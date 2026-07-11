@@ -17,6 +17,7 @@ import { SessionLedger } from "../../src/resume/SessionLedger.js";
 import { EVIDENCE_SCHEMA_VERSION, isSafeArtifactRef, viewEvidence, summarizeEvidence, type WorktreeEvidence } from "../../src/worktree/evidence.js";
 import { readDoorbellEvents } from "../../src/bridge/doorbell.js";
 import { GitDeliveryStore } from "../../src/git-delivery/store.js";
+import type { WaitForDeliveryLeaseInput, WaitForDeliveryLeaseResult } from "../../src/delivery/leaseService.js";
 import fs from "node:fs";
 import os from "node:os";
 import nodePath from "node:path";
@@ -113,6 +114,8 @@ describe("Bridge end-to-end over streamable HTTP", () => {
   let validationChanges = 0;
   const hostActionCalls: unknown[] = [];
   const leaseWaitCalls: unknown[] = [];
+  let leaseWaitImpl: (input: WaitForDeliveryLeaseInput, signal?: AbortSignal) => Promise<WaitForDeliveryLeaseResult> = async (input) =>
+    ({ deliveryId: input.deliveryId, outcome: "changed" as const, waitedMs: 7, version: 4, state: "held" as const });
   const bridge = new Bridge({
     workspaceRoot: pinsRoot,
     manager,
@@ -194,9 +197,9 @@ describe("Bridge end-to-end over streamable HTTP", () => {
         outcomeSeq: 2,
       };
     },
-    waitForDeliveryLease: async (input) => {
+    waitForDeliveryLease: async (input, signal) => {
       leaseWaitCalls.push(input);
-      return { deliveryId: input.deliveryId, outcome: "changed", waitedMs: 7, version: 4, state: "held" };
+      return leaseWaitImpl(input, signal);
     },
   });
   let client: Client;
@@ -313,6 +316,57 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       expect(invalid.isError).toBe(true);
     }
     expect(leaseWaitCalls).toHaveLength(1);
+  });
+
+  it("wait_for_lease forwards real MCP cancellation to the dependency and releases its slot", async () => {
+    leaseWaitCalls.length = 0;
+    let observedSignal!: AbortSignal;
+    let dependencyStarted!: () => void;
+    const started = new Promise<void>((resolve) => { dependencyStarted = resolve; });
+    leaseWaitImpl = async (input, signal) => {
+      observedSignal = signal!;
+      dependencyStarted();
+      await new Promise<void>((_resolve, reject) => signal!.addEventListener("abort", () => reject(signal!.reason), { once: true }));
+      return { deliveryId: input.deliveryId, outcome: "timeout", waitedMs: 0 };
+    };
+    const controller = new AbortController();
+    const call = client.callTool({ name: "wait_for_lease", arguments: { delivery_id: "d-abort", timeout_ms: 1_000 } }, undefined,
+      { signal: controller.signal });
+    await started;
+    controller.abort();
+    await expect(call).rejects.toThrow(/AbortError/);
+    await vi.waitFor(() => expect(observedSignal.aborted).toBe(true));
+
+    leaseWaitImpl = async (input) => ({ deliveryId: input.deliveryId, outcome: "timeout", waitedMs: 0 });
+    const reused = await client.callTool({ name: "wait_for_lease", arguments: { delivery_id: "d-abort", timeout_ms: 1 } });
+    expect(reused.isError).not.toBe(true);
+    expect(leaseWaitCalls).toHaveLength(2);
+  });
+
+  it("wait_for_lease refuses duplicate and fifth fanout without invoking the dependency, then reuses slots", async () => {
+    leaseWaitCalls.length = 0;
+    const releases = new Map<string, () => void>();
+    leaseWaitImpl = (input) => new Promise((resolve) => {
+      releases.set(input.deliveryId, () => resolve({ deliveryId: input.deliveryId, outcome: "timeout", waitedMs: 1 }));
+    });
+    const held = ["d-one", "d-two", "d-three", "d-four"].map((delivery_id) =>
+      client.callTool({ name: "wait_for_lease", arguments: { delivery_id, timeout_ms: 1_000 } }));
+    await vi.waitFor(() => expect(leaseWaitCalls).toHaveLength(4));
+
+    const duplicate = await client.callTool({ name: "wait_for_lease", arguments: { delivery_id: "d-one", timeout_ms: 1_000 } });
+    expect(duplicate.isError).toBe(true);
+    expect((duplicate.content as Array<{ type: "text"; text: string }>)[0]!.text).toContain("limit: 1 per Delivery");
+    const fifth = await client.callTool({ name: "wait_for_lease", arguments: { delivery_id: "d-five", timeout_ms: 1_000 } });
+    expect(fifth.isError).toBe(true);
+    expect((fifth.content as Array<{ type: "text"; text: string }>)[0]!.text).toContain("limit: 4");
+    expect(leaseWaitCalls).toHaveLength(4);
+
+    for (const release of releases.values()) release();
+    await Promise.all(held);
+    leaseWaitImpl = async (input) => ({ deliveryId: input.deliveryId, outcome: "timeout", waitedMs: 0 });
+    const reused = await client.callTool({ name: "wait_for_lease", arguments: { delivery_id: "d-one", timeout_ms: 1 } });
+    expect(reused.isError).not.toBe(true);
+    expect(leaseWaitCalls).toHaveLength(5);
   });
 
   it("run_host_action uses the Bridge-resolved caller and never accepts caller as a parameter", async () => {

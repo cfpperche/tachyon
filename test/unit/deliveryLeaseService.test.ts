@@ -155,6 +155,43 @@ describe("DeliveryLeaseService (SDD 368 T5)", () => {
       { deliveryId: delivery.id, timeoutMs: 20 })).rejects.toBe(corruption);
   });
 
+  it("aborts a production sleep with exact timer/listener cleanup and no later reads", async () => {
+    vi.useFakeTimers();
+    try {
+      const { store, input } = heldFixture();
+      await store.create(input);
+      const get = vi.spyOn(store, "get");
+      const controller = new AbortController();
+      const add = vi.spyOn(controller.signal, "addEventListener");
+      const remove = vi.spyOn(controller.signal, "removeEventListener");
+      const waiting = waitForDeliveryLease(store, { deliveryId: "d-lease", timeoutMs: 1_000 }, undefined, controller.signal);
+      await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(1));
+      expect(vi.getTimerCount()).toBe(1);
+
+      controller.abort();
+      await expect(waiting).rejects.toMatchObject({ name: "AbortError" });
+      expect(vi.getTimerCount()).toBe(0);
+      expect(add).toHaveBeenCalledTimes(1);
+      expect(remove).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(get).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("forwards the AbortSignal to injected sleeps and checks abort before another read", async () => {
+    const { store, input } = heldFixture();
+    await store.create(input);
+    const controller = new AbortController();
+    const sleep = vi.fn(async (_ms: number, signal?: AbortSignal) => { expect(signal).toBe(controller.signal); controller.abort(); });
+    const get = vi.spyOn(store, "get");
+    await expect(waitForDeliveryLease(store, { deliveryId: "d-lease", timeoutMs: 10 },
+      { now: () => 0, pollMs: 1, sleep }, controller.signal)).rejects.toMatchObject({ name: "AbortError" });
+    expect(sleep).toHaveBeenCalledTimes(1);
+    expect(get).toHaveBeenCalledTimes(1);
+  });
+
   it("rejects invalid timeout and afterVersion values", async () => {
     const store = { get: async () => undefined };
     await expect(waitForDeliveryLease(store, { deliveryId: "d", timeoutMs: 0 })).rejects.toBeInstanceOf(RangeError);

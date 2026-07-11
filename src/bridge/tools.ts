@@ -163,7 +163,7 @@ export interface BridgeDeps {
    *  firing the in-app toast/badge wiring. Enables request_human_attention; absent = no-op tool. */
   flagAwaitingHuman?: (agent: string, reason: string) => void;
   /** spec 368 — bounded read-only Delivery lease watcher. */
-  waitForDeliveryLease?: (input: WaitForDeliveryLeaseInput) => Promise<WaitForDeliveryLeaseResult>;
+  waitForDeliveryLease?: (input: WaitForDeliveryLeaseInput, signal?: AbortSignal) => Promise<WaitForDeliveryLeaseResult>;
   /** spec 365 — local GitDelivery store + live-git/liveness seams. Enables git_delivery_* tools. */
   gitDelivery?: {
     store: GitDeliveryStore;
@@ -548,6 +548,34 @@ function waitOutputGateFor(manager: AgentManager): WaitOutputConcurrencyGate {
   if (!gate) {
     gate = new WaitOutputConcurrencyGate();
     waitOutputGates.set(manager, gate);
+  }
+  return gate;
+}
+
+const MAX_CONCURRENT_LEASE_WAITS = 4;
+class DeliveryLeaseWaitGate {
+  private readonly deliveries = new Set<string>();
+
+  tryAcquire(deliveryId: string): string | undefined {
+    if (this.deliveries.has(deliveryId)) {
+      return `wait_for_lease refused: Delivery '${deliveryId}' already has an active watcher (limit: 1 per Delivery)`;
+    }
+    if (this.deliveries.size >= MAX_CONCURRENT_LEASE_WAITS) {
+      return `wait_for_lease refused: workspace already has ${MAX_CONCURRENT_LEASE_WAITS} active lease watchers (limit: ${MAX_CONCURRENT_LEASE_WAITS})`;
+    }
+    this.deliveries.add(deliveryId);
+    return undefined;
+  }
+
+  release(deliveryId: string): void { this.deliveries.delete(deliveryId); }
+}
+
+const deliveryLeaseWaitGates = new WeakMap<AgentManager, DeliveryLeaseWaitGate>();
+function deliveryLeaseWaitGateFor(manager: AgentManager): DeliveryLeaseWaitGate {
+  let gate = deliveryLeaseWaitGates.get(manager);
+  if (!gate) {
+    gate = new DeliveryLeaseWaitGate();
+    deliveryLeaseWaitGates.set(manager, gate);
   }
   return gate;
 }
@@ -2323,14 +2351,21 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         timeout_ms: z.number().int().min(1).max(300_000),
       },
     },
-    async ({ delivery_id, after_version, timeout_ms }) => {
+    async ({ delivery_id, after_version, timeout_ms }, extra) => {
       try {
         if (!deps.waitForDeliveryLease) return fail(new Error("Delivery lease observation is not available on this Bridge"));
-        return ok(JSON.stringify(await deps.waitForDeliveryLease({
-          deliveryId: delivery_id,
-          ...(after_version !== undefined ? { afterVersion: after_version } : {}),
-          timeoutMs: timeout_ms,
-        })));
+        const gate = deliveryLeaseWaitGateFor(deps.manager);
+        const refusal = gate.tryAcquire(delivery_id);
+        if (refusal) return fail(new Error(refusal));
+        try {
+          return ok(JSON.stringify(await deps.waitForDeliveryLease({
+            deliveryId: delivery_id,
+            ...(after_version !== undefined ? { afterVersion: after_version } : {}),
+            timeoutMs: timeout_ms,
+          }, extra.signal)));
+        } finally {
+          gate.release(delivery_id);
+        }
       } catch (err) {
         return fail(err);
       }

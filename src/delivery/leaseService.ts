@@ -36,12 +36,33 @@ export interface WaitForDeliveryLeaseResult {
 
 export interface DeliveryLeaseWaitTiming {
   now(): number;
-  sleep(ms: number): Promise<void>;
+  sleep(ms: number, signal?: AbortSignal): Promise<void>;
   pollMs: number;
 }
 
 const DEFAULT_LEASE_WAIT_POLL_MS = 100;
 const MAX_LEASE_WAIT_MS = 300_000;
+
+function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
+  signal?.throwIfAborted();
+  return new Promise<void>((resolve, reject) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let settled = false;
+    const cleanup = () => {
+      if (timer !== undefined) clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+    };
+    const settle = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      fn();
+    };
+    const onAbort = () => settle(() => reject(signal?.reason ?? new DOMException("This operation was aborted", "AbortError")));
+    signal?.addEventListener("abort", onAbort, { once: true });
+    timer = setTimeout(() => settle(resolve), ms);
+  });
+}
 
 /** Read-only bounded observation of a Delivery lease. This deliberately uses only DeliveryStore.get. */
 export async function waitForDeliveryLease(
@@ -49,9 +70,10 @@ export async function waitForDeliveryLease(
   input: WaitForDeliveryLeaseInput,
   timing: DeliveryLeaseWaitTiming = {
     now: () => performance.now(),
-    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    sleep: abortableSleep,
     pollMs: DEFAULT_LEASE_WAIT_POLL_MS,
   },
+  signal?: AbortSignal,
 ): Promise<WaitForDeliveryLeaseResult> {
   if (!Number.isInteger(input.timeoutMs) || input.timeoutMs <= 0 || input.timeoutMs > MAX_LEASE_WAIT_MS) {
     throw new RangeError(`timeoutMs must be an integer between 1 and ${MAX_LEASE_WAIT_MS}`);
@@ -73,8 +95,10 @@ export async function waitForDeliveryLease(
   });
 
   while (true) {
+    signal?.throwIfAborted();
     try {
       const delivery = await store.get(input.deliveryId);
+      signal?.throwIfAborted();
       if (!delivery) return {
         deliveryId: input.deliveryId,
         outcome: "disappeared",
@@ -86,12 +110,14 @@ export async function waitForDeliveryLease(
       if (baseline !== undefined && baseline !== delivery.version) return result("changed");
       baseline ??= delivery.version;
     } catch (error) {
+      signal?.throwIfAborted();
       if (!(error instanceof DeliveryStoreBusyError)) throw error;
     }
 
     const remaining = deadline - timing.now();
     if (remaining <= 0) return result("timeout");
-    await timing.sleep(Math.min(timing.pollMs, remaining));
+    signal?.throwIfAborted();
+    await timing.sleep(Math.min(timing.pollMs, remaining), signal);
   }
 }
 
