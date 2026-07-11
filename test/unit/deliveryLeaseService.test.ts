@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
 import type { ProcessFencePort } from "../../src/agents/processFence.js";
 import { UnavailableProcessFence } from "../../src/agents/processFence.js";
@@ -79,13 +80,57 @@ describe("DeliveryLeaseService (SDD 368 T5)", () => {
       role: "fixer", executionAgent: "fixer", grantedBy: actor,
       ownsSubset: ["src/feature/", "./src/feature"], operationId: "reserve",
     });
+    const retriedReservation = await lease.acquire({
+      deliveryId: "d-lease", expectedHeadSha: "b", canonicalWorktree: worktree,
+      role: "fixer", executionAgent: "fixer", grantedBy: actor,
+      ownsSubset: ["./src/feature", "src/feature/"], operationId: "reserve",
+    });
+    expect(retriedReservation).toEqual(reserved);
     expect(reserved.delivery.segments[1]?.ownsSubset).toEqual(["src/feature"]);
     const held = await lease.confirmHeld("d-lease", "nonce", {
       pid: 42, processStart: "100", bootId: "boot",
     }, "confirm");
+    expect(await lease.confirmHeld("d-lease", "nonce", {
+      pid: 42, processStart: "100", bootId: "boot",
+    }, "confirm")).toEqual(held);
     expect(held.lease).toMatchObject({
       state: "held", holder: { executionAgent: "fixer", process: { pid: 42, processStart: "100", bootId: "boot" } },
     });
+    expect(held.lease.holder).not.toHaveProperty("reservationNonce");
+  });
+
+  it("translates a real SQLite BEGIN IMMEDIATE collision into retryable WORKTREE_OCCUPIED", async () => {
+    const { store, worktree, input } = fixture();
+    await store.create(input);
+    const blocker = new DatabaseSync(store.databasePath);
+    blocker.exec("BEGIN IMMEDIATE");
+    try {
+      const error = await service(store, worktree).acquire({
+        deliveryId: "d-lease", expectedHeadSha: "b", canonicalWorktree: worktree,
+        role: "fixer", executionAgent: "fixer", grantedBy: actor, ownsSubset: ["src"], operationId: "busy",
+      }).catch((caught) => caught);
+      expect(error).toBeInstanceOf(DeliveryLeaseError);
+      expect(error).toMatchObject({ code: "WORKTREE_OCCUPIED", retryable: true });
+    } finally {
+      blocker.exec("ROLLBACK");
+      blocker.close();
+    }
+  });
+
+  it("rechecks HEAD immediately before the Delivery CAS and refuses mid-acquire drift", async () => {
+    const { store, worktree, input } = fixture();
+    await store.create(input);
+    let reads = 0;
+    const lease = new DeliveryLeaseService({
+      store, processFence: certifiedFence, canonicalWorktreeFor: () => worktree,
+      readHead: () => (++reads === 1 ? "b" : "c"), isAncestor: () => true,
+      withWorktreeLock: async (_path, fn) => fn(), now: () => now,
+    });
+    await expect(lease.acquire({
+      deliveryId: "d-lease", expectedHeadSha: "b", canonicalWorktree: worktree,
+      role: "fixer", executionAgent: "fixer", grantedBy: actor, ownsSubset: ["src"], operationId: "drift",
+    })).rejects.toMatchObject({ code: "DELIVERY_HEAD_CHANGED" });
+    expect((await store.get("d-lease"))?.lease.state).toBe("free");
   });
 
   it("fails closed before mutation when the production fence capability is unavailable", async () => {

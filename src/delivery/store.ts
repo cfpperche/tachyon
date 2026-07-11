@@ -147,6 +147,24 @@ export class DeliveryStore {
     });
   }
 
+  /** Read a committed operation result after a caller lost the response. The higher-level
+   * service must validate its domain intent against durable event detail before replaying. */
+  async getOperationResult(operationId: string, kind: "create" | "update", deliveryId: string): Promise<Delivery | undefined> {
+    assertOperationId(operationId);
+    assertDeliveryId(deliveryId);
+    return this.withDatabase((db) => {
+      const row = db.prepare(`
+        SELECT operation_kind, delivery_id, result_json
+        FROM delivery_operation_receipts WHERE operation_id = ?
+      `).get(operationId) as SqlRow | undefined;
+      if (!row) return undefined;
+      if (row.operation_kind !== kind || row.delivery_id !== deliveryId) {
+        throw new DeliveryInvariantError(`operation id '${operationId}' was already used for another mutation`);
+      }
+      return structuredClone(parseRecord(String(row.result_json)));
+    });
+  }
+
   async create(input: DeliveryCreateInput): Promise<Delivery> {
     const id = input.id ?? this.newId();
     assertDeliveryId(id);
