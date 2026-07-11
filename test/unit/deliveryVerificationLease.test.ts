@@ -155,16 +155,20 @@ describe("DeliveryVerificationLeaseService (SDD 368 T9)", () => {
       process: { pid: 42, processStart: "100", bootId: "boot" }, executionNonce: "execution-nonce" },
       expectedHeadSha: "expected-head", changedAt: "2026-07-11T00:01:00.000Z" };
     const f = await fixture({ lease: heldLease });
-    await seedInterrupted(f);
+    await seedInterrupted(f, f.base);
+    git(f.worktree, "checkout", "--detach", "--force", f.base);
     fs.writeFileSync(path.join(f.worktree, "dirty-held.txt"), "dirty\n");
     await expect(service(f).run("d-verify", actor, async () => { throw new Error("must not execute"); }))
       .rejects.toMatchObject({ code: "DELIVERY_QUARANTINED" });
     const quarantined = (await f.store.get("d-verify"))!;
     expect(quarantined.lease).toMatchObject({ state: "quarantined", holder: heldLease.holder,
       expectedHeadSha: heldLease.expectedHeadSha });
+    expect(quarantined.lease.holder).toEqual(heldLease.holder);
     expect(quarantined.events.at(-1)).toMatchObject({ type: "verification_quarantined", detail: {
       operationId: "old-operation", subjectSegmentId: "seg-0", ownerEpoch: "epoch-old",
-      verificationActor: actor, priorLeaseState: "held",
+      verificationActor: actor, priorLeaseState: "held", deliveredHeadSha: f.delivered,
+      temporaryCheckoutSha: f.base,
+      reason: expect.stringContaining("interrupted verification recovery failed"),
     } });
   });
 
