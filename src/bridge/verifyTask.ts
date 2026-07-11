@@ -466,7 +466,12 @@ async function canonicalSegmentBlockers(delivery: Delivery, refSha: string, cwd:
   if (blockers.some((finding) => finding.code === "non_linear_segment_history")) return blockers;
 
   for (const { segment, end } of ranges) {
-    if (!["implementer", "fixer", "recovery"].includes(segment.role) || segment.grantedHeadSha === end) continue;
+    if (["reviewer", "verifier"].includes(segment.role)) continue;
+    if (!["implementer", "fixer", "recovery"].includes(segment.role)) {
+      blockers.push({ code: "invalid_segment_role", detail: `segment '${segment.id}' has unsupported role '${String(segment.role)}'` });
+      continue;
+    }
+    if (segment.grantedHeadSha === end) continue;
     const owns = normalizeSegmentOwns(segment.ownsSubset);
     if (!owns || owns.some((entry) => !withinOwns(entry, delivery.contract.owns))) {
       blockers.push({ code: "invalid_segment_scope", detail: `segment '${segment.id}' has invalid, escaping, or widened ownsSubset authority` });
@@ -784,7 +789,7 @@ async function verifyTaskResolved(input: VerifyTaskInput, target: VerificationTa
   waivedFindings.push(...scopedWaivers.waived);
 
   const wtPath = canonical?.worktreePath ?? await worktreePathForRef(input.workspaceRoot, record.taskRef);
-  let canRunBehavior = !noCommit && !blockers.some((finding) => finding.code === "non_linear_segment_history" || finding.code === "invalid_segment_scope");
+  let canRunBehavior = !noCommit && !blockers.some((finding) => ["non_linear_segment_history", "invalid_segment_scope", "invalid_segment_role"].includes(finding.code));
   if (!wtPath) {
     blockers.push({ code: "worktree_missing", detail: `task ref ${record.taskRef} is not checked out in an isolated worktree` });
     canRunBehavior = false;

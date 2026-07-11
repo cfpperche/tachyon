@@ -62,7 +62,11 @@ export class DeliveryVerificationLeaseService {
         this.assertProjection(current, linked, lockPath);
       } catch (error) {
         if (current.lease.state === "verifying" && current.lease.verification?.ownerEpoch !== this.deps.ownerEpoch) {
-          await this.quarantineBestEffort(current, current.lease.verification!, `interrupted verification projection drift: ${this.message(error)}`, lockPath);
+          try {
+            await this.persistQuarantine(current, current.lease.verification!, `interrupted verification projection drift: ${this.message(error)}`, lockPath);
+          } catch (quarantineError) {
+            throw new AggregateError([error, quarantineError], "interrupted verification projection drifted and quarantine persistence is uncertain");
+          }
           throw new DeliveryLeaseError("DELIVERY_QUARANTINED", false, "interrupted verification projection drifted", { deliveryId });
         }
         throw error;
@@ -163,7 +167,11 @@ export class DeliveryVerificationLeaseService {
           return record;
         });
       } catch (error) {
-        await this.quarantineBestEffort(current, intent, "verification record was published but lease completion could not be persisted", lockPath);
+        try {
+          await this.persistQuarantine(current, intent, "verification record was published but lease completion could not be persisted", lockPath);
+        } catch (quarantineError) {
+          throw new AggregateError([error, quarantineError], "verification completion and quarantine persistence both failed after record publication");
+        }
         throw new AggregateError([error], "verification completion persistence failed after record publication");
       }
       return published.result;
@@ -190,7 +198,11 @@ export class DeliveryVerificationLeaseService {
         return record;
       });
     } catch (error) {
-      await this.quarantineBestEffort(current, intent, `interrupted verification recovery failed: ${this.message(error)}`, worktreePath);
+      try {
+        await this.persistQuarantine(current, intent, `interrupted verification recovery failed: ${this.message(error)}`, worktreePath);
+      } catch (quarantineError) {
+        throw new AggregateError([error, quarantineError], "interrupted verification recovery failed and quarantine persistence is uncertain");
+      }
       throw new DeliveryLeaseError("DELIVERY_QUARANTINED", false, "interrupted verification could not be restored safely", { deliveryId: current.id });
     }
   }
@@ -206,7 +218,11 @@ export class DeliveryVerificationLeaseService {
         return record;
       });
     } catch (restoreError) {
-      await this.quarantineBestEffort(current, intent, `verification restore failed: ${this.message(restoreError)}`, worktreePath);
+      try {
+        await this.persistQuarantine(current, intent, `verification restore failed: ${this.message(restoreError)}`, worktreePath);
+      } catch (quarantineError) {
+        throw new AggregateError([original, restoreError, quarantineError], "verification failed, restoration failed, and quarantine persistence is uncertain");
+      }
       throw new AggregateError([original, restoreError], "verification failed and safe restoration did not complete");
     }
   }
@@ -231,22 +247,18 @@ export class DeliveryVerificationLeaseService {
     }
   }
 
-  private async quarantineBestEffort(current: Delivery, intent: DeliveryVerificationIntent, reason: string, worktreePath: string): Promise<void> {
-    const latest = await this.requireDelivery(current.id).catch(() => current);
+  private async persistQuarantine(current: Delivery, intent: DeliveryVerificationIntent, reason: string, worktreePath: string): Promise<void> {
+    const latest = await this.requireDelivery(current.id);
     const observed = await this.inspect(worktreePath).catch(() => undefined);
-    try {
-      await this.deps.store.update(latest.id, latest.version, (record) => {
-        this.assertIntent(record, intent);
-        record.lease = { state: "quarantined", changedAt: this.now(), reason };
-        record.events.push({ id: this.eventId(), at: this.now(), type: "verification_quarantined", by: { kind: "system" },
-          detail: { reason, worktreePath, observedHead: observed?.head, clean: observed?.clean,
-            operationId: intent.operationId, subjectSegmentId: intent.subjectSegmentId,
-            deliveredHeadSha: intent.deliveredHeadSha, temporaryCheckoutSha: intent.temporaryCheckoutSha } });
-        return record;
-      });
-    } catch {
-      // The AggregateError/structured quarantine refusal remains the caller-visible evidence.
-    }
+    await this.deps.store.update(latest.id, latest.version, (record) => {
+      this.assertIntent(record, intent);
+      record.lease = { state: "quarantined", changedAt: this.now(), reason };
+      record.events.push({ id: this.eventId(), at: this.now(), type: "verification_quarantined", by: { kind: "system" },
+        detail: { reason, worktreePath, observedHead: observed?.head, clean: observed?.clean,
+          operationId: intent.operationId, subjectSegmentId: intent.subjectSegmentId,
+          deliveredHeadSha: intent.deliveredHeadSha, temporaryCheckoutSha: intent.temporaryCheckoutSha } });
+      return record;
+    });
   }
 
   private assertIntent(delivery: Delivery, intent: DeliveryVerificationIntent): void {

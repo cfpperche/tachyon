@@ -279,6 +279,28 @@ describe("verifyTask", () => {
     expect(runner).not.toHaveBeenCalled();
   });
 
+  it("fails closed on an unknown canonical segment role instead of treating it as read-only", async () => {
+    const { repo, wt, baseSha } = fixture();
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    git(wt, ["add", "src/feature.txt"]); git(wt, ["commit", "-qm", "t-delivery unknown role"]);
+    const delivered = git(wt, ["rev-parse", "HEAD"]);
+    const store = new DeliveryStore(repo);
+    const gitDeliveries = new GitDeliveryStore(repo, { id: () => "gd-unknown-role" });
+    const projection = await gitDeliveries.open({ workspaceId: "ws", createdBy: actor, deliveryId: "d-unknown-role", agent: "worker",
+      branchRef: "tachyon/worker", worktreePath: wt, tachyonCreatedBranch: true, baseRef: baseSha, currentHeadSha: delivered });
+    await store.create({ id: "d-unknown-role", workspaceId: "ws", createdBy: actor,
+      contract: { taskId: "t-delivery", baseSha, behaviorTest: "cmd:node behavior.js", owns: ["src"], taskRef: "tachyon/worker" },
+      gitDeliveryId: projection.id, segments: [{ id: "seg-0", index: 0,
+        role: "unknown-role" as DelegationSegment["role"], executionAgent: "worker", grantedBy: actor, ownsSubset: ["src"],
+        grantedHeadSha: baseSha, grantedAt: "2026-01-01T00:00:00.000Z" }] });
+    const runner = vi.fn(testRunner);
+    const result = await verifyTask({ workspaceRoot: repo, deliveryId: "d-unknown-role",
+      deliveryVerification: await canonicalVerification(store, gitDeliveries), runner });
+    expect(result.verdict).toBe("blocked");
+    expect(result.blockers).toContainEqual(expect.objectContaining({ code: "invalid_segment_role" }));
+    expect(runner).not.toHaveBeenCalled();
+  });
+
   /** Builds a Delivery on the fixture's taskRef. `segments` are given tail-last. */
   async function delivery(repo: string, id: string, baseSha: string, agents: string[]) {
     await new DeliveryStore(repo).create({

@@ -168,4 +168,29 @@ describe("DeliveryVerificationLeaseService (SDD 368 T9)", () => {
     expect(completed.events.at(-1)).toMatchObject({ type: "verification_completed",
       detail: { integrityHash: "integrity", recordPath: ".tachyon/verifications/record.json" } });
   });
+
+  it("preserves original, restore, and quarantine-persistence failures without claiming quarantine", async () => {
+    const f = await fixture();
+    const update = f.store.update.bind(f.store);
+    let refusePersistence = false;
+    f.store.update = async (...args: Parameters<DeliveryStore["update"]>) => {
+      if (refusePersistence) throw new Error("quarantine persistence failed");
+      return update(...args);
+    };
+    const error = await service(f).run("d-verify", actor, async (context) => {
+      await context.runAtSha(f.base, async () => {
+        fs.writeFileSync(path.join(f.worktree, "dirty-after-failure.txt"), "dirty\n");
+        refusePersistence = true;
+        throw new Error("verification callback failed");
+      });
+      throw new Error("unreachable");
+    }).catch((caught) => caught) as AggregateError;
+    expect(error).toBeInstanceOf(AggregateError);
+    expect(error.errors.map((item) => item instanceof Error ? item.message : String(item))).toEqual([
+      "verification callback failed",
+      expect.stringContaining("worktree is not a clean recorded verification checkout"),
+      "quarantine persistence failed",
+    ]);
+    expect((await f.store.get("d-verify"))!.lease.state).toBe("verifying");
+  });
 });
