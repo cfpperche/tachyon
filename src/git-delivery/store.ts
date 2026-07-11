@@ -146,18 +146,24 @@ export class GitDeliveryStore {
     const { DatabaseSync } = require("node:sqlite") as typeof import("node:sqlite");
     const db = new DatabaseSync(this.databasePath, { timeout: 5000 });
     try {
-      db.exec("PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS git_deliveries (id TEXT PRIMARY KEY, branch_ref TEXT NOT NULL, worktree_path TEXT NOT NULL, active INTEGER NOT NULL, record_json TEXT NOT NULL) STRICT; CREATE UNIQUE INDEX IF NOT EXISTS git_deliveries_active_branch ON git_deliveries(branch_ref) WHERE active = 1; CREATE UNIQUE INDEX IF NOT EXISTS git_deliveries_active_worktree ON git_deliveries(worktree_path) WHERE active = 1;");
+      db.exec("PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS git_deliveries (id TEXT PRIMARY KEY, branch_ref TEXT NOT NULL, worktree_path TEXT NOT NULL, active INTEGER NOT NULL, record_json TEXT NOT NULL) STRICT; CREATE TABLE IF NOT EXISTS git_delivery_store_state (key TEXT PRIMARY KEY, value TEXT NOT NULL) STRICT; CREATE UNIQUE INDEX IF NOT EXISTS git_deliveries_active_branch ON git_deliveries(branch_ref) WHERE active = 1; CREATE UNIQUE INDEX IF NOT EXISTS git_deliveries_active_worktree ON git_deliveries(worktree_path) WHERE active = 1;");
       this.migrateLegacy(db);
-      return fn(db);
+      const result = fn(db);
+      this.rebuildMirrors(db);
+      return result;
     } finally { db.close(); }
   }
 
-  /** Promote the JSON v1 store atomically. JSON remains a durable mirror after commit. */
+  /** Promote JSON atomically. Once marked, SQLite is authoritative and JSON is only a cache. */
   private migrateLegacy(db: import("node:sqlite").DatabaseSync): void {
-    if (!fs.existsSync(this.dir)) return;
     db.exec("BEGIN IMMEDIATE");
     try {
-      for (const name of fs.readdirSync(this.dir).sort()) {
+      const promoted = db.prepare("SELECT value FROM git_delivery_store_state WHERE key = 'sqlite_authoritative'").get();
+      if (promoted) {
+        db.exec("COMMIT");
+        return;
+      }
+      for (const name of (fs.existsSync(this.dir) ? fs.readdirSync(this.dir).sort() : [])) {
         if (!name.endsWith(".json")) continue;
         const file = path.join(this.dir, name);
         let record: GitDelivery;
@@ -182,10 +188,18 @@ export class GitDeliveryStore {
         db.prepare("INSERT INTO git_deliveries(id, branch_ref, worktree_path, active, record_json) VALUES (?, ?, ?, ?, ?)")
           .run(record.id, record.branchRef, path.resolve(record.worktreePath), record.phase === "pruned" ? 0 : 1, JSON.stringify(record));
       }
+      db.prepare("INSERT INTO git_delivery_store_state(key, value) VALUES ('sqlite_authoritative', '1')").run();
       db.exec("COMMIT");
     } catch (error) {
       try { db.exec("ROLLBACK"); } catch {}
       throw error;
+    }
+  }
+
+  private rebuildMirrors(db: import("node:sqlite").DatabaseSync): void {
+    const rows = db.prepare("SELECT record_json FROM git_deliveries").all() as Array<{ record_json: string }>;
+    for (const row of rows) {
+      try { this.writeMirror(JSON.parse(row.record_json) as GitDelivery); } catch { /* cache repair is best effort */ }
     }
   }
 

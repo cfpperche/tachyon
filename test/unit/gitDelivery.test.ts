@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
 import { parseConfig, type TachyonConfig } from "../../src/config/loadConfig.js";
 import { containedInBase, hygieneReport } from "../../src/git-delivery/classify.js";
@@ -68,7 +69,7 @@ describe("GitDelivery store (spec 365)", () => {
       worktreePath: legacy.worktreePath, tachyonCreatedBranch: true, baseRef: "main" })).id).toBe(legacy.id);
   });
 
-  it("fails closed and rolls back the whole legacy migration on corruption or divergence", async () => {
+  it("fails closed and rolls back the whole legacy migration on corruption", async () => {
     const corruptRoot = tmpRoot();
     const corruptDir = path.join(corruptRoot, ".tachyon", "git-deliveries");
     fs.mkdirSync(corruptDir, { recursive: true });
@@ -78,12 +79,35 @@ describe("GitDelivery store (spec 365)", () => {
     fs.rmSync(path.join(corruptDir, "gd-bad.json"));
     expect(await new GitDeliveryStore(corruptRoot).list()).toHaveLength(1);
 
+  });
+
+  it("uses promoted SQLite as authority and repairs a stale or missing mirror after a committed update", async () => {
     const root = tmpRoot();
     const store = new GitDeliveryStore(root, { id: () => "gd-same" });
     const current = await store.open({ workspaceId: "ws", createdBy: actor, agent: "worker", branchRef: "branch",
       worktreePath: "/wt/same", tachyonCreatedBranch: true, baseRef: "main" });
-    fs.writeFileSync(path.join(root, ".tachyon", "git-deliveries", "gd-same.json"), JSON.stringify({ ...current, phase: "accepted" }));
-    await expect(store.get("gd-same")).rejects.toThrow(/divergence/);
+    const next = await store.update(current.id, 1, (record) => ({ ...record, phase: "accepted" }));
+    const mirror = path.join(root, ".tachyon", "git-deliveries", "gd-same.json");
+    fs.writeFileSync(mirror, JSON.stringify(current)); // model crash after SQLite commit, before mirror replacement
+    expect(await new GitDeliveryStore(root).get(current.id)).toEqual(next);
+    expect(JSON.parse(fs.readFileSync(mirror, "utf8"))).toEqual(next);
+    fs.rmSync(mirror);
+    expect(await new GitDeliveryStore(root).get(current.id)).toEqual(next);
+    expect(fs.existsSync(mirror)).toBe(true);
+  });
+
+  it("refuses unexplained legacy divergence before the authority marker is committed", async () => {
+    const root = tmpRoot();
+    const legacy = baseDelivery({ id: "gd-divergent", worktreePath: path.join(root, "wt") });
+    const dir = path.join(root, ".tachyon", "git-deliveries");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, `${legacy.id}.json`), JSON.stringify(legacy));
+    const db = new DatabaseSync(path.join(root, ".tachyon", "git-deliveries-v2.sqlite3"));
+    db.exec("CREATE TABLE git_deliveries (id TEXT PRIMARY KEY, branch_ref TEXT NOT NULL, worktree_path TEXT NOT NULL, active INTEGER NOT NULL, record_json TEXT NOT NULL) STRICT");
+    db.prepare("INSERT INTO git_deliveries VALUES (?, ?, ?, 1, ?)")
+      .run(legacy.id, legacy.branchRef, legacy.worktreePath, JSON.stringify({ ...legacy, phase: "accepted" }));
+    db.close();
+    await expect(new GitDeliveryStore(root).list()).rejects.toThrow(/divergence/);
   });
 
   it("writes records atomically enough for reload and enforces version CAS", async () => {

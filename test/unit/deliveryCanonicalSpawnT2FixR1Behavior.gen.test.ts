@@ -1,40 +1,48 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { fork } from "node:child_process";
+import { spawn } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import { GitDeliveryStore } from "../../src/git-delivery/store.js";
 
 describe("container-generated delegation behavior", () => {
-  it("observes real cross-process SQLite busy contention without timing sleeps", async () => {
+  it("reconciles concurrent GitDeliveryStore.open calls from real subprocesses", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-canonical-busy-"));
-    const worker = path.join(root, "locker.cjs");
+    const worker = path.join(root, "open-worker.ts");
     fs.writeFileSync(worker, `
-      const { DatabaseSync } = require("node:sqlite");
-      const db = new DatabaseSync(process.argv[2], { timeout: 0 });
-      db.exec("CREATE TABLE IF NOT EXISTS lock_probe (id INTEGER PRIMARY KEY)");
-      try {
-        db.exec("BEGIN IMMEDIATE");
-        process.send("locked");
-        process.once("message", () => { db.exec("COMMIT"); db.close(); process.exit(0); });
-      } catch (error) { process.send({ busy: error.code === "ERR_SQLITE_ERROR", message: error.message }); db.close(); process.exit(0); }
+      import { GitDeliveryStore } from ${JSON.stringify(path.join(process.cwd(), "src/git-delivery/store.ts"))};
+      const root = process.argv[2];
+      process.stdout.write("ready\\n");
+      process.stdin.once("data", async () => {
+        const input = { workspaceId: "ws", createdBy: { kind: "agent", name: "coordinator" }, deliveryId: "d-spawn",
+          agent: "worker", branchRef: "tachyon/worker", worktreePath: root + "/worker", tachyonCreatedBranch: true, baseRef: "main" };
+        for (let attempt = 0; attempt < 20; attempt++) {
+          try { process.stdout.write(JSON.stringify(await new GitDeliveryStore(root).open(input)) + "\\n"); return; }
+          catch (error) {
+            if (!/busy|locked/i.test(String(error)) || attempt === 19) {
+              process.stdout.write(JSON.stringify({ error: String(error) }) + "\\n"); return;
+            }
+            await new Promise((resolve) => setImmediate(resolve));
+          }
+        }
+      });
     `);
-    const dbPath = path.join(root, "probe.sqlite3");
-    const start = () => fork(worker, [dbPath], { stdio: ["ignore", "ignore", "ignore", "ipc"] });
-    const message = (child: ReturnType<typeof start>) => new Promise<unknown>((resolve, reject) => {
-      child.once("message", resolve); child.once("error", reject);
+    const viteNode = path.join(process.cwd(), "node_modules/vite-node/vite-node.mjs");
+    const start = () => spawn(process.execPath, [viteNode, worker, root], { stdio: ["pipe", "pipe", "inherit"] });
+    const line = (child: ReturnType<typeof start>) => new Promise<string>((resolve, reject) => {
+      child.stdout.once("data", (data) => resolve(String(data).trim())); child.once("error", reject);
     });
     try {
-      const holder = start();
-      expect(await message(holder)).toBe("locked");
-      const contender = start();
-      expect(await message(contender)).toMatchObject({ busy: true });
-      holder.send("commit");
-      await new Promise<void>((resolve) => holder.once("exit", () => resolve()));
-      const successor = start();
-      expect(await message(successor)).toBe("locked");
-      successor.send("commit");
-      await new Promise<void>((resolve) => successor.once("exit", () => resolve()));
+      const left = start(); const right = start();
+      expect(await line(left)).toBe("ready"); expect(await line(right)).toBe("ready");
+      const leftResult = line(left); const rightResult = line(right);
+      left.stdin.end("go\\n"); right.stdin.end("go\\n");
+      const results = [JSON.parse(await leftResult), JSON.parse(await rightResult)];
+      expect(results[0].id).toBe(results[1].id);
+      expect(results.every((record) => record.deliveryId === "d-spawn" && record.agent === "worker")).toBe(true);
+      const active = (await new GitDeliveryStore(root).list()).filter((record) => record.phase !== "pruned");
+      expect(active).toHaveLength(1);
+      expect(await new GitDeliveryStore(root).get(results[0].id)).toMatchObject({ deliveryId: "d-spawn", branchRef: "tachyon/worker" });
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
