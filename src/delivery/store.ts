@@ -71,6 +71,15 @@ type DatabaseSyncConstructor = new (location: string, options?: { timeout?: numb
 const legacyMigrationKey = "legacy_json_migration";
 const legacyMigrationComplete = "complete-v1";
 
+function sameLegacyImportIntent(existing: Delivery, planned: DeliveryCreateInput & { id: string }): boolean {
+  const comparable = (value: DeliveryCreateInput & { id: string }) => ({
+    id: value.id, workspaceId: value.workspaceId, createdBy: value.createdBy, contract: value.contract,
+    lease: value.lease, segments: value.segments, events: value.events, gitDeliveryId: value.gitDeliveryId,
+    legacy: value.legacy,
+  });
+  return isDeepStrictEqual(comparable(existing), comparable(planned));
+}
+
 const STORE_SCHEMA = `
   CREATE TABLE IF NOT EXISTS delivery_store_metadata (
     key TEXT PRIMARY KEY,
@@ -172,6 +181,41 @@ export class DeliveryStore {
         throw error;
       }
       if (input.operationId) this.writeReceipt(db, input.operationId, "create", fingerprint, record, now);
+      return structuredClone(record);
+    });
+  }
+
+  /** Atomic deterministic-id reconciliation reserved for the legacy importer. */
+  async createLegacyImport(input: DeliveryCreateInput & { id: string }): Promise<Delivery> {
+    assertDeliveryId(input.id);
+    assertOperationId(input.operationId);
+    const now = this.now();
+    const record: Delivery = {
+      schemaVersion: DELIVERY_SCHEMA_VERSION,
+      id: input.id,
+      version: 1,
+      workspaceId: input.workspaceId,
+      createdBy: structuredClone(input.createdBy),
+      contract: structuredClone(input.contract),
+      lease: structuredClone(input.lease ?? { state: "free", changedAt: now }),
+      segments: structuredClone(input.segments ?? []),
+      events: structuredClone(input.events ?? []),
+      ...(input.gitDeliveryId ? { gitDeliveryId: input.gitDeliveryId } : {}),
+      ...(input.legacy ? { legacy: structuredClone(input.legacy) } : {}),
+      createdAt: now,
+      updatedAt: now,
+    };
+    validateRecord(record);
+    return this.writeTransaction((db) => {
+      const row = db.prepare("SELECT record_json FROM deliveries WHERE id = ?").get(input.id) as SqlRow | undefined;
+      if (row) {
+        const existing = parseRecord(String(row.record_json));
+        if (!sameLegacyImportIntent(existing, input)) {
+          throw new DeliveryInvariantError(`Delivery '${input.id}' conflicts with the canonical legacy intent`);
+        }
+        return structuredClone(existing);
+      }
+      db.prepare("INSERT INTO deliveries(id, record_json) VALUES (?, ?)").run(input.id, JSON.stringify(record));
       return structuredClone(record);
     });
   }

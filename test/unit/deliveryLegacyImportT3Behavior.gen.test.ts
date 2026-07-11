@@ -6,8 +6,29 @@ import { applyLegacyImport, previewLegacyImport } from "../../src/delivery/legac
 import { DeliveryStore } from "../../src/delivery/store.js";
 import type { DelegationRecord } from "../../src/bridge/delegationRecord.js";
 import type { GitDelivery } from "../../src/git-delivery/types.js";
+import { GitDeliveryStore } from "../../src/git-delivery/store.js";
 
 describe("container-generated delegation behavior", () => {
+  it("converges simultaneous identical applies with distinct transport operation ids", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-import-concurrent-"));
+    const worktree = path.join(root, "worktree"); fs.mkdirSync(worktree);
+    const record: DelegationRecord = { id: "legacy-concurrent", agent: "worker", baseSha: "base", taskRef: "task/concurrent", worktreePath: worktree, owns: ["src/a.ts"], behaviorTest: "same intent", contract: { task: "converge" }, createdAt: "2026-07-10T00:00:00.000Z" };
+    const deps = { isAncestor: async () => true, now: () => "2026-07-10T01:00:00.000Z" };
+    const git = new GitDeliveryStore(root, { now: deps.now, id: () => "gd-concurrent" });
+    await git.open({ workspaceId: "ws", createdBy: { kind: "system" }, agent: record.agent, branchRef: record.taskRef, worktreePath: worktree, tachyonCreatedBranch: true, baseRef: "main", currentHeadSha: "base" });
+    const preview = await previewLegacyImport({ workspaceId: "ws", record, gitDeliveries: await git.list() }, deps);
+    expect(preview.ok).toBe(true); if (!preview.ok) return;
+    const delivery = new DeliveryStore(root, { now: deps.now });
+    const [left, right] = await Promise.all([
+      applyLegacyImport({ workspaceId: "ws", record, fingerprint: preview.fingerprint, operationId: "op-left" }, { delivery, git }, deps),
+      applyLegacyImport({ workspaceId: "ws", record, fingerprint: preview.fingerprint, operationId: "op-right" }, { delivery, git }, deps),
+    ]);
+    expect("id" in left && left.id).toBe(preview.delivery.id);
+    expect("id" in right && right.id).toBe(preview.delivery.id);
+    expect(await delivery.list()).toHaveLength(1);
+    expect(await git.get("gd-concurrent")).toMatchObject({ deliveryId: preview.delivery.id, legacyImport: { state: "linked", deliveryId: preview.delivery.id, intentFingerprint: preview.intentFingerprint } });
+  });
+
   it("recovers identical legacy intent under a new operation id after create failure and post-create crash", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-import-recovery-"));
     const worktree = path.join(root, "worktree"); fs.mkdirSync(worktree);
@@ -28,7 +49,7 @@ describe("container-generated delegation behavior", () => {
     };
     const preview = await previewLegacyImport({ workspaceId: "ws", record, gitDeliveries: [git] }, deps);
     expect(preview.ok).toBe(true); if (!preview.ok) return;
-    const failing = { get: store.get.bind(store), async create() { throw new Error("injected create failure"); } } as unknown as DeliveryStore;
+    const failing = { get: store.get.bind(store), async createLegacyImport() { throw new Error("injected create failure"); } } as unknown as DeliveryStore;
     await expect(applyLegacyImport({ workspaceId: "ws", record, fingerprint: preview.fingerprint, operationId: "op-lost" }, { delivery: failing, git: gitStore }, deps)).rejects.toThrow("injected create failure");
     const recovered = await applyLegacyImport({ workspaceId: "ws", record, fingerprint: preview.fingerprint, operationId: "op-new" }, { delivery: store, git: gitStore }, deps);
     expect("id" in recovered && recovered.id).toBe(preview.delivery.id);

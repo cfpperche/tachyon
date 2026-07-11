@@ -3,7 +3,8 @@ import fs from "node:fs";
 import path from "node:path";
 import type { DelegationRecord } from "../bridge/delegationRecord.js";
 import type { GitDelivery } from "../git-delivery/types.js";
-import type { DeliveryStore } from "./store.js";
+import { DeliveryInvariantError, type DeliveryStore } from "./store.js";
+import { GitDeliveryVersionConflictError } from "../git-delivery/store.js";
 import type { DelegationSegment, Delivery, DeliveryCreateInput } from "./types.js";
 
 export type LegacyImportRefusalCode =
@@ -211,9 +212,25 @@ export async function applyLegacyImport(input: LegacyImportApplyInput, stores: {
   }
   // A prior caller may have committed create and crashed before linking. The deterministic id plus
   // full intent comparison makes that Delivery the idempotent create result for any identical retry.
-  const delivery = alreadyCreated ?? await stores.delivery.create({ ...plan.delivery, operationId: input.operationId });
+  let delivery: Delivery;
+  try {
+    delivery = await stores.delivery.createLegacyImport({ ...plan.delivery, operationId: input.operationId });
+  } catch (error) {
+    if (error instanceof DeliveryInvariantError) {
+      return { ok: false, code: "GIT_PROJECTION_DRIFT", message: error.message };
+    }
+    throw error;
+  }
   if (plan.gitProjection && reserved) {
-    await stores.git.update(plan.gitProjection.id, reserved.version, (record) => ({ ...record, deliveryId: delivery.id, legacyImport: { operationId: input.operationId, deliveryId: delivery.id, state: "linked" } }));
+    try {
+      await stores.git.update(plan.gitProjection.id, reserved.version, (record) => ({ ...record, deliveryId: delivery.id, legacyImport: { operationId: input.operationId, deliveryId: delivery.id, intentFingerprint: plan.intentFingerprint, state: "linked" } }));
+    } catch (error) {
+      if (!(error instanceof GitDeliveryVersionConflictError)) throw error;
+      const winner = await stores.git.get(plan.gitProjection.id);
+      const linkedImport = winner?.legacyImport as { deliveryId?: string; intentFingerprint?: string; state?: string } | undefined;
+      if (winner?.deliveryId !== delivery.id || linkedImport?.state !== "linked" || linkedImport.deliveryId !== delivery.id
+        || linkedImport.intentFingerprint !== plan.intentFingerprint) throw error;
+    }
   }
   return delivery;
 }
