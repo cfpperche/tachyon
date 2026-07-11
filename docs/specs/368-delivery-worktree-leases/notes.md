@@ -453,6 +453,35 @@ allowed, but do not add a Bridge tool or public user-facing API. Preserve every 
 Run the R1 nine-suite serial matrix, `npm run typecheck`, `git diff --check`, and `npm run verify:full`. Commit only
 the correction paths in one new plain `t-0b5723` commit; no amend/history rewrite and never stage `tachyon.yml`.
 
+### T9 R3 correction contract — transaction error causality and forcing race proof
+
+R3 (`485d50a`) confirms the SQLite serialization itself is sound and narrows the remaining work to error composition
+and the concurrency regression. Do not change publication semantics or introduce another lock mechanism.
+
+Refactor the transaction wrapper so no `finally` operation can replace an earlier exception. Track transaction
+stage, return value, and failures explicitly. Initialization/PRAGMA/`BEGIN IMMEDIATE` failure is the primary clear
+`verification record publication unavailable` error with the original cause. A callback/conflict/write failure or
+COMMIT failure is the primary error. Whenever BEGIN succeeded and COMMIT did not, attempt ROLLBACK and retain any
+rollback failure. Always attempt close and retain any close failure. After cleanup, throw the sole failure directly
+or an `AggregateError` in stable `primary`, `rollback`, `close` order; on a successful COMMIT with close-only failure,
+surface that close failure rather than reporting success. Busy/BEGIN failures remain publication-unavailable and
+keep their original cause. No rollback/close exception is swallowed.
+
+Provide a narrow internal test seam for the publication database factory/lifecycle and a post-conflict-check hook;
+it is not a Bridge or user API. Add deterministic unit cases for BEGIN/busy failure, callback/conflict plus rollback
+failure, COMMIT plus rollback failure, and primary+rollback+close failure, asserting exact order and causes.
+
+Strengthen the real two-process test: both children signal ready before calling the writer. The first process to
+reach the post-conflict-check hook writes its marker and blocks on a parent-controlled release file while still
+holding `BEGIN IMMEDIATE`. Prove the other ready process cannot reach its own post-check marker during a bounded
+window. Release the winner; it publishes, then the loser enters, observes the different canonical identity, and
+returns `VERIFICATION_RECORD_CONFLICT` without reaching the hook. Keep the one-success/one-conflict and canonical
+winner-byte assertions. This forcing protocol must fail if the SQLite wrapper is removed and old check-then-rename
+behavior returns.
+
+Run the R1 nine-suite serial matrix, `npm run typecheck`, `git diff --check`, and `npm run verify:full`. One new plain
+`t-0b5723` commit by explicit pathspec; no amend/history rewrite and never stage `tachyon.yml`.
+
 ### T1 lock protocol redesign — SQLite decision
 
 Five adversarial rounds found successive crash windows in application-managed owner/fence/claim lockfiles. The
