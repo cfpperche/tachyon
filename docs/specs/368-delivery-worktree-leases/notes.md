@@ -192,6 +192,74 @@ proved the receipt retains the original holder after a nonce-preserving live-rec
 retracted R2 and returned **ACCEPT**. Integrated on `main` through `f87894f`; final coordinator full verification is
 recorded after this bookkeeping commit.
 
+### T8 implementation contract — bounded lease observation
+
+T8 adds a read-only condition watcher and its Bridge surface. It does not acquire, reserve, release, reconcile,
+or mutate a Delivery; it does not certify the process fence or enable `delivery_join`. The watcher must remain
+usable while the production fence is unavailable.
+
+**Runtime/model triage:** ambiguity is low because this contract fixes the API and algorithm; implementation spans
+five files with a narrow Bridge/Workspace seam. Concurrency risk is medium because a long request must not hold or
+queue behind acquisition locks; security risk is low but the response must not expose holder nonces, process
+identity, principal, or quarantine evidence. Use the declared `codex-executor` at `gpt-5.6-sol` medium with serial
+tests. The coordinator owns every design choice below.
+
+**Owned files:** `src/delivery/leaseService.ts`, `src/bridge/tools.ts`, `src/workspace/Workspace.ts`,
+`test/unit/deliveryLeaseService.test.ts`, and `test/unit/bridge.test.ts`. No store schema, process-fence,
+AgentManager, GitDelivery, config, ledger, or other test edits.
+
+**Internal API and result contract:**
+
+- Export `waitForDeliveryLease(store, input, timing?)` from `src/delivery/leaseService.ts`; `store` is the read-only
+  `Pick<DeliveryStore, "get">`, not a `DeliveryLeaseService` instance, so Workspace does not construct a fake
+  handoff service with unusable production dependencies.
+- `input` is `{ deliveryId: string; afterVersion?: number; timeoutMs: number }`. Reject a non-integer/non-positive
+  timeout or a timeout above 300,000 ms; reject an invalid `afterVersion` rather than clamping it. The Bridge schema
+  enforces the same bounds with `delivery_id`, optional `after_version`, and required `timeout_ms`.
+- `timing` is an internal test seam with monotonic `now()`, `sleep(ms)`, and `pollMs`; production defaults are
+  `Date.now`, an ordinary cancellable-by-completion timer sleep, and 100 ms. Polling always sleeps at most the
+  remaining deadline and leaves no timer after return.
+- Return only `{ deliveryId, outcome, waitedMs, version?, state? }`, where outcome is `released`, `quarantined`,
+  `disappeared`, `changed`, or `timeout`. Never return `holder`, reservation/execution nonce, process identity,
+  principal, or free-form quarantine reason/evidence.
+- Classification order on every successful read is binding: missing record -> `disappeared`; `quarantined` ->
+  `quarantined`; `free` -> `released`; if `afterVersion`/the occupied baseline differs from the current version ->
+  `changed`; otherwise continue watching the occupied state. A missing `afterVersion` adopts the first successfully
+  read occupied record version as its baseline. `changed` prevents a release followed by another acquisition
+  between polls from becoming an invisible lost wakeup; it grants no lease and callers must re-read/retry.
+- A transient `DeliveryStoreBusyError` is observation contention, not disappearance or release: keep polling until
+  a successful classification or the original deadline. Surface every other store/corruption error. Timeout
+  returns the last successfully observed public version/state when available.
+- The watcher calls only `store.get` and `sleep`. It must never enter `withDeliveryLock`, `withWorktreeLock`, a
+  SQLite write transaction, or any acquisition queue. Add `version` to the minimal detail of retryable
+  `WORKTREE_OCCUPIED` errors so callers can pass an exact `after_version`; do not add any secret holder fields.
+
+**Bridge/Workspace wiring:**
+
+- Add an optional typed `waitForDeliveryLease` dependency to `BridgeDeps`; register `wait_for_lease` on every
+  Bridge and fail visibly when the dependency is absent, matching existing optional tool seams.
+- Workspace wires the dependency directly to its canonical `DeliveryStore`. The handler returns the structured
+  minimal result as JSON and performs no caller-name authorization by display-name equality.
+- Update the exact Bridge tool inventory/count and add an end-to-end forwarding/schema test. Do not change any
+  existing wait-for-agent/output concurrency behavior.
+
+**Required deterministic tests:**
+
+1. `wait_for_lease is bounded and cannot block an independent release`: start from a real held Delivery, pause the
+   injected sleep, complete an independent `store.update` to `free` before releasing that sleep, then require the
+   waiter to return `released` without exposing holder data;
+2. immediate `free`, `quarantined`, and missing records return their exact terminal outcomes without sleeping;
+3. an `afterVersion` mismatch returns `changed` immediately, including when a release/reacquire has left the
+   Delivery occupied again;
+4. fake monotonic time proves the exact deadline is bounded and the final sleep is capped to the remaining time;
+5. transient store-busy observations retry within the same deadline, while non-busy errors surface;
+6. the real MCP client lists/calls `wait_for_lease`, forwards snake-case input correctly, enforces bounds, and
+   returns no holder/nonce/process/principal/reason fields.
+
+**Verification:** run the lease-service, DeliveryStore, and Bridge suites serially with one worker, then
+`npm run typecheck` and `git diff --check` from the T8 base. Commit only the owned paths with a `t-0b5723` message
+and notify `codex`; stop before editing if repository evidence contradicts this contract.
+
 ### T1 lock protocol redesign — SQLite decision
 
 Five adversarial rounds found successive crash windows in application-managed owner/fence/claim lockfiles. The
