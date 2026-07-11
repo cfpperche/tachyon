@@ -33,11 +33,34 @@ describe("container-generated delegation behavior", () => {
       { role: "implementer", grant: "base", release: "implementation", owns: ["src/a.ts"] },
       { role: "fixer", grant: "implementation", release: undefined, owns: ["src/a.ts"] },
     ]);
-    const gitStore = { async list() { return [git]; }, async get() { return git; }, async update(_id: string, _version: number, mutate: (value: GitDelivery) => GitDelivery) { Object.assign(git, mutate(git), { version: 2 }); return git; } };
+    const gitStore = { async list() { return [git]; }, async get() { return git; }, async reserveLegacyImport(input: { operationId: string; deliveryId: string }) { Object.assign(git, { version: git.version + 1, legacyImport: { operationId: input.operationId, deliveryId: input.deliveryId, state: "pending" } }); return { ok: true as const, projection: git }; }, async update(_id: string, _version: number, mutate: (value: GitDelivery) => GitDelivery) { Object.assign(git, mutate(git), { version: git.version + 1 }); return git; } };
     const applied = await applyLegacyImport({ workspaceId: "ws", sourcePath: "legacy.json", record, gitDeliveries: [projection("gd-one")], fingerprint: preview.fingerprint, operationId: "import-legacy-1" }, { delivery: store, git: gitStore }, deps);
     expect("id" in applied && applied.id).toBe(preview.delivery.id);
     expect(git.deliveryId).toBe(preview.delivery.id);
     expect(await store.list()).toHaveLength(1);
+
+    const racedRoot = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-import-race-"));
+    const racedDelivery = new DeliveryStore(racedRoot);
+    const g1 = projection("gd-race-1");
+    const live = [g1];
+    let releaseAncestor!: () => void;
+    const ancestorEntered = new Promise<void>((resolve) => { releaseAncestor = resolve; });
+    let firstAncestor = true;
+    const racedDeps = { ...deps, async isAncestor(a: string, b: string) { if (firstAncestor) { firstAncestor = false; releaseAncestor(); await Promise.resolve(); } return deps.isAncestor(a, b); } };
+    const racedPreview = await previewLegacyImport({ workspaceId: "ws", sourcePath: "legacy.json", record, gitDeliveries: [g1] }, deps);
+    expect(racedPreview.ok).toBe(true);
+    if (!racedPreview.ok) return;
+    const racedGitStore = {
+      async list() { return [...live]; }, async get(id: string) { return live.find((entry) => entry.id === id); },
+      async reserveLegacyImport() { const exact = live.filter((entry) => entry.branchRef === record.taskRef && entry.worktreePath === worktree); return exact.length === 1 ? { ok: true as const, projection: exact[0] } : { ok: false as const, code: "AMBIGUOUS_GIT_PROJECTION" as const, candidates: exact.map((entry) => entry.id).sort() }; },
+      async update() { throw new Error("must not link after ambiguous reservation"); },
+    };
+    const racingApply = applyLegacyImport({ workspaceId: "ws", sourcePath: "legacy.json", record, fingerprint: racedPreview.fingerprint, operationId: "import-race" }, { delivery: racedDelivery, git: racedGitStore }, racedDeps);
+    await ancestorEntered;
+    live.push(projection("gd-race-2"));
+    const raced = await racingApply;
+    expect(raced).toMatchObject({ ok: false, code: "AMBIGUOUS_GIT_PROJECTION", candidates: ["gd-race-1", "gd-race-2"] });
+    expect(await racedDelivery.list()).toEqual([]);
 
     const nonlinear = await previewLegacyImport({ workspaceId: "ws", record, gitDeliveries: [projection("gd-linear-check")] }, { ...deps, isAncestor: async () => false });
     expect(nonlinear).toMatchObject({ ok: false, code: "NON_LINEAR_HISTORY" });

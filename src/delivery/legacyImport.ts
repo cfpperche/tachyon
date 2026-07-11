@@ -48,6 +48,10 @@ export interface LegacyImportGitStore {
   list(): Promise<GitDelivery[]>;
   get(id: string): Promise<GitDelivery | undefined>;
   update(id: string, version: number, mutate: (record: GitDelivery) => GitDelivery): Promise<GitDelivery>;
+  reserveLegacyImport(input: {
+    projectionId: string; expectedVersion: number; deliveryId: string; operationId: string;
+    branchRef: string; worktreePath: string;
+  }): Promise<{ ok: true; projection: GitDelivery } | { ok: false; code: "AMBIGUOUS_GIT_PROJECTION" | "GIT_PROJECTION_DRIFT" | "STALE_PREVIEW"; candidates?: string[] }>;
 }
 
 export interface LegacyImportApplyInput extends LegacyImportPreviewInput {
@@ -166,18 +170,33 @@ export async function applyLegacyImport(input: LegacyImportApplyInput, stores: {
   // A completed prior attempt is authoritative even though linking increments the Git projection
   // version and therefore intentionally changes the preview fingerprint.
   if (alreadyCreated && linked?.deliveryId === alreadyCreated.id) return alreadyCreated;
-  if (plan.fingerprint !== input.fingerprint) return { ok: false, code: "STALE_PREVIEW", message: "legacy import inputs changed after preview" };
+  const pending = linked?.legacyImport as { operationId?: string; deliveryId?: string; state?: string } | undefined;
+  const resumesOwnReservation = pending?.state === "pending" && pending.operationId === input.operationId && pending.deliveryId === plan.delivery.id;
+  if (plan.fingerprint !== input.fingerprint && !resumesOwnReservation) return { ok: false, code: "STALE_PREVIEW", message: "legacy import inputs changed after preview" };
+  let reserved: GitDelivery | undefined;
   if (plan.gitProjection) {
     const current = await stores.git.get(plan.gitProjection.id);
     if (current?.deliveryId === plan.delivery.id) {
       const replayed = await stores.delivery.get(plan.delivery.id);
       if (replayed) return replayed;
     }
-    if (!current || current.version !== plan.gitProjection.expectedVersion || current.deliveryId !== undefined) return { ok: false, code: "STALE_PREVIEW", message: "GitDelivery changed after preview" };
+    const reservation = await stores.git.reserveLegacyImport({
+      projectionId: plan.gitProjection.id, expectedVersion: plan.gitProjection.expectedVersion,
+      deliveryId: plan.delivery.id, operationId: input.operationId,
+      branchRef: input.record.taskRef, worktreePath: input.record.worktreePath!,
+    });
+    if (!reservation.ok) return {
+      ok: false, code: reservation.code,
+      message: reservation.code === "AMBIGUOUS_GIT_PROJECTION" ? "multiple live GitDelivery records exactly match the legacy branch/worktree"
+        : reservation.code === "GIT_PROJECTION_DRIFT" ? "live GitDelivery branch/worktree projections disagree with the legacy record"
+          : "GitDelivery changed after preview",
+      ...(reservation.candidates ? { candidates: reservation.candidates } : {}),
+    };
+    reserved = reservation.projection;
   }
   const delivery = await stores.delivery.create({ ...plan.delivery, operationId: input.operationId });
-  if (plan.gitProjection) {
-    await stores.git.update(plan.gitProjection.id, plan.gitProjection.expectedVersion, (record) => ({ ...record, deliveryId: delivery.id }));
+  if (plan.gitProjection && reserved) {
+    await stores.git.update(plan.gitProjection.id, reserved.version, (record) => ({ ...record, deliveryId: delivery.id, legacyImport: { operationId: input.operationId, deliveryId: delivery.id, state: "linked" } }));
   }
   return delivery;
 }

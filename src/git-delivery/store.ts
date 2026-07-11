@@ -132,6 +132,29 @@ export class GitDeliveryStore {
     return next;
   }
 
+  async reserveLegacyImport(input: {
+    projectionId: string; expectedVersion: number; deliveryId: string; operationId: string;
+    branchRef: string; worktreePath: string;
+  }): Promise<{ ok: true; projection: GitDelivery } | { ok: false; code: "AMBIGUOUS_GIT_PROJECTION" | "GIT_PROJECTION_DRIFT" | "STALE_PREVIEW"; candidates?: string[] }> {
+    const normalizedPath = path.resolve(input.worktreePath);
+    return this.withTransaction((db) => {
+      const records = (db.prepare("SELECT record_json FROM git_deliveries WHERE active = 1 ORDER BY id").all() as Array<{ record_json: string }>)
+        .map((row) => JSON.parse(row.record_json) as GitDelivery);
+      const exact = records.filter((record) => record.branchRef === input.branchRef && path.resolve(record.worktreePath) === normalizedPath);
+      if (exact.length !== 1) return { ok: false as const, code: "AMBIGUOUS_GIT_PROJECTION" as const, candidates: exact.map((record) => record.id) };
+      const partial = records.filter((record) => (record.branchRef === input.branchRef || path.resolve(record.worktreePath) === normalizedPath) && record.id !== exact[0].id);
+      if (partial.length) return { ok: false as const, code: "GIT_PROJECTION_DRIFT" as const, candidates: partial.map((record) => record.id) };
+      const current = exact[0];
+      const pending = current.legacyImport as { operationId?: string; deliveryId?: string; state?: string } | undefined;
+      if (current.id !== input.projectionId || current.deliveryId !== undefined && current.deliveryId !== input.deliveryId) return { ok: false as const, code: "STALE_PREVIEW" as const };
+      if (pending?.operationId === input.operationId && pending.deliveryId === input.deliveryId) return { ok: true as const, projection: current };
+      if (current.version !== input.expectedVersion || pending !== undefined) return { ok: false as const, code: "STALE_PREVIEW" as const };
+      const reserved = { ...current, version: current.version + 1, updatedAt: this.now(), legacyImport: { operationId: input.operationId, deliveryId: input.deliveryId, state: "pending" } };
+      db.prepare("UPDATE git_deliveries SET record_json = ? WHERE id = ?").run(JSON.stringify(reserved), current.id);
+      return { ok: true as const, projection: reserved };
+    });
+  }
+
   private writeMirror(record: GitDelivery): void {
     fs.mkdirSync(this.dir, { recursive: true });
     const file = this.fileFor(record.id);
