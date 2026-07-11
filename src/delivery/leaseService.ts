@@ -182,12 +182,30 @@ export interface DeliveryWorktreeInspection {
   clean: boolean;
 }
 
+export interface DeliveryReviewInspection {
+  headSha: string;
+  taskRefSha: string;
+  indexTreeSha: string;
+  commitTreeSha: string;
+  trackedClean: boolean;
+}
+
+export interface DeliveryCompleteReviewInput {
+  deliveryId: string;
+  canonicalWorktree: string;
+  expectedReviewedHeadSha: string;
+  verdict: "ACCEPT" | "FINDINGS";
+  actor: DeliveryActor;
+  operationId: string;
+}
+
 export interface DeliveryLeaseServiceDeps {
   store: DeliveryStore;
   processFence: ProcessFencePort;
   canonicalWorktreeFor(delivery: Delivery): string | Promise<string>;
   readHead(canonicalWorktree: string): string | Promise<string>;
   inspectWorktree(canonicalWorktree: string): DeliveryWorktreeInspection | Promise<DeliveryWorktreeInspection>;
+  inspectReviewWorktree?(canonicalWorktree: string, taskRef: string): DeliveryReviewInspection | Promise<DeliveryReviewInspection>;
   isAncestor(older: string, newer: string, canonicalWorktree: string): boolean | Promise<boolean>;
   withWorktreeLock<T>(canonicalWorktree: string, fn: () => Promise<T>): Promise<T>;
   now?: () => string;
@@ -220,6 +238,9 @@ export class DeliveryLeaseService {
       throw new DeliveryLeaseError("DELIVERY_LEASE_UNAVAILABLE", false, capability.reason);
     }
     const ownsSubset = normalizeOwns(input.ownsSubset);
+    if (input.role === "reviewer" && ownsSubset.length !== 0) {
+      throw new DeliveryLeaseError("DELIVERY_OWNS_WIDENING", false, "reviewer authority must be exactly empty");
+    }
     const intent = acquireIntent(input, path.resolve(input.canonicalWorktree), ownsSubset);
     const replay = await this.replayAcquire(input.operationId, input.deliveryId, intent);
     if (replay) return replay;
@@ -262,6 +283,10 @@ export class DeliveryLeaseService {
             predecessor: predecessor.releasedHeadSha, actual: liveHead,
           });
         }
+        if (input.role === "reviewer") {
+          const reviewInspection = await this.inspectReview(canonicalWorktree, current.contract.taskRef);
+          this.assertReviewInspection(reviewInspection, input.expectedHeadSha);
+        }
         const now = this.deps.now?.() ?? new Date().toISOString();
         const reservationNonce = this.deps.nonce?.() ?? randomBytes(16).toString("hex");
         const segmentId = this.deps.segmentId?.() ?? `seg-${randomBytes(8).toString("hex")}`;
@@ -272,6 +297,10 @@ export class DeliveryLeaseService {
             throw new DeliveryLeaseError("DELIVERY_HEAD_CHANGED", false, "canonical worktree HEAD moved during acquisition", {
               expected: liveHead, actual: recheckedHead,
             });
+          }
+          if (input.role === "reviewer") {
+            const recheckedReview = await this.inspectReview(canonicalWorktree, current.contract.taskRef);
+            this.assertReviewInspection(recheckedReview, input.expectedHeadSha);
           }
           const delivery = await this.deps.store.update(current.id, current.version, (record) => {
             this.assertAcquirable(record);
@@ -489,6 +518,159 @@ export class DeliveryLeaseService {
       if (error instanceof DeliveryStoreBusyError) throw this.busy(error);
       return this.quarantineAndThrow(input, intent, predecessorHolder, { phase: "final", error: error instanceof Error ? error.message : String(error) });
     }
+  }
+
+  async completeReview(input: DeliveryCompleteReviewInput): Promise<Delivery> {
+    const canonicalWorktree = path.resolve(input.canonicalWorktree);
+    const intent = { ...structuredClone(input), canonicalWorktree };
+    const completedReplay = await this.replayReviewCompletion(`${input.operationId}:complete`, input.deliveryId, intent);
+    if (completedReplay) return completedReplay;
+
+    let reviewerHolder = await this.replayReviewDrain(`${input.operationId}:drain`, input.deliveryId, intent);
+    if (!reviewerHolder) {
+      try {
+        await this.withDeliveryLock(input.deliveryId, async () => this.deps.withWorktreeLock(canonicalWorktree, async () => {
+          const current = await this.deps.store.get(input.deliveryId);
+          if (!current) throw new DeliveryNotFoundError(input.deliveryId);
+          const actualCanonical = path.resolve(await this.deps.canonicalWorktreeFor(current));
+          if (actualCanonical !== canonicalWorktree) {
+            throw new DeliveryLeaseError("DELIVERY_WORKTREE_MISMATCH", false, "caller worktree is not the canonical Delivery worktree");
+          }
+          reviewerHolder = this.assertReviewHolder(current, "held", input.expectedReviewedHeadSha);
+          await this.deps.store.update(current.id, current.version, (record) => {
+            this.assertExactHolder(record, "held", reviewerHolder!);
+            this.assertReviewTail(record, input.expectedReviewedHeadSha);
+            record.lease = { ...record.lease, state: "draining", changedAt: this.now() };
+            record.events.push({ id: this.eventId(), at: this.now(), type: "review_draining", by: structuredClone(input.actor),
+              detail: { operationId: input.operationId, intent, executionNonce: reviewerHolder!.executionNonce } });
+            return record;
+          }, { operationId: `${input.operationId}:drain`, intent });
+        }));
+      } catch (error) {
+        reviewerHolder = await this.replayReviewDrain(`${input.operationId}:drain`, input.deliveryId, intent);
+        if (!reviewerHolder) throw error;
+      }
+    }
+    if (!reviewerHolder?.executionNonce) throw new DeliveryInvariantError("reviewer drain lacks durable execution identity");
+
+    let fenceError: unknown;
+    let proof: Awaited<ReturnType<ProcessFencePort["proveEmpty"]>> = { state: "unknown", reason: "fence did not complete" };
+    try { await this.deps.processFence.freeze(reviewerHolder.executionNonce); } catch (error) { fenceError = error; }
+    try { await this.deps.processFence.terminate(reviewerHolder.executionNonce); } catch (error) { fenceError ??= error; }
+    try { proof = await this.deps.processFence.proveEmpty(reviewerHolder.executionNonce, canonicalWorktree); } catch (error) { fenceError ??= error; }
+    if (fenceError || proof.state !== "proven_empty") {
+      return this.quarantineReviewAndThrow(input, intent, {
+        phase: "fence", proof, error: fenceError instanceof Error ? fenceError.message : fenceError === undefined ? undefined : String(fenceError),
+      }, fenceError ?? new Error(`process fence proof was ${proof.state}`));
+    }
+
+    try {
+      return await this.withDeliveryLock(input.deliveryId, async () => this.deps.withWorktreeLock(canonicalWorktree, async () => {
+        const current = await this.deps.store.get(input.deliveryId);
+        if (!current) throw new DeliveryNotFoundError(input.deliveryId);
+        const actualCanonical = path.resolve(await this.deps.canonicalWorktreeFor(current));
+        if (actualCanonical !== canonicalWorktree) throw new DeliveryLeaseError("DELIVERY_WORKTREE_MISMATCH", false, "review worktree is no longer canonical");
+        this.assertExactHolder(current, "draining", reviewerHolder!);
+        this.assertReviewTail(current, input.expectedReviewedHeadSha);
+        const first = await this.inspectReview(canonicalWorktree, current.contract.taskRef);
+        this.assertReviewInspection(first, input.expectedReviewedHeadSha);
+        const second = await this.inspectReview(canonicalWorktree, current.contract.taskRef);
+        this.assertReviewInspection(second, input.expectedReviewedHeadSha);
+        return this.deps.store.update(current.id, current.version, (record) => {
+          this.assertExactHolder(record, "draining", reviewerHolder!);
+          const tail = this.assertReviewTail(record, input.expectedReviewedHeadSha);
+          tail.releasedAt = this.now(); tail.releasedHeadSha = input.expectedReviewedHeadSha; tail.outcome = "completed";
+          record.lease = { state: "free", changedAt: this.now() };
+          record.events.push({ id: this.eventId(), at: this.now(), type: "review_completed", by: structuredClone(input.actor),
+            detail: { operationId: input.operationId, intent, verdict: input.verdict, reviewedHeadSha: input.expectedReviewedHeadSha } });
+          return record;
+        }, { operationId: `${input.operationId}:complete`, intent });
+      }));
+    } catch (error) {
+      const replay = await this.replayReviewCompletion(`${input.operationId}:complete`, input.deliveryId, intent);
+      if (replay) return replay;
+      return this.quarantineReviewAndThrow(input, intent, { phase: "postcondition", error: error instanceof Error ? error.message : String(error) }, error);
+    }
+  }
+
+  private assertReviewHolder(delivery: Delivery, state: "held" | "draining", expectedHead: string): DeliveryLeaseHolder {
+    const holder = delivery.lease.holder;
+    const tail = this.assertReviewTail(delivery, expectedHead);
+    if (delivery.lease.state !== state || !holder || !holder.process || !holder.executionNonce
+      || holder.reservationNonce !== undefined || delivery.lease.expectedHeadSha !== expectedHead
+      || holder.segmentId !== tail.id || holder.executionAgent !== tail.executionAgent || holder.principal !== tail.principal) {
+      throw new DeliveryLeaseError("DELIVERY_PROCESS_IDENTITY_MISSING", false, "reviewer holder is not exact or lacks durable process identity");
+    }
+    return structuredClone(holder);
+  }
+
+  private assertReviewTail(delivery: Delivery, expectedHead: string): Delivery["segments"][number] {
+    const tail = delivery.segments.at(-1);
+    if (!tail || tail.role !== "reviewer" || tail.releasedAt || tail.ownsSubset.length !== 0 || tail.grantedHeadSha !== expectedHead) {
+      throw new DeliveryLeaseError("DELIVERY_INVALID_STATE", false, "open tail is not the pinned empty-authority reviewer segment");
+    }
+    return tail;
+  }
+
+  private async inspectReview(canonicalWorktree: string, taskRef: string): Promise<DeliveryReviewInspection> {
+    if (!this.deps.inspectReviewWorktree) {
+      throw new DeliveryLeaseError("DELIVERY_INVALID_STATE", false, "review worktree inspection capability is unavailable");
+    }
+    return this.deps.inspectReviewWorktree(canonicalWorktree, taskRef);
+  }
+
+  private assertReviewInspection(inspection: DeliveryReviewInspection, expectedHead: string): void {
+    if (inspection.headSha !== expectedHead || inspection.taskRefSha !== expectedHead) {
+      throw new DeliveryLeaseError("DELIVERY_HEAD_CHANGED", false, "reviewed HEAD or immutable task ref moved", {
+        expected: expectedHead, head: inspection.headSha, taskRef: inspection.taskRefSha,
+      });
+    }
+    if (!inspection.trackedClean) throw new DeliveryLeaseError("DELIVERY_WORKTREE_DIRTY", false, "reviewer changed tracked worktree content");
+    if (!inspection.indexTreeSha || !inspection.commitTreeSha || inspection.indexTreeSha !== inspection.commitTreeSha) {
+      throw new DeliveryLeaseError("DELIVERY_WORKTREE_DIRTY", false, "reviewer index differs from the pinned commit tree");
+    }
+  }
+
+  private async quarantineReviewAndThrow(input: DeliveryCompleteReviewInput, intent: Record<string, unknown>, evidence: Record<string, unknown>, original?: unknown): Promise<never> {
+    let persistenceError: unknown;
+    try {
+      const operationId = `${input.operationId}:quarantine`;
+      const replay = await this.replayEvent(operationId, input.deliveryId, "review_invalid", intent, "quarantined");
+      if (!replay) {
+        const current = await this.deps.store.get(input.deliveryId);
+        if (!current) throw new DeliveryNotFoundError(input.deliveryId);
+        await this.deps.store.update(current.id, current.version, (record) => {
+          if (record.lease.state !== "draining") throw this.occupied(record, "review lease is no longer draining");
+          this.assertReviewTail(record, input.expectedReviewedHeadSha);
+          record.lease = { ...record.lease, state: "quarantined", reason: JSON.stringify(evidence), changedAt: this.now() };
+          record.events.push({ id: this.eventId(), at: this.now(), type: "review_invalid", by: structuredClone(input.actor),
+            detail: { operationId: input.operationId, intent, verdict: input.verdict, reviewedHeadSha: input.expectedReviewedHeadSha, evidence } });
+          return record;
+        }, { operationId, intent });
+      }
+    } catch (error) { persistenceError = error; }
+    const refusal = new DeliveryLeaseError("DELIVERY_QUARANTINED", false, "review postconditions could not be established", evidence);
+    const primary = original ?? refusal;
+    if (persistenceError) throw new AggregateError([primary, persistenceError], "review invalidation failed and quarantine persistence is uncertain");
+    throw refusal;
+  }
+
+  private async replayReviewDrain(operationId: string, deliveryId: string, intent: Record<string, unknown>): Promise<DeliveryLeaseHolder | undefined> {
+    const delivery = await this.deps.store.getOperationResult(operationId, "update", deliveryId);
+    if (!delivery) return undefined;
+    const event = delivery.events.find((candidate) => candidate.type === "review_draining" && isDeepStrictEqual(candidate.detail?.intent, intent));
+    if (!event || delivery.lease.state !== "draining" || !delivery.lease.holder?.executionNonce) {
+      throw new DeliveryInvariantError(`operation id '${operationId}' does not match this review drain intent`);
+    }
+    return structuredClone(delivery.lease.holder);
+  }
+
+  private async replayReviewCompletion(operationId: string, deliveryId: string, intent: Record<string, unknown>): Promise<Delivery | undefined> {
+    const delivery = await this.deps.store.getOperationResult(operationId, "update", deliveryId);
+    if (!delivery) return undefined;
+    const event = delivery.events.find((candidate) => candidate.type === "review_completed" && isDeepStrictEqual(candidate.detail?.intent, intent));
+    if (!event || delivery.lease.state !== "free") throw new DeliveryInvariantError(`operation id '${operationId}' does not match this review completion intent`);
+    return delivery;
   }
 
   private assertHandoffAuthority(delivery: Delivery, input: DeliveryLeaseHandoffInput, ownsSubset: string[], canonicalWorktree: string): void {

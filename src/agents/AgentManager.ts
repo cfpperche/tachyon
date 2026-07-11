@@ -162,6 +162,34 @@ export interface PreparedDeliveryJoin {
   reservationNonce: string;
 }
 
+function reviewerSafeCommand(cmd: string): { cmd: string; advisory?: string } {
+  const runtime = adapterFor(cmd)?.runtime;
+  const tokens = cmd.trim().split(/\s+/);
+  const valueFor = (flag: string): string | undefined => {
+    const direct = tokens.find((token) => token.startsWith(`${flag}=`));
+    if (direct) return direct.slice(flag.length + 1);
+    const index = tokens.indexOf(flag);
+    return index >= 0 ? tokens[index + 1] : undefined;
+  };
+  const has = (flag: string) => tokens.includes(flag) || tokens.some((token) => token.startsWith(`${flag}=`));
+  if (tokens.some((token) => token.startsWith("--dangerously-")) || has("--yolo") || has("--always-approve") || has("--allow-all")) {
+    throw new Error("reviewer command refuses bypass flags");
+  }
+  if (runtime === "codex") {
+    const sandbox = valueFor("--sandbox");
+    if (has("--sandbox") && !sandbox) throw new Error("reviewer command has an incomplete --sandbox mode");
+    if (sandbox && sandbox !== "read-only") throw new Error(`reviewer command conflicts with --sandbox ${sandbox}`);
+    return { cmd: sandbox ? cmd : `${cmd} --sandbox read-only` };
+  }
+  if (runtime === "claude" || runtime === "grok") {
+    const permission = valueFor("--permission-mode");
+    if (has("--permission-mode") && !permission) throw new Error("reviewer command has an incomplete --permission-mode");
+    if (permission && permission !== "plan") throw new Error(`reviewer command conflicts with --permission-mode ${permission}`);
+    return { cmd: permission ? cmd : `${cmd} --permission-mode plan` };
+  }
+  return { cmd, advisory: `reviewer runtime '${binaryOf(cmd) || "unknown"}' has no measured shell-level read-only mode; command left unchanged` };
+}
+
 export interface SpawnOptions {
   /** present = ad-hoc agent (not declared in tachyon.yml) */
   cmd?: string;
@@ -814,10 +842,18 @@ export class AgentManager {
     if (!this.opts.prepareDeliveryJoin || !this.opts.confirmDeliveryJoin) {
       throw new Error("DELIVERY_LEASE_UNAVAILABLE: Delivery join wiring is unavailable");
     }
+    let commandOverride: string | undefined;
+    if (request.role === "reviewer") {
+      const baseCommand = opts.cmd ?? this.definitionOf(name)?.cmd;
+      if (!baseCommand) throw new UnknownAgentError(name);
+      const safe = reviewerSafeCommand(baseCommand);
+      commandOverride = safe.cmd;
+      if (safe.advisory) this.opts.notify?.(safe.advisory, "warn");
+    }
     const prepared = await this.opts.prepareDeliveryJoin(name, request);
     let spawned = false;
     try {
-      await this.spawnCore(name, opts, { cwd: prepared.cwd, worktree: prepared.worktree });
+      await this.spawnCore(name, opts, { cwd: prepared.cwd, worktree: prepared.worktree, commandOverride });
       spawned = true;
       await this.opts.confirmDeliveryJoin(name, request, prepared, await this.tryPanePid(name));
     } catch (error) {
@@ -1033,7 +1069,7 @@ export class AgentManager {
    * parentCwd and ignores it), so reuse cannot ride `opts.cwd`/`resolveSpawnCwd` and instead short-circuits
    * both here.
    */
-  private async spawnCore(name: string, opts?: SpawnOptions, forced?: { cwd: string; worktree: WorktreeRecord }): Promise<void> {
+  private async spawnCore(name: string, opts?: SpawnOptions, forced?: { cwd: string; worktree: WorktreeRecord; commandOverride?: string }): Promise<void> {
     this.readyAgents.delete(name);
     this.readinessCache.delete(name); // spec 221: a (re)spawn changes the session → drop the cached badge
     this.stoppingSince.delete(name);
@@ -1057,6 +1093,7 @@ export class AgentManager {
       };
     }
     if (!def) throw new UnknownAgentError(name);
+    if (forced?.commandOverride) def = { ...def, cmd: forced.commandOverride };
 
     // spec 230 — a pipeline node appends its task AFTER the declared agent's role/instructions, so the
     // specialist's config (role/harness) is preserved and the task is delivered in the initial prompt.

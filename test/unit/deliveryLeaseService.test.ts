@@ -63,6 +63,34 @@ function service(store: DeliveryStore, worktree: string, fence = certifiedFence)
   });
 }
 
+function reviewFixture() {
+  const result = fixture();
+  result.input.segments![0] = { id: "seg-review", index: 0, role: "reviewer", executionAgent: "reviewer",
+    principal: "review-principal", grantedBy: actor, ownsSubset: [], grantedHeadSha: "b", grantedAt: now };
+  result.input.lease = { state: "held", holder: { segmentId: "seg-review", executionAgent: "reviewer", principal: "review-principal",
+    process: { pid: 12, processStart: "20", bootId: "boot" }, executionNonce: "review-exec" }, expectedHeadSha: "b", changedAt: now };
+  return result;
+}
+
+const cleanReviewInspection = { headSha: "b", taskRefSha: "b", indexTreeSha: "tree-b", commitTreeSha: "tree-b", trackedClean: true };
+
+function reviewService(store: DeliveryStore, worktree: string, options: {
+  fence?: ProcessFencePort;
+  inspect?: () => typeof cleanReviewInspection;
+  withLock?: <T>(path: string, fn: () => Promise<T>) => Promise<T>;
+} = {}) {
+  let events = 0;
+  return new DeliveryLeaseService({ store, processFence: options.fence ?? certifiedFence, canonicalWorktreeFor: () => worktree,
+    readHead: () => "b", inspectWorktree: () => ({ headSha: "b", clean: true }),
+    inspectReviewWorktree: options.inspect ?? (() => cleanReviewInspection), isAncestor: () => true,
+    withWorktreeLock: options.withLock ?? (async (_path, fn) => fn()), now: () => now,
+    nonce: () => "review-nonce", segmentId: () => "seg-review", eventId: () => `review-event-${++events}` });
+}
+
+function completeReviewInput(worktree: string, verdict: "ACCEPT" | "FINDINGS" = "ACCEPT", operationId = "review-op") {
+  return { deliveryId: "d-lease", canonicalWorktree: worktree, expectedReviewedHeadSha: "b", verdict, actor, operationId };
+}
+
 describe("DeliveryLeaseService (SDD 368 T5)", () => {
   it("treats a durable system verification lease as retryable occupancy", async () => {
     const { store, worktree, input } = fixture();
@@ -557,5 +585,161 @@ describe("DeliveryLeaseService (SDD 368 T5)", () => {
     });
     await expect(nonLinear.acquire(base)).rejects.toMatchObject({ code: "DELIVERY_NON_LINEAR_HEAD" });
     expect((await store.get("d-lease"))?.lease.state).toBe("free");
+  });
+
+  it("requires empty reviewer authority and pins a clean reviewer grant", async () => {
+    const { store, worktree, input } = fixture();
+    await store.create(input);
+    const lease = reviewService(store, worktree);
+    const base = { deliveryId: "d-lease", expectedHeadSha: "b", canonicalWorktree: worktree, role: "reviewer" as const,
+      executionAgent: "reviewer", grantedBy: actor, operationId: "review-grant" };
+    await expect(lease.acquire({ ...base, ownsSubset: ["src"] })).rejects.toMatchObject({ code: "DELIVERY_OWNS_WIDENING" });
+    const granted = await lease.acquire({ ...base, ownsSubset: [] });
+    expect(granted.delivery.segments.at(-1)).toMatchObject({ role: "reviewer", ownsSubset: [], grantedHeadSha: "b" });
+    expect(granted.delivery.lease).toMatchObject({ state: "pending", expectedHeadSha: "b" });
+  });
+
+  it("treats verifying as retryable exclusion for reviewer acquisition", async () => {
+    const { store, worktree, input } = fixture();
+    input.lease = { state: "verifying", changedAt: now, verification: { nonce: "n", ownerEpoch: "e", actor,
+      subjectSegmentId: "seg-0", deliveredHeadSha: "b", startedAt: now, operationId: "verify",
+      priorLease: { state: "free", changedAt: now } } };
+    await store.create(input);
+    await expect(reviewService(store, worktree).acquire({ deliveryId: "d-lease", expectedHeadSha: "b", canonicalWorktree: worktree,
+      role: "reviewer", executionAgent: "reviewer", grantedBy: actor, ownsSubset: [], operationId: "review-blocked" }))
+      .rejects.toMatchObject({ code: "WORKTREE_OCCUPIED", retryable: true, detail: { state: "verifying" } });
+  });
+
+  it.each(["ACCEPT", "FINDINGS"] as const)("completes a clean %s review exactly once and releases the lease", async (verdict) => {
+    const { store, worktree, input } = reviewFixture();
+    await store.create(input);
+    const lease = reviewService(store, worktree);
+    const completed = await lease.completeReview(completeReviewInput(worktree, verdict));
+    expect(completed.lease.state).toBe("free");
+    expect(completed.segments.at(-1)).toMatchObject({ releasedHeadSha: "b", outcome: "completed" });
+    expect(completed.events.filter((event) => event.type === "review_completed")).toHaveLength(1);
+    expect(completed.events.at(-1)).toMatchObject({ type: "review_completed", detail: { verdict, reviewedHeadSha: "b" } });
+    expect(await lease.completeReview(completeReviewInput(worktree, verdict))).toEqual(completed);
+  });
+
+  it("refuses reuse of a review operation id with a different intent", async () => {
+    const { store, worktree, input } = reviewFixture();
+    await store.create(input);
+    const lease = reviewService(store, worktree);
+    await lease.completeReview(completeReviewInput(worktree, "ACCEPT", "stable-review"));
+    await expect(lease.completeReview(completeReviewInput(worktree, "FINDINGS", "stable-review")))
+      .rejects.toThrow("does not match this review completion intent");
+  });
+
+  it.each([
+    ["HEAD", { ...cleanReviewInspection, headSha: "moved" }],
+    ["task ref", { ...cleanReviewInspection, taskRefSha: "moved" }],
+    ["index", { ...cleanReviewInspection, indexTreeSha: "staged" }],
+    ["tracked worktree", { ...cleanReviewInspection, trackedClean: false }],
+  ] as const)("quarantines reviewer %s mutation without authoritative completion", async (_label, inspection) => {
+    const { store, worktree, input } = reviewFixture();
+    await store.create(input);
+    await expect(reviewService(store, worktree, { inspect: () => inspection }).completeReview(completeReviewInput(worktree)))
+      .rejects.toMatchObject({ code: "DELIVERY_QUARANTINED" });
+    const invalid = (await store.get("d-lease"))!;
+    expect(invalid.lease).toMatchObject({ state: "quarantined", holder: input.lease!.holder });
+    expect(invalid.segments.at(-1)?.releasedAt).toBeUndefined();
+    expect(invalid.events.some((event) => event.type === "review_completed")).toBe(false);
+    expect(invalid.events.at(-1)?.type).toBe("review_invalid");
+  });
+
+  it("ignores an untracked-only file when tracked/index/ref postconditions remain exact", async () => {
+    const { store, worktree, input } = reviewFixture();
+    fs.writeFileSync(path.join(worktree, "untracked.txt"), "advisory only\n");
+    await store.create(input);
+    await expect(reviewService(store, worktree).completeReview(completeReviewInput(worktree))).resolves.toMatchObject({ lease: { state: "free" } });
+  });
+
+  it("inspects twice and quarantines a mutation appearing only in the second observation", async () => {
+    const { store, worktree, input } = reviewFixture();
+    await store.create(input);
+    let observations = 0;
+    const lease = reviewService(store, worktree, { inspect: () => (++observations === 1
+      ? cleanReviewInspection : { ...cleanReviewInspection, taskRefSha: "moved-second" }) });
+    await expect(lease.completeReview(completeReviewInput(worktree))).rejects.toMatchObject({ code: "DELIVERY_QUARANTINED" });
+    expect(observations).toBe(2);
+    expect((await store.get("d-lease"))!.events.some((event) => event.type === "review_completed")).toBe(false);
+  });
+
+  it("quarantines when exact review inspection is unavailable", async () => {
+    const { store, worktree, input } = reviewFixture();
+    await store.create(input);
+    const lease = new DeliveryLeaseService({ store, processFence: certifiedFence, canonicalWorktreeFor: () => worktree,
+      readHead: () => "b", inspectWorktree: () => ({ headSha: "b", clean: true }), isAncestor: () => true,
+      withWorktreeLock: async (_path, fn) => fn(), now: () => now });
+    await expect(lease.completeReview(completeReviewInput(worktree))).rejects.toMatchObject({ code: "DELIVERY_QUARANTINED" });
+    expect((await store.get("d-lease"))!.lease.state).toBe("quarantined");
+  });
+
+  it("quarantines holder drift and fence uncertainty while preserving the open reviewer", async () => {
+    const drift = reviewFixture();
+    await drift.store.create(drift.input);
+    const driftingFence: ProcessFencePort = { ...certifiedFence, terminate: async () => {
+      const current = await drift.store.get("d-lease");
+      await drift.store.update("d-lease", current!.version, (record) => {
+        record.lease.holder = { ...record.lease.holder!, principal: "drifted" }; return record;
+      });
+    } };
+    await expect(reviewService(drift.store, drift.worktree, { fence: driftingFence }).completeReview(completeReviewInput(drift.worktree)))
+      .rejects.toMatchObject({ code: "DELIVERY_QUARANTINED" });
+    expect((await drift.store.get("d-lease"))!.lease).toMatchObject({ state: "quarantined", holder: { principal: "drifted" } });
+
+    const uncertain = reviewFixture();
+    await uncertain.store.create(uncertain.input);
+    const unknownFence: ProcessFencePort = { ...certifiedFence, proveEmpty: async () => ({ state: "unknown", reason: "uncertain" }) };
+    await expect(reviewService(uncertain.store, uncertain.worktree, { fence: unknownFence }).completeReview(completeReviewInput(uncertain.worktree)))
+      .rejects.toMatchObject({ code: "DELIVERY_QUARANTINED" });
+    expect((await uncertain.store.get("d-lease"))!.segments.at(-1)?.releasedAt).toBeUndefined();
+  });
+
+  it.each(["drain", "complete"] as const)("replays a committed review %s after a lost response", async (phase) => {
+    const { store, worktree, input } = reviewFixture();
+    await store.create(input);
+    const update = store.update.bind(store);
+    let lost = false;
+    store.update = async (...args: Parameters<DeliveryStore["update"]>) => {
+      const result = await update(...args);
+      const operationId = args[3]?.operationId;
+      if (!lost && operationId === `review-op:${phase}`) { lost = true; throw new Error(`${phase} response lost`); }
+      return result;
+    };
+    const completed = await reviewService(store, worktree).completeReview(completeReviewInput(worktree));
+    expect(completed.lease.state).toBe("free");
+    expect(completed.events.filter((event) => event.type === "review_completed")).toHaveLength(1);
+  });
+
+  it("runs process-fence work outside Delivery/worktree locks", async () => {
+    const { store, worktree, input } = reviewFixture();
+    await store.create(input);
+    let lockDepth = 0;
+    const outside = vi.fn(() => { expect(lockDepth).toBe(0); });
+    const fence: ProcessFencePort = { capability: () => ({ supported: true, domain: "test" }),
+      freeze: async () => { outside(); }, terminate: async () => { outside(); },
+      proveEmpty: async () => { outside(); return { state: "proven_empty" }; } };
+    const withLock = async <T>(_path: string, fn: () => Promise<T>) => { lockDepth += 1; try { return await fn(); } finally { lockDepth -= 1; } };
+    await reviewService(store, worktree, { fence, withLock }).completeReview(completeReviewInput(worktree));
+    expect(outside).toHaveBeenCalledTimes(3);
+  });
+
+  it("aggregates the postcondition cause with quarantine persistence failure", async () => {
+    const { store, worktree, input } = reviewFixture();
+    await store.create(input);
+    const update = store.update.bind(store);
+    store.update = async (...args: Parameters<DeliveryStore["update"]>) => {
+      if (args[3]?.operationId === "review-op:quarantine") throw new Error("quarantine persistence failed");
+      return update(...args);
+    };
+    const error = await reviewService(store, worktree, { inspect: () => ({ ...cleanReviewInspection, trackedClean: false }) })
+      .completeReview(completeReviewInput(worktree)).catch((caught) => caught);
+    expect(error).toBeInstanceOf(AggregateError);
+    expect(error.errors.map((entry: Error) => entry.message)).toEqual([
+      expect.stringContaining("reviewer changed tracked worktree content"), "quarantine persistence failed",
+    ]);
+    expect((await store.get("d-lease"))!.lease.state).toBe("draining");
   });
 });

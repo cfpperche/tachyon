@@ -824,6 +824,60 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(error.errors.map((entry: Error) => entry.message)).toEqual(["confirmation failed", "reservation quarantine failed"]);
   });
 
+  it.each([
+    ["codex", "--sandbox read-only"],
+    ["claude", "--permission-mode plan"],
+    ["grok", "--permission-mode plan"],
+  ])("SDD 368 T10 applies and persists the measured reviewer-safe %s command", async (runtime, expectedFlag) => {
+    const { manager, ledger, cmds, ws } = resumeHarness("agents: {}\n", {
+      prepareDeliveryJoin: async (_name, request) => ({ cwd: ws,
+        worktree: { path: ws, branch: "tachyon/delivery", tachyonCreatedBranch: true, baseRef: request.expectedHead, createdAt: "now" },
+        reservationNonce: "nonce" }),
+      confirmDeliveryJoin: async () => undefined,
+    });
+    await manager.spawn(`reviewer-${runtime}`, { cmd: runtime, parent: "boss",
+      deliveryJoin: { deliveryId: "d-review", role: "reviewer", ownsSubset: [], expectedHead: "abc", operationId: `join-${runtime}` } });
+    expect(cmds.at(-1)).toContain(expectedFlag);
+    expect(ledger.get(`reviewer-${runtime}`)?.def?.cmd).toContain(expectedFlag);
+  });
+
+  it.each([
+    "codex --sandbox workspace-write",
+    "codex --dangerously-bypass-approvals-and-sandbox",
+    "claude --permission-mode acceptEdits",
+    "claude --dangerously-skip-permissions",
+    "grok --permission-mode default",
+    "grok --dangerously-skip-permissions",
+    "grok --always-approve",
+  ])("SDD 368 T10 refuses conflicting reviewer command before reservation or spawn: %s", async (cmd) => {
+    let prepared = false;
+    const { manager, cmds } = resumeHarness("agents: {}\n", {
+      prepareDeliveryJoin: async () => { prepared = true; throw new Error("must not prepare"); },
+      confirmDeliveryJoin: async () => undefined,
+    });
+    await expect(manager.spawn("unsafe-reviewer", { cmd,
+      deliveryJoin: { deliveryId: "d-review", role: "reviewer", ownsSubset: [], expectedHead: "abc", operationId: "unsafe" } }))
+      .rejects.toThrow(/reviewer command/);
+    expect(prepared).toBe(false);
+    expect(cmds).toHaveLength(0);
+  });
+
+  it("SDD 368 T10 leaves unsupported reviewer runtimes unchanged with an advisory", async () => {
+    const advisories: string[] = [];
+    const { manager, cmds, ws } = resumeHarness("agents: {}\n", {
+      notify: (message) => { advisories.push(message); },
+      prepareDeliveryJoin: async (_name, request) => ({ cwd: ws,
+        worktree: { path: ws, branch: "tachyon/delivery", tachyonCreatedBranch: true, baseRef: request.expectedHead, createdAt: "now" },
+        reservationNonce: "nonce" }),
+      confirmDeliveryJoin: async () => undefined,
+    });
+    await manager.spawn("reviewer-unknown", { cmd: "custom-review-runtime",
+      deliveryJoin: { deliveryId: "d-review", role: "reviewer", ownsSubset: [], expectedHead: "abc", operationId: "unknown" } });
+    expect(cmds.at(-1)).toContain("custom-review-runtime");
+    expect(cmds.at(-1)).not.toMatch(/--sandbox|--permission-mode/);
+    expect(advisories).toEqual([expect.stringContaining("no measured shell-level read-only mode")]);
+  });
+
   it("mint runtime (claude): spawns a NAMED session (-n) and records the name (spec 220)", async () => {
     const { manager, ledger, cmds, ws } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
       newSessionId: () => "uuid-ignored-for-claude", // claude name-mints; the random uuid is unused
