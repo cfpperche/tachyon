@@ -42,6 +42,7 @@ function service(store: DeliveryStore, worktree: string, fence = certifiedFence)
     store, processFence: fence,
     canonicalWorktreeFor: () => worktree,
     readHead: () => "b",
+    inspectWorktree: () => ({ headSha: "b", clean: true }),
     isAncestor: (older, newer) => older === "b" && newer === "b",
     withWorktreeLock: async (_path, fn) => { lockDepth += 1; try { return await fn(); } finally { lockDepth -= 1; } },
     now: () => now, nonce: () => "nonce", segmentId: () => "seg-1", eventId: () => `event-${lockDepth}`,
@@ -94,9 +95,69 @@ describe("DeliveryLeaseService (SDD 368 T5)", () => {
       pid: 42, processStart: "100", bootId: "boot",
     }, "confirm")).toEqual(held);
     expect(held.lease).toMatchObject({
-      state: "held", holder: { executionAgent: "fixer", process: { pid: 42, processStart: "100", bootId: "boot" } },
+      state: "held", holder: { executionAgent: "fixer", executionNonce: "nonce", process: { pid: 42, processStart: "100", bootId: "boot" } },
     });
     expect(held.lease.holder).not.toHaveProperty("reservationNonce");
+  });
+
+  it("hands a held lease to one pending successor and fences outside both locks", async () => {
+    const { store, worktree, input } = fixture();
+    input.segments![0] = { ...input.segments![0]!, releasedAt: undefined, releasedHeadSha: undefined, outcome: undefined };
+    input.lease = { state: "held", holder: { segmentId: "seg-0", executionAgent: "worker", process: { pid: 7, processStart: "10", bootId: "boot" }, executionNonce: "exec-0" }, expectedHeadSha: "b", changedAt: now };
+    await store.create(input);
+    let lockDepth = 0;
+    const calls: string[] = [];
+    const fence: ProcessFencePort = {
+      capability: () => ({ supported: true, domain: "test" }),
+      freeze: async () => { expect(lockDepth).toBe(0); calls.push("freeze"); },
+      terminate: async () => { expect(lockDepth).toBe(0); calls.push("terminate"); },
+      proveEmpty: async () => { expect(lockDepth).toBe(0); calls.push("proveEmpty"); return { state: "proven_empty" }; },
+    };
+    const lease = new DeliveryLeaseService({
+      store, processFence: fence, canonicalWorktreeFor: () => worktree,
+      readHead: () => "b", inspectWorktree: () => ({ headSha: "b", clean: true }), isAncestor: () => true,
+      withWorktreeLock: async (_path, fn) => { lockDepth++; try { return await fn(); } finally { lockDepth--; } },
+      now: () => now, nonce: () => "next-nonce", segmentId: () => "seg-1", eventId: () => `event-${calls.length}`,
+    });
+    const result = await lease.handoff({ deliveryId: "d-lease", canonicalWorktree: worktree, expectedFinalHeadSha: "b",
+      role: "fixer", executionAgent: "fixer", ownsSubset: ["src/feature"], grantedBy: actor, operationId: "handoff" });
+    expect(calls).toEqual(["freeze", "terminate", "proveEmpty"]);
+    expect(result.reservationNonce).toBe("next-nonce");
+    expect(result.delivery.lease).toMatchObject({ state: "pending", holder: { segmentId: "seg-1", reservationNonce: "next-nonce" } });
+    expect(result.delivery.segments).toHaveLength(2);
+    expect(result.delivery.segments[0]).toMatchObject({ releasedHeadSha: "b", outcome: "completed" });
+    expect(await lease.handoff({ deliveryId: "d-lease", canonicalWorktree: worktree, expectedFinalHeadSha: "b",
+      role: "fixer", executionAgent: "fixer", ownsSubset: ["src/feature"], grantedBy: actor, operationId: "handoff" })).toEqual(result);
+    expect(calls).toHaveLength(3);
+  });
+
+  it("quarantines survivors without appending a successor", async () => {
+    const { store, worktree, input } = fixture();
+    input.segments![0] = { ...input.segments![0]!, releasedAt: undefined, releasedHeadSha: undefined, outcome: undefined };
+    input.lease = { state: "held", holder: { segmentId: "seg-0", executionAgent: "worker", process: { pid: 7, processStart: "10", bootId: "boot" }, executionNonce: "exec-0" }, changedAt: now };
+    await store.create(input);
+    const fence: ProcessFencePort = { ...certifiedFence, proveEmpty: async () => ({ state: "survivors", pids: [7] }) };
+    const lease = new DeliveryLeaseService({ store, processFence: fence, canonicalWorktreeFor: () => worktree,
+      readHead: () => "b", inspectWorktree: () => ({ headSha: "b", clean: true }), isAncestor: () => true,
+      withWorktreeLock: async (_path, fn) => fn(), now: () => now });
+    await expect(lease.handoff({ deliveryId: "d-lease", canonicalWorktree: worktree, expectedFinalHeadSha: "b",
+      role: "fixer", executionAgent: "fixer", ownsSubset: ["src"], grantedBy: actor, operationId: "survivor" }))
+      .rejects.toMatchObject({ code: "DELIVERY_QUARANTINED", retryable: false });
+    const delivery = await store.get("d-lease");
+    expect(delivery?.lease.state).toBe("quarantined");
+    expect(delivery?.segments).toHaveLength(1);
+  });
+
+  it("failPending requires the exact nonce and is receipt-idempotent", async () => {
+    const { store, worktree, input } = fixture();
+    await store.create(input);
+    const lease = service(store, worktree);
+    await lease.acquire({ deliveryId: "d-lease", expectedHeadSha: "b", canonicalWorktree: worktree, role: "fixer",
+      executionAgent: "fixer", grantedBy: actor, ownsSubset: ["src"], operationId: "reserve-fail" });
+    await expect(lease.failPending("d-lease", "wrong", "spawn failed", "fail-wrong")).rejects.toMatchObject({ code: "WORKTREE_OCCUPIED" });
+    const failed = await lease.failPending("d-lease", "nonce", "spawn failed", "fail-right");
+    expect(await lease.failPending("d-lease", "nonce", "spawn failed", "fail-right")).toEqual(failed);
+    expect(failed.lease).toMatchObject({ state: "quarantined", reason: "spawn failed", holder: { reservationNonce: "nonce" } });
   });
 
   it("translates a real SQLite BEGIN IMMEDIATE collision into retryable WORKTREE_OCCUPIED", async () => {
@@ -144,7 +205,7 @@ describe("DeliveryLeaseService (SDD 368 T5)", () => {
     let reads = 0;
     const lease = new DeliveryLeaseService({
       store, processFence: certifiedFence, canonicalWorktreeFor: () => worktree,
-      readHead: () => (++reads === 1 ? "b" : "c"), isAncestor: () => true,
+      readHead: () => (++reads === 1 ? "b" : "c"), inspectWorktree: () => ({ headSha: "b", clean: true }), isAncestor: () => true,
       withWorktreeLock: async (_path, fn) => fn(), now: () => now,
     });
     await expect(lease.acquire({
@@ -182,7 +243,7 @@ describe("DeliveryLeaseService (SDD 368 T5)", () => {
       .rejects.toMatchObject({ code: "DELIVERY_WORKTREE_MISMATCH" });
     const nonLinear = new DeliveryLeaseService({
       store, processFence: certifiedFence, canonicalWorktreeFor: () => worktree, readHead: () => "b",
-      isAncestor: () => false, withWorktreeLock: async (_path, fn) => fn(), now: () => now,
+      inspectWorktree: () => ({ headSha: "b", clean: true }), isAncestor: () => false, withWorktreeLock: async (_path, fn) => fn(), now: () => now,
     });
     await expect(nonLinear.acquire(base)).rejects.toMatchObject({ code: "DELIVERY_NON_LINEAR_HEAD" });
     expect((await store.get("d-lease"))?.lease.state).toBe("free");

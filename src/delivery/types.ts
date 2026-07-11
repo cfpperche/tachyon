@@ -30,6 +30,7 @@ export interface DeliveryLeaseHolder {
   principal?: string;
   process?: DeliveryProcessIdentity;
   reservationNonce?: string;
+  executionNonce?: string;
 }
 
 export interface DeliveryLease {
