@@ -199,14 +199,15 @@ or mutate a Delivery; it does not certify the process fence or enable `delivery_
 usable while the production fence is unavailable.
 
 **Runtime/model triage:** ambiguity is low because this contract fixes the API and algorithm; implementation spans
-five files with a narrow Bridge/Workspace seam. Concurrency risk is medium because a long request must not hold or
+six files with a narrow Bridge/Workspace seam. Concurrency risk is medium because a long request must not hold or
 queue behind acquisition locks; security risk is low but the response must not expose holder nonces, process
 identity, principal, or quarantine evidence. Use the declared `codex-executor` at `gpt-5.6-sol` medium with serial
 tests. The coordinator owns every design choice below.
 
 **Owned files:** `src/delivery/leaseService.ts`, `src/bridge/tools.ts`, `src/workspace/Workspace.ts`,
-`test/unit/deliveryLeaseService.test.ts`, and `test/unit/bridge.test.ts`. No store schema, process-fence,
-AgentManager, GitDelivery, config, ledger, or other test edits.
+`test/unit/deliveryLeaseService.test.ts`, `test/unit/bridge.test.ts`, and the two exact tool-inventory count
+assertions in `test/unit/auth.test.ts`. No other auth-test changes and no store schema, process-fence, AgentManager,
+GitDelivery, config, ledger, or other test edits.
 
 **Internal API and result contract:**
 
