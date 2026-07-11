@@ -143,3 +143,15 @@ _Questions surfaced during the build with no answer yet. Owner or path to resolu
 - Integrated on `main` through `96942f7`; `npm run verify:full` passed (295 files, 3263 tests, 3 skipped).
 - The superseded lockfile working copy remains preserved in stash
   `pre-sqlite delivery-store lockfile work t-0b5723` until the broader Delivery rollout is complete.
+
+# T2 canonical gated-spawn projection closure — 2026-07-10
+
+- Added opt-in canonical gated-spawn persistence: exactly one Delivery, implementer segment zero, and linked
+  GitDelivery projection. Legacy mode remains the default rollout path.
+- Spawn failures after runtime creation now run verified compensation without hiding a possibly-live runtime or
+  deleting a pre-existing forced worktree.
+- GitDelivery moved to a transactionally unique SQLite authority with fail-closed legacy migration and repairable
+  JSON mirrors. Real subprocess coverage proves concurrent `open()` converges to one projection.
+- Adversarial reviews R1–R4 closed cross-store partial failure, projection uniqueness, migration, crash/mirror,
+  compensation, and subprocess cleanup findings.
+- Integrated on `main` through `f7476fe`; `npm run verify:full` passed (296 files, 3272 tests, 3 skipped).

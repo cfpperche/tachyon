@@ -17,7 +17,7 @@ _Generated from `plan.md` on 2026-07-10. Work top-to-bottom. Check boxes as task
   `BEGIN IMMEDIATE` short transactions, CAS versions, immutable-contract enforcement, append-only unique segment/
   event history, operation receipts for idempotent retry, and capability-gated local lock-domain validation.
   - Gate: `DeliveryStore recovers a crash-interrupted transaction without duplicating immutable append-only state`.
-- [ ] T2. Create one Delivery plus implementer segment zero for new gated spawns, link a GitDelivery projection by
+- [x] T2. Create one Delivery plus implementer segment zero for new gated spawns, link a GitDelivery projection by
   `deliveryId`, and preserve the legacy gated-spawn path behind compatibility settings.
   - Gate: `a gated spawn creates exactly one canonical Delivery and one Git projection`.
 - [ ] T3. Implement deterministic legacy preview/apply import from DelegationRecord + fixerAttempts + optional exact
