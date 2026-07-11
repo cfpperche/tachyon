@@ -420,6 +420,39 @@ Run the focused nine-suite serial matrix recorded in R1, `npm run typecheck`, `g
 `npm run verify:full`. Commit corrections in one new plain commit by explicit pathspec; never amend/rewrite and never
 stage `tachyon.yml`.
 
+### T9 R2 correction contract — cross-process record CAS and owned temp cleanup
+
+R2 (`8e68d23`) proved that atomic rename alone is insufficient: two legacy identities can both pass the preflight
+and the second POSIX rename replaces the first. Do not add a crash-stale lockfile protocol. Serialize the complete
+canonical-record conflict check plus sibling-temp publication in one short cross-process SQLite `BEGIN IMMEDIATE`
+critical section, using a dedicated workspace-local publication database under `.tachyon/`. Configure a bounded
+busy timeout, `journal_mode=DELETE`, and `synchronous=FULL`; always COMMIT/ROLLBACK and close in `finally`. The
+transaction contains only synchronous record read/parse/scope comparison, temp write/fsync/close, rename, and
+directory fsync — never behavior tests, Git operations, or Delivery lease work. SQLite owns crash release; there is
+no durable application lock row or stale-owner recovery policy.
+
+Inside that serialized section, retain the existing rules: absent target may publish; valid same-scope target may
+be atomically replaced by the new complete record; unreadable or different-scope target returns
+`VERIFICATION_RECORD_CONFLICT` and is never renamed over. Thus legacy different identities targeting the same
+`<refSha>.json` cannot both succeed, while sequential same-scope re-verification remains supported. If the verified
+runtime cannot provide the SQLite lock domain, fail closed with a clear publication-unavailable error rather than
+falling back to check-then-rename.
+
+Track temporary-file ownership only after `openSync(..., "wx")` succeeds. An exclusive-open collision performs no
+unlink and preserves the pre-existing sibling byte-for-byte. On a later publication failure, attempt to remove only
+the temp created by this call. Cleanup failure must not replace the primary write/fsync/close/rename/dir-fsync error:
+throw an `AggregateError` carrying both in stable primary-then-cleanup order. Never claim cleanup succeeded.
+
+Add deterministic regressions through the real publisher: two concurrent child processes/barriered workers publish
+different legacy identities to one SHA and exactly one succeeds while the loser receives
+`VERIFICATION_RECORD_CONFLICT`; the winner's returned bytes remain canonical. Add an exact `wx` collision test that
+preserves the unowned sibling, and a primary publication failure plus cleanup failure test that exposes both errors.
+A tiny test helper process is allowed under `test/helpers/`; exporting the internal record writer for this helper is
+allowed, but do not add a Bridge tool or public user-facing API. Preserve every R1 regression.
+
+Run the R1 nine-suite serial matrix, `npm run typecheck`, `git diff --check`, and `npm run verify:full`. Commit only
+the correction paths in one new plain `t-0b5723` commit; no amend/history rewrite and never stage `tachyon.yml`.
+
 ### T1 lock protocol redesign — SQLite decision
 
 Five adversarial rounds found successive crash windows in application-managed owner/fence/claim lockfiles. The
