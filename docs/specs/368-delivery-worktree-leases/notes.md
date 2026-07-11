@@ -482,6 +482,27 @@ behavior returns.
 Run the R1 nine-suite serial matrix, `npm run typecheck`, `git diff --check`, and `npm run verify:full`. One new plain
 `t-0b5723` commit by explicit pathspec; no amend/history rewrite and never stage `tachyon.yml`.
 
+### T9 crash-safe verification lease closure
+
+T9 now acquires a durable `verifying` system lease for canonical Delivery-backed `verify_task`, resolves the exact
+linked GitDelivery/workspace/canonical realpath, excludes the live tail rather than segment zero, persists every
+temporary checkout before mutation, restores the delivered branch before evidence publication, and preserves or
+quarantines the prior lease with complete identity evidence. Canonical scope verification proves ancestor-linear
+boundaries and validates every writer segment's normalized authority, including zero-write segments; reviewer and
+verifier segments remain no-write ranges pending T10 postconditions. Direct canonical calls without the
+Workspace-owned lease fail closed; the legacy agent-only path remains compatible.
+
+Verification records publish complete fsynced bytes through a sibling temp under a short crash-released SQLite
+`BEGIN IMMEDIATE` transaction. Cross-process conflict check and rename are serialized, different legacy identities
+cannot overwrite one another, same-scope retries remain supported, temp ownership is exact, and transaction/file
+cleanup errors preserve stable causal order. Four adversarial review rounds closed crash-wedge, zero-write scope,
+cross-process overwrite, temp ownership, lifecycle-error, and non-forcing-test findings. Final verdict: **ACCEPT**
+(`9b76e0c`) over implementation head `d3f0758`.
+
+Coordinator closure verification on `9b76e0c`: `npm run typecheck`, `npm run verify:full`, and `git diff --check`
+passed; full verification reported 300 files, 3,361 passed, and 3 skipped. The only remaining working-tree change is
+the maintainer-owned `tachyon.yml`, deliberately excluded from every T9 commit.
+
 ### T1 lock protocol redesign — SQLite decision
 
 Five adversarial rounds found successive crash windows in application-managed owner/fence/claim lockfiles. The

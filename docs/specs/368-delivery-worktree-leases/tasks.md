@@ -45,7 +45,7 @@ _Generated from `plan.md` on 2026-07-10. Work top-to-bottom. Check boxes as task
 - [x] T8. Add `wait_for_lease` as a bounded state watcher that owns no acquisition lock and exits on release,
   quarantine, disappearance, or timeout.
   - Gate: `wait_for_lease is bounded and cannot block an independent release`.
-- [ ] T9. Acquire a system verification lease around `verify_task`, checking the canonical current holder rather
+- [x] T9. Acquire a system verification lease around `verify_task`, checking the canonical current holder rather
   than segment zero; record restore intent, recover clean interruptions, restore delivered HEAD, and verify
   ancestor-linear write segments against their scopes.
   - Gate: `verification excludes a live successor and safely restores an interrupted temporary checkout`.
