@@ -10,6 +10,8 @@ import { registerTools, type BridgeDeps } from "../../src/bridge/tools.js";
 import { DeliveryStore } from "../../src/delivery/store.js";
 import { deliveryToVerificationRecord, resolveOperationalSegment } from "../../src/delivery/verifyAdapter.js";
 import type { DelegationSegment, Delivery } from "../../src/delivery/types.js";
+import { GitDeliveryStore } from "../../src/git-delivery/store.js";
+import { DeliveryVerificationLeaseService } from "../../src/delivery/verificationLease.js";
 
 // t-7acc58 — wraps the real verifyTask in a vi.fn that call-throughs by default (every existing test in
 // this file keeps exercising the real implementation), so the new verify_task Bridge-tool describe block
@@ -27,6 +29,7 @@ const ENV = {
   GIT_COMMITTER_NAME: "tachyon-test",
   GIT_COMMITTER_EMAIL: "tachyon@example.test",
 };
+const actor = { kind: "agent" as const, name: "coordinator" };
 
 function git(cwd: string, args: string[]): string {
   return execFileSync("git", args, { cwd, encoding: "utf8", env: ENV }).trim();
@@ -197,6 +200,83 @@ describe("verifyTask", () => {
     expect(result.record.agent).toBe("worker");
     expect(result.record.identity).toMatchObject({ legacy: "worker", canonical: "worker", deliveryId: "d-verify-explicit", segmentId: "seg-0", segmentIndex: 0 });
     expect(fs.existsSync(path.join(repo, ".tachyon", "delegations"))).toBe(false);
+  });
+
+  async function canonicalVerification(store: DeliveryStore, gitDeliveries: GitDeliveryStore) {
+    return new DeliveryVerificationLeaseService({ store, gitDeliveries, ownerEpoch: "verify-task-test-epoch",
+      withPathLock: async (_worktreePath, fn) => fn(), isAgentRunning: async () => false,
+      nonce: () => "verify-task-nonce", operationId: () => "verify-task-operation" });
+  }
+
+  it("verifies three canonical write segments against their own linear scopes and restores before recording completion", async () => {
+    const { repo, wt, baseSha } = fixture();
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    git(wt, ["add", "src/feature.txt"]); git(wt, ["commit", "-qm", "t-delivery segment zero"]);
+    const first = git(wt, ["rev-parse", "HEAD"]);
+    write(path.join(wt, "src", "second", "value.txt"), "second\n");
+    git(wt, ["add", "src/second/value.txt"]); git(wt, ["commit", "-qm", "t-delivery segment one"]);
+    const second = git(wt, ["rev-parse", "HEAD"]);
+    write(path.join(wt, "src", "third", "value.txt"), "third\n");
+    git(wt, ["add", "src/third/value.txt"]); git(wt, ["commit", "-qm", "t-delivery segment two"]);
+    const delivered = git(wt, ["rev-parse", "HEAD"]);
+    const store = new DeliveryStore(repo);
+    const gitDeliveries = new GitDeliveryStore(repo, { id: () => "gd-three-segment" });
+    const projection = await gitDeliveries.open({ workspaceId: "ws", createdBy: { kind: "agent", name: "coordinator" },
+      deliveryId: "d-three-segment", agent: "fixer-2", branchRef: "tachyon/worker", worktreePath: wt,
+      tachyonCreatedBranch: true, baseRef: baseSha, currentHeadSha: delivered });
+    await store.create({ id: "d-three-segment", workspaceId: "ws", createdBy: { kind: "agent", name: "coordinator" },
+      contract: { taskId: "t-delivery", baseSha, behaviorTest: "cmd:node behavior.js", owns: ["src"], taskRef: "tachyon/worker" },
+      gitDeliveryId: projection.id, segments: [
+        { id: "seg-0", index: 0, role: "implementer", executionAgent: "worker", grantedBy: actor,
+          ownsSubset: ["src/feature.txt"], grantedHeadSha: baseSha, grantedAt: "2026-01-01T00:00:00.000Z",
+          releasedAt: "2026-01-01T00:01:00.000Z", releasedHeadSha: first, outcome: "completed" },
+        { id: "seg-1", index: 1, role: "fixer", executionAgent: "fixer-1", grantedBy: actor,
+          ownsSubset: ["src/second"], grantedHeadSha: first, grantedAt: "2026-01-01T00:01:00.000Z",
+          releasedAt: "2026-01-01T00:02:00.000Z", releasedHeadSha: second, outcome: "completed" },
+        { id: "seg-2", index: 2, role: "recovery", executionAgent: "fixer-2", grantedBy: actor,
+          ownsSubset: ["src/third"], grantedHeadSha: second, grantedAt: "2026-01-01T00:02:00.000Z" },
+      ] });
+    const deliveryVerification = await canonicalVerification(store, gitDeliveries);
+    const result = await runVerify({ workspaceRoot: repo, deliveryId: "d-three-segment", deliveryVerification });
+    expect(result.verdict).toBe("accept");
+    expect(result.blockers).toEqual([]);
+    expect(git(wt, ["symbolic-ref", "--short", "HEAD"])).toBe("tachyon/worker");
+    const completed = (await store.get("d-three-segment"))!;
+    expect(completed.lease.state).toBe("free");
+    expect(completed.events.at(-1)).toMatchObject({ type: "verification_completed",
+      detail: { integrityHash: result.record.integrityHash, recordPath: result.recordPath } });
+  });
+
+  it("blocks a nonlinear adjacent canonical boundary before behavior execution", async () => {
+    const { repo, wt, baseSha } = fixture();
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    git(wt, ["add", "src/feature.txt"]); git(wt, ["commit", "-qm", "t-delivery delivered"]);
+    const delivered = git(wt, ["rev-parse", "HEAD"]);
+    git(repo, ["branch", "unrelated", baseSha]);
+    const unrelatedWt = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-vtask-unrelated-"));
+    fs.rmSync(unrelatedWt, { recursive: true, force: true }); roots.push(unrelatedWt);
+    git(repo, ["worktree", "add", "-q", unrelatedWt, "unrelated"]);
+    write(path.join(unrelatedWt, "src", "unrelated.txt"), "unrelated\n");
+    git(unrelatedWt, ["add", "src/unrelated.txt"]); git(unrelatedWt, ["commit", "-qm", "unrelated history"]);
+    const unrelated = git(unrelatedWt, ["rev-parse", "HEAD"]);
+    const store = new DeliveryStore(repo);
+    const gitDeliveries = new GitDeliveryStore(repo, { id: () => "gd-nonlinear" });
+    const projection = await gitDeliveries.open({ workspaceId: "ws", createdBy: actor, deliveryId: "d-nonlinear", agent: "fixer",
+      branchRef: "tachyon/worker", worktreePath: wt, tachyonCreatedBranch: true, baseRef: baseSha, currentHeadSha: delivered });
+    await store.create({ id: "d-nonlinear", workspaceId: "ws", createdBy: actor,
+      contract: { taskId: "t-delivery", baseSha, behaviorTest: "cmd:node behavior.js", owns: ["src"], taskRef: "tachyon/worker" },
+      gitDeliveryId: projection.id, segments: [
+        { id: "seg-0", index: 0, role: "implementer", executionAgent: "worker", grantedBy: actor, ownsSubset: ["src"],
+          grantedHeadSha: baseSha, grantedAt: "2026-01-01T00:00:00.000Z", releasedAt: "2026-01-01T00:01:00.000Z",
+          releasedHeadSha: unrelated, outcome: "completed" },
+        { id: "seg-1", index: 1, role: "fixer", executionAgent: "fixer", grantedBy: actor, ownsSubset: ["src"],
+          grantedHeadSha: unrelated, grantedAt: "2026-01-01T00:01:00.000Z" },
+      ] });
+    const runner = vi.fn(testRunner);
+    const result = await verifyTask({ workspaceRoot: repo, deliveryId: "d-nonlinear", deliveryVerification: await canonicalVerification(store, gitDeliveries), runner });
+    expect(result.verdict).toBe("blocked");
+    expect(result.blockers).toEqual(expect.arrayContaining([expect.objectContaining({ code: "non_linear_segment_history" })]));
+    expect(runner).not.toHaveBeenCalled();
   });
 
   /** Builds a Delivery on the fixture's taskRef. `segments` are given tail-last. */
@@ -1129,6 +1209,14 @@ function fakeRecord(overrides: Partial<VerifyTaskRecord> = {}): VerifyTaskRecord
 describe("verify_task Bridge tool caller-identity guard (t-7acc58)", () => {
   beforeEach(() => {
     (verifyTask as unknown as Mock).mockClear();
+  });
+
+  it("fails visibly when canonical verification has no Workspace-owned lease service", async () => {
+    const mcp = wireVerifyTaskTool("/does/not/matter", { kind: "legacy" });
+    const res = await callVerifyTaskTool(mcp, { delivery_id: "d-canonical" });
+    expect(res.isError).toBe(true);
+    expect(res.content[0]!.text).toContain("canonical Delivery verification is unavailable");
+    expect(verifyTask).not.toHaveBeenCalled();
   });
 
   // t-0b5723 (F1) — the guard now lives inside verifyTask, because it can only be decided AFTER the

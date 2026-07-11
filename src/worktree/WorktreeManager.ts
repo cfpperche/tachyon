@@ -274,11 +274,12 @@ export class WorktreeManager {
   }
 
   /** Serialize all worktree ops for one agent (spawn/restart/setup/remove). */
-  private withLock<T>(agent: string, fn: () => Promise<T>): Promise<T> {
-    const prev = this.locks.get(agent) ?? Promise.resolve();
+  private withLock<T>(worktreePath: string, fn: () => Promise<T>): Promise<T> {
+    const key = this.canonicalLockKey(worktreePath);
+    const prev = this.locks.get(key) ?? Promise.resolve();
     const next = prev.then(fn, fn);
     this.locks.set(
-      agent,
+      key,
       next.then(
         () => undefined,
         () => undefined,
@@ -287,10 +288,29 @@ export class WorktreeManager {
     return next;
   }
 
+  /** Realpath the nearest existing ancestor so symlinked worktree bases cannot create a second mutex key. */
+  private canonicalLockKey(value: string): string {
+    let cursor = path.resolve(value);
+    const suffix: string[] = [];
+    while (!fs.existsSync(cursor)) {
+      const parent = path.dirname(cursor);
+      if (parent === cursor) break;
+      suffix.unshift(path.basename(cursor));
+      cursor = parent;
+    }
+    try { return path.join(fs.realpathSync(cursor), ...suffix); }
+    catch { return path.resolve(value); }
+  }
+
   /** Serialize custom worktree mutations with ensure/remove for this agent's deterministic worktree path. */
   withAgentPathLock<T>(agent: string, fn: () => Promise<T>): Promise<T> {
     const key = pathFor(resolveBase(this.opts.getSettings()), this.opts.wsHash, agent);
-    return this.withLock(key, fn);
+    return this.withPathLock(key, fn);
+  }
+
+  /** Serialize by the canonical worktree path used by ensure/remove and Delivery verification. */
+  withPathLock<T>(worktreePath: string, fn: () => Promise<T>): Promise<T> {
+    return this.withLock(path.resolve(worktreePath), fn);
   }
 
   /** True when the workspace is a usable git repo with at least one commit (a worktree needs a HEAD to fork from). */

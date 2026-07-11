@@ -64,6 +64,19 @@ function service(store: DeliveryStore, worktree: string, fence = certifiedFence)
 }
 
 describe("DeliveryLeaseService (SDD 368 T5)", () => {
+  it("treats a durable system verification lease as retryable occupancy", async () => {
+    const { store, worktree, input } = fixture();
+    input.lease = { state: "verifying", changedAt: now, verification: {
+      nonce: "verification-nonce", ownerEpoch: "workspace-epoch", actor,
+      subjectSegmentId: "seg-0", deliveredHeadSha: "b", startedAt: now,
+      operationId: "verification-operation", priorLease: { state: "free", changedAt: now },
+    } };
+    await store.create(input);
+    await expect(service(store, worktree).acquire({ deliveryId: "d-lease", expectedHeadSha: "b", canonicalWorktree: worktree,
+      role: "fixer", executionAgent: "fixer", grantedBy: actor, ownsSubset: ["src"], operationId: "contend-verification" }))
+      .rejects.toMatchObject({ code: "WORKTREE_OCCUPIED", retryable: true, detail: { state: "verifying" } });
+  });
+
   it("wait_for_lease is bounded and cannot block an independent release", async () => {
     const { store, input } = heldFixture();
     await store.create(input);

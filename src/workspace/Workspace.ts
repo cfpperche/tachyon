@@ -88,6 +88,7 @@ import { resolveOpencodeStorageSession } from "./opencodeStorage.js";
 import { GitDeliveryStore } from "../git-delivery/store.js";
 import { DeliveryStore } from "../delivery/store.js";
 import { waitForDeliveryLease } from "../delivery/leaseService.js";
+import { DeliveryVerificationLeaseService } from "../delivery/verificationLease.js";
 import { resolveGitDeliverySettings } from "../git-delivery/settings.js";
 import { createGitExec, type GitExec } from "../worktree/WorktreeManager.js";
 import { resolveGitBinaryForHost } from "../worktree/gitBinary.js";
@@ -230,6 +231,7 @@ export class Workspace {
   readonly worktrees: WorktreeManager;
   readonly gitDeliveries: GitDeliveryStore;
   readonly deliveries: DeliveryStore;
+  readonly deliveryVerification: DeliveryVerificationLeaseService;
   /** spec 257 — the captured headless A2A probe lane (probe_agent / read_probe_result). */
   readonly probeService: ProbeService;
   private readonly probeStore: ProbeStore;
@@ -639,6 +641,17 @@ export class Workspace {
       removeHarnessHome: (name) => this.harness.remove(name),
     });
 
+    this.deliveryVerification = new DeliveryVerificationLeaseService({
+      store: this.deliveries,
+      gitDeliveries: this.gitDeliveries,
+      ownerEpoch: randomBytes(16).toString("hex"),
+      withPathLock: (worktreePath, fn) => this.worktrees.withPathLock(worktreePath, fn),
+      isAgentRunning: async (name) => {
+        const state = (await this.manager.agentStates()).get(name);
+        return !!state && !state.dead;
+      },
+    });
+
     // spec 230 — the pipeline executor. Constructed before the Bridge so its `completeNode` dep can
     // reference it. Deps bind to the real WorktreeManager / AgentManager / verify gate.
     this.runLedger = new RunLedger(workspaceRoot);
@@ -971,6 +984,7 @@ export class Workspace {
           return { command: s.command, passed: s.passed, atCommit: s.atCommit, ranAt: s.ranAt, stale: info?.stale ?? true, evidence: await this.evidenceHandoff(agent) };
         },
         withWorktreeLock: (agent, fn) => this.worktrees.withAgentPathLock(agent, fn),
+        deliveryVerification: this.deliveryVerification,
         // spec 273 — the worktree evidence channel over MCP.
         attachEvidence: (input) => this.attachEvidence(input),
         listEvidence: (agent) => this.listEvidence(agent),

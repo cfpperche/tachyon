@@ -9,6 +9,8 @@ import { DeliveryIdentityError, deliveryToVerificationRecord } from "../delivery
 import { hasDoorbellRung } from "./doorbell.js";
 import { CONFIG_FILENAMES, loadConfigFile, type TachyonConfig } from "../config/loadConfig.js";
 import type { CallerSnapshot } from "./callerIdentity.js";
+import type { Delivery } from "../delivery/types.js";
+import type { DeliveryVerificationContext, DeliveryVerificationLeaseService, PreparedDeliveryVerification } from "../delivery/verificationLease.js";
 
 const execFileP = promisify(execFile);
 const VERIFIER_VERSION = "363-phase1";
@@ -113,6 +115,8 @@ export type VerifyTaskInput = {
   /** t-7acc58 — the Bridge-resolved caller for this verification (spec 351 pattern); recorded on the
    *  record for attribution. Omitted -> {kind:"legacy"}, matching every other deps.caller consumer in tools.ts. */
   verifierCaller?: { kind: CallerSnapshot["kind"]; name?: string };
+  /** Canonical Delivery path only; Workspace owns this lifecycle service once per host epoch. */
+  deliveryVerification?: DeliveryVerificationLeaseService;
 };
 
 export type VerifyTaskErrorCode =
@@ -425,6 +429,57 @@ async function scopeBreachBlockers(
   return blockers;
 }
 
+function normalizeSegmentOwns(owns: string[]): string[] | undefined {
+  const normalized = [...new Set(owns.map((entry) => entry.replace(/\\/g, "/").replace(/^\.\//, "").replace(/\/+$/, "")))].sort();
+  return normalized.every((entry) => entry && !path.isAbsolute(entry) && !entry.split("/").includes("..")) ? normalized : undefined;
+}
+
+async function canonicalSegmentBlockers(delivery: Delivery, refSha: string, cwd: string): Promise<VerifyTaskBlocker[]> {
+  const blockers: VerifyTaskBlocker[] = [];
+  const boundaries: Array<{ from: string; to: string; label: string }> = [];
+  const ranges: Array<{ segment: Delivery["segments"][number]; end: string }> = [];
+  const first = delivery.segments[0];
+  if (!first) return [{ code: "non_linear_segment_history", detail: "canonical Delivery has no segments" }];
+  boundaries.push({ from: delivery.contract.baseSha, to: first.grantedHeadSha, label: "contract base to first grant" });
+  for (let index = 0; index < delivery.segments.length; index++) {
+    const segment = delivery.segments[index]!;
+    const end = segment.releasedHeadSha ?? (index === delivery.segments.length - 1 ? refSha : undefined);
+    if (!end) {
+      blockers.push({ code: "non_linear_segment_history", detail: `segment '${segment.id}' has no provable end boundary` });
+      continue;
+    }
+    boundaries.push({ from: segment.grantedHeadSha, to: end, label: `segment '${segment.id}' grant to end` });
+    ranges.push({ segment, end });
+    const next = delivery.segments[index + 1];
+    if (next) boundaries.push({ from: end, to: next.grantedHeadSha, label: `segment '${segment.id}' release to '${next.id}' grant` });
+    else boundaries.push({ from: end, to: refSha, label: `final segment '${segment.id}' end to delivered HEAD` });
+
+  }
+  for (const boundary of boundaries) {
+    try {
+      const ancestor = await git(cwd, ["merge-base", "--is-ancestor", boundary.from, boundary.to], { okExitCodes: [0, 1] });
+      if (ancestor.exitCode !== 0) blockers.push({ code: "non_linear_segment_history", detail: `${boundary.label} is not ancestor-linear (${boundary.from} !<= ${boundary.to})` });
+    } catch (error) {
+      blockers.push({ code: "non_linear_segment_history", detail: `${boundary.label} cannot be proved: ${error instanceof Error ? error.message : String(error)}` });
+    }
+  }
+  if (blockers.some((finding) => finding.code === "non_linear_segment_history")) return blockers;
+
+  for (const { segment, end } of ranges) {
+    if (!["implementer", "fixer", "recovery"].includes(segment.role) || segment.grantedHeadSha === end) continue;
+    const owns = normalizeSegmentOwns(segment.ownsSubset);
+    if (!owns || owns.some((entry) => !withinOwns(entry, delivery.contract.owns))) {
+      blockers.push({ code: "invalid_segment_scope", detail: `segment '${segment.id}' has invalid, escaping, or widened ownsSubset authority` });
+      continue;
+    }
+    const files = (await git(cwd, ["diff", "--name-only", `${segment.grantedHeadSha}..${end}`])).stdout.split(/\r?\n/).filter(Boolean);
+    for (const file of files) {
+      if (!withinOwns(file, owns)) blockers.push({ code: "scope_breach", detail: `changed file is outside ownsSubset for segment '${segment.id}' (${segment.grantedHeadSha}..${end})`, file });
+    }
+  }
+  return blockers;
+}
+
 function isSuppressionPath(file: string): boolean {
   const f = file.replace(/\\/g, "/");
   return (
@@ -647,6 +702,10 @@ async function runTieredTestsInCurrentCheckout(input: {
   }
 }
 
+interface PreparedVerifyTask {
+  publish(): Promise<{ result: VerifyTaskResult; evidence: { refSha: string; treeSha: string; verdict: "accept" | "blocked"; integrityHash: string; recordPath: string } }>;
+}
+
 export async function verifyTask(input: VerifyTaskInput): Promise<VerifyTaskResult> {
   const waivers = input.waivers ?? [];
   // t-7acc58 — reject before any git work: a waiver keyed on the bare code "scope_breach" would blanket-
@@ -664,10 +723,33 @@ export async function verifyTask(input: VerifyTaskInput): Promise<VerifyTaskResu
     );
   }
 
+  const verifierCaller = input.verifierCaller ?? { kind: "legacy" as const };
+  if (input.deliveryId && input.deliveryVerification) {
+    return input.deliveryVerification.run(input.deliveryId, verifierCaller, async (context): Promise<PreparedDeliveryVerification<VerifyTaskResult>> => {
+      let view;
+      try {
+        view = deliveryToVerificationRecord(context.delivery);
+      } catch (err) {
+        if (err instanceof DeliveryIdentityError) throw new VerifyTaskResolutionError(err.code, err.message);
+        throw err;
+      }
+      const target = { record: view.record, identity: { ...view.identity, ...(view.record.id ? { delegationId: view.record.id } : {}) } };
+      return verifyTaskResolved(input, target, context);
+    });
+  }
+
+  const target = await resolveVerificationTarget(input);
+  const prepared = await verifyTaskResolved(input, target);
+  return (await prepared.publish()).result;
+}
+
+async function verifyTaskResolved(input: VerifyTaskInput, target: VerificationTarget, canonical?: DeliveryVerificationContext): Promise<PreparedVerifyTask> {
+  const waivers = input.waivers ?? [];
+
   // F1 — resolve the delivery FIRST, then authorize the waivers against the identity that resolution
   // proved. Authorizing before resolving is what let a caller name someone else's agent (or hand over a
   // delivery_id) and waive its own findings.
-  const { record, identity } = await resolveVerificationTarget(input);
+  const { record, identity } = target;
   const verifierCaller = input.verifierCaller ?? { kind: "legacy" as const };
   assertWaiverAuthorized(verifierCaller, identity, waivers);
 
@@ -678,7 +760,7 @@ export async function verifyTask(input: VerifyTaskInput): Promise<VerifyTaskResu
   const runner = input.runner ?? runArgv;
   const verifySettings = input.verifySettings ?? loadVerifySettings(input.workspaceRoot);
 
-  const refSha = (await git(input.workspaceRoot, ["rev-parse", record.taskRef])).stdout.trim();
+  const refSha = canonical?.deliveredHeadSha ?? (await git(input.workspaceRoot, ["rev-parse", record.taskRef])).stdout.trim();
   const treeSha = (await git(input.workspaceRoot, ["rev-parse", `${refSha}^{tree}`])).stdout.trim();
   const noCommit = refSha === record.baseSha;
   if (noCommit) blockers.push({ code: "no_commit", detail: `task ref ${record.taskRef} is still at baseSha ${record.baseSha}` });
@@ -692,22 +774,28 @@ export async function verifyTask(input: VerifyTaskInput): Promise<VerifyTaskResu
   const gitDiffNameOnly = async (from: string, to: string): Promise<string[]> =>
     (await git(input.workspaceRoot, ["diff", "--name-only", `${from}..${to}`])).stdout.split(/\r?\n/).filter(Boolean);
   const waivedFindings: VerifyTaskBlocker[] = [];
-  const scopeFindings = await scopeBreachBlockers(record, refSha, gitDiffNameOnly);
-  const scopedWaivers = waiveFindings(scopeFindings, waivers);
+  const scopeFindings = canonical
+    ? await canonicalSegmentBlockers(canonical.delivery, refSha, canonical.worktreePath)
+    : await scopeBreachBlockers(record, refSha, gitDiffNameOnly);
+  const nonWaivableScopeFindings = scopeFindings.filter((finding) => finding.code !== "scope_breach");
+  blockers.push(...nonWaivableScopeFindings);
+  const scopedWaivers = waiveFindings(scopeFindings.filter((finding) => finding.code === "scope_breach"), waivers);
   blockers.push(...scopedWaivers.unwaived);
   waivedFindings.push(...scopedWaivers.waived);
 
-  const wtPath = await worktreePathForRef(input.workspaceRoot, record.taskRef);
-  let canRunBehavior = !noCommit;
+  const wtPath = canonical?.worktreePath ?? await worktreePathForRef(input.workspaceRoot, record.taskRef);
+  let canRunBehavior = !noCommit && !blockers.some((finding) => finding.code === "non_linear_segment_history" || finding.code === "invalid_segment_scope");
   if (!wtPath) {
     blockers.push({ code: "worktree_missing", detail: `task ref ${record.taskRef} is not checked out in an isolated worktree` });
     canRunBehavior = false;
   }
 
   if (wtPath) {
-    const withWorktreeLock = input.withWorktreeLock ?? (async <T>(_agent: string, fn: () => Promise<T>): Promise<T> => fn());
+    const withWorktreeLock = canonical
+      ? (async <T>(_agent: string, fn: () => Promise<T>): Promise<T> => fn())
+      : input.withWorktreeLock ?? (async <T>(_agent: string, fn: () => Promise<T>): Promise<T> => fn());
     await withWorktreeLock(occupant, async () => {
-      if (await input.isAgentRunning?.(occupant)) {
+      if (!canonical && await input.isAgentRunning?.(occupant)) {
         blockers.push({ code: "agent_still_running", detail: `agent '${occupant}' is still running; stop it before verify_task mutates its worktree for the behavior check` });
         canRunBehavior = false;
       }
@@ -720,7 +808,10 @@ export async function verifyTask(input: VerifyTaskInput): Promise<VerifyTaskResu
 
       const blockersBeforeTiered = blockers.length;
       const fullCommand = verifySettings?.full ?? DEFAULT_FULL_VERIFY;
-      await runAtSha(wtPath, record.taskRef, refSha, async () => {
+      const runAtVerificationSha = canonical
+        ? canonical.runAtSha
+        : <T>(sha: string, fn: () => Promise<T>) => runAtSha(wtPath, record.taskRef, sha, fn);
+      await runAtVerificationSha(refSha, async () => {
         await runTieredTestsInCurrentCheckout({
           worktreePath: wtPath,
           changed,
@@ -755,7 +846,9 @@ export async function verifyTask(input: VerifyTaskInput): Promise<VerifyTaskResu
         return;
       }
 
-      const baseRun = await runBehaviorAtSha(wtPath, record.taskRef, record.baseSha, record.behaviorTest, runner);
+      const baseRun = canonical
+        ? await canonical.runAtSha(record.baseSha, () => runBehaviorInCurrentCheckout(wtPath, record.behaviorTest, runner))
+        : await runBehaviorAtSha(wtPath, record.taskRef, record.baseSha, record.behaviorTest, runner);
       commands.push(commandRecord("behavior_base_expect_fail", wtPath, baseRun));
       if (baseRun.exitCode === 0) blockers.push({ code: "behavior_already_passed", detail: `behaviorTest passed at baseSha and proves no delivered change: ${record.behaviorTest}` });
     });
@@ -800,6 +893,11 @@ export async function verifyTask(input: VerifyTaskInput): Promise<VerifyTaskResu
     at: new Date().toISOString(),
     verifierCaller,
   });
-  const recordPath = writeVerificationRecord(input.workspaceRoot, verification);
-  return { verdict, blockers: blockingFindings, waivedFindings, record: verification, recordPath };
+  return {
+    publish: async () => {
+      const recordPath = writeVerificationRecord(input.workspaceRoot, verification);
+      const result: VerifyTaskResult = { verdict, blockers: blockingFindings, waivedFindings, record: verification, recordPath };
+      return { result, evidence: { refSha, treeSha, verdict, integrityHash: verification.integrityHash, recordPath } };
+    },
+  };
 }

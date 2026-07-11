@@ -8,6 +8,7 @@ import {
   gitArgs,
   resolveWorktreeCwd,
   WorktreeUnavailableError,
+  WorktreeManager,
   type WorktreeRecord,
   type WorktreeResolveDeps,
 } from "../../src/worktree/WorktreeManager.js";
@@ -16,6 +17,21 @@ import type { TachyonConfig } from "../../src/config/loadConfig.js";
 const settings = (s: Partial<TachyonConfig["settings"]> = {}): TachyonConfig["settings"] => s as TachyonConfig["settings"];
 
 describe("WorktreeManager — pure resolvers (spec 210)", () => {
+  it("shares one canonical path mutex between agent and direct-path callers", async () => {
+    const manager = new WorktreeManager({ workspaceRoot: "/repo", wsHash: "abc123",
+      getSettings: () => settings({ worktree: { base: "/base" } }) });
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    let entered = false;
+    const first = manager.withAgentPathLock("worker", async () => { await held; });
+    const second = manager.withPathLock("/base/abc123/worker", async () => { entered = true; });
+    await Promise.resolve();
+    expect(entered).toBe(false);
+    release();
+    await Promise.all([first, second]);
+    expect(entered).toBe(true);
+  });
+
   describe("resolveBase", () => {
     it("uses the configured base, expanding a leading ~", () => {
       expect(resolveBase(settings({ worktree: { base: "~/wt" } }), {}, "/home/me")).toBe("/home/me/wt");

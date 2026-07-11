@@ -44,6 +44,7 @@ import { redactSecrets } from "./redact.js";
 import { hostActionName, type HostActionBrokerResult } from "../host-action/index.js";
 import type { DelegationGate } from "./delegationRecord.js";
 import { verifyTask, VerifyTaskStructuredError } from "./verifyTask.js";
+import type { DeliveryVerificationLeaseService } from "../delivery/verificationLease.js";
 import {
   buildApprovalRequest,
   writeApprovalRequest,
@@ -135,6 +136,8 @@ export interface BridgeDeps {
   runVerify?: (agent: string) => Promise<VerifyHandoff>;
   /** spec 362 — serialize verify_task's checkout dance with WorktreeManager ensure/remove for the same agent worktree. */
   withWorktreeLock?: <T>(agent: string, fn: () => Promise<T>) => Promise<T>;
+  /** spec 368 T9 — Workspace-owned canonical system verification lease lifecycle. */
+  deliveryVerification?: DeliveryVerificationLeaseService;
   /** spec 273 — attach one non-binary evidence record to a worktree agent. Enables attach_evidence. */
   attachEvidence?: (input: AttachEvidenceInput) => Promise<{ ok: boolean; id?: string; reason?: string }>;
   /** spec 273 — read a worktree agent's evidence records (fresh + stale-flagged). Enables list_evidence. */
@@ -1092,6 +1095,9 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     },
     async ({ delivery_id, agent, full, waivers }) => {
       try {
+        if (delivery_id && !deps.deliveryVerification) {
+          return fail(new Error("canonical Delivery verification is unavailable on this Bridge"));
+        }
         // t-0b5723 (F1) — anti-laundering (spec 351 pattern, mirrors request_human_approval): a requester
         // never resolves its own escalation. The guard itself lives in verifyTask, because it can only be
         // decided AFTER the delivery is resolved: it compares this Bridge-resolved caller against the
@@ -1109,6 +1115,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
             return !!state && !state.dead;
           },
           withWorktreeLock: deps.withWorktreeLock,
+          deliveryVerification: deps.deliveryVerification,
           verifierCaller: caller,
         });
         // t-7acc58 — an unmissable marker at the very top of the tool output text when waivers were

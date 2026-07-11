@@ -33,11 +33,32 @@ export interface DeliveryLeaseHolder {
   executionNonce?: string;
 }
 
+export interface DeliveryVerificationPriorLease {
+  state: "free" | "held";
+  holder?: DeliveryLeaseHolder;
+  expectedHeadSha?: string;
+  reason?: string;
+  changedAt: string;
+}
+
+export interface DeliveryVerificationIntent {
+  nonce: string;
+  ownerEpoch: string;
+  actor: DeliveryActor;
+  subjectSegmentId: string;
+  deliveredHeadSha: string;
+  temporaryCheckoutSha?: string;
+  startedAt: string;
+  operationId: string;
+  priorLease: DeliveryVerificationPriorLease;
+}
+
 export interface DeliveryLease {
   state: DeliveryLeaseState;
   holder?: DeliveryLeaseHolder;
   expectedHeadSha?: string;
   reason?: string;
+  verification?: DeliveryVerificationIntent;
   changedAt: string;
 }
 

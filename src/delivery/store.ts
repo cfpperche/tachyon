@@ -585,6 +585,25 @@ function validateRecord(record: Delivery): void {
     if (!event.id || eventIds.has(event.id)) throw new DeliveryInvariantError("Delivery event ids must be unique");
     eventIds.add(event.id);
   }
+  const verification = record.lease.verification;
+  if (record.lease.state === "verifying") {
+    if (!verification || !verification.nonce || !verification.ownerEpoch || !verification.subjectSegmentId
+      || !verification.deliveredHeadSha || !verification.startedAt || !verification.operationId
+      || !["free", "held"].includes(verification.priorLease?.state)) {
+      throw new DeliveryInvariantError("verifying lease requires a complete durable verification intent");
+    }
+    if (verification.priorLease.state === "held" && !verification.priorLease.holder) {
+      throw new DeliveryInvariantError("held verification snapshot requires its exact prior holder");
+    }
+    if (verification.priorLease.state === "free" && verification.priorLease.holder) {
+      throw new DeliveryInvariantError("free verification snapshot cannot carry a holder");
+    }
+    if (!same(record.lease.holder, verification.priorLease.holder)) {
+      throw new DeliveryInvariantError("verifying lease must retain the exact prior held holder only");
+    }
+  } else if (verification) {
+    throw new DeliveryInvariantError("verification intent is valid only while the lease is verifying");
+  }
 }
 
 function isPrefix<T>(before: T[], after: T[]): boolean {
