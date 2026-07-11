@@ -779,6 +779,17 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           .describe(
             "Grant this ad-hoc agent an EXISTING delegation's worktree/branch atomically (occupancy-checked, subset-authority, head-pinned) instead of a fresh one — for a fixer round on a prior delegation's own branch.",
           ),
+        delivery_join: z
+          .object({
+            delivery_id: z.string().min(1),
+            role: z.enum(["implementer", "reviewer", "fixer", "recovery"]),
+            owns_subset: z.array(z.string().min(1)).default([]),
+            expected_head: z.string().min(1),
+            principal: z.string().min(1).optional(),
+            operation_id: z.string().min(1),
+          })
+          .optional()
+          .describe("Join an existing canonical Delivery in its one worktree. Occupied/unavailable Deliveries refuse; no fallback worktree is created."),
         // spec 246 — the delegation contract (required for an ad-hoc AI agent unless skip_contract_reason is given).
         task: z.string().optional().describe("what the child must do — one substantive directive"),
         context: z.string().optional().describe("the situation/files/background the child needs to start"),
@@ -791,7 +802,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           .describe("bypass the contract gate for a trivial spawn — ≥10 chars explaining why; recorded + surfaced to the human"),
       },
     },
-    async ({ name, cmd, cwd, instructions, parent, worktree, gate, reuse_worktree, task, context, constraints, deliverable, done_when, skip_contract_reason }) => {
+    async ({ name, cmd, cwd, instructions, parent, worktree, gate, reuse_worktree, delivery_join, task, context, constraints, deliverable, done_when, skip_contract_reason }) => {
       try {
         // spec 351 — resolved caller wins: omitted parent -> the caller itself; a lineage lie is a
         // structured mismatch, closing t-d7b3a9's "guessed parent mis-rooting lineage" damage.
@@ -803,6 +814,9 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         // combination, but reject it here with a clearer message before any contract validation runs.
         if (reuse_worktree && (gate || worktree)) {
           return fail(new Error("spawn_agent cannot combine reuse_worktree with gate or worktree:true — reuse targets an EXISTING delegation's worktree, they create a NEW one"));
+        }
+        if (delivery_join && (reuse_worktree || gate || worktree)) {
+          return fail(new Error("spawn_agent cannot combine delivery_join with reuse_worktree, gate, or worktree:true — a Delivery already owns its worktree"));
         }
         // spec 246 — the contract gate fires only for an ad-hoc AI-agent spawn (the genuine "delegate a fresh
         // task to a new CLI" case). A declared agent (no cmd, carries config intent) and a terminal child
@@ -877,6 +891,16 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           gate: delegationGate,
           reuseWorktree: reuse_worktree
             ? { delegationId: reuse_worktree.delegation_id, agentName: reuse_worktree.agent_name, ownsSubset: reuse_worktree.owns_subset, expectedHead: reuse_worktree.expected_head }
+            : undefined,
+          deliveryJoin: delivery_join
+            ? {
+              deliveryId: delivery_join.delivery_id,
+              role: delivery_join.role,
+              ownsSubset: delivery_join.owns_subset,
+              expectedHead: delivery_join.expected_head,
+              principal: delivery_join.principal,
+              operationId: delivery_join.operation_id,
+            }
             : undefined,
         });
         return ok(`agent '${name}' spawned (session ${deps.manager.session(name)})`);

@@ -634,6 +634,12 @@ describe("AgentManager — session resume (spec 209)", () => {
       mintAgentToken?: (name: string) => Record<string, string>;
       revokeAgentToken?: (name: string) => void;
       removeHarnessHome?: (name: string) => void;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      prepareDeliveryJoin?: (name: string, request: any) => Promise<any>;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      confirmDeliveryJoin?: (name: string, request: any, prepared: any, pid?: number) => Promise<void>;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      failDeliveryJoin?: (name: string, request: any, prepared: any, error: unknown) => Promise<void>;
     } = {},
   ) {
     const ws = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-am-"));
@@ -731,9 +737,73 @@ describe("AgentManager — session resume (spec 209)", () => {
       mintAgentToken: opts.mintAgentToken,
       revokeAgentToken: opts.revokeAgentToken,
       removeHarnessHome: opts.removeHarnessHome,
+      prepareDeliveryJoin: opts.prepareDeliveryJoin,
+      confirmDeliveryJoin: opts.confirmDeliveryJoin,
+      failDeliveryJoin: opts.failDeliveryJoin,
     });
     return { manager, ledger, cmds, newSessionArgs, respawnArgs, startArgs, failRespawn, ws, hash };
   }
+
+  it("SDD 368 T6 reuses the prepared Delivery worktree and never invokes fresh-worktree resolution", async () => {
+    const prepared: string[] = [];
+    const confirmed: string[] = [];
+    let freshResolutions = 0;
+    const { manager, ledger, ws } = resumeHarness("agents: {}\n", {
+      resolveSpawnCwd: async () => { freshResolutions += 1; return null; },
+      prepareDeliveryJoin: async (name, request) => {
+        prepared.push(`${name}:${request.deliveryId}`);
+        return {
+          cwd: ws,
+          worktree: { path: ws, branch: "tachyon/delivery", tachyonCreatedBranch: true, baseRef: request.expectedHead, createdAt: "now" },
+          reservationNonce: "nonce",
+        };
+      },
+      confirmDeliveryJoin: async (name) => { confirmed.push(name); },
+    });
+    await manager.spawn("successor", {
+      cmd: "claude", parent: "boss",
+      deliveryJoin: { deliveryId: "d-one", role: "fixer", ownsSubset: ["src"], expectedHead: "abc", operationId: "join-1" },
+    });
+    expect(prepared).toEqual(["successor:d-one"]);
+    expect(confirmed).toEqual(["successor"]);
+    expect(freshResolutions).toBe(0);
+    expect(ledger.get("successor")?.cwd).toBe(ws);
+    expect(ledger.get("successor")?.worktree?.branch).toBe("tachyon/delivery");
+  });
+
+  it("SDD 368 T6 refuses unavailable joins without spawning or falling back", async () => {
+    let freshResolutions = 0;
+    const { manager, ledger } = resumeHarness("agents: {}\n", {
+      resolveSpawnCwd: async () => { freshResolutions += 1; return null; },
+      prepareDeliveryJoin: async () => { throw new Error("DELIVERY_LEASE_UNAVAILABLE"); },
+      confirmDeliveryJoin: async () => undefined,
+    });
+    await expect(manager.spawn("successor", {
+      cmd: "claude",
+      deliveryJoin: { deliveryId: "d-one", role: "fixer", ownsSubset: [], expectedHead: "abc", operationId: "join-2" },
+    })).rejects.toThrow("DELIVERY_LEASE_UNAVAILABLE");
+    expect(freshResolutions).toBe(0);
+    expect(ledger.get("successor")).toBeUndefined();
+  });
+
+  it("SDD 368 T6 terminates a spawned successor when durable confirmation fails", async () => {
+    const failed: string[] = [];
+    const { manager, ws } = resumeHarness("agents: {}\n", {
+      prepareDeliveryJoin: async (_name, request) => ({
+        cwd: ws,
+        worktree: { path: ws, branch: "tachyon/delivery", tachyonCreatedBranch: true, baseRef: request.expectedHead, createdAt: "now" },
+        reservationNonce: "nonce",
+      }),
+      confirmDeliveryJoin: async () => { throw new Error("confirmation lost"); },
+      failDeliveryJoin: async (name) => { failed.push(name); },
+    });
+    await expect(manager.spawn("successor", {
+      cmd: "claude",
+      deliveryJoin: { deliveryId: "d-one", role: "fixer", ownsSubset: [], expectedHead: "abc", operationId: "join-3" },
+    })).rejects.toThrow("confirmation lost");
+    expect(failed).toEqual(["successor"]);
+    expect(await manager.runningAgents()).not.toContain("successor");
+  });
 
   it("mint runtime (claude): spawns a NAMED session (-n) and records the name (spec 220)", async () => {
     const { manager, ledger, cmds, ws } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {

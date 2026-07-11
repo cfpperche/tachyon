@@ -147,6 +147,21 @@ export interface ReuseWorktreeRequest {
   expectedHead?: string;
 }
 
+export interface DeliveryJoinRequest {
+  deliveryId: string;
+  role: "implementer" | "reviewer" | "fixer" | "recovery";
+  ownsSubset: string[];
+  expectedHead: string;
+  principal?: string;
+  operationId: string;
+}
+
+export interface PreparedDeliveryJoin {
+  cwd: string;
+  worktree: WorktreeRecord;
+  reservationNonce: string;
+}
+
 export interface SpawnOptions {
   /** present = ad-hoc agent (not declared in tachyon.yml) */
   cmd?: string;
@@ -178,6 +193,8 @@ export interface SpawnOptions {
   /** t-815796 — reuse an EXISTING delegation's worktree/branch (fixer-on-own-branch) instead of creating
    *  a new one. Mutually exclusive with `gate` (which creates a fresh worktree) and `worktree` (ditto). */
   reuseWorktree?: ReuseWorktreeRequest;
+  /** SDD 368 T6 — join an existing canonical Delivery; never creates a fallback worktree. */
+  deliveryJoin?: DeliveryJoinRequest;
 }
 
 export interface AgentManagerOptions {
@@ -294,6 +311,9 @@ export interface AgentManagerOptions {
   /** t-815796 — git executor for reuse_worktree's branch-HEAD reads (occupancy has nothing to do with
    *  git otherwise). Defaults to a real `git` subprocess; injectable for tests. */
   gitExec?: GitExec;
+  prepareDeliveryJoin?: (name: string, request: DeliveryJoinRequest) => Promise<PreparedDeliveryJoin>;
+  confirmDeliveryJoin?: (name: string, request: DeliveryJoinRequest, prepared: PreparedDeliveryJoin, pid?: number) => Promise<void>;
+  failDeliveryJoin?: (name: string, request: DeliveryJoinRequest, prepared: PreparedDeliveryJoin, error: unknown) => Promise<void>;
   /** Runtime-native, non-inference capability validation performed before tmux or worktree creation. */
   launchPreflight?: RuntimeLaunchPreflightPort;
   /** Bounded, non-inference post-launch observation. Injectable for fake-timer tests. */
@@ -776,12 +796,37 @@ export class AgentManager {
    * exclusive with `gate`/`worktree`, which both create a FRESH worktree instead of reusing one.
    */
   async spawn(name: string, opts?: SpawnOptions): Promise<void> {
+    if (opts?.deliveryJoin) {
+      if (opts.gate || opts.worktree || opts.reuseWorktree) {
+        throw new Error("spawn_agent delivery_join cannot combine with gate, worktree:true, or reuse_worktree");
+      }
+      return this.spawnDeliveryJoin(name, opts, opts.deliveryJoin);
+    }
     if (opts?.reuseWorktree) {
       if (opts.gate) throw new Error("spawn_agent cannot combine reuse_worktree with gate — reuse targets an EXISTING delegation's worktree, gate creates a NEW one");
       if (opts.worktree) throw new Error("spawn_agent cannot combine reuse_worktree with worktree:true — reuse already grants an isolated worktree");
       return this.spawnReuseWorktree(name, opts, opts.reuseWorktree);
     }
     return this.spawnCore(name, opts);
+  }
+
+  private async spawnDeliveryJoin(name: string, opts: SpawnOptions, request: DeliveryJoinRequest): Promise<void> {
+    if (!this.opts.prepareDeliveryJoin || !this.opts.confirmDeliveryJoin) {
+      throw new Error("DELIVERY_LEASE_UNAVAILABLE: Delivery join wiring is unavailable");
+    }
+    const prepared = await this.opts.prepareDeliveryJoin(name, request);
+    let spawned = false;
+    try {
+      await this.spawnCore(name, opts, { cwd: prepared.cwd, worktree: prepared.worktree });
+      spawned = true;
+      await this.opts.confirmDeliveryJoin(name, request, prepared, await this.tryPanePid(name));
+    } catch (error) {
+      if (spawned) {
+        try { await this.kill(name); } catch { /* compensation below remains authoritative and fail-closed */ }
+      }
+      try { await this.opts.failDeliveryJoin?.(name, request, prepared, error); } catch { /* preserve the launch/confirm failure */ }
+      throw error;
+    }
   }
 
   /**
