@@ -38,7 +38,7 @@ function fixture() {
 
 function heldFixture() {
   const result = fixture();
-  result.input.segments![0] = { ...result.input.segments![0]!, releasedAt: undefined, releasedHeadSha: undefined, outcome: undefined };
+  result.input.segments![0] = { ...result.input.segments![0]!, grantedHeadSha: "b", releasedAt: undefined, releasedHeadSha: undefined, outcome: undefined };
   result.input.lease = { state: "held", holder: { segmentId: "seg-0", executionAgent: "worker",
     process: { pid: 7, processStart: "10", bootId: "boot" }, executionNonce: "exec-0" }, expectedHeadSha: "b", changedAt: now };
   return result;
@@ -750,14 +750,17 @@ describe("DeliveryLeaseService dead-holder reconciliation (SDD 368 T11)", () => 
   });
   const makeService = (store: DeliveryStore, worktree: string, options: {
     observation?: { state: "alive" } | { state: "gone" } | { state: "unknown"; reason: string };
-    observe?: (identity: unknown) => Promise<{ state: "alive" } | { state: "gone" } | { state: "unknown"; reason: string }>;
+    observe?: (identity: unknown) => Promise<unknown>;
+    omitObserver?: boolean;
     fence?: ProcessFencePort;
     inspect?: () => { headSha: string; clean: boolean };
     withLock?: <T>(path: string, fn: () => Promise<T>) => Promise<T>;
   } = {}) => new DeliveryLeaseService({
     store,
     processFence: options.fence ?? certifiedFence,
-    processObserver: { observe: options.observe ?? (async () => options.observation ?? { state: "gone" }) },
+    ...(options.omitObserver ? {} : { processObserver: {
+      observe: async (identity: unknown) => await (options.observe ?? (async () => options.observation ?? { state: "gone" }))(identity) as never,
+    } }),
     canonicalWorktreeFor: () => worktree,
     readHead: () => "b",
     inspectWorktree: options.inspect ?? (() => ({ headSha: "b", clean: true })),
@@ -940,5 +943,119 @@ describe("DeliveryLeaseService dead-holder reconciliation (SDD 368 T11)", () => 
       .reconcileHolder(request(outside.worktree, "outside"));
     expect(assertOutside).toHaveBeenCalledTimes(2);
     expect(fence.freeze).not.toHaveBeenCalled(); expect(fence.terminate).not.toHaveBeenCalled();
+  });
+
+  it.each(["missing-holder", "reservation-nonce", "grant-boundary"] as const)("quarantines invalid held boundary: %s", async (kind) => {
+    const { store, worktree, input } = heldFixture();
+    if (kind === "missing-holder") delete input.lease!.holder;
+    if (kind === "reservation-nonce") input.lease!.holder!.reservationNonce = "stale-reservation";
+    if (kind === "grant-boundary") input.segments![0]!.grantedHeadSha = "a";
+    await store.create(input);
+    await expect(makeService(store, worktree).reconcileHolder(request(worktree, `boundary-${kind}`)))
+      .rejects.toMatchObject({ code: "DELIVERY_QUARANTINED" });
+    const delivery = await store.get("d-lease");
+    expect(delivery!.lease.state).toBe("quarantined");
+    expect(delivery!.lease.holder).toEqual(input.lease!.holder);
+    expect(delivery!.segments[0]!.releasedAt).toBeUndefined();
+  });
+
+  it.each([
+    ["missing observer", { omitObserver: true }],
+    ["foreign observer state", { observe: async () => ({ state: "dead" }) }],
+    ["blank unknown reason", { observe: async () => ({ state: "unknown", reason: "" }) }],
+  ] as const)("quarantines %s without invoking proveEmpty", async (_label, observerOptions) => {
+    const { store, worktree, input } = heldFixture(); await store.create(input);
+    const fence: ProcessFencePort = { ...certifiedFence, proveEmpty: vi.fn() };
+    await expect(makeService(store, worktree, { ...observerOptions, fence }).reconcileHolder(request(worktree, `observer-${_label.replace(/ /g, "-")}`)))
+      .rejects.toMatchObject({ code: "DELIVERY_QUARANTINED" });
+    expect(fence.proveEmpty).not.toHaveBeenCalled();
+  });
+
+  it("revalidates the exact live open tail and quarantines tail-only drift", async () => {
+    const { store, worktree, input } = heldFixture(); await store.create(input);
+    const lease = makeService(store, worktree, { observe: async () => {
+      const current = await store.get("d-lease");
+      await store.update("d-lease", current!.version, (record) => { record.segments[0]!.grantedHeadSha = "a"; return record; });
+      return { state: "alive" };
+    } });
+    await expect(lease.reconcileHolder(request(worktree, "live-tail-drift"))).rejects.toMatchObject({ code: "DELIVERY_QUARANTINED" });
+    expect((await store.get("d-lease"))!.lease.state).toBe("quarantined");
+  });
+
+  it.each(["live", "interrupt", "quarantine"] as const)("revalidates canonical authority during the %s locked phase", async (phase) => {
+    const { store, worktree, input } = heldFixture(); await store.create(input);
+    let resolutions = 0;
+    const deps = makeService(store, worktree, {
+      observation: phase === "live" ? { state: "alive" } : phase === "quarantine" ? { state: "unknown", reason: "uncertain" } : { state: "gone" },
+    });
+    const internals = deps as unknown as { deps: { canonicalWorktreeFor: () => string } };
+    internals.deps.canonicalWorktreeFor = () => ++resolutions === 1 ? worktree : path.join(worktree, "moved");
+    await expect(deps.reconcileHolder(request(worktree, `canonical-${phase}`))).rejects.toMatchObject({ code: "DELIVERY_WORKTREE_MISMATCH" });
+    expect((await store.get("d-lease"))!.lease.state).toBe("held");
+  });
+
+  it.each(["pending", "draining"] as const)("preserves a competing %s transition as retryable occupancy", async (state) => {
+    const { store, worktree, input } = heldFixture(); await store.create(input);
+    const lease = makeService(store, worktree, { observe: async () => {
+      const current = await store.get("d-lease");
+      await store.update("d-lease", current!.version, (record) => {
+        record.lease = { ...record.lease, state };
+        return record;
+      });
+      return { state: "gone" };
+    } });
+    await expect(lease.reconcileHolder(request(worktree, `inflight-${state}`))).rejects.toMatchObject({ code: "WORKTREE_OCCUPIED", retryable: true });
+    expect((await store.get("d-lease"))!.lease.state).toBe(state);
+  });
+
+  it("preserves a verifying in-flight state as retryable occupancy", async () => {
+    const { store, worktree, input } = fixture();
+    input.lease = { state: "verifying", changedAt: now, verification: {
+      nonce: "verify-nonce", ownerEpoch: "epoch", actor, subjectSegmentId: "seg-0", deliveredHeadSha: "b",
+      startedAt: now, operationId: "competing-verification", priorLease: { state: "free", changedAt: now },
+    } };
+    await store.create(input);
+    await expect(makeService(store, worktree).reconcileHolder(request(worktree, "inflight-verifying")))
+      .rejects.toMatchObject({ code: "WORKTREE_OCCUPIED", retryable: true });
+    expect((await store.get("d-lease"))!.lease.state).toBe("verifying");
+  });
+
+  it("quarantines a holder that disappears during observation and replays a lost quarantine response", async () => {
+    const { store, worktree, input } = heldFixture(); await store.create(input);
+    const update = store.update.bind(store); let lost = false;
+    store.update = async (...args: Parameters<DeliveryStore["update"]>) => {
+      const result = await update(...args);
+      if (!lost && args[3]?.operationId === "holder-disappeared:quarantine") { lost = true; throw new Error("quarantine response lost"); }
+      return result;
+    };
+    const lease = makeService(store, worktree, { observe: async () => {
+      const current = await store.get("d-lease");
+      await update("d-lease", current!.version, (record) => { delete record.lease.holder; return record; });
+      return { state: "gone" };
+    } });
+    const error = await lease.reconcileHolder(request(worktree, "holder-disappeared")).catch((caught) => caught);
+    expect(error).toMatchObject({ code: "DELIVERY_QUARANTINED" });
+    expect((await store.get("d-lease"))!.lease).toMatchObject({ state: "quarantined" });
+    expect((await store.get("d-lease"))!.lease.holder).toBeUndefined();
+    expect((await store.get("d-lease"))!.events.filter((event) => event.type === "holder_reconcile_quarantined")).toHaveLength(1);
+  });
+
+  it.each(["interrupt", "quarantine"] as const)("rejects malformed %s receipt projections", async (terminal) => {
+    const { store, worktree, input } = heldFixture(); await store.create(input);
+    const operationId = `receipt-${terminal}`;
+    const lease = makeService(store, worktree, { observation: terminal === "interrupt" ? { state: "gone" } : { state: "unknown", reason: "uncertain" } });
+    await lease.reconcileHolder(request(worktree, operationId)).catch(() => undefined);
+    const getResult = store.getOperationResult.bind(store);
+    store.getOperationResult = async (...args: Parameters<DeliveryStore["getOperationResult"]>) => {
+      const result = await getResult(...args);
+      if (result && args[0] === `${operationId}:${terminal}`) {
+        const malformed = structuredClone(result);
+        if (terminal === "interrupt") malformed.segments.at(-1)!.outcome = "completed";
+        else malformed.events.find((event) => event.type === "holder_reconcile_quarantined")!.detail!.holder = { segmentId: "wrong" };
+        return malformed;
+      }
+      return result;
+    };
+    await expect(lease.reconcileHolder(request(worktree, operationId))).rejects.toThrow(/does not match/);
   });
 });
