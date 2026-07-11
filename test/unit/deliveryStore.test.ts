@@ -81,8 +81,9 @@ describe("DeliveryStore SQLite (spec 368)", () => {
   it("replays a committed operation receipt without invoking the mutation twice", async () => {
     const store = new DeliveryStore(root(), { now: () => now });
     const firstCreate = await store.create(input("d-retry", "op-create"));
-    expect(await store.create({ ...input("d-retry", "op-create"), contract: { ...input().contract, baseSha: "ignored-on-replay" } }))
-      .toEqual(firstCreate);
+    expect(await store.create(input("d-retry", "op-create"))).toEqual(firstCreate);
+    await expect(store.create({ ...input("d-retry", "op-create"), contract: { ...input().contract, baseSha: "collision" } }))
+      .rejects.toMatchObject({ name: "DeliveryInvariantError" });
 
     let calls = 0;
     const mutate = (record: Delivery) => {
@@ -90,8 +91,8 @@ describe("DeliveryStore SQLite (spec 368)", () => {
       record.events.push({ id: "event-retry", at: now, type: "once", by: actor });
       return record;
     };
-    const committed = await store.update("d-retry", 1, mutate, { operationId: "op-update" });
-    const replayed = await store.update("d-retry", 1, mutate, { operationId: "op-update" });
+    const committed = await store.update("d-retry", 1, mutate, { operationId: "op-update", intent: { eventId: "event-retry" } });
+    const replayed = await store.update("d-retry", 1, mutate, { operationId: "op-update", intent: { eventId: "event-retry" } });
 
     expect(replayed).toEqual(committed);
     expect(calls).toBe(1);

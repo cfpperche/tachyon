@@ -1,8 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
+import { createRequire } from "node:module";
 import { isDeepStrictEqual } from "node:util";
-import { DatabaseSync } from "node:sqlite";
 import {
   DELIVERY_SCHEMA_VERSION,
   type DelegationSegment,
@@ -65,6 +65,11 @@ export interface DeliveryStoreOptions {
 }
 
 type SqlRow = Record<string, unknown>;
+type DatabaseSync = import("node:sqlite").DatabaseSync;
+type DatabaseSyncConstructor = new (location: string, options?: { timeout?: number }) => DatabaseSync;
+
+const legacyMigrationKey = "legacy_json_migration";
+const legacyMigrationComplete = "complete-v1";
 
 const STORE_SCHEMA = `
   CREATE TABLE IF NOT EXISTS delivery_store_metadata (
@@ -81,6 +86,7 @@ const STORE_SCHEMA = `
     operation_kind TEXT NOT NULL,
     delivery_id TEXT NOT NULL,
     result_json TEXT NOT NULL,
+    intent_fingerprint TEXT NOT NULL,
     committed_at TEXT NOT NULL
   ) STRICT;
 `;
@@ -94,11 +100,13 @@ export class DeliveryStore {
   /** Kept as a compatibility alias for callers that displayed the old backing location. */
   readonly dir: string;
   private readonly capability: DeliveryStoreCapability;
+  private readonly Database: DatabaseSyncConstructor;
 
   constructor(readonly workspaceRoot: string, private readonly opts: DeliveryStoreOptions = {}) {
     this.databasePath = path.join(workspaceRoot, ".tachyon", "deliveries-v2.sqlite3");
     this.dir = path.dirname(this.databasePath);
     this.capability = this.validateCapability();
+    this.Database = loadDatabaseSync();
   }
 
   async list(): Promise<Delivery[]> {
@@ -154,7 +162,8 @@ export class DeliveryStore {
 
     return this.writeTransaction((db) => {
       // When id was generated, the receipt is how a caller learns that id after response loss.
-      const replay = input.operationId && this.readReceipt(db, input.operationId, "create", input.id);
+      const fingerprint = fingerprintIntent({ kind: "create", input: { ...input, operationId: undefined } });
+      const replay = input.operationId && this.readReceipt(db, input.operationId, "create", fingerprint, input.id);
       if (replay) return replay;
       try {
         db.prepare("INSERT INTO deliveries(id, record_json) VALUES (?, ?)").run(id, JSON.stringify(record));
@@ -162,7 +171,7 @@ export class DeliveryStore {
         if (isConstraintError(error)) throw new DeliveryInvariantError(`Delivery '${id}' already exists`);
         throw error;
       }
-      if (input.operationId) this.writeReceipt(db, input.operationId, "create", record, now);
+      if (input.operationId) this.writeReceipt(db, input.operationId, "create", fingerprint, record, now);
       return structuredClone(record);
     });
   }
@@ -175,12 +184,16 @@ export class DeliveryStore {
   ): Promise<Delivery> {
     assertDeliveryId(id);
     assertOperationId(options.operationId);
+    if (options.operationId !== undefined && options.intent === undefined) {
+      throw new DeliveryInvariantError("an explicit serializable intent is required with an update operation id");
+    }
+    const fingerprint = fingerprintIntent({ kind: "update", id, expectedVersion, intent: options.intent });
 
     // The caller-controlled computation intentionally runs without a SQLite transaction.
     const observed = await this.get(id);
     if (!observed) throw new DeliveryNotFoundError(id);
     if (observed.version !== expectedVersion) {
-      const replay = options.operationId && this.withDatabase((db) => this.readReceipt(db, options.operationId!, "update", id));
+      const replay = options.operationId && this.withDatabase((db) => this.readReceipt(db, options.operationId!, "update", fingerprint, id));
       if (replay) return replay;
       throw new DeliveryVersionConflictError(id, expectedVersion, observed.version);
     }
@@ -189,7 +202,7 @@ export class DeliveryStore {
     const updatedAt = this.now();
 
     return this.writeTransaction((db) => {
-      const replay = options.operationId && this.readReceipt(db, options.operationId, "update", id);
+      const replay = options.operationId && this.readReceipt(db, options.operationId, "update", fingerprint, id);
       if (replay) return replay;
       const row = db.prepare("SELECT record_json FROM deliveries WHERE id = ?").get(id) as SqlRow | undefined;
       if (!row) throw new DeliveryNotFoundError(id);
@@ -203,7 +216,7 @@ export class DeliveryStore {
       validateRecord(committed);
       const changed = db.prepare("UPDATE deliveries SET record_json = ? WHERE id = ?").run(JSON.stringify(committed), id);
       if (Number(changed.changes) !== 1) throw new DeliveryNotFoundError(id);
-      if (options.operationId) this.writeReceipt(db, options.operationId, "update", committed, committed.updatedAt);
+      if (options.operationId) this.writeReceipt(db, options.operationId, "update", fingerprint, committed, committed.updatedAt);
       return structuredClone(committed);
     });
   }
@@ -231,9 +244,17 @@ export class DeliveryStore {
     fs.mkdirSync(path.dirname(this.databasePath), { recursive: true });
     let db: DatabaseSync | undefined;
     try {
-      db = new DatabaseSync(this.databasePath, { timeout: this.opts.busyTimeoutMs ?? 0 });
+      db = new this.Database(this.databasePath, { timeout: this.opts.busyTimeoutMs ?? 0 });
       db.exec("PRAGMA journal_mode=DELETE; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON;");
       db.exec(STORE_SCHEMA);
+      const receiptColumns = db.prepare("PRAGMA table_info(delivery_operation_receipts)").all() as SqlRow[];
+      if (!receiptColumns.some((column) => column.name === "intent_fingerprint")) {
+        const receiptCount = db.prepare("SELECT count(*) AS count FROM delivery_operation_receipts").get() as SqlRow;
+        if (Number(receiptCount.count) !== 0) {
+          throw new DeliveryInvariantError("existing operation receipts lack intent fingerprints");
+        }
+        db.exec("ALTER TABLE delivery_operation_receipts ADD COLUMN intent_fingerprint TEXT");
+      }
       const settings = db.prepare(`
         SELECT
           (SELECT value FROM delivery_store_metadata WHERE key = 'schema_version') AS schema_version,
@@ -244,12 +265,41 @@ export class DeliveryStore {
       if (settings.journal_mode !== "delete" || Number(settings.synchronous) !== 2) {
         throw new DeliveryStoreUnsupportedError("SQLite DELETE journal with FULL synchronous durability could not be established");
       }
+      this.migrateLegacyJson(db);
       return fn(db);
     } catch (error) {
       if (isBusyError(error)) throw new DeliveryStoreBusyError(this.databasePath);
       throw error;
     } finally {
       db?.close();
+    }
+  }
+
+  private migrateLegacyJson(db: DatabaseSync): void {
+    const legacyDir = path.join(this.workspaceRoot, ".tachyon", "deliveries");
+    const archiveDir = path.join(this.workspaceRoot, ".tachyon", "deliveries.migrated-v1");
+    const marker = db.prepare("SELECT value FROM delivery_store_metadata WHERE key = ?").get(legacyMigrationKey) as SqlRow | undefined;
+    if (marker && marker.value !== legacyMigrationComplete) {
+      throw new DeliveryInvariantError("legacy Delivery migration has an unsupported or partial state");
+    }
+    if (!marker) {
+      const records = readLegacyRecords(legacyDir);
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        const insert = db.prepare("INSERT INTO deliveries(id, record_json) VALUES (?, ?)");
+        for (const record of records) insert.run(record.id, JSON.stringify(record));
+        db.prepare("INSERT INTO delivery_store_metadata(key, value) VALUES (?, ?)")
+          .run(legacyMigrationKey, legacyMigrationComplete);
+        db.exec("COMMIT");
+      } catch (error) {
+        if (db.isTransaction) db.exec("ROLLBACK");
+        throw new DeliveryInvariantError(`legacy Delivery migration refused: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+    if (fs.existsSync(legacyDir)) {
+      verifyLegacyMatchesDatabase(db, legacyDir);
+      if (fs.existsSync(archiveDir)) throw new DeliveryInvariantError("legacy Delivery migration archive already exists");
+      fs.renameSync(legacyDir, archiveDir);
     }
   }
 
@@ -267,23 +317,23 @@ export class DeliveryStore {
     });
   }
 
-  private readReceipt(db: DatabaseSync, operationId: string, kind: string, deliveryId?: string): Delivery | undefined {
+  private readReceipt(db: DatabaseSync, operationId: string, kind: string, fingerprint: string, deliveryId?: string): Delivery | undefined {
     const row = db.prepare(`
-      SELECT operation_kind, delivery_id, result_json
+      SELECT operation_kind, delivery_id, result_json, intent_fingerprint
       FROM delivery_operation_receipts WHERE operation_id = ?
     `).get(operationId) as SqlRow | undefined;
     if (!row) return undefined;
-    if (row.operation_kind !== kind || (deliveryId !== undefined && row.delivery_id !== deliveryId)) {
+    if (row.operation_kind !== kind || row.intent_fingerprint !== fingerprint || (deliveryId !== undefined && row.delivery_id !== deliveryId)) {
       throw new DeliveryInvariantError(`operation id '${operationId}' was already used for another mutation`);
     }
     return structuredClone(parseRecord(String(row.result_json)));
   }
 
-  private writeReceipt(db: DatabaseSync, operationId: string, kind: string, result: Delivery, committedAt: string): void {
+  private writeReceipt(db: DatabaseSync, operationId: string, kind: string, fingerprint: string, result: Delivery, committedAt: string): void {
     db.prepare(`
-      INSERT INTO delivery_operation_receipts(operation_id, operation_kind, delivery_id, result_json, committed_at)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(operationId, kind, result.id, JSON.stringify(result), committedAt);
+      INSERT INTO delivery_operation_receipts(operation_id, operation_kind, delivery_id, result_json, intent_fingerprint, committed_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(operationId, kind, result.id, JSON.stringify(result), fingerprint, committedAt);
   }
 
   private now(): string { return this.opts.now?.() ?? new Date().toISOString(); }
@@ -307,6 +357,70 @@ function validateKnownLocalDomain(context: DeliveryStoreCapabilityContext): Deli
   return domain
     ? { supported: true, domain }
     : { supported: false, reason: `filesystem locking domain 0x${context.filesystemType.toString(16)} is not certified local` };
+}
+
+function loadDatabaseSync(): DatabaseSyncConstructor {
+  try {
+    const require = createRequire(path.join(process.cwd(), "tachyon-delivery-store-loader.cjs"));
+    const sqlite = require("node:sqlite") as { DatabaseSync?: DatabaseSyncConstructor };
+    if (typeof sqlite.DatabaseSync !== "function") throw new Error("DatabaseSync is unavailable");
+    return sqlite.DatabaseSync;
+  } catch (error) {
+    throw new DeliveryStoreUnsupportedError(`node:sqlite is unavailable: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+function readLegacyRecords(legacyDir: string): Delivery[] {
+  if (!fs.existsSync(legacyDir)) return [];
+  const entries = fs.readdirSync(legacyDir, { withFileTypes: true });
+  const records: Delivery[] = [];
+  for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+    if (entry.isDirectory() && entry.name === ".locks") continue;
+    if (!entry.isFile() || !entry.name.endsWith(".json")) {
+      throw new DeliveryInvariantError(`unexpected legacy Delivery entry '${entry.name}'`);
+    }
+    const file = path.join(legacyDir, entry.name);
+    let record: Delivery;
+    try {
+      record = parseRecord(fs.readFileSync(file, "utf8"));
+    } catch (error) {
+      throw new DeliveryInvariantError(`corrupt legacy Delivery '${file}': ${error instanceof Error ? error.message : String(error)}`);
+    }
+    if (`${record.id}.json` !== entry.name) {
+      throw new DeliveryInvariantError(`legacy Delivery filename '${entry.name}' does not match id '${record.id}'`);
+    }
+    records.push(record);
+  }
+  return records;
+}
+
+function verifyLegacyMatchesDatabase(db: DatabaseSync, legacyDir: string): void {
+  for (const legacy of readLegacyRecords(legacyDir)) {
+    const row = db.prepare("SELECT record_json FROM deliveries WHERE id = ?").get(legacy.id) as SqlRow | undefined;
+    if (!row || !same(parseRecord(String(row.record_json)), legacy)) {
+      throw new DeliveryInvariantError(`legacy Delivery '${legacy.id}' does not match the durable migrated record`);
+    }
+  }
+}
+
+function fingerprintIntent(value: unknown): string {
+  return createHash("sha256").update(canonicalJson(value)).digest("hex");
+}
+
+function canonicalJson(value: unknown): string {
+  if (value === undefined) return "null";
+  if (value === null || typeof value === "boolean" || typeof value === "string") return JSON.stringify(value);
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) throw new DeliveryInvariantError("operation intent must contain only finite JSON numbers");
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (typeof value === "object") {
+    const object = value as Record<string, unknown>;
+    return `{${Object.keys(object).filter((key) => object[key] !== undefined).sort()
+      .map((key) => `${JSON.stringify(key)}:${canonicalJson(object[key])}`).join(",")}}`;
+  }
+  throw new DeliveryInvariantError("operation intent must be JSON-serializable");
 }
 
 function parseRecord(json: string): Delivery {

@@ -104,6 +104,8 @@ export interface DeliveryCreateInput {
 export interface DeliveryMutationOptions {
   /** Stable caller-supplied key used to replay a committed mutation exactly once. */
   operationId?: string;
+  /** Serializable, stable description of the caller's intended mutation. Required with operationId. */
+  intent?: unknown;
 }
 
 export interface DeliveryStoreCapabilityContext {
