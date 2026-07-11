@@ -556,6 +556,32 @@ file does not invalidate; holder drift and fence unknown quarantine; lost drain/
 and no process-fence or spawn work occurs under durable locks. Run the focused DeliveryLeaseService + AgentManager
 suites serially, `npm run typecheck`, `git diff --check`, and `npm run verify:full`.
 
+### T10 R1 correction contract — effective reviewer argv
+
+R1 report `5fc0b45` correctly proves that whitespace scanning plus end-appending can place a nominal safety flag
+after `--` or on another shell command. Replace that transformation with the existing launch-preflight shell model;
+do not grow a second regex/tokenizer. The parser may expose the runtime token's exact source end and whether every
+word is literal/static, while preserving its current callers. Reviewer commands must refuse when parsing is
+ambiguous, when shell control/redirection/substitution/expansion can change the effective argv, or when one supported
+runtime argv cannot be proved. Literal control-looking text inside a single-quoted positional argument is data, not
+composition.
+
+For Codex, Claude, and Grok, inspect runtime options only before the first literal `--`. Recognize both Codex
+`--sandbox[=]` and `-s[=]`; accept only `read-only`, and refuse `--full-auto` plus active bypass flags. For Claude and
+Grok, accept only `--permission-mode[=]plan` and refuse active bypass flags. Bypass-looking text after `--` is
+positional and does not itself refuse. If no safe mode is present, insert the fixed safety option immediately after
+the structurally located runtime binary, so it is necessarily before every runtime argument and `--`; never append
+it to the command tail. Preserve an already-safe literal command byte-for-byte. The exact transformed command remains
+the command passed into spawn composition and persisted in the ledger.
+
+The R1 fix may additionally own `src/runtime/launchPreflight.ts` and
+`test/unit/runtimeLaunchPreflight.test.ts` solely for shared structural-token metadata; no other scope expands. Add
+production-path regressions for quoted safe values, `--`, `env`/`npx` wrappers, pipelines/`&&`/`;`/redirection,
+command or parameter expansion, Codex short sandbox and `--full-auto`, bypass-looking positional text, and a real
+shell argv-capture executable proving the supported runtime—not a sibling process—receives the inserted flag. String
+containment alone is not acceptance evidence. Re-run the focused AgentManager + launch-preflight + lease suites
+serially, `npm run typecheck`, `git diff --check`, and `npm run verify:full`.
+
 ### T1 lock protocol redesign — SQLite decision
 
 Five adversarial rounds found successive crash windows in application-managed owner/fence/claim lockfiles. The
