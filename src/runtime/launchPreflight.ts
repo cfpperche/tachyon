@@ -16,6 +16,10 @@ export interface ParsedLaunchCommand {
   /** The executable and fixed arguments used to probe the same launch path. */
   probeBinary: string;
   probeArgv: string[];
+  /** Exact source offset immediately after the runtime executable token. */
+  runtimeTokenEnd: number;
+  /** False when shell expansion could change any effective argv word. */
+  allWordsLiteral: boolean;
   model?: string;
 }
 
@@ -46,21 +50,41 @@ export class RuntimeLaunchPreflightError extends Error {
 /** A deliberately small, non-executing shell tokenizer. Composition/substitution is ambiguous and rejected. */
 export function parseLaunchCommand(input: string): ParsedLaunchCommand | undefined {
   const tokens: string[] = [];
+  const tokenEnds: number[] = [];
+  const literalWords: boolean[] = [];
   let token = "";
+  let tokenStarted = false;
+  let tokenLiteral = true;
   let quote: "'" | '"' | undefined;
   let escaped = false;
+  const pushToken = (end: number) => {
+    if (!tokenStarted) return;
+    tokens.push(token); tokenEnds.push(end); literalWords.push(tokenLiteral);
+    token = ""; tokenStarted = false; tokenLiteral = true;
+  };
   for (let i = 0; i < input.length; i++) {
     const ch = input[i]!;
-    if (escaped) { token += ch; escaped = false; continue; }
-    if (ch === "\\" && quote !== "'") { escaped = true; continue; }
-    if (quote) { if (ch === quote) quote = undefined; else token += ch; continue; }
-    if (ch === "'" || ch === '"') { quote = ch; continue; }
-    if (/\s/.test(ch)) { if (token) { tokens.push(token); token = ""; } continue; }
-    if (";&|<>`".includes(ch) || (ch === "$" && input[i + 1] === "(")) return undefined;
+    if (escaped) { tokenStarted = true; token += ch; escaped = false; continue; }
+    if (ch === "\\" && quote !== "'") { tokenStarted = true; escaped = true; continue; }
+    if (quote) {
+      if (ch === quote) quote = undefined;
+      else {
+        if (quote === '"' && (ch === "`" || (ch === "$" && input[i + 1] === "("))) return undefined;
+        if (quote === '"' && ch === "$") tokenLiteral = false;
+        tokenStarted = true; token += ch;
+      }
+      continue;
+    }
+    if (ch === "'" || ch === '"') { tokenStarted = true; quote = ch; continue; }
+    if (ch === "\n" || ch === "\r") return undefined;
+    if (/\s/.test(ch)) { pushToken(i); continue; }
+    if (";&|<>`()!#".includes(ch) || (ch === "$" && input[i + 1] === "(")) return undefined;
+    if (ch === "$" || "*?[~{}".includes(ch)) tokenLiteral = false;
+    tokenStarted = true;
     token += ch;
   }
   if (escaped || quote) return undefined;
-  if (token) tokens.push(token);
+  pushToken(input.length);
   let start = 0;
   while (start < tokens.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[start]!)) start++;
   if (start >= tokens.length) return undefined;
@@ -84,6 +108,7 @@ export function parseLaunchCommand(input: string): ParsedLaunchCommand | undefin
     base = tokens[start]!.split("/").pop() ?? "";
   }
   const binary = tokens[start]!;
+  const runtimeTokenEnd = tokenEnds[start]!;
   const argv = tokens.slice(start + 1);
   let model: string | undefined;
   for (let i = 0; i < argv.length; i++) {
@@ -101,6 +126,8 @@ export function parseLaunchCommand(input: string): ParsedLaunchCommand | undefin
     argv,
     probeBinary: tokens[probeStart]!,
     probeArgv: tokens.slice(probeStart + 1, start + 1),
+    runtimeTokenEnd,
+    allWordsLiteral: literalWords.every(Boolean),
     ...(model ? { model } : {}),
   };
 }

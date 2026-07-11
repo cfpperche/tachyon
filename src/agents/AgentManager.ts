@@ -163,31 +163,40 @@ export interface PreparedDeliveryJoin {
 }
 
 function reviewerSafeCommand(cmd: string): { cmd: string; advisory?: string } {
-  const runtime = adapterFor(cmd)?.runtime;
-  const tokens = cmd.trim().split(/\s+/);
-  const valueFor = (flag: string): string | undefined => {
-    const direct = tokens.find((token) => token.startsWith(`${flag}=`));
-    if (direct) return direct.slice(flag.length + 1);
-    const index = tokens.indexOf(flag);
-    return index >= 0 ? tokens[index + 1] : undefined;
+  const parsed = parseLaunchCommand(cmd);
+  if (!parsed || !parsed.allWordsLiteral) throw new Error("reviewer command is structurally ambiguous or uses shell expansion");
+  const runtime = adapterFor(parsed.binary)?.runtime;
+  const boundary = parsed.argv.indexOf("--");
+  const options = boundary < 0 ? parsed.argv : parsed.argv.slice(0, boundary);
+  const has = (flag: string) => options.includes(flag) || options.some((token) => token.startsWith(`${flag}=`));
+  const valuesFor = (flags: string[]): string[] => {
+    const values: string[] = [];
+    for (let index = 0; index < options.length; index++) {
+      const arg = options[index]!;
+      const flag = flags.find((candidate) => arg === candidate || arg.startsWith(`${candidate}=`));
+      if (!flag) continue;
+      const value = arg === flag ? options[++index] : arg.slice(flag.length + 1);
+      if (!value || value.startsWith("-")) throw new Error(`reviewer command has an incomplete ${flag} mode`);
+      values.push(value);
+    }
+    return values;
   };
-  const has = (flag: string) => tokens.includes(flag) || tokens.some((token) => token.startsWith(`${flag}=`));
-  if (tokens.some((token) => token.startsWith("--dangerously-")) || has("--yolo") || has("--always-approve") || has("--allow-all")) {
-    throw new Error("reviewer command refuses bypass flags");
-  }
+  const bypass = options.some((token) => token.startsWith("--dangerously-"))
+    || has("--yolo") || has("--always-approve") || has("--allow-all");
+  if (bypass) throw new Error("reviewer command refuses bypass flags");
+  const insert = (flag: string) => `${cmd.slice(0, parsed.runtimeTokenEnd)} ${flag}${cmd.slice(parsed.runtimeTokenEnd)}`;
   if (runtime === "codex") {
-    const sandbox = valueFor("--sandbox");
-    if (has("--sandbox") && !sandbox) throw new Error("reviewer command has an incomplete --sandbox mode");
-    if (sandbox && sandbox !== "read-only") throw new Error(`reviewer command conflicts with --sandbox ${sandbox}`);
-    return { cmd: sandbox ? cmd : `${cmd} --sandbox read-only` };
+    if (has("--full-auto")) throw new Error("reviewer command refuses --full-auto");
+    const sandboxes = valuesFor(["--sandbox", "-s"]);
+    if (sandboxes.some((sandbox) => sandbox !== "read-only")) throw new Error(`reviewer command conflicts with sandbox mode ${sandboxes.join(",")}`);
+    return { cmd: sandboxes.length ? cmd : insert("--sandbox read-only") };
   }
   if (runtime === "claude" || runtime === "grok") {
-    const permission = valueFor("--permission-mode");
-    if (has("--permission-mode") && !permission) throw new Error("reviewer command has an incomplete --permission-mode");
-    if (permission && permission !== "plan") throw new Error(`reviewer command conflicts with --permission-mode ${permission}`);
-    return { cmd: permission ? cmd : `${cmd} --permission-mode plan` };
+    const permissions = valuesFor(["--permission-mode"]);
+    if (permissions.some((permission) => permission !== "plan")) throw new Error(`reviewer command conflicts with permission mode ${permissions.join(",")}`);
+    return { cmd: permissions.length ? cmd : insert("--permission-mode plan") };
   }
-  return { cmd, advisory: `reviewer runtime '${binaryOf(cmd) || "unknown"}' has no measured shell-level read-only mode; command left unchanged` };
+  return { cmd, advisory: `reviewer runtime '${path.basename(parsed.binary) || "unknown"}' has no measured shell-level read-only mode; command left unchanged` };
 }
 
 export interface SpawnOptions {

@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import { AgentManager, MaxAgentsError, ResumeUnavailableError, ForkUnavailableError, WatchController, newlyDeclaredAutostart } from "../../src/agents/AgentManager.js";
 import { TmuxService, workspaceHash, sessionName, type ExecResult } from "../../src/tmux/TmuxService.js";
 import { parseConfig, type TachyonConfig } from "../../src/config/loadConfig.js";
@@ -842,7 +843,40 @@ describe("AgentManager — session resume (spec 209)", () => {
   });
 
   it.each([
+    ["codex --sandbox \"read-only\"", "codex --sandbox \"read-only\""],
+    ["codex -s=read-only", "codex -s=read-only"],
+    ["claude --permission-mode 'plan'", "claude --permission-mode 'plan'"],
+    ["grok --permission-mode=plan", "grok --permission-mode=plan"],
+  ])("SDD 368 T10 preserves an already-safe literal reviewer command byte-for-byte: %s", async (cmd, expected) => {
+    const { manager, ledger, ws } = resumeHarness("agents: {}\n", {
+      prepareDeliveryJoin: async (_name, request) => ({ cwd: ws,
+        worktree: { path: ws, branch: "tachyon/delivery", tachyonCreatedBranch: true, baseRef: request.expectedHead, createdAt: "now" }, reservationNonce: "n" }),
+      confirmDeliveryJoin: async () => undefined,
+    });
+    await manager.spawn("literal-reviewer", { cmd,
+      deliveryJoin: { deliveryId: "d", role: "reviewer", ownsSubset: [], expectedHead: "abc", operationId: "literal" } });
+    expect(ledger.get("literal-reviewer")?.def?.cmd).toBe(expected);
+  });
+
+  it.each([
+    ["codex -- positional", "codex --sandbox read-only -- positional"],
+    ["env MODE=review codex -- positional", "env MODE=review codex --sandbox read-only -- positional"],
+    ["npx --yes codex -- positional", "npx --yes codex --sandbox read-only -- positional"],
+  ])("SDD 368 T10 inserts reviewer safety immediately after the structural runtime token: %s", async (cmd, effective) => {
+    const { manager, ledger, ws } = resumeHarness("agents: {}\n", {
+      prepareDeliveryJoin: async (_name, request) => ({ cwd: ws,
+        worktree: { path: ws, branch: "tachyon/delivery", tachyonCreatedBranch: true, baseRef: request.expectedHead, createdAt: "now" }, reservationNonce: "n" }),
+      confirmDeliveryJoin: async () => undefined,
+    });
+    await manager.spawn("structural-reviewer", { cmd,
+      deliveryJoin: { deliveryId: "d", role: "reviewer", ownsSubset: [], expectedHead: "abc", operationId: "structural" } });
+    expect(ledger.get("structural-reviewer")?.def?.cmd).toBe(effective);
+  });
+
+  it.each([
     "codex --sandbox workspace-write",
+    "codex -s danger-full-access",
+    "codex --full-auto",
     "codex --dangerously-bypass-approvals-and-sandbox",
     "claude --permission-mode acceptEdits",
     "claude --dangerously-skip-permissions",
@@ -860,6 +894,50 @@ describe("AgentManager — session resume (spec 209)", () => {
       .rejects.toThrow(/reviewer command/);
     expect(prepared).toBe(false);
     expect(cmds).toHaveLength(0);
+  });
+
+  it.each([
+    "codex | tee /tmp/review", "codex && sh", "codex; sh", "codex > /tmp/review",
+    "codex $(printf unsafe)", "codex $REVIEW_MODE", "codex *.md",
+  ])("SDD 368 T10 refuses ambiguous reviewer shell structure before reservation: %s", async (cmd) => {
+    let prepared = false;
+    const { manager } = resumeHarness("agents: {}\n", {
+      prepareDeliveryJoin: async () => { prepared = true; throw new Error("must not prepare"); }, confirmDeliveryJoin: async () => undefined,
+    });
+    await expect(manager.spawn("ambiguous-reviewer", { cmd,
+      deliveryJoin: { deliveryId: "d", role: "reviewer", ownsSubset: [], expectedHead: "abc", operationId: "ambiguous" } }))
+      .rejects.toThrow(/structurally ambiguous|shell expansion/);
+    expect(prepared).toBe(false);
+  });
+
+  it("SDD 368 T10 treats bypass-looking text after -- and single-quoted control text as positional data", async () => {
+    const cmd = "codex -- '--dangerously-bypass-approvals-and-sandbox | && ; >'";
+    const { manager, ledger, ws } = resumeHarness("agents: {}\n", {
+      prepareDeliveryJoin: async (_name, request) => ({ cwd: ws,
+        worktree: { path: ws, branch: "tachyon/delivery", tachyonCreatedBranch: true, baseRef: request.expectedHead, createdAt: "now" }, reservationNonce: "n" }),
+      confirmDeliveryJoin: async () => undefined,
+    });
+    await manager.spawn("positional-reviewer", { cmd,
+      deliveryJoin: { deliveryId: "d", role: "reviewer", ownsSubset: [], expectedHead: "abc", operationId: "positional" } });
+    expect(ledger.get("positional-reviewer")?.def?.cmd).toBe("codex --sandbox read-only -- '--dangerously-bypass-approvals-and-sandbox | && ; >'");
+  });
+
+  it("SDD 368 T10 real shell capture proves Codex receives the inserted sandbox argv before --", async () => {
+    const bin = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-reviewer-bin-"));
+    const capture = path.join(bin, "argv.txt");
+    const executable = path.join(bin, "codex");
+    fs.writeFileSync(executable, "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$CAPTURE_FILE\"\n", { mode: 0o755 });
+    const raw = `env CAPTURE_FILE=${capture} codex -- positional`;
+    const { manager, cmds, ws } = resumeHarness("agents: {}\n", {
+      prepareDeliveryJoin: async (_name, request) => ({ cwd: ws,
+        worktree: { path: ws, branch: "tachyon/delivery", tachyonCreatedBranch: true, baseRef: request.expectedHead, createdAt: "now" }, reservationNonce: "n" }),
+      confirmDeliveryJoin: async () => undefined,
+    });
+    await manager.spawn("argv-reviewer", { cmd: raw,
+      deliveryJoin: { deliveryId: "d", role: "reviewer", ownsSubset: [], expectedHead: "abc", operationId: "argv" } });
+    execFileSync("/bin/sh", ["-c", cmds.at(-1)!], { env: { ...process.env, PATH: `${bin}:${process.env.PATH}` } });
+    expect(fs.readFileSync(capture, "utf8").trim().split("\n").slice(0, 4)).toEqual(["--sandbox", "read-only", "--", "positional"]);
+    fs.rmSync(bin, { recursive: true, force: true });
   });
 
   it("SDD 368 T10 leaves unsupported reviewer runtimes unchanged with an advisory", async () => {

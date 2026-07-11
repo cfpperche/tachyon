@@ -32,6 +32,27 @@ describe("runtime launch preflight", () => {
   });
 
   it.each([
+    "codex | tee out", "codex && sh", "codex; sh", "codex > out", "codex\nsh", "codex `whoami`", "codex \"$(whoami)\"",
+    "codex # --sandbox read-only", "! codex", "codex ( sh )",
+  ])("rejects structural shell composition: %s", (command) => {
+    expect(parseLaunchCommand(command)).toBeUndefined();
+  });
+
+  it("exposes exact runtime source position and static-word proof through wrappers", () => {
+    const command = "env MODE=review npx --yes /opt/bin/codex -- prompt";
+    const parsed = parseLaunchCommand(command)!;
+    expect(parsed).toMatchObject({ binary: "/opt/bin/codex", argv: ["--", "prompt"], allWordsLiteral: true });
+    expect(command.slice(0, parsed.runtimeTokenEnd)).toBe("env MODE=review npx --yes /opt/bin/codex");
+  });
+
+  it("keeps single-quoted control-looking text literal but marks parameter/glob expansion dynamic", () => {
+    expect(parseLaunchCommand("codex 'literal | && ; > $(not-run)'")).toMatchObject({ allWordsLiteral: true });
+    expect(parseLaunchCommand("codex $MODE")).toMatchObject({ allWordsLiteral: false });
+    expect(parseLaunchCommand("codex \"$MODE\"")).toMatchObject({ allWordsLiteral: false });
+    expect(parseLaunchCommand("codex *.md")).toMatchObject({ allWordsLiteral: false });
+  });
+
+  it.each([
     ["npx codex --model gpt-5.6", "npx", ["codex"]],
     ["pnpx codex -m gpt-5.6", "pnpx", ["codex"]],
     ["env -u TOKEN codex --model=gpt-5.6", "env", ["-u", "TOKEN", "codex"]],
