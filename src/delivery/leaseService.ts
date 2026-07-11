@@ -14,6 +14,7 @@ import type {
   DelegationSegmentRole,
   Delivery,
   DeliveryActor,
+  DeliveryLeaseHolder,
   DeliveryProcessIdentity,
 } from "./types.js";
 
@@ -305,12 +306,10 @@ export class DeliveryLeaseService {
     const replay = await this.replayHandoff(`${input.operationId}:reserve`, input.deliveryId, intent);
     if (replay) return replay;
 
-    let predecessorNonce = "";
-    let predecessorSegment = "";
+    let predecessorHolder: DeliveryLeaseHolder | undefined;
     const committedDrain = await this.replayDrain(`${input.operationId}:drain`, input.deliveryId, input.operationId, intent);
     if (committedDrain) {
-      predecessorNonce = committedDrain.executionNonce;
-      predecessorSegment = committedDrain.segmentId;
+      predecessorHolder = committedDrain;
     } else try {
       await this.withDeliveryLock(input.deliveryId, async () => this.deps.withWorktreeLock(canonicalWorktree, async () => {
         const current = await this.deps.store.get(input.deliveryId);
@@ -320,22 +319,20 @@ export class DeliveryLeaseService {
           throw new DeliveryLeaseError("DELIVERY_WORKTREE_MISMATCH", false, "caller worktree is not the canonical Delivery worktree", { expected: actualCanonical, actual: canonicalWorktree });
         }
         this.assertHandoffAuthority(current, input, ownsSubset, canonicalWorktree);
-        predecessorNonce = current.lease.holder!.executionNonce!;
-        predecessorSegment = current.lease.holder!.segmentId;
+        predecessorHolder = structuredClone(current.lease.holder!);
         const inspection = await this.inspect(canonicalWorktree);
         await this.assertInspection(current, inspection, input.expectedFinalHeadSha, canonicalWorktree);
         await this.deps.store.update(current.id, current.version, (record) => {
-          this.assertExactHeld(record, predecessorSegment, predecessorNonce);
+          this.assertExactHolder(record, "held", predecessorHolder!);
           record.lease = { ...record.lease, state: "draining", changedAt: this.now() };
-          record.events.push({ id: this.eventId(), at: this.now(), type: "handoff_draining", by: structuredClone(input.grantedBy), detail: { operationId: input.operationId, executionNonce: predecessorNonce, intent } });
+          record.events.push({ id: this.eventId(), at: this.now(), type: "handoff_draining", by: structuredClone(input.grantedBy), detail: { operationId: input.operationId, executionNonce: predecessorHolder!.executionNonce, intent } });
           return record;
         }, { operationId: `${input.operationId}:drain`, intent });
       }));
     } catch (error) {
       const recovered = await this.replayDrain(`${input.operationId}:drain`, input.deliveryId, input.operationId, intent);
       if (recovered) {
-        predecessorNonce = recovered.executionNonce;
-        predecessorSegment = recovered.segmentId;
+        predecessorHolder = recovered;
       } else {
         if (error instanceof DeliveryVersionConflictError || error instanceof DeliveryStoreBusyError) {
           const winner = await this.deps.store.get(input.deliveryId);
@@ -344,14 +341,15 @@ export class DeliveryLeaseService {
         throw error;
       }
     }
+    if (!predecessorHolder?.executionNonce) throw new DeliveryInvariantError("handoff predecessor holder was not durably established");
 
     let fenceError: unknown;
     let proof: Awaited<ReturnType<ProcessFencePort["proveEmpty"]>> = { state: "unknown", reason: "fence did not complete" };
-    try { await this.deps.processFence.freeze(predecessorNonce); } catch (error) { fenceError = error; }
-    try { await this.deps.processFence.terminate(predecessorNonce); } catch (error) { fenceError ??= error; }
-    try { proof = await this.deps.processFence.proveEmpty(predecessorNonce, canonicalWorktree); } catch (error) { fenceError ??= error; }
+    try { await this.deps.processFence.freeze(predecessorHolder.executionNonce); } catch (error) { fenceError = error; }
+    try { await this.deps.processFence.terminate(predecessorHolder.executionNonce); } catch (error) { fenceError ??= error; }
+    try { proof = await this.deps.processFence.proveEmpty(predecessorHolder.executionNonce, canonicalWorktree); } catch (error) { fenceError ??= error; }
     if (fenceError || proof.state !== "proven_empty") {
-      return this.quarantineAndThrow(input, intent, predecessorSegment, predecessorNonce, {
+      return this.quarantineAndThrow(input, intent, predecessorHolder, {
         phase: "fence", proof, error: fenceError instanceof Error ? fenceError.message : fenceError === undefined ? undefined : String(fenceError),
       });
     }
@@ -360,7 +358,7 @@ export class DeliveryLeaseService {
       return await this.withDeliveryLock(input.deliveryId, async () => this.deps.withWorktreeLock(canonicalWorktree, async () => {
         const current = await this.deps.store.get(input.deliveryId);
         if (!current) throw new DeliveryNotFoundError(input.deliveryId);
-        this.assertExactDraining(current, predecessorSegment, predecessorNonce);
+        this.assertExactHolder(current, "draining", predecessorHolder!);
         const first = await this.inspect(canonicalWorktree);
         await this.assertInspection(current, first, input.expectedFinalHeadSha, canonicalWorktree);
         const second = await this.inspect(canonicalWorktree);
@@ -368,7 +366,7 @@ export class DeliveryLeaseService {
         const reservationNonce = this.deps.nonce?.() ?? randomBytes(16).toString("hex");
         const segmentId = this.deps.segmentId?.() ?? `seg-${randomBytes(8).toString("hex")}`;
         const delivery = await this.deps.store.update(current.id, current.version, (record) => {
-          this.assertExactDraining(record, predecessorSegment, predecessorNonce);
+          this.assertExactHolder(record, "draining", predecessorHolder!);
           const tail = record.segments.at(-1)!;
           tail.releasedAt = this.now(); tail.releasedHeadSha = second.headSha; tail.outcome = "completed";
           record.segments.push({ id: segmentId, index: record.segments.length, role: input.role, executionAgent: input.executionAgent,
@@ -385,7 +383,7 @@ export class DeliveryLeaseService {
       const committed = await this.replayHandoff(`${input.operationId}:reserve`, input.deliveryId, intent);
       if (committed) return committed;
       if (error instanceof DeliveryStoreBusyError) throw this.busy(error);
-      return this.quarantineAndThrow(input, intent, predecessorSegment, predecessorNonce, { phase: "final", error: error instanceof Error ? error.message : String(error) });
+      return this.quarantineAndThrow(input, intent, predecessorHolder, { phase: "final", error: error instanceof Error ? error.message : String(error) });
     }
   }
 
@@ -395,20 +393,16 @@ export class DeliveryLeaseService {
     if (!isOwnsSubset(ownsSubset, delivery.contract.owns)) throw new DeliveryLeaseError("DELIVERY_OWNS_WIDENING", false, "successor authority exceeds the immutable contract");
     const holder = delivery.lease.holder;
     const tail = delivery.segments.at(-1);
+    if (["draining", "pending", "verifying"].includes(delivery.lease.state)) throw this.occupied(delivery, "Delivery already has an occupant or handoff in progress");
+    if (delivery.lease.state === "quarantined") throw new DeliveryLeaseError("DELIVERY_QUARANTINED", false, "Delivery is quarantined", { deliveryId: delivery.id, reason: delivery.lease.reason });
     if (delivery.lease.state !== "held") throw new DeliveryLeaseError("DELIVERY_INVALID_STATE", false, "handoff requires a held predecessor");
     if (!holder || !tail || tail.releasedAt || tail.id !== holder.segmentId) throw new DeliveryLeaseError("DELIVERY_INVALID_STATE", false, "held predecessor does not match the open tail");
     if (!holder.process || !holder.executionNonce) throw new DeliveryLeaseError("DELIVERY_PROCESS_IDENTITY_MISSING", false, "held predecessor lacks durable process identity or execution nonce");
   }
 
-  private assertExactHeld(delivery: Delivery, segmentId: string, executionNonce: string): void {
-    if (delivery.lease.state !== "held" || delivery.lease.holder?.segmentId !== segmentId || delivery.lease.holder.executionNonce !== executionNonce) {
-      throw this.occupied(delivery, "predecessor changed before draining");
-    }
-  }
-
-  private assertExactDraining(delivery: Delivery, segmentId: string, executionNonce: string): void {
-    if (delivery.lease.state !== "draining" || delivery.lease.holder?.segmentId !== segmentId || delivery.lease.holder.executionNonce !== executionNonce) {
-      throw this.occupied(delivery, "draining predecessor changed");
+  private assertExactHolder(delivery: Delivery, state: "held" | "draining", holder: DeliveryLeaseHolder): void {
+    if (delivery.lease.state !== state || !isDeepStrictEqual(delivery.lease.holder, holder)) {
+      throw this.occupied(delivery, `${state} predecessor holder changed`);
     }
   }
 
@@ -425,7 +419,7 @@ export class DeliveryLeaseService {
     }
   }
 
-  private async quarantineAndThrow(input: DeliveryLeaseHandoffInput, intent: Record<string, unknown>, segmentId: string, executionNonce: string, evidence: Record<string, unknown>): Promise<never> {
+  private async quarantineAndThrow(input: DeliveryLeaseHandoffInput, intent: Record<string, unknown>, holder: DeliveryLeaseHolder, evidence: Record<string, unknown>): Promise<never> {
     const operationId = `${input.operationId}:quarantine`;
     let persistenceError: unknown;
     try {
@@ -433,11 +427,11 @@ export class DeliveryLeaseService {
       if (!replay) {
         const current = await this.deps.store.get(input.deliveryId);
         if (!current) throw new DeliveryNotFoundError(input.deliveryId);
-        this.assertExactDraining(current, segmentId, executionNonce);
+        this.assertExactHolder(current, "draining", holder);
         await this.deps.store.update(current.id, current.version, (record) => {
-          this.assertExactDraining(record, segmentId, executionNonce);
+          this.assertExactHolder(record, "draining", holder);
           record.lease = { ...record.lease, state: "quarantined", reason: JSON.stringify(evidence), changedAt: this.now() };
-          record.events.push({ id: this.eventId(), at: this.now(), type: "handoff_quarantined", by: structuredClone(input.grantedBy), detail: { operationId: input.operationId, executionNonce, evidence, intent } });
+          record.events.push({ id: this.eventId(), at: this.now(), type: "handoff_quarantined", by: structuredClone(input.grantedBy), detail: { operationId: input.operationId, executionNonce: holder.executionNonce, evidence, intent } });
           return record;
         }, { operationId, intent });
       }
@@ -458,7 +452,7 @@ export class DeliveryLeaseService {
     return { delivery, reservationNonce: nonce };
   }
 
-  private async replayDrain(operationId: string, deliveryId: string, baseOperationId: string, intent: Record<string, unknown>): Promise<{ segmentId: string; executionNonce: string } | undefined> {
+  private async replayDrain(operationId: string, deliveryId: string, baseOperationId: string, intent: Record<string, unknown>): Promise<DeliveryLeaseHolder | undefined> {
     const delivery = await this.deps.store.getOperationResult(operationId, "update", deliveryId);
     if (!delivery) return undefined;
     const event = delivery.events.find((candidate) => candidate.type === "handoff_draining" && candidate.detail?.operationId === baseOperationId);
@@ -467,7 +461,7 @@ export class DeliveryLeaseService {
       || typeof holder.executionNonce !== "string" || event.detail?.executionNonce !== holder.executionNonce) {
       throw new DeliveryInvariantError(`operation id '${operationId}' does not match this handoff drain intent`);
     }
-    return { segmentId: holder.segmentId, executionNonce: holder.executionNonce };
+    return structuredClone(holder);
   }
 
   private async replayEvent(operationId: string, deliveryId: string, type: string, intent: Record<string, unknown>, state: string): Promise<Delivery | undefined> {

@@ -208,6 +208,45 @@ describe("DeliveryLeaseService (SDD 368 T5)", () => {
     expect((await store.get("d-lease"))?.segments).toHaveLength(2);
   });
 
+  it("returns retryable WORKTREE_OCCUPIED to a contender starting after draining is durable", async () => {
+    const { store, worktree, input } = heldFixture();
+    await store.create(input);
+    let announceDrain!: () => void;
+    const draining = new Promise<void>((resolve) => { announceDrain = resolve; });
+    let allowProof!: () => void;
+    const proofAllowed = new Promise<void>((resolve) => { allowProof = resolve; });
+    const fence: ProcessFencePort = { ...certifiedFence, proveEmpty: async () => {
+      announceDrain(); await proofAllowed; return { state: "proven_empty" };
+    } };
+    const winner = service(store, worktree, fence).handoff(handoffInput(worktree, "durable-winner"));
+    await draining;
+    expect((await store.get("d-lease"))?.lease.state).toBe("draining");
+    await expect(service(new DeliveryStore(store.workspaceRoot, { now: () => now }), worktree)
+      .handoff(handoffInput(worktree, "durable-contender")))
+      .rejects.toMatchObject({ code: "WORKTREE_OCCUPIED", retryable: true });
+    allowProof();
+    await expect(winner).resolves.toMatchObject({ delivery: { lease: { state: "pending" } } });
+  });
+
+  it("never reserves a successor when the full predecessor holder changes during proveEmpty", async () => {
+    const { store, worktree, input } = heldFixture();
+    await store.create(input);
+    const fence: ProcessFencePort = { ...certifiedFence, proveEmpty: async () => {
+      const draining = await store.get("d-lease");
+      await store.update("d-lease", draining!.version, (record) => {
+        record.lease.holder = { ...record.lease.holder!, executionAgent: "mutated-worker",
+          process: { pid: 99, processStart: "changed", bootId: "other" } };
+        return record;
+      });
+      return { state: "proven_empty" };
+    } };
+    const error = await service(store, worktree, fence).handoff(handoffInput(worktree, "holder-mutation")).catch((caught) => caught);
+    expect(error instanceof AggregateError || error?.code === "DELIVERY_QUARANTINED").toBe(true);
+    const delivery = await store.get("d-lease");
+    expect(delivery?.segments).toHaveLength(1);
+    expect(delivery?.lease.state).not.toBe("pending");
+  });
+
   it("refuses invalid scope, path, state, and process identity before fencing", async () => {
     for (const kind of ["scope", "path", "state", "process"] as const) {
       const { store, worktree, input } = heldFixture();
