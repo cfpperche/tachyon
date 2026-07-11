@@ -282,8 +282,9 @@ describe("ControlModeClient", () => {
 
     await vi.advanceTimersByTimeAsync(10);
     expect(newSessionCalls).toBe(2);
-    await client.dispose();
+    const disposed = client.dispose();
     resolveReconnect({ stdout: "", stderr: "" });
+    await disposed;
     await vi.advanceTimersByTimeAsync(0);
 
     expect(procs).toHaveLength(1);
@@ -296,10 +297,19 @@ describe("ControlModeClient", () => {
   it("finishes disposed bootstrap cleanup before a same-workspace successor assumes the anchor", async () => {
     let resolveBootstrapA!: (result: ExecResult) => void;
     const bootstrapA = new Promise<ExecResult>((resolve) => { resolveBootstrapA = resolve; });
+    const killResolvers: Array<(result: ExecResult) => void> = [];
+    const killStartedResolvers: Array<() => void> = [];
+    const killStarted = [0, 1].map(() => new Promise<void>((resolve) => { killStartedResolvers.push(resolve); }));
     const calls: Array<{ owner: "A" | "B"; args: string[] }> = [];
     const fallback = (owner: "A" | "B") => async (args: string[]): Promise<ExecResult> => {
       calls.push({ owner, args });
       if (owner === "A" && args.includes("new-session")) return bootstrapA;
+      if (owner === "A" && args.includes("kill-session")) {
+        const index = killResolvers.length;
+        const pending = new Promise<ExecResult>((resolve) => { killResolvers.push(resolve); });
+        killStartedResolvers[index]();
+        return pending;
+      }
       return { stdout: "", stderr: "" };
     };
     const a = makeClient({ fallbackExec: fallback("A") });
@@ -311,10 +321,19 @@ describe("ControlModeClient", () => {
     const startingB = b.client.start();
     await Promise.resolve();
     expect(calls.map(({ owner, args }) => [owner, args.includes("new-session") ? "new" : "kill"]))
-      .toEqual([["A", "new"], ["A", "kill"]]);
+      .toEqual([["A", "new"]]);
 
     resolveBootstrapA({ stdout: "", stderr: "" });
-    await Promise.all([startingA, disposingA, startingB]);
+    await killStarted[0];
+    expect(calls.map(({ owner, args }) => [owner, args.includes("new-session") ? "new" : "kill"]))
+      .toEqual([["A", "new"], ["A", "kill"]]);
+    killResolvers[0]({ stdout: "", stderr: "" });
+    await startingA;
+    await killStarted[1];
+    expect(calls.map(({ owner, args }) => [owner, args.includes("new-session") ? "new" : "kill"]))
+      .toEqual([["A", "new"], ["A", "kill"], ["A", "kill"]]);
+    killResolvers[1]({ stdout: "", stderr: "" });
+    await Promise.all([disposingA, startingB]);
     expect(calls.map(({ owner, args }) => [owner, args.includes("new-session") ? "new" : "kill"]))
       .toEqual([["A", "new"], ["A", "kill"], ["A", "kill"], ["B", "new"]]);
     expect(a.procs).toHaveLength(0);

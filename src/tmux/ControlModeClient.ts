@@ -166,7 +166,7 @@ export class ControlModeClient {
         if (!(err instanceof Error && /duplicate session/.test(err.message))) throw err;
       }
       if (this.disposed) {
-        await this.cleanupAnchor();
+        await this.cleanupAnchorUnlocked();
         return;
       }
 
@@ -182,7 +182,7 @@ export class ControlModeClient {
       if (this.disposed) {
         this.proc = undefined;
         proc.kill();
-        await this.cleanupAnchor();
+        await this.cleanupAnchorUnlocked();
         return;
       }
       this.awaitingGuard = true;
@@ -367,13 +367,13 @@ export class ControlModeClient {
       pending.reject(error);
     }
     proc?.kill();
-    // A bootstrap holding the anchor lock may still be pending. Clean up the
-    // current anchor immediately; that bootstrap will perform a second cleanup
-    // before releasing the lock to any successor.
-    await this.cleanupAnchor();
+    // Queue teardown behind any in-flight bootstrap and ahead of successors.
+    // Bootstrap cleanup uses the unlocked variant because start() already owns
+    // this same socket+anchor lock.
+    await this.withAnchorLock(() => this.cleanupAnchorUnlocked());
   }
 
-  /** Serializes shared anchor transitions without blocking dispose on bootstrap. */
+  /** Serializes shared anchor transitions by socket and anchor session. */
   private async withAnchorLock<T>(operation: () => Promise<T>): Promise<T> {
     const key = `${this.socket}\0${this.anchorSession}`;
     const previous = ControlModeClient.anchorTails.get(key) ?? Promise.resolve();
@@ -390,7 +390,7 @@ export class ControlModeClient {
   }
 
   /** Removes an anchor that may have completed bootstrapping during teardown. */
-  private async cleanupAnchor(): Promise<void> {
+  private async cleanupAnchorUnlocked(): Promise<void> {
     try {
       await this.fallback(["-L", this.socket, "kill-session", "-t", `=${this.anchorSession}`]);
     } catch {
