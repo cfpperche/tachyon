@@ -129,3 +129,17 @@ _Alternatives weighed mid-build. The chosen path + what was given up + why it wa
 ## Open questions
 
 _Questions surfaced during the build with no answer yet. Owner or path to resolution if known._
+
+# T1 SQLite DeliveryStore closure — 2026-07-10
+
+- Replaced the lockfile backend with a workspace-local SQLite store using short `BEGIN IMMEDIATE` transactions,
+  CAS versions, immutable/append-only validation, structured busy/unsupported errors, and intent-fingerprinted
+  operation receipts.
+- Added fail-closed runtime/filesystem capability detection and a transactional, idempotent migration of legacy
+  Delivery JSON records. Concurrent migrators converge under the SQLite write lock and archive legacy data only
+  after proving durable equivalence.
+- Adversarial reviews R1–R3 closed legacy invisibility, runtime loading, receipt collision, concurrent marker, and
+  archive-rename races. Final verdict: ACCEPT (`c56042a`).
+- Integrated on `main` through `96942f7`; `npm run verify:full` passed (295 files, 3263 tests, 3 skipped).
+- The superseded lockfile working copy remains preserved in stash
+  `pre-sqlite delivery-store lockfile work t-0b5723` until the broader Delivery rollout is complete.
