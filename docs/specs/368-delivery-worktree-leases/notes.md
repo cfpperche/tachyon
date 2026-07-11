@@ -155,3 +155,15 @@ _Questions surfaced during the build with no answer yet. Owner or path to resolu
 - Adversarial reviews R1–R4 closed cross-store partial failure, projection uniqueness, migration, crash/mirror,
   compensation, and subprocess cleanup findings.
 - Integrated on `main` through `f7476fe`; `npm run verify:full` passed (296 files, 3272 tests, 3 skipped).
+
+# T3 deterministic legacy import closure — 2026-07-11
+
+- Added read-only preview plus fingerprint-bound apply for converting a legacy DelegationRecord and linear fixer
+  attempts into canonical Delivery segments with one exact GitDelivery projection.
+- Zero/multiple/drifted projections, nonlinear history, changed realpaths/ancestry, and conflicting intent refuse
+  before canonical writes.
+- A serialized Git reservation makes partial create/link failures resumable by canonical intent rather than a lost
+  transport operation id; identical concurrent retries converge to the same Delivery and linked projection.
+- Adversarial reviews R1–R5 closed partial-write, stale-inventory TOCTOU, incomplete fingerprint, pending wedge,
+  and concurrent retry findings. Final verdict: ACCEPT (`c8a59da`).
+- Integrated on `main` through `583f238`; `npm run verify:full` passed (297 files, 3275 tests, 3 skipped).
