@@ -430,8 +430,15 @@ async function scopeBreachBlockers(
 }
 
 function normalizeSegmentOwns(owns: string[]): string[] | undefined {
-  const normalized = [...new Set(owns.map((entry) => entry.replace(/\\/g, "/").replace(/^\.\//, "").replace(/\/+$/, "")))].sort();
-  return normalized.every((entry) => entry && !path.isAbsolute(entry) && !entry.split("/").includes("..")) ? normalized : undefined;
+  const normalized: string[] = [];
+  for (const entry of owns) {
+    const slashPath = entry.replace(/\\/g, "/");
+    if (!slashPath || path.posix.isAbsolute(slashPath)) return undefined;
+    const canonical = path.posix.normalize(slashPath);
+    if (!canonical || canonical === "." || canonical === ".." || canonical.startsWith("../")) return undefined;
+    normalized.push(canonical);
+  }
+  return [...new Set(normalized)].sort();
 }
 
 async function canonicalSegmentBlockers(delivery: Delivery, refSha: string, cwd: string): Promise<VerifyTaskBlocker[]> {

@@ -301,6 +301,31 @@ describe("verifyTask", () => {
     expect(runner).not.toHaveBeenCalled();
   });
 
+  it.each([
+    { label: "escaping normalized authority", ownsSubset: ["./../src"] },
+    { label: "authority wider than the contract", ownsSubset: ["src", "test"] },
+  ])("blocks $label before behavior execution", async ({ ownsSubset }) => {
+    const { repo, wt, baseSha } = fixture();
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    git(wt, ["add", "src/feature.txt"]); git(wt, ["commit", "-qm", "t-delivery invalid scope"]);
+    const delivered = git(wt, ["rev-parse", "HEAD"]);
+    const store = new DeliveryStore(repo);
+    const gitDeliveries = new GitDeliveryStore(repo, { id: () => `gd-invalid-scope-${ownsSubset.length}` });
+    const projection = await gitDeliveries.open({ workspaceId: "ws", createdBy: actor, deliveryId: "d-invalid-scope", agent: "worker",
+      branchRef: "tachyon/worker", worktreePath: wt, tachyonCreatedBranch: true, baseRef: baseSha, currentHeadSha: delivered });
+    await store.create({ id: "d-invalid-scope", workspaceId: "ws", createdBy: actor,
+      contract: { taskId: "t-delivery", baseSha, behaviorTest: "cmd:node behavior.js", owns: ["src"], taskRef: "tachyon/worker" },
+      gitDeliveryId: projection.id, segments: [{ id: "seg-0", index: 0,
+        role: "implementer", executionAgent: "worker", grantedBy: actor, ownsSubset,
+        grantedHeadSha: baseSha, grantedAt: "2026-01-01T00:00:00.000Z" }] });
+    const runner = vi.fn(testRunner);
+    const result = await verifyTask({ workspaceRoot: repo, deliveryId: "d-invalid-scope",
+      deliveryVerification: await canonicalVerification(store, gitDeliveries), runner });
+    expect(result.verdict).toBe("blocked");
+    expect(result.blockers).toContainEqual(expect.objectContaining({ code: "invalid_segment_scope" }));
+    expect(runner).not.toHaveBeenCalled();
+  });
+
   /** Builds a Delivery on the fixture's taskRef. `segments` are given tail-last. */
   async function delivery(repo: string, id: string, baseSha: string, agents: string[]) {
     await new DeliveryStore(repo).create({
