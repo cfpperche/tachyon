@@ -725,3 +725,58 @@ _Questions surfaced during the build with no answer yet. Owner or path to resolu
   nested-`env` escapes. Final verdict: ACCEPT (`9a1a586`).
 - Implementation head is `b5d4d98`; coordinator-focused verification passed 385/385 and full verification passed
   300 files, 3500 tests, and 3 skipped before this documentation-only closure.
+
+### T11 implementation contract — dead-holder reconciliation
+
+T11 is a bounded `DeliveryLeaseService` slice. It does not add Bridge/Workspace tools, session-ledger reload binding
+(T14), quarantine recovery or actor policy (T12), a production OS `ProcessFencePort`, GitDelivery projection/hygiene,
+or any cleanup/reset/prune behavior. It reconciles only a canonical `held` lease. `pending`, `draining`, and
+`verifying` remain owned by their existing operation receipts and refuse as in-flight; an already quarantined lease
+remains unavailable.
+
+Add a read-only process-identity observation dependency whose input is the exact persisted
+`DeliveryProcessIdentity { pid, processStart, bootId }` and whose result is `alive`, `gone`, or `unknown(reason)`.
+`alive` means the exact recorded boot/PID/start identity still exists; return an explicit live outcome with the held
+Delivery unchanged, no receipt/event, and no fence call. PID absence, boot-generation mismatch, or PID-start mismatch
+may be reported as `gone` because the exact recorded process is absent; it still never authorizes release without the
+independent fence proof. A missing/malformed holder identity or unavailable/throwing observation is unknown and must
+quarantine. Do not infer death from tmux/pane/name liveness.
+
+Add one `reconcileHolder` operation with Delivery id, canonical worktree, Bridge-resolved actor, and stable operation
+id. Under Delivery-then-canonical-worktree lock, resolve and match the exact canonical path, require a held open tail,
+snapshot the complete lease/holder/process/execution nonce/recorded expected HEAD, and verify holder segment,
+executionAgent, and principal match the tail. Perform process observation and all `ProcessFencePort` work outside
+every Delivery/worktree/SQLite lock. Reconciliation never calls `freeze` or `terminate`: after exact-process `gone`,
+call only the same independent `proveEmpty(executionNonce, canonicalWorktree)` predicate used by handoff. Unsupported
+capability, exceptions, `survivors`, or fence `unknown` quarantine.
+
+After `gone + proven_empty`, reacquire Delivery then canonical-worktree lock, revalidate the exact full held lease and
+open tail, and inspect the worktree twice. Both observations must be clean including untracked files and exactly at
+the lease's recorded expected HEAD; a committed HEAD move is quarantined even if ancestor-linear, because it is
+unverified recovery material. Only exact equality atomically closes the tail at that HEAD with outcome `interrupted`,
+sets the lease `free`, and appends one `holder_interrupted` event. This is the sole retryable-success transition and
+never fabricates completed work, review, or verification.
+
+Unknown identity, absent/malformed durable identity, fence uncertainty/survivors/error, dirty/index/untracked state,
+HEAD drift, inspection error, or full-holder drift prevents release and appends one durable
+`holder_reconcile_quarantined` event while retaining the current holder, expected HEAD, and open segment. If the
+observed lease moved into another owned in-flight state meanwhile, return retryable occupancy and do not overwrite
+that flow; if only its held holder drifted, quarantine the current held state. Surface structured
+`DELIVERY_QUARANTINED`; aggregate the original safety failure before a quarantine-persistence failure. Never reset,
+clean, checkout, terminate, or discard anything.
+
+Use immutable operation receipts for terminal `:interrupt` and `:quarantine` mutations. A lost success response
+replays the exact interrupted Delivery; a lost quarantine response replays the same structured refusal; a different
+intent on the same operation id refuses. Concurrent identical reconciliation produces one terminal event; a
+different concurrent handoff/reconcile winner cannot be overwritten. The live no-op deliberately consumes no
+mutation receipt and may be retried later with the same operation id after liveness changes.
+
+Production scope is `src/delivery/leaseService.ts` only; `src/delivery/types.ts` may be used solely if a shared result
+type is mechanically necessary. Tests are limited to `test/unit/deliveryLeaseService.test.ts`. Required regressions:
+exact live identity unchanged/no fence; gone+proven-empty+double-clean exact HEAD interrupts/releases; reviewer death
+does not record ACCEPT; missing/malformed/unknown identity; unavailable/throwing/survivor/unknown fence; dirty,
+untracked, index, committed-HEAD, second-observation, and inspection-error quarantine; holder drift and competing
+state transition; exact lost-response replay and intent collision; concurrent terminal singularity; quarantine
+persistence aggregation; canonical mismatch; and assertions that process observation/proveEmpty run outside locks
+while freeze/terminate are never called. Run the focused lease-service suite serially, `npm run typecheck`,
+`git diff --check`, and `npm run verify:full`.
