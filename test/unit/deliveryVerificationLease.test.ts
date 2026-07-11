@@ -206,6 +206,7 @@ describe("DeliveryVerificationLeaseService (SDD 368 T9)", () => {
       throw new Error("unreachable");
     }).catch((caught) => caught) as AggregateError;
     expect(error).toBeInstanceOf(AggregateError);
+    expect(error).not.toMatchObject({ code: "DELIVERY_QUARANTINED" });
     expect(error.errors.map((item) => item instanceof Error ? item.message : String(item))).toEqual([
       "verification callback failed",
       expect.stringContaining("worktree is not a clean recorded verification checkout"),
