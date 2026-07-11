@@ -338,7 +338,8 @@ export class DeliveryLeaseService {
           open.releasedAt = this.now(); open.releasedHeadSha = second.headSha; open.outcome = "interrupted";
           record.lease = { state: "free", changedAt: this.now() };
           record.events.push({ id: this.eventId(), at: this.now(), type: "holder_interrupted", by: structuredClone(input.actor),
-            detail: { operationId: input.operationId, intent, segmentId: open.id, executionNonce: snapshot.holder!.executionNonce, headSha: second.headSha } });
+            detail: { operationId: input.operationId, intent, holder: structuredClone(snapshot.holder), segmentId: open.id,
+              executionNonce: snapshot.holder!.executionNonce, expectedHeadSha: snapshot.expectedHeadSha, headSha: second.headSha } });
           return record;
         }, { operationId: interruptedOperation, intent });
       }));
@@ -788,6 +789,7 @@ export class DeliveryLeaseService {
           if (current.lease.state === "quarantined") throw this.reconcileRefusal(parseReason(current.lease.reason));
           if (current.lease.state !== "held") throw this.occupied(current, "held lease changed during reconciliation");
           const holder = structuredClone(current.lease.holder);
+          const tail = structuredClone(current.segments.at(-1));
           const durableEvidence = { ...evidence, currentExecutionNonce: holder?.executionNonce, expectedHeadSha: current.lease.expectedHeadSha };
           refusalEvidence = durableEvidence;
           await this.deps.store.update(current.id, current.version, (record) => {
@@ -796,7 +798,7 @@ export class DeliveryLeaseService {
             }
             record.lease = { ...record.lease, state: "quarantined", reason: JSON.stringify(durableEvidence), changedAt: this.now() };
             record.events.push({ id: this.eventId(), at: this.now(), type: "holder_reconcile_quarantined", by: structuredClone(input.actor),
-              detail: { operationId: input.operationId, intent, holder, expectedHeadSha: record.lease.expectedHeadSha, evidence: durableEvidence } });
+              detail: { operationId: input.operationId, intent, holder, tail, expectedHeadSha: record.lease.expectedHeadSha, evidence: durableEvidence } });
             return record;
           }, { operationId, intent });
         }));
@@ -829,10 +831,17 @@ export class DeliveryLeaseService {
     const delivery = await this.deps.store.getOperationResult(operationId, "update", deliveryId);
     if (!delivery) return undefined;
     const event = delivery.events.find((candidate) => candidate.type === "holder_interrupted" && isDeepStrictEqual(candidate.detail?.intent, intent));
-    const segment = delivery.segments.find((candidate) => candidate.id === event?.detail?.segmentId);
-    if (!event || event.detail?.operationId !== intent.operationId || delivery.lease.state !== "free"
-      || !segment || segment.outcome !== "interrupted" || !segment.releasedAt
-      || typeof event.detail?.headSha !== "string" || segment.releasedHeadSha !== event.detail.headSha) {
+    const detail = event?.detail;
+    const holder = detail?.holder as DeliveryLeaseHolder | undefined;
+    const tail = delivery.segments.at(-1);
+    const expectedHead = detail?.expectedHeadSha;
+    if (!event || !detail || detail.operationId !== intent.operationId || delivery.lease.state !== "free"
+      || !holder || !validProcessIdentity(holder.process) || holder.reservationNonce !== undefined
+      || typeof holder.executionNonce !== "string" || !holder.executionNonce.trim()
+      || detail.executionNonce !== holder.executionNonce || !tail || tail.id !== holder.segmentId
+      || tail.executionAgent !== holder.executionAgent || tail.principal !== holder.principal
+      || tail.outcome !== "interrupted" || !tail.releasedAt || typeof expectedHead !== "string"
+      || tail.grantedHeadSha !== expectedHead || detail.headSha !== expectedHead || tail.releasedHeadSha !== expectedHead) {
       throw new DeliveryInvariantError(`operation id '${operationId}' does not match this holder reconciliation intent`);
     }
     return delivery;
@@ -844,11 +853,9 @@ export class DeliveryLeaseService {
     const event = delivery.events.find((candidate) => candidate.type === "holder_reconcile_quarantined" && isDeepStrictEqual(candidate.detail?.intent, intent));
     const holder = delivery.lease.holder;
     const tail = delivery.segments.at(-1);
-    const holderRelationshipValid = !holder || (!!tail && !tail.releasedAt && tail.id === holder.segmentId
-      && tail.executionAgent === holder.executionAgent && tail.principal === holder.principal);
     if (!event || event.detail?.operationId !== intent.operationId || delivery.lease.state !== "quarantined"
       || !isDeepStrictEqual(event.detail?.holder, holder) || !isDeepStrictEqual(event.detail?.evidence, parseReason(delivery.lease.reason))
-      || event.detail?.expectedHeadSha !== delivery.lease.expectedHeadSha || !holderRelationshipValid) {
+      || !isDeepStrictEqual(event.detail?.tail, tail) || event.detail?.expectedHeadSha !== delivery.lease.expectedHeadSha) {
       throw new DeliveryInvariantError(`operation id '${operationId}' does not match this holder quarantine intent`);
     }
     return delivery;
