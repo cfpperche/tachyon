@@ -38,7 +38,7 @@ _Generated from `plan.md` on 2026-07-10. Work top-to-bottom. Check boxes as task
   prior segment, launches inside the proven process-containment adapter, appends its role-scoped segment, and never
   creates a fallback worktree.
   - Gate: `successor acquire reuses one worktree and never forks an occupied Delivery`.
-- [ ] T7. Add fenced handoff and nonce-bound reservation: mark `draining`, freeze/terminate through
+- [x] T7. Add fenced handoff and nonce-bound reservation: mark `draining`, freeze/terminate through
   `ProcessFencePort`, require the whole containment group plus worktree-bound process audit to be proven empty,
   revalidate Git, close/reserve, spawn outside locks, then confirm; failures quarantine without phantom occupancy.
   - Gate: `a detached predecessor child prevents successor spawn until the process fence proves empty`.

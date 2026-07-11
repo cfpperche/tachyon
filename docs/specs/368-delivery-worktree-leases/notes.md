@@ -176,6 +176,22 @@ certified `ProcessFencePort`.
 and `git diff --check`. The executor must stop without editing if repository evidence requires a decision outside
 this contract.
 
+### T7 fenced handoff closure
+
+T7 now persists `held -> draining` before any fence operation, performs freeze/terminate/prove-empty outside every
+Delivery, worktree, and SQLite lock, and reserves a successor only after exact full-holder and clean linear-HEAD
+revalidation. Fence uncertainty, survivor processes, dirty state, or identity drift quarantines instead of
+creating a successor. Reservation confirmation carries the execution nonce, and failed spawn compensation is
+exact-nonce and receipt-idempotent. The production fence remains unavailable on this host, so the public join path
+still fails closed; only unit tests inject a certified fence.
+
+Adversarial R1 found retryability and partial-holder comparison gaps; the accepted fix makes in-flight states
+retryable and structurally fences the complete holder. R2 then reported a replay gap but had mistaken the current
+Delivery for the immutable `result_json` stored in the transaction-A operation receipt. Coordinator reproduction
+proved the receipt retains the original holder after a nonce-preserving live-record mutation; R3 explicitly
+retracted R2 and returned **ACCEPT**. Integrated on `main` through `f87894f`; final coordinator full verification is
+recorded after this bookkeeping commit.
+
 ### T1 lock protocol redesign — SQLite decision
 
 Five adversarial rounds found successive crash windows in application-managed owner/fence/claim lockfiles. The
