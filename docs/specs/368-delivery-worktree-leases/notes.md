@@ -261,6 +261,37 @@ GitDelivery, config, ledger, or other test edits.
 `npm run typecheck` and `git diff --check` from the T8 base. Commit only the owned paths with a `t-0b5723` message
 and notify `codex`; stop before editing if repository evidence contradicts this contract.
 
+### T8 R1 correction contract — cancellation and bounded fanout
+
+R1 found that an individually bounded watcher was still an unbounded workspace resource: the MCP callback exposes
+`RequestHandlerExtra.signal`, but the handler ignored it, and every concurrent call created an independent SQLite
+poll loop. The correction remains within the existing six owned implementation/test files and makes these binding
+choices:
+
+- `waitForDeliveryLease` accepts an optional `AbortSignal` as a distinct control argument after the internal timing
+  seam. It calls `throwIfAborted` before and after every `store.get`, and before sleeping, so cancellation can never
+  start another database read or return a stale terminal classification.
+- The production sleep accepts that signal and owns its timer plus one abort listener. Normal completion and abort
+  both clear the timer/listener exactly once; abort rejects with the signal's standard reason/`AbortError`. Injected
+  test sleeps receive the same signal. No `cancelled` lease outcome is invented because cancellation belongs to the
+  MCP request, not Delivery domain state.
+- `BridgeDeps.waitForDeliveryLease` receives `(input, signal)`, and the `wait_for_lease` callback must use its second
+  SDK `extra` parameter to forward `extra.signal`. Workspace forwards it to the canonical watcher.
+- Add a non-queuing gate in `src/bridge/tools.ts`, stored in a `WeakMap<AgentManager, Gate>` so stateless per-request
+  tool registration shares one workspace lifetime. At most four lease waits may run globally and at most one may
+  run for a given `delivery_id`. A duplicate Delivery or full global gate refuses immediately with a stable visible
+  error; every success, error, timeout, and abort releases exactly its own slot in `finally`. There is no hidden
+  acquisition queue and no coalesced result that could mix different baselines/deadlines.
+- With the fixed 100 ms production poll interval, the policy bounds one Delivery to ten reads/second and the whole
+  Bridge to forty reads/second while still allowing four independent Deliveries to be observed in parallel.
+
+**Required regression tests:** deterministically abort while the watcher is sleeping and prove its timer/listener
+cleanup and read count remain unchanged afterward; abort through the real MCP client and prove the SDK signal reaches
+the dependency; hold one same-Delivery wait and prove a duplicate is refused without invoking the dependency; hold
+four distinct waits and prove a fifth is refused without invoking the dependency; release/abort all holders and
+prove slots are reusable. Re-run the existing 105-test matrix, typecheck, diff-check, and full verification. The
+executor must commit the correction separately and stop on any new scope/design conflict.
+
 ### T1 lock protocol redesign — SQLite decision
 
 Five adversarial rounds found successive crash windows in application-managed owner/fence/claim lockfiles. The
