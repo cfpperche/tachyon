@@ -1,5 +1,6 @@
 import path from "node:path";
 import { randomBytes } from "node:crypto";
+import { performance } from "node:perf_hooks";
 import { isDeepStrictEqual } from "node:util";
 import { isOwnsSubset } from "../agents/reuseWorktree.js";
 import type { ProcessFencePort } from "../agents/processFence.js";
@@ -47,7 +48,7 @@ export async function waitForDeliveryLease(
   store: Pick<DeliveryStore, "get">,
   input: WaitForDeliveryLeaseInput,
   timing: DeliveryLeaseWaitTiming = {
-    now: Date.now,
+    now: () => performance.now(),
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
     pollMs: DEFAULT_LEASE_WAIT_POLL_MS,
   },
