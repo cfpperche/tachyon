@@ -743,3 +743,202 @@ describe("DeliveryLeaseService (SDD 368 T5)", () => {
     expect((await store.get("d-lease"))!.lease.state).toBe("draining");
   });
 });
+
+describe("DeliveryLeaseService dead-holder reconciliation (SDD 368 T11)", () => {
+  const request = (worktree: string, operationId = "reconcile") => ({
+    deliveryId: "d-lease", canonicalWorktree: worktree, actor, operationId,
+  });
+  const makeService = (store: DeliveryStore, worktree: string, options: {
+    observation?: { state: "alive" } | { state: "gone" } | { state: "unknown"; reason: string };
+    observe?: (identity: unknown) => Promise<{ state: "alive" } | { state: "gone" } | { state: "unknown"; reason: string }>;
+    fence?: ProcessFencePort;
+    inspect?: () => { headSha: string; clean: boolean };
+    withLock?: <T>(path: string, fn: () => Promise<T>) => Promise<T>;
+  } = {}) => new DeliveryLeaseService({
+    store,
+    processFence: options.fence ?? certifiedFence,
+    processObserver: { observe: options.observe ?? (async () => options.observation ?? { state: "gone" }) },
+    canonicalWorktreeFor: () => worktree,
+    readHead: () => "b",
+    inspectWorktree: options.inspect ?? (() => ({ headSha: "b", clean: true })),
+    isAncestor: () => true,
+    withWorktreeLock: options.withLock ?? (async (_path, fn) => fn()),
+    now: () => now,
+    eventId: () => `reconcile-event-${Math.random()}`,
+  });
+
+  it("leaves an exact live identity unchanged without invoking the fence", async () => {
+    const { store, worktree, input } = heldFixture();
+    await store.create(input);
+    const fence: ProcessFencePort = { capability: vi.fn(() => ({ supported: true as const, domain: "test" })),
+      freeze: vi.fn(), terminate: vi.fn(), proveEmpty: vi.fn() };
+    const observe = vi.fn(async (identity) => { expect(identity).toEqual(input.lease!.holder!.process); return { state: "alive" as const }; });
+    const result = await makeService(store, worktree, { observe, fence }).reconcileHolder(request(worktree));
+    expect(result).toMatchObject({ outcome: "alive", delivery: { lease: { state: "held" } } });
+    expect(fence.capability).not.toHaveBeenCalled();
+    expect(fence.proveEmpty).not.toHaveBeenCalled();
+    expect((await store.get("d-lease"))!.events).toHaveLength(0);
+  });
+
+  it("interrupts only after gone, proven-empty, and two exact clean HEAD observations", async () => {
+    const { store, worktree, input } = heldFixture();
+    await store.create(input);
+    const inspect = vi.fn(() => ({ headSha: "b", clean: true }));
+    const result = await makeService(store, worktree, { inspect }).reconcileHolder(request(worktree));
+    expect(result.outcome).toBe("interrupted");
+    expect(inspect).toHaveBeenCalledTimes(2);
+    expect(result.delivery.lease.state).toBe("free");
+    expect(result.delivery.segments[0]).toMatchObject({ outcome: "interrupted", releasedHeadSha: "b" });
+    expect(result.delivery.events.map((event) => event.type)).toEqual(["holder_interrupted"]);
+  });
+
+  it("does not fabricate ACCEPT when a reviewer dies", async () => {
+    const { store, worktree, input } = reviewFixture();
+    await store.create(input);
+    const result = await makeService(store, worktree).reconcileHolder(request(worktree));
+    expect(result.delivery.segments[0]!.outcome).toBe("interrupted");
+    expect(result.delivery.events.some((event) => event.type === "review_completed" || event.detail?.verdict === "ACCEPT")).toBe(false);
+  });
+
+  it.each(["missing", "malformed", "unknown", "throwing"] as const)("quarantines %s process identity observation", async (kind) => {
+    const { store, worktree, input } = heldFixture();
+    if (kind === "missing") delete input.lease!.holder!.process;
+    if (kind === "malformed") input.lease!.holder!.process = { pid: 0, processStart: "", bootId: "" };
+    await store.create(input);
+    const observe = kind === "throwing" ? async () => { throw new Error("observer failed"); }
+      : async () => kind === "unknown" ? { state: "unknown" as const, reason: "unavailable" } : { state: "gone" as const };
+    await expect(makeService(store, worktree, { observe }).reconcileHolder(request(worktree, `identity-${kind}`)))
+      .rejects.toMatchObject({ code: "DELIVERY_QUARANTINED" });
+    expect((await store.get("d-lease"))!.lease).toMatchObject({ state: "quarantined", holder: input.lease!.holder });
+  });
+
+  it.each(["unavailable", "throwing", "survivors", "unknown"] as const)("quarantines %s external fence proof", async (kind) => {
+    const { store, worktree, input } = heldFixture();
+    await store.create(input);
+    const fence: ProcessFencePort = {
+      capability: () => kind === "unavailable" ? { supported: false, reason: "unsupported" } : { supported: true, domain: "test" },
+      freeze: vi.fn(), terminate: vi.fn(),
+      proveEmpty: async () => {
+        if (kind === "throwing") throw new Error("fence failed");
+        if (kind === "survivors") return { state: "survivors", pids: [8] };
+        if (kind === "unknown") return { state: "unknown", reason: "uncertain" };
+        return { state: "proven_empty" };
+      },
+    };
+    await expect(makeService(store, worktree, { fence }).reconcileHolder(request(worktree, `fence-${kind}`)))
+      .rejects.toMatchObject({ code: "DELIVERY_QUARANTINED" });
+    expect(fence.freeze).not.toHaveBeenCalled();
+    expect(fence.terminate).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["dirty", [{ headSha: "b", clean: false }]],
+    ["untracked", [{ headSha: "b", clean: false }]],
+    ["index", [{ headSha: "b", clean: false }]],
+    ["committed HEAD", [{ headSha: "c", clean: true }]],
+    ["second observation", [{ headSha: "b", clean: true }, { headSha: "b", clean: false }]],
+  ] as const)("quarantines %s worktree state", async (_label, observations) => {
+    const { store, worktree, input } = heldFixture();
+    await store.create(input);
+    let index = 0;
+    await expect(makeService(store, worktree, { inspect: () => observations[Math.min(index++, observations.length - 1)]! })
+      .reconcileHolder(request(worktree, `inspection-${_label.replace(/ /g, "-")}`))).rejects.toMatchObject({ code: "DELIVERY_QUARANTINED" });
+  });
+
+  it("quarantines inspection errors", async () => {
+    const { store, worktree, input } = heldFixture(); await store.create(input);
+    await expect(makeService(store, worktree, { inspect: () => { throw new Error("git inspection failed"); } })
+      .reconcileHolder(request(worktree, "inspect-error"))).rejects.toMatchObject({ code: "DELIVERY_QUARANTINED" });
+  });
+
+  it("quarantines the current holder after holder drift but preserves competing owned state", async () => {
+    const drift = heldFixture(); await drift.store.create(drift.input);
+    const driftService = makeService(drift.store, drift.worktree, { observe: async () => {
+      const current = await drift.store.get("d-lease");
+      await drift.store.update("d-lease", current!.version, (record) => { record.lease.holder!.principal = "new-principal"; return record; });
+      return { state: "gone" };
+    } });
+    await expect(driftService.reconcileHolder(request(drift.worktree, "holder-drift"))).rejects.toMatchObject({ code: "DELIVERY_QUARANTINED" });
+    expect((await drift.store.get("d-lease"))!.lease).toMatchObject({ state: "quarantined", holder: { principal: "new-principal" } });
+
+    const competing = heldFixture(); await competing.store.create(competing.input);
+    const competingService = makeService(competing.store, competing.worktree, { observe: async () => {
+      const current = await competing.store.get("d-lease");
+      await competing.store.update("d-lease", current!.version, (record) => { record.lease = { ...record.lease, state: "draining" }; return record; });
+      return { state: "gone" };
+    } });
+    await expect(competingService.reconcileHolder(request(competing.worktree, "competing")))
+      .rejects.toMatchObject({ code: "WORKTREE_OCCUPIED", retryable: true });
+    expect((await competing.store.get("d-lease"))!.lease.state).toBe("draining");
+  });
+
+  it("replays lost interrupted responses, rejects intent collisions, and emits one terminal event concurrently", async () => {
+    const { store, worktree, input } = heldFixture(); await store.create(input);
+    const update = store.update.bind(store); let lost = false;
+    store.update = async (...args: Parameters<DeliveryStore["update"]>) => {
+      const result = await update(...args);
+      if (!lost && args[3]?.operationId === "same:interrupt") { lost = true; throw new Error("response lost"); }
+      return result;
+    };
+    const lease = makeService(store, worktree);
+    const [first, second] = await Promise.all([
+      lease.reconcileHolder(request(worktree, "same")), lease.reconcileHolder(request(worktree, "same")),
+    ]);
+    expect(first).toEqual(second);
+    expect(first.delivery.events.filter((event) => event.type === "holder_interrupted")).toHaveLength(1);
+    await expect(lease.reconcileHolder({ ...request(worktree, "same"), actor: { kind: "agent", name: "other" } }))
+      .rejects.toThrow(/intent/);
+  });
+
+  it("replays quarantine refusal and aggregates the safety cause before persistence failure", async () => {
+    const replay = heldFixture(); await replay.store.create(replay.input);
+    const lease = makeService(replay.store, replay.worktree, { observation: { state: "unknown", reason: "uncertain" } });
+    const first = await lease.reconcileHolder(request(replay.worktree, "quarantine-replay")).catch((error) => error);
+    const second = await lease.reconcileHolder(request(replay.worktree, "quarantine-replay")).catch((error) => error);
+    expect(first).toMatchObject({ code: "DELIVERY_QUARANTINED" });
+    expect(second).toMatchObject({ code: first.code, retryable: first.retryable, detail: first.detail });
+    expect((await replay.store.get("d-lease"))!.events.filter((event) => event.type === "holder_reconcile_quarantined")).toHaveLength(1);
+
+    const concurrent = heldFixture(); await concurrent.store.create(concurrent.input);
+    const concurrentLease = makeService(concurrent.store, concurrent.worktree, { observation: { state: "unknown", reason: "uncertain" } });
+    const refusals = await Promise.allSettled([
+      concurrentLease.reconcileHolder(request(concurrent.worktree, "quarantine-concurrent")),
+      concurrentLease.reconcileHolder(request(concurrent.worktree, "quarantine-concurrent")),
+    ]);
+    expect(refusals.every((result) => result.status === "rejected" && result.reason.code === "DELIVERY_QUARANTINED")).toBe(true);
+    expect((await concurrent.store.get("d-lease"))!.events.filter((event) => event.type === "holder_reconcile_quarantined")).toHaveLength(1);
+
+    const failed = heldFixture(); await failed.store.create(failed.input);
+    const update = failed.store.update.bind(failed.store);
+    failed.store.update = async (...args: Parameters<DeliveryStore["update"]>) => {
+      if (args[3]?.operationId === "persist:quarantine") throw new Error("quarantine persistence failed");
+      return update(...args);
+    };
+    const error = await makeService(failed.store, failed.worktree, { observation: { state: "unknown", reason: "primary safety failure" } })
+      .reconcileHolder(request(failed.worktree, "persist")).catch((caught) => caught);
+    expect(error).toBeInstanceOf(AggregateError);
+    expect(error.errors.map((entry: Error) => entry.message)).toEqual([
+      expect.stringContaining("primary safety failure"), "quarantine persistence failed",
+    ]);
+    expect((await failed.store.get("d-lease"))!.lease.state).toBe("held");
+  });
+
+  it("rejects canonical mismatch before process observation and runs observation/proof outside the worktree lock", async () => {
+    const mismatch = heldFixture(); await mismatch.store.create(mismatch.input);
+    const observe = vi.fn(async () => ({ state: "gone" as const }));
+    await expect(makeService(mismatch.store, mismatch.worktree, { observe }).reconcileHolder(request(path.join(mismatch.worktree, "other"))))
+      .rejects.toMatchObject({ code: "DELIVERY_WORKTREE_MISMATCH" });
+    expect(observe).not.toHaveBeenCalled();
+
+    const outside = heldFixture(); await outside.store.create(outside.input);
+    let lockDepth = 0;
+    const assertOutside = vi.fn(() => expect(lockDepth).toBe(0));
+    const fence: ProcessFencePort = { capability: () => ({ supported: true, domain: "test" }), freeze: vi.fn(), terminate: vi.fn(),
+      proveEmpty: async () => { assertOutside(); return { state: "proven_empty" }; } };
+    const withLock = async <T>(_path: string, fn: () => Promise<T>) => { lockDepth++; try { return await fn(); } finally { lockDepth--; } };
+    await makeService(outside.store, outside.worktree, { fence, withLock, observe: async () => { assertOutside(); return { state: "gone" }; } })
+      .reconcileHolder(request(outside.worktree, "outside"));
+    expect(assertOutside).toHaveBeenCalledTimes(2);
+    expect(fence.freeze).not.toHaveBeenCalled(); expect(fence.terminate).not.toHaveBeenCalled();
+  });
+});

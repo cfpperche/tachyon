@@ -199,9 +199,30 @@ export interface DeliveryCompleteReviewInput {
   operationId: string;
 }
 
+export type DeliveryProcessObservation =
+  | { state: "alive" }
+  | { state: "gone" }
+  | { state: "unknown"; reason: string };
+
+export interface DeliveryProcessObserver {
+  observe(identity: DeliveryProcessIdentity): DeliveryProcessObservation | Promise<DeliveryProcessObservation>;
+}
+
+export interface DeliveryReconcileHolderInput {
+  deliveryId: string;
+  canonicalWorktree: string;
+  actor: DeliveryActor;
+  operationId: string;
+}
+
+export type DeliveryReconcileHolderResult =
+  | { outcome: "alive"; delivery: Delivery }
+  | { outcome: "interrupted"; delivery: Delivery };
+
 export interface DeliveryLeaseServiceDeps {
   store: DeliveryStore;
   processFence: ProcessFencePort;
+  processObserver?: DeliveryProcessObserver;
   canonicalWorktreeFor(delivery: Delivery): string | Promise<string>;
   readHead(canonicalWorktree: string): string | Promise<string>;
   inspectWorktree(canonicalWorktree: string): DeliveryWorktreeInspection | Promise<DeliveryWorktreeInspection>;
@@ -223,6 +244,126 @@ export class DeliveryLeaseService {
   private readonly deliveryLocks = new Map<string, Promise<void>>();
 
   constructor(private readonly deps: DeliveryLeaseServiceDeps) {}
+
+  async reconcileHolder(input: DeliveryReconcileHolderInput): Promise<DeliveryReconcileHolderResult> {
+    const canonicalWorktree = path.resolve(input.canonicalWorktree);
+    const intent = { ...structuredClone(input), canonicalWorktree };
+    const interruptedOperation = `${input.operationId}:interrupt`;
+    const quarantineOperation = `${input.operationId}:quarantine`;
+    const interruptedReplay = await this.replayReconcileInterrupted(interruptedOperation, input.deliveryId, intent);
+    if (interruptedReplay) return { outcome: "interrupted", delivery: interruptedReplay };
+    const quarantineReplay = await this.replayEvent(quarantineOperation, input.deliveryId,
+      "holder_reconcile_quarantined", intent, "quarantined");
+    if (quarantineReplay) throw this.reconcileRefusal(parseReason(quarantineReplay.lease.reason));
+
+    let snapshot!: { lease: Delivery["lease"]; holder: DeliveryLeaseHolder; expectedHeadSha: string };
+    let initialFailure: unknown;
+    await this.withDeliveryLock(input.deliveryId, async () => this.deps.withWorktreeLock(canonicalWorktree, async () => {
+      const current = await this.deps.store.get(input.deliveryId);
+      if (!current) throw new DeliveryNotFoundError(input.deliveryId);
+      const actualCanonical = path.resolve(await this.deps.canonicalWorktreeFor(current));
+      if (actualCanonical !== canonicalWorktree) {
+        throw new DeliveryLeaseError("DELIVERY_WORKTREE_MISMATCH", false, "caller worktree is not the canonical Delivery worktree",
+          { expected: actualCanonical, actual: canonicalWorktree });
+      }
+      if (["pending", "draining", "verifying"].includes(current.lease.state)) throw this.occupied(current, "Delivery has an owned in-flight operation");
+      if (current.lease.state === "quarantined") throw this.reconcileRefusal(parseReason(current.lease.reason));
+      if (current.lease.state !== "held" || !current.lease.holder) {
+        throw new DeliveryLeaseError("DELIVERY_INVALID_STATE", false, "holder reconciliation requires a held lease");
+      }
+      const holder = structuredClone(current.lease.holder);
+      const tail = current.segments.at(-1);
+      snapshot = { lease: structuredClone(current.lease), holder, expectedHeadSha: current.lease.expectedHeadSha ?? "" };
+      if (!tail || tail.releasedAt || tail.id !== holder.segmentId || tail.executionAgent !== holder.executionAgent
+        || tail.principal !== holder.principal || !current.lease.expectedHeadSha || !validProcessIdentity(holder.process)
+        || !holder.executionNonce) {
+        initialFailure = new DeliveryLeaseError("DELIVERY_PROCESS_IDENTITY_MISSING", false,
+          "held lease does not have an exact durable holder identity");
+      }
+    }));
+    if (initialFailure) return this.quarantineReconcileAndThrow(input, intent, snapshot, initialFailure);
+
+    let observation: DeliveryProcessObservation;
+    try {
+      observation = this.deps.processObserver
+        ? await this.deps.processObserver.observe(structuredClone(snapshot.holder.process!))
+        : { state: "unknown", reason: "exact process observation is unavailable" };
+    } catch (error) {
+      return this.quarantineReconcileAndThrow(input, intent, snapshot, error);
+    }
+    if (observation.state === "alive") {
+      let liveDelivery: Delivery | undefined;
+      let liveFailure: unknown;
+      await this.withDeliveryLock(input.deliveryId, async () => this.deps.withWorktreeLock(canonicalWorktree, async () => {
+        const current = await this.deps.store.get(input.deliveryId);
+        if (!current) throw new DeliveryNotFoundError(input.deliveryId);
+        if (["pending", "draining", "verifying"].includes(current.lease.state)) throw this.occupied(current, "another owned operation won reconciliation");
+        if (current.lease.state !== "held") throw this.occupied(current, "held lease changed during reconciliation");
+        if (!isDeepStrictEqual(current.lease, snapshot.lease)) liveFailure = new Error("held holder changed during live observation");
+        else liveDelivery = current;
+      }));
+      if (liveFailure) return this.quarantineReconcileAndThrow(input, intent, snapshot, liveFailure);
+      return { outcome: "alive", delivery: liveDelivery! };
+    }
+    if (observation.state === "unknown") {
+      return this.quarantineReconcileAndThrow(input, intent, snapshot,
+        new Error(`exact process identity is unknown: ${observation.reason}`));
+    }
+
+    let proof: Awaited<ReturnType<ProcessFencePort["proveEmpty"]>>;
+    try {
+      const capability = this.deps.processFence.capability();
+      if (!capability.supported) throw new Error(capability.reason);
+      proof = await this.deps.processFence.proveEmpty(snapshot.holder.executionNonce!, canonicalWorktree);
+    } catch (error) {
+      return this.quarantineReconcileAndThrow(input, intent, snapshot, error);
+    }
+    if (proof.state !== "proven_empty") {
+      return this.quarantineReconcileAndThrow(input, intent, snapshot,
+        new Error(`process fence proof was ${proof.state}${proof.state === "unknown" ? `: ${proof.reason}` : ""}`));
+    }
+
+    let terminalFailure: unknown;
+    try {
+      const delivery = await this.withDeliveryLock(input.deliveryId, async () => this.deps.withWorktreeLock(canonicalWorktree, async () => {
+        const current = await this.deps.store.get(input.deliveryId);
+        if (!current) throw new DeliveryNotFoundError(input.deliveryId);
+        const actualCanonical = path.resolve(await this.deps.canonicalWorktreeFor(current));
+        if (actualCanonical !== canonicalWorktree) throw new DeliveryLeaseError("DELIVERY_WORKTREE_MISMATCH", false, "Delivery worktree changed during reconciliation");
+        if (["pending", "draining", "verifying"].includes(current.lease.state)) throw this.occupied(current, "another owned operation won reconciliation");
+        if (current.lease.state !== "held") throw this.occupied(current, "held lease changed during reconciliation");
+        if (!isDeepStrictEqual(current.lease, snapshot.lease)) throw new Error("held holder changed during reconciliation");
+        const tail = current.segments.at(-1);
+        if (!tail || tail.releasedAt || tail.id !== snapshot.holder.segmentId || tail.executionAgent !== snapshot.holder.executionAgent
+          || tail.principal !== snapshot.holder.principal) throw new Error("open holder segment changed during reconciliation");
+        const first = await this.inspect(canonicalWorktree);
+        this.assertReconcileInspection(first, snapshot.expectedHeadSha);
+        const second = await this.inspect(canonicalWorktree);
+        this.assertReconcileInspection(second, snapshot.expectedHeadSha);
+        return this.deps.store.update(current.id, current.version, (record) => {
+          if (!isDeepStrictEqual(record.lease, snapshot.lease)) throw new DeliveryVersionConflictError(current.id, current.version, record.version);
+          const open = record.segments.at(-1);
+          if (!open || open.releasedAt || open.id !== snapshot.holder.segmentId) throw new DeliveryInvariantError("reconciled holder tail changed");
+          open.releasedAt = this.now(); open.releasedHeadSha = second.headSha; open.outcome = "interrupted";
+          record.lease = { state: "free", changedAt: this.now() };
+          record.events.push({ id: this.eventId(), at: this.now(), type: "holder_interrupted", by: structuredClone(input.actor),
+            detail: { operationId: input.operationId, intent, segmentId: open.id, executionNonce: snapshot.holder.executionNonce, headSha: second.headSha } });
+          return record;
+        }, { operationId: interruptedOperation, intent });
+      }));
+      return { outcome: "interrupted", delivery };
+    } catch (error) {
+      let replay: Delivery | undefined;
+      try { replay = await this.replayReconcileInterrupted(interruptedOperation, input.deliveryId, intent); }
+      catch (replayError) {
+        if (!(replayError instanceof DeliveryInvariantError && replayError.message.startsWith("invalid operation id"))) throw replayError;
+      }
+      if (replay) return { outcome: "interrupted", delivery: replay };
+      if (error instanceof DeliveryLeaseError && error.code === "WORKTREE_OCCUPIED") throw error;
+      terminalFailure = error;
+    }
+    return this.quarantineReconcileAndThrow(input, intent, snapshot, terminalFailure);
+  }
 
   async acquire(input: DeliveryLeaseAcquireInput): Promise<DeliveryLeaseReservation> {
     try { return await this.acquireInternal(input); }
@@ -593,6 +734,79 @@ export class DeliveryLeaseService {
     }
   }
 
+  private assertReconcileInspection(inspection: DeliveryWorktreeInspection, expectedHeadSha: string): void {
+    if (!inspection.clean) throw new DeliveryLeaseError("DELIVERY_WORKTREE_DIRTY", false, "canonical worktree is dirty");
+    if (inspection.headSha !== expectedHeadSha) {
+      throw new DeliveryLeaseError("DELIVERY_HEAD_CHANGED", false, "canonical worktree HEAD differs from the held lease",
+        { expected: expectedHeadSha, actual: inspection.headSha });
+    }
+  }
+
+  private async quarantineReconcileAndThrow(
+    input: DeliveryReconcileHolderInput,
+    intent: Record<string, unknown>,
+    snapshot: { lease: Delivery["lease"]; holder: DeliveryLeaseHolder; expectedHeadSha: string },
+    original: unknown,
+  ): Promise<never> {
+    const operationId = `${input.operationId}:quarantine`;
+    const evidence = {
+      error: original instanceof Error ? original.message : String(original),
+      observedExecutionNonce: snapshot.holder.executionNonce,
+      expectedHeadSha: snapshot.expectedHeadSha,
+    };
+    let refusalEvidence: unknown = evidence;
+    let persistenceError: unknown;
+    try {
+      const replay = await this.replayEvent(operationId, input.deliveryId, "holder_reconcile_quarantined", intent, "quarantined");
+      if (!replay) {
+        await this.withDeliveryLock(input.deliveryId, async () => this.deps.withWorktreeLock(path.resolve(input.canonicalWorktree), async () => {
+          const current = await this.deps.store.get(input.deliveryId);
+          if (!current) throw new DeliveryNotFoundError(input.deliveryId);
+          if (["pending", "draining", "verifying"].includes(current.lease.state)) {
+            throw this.occupied(current, "another owned operation won reconciliation");
+          }
+          if (current.lease.state === "quarantined") throw this.reconcileRefusal(parseReason(current.lease.reason));
+          if (current.lease.state !== "held" || !current.lease.holder) throw this.occupied(current, "held lease changed during reconciliation");
+          const holder = structuredClone(current.lease.holder);
+          const durableEvidence = { ...evidence, currentExecutionNonce: holder.executionNonce, expectedHeadSha: current.lease.expectedHeadSha };
+          refusalEvidence = durableEvidence;
+          await this.deps.store.update(current.id, current.version, (record) => {
+            if (record.lease.state !== "held" || !isDeepStrictEqual(record.lease.holder, holder)) {
+              throw new DeliveryVersionConflictError(current.id, current.version, record.version);
+            }
+            record.lease = { ...record.lease, state: "quarantined", reason: JSON.stringify(durableEvidence), changedAt: this.now() };
+            record.events.push({ id: this.eventId(), at: this.now(), type: "holder_reconcile_quarantined", by: structuredClone(input.actor),
+              detail: { operationId: input.operationId, intent, holder, expectedHeadSha: record.lease.expectedHeadSha, evidence: durableEvidence } });
+            return record;
+          }, { operationId, intent });
+        }));
+      }
+    } catch (error) {
+      if (error instanceof DeliveryLeaseError && error.code === "WORKTREE_OCCUPIED") throw error;
+      if (error instanceof DeliveryLeaseError && error.code === "DELIVERY_QUARANTINED") throw error;
+      persistenceError = error;
+    }
+    const refusal = this.reconcileRefusal(refusalEvidence);
+    if (persistenceError) {
+      throw new AggregateError([original, persistenceError], "holder reconciliation failed and quarantine persistence is uncertain");
+    }
+    throw refusal;
+  }
+
+  private reconcileRefusal(detail: unknown): DeliveryLeaseError {
+    return new DeliveryLeaseError("DELIVERY_QUARANTINED", false, "dead holder could not be safely reconciled", { evidence: detail });
+  }
+
+  private async replayReconcileInterrupted(operationId: string, deliveryId: string, intent: Record<string, unknown>): Promise<Delivery | undefined> {
+    const delivery = await this.deps.store.getOperationResult(operationId, "update", deliveryId);
+    if (!delivery) return undefined;
+    const event = delivery.events.find((candidate) => candidate.type === "holder_interrupted" && isDeepStrictEqual(candidate.detail?.intent, intent));
+    if (!event || delivery.lease.state !== "free") {
+      throw new DeliveryInvariantError(`operation id '${operationId}' does not match this holder reconciliation intent`);
+    }
+    return delivery;
+  }
+
   private assertReviewHolder(delivery: Delivery, state: "held" | "draining", expectedHead: string): DeliveryLeaseHolder {
     const holder = delivery.lease.holder;
     const tail = this.assertReviewTail(delivery, expectedHead);
@@ -837,4 +1051,15 @@ function acquireIntent(input: DeliveryLeaseAcquireInput, canonicalWorktree: stri
     grantedBy: structuredClone(input.grantedBy),
     ownsSubset,
   };
+}
+
+function validProcessIdentity(identity: DeliveryProcessIdentity | undefined): identity is DeliveryProcessIdentity {
+  return !!identity && Number.isSafeInteger(identity.pid) && identity.pid > 0
+    && typeof identity.processStart === "string" && identity.processStart.length > 0
+    && typeof identity.bootId === "string" && identity.bootId.length > 0;
+}
+
+function parseReason(reason: string | undefined): unknown {
+  if (!reason) return undefined;
+  try { return JSON.parse(reason); } catch { return reason; }
 }
