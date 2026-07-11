@@ -805,6 +805,25 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(await manager.runningAgents()).not.toContain("successor");
   });
 
+  it("SDD 368 T6 fails visibly when reservation compensation itself fails", async () => {
+    const { manager, ws } = resumeHarness("agents: {}\n", {
+      prepareDeliveryJoin: async (_name, request) => ({
+        cwd: ws,
+        worktree: { path: ws, branch: "tachyon/delivery", tachyonCreatedBranch: true, baseRef: request.expectedHead, createdAt: "now" },
+        reservationNonce: "nonce",
+      }),
+      confirmDeliveryJoin: async () => { throw new Error("confirmation failed"); },
+      failDeliveryJoin: async () => { throw new Error("reservation quarantine failed"); },
+    });
+    const error = await manager.spawn("successor", {
+      cmd: "claude",
+      deliveryJoin: { deliveryId: "d-one", role: "fixer", ownsSubset: [], expectedHead: "abc", operationId: "join-4" },
+    }).catch((caught) => caught);
+    expect(error).toBeInstanceOf(AggregateError);
+    expect(error.message).toContain("compensation was incomplete");
+    expect(error.errors.map((entry: Error) => entry.message)).toEqual(["confirmation failed", "reservation quarantine failed"]);
+  });
+
   it("mint runtime (claude): spawns a NAMED session (-n) and records the name (spec 220)", async () => {
     const { manager, ledger, cmds, ws } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
       newSessionId: () => "uuid-ignored-for-claude", // claude name-mints; the random uuid is unused

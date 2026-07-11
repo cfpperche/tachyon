@@ -821,10 +821,15 @@ export class AgentManager {
       spawned = true;
       await this.opts.confirmDeliveryJoin(name, request, prepared, await this.tryPanePid(name));
     } catch (error) {
+      const compensationErrors: unknown[] = [];
       if (spawned) {
-        try { await this.kill(name); } catch { /* compensation below remains authoritative and fail-closed */ }
+        try { await this.kill(name); } catch (cleanupError) { compensationErrors.push(cleanupError); }
       }
-      try { await this.opts.failDeliveryJoin?.(name, request, prepared, error); } catch { /* preserve the launch/confirm failure */ }
+      try { await this.opts.failDeliveryJoin?.(name, request, prepared, error); }
+      catch (cleanupError) { compensationErrors.push(cleanupError); }
+      if (compensationErrors.length) {
+        throw new AggregateError([error, ...compensationErrors], "Delivery join failed and compensation was incomplete");
+      }
       throw error;
     }
   }
