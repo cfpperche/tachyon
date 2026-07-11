@@ -34,7 +34,7 @@ _Generated from `plan.md` on 2026-07-10. Work top-to-bottom. Check boxes as task
   Current-host constraint: expose capability unavailable; do not enable successor handoff without a complete
   adapter that can prove both containment-group and independent worktree-binding absence.
   - Gate: `concurrent acquire grants one Delivery lease and returns retryable WORKTREE_OCCUPIED to the loser`.
-- [ ] T6. Generalize the forced-worktree spawn path so a Delivery successor uses the existing worktree, closes the
+- [x] T6. Generalize the forced-worktree spawn path so a Delivery successor uses the existing worktree, closes the
   prior segment, launches inside the proven process-containment adapter, appends its role-scoped segment, and never
   creates a fallback worktree.
   - Gate: `successor acquire reuses one worktree and never forks an occupied Delivery`.

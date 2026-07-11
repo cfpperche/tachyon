@@ -98,6 +98,15 @@ narrows in-process drift, but cross-process Git/worktree exclusion remains delib
 gated until T7 supplies the complete containment plus independent worktree-binding absence proof. R1 findings are
 closed by `43c02bd`/`b23547a`; adversarial R2 accepted the slice in `.tachyon/reviews/368-delivery-lease-t5-r2.md`.
 
+### T6 no-fallback Delivery join boundary
+
+T6 adds the `delivery_join` Bridge/AgentManager channel and reuses only a coordinator-prepared canonical worktree;
+it is mutually exclusive with every path that creates or reuses a legacy worktree. Spawn confirmation failure
+terminates the new runtime and invokes durable reservation compensation; incomplete teardown/compensation is
+surfaced as an `AggregateError`, never swallowed. The current host supplies no certified preparation callback, so
+the public path remains `DELIVERY_LEASE_UNAVAILABLE` before tmux until T7 wires the complete fence. R1 found the
+initial silent-compensation gap; `81741bb` closed it and R2 accepted the delta.
+
 ### T1 lock protocol redesign — SQLite decision
 
 Five adversarial rounds found successive crash windows in application-managed owner/fence/claim lockfiles. The
