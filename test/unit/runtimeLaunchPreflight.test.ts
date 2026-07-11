@@ -68,7 +68,8 @@ describe("runtime launch preflight", () => {
     "npx --package @openai/codex codex -- prompt",
     "npx --package=@openai/codex --workspace repo codex -- prompt",
     "npx -- codex -- prompt",
-    "pnpx --allow-build --package @openai/codex --reporter=append-only codex -- prompt",
+    "pnpx --allow-build native-addon --package @openai/codex --reporter=append-only codex -- prompt",
+    "pnpx --allow-build=native-addon codex -- prompt",
     "bunx --bun --no-install -p @openai/codex codex -- prompt",
     "env MODE=review npx --yes --package=@openai/codex codex -- prompt",
   ])("proves the runtime boundary through the explicit wrapper grammar: %s", (command) => {
@@ -81,10 +82,21 @@ describe("runtime launch preflight", () => {
     "env -S 'codex --'", "env --split-string=codex codex", "env --unknown codex", "env -a", "env -a -i codex", "env --file= codex",
     "npx -c 'codex --'", "npx --call=codex", "npx --unknown codex", "npx -p", "npx -p --yes codex", "npx --package= codex",
     "pnpx -c codex", "pnpx --shell-mode codex", "pnpx --unknown codex", "pnpx --package",
+    "pnpx --allow-build", "pnpx --allow-build --package pkg codex", "pnpx --allow-build= codex",
     "bunx --unknown codex", "bunx -p", "bunx --package= codex",
     "npx --yes pnpx codex",
   ])("fails closed on unknown, shell-mode, missing, or ambiguous wrapper grammar: %s", (command) => {
     expect(parseLaunchCommand(command)).toBeUndefined();
+  });
+
+  it.each([
+    ["codex --", undefined],
+    ["env MODE=review codex --", undefined],
+    ["npx codex --", "npx"],
+    ["env MODE=review pnpx codex --", "pnpx"],
+    ["bunx opencode --", "bunx"],
+  ])("exposes package-launcher traversal only when crossed: %s", (command, packageLauncher) => {
+    expect(parseLaunchCommand(command)?.packageLauncher).toBe(packageLauncher);
   });
 
   it("probes through the launcher that will execute Codex", async () => {

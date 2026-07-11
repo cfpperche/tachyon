@@ -166,6 +166,9 @@ function reviewerSafeCommand(cmd: string): { cmd: string; advisory?: string } {
   const parsed = parseLaunchCommand(cmd);
   if (!parsed || !parsed.allWordsLiteral) throw new Error("reviewer command is structurally ambiguous or uses shell expansion");
   const runtime = adapterFor(parsed.binary)?.runtime;
+  if (parsed.packageLauncher && (!runtime || parsed.binary.includes("@") || parsed.binary.includes("/"))) {
+    throw new Error(`reviewer command cannot prove the runtime adapter after ${parsed.packageLauncher}`);
+  }
   const boundary = parsed.argv.indexOf("--");
   const options = boundary < 0 ? parsed.argv : parsed.argv.slice(0, boundary);
   const has = (flag: string) => options.includes(flag) || options.some((token) => token.startsWith(`${flag}=`));

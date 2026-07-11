@@ -20,6 +20,8 @@ export interface ParsedLaunchCommand {
   runtimeTokenEnd: number;
   /** False when shell expansion could change any effective argv word. */
   allWordsLiteral: boolean;
+  /** Present only when executable-boundary proof traversed a package launcher. */
+  packageLauncher?: "npx" | "pnpx" | "bunx";
   model?: string;
 }
 
@@ -78,8 +80,8 @@ function pnpxCommandIndex(tokens: string[], start: number): number | undefined {
   let index = start;
   while (index < tokens.length) {
     const arg = tokens[index]!;
-    if (arg === "--allow-build") { index++; continue; }
     const next = [
+      separateOrLongEquals(tokens, index, undefined, "--allow-build"),
       separateOrLongEquals(tokens, index, undefined, "--package"),
       separateOrLongEquals(tokens, index, undefined, "--reporter"),
     ].find((candidate) => candidate !== undefined);
@@ -163,6 +165,7 @@ export function parseLaunchCommand(input: string): ParsedLaunchCommand | undefin
   if (start >= tokens.length) return undefined;
   const probeStart = start;
   let base = tokens[start]!.split("/").pop() ?? "";
+  let packageLauncher: "npx" | "pnpx" | "bunx" | undefined;
   // Explicit wrapper grammar only: env may wrap one measured package launcher, which then yields
   // exactly one runtime token. Unknown, shell-evaluating, or missing-operand forms fail closed.
   if (base === "env") {
@@ -171,6 +174,7 @@ export function parseLaunchCommand(input: string): ParsedLaunchCommand | undefin
     start = command; base = tokens[start]!.split("/").pop() ?? "";
   }
   if (LAUNCHERS.has(base)) {
+    packageLauncher = base as "npx" | "pnpx" | "bunx";
     const command = base === "npx" ? npxCommandIndex(tokens, start + 1)
       : base === "pnpx" ? pnpxCommandIndex(tokens, start + 1)
         : bunxCommandIndex(tokens, start + 1);
@@ -199,6 +203,7 @@ export function parseLaunchCommand(input: string): ParsedLaunchCommand | undefin
     probeArgv: tokens.slice(probeStart + 1, start + 1),
     runtimeTokenEnd,
     allWordsLiteral: literalWords.every(Boolean),
+    ...(packageLauncher ? { packageLauncher } : {}),
     ...(model ? { model } : {}),
   };
 }

@@ -867,6 +867,7 @@ describe("AgentManager — session resume (spec 209)", () => {
     ["npx --package=@openai/codex codex -- positional", "npx --package=@openai/codex codex --sandbox read-only -- positional"],
     ["env --argv0 reviewer codex -- positional", "env --argv0 reviewer codex --sandbox read-only -- positional"],
     ["env -a codex -f vars.env codex -- positional", "env -a codex -f vars.env codex --sandbox read-only -- positional"],
+    ["pnpx --allow-build native-addon codex -- positional", "pnpx --allow-build native-addon codex --sandbox read-only -- positional"],
   ])("SDD 368 T10 inserts reviewer safety immediately after the structural runtime token: %s", async (cmd, effective) => {
     const { manager, ledger, ws } = resumeHarness("agents: {}\n", {
       prepareDeliveryJoin: async (_name, request) => ({ cwd: ws,
@@ -912,6 +913,7 @@ describe("AgentManager — session resume (spec 209)", () => {
     "env -S 'codex --'", "env --unknown codex", "env -a", "env -f codex",
     "npx -c codex", "npx --unknown codex", "npx -p", "npx --package= codex",
     "pnpx --shell-mode codex", "pnpx --unknown codex", "bunx --unknown codex", "bunx -p",
+    "pnpx --allow-build", "pnpx --allow-build --package pkg codex", "pnpx --allow-build= codex",
   ])("SDD 368 T10 refuses ambiguous reviewer shell structure before reservation: %s", async (cmd) => {
     let prepared = false;
     const { manager } = resumeHarness("agents: {}\n", {
@@ -921,6 +923,42 @@ describe("AgentManager — session resume (spec 209)", () => {
       deliveryJoin: { deliveryId: "d", role: "reviewer", ownsSubset: [], expectedHead: "abc", operationId: "ambiguous" } }))
       .rejects.toThrow(/structurally ambiguous|shell expansion/);
     expect(prepared).toBe(false);
+  });
+
+  it.each([
+    "npx codex@0.144.1 -- positional",
+    "npx @openai/codex -- positional",
+    "env MODE=review pnpx @scope/reviewer-cli -- positional",
+    "bunx custom-reviewer@latest -- positional",
+  ])("SDD 368 T10 A3 refuses package specs whose effective adapter cannot be proven: %s", async (cmd) => {
+    let prepared = false;
+    const { manager } = resumeHarness("agents: {}\n", {
+      prepareDeliveryJoin: async () => { prepared = true; throw new Error("must not prepare"); }, confirmDeliveryJoin: async () => undefined,
+    });
+    await expect(manager.spawn("package-reviewer", { cmd,
+      deliveryJoin: { deliveryId: "d", role: "reviewer", ownsSubset: [], expectedHead: "abc", operationId: "package" } }))
+      .rejects.toThrow(/cannot prove the runtime adapter/);
+    expect(prepared).toBe(false);
+  });
+
+  it.each([
+    ["custom-review-runtime", false],
+    ["env MODE=review custom-review-runtime", false],
+    ["npx codex -- positional", true],
+    ["npx opencode -- positional", false],
+  ])("SDD 368 T10 A3 preserves direct/env unknown and known literal launcher policy: %s", async (cmd, sandboxed) => {
+    const advisories: string[] = [];
+    const { manager, ledger, ws } = resumeHarness("agents: {}\n", {
+      notify: (message) => { advisories.push(message); },
+      prepareDeliveryJoin: async (_name, request) => ({ cwd: ws,
+        worktree: { path: ws, branch: "tachyon/delivery", tachyonCreatedBranch: true, baseRef: request.expectedHead, createdAt: "now" }, reservationNonce: "n" }),
+      confirmDeliveryJoin: async () => undefined,
+    });
+    await manager.spawn("policy-reviewer", { cmd,
+      deliveryJoin: { deliveryId: "d", role: "reviewer", ownsSubset: [], expectedHead: "abc", operationId: "policy" } });
+    const effective = ledger.get("policy-reviewer")?.def?.cmd ?? "";
+    expect(effective.includes("--sandbox read-only")).toBe(sandboxed);
+    expect(advisories.length > 0).toBe(!sandboxed);
   });
 
   it("SDD 368 T10 treats bypass-looking text after -- and single-quoted control text as positional data", async () => {
@@ -939,7 +977,7 @@ describe("AgentManager — session resume (spec 209)", () => {
     const bin = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-reviewer-bin-"));
     const executable = path.join(bin, "codex");
     fs.writeFileSync(executable, "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$CAPTURE_FILE\"\n", { mode: 0o755 });
-    const wrapper = "#!/bin/sh\ncase \"$(basename \"$0\")\" in\n  npx) while [ $# -gt 0 ]; do case \"$1\" in -p|--package|-w|--workspace) shift 2;; --package=*|--workspace=*|-y|--yes|--no|--workspaces|--include-workspace-root) shift;; --) shift; break;; *) break;; esac; done;;\n  pnpx) while [ $# -gt 0 ]; do case \"$1\" in --package|--reporter) shift 2;; --package=*|--reporter=*|--allow-build) shift;; *) break;; esac; done;;\n  bunx) while [ $# -gt 0 ]; do case \"$1\" in -p|--package) shift 2;; --package=*|--bun|--no-install|--verbose|--silent) shift;; *) break;; esac; done;;\nesac\nexec \"$@\"\n";
+    const wrapper = "#!/bin/sh\ncase \"$(basename \"$0\")\" in\n  npx) while [ $# -gt 0 ]; do case \"$1\" in -p|--package|-w|--workspace) shift 2;; --package=*|--workspace=*|-y|--yes|--no|--workspaces|--include-workspace-root) shift;; --) shift; break;; *) break;; esac; done;;\n  pnpx) while [ $# -gt 0 ]; do case \"$1\" in --allow-build|--package|--reporter) shift 2;; --allow-build=*|--package=*|--reporter=*) shift;; *) break;; esac; done;;\n  bunx) while [ $# -gt 0 ]; do case \"$1\" in -p|--package) shift 2;; --package=*|--bun|--no-install|--verbose|--silent) shift;; *) break;; esac; done;;\nesac\nexec \"$@\"\n";
     for (const name of ["npx", "pnpx", "bunx"]) fs.writeFileSync(path.join(bin, name), wrapper, { mode: 0o755 });
     const { manager, cmds, ws } = resumeHarness("agents: {}\n", {
       prepareDeliveryJoin: async (_name, request) => ({ cwd: ws,
@@ -949,7 +987,7 @@ describe("AgentManager — session resume (spec 209)", () => {
     const cases = [
       "env --argv0 reviewer codex -- positional",
       "npx -p @openai/codex codex -- positional",
-      "pnpx --package @openai/codex --reporter append-only codex -- positional",
+      "pnpx --allow-build native-addon --package @openai/codex --reporter append-only codex -- positional",
       "bunx --no-install -p @openai/codex codex -- positional",
     ];
     for (const [index, raw] of cases.entries()) {
