@@ -103,6 +103,18 @@ Stated per tier, no overclaim:
      Evidence stays non-gating (273 rule intact); THIS gate is the broker precondition, not evidence
      severity. A `break-glass` capability (separate template, its own audit class + louder approval) is
      the only unverified path.
+   - **HONESTY LIMIT on that precondition (Phase-1 security review, 2026-07-11 — .tachyon/reviews/371-p1-773daa6-codex.md finding 5):**
+     in **Tier A the verification link is INTEGRITY-checked, NOT AUTHENTICATED.** `.tachyon/verifications/<refSha>.json`
+     is writable by any same-UID agent and its `integrityHash` is an **unkeyed** sha256 — so a determined
+     agent can author a `verdict:accept` record for any commit and recompute a matching hash. The
+     precondition therefore catches accidental corruption, a stale/wrong-commit record, and honest
+     mistakes; it does **NOT** withstand adversarial forgery. This is consistent with Tier A (nothing
+     on-machine prevents a same-UID agent), and it means the "traceable to a commit that passed the gate"
+     invariant is, in Tier A, a **recorded claim that the off-machine consumer (Phase 4) must
+     corroborate** — not an on-machine proof. It becomes a real gate only under **Tier E**, where the
+     agent principal cannot write the verification store. **No doc/UI may describe this precondition as
+     proof that the shipped commit passed verification** (the Phase-1 no-overclaim test covers this
+     wording too).
    - **Bind what TRANSMITS, not just a hash** (folds BLOCKER-4 — the deepest). Per-template binding
      semantics, because most outward actions don't ship one file:
      - *file-upload templates* (vsix-install, generic-upload, npm-publish tarball): the broker COPIES
