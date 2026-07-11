@@ -29,7 +29,7 @@ _Generated from `plan.md` on 2026-07-10. Work top-to-bottom. Check boxes as task
 
 ## Phase 2 — lease and sequential occupants
 
-- [ ] T5. Add `DeliveryLeaseService` with fail-closed acquire, normalized authority subset checks, expected-HEAD pin,
+- [x] T5. Add `DeliveryLeaseService` with fail-closed acquire, normalized authority subset checks, expected-HEAD pin,
   ancestor-linear boundary checks, durable holder/liveness state, and a single global lock order.
   Current-host constraint: expose capability unavailable; do not enable successor handoff without a complete
   adapter that can prove both containment-group and independent worktree-binding absence.

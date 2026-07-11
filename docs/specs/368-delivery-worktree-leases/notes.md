@@ -89,6 +89,15 @@ Study: `.tachyon/studies/368-process-fence-spike.md`.
 
 ## Deviations
 
+### T5 current-host acquisition boundary
+
+T5 implements and tests atomic `pending` reservation, durable idempotent acquire/confirm receipts, normalized
+authority, HEAD/ancestry checks, and structured contention. The production `ProcessFencePort` remains explicitly
+unavailable on this host, so none of those primitives enable real successor acquisition yet. The second HEAD read
+narrows in-process drift, but cross-process Git/worktree exclusion remains deliberately unproven and capability-
+gated until T7 supplies the complete containment plus independent worktree-binding absence proof. R1 findings are
+closed by `43c02bd`/`b23547a`; adversarial R2 accepted the slice in `.tachyon/reviews/368-delivery-lease-t5-r2.md`.
+
 ### T1 lock protocol redesign — SQLite decision
 
 Five adversarial rounds found successive crash windows in application-managed owner/fence/claim lockfiles. The
