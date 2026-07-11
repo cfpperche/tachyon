@@ -52,7 +52,7 @@ _Generated from `plan.md` on 2026-07-10. Work top-to-bottom. Check boxes as task
 
 ## Phase 3 — review, recovery, and persistent identities
 
-- [ ] T10. Add exclusive reviewer segments with adapter-level read-only hints and decisive HEAD/index/clean-tree
+- [x] T10. Add exclusive reviewer segments with adapter-level read-only hints and decisive HEAD/index/clean-tree
   postconditions; invalid mutation can never record ACCEPT.
   - Gate: `review ACCEPT is refused when the pinned branch or tracked tree changed`.
 - [ ] T11. Reconcile holder death using the same `ProcessFencePort` absence predicate as handoff plus persisted

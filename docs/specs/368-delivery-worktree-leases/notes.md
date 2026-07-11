@@ -712,3 +712,16 @@ _Questions surfaced during the build with no answer yet. Owner or path to resolu
 - Adversarial reviews R1–R5 closed partial-write, stale-inventory TOCTOU, incomplete fingerprint, pending wedge,
   and concurrent retry findings. Final verdict: ACCEPT (`c8a59da`).
 - Integrated on `main` through `583f238`; `npm run verify:full` passed (297 files, 3275 tests, 3 skipped).
+
+# T10 exclusive reviewer closure — 2026-07-11
+
+- Added empty-authority exclusive reviewer segments, pinned review completion, and decisive task-ref/HEAD/index/
+  tracked-tree postconditions after `ProcessFencePort` proves the reviewer execution empty. Mutation or uncertainty
+  quarantines the still-open segment and can never append authoritative `review_completed`/ACCEPT.
+- Added measured Codex read-only and Claude/Grok plan hints. A shared fail-closed launch parser proves literal argv,
+  one permitted `env` layer, an explicit `npx`/`pnpx`/`bunx` operand grammar, the runtime token insertion boundary,
+  and a single safe-mode declaration; unsupported direct runtimes remain advisory as explicitly contracted.
+- Adversarial R1–R4 closed tail-append/shell-composition, operand-wrapper, attached-short-option, package-spec, and
+  nested-`env` escapes. Final verdict: ACCEPT (`9a1a586`).
+- Implementation head is `b5d4d98`; coordinator-focused verification passed 385/385 and full verification passed
+  300 files, 3500 tests, and 3 skipped before this documentation-only closure.
