@@ -2709,6 +2709,46 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     expect(reviewer?.delegator).toBe("boss");
   });
 
+  it("keeps ledger and worktree visible when rejected delegation kill cannot prove the session dead", async () => {
+    const REC = { path: "/wt/h/reviewer", branch: "tachyon/reviewer", tachyonCreatedBranch: true, baseRef: "b", createdAt: "t" };
+    const sessions = new Set<string>();
+    const exec = async (args: string[]): Promise<ExecResult> => {
+      const target = args[args.indexOf("-t") + 1]?.replace(/^=/, "").replace(/:$/, "");
+      if (args.includes("new-session")) { sessions.add(args[args.indexOf("-s") + 1]); return { stdout: "", stderr: "" }; }
+      if (args[2] === "has-session") { if (!sessions.has(target)) throw new Error("none"); return { stdout: "", stderr: "" }; }
+      if (args[2] === "kill-session") throw new Error("injected kill failure");
+      if (args[2] === "list-sessions") return { stdout: [...sessions].join("\n") + "\n", stderr: "" };
+      if (args[2] === "list-panes") return { stdout: [...sessions].map((s) => `${s}\t0\t`).join("\n"), stderr: "" };
+      return { stdout: "", stderr: "" };
+    };
+    const removed: string[] = [];
+    const { manager, ledger } = harness("agents:\n  boss:\n    cmd: claude\n", {
+      tmux: new TmuxService(exec), resolveSpawnCwd: async () => ({ cwd: REC.path, worktree: REC }),
+      removeForkWorktree: async () => { removed.push(REC.path); }, recordDelegation: async () => { throw new Error("canonical reject"); },
+    });
+    const failure = await manager.spawn("reviewer", { cmd: "claude", delegator: "boss",
+      contract: { task: "t", context: "c", constraints: "x", doneWhen: "d" }, gate: { behaviorTest: "b" } }).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(AggregateError);
+    expect((failure as AggregateError).errors[0]).toMatchObject({ message: "canonical reject" });
+    expect(ledger.get("reviewer")).toBeDefined();
+    expect(removed).toEqual([]);
+  });
+
+  it("attempts worktree cleanup after a dead rejected runtime even when ledger removal fails", async () => {
+    const REC = { path: "/wt/h/reviewer", branch: "tachyon/reviewer", tachyonCreatedBranch: true, baseRef: "b", createdAt: "t" };
+    const removed: string[] = [];
+    const { manager, ledger } = harness("agents:\n  boss:\n    cmd: claude\n", {
+      resolveSpawnCwd: async () => ({ cwd: REC.path, worktree: REC }), removeForkWorktree: async () => { removed.push(REC.path); },
+      recordDelegation: async () => { throw new Error("canonical reject"); },
+    });
+    ledger.remove = (() => { throw new Error("injected ledger failure"); }) as typeof ledger.remove;
+    const failure = await manager.spawn("reviewer", { cmd: "claude", delegator: "boss",
+      contract: { task: "t", context: "c", constraints: "x", doneWhen: "d" }, gate: { behaviorTest: "b" } }).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(AggregateError);
+    expect(removed).toEqual([REC.path]);
+    expect(ledger.get("reviewer")).toBeDefined();
+  });
+
   it("rehydrates a re-discovered ad-hoc agent so it is restartable + re-nested", async () => {
     const { manager, ledger, ws, cmds } = harness("agents:\n  claude:\n    cmd: claude\n");
     ledger.record("worker", { def: { cmd: "sh", kind: "terminal", parent: "claude" }, cwd: ws, declared: false });

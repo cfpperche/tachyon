@@ -52,6 +52,40 @@ const ok = (stdout = ""): GitResult => ({ code: 0, stdout, stderr: "" });
 const fail = (stderr = ""): GitResult => ({ code: 1, stdout: "", stderr });
 
 describe("GitDelivery store (spec 365)", () => {
+  it("transactionally promotes legacy JSON for list/get/update/open without changing identity", async () => {
+    const root = tmpRoot();
+    const legacy = baseDelivery({ id: "gd-legacy", version: 7, worktreePath: path.join(root, "worker"), phase: "in_review" });
+    const dir = path.join(root, ".tachyon", "git-deliveries");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, `${legacy.id}.json`), JSON.stringify(legacy));
+    const store = new GitDeliveryStore(root, { now: () => "2026-07-10T00:00:00.000Z" });
+
+    expect(await store.list()).toEqual([legacy]);
+    expect(await store.get(legacy.id)).toEqual(legacy);
+    const updated = await store.update(legacy.id, 7, (record) => ({ ...record, phase: "accepted" }));
+    expect(updated).toMatchObject({ id: legacy.id, version: 8, phase: "accepted" });
+    expect((await store.open({ workspaceId: "ws", createdBy: actor, agent: legacy.agent, branchRef: legacy.branchRef,
+      worktreePath: legacy.worktreePath, tachyonCreatedBranch: true, baseRef: "main" })).id).toBe(legacy.id);
+  });
+
+  it("fails closed and rolls back the whole legacy migration on corruption or divergence", async () => {
+    const corruptRoot = tmpRoot();
+    const corruptDir = path.join(corruptRoot, ".tachyon", "git-deliveries");
+    fs.mkdirSync(corruptDir, { recursive: true });
+    fs.writeFileSync(path.join(corruptDir, "gd-good.json"), JSON.stringify(baseDelivery({ id: "gd-good" })));
+    fs.writeFileSync(path.join(corruptDir, "gd-bad.json"), "{");
+    await expect(new GitDeliveryStore(corruptRoot).list()).rejects.toThrow(/corrupt legacy record/);
+    fs.rmSync(path.join(corruptDir, "gd-bad.json"));
+    expect(await new GitDeliveryStore(corruptRoot).list()).toHaveLength(1);
+
+    const root = tmpRoot();
+    const store = new GitDeliveryStore(root, { id: () => "gd-same" });
+    const current = await store.open({ workspaceId: "ws", createdBy: actor, agent: "worker", branchRef: "branch",
+      worktreePath: "/wt/same", tachyonCreatedBranch: true, baseRef: "main" });
+    fs.writeFileSync(path.join(root, ".tachyon", "git-deliveries", "gd-same.json"), JSON.stringify({ ...current, phase: "accepted" }));
+    await expect(store.get("gd-same")).rejects.toThrow(/divergence/);
+  });
+
   it("writes records atomically enough for reload and enforces version CAS", async () => {
     const root = tmpRoot();
     const store = new GitDeliveryStore(root, { id: () => "gd-111111", now: () => "2026-07-09T00:00:00.000Z" });

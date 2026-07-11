@@ -1152,11 +1152,27 @@ export class AgentManager {
       try {
         await this.opts.recordDelegation?.({ name, delegator, gate: opts.gate, contract: opts.contract, worktree, baseSha: delegationBaseSha ?? worktree.baseRef });
       } catch (error) {
-        // A gated runtime is not observable until its canonical identity is reconciled. Undo every
-        // spawn-side durable effect so retry starts clean instead of colliding with a surviving tmux session.
-        await this.opts.tmux.killSession(session).catch(() => {});
-        this.opts.ledger?.remove(name);
-        if (!forced && this.opts.removeForkWorktree) await this.opts.removeForkWorktree(worktree).catch(() => {});
+        // Keep the ledger/cwd as a visible recovery handle until tmux proves the runtime is dead.
+        // Every eligible cleanup is attempted and failures retain the reconciliation error as cause.
+        const cleanupErrors: Error[] = [];
+        try { await this.opts.tmux.killSession(session); }
+        catch (cleanupError) { cleanupErrors.push(new Error("failed to kill rejected delegated runtime", { cause: cleanupError })); }
+        let sessionGone = false;
+        try { sessionGone = !(await this.opts.tmux.hasSession(session)); }
+        catch (cleanupError) { cleanupErrors.push(new Error("failed to verify rejected delegated runtime liveness", { cause: cleanupError })); }
+        if (sessionGone) {
+          try { this.opts.ledger?.remove(name); }
+          catch (cleanupError) { cleanupErrors.push(new Error("failed to remove rejected delegation ledger entry", { cause: cleanupError })); }
+          if (!forced && this.opts.removeForkWorktree) {
+            try { await this.opts.removeForkWorktree(worktree); }
+            catch (cleanupError) { cleanupErrors.push(new Error("failed to remove rejected delegation worktree", { cause: cleanupError })); }
+          }
+        } else {
+          cleanupErrors.push(new Error("rejected delegated runtime may still be live; durable recovery state was preserved"));
+        }
+        if (cleanupErrors.length) {
+          throw new AggregateError([error, ...cleanupErrors], "delegation reconciliation failed and compensation was incomplete", { cause: error });
+        }
         throw error;
       }
     }

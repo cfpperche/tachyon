@@ -40,22 +40,7 @@ export class GitDeliveryStore {
 
   async listWithCorrupt(): Promise<{ records: GitDelivery[]; corrupt: GitDeliveryCorruptRecord[] }> {
     const records = this.withDatabase((db) => (db.prepare("SELECT record_json FROM git_deliveries ORDER BY id").all() as Array<{ record_json: string }>).map((r) => JSON.parse(r.record_json) as GitDelivery));
-    const corrupt: GitDeliveryCorruptRecord[] = [];
-    if (!fs.existsSync(this.dir)) return { records, corrupt };
-    for (const name of fs.readdirSync(this.dir).sort()) {
-      if (!name.endsWith(".json")) continue;
-      const file = path.join(this.dir, name);
-      try {
-        const parsed = JSON.parse(fs.readFileSync(file, "utf8")) as GitDelivery;
-        if (!parsed || parsed.schemaVersion !== GIT_DELIVERY_SCHEMA_VERSION || typeof parsed.id !== "string" || typeof parsed.version !== "number") {
-          throw new Error("invalid GitDelivery record shape");
-        }
-        if (!records.some((record) => record.id === parsed.id)) records.push(parsed);
-      } catch (err) {
-        corrupt.push({ id: path.basename(name, ".json"), path: file, error: err instanceof Error ? err.message : String(err) });
-      }
-    }
-    return { records, corrupt };
+    return { records, corrupt: [] };
   }
 
   async get(id: string): Promise<GitDelivery | undefined> {
@@ -162,8 +147,46 @@ export class GitDeliveryStore {
     const db = new DatabaseSync(this.databasePath, { timeout: 5000 });
     try {
       db.exec("PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS git_deliveries (id TEXT PRIMARY KEY, branch_ref TEXT NOT NULL, worktree_path TEXT NOT NULL, active INTEGER NOT NULL, record_json TEXT NOT NULL) STRICT; CREATE UNIQUE INDEX IF NOT EXISTS git_deliveries_active_branch ON git_deliveries(branch_ref) WHERE active = 1; CREATE UNIQUE INDEX IF NOT EXISTS git_deliveries_active_worktree ON git_deliveries(worktree_path) WHERE active = 1;");
+      this.migrateLegacy(db);
       return fn(db);
     } finally { db.close(); }
+  }
+
+  /** Promote the JSON v1 store atomically. JSON remains a durable mirror after commit. */
+  private migrateLegacy(db: import("node:sqlite").DatabaseSync): void {
+    if (!fs.existsSync(this.dir)) return;
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      for (const name of fs.readdirSync(this.dir).sort()) {
+        if (!name.endsWith(".json")) continue;
+        const file = path.join(this.dir, name);
+        let record: GitDelivery;
+        try {
+          record = JSON.parse(fs.readFileSync(file, "utf8")) as GitDelivery;
+        } catch (error) {
+          throw new Error(`refusing GitDelivery migration: corrupt legacy record '${file}': ${error instanceof Error ? error.message : String(error)}`);
+        }
+        if (!record || record.schemaVersion !== GIT_DELIVERY_SCHEMA_VERSION || typeof record.id !== "string"
+          || record.id !== path.basename(name, ".json") || typeof record.version !== "number"
+          || typeof record.branchRef !== "string" || typeof record.worktreePath !== "string"
+          || !Array.isArray(record.transitions) || typeof record.phase !== "string") {
+          throw new Error(`refusing GitDelivery migration: invalid legacy record '${file}'`);
+        }
+        const existing = db.prepare("SELECT record_json FROM git_deliveries WHERE id = ?").get(record.id) as { record_json: string } | undefined;
+        if (existing) {
+          if (JSON.stringify(JSON.parse(existing.record_json)) !== JSON.stringify(record)) {
+            throw new Error(`refusing GitDelivery migration: legacy/SQLite divergence for '${record.id}'`);
+          }
+          continue;
+        }
+        db.prepare("INSERT INTO git_deliveries(id, branch_ref, worktree_path, active, record_json) VALUES (?, ?, ?, ?, ?)")
+          .run(record.id, record.branchRef, path.resolve(record.worktreePath), record.phase === "pruned" ? 0 : 1, JSON.stringify(record));
+      }
+      db.exec("COMMIT");
+    } catch (error) {
+      try { db.exec("ROLLBACK"); } catch {}
+      throw error;
+    }
   }
 
   private withTransaction<T>(fn: (db: import("node:sqlite").DatabaseSync) => T): T {
