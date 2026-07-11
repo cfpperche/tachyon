@@ -107,6 +107,75 @@ surfaced as an `AggregateError`, never swallowed. The current host supplies no c
 the public path remains `DELIVERY_LEASE_UNAVAILABLE` before tmux until T7 wires the complete fence. R1 found the
 initial silent-compensation gap; `81741bb` closed it and R2 accepted the delta.
 
+### T7 implementation contract — fenced handoff and quarantine
+
+T7 is a service/state-machine slice only. It does **not** certify this host, add a production fence adapter, or
+enable `delivery_join` in Workspace. Production remains `DELIVERY_LEASE_UNAVAILABLE`; only unit tests may inject a
+certified `ProcessFencePort`.
+
+**Owned files:** `src/delivery/types.ts`, `src/delivery/leaseService.ts`, `src/agents/processFence.ts`, and
+`test/unit/deliveryLeaseService.test.ts`. No Bridge, AgentManager, Workspace, GitDelivery, config, or ledger edits.
+
+**Type/API decisions:**
+
+- `DeliveryLeaseHolder` gains `executionNonce?: string`. `confirmHeld` consumes `reservationNonce` and persists the
+  same value as `executionNonce`; a held predecessor without process identity plus execution nonce is ineligible
+  for handoff.
+- Add a handoff input carrying Delivery id, canonical worktree, expected final HEAD, successor role/name/principal,
+  normalized `ownsSubset`, Bridge-resolved `grantedBy`, and one stable `operationId`.
+- Add a worktree inspection port returning `{ headSha, clean }`; do not infer cleanliness from HEAD alone.
+- Add structured fail-closed codes for fence/quarantine/invariant outcomes. Occupied/store-busy stays retryable;
+  scope, path, head, ancestry, capability, and quarantine outcomes are non-retryable until state changes.
+- Add `failPending(deliveryId, reservationNonce, reason, operationId)` for T6 spawn compensation. Exact nonce only;
+  it moves the pending lease to `quarantined`, retains evidence, and is receipt-idempotent.
+
+**Handoff algorithm (binding):**
+
+1. Check `ProcessFencePort.capability()` before store or Git reads. Normalize/validate successor authority before
+   touching the predecessor.
+2. Under Delivery mutex then canonical worktree mutex: reload the Delivery; require `held`, exact canonical path,
+   an open tail matching `holder.segmentId`, durable process identity and `executionNonce`, expected live clean
+   HEAD, ancestor-linearity from the tail's granted HEAD, and successor authority within the immutable contract.
+3. Short CAS transaction A changes only `held -> draining`, retaining the predecessor holder and open segment and
+   appending a nonce/operation-bound `handoff_draining` event. Contenders must immediately see
+   `WORKTREE_OCCUPIED`; no free interval exists.
+4. Outside every Delivery/worktree/SQLite lock, attempt `freeze`, then `terminate`, then `proveEmpty` using the
+   predecessor `executionNonce` and canonical worktree. A freeze/terminate exception is remembered even if later
+   proof says empty. Runtime spawn, waiting, and tests never occur here.
+5. Any freeze/terminate error, `survivors`, or `unknown` result performs an exact draining-state CAS to
+   `quarantined`, retains the predecessor holder/open segment, records structured evidence, and throws a visible
+   quarantine error. If quarantine persistence also fails, surface an `AggregateError`; never report a clean
+   refusal while compensation is uncertain.
+6. Only `proven_empty` with no prior fence-operation error may proceed. Re-enter Delivery mutex then worktree
+   mutex; reload and require the exact same draining holder/execution nonce. Inspect the worktree twice around
+   final checks; dirty state, HEAD drift, non-linear ancestry, state/holder change, or inspection uncertainty
+   quarantines instead of reserving a successor.
+7. Short CAS transaction B atomically closes the predecessor segment at the final HEAD, appends exactly one
+   successor segment, writes a nonce-bound `pending` successor holder, and appends `handoff_reserved`. No runtime
+   starts inside the transaction; T6 starts only after this method returns.
+8. Lost responses are replay-safe. Derive stable receipt ids from `<operationId>:drain`, `:reserve`, and
+   `:quarantine`; validate durable event intent before returning cached results. A retry after transaction B
+   returns the original reservation nonce/result and never re-fences or appends another segment.
+
+**Required tests (serial, fake fence only):**
+
+1. capability unavailable performs no mutation and calls no fence method;
+2. successful handoff calls freeze→terminate→proveEmpty outside locks, closes one predecessor, appends one
+   successor, and returns one pending reservation on the same canonical worktree;
+3. a detached/surviving predecessor returns `survivors`, appends no successor, and quarantines;
+4. `unknown`, freeze error, or terminate error quarantines even if a later proof says empty;
+5. dirty tree or HEAD/ancestry drift after a proven-empty result quarantines;
+6. concurrent handoff grants at most one draining/reservation path and the loser gets retryable
+   `WORKTREE_OCCUPIED`;
+7. retry after a lost successful response returns the original reservation without re-running the fence;
+8. invalid scope/path/state/process identity refuses before fencing;
+9. `confirmHeld` persists `executionNonce` and removes `reservationNonce`;
+10. `failPending` is exact-nonce, idempotent, and leaves no free/held phantom state.
+
+**Verification:** focused `deliveryLeaseService` + `deliveryStore` suites with one worker, then `npm run typecheck`
+and `git diff --check`. The executor must stop without editing if repository evidence requires a decision outside
+this contract.
+
 ### T1 lock protocol redesign — SQLite decision
 
 Five adversarial rounds found successive crash windows in application-managed owner/fence/claim lockfiles. The
