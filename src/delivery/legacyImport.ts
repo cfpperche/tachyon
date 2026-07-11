@@ -25,6 +25,7 @@ export interface LegacyImportRefusal {
 export interface LegacyImportPlan {
   ok: true;
   fingerprint: string;
+  intentFingerprint: string;
   delivery: DeliveryCreateInput & { id: string };
   gitProjection?: { id: string; expectedVersion: number };
 }
@@ -49,7 +50,7 @@ export interface LegacyImportGitStore {
   get(id: string): Promise<GitDelivery | undefined>;
   update(id: string, version: number, mutate: (record: GitDelivery) => GitDelivery): Promise<GitDelivery>;
   reserveLegacyImport(input: {
-    projectionId: string; expectedVersion: number; deliveryId: string; operationId: string;
+    projectionId: string; expectedVersion: number; deliveryId: string; operationId: string; intentFingerprint: string;
     branchRef: string; worktreePath: string;
   }): Promise<{ ok: true; projection: GitDelivery } | { ok: false; code: "AMBIGUOUS_GIT_PROJECTION" | "GIT_PROJECTION_DRIFT" | "STALE_PREVIEW"; candidates?: string[] }>;
 }
@@ -76,6 +77,12 @@ function canonical(value: string, realpath: (value: string) => string): string |
 function subset(requested: readonly string[], owns: readonly string[]): boolean {
   const authority = new Set(owns.map((entry) => path.normalize(entry)));
   return requested.every((entry) => authority.has(path.normalize(entry)));
+}
+
+function matchesPlannedDelivery(existing: Delivery, planned: DeliveryCreateInput & { id: string }): boolean {
+  const comparable = ({ id, workspaceId, createdBy, contract, lease, segments, events, gitDeliveryId, legacy }: DeliveryCreateInput & { id: string }) =>
+    ({ id, workspaceId, createdBy, contract, lease, segments, events, gitDeliveryId, legacy });
+  return stableJson(comparable(existing)) === stableJson(comparable(planned));
 }
 
 export async function previewLegacyImport(input: LegacyImportPreviewInput, deps: LegacyImportDependencies): Promise<LegacyImportPreview> {
@@ -144,7 +151,7 @@ export async function previewLegacyImport(input: LegacyImportPreviewInput, deps:
     ...(git ? { gitDeliveryId: git.id } : {}),
     legacy: { ...(record.id ? { delegationId: record.id } : {}), ...(input.sourcePath ? { sourcePath: input.sourcePath } : {}), importedAt },
   };
-  const fingerprint = hash({
+  const intent = {
     delivery,
     identity: {
       workspace: canonical(input.workspaceId, realpath) ?? path.resolve(input.workspaceId),
@@ -155,9 +162,13 @@ export async function previewLegacyImport(input: LegacyImportPreviewInput, deps:
       projectionHead: git.currentHeadSha,
     },
     ancestry,
-    gitProjection: { id: git.id, expectedVersion: git.version },
-  });
-  return { ok: true, fingerprint, delivery, ...(git ? { gitProjection: { id: git.id, expectedVersion: git.version } } : {}) };
+    gitProjection: { id: git.id },
+  };
+  const intentFingerprint = hash(intent);
+  // The preview fingerprint additionally serializes the observed projection version. The intent
+  // fingerprint deliberately does not: reserving this exact intent increments that version.
+  const fingerprint = hash({ intent, gitProjection: { id: git.id, expectedVersion: git.version } });
+  return { ok: true, fingerprint, intentFingerprint, delivery, ...(git ? { gitProjection: { id: git.id, expectedVersion: git.version } } : {}) };
 }
 
 export async function applyLegacyImport(input: LegacyImportApplyInput, stores: { delivery: DeliveryStore; git?: LegacyImportGitStore }, deps: LegacyImportDependencies): Promise<Delivery | LegacyImportRefusal> {
@@ -169,10 +180,14 @@ export async function applyLegacyImport(input: LegacyImportApplyInput, stores: {
   const linked = plan.gitProjection ? await stores.git.get(plan.gitProjection.id) : undefined;
   // A completed prior attempt is authoritative even though linking increments the Git projection
   // version and therefore intentionally changes the preview fingerprint.
+  if (alreadyCreated && !matchesPlannedDelivery(alreadyCreated, plan.delivery)) {
+    return { ok: false, code: "GIT_PROJECTION_DRIFT", message: `Delivery '${plan.delivery.id}' conflicts with the canonical legacy intent` };
+  }
   if (alreadyCreated && linked?.deliveryId === alreadyCreated.id) return alreadyCreated;
-  const pending = linked?.legacyImport as { operationId?: string; deliveryId?: string; state?: string } | undefined;
-  const resumesOwnReservation = pending?.state === "pending" && pending.operationId === input.operationId && pending.deliveryId === plan.delivery.id;
-  if (plan.fingerprint !== input.fingerprint && !resumesOwnReservation) return { ok: false, code: "STALE_PREVIEW", message: "legacy import inputs changed after preview" };
+  const pending = linked?.legacyImport as { operationId?: string; deliveryId?: string; intentFingerprint?: string; state?: string } | undefined;
+  const resumesIdenticalReservation = pending?.state === "pending" && pending.deliveryId === plan.delivery.id
+    && pending.intentFingerprint === plan.intentFingerprint;
+  if (plan.fingerprint !== input.fingerprint && !resumesIdenticalReservation) return { ok: false, code: "STALE_PREVIEW", message: "legacy import inputs changed after preview" };
   let reserved: GitDelivery | undefined;
   if (plan.gitProjection) {
     const current = await stores.git.get(plan.gitProjection.id);
@@ -182,7 +197,7 @@ export async function applyLegacyImport(input: LegacyImportApplyInput, stores: {
     }
     const reservation = await stores.git.reserveLegacyImport({
       projectionId: plan.gitProjection.id, expectedVersion: plan.gitProjection.expectedVersion,
-      deliveryId: plan.delivery.id, operationId: input.operationId,
+      deliveryId: plan.delivery.id, operationId: input.operationId, intentFingerprint: plan.intentFingerprint,
       branchRef: input.record.taskRef, worktreePath: input.record.worktreePath!,
     });
     if (!reservation.ok) return {
@@ -194,7 +209,9 @@ export async function applyLegacyImport(input: LegacyImportApplyInput, stores: {
     };
     reserved = reservation.projection;
   }
-  const delivery = await stores.delivery.create({ ...plan.delivery, operationId: input.operationId });
+  // A prior caller may have committed create and crashed before linking. The deterministic id plus
+  // full intent comparison makes that Delivery the idempotent create result for any identical retry.
+  const delivery = alreadyCreated ?? await stores.delivery.create({ ...plan.delivery, operationId: input.operationId });
   if (plan.gitProjection && reserved) {
     await stores.git.update(plan.gitProjection.id, reserved.version, (record) => ({ ...record, deliveryId: delivery.id, legacyImport: { operationId: input.operationId, deliveryId: delivery.id, state: "linked" } }));
   }

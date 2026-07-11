@@ -133,7 +133,7 @@ export class GitDeliveryStore {
   }
 
   async reserveLegacyImport(input: {
-    projectionId: string; expectedVersion: number; deliveryId: string; operationId: string;
+    projectionId: string; expectedVersion: number; deliveryId: string; operationId: string; intentFingerprint: string;
     branchRef: string; worktreePath: string;
   }): Promise<{ ok: true; projection: GitDelivery } | { ok: false; code: "AMBIGUOUS_GIT_PROJECTION" | "GIT_PROJECTION_DRIFT" | "STALE_PREVIEW"; candidates?: string[] }> {
     const normalizedPath = path.resolve(input.worktreePath);
@@ -145,11 +145,13 @@ export class GitDeliveryStore {
       const partial = records.filter((record) => (record.branchRef === input.branchRef || path.resolve(record.worktreePath) === normalizedPath) && record.id !== exact[0].id);
       if (partial.length) return { ok: false as const, code: "GIT_PROJECTION_DRIFT" as const, candidates: partial.map((record) => record.id) };
       const current = exact[0];
-      const pending = current.legacyImport as { operationId?: string; deliveryId?: string; state?: string } | undefined;
+      const pending = current.legacyImport as { operationId?: string; deliveryId?: string; intentFingerprint?: string; state?: string } | undefined;
       if (current.id !== input.projectionId || current.deliveryId !== undefined && current.deliveryId !== input.deliveryId) return { ok: false as const, code: "STALE_PREVIEW" as const };
-      if (pending?.operationId === input.operationId && pending.deliveryId === input.deliveryId) return { ok: true as const, projection: current };
+      if (pending?.state === "pending" && pending.deliveryId === input.deliveryId && pending.intentFingerprint === input.intentFingerprint) {
+        return { ok: true as const, projection: current };
+      }
       if (current.version !== input.expectedVersion || pending !== undefined) return { ok: false as const, code: "STALE_PREVIEW" as const };
-      const reserved = { ...current, version: current.version + 1, updatedAt: this.now(), legacyImport: { operationId: input.operationId, deliveryId: input.deliveryId, state: "pending" } };
+      const reserved = { ...current, version: current.version + 1, updatedAt: this.now(), legacyImport: { operationId: input.operationId, deliveryId: input.deliveryId, intentFingerprint: input.intentFingerprint, state: "pending" } };
       db.prepare("UPDATE git_deliveries SET record_json = ? WHERE id = ?").run(JSON.stringify(reserved), current.id);
       return { ok: true as const, projection: reserved };
     });

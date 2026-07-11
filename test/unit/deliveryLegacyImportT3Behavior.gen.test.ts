@@ -8,6 +8,41 @@ import type { DelegationRecord } from "../../src/bridge/delegationRecord.js";
 import type { GitDelivery } from "../../src/git-delivery/types.js";
 
 describe("container-generated delegation behavior", () => {
+  it("recovers identical legacy intent under a new operation id after create failure and post-create crash", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-import-recovery-"));
+    const worktree = path.join(root, "worktree"); fs.mkdirSync(worktree);
+    const record: DelegationRecord = { id: "legacy-recovery", agent: "worker", baseSha: "base", taskRef: "task/recovery", worktreePath: worktree, owns: ["src/a.ts"], behaviorTest: "recover", contract: { task: "recover" }, createdAt: "2026-07-10T00:00:00.000Z" };
+    const git: GitDelivery = { schemaVersion: 1, id: "gd-recovery", version: 1, workspaceId: "ws", createdBy: { kind: "system" }, agent: "worker", branchRef: record.taskRef, worktreePath: worktree, tachyonCreatedBranch: true, baseRef: "main", currentHeadSha: "base", phase: "open", taskLinks: [], transitions: [], createdAt: record.createdAt, updatedAt: record.createdAt };
+    const deps = { isAncestor: async () => true, now: () => "2026-07-10T01:00:00.000Z" };
+    const store = new DeliveryStore(root);
+    const gitStore = {
+      async list() { return [git]; }, async get() { return git; },
+      async reserveLegacyImport(input: { operationId: string; deliveryId: string; intentFingerprint: string }) {
+        const pending = git.legacyImport as { deliveryId?: string; intentFingerprint?: string; state?: string } | undefined;
+        if (pending) return pending.state === "pending" && pending.deliveryId === input.deliveryId && pending.intentFingerprint === input.intentFingerprint
+          ? { ok: true as const, projection: git } : { ok: false as const, code: "STALE_PREVIEW" as const };
+        Object.assign(git, { version: git.version + 1, legacyImport: { operationId: input.operationId, deliveryId: input.deliveryId, intentFingerprint: input.intentFingerprint, state: "pending" } });
+        return { ok: true as const, projection: git };
+      },
+      async update(_id: string, _version: number, mutate: (value: GitDelivery) => GitDelivery) { Object.assign(git, mutate(git), { version: git.version + 1 }); return git; },
+    };
+    const preview = await previewLegacyImport({ workspaceId: "ws", record, gitDeliveries: [git] }, deps);
+    expect(preview.ok).toBe(true); if (!preview.ok) return;
+    const failing = { get: store.get.bind(store), async create() { throw new Error("injected create failure"); } } as unknown as DeliveryStore;
+    await expect(applyLegacyImport({ workspaceId: "ws", record, fingerprint: preview.fingerprint, operationId: "op-lost" }, { delivery: failing, git: gitStore }, deps)).rejects.toThrow("injected create failure");
+    const recovered = await applyLegacyImport({ workspaceId: "ws", record, fingerprint: preview.fingerprint, operationId: "op-new" }, { delivery: store, git: gitStore }, deps);
+    expect("id" in recovered && recovered.id).toBe(preview.delivery.id);
+
+    delete git.deliveryId; Object.assign(git, { version: git.version + 1, legacyImport: { operationId: "op-crashed", deliveryId: preview.delivery.id, intentFingerprint: preview.intentFingerprint, state: "pending" } });
+    const postCreate = await applyLegacyImport({ workspaceId: "ws", record, fingerprint: preview.fingerprint, operationId: "op-after-crash" }, { delivery: store, git: gitStore }, deps);
+    expect("id" in postCreate && postCreate.id).toBe(preview.delivery.id);
+    expect(git.deliveryId).toBe(preview.delivery.id);
+
+    const changed = { ...record, behaviorTest: "different intent" };
+    const refused = await applyLegacyImport({ workspaceId: "ws", record: changed, fingerprint: preview.fingerprint, operationId: "op-different" }, { delivery: store, git: gitStore }, deps);
+    expect(refused).toMatchObject({ ok: false });
+  });
+
   it("legacy import preserves linear provenance and refuses ambiguous Git projections without mutation", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-import-"));
     const worktree = path.join(root, "worktree"); fs.mkdirSync(worktree);
