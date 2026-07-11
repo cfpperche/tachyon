@@ -306,6 +306,82 @@ race, prevents post-abort reads, and uses a non-queuing workspace gate of four i
 per Delivery. R2 returned **ACCEPT** after the coordinator added the registration-window regression. Integrated on
 `main` through `1efc2f5`; final coordinator full verification is recorded after this bookkeeping commit.
 
+### T9 implementation contract — crash-safe system verification lease
+
+T9 applies only to canonical Delivery-backed `verify_task` calls. The legacy exactly-one-agent compatibility path
+keeps its existing liveness guard and checkout lock. A canonical call must resolve its exact linked GitDelivery and
+use that projection's normalized `worktreePath`; branch-name inventory is not an authority for Delivery verification.
+
+**State and identity.** System verification is a lease substate, not a `DelegationSegment`. Appending a verifier
+segment would either close an inactive writer permanently or require reopening immutable history. Extend
+`DeliveryLease` with an optional durable verification intent containing a random lease nonce, a per-Workspace
+verifier-owner epoch, the Bridge-resolved actor, the subject tail segment id, delivered HEAD, optional temporary
+checkout SHA, start time, operation id, and an exact resumable snapshot of the prior `free` or `held` lease. While
+verification runs, `lease.state` is `verifying`; a prior held holder remains recorded for provenance but grants no
+runtime authority. Completion restores the prior `held`/`free` shape with a fresh `changedAt`. Pending, draining,
+verifying, and quarantined leases are never silently repurposed.
+
+Before the verifying CAS, re-read the Delivery and its linked GitDelivery under the canonical worktree-path mutex.
+Re-prove contiguous unique segments, resolve the tail, and, when a holder exists, require the complete holder to
+name that exact tail. Check liveness for the tail's **current `executionAgent`**, even for a free lease; never inspect
+segment zero. A live current execution returns retryable `WORKTREE_OCCUPIED`. Require a clean canonical worktree,
+the checked-out HEAD equal to the current immutable `taskRef`, and the linked projection still name this Delivery,
+branch, and realpath. The SQLite version CAS is the cross-process winner; a loser performs no checkout.
+
+The current host's unavailable `ProcessFencePort` remains honest. T9 does not claim T11's dead-holder reconciliation
+or prove independent process absence: it preserves the accepted T9 boundary of managed current-holder liveness and
+does not call `freeze`/`terminate`. A real live successor is excluded now; detached/ambiguous death remains the
+explicit T11 concern.
+
+**Checkout protocol.** Put Delivery verification behind a dedicated service owned once by `Workspace`, using the
+same canonical path key as WorktreeManager `ensure`/`remove`. Expose a path-based WorktreeManager mutex and make the
+existing agent-path helper delegate to it, so verification, creation, reuse, and deletion serialize on one key. The
+service owns the mutex for the complete checkout/test/restore interval; it must not hold a SQLite transaction or the
+Delivery service's process-local mutation mutex while tests execute.
+
+Before every `git checkout --detach --force <sha>`, persist that SHA as the intent's temporary checkout with an exact
+nonce/owner/version CAS. A crash is therefore safe on either side of the checkout: recovery accepts a clean observed
+HEAD equal to the delivered SHA or the recorded temporary SHA. Restoration performs the existing hard reset and
+untracked clean, checks that `taskRef` still resolves to the recorded delivered SHA, checks out that branch, and
+re-proves clean HEAD equality. Dirty state, branch movement, a third HEAD, projection drift, or an uncertain CAS
+quarantines with evidence; none is called restored.
+
+The service stamps a fresh in-memory owner epoch per Workspace construction. A `verifying` intent owned by the same
+epoch is active and returns retryable occupied. A different epoch is an interrupted prior host session: recover the
+clean matching checkout, restore the saved lease, append an interrupted/retryable event, and return a retryable
+interruption so the caller deliberately retries. Normal callback failure also restores and records interruption;
+if safe restoration or its persistence fails, surface an `AggregateError` and retain/quarantine the evidence rather
+than hiding the original failure.
+
+Write the existing SHA-bound verification record only after all checks and after a delivered-HEAD restore has been
+proved. Then complete the lease with an append-only Delivery event containing `refSha`, `treeSha`, verdict,
+verification-record integrity hash, and record path. Completion must exact-match nonce, owner epoch, subject segment,
+delivered HEAD, and the resumable prior lease. Both ACCEPT and BLOCKED release the system lease; an exception never
+publishes a successful completion event.
+
+**Segment history and scope.** Delivery-backed verification uses the canonical `segments[]` directly, not the
+lossy legacy fixer-attempt adapter. Prove every boundary before behavior tests: contract base to first grant, each
+segment grant to its release/current end, each release to the next grant, and the final segment end to delivered
+HEAD must be ancestor-linear. A missing/non-ancestor boundary is a blocking `non_linear_segment_history` finding,
+never a skipped range. For `implementer`, `fixer`, and `recovery`, diff that segment's own grant/end range and check
+every file against its normalized `ownsSubset`; invalid/escaping authority fails closed. Reviewer/verifier segments
+create no write range in T9. T10 remains responsible for their decisive read-only postconditions.
+
+**Required implementation surface.** Keep production and tests within
+`src/delivery/{types,store,leaseService,verifyAdapter}.ts`, `src/worktree/WorktreeManager.ts`,
+`src/bridge/{verifyTask,tools}.ts`, `src/workspace/Workspace.ts`, and focused unit tests for those modules. A separate
+small Delivery verification service module is allowed only if it owns the complete lifecycle above and avoids
+duplicating Delivery/GitDelivery authority. Do not alter `tachyon.yml`, config defaults, agent spawning, reviewer
+semantics, quarantine recovery policy, or GitDelivery phase transitions.
+
+**Required regressions.** Prove: a live tail successor is refused while a dead segment-zero agent is irrelevant;
+two contenders yield one verifying CAS and zero checkout by the loser; acquisition sees verifying as occupied; a
+crash at delivered-before-checkout and at the recorded temporary SHA restores and records interruption; dirty and
+third-HEAD recovery quarantine; branch/projection drift quarantines; completion restores the exact delivered branch
+and prior lease and records the integrity hash; three-plus linear segments use their own write scopes; a nonlinear
+adjacent boundary blocks before behavior execution; and legacy verification behavior remains green. Run the focused
+Delivery/verifyTask/Bridge/Workspace/Worktree suites serially, then typecheck, diff-check, and `npm run verify:full`.
+
 ### T1 lock protocol redesign — SQLite decision
 
 Five adversarial rounds found successive crash windows in application-managed owner/fence/claim lockfiles. The
