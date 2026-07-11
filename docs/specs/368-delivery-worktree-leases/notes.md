@@ -625,6 +625,15 @@ advisory. A direct unknown runtime, or one wrapped only by proven `env`, remains
 package-first tokens such as literal `npx codex` and known unsupported adapters such as literal `npx opencode` retain
 their existing safe/advisory behavior. Add exact package-version/scoped refusals plus direct/env-only unknown guards.
 
+**R3 correction.** Report `01f8fae` proves that the first `env` can currently resolve to another `env`, which is then
+misclassified as an unknown direct runtime and launches a supported CLI without its hint. The grammar permits exactly
+one `env` layer. Immediately after resolving it, reject another `env` basename (including an absolute-path spelling)
+before package-launcher or advisory handling. Preserve the sole allowed chain `env -> npx|pnpx|bunx -> runtime`.
+Add parser and production-path refusals for `env env codex`, assignments/options before the second `env`, absolute
+second `env`, and `env env npx codex`; prove `prepareDeliveryJoin` and spawn remain untouched. No other wrapper or
+unknown-runtime policy changes in this correction. Run the same focused three suites, typecheck, diff-check, and full
+verify before the next review.
+
 ### T1 lock protocol redesign — SQLite decision
 
 Five adversarial rounds found successive crash windows in application-managed owner/fence/claim lockfiles. The
