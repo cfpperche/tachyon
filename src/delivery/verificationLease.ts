@@ -252,11 +252,19 @@ export class DeliveryVerificationLeaseService {
     const observed = await this.inspect(worktreePath).catch(() => undefined);
     await this.deps.store.update(latest.id, latest.version, (record) => {
       this.assertIntent(record, intent);
-      record.lease = { state: "quarantined", changedAt: this.now(), reason };
+      record.lease = {
+        state: "quarantined",
+        ...(record.lease.holder ? { holder: structuredClone(record.lease.holder) } : {}),
+        ...(record.lease.expectedHeadSha ? { expectedHeadSha: record.lease.expectedHeadSha } : {}),
+        changedAt: this.now(),
+        reason,
+      };
       record.events.push({ id: this.eventId(), at: this.now(), type: "verification_quarantined", by: { kind: "system" },
         detail: { reason, worktreePath, observedHead: observed?.head, clean: observed?.clean,
           operationId: intent.operationId, subjectSegmentId: intent.subjectSegmentId,
-          deliveredHeadSha: intent.deliveredHeadSha, temporaryCheckoutSha: intent.temporaryCheckoutSha } });
+          deliveredHeadSha: intent.deliveredHeadSha, temporaryCheckoutSha: intent.temporaryCheckoutSha,
+          ownerEpoch: intent.ownerEpoch, verificationActor: structuredClone(intent.actor),
+          startedAt: intent.startedAt, priorLeaseState: intent.priorLease.state } });
       return record;
     });
   }

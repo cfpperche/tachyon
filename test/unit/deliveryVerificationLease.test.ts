@@ -70,7 +70,9 @@ async function seedInterrupted(f: Awaited<ReturnType<typeof fixture>>, temporary
     ...(temporaryCheckoutSha ? { temporaryCheckoutSha } : {}), startedAt: "2026-07-11T00:30:00.000Z",
     operationId: "old-operation", priorLease };
   await f.store.update(current.id, current.version, (record) => {
-    record.lease = { state: "verifying", changedAt: intent.startedAt, verification: intent };
+    record.lease = { state: "verifying", ...(priorLease.holder ? { holder: structuredClone(priorLease.holder) } : {}),
+      ...(priorLease.expectedHeadSha ? { expectedHeadSha: priorLease.expectedHeadSha } : {}),
+      changedAt: intent.startedAt, verification: intent };
     return record;
   });
   return intent;
@@ -146,6 +148,24 @@ describe("DeliveryVerificationLeaseService (SDD 368 T9)", () => {
     await expect(service(f).run("d-verify", actor, async () => { throw new Error("must not execute"); }))
       .rejects.toMatchObject({ code: "DELIVERY_QUARANTINED" });
     expect((await f.store.get("d-verify"))!.lease.state).toBe("quarantined");
+  });
+
+  it("preserves a prior held holder, process identity, nonce, and expected HEAD through unsafe recovery quarantine", async () => {
+    const heldLease: DeliveryLease = { state: "held", holder: { segmentId: "seg-0", executionAgent: "tail", principal: "principal",
+      process: { pid: 42, processStart: "100", bootId: "boot" }, executionNonce: "execution-nonce" },
+      expectedHeadSha: "expected-head", changedAt: "2026-07-11T00:01:00.000Z" };
+    const f = await fixture({ lease: heldLease });
+    await seedInterrupted(f);
+    fs.writeFileSync(path.join(f.worktree, "dirty-held.txt"), "dirty\n");
+    await expect(service(f).run("d-verify", actor, async () => { throw new Error("must not execute"); }))
+      .rejects.toMatchObject({ code: "DELIVERY_QUARANTINED" });
+    const quarantined = (await f.store.get("d-verify"))!;
+    expect(quarantined.lease).toMatchObject({ state: "quarantined", holder: heldLease.holder,
+      expectedHeadSha: heldLease.expectedHeadSha });
+    expect(quarantined.events.at(-1)).toMatchObject({ type: "verification_quarantined", detail: {
+      operationId: "old-operation", subjectSegmentId: "seg-0", ownerEpoch: "epoch-old",
+      verificationActor: actor, priorLeaseState: "held",
+    } });
   });
 
   it("restores the exact prior held lease before publication and records completion integrity", async () => {
