@@ -582,6 +582,36 @@ shell argv-capture executable proving the supported runtime—not a sibling proc
 containment alone is not acceptance evidence. Re-run the focused AgentManager + launch-preflight + lease suites
 serially, `npm run typecheck`, `git diff --check`, and `npm run verify:full`.
 
+### T10 R2 correction contract — proven wrapper boundary
+
+R2 report `ac097eb` correctly shows that “skip every leading wrapper flag” is not an executable-boundary proof.
+Replace the generic launcher loop in the shared launch parser with a small explicit grammar. It may accept leading
+assignments, chain `env` into one of `npx`/`pnpx`/`bunx`, and then return exactly one runtime token; any unknown option,
+missing operand, shell-evaluating mode, or ambiguous boundary returns no parse and reviewer join refuses before
+reservation.
+
+The measured minimum grammar is: `env` assignments plus static `-i/--ignore-environment` and the operand-taking
+`-a/--argv0`, `-C/--chdir`, `-f/--file`, and `-u/--unset` in exact separate or documented long-`=` form. Refuse
+`-S/--split-string` and every unlisted `env` option. For `npx`, accept `-y/--yes`, `--no`, `--workspaces`,
+`--include-workspace-root`, `-p/--package` and `-w/--workspace` with a separate operand or long-`=` form, plus a
+literal wrapper `--` boundary; refuse `-c/--call` and unlisted options. For `pnpx`, accept static `--allow-build` and
+`--package` operands, reporter operands, and ordinary package-first invocation; refuse `-c/--shell-mode` and unknown
+options. For `bunx`, accept static `--bun`, `--no-install`, `--verbose`, `--silent`, and `-p/--package` operands;
+refuse unknown options. Supporting additional wrapper forms is unnecessary in T10; fail closed with a clear reviewer
+command error. Parser/preflight behavior for a direct runtime remains unchanged.
+
+Recognize Codex sandbox as `--sandbox VALUE`, `--sandbox=VALUE`, `-s VALUE`, `-s=VALUE`, or attached `-sVALUE`.
+Exactly one sandbox declaration is permitted: preserve one literal `read-only` form byte-for-byte, refuse every other
+value, missing value, and every duplicate before reservation. Apply the same single-declaration rule to
+Claude/Grok `--permission-mode`; the inserted default is not a declaration from the supplied command.
+
+Add parser and AgentManager production-path tests for every accepted/refused wrapper class, including the exact R2
+`env --argv0/-a/-f` and `npx -p/--package/--package=` reproductions, wrapper chains, missing operands, and
+shell-evaluating modes. Add real executable argv capture through real `env` and deterministic fake `npx`/`pnpx`/`bunx`
+wrappers that consume their declared operands before invoking the fake runtime; prove the safety option lands on the
+runtime argv. Cover `-sread-only`, `-sworkspace-write`, and duplicates spanning short-attached/separate/long forms.
+Run the same focused three-suite matrix, `npm run typecheck`, `git diff --check`, and `npm run verify:full`.
+
 ### T1 lock protocol redesign — SQLite decision
 
 Five adversarial rounds found successive crash windows in application-managed owner/fence/claim lockfiles. The
