@@ -189,22 +189,37 @@ describe("verifyTask", () => {
     const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-vtask-publisher-race-"));
     roots.push(workspace);
     const start = path.join(workspace, "start");
+    const release = path.join(workspace, "release");
     const children = ["alpha", "beta"].map((agent) => {
       const recordFile = path.join(workspace, `${agent}.record.json`);
       const ready = path.join(workspace, `${agent}.ready`);
+      const calling = path.join(workspace, `${agent}.calling`);
+      const postCheck = path.join(workspace, `${agent}.post-check`);
       const result = path.join(workspace, `${agent}.result.json`);
       fs.writeFileSync(recordFile, JSON.stringify(fakeRecord({ agent,
         identity: { legacy: agent, canonical: agent, occupants: [agent] }, integrityHash: agent.repeat(64).slice(0, 64) })));
       const child = spawn(path.join(process.cwd(), "node_modules", ".bin", "vite-node"), [
-        path.join(process.cwd(), "test", "helpers", "verificationPublisherChild.ts"), workspace, recordFile, ready, start, result,
+        path.join(process.cwd(), "test", "helpers", "verificationPublisherChild.ts"),
+        workspace, recordFile, ready, start, calling, postCheck, release, result,
       ], { cwd: process.cwd(), stdio: "pipe" });
       let stderr = "";
       child.stderr.setEncoding("utf8"); child.stderr.on("data", (chunk) => { stderr += chunk; });
       const exited = new Promise<void>((resolve, reject) => child.once("exit", (code) => code === 0 ? resolve() : reject(new Error(stderr || `publisher child exited ${code}`))));
-      return { agent, ready, result, exited };
+      return { agent, ready, calling, postCheck, result, exited };
     });
     await waitForFiles(children.map((child) => child.ready));
     fs.writeFileSync(start, "go");
+    await waitForFiles(children.map((child) => child.calling));
+    const postCheckDeadline = Date.now() + 10_000;
+    while (!children.some((child) => fs.existsSync(child.postCheck))) {
+      if (Date.now() >= postCheckDeadline) throw new Error("timed out waiting for first post-conflict-check marker");
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    const first = children.find((child) => fs.existsSync(child.postCheck))!;
+    const second = children.find((child) => child !== first)!;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    expect(fs.existsSync(second.postCheck)).toBe(false);
+    fs.writeFileSync(release, "publish");
     await Promise.all(children.map((child) => child.exited));
     const results = children.map((child) => ({ agent: child.agent,
       value: JSON.parse(fs.readFileSync(child.result, "utf8")) as { ok: boolean; code?: string; path?: string; bytes?: string } }));
@@ -212,7 +227,9 @@ describe("verifyTask", () => {
     const losers = results.filter(({ value }) => !value.ok);
     expect(winners).toHaveLength(1);
     expect(losers).toHaveLength(1);
+    expect(winners[0]!.agent).toBe(first.agent);
     expect(losers[0]!.value.code).toBe("VERIFICATION_RECORD_CONFLICT");
+    expect(fs.existsSync(second.postCheck)).toBe(false);
     expect(fs.readFileSync(winners[0]!.value.path!, "utf8")).toBe(winners[0]!.value.bytes);
     expect(JSON.parse(winners[0]!.value.bytes!)).toMatchObject({ agent: winners[0]!.agent });
   });
@@ -256,6 +273,73 @@ describe("verifyTask", () => {
     expect(error).toBeInstanceOf(AggregateError);
     expect((error as AggregateError).errors.map((item) => item instanceof Error ? item.message : String(item))).toEqual([
       "primary rename failure", "owned temp cleanup failure",
+    ]);
+  });
+
+  it("wraps BEGIN busy failure as publication unavailable with its cause and still closes", () => {
+    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-vtask-publisher-begin-"));
+    roots.push(workspace);
+    const busy = new Error("database is busy");
+    let closed = false;
+    const database = {
+      exec(sql: string) { if (sql === "BEGIN IMMEDIATE") throw busy; },
+      close() { closed = true; },
+    } as unknown as import("node:sqlite").DatabaseSync;
+    let error: unknown;
+    try { writeVerificationRecord(workspace, fakeRecord(), { databaseFactory: () => database }); } catch (caught) { error = caught; }
+    expect(error).toMatchObject({ message: expect.stringContaining("verification record publication unavailable"), cause: busy });
+    expect(closed).toBe(true);
+  });
+
+  it("retains conflict then rollback failures in exact order", () => {
+    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-vtask-publisher-rollback-"));
+    roots.push(workspace);
+    const dir = path.join(workspace, ".tachyon", "verifications");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, `${"a".repeat(40)}.json`), JSON.stringify(fakeRecord({ agent: "other",
+      identity: { legacy: "other", canonical: "other", occupants: ["other"] } })));
+    const rollback = new Error("rollback failed");
+    const database = {
+      exec(sql: string) { if (sql === "ROLLBACK") throw rollback; }, close() {},
+    } as unknown as import("node:sqlite").DatabaseSync;
+    let error: unknown;
+    try { writeVerificationRecord(workspace, fakeRecord(), { databaseFactory: () => database }); } catch (caught) { error = caught; }
+    expect(error).toBeInstanceOf(AggregateError);
+    expect((error as AggregateError).errors).toEqual([
+      expect.objectContaining({ code: "VERIFICATION_RECORD_CONFLICT" }), rollback,
+    ]);
+  });
+
+  it("retains COMMIT then rollback failures in exact order", () => {
+    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-vtask-publisher-commit-"));
+    roots.push(workspace);
+    const commit = new Error("commit failed");
+    const rollback = new Error("rollback after commit failed");
+    const database = {
+      exec(sql: string) { if (sql === "COMMIT") throw commit; if (sql === "ROLLBACK") throw rollback; }, close() {},
+    } as unknown as import("node:sqlite").DatabaseSync;
+    let error: unknown;
+    try { writeVerificationRecord(workspace, fakeRecord(), { databaseFactory: () => database }); } catch (caught) { error = caught; }
+    expect(error).toBeInstanceOf(AggregateError);
+    expect((error as AggregateError).errors).toEqual([commit, rollback]);
+  });
+
+  it("retains primary, rollback, then close failures in exact order", () => {
+    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-vtask-publisher-close-"));
+    roots.push(workspace);
+    const dir = path.join(workspace, ".tachyon", "verifications");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, `${"a".repeat(40)}.json`), "unreadable");
+    const rollback = new Error("rollback failed");
+    const close = new Error("close failed");
+    const database = {
+      exec(sql: string) { if (sql === "ROLLBACK") throw rollback; }, close() { throw close; },
+    } as unknown as import("node:sqlite").DatabaseSync;
+    let error: unknown;
+    try { writeVerificationRecord(workspace, fakeRecord(), { databaseFactory: () => database }); } catch (caught) { error = caught; }
+    expect(error).toBeInstanceOf(AggregateError);
+    expect((error as AggregateError).errors).toEqual([
+      expect.objectContaining({ code: "VERIFICATION_RECORD_CONFLICT" }), rollback, close,
     ]);
   });
 

@@ -598,39 +598,65 @@ function verificationRecordPath(dir: string, record: VerifyTaskRecord): string {
 
 type PublicationDatabase = import("node:sqlite").DatabaseSync;
 
-function withVerificationPublicationTransaction<T>(workspaceRoot: string, fn: () => T): T {
+export interface VerificationPublicationTestSeams {
+  databaseFactory?: (databasePath: string) => PublicationDatabase;
+  afterConflictCheck?: () => void;
+}
+
+function publicationUnavailable(error: unknown): Error {
+  return new Error(`verification record publication unavailable: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+}
+
+function withVerificationPublicationTransaction<T>(workspaceRoot: string, fn: () => T, seams?: VerificationPublicationTestSeams): T {
   const tachyonDir = path.join(workspaceRoot, ".tachyon");
   fs.mkdirSync(tachyonDir, { recursive: true });
   const databasePath = path.join(tachyonDir, "verification-publication.sqlite3");
   let database: PublicationDatabase | undefined;
   let began = false;
+  let committed = false;
+  let result: T | undefined;
+  let primary: unknown;
+  let rollbackFailure: unknown;
+  let closeFailure: unknown;
   try {
-    const require = createRequire(path.join(workspaceRoot, "tachyon-verification-publisher-loader.cjs"));
-    const sqlite = require("node:sqlite") as typeof import("node:sqlite");
-    if (typeof sqlite.DatabaseSync !== "function") throw new Error("node:sqlite DatabaseSync is unavailable");
-    database = new sqlite.DatabaseSync(databasePath, { timeout: 5000 });
+    if (seams?.databaseFactory) database = seams.databaseFactory(databasePath);
+    else {
+      const require = createRequire(path.join(workspaceRoot, "tachyon-verification-publisher-loader.cjs"));
+      const sqlite = require("node:sqlite") as typeof import("node:sqlite");
+      if (typeof sqlite.DatabaseSync !== "function") throw new Error("node:sqlite DatabaseSync is unavailable");
+      database = new sqlite.DatabaseSync(databasePath, { timeout: 5000 });
+    }
     database.exec("PRAGMA busy_timeout=5000; PRAGMA journal_mode=DELETE; PRAGMA synchronous=FULL;");
     database.exec("BEGIN IMMEDIATE");
     began = true;
-    const result = fn();
-    database.exec("COMMIT");
-    began = false;
-    return result;
   } catch (error) {
-    if (began) {
-      try { database?.exec("ROLLBACK"); } catch { /* preserve the publication failure */ }
-    }
-    if (!began) {
-      throw new Error(`verification record publication unavailable: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
-    }
-    throw error;
-  } finally {
-    database?.close();
+    primary = publicationUnavailable(error);
   }
+  if (began) {
+    try {
+      result = fn();
+      database!.exec("COMMIT");
+      committed = true;
+    } catch (error) {
+      primary = error;
+    }
+  }
+  if (began && !committed) {
+    try { database!.exec("ROLLBACK"); } catch (error) { rollbackFailure = error; }
+  }
+  if (database) {
+    try { database.close(); } catch (error) { closeFailure = error; }
+  }
+  const failures = [primary, rollbackFailure, closeFailure].filter((failure) => failure !== undefined);
+  if (failures.length === 1) throw failures[0];
+  if (failures.length > 1) {
+    throw new AggregateError(failures, "verification publication transaction lifecycle failed");
+  }
+  return result as T;
 }
 
 /** Internal evidence publisher. Exported only for the cross-process regression helper. */
-export function writeVerificationRecord(workspaceRoot: string, record: VerifyTaskRecord): string {
+export function writeVerificationRecord(workspaceRoot: string, record: VerifyTaskRecord, seams?: VerificationPublicationTestSeams): string {
   const dir = path.join(workspaceRoot, ".tachyon", "verifications");
   fs.mkdirSync(dir, { recursive: true });
   const file = verificationRecordPath(dir, record);
@@ -650,6 +676,7 @@ export function writeVerificationRecord(workspaceRoot: string, record: VerifyTas
         );
       }
     }
+    seams?.afterConflictCheck?.();
 
     const temporary = `${file}.${process.pid}.${crypto.randomUUID()}.tmp`;
     let descriptor: number | undefined;
@@ -683,7 +710,7 @@ export function writeVerificationRecord(workspaceRoot: string, record: VerifyTas
       throw primary;
     }
     return file;
-  });
+  }, seams);
 }
 
 async function worktreePathForRef(workspaceRoot: string, taskRef: string): Promise<string | undefined> {
