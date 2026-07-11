@@ -23,7 +23,7 @@ _Generated from `plan.md` on 2026-07-10. Work top-to-bottom. Check boxes as task
 - [x] T3. Implement deterministic legacy preview/apply import from DelegationRecord + fixerAttempts + optional exact
   GitDelivery match; ambiguous drift or non-linear segment history refuses without writing.
   - Gate: `legacy import preserves linear provenance and refuses ambiguous Git projections without mutation`.
-- [ ] T4. Teach `verify_task` to resolve by `delivery_id` first and exactly-one-non-archived legacy agent-name sugar
+- [x] T4. Teach `verify_task` to resolve by `delivery_id` first and exactly-one-non-archived legacy agent-name sugar
   second, using an adapter rather than a duplicate DelegationRecord; forbid mtime selection.
   - Gate: `verify_task refuses ambiguous same-name legacy delegations instead of selecting by mtime`.
 
