@@ -1497,6 +1497,9 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         "through the same hardened submit path notify_agent uses and is REFUSED with a structured error " +
         "(receipt: refused-busy) if the recipient is working/throttled — write_input is a direct command " +
         "gesture, so a busy recipient is never queued silently; use notify_agent or wait for idle instead. " +
+        "Also REFUSED (receipt: refused-not-ready, t-f87651) while a Codex-class agent is still bootstrapping " +
+        "(runtime not ready) — a spawn receipt is not proof the first contract landed; wait for ready or " +
+        "persist the contract to the task journal and notify a short pointer after ready. " +
         "A non-empty runtime composer draft is refused with receipt: refused-composer unless answering=true " +
         "and the recipient is needs-input. " +
         "needs-input is ALLOWED (t-8605be): that state means the recipient is blocked on an interactive prompt, " +
@@ -1519,6 +1522,17 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         const session = deps.manager.session(name);
         if (!(await deps.tmux.hasSession(session))) {
           return fail(new Error(`agent '${name}' is not running`));
+        }
+        // t-f87651 — first-contract bootstrap gate: spawn/restart success and tmux submit receipts
+        // are not proof the runtime has finished booting. While a Codex (or other gated) agent is
+        // provisional/not-ready, refuse so callers cannot believe a long contract was delivered.
+        // Persist to the task journal and re-notify a short pointer after ready (the confirmed workaround).
+        if (deps.manager.kindOf(name) === "agent" && !(await deps.manager.isReady(name))) {
+          return fail(
+            new Error(
+              `recipient '${name}' is still bootstrapping (runtime not ready) — refused-not-ready: wait for the runtime prompt, or persist the contract to the task journal and notify a short pointer after ready`,
+            ),
+          );
         }
         if (!submit) {
           await deps.tmux.sendKeys(session, text, false);
@@ -1563,7 +1577,9 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         "already teaches this to a child spawned with parent set), or any agent→agent nudge by name (parent, " +
         "sibling, anyone in the fleet). NOT a chat channel: it types ONE sanitized, single-line, provenance-" +
         "prefixed message into the recipient's terminal and submits it when the recipient appears idle — a waiting agent " +
-        "only wakes on input that starts a turn. Busy recipients may be queued until idle. Targets must be running AGENTS " +
+        "only wakes on input that starts a turn. Busy recipients may be queued until idle. Also REFUSED " +
+        "(receipt: refused-not-ready, t-f87651) while the recipient is still bootstrapping (runtime not ready). " +
+        "Targets must be running AGENTS " +
         "(not terminals) and not yourself. Best-effort pane input, not durable history, and still unsafe for a recipient " +
         "actively being typed into by a human.",
       inputSchema: {
@@ -1586,18 +1602,30 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         if (deps.manager.kindOf(to) !== "agent") {
           return fail(new Error(`'${to}' is not an agent — notify_agent targets running agents only, not terminals`));
         }
-        // spec 363 T1 / t-5f80c6 — witness the doorbell right after static sender/target validation,
-        // BEFORE the hangable preflight below (tmux.hasSession is bounded in TmuxService with child
-        // cancellation). verify_task's protocol_doorbell_missed
-        // finding only checks EXISTENCE of a ring, not delivery outcome, so a doorbell entry for an
-        // attempt that later fails preflight (timeout, or recipient not running) is harmless/correct:
-        // the child DID call notify_agent and must never be penalized because tmux was slow.
-        appendDoorbellEvent(deps.workspaceRoot, { from: agent, to, at: new Date().toISOString() });
+        // t-f87651 — bootstrap gate BEFORE the doorbell: a parent→child first-contract notify while
+        // the child is still launching must not count as a witnessed doorbell and must not report
+        // notified. Session existence alone is not readiness.
         const session = deps.manager.session(to);
         const sessionAlive = await deps.tmux.hasSession(session);
         if (!sessionAlive) {
+          // Still witness doorbell for a child→parent attempt at a not-running parent? Spec 363/t-5f80c6
+          // wants the ring when static checks pass and only hangable preflight fails. Ghost targets
+          // are not kind:agent in our roster unless declared — keep prior path for unknown names:
+          // only append when we would have reached the hangable preflight with a resolved agent.
+          appendDoorbellEvent(deps.workspaceRoot, { from: agent, to, at: new Date().toISOString() });
           return fail(new Error(`agent '${to}' is not running`));
         }
+        if (!(await deps.manager.isReady(to))) {
+          return fail(
+            new Error(
+              `agent '${to}' is still bootstrapping (runtime not ready) — refused-not-ready: wait for the runtime prompt, then retry (or use a short journal-pointer notify after ready)`,
+            ),
+          );
+        }
+        // spec 363 T1 / t-5f80c6 — witness the doorbell after readiness so a bootstrap refuse does not
+        // inflate doorbell counts; a child that reached a ready parent still gets credit before any
+        // later hangable delivery failure.
+        appendDoorbellEvent(deps.workspaceRoot, { from: agent, to, at: new Date().toISOString() });
         if (!prepareAgentSummary(summary)) {
           return fail(new Error("summary must not be empty after sanitizing"));
         }

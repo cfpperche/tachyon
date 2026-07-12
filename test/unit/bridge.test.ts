@@ -1103,6 +1103,56 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     expect(sessions.get(`tachyon-${HASH}-claude`)).toBe("typed only");
   });
 
+  it("t-f87651: write_input refuses while a Codex agent is still bootstrapping (not ready)", async () => {
+    // Fresh Codex spawn: launch readiness window is 0 under VITEST → pending, not readyAgents.
+    // Fake capture lacks "Ask anything" / "Type a message" → isReady stays false.
+    await client.callTool({
+      name: "spawn_agent",
+      arguments: { name: "boot-codex", cmd: "codex", parent: "claude", skip_contract_reason: "test fixture first-contract bootstrap" },
+    });
+    const session = `tachyon-${HASH}-boot-codex`;
+    const before = sessions.get(session);
+    const refused = await client.callTool({
+      name: "write_input",
+      arguments: { name: "boot-codex", text: "FIRST CONTRACT: implement the thing" },
+    });
+    expect(refused.isError).toBe(true);
+    expect(JSON.stringify(refused.content)).toMatch(/refused-not-ready/);
+    expect(JSON.stringify(refused.content)).toMatch(/bootstrapping|not ready/i);
+    expect(sessions.get(session)).toBe(before);
+
+    // Promote readiness via the same classifier observeLaunchReadiness uses, then deliver succeeds.
+    panes.set(session, "Ask anything\n");
+    const ok = await client.callTool({
+      name: "write_input",
+      arguments: { name: "boot-codex", text: "FIRST CONTRACT: implement the thing" },
+    });
+    expect(ok.isError).toBeFalsy();
+    expect(JSON.stringify(ok.content)).toContain("submitted");
+    expect(sessions.get(session)).toBe("FIRST CONTRACT: implement the thing");
+    await client.callTool({ name: "kill_agent", arguments: { name: "boot-codex" } });
+  });
+
+  it("t-f87651: notify_agent refuses while a Codex agent is still bootstrapping (not ready)", async () => {
+    await client.callTool({
+      name: "spawn_agent",
+      arguments: { name: "boot-codex-n", cmd: "codex", parent: "claude", skip_contract_reason: "test fixture first-contract bootstrap" },
+    });
+    const session = `tachyon-${HASH}-boot-codex-n`;
+    const before = sessions.get(session);
+    const doorbellBefore = readDoorbellEvents(pinsRoot).length;
+    const refused = await client.callTool({
+      name: "notify_agent",
+      arguments: { to: "boot-codex-n", summary: "task journal: see j-abc for full contract", agent: "claude" },
+    });
+    expect(refused.isError).toBe(true);
+    expect(JSON.stringify(refused.content)).toMatch(/refused-not-ready/);
+    expect(sessions.get(session)).toBe(before);
+    // Bootstrap refuse must not inflate doorbell counts (parent→not-ready child is not a witnessed handoff).
+    expect(readDoorbellEvents(pinsRoot)).toHaveLength(doorbellBefore);
+    await client.callTool({ name: "kill_agent", arguments: { name: "boot-codex-n" } });
+  });
+
   it("update_task: assigning to a live running agent notifies the assignee (t-ea86e6, case 1/4)", async () => {
     const created = await client.callTool({ name: "create_task", arguments: { title: "Ship the thing", agent: "claude" } });
     const task = JSON.parse((created.content as Array<{ text: string }>)[0].text);
