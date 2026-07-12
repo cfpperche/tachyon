@@ -1005,3 +1005,92 @@ pathspec with `t-0b5723`, then notify the coordinator with SHA, exact counts, an
   `git diff --check` passed; `npm run verify:full:quiet` passed 301 files with 3,603 tests passed and 3 skipped.
   Progress is now design T0/T0.1/T0.2 plus T1–T12 = 15/23 primary checklist items complete; T13 bound persistent
   executions is next.
+
+### T13 implementation contract — declared-agent bound executions
+
+T13 adds one explicit declared-definition binding mode to the existing `delivery_join` spawn path. It does not wire
+the production `DeliveryLeaseService` into `Workspace` while the real `ProcessFencePort` remains unavailable, persist
+Delivery bindings for reload (T14), change configured lifecycle authority, add GitDelivery projection behavior, or
+permit a same-Delivery fallback worktree. The current ad-hoc `cmd` join and ordinary declared-agent spawn remain
+compatible.
+
+**Measured boundary and API.** `spawn_agent` currently treats `name` as the runtime/Bridge identity, while optional
+`delivery_join.principal` is attribution only; `AgentManager.spawnCore` resolves a definition by that runtime name,
+mints the per-agent Bridge token with that name, materializes private runtime state under that name, and writes the
+session ledger under that name. A unique execution name therefore cannot reuse a differently named declared
+definition today. Add optional `delivery_join.declared_agent` as the explicit selection field. It is mutually
+exclusive with top-level `cmd` and with legacy attribution-only `delivery_join.principal`. `name` remains the
+caller-supplied `executionAgent`; it must differ from `declared_agent` and must not collide with a configured
+definition, an in-memory ad-hoc definition, an existing session-ledger row, or any live/dead tmux session. Reject all
+of those before lease reservation. Do not reinterpret or remove the legacy `principal` field.
+
+The selected source must exist in the current parsed config and have `kind: agent`; terminals, unknown names, and an
+ad-hoc definition that merely shares the requested source name are refused. Snapshot the parsed `AgentDef` before
+reservation and derive a new ephemeral definition: preserve runtime command, role, instructions, declared env,
+harness/isolate configuration, watch, and attention behavior; append the Bridge-managed delegation contract after
+the declared role instructions. Force `autostart: false`, `restart: never`, and discard declared worktree/branch/
+setup/verify/subagent lifecycle settings because the Delivery already owns the worktree and the execution is not the
+persistent home session. Reviewer safety transformation applies to the derived command before reservation.
+
+Extend the private forced-spawn channel so `spawnCore` accepts the derived definition and an explicit ephemeral flag,
+while still forcing the prepared Delivery cwd/worktree and bypassing every fresh-worktree resolver. Do not add the
+derived definition to `tachyon.yml` or mutate the source object. The derived execution is recorded/listed/cleaned as
+an ad-hoc agent under `name`; its ledger `declared` bit is false. T14, not T13, owns durable Delivery/segment binding
+and reload reconstruction.
+
+**Identity and authority invariants.** Normalize the request passed to `prepareDeliveryJoin`,
+`confirmDeliveryJoin`, and `failDeliveryJoin` so `principal` is exactly `declared_agent`, while `executionAgent` is
+always `name`. The Delivery service therefore persists both identities without granting policy authority to either;
+Bridge-resolved `grantedBy` remains the authority boundary. Mint `TACHYON_AGENT_BRIDGE_TOKEN` only for the execution
+name, set `TACHYON_AGENT_NAME` to the execution name, materialize MCP/session-ownership files and private runtime home
+only under the execution name, and never read, mint, revoke, overwrite, stop, resume, or clean the principal's live
+session. The source definition's env may not override either reserved identity variable in the bound execution;
+refuse a declared source that explicitly supplies `TACHYON_AGENT_BRIDGE_TOKEN` rather than risking token
+impersonation. Existing shared-token compatibility is unchanged and is not treated as principal identity.
+
+Because every hook, activity, ledger, harness, token, and continuity lookup keys on execution name, the bound child
+must receive the normal ad-hoc/ownership-only prompt hooks and completion doorbell addressed from its execution
+identity. Its source principal's ledger row, cwd, resume binding/config home, caller-token registry entry, harness
+tree, activity owner rows, and `.tachyon/continuity/<principal>.md` and state file remain byte-for-byte untouched.
+Cleanup or confirmation compensation targets only the execution name. If cleanup or reservation compensation fails,
+preserve the existing aggregate causal error and never fall back to stopping the principal.
+
+**Bridge contract and compatibility.** A `delivery_join.declared_agent` spawn is an AI delegation even though it
+omits `cmd`; require the same structured `task`/`context`/`constraints` plus `deliverable` or `done_when` contract as
+an ad-hoc AI child, and deliver the identity line using the execution name. `skip_contract_reason` remains forbidden
+with a gated contract but otherwise retains its existing semantics; no new authority is inferred from config
+ownership metadata. Preserve byte-for-byte behavior for ordinary `spawn_agent(name)` declared starts, ad-hoc joins
+with `cmd`, and legacy joins carrying attribution-only `principal`.
+
+**Failure order.** Before `prepareDeliveryJoin`, validate field exclusivity, source kind/existence, unique execution
+name, reserved env, reviewer command structure, and runtime launch preflight for the effective derived command. No
+invalid binding may create a reservation, tmux session, token, ledger row, harness home, or contract brief file. Once
+reserved, retain the existing spawn/confirm compensation protocol: a spawn or confirmation failure stops and cleans
+only the bound execution, then consumes/quarantines the exact reservation; aggregate every primary and cleanup error
+in stable causal order.
+
+**Owned implementation paths.** `src/agents/AgentManager.ts`, `src/bridge/tools.ts`,
+`test/unit/agentManager.test.ts`, and `test/unit/bridge.test.ts` only. No Workspace, Delivery store/service/type,
+SessionLedger schema, config/schema, GitDelivery, continuity implementation, tachyon.yml, or task-store edit. If the
+current interfaces cannot prove principal token/home/continuity non-mutation within these paths, stop and return the
+missing seam instead of widening scope.
+
+**Deterministic test matrix.** Keep a declared principal live, snapshot its ledger row/cwd/resume/config home,
+token-mint calls, harness materialization calls, continuity files, and tmux command/env; then bind a reviewer through
+a different execution name and prove both sessions remain live, the Delivery callbacks receive
+`executionAgent=name` plus `principal=declared_agent`, the reviewer-safe command and declared role/contract run in the
+prepared Delivery cwd, only the execution token/home/ledger/activity hooks are created, and the principal snapshot is
+unchanged before and after bound cleanup. Prove harness/isolate/env inheritance under the execution name; ad-hoc
+classification and `declared:false`; no fresh-worktree resolver; structured contract enforcement without top-level
+`cmd`; unknown/terminal source, same/colliding execution name across config/ad-hoc/ledger/tmux, reserved token env,
+`cmd+declared_agent`, `principal+declared_agent`, unsafe reviewer command, and failed launch preflight all refuse with
+zero reservation/runtime/identity effects. Force confirmation plus cleanup failures and prove only the execution is
+targeted. Retain existing T6/T10 ad-hoc join and ordinary declared-spawn tests unchanged.
+
+**Runtime/model and done condition.** Use the declared `codex-executor` at `gpt-5.6-terra` medium: the design is
+closed, the change is four files, and the remaining work is bounded implementation with identity-sensitive failure
+ordering but no unresolved architecture. The behavior gate is `a persistent identity reviews through a bound
+execution without rebinding or impersonation`. Run the focused AgentManager and Bridge suites serially,
+`npm run typecheck`, `git diff --check`, then `npm run verify:full:quiet` exactly once at the first reviewable
+candidate. Commit only the four owned paths with `t-0b5723` and notify `codex`; immutable Sonnet review and final
+closure verification remain coordinator gates.
