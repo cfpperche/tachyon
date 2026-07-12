@@ -1,12 +1,13 @@
 import { MarkdownView } from "../activity/markdown";
 import { Button } from "../shared/ui";
-import { useState } from "preact/hooks";
+import { useEffect, useState } from "preact/hooks";
 import { stalenessLabel, noteGlyph, relativeTime, type HandoffViewModel, type HandoffNoteVM } from "./handoffViewModel";
-import { buildHandoffDistillCommand } from "./distill";
+import { buildHandoffDistillCommand, reconcileDistillSelection, type HandoffDistillMode } from "./distill";
 
 // spec 245 inc D — the Project Handoff panel (Preact, render-only). A calm, curated DOCUMENT view (not a
 // dashboard): a compact header + staleness badge, a metadata subline, the canonical handoff rendered as
 // markdown, then the pending-note lane as a quiet secondary list. Read-only; never imports vscode.
+// t-4eb7c0 — Distill re-requests a host snapshot on open so runningDistillTargets match live panes.
 
 const Icon = ({ name }: { name: string }) => <span class={`codicon codicon-${name}`} aria-hidden="true" />;
 
@@ -36,7 +37,7 @@ function NoteRow({ n, now }: { n: HandoffNoteVM; now: Date }) {
 }
 
 function DistillBox({ vm, dispatch, onClose }: { vm: HandoffViewModel; dispatch: HandoffDispatch; onClose(): void }) {
-  const [mode, setMode] = useState<"existing" | "adhoc">(vm.distillTargets.length > 0 ? "existing" : "adhoc");
+  const [mode, setMode] = useState<HandoffDistillMode>(vm.distillTargets.length > 0 ? "existing" : "adhoc");
   const [agent, setAgent] = useState(vm.distillTargets[0]?.name ?? "");
   const [profileId, setProfileId] = useState<string>(vm.distillProfiles[0]?.id ?? "codex:default");
   const [args, setArgs] = useState("");
@@ -45,6 +46,20 @@ function DistillBox({ vm, dispatch, onClose }: { vm: HandoffViewModel; dispatch:
   const profile = vm.distillProfiles.find((p) => p.id === profileId) ?? vm.distillProfiles[0];
   const commandPreview = profile ? buildHandoffDistillCommand(profile, args) : "";
   const canStart = mode === "existing" ? !!agent : !!profile;
+
+  // t-4eb7c0 — host only recomputes distillTargets on snapshot post; open always re-pulls live agents.
+  // Mount-only: Root builds a fresh dispatch object every render, so [dispatch] would refresh-loop.
+  useEffect(() => {
+    dispatch.refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per Distill open
+  }, []);
+
+  // Async refresh can repost targets after mount — keep selection coherent without wiping owner edits.
+  useEffect(() => {
+    const next = reconcileDistillSelection(vm.distillTargets, { mode, agent });
+    if (next.mode !== mode) setMode(next.mode);
+    if (next.agent !== agent) setAgent(next.agent);
+  }, [vm.distillTargets, mode, agent]);
 
   const submit = () => {
     if (!canStart) return;
@@ -58,7 +73,7 @@ function DistillBox({ vm, dispatch, onClose }: { vm: HandoffViewModel; dispatch:
       <div class="distill-row">
         <label>
           Target
-          <select value={mode} onChange={(e) => setMode((e.currentTarget as HTMLSelectElement).value as "existing" | "adhoc")}>
+          <select value={mode} onChange={(e) => setMode((e.currentTarget as HTMLSelectElement).value as HandoffDistillMode)}>
             <option value="existing" disabled={!canUseExisting}>Running agent</option>
             <option value="adhoc">Ad-hoc agent</option>
           </select>
@@ -122,6 +137,14 @@ export function App({ vm, dispatch }: { vm?: HandoffViewModel; dispatch: Handoff
     </Button>
   );
 
+  const toggleDistill = () => {
+    setDistillOpen((openNow) => {
+      // Also request refresh at the toggle edge so the host starts list() before DistillBox mounts.
+      if (!openNow) dispatch.refresh();
+      return !openNow;
+    });
+  };
+
   return (
     <div>
       <div class="head">
@@ -131,7 +154,7 @@ export function App({ vm, dispatch }: { vm?: HandoffViewModel; dispatch: Handoff
           {vm.staleness === "needs_distill" && vm.pendingCount > 0 ? ` · ${vm.pendingCount}` : ""}
         </span>
         <span class="actions">
-          <Button icon="wand" title="Distill pending notes with an agent" onClick={() => setDistillOpen((v) => !v)}>
+          <Button icon="wand" title="Distill pending notes with an agent" onClick={toggleDistill}>
             Distill
           </Button>
           {open}

@@ -64,3 +64,27 @@ export function buildHandoffDistillPrompt(opts: { additionalInstruction?: unknow
     ...(extra ? ["", "Additional owner instruction:", extra] : []),
   ].join("\n");
 }
+
+export type HandoffDistillMode = "existing" | "adhoc";
+
+/**
+ * t-4eb7c0 — keep Distill mode/agent selection valid after an async host refresh reposts distillTargets.
+ * - No running targets ⇒ force adhoc (existing is disabled in the UI).
+ * - existing + dead/missing agent ⇒ pick the first live target.
+ * - adhoc while targets were empty, then targets appear ⇒ prefer existing (stale open→refresh path).
+ * - adhoc with a deliberate choice while targets already exist ⇒ leave mode alone.
+ */
+export function reconcileDistillSelection(
+  targets: ReadonlyArray<{ name: string }>,
+  prev: { mode: HandoffDistillMode; agent: string },
+): { mode: HandoffDistillMode; agent: string } {
+  if (targets.length === 0) return { mode: "adhoc", agent: "" };
+  const names = new Set(targets.map((t) => t.name));
+  if (prev.mode === "existing") {
+    if (names.has(prev.agent)) return { mode: "existing", agent: prev.agent };
+    return { mode: "existing", agent: targets[0]!.name };
+  }
+  // Opened with a stale empty list (forced adhoc) then refresh filled targets — surface Running agent.
+  if (!prev.agent) return { mode: "existing", agent: targets[0]!.name };
+  return { mode: "adhoc", agent: prev.agent };
+}

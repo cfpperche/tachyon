@@ -6,6 +6,7 @@ import {
   isHandoffDistillRuntime,
   normalizeAdditionalInstruction,
   normalizeHandoffDistillArgs,
+  reconcileDistillSelection,
   resolveHandoffDistillProfile,
 } from "../../src/webview/handoff/distill.js";
 
@@ -61,5 +62,30 @@ describe("handoff distill prompt (spec 328)", () => {
     expect(normalizeHandoffDistillArgs(123)).toBe("");
     expect(normalizeHandoffDistillArgs("--model sonnet\nrm -rf nope")).toBe("");
     expect(normalizeHandoffDistillArgs("--model sonnet")).toBe("--model sonnet");
+  });
+});
+
+describe("reconcileDistillSelection (t-4eb7c0)", () => {
+  const targets = [{ name: "codex" }, { name: "grok" }];
+
+  it("forces adhoc when no running targets", () => {
+    expect(reconcileDistillSelection([], { mode: "existing", agent: "codex" })).toEqual({ mode: "adhoc", agent: "" });
+  });
+
+  it("keeps a still-valid existing agent after refresh", () => {
+    expect(reconcileDistillSelection(targets, { mode: "existing", agent: "grok" })).toEqual({ mode: "existing", agent: "grok" });
+  });
+
+  it("repicks the first target when the previous existing agent left the list", () => {
+    expect(reconcileDistillSelection(targets, { mode: "existing", agent: "claude" })).toEqual({ mode: "existing", agent: "codex" });
+  });
+
+  it("promotes stale empty open (adhoc + no agent) to existing when targets arrive", () => {
+    expect(reconcileDistillSelection(targets, { mode: "adhoc", agent: "" })).toEqual({ mode: "existing", agent: "codex" });
+  });
+
+  it("does not steal a deliberate adhoc choice when targets already exist", () => {
+    // agent still holds the prior existing name after the user switched Target → Ad-hoc
+    expect(reconcileDistillSelection(targets, { mode: "adhoc", agent: "codex" })).toEqual({ mode: "adhoc", agent: "codex" });
   });
 });
