@@ -6,7 +6,7 @@ import { DeliveryLeaseService } from "../../src/delivery/leaseService.js";
 import { DeliveryStore } from "../../src/delivery/store.js";
 
 describe("container-generated delegation behavior", () => {
-  it("mechanism-only canonical Delivery reuses one worktree through review completion", async () => {
+  it("mechanism-only lease service preserves review completion semantics", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-b2-lifecycle-"));
     const worktree = path.join(root, "one-worktree"); fs.mkdirSync(worktree);
     const store = new DeliveryStore(root, { now: () => "2026-07-12T00:00:00.000Z" });

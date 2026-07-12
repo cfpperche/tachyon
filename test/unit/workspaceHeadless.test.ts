@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { Workspace } from "../../src/workspace/Workspace.js";
 import type { EngineHost, NoticeAction, ViewKind, WatchEvents } from "../../src/workspace/EngineHost.js";
 import { TMUX_CONTROL_CONCURRENCY, TmuxService, sessionName, workspaceHash, type ExecResult } from "../../src/tmux/TmuxService.js";
@@ -74,18 +74,31 @@ class FakeHost implements EngineHost {
 }
 
 /** fake-exec tmux: a real TmuxService whose command channel is a fake (same pattern as the manager suites). */
-function fakeTmux() {
+function fakeTmux(opts: { realPaneProcesses?: boolean } = {}) {
   const sessions = new Set<string>();
   const dead = new Map<string, number>();
   const sent = new Map<string, string>(); // session -> last literal send-keys text (spec 332 death-poke assertions)
   const panes = new Map<string, string>();
   const calls: string[][] = [];
+  const children = new Map<string, ChildProcess>();
+  const waitForExit = (child: ChildProcess) => new Promise<void>((resolve) => child.exitCode !== null ? resolve() : child.once("exit", () => resolve()));
+  const stop = async (name: string) => {
+    const child = children.get(name);
+    if (child?.exitCode === null) { child.kill("SIGKILL"); await waitForExit(child); }
+    children.delete(name);
+  };
+  const replacePaneProcess = async (name: string) => {
+    const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+    children.set(name, child);
+    return child;
+  };
   const exec = async (args: string[]): Promise<ExecResult> => {
     calls.push(args);
     if (args.includes("new-session")) {
       const name = args[args.indexOf("-s") + 1];
       sessions.add(name);
       panes.set(name, "");
+      if (opts.realPaneProcesses) await replacePaneProcess(name);
       return { stdout: "", stderr: "" };
     }
     if (args[2] === "has-session") {
@@ -108,15 +121,21 @@ function fakeTmux() {
       const name = args[args.indexOf("-t") + 1].replace(/^=/, "").replace(/:$/, "");
       return { stdout: panes.get(name) ?? "", stderr: "" };
     }
+    if (args.includes("display-message")) {
+      const name = args[args.indexOf("-t") + 1].replace(/^=/, "").replace(/:$/, "");
+      const child = children.get(name);
+      return { stdout: child?.pid ? `${child.pid}\n` : "", stderr: "" };
+    }
     if (args[2] === "kill-session") {
       const name = args[args.indexOf("-t") + 1].replace(/^=/, "");
+      await stop(name);
       sessions.delete(name);
       dead.delete(name);
       panes.delete(name);
     }
     return { stdout: "", stderr: "" };
   };
-  return { sessions, dead, sent, panes, calls, tmux: new TmuxService(exec) };
+  return { sessions, dead, sent, panes, calls, children, replacePaneProcess, cleanup: async () => { await Promise.all([...children.keys()].map(stop)); }, tmux: new TmuxService(exec) };
 }
 
 const dirs: string[] = [];
@@ -163,6 +182,49 @@ function latestDelegationRecord(root: string, agent: string) {
 }
 
 describe("Workspace — headless composition smoke (spec 235)", () => {
+  it("mechanism-only canonical Delivery reuses one worktree through review completion", async () => {
+    const root = mkdir(); const base = path.join(root, ".tachyon-worktrees");
+    fs.writeFileSync(path.join(root, "tachyon.yml"), `settings:\n  worktree:\n    base: ${JSON.stringify(base)}\n  delivery:\n    mode: canonical\n    handoffSafety: mechanism-only\nagents:\n  boss:\n    cmd: sh\n`, "utf8");
+    git(root, ["init"]); git(root, ["config", "user.email", "test@example.com"]); git(root, ["config", "user.name", "Test User"]);
+    fs.writeFileSync(path.join(root, "README.md"), "base\n"); git(root, ["add", "README.md"]); git(root, ["commit", "-m", "base"]);
+    const host = new FakeHost(mkdir()); const fake = fakeTmux({ realPaneProcesses: true });
+    const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux: fake.tmux, startBridge: false });
+    const contract = { task: "implement", context: "real lifecycle", constraints: "scoped", doneWhen: "complete" };
+    try {
+      await ws.manager.spawn("implementer", { cmd: "claude", delegator: "boss", contract, gate: { behaviorTest: "mechanism-only canonical Delivery reuses one worktree through review completion", owns: ["src"] }, reveal: false });
+      const initial = (await ws.deliveries.list())[0]!; const canonical = fs.realpathSync(ws.ledger.get("implementer")!.worktree!.path);
+      expect(initial.lease.holder).toMatchObject({ executionAgent: "implementer" });
+      expect(initial.lease.holder?.process?.pid).toBeGreaterThan(0); expect(initial.lease.holder?.executionNonce).toBeTruthy();
+      const head = git(canonical, ["rev-parse", "HEAD"]);
+      const join = async (name: string, role: "reviewer" | "fixer", operation: string) => ws.manager.spawn(name, { cmd: "claude", reveal: false, deliveryJoin: { deliveryId: initial.id, role, ownsSubset: role === "reviewer" ? [] : ["src"], expectedHead: head, operationId: operation } });
+      await join("reviewer-1", "reviewer", "review-1");
+      expect(fake.children.get(ws.manager.session("implementer"))?.exitCode).not.toBeNull();
+      expect(fs.realpathSync(ws.ledger.get("reviewer-1")!.cwd)).toBe(canonical);
+      await ws.deliveryLease.completeReview({ deliveryId: initial.id, canonicalWorktree: canonical, expectedReviewedHeadSha: head, verdict: "FINDINGS", actor: { kind: "agent", name: "boss" }, operationId: "findings" });
+      await join("fixer", "fixer", "fixer"); await join("reviewer-2", "reviewer", "review-2");
+      await ws.deliveryLease.completeReview({ deliveryId: initial.id, canonicalWorktree: canonical, expectedReviewedHeadSha: head, verdict: "ACCEPT", actor: { kind: "agent", name: "boss" }, operationId: "accept" });
+      const final = await ws.deliveries.get(initial.id);
+      expect(final?.lease.state).toBe("free"); expect(final?.segments.map((s) => s.role)).toEqual(["implementer", "reviewer", "fixer", "reviewer"]);
+      expect((await ws.gitDeliveries.list()).filter((g) => g.deliveryId === initial.id)).toHaveLength(1);
+      expect(fs.readdirSync(base).filter((x) => fs.statSync(path.join(base, x)).isDirectory())).toHaveLength(1);
+    } finally { await fake.cleanup(); ws.dispose(); }
+  });
+
+  it("quarantines a replacement pane PID without touching the replacement session", async () => {
+    const root = mkdir(); const base = path.join(root, ".tachyon-worktrees");
+    fs.writeFileSync(path.join(root, "tachyon.yml"), `settings:\n  worktree:\n    base: ${JSON.stringify(base)}\n  delivery:\n    mode: canonical\n    handoffSafety: mechanism-only\nagents:\n  boss:\n    cmd: sh\n`, "utf8");
+    git(root, ["init"]); git(root, ["config", "user.email", "test@example.com"]); git(root, ["config", "user.name", "Test User"]); fs.writeFileSync(path.join(root, "README.md"), "base\n"); git(root, ["add", "README.md"]); git(root, ["commit", "-m", "base"]);
+    const fake = fakeTmux({ realPaneProcesses: true }); const ws = await Workspace.createForTest(root, { host: new FakeHost(mkdir()), onViewsChanged: () => {} }, { tmux: fake.tmux, startBridge: false }); let original: ChildProcess | undefined;
+    try {
+      await ws.manager.spawn("implementer", { cmd: "claude", delegator: "boss", contract: { task: "implement", context: "replacement", constraints: "scoped", doneWhen: "complete" }, gate: { behaviorTest: "replacement PID is refused", owns: ["src"] }, reveal: false });
+      const delivery = (await ws.deliveries.list())[0]!; const cwd = fs.realpathSync(ws.ledger.get("implementer")!.cwd); const head = git(cwd, ["rev-parse", "HEAD"]); original = fake.children.get(ws.manager.session("implementer"));
+      const replacement = await fake.replacePaneProcess(ws.manager.session("implementer"));
+      await expect(ws.manager.spawn("reviewer", { cmd: "claude", reveal: false, deliveryJoin: { deliveryId: delivery.id, role: "reviewer", ownsSubset: [], expectedHead: head, operationId: "replacement" } })).rejects.toThrow(/DELIVERY_QUARANTINED|DELIVERY_EXACT_STOP_REFUSED/);
+      expect(replacement.exitCode).toBeNull(); expect(fake.sessions.has(ws.manager.session("implementer"))).toBe(true);
+      expect((await ws.deliveries.get(delivery.id))?.lease.state).toBe("quarantined");
+    } finally { if (original?.exitCode === null) original.kill("SIGKILL"); await fake.cleanup(); ws.dispose(); }
+  });
+
   it("builds + starts with no Electron / real tmux / bound port; start() auto-launches the declared agent", async () => {
     const { ws, sessions } = await makeWorkspace();
     // T14/R4: factory completes a bounded reload before return — ready before start().

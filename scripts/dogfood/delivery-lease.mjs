@@ -7,6 +7,6 @@ const root = process.cwd();
 if (!existsSync(new URL("../../package.json", import.meta.url))) {
   throw new Error("delivery lease dogfood must run from the repository checkout");
 }
-const result = spawnSync(process.execPath, ["./node_modules/vitest/vitest.mjs", "run", "test/unit/deliveryMechanismB2TerraR1Behavior.gen.test.ts"], { cwd: root, stdio: "inherit" });
+const result = spawnSync(process.execPath, ["./node_modules/vitest/vitest.mjs", "run", "test/unit/workspaceHeadless.test.ts", "-t", "mechanism-only canonical Delivery reuses one worktree through review completion"], { cwd: root, stdio: "inherit" });
 if (result.status !== 0) throw new Error(`delivery lease dogfood lifecycle failed (${result.status ?? "signal"})`);
 console.log("delivery lease dogfood lifecycle passed");

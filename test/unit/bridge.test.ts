@@ -484,7 +484,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     await projections.open({ workspaceId: "ws", deliveryId: "d-review", createdBy: { kind: "agent", name: "creator" }, agent: "worker", branchRef: "branch", worktreePath: root, tachyonCreatedBranch: true, baseRef: "main", reason: "test" });
     const completeReview = vi.fn(async () => delivery);
     class ToolCapture { handlers = new Map<string, (args: Record<string, unknown>) => Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }>>(); registerTool(name: string, _schema: unknown, handler: (args: Record<string, unknown>) => Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }>) { this.handlers.set(name, handler); } }
-    const args = { delivery_id: "d-review", expected_reviewed_head_sha: "a", verdict: "ACCEPT", operation_id: "review-op" };
+    const args = { delivery_id: "d-review", expected_reviewed_head_sha: "a".repeat(40), verdict: "ACCEPT", operation_id: "review-op" };
     try {
       const deniedMcp = new ToolCapture();
       registerTools(deniedMcp as never, { workspaceRoot: root, manager: {} as never, caller: { kind: "agent", name: "reviewer" }, deliveryLease: { completeReview } as never, gitDelivery: { store: projections, deliveries, workspaceId: "ws" } } as never);
@@ -494,6 +494,21 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       registerTools(allowedMcp as never, { workspaceRoot: root, manager: {} as never, caller: { kind: "agent", name: "creator" }, deliverySafety: () => "mechanism-only", deliveryLease: { completeReview } as never, gitDelivery: { store: projections, deliveries, workspaceId: "ws" } } as never);
       const allowed = await allowedMcp.handlers.get("delivery_complete_review")!(args);
       expect(allowed.isError).toBeFalsy(); expect(completeReview).toHaveBeenCalledOnce(); expect(JSON.stringify(allowed.content)).toContain("root death is best-effort");
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  });
+
+  it("delivery_complete_review accepts both Git object formats and rejects malformed IDs before service", async () => {
+    const root = fs.mkdtempSync(nodePath.join(os.tmpdir(), "tachyon-bridge-review-sha-"));
+    const mcp = new (class { handlers = new Map<string, (args: Record<string, unknown>) => Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }>>(); registerTool(n: string, _s: unknown, h: (a: Record<string, unknown>) => Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }>) { this.handlers.set(n, h); } })();
+    const completeReview = vi.fn();
+    registerTools(mcp as never, { workspaceRoot: root, manager: {} as never, caller: { kind: "human" }, deliveryLease: { completeReview } as never, gitDelivery: { deliveries: { get: async () => undefined }, store: { list: async () => [] } } } as never);
+    try {
+      for (const sha of ["b".repeat(40), "c".repeat(64)]) {
+        const result = await mcp.handlers.get("delivery_complete_review")!({ delivery_id: "missing", expected_reviewed_head_sha: sha, verdict: "ACCEPT", operation_id: sha });
+        expect(JSON.stringify(result.content)).toContain("not found");
+      }
+      const malformed = await mcp.handlers.get("delivery_complete_review")!({ delivery_id: "missing", expected_reviewed_head_sha: "not-an-object", verdict: "ACCEPT", operation_id: "bad" });
+      expect(malformed.isError).toBe(true); expect(completeReview).not.toHaveBeenCalled();
     } finally { fs.rmSync(root, { recursive: true, force: true }); }
   });
 
@@ -923,7 +938,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     expect(sessions.has(`tachyon-${HASH}-delivery-child`)).toBe(false);
   });
 
-  it("T13 R4B forwards a bound Delivery success without a top-level cmd as an exact execution request", async () => {
+  it("T14.6B2 refuses bound Delivery execution when the canonical Delivery store is unavailable", async () => {
     const spawn = vi.spyOn(manager, "spawn").mockResolvedValue(undefined);
     try {
       const result = await client.callTool({
@@ -945,30 +960,9 @@ describe("Bridge end-to-end over streamable HTTP", () => {
           },
         },
       });
-      expect(result.isError).toBeFalsy();
-      expect(spawn).toHaveBeenCalledTimes(1);
-      const [name, options] = spawn.mock.calls[0]!;
-      expect(name).toBe("bound-review-execution");
-      expect(options).toMatchObject({
-        parent: "claude",
-        deliveryJoin: {
-          deliveryId: "delivery-bound", role: "reviewer", ownsSubset: ["src/agents"], expectedHead: "abc",
-          operationId: "bridge-bound-success", declaredAgent: "claude",
-        },
-      });
-      expect(options?.cmd).toBeUndefined();
-      const instructions = options?.appendInstructions ?? "";
-      const task = "TASK: review the isolated delivery";
-      const context = "CONTEXT: the declared reviewer owns the durable principal";
-      const constraints = "CONSTRAINTS: read only; retain the declared principal";
-      const done = "DONE_WHEN: review evidence is recorded";
-      expect(instructions).toContain(task);
-      expect(instructions).toContain(context);
-      expect(instructions).toContain(constraints);
-      expect(instructions).toContain(done);
-      expect(instructions.indexOf(task)).toBeLessThan(instructions.indexOf(context));
-      expect(instructions.indexOf(context)).toBeLessThan(instructions.indexOf(constraints));
-      expect(instructions.indexOf(constraints)).toBeLessThan(instructions.indexOf(done));
+      expect(result.isError).toBe(true);
+      expect(JSON.stringify(result.content)).toContain("DELIVERY_LEASE_UNAVAILABLE");
+      expect(spawn).not.toHaveBeenCalled();
     } finally {
       spawn.mockRestore();
     }

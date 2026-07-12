@@ -1054,7 +1054,8 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         } else if (gate !== undefined) {
           return fail(new Error("spawn_agent gate is only supported for an ad-hoc AI sub-agent with a delegation contract"));
         }
-        if (delivery_join && deps.gitDelivery?.deliveries) {
+        if (delivery_join) {
+          if (!deps.gitDelivery?.deliveries) return fail(new Error("DELIVERY_LEASE_UNAVAILABLE: delivery_join requires the Delivery store dependency"));
           const caller = deps.caller;
           if (!caller || caller.kind === "legacy" || caller.kind === "external") return fail(new Error("delivery_join refused: resolved caller required"));
           const delivery = await deps.gitDelivery?.deliveries?.get(delivery_join.delivery_id);
@@ -2578,7 +2579,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     "delivery_complete_review",
     {
       description: "Complete an exact canonical Delivery review. Mechanism-only root death is best-effort; descendants are unproven.",
-      inputSchema: { delivery_id: z.string().min(1), expected_reviewed_head_sha: z.string().min(1), verdict: z.enum(["ACCEPT", "FINDINGS"]), operation_id: z.string().min(1) },
+      inputSchema: { delivery_id: z.string().min(1), expected_reviewed_head_sha: z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i, "must be a SHA-1 or SHA-256 object id"), verdict: z.enum(["ACCEPT", "FINDINGS"]), operation_id: z.string().min(1) },
     },
     async ({ delivery_id, expected_reviewed_head_sha, verdict, operation_id }) => {
       try {

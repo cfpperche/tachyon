@@ -466,9 +466,7 @@ export class Workspace {
     this.deliveryLease = new DeliveryLeaseService({
       store: this.deliveries,
       processFence: new UnavailableProcessFence(),
-      handoffSafety: () => this.config?.settings.delivery?.mode === "canonical"
-        ? this.config.settings.delivery?.handoffSafety ?? "disabled"
-        : "disabled",
+      handoffSafety: () => this.effectiveDeliverySafety(),
       canonicalWorktreeFor: async (delivery) => fs.realpathSync((await this.exactCanonicalProjection(delivery)).worktreePath),
       readHead: async (cwd) => this.requiredGitOutput(["rev-parse", "HEAD"], cwd, "Git HEAD"),
       inspectWorktree: async (cwd) => ({ headSha: await this.requiredGitOutput(["rev-parse", "HEAD"], cwd, "Git HEAD"), clean: await this.requiredGitStatus(cwd) }),
@@ -1098,9 +1096,7 @@ export class Workspace {
         withWorktreeLock: (agent, fn) => this.worktrees.withAgentPathLock(agent, fn),
         deliveryVerification: this.deliveryVerification,
         deliveryLease: this.deliveryLease,
-        deliverySafety: () => this.config?.settings.delivery?.mode === "canonical"
-          ? this.config.settings.delivery?.handoffSafety ?? "disabled"
-          : "disabled",
+        deliverySafety: () => this.effectiveDeliverySafety(),
         // spec 273 — the worktree evidence channel over MCP.
         attachEvidence: (input) => this.attachEvidence(input),
         listEvidence: (agent) => this.listEvidence(agent),
@@ -2269,7 +2265,9 @@ export class Workspace {
   private async requiredGitOutput(args: string[], cwd: string, label: string): Promise<string> {
     const result = await this.gitExec(args, cwd);
     const output = result.stdout.trim();
-    if (result.code !== 0 || !/^[0-9a-f]{40}$/i.test(output)) {
+    // Git object formats are SHA-1 (40 hex) or SHA-256 (64 hex).  Do not turn a
+    // successful SHA-256 repository into an apparent inspection failure.
+    if (result.code !== 0 || !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(output)) {
       throw new Error(`${label} failed (${result.code}): ${result.stderr.trim() || "missing or malformed object id"}`);
     }
     return output;
@@ -2315,9 +2313,13 @@ export class Workspace {
     if (!delivery) {
       // The gated pane already exists at this callback boundary. Capture its exact
       // Linux identity before publishing the initial held lease; unknown is fail-closed.
-      const identity = readLinuxProcessIdentity(await this.tmux.panePid(this.manager.session(input.name)));
-      if (identity.state !== "exact") throw new Error("DELIVERY_PROCESS_IDENTITY_MISSING: canonical gated spawn requires an exact pane identity");
-      const executionNonce = randomBytes(16).toString("hex");
+      const safety = this.effectiveDeliverySafety();
+      // Disabled canonical mode is the pre-sequential compatibility path.  It
+      // must not touch /proc or manufacture a process boundary just by opening a
+      // canonical Delivery.  Sequential safety modes are deliberately strict.
+      const identity = safety === "disabled" ? undefined : readLinuxProcessIdentity(await this.tmux.panePid(this.manager.session(input.name)));
+      if (safety !== "disabled" && identity?.state !== "exact") throw new Error("DELIVERY_PROCESS_IDENTITY_MISSING: canonical gated spawn requires an exact pane identity");
+      const executionNonce = safety === "disabled" ? undefined : randomBytes(16).toString("hex");
       const now = new Date().toISOString();
       try {
         delivery = await this.deliveries.create({
@@ -2332,7 +2334,7 @@ export class Workspace {
         taskRef: input.worktree.branch,
         ...(input.gate.stubPath ? { stubPath: input.gate.stubPath } : {}),
       },
-      lease: { state: "held", holder: { segmentId: `seg-${spawnKey.slice(0, 16)}`, executionAgent: input.name, executionNonce, process: { pid: identity.pid, processStart: identity.processStart, bootId: identity.bootId } }, expectedHeadSha: input.baseSha, changedAt: now },
+      lease: { state: "held", holder: { segmentId: `seg-${spawnKey.slice(0, 16)}`, executionAgent: input.name, ...(executionNonce ? { executionNonce } : {}), ...(identity?.state === "exact" ? { process: { pid: identity.pid, processStart: identity.processStart, bootId: identity.bootId } } : {}) }, expectedHeadSha: input.baseSha, changedAt: now },
       segments: [{
         id: `seg-${spawnKey.slice(0, 16)}`, index: 0, role: "implementer", executionAgent: input.name,
         principal: input.name, grantedBy: actor, ownsSubset: owns, grantedHeadSha: input.baseSha, grantedAt: now,
@@ -2375,11 +2377,18 @@ export class Workspace {
         `Delivery '${delivery.id}' has no exact holder/open-tail/executionAgent boundary for '${input.name}'`,
       );
     }
-    const safety = this.config?.settings.delivery?.mode === "canonical" ? this.config.settings.delivery?.handoffSafety ?? "disabled" : "disabled";
+    const safety = this.effectiveDeliverySafety();
     if (safety !== "disabled" && (!holder.executionNonce || !holder.process)) {
       throw new Error("DELIVERY_PROCESS_IDENTITY_MISSING: sequential canonical holder lacks nonce or process identity");
     }
     this.ledger.bindDelivery(input.name, { deliveryId: delivery.id, segmentId: holder.segmentId, executionNonce: holder.executionNonce });
+  }
+
+  /** Single live source for creation, lease, Bridge diagnostics, and reload. */
+  private effectiveDeliverySafety(): "disabled" | "mechanism-only" | "process-fenced" {
+    return this.config?.settings.delivery?.mode === "canonical"
+      ? this.config.settings.delivery?.handoffSafety ?? "disabled"
+      : "disabled";
   }
 
   private async prepareDeliveryJoin(name: string, request: DeliveryJoinRequest): Promise<PreparedDeliveryJoin> {
