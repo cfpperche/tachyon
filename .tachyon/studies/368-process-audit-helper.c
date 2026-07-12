@@ -85,8 +85,13 @@ struct unknown_ev {
 
 struct audit {
   uid_t self_ruid;
+  /* Caller-supplied path; after pin, must equal realpath() byte-for-byte. */
   const char *target;
   size_t target_len;
+  /* O_PATH|O_DIRECTORY pin of the target inode for TOCTOU revalidation. */
+  int target_fd;
+  dev_t target_dev;
+  ino_t target_ino;
   bool has_ptrace_cap;
   bool saw_cap_loss;
   bool saw_instability;
@@ -120,6 +125,24 @@ static void add_unknown(struct audit *a, pid_t pid, const char *reason,
   u->kind = kind;
   u->has_fd = has_fd;
   u->fd = fd;
+}
+
+/* Always visible in the report buffer (clobbers last slot if full). Used for
+ * target pin/revalidation failures so TOCTOU drift is never silent. */
+static void add_unknown_critical(struct audit *a, const char *reason) {
+  a->unknown_count++;
+  unsigned idx;
+  if (a->unknown_report_n < MAX_UNKNOWN_REPORT)
+    idx = a->unknown_report_n++;
+  else
+    idx = MAX_UNKNOWN_REPORT - 1;
+  struct unknown_ev *u = &a->unknowns[idx];
+  u->pid = 0;
+  u->reason = reason;
+  u->has_kind = false;
+  u->kind = KIND_CWD;
+  u->has_fd = false;
+  u->fd = -1;
 }
 
 static void add_match(struct audit *a, pid_t pid, unsigned long long st,
@@ -159,6 +182,80 @@ static void strip_deleted_suffix(char *s) {
   size_t sn = sizeof(suf) - 1;
   if (n >= sn && memcmp(s + (n - sn), suf, sn) == 0)
     s[n - sn] = '\0';
+}
+
+/* True when s ends with the procfs " (deleted)" display suffix (not stripped). */
+static bool has_deleted_suffix(const char *s) {
+  static const char suf[] = " (deleted)";
+  size_t n = strlen(s);
+  size_t sn = sizeof(suf) - 1;
+  return n >= sn && memcmp(s + (n - sn), suf, sn) == 0;
+}
+
+/*
+ * Revalidate pinned target identity against live realpath/stat and the
+ * O_PATH descriptor via /proc/self/fd. Fail closed: any mismatch or missing
+ * path returns false and records an unknown reason (never under-report).
+ */
+static bool revalidate_target(struct audit *a) {
+  char resolved[PATH_MAX];
+  if (!realpath(a->target, resolved)) {
+    add_unknown_critical(a, "target_missing");
+    return false;
+  }
+  if (strcmp(resolved, a->target) != 0) {
+    add_unknown_critical(a, "target_path_drift");
+    return false;
+  }
+
+  struct stat st_path;
+  if (stat(a->target, &st_path) != 0) {
+    add_unknown_critical(a, "target_missing");
+    return false;
+  }
+  if (!S_ISDIR(st_path.st_mode)) {
+    add_unknown_critical(a, "target_not_dir");
+    return false;
+  }
+  if (st_path.st_dev != a->target_dev || st_path.st_ino != a->target_ino) {
+    add_unknown_critical(a, "target_identity_drift");
+    return false;
+  }
+
+  struct stat st_fd;
+  if (fstat(a->target_fd, &st_fd) != 0) {
+    add_unknown_critical(a, "target_fd_error");
+    return false;
+  }
+  if (!S_ISDIR(st_fd.st_mode) || st_fd.st_dev != a->target_dev ||
+      st_fd.st_ino != a->target_ino) {
+    add_unknown_critical(a, "target_identity_drift");
+    return false;
+  }
+
+  char fdlink_path[64];
+  snprintf(fdlink_path, sizeof(fdlink_path), "/proc/self/fd/%d", a->target_fd);
+  char linkbuf[LINK_BUF];
+  ssize_t n = readlink(fdlink_path, linkbuf, sizeof(linkbuf));
+  if (n < 0) {
+    add_unknown_critical(a, "target_fd_error");
+    return false;
+  }
+  if ((size_t)n >= sizeof(linkbuf)) {
+    add_unknown_critical(a, "target_fd_error");
+    return false;
+  }
+  linkbuf[n] = '\0';
+  /* Unlinked/renamed O_PATH targets surface as "... (deleted)" — fail closed. */
+  if (has_deleted_suffix(linkbuf)) {
+    add_unknown_critical(a, "target_deleted");
+    return false;
+  }
+  if (strcmp(linkbuf, a->target) != 0) {
+    add_unknown_critical(a, "target_path_drift");
+    return false;
+  }
+  return true;
 }
 
 /*
@@ -377,6 +474,7 @@ static bool scan_one_pid(struct audit *a, pid_t pid, bool *vanished) {
       add_unknown(a, pid, "fd_dir_error", true, KIND_FD, false, -1);
     }
   } else {
+    pid_t self_pid = getpid();
     struct dirent *ent;
     while ((ent = readdir(d)) != NULL) {
       if (!is_all_digits(ent->d_name))
@@ -384,6 +482,9 @@ static bool scan_one_pid(struct audit *a, pid_t pid, bool *vanished) {
       errno = 0;
       long fdn = strtol(ent->d_name, NULL, 10);
       if (errno != 0 || fdn < 0 || fdn > INT_MAX)
+        continue;
+      /* Exclude our own O_PATH target pin — it is not a binding under audit. */
+      if (pid == self_pid && (int)fdn == a->target_fd)
         continue;
       snprintf(linkpath, sizeof(linkpath), "/proc/%d/fd/%ld", (int)pid, fdn);
       consider_link(a, pid, st1, KIND_FD, (int)fdn, linkpath);
@@ -445,9 +546,19 @@ static enum state run_audit(struct audit *a) {
     a->unknown_report_n = 0;
     a->saw_instability = false;
 
-    if (a->has_ptrace_cap && !cap_sys_ptrace_effective()) {
+    /* F2: sticky capability_loss is re-counted/reported every pass so a final
+     * stable pass can never print state=unknown with unknown_count=0/no reason
+     * after an earlier-pass loss observation. */
+    if (a->has_ptrace_cap && !cap_sys_ptrace_effective())
       a->saw_cap_loss = true;
+    if (a->saw_cap_loss)
       add_unknown(a, 0, "capability_loss", false, KIND_CWD, false, -1);
+
+    /* F1: pre-pass target identity revalidation (realpath + path stat +
+     * O_PATH fstat + /proc/self/fd link). */
+    if (!revalidate_target(a)) {
+      free(pids);
+      return ST_UNKNOWN;
     }
 
     int np = collect_pids(pids, MAX_PIDS);
@@ -468,6 +579,13 @@ static enum state run_audit(struct audit *a) {
       scan_one_pid(a, pids[i], &vanished);
       if (vanished)
         any_vanished = true;
+    }
+
+    /* F1: post-pass revalidation — rename/replacement/deletion mid-scan fails
+     * closed to unknown (never under-report as empty). */
+    if (!revalidate_target(a)) {
+      free(pids);
+      return ST_UNKNOWN;
     }
 
     if (!any_vanished) {
@@ -505,8 +623,7 @@ int main(int argc, char **argv) {
     fprintf(stderr, "error=target_not_absolute\n");
     return ST_ERROR;
   }
-  /* Reject empty and "." components lightly: require canonical absolute form
-   * from the caller (no relative segments). */
+  /* Syntactic pre-checks: absolute, no relative segments, no trailing slash. */
   if (strstr(target, "/./") != NULL || strstr(target, "/../") != NULL ||
       strcmp(target, "/.") == 0 || strcmp(target, "/..") == 0) {
     fprintf(stderr, "error=target_not_canonical\n");
@@ -517,20 +634,76 @@ int main(int argc, char **argv) {
     fprintf(stderr, "error=target_trailing_slash\n");
     return ST_ERROR;
   }
+  if (tlen >= PATH_MAX) {
+    fprintf(stderr, "error=target_too_long\n");
+    return ST_ERROR;
+  }
+
+  /*
+   * F1 pin: independent realpath must equal the caller string byte-for-byte
+   * (rejects symlink aliases and non-canonical inputs). Then open
+   * O_PATH|O_DIRECTORY|O_CLOEXEC and pin st_dev+st_ino for every-pass
+   * revalidation.
+   */
+  char resolved[PATH_MAX];
+  if (!realpath(target, resolved)) {
+    fprintf(stderr, "error=target_unresolvable\n");
+    return ST_ERROR;
+  }
+  if (strcmp(resolved, target) != 0) {
+    /* Symlink component or other non-canonical alias — refuse, do not scan. */
+    fprintf(stderr, "error=target_not_canonical\n");
+    return ST_ERROR;
+  }
+
+  int tfd = open(target, O_PATH | O_DIRECTORY | O_CLOEXEC);
+  if (tfd < 0) {
+    fprintf(stderr, "error=target_open_failed\n");
+    return ST_ERROR;
+  }
+  struct stat st;
+  if (fstat(tfd, &st) != 0 || !S_ISDIR(st.st_mode)) {
+    close(tfd);
+    fprintf(stderr, "error=target_open_failed\n");
+    return ST_ERROR;
+  }
 
   struct audit a;
   memset(&a, 0, sizeof(a));
   a.self_ruid = getuid(); /* real UID */
   a.target = target;
   a.target_len = tlen;
+  a.target_fd = tfd;
+  a.target_dev = st.st_dev;
+  a.target_ino = st.st_ino;
   a.has_ptrace_cap = cap_sys_ptrace_effective();
 
-  enum state st = run_audit(&a);
-  if (st == ST_ERROR)
-    return ST_ERROR;
+  /* Initial pin check before any pass (same contract as pre/post revalidate). */
+  if (!revalidate_target(&a)) {
+    /* Emit machine-readable unknown rather than under-reporting. */
+    printf("state=unknown\n");
+    printf("self_ruid=%u\n", (unsigned)a.self_ruid);
+    printf("target=%s\n", a.target);
+    printf("cap_sys_ptrace=%s\n", a.has_ptrace_cap ? "yes" : "no");
+    printf("match_count=0\n");
+    printf("unknown_count=%u\n", a.unknown_count);
+    for (unsigned i = 0; i < a.unknown_report_n; i++) {
+      const struct unknown_ev *u = &a.unknowns[i];
+      printf("unknown reason=%s\n", u->reason);
+    }
+    close(tfd);
+    return ST_UNKNOWN;
+  }
 
-  const char *state_s =
-      st == ST_EMPTY ? "empty" : st == ST_SURVIVORS ? "survivors" : "unknown";
+  enum state st_res = run_audit(&a);
+  if (st_res == ST_ERROR) {
+    close(tfd);
+    return ST_ERROR;
+  }
+
+  const char *state_s = st_res == ST_EMPTY
+                            ? "empty"
+                            : st_res == ST_SURVIVORS ? "survivors" : "unknown";
 
   /* Machine-readable stable output. No unrelated path strings. */
   printf("state=%s\n", state_s);
@@ -565,5 +738,6 @@ int main(int argc, char **argv) {
     printf("unknown_truncated=yes omitted=%u\n",
            a.unknown_count - a.unknown_report_n);
 
-  return (int)st;
+  close(tfd);
+  return (int)st_res;
 }
