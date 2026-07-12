@@ -1316,3 +1316,97 @@ Write severity-ranked findings with file/line and contract evidence to
 `.tachyon/reviews/368-delivery-bound-t13-r2.md`. Allowed verification is the three focused suites plus
 `git diff --check`; do not rerun typecheck or full verification. Commit only the review artifact by explicit
 pathspec with `t-0b5723`, then notify `codex` with one-line ACCEPT or FINDINGS and the SHA/pointer.
+
+### T13 R2 consolidated correction contract — two sequential occupations, one acceptance boundary
+
+Candidate `be23bd26` is rejected. Sonnet R2 `c51bc10c`
+(`.tachyon/reviews/368-delivery-bound-t13-r2.md`) confirms two HIGH findings: the new unconditional failure cleanup
+can erase a persistent declared agent's ledger/private home, and the A1 seven-block proof matrix remains largely
+absent for a third round. Coordinator tracing broadens the first finding: cleanup currently runs even when
+`spawnCore` rejected before acquiring the requested name, so a colliding live/dead session or pre-existing durable
+row can be killed or forgotten despite belonging to another launch. A boolean based only on `bound`/`opts.cmd` is
+not sufficient authority to clean.
+
+This correction is one closed contract delivered through **two sequential occupations of the same fresh gated
+worktree**, not two independent designs or acceptance points. Terra medium remains the implementation model: the
+production change is bounded but lifecycle ownership, liveness uncertainty, and causal errors exclude Luna. The
+first occupant owns the production safety correction and its forcing regression; after coordinator content audit,
+the second occupant receives the same branch with test-only authority and completes the exhaustive matrix. Neither
+phase is accepted or integrated alone. Final Sonnet review and full verification cover the combined immutable
+range.
+
+**Shared scope.** Start from current `main`, selectively carry forward the accepted parts of `be23bd26`, and own
+only `src/agents/AgentManager.ts`, `src/agents/forgetAgent.ts`, `src/bridge/tools.ts`,
+`test/unit/agentManager.test.ts`, `test/unit/bridge.test.ts`,
+`test/helpers/boundDeliveryExecutionHarness.ts`, the prior generated R3 stub (delete it), and the new generated R4
+stub. No Workspace, Delivery store/service/types, config/schema, SessionLedger schema, GitDelivery, continuity
+implementation, tachyon.yml, docs, task state, or unrelated test edit. Preserve the structured clone, bound
+identity mapping, Bridge contract, hardened `forgetAgent`, and forcing-helper approach where correct.
+
+#### Occupation A — launch ownership and non-destructive compensation
+
+Replace unconditional name-based cleanup authority with an explicit per-call launch-attempt receipt/state passed
+through `spawnDeliveryJoin` and `spawnCore`. It must distinguish at minimum: validation/collision rejection before
+name acquisition; a fresh ephemeral execution whose name/footprint this call owns; and an ordinary declared join
+whose persistent definition/ledger/home pre-existed and must survive. Record the exact side-effect milestones needed
+for compensation (token/materialization, session creation, readiness/ledger/ad-hoc registration) instead of
+inferring ownership from final tmux absence or from `bound`/`opts.cmd` alone.
+
+Before acquisition, a failure may compensate its Delivery reservation but must not clear readiness state, kill a
+session, revoke a token, remove a ledger/activity/owner/settings/home footprint, forget lineage, or emit `onKilled`
+for a pre-existing name. A fresh bound execution keeps fail-closed collision semantics and never reaps a racing
+live/dead occupant. After acquisition, partial-spawn cleanup may touch only milestones owned by this attempt. For a
+fresh ephemeral execution, proven session absence permits the complete A1 cleanup. For an ordinary declared join,
+confirmation failure may tear down the session/token created by that attempt as legacy behavior requires, but must
+preserve the declared agent's ledger/resume/config home, activity, ownership, continuity, definition, and unrelated
+pre-existing state. Unknown/live liveness preserves recoverable state and reports the failure; no destructive
+cleanup is justified by absence that was not proven.
+
+Keep stable causal order and phase labels: primary failure, owned session probe/kill/re-probe, owned token action,
+in-memory cleanup, ephemeral footprint AggregateError, killed callback, reservation compensation. Later safe phases
+still run after an earlier failure; unsafe phases do not. Do not weaken the independently-attempted canonical
+`forgetAgent()` cleanup.
+
+The R4 ordinary Vitest behavior gate is
+`a failed Delivery join never cleans state the launch attempt did not acquire`. Its generated BASE stub must fail
+exactly once. At HEAD it imports the real helper and empirically proves at least: (1) a pre-existing live-name
+collision is not killed/revoked/forgotten; (2) a declared principal with persisted ledger/home survives forced
+confirmation failure; and (3) a distinct bound execution that fails after token/home/session creation is fully
+cleaned without changing the principal. The helper must use the real AgentManager/TmuxService and clean temp state
+in `finally`.
+
+Occupation A runs the generated behavior, AgentManager, and Bridge suites serially, `npm run typecheck`, and
+`git diff --check`; no full verification. Commit all owned Phase-A paths by explicit pathspec with `t-0b5723`, ring
+`codex`, and stop. Coordinator will run `verify_task` without waivers and audit the full production path before
+granting Occupation B; ACCEPT at this intermediate gate is necessary but not T13 acceptance.
+
+#### Occupation B — exhaustive proof, test-only
+
+Reuse Occupation A's exact delegation/worktree/HEAD with authority limited to the two unit suites, focused helper,
+and R4 generated stub. No production edit. Implement every A1 block that is not already proved, with individually
+named cases and explicit counters/byte snapshots — no aggregation that hides a named case and no source-text/static
+assertion:
+
+1. Bridge success without top-level `cmd`, exact `appendInstructions`, execution name/`declaredAgent`, and resolved
+   parent mapping, plus existing refusal cases.
+2. Full live-principal happy path with harness/isolate/env, config home, token, ownership hook, tmux command/env,
+   prepared cwd/worktree, ad-hoc listing, `declared:false`, zero fresh-worktree resolution, and byte-identity snapshots
+   of principal ledger/resume/home, continuity/state, activity-owner data, token and tmux before/after cleanup.
+3. Each pre-reservation refusal separately: unknown/terminal source, same name, config/ad-hoc/ledger/live-tmux/
+   dead-tmux collision, reserved token env, `cmd+declared_agent`, `principal+declared_agent`, unsafe reviewer command,
+   and failed preflight. Each proves zero reservation, mint/revoke, materialization/settings, session create/kill,
+   ledger/activity/callback, and principal effects.
+4. Nested snapshot-mutation barrier for harness MCP/env/hooks/rules/skills plus env/watch/attention, and exactly one
+   bound preflight.
+5. Independent `newSession`, readiness, and confirmation failures with exact owned cleanup and principal isolation.
+6. Independent initial-probe, kill-with-survivor, post-kill-probe, token-revoke, early/middle canonical-footprint,
+   killed-callback, and reservation-compensation failures plus meaningful combinations; exact AggregateError order,
+   later-safe attempts, and footprint retention under unknown/live liveness.
+7. The real forcing helper retains the three Occupation-A scenarios and truthful assertions; all T6/T10 and ordinary
+   declared-spawn compatibility tests remain green.
+
+Occupation B runs only the three serial focused suites and `git diff --check`, then commits its test-only delta by
+explicit pathspec with `t-0b5723`, rings `codex`, and stops. Coordinator reruns the original R4 `verify_task` at the
+combined HEAD, audits the entire matrix/delta, routes one immutable Sonnet R3 review, and only after ACCEPT runs the
+single final `npm run verify:full:quiet`. No additional full run is authorized: `be23bd26` already consumed the
+first-reviewable full gate.
