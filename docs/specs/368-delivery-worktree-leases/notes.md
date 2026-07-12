@@ -1555,3 +1555,19 @@ Finally map every seven-block requirement to an actual named test/assertion, ret
 three ownership scenarios, and keep T6/T10/ordinary declared compatibility green. Run generated R4, AgentManager,
 and Bridge serially plus diff-check. Coordinator then reruns the original R4 `verify_task`, audits the complete
 combined range, and routes immutable Sonnet R3. Only Sonnet ACCEPT unlocks the single final quiet full verification.
+
+### T13 B1 coordinator audit — three explicit assertions before B2
+
+B1 `25840d28` is substantively correct and passes the combined R4 gate, but B2 is held for one small test-only
+completion. Keep the entire fixture and add exactly these non-tautological proofs:
+
+- install a real `resolveSpawnCwd` spy/seam which would increment (or fail) for `review-execution`, while allowing
+  the principal setup; assert the bound execution left it at zero. A counter for an omitted dependency is not proof;
+- record the exact arguments received by both `prepareDeliveryJoin` and `confirmDeliveryJoin`; assert execution
+  name `review-execution`, normalized principal `reviewer`, and the same prepared receipt/cwd/worktree identity;
+- assert command ordering, not mere containment: declared role/instructions precede the appended Bridge contract in
+  the final execution command.
+
+Reuse the same delegation at exact `25840d28`, with authority only over the focused helper/generated R4 test. Run
+generated R4 plus diff-check, no AgentManager/Bridge/typecheck/full. Commit by explicit pathspec with `t-0b5723`,
+ring `codex`, and stop. Production and every other test remain frozen. A clean coordinator audit unlocks B2.
