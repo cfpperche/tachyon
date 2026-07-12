@@ -5,6 +5,12 @@ import { promisify } from "node:util";
 import { TmuxService, workspaceHash, SESSION_PREFIX } from "../tmux/TmuxService.js";
 import { ControlModeClient } from "../tmux/ControlModeClient.js";
 import { loadConfigFile, parseConfig, CONFIG_FILENAMES, inferKind, type TachyonConfig } from "../config/loadConfig.js";
+import { snapshotFromConfig, writeConfigLkg, readConfigLkg, type ConfigLkgSnapshot } from "../config/configLkg.js";
+import {
+  type ConfigFailure,
+  isLkgOnlySpawn,
+  lkgSpawnRefusalMessage,
+} from "../config/configFailure.js";
 import { upsertAgent, upsertCommand, upsertRunbook, upsertSchedule, deleteSchedule, renameAgent as renameAgentInYml } from "../config/YamlConfigEditor.js";
 import { AgentManager, ResumeUnavailableError, WatchController, newlyDeclaredAutostart } from "../agents/AgentManager.js";
 import { agentLaunchPath } from "../agents/spawnPath.js";
@@ -319,6 +325,12 @@ export class Workspace {
   private clientRebind: BridgeClientRebindCoordinator | undefined;
   private readonly bridgeClientRebindAuditPath: string;
   config: TachyonConfig | undefined;
+  /**
+   * t-8354ae — set whenever the working-tree config fails to load. Survives until the next
+   * successful reloadConfig(). Drives the persistent sidebar error banner + degraded roster.
+   * Undefined when the config is valid (or no config file exists yet).
+   */
+  configFailure: ConfigFailure | undefined;
 
   private readonly engine: WorkspaceEngine;
   private watches: WatchController;
@@ -525,6 +537,8 @@ export class Workspace {
       },
 
       getConfig: () => this.config,
+      // t-8354ae — refuse spawn of names that exist only in the LKG snapshot while config is invalid.
+      assertSpawnAllowed: (name) => this.assertNotLkgOnlySpawn(name),
       getMaxAgents: () => this.host.getSetting("tachyon", "maxAgents", 8),
       getExtraEnv: () => {
         // Every Tachyon-spawned session can reach (and authenticate to) ITS folder's Bridge.
@@ -2566,15 +2580,28 @@ export class Workspace {
     const file = this.configPath();
     if (!file) {
       this.config = undefined;
+      this.configFailure = undefined;
       return false;
     }
     const { config, errors, warnings } = loadConfigFile(file);
     if (errors.length > 0) {
+      // t-8354ae — keep a durable failure surface (sidebar banner); toast alone is not enough.
+      // Do NOT clear a previously-loaded in-memory config: live sessions keep working until
+      // the human fixes the file. Cold start leaves config undefined (never loaded).
+      this.configFailure = {
+        path: file,
+        file: path.basename(file),
+        errors: [...errors],
+        at: new Date().toISOString(),
+      };
       this.host.notify(this.t("invalid {0} — {1}{2}", path.basename(file), errors[0], errors.length > 1 ? this.t(" (+{0} more)", errors.length - 1) : ""), "error");
       return false;
     }
     for (const warning of warnings) this.host.notify(this.t("{0}: {1}", path.basename(file), warning), "warn");
     this.config = config;
+    this.configFailure = undefined;
+    // t-8354ae — persist last-known-good roster for degraded sidebar rendering if config later breaks.
+    if (config) writeConfigLkg(this.workspaceRoot, snapshotFromConfig(config, file));
     // Push the user's tmux overlay (settings.tmux) to the server-options layer;
     // empty/absent falls back to Tachyon's defaults. Re-asserted per new-session.
     this.tmux.setServerOptions(config?.settings.tmux ?? {});
@@ -2592,6 +2619,25 @@ export class Workspace {
     // agents without restarting one. Best-effort: a no-op when no server runs, never blocks apply.
     void this.tmux.applyLiveOptions().catch(() => {});
     return true;
+  }
+
+  /** t-8354ae — last successful roster snapshot (null when never written / corrupt). */
+  readConfigLkg(): ConfigLkgSnapshot | null {
+    return readConfigLkg(this.workspaceRoot);
+  }
+
+  /**
+   * t-8354ae — LKG is render-only. Refuse spawn when the working-tree config is invalid AND the
+   * name is not known via live config or an in-memory ad-hoc def (i.e. it would only come from LKG).
+   */
+  assertNotLkgOnlySpawn(name: string): void {
+    if (!this.configFailure) return;
+    const inLive = !!this.config?.agents[name] || this.manager.defOf(name) !== undefined;
+    const lkg = this.readConfigLkg();
+    const inLkg = !!lkg?.agents.some((a) => a.name === name);
+    if (isLkgOnlySpawn({ configValid: false, nameInLiveConfigOrAdhoc: inLive, nameInLkg: inLkg })) {
+      throw new Error(lkgSpawnRefusalMessage(name, this.configFailure.file));
+    }
   }
 
   private triggerLifecycle(): void {
@@ -2798,10 +2844,7 @@ export class Workspace {
   }
 
   async start(): Promise<void> {
-    if (!this.reloadConfig()) {
-      this.host.notify(this.t("no valid tachyon.yml in the workspace root — create one (see the Tachyon README) and run 'Tachyon: Start' again"), "warn");
-      return;
-    }
+    const configOk = this.reloadConfig();
     // Re-discover sessions that survived a VSCode restart, then resume agents whose
     // process died (crash/reboot), then spawn the remaining pending autostarts.
     // Survivors are NOT auto-opened as tabs (hidden-tab attach renders blank).
@@ -2817,14 +2860,43 @@ export class Workspace {
     for (const name of liveSessions) {
       this.recordSpawnIncarnation(name);
     }
+    // Spec 211: rebuild ad-hoc defs + lineage from the ledger BEFORE planning resume,
+    // so a re-discovered ad-hoc agent is restartable and re-nests under its parent.
+    // t-8354ae — also run when config is invalid so the sidebar can list ledger agents.
+    this.manager.rehydrateFromLedger();
+
+    if (!configOk) {
+      // t-8354ae — fail VISIBLE, not silent wipe: rehydrate + surface views, but never
+      // autostart/auto-resume from LKG or a missing live config.
+      this.host.notify(
+        this.configFailure
+          ? this.t(
+              "invalid {0} — fleet shown from session ledger / last-known-good (read-only). Fix the config or run Tachyon: Doctor.",
+              this.configFailure.file,
+            )
+          : this.t("no valid tachyon.yml in the workspace root — create one (see the Tachyon README) and run 'Tachyon: Start' again"),
+        "warn",
+      );
+      // Offer manual resume for ledger-resumable agents (defs are self-contained).
+      const plan = planResume({
+        ledger: this.ledger.all(),
+        declaredAutostart: new Set(), // no autostart while config invalid
+        liveSessions,
+        deliveryUnavailableAgents: undefined,
+        deliveryReloadSnapshotReady: false,
+      });
+      this.resumable = offers(plan);
+      this.deps.onViewsChanged("agents");
+      if (this.resumable.length > 0) this.offerResume();
+      if (surviving.length > 0) this.host.notify(this.t("{0} re-discovered", surviving.length));
+      return;
+    }
+
     const declaredAutostart = new Set(
       Object.entries(this.config?.agents ?? {})
         .filter(([, def]) => def.autostart)
         .map(([name]) => name),
     );
-    // Spec 211: rebuild ad-hoc defs + lineage from the ledger BEFORE planning resume,
-    // so a re-discovered ad-hoc agent is restartable and re-nests under its parent.
-    this.manager.rehydrateFromLedger();
     this.gcHarnessHomes(); // spec 226 (H8): drop config homes left by agents no longer declared/tracked
     const declaredInConfig = new Set(Object.keys(this.config?.agents ?? {}));
     this.gcLedger(declaredInConfig, liveSessions); // spec 239: prune stale declared rows

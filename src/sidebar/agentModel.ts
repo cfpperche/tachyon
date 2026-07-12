@@ -130,6 +130,8 @@ export interface AgentExtras {
   canDismiss?: boolean;
   /** t-35d95a — AttentionMonitor.awaitingHuman latch (request_human_attention); undefined = not latched. */
   awaitingHuman?: { reason: string };
+  /** t-8354ae — row rendered under invalid config (ledger/LKG degraded mode). */
+  configInvalid?: boolean;
 }
 
 /** The sidebar grouping bucket. NOTE: mixes lifecycle (running/stopped/crashed) with running-attention
@@ -181,5 +183,6 @@ export function toAgentVM(a: AgentRaw, x: AgentExtras = {}): AgentVM {
     ...(x.evidence ? { evidence: x.evidence } : {}),
     ...(x.externalTools ? { externalTools: x.externalTools } : {}),
     ...(visibleAwaitingHuman ? { awaitingHuman: visibleAwaitingHuman } : {}),
+    ...(x.configInvalid ? { configInvalid: true } : {}),
   };
 }

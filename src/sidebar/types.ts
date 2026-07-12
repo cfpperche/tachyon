@@ -56,6 +56,8 @@ export interface AgentVM {
   /** t-35d95a — AttentionMonitor.awaitingHuman latch (request_human_attention): an AUTHORED
    *  "I need a human" signal, independent of `attention`/`status`. Undefined = not latched. */
   awaitingHuman?: { reason: string };
+  /** t-8354ae — row is shown while tachyon.yml is invalid (ledger and/or LKG). */
+  configInvalid?: boolean;
   // capability flags (gate which actions a row offers — mirror of agentContextValue)
   ai?: boolean; // an AI agent (vs a terminal/process)
   adhoc?: boolean; // MCP/forked, not declared in tachyon.yml → can be promoted
@@ -103,6 +105,14 @@ export interface WorkspaceRef { hash: string; name: string }
 export type HandoffStaleness = "fresh" | "needs_distill" | "possibly_stale" | "old";
 export interface HandoffVM { exists: boolean; staleness: HandoffStaleness; pendingCount: number }
 
+/** t-8354ae — persistent config-error banner payload (webview). */
+export interface ConfigErrorVM {
+  file: string;
+  path: string;
+  errors: string[];
+  summary: string;
+}
+
 export interface FleetVM {
   /** the workspace this fleet belongs to (set when >1 root, so the UI can group + route by folder) */
   folder?: WorkspaceRef;
@@ -118,6 +128,11 @@ export interface FleetVM {
   pins: PinVM[];
   /** spec 245 — the per-folder Project Handoff state (drives the header open-button + badge). */
   handoff?: HandoffVM;
+  /**
+   * t-8354ae — set when the working-tree config failed to load. While present, Agents tab
+   * MUST show this banner and must not render the empty-roster placeholder when agents/ledger/LKG exist.
+   */
+  configError?: ConfigErrorVM;
 }
 
 export type TabId = "Agents" | "Terminals" | "Pipelines" | "Schedules" | "Commands" | "Runbooks" | "Pins";

@@ -310,6 +310,16 @@
         "title": "%command.checkRequirements%"
       },
       {
+        "command": "tachyon.doctor",
+        "title": "%command.doctor%",
+        "icon": "$(heart)"
+      },
+      {
+        "command": "tachyon.openConfig",
+        "title": "%command.openConfig%",
+        "icon": "$(file-code)"
+      },
+      {
         "command": "tachyon.restartTmuxServer",
         "title": "%command.restartTmuxServer%"
       },

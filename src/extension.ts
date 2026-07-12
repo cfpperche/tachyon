@@ -3,11 +3,13 @@ import path from "node:path";
 import fs from "node:fs";
 import crypto from "node:crypto";
 import { doctor, findServerPids, probeServer, recoverWedgedServer, snapshotServerPids, socketPath, TmuxService, SESSION_PREFIX, SOCKET_NAME, type ServerProbe } from "./tmux/TmuxService.js";
+import { buildDoctorReport, formatDoctorReport } from "./workspace/doctorReport.js";
+import net from "node:net";
 import { watchdogStep, type WatchdogState } from "./tmux/wedgeWatchdog.js";
 import { isResumable } from "./resume/SessionLedger.js";
 import { subtreeCpuTicks } from "./attention/cpu.js";
 import { classifySession } from "./inspector/classify.js";
-import { CONFIG_FILENAMES, inferKind, type ScheduleDef } from "./config/loadConfig.js";
+import { CONFIG_FILENAMES, inferKind, loadConfigFile, type ScheduleDef } from "./config/loadConfig.js";
 import { addAgent, cloneAgent, deleteAgent, agentEntryLine, deleteCommand, commandEntryLine, deleteRunbook, runbookEntryLine, scheduleEntryLine } from "./config/YamlConfigEditor.js";
 import type { StudioSubmit } from "./webview/studioSubmit.js";
 import { openServerInspector, SERVER_INSPECTOR_VIEW_TYPE, type ServerInspectorPanelState, type InspectorDeps } from "./webview/ServerInspector.js";
@@ -1172,6 +1174,105 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           .then((c) => {
             if (c === vscode.l10n.t("tmux install docs")) void vscode.env.openExternal(vscode.Uri.parse("https://github.com/tmux/tmux/wiki/Installing"));
           });
+      }
+    }),
+    // t-8354ae — fail-visible forensics: config + ledger + tmux + bridge + LKG
+    vscode.commands.registerCommand("tachyon.doctor", async (hash?: string) => {
+      const ws = hash ? byHash(hash) : workspaces()[0];
+      if (!ws) {
+        notify(vscode.l10n.t("no Tachyon workspace is active"), "warn");
+        return;
+      }
+      const configPath = ws.configPath();
+      const fileExists = !!configPath && fs.existsSync(configPath);
+      // Prefer the durable failure recorded by reloadConfig; re-probe so the report is fresh.
+      let configValid = !ws.configFailure && !!ws.config;
+      let configFailure = ws.configFailure ?? null;
+      if (configPath && fileExists) {
+        const { errors } = loadConfigFile(configPath);
+        if (errors.length > 0) {
+          configValid = false;
+          configFailure = {
+            path: configPath,
+            file: path.basename(configPath),
+            errors: [...errors],
+            at: new Date().toISOString(),
+          };
+        } else {
+          configValid = true;
+          configFailure = null;
+        }
+      }
+      const states = await ws.manager.agentStates();
+      const liveSessions = new Set([...states].filter(([, s]) => !s.dead).map(([n]) => n));
+      const knownSessions = new Set(states.keys());
+      const transcriptPresence = new Map<string, boolean>();
+      for (const [name, rec] of ws.ledger.all()) {
+        if (!isResumable(rec)) continue;
+        try {
+          transcriptPresence.set(name, await ws.manager.resumeReadiness(name, rec));
+        } catch {
+          transcriptPresence.set(name, false);
+        }
+      }
+      let reachable: boolean | undefined;
+      if (ws.bridge.port) {
+        reachable = await new Promise<boolean>((resolve) => {
+          const sock = net.connect({ host: "127.0.0.1", port: ws.bridge.port! }, () => {
+            sock.end();
+            resolve(true);
+          });
+          sock.setTimeout(800);
+          sock.on("error", () => resolve(false));
+          sock.on("timeout", () => {
+            sock.destroy();
+            resolve(false);
+          });
+        });
+      }
+      const report = buildDoctorReport({
+        workspaceRoot: ws.workspaceRoot,
+        configPath,
+        configFailure,
+        configFileExists: fileExists,
+        configValid,
+        lkg: ws.readConfigLkg(),
+        ledger: [...ws.ledger.all()],
+        liveSessions,
+        knownSessions,
+        bridge: {
+          port: ws.bridge.port,
+          url: ws.bridge.url,
+          reachable,
+          authConfigured: ws.authEnabled,
+        },
+        transcriptPresence,
+      });
+      const text = formatDoctorReport(report);
+      const channel = vscode.window.createOutputChannel("Tachyon Doctor");
+      channel.clear();
+      channel.append(text);
+      channel.show(true);
+      const hasErr = report.findings.some((f) => f.severity === "error");
+      notify(
+        hasErr
+          ? vscode.l10n.t("Tachyon Doctor found problems — see the Output panel")
+          : vscode.l10n.t("Tachyon Doctor report ready — see the Output panel"),
+        hasErr ? "warn" : "info",
+      );
+    }),
+    vscode.commands.registerCommand("tachyon.openConfig", async (hash?: string) => {
+      const ws = hash ? byHash(hash) : workspaces()[0];
+      if (!ws) {
+        notify(vscode.l10n.t("no Tachyon workspace is active"), "warn");
+        return;
+      }
+      const file = ws.configPath() ?? path.join(ws.workspaceRoot, "tachyon.yml");
+      try {
+        const doc = await vscode.workspace.openTextDocument(file);
+        await vscode.window.showTextDocument(doc, { preview: false });
+      } catch (err) {
+        notify(vscode.l10n.t("Could not open config: {0}", err instanceof Error ? err.message : String(err)), "error");
       }
     }),
     vscode.commands.registerCommand("tachyon.restartTmuxServer", async () => {

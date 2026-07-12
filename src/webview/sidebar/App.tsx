@@ -41,7 +41,7 @@ export interface Dispatch {
   setCollapsedKeys?: (keys: string[]) => void;
 }
 /** Global (section-level, not per-row) ops: pins + the per-section "new …" studios. */
-export type GlobalOp = "addPin" | "copyBridge" | "init" | "openHandoff" | "studio:agents" | "studio:terminals" | "studio:commands" | "studio:runbooks" | "studio:schedules";
+export type GlobalOp = "addPin" | "copyBridge" | "init" | "openHandoff" | "openConfig" | "doctor" | "studio:agents" | "studio:terminals" | "studio:commands" | "studio:runbooks" | "studio:schedules";
 
 /** One entry in the in-webview "..." overflow menu (edit/remove etc. live here across ALL tabs, not inline). */
 export interface MenuItem { label: string; icon: string; run: () => void }
@@ -86,10 +86,29 @@ function externalToolBadgeTitle(a: AgentVM): string {
   }).join("\n");
 }
 
+/** t-8354ae — persistent config-error banner (Agents tab). */
+function ConfigErrorBanner({ err }: { err: NonNullable<FleetVM["configError"]> }) {
+  const d = useContext(DispatchCtx);
+  return (
+    <div class="config-error-banner" role="alert">
+      <div class="config-error-title">
+        <Icon name="warning" />
+        <strong>Invalid {err.file}</strong>
+      </div>
+      <div class="config-error-summary" title={err.errors.join("\n")}>{err.summary}</div>
+      <div class="config-error-actions">
+        <button type="button" class="config-error-btn" onClick={() => d.global("openConfig")}>Open {err.file}</button>
+        <button type="button" class="config-error-btn secondary" onClick={() => d.global("doctor")}>Doctor</button>
+      </div>
+    </div>
+  );
+}
+
 function AgentBadges({ a }: { a: AgentVM }) {
   const externalToolLabel = externalToolBadgeLabel(a);
   return (
     <>
+      {a.configInvalid && <span class="badge err" title="tachyon.yml is invalid — row shown from session ledger or last-known-good snapshot (read-only for spawn)">config invalid</span>}
       {a.delegator && a.parent && <span class="badge" title="Gated delegation requester">delegated by {a.delegator}</span>}
       {a.declaredOwner && (a.parent || a.delegator) && <span class="badge" title="Declared owner from tachyon.yml subagents">owned by {a.declaredOwner}</span>}
       {a.attention && <span class="badge attn">{a.attention}</span>}
@@ -136,7 +155,7 @@ function AgentBadges({ a }: { a: AgentVM }) {
 export function AgentRow({ a, flash, nested = false, hasChildren = false, collapsed = false, hiddenCount = 0, hiddenNeedsAttention = false, onToggle }: { a: AgentVM; flash: boolean; nested?: boolean; hasChildren?: boolean; collapsed?: boolean; hiddenCount?: number; hiddenNeedsAttention?: boolean; onToggle?: () => void }) {
   const d = useContext(DispatchCtx);
   const hasHidden = collapsed && hiddenCount > 0;
-  const hasMeta = a.parent || a.delegator || a.declaredOwner || a.sub || a.attention || a.awaitingHuman || a.worktree || a.verify || a.externalTools?.active || a.harness || a.resumable || a.forked || (a.continuity && a.continuity !== "fresh") || a.persistenceHooks || hasHidden;
+  const hasMeta = a.configInvalid || a.parent || a.delegator || a.declaredOwner || a.sub || a.attention || a.awaitingHuman || a.worktree || a.verify || a.externalTools?.active || a.harness || a.resumable || a.forked || (a.continuity && a.continuity !== "fresh") || a.persistenceHooks || hasHidden;
   return (
     <div class={`row${nested ? " child" : ""}${flash ? " flash" : ""}`} data-name={a.name.toLowerCase()}>
       <div class="row-top">
@@ -249,9 +268,14 @@ function Panel({ tab, fleet, scope, collapsed, toggle, flashName, agentSort, ter
   // Collapse keys are scoped to the folder so multi-root groups with the same name don't collapse together.
   const k = (suffix: string) => `${scope}:${suffix}`;
   if (tab === "Agents") {
+    // t-8354ae — while config is invalid, never show the empty-fleet placeholder as the sole signal
+    // (banner + ledger/LKG rows replace the "destroyed fleet" illusion).
+    const banner = fleet.configError ? <ConfigErrorBanner err={fleet.configError} /> : null;
     // spec 242 — a flat, human-sorted list (default name-asc is stable: a status change only recolors the dot
     // in place, no reflow). The dot + the header count-chips carry status; no status group headers.
-    if (!fleet.agents.length) return <div class="empty">(no agents)</div>;
+    if (!fleet.agents.length) {
+      return <>{banner}{fleet.configError ? <div class="empty">No agents in ledger or last-known-good snapshot</div> : <div class="empty">(no agents)</div>}</>;
+    }
     const sorted = sortRows(fleet.agents, agentSort, (a) => a.name);
     // spec 304 — group a spawned agent's row next to its parent's; sortRows itself stays parent-unaware.
     // spec 352/t-4eb8bf — declared ownership also nests visually, but runtime parent wins when both exist.
@@ -259,7 +283,10 @@ function Panel({ tab, fleet, scope, collapsed, toggle, flashName, agentSort, ter
     const grouped = groupByParent(sorted, (a) => a.name, agentGroupParent);
     const collapsedAgents = new Set([...collapsed].filter((key) => key.startsWith(k("a:"))).map((key) => key.slice(k("a:").length)));
     const rows = agentHierarchyRows(grouped, collapsedAgents);
-    return <>{rows.map((r) => <AgentRow key={r.agent.name} a={r.agent} flash={r.agent.name === flashName} nested={r.nested} hasChildren={r.hasChildren} collapsed={r.collapsed} hiddenCount={r.hiddenCount} hiddenNeedsAttention={r.hiddenNeedsAttention} onToggle={() => toggle(k(`a:${r.agent.name}`))} />)}</>;
+    return <>
+      {banner}
+      {rows.map((r) => <AgentRow key={r.agent.name} a={r.agent} flash={r.agent.name === flashName} nested={r.nested} hasChildren={r.hasChildren} collapsed={r.collapsed} hiddenCount={r.hiddenCount} hiddenNeedsAttention={r.hiddenNeedsAttention} onToggle={() => toggle(k(`a:${r.agent.name}`))} />)}
+    </>;
   }
   if (tab === "Terminals") {
     // spec 242 — flat human-sorted list (same machinery as Agents); terminals are managed entries with ai:false.

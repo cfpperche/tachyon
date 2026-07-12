@@ -294,6 +294,8 @@ export interface AgentManagerOptions {
   wsHash: string;
   workspaceRoot: string;
   getConfig: () => TachyonConfig | undefined;
+  /** t-8354ae — optional pre-spawn gate (e.g. refuse LKG-only names while config is invalid). */
+  assertSpawnAllowed?: (name: string) => void;
   getMaxAgents: () => number;
   /** Env injected into every spawned session (e.g. TACHYON_BRIDGE_URL/TOKEN); agent-declared env wins on conflict. */
   getExtraEnv?: () => Record<string, string>;
@@ -894,6 +896,9 @@ export class AgentManager {
    * exclusive with `gate`/`worktree`, which both create a FRESH worktree instead of reusing one.
    */
   async spawn(name: string, opts?: SpawnOptions): Promise<void> {
+    // t-8354ae — config-failure / LKG-only refusal (before any delivery or occupancy mutation).
+    // Ad-hoc spawns with an explicit cmd are allowed (caller supplies the def); declared LKG-only names are not.
+    if (!opts?.cmd) this.opts.assertSpawnAllowed?.(name);
     if (opts?.deliveryJoin) {
       if (opts.gate || opts.worktree || opts.reuseWorktree) {
         throw new Error("spawn_agent delivery_join cannot combine with gate, worktree:true, or reuse_worktree");

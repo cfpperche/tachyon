@@ -7,6 +7,7 @@ import { adapterFor, forkable, managesOwnSession } from "../resume/adapters.js";
 import type { FleetVM, AgentStatus, Verify, AgentVM, RunState, PinPreviewAttachmentVM, PinPreviewVM, EvidenceBadge } from "../sidebar/types.js";
 import { toAgentVM } from "../sidebar/agentModel.js";
 import { evidenceBadge } from "../worktree/evidence.js";
+import { degradedRosterExtras, toConfigErrorVM } from "../config/configFailure.js";
 import { fleetMessage } from "./sidebar/messages.js";
 import { READY } from "./shared/ready.js";
 import { renderWebviewShell } from "./shared/shell.js";
@@ -185,6 +186,8 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       if (m.op === "copyBridge") return void vscode.commands.executeCommand("tachyon.copyBridgeUrl", m.hash);
       if (m.op === "init") return void vscode.commands.executeCommand("tachyon.init");
       if (m.op === "openHandoff") return void vscode.commands.executeCommand("tachyon.openProjectHandoff", m.hash); // spec 245
+      if (m.op === "openConfig") return void vscode.commands.executeCommand("tachyon.openConfig", m.hash); // t-8354ae
+      if (m.op === "doctor") return void vscode.commands.executeCommand("tachyon.doctor", m.hash); // t-8354ae
       const ws = this.wsFor(m.hash);
       if (ws && m.op === "addPin") void vscode.commands.executeCommand("tachyon.addPin", { ws });
       return;
@@ -418,7 +421,8 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       const rec = ws.ledger.get(name);
       if (rec) resumeReadyOf.set(name, await ws.manager.resumeReadiness(name, rec));
     }));
-    const agents = all
+    const configFailure = ws.configFailure;
+    const agents: AgentVM[] = all
       .filter((a) => a.kind === "agent")
       .map((a) => {
         const def = ws.manager.defOf(a.name);
@@ -443,18 +447,66 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
           persistenceHooks: a.declared && typeof ws.persistenceHookHealth === "function" ? ws.persistenceHookHealth(a.name) : undefined,
           externalTools: externalTools.summary(a.name),
           canDismiss: !a.declared && !a.running,
+          ...(configFailure ? { configInvalid: true } : {}),
         });
       });
     // Terminals are managed entries with ai:false → same model + action matrix, reduced set (no resume-context/
     // fork/verify/re-anchor). A stopped terminal thus gets ▶ Start; a running one Open/Restart/Kill.
-    const terminals = all
+    const terminals: AgentVM[] = all
       .filter((a) => a.kind === "terminal")
       .map((a) => {
-        const vm = toAgentVM(a, { ai: false, adhoc: !a.declared, resumable: !a.running && resumable.has(a.name) });
+        const vm = toAgentVM(a, {
+          ai: false,
+          adhoc: !a.declared,
+          resumable: !a.running && resumable.has(a.name),
+          ...(configFailure ? { configInvalid: true } : {}),
+        });
         if (!a.declared && !a.running) vm.canDismiss = true;
         const cmd = ws.manager.defOf(a.name)?.cmd;
         return cmd && !vm.sub ? { ...vm, sub: cmd } : vm;
       });
+
+    // t-8354ae — when config is invalid, surface ledger + LKG names that manager.list() missed
+    // (declared never-ran agents disappear from list when config is null).
+    if (configFailure) {
+      const existing = new Set([...agents, ...terminals].map((a) => a.name));
+      const extras = degradedRosterExtras({
+        existingNames: existing,
+        ledger,
+        lkg: typeof ws.readConfigLkg === "function" ? ws.readConfigLkg() : null,
+      });
+      for (const extra of extras) {
+        const raw = {
+          name: extra.name,
+          cmd: extra.cmd,
+          running: false,
+          dead: false,
+          crashed: false,
+          parent: extra.parent,
+          delegator: extra.delegator,
+          declaredOwner: extra.declaredOwner,
+        };
+        if (extra.kind === "terminal") {
+          const vm = toAgentVM(raw, {
+            ai: false,
+            adhoc: !extra.declared,
+            resumable: extra.resumable,
+            configInvalid: true,
+          });
+          if (extra.cmd && !vm.sub) vm.sub = extra.cmd;
+          terminals.push(vm);
+        } else {
+          agents.push(toAgentVM(raw, {
+            ai: true,
+            adhoc: !extra.declared,
+            resumable: extra.resumable,
+            worktree: extra.worktreeBranch,
+            configInvalid: true,
+          }));
+        }
+      }
+    }
+
     const bridge = { port: ws.bridge.port?.toString() ?? "—", connected: !!ws.bridge.url };
 
     // Other sections — live, read-only (no per-row actions yet). Secondary fields are best-effort.
@@ -509,7 +561,20 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       const status = (run ? runStatus(run) : "idle") as RunState;
       return { name, status, nodes };
     });
-    return { folder: { hash: ws.wsHash, name: ws.folderName }, bridge, agents, terminals, commands, runbooks, pins, schedules, pipelines, proposals, handoff };
+    return {
+      folder: { hash: ws.wsHash, name: ws.folderName },
+      bridge,
+      agents,
+      terminals,
+      commands,
+      runbooks,
+      pins,
+      schedules,
+      pipelines,
+      proposals,
+      handoff,
+      ...(configFailure ? { configError: toConfigErrorVM(configFailure) } : {}),
+    };
   }
 }
 
