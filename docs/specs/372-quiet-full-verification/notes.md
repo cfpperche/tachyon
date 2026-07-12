@@ -39,3 +39,6 @@ None.
   3,558 total; `npm run typecheck` and `git diff --check` passed.
 - Temporary hygiene proof around the final full run: test fixture directories remained 28→28 and retained runner
   directories remained 21→21. Existing retained failure evidence was not destructively removed.
+- 2026-07-11 post-closure regression `17205a1`: the config assertion now scopes uniqueness to the YAML `verify.full`
+  entry instead of counting legitimate command mentions inside workspace-local agent instructions. Final rerun passed
+  301 files, 3,559 tests, and 3 skipped; typecheck and diff-check passed.
