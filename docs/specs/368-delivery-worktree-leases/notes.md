@@ -1488,3 +1488,70 @@ R4 forcing scenarios and all prior assertions. This A3 does not start the broad 
 Reuse the same delegation at exact `60895afa` with original production/test authority. Terra medium; focused R4,
 AgentManager, Bridge, typecheck and diff-check only, no full. Commit by explicit pathspec with `t-0b5723`, ring
 `codex`, and stop. Coordinator reruns the original gate/content audit; only a clean result unlocks B test-only.
+
+### T13 Occupation B audit — reject sampled `ac3955bc`, decompose remaining proof before correction
+
+Production HEAD `4840248e` and its R4 gate remain accepted/frozen. Test-only candidate `ac3955bc` also passes the
+mechanical gate, but is rejected as an Occupation-B delivery: its entire delta is 65 additions across only the Bridge
+suite and forcing helper, with no AgentManager-suite edit. It adds a useful Bridge success mapping and normal bound
+cleanup snapshot, but does not implement the promised seven-block matrix. Specifically absent are the full
+principal continuity/activity/tmux/harness snapshot; nested clone barrier and one-preflight proof; thirteen named
+zero-effect refusals; `newSession` and confirmation failure cases; every liveness/dependency/causal-order injection;
+and independent `forgetAgent` failure continuation. Retain the two truthful additions, but do not count them as
+matrix closure.
+
+The remaining test work is one closed correction delivered through four small **sequential test-only occupations**
+of the same delegation/worktree. This is a re-triage after repeated breadth failure, not permission to weaken the
+matrix. Terra medium remains appropriate because each slice requires real harness/failure scheduling judgment; Luna
+must not invent test seams. Production stays byte-frozen at `4840248e`. Every occupant reads this full decomposition,
+edits only the granted test paths, runs only its named focused suite(s) plus diff-check, commits by explicit pathspec
+with `t-0b5723`, rings `codex`, and stops. No typecheck/full until the final combined gate.
+
+#### B1 — identity-isolation happy path and defensive snapshot barrier
+
+Starting at `ac3955bc`, complete blocks 2 and 4 only. Build one reusable AgentManager fixture with explicit counters
+and real temp files. The declared principal must use nested harness/isolate/env and have persisted ledger/resume/
+config-home, continuity brief plus state, activity log/owner rows, harness marker, token history, and tmux command/env.
+Keep it live, start the distinct bound execution in the prepared Delivery cwd/worktree, and assert: both sessions;
+callback execution/principal identities; reviewer-safe command; declared role followed by appended contract; execution
+name env/token/home/ownership settings only; ad-hoc listing and `declared:false`; zero fresh-worktree resolution; then
+normal execution cleanup with every principal byte/process/token snapshot unchanged.
+
+Add a deterministic reservation barrier: after definition snapshot but before launch, mutate the source config's
+nested harness MCP/env/hooks/rules/skills plus env/watch/attention. Assert the execution used the complete old deep
+snapshot while later ordinary reads see the mutation. Count the bound launch preflight and assert exactly one. No
+refusal or cleanup-error matrix in B1.
+
+#### B2 — complete pre-reservation refusal table
+
+Starting at accepted B1 HEAD, implement block 3. Individually named/table-visible cases: unknown source; terminal
+source; same name; config collision; ad-hoc-map collision; ledger collision; live tmux collision; dead/postmortem
+tmux collision; reserved token env; `cmd+declared_agent`; `principal+declared_agent`; unsafe reviewer command; failed
+launch preflight. Each case snapshots/counters **all** reservation, mint/revoke, harness/MCP/settings, tmux create/
+kill, ledger/activity, callbacks, and principal state, and proves zero effects. Do not combine config/ad-hoc/ledger/
+tmux into one generic collision assertion and do not treat Bridge error text alone as effect proof.
+
+#### B3 — launch and confirmation failure ownership
+
+Starting at accepted B2 HEAD, implement block 5 plus the intentionally preserved session-attempted uncertainty.
+Independently force: `newSession` fail before creation; `newSession` ambiguous throw after simulated creation;
+readiness rejection after completed session; confirmation failure after full spawn; and the existing cmd-ad-hoc
+readiness path. For known absence, assert token/home/settings/session/ledger/ad-hoc/transient cleanup and exactly-one
+reservation compensation/callback as applicable, with principal bytes/process/token untouched. For ambiguous
+creation, assert no kill/footprint/transient/callback action against the unproven pane, explicit uncertainty in the
+causal error, reservation compensation once, and only receipt-owned token policy.
+
+#### B4 — cleanup dependency ordering and forcing-helper closure
+
+Starting at accepted B3 HEAD, implement block 6 and close block 7. Independently force initial probe error;
+kill error with survivor; post-kill probe error; token-revoke error; canonical `forgetAgent` early ledger failure;
+canonical middle harness failure; killed-callback error; reservation-compensation error; and meaningful combinations
+covering more than one cleanup failure. Assert exact stable AggregateError order/labels/causes, every later safe
+attempt, state retention under unknown/live liveness, and zero principal action. Directly exercise `forgetAgent` with
+throwing ledger/removeHarness dependencies and real later artifacts to prove all later removals still run exactly
+once and the aggregate preserves ordered causes.
+
+Finally map every seven-block requirement to an actual named test/assertion, retain the real forcing helper and its
+three ownership scenarios, and keep T6/T10/ordinary declared compatibility green. Run generated R4, AgentManager,
+and Bridge serially plus diff-check. Coordinator then reruns the original R4 `verify_task`, audits the complete
+combined range, and routes immutable Sonnet R3. Only Sonnet ACCEPT unlocks the single final quiet full verification.
