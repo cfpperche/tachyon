@@ -404,5 +404,8 @@
   "Re-run from '{0}'? This discards that node and everything after it, then re-runs.": "Re-rodar a partir de '{0}'? Isso descarta esse nó e tudo depois dele, e re-roda.",
   "Re-run": "Re-rodar",
   "current": "atual",
-  "default": "padrão"
+  "default": "padrão",
+  "Tachyon Doctor found problems — see the Output panel": "Tachyon Doctor encontrou problemas — veja o painel Output",
+  "Tachyon Doctor report ready — see the Output panel": "Relatório do Tachyon Doctor pronto — veja o painel Output",
+  "Could not open config: {0}": "Não foi possível abrir a config: {0}"
 }
