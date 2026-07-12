@@ -2,7 +2,8 @@
 
 _Created 2026-07-09._
 
-**Status:** shipped-partial
+**Status:** shipped
+**Closure:** 2026-07-12 — Runtime Ops panel (phases 1–4) + global `npm run test:browser` restored via `t-1c745f` (57/57). Earlier shipped-partial held only on out-of-slice browser debt.
 
 ## Intent
 

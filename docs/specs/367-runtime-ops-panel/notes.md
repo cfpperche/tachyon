@@ -169,3 +169,26 @@ were bypassed beyond the unavailable Bridge transport.
   unrelated failures: `taskPrototypeFrame` (1), `pinPreviewImageRender` (1), and `pilotBTaskStudio` (5).
 - Browser-suite debt is tracked by follow-up task `t-1c745f`; no production-code or `tachyon.yml` changes are part of
   this closure.
+
+
+## t-1c745f — global browser suite restore (2026-07-12)
+
+Baseline (reported at 367 close): 7 failures outside Runtime Ops — `taskPrototypeFrame` (1),
+`pinPreviewImageRender` (1), `pilotBTaskStudio` (5). Runtime Ops browser tests stayed 3/3.
+
+Classification (independent causes, not one shared root):
+1. **taskPrototypeFrame** — product+test (spec 366): static pointer-guard must keep document overflow;
+   tall mocks scrollable via `scrollBy`/overflow metrics. Already on main from 366 T9.
+2. **pilotBTaskStudio** — harness obsolete after studio shell (spec 350): still injected
+   `{ type: "taskStudio", vm }` and waited for `.ts-fields`. Product expects enveloped
+   `{ type: "load", entity, concurrency, studioProtocolVersion }`. Fixed inject + race-proof re-post.
+3. **pinPreviewImageRender** — harness race under full-suite load: ready could fire before the test
+   listener attached. Re-post VM until `.body` mounts (same pattern as pilotB).
+
+Verification: `npm run test:browser` → 11 files / 57 passed; `npm run typecheck` green; Runtime Ops
+browser 3/3 preserved. No assertion removals or timeout inflation.
+
+## Dogfood log
+
+### 2026-07-12T18:53:33Z — pass (1/1) — source: tasks.md — commit: f70a86b2b844f3046b0b8065bb1a16b29cbbaa8d
+- `xvfb-run -a npx vscode-test --label single-root --run test/integration/runtimeOps.test.js` — pass

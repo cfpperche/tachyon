@@ -43,19 +43,25 @@ async function loadPinPreview(page: Page, origin: string, vm: PinPreviewVM): Pro
   // pin-preview/main.tsx signals ready from a `useEffect`, which preact/hooks flushes via
   // requestAnimationFrame — a BACKGROUND (non-active) tab gets that throttled by Chrome, which can stall the
   // ready handshake under heavy multi-browser contention. Forcing this page to the front keeps rAF live.
+  //
+  // t-1c745f: under full `test:browser` load, ready can fire before the test installs its listener (lost
+  // handshake). Re-post the pinPreview VM until `.body` mounts — late inject is accepted once Root listens.
   await page.bringToFront();
   await page.setContent(hostPage(origin), { waitUntil: "domcontentloaded" });
-  await page.evaluate((v) => {
-    const onReady = (e: MessageEvent) => {
-      const d = e.data as { type?: string } | undefined;
-      if (d?.type === "ready") {
-        window.removeEventListener("message", onReady);
-        window.postMessage({ type: "pinPreview", vm: v }, "*");
-      }
-    };
-    window.addEventListener("message", onReady);
-  }, vm);
-  await page.waitForSelector(".body", { visible: true, timeout: 15000 });
+  const deadline = Date.now() + 15_000;
+  while (Date.now() < deadline) {
+    await page.bringToFront();
+    await page.evaluate((v) => {
+      window.postMessage({ type: "pinPreview", vm: v }, "*");
+    }, vm);
+    try {
+      await page.waitForSelector(".body", { visible: true, timeout: 250 });
+      return;
+    } catch {
+      // Root not listening yet — retry.
+    }
+  }
+  throw new Error("Pin Preview never rendered .body after pinPreview VM injects");
 }
 
 describe("Pin Preview renders inline doc images (t-321e9d)", () => {

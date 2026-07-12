@@ -2,37 +2,37 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import puppeteer, { type Browser, type Page } from "puppeteer-core";
 import { resolveChromeExecutable } from "./support/chrome";
 import { startGateServer, type GateServer } from "./support/gateServer";
+import { STUDIO_PROTOCOL_VERSION } from "../../src/webview/shared/studio/protocol";
+import type { TaskDetailEntity } from "../../src/webview/task-studio/domain";
 
-// spec 342 T7 — Pilot B: the Task Studio fields row (the surface whose 339 dogfood motivated this spec)
-// migrates Kind/Priority/Assignee to KitLabeledInput/KitSelect. Task Studio isn't onboarded into
-// scripts/webview-preview (only pin-studio made it in so far — see routes.ts), so this test drives the REAL
-// dist/webview/task-studio.js bundle directly against a minimal fixture VM, posted via `page.setContent`
-// (the gate server's static-file fallback still serves the dist/webview/* assets this host page references)
-// after the bundle's own `ready` handshake — same protocol main.tsx/messages.ts define, same proof shape as
-// Pilot A's preview-harness test, without depending on that harness's route table.
-const FIXTURE_VM_NEW = {
+// spec 342 T7 — Pilot B: Task Studio fields row (Kind/Priority/Assignee Kit migration).
+// Drives the REAL dist/webview/task-studio.js bundle via the gate server's static root.
+//
+// t-1c745f (2026-07-12): after spec 350 studio-shell, the host↔webview wire is the versioned
+// envelope (`type: "load" | "ready"` + `studioProtocolVersion`), NOT the pre-migration
+// `{ type: "taskStudio", vm }` push. The fixture is a TaskDetailEntity (mode lives on the shell
+// panel entry; assets come from bootstrapGlobals in product — optional here).
+
+const ENTITY_NEW: TaskDetailEntity = {
   workspaceHash: "ws1",
   folder: "/tmp/demo",
-  mode: "new",
   taskId: "t-000001",
   title: "",
   deps: [],
   artifact_refs: [],
   doc: { type: "doc", content: [{ type: "paragraph" }] },
   attachments: [],
-  assets: { excalidrawScriptUri: "/dist/webview/excalidraw.js", excalidrawCssUri: "/dist/webview/excalidraw.css", excalidrawAssetPath: "/dist/webview/" },
   anchor: "load",
   knownAgents: ["claude", "codex"],
 };
 
-const FIXTURE_VM_EDIT = {
-  ...FIXTURE_VM_NEW,
-  mode: "edit",
+const ENTITY_EDIT: TaskDetailEntity = {
+  ...ENTITY_NEW,
   taskId: "t-000002",
   title: "Existing task",
   priority: 1,
   assignee: "claude",
-  // dogfood round 2 (#2) — a long dep title, so the truncation fix has something real to truncate.
+  // dogfood round 2 (#2) — long dep title so truncation has something real to clip.
   deps: [{ id: "t-1a2b3c", title: "Vendor shadcn/Radix components behind a Kit namespace with a legacy fallback", missing: false }],
   expectUpdatedAt: "2026-07-03T00:00:00.000Z",
 };
@@ -49,21 +49,39 @@ function hostPage(cspSource: string): string {
 <body><div id="root"></div><script src="${cspSource}/dist/webview/task-studio.js"></script></body></html>`;
 }
 
-/** Load the real bundle on a fresh page and inject a fixture VM once it signals `ready` — mirrors
- *  scripts/webview-preview/preview.ts's own injection protocol without depending on its route table. */
-async function loadTaskStudio(page: Page, origin: string, vm: unknown): Promise<void> {
+/** Load the real bundle and inject a TaskDetailEntity via the studio-shell `load` message.
+ *  Race-proof: re-post load until Root's message listener is mounted (ready may fire before the
+ *  test installs a listener; late load is accepted once useEffect has registered). */
+async function loadTaskStudio(page: Page, origin: string, entity: TaskDetailEntity): Promise<void> {
+  // useEffect flushes via rAF — a background tab can stall the handshake under multi-browser load.
+  await page.bringToFront();
   await page.setContent(hostPage(origin), { waitUntil: "domcontentloaded" });
-  await page.evaluate((v) => {
-    const onReady = (e: MessageEvent) => {
-      const d = e.data as { type?: string } | undefined;
-      if (d?.type === "ready") {
-        window.removeEventListener("message", onReady);
-        window.postMessage({ type: "taskStudio", vm: v }, "*");
-      }
-    };
-    window.addEventListener("message", onReady);
-  }, vm);
-  await page.waitForSelector(".ts-fields", { visible: true, timeout: 5000 });
+
+  const deadline = Date.now() + 15_000;
+  while (Date.now() < deadline) {
+    await page.evaluate(
+      (ent, protocolVersion) => {
+        window.postMessage(
+          {
+            type: "load",
+            entity: ent,
+            concurrency: { kind: "none" },
+            studioProtocolVersion: protocolVersion,
+          },
+          "*",
+        );
+      },
+      entity,
+      STUDIO_PROTOCOL_VERSION,
+    );
+    try {
+      await page.waitForSelector(".ts-fields", { visible: true, timeout: 250 });
+      return;
+    } catch {
+      // Root not listening yet — retry load.
+    }
+  }
+  throw new Error("Task Studio never rendered .ts-fields after studio-protocol load messages");
 }
 
 describe("Pilot B: Task Studio fields row (real bundle, minimal fixture VM)", () => {
@@ -85,13 +103,14 @@ describe("Pilot B: Task Studio fields row (real bundle, minimal fixture VM)", ()
     const pageErrors: string[] = [];
     const failedResponses: string[] = [];
     page.on("pageerror", (err) => pageErrors.push(String(err)));
-    // the excalidraw bundle/css are lazy-loaded on-demand for sketch editing, never fetched by the fields
-    // row itself — irrelevant to this test, so excluded from the failure list rather than pre-fetched.
+    // excalidraw is lazy-loaded for sketch editing — not required for the fields row.
     page.on("response", (res) => {
-      if (!res.ok() && !res.url().includes("excalidraw") && !res.url().endsWith("/favicon.ico")) failedResponses.push(`${res.status()} ${res.url()}`);
+      if (!res.ok() && !res.url().includes("excalidraw") && !res.url().endsWith("/favicon.ico")) {
+        failedResponses.push(`${res.status()} ${res.url()}`);
+      }
     });
 
-    await loadTaskStudio(page, server.origin, FIXTURE_VM_NEW);
+    await loadTaskStudio(page, server.origin, ENTITY_NEW);
 
     expect(failedResponses).toEqual([]);
     expect(pageErrors).toEqual([]);
@@ -100,13 +119,13 @@ describe("Pilot B: Task Studio fields row (real bundle, minimal fixture VM)", ()
 
   it("edit-mode gating: Assignee is disabled in 'new' mode, enabled in 'edit' mode (339 behavior preserved)", async () => {
     const pageNew = await browser.newPage();
-    await loadTaskStudio(pageNew, server.origin, FIXTURE_VM_NEW);
+    await loadTaskStudio(pageNew, server.origin, ENTITY_NEW);
     const disabledInNew = await pageNew.$eval(".ts-fields input[placeholder='assign during triage']", (el) => (el as HTMLInputElement).disabled);
     expect(disabledInNew).toBe(true);
     await pageNew.close();
 
     const pageEdit = await browser.newPage();
-    await loadTaskStudio(pageEdit, server.origin, FIXTURE_VM_EDIT);
+    await loadTaskStudio(pageEdit, server.origin, ENTITY_EDIT);
     const enabledInEdit = await pageEdit.$eval(".ts-fields input[placeholder='assignee']", (el) => (el as HTMLInputElement).disabled);
     expect(enabledInEdit).toBe(false);
     await pageEdit.close();
@@ -114,7 +133,7 @@ describe("Pilot B: Task Studio fields row (real bundle, minimal fixture VM)", ()
 
   it("KitSelect Priority: keyboard-selecting P2 updates the trigger AND can be cleared back to 'none'", async () => {
     const page = await browser.newPage();
-    await loadTaskStudio(page, server.origin, FIXTURE_VM_NEW);
+    await loadTaskStudio(page, server.origin, ENTITY_NEW);
     await page.waitForSelector('[data-slot="select-trigger"]', { visible: true, timeout: 5000 });
 
     await page.click('[data-slot="select-trigger"]');
@@ -139,13 +158,10 @@ describe("Pilot B: Task Studio fields row (real bundle, minimal fixture VM)", ()
     await page.close();
   });
 
-  // dogfood round 2 (#1) — "the parity fixture asserted box-model equality but not ROW behavior (width
-  // policy + baseline alignment)": kitLegacyParity.test.ts's synthetic ui-gate fixture passed even with the
-  // bug, since it only ever measured an isolated trigger, never the REAL .ts-fields row where Priority's
-  // Radix SelectTrigger ships an upstream `w-fit` class. This drives the actual production bundle instead.
+  // dogfood round 2 (#1) — parity of Priority KitSelect vs Kind in the REAL .ts-fields row.
   it("Priority KitSelect matches Kind's width/height and sits on the same row (dogfood round 2 #1)", async () => {
     const page = await browser.newPage();
-    await loadTaskStudio(page, server.origin, FIXTURE_VM_NEW);
+    await loadTaskStudio(page, server.origin, ENTITY_NEW);
 
     const boxOf = (selector: string) =>
       page.$eval(selector, (el) => {
@@ -162,12 +178,10 @@ describe("Pilot B: Task Studio fields row (real bundle, minimal fixture VM)", ()
     await page.close();
   });
 
-  // dogfood round 2 (#2) — the deps chip used to render a dep's full `id · title` on the pill, wrapping
-  // across lines; verifies the fix truncates to a single line (scrollWidth > clientWidth, the DOM signal
-  // ellipsis is actually clipping something) while the full text still reaches the user via `title`.
+  // dogfood round 2 (#2) — deps chip truncates long title; full text via title tooltip.
   it("a long dep title truncates to a single-line chip with the full text as a tooltip (dogfood round 2 #2)", async () => {
     const page = await browser.newPage();
-    await loadTaskStudio(page, server.origin, FIXTURE_VM_EDIT);
+    await loadTaskStudio(page, server.origin, ENTITY_EDIT);
 
     const chip = await page.$eval(".ts-chip-field .chip-pill", (el) => ({
       title: el.getAttribute("title"),
@@ -182,7 +196,6 @@ describe("Pilot B: Task Studio fields row (real bundle, minimal fixture VM)", ()
     expect(chip.title).toBe("t-1a2b3c · Vendor shadcn/Radix components behind a Kit namespace with a legacy fallback");
     expect(chip.ariaLabel).toBe("Remove dependency t-1a2b3c");
     expect(text.scrollWidth).toBeGreaterThan(text.clientWidth);
-    // single-line clipping, not a taller multi-line wrap — the pill's height stays the compact one-line box.
     expect(chip.height).toBeLessThan(24);
     await page.close();
   });

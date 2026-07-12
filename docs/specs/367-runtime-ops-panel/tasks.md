@@ -73,8 +73,10 @@ redirect ships only with the integrated Phase 1-4 result after usage parity is r
 - [x] Browser tests prove wide/narrow layout, keyboard navigation, and no page overflow.
 - [x] `npm run verify:full` passes the repository verification gate: 282 files, 3216 passed, and 3 skipped; the
   typecheck, engine-boundary, and production-build gates are green.
-- [ ] The full `npm run test:browser` suite passes; seven unrelated failures remain: `taskPrototypeFrame` (1),
-  `pinPreviewImageRender` (1), and `pilotBTaskStudio` (5). Follow-up task: `t-1c745f`.
+- [x] The full `npm run test:browser` suite passes (2026-07-12, `t-1c745f`: 11 files / 57 tests green).
+  Causes were independent harness drift, not Runtime Ops product regressions: tall static-prototype scroll
+  (spec 366 overflow guard), pin-preview ready race under suite load, pilotB still on pre-350
+  `{type:"taskStudio",vm}` wire (migrated to studio-shell `load` + `TaskDetailEntity`).
 
 **Headless check:** `npm run verify:full`
 **Verify:** `npm run verify:full`
