@@ -1451,3 +1451,40 @@ limited to its original owns. Terra medium remains required. Run R4 generated, A
 serially, `npm run typecheck`, and `git diff --check`; no full. Commit the A2 delta by explicit pathspec with
 `t-0b5723`, ring `codex`, and stop. Coordinator reruns the original `verify_task` and full content audit; only then
 may Occupation B receive test-only authority.
+
+### T13 R4A2 coordinator audit — final production correction A3 before Occupation B
+
+A2 `60895afa` passes the original R4 gate without waiver at
+`.tachyon/verifications/60895afa400ad27fbd41c6729f6cbab4cd5e2a0c.json` and closes its three assigned findings.
+Occupation B remains blocked on two milestone/mode errors found in the combined production audit:
+
+1. `cleanupFailedDeliveryExecution` treats `session:not-started` as proven absence, then clears all transient sets,
+   calls `forgetAdhoc`, and emits `onKilled` for an ordinary declared join. A failure after acquisition but before
+   `newSession` (for example materializer/Bridge composition failure) therefore mutates readiness/lineage/callback
+   state which the attempt never created. For a declared attempt, revoke only a token actually minted; clear
+   session-transient state and emit `onKilled` only when `session:completed` was subsequently proven absent. Never
+   call `forgetAdhoc` or remove durable footprint for declared mode. `session:attempted` remains uncertainty and
+   preserves state.
+
+2. The receipt's `ephemeral` bit is currently `!!declared_agent`, excluding the accepted T6/T10 ad-hoc `cmd`
+   Delivery join. That path therefore retains the original partial-spawn leak the R1/A1 contract explicitly required
+   this shared cleanup to close. Replace the boolean with an explicit mode (or equivalent closed representation):
+   bound ephemeral, cmd-ad-hoc ephemeral, ordinary declared persistent. Both ephemeral modes require a fresh inner
+   identity check and own their newly materialized/token/session/ledger/ad-hoc footprint; both receive complete
+   partial cleanup after proven absence. Declared mode preserves durable identity. Do not infer mode later from
+   mutable maps.
+
+Separate cleanup phases by what the receipt actually owns: token; session-transient state; ephemeral in-memory
+definition/lineage; ephemeral durable footprint; callback. A fresh ephemeral attempt with no completed session may
+still remove its own attempted materialization after absence is structurally known, but it must not pretend a
+session was killed. A declared attempt with no completed session performs none of the session/ephemeral/callback
+phases.
+
+Add real regression assertions for: declared post-acquisition/pre-session materializer failure preserving callback,
+readiness/lineage/durable principal state while revoking only its newly minted token; and ad-hoc `cmd` readiness
+failure removing its token/home/session/ledger/ad-hoc listing with reservation compensation exactly once. Keep the
+R4 forcing scenarios and all prior assertions. This A3 does not start the broad Occupation-B matrix.
+
+Reuse the same delegation at exact `60895afa` with original production/test authority. Terra medium; focused R4,
+AgentManager, Bridge, typecheck and diff-check only, no full. Commit by explicit pathspec with `t-0b5723`, ring
+`codex`, and stop. Coordinator reruns the original gate/content audit; only a clean result unlocks B test-only.
