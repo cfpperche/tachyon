@@ -54,7 +54,7 @@ function service(store: DeliveryStore, worktree: string, fence = certifiedFence)
   let lockDepth = 0;
   let events = 0;
   return new DeliveryLeaseService({
-    store, processFence: fence,
+    store, processFence: fence, handoffSafety: "process-fenced",
     canonicalWorktreeFor: () => worktree,
     readHead: () => "b",
     inspectWorktree: () => ({ headSha: "b", clean: true }),
@@ -81,7 +81,7 @@ function reviewService(store: DeliveryStore, worktree: string, options: {
   withLock?: <T>(path: string, fn: () => Promise<T>) => Promise<T>;
 } = {}) {
   let events = 0;
-  return new DeliveryLeaseService({ store, processFence: options.fence ?? certifiedFence, canonicalWorktreeFor: () => worktree,
+  return new DeliveryLeaseService({ store, processFence: options.fence ?? certifiedFence, handoffSafety: "process-fenced", canonicalWorktreeFor: () => worktree,
     readHead: () => "b", inspectWorktree: () => ({ headSha: "b", clean: true }),
     inspectReviewWorktree: options.inspect ?? (() => cleanReviewInspection), isAncestor: () => true,
     withWorktreeLock: options.withLock ?? (async (_path, fn) => fn()), now: () => now,

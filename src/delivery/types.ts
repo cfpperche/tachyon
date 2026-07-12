@@ -18,6 +18,9 @@ export interface DeliveryContract {
 
 export type DeliveryLeaseState = "free" | "pending" | "held" | "draining" | "verifying" | "quarantined" | "abandoned";
 
+/** The evidence level used for sequential Delivery lease transitions. */
+export type DeliveryHandoffSafety = "disabled" | "mechanism-only" | "process-fenced";
+
 export interface DeliveryProcessIdentity {
   pid: number;
   processStart: string;
