@@ -3,7 +3,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { isDeepStrictEqual } from "node:util";
 import { isOwnsSubset } from "../agents/reuseWorktree.js";
-import type { ProcessFencePort } from "../agents/processFence.js";
+import type { ProcessFenceEmptyProof, ProcessFencePort } from "../agents/processFence.js";
 import {
   DeliveryInvariantError,
   DeliveryNotFoundError,
@@ -45,6 +45,10 @@ export interface DeliveryLeaseWaitTiming {
 
 const DEFAULT_LEASE_WAIT_POLL_MS = 100;
 const MAX_LEASE_WAIT_MS = 300_000;
+
+class TransferAbsenceError extends Error {
+  constructor(message: string, readonly proof?: ProcessFenceEmptyProof, readonly fenceError?: unknown) { super(message); }
+}
 
 function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
   signal?.throwIfAborted();
@@ -500,17 +504,17 @@ export class DeliveryLeaseService {
 
   private async acquireInternal(input: DeliveryLeaseAcquireInput): Promise<DeliveryLeaseReservation> {
     const handoffSafety = this.handoffSafety();
-    this.assertSafetyEnabled(handoffSafety);
-    if (handoffSafety === "process-fenced") this.assertFenceCapability();
     const ownsSubset = normalizeOwns(input.ownsSubset);
     if (input.role === "reviewer" && ownsSubset.length !== 0) {
       throw new DeliveryLeaseError("DELIVERY_OWNS_WIDENING", false, "reviewer authority must be exactly empty");
     }
     const intent = acquireIntent(input, path.resolve(input.canonicalWorktree), ownsSubset, handoffSafety);
-    const replay = await this.replayAcquire(input.operationId, input.deliveryId, intent);
+    const replay = await this.replayAcquire(input.operationId, input.deliveryId, intent, true);
     if (replay) return replay;
+    this.assertSafetyEnabled(handoffSafety);
+    if (handoffSafety === "process-fenced") this.assertFenceCapability();
     return this.withDeliveryLock(input.deliveryId, async () => {
-      const lockedReplay = await this.replayAcquire(input.operationId, input.deliveryId, intent);
+      const lockedReplay = await this.replayAcquire(input.operationId, input.deliveryId, intent, true);
       if (lockedReplay) return lockedReplay;
       const observed = await this.deps.store.get(input.deliveryId);
       if (!observed) throw new DeliveryNotFoundError(input.deliveryId);
@@ -697,13 +701,13 @@ export class DeliveryLeaseService {
 
   async handoff(input: DeliveryLeaseHandoffInput): Promise<DeliveryLeaseReservation> {
     const handoffSafety = this.handoffSafety();
-    this.assertSafetyEnabled(handoffSafety);
-    if (handoffSafety === "process-fenced") this.assertFenceCapability();
     const ownsSubset = normalizeOwns(input.ownsSubset);
     const canonicalWorktree = path.resolve(input.canonicalWorktree);
     const intent = { ...structuredClone(input), canonicalWorktree, ownsSubset, handoffSafety };
-    const replay = await this.replayHandoff(`${input.operationId}:reserve`, input.deliveryId, intent);
+    const replay = await this.replayHandoff(`${input.operationId}:reserve`, input.deliveryId, intent, true);
     if (replay) return replay;
+    this.assertSafetyEnabled(handoffSafety);
+    if (handoffSafety === "process-fenced") this.assertFenceCapability();
 
     let predecessorHolder: DeliveryLeaseHolder | undefined;
     const committedDrain = await this.replayDrain(`${input.operationId}:drain`, input.deliveryId, input.operationId, intent);
@@ -771,7 +775,7 @@ export class DeliveryLeaseService {
         return { delivery, reservationNonce };
       }));
     } catch (error) {
-      const committed = await this.replayHandoff(`${input.operationId}:reserve`, input.deliveryId, intent);
+      const committed = await this.replayHandoff(`${input.operationId}:reserve`, input.deliveryId, intent, true);
       if (committed) return committed;
       if (error instanceof DeliveryStoreBusyError) throw this.busy(error);
       return this.quarantineAndThrow(input, intent, predecessorHolder, { phase: "final", error: error instanceof Error ? error.message : String(error) });
@@ -780,12 +784,12 @@ export class DeliveryLeaseService {
 
   async completeReview(input: DeliveryCompleteReviewInput): Promise<Delivery> {
     const handoffSafety = this.handoffSafety();
-    this.assertSafetyEnabled(handoffSafety);
-    if (handoffSafety === "process-fenced") this.assertFenceCapability();
     const canonicalWorktree = path.resolve(input.canonicalWorktree);
     const intent = { ...structuredClone(input), canonicalWorktree, handoffSafety };
-    const completedReplay = await this.replayReviewCompletion(`${input.operationId}:complete`, input.deliveryId, intent);
+    const completedReplay = await this.replayReviewCompletion(`${input.operationId}:complete`, input.deliveryId, intent, true);
     if (completedReplay) return completedReplay;
+    this.assertSafetyEnabled(handoffSafety);
+    if (handoffSafety === "process-fenced") this.assertFenceCapability();
 
     let reviewerHolder = await this.replayReviewDrain(`${input.operationId}:drain`, input.deliveryId, intent);
     if (!reviewerHolder) {
@@ -840,7 +844,7 @@ export class DeliveryLeaseService {
         }, { operationId: `${input.operationId}:complete`, intent });
       }));
     } catch (error) {
-      const replay = await this.replayReviewCompletion(`${input.operationId}:complete`, input.deliveryId, intent);
+      const replay = await this.replayReviewCompletion(`${input.operationId}:complete`, input.deliveryId, intent, true);
       if (replay) return replay;
       return this.quarantineReviewAndThrow(input, intent, { phase: "postcondition", error: error instanceof Error ? error.message : String(error) }, error);
     }
@@ -1155,10 +1159,10 @@ export class DeliveryLeaseService {
     return structuredClone(delivery.lease.holder);
   }
 
-  private async replayReviewCompletion(operationId: string, deliveryId: string, intent: Record<string, unknown>): Promise<Delivery | undefined> {
+  private async replayReviewCompletion(operationId: string, deliveryId: string, intent: Record<string, unknown>, historicalSafety = false): Promise<Delivery | undefined> {
     const delivery = await this.deps.store.getOperationResult(operationId, "update", deliveryId);
     if (!delivery) return undefined;
-    const event = delivery.events.find((candidate) => candidate.type === "review_completed" && isDeepStrictEqual(candidate.detail?.intent, intent));
+    const event = delivery.events.find((candidate) => candidate.type === "review_completed" && this.replayIntentMatches(candidate.detail?.intent, intent, historicalSafety));
     if (!event || delivery.lease.state !== "free") throw new DeliveryInvariantError(`operation id '${operationId}' does not match this review completion intent`);
     return delivery;
   }
@@ -1217,12 +1221,12 @@ export class DeliveryLeaseService {
     throw refusal;
   }
 
-  private async replayHandoff(operationId: string, deliveryId: string, intent: Record<string, unknown>): Promise<DeliveryLeaseReservation | undefined> {
+  private async replayHandoff(operationId: string, deliveryId: string, intent: Record<string, unknown>, historicalSafety = false): Promise<DeliveryLeaseReservation | undefined> {
     const delivery = await this.deps.store.getOperationResult(operationId, "update", deliveryId);
     if (!delivery) return undefined;
     const event = delivery.events.find((candidate) => candidate.type === "handoff_reserved" && candidate.detail?.operationId === operationId.slice(0, -8));
     const nonce = event?.detail?.reservationNonce;
-    if (!event || !isDeepStrictEqual(event.detail?.intent, intent) || typeof nonce !== "string" || delivery.lease.holder?.reservationNonce !== nonce) {
+    if (!event || !this.replayIntentMatches(event.detail?.intent, intent, historicalSafety) || typeof nonce !== "string" || delivery.lease.holder?.reservationNonce !== nonce) {
       throw new DeliveryInvariantError(`operation id '${operationId}' does not match this handoff intent`);
     }
     return { delivery, reservationNonce: nonce };
@@ -1275,16 +1279,26 @@ export class DeliveryLeaseService {
     });
   }
 
-  private async replayAcquire(operationId: string, deliveryId: string, intent: Record<string, unknown>): Promise<DeliveryLeaseReservation | undefined> {
+  private async replayAcquire(operationId: string, deliveryId: string, intent: Record<string, unknown>, historicalSafety = false): Promise<DeliveryLeaseReservation | undefined> {
     const delivery = await this.deps.store.getOperationResult(operationId, "update", deliveryId);
     if (!delivery) return undefined;
     const event = delivery.events.find((candidate) => candidate.type === "lease_reserved" && candidate.detail?.operationId === operationId);
     const holder = delivery.lease.holder;
-    if (!event || !holder || !isDeepStrictEqual(event.detail?.intent, intent) || holder.segmentId !== event.detail?.segmentId
+    if (!event || !holder || !this.replayIntentMatches(event.detail?.intent, intent, historicalSafety) || holder.segmentId !== event.detail?.segmentId
       || typeof holder.reservationNonce !== "string") {
       throw new DeliveryInvariantError(`operation id '${operationId}' does not match this lease acquisition intent`);
     }
     return { delivery, reservationNonce: holder.reservationNonce };
+  }
+
+  /** Completed receipts bind to their recorded safety level; every other input remains exact. */
+  private replayIntentMatches(recorded: unknown, current: Record<string, unknown>, historicalSafety: boolean): boolean {
+    if (!historicalSafety) return isDeepStrictEqual(recorded, current);
+    if (!recorded || typeof recorded !== "object") return false;
+    const { handoffSafety: recordedSafety, ...recordedWithoutSafety } = recorded as Record<string, unknown>;
+    const { handoffSafety: _currentSafety, ...currentWithoutSafety } = current;
+    return (recordedSafety === "process-fenced" || recordedSafety === "mechanism-only")
+      && isDeepStrictEqual(recordedWithoutSafety, currentWithoutSafety);
   }
 
   private async replayConfirmation(operationId: string, deliveryId: string, intent: Record<string, unknown>): Promise<Delivery | undefined> {
@@ -1327,8 +1341,13 @@ export class DeliveryLeaseService {
       try { await this.deps.processFence.freeze(holder.executionNonce!); } catch (error) { fenceError = error; }
       try { await this.deps.processFence.terminate(holder.executionNonce!); } catch (error) { fenceError ??= error; }
       try { proof = await this.deps.processFence.proveEmpty(holder.executionNonce!, canonicalWorktree); } catch (error) { fenceError ??= error; }
-      if (fenceError) throw fenceError;
-      if (proof.state !== "proven_empty") throw new Error(`process fence proof was ${proof.state}${proof.state === "unknown" ? `: ${proof.reason}` : ""}`);
+      if (fenceError || proof.state !== "proven_empty") {
+        throw new TransferAbsenceError(
+          fenceError instanceof Error ? fenceError.message : `process fence proof was ${proof.state}${proof.state === "unknown" ? `: ${proof.reason}` : ""}`,
+          proof,
+          fenceError,
+        );
+      }
       return "proven_empty";
     }
 
@@ -1348,11 +1367,16 @@ export class DeliveryLeaseService {
   }
 
   private transferFailureEvidence(handoffSafety: DeliveryHandoffSafety, error: unknown): Record<string, unknown> {
-    return {
+    const evidence: Record<string, unknown> = {
       phase: handoffSafety === "mechanism-only" ? "exact_root_stop" : "fence",
       handoffSafety,
       error: error instanceof Error ? error.message : String(error),
     };
+    if (error instanceof TransferAbsenceError) {
+      if (error.proof) evidence.proof = structuredClone(error.proof);
+      if (error.fenceError) evidence.fenceError = error.fenceError instanceof Error ? error.fenceError.message : String(error.fenceError);
+    }
+    return evidence;
   }
 
   private async withDeliveryLock<T>(id: string, fn: () => Promise<T>): Promise<T> {

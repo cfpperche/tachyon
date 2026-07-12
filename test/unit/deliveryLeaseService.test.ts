@@ -355,6 +355,42 @@ describe("DeliveryLeaseService (SDD 368 T5)", () => {
     const delivery = await store.get("d-lease");
     expect(delivery?.lease.state).toBe("quarantined");
     expect(delivery?.segments).toHaveLength(1);
+    expect(delivery?.events.at(-1)?.detail?.evidence).toMatchObject({ proof: { state: "survivors", pids: [7] } });
+  });
+
+  it("persists unknown proof and simultaneous fence error as structured quarantine evidence", async () => {
+    const { store, worktree, input } = heldFixture();
+    await store.create(input);
+    const fence: ProcessFencePort = { capability: () => ({ supported: true, domain: "test" }),
+      freeze: async () => { throw new Error("freeze failed"); }, terminate: async () => undefined,
+      proveEmpty: async () => ({ state: "unknown", reason: "audit unavailable" }) };
+    await expect(service(store, worktree, fence).handoff(handoffInput(worktree, "unknown-evidence")))
+      .rejects.toMatchObject({ code: "DELIVERY_QUARANTINED" });
+    expect((await store.get("d-lease"))?.events.at(-1)?.detail?.evidence)
+      .toMatchObject({ proof: { state: "unknown", reason: "audit unavailable" }, fenceError: "freeze failed" });
+  });
+
+  it("replays completed acquire, handoff, and review receipts before disabled or unavailable ambient safety checks", async () => {
+    const capability = vi.fn(() => ({ supported: false as const, reason: "now unavailable" }));
+    const disabled = (store: DeliveryStore, worktree: string) => new DeliveryLeaseService({ store, handoffSafety: "disabled",
+      processFence: { capability, freeze: async () => undefined, terminate: async () => undefined, proveEmpty: async () => ({ state: "proven_empty" }) },
+      canonicalWorktreeFor: () => worktree, readHead: () => "b", inspectWorktree: () => ({ headSha: "b", clean: true }),
+      inspectReviewWorktree: () => cleanReviewInspection, isAncestor: () => true, withWorktreeLock: async (_path, fn) => fn() });
+
+    const acquire = fixture(); await acquire.store.create(acquire.input);
+    const acquireInput = { deliveryId: "d-lease", expectedHeadSha: "b", canonicalWorktree: acquire.worktree, role: "fixer" as const,
+      executionAgent: "fixer", grantedBy: actor, ownsSubset: ["src"], operationId: "receipt-acquire" };
+    const acquired = await service(acquire.store, acquire.worktree).acquire(acquireInput);
+    await expect(disabled(acquire.store, acquire.worktree).acquire(acquireInput)).resolves.toEqual(acquired);
+
+    const handoff = heldFixture(); await handoff.store.create(handoff.input);
+    const handed = await service(handoff.store, handoff.worktree).handoff(handoffInput(handoff.worktree, "receipt-handoff"));
+    await expect(disabled(handoff.store, handoff.worktree).handoff(handoffInput(handoff.worktree, "receipt-handoff"))).resolves.toEqual(handed);
+
+    const review = reviewFixture(); await review.store.create(review.input);
+    const reviewed = await reviewService(review.store, review.worktree).completeReview(completeReviewInput(review.worktree, "ACCEPT", "receipt-review"));
+    await expect(disabled(review.store, review.worktree).completeReview(completeReviewInput(review.worktree, "ACCEPT", "receipt-review"))).resolves.toEqual(reviewed);
+    expect(capability).not.toHaveBeenCalled();
   });
 
   it("unavailable handoff mutates nothing and invokes no fence operation", async () => {
