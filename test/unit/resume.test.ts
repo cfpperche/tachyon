@@ -10,6 +10,8 @@ import {
   forkable,
   managesOwnSession,
   encodeClaudeCwd,
+  encodeGrokCwd,
+  grokTranscriptPath,
   type ResumeRuntime,
 } from "../../src/resume/adapters.js";
 import {
@@ -172,11 +174,20 @@ describe("ResumeAdapter — capture runtimes", () => {
   });
 
   it("capture runtimes have no deterministic transcript path", () => {
-    for (const rt of ["codex", "gemini", "antigravity", "opencode", "qwen", "continue", "grok"] as ResumeRuntime[]) {
+    for (const rt of ["codex", "gemini", "antigravity", "opencode", "qwen", "continue"] as ResumeRuntime[]) {
       // gemini mints but its path is not derivable either
-      if (rt === "claude") continue;
+      if (rt === "claude" || rt === "grok") continue;
       expect(adapterForRuntime(rt)!.transcriptPath).toBeUndefined();
     }
+  });
+
+  it("grok: deterministic chat_history path under GROK_HOME/sessions (t-9874be)", () => {
+    const a = adapterForRuntime("grok")!;
+    expect(a.mintsId).toBe(true);
+    expect(a.transcriptPath!("/ws/.tachyon/bridge-mcp/agent.grok", "/home/goat/tachyon", "c1446c1e-57f6-4efa-95ca-7526a1880287"))
+      .toBe("/ws/.tachyon/bridge-mcp/agent.grok/sessions/%2Fhome%2Fgoat%2Ftachyon/c1446c1e-57f6-4efa-95ca-7526a1880287/chat_history.jsonl");
+    expect(a.transcriptPath!("/ws/.tachyon/harness/g/.grok", "/ws", "uuid-1"))
+      .toBe(grokTranscriptPath("/ws/.tachyon/harness/g/.grok", "/ws", "uuid-1"));
   });
 });
 
@@ -184,6 +195,13 @@ describe("encodeClaudeCwd", () => {
   it("collapses / and . to -", () => {
     expect(encodeClaudeCwd("/home/goat/Demo")).toBe("-home-goat-Demo");
     expect(encodeClaudeCwd("/a/b.c/d")).toBe("-a-b-c-d");
+  });
+});
+
+describe("encodeGrokCwd / grokTranscriptPath (t-9874be)", () => {
+  it("URL-encodes the cwd (slashes become %2F)", () => {
+    expect(encodeGrokCwd("/home/goat/tachyon")).toBe("%2Fhome%2Fgoat%2Ftachyon");
+    expect(encodeGrokCwd("/a/b.c/d")).toBe("%2Fa%2Fb.c%2Fd");
   });
 });
 

@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { ActivityLogManager } from "../../src/webview/ActivityLogManager.js";
+import { ActivityLogManager, sessionIdFromTranscriptPath } from "../../src/webview/ActivityLogManager.js";
 import { agentLogId } from "../../src/activity/logStore.js";
 
 const dirs: string[] = [];
@@ -77,5 +77,16 @@ describe("ActivityLogManager append notification (spec 367)", () => {
     writers.set("hash::agent", { writer: { poll: () => 0 }, loc: undefined, resolvedAt: Date.now() });
     await (manager as unknown as { tick(): Promise<void> }).tick();
     expect(appended).toHaveLength(1);
+  });
+});
+
+describe("sessionIdFromTranscriptPath (t-9874be)", () => {
+  it("uses parent dir for Grok chat_history.jsonl, basename for peers", () => {
+    expect(sessionIdFromTranscriptPath(
+      "/ws/.tachyon/bridge-mcp/a.grok/sessions/%2Fws/c1446c1e-57f6-4efa-95ca-7526a1880287/chat_history.jsonl",
+      "grok",
+    )).toBe("c1446c1e-57f6-4efa-95ca-7526a1880287");
+    expect(sessionIdFromTranscriptPath("/home/me/.claude/projects/-ws/u1.jsonl", "claude")).toBe("u1");
+    expect(sessionIdFromTranscriptPath("/tmp/rollout-codex.jsonl", "codex")).toBe("rollout-codex");
   });
 });

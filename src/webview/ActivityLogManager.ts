@@ -91,7 +91,9 @@ export class ActivityLogManager {
               // transcriptPathOf is shared-cwd-safe: it attributes via the captured uuid or the unique title
               // and returns undefined (a gap) in the genuinely-ambiguous id-less case — never another agent's.
               const loc = await ws.manager.transcriptPathOf(name, { live: true });
-              entry.loc = loc ? { path: loc.path, sessionId: path.basename(loc.path, ".jsonl"), runtime: loc.runtime } : undefined;
+              entry.loc = loc
+                ? { path: loc.path, sessionId: sessionIdFromTranscriptPath(loc.path, loc.runtime), runtime: loc.runtime }
+                : undefined;
             } catch { entry.loc = undefined; } // gap, never guess
           }
           // pin p-4dadd3: a tick snapshots ledger.all() at the top, but the awaits below (transcriptPathOf for
@@ -111,4 +113,17 @@ export class ActivityLogManager {
       this.ticking = false;
     }
   }
+}
+
+/**
+ * Session uuid for ActivityLogWriter. Claude/Codex/OpenCode use `<uuid>.jsonl` basenames;
+ * Grok uses `…/<uuid>/chat_history.jsonl` — basename alone would be the constant `chat_history`
+ * and collapse every session into one writer key (t-9874be).
+ */
+export function sessionIdFromTranscriptPath(transcriptPath: string, runtime?: string): string {
+  const base = path.basename(transcriptPath, ".jsonl");
+  if (base === "chat_history" || runtime === "grok") {
+    return path.basename(path.dirname(transcriptPath));
+  }
+  return base;
 }

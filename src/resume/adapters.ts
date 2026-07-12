@@ -180,6 +180,20 @@ export function encodeClaudeCwd(cwd: string): string {
   return cwd.replace(/[/.]/g, "-");
 }
 
+/**
+ * Grok session dir key under `$GROK_HOME/sessions/<encoded>/…` — measured 2026-07-12 as
+ * `encodeURIComponent(cwd)` (e.g. `/home/goat/tachyon` → `%2Fhome%2Fgoat%2Ftachyon`).
+ * Distinct from Claude's slash/dot → hyphen encoding.
+ */
+export function encodeGrokCwd(cwd: string): string {
+  return encodeURIComponent(cwd);
+}
+
+/** On-disk Grok transcript for (GROK_HOME, cwd, sessionId). */
+export function grokTranscriptPath(configHome: string, cwd: string, id: string): string {
+  return `${configHome}/sessions/${encodeGrokCwd(cwd)}/${id}/chat_history.jsonl`;
+}
+
 const ADAPTERS: ResumeAdapter[] = [
   {
     runtime: "claude",
@@ -228,6 +242,10 @@ const ADAPTERS: ResumeAdapter[] = [
     injectId: (cmd, id) => (managesOwnSession(cmd) ? cmd : append(cmd, "-s", id)),
     resumeCommand: (cmd, id) => (managesOwnSession(cmd) ? cmd : append(cmd, "-r", id)),
     forkCommand: (cmd, sourceId) => append(cmd, "-r", sourceId, "--fork-session"),
+    // t-9874be — transcript is `$GROK_HOME/sessions/<encodeURIComponent(cwd)>/<id>/chat_history.jsonl`
+    // (measured 2026-07-12 on bridge + real homes). `configHome` is the effective GROK_HOME
+    // (bridge-mcp / harness / ~/.grok) from AgentManager.runtimeConfigHome.
+    transcriptPath: (configHome, cwd, id) => grokTranscriptPath(configHome, cwd, id),
     // t-4891dd — Grok supports a native config home override (`GROK_HOME`; default `~/.grok`) and
     // trusted global hooks under that home's `hooks/*.json`. Tachyon points GROK_HOME at the private
     // `<harness>/<agent>/.grok` dir so auth/config/hooks/sessions are isolated per harnessed agent.

@@ -201,4 +201,40 @@ describe("ActivityLogWriter (spec 239 inc 3b)", () => {
     expect(w.poll(loc(sessA, "A"))).toBe(0);
     expect(new ActivityLog(adir, "claude").readTail(10)).toEqual([]);
   });
+
+  it("tails a Grok chat_history.jsonl and emits a session.boundary on uuid rotation (t-9874be)", () => {
+    const root = freshRoot();
+    const adir = path.join(root, "activity");
+    const sessA = path.join(root, "sessA", "chat_history.jsonl");
+    const sessB = path.join(root, "sessB", "chat_history.jsonl");
+    fs.mkdirSync(path.dirname(sessA), { recursive: true });
+    fs.mkdirSync(path.dirname(sessB), { recursive: true });
+    const grokUser = (text: string) =>
+      JSON.stringify({ type: "user", content: [{ type: "text", text: `<user_query>\n${text}\n</user_query>` }] });
+    const grokAsst = (text: string) =>
+      JSON.stringify({ type: "assistant", content: text, model_id: "grok-4.5" });
+    fs.writeFileSync(sessA, `${grokUser("hi")}\n${grokAsst("ola")}\n`);
+    fs.writeFileSync(sessB, `${grokUser("again")}\n`);
+    const grokLoc = (p: string, id: string) => ({ path: p, sessionId: id, runtime: "grok" });
+    const w = new ActivityLogWriter(adir, "grok", clock);
+    expect(w.poll(grokLoc(sessA, "sessA"))).toBe(2);
+    const n = w.poll(grokLoc(sessB, "sessB"));
+    expect(n).toBe(2); // boundary + B user message
+    const types = new ActivityLog(adir, "grok").readTail(20).map((e) => e.type);
+    expect(types).toEqual([
+      "user.message.completed",
+      "assistant.message.completed",
+      "session.boundary",
+      "user.message.completed",
+    ]);
+    fs.appendFileSync(sessB, `${grokAsst("more")}\n`);
+    expect(w.poll(grokLoc(sessB, "sessB"))).toBe(1);
+    // restart rehydrates grok normalizer for the same session id
+    fs.appendFileSync(sessB, `${grokAsst("after restart")}\n`);
+    expect(new ActivityLogWriter(adir, "grok", clock).poll(grokLoc(sessB, "sessB"))).toBe(1);
+    const texts = new ActivityLog(adir, "grok").readTail(20)
+      .filter((e) => e.type === "assistant.message.completed")
+      .map((e) => (e.payload as { text: string }).text);
+    expect(texts).toEqual(["ola", "more", "after restart"]);
+  });
 });

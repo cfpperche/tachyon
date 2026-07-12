@@ -15,6 +15,7 @@ import * as path from "node:path";
 import { ActivityLog, agentLogId } from "./logStore.js";
 import { createClaudeNormalizer } from "./claudeNormalizer.js";
 import { createCodexNormalizer, type ActivityNormalizer } from "./codexNormalizer.js";
+import { createGrokNormalizer } from "./grokNormalizer.js";
 import { OpencodeStorageReader, type OpencodeReaderState } from "./opencodeStorageReader.js";
 import { readForward, readTailWindow } from "./tailReader.js";
 import type { NormalizedEvent } from "./types.js";
@@ -235,6 +236,7 @@ export class ActivityLogWriter {
 function createNormalizer(runtime = "claude", sourcePath?: string): ActivityNormalizer {
   if (runtime === "claude") return createClaudeNormalizer(sourcePath);
   if (runtime === "codex") return createCodexNormalizer(sourcePath);
+  if (runtime === "grok") return createGrokNormalizer(sourcePath);
   return { push: () => [] };
 }
 

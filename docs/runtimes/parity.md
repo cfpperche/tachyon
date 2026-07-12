@@ -1,6 +1,6 @@
 # Runtime capability parity (living document)
 
-**Status:** living · **Owner:** Tachyon maintainers · **Last verified:** 2026-07-09 (t-2b0a08 Grok auth rematerialize)  
+**Status:** living · **Owner:** Tachyon maintainers · **Last verified:** 2026-07-12 (t-9874be Grok Activity)  
 **Seams (code of record):** `src/resume/adapters.ts`, `src/runtime/runtimeProfile.ts`, `src/agents/AgentManager.ts` (`withRuntimeBridge`, `effectiveCmd`), `src/harness/HarnessManager.ts`, `src/activity/*Normalizer.ts`, `src/attention/patterns.ts`, `src/config/loadConfig.ts` (`INSTRUCTION_ARG`)
 
 This document is the **source of truth** for how Tachyon treats AI CLIs as first-class runtimes.  
@@ -146,7 +146,7 @@ Detail dump: [`docs/runtimes/opencode.md`](./opencode.md) (narrative may still s
 | Fork | `-r <id> --fork-session` | `forkCommand` | adapter 2026-07-09 |
 | Harness | `GROK_HOME` + hooks dir | harness + lifecycle hooks + Bridge fold **exist**; auth seed + **rematerialize** (below) | **✓** materialization; auth rematerialize **✓** t-2b0a08 unit |
 | Stop | C-c, C-c | `runtimeProfile.grok` measured | t-bae032 / 2026-07-08 |
-| Activity | `sessions/.../chat_history.jsonl` (+ sqlite) | **no** `grokNormalizer` | **✗** |
+| Activity | `sessions/<encodeURIComponent(cwd)>/<id>/chat_history.jsonl` | `grokNormalizer` + `transcriptPath` + file-tail in `ActivityLogWriter` (sessionId from parent dir) | **✓** 2026-07-12 unit `grokNormalizer.test.ts` + `logWriter` Grok rotation (t-9874be) |
 | Permission inject | `--permission-mode`, `--always-approve` (measured on CLI) | profile **records** modes/flags; **nothing applies them** at spawn (`alwaysApproveFlag` has zero readers) | **✗** |
 | Profile | `label: "Grok"` + isolation + stop | `runtimeProfile.grok` — isolation still **`project-scoped`** (stale note: “private config-home wiring is not declared here yet”) | label ✓; isolation field lag |
 
@@ -187,11 +187,11 @@ These diverge; the summary table alone cannot show them:
 4. **Gaps:** open a **normal** board task when prioritized — never a permanent matrix owner task.  
 5. **Disputes:** code wins; fix the doc in the same change set when possible.
 
-### Open gaps (as of 2026-07-09, post t-2b0a08)
+### Open gaps (as of 2026-07-12, post t-9874be)
 
 | Gap | Focus |
 |-----|--------|
-| Grok Activity | `grokNormalizer` + `GROK_HOME/sessions/...` |
+| ~~Grok Activity~~ | **Closed t-9874be** — `grokNormalizer` + `GROK_HOME/sessions/.../chat_history.jsonl` file-tail |
 | Grok permission inject | consumers for measured profile / `--permission-mode` at spawn |
 | Grok isolation profile | align `runtimeProfile.grok.isolation` with private-home materialization **or** document the worktree gate forever |
 | OpenCode profile completeness | `label` / model aliases if UI needs them; permission inject on harness path |
