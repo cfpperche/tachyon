@@ -807,7 +807,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           const callerName = gitDeliveryCallerName(deps);
           const settings = deps.gitDelivery?.settings?.() ?? resolveGitDeliverySettings(undefined);
 
-        if (delivery.deliveryId) {
+          if (delivery.deliveryId) {
             if (!deps.caller) {
               return fail(new Error("git_delivery_prune refused: linked mutation requires a resolved Bridge caller"));
             }

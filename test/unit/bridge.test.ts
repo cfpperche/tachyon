@@ -17,6 +17,7 @@ import { SessionLedger } from "../../src/resume/SessionLedger.js";
 import { EVIDENCE_SCHEMA_VERSION, isSafeArtifactRef, viewEvidence, summarizeEvidence, type WorktreeEvidence } from "../../src/worktree/evidence.js";
 import { readDoorbellEvents } from "../../src/bridge/doorbell.js";
 import { GitDeliveryStore } from "../../src/git-delivery/store.js";
+import { registerTools } from "../../src/bridge/tools.js";
 import type { WaitForDeliveryLeaseInput, WaitForDeliveryLeaseResult } from "../../src/delivery/leaseService.js";
 import fs from "node:fs";
 import os from "node:os";
@@ -433,6 +434,42 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     } finally {
       await peerClient.close();
       await bridgeWithGitDelivery.dispose();
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("linked delivery mutations refuse without a resolved Bridge caller and never invoke projection", async () => {
+    const root = fs.mkdtempSync(nodePath.join(os.tmpdir(), "tachyon-bridge-missing-caller-"));
+    const store = new GitDeliveryStore(root, { id: () => "gd-222222", now: () => "2026-07-09T00:00:00.000Z" });
+    await store.open({ workspaceId: "ws", deliveryId: "delivery-linked", createdBy: { kind: "human" }, agent: "worker", branchRef: "refs/heads/worker", worktreePath: "/wt/worker", tachyonCreatedBranch: true, baseRef: "main", reason: "test" });
+    const integrate = vi.fn();
+    const prune = vi.fn();
+    class ToolCapture {
+      handlers = new Map<string, (args: Record<string, unknown>) => Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }>>();
+      registerTool(name: string, _schema: unknown, handler: (args: Record<string, unknown>) => Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }>) { this.handlers.set(name, handler); }
+    }
+    const mcp = new ToolCapture();
+    registerTools(mcp as never, {
+      workspaceRoot: root,
+      gitDelivery: {
+        store,
+        workspaceId: "ws",
+        settings: () => ({ profile: "balanced", autoOpen: true, requireNonSelfAccept: false, autoPrune: false, prunePrincipals: [], integratePrincipals: [] }),
+        git: async () => ({ code: 0, stdout: "tip\n", stderr: "" }),
+        liveness: async () => "not_live",
+        projection: { integrate, prune },
+      },
+    } as never);
+    try {
+      const integrated = await mcp.handlers.get("git_delivery_integrate")!({ id: "gd-222222", expectedVersion: 1, expectedHeadSha: "tip123" });
+      const pruned = await mcp.handlers.get("git_delivery_prune")!({ id: "gd-222222", expectedVersion: 1 });
+      expect(integrated.isError).toBe(true);
+      expect(pruned.isError).toBe(true);
+      expect(JSON.stringify(integrated.content)).toContain("resolved Bridge caller");
+      expect(JSON.stringify(pruned.content)).toContain("resolved Bridge caller");
+      expect(integrate).not.toHaveBeenCalled();
+      expect(prune).not.toHaveBeenCalled();
+    } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
   });
