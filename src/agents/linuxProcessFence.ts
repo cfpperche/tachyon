@@ -279,7 +279,7 @@ export function parseAuditHelperStdout(stdout: string, target: string, expectedU
       const pid = Number(matchM[1]);
       const starttime = Number(matchM[2]);
       const fd = matchM[3] === undefined ? undefined : Number(matchM[3]);
-      if (!isSafePositive(pid) || !isSafePositive(starttime) || (fd !== undefined && !isSafePositive(fd))) return null;
+      if (!isSafePositive(pid) || !isSafePositive(starttime) || (fd !== undefined && !isSafeNonnegative(fd))) return null;
       matchPids.push(pid);
       continue;
     }
@@ -287,8 +287,14 @@ export function parseAuditHelperStdout(stdout: string, target: string, expectedU
     const unknownM = /^unknown reason=[A-Za-z0-9_-]+(?: pid=(\d+))?(?: kind=(cwd|root|fd))?(?: fd=(\d+))?$/.exec(line);
     if (unknownM) {
       const pid = unknownM[1] === undefined ? undefined : Number(unknownM[1]);
+      const kind = unknownM[2];
       const fd = unknownM[3] === undefined ? undefined : Number(unknownM[3]);
-      if ((pid !== undefined && !isSafePositive(pid)) || (fd !== undefined && !isSafePositive(fd))) return null;
+      if ((pid !== undefined && !isSafePositive(pid)) || (fd !== undefined && !isSafeNonnegative(fd))) return null;
+      // The helper only reports descriptors for fd matches.  cwd/root matches
+      // carry their PID and never an fd; a bare reason may omit all location data.
+      if ((fd !== undefined && kind !== "fd")
+        || (kind === "fd" && (pid === undefined || fd === undefined))
+        || ((kind === "cwd" || kind === "root") && (pid === undefined || fd !== undefined))) return null;
       unknownLines++;
       continue;
     }
@@ -439,9 +445,11 @@ export class LinuxSystemdProcessFence implements LinuxProcessFencePort {
 
     const snap = await this.pollUntil(async () => {
       const s = await this.systemd.show(unitName);
-      if (s.loadState === "not-found") return null;
-      if (!this.isActiveDeterministicSnapshot(unitName, s)) throw new ProcessFenceError("PROCESS_FENCE_IDENTITY", "unit identity is not exact active receipt");
-      if (!s.invocationId.trim() || !s.controlGroup.trim()) return null;
+      if (s.loadState === "not-found" || s.activeState === "activating") return null;
+      if (s.id !== unitName || s.activeState === "inactive" || s.activeState === "failed") {
+        throw new ProcessFenceError("PROCESS_FENCE_IDENTITY", "unit identity is not exact active receipt");
+      }
+      if (s.activeState !== "active" || !s.invocationId.trim() || !s.controlGroup.trim()) return null;
       return s;
     }, "unit did not become active with InvocationID/ControlGroup");
 
@@ -496,8 +504,9 @@ export class LinuxSystemdProcessFence implements LinuxProcessFencePort {
         throw new ProcessFenceError("PROCESS_FENCE_IDENTITY", "unit drift during terminate");
       }
       const events = await this.cgroup.readEvents(cg);
-      if (events !== "missing" && events.populated === 0) {
+      if (events === "missing" || events.populated === 0) {
         if (live.activeState === "inactive" || live.activeState === "failed") return this.stableTerminalEmpty(identity, live, "terminal");
+        if (events === "missing") return null;
         const second = await this.systemd.show(unitName);
         if (!this.sameSnapshot(live, second) || !this.isExactSnapshotFor(identity, second, ["active"])) {
           throw new ProcessFenceError("PROCESS_FENCE_IDENTITY", "unit changed before stop");
@@ -843,6 +852,10 @@ function isSafeLinuxUid(value: number): boolean {
 
 function isSafePositive(value: number): boolean {
   return Number.isSafeInteger(value) && value > 0;
+}
+
+function isSafeNonnegative(value: number): boolean {
+  return Number.isSafeInteger(value) && value >= 0;
 }
 
 function requireNonBlank(value: string, name: string): string {

@@ -877,6 +877,151 @@ describe("R3 strict helper grammar and configuration", () => {
   });
 });
 
+describe("R4 terminal, startup, and helper forcing matrix", () => {
+  it("accepts a stable exact terminal unit after its cgroup is removed, but never stops an active missing cgroup", async () => {
+    const h = makeHarness();
+    const { fence, prepared } = await launchAndConfirm(h, "nonce-terminal-missing", "cmd", [1]);
+    const unit = h.units.get(prepared.unitName)! as UnitState & { cgGone?: boolean };
+    h.deps.cgroup.writeKill = async () => {
+      unit.killWrites++;
+      unit.procs = []; unit.events = { populated: 0, frozen: 0 }; unit.cgGone = true;
+      unit.snap = { ...unit.snap, activeState: "inactive", subState: "dead" };
+    };
+    await expect(fence.terminate("nonce-terminal-missing")).resolves.toBeUndefined();
+
+    const h2 = makeHarness();
+    const launched = await launchAndConfirm(h2, "nonce-active-missing", "cmd", [1]);
+    const active = h2.units.get(launched.prepared.unitName)! as UnitState & { cgGone?: boolean };
+    h2.deps.cgroup.writeKill = async () => {
+      active.killWrites++; active.procs = []; active.events = { populated: 0, frozen: 0 }; active.cgGone = true;
+    };
+    h2.deps.cgroup.readEvents = async () => "missing";
+    await expect(launched.fence.terminate("nonce-active-missing")).rejects.toThrow(/PROCESS_FENCE_TIMEOUT/);
+    expect(active.stopCalls).toBe(0);
+  });
+
+  it("waits through normal startup blanks and activating state, but refuses a wrong id or terminal state", async () => {
+    const h = makeHarness();
+    const fence = await h.createFence({ supported: true, domain: LINUX_PROCESS_FENCE_DOMAIN });
+    const prepared = await fence.prepareLaunch("nonce-startup", "cmd");
+    const u = h.putUnit(prepared.unitName, { invocationId: "", controlGroup: "", procs: [1], activeState: "activating" });
+    let shows = 0;
+    const show = h.deps.systemd.show.bind(h.deps.systemd);
+    h.deps.systemd.show = async (name) => {
+      shows++;
+      if (shows === 2) u.snap = { ...u.snap, activeState: "active", invocationId: "inv-ready", controlGroup: `/cg/${prepared.unitName}` };
+      return show(name);
+    };
+    await fence.confirmLaunch("nonce-startup");
+    expect((await h.store.load(nonceDigestOf("nonce-startup")))?.phase).toBe("confirmed");
+
+    for (const change of ["wrong-id", "terminal"] as const) {
+      const x = makeHarness(); const f = await x.createFence({ supported: true, domain: LINUX_PROCESS_FENCE_DOMAIN });
+      const p = await f.prepareLaunch(`nonce-${change}`, "cmd");
+      const bad = x.putUnit(p.unitName, { invocationId: "inv", controlGroup: `/cg/${p.unitName}`, procs: [1], activeState: change === "terminal" ? "failed" : "active" });
+      if (change === "wrong-id") bad.snap.id = "foreign.scope";
+      await expect(f.confirmLaunch(`nonce-${change}`)).rejects.toThrow(/identity/);
+    }
+  });
+
+  it("forces a concurrent prepare create race: exactly one wrapper and one durable receipt win", async () => {
+    const h = makeHarness(); const fence = await h.createFence({ supported: true, domain: LINUX_PROCESS_FENCE_DOMAIN });
+    const original = h.store.create.bind(h.store);
+    let arrived = 0; let release!: () => void;
+    const barrier = new Promise<void>((resolve) => { release = resolve; });
+    h.store.create = async (identity) => {
+      arrived++; if (arrived === 2) release(); await barrier;
+      return original(identity);
+    };
+    const outcomes = await Promise.allSettled([fence.prepareLaunch("nonce-race", "cmd"), fence.prepareLaunch("nonce-race", "cmd")]);
+    expect(outcomes.filter((x) => x.status === "fulfilled")).toHaveLength(1);
+    expect(outcomes.filter((x) => x.status === "rejected")).toHaveLength(1);
+    expect(h.store.storeOrder).toHaveLength(1);
+  });
+
+  it("forces repair create loss and leaves no receipt", async () => {
+    const h = makeHarness(); const fence = await h.createFence({ supported: true, domain: LINUX_PROCESS_FENCE_DOMAIN });
+    const nonce = "nonce-repair-create-loss"; const unit = unitNameForDigest(nonceDigestOf(nonce));
+    h.putUnit(unit, { invocationId: "inv", controlGroup: `/cg/${unit}`, procs: [1] });
+    h.store.create = async () => false;
+    await expect(fence.confirmLaunch(nonce)).rejects.toThrow(/repair failed/);
+    expect(await h.store.load(nonceDigestOf(nonce))).toBeUndefined();
+  });
+
+  it("fails closed for table-driven corrupt receipt fields and helper capability pins", async () => {
+    for (const mutate of [
+      (r: FenceIdentityV1) => ({ ...r, schemaVersion: 2 as 1 }),
+      (r: FenceIdentityV1) => ({ ...r, nonceDigest: "b".repeat(64) }),
+      (r: FenceIdentityV1) => ({ ...r, unitName: "foreign.scope" }),
+      (r: FenceIdentityV1) => ({ ...r, phase: "confirmed" as const }),
+      (r: FenceIdentityV1) => ({ ...r, helperPath: "/wrong/helper" }),
+      (r: FenceIdentityV1) => ({ ...r, helperSha256: "b".repeat(64) }),
+    ]) {
+      const h = makeHarness(); const f = await h.createFence({ supported: true, domain: LINUX_PROCESS_FENCE_DOMAIN });
+      await f.prepareLaunch("nonce-corrupt-table", "cmd"); const d = nonceDigestOf("nonce-corrupt-table");
+      h.store.map.set(d, mutate((await h.store.load(d))!));
+      await expect(f.confirmLaunch("nonce-corrupt-table")).rejects.toThrow(/invalid|missing/);
+    }
+    for (const helper of [
+      goodHelperInspection({ path: "/wrong/helper" }), goodHelperInspection({ sha256: "b".repeat(64) }),
+      goodHelperInspection({ mode: 0o100775 }), goodHelperInspection({ mode: 0o100757 }),
+      goodHelperInspection({ uid: 0 }), goodHelperInspection({ hasCapSysPtrace: false }), goodHelperInspection({ mountNosuid: true }),
+    ]) {
+      const h = makeHarness({ helper }); h.deps.expectedHelperPath = "/opt/tachyon/process-audit-helper"; h.deps.expectedHelperSha256 = "a".repeat(64); h.deps.expectedHelperUid = 1000;
+      expect((await LinuxSystemdProcessFence.create(h.deps)).capability().supported).toBe(false);
+    }
+  });
+
+  it("never stops after same-name identity drift between empty observation and stop", async () => {
+    const h = makeHarness(); const { fence, prepared } = await launchAndConfirm(h, "nonce-stop-swap", "cmd", [1]);
+    const u = h.units.get(prepared.unitName)!;
+    h.deps.cgroup.writeKill = async () => { u.killWrites++; u.procs = []; u.events = { populated: 0, frozen: 0 }; };
+    const show = h.deps.systemd.show.bind(h.deps.systemd); let calls = 0;
+    h.deps.systemd.show = async (name) => { calls++; if (calls === 3) u.snap = { ...u.snap, invocationId: "foreign" }; return show(name); };
+    await expect(fence.terminate("nonce-stop-swap")).rejects.toThrow(/changed before stop/);
+    expect(u.stopCalls).toBe(0);
+  });
+
+  it("never proves empty when containment observations appear, disappear, or drift", async () => {
+    for (const change of ["appear", "disappear", "tuple"] as const) {
+      const h = makeHarness(); const { fence, prepared } = await launchAndConfirm(h, `nonce-containment-${change}`, "cmd", [1]);
+      const u = h.units.get(prepared.unitName)!;
+      u.procs = []; u.events = { populated: 0, frozen: 0 }; u.snap = { ...u.snap, activeState: "inactive" };
+      const show = h.deps.systemd.show.bind(h.deps.systemd); let calls = 0;
+      h.deps.systemd.show = async (name) => { calls++; if (calls === 2) {
+        u.snap = change === "appear" ? { ...u.snap, activeState: "active" } : change === "disappear" ? { ...u.snap, loadState: "not-found" } : { ...u.snap, invocationId: "foreign" };
+      } return show(name); };
+      expect((await fence.proveEmpty(`nonce-containment-${change}`, "/tmp/wt")).state).not.toBe("proven_empty");
+    }
+  });
+
+  it("accepts fd zero only in valid fd forms and rejects parser target, uid, count, and truncation violations", () => {
+    const base = survivorsHelperStdout([7]).replace("fd=3", "fd=0");
+    expect(parseAuditHelperStdout(base, "/tmp/wt", 1000)).not.toBeNull();
+    const unknownFdZero = "state=unknown\nself_ruid=1000\ntarget=/tmp/wt\ncap_sys_ptrace=yes\nmatch_count=0\nunknown_count=1\nunknown reason=x pid=7 kind=fd fd=0\n";
+    expect(parseAuditHelperStdout(unknownFdZero, "/tmp/wt", 1000)).not.toBeNull();
+    for (const bad of [
+      base.replace("fd=0", "fd=-1"), base.replace("fd=0", "fd=9007199254740992"), base.replace("kind=fd fd=0", "kind=cwd fd=0"),
+      unknownFdZero.replace("kind=fd fd=0", "fd=0"), base.replace("target=/tmp/wt", "target=/wrong"), base.replace("self_ruid=1000", "self_ruid=1001"),
+      base.replace("match_count=1", "match_count=2"), base + "match pid=7 starttime=123 kind=fd fd=0\n", base + "match_truncated=yes omitted=0\n",
+    ]) expect(parseAuditHelperStdout(bad, "/tmp/wt", 1000)).toBeNull();
+  });
+
+  it("rejects helper stderr, duplicate output, and exit/state inconsistencies", async () => {
+    for (const [i, run] of [
+      { exitCode: 0, stdout: emptyHelperStdout(), stderr: "warning" },
+      { exitCode: 0, stdout: emptyHelperStdout() + "state=empty\n", stderr: "" },
+      { exitCode: 0, stdout: survivorsHelperStdout([7]), stderr: "" },
+    ].entries()) {
+      const h = makeHarness(); h.setHelperRun(async () => ({ timedOut: false, ...run }));
+      const nonce = `nonce-helper-${i}`;
+      const { fence } = await launchAndConfirm(h, nonce, "cmd", [1]);
+      await fence.terminate(nonce);
+      expect((await fence.proveEmpty(nonce, "/tmp/wt")).state).toBe("unknown");
+    }
+  });
+});
+
 // ── Canonical adversarial story ────────────────────────────────────────────
 
 describe("detached Delivery writer vs handoff fence", () => {
