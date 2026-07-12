@@ -1,0 +1,59 @@
+/*
+ * Light+ stand-in for the webview preview harness (spec 374 visual QA matrix).
+ * Same role as theme-dark.css — NOT design truth; maps `--vscode-*` so components render under a light theme.
+ */
+:root {
+  --vscode-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --vscode-font-size: 13px;
+  --vscode-editor-font-family: "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+
+  --vscode-foreground: #3b3b3b;
+  --vscode-descriptionForeground: #6b6b6b;
+  --vscode-disabledForeground: #8b8b8b;
+  --vscode-errorForeground: #a1260d;
+  --vscode-focusBorder: #0090f1;
+  --vscode-widget-border: #e5e5e5;
+
+  --vscode-editor-background: #ffffff;
+  --vscode-editor-foreground: #3b3b3b;
+  --vscode-sideBar-background: #f3f3f3;
+  --vscode-editorWidget-background: #f3f3f3;
+  --vscode-editorWidget-border: #c8c8c8;
+
+  --vscode-button-background: #0078d4;
+  --vscode-button-foreground: #ffffff;
+  --vscode-button-hoverBackground: #026ec1;
+  --vscode-toolbar-hoverBackground: rgba(184, 184, 184, 0.31);
+
+  --vscode-input-background: #ffffff;
+  --vscode-input-foreground: #3b3b3b;
+  --vscode-input-border: #cecece;
+  --vscode-input-placeholderForeground: #767676;
+
+  --vscode-dropdown-background: #ffffff;
+  --vscode-dropdown-foreground: #3b3b3b;
+  --vscode-quickInput-background: #f3f3f3;
+
+  --vscode-menu-background: #ffffff;
+  --vscode-menu-border: #c8c8c8;
+  --vscode-menu-foreground: #3b3b3b;
+  --vscode-menu-selectionBackground: #0060c0;
+  --vscode-menu-selectionForeground: #ffffff;
+
+  --vscode-list-hoverBackground: #e8e8e8;
+  --vscode-list-inactiveSelectionBackground: #e4e6f1;
+  --vscode-list-activeSelectionBackground: #0060c0;
+  --vscode-list-activeSelectionForeground: #ffffff;
+  --vscode-list-errorForeground: #a1260d;
+  --vscode-list-warningForeground: #bf8803;
+
+  --vscode-textLink-foreground: #006ab1;
+  --vscode-charts-blue: #1a85ff;
+  --vscode-charts-green: #388a34;
+  --vscode-charts-yellow: #bf8803;
+  --vscode-charts-red: #e51400;
+  --vscode-terminal-ansiGreen: #16825d;
+  --vscode-terminal-ansiRed: #cd3131;
+  --vscode-terminal-ansiYellow: #949800;
+  --vscode-testing-iconPassed: #388a34;
+}

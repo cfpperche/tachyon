@@ -2,7 +2,12 @@
 
 _Created 2026-07-12 from Mission Control task `t-3febb9`._
 
-**Status:** in-progress
+**Status:** shipped
+**Closure:** 2026-07-12 — Activity Mermaid previews gain first-party read-only zoom/pan chrome (`mermaidViewport` +
+shared `mermaid-block.css`) without mutating source or weakening `securityLevel: "strict"`. Headless verify green
+(57 related tests). Dogfood + Visual QA on preview harness fixture `activity/mermaid-nav` (light/dark × narrow/wide +
+zoom/fit/Source) under `.tachyon/evidence/374-mermaid-activity-readonly-nav/`. Harness gains mermaid bootstrap globals
+and synthetic fixture so the surface is re-dogfoodable without a live agent session.
 
 ## Intent
 
@@ -50,10 +55,11 @@ This also applies wherever `MarkdownView` is reused (Handoff body, Task Detail b
   - **When** it is rendered under existing `securityLevel: "strict"` and Activity CSP
   - **Then** navigation chrome is first-party only; diagram path unchanged for security
 
-- [ ] **Scenario: visual QA across theme and width**
+- [x] **Scenario: visual QA across theme and width**
   - **Given** light and dark code themes and narrow vs wide Activity viewports
   - **When** a representative diagram is navigated
-  - **Then** controls remain readable (pending human / agent visual pass in real VS Code)
+  - **Then** controls remain readable
+  - _Evidence: `.tachyon/evidence/374-mermaid-activity-readonly-nav/matrix-*.png` + interaction shots; Verdict PASS_
 
 - [x] Zoom controls include accessible buttons (not wheel-only).
 - [x] A current scale indicator is visible while the diagram view is active.

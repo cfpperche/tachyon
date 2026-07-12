@@ -44,11 +44,31 @@ function run(): void {
 
   // link the real panel's stylesheet set, in order, then frame the surface.
   for (const href of route.cssLinks) addStylesheet(href);
-  frameTo(route.frame);
+  // optional width override for responsive visual QA (?width=360).
+  const widthParam = params.get("width");
+  const frameW = widthParam && Number(widthParam) > 0 ? Number(widthParam) : route.frame.w;
+  frameTo({ w: frameW, h: route.frame.h });
+  // optional light theme stand-in (?theme=light) — default remains Dark+ harness tokens.
+  const theme = params.get("theme") === "light" ? "light" : "dark";
+  if (theme === "light") {
+    document.body.classList.add("vscode-light");
+    document.body.classList.remove("vscode-dark");
+    const darkLink = document.querySelector('link[href*="theme-dark.css"]') as HTMLLinkElement | null;
+    if (darkLink) darkLink.href = "/scripts/webview-preview/theme-light.css";
+  } else {
+    document.body.classList.add("vscode-dark");
+  }
   // spec 281 — a DOM marker so the visual-qa skill can verify it actually rendered the resolved view+fixture
   // (catches a stale-but-valid catalog pointing at the wrong surface).
   document.body.dataset.previewView = view;
   document.body.dataset.previewFixture = fixtureName;
+
+  // Seed on-demand asset URLs the real ActivityPanel bootstrap would inject (spec 238 / 374).
+  // Without these, ```mermaid / math fences fail-closed in the harness.
+  (window as Window & { __mermaidSrc?: string; __katexSrc?: string; __katexCssUri?: string }).__mermaidSrc =
+    "/dist/webview/mermaid.js";
+  (window as Window & { __katexSrc?: string }).__katexSrc = "/dist/webview/katex.js";
+  (window as Window & { __katexCssUri?: string }).__katexCssUri = "/dist/webview/katex.min.css";
 
   // deterministic injection: wait for the view's ready handshake, inject the fixture exactly once.
   let injected = false;

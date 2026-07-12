@@ -50,10 +50,54 @@ This is width-fit only. It **fights** transform zoom (must leave the stage path)
 
 ## Deviations
 
-- None material from plan. Visual QA / human dogfood still open (needs real VS Code webview).
+- None material from plan.
+- Closure dogfood used the **preview harness** (real Activity bundle + synthetic `mermaid-nav` fixture) rather than a
+  live Extension Development Host session. Same `MermaidBlock` / CSS / mermaid bootstrap path as the host panel;
+  `__mermaidSrc` is now seeded by `scripts/webview-preview/preview.ts` so fences render outside VS Code.
 
 ## Implementation location
 
-- Branch: `tachyon/mermaid-activity-readonly-nav`
-- Worktree: `/home/goat/.cache/tachyon/worktrees/b349073a/mermaid-activity-readonly-nav`
+- Landed on main as `c5f9aee0` (`feat(t-3febb9): read-only zoom/pan nav for Activity Mermaid previews`).
+- Closure follow-up: harness fixture `mermaid-nav`, `theme-light.css`, preview `?theme=` / `?width=` helpers.
 
+## Verification log
+
+### 2026-07-12 — verify (declared suite)
+
+```
+npx vitest run test/unit/mermaidViewport.test.ts test/unit/markdownEngine.test.ts \
+  test/unit/markdownHardening.test.ts test/unit/webviewPreviewRoutes.test.ts \
+  test/unit/webviewShellParity.test.ts test/unit/webviewPreviewActivityFixture.test.ts
+```
+
+Result: **pass** — 6 files, 57 tests.
+
+### 2026-07-12T18:20:31Z — pass (1/1) — source: tasks.md
+- `npx vitest run test/unit/mermaidViewport.test.ts test/unit/markdownEngine.test.ts test/unit/markdownHardening.test.ts test/unit/webviewPreviewRoutes.test.ts test/unit/webviewShellParity.test.ts` — pass
+
+## Dogfood log
+
+### 2026-07-12 — headless dogfood
+
+```
+npx vitest run test/unit/mermaidViewport.test.ts
+```
+
+Result: **pass** — 12 pure-math tests (zoom step, fit-width cap, pan bounds, wheel policy inputs).
+
+### 2026-07-12 — harness dogfood (Activity mermaid-nav)
+
+- Server: `PREVIEW_PORT=5199 npm run preview:webview`
+- Route: `?view=activity&fixture=mermaid-nav&width=820|360[&theme=light]`
+- Observed: large diagram scale **25%** (fit-to-width), small **100%** (wide) / **79%** (narrow 360px)
+- Zoom in buttons: **25% → 29%**; Fit restores fit framing; Source shows original `flowchart TB` fence text
+- Evidence dir: `.tachyon/evidence/374-mermaid-activity-readonly-nav/`
+
+### 2026-07-12T18:20:32Z — pass (1/1) — source: tasks.md — commit: e176d9a4900793c43ff1dbfb836d063943f717cc
+- `npx vitest run test/unit/mermaidViewport.test.ts` — pass
+
+## Visual QA
+
+- Matrix: dark/light × wide(820)/narrow(360) — controls + scale readable; no chrome clipping
+- Interaction: zoomed, fit, source, 100% reset captured
+- Verdict: **PASS**

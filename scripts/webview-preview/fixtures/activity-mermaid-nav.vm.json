@@ -1,0 +1,41 @@
+{
+  "runtime": "claude",
+  "runtimeVersion": "2.1.183",
+  "sourcePath": "/repo/.sess/mermaid-nav.jsonl",
+  "tier": "structured",
+  "summary": {
+    "messages": 2,
+    "toolsRunning": 0,
+    "toolsFailed": 0,
+    "filesChanged": [],
+    "filesReferenced": [],
+    "tokens": {
+      "input": 100,
+      "output": 200
+    },
+    "lastActivity": "2026-07-12T00:00:00Z"
+  },
+  "items": [
+    {
+      "sequence": 0,
+      "kind": "message",
+      "role": "user",
+      "title": "Show the delivery architecture as a mermaid diagram.",
+      "timestamp": "2026-07-12T00:00:00Z"
+    },
+    {
+      "sequence": 1,
+      "kind": "message",
+      "role": "agent",
+      "title": "Architecture overview (large diagram for nav dogfood):\n\n```mermaid\nflowchart TB\n  subgraph Orchestration\n    C[Coordinator]\n    D[Delivery lease]\n    V[verify_task]\n  end\n  subgraph Occupants\n    I[Implementer]\n    R[Reviewer]\n    F[Fixer]\n  end\n  subgraph Git\n    B[branch]\n    W[worktree]\n    H[HEAD pin]\n  end\n  C -->|create| D\n  D --> I\n  I -->|release clean| V\n  V -->|pass| R\n  R -->|FINDINGS| F\n  F -->|fix| V\n  V -->|ACCEPT| H\n  D --- B\n  D --- W\n  I -.->|exclusive lease| D\n  R -.->|exclusive lease| D\n  F -.->|exclusive lease| D\n  subgraph Parallel\n    D2[Delivery B]\n    I2[Other implementer]\n  end\n  C -->|independent| D2\n  D2 --> I2\n```\n\nZoom, pan, Fit, and 100% should navigate without stealing Activity scroll.\n",
+      "timestamp": "2026-07-12T00:00:01Z"
+    },
+    {
+      "sequence": 2,
+      "kind": "message",
+      "role": "agent",
+      "title": "Small diagram:\n\n```mermaid\nflowchart LR\n  A[Agent] --> B[Activity]\n```\n",
+      "timestamp": "2026-07-12T00:00:02Z"
+    }
+  ]
+}
