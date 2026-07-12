@@ -16,7 +16,7 @@ export interface DeliveryContract {
   stubPath?: string;
 }
 
-export type DeliveryLeaseState = "free" | "pending" | "held" | "draining" | "verifying" | "quarantined";
+export type DeliveryLeaseState = "free" | "pending" | "held" | "draining" | "verifying" | "quarantined" | "abandoned";
 
 export interface DeliveryProcessIdentity {
   pid: number;

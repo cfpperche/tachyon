@@ -1,5 +1,5 @@
 import path from "node:path";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { isDeepStrictEqual } from "node:util";
 import { isOwnsSubset } from "../agents/reuseWorktree.js";
@@ -28,7 +28,7 @@ export interface WaitForDeliveryLeaseInput {
 
 export interface WaitForDeliveryLeaseResult {
   deliveryId: string;
-  outcome: "released" | "quarantined" | "disappeared" | "changed" | "timeout";
+  outcome: "released" | "quarantined" | "abandoned" | "disappeared" | "changed" | "timeout";
   waitedMs: number;
   version?: number;
   state?: DeliveryLeaseState;
@@ -107,6 +107,7 @@ export async function waitForDeliveryLease(
       };
       last = { version: delivery.version, state: delivery.lease.state };
       if (delivery.lease.state === "quarantined") return result("quarantined");
+      if (delivery.lease.state === "abandoned") return result("abandoned");
       if (delivery.lease.state === "free") return result("released");
       if (baseline !== undefined && baseline !== delivery.version) return result("changed");
       baseline ??= delivery.version;
@@ -215,6 +216,34 @@ export interface DeliveryReconcileHolderInput {
   operationId: string;
 }
 
+export interface DeliveryRecoveryInventory {
+  headSha: string;
+  dirtyPaths: Array<{ path: string; status: string }>;
+  uniqueCommits: string[];
+}
+
+export interface DeliveryRecoveryInspection { inventory: DeliveryRecoveryInventory; }
+
+export interface DeliveryRecoveryApproval {
+  decision: "approved";
+  requester: string;
+  actionDigest: string;
+  payloadHash: string;
+  resolvedAt: string;
+  resolvedBy?: string;
+}
+
+export interface DeliverySalvageQuarantineInput {
+  deliveryId: string; canonicalWorktree: string; actor: DeliveryActor; operationId: string;
+  expectedHeadSha: string; expectedInventory: DeliveryRecoveryInventory;
+  executionAgent: string; principal?: string; ownsSubset: string[];
+}
+
+export interface DeliveryAbandonQuarantineInput {
+  deliveryId: string; canonicalWorktree: string; actor: DeliveryActor; operationId: string;
+  expectedHeadSha: string; expectedInventory: DeliveryRecoveryInventory; approvalId: string;
+}
+
 export type DeliveryReconcileHolderResult =
   | { outcome: "alive"; delivery: Delivery }
   | { outcome: "interrupted"; delivery: Delivery };
@@ -226,6 +255,9 @@ export interface DeliveryLeaseServiceDeps {
   canonicalWorktreeFor(delivery: Delivery): string | Promise<string>;
   readHead(canonicalWorktree: string): string | Promise<string>;
   inspectWorktree(canonicalWorktree: string): DeliveryWorktreeInspection | Promise<DeliveryWorktreeInspection>;
+  inspectRecoveryWorktree?(canonicalWorktree: string, baseSha: string): DeliveryRecoveryInspection | Promise<DeliveryRecoveryInspection>;
+  recoveryPrincipals?: string[];
+  resolveRecoveryApproval?(approvalId: string, actor: DeliveryActor, actionDigest: string): DeliveryRecoveryApproval | Promise<DeliveryRecoveryApproval>;
   inspectReviewWorktree?(canonicalWorktree: string, taskRef: string): DeliveryReviewInspection | Promise<DeliveryReviewInspection>;
   isAncestor(older: string, newer: string, canonicalWorktree: string): boolean | Promise<boolean>;
   withWorktreeLock<T>(canonicalWorktree: string, fn: () => Promise<T>): Promise<T>;
@@ -357,6 +389,73 @@ export class DeliveryLeaseService {
       terminalFailure = error;
     }
     return this.quarantineReconcileAndThrow(input, intent, snapshot, terminalFailure);
+  }
+
+  async salvageQuarantine(input: DeliverySalvageQuarantineInput): Promise<DeliveryLeaseReservation> {
+    const ownsSubset = normalizeOwns(input.ownsSubset);
+    const canonicalWorktree = path.resolve(input.canonicalWorktree);
+    const intent = { ...structuredClone(input), canonicalWorktree, ownsSubset, expectedInventory: normalizeRecoveryInventory(input.expectedInventory) };
+    const replay = await this.replayRecovery(input.operationId, input.deliveryId, intent, "quarantine_salvaged", "pending");
+    if (replay) return { delivery: replay, reservationNonce: replay.lease.holder!.reservationNonce! };
+    const snapshot = await this.recoverySnapshot(input.deliveryId, canonicalWorktree, input.actor);
+    await this.proveRecoveryEmpty(snapshot.holder, canonicalWorktree);
+    return this.withDeliveryLock(input.deliveryId, async () => this.deps.withWorktreeLock(canonicalWorktree, async () => {
+      const current = await this.recoveryCurrent(input.deliveryId, canonicalWorktree, input.actor, snapshot);
+      if (!isOwnsSubset(ownsSubset, current.contract.owns)) throw new DeliveryLeaseError("DELIVERY_OWNS_WIDENING", false, "recovery authority exceeds the immutable contract");
+      const first = await this.recoveryInventory(current, canonicalWorktree);
+      const second = await this.recoveryInventory(current, canonicalWorktree);
+      if (!isDeepStrictEqual(first, second) || !isDeepStrictEqual(first, intent.expectedInventory) || first.headSha !== input.expectedHeadSha) {
+        throw new DeliveryLeaseError("DELIVERY_QUARANTINED", false, "recovery loss inventory changed", { expected: intent.expectedInventory, observed: second });
+      }
+      const reservationNonce = this.deps.nonce?.() ?? randomBytes(16).toString("hex");
+      const segmentId = this.deps.segmentId?.() ?? `seg-${randomBytes(8).toString("hex")}`;
+      const delivery = await this.deps.store.update(current.id, current.version, (record) => {
+        this.assertRecoverySnapshot(record, snapshot);
+        const tail = record.segments.at(-1)!;
+        tail.releasedAt = this.now(); tail.releasedHeadSha = first.headSha; tail.outcome = "interrupted";
+        record.segments.push({ id: segmentId, index: record.segments.length, role: "recovery", executionAgent: input.executionAgent,
+          ...(input.principal ? { principal: input.principal } : {}), grantedBy: structuredClone(input.actor), ownsSubset,
+          grantedHeadSha: first.headSha, grantedAt: this.now() });
+        record.lease = { state: "pending", holder: { segmentId, executionAgent: input.executionAgent,
+          ...(input.principal ? { principal: input.principal } : {}), reservationNonce }, expectedHeadSha: first.headSha, changedAt: this.now() };
+        record.events.push({ id: this.eventId(), at: this.now(), type: "quarantine_salvaged", by: structuredClone(input.actor),
+          detail: { operationId: input.operationId, intent, priorReason: snapshot.reason, holder: snapshot.holder, tail: snapshot.tail,
+            inventory: first, ownsSubset, reservationNonce, segmentId } });
+        return record;
+      }, { operationId: input.operationId, intent });
+      return { delivery, reservationNonce };
+    }));
+  }
+
+  async abandonQuarantine(input: DeliveryAbandonQuarantineInput): Promise<Delivery> {
+    const canonicalWorktree = path.resolve(input.canonicalWorktree);
+    const expectedInventory = normalizeRecoveryInventory(input.expectedInventory);
+    const digest = recoveryActionDigest(input.deliveryId, input.expectedHeadSha, expectedInventory, { action: "abandon", operationId: input.operationId, actor: input.actor });
+    const intent = { ...structuredClone(input), canonicalWorktree, expectedInventory, actionDigest: digest };
+    const replay = await this.replayRecovery(input.operationId, input.deliveryId, intent, "quarantine_abandoned", "abandoned");
+    if (replay) return replay;
+    const snapshot = await this.recoverySnapshot(input.deliveryId, canonicalWorktree, input.actor);
+    const approval = await this.recoveryApproval(input.approvalId, input.actor, digest);
+    await this.proveRecoveryEmpty(snapshot.holder, canonicalWorktree);
+    return this.withDeliveryLock(input.deliveryId, async () => this.deps.withWorktreeLock(canonicalWorktree, async () => {
+      const current = await this.recoveryCurrent(input.deliveryId, canonicalWorktree, input.actor, snapshot);
+      const first = await this.recoveryInventory(current, canonicalWorktree);
+      const second = await this.recoveryInventory(current, canonicalWorktree);
+      if (!isDeepStrictEqual(first, second) || !isDeepStrictEqual(first, expectedInventory) || first.headSha !== input.expectedHeadSha) {
+        throw new DeliveryLeaseError("DELIVERY_QUARANTINED", false, "recovery loss inventory changed", { expected: expectedInventory, observed: second });
+      }
+      return this.deps.store.update(current.id, current.version, (record) => {
+        this.assertRecoverySnapshot(record, snapshot);
+        const tail = record.segments.at(-1)!;
+        tail.releasedAt = this.now(); tail.releasedHeadSha = first.headSha; tail.outcome = "rejected";
+        record.lease = { state: "abandoned", reason: snapshot.reason, changedAt: this.now() };
+        record.events.push({ id: this.eventId(), at: this.now(), type: "quarantine_abandoned", by: structuredClone(input.actor),
+          detail: { operationId: input.operationId, intent, priorReason: snapshot.reason, holder: snapshot.holder, tail: snapshot.tail,
+            inventory: first, approvalId: input.approvalId, actionDigest: approval.actionDigest, payloadHash: approval.payloadHash,
+            resolvedAt: approval.resolvedAt, resolvedBy: approval.resolvedBy } });
+        return record;
+      }, { operationId: input.operationId, intent });
+    }));
   }
 
   async acquire(input: DeliveryLeaseAcquireInput): Promise<DeliveryLeaseReservation> {
@@ -749,6 +848,70 @@ export class DeliveryLeaseService {
     }
   }
 
+  private assertRecoveryActor(delivery: Delivery, actor: DeliveryActor): void {
+    const creator = delivery.createdBy.kind === "agent" ? delivery.createdBy.name : undefined;
+    const allowed = actor.kind === "human" || actor.kind === "master" || actor.kind === "system"
+      || (actor.kind === "agent" && !!actor.name && (actor.name === creator || this.deps.recoveryPrincipals?.includes(actor.name)));
+    if (!allowed) throw new DeliveryLeaseError("DELIVERY_QUARANTINED", false, "caller is not authorized to recover this Delivery");
+  }
+
+  private async recoverySnapshot(deliveryId: string, canonicalWorktree: string, actor: DeliveryActor) {
+    return this.withDeliveryLock(deliveryId, async () => this.deps.withWorktreeLock(canonicalWorktree, async () => {
+      const current = await this.deps.store.get(deliveryId);
+      if (!current) throw new DeliveryNotFoundError(deliveryId);
+      await this.assertCanonical(current, canonicalWorktree); this.assertRecoveryActor(current, actor);
+      if (current.lease.state !== "quarantined") throw this.occupied(current, "Delivery is not quarantined");
+      const holder = structuredClone(current.lease.holder); const tail = structuredClone(current.segments.at(-1));
+      if (!holder || !tail || tail.releasedAt || tail.id !== holder.segmentId || !holder.executionNonce?.trim()) {
+        throw new DeliveryLeaseError("DELIVERY_QUARANTINED", false, "quarantine lacks an exact recoverable holder boundary");
+      }
+      return { lease: structuredClone(current.lease), holder, tail, reason: current.lease.reason, canonicalWorktree };
+    }));
+  }
+
+  private async proveRecoveryEmpty(holder: DeliveryLeaseHolder, canonicalWorktree: string): Promise<void> {
+    const capability = this.deps.processFence.capability();
+    if (!capability.supported) throw new DeliveryLeaseError("DELIVERY_QUARANTINED", false, capability.reason);
+    const proof = await this.deps.processFence.proveEmpty(holder.executionNonce!, canonicalWorktree);
+    if (proof.state !== "proven_empty") throw new DeliveryLeaseError("DELIVERY_QUARANTINED", false, "recovery process absence is not proven", { proof });
+  }
+
+  private async recoveryCurrent(deliveryId: string, canonicalWorktree: string, actor: DeliveryActor, snapshot: { lease: Delivery["lease"] }) {
+    const current = await this.deps.store.get(deliveryId);
+    if (!current) throw new DeliveryNotFoundError(deliveryId);
+    await this.assertCanonical(current, canonicalWorktree); this.assertRecoveryActor(current, actor); this.assertRecoverySnapshot(current, snapshot);
+    return current;
+  }
+
+  private assertRecoverySnapshot(delivery: Delivery, snapshot: { lease: Delivery["lease"] }): void {
+    if (!isDeepStrictEqual(delivery.lease, snapshot.lease) || delivery.lease.state !== "quarantined") {
+      throw new DeliveryLeaseError("DELIVERY_QUARANTINED", false, "quarantine changed during recovery");
+    }
+  }
+
+  private async recoveryInventory(delivery: Delivery, canonicalWorktree: string): Promise<DeliveryRecoveryInventory> {
+    if (!this.deps.inspectRecoveryWorktree) throw new DeliveryLeaseError("DELIVERY_QUARANTINED", false, "trusted recovery inspection is unavailable");
+    return normalizeRecoveryInventory((await this.deps.inspectRecoveryWorktree(canonicalWorktree, delivery.contract.baseSha)).inventory);
+  }
+
+  private async recoveryApproval(approvalId: string, actor: DeliveryActor, digest: string): Promise<DeliveryRecoveryApproval> {
+    if (!this.deps.resolveRecoveryApproval || actor.kind !== "agent" || !actor.name) {
+      throw new DeliveryLeaseError("DELIVERY_QUARANTINED", false, "trusted recovery approval is unavailable or unbound");
+    }
+    const approval = await this.deps.resolveRecoveryApproval(approvalId, actor, digest);
+    if (approval.decision !== "approved" || approval.requester !== actor.name || approval.actionDigest !== digest
+      || !approval.payloadHash || !approval.resolvedAt) throw new DeliveryLeaseError("DELIVERY_QUARANTINED", false, "recovery approval is not an exact approved receipt");
+    return approval;
+  }
+
+  private async replayRecovery(operationId: string, deliveryId: string, intent: Record<string, unknown>, eventType: string, state: Delivery["lease"]["state"]): Promise<Delivery | undefined> {
+    const delivery = await this.deps.store.getOperationResult(operationId, "update", deliveryId);
+    if (!delivery) return undefined;
+    const event = delivery.events.find((candidate) => candidate.type === eventType && isDeepStrictEqual(candidate.detail?.intent, intent));
+    if (!event || delivery.lease.state !== state) throw new DeliveryInvariantError(`operation id '${operationId}' does not match this quarantine recovery intent`);
+    return delivery;
+  }
+
   private heldBoundaryFailure(delivery: Delivery): DeliveryLeaseError | undefined {
     const holder = delivery.lease.holder;
     const tail = delivery.segments.at(-1);
@@ -1092,6 +1255,28 @@ function normalizeOwns(entries: string[]): string[] {
     throw new DeliveryLeaseError("DELIVERY_OWNS_WIDENING", false, "owns subset contains an invalid or escaping path");
   }
   return [...new Set(normalized)].sort();
+}
+
+function normalizeRecoveryInventory(inventory: DeliveryRecoveryInventory): DeliveryRecoveryInventory {
+  if (!inventory || typeof inventory.headSha !== "string" || !inventory.headSha || !Array.isArray(inventory.dirtyPaths) || !Array.isArray(inventory.uniqueCommits)) {
+    throw new DeliveryLeaseError("DELIVERY_QUARANTINED", false, "recovery inventory is malformed");
+  }
+  const dirtyPaths = inventory.dirtyPaths.map((entry) => {
+    if (!entry || typeof entry.path !== "string" || !entry.path || typeof entry.status !== "string" || !entry.status) {
+      throw new DeliveryLeaseError("DELIVERY_QUARANTINED", false, "recovery inventory is malformed");
+    }
+    return { path: entry.path, status: entry.status };
+  }).sort((a, b) => a.path.localeCompare(b.path) || a.status.localeCompare(b.status));
+  const uniqueCommits = [...inventory.uniqueCommits].sort();
+  if (new Set(dirtyPaths.map((entry) => `${entry.path}\u0000${entry.status}`)).size !== dirtyPaths.length
+    || new Set(uniqueCommits).size !== uniqueCommits.length || uniqueCommits.some((sha) => typeof sha !== "string" || !sha)) {
+    throw new DeliveryLeaseError("DELIVERY_QUARANTINED", false, "recovery inventory contains duplicates or malformed commits");
+  }
+  return { headSha: inventory.headSha, dirtyPaths, uniqueCommits };
+}
+
+function recoveryActionDigest(deliveryId: string, expectedHeadSha: string, inventory: DeliveryRecoveryInventory, intent: Record<string, unknown>): string {
+  return createHash("sha256").update(JSON.stringify({ deliveryId, expectedHeadSha, inventory, intent })).digest("hex");
 }
 
 function acquireIntent(input: DeliveryLeaseAcquireInput, canonicalWorktree: string, ownsSubset: string[]): Record<string, unknown> {
