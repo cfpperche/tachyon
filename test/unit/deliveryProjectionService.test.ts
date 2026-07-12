@@ -316,7 +316,7 @@ describe("DeliveryProjectionService (SDD 368 T15)", () => {
     });
 
     await expect(svc.integrate({
-      deliveryId: held.id, gitDeliveryId: gd.id, expectedGitVersion: 2, expectedHeadSha: "tip", actor: human, operationId: "nope",
+      deliveryId: held.id, gitDeliveryId: gd.id, expectedGitVersion: 2, expectedHeadSha: "tip", actor: human, caller: human, operationId: "nope",
     })).rejects.toBeInstanceOf(DeliveryProjectionError);
 
     expect(canIntegrateLinkedGitDelivery({ kind: "agent", name: "worker" }, settings.integratePrincipals)).toBe(false);

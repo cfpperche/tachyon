@@ -112,7 +112,8 @@ export interface CanonicalIntegrateInput {
   expectedGitVersion: number;
   expectedHeadSha: string;
   actor: DeliveryActor;
-  caller?: Pick<CallerSnapshot, "kind" | "name">;
+  /** Caller identity is mandatory for linked mutations; legacy compatibility is only at the Bridge tool boundary. */
+  caller: Pick<CallerSnapshot, "kind" | "name">;
   operationId?: string;
   integrationKind?: "ancestor" | "patch-id" | "manual";
 }
@@ -122,7 +123,8 @@ export interface CanonicalPruneInput {
   gitDeliveryId: string;
   expectedGitVersion: number;
   actor: DeliveryActor;
-  caller?: Pick<CallerSnapshot, "kind" | "name">;
+  /** Caller identity is mandatory for linked mutations; legacy compatibility is only at the Bridge tool boundary. */
+  caller: Pick<CallerSnapshot, "kind" | "name">;
   abandon?: boolean;
   forceLoseCommits?: boolean;
   doomedShas?: string[];

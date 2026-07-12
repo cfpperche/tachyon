@@ -734,6 +734,9 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         const actor = gitDeliveryActor(deps);
         const settings = deps.gitDelivery.settings?.() ?? resolveGitDeliverySettings(undefined);
         if (projection.deliveryId) {
+          if (!deps.caller) {
+            return fail(new Error("git_delivery_integrate refused: linked mutation requires a resolved Bridge caller"));
+          }
           if (!deps.gitDelivery.projection) {
             return fail(new Error("canonical DeliveryProjectionService is not available for linked integrate"));
           }
@@ -804,7 +807,10 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           const callerName = gitDeliveryCallerName(deps);
           const settings = deps.gitDelivery?.settings?.() ?? resolveGitDeliverySettings(undefined);
 
-          if (delivery.deliveryId) {
+        if (delivery.deliveryId) {
+            if (!deps.caller) {
+              return fail(new Error("git_delivery_prune refused: linked mutation requires a resolved Bridge caller"));
+            }
             if (!deps.gitDelivery?.projection) {
               return fail(new Error("canonical DeliveryProjectionService is not available for linked prune"));
             }
