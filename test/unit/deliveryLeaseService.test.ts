@@ -771,7 +771,7 @@ describe("DeliveryLeaseService dead-holder reconciliation (SDD 368 T11)", () => 
   });
   const recoveryInventory = { headSha: "b", dirtyPaths: [{ path: "src/dirty.ts", status: "M" }], uniqueCommits: ["unique-b"] };
   const recoveryService = (store: DeliveryStore, worktree: string, options: {
-    inventory?: typeof recoveryInventory;
+    inventory?: typeof recoveryInventory | (() => typeof recoveryInventory | Promise<typeof recoveryInventory>);
     approval?: (id: string, digest: string) => unknown;
     recoveryPrincipals?: string[];
     fence?: ProcessFencePort;
@@ -780,7 +780,7 @@ describe("DeliveryLeaseService dead-holder reconciliation (SDD 368 T11)", () => 
   } = {}) => new DeliveryLeaseService({
     store, processFence: options.fence ?? certifiedFence, canonicalWorktreeFor: options.canonical ?? (() => worktree),
     readHead: () => "b", inspectWorktree: () => ({ headSha: "b", clean: true }), isAncestor: () => true,
-    inspectRecoveryWorktree: () => ({ inventory: options.inventory ?? recoveryInventory }),
+    inspectRecoveryWorktree: async () => ({ inventory: typeof options.inventory === "function" ? await options.inventory() : options.inventory ?? recoveryInventory }),
     recoveryPrincipals: options.recoveryPrincipals,
     resolveRecoveryApproval: async (id, resolved, digest) => options.approval?.(id, digest) as never ?? {
       decision: "approved", requester: resolved.name!, actionDigest: digest, payloadHash: "payload", resolvedAt: now, resolvedBy: "human",
@@ -1237,6 +1237,130 @@ describe("DeliveryLeaseService dead-holder reconciliation (SDD 368 T11)", () => 
         actor: actor as never, operationId: `denied-${actor.kind}`, expectedHeadSha: "b", expectedInventory: recoveryInventory, executionAgent: "fixer", ownsSubset: ["src"] })).rejects.toMatchObject({ code: "DELIVERY_QUARANTINED" });
       expect(canonical).not.toHaveBeenCalled(); expect(fence.proveEmpty).not.toHaveBeenCalled();
     }
+  });
+
+  it("rejects every holder, tail, requested, peer, legacy, and external identity before any recovery effect", async () => {
+    const identities = [
+      { kind: "agent", name: "worker" }, { kind: "agent", name: "tail-principal" },
+      { kind: "agent", name: "requested-agent" }, { kind: "agent", name: "requested-principal" },
+      { kind: "agent", name: "peer" }, { kind: "legacy" }, { kind: "external" },
+    ] as const;
+    for (const deniedActor of identities) {
+      const { store, worktree, input } = heldFixture();
+      input.segments![0] = { ...input.segments![0]!, principal: "tail-principal" };
+      input.lease = { ...input.lease!, state: "quarantined", reason: "q", holder: { ...input.lease!.holder!, principal: "holder-principal" } };
+      await store.create(input);
+      const calls = { canonical: 0, lock: 0, fence: 0, inventory: 0, approval: 0, nonce: 0, segment: 0, event: 0 };
+      const lease = new DeliveryLeaseService({ store, processFence: { ...certifiedFence, proveEmpty: async () => { calls.fence++; return { state: "proven_empty" }; } },
+        canonicalWorktreeFor: () => { calls.canonical++; return worktree; }, readHead: () => "b", inspectWorktree: () => ({ headSha: "b", clean: true }), isAncestor: () => true,
+        inspectRecoveryWorktree: () => { calls.inventory++; return { inventory: recoveryInventory }; },
+        resolveRecoveryApproval: () => { calls.approval++; return { decision: "approved", requester: "x", actionDigest: "x", payloadHash: "x", resolvedAt: now }; },
+        withWorktreeLock: async (_path, fn) => { calls.lock++; return fn(); }, nonce: () => { calls.nonce++; return "n"; }, segmentId: () => { calls.segment++; return "s"; }, eventId: () => { calls.event++; return "e"; }, now: () => now,
+      });
+      await expect(lease.salvageQuarantine({ deliveryId: "d-lease", canonicalWorktree: worktree, actor: deniedActor as never,
+        operationId: `zero-${deniedActor.kind}-${"name" in deniedActor ? deniedActor.name : "none"}`, expectedHeadSha: "b", expectedInventory: recoveryInventory,
+        executionAgent: "requested-agent", principal: "requested-principal", ownsSubset: ["src"] })).rejects.toMatchObject({ code: "DELIVERY_QUARANTINED" });
+      expect(calls).toEqual({ canonical: 0, lock: 0, fence: 0, inventory: 0, approval: 0, nonce: 0, segment: 0, event: 0 });
+    }
+  });
+
+  it("classifies a pre-CAS different-operation winner instead of leaking the frozen snapshot error", async () => {
+    const { store, worktree, input } = heldFixture(); input.lease = { ...input.lease!, state: "quarantined", reason: "q" }; await store.create(input);
+    let changed = false;
+    const lease = recoveryService(store, worktree, { inventory: async () => {
+      if (!changed) { changed = true; const current = (await store.get("d-lease"))!; await store.update(current.id, current.version, (record) => {
+        record.lease = { state: "pending", changedAt: now, holder: { segmentId: "winner", executionAgent: "winner", reservationNonce: "winner" }, expectedHeadSha: "b" };
+        record.segments[0]!.releasedAt = now; record.segments[0]!.releasedHeadSha = "b"; record.segments[0]!.outcome = "interrupted";
+        record.segments.push({ id: "winner", index: 1, role: "recovery", executionAgent: "winner", grantedBy: actor, ownsSubset: ["src"], grantedHeadSha: "b", grantedAt: now }); return record;
+      }); }
+      return recoveryInventory;
+    } });
+    await expect(lease.salvageQuarantine({ deliveryId: "d-lease", canonicalWorktree: worktree, actor, operationId: "pre-cas-loser", expectedHeadSha: "b", expectedInventory: recoveryInventory, executionAgent: "fixer", ownsSubset: ["src"] }))
+      .rejects.toMatchObject({ code: "WORKTREE_OCCUPIED", retryable: true, detail: { state: "pending" } });
+  });
+
+  it("serializes two-store same-action recovery and returns the exact durable replay without rerunning effects", async () => {
+    const { root, store, worktree, input } = heldFixture(); input.lease = { ...input.lease!, state: "quarantined", reason: "q" }; await store.create(input);
+    const secondStore = new DeliveryStore(root, { now: () => now });
+    let arrived = 0; let release!: () => void; const both = new Promise<void>((resolve) => { release = resolve; });
+    const inventory = async () => { if (++arrived === 2) release(); await both; return recoveryInventory; };
+    const request = { deliveryId: "d-lease", canonicalWorktree: worktree, actor, operationId: "two-store-same", expectedHeadSha: "b", expectedInventory: recoveryInventory, executionAgent: "fixer", ownsSubset: ["src"] };
+    const [first, second] = await Promise.all([recoveryService(store, worktree, { inventory }).salvageQuarantine(request), recoveryService(secondStore, worktree, { inventory }).salvageQuarantine(request)]);
+    expect(first).toEqual(second);
+    const delivery = (await store.get("d-lease"))!;
+    expect(delivery.events.filter((event) => event.type === "quarantine_salvaged")).toHaveLength(1);
+    expect(delivery.segments.filter((segment) => segment.role === "recovery")).toHaveLength(1);
+  });
+
+  it("serializes two-store salvage versus abandon and reports the actual winner", async () => {
+    const { root, store, worktree, input } = heldFixture(); input.lease = { ...input.lease!, state: "quarantined", reason: "q" }; await store.create(input);
+    const secondStore = new DeliveryStore(root, { now: () => now });
+    let arrived = 0; let release!: () => void; const both = new Promise<void>((resolve) => { release = resolve; });
+    const inventory = async () => { if (++arrived === 2) release(); await both; return recoveryInventory; };
+    const salvage = recoveryService(store, worktree, { inventory }).salvageQuarantine({ deliveryId: "d-lease", canonicalWorktree: worktree, actor, operationId: "race-salvage", expectedHeadSha: "b", expectedInventory: recoveryInventory, executionAgent: "fixer", ownsSubset: ["src"] });
+    const abandon = recoveryService(secondStore, worktree, { inventory }).abandonQuarantine({ deliveryId: "d-lease", canonicalWorktree: worktree, actor, operationId: "race-abandon", expectedHeadSha: "b", expectedInventory: recoveryInventory, approvalId: "approval" }).catch((error) => error);
+    const [winner, loser] = await Promise.all([salvage, abandon]);
+    expect(winner.delivery.lease.state).toBe("pending"); expect(loser).toMatchObject({ code: "WORKTREE_OCCUPIED", retryable: true, detail: { state: "pending" } });
+    const delivery = (await store.get("d-lease"))!;
+    expect(delivery.events.filter((event) => /^quarantine_(salvaged|abandoned)$/.test(event.type))).toHaveLength(1);
+    expect(delivery.segments.filter((segment) => segment.role === "recovery")).toHaveLength(1);
+  });
+
+  it.each(["salvage", "abandon"] as const)("replays %s without rerunning recovery effects", async (action) => {
+    const { store, worktree, input } = heldFixture(); input.lease = { ...input.lease!, state: "quarantined", reason: "q" }; await store.create(input);
+    let inventory = 0; let approval = 0; let nonce = 0; let segment = 0; let event = 0;
+    const lease = new DeliveryLeaseService({ store, processFence: certifiedFence, canonicalWorktreeFor: () => worktree, readHead: () => "b", inspectWorktree: () => ({ headSha: "b", clean: true }), isAncestor: () => true,
+      inspectRecoveryWorktree: () => { inventory++; return { inventory: recoveryInventory }; }, resolveRecoveryApproval: (_id, _actor, digest) => { approval++; return { decision: "approved", requester: actor.name!, actionDigest: digest, payloadHash: "p", resolvedAt: now }; },
+      withWorktreeLock: async (_path, fn) => fn(), nonce: () => { nonce++; return "n"; }, segmentId: () => { segment++; return "s"; }, eventId: () => { event++; return "e"; }, now: () => now,
+    });
+    const request = { deliveryId: "d-lease", canonicalWorktree: worktree, actor, operationId: `replay-${action}`, expectedHeadSha: "b", expectedInventory: recoveryInventory };
+    const first = action === "salvage" ? await lease.salvageQuarantine({ ...request, executionAgent: "fixer", ownsSubset: ["src"] }) : await lease.abandonQuarantine({ ...request, approvalId: "a" });
+    const effects = { inventory, approval, nonce, segment, event };
+    const second = action === "salvage" ? await lease.salvageQuarantine({ ...request, executionAgent: "fixer", ownsSubset: ["src"] }) : await lease.abandonQuarantine({ ...request, approvalId: "a" });
+    expect(second).toEqual(first); expect({ inventory, approval, nonce, segment, event }).toEqual(effects);
+  });
+
+  it("fails closed for a throwing capability, a holder-less quarantine, and a missing approval resolver", async () => {
+    const capability = heldFixture(); capability.input.lease = { ...capability.input.lease!, state: "quarantined", reason: "q" }; await capability.store.create(capability.input);
+    const throwingFence: ProcessFencePort = { ...certifiedFence, capability: () => { throw new Error("capability boom"); } };
+    await expect(recoveryService(capability.store, capability.worktree, { fence: throwingFence }).salvageQuarantine({ deliveryId: "d-lease", canonicalWorktree: capability.worktree, actor, operationId: "throwing-capability", expectedHeadSha: "b", expectedInventory: recoveryInventory, executionAgent: "fixer", ownsSubset: ["src"] })).rejects.toMatchObject({ code: "DELIVERY_QUARANTINED" });
+    const holderless = heldFixture(); holderless.input.lease = { state: "quarantined", reason: "q", changedAt: now }; await holderless.store.create(holderless.input);
+    await expect(recoveryService(holderless.store, holderless.worktree).salvageQuarantine({ deliveryId: "d-lease", canonicalWorktree: holderless.worktree, actor, operationId: "holderless", expectedHeadSha: "b", expectedInventory: recoveryInventory, executionAgent: "fixer", ownsSubset: ["src"] })).rejects.toMatchObject({ code: "DELIVERY_QUARANTINED" });
+    const missing = heldFixture(); missing.input.lease = { ...missing.input.lease!, state: "quarantined", reason: "q" }; await missing.store.create(missing.input);
+    const withoutResolver = new DeliveryLeaseService({ store: missing.store, processFence: certifiedFence, canonicalWorktreeFor: () => missing.worktree, readHead: () => "b", inspectWorktree: () => ({ headSha: "b", clean: true }), inspectRecoveryWorktree: () => ({ inventory: recoveryInventory }), isAncestor: () => true, withWorktreeLock: async (_path, fn) => fn() });
+    await expect(withoutResolver.abandonQuarantine({ deliveryId: "d-lease", canonicalWorktree: missing.worktree, actor, operationId: "missing-resolver", expectedHeadSha: "b", expectedInventory: recoveryInventory, approvalId: "a" })).rejects.toMatchObject({ code: "DELIVERY_QUARANTINED" });
+  });
+
+  it("keeps proveEmpty outside Delivery and worktree locks", async () => {
+    const { store, worktree, input } = heldFixture(); input.lease = { ...input.lease!, state: "quarantined", reason: "q" }; await store.create(input);
+    let lockDepth = 0;
+    const fence: ProcessFencePort = { ...certifiedFence, proveEmpty: async () => { expect(lockDepth).toBe(0); return { state: "proven_empty" }; } };
+    await recoveryService(store, worktree, { fence, withLock: async (_path, fn) => { lockDepth++; try { return await fn(); } finally { lockDepth--; } } }).salvageQuarantine({ deliveryId: "d-lease", canonicalWorktree: worktree, actor, operationId: "outside-lock", expectedHeadSha: "b", expectedInventory: recoveryInventory, executionAgent: "fixer", ownsSubset: ["src"] });
+  });
+
+  it("rejects a canonical mismatch and unstable duplicate inspection without a recovery mutation", async () => {
+    const mismatch = heldFixture(); mismatch.input.lease = { ...mismatch.input.lease!, state: "quarantined", reason: "q" }; await mismatch.store.create(mismatch.input);
+    await expect(recoveryService(mismatch.store, mismatch.worktree, { canonical: () => path.join(mismatch.worktree, "other") }).salvageQuarantine({ deliveryId: "d-lease", canonicalWorktree: mismatch.worktree, actor, operationId: "canonical-mismatch", expectedHeadSha: "b", expectedInventory: recoveryInventory, executionAgent: "fixer", ownsSubset: ["src"] })).rejects.toMatchObject({ code: "DELIVERY_WORKTREE_MISMATCH" });
+    const unstable = heldFixture(); unstable.input.lease = { ...unstable.input.lease!, state: "quarantined", reason: "q" }; await unstable.store.create(unstable.input);
+    let inspections = 0;
+    await expect(recoveryService(unstable.store, unstable.worktree, { inventory: () => ++inspections === 1 ? recoveryInventory : { ...recoveryInventory, dirtyPaths: [{ path: "src/other.ts", status: "M" }] } }).salvageQuarantine({ deliveryId: "d-lease", canonicalWorktree: unstable.worktree, actor, operationId: "unstable", expectedHeadSha: "b", expectedInventory: recoveryInventory, executionAgent: "fixer", ownsSubset: ["src"] })).rejects.toMatchObject({ code: "DELIVERY_QUARANTINED" });
+  });
+
+  it("normalizes locale-sensitive inventory by code units and rejects duplicate dirty/commit evidence", async () => {
+    const { store, worktree, input } = heldFixture(); input.lease = { ...input.lease!, state: "quarantined", reason: "q" }; await store.create(input);
+    const inventory = { headSha: "b", dirtyPaths: [{ path: "z", status: "M" }, { path: "ä", status: "M" }], uniqueCommits: ["z", "ä"] };
+    const result = await recoveryService(store, worktree, { inventory: { headSha: "b", dirtyPaths: [{ path: "ä", status: "M" }, { path: "z", status: "M" }], uniqueCommits: ["ä", "z"] } }).salvageQuarantine({ deliveryId: "d-lease", canonicalWorktree: worktree, actor, operationId: "code-unit", expectedHeadSha: "b", expectedInventory: inventory, executionAgent: "fixer", ownsSubset: ["src"] });
+    expect(result.delivery.events.at(-1)!.detail!.inventory).toEqual({ headSha: "b", dirtyPaths: [{ path: "z", status: "M" }, { path: "ä", status: "M" }], uniqueCommits: ["z", "ä"] });
+    const duplicate = heldFixture(); duplicate.input.lease = { ...duplicate.input.lease!, state: "quarantined", reason: "q" }; await duplicate.store.create(duplicate.input);
+    await expect(recoveryService(duplicate.store, duplicate.worktree, { inventory: { ...recoveryInventory, dirtyPaths: [recoveryInventory.dirtyPaths[0]!, recoveryInventory.dirtyPaths[0]!], uniqueCommits: ["a", "a"] } }).salvageQuarantine({ deliveryId: "d-lease", canonicalWorktree: duplicate.worktree, actor, operationId: "duplicate", expectedHeadSha: "b", expectedInventory: recoveryInventory, executionAgent: "fixer", ownsSubset: ["src"] })).rejects.toMatchObject({ code: "DELIVERY_QUARANTINED" });
+  });
+
+  it("treats repeated recovery and waiting on abandoned as terminal without destructive hooks", async () => {
+    const { store, worktree, input } = fixture(); input.lease = { state: "abandoned", changedAt: now }; await store.create(input);
+    const lease = recoveryService(store, worktree);
+    await expect(lease.salvageQuarantine({ deliveryId: "d-lease", canonicalWorktree: worktree, actor, operationId: "repeat-terminal", expectedHeadSha: "b", expectedInventory: recoveryInventory, executionAgent: "fixer", ownsSubset: ["src"] })).rejects.toMatchObject({ code: "DELIVERY_ABANDONED", retryable: false });
+    await expect(waitForDeliveryLease(store, { deliveryId: "d-lease", timeoutMs: 1 }, { now: () => 0, pollMs: 1, sleep: async () => { throw new Error("must not sleep"); } })).resolves.toMatchObject({ outcome: "abandoned", state: "abandoned" });
+    expect(Object.keys((lease as unknown as { deps: object }).deps)).not.toContain("destroyWorktree");
   });
 
   it.each(["unsupported", "unknown", "survivors", "throwing"] as const)("keeps quarantine byte-identical for %s recovery fence failure", async (kind) => {
