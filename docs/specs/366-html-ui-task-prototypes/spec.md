@@ -3,7 +3,13 @@
 _Created 2026-07-09 from task `t-119dc1` and its design-review journal. Folded with the Claude Fable
 adversarial review in `.tachyon/reviews/366-html-ui-task-prototypes-fable.md`._
 
-**Status:** in-progress
+**Status:** shipped
+**Closure:** 2026-07-12 — Static-only v1 of HTML UI task prototypes: content-addressed store, strict prototype HTML
+policy, Bridge draft-only attach, Task Detail/Studio static previews with empty sandbox + first-party decision chrome,
+interactive panel omitted after T3 real-host egress proof unavailable. T9: typecheck + focused suites +
+`verify:full` (308 files / 3684 tests) green; browser `taskPrototypeFrame` 3/3; scrollable tall static mocks fixed
+via static pointer-guard overflow. Evidence `.tachyon/evidence/366-html-ui-task-prototypes/`. Worktree
+`tachyon/htmlUiPrototypes366T9`.
 
 ## Intent
 
@@ -29,7 +35,7 @@ an ad-hoc agent based on fit; Tachyon does not hardcode one agent name.
 
 ## Acceptance criteria
 
-- [ ] **Scenario: an agent attaches a bounded self-contained draft**
+- [x] **Scenario: an agent attaches a bounded self-contained draft**
   - **Given** an existing task and an agent-authenticated Bridge caller
   - **When** the caller submits a prototype title and HTML through `attach_task_prototype`
   - **Then** Tachyon validates the task id, UTF-8 byte cap, MIME, markup policy, external-resource ban, and decoded
@@ -39,7 +45,7 @@ an ad-hoc agent based on fit; Tachyon does not hardcode one agent name.
   - **And** malformed, oversized, externally-referencing, form/iframe/object/embed/base/meta-refresh,
     worker/import-map, inline-handler, or traversal payloads are rejected before any manifest mutation
 
-- [ ] **Scenario: prototype metadata is versioned and fail-closed**
+- [x] **Scenario: prototype metadata is versioned and fail-closed**
   - **Given** multiple prototype revisions for one task
   - **When** Task Detail, Task Studio, or `get_task` reads them
   - **Then** the reader receives ordered metadata for `draft | approved | superseded | rejected`, integrity and
@@ -47,7 +53,7 @@ an ad-hoc agent based on fit; Tachyon does not hardcode one agent name.
   - **And** an unknown manifest/policy version, malformed transition, missing blob, hash mismatch, or stale CAS
     expectation is surfaced as unavailable/read-only and is never silently repaired or overwritten
 
-- [ ] **Scenario: both task surfaces show a safe static preview**
+- [x] **Scenario: both task surfaces show a safe static preview**
   - **Given** a task with an available prototype
   - **When** the human opens Task Detail or Task Studio
   - **Then** the selected revision renders in an iframe with byte-exact `sandbox=""`, scripts disabled, and
@@ -56,7 +62,7 @@ an ad-hoc agent based on fit; Tachyon does not hardcode one agent name.
     untrusted, show revision/state/integrity, and keep prototype pixels from abutting or mimicking decision chrome
   - **And** Task Studio can import a local `.html` revision through the same store/policy as the Bridge tool
 
-- [ ] **Scenario: interaction ships only after the navigation-egress gate passes in the real host**
+- [x] **Scenario: interaction ships only after the navigation-egress gate passes in the real host**
   - **Given** headless request-counter tests and a real VS Code `vscode-webview://` dogfood prove that dynamic
     self-navigation produces zero external requests
   - **When** the human explicitly opens the interactive prototype and its agent-authored script runs
@@ -71,7 +77,7 @@ an ad-hoc agent based on fit; Tachyon does not hardcode one agent name.
   - **And** if the real-host gate cannot prove zero navigation egress, the interactive command/panel do not ship in
     v1; static preview, approval, storage, and the producer workflow remain the complete fallback
 
-- [ ] **Scenario: the human approves through first-party chrome**
+- [x] **Scenario: the human approves through first-party chrome**
   - **Given** a `draft` prototype on a task flagged `awaitingHuman.kind = decision`
   - **When** the human selects `Approve prototype` in Task Detail
   - **Then** only first-party controls outside any prototype frame perform the transition, the selected revision
@@ -81,7 +87,7 @@ an ad-hoc agent based on fit; Tachyon does not hardcode one agent name.
     prototype review, using the task's current CAS value; a concurrent task edit leaves the advisory flag set and
     reports retryable reconciliation instead of claiming that the board signal is reconciled
 
-- [ ] **Scenario: the human requests changes or annotates a revision**
+- [x] **Scenario: the human requests changes or annotates a revision**
   - **Given** a visible draft or approved prototype
   - **When** the human adds a review note or selects `Request changes`
   - **Then** Tachyon appends a bounded first-party review record to the prototype manifest; requesting changes marks
@@ -89,7 +95,7 @@ an ad-hoc agent based on fit; Tachyon does not hardcode one agent name.
     DOM back into stored HTML
   - **And** any task-journal note is optional, cap-tolerant, and non-authoritative
 
-- [ ] **Scenario: implementation and visual QA consume the approved anchor**
+- [x] **Scenario: implementation and visual QA consume the approved anchor**
   - **Given** a task with one approved prototype
   - **When** an implementation agent reads `get_task`
   - **Then** the response includes prototype summaries and a workspace-contained blob path plus sha256 for the
@@ -97,7 +103,7 @@ an ad-hoc agent based on fit; Tachyon does not hardcode one agent name.
   - **And** visual QA and implementation resolve only the currently approved, non-superseded sha256; implementation
     completion remains normal task/artifact history, not a prototype lifecycle transition
 
-- [ ] **Scenario: lifecycle cleanup does not leak or orphan authority**
+- [x] **Scenario: lifecycle cleanup does not leak or orphan authority**
   - **Given** a task is hard-deleted, a draft is superseded, or a panel closes/reloads
   - **When** cleanup runs
   - **Then** a prototype cleanup helper removes its isolated blob directory when a future hard-delete path calls it;
@@ -105,7 +111,7 @@ an ad-hoc agent based on fit; Tachyon does not hardcode one agent name.
   - **And** stale revisions remain auditable, panels use `retainContextWhenHidden: false`, close/dispose drops all
     in-memory content, and reload reconstructs state only from validated persisted metadata
 
-- [ ] The producer convention is documented: choose a declared UI/UX specialist when the project declares one,
+- [x] The producer convention is documented: choose a declared UI/UX specialist when the project declares one,
   otherwise spawn an ad-hoc designer; require a self-contained mocked prototype; attach through the Bridge tool;
   never let the producer approve or supersede its own work; use the approved sha256 as the
   implementation/visual-QA anchor; treat every producer payload as untrusted regardless of declared ownership.

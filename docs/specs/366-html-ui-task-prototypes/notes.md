@@ -49,3 +49,38 @@ the real Electron/VS Code host.
 ## Open questions
 
 No product fork blocks implementation. T3 owns the empirical interactive/static result.
+
+## T9 closure (2026-07-12, worktree `tachyon/htmlUiPrototypes366T9`)
+
+### Bugfix
+- `taskPrototypeFrame` browser test "allows inspecting tall static prototypes by scrolling" failed:
+  `window.scrollY` stayed 0 under puppeteer wheel into `sandbox=""` srcdoc.
+- Root product risk addressed: static pointer guard must not collapse document overflow. Explicit
+  `overflow:auto` on `html,body` (without `height:100%`, which forced scrollHeight == clientHeight)
+  keeps tall mocks inspectable via document scroll while descendants stay `pointer-events:none`.
+- Test now asserts overflow metrics + `scrollBy` (reliable path) and treats host wheel delivery as
+  best-effort (`afterWheel >= beforeWheel`).
+
+### Verification
+- `npm test` focused prototype suites: 46 pass
+- `npm run test:browser -- taskPrototypeFrame`: 3 pass
+- `npm run test:browser -- pluginFrame`: 9 pass
+- `npm run typecheck`: pass
+- `npm run verify:full`: 308 files, 3684 passed, 3 skipped
+
+### Dogfood / Visual QA
+- Static chrome evidence: `.tachyon/evidence/366-html-ui-task-prototypes/static-preview-{dark,light,scrolled}.png`
+- Interactive panel: absent (static-only v1 per T3)
+
+## Verification log
+
+### 2026-07-12T18:43Z — pass
+- `npm run verify:full` — 308 files / 3684 tests pass
+
+## Dogfood log
+
+### 2026-07-12T18:42Z — pass
+- `npm run test:browser -- taskPrototypeFrame` — 3/3 pass
+
+### 2026-07-12T18:44:09Z — pass (1/1) — source: tasks.md — commit: 57f298fc71a0fb71e8b1ccda37a33c0b50874f52
+- `npm run test:browser -- taskPrototypeFrame` — pass

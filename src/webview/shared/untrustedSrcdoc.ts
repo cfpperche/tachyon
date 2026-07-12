@@ -4,7 +4,10 @@ const CSP_META_RE = /<meta\b(?=[^>]*http-equiv\s*=\s*(?:"content-security-policy
 const HEAD_OPEN_RE = /<head\b[^>]*>/i;
 const SCRIPT_OPEN_RE = /<script\b(?![^>]*\bsrc\s*=)(?![^>]*\bnonce\s*=)([^>]*)>/gi;
 const SCRIPT_BLOCK_RE = /<script\b[^>]*>[\s\S]*?<\/script\s*>/gi;
-const STATIC_POINTER_GUARD = `<style data-tachyon-static-prototype-guard>html,body{pointer-events:auto!important;}body *{pointer-events:none!important;}</style>`;
+// html/body remain the hit target so wheel/trackpad can scroll tall mocks for inspection.
+// Descendants stay non-interactive (no clicks). Do NOT force height:100% — that collapses
+// document scrollHeight to the iframe viewport and blocks inspecting tall prototypes.
+const STATIC_POINTER_GUARD = `<style data-tachyon-static-prototype-guard>html,body{pointer-events:auto!important;overflow:auto!important;margin:0;}body *{pointer-events:none!important;}</style>`;
 
 export function assembleUntrustedSrcdoc(html: string, options: { mode: UntrustedSrcdocMode; nonce?: string }): string {
   const interactive = options.mode !== "prototype-static";

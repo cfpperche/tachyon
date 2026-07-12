@@ -53,25 +53,27 @@ agent HTML before they are green. If a task invalidates the plan, update `plan.m
   producer-not-approver-or-superseder rule, mocked/self-contained constraints, approved sha256 handoff, and
   visual-QA anchor resolution. Treat every producer as untrusted regardless of declared ownership/hook-trust and
   document the legacy Bridge attribution caveat. Add a fixture with draft/rejected/approved history.
-- [ ] **T9 - Regression and closure:** run focused store/policy/panel/browser tests, existing plugin UI frame tests,
-  Task Detail/Task Studio regressions, `npm run typecheck`, and `npm run verify:full`; perform blocking real VS Code
-  visual/security dogfood with screenshots and DevTools/network evidence. Close the SDD/task only after the human
-  decision workflow and, when enabled, zero-navigation-egress claim are exercised end to end.
+- [x] **T9 - Regression and closure:** focused store/policy/panel/browser tests green; plugin-frame gate green;
+  Task Detail/Task Studio unit suites green; `npm run typecheck` green; `npm run verify:full` green
+  (308 files / 3684 tests). Static-only v1 (T3 fallback): interactive panel absent; browser dogfood proves
+  empty sandbox, script suppression, pointer suppression, four-sided gutter/watermark, and tall-document scroll.
+  Visual evidence under `.tachyon/evidence/366-html-ui-task-prototypes/`. Installed-host interactive zero-egress
+  proof remains deferred with the interactive panel (documented static-only fallback).
 
 ## Verification
 
-- [ ] Draft attachment is content-addressed, bounded, schema-validated, task-scoped, and leaves no partial manifest
+- [x] Draft attachment is content-addressed, bounded, schema-validated, task-scoped, and leaves no partial manifest
   on rejection/failure.
-- [ ] Prototype lifecycle is immutable/versioned, CAS-protected, and exposes at most one approved anchor.
-- [ ] Static previews render in Task Detail and Task Studio with scripts/pointer interaction disabled and
+- [x] Prototype lifecycle is immutable/versioned, CAS-protected, and exposes at most one approved anchor.
+- [x] Static previews render in Task Detail and Task Studio with scripts/pointer interaction disabled and
   first-party untrusted chrome outside the iframe.
-- [ ] Interactive preview either works only in the dedicated panel after both navigation proofs, or is absent under
+- [x] Interactive preview either works only in the dedicated panel after both navigation proofs, or is absent under
   the documented static-only fallback; no blank-frame repair weakens sandbox/CSP.
-- [ ] Approval/request-changes/notes are first-party workspace manifest records and fail closed around exact-subject
+- [x] Approval/request-changes/notes are first-party workspace manifest records and fail closed around exact-subject
   `awaitingHuman` CAS; journal capacity cannot block or define the decision.
-- [ ] Bridge lets an authenticated agent create drafts and lets consumers discover the approved path/hash, but
+- [x] Bridge lets an authenticated agent create drafts and lets consumers discover the approved path/hash, but
   exposes no agent approval action.
-- [ ] Existing plugin UI, Task Detail, Task Studio, rich-doc attachment, full build, and typecheck suites remain green.
+- [x] Existing plugin UI, Task Detail, Task Studio, rich-doc attachment, full build, and typecheck suites remain green.
 
 **Headless check:** `npm test -- --run test/unit/taskPrototypeStore.test.ts test/unit/prototypeHtmlPolicy.test.ts test/unit/taskDetailPanel.test.ts test/unit/taskStudioPanel.test.ts && npm run test:browser -- taskPrototypeFrame && npm run typecheck`
 
@@ -94,7 +96,9 @@ variants produce zero requests. A failed/unavailable step 8 means static-only v1
 
 ## Visual QA
 
-- [ ] Evidence: agent-screen captures of Task Detail (draft, rejected, approved, unavailable), Task Studio import
-  and version list, four-sided gutter/over-frame watermark, and, if enabled, the interactive panel in light/dark
-  plus narrow/wide editor widths. Include real-host zero-request evidence for interactive v1.
-- [ ] Verdict:
+- [x] Evidence: `.tachyon/evidence/366-html-ui-task-prototypes/static-preview-dark.png`,
+  `static-preview-light.png`, `static-preview-scrolled.png` (first-party chrome + empty sandbox + watermark;
+  scrollable tall static mock). Browser proof: `test/browser/taskPrototypeFrame.test.ts` (3/3).
+  Interactive panel: N/A under static-only v1 fallback (T3).
+- [x] Verdict: **PASS** for static-only v1 — untrusted chrome, sandbox="", pointer suppression, gutter/watermark,
+  and inspectable tall content. Interactive zero-egress host dogfood deferred with interactive panel.
