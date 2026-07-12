@@ -73,6 +73,13 @@ export type NoticeDeliveryResult = { status: "notified" | "queued"; dropped?: nu
 export interface BridgeDeps {
   /** Workspace root used by best-effort local discovery tools. */
   workspaceRoot: string;
+  /**
+   * t-099be8 — validate-then-write the workspace tachyon.yml (agent self-edit gate).
+   * When present, enables `write_tachyon_config`. Must refuse invalid configs without writing.
+   */
+  writeTachyonConfig?: (
+    yamlText: string,
+  ) => { ok: true; warnings: string[] } | { ok: false; errors: string[]; warnings: string[] };
   manager: AgentManager;
   tmux: TmuxService;
   /** Shared human↔agent project checklist (.tachyon/pins.json). */
@@ -1037,6 +1044,49 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           }),
         );
         return ok(JSON.stringify(enriched, null, 2));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  // t-099be8 — mechanical gate for agent self-edits of tachyon.yml (do NOT use raw Write for this file).
+  mcp.registerTool(
+    "write_tachyon_config",
+    {
+      description:
+        "Validate and write the workspace tachyon.yml in one step. Runs the same loadConfig/schema/cross-ref checks " +
+        "the extension uses and REFUSES to save on hard errors (invalid YAML, schema, cycles, multi-owner, etc.). " +
+        "Dangling subagents names become warnings and are dropped rather than wiping the roster. " +
+        "Prefer this over raw filesystem Write when editing tachyon.yml so a bad edit cannot detonate only on next reload.",
+      inputSchema: {
+        content: z.string().min(1).describe("Full tachyon.yml text to validate and persist"),
+      },
+    },
+    async ({ content }) => {
+      try {
+        if (!deps.writeTachyonConfig) return fail(new Error("write_tachyon_config is not available on this Bridge"));
+        const result = deps.writeTachyonConfig(content);
+        if (!result.ok) {
+          return fail(
+            new Error(
+              `tachyon.yml rejected (not saved):\n${result.errors.join("\n")}${
+                result.warnings.length ? `\nwarnings:\n${result.warnings.join("\n")}` : ""
+              }`,
+            ),
+          );
+        }
+        return ok(
+          JSON.stringify(
+            {
+              ok: true,
+              saved: true,
+              warnings: result.warnings,
+            },
+            null,
+            2,
+          ),
+        );
       } catch (err) {
         return fail(err);
       }

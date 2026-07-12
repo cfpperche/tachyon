@@ -951,6 +951,8 @@ export class Workspace {
     this.bridge = new Bridge(
       {
         workspaceRoot: this.workspaceRoot,
+        // t-099be8 — agent self-edit gate for tachyon.yml (validate-then-write).
+        writeTachyonConfig: (yamlText) => this.writeTachyonConfigText(yamlText),
         manager: this.manager,
         tmux: this.tmux,
         pins: this.pinStore,
@@ -2954,16 +2956,44 @@ export class Workspace {
     const existing = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : undefined;
     try {
       const { text, warnings } = mutate(existing);
+      // t-099be8 — validate the full resulting file BEFORE write (same gate as Studio submit / Bridge tool).
+      // Never persist a config that loadConfig would reject; the delayed-detonation window (invalid on disk
+      // until next reload) is the incident class this blocks for UI-driven edits.
+      const check = parseConfig(text);
+      if (check.errors.length > 0) {
+        throw new Error(`invalid tachyon.yml (not saved): ${check.errors[0]}${check.errors.length > 1 ? ` (+${check.errors.length - 1} more)` : ""}`);
+      }
       fs.writeFileSync(file, text, "utf8");
       this.reloadConfig();
       this.rebuildWatches();
       afterReload?.();
-      for (const warning of warnings) this.host.notify(warning, "warn");
+      for (const warning of [...warnings, ...check.warnings]) this.host.notify(warning, "warn");
       return true;
     } catch (err) {
       this.host.notify(`${err instanceof Error ? err.message : String(err)}`, "error");
       return false;
     }
+  }
+
+  /**
+   * t-099be8 — agent-facing validate-then-write for the workspace tachyon.yml.
+   * Refuses to save on parse/schema/cross-ref hard errors; returns structured result (no throw).
+   */
+  writeTachyonConfigText(yamlText: string): { ok: true; warnings: string[] } | { ok: false; errors: string[]; warnings: string[] } {
+    const check = parseConfig(yamlText);
+    if (check.errors.length > 0) return { ok: false, errors: check.errors, warnings: check.warnings };
+    const file = this.configPath() ?? path.join(this.workspaceRoot, "tachyon.yml");
+    try {
+      fs.writeFileSync(file, yamlText.endsWith("\n") ? yamlText : `${yamlText}\n`, "utf8");
+    } catch (err) {
+      return { ok: false, errors: [`cannot write tachyon.yml: ${err instanceof Error ? err.message : String(err)}`], warnings: check.warnings };
+    }
+    this.reloadConfig();
+    this.rebuildWatches();
+    this.deps.onViewsChanged("agents");
+    this.deps.onViewsChanged("commands");
+    for (const warning of check.warnings) this.host.notify(warning, "warn");
+    return { ok: true, warnings: check.warnings };
   }
 
   // spec 234 — applyLayoutWithSpawn / applyDefaultLayout removed (layouts feature retired).

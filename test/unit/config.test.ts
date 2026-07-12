@@ -91,9 +91,8 @@ describe("parseConfig", () => {
     expect(config?.declaredOwner).toEqual({});
   });
 
-  it("spec 352 — validates dangling, terminal, multi-owner, self, direct-cycle, and deep-tree refs", () => {
+  it("spec 352 — validates terminal, multi-owner, self, direct-cycle, and deep-tree refs as hard errors", () => {
     const cases: Array<[string, string]> = [
-      ["agents:\n  owner:\n    cmd: claude\n    subagents: [ghost]\n", "agents.owner.subagents: 'ghost' is not declared"],
       ["agents:\n  owner:\n    cmd: claude\n    subagents: [dev]\n  dev:\n    cmd: npm run dev\n    kind: terminal\n", "agents.owner.subagents: 'dev' resolves to a terminal"],
       ["agents:\n  a:\n    cmd: claude\n    subagents: [child]\n  b:\n    cmd: codex\n    subagents: [child]\n  child:\n    cmd: claude\n", "agents.b.subagents: 'child' is already declared as a subagent of 'a'"],
       ["agents:\n  a:\n    cmd: claude\n    subagents: [a]\n", "agents.a.subagents: 'a' cannot reference itself"],
@@ -103,6 +102,41 @@ describe("parseConfig", () => {
     for (const [yaml, expected] of cases) {
       expect(parseConfig(yaml).errors.some((e) => e.includes(expected))).toBe(true);
     }
+  });
+
+  // t-099be8 — dangling subagents must NOT wipe the roster (incident: remove declared agent, leave ref)
+  it("t-099be8 — dangling subagents refs are warnings; roster stays loadable", () => {
+    const yaml = `agents:
+  claude:
+    cmd: claude
+    subagents: [reviewer, tester]
+  tester:
+    cmd: claude
+`;
+    const { config, errors, warnings } = parseConfig(yaml);
+    expect(errors).toEqual([]);
+    expect(config).toBeDefined();
+    expect(Object.keys(config!.agents).sort()).toEqual(["claude", "tester"]);
+    expect(config!.agents.claude.subagents).toEqual(["tester"]);
+    expect(config!.declaredOwner).toEqual({ tester: "claude" });
+    expect(warnings.some((w) => w.includes("'reviewer'") && w.includes("dangling"))).toBe(true);
+  });
+
+  it("t-099be8 — incident scenario: only dangling ref left still loads remaining agents", () => {
+    const yaml = `agents:
+  claude:
+    cmd: claude
+    subagents: [reviewer]
+  coder:
+    cmd: codex
+`;
+    const { config, errors, warnings } = parseConfig(yaml);
+    expect(errors).toEqual([]);
+    expect(config?.agents.claude).toBeDefined();
+    expect(config?.agents.coder).toBeDefined();
+    expect(config?.agents.reviewer).toBeUndefined();
+    expect(config?.agents.claude.subagents).toBeUndefined();
+    expect(warnings.some((w) => w.includes("reviewer"))).toBe(true);
   });
 
   it("spec 352 — rejects subagents on terminal entries and malformed lists before semantic validation", () => {

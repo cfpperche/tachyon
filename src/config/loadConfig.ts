@@ -811,10 +811,22 @@ function parseAgentEntry(section: "agents" | "terminals", name: string, def: Rec
   return agent;
 }
 
-function buildDeclaredOwner(agents: Record<string, ManagedEntryDef>, errors: string[]): Record<string, string> {
+/**
+ * Build the child→owner map from `agents.*.subagents`.
+ *
+ * t-099be8 — a *dangling* subagents name (referenced but not declared) is a **warning**, not a fatal
+ * error: drop the unknown name, keep the rest of the roster. Hard errors remain for self-ref, terminal
+ * targets, multi-owner, cycles, and nested trees (those make ownership unloadable, not merely stale).
+ */
+function buildDeclaredOwner(
+  agents: Record<string, ManagedEntryDef>,
+  errors: string[],
+  warnings: string[],
+): Record<string, string> {
   const declaredOwner: Record<string, string> = {};
   for (const [owner, def] of Object.entries(agents)) {
     if (!def.subagents) continue;
+    const kept: string[] = [];
     for (const child of def.subagents) {
       const target = agents[child];
       if (child === owner) {
@@ -822,7 +834,10 @@ function buildDeclaredOwner(agents: Record<string, ManagedEntryDef>, errors: str
         continue;
       }
       if (!target) {
-        errors.push(`agents.${owner}.subagents: '${child}' is not declared in agents/terminals`);
+        // Dangling ownership metadata — roster/sidebar only (spec 352). Do not nuke the whole config.
+        warnings.push(
+          `agents.${owner}.subagents: '${child}' is not declared in agents/terminals — dropped (dangling subagent reference)`,
+        );
         continue;
       }
       if (target.kind !== "agent") {
@@ -839,10 +854,13 @@ function buildDeclaredOwner(agents: Record<string, ManagedEntryDef>, errors: str
         continue;
       }
       declaredOwner[child] = owner;
+      kept.push(child);
     }
+    if (kept.length === 0) delete def.subagents;
+    else def.subagents = kept;
   }
   for (const [child, owner] of Object.entries(declaredOwner)) {
-    if (agents[child]?.subagents && agents[child].subagents.length > 0) {
+    if (agents[child]?.subagents && agents[child].subagents!.length > 0) {
       errors.push(`agents.${owner}.subagents: '${child}' declares its own subagents; nested subagent trees are not supported in v1`);
       delete declaredOwner[child];
     }
@@ -1355,7 +1373,7 @@ export function parseConfig(yamlText: string): ParseResult {
     }
   }
 
-  const declaredOwner = buildDeclaredOwner(agents, errors);
+  const declaredOwner = buildDeclaredOwner(agents, errors, warnings);
   if (errors.length > 0) return { errors, warnings };
   return { config: { agents, commands, runbooks, schedules, declaredOwner, settings }, errors: [], warnings };
 }
@@ -1368,4 +1386,12 @@ export function loadConfigFile(path: string): ParseResult {
     return { errors: [`cannot read ${path}: ${err instanceof Error ? err.message : String(err)}`], warnings: [] };
   }
   return parseConfig(text);
+}
+
+/**
+ * t-099be8 — pure validate-before-save gate for proposed tachyon.yml text (Bridge tool / Studio / mutateConfig).
+ * Same rules as loadConfigFile; does not touch the filesystem.
+ */
+export function validateTachyonConfigText(yamlText: string): ParseResult {
+  return parseConfig(yamlText);
 }
