@@ -1287,3 +1287,32 @@ matching failing stub and HEAD exactly one passing real helper. Run generated st
 serially, `npm run typecheck`, and `git diff --check`; no full verification until final R2 acceptance. Commit exactly
 the seven owned paths by explicit pathspec with `t-0b5723`, doorbell `codex`, then stop. Coordinator requires
 `verify_task` ACCEPT and full content audit before immutable Sonnet R2.
+
+### T13 R2 independent review contract
+
+Review immutable range `0a4e1136..be23bd26` against the original T13 contract, R1 consolidated correction, and A1
+completion contract above. The canonical gate ACCEPTED with no waiver at
+`.tachyon/verifications/be23bd26c8bfec86a45410d05d02fa6a87319af5.json`; the executor also reports focused,
+typecheck, diff-check, and quiet full verification green. These mechanical results do not establish semantic
+acceptance.
+
+Coordinator audit finds an immediate contract-coverage discrepancy: despite A1's explicit seven-block matrix with
+"no sampling", the candidate changes only five lines in `test/unit/agentManager.test.ts`, twelve lines in
+`test/unit/bridge.test.ts`, and adds a 58-line helper covering one happy path plus one readiness rejection. The
+helper does not exercise pre-reservation refusal cases, the snapshot mutation barrier, `newSession` failure,
+confirmation failure, liveness/cleanup dependency failures, normal execution cleanup, or the required exact
+AggregateError ordering. Its behavior title claims zero-effect refusals and complete failure cleanup without
+executing those classes. Treat this as a starting hypothesis and independently enumerate every required matrix
+case against actual assertions.
+
+Audit the full production delta and surrounding paths, especially: defensive cloning and stripped definition
+fields; one-call preflight proof and reservation ordering; execution/principal provenance; reviewer-safe command;
+token/home/settings/ownership/ledger/activity/continuity isolation; cleanup when session absence is proven versus
+unknown/live; independent cleanup attempts and stable causal error ordering; ordinary declared/ad-hoc T6/T10
+compatibility; and Bridge success mapping without top-level `cmd`. Check whether any cleanup action can target or
+mutate the persistent principal. Do not design or implement fixes.
+
+Write severity-ranked findings with file/line and contract evidence to
+`.tachyon/reviews/368-delivery-bound-t13-r2.md`. Allowed verification is the three focused suites plus
+`git diff --check`; do not rerun typecheck or full verification. Commit only the review artifact by explicit
+pathspec with `t-0b5723`, then notify `codex` with one-line ACCEPT or FINDINGS and the SHA/pointer.
