@@ -3,10 +3,12 @@
  *
  * Scenario S1 (t-8354ae fail-visible): fixture opens with invalid tachyon.yml + LKG + ledger.
  * Asserts configFailure, degraded roster (not empty-only), LKG spawn refusal, Doctor findings.
+ * Optionally handshakes with the shell for an Xvfb screenshot (ready-/done- markers).
  *
  * Env:
  *   EDH_PALLIATIVE_RESULT  — path to write JSON report (required for shell to reap status)
  *   EDH_PALLIATIVE_WS      — workspace root (optional; defaults to first folder)
+ *   EDH_PALLIATIVE_SHOTDIR — if set, write ready-<name> and wait for done-<name> (ffmpeg outside)
  */
 const vscode = require("vscode");
 const fs = require("fs");
@@ -34,11 +36,37 @@ function check(asserts, ok, id, detail) {
   else console.log(`[edh-palliative] ok   ${id}${detail ? ` — ${detail}` : ""}`);
 }
 
+/** Signal the outer shell to grab an Xvfb frame (mirrors scripts/screenshots/capture.sh). */
+async function frame(name) {
+  const shotDir = process.env.EDH_PALLIATIVE_SHOTDIR;
+  if (!shotDir) return false;
+  try {
+    fs.mkdirSync(shotDir, { recursive: true });
+    const ready = path.join(shotDir, `ready-${name}`);
+    const done = path.join(shotDir, `done-${name}`);
+    try {
+      fs.unlinkSync(done);
+    } catch {
+      /* ignore */
+    }
+    fs.writeFileSync(ready, "");
+    console.log(`[edh-palliative] frame ready: ${name}`);
+    for (let i = 0; i < 60 && !fs.existsSync(done); i++) await sleep(500);
+    const ok = fs.existsSync(done);
+    console.log(`[edh-palliative] frame ${ok ? "captured" : "TIMEOUT"}: ${name}`);
+    return ok;
+  } catch (err) {
+    console.warn("[edh-palliative] frame handshake failed:", err);
+    return false;
+  }
+}
+
 exports.run = async function run() {
   const asserts = [];
   const startedAt = new Date().toISOString();
   let health = null;
   let doctorText = "";
+  const frames = {};
 
   try {
     const ext = vscode.extensions.getExtension("cfpperche.tachyon");
@@ -58,6 +86,14 @@ exports.run = async function run() {
         /* ignore */
       }
     }
+    // Focus the Tachyon sidebar webview if the command exists (prototype id).
+    for (const c of ["tachyonSidebarPrototype.focus", "workbench.view.extension.tachyon"]) {
+      try {
+        await vscode.commands.executeCommand(c);
+      } catch {
+        /* ignore */
+      }
+    }
 
     // Cold start against whatever is on disk (seed+break → invalid config).
     try {
@@ -67,9 +103,23 @@ exports.run = async function run() {
     }
     await sleep(1500);
 
+    // Refresh views so sidebar paints degraded roster before the screenshot.
+    try {
+      await vscode.commands.executeCommand("tachyon.refreshViews");
+    } catch {
+      /* ignore */
+    }
+    await sleep(1500);
+
     health = await vscode.commands.executeCommand("tachyon._configHealth");
     if (!health || health.ok === false) {
       throw new Error(`_configHealth failed: ${health?.error ?? "null"}`);
+    }
+
+    // Visual evidence: Xvfb grab of fail-visible state (banner + roster when UI is up).
+    frames["fail-visible"] = await frame("fail-visible");
+    if (process.env.EDH_PALLIATIVE_SHOTDIR) {
+      check(asserts, frames["fail-visible"] === true, "frame.fail-visible", frames["fail-visible"] ? "png ok" : "no done marker");
     }
 
     // --- acceptance (a)(b)(c) core ---
@@ -138,6 +188,8 @@ commands:
       asserts,
       health,
       doctorText,
+      frames,
+      shotDir: process.env.EDH_PALLIATIVE_SHOTDIR ?? null,
       sha: process.env.EDH_PALLIATIVE_SHA ?? null,
     };
     writeResult(payload);
@@ -152,6 +204,7 @@ commands:
       finishedAt: new Date().toISOString(),
       asserts,
       health,
+      frames,
       error: err instanceof Error ? err.message : String(err),
       sha: process.env.EDH_PALLIATIVE_SHA ?? null,
     };

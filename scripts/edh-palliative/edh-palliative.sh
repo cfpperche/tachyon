@@ -265,9 +265,11 @@ headless() {
   local out_dir="${FIXTURE}/headless-out"
   local result="${out_dir}/result.json"
   local host_log="${out_dir}/host.log"
+  local shot_dir="${out_dir}/shots"
   local udd="${out_dir}/udd"
   rm -rf -- "$out_dir"
-  mkdir -p "$udd/User" "$TMUX_DIR" "$CACHE_HOME"
+  mkdir -p "$udd/User" "$TMUX_DIR" "$CACHE_HOME" "$shot_dir"
+  command -v ffmpeg >/dev/null 2>&1 || die "ffmpeg required for headless screenshots"
   cat >"$udd/User/settings.json" <<'JSON'
 {
   "workbench.startupEditor": "none",
@@ -296,6 +298,7 @@ JSON
   export EDH_PALLIATIVE_RESULT="$result"
   export EDH_PALLIATIVE_WS="$WS"
   export EDH_PALLIATIVE_SHA="$sha"
+  export EDH_PALLIATIVE_SHOTDIR="$shot_dir"
 
   info "starting Xvfb on $disp"
   Xvfb "$disp" -screen 0 1600x1000x24 >/dev/null 2>&1 &
@@ -310,6 +313,7 @@ JSON
     EDH_PALLIATIVE_RESULT="$result" \
     EDH_PALLIATIVE_WS="$WS" \
     EDH_PALLIATIVE_SHA="$sha" \
+    EDH_PALLIATIVE_SHOTDIR="$shot_dir" \
     TMUX_TMPDIR="$TMUX_DIR" \
     XDG_CACHE_HOME="$CACHE_HOME" \
     "$code_bin" \
@@ -325,19 +329,35 @@ JSON
       "$WS" >"$host_log" 2>&1 &
   local host_pid=$!
 
-  # Wait for host exit (runner throws → non-zero often) or timeout.
+  # While the host is up, grab Xvfb frames for each ready-* marker (capture.sh pattern).
   local timeout_s="${TACHYON_EDH_HEADLESS_TIMEOUT:-120}"
-  local i=0
+  local start_ts
+  start_ts="$(date +%s)"
   while kill -0 "$host_pid" 2>/dev/null; do
-    if [ "$i" -ge "$timeout_s" ]; then
+    for r in "$shot_dir"/ready-*; do
+      [ -e "$r" ] || continue
+      name="$(basename "$r" | sed 's/^ready-//')"
+      [ -e "$shot_dir/done-$name" ] && continue
+      sleep 0.8
+      if DISPLAY="$disp" ffmpeg -hide_banner -loglevel error -y \
+        -f x11grab -video_size 1600x1000 -i "$disp" -frames:v 1 \
+        "$shot_dir/${name}.png" 2>>"$host_log"; then
+        touch "$shot_dir/done-$name"
+        info "captured shot: $shot_dir/${name}.png"
+      else
+        info "ffmpeg frame failed for $name (see host.log)"
+        # Still mark done so the runner does not hang forever.
+        touch "$shot_dir/done-$name"
+      fi
+    done
+    if [ "$(( $(date +%s) - start_ts ))" -ge "$timeout_s" ]; then
       kill "$host_pid" 2>/dev/null || true
       wait "$host_pid" 2>/dev/null || true
       info "host log (tail):"
       tail -n 80 "$host_log" 2>/dev/null || true
       die "headless timed out after ${timeout_s}s — see $host_log"
     fi
-    sleep 1
-    i=$((i + 1))
+    sleep 0.5
   done
   local host_ec=0
   wait "$host_pid" || host_ec=$?
@@ -351,12 +371,22 @@ JSON
     die "headless runner did not write $result"
   fi
 
+  # Copy PNGs into repo evidence (gitignored under .tachyon/) for local inspection.
+  local evidence_dir="$REPO/.tachyon/evidence/edh-palliative"
+  mkdir -p "$evidence_dir"
+  for png in "$shot_dir"/*.png; do
+    [ -f "$png" ] || continue
+    cp -f "$png" "$evidence_dir/"
+    info "evidence: $evidence_dir/$(basename "$png")"
+  done
+
   info "result: $result"
   if command -v python3 >/dev/null 2>&1; then
-    python3 - "$result" "$host_ec" <<'PY'
-import json, sys
-path, host_ec = sys.argv[1], int(sys.argv[2])
+    python3 - "$result" "$host_ec" "$shot_dir" <<'PY'
+import json, sys, os
+path, host_ec, shot_dir = sys.argv[1], int(sys.argv[2]), sys.argv[3]
 data = json.load(open(path))
+shots = [f for f in os.listdir(shot_dir) if f.endswith(".png")] if os.path.isdir(shot_dir) else []
 print(json.dumps({
   "ok": data.get("ok"),
   "host_exit": host_ec,
@@ -365,6 +395,8 @@ print(json.dumps({
   "error": data.get("error"),
   "roster": (data.get("health") or {}).get("rosterNames"),
   "lkgSpawn": (data.get("health") or {}).get("lkgSpawn"),
+  "frames": data.get("frames"),
+  "shots": shots,
 }, indent=2))
 sys.exit(0 if data.get("ok") else 1)
 PY
@@ -380,7 +412,7 @@ PY
       die "headless failed — see $result and $host_log"
     fi
   fi
-  info "headless PASS (SHA $sha) — report $result"
+  info "headless PASS (SHA $sha) — report $result — shots $shot_dir"
 }
 
 help() {

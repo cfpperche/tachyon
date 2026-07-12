@@ -75,6 +75,7 @@ What it asserts (S1 / t-8354ae):
 - restore valid YAML → reload succeeds  
 
 Report: `$FIXTURE/headless-out/result.json` (+ `host.log` on failure).
+PNG evidence: `$FIXTURE/headless-out/shots/fail-visible.png` (copied to `.tachyon/evidence/edh-palliative/`).
 
 Requirements: `Xvfb`, VS Code test binary (`.vscode-test/...` or `TACHYON_EDH_CODE`).
 
