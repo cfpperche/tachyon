@@ -219,6 +219,26 @@
     ]
   },
   {
+    "view": "activity",
+    "fixture": "grok-feed",
+    "url": "/scripts/webview-preview/index.html?view=activity&fixture=grok-feed",
+    "frame": {
+      "w": 820,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Activity",
+    "aliases": [
+      "activity",
+      "agent activity",
+      "chat",
+      "transcript",
+      "studio chat"
+    ]
+  },
+  {
     "view": "probes",
     "fixture": "default",
     "url": "/scripts/webview-preview/index.html?view=probes&fixture=default",
@@ -394,6 +414,23 @@
     "view": "handoff",
     "fixture": "stale",
     "url": "/scripts/webview-preview/index.html?view=handoff&fixture=stale",
+    "frame": {
+      "w": 900,
+      "h": 760
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Project Handoff",
+    "aliases": [
+      "handoff",
+      "project handoff"
+    ]
+  },
+  {
+    "view": "handoff",
+    "fixture": "distill-list",
+    "url": "/scripts/webview-preview/index.html?view=handoff&fixture=distill-list",
     "frame": {
       "w": 900,
       "h": 760
