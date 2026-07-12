@@ -1830,3 +1830,45 @@ suites serially, then `npm run typecheck` and `git diff --check`; no second full
 candidate full is already green and no global-regression reason exists. Commit once by explicit pathspec with
 `t-0b5723`, keep the worktree clean, and doorbell `codex`. Coordinator reruns the original no-waiver canonical gate,
 audits the complete net delta, and only then routes immutable Sonnet review.
+
+### T14 R3 combined audit — one narrow initialization correction
+
+R3 candidate `56a7295f` correctly closes all four R2 semantic findings, and its focused 392-test matrix, typecheck,
+and diff-check are green. It is nevertheless blocked without waiver at
+`.tachyon/verifications/56a7295ff5ae62022ea7962150275654ebcf9372.json`: canonical affected tests reproduce 27
+failures across five files because every generic lifecycle operation is denied between `Workspace.create()` and
+`Workspace.start()`. Independent Sonnet R1 confirms this is a real HIGH compatibility defect, not a harness
+artifact; see `.tachyon/reviews/368-delivery-reload-t14-r1.md` (`ab787ab6`). The documented production
+`ensureWorkspaceFor`/Init/New-Agent/Studio path creates a Workspace without calling `start()`, and config-change
+autostart or a manual spawn is then permanently refused even when the canonical stores are empty and healthy.
+
+Preserve R3's four accepted closures byte-for-byte except where this initialization correction necessarily touches
+their Workspace wiring: failed store reads remain explicit deny-all, explicit `deliveryJoin` remains allowed,
+existing realpath is required for held, holder/tail head and principal boundaries remain exact, and occupancy still
+gathers cwd or persisted worktree path.
+
+**Closed R4 algorithm.** Complete one bounded read-only Delivery reload attempt inside `Workspace._create` after
+config is loaded and before the Bridge or returned Workspace can expose generic lifecycle. Factor the attempt so
+both `_create` and `start()` use identical success/failure handling: success installs `{phase:"ready", snapshot}`;
+failure installs `{phase:"failed", reason}` and warns. `_create` must await that attempt; no external caller may
+observe `uninitialized`. `start()` must still recompute after session discovery/ledger rehydration/GC, so a startup
+retry can move failed→ready and ledger changes are reflected. The AgentManager callback remains deny-all for every
+non-ready phase, preserving the proof that a real attempted store-read failure cannot fail open. Do not special-case
+tests, Delivery presence, agent names, config modes, or allow `uninitialized` through the guard.
+
+Restore the pre-R3 `workspaceHeadless` helper semantics: `Workspace.createForTest` alone must again support an
+ordinary pre-`start()` spawn because `_create` has already produced a ready empty snapshot; remove the R3-only
+automatic/helper `start()` calls that masked this compatibility contract. Add direct assertions that the factory
+returns ready before `start`, ordinary pre-start spawn succeeds after a healthy empty snapshot, a forced
+`start()` store failure transitions ready→failed and blocks all generic paths, explicit `deliveryJoin` remains
+allowed, and a later successful `start()` retry transitions failed→ready. The canonical generated behavior must
+exercise the healthy pre-start path plus the existing R3 fail-closed cases, not copy production logic.
+
+Reuse Delivery `83a7f572-2672-4f9a-bf12-65e16d73769a` at exact `56a7295f`, granting Grok 4.5 only
+`src/workspace/Workspace.ts`, `test/unit/workspaceHeadless.test.ts`, and
+`test/unit/deliveryReloadT14GrokR2Behavior.gen.test.ts`. Grok remains the default implementation family; Sonnet's
+cross-family finding is the independent review input. Run the generated behavior, Workspace headless, and the exact
+canonical `vitest related` command serially, then `npm run typecheck` and `git diff --check`; no full, because R2's
+first-reviewable full is already green and final closure reserves the next full. Commit once by explicit pathspec
+with `t-0b5723`, clean tree, and doorbell `codex`. Coordinator reruns canonical `verify_task` without waiver, audits
+the narrow delta, then routes a final immutable Sonnet re-review before integration.
