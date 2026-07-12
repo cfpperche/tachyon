@@ -156,3 +156,47 @@ export interface DeliveryCorruptRecord {
   path: string;
   error: string;
 }
+
+/** Owner identity for a durable per-Delivery projection claim (SDD 368 T15). */
+export interface DeliveryProjectionOwnerIdentity {
+  pid: number;
+  processStart: string;
+  bootId: string;
+  /** Linux PID-namespace inode identity (e.g. from `/proc/self/ns/pid`). */
+  pidNamespace: string;
+}
+
+/**
+ * Opaque claim capability returned by `DeliveryStore.claimProjection`.
+ * Only the projection service may pair this with `updateUnderProjectionClaim`.
+ */
+export interface DeliveryProjectionClaimCapability {
+  readonly deliveryId: string;
+  readonly nonce: string;
+}
+
+export type DeliveryProjectionAction = "open" | "integrate" | "prune";
+
+/** Typed detail for append-only `projection.intent` Delivery events. */
+export interface DeliveryProjectionIntentDetail {
+  projectionSequence: number;
+  operationId: string;
+  gitDeliveryId: string;
+  action: DeliveryProjectionAction;
+  expected: {
+    deliveryVersion?: number;
+    gitDeliveryVersion?: number;
+    headSha?: string;
+    baseRef?: string;
+    branchRef?: string;
+    worktreePath?: string;
+    phase?: string;
+    abandon?: boolean;
+    forceLoseCommits?: boolean;
+    doomedShas?: string[];
+  };
+  actor: DeliveryActor;
+  payload: Record<string, unknown>;
+}
+
+export const PROJECTION_INTENT_EVENT_TYPE = "projection.intent";

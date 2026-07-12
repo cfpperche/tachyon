@@ -79,6 +79,7 @@ function fakeTmuxExec() {
 }
 
 describe("Bridge end-to-end over streamable HTTP", () => {
+  // Legacy generated guard: it("exposes exactly the 60 tools (17 agent ...")
   const { sessions, dead, panes, exec } = fakeTmuxExec();
   const notifications: Array<{ message: string; level: string }> = [];
   const config = parseConfig("agents:\n  claude:\n    cmd: claude\nsettings:\n  maxAgents: 2\n").config;
@@ -231,7 +232,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     fs.rmSync(pinsRoot, { recursive: true, force: true });
   });
 
-  it("exposes exactly the 60 tools (17 agent + 4 GitDelivery + 1 host action + 2 evidence + 5 pins + 9 tasks + 7 validations + 3 continuity + 3 handoff + 3 commands/runbooks + 2 schedules + 4 approvals/attention)", async () => {
+  it("exposes exactly the 61 tools (17 agent + 5 GitDelivery + 1 host action + 2 evidence + 5 pins + 9 tasks + 7 validations + 3 continuity + 3 handoff + 3 commands/runbooks + 2 schedules + 4 approvals/attention)", async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       "append_project_handoff_note",
@@ -256,6 +257,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       "get_task",
       "get_validation",
       "git_delivery_hygiene",
+      "git_delivery_integrate",
       "git_delivery_list",
       "git_delivery_open",
       "git_delivery_prune",

@@ -183,4 +183,24 @@ describe("DeliveryStore SQLite (spec 368)", () => {
       return record;
     });
   });
+
+  it("refuses ordinary update while a projection claim is held and accepts claim-capability updates", async () => {
+    const store = new DeliveryStore(root(), { now: () => now });
+    await store.create(input("d-proj-claim"));
+    const claim = await store.claimProjection("d-proj-claim");
+    await expect(store.update("d-proj-claim", 1, (record) => record)).rejects.toMatchObject({
+      name: "DeliveryProjectionClaimError",
+      retryable: true,
+    });
+    const updated = await store.updateUnderProjectionClaim(claim, 1, (record) => {
+      record.events.push({ id: "event-proj", at: now, type: "projection-held", by: actor });
+      return record;
+    }, { operationId: "op-proj", intent: { k: 1 } });
+    expect(updated.events.some((e) => e.id === "event-proj")).toBe(true);
+    await store.releaseProjection(claim);
+    await store.update("d-proj-claim", updated.version, (record) => {
+      record.events.push({ id: "event-free", at: now, type: "free-again", by: actor });
+      return record;
+    });
+  });
 });

@@ -10,6 +10,8 @@ import {
   type DeliveryCorruptRecord,
   type DeliveryCreateInput,
   type DeliveryMutationOptions,
+  type DeliveryProjectionClaimCapability,
+  type DeliveryProjectionOwnerIdentity,
   type DeliveryStoreCapability,
   type DeliveryStoreCapabilityContext,
   type DeliveryStoreCapabilityValidator,
@@ -51,9 +53,19 @@ export class DeliveryStoreBusyError extends Error implements StructuredDeliveryS
   readonly code = "DELIVERY_STORE_BUSY" as const;
   readonly retryable = true;
 
-  constructor(readonly databasePath: string) {
-    super(`DeliveryStore is busy: '${databasePath}'`);
+  constructor(readonly databasePath: string, message?: string) {
+    super(message ?? `DeliveryStore is busy: '${databasePath}'`);
     this.name = "DeliveryStoreBusyError";
+  }
+}
+
+export class DeliveryProjectionClaimError extends Error implements StructuredDeliveryStoreError {
+  readonly code = "DELIVERY_STORE_BUSY" as const;
+  readonly retryable = true;
+
+  constructor(readonly deliveryId: string, message: string) {
+    super(message);
+    this.name = "DeliveryProjectionClaimError";
   }
 }
 
@@ -62,6 +74,10 @@ export interface DeliveryStoreOptions {
   id?: () => string;
   busyTimeoutMs?: number;
   capabilityValidator?: DeliveryStoreCapabilityValidator;
+  /** Test seam: override owner identity used when claiming a projection lock. */
+  projectionOwnerIdentity?: () => DeliveryProjectionOwnerIdentity;
+  /** Test seam: classify an observed claim owner (alive / dead / ambiguous). */
+  projectionOwnerStatus?: (owner: DeliveryProjectionOwnerIdentity) => "alive" | "dead" | "ambiguous";
 }
 
 type SqlRow = Record<string, unknown>;
@@ -97,6 +113,12 @@ const STORE_SCHEMA = `
     result_json TEXT NOT NULL,
     intent_fingerprint TEXT NOT NULL,
     committed_at TEXT NOT NULL
+  ) STRICT;
+  CREATE TABLE IF NOT EXISTS delivery_projection_claims (
+    delivery_id TEXT PRIMARY KEY,
+    nonce TEXT NOT NULL,
+    owner_json TEXT NOT NULL,
+    claimed_at TEXT NOT NULL
   ) STRICT;
 `;
 
@@ -244,6 +266,106 @@ export class DeliveryStore {
     mutate: (record: Delivery) => Delivery,
     options: DeliveryMutationOptions = {},
   ): Promise<Delivery> {
+    return this.updateInternal(id, expectedVersion, mutate, options, undefined);
+  }
+
+  /**
+   * Canonical projection mutations under a held projection claim (SDD 368 T15).
+   * Ordinary `update` is refused while a claim exists; only this path may mutate
+   * a claimed Delivery, and only with the matching `(deliveryId, nonce)`.
+   */
+  async updateUnderProjectionClaim(
+    claim: DeliveryProjectionClaimCapability,
+    expectedVersion: number,
+    mutate: (record: Delivery) => Delivery,
+    options: DeliveryMutationOptions = {},
+  ): Promise<Delivery> {
+    assertDeliveryId(claim.deliveryId);
+    if (!claim.nonce || typeof claim.nonce !== "string") {
+      throw new DeliveryInvariantError("projection claim nonce is required");
+    }
+    return this.updateInternal(claim.deliveryId, expectedVersion, mutate, options, claim);
+  }
+
+  /**
+   * Acquire the durable per-Delivery projection claim. Short BEGIN IMMEDIATE only.
+   * Same-domain provably-dead owners are reclaimed; live/foreign/ambiguous owners busy-retry.
+   */
+  async claimProjection(deliveryId: string): Promise<DeliveryProjectionClaimCapability> {
+    assertDeliveryId(deliveryId);
+    const owner = this.currentProjectionOwner();
+    const nonce = randomBytes(16).toString("hex");
+    const claimedAt = this.now();
+    return this.writeTransaction((db) => {
+      const existing = db.prepare("SELECT delivery_id, nonce, owner_json, claimed_at FROM delivery_projection_claims WHERE delivery_id = ?")
+        .get(deliveryId) as SqlRow | undefined;
+      if (existing) {
+        let existingOwner: DeliveryProjectionOwnerIdentity;
+        try {
+          existingOwner = parseProjectionOwner(String(existing.owner_json));
+        } catch {
+          throw new DeliveryProjectionClaimError(deliveryId, `Delivery '${deliveryId}' projection claim owner is malformed`);
+        }
+        const status = this.ownerStatus(existingOwner);
+        if (status !== "dead") {
+          throw new DeliveryProjectionClaimError(
+            deliveryId,
+            `Delivery '${deliveryId}' projection claim is held (${status === "alive" ? "live owner" : "ambiguous owner"})`,
+          );
+        }
+        // Atomic replace of a same-domain provably-dead owner.
+        db.prepare("DELETE FROM delivery_projection_claims WHERE delivery_id = ? AND nonce = ?")
+          .run(deliveryId, String(existing.nonce));
+      }
+      const row = db.prepare("SELECT id FROM deliveries WHERE id = ?").get(deliveryId) as SqlRow | undefined;
+      if (!row) throw new DeliveryNotFoundError(deliveryId);
+      try {
+        db.prepare("INSERT INTO delivery_projection_claims(delivery_id, nonce, owner_json, claimed_at) VALUES (?, ?, ?, ?)")
+          .run(deliveryId, nonce, JSON.stringify(owner), claimedAt);
+      } catch (error) {
+        if (isConstraintError(error)) {
+          throw new DeliveryProjectionClaimError(deliveryId, `Delivery '${deliveryId}' projection claim is held (concurrent claim)`);
+        }
+        throw error;
+      }
+      return { deliveryId, nonce };
+    });
+  }
+
+  /**
+   * Exact release: deletes only the matching `(deliveryId, nonce)`. A successor claim is never deleted.
+   */
+  async releaseProjection(claim: DeliveryProjectionClaimCapability): Promise<void> {
+    assertDeliveryId(claim.deliveryId);
+    if (!claim.nonce) throw new DeliveryInvariantError("projection claim nonce is required");
+    this.writeTransaction((db) => {
+      db.prepare("DELETE FROM delivery_projection_claims WHERE delivery_id = ? AND nonce = ?")
+        .run(claim.deliveryId, claim.nonce);
+    });
+  }
+
+  async getProjectionClaim(deliveryId: string): Promise<{ deliveryId: string; nonce: string; owner: DeliveryProjectionOwnerIdentity; claimedAt: string } | undefined> {
+    assertDeliveryId(deliveryId);
+    return this.withDatabase((db) => {
+      const row = db.prepare("SELECT delivery_id, nonce, owner_json, claimed_at FROM delivery_projection_claims WHERE delivery_id = ?")
+        .get(deliveryId) as SqlRow | undefined;
+      if (!row) return undefined;
+      return {
+        deliveryId: String(row.delivery_id),
+        nonce: String(row.nonce),
+        owner: parseProjectionOwner(String(row.owner_json)),
+        claimedAt: String(row.claimed_at),
+      };
+    });
+  }
+
+  private async updateInternal(
+    id: string,
+    expectedVersion: number,
+    mutate: (record: Delivery) => Delivery,
+    options: DeliveryMutationOptions,
+    claim: DeliveryProjectionClaimCapability | undefined,
+  ): Promise<Delivery> {
     assertDeliveryId(id);
     assertOperationId(options.operationId);
     if (options.operationId !== undefined && options.intent === undefined) {
@@ -266,6 +388,17 @@ export class DeliveryStore {
     return this.writeTransaction((db) => {
       const replay = options.operationId && this.readReceipt(db, options.operationId, "update", fingerprint, id);
       if (replay) return replay;
+      const claimRow = db.prepare("SELECT nonce FROM delivery_projection_claims WHERE delivery_id = ?").get(id) as SqlRow | undefined;
+      if (claim) {
+        if (!claimRow || String(claimRow.nonce) !== claim.nonce) {
+          throw new DeliveryProjectionClaimError(id, `Delivery '${id}' projection claim is missing or nonce-mismatched`);
+        }
+      } else if (claimRow) {
+        throw new DeliveryProjectionClaimError(
+          id,
+          `Delivery '${id}' has an active projection claim; ordinary update is refused`,
+        );
+      }
       const row = db.prepare("SELECT record_json FROM deliveries WHERE id = ?").get(id) as SqlRow | undefined;
       if (!row) throw new DeliveryNotFoundError(id);
       const current = parseRecord(String(row.record_json));
@@ -281,6 +414,16 @@ export class DeliveryStore {
       if (options.operationId) this.writeReceipt(db, options.operationId, "update", fingerprint, committed, committed.updatedAt);
       return structuredClone(committed);
     });
+  }
+
+  private currentProjectionOwner(): DeliveryProjectionOwnerIdentity {
+    if (this.opts.projectionOwnerIdentity) return this.opts.projectionOwnerIdentity();
+    return readLocalProjectionOwnerIdentity();
+  }
+
+  private ownerStatus(owner: DeliveryProjectionOwnerIdentity): "alive" | "dead" | "ambiguous" {
+    if (this.opts.projectionOwnerStatus) return this.opts.projectionOwnerStatus(owner);
+    return classifyProjectionOwner(owner);
   }
 
   private validateCapability(): DeliveryStoreCapability {
@@ -641,4 +784,91 @@ function isConstraintError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
   const code = (error as Error & { code?: string }).code;
   return code === "ERR_SQLITE_CONSTRAINT_PRIMARYKEY" || code === "SQLITE_CONSTRAINT" || /constraint failed/i.test(error.message);
+}
+
+function parseProjectionOwner(json: string): DeliveryProjectionOwnerIdentity {
+  let owner: DeliveryProjectionOwnerIdentity;
+  try {
+    owner = JSON.parse(json) as DeliveryProjectionOwnerIdentity;
+  } catch {
+    throw new DeliveryInvariantError("malformed projection claim owner JSON");
+  }
+  if (!Number.isInteger(owner.pid) || owner.pid <= 0
+    || typeof owner.processStart !== "string" || !owner.processStart
+    || typeof owner.bootId !== "string" || !owner.bootId
+    || typeof owner.pidNamespace !== "string" || !owner.pidNamespace) {
+    throw new DeliveryInvariantError("malformed projection claim owner identity");
+  }
+  return owner;
+}
+
+/** Read this process's durable projection-owner identity (PID, start, boot, PID-ns). */
+export function readLocalProjectionOwnerIdentity(): DeliveryProjectionOwnerIdentity {
+  const pid = process.pid;
+  let processStart: string;
+  try {
+    const stat = fs.readFileSync(`/proc/${pid}/stat`, "utf8");
+    const close = stat.lastIndexOf(")");
+    if (close < 0) throw new Error("malformed stat");
+    const after = stat.slice(close + 2).trimStart().split(/\s+/);
+    processStart = after[19] ?? "";
+    if (!/^\d+$/.test(processStart)) throw new Error("malformed process start");
+  } catch (error) {
+    throw new DeliveryStoreUnsupportedError(
+      `projection claim owner processStart unreadable: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  let bootId: string;
+  try {
+    bootId = fs.readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim();
+  } catch (error) {
+    throw new DeliveryStoreUnsupportedError(
+      `projection claim owner bootId unreadable: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  if (!bootId) throw new DeliveryStoreUnsupportedError("projection claim owner bootId empty");
+  let pidNamespace: string;
+  try {
+    pidNamespace = fs.readlinkSync("/proc/self/ns/pid");
+  } catch (error) {
+    throw new DeliveryStoreUnsupportedError(
+      `projection claim owner pidNamespace unreadable: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  if (!pidNamespace) throw new DeliveryStoreUnsupportedError("projection claim owner pidNamespace empty");
+  return { pid, processStart, bootId, pidNamespace };
+}
+
+/**
+ * Classify a durable claim owner. Same boot+PID-namespace with a missing process is dead and reclaimable.
+ * Live, foreign domain, PID-reuse, unreadable, or malformed observations are ambiguous (busy).
+ */
+export function classifyProjectionOwner(owner: DeliveryProjectionOwnerIdentity): "alive" | "dead" | "ambiguous" {
+  let currentBoot: string;
+  let currentNs: string;
+  try {
+    currentBoot = fs.readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim();
+    currentNs = fs.readlinkSync("/proc/self/ns/pid");
+  } catch {
+    return "ambiguous";
+  }
+  if (!currentBoot || !currentNs) return "ambiguous";
+  if (owner.bootId !== currentBoot || owner.pidNamespace !== currentNs) return "ambiguous";
+
+  let stat: string;
+  try {
+    stat = fs.readFileSync(`/proc/${owner.pid}/stat`, "utf8");
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") return "dead";
+    return "ambiguous";
+  }
+  const close = stat.lastIndexOf(")");
+  if (close < 0) return "ambiguous";
+  const after = stat.slice(close + 2).trimStart().split(/\s+/);
+  const processStart = after[19];
+  if (!processStart || !/^\d+$/.test(processStart)) return "ambiguous";
+  if (processStart === owner.processStart) return "alive";
+  // PID reused by a different process in the same domain — never auto-reclaim.
+  return "ambiguous";
 }

@@ -95,6 +95,7 @@ import { GitDeliveryStore } from "../git-delivery/store.js";
 import { DeliveryStore } from "../delivery/store.js";
 import { waitForDeliveryLease } from "../delivery/leaseService.js";
 import { DeliveryVerificationLeaseService } from "../delivery/verificationLease.js";
+import { DeliveryProjectionService } from "../delivery/projectionService.js";
 import {
   readLinuxProcessIdentity,
   reconcileDeliveryReload,
@@ -245,6 +246,7 @@ export class Workspace {
   readonly worktrees: WorktreeManager;
   readonly gitDeliveries: GitDeliveryStore;
   readonly deliveries: DeliveryStore;
+  readonly deliveryProjection: DeliveryProjectionService;
   readonly deliveryVerification: DeliveryVerificationLeaseService;
   /** spec 257 — the captured headless A2A probe lane (probe_agent / read_probe_result). */
   readonly probeService: ProbeService;
@@ -436,6 +438,26 @@ export class Workspace {
       getSettings: () => this.config?.settings ?? {},
       git: this.gitExec,
       occupancy: (worktreePath) => this.manager.worktreeOccupant(worktreePath),
+    });
+    // SDD 368 T15 — constructed after worktrees so the path lock seam is available.
+    this.deliveryProjection = new DeliveryProjectionService({
+      deliveries: this.deliveries,
+      gitDeliveries: this.gitDeliveries,
+      workspaceRoot,
+      workspaceId: this.wsHash,
+      git: this.gitExec,
+      liveness: (agent) => this.gitDeliveryLiveness(agent),
+      worktreeOccupancy: (worktreePath) => this.manager.worktreeOccupant(worktreePath),
+      withWorktreeLock: (canonicalWorktree, fn) => this.worktrees.withPathLock(canonicalWorktree, fn),
+      settings: () => resolveGitDeliverySettings(this.config?.settings),
+      loadReloadSnapshot: async (deliveryId) => {
+        // Prefer the in-memory T14 snapshot when ready; otherwise recompute one bounded view.
+        if (this.deliveryReload.phase === "ready") {
+          const snap = this.deliveryReload.snapshot;
+          if (snap.byId.has(deliveryId)) return snap;
+        }
+        return this.refreshDeliveryReloadSnapshot();
+      },
     });
     this.harness = new HarnessManager(workspaceRoot, realConfigHome(), undefined, undefined, undefined, (message) => this.host.notify(message, "warn"));
     // spec 226 (H2) — when an agent has an isolated harness, its claude transcripts live under the
@@ -1043,6 +1065,9 @@ export class Workspace {
           tasks: this.taskStore,
           workspaceId: this.wsHash,
           withWorktreeLock: (agent, fn) => this.worktrees.withAgentPathLock(agent, fn),
+          projection: this.deliveryProjection,
+          deliveries: this.deliveries,
+          reloadSnapshot: () => (this.deliveryReload.phase === "ready" ? this.deliveryReload.snapshot : undefined),
         },
         // spec 351 (dueto F8) — plaintext Bridge tokens Tachyon still holds, for exact-match redaction of
         // live-captured pane text (read_output). Per-agent tokens aren't retained in plaintext.
@@ -2233,22 +2258,20 @@ export class Workspace {
         if (!delivery) throw error;
       }
     }
-    const projection = await this.gitDeliveries.open({
-      workspaceId: this.wsHash, createdBy: actor, deliveryId: delivery.id, agent: input.name,
-      branchRef: input.worktree.branch, worktreePath: input.worktree.path,
+    // SDD 368 T15 — canonical gated open under projection claim + intent + backlink repair.
+    const opened = await this.deliveryProjection.openCanonical({
+      deliveryId: delivery.id,
+      agent: input.name,
+      branchRef: input.worktree.branch,
+      worktreePath: input.worktree.path,
       tachyonCreatedBranch: input.worktree.tachyonCreatedBranch,
       baseRef: input.worktree.baseBranch ?? input.worktree.baseRef,
-      currentHeadSha: input.baseSha, reason: "canonical gated spawn",
+      currentHeadSha: input.baseSha,
+      actor,
+      operationId: `gated-spawn-open:${spawnKey}`,
+      reason: "canonical gated spawn",
     });
-    if (delivery.gitDeliveryId !== projection.id) {
-      if (delivery.gitDeliveryId && delivery.gitDeliveryId !== projection.id) {
-        throw new Error(`Delivery '${delivery.id}' is already linked to GitDelivery '${delivery.gitDeliveryId}'`);
-      }
-      delivery = await this.deliveries.update(delivery.id, delivery.version, (record) => ({ ...record, gitDeliveryId: projection.id }), {
-        operationId: `gated-spawn-link:${spawnKey}`,
-        intent: { gitDeliveryId: projection.id },
-      });
-    }
+    delivery = opened.delivery;
     // SDD 368 T14 — reverse binding after Delivery + linked Git projection are durable.
     // Require one internally exact held holder/open-tail/executionAgent boundary; no
     // same-name or tail-segment inference. Pre-sequential gated spawn omits executionNonce;

@@ -1,7 +1,17 @@
 import fs from "node:fs";
 import type { GitExec } from "../worktree/WorktreeManager.js";
 import type { TaskStore } from "../tasks/TaskStore.js";
-import type { GitDelivery, GitDeliveryCorruptRecord, GitDeliveryListRow, GitDeliveryLiveState, HygieneFinding, HygieneReport } from "./types.js";
+import type { Delivery } from "../delivery/types.js";
+import type { ReloadReconciliationSnapshot } from "../delivery/reloadReconciliation.js";
+import type {
+  GitDelivery,
+  GitDeliveryCorruptRecord,
+  GitDeliveryListRow,
+  GitDeliveryLiveState,
+  HygieneFinding,
+  HygieneReport,
+  ProjectionSyncState,
+} from "./types.js";
 
 export type DeliveryLiveness = (agent: string) => Promise<"live" | "not_live" | "unknown">;
 
@@ -11,6 +21,12 @@ export interface ClassifyDeps {
   liveness: DeliveryLiveness;
   tasks?: TaskStore;
   now?: () => string;
+  /** Optional canonical Delivery lookup for list/hygiene safety metadata (SDD 368 T15). */
+  deliveriesById?: ReadonlyMap<string, Delivery>;
+  /** Optional T14 reload snapshot for safety classification on linked rows. */
+  reloadSnapshot?: ReloadReconciliationSnapshot;
+  /** Optional map of pending projection intent sequences by GitDelivery id. */
+  pendingProjectionByGitId?: ReadonlyMap<string, number>;
 }
 
 function hasIntegrationMetadata(delivery: GitDelivery): boolean {
@@ -80,6 +96,38 @@ export async function classifyDelivery(delivery: GitDelivery, deps: ClassifyDeps
   return { currentHeadSha, containedInBase: contained, cherryPickedWithoutMetadata, missingRef, branchExists, worktreeExists, clean, liveState, reasons };
 }
 
+function projectionSyncFor(delivery: GitDelivery, deps: ClassifyDeps): ProjectionSyncState {
+  if (!delivery.deliveryId) return "unlinked";
+  const pending = deps.pendingProjectionByGitId?.get(delivery.id);
+  if (pending !== undefined && pending > (delivery.lastAppliedProjectionSequence ?? 0)) return "pending";
+  const canonical = deps.deliveriesById?.get(delivery.deliveryId);
+  if (!canonical) return "unknown";
+  if (canonical.gitDeliveryId && canonical.gitDeliveryId !== delivery.id) return "diverged";
+  if (delivery.deliveryId !== canonical.id) return "diverged";
+  return "in_sync";
+}
+
+function safetyMeta(delivery: GitDelivery, deps: ClassifyDeps): Pick<GitDeliveryListRow, "deliveryId" | "leaseState" | "safetyClass" | "projectionSync"> {
+  if (!delivery.deliveryId) {
+    return { projectionSync: "unlinked" };
+  }
+  const canonical = deps.deliveriesById?.get(delivery.deliveryId);
+  const classif = deps.reloadSnapshot?.byId.get(delivery.deliveryId);
+  return {
+    deliveryId: delivery.deliveryId,
+    ...(canonical ? { leaseState: canonical.lease.state } : {}),
+    safetyClass: classif?.class ?? (canonical ? "unknown" : "unknown"),
+    projectionSync: projectionSyncFor(delivery, deps),
+  };
+}
+
+/** Linked rows that are not safe for ready_to_prune (T14 non-terminal or unknown). */
+export function linkedRowUnsafeForPrune(row: Pick<GitDeliveryListRow, "deliveryId" | "safetyClass">): boolean {
+  if (!row.deliveryId) return false;
+  if (!row.safetyClass || row.safetyClass === "unknown") return true;
+  return row.safetyClass !== "terminal";
+}
+
 export async function listRows(deliveries: GitDelivery[], deps: ClassifyDeps): Promise<GitDeliveryListRow[]> {
   return Promise.all(
     deliveries.map(async (delivery) => ({
@@ -92,6 +140,7 @@ export async function listRows(deliveries: GitDelivery[], deps: ClassifyDeps): P
       phase: delivery.phase,
       taskLinks: delivery.taskLinks,
       ...(delivery.review ? { review: delivery.review } : {}),
+      ...safetyMeta(delivery, deps),
       ...(await classifyDelivery(delivery, deps)),
     })),
   );
@@ -106,9 +155,19 @@ export async function hygieneReport(deliveries: GitDelivery[], corrupt: GitDeliv
   for (const row of rows) {
     if (row.missingRef && row.phase !== "pruned") findings.push({ category: "missing_ref", deliveryId: row.id, agent: row.agent, reason: row.reasons.join("; ") });
     if (row.phase === "integrated_unverified") findings.push({ category: "integrated_unverified", deliveryId: row.id, agent: row.agent, reason: "integration was asserted without git verification" });
-    if (row.containedInBase && row.clean && row.liveState === "not_live" && (row.phase === "integrated" || row.phase === "open" || row.phase === "accepted")) {
+
+    const unsafeLinked = linkedRowUnsafeForPrune(row);
+    if (unsafeLinked) {
+      findings.push({
+        category: "delivery_unavailable",
+        deliveryId: row.id,
+        agent: row.agent,
+        reason: `linked Delivery safety is ${row.safetyClass ?? "unknown"}; not ready_to_prune`,
+      });
+    } else if (row.containedInBase && row.clean && row.liveState === "not_live" && (row.phase === "integrated" || row.phase === "open" || row.phase === "accepted")) {
       findings.push({ category: "ready_to_prune", deliveryId: row.id, agent: row.agent, reason: "branch is contained in base, worktree is clean, and agent is not live" });
     }
+
     if (row.cherryPickedWithoutMetadata) {
       findings.push({
         category: "cherry_pick_unrecorded",

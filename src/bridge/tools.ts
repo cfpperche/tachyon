@@ -58,7 +58,12 @@ import {
 import { hygieneReport, listRows, type DeliveryLiveness } from "../git-delivery/classify.js";
 import { pruneDeliveryRecord } from "../git-delivery/prune.js";
 import { resolveGitDeliverySettings } from "../git-delivery/settings.js";
-import { canOpenGitDelivery, canPruneGitDelivery } from "../git-delivery/policy.js";
+import {
+  canOpenGitDelivery,
+  canPruneGitDelivery,
+  canPruneLinkedGitDelivery,
+  canIntegrateLinkedGitDelivery,
+} from "../git-delivery/policy.js";
 import type { GitDeliveryStore } from "../git-delivery/store.js";
 import type { GitExec } from "../worktree/WorktreeManager.js";
 import type { WorktreeOccupancyProbe } from "../worktree/WorktreeManager.js";
@@ -66,6 +71,10 @@ import type { GitDeliveryActor, GitDeliverySettings } from "../git-delivery/type
 import type { TaskNotificationEvent } from "../tasks/taskNotificationPolicy.js";
 import { TaskPrototypeStore, type TaskPrototypeSnapshot } from "../tasks/TaskPrototypeStore.js";
 import type { WaitForDeliveryLeaseInput, WaitForDeliveryLeaseResult } from "../delivery/leaseService.js";
+import type { DeliveryProjectionService } from "../delivery/projectionService.js";
+import type { DeliveryStore } from "../delivery/store.js";
+import type { Delivery } from "../delivery/types.js";
+import type { ReloadReconciliationSnapshot } from "../delivery/reloadReconciliation.js";
 
 export type NotifyLevel = "info" | "warn" | "error";
 export type NoticeDeliveryResult = { status: "notified" | "queued"; dropped?: number; queued?: number };
@@ -184,6 +193,12 @@ export interface BridgeDeps {
     tasks?: TaskStore;
     workspaceId: string;
     withWorktreeLock?: <T>(agent: string, fn: () => Promise<T>) => Promise<T>;
+    /** SDD 368 T15 — canonical linked projection mutations. */
+    projection?: DeliveryProjectionService;
+    /** Canonical Delivery store for list/hygiene safety metadata. */
+    deliveries?: DeliveryStore;
+    /** Optional T14 snapshot for list/hygiene linked safety labeling. */
+    reloadSnapshot?: () => ReloadReconciliationSnapshot | undefined;
   };
 }
 
@@ -352,6 +367,23 @@ function gitDeliveryActor(deps: Pick<BridgeDeps, "caller">): GitDeliveryActor {
 
 function gitDeliveryCallerName(deps: Pick<BridgeDeps, "caller">): string | undefined {
   return deps.caller?.kind === "agent" ? deps.caller.name : undefined;
+}
+
+async function gitDeliveryClassifyExtras(deps: BridgeDeps): Promise<{
+  deliveriesById?: ReadonlyMap<string, Delivery>;
+  reloadSnapshot?: ReloadReconciliationSnapshot;
+}> {
+  const out: {
+    deliveriesById?: ReadonlyMap<string, Delivery>;
+    reloadSnapshot?: ReloadReconciliationSnapshot;
+  } = {};
+  if (deps.gitDelivery?.deliveries) {
+    const list = await deps.gitDelivery.deliveries.list();
+    out.deliveriesById = new Map(list.map((d) => [d.id, d]));
+  }
+  const snap = deps.gitDelivery?.reloadSnapshot?.();
+  if (snap) out.reloadSnapshot = snap;
+  return out;
 }
 
 function fail(err: unknown): ToolResult {
@@ -607,6 +639,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           git: deps.gitDelivery.git,
           liveness: deps.gitDelivery.liveness,
           tasks: deps.gitDelivery.tasks,
+          ...(await gitDeliveryClassifyExtras(deps)),
         });
         return ok(JSON.stringify(rows, null, 2));
       } catch (err) {
@@ -619,7 +652,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     "git_delivery_hygiene",
     {
       description:
-        "Read-only GitDelivery hygiene report. Categories include ready_to_prune, candidate_orphan, landed_without_integrated, missing_ref, integrated_unverified, and corrupt_record. Never deletes.",
+        "Read-only GitDelivery hygiene report. Categories include ready_to_prune, candidate_orphan, landed_without_integrated, missing_ref, integrated_unverified, corrupt_record, and delivery_unavailable. Never deletes.",
       inputSchema: {},
     },
     async () => {
@@ -631,6 +664,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           git: deps.gitDelivery.git,
           liveness: deps.gitDelivery.liveness,
           tasks: deps.gitDelivery.tasks,
+          ...(await gitDeliveryClassifyExtras(deps)),
         });
         return ok(JSON.stringify(report, null, 2));
       } catch (err) {
@@ -642,7 +676,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
   mcp.registerTool(
     "git_delivery_open",
     {
-      description: "Open a local GitDelivery for an existing worktree branch. Allowed for the delivery agent itself or any orchestrator using its own Bridge identity.",
+      description: "Open a local GitDelivery for an existing worktree branch. Allowed for the delivery agent itself or any orchestrator using its own Bridge identity. Linked canonical opens go through DeliveryProjectionService when deliveryId is supplied via internal seams; this tool remains the Delivery-less compatibility path.",
       inputSchema: {
         agent: AGENT_NAME,
         branchRef: z.string().min(1),
@@ -681,10 +715,75 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
   );
 
   mcp.registerTool(
+    "git_delivery_integrate",
+    {
+      description:
+        "Record-only integrate: records integrated only after live Git proves the exact delivered head is contained in the base (ancestor or audited patch-equivalence). Never runs a main-mutating Git command. Linked projections require privileged or configure integratePrincipals.",
+      inputSchema: {
+        id: z.string().regex(/^gd-[0-9a-f]+$/),
+        expectedVersion: z.number().int().min(1),
+        expectedHeadSha: z.string().min(7),
+      },
+    },
+    async ({ id, expectedVersion, expectedHeadSha }) => {
+      try {
+        if (!deps.gitDelivery) return fail(new Error("GitDelivery is not available on this Bridge"));
+        const store = deps.gitDelivery.store;
+        const projection = await store.get(id);
+        if (!projection) return fail(new Error(`GitDelivery '${id}' not found`));
+        const actor = gitDeliveryActor(deps);
+        const settings = deps.gitDelivery.settings?.() ?? resolveGitDeliverySettings(undefined);
+        if (projection.deliveryId) {
+          if (!deps.gitDelivery.projection) {
+            return fail(new Error("canonical DeliveryProjectionService is not available for linked integrate"));
+          }
+          if (!canIntegrateLinkedGitDelivery(actor, settings.integratePrincipals, deps.caller)) {
+            return fail(new Error("git_delivery_integrate refused: linked caller is not privileged or a configured integratePrincipal"));
+          }
+          const result = await deps.gitDelivery.projection.integrate({
+            deliveryId: projection.deliveryId,
+            gitDeliveryId: id,
+            expectedGitVersion: expectedVersion,
+            expectedHeadSha,
+            actor,
+            caller: deps.caller,
+          });
+          return ok(JSON.stringify({ ok: true, projection: result.projection }, null, 2));
+        }
+        // Delivery-less legacy path: live proof then direct phase update.
+        if (projection.version !== expectedVersion) {
+          return fail(new Error(`GitDelivery '${id}' version conflict: expected ${expectedVersion}, found ${projection.version}`));
+        }
+        const tip = await deps.gitDelivery.git(["rev-parse", projection.branchRef], deps.workspaceRoot).catch(() => ({ code: 1, stdout: "", stderr: "" }));
+        const liveHead = tip.code === 0 ? tip.stdout.trim() : "";
+        if (!liveHead || liveHead !== expectedHeadSha) {
+          return fail(new Error(`git_delivery_integrate refused: live tip does not equal expected head`));
+        }
+        const ancestry = await deps.gitDelivery.git(["merge-base", "--is-ancestor", liveHead, projection.baseRef], deps.workspaceRoot);
+        if (ancestry.code !== 0) {
+          return fail(new Error("git_delivery_integrate refused: live tip is not contained in base"));
+        }
+        const at = new Date().toISOString();
+        const next = await store.update(id, expectedVersion, (record) => ({
+          ...record,
+          phase: "integrated",
+          currentHeadSha: liveHead,
+          integratedSha: liveHead,
+          integration: { kind: "ancestor", at, by: actor, integratedSha: liveHead, evidence: { proof: "live-contained-in-base" } },
+          transitions: [...record.transitions, { at, from: record.phase, to: "integrated", by: actor, reason: "record-only integrate" }],
+        }));
+        return ok(JSON.stringify({ ok: true, projection: next }, null, 2));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
     "git_delivery_prune",
     {
       description:
-        "Prune a GitDelivery after live fail-closed checks. Integrated branch prune requires live containedInBase, clean worktree, not-live agent, Tachyon-created branch, and expectedVersion. Abandon mode removes the worktree and keeps unique branch commits unless forceLoseCommits plus doomedShas match live history.",
+        "Prune a GitDelivery after live fail-closed checks. Integrated branch prune requires live containedInBase, clean worktree, not-live agent, Tachyon-created branch, and expectedVersion. Abandon mode removes the worktree and keeps unique branch commits unless forceLoseCommits plus doomedShas match live history. Linked projections route through DeliveryProjectionService with T14 safety.",
       inputSchema: {
         id: z.string().regex(/^gd-[0-9a-f]+$/),
         expectedVersion: z.number().int().min(1),
@@ -701,11 +800,33 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           const delivery = await store.get(id);
           if (!delivery) return fail(new Error(`GitDelivery '${id}' not found`));
           if (delivery.version !== expectedVersion) return fail(new Error(`GitDelivery '${id}' version conflict: expected ${expectedVersion}, found ${delivery.version}`));
+          const actor = gitDeliveryActor(deps);
           const callerName = gitDeliveryCallerName(deps);
           const settings = deps.gitDelivery?.settings?.() ?? resolveGitDeliverySettings(undefined);
+
+          if (delivery.deliveryId) {
+            if (!deps.gitDelivery?.projection) {
+              return fail(new Error("canonical DeliveryProjectionService is not available for linked prune"));
+            }
+            if (!canPruneLinkedGitDelivery(actor, settings.prunePrincipals, deps.caller)) {
+              return fail(new Error("git_delivery_prune refused: linked caller is not privileged or a configured prunePrincipal"));
+            }
+            const result = await deps.gitDelivery.projection.prune({
+              deliveryId: delivery.deliveryId,
+              gitDeliveryId: id,
+              expectedGitVersion: expectedVersion,
+              actor,
+              caller: deps.caller,
+              abandon,
+              forceLoseCommits,
+              doomedShas,
+            });
+            return ok(JSON.stringify(result.result, null, 2));
+          }
+
           const allowed = canPruneGitDelivery(delivery, callerName, settings.prunePrincipals);
           if (!allowed) return fail(new Error("git_delivery_prune refused: caller is not the delivery agent, creator, or a configured prunePrincipal"));
-          const pruned = await pruneDeliveryRecord(delivery, { id, expectedVersion, abandon, forceLoseCommits, doomedShas }, gitDeliveryActor(deps), {
+          const pruned = await pruneDeliveryRecord(delivery, { id, expectedVersion, abandon, forceLoseCommits, doomedShas }, actor, {
             workspaceRoot: deps.workspaceRoot,
             git: deps.gitDelivery!.git,
             liveness: deps.gitDelivery!.liveness,
@@ -720,6 +841,8 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         if (!deps.gitDelivery.withWorktreeLock) return run();
         const delivery = await store.get(id);
         if (!delivery) return fail(new Error(`GitDelivery '${id}' not found`));
+        // Linked path takes its own claim → worktree lock order inside the projection service.
+        if (delivery.deliveryId && deps.gitDelivery.projection) return run();
         return deps.gitDelivery.withWorktreeLock(delivery.agent, run);
       } catch (err) {
         return fail(err);

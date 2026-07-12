@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { createRequire } from "node:module";
 import { GIT_DELIVERY_SCHEMA_VERSION, type GitDelivery, type GitDeliveryCorruptRecord, type GitDeliveryOpenInput } from "./types.js";
 
@@ -22,6 +22,20 @@ export class GitDeliveryNotFoundError extends Error {
   constructor(id: string) {
     super(`GitDelivery '${id}' not found`);
     this.name = "GitDeliveryNotFoundError";
+  }
+}
+
+export class GitDeliveryCanonicalSequenceError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "GitDeliveryCanonicalSequenceError";
+  }
+}
+
+export class GitDeliveryLinkedMutationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "GitDeliveryLinkedMutationError";
   }
 }
 
@@ -52,17 +66,29 @@ export class GitDeliveryStore {
 
   async open(input: GitDeliveryOpenInput): Promise<GitDelivery> {
     const normalizedPath = path.resolve(input.worktreePath);
+    const requestedId = input.id;
+    if (requestedId !== undefined && !/^gd-[0-9a-f]+$/.test(requestedId)) {
+      throw new GitDeliveryUniquenessError(`invalid GitDelivery id '${requestedId}'`);
+    }
     const existing = this.withDatabase((db) => {
+      if (requestedId) {
+        const byId = db.prepare("SELECT record_json FROM git_deliveries WHERE id = ?").get(requestedId) as { record_json: string } | undefined;
+        if (byId) return JSON.parse(byId.record_json) as GitDelivery;
+      }
       const row = db.prepare("SELECT record_json FROM git_deliveries WHERE active = 1 AND (branch_ref = ? OR worktree_path = ?)").get(input.branchRef, normalizedPath) as { record_json: string } | undefined;
       return row ? JSON.parse(row.record_json) as GitDelivery : undefined;
     });
     if (existing) {
       if (existing.agent === input.agent && existing.branchRef === input.branchRef && path.resolve(existing.worktreePath) === path.resolve(input.worktreePath)) {
+        if (requestedId && existing.id !== requestedId) {
+          throw new GitDeliveryUniquenessError(`GitDelivery '${existing.id}' already owns branch/worktree; expected deterministic id '${requestedId}'`);
+        }
         if (input.deliveryId && existing.deliveryId && existing.deliveryId !== input.deliveryId) {
           throw new GitDeliveryUniquenessError(`GitDelivery '${existing.id}' is linked to Delivery '${existing.deliveryId}', not '${input.deliveryId}'`);
         }
         if (input.deliveryId && !existing.deliveryId) {
-          return this.update(existing.id, existing.version, (record) => ({ ...record, deliveryId: input.deliveryId }));
+          // Linking an unlinked legacy row is allowed via open (pre-link reservation path).
+          return this.update(existing.id, existing.version, (record) => ({ ...record, deliveryId: input.deliveryId }), { allowLinkedBypass: true });
         }
         return existing;
       }
@@ -71,7 +97,7 @@ export class GitDeliveryStore {
     const now = this.now();
     const rec: GitDelivery = {
       schemaVersion: GIT_DELIVERY_SCHEMA_VERSION,
-      id: this.newId(),
+      id: requestedId ?? this.newId(),
       version: 1,
       workspaceId: input.workspaceId,
       ...(input.deliveryId ? { deliveryId: input.deliveryId } : {}),
@@ -90,6 +116,17 @@ export class GitDeliveryStore {
     };
     try {
       return this.withTransaction((db) => {
+        if (requestedId) {
+          const byId = db.prepare("SELECT record_json FROM git_deliveries WHERE id = ?").get(requestedId) as { record_json: string } | undefined;
+          if (byId) {
+            const winner = JSON.parse(byId.record_json) as GitDelivery;
+            if (winner.agent !== input.agent || winner.branchRef !== input.branchRef || path.resolve(winner.worktreePath) !== normalizedPath
+              || (input.deliveryId && winner.deliveryId && winner.deliveryId !== input.deliveryId)) {
+              throw new GitDeliveryUniquenessError(`deterministic GitDelivery '${requestedId}' conflicts with an existing record`);
+            }
+            return winner;
+          }
+        }
         const row = db.prepare("SELECT record_json FROM git_deliveries WHERE active = 1 AND (branch_ref = ? OR worktree_path = ?)").get(input.branchRef, normalizedPath) as { record_json: string } | undefined;
         if (row) {
           const winner = JSON.parse(row.record_json) as GitDelivery;
@@ -113,13 +150,29 @@ export class GitDeliveryStore {
     }
   }
 
-  async update(id: string, expectedVersion: number, mutate: (record: GitDelivery) => GitDelivery): Promise<GitDelivery> {
+  /**
+   * Generic mutation path. Bridge/Workspace route linked lifecycle mutations through
+   * DeliveryProjectionService + `applyCanonicalIntent`. Linked records must never
+   * use this generic path: that would bypass the claim, authorization, and sequence.
+   */
+  async update(
+    id: string,
+    expectedVersion: number,
+    mutate: (record: GitDelivery) => GitDelivery,
+    options: { allowLinkedBypass?: boolean } = {},
+  ): Promise<GitDelivery> {
     const current = await this.get(id);
     if (!current) throw new GitDeliveryNotFoundError(id);
     if (current.version !== expectedVersion) {
       throw new GitDeliveryVersionConflictError(`GitDelivery '${id}' version conflict: expected ${expectedVersion}, found ${current.version}`);
     }
+    if (current.deliveryId && !options.allowLinkedBypass) {
+      throw new GitDeliveryCanonicalSequenceError(
+        `linked GitDelivery '${id}' must be mutated through applyCanonicalIntent`,
+      );
+    }
     const next = mutate(structuredClone(current));
+    assertImmutableLink(current, next);
     next.version = current.version + 1;
     next.updatedAt = this.now();
     this.withTransaction((db) => {
@@ -127,6 +180,69 @@ export class GitDeliveryStore {
       const result = db.prepare("UPDATE git_deliveries SET branch_ref = ?, worktree_path = ?, active = ?, record_json = ? WHERE id = ? AND json_extract(record_json, '$.version') = ?")
         .run(next.branchRef, path.resolve(next.worktreePath), active, JSON.stringify(next), id, expectedVersion);
       if (Number(result.changes) !== 1) throw new GitDeliveryVersionConflictError(`GitDelivery '${id}' version conflict`);
+    });
+    this.writeMirror(next);
+    return next;
+  }
+
+  /**
+   * Apply the next exact canonical projection sequence (SDD 368 T15).
+   * Identical sequence+operationId replay is success; gaps, collisions, link/version drift refuse.
+   */
+  async applyCanonicalIntent(input: {
+    id: string;
+    expectedVersion: number;
+    sequence: number;
+    operationId: string;
+    deliveryId: string;
+    mutate: (record: GitDelivery) => GitDelivery;
+  }): Promise<GitDelivery> {
+    if (!Number.isSafeInteger(input.sequence) || input.sequence < 1) {
+      throw new GitDeliveryCanonicalSequenceError(`invalid projection sequence ${input.sequence}`);
+    }
+    if (!input.operationId) throw new GitDeliveryCanonicalSequenceError("operationId is required");
+    const current = await this.get(input.id);
+    if (!current) throw new GitDeliveryNotFoundError(input.id);
+    const appliedSeq = current.lastAppliedProjectionSequence ?? 0;
+    if (appliedSeq === input.sequence && current.lastAppliedOperationId === input.operationId) {
+      // Idempotent identical replay.
+      return current;
+    }
+    if (appliedSeq === input.sequence && current.lastAppliedOperationId !== input.operationId) {
+      throw new GitDeliveryCanonicalSequenceError(
+        `projection sequence ${input.sequence} already applied as operation '${current.lastAppliedOperationId}', not '${input.operationId}'`,
+      );
+    }
+    if (input.sequence !== appliedSeq + 1) {
+      throw new GitDeliveryCanonicalSequenceError(
+        `projection sequence gap: expected ${appliedSeq + 1}, got ${input.sequence}`,
+      );
+    }
+    if (current.version !== input.expectedVersion) {
+      throw new GitDeliveryVersionConflictError(
+        `GitDelivery '${input.id}' version conflict: expected ${input.expectedVersion}, found ${current.version}`,
+      );
+    }
+    if (current.deliveryId !== undefined && current.deliveryId !== input.deliveryId) {
+      throw new GitDeliveryCanonicalSequenceError(
+        `immutable deliveryId link drift: record has '${current.deliveryId}', intent has '${input.deliveryId}'`,
+      );
+    }
+    const next = input.mutate(structuredClone(current));
+    assertImmutableLink(current, next);
+    if (next.deliveryId !== undefined && next.deliveryId !== input.deliveryId) {
+      throw new GitDeliveryCanonicalSequenceError(`mutate attempted to change deliveryId link`);
+    }
+    if (!next.deliveryId) next.deliveryId = input.deliveryId;
+    next.lastAppliedProjectionSequence = input.sequence;
+    next.lastAppliedOperationId = input.operationId;
+    next.version = current.version + 1;
+    next.updatedAt = this.now();
+    this.withTransaction((db) => {
+      const active = next.phase === "pruned" ? 0 : 1;
+      const result = db.prepare("UPDATE git_deliveries SET branch_ref = ?, worktree_path = ?, active = ?, record_json = ? WHERE id = ? AND json_extract(record_json, '$.version') = ?")
+        .run(next.branchRef, path.resolve(next.worktreePath), active, JSON.stringify(next), input.id, input.expectedVersion);
+      if (Number(result.changes) !== 1) throw new GitDeliveryVersionConflictError(`GitDelivery '${input.id}' version conflict`);
     });
     this.writeMirror(next);
     return next;
@@ -247,4 +363,23 @@ export class GitDeliveryStore {
   private newId(): string {
     return this.opts.id?.() ?? `gd-${randomBytes(4).toString("hex")}`;
   }
+}
+
+function assertImmutableLink(current: GitDelivery, next: GitDelivery): void {
+  if (current.deliveryId && next.deliveryId && current.deliveryId !== next.deliveryId) {
+    throw new GitDeliveryCanonicalSequenceError(
+      `immutable deliveryId cannot change from '${current.deliveryId}' to '${next.deliveryId}'`,
+    );
+  }
+  if (current.id !== next.id) {
+    throw new GitDeliveryCanonicalSequenceError("GitDelivery id is immutable");
+  }
+  // workspaceId / branch / worktree may be mutated by deliberate test seams that inject
+  // projection drift for verification recovery; lifecycle authority still lives in the
+  // projection service. deliveryId link, once set, cannot retarget another Delivery.
+}
+
+/** Deterministic GitDelivery id derived from a Delivery identity (canonical gated open). */
+export function deterministicGitDeliveryId(deliveryId: string): string {
+  return `gd-${createHash("sha256").update(`delivery-projection:${deliveryId}`).digest("hex").slice(0, 12)}`;
 }

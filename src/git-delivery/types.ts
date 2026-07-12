@@ -70,6 +70,10 @@ export interface GitDelivery {
   review?: GitDeliveryReview;
   integration?: GitDeliveryIntegration;
   transitions: GitDeliveryTransition[];
+  /** Last applied canonical projection sequence (SDD 368 T15). */
+  lastAppliedProjectionSequence?: number;
+  /** Operation id of the last applied canonical projection intent. */
+  lastAppliedOperationId?: string;
   createdAt: string;
   updatedAt: string;
   [key: string]: unknown;
@@ -91,7 +95,10 @@ export type HygieneCategory =
   | "missing_ref"
   | "integrated_unverified"
   | "corrupt_record"
-  | "cherry_pick_unrecorded";
+  | "cherry_pick_unrecorded"
+  | "delivery_unavailable";
+
+export type ProjectionSyncState = "in_sync" | "pending" | "diverged" | "unlinked" | "unknown";
 
 export interface GitDeliveryLiveState {
   currentHeadSha?: string;
@@ -115,6 +122,14 @@ export interface GitDeliveryListRow extends GitDeliveryLiveState {
   phase: GitDeliveryPhase;
   taskLinks: GitDeliveryTaskLink[];
   review?: GitDeliveryReview;
+  /** Canonical Delivery id when linked (SDD 368 T15 list safety metadata). */
+  deliveryId?: string;
+  /** Canonical lease state when the Delivery is readable. */
+  leaseState?: string;
+  /** T14 reload safety class, or unknown when snapshot/Delivery is unavailable. */
+  safetyClass?: string;
+  /** Projection intent application sync relative to the canonical intent log. */
+  projectionSync?: ProjectionSyncState;
 }
 
 export interface HygieneFinding {
@@ -135,6 +150,8 @@ export interface GitDeliveryOpenInput {
   workspaceId: string;
   createdBy: GitDeliveryActor;
   deliveryId?: string;
+  /** Deterministic id for canonical gated open (SDD 368 T15). */
+  id?: string;
   agent: string;
   branchRef: string;
   worktreePath: string;

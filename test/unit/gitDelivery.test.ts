@@ -311,4 +311,48 @@ describe("GitDelivery actor policy", () => {
     expect(canPruneGitDelivery(d, "peer", [])).toBe(false);
     expect(canPruneGitDelivery(d, undefined, ["peer"])).toBe(false);
   });
+
+  it("linked policy never grants integrate/prune by agent or createdBy equality", async () => {
+    const { canIntegrateLinkedGitDelivery, canPruneLinkedGitDelivery } = await import("../../src/git-delivery/policy.js");
+    expect(canIntegrateLinkedGitDelivery({ kind: "agent", name: "worker" }, [])).toBe(false);
+    expect(canPruneLinkedGitDelivery({ kind: "agent", name: "worker" }, [])).toBe(false);
+    expect(canPruneLinkedGitDelivery({ kind: "agent", name: "orch" }, ["orch"], { kind: "agent", name: "orch" })).toBe(true);
+    expect(canIntegrateLinkedGitDelivery({ kind: "human" }, [], { kind: "human" })).toBe(true);
+    expect(canPruneLinkedGitDelivery({ kind: "system" }, [], { kind: "system" })).toBe(true);
+    expect(canPruneLinkedGitDelivery({ kind: "human" }, [], { kind: "legacy" })).toBe(false);
+  });
+});
+
+describe("GitDelivery canonical sequence apply (T15)", () => {
+  it("applies the next sequence, replays identically, and refuses gaps/collisions/link retarget", async () => {
+    const root = tmpRoot();
+    const store = new GitDeliveryStore(root, { id: () => "gd-cafecafe", now: () => "2026-07-12T00:00:00.000Z" });
+    const rec = await store.open({
+      workspaceId: "ws", createdBy: actor, deliveryId: "d-1", agent: "worker",
+      branchRef: "b", worktreePath: "/wt/c", tachyonCreatedBranch: true, baseRef: "main", id: "gd-cafecafe",
+    });
+    const applied = await store.applyCanonicalIntent({
+      id: rec.id, expectedVersion: rec.version, sequence: 1, operationId: "op-1", deliveryId: "d-1",
+      mutate: (r) => ({ ...r, phase: "accepted" }),
+    });
+    expect(applied.lastAppliedProjectionSequence).toBe(1);
+    expect(applied.phase).toBe("accepted");
+    const replay = await store.applyCanonicalIntent({
+      id: rec.id, expectedVersion: applied.version, sequence: 1, operationId: "op-1", deliveryId: "d-1",
+      mutate: (r) => ({ ...r, phase: "integrated" }),
+    });
+    expect(replay.phase).toBe("accepted");
+    await expect(store.applyCanonicalIntent({
+      id: rec.id, expectedVersion: applied.version, sequence: 1, operationId: "op-OTHER", deliveryId: "d-1",
+      mutate: (r) => r,
+    })).rejects.toThrow(/already applied/);
+    await expect(store.applyCanonicalIntent({
+      id: rec.id, expectedVersion: applied.version, sequence: 3, operationId: "op-3", deliveryId: "d-1",
+      mutate: (r) => r,
+    })).rejects.toThrow(/gap/);
+    await expect(store.applyCanonicalIntent({
+      id: rec.id, expectedVersion: applied.version, sequence: 2, operationId: "op-2", deliveryId: "d-OTHER",
+      mutate: (r) => r,
+    })).rejects.toThrow(/link drift|deliveryId/);
+  });
 });
