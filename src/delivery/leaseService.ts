@@ -134,7 +134,8 @@ export type DeliveryLeaseErrorCode =
   | "DELIVERY_PROCESS_IDENTITY_MISSING"
   | "DELIVERY_WORKTREE_DIRTY"
   | "DELIVERY_FENCE_FAILED"
-  | "DELIVERY_QUARANTINED";
+  | "DELIVERY_QUARANTINED"
+  | "DELIVERY_ABANDONED";
 
 export class DeliveryLeaseError extends Error {
   constructor(
@@ -392,6 +393,11 @@ export class DeliveryLeaseService {
   }
 
   async salvageQuarantine(input: DeliverySalvageQuarantineInput): Promise<DeliveryLeaseReservation> {
+    try { return await this.salvageQuarantineInternal(input); }
+    catch (error) { return this.recoveryFailure<DeliveryLeaseReservation>(error, input.operationId, input.deliveryId, { ...structuredClone(input), canonicalWorktree: path.resolve(input.canonicalWorktree), ownsSubset: normalizeOwns(input.ownsSubset), expectedInventory: normalizeRecoveryInventory(input.expectedInventory) }, "quarantine_salvaged", "pending"); }
+  }
+
+  private async salvageQuarantineInternal(input: DeliverySalvageQuarantineInput): Promise<DeliveryLeaseReservation> {
     const ownsSubset = normalizeOwns(input.ownsSubset);
     const canonicalWorktree = path.resolve(input.canonicalWorktree);
     const intent = { ...structuredClone(input), canonicalWorktree, ownsSubset, expectedInventory: normalizeRecoveryInventory(input.expectedInventory) };
@@ -428,6 +434,14 @@ export class DeliveryLeaseService {
   }
 
   async abandonQuarantine(input: DeliveryAbandonQuarantineInput): Promise<Delivery> {
+    const expectedInventory = normalizeRecoveryInventory(input.expectedInventory);
+    const digest = recoveryActionDigest(input.deliveryId, input.expectedHeadSha, expectedInventory, { action: "abandon", operationId: input.operationId, actor: input.actor });
+    const intent = { ...structuredClone(input), canonicalWorktree: path.resolve(input.canonicalWorktree), expectedInventory, actionDigest: digest };
+    try { return await this.abandonQuarantineInternal(input); }
+    catch (error) { return this.recoveryFailure<Delivery>(error, input.operationId, input.deliveryId, intent, "quarantine_abandoned", "abandoned"); }
+  }
+
+  private async abandonQuarantineInternal(input: DeliveryAbandonQuarantineInput): Promise<Delivery> {
     const canonicalWorktree = path.resolve(input.canonicalWorktree);
     const expectedInventory = normalizeRecoveryInventory(input.expectedInventory);
     const digest = recoveryActionDigest(input.deliveryId, input.expectedHeadSha, expectedInventory, { action: "abandon", operationId: input.operationId, actor: input.actor });
@@ -856,49 +870,65 @@ export class DeliveryLeaseService {
   }
 
   private async recoverySnapshot(deliveryId: string, canonicalWorktree: string, actor: DeliveryActor) {
-    return this.withDeliveryLock(deliveryId, async () => this.deps.withWorktreeLock(canonicalWorktree, async () => {
+    return this.withDeliveryLock(deliveryId, async () => {
       const current = await this.deps.store.get(deliveryId);
       if (!current) throw new DeliveryNotFoundError(deliveryId);
-      await this.assertCanonical(current, canonicalWorktree); this.assertRecoveryActor(current, actor);
-      if (current.lease.state !== "quarantined") throw this.occupied(current, "Delivery is not quarantined");
-      const holder = structuredClone(current.lease.holder); const tail = structuredClone(current.segments.at(-1));
-      if (!holder || !tail || tail.releasedAt || tail.id !== holder.segmentId || !holder.executionNonce?.trim()) {
-        throw new DeliveryLeaseError("DELIVERY_QUARANTINED", false, "quarantine lacks an exact recoverable holder boundary");
-      }
-      return { lease: structuredClone(current.lease), holder, tail, reason: current.lease.reason, canonicalWorktree };
-    }));
+      this.assertRecoveryActor(current, actor);
+      if (current.lease.state === "abandoned") throw this.abandoned(current);
+      const actual = path.resolve(await this.deps.canonicalWorktreeFor(current));
+      if (actual !== canonicalWorktree) throw new DeliveryLeaseError("DELIVERY_WORKTREE_MISMATCH", false, "Delivery worktree changed during recovery", { expected: actual, actual: canonicalWorktree });
+      return this.deps.withWorktreeLock(actual, async () => {
+        const locked = await this.deps.store.get(deliveryId);
+        if (!locked) throw new DeliveryNotFoundError(deliveryId);
+        this.assertRecoveryActor(locked, actor);
+        if (locked.lease.state === "abandoned") throw this.abandoned(locked);
+        if (locked.lease.state !== "quarantined") throw this.occupied(locked, "Delivery is not quarantined");
+        const holder = structuredClone(locked.lease.holder); const tail = structuredClone(locked.segments.at(-1));
+        if (!holder || !tail || tail.releasedAt || tail.id !== holder.segmentId || !holder.executionNonce?.trim()) {
+          throw new DeliveryLeaseError("DELIVERY_QUARANTINED", false, "quarantine lacks an exact recoverable holder boundary");
+        }
+        return { lease: structuredClone(locked.lease), holder, tail, reason: locked.lease.reason, canonicalWorktree };
+      });
+    });
   }
 
   private async proveRecoveryEmpty(holder: DeliveryLeaseHolder, canonicalWorktree: string): Promise<void> {
-    const capability = this.deps.processFence.capability();
+    let capability: ReturnType<ProcessFencePort["capability"]>;
+    try { capability = this.deps.processFence.capability(); }
+    catch (error) { throw new DeliveryLeaseError("DELIVERY_QUARANTINED", false, "recovery fence capability failed", { error: error instanceof Error ? error.message : String(error) }); }
     if (!capability.supported) throw new DeliveryLeaseError("DELIVERY_QUARANTINED", false, capability.reason);
-    const proof = await this.deps.processFence.proveEmpty(holder.executionNonce!, canonicalWorktree);
+    let proof: Awaited<ReturnType<ProcessFencePort["proveEmpty"]>>;
+    try { proof = await this.deps.processFence.proveEmpty(holder.executionNonce!, canonicalWorktree); }
+    catch (error) { throw new DeliveryLeaseError("DELIVERY_QUARANTINED", false, "recovery fence proof failed", { error: error instanceof Error ? error.message : String(error) }); }
     if (proof.state !== "proven_empty") throw new DeliveryLeaseError("DELIVERY_QUARANTINED", false, "recovery process absence is not proven", { proof });
   }
 
-  private async recoveryCurrent(deliveryId: string, canonicalWorktree: string, actor: DeliveryActor, snapshot: { lease: Delivery["lease"] }) {
+  private async recoveryCurrent(deliveryId: string, canonicalWorktree: string, actor: DeliveryActor, snapshot: { lease: Delivery["lease"]; tail: Delivery["segments"][number] }) {
     const current = await this.deps.store.get(deliveryId);
     if (!current) throw new DeliveryNotFoundError(deliveryId);
     await this.assertCanonical(current, canonicalWorktree); this.assertRecoveryActor(current, actor); this.assertRecoverySnapshot(current, snapshot);
     return current;
   }
 
-  private assertRecoverySnapshot(delivery: Delivery, snapshot: { lease: Delivery["lease"] }): void {
-    if (!isDeepStrictEqual(delivery.lease, snapshot.lease) || delivery.lease.state !== "quarantined") {
+  private assertRecoverySnapshot(delivery: Delivery, snapshot: { lease: Delivery["lease"]; tail?: Delivery["segments"][number] }): void {
+    if (!isDeepStrictEqual(delivery.lease, snapshot.lease) || !isDeepStrictEqual(delivery.segments.at(-1), snapshot.tail) || delivery.lease.state !== "quarantined") {
       throw new DeliveryLeaseError("DELIVERY_QUARANTINED", false, "quarantine changed during recovery");
     }
   }
 
   private async recoveryInventory(delivery: Delivery, canonicalWorktree: string): Promise<DeliveryRecoveryInventory> {
     if (!this.deps.inspectRecoveryWorktree) throw new DeliveryLeaseError("DELIVERY_QUARANTINED", false, "trusted recovery inspection is unavailable");
-    return normalizeRecoveryInventory((await this.deps.inspectRecoveryWorktree(canonicalWorktree, delivery.contract.baseSha)).inventory);
+    try { return normalizeRecoveryInventory((await this.deps.inspectRecoveryWorktree(canonicalWorktree, delivery.contract.baseSha)).inventory); }
+    catch (error) { if (error instanceof DeliveryLeaseError) throw error; throw new DeliveryLeaseError("DELIVERY_QUARANTINED", false, "recovery inspection failed", { error: error instanceof Error ? error.message : String(error) }); }
   }
 
   private async recoveryApproval(approvalId: string, actor: DeliveryActor, digest: string): Promise<DeliveryRecoveryApproval> {
     if (!this.deps.resolveRecoveryApproval || actor.kind !== "agent" || !actor.name) {
       throw new DeliveryLeaseError("DELIVERY_QUARANTINED", false, "trusted recovery approval is unavailable or unbound");
     }
-    const approval = await this.deps.resolveRecoveryApproval(approvalId, actor, digest);
+    let approval: DeliveryRecoveryApproval;
+    try { approval = await this.deps.resolveRecoveryApproval(approvalId, actor, digest); }
+    catch (error) { throw new DeliveryLeaseError("DELIVERY_QUARANTINED", false, "recovery approval resolution failed", { error: error instanceof Error ? error.message : String(error) }); }
     if (approval.decision !== "approved" || approval.requester !== actor.name || approval.actionDigest !== digest
       || !approval.payloadHash || !approval.resolvedAt) throw new DeliveryLeaseError("DELIVERY_QUARANTINED", false, "recovery approval is not an exact approved receipt");
     return approval;
@@ -910,6 +940,24 @@ export class DeliveryLeaseService {
     const event = delivery.events.find((candidate) => candidate.type === eventType && isDeepStrictEqual(candidate.detail?.intent, intent));
     if (!event || delivery.lease.state !== state) throw new DeliveryInvariantError(`operation id '${operationId}' does not match this quarantine recovery intent`);
     return delivery;
+  }
+
+  private async recoveryFailure<T>(error: unknown, operationId: string, deliveryId: string, intent: Record<string, unknown>, eventType: string, state: Delivery["lease"]["state"]): Promise<T> {
+    if (error instanceof DeliveryStoreBusyError) throw this.busy(error);
+    if (error instanceof DeliveryVersionConflictError) {
+      const replay = await this.replayRecovery(operationId, deliveryId, intent, eventType, state);
+      if (replay) {
+        if (state === "pending") return { delivery: replay, reservationNonce: replay.lease.holder!.reservationNonce! } as T;
+        return replay as T;
+      }
+      const winner = await this.deps.store.get(deliveryId);
+      if (!winner) throw error;
+      if (winner.lease.state === "abandoned") throw this.abandoned(winner);
+      if (["pending", "held", "draining", "verifying"].includes(winner.lease.state)) throw this.occupied(winner, "another recovery operation won the Delivery CAS");
+      if (winner.lease.state === "quarantined") throw this.reconcileRefusal(parseReason(winner.lease.reason));
+      throw new DeliveryLeaseError("DELIVERY_INVALID_STATE", false, "Delivery entered an invalid recovery state", { state: winner.lease.state });
+    }
+    throw error;
   }
 
   private heldBoundaryFailure(delivery: Delivery): DeliveryLeaseError | undefined {
@@ -1194,7 +1242,12 @@ export class DeliveryLeaseService {
   private eventId(): string { return this.deps.eventId?.() ?? `event-${randomBytes(8).toString("hex")}`; }
 
   private assertAcquirable(delivery: Delivery): void {
+    if (delivery.lease.state === "abandoned") throw this.abandoned(delivery);
     if (delivery.lease.state !== "free") throw this.occupied(delivery, "Delivery already has an occupant or reservation");
+  }
+
+  private abandoned(delivery: Delivery): DeliveryLeaseError {
+    return new DeliveryLeaseError("DELIVERY_ABANDONED", false, "Delivery is permanently abandoned", { deliveryId: delivery.id, version: delivery.version });
   }
 
   private occupied(delivery: Delivery, message: string): DeliveryLeaseError {
@@ -1266,7 +1319,7 @@ function normalizeRecoveryInventory(inventory: DeliveryRecoveryInventory): Deliv
       throw new DeliveryLeaseError("DELIVERY_QUARANTINED", false, "recovery inventory is malformed");
     }
     return { path: entry.path, status: entry.status };
-  }).sort((a, b) => a.path.localeCompare(b.path) || a.status.localeCompare(b.status));
+  }).sort((a, b) => codeUnitCompare(a.path, b.path) || codeUnitCompare(a.status, b.status));
   const uniqueCommits = [...inventory.uniqueCommits].sort();
   if (new Set(dirtyPaths.map((entry) => `${entry.path}\u0000${entry.status}`)).size !== dirtyPaths.length
     || new Set(uniqueCommits).size !== uniqueCommits.length || uniqueCommits.some((sha) => typeof sha !== "string" || !sha)) {
@@ -1274,6 +1327,8 @@ function normalizeRecoveryInventory(inventory: DeliveryRecoveryInventory): Deliv
   }
   return { headSha: inventory.headSha, dirtyPaths, uniqueCommits };
 }
+
+function codeUnitCompare(a: string, b: string): number { return a < b ? -1 : a > b ? 1 : 0; }
 
 function recoveryActionDigest(deliveryId: string, expectedHeadSha: string, inventory: DeliveryRecoveryInventory, intent: Record<string, unknown>): string {
   return createHash("sha256").update(JSON.stringify({ deliveryId, expectedHeadSha, inventory, intent })).digest("hex");

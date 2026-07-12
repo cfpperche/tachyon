@@ -33,6 +33,23 @@ function input(id = "d-test", operationId?: string): DeliveryCreateInput {
 }
 
 describe("DeliveryStore SQLite (spec 368)", () => {
+  it("validates the terminal abandoned lease shape and rejects unknown states", async () => {
+    const store = new DeliveryStore(root(), { now: () => now });
+    const created = await store.create(input("d-abandoned"));
+    await expect(store.update(created.id, created.version, (record) => {
+      record.lease = { state: "unknown" as never, changedAt: now }; return record;
+    })).rejects.toThrow("invalid Delivery lease state");
+    await expect(store.update(created.id, created.version, (record) => {
+      record.lease = { state: "abandoned", changedAt: now }; return record;
+    })).rejects.toThrow("abandoned lease requires closed history");
+    const abandoned = await store.update(created.id, created.version, (record) => {
+      record.segments[0] = { ...record.segments[0]!, releasedAt: now, releasedHeadSha: "base", outcome: "rejected" };
+      record.lease = { state: "abandoned", changedAt: now };
+      return record;
+    });
+    expect(abandoned.lease.state).toBe("abandoned");
+  });
+
   it("uses one workspace-local SQLite database and enforces CAS plus immutable creation", async () => {
     const workspace = root();
     const store = new DeliveryStore(workspace, { now: () => now });

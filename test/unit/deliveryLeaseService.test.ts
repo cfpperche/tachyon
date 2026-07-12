@@ -1213,4 +1213,14 @@ describe("DeliveryLeaseService dead-holder reconciliation (SDD 368 T11)", () => 
       executionAgent: "fixer", ownsSubset: ["src"] })).rejects.toMatchObject({ code: "DELIVERY_QUARANTINED" });
     expect((await store.get("d-lease"))!.lease.state).toBe("quarantined");
   });
+
+  it("refuses acquisition of an abandoned Delivery as a terminal error", async () => {
+    const { store, worktree, input } = fixture();
+    input.segments![0] = { ...input.segments![0]!, releasedAt: now, releasedHeadSha: "b", outcome: "rejected" };
+    input.lease = { state: "abandoned", changedAt: now };
+    await store.create(input);
+    await expect(makeService(store, worktree).acquire({ deliveryId: "d-lease", canonicalWorktree: worktree, expectedHeadSha: "b",
+      role: "fixer", executionAgent: "fixer", ownsSubset: ["src"], grantedBy: actor, operationId: "abandoned-acquire" }))
+      .rejects.toMatchObject({ code: "DELIVERY_ABANDONED", retryable: false });
+  });
 });

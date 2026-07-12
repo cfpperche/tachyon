@@ -7,7 +7,7 @@ import type { CallerSnapshot } from "../bridge/callerIdentity.js";
 import type { GitDeliveryStore } from "../git-delivery/store.js";
 import type { GitDelivery } from "../git-delivery/types.js";
 import { DeliveryLeaseError } from "./leaseService.js";
-import { DeliveryStore, DeliveryVersionConflictError } from "./store.js";
+import { DeliveryStore, DeliveryStoreBusyError, DeliveryVersionConflictError } from "./store.js";
 import type { Delivery, DeliveryActor, DeliveryLease, DeliveryVerificationIntent } from "./types.js";
 import { resolveOperationalSegment } from "./verifyAdapter.js";
 
@@ -80,6 +80,10 @@ export class DeliveryVerificationLeaseService {
         throw this.occupied(current, "interrupted system verification was restored; retry deliberately");
       }
 
+      if (current.lease.state === "abandoned") {
+        throw new DeliveryLeaseError("DELIVERY_ABANDONED", false, "Delivery is permanently abandoned", { deliveryId: current.id });
+      }
+
       const tail = resolveOperationalSegment(current);
       if (current.lease.state !== "free" && current.lease.state !== "held") {
         throw this.occupied(current, `Delivery lease state '${current.lease.state}' cannot be repurposed for verification`);
@@ -129,6 +133,7 @@ export class DeliveryVerificationLeaseService {
         });
       } catch (error) {
         if (error instanceof DeliveryVersionConflictError) throw this.occupied(current, "another contender won the verification CAS");
+        if (error instanceof DeliveryStoreBusyError) throw this.busy(error);
         throw error;
       }
 
@@ -326,5 +331,9 @@ export class DeliveryVerificationLeaseService {
   private message(error: unknown): string { return error instanceof Error ? error.message : String(error); }
   private occupied(delivery: Delivery, message: string): DeliveryLeaseError {
     return new DeliveryLeaseError("WORKTREE_OCCUPIED", true, message, { deliveryId: delivery.id, version: delivery.version, state: delivery.lease.state });
+  }
+
+  private busy(error: DeliveryStoreBusyError): DeliveryLeaseError {
+    return new DeliveryLeaseError("WORKTREE_OCCUPIED", true, "Delivery mutation is contended by another process", { storeCode: error.code });
   }
 }

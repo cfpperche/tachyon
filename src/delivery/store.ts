@@ -563,6 +563,9 @@ function validateRecord(record: Delivery): void {
     throw new DeliveryInvariantError("invalid Delivery record shape");
   }
   assertDeliveryId(record.id);
+  if (!["free", "pending", "held", "draining", "verifying", "quarantined", "abandoned"].includes(record.lease.state)) {
+    throw new DeliveryInvariantError("invalid Delivery lease state");
+  }
   if (!record.contract.baseSha || !record.contract.behaviorTest || !record.contract.taskRef || !Array.isArray(record.contract.owns)) {
     throw new DeliveryInvariantError("invalid Delivery contract");
   }
@@ -603,6 +606,12 @@ function validateRecord(record: Delivery): void {
     }
   } else if (verification) {
     throw new DeliveryInvariantError("verification intent is valid only while the lease is verifying");
+  }
+  if (record.lease.state === "abandoned") {
+    if (record.lease.holder || record.lease.expectedHeadSha || record.lease.verification || record.segments.length === 0
+      || record.segments.some((segment) => !segment.releasedAt)) {
+      throw new DeliveryInvariantError("abandoned lease requires closed history and no active boundary");
+    }
   }
 }
 

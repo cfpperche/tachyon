@@ -83,6 +83,17 @@ afterEach(() => {
 });
 
 describe("DeliveryVerificationLeaseService (SDD 368 T9)", () => {
+  it("refuses terminal abandoned Deliveries without retryable occupancy", async () => {
+    const f = await fixture();
+    const current = (await f.store.get("d-verify"))!;
+    await f.store.update(current.id, current.version, (record) => {
+      record.lease = { state: "abandoned", changedAt: "2026-07-11T00:02:00.000Z" };
+      return record;
+    });
+    await expect(service(f).run("d-verify", actor, async () => { throw new Error("must not execute"); }))
+      .rejects.toMatchObject({ code: "DELIVERY_ABANDONED", retryable: false });
+  });
+
   it("checks current tail liveness while dead segment zero is irrelevant", async () => {
     const f = await fixture({ multiTail: true });
     let executed = false;
