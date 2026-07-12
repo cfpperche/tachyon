@@ -107,7 +107,7 @@ import {
 import { resolveGitDeliverySettings } from "../git-delivery/settings.js";
 import { createGitExec, type GitExec } from "../worktree/WorktreeManager.js";
 import { resolveGitBinaryForHost } from "../worktree/gitBinary.js";
-import type { GitDeliveryActor } from "../git-delivery/types.js";
+import type { GitDelivery, GitDeliveryActor } from "../git-delivery/types.js";
 import { hasDeliveryMarker, isValidDeliveryBinding } from "../resume/SessionLedger.js";
 import { TaskNotificationService } from "./TaskNotificationService.js";
 import { BridgeSlowRequestToastPolicy } from "./bridgeSlowRequestPolicy.js";
@@ -466,22 +466,25 @@ export class Workspace {
     this.deliveryLease = new DeliveryLeaseService({
       store: this.deliveries,
       processFence: new UnavailableProcessFence(),
-      handoffSafety: earlyConfig?.settings.delivery?.handoffSafety ?? "disabled",
-      canonicalWorktreeFor: async (delivery) => {
-        const linked = (await this.gitDeliveries.list()).filter((g) => g.deliveryId === delivery.id && !!g.worktreePath);
-        if (linked.length !== 1) throw new Error(`DELIVERY_WORKTREE_MISMATCH: expected one linked projection for '${delivery.id}'`);
-        return fs.realpathSync(linked[0].worktreePath!);
-      },
-      readHead: async (cwd) => (await this.gitExec(["rev-parse", "HEAD"], cwd)).stdout.trim(),
-      inspectWorktree: async (cwd) => ({ headSha: (await this.gitExec(["rev-parse", "HEAD"], cwd)).stdout.trim(), clean: (await this.gitExec(["status", "--porcelain"], cwd)).stdout.trim() === "" }),
+      handoffSafety: () => this.config?.settings.delivery?.mode === "canonical"
+        ? this.config.settings.delivery?.handoffSafety ?? "disabled"
+        : "disabled",
+      canonicalWorktreeFor: async (delivery) => fs.realpathSync((await this.exactCanonicalProjection(delivery)).worktreePath),
+      readHead: async (cwd) => this.requiredGitOutput(["rev-parse", "HEAD"], cwd, "Git HEAD"),
+      inspectWorktree: async (cwd) => ({ headSha: await this.requiredGitOutput(["rev-parse", "HEAD"], cwd, "Git HEAD"), clean: await this.requiredGitStatus(cwd) }),
       inspectReviewWorktree: async (cwd, taskRef) => {
-        const headSha = (await this.gitExec(["rev-parse", "HEAD"], cwd)).stdout.trim();
-        const taskRefSha = (await this.gitExec(["rev-parse", taskRef], cwd)).stdout.trim();
-        const indexTreeSha = (await this.gitExec(["write-tree"], cwd)).stdout.trim();
-        const commitTreeSha = (await this.gitExec(["rev-parse", "HEAD^{tree}"], cwd)).stdout.trim();
-        return { headSha, taskRefSha, indexTreeSha, commitTreeSha, trackedClean: (await this.gitExec(["status", "--porcelain"], cwd)).stdout.trim() === "" };
+        const headSha = await this.requiredGitOutput(["rev-parse", "HEAD"], cwd, "Git HEAD");
+        const taskRefSha = await this.requiredGitOutput(["rev-parse", taskRef], cwd, "Git task ref");
+        const indexTreeSha = await this.requiredGitOutput(["write-tree"], cwd, "Git index tree");
+        const commitTreeSha = await this.requiredGitOutput(["rev-parse", "HEAD^{tree}"], cwd, "Git commit tree");
+        return { headSha, taskRefSha, indexTreeSha, commitTreeSha, trackedClean: await this.requiredGitStatus(cwd) };
       },
-      isAncestor: async (older, newer, cwd) => { try { await this.gitExec(["merge-base", "--is-ancestor", older, newer], cwd); return true; } catch { return false; } },
+      isAncestor: async (older, newer, cwd) => {
+        const result = await this.gitExec(["merge-base", "--is-ancestor", older, newer], cwd);
+        if (result.code === 0) return true;
+        if (result.code === 1) return false;
+        throw new Error(`Git ancestry inspection failed (${result.code}): ${result.stderr.trim() || "no diagnostic"}`);
+      },
       withWorktreeLock: (cwd, fn) => this.worktrees.withPathLock(cwd, fn),
       processObserver: { observe: (identity) => {
         const observed = readLinuxProcessIdentity(identity.pid);
@@ -492,11 +495,12 @@ export class Workspace {
       exactExecutionStopper: { stop: async (input) => {
         const holder = (await this.deliveries.get(input.deliveryId))?.lease.holder;
         const row = this.ledger.get(input.executionAgent);
+        const panePid = await this.tmux.panePid(this.manager.session(input.executionAgent));
         const observed = readLinuxProcessIdentity(input.process.pid);
         if (!holder || holder.segmentId !== input.segmentId || holder.executionNonce !== input.executionNonce
           || holder.executionAgent !== input.executionAgent || !isValidDeliveryBinding(row?.delivery) || row.delivery.deliveryId !== input.deliveryId || row.delivery.segmentId !== input.segmentId || row.delivery.executionNonce !== input.executionNonce
           || !row.cwd || !row.worktree?.path || fs.realpathSync(row.cwd) !== input.canonicalWorktree || fs.realpathSync(row.worktree.path) !== input.canonicalWorktree
-          || observed.state !== "exact" || observed.processStart !== input.process.processStart || observed.bootId !== input.process.bootId) {
+          || panePid !== input.process.pid || observed.state !== "exact" || observed.processStart !== input.process.processStart || observed.bootId !== input.process.bootId) {
           throw new Error("DELIVERY_EXACT_STOP_REFUSED: ledger, worktree, or pane identity drifted");
         }
         await this.manager.kill(input.executionAgent);
@@ -1094,6 +1098,9 @@ export class Workspace {
         withWorktreeLock: (agent, fn) => this.worktrees.withAgentPathLock(agent, fn),
         deliveryVerification: this.deliveryVerification,
         deliveryLease: this.deliveryLease,
+        deliverySafety: () => this.config?.settings.delivery?.mode === "canonical"
+          ? this.config.settings.delivery?.handoffSafety ?? "disabled"
+          : "disabled",
         // spec 273 — the worktree evidence channel over MCP.
         attachEvidence: (input) => this.attachEvidence(input),
         listEvidence: (agent) => this.listEvidence(agent),
@@ -2259,6 +2266,32 @@ export class Workspace {
     }
   }
 
+  private async requiredGitOutput(args: string[], cwd: string, label: string): Promise<string> {
+    const result = await this.gitExec(args, cwd);
+    const output = result.stdout.trim();
+    if (result.code !== 0 || !/^[0-9a-f]{40}$/i.test(output)) {
+      throw new Error(`${label} failed (${result.code}): ${result.stderr.trim() || "missing or malformed object id"}`);
+    }
+    return output;
+  }
+
+  private async requiredGitStatus(cwd: string): Promise<boolean> {
+    const result = await this.gitExec(["status", "--porcelain"], cwd);
+    if (result.code !== 0) {
+      throw new Error(`Git status inspection failed (${result.code}): ${result.stderr.trim() || "no diagnostic"}`);
+    }
+    return result.stdout.trim() === "";
+  }
+
+  /** The Delivery backlink, linked row, and real worktree must agree at every canonical entry point. */
+  private async exactCanonicalProjection(delivery: import("../delivery/types.js").Delivery): Promise<GitDelivery> {
+    if (!delivery.gitDeliveryId) throw new Error(`DELIVERY_WORKTREE_MISMATCH: Delivery '${delivery.id}' has no projection backlink`);
+    const linked = (await this.gitDeliveries.list()).filter((g) => g.deliveryId === delivery.id && !!g.worktreePath);
+    if (linked.length !== 1 || linked[0].id !== delivery.gitDeliveryId) throw new Error(`DELIVERY_WORKTREE_MISMATCH: expected exact linked projection for '${delivery.id}'`);
+    fs.realpathSync(linked[0].worktreePath);
+    return linked[0];
+  }
+
   /**
    * Cross-store boundary is deliberately fail-closed: canonical Delivery is durable first, then its
    * Git projection, then the backlink. Replaying the stable operation repairs either crash boundary;
@@ -2342,6 +2375,10 @@ export class Workspace {
         `Delivery '${delivery.id}' has no exact holder/open-tail/executionAgent boundary for '${input.name}'`,
       );
     }
+    const safety = this.config?.settings.delivery?.mode === "canonical" ? this.config.settings.delivery?.handoffSafety ?? "disabled" : "disabled";
+    if (safety !== "disabled" && (!holder.executionNonce || !holder.process)) {
+      throw new Error("DELIVERY_PROCESS_IDENTITY_MISSING: sequential canonical holder lacks nonce or process identity");
+    }
     this.ledger.bindDelivery(input.name, { deliveryId: delivery.id, segmentId: holder.segmentId, executionNonce: holder.executionNonce });
   }
 
@@ -2349,10 +2386,9 @@ export class Workspace {
     if (this.config?.settings.delivery?.mode !== "canonical") throw new Error("DELIVERY_LEASE_UNAVAILABLE: canonical Delivery mode is disabled");
     const delivery = await this.deliveries.get(request.deliveryId);
     if (!delivery) throw new Error(`DELIVERY_NOT_FOUND: ${request.deliveryId}`);
-    const projections = (await this.gitDeliveries.list()).filter((g) => g.deliveryId === delivery.id && !!g.worktreePath);
-    if (projections.length !== 1) throw new Error("DELIVERY_WORKTREE_MISMATCH: canonical Delivery has no exact single worktree");
-    const worktreePath = fs.realpathSync(projections[0].worktreePath!);
-    const worktree: WorktreeRecord = { path: worktreePath, branch: projections[0].branchRef, tachyonCreatedBranch: projections[0].tachyonCreatedBranch, baseRef: projections[0].baseRef, createdAt: projections[0].createdAt };
+    const projection = await this.exactCanonicalProjection(delivery);
+    const worktreePath = fs.realpathSync(projection.worktreePath);
+    const worktree: WorktreeRecord = { path: worktreePath, branch: projection.branchRef, tachyonCreatedBranch: projection.tachyonCreatedBranch, baseRef: projection.baseRef, createdAt: projection.createdAt };
     const actor = { kind: "system" as const, name: "tachyon" };
     const reservation = delivery.lease.state === "free"
       ? await this.deliveryLease.acquire({ deliveryId: delivery.id, expectedVersion: delivery.version, expectedHeadSha: request.expectedHead, canonicalWorktree: worktreePath, role: request.role, executionAgent: name, principal: request.principal, grantedBy: actor, ownsSubset: request.ownsSubset, operationId: request.operationId })

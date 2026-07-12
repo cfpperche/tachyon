@@ -272,7 +272,7 @@ export interface DeliveryLeaseServiceDeps {
   store: DeliveryStore;
   processFence: ProcessFencePort;
   /** Explicitly opt in to a handoff evidence level; disabled is fail-closed. */
-  handoffSafety?: DeliveryHandoffSafety;
+  handoffSafety?: DeliveryHandoffSafety | (() => DeliveryHandoffSafety);
   exactExecutionStopper?: DeliveryExactExecutionStopper;
   processObserver?: DeliveryProcessObserver;
   canonicalWorktreeFor(delivery: Delivery): string | Promise<string>;
@@ -1339,7 +1339,8 @@ export class DeliveryLeaseService {
   private handoffSafety(): DeliveryHandoffSafety {
     // The integration layer supplies the rollout default. Retain the historical service
     // contract for direct callers until that wiring is present.
-    return this.deps.handoffSafety ?? "process-fenced";
+    const configured = typeof this.deps.handoffSafety === "function" ? this.deps.handoffSafety() : this.deps.handoffSafety;
+    return configured ?? "process-fenced";
   }
 
   private assertSafetyEnabled(handoffSafety: DeliveryHandoffSafety): void {

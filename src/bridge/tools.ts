@@ -1,4 +1,5 @@
 import { z } from "zod";
+import fs from "node:fs";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { AgentManager } from "../agents/AgentManager.js";
 import { TmuxQueueError, type TmuxService } from "../tmux/TmuxService.js";
@@ -184,6 +185,8 @@ export interface BridgeDeps {
   /** spec 368 — bounded read-only Delivery lease watcher. */
   waitForDeliveryLease?: (input: WaitForDeliveryLeaseInput, signal?: AbortSignal) => Promise<WaitForDeliveryLeaseResult>;
   deliveryLease?: DeliveryLeaseService;
+  /** Workspace-owned live effective safety; keeps review warnings aligned with lease enforcement after reload. */
+  deliverySafety?: () => "disabled" | "mechanism-only" | "process-fenced";
   /** spec 365 — local GitDelivery store + live-git/liveness seams. Enables git_delivery_* tools. */
   gitDelivery?: {
     store: GitDeliveryStore;
@@ -1050,6 +1053,15 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           }
         } else if (gate !== undefined) {
           return fail(new Error("spawn_agent gate is only supported for an ad-hoc AI sub-agent with a delegation contract"));
+        }
+        if (delivery_join && deps.gitDelivery?.deliveries) {
+          const caller = deps.caller;
+          if (!caller || caller.kind === "legacy" || caller.kind === "external") return fail(new Error("delivery_join refused: resolved caller required"));
+          const delivery = await deps.gitDelivery?.deliveries?.get(delivery_join.delivery_id);
+          if (!delivery) return fail(new Error(`delivery_join refused: Delivery '${delivery_join.delivery_id}' not found`));
+          const permitted = caller.kind === "human" || caller.kind === "master"
+            || (caller.kind === "agent" && caller.name === (delivery.createdBy.kind === "agent" ? delivery.createdBy.name : undefined));
+          if (!permitted) return fail(new Error("delivery_join refused: caller is not the Delivery creator/coordinator or privileged"));
         }
         // reveal:false — spawning a child must not steal the human's editor focus (F3);
         // the child shows in the tree (nested under parent), opened on demand.
@@ -2577,11 +2589,12 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         if (!delivery) return fail(new Error(`Delivery '${delivery_id}' not found`));
         const permitted = caller.kind === "human" || caller.kind === "master" || (caller.kind === "agent" && caller.name === (delivery.createdBy.kind === "agent" ? delivery.createdBy.name : undefined));
         if (!permitted) return fail(new Error("delivery_complete_review refused: caller is not the Delivery creator/coordinator or privileged"));
+        if (!delivery.gitDeliveryId) return fail(new Error("delivery_complete_review refused: canonical projection backlink unavailable"));
         const linked = (await deps.gitDelivery.store.list()).filter((g) => g.deliveryId === delivery_id && !!g.worktreePath);
-        if (linked.length !== 1) return fail(new Error("delivery_complete_review refused: exact canonical worktree unavailable"));
+        if (linked.length !== 1 || linked[0].id !== delivery.gitDeliveryId) return fail(new Error("delivery_complete_review refused: exact canonical worktree unavailable"));
         const actor = caller.kind === "agent" ? { kind: "agent" as const, name: caller.name! } : { kind: caller.kind as "human" | "master" };
-        const completed = await deps.deliveryLease.completeReview({ deliveryId: delivery_id, canonicalWorktree: linked[0].worktreePath!, expectedReviewedHeadSha: expected_reviewed_head_sha, verdict, actor, operationId: operation_id });
-        return ok(JSON.stringify({ delivery: completed, warning: "Mechanism-only: root death is best-effort; descendant process absence is unproven." }));
+        const completed = await deps.deliveryLease.completeReview({ deliveryId: delivery_id, canonicalWorktree: fs.realpathSync(linked[0].worktreePath!), expectedReviewedHeadSha: expected_reviewed_head_sha, verdict, actor, operationId: operation_id });
+        return ok(JSON.stringify({ delivery: completed, ...(deps.deliverySafety?.() === "mechanism-only" ? { warning: "Mechanism-only: root death is best-effort; descendant process absence is unproven." } : {}) }));
       } catch (err) { return fail(err); }
     },
   );

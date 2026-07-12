@@ -93,6 +93,17 @@ function completeReviewInput(worktree: string, verdict: "ACCEPT" | "FINDINGS" = 
 }
 
 describe("DeliveryLeaseService (SDD 368 T5)", () => {
+  it("uses the live safety getter on every operation, including a reload disable", async () => {
+    const { store, worktree, input } = fixture(); await store.create(input);
+    let safety: "mechanism-only" | "disabled" = "mechanism-only";
+    const lease = new DeliveryLeaseService({ store, processFence: certifiedFence, handoffSafety: () => safety,
+      canonicalWorktreeFor: () => worktree, readHead: () => "b", inspectWorktree: () => ({ headSha: "b", clean: true }), isAncestor: () => true,
+      withWorktreeLock: async (_path, fn) => fn(), nonce: () => "live", segmentId: () => "live-seg" });
+    await lease.acquire({ deliveryId: "d-lease", expectedHeadSha: "b", canonicalWorktree: worktree, role: "fixer", executionAgent: "fixer", grantedBy: actor, ownsSubset: ["src"], operationId: "live-enabled" });
+    safety = "disabled";
+    await expect(lease.acquire({ deliveryId: "d-lease", expectedHeadSha: "b", canonicalWorktree: worktree, role: "fixer", executionAgent: "other", grantedBy: actor, ownsSubset: ["src"], operationId: "live-disabled" })).rejects.toMatchObject({ code: "DELIVERY_LEASE_UNAVAILABLE" });
+  });
+
   it("allows mechanism-only free acquire without probing ProcessFence", async () => {
     const { store, worktree, input } = fixture(); await store.create(input);
     const capability = vi.fn(() => ({ supported: false as const, reason: "unused" }));

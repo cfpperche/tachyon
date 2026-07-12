@@ -17,6 +17,7 @@ import { SessionLedger } from "../../src/resume/SessionLedger.js";
 import { EVIDENCE_SCHEMA_VERSION, isSafeArtifactRef, viewEvidence, summarizeEvidence, type WorktreeEvidence } from "../../src/worktree/evidence.js";
 import { readDoorbellEvents } from "../../src/bridge/doorbell.js";
 import { GitDeliveryStore } from "../../src/git-delivery/store.js";
+import { DeliveryStore } from "../../src/delivery/store.js";
 import { registerTools } from "../../src/bridge/tools.js";
 import type { WaitForDeliveryLeaseInput, WaitForDeliveryLeaseResult } from "../../src/delivery/leaseService.js";
 import fs from "node:fs";
@@ -473,6 +474,27 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
+  });
+
+  it("delivery_complete_review authorizes only the exact creator and keeps refusal paths side-effect free", async () => {
+    const root = fs.mkdtempSync(nodePath.join(os.tmpdir(), "tachyon-bridge-review-auth-"));
+    const projections = new GitDeliveryStore(root, { id: () => "gd-review", now: () => "2026-07-12T00:00:00.000Z" });
+    const deliveries = new DeliveryStore(root, { now: () => "2026-07-12T00:00:00.000Z" });
+    const delivery = await deliveries.create({ id: "d-review", workspaceId: "ws", createdBy: { kind: "agent", name: "creator" }, gitDeliveryId: "gd-review", contract: { baseSha: "a", taskRef: "task", behaviorTest: "test", owns: [] }, segments: [] });
+    await projections.open({ workspaceId: "ws", deliveryId: "d-review", createdBy: { kind: "agent", name: "creator" }, agent: "worker", branchRef: "branch", worktreePath: root, tachyonCreatedBranch: true, baseRef: "main", reason: "test" });
+    const completeReview = vi.fn(async () => delivery);
+    class ToolCapture { handlers = new Map<string, (args: Record<string, unknown>) => Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }>>(); registerTool(name: string, _schema: unknown, handler: (args: Record<string, unknown>) => Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }>) { this.handlers.set(name, handler); } }
+    const args = { delivery_id: "d-review", expected_reviewed_head_sha: "a", verdict: "ACCEPT", operation_id: "review-op" };
+    try {
+      const deniedMcp = new ToolCapture();
+      registerTools(deniedMcp as never, { workspaceRoot: root, manager: {} as never, caller: { kind: "agent", name: "reviewer" }, deliveryLease: { completeReview } as never, gitDelivery: { store: projections, deliveries, workspaceId: "ws" } } as never);
+      const denied = await deniedMcp.handlers.get("delivery_complete_review")!(args);
+      expect(denied.isError).toBe(true); expect(JSON.stringify(denied.content)).toContain("not the Delivery creator"); expect(completeReview).not.toHaveBeenCalled();
+      const allowedMcp = new ToolCapture();
+      registerTools(allowedMcp as never, { workspaceRoot: root, manager: {} as never, caller: { kind: "agent", name: "creator" }, deliverySafety: () => "mechanism-only", deliveryLease: { completeReview } as never, gitDelivery: { store: projections, deliveries, workspaceId: "ws" } } as never);
+      const allowed = await allowedMcp.handlers.get("delivery_complete_review")!(args);
+      expect(allowed.isError).toBeFalsy(); expect(completeReview).toHaveBeenCalledOnce(); expect(JSON.stringify(allowed.content)).toContain("root death is best-effort");
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
   });
 
   it("verify_task exposes the full-suite flag in its Bridge schema", async () => {
