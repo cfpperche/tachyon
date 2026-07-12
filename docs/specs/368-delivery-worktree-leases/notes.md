@@ -1571,3 +1571,31 @@ completion. Keep the entire fixture and add exactly these non-tautological proof
 Reuse the same delegation at exact `25840d28`, with authority only over the focused helper/generated R4 test. Run
 generated R4 plus diff-check, no AgentManager/Bridge/typecheck/full. Commit by explicit pathspec with `t-0b5723`,
 ring `codex`, and stop. Production and every other test remain frozen. A clean coordinator audit unlocks B2.
+
+### T13 B2 coordinator audit — blocked gate and closed correction
+
+B2 candidate `e45d35f0` is not reviewable: canonical verification is BLOCKED at
+`.tachyon/verifications/e45d35f0816e38d2d9c5a209b7a99faaf6da3e17.json` by both a scope breach and typecheck
+failure. The worker changed the generated R4 stub although its fixer grant excluded that file; do not waive. It also
+uses an invalid preflight failure code, an incomplete ledger `ManagedEntryDef`, and an inferred join object without
+the optional `principal` field.
+
+Correct the candidate in the same worktree as one Terra-medium test-only fixer:
+
+- restore `test/unit/deliveryBoundT13FixR4ABehavior.gen.test.ts` byte-for-byte to B1 HEAD `a2bf69ff`; move the
+  thirteen individually named `it.each` cases into `test/unit/agentManager.test.ts`, which B2 was authorized to own;
+- use the real `runtime_preflight_failed` result shape, a complete valid ledger def, and an explicitly typed
+  `DeliveryJoinRequest` (or equivalent production-derived type) so typecheck is green without casts that erase the
+  contract;
+- retain the shared helper and all thirteen visible names, but make the effect vector honest: count reservation
+  prepare/confirm/fail, mint/revoke, harness/MCP materialization, ownership/settings hooks, tmux create/kill,
+  ledger writes, `onSpawned` and `onKilled`; snapshot principal ledger/activity/session sets. Remove or rename any
+  counter not connected to the actual dependency it claims to prove. No Bridge error-text-only proof;
+- ensure setup for config/ad-hoc/ledger/live/dead collision is excluded from the measured window, then assert the
+  complete vector and bytes are unchanged for each attempted refusal. The live/dead cases may share the production
+  `hasSession` refusal but must remain separately named fixtures and preserve their respective incumbent state.
+
+Reuse delegation `84f9d521-e294-4bd9-8f48-66d6114a7297` at exact `e45d35f0`, granting only AgentManager test,
+focused helper, and generated R4 stub (the latter solely for the required revert). Run generated R4, AgentManager,
+Bridge, `npm run typecheck`, and diff-check; no full. Commit by explicit pathspec with `t-0b5723`, ring `codex`, and
+stop. Coordinator reruns the original gate without waivers and audits the complete thirteen-case vector before B3.
