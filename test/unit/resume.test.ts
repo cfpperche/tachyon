@@ -12,7 +12,14 @@ import {
   encodeClaudeCwd,
   type ResumeRuntime,
 } from "../../src/resume/adapters.js";
-import { SessionLedger, isResumable, type SessionRecord } from "../../src/resume/SessionLedger.js";
+import {
+  SessionLedger,
+  hasDeliveryMarker,
+  isInvalidDeliveryMarker,
+  isResumable,
+  isValidDeliveryBinding,
+  type SessionRecord,
+} from "../../src/resume/SessionLedger.js";
 import { EVIDENCE_SCHEMA_VERSION, VERIFY_PRODUCER, STEP_RESULT_KIND, type WorktreeEvidence } from "../../src/worktree/evidence.js";
 import { planResume, autoResumes, offers } from "../../src/resume/planResume.js";
 import { resolveCodexId, resolveCodexSession, resolveOpencodeId, resolveAntigravityId, resolveCaptureId, resolveCaptureSession, resolveClaudeId, resolveClaudeIdByTitle, resolveCurrentSession } from "../../src/resume/resolvers.js";
@@ -319,6 +326,89 @@ describe("SessionLedger", () => {
       expect(back.map((r) => r.id)).toEqual(["good"]); // bad dropped, good kept
     });
   });
+
+  // SDD 368 T14 — durable Delivery reverse binding
+  describe("Delivery reverse binding (SDD 368 T14)", () => {
+    it("round-trips a valid binding and is idempotent on exact re-bind", () => {
+      const ws = tmpWs();
+      const l = new SessionLedger(ws);
+      l.record("holder", {
+        def: { cmd: "claude", kind: "agent" },
+        resume: { runtime: "claude", sessionId: "s1" },
+        cwd: "/wt/d",
+        declared: false,
+        bridgeClient: { boundGeneration: 2, wired: true },
+      });
+      const binding = { deliveryId: "d-1", segmentId: "seg-1", executionNonce: "nonce-1" };
+      l.bindDelivery("holder", binding);
+      expect(l.get("holder")?.delivery).toEqual(binding);
+      l.bindDelivery("holder", binding); // idempotent
+      const back = new SessionLedger(ws).get("holder");
+      expect(back?.delivery).toEqual(binding);
+      // preserves def/resume/cwd/declared/bridge
+      expect(back).toMatchObject({
+        def: { cmd: "claude", kind: "agent" },
+        resume: { runtime: "claude", sessionId: "s1" },
+        cwd: "/wt/d",
+        declared: false,
+        bridgeClient: { boundGeneration: 2, wired: true },
+      });
+      expect(isValidDeliveryBinding(back?.delivery)).toBe(true);
+      expect(hasDeliveryMarker(back)).toBe(true);
+    });
+
+    it("refuses conflicting bind and refuses overwrite of an invalid marker", () => {
+      const ws = tmpWs();
+      const l = new SessionLedger(ws);
+      l.record("holder", { def: { cmd: "claude", kind: "agent" }, cwd: ws, declared: false });
+      l.bindDelivery("holder", { deliveryId: "d-1", segmentId: "seg-1", executionNonce: "n1" });
+      expect(() => l.bindDelivery("holder", { deliveryId: "d-2", segmentId: "seg-1", executionNonce: "n1" }))
+        .toThrow(/existing binding differs/);
+      // hand-corrupt to invalid sentinel
+      const p = path.join(ws, ".tachyon", "sessions.json");
+      const raw = JSON.parse(fs.readFileSync(p, "utf8"));
+      raw.sessions.holder.delivery = { deliveryId: "", segmentId: "x" };
+      fs.writeFileSync(p, JSON.stringify(raw), "utf8");
+      const re = new SessionLedger(ws);
+      expect(isInvalidDeliveryMarker(re.get("holder")?.delivery)).toBe(true);
+      expect(() => re.bindDelivery("holder", { deliveryId: "d-1", segmentId: "seg-1" }))
+        .toThrow(/invalid/);
+    });
+
+    it("clear requires the exact expected binding (no name-only clear)", () => {
+      const ws = tmpWs();
+      const l = new SessionLedger(ws);
+      l.record("holder", { def: { cmd: "claude", kind: "agent" }, cwd: ws, declared: false });
+      l.bindDelivery("holder", { deliveryId: "d-1", segmentId: "seg-1", executionNonce: "n1" });
+      expect(() => l.clearDelivery("holder", { deliveryId: "d-1", segmentId: "seg-OTHER", executionNonce: "n1" }))
+        .toThrow(/does not match/);
+      expect(l.get("holder")?.delivery).toEqual({ deliveryId: "d-1", segmentId: "seg-1", executionNonce: "n1" });
+      l.clearDelivery("holder", { deliveryId: "d-1", segmentId: "seg-1", executionNonce: "n1" });
+      expect(l.get("holder")?.delivery).toBeUndefined();
+    });
+
+    it("malformed persisted marker survives as invalid sentinel alongside resume fields", () => {
+      const ws = tmpWs();
+      const p = path.join(ws, ".tachyon");
+      fs.mkdirSync(p, { recursive: true });
+      fs.writeFileSync(path.join(p, "sessions.json"), JSON.stringify({
+        sessions: {
+          holder: {
+            def: { cmd: "claude", kind: "agent" },
+            resume: { runtime: "claude", sessionId: "s" },
+            cwd: "/wt",
+            declared: false,
+            delivery: { deliveryId: 99 }, // malformed
+            updatedAt: "t",
+          },
+        },
+      }), "utf8");
+      const rec = new SessionLedger(ws).get("holder");
+      expect(rec?.resume?.sessionId).toBe("s");
+      expect(isInvalidDeliveryMarker(rec?.delivery)).toBe(true);
+      expect(hasDeliveryMarker(rec)).toBe(true);
+    });
+  });
 });
 
 describe("planResume", () => {
@@ -356,6 +446,58 @@ describe("planResume", () => {
 
   it("is empty when the ledger is empty", () => {
     expect(planResume({ ledger: new Map(), declaredAutostart: new Set(), liveSessions: new Set() })).toEqual([]);
+  });
+
+  it("SDD 368 T14 excludes valid and invalid Delivery-bound rows from auto-resume and offer", () => {
+    const ledger = new Map<string, SessionRecord>([
+      ["boundLive", rec({ delivery: { deliveryId: "d-1", segmentId: "seg-1", executionNonce: "n" } })],
+      ["boundDead", rec({ delivery: { deliveryId: "d-1", segmentId: "seg-1", executionNonce: "n" } })],
+      ["invalidBound", rec({ delivery: { invalid: true } })],
+      ["ordinary", rec()],
+    ]);
+    const plan = planResume({
+      ledger,
+      declaredAutostart: new Set(["boundDead", "ordinary", "invalidBound"]),
+      liveSessions: new Set(["boundLive"]),
+    });
+    const byName = Object.fromEntries(plan.map((p) => [p.name, p.action]));
+    // Delivery markers excluded entirely (even live ones are not reattach via generic plan —
+    // rehydrate still surfaces them; live tmux is discovered separately).
+    expect(byName).toEqual({ ordinary: "auto-resume" });
+    expect(autoResumes(plan).map((p) => p.name)).toEqual(["ordinary"]);
+    expect(offers(plan)).toEqual([]);
+  });
+
+  it("SDD 368 T14 excludes marker-less snapshot-denied agents (crash window)", () => {
+    const ledger = new Map<string, SessionRecord>([
+      ["crash-holder", rec()], // no delivery marker
+      ["ordinary", rec()],
+    ]);
+    const plan = planResume({
+      ledger,
+      declaredAutostart: new Set(["crash-holder", "ordinary"]),
+      liveSessions: new Set(),
+      deliveryUnavailableAgents: new Set(["crash-holder"]),
+    });
+    expect(plan.map((p) => p.name)).toEqual(["ordinary"]);
+    expect(autoResumes(plan).map((p) => p.name)).toEqual(["ordinary"]);
+  });
+
+  it("SDD 368 T14/R3 denies every generic plan action when reload snapshot is not ready", () => {
+    const ledger = new Map<string, SessionRecord>([
+      ["ordinary", rec()],
+      ["offered", { ...rec(), declared: false }],
+      ["live", rec()],
+    ]);
+    const plan = planResume({
+      ledger,
+      declaredAutostart: new Set(["ordinary"]),
+      liveSessions: new Set(["live"]),
+      deliveryReloadSnapshotReady: false,
+    });
+    expect(plan).toEqual([]);
+    expect(autoResumes(plan)).toEqual([]);
+    expect(offers(plan)).toEqual([]);
   });
 });
 

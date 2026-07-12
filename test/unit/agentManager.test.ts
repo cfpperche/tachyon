@@ -648,6 +648,8 @@ describe("AgentManager — session resume (spec 209)", () => {
       confirmDeliveryJoin?: (name: string, request: any, prepared: any, pid?: number) => Promise<void>;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       failDeliveryJoin?: (name: string, request: any, prepared: any, error: unknown) => Promise<void>;
+      /** SDD 368 T14 — snapshot deny set for marker-less crash-window agents. */
+      isDeliveryLifecycleDenied?: (name: string) => boolean;
     } = {},
   ) {
     const ws = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-am-"));
@@ -748,6 +750,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       prepareDeliveryJoin: opts.prepareDeliveryJoin,
       confirmDeliveryJoin: opts.confirmDeliveryJoin,
       failDeliveryJoin: opts.failDeliveryJoin,
+      isDeliveryLifecycleDenied: opts.isDeliveryLifecycleDenied,
     });
     return { manager, ledger, cmds, newSessionArgs, respawnArgs, startArgs, failRespawn, ws, hash };
   }
@@ -763,7 +766,7 @@ describe("AgentManager — session resume (spec 209)", () => {
         return {
           cwd: ws,
           worktree: { path: ws, branch: "tachyon/delivery", tachyonCreatedBranch: true, baseRef: request.expectedHead, createdAt: "now" },
-          reservationNonce: "nonce",
+          reservationNonce: "nonce", segmentId: "seg-t14",
         };
       },
       confirmDeliveryJoin: async (name) => { confirmed.push(name); },
@@ -800,7 +803,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       prepareDeliveryJoin: async (_name, request) => ({
         cwd: ws,
         worktree: { path: ws, branch: "tachyon/delivery", tachyonCreatedBranch: true, baseRef: request.expectedHead, createdAt: "now" },
-        reservationNonce: "nonce",
+        reservationNonce: "nonce", segmentId: "seg-t14",
       }),
       confirmDeliveryJoin: async () => { throw new Error("confirmation lost"); },
       failDeliveryJoin: async (name) => { failed.push(name); },
@@ -818,7 +821,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       prepareDeliveryJoin: async (_name, request) => ({
         cwd: ws,
         worktree: { path: ws, branch: "tachyon/delivery", tachyonCreatedBranch: true, baseRef: request.expectedHead, createdAt: "now" },
-        reservationNonce: "nonce",
+        reservationNonce: "nonce", segmentId: "seg-t14",
       }),
       confirmDeliveryJoin: async () => { throw new Error("confirmation failed"); },
       failDeliveryJoin: async () => { throw new Error("reservation quarantine failed"); },
@@ -832,6 +835,199 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(error.errors.map((entry: Error) => entry.message)).toEqual(["confirmation failed", "reservation compensation failed"]);
   });
 
+  it("SDD 368 T14 persists reverse binding after confirmed join", async () => {
+    const { manager, ledger, ws } = resumeHarness("agents: {}\n", {
+      prepareDeliveryJoin: async (_name, request) => ({
+        cwd: ws,
+        worktree: { path: ws, branch: "tachyon/delivery", tachyonCreatedBranch: true, baseRef: request.expectedHead, createdAt: "now" },
+        reservationNonce: "nonce-bind",
+        segmentId: "seg-bind",
+      }),
+      confirmDeliveryJoin: async () => undefined,
+    });
+    await manager.spawn("successor", {
+      cmd: "claude",
+      deliveryJoin: { deliveryId: "d-bind", role: "fixer", ownsSubset: ["src"], expectedHead: "abc", operationId: "join-bind" },
+    });
+    expect(ledger.get("successor")?.delivery).toEqual({
+      deliveryId: "d-bind",
+      segmentId: "seg-bind",
+      executionNonce: "nonce-bind",
+    });
+  });
+
+  it("SDD 368 T14 binding-write failure compensates like a failed join", async () => {
+    const failed: string[] = [];
+    const { manager, ledger, ws } = resumeHarness("agents: {}\n", {
+      prepareDeliveryJoin: async (_name, request) => ({
+        cwd: ws,
+        worktree: { path: ws, branch: "tachyon/delivery", tachyonCreatedBranch: true, baseRef: request.expectedHead, createdAt: "now" },
+        reservationNonce: "nonce",
+        segmentId: "seg-1",
+      }),
+      confirmDeliveryJoin: async (name) => {
+        // Pre-seed a conflicting binding so post-confirm bindDelivery refuses.
+        ledger.bindDelivery(name, { deliveryId: "d-OTHER", segmentId: "seg-OTHER", executionNonce: "x" });
+      },
+      failDeliveryJoin: async (name) => { failed.push(name); },
+    });
+    // First create a row that confirm can conflict-bind against by intercepting: actually
+    // confirm runs after spawnCore which creates the row; we bind a different value then
+    // persistDeliveryBinding tries the join binding and fails.
+    await expect(manager.spawn("successor", {
+      cmd: "claude",
+      deliveryJoin: { deliveryId: "d-one", role: "fixer", ownsSubset: [], expectedHead: "abc", operationId: "join-bind-fail" },
+    })).rejects.toThrow(/existing binding differs|Delivery join failed/);
+    expect(failed).toEqual(["successor"]);
+    expect(await manager.runningAgents()).not.toContain("successor");
+  });
+
+  it("SDD 368 T14 refuses generic resume and restart for Delivery-bound rows", async () => {
+    const { manager, ledger, ws } = resumeHarness("agents:\n  claude:\n    cmd: claude\n");
+    ledger.record("claude", {
+      def: { cmd: "claude", kind: "agent" },
+      resume: { runtime: "claude", sessionId: "s1" },
+      cwd: ws,
+      declared: true,
+      delivery: { deliveryId: "d-1", segmentId: "seg-1", executionNonce: "n" },
+    });
+    await expect(manager.resume("claude", ledger.get("claude")!)).rejects.toThrow(/Delivery-bound/);
+    await expect(manager.restart("claude")).rejects.toThrow(/Delivery-bound/);
+    // Invalid marker also refuses
+    ledger.record("invalid", {
+      def: { cmd: "claude", kind: "agent" },
+      resume: { runtime: "claude", sessionId: "s2" },
+      cwd: ws,
+      declared: false,
+      delivery: { invalid: true },
+    });
+    await expect(manager.resume("invalid", ledger.get("invalid")!)).rejects.toThrow(/Delivery-bound/);
+    // resumeReadiness is false for marker-bound rows
+    expect(await manager.resumeReadiness("claude", ledger.get("claude")!)).toBe(false);
+    expect(await manager.resumeReadiness("invalid", ledger.get("invalid")!)).toBe(false);
+  });
+
+  it("SDD 368 T14 snapshot deny set blocks marker-less crash-window spawn/resume/restart/readiness before mutation", async () => {
+    const denied = new Set(["crash-holder"]);
+    const { manager, ledger, ws } = resumeHarness(
+      "agents:\n  crash-holder:\n    cmd: claude\n    autostart: true\n",
+      { isDeliveryLifecycleDenied: (name) => denied.has(name) },
+    );
+    // Ordinary marker-less row — only the snapshot deny set blocks it.
+    ledger.record("crash-holder", {
+      def: { cmd: "claude", kind: "agent" },
+      resume: { runtime: "claude", sessionId: "s-crash" },
+      cwd: ws,
+      declared: true,
+    });
+    expect(ledger.get("crash-holder")?.delivery).toBeUndefined();
+
+    // Seed transient caches; refused restart must not clear them.
+    const internals = manager as unknown as {
+      readinessCache: Map<string, { sessionId: string; ready: boolean }>;
+      stoppingSince: Map<string, number>;
+      cleanExited: Set<string>;
+    };
+    internals.readinessCache.set("crash-holder", { sessionId: "s-crash", ready: true });
+    internals.stoppingSince.set("crash-holder", Date.now());
+    internals.cleanExited.add("crash-holder");
+
+    await expect(manager.spawn("crash-holder")).rejects.toThrow(/Delivery lifecycle is unavailable/);
+    await expect(manager.resume("crash-holder", ledger.get("crash-holder")!)).rejects.toThrow(/Delivery/);
+    await expect(manager.restart("crash-holder")).rejects.toThrow(/Delivery/);
+    // Caches untouched after refused restart.
+    expect(internals.readinessCache.get("crash-holder")).toEqual({ sessionId: "s-crash", ready: true });
+    expect(internals.stoppingSince.has("crash-holder")).toBe(true);
+    expect(internals.cleanExited.has("crash-holder")).toBe(true);
+
+    expect(await manager.resumeReadiness("crash-holder", ledger.get("crash-holder")!)).toBe(false);
+    const pending = await manager.autostartPending();
+    expect(pending).not.toContain("crash-holder");
+
+    // Explicit deliveryJoin remains allowed even while the deny set is active for other names.
+    let joinWs = "";
+    const join = resumeHarness("agents: {}\n", {
+      isDeliveryLifecycleDenied: (name) => denied.has(name),
+      prepareDeliveryJoin: async (_name, request) => ({
+        cwd: joinWs,
+        worktree: { path: joinWs, branch: "tachyon/delivery", tachyonCreatedBranch: true, baseRef: request.expectedHead, createdAt: "now" },
+        reservationNonce: "n",
+        segmentId: "seg-join",
+      }),
+      confirmDeliveryJoin: async () => undefined,
+    });
+    joinWs = join.ws;
+    await join.manager.spawn("recovery", {
+      cmd: "claude",
+      deliveryJoin: { deliveryId: "d-r", role: "fixer", ownsSubset: [], expectedHead: "abc", operationId: "join-ok" },
+    });
+    expect(await join.manager.runningAgents()).toContain("recovery");
+  });
+
+  it("SDD 368 T14 worktree occupancy gathers all rows and fails closed on duplicates", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-occ-"));
+    dirs.push(root);
+    const wt = path.join(root, "wt");
+    fs.mkdirSync(wt, { recursive: true });
+    const { manager, ledger, hash } = resumeHarness("agents: {}\n");
+    // Two bound rows claim the same worktree cwd → dirty/unavailable (dead), not free.
+    ledger.record("a1", {
+      def: { cmd: "claude", kind: "agent" },
+      cwd: wt,
+      declared: false,
+      delivery: { deliveryId: "d-1", segmentId: "seg-a", executionNonce: "n1" },
+    });
+    ledger.record("a2", {
+      def: { cmd: "claude", kind: "agent" },
+      cwd: wt,
+      declared: false,
+      delivery: { deliveryId: "d-1", segmentId: "seg-b", executionNonce: "n2" },
+    });
+    // Probe occupancy via reuse path's public surface when possible; fall back to private method.
+    const occ = await (manager as unknown as {
+      findLedgerWorktreeOccupant: (p: string) => Promise<{ agent: string; state: "live" | "dead"; cwd: string } | undefined>;
+    }).findLedgerWorktreeOccupant(wt);
+    expect(occ?.state).toBe("dead");
+    expect(["a1", "a2"]).toContain(occ?.agent);
+    void hash;
+  });
+
+  it("SDD 368 T14/R3 cwd-drifted bound worktree.path still dirties public occupancy/reuse", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-cwd-drift-"));
+    dirs.push(root);
+    const deliveryWt = path.join(root, "delivery-wt");
+    const driftedCwd = path.join(root, "elsewhere");
+    fs.mkdirSync(deliveryWt, { recursive: true });
+    fs.mkdirSync(driftedCwd, { recursive: true });
+    const { manager, ledger } = resumeHarness("agents: {}\n");
+    // Bound row: worktree.path names the Delivery worktree, but cwd drifted elsewhere.
+    // Pre-R3 occupancy only scanned rec.cwd and would miss this occupant.
+    ledger.record("drifter", {
+      def: { cmd: "claude", kind: "agent" },
+      cwd: driftedCwd,
+      worktree: {
+        path: deliveryWt,
+        branch: "tachyon/d",
+        tachyonCreatedBranch: true,
+        baseRef: "abc",
+        createdAt: "t0",
+      },
+      declared: false,
+      delivery: { deliveryId: "d-drift", segmentId: "seg-d", executionNonce: "n-d" },
+    });
+    const publicOcc = await manager.worktreeOccupant(deliveryWt);
+    expect(publicOcc).toEqual(expect.objectContaining({
+      state: "dirty",
+      agent: "drifter",
+    }));
+    // Drifted cwd alone must not free the delivery worktree for a second writer.
+    expect(await manager.worktreeOccupant(driftedCwd)).toEqual(expect.objectContaining({
+      state: "dirty",
+      agent: "drifter",
+    }));
+    void ledger;
+  });
+
   it.each([
     ["codex", "--sandbox read-only"],
     ["claude", "--permission-mode plan"],
@@ -840,7 +1036,7 @@ describe("AgentManager — session resume (spec 209)", () => {
     const { manager, ledger, cmds, ws } = resumeHarness("agents: {}\n", {
       prepareDeliveryJoin: async (_name, request) => ({ cwd: ws,
         worktree: { path: ws, branch: "tachyon/delivery", tachyonCreatedBranch: true, baseRef: request.expectedHead, createdAt: "now" },
-        reservationNonce: "nonce" }),
+        reservationNonce: "nonce", segmentId: "seg-t14" }),
       confirmDeliveryJoin: async () => undefined,
     });
     await manager.spawn(`reviewer-${runtime}`, { cmd: runtime, parent: "boss",
@@ -858,7 +1054,7 @@ describe("AgentManager — session resume (spec 209)", () => {
   ])("SDD 368 T10 preserves an already-safe literal reviewer command byte-for-byte: %s", async (cmd, expected) => {
     const { manager, ledger, ws } = resumeHarness("agents: {}\n", {
       prepareDeliveryJoin: async (_name, request) => ({ cwd: ws,
-        worktree: { path: ws, branch: "tachyon/delivery", tachyonCreatedBranch: true, baseRef: request.expectedHead, createdAt: "now" }, reservationNonce: "n" }),
+        worktree: { path: ws, branch: "tachyon/delivery", tachyonCreatedBranch: true, baseRef: request.expectedHead, createdAt: "now" }, reservationNonce: "n", segmentId: "seg-t14" }),
       confirmDeliveryJoin: async () => undefined,
     });
     await manager.spawn("literal-reviewer", { cmd,
@@ -878,7 +1074,7 @@ describe("AgentManager — session resume (spec 209)", () => {
   ])("SDD 368 T10 inserts reviewer safety immediately after the structural runtime token: %s", async (cmd, effective) => {
     const { manager, ledger, ws } = resumeHarness("agents: {}\n", {
       prepareDeliveryJoin: async (_name, request) => ({ cwd: ws,
-        worktree: { path: ws, branch: "tachyon/delivery", tachyonCreatedBranch: true, baseRef: request.expectedHead, createdAt: "now" }, reservationNonce: "n" }),
+        worktree: { path: ws, branch: "tachyon/delivery", tachyonCreatedBranch: true, baseRef: request.expectedHead, createdAt: "now" }, reservationNonce: "n", segmentId: "seg-t14" }),
       confirmDeliveryJoin: async () => undefined,
     });
     await manager.spawn("structural-reviewer", { cmd,
@@ -976,7 +1172,7 @@ describe("AgentManager — session resume (spec 209)", () => {
     const { manager, ledger, ws } = resumeHarness("agents: {}\n", {
       notify: (message) => { advisories.push(message); },
       prepareDeliveryJoin: async (_name, request) => ({ cwd: ws,
-        worktree: { path: ws, branch: "tachyon/delivery", tachyonCreatedBranch: true, baseRef: request.expectedHead, createdAt: "now" }, reservationNonce: "n" }),
+        worktree: { path: ws, branch: "tachyon/delivery", tachyonCreatedBranch: true, baseRef: request.expectedHead, createdAt: "now" }, reservationNonce: "n", segmentId: "seg-t14" }),
       confirmDeliveryJoin: async () => undefined,
     });
     await manager.spawn("policy-reviewer", { cmd,
@@ -990,7 +1186,7 @@ describe("AgentManager — session resume (spec 209)", () => {
     const cmd = "codex -- '--dangerously-bypass-approvals-and-sandbox | && ; >'";
     const { manager, ledger, ws } = resumeHarness("agents: {}\n", {
       prepareDeliveryJoin: async (_name, request) => ({ cwd: ws,
-        worktree: { path: ws, branch: "tachyon/delivery", tachyonCreatedBranch: true, baseRef: request.expectedHead, createdAt: "now" }, reservationNonce: "n" }),
+        worktree: { path: ws, branch: "tachyon/delivery", tachyonCreatedBranch: true, baseRef: request.expectedHead, createdAt: "now" }, reservationNonce: "n", segmentId: "seg-t14" }),
       confirmDeliveryJoin: async () => undefined,
     });
     await manager.spawn("positional-reviewer", { cmd,
@@ -1006,7 +1202,7 @@ describe("AgentManager — session resume (spec 209)", () => {
     for (const name of ["npx", "pnpx", "bunx"]) fs.writeFileSync(path.join(bin, name), wrapper, { mode: 0o755 });
     const { manager, cmds, ws } = resumeHarness("agents: {}\n", {
       prepareDeliveryJoin: async (_name, request) => ({ cwd: ws,
-        worktree: { path: ws, branch: "tachyon/delivery", tachyonCreatedBranch: true, baseRef: request.expectedHead, createdAt: "now" }, reservationNonce: "n" }),
+        worktree: { path: ws, branch: "tachyon/delivery", tachyonCreatedBranch: true, baseRef: request.expectedHead, createdAt: "now" }, reservationNonce: "n", segmentId: "seg-t14" }),
       confirmDeliveryJoin: async () => undefined,
     });
     const cases = [
@@ -1031,7 +1227,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       notify: (message) => { advisories.push(message); },
       prepareDeliveryJoin: async (_name, request) => ({ cwd: ws,
         worktree: { path: ws, branch: "tachyon/delivery", tachyonCreatedBranch: true, baseRef: request.expectedHead, createdAt: "now" },
-        reservationNonce: "nonce" }),
+        reservationNonce: "nonce", segmentId: "seg-t14" }),
       confirmDeliveryJoin: async () => undefined,
     });
     await manager.spawn("reviewer-unknown", { cmd: "custom-review-runtime",

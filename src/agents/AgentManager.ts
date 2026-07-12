@@ -10,7 +10,15 @@ import { URL_ENV_VAR } from "../bridge/token.js";
 import { redactSecrets } from "../bridge/redact.js";
 import { resolveBase as resolveWorktreeBase, defaultGitExec, gitArgs, type WorktreeRecord, type GitExec } from "../worktree/WorktreeManager.js";
 import { defaultRealOpencodeDataHome, harnessHome, type MaterializedHarness } from "../harness/HarnessManager.js";
-import type { SessionLedger, SessionRecord, SessionResume } from "../resume/SessionLedger.js";
+import {
+  hasDeliveryMarker,
+  isInvalidDeliveryMarker,
+  isValidDeliveryBinding,
+  type SessionDeliveryBinding,
+  type SessionLedger,
+  type SessionRecord,
+  type SessionResume,
+} from "../resume/SessionLedger.js";
 import { moveActivityLog } from "../activity/logStore.js";
 import type { SpawnContract } from "../bridge/spawnContract.js";
 import { readLatestDelegationRecord, appendFixerAttempt, type DelegationGate, type DelegationRecord, type FixerAttempt } from "../bridge/delegationRecord.js";
@@ -189,6 +197,8 @@ export interface PreparedDeliveryJoin {
   cwd: string;
   worktree: WorktreeRecord;
   reservationNonce: string;
+  /** SDD 368 T14 — reserved segment id from the pending lease; required for reverse binding. */
+  segmentId: string;
 }
 
 function reviewerSafeCommand(cmd: string): { cmd: string; advisory?: string } {
@@ -396,6 +406,12 @@ export interface AgentManagerOptions {
   prepareDeliveryJoin?: (name: string, request: DeliveryJoinRequest) => Promise<PreparedDeliveryJoin>;
   confirmDeliveryJoin?: (name: string, request: DeliveryJoinRequest, prepared: PreparedDeliveryJoin, pid?: number) => Promise<void>;
   failDeliveryJoin?: (name: string, request: DeliveryJoinRequest, prepared: PreparedDeliveryJoin, error: unknown) => Promise<void>;
+  /**
+   * SDD 368 T14 — agents denied by the read-only reload snapshot (includes marker-less
+   * cross-store crash rows). Generic spawn/resume/restart/autostart/readiness consult this;
+   * explicit deliveryJoin remains allowed.
+   */
+  isDeliveryLifecycleDenied?: (name: string) => boolean;
   /** Runtime-native, non-inference capability validation performed before tmux or worktree creation. */
   launchPreflight?: RuntimeLaunchPreflightPort;
   /** Bounded, non-inference post-launch observation. Injectable for fake-timer tests. */
@@ -882,14 +898,44 @@ export class AgentManager {
       if (opts.gate || opts.worktree || opts.reuseWorktree) {
         throw new Error("spawn_agent delivery_join cannot combine with gate, worktree:true, or reuse_worktree");
       }
+      // Explicit deliveryJoin is the only allowed route after canonical recovery/acquisition.
       return this.spawnDeliveryJoin(name, opts, opts.deliveryJoin);
     }
+    // SDD 368 T14 — generic spawn (and reuse) refuse snapshot-denied agents before any mutation.
+    this.assertNotDeliveryLifecycleDenied(name, "spawn");
     if (opts?.reuseWorktree) {
       if (opts.gate) throw new Error("spawn_agent cannot combine reuse_worktree with gate — reuse targets an EXISTING delegation's worktree, gate creates a NEW one");
       if (opts.worktree) throw new Error("spawn_agent cannot combine reuse_worktree with worktree:true — reuse already grants an isolated worktree");
       return this.spawnReuseWorktree(name, opts, opts.reuseWorktree);
     }
     return this.spawnCore(name, opts);
+  }
+
+  /**
+   * SDD 368 T14 — refuse generic lifecycle when the agent has a Delivery marker OR is in the
+   * reload snapshot's unavailable deny set (marker-less crash window). Guards must run before
+   * any transient cache mutation.
+   */
+  private isDeliveryLifecycleDenied(name: string, record?: SessionRecord): boolean {
+    if (hasDeliveryMarker(record) || hasDeliveryMarker(this.opts.ledger?.get(name))) return true;
+    return this.opts.isDeliveryLifecycleDenied?.(name) === true;
+  }
+
+  private assertNotDeliveryLifecycleDenied(name: string, op: "spawn" | "resume" | "restart", record?: SessionRecord): void {
+    if (!this.isDeliveryLifecycleDenied(name, record)) return;
+    if (op === "resume") {
+      throw new Error(
+        `cannot resume '${name}': Delivery-bound execution requires Delivery recovery, not generic resume`,
+      );
+    }
+    if (op === "restart") {
+      throw new Error(
+        `cannot restart '${name}': Delivery-bound execution requires a new nonce-bound segment or recovery path, not generic pane respawn`,
+      );
+    }
+    throw new Error(
+      `cannot spawn '${name}': Delivery lifecycle is unavailable for this agent (reload deny or Delivery marker); use explicit deliveryJoin recovery`,
+    );
   }
 
   private async spawnDeliveryJoin(name: string, opts: SpawnOptions, request: DeliveryJoinRequest): Promise<void> {
@@ -936,6 +982,12 @@ export class AgentManager {
     try {
       await this.spawnCore(name, opts, { cwd: prepared.cwd, worktree: prepared.worktree, commandOverride, definition, ephemeral: mode !== "declared", preflight, attempt });
       await this.opts.confirmDeliveryJoin(name, request, prepared, await this.tryPanePid(name));
+      // SDD 368 T14 — reverse binding after confirm; failure is a failed join (never unbound successful holder).
+      this.persistDeliveryBinding(name, {
+        deliveryId: request.deliveryId,
+        segmentId: prepared.segmentId,
+        executionNonce: prepared.reservationNonce,
+      });
     } catch (error) {
       const compensationErrors = await this.cleanupFailedDeliveryExecution(name, attempt);
       try { await this.opts.failDeliveryJoin?.(name, request, prepared, error); }
@@ -945,6 +997,20 @@ export class AgentManager {
       }
       throw error;
     }
+  }
+
+  /**
+   * SDD 368 T14 — write the Delivery reverse marker onto the exact execution's ledger row.
+   * Throws on missing ledger/row or conflicting bind so the join path compensates.
+   */
+  private persistDeliveryBinding(name: string, binding: SessionDeliveryBinding): void {
+    if (!this.opts.ledger) {
+      throw new Error(`DELIVERY_BINDING_FAILED: no session ledger to persist reverse binding for '${name}'`);
+    }
+    if (typeof binding.segmentId !== "string" || binding.segmentId.length === 0) {
+      throw new Error(`DELIVERY_BINDING_FAILED: prepared join for '${name}' lacks segmentId`);
+    }
+    this.opts.ledger.bindDelivery(name, binding);
   }
 
   private async cleanupFailedDeliveryExecution(name: string, attempt: DeliveryLaunchAttempt): Promise<Error[]> {
@@ -1148,6 +1214,12 @@ export class AgentManager {
       this.worktreeOccupancy.set(key, { ...occ, state: "dirty" });
       return;
     }
+    // SDD 368 T14 — a Delivery-bound occupant never becomes free from tmux disappearance alone.
+    // Bound worktrees stay dirty/unavailable until an explicit Delivery recovery path clears them.
+    if (hasDeliveryMarker(this.opts.ledger?.get(occ.agentId))) {
+      this.worktreeOccupancy.set(key, { ...occ, state: "dirty" });
+      return;
+    }
     if (occ.pid === undefined) console.warn(`[tachyon] worktree occupancy freed on tmux-session-gone alone for '${occ.agentId}' — no pid was captured to verify its root process also exited`);
     this.worktreeOccupancy.delete(key);
   }
@@ -1161,21 +1233,68 @@ export class AgentManager {
     }
   }
 
-  /** t-7da04c / t-815796 — owner-vs-occupant reload gap: any agent (not just a reuse occupant
-   *  tracked in-memory) whose ledger row's cwd is this worktree and whose tmux session survived.
-   *  Live sessions restore a live occupancy row; dead/postmortem panes restore the dirty quarantine
-   *  that an in-memory pre-reload refresh would have set. */
+  /**
+   * t-7da04c / t-815796 / SDD 368 T14/R3 — owner-vs-occupant reload gap.
+   * Gather ALL ledger rows whose persisted cwd OR worktree.path is under this worktree
+   * (never return the first match alone; never ignore a cwd-drifted bound worktree path):
+   *   - one exact live bound row with matching cwd+worktree → live
+   *   - a dead/missing/invalid/mismatched bound row or multiple candidates → dirty (dead)
+   *   - unbound live/dead behaves as before for a single match
+   * Bound rows without a live tmux session still count (missing runtime is dirty, not free).
+   */
   private async findLedgerWorktreeOccupant(worktreePath: string): Promise<{ agent: string; state: "live" | "dead"; cwd: string } | undefined> {
     if (!this.opts.ledger) return undefined;
     const states = await this.agentStates();
     const root = this.canonicalWorktreeKey(worktreePath);
+    type Candidate = { agent: string; state: "live" | "dead"; cwd: string; bound: boolean; invalid: boolean };
+    const candidates: Candidate[] = [];
     for (const [agent, rec] of this.opts.ledger.all()) {
-      if (!rec.cwd || !isPathAtOrUnder(this.canonicalWorktreeKey(rec.cwd), root)) continue;
+      const cwdKey = rec.cwd ? this.canonicalWorktreeKey(rec.cwd) : undefined;
+      const wtKey = rec.worktree?.path ? this.canonicalWorktreeKey(rec.worktree.path) : undefined;
+      const cwdMatch = !!cwdKey && isPathAtOrUnder(cwdKey, root);
+      const wtMatch = !!wtKey && isPathAtOrUnder(wtKey, root);
+      if (!cwdMatch && !wtMatch) continue;
+
+      const bound = hasDeliveryMarker(rec);
+      const invalidMarker = isInvalidDeliveryMarker(rec.delivery)
+        || (bound && !isValidDeliveryBinding(rec.delivery));
+      // Bound mismatch (including cwd-drift): one of cwd/worktree under the target without the
+      // other agreeing, missing side, or both under but not the same canonical key.
+      const boundPathMismatch = bound && (
+        !rec.cwd
+        || !rec.worktree?.path
+        || cwdMatch !== wtMatch
+        || (cwdKey !== undefined && wtKey !== undefined && cwdKey !== wtKey)
+      );
+      const invalid = invalidMarker || boundPathMismatch;
+      const reportCwd = (cwdMatch && rec.cwd)
+        ? rec.cwd
+        : (rec.worktree?.path ?? rec.cwd ?? worktreePath);
       const state = states.get(agent);
-      if (!state) continue;
-      return { agent, state: state.dead ? "dead" : "live", cwd: rec.cwd };
+      if (!state) {
+        // Unbound rows without a session remain invisible (pre-T14). Bound missing runtime → dirty.
+        if (bound) candidates.push({ agent, state: "dead", cwd: reportCwd, bound: true, invalid });
+        continue;
+      }
+      candidates.push({
+        agent,
+        state: state.dead ? "dead" : "live",
+        cwd: reportCwd,
+        bound,
+        invalid,
+      });
     }
-    return undefined;
+    if (candidates.length === 0) return undefined;
+    if (candidates.length > 1) {
+      // Multiple candidates → dirty/unavailable; report first agent for diagnostics.
+      const pick = candidates[0]!;
+      return { agent: pick.agent, state: "dead", cwd: pick.cwd };
+    }
+    const only = candidates[0]!;
+    if (only.bound && (only.invalid || only.state === "dead")) {
+      return { agent: only.agent, state: "dead", cwd: only.cwd };
+    }
+    return { agent: only.agent, state: only.state, cwd: only.cwd };
   }
 
   /** t-815796 — the worktree's current branch HEAD (for design point 5's head pinning + grant provenance). */
@@ -1983,6 +2102,8 @@ export class AgentManager {
   }
 
   async restart(name: string): Promise<void> {
+    // SDD 368 T14 — refuse before mutating transient caches (readiness/postmortem/stopping).
+    this.assertNotDeliveryLifecycleDenied(name, "restart");
     this.stoppingSince.delete(name);
     this.stopFailed.delete(name);
     this.readinessCache.delete(name); // spec 221: restart is a new session → drop the cached badge
@@ -2079,6 +2200,9 @@ export class AgentManager {
    * changes clear the agent's entry.
    */
   async resumeReadiness(name: string, record: SessionRecord): Promise<boolean> {
+    // SDD 368 T14 — valid/invalid markers and snapshot-unavailable agents never report ready
+    // for generic resume (explicit deliveryJoin recovery only).
+    if (this.isDeliveryLifecycleDenied(name, record)) return false;
     const sid = record.resume?.sessionId ?? "";
     const cached = this.readinessCache.get(name);
     if (cached && cached.sessionId === sid) return cached.ready;
@@ -2187,6 +2311,8 @@ export class AgentManager {
    * be resolved or the transcript is gone — the caller falls back to a fresh spawn.
    */
   async resume(name: string, record: SessionRecord): Promise<void> {
+    // SDD 368 T14 — refuse before mutating readiness cache (markers + snapshot deny set).
+    this.assertNotDeliveryLifecycleDenied(name, "resume", record);
     this.readinessCache.delete(name); // spec 221: resuming changes the session → drop the cached badge
     if (!record.resume) throw new ResumeUnavailableError(name, "record is not resumable (no resume block)");
     const { runtime } = record.resume;
@@ -2540,7 +2666,12 @@ export class AgentManager {
     if (!config) return [];
     const present = new Set((await this.agentStates()).keys());
     return Object.entries(config.agents)
-      .filter(([name, def]) => def.autostart && !present.has(name))
+      .filter(([name, def]) => {
+        if (!def.autostart || present.has(name)) return false;
+        // SDD 368 T14 — Delivery markers and snapshot-denied agents never generic autostart.
+        if (this.isDeliveryLifecycleDenied(name)) return false;
+        return true;
+      })
       .map(([name]) => name);
   }
 }

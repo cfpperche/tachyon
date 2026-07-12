@@ -40,7 +40,7 @@ export async function exerciseBoundDeliveryExecution(): Promise<void> {
       removeHarnessHome: name => fs.rmSync(home(name), { recursive: true, force: true }),
       prepareDeliveryJoin: async (name, request) => {
         if (name === "racing-live" || name === "racing-dead") sessions.add(manager.session(name));
-        return { cwd: root, worktree: { path: root, branch: "delivery", tachyonCreatedBranch: true, baseRef: request.expectedHead, createdAt: "now" }, reservationNonce: "n" };
+        return { cwd: root, worktree: { path: root, branch: "delivery", tachyonCreatedBranch: true, baseRef: request.expectedHead, createdAt: "now" }, reservationNonce: "n", segmentId: "seg-t14" };
       },
       confirmDeliveryJoin: async () => { if (rejectConfirmation) throw new Error("confirmation failed"); },
       failDeliveryJoin: async name => { failed.push(name); },
@@ -202,7 +202,7 @@ export async function exerciseBoundDeliveryIdentitySnapshot(): Promise<void> {
       materializeHarness: ({ name, def, cwd }) => { counters.materialize++; materialized.push({ name, def: structuredClone(def), cwd }); const dir = home(name); fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(path.join(dir, "marker"), JSON.stringify(def)); return { home: dir, env: { CODEX_HOME: dir }, args: [`--harness-${name}`] }; },
       removeHarnessHome: name => fs.rmSync(home(name), { recursive: true, force: true }),
       materializeCodexSessionStartHookConfig: name => { hooks.push(name); const file = spawnSettingsPath(root, name); fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, name); return `hooks.SessionStart=${name}`; },
-      prepareDeliveryJoin: async (name, request) => { counters.prepare++; const receipt = { cwd: prepared, worktree: { path: prepared, branch: "delivery", tachyonCreatedBranch: true, baseRef: request.expectedHead, createdAt: "now" }, reservationNonce: "reservation" }; preparations.push({ name, request: structuredClone(request), prepared: receipt }); return receipt; },
+      prepareDeliveryJoin: async (name, request) => { counters.prepare++; const receipt = { cwd: prepared, worktree: { path: prepared, branch: "delivery", tachyonCreatedBranch: true, baseRef: request.expectedHead, createdAt: "now" }, reservationNonce: "reservation", segmentId: "seg-t14" }; preparations.push({ name, request: structuredClone(request), prepared: receipt }); return receipt; },
       confirmDeliveryJoin: async (name, request, receipt) => { counters.confirm++; confirmations.push({ name, request: structuredClone(request), prepared: receipt }); },
     });
     await manager.spawn("reviewer");
@@ -295,7 +295,7 @@ export async function exerciseBoundDeliveryPreReservationRefusal(kind: BoundDeli
       launchPreflight: { check: async () => kind === "failed launch preflight"
         ? { state: "failed", code: "runtime_preflight_failed", runtime: "codex", reason: "fixture" }
         : { state: "supported", runtime: "codex", source: "fixture" } },
-      prepareDeliveryJoin: async (_name, request) => ({ reservation: ++counters.reservationPrepare, cwd: root, worktree: { path: root, branch: "delivery", tachyonCreatedBranch: true, baseRef: request.expectedHead, createdAt: "now" }, reservationNonce: "n" }),
+      prepareDeliveryJoin: async (_name, request) => ({ reservation: ++counters.reservationPrepare, cwd: root, worktree: { path: root, branch: "delivery", tachyonCreatedBranch: true, baseRef: request.expectedHead, createdAt: "now" }, reservationNonce: "n", segmentId: "seg-t14" }),
       confirmDeliveryJoin: async () => { counters.reservationConfirm++; },
       failDeliveryJoin: async () => { counters.reservationFail++; },
       mintAgentToken: () => { counters.tokenMint++; return { TACHYON_AGENT_BRIDGE_TOKEN: "minted" }; },
@@ -410,7 +410,7 @@ export async function exerciseDeclaredDeliveryJoinBridgeStampRefresh(): Promise<
           baseRef: request.expectedHead,
           createdAt: "now",
         },
-        reservationNonce: "n",
+        reservationNonce: "n", segmentId: "seg-t14",
       }),
       confirmDeliveryJoin: async () => undefined,
       failDeliveryJoin: async () => undefined,

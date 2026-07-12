@@ -89,10 +89,18 @@ import { GitDeliveryStore } from "../git-delivery/store.js";
 import { DeliveryStore } from "../delivery/store.js";
 import { waitForDeliveryLease } from "../delivery/leaseService.js";
 import { DeliveryVerificationLeaseService } from "../delivery/verificationLease.js";
+import {
+  readLinuxProcessIdentity,
+  reconcileDeliveryReload,
+  type LinkedGitProjection,
+  type ObservedProcess,
+  type ReloadReconciliationSnapshot,
+} from "../delivery/reloadReconciliation.js";
 import { resolveGitDeliverySettings } from "../git-delivery/settings.js";
 import { createGitExec, type GitExec } from "../worktree/WorktreeManager.js";
 import { resolveGitBinaryForHost } from "../worktree/gitBinary.js";
 import type { GitDeliveryActor } from "../git-delivery/types.js";
+import { hasDeliveryMarker } from "../resume/SessionLedger.js";
 import { TaskNotificationService } from "./TaskNotificationService.js";
 import { BridgeSlowRequestToastPolicy } from "./bridgeSlowRequestPolicy.js";
 import { ExternalToolRegistry } from "../externalTools/registry.js";
@@ -248,6 +256,17 @@ export class Workspace {
   private readonly pipelineRunWt = new Map<string, WorktreeRecord>();
   /** Dead agents with a resumable session that we did NOT auto-resume — offered to the human (spec 209). */
   private resumable: ResumePlanItem[] = [];
+  /**
+   * SDD 368 T14/R4 — explicit reload snapshot readiness.
+   * Construction attempts one bounded reload before the Workspace is returned;
+   * external callers must never observe `uninitialized`. Non-ready phases
+   * (failed, and the internal uninitialized default before that attempt)
+   * deny every generic lifecycle action. Explicit deliveryJoin remains allowed.
+   */
+  private deliveryReload:
+    | { phase: "uninitialized" }
+    | { phase: "ready"; snapshot: ReloadReconciliationSnapshot }
+    | { phase: "failed"; reason: string } = { phase: "uninitialized" };
   readonly monitor: AttentionMonitor;
   private readonly adhocBackstop: AdhocBackstopMonitor;
   /** spec 216 — agents whose CLI just compacted; a re-anchor is consumed on their next idle. */
@@ -499,6 +518,11 @@ export class Workspace {
         return row ? { sessionId: row.sessionId, transcriptPath: row.transcriptPath } : undefined;
       },
       notify: (message, level) => this.host.notify(message, level),
+      // SDD 368 T14/R3 — fail-closed until a complete snapshot is ready; then consult deny set.
+      isDeliveryLifecycleDenied: (name) => {
+        if (this.deliveryReload.phase !== "ready") return true;
+        return this.deliveryReload.snapshot.unavailableAgents.has(name);
+      },
 
       getConfig: () => this.config,
       getMaxAgents: () => this.host.getSetting("tachyon", "maxAgents", 8),
@@ -1602,6 +1626,10 @@ export class Workspace {
       // Load config before the Bridge so settings.bridgePort applies; default is a
       // stable per-workspace derived port, so registrations survive editor restarts.
       ws.reloadConfig();
+      // SDD 368 T14/R4 — one bounded Delivery reload before Bridge exposure or return,
+      // so ensureWorkspaceFor / createForTest never leave callers on `uninitialized`.
+      // start() still recomputes after rehydrate/GC (failed→ready retry + ledger truth).
+      await ws.attemptDeliveryReloadSnapshot();
       if (seams.startBridge !== false) {
         const preferred = ws.config?.settings.bridgePort ?? derivePort(ws.wsHash);
         const port = await ws.bridge.start(preferred);
@@ -2194,14 +2222,122 @@ export class Workspace {
       baseRef: input.worktree.baseBranch ?? input.worktree.baseRef,
       currentHeadSha: input.baseSha, reason: "canonical gated spawn",
     });
-    if (delivery.gitDeliveryId === projection.id) return;
-    if (delivery.gitDeliveryId && delivery.gitDeliveryId !== projection.id) {
-      throw new Error(`Delivery '${delivery.id}' is already linked to GitDelivery '${delivery.gitDeliveryId}'`);
+    if (delivery.gitDeliveryId !== projection.id) {
+      if (delivery.gitDeliveryId && delivery.gitDeliveryId !== projection.id) {
+        throw new Error(`Delivery '${delivery.id}' is already linked to GitDelivery '${delivery.gitDeliveryId}'`);
+      }
+      delivery = await this.deliveries.update(delivery.id, delivery.version, (record) => ({ ...record, gitDeliveryId: projection.id }), {
+        operationId: `gated-spawn-link:${spawnKey}`,
+        intent: { gitDeliveryId: projection.id },
+      });
     }
-    await this.deliveries.update(delivery.id, delivery.version, (record) => ({ ...record, gitDeliveryId: projection.id }), {
-      operationId: `gated-spawn-link:${spawnKey}`,
-      intent: { gitDeliveryId: projection.id },
+    // SDD 368 T14 — reverse binding after Delivery + linked Git projection are durable.
+    // Require one internally exact held holder/open-tail/executionAgent boundary; no
+    // same-name or tail-segment inference. Pre-sequential gated spawn omits executionNonce;
+    // reload classifies that path unavailable rather than inventing containment identity.
+    const holder = delivery.lease.holder;
+    const tail = delivery.segments.at(-1);
+    if (
+      !holder
+      || !tail
+      || tail.releasedAt
+      || tail.id !== holder.segmentId
+      || tail.executionAgent !== holder.executionAgent
+      || holder.executionAgent !== input.name
+    ) {
+      throw new Error(
+        `Delivery '${delivery.id}' has no exact holder/open-tail/executionAgent boundary for '${input.name}'`,
+      );
+    }
+    this.ledger.bindDelivery(input.name, { deliveryId: delivery.id, segmentId: holder.segmentId });
+  }
+
+  /**
+   * SDD 368 T14 — recompute the in-memory Delivery reload snapshot from one bounded
+   * set of store/ledger/process reads. Read-only; never mutates Delivery or GitDelivery.
+   * Passes exact linked GitDelivery records (no last-wins path map).
+   * On success installs `{phase:"ready", snapshot}`; throws leave phase unchanged
+   * (callers use `attemptDeliveryReloadSnapshot` for fail-closed handling).
+   */
+  private async refreshDeliveryReloadSnapshot(): Promise<ReloadReconciliationSnapshot> {
+    const deliveries = await this.deliveries.list();
+    const gitList = await this.gitDeliveries.list();
+    const linkedProjections: LinkedGitProjection[] = [];
+    for (const g of gitList) {
+      if (g.deliveryId && g.worktreePath) {
+        linkedProjections.push({
+          gitDeliveryId: g.id,
+          deliveryId: g.deliveryId,
+          worktreePath: g.worktreePath,
+        });
+      }
+    }
+    const sessions = this.ledger.all();
+    // Observe processes for every session that may participate in classification:
+    // bound rows, and also marker-less names that appear as Delivery holders (crash window).
+    const observeNames = new Set<string>();
+    for (const [name, rec] of sessions) {
+      if (hasDeliveryMarker(rec)) observeNames.add(name);
+    }
+    for (const d of deliveries) {
+      const holder = d.lease.holder?.executionAgent;
+      if (holder) observeNames.add(holder);
+    }
+    const processByAgent = new Map<string, ObservedProcess>();
+    for (const name of observeNames) {
+      try {
+        const session = this.manager.session(name);
+        if (!(await this.tmux.hasSession(session))) {
+          processByAgent.set(name, { state: "gone" });
+          continue;
+        }
+        const pid = await this.tmux.panePid(session);
+        processByAgent.set(name, readLinuxProcessIdentity(pid));
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        processByAgent.set(name, { state: "unknown", reason });
+      }
+    }
+    const snapshot = reconcileDeliveryReload({
+      deliveries,
+      linkedProjections,
+      sessions,
+      processByAgent,
     });
+    this.deliveryReload = { phase: "ready", snapshot };
+    return snapshot;
+  }
+
+  /**
+   * SDD 368 T14/R4 — shared bounded reload attempt used by `_create` and `start`.
+   * Success → ready; failure → failed + warn. Never leaves callers on uninitialized
+   * after the attempt completes. Does not special-case empty stores or test mode.
+   */
+  private async attemptDeliveryReloadSnapshot(): Promise<void> {
+    try {
+      await this.refreshDeliveryReloadSnapshot();
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      this.deliveryReload = { phase: "failed", reason };
+      this.host.notify(
+        this.t("delivery reload reconciliation failed: {0}", reason),
+        "warn",
+      );
+    }
+  }
+
+  /** SDD 368 T14 — last ready reload snapshot (undefined when not ready). */
+  deliveryReloadState(): ReloadReconciliationSnapshot | undefined {
+    return this.deliveryReload.phase === "ready" ? this.deliveryReload.snapshot : undefined;
+  }
+
+  /**
+   * SDD 368 T14/R3 — explicit snapshot readiness. Never interpret a missing
+   * snapshot as safe generic-lifecycle admission. After `_create`/`start` attempt,
+   * callers should only see `ready` or `failed` (not `uninitialized`).
+   */
+  deliveryReloadPhase(): "uninitialized" | "ready" | "failed" {
+    return this.deliveryReload.phase;
   }
 
   private async gitDeliveryLiveness(agent: string): Promise<"live" | "not_live" | "unknown"> {
@@ -2690,7 +2826,17 @@ export class Workspace {
     this.gcLedger(declaredInConfig, liveSessions); // spec 239: prune stale declared rows
     this.compactSessionOwners(declaredInConfig, liveSessions); // t-123143: prune stale session-owner rows
     this.rehydratePipelines(); // spec 230: restore pipeline runs so a reloaded run's surviving nodes can still complete
-    const plan = planResume({ ledger: this.ledger.all(), declaredAutostart, liveSessions });
+    // SDD 368 T14/R4 — recompute after ledger rehydration/GC (same attempt helper as _create).
+    // Reflects post-rehydrate truth and allows a prior failed create/start to become ready.
+    await this.attemptDeliveryReloadSnapshot();
+    const reload = this.deliveryReload;
+    const plan = planResume({
+      ledger: this.ledger.all(),
+      declaredAutostart,
+      liveSessions,
+      deliveryUnavailableAgents: reload.phase === "ready" ? reload.snapshot.unavailableAgents : undefined,
+      deliveryReloadSnapshotReady: reload.phase === "ready",
+    });
     let resumed = 0;
     for (const item of autoResumes(plan)) {
       try {

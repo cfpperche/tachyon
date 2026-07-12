@@ -1,4 +1,4 @@
-import { isResumable, type SessionRecord } from "./SessionLedger.js";
+import { hasDeliveryMarker, isResumable, type SessionRecord } from "./SessionLedger.js";
 
 /**
  * Pure activation-time resume decision (spec 209 / F29). Given the ledger and the
@@ -30,6 +30,17 @@ export interface ResumeWorld {
   declaredAutostart: Set<string>;
   /** Agent names with a LIVE (non-dead) tmux session right now. */
   liveSessions: Set<string>;
+  /**
+   * SDD 368 T14 — agents denied by the read-only reload snapshot (including marker-less
+   * cross-store crash rows). Generic plan must exclude them entirely.
+   */
+  deliveryUnavailableAgents?: ReadonlySet<string>;
+  /**
+   * SDD 368 T14/R3 — when explicitly false, no complete bounded reload snapshot is available
+   * (store-read failure or pre-ready). Every generic plan action is denied. Omitted/undefined
+   * preserves unit-test deny-set-only behavior; Workspace always passes a boolean after start.
+   */
+  deliveryReloadSnapshotReady?: boolean;
 }
 
 export function planResume(world: ResumeWorld): ResumePlanItem[] {
@@ -39,6 +50,14 @@ export function planResume(world: ResumeWorld): ResumePlanItem[] {
     // the generic resume/offer path (codex S4 M4). (autostartPending is already safe — it only
     // fresh-spawns DECLARED agents, and pipeline nodes are ad-hoc.)
     if (record.def?.pipeline) continue;
+    // SDD 368 T14 — valid or invalid Delivery markers are never generic auto-resume/offer.
+    // Reload may rehydrate definition/lineage for visibility; holder recovery is Delivery-owned.
+    if (hasDeliveryMarker(record)) continue;
+    // SDD 368 T14/R3 — fail-closed when Workspace reports snapshot not ready.
+    if (world.deliveryReloadSnapshotReady === false) continue;
+    // Marker-less crash window: snapshot deny set blocks ordinary rows that still map to
+    // an unavailable Delivery holder (Delivery/projection durable, bindDelivery not yet written).
+    if (world.deliveryUnavailableAgents?.has(name)) continue;
     if (world.liveSessions.has(name)) {
       plan.push({ name, action: "reattach", record });
     } else if (!isResumable(record)) {

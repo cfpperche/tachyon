@@ -80,6 +80,47 @@ export interface BridgeClientBinding {
   wired: boolean;
 }
 
+/**
+ * SDD 368 T14 — defensive reverse index from one runtime ledger row to one Delivery segment.
+ * DeliveryStore remains the lease authority; this never grants occupancy by itself.
+ * A valid marker has non-empty deliveryId + segmentId, and executionNonce when sequential identity exists.
+ */
+export interface SessionDeliveryBinding {
+  deliveryId: string;
+  segmentId: string;
+  /** Confirmed reservation/execution nonce when sequential identity was established; may be omitted for pre-sequential gated spawn. */
+  executionNonce?: string;
+}
+
+/**
+ * Explicit invalid sentinel for a malformed persisted delivery marker.
+ * Must survive parse so the row is never mistaken for an ordinary resumable agent.
+ */
+export type SessionDeliveryMarker = SessionDeliveryBinding | { readonly invalid: true };
+
+export function isInvalidDeliveryMarker(marker: SessionDeliveryMarker | undefined): marker is { readonly invalid: true } {
+  return !!marker && (marker as { invalid?: unknown }).invalid === true;
+}
+
+export function isValidDeliveryBinding(marker: SessionDeliveryMarker | undefined): marker is SessionDeliveryBinding {
+  return !!marker && !isInvalidDeliveryMarker(marker)
+    && typeof (marker as SessionDeliveryBinding).deliveryId === "string"
+    && (marker as SessionDeliveryBinding).deliveryId.length > 0
+    && typeof (marker as SessionDeliveryBinding).segmentId === "string"
+    && (marker as SessionDeliveryBinding).segmentId.length > 0;
+}
+
+/** True when the row carries any Delivery marker (valid or invalid) — generic resume/restart must refuse it. */
+export function hasDeliveryMarker(rec: SessionRecord | undefined): boolean {
+  return rec?.delivery !== undefined;
+}
+
+export function sameDeliveryBinding(a: SessionDeliveryBinding, b: SessionDeliveryBinding): boolean {
+  return a.deliveryId === b.deliveryId
+    && a.segmentId === b.segmentId
+    && (a.executionNonce ?? undefined) === (b.executionNonce ?? undefined);
+}
+
 export interface SessionRecord {
   /** present for every ad-hoc agent; absent for a declared agent's resume-only row. */
   def?: SessionDef;
@@ -93,6 +134,11 @@ export interface SessionRecord {
   declared: boolean;
   /** spec 364 — durable Bridge-client generation stamp for rebind after host reload. */
   bridgeClient?: BridgeClientBinding;
+  /**
+   * SDD 368 T14 — Delivery/segment reverse binding (or explicit invalid sentinel).
+   * Presence of any marker excludes generic auto-resume/offer/restart.
+   */
+  delivery?: SessionDeliveryMarker;
   updatedAt: string;
 }
 
@@ -212,6 +258,59 @@ export class SessionLedger {
     this.write(all);
   }
 
+  /**
+   * SDD 368 T14 — idempotent exact-bind of a Delivery reverse marker.
+   * Merges only the delivery field; preserves def/resume/worktree/cwd/declared/bridgeClient.
+   * Refuses to overwrite a different or invalid binding. Requires an existing ledger row.
+   */
+  bindDelivery(name: string, binding: SessionDeliveryBinding): void {
+    if (!isValidDeliveryBinding(binding)) {
+      throw new Error(`cannot bind Delivery for '${name}': binding requires non-empty deliveryId and segmentId`);
+    }
+    const normalized: SessionDeliveryBinding = {
+      deliveryId: binding.deliveryId,
+      segmentId: binding.segmentId,
+      ...(binding.executionNonce !== undefined && binding.executionNonce.length > 0
+        ? { executionNonce: binding.executionNonce }
+        : {}),
+    };
+    const all = this.all();
+    const rec = all.get(name);
+    if (!rec) throw new Error(`cannot bind Delivery for '${name}': no session ledger row`);
+    if (rec.delivery !== undefined) {
+      if (isInvalidDeliveryMarker(rec.delivery)) {
+        throw new Error(`cannot bind Delivery for '${name}': existing binding is invalid and must be cleared exactly`);
+      }
+      if (sameDeliveryBinding(rec.delivery, normalized)) return; // idempotent exact-bind
+      throw new Error(`cannot bind Delivery for '${name}': existing binding differs`);
+    }
+    all.set(name, stripDeclaredParent({
+      ...rec,
+      delivery: normalized,
+      updatedAt: new Date().toISOString(),
+    }));
+    this.write(all);
+  }
+
+  /**
+   * SDD 368 T14 — clear a Delivery reverse marker only when the caller's expected binding matches exactly.
+   * There is no name-only clear.
+   */
+  clearDelivery(name: string, expected: SessionDeliveryBinding): void {
+    if (!isValidDeliveryBinding(expected)) {
+      throw new Error(`cannot clear Delivery for '${name}': expected binding requires non-empty deliveryId and segmentId`);
+    }
+    const all = this.all();
+    const rec = all.get(name);
+    if (!rec?.delivery) return;
+    if (isInvalidDeliveryMarker(rec.delivery) || !sameDeliveryBinding(rec.delivery, expected)) {
+      throw new Error(`cannot clear Delivery for '${name}': expected binding does not match`);
+    }
+    const { delivery: _drop, ...rest } = rec;
+    all.set(name, stripDeclaredParent({ ...rest, updatedAt: new Date().toISOString() }));
+    this.write(all);
+  }
+
   private write(all: Map<string, SessionRecord>): void {
     const dir = path.dirname(this.path);
     fs.mkdirSync(dir, { recursive: true });
@@ -231,14 +330,16 @@ function normalize(r: unknown): SessionRecord | null {
   const declared = o.declared === true;
   const updatedAt = typeof o.updatedAt === "string" ? o.updatedAt : new Date(0).toISOString();
 
-  // New (211) shape: a def and/or resume object (+ spec 210 worktree + spec 364 bridgeClient).
-  if (o.def !== undefined || o.resume !== undefined || o.worktree !== undefined || o.bridgeClient !== undefined) {
+  // New (211) shape: a def and/or resume object (+ spec 210 worktree + spec 364 bridgeClient + SDD 368 T14 delivery).
+  if (o.def !== undefined || o.resume !== undefined || o.worktree !== undefined || o.bridgeClient !== undefined || o.delivery !== undefined) {
     const def = parseDef(o.def);
     const resume = parseResume(o.resume);
     const worktree = parseWorktree(o.worktree);
     const bridgeClient = parseBridgeClient(o.bridgeClient);
-    if (!def && !resume && !worktree && !bridgeClient) return null;
-    return stripDeclaredParent({ def, resume, worktree, bridgeClient, cwd: o.cwd, declared, updatedAt });
+    // delivery field present → always keep a marker (valid or invalid); never drop it into an ordinary row.
+    const delivery = o.delivery !== undefined ? parseDeliveryMarker(o.delivery) : undefined;
+    if (!def && !resume && !worktree && !bridgeClient && delivery === undefined) return null;
+    return stripDeclaredParent({ def, resume, worktree, bridgeClient, delivery, cwd: o.cwd, declared, updatedAt });
   }
 
   // Pre-211 flat record → migrate.
@@ -387,6 +488,24 @@ function parseBridgeClient(v: unknown): BridgeClientBinding | undefined {
   if (typeof o.boundGeneration !== "number" || !Number.isFinite(o.boundGeneration) || o.boundGeneration < 0) return undefined;
   if (typeof o.wired !== "boolean") return undefined;
   return { boundGeneration: Math.floor(o.boundGeneration), wired: o.wired };
+}
+
+/**
+ * SDD 368 T14 — parse a persisted delivery marker.
+ * Malformed values become the explicit invalid sentinel (never omitted when the field was present).
+ */
+function parseDeliveryMarker(v: unknown): SessionDeliveryMarker {
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return { invalid: true };
+  const o = v as Record<string, unknown>;
+  if (o.invalid === true) return { invalid: true };
+  if (typeof o.deliveryId !== "string" || o.deliveryId.length === 0) return { invalid: true };
+  if (typeof o.segmentId !== "string" || o.segmentId.length === 0) return { invalid: true };
+  // Reject unknown extra authority-looking fields that could confuse equality; keep only known keys.
+  if (o.executionNonce !== undefined && o.executionNonce !== null) {
+    if (typeof o.executionNonce !== "string" || o.executionNonce.length === 0) return { invalid: true };
+    return { deliveryId: o.deliveryId, segmentId: o.segmentId, executionNonce: o.executionNonce };
+  }
+  return { deliveryId: o.deliveryId, segmentId: o.segmentId };
 }
 
 /** spec 364 — missing pre-364 `boundGeneration` is treated as 0 (upgrade rebind). */

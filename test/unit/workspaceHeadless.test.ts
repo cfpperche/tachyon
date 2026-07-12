@@ -137,6 +137,8 @@ async function makeWorkspace(onViewsChanged: (view: ViewKind) => void = () => {}
   fs.writeFileSync(path.join(root, "tachyon.yml"), opts.tachyonYaml ?? `agents:\n  a:\n    cmd: sh\n    autostart: true\n  b:\n    cmd: ${opts.bCmd ?? "sh"}\n`, "utf8");
   const host = new FakeHost(mkdir());
   const { tmux, sessions, dead, sent, panes, calls } = fakeTmux();
+  // SDD 368 T14/R4 — createForTest alone yields a ready empty snapshot; callers that need
+  // start()-side autostart/rehydrate must call start() explicitly (pre-R3 helper semantics).
   const ws = await Workspace.createForTest(root, { host, onViewsChanged }, { tmux, startBridge: false });
   return { ws, host, tmux, sessions, dead, sent, panes, calls };
 }
@@ -163,7 +165,11 @@ function latestDelegationRecord(root: string, agent: string) {
 describe("Workspace — headless composition smoke (spec 235)", () => {
   it("builds + starts with no Electron / real tmux / bound port; start() auto-launches the declared agent", async () => {
     const { ws, sessions } = await makeWorkspace();
+    // T14/R4: factory completes a bounded reload before return — ready before start().
+    expect(ws.deliveryReloadPhase()).toBe("ready");
+    expect(sessions.size).toBe(0);
     await ws.start();
+    expect(ws.deliveryReloadPhase()).toBe("ready");
     expect(sessions.size).toBe(1); // config → start → manager → fake tmux, end to end, headless
     ws.dispose();
   });
@@ -411,6 +417,8 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     vi.useFakeTimers();
     const views: ViewKind[] = [];
     const { ws, host } = await makeWorkspace((view) => views.push(view));
+    // Ignore view notifications from start()/autostart; this test only measures the task debounce.
+    views.length = 0;
     const taskWatch = host.watches.find((w) => w.glob === ".tachyon/tasks/*.json");
 
     expect(taskWatch).toMatchObject({ root: ws.workspaceRoot, disposed: false });
@@ -431,6 +439,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     vi.useFakeTimers();
     const views: ViewKind[] = [];
     const { ws, host } = await makeWorkspace((view) => views.push(view));
+    views.length = 0;
     const taskWatch = host.watches.find((w) => w.glob === ".tachyon/tasks/*.json");
 
     taskWatch?.onEvent();
@@ -463,8 +472,9 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
   it("polling lifecycle reacts to a dead pane on tick(), then dispose() is clean", async () => {
     const { ws, host, sessions, dead } = await makeWorkspace();
     await ws.manager.spawn("b");
-    const session = [...sessions][0];
-    dead.set(session, 7); // the pane died with exit 7
+    const session = [...sessions].find((s) => s.endsWith("-b"));
+    expect(session).toBeDefined();
+    dead.set(session!, 7); // the pane died with exit 7
     await ws.tick(); // no control-mode events in test mode — the poll drives lifecycle
     expect(host.notices.some((n) => /crash/i.test(n.message))).toBe(true);
     expect(() => ws.dispose()).not.toThrow();
@@ -531,6 +541,240 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
       shellArgs: ["-u", "-L", "tachyon", "attach-session", "-d", "-t", `=${session}`],
       isTransient: true,
     });
+    ws.dispose();
+  });
+
+  it("SDD 368 T14 does not auto-resume a dead Delivery-bound runtime on Workspace.start", async () => {
+    const root = mkdir();
+    fs.writeFileSync(
+      path.join(root, "tachyon.yml"),
+      "agents:\n  holder:\n    cmd: claude\n    autostart: true\n  a:\n    cmd: sh\n    autostart: false\n",
+      "utf8",
+    );
+    fs.mkdirSync(path.join(root, ".tachyon"), { recursive: true });
+    fs.writeFileSync(path.join(root, ".tachyon", "sessions.json"), JSON.stringify({
+      sessions: {
+        holder: {
+          def: { cmd: "claude", kind: "agent" },
+          resume: { runtime: "claude", sessionId: "dead-session" },
+          cwd: root,
+          declared: true,
+          delivery: { deliveryId: "d-dead", segmentId: "seg-1", executionNonce: "n1" },
+          updatedAt: "2026-07-12T00:00:00.000Z",
+        },
+      },
+    }), "utf8");
+    const host = new FakeHost(mkdir());
+    const { tmux, sessions } = fakeTmux();
+    // holder is NOT live — dead Delivery-bound must not generic-resume; a is not autostart.
+    const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux, startBridge: false });
+    await ws.start();
+    // Delivery-bound holder must not appear as a started session via generic resume/autostart.
+    expect([...sessions].some((s) => s.endsWith("-holder"))).toBe(false);
+    // Rehydrate still keeps the ledger row for visibility.
+    expect(ws.ledger.get("holder")?.delivery).toEqual({
+      deliveryId: "d-dead",
+      segmentId: "seg-1",
+      executionNonce: "n1",
+    });
+    // Reload snapshot was computed (read-only) and is explicitly ready.
+    expect(ws.deliveryReloadPhase()).toBe("ready");
+    expect(ws.deliveryReloadState()).toBeDefined();
+    // Offered resume list must not include the Delivery-bound agent.
+    expect(ws.resumableAgents()).not.toContain("holder");
+    ws.dispose();
+  });
+
+  it("SDD 368 T14 Workspace.reload snapshot denies marker-less crash-window holder via real stores", async () => {
+    const { DeliveryStore } = await import("../../src/delivery/store.js");
+    const { GitDeliveryStore } = await import("../../src/git-delivery/store.js");
+    const root = mkdir();
+    const wt = path.join(root, "wt-crash");
+    fs.mkdirSync(wt, { recursive: true });
+    fs.writeFileSync(
+      path.join(root, "tachyon.yml"),
+      "agents:\n  crash-holder:\n    cmd: claude\n    autostart: true\n  ordinary:\n    cmd: sh\n    autostart: false\n",
+      "utf8",
+    );
+    const now = "2026-07-12T00:00:00.000Z";
+    // Durable Delivery + Git projection, but NO ledger reverse binding (crash window).
+    const store = new DeliveryStore(root, { now: () => now });
+    await store.create({
+      id: "d-crash",
+      workspaceId: "ws",
+      createdBy: { kind: "system", name: "tachyon" },
+      contract: { baseSha: "abc", behaviorTest: "gate", owns: ["src"], taskRef: "tachyon/crash" },
+      lease: {
+        state: "held",
+        holder: {
+          segmentId: "seg-crash",
+          executionAgent: "crash-holder",
+          process: { pid: 1, processStart: "1", bootId: "boot" },
+          executionNonce: "nonce-crash",
+        },
+        expectedHeadSha: "abc",
+        changedAt: now,
+      },
+      segments: [{
+        id: "seg-crash",
+        index: 0,
+        role: "implementer",
+        executionAgent: "crash-holder",
+        grantedBy: { kind: "system", name: "tachyon" },
+        ownsSubset: ["src"],
+        grantedHeadSha: "abc",
+        grantedAt: now,
+      }],
+      events: [],
+      gitDeliveryId: "gd-crash",
+    });
+    await new GitDeliveryStore(root, { id: () => "gd-crash", now: () => now }).open({
+      workspaceId: "ws",
+      createdBy: { kind: "system", name: "tachyon" },
+      deliveryId: "d-crash",
+      agent: "crash-holder",
+      branchRef: "tachyon/crash",
+      worktreePath: wt,
+      tachyonCreatedBranch: true,
+      baseRef: "abc",
+      currentHeadSha: "abc",
+      reason: "workspace-headless-crash-window",
+    });
+    fs.mkdirSync(path.join(root, ".tachyon"), { recursive: true });
+    fs.writeFileSync(path.join(root, ".tachyon", "sessions.json"), JSON.stringify({
+      sessions: {
+        "crash-holder": {
+          def: { cmd: "claude", kind: "agent" },
+          resume: { runtime: "claude", sessionId: "dead-crash" },
+          cwd: wt,
+          worktree: { path: wt, branch: "tachyon/crash", tachyonCreatedBranch: true, baseRef: "abc", createdAt: now },
+          declared: true,
+          // no delivery marker — the crash-window shape
+          updatedAt: now,
+        },
+      },
+    }), "utf8");
+
+    const host = new FakeHost(mkdir());
+    const { tmux, sessions } = fakeTmux();
+    const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux, startBridge: false });
+    await ws.start();
+
+    const snap = ws.deliveryReloadState();
+    expect(snap).toBeDefined();
+    expect(ws.deliveryReloadPhase()).toBe("ready");
+    expect(snap!.byId.get("d-crash")?.class).toBe("unavailable");
+    expect(snap!.unavailableAgents.has("crash-holder")).toBe(true);
+    // Generic autostart/resume must not launch the marker-less crash holder.
+    expect([...sessions].some((s) => s.endsWith("-crash-holder"))).toBe(false);
+    expect(ws.resumableAgents()).not.toContain("crash-holder");
+    // Direct spawn still refused by deny set after start.
+    await expect(ws.manager.spawn("crash-holder")).rejects.toThrow(/Delivery/);
+    ws.dispose();
+  });
+
+  it("SDD 368 T14/R4 factory ready pre-start; start store-read failure deny-all + deliveryJoin; start retry failed→ready", async () => {
+    const root = mkdir();
+    fs.writeFileSync(
+      path.join(root, "tachyon.yml"),
+      "agents:\n  ordinary:\n    cmd: claude\n    autostart: true\n  offered:\n    cmd: claude\n    autostart: false\n",
+      "utf8",
+    );
+    fs.mkdirSync(path.join(root, ".tachyon"), { recursive: true });
+    fs.writeFileSync(path.join(root, ".tachyon", "sessions.json"), JSON.stringify({
+      sessions: {
+        ordinary: {
+          def: { cmd: "claude", kind: "agent" },
+          resume: { runtime: "claude", sessionId: "sess-ord" },
+          cwd: root,
+          declared: true,
+          updatedAt: "2026-07-12T00:00:00.000Z",
+        },
+        offered: {
+          def: { cmd: "claude", kind: "agent" },
+          resume: { runtime: "claude", sessionId: "sess-off" },
+          cwd: root,
+          declared: true,
+          updatedAt: "2026-07-12T00:00:00.000Z",
+        },
+      },
+    }), "utf8");
+
+    const host = new FakeHost(mkdir());
+    const { tmux, sessions } = fakeTmux();
+    const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux, startBridge: false });
+    // T14/R4: factory never exposes uninitialized; healthy empty stores → ready before start.
+    expect(ws.deliveryReloadPhase()).toBe("ready");
+    expect(ws.deliveryReloadPhase()).not.toBe("uninitialized");
+    expect(ws.deliveryReloadState()).toBeDefined();
+    // Ordinary pre-start generic spawn succeeds on the factory-ready empty snapshot.
+    await ws.manager.spawn("ordinary");
+    expect(await ws.manager.runningAgents()).toContain("ordinary");
+    await ws.manager.kill("ordinary");
+
+    // Force a real Workspace.start store-read failure on the Delivery store list path.
+    const originalList = ws.deliveries.list.bind(ws.deliveries);
+    (ws.deliveries as { list: () => Promise<unknown> }).list = async () => {
+      throw new Error("forced Delivery store-read failure");
+    };
+    await ws.start();
+
+    expect(ws.deliveryReloadPhase()).toBe("failed");
+    expect(ws.deliveryReloadState()).toBeUndefined();
+    expect(host.notices.some((n) => /delivery reload reconciliation failed/i.test(n.message))).toBe(true);
+    // Zero generic launches / offers — ordinary autostart and offered resume must not fire.
+    expect([...sessions].some((s) => s.endsWith("-ordinary"))).toBe(false);
+    expect([...sessions].some((s) => s.endsWith("-offered"))).toBe(false);
+    expect(ws.resumableAgents()).toEqual([]);
+    // Direct generic lifecycle refused while snapshot is failed.
+    await expect(ws.manager.spawn("ordinary")).rejects.toThrow(/Delivery/);
+    await expect(ws.manager.resume("ordinary", ws.ledger.get("ordinary")!)).rejects.toThrow(/Delivery/);
+    await expect(ws.manager.restart("ordinary")).rejects.toThrow(/Delivery/);
+    expect(await ws.manager.resumeReadiness("ordinary", ws.ledger.get("ordinary")!)).toBe(false);
+    expect(await ws.manager.autostartPending()).not.toContain("ordinary");
+
+    // Explicit deliveryJoin remains allowed under failed phase.
+    let joinCwd = "";
+    const originalPrepare = (ws.manager as unknown as { opts: {
+      prepareDeliveryJoin?: (name: string, request: { expectedHead: string }) => Promise<unknown>;
+      confirmDeliveryJoin?: () => Promise<void>;
+    } }).opts;
+    originalPrepare.prepareDeliveryJoin = async (_name, request) => {
+      joinCwd = root;
+      return {
+        cwd: joinCwd,
+        worktree: {
+          path: joinCwd,
+          branch: "tachyon/delivery",
+          tachyonCreatedBranch: true,
+          baseRef: request.expectedHead,
+          createdAt: "now",
+        },
+        reservationNonce: "n-join",
+        segmentId: "seg-join",
+      };
+    };
+    originalPrepare.confirmDeliveryJoin = async () => undefined;
+    await ws.manager.spawn("joiner", {
+      cmd: "claude",
+      deliveryJoin: {
+        deliveryId: "d-r3",
+        role: "fixer",
+        ownsSubset: [],
+        expectedHead: "abc",
+        operationId: "join-r3-fail-open-closed",
+      },
+    });
+    expect(await ws.manager.runningAgents()).toContain("joiner");
+
+    // Successful start retry: restore store list → failed→ready; generic lifecycle unblocked.
+    (ws.deliveries as { list: typeof originalList }).list = originalList;
+    await ws.start();
+    expect(ws.deliveryReloadPhase()).toBe("ready");
+    expect(ws.deliveryReloadState()).toBeDefined();
+    // ordinary may have been auto-resumed/autostarted by the successful start; either way spawn/resume path is open.
+    await expect(ws.manager.spawn("offered")).resolves.toBeUndefined();
+    expect(await ws.manager.runningAgents()).toContain("offered");
     ws.dispose();
   });
 });
