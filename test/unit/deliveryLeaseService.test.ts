@@ -926,6 +926,40 @@ describe("DeliveryLeaseService dead-holder reconciliation (SDD 368 T11)", () => 
     expect((await failed.store.get("d-lease"))!.lease.state).toBe("held");
   });
 
+  it("replays the immutable quarantine reason when concurrent observers fail differently", async () => {
+    const { store, worktree, input } = heldFixture(); await store.create(input);
+    let observers = 0;
+    let releaseWinner!: () => void;
+    const bothObserved = new Promise<void>((resolve) => { releaseWinner = resolve; });
+    let signalCommit!: () => void;
+    const committed = new Promise<void>((resolve) => { signalCommit = resolve; });
+    const update = store.update.bind(store);
+    store.update = async (...args: Parameters<DeliveryStore["update"]>) => {
+      const result = await update(...args);
+      if (args[3]?.operationId === "same-operation:quarantine") signalCommit();
+      return result;
+    };
+    const lease = makeService(store, worktree, { observe: async () => {
+      observers++;
+      if (observers === 1) {
+        await bothObserved;
+        return { state: "unknown" as const, reason: "winner" };
+      }
+      releaseWinner();
+      await committed;
+      return { state: "unknown" as const, reason: "loser" };
+    } });
+    const [first, second] = await Promise.all([
+      lease.reconcileHolder(request(worktree, "same-operation")).catch((error) => error),
+      lease.reconcileHolder(request(worktree, "same-operation")).catch((error) => error),
+    ]);
+    const delivery = (await store.get("d-lease"))!;
+    const persisted = JSON.parse(delivery.lease.reason!) as Record<string, unknown>;
+    expect(first).toMatchObject({ code: "DELIVERY_QUARANTINED", retryable: false, detail: { evidence: persisted } });
+    expect(second).toEqual(first);
+    expect(delivery.events.filter((event) => event.type === "holder_reconcile_quarantined")).toHaveLength(1);
+  });
+
   it("rejects canonical mismatch before process observation and runs observation/proof outside the worktree lock", async () => {
     const mismatch = heldFixture(); await mismatch.store.create(mismatch.input);
     const observe = vi.fn(async () => ({ state: "gone" as const }));
@@ -1018,6 +1052,27 @@ describe("DeliveryLeaseService dead-holder reconciliation (SDD 368 T11)", () => 
     expect((await store.get("d-lease"))!.lease.state).toBe(state);
   });
 
+  it.each(["alive", "gone"] as const)("replays a concurrent quarantined lease during %s revalidation", async (phase) => {
+    const { store, worktree, input } = heldFixture(); await store.create(input);
+    const evidence = { source: `${phase}-race`, exact: true };
+    const quarantine = async () => {
+      const current = await store.get("d-lease");
+      await store.update("d-lease", current!.version, (record) => {
+        record.lease = { ...record.lease, state: "quarantined", reason: JSON.stringify(evidence), changedAt: now };
+        return record;
+      });
+    };
+    const lease = makeService(store, worktree, phase === "alive"
+      ? { observe: async () => { await quarantine(); return { state: "alive" as const }; } }
+      : { observe: async () => ({ state: "gone" as const }), fence: { ...certifiedFence, proveEmpty: async () => {
+        await quarantine(); return { state: "proven_empty" };
+      } } });
+    await expect(lease.reconcileHolder(request(worktree, `quarantined-${phase}`))).rejects.toMatchObject({
+      code: "DELIVERY_QUARANTINED", retryable: false, detail: { evidence },
+    });
+    expect((await store.get("d-lease"))!.lease).toMatchObject({ state: "quarantined", reason: JSON.stringify(evidence) });
+  });
+
   it("preserves a verifying in-flight state as retryable occupancy", async () => {
     const { store, worktree, input } = fixture();
     input.lease = { state: "verifying", changedAt: now, verification: {
@@ -1081,7 +1136,7 @@ describe("DeliveryLeaseService dead-holder reconciliation (SDD 368 T11)", () => 
     await expect(lease.reconcileHolder(request(worktree, operationId))).rejects.toThrow(/does not match/);
   });
 
-  it.each(["holder", "process", "nonce", "segment", "grant-head", "release-head"] as const)("rejects interrupted receipt mutation: %s", async (mutation) => {
+  it.each(["holder", "process", "nonce", "event-segment", "tail-agent", "grant-head", "release-head"] as const)("rejects interrupted receipt mutation: %s", async (mutation) => {
     const { store, worktree, input } = heldFixture(); await store.create(input);
     const operationId = `interrupt-receipt-${mutation}`;
     const lease = makeService(store, worktree);
@@ -1096,7 +1151,8 @@ describe("DeliveryLeaseService dead-holder reconciliation (SDD 368 T11)", () => 
       if (mutation === "holder") holder!.principal = "wrong";
       if (mutation === "process") holder!.process!.processStart = "";
       if (mutation === "nonce") event.detail!.executionNonce = "wrong";
-      if (mutation === "segment") malformed.segments.at(-1)!.executionAgent = "wrong";
+      if (mutation === "event-segment") event.detail!.segmentId = "wrong";
+      if (mutation === "tail-agent") malformed.segments.at(-1)!.executionAgent = "wrong";
       if (mutation === "grant-head") malformed.segments.at(-1)!.grantedHeadSha = "wrong";
       if (mutation === "release-head") malformed.segments.at(-1)!.releasedHeadSha = "wrong";
       return malformed;

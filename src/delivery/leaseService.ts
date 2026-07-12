@@ -290,6 +290,7 @@ export class DeliveryLeaseService {
         if (!current) throw new DeliveryNotFoundError(input.deliveryId);
         await this.assertCanonical(current, canonicalWorktree);
         if (["pending", "draining", "verifying"].includes(current.lease.state)) throw this.occupied(current, "another owned operation won reconciliation");
+        if (current.lease.state === "quarantined") throw this.reconcileRefusal(parseReason(current.lease.reason));
         if (current.lease.state !== "held") throw this.occupied(current, "held lease changed during reconciliation");
         if (!isDeepStrictEqual(current.lease, snapshot.lease) || this.heldBoundaryFailure(current)) {
           liveFailure = new Error("held holder or open tail changed during live observation");
@@ -324,6 +325,7 @@ export class DeliveryLeaseService {
         if (!current) throw new DeliveryNotFoundError(input.deliveryId);
         await this.assertCanonical(current, canonicalWorktree);
         if (["pending", "draining", "verifying"].includes(current.lease.state)) throw this.occupied(current, "another owned operation won reconciliation");
+        if (current.lease.state === "quarantined") throw this.reconcileRefusal(parseReason(current.lease.reason));
         if (current.lease.state !== "held") throw this.occupied(current, "held lease changed during reconciliation");
         if (!isDeepStrictEqual(current.lease, snapshot.lease)) throw new Error("held holder changed during reconciliation");
         if (this.heldBoundaryFailure(current)) throw new Error("open holder segment changed during reconciliation");
@@ -778,31 +780,30 @@ export class DeliveryLeaseService {
     let persistenceError: unknown;
     try {
       const replay = await this.replayReconcileQuarantine(operationId, input.deliveryId, intent);
-      if (!replay) {
-        await this.withDeliveryLock(input.deliveryId, async () => this.deps.withWorktreeLock(path.resolve(input.canonicalWorktree), async () => {
-          const current = await this.deps.store.get(input.deliveryId);
-          if (!current) throw new DeliveryNotFoundError(input.deliveryId);
-          await this.assertCanonical(current, path.resolve(input.canonicalWorktree));
-          if (["pending", "draining", "verifying"].includes(current.lease.state)) {
-            throw this.occupied(current, "another owned operation won reconciliation");
+      if (replay) throw this.reconcileRefusal(parseReason(replay.lease.reason));
+      await this.withDeliveryLock(input.deliveryId, async () => this.deps.withWorktreeLock(path.resolve(input.canonicalWorktree), async () => {
+        const current = await this.deps.store.get(input.deliveryId);
+        if (!current) throw new DeliveryNotFoundError(input.deliveryId);
+        await this.assertCanonical(current, path.resolve(input.canonicalWorktree));
+        if (["pending", "draining", "verifying"].includes(current.lease.state)) {
+          throw this.occupied(current, "another owned operation won reconciliation");
+        }
+        if (current.lease.state === "quarantined") throw this.reconcileRefusal(parseReason(current.lease.reason));
+        if (current.lease.state !== "held") throw this.occupied(current, "held lease changed during reconciliation");
+        const holder = structuredClone(current.lease.holder);
+        const tail = structuredClone(current.segments.at(-1));
+        const durableEvidence = { ...evidence, currentExecutionNonce: holder?.executionNonce, expectedHeadSha: current.lease.expectedHeadSha };
+        refusalEvidence = durableEvidence;
+        await this.deps.store.update(current.id, current.version, (record) => {
+          if (record.lease.state !== "held" || !isDeepStrictEqual(record.lease.holder, holder)) {
+            throw new DeliveryVersionConflictError(current.id, current.version, record.version);
           }
-          if (current.lease.state === "quarantined") throw this.reconcileRefusal(parseReason(current.lease.reason));
-          if (current.lease.state !== "held") throw this.occupied(current, "held lease changed during reconciliation");
-          const holder = structuredClone(current.lease.holder);
-          const tail = structuredClone(current.segments.at(-1));
-          const durableEvidence = { ...evidence, currentExecutionNonce: holder?.executionNonce, expectedHeadSha: current.lease.expectedHeadSha };
-          refusalEvidence = durableEvidence;
-          await this.deps.store.update(current.id, current.version, (record) => {
-            if (record.lease.state !== "held" || !isDeepStrictEqual(record.lease.holder, holder)) {
-              throw new DeliveryVersionConflictError(current.id, current.version, record.version);
-            }
-            record.lease = { ...record.lease, state: "quarantined", reason: JSON.stringify(durableEvidence), changedAt: this.now() };
-            record.events.push({ id: this.eventId(), at: this.now(), type: "holder_reconcile_quarantined", by: structuredClone(input.actor),
-              detail: { operationId: input.operationId, intent, holder, tail, expectedHeadSha: record.lease.expectedHeadSha, evidence: durableEvidence } });
-            return record;
-          }, { operationId, intent });
-        }));
-      }
+          record.lease = { ...record.lease, state: "quarantined", reason: JSON.stringify(durableEvidence), changedAt: this.now() };
+          record.events.push({ id: this.eventId(), at: this.now(), type: "holder_reconcile_quarantined", by: structuredClone(input.actor),
+            detail: { operationId: input.operationId, intent, holder, tail, expectedHeadSha: record.lease.expectedHeadSha, evidence: durableEvidence } });
+          return record;
+        }, { operationId, intent });
+      }));
     } catch (error) {
       if (error instanceof DeliveryLeaseError && error.code === "WORKTREE_OCCUPIED") throw error;
       if (error instanceof DeliveryLeaseError && error.code === "DELIVERY_QUARANTINED") throw error;
@@ -838,7 +839,7 @@ export class DeliveryLeaseService {
     if (!event || !detail || detail.operationId !== intent.operationId || delivery.lease.state !== "free"
       || !holder || !validProcessIdentity(holder.process) || holder.reservationNonce !== undefined
       || typeof holder.executionNonce !== "string" || !holder.executionNonce.trim()
-      || detail.executionNonce !== holder.executionNonce || !tail || tail.id !== holder.segmentId
+      || detail.executionNonce !== holder.executionNonce || !tail || detail.segmentId !== holder.segmentId || detail.segmentId !== tail.id || tail.id !== holder.segmentId
       || tail.executionAgent !== holder.executionAgent || tail.principal !== holder.principal
       || tail.outcome !== "interrupted" || !tail.releasedAt || typeof expectedHead !== "string"
       || tail.grantedHeadSha !== expectedHead || detail.headSha !== expectedHead || tail.releasedHeadSha !== expectedHead) {
