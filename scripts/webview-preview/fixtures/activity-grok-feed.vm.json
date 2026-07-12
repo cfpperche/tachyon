@@ -1,0 +1,84 @@
+{
+  "runtime": "grok",
+  "runtimeVersion": "grok-4.5",
+  "sourcePath": "/repo/.grok/sessions/demo/chat_history.jsonl",
+  "tier": "structured",
+  "summary": {
+    "messages": 3,
+    "toolsRunning": 0,
+    "toolsFailed": 0,
+    "filesChanged": ["src/foo.ts"],
+    "filesReferenced": ["src/foo.ts"],
+    "tokens": { "input": 1200, "output": 450 },
+    "lastActivity": "2026-07-12T18:00:08Z"
+  },
+  "items": [
+    {
+      "sequence": 0,
+      "kind": "injected",
+      "title": "context compacted",
+      "timestamp": "2026-07-12T18:00:00Z"
+    },
+    {
+      "sequence": 1,
+      "kind": "message",
+      "role": "user",
+      "title": "fixe o bug no teste de config",
+      "timestamp": "2026-07-12T18:00:01Z"
+    },
+    {
+      "sequence": 2,
+      "kind": "thinking",
+      "title": "looking at the failing test",
+      "timestamp": "2026-07-12T18:00:02Z"
+    },
+    {
+      "sequence": 3,
+      "kind": "message",
+      "role": "agent",
+      "title": "Vou inspecionar o teste.",
+      "timestamp": "2026-07-12T18:00:03Z"
+    },
+    {
+      "sequence": 4,
+      "kind": "tool",
+      "title": "read_file",
+      "detail": "…/foo.ts",
+      "path": "src/foo.ts",
+      "result": "export const x = 1;",
+      "timestamp": "2026-07-12T18:00:04Z"
+    },
+    {
+      "sequence": 5,
+      "kind": "file",
+      "title": "src/foo.ts",
+      "path": "src/foo.ts",
+      "detail": "read_file",
+      "timestamp": "2026-07-12T18:00:05Z"
+    },
+    {
+      "sequence": 6,
+      "kind": "message",
+      "role": "agent",
+      "title": "Aplicando o patch.",
+      "timestamp": "2026-07-12T18:00:06Z"
+    },
+    {
+      "sequence": 7,
+      "kind": "tool",
+      "title": "search_replace",
+      "detail": "…/foo.ts",
+      "path": "src/foo.ts",
+      "result": "ok",
+      "timestamp": "2026-07-12T18:00:07Z"
+    },
+    {
+      "sequence": 8,
+      "kind": "file",
+      "title": "src/foo.ts",
+      "path": "src/foo.ts",
+      "detail": "search_replace",
+      "timestamp": "2026-07-12T18:00:08Z"
+    }
+  ]
+}

@@ -16,6 +16,7 @@ import type { ActivityViewModel } from "../../../src/activity/activityView";
 import type { Fixture } from "../routes";
 import vms from "./activity.vms.json";
 import mermaidNavVm from "./activity-mermaid-nav.vm.json";
+import grokFeedVm from "./activity-grok-feed.vm.json";
 
 const captured = vms as unknown as { default: ActivityViewModel; empty: ActivityViewModel; interrupted: ActivityViewModel };
 
@@ -31,4 +32,7 @@ export const activityFixtures: Record<string, Fixture<ActivityViewModel>> = {
 
   // large + small mermaid diagrams for read-only nav chrome (spec 374).
   "mermaid-nav": { provenance: "synthetic-edge", vm: mermaidNavVm as unknown as ActivityViewModel },
+
+  // t-9874be shortlist dogfood — Grok chat_history-shaped feed (user/thinking/tools/files).
+  "grok-feed": { provenance: "synthetic-edge", vm: grokFeedVm as unknown as ActivityViewModel },
 };

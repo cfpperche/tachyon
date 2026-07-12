@@ -31,8 +31,26 @@ const cold: HandoffViewModel = { folder: "tachyon", exists: false, body: "", sta
 
 const stale: HandoffViewModel = { ...populated, staleness: "possibly_stale", updatedAt: "2026-06-20T00:00:00.000Z" };
 
+/** t-4eb7c0 shortlist — Distill target list with declared + ad-hoc labels (UI dogfood). */
+const distillList: HandoffViewModel = {
+  ...populated,
+  staleness: "needs_distill",
+  pendingCount: 3,
+  distillTargets: [
+    { name: "codex", description: "declared · running" },
+    { name: "grok", description: "declared · running" },
+    { name: "claude", description: "declared · idle" },
+    { name: "distill-helper", description: "ad-hoc · running" },
+  ],
+  notes: [
+    ...populated.notes,
+    { ts: "2026-07-12T16:00:00.000Z", agent: "grok", kind: "gotcha", summary: "Distill list must refresh when Distill opens", evidence: ["t-4eb7c0"] },
+  ],
+};
+
 export const handoffFixtures: Record<string, Fixture<HandoffViewModel>> = {
   default: { provenance: "synthetic-edge", vm: populated },
   cold: { provenance: "synthetic-edge", vm: cold },
   stale: { provenance: "synthetic-edge", vm: stale },
+  "distill-list": { provenance: "synthetic-edge", vm: distillList },
 };

@@ -415,6 +415,13 @@ PY
   info "headless PASS (SHA $sha) — report $result — shots $shot_dir"
 }
 
+shortlist() {
+  # Headless Chromium captures of top UI surfaces missing visual evidence
+  # (mermaid Activity, Grok Activity feed, Handoff Distill targets).
+  # Extra args after shortlist are scene names; default = the three.
+  bash "$REPO/scripts/edh-palliative/run-shortlist.sh" "$@"
+}
+
 help() {
   cat <<'EOF'
 Usage: npm run dogfood:edh-palliative -- <command>
@@ -424,10 +431,17 @@ Commands:
   break     Arm t-8354ae fail-visible scenario (dangling subagent)
   restore   Restore valid tachyon.yml in the fixture
   launch    Open GUI Extension Development Host (interactive)
-  headless  Xvfb EDH + in-host runner (S1 fail-visible asserts) — preferred dogfood
+  headless  Xvfb EDH + in-host runner (S1 fail-visible asserts)
+  shortlist Headless Chromium screenshots: mermaid | grok-activity | handoff-distill
+            (default: all three). Pass scene names to subset.
   status    Show fixture path / broken-or-valid
   clean     Delete the fixture directory
   help      This text
+
+Examples:
+  npm run dogfood:edh-palliative -- shortlist
+  npm run dogfood:edh-palliative -- shortlist mermaid handoff-distill
+  npm run dogfood:edh-palliative -- shortlist fail-visible   # also runs EDH S1
 
 Env:
   TACHYON_EDH_PALLIATIVE_ID   fixture id (default: default)
@@ -436,6 +450,8 @@ Env:
   TACHYON_EDH_DISPLAY         Xvfb display (default: :96)
   TACHYON_EDH_HEADLESS_TIMEOUT  seconds (default: 120)
   TACHYON_EDH_FOREGROUND=1    launch (GUI) in foreground (exec)
+  TACHYON_SHORTLIST_OUT       evidence root (default .tachyon/evidence/ui-shortlist)
+  TACHYON_CHROME              Chrome/Chromium binary for preview shots
 
 See docs/runbooks/edh-palliative-dogfood.md
 EOF
@@ -447,6 +463,7 @@ case "$CMD" in
   restore) restore_config ;;
   launch) launch ;;
   headless) headless ;;
+  shortlist) shortlist "$@" ;;
   status) status ;;
   clean) clean ;;
   help|-h|--help) help ;;

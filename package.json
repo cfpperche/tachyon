@@ -869,6 +869,7 @@
     "verify:full": "node esbuild.mjs && vitest run",
     "verify:full:quiet": "node scripts/verify-full.mjs",
     "dogfood:edh-palliative": "bash scripts/edh-palliative/edh-palliative.sh",
+    "dogfood:ui-shortlist": "bash scripts/edh-palliative/run-shortlist.sh",
     "test:browser": "vitest run --config vitest.browser.config.ts",
     "test:integration": "vscode-test",
     "vscode:prepublish": "npm run build && npm run package:prepare",

@@ -171,3 +171,23 @@ Do **not** expand this palliative into the full design inside random PRs — lan
 - Task: `t-8354ae` — Fail-visible config (banner / LKG / Doctor) — first scenario pack target  
 - Script: `scripts/edh-palliative/edh-palliative.sh`  
 - Product boundary: `docs/architecture/dogfood-product-boundary.md`
+
+## UI shortlist (headless Chromium / preview harness)
+
+For landed UI surfaces that need a glance without a full EDH window:
+
+```bash
+npm run build
+npm run dogfood:edh-palliative -- shortlist
+# or: npm run dogfood:ui-shortlist
+# subset: npm run dogfood:edh-palliative -- shortlist mermaid grok-activity
+```
+
+| Scene | Task | Harness |
+|-------|------|---------|
+| `mermaid` | t-3febb9 / 374 | activity + fixture `mermaid-nav` |
+| `grok-activity` | t-9874be | activity + fixture `grok-feed` |
+| `handoff-distill` | t-4eb7c0 | handoff + fixture `distill-list` |
+| `fail-visible` | t-8354ae | Xvfb EDH (optional, slower) |
+
+PNGs land under `.tachyon/evidence/ui-shortlist/<stamp>-<sha>/`.
