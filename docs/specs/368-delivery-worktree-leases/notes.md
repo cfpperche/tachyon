@@ -1222,3 +1222,68 @@ the wrong phase:
 candidate already consumed the first-reviewable full gate; the next full is reserved for final closure after R2.
 Commit exactly the six owned paths by explicit pathspec with `t-0b5723`; notify `codex` with SHA, exact counts, and
 residual risk. Coordinator must run `verify_task` with no waivers and receive ACCEPT before immutable Sonnet R2.
+
+### T13 coordinator A1 completion contract
+
+Correction candidate `b160cabd` has a valid canonical gate: `verify_task` ACCEPT at
+`.tachyon/verifications/b160cabd24c4b98fcad6adc1a2233e694bd6618d.json` proves one matching BASE failure and one
+HEAD pass with no waiver. It is still semantically withheld. The executor implemented only a real readiness-failure
+helper, one snapshot/happy-path test, three aggregated collision cases, and two Bridge refusals; it did not deliver
+the seven-block deterministic matrix. Its cleanup also groups `forgetAdhoc`, `removeEphemeralFootprint`, and
+`onKilled` in one `try`, does not clear all execution readiness state, and the canonical `forgetAgent()` itself can
+skip later footprint removals when an earlier dependency throws. Because the prior Delivery does not own
+`src/agents/forgetAgent.ts`, do not widen/reuse it. Start one fresh gated Delivery and cherry-pick/reimplement
+`b160cabd` under the exact authority below.
+
+**Owned paths and model.** Terra medium; exact paths are `src/agents/AgentManager.ts`,
+`src/agents/forgetAgent.ts`, `src/bridge/tools.ts`, `test/unit/agentManager.test.ts`, `test/unit/bridge.test.ts`,
+`test/helpers/boundDeliveryExecutionHarness.ts`, and the new generated behavior stub only. No other production,
+test, docs, config, Workspace, Delivery, ledger-schema, GitDelivery, continuity, tachyon.yml, or task-state edit.
+
+**Canonical footprint cleanup.** Make `forgetAgent()` attempt each named footprint independently in stable order:
+ledger row; activity log/writer state; session-owner rows; private harness/config home; per-spawn settings. Collect
+every thrown error and, only after all attempts, throw one AggregateError preserving the ordered causes. Missing
+artifacts remain idempotent success. Update its existing AgentManager-suite tests to force failures in early and
+middle dependencies and prove every later removal still runs exactly once; retain the authoritative footprint list.
+
+**Delivery execution cleanup.** After session absence is proven, perform each action independently so one failure
+cannot skip the next: clear `readyAgents`, `provisionalAgents`, `readinessCache`, `stoppingSince`, `stopFailed`,
+`cleanExited`, and `postmortemOutput`; forget ad-hoc/lineage/delegator state; call the now-aggregate canonical
+footprint cleanup; emit `onKilled`. Preserve each error with an exact phase label. If absence is unknown/live, clear
+none of the recoverable footprint/session state and emit no killed callback. Token revocation remains unconditional
+and execution-only. Final error order is primary → session probe/kill/re-probe → token revoke → in-memory cleanup →
+footprint AggregateError → killed callback → reservation compensation. Later phases always run when their safety
+precondition holds. Exact successful cleanup rethrows only the primary.
+
+**Required proof matrix — no sampling.** Keep the forcing generated helper and add all missing cases from the R1
+contract, each with explicit effect counters/snapshots:
+
+1. Bridge **success** without `cmd` proves the full structured contract becomes `appendInstructions`, manager input
+   retains execution `name`/`declaredAgent`, and parent remains Bridge-resolved; keep both refusal cases.
+2. Happy path uses a declared harness/isolate/env and real materializer seam. Assert execution-only config home,
+   token, ownership hook, tmux env/command, prepared cwd/worktree, ad-hoc listing, ledger, and zero fresh-worktree
+   resolution. Persist real principal continuity brief/state, activity owner data, harness marker, ledger/resume/home,
+   token, and tmux snapshot and prove byte identity before and after execution cleanup.
+3. Individually named pre-reservation cases: unknown source, terminal source, same name, config collision, ad-hoc
+   collision, ledger collision, live tmux collision, dead/postmortem tmux collision, reserved token env,
+   `cmd+declared_agent`, `principal+declared_agent`, unsafe reviewer command, and failed preflight. Each proves zero
+   reservation, mint/revoke, harness/MCP/settings, tmux create/kill, ledger/activity, callback, and principal effects.
+4. Snapshot barrier mutates nested harness MCP/env/hooks/rules/skills plus env/watch/attention after reservation begins
+   and asserts the execution used the complete pre-reservation clone. Assert one and only one bound preflight.
+5. Force `newSession` failure after token/home/settings materialization, readiness rejection after session creation,
+   and confirmation failure after full spawn. Proven absence removes every execution footprint/state, revokes token,
+   fails the reservation once, and leaves principal bytes/process/token untouched.
+6. Independently force initial probe error, kill error with survivor, post-kill probe error, token-revoke error,
+   early and middle canonical-footprint errors, killed-callback error, and reservation-compensation error; include
+   meaningful combinations. Assert the exact stable AggregateError order, later safe cleanup attempts, footprint
+   retention under unknown/live liveness, and no principal action.
+7. The generated behavior stub must import/await the real helper. Extend that helper beyond readiness rejection to
+   assert real execution home materialization/removal and principal home preservation. It must clean every temp
+   directory/session in `finally`. Retain all T6/T10 and ordinary declared-spawn tests.
+
+**Gates.** The new ordinary Vitest behavior pattern is
+`a bound Delivery execution proves zero-effect refusals and complete failure cleanup`; BASE must execute exactly one
+matching failing stub and HEAD exactly one passing real helper. Run generated stub, AgentManager, and Bridge suites
+serially, `npm run typecheck`, and `git diff --check`; no full verification until final R2 acceptance. Commit exactly
+the seven owned paths by explicit pathspec with `t-0b5723`, doorbell `codex`, then stop. Coordinator requires
+`verify_task` ACCEPT and full content audit before immutable Sonnet R2.
