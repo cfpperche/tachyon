@@ -825,3 +825,21 @@ Finally, make the live-tail drift regression truthful. Mutating `grantedHeadSha`
 `DeliveryStore` and currently turns the test into observer-error quarantine. Use a store-legal concurrent tail
 closure (or another deterministic legal seam), assert the mutation itself succeeds, then prove live revalidation
 detects the now-closed tail and quarantine replay remains exact. Same two paths and gates; no policy expansion.
+
+# T11 dead-holder reconciliation closure — 2026-07-11
+
+- `reconcileHolder` now distinguishes exact live, gone, and unknown process identities; only `gone` plus the same
+  independent `ProcessFencePort.proveEmpty` predicate used by handoff may reach double clean/exact-HEAD inspection.
+  Process observation and fence proof run outside Delivery/worktree locks, and reconciliation never freezes,
+  terminates, resets, cleans, checks out, or discards work.
+- A clean exact dead holder closes its current segment as `interrupted` and frees the Delivery without fabricating
+  completion, verification, or review. Missing/malformed identity, fence uncertainty/survivors, dirty state, HEAD or
+  holder/tail drift, inspection failure, and malformed receipts fail closed; competing owned states remain retryable
+  while a concurrent quarantine remains non-retryable and returns its exact persisted evidence.
+- Coordinator rounds A1/A2 and Claude R1 found and closed complete snapshot validation, canonical revalidation,
+  truthful tail drift, lost-response receipts, concurrent quarantine determinism, event `segmentId` validation, and
+  mid-flight quarantine classification. Final fix `70ecb68`; Claude R2 ACCEPT `e759af0`.
+- Final gates after the independent acceptance and the quiet-config mechanical regression `17205a1`:
+  `test/unit/deliveryLeaseService.test.ts` 100/100, `npm run typecheck` passed, and `npm run verify:full:quiet` passed
+  301 files with 3,559 tests passed and 3 skipped. T11 adds no Bridge wiring, production OS fence, reload binding,
+  salvage/abandon policy, or cleanup; those remain T12/T14/T16 concerns.
