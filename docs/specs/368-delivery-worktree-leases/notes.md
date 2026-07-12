@@ -1789,3 +1789,44 @@ pure decision table. Run focused suites, typecheck, diff-check, and one quiet fu
 canonically blocked history and the corrected R2 is the first reviewable candidate. Commit by explicit pathspec,
 doorbell `codex`, and stop. Coordinator then runs no-waiver `verify_task`, audits the complete net delta, and routes
 immutable Sonnet review before the final closure full.
+
+### T14 R2 coordinator audit — canonical gate accepted, semantic closure withheld
+
+Candidate `a3f14456` passes canonical `verify_task` without waiver at
+`.tachyon/verifications/a3f14456559cdcae3792bf34aa6614f75c97ed01.json`: the forcing behavior fails at BASE and
+passes at HEAD, with typecheck and affected tests green. The eleven changed paths are exactly the R2 grant and the
+worker's first-candidate `npm run verify:full:quiet` passed 304 files, 3,656 tests, and 3 skips. The candidate is not
+yet reviewable because the coordinator's complete call-path audit found four remaining fail-open boundaries:
+
+1. **Reload-read failure re-enables generic lifecycle (HIGH).** `Workspace.start()` catches a failed
+   `refreshDeliveryReloadSnapshot()` and continues with an undefined snapshot. The AgentManager callback and
+   `planResume` then treat every marker-less row as allowed, so a Delivery-store or GitDelivery-store read failure
+   reopens the exact Delivery→projection→ledger crash window fixed by R2. Snapshot availability must be an explicit
+   fail-closed state: until one complete bounded reconstruction succeeds, every generic spawn/resume/restart/
+   autostart/readiness/plan action is denied; explicit `deliveryJoin` remains allowed. Force a store-read failure in
+   a real Workspace startup test and prove zero generic launches/offers plus direct lifecycle refusal.
+2. **A missing canonical worktree can reconstruct as held (HIGH).** `canonicalPath()` falls back from failed
+   `realpathSync` to `path.resolve`, so identical strings for a deleted/nonexistent projection, ledger worktree, and
+   cwd satisfy `sessionPathsExact`. Exact-held requires a uniquely existing canonical worktree; any realpath/stat
+   failure is unavailable. Add a temp-worktree deletion/nonexistence regression using exact binding/process data.
+3. **Held canonical boundary remains internally under-checked (MEDIUM).** `classifyHeld` checks that expected HEAD
+   is merely non-empty, but does not require the open tail's `grantedHeadSha` to equal
+   `lease.expectedHeadSha`; it also omits the canonical holder/tail principal equality enforced by the lease
+   service's held-boundary predicate. A corrupt boundary can therefore be reported held. Mirror the durable held
+   boundary exactly while continuing to forbid principal-based occupant inference; force independent head and
+   principal drift cases to unavailable.
+4. **Worktree occupancy ignores the persisted worktree path (HIGH).** `findLedgerWorktreeOccupant()` selects rows
+   only when `rec.cwd` is under the target. A bound row whose `worktree.path` names the Delivery worktree but whose
+   cwd drifted elsewhere is correctly unavailable in the reload snapshot yet invisible to reuse occupancy, allowing
+   another writer into that worktree. Gather candidates from either persisted cwd or persisted worktree path; any
+   bound mismatch/missing runtime/invalid marker is dirty, and duplicates remain dirty. Prove the cwd-drifted bound
+   row blocks the public reuse/occupancy path.
+
+**Closed R3 correction contract.** Reuse Delivery `83a7f572-2672-4f9a-bf12-65e16d73769a` at exact `a3f14456` with
+the same eleven-path authority. Implement only the four closures above; preserve every accepted R2 behavior and the
+generated forcing title. Use an explicit snapshot readiness/failure representation rather than interpreting
+`undefined` as safe. Run the generated behavior, reload reconciler, Workspace headless, AgentManager, and resume
+suites serially, then `npm run typecheck` and `git diff --check`; no second full run, because the first reviewable
+candidate full is already green and no global-regression reason exists. Commit once by explicit pathspec with
+`t-0b5723`, keep the worktree clean, and doorbell `codex`. Coordinator reruns the original no-waiver canonical gate,
+audits the complete net delta, and only then routes immutable Sonnet review.
