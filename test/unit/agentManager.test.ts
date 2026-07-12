@@ -15,9 +15,16 @@ import { HarnessManager, harnessHome, opencodeHarnessDirs } from "../../src/harn
 import { adapterFor, harnessable } from "../../src/resume/adapters.js";
 import { CallerIdentityRegistry } from "../../src/bridge/callerIdentity.js";
 import { delegationRecordFromSpawn, readDelegationRecord, writeDelegationRecord } from "../../src/bridge/delegationRecord.js";
+import { boundDeliveryPreReservationRefusals, exerciseBoundDeliveryPreReservationRefusal } from "../helpers/boundDeliveryExecutionHarness.js";
 
 const WS = "/repo";
 const HASH = workspaceHash(WS);
+
+describe("Delivery pre-reservation refusals", () => {
+  it.each(boundDeliveryPreReservationRefusals)("refuses %s with the complete zero-effect vector", async (refusal) => {
+    await exerciseBoundDeliveryPreReservationRefusal(refusal);
+  });
+});
 
 /**
  * Parse env from either `new-session -e KEY=value` or `set-environment -t … KEY value`
@@ -822,7 +829,7 @@ describe("AgentManager — session resume (spec 209)", () => {
     }).catch((caught) => caught);
     expect(error).toBeInstanceOf(AggregateError);
     expect(error.message).toContain("compensation was incomplete");
-    expect(error.errors.map((entry: Error) => entry.message)).toEqual(["confirmation failed", "reservation quarantine failed"]);
+    expect(error.errors.map((entry: Error) => entry.message)).toEqual(["confirmation failed", "reservation compensation failed"]);
   });
 
   it.each([
@@ -1939,12 +1946,11 @@ describe("AgentManager — session resume (spec 209)", () => {
 
   it("canonical forgetAgent footprint list names every per-agent removal surface", () => {
     expect(FORGET_AGENT_FOOTPRINTS).toEqual([
-      "tachyon.yml entry (removed by the declared-removal caller before durable cleanup)",
+      "session ledger row",
       "activity log and writer state",
       "session-owner ledger rows",
       "private harness/config home",
       "per-spawn settings file",
-      "session ledger row",
     ]);
   });
 

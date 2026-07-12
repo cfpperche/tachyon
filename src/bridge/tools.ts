@@ -820,6 +820,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
             owns_subset: z.array(z.string().min(1)).default([]),
             expected_head: z.string().min(1),
             principal: z.string().min(1).optional(),
+            declared_agent: AGENT_NAME.optional().describe("select a declared agent definition for a distinct ephemeral Delivery execution"),
             operation_id: z.string().min(1),
           })
           .optional()
@@ -856,7 +857,10 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         // task to a new CLI" case). A declared agent (no cmd, carries config intent) and a terminal child
         // (can't act on a handoff — D7) are not gated. Enforced HERE at the agent-facing Bridge surface so it
         // is runtime-neutral (claude/codex/gemini/opencode alike) and never re-fires on restart/resume/fork.
-        const isAdhocAiAgent = !!cmd && inferKind(cmd) === "agent";
+        const isBoundDeliveryExecution = !!delivery_join?.declared_agent;
+        if (isBoundDeliveryExecution && cmd) return fail(new Error("spawn_agent cannot combine delivery_join.declared_agent with cmd"));
+        if (isBoundDeliveryExecution && delivery_join?.principal) return fail(new Error("spawn_agent cannot combine delivery_join.declared_agent with principal"));
+        const isAdhocAiAgent = (!!cmd && inferKind(cmd) === "agent") || isBoundDeliveryExecution;
         let brief = instructions;
         let contract: SpawnContract | undefined;
         let delegationGate: DelegationGate | undefined;
@@ -915,7 +919,8 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         await deps.manager.spawn(name, {
           cmd,
           cwd,
-          instructions: brief,
+          instructions: isBoundDeliveryExecution ? undefined : brief,
+          appendInstructions: isBoundDeliveryExecution ? brief : undefined,
           parent,
           delegator: delegationGate ? parent : undefined,
           worktree: delegationGate ? true : worktree,
@@ -933,6 +938,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
               ownsSubset: delivery_join.owns_subset,
               expectedHead: delivery_join.expected_head,
               principal: delivery_join.principal,
+              declaredAgent: delivery_join.declared_agent,
               operationId: delivery_join.operation_id,
             }
             : undefined,

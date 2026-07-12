@@ -153,7 +153,36 @@ export interface DeliveryJoinRequest {
   ownsSubset: string[];
   expectedHead: string;
   principal?: string;
+  /** A declared definition used for a distinct, ephemeral Delivery execution. */
+  declaredAgent?: string;
   operationId: string;
+}
+
+const deliveryPreflightProof = Symbol("deliveryPreflightProof");
+type DeliveryPreflightProof = { readonly [deliveryPreflightProof]: true };
+
+/** A receipt is deliberately local to one Delivery launch.  A name is not cleanup authority. */
+interface DeliveryLaunchAttempt {
+  /** Closed at acquisition: cleanup must never re-infer ownership from mutable maps. */
+  readonly mode: "bound-ephemeral" | "cmd-adhoc-ephemeral" | "declared";
+  acquired: boolean;
+  token: boolean;
+  materialized: "not-started" | "attempted" | "completed";
+  session: "not-started" | "attempted" | "completed";
+  ledger: boolean;
+}
+
+function deliveryDefinitionSnapshot(source: AgentDef): AgentDef {
+  const clone = structuredClone(source) as AgentDef;
+  return {
+    ...clone, autostart: false, restart: "never", kind: "agent",
+    ...("cwd" in clone ? { cwd: undefined } : {}),
+    ...("worktree" in clone ? { worktree: undefined } : {}),
+    ...("branch" in clone ? { branch: undefined } : {}),
+    ...("worktreeSetup" in clone ? { worktreeSetup: undefined } : {}),
+    ...("verify" in clone ? { verify: undefined } : {}),
+    ...("subagents" in clone ? { subagents: undefined } : {}),
+  };
 }
 
 export interface PreparedDeliveryJoin {
@@ -867,32 +896,101 @@ export class AgentManager {
     if (!this.opts.prepareDeliveryJoin || !this.opts.confirmDeliveryJoin) {
       throw new Error("DELIVERY_LEASE_UNAVAILABLE: Delivery join wiring is unavailable");
     }
+    let definition: AgentDef | undefined;
+    const bound = request.declaredAgent;
+    if (bound) {
+      if (opts.cmd) throw new Error("delivery_join.declared_agent cannot combine with cmd");
+      if (request.principal) throw new Error("delivery_join.declared_agent cannot combine with principal");
+      if (name === bound) throw new Error("delivery_join execution name must differ from declared_agent");
+      const config = this.opts.getConfig();
+      const source = config?.agents[bound];
+      if (!source) throw new UnknownAgentError(bound);
+      if (source.kind !== "agent") throw new Error(`delivery_join.declared_agent '${bound}' must have kind: agent`);
+      if (source.env?.TACHYON_AGENT_BRIDGE_TOKEN !== undefined) throw new Error(`delivery_join.declared_agent '${bound}' may not declare TACHYON_AGENT_BRIDGE_TOKEN`);
+      if (config?.agents[name] || this.adhoc.has(name) || this.opts.ledger?.get(name) || await this.opts.tmux.hasSession(this.session(name))) throw new Error(`delivery_join execution name '${name}' is already in use`);
+      definition = deliveryDefinitionSnapshot(source);
+      request = { ...request, principal: bound };
+    }
     let commandOverride: string | undefined;
     if (request.role === "reviewer") {
-      const baseCommand = opts.cmd ?? this.definitionOf(name)?.cmd;
+      const baseCommand = definition?.cmd ?? opts.cmd ?? this.definitionOf(name)?.cmd;
       if (!baseCommand) throw new UnknownAgentError(name);
       const safe = reviewerSafeCommand(baseCommand);
       commandOverride = safe.cmd;
       if (safe.advisory) this.opts.notify?.(safe.advisory, "warn");
     }
+    const effective = commandOverride ?? definition?.cmd ?? opts.cmd ?? this.definitionOf(name)?.cmd;
+    if (!effective) throw new UnknownAgentError(name);
+    await this.assertLaunchPreflight(name, effective, { ...(definition?.env ?? this.definitionOf(name)?.env), ...(opts.env ?? {}) });
+    const preflight: DeliveryPreflightProof = { [deliveryPreflightProof]: true };
+    // Preparation is not an acquisition boundary: a same-named session can appear while
+    // the Delivery reservation is being prepared.  The inner spawn boundary records
+    // acquisition only after it rechecks every identity source.
+    const mode: DeliveryLaunchAttempt["mode"] = bound
+      ? "bound-ephemeral"
+      : opts.cmd
+        ? "cmd-adhoc-ephemeral"
+        : "declared";
+    const attempt: DeliveryLaunchAttempt = { mode, acquired: false, token: false, materialized: "not-started", session: "not-started", ledger: false };
     const prepared = await this.opts.prepareDeliveryJoin(name, request);
-    let spawned = false;
     try {
-      await this.spawnCore(name, opts, { cwd: prepared.cwd, worktree: prepared.worktree, commandOverride });
-      spawned = true;
+      await this.spawnCore(name, opts, { cwd: prepared.cwd, worktree: prepared.worktree, commandOverride, definition, ephemeral: mode !== "declared", preflight, attempt });
       await this.opts.confirmDeliveryJoin(name, request, prepared, await this.tryPanePid(name));
     } catch (error) {
-      const compensationErrors: unknown[] = [];
-      if (spawned) {
-        try { await this.kill(name); } catch (cleanupError) { compensationErrors.push(cleanupError); }
-      }
+      const compensationErrors = await this.cleanupFailedDeliveryExecution(name, attempt);
       try { await this.opts.failDeliveryJoin?.(name, request, prepared, error); }
-      catch (cleanupError) { compensationErrors.push(cleanupError); }
+      catch (cleanupError) { compensationErrors.push(new Error("reservation compensation failed", { cause: cleanupError })); }
       if (compensationErrors.length) {
-        throw new AggregateError([error, ...compensationErrors], "Delivery join failed and compensation was incomplete");
+        throw new AggregateError([error, ...compensationErrors], "Delivery join failed and compensation was incomplete", { cause: error });
       }
       throw error;
     }
+  }
+
+  private async cleanupFailedDeliveryExecution(name: string, attempt: DeliveryLaunchAttempt): Promise<Error[]> {
+    const errors: Error[] = [];
+    const phase = (label: string, error: unknown) => errors.push(new Error(label, { cause: error }));
+    if (!attempt.acquired) return errors;
+    let completedSessionAbsent = false;
+    if (attempt.session === "completed") {
+      try {
+        if (!(await this.opts.tmux.hasSession(this.session(name)))) completedSessionAbsent = true;
+        else {
+        try { await this.opts.tmux.killSession(this.session(name)); } catch (error) { phase("session kill failed", error); }
+        try { completedSessionAbsent = !(await this.opts.tmux.hasSession(this.session(name))); } catch (error) { phase("post-kill session probe failed", error); }
+        if (!completedSessionAbsent) errors.push(new Error("failed Delivery execution may still be live; recovery state preserved"));
+        }
+      } catch (error) { phase("initial session probe failed", error); }
+      if (!completedSessionAbsent && !errors.some(error => error.message.includes("may still be live"))) errors.push(new Error("failed Delivery execution may still be live; recovery state preserved"));
+    } else if (attempt.session === "attempted") {
+      // newSession may have created a pane before reporting a failure.  It is not
+      // safe to kill a same-named session without a successful creation receipt.
+      errors.push(new Error("Delivery execution session creation is uncertain; recovery state preserved"));
+    }
+    if (attempt.token) try { this.opts.revokeAgentToken?.(name); } catch (error) { phase("token revoke failed", error); }
+    if (attempt.session === "attempted") return errors;
+    if (attempt.session === "not-started") {
+      // No session was completed, so only a freshly acquired ephemeral execution
+      // can discard the materialization it owns.  A declared principal retains
+      // all transient, durable, and callback state from its prior lifetime.
+      if (attempt.mode !== "declared" && (attempt.materialized !== "not-started" || attempt.ledger)) {
+        try { this.forgetAdhoc(name); } catch (error) { phase("in-memory cleanup failed", error); }
+        try { this.removeEphemeralFootprint(name); } catch (error) { phase("footprint cleanup failed", error); }
+      }
+      return errors;
+    }
+    if (!completedSessionAbsent) return errors;
+    const transient = [
+      () => this.readyAgents.delete(name), () => this.provisionalAgents.delete(name), () => this.readinessCache.delete(name),
+      () => this.stoppingSince.delete(name), () => this.stopFailed.delete(name), () => this.cleanExited.delete(name), () => this.postmortemOutput.delete(name),
+    ];
+    for (const clear of transient) try { clear(); } catch (error) { phase("in-memory cleanup failed", error); }
+    if (attempt.mode !== "declared" && (attempt.materialized !== "not-started" || attempt.ledger)) {
+      try { this.forgetAdhoc(name); } catch (error) { phase("in-memory cleanup failed", error); }
+      try { this.removeEphemeralFootprint(name); } catch (error) { phase("footprint cleanup failed", error); }
+    }
+    try { this.opts.onKilled?.(name); } catch (error) { phase("killed callback failed", error); }
+    return errors;
   }
 
   /**
@@ -1094,14 +1192,19 @@ export class AgentManager {
    * parentCwd and ignores it), so reuse cannot ride `opts.cwd`/`resolveSpawnCwd` and instead short-circuits
    * both here.
    */
-  private async spawnCore(name: string, opts?: SpawnOptions, forced?: { cwd: string; worktree: WorktreeRecord; commandOverride?: string }): Promise<void> {
-    this.readyAgents.delete(name);
-    this.readinessCache.delete(name); // spec 221: a (re)spawn changes the session → drop the cached badge
-    this.stoppingSince.delete(name);
-    this.stopFailed.delete(name);
-    this.cleanExited.delete(name);
-    this.postmortemOutput.delete(name);
-    let def = this.definitionOf(name);
+  private async spawnCore(name: string, opts?: SpawnOptions, forced?: { cwd: string; worktree: WorktreeRecord; commandOverride?: string; definition?: AgentDef; ephemeral?: boolean; preflight?: DeliveryPreflightProof; attempt?: DeliveryLaunchAttempt }): Promise<void> {
+    const clearTransientState = () => {
+      this.readyAgents.delete(name);
+      this.readinessCache.delete(name);
+      this.stoppingSince.delete(name);
+      this.stopFailed.delete(name);
+      this.cleanExited.delete(name);
+      this.postmortemOutput.delete(name);
+    };
+    // Delivery does this only after it has created its own session.  A collision
+    // rejection must not erase the incumbent's readiness/postmortem state.
+    if (!forced?.attempt) clearTransientState();
+    let def = forced?.definition ?? this.definitionOf(name);
     if (opts?.cmd) {
       def = {
         cmd: opts.cmd,
@@ -1127,7 +1230,16 @@ export class AgentManager {
     }
 
     const session = this.session(name);
-    if (await this.opts.tmux.hasSession(session)) {
+    if (forced?.attempt) {
+      // This is the true Delivery acquisition boundary.  Do not inherit ordinary
+      // spawn's dead-pane replacement behavior: either kind of racing occupant is
+      // another execution and carries no cleanup authority for this receipt.
+      const incumbentIdentity = forced.attempt.mode !== "declared"
+        && (this.opts.getConfig()?.agents[name] || this.adhoc.has(name) || this.opts.ledger?.get(name));
+      if (incumbentIdentity || await this.opts.tmux.hasSession(session)) {
+        throw new Error(`delivery_join execution name '${name}' is already in use`);
+      }
+    } else if (await this.opts.tmux.hasSession(session)) {
       const state = (await this.agentStates()).get(name);
       if (state && state.dead) {
         // Spawning over a crashed agent replaces the dead postmortem pane.
@@ -1143,10 +1255,10 @@ export class AgentManager {
 
     // SDD 370: authoritative validation precedes cwd/worktree preparation and every durable/runtime
     // side effect. The parser never evaluates shell syntax; ambiguous composition remains unverifiable.
-    await this.assertLaunchPreflight(name, def.cmd, { ...def.env, ...(opts?.env ?? {}) });
+    if (!forced?.preflight || forced.preflight[deliveryPreflightProof] !== true) await this.assertLaunchPreflight(name, def.cmd, { ...def.env, ...(opts?.env ?? {}) });
 
     let cwd = resolveCwd(this.opts.workspaceRoot, def.cwd);
-    const adhoc = !!opts?.cmd;
+    const adhoc = !!opts?.cmd || !!forced?.ephemeral;
     // Runtime lineage is only for ad-hoc children. A tachyon.yml-declared name is
     // always a top-level managed entry; config subagents are exposed separately as
     // declaredOwner metadata and must not inherit stale ad-hoc-era parents.
@@ -1208,17 +1320,27 @@ export class AgentManager {
 
     // spec 230 — per-spawn env (a pipeline node's TACHYON_* nonce) is merged LAST so it reaches a
     // DECLARED agent too (not just the ad-hoc cmd path) and wins on any collision (codex B1).
+    // Evaluate the extra environment before minting.  A bridge/env failure must not
+    // revoke a durable declared token that this attempt never minted.
+    const extraEnv = this.opts.getExtraEnv?.();
+    const effectiveCmd = this.effectiveCmd(name, def, parent, { delegator, gate: opts?.gate, freshWorktree: !!worktree });
+    if (forced?.attempt) forced.attempt.acquired = true;
+    const tokenEnv = this.opts.mintAgentToken?.(name);
+    if (forced?.attempt && tokenEnv !== undefined) forced.attempt.token = true;
+    if (forced?.attempt) forced.attempt.materialized = "attempted";
     const spawnBuild = this.applyHarness(
       name,
       def,
       cwd,
-      this.effectiveCmd(name, def, parent, { delegator, gate: opts?.gate, freshWorktree: !!worktree }),
-      { ...this.opts.getExtraEnv?.(), ...this.opts.mintAgentToken?.(name), ...def.env, ...(opts?.env ?? {}), TACHYON_AGENT_NAME: name },
+      effectiveCmd,
+      { ...extraEnv, ...tokenEnv, ...def.env, ...(opts?.env ?? {}), TACHYON_AGENT_NAME: name },
     );
+    if (forced?.attempt) forced.attempt.materialized = "completed";
     this.applyDelegatedOpencodeHarnessPermission(def, spawnBuild.env, delegatedOpencode);
     // spec 236 — fold the runtime-Bridge env delta (the OPENCODE_CONFIG path for opencode agents)
     // into spawnBuild.env so it reaches the spawn env alongside the Bridge URL/token.
     const spawnBridge = this.withRuntimeBridge(name, def, spawnBuild.cmd, cwd, delegatedOpencode);
+    if (forced?.attempt) forced.attempt.session = "attempted";
     await this.opts.tmux.newSession({
       name: session,
       // spec 236 Bridge + 243 ownership hook — apply ownership hook to the runtime-bridge cmd; the
@@ -1227,6 +1349,10 @@ export class AgentManager {
       cwd,
       env: { ...spawnBuild.env, ...spawnBridge.env },
     });
+    if (forced?.attempt) {
+      forced.attempt.session = "completed";
+      clearTransientState();
+    }
 
     // A normal spawn owns a newly-created worktree; reuse_worktree does not. Never
     // compensate a rejection by deleting a caller-owned, pre-existing worktree.
@@ -1241,7 +1367,10 @@ export class AgentManager {
     // OR it has a parent — the worktree case covers a declared terminal/unknown-runtime
     // agent, and `parent` persists a declared non-adapter sub-agent's lineage so the
     // cleanup descendant-guard sees it after a reload (review fixes).
-    if (this.opts.ledger && (adhoc || adapter || worktree || parent)) {
+    // A conventional Delivery join may use a declared principal that already has
+    // durable resume state.  It receives a new session, not ownership of that row.
+    const preservesDeclaredLedger = !!forced?.attempt && forced.attempt.mode === "declared" && !!this.opts.ledger?.get(name);
+    if (this.opts.ledger && !preservesDeclaredLedger && (adhoc || adapter || worktree || parent)) {
       const defBlock = {
         cmd: originalCmd,
         kind: def.kind,
@@ -1255,8 +1384,12 @@ export class AgentManager {
       };
       const resumeBlock = adapter && !selfManaged ? this.withConfigHome(name, def, { runtime: adapter.runtime, sessionId: resumeId }) : undefined; // spec 240
       this.opts.ledger.record(name, { def: defBlock, resume: resumeBlock, worktree, cwd, declared: !adhoc });
+      if (forced?.attempt) forced.attempt.ledger = true;
     }
     // spec 364 — durable Bridge-client stamp after successful spawn with materialization.
+    // Always stamp: preservesDeclaredLedger only protects principal def/resume/worktree/cwd
+    // from ledger.record; stampBridgeClientBinding merges bridgeClient alone and must
+    // reflect this incarnation's wiring (T13 R3 / t-0b5723).
     this.stampBridgeClientBinding(name, spawnBridge.wired);
     if (opts?.gate) {
       if (!opts.contract) throw new Error("gated delegation requires a validated delegation contract");

@@ -824,6 +824,18 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     expect(noContract.isError).toBe(true);
     expect(JSON.stringify(noContract.content)).toContain("delegation contract");
 
+    const boundNoContract = await client.callTool({
+      name: "spawn_agent", arguments: { name: "delivery-bound-child", parent: "claude", delivery_join: { ...join, declared_agent: "claude" } },
+    });
+    expect(boundNoContract.isError).toBe(true);
+    expect(JSON.stringify(boundNoContract.content)).toContain("delegation contract");
+
+    const boundCmdConflict = await client.callTool({
+      name: "spawn_agent", arguments: { name: "delivery-bound-child", cmd: "claude", parent: "claude", delivery_join: { ...join, declared_agent: "claude" } },
+    });
+    expect(boundCmdConflict.isError).toBe(true);
+    expect(JSON.stringify(boundCmdConflict.content)).toContain("declared_agent with cmd");
+
     const conflicting = await client.callTool({
       name: "spawn_agent",
       arguments: {
@@ -846,6 +858,57 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     expect(unavailable.isError).toBe(true);
     expect(JSON.stringify(unavailable.content)).toContain("DELIVERY_LEASE_UNAVAILABLE");
     expect(sessions.has(`tachyon-${HASH}-delivery-child`)).toBe(false);
+  });
+
+  it("T13 R4B forwards a bound Delivery success without a top-level cmd as an exact execution request", async () => {
+    const spawn = vi.spyOn(manager, "spawn").mockResolvedValue(undefined);
+    try {
+      const result = await client.callTool({
+        name: "spawn_agent",
+        arguments: {
+          name: "bound-review-execution",
+          parent: "claude",
+          task: "review the isolated delivery",
+          context: "the declared reviewer owns the durable principal",
+          constraints: "read only; retain the declared principal",
+          done_when: "review evidence is recorded",
+          delivery_join: {
+            delivery_id: "delivery-bound",
+            role: "reviewer",
+            owns_subset: ["src/agents"],
+            expected_head: "abc",
+            operation_id: "bridge-bound-success",
+            declared_agent: "claude",
+          },
+        },
+      });
+      expect(result.isError).toBeFalsy();
+      expect(spawn).toHaveBeenCalledTimes(1);
+      const [name, options] = spawn.mock.calls[0]!;
+      expect(name).toBe("bound-review-execution");
+      expect(options).toMatchObject({
+        parent: "claude",
+        deliveryJoin: {
+          deliveryId: "delivery-bound", role: "reviewer", ownsSubset: ["src/agents"], expectedHead: "abc",
+          operationId: "bridge-bound-success", declaredAgent: "claude",
+        },
+      });
+      expect(options?.cmd).toBeUndefined();
+      const instructions = options?.appendInstructions ?? "";
+      const task = "TASK: review the isolated delivery";
+      const context = "CONTEXT: the declared reviewer owns the durable principal";
+      const constraints = "CONSTRAINTS: read only; retain the declared principal";
+      const done = "DONE_WHEN: review evidence is recorded";
+      expect(instructions).toContain(task);
+      expect(instructions).toContain(context);
+      expect(instructions).toContain(constraints);
+      expect(instructions).toContain(done);
+      expect(instructions.indexOf(task)).toBeLessThan(instructions.indexOf(context));
+      expect(instructions.indexOf(context)).toBeLessThan(instructions.indexOf(constraints));
+      expect(instructions.indexOf(constraints)).toBeLessThan(instructions.indexOf(done));
+    } finally {
+      spawn.mockRestore();
+    }
   });
 
   it("spawn_agent (ad-hoc) + maxAgents guardrail + lineage", async () => {

@@ -4,12 +4,11 @@ import { removeSessionOwnerRows, removeSpawnSettings, sessionOwnersFile } from "
 import type { SessionLedger } from "../resume/SessionLedger.js";
 
 export const FORGET_AGENT_FOOTPRINTS = [
-  "tachyon.yml entry (removed by the declared-removal caller before durable cleanup)",
+  "session ledger row",
   "activity log and writer state",
   "session-owner ledger rows",
   "private harness/config home",
   "per-spawn settings file",
-  "session ledger row",
 ] as const;
 
 export interface ForgetAgentDeps {
@@ -24,9 +23,16 @@ export interface ForgetAgentDeps {
  * one-off cleanup at the call site.
  */
 export function forgetAgent(name: string, deps: ForgetAgentDeps): void {
-  deps.ledger?.remove(name);
-  deleteActivityLog(path.join(deps.workspaceRoot, ".tachyon", "activity"), name);
-  removeSessionOwnerRows(sessionOwnersFile(deps.workspaceRoot), name);
-  deps.removeHarnessHome?.(name);
-  removeSpawnSettings(deps.workspaceRoot, name);
+  const failures: unknown[] = [];
+  const attempt = (remove: () => void) => {
+    try { remove(); } catch (error) { failures.push(error); }
+  };
+  // Each footprint is independently idempotent. Never let a corrupt early artifact
+  // strand later credentials or private state.
+  attempt(() => deps.ledger?.remove(name));
+  attempt(() => deleteActivityLog(path.join(deps.workspaceRoot, ".tachyon", "activity"), name));
+  attempt(() => removeSessionOwnerRows(sessionOwnersFile(deps.workspaceRoot), name));
+  attempt(() => deps.removeHarnessHome?.(name));
+  attempt(() => removeSpawnSettings(deps.workspaceRoot, name));
+  if (failures.length) throw new AggregateError(failures, `failed to remove agent '${name}' footprints`);
 }
