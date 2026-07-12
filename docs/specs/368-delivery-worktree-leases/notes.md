@@ -1096,3 +1096,36 @@ execution without rebinding or impersonation`. Run the focused AgentManager and 
 `npm run typecheck`, `git diff --check`, then `npm run verify:full:quiet` exactly once at the first reviewable
 candidate. Commit only the five owned paths with `t-0b5723` and notify `codex`; immutable Sonnet review and final
 closure verification remain coordinator gates.
+
+### T13 R1 independent review contract
+
+Review immutable range `221b3d9..672ba2e0` against the T13 implementation contract above (including the generated
+stub correction at `7986b65a`). The candidate changes exactly the five owned paths and self-reports focused
+AgentManager 269, Bridge 57, generated behavior 1, typecheck, diff-check, and quiet full verification green (302
+files, 3,605 passed, 3 skipped). Coordinator `verify_task` is nevertheless **BLOCKED** at record
+`.tachyon/verifications/672ba2e02140c8717c0181f59fa7ea00821c36c9.json`: the immutable behavior command exits zero
+at BASE when its `-t` pattern matches no test, so it cannot prove fail-before/pass-after. The generated stub was
+changed from the required placeholder failure to an unconnected `expect(true)`.
+
+Audit the entire delta and surrounding spawn, readiness, token registry, harness/home, ledger, continuity/activity,
+reviewer-command, Bridge contract, Delivery reservation/confirmation/failure, and cleanup call paths. Coordinator
+hypotheses are starting points, not the limit of review:
+
+- the one happy-path test does not implement the contract's deterministic rejection/isolation/compensation matrix,
+  and Bridge has no successful bound-execution mapping proof;
+- `spawned` becomes true only after `spawnCore` returns, but token/home/settings/session side effects occur inside
+  `spawnCore`; `newSession` or Codex readiness failure can therefore leave a live execution token/private footprint
+  after the session is absent while the outer catch runs only reservation compensation;
+- declared harness is retained by shallow reference rather than an immutable definition snapshot, and the effective
+  launch preflight runs twice (before and after reservation); inspect whether either can violate the bound snapshot,
+  side-effect order, or exact failure causality;
+- prove/refute all config/ad-hoc/ledger/tmux name collisions, unknown/terminal/same-name source, reserved token env,
+  principal/cmd conflicts, unsafe reviewer command, failed preflight, harness/isolate/env inheritance, execution-only
+  mint/materialization/hooks/cleanup, principal ledger/cwd/home/token/continuity immutability, and combined spawn/
+  confirmation/reservation cleanup errors.
+
+Return every severity-ranked production and test-truthfulness finding in one artifact
+`.tachyon/reviews/368-delivery-bound-t13-r1.md`. Stay read-only for production/tests and do not design or implement
+fixes. Allowed gates: serial focused AgentManager, Bridge, and generated behavior suites plus `git diff --check`;
+do not rerun typecheck or full verification. Commit only the review artifact by explicit pathspec with `t-0b5723`,
+then notify `codex` with one-line ACCEPT or FINDINGS and the SHA/pointer.
