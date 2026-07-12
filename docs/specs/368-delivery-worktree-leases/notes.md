@@ -2139,3 +2139,25 @@ review completion, six stop/observation failure classes, post-stop dirty/HEAD dr
 tails, no successor reservation, and zero ProcessFence effects in mechanism-only mode. These changes were
 integrated through main commit `eed1f337`. T14.6B remains open only for B2 Workspace/AgentManager/config/Bridge
 wiring; neither accepted block reopens for speculative matrix expansion without a concrete product defect.
+
+## Dogfood log
+
+### 2026-07-12T23:43:09Z — pass (1/1) — source: tasks.md — commit: 6c6ac3e4b0dbe01434b97fd32821047fdd77d968
+- `node scripts/dogfood/delivery-lease.mjs` — pass
+
+### T14.6B2 mechanism-only lifecycle closure — 2026-07-12
+
+The Workspace/AgentManager/config/Bridge slice is accepted and integrated through main commit `6c6ac3e4`.
+The candidate culminated at `41a64ebb`, passed the canonical Delivery behavior gate and 630 focused lifecycle
+tests, and was independently reviewed by Grok 4.5 at `.tachyon/reviews/368-mechanism-b2-r2.md`; the review
+returned ACCEPT with every R1 finding closed and no concrete production defect. The real headless lifecycle now
+forces one canonical Delivery worktree across implement, review and replacement, persists the initial process
+identity and nonce, authorizes join and review completion at the Bridge boundary, and refuses stale replacement
+identity without killing the current execution.
+
+The declared dogfood command above passed 1/1. The first integrated full verification exposed an independent
+`t-f87651` notify bootstrap regression: a timed-out tmux preflight no longer persisted the caller's doorbell.
+Commits `f291c637` and `8732ea4e` restored the exact contract—preflight failure records one event while a
+not-ready runtime records none—without weakening the bootstrap gate. Focused Bridge/snBell verification passed
+65/65, typecheck and diff-check passed, and the final `npm run verify:full:quiet` passed 320 files with 3,802
+tests passed and 3 skipped. T14.6B is therefore closed; T14.6C remains the separate strong process-fenced rollout.

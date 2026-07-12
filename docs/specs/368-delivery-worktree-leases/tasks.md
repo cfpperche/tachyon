@@ -78,7 +78,7 @@ _Generated from `plan.md` on 2026-07-10. Work top-to-bottom. Check boxes as task
   adding an explicitly weaker mechanism-only dogfood level that can never impersonate its proof.
   - [x] T14.6A. Land and independently review the injected Linux systemd/cgroup adapter, nonce-bound identity
     registry, exact-snapshot action gates, checksum-pinned helper parser, and deterministic adversarial matrix.
-  - [ ] T14.6B. Wire an explicitly experimental `mechanism-only` policy into exact Delivery-bound
+  - [x] T14.6B. Wire an explicitly experimental `mechanism-only` policy into exact Delivery-bound
     acquire/handoff/review-completion plus Workspace/AgentManager prepare/confirm/fail callbacks and a
     coordinator-authorized review-completion Bridge operation. Initial canonical gated spawn must persist an exact
     root identity and execution nonce. Stop only the exact ledger-bound execution, require that identity gone,
@@ -86,7 +86,7 @@ _Generated from `plan.md` on 2026-07-10. Work top-to-bottom. Check boxes as task
     pre-T15 integration/prune route fail-closed. Generic/legacy launch remains byte-compatible.
     - [x] T14.6B1. Land the lease-service safety policy, structured absence evidence, replay-before-ambient-gate
       semantics, exact-root stop/observe path, quarantine behavior, and deterministic forcing matrix.
-    - [ ] T14.6B2. Wire Workspace/AgentManager/config/Bridge, initial process identity and nonce persistence,
+    - [x] T14.6B2. Wire Workspace/AgentManager/config/Bridge, initial process identity and nonce persistence,
       review completion authority, and operator-visible mechanism-only warnings.
   - [ ] T14.6C. Wire the accepted Linux adapter into exact Delivery-bound launch/reload/compensation paths plus
     persistent fence identity storage and `process-fenced` configuration; never silently downgrade to
