@@ -192,6 +192,10 @@ describe("container-generated delegation behavior", () => {
     });
     expect(openedAgain.projection.id).toBe(opened.projection.id);
     expect(listProjectionIntents(openedAgain.delivery).filter((i) => i.action === "open")).toHaveLength(1);
+    await expect(svc.openCanonical({
+      deliveryId: "d-t15", agent: "worker", branchRef: "tachyon/d", worktreePath: wt,
+      tachyonCreatedBranch: true, baseRef: "other-base", currentHeadSha: "tip", actor, operationId: "op-open",
+    })).rejects.toThrow(/altered projection intent/);
 
     // Sequence gap / collision / linked generic mutation refuse
     await expect(gitDeliveries.applyCanonicalIntent({
@@ -413,6 +417,11 @@ describe("container-generated delegation behavior", () => {
     });
     expect(again.projection.phase).toBe("pruned");
     expect(again.result.ok).toBe(true);
+    await expect(concurrentSvc.prune({
+      deliveryId: "d-t15", gitDeliveryId: opened.projection.id,
+      expectedGitVersion: integrated.projection.version, actor: human, caller: human,
+      operationId: "op-prune", doomedShas: ["altered"],
+    })).rejects.toThrow(/altered projection intent/);
 
     // Legacy Delivery-less open still works byte-compatibly (no claim, agent policy)
     const legacy = await gitDeliveries.open({

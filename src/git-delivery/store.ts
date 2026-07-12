@@ -88,7 +88,7 @@ export class GitDeliveryStore {
         }
         if (input.deliveryId && !existing.deliveryId) {
           // Linking an unlinked legacy row is allowed via open (pre-link reservation path).
-          return this.update(existing.id, existing.version, (record) => ({ ...record, deliveryId: input.deliveryId }), { allowLinkedBypass: true });
+          return this.update(existing.id, existing.version, (record) => ({ ...record, deliveryId: input.deliveryId }));
         }
         return existing;
       }
@@ -159,14 +159,13 @@ export class GitDeliveryStore {
     id: string,
     expectedVersion: number,
     mutate: (record: GitDelivery) => GitDelivery,
-    options: { allowLinkedBypass?: boolean } = {},
   ): Promise<GitDelivery> {
     const current = await this.get(id);
     if (!current) throw new GitDeliveryNotFoundError(id);
     if (current.version !== expectedVersion) {
       throw new GitDeliveryVersionConflictError(`GitDelivery '${id}' version conflict: expected ${expectedVersion}, found ${current.version}`);
     }
-    if (current.deliveryId && !options.allowLinkedBypass) {
+    if (current.deliveryId) {
       throw new GitDeliveryCanonicalSequenceError(
         `linked GitDelivery '${id}' must be mutated through applyCanonicalIntent`,
       );
