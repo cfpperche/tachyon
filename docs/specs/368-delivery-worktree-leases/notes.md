@@ -927,3 +927,59 @@ binding field independently; prove same-operation replay skips all effects; forc
 two-store races with exactly one event/segment winner; retain existing T5-T11 suite behavior. First reviewable
 candidate gates: serial focused DeliveryLeaseService suite, `npm run typecheck`, `git diff --check`, then
 `npm run verify:full:quiet` exactly once.
+
+### T12 R1 consolidated correction contract
+
+Candidate `7a9d82fa` is not accepted. Sonnet R1 `cc47254` confirms the coordinator's terminal-state, cross-process
+CAS/error, exact-tail, authority-order, locale-canonicalization, and coverage findings. Use Terra medium because the
+change is bounded but requires SQLite idempotence and deterministic concurrency proof. Own only:
+`src/delivery/types.ts`, `src/delivery/leaseService.ts`, `src/delivery/store.ts`,
+`src/delivery/verificationLease.ts`, `test/unit/deliveryLeaseService.test.ts`,
+`test/unit/deliveryStore.test.ts`, and `test/unit/deliveryVerificationLease.test.ts`. Do not add Bridge, Workspace,
+config, GitDelivery, cleanup, T13, or refactor work.
+
+**Terminal state and store invariants.** Add an explicit non-retryable `DELIVERY_ABANDONED` refusal and use it for
+lease acquisition, repeat recovery, and system verification before their generic retryable occupied paths.
+DeliveryStore runtime validation must reject unknown lease states and malformed abandoned records. An abandoned
+record has no holder, expected HEAD, or verification intent, has at least one segment, and has no open segment.
+Schema version remains 1; other states remain compatible. Test immediate terminal wait plus all three non-retryable
+entry points and malformed/unknown store records.
+
+**CAS, replay, and errors.** Wrap both recovery operations so every `DeliveryStoreBusyError` becomes the established
+structured retryable busy refusal. After any post-proof state change or final `DeliveryVersionConflictError`, first
+replay the same operation id and full intent; an exact same-operation contender returns the immutable result without
+rerunning fence, inspection, approval, or id allocation. Otherwise read and classify the actual winner: in-flight
+states are retryable occupied, abandoned is terminal, quarantined returns its durable non-retryable evidence, and an
+impossible state is non-retryable invalid. No raw version/busy error may escape. Approval, fence, and inspection
+throws/malformed results become structured non-retryable quarantine refusals while leaving the original record
+byte-for-byte unchanged; unexpected persistence failures retain their real causal chain and are never reported as a
+safe recovery.
+
+**Exact boundary and policy-first locking.** The frozen snapshot and every revalidation compare the exact lease and
+the exact pre-recovery open tail, both before inspection and inside the store mutation. A store-legal concurrent tail
+closure or append with an unchanged quarantine lease must refuse without another close, segment, or event. Under the
+Delivery lock, read the record and authorize from canonical `createdBy` plus configured recovery principals before
+calling `canonicalWorktreeFor` or acquiring any worktree lock. Only then resolve/compare the actual canonical path,
+lock it in Delivery→worktree order, and re-read/revalidate authority/state/snapshot. Unauthorized holder, segment
+principal, execution identity, peer, legacy, and external callers cause zero canonical-resolution, worktree-lock,
+fence, inspection, approval, nonce, or mutation calls; original creator and configured principal remain allowed.
+
+**Canonical inventory.** Replace `localeCompare` with a locale/ICU-independent total code-unit ordering for path and
+status. Retain duplicate/malformed rejection and prove inventories containing locale-sensitive strings normalize and
+hash identically regardless of host collation.
+
+**Deterministic matrix.** Add forcing regressions for: configured-principal allow; every unauthorized identity/kind
+with zero effects; fence outside both locks; unsupported/throwing/unknown/survivor/holder-less fence boundaries;
+canonical path, lease, legal tail, HEAD, dirty path, unique commit, first-vs-second inspection, malformed/duplicate
+inventory, and owns widening with byte-identical quarantine; salvage's single pending recovery segment plus dirty
+evidence and no verified/accepted/clean/completed claim; approval decision, requester, digest, payloadHash,
+resolvedAt, unbound, throw, and different-loss refusal; same-operation replay skipping all effects for both actions;
+same-action and salvage-vs-abandon races using two DeliveryStore instances and barriers, with exactly one event/
+segment winner and exact replay or actual-winner classification; abandoned validation/nonretryability/wait; and the
+absence of any destructive dependency/action. Tests must force the intended interleaving, not merely assert a final
+state.
+
+Correction gates are the serial focused lease/store/verification suites, `npm run typecheck`, and
+`git diff --check`. Do **not** run full verification during correction: the first candidate full is already green;
+the next full is reserved for final closure after independent R2 acceptance. Commit exactly the seven owned paths by
+pathspec with `t-0b5723`, then notify the coordinator with SHA, exact counts, and residual risk.
