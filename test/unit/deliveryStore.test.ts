@@ -50,6 +50,23 @@ describe("DeliveryStore SQLite (spec 368)", () => {
     expect(abandoned.lease.state).toBe("abandoned");
   });
 
+  it.each(["holder", "expectedHead", "verification", "open-tail"] as const)("rejects malformed abandoned %s records", async (kind) => {
+    const store = new DeliveryStore(root(), { now: () => now }); const created = await store.create(input(`d-abandoned-${kind}`));
+    await expect(store.update(created.id, created.version, (record) => {
+      if (kind !== "open-tail") record.segments[0] = { ...record.segments[0]!, releasedAt: now, releasedHeadSha: "base", outcome: "rejected" };
+      record.lease = { state: "abandoned", changedAt: now,
+        ...(kind === "holder" ? { holder: { segmentId: "seg-0", executionAgent: "x" } } : {}),
+        ...(kind === "expectedHead" ? { expectedHeadSha: "base" } : {}),
+        ...(kind === "verification" ? { verification: {} as never } : {}) };
+      return record;
+    })).rejects.toThrow();
+  });
+
+  it("rejects abandoned empty history on creation", async () => {
+    const malformed = input("d-abandoned-empty"); malformed.segments = []; malformed.lease = { state: "abandoned", changedAt: now };
+    await expect(new DeliveryStore(root(), { now: () => now }).create(malformed)).rejects.toThrow("abandoned lease requires closed history");
+  });
+
   it("uses one workspace-local SQLite database and enforces CAS plus immutable creation", async () => {
     const workspace = root();
     const store = new DeliveryStore(workspace, { now: () => now });

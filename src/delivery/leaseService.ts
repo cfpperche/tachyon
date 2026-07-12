@@ -912,7 +912,7 @@ export class DeliveryLeaseService {
 
   private assertRecoverySnapshot(delivery: Delivery, snapshot: { lease: Delivery["lease"]; tail?: Delivery["segments"][number] }): void {
     if (!isDeepStrictEqual(delivery.lease, snapshot.lease) || !isDeepStrictEqual(delivery.segments.at(-1), snapshot.tail) || delivery.lease.state !== "quarantined") {
-      throw new DeliveryLeaseError("DELIVERY_QUARANTINED", false, "quarantine changed during recovery");
+      throw new DeliveryLeaseError("DELIVERY_QUARANTINED", false, "quarantine changed during recovery", { recoverySnapshotChanged: true });
     }
   }
 
@@ -951,8 +951,8 @@ export class DeliveryLeaseService {
       return replay as T;
     }
     if (error instanceof DeliveryStoreBusyError) throw this.busy(error);
-    if (error instanceof DeliveryLeaseError) throw error;
-    if (error instanceof DeliveryVersionConflictError) {
+    if (error instanceof DeliveryLeaseError && !error.detail?.recoverySnapshotChanged) throw error;
+    if (error instanceof DeliveryVersionConflictError || error instanceof DeliveryLeaseError) {
       let winner: Delivery | undefined;
       try { winner = await this.deps.store.get(deliveryId); }
       catch (readError) { if (readError instanceof DeliveryStoreBusyError) throw this.busy(readError); throw readError; }

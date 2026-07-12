@@ -1254,4 +1254,15 @@ describe("DeliveryLeaseService dead-holder reconciliation (SDD 368 T11)", () => 
     await expect(recoveryService(store, worktree, { inventory: inventory as typeof recoveryInventory }).salvageQuarantine({ deliveryId: "d-lease", canonicalWorktree: worktree, actor, operationId: `boundary-${kind}`, expectedHeadSha: "b", expectedInventory: recoveryInventory, executionAgent: "fixer", ownsSubset: kind === "scope" ? ["test"] : ["src"] })).rejects.toMatchObject({ code: kind === "scope" ? "DELIVERY_OWNS_WIDENING" : "DELIVERY_QUARANTINED" });
     expect(await store.get("d-lease")).toEqual(before);
   });
+
+  it.each(["decision", "requester", "digest", "payloadHash", "resolvedAt", "throwing"] as const)("rejects malformed %s abandonment approval without mutation", async (kind) => {
+    const { store, worktree, input } = heldFixture(); input.lease = { ...input.lease!, state: "quarantined", reason: "q" }; await store.create(input); const before = await store.get("d-lease");
+    const lease = recoveryService(store, worktree, { approval: (_id, digest) => {
+      if (kind === "throwing") throw new Error("resolver failed");
+      return { decision: kind === "decision" ? "denied" : "approved", requester: kind === "requester" ? "other" : actor.name!, actionDigest: kind === "digest" ? "wrong" : digest,
+        payloadHash: kind === "payloadHash" ? "" : "payload", resolvedAt: kind === "resolvedAt" ? "" : now };
+    } });
+    await expect(lease.abandonQuarantine({ deliveryId: "d-lease", canonicalWorktree: worktree, actor, operationId: `approval-${kind}`, expectedHeadSha: "b", expectedInventory: recoveryInventory, approvalId: "a-1" })).rejects.toMatchObject({ code: "DELIVERY_QUARANTINED" });
+    expect(await store.get("d-lease")).toEqual(before);
+  });
 });
