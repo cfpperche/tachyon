@@ -108,6 +108,67 @@ describe("DeliveryLeaseService (SDD 368 T5)", () => {
     expect(completed.lease.state).toBe("free"); expect(completed.events.at(-1)?.detail).toMatchObject({ handoffSafety: "mechanism-only", absenceEvidence: "root_gone_best_effort" }); expect(stop).toHaveBeenCalledTimes(1);
   });
 
+  it.each([
+    ["alive root", { state: "alive" }, true],
+    ["unknown root", { state: "unknown", reason: "cannot inspect" }, true],
+    ["malformed observation", { state: "invalid" }, true],
+    ["missing observer", undefined, true],
+    ["stopper failure", { state: "gone" }, true],
+    ["missing stopper", { state: "gone" }, false],
+  ] as const)("quarantines mechanism-only review after %s without ProcessFence effects", async (label, observation, hasStopper) => {
+    const { store, worktree, input } = reviewFixture(); await store.create(input);
+    const fence = { capability: vi.fn(() => ({ supported: false as const, reason: "unused" })), freeze: vi.fn(), terminate: vi.fn(), proveEmpty: vi.fn() };
+    const stop = vi.fn(async () => { if (label === "stopper failure") throw new Error("stop failed"); });
+    const observe = vi.fn(() => observation as never);
+    const lease = new DeliveryLeaseService({ store, processFence: fence, handoffSafety: "mechanism-only", ...(hasStopper ? { exactExecutionStopper: { stop } } : {}),
+      ...(label === "missing observer" ? {} : { processObserver: { observe } }), canonicalWorktreeFor: () => worktree,
+      readHead: () => "b", inspectWorktree: () => ({ headSha: "b", clean: true }), inspectReviewWorktree: () => cleanReviewInspection,
+      isAncestor: () => true, withWorktreeLock: async (_path, fn) => fn() });
+
+    await expect(lease.completeReview(completeReviewInput(worktree, "ACCEPT", `review-${label.replace(/\s+/g, "-")}`)))
+      .rejects.toMatchObject({ code: "DELIVERY_QUARANTINED" } satisfies Partial<DeliveryLeaseError>);
+
+    if (hasStopper) expect(stop).toHaveBeenCalledWith(expect.objectContaining({ deliveryId: "d-lease", segmentId: "seg-review", executionNonce: "review-exec", process: { pid: 12, processStart: "20", bootId: "boot" } }));
+    else expect(stop).not.toHaveBeenCalled();
+    if (label === "stopper failure" || label === "missing stopper") expect(observe).not.toHaveBeenCalled();
+    const persisted = (await store.get("d-lease"))!;
+    expect(persisted.lease).toMatchObject({ state: "quarantined", holder: { segmentId: "seg-review", executionNonce: "review-exec", process: { pid: 12, processStart: "20", bootId: "boot" } } });
+    expect(persisted.segments.at(-1)).toMatchObject({ id: "seg-review" });
+    expect(persisted.segments.at(-1)?.releasedAt).toBeUndefined();
+    expect(persisted.events).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: "review_draining", detail: expect.objectContaining({ executionNonce: "review-exec" }) }),
+      expect.objectContaining({ type: "review_invalid", detail: expect.objectContaining({ evidence: expect.objectContaining({ phase: "exact_root_stop", handoffSafety: "mechanism-only" }) }) }),
+    ]));
+    expect(persisted.events.some((event) => event.type === "review_completed")).toBe(false);
+    expect(fence.capability).not.toHaveBeenCalled(); expect(fence.freeze).not.toHaveBeenCalled(); expect(fence.terminate).not.toHaveBeenCalled(); expect(fence.proveEmpty).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["dirty", { headSha: "b", clean: false }, "DELIVERY_WORKTREE_DIRTY"],
+    ["moved HEAD", { headSha: "moved", clean: true }, "DELIVERY_HEAD_CHANGED"],
+  ] as const)("quarantines a mechanism-only handoff when post-stop inspection finds %s", async (_label, drift, code) => {
+    const { store, worktree, input } = heldFixture(); await store.create(input); let inspections = 0;
+    const stop = vi.fn(); const observe = vi.fn(() => ({ state: "gone" as const }));
+    const fence = { capability: vi.fn(() => ({ supported: false as const, reason: "unused" })), freeze: vi.fn(), terminate: vi.fn(), proveEmpty: vi.fn() };
+    const lease = new DeliveryLeaseService({ store, processFence: fence, handoffSafety: "mechanism-only", exactExecutionStopper: { stop }, processObserver: { observe },
+      canonicalWorktreeFor: () => worktree, readHead: () => "b", inspectWorktree: () => (++inspections === 1 ? { headSha: "b", clean: true } : drift),
+      isAncestor: () => true, withWorktreeLock: async (_path, fn) => fn() });
+
+    await expect(lease.handoff(handoffInput(worktree, `post-stop-${code}`))).rejects.toMatchObject({ code: "DELIVERY_QUARANTINED" } satisfies Partial<DeliveryLeaseError>);
+
+    expect(stop).toHaveBeenCalledWith(expect.objectContaining({ deliveryId: "d-lease", segmentId: "seg-0", executionNonce: "exec-0", process: { pid: 7, processStart: "10", bootId: "boot" } }));
+    expect(observe).toHaveBeenCalledWith({ pid: 7, processStart: "10", bootId: "boot" });
+    expect(inspections).toBe(2);
+    const persisted = (await store.get("d-lease"))!;
+    expect(persisted.lease).toMatchObject({ state: "quarantined", holder: { segmentId: "seg-0", executionNonce: "exec-0" } });
+    expect(persisted.lease.reason).toContain(code);
+    expect(persisted.segments.at(-1)).toMatchObject({ id: "seg-0" });
+    expect(persisted.segments.at(-1)?.releasedAt).toBeUndefined();
+    expect(persisted.events.at(-1)).toMatchObject({ type: "handoff_quarantined", detail: { executionNonce: "exec-0", evidence: expect.objectContaining({ phase: "final" }) } });
+    expect(persisted.events.some((event) => event.type === "handoff_reserved")).toBe(false);
+    expect(fence.capability).not.toHaveBeenCalled(); expect(fence.freeze).not.toHaveBeenCalled(); expect(fence.terminate).not.toHaveBeenCalled(); expect(fence.proveEmpty).not.toHaveBeenCalled();
+  });
+
   it("forces mechanism-only stop and observation outside the worktree lock", async () => {
     const { store, worktree, input } = heldFixture(); await store.create(input); let locked = false;
     const lease = new DeliveryLeaseService({ store, processFence: certifiedFence, handoffSafety: "mechanism-only", exactExecutionStopper: { stop: async () => { expect(locked).toBe(false); } }, processObserver: { observe: () => { expect(locked).toBe(false); return { state: "gone" }; } }, canonicalWorktreeFor: () => worktree, readHead: () => "b", inspectWorktree: () => ({ headSha: "b", clean: true }), isAncestor: () => true, withWorktreeLock: async (_path, fn) => { locked = true; try { return await fn(); } finally { locked = false; } }, nonce: () => "next", segmentId: () => "seg-1" });
