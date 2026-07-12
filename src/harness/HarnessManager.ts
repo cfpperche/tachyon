@@ -326,10 +326,43 @@ export function defaultRealCodexHome(env: NodeJS.ProcessEnv = process.env, homeD
   return override && override.length > 0 ? override : path.join(homeDir, ".codex");
 }
 
-/** The real Grok config home Tachyon's process uses. Grok documents `GROK_HOME`; default is `~/.grok`. */
+/**
+ * t-303f2b — true when `p` looks like a Tachyon-managed private Grok home (bridge-mcp or harness),
+ * not the user's real login home. A process that inherits `GROK_HOME` from a redirected agent pane
+ * must not treat that private dir as the credential *source* for new agents (cold homes without a
+ * readable auth.json → browser login wall).
+ */
+export function isTachyonManagedGrokHome(p: string): boolean {
+  const n = path.resolve(p).replace(/\\/g, "/");
+  return n.includes("/.tachyon/bridge-mcp/") || n.includes("/.tachyon/harness/");
+}
+
+/**
+ * The real Grok config home used as the **auth source** for private homes. Grok documents `GROK_HOME`
+ * (default `~/.grok`). Honors an explicit override unless it is a Tachyon-managed private path
+ * (t-303f2b) — those must never be the seed for sibling agents.
+ */
 export function defaultRealGrokHome(env: NodeJS.ProcessEnv = process.env, homeDir: string = os.homedir()): string {
   const override = env.GROK_HOME?.trim();
-  return override && override.length > 0 ? override : path.join(homeDir, ".grok");
+  if (override && override.length > 0 && !isTachyonManagedGrokHome(override)) return override;
+  return path.join(homeDir, ".grok");
+}
+
+/** Fail-closed: private GROK_HOME must resolve to a readable auth.json object (t-303f2b). */
+export function assertReadableGrokAuth(agent: string, privateHome: string, realAuthTarget: string): void {
+  const authPath = path.join(privateHome, "auth.json");
+  try {
+    const parsed = JSON.parse(fs.readFileSync(authPath, "utf8")) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new Error("auth.json is not a JSON object");
+    }
+  } catch (e) {
+    const detail = e instanceof Error ? e.message : String(e);
+    throw new HarnessUnavailableError(
+      agent,
+      `grok credentials unreadable at ${authPath} (source ${realAuthTarget}): ${detail} — run grok login first (a redirected GROK_HOME starts logged out)`,
+    );
+  }
 }
 
 /** spec t-e2ebe3 — the real (authenticated) XDG_DATA_HOME for opencode (auth lives at
@@ -627,6 +660,10 @@ export class HarnessManager {
     }
 
     if (adapter.runtime === "codex" || adapter.runtime === "grok") {
+      // t-303f2b — harness/isolate-transcript private homes must also prove credentials before spawn.
+      if (adapter.runtime === "grok") {
+        assertReadableGrokAuth(agent, authDestHome, path.join(authSourceHome, "auth.json"));
+      }
       return home;
     }
 
@@ -947,6 +984,9 @@ export class HarnessManager {
       if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
     }
     fs.symlinkSync(authTarget, authLink);
+    // t-303f2b — never hand the agent a GROK_HOME that looks seeded but cannot read credentials
+    // (dangling/unreadable symlink → interactive "Approve in your browser" instead of a hard spawn error).
+    assertReadableGrokAuth(agent, home, authTarget);
 
     const url = typeof bridgeEntry.url === "string" ? bridgeEntry.url : "";
     const headers =

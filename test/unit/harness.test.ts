@@ -20,6 +20,8 @@ import {
   readWorkspaceMcpServers,
   realConfigHome,
   defaultRealCodexHome,
+  defaultRealGrokHome,
+  isTachyonManagedGrokHome,
   opencodeHarnessDirs,
 } from "../../src/harness/HarnessManager.js";
 import { adapterForRuntime } from "../../src/resume/adapters.js";
@@ -430,6 +432,26 @@ describe("HarnessManager materialize (fs)", () => {
     expect(fs.lstatSync(privateAuth).isSymbolicLink()).toBe(true);
     expect(fs.readlinkSync(privateAuth)).toBe(realAuth);
     expect(fs.readFileSync(realAuth, "utf8")).toBe('{"token":"GROK"}');
+  });
+
+  it("t-303f2b: defaultRealGrokHome ignores Tachyon-managed private GROK_HOME overrides", () => {
+    expect(isTachyonManagedGrokHome("/ws/.tachyon/bridge-mcp/agent.grok")).toBe(true);
+    expect(isTachyonManagedGrokHome("/ws/.tachyon/harness/agent/.grok")).toBe(true);
+    expect(isTachyonManagedGrokHome("/home/me/.grok")).toBe(false);
+    expect(defaultRealGrokHome({ GROK_HOME: "/ws/.tachyon/bridge-mcp/agent.grok" }, "/home/me")).toBe(path.join("/home/me", ".grok"));
+    expect(defaultRealGrokHome({ GROK_HOME: "/custom/grok-home" }, "/home/me")).toBe("/custom/grok-home");
+    expect(defaultRealGrokHome({}, "/home/me")).toBe(path.join("/home/me", ".grok"));
+  });
+
+  it("t-303f2b: materializeBridgeMcpGrok fails closed when auth.json is unreadable after symlink", () => {
+    const realGrokHome = path.join(path.dirname(ws), "real-grok-bad-auth");
+    fs.mkdirSync(realGrokHome, { recursive: true });
+    // exists but not a JSON object → assertReadableGrokAuth must throw
+    fs.writeFileSync(path.join(realGrokHome, "auth.json"), "not-json");
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), undefined, undefined, undefined, realGrokHome);
+    expect(() =>
+      mgr.materializeBridgeMcpGrok("solo", { url: "http://127.0.0.1:9/mcp", headers: { Authorization: "Bearer ${TACHYON_AGENT_BRIDGE_TOKEN}" } }),
+    ).toThrow(/credentials unreadable|not a JSON object|Unexpected token|not-json|JSON/i);
   });
 
   it("t-843576: materializeBridgeMcpGrok fails closed when real grok auth is missing", () => {

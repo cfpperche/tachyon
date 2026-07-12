@@ -2663,6 +2663,35 @@ describe("AgentManager — session resume (spec 209)", () => {
       await manager.spawn("grok");
       expect(newSessionArgs.at(-1)!.some((a) => a.startsWith("GROK_HOME="))).toBe(false);
     });
+
+    // t-303f2b — gated/ad-hoc grok must use the Bridge private GROK_HOME (same as declared), not a
+    // second isolate:transcript harness home that races auth materialization.
+    it("t-303f2b: ad-hoc grok with Bridge materializer injects bridge GROK_HOME (no harness isolate race)", async () => {
+      const calls: string[] = [];
+      const matCalls: Array<{ name: string; isolate?: string }> = [];
+      const WT = { path: "/wt/h/deliveryMechanismLeaseGrokR1", branch: "tachyon/deliveryMechanismLeaseGrokR1", tachyonCreatedBranch: true, baseRef: "base", createdAt: "t" };
+      const { manager, newSessionArgs } = resumeHarness("agents: {}\n", {
+        ...GROK_BRIDGE(calls),
+        resolveSpawnCwd: async () => ({ cwd: WT.path, worktree: WT, delegationBaseSha: "base" }),
+        materializeHarness: ({ name, def }) => {
+          matCalls.push({ name, isolate: def.isolate });
+          return { home: `/ws/.tachyon/harness/${name}`, env: { GROK_HOME: `/ws/.tachyon/harness/${name}/.grok` }, args: [] };
+        },
+      });
+      await manager.spawn("deliveryMechanismLeaseGrokR1", {
+        cmd: "grok --model grok-4.5 --permission-mode auto --no-subagents",
+        gate: {
+          behaviorTest: "mechanism-only lease policy never impersonates proven_empty",
+          owns: ["src/delivery/leaseService.ts"],
+        },
+        contract: { task: "lease core", context: "sdd 368", constraints: "no scope creep", doneWhen: "tests green" },
+      });
+      const envPairs = newSessionArgs.at(-1)!.filter((a) => a.startsWith("GROK_HOME="));
+      expect(envPairs).toEqual(["GROK_HOME=/ws/.tachyon/bridge-mcp/deliveryMechanismLeaseGrokR1.grok"]);
+      expect(calls).toEqual(["deliveryMechanismLeaseGrokR1"]);
+      // materializeHarness must not run for auto-isolate on grok when bridge private home is available
+      expect(matCalls).toEqual([]);
+    });
   });
 
   describe("spec 243 — per-spawn --settings session-ownership hook", () => {

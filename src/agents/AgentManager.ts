@@ -1420,7 +1420,14 @@ export class AgentManager {
     def = injected.def;
     const { adapter, resumeId, selfManaged } = injected;
     if (adhoc && adapter?.harness && !selfManaged && !def.harness && def.isolate === undefined) {
-      def = { ...def, isolate: "transcript" };
+      // t-303f2b — grok non-harness already gets a private GROK_HOME via materializeBridgeMcpGrok
+      // (same path as declared agents). Auto isolate:transcript would materialize a *second* private
+      // home under .tachyon/harness/ and race GROK_HOME with withRuntimeBridge; cold dual-homes have
+      // surfaced as interactive "Approve in your browser" instead of reusing ~/.grok auth.
+      const grokUsesBridgePrivateHome = adapter.runtime === "grok" && !!this.opts.materializeBridgeMcpGrok;
+      if (!grokUsesBridgePrivateHome) {
+        def = { ...def, isolate: "transcript" };
+      }
     }
     const isolatedWorktree = !!worktree;
     // t-ef19a1 — anti-footgun only, never a trust/allow change: a tachyon.yml-declared opencode
