@@ -36,9 +36,10 @@ const HARDEN_CFLAGS = [
 const TARGET_UNKNOWN_RE =
   /unknown reason=target_(identity_drift|deleted|path_drift|missing|not_dir|fd_error)/;
 
-const HIGH_FD = 200;
-/** Soft limit the TEST_ONLY child applies (strictly below HIGH_FD). */
-const SOFT_AFTER_LOWER = 100; // child uses high/2 with floor 8; for 200 → 100
+/** R5 contract: deterministic high FD beyond a lowered soft RLIMIT. */
+const HIGH_FD = 5000;
+/** Soft limit the TEST_ONLY child applies (high/2). Soft-bound [0, soft) misses HIGH_FD. */
+const SOFT_AFTER_LOWER = 2500;
 
 function sha256File(path: string): string {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
@@ -181,7 +182,7 @@ async function runWithSeam(opts: {
 }
 
 describe("container-generated delegation behavior", () => {
-  it("R4: pidfd_getfd fallback (stable nr_open/two-scan), high-FD soft-bound miss, seam residual BLOCKED", async () => {
+  it("R5: FDSize-bounded pidfd_getfd fallback, high-FD=5000, seams, residual BLOCKED", async () => {
     const report = readFileSync(REPORT, "utf8");
     const source = readFileSync(SRC, "utf8");
 
@@ -203,22 +204,26 @@ describe("container-generated delegation behavior", () => {
     expect(report).toMatch(/proven_empty|production adapter|ProcessFence/i);
     expect(report).toMatch(/BLOCK.*production|must keep production|not.*production proven_empty|BLOCK production/i);
 
-    // R4 contract surface in source + report.
+    // R5 contract surface in source + report: FDSize primary bound, nr_open validation-only.
     expect(source).toMatch(/pidfd_getfd|__NR_pidfd_getfd/);
     expect(source).toMatch(/pidfd_open|__NR_pidfd_open/);
+    expect(source).toMatch(/FDSize/);
+    expect(source).toMatch(/PIDFD_FDSIZE_SAFE_MAX|PIDFD_NR_OPEN_SAFE_MAX/);
+    expect(source).toMatch(/pidfd_fdsize_changed|pidfd_fdsize_malformed|pidfd_fdsize_too_large/);
+    expect(source).toMatch(/pidfd_scan_disagreement|pidfd_deadline/);
     expect(source).toMatch(/fs\/nr_open|nr_open/);
-    expect(source).toMatch(/PIDFD_NR_OPEN_SAFE_MAX/);
-    expect(source).toMatch(/pidfd_scan_disagreement|pidfd_deadline|pidfd_nr_open_too_large/);
+    expect(source).toMatch(/validation|validate/);
     expect(source).toMatch(/RLIMIT_NOFILE/); // only for TEST_ONLY soft-lower proof, not completeness bound
-    expect(source).not.toMatch(/getrlimit\s*\(\s*RLIMIT_NOFILE[\s\S]{0,200}nr_open|probe.*rlim_cur/);
-    // Completeness bound must not be soft RLIMIT — must be fs.nr_open / SAFE_MAX.
-    expect(source).toMatch(/PIDFD_NR_OPEN_SAFE_MAX\s+1048576/);
+    expect(source).not.toMatch(/getrlimit\s*\(\s*RLIMIT_NOFILE[\s\S]{0,200}FDSize|probe.*rlim_cur/);
+    // Completeness bound is FDSize, not soft RLIMIT; SAFE_MAX remains memory/deadline ceiling.
+    expect(source).toMatch(/PIDFD_(?:FDSIZE|NR_OPEN)_SAFE_MAX\s+1048576/);
     expect(report).toMatch(/pidfd_getfd|pidfd/);
+    expect(report).toMatch(/FDSize/);
     expect(report).toMatch(/nr_open|fs\.nr_open/);
     expect(report).toMatch(/two-scan|two scan|two complete scans/i);
     expect(report).toMatch(/RLIMIT_NOFILE|soft.?limit/i);
     expect(report).toMatch(/SAFE_MAX|safe maximum|1048576/);
-    expect(report).toMatch(/j-aec448bf6364|R4/);
+    expect(report).toMatch(/j-de678ede82c3|R5/);
     // No grant of DAC_READ_SEARCH — only negative mentions allowed.
     expect(report).toMatch(/No setcap was performed/i);
     expect(report).toMatch(/CAP_DAC_READ_SEARCH/);
@@ -236,7 +241,10 @@ describe("container-generated delegation behavior", () => {
     expect(source).toMatch(/TEST_SEAM\s*\(\s*"post_pin"\s*\)/);
     expect(source).toMatch(/TEST_SEAM\s*\(\s*"obs"\s*\)/);
     expect(source).toMatch(/PAH_TEST_SEAM_DIR/);
-    expect(source).toMatch(/PAH_TEST_FORCE_PIDFD_FD_SCAN|PAH_TEST_SPAWN_HIGH_FD|PAH_TEST_NR_OPEN/);
+    expect(source).toMatch(
+      /PAH_TEST_FORCE_PIDFD_FD_SCAN|PAH_TEST_SPAWN_HIGH_FD|PAH_TEST_FDSIZE/,
+    );
+    expect(source).toMatch(/PAH_TEST_FDSIZE_MALFORMED|PAH_TEST_FDSIZE_CHANGE|PAH_TEST_FDSIZE_TOO_LARGE/);
 
     // Sticky capability_loss still present.
     expect(source).toMatch(/saw_cap_loss/);
@@ -270,6 +278,7 @@ describe("container-generated delegation behavior", () => {
       expect(stringsR.stdout).not.toMatch(/PAH_TEST_SEAM_DIR/);
       expect(stringsR.stdout).not.toMatch(/PAH_TEST_FORCE_PIDFD/);
       expect(stringsR.stdout).not.toMatch(/PAH_TEST_SPAWN_HIGH_FD/);
+      expect(stringsR.stdout).not.toMatch(/PAH_TEST_FDSIZE/);
       expect(stringsR.stdout).not.toMatch(/PAH_TEST_NR_OPEN/);
       expect(stringsR.stdout).not.toMatch(/post_pin\.ready/);
       // TEST_ONLY binary must contain the seam env keys.
@@ -279,6 +288,7 @@ describe("container-generated delegation behavior", () => {
       expect(testStrings.status).toBe(0);
       expect(testStrings.stdout).toMatch(/PAH_TEST_SEAM_DIR/);
       expect(testStrings.stdout).toMatch(/PAH_TEST_FORCE_PIDFD_FD_SCAN|PAH_TEST_SPAWN_HIGH_FD/);
+      expect(testStrings.stdout).toMatch(/PAH_TEST_FDSIZE/);
 
       // --- no-cap unknown with reason (hardened binary) ---
       const target = mkdtempSync(join(tmpdir(), "tachyon-368-audit-target-"));
@@ -289,8 +299,9 @@ describe("container-generated delegation behavior", () => {
       expect(noCap.stdout).toMatch(/^cap_sys_ptrace=no$/m);
       expect(noCap.stdout).toMatch(/^match_count=0$/m);
       // Ambient incompleteness: eaccess and/or pidfd fail-closed reasons.
+      // R5: EACCES fd-dir uses FDSize-bounded pidfd (often pidfd_getfd_eperm without cap).
       expect(noCap.stdout).toMatch(
-        /unknown reason=(eaccess|pidfd_nr_open_too_large|pidfd_getfd_eperm|pidfd_open_eperm)/,
+        /unknown reason=(eaccess|pidfd_fdsize_too_large|pidfd_getfd_eperm|pidfd_open_eperm|pidfd_nr_open_unreadable)/,
       );
       const unknownCount = Number(
         noCap.stdout.match(/^unknown_count=(\d+)$/m)?.[1] ?? "0",
@@ -328,10 +339,10 @@ describe("container-generated delegation behavior", () => {
       expect(withFd.stdout).toMatch(new RegExp(`match pid=${wpid} .*kind=fd`));
       writer.kill("SIGKILL");
 
-      // --- R4: high-FD above lowered soft limit — fallback finds it; soft-bound would miss ---
-      // Soft-bound incompleteness (mathematical): soft after lower is high/2 (=100 for 200).
+      // --- R5: high-FD=5000 above lowered soft — FDSize expands; fallback finds it ---
+      expect(HIGH_FD).toBe(5000);
       expect(HIGH_FD).toBeGreaterThanOrEqual(SOFT_AFTER_LOWER);
-      // Probe range [0, soft) excludes HIGH_FD — soft-bound completeness is unsound.
+      // Soft-bound completeness is unsound: [0, soft) excludes HIGH_FD.
       expect(HIGH_FD >= SOFT_AFTER_LOWER).toBe(true);
 
       const highTarget = mkdtempSync(join(tmpdir(), "tachyon-368-audit-target-"));
@@ -339,16 +350,18 @@ describe("container-generated delegation behavior", () => {
       const beforeSoft = readdirSync("/tmp").filter((n) =>
         n.startsWith("pah-test-soft-"),
       );
+      const beforeFs = readdirSync("/tmp").filter((n) =>
+        n.startsWith("pah-test-fdsize-"),
+      );
       const t0 = Date.now();
       const highRun = runHelper(testHelper, highTarget, {
         PAH_TEST_FORCE_PIDFD_FD_SCAN: "1",
-        PAH_TEST_NR_OPEN: "512",
         PAH_TEST_SPAWN_HIGH_FD: String(HIGH_FD),
       });
       const highMs = Date.now() - t0;
-      expect(highRun.status).toBe(2);
+      expect(highRun.status, highRun.stderr).toBe(2);
       expect(highRun.stdout).toMatch(/^state=unknown$/m);
-      // Success: pidfd fallback (forced) finds the high FD binding.
+      // Success: FDSize-bounded pidfd fallback finds the high FD binding.
       expect(highRun.stdout).toMatch(
         new RegExp(`match pid=\\d+ starttime=\\d+ kind=fd fd=${HIGH_FD}`),
       );
@@ -357,35 +370,67 @@ describe("container-generated delegation behavior", () => {
       );
       expect(highMatch).toBeTruthy();
       const childPid = highMatch![1]!;
-      // Soft limit published by child must be strictly below HIGH_FD.
-      // (File is cleaned by helper atexit; capture via math contract + source path.)
+      // Soft limit + FDSize expansion required by helper (source + parent check).
       expect(source).toMatch(/setrlimit\s*\(\s*RLIMIT_NOFILE/);
       expect(source).toMatch(/PAH_TEST_SPAWN_HIGH_FD/);
-      // Gap (EBADF holes): no unknown for arbitrary missing FDs in [0, nr_open).
+      expect(source).toMatch(/test_fdsize_not_expanded|FDSize/);
+      expect(source).toMatch(/high \+ 1|high\s*\+\s*1|n\s*\+\s*1|high \+ 1u/);
+      // Gap (EBADF holes): no unknown for arbitrary missing FDs just below HIGH_FD.
       expect(highRun.stdout).not.toMatch(
         new RegExp(`unknown reason=.*fd=${HIGH_FD - 1}\\b`),
       );
       // Error path: ambient non-child processes under forced pidfd → explicit eperm unknown.
       expect(highRun.stdout).toMatch(/unknown reason=pidfd_getfd_eperm/);
-      // nr_open too large is a documented fail-closed path (production host).
-      expect(source).toMatch(/pidfd_nr_open_too_large/);
-      // Cleanup: helper reaps high-FD child; no leftover soft marker for that pid.
+      // Cleanup: helper reaps high-FD child; no leftover soft/fdsize markers.
       expect(existsSync(`/tmp/pah-test-soft-${childPid}`)).toBe(false);
+      expect(existsSync(`/tmp/pah-test-fdsize-${childPid}`)).toBe(false);
       const afterSoft = readdirSync("/tmp").filter((n) =>
         n.startsWith("pah-test-soft-"),
       );
       expect(afterSoft.filter((n) => !beforeSoft.includes(n))).toEqual([]);
-      // Performance budget for bounded test probe (two scans × 512, not full host nr_open).
+      const afterFs = readdirSync("/tmp").filter((n) =>
+        n.startsWith("pah-test-fdsize-"),
+      );
+      expect(afterFs.filter((n) => !beforeFs.includes(n))).toEqual([]);
+      // Performance budget for two-scan over real expanded FDSize (~8k), not host nr_open.
       expect(highMs).toBeLessThan(15_000);
-      // Soft-bound would miss: document in assertions.
-      // If completeness used [0, soft), HIGH_FD would never be probed.
       const softWouldMiss = HIGH_FD >= SOFT_AFTER_LOWER;
       expect(softWouldMiss).toBe(true);
 
-      // Production path: oversized fs.nr_open → pidfd_nr_open_too_large on EACCES fd dirs
-      // (observed for sd-pam class). Do not require specific PID (host-dependent).
-      if (noCap.stdout.includes("pidfd_nr_open_too_large")) {
-        expect(noCap.stdout).toMatch(/unknown reason=pidfd_nr_open_too_large/);
+      // --- R5 FDSize seams: malformed / change / too-large → explicit unknown ---
+      const seamTarget = mkdtempSync(join(tmpdir(), "tachyon-368-audit-target-"));
+      scratch.push(seamTarget);
+
+      const mal = runHelper(testHelper, seamTarget, {
+        PAH_TEST_FORCE_PIDFD_FD_SCAN: "1",
+        PAH_TEST_FDSIZE_MALFORMED: "1",
+      });
+      expect(mal.status).toBe(2);
+      expect(mal.stdout).toMatch(/^state=unknown$/m);
+      expect(mal.stdout).toMatch(/unknown reason=pidfd_fdsize_malformed/);
+      expect(mal.stdout).not.toMatch(/^state=empty$/m);
+
+      const chg = runHelper(testHelper, seamTarget, {
+        PAH_TEST_FORCE_PIDFD_FD_SCAN: "1",
+        PAH_TEST_FDSIZE_CHANGE: "1",
+      });
+      expect(chg.status).toBe(2);
+      expect(chg.stdout).toMatch(/^state=unknown$/m);
+      expect(chg.stdout).toMatch(/unknown reason=pidfd_fdsize_changed/);
+      expect(chg.stdout).not.toMatch(/^state=empty$/m);
+
+      const big = runHelper(testHelper, seamTarget, {
+        PAH_TEST_FORCE_PIDFD_FD_SCAN: "1",
+        PAH_TEST_FDSIZE_TOO_LARGE: "1",
+      });
+      expect(big.status).toBe(2);
+      expect(big.stdout).toMatch(/^state=unknown$/m);
+      expect(big.stdout).toMatch(/unknown reason=pidfd_fdsize_too_large/);
+      expect(big.stdout).not.toMatch(/^state=empty$/m);
+
+      // Production path may still surface pidfd_getfd_eperm for sd-pam class (no cap).
+      if (noCap.stdout.includes("pidfd_getfd_eperm")) {
+        expect(noCap.stdout).toMatch(/unknown reason=pidfd_getfd_eperm/);
       }
 
       // --- H1 closed: post_pin barrier + forced rename/replacement (no race-miss fallback) ---

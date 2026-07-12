@@ -65,17 +65,22 @@
 #define MAX_FIXED_POINT 8
 #define MAX_PIDS 65536
 /*
- * R4 (j-aec448bf6364): complete FD enumeration via pidfd_getfd is bounded by
- * the global stable fs.nr_open ceiling — NOT RLIMIT_NOFILE soft/hard (a process
- * may retain FDs opened before a subsequent soft-limit lowering).
+ * R5 (j-de678ede82c3): complete FD enumeration via pidfd_getfd is bounded by
+ * the kernel per-process fdtable capacity FDSize from /proc/<pid>/status —
+ * NOT RLIMIT_NOFILE soft/hard (a process may retain FDs opened before a
+ * subsequent soft-limit lowering) and NOT the global fs.nr_open as the primary
+ * probe bound (hosts may set nr_open ~2^31, which refuses a complete probe).
  *
- * Documented safe maximum: probing beyond this is refuse-closed (unknown).
- * Default Linux fs.nr_open is often 1048576; some hosts raise it far higher
- * (this WSL host reports ~2^31), which is not a practical complete probe.
+ * Global fs.nr_open is kept only as a validation ceiling (FDSize must not
+ * exceed it). Documented memory/deadline ceiling: probing FDSize above this
+ * is refuse-closed (unknown). FDSize may expand or shrink; never assume
+ * monotonicity — require exact pre/mid/post stability across two scans.
  */
-#define PIDFD_NR_OPEN_SAFE_MAX 1048576u
+#define PIDFD_FDSIZE_SAFE_MAX 1048576u
+/* Backward-compatible alias for report/test surface that still mentions SAFE_MAX. */
+#define PIDFD_NR_OPEN_SAFE_MAX PIDFD_FDSIZE_SAFE_MAX
 /* Per-process two-scan wall budget (monotonic clock). */
-#define PIDFD_SCAN_DEADLINE_MS 2000
+#define PIDFD_SCAN_DEADLINE_MS 10000
 /* Occupied-FD evidence capacity for two-scan convergence. */
 #define PIDFD_MAX_OCCUPIED 4096
 
@@ -452,22 +457,25 @@ static bool monotonic_now_ms(uint64_t *out_ms) {
 }
 
 /*
- * Read stable global FD ceiling from /proc/sys/fs/nr_open.
- * TEST_ONLY may override via PAH_TEST_NR_OPEN for bounded regressions.
- * Returns false → caller records unknown (unreadable/malformed/too large).
+ * Read global /proc/sys/fs/nr_open as a validation ceiling only (R5).
+ * Not used as the primary pidfd probe bound. Large host values are accepted
+ * so per-process FDSize can still be validated against them.
+ * TEST_ONLY may override via PAH_TEST_NR_OPEN (including oversize seam tests).
  */
-static bool read_stable_nr_open(unsigned *out, const char **fail_reason) {
+static bool read_stable_nr_open(unsigned long *out, const char **fail_reason) {
 #ifdef TEST_ONLY
   {
     const char *ov = getenv("PAH_TEST_NR_OPEN");
     if (ov && *ov) {
       errno = 0;
-      unsigned long v = strtoul(ov, NULL, 10);
-      if (errno != 0 || v == 0 || v > (unsigned long)PIDFD_NR_OPEN_SAFE_MAX) {
-        *fail_reason = "pidfd_nr_open_too_large";
+      char *end = NULL;
+      unsigned long v = strtoul(ov, &end, 10);
+      if (errno != 0 || end == ov || v == 0 ||
+          (*end != '\0' && *end != '\n')) {
+        *fail_reason = "pidfd_nr_open_unreadable";
         return false;
       }
-      *out = (unsigned)v;
+      *out = v;
       return true;
     }
   }
@@ -484,11 +492,202 @@ static bool read_stable_nr_open(unsigned *out, const char **fail_reason) {
     *fail_reason = "pidfd_nr_open_unreadable";
     return false;
   }
-  if (v > (unsigned long)PIDFD_NR_OPEN_SAFE_MAX) {
-    *fail_reason = "pidfd_nr_open_too_large";
+  *out = v;
+  return true;
+}
+
+/*
+ * Parse real Uid + FDSize from one complete /proc/<pid>/status snapshot.
+ * Strict: exactly one well-formed Uid and one well-formed FDSize line;
+ * missing/duplicate/malformed → false with an explicit fail_reason.
+ * FDSize is the kernel fdtable capacity (primary pidfd probe bound under R5).
+ */
+static bool read_status_uid_and_fdsize(pid_t pid, uid_t *uid_out,
+                                       unsigned *fdsize_out,
+                                       const char **fail_reason) {
+#ifdef TEST_ONLY
+  {
+    const char *mal = getenv("PAH_TEST_FDSIZE_MALFORMED");
+    if (mal && mal[0] == '1' && mal[1] == '\0') {
+      *fail_reason = "pidfd_fdsize_malformed";
+      return false;
+    }
+    const char *big = getenv("PAH_TEST_FDSIZE_TOO_LARGE");
+    if (big && big[0] == '1' && big[1] == '\0') {
+      /* Force configured memory/deadline ceiling refusal without scanning. */
+      if (uid_out)
+        *uid_out = getuid();
+      *fdsize_out = PIDFD_FDSIZE_SAFE_MAX + 1u;
+      return true;
+    }
+    const char *ov = getenv("PAH_TEST_FDSIZE");
+    if (ov && *ov) {
+      errno = 0;
+      char *end = NULL;
+      unsigned long v = strtoul(ov, &end, 10);
+      if (errno != 0 || end == ov ||
+          (*end != '\0' && *end != '\n')) {
+        *fail_reason = "pidfd_fdsize_malformed";
+        return false;
+      }
+      if (v == 0) {
+        *fail_reason = "pidfd_fdsize_zero";
+        return false;
+      }
+      if (v > (unsigned long)UINT_MAX) {
+        *fail_reason = "pidfd_fdsize_malformed";
+        return false;
+      }
+      if (uid_out)
+        *uid_out = getuid();
+      *fdsize_out = (unsigned)v;
+      return true;
+    }
+  }
+#endif
+
+  char path[64];
+  snprintf(path, sizeof(path), "/proc/%d/status", (int)pid);
+  FILE *f = fopen(path, "r");
+  if (!f) {
+    *fail_reason = "status_unreadable";
     return false;
   }
-  *out = (unsigned)v;
+
+  char line[256];
+  unsigned uid_hits = 0;
+  unsigned fdsize_hits = 0;
+  uid_t uid_val = 0;
+  unsigned fdsize_val = 0;
+  bool uid_ok = false;
+  bool fdsize_ok = false;
+  bool fdsize_malformed = false;
+  bool uid_malformed = false;
+
+  while (fgets(line, sizeof(line), f)) {
+    if (strncmp(line, "Uid:", 4) == 0) {
+      uid_hits++;
+      unsigned int ruid = 0;
+      char trail = '\0';
+      int n = sscanf(line + 4, "%u%c", &ruid, &trail);
+      /* Accept Uid: <ruid> <euid> ... or Uid:\t<ruid>... ; reject pure junk. */
+      if (n < 1) {
+        uid_malformed = true;
+      } else {
+        uid_val = (uid_t)ruid;
+        uid_ok = true;
+      }
+    } else if (strncmp(line, "FDSize:", 7) == 0) {
+      fdsize_hits++;
+      char *p = line + 7;
+      while (*p == ' ' || *p == '\t')
+        p++;
+      if (*p == '\0' || *p == '\n') {
+        fdsize_malformed = true;
+        continue;
+      }
+      errno = 0;
+      char *end = NULL;
+      unsigned long v = strtoul(p, &end, 10);
+      if (errno != 0 || end == p) {
+        fdsize_malformed = true;
+        continue;
+      }
+      while (*end == ' ' || *end == '\t')
+        end++;
+      if (*end != '\0' && *end != '\n') {
+        fdsize_malformed = true;
+        continue;
+      }
+      if (v > (unsigned long)UINT_MAX) {
+        fdsize_malformed = true;
+        continue;
+      }
+      fdsize_val = (unsigned)v;
+      fdsize_ok = true;
+    }
+  }
+  fclose(f);
+
+  if (uid_hits == 0 || uid_malformed || !uid_ok) {
+    *fail_reason = "status_unreadable";
+    return false;
+  }
+  if (uid_hits > 1) {
+    *fail_reason = "status_unreadable";
+    return false;
+  }
+  if (fdsize_hits == 0) {
+    *fail_reason = "pidfd_fdsize_missing";
+    return false;
+  }
+  if (fdsize_hits > 1) {
+    *fail_reason = "pidfd_fdsize_duplicate";
+    return false;
+  }
+  if (fdsize_malformed || !fdsize_ok) {
+    *fail_reason = "pidfd_fdsize_malformed";
+    return false;
+  }
+  if (fdsize_val == 0) {
+    *fail_reason = "pidfd_fdsize_zero";
+    return false;
+  }
+
+#ifdef TEST_ONLY
+  {
+    /*
+     * Drift seam: alternate real vs perturbed FDSize on successive reads so
+     * any pre/mid/post pair disagrees (FDSize may shrink or grow — no mono
+     * assumption). Even calls perturb; odd calls return the real value.
+     */
+    const char *chg = getenv("PAH_TEST_FDSIZE_CHANGE");
+    if (chg && chg[0] == '1' && chg[1] == '\0') {
+      static unsigned change_calls = 0;
+      change_calls++;
+      if ((change_calls % 2u) == 0u) {
+        if (fdsize_val > 1u)
+          fdsize_val = fdsize_val - 1u; /* shrink */
+        else
+          fdsize_val = fdsize_val + 64u; /* expand if tiny */
+      }
+    }
+  }
+#endif
+
+  if (uid_out)
+    *uid_out = uid_val;
+  *fdsize_out = fdsize_val;
+  return true;
+}
+
+/*
+ * Read + validate FDSize for pidfd probing: status facts, then ceilings.
+ * nr_open is validation-only; SAFE_MAX is the configured memory/deadline cap.
+ */
+static bool read_validated_fdsize(pid_t pid, uid_t expect_ruid, unsigned *fdsize_out,
+                                  const char **fail_reason) {
+  uid_t uid = 0;
+  unsigned fdsize = 0;
+  if (!read_status_uid_and_fdsize(pid, &uid, &fdsize, fail_reason))
+    return false;
+  if (uid != expect_ruid) {
+    *fail_reason = "identity_drift";
+    return false;
+  }
+
+  unsigned long nr_open = 0;
+  if (!read_stable_nr_open(&nr_open, fail_reason))
+    return false;
+  if ((unsigned long)fdsize > nr_open) {
+    *fail_reason = "pidfd_fdsize_above_nr_open";
+    return false;
+  }
+  if (fdsize > PIDFD_FDSIZE_SAFE_MAX) {
+    *fail_reason = "pidfd_fdsize_too_large";
+    return false;
+  }
+  *fdsize_out = fdsize;
   return true;
 }
 
@@ -591,18 +790,18 @@ static const char *pidfd_getfd_fail_reason(int err) {
 }
 
 /*
- * One complete probe of [0, nr_open) via pidfd_getfd.
+ * One complete probe of [0, fdsize) via pidfd_getfd (R5: FDSize bound).
  * EBADF = hole (absence). Any other error aborts with *fail_reason set.
  * Occupied slots recorded in occ[0..*occ_n).
  */
 static bool pidfd_probe_once(struct audit *a, pid_t pid, int pidfd,
-                             unsigned nr_open, uint64_t deadline_ms,
+                             unsigned fdsize, uint64_t deadline_ms,
                              struct fd_occ *occ, unsigned *occ_n,
                              const char **fail_reason, int *fail_fd) {
   *occ_n = 0;
   *fail_fd = -1;
   pid_t self_pid = getpid();
-  for (unsigned fdn = 0; fdn < nr_open; fdn++) {
+  for (unsigned fdn = 0; fdn < fdsize; fdn++) {
     uint64_t now = 0;
     if (!monotonic_now_ms(&now) || now > deadline_ms) {
       *fail_reason = "pidfd_deadline";
@@ -663,15 +862,17 @@ static bool pidfd_probe_once(struct audit *a, pid_t pid, int pidfd,
 }
 
 /*
- * R4 fallback: only when same-UID /proc/<pid>/fd readdir fails EACCES/EPERM.
- * Two complete scans under stable nr_open + starttime pin; occupied evidence
- * (fd number + classification) must agree exactly. Never uses RLIMIT_NOFILE.
+ * R5 fallback: only when same-UID /proc/<pid>/fd readdir fails EACCES/EPERM.
+ * Two complete scans of [0, FDSize) under stable starttime + FDSize pin;
+ * occupied evidence (fd number + classification) must agree exactly.
+ * Global nr_open is validation-only. Never uses RLIMIT_NOFILE as a bound.
+ * FDSize is not assumed monotonic — any pre/mid/post change fails closed.
  */
 static void scan_fds_via_pidfd(struct audit *a, pid_t pid, unsigned long long st1,
                                bool *vanished) {
   const char *reason = NULL;
-  unsigned nr1 = 0;
-  if (!read_stable_nr_open(&nr1, &reason)) {
+  unsigned fdsize1 = 0;
+  if (!read_validated_fdsize(pid, a->self_ruid, &fdsize1, &reason)) {
     add_unknown(a, pid, reason, true, KIND_FD, false, -1);
     return;
   }
@@ -712,6 +913,22 @@ static void scan_fds_via_pidfd(struct audit *a, pid_t pid, unsigned long long st
     return;
   }
 
+  /* Re-pin FDSize after pidfd_open; must match the pre-open value exactly. */
+  {
+    unsigned fdsize_pin = 0;
+    reason = NULL;
+    if (!read_validated_fdsize(pid, a->self_ruid, &fdsize_pin, &reason)) {
+      close(pidfd);
+      add_unknown(a, pid, reason, true, KIND_FD, false, -1);
+      return;
+    }
+    if (fdsize_pin != fdsize1) {
+      close(pidfd);
+      add_unknown(a, pid, "pidfd_fdsize_changed", true, KIND_FD, false, -1);
+      return;
+    }
+  }
+
   uint64_t t0 = 0;
   if (!monotonic_now_ms(&t0)) {
     close(pidfd);
@@ -733,7 +950,7 @@ static void scan_fds_via_pidfd(struct audit *a, pid_t pid, unsigned long long st
   unsigned n1 = 0, n2 = 0;
   int fail_fd = -1;
   reason = NULL;
-  if (!pidfd_probe_once(a, pid, pidfd, nr1, deadline, occ1, &n1, &reason,
+  if (!pidfd_probe_once(a, pid, pidfd, fdsize1, deadline, occ1, &n1, &reason,
                         &fail_fd)) {
     add_unknown(a, pid, reason, true, KIND_FD, fail_fd >= 0, fail_fd);
     free(occ1);
@@ -742,7 +959,7 @@ static void scan_fds_via_pidfd(struct audit *a, pid_t pid, unsigned long long st
     return;
   }
 
-  /* Mid-point identity: starttime + nr_open must be unchanged. */
+  /* Mid-point identity: starttime + FDSize must be unchanged (no mono assume). */
   unsigned long long st_mid = 0;
   if (!read_starttime(pid, &st_mid) || st_mid != st1) {
     free(occ1);
@@ -751,26 +968,26 @@ static void scan_fds_via_pidfd(struct audit *a, pid_t pid, unsigned long long st
     add_unknown(a, pid, "identity_drift", false, KIND_CWD, false, -1);
     return;
   }
-  unsigned nr_mid = 0;
-  const char *nr_fail = NULL;
-  if (!read_stable_nr_open(&nr_mid, &nr_fail)) {
+  unsigned fdsize_mid = 0;
+  const char *fs_fail = NULL;
+  if (!read_validated_fdsize(pid, a->self_ruid, &fdsize_mid, &fs_fail)) {
     free(occ1);
     free(occ2);
     close(pidfd);
-    add_unknown(a, pid, nr_fail, true, KIND_FD, false, -1);
+    add_unknown(a, pid, fs_fail, true, KIND_FD, false, -1);
     return;
   }
-  if (nr_mid != nr1) {
+  if (fdsize_mid != fdsize1) {
     free(occ1);
     free(occ2);
     close(pidfd);
-    add_unknown(a, pid, "pidfd_nr_open_changed", true, KIND_FD, false, -1);
+    add_unknown(a, pid, "pidfd_fdsize_changed", true, KIND_FD, false, -1);
     return;
   }
 
   reason = NULL;
   fail_fd = -1;
-  if (!pidfd_probe_once(a, pid, pidfd, nr1, deadline, occ2, &n2, &reason,
+  if (!pidfd_probe_once(a, pid, pidfd, fdsize1, deadline, occ2, &n2, &reason,
                         &fail_fd)) {
     add_unknown(a, pid, reason, true, KIND_FD, fail_fd >= 0, fail_fd);
     free(occ1);
@@ -787,12 +1004,20 @@ static void scan_fds_via_pidfd(struct audit *a, pid_t pid, unsigned long long st
     add_unknown(a, pid, "identity_drift", false, KIND_CWD, false, -1);
     return;
   }
-  unsigned nr_post = 0;
-  if (!read_stable_nr_open(&nr_post, &reason) || nr_post != nr1) {
+  unsigned fdsize_post = 0;
+  reason = NULL;
+  if (!read_validated_fdsize(pid, a->self_ruid, &fdsize_post, &reason)) {
     free(occ1);
     free(occ2);
     close(pidfd);
-    add_unknown(a, pid, "pidfd_nr_open_changed", true, KIND_FD, false, -1);
+    add_unknown(a, pid, reason, true, KIND_FD, false, -1);
+    return;
+  }
+  if (fdsize_post != fdsize1) {
+    free(occ1);
+    free(occ2);
+    close(pidfd);
+    add_unknown(a, pid, "pidfd_fdsize_changed", true, KIND_FD, false, -1);
     return;
   }
 
@@ -892,10 +1117,11 @@ static void test_seam_barrier(const char *phase) {
 #define TEST_SEAM(phase) test_seam_barrier(phase)
 
 /*
- * Deterministic high-FD-above-soft-limit child for R4 regression.
+ * Deterministic high-FD-above-soft-limit child for R5 regression.
  * Env PAH_TEST_SPAWN_HIGH_FD=<n>: fork a child that opens the audit target at
- * FD n, then lowers RLIMIT_NOFILE soft below n (proving soft-bound incompleteness),
- * and remains alive for the duration of the audit. Parent relationship preserves
+ * FD n (contract: 5000), then lowers RLIMIT_NOFILE soft below n (proving
+ * soft-bound incompleteness). Kernel FDSize must expand to at least n+1 so the
+ * FDSize-bounded pidfd probe can find n. Parent relationship preserves
  * pidfd_getfd permission under Yama ptrace_scope=1 without CAP_SYS_PTRACE.
  * Hardened builds omit this seam entirely.
  */
@@ -907,6 +1133,10 @@ static void test_cleanup_high_fd_child(void) {
     snprintf(softpath, sizeof(softpath), "/tmp/pah-test-soft-%d",
              (int)test_spawned_high_fd_child);
     unlink(softpath);
+    char fspath[64];
+    snprintf(fspath, sizeof(fspath), "/tmp/pah-test-fdsize-%d",
+             (int)test_spawned_high_fd_child);
+    unlink(fspath);
     kill(test_spawned_high_fd_child, SIGKILL);
     int st = 0;
     (void)waitpid(test_spawned_high_fd_child, &st, 0);
@@ -969,6 +1199,23 @@ static bool test_maybe_spawn_high_fd_child(const char *target) {
       fprintf(sf, "%llu\n", (unsigned long long)soft);
       fclose(sf);
     }
+    /* Publish kernel FDSize after high dup2 (must expand past high). */
+    {
+      uid_t u = 0;
+      unsigned fsz = 0;
+      const char *fr = NULL;
+      if (!read_status_uid_and_fdsize(getpid(), &u, &fsz, &fr) ||
+          fsz < (unsigned)high + 1u) {
+        _exit(16);
+      }
+      char fspath[64];
+      snprintf(fspath, sizeof(fspath), "/tmp/pah-test-fdsize-%d", (int)getpid());
+      FILE *ff = fopen(fspath, "w");
+      if (ff) {
+        fprintf(ff, "%u\n", fsz);
+        fclose(ff);
+      }
+    }
     /* Ready byte then sleep until killed. */
     char one = 'R';
     if (write(ready[1], &one, 1) != 1) {
@@ -989,6 +1236,19 @@ static bool test_maybe_spawn_high_fd_child(const char *target) {
     (void)waitpid(c, NULL, 0);
     fprintf(stderr, "error=test_high_fd_ready\n");
     return false;
+  }
+  /* Parent: require kernel FDSize capacity beyond the high FD. */
+  {
+    uid_t u = 0;
+    unsigned fsz = 0;
+    const char *fr = NULL;
+    if (!read_status_uid_and_fdsize(c, &u, &fsz, &fr) ||
+        fsz < (unsigned)high + 1u) {
+      kill(c, SIGKILL);
+      (void)waitpid(c, NULL, 0);
+      fprintf(stderr, "error=test_fdsize_not_expanded\n");
+      return false;
+    }
   }
   test_spawned_high_fd_child = c;
   atexit(test_cleanup_high_fd_child);
@@ -1147,8 +1407,9 @@ static bool scan_one_pid(struct audit *a, pid_t pid, bool *vanished) {
       return true;
     }
     /*
-     * R4: same-UID fd-directory EACCES/EPERM → pidfd_getfd fallback under
-     * stable fs.nr_open (never RLIMIT_NOFILE). TEST_ONLY force also lands here.
+     * R5: same-UID fd-directory EACCES/EPERM → pidfd_getfd fallback under
+     * stable /proc/<pid>/status FDSize (never RLIMIT_NOFILE; nr_open is
+     * validation-only). TEST_ONLY force also lands here.
      */
     if (force_pidfd || oerr == EACCES || oerr == EPERM) {
       scan_fds_via_pidfd(a, pid, st1, vanished);
@@ -1431,7 +1692,7 @@ int main(int argc, char **argv) {
   }
 
 #ifdef TEST_ONLY
-  /* Optional R4 high-FD child (parent-owned) for pidfd fallback regression. */
+  /* Optional R5 high-FD child (parent-owned) for FDSize-bounded pidfd regression. */
   if (!test_maybe_spawn_high_fd_child(target)) {
     close(tfd);
     return ST_ERROR;
