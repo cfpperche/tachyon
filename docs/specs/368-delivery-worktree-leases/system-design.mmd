@@ -1,0 +1,92 @@
+flowchart LR
+  classDef canonical fill:#17365d,color:#fff,stroke:#69a7ff,stroke-width:2px
+  classDef service fill:#183f35,color:#fff,stroke:#69d1ad,stroke-width:1.5px
+  classDef projection fill:#4b3a16,color:#fff,stroke:#e8bd58,stroke-width:1.5px
+  classDef boundary fill:#4a2028,color:#fff,stroke:#ff778a,stroke-width:2px
+  classDef actor fill:#292d3e,color:#fff,stroke:#aab4d6
+  classDef legacy fill:#343434,color:#ddd,stroke:#888,stroke-dasharray: 5 5
+
+  subgraph Control["Bridge / orchestration plane"]
+    Human["Human / coordinator"]:::actor
+    Spawn["spawn_agent / delivery_join"]:::service
+    Verify["verify_task"]:::service
+    Recover["reconcile / salvage / abandon"]:::service
+    Wait["wait_for_lease"]:::service
+  end
+
+  subgraph Canonical["Canonical authority — SQLite"]
+    Store["DeliveryStore<br/>CAS + receipts + append-only events"]:::canonical
+    Delivery["Delivery aggregate<br/>contract · segments · actors · lease"]:::canonical
+    Claim["Projection claim + intent journal<br/>idempotent crash replay"]:::canonical
+    Ledger["Session ledger binding<br/>deliveryId · segmentId · nonce"]:::canonical
+    Store --> Delivery
+    Delivery --> Claim
+    Delivery --> Ledger
+  end
+
+  subgraph Lease["Exclusive occupancy service"]
+    LeaseSvc["DeliveryLeaseService"]:::service
+    Locks["Global lock order<br/>Delivery → worktree → live checks"]:::service
+    States["free → pending → held<br/>held → draining → pending<br/>uncertainty → quarantined"]:::service
+    LeaseSvc --> Locks --> States
+  end
+
+  subgraph Execution["One canonical worktree per Delivery"]
+    WT["Git worktree + branch"]:::canonical
+    Impl["Implementer segment"]:::actor
+    Sys["System verification segment"]:::actor
+    Review["Read-only reviewer segment"]:::actor
+    Fix["Fixer segment"]:::actor
+    Impl --> Sys --> Review --> Fix
+    Impl -. same path, sequential .-> WT
+    Sys -. same path, sequential .-> WT
+    Review -. same path, sequential .-> WT
+    Fix -. same path, sequential .-> WT
+  end
+
+  subgraph Fence["Host safety boundary"]
+    PF["ProcessFencePort"]:::boundary
+    CG["Per-execution cgroup / namespace<br/>freeze · terminate · membership empty"]:::boundary
+    Audit["Independent worktree audit<br/>cwd · root · every open FD"]:::boundary
+    Empty{"Both proofs<br/>proven_empty?"}:::boundary
+    PF --> CG --> Empty
+    PF --> Audit --> Empty
+  end
+
+  subgraph GitProjection["Crash-reconcilable Git projection"]
+    Projector["DeliveryProjectionService"]:::projection
+    GitD["GitDelivery<br/>worktree · branch · HEAD · review · prune"]:::projection
+    Hygiene["list / hygiene / integrate / prune"]:::projection
+    Projector --> GitD --> Hygiene
+  end
+
+  subgraph Compatibility["Temporary compatibility boundary"]
+    Import["Explicit preview/apply legacy import"]:::legacy
+    Delegation["DelegationRecord + fixerAttempts"]:::legacy
+    Reuse["reuse_worktree sugar"]:::legacy
+    Delegation --> Import
+    Reuse --> Import
+  end
+
+  Human --> Spawn
+  Human --> Verify
+  Human --> Recover
+  Human --> Wait
+  Spawn --> LeaseSvc
+  Verify --> LeaseSvc
+  Recover --> LeaseSvc
+  Wait -. observes only .-> Delivery
+  LeaseSvc <--> Delivery
+  States --> WT
+  Ledger -. reload reconstructs exact holder .-> LeaseSvc
+  States -- "handoff / death reconciliation" --> PF
+  Empty -- "yes: successor may reserve" --> LeaseSvc
+  Empty -- "survivor / unknown: fail closed" --> Recover
+  Claim --> Projector
+  Projector -. "projection only; never lease authority" .-> Delivery
+  Hygiene -. "linked mutations require canonical claim" .-> Claim
+  Import --> Delivery
+  Import --> GitD
+
+  Parallel["Parallelism rule:<br/>same Delivery = sequential<br/>different Deliveries = concurrent"]:::canonical
+  Delivery --- Parallel
