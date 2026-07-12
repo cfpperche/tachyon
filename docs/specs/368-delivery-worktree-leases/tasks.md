@@ -84,11 +84,15 @@ _Generated from `plan.md` on 2026-07-10. Work top-to-bottom. Check boxes as task
     root identity and execution nonce. Stop only the exact ledger-bound execution, require that identity gone,
     record `root_gone_best_effort`, warn that descendants are unproven, and keep reconciliation/recovery plus any
     pre-T15 integration/prune route fail-closed. Generic/legacy launch remains byte-compatible.
+    - [x] T14.6B1. Land the lease-service safety policy, structured absence evidence, replay-before-ambient-gate
+      semantics, exact-root stop/observe path, quarantine behavior, and deterministic forcing matrix.
+    - [ ] T14.6B2. Wire Workspace/AgentManager/config/Bridge, initial process identity and nonce persistence,
+      review completion authority, and operator-visible mechanism-only warnings.
   - [ ] T14.6C. Wire the accepted Linux adapter into exact Delivery-bound launch/reload/compensation paths plus
     persistent fence identity storage and `process-fenced` configuration; never silently downgrade to
     `mechanism-only`.
   - Gate: `a detached Delivery writer survives pane death but cannot cross handoff after scope kill and exact audit`.
-- [ ] T15. Serialize linked GitDelivery mutation under the canonical Delivery lock, add idempotent projection
+- [x] T15. Serialize linked GitDelivery mutation under the canonical Delivery lock, add idempotent projection
   reconciliation, and make list/hygiene/integration/prune refuse pending, held, verifying, unknown, or quarantined.
   T15 policy acceptance is a prerequisite for mechanism-only dogfood so no legacy projection mutation bypasses the
   experimental lease.

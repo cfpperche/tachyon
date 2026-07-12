@@ -2120,3 +2120,22 @@ T14.6C retains the accepted strong-isolation work: wrap exact Delivery execution
 persist its nonce-bound fence identity, and enable `process-fenced` only when the pinned helper and host capability
 are exact. Mechanism-only dogfood is allowed to discover usability and lease-integration defects early; strong-mode
 milestones and adversarial tests remain planned rather than waiting only for incidents.
+
+### T15 and T14.6B1 closure — 2026-07-12
+
+T15's canonical projection policy is accepted and integrated. The final candidate `7d76f304` passed canonical
+verification without waivers or scope findings at
+`.tachyon/verifications/7d76f304f312f3e57e533bc6814d6ddc96ab569d.json`; Sonnet's independent final review
+`.tachyon/reviews/368-delivery-projection-t15-r2.md` returned ACCEPT and confirmed all four earlier findings closed:
+linked legacy callers have no blanket authority, caller identity is mandatory at both the service type and Bridge
+boundary, generic GitDelivery mutation refuses linked records, and replay validates the exact persisted intent for
+open/integrate/prune. The reviewed candidate was integrated through main commit `72c121cc`.
+
+T14.6B1's mechanism-only lease core is also accepted and integrated. Production corrections culminated at
+`5ad06cf9`; the deterministic test-only closure culminated at `513dd2ad` and passed canonical verification without
+waivers or scope findings at `.tachyon/verifications/513dd2ad6035c68287036ced0467f9550f1da7bd.json`. The final
+coordinator audit confirmed structured survivor evidence, replay-before-ambient-safety semantics, free acquire and
+review completion, six stop/observation failure classes, post-stop dirty/HEAD drift quarantine, incomplete segment
+tails, no successor reservation, and zero ProcessFence effects in mechanism-only mode. These changes were
+integrated through main commit `eed1f337`. T14.6B remains open only for B2 Workspace/AgentManager/config/Bridge
+wiring; neither accepted block reopens for speculative matrix expansion without a concrete product defect.
