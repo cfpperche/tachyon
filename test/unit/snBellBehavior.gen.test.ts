@@ -49,6 +49,7 @@ describe("container-generated delegation behavior", () => {
         manager: {
           kindOf: () => "agent",
           session: (name: string) => `session-${name}`,
+          isReady: async () => true,
         } as unknown as BridgeDeps["manager"],
         tmux,
       });
@@ -80,6 +81,7 @@ describe("container-generated delegation behavior", () => {
       manager: {
         kindOf: () => "agent",
         session: (name: string) => `session-${name}`,
+        isReady: async () => true,
       } as unknown as BridgeDeps["manager"],
       tmux: { hasSession: async () => true } as unknown as BridgeDeps["tmux"],
       deliverNotice: async (to: string, line: string) => {
