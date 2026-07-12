@@ -152,6 +152,6 @@ describe("quiet full verification", () => {
     expect(packageJson.scripts["verify:full:quiet"]).toBe("node scripts/verify-full.mjs");
     const config = fs.readFileSync(path.join(repoRoot, "tachyon.yml"), "utf8");
     expect(config).toMatch(/verify:\n\s+full: npm run verify:full:quiet/);
-    expect(config.match(/npm run verify:full:quiet/g)).toHaveLength(1);
+    expect(config.match(/^\s+full:\s+npm run verify:full:quiet\s*$/gm)).toHaveLength(1);
   });
 });
