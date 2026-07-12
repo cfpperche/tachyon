@@ -1890,3 +1890,92 @@ or quarantined state fails closed. `_create` completes one bounded snapshot befo
 `start()` recomputes after rehydration and can recover failed→ready without ever treating an attempted read failure
 as safe. The final `npm run verify:full:quiet` passed 304 files with 3,662 tests passed and 3 skipped. T15 projection
 serialization and mutation safety is next; T14 does not mutate or clean GitDelivery projections.
+
+### T15 implementation contract — canonical projection intent, lock, and fail-closed mutation
+
+T15 makes `GitDelivery` a crash-reconcilable Git projection of one canonical Delivery. It does not add rollout
+configuration (T16), execute cherry-pick/merge into the base, auto-prune, enable unavailable ProcessFence handoff,
+or change legacy Delivery-less GitDelivery semantics. `git_delivery_integrate` in this slice is **record-only**: it
+records `integrated` only after live Git already proves the exact delivered head is contained in the base (ancestor
+or audited patch-equivalence); it never runs a main-mutating Git command. T17 may drive the external integration
+step and then invoke this proof/record boundary.
+
+**Canonical per-Delivery projection lock.** Extend the SQLite `DeliveryStore` with a durable per-Delivery projection
+claim, not a filesystem lock and not a database-wide transaction held across async Git. Claim/release use short
+`BEGIN IMMEDIATE` transactions and an unguessable nonce. The owner identity contains PID, `/proc` start time,
+boot id, and PID-namespace identity. A same-domain provably dead owner may be atomically replaced; live, foreign,
+PID-reused, unreadable, malformed, or otherwise ambiguous owners return retryable busy. Exact release deletes only
+the matching `(deliveryId, nonce)` and can never delete a successor. A crash leaves one reclaimable row; there are
+no multi-file transition gaps. Different Deliveries may hold claims concurrently.
+
+Every ordinary canonical `DeliveryStore.update` must refuse retryably while that Delivery has a projection claim.
+The projection service receives an opaque claim capability and has the only matching update path. Thus lease,
+verification, recovery, and projection mutations share one canonical exclusion boundary without changing every
+lease call site. Lock order is always Delivery projection claim → canonical worktree mutex → bounded live Git/
+liveness checks → GitDelivery transaction. Never acquire those in reverse. The claim may span bounded Git checks,
+projection writes, and prune side effects, but never runtime spawn, model startup, tests, or waiting.
+
+**Canonical intent and idempotent reconciliation.** Add a typed append-only Delivery event for each linked
+projection operation. It carries a monotonic per-Delivery projection sequence, stable `operationId`, target
+`gitDeliveryId`, action (`open`, `integrate`, or `prune`), exact expected Delivery/projection/head inputs, actor, and
+the minimal deterministic projection payload. Append it under the claim through the existing Delivery operation
+receipt before the GitDelivery write or destructive Git side effect. `GitDelivery` records the last applied
+canonical sequence/operation. Its store applies only the next exact sequence, treats an identical replay as success,
+and refuses gaps, same-sequence/different-operation collisions, immutable-link drift, or version drift.
+
+One `DeliveryProjectionService` owns intent append, application, and replay. Reconciliation reads the canonical
+intent log and applies pending intents in order under the same claim/worktree lock. For canonical gated creation,
+use a deterministic projection id derived from Delivery identity: persist the `open` intent, idempotently open the
+exact branch/worktree projection, then repair the Delivery backlink. A crash after intent, after projection open, or
+before backlink update converges to one reciprocal link on replay. Existing legacy import keeps its current
+pre-link reservation compatibility path; once a projection is linked, no generic GitDelivery mutation may bypass
+the canonical service.
+
+`integrate` first proves the live branch tip equals the caller's expected head and is contained in the resolved base,
+then appends/applies one integration intent. A failure leaves both records unchanged. `prune` appends an authorized
+intent before removal, repeats every live Git/liveness/occupancy predicate under both locks, performs the existing
+safe removal, and finally applies `pruned`; retry after a crash re-observes live Git and completes idempotently.
+Missing worktree/branch may close only when the canonical intent and live absence agree. No projection phase,
+stored head, task status, or caller assertion substitutes for live proof.
+
+**Canonical safety and T14 snapshot consumption.** Before linked integrate/prune, recompute one bounded T14 reload
+snapshot while holding the Delivery claim. Exact reciprocal link plus `free`/terminal with no stale binding is safe
+for verified integration/normal prune; exact `abandoned`/terminal is safe only for the already-authorized abandon
+prune path. `pending`, `held`, `draining`, `verifying`, `quarantined`, missing/corrupt/duplicate link, failed snapshot,
+stale binding, or any unknown classification refuses before Git or GitDelivery effects. Bootstrap `open` is the one
+special action allowed for the exact newly-created Delivery/open-segment intent; it grants no cleanup/integration
+authority. Read-only list/hygiene never fail the whole report: rows expose `deliveryId`, canonical lease/safety and
+projection-sync state, never emit `ready_to_prune` for unsafe/unknown linked rows, and add an actionable
+`delivery_unavailable` finding. Delivery-less legacy rows retain current classification and worktree-lock behavior.
+
+**Authorization.** For linked projections, ephemeral execution name, `GitDelivery.agent`, `createdBy`, and
+attribution-only `principal` never grant integrate/prune authority by equality. Mutations require a privileged
+human/system/master caller or a Bridge-resolved agent explicitly listed in `integratePrincipals`/`prunePrincipals`.
+Legacy Delivery-less projections retain the current compatibility policy. `forceLoseCommits` additionally requires
+canonical `abandoned` plus the existing exact live doomed-SHA proof; T12's canonical abandon approval is the
+destructive authorization boundary.
+
+**Owned paths.** `src/delivery/types.ts`, `src/delivery/store.ts`, one new
+`src/delivery/projectionService.ts`, `src/git-delivery/types.ts`, `src/git-delivery/store.ts`,
+`src/git-delivery/classify.ts`, `src/git-delivery/prune.ts`, `src/git-delivery/policy.ts`, `src/bridge/tools.ts`,
+`src/workspace/Workspace.ts`, `test/unit/deliveryStore.test.ts`, one new
+`test/unit/deliveryProjectionService.test.ts`, `test/unit/gitDelivery.test.ts`, `test/unit/bridge.test.ts`, the
+minimum existing Workspace headless test, and the exact generated behavior stub. No lease-transition algorithm,
+legacy-import semantics, AgentManager/session ledger, config/schema/UI/task state, integration/e2e dogfood, or other
+SDD edit. Stop and report if these seams are insufficient rather than widening.
+
+**Deterministic matrix and done condition.** Prove two-store same-Delivery exclusion, different-Delivery parallel
+claims, exact stale-owner recovery, live/PID-reuse/boot/namespace/unreadable refusal, nonce-safe release, and ordinary
+Delivery update refusal during a claim. Force the three canonical-open crash boundaries and exact replay; sequence
+gap/collision/link/backlink/duplicate drift; concurrent reconcile versus prune; live-contained integrate success and
+head/containment failure zero effects; every lease state plus each unsafe snapshot classification; stale-free
+binding and snapshot-read failure; linked actor refusal versus configured principal; prune crash after Git removal; exact
+abandoned/doomed-SHA behavior; list/hygiene unavailable labeling with no unsafe ready-to-prune; and byte-compatible
+legacy open/list/hygiene/prune. The canonical behavior title is
+`concurrent reconcile and prune cannot diverge GitDelivery from canonical lease safety`; it must fail at BASE and
+pass at HEAD through real stores/service/Bridge seams. Run the generated behavior plus DeliveryStore,
+projection-service, GitDelivery, Bridge, and Workspace suites serially, then `npm run typecheck` and
+`git diff --check`. Run one `npm run verify:full:quiet` at the first reviewable candidate; coordinator reserves the
+next full for post-review closure. Commit exactly owned paths by explicit pathspec with `t-0b5723`, keep the
+worktree clean, and doorbell `codex`. Grok 4.5 implements the closed contract; Sonnet independently reviews the
+immutable candidate before integration.
