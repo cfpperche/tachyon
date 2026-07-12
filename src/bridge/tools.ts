@@ -1620,7 +1620,15 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         // the child is still launching must not count as a witnessed doorbell and must not report
         // notified. Session existence alone is not readiness.
         const session = deps.manager.session(to);
-        const sessionAlive = await deps.tmux.hasSession(session);
+        let sessionAlive: boolean;
+        try {
+          sessionAlive = await deps.tmux.hasSession(session);
+        } catch (err) {
+          // A resolved agent that reached notify_agent is still witnessed when the hangable
+          // preflight itself fails (for example, tmux timing out while checking the session).
+          appendDoorbellEvent(deps.workspaceRoot, { from: agent, to, at: new Date().toISOString() });
+          throw err;
+        }
         if (!sessionAlive) {
           // Still witness doorbell for a child→parent attempt at a not-running parent? Spec 363/t-5f80c6
           // wants the ring when static checks pass and only hangable preflight fails. Ghost targets
