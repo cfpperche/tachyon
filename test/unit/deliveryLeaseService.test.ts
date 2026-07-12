@@ -93,6 +93,26 @@ function completeReviewInput(worktree: string, verdict: "ACCEPT" | "FINDINGS" = 
 }
 
 describe("DeliveryLeaseService (SDD 368 T5)", () => {
+  it("allows mechanism-only free acquire without probing ProcessFence", async () => {
+    const { store, worktree, input } = fixture(); await store.create(input);
+    const capability = vi.fn(() => ({ supported: false as const, reason: "unused" }));
+    const lease = new DeliveryLeaseService({ store, processFence: { capability, freeze: async () => undefined, terminate: async () => undefined, proveEmpty: async () => ({ state: "proven_empty" }) }, handoffSafety: "mechanism-only", canonicalWorktreeFor: () => worktree, readHead: () => "b", inspectWorktree: () => ({ headSha: "b", clean: true }), isAncestor: () => true, withWorktreeLock: async (_path, fn) => fn(), nonce: () => "mechanism-nonce", segmentId: () => "seg-1" });
+    const reservation = await lease.acquire({ deliveryId: "d-lease", expectedHeadSha: "b", canonicalWorktree: worktree, role: "fixer", executionAgent: "fixer", grantedBy: actor, ownsSubset: ["src"], operationId: "mechanism-acquire" });
+    expect(reservation.reservationNonce).toBe("mechanism-nonce"); expect(reservation.delivery.lease.state).toBe("pending"); expect(capability).not.toHaveBeenCalled();
+  });
+
+  it("completes mechanism-only review and records best-effort absence", async () => {
+    const { store, worktree, input } = reviewFixture(); await store.create(input); const stop = vi.fn();
+    const lease = new DeliveryLeaseService({ store, processFence: { capability: vi.fn(() => ({ supported: false as const, reason: "unused" })), freeze: vi.fn(), terminate: vi.fn(), proveEmpty: vi.fn() }, handoffSafety: "mechanism-only", exactExecutionStopper: { stop }, processObserver: { observe: () => ({ state: "gone" }) }, canonicalWorktreeFor: () => worktree, readHead: () => "b", inspectWorktree: () => ({ headSha: "b", clean: true }), inspectReviewWorktree: () => cleanReviewInspection, isAncestor: () => true, withWorktreeLock: async (_path, fn) => fn() });
+    const completed = await lease.completeReview(completeReviewInput(worktree, "ACCEPT", "mechanism-review"));
+    expect(completed.lease.state).toBe("free"); expect(completed.events.at(-1)?.detail).toMatchObject({ handoffSafety: "mechanism-only", absenceEvidence: "root_gone_best_effort" }); expect(stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("forces mechanism-only stop and observation outside the worktree lock", async () => {
+    const { store, worktree, input } = heldFixture(); await store.create(input); let locked = false;
+    const lease = new DeliveryLeaseService({ store, processFence: certifiedFence, handoffSafety: "mechanism-only", exactExecutionStopper: { stop: async () => { expect(locked).toBe(false); } }, processObserver: { observe: () => { expect(locked).toBe(false); return { state: "gone" }; } }, canonicalWorktreeFor: () => worktree, readHead: () => "b", inspectWorktree: () => ({ headSha: "b", clean: true }), isAncestor: () => true, withWorktreeLock: async (_path, fn) => { locked = true; try { return await fn(); } finally { locked = false; } }, nonce: () => "next", segmentId: () => "seg-1" });
+    await lease.handoff({ ...handoffInput(worktree, "outside-lock"), executionAgent: "fixer" });
+  });
   it("treats a durable system verification lease as retryable occupancy", async () => {
     const { store, worktree, input } = fixture();
     input.lease = { state: "verifying", changedAt: now, verification: {

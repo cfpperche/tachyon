@@ -29,6 +29,7 @@ describe("container-generated delegation behavior", () => {
     expect(fence.capability).not.toHaveBeenCalled();
     expect(fence.proveEmpty).not.toHaveBeenCalled();
     expect(result.delivery.events.at(-1)?.detail).toMatchObject({ handoffSafety: "mechanism-only", absenceEvidence: "root_gone_best_effort" });
+    expect(result.delivery.lease.state).toBe("pending");
   });
 
   it.each([

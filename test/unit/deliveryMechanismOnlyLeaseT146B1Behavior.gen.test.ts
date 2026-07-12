@@ -11,4 +11,11 @@ describe("T14.6B1 mechanism-only lease policy", () => {
       .rejects.toMatchObject({ code: "DELIVERY_LEASE_UNAVAILABLE" } satisfies Partial<DeliveryLeaseError>);
     expect(probed).toBe(false);
   });
+
+  it("keeps mechanism-only as an explicit safety level", () => {
+    const lease = new DeliveryLeaseService({ handoffSafety: "mechanism-only", store: { getOperationResult: async () => undefined } as never,
+      processFence: { capability: () => ({ supported: false as const, reason: "not used" }), freeze: async () => undefined, terminate: async () => undefined, proveEmpty: async () => ({ state: "proven_empty" }) },
+      canonicalWorktreeFor: () => "/unused", readHead: () => "a", inspectWorktree: () => ({ headSha: "a", clean: true }), isAncestor: () => true, withWorktreeLock: async (_path, fn) => fn() });
+    expect(lease).toBeDefined();
+  });
 });
