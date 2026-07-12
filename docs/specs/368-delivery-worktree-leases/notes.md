@@ -1599,3 +1599,33 @@ Reuse delegation `84f9d521-e294-4bd9-8f48-66d6114a7297` at exact `e45d35f0`, gra
 focused helper, and generated R4 stub (the latter solely for the required revert). Run generated R4, AgentManager,
 Bridge, `npm run typecheck`, and diff-check; no full. Commit by explicit pathspec with `t-0b5723`, ring `codex`, and
 stop. Coordinator reruns the original gate without waivers and audits the complete thirteen-case vector before B3.
+
+### T13 B2A audit — migrate clean net state to a fresh gated history, never waive the old breach
+
+B2A `9a7bcb63` restores the generated R4 stub, moves all thirteen cases into AgentManager tests, fixes typecheck, and
+uses dependency-backed counters. Its original R4 verification remains BLOCKED because `verify_task` correctly
+retains the immutable scope breach committed by the prior B2 attempt; a later revert cannot erase that historical
+event. No waiver is authorized. B3/B4 must not continue on the contaminated delegation.
+
+Create one fresh Terra-medium gated delegation from current main and migrate the clean net candidate as a single
+reviewable commit. The new ordinary behavior title remains
+`a failed Delivery join never cleans state the launch attempt did not acquire`; BASE must contain exactly its new
+generated failing stub and HEAD must contain the two truthful R4 helper cases under the new stub filename.
+
+Exact migration contract:
+
+- `src/agents/AgentManager.ts` blob must equal `5b806805219561ae71582f0e94b9d426870891e2` from `9a7bcb63`;
+- `src/agents/forgetAgent.ts` blob must equal `a4b8a8673768a6053bb86005ac60c4efec9821dd`;
+- `src/bridge/tools.ts` blob must equal `2efcf57df1803de39cf6badd85d5939c82a8eb66`;
+- `test/unit/agentManager.test.ts` blob must equal `15afd35487fac7b9df7d215633126cef7ea39d57`;
+- `test/unit/bridge.test.ts` blob must equal `23cd7cd14c3a9283c44ee97040191cca9f62305c`;
+- start the focused helper from blob `2de64122ba693a6da7708309f7c9662158af046e`, then make only two B2
+  fixture-strengthening edits: declare `isolate: transcript` on the refusal source so the harness materializer is a
+  live seam, and provide `getExtraEnv` with a Bridge URL so `materializeBridgeMcp` is a live seam if launch proceeds;
+- replace the new generated stub placeholder with the same two real helper invocations as the restored R4 stub;
+  do not create or carry the old R4A generated filename.
+
+Own only those seven paths. Verify exact blob hashes for the five byte-frozen paths, run the new generated behavior,
+AgentManager, Bridge, `npm run typecheck`, and diff-check; no full. Commit once by explicit pathspec with
+`t-0b5723`, ring `codex`, and stop. Coordinator then runs the new delegation's canonical gate. Only a no-waiver
+ACCEPT plus content audit reopens the previously declared B3/B4 sequence on the fresh worktree.
