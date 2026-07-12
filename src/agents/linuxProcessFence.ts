@@ -9,6 +9,7 @@
  */
 
 import { createHash } from "node:crypto";
+import { normalize, resolve } from "node:path";
 import type {
   ProcessFenceCapability,
   ProcessFenceEmptyProof,
@@ -236,6 +237,7 @@ export function parseAuditHelperStdout(stdout: string, target: string, expectedU
   let matchTruncated: number | undefined;
   let unknownTruncated: number | undefined;
   const matchPids: number[] = [];
+  let unknownLines = 0;
   const seen = new Set<string>();
 
   for (const line of lines) {
@@ -271,18 +273,31 @@ export function parseAuditHelperStdout(stdout: string, target: string, expectedU
       unknownCount = Number(v); if (!Number.isSafeInteger(unknownCount)) return null;
       continue;
     }
-    // match pid=N starttime=... kind=...
-    const matchM = /^match pid=(\d+) starttime=\d+ kind=(?:cwd|root|fd(?: fd=\d+)?)$/.exec(line);
+    // This is the exact C helper grammar, including a bounded fd field.
+    const matchM = /^match pid=(\d+) starttime=(\d+) kind=(?:cwd|root|fd fd=(\d+))$/.exec(line);
     if (matchM) {
-      matchPids.push(Number(matchM[1]));
+      const pid = Number(matchM[1]);
+      const starttime = Number(matchM[2]);
+      const fd = matchM[3] === undefined ? undefined : Number(matchM[3]);
+      if (!isSafePositive(pid) || !isSafePositive(starttime) || (fd !== undefined && !isSafePositive(fd))) return null;
+      matchPids.push(pid);
       continue;
     }
-    // unknown reason=... optional fields — accepted but not required for identity keys
-    if (line.startsWith("unknown reason=")) { continue; }
+    // C helper prints reason followed by optional pid/kind/fd fields in this order.
+    const unknownM = /^unknown reason=[A-Za-z0-9_-]+(?: pid=(\d+))?(?: kind=(cwd|root|fd))?(?: fd=(\d+))?$/.exec(line);
+    if (unknownM) {
+      const pid = unknownM[1] === undefined ? undefined : Number(unknownM[1]);
+      const fd = unknownM[3] === undefined ? undefined : Number(unknownM[3]);
+      if ((pid !== undefined && !isSafePositive(pid)) || (fd !== undefined && !isSafePositive(fd))) return null;
+      unknownLines++;
+      continue;
+    }
     if (line.startsWith("self_ruid=")) { if (seen.has("self_ruid")) return null; seen.add("self_ruid"); const v=line.slice(10); if (!/^\d+$/.test(v)) return null; selfUid=Number(v); if (!Number.isSafeInteger(selfUid)) return null; continue; }
     if (line.startsWith("target=")) { if (seen.has("target")) return null; seen.add("target"); outputTarget=line.slice(7); continue; }
-    if (line.startsWith("match_truncated=")) { if (seen.has("match_truncated")) return null; seen.add("match_truncated"); const v=line.slice(16); if (!/^\d+$/.test(v)) return null; matchTruncated=Number(v); continue; }
-    if (line.startsWith("unknown_truncated=")) { if (seen.has("unknown_truncated")) return null; seen.add("unknown_truncated"); const v=line.slice(18); if (!/^\d+$/.test(v)) return null; unknownTruncated=Number(v); continue; }
+    const matchTruncatedM = /^match_truncated=yes omitted=(\d+)$/.exec(line);
+    if (matchTruncatedM) { if (seen.has("match_truncated")) return null; seen.add("match_truncated"); matchTruncated=Number(matchTruncatedM[1]); if (!Number.isSafeInteger(matchTruncated)) return null; continue; }
+    const unknownTruncatedM = /^unknown_truncated=yes omitted=(\d+)$/.exec(line);
+    if (unknownTruncatedM) { if (seen.has("unknown_truncated")) return null; seen.add("unknown_truncated"); unknownTruncated=Number(unknownTruncatedM[1]); if (!Number.isSafeInteger(unknownTruncated)) return null; continue; }
     // Unrecognized line → refuse (strict)
     return null;
   }
@@ -291,10 +306,11 @@ export function parseAuditHelperStdout(stdout: string, target: string, expectedU
     || matchCount === undefined || unknownCount === undefined || selfUid !== expectedUid || outputTarget !== target) {
     return null;
   }
-  // Count consistency: reported match lines must not exceed match_count
-  if (matchPids.length > matchCount || matchPids.length !== matchCount - (matchTruncated ?? 0)) return null;
-  if ((matchTruncated ?? 0) > 0 && matchCount === 0) return null;
-  if ((unknownTruncated ?? 0) > 0 && unknownCount === 0) return null;
+  const matchOmitted = matchTruncated ?? 0;
+  const unknownOmitted = unknownTruncated ?? 0;
+  // Markers exist iff something was omitted; each count is exact, not a lower bound.
+  if ((matchOmitted === 0 && matchTruncated !== undefined) || (unknownOmitted === 0 && unknownTruncated !== undefined)
+    || matchPids.length + matchOmitted !== matchCount || unknownLines + unknownOmitted !== unknownCount) return null;
 
   return { state, capSysPtrace, matchCount, unknownCount, matchPids };
 }
@@ -424,15 +440,18 @@ export class LinuxSystemdProcessFence implements LinuxProcessFencePort {
     const snap = await this.pollUntil(async () => {
       const s = await this.systemd.show(unitName);
       if (s.loadState === "not-found") return null;
-      if (s.id !== unitName) throw new ProcessFenceError("PROCESS_FENCE_IDENTITY", "unit id does not match deterministic name");
+      if (!this.isActiveDeterministicSnapshot(unitName, s)) throw new ProcessFenceError("PROCESS_FENCE_IDENTITY", "unit identity is not exact active receipt");
       if (!s.invocationId.trim() || !s.controlGroup.trim()) return null;
-      if (s.activeState !== "active" && s.activeState !== "running") return null;
       return s;
     }, "unit did not become active with InvocationID/ControlGroup");
 
     const procs = await this.cgroup.readProcs(snap.controlGroup);
     if (procs === "missing" || procs.length === 0) {
       throw new ProcessFenceError("PROCESS_FENCE_CGROUP", "control group missing or empty at confirm");
+    }
+    const second = await this.systemd.show(unitName);
+    if (!this.sameSnapshot(snap, second) || !this.isActiveDeterministicSnapshot(unitName, second)) {
+      throw new ProcessFenceError("PROCESS_FENCE_IDENTITY", "unit changed between membership observation and confirm");
     }
 
     const confirmed: FenceIdentityV1 = {
@@ -468,36 +487,22 @@ export class LinuxSystemdProcessFence implements LinuxProcessFencePort {
     const unitName = identity.unitName;
     const cg = identity.controlGroup!;
 
-    try {
-      await this.cgroup.writeKill(cg);
-    } catch {
-      // cgroup may already be gone mid-teardown; fall through to exact unit wait
-    }
+    await this.cgroup.writeKill(cg);
 
     await this.pollUntil(async () => {
-      // Re-check we never drifted to another unit before optional stop cleanup.
       const live = await this.systemd.show(unitName);
-      if (live.loadState === "not-found" || live.activeState === "inactive" || live.activeState === "failed") {
-        const events = identity.controlGroup
-          ? await this.cgroup.readEvents(identity.controlGroup)
-          : "missing";
-        if (events === "missing" || events.populated === 0) return true;
-      }
-      if (live.invocationId && identity.invocationId && live.invocationId !== identity.invocationId) {
-        throw new ProcessFenceError("PROCESS_FENCE_IDENTITY", "invocation drift during terminate");
+      if (live.loadState === "not-found") return this.stableTerminalEmpty(identity, live, "not-found");
+      if (!this.isExactSnapshotFor(identity, live, ["active", "inactive", "failed"])) {
+        throw new ProcessFenceError("PROCESS_FENCE_IDENTITY", "unit drift during terminate");
       }
       const events = await this.cgroup.readEvents(cg);
       if (events !== "missing" && events.populated === 0) {
-        // Exact collected absence: unit gone or inactive after kill.
-        if (live.loadState === "not-found" || live.activeState === "inactive" || live.activeState === "failed") {
-          return true;
+        if (live.activeState === "inactive" || live.activeState === "failed") return this.stableTerminalEmpty(identity, live, "terminal");
+        const second = await this.systemd.show(unitName);
+        if (!this.sameSnapshot(live, second) || !this.isExactSnapshotFor(identity, second, ["active"])) {
+          throw new ProcessFenceError("PROCESS_FENCE_IDENTITY", "unit changed before stop");
         }
-        // Bounded cleanup only for the same exact unit.
-        try {
-          await this.systemd.stop(unitName);
-        } catch {
-          // ignore; keep polling
-        }
+        await this.systemd.stop(unitName);
       }
       return null;
     }, "cgroup kill did not reach populated=0 with exact unit absence");
@@ -513,8 +518,8 @@ export class LinuxSystemdProcessFence implements LinuxProcessFencePort {
 
     try {
       const worktree = requireNonBlank(canonicalWorktree, "canonicalWorktree");
-      if (!worktree.startsWith("/")) {
-        return { state: "unknown", reason: "canonical worktree must be an absolute path" };
+      if (!isCanonicalAbsolutePath(worktree)) {
+        return { state: "unknown", reason: "canonical worktree must be a canonical absolute path" };
       }
 
       let identity: FenceIdentityV1;
@@ -585,7 +590,10 @@ export class LinuxSystemdProcessFence implements LinuxProcessFencePort {
         return { state: "survivors", pids };
       }
 
-      // exit 2 unknown, exit 3 error, or anything else
+      if (run.exitCode === 2 && parsed.state === "unknown" && parsed.unknownCount > 0) {
+        return { state: "unknown", reason: "audit helper reported unknown process evidence" };
+      }
+      // exit 2 malformed, exit 3 error, or anything else
       return {
         state: "unknown",
         reason: `audit helper exit ${run.exitCode} state=${parsed.state}`,
@@ -666,7 +674,10 @@ export class LinuxSystemdProcessFence implements LinuxProcessFencePort {
 
   private depsExpectedHelperPath(): string { return this.expectedHelperPath; }
   private depsExpectedHelperSha256(): string { return this.expectedHelperSha256; }
-  private depsHelperPinValid(): boolean { return this.expectedHelperPath.startsWith("/") && /^[0-9a-f]{64}$/.test(this.expectedHelperSha256); }
+  private depsHelperPinValid(): boolean {
+    return isCanonicalAbsolutePath(this.expectedHelperPath) && /^[0-9a-f]{64}$/.test(this.expectedHelperSha256)
+      && isSafeLinuxUid(this.expectedRuntimeUid) && isSafeLinuxUid(this.expectedHelperUid);
+  }
 
   /**
    * Exact identity checks before every cgroup/systemd action.
@@ -678,16 +689,10 @@ export class LinuxSystemdProcessFence implements LinuxProcessFencePort {
       throw new ProcessFenceError("PROCESS_FENCE_BOOT", "boot id drift");
     }
     const snap = await this.systemd.show(identity.unitName);
-    if (snap.loadState === "not-found") {
-      // Allowed only when caller is terminate/proveEmpty emptiness path — freeze requires live.
-      throw new ProcessFenceError("PROCESS_FENCE_IDENTITY", "pinned unit not found");
-    }
-    if (identity.invocationId && snap.invocationId !== identity.invocationId) {
-      throw new ProcessFenceError("PROCESS_FENCE_IDENTITY", "InvocationID drift");
-    }
-    if (identity.controlGroup && snap.controlGroup !== identity.controlGroup) {
-      throw new ProcessFenceError("PROCESS_FENCE_IDENTITY", "ControlGroup drift");
-    }
+    if (snap.id !== identity.unitName) throw new ProcessFenceError("PROCESS_FENCE_IDENTITY", "unit id drift");
+    if (!snap.invocationId.trim() || snap.invocationId !== identity.invocationId) throw new ProcessFenceError("PROCESS_FENCE_IDENTITY", "InvocationID drift");
+    if (!snap.controlGroup.trim() || snap.controlGroup !== identity.controlGroup) throw new ProcessFenceError("PROCESS_FENCE_IDENTITY", "ControlGroup drift");
+    if (snap.loadState === "not-found" || snap.activeState !== "active") throw new ProcessFenceError("PROCESS_FENCE_IDENTITY", "pinned unit is not exact active receipt");
   }
 
   private async tryRepairPending(
@@ -698,7 +703,7 @@ export class LinuxSystemdProcessFence implements LinuxProcessFencePort {
     const snap = await this.systemd.show(unitName);
     if (snap.loadState === "not-found" || snap.id !== unitName) return undefined;
     if (!snap.invocationId.trim() || !snap.controlGroup.trim()) return undefined;
-    if (snap.activeState !== "active" && snap.activeState !== "running") return undefined;
+    if (snap.activeState !== "active") return undefined;
 
     let inspection: HelperBinaryInspection;
     try {
@@ -730,52 +735,46 @@ export class LinuxSystemdProcessFence implements LinuxProcessFencePort {
       return { state: "unknown", reason: "boot id drift during proveEmpty" };
     }
 
-    const snap = await this.systemd.show(identity.unitName);
-    if (snap.loadState !== "not-found") {
-      if (identity.invocationId && snap.invocationId && snap.invocationId !== identity.invocationId) {
-        return { state: "unknown", reason: "InvocationID drift during proveEmpty" };
-      }
-      if (identity.controlGroup && snap.controlGroup && snap.controlGroup !== identity.controlGroup) {
-        return { state: "unknown", reason: "ControlGroup drift during proveEmpty" };
-      }
-      if (snap.activeState === "active" || snap.activeState === "running") {
-        const procs = identity.controlGroup
-          ? await this.cgroup.readProcs(identity.controlGroup)
-          : "missing";
-        if (procs !== "missing" && procs.length > 0) {
-          return {
-            state: "survivors",
-            pids: uniqueSorted(procs),
-            reason: "cgroup still populated",
-          };
-        }
-        const events = identity.controlGroup
-          ? await this.cgroup.readEvents(identity.controlGroup)
-          : "missing";
-        if (events !== "missing" && events.populated === 1) {
-          return { state: "unknown", reason: "unit active with populated=1 but procs unreadable" };
-        }
-        return { state: "unknown", reason: "unit still loaded without proven empty cgroup" };
-      }
+    const first = await this.systemd.show(identity.unitName);
+    const absent = first.loadState === "not-found";
+    if (!absent && !this.isExactSnapshotFor(identity, first, ["active", "inactive", "failed"])) return { state: "unknown", reason: "unit identity drift during proveEmpty" };
+    const events = await this.cgroup.readEvents(identity.controlGroup!);
+    const procs = events !== "missing" && events.populated === 1 ? await this.cgroup.readProcs(identity.controlGroup!) : [];
+    const second = await this.systemd.show(identity.unitName);
+    if (absent) {
+      if (second.loadState !== "not-found") return { state: "unknown", reason: "unit appeared during proveEmpty" };
+    } else if (!this.sameSnapshot(first, second) || !this.isExactSnapshotFor(identity, second, ["active", "inactive", "failed"])) {
+      return { state: "unknown", reason: "unit changed during proveEmpty" };
     }
-
-    // Unit not-found / inactive: require cgroup missing or populated=0 for the *pinned* path only.
-    if (!identity.controlGroup) {
-      return { state: "unknown", reason: "confirmed identity missing control group" };
-    }
-    const events = await this.cgroup.readEvents(identity.controlGroup);
-    if (events === "missing") {
-      // Pinned path gone after kill/collect — acceptable empty for that exact identity.
-      return { state: "empty" };
-    }
-    if (events.populated === 1) {
-      const procs = await this.cgroup.readProcs(identity.controlGroup);
-      if (procs !== "missing" && procs.length > 0) {
-        return { state: "survivors", pids: uniqueSorted(procs), reason: "cgroup populated after unit teardown" };
-      }
+    if (events !== "missing" && events.populated === 1) {
+      if (procs !== "missing" && procs.length > 0) return { state: "survivors", pids: uniqueSorted(procs), reason: "cgroup populated" };
       return { state: "unknown", reason: "cgroup populated=1 without readable survivors" };
     }
+    if (!absent && first.activeState === "active") return { state: "unknown", reason: "unit remains active" };
     return { state: "empty" };
+  }
+
+  private isExactSnapshotFor(identity: FenceIdentityV1, snap: SystemdUnitSnapshot, allowed: readonly string[]): boolean {
+    return snap.loadState !== "not-found" && snap.id === identity.unitName && !!snap.invocationId.trim() && !!snap.controlGroup.trim()
+      && snap.invocationId === identity.invocationId && snap.controlGroup === identity.controlGroup && allowed.includes(snap.activeState);
+  }
+
+  private isActiveDeterministicSnapshot(unitName: string, snap: SystemdUnitSnapshot): boolean {
+    return snap.loadState !== "not-found" && snap.id === unitName && snap.activeState === "active"
+      && !!snap.invocationId.trim() && !!snap.controlGroup.trim();
+  }
+
+  private sameSnapshot(a: SystemdUnitSnapshot, b: SystemdUnitSnapshot): boolean {
+    return a.loadState === b.loadState && a.activeState === b.activeState && a.id === b.id
+      && a.invocationId === b.invocationId && a.controlGroup === b.controlGroup;
+  }
+
+  private async stableTerminalEmpty(identity: FenceIdentityV1, first: SystemdUnitSnapshot, kind: "not-found" | "terminal"): Promise<boolean | null> {
+    const events = await this.cgroup.readEvents(identity.controlGroup!);
+    if (events !== "missing" && events.populated !== 0) return null;
+    const second = await this.systemd.show(identity.unitName);
+    if (kind === "not-found") return second.loadState === "not-found" ? true : null;
+    return this.sameSnapshot(first, second) && this.isExactSnapshotFor(identity, second, ["inactive", "failed"]) ? true : null;
   }
 
   private async pollUntil<T>(
@@ -807,7 +806,8 @@ async function probeCapability(deps: LinuxProcessFenceDeps): Promise<ProcessFenc
       return { supported: false, reason: "boot id unavailable" };
     }
     const inspection = await deps.auditHelper.inspect();
-    if (!deps.expectedHelperPath.startsWith("/") || !/^[0-9a-f]{64}$/.test(deps.expectedHelperSha256)
+    if (!isCanonicalAbsolutePath(deps.expectedHelperPath) || !/^[0-9a-f]{64}$/.test(deps.expectedHelperSha256)
+      || !isSafeLinuxUid(deps.expectedRuntimeUid)
       || deps.auditHelper.path() !== deps.expectedHelperPath || inspection.path !== deps.expectedHelperPath
       || inspection.sha256 !== deps.expectedHelperSha256) {
       return { supported: false, reason: "audit helper sha256 unavailable" };
@@ -817,7 +817,7 @@ async function probeCapability(deps: LinuxProcessFenceDeps): Promise<ProcessFenc
     }
     const expectedUid = deps.expectedHelperUid
       ?? (typeof process.getuid === "function" ? process.getuid() : 0);
-    if (inspection.uid !== expectedUid) {
+    if (!isSafeLinuxUid(expectedUid) || inspection.uid !== expectedUid) {
       return { supported: false, reason: "audit helper owner mismatch" };
     }
     if (inspection.mountNosuid) {
@@ -830,6 +830,19 @@ async function probeCapability(deps: LinuxProcessFenceDeps): Promise<ProcessFenc
   } catch (err) {
     return { supported: false, reason: `capability probe failed: ${errMessage(err)}` };
   }
+}
+
+function isCanonicalAbsolutePath(value: string): boolean {
+  return typeof value === "string" && value.startsWith("/") && value === normalize(value) && value === resolve(value)
+    && !value.includes("//") && !value.includes("/./") && !value.includes("/../");
+}
+
+function isSafeLinuxUid(value: number): boolean {
+  return Number.isSafeInteger(value) && value >= 0 && value <= 0xffff_ffff;
+}
+
+function isSafePositive(value: number): boolean {
+  return Number.isSafeInteger(value) && value > 0;
 }
 
 function requireNonBlank(value: string, name: string): string {
