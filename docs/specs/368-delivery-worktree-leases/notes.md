@@ -2033,3 +2033,23 @@ InvocationID/boot/cgroup drift, crash before/after receipt, freeze/kill timeout,
 empty/survivor/unknown, reload repair/quarantine, spawn compensation, generic-launch compatibility, and proof that
 no external process or unit is signalled. The first reviewable candidate runs the focused matrix, typecheck,
 diff-check, and one full quiet verification; final closure repeats the full gate after independent Sonnet review.
+
+### T14.6A Linux ProcessFence core closure — 2026-07-12
+
+The injected Linux adapter is accepted and integrated through `c1a04515` (immutable accepted candidate
+`2b088ae0`). It persists a create-once/CAS nonce-digest identity, wraps launches in a deterministic transient user
+scope, confirms exact boot/unit/InvocationID/ControlGroup plus nonempty membership, and uses shared exact-snapshot
+checks before freeze, kill, stop, and containment-empty decisions. `proveEmpty` requires stable containment absence
+and a checksum-pinned helper result whose real C output grammar, counts, truncation markers, UID, target, exit state,
+and descriptor evidence are internally consistent. Ambiguity remains fail-closed.
+
+Canonical verification accepted `2b088ae0` without waiver at
+`.tachyon/verifications/2b088ae0c35b32f27dc54ae208c950a2eb0ef538.json`. Sonnet's final micro-review
+`.tachyon/reviews/368-linux-process-fence-t146a-r4-1.md` independently reproduced the formerly rejected real
+`kind=fd`-without-specific-`fd` helper line and returned ACCEPT. The accumulated focused suite is 54 tests plus the
+material generated behavior. Review rounds R1–R4.1 remain the durable audit trail rather than being hidden.
+
+T14.6A does not install/elevate the helper and does not yet authorize production launch wrapping. T14.6B still owns
+Workspace/AgentManager launch, reload/compensation, persistent store, and explicit opt-in configuration. The LOW
+diagnostic-only `activating` wrong-id fast-refusal improvement is tracked separately as `t-108a79`; it remains
+fail-closed and does not reopen this accepted core.

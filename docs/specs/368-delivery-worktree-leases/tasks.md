@@ -78,6 +78,10 @@ _Generated from `plan.md` on 2026-07-10. Work top-to-bottom. Check boxes as task
   execution in one transient user scope, freeze/kill/prove `populated=0`, invoke the verified read-only binding
   helper, and return `proven_empty` only when both independent proofs agree. Capability, identity, helper hash,
   cgroup, audit, timeout, reload, or cleanup uncertainty must remain `unknown`/quarantined.
+  - [x] T14.6A. Land and independently review the injected Linux systemd/cgroup adapter, nonce-bound identity
+    registry, exact-snapshot action gates, checksum-pinned helper parser, and deterministic adversarial matrix.
+  - [ ] T14.6B. Wire the accepted adapter into exact Delivery-bound launch/reload/compensation paths plus explicit
+    opt-in configuration and persistent identity storage; generic/legacy launch remains byte-compatible.
   - Gate: `a detached Delivery writer survives pane death but cannot cross handoff after scope kill and exact audit`.
 - [ ] T15. Serialize linked GitDelivery mutation under the canonical Delivery lock, add idempotent projection
   reconciliation, and make list/hygiene/integration/prune refuse pending, held, verifying, unknown, or quarantined.
