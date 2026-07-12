@@ -1000,6 +1000,8 @@ describe("R4 terminal, startup, and helper forcing matrix", () => {
     expect(parseAuditHelperStdout(base, "/tmp/wt", 1000)).not.toBeNull();
     const unknownFdZero = "state=unknown\nself_ruid=1000\ntarget=/tmp/wt\ncap_sys_ptrace=yes\nmatch_count=0\nunknown_count=1\nunknown reason=x pid=7 kind=fd fd=0\n";
     expect(parseAuditHelperStdout(unknownFdZero, "/tmp/wt", 1000)).not.toBeNull();
+    const unknownFdWithoutFd = unknownFdZero.replace(" fd=0", "");
+    expect(parseAuditHelperStdout(unknownFdWithoutFd, "/tmp/wt", 1000)).not.toBeNull();
     for (const bad of [
       base.replace("fd=0", "fd=-1"), base.replace("fd=0", "fd=9007199254740992"), base.replace("kind=fd fd=0", "kind=cwd fd=0"),
       unknownFdZero.replace("kind=fd fd=0", "fd=0"), base.replace("target=/tmp/wt", "target=/wrong"), base.replace("self_ruid=1000", "self_ruid=1001"),

@@ -293,7 +293,7 @@ export function parseAuditHelperStdout(stdout: string, target: string, expectedU
       // The helper only reports descriptors for fd matches.  cwd/root matches
       // carry their PID and never an fd; a bare reason may omit all location data.
       if ((fd !== undefined && kind !== "fd")
-        || (kind === "fd" && (pid === undefined || fd === undefined))
+        || (kind === "fd" && pid === undefined)
         || ((kind === "cwd" || kind === "root") && (pid === undefined || fd !== undefined))) return null;
       unknownLines++;
       continue;
