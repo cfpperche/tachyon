@@ -68,7 +68,20 @@ default change.
   - **And** a changed or unexpected branch HEAD refuses the handoff without transferring authority
   - **And** the successor runtime cannot start until the predecessor and its root process are proven stopped
 
-- [ ] **Scenario: predecessor is fenced before successor spawn**
+- [ ] **Scenario: mechanism-only dogfood is explicit and honest**
+  - **Given** canonical Delivery rollout and `handoffSafety: mechanism-only` are both explicitly enabled
+  - **When** Tachyon transfers a clean, expected-HEAD Delivery after stopping the exact managed predecessor session
+  - **Then** it requires the predecessor's durable root-process identity to be observed gone and repeats the
+    canonical worktree/HEAD inspection before reserving the successor
+  - **And** the transition is durably labelled `mechanism-only` and reports that detached or reparented child
+    processes were not proven absent
+  - **And** it never records or implies `proven_empty`, never silently falls back from process fencing, and never
+    authorizes crash reconciliation, quarantine recovery, destructive cleanup, integration, or prune from that
+    weaker observation
+  - **And** a live, unknown, mismatched, or unbound predecessor refuses the transfer without
+    spawning the successor or a fallback worktree
+
+- [ ] **Scenario: predecessor is fenced before successor spawn in process-fenced mode**
   - **Given** a live holder is selected for handoff
   - **When** Tachyon begins the transfer
   - **Then** it marks the lease `draining`, freezes/stops the predecessor's entire owned process containment group,
@@ -191,8 +204,10 @@ default change.
   - **Given** an installation with the legacy per-delegation behavior
   - **When** Delivery leases first ship
   - **Then** existing delegations remain readable and the new lifecycle is exercised behind an explicit opt-in
-  - **And** the default changes only after migration, verification, crash recovery, and real sequential handoff
-    dogfood pass
+  - **And** mechanism-only dogfood may exercise sequential leases before strong process isolation is enabled, but
+    remains visibly experimental and cannot satisfy process-fenced crash/recovery acceptance
+  - **And** the default changes only after migration, verification, crash recovery, and real process-fenced
+    sequential handoff dogfood pass
 
 - [ ] The canonical Delivery schema is versioned, persisted atomically, concurrency-guarded, and append-only for
   segment history.

@@ -66,9 +66,9 @@ Add a `DeliveryLeaseService` that owns acquisition, sequential transfer, verific
 liveness reconciliation, and quarantine. It operates under the Delivery record lock and the canonical
 worktree-path mutex, and always rechecks live tmux/process and live Git state inside the critical section.
 
-Every Delivery-bound execution is launched through a `ProcessFencePort` with a durable execution nonce. The
-platform adapter must provide `freeze`, `terminate`, and `proveEmpty` over the execution's whole containment
-group, including descendants that reparent or detach, plus an independent audit for processes whose canonical
+In `process-fenced` mode every Delivery-bound execution is launched through a `ProcessFencePort` with a durable
+execution nonce. The platform adapter must provide `freeze`, `terminate`, and `proveEmpty` over the execution's
+whole containment group, including descendants that reparent or detach, plus an independent audit for processes whose canonical
 cwd/root/open worktree binding targets the Delivery. Handoff and crash reconciliation share this exact predicate.
 Only `proven_empty` permits successor reservation; `survivors` or `unknown` quarantines. Pane-root PID death is
 never sufficient. A platform without a sound adapter reports capability unavailable and cannot enable sequential
@@ -90,6 +90,33 @@ syscalls; defending against that actor requires a separate OS identity/security 
 Observed path, identity, membership, capability, enumeration, or convergence drift still fails closed. Production
 enablement therefore requires a reviewed Linux adapter that combines both proofs and an explicit opt-in helper
 installation; Tachyon never invokes `sudo`, installs a capability, or falls back automatically.
+
+Rollout has three explicit safety levels under canonical Delivery mode:
+
+- `handoffSafety: disabled` (default) persists canonical Deliveries but refuses sequential successor transfer;
+- `handoffSafety: mechanism-only` is an experimental dogfood path. It stops only the exact managed Delivery-bound
+  execution, requires its durable root-process identity to be observed gone, and then repeats the existing clean
+  worktree/exact-HEAD/CAS checks. It does **not** contain or prove detached/reparented descendants absent;
+- `handoffSafety: process-fenced` uses the Linux adapter and retains the full `proven_empty` contract.
+
+There is no automatic downgrade between levels. Every reservation/completion event records the selected level and
+mechanism-only Bridge/doctor output carries a prominent best-effort-isolation warning. The weaker mode may drive
+implement -> review -> fix dogfood, same-Delivery contention, exact-root stopping, lease/CAS, and one-worktree
+reuse. It cannot emit `proven_empty` or authorize dead-holder reconciliation, salvage/abandon, integration, prune,
+automatic cleanup, or any acceptance claim that depends on descendant absence. GitDelivery integration/prune must
+also consume T15's canonical lease policy before mechanism-only dogfood begins; no legacy projection route may
+bypass the lease. Those operations remain fail-closed until their stronger prerequisites are configured and
+capable.
+
+Mechanism-only transfer is a distinct lease-service policy, never a permissive `ProcessFencePort`. After the normal
+authority, canonical-path, clean-tree, expected-HEAD, and held-to-draining CAS, Tachyon validates that the holder is
+an exact ledger-bound Delivery execution, stops that managed runtime outside all Delivery/worktree/SQLite locks,
+and observes the persisted PID/start-time/boot identity. After the stop attempt, `alive`, `unknown`, binding drift,
+stop uncertainty, or post-stop Git drift quarantines; contenders that lose before draining retain the existing
+retryable occupied result. Only `gone` reaches two stable inspections and successor reservation. This observation
+is stored as `root_gone_best_effort`, not as a process-fence proof. Review completion follows the same rule and is
+exposed as a coordinator-authorized Bridge operation carrying an exact reviewed HEAD, verdict, and stable
+operation ID; a reviewer's own session is never required to kill itself while servicing its completion call.
 
 Lease states:
 

@@ -74,27 +74,37 @@ _Generated from `plan.md` on 2026-07-10. Work top-to-bottom. Check boxes as task
   containment plus a checksum-pinned `CAP_SYS_PTRACE` helper must return exact empty/survivor outcomes with zero
   unknown evidence; deliberate malicious control of the same Linux account is explicitly out of scope.
   - Gate: `a capped FDSize-bounded audit reports empty with no binding and the exact open FD as a survivor`.
-- [ ] T14.6. Implement the opt-in Linux `ProcessFencePort`: persist nonce-bound scope identity, wrap every Delivery
-  execution in one transient user scope, freeze/kill/prove `populated=0`, invoke the verified read-only binding
-  helper, and return `proven_empty` only when both independent proofs agree. Capability, identity, helper hash,
-  cgroup, audit, timeout, reload, or cleanup uncertainty must remain `unknown`/quarantined.
+- [ ] T14.6. Complete the staged handoff-safety rollout. Preserve the reviewed Linux `ProcessFencePort` path while
+  adding an explicitly weaker mechanism-only dogfood level that can never impersonate its proof.
   - [x] T14.6A. Land and independently review the injected Linux systemd/cgroup adapter, nonce-bound identity
     registry, exact-snapshot action gates, checksum-pinned helper parser, and deterministic adversarial matrix.
-  - [ ] T14.6B. Wire the accepted adapter into exact Delivery-bound launch/reload/compensation paths plus explicit
-    opt-in configuration and persistent identity storage; generic/legacy launch remains byte-compatible.
+  - [ ] T14.6B. Wire an explicitly experimental `mechanism-only` policy into exact Delivery-bound
+    acquire/handoff/review-completion plus Workspace/AgentManager prepare/confirm/fail callbacks and a
+    coordinator-authorized review-completion Bridge operation. Initial canonical gated spawn must persist an exact
+    root identity and execution nonce. Stop only the exact ledger-bound execution, require that identity gone,
+    record `root_gone_best_effort`, warn that descendants are unproven, and keep reconciliation/recovery plus any
+    pre-T15 integration/prune route fail-closed. Generic/legacy launch remains byte-compatible.
+  - [ ] T14.6C. Wire the accepted Linux adapter into exact Delivery-bound launch/reload/compensation paths plus
+    persistent fence identity storage and `process-fenced` configuration; never silently downgrade to
+    `mechanism-only`.
   - Gate: `a detached Delivery writer survives pane death but cannot cross handoff after scope kill and exact audit`.
 - [ ] T15. Serialize linked GitDelivery mutation under the canonical Delivery lock, add idempotent projection
   reconciliation, and make list/hygiene/integration/prune refuse pending, held, verifying, unknown, or quarantined.
+  T15 policy acceptance is a prerequisite for mechanism-only dogfood so no legacy projection mutation bypasses the
+  experimental lease.
   - Gate: `concurrent reconcile and prune cannot diverge GitDelivery from canonical lease safety`.
-- [ ] T16. Add config/schema for opt-in rollout and recovery principals; retain legacy behavior by default until
+- [ ] T16. Add config/schema for canonical rollout, recovery principals, and explicit
+  `handoffSafety: disabled | mechanism-only | process-fenced`; retain `disabled`/legacy behavior by default,
+  reject incompatible combinations, and surface the mechanism-only isolation warning until process-fenced
   dogfood evidence is recorded.
   - Gate: `Delivery lease rollout is opt-in and legacy configuration remains compatible`.
 - [ ] T17. Add a temp-git integration test covering implement → verify → review FINDINGS → fix → verify → ACCEPT on
   one worktree plus a second concurrent Delivery.
 - [ ] T18. Add and run headless dogfood covering the sequential lifecycle, same-Delivery contention refusal, dirty
   crash quarantine, salvage/abandon policy, and GitDelivery hygiene/prune refusal.
-  Real sequential lifecycle evidence requires T14.6 plus an explicitly installed/verified helper; hosts without it
-  remain limited to refusal/quarantine behavior.
+  T14.6B mechanism-only dogfood may cover clean implement -> review -> fix reuse and contention, with explicit
+  evidence that detached descendants are unproven and destructive/recovery paths refuse. Full crash quarantine,
+  recovery, and isolation acceptance still requires T14.6C plus an explicitly installed/verified helper.
 - [ ] T19. After dogfood and full verification pass, switch new gated orchestration to Delivery leases by default,
   retain explicit legacy compatibility, update docs/tool descriptions, and record the rollout decision.
 - [ ] T20. Run SDD closure audit, attach verification/dogfood evidence, mark acceptance criteria, and move

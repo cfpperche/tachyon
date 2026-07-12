@@ -2053,3 +2053,70 @@ T14.6A does not install/elevate the helper and does not yet authorize production
 Workspace/AgentManager launch, reload/compensation, persistent store, and explicit opt-in configuration. The LOW
 diagnostic-only `activating` wrong-id fast-refusal improvement is tracked separately as `t-108a79`; it remains
 fail-closed and does not reopen this accepted core.
+
+### Mechanism-only dogfood ratification — 2026-07-12
+
+The maintainer authorized dogfooding the Delivery/worktree lease mechanism before the full Linux ProcessFence is
+wired. This is a staged rollout decision, not a relaxation disguised as a successful fence. Configuration will
+name three states explicitly: `disabled` by default, experimental `mechanism-only`, and future
+`process-fenced`; there is no automatic fallback between them.
+
+T14.6B now owns the bounded experimental slice. It wires the existing Delivery join prepare/confirm/fail path,
+sequential lease transitions, and a coordinator-authorized review-completion Bridge operation. Initial canonical
+gated spawn must persist a fresh execution nonce and exact pane-root PID/start-time/boot identity so its first
+handoff is eligible. The path stops only the exact managed Delivery-bound execution after validating the session
+ledger marker against Delivery ID, segment ID, nonce, and canonical worktree; it requires the persisted root
+identity to be observed gone, repeats clean/exact-HEAD inspection, and records `root_gone_best_effort` plus an
+operator-visible warning. It never infers stop authority from attribution-only principal identity. Root death does
+not prove that detached/reparented descendants are gone, so the mode never calls or impersonates
+`ProcessFencePort.proveEmpty`,
+never emits `proven_empty`, and cannot authorize dead-holder reconciliation, salvage, abandon, integration, prune,
+automatic cleanup, or full isolation acceptance. Live/unknown/mismatched identities and post-stop drift refuse or
+quarantine without spawning a successor or fallback worktree.
+
+The service policy is an explicit dependency, not a permissive ProcessFence implementation. `disabled` refuses
+acquire/handoff/completion; `mechanism-only` permits free-state acquire without claiming fence capability and uses
+the exact-root stop path only for handoff/review completion; `process-fenced` retains the current capability plus
+freeze/terminate/prove-empty path. Reconciliation and salvage/abandon continue to call the real ProcessFence and
+therefore remain unavailable without strong proof. After a drain/stop attempt, `alive`, `unknown`, binding drift,
+or stop uncertainty quarantines rather than returning a reusable held lease. Contenders that lose before draining
+still receive the existing retryable `WORKTREE_OCCUPIED` response.
+
+Real dogfood additionally depends on T15's canonical projection policy. A linked GitDelivery must not integrate,
+prune, or report itself safely disposable through a legacy-only route while its canonical Delivery is pending,
+held, draining, verifying, quarantined, or otherwise unavailable. T15 can be reviewed/integrated independently of
+T14.6B, but both must be accepted before the first live mechanism-only lifecycle.
+
+**T14.6B decomposition and forcing matrix.** B1 owns the lease-service policy only. Export the closed safety enum
+and an exact-bound-execution stop dependency; include the selected safety level in idempotent intents/events.
+`disabled` refuses before mutation, `mechanism-only` bypasses fence capability only for free acquire and uses
+stop-plus-exact-root observation for handoff/review completion, and `process-fenced` preserves today's behavior.
+All recovery methods stay byte-for-byte on real fence proof. Prove: free acquire, held handoff, review completion,
+same-Delivery CAS loser, stop outside locks, exact `gone`, `alive`/`unknown`/throw, binding callback failure,
+post-stop dirty/HEAD drift, replay at drain/reserve/complete, zero ProcessFence calls in mechanism-only, unchanged
+ProcessFence calls in strong mode, and recovery refusal without strong proof.
+
+B2 owns integration. Extend `settings.delivery` with
+`handoffSafety: disabled | mechanism-only | process-fenced`, defaulting to disabled and rejecting a non-disabled
+value unless `mode: canonical`. Instantiate one production lease service in Workspace; resolve the canonical
+worktree only through the exact Delivery-to-GitDelivery link; wire AgentManager prepare to acquire/free or
+handoff/held, confirm to exact `/proc` identity plus `confirmHeld`, and fail to `failPending`. Extend gated-spawn
+recording so a newly created mechanism-only segment zero has a fresh nonce, exact root identity, and matching
+ledger reverse marker. The stop dependency revalidates Delivery ID, segment, nonce, execution agent, existing
+canonical cwd/worktree, and ledger marker before calling the exact AgentManager kill; attribution-only principal
+never grants stop authority. Add coordinator-authorized `delivery_complete_review` with Bridge-resolved actor,
+exact reviewed HEAD/verdict/operation ID, plus tool metadata/count updates and an explicit warning in command result
+and doctor/config diagnostics. Prove disabled/legacy byte compatibility, invalid config combinations, initial
+identity persistence and crash boundaries, free-versus-held prepare selection, PID missing/reused/unreadable,
+bound principal home untouched, compensation quarantine, review completion authority/idempotence, warning text,
+reload exactness, no second worktree, and no generic launch change.
+
+Each occupation gets its own generated behavior verifier that fails at its BASE SHA and passes at HEAD. Run focused
+DeliveryLeaseService/AgentManager/Workspace/Bridge/config/reload suites, typecheck, and diff-check per occupation.
+Run `npm run verify:full:quiet` at the first combined reviewable B candidate and again only at final closure after
+independent Sonnet acceptance. T15 is reviewed and rebased as a separate occupation before live dogfood.
+
+T14.6C retains the accepted strong-isolation work: wrap exact Delivery executions in the reviewed transient cgroup,
+persist its nonce-bound fence identity, and enable `process-fenced` only when the pinned helper and host capability
+are exact. Mechanism-only dogfood is allowed to discover usability and lease-integration defects early; strong-mode
+milestones and adversarial tests remain planned rather than waiting only for incidents.
