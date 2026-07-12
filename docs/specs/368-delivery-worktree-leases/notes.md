@@ -1629,3 +1629,26 @@ Own only those seven paths. Verify exact blob hashes for the five byte-frozen pa
 AgentManager, Bridge, `npm run typecheck`, and diff-check; no full. Commit once by explicit pathspec with
 `t-0b5723`, ring `codex`, and stop. Coordinator then runs the new delegation's canonical gate. Only a no-waiver
 ACCEPT plus content audit reopens the previously declared B3/B4 sequence on the fresh worktree.
+
+### T13 closure course correction and R3 risk review contract
+
+Clean R5 candidate `cf7c8e82` passes canonical `verify_task` without waiver at
+`.tachyon/verifications/cf7c8e82d16947c5ea971944771f83aec591603e.json`. Its five frozen blobs match the audited
+net candidate exactly; the helper differs only by activating the refusal fixture's isolate/harness and Bridge-MCP
+seams; the new generated stub replaces the old filename with identical two-helper behavior.
+
+Coordinator course correction: the previously planned exhaustive B3/B4 chaos/error-combination matrix no longer
+blocks T13. It is valuable residual coverage but has consumed implementation cycles without exposing a new
+production defect after the real principal-footprint deletion bug was fixed. Move it to a separate board task. T13
+now closes on: clean no-waiver canonical gate; current forcing ownership, full identity/snapshot, Bridge success and
+thirteen zero-effect refusal proofs; immutable Sonnet review with no concrete HIGH/MEDIUM production defect or
+truthfulness failure in those proofs; one final quiet full; clean integration and push. Do not reopen production or
+add another test round for a theoretical missing combination.
+
+Sonnet R3 reviews immutable range `3e7c3b58..cf7c8e82`, the full surrounding launch/token/materialization/session/
+ledger/cleanup call paths, and the current tests. Report severity-ranked concrete defects only: data loss,
+authorization/identity confusion, unsafe cleanup ownership, liveness/concurrency failure, compatibility regression,
+or an assertion that does not actually prove the behavior it claims. B3/B4 absence is an acknowledged follow-up,
+not a finding against revised T13 closure. Write `.tachyon/reviews/368-delivery-bound-t13-r3.md`, commit only that
+artifact by explicit pathspec with `t-0b5723`, run at most focused suites plus diff-check (no typecheck/full), and
+ring `codex` with ACCEPT or FINDINGS.
