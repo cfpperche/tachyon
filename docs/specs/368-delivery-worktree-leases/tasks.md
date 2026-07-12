@@ -64,7 +64,7 @@ _Generated from `plan.md` on 2026-07-10. Work top-to-bottom. Check boxes as task
 - [x] T13. Add declared-agent bound executions with unique runtime names and separate `executionAgent`/`principal`
   provenance; prove the live persistent session's cwd, runtime home, token, and continuity are untouched.
   - Gate: `a persistent identity reviews through a bound execution without rebinding or impersonation`.
-- [ ] T14. Persist Delivery/segment bindings in the session ledger and reconstruct held/quarantined leases after
+- [x] T14. Persist Delivery/segment bindings in the session ledger and reconstruct held/quarantined leases after
   reload, treating ambiguous occupancy as unavailable.
   - Gate: `reload reconstructs an exact lease holder and fails closed on ambiguous occupancy`.
 

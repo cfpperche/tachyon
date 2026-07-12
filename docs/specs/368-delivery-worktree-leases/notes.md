@@ -1872,3 +1872,21 @@ canonical `vitest related` command serially, then `npm run typecheck` and `git d
 first-reviewable full is already green and final closure reserves the next full. Commit once by explicit pathspec
 with `t-0b5723`, clean tree, and doorbell `codex`. Coordinator reruns canonical `verify_task` without waiver, audits
 the narrow delta, then routes a final immutable Sonnet re-review before integration.
+
+### T14 closure — durable reverse binding and fail-closed reload accepted
+
+T14 is integrated on `main` at `bdc771d1`. The eleven integrated blobs match final Grok 4.5 candidate
+`2059f427` exactly. Canonical `verify_task` ACCEPT at
+`.tachyon/verifications/2059f42747f5478ac3492ac13fa4d18823798a2e.json` has no waiver: typecheck and affected
+tests pass, and the exact behavior passes at HEAD and fails at BASE. Independent Sonnet R2 ACCEPT is recorded in
+`.tachyon/reviews/368-delivery-reload-t14-r2.md` (`aaa6bdd0`); it independently forced the R4 regression to fail
+without the fix and confirmed all four R3 closures remain intact.
+
+The accepted boundary keeps `DeliveryStore` authoritative and the session ledger a strict reverse index; malformed
+markers remain explicit and every generic lifecycle path excludes bound/invalid/unavailable rows. Reload held-state
+requires one exact holder/open tail/HEAD, unique linked existing worktree, unique exact binding, matching cwd and
+worktree, and exact Linux process identity. Missing, ambiguous, stale, corrupt, PID-reused, unreadable, transient,
+or quarantined state fails closed. `_create` completes one bounded snapshot before Bridge/manual lifecycle exposure;
+`start()` recomputes after rehydration and can recover failed→ready without ever treating an attempted read failure
+as safe. The final `npm run verify:full:quiet` passed 304 files with 3,662 tests passed and 3 skipped. T15 projection
+serialization and mutation safety is next; T14 does not mutate or clean GitDelivery projections.
