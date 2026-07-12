@@ -49,7 +49,7 @@ describe("preview route table", () => {
   it("declares the activity route with its own envelope + ordered CSS", () => {
     const r = ROUTES.activity;
     expect(r.bundle).toBe("/dist/webview/activity.js");
-    expect(r.cssLinks).toEqual(["/dist/webview/codicon.css", "/dist/webview/design-system.css", "/dist/webview/activity.css"]);
+    expect(r.cssLinks).toEqual(["/dist/webview/codicon.css", "/dist/webview/design-system.css", "/dist/webview/mermaid-block.css", "/dist/webview/activity.css"]);
     const msg = r.makeMessage(r.fixtures.default.vm) as { type: string; prepended: boolean };
     expect(msg.type).toBe("activity");
     expect(msg.prepended).toBe(false);
@@ -74,7 +74,7 @@ describe("preview route table", () => {
   it("declares the handoff route (spec 280) with its envelope + default/cold/stale fixtures", () => {
     const r = ROUTES.handoff;
     expect(r.bundle).toBe("/dist/webview/handoff.js");
-    expect(r.cssLinks).toEqual(["/dist/webview/codicon.css", "/dist/webview/design-system.css", "/dist/webview/handoff.css"]);
+    expect(r.cssLinks).toEqual(["/dist/webview/codicon.css", "/dist/webview/design-system.css", "/dist/webview/mermaid-block.css", "/dist/webview/handoff.css"]);
     expect(Object.keys(r.fixtures).sort()).toEqual(["cold", "default", "stale"]);
     expect((r.makeMessage(r.fixtures.default.vm) as { type: string }).type).toBe("handoff");
   });
@@ -129,7 +129,7 @@ describe("preview route table", () => {
   it("declares the task-detail route (spec 342 dogfood round 2 #4) with its envelope + ordered CSS", () => {
     const r = ROUTES["task-detail"];
     expect(r.bundle).toBe("/dist/webview/task-detail.js");
-    expect(r.cssLinks).toEqual(["/dist/webview/codicon.css", "/dist/webview/design-system.css", "/dist/webview/task-detail.css"]);
+    expect(r.cssLinks).toEqual(["/dist/webview/codicon.css", "/dist/webview/design-system.css", "/dist/webview/mermaid-block.css", "/dist/webview/task-detail.css"]);
     expect((r.makeMessage(r.fixtures.default.vm) as { type: string }).type).toBe("task");
   });
 

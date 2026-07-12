@@ -71,7 +71,7 @@ export class HandoffPanelManager {
     panel.webview.html = renderWebviewShell({
       cspSource: panel.webview.cspSource,
       title: `Handoff — ${ws.folderName}`,
-      styles: [uri("codicon.css"), uri("design-system.css"), uri("handoff.css")],
+      styles: [uri("codicon.css"), uri("design-system.css"), uri("mermaid-block.css"), uri("handoff.css")],
       bundle: uri("handoff.js"),
       mode: "live",
       persistedState: { schemaVersion: 1, view: HANDOFF_VIEW_TYPE, wsHash: ws.wsHash } satisfies HandoffPanelState,

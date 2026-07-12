@@ -97,7 +97,7 @@ export class ActivityPanelManager {
     panel.webview.html = renderWebviewShell({
       cspSource: panel.webview.cspSource,
       title: agent.replace(/[<>&]/g, ""),
-      styles: [uri("codicon.css"), uri("design-system.css"), uri("activity.css")],
+      styles: [uri("codicon.css"), uri("design-system.css"), uri("mermaid-block.css"), uri("activity.css")],
       bundle: uri("activity.js"),
       mode: "live",
       bodyClass: themeClass || undefined,

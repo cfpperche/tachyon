@@ -44,8 +44,16 @@ This is width-fit only. It **fights** transform zoom (must leave the stage path)
 
 ## Decisions during build
 
-_(none yet — implementation not started)_
+- Shared CSS file `src/webview/shared/mermaid-block.css` copied to `dist/webview/` and linked from Activity, Handoff, Task Detail (+ preview routes). Keeps MarkdownView mermaid chrome consistent without stuffing design-system.
+- Stage uses `innerHTML = svg` (same trust model as previous `dangerouslySetInnerHTML`) so transform wrappers stay first-party.
+- Handoff/Task Detail still lack `__mermaidSrc` bootstrap (pre-existing) — CSS is ready; render still only works where mermaid is bootstrapped (Activity).
 
 ## Deviations
 
-_(none yet)_
+- None material from plan. Visual QA / human dogfood still open (needs real VS Code webview).
+
+## Implementation location
+
+- Branch: `tachyon/mermaid-activity-readonly-nav`
+- Worktree: `/home/goat/.cache/tachyon/worktrees/b349073a/mermaid-activity-readonly-nav`
+

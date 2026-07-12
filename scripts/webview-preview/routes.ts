@@ -88,7 +88,7 @@ export const ROUTES: Record<string, Route> = {
   },
   activity: {
     bundle: "/dist/webview/activity.js",
-    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/activity.css"],
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/mermaid-block.css", "/dist/webview/activity.css"],
     frame: { w: 820, h: 900 },
     fixtures: activityFixtures as Record<string, Fixture>,
     makeMessage: (vm) => activityMessage(vm as never),
@@ -117,7 +117,7 @@ export const ROUTES: Record<string, Route> = {
   },
   handoff: {
     bundle: "/dist/webview/handoff.js",
-    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/handoff.css"],
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/mermaid-block.css", "/dist/webview/handoff.css"],
     frame: { w: 900, h: 760 },
     fixtures: handoffFixtures as Record<string, Fixture>,
     makeMessage: (vm) => handoffMessage(vm as never),
@@ -177,7 +177,7 @@ export const ROUTES: Record<string, Route> = {
   // surface yet, so its CSS list is the plain codicon/design-system/panel-specific triad.
   "task-detail": {
     bundle: "/dist/webview/task-detail.js",
-    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/task-detail.css"],
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/mermaid-block.css", "/dist/webview/task-detail.css"],
     frame: { w: 820, h: 760 },
     fixtures: taskDetailFixtures as Record<string, Fixture>,
     makeMessage: (vm) => taskMessage(vm as never),

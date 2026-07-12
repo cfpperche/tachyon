@@ -99,7 +99,7 @@ export class TaskDetailPanelManager {
     panel.webview.html = renderWebviewShell({
       cspSource: panel.webview.cspSource,
       title: `Task ${taskId}`,
-      styles: [uri("codicon.css"), uri("design-system.css"), uri("task-detail.css")],
+      styles: [uri("codicon.css"), uri("design-system.css"), uri("mermaid-block.css"), uri("task-detail.css")],
       bundle: uri("task-detail.js"),
       mode: "live",
       frameSrc: "self",

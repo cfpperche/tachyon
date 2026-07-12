@@ -24,10 +24,10 @@ const STANDARD = {
 const linkOrder = (html: string): string[] => [...html.matchAll(/<link rel="stylesheet" href="([^"]+)"/g)].map((m) => m[1]);
 
 describe("spec 280 — migrated-panel shell parity", () => {
-  it("handoff: standard CSP + codicon→design-system→handoff.css order", () => {
-    const html = renderWebviewShell(opts({ styles: ["/dist/webview/codicon.css", "/dist/webview/design-system.css", "/dist/webview/handoff.css"], bundle: "/dist/webview/handoff.js" }));
+  it("handoff: standard CSP + codicon→design-system→mermaid-block→handoff.css order", () => {
+    const html = renderWebviewShell(opts({ styles: ["/dist/webview/codicon.css", "/dist/webview/design-system.css", "/dist/webview/mermaid-block.css", "/dist/webview/handoff.css"], bundle: "/dist/webview/handoff.js" }));
     expect(parseShellCsp(html)).toEqual(STANDARD);
-    expect(linkOrder(html)).toEqual(["/dist/webview/codicon.css", "/dist/webview/design-system.css", "/dist/webview/handoff.css"]);
+    expect(linkOrder(html)).toEqual(["/dist/webview/codicon.css", "/dist/webview/design-system.css", "/dist/webview/mermaid-block.css", "/dist/webview/handoff.css"]);
   });
 
   it("plugins: standard CSP + codicon→design-system→plugins.css order", () => {
@@ -44,10 +44,10 @@ describe("spec 280 — migrated-panel shell parity", () => {
     expect(linkOrder(html)).toEqual(["/dist/webview/codicon.css", "/dist/webview/design-system.css", "/dist/webview/mission-control.css"]);
   });
 
-  it("task-detail: standard CSP (no relaxation) + codicon→design-system→task-detail.css order", () => {
-    const html = renderWebviewShell(opts({ styles: ["/dist/webview/codicon.css", "/dist/webview/design-system.css", "/dist/webview/task-detail.css"], bundle: "/dist/webview/task-detail.js" }));
+  it("task-detail: standard CSP (no relaxation) + codicon→design-system→mermaid-block→task-detail.css order", () => {
+    const html = renderWebviewShell(opts({ styles: ["/dist/webview/codicon.css", "/dist/webview/design-system.css", "/dist/webview/mermaid-block.css", "/dist/webview/task-detail.css"], bundle: "/dist/webview/task-detail.js" }));
     expect(parseShellCsp(html)).toEqual(STANDARD);
-    expect(linkOrder(html)).toEqual(["/dist/webview/codicon.css", "/dist/webview/design-system.css", "/dist/webview/task-detail.css"]);
+    expect(linkOrder(html)).toEqual(["/dist/webview/codicon.css", "/dist/webview/design-system.css", "/dist/webview/mermaid-block.css", "/dist/webview/task-detail.css"]);
   });
 
   it("sidebar: keeps img blob: + script-src nonce-ONLY (no cspSource)", () => {
@@ -77,7 +77,7 @@ describe("spec 280 — migrated-panel shell parity", () => {
   it("activity: standard CSP + body theme class + bootstrap globals BEFORE the bundle, same nonce", () => {
     const html = renderWebviewShell(opts({
       bodyClass: "tac-theme-dark",
-      styles: ["/dist/webview/codicon.css", "/dist/webview/design-system.css", "/dist/webview/activity.css"],
+      styles: ["/dist/webview/codicon.css", "/dist/webview/design-system.css", "/dist/webview/mermaid-block.css", "/dist/webview/activity.css"],
       bundle: "/dist/webview/activity.js",
       bootstrapGlobals: { __mermaidSrc: "/dist/webview/mermaid.js", __katexSrc: "/dist/webview/katex.js", __katexCssUri: "/dist/webview/katex.min.css", __codeThemeForced: "dark" },
     }));
