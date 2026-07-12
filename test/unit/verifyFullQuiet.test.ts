@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 // The production runner is intentionally plain ESM and has no separate declaration surface.
 // @ts-expect-error -- importing the owned .mjs runner directly is the behavior under test.
 import { FAILURE_LIMITS, formatFailure, formatSuccess, summarizeReport } from "../../scripts/verify-full.mjs";
@@ -13,9 +13,24 @@ const passingReport = {
   numTotalTests: 12, numPassedTests: 10, numFailedTests: 0, numPendingTests: 1, numTodoTests: 1,
   testResults: [{ status: "passed", name: "one" }, { status: "passed", name: "two" }],
 };
+const createdPaths = new Set<string>();
+
+function trackRetained(stderr: string) {
+  const retained = stderr.match(/Full private log retained at: (.+)/)?.[1];
+  if (retained) createdPaths.add(retained);
+  return retained;
+}
+
+function cleanupCreatedPaths() {
+  for (const target of createdPaths) fs.rmSync(target, { recursive: true, force: true });
+  createdPaths.clear();
+}
+
+afterEach(cleanupCreatedPaths);
 
 function workspace(buildSource = "", vitestSource?: string) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "verify-full-quiet-test-"));
+  createdPaths.add(root);
   fs.mkdirSync(path.join(root, "node_modules/vitest"), { recursive: true });
   fs.writeFileSync(path.join(root, "esbuild.mjs"), buildSource || "console.log('PASSED BUILD NOISE')\n");
   fs.writeFileSync(path.join(root, "node_modules/vitest/vitest.mjs"), vitestSource ?? `
@@ -35,7 +50,7 @@ function execute(root: string, env: Record<string, string> = {}) {
     child.stdout.on("data", (chunk) => { stdout += chunk; });
     child.stderr.on("data", (chunk) => { stderr += chunk; });
     child.on("error", reject);
-    child.on("close", (code) => resolve({ code, stdout, stderr }));
+    child.on("close", (code) => { trackRetained(stderr); resolve({ code, stdout, stderr }); });
   });
 }
 
@@ -59,6 +74,15 @@ describe("quiet full verification", () => {
     expect(output).toContain("npm run verify:full");
   });
 
+  it("includes bounded deduplicated file-level infrastructure diagnostics", () => {
+    const report = { testResults: [{ status: "failed", name: "broken.test.ts",
+      message: "SyntaxError: broken import", assertionResults: [] }] };
+    const output = formatFailure({ phase: "tests", report, logDir: "/private/log" });
+    expect(output).toContain("broken.test.ts");
+    expect(output.match(/SyntaxError: broken import/g)).toHaveLength(1);
+    expect(Buffer.byteLength(output)).toBeLessThanOrEqual(FAILURE_LIMITS.totalBytes);
+  });
+
   it("runs build then full Vitest quietly, reports below 1 KiB, and cleans success temp", async () => {
     const root = workspace();
     const before = new Set(fs.readdirSync(os.tmpdir()).filter((name) => name.startsWith("tachyon-verify-full-")));
@@ -73,6 +97,15 @@ describe("quiet full verification", () => {
     expect(after).toEqual([]);
   });
 
+  it("removes every tracked test fixture and retained production log", () => {
+    const fixture = workspace();
+    const retained = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-verify-full-"));
+    createdPaths.add(retained);
+    cleanupCreatedPaths();
+    expect(fs.existsSync(fixture)).toBe(false);
+    expect(fs.existsSync(retained)).toBe(false);
+  });
+
   it("preserves test failure status and retains a private bounded diagnostic log", async () => {
     const report = { ...passingReport, numFailedTests: 1, numPassedTests: 9,
       testResults: [{ status: "failed", assertionResults: [{ status: "failed", fullName: "useful failure", failureMessages: ["expected true"] }] }] };
@@ -81,7 +114,7 @@ describe("quiet full verification", () => {
     expect(result.stdout).toBe("");
     expect(result.stderr).toContain("failed during tests");
     expect(result.stderr).toContain("useful failure");
-    const retained = result.stderr.match(/Full private log retained at: (.+)/)?.[1];
+    const retained = trackRetained(result.stderr);
     expect(retained).toBeTruthy();
     expect(fs.statSync(retained!).mode & 0o777).toBe(0o700);
     expect(Buffer.byteLength(result.stderr)).toBeLessThanOrEqual(FAILURE_LIMITS.totalBytes + 1);
@@ -103,9 +136,13 @@ describe("quiet full verification", () => {
       setInterval(() => {}, 1000);
     `);
     const child = spawn(process.execPath, [runner], { cwd: root });
+    let stderr = "";
+    child.stderr.on("data", (chunk) => { stderr += chunk; });
     for (let index = 0; index < 100 && !fs.existsSync(path.join(root, "ready")); index++) await new Promise((resolve) => setTimeout(resolve, 10));
+    const closed = new Promise<number | null>((resolve) => child.once("close", resolve));
     child.kill("SIGTERM");
-    const code = await new Promise<number | null>((resolve) => child.on("close", resolve));
+    const code = await closed;
+    trackRetained(stderr);
     expect(code).toBe(143);
   });
 

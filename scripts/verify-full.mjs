@@ -40,13 +40,21 @@ export function formatSuccess(report) {
 
 function assertionFailures(report) {
   const failures = [];
+  const seen = new Set();
+  const add = (name, message, deduplicate = false) => {
+    const text = String(message ?? "");
+    if (!text || (deduplicate && seen.has(text))) return;
+    seen.add(text);
+    failures.push({ name, message: text });
+  };
   for (const file of Array.isArray(report?.testResults) ? report.testResults : []) {
     for (const assertion of Array.isArray(file?.assertionResults) ? file.assertionResults : []) {
       if (assertion?.status !== "failed") continue;
       const messages = Array.isArray(assertion.failureMessages) && assertion.failureMessages.length
         ? assertion.failureMessages : [file?.message ?? file?.failureMessage ?? "Assertion failed"];
-      failures.push({ name: assertion.fullName ?? assertion.title ?? file?.name ?? "failed assertion", message: messages.join("\n") });
+      add(assertion.fullName ?? assertion.title ?? file?.name ?? "failed assertion", messages.join("\n"));
     }
+    if (file?.status === "failed") add(file.name ?? "failed test file", file.message ?? file.failureMessage, true);
   }
   return failures;
 }
