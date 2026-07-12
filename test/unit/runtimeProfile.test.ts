@@ -18,6 +18,9 @@ describe("runtime profiles (spec 358 phase 1)", () => {
     const profile = runtimeProfile("codex");
     expect(profile?.model).toMatchObject({ defaultModel: "Codex default", source: "declared", verified: false });
     expect(modelLabelForRuntime("codex", "gpt-5.1-codex")).toBe("GPT-5.1 Codex");
+    expect(modelLabelForRuntime("codex", "gpt-5.6-sol")).toBe("GPT-5.6 Sol");
+    expect(modelLabelForRuntime("codex", "gpt-5.6-terra")).toBe("GPT-5.6 Terra");
+    expect(modelLabelForRuntime("codex", "gpt-5.6-luna")).toBe("GPT-5.6 Luna");
     expect(profile?.isolation).toMatchObject({ mechanism: "private-home", source: "measured", verified: true });
     expect(profile?.composer).toMatchObject({ tailLines: 8, source: "declared" });
     expect(profile?.composer?.promptLine.test("❯ hello")).toBe(true);

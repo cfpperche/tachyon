@@ -110,4 +110,28 @@ describe("agentModel.modelFromCommand (t-140242)", () => {
     expect(modelFromCommand("grok --model grok-4")).toBe("Grok 4");
     expect(modelFromCommand("grok -m grok-4-fast")).toBe("Grok 4 Fast");
   });
+  it("t-140a24: parses Codex -c model=<id> fleet overrides (Terra/Luna/Sol)", () => {
+    expect(modelFromCommand("codex -c model=gpt-5.6-terra -c model_reasoning_effort=medium")).toBe("GPT-5.6 Terra");
+    expect(modelFromCommand("codex -c model=gpt-5.6-luna -c model_reasoning_effort=low")).toBe("GPT-5.6 Luna");
+    expect(modelFromCommand("codex -c model=gpt-5.6-sol -c model_reasoning_effort=xhigh")).toBe("GPT-5.6 Sol");
+    expect(modelFromCommand("codex -c model='gpt-5.6-terra'")).toBe("GPT-5.6 Terra");
+    expect(modelFromCommand("codex -c \"model=gpt-5.6-luna\"")).toBe("GPT-5.6 Luna");
+  });
+  it("t-140a24: -c model= does not steal non-model overrides or bare default", () => {
+    expect(modelFromCommand("codex -c model_reasoning_effort=medium")).toBe("Codex default");
+    expect(modelFromCommand("codex --yolo")).toBe("Codex default");
+    // non-model -c then model later still works
+    expect(modelFromCommand("codex -c model_reasoning_effort=low -c model=gpt-5.6-luna")).toBe("GPT-5.6 Luna");
+  });
+  it("t-140a24: --model still wins when it appears before -c model=", () => {
+    expect(modelFromCommand("codex --model gpt-5.1-codex -c model=gpt-5.6-terra")).toBe("GPT-5.1 Codex");
+  });
+  it("t-140a24: toAgentVM surfaces Terra/Luna for declared fleet cmds", () => {
+    expect(
+      toAgentVM(raw({ name: "codex-executor", running: true, cmd: "codex -c model=gpt-5.6-terra -c model_reasoning_effort=medium" }), { ai: true }),
+    ).toMatchObject({ model: "GPT-5.6 Terra" });
+    expect(
+      toAgentVM(raw({ name: "codex-mechanical", running: true, cmd: "codex -c model=gpt-5.6-luna -c model_reasoning_effort=low" }), { ai: true }),
+    ).toMatchObject({ model: "GPT-5.6 Luna" });
+  });
 });

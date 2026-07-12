@@ -140,10 +140,15 @@ export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = 
       aliases: {
         "gpt-5.1-codex": "GPT-5.1 Codex",
         "gpt-5-codex": "GPT-5 Codex",
+        "gpt-5.6-sol": "GPT-5.6 Sol",
+        "gpt-5.6-terra": "GPT-5.6 Terra",
+        "gpt-5.6-luna": "GPT-5.6 Luna",
       },
       source: "declared",
       verified: false,
-      notes: "t-140242 v1: command --model wins; bare codex falls back to this profile label until config/session introspection lands.",
+      notes:
+        "t-140242 v1: command --model wins; bare codex falls back to this profile label until config/session introspection lands. " +
+        "t-140a24: sidebar also reads Codex `-c model=<id>` overrides (fleet form); Sol/Terra/Luna aliases polish gpt-5.6-* labels.",
     },
     isolation: {
       mechanism: "private-home",

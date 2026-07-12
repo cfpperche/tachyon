@@ -60,16 +60,50 @@ function tokenizeCommand(cmd: string): string[] {
   return out;
 }
 
+/** Codex `-c key=value` (and quoted) config override — extract model id when key is `model`. */
+function modelIdFromCodexConfigOverride(token: string | undefined): string | undefined {
+  if (!token) return undefined;
+  const match = /^model=(.+)$/i.exec(token);
+  if (!match) return undefined;
+  const modelId = match[1]?.trim();
+  return modelId || undefined;
+}
+
+function labelModel(runtime: ReturnType<typeof runtimeOf>, modelId: string | undefined): string | undefined {
+  const trimmed = modelId?.trim();
+  if (!trimmed) return undefined;
+  return runtime ? modelLabelForRuntime(runtime, trimmed) : trimmed;
+}
+
+/**
+ * Best-effort model label from a spawn command line.
+ * Supports Claude/Grok `--model`/`-m`/`--model=`, and Codex fleet form `-c model=<id>`
+ * (t-140a24). Leftmost explicit model wins; bare known runtimes fall back to profile default.
+ */
 export function modelFromCommand(cmd: string | undefined): string | undefined {
   if (!cmd?.trim()) return undefined;
   const tokens = tokenizeCommand(cmd);
   const runtime = runtimeOf(cmd);
   for (let i = 0; i < tokens.length; i++) {
-    const token = tokens[i];
-    if (token === "--model" || token === "-m") return runtime ? modelLabelForRuntime(runtime, tokens[i + 1]) : tokens[i + 1]?.trim() || undefined;
+    const token = tokens[i]!;
+    if (token === "--model" || token === "-m") {
+      const labeled = labelModel(runtime, tokens[i + 1]);
+      if (labeled) return labeled;
+      continue;
+    }
     if (token.startsWith("--model=")) {
-      const modelId = token.slice("--model=".length);
-      return runtime ? modelLabelForRuntime(runtime, modelId) : modelId.trim() || undefined;
+      const labeled = labelModel(runtime, token.slice("--model=".length));
+      if (labeled) return labeled;
+      continue;
+    }
+    // Codex TOML override: `-c model=gpt-5.6-terra` (two tokens after shell tokenize)
+    if (token === "-c") {
+      const labeled = labelModel(runtime, modelIdFromCodexConfigOverride(tokens[i + 1]));
+      if (labeled) {
+        i += 1;
+        return labeled;
+      }
+      continue;
     }
   }
   return runtime ? modelLabelForRuntime(runtime) : undefined;
