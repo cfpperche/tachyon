@@ -775,15 +775,17 @@ describe("DeliveryLeaseService dead-holder reconciliation (SDD 368 T11)", () => 
     approval?: (id: string, digest: string) => unknown;
     recoveryPrincipals?: string[];
     fence?: ProcessFencePort;
+    canonical?: () => string;
+    withLock?: <T>(path: string, fn: () => Promise<T>) => Promise<T>;
   } = {}) => new DeliveryLeaseService({
-    store, processFence: options.fence ?? certifiedFence, canonicalWorktreeFor: () => worktree,
+    store, processFence: options.fence ?? certifiedFence, canonicalWorktreeFor: options.canonical ?? (() => worktree),
     readHead: () => "b", inspectWorktree: () => ({ headSha: "b", clean: true }), isAncestor: () => true,
     inspectRecoveryWorktree: () => ({ inventory: options.inventory ?? recoveryInventory }),
     recoveryPrincipals: options.recoveryPrincipals,
     resolveRecoveryApproval: async (id, resolved, digest) => options.approval?.(id, digest) as never ?? {
       decision: "approved", requester: resolved.name!, actionDigest: digest, payloadHash: "payload", resolvedAt: now, resolvedBy: "human",
     },
-    withWorktreeLock: async (_path, fn) => fn(), now: () => now,
+    withWorktreeLock: options.withLock ?? (async (_path, fn) => fn()), now: () => now,
     nonce: () => "recovery-nonce", segmentId: () => "recovery-segment", eventId: () => "recovery-event",
   });
 
@@ -1222,5 +1224,34 @@ describe("DeliveryLeaseService dead-holder reconciliation (SDD 368 T11)", () => 
     await expect(makeService(store, worktree).acquire({ deliveryId: "d-lease", canonicalWorktree: worktree, expectedHeadSha: "b",
       role: "fixer", executionAgent: "fixer", ownsSubset: ["src"], grantedBy: actor, operationId: "abandoned-acquire" }))
       .rejects.toMatchObject({ code: "DELIVERY_ABANDONED", retryable: false });
+  });
+
+  it("allows configured recovery principals but rejects every untrusted actor before canonical or fence effects", async () => {
+    const allowed = heldFixture(); allowed.input.lease = { ...allowed.input.lease!, state: "quarantined", reason: "q" }; await allowed.store.create(allowed.input);
+    await expect(recoveryService(allowed.store, allowed.worktree, { recoveryPrincipals: ["rescuer"] }).salvageQuarantine({ deliveryId: "d-lease", canonicalWorktree: allowed.worktree,
+      actor: { kind: "agent", name: "rescuer" }, operationId: "configured", expectedHeadSha: "b", expectedInventory: recoveryInventory, executionAgent: "fixer", ownsSubset: ["src"] })).resolves.toMatchObject({ delivery: { lease: { state: "pending" } } });
+    for (const actor of [{ kind: "agent", name: "peer" }, { kind: "legacy" }, { kind: "external" }] as const) {
+      const denied = heldFixture(); denied.input.lease = { ...denied.input.lease!, state: "quarantined", reason: "q" }; await denied.store.create(denied.input);
+      const canonical = vi.fn(() => denied.worktree); const fence: ProcessFencePort = { ...certifiedFence, proveEmpty: vi.fn() };
+      await expect(recoveryService(denied.store, denied.worktree, { canonical, fence }).salvageQuarantine({ deliveryId: "d-lease", canonicalWorktree: denied.worktree,
+        actor: actor as never, operationId: `denied-${actor.kind}`, expectedHeadSha: "b", expectedInventory: recoveryInventory, executionAgent: "fixer", ownsSubset: ["src"] })).rejects.toMatchObject({ code: "DELIVERY_QUARANTINED" });
+      expect(canonical).not.toHaveBeenCalled(); expect(fence.proveEmpty).not.toHaveBeenCalled();
+    }
+  });
+
+  it.each(["unsupported", "unknown", "survivors", "throwing"] as const)("keeps quarantine byte-identical for %s recovery fence failure", async (kind) => {
+    const { store, worktree, input } = heldFixture(); input.lease = { ...input.lease!, state: "quarantined", reason: "q" }; await store.create(input);
+    const before = await store.get("d-lease");
+    const fence: ProcessFencePort = { capability: () => kind === "unsupported" ? { supported: false, reason: "no" } : { supported: true, domain: "test" }, freeze: vi.fn(), terminate: vi.fn(),
+      proveEmpty: async () => { if (kind === "throwing") throw new Error("boom"); if (kind === "unknown") return { state: "unknown", reason: "no" }; if (kind === "survivors") return { state: "survivors", pids: [1] }; return { state: "proven_empty" }; } };
+    await expect(recoveryService(store, worktree, { fence }).salvageQuarantine({ deliveryId: "d-lease", canonicalWorktree: worktree, actor, operationId: `fence-${kind}`, expectedHeadSha: "b", expectedInventory: recoveryInventory, executionAgent: "fixer", ownsSubset: ["src"] })).rejects.toMatchObject({ code: "DELIVERY_QUARANTINED" });
+    expect(await store.get("d-lease")).toEqual(before); expect(fence.freeze).not.toHaveBeenCalled(); expect(fence.terminate).not.toHaveBeenCalled();
+  });
+
+  it.each(["head", "dirty", "commit", "malformed", "scope"] as const)("refuses %s recovery boundary without mutation", async (kind) => {
+    const { store, worktree, input } = heldFixture(); input.lease = { ...input.lease!, state: "quarantined", reason: "q" }; await store.create(input); const before = await store.get("d-lease");
+    const inventory = kind === "head" ? { ...recoveryInventory, headSha: "other" } : kind === "dirty" ? { ...recoveryInventory, dirtyPaths: [{ path: "other", status: "M" }] } : kind === "commit" ? { ...recoveryInventory, uniqueCommits: ["other"] } : kind === "malformed" ? { ...recoveryInventory, dirtyPaths: [{ path: "", status: "M" }] } : recoveryInventory;
+    await expect(recoveryService(store, worktree, { inventory: inventory as typeof recoveryInventory }).salvageQuarantine({ deliveryId: "d-lease", canonicalWorktree: worktree, actor, operationId: `boundary-${kind}`, expectedHeadSha: "b", expectedInventory: recoveryInventory, executionAgent: "fixer", ownsSubset: kind === "scope" ? ["test"] : ["src"] })).rejects.toMatchObject({ code: kind === "scope" ? "DELIVERY_OWNS_WIDENING" : "DELIVERY_QUARANTINED" });
+    expect(await store.get("d-lease")).toEqual(before);
   });
 });

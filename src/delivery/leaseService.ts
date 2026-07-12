@@ -943,14 +943,19 @@ export class DeliveryLeaseService {
   }
 
   private async recoveryFailure<T>(error: unknown, operationId: string, deliveryId: string, intent: Record<string, unknown>, eventType: string, state: Delivery["lease"]["state"]): Promise<T> {
+    let replay: Delivery | undefined;
+    try { replay = await this.replayRecovery(operationId, deliveryId, intent, eventType, state); }
+    catch (replayError) { if (replayError instanceof DeliveryStoreBusyError) throw this.busy(replayError); throw replayError; }
+    if (replay) {
+      if (state === "pending") return { delivery: replay, reservationNonce: replay.lease.holder!.reservationNonce! } as T;
+      return replay as T;
+    }
     if (error instanceof DeliveryStoreBusyError) throw this.busy(error);
+    if (error instanceof DeliveryLeaseError) throw error;
     if (error instanceof DeliveryVersionConflictError) {
-      const replay = await this.replayRecovery(operationId, deliveryId, intent, eventType, state);
-      if (replay) {
-        if (state === "pending") return { delivery: replay, reservationNonce: replay.lease.holder!.reservationNonce! } as T;
-        return replay as T;
-      }
-      const winner = await this.deps.store.get(deliveryId);
+      let winner: Delivery | undefined;
+      try { winner = await this.deps.store.get(deliveryId); }
+      catch (readError) { if (readError instanceof DeliveryStoreBusyError) throw this.busy(readError); throw readError; }
       if (!winner) throw error;
       if (winner.lease.state === "abandoned") throw this.abandoned(winner);
       if (["pending", "held", "draining", "verifying"].includes(winner.lease.state)) throw this.occupied(winner, "another recovery operation won the Delivery CAS");
