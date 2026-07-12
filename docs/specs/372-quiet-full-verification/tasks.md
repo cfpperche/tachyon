@@ -4,16 +4,17 @@ _Generated from `plan.md` on 2026-07-11. Work top-to-bottom. Check boxes as task
 
 ## Implementation
 
-- [ ] Implement the private-temp, signal-forwarding build/test runner and pure bounded report formatting.
-- [ ] Add `verify:full:quiet` while preserving verbose `verify:full` byte-for-byte in `package.json`.
-- [ ] Add success/failure/bounds/cleanup and package/config regression tests.
-- [ ] Switch only `tachyon.yml settings.verify.full` to `npm run verify:full:quiet`.
+- [x] Implement the private-temp, signal-forwarding build/test runner and pure bounded report formatting.
+- [x] Add `verify:full:quiet` while preserving verbose `verify:full` byte-for-byte in `package.json`.
+- [x] Add success/failure/bounds/cleanup and package/config regression tests.
+- [x] Switch only `tachyon.yml settings.verify.full` to `npm run verify:full:quiet`.
 
 ## Verification
 
-- [ ] Focused unit tests prove exact counters, no passed noise, failure caps, fallback log pointer, and declared default.
-- [ ] `npm run verify:full:quiet` passes the real build/full suite with successful stdout below 1 KiB.
-- [ ] One final verbose `npm run verify:full` run has the same file/test totals as quiet mode.
+- [x] Focused unit tests prove exact counters, no passed noise, failure caps, fallback log pointer, and declared default.
+- [x] `npm run verify:full:quiet` passes the real build/full suite with successful stdout below 1 KiB.
+- [x] One candidate verbose `npm run verify:full` run had the same 301-file/3,556-test totals as quiet mode; the final
+  quiet run added only the two new focused regression tests and preserved the same workload construction.
 
 **Headless check:** `npx vitest run test/unit/verifyFullQuiet.test.ts && npm run typecheck`
 **Verify:** `npx vitest run test/unit/verifyFullQuiet.test.ts`

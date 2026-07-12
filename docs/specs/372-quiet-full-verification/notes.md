@@ -15,7 +15,12 @@ _In-flight design memory — decisions, deviations, tradeoffs, and open question
 
 ## Deviations
 
-None yet.
+- The coordinator audit found that file-level Vitest infrastructure errors were present in JSON but omitted when no
+  assertion failed, and that failure-path unit tests leaked their intentionally retained logs. `89b3489` added bounded
+  deduplicated file diagnostics and deterministic test cleanup without changing production failure retention.
+- The initially planned final verbose rerun was not repeated after the two audit regression tests. Candidate dogfood
+  had already proved exact quiet/verbose equivalence at 301 files and 3,556 tests; final closure used the now-default
+  quiet gate at 301 files and 3,558 tests to avoid a redundant high-output full run.
 
 ## Tradeoffs
 
@@ -25,3 +30,12 @@ None yet.
 ## Open questions
 
 None.
+
+## Dogfood log
+
+- 2026-07-11, candidate `043c79e`: quiet exited 0 with 156 bytes/7 lines; quiet and verbose both reported 301 files,
+  3,553 passed, 3 skipped, 3,556 total.
+- 2026-07-11, final `89b3489`: `npm run verify:full:quiet` exited 0 with 301 files, 3,555 passed, 3 skipped,
+  3,558 total; `npm run typecheck` and `git diff --check` passed.
+- Temporary hygiene proof around the final full run: test fixture directories remained 28→28 and retained runner
+  directories remained 21→21. Existing retained failure evidence was not destructively removed.

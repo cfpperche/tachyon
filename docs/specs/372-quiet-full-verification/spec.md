@@ -2,7 +2,9 @@
 
 _Created 2026-07-11._
 
-**Status:** in-progress
+**Status:** shipped
+**Closure:** shipped in `043c79e` with coordinator-audit corrections in `89b3489`; final quiet dogfood passed
+301 files and 3,558 tests (3 skipped) with bounded output, typecheck/diff-check green, and no temporary-directory growth.
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
@@ -23,23 +25,23 @@ verbose command for human debugging.
 
 _Observable outcomes. Given/When/Then scenarios for behavior; plain checkbox bullets for static facts. If every box can be ticked, the spec is delivered. Each criterion should be verifiable without re-reading the plan._
 
-- [ ] **Scenario: successful full verification is transcript-bounded**
+- [x] **Scenario: successful full verification is transcript-bounded**
   - **Given** the build and every Vitest test pass
   - **When** `npm run verify:full:quiet` runs
   - **Then** it executes the full build and test suite, exits zero, and prints a correct summary below 1 KiB without
     listing passed bundles, files, suites, or tests
-- [ ] **Scenario: failures remain actionable without flooding context**
+- [x] **Scenario: failures remain actionable without flooding context**
   - **Given** the build, test infrastructure, or assertions fail
   - **When** quiet verification exits non-zero
   - **Then** it prints the failed phase and bounded relevant diagnostics, omits successful noise, and identifies a
     private retained full log or the verbose rerun command
-- [ ] **Scenario: orchestration defaults to quiet while verbose remains available**
+- [x] **Scenario: orchestration defaults to quiet while verbose remains available**
   - **Given** a newly composed Tachyon agent primer or full `verify_task` gate
   - **When** it resolves `settings.verify.full`
   - **Then** it uses `npm run verify:full:quiet`, while explicit `npm run verify:full` retains verbose behavior
-- [ ] Quiet and verbose modes run the same `node esbuild.mjs` then complete `vitest run` workload; reporter/output
+- [x] Quiet and verbose modes run the same `node esbuild.mjs` then complete `vitest run` workload; reporter/output
   policy may differ, test selection and pass/fail semantics may not.
-- [ ] Successful temporary logs are removed; failed logs are private, outside tracked Git state, and named in output.
+- [x] Successful temporary logs are removed; failed logs are private, outside tracked Git state, and named in output.
 
 ## Non-goals
 
