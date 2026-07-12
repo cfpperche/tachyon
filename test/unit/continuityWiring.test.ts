@@ -126,7 +126,7 @@ const priv = (ws: Workspace): WorkspacePrivates => ws as unknown as WorkspacePri
 
 describe("continuity wiring (spec 241, headless via Workspace.createForTest)", () => {
   it("automatic injectContinuity stays silent and leaves discontinuity for runtime-native hooks", async () => {
-    const { ws, sent } = await makeWs("agents:\n  claude:\n    cmd: claude\nsettings:\n  persistence:\n    silentHooks: false\n");
+    const { ws, sent } = await makeWs("agents:\n  claude:\n    cmd: claude\n");
     ws.continuityStore.write("claude", "# Current Goal\nship 241", { sourceActivitySeq: 0 });
     ws.continuityState.markDiscontinuity("claude", 5);
     await ws.injectContinuity("claude", "compaction-idle");
@@ -135,7 +135,7 @@ describe("continuity wiring (spec 241, headless via Workspace.createForTest)", (
   });
 
   it("D3: clean resume and post-compaction resume are both silent automatically", async () => {
-    const { ws, sent } = await makeWs("agents:\n  claude:\n    cmd: claude\nsettings:\n  persistence:\n    silentHooks: false\n");
+    const { ws, sent } = await makeWs("agents:\n  claude:\n    cmd: claude\n");
     ws.continuityStore.write("claude", "# Current Goal\nx", {});
     await ws.injectContinuity("claude", "resume"); // no discontinuity flag → must stay silent
     expect(sent.length).toBe(0);
@@ -145,7 +145,7 @@ describe("continuity wiring (spec 241, headless via Workspace.createForTest)", (
   });
 
   it("cold start (no brief) does not inject a create-first-brief nudge automatically", async () => {
-    const { ws, sent } = await makeWs("agents:\n  claude:\n    cmd: claude\nsettings:\n  persistence:\n    silentHooks: false\n");
+    const { ws, sent } = await makeWs("agents:\n  claude:\n    cmd: claude\n");
     ws.continuityState.markDiscontinuity("claude");
     await ws.injectContinuity("claude", "compaction-idle");
     expect(sent.length).toBe(0);
@@ -194,15 +194,16 @@ describe("continuity wiring (spec 241, headless via Workspace.createForTest)", (
     expect(sent.some((s) => s.includes("append_project_handoff_note"))).toBe(false);
   });
 
-  it("spec 312: settings.persistence.silentHooks=false still does not restore legacy automatic pane reminders", async () => {
-    const { ws, root, sent } = await makeWs("agents:\n  claude:\n    cmd: claude\nsettings:\n  persistence:\n    silentHooks: false\n");
+  it("spec 312 / t-7bcba6: automatic pane reminders stay suppressed for declared agents (no visible-legacy path)", async () => {
+    const { ws, root, sent } = await makeWs("agents:\n  claude:\n    cmd: claude\n");
     appendActivity(root, "claude", 30);
 
     await priv(ws).maybeRemindCheckpoint("claude");
     await priv(ws).maybeRemindHandoff("claude");
     expect(sent.some((s) => s.includes('set_continuity(agent: "claude"'))).toBe(false);
     expect(sent.some((s) => s.includes("append_project_handoff_note"))).toBe(false);
-    expect(ws.persistenceHookHealth("claude")).toBeUndefined();
+    // Hooks remain the supported path — health is active, not disabled by a kill switch.
+    expect(ws.persistenceHookHealth("claude")).toMatchObject({ state: "active" });
   });
 
   it("spec 312: no visible fallback remains when Claude --settings prevents hook injection", async () => {
@@ -262,7 +263,7 @@ describe("continuity wiring (spec 241, headless via Workspace.createForTest)", (
   });
 
   it("spec 309: cold-start checkpoint reminder is retired, even after new activity", async () => {
-    const { ws, root, sent } = await makeWs("agents:\n  claude:\n    cmd: claude\nsettings:\n  persistence:\n    silentHooks: false\n");
+    const { ws, root, sent } = await makeWs("agents:\n  claude:\n    cmd: claude\n");
     appendActivity(root, "claude", 30);
 
     await priv(ws).maybeRemindCheckpoint("claude");
@@ -302,7 +303,7 @@ describe("continuity wiring (spec 241, headless via Workspace.createForTest)", (
   });
 
   it("a malformed brief stays silent automatically + does NOT clear the discontinuity", async () => {
-    const { ws, sent } = await makeWs("agents:\n  claude:\n    cmd: claude\nsettings:\n  persistence:\n    silentHooks: false\n");
+    const { ws, sent } = await makeWs("agents:\n  claude:\n    cmd: claude\n");
     fs.mkdirSync(ws.continuityStore.dir, { recursive: true });
     fs.writeFileSync(ws.continuityStore.pathOf("claude"), "garbage no frontmatter", "utf8");
     ws.continuityState.markDiscontinuity("claude");
@@ -312,7 +313,7 @@ describe("continuity wiring (spec 241, headless via Workspace.createForTest)", (
   });
 
   it("manual UI reinject can still warn for a malformed brief", async () => {
-    const { ws, root, sent } = await makeWs("agents:\n  claude:\n    cmd: claude\nsettings:\n  persistence:\n    silentHooks: false\n");
+    const { ws, root, sent } = await makeWs("agents:\n  claude:\n    cmd: claude\n");
     fs.mkdirSync(ws.continuityStore.dir, { recursive: true });
     fs.writeFileSync(ws.continuityStore.pathOf("claude"), "garbage no frontmatter", "utf8");
     appendActivity(root, "claude", 30);

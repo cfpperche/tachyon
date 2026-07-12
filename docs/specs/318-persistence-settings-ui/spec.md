@@ -9,6 +9,9 @@ _Created 2026-07-01._
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
+> **t-7bcba6 (2026-07-12):** The `settings.persistence.silentHooks` kill switch and the `tachyon.persistenceSettings` / “Visible legacy reminders” UI were **removed**. Silent hooks remain the only supported path for eligible declared Claude/Codex agents. This shipped history is not rewritten; the kill switch is obsolete product surface, not current behavior.
+
+
 ## Intent
 
 Spec 312 added `settings.persistence.silentHooks: false` as a config-file kill switch. That is sufficient for a power

@@ -370,8 +370,8 @@ export interface TachyonConfig {
     /** spec 245 — project handoff: canonical file path (RELATIVE to workspace root, default .tachyon/HANDOFF.md)
      *  + the append-note nudge cadence (`off` | an interval like `30m`/`1h`; default `30m`, throttled per-workspace). */
     handoff?: { path?: string; nudgeEvery?: string };
-    /** spec 312 — default-on runtime-native silent persistence hooks for declared Claude/Codex agents. */
-    persistence?: { silentHooks?: boolean };
+    // t-7bcba6 — settings.persistence (silentHooks kill switch) removed. Silent hooks are always
+    // the supported path for eligible agents; obsolete keys are rejected at parse time.
     /**
      * spec 364 — Bridge-client rebind after extension-host reload (MCP half-open recovery).
      * Defaults when absent: auto, graceMs 0, stopTimeoutMs 15000, maxConcurrentRebinds 1, circuitFailCount 3.
@@ -1220,19 +1220,11 @@ export function parseConfig(yamlText: string): ParseResult {
           for (const key of Object.keys(ho)) if (key !== "path" && key !== "nudgeEvery") errors.push(`settings.handoff: unknown key '${key}'`);
         }
       }
+      // t-7bcba6 — reject obsolete persistence kill switch so a false override cannot silently disable hooks.
       if (raw.settings.persistence !== undefined) {
-        if (!isPlainObject(raw.settings.persistence)) {
-          errors.push("settings.persistence: must be a mapping with 'silentHooks'");
-        } else {
-          const pe = raw.settings.persistence;
-          const p: { silentHooks?: boolean } = {};
-          if (pe.silentHooks !== undefined) {
-            if (typeof pe.silentHooks !== "boolean") errors.push("settings.persistence.silentHooks: must be a boolean");
-            else p.silentHooks = pe.silentHooks;
-          }
-          if (Object.keys(p).length > 0) settings.persistence = p;
-          for (const key of Object.keys(pe)) if (key !== "silentHooks") errors.push(`settings.persistence: unknown key '${key}'`);
-        }
+        errors.push(
+          "settings.persistence is obsolete: silent hooks are always enabled for eligible declared Claude/Codex agents. Remove settings.persistence (including silentHooks) from tachyon.yml — there is no visible-legacy fallback.",
+        );
       }
       // spec 364 — Bridge-client rebind policy (host generation bump after reload).
       if (raw.settings.bridgeClientRebind !== undefined) {

@@ -301,18 +301,7 @@
           "default": "auto",
           "description": "Clean clipboard copy (spec 219). 'auto' wires a UTF-8 copy-mode helper so a plain mouse drag-select (incl. scrollback) copies clean — no Shift, mouse stays on. 'off' leaves the OSC 52 default (use if copy already works or on a headless box)."
         },
-        "persistence": {
-          "type": "object",
-          "description": "Persistence maintenance behavior (spec 312).",
-          "additionalProperties": false,
-          "properties": {
-            "silentHooks": {
-              "type": "boolean",
-              "default": true,
-              "description": "Use runtime-native silent hooks for declared Claude/Codex continuity and handoff bookkeeping. Default true. Set false to restore legacy visible pane reminders."
-            }
-          }
-        },
+
         "taskNotifications": {
           "type": "object",
           "description": "Shared defaults for VS Code task mutation notifications. Explicit user and workspace editor settings take precedence.",

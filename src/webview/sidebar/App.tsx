@@ -41,7 +41,7 @@ export interface Dispatch {
   setCollapsedKeys?: (keys: string[]) => void;
 }
 /** Global (section-level, not per-row) ops: pins + the per-section "new …" studios. */
-export type GlobalOp = "addPin" | "copyBridge" | "init" | "openHandoff" | "persistenceSettings" | "studio:agents" | "studio:terminals" | "studio:commands" | "studio:runbooks" | "studio:schedules";
+export type GlobalOp = "addPin" | "copyBridge" | "init" | "openHandoff" | "studio:agents" | "studio:terminals" | "studio:commands" | "studio:runbooks" | "studio:schedules";
 
 /** One entry in the in-webview "..." overflow menu (edit/remove etc. live here across ALL tabs, not inline). */
 export interface MenuItem { label: string; icon: string; run: () => void }
@@ -87,7 +87,6 @@ function externalToolBadgeTitle(a: AgentVM): string {
 }
 
 function AgentBadges({ a }: { a: AgentVM }) {
-  const d = useContext(DispatchCtx);
   const externalToolLabel = externalToolBadgeLabel(a);
   return (
     <>
@@ -123,14 +122,12 @@ function AgentBadges({ a }: { a: AgentVM }) {
       {a.continuity === "stale" && <span class="badge warn" title="Continuity brief is behind recent activity — the agent should checkpoint (set_continuity)">◐ continuity stale</span>}
       {a.continuity === "missing" && <span class="badge" title="No continuity brief yet — the agent hasn't checkpointed its working state">○ no continuity</span>}
       {a.persistenceHooks && a.persistenceHooks.state !== "active" && (
-        <button
+        <span
           class={`badge hook-badge ${a.persistenceHooks.state === "failed" ? "err" : a.persistenceHooks.state === "unknown" ? "" : "warn"}`}
-          type="button"
-          title={`${a.persistenceHooks.reason ?? `Persistence hooks ${a.persistenceHooks.state}`} — open persistence settings`}
-          onClick={(e) => { e.preventDefault(); e.stopPropagation(); d.global("persistenceSettings"); }}
+          title={a.persistenceHooks.reason ?? `Persistence hooks ${a.persistenceHooks.state}`}
         >
           ⛓ hooks {a.persistenceHooks.state}
-        </button>
+        </span>
       )}
     </>
   );
@@ -673,7 +670,6 @@ export function App({ fleets = [SAMPLE], dispatch, prefs = {}, collapsedKeys = [
           const flipSort = () => changeSort(section, active === "name-asc" ? "name-desc" : "name-asc");
           return <>
             <span class="sec-actions">
-              <Act icon="settings-gear" title="Persistence hooks settings" on={() => dispatch?.global("persistenceSettings")} />
               <button class="act" type="button" title={`Sort ${section} — ${SORT_LABEL[active]} (click to flip)`} aria-label={`Sort ${section} (${SORT_LABEL[active]}); click to flip`} onClick={flipSort}><SortIcon dir={active} /></button>
               {STUDIO_OF[tab] && <Act icon="add" title={STUDIO_OF[tab]!.label} on={() => dispatch?.global(STUDIO_OF[tab]!.op)} />}
             </span>

@@ -1866,8 +1866,10 @@ export class Workspace {
   /** spec 312 — persisted Claude/Codex agents use runtime-native silent hooks by default. This also suppresses
    *  automatic pane nudges; manual UI reinjection remains explicit and visible. */
   private silentPersistenceHooksDesired(agent: string): boolean {
+    // t-7bcba6 — silent hooks are the only supported mode for eligible declared Claude/Codex
+    // agents. The obsolete settings.persistence.silentHooks kill switch was removed; a false
+    // override can no longer disable injection or claim to restore visible pane reminders.
     if (!this.automaticPersistenceNudgesAllowed(agent)) return false;
-    if (this.config?.settings.persistence?.silentHooks === false) return false;
     const def = this.config?.agents?.[agent];
     if (!def || managesOwnSession(def.cmd)) return false;
     const binary = binaryOf(def.cmd);
