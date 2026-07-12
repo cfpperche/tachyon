@@ -70,6 +70,15 @@ _Generated from `plan.md` on 2026-07-10. Work top-to-bottom. Check boxes as task
 
 ## Phase 4 — projection safety, rollout, and dogfood
 
+- [x] T14.5. Prove supported-host ProcessFence feasibility and ratify its threat model: transient user cgroup
+  containment plus a checksum-pinned `CAP_SYS_PTRACE` helper must return exact empty/survivor outcomes with zero
+  unknown evidence; deliberate malicious control of the same Linux account is explicitly out of scope.
+  - Gate: `a capped FDSize-bounded audit reports empty with no binding and the exact open FD as a survivor`.
+- [ ] T14.6. Implement the opt-in Linux `ProcessFencePort`: persist nonce-bound scope identity, wrap every Delivery
+  execution in one transient user scope, freeze/kill/prove `populated=0`, invoke the verified read-only binding
+  helper, and return `proven_empty` only when both independent proofs agree. Capability, identity, helper hash,
+  cgroup, audit, timeout, reload, or cleanup uncertainty must remain `unknown`/quarantined.
+  - Gate: `a detached Delivery writer survives pane death but cannot cross handoff after scope kill and exact audit`.
 - [ ] T15. Serialize linked GitDelivery mutation under the canonical Delivery lock, add idempotent projection
   reconciliation, and make list/hygiene/integration/prune refuse pending, held, verifying, unknown, or quarantined.
   - Gate: `concurrent reconcile and prune cannot diverge GitDelivery from canonical lease safety`.
@@ -80,8 +89,8 @@ _Generated from `plan.md` on 2026-07-10. Work top-to-bottom. Check boxes as task
   one worktree plus a second concurrent Delivery.
 - [ ] T18. Add and run headless dogfood covering the sequential lifecycle, same-Delivery contention refusal, dirty
   crash quarantine, salvage/abandon policy, and GitDelivery hygiene/prune refusal.
-  Real sequential lifecycle evidence is blocked until `ProcessFencePort` can return `proven_empty`; current-host
-  dogfood is limited to refusal/quarantine behavior.
+  Real sequential lifecycle evidence requires T14.6 plus an explicitly installed/verified helper; hosts without it
+  remain limited to refusal/quarantine behavior.
 - [ ] T19. After dogfood and full verification pass, switch new gated orchestration to Delivery leases by default,
   retain explicit legacy compatibility, update docs/tool descriptions, and record the rollout decision.
 - [ ] T20. Run SDD closure audit, attach verification/dogfood evidence, mark acceptance criteria, and move

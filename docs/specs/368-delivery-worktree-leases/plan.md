@@ -74,11 +74,22 @@ Only `proven_empty` permits successor reservation; `survivors` or `unknown` quar
 never sufficient. A platform without a sound adapter reports capability unavailable and cannot enable sequential
 handoff; it does not degrade to optimistic process-group guessing or a same-Delivery fallback worktree.
 
-The supported-host spike returned **PARTIAL**: a PID-namespace containment core can retain and terminate detached
-descendants, but the required independent global worktree-binding audit cannot prove absence because some
-same-UID `/proc` entries are unreadable. The first production slice therefore implements the domain/store and an
-explicit unavailable fence capability only. Sequential handoff remains disabled until a complete adapter can
-return `proven_empty`; fake adapters are limited to unit tests.
+The initial supported-host spike returned **PARTIAL**, so the first production slice correctly shipped an explicit
+unavailable fence. Follow-up evidence now closes host feasibility: an unprivileged transient `systemd --user`
+scope retains detached/reparented descendants and supports freeze, kill, and `populated=0`; a checksum-pinned,
+read-only helper holding only `CAP_SYS_PTRACE` audits every same-real-UID process's canonical `cwd`, `root`, and FD
+bindings. For non-dumpable processes whose `/proc/<pid>/fd` directory is DAC-locked, it uses `pidfd_getfd` bounded
+by the kernel-reported `FDSize`, with stable process identity and two equal complete scans. On this host the final
+capped experiment returned exact `empty` for no binding and exact `survivors` for a detached writer's open FD,
+both with zero unknown evidence.
+
+The maintainer ratified the supported threat model on 2026-07-12: the fence protects against accidental, stale,
+or defective same-UID processes, not a deliberately malicious actor controlling the same Linux account. Such an
+actor can already replace repository artifacts and coordinate target move/restore between separate procfs
+syscalls; defending against that actor requires a separate OS identity/security boundary and is a non-goal here.
+Observed path, identity, membership, capability, enumeration, or convergence drift still fails closed. Production
+enablement therefore requires a reviewed Linux adapter that combines both proofs and an explicit opt-in helper
+installation; Tachyon never invokes `sudo`, installs a capability, or falls back automatically.
 
 Lease states:
 

@@ -1979,3 +1979,57 @@ projection-service, GitDelivery, Bridge, and Workspace suites serially, then `np
 next full for post-review closure. Commit exactly owned paths by explicit pathspec with `t-0b5723`, keep the
 worktree clean, and doorbell `codex`. Grok 4.5 implements the closed contract; Sonnet independently reviews the
 immutable candidate before integration.
+
+### ProcessFence host-feasibility closure and threat-model ratification — 2026-07-12
+
+The maintainer ratified the production threat model after the final R5 host experiment. Tachyon must contain and
+detect accidental, stale, orphaned, detached, reparented, or defective same-real-UID processes. A deliberately
+malicious actor controlling the same Linux account is outside this guarantee: that actor can already replace repo
+artifacts and can coordinate a target move/restore entirely between separate procfs syscalls. A deployment that
+must resist that actor needs a separate OS user/security boundary. This disposition does not permit optimism:
+every observed identity, path, scope, capability, FD-table, scan-convergence, timeout, or cleanup ambiguity remains
+`unknown` and quarantines the Delivery.
+
+The accepted empirical chain is durable in `.tachyon/studies/368-process-fence-cgroup-spike.md`,
+`.tachyon/studies/368-process-audit-helper-spike.md`, and reviews R1–R5. The transient `systemd --user` scope retained
+a double-forked `setsid` writer after pane death, froze/thawed it, killed it, exposed `populated=0`, and cleaned the
+unit. The final seam-free helper source hash was
+`e60d1cc8acc51bc811fd7a7c5f2a4c3c6a4068d07c57e6a95a077339a1b85014`; binary hash was
+`856b0b78aecca1540a2eaee701032e9df436e709e100b0ea3f3944f542a36185`. With only
+`cap_sys_ptrace=ep`, the accepted binary returned `empty`/exit 0 with `match_count=0, unknown_count=0`, then
+`survivors`/exit 1 with the exact writer PID/start-time/open FD 3 and `unknown_count=0`. The capped inode, writer,
+target, and outputs were removed immediately; no capability remains installed.
+
+**T14.6 production contract.** Add an opt-in Linux adapter; keep `UnavailableProcessFence` as the default and for
+unsupported hosts. Derive a collision-resistant unit name from the execution nonce without exposing the nonce.
+Persist one nonce-bound fence identity before treating launch as confirmed: boot ID, transient unit name,
+InvocationID, exact ControlGroup path, creation receipt, and helper identity/hash. A missing receipt may be repaired
+only from the unique deterministic live unit whose current boot/unit identity is exact; ambiguity is unavailable.
+Never infer authority from agent/session/display names.
+
+Every Delivery execution command is wrapped before tmux launch in exactly one
+`systemd-run --user --scope --collect` boundary. Confirm the unit identity and membership before confirming the
+Delivery reservation as held;
+failure compensates/quarantines and never falls back to an ordinary pane. `freeze` writes `cgroup.freeze=1`, waits
+boundedly for `frozen 1`, and rechecks the pinned identity. `terminate` uses `cgroup.kill` (with bounded
+`systemctl --user stop` cleanup only for the same exact unit) and waits for `populated=0`/exact collected-unit
+absence. Scope creation, freeze, kill, waiting, helper execution, and audit run outside every Delivery/worktree/
+SQLite lock.
+
+`proveEmpty` requires both independent facts in one result: the exact containment identity is absent/empty, and
+the checksum-pinned helper reports `empty` for the canonical existing worktree with effective `CAP_SYS_PTRACE`,
+zero matches, and zero unknowns. `survivors` preserves bounded PID/start-time/kind/FD evidence; malformed output,
+wrong UID/hash/owner/mode/capability, `nosuid`, helper timeout/nonzero inconsistency, cgroup drift, reboot, missing
+controls, scan disagreement, or cleanup uncertainty returns `unknown`. The adapter never installs/builds/elevates
+the helper, never calls `sudo`, and never accepts `CAP_DAC_READ_SEARCH`; T16 owns explicit config and opt-in
+installation guidance.
+
+Implementation is split so capability plumbing cannot silently widen launch authority. Core scope/registry/audit
+logic belongs in `src/agents/processFence.ts` plus narrowly named Linux modules and focused unit/integration tests.
+AgentManager/Workspace wiring may only wrap exact Delivery-bound launches carrying a nonblank execution nonce;
+legacy/generic launches remain byte-compatible. Session-ledger reload consumes the persisted fence identity but
+does not manufacture one. The forcing matrix covers detached/reparented descendants, unit collision/reuse,
+InvocationID/boot/cgroup drift, crash before/after receipt, freeze/kill timeout, helper hash/cap/mode/output errors,
+empty/survivor/unknown, reload repair/quarantine, spawn compensation, generic-launch compatibility, and proof that
+no external process or unit is signalled. The first reviewable candidate runs the focused matrix, typecheck,
+diff-check, and one full quiet verification; final closure repeats the full gate after independent Sonnet review.
