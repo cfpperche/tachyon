@@ -76,9 +76,17 @@ class MemoryStore implements FenceIdentityStore {
   async load(nonceDigest: string): Promise<FenceIdentityV1 | undefined> {
     return this.map.get(nonceDigest);
   }
-  async store(identity: FenceIdentityV1): Promise<void> {
+  async create(identity: FenceIdentityV1): Promise<boolean> {
+    if (this.map.has(identity.nonceDigest)) return false;
     this.storeOrder.push(structuredClone(identity));
     this.map.set(identity.nonceDigest, structuredClone(identity));
+    return true;
+  }
+  async compareAndSet(expected: FenceIdentityV1, next: FenceIdentityV1): Promise<boolean> {
+    if (JSON.stringify(this.map.get(expected.nonceDigest)) !== JSON.stringify(expected)) return false;
+    this.storeOrder.push(structuredClone(next));
+    this.map.set(next.nonceDigest, structuredClone(next));
+    return true;
   }
 }
 
@@ -251,6 +259,9 @@ function makeHarness(opts: {
     store,
     clock,
     expectedHelperUid: helper.uid,
+    expectedHelperPath: helper.path,
+    expectedHelperSha256: helper.sha256,
+    expectedRuntimeUid: helper.uid,
     waitBudgetMs: 200,
     pollIntervalMs: 10,
     helperTimeoutMs: 1000,
@@ -363,25 +374,25 @@ describe("linuxProcessFence pure helpers", () => {
   });
 
   it("parseAuditHelperStdout is strict and non-optimistic", () => {
-    expect(parseAuditHelperStdout(emptyHelperStdout())).toEqual({
+    expect(parseAuditHelperStdout(emptyHelperStdout(), "/tmp/wt", 1000)).toEqual({
       state: "empty",
       capSysPtrace: "yes",
       matchCount: 0,
       unknownCount: 0,
       matchPids: [],
     });
-    expect(parseAuditHelperStdout(survivorsHelperStdout([9, 8]))).toMatchObject({
+    expect(parseAuditHelperStdout(survivorsHelperStdout([9, 8]), "/tmp/wt", 1000)).toMatchObject({
       state: "survivors",
       matchCount: 2,
       matchPids: [9, 8],
     });
-    expect(parseAuditHelperStdout("state=empty\n")).toBeNull();
-    expect(parseAuditHelperStdout("garbage\n")).toBeNull();
+    expect(parseAuditHelperStdout("state=empty\n", "/tmp/wt", 1000)).toBeNull();
+    expect(parseAuditHelperStdout("garbage\n", "/tmp/wt", 1000)).toBeNull();
     expect(parseAuditHelperStdout(
-      emptyHelperStdout() + "state=empty\n",
+      emptyHelperStdout() + "state=empty\n", "/tmp/wt", 1000,
     )).toBeNull(); // duplicate key
     expect(parseAuditHelperStdout(
-      "state=empty\ncap_sys_ptrace=yes\nmatch_count=0\nunknown_count=0\nextra=1\n",
+      "state=empty\ncap_sys_ptrace=yes\nmatch_count=0\nunknown_count=0\nextra=1\n", "/tmp/wt", 1000,
     )).toBeNull();
   });
 });

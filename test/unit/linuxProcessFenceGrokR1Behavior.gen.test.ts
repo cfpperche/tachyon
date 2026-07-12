@@ -39,8 +39,15 @@ describe("container-generated delegation behavior", () => {
       async load(d) {
         return storeMap.get(d);
       },
-      async store(identity) {
+      async create(identity) {
+        if (storeMap.has(identity.nonceDigest)) return false;
         storeMap.set(identity.nonceDigest, structuredClone(identity));
+        return true;
+      },
+      async compareAndSet(expected, next) {
+        if (JSON.stringify(storeMap.get(expected.nonceDigest)) !== JSON.stringify(expected)) return false;
+        storeMap.set(next.nonceDigest, structuredClone(next));
+        return true;
       },
     };
 
@@ -187,6 +194,9 @@ describe("container-generated delegation behavior", () => {
         store,
         clock,
         expectedHelperUid: 1000,
+        expectedHelperPath: helper.path,
+        expectedHelperSha256: helper.sha256,
+        expectedRuntimeUid: 1000,
         waitBudgetMs: 500,
         pollIntervalMs: 5,
       },

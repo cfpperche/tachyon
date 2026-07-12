@@ -111,8 +111,10 @@ export interface BootIdentityPort {
 
 export interface FenceIdentityStore {
   load(nonceDigest: string): Promise<FenceIdentityV1 | undefined>;
-  /** Atomic replace of the identity record for this digest. */
-  store(identity: FenceIdentityV1): Promise<void>;
+  /** Atomic create; false means a receipt already exists. */
+  create(identity: FenceIdentityV1): Promise<boolean>;
+  /** Atomic exact-value transition; false means the receipt changed. */
+  compareAndSet(expected: FenceIdentityV1, next: FenceIdentityV1): Promise<boolean>;
 }
 
 export interface FenceClock {
@@ -129,6 +131,11 @@ export type LinuxProcessFenceDeps = {
   clock: FenceClock;
   /** Expected helper owner uid (defaults to process euid). */
   expectedHelperUid?: number;
+  /** Explicit production pin; no self-reported helper identity is trusted. */
+  expectedHelperPath: string;
+  expectedHelperSha256: string;
+  /** Real UID the helper must report about itself. */
+  expectedRuntimeUid: number;
   waitBudgetMs?: number;
   pollIntervalMs?: number;
   helperTimeoutMs?: number;
@@ -218,12 +225,16 @@ export type ParsedHelperOutput = {
  * Strict machine-readable helper parser. Any missing/duplicate/malformed key → null.
  * Never optimistically treats partial output as empty.
  */
-export function parseAuditHelperStdout(stdout: string): ParsedHelperOutput | null {
+export function parseAuditHelperStdout(stdout: string, target: string, expectedUid: number): ParsedHelperOutput | null {
   const lines = stdout.split(/\r?\n/).filter((l) => l.length > 0);
   let state: ParsedHelperOutput["state"] | undefined;
   let capSysPtrace: "yes" | "no" | undefined;
   let matchCount: number | undefined;
   let unknownCount: number | undefined;
+  let selfUid: number | undefined;
+  let outputTarget: string | undefined;
+  let matchTruncated: number | undefined;
+  let unknownTruncated: number | undefined;
   const matchPids: number[] = [];
   const seen = new Set<string>();
 
@@ -249,7 +260,7 @@ export function parseAuditHelperStdout(stdout: string): ParsedHelperOutput | nul
       seen.add("match_count");
       const v = line.slice("match_count=".length);
       if (!/^\d+$/.test(v)) return null;
-      matchCount = Number(v);
+      matchCount = Number(v); if (!Number.isSafeInteger(matchCount)) return null;
       continue;
     }
     if (line.startsWith("unknown_count=")) {
@@ -257,7 +268,7 @@ export function parseAuditHelperStdout(stdout: string): ParsedHelperOutput | nul
       seen.add("unknown_count");
       const v = line.slice("unknown_count=".length);
       if (!/^\d+$/.test(v)) return null;
-      unknownCount = Number(v);
+      unknownCount = Number(v); if (!Number.isSafeInteger(unknownCount)) return null;
       continue;
     }
     // match pid=N starttime=... kind=...
@@ -267,21 +278,23 @@ export function parseAuditHelperStdout(stdout: string): ParsedHelperOutput | nul
       continue;
     }
     // unknown reason=... optional fields — accepted but not required for identity keys
-    if (line.startsWith("unknown reason=")) continue;
-    if (line.startsWith("self_ruid=")) continue;
-    if (line.startsWith("target=")) continue;
-    if (line.startsWith("match_truncated=")) continue;
-    if (line.startsWith("unknown_truncated=")) continue;
+    if (line.startsWith("unknown reason=")) { continue; }
+    if (line.startsWith("self_ruid=")) { if (seen.has("self_ruid")) return null; seen.add("self_ruid"); const v=line.slice(10); if (!/^\d+$/.test(v)) return null; selfUid=Number(v); if (!Number.isSafeInteger(selfUid)) return null; continue; }
+    if (line.startsWith("target=")) { if (seen.has("target")) return null; seen.add("target"); outputTarget=line.slice(7); continue; }
+    if (line.startsWith("match_truncated=")) { if (seen.has("match_truncated")) return null; seen.add("match_truncated"); const v=line.slice(16); if (!/^\d+$/.test(v)) return null; matchTruncated=Number(v); continue; }
+    if (line.startsWith("unknown_truncated=")) { if (seen.has("unknown_truncated")) return null; seen.add("unknown_truncated"); const v=line.slice(18); if (!/^\d+$/.test(v)) return null; unknownTruncated=Number(v); continue; }
     // Unrecognized line → refuse (strict)
     return null;
   }
 
   if (state === undefined || capSysPtrace === undefined
-    || matchCount === undefined || unknownCount === undefined) {
+    || matchCount === undefined || unknownCount === undefined || selfUid !== expectedUid || outputTarget !== target) {
     return null;
   }
   // Count consistency: reported match lines must not exceed match_count
-  if (matchPids.length > matchCount) return null;
+  if (matchPids.length > matchCount || matchPids.length !== matchCount - (matchTruncated ?? 0)) return null;
+  if ((matchTruncated ?? 0) > 0 && matchCount === 0) return null;
+  if ((unknownTruncated ?? 0) > 0 && unknownCount === 0) return null;
 
   return { state, capSysPtrace, matchCount, unknownCount, matchPids };
 }
@@ -289,10 +302,6 @@ export function parseAuditHelperStdout(stdout: string): ParsedHelperOutput | nul
 function isRegularExecutable(mode: number): boolean {
   // S_IFREG = 0o100000; owner or group/other execute bit present
   return (mode & 0o170000) === 0o100000 && (mode & 0o111) !== 0;
-}
-
-function isWorldWritable(mode: number): boolean {
-  return (mode & 0o002) !== 0;
 }
 
 // ── Implementation ─────────────────────────────────────────────────────────
@@ -305,6 +314,9 @@ export class LinuxSystemdProcessFence implements LinuxProcessFencePort {
   private readonly store: FenceIdentityStore;
   private readonly clock: FenceClock;
   private readonly expectedHelperUid: number;
+  private readonly expectedHelperPath: string;
+  private readonly expectedHelperSha256: string;
+  private readonly expectedRuntimeUid: number;
   private readonly waitBudgetMs: number;
   private readonly pollIntervalMs: number;
   private readonly helperTimeoutMs: number;
@@ -318,6 +330,9 @@ export class LinuxSystemdProcessFence implements LinuxProcessFencePort {
     this.store = deps.store;
     this.clock = deps.clock;
     this.expectedHelperUid = deps.expectedHelperUid ?? (typeof process.getuid === "function" ? process.getuid() : 0);
+    this.expectedHelperPath = deps.expectedHelperPath;
+    this.expectedHelperSha256 = deps.expectedHelperSha256;
+    this.expectedRuntimeUid = deps.expectedRuntimeUid;
     this.waitBudgetMs = deps.waitBudgetMs ?? DEFAULT_FENCE_WAIT_MS;
     this.pollIntervalMs = deps.pollIntervalMs ?? DEFAULT_FENCE_POLL_MS;
     this.helperTimeoutMs = deps.helperTimeoutMs ?? DEFAULT_HELPER_TIMEOUT_MS;
@@ -358,23 +373,6 @@ export class LinuxSystemdProcessFence implements LinuxProcessFencePort {
     }
 
     const inspection = await this.requireHelperIdentity();
-    const existing = await this.store.load(digest);
-    if (existing) {
-      if (existing.unitName !== unitName || existing.bootId !== bootId) {
-        throw new ProcessFenceError(
-          "PROCESS_FENCE_IDENTITY",
-          "existing fence identity conflicts with deterministic unit/boot",
-        );
-      }
-      // Idempotent prepare: reuse pending/confirmed on same boot+unit; still return wrapper.
-      if (existing.phase === "confirmed") {
-        return {
-          command: wrapSystemdScopeCommand(unitName, cmd),
-          unitName,
-          nonceDigest: digest,
-        };
-      }
-    }
 
     const pending: FenceIdentityV1 = {
       schemaVersion: FENCE_IDENTITY_SCHEMA_VERSION,
@@ -386,7 +384,9 @@ export class LinuxSystemdProcessFence implements LinuxProcessFencePort {
       helperSha256: inspection.sha256,
     };
     // Pending receipt MUST precede returned command.
-    await this.store.store(pending);
+    if (!(await this.store.create(pending))) {
+      throw new ProcessFenceError("PROCESS_FENCE_IDENTITY", "fence identity already exists; refusing duplicate launch");
+    }
 
     return {
       command: wrapSystemdScopeCommand(unitName, cmd),
@@ -413,12 +413,8 @@ export class LinuxSystemdProcessFence implements LinuxProcessFencePort {
       }
     }
 
-    if (identity.nonceDigest !== digest || identity.unitName !== unitName) {
-      throw new ProcessFenceError("PROCESS_FENCE_IDENTITY", "identity digest/unit mismatch");
-    }
-    if (identity.bootId !== bootId) {
-      throw new ProcessFenceError("PROCESS_FENCE_BOOT", "boot id drift since prepare");
-    }
+    if (identity.bootId !== bootId) throw new ProcessFenceError("PROCESS_FENCE_BOOT", "boot id drift since prepare");
+    this.validateIdentity(identity, digest, bootId);
 
     if (identity.phase === "confirmed") {
       await this.assertExactLiveIdentity(identity);
@@ -428,21 +424,15 @@ export class LinuxSystemdProcessFence implements LinuxProcessFencePort {
     const snap = await this.pollUntil(async () => {
       const s = await this.systemd.show(unitName);
       if (s.loadState === "not-found") return null;
+      if (s.id !== unitName) throw new ProcessFenceError("PROCESS_FENCE_IDENTITY", "unit id does not match deterministic name");
       if (!s.invocationId.trim() || !s.controlGroup.trim()) return null;
-      if (s.id && s.id !== unitName && s.id !== unitName.replace(/\.scope$/, "")) {
-        // Accept unit id with or without .scope suffix conventions; require exact name match when present.
-      }
       if (s.activeState !== "active" && s.activeState !== "running") return null;
       return s;
     }, "unit did not become active with InvocationID/ControlGroup");
 
-    if (snap.id && snap.id !== unitName) {
-      throw new ProcessFenceError("PROCESS_FENCE_IDENTITY", "unit id does not match deterministic name");
-    }
-
     const procs = await this.cgroup.readProcs(snap.controlGroup);
-    if (procs === "missing") {
-      throw new ProcessFenceError("PROCESS_FENCE_CGROUP", "control group missing at confirm");
+    if (procs === "missing" || procs.length === 0) {
+      throw new ProcessFenceError("PROCESS_FENCE_CGROUP", "control group missing or empty at confirm");
     }
 
     const confirmed: FenceIdentityV1 = {
@@ -451,7 +441,9 @@ export class LinuxSystemdProcessFence implements LinuxProcessFencePort {
       invocationId: snap.invocationId,
       controlGroup: snap.controlGroup,
     };
-    await this.store.store(confirmed);
+    if (!(await this.store.compareAndSet(identity, confirmed))) {
+      throw new ProcessFenceError("PROCESS_FENCE_IDENTITY", "fence identity changed during confirm");
+    }
   }
 
   async freeze(executionNonce: string): Promise<void> {
@@ -561,7 +553,7 @@ export class LinuxSystemdProcessFence implements LinuxProcessFencePort {
         return { state: "unknown", reason: "audit helper timed out" };
       }
 
-      const parsed = parseAuditHelperStdout(run.stdout);
+      const parsed = run.stderr === "" ? parseAuditHelperStdout(run.stdout, worktree, this.expectedRuntimeUid) : null;
       if (!parsed) {
         return { state: "unknown", reason: "audit helper output malformed or incomplete" };
       }
@@ -579,7 +571,7 @@ export class LinuxSystemdProcessFence implements LinuxProcessFencePort {
       }
 
       if (run.exitCode === 1) {
-        if (parsed.state !== "survivors" || parsed.unknownCount !== 0) {
+        if (parsed.state !== "survivors" || parsed.capSysPtrace !== "yes" || parsed.unknownCount !== 0 || parsed.matchCount <= 0) {
           return {
             state: "unknown",
             reason: "audit helper exit 1 inconsistent with survivors/unknown counts",
@@ -616,17 +608,17 @@ export class LinuxSystemdProcessFence implements LinuxProcessFencePort {
 
   private async requireHelperIdentity(): Promise<HelperBinaryInspection> {
     const inspection = await this.auditHelper.inspect();
-    if (inspection.path !== this.auditHelper.path()) {
+    if (!this.depsHelperPinValid() || inspection.path !== this.depsExpectedHelperPath() || this.auditHelper.path() !== this.depsExpectedHelperPath()) {
       throw new ProcessFenceError("PROCESS_FENCE_HELPER", "helper path mismatch");
     }
-    if (!/^[0-9a-f]{64}$/.test(inspection.sha256)) {
-      throw new ProcessFenceError("PROCESS_FENCE_HELPER", "helper sha256 malformed");
+    if (inspection.sha256 !== this.depsExpectedHelperSha256()) {
+      throw new ProcessFenceError("PROCESS_FENCE_HELPER", "helper sha256 mismatch");
     }
     if (!isRegularExecutable(inspection.mode)) {
       throw new ProcessFenceError("PROCESS_FENCE_HELPER", "helper is not a regular executable");
     }
-    if (isWorldWritable(inspection.mode)) {
-      throw new ProcessFenceError("PROCESS_FENCE_HELPER", "helper is world-writable");
+    if ((inspection.mode & 0o022) !== 0) {
+      throw new ProcessFenceError("PROCESS_FENCE_HELPER", "helper is group or world-writable");
     }
     if (inspection.uid !== this.expectedHelperUid) {
       throw new ProcessFenceError("PROCESS_FENCE_HELPER", "helper owner uid mismatch");
@@ -646,17 +638,35 @@ export class LinuxSystemdProcessFence implements LinuxProcessFencePort {
     if (!identity) {
       throw new ProcessFenceError("PROCESS_FENCE_IDENTITY", "no fence identity for nonce digest");
     }
+    this.validateIdentity(identity, digest, await this.boot.getBootId());
     if (identity.phase !== "confirmed") {
       throw new ProcessFenceError("PROCESS_FENCE_IDENTITY", "fence identity is not confirmed");
     }
     if (!identity.invocationId || !identity.controlGroup) {
       throw new ProcessFenceError("PROCESS_FENCE_IDENTITY", "confirmed identity missing InvocationID/ControlGroup");
     }
-    if (identity.unitName !== unitNameForDigest(digest)) {
-      throw new ProcessFenceError("PROCESS_FENCE_IDENTITY", "unit name drift from digest");
-    }
     return identity;
   }
+
+  private validateIdentity(identity: FenceIdentityV1, digest: string, bootId: string): void {
+    if (identity.schemaVersion !== 1 || !/^[0-9a-f]{64}$/.test(identity.nonceDigest)
+      || identity.nonceDigest !== digest || identity.unitName !== unitNameForDigest(digest)
+      || identity.bootId !== bootId || identity.helperPath !== this.depsExpectedHelperPath()
+      || identity.helperSha256 !== this.depsExpectedHelperSha256()
+      || (identity.phase !== "pending" && identity.phase !== "confirmed")) {
+      throw new ProcessFenceError("PROCESS_FENCE_IDENTITY", "invalid or drifted fence identity");
+    }
+    if (identity.phase === "pending" && (identity.invocationId !== undefined || identity.controlGroup !== undefined)) {
+      throw new ProcessFenceError("PROCESS_FENCE_IDENTITY", "pending identity contains confirmed fields");
+    }
+    if (identity.phase === "confirmed" && (!identity.invocationId?.trim() || !identity.controlGroup?.trim())) {
+      throw new ProcessFenceError("PROCESS_FENCE_IDENTITY", "confirmed identity missing InvocationID/ControlGroup");
+    }
+  }
+
+  private depsExpectedHelperPath(): string { return this.expectedHelperPath; }
+  private depsExpectedHelperSha256(): string { return this.expectedHelperSha256; }
+  private depsHelperPinValid(): boolean { return this.expectedHelperPath.startsWith("/") && /^[0-9a-f]{64}$/.test(this.expectedHelperSha256); }
 
   /**
    * Exact identity checks before every cgroup/systemd action.
@@ -686,7 +696,7 @@ export class LinuxSystemdProcessFence implements LinuxProcessFencePort {
     bootId: string,
   ): Promise<FenceIdentityV1 | undefined> {
     const snap = await this.systemd.show(unitName);
-    if (snap.loadState === "not-found") return undefined;
+    if (snap.loadState === "not-found" || snap.id !== unitName) return undefined;
     if (!snap.invocationId.trim() || !snap.controlGroup.trim()) return undefined;
     if (snap.activeState !== "active" && snap.activeState !== "running") return undefined;
 
@@ -706,7 +716,9 @@ export class LinuxSystemdProcessFence implements LinuxProcessFencePort {
       helperPath: inspection.path,
       helperSha256: inspection.sha256,
     };
-    await this.store.store(pending);
+    const procs = await this.cgroup.readProcs(snap.controlGroup);
+    if (procs === "missing" || procs.length === 0) return undefined;
+    if (!(await this.store.create(pending))) return undefined;
     return pending;
   }
 
@@ -795,10 +807,12 @@ async function probeCapability(deps: LinuxProcessFenceDeps): Promise<ProcessFenc
       return { supported: false, reason: "boot id unavailable" };
     }
     const inspection = await deps.auditHelper.inspect();
-    if (!/^[0-9a-f]{64}$/.test(inspection.sha256)) {
+    if (!deps.expectedHelperPath.startsWith("/") || !/^[0-9a-f]{64}$/.test(deps.expectedHelperSha256)
+      || deps.auditHelper.path() !== deps.expectedHelperPath || inspection.path !== deps.expectedHelperPath
+      || inspection.sha256 !== deps.expectedHelperSha256) {
       return { supported: false, reason: "audit helper sha256 unavailable" };
     }
-    if (!isRegularExecutable(inspection.mode) || isWorldWritable(inspection.mode)) {
+    if (!isRegularExecutable(inspection.mode) || (inspection.mode & 0o022) !== 0) {
       return { supported: false, reason: "audit helper mode unacceptable" };
     }
     const expectedUid = deps.expectedHelperUid
