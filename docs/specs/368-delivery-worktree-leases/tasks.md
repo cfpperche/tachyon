@@ -58,7 +58,7 @@ _Generated from `plan.md` on 2026-07-10. Work top-to-bottom. Check boxes as task
 - [x] T11. Reconcile holder death using the same `ProcessFencePort` absence predicate as handoff plus persisted
   process/boot identity, canonical worktree audit, Git status, and recorded HEAD; survivors/unknown quarantine.
   - Gate: `a dirty dead holder quarantines its Delivery while a clean dead holder becomes retryable`.
-- [ ] T12. Add explicit salvage/abandon recovery with Bridge-resolved/configured actor policy that never authorizes
+- [x] T12. Add explicit salvage/abandon recovery with Bridge-resolved/configured actor policy that never authorizes
   by ephemeral/principal display-name equality, expected-HEAD/loss proof, audit, and human approval for destruction.
   - Gate: `quarantine recovery never treats dirty state as verified or discards data without approval`.
 - [ ] T13. Add declared-agent bound executions with unique runtime names and separate `executionAgent`/`principal`

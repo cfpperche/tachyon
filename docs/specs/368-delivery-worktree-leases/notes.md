@@ -983,3 +983,25 @@ Correction gates are the serial focused lease/store/verification suites, `npm ru
 `git diff --check`. Do **not** run full verification during correction: the first candidate full is already green;
 the next full is reserved for final closure after independent R2 acceptance. Commit exactly the seven owned paths by
 pathspec with `t-0b5723`, then notify the coordinator with SHA, exact counts, and residual risk.
+
+# T12 explicit quarantine recovery closure — 2026-07-12
+
+- Added policy-first salvage/abandon recovery over the canonical Delivery. Authorization reads only the
+  Bridge-resolved actor, original canonical creator, and trusted configured recovery principals; holder,
+  execution-agent, segment-principal, and requested display identities grant no authority.
+- Both actions require an exact `ProcessFencePort.proven_empty` boundary outside Delivery/worktree locks plus two
+  stable, canonical loss-inventory inspections. Salvage preserves every byte and commit, closes the interrupted
+  predecessor, and creates one pending recovery segment without claiming verification. Abandon requires an exact
+  host-resolved approval digest and records a terminal `abandoned` state without deleting Git or filesystem data.
+- Store validation, lease acquisition, repeat recovery, system verification, and bounded wait now agree on terminal
+  abandoned semantics. Recovery receipts replay exactly; cross-store same/different-operation and salvage/abandon
+  races return the durable receipt or classify the real winner without leaking SQLite busy/version errors.
+- Coordinator A1-A3 and Sonnet R1 found and closed terminal retryability, raw CAS/busy failures, exact tail snapshot,
+  authority ordering, locale-stable inventory, approval binding, and the complete forcing matrix. Final Sonnet R2
+  verdict: **ACCEPT** (`9ca9a47`) over implementation/test head `b56b4ceb`.
+- R2's one LOW, non-blocking test gap is tracked on the board as `t-cd8cbe`: isolate tail-only drift specifically in
+  the fence-proof→`recoveryCurrent` window. Production is already protected by the exact snapshot plus store CAS.
+- Final coordinator closure gates on `9ca9a47`: focused lease/store/verification 162/162, `npm run typecheck`, and
+  `git diff --check` passed; `npm run verify:full:quiet` passed 301 files with 3,603 tests passed and 3 skipped.
+  Progress is now design T0/T0.1/T0.2 plus T1–T12 = 15/23 primary checklist items complete; T13 bound persistent
+  executions is next.
