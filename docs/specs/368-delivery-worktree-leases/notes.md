@@ -1129,3 +1129,96 @@ Return every severity-ranked production and test-truthfulness finding in one art
 fixes. Allowed gates: serial focused AgentManager, Bridge, and generated behavior suites plus `git diff --check`;
 do not rerun typecheck or full verification. Commit only the review artifact by explicit pathspec with `t-0b5723`,
 then notify `codex` with one-line ACCEPT or FINDINGS and the SHA/pointer.
+
+### T13 R1 consolidated correction contract
+
+Candidate `672ba2e0` is rejected. Coordinator audit plus Sonnet R1 `9344877`
+(`.tachyon/reviews/368-delivery-bound-t13-r1.md`) confirm one non-forcing gate, one security-relevant partial-spawn
+cleanup defect, a largely absent deterministic matrix, and a defensive snapshot gap. The old delegation
+`8eb4de50-3c18-494b-975b-84874a0b36b4` can never be accepted because its immutable `cmd:` behavior verifier exits
+zero at BASE when no test matches; do not waive or reuse it. Start a fresh gated Delivery from current main.
+
+**Runtime/model and authority.** Use Terra medium: production changes are bounded, but exact teardown/liveness/error
+causality and deterministic failure scheduling require more than Luna. The coordinator owns every choice below.
+Own only `src/agents/AgentManager.ts`, `src/bridge/tools.ts`, `test/unit/agentManager.test.ts`,
+`test/unit/bridge.test.ts`, one new focused helper `test/helpers/boundDeliveryExecutionHarness.ts`, and the exact
+Bridge-generated stub `test/unit/deliveryBoundT13FixR2Behavior.gen.test.ts`. No Workspace, config/schema,
+SessionLedger schema, Delivery service/store/types, GitDelivery, continuity implementation, tachyon.yml, docs, task
+state, or other test edit.
+
+**Forcing behavior gate.** The new immutable behavior test is the ordinary Vitest pattern
+`a bound Delivery execution preserves its declared principal and cleans every partial spawn failure` — never a
+`cmd:` verifier. Tachyon's generated BASE stub must match that title and retain `expect.fail`, so fail-before is
+mechanically forced. At HEAD the same stub imports and awaits the focused helper, which must instantiate the real
+`AgentManager`/`TmuxService`, exercise a live declared principal plus a distinct bound execution, force at least one
+post-mint/pre-return spawn failure, and assert identity isolation plus cleanup. A constant/static/source-text
+assertion, nested Vitest invocation, skip, rename, or deletion is forbidden. The main AgentManager suite may reuse
+the helper, but the generated stub itself must fail if the production behavior is reverted.
+
+**Immutable declared-definition snapshot.** Preserve the accepted field policy from `672ba2e0`, but clone every
+mutable nested value used by the execution. `watch`, `attention.patterns`, `env`, and the complete nested `harness`
+graph must not share references with the current config object; `isolate`, command, role, and instruction strings are
+primitives. A deterministic barrier test mutates the source config's nested harness/env/attention values after
+`prepareDeliveryJoin` begins and proves the execution materializes the pre-reservation snapshot. Keep lifecycle
+fields stripped (`autostart:false`, `restart:never`, no source worktree/branch/setup/verify/subagents).
+
+**One preflight before reservation.** Reviewer-safe command construction and runtime launch preflight occur exactly
+once before `prepareDeliveryJoin`. Extend the private forced-spawn channel with an explicit proof that this effective
+command/env was already preflighted, so `spawnCore` does not repeat the catalog call after reservation. The proof is
+private to this synchronous call and cannot be supplied by Bridge/user input. Failed preflight has zero reservation,
+token, home/MCP/settings, tmux, ledger, activity, or principal effects.
+
+**Partial-spawn cleanup algorithm.** Replace the `spawned`-after-return guard for both bound and existing ad-hoc
+Delivery joins with one exact execution-cleanup path after any error occurring after reservation (spawn failure,
+readiness rejection, or confirmation failure):
+
+1. Preserve the primary error. Probe the execution tmux session. If present, attempt `killSession`, then re-probe;
+   an absent session is proven gone, while probe/kill/re-probe error or continued presence is unknown/live.
+2. Revoke the execution-name Bridge token unconditionally and exactly once; never mint/revoke the principal token.
+   Token revocation failure is retained as a cleanup error, not allowed to skip later compensation.
+3. Only after session absence is proven, clear execution-only in-memory ad-hoc/lineage/delegator/readiness state,
+   remove the execution ledger/activity/session-owner/harness-home/spawn-settings footprint idempotently, and emit
+   the normal killed/view callback. Never remove or rewrite the principal's cwd, resume/config home, token, harness,
+   activity ownership, continuity brief/state, or live tmux session.
+4. If absence is not proven, retain the execution's durable/private footprint for recovery and append an explicit
+   cleanup error that the runtime may still be live; do not report safe cleanup or delete its home. The token remains
+   revoked so an orphan cannot exercise Bridge authority.
+5. Regardless of execution-cleanup outcome, call `failDeliveryJoin` once with the exact normalized request,
+   reservation, and primary error. Aggregate in stable order: primary → session/liveness/footprint/token cleanup
+   errors → reservation-compensation error. Exact successful cleanup rethrows only the primary.
+
+The helper may be private to `AgentManager`; do not add a Workspace policy or another lifecycle state machine.
+Cleanup must cover failures before `spawnCore` writes `adhoc`/ledger, after tmux creation/readiness rejection, and
+after full spawn during confirmation. Preserve accepted T6/T10 behavior while closing their shared spawned-flag gap.
+
+**Complete deterministic matrix.** Implement every named case, with counters/barriers that fail if effects happen in
+the wrong phase:
+
+1. Bridge success without top-level `cmd`: structured contract is appended after declared role/instructions and the
+   manager receives execution name plus `declaredAgent`; missing contract still refuses.
+2. Live principal happy path: both sessions stay live; callbacks receive `executionAgent=name` and
+   `principal=declared_agent`; reviewer-safe command, declared env/harness/isolate, prepared Delivery cwd/worktree,
+   execution token/private home/ownership-only hooks, ad-hoc listing, and `declared:false` ledger are exact; fresh
+   worktree resolution is never called. Snapshot principal ledger/cwd/resume/config home, token registry, harness,
+   activity owner rows, continuity brief/state, tmux command/env, and prove them unchanged before/after execution
+   cleanup.
+3. Table-driven pre-reservation refusals: unknown and terminal source; same name; collision in config, ad-hoc map,
+   ledger, live tmux, and dead/postmortem tmux; reserved token env; `cmd+declared_agent`;
+   `principal+declared_agent`; unsafe reviewer command; and failed launch preflight. Each asserts zero
+   `prepareDeliveryJoin`, token mint, harness/MCP/settings, new-session/kill, ledger/activity, and principal effects.
+4. Defensive snapshot barrier described above plus a one-call preflight assertion.
+5. Force `tmux.newSession` failure after token/home materialization, Codex readiness rejection after session
+   creation, and confirmation failure after full spawn. When absence is provable, assert session gone, execution
+   token revoked, execution footprint removed, reservation failed once, and principal byte-for-byte untouched.
+6. Force initial liveness probe error, kill error, post-kill probe error/session survivor, token-revoke error,
+   footprint-removal error, and reservation-compensation error independently and in meaningful combinations.
+   Assert no later cleanup step is skipped, unknown/live keeps durable footprint, token revocation is attempted,
+   errors retain exact stable causal order, and no principal action occurs.
+7. Retain all existing T6/T10 ad-hoc join and ordinary declared-spawn behavior. Generated-stub helper plus focused
+   suites must be truthful and leak no temp session/home/files on success or failure.
+
+**Gates and done condition.** Run the generated stub, AgentManager, and Bridge suites serially, then
+`npm run typecheck` and `git diff --check`. Do not run full verification in this correction: the rejected first
+candidate already consumed the first-reviewable full gate; the next full is reserved for final closure after R2.
+Commit exactly the six owned paths by explicit pathspec with `t-0b5723`; notify `codex` with SHA, exact counts, and
+residual risk. Coordinator must run `verify_task` with no waivers and receive ACCEPT before immutable Sonnet R2.
