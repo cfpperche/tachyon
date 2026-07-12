@@ -155,7 +155,9 @@ describe("DeliveryVerificationLeaseService (SDD 368 T9)", () => {
   it("quarantines linked projection drift during interrupted recovery", async () => {
     const f = await fixture();
     await seedInterrupted(f);
-    await f.gitDeliveries.update(f.projection.id, f.projection.version, (record) => ({ ...record, branchRef: "wrong" }));
+    await f.gitDeliveries.applyCanonicalIntent({ id: f.projection.id, expectedVersion: f.projection.version,
+      sequence: 1, operationId: "fixture-branch-drift", deliveryId: "d-verify",
+      mutate: (record) => ({ ...record, branchRef: "wrong" }) });
     await expect(service(f).run("d-verify", actor, async () => { throw new Error("must not execute"); }))
       .rejects.toMatchObject({ code: "DELIVERY_QUARANTINED" });
     expect((await f.store.get("d-verify"))!.lease.state).toBe("quarantined");
@@ -163,7 +165,9 @@ describe("DeliveryVerificationLeaseService (SDD 368 T9)", () => {
 
   it("refuses a linked GitDelivery workspace drift before checkout or callback execution", async () => {
     const f = await fixture();
-    await f.gitDeliveries.update(f.projection.id, f.projection.version, (record) => ({ ...record, workspaceId: "other-workspace" }));
+    await f.gitDeliveries.applyCanonicalIntent({ id: f.projection.id, expectedVersion: f.projection.version,
+      sequence: 1, operationId: "fixture-workspace-drift", deliveryId: "d-verify",
+      mutate: (record) => ({ ...record, workspaceId: "other-workspace" }) });
     const before = git(f.worktree, "rev-parse", "HEAD");
     let executed = false;
     await expect(service(f).run("d-verify", actor, async () => {

@@ -442,4 +442,31 @@ describe("container-generated delegation behavior", () => {
     });
     expect(legacyHygiene.rows[0]?.projectionSync === "unlinked" || legacyHygiene.rows[0]?.deliveryId === undefined).toBe(true);
   });
+
+  it("canonical projection drift fixtures never reopen generic linked mutation", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "t15-canonical-gate-"));
+    const store = new GitDeliveryStore(root, { now: () => "2026-07-12T18:00:00.000Z" });
+    const record = await store.open({
+      id: "gd-c0ffee",
+      workspaceId: "ws",
+      deliveryId: "d-canonical",
+      createdBy: { kind: "system", name: "tachyon" },
+      agent: "worker",
+      branchRef: "tachyon/canonical",
+      worktreePath: path.join(root, "wt"),
+      tachyonCreatedBranch: true,
+      baseRef: "main",
+    });
+    await expect(store.update(record.id, record.version, (r) => ({ ...r, phase: "integrated" })))
+      .rejects.toThrow(/applyCanonicalIntent/);
+    await expect(store.applyCanonicalIntent({
+      id: record.id,
+      expectedVersion: record.version,
+      sequence: 1,
+      operationId: "canonical-drift",
+      deliveryId: "d-other",
+      mutate: (r) => r,
+    })).rejects.toThrow(/link drift|deliveryId/);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
 });
