@@ -1070,7 +1070,9 @@ only the bound execution, then consumes/quarantines the exact reservation; aggre
 in stable causal order.
 
 **Owned implementation paths.** `src/agents/AgentManager.ts`, `src/bridge/tools.ts`,
-`test/unit/agentManager.test.ts`, and `test/unit/bridge.test.ts` only. No Workspace, Delivery store/service/type,
+`test/unit/agentManager.test.ts`, `test/unit/bridge.test.ts`, and the exact Bridge-generated canonical behavior stub
+`test/unit/deliveryBoundT13TerraBehavior.gen.test.ts` only. The stub must replace its placeholder failure with a
+truthful assertion over the implemented behavior; it may not be renamed, removed, skipped, or weakened. No Workspace, Delivery store/service/type,
 SessionLedger schema, config/schema, GitDelivery, continuity implementation, tachyon.yml, or task-store edit. If the
 current interfaces cannot prove principal token/home/continuity non-mutation within these paths, stop and return the
 missing seam instead of widening scope.
@@ -1088,9 +1090,9 @@ zero reservation/runtime/identity effects. Force confirmation plus cleanup failu
 targeted. Retain existing T6/T10 ad-hoc join and ordinary declared-spawn tests unchanged.
 
 **Runtime/model and done condition.** Use the declared `codex-executor` at `gpt-5.6-terra` medium: the design is
-closed, the change is four files, and the remaining work is bounded implementation with identity-sensitive failure
+closed, the production/test change is four paths plus the mechanically generated behavior stub, and the remaining work is bounded implementation with identity-sensitive failure
 ordering but no unresolved architecture. The behavior gate is `a persistent identity reviews through a bound
 execution without rebinding or impersonation`. Run the focused AgentManager and Bridge suites serially,
 `npm run typecheck`, `git diff --check`, then `npm run verify:full:quiet` exactly once at the first reviewable
-candidate. Commit only the four owned paths with `t-0b5723` and notify `codex`; immutable Sonnet review and final
+candidate. Commit only the five owned paths with `t-0b5723` and notify `codex`; immutable Sonnet review and final
 closure verification remain coordinator gates.
