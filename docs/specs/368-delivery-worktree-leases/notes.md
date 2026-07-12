@@ -843,3 +843,87 @@ detects the now-closed tail and quarantine replay remains exact. Same two paths 
   `test/unit/deliveryLeaseService.test.ts` 100/100, `npm run typecheck` passed, and `npm run verify:full:quiet` passed
   301 files with 3,559 tests passed and 3 skipped. T11 adds no Bridge wiring, production OS fence, reload binding,
   salvage/abandon policy, or cleanup; those remain T12/T14/T16 concerns.
+
+### T12 implementation contract — explicit quarantine salvage/abandon
+
+T12 is a bounded canonical `DeliveryLeaseService` recovery slice. It does not reset, clean, checkout, remove,
+prune, integrate, or mutate a GitDelivery projection; T15 owns projection serialization and destructive Git cleanup.
+It does not add rollout/config schema or production Bridge/Workspace wiring; T16 owns those. The slice defines the
+trustworthy service interface which that later wiring must call with the Bridge-resolved caller and configured
+recovery principals. A direct tool argument, `executionAgent`, segment `principal`, GitDelivery `agent`, or display
+name equality is never authority.
+
+**Authority.** Add one pure policy over the canonical Delivery and resolved `DeliveryActor`. An agent may recover
+only when its exact resolved name is the Delivery's original agent creator or is present in the trusted
+`recoveryPrincipals` dependency. `legacy` and `external` callers are denied. Host-internal `human`, `master`, and
+`system` actors remain authoritative, but an agent cannot self-declare those kinds at the later Bridge boundary.
+The service performs this policy itself before any fence, Git observation, nonce allocation, or mutation. The
+authorization decision is based only on `createdBy` plus configured principals, never on the quarantined holder,
+open tail, requested successor, or attribution-only `principal`.
+
+**Recovery inputs and evidence.** Expose separate `salvageQuarantine` and `abandonQuarantine` operations with a
+stable `operationId`, canonical worktree, exact caller actor, caller-observed expected HEAD, and exact expected loss
+inventory. The inventory is a canonical, duplicate-free, deterministically ordered value containing the observed
+HEAD, dirty tracked/index/worktree and untracked paths with status, and the commit SHAs not retained by the
+Delivery's immutable base. Obtain it from a trusted `inspectRecoveryWorktree` dependency; never accept the caller's
+inventory as the observation. Require two equal inspections while holding the Delivery-then-worktree locks at the
+commit boundary, and require both to equal the supplied expectation. Inspection error, malformed/duplicate or
+unstable inventory, HEAD mismatch, canonical-worktree drift, lease drift, holder/tail drift, or loss-set drift leaves
+the Delivery quarantined and returns a non-retryable structured refusal with no partial segment/event append.
+
+**Exclusive boundary.** Snapshot the exact quarantined lease, holder, open tail, reason, and canonical worktree
+under the normal lock order. A recoverable quarantine must retain an exact open holder/tail with a non-empty
+execution nonce. Call `ProcessFencePort.capability` and `proveEmpty(executionNonce, canonicalWorktree)` outside all
+Delivery/worktree locks. Never freeze or terminate during recovery. Only `proven_empty` can proceed; unavailable,
+unknown, survivors, missing holder/tail/nonce, or any snapshot drift remains quarantined. Revalidate the complete
+snapshot and canonical path after the proof and immediately before the durable CAS. This deliberately fails closed
+for a holder-less system-verification quarantine until a later explicit recovery contract can prove its owner epoch;
+T12 must not guess that absence.
+
+**Salvage.** Salvage is non-destructive: it preserves every byte and commit, closes the quarantined predecessor as
+`interrupted` at the observed HEAD, appends exactly one open `recovery` segment, and publishes a nonce-bound
+`pending` reservation for the requested `executionAgent`/optional attribution-only `principal`. Normalize and prove
+the requested `ownsSubset` is inside the immutable Delivery contract. The recovery segment's `grantedHeadSha` is
+the observed committed HEAD; its event records the prior quarantine reason, exact holder/tail snapshot, complete
+loss inventory, actor, scope, reservation nonce, and stable intent. Dirty state is evidence carried into recovery,
+not a verified baseline: the event/type/result must not say verified, accepted, clean, or completed. Existing
+`confirmHeld`/`failPending` owns the later spawn confirmation/compensation.
+
+**Abandon.** Add terminal lease state `abandoned`; it is neither released nor acquirable. Abandon closes the open
+predecessor as `rejected` at the observed HEAD and records one `quarantine_abandoned` event, but performs no Git or
+filesystem deletion. It requires the same actor policy plus a trusted approval resolver dependency keyed by
+`approvalId`, resolved actor, and a canonical action digest over Delivery id, expected HEAD, exact loss inventory,
+and operation intent. The returned receipt must be an on-disk, tamper-checked, host-resolved `approved` decision,
+belong to the same resolved agent requester, and echo the exact digest; pending, denied, foreign-requester,
+tampered, unbound, or replayed-for-different-loss approval is refused before mutation. Persist the approval id,
+payload hash/action digest, human resolution timestamp/identity, exact loss inventory, and actor in the event so T15
+can require this immutable authorization before any destructive cleanup. Marking abandoned never itself deletes
+dirty files or unique commits.
+
+**Receipts and failure behavior.** Both operations use one SQLite operation receipt whose intent includes the full
+normalized input, actor, expected inventory, and approval id where applicable. Same-operation lost-response replay
+must return the exact persisted reservation/abandoned Delivery without rerunning the fence, inspections, approval
+resolver, or allocating new ids. Reusing an operation id with any changed action, inventory, actor, scope, execution
+identity, approval, or canonical path fails as an invalid receipt. Concurrent salvage/abandon attempts permit one
+winner; the loser observes the resulting owned/terminal state and cannot append a second segment or event. Any
+error before the CAS leaves the original quarantine byte-for-byte unchanged; an uncertain persistence error is
+surfaced with its causal chain rather than reported as a safe recovery.
+
+**Compatibility and observation.** Existing records remain schema version 1. Extend lease-state validation and
+wait observation so `abandoned` is a terminal, non-released outcome, while all existing free/pending/held/draining/
+verifying/quarantined behavior remains unchanged. No legacy Delivery or GitDelivery behavior becomes enabled.
+
+**Owned implementation paths.** `src/delivery/types.ts`, `src/delivery/leaseService.ts`, and
+`test/unit/deliveryLeaseService.test.ts` only. If repository evidence proves the approval receipt cannot be modeled
+without changing `src/bridge/approvalRequest.ts`, stop and return the missing interface decision; do not widen scope.
+
+**Deterministic test matrix.** Cover original-creator and configured-principal salvage; deny holder/principal/
+execution-name equality, legacy/external, and unconfigured peers; prove fence work occurs outside locks and only
+`proven_empty` advances; refuse holder-less, survivor, unknown, capability-missing, canonical-path, lease/tail, HEAD,
+dirty-path, unique-commit, unstable-inspection, malformed-inventory, and scope drift without mutation; prove salvage
+creates one pending recovery segment with dirty evidence but no verified claim; prove abandon requires exact
+host-resolved approved receipt and produces terminal state without any cleanup callback; mutate every approval
+binding field independently; prove same-operation replay skips all effects; force salvage-vs-abandon and same-action
+two-store races with exactly one event/segment winner; retain existing T5-T11 suite behavior. First reviewable
+candidate gates: serial focused DeliveryLeaseService suite, `npm run typecheck`, `git diff --check`, then
+`npm run verify:full:quiet` exactly once.
