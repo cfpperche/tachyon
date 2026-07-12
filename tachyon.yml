@@ -267,7 +267,7 @@ settings:
   # spec 362 — canonical verification commands for verify_task (read from the SOURCE tree, tamper-proof):
   # full builds dist/ first (the plugin-ui e2e needs bundles; a fresh worktree has none — T4 dogfood finding).
   verify:
-    full: npm run verify:full
+    full: npm run verify:full:quiet
     typecheck: npm run typecheck
   # worktree:
   #   branch: "tachyon/{agent}"   # template for per-agent worktree branch names

@@ -857,6 +857,7 @@
     "record:provenance": "node scripts/record-provenance.mjs",
     "test": "vitest run",
     "verify:full": "node esbuild.mjs && vitest run",
+    "verify:full:quiet": "node scripts/verify-full.mjs",
     "test:browser": "vitest run --config vitest.browser.config.ts",
     "test:integration": "vscode-test",
     "vscode:prepublish": "npm run build && npm run package:prepare",
