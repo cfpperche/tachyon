@@ -699,6 +699,31 @@ export class DeliveryLeaseService {
     });
   }
 
+  /** Exact join compensation. Pending reservations and the just-confirmed holder are
+   * quarantined only when their durable nonce still matches; names are never authority. */
+  async failJoin(deliveryId: string, reservationNonce: string, reason: string, operationId: string): Promise<Delivery> {
+    const intent = { deliveryId, reservationNonce, reason };
+    const replay = await this.replayEvent(operationId, deliveryId, "lease_join_failed", intent, "quarantined");
+    if (replay) return replay;
+    return this.withDeliveryLock(deliveryId, async () => {
+      const current = await this.deps.store.get(deliveryId);
+      if (!current) throw new DeliveryNotFoundError(deliveryId);
+      const holder = current.lease.holder;
+      const matches = (current.lease.state === "pending" && holder?.reservationNonce === reservationNonce)
+        || (current.lease.state === "held" && holder?.executionNonce === reservationNonce);
+      if (!matches) throw this.occupied(current, "join compensation no longer matches this exact reservation");
+      return this.deps.store.update(deliveryId, current.version, (record) => {
+        const h = record.lease.holder;
+        const exact = (record.lease.state === "pending" && h?.reservationNonce === reservationNonce)
+          || (record.lease.state === "held" && h?.executionNonce === reservationNonce);
+        if (!exact) throw this.occupied(record, "join compensation changed before quarantine");
+        record.lease = { ...record.lease, state: "quarantined", reason, changedAt: this.now() };
+        record.events.push({ id: this.eventId(), at: this.now(), type: "lease_join_failed", by: { kind: "system" }, detail: { operationId, intent } });
+        return record;
+      }, { operationId, intent });
+    });
+  }
+
   async handoff(input: DeliveryLeaseHandoffInput): Promise<DeliveryLeaseReservation> {
     const handoffSafety = this.handoffSafety();
     const ownsSubset = normalizeOwns(input.ownsSubset);

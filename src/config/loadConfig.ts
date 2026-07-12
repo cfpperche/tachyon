@@ -393,7 +393,7 @@ export interface TachyonConfig {
       integratePrincipals?: string[];
     };
     /** spec 368 — opt-in canonical gated-spawn persistence; legacy remains the rollout default. */
-    delivery?: { mode?: "legacy" | "canonical" };
+    delivery?: { mode?: "legacy" | "canonical"; handoffSafety?: "disabled" | "mechanism-only" | "process-fenced" };
     /** Shared defaults for human-facing task mutation toasts; explicit VS Code settings override these. */
     taskNotifications?: TaskNotificationSettingsInput;
   };
@@ -1331,8 +1331,16 @@ export function parseConfig(yamlText: string): ParseResult {
           const delivery = raw.settings.delivery;
           if (delivery.mode !== undefined && delivery.mode !== "legacy" && delivery.mode !== "canonical") {
             errors.push("settings.delivery.mode: must be legacy or canonical");
-          } else if (delivery.mode !== undefined) settings.delivery = { mode: delivery.mode };
-          for (const key of Object.keys(delivery)) if (key !== "mode") errors.push(`settings.delivery: unknown key '${key}'`);
+          } else {
+            if (delivery.handoffSafety !== undefined && !["disabled", "mechanism-only", "process-fenced"].includes(String(delivery.handoffSafety))) {
+              errors.push("settings.delivery.handoffSafety: must be disabled, mechanism-only, or process-fenced");
+            }
+            const mode = delivery.mode ?? "legacy";
+            const handoffSafety = delivery.handoffSafety ?? "disabled";
+            if (handoffSafety !== "disabled" && mode !== "canonical") errors.push("settings.delivery.handoffSafety requires settings.delivery.mode: canonical");
+            if (delivery.mode !== undefined || delivery.handoffSafety !== undefined) settings.delivery = { mode: mode as "legacy" | "canonical", handoffSafety: handoffSafety as "disabled" | "mechanism-only" | "process-fenced" };
+          }
+          for (const key of Object.keys(delivery)) if (key !== "mode" && key !== "handoffSafety") errors.push(`settings.delivery: unknown key '${key}'`);
         }
       }
       if (raw.settings.taskNotifications !== undefined) {

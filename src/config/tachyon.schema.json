@@ -357,7 +357,8 @@
           "description": "Canonical Delivery rollout settings (spec 368). Legacy gated persistence remains the default.",
           "additionalProperties": false,
           "properties": {
-            "mode": { "type": "string", "enum": ["legacy", "canonical"], "default": "legacy" }
+            "mode": { "type": "string", "enum": ["legacy", "canonical"], "default": "legacy" },
+            "handoffSafety": { "type": "string", "enum": ["disabled", "mechanism-only", "process-fenced"], "default": "disabled" }
           }
         }
       }

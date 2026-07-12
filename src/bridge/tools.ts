@@ -70,7 +70,7 @@ import type { WorktreeOccupancyProbe } from "../worktree/WorktreeManager.js";
 import type { GitDeliveryActor, GitDeliverySettings } from "../git-delivery/types.js";
 import type { TaskNotificationEvent } from "../tasks/taskNotificationPolicy.js";
 import { TaskPrototypeStore, type TaskPrototypeSnapshot } from "../tasks/TaskPrototypeStore.js";
-import type { WaitForDeliveryLeaseInput, WaitForDeliveryLeaseResult } from "../delivery/leaseService.js";
+import type { DeliveryLeaseService, WaitForDeliveryLeaseInput, WaitForDeliveryLeaseResult } from "../delivery/leaseService.js";
 import type { DeliveryProjectionService } from "../delivery/projectionService.js";
 import type { DeliveryStore } from "../delivery/store.js";
 import type { Delivery } from "../delivery/types.js";
@@ -183,6 +183,7 @@ export interface BridgeDeps {
   flagAwaitingHuman?: (agent: string, reason: string) => void;
   /** spec 368 — bounded read-only Delivery lease watcher. */
   waitForDeliveryLease?: (input: WaitForDeliveryLeaseInput, signal?: AbortSignal) => Promise<WaitForDeliveryLeaseResult>;
+  deliveryLease?: DeliveryLeaseService;
   /** spec 365 — local GitDelivery store + live-git/liveness seams. Enables git_delivery_* tools. */
   gitDelivery?: {
     store: GitDeliveryStore;
@@ -2558,6 +2559,30 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       } catch (err) {
         return fail(err);
       }
+    },
+  );
+
+  mcp.registerTool(
+    "delivery_complete_review",
+    {
+      description: "Complete an exact canonical Delivery review. Mechanism-only root death is best-effort; descendants are unproven.",
+      inputSchema: { delivery_id: z.string().min(1), expected_reviewed_head_sha: z.string().min(1), verdict: z.enum(["ACCEPT", "FINDINGS"]), operation_id: z.string().min(1) },
+    },
+    async ({ delivery_id, expected_reviewed_head_sha, verdict, operation_id }) => {
+      try {
+        if (!deps.deliveryLease || !deps.gitDelivery?.deliveries) return fail(new Error("delivery_complete_review unavailable"));
+        const caller = deps.caller;
+        if (!caller || caller.kind === "legacy" || caller.kind === "external") return fail(new Error("delivery_complete_review refused: resolved caller required"));
+        const delivery = await deps.gitDelivery.deliveries.get(delivery_id);
+        if (!delivery) return fail(new Error(`Delivery '${delivery_id}' not found`));
+        const permitted = caller.kind === "human" || caller.kind === "master" || (caller.kind === "agent" && caller.name === (delivery.createdBy.kind === "agent" ? delivery.createdBy.name : undefined));
+        if (!permitted) return fail(new Error("delivery_complete_review refused: caller is not the Delivery creator/coordinator or privileged"));
+        const linked = (await deps.gitDelivery.store.list()).filter((g) => g.deliveryId === delivery_id && !!g.worktreePath);
+        if (linked.length !== 1) return fail(new Error("delivery_complete_review refused: exact canonical worktree unavailable"));
+        const actor = caller.kind === "agent" ? { kind: "agent" as const, name: caller.name! } : { kind: caller.kind as "human" | "master" };
+        const completed = await deps.deliveryLease.completeReview({ deliveryId: delivery_id, canonicalWorktree: linked[0].worktreePath!, expectedReviewedHeadSha: expected_reviewed_head_sha, verdict, actor, operationId: operation_id });
+        return ok(JSON.stringify({ delivery: completed, warning: "Mechanism-only: root death is best-effort; descendant process absence is unproven." }));
+      } catch (err) { return fail(err); }
     },
   );
 

@@ -12,7 +12,7 @@ import {
   lkgSpawnRefusalMessage,
 } from "../config/configFailure.js";
 import { upsertAgent, upsertCommand, upsertRunbook, upsertSchedule, deleteSchedule, renameAgent as renameAgentInYml } from "../config/YamlConfigEditor.js";
-import { AgentManager, ResumeUnavailableError, WatchController, newlyDeclaredAutostart } from "../agents/AgentManager.js";
+import { AgentManager, ResumeUnavailableError, WatchController, newlyDeclaredAutostart, type DeliveryJoinRequest, type PreparedDeliveryJoin } from "../agents/AgentManager.js";
 import { agentLaunchPath } from "../agents/spawnPath.js";
 import { SessionLedger, durableBoundGeneration } from "../resume/SessionLedger.js";
 import { WorktreeManager, resolveWorktreeCwd, branchFor, type WorktreeRecord } from "../worktree/WorktreeManager.js";
@@ -93,7 +93,8 @@ import type { NoticeDeliveryResult, NotifyLevel } from "../bridge/tools.js";
 import { resolveOpencodeStorageSession } from "./opencodeStorage.js";
 import { GitDeliveryStore } from "../git-delivery/store.js";
 import { DeliveryStore } from "../delivery/store.js";
-import { waitForDeliveryLease } from "../delivery/leaseService.js";
+import { DeliveryLeaseService, waitForDeliveryLease } from "../delivery/leaseService.js";
+import { UnavailableProcessFence } from "../agents/processFence.js";
 import { DeliveryVerificationLeaseService } from "../delivery/verificationLease.js";
 import { DeliveryProjectionService } from "../delivery/projectionService.js";
 import {
@@ -107,7 +108,7 @@ import { resolveGitDeliverySettings } from "../git-delivery/settings.js";
 import { createGitExec, type GitExec } from "../worktree/WorktreeManager.js";
 import { resolveGitBinaryForHost } from "../worktree/gitBinary.js";
 import type { GitDeliveryActor } from "../git-delivery/types.js";
-import { hasDeliveryMarker } from "../resume/SessionLedger.js";
+import { hasDeliveryMarker, isValidDeliveryBinding } from "../resume/SessionLedger.js";
 import { TaskNotificationService } from "./TaskNotificationService.js";
 import { BridgeSlowRequestToastPolicy } from "./bridgeSlowRequestPolicy.js";
 import { ExternalToolRegistry } from "../externalTools/registry.js";
@@ -247,6 +248,7 @@ export class Workspace {
   readonly gitDeliveries: GitDeliveryStore;
   readonly deliveries: DeliveryStore;
   readonly deliveryProjection: DeliveryProjectionService;
+  readonly deliveryLease: DeliveryLeaseService;
   readonly deliveryVerification: DeliveryVerificationLeaseService;
   /** spec 257 — the captured headless A2A probe lane (probe_agent / read_probe_result). */
   readonly probeService: ProbeService;
@@ -459,6 +461,47 @@ export class Workspace {
         return this.refreshDeliveryReloadSnapshot();
       },
     });
+    // T14.6B2: the strong fence remains deliberately unavailable until T14.6C.
+    // Mechanism-only uses the exact ledger/pane stopper below and never claims descendant absence.
+    this.deliveryLease = new DeliveryLeaseService({
+      store: this.deliveries,
+      processFence: new UnavailableProcessFence(),
+      handoffSafety: earlyConfig?.settings.delivery?.handoffSafety ?? "disabled",
+      canonicalWorktreeFor: async (delivery) => {
+        const linked = (await this.gitDeliveries.list()).filter((g) => g.deliveryId === delivery.id && !!g.worktreePath);
+        if (linked.length !== 1) throw new Error(`DELIVERY_WORKTREE_MISMATCH: expected one linked projection for '${delivery.id}'`);
+        return fs.realpathSync(linked[0].worktreePath!);
+      },
+      readHead: async (cwd) => (await this.gitExec(["rev-parse", "HEAD"], cwd)).stdout.trim(),
+      inspectWorktree: async (cwd) => ({ headSha: (await this.gitExec(["rev-parse", "HEAD"], cwd)).stdout.trim(), clean: (await this.gitExec(["status", "--porcelain"], cwd)).stdout.trim() === "" }),
+      inspectReviewWorktree: async (cwd, taskRef) => {
+        const headSha = (await this.gitExec(["rev-parse", "HEAD"], cwd)).stdout.trim();
+        const taskRefSha = (await this.gitExec(["rev-parse", taskRef], cwd)).stdout.trim();
+        const indexTreeSha = (await this.gitExec(["write-tree"], cwd)).stdout.trim();
+        const commitTreeSha = (await this.gitExec(["rev-parse", "HEAD^{tree}"], cwd)).stdout.trim();
+        return { headSha, taskRefSha, indexTreeSha, commitTreeSha, trackedClean: (await this.gitExec(["status", "--porcelain"], cwd)).stdout.trim() === "" };
+      },
+      isAncestor: async (older, newer, cwd) => { try { await this.gitExec(["merge-base", "--is-ancestor", older, newer], cwd); return true; } catch { return false; } },
+      withWorktreeLock: (cwd, fn) => this.worktrees.withPathLock(cwd, fn),
+      processObserver: { observe: (identity) => {
+        const observed = readLinuxProcessIdentity(identity.pid);
+        if (observed.state === "gone") return { state: "gone" as const };
+        if (observed.state !== "exact") return { state: "unknown" as const, reason: observed.reason };
+        return observed.processStart === identity.processStart && observed.bootId === identity.bootId ? { state: "alive" as const } : { state: "unknown" as const, reason: "pid identity changed" };
+      } },
+      exactExecutionStopper: { stop: async (input) => {
+        const holder = (await this.deliveries.get(input.deliveryId))?.lease.holder;
+        const row = this.ledger.get(input.executionAgent);
+        const observed = readLinuxProcessIdentity(input.process.pid);
+        if (!holder || holder.segmentId !== input.segmentId || holder.executionNonce !== input.executionNonce
+          || holder.executionAgent !== input.executionAgent || !isValidDeliveryBinding(row?.delivery) || row.delivery.deliveryId !== input.deliveryId || row.delivery.segmentId !== input.segmentId || row.delivery.executionNonce !== input.executionNonce
+          || !row.cwd || !row.worktree?.path || fs.realpathSync(row.cwd) !== input.canonicalWorktree || fs.realpathSync(row.worktree.path) !== input.canonicalWorktree
+          || observed.state !== "exact" || observed.processStart !== input.process.processStart || observed.bootId !== input.process.bootId) {
+          throw new Error("DELIVERY_EXACT_STOP_REFUSED: ledger, worktree, or pane identity drifted");
+        }
+        await this.manager.kill(input.executionAgent);
+      } },
+    });
     this.harness = new HarnessManager(workspaceRoot, realConfigHome(), undefined, undefined, undefined, (message) => this.host.notify(message, "warn"));
     // spec 226 (H2) — when an agent has an isolated harness, its claude transcripts live under the
     // redirected config home; pass it to the resolvers as `claudeHome` so by-title/by-cwd scans hit it.
@@ -557,6 +600,9 @@ export class Workspace {
         if (this.deliveryReload.phase !== "ready") return true;
         return this.deliveryReload.snapshot.unavailableAgents.has(name);
       },
+      prepareDeliveryJoin: (name, request) => this.prepareDeliveryJoin(name, request),
+      confirmDeliveryJoin: (name, request, prepared, pid) => this.confirmDeliveryJoin(name, request, prepared, pid),
+      failDeliveryJoin: (_name, request, prepared, error) => this.deliveryLease.failJoin(request.deliveryId, prepared.reservationNonce, error instanceof Error ? error.message : String(error), `${request.operationId}:fail`).then(() => undefined),
 
       getConfig: () => this.config,
       // t-8354ae — refuse spawn of names that exist only in the LKG snapshot while config is invalid.
@@ -1047,6 +1093,7 @@ export class Workspace {
         },
         withWorktreeLock: (agent, fn) => this.worktrees.withAgentPathLock(agent, fn),
         deliveryVerification: this.deliveryVerification,
+        deliveryLease: this.deliveryLease,
         // spec 273 — the worktree evidence channel over MCP.
         attachEvidence: (input) => this.attachEvidence(input),
         listEvidence: (agent) => this.listEvidence(agent),
@@ -2233,6 +2280,11 @@ export class Workspace {
     const actor = input.delegator ? { kind: "agent" as const, name: input.delegator } : { kind: "system" as const, name: "tachyon" };
     let delivery = await this.deliveries.get(deliveryId);
     if (!delivery) {
+      // The gated pane already exists at this callback boundary. Capture its exact
+      // Linux identity before publishing the initial held lease; unknown is fail-closed.
+      const identity = readLinuxProcessIdentity(await this.tmux.panePid(this.manager.session(input.name)));
+      if (identity.state !== "exact") throw new Error("DELIVERY_PROCESS_IDENTITY_MISSING: canonical gated spawn requires an exact pane identity");
+      const executionNonce = randomBytes(16).toString("hex");
       const now = new Date().toISOString();
       try {
         delivery = await this.deliveries.create({
@@ -2247,7 +2299,7 @@ export class Workspace {
         taskRef: input.worktree.branch,
         ...(input.gate.stubPath ? { stubPath: input.gate.stubPath } : {}),
       },
-      lease: { state: "held", holder: { segmentId: `seg-${spawnKey.slice(0, 16)}`, executionAgent: input.name }, expectedHeadSha: input.baseSha, changedAt: now },
+      lease: { state: "held", holder: { segmentId: `seg-${spawnKey.slice(0, 16)}`, executionAgent: input.name, executionNonce, process: { pid: identity.pid, processStart: identity.processStart, bootId: identity.bootId } }, expectedHeadSha: input.baseSha, changedAt: now },
       segments: [{
         id: `seg-${spawnKey.slice(0, 16)}`, index: 0, role: "implementer", executionAgent: input.name,
         principal: input.name, grantedBy: actor, ownsSubset: owns, grantedHeadSha: input.baseSha, grantedAt: now,
@@ -2290,7 +2342,34 @@ export class Workspace {
         `Delivery '${delivery.id}' has no exact holder/open-tail/executionAgent boundary for '${input.name}'`,
       );
     }
-    this.ledger.bindDelivery(input.name, { deliveryId: delivery.id, segmentId: holder.segmentId });
+    this.ledger.bindDelivery(input.name, { deliveryId: delivery.id, segmentId: holder.segmentId, executionNonce: holder.executionNonce });
+  }
+
+  private async prepareDeliveryJoin(name: string, request: DeliveryJoinRequest): Promise<PreparedDeliveryJoin> {
+    if (this.config?.settings.delivery?.mode !== "canonical") throw new Error("DELIVERY_LEASE_UNAVAILABLE: canonical Delivery mode is disabled");
+    const delivery = await this.deliveries.get(request.deliveryId);
+    if (!delivery) throw new Error(`DELIVERY_NOT_FOUND: ${request.deliveryId}`);
+    const projections = (await this.gitDeliveries.list()).filter((g) => g.deliveryId === delivery.id && !!g.worktreePath);
+    if (projections.length !== 1) throw new Error("DELIVERY_WORKTREE_MISMATCH: canonical Delivery has no exact single worktree");
+    const worktreePath = fs.realpathSync(projections[0].worktreePath!);
+    const worktree: WorktreeRecord = { path: worktreePath, branch: projections[0].branchRef, tachyonCreatedBranch: projections[0].tachyonCreatedBranch, baseRef: projections[0].baseRef, createdAt: projections[0].createdAt };
+    const actor = { kind: "system" as const, name: "tachyon" };
+    const reservation = delivery.lease.state === "free"
+      ? await this.deliveryLease.acquire({ deliveryId: delivery.id, expectedVersion: delivery.version, expectedHeadSha: request.expectedHead, canonicalWorktree: worktreePath, role: request.role, executionAgent: name, principal: request.principal, grantedBy: actor, ownsSubset: request.ownsSubset, operationId: request.operationId })
+      : delivery.lease.state === "held"
+        ? await this.deliveryLease.handoff({ deliveryId: delivery.id, canonicalWorktree: worktreePath, expectedFinalHeadSha: request.expectedHead, role: request.role, executionAgent: name, principal: request.principal, grantedBy: actor, ownsSubset: request.ownsSubset, operationId: request.operationId })
+        : (() => { throw new Error(`DELIVERY_INVALID_STATE: Delivery is ${delivery.lease.state}`); })();
+    const segmentId = reservation.delivery.lease.holder?.segmentId;
+    if (!segmentId) throw new Error("DELIVERY_INVALID_STATE: reservation has no segment");
+    return { cwd: worktreePath, worktree, reservationNonce: reservation.reservationNonce, segmentId };
+  }
+
+  private async confirmDeliveryJoin(name: string, request: DeliveryJoinRequest, prepared: PreparedDeliveryJoin, pid?: number): Promise<void> {
+    void name;
+    if (!pid) throw new Error("DELIVERY_PROCESS_IDENTITY_MISSING: pane pid is unreadable");
+    const identity = readLinuxProcessIdentity(pid);
+    if (identity.state !== "exact") throw new Error("DELIVERY_PROCESS_IDENTITY_MISSING: pane identity is unreadable or reused");
+    await this.deliveryLease.confirmHeld(request.deliveryId, prepared.reservationNonce, { pid: identity.pid, processStart: identity.processStart, bootId: identity.bootId }, `${request.operationId}:confirm`);
   }
 
   /**

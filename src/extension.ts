@@ -1310,6 +1310,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           authConfigured: ws.authEnabled,
         },
         transcriptPresence,
+        mechanismOnlyDelivery: ws.config?.settings.delivery?.mode === "canonical" && ws.config?.settings.delivery?.handoffSafety === "mechanism-only",
       });
       const text = formatDoctorReport(report);
       const channel = vscode.window.createOutputChannel("Tachyon Doctor");

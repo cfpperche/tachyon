@@ -42,6 +42,8 @@ export interface DoctorReportInput {
   /** optional per-agent transcript/rollout presence for resumable rows */
   transcriptPresence?: ReadonlyMap<string, boolean>;
   now?: Date;
+  /** Canonical mechanism-only handoff is intentionally best-effort root death. */
+  mechanismOnlyDelivery?: boolean;
 }
 
 export interface DoctorReport {
@@ -149,6 +151,9 @@ export function buildDoctorReport(input: DoctorReportInput): DoctorReport {
   }
 
   // --- bridge ---
+  if (input.mechanismOnlyDelivery) {
+    findings.push({ id: "delivery.mechanism_only", severity: "warn", title: "Canonical Delivery uses mechanism-only handoff safety", detail: "Root death is best-effort; descendant process absence is unproven." });
+  }
   if (!input.bridge.port && !input.bridge.url) {
     findings.push({
       id: "bridge.down",
