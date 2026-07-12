@@ -2,10 +2,10 @@
 
 Date: 2026-07-12  
 Host: `DESKTOP-BGG95NA`, WSL2  
-Investigators: `processAuditHelperGrokR1` (initial spike), `processAuditHelperGrokFixR2` (Sonnet R1 F1/F2 under `j-2cf388e6c4cf`), `processAuditHelperGrokFixR3` (Sonnet R2 H1/H2 correction under `j-df883330e9cf`)  
+Investigators: `processAuditHelperGrokR1` (initial spike), `processAuditHelperGrokFixR2` (Sonnet R1 F1/F2 under `j-2cf388e6c4cf`), `processAuditHelperGrokFixR3` (Sonnet R2 H1/H2 correction under `j-df883330e9cf`), `processAuditHelperGrokFixR4` (Grok R4 `pidfd_getfd` fallback under `j-aec448bf6364`)  
 Scope: prototype read-only same-UID worktree-binding audit helper under `.tachyon/studies` plus disposable `/tmp` build/install only; no production ProcessFence adapter; no production/tests/config changes except the generated gate test.  
 Prior studies: `.tachyon/studies/368-process-fence-spike.md` (audit `EACCES` blocker), `.tachyon/studies/368-process-fence-cgroup-spike.md` (cgroup containment accepted independently).  
-Reviews: R1 `fe72ca16` F1/F2; R2 FINDINGS H1 nondeterministic race + H2 per-process swap/restore gap (`.tachyon/reviews/368-process-audit-helper-r2.md`).
+Reviews: R1 `fe72ca16` F1/F2; R2 FINDINGS H1 nondeterministic race + H2 per-process swap/restore gap (`.tachyon/reviews/368-process-audit-helper-r2.md`); R3 ACCEPT `cba4894c`; capability tradeoff `j-3ea903e0ce8b` + coordinator correction `j-aec448bf6364`.
 
 ## Verdict
 
@@ -18,7 +18,8 @@ Reviews: R1 `fe72ca16` F1/F2; R2 FINDINGS H1 nondeterministic race + H2 per-proc
 5. **(F1 closed)** independently `realpath()` the caller target, require **byte-exact** equality with the resolved canonical absolute directory, pin identity via `O_PATH|O_DIRECTORY|O_CLOEXEC` + `fstat` `st_dev`/`st_ino`, and revalidate path+identity before and after every audit pass (symlink alias → refuse; rename/replacement/deletion/identity drift → `unknown`, never silent under-report/`empty`);
 6. **(F2 closed)** keep `capability_loss` as a sticky counted/reported unknown reason across fixed-point passes so `state=unknown` cannot print `unknown_count=0`/no reason after an earlier-pass loss observation;
 7. **(H1 closed — practical test truth)** expose a **compile-time `TEST_ONLY`** ready/release synchronization seam (absent from the hardened production binary) so the generated gate can **require** the barrier and deterministically force rename/replacement → specific `target_*` unknown, with **no** ambient-`EACCES` race-miss fallback;
-8. **(H2 practical close)** revalidate the pinned target and obtain its live `/proc/self/fd` canonical path **around each process/link observation**, compare candidates against that live path, and fail closed with `target_*` on any pre/post path/identity drift (pass-level checks preserved).
+8. **(H2 practical close)** revalidate the pinned target and obtain its live `/proc/self/fd` canonical path **around each process/link observation**, compare candidates against that live path, and fail closed with `target_*` on any pre/post path/identity drift (pass-level checks preserved);
+9. **(R4 implemented — not host-complete)** on same-UID `/proc/<pid>/fd` `opendir` `EACCES`/`EPERM` only, fall back to raw `pidfd_open` + `pidfd_getfd` probes over **stable `/proc/sys/fs/nr_open`** (documented `PIDFD_NR_OPEN_SAFE_MAX=1048576`), **two complete scans** with starttime + nr_open pre/mid/post identity checks, monotonic deadline, exact occupied-evidence agreement (FD number + classification); **never** uses `RLIMIT_NOFILE` soft/hard as a completeness bound. `EBADF` = absence; `ESRCH`/`EPERM`/`EACCES`/`ENOSYS`/`EMFILE`/other → explicit unknown. On this host `fs.nr_open=2147483584` exceeds the safe maximum, so the residual `sd-pam` class still fails closed as `pidfd_nr_open_too_large` (honest incompleteness, not `empty`).
 
 However, installing the authorized **file capability** `CAP_SYS_PTRACE` requires interactive credentials on this host:
 
@@ -26,7 +27,7 @@ However, installing the authorized **file capability** `CAP_SYS_PTRACE` requires
 - `sudo -n setcap cap_sys_ptrace=ep <binary>` → same failure
 - unprivileged `setcap` → `unable to set CAP_SETFCAP effective capability: Operation not permitted`
 
-Per the spike contract: **do not claim feasibility** of a complete privileged audit when capability install is not already noninteractive. **No setcap was performed in this correction.** This is **not** a PASS and **not** authorization to ship a production ProcessFence adapter or to treat `proven_empty` / default sequential handoff as closed.
+Per the spike contract: **do not claim feasibility** of a complete privileged audit when capability install is not already noninteractive. **No setcap was performed in this R4 round.** No `CAP_DAC_READ_SEARCH`. This is **not** a PASS and **not** authorization to ship a production ProcessFence adapter or to treat `proven_empty` / default sequential handoff as closed.
 
 ### Irreducible residual (must stay explicit)
 
@@ -79,13 +80,14 @@ Helper requirements exercised:
 | Artifact | Path / value |
 |---|---|
 | Source | `.tachyon/studies/368-process-audit-helper.c` |
-| Source SHA-256 | `f01726914fa29e92fe6e69efda6e96d9c075eab8a58953f3279ffae1c8a24bba` |
-| Binary SHA-256 (hardened, seam-free) | `a7a756d75243ef6b2166a5fde2c74212bf73e9464f0e01a03ec81198322cf083` |
+| Source SHA-256 | `427e56d0c5556197d9241d747dfe8df31c9baf0deed9b563c14201929bd30d5a` |
+| Binary SHA-256 (hardened, seam-free) | `e84ce9db1ccb648714e0526522a4525419fc1069a926f5423040d882bdae318f` |
 | TEST_ONLY binary | built only in the generated gate (`-DTEST_ONLY`); **not** capability candidate; different hash |
 | Disposable build root | `/tmp/tachyon-368-audit-build-*` (removed after experiments) |
 | Disposable targets | `/tmp/tachyon-368-audit-target-*` (removed after experiments) |
-| Correction journals | R2 `j-2cf388e6c4cf`; R3 `j-df883330e9cf` on task `t-0b5723` |
-| R1 / R2 reviews | `.tachyon/reviews/368-process-audit-helper-r1.md`, `…-r2.md` |
+| Correction journals | R2 `j-2cf388e6c4cf`; R3 `j-df883330e9cf`; R4 `j-aec448bf6364` on task `t-0b5723` |
+| R1 / R2 / R3 reviews | `.tachyon/reviews/368-process-audit-helper-r1.md`, `…-r2.md`, `…-r3.md` |
+| Capability tradeoff | `.tachyon/reviews/368-process-audit-capability-tradeoff.md` (soft-limit premise **superseded** by `j-aec448bf6364`) |
 
 ## Build (exact)
 
@@ -118,11 +120,11 @@ Observed:
 
 ```text
 compile_ok
-f01726914fa29e92fe6e69efda6e96d9c075eab8a58953f3279ffae1c8a24bba  .tachyon/studies/368-process-audit-helper.c
-a7a756d75243ef6b2166a5fde2c74212bf73e9464f0e01a03ec81198322cf083  .../process-audit-helper
+427e56d0c5556197d9241d747dfe8df31c9baf0deed9b563c14201929bd30d5a  .tachyon/studies/368-process-audit-helper.c
+e84ce9db1ccb648714e0526522a4525419fc1069a926f5423040d882bdae318f  .../process-audit-helper
 ELF 64-bit LSB pie executable, x86-64, dynamically linked
 readelf: FLAGS BIND_NOW; FLAGS_1 NOW PIE
-hardened strings: no PAH_TEST_SEAM_DIR
+hardened strings: no PAH_TEST_SEAM_DIR / PAH_TEST_FORCE_PIDFD / PAH_TEST_SPAWN_HIGH_FD / PAH_TEST_NR_OPEN
 ```
 
 Hardening notes: PIE + full RELRO (`-Wl,-z,relro,-z,now`) + stack protector + FORTIFY. The binary is a spike prototype, not a production install target.
@@ -143,7 +145,7 @@ match pid=<pid> starttime=<ticks> kind=fd fd=<n>
 unknown reason=<code> [pid=<pid>] [kind=...] [fd=<n>]
 ```
 
-Unknown reason codes used: `eaccess`, `truncation`, `malformed_link`, `read_error`, `status_unreadable`, `stat_unreadable`, `fd_dir_error`, `identity_drift`, `capability_loss`, `proc_unreadable`, `pid_enum_truncated`, `instability_fixed_point`, `target_missing`, `target_path_drift`, `target_identity_drift`, `target_deleted`, `target_not_dir`, `target_fd_error`.
+Unknown reason codes used: `eaccess`, `truncation`, `malformed_link`, `read_error`, `status_unreadable`, `stat_unreadable`, `fd_dir_error`, `identity_drift`, `capability_loss`, `proc_unreadable`, `pid_enum_truncated`, `instability_fixed_point`, `target_missing`, `target_path_drift`, `target_identity_drift`, `target_deleted`, `target_not_dir`, `target_fd_error`, plus R4 pidfd reasons: `pidfd_nr_open_unreadable`, `pidfd_nr_open_too_large`, `pidfd_nr_open_changed`, `pidfd_deadline`, `pidfd_scan_disagreement`, `pidfd_occupied_overflow`, `pidfd_oom`, `pidfd_open_enosys`, `pidfd_open_eperm`, `pidfd_open_emfile`, `pidfd_open_error`, `pidfd_getfd_esrch`, `pidfd_getfd_eperm`, `pidfd_getfd_eacces`, `pidfd_getfd_enosys`, `pidfd_getfd_emfile`, `pidfd_getfd_error`.
 
 Pre-scan refuse codes on stderr (exit 3): `error=target_not_absolute`, `error=target_not_canonical` (includes symlink alias where `realpath` ≠ input), `error=target_trailing_slash`, `error=target_unresolvable`, `error=target_open_failed`, `error=target_too_long`.
 
@@ -185,6 +187,51 @@ The generated gate **requires** the ready marker, forces rename/replacement unde
 ### Sticky capability_loss (F2)
 
 Per-pass counters reset each fixed-point iteration, but `saw_cap_loss` is sticky. Once set (started with effective CAP_SYS_PTRACE and later `capget` shows it gone), every subsequent pass re-adds `unknown reason=capability_loss` so the final printed output cannot be `state=unknown` with `unknown_count=0` and no reason line.
+
+### R4 pidfd_getfd fallback (`j-aec448bf6364`)
+
+**Trigger (production):** only when same-UID `/proc/<pid>/fd` `opendir` fails with `EACCES` or `EPERM`. Normal readable `readdir` path is unchanged.
+
+**Completeness bound (critical correction):** **`/proc/sys/fs/nr_open`**, not `RLIMIT_NOFILE` soft/hard. A process may retain already-open FDs above a subsequently lowered soft (or hard) limit — probing `[0, soft)` is **incomplete** and must not be implemented. Coordinator superseded the tradeoff review’s soft-limit premise.
+
+**Algorithm:**
+
+1. Read stable `fs.nr_open`. Unreadable → `pidfd_nr_open_unreadable`. Value `0` or `> PIDFD_NR_OPEN_SAFE_MAX` (documented **1048576**) → `pidfd_nr_open_too_large`.
+2. `pidfd_open(pid, 0)`; pin `/proc/<pid>/stat` starttime; close every pidfd/dup on all paths.
+3. Monotonic deadline (`PIDFD_SCAN_DEADLINE_MS=2000`) for the whole two-scan of that process.
+4. **Scan A:** for each candidate FD in `[0, nr_open)`, `pidfd_getfd`; `EBADF` = hole (absence); success → `readlink(/proc/self/fd/<dup>)` classify bind/nobind/nonpath/trunc/error, **always close dup**; any other errno → explicit unknown and abort that process.
+5. Recheck starttime + nr_open (change → `identity_drift` / `pidfd_nr_open_changed`).
+6. **Scan B:** identical probe; occupied evidence (FD number + classification) must **agree exactly** with scan A or → `pidfd_scan_disagreement`.
+7. Commit agreed `FD_CLS_BIND` as matches; classification errors as unknowns.
+
+**Not used:** `CAP_DAC_READ_SEARCH`, process-name carve-outs, soft/hard `RLIMIT_NOFILE` as probe ceiling.
+
+**TEST_ONLY seams (absent from hardened binary):**
+
+| Env | Role |
+|---|---|
+| `PAH_TEST_FORCE_PIDFD_FD_SCAN=1` | force pidfd path even when readdir would work (parent/child regressions) |
+| `PAH_TEST_NR_OPEN=<n>` | override probe ceiling (≤ SAFE_MAX) for bounded tests |
+| `PAH_TEST_SPAWN_HIGH_FD=<n>` | helper forks a child that opens the target at FD `n`, then lowers soft `RLIMIT_NOFILE` below `n` |
+
+**Host facts (R4):**
+
+| Fact | Value |
+|---|---|
+| `fs.nr_open` | `2147483584` (exceeds SAFE_MAX → production fallback refuse-closed) |
+| Yama `ptrace_scope` | `1` |
+| `pidfd_getfd` without CAP_SYS_PTRACE | works for parent→dumpable child; `EPERM` for non-descendant / non-dumpable |
+| Real capped residual (prior) | `eaccess pid=1533 kind=fd` for root-owned `(sd-pam)` fd dir |
+
+**Performance (TEST_ONLY forced two-scan + high-FD child, this host):**
+
+| `PAH_TEST_NR_OPEN` | Wall ms (representative) | high FD=200 found |
+|---|---|---|
+| 512 | ~104 | yes |
+| 1024 | ~153 | yes |
+| 4096 | ~462 | yes |
+
+Full host ceiling `2147483584` is not probed (SAFE_MAX refuse). A complete 1 048 576×2 probe of a single permitted process is on the order of ~1 s of pure `pidfd_getfd` syscalls on this kernel class; production only enters the fallback on `EACCES` fd dirs (rare).
 
 ## Experiment 1 — without capability, no intended binding
 
@@ -261,9 +308,26 @@ getcap "$BUILDDIR/process-audit-helper"
 
 No password was solicited, captured, cached, or bypassed. **Capability-enabled scan was not executed.** Feasibility of a complete `empty`/`survivors` result under `CAP_SYS_PTRACE` on this host is therefore **not demonstrated**.
 
-### One minimal human residual (not run)
+### One minimal human residual (not run in R4)
 
-After rebuilding the **hardened** binary and verifying SHA-256 `a7a756d75243ef6b2166a5fde2c74212bf73e9464f0e01a03ec81198322cf083`, a human with credentials could install `cap_sys_ptrace=ep` on that exact binary for a privileged recheck. That step is **out of band**, was **not** performed here, and still does **not** erase the irreducible move+restore residual or authorize production rollout.
+After rebuilding the **hardened** binary and verifying SHA-256 `e84ce9db1ccb648714e0526522a4525419fc1069a926f5423040d882bdae318f`, a human with credentials could install `cap_sys_ptrace=ep` on that exact binary (on a non-`nosuid` filesystem) for a privileged recheck of whether `pidfd_getfd` closes the `sd-pam` residual when `fs.nr_open` is also within SAFE_MAX or is lowered. That step is **out of band**, was **not** performed in this R4 worker round, and still does **not** erase the irreducible move+restore residual or authorize production rollout.
+
+## Experiment 8 — R4 high-FD above lowered soft limit (TEST_ONLY)
+
+```bash
+PAH_TEST_FORCE_PIDFD_FD_SCAN=1 PAH_TEST_NR_OPEN=512 PAH_TEST_SPAWN_HIGH_FD=200 \
+  ./process-audit-helper-test "$TARGET"
+# → match kind=fd fd=200 for the helper-spawned child
+# → soft RLIMIT_NOFILE was lowered to 100 (= high/2); soft-bound [0, soft) would MISS 200
+# → ambient non-child pidfd attempts → pidfd_getfd_eperm (explicit unknown)
+# → child reaped; /tmp/pah-test-soft-<pid> removed
+```
+
+**Proves:** stable-`nr_open` / pidfd path finds FDs that a soft-`RLIMIT_NOFILE` completeness bound would miss. Soft-limit premise is empirically unsound.
+
+## Experiment 9 — production EACCES fd-dir → nr_open too large (this host)
+
+Without capability, PID 1533 `(sd-pam)` still yields cwd/root `eaccess`; fd-directory `EACCES` now routes through the pidfd fallback and reports `pidfd_nr_open_too_large` because host `fs.nr_open=2147483584` exceeds documented SAFE_MAX `1048576`. State remains **`unknown`** (never `empty`).
 
 ## Security analysis
 
@@ -301,11 +365,12 @@ No file capabilities were successfully installed, so no `setcap -r` was required
 | Residual | Severity | Notes |
 |---|---|---|
 | Interactive credentials required for `setcap` | **Blocks feasibility claim** | Noninteractive setcap unavailable on this host |
-| Capability-enabled complete scan not observed | Blocks PASS | Cannot assert `empty` under CAP_SYS_PTRACE until human recheck |
+| Capability-enabled complete scan not observed in R4 | Blocks PASS | Prior capped run (R3 binary) reduced 164→1 residual; R4 binary not re-capped here |
+| Host `fs.nr_open` > SAFE_MAX | Blocks host-complete FD enum | `2147483584` → `pidfd_nr_open_too_large` for EACCES fd dirs |
 | Malicious same-UID move+restore between procfs syscalls | **Irreducible with this primitive** | Disclosed; **BLOCK production proven_empty / adapter** |
 | Production ProcessFence adapter | Out of scope / blocked | Explicit non-goal; still unavailable |
 | Cap + seccomp interaction under agent runtimes | Residual risk | Re-verify CapEff after exec of any capped binary |
-| Independent re-review | Planned | Sonnet re-reviews R3; coordinator retains acceptance |
+| Independent re-review | Planned | Sonnet re-reviews R4; coordinator retains acceptance |
 
 ## Findings status
 
@@ -315,6 +380,8 @@ No file capabilities were successfully installed, so no `setcap -r` was required
 | F2 sticky cap-loss reason transparency | LOW/MEDIUM | **Closed** (R2) — sticky re-emit every pass |
 | H1 nondeterministic bare race / EACCES fallback | MEDIUM | **Closed** (R3) — TEST_ONLY seam; barrier required; forced `target_*` |
 | H2 per-process swap/restore window | HIGH (practical) / residual | **Practical fail-closed** via per-observation checks; **fundamental residual remains** and is disclosed; production still **BLOCKED** |
+| R4 soft-limit completeness (tradeoff B) | HIGH (correctness) | **Rejected** — do not use `RLIMIT_NOFILE`; use stable `fs.nr_open` + two-scan (`j-aec448bf6364`) |
+| R4 `pidfd_getfd` fallback | — | **Implemented** under contract; host still **BLOCKED** (nr_open too large + no setcap in R4 + move+restore residual) |
 
 ## What this does and does not authorize
 
@@ -322,6 +389,7 @@ No file capabilities were successfully installed, so no `setcap -r` was required
 
 - land a minimal, hardened, checksum-pinned **prototype** helper source under `.tachyon/studies`;
 - close H1 test nondeterminism and practical per-observation drift handling under `j-df883330e9cf` without overclaiming the fundamental procfs race;
+- implement R4 `pidfd_getfd` fallback under stable `fs.nr_open` + two-scan convergence (`j-aec448bf6364`), with high-FD soft-bound-miss regression;
 - document that without capability the host still fails closed at `unknown` for the global same-UID audit;
 - keep the malicious same-UID swap/restore residual explicit.
 
@@ -329,21 +397,23 @@ No file capabilities were successfully installed, so no `setcap -r` was required
 
 - claim CAP_SYS_PTRACE audit feasibility (BLOCKED);
 - claim production `proven_empty` or default ProcessFence adapter readiness (BLOCKED);
-- install a durable privileged binary;
+- install a durable privileged binary or `CAP_DAC_READ_SEARCH`;
 - implement or enable a production `ProcessFencePort` adapter;
-- erase the irreducible multi-syscall move+restore residual.
+- erase the irreducible multi-syscall move+restore residual;
+- claim host-complete FD enumeration while `fs.nr_open` exceeds SAFE_MAX.
 
 ## Reproducible no-cap assertion (always)
 
 ```text
-1. hardened build of pinned source succeeds; strings have no PAH_TEST_SEAM_DIR
+1. hardened build of pinned source succeeds; strings have no PAH_TEST_* seams
 2. without cap: state=unknown exit=2 on empty disposable target
-3. EACCES unknowns include systemd / (sd-pam) / postgrest class PIDs
+3. EACCES / pidfd_* unknowns include systemd / (sd-pam) class; sd-pam fd → pidfd_nr_open_too_large on this host
 4. open-FD writer to target appears as match kind=fd while state remains unknown
 5. symlink target path refused (exit 3 error=target_not_canonical)
 6. TEST_ONLY post_pin barrier + forced rename → specific target_* (no EACCES fallback)
 7. TEST_ONLY obs barrier + held rename → specific target_*
 8. swap/restore characterization keeps residual disclosed; no empty claim
-9. noninteractive setcap unavailable => BLOCKED feasibility; no setcap performed
-10. /tmp tachyon-368-audit-* build/target trees removed
+9. TEST_ONLY high-FD=200 after soft-limit lowering found via pidfd; soft-bound would miss
+10. noninteractive setcap unavailable => BLOCKED feasibility; no setcap performed in R4
+11. /tmp tachyon-368-audit-* build/target trees and pah-test-soft-* removed
 ```

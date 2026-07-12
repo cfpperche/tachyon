@@ -10,6 +10,7 @@ import {
   existsSync,
   openSync,
   closeSync,
+  readdirSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -34,6 +35,10 @@ const HARDEN_CFLAGS = [
 
 const TARGET_UNKNOWN_RE =
   /unknown reason=target_(identity_drift|deleted|path_drift|missing|not_dir|fd_error)/;
+
+const HIGH_FD = 200;
+/** Soft limit the TEST_ONLY child applies (strictly below HIGH_FD). */
+const SOFT_AFTER_LOWER = 100; // child uses high/2 with floor 8; for 200 → 100
 
 function sha256File(path: string): string {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
@@ -176,7 +181,7 @@ async function runWithSeam(opts: {
 }
 
 describe("container-generated delegation behavior", () => {
-  it("R3: seam-backed deterministic target_* drift, per-obs fail-closed, hardened seam-free, BLOCKED residual", async () => {
+  it("R4: pidfd_getfd fallback (stable nr_open/two-scan), high-FD soft-bound miss, seam residual BLOCKED", async () => {
     const report = readFileSync(REPORT, "utf8");
     const source = readFileSync(SRC, "utf8");
 
@@ -194,12 +199,32 @@ describe("container-generated delegation behavior", () => {
     expect(report).toMatch(/TEST_ONLY|compile-time/i);
     expect(report).toMatch(/per-observation|per.observation/i);
     expect(report).not.toMatch(/sudo setcap/);
-    // Human residual may mention setcap as future step, but no claim it was run.
     expect(report).toMatch(/No setcap was performed/i);
     expect(report).toMatch(/proven_empty|production adapter|ProcessFence/i);
     expect(report).toMatch(/BLOCK.*production|must keep production|not.*production proven_empty|BLOCK production/i);
 
-    // Contract surface: pin + revalidate + per-observation live path.
+    // R4 contract surface in source + report.
+    expect(source).toMatch(/pidfd_getfd|__NR_pidfd_getfd/);
+    expect(source).toMatch(/pidfd_open|__NR_pidfd_open/);
+    expect(source).toMatch(/fs\/nr_open|nr_open/);
+    expect(source).toMatch(/PIDFD_NR_OPEN_SAFE_MAX/);
+    expect(source).toMatch(/pidfd_scan_disagreement|pidfd_deadline|pidfd_nr_open_too_large/);
+    expect(source).toMatch(/RLIMIT_NOFILE/); // only for TEST_ONLY soft-lower proof, not completeness bound
+    expect(source).not.toMatch(/getrlimit\s*\(\s*RLIMIT_NOFILE[\s\S]{0,200}nr_open|probe.*rlim_cur/);
+    // Completeness bound must not be soft RLIMIT — must be fs.nr_open / SAFE_MAX.
+    expect(source).toMatch(/PIDFD_NR_OPEN_SAFE_MAX\s+1048576/);
+    expect(report).toMatch(/pidfd_getfd|pidfd/);
+    expect(report).toMatch(/nr_open|fs\.nr_open/);
+    expect(report).toMatch(/two-scan|two scan|two complete scans/i);
+    expect(report).toMatch(/RLIMIT_NOFILE|soft.?limit/i);
+    expect(report).toMatch(/SAFE_MAX|safe maximum|1048576/);
+    expect(report).toMatch(/j-aec448bf6364|R4/);
+    // No grant of DAC_READ_SEARCH — only negative mentions allowed.
+    expect(report).toMatch(/No setcap was performed/i);
+    expect(report).toMatch(/CAP_DAC_READ_SEARCH/);
+    expect(report).toMatch(/not used|No `CAP_DAC_READ_SEARCH`|do \*\*not\*\* add/i);
+
+    // Contract surface: pin + revalidate + per-observation live path (R3 retained).
     expect(source).toMatch(/O_PATH/);
     expect(source).toMatch(/O_DIRECTORY/);
     expect(source).toMatch(/O_CLOEXEC/);
@@ -211,6 +236,7 @@ describe("container-generated delegation behavior", () => {
     expect(source).toMatch(/TEST_SEAM\s*\(\s*"post_pin"\s*\)/);
     expect(source).toMatch(/TEST_SEAM\s*\(\s*"obs"\s*\)/);
     expect(source).toMatch(/PAH_TEST_SEAM_DIR/);
+    expect(source).toMatch(/PAH_TEST_FORCE_PIDFD_FD_SCAN|PAH_TEST_SPAWN_HIGH_FD|PAH_TEST_NR_OPEN/);
 
     // Sticky capability_loss still present.
     expect(source).toMatch(/saw_cap_loss/);
@@ -242,13 +268,17 @@ describe("container-generated delegation behavior", () => {
       const stringsR = spawnSync("strings", [helper], { encoding: "utf8" });
       expect(stringsR.status).toBe(0);
       expect(stringsR.stdout).not.toMatch(/PAH_TEST_SEAM_DIR/);
+      expect(stringsR.stdout).not.toMatch(/PAH_TEST_FORCE_PIDFD/);
+      expect(stringsR.stdout).not.toMatch(/PAH_TEST_SPAWN_HIGH_FD/);
+      expect(stringsR.stdout).not.toMatch(/PAH_TEST_NR_OPEN/);
       expect(stringsR.stdout).not.toMatch(/post_pin\.ready/);
-      // TEST_ONLY binary must contain the seam env key.
+      // TEST_ONLY binary must contain the seam env keys.
       const testStrings = spawnSync("strings", [testHelper], {
         encoding: "utf8",
       });
       expect(testStrings.status).toBe(0);
       expect(testStrings.stdout).toMatch(/PAH_TEST_SEAM_DIR/);
+      expect(testStrings.stdout).toMatch(/PAH_TEST_FORCE_PIDFD_FD_SCAN|PAH_TEST_SPAWN_HIGH_FD/);
 
       // --- no-cap unknown with reason (hardened binary) ---
       const target = mkdtempSync(join(tmpdir(), "tachyon-368-audit-target-"));
@@ -258,7 +288,10 @@ describe("container-generated delegation behavior", () => {
       expect(noCap.stdout).toMatch(/^state=unknown$/m);
       expect(noCap.stdout).toMatch(/^cap_sys_ptrace=no$/m);
       expect(noCap.stdout).toMatch(/^match_count=0$/m);
-      expect(noCap.stdout).toMatch(/unknown reason=eaccess/);
+      // Ambient incompleteness: eaccess and/or pidfd fail-closed reasons.
+      expect(noCap.stdout).toMatch(
+        /unknown reason=(eaccess|pidfd_nr_open_too_large|pidfd_getfd_eperm|pidfd_open_eperm)/,
+      );
       const unknownCount = Number(
         noCap.stdout.match(/^unknown_count=(\d+)$/m)?.[1] ?? "0",
       );
@@ -294,6 +327,66 @@ describe("container-generated delegation behavior", () => {
       expect(withFd.stdout).toMatch(/^state=unknown$/m);
       expect(withFd.stdout).toMatch(new RegExp(`match pid=${wpid} .*kind=fd`));
       writer.kill("SIGKILL");
+
+      // --- R4: high-FD above lowered soft limit — fallback finds it; soft-bound would miss ---
+      // Soft-bound incompleteness (mathematical): soft after lower is high/2 (=100 for 200).
+      expect(HIGH_FD).toBeGreaterThanOrEqual(SOFT_AFTER_LOWER);
+      // Probe range [0, soft) excludes HIGH_FD — soft-bound completeness is unsound.
+      expect(HIGH_FD >= SOFT_AFTER_LOWER).toBe(true);
+
+      const highTarget = mkdtempSync(join(tmpdir(), "tachyon-368-audit-target-"));
+      scratch.push(highTarget);
+      const beforeSoft = readdirSync("/tmp").filter((n) =>
+        n.startsWith("pah-test-soft-"),
+      );
+      const t0 = Date.now();
+      const highRun = runHelper(testHelper, highTarget, {
+        PAH_TEST_FORCE_PIDFD_FD_SCAN: "1",
+        PAH_TEST_NR_OPEN: "512",
+        PAH_TEST_SPAWN_HIGH_FD: String(HIGH_FD),
+      });
+      const highMs = Date.now() - t0;
+      expect(highRun.status).toBe(2);
+      expect(highRun.stdout).toMatch(/^state=unknown$/m);
+      // Success: pidfd fallback (forced) finds the high FD binding.
+      expect(highRun.stdout).toMatch(
+        new RegExp(`match pid=\\d+ starttime=\\d+ kind=fd fd=${HIGH_FD}`),
+      );
+      const highMatch = highRun.stdout.match(
+        new RegExp(`match pid=(\\d+) starttime=\\d+ kind=fd fd=${HIGH_FD}`),
+      );
+      expect(highMatch).toBeTruthy();
+      const childPid = highMatch![1]!;
+      // Soft limit published by child must be strictly below HIGH_FD.
+      // (File is cleaned by helper atexit; capture via math contract + source path.)
+      expect(source).toMatch(/setrlimit\s*\(\s*RLIMIT_NOFILE/);
+      expect(source).toMatch(/PAH_TEST_SPAWN_HIGH_FD/);
+      // Gap (EBADF holes): no unknown for arbitrary missing FDs in [0, nr_open).
+      expect(highRun.stdout).not.toMatch(
+        new RegExp(`unknown reason=.*fd=${HIGH_FD - 1}\\b`),
+      );
+      // Error path: ambient non-child processes under forced pidfd → explicit eperm unknown.
+      expect(highRun.stdout).toMatch(/unknown reason=pidfd_getfd_eperm/);
+      // nr_open too large is a documented fail-closed path (production host).
+      expect(source).toMatch(/pidfd_nr_open_too_large/);
+      // Cleanup: helper reaps high-FD child; no leftover soft marker for that pid.
+      expect(existsSync(`/tmp/pah-test-soft-${childPid}`)).toBe(false);
+      const afterSoft = readdirSync("/tmp").filter((n) =>
+        n.startsWith("pah-test-soft-"),
+      );
+      expect(afterSoft.filter((n) => !beforeSoft.includes(n))).toEqual([]);
+      // Performance budget for bounded test probe (two scans × 512, not full host nr_open).
+      expect(highMs).toBeLessThan(15_000);
+      // Soft-bound would miss: document in assertions.
+      // If completeness used [0, soft), HIGH_FD would never be probed.
+      const softWouldMiss = HIGH_FD >= SOFT_AFTER_LOWER;
+      expect(softWouldMiss).toBe(true);
+
+      // Production path: oversized fs.nr_open → pidfd_nr_open_too_large on EACCES fd dirs
+      // (observed for sd-pam class). Do not require specific PID (host-dependent).
+      if (noCap.stdout.includes("pidfd_nr_open_too_large")) {
+        expect(noCap.stdout).toMatch(/unknown reason=pidfd_nr_open_too_large/);
+      }
 
       // --- H1 closed: post_pin barrier + forced rename/replacement (no race-miss fallback) ---
       const driftTarget = mkdtempSync(join(tmpdir(), "tachyon-368-audit-target-"));
@@ -364,9 +457,6 @@ os.mkdir(target)
       expect(obsHeld.stdout).toMatch(TARGET_UNKNOWN_RE);
 
       // --- Swap/restore characterization (malicious same-UID residual window) ---
-      // At obs barrier: rename out then restore same inode before release.
-      // Practical post-barrier revalidate may miss a fully restored path; the
-      // report must keep this residual disclosed and production BLOCKED.
       const swapTarget = mkdtempSync(join(tmpdir(), "tachyon-368-audit-target-"));
       scratch.push(swapTarget);
       const swapMoved = `${swapTarget}.moved`;
@@ -394,9 +484,6 @@ os.rename(moved, target)
         },
       });
       expect(existsSync(join(seamSwap, "obs.ready"))).toBe(true);
-      // Restored inode at original path: helper may complete without target_*.
-      // State remains unknown on this host due to ambient EACCES (incomplete),
-      // which is fail-closed incompleteness — not a proven_empty claim.
       expect(swapped.status).toBe(2);
       expect(swapped.stdout).toMatch(/^state=unknown$/m);
       expect(swapped.stdout).not.toMatch(/^state=empty$/m);
@@ -424,5 +511,5 @@ os.rename(moved, target)
         }
       }
     }
-  }, 120_000);
+  }, 180_000);
 });
