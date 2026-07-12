@@ -1652,3 +1652,18 @@ or an assertion that does not actually prove the behavior it claims. B3/B4 absen
 not a finding against revised T13 closure. Write `.tachyon/reviews/368-delivery-bound-t13-r3.md`, commit only that
 artifact by explicit pathspec with `t-0b5723`, run at most focused suites plus diff-check (no typecheck/full), and
 ring `codex` with ACCEPT or FINDINGS.
+
+### T13 closure — declared-agent bound execution accepted
+
+T13 is integrated on `main` at `4cada03f`. Clean Grok 4.5 correction candidate `25f851cd` passed canonical
+`verify_task` without waiver at
+`.tachyon/verifications/25f851cd7a366d9dc551abbb9bf0371c0039673a.json`: the exact R3 regression fails at
+BASE and passes at HEAD, with typecheck and affected tests green. Coordinator comparison against `cf7c8e82`
+confirmed that the correction changes production only by removing the inappropriate guard around the merge-only
+`stampBridgeClientBinding` call; the declared principal's `def`/`resume`/`worktree`/`cwd` overwrite guard remains.
+
+Independent Sonnet R4 accepted all six closure invariants in
+`.tachyon/reviews/368-delivery-bound-t13-r4.md` (`d8f6ed0b`). The seven integrated blobs match `25f851cd` exactly,
+and the final `npm run verify:full:quiet` passed 302 files with 3,629 tests passed and 3 skipped. Exhaustive B3/B4
+chaos expansion remains the non-blocking follow-up `t-13c2b6`; it is not reopened as T13 acceptance work. T14
+Delivery-binding persistence and reload reconstruction is next.

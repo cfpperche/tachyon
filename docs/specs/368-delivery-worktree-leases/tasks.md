@@ -61,7 +61,7 @@ _Generated from `plan.md` on 2026-07-10. Work top-to-bottom. Check boxes as task
 - [x] T12. Add explicit salvage/abandon recovery with Bridge-resolved/configured actor policy that never authorizes
   by ephemeral/principal display-name equality, expected-HEAD/loss proof, audit, and human approval for destruction.
   - Gate: `quarantine recovery never treats dirty state as verified or discards data without approval`.
-- [ ] T13. Add declared-agent bound executions with unique runtime names and separate `executionAgent`/`principal`
+- [x] T13. Add declared-agent bound executions with unique runtime names and separate `executionAgent`/`principal`
   provenance; prove the live persistent session's cwd, runtime home, token, and continuity are untouched.
   - Gate: `a persistent identity reviews through a bound execution without rebinding or impersonation`.
 - [ ] T14. Persist Delivery/segment bindings in the session ledger and reconstruct held/quarantined leases after
