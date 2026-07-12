@@ -1735,3 +1735,57 @@ resume, AgentManager, reload-reconciliation, and focused Workspace suites serial
 final full for post-review closure. Commit exactly owned paths by explicit pathspec with `t-0b5723`, keep the
 worktree clean, and doorbell `codex` with SHA/counts/residuals. Grok 4.5 is selected as the maintainer's default
 implementation family; immutable Sonnet review preserves model-family independence.
+
+### T14 R1 coordinator audit — blocked scope and one clean migration contract
+
+Candidate `07fb8923` is not reviewable. Canonical verification is BLOCKED without waiver at
+`.tachyon/verifications/07fb8923874a7008bbb1093025a5d1188665d031.json`: it changed
+`test/helpers/boundDeliveryExecutionHarness.ts` outside the declared ownership. The helper edits are mechanically
+required `segmentId` receipts, but immutable scope history is authority and cannot be repaired or waived after the
+fact. Migrate the corrected net state into a fresh gated Delivery; do not reuse or cherry-pick the contaminated
+commit as history.
+
+Coordinator full-delta/call-path audit found these additional closure blockers to combine into that one migration:
+
+1. **Cross-store crash gap (HIGH).** Reload classification is computed but generic lifecycle exclusion consults only
+   the ledger marker. A crash after canonical Delivery/projection persistence but before `bindDelivery` leaves an
+   ordinary resumable row: the snapshot says unavailable, yet `planResume`, `autostartPending`, direct spawn,
+   `resumeReadiness`, resume, or restart can still launch it outside a new nonce-bound segment. The reconstructed
+   unavailable holder set must be an active AgentManager/planResume deny source, including rows with no marker.
+2. **Ambiguity is collapsed (HIGH).** Workspace overwrites duplicate GitDelivery projections in a one-value map;
+   the reconciler searches only the holder-named row, so a second differently named binding to the same Delivery is
+   ignored; bindings to missing Deliveries are absent from the snapshot. Consume exact linked projections (including
+   `delivery.gitDeliveryId`), gather every binding by Delivery, and make duplicate/conflicting/orphan state
+   unavailable. Never select by iteration order.
+3. **Runtime/worktree identity is under-checked (HIGH).** Exact-held accepts `rec.worktree.path` while ignoring a
+   conflicting `rec.cwd` because it chooses one path. Require both the persisted worktree path and actual spawn cwd
+   to resolve exactly to the unique linked canonical worktree before comparing process identity.
+4. **Canonical binding uses inference (MEDIUM).** `recordCanonicalDelivery` falls back from the holder to a
+   same-named or tail segment. Require one internally exact held holder/open-tail/executionAgent boundary and bind
+   that segment only; corrupt/drifted state refuses.
+5. **Terminal-state semantics and readiness (MEDIUM).** Free/abandoned Deliveries without stale bindings are not
+   occupancy and must remain distinguishable from unavailable; only a stale binding makes them unavailable.
+   `resumeReadiness` must return false for valid/invalid/unavailable Delivery rows, and restart must refuse before
+   mutating transient caches.
+6. **Proof matrix is incomplete (MEDIUM test truthfulness).** Add production-backed tests for the unbound
+   Delivery→projection→ledger crash window, exact Workspace surviving-holder reconstruction, duplicate linked
+   projections, duplicate differently named session bindings, orphan/stale bindings, both cwd and worktree
+   mismatch, readiness/direct-spawn refusal, and exact canonical holder-tail binding. The current Workspace test
+   seeds no Delivery/GitDelivery and proves only marker-based plan exclusion.
+
+**Fresh R2 contract.** Spawn Grok 4.5 from current `main` with a new forcing stub. Migrate the R1 net implementation
+without its old generated filename, include the four mechanical T13-helper `segmentId` additions under explicit
+ownership, and close all six findings above. The reload snapshot must expose enough immutable information for later
+T15 policy and an unavailable-agent deny set consumed by every generic launch/resume/restart/autostart/readiness
+entry point; explicit `deliveryJoin` remains the only allowed route after canonical recovery/acquisition. Pass
+linked GitDelivery records rather than a lossy last-wins path map. One unique exact projection plus one unique exact
+session binding, matching holder/open tail, binding nonce, `cwd`, worktree path, and full process identity is the
+only `held` result. Quarantine remains quarantine. Transient states and every ambiguity remain unavailable. Free or
+abandoned without stale bindings remain terminal/non-occupied; stale/orphan bindings are unavailable.
+
+Own exactly the prior ten paths plus `test/helpers/boundDeliveryExecutionHarness.ts` and the new generated R2 stub.
+The canonical behavior title is unchanged and must add real cross-store/Workspace assertions, not duplicate the
+pure decision table. Run focused suites, typecheck, diff-check, and one quiet full: the prior full was on a
+canonically blocked history and the corrected R2 is the first reviewable candidate. Commit by explicit pathspec,
+doorbell `codex`, and stop. Coordinator then runs no-waiver `verify_task`, audits the complete net delta, and routes
+immutable Sonnet review before the final closure full.
