@@ -55,7 +55,32 @@ These exist so palliative EDH **cannot** strangle Codex/368 or the human’s liv
 
 ---
 
-## Seed + launch
+## Preferred: headless EDH (no GUI, no Codex collision)
+
+Runs a real Extension Development Host under **Xvfb** with an in-host runner
+(`scripts/edh-palliative/headless-runner.js`) — same class of dogfood as
+`scripts/screenshots/capture.sh`, without sign-in wizards or desktop focus.
+
+```bash
+npm run build
+npm run dogfood:edh-palliative -- headless
+```
+
+What it asserts (S1 / t-8354ae):
+
+- cold start with **invalid** `tachyon.yml` → `configFailure` present  
+- degraded roster from ledger + LKG (not empty-only)  
+- LKG-only spawn refused  
+- `tachyon.doctor` executes  
+- restore valid YAML → reload succeeds  
+
+Report: `$FIXTURE/headless-out/result.json` (+ `host.log` on failure).
+
+Requirements: `Xvfb`, VS Code test binary (`.vscode-test/...` or `TACHYON_EDH_CODE`).
+
+---
+
+## Optional: GUI launch
 
 From the repo root (any clean-enough tree; prefer the SHA under test):
 
@@ -69,6 +94,7 @@ npm run dogfood:edh-palliative -- seed
 # 3) Launch EDH (script can also exec when a code binary is available)
 npm run dogfood:edh-palliative -- launch
 ```
+
 
 Manual equivalent (after seed):
 
@@ -105,14 +131,9 @@ npm run dogfood:edh-palliative -- clean
 **Setup (seed already creates a valid fleet + fake LKG + ledger rows).**
 
 1. Open EDH on the fixture workspace; wait until the Tachyon sidebar lists agents (e.g. `pilot`, `reviewer`).
-2. In the fixture only, break config — e.g. leave a dangling subagent ref:
-
-   ```yaml
-   agents:
-     pilot:
-       cmd: echo pilot
-       subagents: [ghost]
-   ```
+2. In the fixture only, break config with a **hard** validation error
+   (`npm run dogfood:edh-palliative -- break` uses self-referential `subagents: [pilot]`).
+   Note: after t-099be8, a *dangling* name is only a warning — it will not arm fail-visible.
 
 3. In the **EDH** window: Command Palette → `Developer: Reload Window` (EDH only).
 4. **Expect:**

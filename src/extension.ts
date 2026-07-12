@@ -7,6 +7,7 @@ import { buildDoctorReport, formatDoctorReport } from "./workspace/doctorReport.
 import net from "node:net";
 import { watchdogStep, type WatchdogState } from "./tmux/wedgeWatchdog.js";
 import { isResumable } from "./resume/SessionLedger.js";
+import { degradedRosterExtras } from "./config/configFailure.js";
 import { subtreeCpuTicks } from "./attention/cpu.js";
 import { classifySession } from "./inspector/classify.js";
 import { CONFIG_FILENAMES, inferKind, loadConfigFile, type ScheduleDef } from "./config/loadConfig.js";
@@ -1121,6 +1122,68 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
     }),
     vscode.commands.registerCommand("tachyon._workspaces", () => workspaces().map((ws) => ({ folder: ws.folderName, root: ws.workspaceRoot, hash: ws.wsHash, bridge: ws.bridgeUrl() }))),
+    /**
+     * t-8354ae / EDH palliative — read-only health probe for headless dogfood.
+     * Reloads config from disk, returns failure surface + degraded roster extras + LKG-spawn check.
+     * Not a user-facing command (underscore); not contributed in package.json.
+     */
+    vscode.commands.registerCommand("tachyon._configHealth", async (hash?: string) => {
+      const ws = hash ? byHash(hash) : workspaces()[0];
+      if (!ws) return { ok: false as const, error: "no-workspace" };
+      const reloadOk = ws.reloadConfig();
+      const failure = ws.configFailure ?? null;
+      const lkg = typeof ws.readConfigLkg === "function" ? ws.readConfigLkg() : null;
+      const ledgerPairs = [...ws.ledger.all()];
+      const live = await ws.manager.list();
+      const extras = degradedRosterExtras({
+        existingNames: new Set(live.map((a) => a.name)),
+        ledger: ledgerPairs,
+        lkg,
+      });
+      const rosterNames = [...new Set([...live.map((a) => a.name), ...extras.map((e) => e.name)])].sort();
+      let lkgSpawn: { name: string; refused: boolean; message?: string } | undefined;
+      if (failure && lkg?.agents.length) {
+        // Prefer a name that is only recoverable via LKG/ledger render, not a live def.
+        const candidate =
+          extras.find((e) => e.source === "lkg")?.name
+          ?? lkg.agents.find((a) => !ws.config?.agents[a.name] && !ws.manager.defOf(a.name))?.name
+          ?? lkg.agents[0]?.name;
+        if (candidate) {
+          try {
+            await ws.manager.spawn(candidate);
+            lkgSpawn = { name: candidate, refused: false };
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            lkgSpawn = {
+              name: candidate,
+              refused: /render-only|config is invalid|cannot spawn|unknown agent/i.test(message),
+              message,
+            };
+          }
+        }
+      }
+      return {
+        ok: true as const,
+        reloadOk,
+        configFailure: failure
+          ? { file: failure.file, path: failure.path, errors: failure.errors, at: failure.at }
+          : null,
+        lkg: lkg
+          ? { savedAt: lkg.savedAt, sourceFile: lkg.sourceFile, agents: lkg.agents.map((a) => a.name) }
+          : null,
+        ledger: ledgerPairs.map(([name, rec]) => ({
+          name,
+          declared: rec.declared,
+          resumable: isResumable(rec),
+        })),
+        live: live.map((a) => ({ name: a.name, running: a.running, declared: a.declared, kind: a.kind })),
+        extras: extras.map((e) => ({ name: e.name, source: e.source, declared: e.declared, resumable: e.resumable })),
+        rosterNames,
+        lkgSpawn,
+        // Sidebar must not be empty-only while failure + known agents exist
+        emptyRosterOnly: !!failure && rosterNames.length === 0,
+      };
+    }),
     // ---- views ----
     vscode.commands.registerCommand("tachyon.refreshViews", refreshAll),
     vscode.commands.registerCommand("tachyon.openApprovals", async (hash?: string) => {
