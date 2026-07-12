@@ -1410,3 +1410,44 @@ explicit pathspec with `t-0b5723`, rings `codex`, and stops. Coordinator reruns 
 combined HEAD, audits the entire matrix/delta, routes one immutable Sonnet R3 review, and only after ACCEPT runs the
 single final `npm run verify:full:quiet`. No additional full run is authorized: `be23bd26` already consumed the
 first-reviewable full gate.
+
+### T13 R4A coordinator audit — production correction A2 before Occupation B
+
+R4A candidate `afd9db60` has a valid no-waiver canonical gate at
+`.tachyon/verifications/afd9db60478191808d68864ee9444136219db0f8.json`, but Occupation B is not yet authorized.
+Coordinator content audit found three receipt/cleanup violations in the new production path; combine them into one
+A2 correction on the same worktree before any matrix-only work.
+
+1. `attempt.acquired` is initialized true in `spawnDeliveryJoin` before `spawnCore` rechecks tmux/name state. The
+   outer bound precheck is not atomic with spawn. If a live session appears during `prepareDeliveryJoin`, the inner
+   collision throws but ephemeral cleanup still clears transient/ad-hoc state and emits `onKilled`; if a dead pane
+   appears, legacy `spawnCore` kills it and proceeds. Both violate the contract that a fresh bound execution never
+   reaps or cleans a racing occupant. Initialize unacquired. For a bound attempt, recheck config, ad-hoc map, ledger,
+   and any live/dead tmux session at the inner acquisition boundary and refuse without reaping. Set acquired only
+   after those checks and launch preflight succeed. Ordinary non-Delivery spawn/dead-pane behavior stays unchanged.
+
+2. `attempt.token` and `attempt.materialized` are set before evaluating `getExtraEnv`, `mintAgentToken`,
+   `effectiveCmd`, or `applyHarness`. A `getExtraEnv`/command-composition failure can therefore revoke a persistent
+   declared token which this attempt never minted. Model milestones honestly (`not-started`/`attempted`/`completed`
+   where a dependency can throw after partial effects). Evaluate extra env separately; mark token owned only after a
+   successful mint result, and never revoke a declared principal token on an earlier failure. A fresh acquired
+   ephemeral name may conservatively remove materialization after the materializer was invoked because no prior
+   footprint can belong to another identity; do not label invocation as completed. If session creation returns an
+   ambiguous failure, never kill an unproven racing session: preserve/reconcile with an explicit uncertainty error.
+
+3. After a declared attempt creates and then compensates its own session, cleanup returns at
+   `!attempt.ephemeral` before the killed callback. Preserve the declared durable ledger/home, but clear only
+   transient state owned by the created session and emit `onKilled` exactly once after proven absence, matching the
+   legacy lifecycle. No callback or transient clear is allowed for pre-acquisition collision/failure.
+
+Add deterministic helper/AgentManager assertions for: a bound live and dead collision injected during preparation
+(zero kill/revoke/forget/transient/callback effects); `getExtraEnv` failure before mint for a persisted declared
+principal (zero revoke and byte-identical principal state); and declared confirmation compensation (owned session
+gone, durable identity preserved, callback exactly once). Retain all existing R4 three-scenario assertions and the
+forcing title unchanged.
+
+Reuse delegation `84f9d521-e294-4bd9-8f48-66d6114a7297` at exact HEAD `afd9db60` with production/test authority
+limited to its original owns. Terra medium remains required. Run R4 generated, AgentManager, and Bridge suites
+serially, `npm run typecheck`, and `git diff --check`; no full. Commit the A2 delta by explicit pathspec with
+`t-0b5723`, ring `codex`, and stop. Coordinator reruns the original `verify_task` and full content audit; only then
+may Occupation B receive test-only authority.
