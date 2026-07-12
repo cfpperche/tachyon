@@ -1667,3 +1667,71 @@ Independent Sonnet R4 accepted all six closure invariants in
 and the final `npm run verify:full:quiet` passed 302 files with 3,629 tests passed and 3 skipped. Exhaustive B3/B4
 chaos expansion remains the non-blocking follow-up `t-13c2b6`; it is not reopened as T13 acceptance work. T14
 Delivery-binding persistence and reload reconstruction is next.
+
+### T14 implementation contract — durable reverse binding and fail-closed reload
+
+T14 persists the Delivery/segment association needed to reconnect a surviving runtime after extension-host reload.
+It does not make the session ledger a second lease authority, release or repair a canonical Delivery, enable the
+unavailable `ProcessFencePort`, add GitDelivery mutation policy (T15), or switch rollout/configuration (T16). The
+SQLite `DeliveryStore` remains canonical; the session ledger is a defensive reverse index from one runtime row to
+one Delivery segment.
+
+**Durable binding shape and parser.** Add a typed delivery marker to `SessionRecord`. A valid bound marker contains
+non-empty `deliveryId` and `segmentId` plus the confirmed `executionNonce` when one exists. A malformed persisted
+marker must survive parsing as an explicit invalid sentinel; never drop only the marker and leave an apparently
+ordinary resumable row. Add idempotent exact-bind and exact-clear ledger operations. Binding may merge only this
+field into an existing row, must preserve def/resume/worktree/cwd/declared/Bridge state, and must refuse to overwrite
+a different or invalid binding. Clearing requires the caller's exact expected binding; there is no name-only clear.
+
+**Spawn boundary.** Extend the prepared Delivery join receipt with the reserved `segmentId`. After
+`confirmDeliveryJoin` succeeds, persist `{deliveryId, segmentId, executionNonce: reservationNonce}` on that exact
+execution's ledger row. A binding-write failure is a failed join: run the existing receipt-scoped runtime/token
+compensation and canonical `failDeliveryJoin` path; never report an unbound successful holder. Canonical gated-spawn
+creation also records its known Delivery/segment reverse binding after the Delivery and linked Git projection are
+durable. It may omit `executionNonce` for the pre-sequential compatibility path; reload must then classify it as
+unavailable rather than inventing containment identity.
+
+**Generic lifecycle exclusion.** Any row with a valid or invalid Delivery marker is excluded from activation-time
+auto-resume and resume offers. `AgentManager.resume` and `restart` refuse it with a Delivery-specific diagnostic:
+restarting a holder is a new nonce-bound segment/recovery operation, never a generic pane respawn. Reload may still
+rehydrate its definition/lineage for visibility. Worktree occupancy scans must gather all rows rather than return the
+first match: one exact live bound row is live; a dead/missing/invalid bound row or multiple candidate rows is dirty/
+unavailable. No tmux-only disappearance may turn a bound worktree free.
+
+**Read-only reload reconstruction.** Add one pure/isolatable reconciler and call it during `Workspace.start` after
+session discovery/ledger rehydration but before generic resume/autostart. Inputs are canonical Deliveries, linked
+GitDelivery worktree paths, parsed session rows, and exact live process observations. Output is an in-memory snapshot
+only; it never mutates Delivery or GitDelivery. Rules:
+
+- `quarantined` remains `quarantined` regardless of missing runtime metadata;
+- `pending`, `draining`, and `verifying` are `unavailable` after reload until their owning recovery path resolves;
+- `held` is reconstructed only when holder/open tail/expected HEAD are internally exact, exactly one session row
+  names the same execution and binding, its cwd/worktree resolves to the linked canonical worktree, and the live
+  `{pid, processStart, bootId}` equals the canonical holder identity;
+- missing/corrupt/duplicate/conflicting bindings, missing projection/worktree, gone or unknown process, PID reuse,
+  missing holder process/execution nonce, and stale bindings to free/abandoned/missing Deliveries are unavailable;
+- no inference from display name, mtime, session existence alone, or `principal` equality is permitted.
+
+Linux process identity reads `/proc/<pid>/stat` start time (parsing after the final `)` so spaces/parentheses in
+`comm` are safe) plus `/proc/sys/kernel/random/boot_id`. Unsupported/unreadable/malformed observations are `unknown`,
+not gone. The snapshot must be recomputed atomically from one bounded set of store/ledger reads; later T15 consumes
+it for projection cleanup safety.
+
+**Owned paths.** `src/resume/SessionLedger.ts`, `src/resume/planResume.ts`, `src/agents/AgentManager.ts`, one new
+`src/delivery/reloadReconciliation.ts`, `src/workspace/Workspace.ts`, `test/unit/resume.test.ts`,
+`test/unit/agentManager.test.ts`, one new `test/unit/deliveryReloadReconciliation.test.ts`, the minimum existing
+Workspace headless test needed to prove startup ordering, and the exact Bridge-generated behavior stub only. No
+DeliveryStore/lease transition, GitDelivery policy/store, Bridge schema/tool, config, UI, task-state, or other SDD
+edit. Stop and report if the production seams require widening.
+
+**Deterministic matrix and done condition.** Prove round-trip/idempotent/conflicting/invalid binding behavior; generic
+resume/restart exclusion; confirmed-join persistence and binding-write compensation; exact held reconstruction;
+quarantine preservation; each ambiguity above returning unavailable; duplicate worktree rows failing closed; and
+Workspace startup not resuming a dead Delivery-bound runtime. The canonical behavior title is
+`reload reconstructs an exact lease holder and fails closed on ambiguous occupancy`; it must fail at BASE and pass
+at HEAD through real ledger/reconciler/lifecycle seams, not copied production logic. Run the generated behavior,
+resume, AgentManager, reload-reconciliation, and focused Workspace suites serially, then `npm run typecheck` and
+`git diff --check`. Run `npm run verify:full:quiet` once at the first reviewable candidate; coordinator reserves the
+final full for post-review closure. Commit exactly owned paths by explicit pathspec with `t-0b5723`, keep the
+worktree clean, and doorbell `codex` with SHA/counts/residuals. Grok 4.5 is selected as the maintainer's default
+implementation family; immutable Sonnet review preserves model-family independence.
