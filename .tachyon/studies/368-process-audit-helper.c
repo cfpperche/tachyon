@@ -20,6 +20,10 @@
  * spike unless noninteractive setcap is already available):
  *   CAP_SYS_PTRACE (effective+permitted) so Yama/nondumpable same-UID targets
  *   become readable. Without it, same-UID EACCES correctly yields unknown.
+ *
+ * TEST_ONLY (compile with -DTEST_ONLY): parent-controlled ready/release marker
+ * barriers for deterministic adversarial tests. The hardened production build
+ * MUST omit -DTEST_ONLY so the seam is absent from the checksum-pinned binary.
  */
 
 #define _GNU_SOURCE
@@ -95,6 +99,8 @@ struct audit {
   bool has_ptrace_cap;
   bool saw_cap_loss;
   bool saw_instability;
+  /* Sticky: any target pin/path/identity failure during the audit. */
+  bool target_failed;
   unsigned match_count;
   unsigned unknown_count;
   unsigned match_report_n;
@@ -131,6 +137,7 @@ static void add_unknown(struct audit *a, pid_t pid, const char *reason,
  * target pin/revalidation failures so TOCTOU drift is never silent. */
 static void add_unknown_critical(struct audit *a, const char *reason) {
   a->unknown_count++;
+  a->target_failed = true;
   unsigned idx;
   if (a->unknown_report_n < MAX_UNKNOWN_REPORT)
     idx = a->unknown_report_n++;
@@ -193,11 +200,33 @@ static bool has_deleted_suffix(const char *s) {
 }
 
 /*
+ * Read the live canonical path of the O_PATH pin via /proc/self/fd.
+ * Does not itself decide pass/fail against a->target (caller does).
+ */
+static bool read_pin_live_path(struct audit *a, char *out, size_t outsz) {
+  char fdlink_path[64];
+  snprintf(fdlink_path, sizeof(fdlink_path), "/proc/self/fd/%d", a->target_fd);
+  ssize_t n = readlink(fdlink_path, out, outsz);
+  if (n < 0) {
+    add_unknown_critical(a, "target_fd_error");
+    return false;
+  }
+  if ((size_t)n >= outsz) {
+    add_unknown_critical(a, "target_fd_error");
+    return false;
+  }
+  out[n] = '\0';
+  return true;
+}
+
+/*
  * Revalidate pinned target identity against live realpath/stat and the
  * O_PATH descriptor via /proc/self/fd. Fail closed: any mismatch or missing
  * path returns false and records an unknown reason (never under-report).
+ * On success, if live_out is non-NULL, fills it with the pin's live path
+ * (which must equal a->target byte-for-byte after this check).
  */
-static bool revalidate_target(struct audit *a) {
+static bool revalidate_target(struct audit *a, char *live_out, size_t live_outsz) {
   char resolved[PATH_MAX];
   if (!realpath(a->target, resolved)) {
     add_unknown_critical(a, "target_missing");
@@ -233,19 +262,9 @@ static bool revalidate_target(struct audit *a) {
     return false;
   }
 
-  char fdlink_path[64];
-  snprintf(fdlink_path, sizeof(fdlink_path), "/proc/self/fd/%d", a->target_fd);
   char linkbuf[LINK_BUF];
-  ssize_t n = readlink(fdlink_path, linkbuf, sizeof(linkbuf));
-  if (n < 0) {
-    add_unknown_critical(a, "target_fd_error");
+  if (!read_pin_live_path(a, linkbuf, sizeof(linkbuf)))
     return false;
-  }
-  if ((size_t)n >= sizeof(linkbuf)) {
-    add_unknown_critical(a, "target_fd_error");
-    return false;
-  }
-  linkbuf[n] = '\0';
   /* Unlinked/renamed O_PATH targets surface as "... (deleted)" — fail closed. */
   if (has_deleted_suffix(linkbuf)) {
     add_unknown_critical(a, "target_deleted");
@@ -254,6 +273,13 @@ static bool revalidate_target(struct audit *a) {
   if (strcmp(linkbuf, a->target) != 0) {
     add_unknown_critical(a, "target_path_drift");
     return false;
+  }
+  if (live_out) {
+    if (strlen(linkbuf) + 1 > live_outsz) {
+      add_unknown_critical(a, "target_fd_error");
+      return false;
+    }
+    memcpy(live_out, linkbuf, strlen(linkbuf) + 1);
   }
   return true;
 }
@@ -385,8 +411,79 @@ static enum read_result read_proc_link(const char *path, char *out, size_t outsz
   return RR_OK;
 }
 
+#ifdef TEST_ONLY
+/*
+ * Parent-controlled ready/release markers (compile-time TEST_ONLY only).
+ * Env:
+ *   PAH_TEST_SEAM_DIR   — directory for <phase>.ready / <phase>.release
+ *   PAH_TEST_SEAM_PHASE — exact phase name to arm ("post_pin" or "obs");
+ *                         other phases no-op so only one barrier is active.
+ * Creates ready, then blocks until release appears. Absent env → no-op so
+ * non-barrier runs of the TEST_ONLY binary still work.
+ */
+static void test_seam_barrier(const char *phase) {
+  const char *dir = getenv("PAH_TEST_SEAM_DIR");
+  const char *want = getenv("PAH_TEST_SEAM_PHASE");
+  if (!dir || !*dir || !want || !*want || !phase || !*phase)
+    return;
+  if (strcmp(want, phase) != 0)
+    return;
+  char ready[PATH_MAX];
+  char release[PATH_MAX];
+  if (snprintf(ready, sizeof(ready), "%s/%s.ready", dir, phase) >= (int)sizeof(ready))
+    return;
+  if (snprintf(release, sizeof(release), "%s/%s.release", dir, phase) >=
+      (int)sizeof(release))
+    return;
+  int fd = open(ready, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
+  if (fd >= 0)
+    close(fd);
+  /* Bounded wait so a stuck test cannot hang forever (≈30s). */
+  for (int i = 0; i < 30000; i++) {
+    if (access(release, F_OK) == 0)
+      return;
+    usleep(1000);
+  }
+}
+
+#define TEST_SEAM(phase) test_seam_barrier(phase)
+#else
+#define TEST_SEAM(phase) ((void)0)
+#endif
+
+/*
+ * Per-observation check: revalidate pin, obtain live /proc/self/fd path, then
+ * after the caller's procfs read, revalidate again. Any pre/post path or
+ * identity drift → target_* unknown (sticky fail-closed). Binding comparison
+ * uses the live pin path captured at pre-check time.
+ *
+ * Residual (irreducible with this readlink primitive): a malicious same-UID
+ * actor that coordinates move+restore entirely between the separate procfs
+ * syscalls inside this window cannot be mathematically excluded.
+ */
 static void consider_link(struct audit *a, pid_t pid, unsigned long long st,
                           enum link_kind kind, int fd, const char *linkpath) {
+  if (a->target_failed)
+    return;
+
+  char live[PATH_MAX];
+  if (!revalidate_target(a, live, sizeof(live)))
+    return;
+
+  /* Deterministic test barrier at the intended observation (once per run). */
+#ifdef TEST_ONLY
+  {
+    static bool obs_seam_done = false;
+    if (!obs_seam_done) {
+      obs_seam_done = true;
+      TEST_SEAM("obs");
+      /* Re-check immediately after release so a held rename is observed. */
+      if (!revalidate_target(a, live, sizeof(live)))
+        return;
+    }
+  }
+#endif
+
   char target_buf[LINK_BUF];
   enum read_result rr = read_proc_link(linkpath, target_buf, sizeof(target_buf));
   switch (rr) {
@@ -395,33 +492,53 @@ static void consider_link(struct audit *a, pid_t pid, unsigned long long st,
   case RR_ENOENT:
     /* Vanishing process/FD is handled by fixed-point rescan at outer level
      * for whole-process ENOENT; for individual FDs, skip quietly. */
+    if (!revalidate_target(a, NULL, 0))
+      return;
     return;
   case RR_EACCES:
     add_unknown(a, pid, "eaccess", true, kind, kind == KIND_FD, fd);
+    if (!revalidate_target(a, NULL, 0))
+      return;
     return;
   case RR_TRUNC:
     add_unknown(a, pid, "truncation", true, kind, kind == KIND_FD, fd);
+    if (!revalidate_target(a, NULL, 0))
+      return;
     return;
   case RR_MALFORMED:
     add_unknown(a, pid, "malformed_link", true, kind, kind == KIND_FD, fd);
+    if (!revalidate_target(a, NULL, 0))
+      return;
     return;
   case RR_OTHER:
     add_unknown(a, pid, "read_error", true, kind, kind == KIND_FD, fd);
+    if (!revalidate_target(a, NULL, 0))
+      return;
     return;
   }
 
   strip_deleted_suffix(target_buf);
 
   /* Non-path pseudo targets cannot bind a directory. */
-  if (target_buf[0] != '/')
+  if (target_buf[0] != '/') {
+    if (!revalidate_target(a, NULL, 0))
+      return;
     return;
+  }
 
-  if (path_binds(target_buf, a->target, a->target_len))
+  /* Compare candidate against the pinned live path from pre-observation. */
+  size_t live_len = strlen(live);
+  if (path_binds(target_buf, live, live_len))
     add_match(a, pid, st, kind, kind == KIND_FD ? fd : -1);
+
+  /* Post-observation: any path/identity drift fails closed. */
+  (void)revalidate_target(a, NULL, 0);
 }
 
 static bool scan_one_pid(struct audit *a, pid_t pid, bool *vanished) {
   *vanished = false;
+  if (a->target_failed)
+    return true;
 
   uid_t ruid = 0;
   if (!read_real_uid(pid, &ruid)) {
@@ -455,9 +572,13 @@ static bool scan_one_pid(struct audit *a, pid_t pid, bool *vanished) {
   char linkpath[128];
   snprintf(linkpath, sizeof(linkpath), "/proc/%d/cwd", (int)pid);
   consider_link(a, pid, st1, KIND_CWD, -1, linkpath);
+  if (a->target_failed)
+    return true;
 
   snprintf(linkpath, sizeof(linkpath), "/proc/%d/root", (int)pid);
   consider_link(a, pid, st1, KIND_ROOT, -1, linkpath);
+  if (a->target_failed)
+    return true;
 
   char fddir[64];
   snprintf(fddir, sizeof(fddir), "/proc/%d/fd", (int)pid);
@@ -477,6 +598,8 @@ static bool scan_one_pid(struct audit *a, pid_t pid, bool *vanished) {
     pid_t self_pid = getpid();
     struct dirent *ent;
     while ((ent = readdir(d)) != NULL) {
+      if (a->target_failed)
+        break;
       if (!is_all_digits(ent->d_name))
         continue;
       errno = 0;
@@ -491,6 +614,9 @@ static bool scan_one_pid(struct audit *a, pid_t pid, bool *vanished) {
     }
     closedir(d);
   }
+
+  if (a->target_failed)
+    return true;
 
   if (!read_starttime(pid, &st2)) {
     char p[64];
@@ -545,6 +671,8 @@ static enum state run_audit(struct audit *a) {
     a->match_report_n = 0;
     a->unknown_report_n = 0;
     a->saw_instability = false;
+    /* target_failed is sticky: once set mid-scan we return ST_UNKNOWN before
+     * the next pass reset, so a true value here would be a logic error. */
 
     /* F2: sticky capability_loss is re-counted/reported every pass so a final
      * stable pass can never print state=unknown with unknown_count=0/no reason
@@ -554,9 +682,8 @@ static enum state run_audit(struct audit *a) {
     if (a->saw_cap_loss)
       add_unknown(a, 0, "capability_loss", false, KIND_CWD, false, -1);
 
-    /* F1: pre-pass target identity revalidation (realpath + path stat +
-     * O_PATH fstat + /proc/self/fd link). */
-    if (!revalidate_target(a)) {
+    /* Pass-level pre revalidation (preserved; per-observation also checks). */
+    if (!revalidate_target(a, NULL, 0)) {
       free(pids);
       return ST_UNKNOWN;
     }
@@ -575,15 +702,22 @@ static enum state run_audit(struct audit *a) {
 
     bool any_vanished = false;
     for (int i = 0; i < np; i++) {
+      if (a->target_failed)
+        break;
       bool vanished = false;
       scan_one_pid(a, pids[i], &vanished);
       if (vanished)
         any_vanished = true;
     }
 
-    /* F1: post-pass revalidation — rename/replacement/deletion mid-scan fails
-     * closed to unknown (never under-report as empty). */
-    if (!revalidate_target(a)) {
+    if (a->target_failed) {
+      free(pids);
+      return ST_UNKNOWN;
+    }
+
+    /* Pass-level post revalidation — rename/replacement/deletion mid-scan
+     * fails closed to unknown (never under-report as empty). */
+    if (!revalidate_target(a, NULL, 0)) {
       free(pids);
       return ST_UNKNOWN;
     }
@@ -614,6 +748,45 @@ static int usage(const char *argv0) {
   return ST_ERROR;
 }
 
+static void emit_report(struct audit *a, enum state st_res) {
+  const char *state_s = st_res == ST_EMPTY
+                            ? "empty"
+                            : st_res == ST_SURVIVORS ? "survivors" : "unknown";
+
+  /* Machine-readable stable output. No unrelated path strings. */
+  printf("state=%s\n", state_s);
+  printf("self_ruid=%u\n", (unsigned)a->self_ruid);
+  printf("target=%s\n", a->target);
+  printf("cap_sys_ptrace=%s\n", a->has_ptrace_cap ? "yes" : "no");
+  printf("match_count=%u\n", a->match_count);
+  printf("unknown_count=%u\n", a->unknown_count);
+  for (unsigned i = 0; i < a->match_report_n; i++) {
+    const struct match_ev *m = &a->matches[i];
+    if (m->kind == KIND_FD)
+      printf("match pid=%d starttime=%llu kind=fd fd=%d\n", (int)m->pid,
+             m->starttime, m->fd);
+    else
+      printf("match pid=%d starttime=%llu kind=%s\n", (int)m->pid,
+             m->starttime, kind_name(m->kind));
+  }
+  if (a->match_count > a->match_report_n)
+    printf("match_truncated=yes omitted=%u\n", a->match_count - a->match_report_n);
+  for (unsigned i = 0; i < a->unknown_report_n; i++) {
+    const struct unknown_ev *u = &a->unknowns[i];
+    printf("unknown reason=%s", u->reason);
+    if (u->pid > 0)
+      printf(" pid=%d", (int)u->pid);
+    if (u->has_kind)
+      printf(" kind=%s", kind_name(u->kind));
+    if (u->has_fd)
+      printf(" fd=%d", u->fd);
+    printf("\n");
+  }
+  if (a->unknown_count > a->unknown_report_n)
+    printf("unknown_truncated=yes omitted=%u\n",
+           a->unknown_count - a->unknown_report_n);
+}
+
 int main(int argc, char **argv) {
   if (argc != 2)
     return usage(argv[0]);
@@ -640,10 +813,10 @@ int main(int argc, char **argv) {
   }
 
   /*
-   * F1 pin: independent realpath must equal the caller string byte-for-byte
+   * Pin: independent realpath must equal the caller string byte-for-byte
    * (rejects symlink aliases and non-canonical inputs). Then open
-   * O_PATH|O_DIRECTORY|O_CLOEXEC and pin st_dev+st_ino for every-pass
-   * revalidation.
+   * O_PATH|O_DIRECTORY|O_CLOEXEC and pin st_dev+st_ino for every-pass and
+   * per-observation revalidation.
    */
   char resolved[PATH_MAX];
   if (!realpath(target, resolved)) {
@@ -679,18 +852,19 @@ int main(int argc, char **argv) {
   a.has_ptrace_cap = cap_sys_ptrace_effective();
 
   /* Initial pin check before any pass (same contract as pre/post revalidate). */
-  if (!revalidate_target(&a)) {
-    /* Emit machine-readable unknown rather than under-reporting. */
-    printf("state=unknown\n");
-    printf("self_ruid=%u\n", (unsigned)a.self_ruid);
-    printf("target=%s\n", a.target);
-    printf("cap_sys_ptrace=%s\n", a.has_ptrace_cap ? "yes" : "no");
-    printf("match_count=0\n");
-    printf("unknown_count=%u\n", a.unknown_count);
-    for (unsigned i = 0; i < a.unknown_report_n; i++) {
-      const struct unknown_ev *u = &a.unknowns[i];
-      printf("unknown reason=%s\n", u->reason);
-    }
+  if (!revalidate_target(&a, NULL, 0)) {
+    emit_report(&a, ST_UNKNOWN);
+    close(tfd);
+    return ST_UNKNOWN;
+  }
+
+  /* Deterministic test barrier immediately after successful target pin. */
+  TEST_SEAM("post_pin");
+
+  /* After release, re-check so a rename held across the barrier is observed
+   * before any process scan begins. */
+  if (!revalidate_target(&a, NULL, 0)) {
+    emit_report(&a, ST_UNKNOWN);
     close(tfd);
     return ST_UNKNOWN;
   }
@@ -701,43 +875,7 @@ int main(int argc, char **argv) {
     return ST_ERROR;
   }
 
-  const char *state_s = st_res == ST_EMPTY
-                            ? "empty"
-                            : st_res == ST_SURVIVORS ? "survivors" : "unknown";
-
-  /* Machine-readable stable output. No unrelated path strings. */
-  printf("state=%s\n", state_s);
-  printf("self_ruid=%u\n", (unsigned)a.self_ruid);
-  printf("target=%s\n", a.target);
-  printf("cap_sys_ptrace=%s\n", a.has_ptrace_cap ? "yes" : "no");
-  printf("match_count=%u\n", a.match_count);
-  printf("unknown_count=%u\n", a.unknown_count);
-  for (unsigned i = 0; i < a.match_report_n; i++) {
-    const struct match_ev *m = &a.matches[i];
-    if (m->kind == KIND_FD)
-      printf("match pid=%d starttime=%llu kind=fd fd=%d\n", (int)m->pid,
-             m->starttime, m->fd);
-    else
-      printf("match pid=%d starttime=%llu kind=%s\n", (int)m->pid,
-             m->starttime, kind_name(m->kind));
-  }
-  if (a.match_count > a.match_report_n)
-    printf("match_truncated=yes omitted=%u\n", a.match_count - a.match_report_n);
-  for (unsigned i = 0; i < a.unknown_report_n; i++) {
-    const struct unknown_ev *u = &a.unknowns[i];
-    printf("unknown reason=%s", u->reason);
-    if (u->pid > 0)
-      printf(" pid=%d", (int)u->pid);
-    if (u->has_kind)
-      printf(" kind=%s", kind_name(u->kind));
-    if (u->has_fd)
-      printf(" fd=%d", u->fd);
-    printf("\n");
-  }
-  if (a.unknown_count > a.unknown_report_n)
-    printf("unknown_truncated=yes omitted=%u\n",
-           a.unknown_count - a.unknown_report_n);
-
+  emit_report(&a, st_res);
   close(tfd);
   return (int)st_res;
 }

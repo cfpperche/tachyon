@@ -2,15 +2,18 @@ import { describe, expect, it } from "vitest";
 import { createHash } from "node:crypto";
 import {
   mkdtempSync,
+  mkdirSync,
   readFileSync,
   rmSync,
   symlinkSync,
   writeFileSync,
   existsSync,
+  openSync,
+  closeSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { spawn, spawnSync } from "node:child_process";
+import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
 
 const REPO = process.cwd();
 const SRC = join(REPO, ".tachyon/studies/368-process-audit-helper.c");
@@ -29,13 +32,20 @@ const HARDEN_CFLAGS = [
   "-Wl,-z,relro,-z,now",
 ];
 
+const TARGET_UNKNOWN_RE =
+  /unknown reason=target_(identity_drift|deleted|path_drift|missing|not_dir|fd_error)/;
+
 function sha256File(path: string): string {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
 }
 
-function compileHelper(buildDir: string): string {
-  const out = join(buildDir, "process-audit-helper");
-  const r = spawnSync("gcc", [...HARDEN_CFLAGS, "-o", out, SRC], {
+function compileHelper(
+  buildDir: string,
+  name: string,
+  extra: string[] = [],
+): string {
+  const out = join(buildDir, name);
+  const r = spawnSync("gcc", [...HARDEN_CFLAGS, ...extra, "-o", out, SRC], {
     encoding: "utf8",
   });
   expect(r.status, `gcc failed: ${r.stderr || r.stdout}`).toBe(0);
@@ -45,8 +55,12 @@ function compileHelper(buildDir: string): string {
 function runHelper(
   helper: string,
   target: string,
+  env?: NodeJS.ProcessEnv,
 ): { status: number | null; stdout: string; stderr: string } {
-  const r = spawnSync(helper, [target], { encoding: "utf8" });
+  const r = spawnSync(helper, [target], {
+    encoding: "utf8",
+    env: env ? { ...process.env, ...env } : process.env,
+  });
   return {
     status: r.status,
     stdout: r.stdout ?? "",
@@ -55,7 +69,7 @@ function runHelper(
 }
 
 function readPidLine(
-  child: ReturnType<typeof spawn>,
+  child: ChildProcessWithoutNullStreams | ReturnType<typeof spawn>,
   timeoutMs = 5000,
 ): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -85,27 +99,120 @@ function readPidLine(
   });
 }
 
+function sleepMs(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+async function waitForFile(path: string, timeoutMs = 10000): Promise<void> {
+  const start = Date.now();
+  while (!existsSync(path)) {
+    if (Date.now() - start > timeoutMs) {
+      throw new Error(`timed out waiting for barrier file: ${path}`);
+    }
+    await sleepMs(5);
+  }
+}
+
+function touch(path: string): void {
+  closeSync(openSync(path, "w"));
+}
+
+/**
+ * Run TEST_ONLY helper against target with a named seam barrier.
+ * When ready appears, invoke onReady (must perform attack then return), then
+ * release the barrier and await helper exit. Requires barrier reached — no
+ * race-miss / ambient EACCES fallback.
+ */
+async function runWithSeam(opts: {
+  helper: string;
+  target: string;
+  seamDir: string;
+  phase: "post_pin" | "obs";
+  onReady: () => void | Promise<void>;
+}): Promise<{ status: number | null; stdout: string; stderr: string }> {
+  mkdirSync(opts.seamDir, { recursive: true });
+  const ready = join(opts.seamDir, `${opts.phase}.ready`);
+  const release = join(opts.seamDir, `${opts.phase}.release`);
+  try {
+    rmSync(ready, { force: true });
+  } catch {
+    /* ignore */
+  }
+  try {
+    rmSync(release, { force: true });
+  } catch {
+    /* ignore */
+  }
+
+  const child = spawn(opts.helper, [opts.target], {
+    env: {
+      ...process.env,
+      PAH_TEST_SEAM_DIR: opts.seamDir,
+      PAH_TEST_SEAM_PHASE: opts.phase,
+    },
+  }) as ChildProcessWithoutNullStreams;
+
+  let stdout = "";
+  let stderr = "";
+  child.stdout.on("data", (c: Buffer) => {
+    stdout += c.toString("utf8");
+  });
+  child.stderr.on("data", (c: Buffer) => {
+    stderr += c.toString("utf8");
+  });
+
+  const exitP = new Promise<number | null>((resolve, reject) => {
+    child.on("error", reject);
+    child.on("close", (code) => resolve(code));
+  });
+
+  await waitForFile(ready, 15000);
+  // Barrier reached — parent controls the observation window.
+  await opts.onReady();
+  touch(release);
+
+  const status = await exitP;
+  return { status, stdout, stderr };
+}
+
 describe("container-generated delegation behavior", () => {
-  it("closes F1/F2: compile helper, reject symlink targets, fail-closed on rename/identity drift, no-cap unknown with reason, live FD match, honest BLOCKED report", async () => {
+  it("R3: seam-backed deterministic target_* drift, per-obs fail-closed, hardened seam-free, BLOCKED residual", async () => {
     const report = readFileSync(REPORT, "utf8");
     const source = readFileSync(SRC, "utf8");
 
-    // Report presence + honest BLOCKED (no capability feasibility claim).
+    // Report presence + honest BLOCKED (no capability / production feasibility claim).
     expect(report).toMatch(/Verdict/);
     expect(report).toContain("**BLOCKED.**");
     expect(report).toContain("CAP_SYS_PTRACE");
     expect(report).toContain("state=unknown");
     expect(report).not.toMatch(/\*\*PASS\.\*\*/);
+    expect(report).not.toMatch(/\bPASS\b.*feasib/i);
+    // Irreducible residual must remain explicit (no production proven_empty rollout).
+    expect(report).toMatch(/swap\/restore|move\+restore|move\+ *restore/i);
+    expect(report).toMatch(/residual/i);
+    expect(report).toMatch(/between separate procfs|between the separate procfs|procfs syscalls/i);
+    expect(report).toMatch(/TEST_ONLY|compile-time/i);
+    expect(report).toMatch(/per-observation|per.observation/i);
+    expect(report).not.toMatch(/sudo setcap/);
+    // Human residual may mention setcap as future step, but no claim it was run.
+    expect(report).toMatch(/No setcap was performed/i);
+    expect(report).toMatch(/proven_empty|production adapter|ProcessFence/i);
+    expect(report).toMatch(/BLOCK.*production|must keep production|not.*production proven_empty|BLOCK production/i);
 
-    // F1 contract surface in source (realpath + O_PATH pin + revalidate).
+    // Contract surface: pin + revalidate + per-observation live path.
     expect(source).toMatch(/O_PATH/);
     expect(source).toMatch(/O_DIRECTORY/);
     expect(source).toMatch(/O_CLOEXEC/);
     expect(source).toMatch(/revalidate_target/);
     expect(source).toMatch(/target_identity_drift/);
     expect(source).toMatch(/realpath\s*\(/);
+    expect(source).toMatch(/read_pin_live_path|\/proc\/self\/fd/);
+    expect(source).toMatch(/#ifdef TEST_ONLY/);
+    expect(source).toMatch(/TEST_SEAM\s*\(\s*"post_pin"\s*\)/);
+    expect(source).toMatch(/TEST_SEAM\s*\(\s*"obs"\s*\)/);
+    expect(source).toMatch(/PAH_TEST_SEAM_DIR/);
 
-    // F2: sticky capability_loss re-emitted every pass after counter reset.
+    // Sticky capability_loss still present.
     expect(source).toMatch(/saw_cap_loss/);
     expect(source).toMatch(
       /if\s*\(\s*a->saw_cap_loss\s*\)[\s\S]{0,160}capability_loss/,
@@ -116,15 +223,34 @@ describe("container-generated delegation behavior", () => {
     const children: Array<ReturnType<typeof spawn>> = [];
 
     try {
-      const helper = compileHelper(buildDir);
+      // Hardened production binary: seam-free, checksum-pinned for capability.
+      const helper = compileHelper(buildDir, "process-audit-helper");
+      // Separate TEST_ONLY binary for barrier-backed proofs only.
+      const testHelper = compileHelper(buildDir, "process-audit-helper-test", [
+        "-DTEST_ONLY",
+      ]);
+
       const srcHash = sha256File(SRC);
       const binHash = sha256File(helper);
+      const testBinHash = sha256File(testHelper);
+      expect(binHash).not.toBe(testBinHash);
 
-      // Report pins exact reproducible hashes for this correction.
+      // Report pins exact reproducible hashes for hardened (not TEST_ONLY) build.
       expect(report).toContain(srcHash);
       expect(report).toContain(binHash);
+      // Seam marker string must not appear in hardened binary.
+      const stringsR = spawnSync("strings", [helper], { encoding: "utf8" });
+      expect(stringsR.status).toBe(0);
+      expect(stringsR.stdout).not.toMatch(/PAH_TEST_SEAM_DIR/);
+      expect(stringsR.stdout).not.toMatch(/post_pin\.ready/);
+      // TEST_ONLY binary must contain the seam env key.
+      const testStrings = spawnSync("strings", [testHelper], {
+        encoding: "utf8",
+      });
+      expect(testStrings.status).toBe(0);
+      expect(testStrings.stdout).toMatch(/PAH_TEST_SEAM_DIR/);
 
-      // --- no-cap unknown with reason ---
+      // --- no-cap unknown with reason (hardened binary) ---
       const target = mkdtempSync(join(tmpdir(), "tachyon-368-audit-target-"));
       scratch.push(target);
       const noCap = runHelper(helper, target);
@@ -137,15 +263,13 @@ describe("container-generated delegation behavior", () => {
         noCap.stdout.match(/^unknown_count=(\d+)$/m)?.[1] ?? "0",
       );
       expect(unknownCount).toBeGreaterThan(0);
-      // F2 no-cap path: never capability_loss without prior effective cap.
       expect(noCap.stdout).not.toMatch(/capability_loss/);
-      // Output privacy: no unrelated absolute process path strings.
       for (const line of noCap.stdout.split("\n")) {
         if (line.startsWith("target=")) continue;
         expect(line).not.toMatch(/^\/(?:tmp|home|proc|var|usr)\//);
       }
 
-      // --- F1: symlink target rejection (byte-exact realpath must match) ---
+      // --- F1: symlink target rejection ---
       const realDir = mkdtempSync(join(tmpdir(), "tachyon-368-audit-real-"));
       scratch.push(realDir);
       const linkPath = `${realDir}-link`;
@@ -171,57 +295,111 @@ describe("container-generated delegation behavior", () => {
       expect(withFd.stdout).toMatch(new RegExp(`match pid=${wpid} .*kind=fd`));
       writer.kill("SIGKILL");
 
-      // --- F1: rename/replacement mid-scan → pinned-identity drift fail-closed ---
+      // --- H1 closed: post_pin barrier + forced rename/replacement (no race-miss fallback) ---
       const driftTarget = mkdtempSync(join(tmpdir(), "tachyon-368-audit-target-"));
       scratch.push(driftTarget);
       const moved = `${driftTarget}.moved`;
       scratch.push(moved);
-      const attackFlag = join(buildDir, "attacked.flag");
-      for (let i = 0; i < 50; i++) {
-        children.push(spawn("sleep", ["3600"]));
-      }
-      const attacker = spawn("python3", [
-        "-c",
-        `
-import os, time
-helper = ${JSON.stringify(helper)}
-target = ${JSON.stringify(driftTarget)}
-moved = ${JSON.stringify(moved)}
-flag = ${JSON.stringify(attackFlag)}
-for _ in range(20000):
-    for name in os.listdir("/proc"):
-        if not name.isdigit():
-            continue
-        try:
-            cmd = open(f"/proc/{name}/cmdline", "rb").read()
-        except OSError:
-            continue
-        if helper.encode() in cmd and target.encode() in cmd:
-            try:
-                os.rename(target, moved)
-                os.mkdir(target)
-                open(flag, "w").write("1")
-            except OSError:
-                pass
-            raise SystemExit(0)
-    time.sleep(0.0002)
+      const seamPost = join(buildDir, "seam-post-pin");
+      scratch.push(seamPost);
+      const postPin = await runWithSeam({
+        helper: testHelper,
+        target: driftTarget,
+        seamDir: seamPost,
+        phase: "post_pin",
+        onReady: () => {
+          // Rename original inode away and place a fresh directory at the path.
+          const r = spawnSync("python3", [
+            "-c",
+            `
+import os, sys
+target, moved = sys.argv[1], sys.argv[2]
+os.rename(target, moved)
+os.mkdir(target)
 `,
-      ]);
-      children.push(attacker);
-      const drifted = runHelper(helper, driftTarget);
-      spawnSync("sleep", ["0.05"]);
-      const attacked = existsSync(attackFlag);
-      expect(drifted.status).toBe(2);
-      expect(drifted.stdout).toMatch(/^state=unknown$/m);
-      expect(drifted.stdout).not.toMatch(/^state=empty$/m);
-      if (attacked) {
-        expect(drifted.stdout).toMatch(
-          /unknown reason=target_(identity_drift|deleted|path_drift|missing)/,
-        );
-      } else {
-        // Race miss still must fail closed (host EACCES incompleteness).
-        expect(drifted.stdout).toMatch(/unknown reason=/);
-      }
+            driftTarget,
+            moved,
+          ]);
+          expect(r.status, r.stderr?.toString()).toBe(0);
+          expect(existsSync(join(seamPost, "post_pin.ready"))).toBe(true);
+        },
+      });
+      expect(existsSync(join(seamPost, "post_pin.ready"))).toBe(true);
+      expect(postPin.status).toBe(2);
+      expect(postPin.stdout).toMatch(/^state=unknown$/m);
+      expect(postPin.stdout).not.toMatch(/^state=empty$/m);
+      // Must prove specific target_* — ambient eaccess alone is insufficient.
+      expect(postPin.stdout).toMatch(TARGET_UNKNOWN_RE);
+
+      // --- Hold drift across per-observation barrier → specific target_* ---
+      const obsTarget = mkdtempSync(join(tmpdir(), "tachyon-368-audit-target-"));
+      scratch.push(obsTarget);
+      const obsMoved = `${obsTarget}.moved`;
+      scratch.push(obsMoved);
+      const seamObs = join(buildDir, "seam-obs");
+      scratch.push(seamObs);
+      const obsHeld = await runWithSeam({
+        helper: testHelper,
+        target: obsTarget,
+        seamDir: seamObs,
+        phase: "obs",
+        onReady: () => {
+          const r = spawnSync("python3", [
+            "-c",
+            `
+import os, sys
+target, moved = sys.argv[1], sys.argv[2]
+os.rename(target, moved)
+os.mkdir(target)
+`,
+            obsTarget,
+            obsMoved,
+          ]);
+          expect(r.status, r.stderr?.toString()).toBe(0);
+        },
+      });
+      expect(existsSync(join(seamObs, "obs.ready"))).toBe(true);
+      expect(obsHeld.status).toBe(2);
+      expect(obsHeld.stdout).toMatch(/^state=unknown$/m);
+      expect(obsHeld.stdout).toMatch(TARGET_UNKNOWN_RE);
+
+      // --- Swap/restore characterization (malicious same-UID residual window) ---
+      // At obs barrier: rename out then restore same inode before release.
+      // Practical post-barrier revalidate may miss a fully restored path; the
+      // report must keep this residual disclosed and production BLOCKED.
+      const swapTarget = mkdtempSync(join(tmpdir(), "tachyon-368-audit-target-"));
+      scratch.push(swapTarget);
+      const swapMoved = `${swapTarget}.moved`;
+      scratch.push(swapMoved);
+      const seamSwap = join(buildDir, "seam-swap");
+      scratch.push(seamSwap);
+      const swapped = await runWithSeam({
+        helper: testHelper,
+        target: swapTarget,
+        seamDir: seamSwap,
+        phase: "obs",
+        onReady: () => {
+          const r = spawnSync("python3", [
+            "-c",
+            `
+import os, sys
+target, moved = sys.argv[1], sys.argv[2]
+os.rename(target, moved)
+os.rename(moved, target)
+`,
+            swapTarget,
+            swapMoved,
+          ]);
+          expect(r.status, r.stderr?.toString()).toBe(0);
+        },
+      });
+      expect(existsSync(join(seamSwap, "obs.ready"))).toBe(true);
+      // Restored inode at original path: helper may complete without target_*.
+      // State remains unknown on this host due to ambient EACCES (incomplete),
+      // which is fail-closed incompleteness — not a proven_empty claim.
+      expect(swapped.status).toBe(2);
+      expect(swapped.stdout).toMatch(/^state=unknown$/m);
+      expect(swapped.stdout).not.toMatch(/^state=empty$/m);
 
       // Missing target refuses closed (never silent empty).
       const missing = runHelper(
@@ -246,5 +424,5 @@ for _ in range(20000):
         }
       }
     }
-  });
+  }, 120_000);
 });
