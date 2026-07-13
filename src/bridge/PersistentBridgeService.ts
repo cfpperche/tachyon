@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
+import { randomBytes } from "node:crypto";
 import { spawn } from "node:child_process";
 import {
   isPersistentBridgeDescriptor,
@@ -16,11 +17,20 @@ import type { PersistentProxyDaemonOptions } from "./persistentProxyDaemon.js";
 const START_TIMEOUT_MS = 5_000;
 const STALE_START_LOCK_MS = 10_000;
 
+export interface PersistentBridgeLaunchInput {
+  options: PersistentProxyDaemonOptions;
+  daemonModule: string;
+  encodedOptions: string;
+}
+
+export type PersistentBridgeLauncher = (input: PersistentBridgeLaunchInput) => void | Promise<void>;
+
 export class PersistentBridgeService {
   constructor(
     private readonly workspaceRoot: string,
     private readonly workspaceHash: string,
     private readonly daemonModule = path.join(__dirname, "persistent-bridge-daemon.cjs"),
+    private readonly launcher: PersistentBridgeLauncher = launchPersistentBridgeDaemon,
   ) {}
 
   async ensureAndRegister(preferredPort: number, backendPort: number): Promise<PersistentBridgeDescriptor> {
@@ -49,13 +59,7 @@ export class PersistentBridgeService {
         controlSocket: persistentBridgeControlSocket(this.workspaceRoot),
         descriptorPath: persistentBridgeDescriptorPath(this.workspaceRoot),
       };
-      const child = spawn(process.execPath, [this.daemonModule, Buffer.from(JSON.stringify(options)).toString("base64url")], {
-        cwd: this.workspaceRoot,
-        detached: true,
-        stdio: "ignore",
-        windowsHide: true,
-      });
-      child.unref();
+      await this.launcher({ options, daemonModule: this.daemonModule, encodedOptions: encodeDaemonOptions(options) });
       return await this.waitForReadyAndRegister(backendPort);
     } finally {
       fs.closeSync(lockFd);
@@ -154,6 +158,65 @@ export class PersistentBridgeService {
       return fs.openSync(lock, "wx", 0o600);
     }
   }
+}
+
+export function encodeDaemonOptions(options: PersistentProxyDaemonOptions): string {
+  return Buffer.from(JSON.stringify(options)).toString("base64url");
+}
+
+export function persistentBridgeSystemdUnitName(workspaceHash: string): string {
+  return `tachyon-bridge-${workspaceHash}-${process.pid}-${Date.now().toString(36)}-${randomBytes(4).toString("hex")}.service`;
+}
+
+export function buildPersistentBridgeSystemdRunArgs(input: PersistentBridgeLaunchInput, unitName: string): string[] {
+  return [
+    "--user",
+    "--quiet",
+    "--collect",
+    `--unit=${unitName}`,
+    `--working-directory=${input.options.workspaceRoot}`,
+    "--",
+    process.execPath,
+    input.daemonModule,
+    input.encodedOptions,
+  ];
+}
+
+export async function launchPersistentBridgeDaemon(input: PersistentBridgeLaunchInput): Promise<void> {
+  if (process.platform === "linux") {
+    const args = buildPersistentBridgeSystemdRunArgs(input, persistentBridgeSystemdUnitName(input.options.workspaceHash));
+    await runSystemdRun(args, input.options.workspaceRoot);
+    return;
+  }
+
+  const child = spawn(process.execPath, [input.daemonModule, input.encodedOptions], {
+    cwd: input.options.workspaceRoot,
+    detached: true,
+    stdio: "ignore",
+    windowsHide: true,
+  });
+  child.unref();
+}
+
+function runSystemdRun(args: string[], cwd: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn("systemd-run", args, { cwd, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
+    let output = "";
+    const append = (chunk: Buffer) => {
+      output += chunk.toString("utf8");
+      if (output.length > 8_192) output = output.slice(-8_192);
+    };
+    child.stdout?.on("data", append);
+    child.stderr?.on("data", append);
+    child.once("error", reject);
+    child.once("close", (code) => {
+      if (code === 0) resolve();
+      else {
+        const detail = output.trim();
+        reject(new Error(`systemd-run failed to launch persistent Bridge proxy${detail ? `: ${detail}` : ""}`));
+      }
+    });
+  });
 }
 
 function validDescriptor(descriptor: unknown, workspaceRoot: string, workspaceHash: string): descriptor is PersistentBridgeDescriptor {

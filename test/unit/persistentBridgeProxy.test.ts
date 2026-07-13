@@ -5,7 +5,11 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { startPersistentProxy, type RunningPersistentProxy } from "../../src/bridge/persistentProxyDaemon.js";
-import { PersistentBridgeService } from "../../src/bridge/PersistentBridgeService.js";
+import {
+  buildPersistentBridgeSystemdRunArgs,
+  encodeDaemonOptions,
+  PersistentBridgeService,
+} from "../../src/bridge/PersistentBridgeService.js";
 import {
   persistentBridgeControlSocket,
   persistentBridgeDescriptorPath,
@@ -80,6 +84,45 @@ describe("persistent Bridge proxy", () => {
     expect(first.port).toBe(second.port);
     await a.stop();
     expect(fs.existsSync(socket)).toBe(false);
+  });
+
+  it("starts a missing proxy through the injectable launcher before registering the backend", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-persistent-bridge-launch-"));
+    const backendPort = await backendServer("launched", servers);
+    const launches: unknown[] = [];
+    const service = new PersistentBridgeService(root, "launch", "/daemon.cjs", (input) => {
+      launches.push(input);
+      void startPersistentProxy(input.options).then((proxy) => running.push(proxy));
+    });
+
+    const descriptor = await service.ensureAndRegister(0, backendPort);
+    expect(launches).toHaveLength(1);
+    expect(descriptor.workspaceHash).toBe("launch");
+    expect((await request(descriptor.port, "/mcp", "body")).body).toBe("launched:body:");
+    await service.stop();
+  });
+
+  it("builds a Linux user-systemd launch instead of a child of the Extension Host", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-persistent-bridge-systemd-"));
+    const options = {
+      workspaceRoot: root,
+      workspaceHash: "abc12345",
+      preferredPort: 42_897,
+      controlSocket: persistentBridgeControlSocket(root),
+      descriptorPath: persistentBridgeDescriptorPath(root),
+    };
+    const input = { options, daemonModule: "/ext/dist/persistent-bridge-daemon.cjs", encodedOptions: encodeDaemonOptions(options) };
+    expect(buildPersistentBridgeSystemdRunArgs(input, "tachyon-bridge-abc.service")).toEqual([
+      "--user",
+      "--quiet",
+      "--collect",
+      "--unit=tachyon-bridge-abc.service",
+      `--working-directory=${root}`,
+      "--",
+      process.execPath,
+      "/ext/dist/persistent-bridge-daemon.cjs",
+      input.encodedOptions,
+    ]);
   });
 });
 

@@ -8,13 +8,14 @@ _Generated from `plan.md` on 2026-07-13. Work top-to-bottom. Check boxes as task
 - [x] Implement detached loopback proxy with bounded `HOST_UNAVAILABLE` and explicit stop.
 - [x] Add Workspace-side ensure/register/health/stop client and advertised endpoint support.
 - [x] Wire activation, reload-safe disposal, Restart Bridge and Stop Bridge.
-- [x] Add packaging/file-list coverage and headless child-process lifecycle tests.
+- [x] Add packaging/file-list coverage and headless user-manager lifecycle tests.
 
 ## Verification
 
 _Acceptance checks tied to `spec.md`. Each should map to a checklist item there._
 
 - [x] Stable proxy PID/port across backend detach and reattach.
+- [x] Linux/WSL proxy is not a direct child of the caller or Extension Host process.
 - [x] Requests proxy before/after reattach and return bounded 503 during the gap.
 - [x] Concurrent ensure elects one proxy; stale socket recovery does not kill by PID.
 - [ ] Typecheck, focused tests, diff-check and full verification pass.

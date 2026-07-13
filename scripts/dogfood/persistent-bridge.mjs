@@ -3,7 +3,7 @@ import http from "node:http";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
-import { spawn } from "node:child_process";
+import { spawnSync } from "node:child_process";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-persistent-bridge-dogfood-"));
 const serviceDir = path.join(root, ".tachyon", "bridge-service");
@@ -13,16 +13,17 @@ const daemon = path.resolve("dist/persistent-bridge-daemon.cjs");
 if (!fs.existsSync(daemon)) throw new Error("dist/persistent-bridge-daemon.cjs missing; run npm run build first");
 
 const options = { workspaceRoot: root, workspaceHash: "dogfood375", preferredPort: 0, controlSocket, descriptorPath };
-const child = spawn(process.execPath, [daemon, Buffer.from(JSON.stringify(options)).toString("base64url")], {
-  cwd: root,
-  stdio: "ignore",
-});
+const unitName = `tachyon-bridge-dogfood-${process.pid}-${Date.now().toString(36)}.service`;
+launchDaemonViaSystemd();
 const backends = [];
+let stopped = false;
 
 try {
   await waitFor(() => fs.existsSync(descriptorPath));
   const firstDescriptor = JSON.parse(fs.readFileSync(descriptorPath, "utf8"));
-  if (firstDescriptor.pid !== child.pid) throw new Error("descriptor PID does not name the proxy child");
+  if (firstDescriptor.pid === process.pid) throw new Error("descriptor PID names the dogfood process");
+  const parentPid = processParentPid(firstDescriptor.pid);
+  if (parentPid === process.pid) throw new Error("persistent Bridge proxy is still a direct dogfood child");
 
   const backend1 = await backend("before", backends);
   await control({ op: "register", workspaceHash: "dogfood375", backendPort: backend1 });
@@ -44,11 +45,43 @@ try {
 
   await control({ op: "stop", workspaceHash: "dogfood375" });
   await waitFor(() => !fs.existsSync(controlSocket));
-  process.stdout.write(`persistent Bridge dogfood PASS pid=${firstDescriptor.pid} port=${firstDescriptor.port}\n`);
+  stopped = true;
+  process.stdout.write(`persistent Bridge dogfood PASS pid=${firstDescriptor.pid} ppid=${parentPid} port=${firstDescriptor.port}\n`);
 } finally {
   for (const server of backends) await closeServer(server);
-  if (child.exitCode === null) child.kill("SIGTERM");
+  if (!stopped) {
+    await control({ op: "stop", workspaceHash: "dogfood375" }).catch(() => undefined);
+    spawnSync("systemctl", ["--user", "stop", unitName], { encoding: "utf8" });
+  }
   fs.rmSync(root, { recursive: true, force: true });
+}
+
+function launchDaemonViaSystemd() {
+  if (process.platform !== "linux") throw new Error("persistent Bridge dogfood requires Linux user systemd");
+  const result = spawnSync("systemd-run", [
+    "--user",
+    "--quiet",
+    "--collect",
+    `--unit=${unitName}`,
+    `--working-directory=${root}`,
+    "--",
+    process.execPath,
+    daemon,
+    Buffer.from(JSON.stringify(options)).toString("base64url"),
+  ], { cwd: root, encoding: "utf8" });
+  if (result.error) throw result.error;
+  if (result.status !== 0) {
+    const detail = (result.stderr || result.stdout || "").trim();
+    throw new Error(`systemd-run failed: ${detail || `exit ${result.status}`}`);
+  }
+}
+
+function processParentPid(pid) {
+  const result = spawnSync("ps", ["-o", "ppid=", "-p", String(pid)], { encoding: "utf8" });
+  if (result.status !== 0) throw new Error(`ps failed for persistent Bridge proxy pid ${pid}`);
+  const ppid = Number.parseInt(result.stdout.trim(), 10);
+  if (!Number.isSafeInteger(ppid) || ppid <= 0) throw new Error(`invalid parent pid for persistent Bridge proxy pid ${pid}`);
+  return ppid;
 }
 
 async function backend(label, servers) {

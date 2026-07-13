@@ -4,17 +4,20 @@ _Drafted from `spec.md` on 2026-07-13. The approach, not the steps (those go in 
 
 ## Approach
 
-Keep the existing `Workspace` and `Bridge` engine intact. Add one small detached Node proxy per canonical workspace.
-The proxy owns the stable public loopback port. The embedded Bridge binds an ephemeral private loopback port on each
-Extension Host activation. A workspace-local Unix control socket lets the extension register that backend, query
-health and explicitly stop the proxy. Requests are streamed to the backend; absence returns bounded HTTP 503 with
-`HOST_UNAVAILABLE`. Extension disposal closes only the private backend.
+Keep the existing `Workspace` and `Bridge` engine intact. Add one small Node proxy per canonical workspace. On
+Linux/WSL it is launched by the user systemd manager so VS Code reload/crash does not kill it as an Extension Host
+descendant. The proxy owns the stable public loopback port. The embedded Bridge binds an ephemeral private loopback
+port on each Extension Host activation. A workspace-local Unix control socket lets the extension register that
+backend, query health and explicitly stop the proxy. Requests are streamed to the backend; absence returns bounded
+HTTP 503 with `HOST_UNAVAILABLE`. Extension disposal closes only the private backend.
 
 ## Key decisions
 
 - **Persistent proxy, existing engine** — fixes the stable-endpoint failure without migrating the whole engine.
 - **Unix control socket** — owner-only local control without writing a bearer token.
-- **One process, no supervisor** — daemon failure is recovered on next activation; no supervisor tree.
+- **User-manager launch on Linux/WSL** — avoids VS Code process-tree cleanup killing the proxy during reload.
+- **One proxy process, no Tachyon supervisor** — daemon failure is recovered on next activation; no extra Tachyon
+  process tree.
 - **Immediate 503 while detached** — bounded and honest; arbitrary request queueing is rejected.
 - **Explicit upgrade restart** — no hot protocol migration in this slice.
 

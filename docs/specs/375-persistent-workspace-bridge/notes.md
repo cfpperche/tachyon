@@ -29,3 +29,10 @@ Focused proxy/Bridge/Workspace/i18n tests pass 110/110, typecheck and diff-check
 dogfood proves stable PID/port across detach/reattach. The first full run found only two new l10n calls; both were
 replaced with repo-required plain strings and the focused i18n gate is green. Installed-VSIX reload dogfood and the
 final full gate remain.
+
+## 2026-07-13 — reload dogfood correction
+
+Installed dogfood of 0.55.96 showed the stable port survived only because a new proxy was spawned after reload:
+the proxy PID/instance changed and the old proxy was a direct Extension Host child. The Linux/WSL launcher now uses
+`systemd-run --user --collect` so the user manager owns the proxy process. Headless dogfood was updated to prove the
+proxy is not a direct child of the caller and still keeps one PID/port/instance across backend detach and reattach.
