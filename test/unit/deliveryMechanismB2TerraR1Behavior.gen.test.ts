@@ -18,10 +18,18 @@ describe("container-generated delegation behavior", () => {
     });
     const stopped: string[] = [];
     let nonce = 0;
+    // Each transfer starts with a live root (stop once) then post-observe gone — preserves
+    // sequential stop bookkeeping while remaining honest about the pre-observe algorithm.
+    const liveThenGone = new Map<string, number>();
     const lease = new DeliveryLeaseService({
       store, handoffSafety: "mechanism-only", processFence: { capability: () => ({ supported: false, reason: "unused" }), freeze: vi.fn(), terminate: vi.fn(), proveEmpty: vi.fn() },
       exactExecutionStopper: { stop: async (input) => { stopped.push(input.executionAgent); } },
-      processObserver: { observe: () => ({ state: "gone" }) }, canonicalWorktreeFor: (delivery) => { expect(delivery.gitDeliveryId).toBe("g-lifecycle"); return fs.realpathSync(worktree); },
+      processObserver: { observe: (identity) => {
+        const key = `${identity.pid}:${identity.processStart}:${identity.bootId}`;
+        const count = (liveThenGone.get(key) ?? 0) + 1;
+        liveThenGone.set(key, count);
+        return count === 1 ? { state: "alive" as const } : { state: "gone" as const };
+      } }, canonicalWorktreeFor: (delivery) => { expect(delivery.gitDeliveryId).toBe("g-lifecycle"); return fs.realpathSync(worktree); },
       readHead: () => "base", inspectWorktree: () => ({ headSha: "base", clean: true }),
       inspectReviewWorktree: () => ({ headSha: "base", taskRefSha: "base", indexTreeSha: "tree", commitTreeSha: "tree", trackedClean: true }),
       isAncestor: () => true, withWorktreeLock: async (cwd, fn) => { expect(cwd).toBe(fs.realpathSync(worktree)); return fn(); },

@@ -1377,18 +1377,36 @@ export class DeliveryLeaseService {
       return "proven_empty";
     }
 
-    if (!holder.executionNonce || !validProcessIdentity(holder.process) || !this.deps.exactExecutionStopper) {
-      throw new Error("exact Delivery-bound execution stop dependency or persisted root identity is unavailable");
+    // Mechanism-only: observe the persisted exact process identity first. An already-gone
+    // predecessor is valid absence evidence — do not invoke the live-pane stopper (which
+    // requires pane/ledger liveness and would quarantine a clean exit). Alive requires an
+    // exact stop then post-observe gone. Unknown/malformed fail closed without stopping.
+    if (!holder.executionNonce || !validProcessIdentity(holder.process) || !this.deps.processObserver) {
+      throw new Error("exact process observation dependency or persisted root identity is unavailable");
+    }
+    const processIdentity = structuredClone(holder.process);
+    const preObservation = await this.deps.processObserver.observe(processIdentity);
+    if (!validProcessObservation(preObservation)) {
+      throw new Error("exact process observation returned a malformed result");
+    }
+    if (preObservation.state === "gone") return "root_gone_best_effort";
+    if (preObservation.state === "unknown") {
+      throw new Error(`exact Delivery root is unknown: ${preObservation.reason}`);
+    }
+    if (!this.deps.exactExecutionStopper) {
+      throw new Error("exact Delivery-bound execution stop dependency is unavailable");
     }
     await this.deps.exactExecutionStopper.stop({
       deliveryId, segmentId: holder.segmentId, executionNonce: holder.executionNonce,
       executionAgent: holder.executionAgent, process: structuredClone(holder.process), canonicalWorktree,
     });
-    const observation = this.deps.processObserver
-      ? await this.deps.processObserver.observe(structuredClone(holder.process))
-      : { state: "unknown", reason: "exact process observation is unavailable" };
-    if (!validProcessObservation(observation)) throw new Error("exact process observation returned a malformed result");
-    if (observation.state !== "gone") throw new Error(`exact Delivery root is ${observation.state}${observation.state === "unknown" ? `: ${observation.reason}` : ""}`);
+    const postObservation = await this.deps.processObserver.observe(structuredClone(holder.process));
+    if (!validProcessObservation(postObservation)) {
+      throw new Error("exact process observation returned a malformed result");
+    }
+    if (postObservation.state !== "gone") {
+      throw new Error(`exact Delivery root is ${postObservation.state}${postObservation.state === "unknown" ? `: ${postObservation.reason}` : ""}`);
+    }
     return "root_gone_best_effort";
   }
 

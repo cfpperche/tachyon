@@ -210,6 +210,39 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     } finally { await fake.cleanup(); ws.dispose(); }
   });
 
+  it("mechanism-only successor join reuses the worktree after a cleanly ended predecessor without exact stop", async () => {
+    // Dogfood 0.55.94: R1 exits cleanly first; delivery_join must accept already-gone exact
+    // process identity without invoking the live-pane stopper (which needs pane/ledger liveness).
+    const root = mkdir(); const base = path.join(root, ".tachyon-worktrees");
+    fs.writeFileSync(path.join(root, "tachyon.yml"), `settings:\n  worktree:\n    base: ${JSON.stringify(base)}\n  delivery:\n    mode: canonical\n    handoffSafety: mechanism-only\nagents:\n  boss:\n    cmd: sh\n`, "utf8");
+    git(root, ["init"]); git(root, ["config", "user.email", "test@example.com"]); git(root, ["config", "user.name", "Test User"]);
+    fs.writeFileSync(path.join(root, "README.md"), "base\n"); git(root, ["add", "README.md"]); git(root, ["commit", "-m", "base"]);
+    const host = new FakeHost(mkdir()); const fake = fakeTmux({ realPaneProcesses: true });
+    const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux: fake.tmux, startBridge: false });
+    try {
+      await ws.manager.spawn("implementer", { cmd: "claude", delegator: "boss", contract: { task: "implement", context: "clean exit then join", constraints: "scoped", doneWhen: "complete" }, gate: { behaviorTest: "mechanism-only successor join reuses the worktree after a cleanly ended predecessor without exact stop", owns: ["src"] }, reveal: false });
+      const initial = (await ws.deliveries.list())[0]!;
+      const canonical = fs.realpathSync(ws.ledger.get("implementer")!.worktree!.path);
+      const holderBefore = structuredClone((await ws.deliveries.get(initial.id))!.lease.holder!);
+      expect(holderBefore.process?.pid).toBeGreaterThan(0);
+      expect(holderBefore.executionNonce).toBeTruthy();
+      const head = git(canonical, ["rev-parse", "HEAD"]);
+      // Clean self-exit of the exact predecessor — process gone, lease still held.
+      await ws.manager.kill("implementer");
+      expect(fake.sessions.has(ws.manager.session("implementer"))).toBe(false);
+      const child = fake.children.get(ws.manager.session("implementer"));
+      expect(child === undefined || child.exitCode !== null).toBe(true);
+      await ws.manager.spawn("reviewer", { cmd: "claude", reveal: false, deliveryJoin: { deliveryId: initial.id, role: "reviewer", ownsSubset: [], expectedHead: head, operationId: "gone-predecessor-join" } });
+      expect(fs.realpathSync(ws.ledger.get("reviewer")!.cwd)).toBe(canonical);
+      const after = await ws.deliveries.get(initial.id);
+      expect(after?.lease.state).toBe("held");
+      expect(after?.lease.holder?.executionAgent).toBe("reviewer");
+      expect(after?.segments.map((s) => s.role)).toEqual(["implementer", "reviewer"]);
+      expect((await ws.gitDeliveries.list()).filter((g) => g.deliveryId === initial.id)).toHaveLength(1);
+      expect(fs.readdirSync(base).filter((x) => fs.statSync(path.join(base, x)).isDirectory())).toHaveLength(1);
+    } finally { await fake.cleanup(); ws.dispose(); }
+  });
+
   it("quarantines a replacement pane PID without touching the replacement session", async () => {
     const root = mkdir(); const base = path.join(root, ".tachyon-worktrees");
     fs.writeFileSync(path.join(root, "tachyon.yml"), `settings:\n  worktree:\n    base: ${JSON.stringify(base)}\n  delivery:\n    mode: canonical\n    handoffSafety: mechanism-only\nagents:\n  boss:\n    cmd: sh\n`, "utf8");
