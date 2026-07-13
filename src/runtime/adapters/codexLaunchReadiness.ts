@@ -14,6 +14,19 @@ export class CodexLaunchReadiness implements RuntimeLaunchReadinessAdapter {
       return { state: "rejected" as const, code: "runtime_config_rejected" as const };
     }
     if (/(?:^|\n)\s*(?:›|>)?\s*(?:Ask anything|Type a message)\b/i.test(output)) return { state: "ready" as const };
+
+    // Codex rotates the composer placeholder (for example "Implement {feature}"), so the
+    // placeholder text itself is not a stable readiness affordance. The prompt glyph plus
+    // the status footer emitted immediately below it is stable across startup, resume, and
+    // an active turn. Requiring both avoids treating an old transcript line beginning with
+    // `›` as proof that the current runtime finished booting.
+    const lines = output.split(/\r?\n/);
+    for (let i = lines.length - 1; i >= 0; i -= 1) {
+      if (!/^\s*(?:›|>)\s+\S/.test(lines[i] ?? "")) continue;
+      const footerWindow = lines.slice(i + 1, i + 8).join("\n");
+      if (/\bContext\s+\d+%\s+used\b/i.test(footerWindow)) return { state: "ready" as const };
+      break;
+    }
     return undefined;
   }
 }
