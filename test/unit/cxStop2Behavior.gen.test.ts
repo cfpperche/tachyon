@@ -48,7 +48,7 @@ describe("container-generated delegation behavior", () => {
     }
 
     await expect(keysFor("claude")).resolves.toEqual(["Escape", "C-c", "C-d", "C-d"]);
-    await expect(keysFor("codex")).resolves.toEqual(["Escape", "C-d"]);
+    await expect(keysFor("codex")).resolves.toEqual(["Escape", "C-c", "C-d", "C-d"]);
     await expect(keysFor("grok")).resolves.toEqual(["C-c", "C-c"]);
     await expect(keysFor("opencode")).resolves.toEqual(["C-d"]);
     await expect(keysFor("custom-ai")).resolves.toEqual(["C-c", "C-c", "C-d"]);

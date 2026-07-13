@@ -169,10 +169,18 @@ export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = 
         "t-aee74e: placeholder text after the prompt is entirely SGR-dim and does not count as a human draft.",
     },
     gracefulStop: {
-      steps: [{ type: "interruptActiveTurn" }, { type: "sendKey", key: "C-d" }],
-      source: "declared",
-      verified: false,
-      notes: "Byte-identical to the pre-t-bae032 Codex path: interrupt an active turn when present, then EOF.",
+      steps: [
+        { type: "interruptActiveTurn" },
+        { type: "sendKey", key: "C-c" },
+        { type: "sendKey", key: "C-d" },
+        { type: "sendKeyIfAliveAfterDelay", key: "C-d", delayMs: 150 },
+      ],
+      source: "measured",
+      verified: true,
+      verifiedAt: "2026-07-13",
+      notes:
+        "t-82456f: Codex 0.144.1 resumed sessions can retain composer/startup state that consumes a bare EOF; " +
+        "interrupt the active turn, clear residual input, then retry EOF if the pane is still alive.",
     },
   },
   opencode: {

@@ -336,6 +336,8 @@ describe("AgentManager", () => {
     await manager.stopGracefully("codex");
     expect(sentKeys).toEqual([
       { session: `tachyon-${HASH}-codex`, key: "Escape" },
+      { session: `tachyon-${HASH}-codex`, key: "C-c" },
+      { session: `tachyon-${HASH}-codex`, key: "C-d" },
       { session: `tachyon-${HASH}-codex`, key: "C-d" },
     ]);
   });
@@ -345,7 +347,11 @@ describe("AgentManager", () => {
     await manager.spawn("codex");
     panes.set(`tachyon-${HASH}-codex`, "› ");
     await manager.stopGracefully("codex");
-    expect(sentKeys).toEqual([{ session: `tachyon-${HASH}-codex`, key: "C-d" }]);
+    expect(sentKeys).toEqual([
+      { session: `tachyon-${HASH}-codex`, key: "C-c" },
+      { session: `tachyon-${HASH}-codex`, key: "C-d" },
+      { session: `tachyon-${HASH}-codex`, key: "C-d" },
+    ]);
   });
 
   it("stopGracefully sends Claude's second EOF when the pane stays alive", async () => {
@@ -3355,6 +3361,19 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
       { session: `tachyon-${HASH}-a`, key: "C-d" },
     ]);
     expect((await manager.list()).find((a) => a.name === "a")).toMatchObject({ running: true, stopping: true });
+  });
+
+  it("t-82456f: Codex clears resumed composer state and retries EOF while the pane remains alive", async () => {
+    const { manager, sentKeys } = makeManager("agents:\n  codex:\n    cmd: codex\n");
+    await manager.spawn("codex");
+
+    await manager.stopGracefully("codex");
+
+    expect(sentKeys).toEqual([
+      { session: `tachyon-${HASH}-codex`, key: "C-c" },
+      { session: `tachyon-${HASH}-codex`, key: "C-d" },
+      { session: `tachyon-${HASH}-codex`, key: "C-d" },
+    ]);
   });
 
   it("graceful stop surfaces a retryable failure when the pane stays alive past fallback", async () => {
