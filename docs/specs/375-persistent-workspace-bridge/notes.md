@@ -36,3 +36,16 @@ Installed dogfood of 0.55.96 showed the stable port survived only because a new 
 the proxy PID/instance changed and the old proxy was a direct Extension Host child. The Linux/WSL launcher now uses
 `systemd-run --user --collect` so the user manager owns the proxy process. Headless dogfood was updated to prove the
 proxy is not a direct child of the caller and still keeps one PID/port/instance across backend detach and reattach.
+
+## 2026-07-13 — installed dogfood closure
+
+Installed VSIX `0.55.97` in the WSL VS Code server and reloaded the window. The active extension version is
+`cfpperche.tachyon@0.55.97`. The persistent proxy descriptor stayed on port `42897` with pid `1381746` and
+instance `6611811f-723c-4ad7-ab40-3bfae4591659`; the process command points at
+`extensions/cfpperche.tachyon-0.55.97/dist/persistent-bridge-daemon.cjs` and its parent is user systemd pid `2312`,
+not the Extension Host. After killing Extension Host pid `1381553`, VS Code started pid `1384909`, the backend
+reattached at `44927`, and the proxy pid/instance/port did not change. Fresh authenticated MCP initialize returned
+HTTP 200 with an MCP session header.
+
+Follow-up created as `t-40a28c`: the runtime-provided MCP wrapper kept an old session and timed out on
+`mcp__tachyon_bridge.append_task_note`, while a fresh direct MCP session worked.

@@ -18,7 +18,7 @@ _Acceptance checks tied to `spec.md`. Each should map to a checklist item there.
 - [x] Linux/WSL proxy is not a direct child of the caller or Extension Host process.
 - [x] Requests proxy before/after reattach and return bounded 503 during the gap.
 - [x] Concurrent ensure elects one proxy; stale socket recovery does not kill by PID.
-- [ ] Typecheck, focused tests, diff-check and full verification pass.
+- [x] Typecheck, focused tests, diff-check and full verification pass.
 
 **Headless check:** `node scripts/dogfood/persistent-bridge.mjs`
 <!-- A mechanical command an agent can run to validate this spec's implementation

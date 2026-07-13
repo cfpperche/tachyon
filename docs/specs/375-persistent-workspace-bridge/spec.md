@@ -2,7 +2,8 @@
 
 _Created 2026-07-13._
 
-**Status:** in-progress
+**Status:** shipped
+**Closure:** Shipped in `8625ab46` plus installed dogfood of VSIX `0.55.97`: the persistent Bridge proxy runs under user systemd on Linux/WSL, survives Extension Host crash/reload with the same PID/instance/port, reattaches a new backend, and authenticated MCP calls resume on the stable endpoint.
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
@@ -25,55 +26,55 @@ ordinary UI disposal only detaches its backend.
 
 ## Acceptance criteria
 
-- [ ] **Scenario: VS Code window reload does not interrupt the Bridge**
+- [x] **Scenario: VS Code window reload does not interrupt the Bridge**
   - **Given** a running workspace service and an agent with a working Bridge client
   - **When** the VS Code window reloads and its old Extension Host deactivates
   - **Then** the same proxy PID/instance and public listener remain alive
   - **And** calls during the gap fail promptly with `HOST_UNAVAILABLE`
   - **And** the new Extension Host registers its backend without restarting agents or changing their Bridge endpoint
-- [ ] **Scenario: Extension Host crash or accidental window close does not interrupt coordination**
+- [x] **Scenario: Extension Host crash or accidental window close does not interrupt coordination**
   - **Given** running agents and no explicit stop request
   - **When** the Extension Host crashes or every editor window for the workspace closes
   - **Then** the public Bridge listener remains owned by the same proxy
   - **And** calls return a bounded `HOST_UNAVAILABLE` response until an Extension Host reconnects; they never
     pretend success or hang
-- [ ] **Scenario: editor reopen attaches to the existing service**
+- [x] **Scenario: editor reopen attaches to the existing service**
   - **Given** the workspace proxy survived without an editor
   - **When** VS Code opens the workspace again
   - **Then** the extension validates workspace identity, protocol version and proxy incarnation before registering
     its private backend
   - **And** agents resume through the same public endpoint
-- [ ] **Scenario: only an explicit lifecycle operation stops the service**
+- [x] **Scenario: only an explicit lifecycle operation stops the service**
   - **Given** a healthy workspace service
   - **When** a user or authorized agent invokes Stop Bridge
   - **Then** the operation is authenticated, audited, bounded, drains or refuses in-flight work according to a
     declared policy, and terminates the exact service incarnation
   - **And** reload, deactivate, dispose, folder removal and client disconnect never call that stop path
-- [ ] **Scenario: concurrent starters elect one service**
+- [x] **Scenario: concurrent starters elect one service**
   - **Given** no live service and two editor windows or clients open the same canonical workspace concurrently
   - **When** both try to ensure the service exists
   - **Then** an atomic ownership record elects exactly one workspace service and one listener
   - **And** the loser attaches to the winner without using an unrelated fallback port
-- [ ] **Scenario: stale ownership is recovered without killing an unrelated process**
+- [x] **Scenario: stale ownership is recovered without killing an unrelated process**
   - **Given** a persisted service record whose PID, process start identity, workspace identity or listener proof is
     stale or inconsistent
   - **When** a client attempts attachment or recovery
   - **Then** it refuses ambiguous ownership, never signals a PID by number alone, and provides a bounded explicit
     recovery action
-- [ ] **Scenario: Bridge requests fail promptly during a real service outage**
+- [x] **Scenario: Bridge requests fail promptly during a real service outage**
   - **Given** the independent service is actually unavailable
   - **When** an MCP client calls a Bridge tool
   - **Then** the client receives a bounded transport/service error and the request cannot remain pending forever
-- [ ] **Scenario: upgrades preserve or deliberately migrate the service**
+- [x] **Scenario: upgrades preserve or deliberately migrate the service**
   - **Given** a running service using an older compatible or incompatible protocol
   - **When** a newer extension attaches
   - **Then** compatible clients continue without restart, while an incompatible migration requires an explicit,
     visible service restart and preserves durable state
-- [ ] The persistent service runs locally, binds only to loopback, preserves current per-agent authentication and
+- [x] The persistent service runs locally, binds only to loopback, preserves current per-agent authentication and
   workspace scoping, and does not introduce a cloud dependency.
-- [ ] A durable service descriptor contains no plaintext bearer token and is written atomically with restrictive
+- [x] A durable service descriptor contains no plaintext bearer token and is written atomically with restrictive
   permissions.
-- [ ] Existing tmux agents remain usable during migration, and legacy embedded-Bridge mode has a bounded rollback
+- [x] Existing tmux agents remain usable during migration, and legacy embedded-Bridge mode has a bounded rollback
   switch until dogfood closes the persistent path.
 
 ## Non-goals
