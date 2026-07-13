@@ -23,6 +23,38 @@ export interface RunningPersistentProxy {
   close(): Promise<void>;
 }
 
+/**
+ * Hop-by-hop headers must not be re-emitted by a reverse proxy (RFC 7230 §6.1).
+ * Copying `transfer-encoding` / `connection` into `writeHead` breaks Streamable HTTP
+ * SSE (`GET /mcp`): clients never see response headers, so MCP clients that open an
+ * event stream (Grok/rmcp `client_side_sse`, etc.) hang until cancel — while short
+ * `POST tools/call` still appears fine via `enableJsonResponse`.
+ */
+const HOP_BY_HOP_HEADERS = new Set([
+  "connection",
+  "keep-alive",
+  "proxy-authenticate",
+  "proxy-authorization",
+  "proxy-connection",
+  "te",
+  "trailers",
+  "transfer-encoding",
+  "upgrade",
+]);
+
+/** How long to wait for the backend to *start* responding (headers). Not a stream idle cap. */
+export const PROXY_HEADER_TIMEOUT_MS = 15_000;
+
+export function stripHopByHopHeaders(headers: http.IncomingHttpHeaders): http.OutgoingHttpHeaders {
+  const out: http.OutgoingHttpHeaders = {};
+  for (const [key, value] of Object.entries(headers)) {
+    if (value === undefined) continue;
+    if (HOP_BY_HOP_HEADERS.has(key.toLowerCase())) continue;
+    out[key] = value;
+  }
+  return out;
+}
+
 export async function startPersistentProxy(options: PersistentProxyDaemonOptions): Promise<RunningPersistentProxy> {
   const canonicalRoot = fs.realpathSync(options.workspaceRoot);
   fs.mkdirSync(path.dirname(options.controlSocket), { recursive: true, mode: 0o700 });
@@ -32,22 +64,52 @@ export async function startPersistentProxy(options: PersistentProxyDaemonOptions
   const proxy = http.createServer((req, res) => {
     const target = backendPort;
     if (!target) return hostUnavailable(res);
+    const method = (req.method ?? "GET").toUpperCase();
+    const requestHeaders = stripHopByHopHeaders(req.headers);
+    requestHeaders.host = `127.0.0.1:${target}`;
+    // Body-less methods: never forward a content-length that would make the backend wait for bytes.
+    if (method === "GET" || method === "HEAD" || method === "DELETE") {
+      delete requestHeaders["content-length"];
+    }
+
     const upstream = http.request({
       hostname: "127.0.0.1",
       port: target,
-      method: req.method,
+      method,
       path: req.url,
-      headers: { ...req.headers, host: `127.0.0.1:${target}` },
+      headers: requestHeaders,
     }, (upstreamResponse) => {
-      res.writeHead(upstreamResponse.statusCode ?? 502, upstreamResponse.headers);
+      clearTimeout(headerTimer);
+      // Streaming MCP SSE and long-lived tools must not inherit a socket idle timeout.
+      upstream.setTimeout(0);
+      res.writeHead(upstreamResponse.statusCode ?? 502, stripHopByHopHeaders(upstreamResponse.headers));
+      res.flushHeaders();
       upstreamResponse.pipe(res);
     });
-    upstream.setTimeout(15_000, () => upstream.destroy(new Error("Bridge backend timed out")));
+
+    // Only bound *time-to-first-byte* (headers). A flat 15s socket timeout killed idle SSE
+    // streams and, combined with hop-by-hop header passthrough, left clients without any
+    // response line for the entire wait.
+    const headerTimer = setTimeout(() => {
+      if (!res.headersSent) upstream.destroy(new Error("Bridge backend header timeout"));
+    }, PROXY_HEADER_TIMEOUT_MS);
+    headerTimer.unref?.();
+
     upstream.on("error", () => {
+      clearTimeout(headerTimer);
       if (!res.headersSent) hostUnavailable(res);
       else res.destroy();
     });
-    req.pipe(upstream);
+    res.on("close", () => {
+      clearTimeout(headerTimer);
+      if (!upstream.destroyed) upstream.destroy();
+    });
+
+    if (method === "GET" || method === "HEAD" || method === "DELETE") {
+      upstream.end();
+    } else {
+      req.pipe(upstream);
+    }
   });
 
   await listenHttp(proxy, options.preferredPort);

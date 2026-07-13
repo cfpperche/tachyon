@@ -27,6 +27,72 @@ describe("persistent Bridge proxy", () => {
     await Promise.all(servers.splice(0).map(closeServer));
   });
 
+  it("delivers Streamable HTTP SSE headers immediately and keeps the stream open (Grok/rmcp)", async () => {
+    // Regression: hop-by-hop header passthrough + socket idle timeout made GET /mcp hang
+    // until the client cancelled (minutes), while POST tools/call still returned JSON.
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-persistent-bridge-sse-"));
+    const socket = persistentBridgeControlSocket(root);
+    const proxy = await startPersistentProxy({
+      workspaceRoot: root,
+      workspaceHash: "sse00001",
+      preferredPort: 0,
+      controlSocket: socket,
+      descriptorPath: persistentBridgeDescriptorPath(root),
+    });
+    running.push(proxy);
+
+    const backend = http.createServer((req, res) => {
+      if (req.method === "GET") {
+        res.writeHead(200, {
+          "content-type": "text/event-stream",
+          "cache-control": "no-cache, no-transform",
+          connection: "keep-alive",
+          "mcp-session-id": "sess-sse-test",
+          "transfer-encoding": "chunked",
+        });
+        res.flushHeaders();
+        // Stay open like a real MCP SSE stream (no body chunks yet).
+        const keepAlive = setInterval(() => {
+          /* idle stream — must not be destroyed by the proxy at 15s */
+        }, 60_000);
+        req.on("close", () => clearInterval(keepAlive));
+        res.on("close", () => clearInterval(keepAlive));
+        return;
+      }
+      let body = "";
+      req.setEncoding("utf8");
+      req.on("data", (chunk: string) => {
+        body += chunk;
+      });
+      req.on("end", () => {
+        res.writeHead(200, { "content-type": "application/json", "mcp-session-id": "sess-sse-test" });
+        res.end(JSON.stringify({ ok: true, body }));
+      });
+    });
+    await new Promise<void>((resolve) => backend.listen(0, "127.0.0.1", resolve));
+    servers.push(backend);
+    const backendPort = (backend.address() as net.AddressInfo).port;
+    await control(socket, { op: "register", workspaceHash: "sse00001", backendPort });
+
+    const t0 = Date.now();
+    const sse = await openSse(proxy.descriptor.port, "/mcp", { accept: "text/event-stream" });
+    expect(Date.now() - t0).toBeLessThan(2_000);
+    expect(sse.status).toBe(200);
+    expect(sse.headers["content-type"]).toMatch(/text\/event-stream/);
+    expect(sse.headers["mcp-session-id"]).toBe("sess-sse-test");
+    // Hop-by-hop must not be re-emitted (Node may manage transfer-encoding itself).
+    expect(sse.headers.connection === undefined || sse.headers.connection === "keep-alive").toBe(true);
+
+    const post = await request(proxy.descriptor.port, "/mcp", `{"jsonrpc":"2.0"}`, {
+      "content-type": "application/json",
+      accept: "application/json, text/event-stream",
+    });
+    expect(post.status).toBe(200);
+    expect(JSON.parse(post.body)).toEqual({ ok: true, body: `{"jsonrpc":"2.0"}` });
+
+    sse.destroy();
+  });
+
   it("keeps one public endpoint while the Extension Host backend detaches and reattaches", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-persistent-bridge-"));
     const socket = persistentBridgeControlSocket(root);
@@ -191,6 +257,31 @@ function request(port: number, pathname: string, body = "", headers: Record<stri
     });
     req.once("error", reject);
     req.end(body);
+  });
+}
+
+/** Resolve as soon as response *headers* arrive (SSE stays open). */
+function openSse(
+  port: number,
+  pathname: string,
+  headers: Record<string, string> = {},
+): Promise<{ status: number; headers: http.IncomingHttpHeaders; destroy: () => void }> {
+  return new Promise((resolve, reject) => {
+    const req = http.request({ hostname: "127.0.0.1", port, path: pathname, method: "GET", headers }, (res) => {
+      resolve({
+        status: res.statusCode ?? 0,
+        headers: res.headers,
+        destroy: () => {
+          res.destroy();
+          req.destroy();
+        },
+      });
+    });
+    req.setTimeout(3_000, () => {
+      req.destroy(new Error("SSE headers not received within 3s"));
+    });
+    req.once("error", reject);
+    req.end();
   });
 }
 
