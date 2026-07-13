@@ -661,6 +661,7 @@ describe("AgentManager — session resume (spec 209)", () => {
     const newSessionArgs: string[][] = []; // full args of each new-session (to assert env -e)
     const respawnArgs: string[][] = []; // full args of each respawn-pane chain (t-4d2630)
     const startArgs: string[][] = []; // chronological new-session OR respawn (prefer for env asserts)
+    const paneInjections: string[] = []; // t-762940 — send-keys -l / load-buffer paste payloads
     const failRespawn = { current: false };
     const exec = async (args: string[]): Promise<ExecResult> => {
       const target = () => {
@@ -709,7 +710,18 @@ describe("AgentManager — session resume (spec 209)", () => {
           if (sessions.size === 0) throw new Error("no server running");
           return { stdout: [...sessions].map((s) => `${s}\t0\t`).join("\n") + "\n", stderr: "" };
         case "send-keys":
+          if (args.includes("-l")) paneInjections.push(args[args.length - 1]);
           return { stdout: "", stderr: "" };
+        case "load-buffer": {
+          // multiline primer uses load-buffer + paste-buffer (t-17d7ea)
+          const file = args[args.length - 1];
+          try {
+            paneInjections.push(fs.readFileSync(file, "utf8"));
+          } catch {
+            /* ignore missing tmp */
+          }
+          return { stdout: "", stderr: "" };
+        }
         default:
           return { stdout: "", stderr: "" };
       }
@@ -752,7 +764,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       failDeliveryJoin: opts.failDeliveryJoin,
       isDeliveryLifecycleDenied: opts.isDeliveryLifecycleDenied,
     });
-    return { manager, ledger, cmds, newSessionArgs, respawnArgs, startArgs, failRespawn, ws, hash };
+    return { manager, ledger, cmds, newSessionArgs, respawnArgs, startArgs, paneInjections, failRespawn, ws, hash };
   }
 
   it("SDD 368 T6 reuses the prepared Delivery worktree and never invokes fresh-worktree resolution", async () => {
@@ -1930,6 +1942,29 @@ describe("AgentManager — session resume (spec 209)", () => {
     const rec = { def: { cmd: "codex", kind: "agent" as const }, resume: { runtime: "codex" as const, sessionId: "" }, cwd: "/ws", declared: true, updatedAt: "t" };
     await manager.resume("codex", rec);
     expect(cmds.at(-1)).toBe("codex resume captured-id");
+  });
+
+  it("t-762940: default resume injects the 363 primer into the pane", async () => {
+    const { manager, paneInjections } = resumeHarness("agents:\n  codex:\n    cmd: codex\n", {
+      resolveCaptureId: async () => "captured-id",
+    });
+    const rec = { def: { cmd: "codex", kind: "agent" as const }, resume: { runtime: "codex" as const, sessionId: "" }, cwd: "/ws", declared: true, updatedAt: "t" };
+    await manager.resume("codex", rec);
+    const joined = paneInjections.join("\n");
+    expect(joined).toContain("── TACHYON PRIMER ──");
+    expect(joined).toContain("── END BEFORE FINISHING ──");
+  });
+
+  it("t-762940: resume({ injectPrimer: false }) skips primer paste (rebind path)", async () => {
+    const { manager, paneInjections } = resumeHarness("agents:\n  codex:\n    cmd: codex\n", {
+      resolveCaptureId: async () => "captured-id",
+    });
+    const rec = { def: { cmd: "codex", kind: "agent" as const }, resume: { runtime: "codex" as const, sessionId: "" }, cwd: "/ws", declared: true, updatedAt: "t" };
+    await manager.resume("codex", rec, { injectPrimer: false });
+    const joined = paneInjections.join("\n");
+    expect(joined).not.toContain("── TACHYON PRIMER ──");
+    expect(joined).not.toContain("── END BEFORE FINISHING ──");
+    expect(paneInjections).toEqual([]);
   });
 
   it("resume() throws ResumeUnavailableError when the transcript is gone (fallback signal)", async () => {

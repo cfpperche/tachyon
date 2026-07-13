@@ -1165,7 +1165,7 @@ export class Workspace {
         const session = this.manager.session(name);
         await this.tmux.killSession(session);
       },
-      resume: (name, record) => this.manager.resume(name, record),
+      resume: (name, record, opts) => this.manager.resume(name, record, opts),
       stampBridgeClient: (name, generation) => {
         const rec = this.ledger.get(name);
         if (!rec) return;

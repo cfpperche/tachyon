@@ -2321,8 +2321,13 @@ export class AgentManager {
    * recovers its prior conversation (spec 209). For capture runtimes with no stored
    * id, resolves it from disk by cwd. Throws ResumeUnavailableError when the id can't
    * be resolved or the transcript is gone — the caller falls back to a fresh spawn.
+   *
+   * @param opts.injectPrimer — when true (default), re-types the spec 363 primer into the
+   *   pane after launch. Spec 364 host-generation rebind MUST pass false: rebind only needs a
+   *   live MCP client, not a re-onboarding paste that strands draft text in idle composers
+   *   (t-762940).
    */
-  async resume(name: string, record: SessionRecord): Promise<void> {
+  async resume(name: string, record: SessionRecord, opts?: { injectPrimer?: boolean }): Promise<void> {
     // SDD 368 T14 — refuse before mutating readiness cache (markers + snapshot deny set).
     this.assertNotDeliveryLifecycleDenied(name, "resume", record);
     this.readinessCache.delete(name); // spec 221: resuming changes the session → drop the cached badge
@@ -2418,9 +2423,11 @@ export class AgentManager {
     this.opts.onSpawned?.(name, true); // resume is activation/human-driven — reveal
 
     // spec 363 T3 — resume doesn't recompose def.instructions (the transcript already carries the
-    // original brief), but the primer is re-delivered anyway (spec.md: "always the full compact
-    // primer" at all four moments) — typed into the freshly-resumed pane, mirroring re-anchor's
-    // sendKeys pattern (Workspace.reanchor). Advisory/best-effort: never blocks a resume.
+    // original brief). Human/sidebar/autostart resume re-delivers the full compact primer (spec.md:
+    // four moments). Spec 364 rebind passes injectPrimer:false so a host reload only reconnects MCP
+    // and does not paste primer into every idle composer (t-762940).
+    // Advisory/best-effort: never blocks a resume.
+    if (opts?.injectPrimer === false) return;
     // (resumeDelegationRecord computed above, alongside resumeDelegatedOpencode — reused here.)
     const { primer, beforeFinishing } = renderPrimer({
       agentName: name,

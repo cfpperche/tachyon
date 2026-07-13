@@ -4,7 +4,8 @@
  * After the extension host reloads, surviving tmux agents keep valid 351 tokens but their
  * in-process MCP clients are half-open. This module owns the durable bridge generation,
  * reconstructs suspects from the session ledger, and under default `auto` runs a governed
- * stop → wait-dead → hard-kill-if-needed → resume rebind. No peer tool; no cold spawn.
+ * stop → wait-dead → hard-kill-if-needed → resume rebind (injectPrimer:false — reconnect
+ * only; do not re-paste the 363 primer into composers — t-762940). No peer tool; no cold spawn.
  *
  * Host-agnostic: all side effects go through injected ports (no vscode imports).
  */
@@ -66,8 +67,10 @@ export interface BridgeClientRebindDeps {
   /**
    * Resume via existing sidebar rules. MUST call resume (not cold spawn).
    * Receives the pre-stop ledger snapshot so a race cannot drop the row.
+   * Callers MUST pass injectPrimer:false — rebind reconnects MCP only; re-pasting the
+   * 363 primer after host reload strands draft text in composers (t-762940).
    */
-  resume: (name: string, record: SessionRecord) => Promise<void>;
+  resume: (name: string, record: SessionRecord, opts?: { injectPrimer?: boolean }) => Promise<void>;
   /**
    * Stamp durable bridgeClient on the ledger at resume-time generation.
    * Called after a successful resume (AgentManager also stamps on ordinary spawn/resume).
@@ -533,7 +536,7 @@ export class BridgeClientRebindCoordinator {
       // ── Resume (never cold spawn) ────────────────────────────────────────
       // Re-read ledger in case stop refreshed ownership; fall back to snapshot.
       const record = this.deps.getLedger(name) ?? ledgerSnapshot;
-      await this.deps.resume(name, record);
+      await this.deps.resume(name, record, { injectPrimer: false });
 
       // Stamp at CURRENT generation (may have advanced during rebind).
       const stampG = this.getGeneration();

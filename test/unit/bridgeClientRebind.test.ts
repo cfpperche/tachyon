@@ -43,7 +43,7 @@ function makeDeps(opts: {
   state?: Map<string, unknown>;
   auditPath: string;
   initiator?: string;
-  resumeImpl?: (name: string, record: SessionRecord) => Promise<void>;
+  resumeImpl?: (name: string, record: SessionRecord, opts?: { injectPrimer?: boolean }) => Promise<void>;
   stopImpl?: (name: string) => Promise<void>;
 }): BridgeClientRebindDeps & {
   state: Map<string, unknown>;
@@ -51,6 +51,7 @@ function makeDeps(opts: {
   notifies: Array<{ m: string; l: string }>;
   expectedDeath: string[];
   resumes: string[];
+  resumeOpts: Array<{ name: string; injectPrimer?: boolean }>;
   stops: string[];
   hardKills: string[];
 } {
@@ -59,6 +60,7 @@ function makeDeps(opts: {
   const notifies: Array<{ m: string; l: string }> = [];
   const expectedDeath: string[] = [];
   const resumes: string[] = [];
+  const resumeOpts: Array<{ name: string; injectPrimer?: boolean }> = [];
   const stops: string[] = [];
   const hardKills: string[] = [];
   const settings = opts.settings ?? { ...DEFAULT_BRIDGE_CLIENT_REBIND };
@@ -71,6 +73,7 @@ function makeDeps(opts: {
     notifies: Array<{ m: string; l: string }>;
     expectedDeath: string[];
     resumes: string[];
+    resumeOpts: Array<{ name: string; injectPrimer?: boolean }>;
     stops: string[];
     hardKills: string[];
   } = {
@@ -81,6 +84,7 @@ function makeDeps(opts: {
     notifies,
     expectedDeath,
     resumes,
+    resumeOpts,
     stops,
     hardKills,
     getState: <T>(key: string) => state.get(key) as T | undefined,
@@ -101,9 +105,10 @@ function makeDeps(opts: {
       hardKills.push(name);
       opts.running.delete(name);
     },
-    resume: async (name, record) => {
+    resume: async (name, record, resumeCallOpts) => {
       resumes.push(name);
-      if (opts.resumeImpl) await opts.resumeImpl(name, record);
+      resumeOpts.push({ name, injectPrimer: resumeCallOpts?.injectPrimer });
+      if (opts.resumeImpl) await opts.resumeImpl(name, record, resumeCallOpts);
       else {
         opts.running.add(name);
         // Default: stamp as coordinator will also stamp — simulate AgentManager resume stamp
@@ -361,6 +366,22 @@ describe("BridgeClientRebindCoordinator", () => {
     const audit = fs.readFileSync(path.join(auditDir, "audit.jsonl"), "utf8").trim().split("\n");
     expect(audit.length).toBeGreaterThan(0);
     expect(audit.some((l) => l.includes("resume_ok"))).toBe(true);
+  });
+
+  it("t-762940: rebind resume always passes injectPrimer:false (no primer paste after host reload)", async () => {
+    const auditDir = tmpDir();
+    dirs.push(auditDir);
+    const ledger = new Map([["grok", baseRecord({ bridgeClient: { boundGeneration: 0, wired: true } })]]);
+    const running = new Set(["grok"]);
+    const deps = makeDeps({
+      ledger,
+      running,
+      auditPath: path.join(auditDir, "primer.jsonl"),
+    });
+    const c = new BridgeClientRebindCoordinator(deps);
+    await c.onListenerReady();
+    expect(deps.resumes).toEqual(["grok"]);
+    expect(deps.resumeOpts).toEqual([{ name: "grok", injectPrimer: false }]);
   });
 
   it("policy off does not bump or rebind", async () => {
