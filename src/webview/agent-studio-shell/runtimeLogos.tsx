@@ -91,45 +91,28 @@ const GooseLogo = () => (
   </svg>
 );
 
-/** Official Pi mark from https://pi.dev/logo.svg — block "Pi" glyph; fill follows theme. */
+/** Official Pi favicon from https://pi.dev/favicon.svg — dark rounded tile + white Pi mark. */
 const PiLogo = () => (
   <svg viewBox="0 0 800 800" class="ash-runtime-logo" aria-hidden="true" focusable="false">
-    <path fill="currentColor" fill-rule="evenodd" d="M165.29 165.29H517.36V400H400V517.36H282.65V634.72H165.29ZM282.65 282.65V400H400V282.65Z" />
-    <path fill="currentColor" d="M517.36 400H634.72V634.72H517.36Z" />
+    <rect width="800" height="800" rx="120" fill="#09090b" />
+    <path fill="#fff" fill-rule="evenodd" d="M165.29 165.29H517.36V400H400V517.36H282.65V634.72H165.29ZM282.65 282.65V400H400V282.65Z" />
+    <path fill="#fff" d="M517.36 400H634.72V634.72H517.36Z" />
   </svg>
 );
 
-/** Official Hermes ACP icon from NousResearch/hermes-agent acp_registry/icon.svg — caduceus staff. */
-const HermesLogo = () => (
-  <svg viewBox="0 0 16 16" class="ash-runtime-logo" aria-hidden="true" focusable="false" fill="none">
-    <path d="M8 1.5v13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
-    <path d="M8 3.25c-2.35-1.4-4.7-.95-6.25.35 1.85-.2 3.8.2 5.55 1.55" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round" />
-    <path d="M8 3.25c2.35-1.4 4.7-.95 6.25.35-1.85-.2-3.8.2-5.55 1.55" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round" />
-    <path d="M8 13.25c-2.3-1-3.05-2.65-1.35-4.15-2 .8-2.35 2.95-.35 4" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round" />
-    <path d="M8 13.25c2.3-1 3.05-2.65 1.35-4.15 2 .8 2.35 2.95.35 4" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round" />
-    <circle cx="8" cy="1.8" r="1.1" fill="currentColor" />
-  </svg>
-);
-
-/** Official Verboo Code mark from verbeux-ai/code vscode-extension media/verboo.svg — terminal + caret. */
-const VerbooLogo = () => (
-  <svg viewBox="0 0 128 128" class="ash-runtime-logo" aria-hidden="true" focusable="false" fill="none">
-    <rect width="128" height="128" rx="20" fill="#0B0F18" />
-    <rect x="16" y="20" width="96" height="88" rx="10" fill="#090B10" stroke="#2A3350" />
-    <path d="M32 48L46 60L32 72" stroke="#66D9EF" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" />
-    <rect x="56" y="68" width="38" height="8" rx="4" fill="#89DD7C" />
-  </svg>
-);
-
-/** grok is the only runtime still on a PNG data-URI (valid, 32x32) — kept as <img> so it isn't broken by this fix. */
+/** PNG data-URIs for runtimes whose official favicon is raster (valid 32x32) — rendered as <img>. */
 const pngLogos: Record<string, string> = {
   grok: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAMAAABEpIrGAAAAY1BMVEX///8AAACfn5/f39+/v7/Pz88NDQ2vr6/s7OxDQ0MeHh7w8PAHBwdUVFTk5OQvLy9PT0/Jyck7Ozu4uLiEhIR2dnZoaGixsbH19fUnJycXFxeRkZFcXFy8vLyoqKg/Pz9kZGR1Z31eAAAAwklEQVQ4jd2R0Q6CMAxFe8eGgCBOBBER/P+vtCt7YhvvugTS5B7W9kD0tyczxpyP8hyojoAbgM6m8zvn/aCSuamB9oEkMD6BWk847QfTWmeuGLjBq0EI+Mk7zkuqQoAUJzMVE5BfqAXeQXO+FkvvXuQAHQDysc35GjERAlt7JQpXICZKFpBVSsBEgMIpkOAaBUylncQxBbDCRn4D1zOQRSewPJ2bPwZsCr3QTwh4hV4o+yr2EyqlZPWFi9HyE1nzd88XhycHNygsF+YAAAAASUVORK5CYII=",
+  // Official Hermes Agent favicon — website static favicon-32x32.png (character silhouette)
+  hermes: "data:image/png;base64,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",
+  // Official Verboo Code favicon — code.verboo.ai favicon-32x32.png (purple ghost mascot)
+  verboo: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAADKklEQVR42u2XTWhcZRSGn/ebYSZNQiKKGjX+gbUtiSBmtKCburChtkFIaoSi+FM3iiCuLAg2duFCaDaC6ELwp6s0CdRqF6Vo0SpGm4LWloLFUgQRxhiSpvmZzr2vCyO28d6ZaTIiQr/V/X7uOQ/nO+c998KV8R8PLeeloS635rPcGkFLXOaC8vx6fCM/Dwwo/tcAhrpmb8mE/LM4PALuBMKSIxMSn9rxnuj2zCf9exXVBWBog5vDTLwroOcN+Rp5fzB6aetRHVoRwL6C11zA+wRrlnFTtry7b3N4WRWuJhVguMtrQ+Cw7etXlmV+7/jmsD0tP0LS4p71blHwRyt2DmA9ddfH8Y607USAVTGvYVbXsdh27u/y2poARta7Hfu5Opd7rqR4Z00AinmchGwXGoxirZa0N8VJmYwezVnrLE4mRKF39H5fV/0KTHeC8VLT1bzaf0yny4GBlHT+vG9Mwz3jOkXsN5Oi4FLUXRHAWIa7E4wXuw/qPMB8K2cBJxTd2b8eM9nwU3I+qlAR4OBGGsGt/7TNVZ9tcBagaYKWpNqVdO1F59uSg6SbKwJMFWlM0gZB0+R5HvtzFm93whmbB4fvdceBTc7bfjK5JGleupS9eNKcY2EuRcFj+4ORQvwGcAMwAVxziWmxIPzdXJF5oCmlHKcrRmDTGOcQv6dIZgBuBE5MN6tdeBD4ReIkGfU7qwcwmXTnIHGmIoCQZcaq1HRn6wyvlx129R0NN/V+GzpkvlfZ71YTg8jRkaq9YLTgZ0x1Y8AscArIG9YpRVX/rgAm87Hae8Y1W1EHys0MAcUaABqBe4COas4BgvTWUueJAP2HNWNpsM5SPJXLsbvmZpTP8mGi2Cz7u88HthzRZM0Ac1MUEVG9AKxw7rLaccMq2vClGrFChLbLAiiJO9MsVfm+c3KfSLWXDCCVS0uWFoReiGbVYqKHLCYTnH8TU7pDObVJfr9W8MQwR7dlv8ye4e1Y7pE5TUY7esf09eL2odH7vNX2/sVSBPFjQ4O2PPxFQ3Gxqz49Uoi+CgovxianEL9S1x+TRcHqNPETIkzPm3e2jeu3K/95/8vxB7kuJFRtiEmmAAAAAElFTkSuQmCC",
 };
 
-/** Any remaining PNG data-URIs in this module (kept only for grok) — exported so tests can catch a bad base64 paste. */
+/** PNG data-URIs in this module — exported so tests can catch a bad base64 paste. */
 export const PNG_LOGOS: Readonly<Record<string, string>> = pngLogos;
 
-export const RUNTIME_LOGOS: Record<Exclude<RuntimeLogoId, "grok">, RuntimeLogoSvg> = {
+export const RUNTIME_LOGOS: Record<Exclude<RuntimeLogoId, "grok" | "hermes" | "verboo">, RuntimeLogoSvg> = {
   claude: ClaudeLogo,
   codex: CodexLogo,
   agy: AntigravityLogo,
@@ -142,13 +125,11 @@ export const RUNTIME_LOGOS: Record<Exclude<RuntimeLogoId, "grok">, RuntimeLogoSv
   qwen: QwenLogo,
   "cursor-agent": CursorAgentLogo,
   pi: PiLogo,
-  hermes: HermesLogo,
-  verboo: VerbooLogo,
 };
 
 export function RuntimeLogo({ id }: { id: string }) {
   const png = pngLogos[id];
   if (png) return <img class="ash-runtime-logo ash-runtime-logo-img" src={png} alt="" aria-hidden="true" />;
-  const Logo = RUNTIME_LOGOS[id as Exclude<RuntimeLogoId, "grok">];
+  const Logo = RUNTIME_LOGOS[id as Exclude<RuntimeLogoId, "grok" | "hermes" | "verboo">];
   return Logo ? <Logo /> : null;
 }

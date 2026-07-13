@@ -328,13 +328,20 @@ describe("quickAddChips (catalog merge)", () => {
     const agy = chips.find((c) => c.bin === "agy")!;
     expect(agy).toMatchObject({ label: "Antigravity CLI", detected: false });
     expect(agy.installHint).toContain("antigravity.google/cli/install.sh");
-    expect(chips.find((c) => c.bin === "gemini")?.label).toContain("legacy");
+    // gemini/aider are long-tail (legacy / less common) — not in the always-visible row
+    expect(chips.map((c) => c.bin)).not.toContain("gemini");
+    expect(chips.map((c) => c.bin)).not.toContain("aider");
   });
 
   it("long-tail CLIs appear only when detected", () => {
     expect(quickAddChips([]).map((c) => c.bin)).not.toContain("qwen");
     const withQwen = quickAddChips(["qwen"]);
     expect(withQwen.find((c) => c.bin === "qwen")).toMatchObject({ detected: true });
+    expect(quickAddChips(["gemini"]).find((c) => c.bin === "gemini")).toMatchObject({
+      detected: true,
+      label: expect.stringContaining("legacy"),
+    });
+    expect(quickAddChips(["aider"]).find((c) => c.bin === "aider")).toMatchObject({ detected: true });
   });
 
   it("every always-visible entry has an install hint (discovery contract)", () => {
