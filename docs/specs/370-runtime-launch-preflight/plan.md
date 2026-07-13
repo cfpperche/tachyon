@@ -30,9 +30,10 @@ composition becomes `unverifiable`, not a guessed model.
 ### Codex adapter v1
 
 For an explicit `-m/--model`, execute the exact prospective Codex binary's `debug models` under the relevant auth and
-config/profile environment with a short timeout and stdout byte cap. Parse `{models:[...]}` and retain only bounded
-`slug` values whose runtime catalog marks them selectable. Do not use `supported_in_api`: the failing launch used
-ChatGPT account auth, and API support is a different property.
+config/profile environment with a short timeout and total stream byte cap. Validate `{models:[...]}` incrementally and
+retain only bounded `slug` values whose runtime catalog marks them selectable; never buffer or parse the complete raw
+catalog. Independently bound JSON depth, retained token fragments, selectable-slug count, and slug length. Do not use
+`supported_in_api`: the failing launch used ChatGPT account auth, and API support is a different property.
 
 The current authenticated catalog empirically lists `gpt-5.6-sol`, `gpt-5.6-terra`, and `gpt-5.6-luna`; it does not
 list `gpt-5.6`. This catalog is runtime data, never committed product data. A missing exact slug rejects with at most
@@ -83,6 +84,7 @@ readiness is later observed.
 
 - `src/runtime/launchPreflight.ts` — neutral result types, command-model extraction, adapter registry, bounds.
 - `src/runtime/adapters/codexLaunchPreflight.ts` — `codex debug models` probe and safe projection.
+- `src/runtime/adapters/codexCatalogStream.ts` — bounded streaming JSON validation and selectable-slug projection.
 - `src/agents/AgentManager.ts` — common lifecycle orchestration, provisional state, compensation, persistence ordering.
 - `src/bridge/tools.ts` — structured spawn outcome/error only; no provider logic.
 - `src/tasks/TaskStore.ts` or assignment boundary — only if ratification chooses assignment rejection for non-ready agents.

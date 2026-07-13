@@ -26,6 +26,14 @@ _In-flight design memory — decisions, deviations, tradeoffs, and open question
   claim T1/T2 product integration or perform a live catalog/inference request (preserving SDD 369's T0 boundary).
 - Live follow-up remains coordinator-owned: explicit-model spawn currently fails when the Codex catalog exceeds the
   preflight raw-output limit. The lane exposes the oversized failure safely and never persists the raw catalog.
+- 2026-07-13 catalog-growth fix: the raw 256 KiB buffer was replaced by a strict streaming JSON validator/projector.
+  The probe processes at most 8 MiB, 64 JSON levels, 512 selectable entries, and 128 code units per retained slug;
+  irrelevant strings are validated without being retained, and control/bidirectional formatting characters are not
+  admitted into retained slugs. Malformed UTF-8/JSON, excessive depth/count/bytes, timeout, and non-zero exit remain
+  fail-closed and terminate the probe process tree. No raw catalog field exists in the probe result type.
+- Live bounded evidence after the fix: the authenticated `codex-cli 0.144.1` catalog was 271,154 bytes and projected
+  seven selectable slugs; `gpt-5.6-terra` was present and exact generic `gpt-5.6` was absent. Only byte/count/boolean
+  outcomes and selectable slugs were printed; raw metadata/base instructions were neither logged nor persisted.
 
 _Where implementation intentionally departed from `plan.md`, and why it was necessary or better._
 
@@ -45,3 +53,11 @@ _Alternatives weighed mid-build. The chosen path + what was given up + why it wa
 
 ### 2026-07-13T21:12:09Z — pass (1/1) — source: tasks.md — commit: 9ac4907217d689d8e2c14f058bcdf1b9dc8af30a
 - `npm run dogfood:runtime-launch-preflight` — pass
+
+
+### 2026-07-13T21:46:30Z — pass (1/1) — source: tasks.md — commit: adfc030fa32827deb8cb74c7b7edf8eaf2c5f174
+- `npm run dogfood:runtime-launch-preflight` — pass
+## Verification log
+
+### 2026-07-13T21:46:09Z — pass (1/1) — source: tasks.md
+- `npm run verify:full` — pass
