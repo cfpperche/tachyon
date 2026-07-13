@@ -14,6 +14,9 @@ export const RUNTIME_LOGO_IDS = [
   "grok",
   "qwen",
   "cursor-agent",
+  "pi",
+  "hermes",
+  "verboo",
 ] as const;
 
 export type RuntimeLogoId = (typeof RUNTIME_LOGO_IDS)[number];
@@ -88,6 +91,36 @@ const GooseLogo = () => (
   </svg>
 );
 
+/** Official Pi mark from https://pi.dev/logo.svg — block "Pi" glyph; fill follows theme. */
+const PiLogo = () => (
+  <svg viewBox="0 0 800 800" class="ash-runtime-logo" aria-hidden="true" focusable="false">
+    <path fill="currentColor" fill-rule="evenodd" d="M165.29 165.29H517.36V400H400V517.36H282.65V634.72H165.29ZM282.65 282.65V400H400V282.65Z" />
+    <path fill="currentColor" d="M517.36 400H634.72V634.72H517.36Z" />
+  </svg>
+);
+
+/** Official Hermes ACP icon from NousResearch/hermes-agent acp_registry/icon.svg — caduceus staff. */
+const HermesLogo = () => (
+  <svg viewBox="0 0 16 16" class="ash-runtime-logo" aria-hidden="true" focusable="false" fill="none">
+    <path d="M8 1.5v13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+    <path d="M8 3.25c-2.35-1.4-4.7-.95-6.25.35 1.85-.2 3.8.2 5.55 1.55" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round" />
+    <path d="M8 3.25c2.35-1.4 4.7-.95 6.25.35-1.85-.2-3.8.2-5.55 1.55" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round" />
+    <path d="M8 13.25c-2.3-1-3.05-2.65-1.35-4.15-2 .8-2.35 2.95-.35 4" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round" />
+    <path d="M8 13.25c2.3-1 3.05-2.65 1.35-4.15 2 .8 2.35 2.95.35 4" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round" />
+    <circle cx="8" cy="1.8" r="1.1" fill="currentColor" />
+  </svg>
+);
+
+/** Official Verboo Code mark from verbeux-ai/code vscode-extension media/verboo.svg — terminal + caret. */
+const VerbooLogo = () => (
+  <svg viewBox="0 0 128 128" class="ash-runtime-logo" aria-hidden="true" focusable="false" fill="none">
+    <rect width="128" height="128" rx="20" fill="#0B0F18" />
+    <rect x="16" y="20" width="96" height="88" rx="10" fill="#090B10" stroke="#2A3350" />
+    <path d="M32 48L46 60L32 72" stroke="#66D9EF" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" />
+    <rect x="56" y="68" width="38" height="8" rx="4" fill="#89DD7C" />
+  </svg>
+);
+
 /** grok is the only runtime still on a PNG data-URI (valid, 32x32) — kept as <img> so it isn't broken by this fix. */
 const pngLogos: Record<string, string> = {
   grok: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAMAAABEpIrGAAAAY1BMVEX///8AAACfn5/f39+/v7/Pz88NDQ2vr6/s7OxDQ0MeHh7w8PAHBwdUVFTk5OQvLy9PT0/Jyck7Ozu4uLiEhIR2dnZoaGixsbH19fUnJycXFxeRkZFcXFy8vLyoqKg/Pz9kZGR1Z31eAAAAwklEQVQ4jd2R0Q6CMAxFe8eGgCBOBBER/P+vtCt7YhvvugTS5B7W9kD0tyczxpyP8hyojoAbgM6m8zvn/aCSuamB9oEkMD6BWk847QfTWmeuGLjBq0EI+Mk7zkuqQoAUJzMVE5BfqAXeQXO+FkvvXuQAHQDysc35GjERAlt7JQpXICZKFpBVSsBEgMIpkOAaBUylncQxBbDCRn4D1zOQRSewPJ2bPwZsCr3QTwh4hV4o+yr2EyqlZPWFi9HyE1nzd88XhycHNygsF+YAAAAASUVORK5CYII=",
@@ -108,6 +141,9 @@ export const RUNTIME_LOGOS: Record<Exclude<RuntimeLogoId, "grok">, RuntimeLogoSv
   amp: AmpLogo,
   qwen: QwenLogo,
   "cursor-agent": CursorAgentLogo,
+  pi: PiLogo,
+  hermes: HermesLogo,
+  verboo: VerbooLogo,
 };
 
 export function RuntimeLogo({ id }: { id: string }) {

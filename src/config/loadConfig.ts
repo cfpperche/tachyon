@@ -30,6 +30,9 @@ export const KNOWN_AI_CLIS = [
   "copilot",
   "grok",
   "qwen",
+  "pi",
+  "hermes",
+  "verboo",
 ];
 
 const LAUNCHERS = new Set(["npx", "bunx", "pnpx"]);

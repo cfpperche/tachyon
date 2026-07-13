@@ -18,6 +18,9 @@ describe("Agent Studio runtime logos", () => {
       "grok",
       "qwen",
       "cursor-agent",
+      "pi",
+      "hermes",
+      "verboo",
     ];
     for (const id of ids) expect(source).toContain(`"${id}"`);
     expect(source).not.toContain("circle-slash");

@@ -44,8 +44,11 @@ const LABELS: Record<string, string> = {
   gemini: "Gemini",
   goose: "Goose",
   grok: "Grok",
+  hermes: "Hermes Agent",
   opencode: "opencode",
+  pi: "Pi",
   qwen: "Qwen",
+  verboo: "Verboo Code",
 };
 
 export function buildRuntimeUsageSource(runtime: string, agent: string, updates: Iterable<RuntimeUsageUpdate>): RuntimeUsageSource | undefined {

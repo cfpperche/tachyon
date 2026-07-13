@@ -35,6 +35,9 @@ export const AGENT_CATALOG: CatalogEntry[] = [
   { bin: "grok", label: "grok", alwaysVisible: false },
   { bin: "qwen", label: "qwen", alwaysVisible: false },
   { bin: "cursor-agent", label: "cursor-agent", alwaysVisible: false },
+  { bin: "pi", label: "Pi", installHint: "npm install -g --ignore-scripts @earendil-works/pi-coding-agent", alwaysVisible: false },
+  { bin: "hermes", label: "Hermes Agent", installHint: "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash", alwaysVisible: false },
+  { bin: "verboo", label: "Verboo Code", installHint: "npm install -g @verboo/code", alwaysVisible: false },
 ];
 
 export interface QuickAddChip {
