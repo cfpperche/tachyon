@@ -468,11 +468,22 @@ export function App({
                 </div>
                 <div class="ts-chip-field" aria-label="Artifact refs">
                   <span class="ts-chip-label">Artifacts</span>
-                  {artifactRefs.map((a) => (
-                    <button key={`${a.type}:${a.ref}`} class="chip-pill" type="button" title={`Remove ${a.type}:${a.ref}`} onClick={() => removeArtifactRef(a.type, a.ref)}>
-                      {a.type}:{a.ref}<Icon name="close" />
-                    </button>
-                  ))}
+                  {artifactRefs.map((a) => {
+                    const label = `${a.type}:${a.ref}`;
+                    return (
+                      <button
+                        key={label}
+                        class="chip-pill"
+                        type="button"
+                        title={label}
+                        aria-label={`Remove artifact ${label}`}
+                        onClick={() => removeArtifactRef(a.type, a.ref)}
+                      >
+                        {/* t-dd22e8 — same ellipsis shell as deps; raw {type}:{ref} was overflowing/overlapping long screenshot paths */}
+                        <span class="chip-pill-text">{label}</span><Icon name="close" />
+                      </button>
+                    );
+                  })}
                   <input value={artifactInput} placeholder="type:ref" aria-label="Add artifact ref"
                     onInput={(e) => setArtifactInput((e.currentTarget as HTMLInputElement).value)}
                     onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addArtifactRef(); } }} />

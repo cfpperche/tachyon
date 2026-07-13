@@ -29,18 +29,21 @@
      never exercised this override. Removed: `.ds-input`'s own `--ds-mono` now applies everywhere on this row. */
   .ts-field .ds-input { width: 100%; }
   .ts-field [data-slot="select-trigger"] { width: 100%; }
-  .ts-chip-field { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 220px; flex: 1 1 260px; }
-  .ts-chip-label { color: var(--ds-muted); font-size: var(--ds-small); text-transform: uppercase; letter-spacing: .05em; margin-right: 4px; }
+  /* t-dd22e8 — min-width:0 so the Artifacts column can shrink inside .ds-field-row instead of
+     forcing long chips to paint over the sibling Deps field. */
+  .ts-chip-field { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; flex: 1 1 260px; }
+  .ts-chip-label { color: var(--ds-muted); font-size: var(--ds-small); text-transform: uppercase; letter-spacing: .05em; margin-right: 4px; flex: 0 0 auto; }
   .ts-chip-field input { flex: 1 1 90px; min-width: 90px; border: 0; outline: 0; background: transparent; color: var(--vscode-editor-foreground); font: inherit; font-size: var(--ds-small); padding: 2px 0; }
   /* removable chip pill (whole control removes on click) — same bespoke pattern as pin-studio's tag-pill */
-  .chip-pill { display: inline-flex; align-items: center; gap: 3px; max-width: 220px; padding: 1px 5px; border: 1px solid var(--ds-border); border-radius: var(--ds-radius); color: var(--ds-muted); background: transparent; font-size: var(--ds-small); line-height: 1.4; cursor: pointer; }
+  /* overflow:hidden so a bare text node (pre-t-dd22e8 artifacts) cannot paint outside max-width either */
+  .chip-pill { display: inline-flex; align-items: center; gap: 3px; max-width: min(220px, 100%); min-width: 0; overflow: hidden; padding: 1px 5px; border: 1px solid var(--ds-border); border-radius: var(--ds-radius); color: var(--ds-muted); background: transparent; font-size: var(--ds-small); line-height: 1.4; cursor: pointer; }
   .chip-pill:hover { color: var(--vscode-foreground); border-color: var(--ds-accent); }
-  /* dogfood round 2 (#2) — a dep's `id · title` used to render at full length, wrapping the pill onto
-     multiple lines. `min-width: 0` is required alongside `flex: 1 1 auto` — a flex item's default
+  /* dogfood round 2 (#2) + t-dd22e8 — deps and artifacts share this shell: long labels truncate to one
+     line; `min-width: 0` is required alongside `flex: 1 1 auto` — a flex item's default
      `min-width: auto` refuses to shrink below its own text's intrinsic width, which silently defeats
      `text-overflow: ellipsis` without it. The full text still reaches the user via the button's `title`. */
   .chip-pill-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .chip-pill .codicon { font-size: 11px; }
+  .chip-pill .codicon { font-size: 11px; flex: none; }
   .ts-banner { display: flex; align-items: center; gap: 8px; padding: 6px var(--ds-4); font-size: var(--ds-small); color: var(--ds-muted); border-bottom: 1px solid var(--ds-border); background: color-mix(in srgb, var(--vscode-editorWidget-background, var(--vscode-editor-background)) 92%, transparent); }
   .ts-banner-err { color: var(--ds-danger); }
   .prototype-section { margin-top: var(--ds-3); border: 1px solid var(--ds-border); border-radius: var(--ds-radius); overflow: hidden; }

@@ -43,7 +43,12 @@ const editTask: TaskDetailEntity = {
     { id: "t-1a2b3c", title: "Vendor shadcn/Radix components behind a Kit namespace with a legacy fallback", missing: false },
     { id: "t-9f8e7d", title: "Ship the compat gate", missing: false },
   ],
-  artifact_refs: [{ type: "spec", ref: "342" }],
+  // t-dd22e8 — long screenshot path + multiple relation chips (preview / visual QA).
+  artifact_refs: [
+    { type: "screenshot", ref: "/mnt/c/Users/cfpp/Pictures/Screenshots/Screenshot 2026-07-12 210316.png" },
+    { type: "relation", ref: "t-f87651" },
+    { type: "relation", ref: "docs/specs/370-runtime-launch-preflight" },
+  ],
   doc: {
     type: "doc",
     content: [

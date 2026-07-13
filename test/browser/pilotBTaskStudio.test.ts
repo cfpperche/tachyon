@@ -199,4 +199,73 @@ describe("Pilot B: Task Studio fields row (real bundle, minimal fixture VM)", ()
     expect(chip.height).toBeLessThan(24);
     await page.close();
   });
+
+  // t-dd22e8 — artifact chips with long paths must not overflow/overlap; same ellipsis shell as deps.
+  it("t-dd22e8: long artifact paths truncate without overlapping sibling chips", async () => {
+    const page = await browser.newPage();
+    const longPath = "/mnt/c/Users/cfpp/Pictures/Screenshots/Screenshot 2026-07-12 210316.png";
+    await loadTaskStudio(page, server.origin, {
+      ...ENTITY_EDIT,
+      artifact_refs: [
+        { type: "screenshot", ref: longPath },
+        { type: "relation", ref: "t-f87651" },
+        { type: "relation", ref: "docs/specs/370-runtime-launch-preflight" },
+      ],
+    });
+
+    // Narrow viewport forces the Artifacts column to share a tight width (repro-like).
+    await page.setViewport({ width: 720, height: 900 });
+
+    const artifactsField = await page.$('[aria-label="Artifact refs"]');
+    expect(artifactsField).toBeTruthy();
+    const metrics = await page.$eval('[aria-label="Artifact refs"]', (field) => {
+      const pills = [...field.querySelectorAll(".chip-pill")] as HTMLElement[];
+      const fieldRect = field.getBoundingClientRect();
+      const boxes = pills.map((el) => {
+        const r = el.getBoundingClientRect();
+        const text = el.querySelector(".chip-pill-text") as HTMLElement | null;
+        return {
+          title: el.getAttribute("title") ?? "",
+          top: r.top,
+          left: r.left,
+          right: r.right,
+          bottom: r.bottom,
+          height: r.height,
+          width: r.width,
+          overflowX: r.right > fieldRect.right + 1,
+          textOverflow: text ? text.scrollWidth > text.clientWidth + 1 : false,
+        };
+      });
+      // Any pair of pills whose rectangles overlap in both axes is a visual collision.
+      let overlap = false;
+      for (let i = 0; i < boxes.length; i++) {
+        for (let j = i + 1; j < boxes.length; j++) {
+          const a = boxes[i]!;
+          const b = boxes[j]!;
+          const xHit = a.left < b.right - 1 && a.right > b.left + 1;
+          const yHit = a.top < b.bottom - 1 && a.bottom > b.top + 1;
+          if (xHit && yHit) overlap = true;
+        }
+      }
+      return {
+        count: pills.length,
+        fieldWidth: fieldRect.width,
+        overlap,
+        boxes,
+        hasTextShell: pills.every((el) => !!el.querySelector(".chip-pill-text")),
+      };
+    });
+
+    expect(metrics.count).toBe(3);
+    expect(metrics.hasTextShell).toBe(true);
+    expect(metrics.overlap).toBe(false);
+    expect(metrics.boxes.every((b) => !b.overflowX)).toBe(true);
+    expect(metrics.boxes.every((b) => b.height < 28)).toBe(true);
+    const longChip = metrics.boxes.find((b) => b.title.includes(longPath));
+    expect(longChip).toBeTruthy();
+    expect(longChip!.title).toBe(`screenshot:${longPath}`);
+    expect(longChip!.textOverflow).toBe(true);
+    expect(longChip!.width).toBeLessThanOrEqual(220);
+    await page.close();
+  });
 });
