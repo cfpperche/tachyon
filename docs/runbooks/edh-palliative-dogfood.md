@@ -30,8 +30,15 @@ node scripts/edh-palliative/lane.mjs status
 node scripts/edh-palliative/lane.mjs release --owner coordinator
 ```
 
+If a hard crash leaves `owner.lease` present but completely empty, inspect it and use
+`node scripts/edh-palliative/lane.mjs recover`. Recovery is intentionally ownerless and narrow: it removes only an
+empty, real lease directory. It refuses a valid lease, any other directory contents, and symlinks; it never steals by
+PID or age.
+
 Evidence is bounded to owner, target, timestamps, exit code, and signal at
-`${TACHYON_EDH_EVIDENCE:-${TACHYON_EDH_LANE_BASE:-/tmp/tachyon-edh-lane-v1}/evidence}/latest.json`.
+`${TACHYON_EDH_EVIDENCE:-<resolved-lane-base>/evidence}/latest.json`. `TACHYON_EDH_LANE_BASE` remains available for
+isolated tests. Otherwise the lane uses a private `XDG_RUNTIME_DIR` when valid, falling back to
+`~/.tachyon/runtime/edh-lane-v1`; `status` prints the resolved base.
 It never captures stdout, environment, catalogs, credentials, or prompts. Fixture cleanup only removes the printed
 fixture directory. Lease release only removes the lane's `owner.lease` directory.
 

@@ -42,12 +42,17 @@ describe("EDH dogfood lane v1", () => {
 
   it("removes the lease directory when lease-file creation fails", () => {
     const base = fs.mkdtempSync(path.join(os.tmpdir(), "edh-lane-write-"));
+    const childMarker = path.join(base, "child-ran");
     try {
       const result = call(base, ["acquire", "--owner", "pilot"], { TACHYON_EDH_TEST_FAIL_WRITE: "lease" });
       expect(result.status).toBe(1);
       expect(result.stderr).toContain("injected lease write failure");
       expect(fs.existsSync(path.join(base, "owner.lease"))).toBe(false);
       expect(call(base, ["acquire", "--owner", "next-pilot"]).status).toBe(0);
+      expect(call(base, ["release", "--owner", "next-pilot"]).status).toBe(0);
+      const racedRun = call(base, ["run", "--owner", "pilot", "--", process.execPath, "-e", `require("node:fs").writeFileSync(${JSON.stringify(childMarker)}, "yes")`], { TACHYON_EDH_TEST_FAIL_WRITE: "lease" });
+      expect(racedRun.status).toBe(1);
+      expect(fs.existsSync(childMarker)).toBe(false);
     } finally { fs.rmSync(base, { recursive: true, force: true }); }
   });
 
@@ -59,6 +64,88 @@ describe("EDH dogfood lane v1", () => {
       expect(result.stderr).toContain("injected evidence write failure");
       expect(fs.existsSync(path.join(base, "owner.lease"))).toBe(false);
       expect(call(base, ["acquire", "--owner", "next-pilot"]).status).toBe(0);
+    } finally { fs.rmSync(base, { recursive: true, force: true }); }
+  });
+
+  it("atomically replaces a planted latest.json symlink without touching its target", () => {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), "edh-lane-latest-link-"));
+    const target = path.join(base, "do-not-overwrite.txt");
+    try {
+      fs.mkdirSync(path.join(base, "evidence"));
+      fs.writeFileSync(target, "unchanged");
+      fs.symlinkSync(target, path.join(base, "evidence", "latest.json"));
+      const result = call(base, ["run", "--owner", "pilot", "--", process.execPath, "-e", "process.exit(0)"]);
+      expect(result.status).toBe(0);
+      expect(fs.readFileSync(target, "utf8")).toBe("unchanged");
+      expect(fs.lstatSync(path.join(base, "evidence", "latest.json")).isSymbolicLink()).toBe(false);
+      expect(JSON.parse(fs.readFileSync(path.join(base, "evidence", "latest.json"), "utf8"))).toMatchObject({ owner: "pilot", exitCode: 0 });
+    } finally { fs.rmSync(base, { recursive: true, force: true }); }
+  });
+
+  it("cleans an exclusive evidence temporary file when publication fails", () => {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), "edh-lane-temp-cleanup-"));
+    try {
+      fs.mkdirSync(path.join(base, "evidence", "latest.json"), { recursive: true });
+      const result = call(base, ["run", "--owner", "pilot", "--", process.execPath, "-e", "process.exit(0)"]);
+      expect(result.status).toBe(1);
+      expect(fs.readdirSync(path.join(base, "evidence"))).toEqual(["latest.json"]);
+      expect(fs.existsSync(path.join(base, "owner.lease"))).toBe(false);
+    } finally { fs.rmSync(base, { recursive: true, force: true }); }
+  });
+
+  it("refuses symlinked base and evidence directories before writing through them", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "edh-lane-dir-links-"));
+    const target = path.join(root, "target");
+    const linkedBase = path.join(root, "linked-base");
+    try {
+      fs.mkdirSync(target);
+      fs.symlinkSync(target, linkedBase, "dir");
+      const baseResult = call(linkedBase, ["acquire", "--owner", "pilot"]);
+      expect(baseResult.status).toBe(1);
+      expect(baseResult.stderr).toContain("lane base must be a real directory");
+      expect(fs.readdirSync(target)).toEqual([]);
+
+      const base = path.join(root, "base");
+      fs.mkdirSync(base);
+      fs.symlinkSync(target, path.join(base, "evidence"), "dir");
+      const evidenceResult = call(base, ["run", "--owner", "pilot", "--", process.execPath, "-e", "process.exit(0)"]);
+      expect(evidenceResult.status).toBe(1);
+      expect(evidenceResult.stderr).toContain("evidence must be a real directory");
+      expect(fs.readdirSync(target)).toEqual([]);
+      expect(fs.existsSync(path.join(base, "owner.lease"))).toBe(false);
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  });
+
+  it("recovers only an empty orphan lease directory", () => {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), "edh-lane-recover-empty-"));
+    try {
+      fs.mkdirSync(path.join(base, "owner.lease"));
+      expect(call(base, ["recover"]).status).toBe(0);
+      expect(fs.existsSync(path.join(base, "owner.lease"))).toBe(false);
+      expect(call(base, ["acquire", "--owner", "next-pilot"]).status).toBe(0);
+    } finally { fs.rmSync(base, { recursive: true, force: true }); }
+  });
+
+  it("refuses recovery of valid, nonempty, and symlinked leases", () => {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), "edh-lane-recover-refuse-"));
+    try {
+      expect(call(base, ["acquire", "--owner", "pilot"]).status).toBe(0);
+      expect(call(base, ["recover"]).status).toBe(1);
+      expect(call(base, ["status"]).stdout).toContain('"owner": "pilot"');
+      expect(call(base, ["release", "--owner", "pilot"]).status).toBe(0);
+
+      fs.mkdirSync(path.join(base, "owner.lease"));
+      fs.writeFileSync(path.join(base, "owner.lease", "unexpected"), "occupied");
+      expect(call(base, ["recover"]).status).toBe(1);
+      expect(fs.readFileSync(path.join(base, "owner.lease", "unexpected"), "utf8")).toBe("occupied");
+      fs.rmSync(path.join(base, "owner.lease"), { recursive: true });
+
+      const elsewhere = path.join(base, "elsewhere");
+      fs.mkdirSync(elsewhere);
+      fs.symlinkSync(elsewhere, path.join(base, "owner.lease"), "dir");
+      const linked = call(base, ["recover"]);
+      expect(linked.status).toBe(1);
+      expect(linked.stderr).toContain("lease must be a real directory");
     } finally { fs.rmSync(base, { recursive: true, force: true }); }
   });
 
