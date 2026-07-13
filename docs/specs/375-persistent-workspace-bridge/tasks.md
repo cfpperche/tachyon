@@ -4,18 +4,22 @@ _Generated from `plan.md` on 2026-07-13. Work top-to-bottom. Check boxes as task
 
 ## Implementation
 
-- [ ] {{task — small, unambiguous, ordered}}
-- [ ] {{task}}
-- [ ] {{task}}
+- [x] Implement and test proxy/control protocol, singleton handshake and owner-only socket/descriptor.
+- [x] Implement detached loopback proxy with bounded `HOST_UNAVAILABLE` and explicit stop.
+- [x] Add Workspace-side ensure/register/health/stop client and advertised endpoint support.
+- [x] Wire activation, reload-safe disposal, Restart Bridge and Stop Bridge.
+- [x] Add packaging/file-list coverage and headless child-process lifecycle tests.
 
 ## Verification
 
 _Acceptance checks tied to `spec.md`. Each should map to a checklist item there._
 
-- [ ] {{verify criterion}}
-- [ ] {{verify criterion}}
+- [x] Stable proxy PID/port across backend detach and reattach.
+- [x] Requests proxy before/after reattach and return bounded 503 during the gap.
+- [x] Concurrent ensure elects one proxy; stale socket recovery does not kill by PID.
+- [ ] Typecheck, focused tests, diff-check and full verification pass.
 
-**Headless check:** `{{command, or "none"}}`
+**Headless check:** `node scripts/dogfood/persistent-bridge.mjs`
 <!-- A mechanical command an agent can run to validate this spec's implementation
      without a human (tests / build / lint). Kept green = the spec stays delivered.
      To make `/sdd verify` re-run it, also declare it on a **Verify:** line, e.g.:
@@ -25,13 +29,15 @@ _Acceptance checks tied to `spec.md`. Each should map to a checklist item there.
 
 ## Dogfood
 
-**Dogfood:** `{{representative headless dogfood command}}`
+**Verify:** `npm run verify:full:quiet`
+
+**Dogfood:** `node scripts/dogfood/persistent-bridge.mjs`
 <!-- A representative command that exercises the shipped behavior end-to-end.
      `/sdd dogfood` previews by default and runs only with --run, then logs under
      notes.md `## Dogfood log`. If no meaningful headless dogfood exists, replace
      the Dogfood line with: **Dogfood-Opt-Out:** <non-empty reason>. -->
 
-**Human dogfood:** optional
+**Human dogfood:** Reload the installed Extension Host and confirm the current agent reconnects without restart.
 <!-- Opt-in: a short walkthrough a human follows to approve the spec (demo steps,
      UI routes, things to eyeball). Name the steps here when human sign-off matters. -->
 
@@ -39,5 +45,4 @@ _Acceptance checks tied to `spec.md`. Each should map to a checklist item there.
 
 _Optional for UI/interface/rendered-output work. Keep prose-based: real surface inspected, evidence captured, verdict recorded. If not useful, declare `**Visual QA Opt-Out:** <reason>`._
 
-- [ ] Evidence:
-- [ ] Verdict:
+**Visual QA Opt-Out:** command-palette-only lifecycle change; headless behavior is the acceptance surface.

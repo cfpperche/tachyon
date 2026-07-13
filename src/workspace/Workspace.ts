@@ -45,6 +45,7 @@ import { subtreeCpuTicks } from "../attention/cpu.js";
 import { Waiters } from "../bridge/Waiters.js";
 import { NoticeQueue, type NoticeQueueMetadata } from "../bridge/NoticeQueue.js";
 import { Bridge, derivePort } from "../bridge/Bridge.js";
+import { PersistentBridgeService } from "../bridge/PersistentBridgeService.js";
 import {
   BridgeClientRebindCoordinator,
   DEFAULT_BRIDGE_CLIENT_REBIND,
@@ -169,6 +170,8 @@ export interface WorkspaceSeams {
   engine?: WorkspaceEngine;
   /** skip `bridge.start()` (no port bound) — default true in production. */
   startBridge?: boolean;
+  /** production uses the detached stable proxy; headless tests opt in explicitly. */
+  persistentBridge?: boolean;
 }
 
 const NOOP_ENGINE: WorkspaceEngine = { start: async () => {}, dispose: () => {} };
@@ -307,6 +310,7 @@ export class Workspace {
   readonly scheduler: Scheduler;
   readonly proposals: ProposalStore;
   readonly bridge: Bridge;
+  private readonly persistentBridge?: PersistentBridgeService;
   readonly externalTools: ExternalToolRegistry;
   readonly token: string | undefined;
   readonly externalToken: string | undefined;
@@ -362,6 +366,7 @@ export class Workspace {
     seams: WorkspaceSeams = {},
   ) {
     this.wsHash = workspaceHash(workspaceRoot);
+    if (seams.persistentBridge) this.persistentBridge = new PersistentBridgeService(workspaceRoot, this.wsHash);
     this.gitExec = createGitExec(() => resolveGitBinaryForHost(deps.host));
     this.taskNotifications = new TaskNotificationService(workspaceRoot, deps.host, () => this.config);
     if (seams.tmux) {
@@ -1688,7 +1693,7 @@ export class Workspace {
   /** Builds, boots the Bridge/engine/watchers, and (if configured) starts agents. */
   /** Production entry: builds, boots the Bridge/engine/watchers, and (if configured) starts agents. */
   static async create(workspaceRoot: string, deps: WorkspaceDeps): Promise<Workspace> {
-    return Workspace._create(workspaceRoot, deps, {});
+    return Workspace._create(workspaceRoot, deps, { persistentBridge: true });
   }
 
   /** spec 235 — headless test entry: inject a fake-exec tmux + no-op engine + `startBridge:false` to drive
@@ -1723,8 +1728,8 @@ export class Workspace {
       await ws.attemptDeliveryReloadSnapshot();
       if (seams.startBridge !== false) {
         const preferred = ws.config?.settings.bridgePort ?? derivePort(ws.wsHash);
-        const port = await ws.bridge.start(preferred);
-        if (ws.bridge.usedFallback) {
+        const port = await ws.startBridgeListener(preferred);
+        if (port !== preferred) {
           ws.host.notify(
             ws.t("Bridge port {0} is in use — fell back to {1}. Registered runtimes need re-connecting (or free the port and reload).", preferred, port),
             "warn",
@@ -1753,7 +1758,7 @@ export class Workspace {
       void ws.autostartNewlyDeclared(agentsBefore);
       deps.onViewsChanged("commands");
       if (ws.config?.settings.bridgePort !== portBefore) {
-        ws.host.notify(ws.t("bridgePort changed — reload the window to rebind the Bridge"), "warn");
+        ws.host.notify(ws.t("bridgePort changed — run Tachyon: Restart Bridge to apply it"), "warn");
       }
       if ((ws.config?.settings.auth ?? true) !== ws.authEnabled) {
         ws.host.notify(ws.t("settings.auth changed — reload the window to apply it"), "warn");
@@ -1816,9 +1821,12 @@ export class Workspace {
 
   async restartBridge(): Promise<number> {
     const preferred = this.config?.settings.bridgePort ?? derivePort(this.wsHash);
+    const listener = this.bridge.listenerPort;
+    if (listener && this.persistentBridge) await this.persistentBridge.detach(listener);
     await this.bridge.dispose();
-    const port = await this.bridge.start(preferred);
-    if (this.bridge.usedFallback) {
+    if (this.persistentBridge) await this.persistentBridge.stop().catch(() => undefined);
+    const port = await this.startBridgeListener(preferred);
+    if (port !== preferred) {
       this.host.notify(
         this.t("Bridge port {0} is in use — fell back to {1}. Registered runtimes need re-connecting (or free the port and restart the Bridge).", preferred, port),
         "warn",
@@ -1827,6 +1835,27 @@ export class Workspace {
     await this.clientRebind?.onListenerReady();
     this.deps.onViewsChanged("agents");
     return port;
+  }
+
+  async stopBridge(): Promise<void> {
+    const listener = this.bridge.listenerPort;
+    if (listener && this.persistentBridge) await this.persistentBridge.detach(listener);
+    await this.bridge.dispose();
+    if (this.persistentBridge) await this.persistentBridge.stop();
+    this.deps.onViewsChanged("agents");
+  }
+
+  private async startBridgeListener(preferred: number): Promise<number> {
+    if (!this.persistentBridge) return this.bridge.start(preferred);
+    const backendPort = await this.bridge.start(0);
+    try {
+      const descriptor = await this.persistentBridge.ensureAndRegister(preferred, backendPort);
+      this.bridge.advertise(descriptor.port);
+      return descriptor.port;
+    } catch (error) {
+      await this.bridge.dispose();
+      throw error;
+    }
   }
   attentionOf(agent: string): AgentAttention | undefined {
     return this.monitor.stateOf(agent);
@@ -3398,6 +3427,8 @@ export class Workspace {
     this.watches.dispose();
     this.terminals.dispose();
     this.waiters.dispose();
+    const listener = this.bridge.listenerPort;
+    if (listener && this.persistentBridge) await this.persistentBridge.detach(listener).catch(() => undefined);
     await Promise.allSettled([this.bridge.dispose(), this.engine.dispose()]);
   }
 }

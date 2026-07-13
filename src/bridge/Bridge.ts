@@ -62,6 +62,7 @@ export function derivePort(wsHash: string): number {
 export class Bridge {
   private server?: http.Server;
   private _port?: number;
+  private _advertisedPort?: number;
   private _usedFallback = false;
   private readonly sessions = new Map<string, BridgeMcpSession>();
   private readonly closingSessions = new Set<string>();
@@ -92,7 +93,16 @@ export class Bridge {
   ) {}
 
   get port(): number | undefined {
+    return this._advertisedPort ?? this._port;
+  }
+
+  /** Private Extension Host listener used as the persistent proxy's backend. */
+  get listenerPort(): number | undefined {
     return this._port;
+  }
+
+  advertise(port: number | undefined): void {
+    this._advertisedPort = port;
   }
 
   /** True when the preferred port was busy and an ephemeral one was used instead. */
@@ -101,7 +111,8 @@ export class Bridge {
   }
 
   get url(): string | undefined {
-    return this._port === undefined ? undefined : `http://127.0.0.1:${this._port}${BRIDGE_PATH}`;
+    const port = this.port;
+    return port === undefined ? undefined : `http://127.0.0.1:${port}${BRIDGE_PATH}`;
   }
 
   getMetrics(): BridgeMetrics {
@@ -285,6 +296,7 @@ export class Bridge {
     const server = this.server;
     this.server = undefined;
     this._port = undefined;
+    this._advertisedPort = undefined;
     const sessions = [...this.sessions.values()];
     this.sessions.clear();
     await Promise.all(sessions.map((session) => this.closeSession(session.transport.sessionId, session)));

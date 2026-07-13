@@ -2,7 +2,7 @@
 
 _Created 2026-07-13._
 
-**Status:** draft
+**Status:** in-progress
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
@@ -16,32 +16,33 @@ Extension Host crash, accidental window close, or extension upgrade therefore cu
 coordination even though its tmux session survives. Calls may hang instead of returning an honest transport error,
 and board writes attempted during the outage are not persisted.
 
-Make the workspace Bridge a persistent local service whose lifecycle is independent from any editor window. The
-service, not the VS Code extension, owns the headless workspace engine and the canonical Bridge listener. VS Code
-is a reconnecting presentation client. Reloading, crashing, closing, or upgrading the editor must not stop the
-service or interrupt agent-to-agent, Task, Delivery, handoff, verification, or lifecycle tools. Stopping the
-service is an explicit, auditable user/authorized-agent action; ordinary UI disposal only detaches that client.
+Make the public Bridge listener a persistent local proxy whose lifecycle is independent from any editor window.
+The current workspace engine remains in the Extension Host and registers an ephemeral private backend whenever it
+is available. Reloading, crashing, closing, or upgrading the editor must not kill or change the public endpoint.
+During the bounded gap without an engine, calls fail promptly with `HOST_UNAVAILABLE`; after activation, the same
+agent client works again without restart or reconfiguration. Stopping the proxy is an explicit lifecycle action;
+ordinary UI disposal only detaches its backend.
 
 ## Acceptance criteria
 
 - [ ] **Scenario: VS Code window reload does not interrupt the Bridge**
   - **Given** a running workspace service and an agent with a working Bridge client
   - **When** the VS Code window reloads and its old Extension Host deactivates
-  - **Then** the same workspace service PID/instance and preferred listener remain alive
-  - **And** the agent can complete a durable Bridge write before the new Extension Host attaches
-  - **And** the new Extension Host reconnects without restarting agents or changing their Bridge endpoint
+  - **Then** the same proxy PID/instance and public listener remain alive
+  - **And** calls during the gap fail promptly with `HOST_UNAVAILABLE`
+  - **And** the new Extension Host registers its backend without restarting agents or changing their Bridge endpoint
 - [ ] **Scenario: Extension Host crash or accidental window close does not interrupt coordination**
   - **Given** running agents and no explicit stop request
   - **When** the Extension Host crashes or every editor window for the workspace closes
-  - **Then** agent-to-agent, Task, Delivery, handoff, verification, and lifecycle tools remain operational
-  - **And** UI-only actions return a bounded `UI_UNAVAILABLE` result or use an explicitly durable queue; they never
-    pretend success or hang waiting for an editor
+  - **Then** the public Bridge listener remains owned by the same proxy
+  - **And** calls return a bounded `HOST_UNAVAILABLE` response until an Extension Host reconnects; they never
+    pretend success or hang
 - [ ] **Scenario: editor reopen attaches to the existing service**
-  - **Given** the workspace service survived without an editor
+  - **Given** the workspace proxy survived without an editor
   - **When** VS Code opens the workspace again
-  - **Then** the extension validates workspace identity, protocol version, service incarnation and authentication
-    before attaching
-  - **And** it renders the existing fleet/state rather than creating a competing engine or listener
+  - **Then** the extension validates workspace identity, protocol version and proxy incarnation before registering
+    its private backend
+  - **And** agents resume through the same public endpoint
 - [ ] **Scenario: only an explicit lifecycle operation stops the service**
   - **Given** a healthy workspace service
   - **When** a user or authorized agent invokes Stop Bridge
@@ -70,8 +71,6 @@ service is an explicit, auditable user/authorized-agent action; ordinary UI disp
     visible service restart and preserves durable state
 - [ ] The persistent service runs locally, binds only to loopback, preserves current per-agent authentication and
   workspace scoping, and does not introduce a cloud dependency.
-- [ ] The service owns the headless workspace engine required by Bridge tools; a detached HTTP proxy that depends on
-  live Extension Host callbacks does not satisfy this spec.
 - [ ] A durable service descriptor contains no plaintext bearer token and is written atomically with restrictive
   permissions.
 - [ ] Existing tmux agents remain usable during migration, and legacy embedded-Bridge mode has a bounded rollback
@@ -81,17 +80,13 @@ service is an explicit, auditable user/authorized-agent action; ordinary UI disp
 
 - Running AI agents without tmux or changing runtime commands.
 - Moving workspace artifacts out of the workspace as a storage-cleanup strategy.
-- Making UI-only VS Code operations available while no editor is connected.
+- Running Bridge tools while no Extension Host is connected; the persistent proxy returns `HOST_UNAVAILABLE`.
 - Remote/network Bridge access; the service remains machine-local and loopback-only.
 - Solving Delivery governance, ProcessFence or general artifact cleanup in this spec.
 - Treating a listening port alone as health; service identity and a functional tool probe are required.
 
 ## Open questions
 
-- Should the service be one process containing both supervisor and engine, or a tiny stable supervisor that restarts
-  a versioned engine child? Resolve with a crash/reload spike before the implementation plan.
-- Which current `EngineHost` capabilities must move to a headless implementation, and which tools must be classified
-  as UI-only? Resolve by inventorying every Bridge dependency and tool.
-- What is the explicit stop policy while agents or Delivery leases are active: refuse by default, drain, or require a
-  separate force operation? Maintainer decision required before implementation.
-- What compatibility window and rollback flag are required for the embedded Bridge? Resolve in the rollout plan.
+- Agent-authorized service stop is deferred until a coordinator-only authorization boundary exists; v1 exposes the
+  explicit user command and keeps Restart Bridge explicit.
+- A future headless engine may replace the proxy/backend split, but is not required to close the reload failure.

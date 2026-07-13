@@ -90,6 +90,20 @@ const externalResolver = {
   logLevel: "info",
 };
 
+// spec 375 — stable public Bridge endpoint that survives Extension Host reloads. This tiny detached
+// process only proxies loopback HTTP and accepts owner-only Unix-socket lifecycle control.
+const persistentBridgeDaemon = {
+  entryPoints: ["src/bridge/persistentProxyDaemon.ts"],
+  bundle: true,
+  outfile: "dist/persistent-bridge-daemon.cjs",
+  platform: "node",
+  format: "cjs",
+  target: "node20",
+  define: nodeDefines,
+  sourcemap: false,
+  logLevel: "info",
+};
+
 // spec 342 — every "react"-shaped import (Radix's own internals, not just our JSX) resolves to preact's
 // compat layer at build time. MUST be on every browser target that can transitively pull in shared/ui/vendor
 // or shared/ui/kit (which is now any of them, via esbuild.mjs's shared `sidebar` base below) — a target
@@ -403,7 +417,7 @@ if (existsSync(excalidrawAssets)) {
   cpSync(excalidrawAssets, "dist/webview/excalidraw-assets", { recursive: true });
 }
 
-const targets = [extension, toolLauncher, dataResolver, externalResolver, sidebar, activity, handoff, approval, plugins, probes, inspector, pinPreview, pinStudio, missionControl, taskDetail, taskStudio, runtimeOps, pipelineStudio, agentStudioFixture, agentStudioShell, terminalStudioShell, commandStudioShell, runbookStudioShell, scheduleStudioShell, pluginHost, excalidraw, mermaid, katex, preview, uiGate];
+const targets = [extension, toolLauncher, dataResolver, externalResolver, persistentBridgeDaemon, sidebar, activity, handoff, approval, plugins, probes, inspector, pinPreview, pinStudio, missionControl, taskDetail, taskStudio, runtimeOps, pipelineStudio, agentStudioFixture, agentStudioShell, terminalStudioShell, commandStudioShell, runbookStudioShell, scheduleStudioShell, pluginHost, excalidraw, mermaid, katex, preview, uiGate];
 if (watch) {
   const ctxs = await Promise.all(targets.map((c) => esbuild.context(c)));
   await Promise.all(ctxs.map((c) => c.watch()));

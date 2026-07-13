@@ -328,6 +328,10 @@
         "title": "%command.restartBridge%"
       },
       {
+        "command": "tachyon.stopBridge",
+        "title": "Tachyon: Stop Bridge"
+      },
+      {
         "command": "tachyon.openSettings",
         "title": "%command.openSettings%",
         "icon": "$(gear)"

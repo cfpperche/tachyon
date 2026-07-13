@@ -1366,6 +1366,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       refreshAll();
       notify(vscode.l10n.t("Bridge restarted for {0} workspace(s).", targets.length));
     }),
+    vscode.commands.registerCommand("tachyon.stopBridge", async (hash?: string) => {
+      const targets = hash ? [byHash(hash)].filter((ws): ws is Workspace => !!ws) : workspaces();
+      if (targets.length === 0) {
+        notify(vscode.l10n.t("no Tachyon workspace is active"), "warn");
+        return;
+      }
+      const results = await Promise.allSettled(targets.map((ws) => ws.stopBridge()));
+      const failures = results.filter((r): r is PromiseRejectedResult => r.status === "rejected");
+      if (failures.length > 0) {
+        notify(`Bridge stop failed: ${failures.map((f) => f.reason instanceof Error ? f.reason.message : String(f.reason)).join("; ")}`, "error");
+        return;
+      }
+      refreshAll();
+      notify(`Bridge stopped for ${targets.length} workspace(s).`);
+    }),
     // ---- init / bootstrap (F5) ----
     vscode.commands.registerCommand("tachyon.init", async () => {
       const open = vscode.workspace.workspaceFolders ?? [];

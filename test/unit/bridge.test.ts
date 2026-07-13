@@ -1469,6 +1469,16 @@ describe("Bridge end-to-end over streamable HTTP", () => {
 });
 
 describe("stable Bridge port", () => {
+  it("advertises a persistent public endpoint while retaining the private listener port", async () => {
+    const bridge = new Bridge({} as never);
+    const listener = await bridge.start(0);
+    bridge.advertise(42_897);
+    expect(bridge.listenerPort).toBe(listener);
+    expect(bridge.port).toBe(42_897);
+    expect(bridge.url).toBe("http://127.0.0.1:42897/mcp");
+    await bridge.dispose();
+  });
+
   it("derivePort is deterministic and in range", () => {
     const a = derivePort("e5d08dd8");
     expect(a).toBe(derivePort("e5d08dd8"));
