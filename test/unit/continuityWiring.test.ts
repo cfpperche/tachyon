@@ -98,12 +98,12 @@ afterEach(() => {
   for (const d of dirs.splice(0)) fs.rmSync(d, { recursive: true, force: true });
 });
 
-async function makeWs(config = "agents:\n  claude:\n    cmd: claude\n") {
+async function makeWs(config = "agents:\n  claude:\n    cmd: claude\n", agent = "claude") {
   const root = mkdir();
   fs.writeFileSync(path.join(root, "tachyon.yml"), config, "utf8");
   const { tmux, sessions, sent } = capturingTmux();
   const ws = await Workspace.createForTest(root, { host: new FakeHost(mkdir()), onViewsChanged: () => {} }, { tmux, startBridge: false });
-  await ws.manager.spawn("claude"); // populates the fake session so hasSession() is true
+  await ws.manager.spawn(agent); // populates the fake session so hasSession() is true
   return { ws, root, sessions, sent };
 }
 
@@ -204,6 +204,15 @@ describe("continuity wiring (spec 241, headless via Workspace.createForTest)", (
     expect(sent.some((s) => s.includes("append_project_handoff_note"))).toBe(false);
     // Hooks remain the supported path — health is active, not disabled by a kill switch.
     expect(ws.persistenceHookHealth("claude")).toMatchObject({ state: "active" });
+  });
+
+  it("t-1a808e: declared Codex model overrides still receive silent persistence hooks", async () => {
+    const { ws } = await makeWs(
+      "agents:\n  codex:\n    cmd: codex -c model=gpt-5.6-sol -c model_reasoning_effort=xhigh\n",
+      "codex",
+    );
+
+    expect(ws.persistenceHookHealth("codex")).toMatchObject({ state: "active" });
   });
 
   it("spec 312: no visible fallback remains when Claude --settings prevents hook injection", async () => {

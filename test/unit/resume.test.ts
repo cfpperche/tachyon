@@ -122,6 +122,14 @@ describe("ResumeAdapter — mint runtimes (claude, gemini, grok)", () => {
     expect(managesOwnSession("claude --resumexyz")).toBe(false); // not a real flag
   });
 
+  it("t-1a808e: distinguishes Codex config/sandbox flags from its resume subcommand", () => {
+    expect(managesOwnSession("codex -c model=gpt-5.6-sol -c model_reasoning_effort=xhigh")).toBe(false);
+    expect(managesOwnSession("codex -s danger-full-access")).toBe(false);
+    expect(managesOwnSession("npx codex -c model=gpt-5.6-terra")).toBe(false);
+    expect(managesOwnSession("codex resume thread-1")).toBe(true);
+    expect(managesOwnSession("codex exec resume thread-1")).toBe(true);
+  });
+
   it("claude transcript path uses the cwd-encoding under the config home (spec 226: configHome arg)", () => {
     const a = adapterForRuntime("claude")!;
     // normal: configHome = ~/.claude

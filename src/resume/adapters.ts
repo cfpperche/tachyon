@@ -165,7 +165,17 @@ function append(cmd: string, ...args: string[]): string {
  */
 const SELF_SESSION_FLAGS = new Set(["--resume", "-r", "--continue", "-c", "--session-id", "-s", "--session", "--fork-session"]);
 export function managesOwnSession(cmd: string): boolean {
-  return cmd.trim().split(/\s+/).some((t) => SELF_SESSION_FLAGS.has(t));
+  const tokens = cmd.trim().split(/\s+/);
+  const binary = (tokens[binaryIndex(tokens)] ?? "").split("/").pop() ?? "";
+  if (binary === "codex") {
+    // Codex resumes through the `resume` subcommand (`codex resume …` or
+    // `codex exec resume …`). Its short flags are unrelated: `-c` supplies a
+    // config override and `-s` selects a sandbox. Treating those as Claude's
+    // continue/session flags suppresses Tachyon hooks for ordinary model and
+    // sandbox configuration.
+    return tokens.slice(binaryIndex(tokens) + 1).includes("resume");
+  }
+  return tokens.some((token) => SELF_SESSION_FLAGS.has(token));
 }
 
 /** Insert a subcommand right after the binary token (subcommand-style, e.g. codex). */
