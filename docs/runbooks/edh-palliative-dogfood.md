@@ -100,7 +100,7 @@ Runs a real Extension Development Host under **Xvfb** with an in-host runner
 
 ```bash
 npm run build
-npm run dogfood:edh-palliative -- headless
+npm run dogfood:edh -- headless
 ```
 
 What it asserts (S1 / t-8354ae):
@@ -127,10 +127,10 @@ From the repo root (any clean-enough tree; prefer the SHA under test):
 npm run build
 
 # 2) Seed an isolated fixture (prints paths + the exact launch command)
-npm run dogfood:edh-palliative -- seed
+npm run dogfood:edh -- seed
 
 # 3) Launch EDH (script can also exec when a code binary is available)
-npm run dogfood:edh-palliative -- launch
+npm run dogfood:edh -- launch
 ```
 
 
@@ -156,7 +156,7 @@ Record in the task note / PR:
 Cleanup:
 
 ```bash
-npm run dogfood:edh-palliative -- clean
+npm run dogfood:edh -- clean
 # or: rm -rf "$FIXTURE"  (only the printed fixture dir)
 ```
 
@@ -170,7 +170,7 @@ npm run dogfood:edh-palliative -- clean
 
 1. Open EDH on the fixture workspace; wait until the Tachyon sidebar lists agents (e.g. `pilot`, `reviewer`).
 2. In the fixture only, break config with a **hard** validation error
-   (`npm run dogfood:edh-palliative -- break` uses self-referential `subagents: [pilot]`).
+   (`npm run dogfood:edh -- break` uses self-referential `subagents: [pilot]`).
    Note: after t-099be8, a *dangling* name is only a warning — it will not arm fail-visible.
 
 3. In the **EDH** window: Command Palette → `Developer: Reload Window` (EDH only).
@@ -215,9 +215,9 @@ For landed UI surfaces that need a glance without a full EDH window:
 
 ```bash
 npm run build
-npm run dogfood:edh-palliative -- shortlist
+npm run dogfood:edh -- shortlist
 # or: npm run dogfood:ui-shortlist
-# subset: npm run dogfood:edh-palliative -- shortlist mermaid grok-activity
+# subset: npm run dogfood:edh -- shortlist mermaid grok-activity
 ```
 
 | Scene | Task | Harness |

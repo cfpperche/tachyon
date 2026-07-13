@@ -34,6 +34,17 @@ describe("EDH dogfood lane v1", () => {
     } finally { fs.rmSync(base, { recursive: true, force: true }); }
   });
 
+  it.skipIf(process.platform === "win32")("preserves signal termination separately from numeric child exit", () => {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), "edh-lane-signal-"));
+    try {
+      const result = call(base, ["run", "--owner", "pilot", "--target", "worktree", "--", process.execPath, "-e", 'process.kill(process.pid, "SIGTERM")']);
+      expect(result.status).toBe(128 + 15);
+      const report = JSON.parse(fs.readFileSync(path.join(base, "evidence", "latest.json"), "utf8"));
+      expect(report).toMatchObject({ owner: "pilot", target: "worktree", exitCode: null, signal: "SIGTERM" });
+      expect(fs.existsSync(path.join(base, "owner.lease"))).toBe(false);
+    } finally { fs.rmSync(base, { recursive: true, force: true }); }
+  });
+
   it("rejects unknown target identities", () => {
     const base = fs.mkdtempSync(path.join(os.tmpdir(), "edh-lane-target-"));
     try { expect(call(base, ["acquire", "--owner", "pilot", "--target", "mystery"]).status).toBe(2); }

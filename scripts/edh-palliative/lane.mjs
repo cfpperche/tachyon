@@ -84,6 +84,12 @@ function publishEvidence(dir, report) {
   return file;
 }
 
+function wrapperExitCode(result) {
+  if (typeof result?.status === "number") return result.status;
+  const signalNumber = result?.signal ? os.constants.signals[result.signal] : undefined;
+  return typeof signalNumber === "number" ? 128 + signalNumber : 1;
+}
+
 function acquire() {
   const who = owner();
   const target = value("--target", "worktree");
@@ -147,14 +153,22 @@ function run() {
     result = spawnSync(args[separator + 1], args.slice(separator + 2), { stdio: "inherit", env: process.env });
   } finally {
     try {
-      const report = { version: 1, owner: who, target, startedAt, finishedAt: new Date().toISOString(), exitCode: result?.status ?? 1, signal: bounded(result?.signal, 24) || null };
+      const report = {
+        version: 1,
+        owner: who,
+        target,
+        startedAt,
+        finishedAt: new Date().toISOString(),
+        exitCode: typeof result?.status === "number" ? result.status : null,
+        signal: bounded(result?.signal, 24) || null,
+      };
       const file = publishEvidence(evidenceRoot, report);
       console.log(`edh-lane: evidence ${file}`);
     } finally {
       release();
     }
   }
-  process.exit(result?.status ?? 1);
+  process.exit(wrapperExitCode(result));
 }
 
 switch (command) {
