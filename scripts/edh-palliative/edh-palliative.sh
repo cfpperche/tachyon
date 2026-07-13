@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# EDH palliative dogfood helper (stopgap until t-1d53e8).
+# EDH dogfood lane v1 (promoted in place from the palliative helper).
 # Isolates fixture workspace + tmux/cache so concurrent SDD 368 work is not touched.
 set -euo pipefail
 
@@ -424,7 +424,7 @@ shortlist() {
 
 help() {
   cat <<'EOF'
-Usage: npm run dogfood:edh-palliative -- <command>
+Usage: npm run dogfood:edh -- <command>
 
 Commands:
   seed      Create isolated fixture (valid config + LKG + ledger)
@@ -436,6 +436,7 @@ Commands:
             (default: all three). Pass scene names to subset.
   status    Show fixture path / broken-or-valid
   clean     Delete the fixture directory
+  lease ... Atomic owner lease (acquire|release|status|run); see runbook
   help      This text
 
 Examples:
@@ -453,11 +454,12 @@ Env:
   TACHYON_SHORTLIST_OUT       evidence root (default .tachyon/evidence/ui-shortlist)
   TACHYON_CHROME              Chrome/Chromium binary for preview shots
 
-See docs/runbooks/edh-palliative-dogfood.md
+See docs/runbooks/edh-palliative-dogfood.md (EDH lane v1)
 EOF
 }
 
 case "$CMD" in
+  lease) node "$REPO/scripts/edh-palliative/lane.mjs" "${@:-status}" ;;
   seed) seed ;;
   break) break_config ;;
   restore) restore_config ;;

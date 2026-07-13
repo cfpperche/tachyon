@@ -1,13 +1,45 @@
-# EDH palliative dogfood (stopgap until t-1d53e8)
+# EDH dogfood lane v1
 
-> **Status:** palliative · **Owner of the full lane:** `t-1d53e8` (Establish EDH dogfood lane)  
-> **Why this exists:** ship a *safe* way to dogfood UI/config changes **without** reloading the
-> maintainer’s normal VS Code window and **without** colliding with concurrent work on SDD 368
-> (Delivery / worktree leases / AgentManager spawn paths).
+> **Status:** versioned final lane · **Contract owner:** `t-1d53e8`
 
-This is **not** the final EDH product. It is intentionally thin: isolated fixture + launch recipe +
-forbidden list. When `t-1d53e8` lands (runbook versioned + single-owner concurrency + delegation
-template + pilot), this document becomes a pointer or is deleted.
+This is the single-owner lane for isolated Extension Development Host dogfood. The historical
+`dogfood:edh-palliative` command remains as a compatibility alias; new use should call `npm run dogfood:edh`.
+
+## Target matrix
+
+| Target | Extension bits | Workspace | Automated? | Use |
+|---|---|---|---|---|
+| `worktree` | current worktree via `--extensionDevelopmentPath` | seeded fixture | yes, preferred | pre-merge behavior |
+| `main` | clean main checkout at a recorded SHA | seeded fixture | yes | post-merge confirmation |
+| `vsix` | explicitly installed package | isolated profile only | no | packaging/manifest boundary; coordinator-owned pilot |
+
+Never describe one target as proof of another. Record target, owner, SHA, command exit, and evidence path.
+
+## Single-owner lease
+
+All headless and desktop pilots have one named owner. The atomic lane lease refuses a second owner and is not
+automatically stolen based on PID or age. A coordinator must investigate and explicitly release an abandoned lease.
+
+```bash
+# bounded command: acquires, runs, writes allowlisted latest.json, and releases even on failure
+node scripts/edh-palliative/lane.mjs run --owner "$TACHYON_AGENT_NAME" --target worktree -- npm run dogfood:edh -- headless
+
+# GUI owner holds the lease across the separate desktop step
+node scripts/edh-palliative/lane.mjs acquire --owner coordinator --target worktree
+node scripts/edh-palliative/lane.mjs status
+node scripts/edh-palliative/lane.mjs release --owner coordinator
+```
+
+Evidence is bounded to owner, target, timestamps, exit code, and signal at
+`${TACHYON_EDH_EVIDENCE:-${TACHYON_EDH_LANE_BASE:-/tmp/tachyon-edh-lane-v1}/evidence}/latest.json`.
+It never captures stdout, environment, catalogs, credentials, or prompts. Fixture cleanup only removes the printed
+fixture directory. Lease release only removes the lane's `owner.lease` directory.
+
+## Delegation contract
+
+Copy [the EDH owner template](edh-delegation-template.md) into the delegated task. The delegate owns the entire lane
+from acquire through evidence and cleanup. Observers may read artifacts but must not drive the same EDH, send desktop
+input, release the lease, or start a parallel target. A GUI/desktop pilot is a separate explicit coordinator step.
 
 ---
 
@@ -38,9 +70,7 @@ These exist so palliative EDH **cannot** strangle Codex/368 or the human’s liv
    - `TMUX_TMPDIR` → fixture-local (not the default shared socket)
    - `XDG_CACHE_HOME` → fixture-local (worktrees never land in `~/.cache/tachyon/worktrees` used by 368)
 
-4. **One human/agent drives the EDH window.** No second agent “helps” by sending keys into the same EDH.
-   Full single-owner lease is deferred to `t-1d53e8`; until then, **social** ownership: announce in the
-   task note or chat before launching.
+4. **One human/agent drives the EDH window under the lane lease.** No second agent sends keys into it.
 
 5. **Forbidden while palliative EDH is up:**
    - editing monorepo `tachyon.yml` “to see what happens”
@@ -151,17 +181,17 @@ Open EDH, confirm sidebar loads, Bridge line present, `Tachyon: Doctor` runs wit
 
 ---
 
-## Mapping to t-1d53e8 (what remains)
+## SDD 370 headless pilot
 
-| Palliative has | Full lane (t-1d53e8) still needs |
-|----------------|----------------------------------|
-| Fixture isolation + forbidden list | Single-owner concurrency enforcement |
-| Launch recipe + seed script | Versioned delegation-contract block for agents |
-| Worktree vs main guidance (use SHA under test) | Explicit (a) worktree EDH / (b) main EDH / (c) VSIX matrix |
-| Human-driven scenarios | Bounded desktop/screen owner + evidence store |
-| Pilot of fail-visible optional | **Pilot of SDD 370** as the acceptance pilot |
+```bash
+npm run dogfood:runtime-launch-preflight
+```
 
-Do **not** expand this palliative into the full design inside random PRs — land that under `t-1d53e8`.
+This exercises exact-model accept/reject and malformed/timeout/non-zero/oversized handling from bounded fixtures,
+plus lane ownership and cleanup. It intentionally makes no live model-catalog or inference call. The known live
+explicit-model spawn can still fail because the raw Codex catalog exceeds the product preflight limit; this command
+exposes that class deterministically without logging the catalog. A real delegated launch remains a separate,
+coordinator-owned GUI pilot after the RuntimeOps product integration lands.
 
 ---
 

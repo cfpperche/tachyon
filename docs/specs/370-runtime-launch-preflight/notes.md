@@ -21,6 +21,12 @@ _In-flight design memory — decisions, deviations, tradeoffs, and open question
 
 ## Deviations
 
+- 2026-07-13 lane pilot: `npm run dogfood:runtime-launch-preflight` is now executable and deterministic. It exercises
+  bounded supported/absent/malformed/timeout/non-zero/oversized fixtures plus lease cleanup; it deliberately does not
+  claim T1/T2 product integration or perform a live catalog/inference request (preserving SDD 369's T0 boundary).
+- Live follow-up remains coordinator-owned: explicit-model spawn currently fails when the Codex catalog exceeds the
+  preflight raw-output limit. The lane exposes the oversized failure safely and never persists the raw catalog.
+
 _Where implementation intentionally departed from `plan.md`, and why it was necessary or better._
 
 ## Tradeoffs
@@ -31,3 +37,8 @@ _Alternatives weighed mid-build. The chosen path + what was given up + why it wa
 
 - None before T1 implementation; empirical adapter details may still refine the plan without weakening the ratified
   fail-closed/readiness invariants.
+
+## Dogfood log
+
+### 2026-07-13T21:08:15Z — pass (1/1) — source: tasks.md — commit: 23130cea1c1cf8046c1b09ac306de80d92c1bb0e
+- `npm run dogfood:runtime-launch-preflight` — pass
