@@ -49,3 +49,19 @@ HTTP 200 with an MCP session header.
 
 Follow-up created as `t-40a28c`: the runtime-provided MCP wrapper kept an old session and timed out on
 `mcp__tachyon_bridge.append_task_note`, while a fresh direct MCP session worked.
+
+## 2026-07-13 — persistent-service error UX follow-up
+
+Task `t-c182d2` reopens the shipped spec only for startup-error UX. Linux remains fail-closed when the user systemd
+manager is unavailable: falling back to an Extension Host child would falsely claim reload survival. The notice
+will instead classify the prerequisite, give WSL-specific recovery where applicable, retain bounded launcher detail
+for diagnostics, and offer Doctor plus an in-place retry.
+
+Focused verification passed 57/57 across persistent proxy, Workspace and Doctor suites. `npm run typecheck`,
+`git diff --check`, the real user-systemd dogfood and the first `npm run verify:full:quiet` candidate all passed;
+the full gate reported 322 files, 3822 passed and 3 skipped.
+
+## Dogfood log
+
+### 2026-07-13T15:45:36Z — pass (1/1) — source: tasks.md — commit: e7aad9da3f89ddb3e9342757336b661e6f13e269
+- `node scripts/dogfood/persistent-bridge.mjs` — pass

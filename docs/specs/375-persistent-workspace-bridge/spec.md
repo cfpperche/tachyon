@@ -3,7 +3,7 @@
 _Created 2026-07-13._
 
 **Status:** shipped
-**Closure:** Shipped in `8625ab46` plus installed dogfood of VSIX `0.55.97`: the persistent Bridge proxy runs under user systemd on Linux/WSL, survives Extension Host crash/reload with the same PID/instance/port, reattaches a new backend, and authenticated MCP calls resume on the stable endpoint.
+**Closure:** Shipped in `8625ab46` plus installed dogfood of VSIX `0.55.97`: the persistent Bridge proxy runs under user systemd on Linux/WSL, survives Extension Host crash/reload with the same PID/instance/port, reattaches a new backend, and authenticated MCP calls resume on the stable endpoint. Follow-up `t-c182d2` adds actionable, platform-specific launch errors, bounded Doctor diagnostics and direct Doctor/Retry actions.
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
@@ -76,6 +76,13 @@ ordinary UI disposal only detaches its backend.
   permissions.
 - [x] Existing tmux agents remain usable during migration, and legacy embedded-Bridge mode has a bounded rollback
   switch until dogfood closes the persistent path.
+- [x] **Scenario: persistent service prerequisites fail with an actionable error**
+  - **Given** Linux or WSL cannot execute `systemd-run` or connect to the user service manager
+  - **When** Tachyon tries to start the persistent Bridge
+  - **Then** the notice explains the concrete missing prerequisite in plain language
+  - **And** WSL receives the exact restart path while other Linux environments receive a Linux-specific path
+  - **And** the user can run Doctor or retry the Bridge directly from the notice
+  - **And** unexpected launcher output remains bounded diagnostic detail rather than the primary instruction
 
 ## Non-goals
 

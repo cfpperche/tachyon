@@ -26,8 +26,8 @@ export class VsCodeHost implements EngineHost {
     void vscode.commands.executeCommand("tachyonSidebarPrototype.focus");
   }
 
-  executeCommand(command: string): Promise<unknown> {
-    return Promise.resolve(vscode.commands.executeCommand(command));
+  executeCommand(command: string, ...args: unknown[]): Promise<unknown> {
+    return Promise.resolve(vscode.commands.executeCommand(command, ...args));
   }
 
   watch(root: string, glob: string, events: WatchEvents, onEvent: () => void): HostDisposable {

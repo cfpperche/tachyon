@@ -9,6 +9,9 @@ _Generated from `plan.md` on 2026-07-13. Work top-to-bottom. Check boxes as task
 - [x] Add Workspace-side ensure/register/health/stop client and advertised endpoint support.
 - [x] Wire activation, reload-safe disposal, Restart Bridge and Stop Bridge.
 - [x] Add packaging/file-list coverage and headless user-manager lifecycle tests.
+- [x] Classify persistent launcher failures and retain bounded diagnostic detail.
+- [x] Surface plain-language Linux/WSL remediation with Doctor and Retry actions.
+- [x] Add focused regressions for classification and Workspace notice behavior.
 
 ## Verification
 
@@ -19,6 +22,7 @@ _Acceptance checks tied to `spec.md`. Each should map to a checklist item there.
 - [x] Requests proxy before/after reattach and return bounded 503 during the gap.
 - [x] Concurrent ensure elects one proxy; stale socket recovery does not kill by PID.
 - [x] Typecheck, focused tests, diff-check and full verification pass.
+- [x] Focused error-UX tests, typecheck, diff-check and final full verification pass.
 
 **Headless check:** `node scripts/dogfood/persistent-bridge.mjs`
 <!-- A mechanical command an agent can run to validate this spec's implementation
@@ -46,4 +50,5 @@ _Acceptance checks tied to `spec.md`. Each should map to a checklist item there.
 
 _Optional for UI/interface/rendered-output work. Keep prose-based: real surface inspected, evidence captured, verdict recorded. If not useful, declare `**Visual QA Opt-Out:** <reason>`._
 
-**Visual QA Opt-Out:** command-palette-only lifecycle change; headless behavior is the acceptance surface.
+**Visual QA Opt-Out:** this follow-up uses the standard VS Code notification surface; exact copy, severity and action
+labels are forced through the headless host test, so a screenshot would not add useful layout evidence.

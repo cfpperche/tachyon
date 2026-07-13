@@ -38,6 +38,11 @@ export interface DoctorReportInput {
     /** TCP reachability probe result when available */
     reachable?: boolean;
     authConfigured?: boolean;
+    failure?: {
+      code: string;
+      message: string;
+      technicalDetail: string;
+    };
   };
   /** optional per-agent transcript/rollout presence for resumable rows */
   transcriptPresence?: ReadonlyMap<string, boolean>;
@@ -155,12 +160,23 @@ export function buildDoctorReport(input: DoctorReportInput): DoctorReport {
     findings.push({ id: "delivery.mechanism_only", severity: "warn", title: "Canonical Delivery uses mechanism-only handoff safety", detail: "Root death is best-effort; descendant process absence is unproven." });
   }
   if (!input.bridge.port && !input.bridge.url) {
-    findings.push({
-      id: "bridge.down",
-      severity: "warn",
-      title: "Bridge not running for this workspace",
-      action: "Tachyon: Start or Tachyon: Restart Bridge",
-    });
+    if (input.bridge.failure) {
+      findings.push({
+        id: "bridge.start_failed",
+        severity: "error",
+        title: input.bridge.failure.message,
+        detail: `${input.bridge.failure.code}: ${input.bridge.failure.technicalDetail}`,
+        action: "Fix the reported prerequisite, then run Tachyon: Restart Bridge",
+      });
+      suggestions.push("Fix the Bridge startup prerequisite and restart the Bridge");
+    } else {
+      findings.push({
+        id: "bridge.down",
+        severity: "warn",
+        title: "Bridge not running for this workspace",
+        action: "Tachyon: Start or Tachyon: Restart Bridge",
+      });
+    }
   } else if (input.bridge.reachable === false) {
     findings.push({
       id: "bridge.unreachable",

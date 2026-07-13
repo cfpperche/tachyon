@@ -45,7 +45,7 @@ import { subtreeCpuTicks } from "../attention/cpu.js";
 import { Waiters } from "../bridge/Waiters.js";
 import { NoticeQueue, type NoticeQueueMetadata } from "../bridge/NoticeQueue.js";
 import { Bridge, derivePort } from "../bridge/Bridge.js";
-import { PersistentBridgeService } from "../bridge/PersistentBridgeService.js";
+import { PersistentBridgeLaunchError, PersistentBridgeService } from "../bridge/PersistentBridgeService.js";
 import {
   BridgeClientRebindCoordinator,
   DEFAULT_BRIDGE_CLIENT_REBIND,
@@ -174,8 +174,15 @@ export interface WorkspaceSeams {
   persistentBridge?: boolean;
 }
 
+export interface BridgeStartFailureInfo {
+  code: string;
+  message: string;
+  technicalDetail: string;
+}
+
 const NOOP_ENGINE: WorkspaceEngine = { start: async () => {}, dispose: () => {} };
 const TASK_FILE_REFRESH_DEBOUNCE_MS = 75;
+const MAX_BRIDGE_FAILURE_DETAIL_LENGTH = 2_000;
 
 /** spec 233 — the i18n function shape (vscode.l10n.t-compatible), passed into module helpers. */
 type Translate = (message: string, ...args: (string | number | boolean)[]) => string;
@@ -189,6 +196,11 @@ function safeRead(p: string): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+function boundedBridgeFailureDetail(detail: string): string {
+  if (detail.length <= MAX_BRIDGE_FAILURE_DETAIL_LENGTH) return detail;
+  return `${detail.slice(0, MAX_BRIDGE_FAILURE_DETAIL_LENGTH - 1)}…`;
 }
 
 function safePatterns(sources: string[], t: Translate, warn: (message: string, level?: NotifyLevel) => void): RegExp[] {
@@ -348,6 +360,7 @@ export class Workspace {
   private ticker: NodeJS.Timeout | undefined;
   private engineWarned = false;
   private readonly bridgeSlowRequestToasts = new BridgeSlowRequestToastPolicy();
+  private lastBridgeStartFailure: BridgeStartFailureInfo | undefined;
   /** t-4ecf9a — latest control-mode #{window_activity} map (session → unix seconds); live only while engine is up. */
   private activityBySession = new Map<string, number>();
   private activityFeedLive = false;
@@ -1743,7 +1756,7 @@ export class Workspace {
         })();
       }
     } catch (err) {
-      ws.host.notify(ws.t("Bridge failed to start: {0}", err instanceof Error ? err.message : String(err)), "error");
+      ws.notifyBridgeStartFailure(err);
     }
 
     // tachyon.yml edits reflect live (config + watches + views).
@@ -1819,6 +1832,10 @@ export class Workspace {
     return this.bridge.url;
   }
 
+  bridgeStartFailureInfo(): BridgeStartFailureInfo | undefined {
+    return this.lastBridgeStartFailure ? { ...this.lastBridgeStartFailure } : undefined;
+  }
+
   async restartBridge(): Promise<number> {
     const preferred = this.config?.settings.bridgePort ?? derivePort(this.wsHash);
     const listener = this.bridge.listenerPort;
@@ -1851,11 +1868,49 @@ export class Workspace {
     try {
       const descriptor = await this.persistentBridge.ensureAndRegister(preferred, backendPort);
       this.bridge.advertise(descriptor.port);
+      this.lastBridgeStartFailure = undefined;
       return descriptor.port;
     } catch (error) {
       await this.bridge.dispose();
+      this.rememberBridgeStartFailure(error);
       throw error;
     }
+  }
+
+  private rememberBridgeStartFailure(error: unknown): BridgeStartFailureInfo {
+    const failure = error instanceof PersistentBridgeLaunchError
+      ? { code: error.code, message: error.message, technicalDetail: error.technicalDetail }
+      : {
+          code: "BRIDGE_START_FAILED",
+          message: "Bridge could not start. Run Tachyon: Doctor for details, then retry the Bridge.",
+          technicalDetail: boundedBridgeFailureDetail(error instanceof Error ? error.stack ?? error.message : String(error)),
+        };
+    if (
+      this.lastBridgeStartFailure?.code === failure.code
+      && this.lastBridgeStartFailure.message === failure.message
+      && this.lastBridgeStartFailure.technicalDetail === failure.technicalDetail
+    ) return this.lastBridgeStartFailure;
+    this.lastBridgeStartFailure = failure;
+    console.warn(`[tachyon] ${failure.code}: ${failure.technicalDetail}`);
+    return failure;
+  }
+
+  private notifyBridgeStartFailure(error: unknown): void {
+    const failure = this.rememberBridgeStartFailure(error);
+    this.host.notify(failure.message, "error", [
+      {
+        label: "Retry Bridge",
+        run: async () => {
+          try {
+            await this.restartBridge();
+            this.host.notify("Bridge restarted.");
+          } catch (retryError) {
+            this.notifyBridgeStartFailure(retryError);
+          }
+        },
+      },
+      { label: "Run Doctor", run: () => this.host.executeCommand("tachyon.doctor", this.wsHash).then(() => undefined) },
+    ]);
   }
   attentionOf(agent: string): AgentAttention | undefined {
     return this.monitor.stateOf(agent);

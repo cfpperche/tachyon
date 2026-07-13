@@ -9,6 +9,7 @@ import {
   buildPersistentBridgeSystemdRunArgs,
   encodeDaemonOptions,
   PersistentBridgeService,
+  persistentBridgeSystemdLaunchError,
 } from "../../src/bridge/PersistentBridgeService.js";
 import {
   persistentBridgeControlSocket,
@@ -123,6 +124,43 @@ describe("persistent Bridge proxy", () => {
       "/ext/dist/persistent-bridge-daemon.cjs",
       input.encodedOptions,
     ]);
+  });
+
+  it("explains a missing systemd-run command with a platform-specific recovery path", () => {
+    const error = persistentBridgeSystemdLaunchError({
+      spawnError: Object.assign(new Error("spawn systemd-run ENOENT"), { code: "ENOENT" }),
+      isWsl: true,
+    });
+
+    expect(error).toMatchObject({
+      code: "SYSTEMD_RUN_MISSING",
+      technicalDetail: "spawn systemd-run ENOENT",
+    });
+    expect(error.message).toContain("inside WSL");
+    expect(error.message).toContain("retry the Bridge");
+  });
+
+  it("turns a missing user bus into WSL remediation and keeps bounded diagnostics", () => {
+    const error = persistentBridgeSystemdLaunchError({
+      exitCode: 1,
+      output: `Failed to connect to bus: No medium found ${"x".repeat(2_000)}`,
+      isWsl: true,
+    });
+
+    expect(error.code).toBe("SYSTEMD_USER_UNAVAILABLE");
+    expect(error.message).toContain("/etc/wsl.conf");
+    expect(error.message).toContain("wsl --shutdown");
+    expect(error.technicalDetail.length).toBeLessThan(900);
+    expect(error.technicalDetail.endsWith("…")).toBe(true);
+  });
+
+  it("routes unexpected systemd-run failures through Doctor instead of raw launcher output", () => {
+    const error = persistentBridgeSystemdLaunchError({ exitCode: 5, output: "unexpected unit failure", isWsl: false });
+
+    expect(error.code).toBe("SYSTEMD_RUN_FAILED");
+    expect(error.message).toContain("Tachyon: Doctor");
+    expect(error.message).not.toContain("unexpected unit failure");
+    expect(error.technicalDetail).toContain("unexpected unit failure");
   });
 });
 

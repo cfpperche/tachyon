@@ -7,6 +7,7 @@ import { Workspace } from "../../src/workspace/Workspace.js";
 import type { EngineHost, NoticeAction, ViewKind, WatchEvents } from "../../src/workspace/EngineHost.js";
 import { TMUX_CONTROL_CONCURRENCY, TmuxService, sessionName, workspaceHash, type ExecResult } from "../../src/tmux/TmuxService.js";
 import { Bridge } from "../../src/bridge/Bridge.js";
+import { PersistentBridgeLaunchError, PersistentBridgeService } from "../../src/bridge/PersistentBridgeService.js";
 import type { NotifyLevel } from "../../src/bridge/tools.js";
 import { agentLogId } from "../../src/activity/logStore.js";
 import { readSessionOwners, sessionOwnersFile } from "../../src/activity/sessionOwners.js";
@@ -23,12 +24,12 @@ import { canonicalBehaviorStubPath } from "../../src/bridge/behaviorStub.js";
 
 /** In-memory EngineHost — every host touchpoint is a no-op/recorder; the engine can't tell it isn't vscode. */
 class FakeHost implements EngineHost {
-  readonly notices: { message: string; level: NotifyLevel }[] = [];
+  readonly notices: { message: string; level: NotifyLevel; actions: NoticeAction[] }[] = [];
   readonly watches: Array<{ root: string; glob: string; events: WatchEvents; onEvent: () => void; disposed: boolean }> = [];
   private readonly stateMap = new Map<string, unknown>();
   t = (message: string, ...args: (string | number | boolean)[]): string => message.replace(/\{(\d+)\}/g, (_m, i) => String(args[Number(i)] ?? ""));
-  notify(message: string, level: NotifyLevel = "info", _actions?: NoticeAction[]): void {
-    this.notices.push({ message, level });
+  notify(message: string, level: NotifyLevel = "info", actions: NoticeAction[] = []): void {
+    this.notices.push({ message, level, actions: [...actions] });
   }
   focusPrimaryView(): void {}
   executeCommand(command: string): Promise<unknown> {
@@ -483,6 +484,41 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     expect(auditLines[0].payload).toMatchObject({ kind: "outcome", actionId: "act-reload-recover", state: "reattached_verified" });
     expect(host.notices).toEqual([]);
     ws.dispose();
+  });
+
+  it("surfaces persistent Bridge launch remediation with Doctor and retry actions", async () => {
+    const root = mkdir();
+    fs.writeFileSync(path.join(root, "tachyon.yml"), "agents:\n  idle:\n    cmd: sh\n", "utf8");
+    const host = new FakeHost(mkdir());
+    const { tmux } = fakeTmux();
+    const launchError = new PersistentBridgeLaunchError(
+      "SYSTEMD_USER_UNAVAILABLE",
+      "Bridge is off because WSL user services are not running. Set [boot] systemd=true in /etc/wsl.conf, run wsl --shutdown from Windows, reopen VS Code, then retry the Bridge.",
+      "systemd-run exited with code 1: Failed to connect to bus: No medium found",
+    );
+    const ensure = vi.spyOn(PersistentBridgeService.prototype, "ensureAndRegister").mockRejectedValue(launchError);
+    const start = vi.spyOn(Bridge.prototype, "start").mockResolvedValue(41_000);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    let ws: Workspace | undefined;
+
+    try {
+      ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux, persistentBridge: true });
+      const notice = host.notices.find((candidate) => candidate.actions.some((action) => action.label === "Retry Bridge"));
+      expect(notice?.message).toContain("wsl --shutdown");
+      expect(notice?.message).not.toContain("Failed to connect to bus");
+      expect(notice?.actions.map((action) => action.label)).toEqual(["Retry Bridge", "Run Doctor"]);
+      expect(ws.bridgeStartFailureInfo()).toEqual({
+        code: "SYSTEMD_USER_UNAVAILABLE",
+        message: launchError.message,
+        technicalDetail: launchError.technicalDetail,
+      });
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("Failed to connect to bus"));
+    } finally {
+      await ws?.dispose();
+      ensure.mockRestore();
+      start.mockRestore();
+      warn.mockRestore();
+    }
   });
 
   it("blocks reloadWindow while another agent is actively working", async () => {

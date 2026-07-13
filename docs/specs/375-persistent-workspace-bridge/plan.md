@@ -20,6 +20,10 @@ HTTP 503 with `HOST_UNAVAILABLE`. Extension disposal closes only the private bac
   process tree.
 - **Immediate 503 while detached** — bounded and honest; arbitrary request queueing is rejected.
 - **Explicit upgrade restart** — no hot protocol migration in this slice.
+- **Typed launch failures, actionable notice** — classify missing `systemd-run`, unavailable user systemd and
+  unexpected launcher failures. Keep the toast concise, retain bounded technical detail in logs, and offer Doctor
+  plus an in-place retry. Do not silently fall back to an Extension Host child because that would reintroduce the
+  reload failure this spec exists to remove.
 
 ## Files touched
 
@@ -27,7 +31,8 @@ HTTP 503 with `HOST_UNAVAILABLE`. Extension disposal closes only the private bac
 - `src/bridge/persistentProxyDaemon.ts` — detached proxy executable.
 - `src/bridge/PersistentBridgeService.ts` — ensure/register/health/stop client.
 - `src/bridge/Bridge.ts` — private listener versus advertised public endpoint.
-- `src/workspace/Workspace.ts`, `src/extension.ts`, `package.json` — lifecycle and explicit commands.
+- `src/workspace/Workspace.ts`, `src/extension.ts`, `package.json` — lifecycle, actionable startup notice and
+  explicit commands.
 - focused tests and `scripts/dogfood/persistent-bridge.mjs`.
 
 ## Risks & unknowns

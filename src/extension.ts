@@ -1308,6 +1308,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           url: ws.bridge.url,
           reachable,
           authConfigured: ws.authEnabled,
+          failure: ws.bridgeStartFailureInfo(),
         },
         transcriptPresence,
         mechanismOnlyDelivery: ws.config?.settings.delivery?.mode === "canonical" && ws.config?.settings.delivery?.handoffSafety === "mechanism-only",

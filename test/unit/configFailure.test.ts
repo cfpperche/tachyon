@@ -196,4 +196,34 @@ describe("doctor report", () => {
     expect(text).toContain("Invalid tachyon.yml");
     expect(text).toContain("reviewer");
   });
+
+  it("shows the retained persistent Bridge launch detail when startup failed", () => {
+    const report = buildDoctorReport({
+      workspaceRoot: "/ws",
+      configPath: "/ws/tachyon.yml",
+      configFileExists: true,
+      configValid: true,
+      configFailure: null,
+      lkg: null,
+      ledger: [],
+      liveSessions: new Set(),
+      knownSessions: new Set(),
+      bridge: {
+        port: undefined,
+        url: undefined,
+        failure: {
+          code: "SYSTEMD_USER_UNAVAILABLE",
+          message: "Bridge is off because WSL user services are not running.",
+          technicalDetail: "systemd-run exited with code 1: Failed to connect to bus: No medium found",
+        },
+      },
+    });
+
+    expect(report.findings).toContainEqual(expect.objectContaining({
+      id: "bridge.start_failed",
+      severity: "error",
+      detail: expect.stringContaining("Failed to connect to bus"),
+    }));
+    expect(formatDoctorReport(report)).toContain("SYSTEMD_USER_UNAVAILABLE");
+  });
 });

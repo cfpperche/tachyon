@@ -42,7 +42,7 @@ export interface EngineHost {
   /** bring the shell's primary Tachyon view to focus (a one-way UI nudge; no-op for a headless host). */
   focusPrimaryView(): void;
   /** stable host shim for adapter-internal VS Code commands; the engine never exposes this to agents directly. */
-  executeCommand(command: string): Promise<unknown>;
+  executeCommand(command: string, ...args: unknown[]): Promise<unknown>;
 
   // FileWatchPort — `glob` relative to `root`; the impl chooses vscode-watcher / chokidar / polling.
   watch(root: string, glob: string, events: WatchEvents, onEvent: () => void): HostDisposable;

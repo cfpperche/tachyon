@@ -16,6 +16,30 @@ import type { PersistentProxyDaemonOptions } from "./persistentProxyDaemon.js";
 
 const START_TIMEOUT_MS = 5_000;
 const STALE_START_LOCK_MS = 10_000;
+const MAX_LAUNCH_DETAIL_LENGTH = 800;
+
+export type PersistentBridgeLaunchFailureCode =
+  | "SYSTEMD_RUN_MISSING"
+  | "SYSTEMD_USER_UNAVAILABLE"
+  | "SYSTEMD_RUN_FAILED";
+
+export class PersistentBridgeLaunchError extends Error {
+  constructor(
+    readonly code: PersistentBridgeLaunchFailureCode,
+    message: string,
+    readonly technicalDetail: string,
+  ) {
+    super(message);
+    this.name = "PersistentBridgeLaunchError";
+  }
+}
+
+export interface PersistentBridgeSystemdFailureInput {
+  spawnError?: unknown;
+  exitCode?: number | null;
+  output?: string;
+  isWsl?: boolean;
+}
 
 export interface PersistentBridgeLaunchInput {
   options: PersistentProxyDaemonOptions;
@@ -208,15 +232,60 @@ function runSystemdRun(args: string[], cwd: string): Promise<void> {
     };
     child.stdout?.on("data", append);
     child.stderr?.on("data", append);
-    child.once("error", reject);
+    child.once("error", (error) => reject(persistentBridgeSystemdLaunchError({ spawnError: error })));
     child.once("close", (code) => {
       if (code === 0) resolve();
-      else {
-        const detail = output.trim();
-        reject(new Error(`systemd-run failed to launch persistent Bridge proxy${detail ? `: ${detail}` : ""}`));
-      }
+      else reject(persistentBridgeSystemdLaunchError({ exitCode: code, output }));
     });
   });
+}
+
+export function persistentBridgeSystemdLaunchError(input: PersistentBridgeSystemdFailureInput): PersistentBridgeLaunchError {
+  const spawnCode = (input.spawnError as NodeJS.ErrnoException | undefined)?.code;
+  const isWsl = input.isWsl ?? detectWslEnvironment();
+  const output = boundedLaunchDetail(input.output);
+  const spawnDetail = boundedLaunchDetail(input.spawnError instanceof Error ? input.spawnError.message : input.spawnError);
+  const technicalDetail = output
+    ? `systemd-run exited with code ${input.exitCode ?? "unknown"}: ${output}`
+    : spawnDetail || `systemd-run exited with code ${input.exitCode ?? "unknown"} without output`;
+
+  if (spawnCode === "ENOENT") {
+    return new PersistentBridgeLaunchError(
+      "SYSTEMD_RUN_MISSING",
+      isWsl
+        ? "Bridge is off because systemd-run is not installed inside WSL. Install or enable systemd, restart WSL, then retry the Bridge."
+        : "Bridge is off because systemd-run is not installed. Install systemd for this Linux environment, restart the session, then retry the Bridge.",
+      technicalDetail,
+    );
+  }
+
+  if (/failed to connect to bus|system has not been booted with systemd|no medium found|connection refused|transport endpoint is not connected/i.test(`${output} ${spawnDetail}`)) {
+    return new PersistentBridgeLaunchError(
+      "SYSTEMD_USER_UNAVAILABLE",
+      isWsl
+        ? "Bridge is off because WSL user services are not running. Set [boot] systemd=true in /etc/wsl.conf, run wsl --shutdown from Windows, reopen VS Code, then retry the Bridge."
+        : "Bridge is off because the Linux user service manager is not running. Start a systemd user session, then retry the Bridge.",
+      technicalDetail,
+    );
+  }
+
+  return new PersistentBridgeLaunchError(
+    "SYSTEMD_RUN_FAILED",
+    "Bridge could not start as a persistent Linux service. Run Tachyon: Doctor for details, then retry the Bridge.",
+    technicalDetail,
+  );
+}
+
+function boundedLaunchDetail(value: unknown): string {
+  const detail = String(value ?? "").replace(/\s+/g, " ").trim();
+  if (detail.length <= MAX_LAUNCH_DETAIL_LENGTH) return detail;
+  return `${detail.slice(0, MAX_LAUNCH_DETAIL_LENGTH - 1)}…`;
+}
+
+function detectWslEnvironment(): boolean {
+  if (process.env.WSL_DISTRO_NAME || process.env.WSL_INTEROP) return true;
+  try { return fs.readFileSync("/proc/version", "utf8").toLowerCase().includes("microsoft"); }
+  catch { return false; }
 }
 
 function validDescriptor(descriptor: unknown, workspaceRoot: string, workspaceHash: string): descriptor is PersistentBridgeDescriptor {
