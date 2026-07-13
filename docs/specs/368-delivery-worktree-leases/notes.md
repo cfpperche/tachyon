@@ -2161,3 +2161,25 @@ Commits `f291c637` and `8732ea4e` restored the exact contract—preflight failur
 not-ready runtime records none—without weakening the bootstrap gate. Focused Bridge/snBell verification passed
 65/65, typecheck and diff-check passed, and the final `npm run verify:full:quiet` passed 320 files with 3,802
 tests passed and 3 skipped. T14.6B is therefore closed; T14.6C remains the separate strong process-fenced rollout.
+
+### Live mechanism-only dogfood — 0.55.94 → 0.55.95 — 2026-07-12
+
+The first installed 0.55.94 lifecycle failed closed rather than creating a fallback worktree. Delivery
+`d-spawn-25c857778fe39ab24f19134049436819` quarantined when a cleanly ended predecessor no longer had a pane PID;
+the old algorithm invoked the live-pane stopper before observing the persisted process identity. Task `t-9d4605`
+closed that concrete defect at `bd0f4e1d`: mechanism-only now accepts pre-observed `gone`, while `alive` still
+requires exact stop plus post-observed `gone` and unknown/malformed evidence still quarantines. Sonnet's independent
+review `.tachyon/reviews/368-mechanism-gone-predecessor-r1.md` returned ACCEPT and independently proved fail-base /
+pass-candidate. The corrected 0.55.95 package was built from clean commit `a3163eae`, provenance/full verification
+passed 321 files with 3,808 tests passed and 3 skipped, and the installed extension hash matched its embedded record.
+
+Fresh Delivery `d-spawn-3d384f3694c8c322f9c62482f00d2525` then completed the real sequential lifecycle in exactly
+one canonical worktree: incomplete Grok implementer → direct FINDINGS review → Grok fixer → final ACCEPT review.
+Two intermediate reviewer occupations were discarded and disclosed rather than accepted: Sonnet spawned invisible
+runtime-private subagents, and Codex reached a permission prompt that the false readiness classifier refused to
+answer. They did not write tracked content and still reused the same worktree, exercising additional safe handoffs.
+Coordinator `delivery_complete_review` persisted both FINDINGS and ACCEPT with `root_gone_best_effort`; the final
+canonical gate accepted without waivers at
+`.tachyon/verifications/d90a49e267ac9af48655586cd0af5b05b05f8eae.ceb27cbf9a5927ac.json`. The versioned evidence
+is `dogfood-0.55.95.md`. Mechanism-only is therefore live-proven for clean sequential reuse, while descendant
+absence, crash recovery, quarantine recovery and strong isolation remain explicitly T14.6C/T18 work.

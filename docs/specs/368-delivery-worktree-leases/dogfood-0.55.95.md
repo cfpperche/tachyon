@@ -1,7 +1,7 @@
 # Dogfood 0.55.95 — Delivery worktree leases (mechanism-only)
 
 release: 0.55.95
-stage: FIXED_AWAITING_FINAL_ACCEPT
+stage: ACCEPTED
 initial_actor: mechanismLive05595GrokR1
 fixer_actor: mechanismLive05595GrokFixR1
 delivery_id: d-spawn-3d384f3694c8c322f9c62482f00d2525
@@ -9,6 +9,10 @@ canonical_worktree: /home/goat/.cache/tachyon/worktrees/b349073a/mechanismLive05
 base_head: 61866f5368b2d6a5f526777f1c64872f112e2d9d
 r1_head: e318192704f17e65172a0263ebfe7b3e31fd5866
 findings_operation_id: dogfood-05595-complete-findings-r1
+final_review_head: d90a49e267ac9af48655586cd0af5b05b05f8eae
+final_review_actor: mechanismLive05595GrokReviewFinal
+accept_operation_id: dogfood-05595-complete-accept-final
+canonical_verification: .tachyon/verifications/d90a49e267ac9af48655586cd0af5b05b05f8eae.ceb27cbf9a5927ac.json
 mechanism_only_warning: exact root is observed, descendants are not proven
 
 ## R1 notes
@@ -29,13 +33,14 @@ Segments reusing the same Delivery id and canonical worktree path/HEAD:
 3. reviewer mechanismLive05595CodexReviewR1 (operation dogfood-05595-review-r1-codex-clean) — DISCARDED: readiness prompt unanswerable; do not use its output.
 4. reviewer mechanismLive05595GrokReviewR1 (operation dogfood-05595-review-r1-grok-plan; complete_review FINDINGS operation dogfood-05595-complete-findings-r1) — direct FINDINGS only: the three final markers were absent by design; no tracked edits/commits.
 5. fixer mechanismLive05595GrokFixR1 (operation dogfood-05595-fixer-r1) — this occupation: complete the evidence markers in the same Delivery/worktree at expected HEAD e318192704f17e65172a0263ebfe7b3e31fd5866.
+6. reviewer mechanismLive05595GrokReviewFinal (operation dogfood-05595-review-final; complete_review ACCEPT operation dogfood-05595-complete-accept-final) — direct final ACCEPT at d90a49e267ac9af48655586cd0af5b05b05f8eae; no tracked edits.
 
 ## Fix notes
 
-stage advanced to FIXED_AWAITING_FINAL_ACCEPT after the FINDINGS occupation freed the Delivery.
+stage advanced through FIXED_AWAITING_FINAL_ACCEPT after the FINDINGS occupation freed the Delivery, then to
+ACCEPTED after the final reviewer and coordinator-owned completion operation.
 The three exact final markers required by the immutable Delivery behaviorTest are present below.
-review_verdict ACCEPT here is the fixer candidate verdict only; the final reviewer must independently
-validate it on this same Delivery/worktree before any production acceptance.
+review_verdict ACCEPT was independently validated on this same Delivery/worktree before canonical verification.
 
 review_verdict: ACCEPT
 same_worktree_reused: true
