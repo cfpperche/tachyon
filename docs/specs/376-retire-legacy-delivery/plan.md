@@ -28,6 +28,31 @@ landing
 Generic sessions stay outside this graph. They manage a process, not a tracked change, and therefore get no
 Delivery/GitDelivery/verification state.
 
+## Correlation with existing work
+
+Spec 376 is the hard-cut successor to existing migration work, not a second independent implementation queue.
+Relationships are deliberately split into **absorbed**, **evidence to preserve**, and **separate** so a related
+task is not accidentally treated as a blocking dependency.
+
+| Existing item | Relation to spec 376 | Disposition |
+|---|---|---|
+| `t-c91486` — remove legacy DelegationRecord/GitDelivery | Same product outcome, but its old contract waited for all of spec 368 plus a compatibility window | **Superseded by `t-85f251`.** Preserve its preview, archive, no-Git-mutation, upgrade-diagnostic, and dogfood requirements; replace its sequencing with the maintainer-approved hard cut |
+| `t-0b5723` / spec 368 | Architectural predecessor that produced canonical Delivery, sequential leases, reload binding, and linked projection policy | **Related, not a dependency.** Spec 376 consumes the already-landed mechanism but does not finish, close, or change the status of spec 368 |
+| spec 368 T16 | Proposed selectable rollout modes and legacy-by-default compatibility | **Contract replaced, checkbox untouched.** Spec 376 removes the selector and compatibility path instead of satisfying T16 as written |
+| spec 368 T17 | Broader temp-git lifecycle including a second concurrent Delivery | **Partial overlap only.** Spec 376 owns the canonical-only retirement fixture and optimal one-Delivery lifecycle; it does not claim T17's complete matrix |
+| `t-dc5d94` / spec 368 T18 | Accepted installed mechanism-only dogfood on one Delivery/worktree | **Completed baseline evidence.** T6 reruns the happy path after legacy removal; prior dogfood does not substitute for the post-cut proof or close T18's crash/recovery matrix |
+| spec 368 T19 | Proposed making canonical the default while retaining explicit legacy compatibility | **Superseded direction, checkbox untouched.** Spec 376 removes legacy entirely, so it cannot truthfully mark T19's different contract complete |
+| spec 368 T20 | Closure of all spec 368 acceptance | **Separate and untouched.** Closing spec 376 must not move `t-0b5723` or spec 368 to done |
+| `t-0de165`, `t-a9d850`, `t-815796` | Bugs/design around `reuse_worktree` and DelegationRecord-owned worktree transfer | **Legacy branch retired.** Do not repair `t-0de165`; remove the public path. Preserve the historical landed evidence, while canonical successors use `delivery_join` |
+| `t-7acc58` | Existing coordinator waiver behavior is coupled to legacy verification identity | **Regression contract to preserve.** The direct Delivery verifier must retain auditable coordinator waivers without reading or editing a DelegationRecord |
+| `t-aa9b77` | Existing live-worktree and prune safety in GitDelivery hygiene | **Regression contract to preserve.** Projection-only refactoring must keep the live/dirty/unknown fail-closed behavior |
+| `t-13c2b6`, `t-cd8cbe`, `t-108a79` | Residual fault-injection, recovery-window, and ProcessFence hardening | **Separate, non-blocking work.** None is pulled into spec 376 and none becomes complete because the legacy path is removed |
+| `t-e7a032` / `t-2a2af8` | General inventory, cleanup, disk GC, and worktree retention | **Related but separate.** T5 retires only old metadata; general cleanup still owns branches, worktrees, caches, sessions, and disk reclamation |
+
+The board dependency list for `t-85f251` therefore remains empty: all required canonical primitives are already
+landed, while the open related tasks are either superseded or explicitly out of scope. Board relations and this
+table provide traceability without creating a false wait on unfinished spec 368 work.
+
 ### 1. Freeze and retire active legacy state
 
 Add one human-invoked retirement action with preview and apply phases. Preview reads raw legacy metadata only to

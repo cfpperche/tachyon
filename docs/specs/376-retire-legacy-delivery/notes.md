@@ -20,6 +20,17 @@ _Created 2026-07-13._
 - Process-fenced work remains unreachable and outside this spec. The product path is mechanism-only; no remaining
   368 acceptance criterion is pulled into this closure.
 
+## Existing-work correlation — 2026-07-13
+
+- The initial plan linked spec 368 but did not systematically correlate the existing board tasks.
+- `t-c91486` is the direct predecessor and is superseded by `t-85f251`; its safe preview/archive requirements are
+  retained, while its wait-for-368/deprecation-window sequencing is replaced by the maintainer's hard-cut decision.
+- `t-0de165` is made obsolete by removing `reuse_worktree` rather than repairing that compatibility path.
+- Completed dogfood `t-dc5d94` is baseline evidence only; spec 376 still requires a fresh installed post-cut dogfood.
+- Cleanup tasks `t-e7a032`/`t-2a2af8` and residual 368 hardening tasks remain independent and non-blocking.
+- The exact T16–T20 overlap and the regression obligations from `t-7acc58` and `t-aa9b77` are recorded in
+  `plan.md`; no unchecked spec 368 task is implicitly claimed complete.
+
 ## Deviations
 
 None yet.
