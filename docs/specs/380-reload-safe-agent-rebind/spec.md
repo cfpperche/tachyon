@@ -2,7 +2,11 @@
 
 _Created 2026-07-14._
 
-**Status:** in-progress
+**Status:** shipped
+**Closure:** Tachyon 0.56.4 (`42ef0d51`, production fix `b85da800`) shipped the bounded
+post-activation survivor rescan; installed generation-47 dogfood recorded `codex` through
+`preflight_ok -> stop -> dead -> resume_ok`, advanced its durable Bridge binding to generation 47,
+and restored this session's native MCP calls without a stale-client hang.
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,

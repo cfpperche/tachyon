@@ -126,3 +126,19 @@ None.
   stop/resume/stamp path.
 - The new regression failed against parent `ac6722e8` with `inventorySettled=false` and passed at
   `b85da800`.  The complete AgentManager + rebind focus passed 317/317; typecheck and diff-check passed.
+
+## Installed 0.56.4 closure dogfood — 2026-07-14
+
+- The installed extension provenance reports version `0.56.4`, commit `42ef0d51`, clean tree, and the
+  expected packaged distribution hashes.  The persistent daemon serving this workspace runs from the
+  installed `cfpperche.tachyon-0.56.4` extension.
+- After the maintainer's Reload Window, generation 47 audit records `codex` as
+  `preflight_ok -> stop -> dead -> resume_ok`; its durable `bridgeClient.boundGeneration` is 47.  This is
+  the survivor that generation 46 omitted before the bounded rescan fix.
+- The resumed Codex session's own native Bridge transport returned `get_continuity`,
+  `get_project_handoff`, `list_agents`, and `get_task(t-25cc1c)` immediately.  This closes the installed
+  stale-client symptom rather than inferring success only from process liveness.
+- The same reload also completed ordinary generation-47 rebinds for `codex-budget`, `codex-soul`, and
+  `grok`.  No live Delivery-bound execution or private-home reviewer was present, so the closure does
+  not overclaim live proof for those paths; their no-stop/private-home contracts remain enforced by the
+  deterministic regressions already recorded above.
