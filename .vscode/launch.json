@@ -8,10 +8,7 @@
       "args": [
         "${workspaceFolder}/.tachyon/dev-host/workspace",
         "--extensionDevelopmentPath=${workspaceFolder}/.tachyon/dev-host/extension",
-        "--user-data-dir=${workspaceFolder}/.tachyon/dev-host/user-data",
-        "--extensions-dir=${workspaceFolder}/.tachyon/dev-host/extensions",
-        "--disable-workspace-trust",
-        "--use-inmemory-secretstorage"
+        "--disable-workspace-trust"
       ],
       "env": {
         "TMUX_TMPDIR": "${workspaceFolder}/.tachyon/dev-host/tmux",

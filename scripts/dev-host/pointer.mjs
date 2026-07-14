@@ -137,6 +137,11 @@ export function writeAbsoluteLaunchConfig(repoRoot, worktreeAbs, workspaceAbs) {
   }
   const p = pathsOf(repoRoot);
   const idx = doc.configurations.findIndex((c) => c && c.name === LAUNCH_CONFIG_NAME);
+  // Do NOT set --extensions-dir / --user-data-dir for F5 from a WSL-remote parent window:
+  // an empty private extensions dir drops ms-vscode-remote.remote-wsl and the EDH opens
+  // "Disconnected from WSL" with an empty UI (fixture name in title, no Explorer).
+  // Match the working "Run Tachyon (demo)" pattern: folder + extensionDevelopmentPath only.
+  // Isolation stays via fixture workspace + private TMUX_TMPDIR / XDG_CACHE_HOME.
   const cfg = {
     name: LAUNCH_CONFIG_NAME,
     type: "extensionHost",
@@ -144,10 +149,7 @@ export function writeAbsoluteLaunchConfig(repoRoot, worktreeAbs, workspaceAbs) {
     args: [
       workspaceAbs,
       `--extensionDevelopmentPath=${worktreeAbs}`,
-      `--user-data-dir=${p.userData}`,
-      `--extensions-dir=${p.extensions}`,
       "--disable-workspace-trust",
-      "--use-inmemory-secretstorage",
     ],
     env: {
       TMUX_TMPDIR: p.tmux,
@@ -188,10 +190,7 @@ export function restoreTemplateLaunchConfig(repoRoot) {
     args: [
       "${workspaceFolder}/.tachyon/dev-host/workspace",
       "--extensionDevelopmentPath=${workspaceFolder}/.tachyon/dev-host/extension",
-      "--user-data-dir=${workspaceFolder}/.tachyon/dev-host/user-data",
-      "--extensions-dir=${workspaceFolder}/.tachyon/dev-host/extensions",
       "--disable-workspace-trust",
-      "--use-inmemory-secretstorage",
     ],
     env: {
       TMUX_TMPDIR: "${workspaceFolder}/.tachyon/dev-host/tmux",
