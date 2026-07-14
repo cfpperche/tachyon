@@ -893,12 +893,50 @@ backstop; CPU sampling for attention stays polled — tmux has no events for tha
   `tachyon.yml` takes precedence.
 - In `tachyon.yml` → `settings:`: `maxAgents`, `bridgePort`, `auth`, `tmux`, `worktree`,
   `bridgeGuidance` (default true — append Bridge-coordination guidance to Bridge-spawned children),
+  `projectGuidance` (explicit project-owned guidance files; no default),
   `anchor.auto` (default false — opt-in role re-anchoring after a detected compaction; see *Instructions — agents as roles*),
   `clipboard` (`auto` default — clean UTF-8 copy on plain drag-select; `off` restores OSC 52).
 - `settings.tmux` — tmux options for Tachyon's dedicated socket (applied as `set -g <key> <value>`).
   Tachyon's defaults (`mouse on`, `focus-events on`, `history-limit 10000`) apply first and your
   map overlays them; `remain-on-exit` is reserved. Your `~/.tmux.conf` is never loaded (Tachyon
   runs config-isolated), so this is the only door to tune tmux.
+
+### Project-owned agent guidance
+
+Projects can opt in to repository conventions that Tachyon should deliver to agents without making
+those conventions part of Tachyon's product-global primer:
+
+```yaml
+settings:
+  projectGuidance:
+    files:
+      - docs/agent-guidance.md
+      - docs/testing-conventions.md
+```
+
+`files` is an ordered, non-empty list. Tachyon reads each file from the **source workspace** that
+owns `tachyon.yml` (never from an agent's delegated worktree or process cwd), preserves its content
+verbatim, labels its source, and places it in a separate `PROJECT GUIDANCE (PROJECT-OWNED)` block.
+There is no process-global content cache, so the next supported startup push (spawn or restart) or
+re-anchor sees the current files. Omit `projectGuidance` to deliver no project-owned block. Startup
+delivery uses Tachyon's existing prompt-capable adapters (including Hermes through
+`HERMES_TUI_QUERY`); commands that explicitly manage/resume their own transcript and runtimes with
+no startup-prompt adapter are launched without primer or project guidance so Tachyon does not alter
+their command semantics. Manual re-anchor remains an explicit live-pane push for running agents.
+
+The active system/user instructions and task contract remain authoritative for their scopes;
+Tachyon's primer owns orchestration protocol; project guidance owns repository conventions and
+cannot override that protocol. Tachyon does **not** auto-discover `AGENTS.md`, `CLAUDE.md`,
+`GEMINI.md`, or another runtime-specific context filename. Only the explicitly listed files enter
+this Tachyon-owned delivery channel.
+
+The list accepts 1–8 unique POSIX-style relative paths. Each path is limited to 256 UTF-8 bytes;
+absolute, drive/UNC, backslash, control-character, empty, `.`, `..`, and trailing-slash forms are
+rejected. Every target must remain canonically inside the source workspace and be a readable,
+regular, non-symlink UTF-8 file without NUL bytes. The combined file content is limited to 64 KiB.
+Validation is all-or-nothing and fail-closed: one missing, unreadable, escaping, malformed, or
+oversized source prevents session creation/replacement or re-anchor before any partial guidance is
+typed.
 
 ## Worktree isolation — parallel agents, one branch each
 

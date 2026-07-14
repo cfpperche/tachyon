@@ -183,6 +183,9 @@ agents:
 
 settings:
   auth: true # require a Bearer token on the MCP Bridge (recommended)
+  projectGuidance:
+    files:
+      - docs/project-guidance.md
   # SDD 368 dogfood — exact-root handoff safety only; descendants remain unproven until T14.6C.
   delivery:
     mode: canonical

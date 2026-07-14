@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { parseConfig, inferKind, composeCommand, resolveBinary } from "../../src/config/loadConfig.js";
+import { PROJECT_GUIDANCE_MAX_FILES } from "../../src/config/projectGuidance.js";
 
 const VALID = `
 agents:
@@ -252,6 +253,45 @@ describe("parseConfig", () => {
     expect(parseConfig(`${base}settings:\n  verify:\n    full: ""\n`).errors[0]).toContain("settings.verify.full");
     expect(parseConfig(`${base}settings:\n  verify:\n    typecheck: 3\n`).errors[0]).toContain("settings.verify.typecheck");
     expect(parseConfig(`${base}settings:\n  verify:\n    extra: true\n`).errors[0]).toContain("settings.verify: unknown key 'extra'");
+  });
+
+  it("parses ordered project-owned guidance paths, trimming only their outer whitespace", () => {
+    const { config, errors } = parseConfig(
+      `agents:\n  a:\n    cmd: x\nsettings:\n  projectGuidance:\n    files:\n      - "  docs/regras do projeto.md  "\n      - docs/ação.md\n`,
+    );
+    expect(errors).toEqual([]);
+    expect(config?.settings.projectGuidance).toEqual({ files: ["docs/regras do projeto.md", "docs/ação.md"] });
+  });
+
+  it("keeps settings.projectGuidance a closed mapping with a required non-empty files list", () => {
+    const base = `agents:\n  a:\n    cmd: x\n`;
+    expect(parseConfig(`${base}settings:\n  projectGuidance: docs/guide.md\n`).errors[0]).toContain("must be a mapping");
+    expect(parseConfig(`${base}settings:\n  projectGuidance: {}\n`).errors.some((error) => error.includes("non-empty list"))).toBe(true);
+    expect(parseConfig(`${base}settings:\n  projectGuidance:\n    files: []\n`).errors.some((error) => error.includes("non-empty list"))).toBe(true);
+    expect(parseConfig(`${base}settings:\n  projectGuidance:\n    files: [docs/guide.md]\n    inline: nope\n`).errors.some((error) => error.includes("unknown key 'inline'"))).toBe(true);
+    expect(parseConfig(`${base}settings:\n  projectGuidance:\n    files: [3]\n`).errors.some((error) => error.includes("files[0]") && error.includes("path string"))).toBe(true);
+  });
+
+  it("validates project-guidance count, uniqueness, and conservative POSIX-relative path syntax", () => {
+    const base = `agents:\n  a:\n    cmd: x\n`;
+    const parsePath = (sourcePath: string) =>
+      parseConfig(`${base}settings:\n  projectGuidance:\n    files:\n      - ${JSON.stringify(sourcePath)}\n`).errors;
+
+    for (const sourcePath of ["/outside.md", "C:/outside.md", "docs/C:../outside.md", "docs/C:/outside.md", "docs\\guide.md", "../outside.md", "docs/../outside.md", "./guide.md", "docs//guide.md", "docs/", "docs/\0guide.md"]) {
+      expect(parsePath(sourcePath).some((error) => error.includes("settings.projectGuidance.files[0]"))).toBe(true);
+    }
+    expect(parsePath(`docs/${"é".repeat(130)}.md`).some((error) => error.includes("256 UTF-8 bytes"))).toBe(true);
+
+    const duplicate = parseConfig(
+      `${base}settings:\n  projectGuidance:\n    files:\n      - docs/guide.md\n      - " docs/guide.md "\n`,
+    );
+    expect(duplicate.errors.some((error) => error.includes("duplicate path"))).toBe(true);
+
+    const tooMany = Array.from({ length: PROJECT_GUIDANCE_MAX_FILES + 1 }, (_, index) => `      - docs/${index}.md`).join("\n");
+    expect(parseConfig(`${base}settings:\n  projectGuidance:\n    files:\n${tooMany}\n`).errors.some((error) => error.includes("at most 8 paths"))).toBe(true);
+
+    const maximum = Array.from({ length: PROJECT_GUIDANCE_MAX_FILES }, (_, index) => `      - docs/${index}.md`).join("\n");
+    expect(parseConfig(`${base}settings:\n  projectGuidance:\n    files:\n${maximum}\n`).errors).toEqual([]);
   });
 
   // spec 215 — the terminals: block

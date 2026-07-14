@@ -3,6 +3,11 @@ import { parse as parseYaml } from "yaml";
 import { type Role, isRole, ROLES } from "../roles/templates.js";
 import { binaryOf, binaryIndex } from "../resume/adapters.js";
 import { TASK_NOTIFICATION_EVENT_IDS, type TaskNotificationSettingsInput } from "../tasks/taskNotificationPolicy.js";
+import {
+  PROJECT_GUIDANCE_MAX_FILES,
+  projectGuidancePathError,
+  type ProjectGuidanceSettings,
+} from "./projectGuidance.js";
 
 export interface AttentionDef {
   enabled: boolean;
@@ -189,9 +194,7 @@ export function shellQuote(text: string): string {
 }
 
 export function instructionsDeliverable(cmd: string): boolean {
-  const tokens = cmd.trim().split(/\s+/);
-  const base = (tokens[0] ?? "").split("/").pop() ?? "";
-  return base in INSTRUCTION_ARG;
+  return resolveBinary(cmd) in INSTRUCTION_ARG;
 }
 
 /**
@@ -373,6 +376,8 @@ export interface TachyonConfig {
     worktree?: { base?: string; branch?: string; verify?: string };
     /** spec 362 — workspace verification commands for verify_task's tiered test execution. */
     verify?: { full?: string; typecheck?: string };
+    /** spec 383 — explicit project-owned onboarding documents, transported verbatim by Tachyon. */
+    projectGuidance?: ProjectGuidanceSettings;
     /** spec 216 — auto re-anchor an agent's role after a detected compaction (OFF by default; risky live injection) */
     anchor?: { auto?: boolean };
     /** spec 216 — append Bridge-coordination guidance to agents spawned via the Bridge (default true) */
@@ -1225,6 +1230,51 @@ export function parseConfig(yamlText: string): ParseResult {
           settings.verify = out;
         }
       }
+      if (raw.settings.projectGuidance !== undefined) {
+        if (!isPlainObject(raw.settings.projectGuidance)) {
+          errors.push("settings.projectGuidance: must be a mapping with a non-empty 'files' list");
+        } else {
+          const projectGuidance = raw.settings.projectGuidance;
+          const errorCountBefore = errors.length;
+          for (const key of Object.keys(projectGuidance)) {
+            if (key !== "files") errors.push(`settings.projectGuidance: unknown key '${key}'`);
+          }
+
+          if (!Array.isArray(projectGuidance.files) || projectGuidance.files.length === 0) {
+            errors.push("settings.projectGuidance.files: must be a non-empty list of workspace-relative path strings");
+          } else {
+            if (projectGuidance.files.length > PROJECT_GUIDANCE_MAX_FILES) {
+              errors.push(`settings.projectGuidance.files: must contain at most ${PROJECT_GUIDANCE_MAX_FILES} paths`);
+            }
+            const files: string[] = [];
+            const seen = new Set<string>();
+            for (let index = 0; index < projectGuidance.files.length; index++) {
+              const rawPath = projectGuidance.files[index];
+              if (typeof rawPath !== "string") {
+                errors.push(`settings.projectGuidance.files[${index}]: must be a path string`);
+                continue;
+              }
+              if (/[\u0000-\u001f\u007f-\u009f]/u.test(rawPath)) {
+                errors.push(`settings.projectGuidance.files[${index}]: must not contain control characters`);
+                continue;
+              }
+              const sourcePath = rawPath.trim();
+              const reason = projectGuidancePathError(sourcePath);
+              if (reason) {
+                errors.push(`settings.projectGuidance.files[${index}] (${JSON.stringify(sourcePath)}): ${reason}`);
+                continue;
+              }
+              if (seen.has(sourcePath)) {
+                errors.push(`settings.projectGuidance.files[${index}]: duplicate path ${JSON.stringify(sourcePath)}`);
+                continue;
+              }
+              seen.add(sourcePath);
+              files.push(sourcePath);
+            }
+            if (errors.length === errorCountBefore) settings.projectGuidance = { files };
+          }
+        }
+      }
       if (raw.settings.anchor !== undefined) {
         if (!isPlainObject(raw.settings.anchor)) {
           errors.push("settings.anchor: must be a mapping with 'auto'");
@@ -1405,7 +1455,7 @@ export function parseConfig(yamlText: string): ParseResult {
         }
       }
       for (const key of Object.keys(raw.settings)) {
-        if (!["maxAgents", "bridgePort", "auth", "legacyBridgeAuth", "layout", "tmux", "worktree", "verify", "anchor", "bridgeGuidance", "clipboard", "handoff", "persistence", "bridgeClientRebind", "gitDelivery", "delivery", "taskNotifications"].includes(key)) errors.push(`settings: unknown key '${key}'`);
+        if (!["maxAgents", "bridgePort", "auth", "legacyBridgeAuth", "layout", "tmux", "worktree", "verify", "projectGuidance", "anchor", "bridgeGuidance", "clipboard", "handoff", "persistence", "bridgeClientRebind", "gitDelivery", "delivery", "taskNotifications"].includes(key)) errors.push(`settings: unknown key '${key}'`);
       }
     }
   }

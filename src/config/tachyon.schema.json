@@ -295,6 +295,26 @@
           "default": true,
           "description": "Append Bridge-coordination guidance to agents spawned via the Bridge so delegated work stays visible in Tachyon (spec 216). Default true."
         },
+        "projectGuidance": {
+          "type": "object",
+          "description": "Opt-in, project-owned agent guidance loaded from explicitly declared source-workspace files. Tachyon transports the files in order and does not discover runtime-specific context files.",
+          "additionalProperties": false,
+          "required": ["files"],
+          "properties": {
+            "files": {
+              "type": "array",
+              "description": "Ordered, non-empty list of unique workspace-relative guidance files. Runtime validation additionally enforces UTF-8 byte, containment, file-type and aggregate-content limits.",
+              "minItems": 1,
+              "maxItems": 8,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              }
+            }
+          }
+        },
         "clipboard": {
           "type": "string",
           "enum": ["auto", "off"],

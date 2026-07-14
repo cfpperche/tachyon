@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { codexConfigCmd, codexFlagCmd, composeCommand, codexBridgeCmd, shellQuote, inferKind, type AgentDef, type EntryKind, type TachyonConfig } from "../config/loadConfig.js";
+import { codexConfigCmd, codexFlagCmd, composeCommand, codexBridgeCmd, shellQuote, inferKind, instructionsDeliverable, resolveBinary, type AgentDef, type EntryKind, type TachyonConfig } from "../config/loadConfig.js";
 import { composeInstructions, withBridgeGuidance } from "../roles/templates.js";
 import { TmuxService, sessionName, agentFromSession, SESSION_PREFIX } from "../tmux/TmuxService.js";
 import { adapterFor, adapterForRuntime, binaryOf, forkable, managesOwnSession, type ResumeAdapter, type ResumeRuntime } from "../resume/adapters.js";
@@ -27,7 +27,7 @@ import { assertVerifiedTranscriptIsolation, gracefulStopForCommand, isolationMec
 import { forgetAgent } from "./forgetAgent.js";
 import { wrapWithPrimer, renderPrimer } from "../bridge/primer.js";
 import { delegatedOpencodePermission, setOpencodePermission } from "../registration/adapters.js";
-import { deliverableBody } from "./briefFile.js";
+import { assertSafeBriefTransport, deliverableBody, previewDeliverableBody } from "./briefFile.js";
 import { ReuseWorktreeError, resolveReuseTarget, isOwnsSubset, type ReuseTarget } from "./reuseWorktree.js";
 import { isExplicitCodexModelCommand, parseLaunchCommand, RuntimeLaunchPreflightError, type RuntimeLaunchPreflightPort } from "../runtime/launchPreflight.js";
 import { CodexLaunchPreflight } from "../runtime/adapters/codexLaunchPreflight.js";
@@ -37,6 +37,7 @@ import {
   type CodexBootstrapInputMatch,
 } from "../runtime/adapters/codexLaunchReadiness.js";
 import { LaunchReadiness, type LaunchReadinessPort } from "../runtime/launchReadiness.js";
+import { loadAndRenderProjectGuidance } from "../config/projectGuidance.js";
 
 /** t-815796 MEDIUM fix — is `pid` still alive? `process.kill(pid, 0)` sends no signal, only probes.
  *  ESRCH is the one unambiguous "gone" answer; any other error (e.g. EPERM — exists, owned by someone
@@ -829,9 +830,8 @@ export class AgentManager {
    * NOT use this — a resumed session already carries its original instructions in its transcript.
    *
    * spec 363 T3 — the same composed instructions are then wrapped with the generated PRIMER
-   * (prepended) + BEFORE-FINISHING block (appended), UNLESS there is nothing being delivered at
-   * all (a bare declared entry with no role/instructions and no lineage — nothing to onboard
-   * around, so the non-gated/non-declared byte-identical guard holds for that case).
+   * (prepended) + BEFORE-FINISHING block (appended) for every agent entry. Terminals retain their
+   * byte-identical command because onboarding is agent context, never server/shell input.
    *
    * t-11a2d1 — a composed body past BRIEF_FILE_THRESHOLD is diverted to the agent's brief file
    * (deliverableBody) BEFORE the primer wrap: the pane payload gets a short pointer instead of the
@@ -839,34 +839,59 @@ export class AgentManager {
    * threshold passes through unchanged — short-brief delivery stays byte-identical.
    */
   /**
-   * Composed spawn brief (role + instructions + primer + brief-file diversion). Shared by
+   * Composed spawn brief (project guidance + role/instructions + primer + brief-file diversion). Shared by
    * `effectiveCmd` (argv delivery) and Hermes `HERMES_TUI_QUERY` (env delivery).
    */
   private effectiveInstructions(
     name: string,
     def: AgentDef,
     parent: string | undefined,
-    primerCtx?: { delegator?: string; gate?: DelegationGate; freshWorktree?: boolean },
+    primerCtx?: { delegator?: string; gate?: DelegationGate },
+    projectGuidance?: string,
   ): string | undefined {
+    // An explicit --resume/--continue/--session-id command owns its transcript and argv. Do not add
+    // even declared role/instructions as a positional startup prompt; several runtimes reject or
+    // reinterpret extra arguments on their resume form.
+    if (managesOwnSession(def.cmd) || (def.kind === "agent" && !instructionsDeliverable(def.cmd))) return undefined;
     const guidance = !!parent && (this.opts.getConfig()?.settings.bridgeGuidance ?? true);
     const composed = withBridgeGuidance(composeInstructions(def.role, def.instructions), guidance);
-    const deliverable = composed ? deliverableBody(this.opts.workspaceRoot, name, composed) : composed;
-    const spawner = primerCtx?.delegator ?? parent;
-    const instructions = deliverable?.trim() || spawner || primerCtx?.gate
+    // Project-owned policy is body content, not product protocol. Put it before the task/role body
+    // (task-specific instructions stay more recent) and before the long-brief diversion so an
+    // arbitrarily long configured document can never bypass tmux's measured payload ceiling.
+    const body = [projectGuidance, composed].filter((part): part is string => !!part?.trim()).join("\n\n");
+    const frame = (deliverable: string | undefined): string | undefined => def.kind === "agent"
       ? wrapWithPrimer(deliverable ?? "", {
           agentName: name,
           delegator: primerCtx?.delegator,
           parent,
           gate: primerCtx?.gate,
-          freshWorktree: primerCtx?.freshWorktree,
           verify: this.opts.getConfig()?.settings.verify,
         })
-      : composed;
+      : deliverable;
+    // Size-check the exact successful-write pointer before deliverableBody atomically replaces any
+    // prior brief. Thus an oversized verify/gate fact cannot change what the still-running pane's
+    // old pointer reads when restart is rejected.
+    const preview = body ? previewDeliverableBody(this.opts.workspaceRoot, name, body) : undefined;
+    const previewInstructions = frame(preview);
+    if (previewInstructions) assertSafeBriefTransport(previewInstructions, `agent '${name}' startup brief`);
+
+    const deliverable = body ? deliverableBody(this.opts.workspaceRoot, name, body) : undefined;
+    const instructions = frame(deliverable);
+    if (instructions) assertSafeBriefTransport(instructions, `agent '${name}' startup brief`);
     return instructions?.trim() ? instructions : undefined;
   }
 
-  private effectiveCmd(name: string, def: AgentDef, parent: string | undefined, primerCtx?: { delegator?: string; gate?: DelegationGate; freshWorktree?: boolean }): string {
-    return composeCommand({ cmd: def.cmd, instructions: this.effectiveInstructions(name, def, parent, primerCtx) });
+  private projectGuidanceFor(def: AgentDef): string | undefined {
+    // A command that explicitly resumes/manages its own transcript is the same no-push exception as
+    // Workspace.resume(): adding a positional onboarding prompt can change or break its semantics.
+    // Unsupported startup adapters cannot carry a prompt either; do not read configured files for a
+    // launch that has no delivery channel. Manual re-anchor remains available once such an agent runs.
+    if (def.kind !== "agent" || managesOwnSession(def.cmd) || !instructionsDeliverable(def.cmd)) return undefined;
+    return loadAndRenderProjectGuidance(this.opts.workspaceRoot, this.opts.getConfig()?.settings.projectGuidance);
+  }
+
+  private effectiveCmd(def: AgentDef, instructions: string | undefined): string {
+    return composeCommand({ cmd: def.cmd, instructions });
   }
 
   /**
@@ -874,13 +899,10 @@ export class AgentManager {
    * Inject the same composed brief used by effectiveCmd so contracts are not silently dropped.
    */
   private hermesBriefEnv(
-    name: string,
     def: AgentDef,
-    parent: string | undefined,
-    primerCtx?: { delegator?: string; gate?: DelegationGate; freshWorktree?: boolean },
+    brief: string | undefined,
   ): Record<string, string> {
-    if (binaryOf(def.cmd) !== "hermes") return {};
-    const brief = this.effectiveInstructions(name, def, parent, primerCtx);
+    if (resolveBinary(def.cmd) !== "hermes") return {};
     if (!brief) return {};
     return { HERMES_TUI_QUERY: brief };
   }
@@ -1424,6 +1446,7 @@ export class AgentManager {
     }
 
     const session = this.session(name);
+    let replaceDeadSession = false;
     if (forced?.attempt) {
       // This is the true Delivery acquisition boundary.  Do not inherit ordinary
       // spawn's dead-pane replacement behavior: either kind of racing occupant is
@@ -1436,12 +1459,25 @@ export class AgentManager {
     } else if (await this.opts.tmux.hasSession(session)) {
       const state = (await this.agentStates()).get(name);
       if (state && state.dead) {
-        // Spawning over a crashed agent replaces the dead postmortem pane.
-        await this.opts.tmux.killSession(session);
+        // Delay replacing the dead postmortem pane until every guidance/brief operation that can
+        // fail has completed. Merely observing the pane here is side-effect free.
+        replaceDeadSession = true;
       } else {
         throw new Error(`agent '${name}' is already running`);
       }
     }
+
+    // Resolve every declared project file before touching an incumbent tmux session or preparing a
+    // worktree. A bad opt-in must fail this launch atomically, never kill a dead pane and then reveal
+    // that the replacement brief could not be composed.
+    const projectGuidance = this.projectGuidanceFor(def);
+    const adhoc = !!opts?.cmd || !!forced?.ephemeral;
+    // Runtime lineage is only for ad-hoc children. A tachyon.yml-declared name is
+    // always a top-level managed entry; config subagents are exposed separately as
+    // declaredOwner metadata and must not inherit stale ad-hoc-era parents.
+    const parent = adhoc && !opts?.gate && opts?.parent && opts.parent !== name ? opts.parent : undefined;
+    const delegator = opts?.gate && opts.delegator && opts.delegator !== name ? opts.delegator : undefined;
+    const primerCtx = { delegator, gate: opts?.gate };
 
     const liveCount = (await this.runningAgents()).length;
     const max = this.opts.getConfig()?.settings.maxAgents ?? this.opts.getMaxAgents();
@@ -1452,12 +1488,6 @@ export class AgentManager {
     if (!forced?.preflight || forced.preflight[deliveryPreflightProof] !== true) await this.assertLaunchPreflight(name, def.cmd, { ...def.env, ...(opts?.env ?? {}) });
 
     let cwd = resolveCwd(this.opts.workspaceRoot, def.cwd);
-    const adhoc = !!opts?.cmd || !!forced?.ephemeral;
-    // Runtime lineage is only for ad-hoc children. A tachyon.yml-declared name is
-    // always a top-level managed entry; config subagents are exposed separately as
-    // declaredOwner metadata and must not inherit stale ad-hoc-era parents.
-    const parent = adhoc && !opts?.gate && opts?.parent && opts.parent !== name ? opts.parent : undefined;
-    const delegator = opts?.gate && opts.delegator && opts.delegator !== name ? opts.delegator : undefined;
     // spec 210 — worktree isolation: Workspace resolves the cwd (its own worktree for a
     // top-level opt-in agent, the parent's cwd for a sub-agent, the root on any git
     // problem). Awaited here (off the UI thread); null = keep the default cwd.
@@ -1478,6 +1508,10 @@ export class AgentManager {
     if (opts?.gate && !worktree) {
       throw new Error("gated delegation requires an isolated worktree; worktree creation was unavailable");
     }
+    // `resolveSpawnCwd` materializes a gated delegation's canonical behavior stub and mutates the
+    // gate with its final stubPath/owns facts. Compose only afterwards so the primer carries those
+    // authoritative values. This is still before dead-pane replacement and all tmux mutation.
+    const effectiveInstructions = this.effectiveInstructions(name, def, parent, primerCtx, projectGuidance);
     // Session-resume bookkeeping (spec 209): mint a session id for runtimes that
     // accept one (claude/gemini). The ORIGINAL cmd is kept for the ledger def +
     // adhoc map; the injected one is only what we spawn.
@@ -1526,34 +1560,39 @@ export class AgentManager {
     // Evaluate the extra environment before minting.  A bridge/env failure must not
     // revoke a durable declared token that this attempt never minted.
     const extraEnv = this.opts.getExtraEnv?.();
-    const effectiveCmd = this.effectiveCmd(name, def, parent, { delegator, gate: opts?.gate, freshWorktree: !!worktree });
+    const effectiveCmd = this.effectiveCmd(def, effectiveInstructions);
     if (forced?.attempt) forced.attempt.acquired = true;
     const tokenEnv = this.opts.mintAgentToken?.(name);
     if (forced?.attempt && tokenEnv !== undefined) forced.attempt.token = true;
     if (forced?.attempt) forced.attempt.materialized = "attempted";
-    const primerCtx = { delegator, gate: opts?.gate, freshWorktree: !!worktree };
     const spawnBuild = this.applyHarness(
       name,
       def,
       cwd,
       effectiveCmd,
-      { ...extraEnv, ...tokenEnv, ...def.env, ...(opts?.env ?? {}), TACHYON_AGENT_NAME: name, ...this.hermesBriefEnv(name, def, parent, primerCtx) },
+      { ...extraEnv, ...tokenEnv, ...def.env, ...(opts?.env ?? {}), TACHYON_AGENT_NAME: name, ...this.hermesBriefEnv(def, effectiveInstructions) },
     );
     if (forced?.attempt) forced.attempt.materialized = "completed";
     this.applyDelegatedOpencodeHarnessPermission(def, spawnBuild.env, delegatedOpencode);
     // spec 236 — fold the runtime-Bridge env delta (the OPENCODE_CONFIG path for opencode agents)
     // into spawnBuild.env so it reaches the spawn env alongside the Bridge URL/token.
     const spawnBridge = this.withRuntimeBridge(name, def, spawnBuild.cmd, cwd, delegatedOpencode);
+    // Ownership materialization can write files. Complete it before replacing a dead incumbent so
+    // every fallible launch-preparation step preserves the old postmortem pane on failure.
+    const ownedSpawnCmd = this.withSessionOwnership(name, def, spawnBridge.cmd, {
+      declared: !adhoc,
+      cwd,
+      configHome: spawnBuild.env.CLAUDE_CONFIG_DIR,
+    });
+    // All fallible guidance, cwd, harness, env and Bridge composition is complete. Only now may a
+    // crashed incumbent be replaced; earlier failures leave its postmortem pane intact.
+    if (replaceDeadSession) await this.opts.tmux.killSession(session);
     if (forced?.attempt) forced.attempt.session = "attempted";
     await this.opts.tmux.newSession({
       name: session,
       // spec 236 Bridge + 243 ownership hook — apply ownership hook to the runtime-bridge cmd; the
       // env delta is folded into env below.
-      cmd: this.withSessionOwnership(name, def, spawnBridge.cmd, {
-        declared: !adhoc,
-        cwd,
-        configHome: spawnBuild.env.CLAUDE_CONFIG_DIR,
-      }),
+      cmd: ownedSpawnCmd,
       cwd,
       env: { ...spawnBuild.env, ...spawnBridge.env },
     });
@@ -2215,18 +2254,32 @@ export class AgentManager {
   async restart(name: string): Promise<void> {
     // SDD 368 T14 — refuse before mutating transient caches (readiness/postmortem/stopping).
     this.assertNotDeliveryLifecycleDenied(name, "restart");
-    this.stoppingSince.delete(name);
-    this.stopFailed.delete(name);
-    this.readinessCache.delete(name); // spec 221: restart is a new session → drop the cached badge
-    this.cleanExited.delete(name);
-    this.postmortemOutput.delete(name);
     let def = this.definitionOf(name);
     if (!def) {
       throw new Error(
         `cannot restart '${name}': no stored definition (re-discovered ad-hoc agents lose their definition across extension restarts — kill and re-spawn instead)`,
       );
     }
+    // Project guidance is part of the replacement command. Load it before even transient restart
+    // state changes so an invalid configured source leaves the live pane and its status untouched.
+    const projectGuidance = this.projectGuidanceFor(def);
     await this.assertLaunchPreflight(name, def.cmd, def.env);
+    const restartDelegationRecord = readLatestDelegationRecord(this.opts.workspaceRoot, name)?.record;
+    const restartPrimerCtx = {
+      delegator: this.delegators.get(name),
+      gate: restartDelegationRecord
+        ? { behaviorTest: restartDelegationRecord.behaviorTest, owns: restartDelegationRecord.owns, stubPath: restartDelegationRecord.stubPath }
+        : undefined,
+    };
+    const restartParent = this.lineage.get(name);
+    // `effectiveInstructions` includes long-brief persistence. It must succeed before cache changes,
+    // ownership refresh, respawn, or kill+new fallback can mutate the running session.
+    const restartInstructions = this.effectiveInstructions(name, def, restartParent, restartPrimerCtx, projectGuidance);
+    this.stoppingSince.delete(name);
+    this.stopFailed.delete(name);
+    this.readinessCache.delete(name); // spec 221: restart is a new session → drop the cached badge
+    this.cleanExited.delete(name);
+    this.postmortemOutput.delete(name);
     const session = this.session(name);
     // A3: capture an in-TUI /resume before the process is replaced (respawn or kill).
     if (await this.opts.tmux.hasSession(session)) {
@@ -2251,31 +2304,22 @@ export class AgentManager {
     // spec 363 T3 — restart redelivers the composed instructions (same effectiveCmd path as spawn),
     // so re-attach the gate reminder from the persisted delegation record (gate is display/verify
     // metadata, never stored on the ledger def itself); the worktree is REUSED here, not fresh.
-    const restartDelegationRecord = readLatestDelegationRecord(this.opts.workspaceRoot, name)?.record;
     // Security review (782f1c6, HIGH): mirror spawn's isolatedWorktree gate — a restarted delegation
     // reusing a shared (non-worktree) cwd must not get blanket bash:"allow" either.
     const restartDelegatedOpencode = (this.lineage.get(name) || this.delegators.get(name) || restartDelegationRecord) && worktree
       ? { workspaceRoot: this.opts.workspaceRoot, worktreesBase: this.worktreesBaseFor(cwd, worktree) }
       : undefined;
-    const restartPrimerCtx = {
-      delegator: this.delegators.get(name),
-      gate: restartDelegationRecord
-        ? { behaviorTest: restartDelegationRecord.behaviorTest, owns: restartDelegationRecord.owns, stubPath: restartDelegationRecord.stubPath }
-        : undefined,
-      freshWorktree: false as const,
-    };
-    const restartParent = this.lineage.get(name);
     const restartBuild = this.applyHarness(
       name,
       def,
       cwd,
-      this.effectiveCmd(name, def, restartParent, restartPrimerCtx),
+      this.effectiveCmd(def, restartInstructions),
       {
         ...this.opts.getExtraEnv?.(),
         ...this.opts.mintAgentToken?.(name),
         ...def.env,
         TACHYON_AGENT_NAME: name,
-        ...this.hermesBriefEnv(name, def, restartParent, restartPrimerCtx),
+        ...this.hermesBriefEnv(def, restartInstructions),
       },
     );
     this.applyDelegatedOpencodeHarnessPermission(def, restartBuild.env, restartDelegatedOpencode);
@@ -2566,7 +2610,6 @@ export class AgentManager {
       gate: resumeDelegationRecord
         ? { behaviorTest: resumeDelegationRecord.behaviorTest, owns: resumeDelegationRecord.owns, stubPath: resumeDelegationRecord.stubPath }
         : undefined,
-      freshWorktree: false,
       verify: this.opts.getConfig()?.settings.verify,
     });
     await this.opts.tmux.sendKeys(session, `${primer}\n\n${beforeFinishing}`, true);
