@@ -61,7 +61,45 @@ Focused verification passed 57/57 across persistent proxy, Workspace and Doctor 
 `git diff --check`, the real user-systemd dogfood and the first `npm run verify:full:quiet` candidate all passed;
 the full gate reported 322 files, 3822 passed and 3 skipped.
 
+## 2026-07-14 — t-88ef8c: control socket exceeds sun_path on long checkouts
+
+The workspace-rooted control socket (`<workspaceRoot>/.tachyon/bridge-service/control.sock`) overflows the
+AF_UNIX `sun_path` budget (~108 bytes Linux, ~104 macOS) for any long checkout — e.g. a worktree under
+`~/.cache/tachyon/worktrees/<id>/<agent-name>` is already 122+ bytes before `.tachyon/bridge-service/control.sock`
+is even appended. `connect()` then fails with a raw, undiagnosable `EINVAL`, and that failure previously aborted
+the entire workspace activation (no engine, no spawns, dead pins) instead of degrading.
+
+Two fixes:
+1. **Short socket path.** `persistentBridgeControlSocket` now derives the control socket outside the workspace,
+   under `$XDG_RUNTIME_DIR/tachyon/<8-hex-wsHash>/control.sock` (falling back to `<tmpdir>/tachyon-<uid>/...` when
+   `XDG_RUNTIME_DIR` is unset) — keyed only by the workspace hash, never the workspace path, so the derived path's
+   length no longer depends on checkout depth at all (`MAX_CONTROL_SOCKET_PATH_BYTES = 100`, checked at derivation
+   time; if even that runtime dir is pathologically long, `PersistentBridgeSocketPathError` is thrown with the
+   offending path/length instead of a raw EINVAL surfacing later).
+2. **Graceful degradation.** `Workspace.degradeToInProcessBridge` makes `EINVAL` (or any other persistent-proxy
+   start failure) equivalent to the persistent proxy simply being disabled: the workspace falls back to the
+   in-process Bridge, activation completes, and Doctor gets one warning instead of a fatal abort. This closes the
+   gap that existed even on short paths — any persistent-proxy failure used to kill activation outright.
+
+**Backward compat / migration.** `resolvePersistentBridgeControlSocket` is the single reader-side lookup used by
+every `PersistentBridgeService` request (health/register/detach/stop): it checks the new short path first, and
+falls back to the legacy in-workspace path only if a daemon is still listening there. This build never writes to
+the legacy path, so a daemon started by a pre-t-88ef8c extension build stays reachable — and is NOT duplicated by
+a second daemon at the new path — until it naturally stops (extension update, machine restart, etc.). No explicit
+migration step or forced daemon kill was needed.
+
+**Integration-suite caveat.** `npm run test:integration` (vscode-test) run from this worktree post-fix: 11 + 1
+tests failed, but none show EINVAL/ENAMETOOLONG — the historical bug class is gone. Remaining failures are
+live-fleet collisions (concurrently-running sibling agents share the same tmux server and workspace-hash
+namespace on this host) plus one unrelated pre-existing sidebar/config drift — both out of scope here.
+
+Focused suites green (persistentBridgeProxy.test.ts, workspaceHeadless.test.ts, sockfix3Behavior.gen.test.ts —
+69 tests), `npm run typecheck` clean, real user-systemd dogfood passes.
+
 ## Dogfood log
+
+### 2026-07-14T14:55:00Z — pass (1/1) — source: t-88ef8c — commit: 4055b91c
+- `node scripts/dogfood/persistent-bridge.mjs` — pass (real systemd-spawned daemon, short XDG_RUNTIME_DIR-based control socket)
 
 ### 2026-07-13T15:45:36Z — pass (1/1) — source: tasks.md — commit: e7aad9da3f89ddb3e9342757336b661e6f13e269
 - `node scripts/dogfood/persistent-bridge.mjs` — pass
