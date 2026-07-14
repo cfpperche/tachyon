@@ -172,6 +172,10 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
 
             <div class="ash-grid ash-grid-compact">
               <div class="ash-field">
+                <label><input type="checkbox" checked={fields.soul} onChange={(e) => set("soul", (e.currentTarget as HTMLInputElement).checked)} /> Enable soul</label>
+              </div>
+
+              <div class="ash-field">
                 <label class="ash-label" for="ash-name">Name</label>
                 <Input id="ash-name" value={fields.name} placeholder="frontend, revisor, dev..." onInput={(e) => set("name", (e.currentTarget as HTMLInputElement).value)} />
               </div>
@@ -200,7 +204,7 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
             </div>
 
             <details open={!!fields.instructions}>
-              <summary>Instructions (role prompt)</summary>
+              <summary>Persistent instructions</summary>
               <Textarea rows={4} value={fields.instructions} placeholder="you are a code reviewer; read the diff and flag correctness issues…" onInput={(e) => set("instructions", (e.currentTarget as HTMLTextAreaElement).value)} />
               <div class="hint">Delivered as a startup prompt for claude / codex / agy / gemini.</div>
             </details>

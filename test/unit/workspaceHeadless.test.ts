@@ -15,6 +15,8 @@ import { ReloadTransactionStore } from "../../src/host-action/index.js";
 import { __createdTerminals, __resetVscodeMock } from "../mocks/vscode.js";
 import { readDelegationRecord } from "../../src/bridge/delegationRecord.js";
 import { canonicalBehaviorStubPath } from "../../src/bridge/behaviorStub.js";
+import { blankAgentFields } from "../../src/webview/agent-studio-shell/domain.js";
+import type { FormState } from "../../src/webview/formLogic.js";
 
 /**
  * spec 235 — the headless Workspace smoke test (the deferred spec-233 payoff): drive the orchestrator with
@@ -172,6 +174,16 @@ it("rejects nonboolean soul on reload and retains the prior known-good config", 
   expect(ws.configFailure?.errors).toContain("agents.ada.soul: must be a boolean");
   expect(ws.config?.agents.ada.soul).toBe(true);
   expect(ws.readConfigLkg()?.agents.map((agent) => agent.name)).toContain("ada");
+  ws.dispose();
+});
+
+it("returns actionable Agent Studio messages for invalid soul values and unsupported runtimes", async () => {
+  const { ws } = await makeWorkspace();
+  const invalid = { ...blankAgentFields(), name: "invalid", cmd: "codex", soul: "yes" } as unknown as FormState;
+  expect(ws.studioSubmit({ state: invalid })).toEqual(["soul: choose enabled or disabled, then try again"]);
+  expect(ws.studioSubmit({ state: { ...blankAgentFields(), name: "wrapped", cmd: "bash -lc codex", soul: true } })).toEqual([
+    "soul: bash cannot receive a Tachyon-managed soul — use a supported direct agent command or disable soul",
+  ]);
   ws.dispose();
 });
 

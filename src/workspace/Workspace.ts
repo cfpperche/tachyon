@@ -233,6 +233,10 @@ const issueMessage = (issue: { code: string; param?: string }, t: Translate): st
       return t("steps: at least one step is required");
     case "instructions-not-deliverable":
       return t("note: this CLI doesn't accept a startup prompt — instructions will be saved but not auto-delivered");
+    case "soul-invalid":
+      return t("soul: choose enabled or disabled, then try again");
+    case "soul-runtime-unsupported":
+      return t("soul: {0} cannot receive a Tachyon-managed soul — use a supported direct agent command or disable soul", issue.param ?? "this runtime");
     case "harness-claude-only":
       return t("isolated harness: supported for Claude, Codex, OpenCode, Grok, and Hermes agents only");
     case "codex-harness-mcp-only":
