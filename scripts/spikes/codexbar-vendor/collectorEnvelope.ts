@@ -149,8 +149,12 @@ function bounded(value: unknown, max: number, label: string): string {
 
 function iso(value: unknown, label: string): string {
   const text = bounded(value, 64, label);
-  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/u.test(text)) throw new Error(`invalid ${label}`);
+  const match = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.(\d{1,3}))?Z$/u.exec(text);
+  if (!match) throw new Error(`invalid ${label}`);
   const time = Date.parse(text);
   if (!Number.isFinite(time)) throw new Error(`invalid ${label}`);
-  return new Date(time).toISOString();
+  const canonicalInput = `${text.replace(/(?:\.\d{1,3})?Z$/u, "")}.${(match[1] ?? "").padEnd(3, "0")}Z`;
+  const normalized = new Date(time).toISOString();
+  if (normalized !== canonicalInput) throw new Error(`invalid ${label}`);
+  return normalized;
 }

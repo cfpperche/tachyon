@@ -87,15 +87,18 @@ describe("CodexBar vendor spike CollectorEnvelopeV1", () => {
     expect(result.diagnostics).toEqual([{ provider: "codex", code: "INVALID_PAYLOAD" }]);
   });
 
-  it("fails an invalid observation timestamp closed", () => {
-    const record = valid();
-    (record.usage as Record<string, unknown>).updatedAt = "yesterday";
-    expect(projectCodexBarPayload(record, OPTIONS).facts[0]).toEqual({
-      kind: "provider-unavailable",
-      provider: "codex",
-      reason: "invalid-payload",
-    });
-  });
+  it.each(["yesterday", "2026-02-31T12:00:00Z", "2025-02-29T00:00:00Z"])(
+    "fails invalid observation timestamp %s closed",
+    (updatedAt) => {
+      const record = valid();
+      (record.usage as Record<string, unknown>).updatedAt = updatedAt;
+      expect(projectCodexBarPayload(record, OPTIONS).facts[0]).toEqual({
+        kind: "provider-unavailable",
+        provider: "codex",
+        reason: "invalid-payload",
+      });
+    },
+  );
 
   it("maps upstream failures without copying raw messages, paths, or credentials", () => {
     const result = projectCodexBarPayload({

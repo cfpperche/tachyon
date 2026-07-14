@@ -20,6 +20,9 @@ _In-flight design memory — decisions, deviations, tradeoffs, and open question
 - 2026-07-14 maintainer ratification supersedes the initial Swift-fork candidate: implement small native TypeScript
   adapters for Codex and Claude quota acquisition. CodexBar remains a non-shipping behavioral reference, fixture oracle
   and upstream-change radar. Quota-only v1 is ratified; local cost scans remain deferred.
+- 2026-07-14 integration review hardened the experimental envelope timestamp boundary: JavaScript `Date.parse`
+  normalizes impossible calendar dates, so accepted RFC 3339 input must round-trip to the identical canonical instant
+  or fail closed.
 - Mission Control context: parent design task `t-ed03b3`; vendor-strategy research task `t-79dee5`.
 
 ## Deviations
