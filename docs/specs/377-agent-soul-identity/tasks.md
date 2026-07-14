@@ -96,7 +96,7 @@ implementation still requires separately assigned bounded Deliveries._
 
 ## Checkpoint B — Agent Studio and product closure
 
-- [ ] **T14. Add Studio soul enablement.** Round-trip boolean soul enablement through `FormState`,
+- [x] **T14. Add Studio soul enablement.** Round-trip boolean soul enablement through `FormState`,
       defaults, dirty restore, `fromDef`/`toEntry`, host validation, and error codes: accept explicit
       `false` as disabled and emit `true` or omission from the two-state control. Relabel the existing
       textarea “Persistent instructions”.

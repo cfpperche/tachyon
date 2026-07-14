@@ -360,6 +360,29 @@ pass is recorded below.
   3 skipped. The integration worktree was clean after removing the verification-only dependency
   symlink.
 
+### 2026-07-14 — T14 Agent Studio enablement integrated
+
+- Task `t-6c328e` was implemented and reviewed in isolated worktrees. Accepted candidate
+  `10674d1e` was squash-integrated as `c415ca6d` on
+  `codex-soul/t-60979d-agent-soul-integration`.
+- T14 adds a two-state **Enable soul** control before Role/Persistent instructions, renames the
+  legacy textarea to **Persistent instructions**, defaults every shared `FormState` constructor to
+  disabled, reads only literal `true` from existing agent definitions, and writes only literal
+  `soul: true` or omission for agent entries. Explicit `false` and absence remain disabled.
+- Host validation blocks defined non-boolean values and runtimes without an opening-prompt channel,
+  including Hermes/native-external and wrapped commands, while OpenCode/tui-prefill remains allowed.
+  Both stable soul issue codes map to actionable Agent Studio messages. Missing `soul` in a pre-T14
+  restored draft is accepted as legacy-disabled, so old dirty snapshots remain saveable.
+- The executable T14 behavior test failed semantically at the test-only commit `68a99ffc` before
+  production changes and passed at the accepted candidate. Coordinator pass-after covered 106 tests
+  plus `npm run typecheck`; the candidate full gate passed 340 files, 4084 tests, with 3 skipped.
+- The independent reviewer found the legacy-restore and raw-error-message blockers at `927f9d65`.
+  Both were corrected in `10674d1e`; the narrow closure review returned `SHIP` with no remaining
+  blocker or major. Visual QA at 900x900 returned `SHIP` for new/off and dense-edit/on fixtures with
+  coherent layout and the intended ordering/label.
+- T15 profile actions, profile transactions, product documentation, and final dogfood remain open;
+  no import/create/open/preview/replace/rename/delete/repair behavior was added in this slice.
+
 ## Open questions
 
 - Resolved 2026-07-14: the maintainer ratified the complete revised R1–R6 bundle without amendments.
