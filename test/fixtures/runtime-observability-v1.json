@@ -37,7 +37,7 @@
         "scope": {
           "kind": "provider-account",
           "provider": "codex",
-          "key": "ps_0123456789abcdef"
+          "key": "ps_0000000000000001"
         },
         "source": "oauth",
         "confidence": "exact",
@@ -86,7 +86,7 @@
         "scope": {
           "kind": "provider-account",
           "provider": "claude",
-          "key": "ps_fedcba9876543210"
+          "key": "ps_0000000000000002"
         },
         "source": "local-history",
         "confidence": "estimated",

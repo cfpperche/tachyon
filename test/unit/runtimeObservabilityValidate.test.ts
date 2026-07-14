@@ -74,7 +74,7 @@ describe("RuntimeObservability CollectorEnvelopeV1 validation", () => {
     });
     expect(envelope.facts[1]).toMatchObject({
       kind: "provider-quota",
-      scope: { kind: "provider-account", provider: "codex", key: "ps_0123456789abcdef" },
+      scope: { kind: "provider-account", provider: "codex", key: "ps_0000000000000001" },
     });
   });
 
@@ -121,7 +121,7 @@ describe("RuntimeObservability CollectorEnvelopeV1 validation", () => {
     facts(nativeWithProviderScope)[0].scope = {
       kind: "provider-account",
       provider: "codex",
-      key: "ps_0123456789abcdef",
+      key: "ps_0000000000000001",
     };
     invalid(nativeWithProviderScope, "INVALID_FACT", "$.facts[0].scope.kind");
   });

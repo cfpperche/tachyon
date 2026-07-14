@@ -20,7 +20,7 @@
     },
     {
       "path": "test/fixtures/runtime-observability-v1.json",
-      "sha256": "924e12eaf191a7b96d2506c369bc6f5484a1540b0191a9ee867502ac9a8087f1"
+      "sha256": "fda23004bda234a09acf5e003747dbc6ddc0c05de2162ad57824a24141e0efd7"
     }
   ],
   "watchedPaths": [
