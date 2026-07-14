@@ -34,6 +34,10 @@ export function createCodexNormalizer(sourcePath?: string): ActivityNormalizer {
   let sessionId: string | undefined;
   let cwd: string | undefined;
   let runtimeVersion: string | undefined;
+  /** spec 378 — latched from `turn_context.payload.model`/`.effort` only (session_meta/token_count carry
+   *  no model). Last-observed-wins, mirroring `runtimeVersion`. */
+  let model: string | undefined;
+  let effort: string | undefined;
   const pending = new Map<string, PendingTool>();
   const seenMessages = new Map<string, number>();
 
@@ -53,6 +57,8 @@ export function createCodexNormalizer(sourcePath?: string): ActivityNormalizer {
       cwd,
       timestamp: rec.timestamp,
       runtimeVersion,
+      ...(model ? { model } : {}),
+      ...(effort ? { effort } : {}),
       recordId,
       sourcePath,
       payload,
@@ -81,6 +87,8 @@ export function createCodexNormalizer(sourcePath?: string): ActivityNormalizer {
         }
         if (rec.type === "turn_context") {
           cwd = str(p.cwd) ?? cwd;
+          model = str(p.model) ?? model;
+          effort = str(p.effort) ?? effort;
           continue;
         }
         if (rec.type === "event_msg") {

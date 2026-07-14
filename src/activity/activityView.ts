@@ -168,7 +168,12 @@ export function createActivityBuilder(): ActivityBuilder {
   for (const e of events) {
     if (e.timestamp) lastActivity = e.timestamp;
     runtime = e.runtime; // the latest event's runtime (consistent across a session)
-    if (!runtimeVersion && e.runtimeVersion) runtimeVersion = e.runtimeVersion;
+    // grok/opencode no longer stamp `runtimeVersion` (spec 378 un-overload) — the header shows their `model`
+    // in the same slot instead, so it keeps working without a webview-protocol change.
+    if (!runtimeVersion) {
+      const versionLike = e.runtime === "grok" || e.runtime === "opencode" ? e.model : e.runtimeVersion;
+      if (versionLike) runtimeVersion = versionLike;
+    }
     if (!sourcePath && e.sourcePath) sourcePath = e.sourcePath;
     switch (e.type) {
       case "session.started":

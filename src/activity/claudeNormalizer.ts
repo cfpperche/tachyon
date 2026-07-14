@@ -41,11 +41,14 @@ interface ClaudeRecord {
   subtype?: string;
   isMeta?: boolean;
   isCompactSummary?: boolean;
+  /** True on a subagent's (Task tool) transcript record — a DIFFERENT agent's turn stitched into the same
+   *  file. Its `message.model` must never relabel the primary agent (spec 378). */
+  isSidechain?: boolean;
   compactMetadata?: { trigger?: string; preTokens?: number; postTokens?: number };
   toolUseResult?: unknown;
   apiRefusalExplanation?: string;
   apiRefusalCategory?: string;
-  message?: { content?: unknown; usage?: Record<string, unknown> };
+  message?: { content?: unknown; usage?: Record<string, unknown>; model?: string };
   /** spec 323 — hook/system attachment records (`type: "attachment"`): only `hook_additional_context`
    *  is promoted to a real event; every other attachment type stays raw (log-filtered) by design. */
   attachment?: { type?: string; hookEvent?: string; hookName?: string; content?: unknown };
@@ -70,9 +73,11 @@ export function createClaudeNormalizer(sourcePath?: string): ClaudeNormalizer {
     push(lines: string[]): NormalizedEvent[] {
       const out: NormalizedEvent[] = [];
       const emit = <T extends ActivityEventType>(type: T, rec: ClaudeRecord, payload: ActivityPayloads[T], raw: unknown): void => {
+        const model = claudeModelOf(rec);
         const ev: NormalizedEvent<T> = {
           type, runtime: "claude", sequence: seq++,
           sessionId: rec.sessionId, cwd: rec.cwd, timestamp: rec.timestamp, runtimeVersion: rec.version,
+          ...(model ? { model } : {}),
           recordId: rec.uuid, sourcePath, payload, raw,
         };
         out.push(ev);
@@ -244,6 +249,15 @@ export function createClaudeNormalizer(sourcePath?: string): ClaudeNormalizer {
 /** Batch convenience (non-streaming callers + tests): normalize an array of lines in one pass. */
 export function normalizeClaude(lines: string[], sourcePath?: string): NormalizedEvent[] {
   return createClaudeNormalizer(sourcePath).push(lines);
+}
+
+/** spec 378 — the assistant's live model, latched only from a genuine primary-agent assistant record: a
+ *  subagent's (Task tool) `isSidechain: true` record must never relabel the primary agent, and claude's
+ *  internal `"<synthetic>"` model placeholder is not a real observation. */
+function claudeModelOf(rec: ClaudeRecord): string | undefined {
+  if (rec.type !== "assistant" || rec.isSidechain) return undefined;
+  const model = rec.message?.model;
+  return model && model !== "<synthetic>" ? model : undefined;
 }
 
 function numeric(v: unknown): number | undefined {

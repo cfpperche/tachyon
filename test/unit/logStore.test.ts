@@ -31,6 +31,20 @@ describe("ActivityLog (spec 239 inc 3)", () => {
     expect((line as unknown as { raw?: unknown }).raw).toBeUndefined(); // raw is NOT cloned
   });
 
+  it("spec 378 — hoists model/effort like runtimeVersion, without bumping schemaVersion", () => {
+    const log = new ActivityLog(freshDir(), "claude");
+    log.appendRecord([ev("assistant.message.completed", { payload: { text: "hi" }, model: "claude-sonnet-5" })], src("r1"), "t");
+    log.appendRecord([ev("assistant.message.completed", { payload: { text: "hi" }, model: "gpt-5.6-sol", effort: "high" })], src("r2"), "t");
+    log.appendRecord([ev("assistant.message.completed", { payload: { text: "no model here" } })], src("r3"), "t");
+    const [withModel, withEffort, withoutModel] = log.readTail(10);
+    expect(withModel.schemaVersion).toBe(LOG_SCHEMA_VERSION); // no schemaVersion bump
+    expect(withModel.model).toBe("claude-sonnet-5");
+    expect(withModel.effort).toBeUndefined();
+    expect(withEffort).toMatchObject({ model: "gpt-5.6-sol", effort: "high" });
+    expect(withoutModel.model).toBeUndefined();
+    expect(withoutModel.effort).toBeUndefined();
+  });
+
   it("is idempotent per source record — re-appending the same record is a no-op (R5)", () => {
     const dir = freshDir();
     const log = new ActivityLog(dir, "claude");

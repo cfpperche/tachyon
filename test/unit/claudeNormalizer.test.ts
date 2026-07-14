@@ -329,4 +329,71 @@ describe("normalizeClaude", () => {
     }
     expect(evs.map((e) => e.sequence)).toEqual(evs.map((_, i) => i));
   });
+
+  describe("spec 378 — live model latch", () => {
+    it("latches message.model from a primary-agent assistant record", () => {
+      const rec = line({
+        ...base,
+        type: "assistant",
+        isSidechain: false,
+        message: { role: "assistant", model: "claude-sonnet-5", content: [{ type: "text", text: "hi" }] },
+      });
+      const e = firstOf(normalizeClaude([rec]), "assistant.message.completed");
+      expect(e?.model).toBe("claude-sonnet-5");
+    });
+
+    it("does NOT latch a subagent's isSidechain:true record, even with a different model", () => {
+      const primary = line({
+        ...base,
+        type: "assistant",
+        isSidechain: false,
+        message: { role: "assistant", model: "claude-sonnet-5", content: [{ type: "text", text: "primary" }] },
+      });
+      const sidechain = line({
+        ...base,
+        type: "assistant",
+        isSidechain: true,
+        message: { role: "assistant", model: "claude-haiku-4-5-20251001", content: [{ type: "text", text: "sub-agent turn" }] },
+      });
+      const evs = normalizeClaude([primary, sidechain]);
+      const messages = evs.filter((e) => e.type === "assistant.message.completed");
+      expect(messages).toHaveLength(2);
+      expect(messages[0].model).toBe("claude-sonnet-5");
+      expect(messages[1].model).toBeUndefined(); // sidechain — never relabels the primary agent
+    });
+
+    it("does NOT latch the \"<synthetic>\" model placeholder", () => {
+      const rec = line({
+        ...base,
+        type: "assistant",
+        isSidechain: false,
+        message: { role: "assistant", model: "<synthetic>", content: [{ type: "text", text: "placeholder turn" }] },
+      });
+      const e = firstOf(normalizeClaude([rec]), "assistant.message.completed");
+      expect(e?.model).toBeUndefined();
+    });
+
+    it("a multi-model session latches the LATEST assistant record's model (in-TUI /model switch)", () => {
+      const first = line({
+        ...base,
+        type: "assistant",
+        isSidechain: false,
+        message: { role: "assistant", model: "claude-sonnet-5", content: [{ type: "text", text: "a" }] },
+      });
+      const second = line({
+        ...base,
+        type: "assistant",
+        isSidechain: false,
+        message: { role: "assistant", model: "claude-opus-4-8", content: [{ type: "text", text: "b" }] },
+      });
+      const evs = normalizeClaude([first, second]);
+      const messages = evs.filter((e) => e.type === "assistant.message.completed");
+      expect(messages.map((e) => e.model)).toEqual(["claude-sonnet-5", "claude-opus-4-8"]);
+    });
+
+    it("non-assistant records (user/system) never carry a model", () => {
+      const evs = normalizeClaude([userOk, sysOther]);
+      for (const e of evs) expect(e.model).toBeUndefined();
+    });
+  });
 });
