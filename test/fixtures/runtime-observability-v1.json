@@ -1,0 +1,107 @@
+{
+  "fixtureVersion": 1,
+  "provenance": {
+    "kind": "synthetic-reference-shape",
+    "upstreamRepository": "https://github.com/steipete/CodexBar",
+    "upstreamTag": "v0.43.0",
+    "upstreamCommit": "5a0cbc07119ac04d998e2fd5267442ed9358fff0",
+    "containsProviderPayload": false,
+    "containsIdentityOrCredentials": false
+  },
+  "validEnvelope": {
+    "schemaVersion": 1,
+    "collector": {
+      "id": "tachyon-reference-fixture",
+      "version": "1.0.0"
+    },
+    "generatedAt": "2026-07-14T18:00:00Z",
+    "facts": [
+      {
+        "kind": "native-usage",
+        "scope": {
+          "kind": "agent",
+          "workspaceKey": "ws-7f31",
+          "agentKey": "agent-codex"
+        },
+        "runtime": "codex",
+        "source": "activity-log",
+        "observedAt": "2026-07-14T17:59:58Z",
+        "semantics": "latest-cumulative",
+        "inputTokens": 1200,
+        "outputTokens": 180,
+        "cacheReadTokens": 300,
+        "cacheCreationTokens": 0
+      },
+      {
+        "kind": "provider-quota",
+        "scope": {
+          "kind": "provider-account",
+          "provider": "codex",
+          "key": "ps_0000000000000001"
+        },
+        "source": "oauth",
+        "confidence": "exact",
+        "observedAt": "2026-07-14T17:59:55Z",
+        "freshness": {
+          "state": "fresh"
+        },
+        "windows": [
+          {
+            "name": "weekly",
+            "usedPercent": 63,
+            "windowMinutes": 10080,
+            "resetsAt": "2026-07-19T19:19:41Z"
+          }
+        ]
+      },
+      {
+        "kind": "provider-unavailable",
+        "scope": {
+          "kind": "provider",
+          "provider": "claude"
+        },
+        "source": "oauth",
+        "observedAt": "2026-07-14T17:59:56Z",
+        "reason": "unauthenticated"
+      }
+    ],
+    "diagnostics": [
+      {
+        "code": "SOURCE_UNAVAILABLE",
+        "provider": "claude",
+        "factIndex": 2
+      }
+    ]
+  },
+  "futureCostEnvelope": {
+    "schemaVersion": 1,
+    "collector": {
+      "id": "tachyon-cost-fixture",
+      "version": "1.0.0"
+    },
+    "generatedAt": "2026-07-14T18:00:00Z",
+    "facts": [
+      {
+        "kind": "provider-cost",
+        "scope": {
+          "kind": "provider-account",
+          "provider": "claude",
+          "key": "ps_0000000000000002"
+        },
+        "source": "local-history",
+        "confidence": "estimated",
+        "observedAt": "2026-07-14T17:59:00Z",
+        "freshness": {
+          "state": "fresh"
+        },
+        "currency": "USD",
+        "amountMicros": 1250000,
+        "period": {
+          "startAt": "2026-07-14T00:00:00Z",
+          "endAt": "2026-07-14T17:59:00Z"
+        }
+      }
+    ],
+    "diagnostics": []
+  }
+}

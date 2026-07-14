@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "purpose": "development-reference-only",
+  "productionDependency": false,
+  "upstream": {
+    "repository": "https://github.com/steipete/CodexBar",
+    "tag": "v0.43.0",
+    "annotatedTagObject": "0f491b285c51b908ee8e9b3c018ac7699bccdaee",
+    "commit": "5a0cbc07119ac04d998e2fd5267442ed9358fff0",
+    "license": "MIT"
+  },
+  "providers": [
+    "codex",
+    "claude"
+  ],
+  "fixturePins": [
+    {
+      "path": "test/fixtures/codexbar-vendor-v0.43.0.json",
+      "sha256": "9f7651e20e88565f852e1dcf6cd45cd7ebc03839730ceb7f131c1ca1474ffe8e"
+    },
+    {
+      "path": "test/fixtures/runtime-observability-v1.json",
+      "sha256": "fda23004bda234a09acf5e003747dbc6ddc0c05de2162ad57824a24141e0efd7"
+    }
+  ],
+  "watchedPaths": [
+    "Package.swift",
+    "Package.resolved",
+    "Sources/CodexBarCore/Providers/Codex",
+    "Sources/CodexBarCore/Providers/Claude",
+    "Sources/CodexBarCore/UsageFetcher.swift",
+    "Sources/CodexBarCore/ProviderAccountSnapshot.swift",
+    "Sources/CodexBarCore/ProviderHTTPClient.swift",
+    "Sources/CodexBarCore/Providers/ProviderDescriptor.swift",
+    "Sources/CodexBarCore/Providers/Providers.swift",
+    "Sources/CodexBarCLI/CLIUsageCommand.swift",
+    "Sources/CodexBarCLI/CLIServeCommand.swift",
+    "Sources/CodexBarCLI/CLIServeOperationCoordinator.swift"
+  ]
+}
