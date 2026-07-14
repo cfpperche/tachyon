@@ -34,6 +34,7 @@ const UNAVAILABLE_REASONS: ReadonlySet<string> = new Set<ProviderUnavailableReas
   "unauthenticated",
   "timeout",
   "cancelled",
+  "not-observed",
   "provider-error",
   "invalid-payload",
   "stale-expired",

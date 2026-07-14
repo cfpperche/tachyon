@@ -101,8 +101,19 @@ _Historical pre-ratification questions are retained below; their resolutions fol
   medium/weekly, long/tertiary), uses slot order only when duration is absent, and fails duplicate semantic lanes closed.
   The dogfood emitted one validated quota fact, no diagnostics, and left no app-server child behind; no raw response,
   identity, percentage or reset timestamp was recorded in the repository.
-- Remaining T2 design work is the separate Claude source decision; it must reuse the neutral consent/source contract
-  without expanding the Codex adapter's allowlist.
+- Resolved 2026-07-14 in T2b: Claude Code `2.1.209` exposes quota through its documented token-free status-line JSON as
+  optional `rate_limits.five_hour` and `rate_limits.seven_day` windows. The first Claude source is therefore `cli`: a
+  narrow passive-capture reader feeds bounded JSON into the adapter, which retains only percentage/reset facts. The
+  installed CLI has documented `claude auth status --json` but no documented headless quota subcommand; auth status is
+  only a fallback classifier and all email/organization fields remain confined and discarded.
+- T2b treats missing telemetry from an authenticated runtime as typed `not-observed`. It does not run an inference turn,
+  scrape interactive `/usage`, silently install/replace a status line, or invent zero. Host-side status-line transport,
+  non-destructive composition and freshness are T3 work; T2b supplies the parser/reader boundary only.
+- Direct Claude subscription OAuth/credential-file HTTP is rejected as a fallback despite the CodexBar spike proving it
+  technically viable. It expands the privacy boundary and Anthropic's current legal guidance reserves plan OAuth for
+  native Anthropic applications rather than third-party products. Future SDK rate-limit events may join the ordered
+  strategy only when an already-running, explicitly authorized runtime emits them; Tachyon never spawns `claude -p`
+  just to measure quota.
 
 ## Verification log
 
@@ -119,6 +130,15 @@ _Historical pre-ratification questions are retained below; their resolutions fol
 - `npm run verify:full:quiet` — 334 files passed; 4,055 tests passed; 3 skipped
 - Live explicit-grant Codex app-server dogfood — one validated weekly quota fact, no diagnostic, no surviving child;
   raw response and account identity were neither printed nor persisted.
+
+### 2026-07-14T20:45:41Z — pass (5/5) — source: task t-32cd68
+- `npx vitest run` over the Claude adapter, Codex adapter and neutral validator suites — 67 passed
+- `npm run check:runtime-observability-reference` — pinned Codex and Claude fixture hashes pass
+- `npm run typecheck` — pass
+- `npm run verify:full:quiet` — 335 files passed; 4,079 tests passed; 3 skipped
+- Live explicit-grant Claude fallback dogfood — the bounded adapter returned one validated `not-observed` fact for an
+  authenticated installation with no passive capture, projected no identity fields, and left no auth-status child.
+  Passive quota success remains fixture-proven until T3 supplies the non-destructive host capture transport.
 
 ### 2026-07-14T18:13:54Z — T1 neutral contract
 

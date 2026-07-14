@@ -35,15 +35,15 @@ implementation until its ADR is accepted._
 
 ## T2 — native TypeScript provider acquisition
 
-- [ ] Define a narrow `ProviderObservationSource` interface and implement separate Codex and Claude quota adapters in
+- [x] Define a narrow `ProviderObservationSource` interface and implement separate Codex and Claude quota adapters in
   Tachyon's TypeScript stack.
-- [ ] Add explicit source-specific consent/configuration for every OAuth, file, network or provider-CLI read; browser
+- [x] Add explicit source-specific consent/configuration for every OAuth, file, network or provider-CLI read; browser
   cookies, Keychain, broad fallback and cost scans remain unavailable in the first slice.
-- [ ] Confine raw provider responses and credentials inside each adapter; emit only the versioned neutral envelope with
+- [x] Confine raw provider responses and credentials inside each adapter; emit only the versioned neutral envelope with
   typed unavailable diagnostics.
-- [ ] Record the CodexBar reference tag/commit and fixture provenance, plus MIT attribution for any actually derived
+- [x] Record the CodexBar reference tag/commit and fixture provenance, plus MIT attribution for any actually derived
   implementation, without adding CodexBar source, binaries or Swift tooling to the product/release graph.
-- [ ] Add focused provider fixtures, protocol-drift degradation tests and an upstream-radar review command.
+- [x] Add focused provider fixtures, protocol-drift degradation tests and an upstream-radar review command.
 
 ## T3 — host observation service
 

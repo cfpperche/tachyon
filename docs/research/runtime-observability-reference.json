@@ -25,6 +25,10 @@
     {
       "path": "test/fixtures/codex-app-server-rate-limits-v0.144.4.json",
       "sha256": "da6491cf5d8a2ec9483b1bdb1894cf1502570346507732065454fc204f665c18"
+    },
+    {
+      "path": "test/fixtures/claude-status-line-v2.1.209.json",
+      "sha256": "8974514a4229e4258b5dd813dcb6c9023cde51a4a678e0638357cdb021712ebf"
     }
   ],
   "watchedPaths": [
