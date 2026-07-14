@@ -1,4 +1,4 @@
-import type { Workspace } from "../workspace/Workspace.js";
+import type { WorkspaceStudioTarget } from "../shell/WorkspacePresentation.js";
 import { fromRunbookDef } from "./formLogic.js";
 import type { StudioHostAdapter, StudioLoadResult, StudioSaveResult } from "./shared/studio/adapter.js";
 import { NO_VALIDATION_ERRORS, type StudioValidationResult } from "./shared/studio/errorTaxonomy.js";
@@ -22,7 +22,7 @@ export class RunbookStudioAdapter implements StudioHostAdapter<RunbookStudioEnti
   allowPatchRestore = true;
   dirty = { computeDirty: computeRunbookDirty, serializePatch: serializeRunbookPatch, canDiscard: canDiscardRunbookFields };
 
-  constructor(private readonly ws: Workspace) {}
+  constructor(private readonly ws: WorkspaceStudioTarget) {}
 
   titleFor(mode: "new" | "edit", entityId: string | undefined, entity: RunbookStudioEntity | undefined): string {
     return runbookStudioTitleFor(mode, entityId, entity);

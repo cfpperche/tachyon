@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import type { Workspace } from "../workspace/Workspace.js";
+import type { WorkspaceStudioTarget } from "../shell/WorkspacePresentation.js";
 import { StudioPanelManagerBase, type StudioPanelState, type StudioSurfaceConfig } from "./shared/studio/StudioPanelManagerBase.js";
 import type { StudioRestoreSnapshot } from "./shared/studio/protocol.js";
 import { RunbookStudioAdapter } from "./RunbookStudioAdapter.js";
@@ -20,11 +20,11 @@ export class RunbookStudioPanelManager {
 
   constructor(
     private readonly extensionUri: vscode.Uri,
-    getWorkspacesOrOnChanged?: (() => Workspace[]) | (() => void),
+    getWorkspacesOrOnChanged?: (() => WorkspaceStudioTarget[]) | (() => void),
     onChangedMaybe?: () => void,
   ) {
     if (onChangedMaybe) {
-      this.getWorkspaces = getWorkspacesOrOnChanged as () => Workspace[];
+      this.getWorkspaces = getWorkspacesOrOnChanged as () => WorkspaceStudioTarget[];
       this.onChanged = onChangedMaybe;
     } else {
       this.getWorkspaces = () => [];
@@ -32,14 +32,14 @@ export class RunbookStudioPanelManager {
     }
   }
 
-  private readonly getWorkspaces: () => Workspace[];
+  private readonly getWorkspaces: () => WorkspaceStudioTarget[];
   private readonly onChanged: () => void;
 
-  openNew(ws: Workspace): void {
+  openNew(ws: WorkspaceStudioTarget): void {
     this.baseFor(ws).openNew(ws.wsHash);
   }
 
-  openExisting(ws: Workspace, runbookName: string): void {
+  openExisting(ws: WorkspaceStudioTarget, runbookName: string): void {
     this.baseFor(ws).openExisting(ws.wsHash, runbookName);
   }
 
@@ -56,11 +56,11 @@ export class RunbookStudioPanelManager {
     this.workspaces.clear();
   }
 
-  captureSnapshot(ws: Workspace, entityId?: string): StudioRestoreSnapshot<string, RunbookStudioPatch> | undefined {
+  captureSnapshot(ws: WorkspaceStudioTarget, entityId?: string): StudioRestoreSnapshot<string, RunbookStudioPatch> | undefined {
     return this.workspaces.get(ws.wsHash)?.captureSnapshot(ws.wsHash, entityId);
   }
 
-  restoreFromSnapshot(ws: Workspace, snapshot: StudioRestoreSnapshot<string, RunbookStudioPatch>): void {
+  restoreFromSnapshot(ws: WorkspaceStudioTarget, snapshot: StudioRestoreSnapshot<string, RunbookStudioPatch>): void {
     this.baseFor(ws).restoreFromSnapshot(ws.wsHash, snapshot);
   }
 
@@ -70,7 +70,7 @@ export class RunbookStudioPanelManager {
     this.baseFor(ws).deserializePanel(panel, state);
   }
 
-  private baseFor(ws: Workspace): StudioPanelManagerBase<RunbookStudioEntity, RunbookStudioFields, RunbookStudioPatch, RunbookStudioReferenceData> {
+  private baseFor(ws: WorkspaceStudioTarget): StudioPanelManagerBase<RunbookStudioEntity, RunbookStudioFields, RunbookStudioPatch, RunbookStudioReferenceData> {
     let base = this.workspaces.get(ws.wsHash);
     if (!base) {
       base = new StudioPanelManagerBase<RunbookStudioEntity, RunbookStudioFields, RunbookStudioPatch, RunbookStudioReferenceData>(

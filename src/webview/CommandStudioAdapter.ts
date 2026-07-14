@@ -1,4 +1,4 @@
-import type { Workspace } from "../workspace/Workspace.js";
+import type { WorkspaceStudioTarget } from "../shell/WorkspacePresentation.js";
 import { FLAG_SUGGESTIONS, fromCommandDef } from "./formLogic.js";
 import type { StudioHostAdapter, StudioLoadResult, StudioSaveResult } from "./shared/studio/adapter.js";
 import { NO_VALIDATION_ERRORS, type StudioValidationResult } from "./shared/studio/errorTaxonomy.js";
@@ -22,7 +22,7 @@ export class CommandStudioAdapter implements StudioHostAdapter<CommandStudioEnti
   allowPatchRestore = true;
   dirty = { computeDirty: computeCommandDirty, serializePatch: serializeCommandPatch, canDiscard: canDiscardCommandFields };
 
-  constructor(private readonly ws: Workspace) {}
+  constructor(private readonly ws: WorkspaceStudioTarget) {}
 
   titleFor(mode: "new" | "edit", entityId: string | undefined, entity: CommandStudioEntity | undefined): string {
     return commandStudioTitleFor(mode, entityId, entity);

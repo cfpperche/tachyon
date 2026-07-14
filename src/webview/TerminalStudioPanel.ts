@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import type { Workspace } from "../workspace/Workspace.js";
+import type { WorkspaceStudioTarget } from "../shell/WorkspacePresentation.js";
 import { StudioPanelManagerBase, type StudioDomainMessageContext, type StudioPanelState, type StudioSurfaceConfig } from "./shared/studio/StudioPanelManagerBase.js";
 import { envelope, type StudioRestoreSnapshot } from "./shared/studio/protocol.js";
 import { TerminalStudioAdapter } from "./TerminalStudioAdapter.js";
@@ -20,11 +20,11 @@ export class TerminalStudioPanelManager {
 
   constructor(
     private readonly extensionUri: vscode.Uri,
-    getWorkspacesOrOnChanged?: (() => Workspace[]) | (() => void),
+    getWorkspacesOrOnChanged?: (() => WorkspaceStudioTarget[]) | (() => void),
     onChangedMaybe?: () => void,
   ) {
     if (onChangedMaybe) {
-      this.getWorkspaces = getWorkspacesOrOnChanged as () => Workspace[];
+      this.getWorkspaces = getWorkspacesOrOnChanged as () => WorkspaceStudioTarget[];
       this.onChanged = onChangedMaybe;
     } else {
       this.getWorkspaces = () => [];
@@ -32,14 +32,14 @@ export class TerminalStudioPanelManager {
     }
   }
 
-  private readonly getWorkspaces: () => Workspace[];
+  private readonly getWorkspaces: () => WorkspaceStudioTarget[];
   private readonly onChanged: () => void;
 
-  openNew(ws: Workspace): void {
+  openNew(ws: WorkspaceStudioTarget): void {
     this.baseFor(ws).openNew(ws.wsHash);
   }
 
-  openExisting(ws: Workspace, terminalName: string): void {
+  openExisting(ws: WorkspaceStudioTarget, terminalName: string): void {
     this.baseFor(ws).openExisting(ws.wsHash, terminalName);
   }
 
@@ -52,11 +52,11 @@ export class TerminalStudioPanelManager {
     this.workspaces.clear();
   }
 
-  captureSnapshot(ws: Workspace, entityId?: string): StudioRestoreSnapshot<string, TerminalStudioPatch> | undefined {
+  captureSnapshot(ws: WorkspaceStudioTarget, entityId?: string): StudioRestoreSnapshot<string, TerminalStudioPatch> | undefined {
     return this.workspaces.get(ws.wsHash)?.captureSnapshot(ws.wsHash, entityId);
   }
 
-  restoreFromSnapshot(ws: Workspace, snapshot: StudioRestoreSnapshot<string, TerminalStudioPatch>): void {
+  restoreFromSnapshot(ws: WorkspaceStudioTarget, snapshot: StudioRestoreSnapshot<string, TerminalStudioPatch>): void {
     this.baseFor(ws).restoreFromSnapshot(ws.wsHash, snapshot);
   }
 
@@ -66,7 +66,7 @@ export class TerminalStudioPanelManager {
     this.baseFor(ws).deserializePanel(panel, state);
   }
 
-  private baseFor(ws: Workspace): StudioPanelManagerBase<TerminalStudioEntity, TerminalStudioFields, TerminalStudioPatch, TerminalStudioReferenceData> {
+  private baseFor(ws: WorkspaceStudioTarget): StudioPanelManagerBase<TerminalStudioEntity, TerminalStudioFields, TerminalStudioPatch, TerminalStudioReferenceData> {
     let base = this.workspaces.get(ws.wsHash);
     if (!base) {
       base = new StudioPanelManagerBase<TerminalStudioEntity, TerminalStudioFields, TerminalStudioPatch, TerminalStudioReferenceData>(
@@ -81,12 +81,12 @@ export class TerminalStudioPanelManager {
     return base;
   }
 
-  private handleDomainMessage(ws: Workspace, ctx: StudioDomainMessageContext, message: { type: string }): void {
+  private handleDomainMessage(ws: WorkspaceStudioTarget, ctx: StudioDomainMessageContext, message: { type: string }): void {
     if (message.type !== "browse") return;
     void this.browse(ws, ctx);
   }
 
-  private async browse(ws: Workspace, ctx: StudioDomainMessageContext): Promise<void> {
+  private async browse(ws: WorkspaceStudioTarget, ctx: StudioDomainMessageContext): Promise<void> {
     const picked = await vscode.window.showOpenDialog({
       canSelectFiles: false,
       canSelectFolders: true,

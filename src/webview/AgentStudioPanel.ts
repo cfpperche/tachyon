@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import type { Workspace } from "../workspace/Workspace.js";
+import type { WorkspaceStudioTarget } from "../shell/WorkspacePresentation.js";
 import { StudioPanelManagerBase, type StudioDomainMessageContext, type StudioPanelState, type StudioSurfaceConfig } from "./shared/studio/StudioPanelManagerBase.js";
 import { envelope, type StudioRestoreSnapshot } from "./shared/studio/protocol.js";
 import { AgentStudioAdapter } from "./AgentStudioAdapter.js";
@@ -29,11 +29,11 @@ export class AgentStudioPanelManager {
 
   constructor(
     private readonly extensionUri: vscode.Uri,
-    getWorkspacesOrOnChanged?: (() => Workspace[]) | (() => void),
+    getWorkspacesOrOnChanged?: (() => WorkspaceStudioTarget[]) | (() => void),
     onChangedMaybe?: () => void,
   ) {
     if (onChangedMaybe) {
-      this.getWorkspaces = getWorkspacesOrOnChanged as () => Workspace[];
+      this.getWorkspaces = getWorkspacesOrOnChanged as () => WorkspaceStudioTarget[];
       this.onChanged = onChangedMaybe;
     } else {
       this.getWorkspaces = () => [];
@@ -41,14 +41,14 @@ export class AgentStudioPanelManager {
     }
   }
 
-  private readonly getWorkspaces: () => Workspace[];
+  private readonly getWorkspaces: () => WorkspaceStudioTarget[];
   private readonly onChanged: () => void;
 
-  openNew(ws: Workspace): void {
+  openNew(ws: WorkspaceStudioTarget): void {
     this.baseFor(ws).openNew(ws.wsHash);
   }
 
-  openExisting(ws: Workspace, agentName: string): void {
+  openExisting(ws: WorkspaceStudioTarget, agentName: string): void {
     this.baseFor(ws).openExisting(ws.wsHash, agentName);
   }
 
@@ -61,11 +61,11 @@ export class AgentStudioPanelManager {
     this.workspaces.clear();
   }
 
-  captureSnapshot(ws: Workspace, entityId?: string): StudioRestoreSnapshot<string, AgentStudioPatch> | undefined {
+  captureSnapshot(ws: WorkspaceStudioTarget, entityId?: string): StudioRestoreSnapshot<string, AgentStudioPatch> | undefined {
     return this.workspaces.get(ws.wsHash)?.captureSnapshot(ws.wsHash, entityId);
   }
 
-  restoreFromSnapshot(ws: Workspace, snapshot: StudioRestoreSnapshot<string, AgentStudioPatch>): void {
+  restoreFromSnapshot(ws: WorkspaceStudioTarget, snapshot: StudioRestoreSnapshot<string, AgentStudioPatch>): void {
     this.baseFor(ws).restoreFromSnapshot(ws.wsHash, snapshot);
   }
 
@@ -75,7 +75,7 @@ export class AgentStudioPanelManager {
     this.baseFor(ws).deserializePanel(panel, state);
   }
 
-  private baseFor(ws: Workspace): StudioPanelManagerBase<AgentStudioEntity, AgentStudioFields, AgentStudioPatch> {
+  private baseFor(ws: WorkspaceStudioTarget): StudioPanelManagerBase<AgentStudioEntity, AgentStudioFields, AgentStudioPatch> {
     let base = this.workspaces.get(ws.wsHash);
     if (!base) {
       base = new StudioPanelManagerBase<AgentStudioEntity, AgentStudioFields, AgentStudioPatch>(
@@ -90,12 +90,12 @@ export class AgentStudioPanelManager {
     return base;
   }
 
-  private handleDomainMessage(ws: Workspace, ctx: StudioDomainMessageContext, message: { type: string }): void {
+  private handleDomainMessage(ws: WorkspaceStudioTarget, ctx: StudioDomainMessageContext, message: { type: string }): void {
     if (message.type !== "browse") return;
     void this.browse(ws, ctx);
   }
 
-  private async browse(ws: Workspace, ctx: StudioDomainMessageContext): Promise<void> {
+  private async browse(ws: WorkspaceStudioTarget, ctx: StudioDomainMessageContext): Promise<void> {
     const picked = await vscode.window.showOpenDialog({
       canSelectFiles: false,
       canSelectFolders: true,

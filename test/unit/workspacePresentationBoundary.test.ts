@@ -29,12 +29,25 @@ describe("persistent workspace presentation boundary", () => {
     expect(actual).toEqual(expected);
   });
 
-  it("keeps migrated panels off the concrete Workspace class", () => {
-    const migrated = ["src/webview/ApprovalPanel.ts", "src/webview/PluginsPanel.ts"];
+  it("keeps migrated presentation surfaces off the concrete Workspace class", () => {
+    const migrated = [
+      "src/webview/ApprovalPanel.ts",
+      "src/webview/PluginsPanel.ts",
+      "src/webview/AgentStudioAdapter.ts",
+      "src/webview/AgentStudioPanel.ts",
+      "src/webview/CommandStudioAdapter.ts",
+      "src/webview/CommandStudioPanel.ts",
+      "src/webview/RunbookStudioAdapter.ts",
+      "src/webview/RunbookStudioPanel.ts",
+      "src/webview/ScheduleStudioAdapter.ts",
+      "src/webview/ScheduleStudioPanel.ts",
+      "src/webview/TerminalStudioAdapter.ts",
+      "src/webview/TerminalStudioPanel.ts",
+    ];
     for (const relative of migrated) {
       const source = fs.readFileSync(path.join(root, relative), "utf8");
       expect(source, relative).not.toMatch(/workspace\/Workspace(?:\.js)?/);
-      expect(source, relative).toMatch(/Workspace(?:Git)?PresentationTarget/);
+      expect(source, relative).toMatch(/Workspace(?:Presentation|GitPresentation|Studio)Target/);
     }
   });
 

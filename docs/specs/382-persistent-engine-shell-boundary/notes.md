@@ -265,3 +265,20 @@ None.
 - The new registry is not yet installed in `extension.ts`; doing so before the remaining presentation
   consumers migrate would create the forbidden mixed mode.  Production continues on the explicit legacy
   callback until the single final activation cutover.
+
+## Thirteenth implementation slice — 2026-07-14
+
+- Added a narrow `WorkspaceStudioTarget` for the five config-backed Studios.  It exposes only workspace
+  identity, the currently loaded config and the existing Studio dependency/submit seam; no panel or adapter
+  can import, construct, start, stop or dispose the concrete Workspace lifecycle.
+- Migrated Agent, Terminal, Command, Runbook and Schedule adapters and panel managers to that structural
+  contract.  The legacy Workspace still supplies the exact implementation, so validation, YAML mutation,
+  reload, schedule activation and newly-created autostart behavior remain on the existing path unchanged.
+- The executable concrete-import inventory shrank from 24 to 14 files.  Its boundary test now names all ten
+  migrated Studio surfaces and refuses either a concrete Workspace import or loss of their narrow target.
+- The focused Studio/presentation matrix passes 59/59 with typecheck, extension build, daemon import boundary
+  and diff-check green.  No second global full was run because this slice changes types only and the first
+  reviewable global proof remains current until final closure.
+- This is dependency isolation, not the final remote Studio implementation.  A later slice must provide a
+  shell-local target backed by daemon projection plus the exact existing persistence semantics before the
+  registry can replace the legacy Workspace during activation; production remains single-mode legacy here.

@@ -1,4 +1,4 @@
-import type { Workspace } from "../workspace/Workspace.js";
+import type { WorkspaceStudioTarget } from "../shell/WorkspacePresentation.js";
 import { FLAG_SUGGESTIONS, fromDef, quickAddChips } from "./formLogic.js";
 import type { StudioHostAdapter, StudioLoadResult, StudioSaveResult } from "./shared/studio/adapter.js";
 import {
@@ -42,7 +42,7 @@ export class AgentStudioAdapter implements StudioHostAdapter<AgentStudioEntity, 
   allowPatchRestore = true;
   dirty = { computeDirty: computeAgentDirty, serializePatch: serializeAgentPatch, canDiscard: canDiscardAgentFields };
 
-  constructor(private readonly ws: Workspace) {}
+  constructor(private readonly ws: WorkspaceStudioTarget) {}
 
   titleFor(mode: "new" | "edit", entityId: string | undefined, entity: AgentStudioEntity | undefined): string {
     return agentStudioTitleFor(mode, entityId, entity);

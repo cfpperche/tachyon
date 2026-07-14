@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import type { Workspace } from "../workspace/Workspace.js";
+import type { WorkspaceStudioTarget } from "../shell/WorkspacePresentation.js";
 import { StudioPanelManagerBase, type StudioPanelState, type StudioSurfaceConfig } from "./shared/studio/StudioPanelManagerBase.js";
 import type { StudioRestoreSnapshot } from "./shared/studio/protocol.js";
 import { ScheduleStudioAdapter } from "./ScheduleStudioAdapter.js";
@@ -20,11 +20,11 @@ export class ScheduleStudioPanelManager {
 
   constructor(
     private readonly extensionUri: vscode.Uri,
-    getWorkspacesOrOnChanged?: (() => Workspace[]) | (() => void),
+    getWorkspacesOrOnChanged?: (() => WorkspaceStudioTarget[]) | (() => void),
     onChangedMaybe?: () => void,
   ) {
     if (onChangedMaybe) {
-      this.getWorkspaces = getWorkspacesOrOnChanged as () => Workspace[];
+      this.getWorkspaces = getWorkspacesOrOnChanged as () => WorkspaceStudioTarget[];
       this.onChanged = onChangedMaybe;
     } else {
       this.getWorkspaces = () => [];
@@ -32,14 +32,14 @@ export class ScheduleStudioPanelManager {
     }
   }
 
-  private readonly getWorkspaces: () => Workspace[];
+  private readonly getWorkspaces: () => WorkspaceStudioTarget[];
   private readonly onChanged: () => void;
 
-  openNew(ws: Workspace): void {
+  openNew(ws: WorkspaceStudioTarget): void {
     this.baseFor(ws).openNew(ws.wsHash);
   }
 
-  openExisting(ws: Workspace, scheduleName: string): void {
+  openExisting(ws: WorkspaceStudioTarget, scheduleName: string): void {
     this.baseFor(ws).openExisting(ws.wsHash, scheduleName);
   }
 
@@ -56,11 +56,11 @@ export class ScheduleStudioPanelManager {
     this.workspaces.clear();
   }
 
-  captureSnapshot(ws: Workspace, entityId?: string): StudioRestoreSnapshot<string, ScheduleStudioPatch> | undefined {
+  captureSnapshot(ws: WorkspaceStudioTarget, entityId?: string): StudioRestoreSnapshot<string, ScheduleStudioPatch> | undefined {
     return this.workspaces.get(ws.wsHash)?.captureSnapshot(ws.wsHash, entityId);
   }
 
-  restoreFromSnapshot(ws: Workspace, snapshot: StudioRestoreSnapshot<string, ScheduleStudioPatch>): void {
+  restoreFromSnapshot(ws: WorkspaceStudioTarget, snapshot: StudioRestoreSnapshot<string, ScheduleStudioPatch>): void {
     this.baseFor(ws).restoreFromSnapshot(ws.wsHash, snapshot);
   }
 
@@ -70,7 +70,7 @@ export class ScheduleStudioPanelManager {
     this.baseFor(ws).deserializePanel(panel, state);
   }
 
-  private baseFor(ws: Workspace): StudioPanelManagerBase<ScheduleStudioEntity, ScheduleStudioFields, ScheduleStudioPatch, ScheduleStudioReferenceData> {
+  private baseFor(ws: WorkspaceStudioTarget): StudioPanelManagerBase<ScheduleStudioEntity, ScheduleStudioFields, ScheduleStudioPatch, ScheduleStudioReferenceData> {
     let base = this.workspaces.get(ws.wsHash);
     if (!base) {
       base = new StudioPanelManagerBase<ScheduleStudioEntity, ScheduleStudioFields, ScheduleStudioPatch, ScheduleStudioReferenceData>(
