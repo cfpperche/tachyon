@@ -6,7 +6,7 @@ import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { Workspace } from "../../src/workspace/Workspace.js";
 import type { EngineHost, NoticeAction, ViewKind, WatchEvents } from "../../src/workspace/EngineHost.js";
 import { TMUX_CONTROL_CONCURRENCY, TmuxService, sessionName, workspaceHash, type ExecResult } from "../../src/tmux/TmuxService.js";
-import { Bridge } from "../../src/bridge/Bridge.js";
+import { Bridge, derivePort } from "../../src/bridge/Bridge.js";
 import { PersistentBridgeLaunchError, PersistentBridgeService } from "../../src/bridge/PersistentBridgeService.js";
 import type { NotifyLevel } from "../../src/bridge/tools.js";
 import { agentLogId } from "../../src/activity/logStore.js";
@@ -487,7 +487,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     ws.dispose();
   });
 
-  it("surfaces persistent Bridge launch remediation with Doctor and retry actions", async () => {
+  it("degrades to the in-process Bridge with a single warning when the persistent proxy fails to launch (t-88ef8c)", async () => {
     const root = mkdir();
     fs.writeFileSync(path.join(root, "tachyon.yml"), "agents:\n  idle:\n    cmd: sh\n", "utf8");
     const host = new FakeHost(mkdir());
@@ -504,10 +504,14 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
 
     try {
       ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux, persistentBridge: true });
-      const notice = host.notices.find((candidate) => candidate.actions.some((action) => action.label === "Retry Bridge"));
+      // Activation never aborts: the Bridge listener started twice — once for the persistent-proxy
+      // backend attempt (ephemeral port), once again bound directly to `preferred` for the degrade.
+      expect(start.mock.calls).toEqual([[0], [derivePort(workspaceHash(root))]]);
+      expect(host.notices.filter((n) => n.level === "error")).toEqual([]);
+      const notice = host.notices.find((n) => n.level === "warn" && n.message.includes("in-process Bridge"));
       expect(notice?.message).toContain("wsl --shutdown");
       expect(notice?.message).not.toContain("Failed to connect to bus");
-      expect(notice?.actions.map((action) => action.label)).toEqual(["Retry Bridge", "Run Doctor"]);
+      expect(notice?.actions.map((a) => a.label)).toEqual(["Retry Bridge", "Run Doctor"]);
       expect(ws.bridgeStartFailureInfo()).toEqual({
         code: "SYSTEMD_USER_UNAVAILABLE",
         message: launchError.message,

@@ -1,13 +1,20 @@
 import fs from "node:fs";
 import http from "node:http";
 import net from "node:net";
-import path from "node:path";
 import { randomUUID } from "node:crypto";
 import {
+  ensureSecurePersistentBridgeDir,
   PERSISTENT_BRIDGE_PROTOCOL,
   type PersistentBridgeControlRequest,
   type PersistentBridgeControlResponse,
   type PersistentBridgeDescriptor,
+} from "./persistentProxyProtocol.js";
+// Re-exported so scripts/dogfood/persistent-bridge.mjs (a plain .mjs, run outside the TS build) can
+// `require()` the ONE shared path derivation off this bundle instead of keeping a second copy (t-88ef8c).
+export {
+  persistentBridgeControlSocket,
+  persistentBridgeDescriptorPath,
+  persistentBridgeDir,
 } from "./persistentProxyProtocol.js";
 
 export interface PersistentProxyDaemonOptions {
@@ -57,7 +64,7 @@ export function stripHopByHopHeaders(headers: http.IncomingHttpHeaders): http.Ou
 
 export async function startPersistentProxy(options: PersistentProxyDaemonOptions): Promise<RunningPersistentProxy> {
   const canonicalRoot = fs.realpathSync(options.workspaceRoot);
-  fs.mkdirSync(path.dirname(options.controlSocket), { recursive: true, mode: 0o700 });
+  ensureSecurePersistentBridgeDir(options.workspaceRoot);
   let backendPort: number | undefined;
   let closing = false;
 

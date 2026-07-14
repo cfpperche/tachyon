@@ -4,10 +4,12 @@ import path from "node:path";
 import { randomBytes } from "node:crypto";
 import { spawn } from "node:child_process";
 import {
+  ensureSecurePersistentBridgeDir,
   isPersistentBridgeDescriptor,
   persistentBridgeControlSocket,
   persistentBridgeDescriptorPath,
   persistentBridgeDir,
+  resolvePersistentBridgeControlSocket,
   type PersistentBridgeControlRequest,
   type PersistentBridgeControlResponse,
   type PersistentBridgeDescriptor,
@@ -70,7 +72,7 @@ export class PersistentBridgeService {
     if (existing && !existing.ok) throw new Error(`${existing.code}: ${existing.message}`);
     if (existing?.ok) throw new Error("persistent Bridge identity mismatch");
 
-    fs.mkdirSync(persistentBridgeDir(this.workspaceRoot), { recursive: true, mode: 0o700 });
+    ensureSecurePersistentBridgeDir(this.workspaceRoot);
     const lock = path.join(persistentBridgeDir(this.workspaceRoot), "start.lock");
     const lockFd = this.tryAcquireStartLock(lock);
     if (lockFd === undefined) return this.waitForReadyAndRegister(backendPort);
@@ -143,7 +145,8 @@ export class PersistentBridgeService {
   }
 
   private request(request: PersistentBridgeControlRequest): Promise<PersistentBridgeControlResponse> {
-    const socketPath = persistentBridgeControlSocket(this.workspaceRoot);
+    // Reader: an already-running daemon may still be a pre-upgrade one at the legacy in-workspace path.
+    const socketPath = resolvePersistentBridgeControlSocket(this.workspaceRoot);
     return new Promise((resolve, reject) => {
       const socket = net.createConnection(socketPath);
       let data = "";

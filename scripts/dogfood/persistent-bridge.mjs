@@ -3,14 +3,17 @@ import http from "node:http";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
+import { createRequire } from "node:module";
 import { spawnSync } from "node:child_process";
 
-const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-persistent-bridge-dogfood-"));
-const serviceDir = path.join(root, ".tachyon", "bridge-service");
-const controlSocket = path.join(serviceDir, "control.sock");
-const descriptorPath = path.join(serviceDir, "service.json");
 const daemon = path.resolve("dist/persistent-bridge-daemon.cjs");
 if (!fs.existsSync(daemon)) throw new Error("dist/persistent-bridge-daemon.cjs missing; run npm run build first");
+// Single shared path derivation (t-88ef8c) — required off the built daemon bundle, not re-derived here.
+const { persistentBridgeControlSocket, persistentBridgeDescriptorPath } = createRequire(import.meta.url)(daemon);
+
+const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-persistent-bridge-dogfood-"));
+const controlSocket = persistentBridgeControlSocket(root);
+const descriptorPath = persistentBridgeDescriptorPath(root);
 
 const options = { workspaceRoot: root, workspaceHash: "dogfood375", preferredPort: 0, controlSocket, descriptorPath };
 const unitName = `tachyon-bridge-dogfood-${process.pid}-${Date.now().toString(36)}.service`;
