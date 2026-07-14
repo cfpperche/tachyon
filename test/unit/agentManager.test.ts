@@ -1852,6 +1852,50 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(fs.readdirSync(path.join(ws, ".tachyon", "agent-profile-transactions", "launch-reservations"))).toEqual([]);
   });
 
+  it("holds a soul reservation until a reuse-worktree launch settles", async () => {
+    const { manager, ws } = resumeHarness("agents:\n  reviewer:\n    cmd: codex\n    soul: true\n");
+    const profile = path.join(ws, ".tachyon", "agents", "reviewer");
+    fs.mkdirSync(profile, { recursive: true, mode: 0o700 });
+    fs.writeFileSync(path.join(profile, "SOUL.md"), "Exact identity", { mode: 0o600 });
+    fs.writeFileSync(path.join(profile, "profile.json"), JSON.stringify({ schemaVersion: 1, profileId: "123e4567-e89b-42d3-a456-426614174000", owner: "reviewer", state: "active" }), { mode: 0o600 });
+    let finish!: () => void;
+    const pending = new Promise<void>((resolve) => { finish = resolve; });
+    const internals = manager as unknown as {
+      spawnReuseWorktree(name: string, opts: unknown, request: unknown, resolvedSoul: unknown): Promise<void>;
+    };
+    vi.spyOn(internals, "spawnReuseWorktree").mockImplementation(async () => pending);
+
+    const launch = manager.spawn("reviewer", { reuseWorktree: { delegationId: "d-1", ownsSubset: [] } });
+    await vi.waitFor(() => expect(internals.spawnReuseWorktree).toHaveBeenCalled());
+    const reservations = path.join(ws, ".tachyon", "agent-profile-transactions", "launch-reservations");
+    expect(fs.readdirSync(reservations)).toHaveLength(1);
+    finish();
+    await launch;
+    expect(fs.readdirSync(reservations)).toEqual([]);
+  });
+
+  it("holds a declared soul reservation until Delivery preparation and launch settle", async () => {
+    let finish!: (prepared: { cwd: string; worktree: { path: string; branch: string; tachyonCreatedBranch: boolean; baseRef: string; createdAt: string }; reservationNonce: string; segmentId: string }) => void;
+    const pending = new Promise<Parameters<typeof finish>[0]>((resolve) => { finish = resolve; });
+    const { manager, ws } = resumeHarness("agents:\n  reviewer:\n    cmd: codex\n    soul: true\n", {
+      prepareDeliveryJoin: async () => pending,
+      confirmDeliveryJoin: async () => undefined,
+    });
+    const profile = path.join(ws, ".tachyon", "agents", "reviewer");
+    fs.mkdirSync(profile, { recursive: true, mode: 0o700 });
+    fs.writeFileSync(path.join(profile, "SOUL.md"), "Exact identity", { mode: 0o600 });
+    fs.writeFileSync(path.join(profile, "profile.json"), JSON.stringify({ schemaVersion: 1, profileId: "123e4567-e89b-42d3-a456-426614174000", owner: "reviewer", state: "active" }), { mode: 0o600 });
+
+    const launch = manager.spawn("review-run", {
+      deliveryJoin: { deliveryId: "delivery-1", role: "reviewer", ownsSubset: [], expectedHead: "abc", declaredAgent: "reviewer", operationId: "join-1" },
+    });
+    const reservations = path.join(ws, ".tachyon", "agent-profile-transactions", "launch-reservations");
+    await vi.waitFor(() => expect(fs.readdirSync(reservations)).toHaveLength(1));
+    finish({ cwd: ws, worktree: { path: ws, branch: "tachyon/delivery", tachyonCreatedBranch: true, baseRef: "abc", createdAt: "now" }, reservationNonce: "nonce", segmentId: "segment" });
+    await launch;
+    expect(fs.readdirSync(reservations)).toEqual([]);
+  });
+
   it("resume() spawns the runtime's resume command and persists the id", async () => {
     const { manager, ledger, cmds } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
       newSessionId: () => "uuid-1",

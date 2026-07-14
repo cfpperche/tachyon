@@ -1019,7 +1019,7 @@ export class AgentManager {
         throw new Error("spawn_agent delivery_join cannot combine with gate, worktree:true, or reuse_worktree");
       }
       // Explicit deliveryJoin is the only allowed route after canonical recovery/acquisition.
-      return this.spawnDeliveryJoin(name, opts, opts.deliveryJoin);
+      return await this.spawnDeliveryJoin(name, opts, opts.deliveryJoin);
     }
     // SDD 368 T14 — generic spawn (and reuse) refuse snapshot-denied agents before any mutation.
     this.assertNotDeliveryLifecycleDenied(name, "spawn");
@@ -1028,7 +1028,7 @@ export class AgentManager {
       if (opts.worktree) throw new Error("spawn_agent cannot combine reuse_worktree with worktree:true — reuse already grants an isolated worktree");
       const reuseDef = this.definitionOf(name);
       const resolvedSoul = reuseDef?.soul ? await this.reserveSoulLaunch(name, this.soulPrincipal(name), reuseDef) : undefined;
-      return this.spawnReuseWorktree(name, opts, opts.reuseWorktree, resolvedSoul);
+      return await this.spawnReuseWorktree(name, opts, opts.reuseWorktree, resolvedSoul);
     }
       return await this.spawnCore(name, opts);
     } finally {
