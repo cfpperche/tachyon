@@ -402,16 +402,19 @@ function parseIdentity(value: unknown): SessionIdentity | undefined {
   const o = value as Record<string, unknown>;
   if (typeof o.soul !== "object" || o.soul === null || (o.health !== "offered" && o.health !== "identity-degraded")) return undefined;
   const s = o.soul as Record<string, unknown>;
-  if (typeof s.profileId !== "string" || typeof s.source !== "string" || typeof s.sha256 !== "string" ||
-      !/^[0-9a-f]{64}$/.test(s.sha256) || typeof s.chars !== "number" || typeof s.bytes !== "number" ||
+  if (typeof s.profileId !== "string" || !/^[0-9a-f-]{36}$/i.test(s.profileId) ||
+      typeof s.source !== "string" || !/^\.tachyon\/agents\/[a-zA-Z][a-zA-Z0-9_-]*\/SOUL\.md$/.test(s.source) ||
+      typeof s.sha256 !== "string" || !/^[0-9a-f]{64}$/.test(s.sha256) ||
+      !Number.isInteger(s.chars) || (s.chars as number) < 1 || (s.chars as number) > 20_000 ||
+      !Number.isInteger(s.bytes) || (s.bytes as number) < 1 || (s.bytes as number) > 65_536 ||
       typeof s.offeredAt !== "string" || s.state !== "offered" ||
       (s.channel !== "startup-argument" && s.channel !== "tui-prefill" && s.channel !== "reanchor-pointer")) return undefined;
   return {
-    soul: { profileId: s.profileId, source: s.source, sha256: s.sha256, chars: s.chars, bytes: s.bytes,
+    soul: { profileId: s.profileId, source: s.source, sha256: s.sha256, chars: s.chars as number, bytes: s.bytes as number,
       offeredAt: s.offeredAt, channel: s.channel, state: "offered" },
     health: o.health,
     ...(typeof o.degradedAt === "string" ? { degradedAt: o.degradedAt } : {}),
-    ...(typeof o.degradedCode === "string" ? { degradedCode: o.degradedCode } : {}),
+    ...(typeof o.degradedCode === "string" && /^soul\/[a-z-]+$/.test(o.degradedCode) ? { degradedCode: o.degradedCode } : {}),
   };
 }
 

@@ -2090,6 +2090,26 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(soulResolver).not.toHaveBeenCalled();
   });
 
+  it("commitFork copies soul/role/task offer metadata without resolving or composing identity", async () => {
+    const { manager, ledger, ws } = resumeHarness("agents:\n  claude:\n    cmd: claude\n    role: reviewer\n    soul: true\n", { resolveCurrentSession: async () => UUID });
+    const profile = path.join(ws, ".tachyon", "agents", "claude");
+    fs.mkdirSync(profile, { recursive: true, mode: 0o700 });
+    fs.writeFileSync(path.join(profile, "SOUL.md"), "Calm and exact.", { mode: 0o600 });
+    fs.writeFileSync(path.join(profile, "profile.json"), JSON.stringify({ schemaVersion: 1, profileId: "123e4567-e89b-42d3-a456-426614174000", owner: "claude", state: "active" }), { mode: 0o600 });
+    await manager.spawn("claude", { taskBrief: "One-run objective." });
+    const source = ledger.get("claude")!;
+    const plan = await manager.planFork("claude");
+    const { compositor, soulResolver } = soulLifecycleBypassSpies(manager);
+    compositor.mockClear();
+
+    const forkName = await manager.commitFork(plan);
+    const fork = ledger.get(forkName)!;
+    expect(fork.def).toMatchObject({ role: "reviewer", soul: true, taskBrief: "One-run objective.", fork: true });
+    expect(fork.identity).toEqual(source.identity);
+    expect(compositor).not.toHaveBeenCalled();
+    expect(soulResolver).not.toHaveBeenCalled();
+  });
+
   it("commitFork injects the fork's own TACHYON_AGENT_NAME", async () => {
     const { manager, newSessionArgs } = resumeHarness("agents:\n  claude:\n    cmd: claude\n    env:\n      TACHYON_AGENT_NAME: wrong\n", { resolveCurrentSession: async () => UUID });
     await manager.spawn("claude");

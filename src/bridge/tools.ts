@@ -1069,8 +1069,8 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         await deps.manager.spawn(name, {
           cmd,
           cwd,
-          instructions: isBoundDeliveryExecution ? undefined : brief,
-          taskBrief: isBoundDeliveryExecution ? brief : undefined,
+          instructions: isAdhocAiAgent ? undefined : brief,
+          taskBrief: isAdhocAiAgent ? brief : undefined,
           parent,
           delegator: delegationGate ? parent : undefined,
           worktree: delegationGate ? true : worktree,

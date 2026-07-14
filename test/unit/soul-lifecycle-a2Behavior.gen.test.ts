@@ -6,7 +6,7 @@ import path from "node:path";
 describe("agent soul lifecycle composition closure", () => {
   it("agent soul lifecycle composition closure", async () => {
     const layers = await import("../../src/agents/promptLayers.js");
-    const soul = { source: ".tachyon/agents/reviewer/SOUL.md", profileId: "p1", body: "Steady identity.", sha256: "a".repeat(64), chars: 16, bytes: 16 };
+    const soul = { source: ".tachyon/agents/reviewer/SOUL.md", profileId: "123e4567-e89b-42d3-a456-426614174000", body: "Steady identity.", sha256: "a".repeat(64), chars: 16, bytes: 16 };
     const rendered = layers.composeAgentPrompt({
       soul,
       role: "reviewer",
@@ -21,7 +21,7 @@ describe("agent soul lifecycle composition closure", () => {
 
     const identityBody = "DISTINCTIVE_SOUL_BODY_MUST_NOT_REACH_LEDGER";
     const composed = layers.composeAgentPrompt({
-      soul: { source: ".tachyon/agents/reviewer/SOUL.md", profileId: "p1", body: identityBody, sha256: "a".repeat(64), chars: identityBody.length, bytes: identityBody.length },
+      soul: { ...soul, body: identityBody, chars: identityBody.length, bytes: identityBody.length },
       role: "reviewer",
       instructions: "Persistent specialization.",
       bridgeGuidance: true,
@@ -35,7 +35,17 @@ describe("agent soul lifecycle composition closure", () => {
     const { SessionLedger } = await import("../../src/resume/SessionLedger.js");
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "soul-ledger-"));
     const ledger = new SessionLedger(root);
-    ledger.record("reviewer", { cwd: root, declared: true, identity: { soul: { ...composed.soul!, offeredAt: new Date(0).toISOString(), channel: "startup-argument", state: "offered" }, health: "offered" } });
+    ledger.record("reviewer", { def: { cmd: "codex", kind: "agent", role: "reviewer", soul: true, taskBrief: "Current execution task." }, cwd: root, declared: false, identity: { soul: { ...composed.soul!, offeredAt: new Date(0).toISOString(), channel: "startup-argument", state: "offered" }, health: "offered" } });
     expect(fs.readFileSync(ledger.path, "utf8")).not.toContain(identityBody);
+    expect(new SessionLedger(root).get("reviewer")?.identity?.soul.sha256).toBe("a".repeat(64));
+    const malformed = JSON.parse(fs.readFileSync(ledger.path, "utf8")) as { sessions: Record<string, { identity?: { soul: { bytes: number } } }> };
+    malformed.sessions.reviewer!.identity!.soul.bytes = Number.POSITIVE_INFINITY;
+    fs.writeFileSync(ledger.path, JSON.stringify(malformed));
+    const sanitized = new SessionLedger(root).get("reviewer");
+    expect(sanitized).toBeDefined();
+    expect(sanitized?.identity).toBeUndefined();
+
+    const legacy = layers.composeAgentPrompt({ instructions: "  persistent  ", bridgeGuidance: false, taskBrief: "  one run  " }).body;
+    expect(legacy).toBe("persistent  \n\n  one run");
   });
 });

@@ -902,7 +902,9 @@ export class Workspace {
       // spec 241 — also mark a continuity discontinuity (compaction is in-file, so the activity transition
       // counter won't see it) so the agent's continuity is re-injected on the next idle.
       (agent) => {
-        this.pendingAnchor.add(agent);
+        // A failed soul-aware compaction anchor is a durable human-attention latch. Do not let later
+        // compaction observations create an automatic retry loop; a manual re-anchor clears health.
+        if (this.ledger.get(agent)?.identity?.health !== "identity-degraded") this.pendingAnchor.add(agent);
         if (this.manager.kindOf(agent) === "agent") this.continuityState.markDiscontinuity(agent, this.currentActivitySeq(agent));
       },
     );
@@ -1406,7 +1408,7 @@ export class Workspace {
           // an inline `cmd:` node — an ephemeral ad-hoc, dismissed when done. Deliver the task +
           // complete_node protocol ONLY for an interactive signal-based LLM (e.g. `cmd: codex` with the
           // workspace default config); an exit-based one-shot (sh / codex exec) runs its command as-is.
-          await this.manager.spawn(name, { cmd: def.cmd, env, pipeline: { runId, nodeId }, reveal: false, ...(signalBased ? { instructions: taskInstr } : {}) });
+          await this.manager.spawn(name, { cmd: def.cmd, env, pipeline: { runId, nodeId }, reveal: false, ...(signalBased ? { taskBrief: taskInstr } : {}) });
         }
       },
       runVerify: async ({ runId, nodeId }) => {
@@ -1992,22 +1994,30 @@ export class Workspace {
           freshWorktree: false,
           verify: this.config?.settings.verify,
         });
-        const body = composeAgentPrompt({ soul, role: def.role, instructions: def.instructions, bridgeGuidance: false, taskBrief: this.ledger.get(agent)?.def?.taskBrief }).body ?? "";
+        const body = composeAgentPrompt({
+          soul,
+          role: def.role,
+          instructions: def.instructions,
+          bridgeGuidance: !!this.manager.parentOf(agent) && (this.config?.settings.bridgeGuidance ?? true),
+          taskBrief: this.ledger.get(agent)?.def?.taskBrief,
+        }).body ?? "";
         const dir = path.join(this.workspaceRoot, ".tachyon", "anchors");
         const abs = path.join(dir, `${agent}.md`);
         const tmp = path.join(dir, `.${agent}.${process.pid}.${Date.now()}.tmp`);
         fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-        fs.writeFileSync(tmp, `${primer}\n\n${body}\n\n${beforeFinishing}\n`, { encoding: "utf8", mode: 0o600, flag: "wx" });
+        fs.writeFileSync(tmp, `${body}\n`, { encoding: "utf8", mode: 0o600, flag: "wx" });
         fs.renameSync(tmp, abs);
         fs.chmodSync(abs, 0o600);
         const transition = previous?.soul.sha256 && previous.soul.sha256 !== soul.sha256 ? ` (${previous.soul.sha256.slice(0, 12)}→${soul.sha256.slice(0, 12)})` : "";
-        await this.tmux.sendKeys(session, `[Tachyon] Re-anchor identity${transition}: read the complete current contract with: cat ${shellQuote(abs)}`, true);
+        const pointer = `[Tachyon] Re-anchor identity${transition}: read the complete current contract with: cat ${shellQuote(abs)}`;
+        await this.tmux.sendKeys(session, `${primer}\n\n${pointer}\n\n${beforeFinishing}`, true);
         const rec = this.ledger.get(agent);
         if (rec) this.ledger.record(agent, { ...rec, identity: { soul: { profileId: soul.profileId, source: soul.source, sha256: soul.sha256, chars: soul.chars, bytes: soul.bytes, offeredAt: new Date().toISOString(), channel: "reanchor-pointer", state: "offered" }, health: "offered" } });
         return;
       } catch (error) {
         const rec = this.ledger.get(agent);
         if (rec?.identity) this.ledger.record(agent, { ...rec, identity: { ...rec.identity, health: "identity-degraded", degradedAt: new Date().toISOString(), degradedCode: error instanceof SoulError ? error.code : "soul/io-error" } });
+        this.host.notify(this.t("agent '{0}' identity re-anchor failed; repair the soul and retry re-anchor manually", agent), "warn");
         throw error;
       }
     }
@@ -3113,7 +3123,7 @@ export class Workspace {
     } else if (def.spawn !== undefined) {
       const running = await this.manager.runningAgents();
       if (!running.includes(def.spawn)) {
-        await this.manager.spawn(def.spawn, def.instructions ? { instructions: def.instructions } : undefined);
+        await this.manager.spawn(def.spawn, def.instructions ? { taskBrief: def.instructions } : undefined);
       } else if (def.instructions) {
         // already up — deliver the prompt to its terminal
         await this.tmux.sendKeys(this.manager.session(def.spawn), def.instructions, true);

@@ -30,7 +30,7 @@ const present = (value: string | undefined): string | undefined => value?.trim()
 
 export function composeAgentPrompt(layers: AgentPromptLayers): ComposedAgentBody {
   if (!layers.soul) {
-    const legacyInstructions = [present(layers.instructions), present(layers.taskBrief)].filter(Boolean).join("\n\n") || undefined;
+    const legacyInstructions = [layers.instructions, layers.taskBrief].filter(Boolean).join("\n\n") || undefined;
     const body = withBridgeGuidance(composeInstructions(layers.role, legacyInstructions), layers.bridgeGuidance);
     return { body };
   }

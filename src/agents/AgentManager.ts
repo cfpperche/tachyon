@@ -37,7 +37,7 @@ import {
 } from "../runtime/adapters/codexLaunchReadiness.js";
 import { LaunchReadiness, type LaunchReadinessPort } from "../runtime/launchReadiness.js";
 import { openingPromptCapability } from "./openingPromptCapability.js";
-import { SoulError, resolveSoul, type ResolvedSoul } from "./soul.js";
+import { SoulError, resolveSoul, withSoulProfileAdmission, type ResolvedSoul } from "./soul.js";
 import { composeAgentPrompt, type SoulSnapshot } from "./promptLayers.js";
 
 /** t-815796 MEDIUM fix — is `pid` still alive? `process.kill(pid, 0)` sends no signal, only probes.
@@ -491,6 +491,28 @@ export function newlyDeclaredAutostart(
  * which does not survive an extension restart by design.
  */
 export class AgentManager {
+  private readonly soulReservations = new Map<string, string>();
+
+  private async reserveSoulLaunch(executionName: string, principal: string, def: AgentDef): Promise<ResolvedSoul> {
+    return withSoulProfileAdmission(this.opts.workspaceRoot, principal, async () => {
+      const soul = await this.preflightSoul(principal, def);
+      const dir = path.join(this.opts.workspaceRoot, ".tachyon", "soul-launch-reservations");
+      fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+      const file = path.join(dir, `${executionName}.json`);
+      fs.writeFileSync(file, JSON.stringify({ profileId: soul.profileId, sha256: soul.sha256, createdAt: new Date().toISOString() }), { mode: 0o600 });
+      this.soulReservations.set(executionName, file);
+      return soul;
+    });
+  }
+
+  private releaseSoulReservation(name: string): void {
+    const file = this.soulReservations.get(name);
+    if (!file) return;
+    this.soulReservations.delete(name);
+    try { fs.unlinkSync(file); } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") this.opts.notify?.(`failed to clear soul launch reservation for '${name}'`, "warn");
+    }
+  }
   private soulSnapshot(soul: ResolvedSoul, channel: SoulSnapshot["channel"]): SoulSnapshot {
     return { profileId: soul.profileId, source: soul.source, sha256: soul.sha256, chars: soul.chars, bytes: soul.bytes, offeredAt: new Date().toISOString(), channel, state: "offered" };
   }
@@ -503,7 +525,9 @@ export class AgentManager {
     const delays = [2_000, 4_000, 8_000];
     for (let attempt = 0; ; attempt++) {
       try {
-        return await resolveSoul(this.opts.workspaceRoot, name);
+        const persistedSource = this.opts.ledger?.get(name)?.identity?.soul.source;
+        const persistedOwner = def.kind === "agent" ? persistedSource?.match(/^\.tachyon\/agents\/([a-zA-Z][a-zA-Z0-9_-]*)\/SOUL\.md$/)?.[1] : undefined;
+        return await resolveSoul(this.opts.workspaceRoot, persistedOwner ?? name);
       } catch (error) {
         if (!(error instanceof SoulError) || !error.retryable || attempt >= delays.length) throw error;
         await sleep(delays[attempt]!);
@@ -598,7 +622,9 @@ export class AgentManager {
   async resolveSoulForLifecycle(name: string): Promise<ResolvedSoul | undefined> {
     const def = this.definitionOf(name);
     if (!def?.soul) return undefined;
-    return this.preflightSoul(name, def);
+    const source = this.opts.ledger?.get(name)?.identity?.soul.source;
+    const principal = source?.match(/^\.tachyon\/agents\/([a-zA-Z][a-zA-Z0-9_-]*)\/SOUL\.md$/)?.[1] ?? name;
+    return withSoulProfileAdmission(this.opts.workspaceRoot, principal, () => this.preflightSoul(name, def));
   }
 
   /** An agent's kind (config wins, then ad-hoc def, else infer from a running session's
@@ -732,6 +758,8 @@ export class AgentManager {
         this.adhoc.set(name, {
           cmd: rec.def.cmd,
           instructions: rec.def.instructions,
+          ...(rec.def.role ? { role: rec.def.role } : {}),
+          ...(rec.def.soul ? { soul: true } : {}),
           ...(rec.def.env ? { env: rec.def.env } : {}), // spec 225 — a forked sibling's inherited env survives reload
           autostart: false,
           watch: [],
@@ -986,6 +1014,7 @@ export class AgentManager {
    * exclusive with `gate`/`worktree`, which both create a FRESH worktree instead of reusing one.
    */
   async spawn(name: string, opts?: SpawnOptions): Promise<void> {
+    try {
     // t-8354ae — config-failure / LKG-only refusal (before any delivery or occupancy mutation).
     // Ad-hoc spawns with an explicit cmd are allowed (caller supplies the def); declared LKG-only names are not.
     if (!opts?.cmd) this.opts.assertSpawnAllowed?.(name);
@@ -1001,9 +1030,14 @@ export class AgentManager {
     if (opts?.reuseWorktree) {
       if (opts.gate) throw new Error("spawn_agent cannot combine reuse_worktree with gate — reuse targets an EXISTING delegation's worktree, gate creates a NEW one");
       if (opts.worktree) throw new Error("spawn_agent cannot combine reuse_worktree with worktree:true — reuse already grants an isolated worktree");
-      return this.spawnReuseWorktree(name, opts, opts.reuseWorktree);
+      const reuseDef = this.definitionOf(name);
+      const resolvedSoul = reuseDef?.soul ? await this.reserveSoulLaunch(name, name, reuseDef) : undefined;
+      return this.spawnReuseWorktree(name, opts, opts.reuseWorktree, resolvedSoul);
     }
-    return this.spawnCore(name, opts);
+      return await this.spawnCore(name, opts);
+    } finally {
+      this.releaseSoulReservation(name);
+    }
   }
 
   /**
@@ -1063,7 +1097,7 @@ export class AgentManager {
     const effective = commandOverride ?? definition?.cmd ?? opts.cmd ?? this.definitionOf(name)?.cmd;
     if (!effective) throw new UnknownAgentError(name);
     await this.assertLaunchPreflight(name, effective, { ...(definition?.env ?? this.definitionOf(name)?.env), ...(opts.env ?? {}) });
-    const resolvedSoul = definition?.soul ? await this.preflightSoul(bound!, definition) : undefined;
+    const resolvedSoul = definition?.soul ? await this.reserveSoulLaunch(name, bound!, definition) : undefined;
     const preflight: DeliveryPreflightProof = { [deliveryPreflightProof]: true };
     // Preparation is not an acquisition boundary: a same-named session can appear while
     // the Delivery reservation is being prepared.  The inner spawn boundary records
@@ -1161,7 +1195,7 @@ export class AgentManager {
    * a process-local per-worktree mutex (key = the worktree's canonical realpath) so two concurrent
    * reuse_worktree calls against the SAME worktree can never both pass the occupied-check.
    */
-  private async spawnReuseWorktree(name: string, opts: SpawnOptions, req: ReuseWorktreeRequest): Promise<void> {
+  private async spawnReuseWorktree(name: string, opts: SpawnOptions, req: ReuseWorktreeRequest, resolvedSoul?: ResolvedSoul): Promise<void> {
     const target: ReuseTarget = { delegationId: req.delegationId, agentName: req.agentName };
     // Cheap pre-lock resolve just to find the worktree path (the mutex key itself). Re-resolved fresh
     // INSIDE the lock below — the authoritative resolve-record step the mutex actually covers.
@@ -1209,7 +1243,7 @@ export class AgentManager {
 
       this.worktreeOccupancy.set(key, { state: "pending", agentId: name, cwd: worktree.path });
       try {
-        await this.spawnCore(name, opts, { cwd: worktree.path, worktree });
+        await this.spawnCore(name, opts, { cwd: worktree.path, worktree, resolvedSoul });
       } catch (err) {
         this.worktreeOccupancy.delete(key); // never occupied — clear the reservation on failure
         throw err;
@@ -1467,7 +1501,7 @@ export class AgentManager {
     // SDD 370: authoritative validation precedes cwd/worktree preparation and every durable/runtime
     // side effect. The parser never evaluates shell syntax; ambiguous composition remains unverifiable.
     if (!forced?.preflight || forced.preflight[deliveryPreflightProof] !== true) await this.assertLaunchPreflight(name, def.cmd, { ...def.env, ...(opts?.env ?? {}) });
-    const resolvedSoul = forced?.resolvedSoul ?? (def.soul ? await this.preflightSoul(name, def) : undefined);
+    const resolvedSoul = forced?.resolvedSoul ?? (def.soul ? await this.reserveSoulLaunch(name, name, def) : undefined);
 
     let cwd = resolveCwd(this.opts.workspaceRoot, def.cwd);
     const adhoc = !!opts?.cmd || !!forced?.ephemeral;
@@ -2226,7 +2260,8 @@ export class AgentManager {
       );
     }
     await this.assertLaunchPreflight(name, def.cmd, def.env);
-    const resolvedSoul = def.soul ? await this.preflightSoul(name, def) : undefined;
+    const resolvedSoul = def.soul ? await this.reserveSoulLaunch(name, name, def) : undefined;
+    try {
     this.stoppingSince.delete(name);
     this.stopFailed.delete(name);
     this.readinessCache.delete(name); // spec 221: restart is a new session → drop the cached badge
@@ -2316,6 +2351,9 @@ export class AgentManager {
     // spec 364 — restart is a fresh process with Bridge re-injection; stamp generation.
     this.stampBridgeClientBinding(name, restartBridge.wired);
     this.opts.onSpawned?.(name, true); // restart is a human action — reveal (existing attach or fresh open)
+    } finally {
+      this.releaseSoulReservation(name);
+    }
   }
 
   /**
@@ -2694,6 +2732,8 @@ export class AgentManager {
    */
   async commitFork(plan: ForkPlan): Promise<string> {
     const source = plan.source;
+    const sourceRecord = this.opts.ledger?.get(source);
+    const sourceDefinition = this.definitionOf(source);
     // RE-RESOLVE the source's CURRENT live inputs at spawn time (codex dueto round-2 MAJOR): the plan +
     // confirm modal may be stale — the source could have restarted or switched sessions while the modal
     // sat open, so trusting plan.sourceId/cwd/worktree would fork an OLD transcript. resolveForkSource
@@ -2763,9 +2803,18 @@ export class AgentManager {
       // The source's env is persisted so a restart/resume of the fork keeps it (dueto round-2: a
       // GLM/model-swap ANTHROPIC_BASE_URL must survive, not silently drop).
       this.opts.ledger?.record(forkName, {
-        def: { cmd: src.baseCmd, kind: "agent", ...(src.instructions ? { instructions: src.instructions } : {}), ...(src.env ? { env: src.env } : {}), fork: true },
+        def: {
+          cmd: src.baseCmd,
+          kind: "agent",
+          ...(src.instructions ? { instructions: src.instructions } : {}),
+          ...(sourceDefinition?.role ? { role: sourceDefinition.role } : sourceRecord?.def?.role ? { role: sourceRecord.def.role } : {}),
+          ...(sourceDefinition?.soul || sourceRecord?.def?.soul ? { soul: true } : {}),
+          ...(sourceRecord?.def?.taskBrief ? { taskBrief: sourceRecord.def.taskBrief } : {}),
+          ...(src.env ? { env: src.env } : {}),
+          fork: true,
+        },
         resume: this.withConfigHome(forkName, undefined, { runtime: src.runtime, sessionId: forkClaudeName }), // spec 240 (fork = own cwd, ~/.claude)
-
+        ...(sourceRecord?.identity ? { identity: structuredClone(sourceRecord.identity) } : {}),
         ...(worktree ? { worktree } : {}),
         cwd,
         declared: false,
@@ -2781,6 +2830,8 @@ export class AgentManager {
     this.adhoc.set(forkName, {
       cmd: src.baseCmd,
       instructions: src.instructions,
+      ...(sourceDefinition?.role ? { role: sourceDefinition.role } : sourceRecord?.def?.role ? { role: sourceRecord.def.role } : {}),
+      ...(sourceDefinition?.soul || sourceRecord?.def?.soul ? { soul: true } : {}),
       ...(src.env ? { env: src.env } : {}),
       autostart: false,
       watch: [],

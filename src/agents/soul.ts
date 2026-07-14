@@ -11,6 +11,25 @@ export const SOUL_FILE_NAME = "SOUL.md";
 export const SOUL_MANIFEST_FILE_NAME = "profile.json";
 
 const RETRYABLE_FS_CODES = new Set(["EIO", "EBUSY", "EMFILE", "ENFILE"]);
+const profileAdmissions = new Map<string, Promise<void>>();
+
+/** Serialize lifecycle reads and canonical profile mutations for one case-folded principal. */
+export async function withSoulProfileAdmission<T>(workspaceRoot: string, name: string, operation: () => Promise<T>): Promise<T> {
+  validateSoulAgentName(name);
+  const key = `${path.resolve(workspaceRoot)}\0${name.toLowerCase()}`;
+  const prior = profileAdmissions.get(key) ?? Promise.resolve();
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  const queued = prior.then(() => held);
+  profileAdmissions.set(key, queued);
+  await prior;
+  try {
+    return await operation();
+  } finally {
+    release();
+    if (profileAdmissions.get(key) === queued) profileAdmissions.delete(key);
+  }
+}
 
 export type SoulErrorCode =
   | "soul/path-invalid" | "soul/missing" | "soul/outside-workspace" | "soul/final-symlink"
@@ -280,7 +299,7 @@ export const resolveAgentSoul = resolveSoul;
 export interface ImportSoulResult { profileId: string; sha256: string; chars: number; bytes: number; }
 
 /** Validate and copy exact source bytes into the private canonical profile. The source path is not returned or persisted. */
-export async function importSoulProfile(workspaceRoot: string, name: string, importSource: string): Promise<ImportSoulResult> {
+async function importSoulProfileUnlocked(workspaceRoot: string, name: string, importSource: string): Promise<ImportSoulResult> {
   validateSoulAgentName(name);
   let sourceHandle: Awaited<ReturnType<typeof open>> | undefined;
   let bytes: Buffer<ArrayBufferLike> = Buffer.alloc(0);
@@ -330,6 +349,10 @@ export async function importSoulProfile(workspaceRoot: string, name: string, imp
     }
     throw mapFsError(error, destination);
   }
+}
+
+export function importSoulProfile(workspaceRoot: string, name: string, importSource: string): Promise<ImportSoulResult> {
+  return withSoulProfileAdmission(workspaceRoot, name, () => importSoulProfileUnlocked(workspaceRoot, name, importSource));
 }
 
 export const importSoul = importSoulProfile;
