@@ -1,13 +1,21 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { CodexLaunchPreflight, type CodexProbeResult } from "../../src/runtime/adapters/codexLaunchPreflight.js";
+import {
+  CodexLaunchPreflight,
+  probeCodexCatalog,
+  type CodexProbeResult,
+} from "../../src/runtime/adapters/codexLaunchPreflight.js";
+import { CODEX_CATALOG_MAX_BYTES } from "../../src/runtime/adapters/codexCatalogStream.js";
 import { boundedCloseMatches, isExplicitCodexModelCommand, parseLaunchCommand } from "../../src/runtime/launchPreflight.js";
 
-const output = (value: unknown, extra: Partial<CodexProbeResult> = {}): CodexProbeResult => ({ code: 0, stdout: Buffer.from(JSON.stringify(value)), ...extra });
-const catalog = { models: ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"].map((slug) => ({ slug, visibility: "list", base_instructions: "must never escape" })) };
+const catalogSlugs = ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"];
+const output = (slugs: readonly string[] = catalogSlugs, extra: Partial<CodexProbeResult> = {}): CodexProbeResult => ({ code: 0, slugs, ...extra });
 
 describe("runtime launch preflight", () => {
   it("accepts the exact advertised Sol slug and rejects the absent generic slug", async () => {
-    const adapter = new CodexLaunchPreflight(async () => output(catalog));
+    const adapter = new CodexLaunchPreflight(async () => output());
     await expect(adapter.check(parseLaunchCommand("codex --model gpt-5.6-sol")!, {})).resolves.toMatchObject({ state: "supported", model: "gpt-5.6-sol" });
     await expect(adapter.check(parseLaunchCommand("codex --model gpt-5.6")!, {})).resolves.toEqual({
       state: "unsupported", code: "runtime_model_unavailable", runtime: "codex", model: "gpt-5.6",
@@ -16,14 +24,14 @@ describe("runtime launch preflight", () => {
   });
 
   it.each([
-    ["malformed", { code: 0, stdout: Buffer.from("secret-not-json") }],
-    ["timeout", { code: null, stdout: Buffer.alloc(0), timedOut: true }],
-    ["oversized", { code: null, stdout: Buffer.alloc(0), oversized: true }],
-    ["non-zero", { code: 2, stdout: Buffer.from("provider secret") }],
+    ["malformed", { code: null, slugs: [], failure: "malformed" as const }],
+    ["timeout", { code: null, slugs: [], failure: "timeout" as const }],
+    ["oversized", { code: null, slugs: [], failure: "oversized" as const }],
+    ["non-zero", { code: 2, slugs: [] }],
   ])("fails closed with a redacted reason for a %s catalog", async (_label, probe) => {
     const result = await new CodexLaunchPreflight(async () => probe).check(parseLaunchCommand("codex -m gpt-5.6")!, {});
     expect(result).toMatchObject({ state: "failed", code: "runtime_preflight_failed" });
-    expect(JSON.stringify(result)).not.toMatch(/secret|provider/);
+    expect(result).not.toHaveProperty("stdout");
   });
 
   it("degrades ambiguous shell composition without executing or guessing", () => {
@@ -112,9 +120,76 @@ describe("runtime launch preflight", () => {
     const adapter = new CodexLaunchPreflight(async (binary, args) => {
       expect(binary).toBe("npx");
       expect(args).toEqual(["codex"]);
-      return output(catalog);
+      return output();
     });
     await expect(adapter.check(parseLaunchCommand("npx codex --model gpt-5.6-sol")!, {})).resolves.toMatchObject({ state: "supported" });
+  });
+
+  it("streams a subprocess catalog larger than the retired 256 KiB buffer", async () => {
+    const script = `process.stdout.write(JSON.stringify({metadata:"x".repeat(300*1024),models:[{slug:"gpt-5.6-terra",visibility:"list"}]}))`;
+    await expect(probeCodexCatalog(process.execPath, ["-e", script], process.env)).resolves.toEqual({
+      code: 0,
+      slugs: ["gpt-5.6-terra"],
+    });
+  });
+
+  it("terminates a malformed or timed-out probe instead of waiting for its process", async () => {
+    const malformed = await probeCodexCatalog(process.execPath, ["-e", `process.stdout.write("!");setInterval(()=>{},1000)`], process.env, { timeoutMs: 1_000 });
+    expect(malformed).toEqual({ code: null, slugs: [], failure: "malformed" });
+
+    const started = Date.now();
+    const timedOut = await probeCodexCatalog(process.execPath, ["-e", `setInterval(()=>{},1000)`], process.env, { timeoutMs: 50 });
+    expect(timedOut).toEqual({ code: null, slugs: [], failure: "timeout" });
+    expect(Date.now() - started).toBeLessThan(1_000);
+  });
+
+  it("terminates a subprocess that crosses the total catalog byte bound", async () => {
+    const script = `process.stdout.write(" ".repeat(${CODEX_CATALOG_MAX_BYTES + 1}));setInterval(()=>{},1000)`;
+    await expect(probeCodexCatalog(process.execPath, ["-e", script], process.env)).resolves.toEqual({
+      code: null,
+      slugs: [],
+      failure: "oversized",
+    });
+  });
+
+  it("terminates the detached probe process group on a streaming rejection", async () => {
+    if (process.platform !== "linux") return;
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-catalog-probe-"));
+    const pidFile = path.join(root, "descendant.pid");
+    let descendantPid: number | undefined;
+    const isLive = (pid: number): boolean => {
+      try {
+        return fs.readFileSync(`/proc/${pid}/stat`, "utf8").split(" ")[2] !== "Z";
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+        throw error;
+      }
+    };
+    try {
+      const script = [
+        `const {spawn}=require("node:child_process")`,
+        `const fs=require("node:fs")`,
+        `const child=spawn(process.execPath,["-e","setInterval(()=>{},1000)"],{stdio:"ignore"})`,
+        `fs.writeFileSync(${JSON.stringify(pidFile)},String(child.pid))`,
+        `process.stdout.write("!")`,
+        `setInterval(()=>{},1000)`,
+      ].join(";");
+      await expect(probeCodexCatalog(process.execPath, ["-e", script], process.env, { timeoutMs: 1_000 })).resolves.toEqual({
+        code: null,
+        slugs: [],
+        failure: "malformed",
+      });
+      descendantPid = Number(fs.readFileSync(pidFile, "utf8"));
+      let live = isLive(descendantPid);
+      for (let attempt = 0; live && attempt < 100; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        live = isLive(descendantPid);
+      }
+      expect(live).toBe(false);
+    } finally {
+      if (descendantPid && isLive(descendantPid)) process.kill(descendantPid, "SIGKILL");
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("fails closed when an explicit model occurs after shell composition", () => {

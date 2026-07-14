@@ -30,9 +30,10 @@ composition becomes `unverifiable`, not a guessed model.
 ### Codex adapter v1
 
 For an explicit `-m/--model`, execute the exact prospective Codex binary's `debug models` under the relevant auth and
-config/profile environment with a short timeout and stdout byte cap. Parse `{models:[...]}` and retain only bounded
-`slug` values whose runtime catalog marks them selectable. Do not use `supported_in_api`: the failing launch used
-ChatGPT account auth, and API support is a different property.
+config/profile environment with a short timeout and total stream byte cap. Validate `{models:[...]}` incrementally and
+retain only bounded `slug` values whose runtime catalog marks them selectable; never buffer or parse the complete raw
+catalog. Independently bound JSON depth, retained token fragments, selectable-slug count, and slug length. Do not use
+`supported_in_api`: the failing launch used ChatGPT account auth, and API support is a different property.
 
 The current authenticated catalog empirically lists `gpt-5.6-sol`, `gpt-5.6-terra`, and `gpt-5.6-luna`; it does not
 list `gpt-5.6`. This catalog is runtime data, never committed product data. A missing exact slug rejects with at most
@@ -68,6 +69,36 @@ means `pending/unknown`, not automatically failed. For ad-hoc delegation, the re
 `spawn_agent` waits briefly and returns `ready` or `starting`; callers must not assign Tasks to `starting` agents until
 readiness is later observed.
 
+### Provisional bootstrap input
+
+Keep `isReady()` as the sole promotion boundary and keep Task assignment plus `notify_agent` fail-closed. Add a
+Codex-owned bootstrap classifier that inspects only a bounded tail of the current pane and recognizes the measured
+terminal warning, update notice, directory-trust selector, and hook-review screens. Each screen exposes a closed answer
+and delivery grammar. `write_input` may carry one of those answers only with `answering=true`; line prompts require
+submit, while hook screens admit only the measured one-byte trust or Escape gestures with `submit=false`. All other
+not-ready input retains `refused-not-ready`. The exception returns a distinct receipt and never marks the runtime ready.
+
+Do not reuse the broad attention prompt manifest for authorization: it intentionally detects passwords, generic
+questions, and arbitrary extra patterns, while this boundary carries input before the runtime is assignable and the
+Bridge token does not prove the self-declared caller identity.
+
+### EDH launch isolation
+
+Make executable discovery deterministic and fail-closed. Prefer an explicit compatible executable, then the current
+worktree's `.vscode-test` cache, then the primary checkout cache derived from Git's common directory. Reject a resolved
+WSL `remote-cli/code` rather than launching a window that silently ignores extension-development isolation flags.
+
+Launch both GUI and headless EDH children with `--use-inmemory-secretstorage`. Build the child environment explicitly:
+remove inherited Tachyon Bridge identity, Codex session identity, Electron-as-Node, and parent tmux variables; add only
+the fixture-private tmux/cache paths and the declared headless evidence variables. Parent process state is unchanged.
+
+Native desktop Extension Hosts expose the Electron application as `process.execPath`, not a standalone Node binary.
+When that path launches the persistent Bridge daemon, explicitly enable Electron's Node mode for both Linux
+`systemd-run` and detached non-Linux children. EDH fixture cleanup first validates the descriptor's canonical workspace
+identity, refuses a recorded live EDH, sends a bounded `stop` over the real control socket, terminates only the
+fixture-private tmux server, and only then removes the fixture. It refuses malformed, oversized, or symlinked metadata
+rather than risking an unrelated process or service.
+
 ## Key decisions
 
 - **Dynamic runtime-native discovery, not static catalogs** — reconciles this fix with spec 328's decision not to own
@@ -83,8 +114,14 @@ readiness is later observed.
 
 - `src/runtime/launchPreflight.ts` — neutral result types, command-model extraction, adapter registry, bounds.
 - `src/runtime/adapters/codexLaunchPreflight.ts` — `codex debug models` probe and safe projection.
+- `src/runtime/adapters/codexCatalogStream.ts` — bounded streaming JSON validation and selectable-slug projection.
+- `src/runtime/adapters/codexLaunchReadiness.ts` — readiness plus prompt-specific provisional bootstrap classification.
 - `src/agents/AgentManager.ts` — common lifecycle orchestration, provisional state, compensation, persistence ordering.
 - `src/bridge/tools.ts` — structured spawn outcome/error only; no provider logic.
+- `scripts/edh-palliative/resolve-code.mjs`, `scripts/edh-palliative/edh-palliative.sh` — compatible binary resolution and
+  sanitized EDH child launch.
+- `scripts/edh-palliative/stop-bridge.mjs`, `src/bridge/PersistentBridgeService.ts` — identity-scoped fixture cleanup and
+  Electron-as-Node persistent daemon launch.
 - `src/tasks/TaskStore.ts` or assignment boundary — only if ratification chooses assignment rejection for non-ready agents.
 - `src/attention/*` — narrowly shared startup classifications if existing normalized patterns are reusable.
 - `test/unit/runtimeLaunchPreflight.test.ts`, `test/unit/agentManager.test.ts`, `test/unit/bridge.test.ts` — exact catalog,
@@ -99,6 +136,10 @@ readiness is later observed.
   create false confidence.
 - Readiness waits can slow spawn or classify slow startup incorrectly. Timeout must remain `pending`, not failure.
 - Some runtime errors appear inside a still-running TUI, as in the screenshot. Exit-code-only detection is insufficient.
+- A permissive pre-ready input exception would undo t-f87651 and could make a bootstrap trust choice an authorization
+  bypass. Prompt recognition and admitted answers therefore remain runtime-specific and closed.
+- Codex can truncate the right side of its status footer in a narrow pane before `Context %` appears. Readiness accepts
+  the measured left-side model/effort/cwd structure, still paired with the current prompt glyph.
 - Model catalogs can be account/entitlement specific and change without CLI version changes; avoid long-lived global
   caches. A short cache must include effective auth/config identity without storing secrets.
 

@@ -1,13 +1,54 @@
-# EDH palliative dogfood (stopgap until t-1d53e8)
+# EDH dogfood lane v1
 
-> **Status:** palliative · **Owner of the full lane:** `t-1d53e8` (Establish EDH dogfood lane)  
-> **Why this exists:** ship a *safe* way to dogfood UI/config changes **without** reloading the
-> maintainer’s normal VS Code window and **without** colliding with concurrent work on SDD 368
-> (Delivery / worktree leases / AgentManager spawn paths).
+> **Status:** versioned final lane · **Contract owner:** `t-1d53e8`
 
-This is **not** the final EDH product. It is intentionally thin: isolated fixture + launch recipe +
-forbidden list. When `t-1d53e8` lands (runbook versioned + single-owner concurrency + delegation
-template + pilot), this document becomes a pointer or is deleted.
+This is the single-owner lane for isolated Extension Development Host dogfood. The historical
+`dogfood:edh-palliative` command remains as a compatibility alias; new use should call `npm run dogfood:edh`.
+
+## Target matrix
+
+| Target | Extension bits | Workspace | Automated? | Use |
+|---|---|---|---|---|
+| `worktree` | current worktree via `--extensionDevelopmentPath` | seeded fixture | yes, preferred | pre-merge behavior |
+| `main` | clean main checkout at a recorded SHA | seeded fixture | yes | post-merge confirmation |
+| `vsix` | explicitly installed package | isolated profile only | no | packaging/manifest boundary; coordinator-owned pilot |
+
+Never describe one target as proof of another. Record target, owner, SHA, command exit, and evidence path.
+
+## Single-owner lease
+
+All headless and desktop pilots have one named owner. The atomic lane lease refuses a second owner and is not
+automatically stolen based on PID or age. A coordinator must investigate and explicitly release an abandoned lease.
+
+```bash
+# bounded command: acquires, runs, writes allowlisted latest.json, and releases even on failure
+node scripts/edh-palliative/lane.mjs run --owner "$TACHYON_AGENT_NAME" --target worktree -- npm run dogfood:edh -- headless
+
+# GUI owner holds the lease across the separate desktop step
+node scripts/edh-palliative/lane.mjs acquire --owner coordinator --target worktree
+node scripts/edh-palliative/lane.mjs status
+node scripts/edh-palliative/lane.mjs release --owner coordinator
+```
+
+If a hard crash leaves `owner.lease` present but completely empty, inspect it and use
+`node scripts/edh-palliative/lane.mjs recover`. Recovery is intentionally ownerless and narrow: it removes only an
+empty, real lease directory. It refuses a valid lease, any other directory contents, and symlinks; it never steals by
+PID or age.
+
+Evidence is bounded to owner, target, timestamps, exit code, and signal at
+`${TACHYON_EDH_EVIDENCE:-<resolved-lane-base>/evidence}/latest.json`. `TACHYON_EDH_LANE_BASE` remains available for
+isolated tests. Otherwise the lane uses a private `XDG_RUNTIME_DIR` when valid, falling back to
+`~/.tachyon/runtime/edh-lane-v1`; `status` prints the resolved base.
+It never captures stdout, environment, catalogs, credentials, or prompts. Fixture cleanup refuses a still-running
+recorded EDH, then stops the matching persistent Bridge and fixture-private tmux server before removing only the printed
+fixture directory; suspicious, oversized, or symlinked ownership metadata refuses cleanup. Lease release only removes
+the lane's `owner.lease` directory.
+
+## Delegation contract
+
+Copy [the EDH owner template](edh-delegation-template.md) into the delegated task. The delegate owns the entire lane
+from acquire through evidence and cleanup. Observers may read artifacts but must not drive the same EDH, send desktop
+input, release the lease, or start a parallel target. A GUI/desktop pilot is a separate explicit coordinator step.
 
 ---
 
@@ -37,18 +78,22 @@ These exist so palliative EDH **cannot** strangle Codex/368 or the human’s liv
 3. **Private tmux + cache namespaces** (the seed script sets these for the EDH process only):
    - `TMUX_TMPDIR` → fixture-local (not the default shared socket)
    - `XDG_CACHE_HOME` → fixture-local (worktrees never land in `~/.cache/tachyon/worktrees` used by 368)
+   - inherited live Tachyon Bridge/agent identity, Codex session identity, `TMUX`, and `TMUX_PANE` are removed from the
+     EDH child; both GUI and headless launches use `--use-inmemory-secretstorage`
 
-4. **One human/agent drives the EDH window.** No second agent “helps” by sending keys into the same EDH.
-   Full single-owner lease is deferred to `t-1d53e8`; until then, **social** ownership: announce in the
-   task note or chat before launching.
+4. **Use a compatible executable.** `npm run dogfood:edh -- resolve-code` prefers the current worktree test cache,
+   then the primary checkout cache derived from Git's common directory. It rejects WSL `remote-cli/code`, which cannot
+   honor the isolated Extension Development Host flags.
 
-5. **Forbidden while palliative EDH is up:**
+5. **One human/agent drives the EDH window under the lane lease.** No second agent sends keys into it.
+
+6. **Forbidden while palliative EDH is up:**
    - editing monorepo `tachyon.yml` “to see what happens”
    - `kill-server` on the default tmux socket
    - pruning/removing worktrees under `~/.cache/tachyon/worktrees/b349073a/*` belonging to 368
    - claiming you “dogfooded” without the fixture path + SHA recorded
 
-6. **When palliative EDH is insufficient** (must still do installed-VSIX or main-window checks later):
+7. **When palliative EDH is insufficient** (must still do installed-VSIX or main-window checks later):
    - packaging / activation / `contributes` ship boundary
    - trust/approval modals that only appear on marketplace installs
    - multi-window rebind after real extension-host crash of the *installed* build
@@ -63,7 +108,7 @@ Runs a real Extension Development Host under **Xvfb** with an in-host runner
 
 ```bash
 npm run build
-npm run dogfood:edh-palliative -- headless
+npm run dogfood:edh -- headless
 ```
 
 What it asserts (S1 / t-8354ae):
@@ -77,7 +122,8 @@ What it asserts (S1 / t-8354ae):
 Report: `$FIXTURE/headless-out/result.json` (+ `host.log` on failure).
 PNG evidence: `$FIXTURE/headless-out/shots/fail-visible.png` (copied to `.tachyon/evidence/edh-palliative/`).
 
-Requirements: `Xvfb`, VS Code test binary (`.vscode-test/...` or `TACHYON_EDH_CODE`).
+Requirements: `Xvfb`, and a compatible VS Code test/native binary. The resolver also sees the primary checkout's
+`.vscode-test` cache when this command runs from an isolated worktree.
 
 ---
 
@@ -90,10 +136,10 @@ From the repo root (any clean-enough tree; prefer the SHA under test):
 npm run build
 
 # 2) Seed an isolated fixture (prints paths + the exact launch command)
-npm run dogfood:edh-palliative -- seed
+npm run dogfood:edh -- seed
 
 # 3) Launch EDH (script can also exec when a code binary is available)
-npm run dogfood:edh-palliative -- launch
+npm run dogfood:edh -- launch
 ```
 
 
@@ -119,9 +165,12 @@ Record in the task note / PR:
 Cleanup:
 
 ```bash
-npm run dogfood:edh-palliative -- clean
-# or: rm -rf "$FIXTURE"  (only the printed fixture dir)
+# Close the isolated EDH window first; a live recorded EDH makes cleanup fail closed.
+npm run dogfood:edh -- clean
 ```
+
+Do not substitute a raw `rm -rf`: a closed desktop EDH intentionally leaves its persistent Bridge alive until the lane
+cleanup sends the identity-matched stop request, and fixture agents may leave a private tmux server to terminate.
 
 ---
 
@@ -133,7 +182,7 @@ npm run dogfood:edh-palliative -- clean
 
 1. Open EDH on the fixture workspace; wait until the Tachyon sidebar lists agents (e.g. `pilot`, `reviewer`).
 2. In the fixture only, break config with a **hard** validation error
-   (`npm run dogfood:edh-palliative -- break` uses self-referential `subagents: [pilot]`).
+   (`npm run dogfood:edh -- break` uses self-referential `subagents: [pilot]`).
    Note: after t-099be8, a *dangling* name is only a warning — it will not arm fail-visible.
 
 3. In the **EDH** window: Command Palette → `Developer: Reload Window` (EDH only).
@@ -151,17 +200,22 @@ Open EDH, confirm sidebar loads, Bridge line present, `Tachyon: Doctor` runs wit
 
 ---
 
-## Mapping to t-1d53e8 (what remains)
+## SDD 370 headless pilot
 
-| Palliative has | Full lane (t-1d53e8) still needs |
-|----------------|----------------------------------|
-| Fixture isolation + forbidden list | Single-owner concurrency enforcement |
-| Launch recipe + seed script | Versioned delegation-contract block for agents |
-| Worktree vs main guidance (use SHA under test) | Explicit (a) worktree EDH / (b) main EDH / (c) VSIX matrix |
-| Human-driven scenarios | Bounded desktop/screen owner + evidence store |
-| Pilot of fail-visible optional | **Pilot of SDD 370** as the acceptance pilot |
+```bash
+npm run dogfood:runtime-launch-preflight
+```
 
-Do **not** expand this palliative into the full design inside random PRs — land that under `t-1d53e8`.
+This exercises exact-model accept/reject, bounded catalog streaming, malformed/timeout/non-zero/oversized handling,
+EDH executable/environment isolation, readiness/bootstrap authorization, lane ownership, and cleanup. It makes no
+live model-catalog or inference call. A real delegated launch remains a separate coordinator-owned GUI pilot.
+
+For a clean Codex home, keep the agent provisional while answering only the bootstrap screen actually visible in
+`read_output`. Use `write_input(..., answering: true)` for the terminal warning (`y`), update deferral (`2` or `3`),
+and directory selector (`1` or `2`). Hook screens are key-driven: the safe no-trust path is
+`write_input(..., text: "\\u001b", submit: false, answering: true)`; trusting uses literal `t` with `submit:false` and
+must be an explicit source-reviewed choice. Every other pre-ready input, `notify_agent`, and Task assignment remains
+refused. Re-read the pane after each answer and assign work only after the normal composer/footer is visible.
 
 ---
 
@@ -178,9 +232,9 @@ For landed UI surfaces that need a glance without a full EDH window:
 
 ```bash
 npm run build
-npm run dogfood:edh-palliative -- shortlist
+npm run dogfood:edh -- shortlist
 # or: npm run dogfood:ui-shortlist
-# subset: npm run dogfood:edh-palliative -- shortlist mermaid grok-activity
+# subset: npm run dogfood:edh -- shortlist mermaid grok-activity
 ```
 
 | Scene | Task | Harness |

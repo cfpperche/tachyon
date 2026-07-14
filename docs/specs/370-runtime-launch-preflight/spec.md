@@ -22,13 +22,13 @@ check rather than being declared valid.
 
 ## Acceptance criteria
 
-- [ ] **Scenario: Reject a model absent from the authenticated runtime catalog**
+- [x] **Scenario: Reject a model absent from the authenticated runtime catalog**
   - **Given** an ad-hoc Codex command requests `--model gpt-5.6` and the effective `codex debug models` catalog does not
     contain that exact selectable slug
   - **When** `spawn_agent` prepares the launch
   - **Then** it returns a structured `runtime_model_unavailable` failure with bounded close matches and creates no
     tmux session, durable agent ledger row, live lineage, task assignment notice, or persistent worktree
-- [ ] **Scenario: Accept an exact runtime-advertised model**
+- [x] **Scenario: Accept an exact runtime-advertised model**
   - **Given** the same effective Codex environment advertises `gpt-5.6-sol`
   - **When** an agent requests that exact slug
   - **Then** preflight succeeds and normal launch proceeds without Tachyon persisting that slug in a static catalog
@@ -37,7 +37,7 @@ check rather than being declared valid.
   - **When** model capability is checked
   - **Then** the probe uses the same binary, relevant config/profile, authentication context, and safe environment as
     the prospective launch, without exposing credentials or full catalog payloads
-- [ ] **Scenario: Fail closed on a broken authoritative probe**
+- [x] **Scenario: Fail closed on a broken authoritative probe**
   - **Given** an explicit model was selected and the runtime's authoritative catalog probe times out, exits non-zero,
     exceeds output bounds, or returns malformed data
   - **When** launch preflight runs
@@ -53,7 +53,25 @@ check rather than being declared valid.
   - **When** the bounded provisional-startup window observes it
   - **Then** launch is reported as rejected, the session is stopped, created launch artifacts are compensated, and the
     agent is never presented as ready
-- [ ] **Scenario: Never silently change the requested brain**
+- [x] **Scenario: Answer a bounded Codex bootstrap prompt without bypassing readiness**
+  - **Given** a provisional Codex runtime is blocked on a recognized terminal warning, update notice, directory-trust,
+    or hook-review screen before its normal composer can appear
+  - **When** `write_input` is called with `answering=true` and an answer plus submit mode admitted by that exact screen
+  - **Then** only that bounded answer is submitted with a distinct bootstrap receipt; arbitrary text, raw typing,
+    `notify_agent`, first-contract delivery, and Task assignment remain refused until normal readiness is observed
+- [x] **Scenario: Launch a genuinely isolated Extension Development Host**
+  - **Given** the EDH dogfood command is run from an isolated worktree under a WSL-hosted VS Code session
+  - **When** it resolves and launches the VS Code executable
+  - **Then** it selects a compatible native/test binary (including the shared checkout cache), rejects the WSL
+    `remote-cli/code`, uses in-memory secret storage, and removes live Tachyon/Codex/tmux identity from the EDH child
+    environment while preserving fixture-private tmux/cache paths
+- [x] **Scenario: Clean an isolated EDH without orphaning its persistent Bridge**
+  - **Given** the fixture's native EDH started a persistent Bridge through the Electron application binary
+  - **When** the EDH closes and the lane cleans its fixture
+  - **Then** Electron runs the daemon in Node mode and cleanup stops the identity-matched control socket before removing
+    fixture files, terminates the fixture-private tmux server, and fails closed while the recorded EDH is live or
+    ownership metadata is suspicious
+- [x] **Scenario: Never silently change the requested brain**
   - **Given** a requested model is unavailable but similarly named models exist
   - **When** preflight rejects it
   - **Then** Tachyon may suggest exact catalog slugs but never rewrites, aliases, downgrades, upgrades, or retries with a
@@ -76,6 +94,8 @@ check rather than being declared valid.
 - Guarantee entitlement for a runtime that exposes neither a catalog nor a safe dry-run capability
 - Make an inference request merely to test a model during static preflight
 - Automatically choose a replacement model or mutate `tachyon.yml`
+- Automatically answer, approve, or trust a Codex bootstrap choice; the bounded Bridge path only carries an explicit
+  caller-supplied answer after matching the visible prompt
 - Redesign model-selection UI, runtime economics, or RuntimeOps observability
 - Treat `supported_in_api` as equivalent to ChatGPT-account availability; runtime-native selectability is the contract
 - Solve every possible failure after an agent has already performed useful work; this spec covers launch readiness
@@ -88,3 +108,6 @@ Maintainer ratified all three recommendations on 2026-07-10:
 2. `spawn_agent` waits synchronously for a bounded readiness window; a Task cannot be assigned to a non-ready agent.
 3. The default provisional-startup window is five seconds. A runtime that is neither ready nor rejected at the
    deadline becomes `starting/pending`, never false `ready` or false failure.
+4. Live EDH dogfood may answer a provisional Codex bootstrap screen only through an explicit, prompt-specific,
+   closed-grammar path. Line prompts require submit; measured hook-review key gestures require `submit=false`. This does
+   not promote readiness or relax assignment/notification gates.

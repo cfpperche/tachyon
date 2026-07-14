@@ -185,6 +185,7 @@ describe("persistent Bridge proxy", () => {
       "--collect",
       "--unit=tachyon-bridge-abc.service",
       `--working-directory=${root}`,
+      "--setenv=ELECTRON_RUN_AS_NODE=1",
       "--",
       process.execPath,
       "/ext/dist/persistent-bridge-daemon.cjs",

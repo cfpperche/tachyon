@@ -1,4 +1,3 @@
-export const PREFLIGHT_MAX_OUTPUT_BYTES = 256 * 1024;
 export const PREFLIGHT_TIMEOUT_MS = 3_000;
 export const PREFLIGHT_MAX_SUGGESTIONS = 3;
 

@@ -199,6 +199,10 @@ export function buildPersistentBridgeSystemdRunArgs(input: PersistentBridgeLaunc
     "--collect",
     `--unit=${unitName}`,
     `--working-directory=${input.options.workspaceRoot}`,
+    // Native VS Code/Electron exposes the application binary as process.execPath.
+    // Electron only executes the daemon as a Node program with this mode enabled;
+    // remote Extension Hosts already expose node here, where the flag is harmless.
+    "--setenv=ELECTRON_RUN_AS_NODE=1",
     "--",
     process.execPath,
     input.daemonModule,
@@ -218,6 +222,7 @@ export async function launchPersistentBridgeDaemon(input: PersistentBridgeLaunch
     detached: true,
     stdio: "ignore",
     windowsHide: true,
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
   });
   child.unref();
 }

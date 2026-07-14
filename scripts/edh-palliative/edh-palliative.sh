@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# EDH palliative dogfood helper (stopgap until t-1d53e8).
+# EDH dogfood lane v1 (promoted in place from the palliative helper).
 # Isolates fixture workspace + tmux/cache so concurrent SDD 368 work is not touched.
 set -euo pipefail
 
@@ -17,9 +17,63 @@ USER_DATA="${FIXTURE}/.edh-user-data"
 EXT_DIR="${FIXTURE}/.edh-extensions"
 TMUX_DIR="${FIXTURE}/.tmux"
 CACHE_HOME="${FIXTURE}/.cache"
+PID_FILE="${FIXTURE}/.edh.pid"
+RESOLVE_CODE="$REPO/scripts/edh-palliative/resolve-code.mjs"
+STOP_BRIDGE="$REPO/scripts/edh-palliative/stop-bridge.mjs"
+
+# Only the EDH child receives these removals. The caller's shell/session remains untouched.
+EDH_ENV=(
+  -u ELECTRON_RUN_AS_NODE
+  -u TACHYON_AGENT_BRIDGE_TOKEN
+  -u TACHYON_AGENT_NAME
+  -u TACHYON_BRIDGE_TOKEN
+  -u TACHYON_BRIDGE_URL
+  -u TACHYON_NODE_ID
+  -u TACHYON_NODE_NONCE
+  -u TACHYON_RUN_ID
+  -u TACHYON_WORKSPACE_ROOT
+  -u TACHYON_WORKTREE_ROOT
+  -u TMUX
+  -u TMUX_PANE
+  -u CODEX_HOME
+  -u CODEX_THREAD_ID
+  -u CODEX_CI
+  "TMUX_TMPDIR=$TMUX_DIR"
+  "XDG_CACHE_HOME=$CACHE_HOME"
+)
 
 die() { echo "edh-palliative: $*" >&2; exit 1; }
 info() { echo "edh-palliative: $*"; }
+
+record_edh_pid() {
+  local pid="$1"
+  local temporary="${PID_FILE}.${pid}.tmp"
+  (umask 077; printf '%s\n' "$pid" >"$temporary")
+  mv -f -- "$temporary" "$PID_FILE"
+}
+
+stop_private_tmux() {
+  local socket="${TMUX_DIR}/tmux-$(id -u)/tachyon"
+  [ ! -L "$socket" ] || die "refusing symlinked fixture tmux socket"
+  if [ -e "$socket" ] && [ ! -S "$socket" ]; then
+    die "refusing non-socket fixture tmux path"
+  fi
+  [ -S "$socket" ] || return 0
+  command -v tmux >/dev/null 2>&1 || die "fixture tmux is running but tmux is unavailable for cleanup"
+  env -u TMUX -u TMUX_PANE TMUX_TMPDIR="$TMUX_DIR" tmux -L tachyon kill-server \
+    || die "failed to stop fixture-private tmux server"
+  local attempt
+  for attempt in 1 2 3 4 5; do
+    [ ! -e "$socket" ] && return 0
+    if ! env -u TMUX -u TMUX_PANE TMUX_TMPDIR="$TMUX_DIR" tmux -L tachyon list-sessions >/dev/null 2>&1; then
+      rm -f -- "$socket"
+      [ ! -e "$socket" ] && return 0
+      die "failed to remove stopped fixture-private tmux socket"
+    fi
+    sleep 0.05
+  done
+  die "fixture-private tmux server remained responsive after kill-server"
+}
 
 write_valid_config() {
   # kind: agent is explicit — bare `echo` would infer terminal and reject subagents.
@@ -113,6 +167,7 @@ PY
 
 seed() {
   mkdir -p "$WS" "$USER_DATA" "$EXT_DIR" "$TMUX_DIR" "$CACHE_HOME"
+  chmod 700 "$FIXTURE" "$WS" "$USER_DATA" "$EXT_DIR" "$TMUX_DIR" "$CACHE_HOME"
   write_valid_config
   write_lkg_and_ledger
   cat >"$WS/README.md" <<EOF
@@ -148,14 +203,21 @@ print_launch_hint() {
   cat <<EOF
 
 --- launch (copy/paste) ---
-export TMUX_TMPDIR='$TMUX_DIR'
-export XDG_CACHE_HOME='$CACHE_HOME'
-# Prefer VS Code test binary or 'code' on PATH — never kill the default tmux server.
-code \\
+# Resolve with the lane command; remote-cli/code is refused.
+TACHYON_EDH_CODE="\$(node '$RESOLVE_CODE' '$REPO')"
+# Use the resolved native/test binary; never kill the default tmux server.
+env -u ELECTRON_RUN_AS_NODE -u TACHYON_AGENT_BRIDGE_TOKEN -u TACHYON_AGENT_NAME \\
+  -u TACHYON_BRIDGE_TOKEN -u TACHYON_BRIDGE_URL -u TMUX -u TMUX_PANE \\
+  -u TACHYON_NODE_ID -u TACHYON_NODE_NONCE -u TACHYON_RUN_ID \\
+  -u TACHYON_WORKSPACE_ROOT -u TACHYON_WORKTREE_ROOT \\
+  -u CODEX_HOME -u CODEX_THREAD_ID -u CODEX_CI \\
+  TMUX_TMPDIR='$TMUX_DIR' XDG_CACHE_HOME='$CACHE_HOME' \\
+  "\$TACHYON_EDH_CODE" \\
   --extensionDevelopmentPath='$REPO' \\
   --user-data-dir='$USER_DATA' \\
   --extensions-dir='$EXT_DIR' \\
   --disable-workspace-trust \\
+  --use-inmemory-secretstorage \\
   '$WS'
 ---------------------------
 Record SHA: $(git -C "$REPO" rev-parse --short HEAD 2>/dev/null || echo unknown)
@@ -166,21 +228,7 @@ EOF
 }
 
 find_code() {
-  if [ -n "${TACHYON_EDH_CODE:-}" ] && [ -x "${TACHYON_EDH_CODE}" ]; then
-    echo "$TACHYON_EDH_CODE"
-    return
-  fi
-  local test_bin
-  test_bin="$(ls -d "$REPO"/.vscode-test/vscode-linux-*/code 2>/dev/null | head -1 || true)"
-  if [ -n "$test_bin" ] && [ -x "$test_bin" ]; then
-    echo "$test_bin"
-    return
-  fi
-  if command -v code >/dev/null 2>&1; then
-    command -v code
-    return
-  fi
-  return 1
+  node "$RESOLVE_CODE" "$REPO"
 }
 
 launch() {
@@ -192,37 +240,38 @@ launch() {
   fi
   local code_bin
   if ! code_bin="$(find_code)"; then
-    info "no code binary found — seed is ready; launch manually:"
-    print_launch_hint
-    exit 0
+    die "refusing EDH launch without a compatible VS Code executable"
   fi
   info "launching EDH with $code_bin"
   info "isolation: TMUX_TMPDIR=$TMUX_DIR XDG_CACHE_HOME=$CACHE_HOME"
-  # Do not share the live editor's Electron as node.
-  unset ELECTRON_RUN_AS_NODE || true
-  export TMUX_TMPDIR="$TMUX_DIR"
-  export XDG_CACHE_HOME="$CACHE_HOME"
   # Background: return control to the caller (Codex/368 stays untouched).
   if [ "${TACHYON_EDH_FOREGROUND:-}" = "1" ]; then
-    exec "$code_bin" \
+    record_edh_pid "$$"
+    exec env "${EDH_ENV[@]}" "$code_bin" \
       --extensionDevelopmentPath="$REPO" \
       --user-data-dir="$USER_DATA" \
       --extensions-dir="$EXT_DIR" \
       --disable-workspace-trust \
+      --use-inmemory-secretstorage \
       "$WS"
   fi
-  "$code_bin" \
+  env "${EDH_ENV[@]}" "$code_bin" \
     --extensionDevelopmentPath="$REPO" \
     --user-data-dir="$USER_DATA" \
     --extensions-dir="$EXT_DIR" \
     --disable-workspace-trust \
+    --use-inmemory-secretstorage \
     "$WS" >/dev/null 2>&1 &
-  info "EDH started (pid $!). Drive the window; do not reload the normal Codex window."
+  local edh_pid=$!
+  record_edh_pid "$edh_pid"
+  info "EDH started (pid $edh_pid). Drive the window; do not reload the normal Codex window."
   print_launch_hint
 }
 
 clean() {
   if [ -d "$FIXTURE" ]; then
+    node "$STOP_BRIDGE" "$FIXTURE" || die "refusing fixture removal while its persistent Bridge may still be running"
+    stop_private_tmux
     rm -rf -- "$FIXTURE"
     info "removed $FIXTURE"
   else
@@ -251,7 +300,7 @@ headless() {
   command -v Xvfb >/dev/null 2>&1 || die "Xvfb required for headless (apt install xvfb)"
   local code_bin
   if ! code_bin="$(find_code)"; then
-    die "no VS Code test binary — run npm run test:integration once, or set TACHYON_EDH_CODE"
+    die "no compatible VS Code executable — run npm run test:integration once, or set TACHYON_EDH_CODE"
   fi
   if [ ! -f "$REPO/dist/extension.js" ]; then
     info "dist/ missing — running npm run build"
@@ -292,14 +341,6 @@ JSON
   local runner="$REPO/scripts/edh-palliative/headless-runner.js"
   [ -f "$runner" ] || die "missing $runner"
 
-  unset ELECTRON_RUN_AS_NODE || true
-  export TMUX_TMPDIR="$TMUX_DIR"
-  export XDG_CACHE_HOME="$CACHE_HOME"
-  export EDH_PALLIATIVE_RESULT="$result"
-  export EDH_PALLIATIVE_WS="$WS"
-  export EDH_PALLIATIVE_SHA="$sha"
-  export EDH_PALLIATIVE_SHOTDIR="$shot_dir"
-
   info "starting Xvfb on $disp"
   Xvfb "$disp" -screen 0 1600x1000x24 >/dev/null 2>&1 &
   local xvfb_pid=$!
@@ -309,13 +350,12 @@ JSON
   kill -0 "$xvfb_pid" 2>/dev/null || die "Xvfb failed to start on $disp"
 
   info "launching headless EDH (code=$code_bin)"
-  DISPLAY="$disp" \
+  env "${EDH_ENV[@]}" \
+    DISPLAY="$disp" \
     EDH_PALLIATIVE_RESULT="$result" \
     EDH_PALLIATIVE_WS="$WS" \
     EDH_PALLIATIVE_SHA="$sha" \
     EDH_PALLIATIVE_SHOTDIR="$shot_dir" \
-    TMUX_TMPDIR="$TMUX_DIR" \
-    XDG_CACHE_HOME="$CACHE_HOME" \
     "$code_bin" \
       --extensionDevelopmentPath="$REPO" \
       --extensionTestsPath="$runner" \
@@ -324,6 +364,7 @@ JSON
       --skip-welcome \
       --skip-release-notes \
       --disable-workspace-trust \
+      --use-inmemory-secretstorage \
       --disable-gpu \
       --disable-updates \
       "$WS" >"$host_log" 2>&1 &
@@ -424,18 +465,20 @@ shortlist() {
 
 help() {
   cat <<'EOF'
-Usage: npm run dogfood:edh-palliative -- <command>
+Usage: npm run dogfood:edh -- <command>
 
 Commands:
   seed      Create isolated fixture (valid config + LKG + ledger)
   break     Arm t-8354ae fail-visible scenario (dangling subagent)
   restore   Restore valid tachyon.yml in the fixture
   launch    Open GUI Extension Development Host (interactive)
+  resolve-code Print the compatible VS Code executable selected for EDH
   headless  Xvfb EDH + in-host runner (S1 fail-visible asserts)
   shortlist Headless Chromium screenshots: mermaid | grok-activity | handoff-distill
             (default: all three). Pass scene names to subset.
   status    Show fixture path / broken-or-valid
   clean     Delete the fixture directory
+  lease ... Atomic owner lease (acquire|release|status|run); see runbook
   help      This text
 
 Examples:
@@ -453,15 +496,17 @@ Env:
   TACHYON_SHORTLIST_OUT       evidence root (default .tachyon/evidence/ui-shortlist)
   TACHYON_CHROME              Chrome/Chromium binary for preview shots
 
-See docs/runbooks/edh-palliative-dogfood.md
+See docs/runbooks/edh-palliative-dogfood.md (EDH lane v1)
 EOF
 }
 
 case "$CMD" in
+  lease) node "$REPO/scripts/edh-palliative/lane.mjs" "${@:-status}" ;;
   seed) seed ;;
   break) break_config ;;
   restore) restore_config ;;
   launch) launch ;;
+  resolve-code) find_code ;;
   headless) headless ;;
   shortlist) shortlist "$@" ;;
   status) status ;;
