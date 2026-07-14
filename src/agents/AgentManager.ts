@@ -37,7 +37,7 @@ import {
 } from "../runtime/adapters/codexLaunchReadiness.js";
 import { LaunchReadiness, type LaunchReadinessPort } from "../runtime/launchReadiness.js";
 import { openingPromptCapability } from "./openingPromptCapability.js";
-import { SoulError, resolveSoul, withSoulProfileAdmission, type ResolvedSoul } from "./soul.js";
+import { SoulError, resolveSoul, resolveSoulWithRetry, soulLaunchReservationsDir, withSoulProfileAdmission, type ResolvedSoul } from "./soul.js";
 import { composeAgentPrompt, type SoulSnapshot } from "./promptLayers.js";
 
 /** t-815796 MEDIUM fix — is `pid` still alive? `process.kill(pid, 0)` sends no signal, only probes.
@@ -493,13 +493,18 @@ export function newlyDeclaredAutostart(
 export class AgentManager {
   private readonly soulReservations = new Map<string, string>();
 
+  private soulPrincipal(name: string): string {
+    const source = this.opts.ledger?.get(name)?.identity?.soul.source;
+    return source?.match(/^\.tachyon\/agents\/([a-zA-Z][a-zA-Z0-9_-]*)\/SOUL\.md$/)?.[1] ?? name;
+  }
+
   private async reserveSoulLaunch(executionName: string, principal: string, def: AgentDef): Promise<ResolvedSoul> {
     return withSoulProfileAdmission(this.opts.workspaceRoot, principal, async () => {
       const soul = await this.preflightSoul(principal, def);
-      const dir = path.join(this.opts.workspaceRoot, ".tachyon", "soul-launch-reservations");
+      const dir = soulLaunchReservationsDir(this.opts.workspaceRoot);
       fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-      const file = path.join(dir, `${executionName}.json`);
-      fs.writeFileSync(file, JSON.stringify({ profileId: soul.profileId, sha256: soul.sha256, createdAt: new Date().toISOString() }), { mode: 0o600 });
+      const file = path.join(dir, `${principal.toLowerCase()}--${executionName}--${crypto.randomUUID()}.json`);
+      fs.writeFileSync(file, JSON.stringify({ principal, execution: executionName, profileId: soul.profileId, sha256: soul.sha256, createdAt: new Date().toISOString() }), { mode: 0o600, flag: "wx" });
       this.soulReservations.set(executionName, file);
       return soul;
     });
@@ -522,17 +527,9 @@ export class AgentManager {
     if (capability.status !== "prompt") {
       throw new SoulError("soul/runtime-unsupported", `Soul delivery is unsupported for ${capability.runtime}: ${capability.detail}`);
     }
-    const delays = [2_000, 4_000, 8_000];
-    for (let attempt = 0; ; attempt++) {
-      try {
-        const persistedSource = this.opts.ledger?.get(name)?.identity?.soul.source;
-        const persistedOwner = def.kind === "agent" ? persistedSource?.match(/^\.tachyon\/agents\/([a-zA-Z][a-zA-Z0-9_-]*)\/SOUL\.md$/)?.[1] : undefined;
-        return await resolveSoul(this.opts.workspaceRoot, persistedOwner ?? name);
-      } catch (error) {
-        if (!(error instanceof SoulError) || !error.retryable || attempt >= delays.length) throw error;
-        await sleep(delays[attempt]!);
-      }
-    }
+    return resolveSoulWithRetry(async () => {
+        return await resolveSoul(this.opts.workspaceRoot, name);
+    });
   }
   static readonly STOPPING_FALLBACK_MS = 15_000;
   static readonly POSTMORTEM_MAX_LINES = 1000;
@@ -622,9 +619,8 @@ export class AgentManager {
   async resolveSoulForLifecycle(name: string): Promise<ResolvedSoul | undefined> {
     const def = this.definitionOf(name);
     if (!def?.soul) return undefined;
-    const source = this.opts.ledger?.get(name)?.identity?.soul.source;
-    const principal = source?.match(/^\.tachyon\/agents\/([a-zA-Z][a-zA-Z0-9_-]*)\/SOUL\.md$/)?.[1] ?? name;
-    return withSoulProfileAdmission(this.opts.workspaceRoot, principal, () => this.preflightSoul(name, def));
+    const principal = this.soulPrincipal(name);
+    return withSoulProfileAdmission(this.opts.workspaceRoot, principal, () => this.preflightSoul(principal, def));
   }
 
   /** An agent's kind (config wins, then ad-hoc def, else infer from a running session's
@@ -1031,7 +1027,7 @@ export class AgentManager {
       if (opts.gate) throw new Error("spawn_agent cannot combine reuse_worktree with gate — reuse targets an EXISTING delegation's worktree, gate creates a NEW one");
       if (opts.worktree) throw new Error("spawn_agent cannot combine reuse_worktree with worktree:true — reuse already grants an isolated worktree");
       const reuseDef = this.definitionOf(name);
-      const resolvedSoul = reuseDef?.soul ? await this.reserveSoulLaunch(name, name, reuseDef) : undefined;
+      const resolvedSoul = reuseDef?.soul ? await this.reserveSoulLaunch(name, this.soulPrincipal(name), reuseDef) : undefined;
       return this.spawnReuseWorktree(name, opts, opts.reuseWorktree, resolvedSoul);
     }
       return await this.spawnCore(name, opts);
@@ -1450,9 +1446,6 @@ export class AgentManager {
       this.cleanExited.delete(name);
       this.postmortemOutput.delete(name);
     };
-    // Delivery does this only after it has created its own session.  A collision
-    // rejection must not erase the incumbent's readiness/postmortem state.
-    if (!forced?.attempt) clearTransientState();
     let def = forced?.definition ?? this.definitionOf(name);
     if (opts?.cmd) {
       def = {
@@ -1473,6 +1466,15 @@ export class AgentManager {
     if (forced?.commandOverride) def = { ...def, cmd: forced.commandOverride };
 
     const taskBrief = opts?.taskBrief;
+
+    // Runtime and identity preflight precede dead-pane replacement and every transient/resource
+    // mutation. A broken soul must leave the crashed pane, postmortem, and ledger recoverable.
+    if (!forced?.preflight || forced.preflight[deliveryPreflightProof] !== true) await this.assertLaunchPreflight(name, def.cmd, { ...def.env, ...(opts?.env ?? {}) });
+    const resolvedSoul = forced?.resolvedSoul ?? (def.soul ? await this.reserveSoulLaunch(name, this.soulPrincipal(name), def) : undefined);
+
+    // Delivery does this only after it has created its own session. A collision rejection must not
+    // erase the incumbent's readiness/postmortem state.
+    if (!forced?.attempt) clearTransientState();
 
     const session = this.session(name);
     if (forced?.attempt) {
@@ -1497,11 +1499,6 @@ export class AgentManager {
     const liveCount = (await this.runningAgents()).length;
     const max = this.opts.getConfig()?.settings.maxAgents ?? this.opts.getMaxAgents();
     if (liveCount >= max) throw new MaxAgentsError(max);
-
-    // SDD 370: authoritative validation precedes cwd/worktree preparation and every durable/runtime
-    // side effect. The parser never evaluates shell syntax; ambiguous composition remains unverifiable.
-    if (!forced?.preflight || forced.preflight[deliveryPreflightProof] !== true) await this.assertLaunchPreflight(name, def.cmd, { ...def.env, ...(opts?.env ?? {}) });
-    const resolvedSoul = forced?.resolvedSoul ?? (def.soul ? await this.reserveSoulLaunch(name, name, def) : undefined);
 
     let cwd = resolveCwd(this.opts.workspaceRoot, def.cwd);
     const adhoc = !!opts?.cmd || !!forced?.ephemeral;
@@ -2260,7 +2257,7 @@ export class AgentManager {
       );
     }
     await this.assertLaunchPreflight(name, def.cmd, def.env);
-    const resolvedSoul = def.soul ? await this.reserveSoulLaunch(name, name, def) : undefined;
+    const resolvedSoul = def.soul ? await this.reserveSoulLaunch(name, this.soulPrincipal(name), def) : undefined;
     try {
     this.stoppingSince.delete(name);
     this.stopFailed.delete(name);

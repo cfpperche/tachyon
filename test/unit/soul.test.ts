@@ -1,9 +1,9 @@
-import { lstat, mkdtemp, mkdir, readFile, symlink, writeFile } from "node:fs/promises";
+import { lstat, mkdtemp, mkdir, readFile, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
-import { agentSoulPath, importSoulProfile, resolveSoul, SoulError, SOUL_MAX_BYTES } from "../../src/agents/soul.js";
+import { agentSoulPath, importSoulProfile, resolveSoul, resolveSoulWithRetry, soulLaunchReservationsDir, SoulError, SOUL_MAX_BYTES } from "../../src/agents/soul.js";
 
 const fsFault = vi.hoisted(() => ({ manifestCode: undefined as string | undefined, manifestError: undefined as unknown }));
 vi.mock("node:fs/promises", async (importOriginal) => {
@@ -137,6 +137,49 @@ describe("strict soul profile resolver", () => {
     const canonical = await readFile(agentSoulPath(root, "Ada"));
     expect(bodies.some((body) => body.equals(canonical))).toBe(true);
     await expect(resolveSoul(root, "Ada")).resolves.toMatchObject({ body: expect.stringMatching(/^First|^Second/) });
+  });
+
+  it("serializes import with an active metadata-only lifecycle reservation", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "tachyon-import-reserved-root-"));
+    const source = path.join(root, "identity.md");
+    await writeFile(source, "Reserved identity");
+    const reservations = soulLaunchReservationsDir(root);
+    await mkdir(reservations, { recursive: true, mode: 0o700 });
+    const reservation = path.join(reservations, "ada--execution--123e4567-e89b-42d3-a456-426614174000.json");
+    const metadata = { principal: "Ada", execution: "execution", profileId: "123e4567-e89b-42d3-a456-426614174000", sha256: "a".repeat(64) };
+    await writeFile(reservation, JSON.stringify(metadata), { mode: 0o600, flag: "wx" });
+
+    await expect(importSoulProfile(root, "Ada", source)).rejects.toMatchObject({ code: "soul/io-error" });
+    expect(await readFile(reservation, "utf8")).not.toContain("Reserved identity");
+    expect(await readFile(reservation, "utf8")).not.toContain(source);
+    await unlink(reservation);
+    await expect(importSoulProfile(root, "Ada", source)).resolves.toMatchObject({ profileId: expect.any(String) });
+  });
+
+  it("retries only transient soul failures at exactly 2s/4s/8s", async () => {
+    const transient = () => new SoulError("soul/io-error", "transient", { retryable: true });
+    const waits: number[] = [];
+    let attempts = 0;
+    await expect(resolveSoulWithRetry(async () => {
+      if (++attempts < 3) throw transient();
+      return "ok";
+    }, async (ms) => { waits.push(ms); })).resolves.toBe("ok");
+    expect(waits).toEqual([2_000, 4_000]);
+
+    waits.length = 0;
+    attempts = 0;
+    await expect(resolveSoulWithRetry(async () => { attempts++; throw transient(); }, async (ms) => { waits.push(ms); })).rejects.toMatchObject({ retryable: true });
+    expect(attempts).toBe(4);
+    expect(waits).toEqual([2_000, 4_000, 8_000]);
+
+    for (const deterministic of [
+      new SoulError("soul/missing", "missing"),
+      new SoulError("soul/too-many-bytes", `more than ${SOUL_MAX_BYTES}`),
+    ]) {
+      waits.length = 0;
+      await expect(resolveSoulWithRetry(async () => { throw deterministic; }, async (ms) => { waits.push(ms); })).rejects.toBe(deterministic);
+      expect(waits).toEqual([]);
+    }
   });
 
   it("refuses a symlinked canonical parent before creating an out-of-workspace profile", async () => {

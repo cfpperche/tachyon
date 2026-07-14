@@ -1,5 +1,5 @@
 import { constants as fsConstants } from "node:fs";
-import { open, lstat, link, mkdir, realpath, unlink } from "node:fs/promises";
+import { open, lstat, link, mkdir, readdir, realpath, unlink } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import { AGENT_NAME_PATTERN, isValidAgentName } from "../config/nameValidation.js";
@@ -9,6 +9,7 @@ export const SOUL_MAX_CHARS = 20_000;
 export const SOUL_PROFILE_SCHEMA_VERSION = 1;
 export const SOUL_FILE_NAME = "SOUL.md";
 export const SOUL_MANIFEST_FILE_NAME = "profile.json";
+export const SOUL_RETRY_DELAYS_MS = [2_000, 4_000, 8_000] as const;
 
 const RETRYABLE_FS_CODES = new Set(["EIO", "EBUSY", "EMFILE", "ENFILE"]);
 const profileAdmissions = new Map<string, Promise<void>>();
@@ -28,6 +29,33 @@ export async function withSoulProfileAdmission<T>(workspaceRoot: string, name: s
   } finally {
     release();
     if (profileAdmissions.get(key) === queued) profileAdmissions.delete(key);
+  }
+}
+
+export async function resolveSoulWithRetry<T>(operation: () => Promise<T>, wait: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms))): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await operation();
+    } catch (error) {
+      if (!(error instanceof SoulError) || !error.retryable || attempt >= SOUL_RETRY_DELAYS_MS.length) throw error;
+      await wait(SOUL_RETRY_DELAYS_MS[attempt]!);
+    }
+  }
+}
+
+export function soulLaunchReservationsDir(workspaceRoot: string): string {
+  return path.join(path.resolve(workspaceRoot), ".tachyon", "agent-profile-transactions", "launch-reservations");
+}
+
+async function assertNoActiveLaunchReservation(workspaceRoot: string, principal: string): Promise<void> {
+  let entries: string[];
+  try { entries = await readdir(soulLaunchReservationsDir(workspaceRoot)); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw error;
+  }
+  if (entries.some((entry) => entry.startsWith(`${principal.toLowerCase()}--`) && entry.endsWith(".json"))) {
+    throw new SoulError("soul/io-error", `Soul profile for '${principal}' has an active lifecycle reservation`);
   }
 }
 
@@ -301,6 +329,7 @@ export interface ImportSoulResult { profileId: string; sha256: string; chars: nu
 /** Validate and copy exact source bytes into the private canonical profile. The source path is not returned or persisted. */
 async function importSoulProfileUnlocked(workspaceRoot: string, name: string, importSource: string): Promise<ImportSoulResult> {
   validateSoulAgentName(name);
+  await assertNoActiveLaunchReservation(workspaceRoot, name);
   let sourceHandle: Awaited<ReturnType<typeof open>> | undefined;
   let bytes: Buffer<ArrayBufferLike> = Buffer.alloc(0);
   try {

@@ -38,12 +38,23 @@ describe("agent soul lifecycle composition closure", () => {
     ledger.record("reviewer", { def: { cmd: "codex", kind: "agent", role: "reviewer", soul: true, taskBrief: "Current execution task." }, cwd: root, declared: false, identity: { soul: { ...composed.soul!, offeredAt: new Date(0).toISOString(), channel: "startup-argument", state: "offered" }, health: "offered" } });
     expect(fs.readFileSync(ledger.path, "utf8")).not.toContain(identityBody);
     expect(new SessionLedger(root).get("reviewer")?.identity?.soul.sha256).toBe("a".repeat(64));
-    const malformed = JSON.parse(fs.readFileSync(ledger.path, "utf8")) as { sessions: Record<string, { identity?: { soul: { bytes: number } } }> };
+    const malformed = JSON.parse(fs.readFileSync(ledger.path, "utf8")) as { sessions: Record<string, { identity?: { soul: { bytes: number; profileId: string; offeredAt: string }; degradedAt?: string } }> };
+    const validIdentity = structuredClone(malformed.sessions.reviewer!.identity!);
     malformed.sessions.reviewer!.identity!.soul.bytes = Number.POSITIVE_INFINITY;
     fs.writeFileSync(ledger.path, JSON.stringify(malformed));
     const sanitized = new SessionLedger(root).get("reviewer");
     expect(sanitized).toBeDefined();
     expect(sanitized?.identity).toBeUndefined();
+    for (const breakIdentity of [
+      (identity: typeof validIdentity) => { identity.soul.profileId = "not-a-uuid"; },
+      (identity: typeof validIdentity) => { identity.soul.offeredAt = "not-a-date"; },
+      (identity: typeof validIdentity) => { identity.degradedAt = "not-a-date"; },
+    ]) {
+      malformed.sessions.reviewer!.identity = structuredClone(validIdentity);
+      breakIdentity(malformed.sessions.reviewer!.identity!);
+      fs.writeFileSync(ledger.path, JSON.stringify(malformed));
+      expect(new SessionLedger(root).get("reviewer")).toMatchObject({ identity: undefined, def: { cmd: "codex" } });
+    }
 
     const legacy = layers.composeAgentPrompt({ instructions: "  persistent  ", bridgeGuidance: false, taskBrief: "  one run  " }).body;
     expect(legacy).toBe("persistent  \n\n  one run");
