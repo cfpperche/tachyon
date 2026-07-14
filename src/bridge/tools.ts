@@ -1070,7 +1070,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           cmd,
           cwd,
           instructions: isBoundDeliveryExecution ? undefined : brief,
-          appendInstructions: isBoundDeliveryExecution ? brief : undefined,
+          taskBrief: isBoundDeliveryExecution ? brief : undefined,
           parent,
           delegator: delegationGate ? parent : undefined,
           worktree: delegationGate ? true : worktree,

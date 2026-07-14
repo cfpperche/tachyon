@@ -6,6 +6,7 @@ import type { WorktreeRecord } from "../worktree/WorktreeManager.js";
 import { appendCapped, replaceVerifySet, EVIDENCE_SCHEMA_VERSION, type WorktreeEvidence, type Severity } from "../worktree/evidence.js";
 import type { VerifyState } from "../worktree/verify.js";
 import type { SpawnContract } from "../bridge/spawnContract.js";
+import type { Role } from "../roles/templates.js";
 
 /**
  * Per-workspace session ledger (spec 209 + 211): `agentName -> SessionRecord`,
@@ -26,6 +27,9 @@ export interface SessionDef {
   cmd: string; // the ORIGINAL spawn command (no minted-id injection)
   kind: EntryKind;
   instructions?: string;
+  role?: Role;
+  soul?: boolean;
+  taskBrief?: string;
   parent?: string; // lineage — who spawned it
   /** spec 362 — the Bridge-resolved requester of a GATED delegation (t-bae303). Gated spawns force
    *  `parent` undefined and record this instead; persisted here so it survives a reload — rehydrate
@@ -139,7 +143,21 @@ export interface SessionRecord {
    * Presence of any marker excludes generic auto-resume/offer/restart.
    */
   delivery?: SessionDeliveryMarker;
+  identity?: SessionIdentity;
   updatedAt: string;
+}
+
+export interface SessionIdentity {
+  enabled: true;
+  profileId: string;
+  source: string;
+  sha256: string;
+  chars: number;
+  bytes: number;
+  offeredAt: string;
+  channel: "startup-argument" | "tui-prefill";
+  health: "healthy" | "identity-degraded";
+  attention?: boolean;
 }
 
 /** A row may drive resume only when it has a runtime AND that runtime still has an adapter. */
@@ -331,15 +349,16 @@ function normalize(r: unknown): SessionRecord | null {
   const updatedAt = typeof o.updatedAt === "string" ? o.updatedAt : new Date(0).toISOString();
 
   // New (211) shape: a def and/or resume object (+ spec 210 worktree + spec 364 bridgeClient + SDD 368 T14 delivery).
-  if (o.def !== undefined || o.resume !== undefined || o.worktree !== undefined || o.bridgeClient !== undefined || o.delivery !== undefined) {
+  if (o.def !== undefined || o.resume !== undefined || o.worktree !== undefined || o.bridgeClient !== undefined || o.delivery !== undefined || o.identity !== undefined) {
     const def = parseDef(o.def);
     const resume = parseResume(o.resume);
     const worktree = parseWorktree(o.worktree);
     const bridgeClient = parseBridgeClient(o.bridgeClient);
     // delivery field present → always keep a marker (valid or invalid); never drop it into an ordinary row.
     const delivery = o.delivery !== undefined ? parseDeliveryMarker(o.delivery) : undefined;
-    if (!def && !resume && !worktree && !bridgeClient && delivery === undefined) return null;
-    return stripDeclaredParent({ def, resume, worktree, bridgeClient, delivery, cwd: o.cwd, declared, updatedAt });
+    const identity = parseIdentity(o.identity);
+    if (!def && !resume && !worktree && !bridgeClient && delivery === undefined && !identity) return null;
+    return stripDeclaredParent({ def, resume, worktree, bridgeClient, delivery, identity, cwd: o.cwd, declared, updatedAt });
   }
 
   // Pre-211 flat record → migrate.
@@ -370,6 +389,9 @@ function parseDef(d: unknown): SessionDef | undefined {
     cmd: o.cmd,
     kind,
     ...(typeof o.instructions === "string" ? { instructions: o.instructions } : {}),
+    ...(o.role === "coder" || o.role === "reviewer" || o.role === "tester" || o.role === "orchestrator" || o.role === "custom" ? { role: o.role } : {}),
+    ...(o.soul === true ? { soul: true as const } : {}),
+    ...(typeof o.taskBrief === "string" ? { taskBrief: o.taskBrief } : {}),
     ...(typeof o.parent === "string" ? { parent: o.parent } : {}),
     ...(typeof o.delegator === "string" ? { delegator: o.delegator } : {}),
     ...(isStringMap(o.env) ? { env: o.env as Record<string, string> } : {}),
@@ -378,6 +400,18 @@ function parseDef(d: unknown): SessionDef | undefined {
     ...(isSpawnContract(o.contract) ? { contract: o.contract as SpawnContract } : {}), // spec 246
     ...(typeof o.contractSkipReason === "string" ? { contractSkipReason: o.contractSkipReason } : {}), // spec 246 D6
   };
+}
+
+function parseIdentity(value: unknown): SessionIdentity | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const o = value as Record<string, unknown>;
+  if (o.enabled !== true || typeof o.profileId !== "string" || typeof o.source !== "string" ||
+      typeof o.sha256 !== "string" || !/^[0-9a-f]{64}$/.test(o.sha256) || typeof o.chars !== "number" ||
+      typeof o.bytes !== "number" || typeof o.offeredAt !== "string" ||
+      (o.channel !== "startup-argument" && o.channel !== "tui-prefill") ||
+      (o.health !== "healthy" && o.health !== "identity-degraded")) return undefined;
+  return { enabled: true, profileId: o.profileId, source: o.source, sha256: o.sha256, chars: o.chars, bytes: o.bytes,
+    offeredAt: o.offeredAt, channel: o.channel, health: o.health, ...(o.attention === true ? { attention: true } : {}) };
 }
 
 /** A persisted spawn-contract (spec 246) — the three required string slots + the deliverable/done_when pair. */

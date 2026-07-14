@@ -4,7 +4,9 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { TmuxService, workspaceHash, SESSION_PREFIX } from "../tmux/TmuxService.js";
 import { ControlModeClient } from "../tmux/ControlModeClient.js";
-import { loadConfigFile, parseConfig, CONFIG_FILENAMES, inferKind, type TachyonConfig } from "../config/loadConfig.js";
+import { loadConfigFile, parseConfig, CONFIG_FILENAMES, inferKind, shellQuote, type TachyonConfig } from "../config/loadConfig.js";
+import { composeAgentPrompt } from "../agents/promptLayers.js";
+import { openingPromptCapability } from "../agents/openingPromptCapability.js";
 import { snapshotFromConfig, writeConfigLkg, readConfigLkg, type ConfigLkgSnapshot } from "../config/configLkg.js";
 import {
   type ConfigFailure,
@@ -1393,7 +1395,7 @@ export class Workspace {
           // (manual, or another run), spawn throws; surface a clear reason and let the node fail safely
           // (the executor never owns/kills the contended session — codex B2).
           try {
-            await this.manager.spawn(def.agent, { env, pipeline: { runId, nodeId }, reveal: false, appendInstructions: taskInstr });
+            await this.manager.spawn(def.agent, { env, pipeline: { runId, nodeId }, reveal: false, taskBrief: taskInstr });
           } catch (err) {
             if (String(err).includes("already running")) {
               this.host.notify(this.t("pipeline node '{0}' needs agent '{1}', but it's already running — stop it and re-run", nodeId, def.agent), "warn");
@@ -1976,6 +1978,41 @@ export class Workspace {
     const session = this.manager.session(agent);
     if (!(await this.tmux.hasSession(session))) throw new Error(`agent '${agent}' is not running`);
     const def = this.manager.defOf(agent);
+    if (def?.soul) {
+      const previous = this.ledger.get(agent)?.identity;
+      try {
+        const soul = await this.manager.resolveSoulForLifecycle(agent);
+        if (!soul) throw new Error(`agent '${agent}' has no enabled soul`);
+        const delegationRecord = readLatestDelegationRecord(this.workspaceRoot, agent)?.record;
+        const { primer, beforeFinishing } = renderPrimer({
+          agentName: agent,
+          delegator: this.manager.delegatorOf(agent),
+          parent: this.manager.parentOf(agent),
+          gate: delegationRecord ? { behaviorTest: delegationRecord.behaviorTest, owns: delegationRecord.owns, stubPath: delegationRecord.stubPath } : undefined,
+          freshWorktree: false,
+          verify: this.config?.settings.verify,
+        });
+        const body = composeAgentPrompt({ soul, role: def.role, instructions: def.instructions, bridgeGuidance: false, taskBrief: this.ledger.get(agent)?.def?.taskBrief }).body ?? "";
+        const dir = path.join(this.workspaceRoot, ".tachyon", "anchors");
+        const abs = path.join(dir, `${agent}.md`);
+        const tmp = path.join(dir, `.${agent}.${process.pid}.${Date.now()}.tmp`);
+        fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+        fs.writeFileSync(tmp, `${primer}\n\n${body}\n\n${beforeFinishing}\n`, { encoding: "utf8", mode: 0o600, flag: "wx" });
+        fs.renameSync(tmp, abs);
+        fs.chmodSync(abs, 0o600);
+        const transition = previous?.sha256 && previous.sha256 !== soul.sha256 ? ` (${previous.sha256.slice(0, 12)}→${soul.sha256.slice(0, 12)})` : "";
+        await this.tmux.sendKeys(session, `[Tachyon] Re-anchor identity${transition}: read the complete current contract with: cat ${shellQuote(abs)}`, true);
+        const capability = openingPromptCapability(def.cmd);
+        if (capability.status !== "prompt") throw new Error(`Soul delivery is unsupported for ${capability.runtime}`);
+        const rec = this.ledger.get(agent);
+        if (rec) this.ledger.record(agent, { ...rec, identity: { enabled: true, profileId: soul.profileId, source: soul.source, sha256: soul.sha256, chars: soul.chars, bytes: soul.bytes, offeredAt: new Date().toISOString(), channel: capability.channel, health: "healthy" } });
+        return;
+      } catch (error) {
+        const rec = this.ledger.get(agent);
+        if (rec?.identity) this.ledger.record(agent, { ...rec, identity: { ...rec.identity, health: "identity-degraded", attention: true } });
+        throw error;
+      }
+    }
     const relPath = path.join(".tachyon", "roles", `${agent}.md`);
     try {
       const abs = path.join(this.workspaceRoot, relPath);

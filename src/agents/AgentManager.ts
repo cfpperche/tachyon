@@ -3,7 +3,6 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { codexConfigCmd, codexFlagCmd, composeCommand, codexBridgeCmd, shellQuote, inferKind, type AgentDef, type EntryKind, type TachyonConfig } from "../config/loadConfig.js";
-import { composeInstructions, withBridgeGuidance } from "../roles/templates.js";
 import { TmuxService, sessionName, agentFromSession, SESSION_PREFIX } from "../tmux/TmuxService.js";
 import { adapterFor, adapterForRuntime, binaryOf, forkable, managesOwnSession, type ResumeAdapter, type ResumeRuntime } from "../resume/adapters.js";
 import { URL_ENV_VAR } from "../bridge/token.js";
@@ -37,6 +36,9 @@ import {
   type CodexBootstrapInputMatch,
 } from "../runtime/adapters/codexLaunchReadiness.js";
 import { LaunchReadiness, type LaunchReadinessPort } from "../runtime/launchReadiness.js";
+import { openingPromptCapability } from "./openingPromptCapability.js";
+import { SoulError, resolveSoul, type ResolvedSoul } from "./soul.js";
+import { composeAgentPrompt, type SoulSnapshot } from "./promptLayers.js";
 
 /** t-815796 MEDIUM fix — is `pid` still alive? `process.kill(pid, 0)` sends no signal, only probes.
  *  ESRCH is the one unambiguous "gone" answer; any other error (e.g. EPERM — exists, owned by someone
@@ -278,7 +280,7 @@ export interface SpawnOptions {
   /** spec 230 — tag this ad-hoc spawn as a pipeline-run node; persisted to SessionDef.pipeline so the generic resume/offer path skips it (the run owns it). */
   pipeline?: { runId: string; nodeId: string };
   /** spec 230 — extra instructions appended to the agent's composed prompt (a pipeline node's task, added AFTER a declared agent's role/instructions so the specialist config is preserved). */
-  appendInstructions?: string;
+  taskBrief?: string;
   /** spec 246 — the validated delegation contract this ad-hoc AI child was spawned under (Bridge spawn-contract
    *  gate); persisted as structured metadata on the ledger def (D8). The brief itself rides in `instructions`. */
   contract?: SpawnContract;
@@ -489,6 +491,25 @@ export function newlyDeclaredAutostart(
  * which does not survive an extension restart by design.
  */
 export class AgentManager {
+  private soulSnapshot(soul: ResolvedSoul, channel: "startup-argument" | "tui-prefill"): SoulSnapshot & { offeredAt: string; channel: "startup-argument" | "tui-prefill"; health: "healthy" } {
+    return { enabled: true, profileId: soul.profileId, source: soul.source, sha256: soul.sha256, chars: soul.chars, bytes: soul.bytes, offeredAt: new Date().toISOString(), channel, health: "healthy" };
+  }
+
+  private async preflightSoul(name: string, def: AgentDef): Promise<ResolvedSoul> {
+    const capability = openingPromptCapability(def.cmd);
+    if (capability.status !== "prompt") {
+      throw new SoulError("soul/runtime-unsupported", `Soul delivery is unsupported for ${capability.runtime}: ${capability.detail}`);
+    }
+    const delays = [2_000, 4_000, 8_000];
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await resolveSoul(this.opts.workspaceRoot, name);
+      } catch (error) {
+        if (!(error instanceof SoulError) || !error.retryable || attempt >= delays.length) throw error;
+        await sleep(delays[attempt]!);
+      }
+    }
+  }
   static readonly STOPPING_FALLBACK_MS = 15_000;
   static readonly POSTMORTEM_MAX_LINES = 1000;
   static readonly POSTMORTEM_MAX_BYTES = 64 * 1024;
@@ -571,6 +592,13 @@ export class AgentManager {
    *  cmd/role/instructions to detect compaction and rebuild the role reminder. */
   defOf(name: string): AgentDef | undefined {
     return this.definitionOf(name);
+  }
+
+  /** Resolve the current canonical identity at an explicit lifecycle boundary. */
+  async resolveSoulForLifecycle(name: string): Promise<ResolvedSoul | undefined> {
+    const def = this.definitionOf(name);
+    if (!def?.soul) return undefined;
+    return this.preflightSoul(name, def);
   }
 
   /** An agent's kind (config wins, then ad-hoc def, else infer from a running session's
@@ -839,9 +867,11 @@ export class AgentManager {
     def: AgentDef,
     parent: string | undefined,
     primerCtx?: { delegator?: string; gate?: DelegationGate; freshWorktree?: boolean },
+    taskBrief?: string,
+    soul?: ResolvedSoul,
   ): string | undefined {
     const guidance = !!parent && (this.opts.getConfig()?.settings.bridgeGuidance ?? true);
-    const composed = withBridgeGuidance(composeInstructions(def.role, def.instructions), guidance);
+    const composed = composeAgentPrompt({ soul, role: def.role, instructions: def.instructions, bridgeGuidance: guidance, taskBrief }).body;
     const deliverable = composed ? deliverableBody(this.opts.workspaceRoot, name, composed) : composed;
     const spawner = primerCtx?.delegator ?? parent;
     const instructions = deliverable?.trim() || spawner || primerCtx?.gate
@@ -857,8 +887,8 @@ export class AgentManager {
     return instructions?.trim() ? instructions : undefined;
   }
 
-  private effectiveCmd(name: string, def: AgentDef, parent: string | undefined, primerCtx?: { delegator?: string; gate?: DelegationGate; freshWorktree?: boolean }): string {
-    return composeCommand({ cmd: def.cmd, instructions: this.effectiveInstructions(name, def, parent, primerCtx) });
+  private effectiveCmd(name: string, def: AgentDef, parent: string | undefined, primerCtx?: { delegator?: string; gate?: DelegationGate; freshWorktree?: boolean }, taskBrief?: string, soul?: ResolvedSoul): string {
+    return composeCommand({ cmd: def.cmd, instructions: this.effectiveInstructions(name, def, parent, primerCtx, taskBrief, soul) });
   }
 
   /**
@@ -870,9 +900,11 @@ export class AgentManager {
     def: AgentDef,
     parent: string | undefined,
     primerCtx?: { delegator?: string; gate?: DelegationGate; freshWorktree?: boolean },
+    taskBrief?: string,
+    soul?: ResolvedSoul,
   ): Record<string, string> {
     if (binaryOf(def.cmd) !== "hermes") return {};
-    const brief = this.effectiveInstructions(name, def, parent, primerCtx);
+    const brief = this.effectiveInstructions(name, def, parent, primerCtx, taskBrief, soul);
     if (!brief) return {};
     return { HERMES_TUI_QUERY: brief };
   }
@@ -1405,11 +1437,7 @@ export class AgentManager {
     if (!def) throw new UnknownAgentError(name);
     if (forced?.commandOverride) def = { ...def, cmd: forced.commandOverride };
 
-    // spec 230 — a pipeline node appends its task AFTER the declared agent's role/instructions, so the
-    // specialist's config (role/harness) is preserved and the task is delivered in the initial prompt.
-    if (opts?.appendInstructions) {
-      def = { ...def, instructions: [def.instructions, opts.appendInstructions].filter(Boolean).join("\n\n") };
-    }
+    const taskBrief = opts?.taskBrief;
 
     const session = this.session(name);
     if (forced?.attempt) {
@@ -1438,6 +1466,7 @@ export class AgentManager {
     // SDD 370: authoritative validation precedes cwd/worktree preparation and every durable/runtime
     // side effect. The parser never evaluates shell syntax; ambiguous composition remains unverifiable.
     if (!forced?.preflight || forced.preflight[deliveryPreflightProof] !== true) await this.assertLaunchPreflight(name, def.cmd, { ...def.env, ...(opts?.env ?? {}) });
+    const resolvedSoul = def.soul ? await this.preflightSoul(name, def) : undefined;
 
     let cwd = resolveCwd(this.opts.workspaceRoot, def.cwd);
     const adhoc = !!opts?.cmd || !!forced?.ephemeral;
@@ -1514,7 +1543,7 @@ export class AgentManager {
     // Evaluate the extra environment before minting.  A bridge/env failure must not
     // revoke a durable declared token that this attempt never minted.
     const extraEnv = this.opts.getExtraEnv?.();
-    const effectiveCmd = this.effectiveCmd(name, def, parent, { delegator, gate: opts?.gate, freshWorktree: !!worktree });
+    const effectiveCmd = this.effectiveCmd(name, def, parent, { delegator, gate: opts?.gate, freshWorktree: !!worktree }, taskBrief, resolvedSoul);
     if (forced?.attempt) forced.attempt.acquired = true;
     const tokenEnv = this.opts.mintAgentToken?.(name);
     if (forced?.attempt && tokenEnv !== undefined) forced.attempt.token = true;
@@ -1525,7 +1554,7 @@ export class AgentManager {
       def,
       cwd,
       effectiveCmd,
-      { ...extraEnv, ...tokenEnv, ...def.env, ...(opts?.env ?? {}), TACHYON_AGENT_NAME: name, ...this.hermesBriefEnv(name, def, parent, primerCtx) },
+      { ...extraEnv, ...tokenEnv, ...def.env, ...(opts?.env ?? {}), TACHYON_AGENT_NAME: name, ...this.hermesBriefEnv(name, def, parent, primerCtx, taskBrief, resolvedSoul) },
     );
     if (forced?.attempt) forced.attempt.materialized = "completed";
     this.applyDelegatedOpencodeHarnessPermission(def, spawnBuild.env, delegatedOpencode);
@@ -1567,6 +1596,9 @@ export class AgentManager {
         cmd: originalCmd,
         kind: def.kind,
         ...(def.instructions ? { instructions: def.instructions } : {}),
+        ...(def.role ? { role: def.role } : {}),
+        ...(def.soul ? { soul: true } : {}),
+        ...(taskBrief ? { taskBrief } : {}),
         ...(parent ? { parent } : {}),
         ...(delegator ? { delegator } : {}), // t-bae303 — persist so rehydrate can restore gated lineage after a reload
         ...(opts?.env ? { env: opts.env } : {}), // spec 230 — persist the node env so a restart re-applies the nonce
@@ -1575,7 +1607,9 @@ export class AgentManager {
         ...(opts?.contractSkipReason ? { contractSkipReason: opts.contractSkipReason } : {}), // spec 246 D6 — auditable bypass
       };
       const resumeBlock = adapter && !selfManaged ? this.withConfigHome(name, def, { runtime: adapter.runtime, sessionId: resumeId }) : undefined; // spec 240
-      this.opts.ledger.record(name, { def: defBlock, resume: resumeBlock, worktree, cwd, declared: !adhoc });
+      const promptCapability = openingPromptCapability(def.cmd);
+      const identity = resolvedSoul ? this.soulSnapshot(resolvedSoul, promptCapability.status === "prompt" ? promptCapability.channel : "startup-argument") : undefined;
+      this.opts.ledger.record(name, { def: defBlock, resume: resumeBlock, worktree, cwd, declared: !adhoc, identity });
       if (forced?.attempt) forced.attempt.ledger = true;
     }
     // spec 364 — durable Bridge-client stamp after successful spawn with materialization.
@@ -2184,11 +2218,6 @@ export class AgentManager {
   async restart(name: string): Promise<void> {
     // SDD 368 T14 — refuse before mutating transient caches (readiness/postmortem/stopping).
     this.assertNotDeliveryLifecycleDenied(name, "restart");
-    this.stoppingSince.delete(name);
-    this.stopFailed.delete(name);
-    this.readinessCache.delete(name); // spec 221: restart is a new session → drop the cached badge
-    this.cleanExited.delete(name);
-    this.postmortemOutput.delete(name);
     let def = this.definitionOf(name);
     if (!def) {
       throw new Error(
@@ -2196,6 +2225,12 @@ export class AgentManager {
       );
     }
     await this.assertLaunchPreflight(name, def.cmd, def.env);
+    const resolvedSoul = def.soul ? await this.preflightSoul(name, def) : undefined;
+    this.stoppingSince.delete(name);
+    this.stopFailed.delete(name);
+    this.readinessCache.delete(name); // spec 221: restart is a new session → drop the cached badge
+    this.cleanExited.delete(name);
+    this.postmortemOutput.delete(name);
     const session = this.session(name);
     // A3: capture an in-TUI /resume before the process is replaced (respawn or kill).
     if (await this.opts.tmux.hasSession(session)) {
@@ -2238,13 +2273,13 @@ export class AgentManager {
       name,
       def,
       cwd,
-      this.effectiveCmd(name, def, restartParent, restartPrimerCtx),
+      this.effectiveCmd(name, def, restartParent, restartPrimerCtx, this.opts.ledger?.get(name)?.def?.taskBrief, resolvedSoul),
       {
         ...this.opts.getExtraEnv?.(),
         ...this.opts.mintAgentToken?.(name),
         ...def.env,
         TACHYON_AGENT_NAME: name,
-        ...this.hermesBriefEnv(name, def, restartParent, restartPrimerCtx),
+        ...this.hermesBriefEnv(name, def, restartParent, restartPrimerCtx, this.opts.ledger?.get(name)?.def?.taskBrief, resolvedSoul),
       },
     );
     this.applyDelegatedOpencodeHarnessPermission(def, restartBuild.env, restartDelegatedOpencode);
@@ -2272,7 +2307,9 @@ export class AgentManager {
           // refreshOwnership still PRESERVE — they re-attach to an EXISTING session, where the old home is right.)
           { ...existing?.resume, runtime: injected.adapter.runtime, sessionId: injected.resumeId, configHome: this.runtimeConfigHome(injected.adapter.runtime, name, def) }
         : existing?.resume;
-      this.opts.ledger.record(name, { ...(existing ?? { declared: !this.adhoc.has(name) }), cwd, ...(worktree ? { worktree } : {}), resume });
+      const capability = openingPromptCapability(def.cmd);
+      const identity = resolvedSoul && capability.status === "prompt" ? this.soulSnapshot(resolvedSoul, capability.channel) : existing?.identity;
+      this.opts.ledger.record(name, { ...(existing ?? { declared: !this.adhoc.has(name) }), cwd, ...(worktree ? { worktree } : {}), resume, identity });
     }
     // spec 364 — restart is a fresh process with Bridge re-injection; stamp generation.
     this.stampBridgeClientBinding(name, restartBridge.wired);
