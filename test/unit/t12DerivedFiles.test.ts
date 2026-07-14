@@ -13,7 +13,7 @@ describe("T12 private derived agent files", () => {
     const finalBody = `distinctive-final-${"b".repeat(BRIEF_FILE_THRESHOLD)}`;
     const brief = briefFilePath(workspaceRoot, agent);
     const anchor = path.join(workspaceRoot, ".tachyon", "anchors", `${agent}.md`);
-    const canonical = path.join(workspaceRoot, ".tachyon", "agents", `${agent}.md`);
+    const canonical = path.join(workspaceRoot, ".tachyon", "agents", agent, "SOUL.md");
 
     expect(fs.readFileSync(path.join(process.cwd(), ".gitignore"), "utf8")).toMatch(/^\.tachyon\/$/m);
 

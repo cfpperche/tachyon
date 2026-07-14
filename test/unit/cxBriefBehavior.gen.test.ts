@@ -53,4 +53,17 @@ describe("container-generated delegation behavior", () => {
     expect(deliverableBody(workspaceRoot, "utf8", body)).toContain(briefFilePath(workspaceRoot, "utf8"));
     expect(fs.readFileSync(briefFilePath(workspaceRoot, "utf8"), "utf8")).toBe(body);
   });
+
+  it("removes the same-directory temporary file when an atomic replace fails", () => {
+    const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), "cx-brief-"));
+    const body = "x".repeat(BRIEF_FILE_THRESHOLD + 1);
+    const file = briefFilePath(workspaceRoot, "atomic-failure");
+    vi.spyOn(fs, "renameSync").mockImplementationOnce(() => {
+      throw new Error("EIO: atomic rename failed");
+    });
+
+    expect(deliverableBody(workspaceRoot, "atomic-failure", body)).toBe(body);
+    expect(fs.existsSync(file)).toBe(false);
+    expect(fs.readdirSync(path.dirname(file))).toEqual([]);
+  });
 });
