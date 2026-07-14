@@ -10,10 +10,11 @@
  *   (CLI: npm run dogfood:dev-host -- point|point-status|point-clear)
  *
  * Layout under <repo>/.tachyon/dev-host/ (gitignored via .tachyon/):
- *   extension  → worktree root (symlink)
- *   workspace  → fixture dir opened in EDH (symlink)
+ *   extension  → worktree root (symlink) — --extensionDevelopmentPath
+ *   workspace  → real directory opened in EDH (child symlinks into fixture)
  *   meta.json  — pointer metadata for agents/humans
- *   user-data/, extensions/, tmux/, cache/ — isolation dirs for the launch config
+ *   tmux/, cache/ — private TMUX_TMPDIR / XDG_CACHE_HOME for the EDH process
+ *   user-data/, extensions/ — reserved for CLI launch only (not F5; drops Remote-WSL)
  */
 
 import { execFileSync } from "node:child_process";
@@ -91,6 +92,37 @@ function replaceSymlink(linkPath, targetAbs) {
   fs.symlinkSync(targetAbs, linkPath);
 }
 
+/**
+ * Materialize the EDH open-folder as a *real directory* under the monorepo pointer,
+ * with child symlinks into the fixture. Opening a directory that *is* a symlink
+ * (or an absolute path outside ${workspaceFolder}) breaks F5 on WSL Remote:
+ * - symlink folder → empty "NO FOLDER OPENED"
+ * - absolute machine path → new window re-enters WSL → "Disconnected from WSL" /
+ *   "Extension 'WSL' is required"
+ * Portable launch keeps ${workspaceFolder}/.tachyon/dev-host/workspace so the EDH
+ * inherits the parent remote authority (same shape as Run Tachyon demo/fixture).
+ */
+export function materializeWorkspaceMirror(mirrorDir, fixtureAbs) {
+  const fixture = path.resolve(fixtureAbs);
+  try {
+    fs.lstatSync(mirrorDir);
+    fs.rmSync(mirrorDir, { recursive: true, force: true });
+  } catch {
+    /* missing */
+  }
+  fs.mkdirSync(mirrorDir, { recursive: true, mode: 0o700 });
+  for (const name of fs.readdirSync(fixture)) {
+    // CLI-only isolation dirs on the fixture — not needed for F5 and clutter Explorer.
+    if (name === ".edh-cache" || name === ".edh-extensions" || name === ".edh-tmux" || name === ".edh-user-data") {
+      continue;
+    }
+    if (name === ".dev-host-source") continue;
+    fs.symlinkSync(path.join(fixture, name), path.join(mirrorDir, name));
+  }
+  fs.writeFileSync(path.join(mirrorDir, ".dev-host-source"), `${fixture}\n`, "utf8");
+  return mirrorDir;
+}
+
 export function ensureNodeModules(worktreeAbs, repoRootAbs) {
   const wtNm = path.join(worktreeAbs, "node_modules");
   if (fs.existsSync(wtNm)) return { linked: false };
@@ -117,73 +149,14 @@ function readShortSha(worktreeAbs) {
 
 const LAUNCH_CONFIG_NAME = "Tachyon: Dev Host";
 
-/** VS Code WSL often fails to open a *symlink* as the EDH folder (empty window / NO FOLDER OPENED).
- *  point() therefore rewrites the Dev Host launch entry with absolute real paths. */
-export function writeAbsoluteLaunchConfig(repoRoot, worktreeAbs, workspaceAbs) {
-  const launchPath = path.join(repoRoot, ".vscode", "launch.json");
-  if (!fs.existsSync(launchPath)) {
-    // Tests and bare checkouts without .vscode — pointer still works for CLI status.
-    return null;
-  }
-  const raw = fs.readFileSync(launchPath, "utf8");
-  let doc;
-  try {
-    doc = JSON.parse(raw);
-  } catch (err) {
-    throw new Error(`${SELF}: ${launchPath} is not valid JSON: ${err instanceof Error ? err.message : String(err)}`);
-  }
-  if (!Array.isArray(doc.configurations)) {
-    throw new Error(`${SELF}: ${launchPath} has no configurations array`);
-  }
-  const p = pathsOf(repoRoot);
-  const idx = doc.configurations.findIndex((c) => c && c.name === LAUNCH_CONFIG_NAME);
-  // Do NOT set --extensions-dir / --user-data-dir for F5 from a WSL-remote parent window:
-  // an empty private extensions dir drops ms-vscode-remote.remote-wsl and the EDH opens
-  // "Disconnected from WSL" with an empty UI (fixture name in title, no Explorer).
-  // Match the working "Run Tachyon (demo)" pattern: folder + extensionDevelopmentPath only.
-  // Isolation stays via fixture workspace + private TMUX_TMPDIR / XDG_CACHE_HOME.
-  const cfg = {
-    name: LAUNCH_CONFIG_NAME,
-    type: "extensionHost",
-    request: "launch",
-    args: [
-      workspaceAbs,
-      `--extensionDevelopmentPath=${worktreeAbs}`,
-      "--disable-workspace-trust",
-    ],
-    env: {
-      TMUX_TMPDIR: p.tmux,
-      XDG_CACHE_HOME: p.cache,
-    },
-    outFiles: [`${worktreeAbs}/dist/**/*.js`],
-    preLaunchTask: "tachyon: build-dev-host",
-    presentation: {
-      hidden: false,
-      group: "dogfood",
-      order: 1,
-    },
-  };
-  if (idx >= 0) doc.configurations[idx] = cfg;
-  else doc.configurations.unshift(cfg);
-  fs.mkdirSync(path.dirname(launchPath), { recursive: true });
-  fs.writeFileSync(launchPath, `${JSON.stringify(doc, null, 2)}\n`, "utf8");
-  return launchPath;
-}
-
-/** Restore portable template paths so machine-local absolute paths are not left committed. */
-export function restoreTemplateLaunchConfig(repoRoot) {
-  const launchPath = path.join(repoRoot, ".vscode", "launch.json");
-  if (!fs.existsSync(launchPath)) return { restored: false, reason: "no launch.json" };
-  let doc;
-  try {
-    doc = JSON.parse(fs.readFileSync(launchPath, "utf8"));
-  } catch {
-    return { restored: false, reason: "invalid launch.json" };
-  }
-  if (!Array.isArray(doc.configurations)) return { restored: false, reason: "no configurations" };
-  const idx = doc.configurations.findIndex((c) => c && c.name === LAUNCH_CONFIG_NAME);
-  if (idx < 0) return { restored: false, reason: "Dev Host entry missing" };
-  doc.configurations[idx] = {
+/** Portable F5 shape for WSL Remote parent windows (must stay under ${workspaceFolder}). */
+export function portableDevHostLaunchConfig() {
+  // Do NOT set --extensions-dir / --user-data-dir: empty private dirs drop
+  // ms-vscode-remote.remote-wsl on the local (Windows) side of the EDH window.
+  // Do NOT write absolute machine paths: they force a fresh WSL re-entry
+  // ("Disconnected from WSL" / "Extension 'WSL' is required").
+  // Match Run Tachyon (demo/fixture): folder + extensionDevelopmentPath under workspaceFolder.
+  return {
     name: LAUNCH_CONFIG_NAME,
     type: "extensionHost",
     request: "launch",
@@ -204,7 +177,46 @@ export function restoreTemplateLaunchConfig(repoRoot) {
       order: 1,
     },
   };
+}
+
+/**
+ * Ensure launch.json Dev Host entry uses the portable template (never machine-local paths).
+ * @deprecated name kept as alias — prefer ensurePortableLaunchConfig
+ */
+export function writeAbsoluteLaunchConfig(repoRoot, _worktreeAbs, _workspaceAbs) {
+  return ensurePortableLaunchConfig(repoRoot);
+}
+
+/** Write / restore portable Dev Host launch entry (safe to leave committed). */
+export function ensurePortableLaunchConfig(repoRoot) {
+  const launchPath = path.join(repoRoot, ".vscode", "launch.json");
+  if (!fs.existsSync(launchPath)) {
+    // Tests and bare checkouts without .vscode — pointer still works for CLI status.
+    return null;
+  }
+  const raw = fs.readFileSync(launchPath, "utf8");
+  let doc;
+  try {
+    doc = JSON.parse(raw);
+  } catch (err) {
+    throw new Error(`${SELF}: ${launchPath} is not valid JSON: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  if (!Array.isArray(doc.configurations)) {
+    throw new Error(`${SELF}: ${launchPath} has no configurations array`);
+  }
+  const cfg = portableDevHostLaunchConfig();
+  const idx = doc.configurations.findIndex((c) => c && c.name === LAUNCH_CONFIG_NAME);
+  if (idx >= 0) doc.configurations[idx] = cfg;
+  else doc.configurations.unshift(cfg);
+  fs.mkdirSync(path.dirname(launchPath), { recursive: true });
   fs.writeFileSync(launchPath, `${JSON.stringify(doc, null, 2)}\n`, "utf8");
+  return launchPath;
+}
+
+/** Restore portable template paths (idempotent with ensurePortableLaunchConfig). */
+export function restoreTemplateLaunchConfig(repoRoot) {
+  const launchPath = ensurePortableLaunchConfig(repoRoot);
+  if (!launchPath) return { restored: false, reason: "no launch.json" };
   return { restored: true, path: launchPath };
 }
 
@@ -226,8 +238,10 @@ export function point(opts) {
   ensureDir(p.cache);
 
   const nm = ensureNodeModules(worktree, repoRoot);
+  // extension: symlink is fine for --extensionDevelopmentPath (remote loads package.json/dist).
   replaceSymlink(p.extension, worktree);
-  replaceSymlink(p.workspace, workspace);
+  // workspace: real dir + child symlinks so Explorer works under WSL Remote F5.
+  materializeWorkspaceMirror(p.workspace, workspace);
 
   let packageName = null;
   try {
@@ -243,6 +257,7 @@ export function point(opts) {
     workspace,
     extensionLink: p.extension,
     workspaceLink: p.workspace,
+    workspaceMirror: true,
     spec: opts.spec ?? null,
     slug: opts.slug ?? null,
     owner: opts.owner ?? null,
@@ -259,12 +274,12 @@ export function point(opts) {
     ],
   };
   fs.writeFileSync(p.meta, `${JSON.stringify(meta, null, 2)}\n`, "utf8");
-  // WSL: Extension Host must open real directories, not symlink paths (empty window otherwise).
-  const launchPath = writeAbsoluteLaunchConfig(repoRoot, worktree, workspace);
+  // Always portable ${workspaceFolder} paths — never machine-local absolutes (WSL F5).
+  const launchPath = ensurePortableLaunchConfig(repoRoot);
   if (launchPath) {
     meta.launchJson = launchPath;
     meta.launchNote =
-      "launch.json Dev Host entry now uses absolute paths for WSL; leave uncommitted or run point-clear to restore template";
+      "launch.json Dev Host entry uses portable ${workspaceFolder} paths; workspace is a real mirror dir under .tachyon/dev-host/";
   }
   fs.writeFileSync(p.meta, `${JSON.stringify(meta, null, 2)}\n`, "utf8");
   return meta;
@@ -282,12 +297,25 @@ export function status(repoRoot) {
     return { armed: false, reason: `meta.json unreadable: ${err instanceof Error ? err.message : String(err)}` };
   }
   const extOk = fs.existsSync(p.extension);
-  const wsOk = fs.existsSync(p.workspace);
+  const wsOk = fs.existsSync(p.workspace) && fs.statSync(p.workspace).isDirectory();
+  let workspaceSource = null;
+  if (wsOk) {
+    const srcMarker = path.join(p.workspace, ".dev-host-source");
+    if (fs.existsSync(srcMarker)) {
+      try {
+        workspaceSource = fs.readFileSync(srcMarker, "utf8").trim() || null;
+      } catch {
+        /* ignore */
+      }
+    }
+  }
   return {
     armed: extOk && wsOk,
     meta,
     extensionResolves: extOk ? fs.realpathSync(p.extension) : null,
-    workspaceResolves: wsOk ? fs.realpathSync(p.workspace) : null,
+    // Mirror is a real directory; report fixture source (marker) or the mirror path.
+    workspaceResolves: workspaceSource ?? (wsOk ? path.resolve(p.workspace) : null),
+    workspaceIsMirror: Boolean(workspaceSource),
     broken: !extOk || !wsOk,
   };
 }
@@ -340,7 +368,7 @@ export function main(argv = process.argv.slice(2)) {
 
 Stable F5 config name: "Tachyon: Dev Host"
 Pointer dir: <repo>/.tachyon/dev-host/
-On point: rewrites launch.json Dev Host entry with ABSOLUTE paths (WSL-safe; do not commit machine paths).
+On point: mirrors fixture into .tachyon/dev-host/workspace (real dir) and keeps portable launch.json.
 `);
     return 0;
   }
@@ -364,7 +392,8 @@ On point: rewrites launch.json Dev Host entry with ABSOLUTE paths (WSL-safe; do 
     if (meta.spec) console.log(`  spec:      ${meta.spec}`);
     if (meta.slug) console.log(`  slug:      ${meta.slug}`);
     console.log("");
-    console.log(`  launch.json: absolute paths written for WSL (do not commit)`);
+    console.log("  launch.json: portable ${workspaceFolder} Dev Host paths (WSL-safe)");
+    console.log("  workspace:   real mirror dir under .tachyon/dev-host/workspace");
     console.log("");
     console.log("Human next step:");
     for (const line of meta.howTo) console.log(`  • ${line}`);

@@ -5,6 +5,8 @@ import path from "node:path";
 import {
   assertWorkspaceNotRepoRoot,
   clear,
+  ensurePortableLaunchConfig,
+  materializeWorkspaceMirror,
   point,
   status,
 } from "../../scripts/dev-host/pointer.mjs";
@@ -28,6 +30,11 @@ describe("dev-host pointer", () => {
     fs.mkdirSync(path.join(repo, "node_modules"), { recursive: true });
     fs.mkdirSync(fixture, { recursive: true });
     fs.writeFileSync(path.join(fixture, "tachyon.yml"), "agents:\n  a:\n    cmd: x\n");
+    fs.writeFileSync(path.join(fixture, "README.md"), "# fixture\n");
+    fs.mkdirSync(path.join(fixture, ".tachyon", "prompts"), { recursive: true });
+    fs.writeFileSync(path.join(fixture, ".tachyon", "prompts", "hi.md"), "hello\n");
+    // CLI-only dirs should not be mirrored into the F5 workspace
+    fs.mkdirSync(path.join(fixture, ".edh-user-data"), { recursive: true });
   });
 
   afterEach(() => {
@@ -38,7 +45,7 @@ describe("dev-host pointer", () => {
     expect(() => assertWorkspaceNotRepoRoot(repo, repo)).toThrow(/refusing workspace=repo root/);
   });
 
-  it("points extension + workspace symlinks and writes meta", () => {
+  it("points extension symlink + workspace mirror and writes meta", () => {
     const meta = point({
       repoRoot: repo,
       worktree,
@@ -50,17 +57,28 @@ describe("dev-host pointer", () => {
     expect(meta.worktree).toBe(path.resolve(worktree));
     expect(meta.workspace).toBe(path.resolve(fixture));
     expect(meta.launchConfig).toBe("Tachyon: Dev Host");
+    expect(meta.workspaceMirror).toBe(true);
 
     const ext = path.join(repo, ".tachyon", "dev-host", "extension");
     const ws = path.join(repo, ".tachyon", "dev-host", "workspace");
     expect(fs.lstatSync(ext).isSymbolicLink()).toBe(true);
-    expect(fs.lstatSync(ws).isSymbolicLink()).toBe(true);
+    // workspace must be a real directory (not a symlink) for WSL F5 Explorer
+    expect(fs.lstatSync(ws).isSymbolicLink()).toBe(false);
+    expect(fs.statSync(ws).isDirectory()).toBe(true);
     expect(fs.realpathSync(ext)).toBe(path.resolve(worktree));
-    expect(fs.realpathSync(ws)).toBe(path.resolve(fixture));
+
+    // Child entries are symlinks into the fixture (live content)
+    expect(fs.lstatSync(path.join(ws, "tachyon.yml")).isSymbolicLink()).toBe(true);
+    expect(fs.readFileSync(path.join(ws, "tachyon.yml"), "utf8")).toContain("agents:");
+    expect(fs.existsSync(path.join(ws, ".tachyon", "prompts", "hi.md"))).toBe(true);
+    expect(fs.existsSync(path.join(ws, ".edh-user-data"))).toBe(false);
+    expect(fs.readFileSync(path.join(ws, ".dev-host-source"), "utf8").trim()).toBe(path.resolve(fixture));
 
     const st = status(repo);
     expect(st.armed).toBe(true);
     expect(st.meta?.spec).toBe("381");
+    expect(st.workspaceIsMirror).toBe(true);
+    expect(st.workspaceResolves).toBe(path.resolve(fixture));
   });
 
   it("clear removes only the pointer dir", () => {
@@ -80,7 +98,7 @@ describe("dev-host pointer", () => {
     expect(fs.realpathSync(wtNm)).toBe(path.resolve(repo, "node_modules"));
   });
 
-  it("writes absolute paths into launch.json Dev Host entry (WSL-safe)", () => {
+  it("keeps portable ${workspaceFolder} paths in launch.json (never machine absolutes)", () => {
     const vscode = path.join(repo, ".vscode");
     fs.mkdirSync(vscode, { recursive: true });
     fs.writeFileSync(
@@ -91,16 +109,24 @@ describe("dev-host pointer", () => {
           name: "Tachyon: Dev Host",
           type: "extensionHost",
           request: "launch",
-          args: ["${workspaceFolder}/.tachyon/dev-host/workspace"],
+          // Simulate a dirty absolute-path rewrite from older point()
+          args: ["/tmp/absolute/fixture", "--extensionDevelopmentPath=/tmp/absolute/wt"],
         }],
       }, null, 2),
     );
     point({ repoRoot: repo, worktree, workspace: fixture, spec: "381" });
     const launch = JSON.parse(fs.readFileSync(path.join(vscode, "launch.json"), "utf8"));
     const cfg = launch.configurations.find((c: { name: string }) => c.name === "Tachyon: Dev Host");
-    expect(cfg.args[0]).toBe(path.resolve(fixture));
-    expect(cfg.args[1]).toContain(path.resolve(worktree));
-    expect(cfg.args[1].startsWith("--extensionDevelopmentPath=")).toBe(true);
+    expect(cfg.args[0]).toBe("${workspaceFolder}/.tachyon/dev-host/workspace");
+    expect(cfg.args[1]).toBe("--extensionDevelopmentPath=${workspaceFolder}/.tachyon/dev-host/extension");
+    expect(cfg.args.some((a: string) => a.includes("--extensions-dir"))).toBe(false);
+    expect(cfg.args.some((a: string) => a.includes("--user-data-dir"))).toBe(false);
+    expect(cfg.env.TMUX_TMPDIR).toContain("${workspaceFolder}");
+    expect(cfg.outFiles[0]).toContain("${workspaceFolder}");
+    // No absolute machine paths leaked into the committed template
+    expect(JSON.stringify(cfg)).not.toContain(path.resolve(fixture));
+    expect(JSON.stringify(cfg)).not.toContain(path.resolve(worktree));
+
     const cleared = clear(repo);
     expect(cleared.cleared).toBe(true);
     const restored = JSON.parse(fs.readFileSync(path.join(vscode, "launch.json"), "utf8"));
@@ -108,4 +134,17 @@ describe("dev-host pointer", () => {
     expect(cfg2.args[0]).toContain("${workspaceFolder}");
   });
 
+  it("materializeWorkspaceMirror replaces a prior symlink workspace", () => {
+    const mirror = path.join(repo, ".tachyon", "dev-host", "workspace");
+    fs.mkdirSync(path.dirname(mirror), { recursive: true });
+    fs.symlinkSync(fixture, mirror);
+    expect(fs.lstatSync(mirror).isSymbolicLink()).toBe(true);
+    materializeWorkspaceMirror(mirror, fixture);
+    expect(fs.lstatSync(mirror).isSymbolicLink()).toBe(false);
+    expect(fs.existsSync(path.join(mirror, "README.md"))).toBe(true);
+  });
+
+  it("ensurePortableLaunchConfig is a no-op without launch.json", () => {
+    expect(ensurePortableLaunchConfig(repo)).toBeNull();
+  });
 });

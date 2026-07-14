@@ -21,12 +21,18 @@ pins, journals, or commits should map the old vocabulary here:
 | Interim | `npm run dogfood:edh` (+ alias `dogfood:edh-palliative`) | Same scripts; shorter entry while still under the palliative path. |
 | Current (`t-2d1810`) | **Dev Host** / `npm run dogfood:dev-host` / `scripts/dev-host/` | Semantic product name: isolated Extension Development Host for worktree/fixture dogfood. F5 pointer is first-class (`point` / `point-status` / `point-clear`). |
 
-**F5 launch shape (WSL):** do not pass private `--extensions-dir` / `--user-data-dir` when F5-launching
-from a WSL-remote parent window — that drops `ms-vscode-remote.remote-wsl` and the EDH opens
-**Disconnected from WSL** with an empty UI (fixture name in the title, no Explorer). F5 only sets the
-fixture folder + `--extensionDevelopmentPath` (same shape as **Run Tachyon (demo)**), plus private
-`TMUX_TMPDIR` / `XDG_CACHE_HOME`. CLI `launch` / `headless` may still use private profile dirs under
-the fixture.
+**F5 launch shape (WSL Remote parent window):** keep the same shape as **Run Tachyon (demo)** /
+**Run Tachyon (test fixture)**:
+
+| Do | Do not |
+|----|--------|
+| Open `${workspaceFolder}/.tachyon/dev-host/workspace` (real dir under the monorepo) | Pass machine-local absolute paths in `launch.json` (forces a fresh WSL re-entry → **Disconnected from WSL** / **Extension 'WSL' is required**) |
+| `--extensionDevelopmentPath=${workspaceFolder}/.tachyon/dev-host/extension` | Open a *symlink* as the EDH folder (empty **NO FOLDER OPENED**) |
+| Private `TMUX_TMPDIR` / `XDG_CACHE_HOME` only | Private `--extensions-dir` / `--user-data-dir` (drops `ms-vscode-remote.remote-wsl` on the local side of the EDH window) |
+
+`point` materializes `workspace` as a **real directory** with child symlinks into the fixture (so Explorer
+shows `tachyon.yml`, `.tachyon/prompts`, README) and keeps `launch.json` portable — safe to commit.
+CLI `launch` / `headless` may still use private profile dirs under the fixture.
 
 **Deliberately not kept as runtime aliases:** `dogfood:edh` and `dogfood:edh-palliative` were removed
 after the rename so there is one canonical command. History lives in this section, the stub
@@ -271,10 +277,10 @@ npm run dogfood:dev-host -- point-clear   # when done
 
 | Piece | Location |
 |-------|----------|
-| Stable F5 config | `.vscode/launch.json` → **Tachyon: Dev Host** |
-| Pointer (local) | `.tachyon/dev-host/` (`extension` + `workspace` symlinks + `meta.json`) |
-| Extension bits | worktree (`--extensionDevelopmentPath`) |
-| Opened folder | isolated **fixture** (never monorepo root) |
+| Stable F5 config | `.vscode/launch.json` → **Tachyon: Dev Host** (portable `${workspaceFolder}` paths) |
+| Pointer (local) | `.tachyon/dev-host/` (`extension` symlink → worktree; `workspace` real mirror → fixture; `meta.json`) |
+| Extension bits | worktree via `--extensionDevelopmentPath=…/extension` |
+| Opened folder | mirror of isolated **fixture** (never monorepo root) |
 
 **Human:** Run and Debug → **Tachyon: Dev Host** → **F5**. Drive only the EDH window.
 
