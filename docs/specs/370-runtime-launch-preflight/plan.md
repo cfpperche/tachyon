@@ -118,9 +118,9 @@ rather than risking an unrelated process or service.
 - `src/runtime/adapters/codexLaunchReadiness.ts` — readiness plus prompt-specific provisional bootstrap classification.
 - `src/agents/AgentManager.ts` — common lifecycle orchestration, provisional state, compensation, persistence ordering.
 - `src/bridge/tools.ts` — structured spawn outcome/error only; no provider logic.
-- `scripts/edh-palliative/resolve-code.mjs`, `scripts/edh-palliative/edh-palliative.sh` — compatible binary resolution and
+- `scripts/dev-host/resolve-code.mjs`, `scripts/dev-host/cli.sh` — compatible binary resolution and
   sanitized EDH child launch.
-- `scripts/edh-palliative/stop-bridge.mjs`, `src/bridge/PersistentBridgeService.ts` — identity-scoped fixture cleanup and
+- `scripts/dev-host/stop-bridge.mjs`, `src/bridge/PersistentBridgeService.ts` — identity-scoped fixture cleanup and
   Electron-as-Node persistent daemon launch.
 - `src/tasks/TaskStore.ts` or assignment boundary — only if ratification chooses assignment rejection for non-ready agents.
 - `src/attention/*` — narrowly shared startup classifications if existing normalized patterns are reusable.

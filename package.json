@@ -1,7 +1,7 @@
 {
   "name": "tachyon",
   "displayName": "Tachyon",
-  "description": "Multi-agent terminal orchestration — signals from the future. Run AI coding agents as tmux sessions in native editor terminals, coordinated through the Bridge MCP server.",
+  "description": "Multi-agent terminal orchestration \u2014 signals from the future. Run AI coding agents as tmux sessions in native editor terminals, coordinated through the Bridge MCP server.",
   "version": "0.56.4",
   "publisher": "cfpperche",
   "license": "GPL-3.0-or-later",
@@ -811,7 +811,7 @@
           {
             "id": "init",
             "title": "Initialize your project",
-            "description": "Generate a starter **tachyon.yml** — it detects your stack (Node, PHP, Rust, Go, Python, Ruby) and writes a commented config.\n[Initialize Tachyon](command:tachyon.init)",
+            "description": "Generate a starter **tachyon.yml** \u2014 it detects your stack (Node, PHP, Rust, Go, Python, Ruby) and writes a commented config.\n[Initialize Tachyon](command:tachyon.init)",
             "media": {
               "image": "media/walkthrough/hero.png",
               "altText": "Tachyon running agents as native editor terminals"
@@ -823,7 +823,7 @@
           {
             "id": "fleet",
             "title": "Meet your fleet",
-            "description": "Open the **⚡ Tachyon** view: your agents and terminals, grouped, with start/stop/restart and live attention state.\n\n💡 Tip: to copy text from an agent terminal with correct accents/UTF-8, hold **Shift** while selecting (a plain mouse-drag uses tmux copy-mode, which some hosts mangle).\n[Open the Tachyon view](command:workbench.view.extension.tachyon)",
+            "description": "Open the **\u26a1 Tachyon** view: your agents and terminals, grouped, with start/stop/restart and live attention state.\n\n\ud83d\udca1 Tip: to copy text from an agent terminal with correct accents/UTF-8, hold **Shift** while selecting (a plain mouse-drag uses tmux copy-mode, which some hosts mangle).\n[Open the Tachyon view](command:workbench.view.extension.tachyon)",
             "media": {
               "image": "media/walkthrough/subagents.png",
               "altText": "Sidebar showing agents and nested sub-agents"
@@ -835,7 +835,7 @@
           {
             "id": "bridge",
             "title": "The Bridge is automatic",
-            "description": "The **Bridge** is an embedded MCP server that lets your agents spawn sub-agents, read each other's output, run commands and notify you. Tachyon injects it into every Claude/Codex agent it spawns (incl. restart/resume/fork) — no setup needed.\nUse **Connect Agent Runtime** only for a CLI session you start manually outside Tachyon.\n[Connect a runtime](command:tachyon.connectRuntime)",
+            "description": "The **Bridge** is an embedded MCP server that lets your agents spawn sub-agents, read each other's output, run commands and notify you. Tachyon injects it into every Claude/Codex agent it spawns (incl. restart/resume/fork) \u2014 no setup needed.\nUse **Connect Agent Runtime** only for a CLI session you start manually outside Tachyon.\n[Connect a runtime](command:tachyon.connectRuntime)",
             "media": {
               "image": "media/walkthrough/studio.png",
               "altText": "Agent Studio tabs"
@@ -873,10 +873,9 @@
     "test": "vitest run",
     "verify:full": "node esbuild.mjs && vitest run",
     "verify:full:quiet": "node scripts/verify-full.mjs",
-    "dogfood:edh-palliative": "bash scripts/edh-palliative/edh-palliative.sh",
-    "dogfood:edh": "bash scripts/edh-palliative/edh-palliative.sh",
-    "dogfood:runtime-launch-preflight": "node scripts/edh-palliative/lane.mjs run --owner sdd-370-headless --target worktree -- npm exec vitest run test/unit/codexCatalogStream.test.ts test/unit/runtimeLaunchPreflight.test.ts test/unit/edhDogfoodLane.test.ts test/unit/edhPalliativeLauncher.test.ts test/unit/persistentBridgeProxy.test.ts test/unit/launchReadinessRecovery.test.ts test/unit/bridge.test.ts",
-    "dogfood:ui-shortlist": "bash scripts/edh-palliative/run-shortlist.sh",
+    "dogfood:dev-host": "bash scripts/dev-host/cli.sh",
+    "dogfood:runtime-launch-preflight": "node scripts/dev-host/lane.mjs run --owner sdd-370-headless --target worktree -- npm exec vitest run test/unit/codexCatalogStream.test.ts test/unit/runtimeLaunchPreflight.test.ts test/unit/devHostLane.test.ts test/unit/devHostLauncher.test.ts test/unit/persistentBridgeProxy.test.ts test/unit/launchReadinessRecovery.test.ts test/unit/bridge.test.ts",
+    "dogfood:ui-shortlist": "bash scripts/dev-host/run-shortlist.sh",
     "test:browser": "vitest run --config vitest.browser.config.ts",
     "test:integration": "vscode-test",
     "vscode:prepublish": "npm run build && npm run package:prepare",

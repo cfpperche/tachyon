@@ -4,12 +4,12 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 
-const script = path.resolve("scripts/edh-palliative/lane.mjs");
+const script = path.resolve("scripts/dev-host/lane.mjs");
 function call(base: string, args: string[], env: Record<string, string> = {}) {
   return spawnSync(process.execPath, [script, ...args], { encoding: "utf8", env: { ...process.env, TACHYON_EDH_LANE_BASE: base, ...env } });
 }
 
-describe("EDH dogfood lane v1", () => {
+describe("Dev Host dogfood lane", () => {
   it("allows exactly one owner and only that owner can release", () => {
     const base = fs.mkdtempSync(path.join(os.tmpdir(), "edh-lane-test-"));
     try {

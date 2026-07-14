@@ -6,6 +6,13 @@ Marketplace release notes.
 
 ## Unreleased
 
+### Changed
+- **Dogfood lane renamed from “EDH palliative” to Dev Host.** Same isolation contract (fixture + private
+  tmux/cache + worktree extension bits); entry is now `npm run dogfood:dev-host` and `scripts/dev-host/`, with a
+  stable F5 config **Tachyon: Dev Host** and pointer commands `point` / `point-status` / `point-clear`. The old
+  name and npm scripts are not runtime aliases — evolution is recorded in `docs/runbooks/dev-host.md` and the
+  stub `docs/runbooks/edh-palliative-dogfood.md` (task `t-2d1810`).
+
 ### Fixed
 - **Sidebar domain mutations now share one workspace action path.** Pin toggle/delete, schedule pause/delete, and
   proposal approve/reject now go through a shared `domainActions` layer instead of mixing direct sidebar store edits
