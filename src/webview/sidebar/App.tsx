@@ -104,6 +104,23 @@ function ConfigErrorBanner({ err }: { err: NonNullable<FleetVM["configError"]> }
   );
 }
 
+/** spec 378 — a TEXTUAL provenance marker for the model suffix (never styling alone): "· declared"/"· profile"
+ *  before the first live observation, "· stale" once an observation survives a process-preserving boundary
+ *  (in-TUI /clear, resume) without a fresh one yet, or "≠ declared" when the observed model diverges from
+ *  what was declared/configured. */
+function ModelProvenance({ a }: { a: AgentVM }) {
+  if (!a.model || !a.modelSource) return null;
+  if (a.modelDivergence) {
+    return <span class="model-marker warn" title={`Observed model differs from the ${a.modelSource === "observed" ? "declared/profile" : a.modelSource} default`}> ≠ declared</span>;
+  }
+  if (a.modelSource === "observed") {
+    return a.modelStale
+      ? <span class="model-marker warn" title="Carried across a session boundary — awaiting a fresh observation"> · stale</span>
+      : null;
+  }
+  return <span class="model-marker" title={a.modelSource === "declared" ? "From the declared --model flag; not yet observed live" : "Runtime profile default; not yet observed live"}> · {a.modelSource}</span>;
+}
+
 function AgentBadges({ a }: { a: AgentVM }) {
   const externalToolLabel = externalToolBadgeLabel(a);
   return (
@@ -176,7 +193,7 @@ export function AgentRow({ a, flash, nested = false, hasChildren = false, collap
           !nested && <span class="agent-toggle-spacer" aria-hidden="true" />
         )}
         <span class={`sdot ${a.status}`} role="img" title={STATUS_LABEL[a.status]} aria-label={STATUS_LABEL[a.status]} />
-        <span class="name">{a.name}{a.model && <><span class="model-sep"> — </span><span class="model">{a.model}</span></>}</span>
+        <span class="name">{a.name}{a.model && <><span class="model-sep"> — </span><span class="model">{a.model}</span><ModelProvenance a={a} /></>}</span>
       </div>
       {hasMeta && (
         <div class="row-meta">

@@ -84,6 +84,9 @@ export interface LoggedRecord {
   cwd?: string;
   timestamp?: string;
   runtimeVersion?: string;
+  /** spec 378 — hoisted like `runtimeVersion` (additive; no schemaVersion bump). */
+  model?: string;
+  effort?: string;
   loggedAt: string;
   events: Array<{ type: string; payload: unknown; blobRef?: string }>;
 }
@@ -96,6 +99,9 @@ export interface LoggedEvent {
   cwd?: string;
   timestamp?: string;
   runtimeVersion?: string;
+  /** spec 378 — hoisted like `runtimeVersion` (additive; no schemaVersion bump). */
+  model?: string;
+  effort?: string;
   payload: unknown;
   source: LogSource;
   /** sha256 of a copied blob (an image we render) under `blobs/` — survives runtime pruning. */
@@ -161,6 +167,8 @@ export class ActivityLog {
       ...(f.cwd !== undefined ? { cwd: f.cwd } : {}),
       ...(f.timestamp !== undefined ? { timestamp: f.timestamp } : {}),
       ...(f.runtimeVersion !== undefined ? { runtimeVersion: f.runtimeVersion } : {}),
+      ...(f.model !== undefined ? { model: f.model } : {}),
+      ...(f.effort !== undefined ? { effort: f.effort } : {}),
       loggedAt,
       events: entries,
     };
@@ -251,6 +259,8 @@ function flatten(lines: string[]): LoggedEvent[] {
         ...(r.cwd !== undefined ? { cwd: r.cwd } : {}),
         ...(r.timestamp !== undefined ? { timestamp: r.timestamp } : {}),
         ...(r.runtimeVersion !== undefined ? { runtimeVersion: r.runtimeVersion } : {}),
+        ...(r.model !== undefined ? { model: r.model } : {}),
+        ...(r.effort !== undefined ? { effort: r.effort } : {}),
         payload: e.payload, source: r.source, ...(e.blobRef ? { blobRef: e.blobRef } : {}), loggedAt: r.loggedAt,
       });
     }

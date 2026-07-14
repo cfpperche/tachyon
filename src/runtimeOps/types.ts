@@ -42,6 +42,17 @@ export type RuntimeOpsModelV1 =
   | { state: "available"; value: RuntimeOpsModelLabel; source: "command" | "runtime-profile" }
   | { state: "unavailable" };
 
+/**
+ * spec 378 — the transcript-OBSERVED model fact, projected alongside (never replacing) the declared/profile
+ * `RuntimeOpsModelV1` above. Deliberately NOT the closed `RuntimeOpsModelLabel` union: an observed id comes
+ * from the runtime's own transcript store (not pane text), so an id missing from the alias table renders as
+ * a validated raw/title-cased string rather than collapsing to "Unavailable" (open-fallback label policy —
+ * the closed-enum invariant stays for `RuntimeOpsModelV1`'s declared/profile defaults).
+ */
+export type RuntimeOpsObservedModelV1 =
+  | { state: "available"; value: string; effort?: string; observedAt?: string; stale?: boolean }
+  | { state: "unavailable" };
+
 export type RuntimeOpsContextPressureV1 =
   | { state: "available"; value: { used: number; limit: number } }
   | { state: "unavailable" };
@@ -70,6 +81,10 @@ export interface RuntimeOpsAgentRefV1 {
     rateLimit?: RuntimeOpsRateLimitV1;
   };
   model: RuntimeOpsModelV1;
+  /** spec 378 — the observed model + divergence-vs-declared fact, exposed for agent consumers (the RuntimeOps
+   *  panel's model COLUMN stays declared-only this spec — a stated follow-up). */
+  modelObserved: RuntimeOpsObservedModelV1;
+  modelDivergence: boolean;
   resume: {
     state: "live" | "resumable" | "fresh-start-only" | "not-resumable";
   };

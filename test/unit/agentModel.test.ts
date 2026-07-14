@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { modelFromCommand, toAgentVM, statusOf, type AgentRaw } from "../../src/sidebar/agentModel";
+import { modelFromCommand, toAgentVM, statusOf, resolveModelFact, declaredModelFromCommand, validatedObservedModelId, type AgentRaw, type ObservedModelInput } from "../../src/sidebar/agentModel";
 
 const raw = (o: Partial<AgentRaw> & { name: string }): AgentRaw => ({ running: false, dead: false, crashed: false, ...o });
 
@@ -133,5 +133,115 @@ describe("agentModel.modelFromCommand (t-140242)", () => {
     expect(
       toAgentVM(raw({ name: "codex-mechanical", running: true, cmd: "codex -c model=gpt-5.6-luna -c model_reasoning_effort=low" }), { ai: true }),
     ).toMatchObject({ model: "GPT-5.6 Luna" });
+  });
+});
+
+describe("agentModel.declaredModelFromCommand (spec 378)", () => {
+  it("reports explicit:true + the raw id for --model/-m/-c model=", () => {
+    expect(declaredModelFromCommand("claude --model opus")).toEqual({ id: "opus", explicit: true });
+    expect(declaredModelFromCommand("codex -c model=gpt-5.6-terra")).toEqual({ id: "gpt-5.6-terra", explicit: true });
+  });
+  it("reports explicit:false for a bare runtime (profile default)", () => {
+    expect(declaredModelFromCommand("codex --yolo")).toEqual({ explicit: false });
+    expect(declaredModelFromCommand(undefined)).toEqual({ explicit: false });
+  });
+});
+
+describe("agentModel.validatedObservedModelId (spec 378 — charset/length gate)", () => {
+  it("accepts ids within the allowlisted charset and length", () => {
+    expect(validatedObservedModelId("gpt-5.6-sol")).toBe("gpt-5.6-sol");
+    expect(validatedObservedModelId("anthropic/claude-sonnet-5")).toBe("anthropic/claude-sonnet-5");
+    expect(validatedObservedModelId("  grok-4.5  ")).toBe("grok-4.5"); // trims
+  });
+  it("rejects empty/undefined and oversized ids", () => {
+    expect(validatedObservedModelId(undefined)).toBeUndefined();
+    expect(validatedObservedModelId("")).toBeUndefined();
+    expect(validatedObservedModelId("x".repeat(65))).toBeUndefined();
+  });
+  it("rejects a control-character/injection-shaped id (not a validated transcript-owned id)", () => {
+    expect(validatedObservedModelId("<script>alert(1)</script>")).toBeUndefined();
+    expect(validatedObservedModelId("gpt-5\n; rm -rf")).toBeUndefined();
+  });
+});
+
+describe("agentModel.resolveModelFact (spec 378 — precedence/divergence/label policy)", () => {
+  const observed = (id: string, extra: Partial<ObservedModelInput> = {}): ObservedModelInput => ({ id, stale: false, ...extra });
+
+  it("pre-first-turn honesty: no observation yet → declared label, source declared/profile, never a fake observed", () => {
+    expect(resolveModelFact("claude --model opus")).toMatchObject({ label: "Opus", source: "declared", stale: false, divergence: false });
+    expect(resolveModelFact("codex")).toMatchObject({ label: "Codex default", source: "profile", stale: false, divergence: false });
+  });
+
+  it("an observation present → observed wins over declared/profile", () => {
+    const fact = resolveModelFact("codex", observed("gpt-5.6-sol"));
+    expect(fact).toMatchObject({ label: "GPT-5.6 Sol", source: "observed", stale: false, divergence: true });
+  });
+
+  it("divergence is true only when normalized observed != normalized declared", () => {
+    const same = resolveModelFact("claude --model opus", observed("opus"));
+    expect(same?.divergence).toBe(false);
+    const different = resolveModelFact("claude --model opus", observed("sonnet-5"));
+    expect(different?.divergence).toBe(true);
+  });
+
+  it("bare codex declared (\"Codex default\") vs an observed gpt-5.6-sol is the motivating divergence case", () => {
+    const fact = resolveModelFact("codex", observed("gpt-5.6-sol"));
+    expect(fact?.label).toBe("GPT-5.6 Sol");
+    expect(fact?.divergence).toBe(true);
+  });
+
+  it("an observed id missing from the alias table renders as a validated raw/title-cased id, never 'Unavailable'", () => {
+    const fact = resolveModelFact("codex", observed("this-model-definitely-does-not-exist-xyz123"));
+    expect(fact?.label).toBe("This Model Definitely Does Not Exist Xyz123");
+    expect(fact?.source).toBe("observed");
+  });
+
+  it("an invalid (unvalidated) observed id falls back to declared/profile instead of throwing or rendering garbage", () => {
+    const fact = resolveModelFact("codex", observed("<script>bad</script>"));
+    expect(fact).toMatchObject({ label: "Codex default", source: "profile" });
+  });
+
+  it("carries observedAt and stale through", () => {
+    const fact = resolveModelFact("codex", observed("gpt-5.6-sol", { observedAt: "2026-07-13T00:00:00Z", stale: true }));
+    expect(fact).toMatchObject({ observedAt: "2026-07-13T00:00:00Z", stale: true });
+  });
+
+  it("an unrecognized/non-AI command yields no fact at all", () => {
+    expect(resolveModelFact("npm run dev")).toBeUndefined();
+    expect(resolveModelFact(undefined)).toBeUndefined();
+  });
+});
+
+describe("agentModel.toAgentVM — model provenance siblings (spec 378)", () => {
+  it("surfaces modelSource/modelObservedAt on an observed row, and omits modelStale/modelDivergence when false", () => {
+    const vm = toAgentVM(raw({ name: "codex", running: true, cmd: "codex" }), {
+      ai: true,
+      model: { id: "gpt-5.6-sol", observedAt: "2026-07-13T00:00:00Z", stale: false },
+    });
+    expect(vm).toMatchObject({ model: "GPT-5.6 Sol", modelSource: "observed", modelObservedAt: "2026-07-13T00:00:00Z", modelDivergence: true });
+    expect(vm.modelStale).toBeUndefined();
+  });
+
+  it("surfaces modelStale:true only when the observation is stale", () => {
+    const vm = toAgentVM(raw({ name: "codex", running: true, cmd: "codex -c model=gpt-5.6-sol" }), {
+      ai: true,
+      model: { id: "gpt-5.6-sol", stale: true },
+    });
+    expect(vm).toMatchObject({ modelSource: "observed", modelStale: true });
+    expect(vm.modelDivergence).toBeUndefined(); // declared and observed agree — no divergence badge
+  });
+
+  it("no observation yet → modelSource is declared/profile, no modelObservedAt/modelStale/modelDivergence", () => {
+    const vm = toAgentVM(raw({ name: "codex", running: true, cmd: "codex" }), { ai: true });
+    expect(vm).toMatchObject({ model: "Codex default", modelSource: "profile" });
+    expect(vm.modelObservedAt).toBeUndefined();
+    expect(vm.modelStale).toBeUndefined();
+    expect(vm.modelDivergence).toBeUndefined();
+  });
+
+  it("terminal rows (ai:false) suppress the observed model input entirely", () => {
+    const vm = toAgentVM(raw({ name: "probe", running: true, cmd: "codex" }), { ai: false, model: { id: "gpt-5.6-sol", stale: false } });
+    expect(vm.model).toBeUndefined();
+    expect(vm.modelSource).toBeUndefined();
   });
 });

@@ -288,6 +288,40 @@ describe("SidebarPrototypeProvider", () => {
     expect(fleetMsgs).toHaveLength(1);
   });
 
+  it("spec 378: gathers the observed model via the injected accessor and surfaces provenance on the row", async () => {
+    const ws = fakeWorkspace([], {
+      agents: [{ name: "worker", session: "tachyon-demohash-worker", running: true, declared: true, dead: false, crashed: false, kind: "agent" }],
+    });
+    (ws.manager as { defOf: (name: string) => { cmd: string } | undefined }).defOf = () => ({ cmd: "codex" });
+    const provider = new SidebarPrototypeProvider(vscode.Uri.file("/extension"), () => [ws], undefined, () => ({
+      id: "gpt-5.6-sol", observedAt: "2026-07-13T00:00:00Z", stale: false,
+    }));
+    const { view, posted } = fakeView();
+
+    provider.resolveWebviewView(view);
+    await flushPromises();
+
+    const fleet = posted.find((m) => (m as { type?: string }).type === "fleet") as { fleets: Array<{ agents: Array<{ name: string; model?: string; modelSource?: string; modelDivergence?: boolean }> }> };
+    const agent = fleet.fleets[0].agents.find((a) => a.name === "worker");
+    expect(agent).toMatchObject({ model: "GPT-5.6 Sol", modelSource: "observed", modelDivergence: true });
+  });
+
+  it("spec 378: with no observation yet, the row shows the declared/profile label (never a fake observed)", async () => {
+    const ws = fakeWorkspace([], {
+      agents: [{ name: "worker", session: "tachyon-demohash-worker", running: true, declared: true, dead: false, crashed: false, kind: "agent" }],
+    });
+    (ws.manager as { defOf: (name: string) => { cmd: string } | undefined }).defOf = () => ({ cmd: "codex" });
+    const provider = new SidebarPrototypeProvider(vscode.Uri.file("/extension"), () => [ws], undefined, () => undefined);
+    const { view, posted } = fakeView();
+
+    provider.resolveWebviewView(view);
+    await flushPromises();
+
+    const fleet = posted.find((m) => (m as { type?: string }).type === "fleet") as { fleets: Array<{ agents: Array<{ name: string; model?: string; modelSource?: string }> }> };
+    const agent = fleet.fleets[0].agents.find((a) => a.name === "worker");
+    expect(agent).toMatchObject({ model: "Codex default", modelSource: "profile" });
+  });
+
   it("routes sidebar graceful stop actions through the stop command with the target workspace", async () => {
     const ws = fakeWorkspace([], {
       agents: [{ name: "claude", session: "tachyon-demohash-claude", running: true, declared: true, dead: false, crashed: false, kind: "agent" }],

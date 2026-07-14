@@ -104,6 +104,13 @@ export interface NormalizedEvent<T extends ActivityEventType = ActivityEventType
   timestamp?: string;
   /** Runtime version stamped per source line (drift forensics) — claude exposes `version`. */
   runtimeVersion?: string;
+  /** spec 378 — the model id/label the runtime's own transcript stamped on this record (claude
+   *  `message.model`, codex `turn_context.payload.model`, grok `assistant.model_id`) — latched
+   *  last-observed-wins downstream, like `runtimeVersion`. */
+  model?: string;
+  /** spec 378 — reasoning effort riding alongside `model` when the runtime's transcript carries one
+   *  (codex `turn_context.payload.effort`). */
+  effort?: string;
   /** Stable per-record id from the source transcript (claude `uuid`) — provenance for the durable log
    *  (spec 239); preferred over a byte offset because it survives prune/rotate/rewrite. */
   recordId?: string;

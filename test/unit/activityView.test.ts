@@ -69,6 +69,25 @@ describe("buildActivityView", () => {
     expect(vm.tier).toBe("structured");
   });
 
+  it("spec 378 — the header prefers `model` over `runtimeVersion` for grok/opencode (un-overload)", () => {
+    const grokVm = buildActivityView([
+      { type: "assistant.message.completed", runtime: "grok", sequence: 0, model: "grok-4.5", payload: { text: "hi" }, raw: null },
+    ]);
+    expect(grokVm.runtimeVersion).toBe("grok-4.5");
+
+    const opencodeVm = buildActivityView([
+      { type: "assistant.message.completed", runtime: "opencode", sequence: 0, model: "anthropic/claude-sonnet-5", payload: { text: "hi" }, raw: null },
+    ]);
+    expect(opencodeVm.runtimeVersion).toBe("anthropic/claude-sonnet-5");
+  });
+
+  it("spec 378 — claude/codex keep using `runtimeVersion` (unaffected by the grok/opencode fallback)", () => {
+    const claudeVm = buildActivityView([
+      { type: "assistant.message.completed", runtime: "claude", sequence: 0, runtimeVersion: "2.1.183", model: "claude-sonnet-5", payload: { text: "hi" }, raw: null },
+    ]);
+    expect(claudeVm.runtimeVersion).toBe("2.1.183");
+  });
+
   it("carries the freshness-degraded flag through", () => {
     expect(buildActivityView([], { tier: "raw-only", degradedFreshness: true })).toMatchObject({
       tier: "raw-only",

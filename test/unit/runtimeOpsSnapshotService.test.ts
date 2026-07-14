@@ -229,6 +229,160 @@ describe("RuntimeOpsSnapshotService", () => {
   });
 });
 
+describe("RuntimeOpsSnapshotService — spec 378 observed model latch", () => {
+  const boundary = (timestamp: string, reason: string, runtime = "codex"): LoggedEvent => ({
+    schemaVersion: 1,
+    type: "session.boundary",
+    timestamp,
+    payload: { toSession: "s2", reason },
+    source: { runtime, sessionId: "s2", sourcePath: "/private/transcript" },
+    loggedAt: timestamp,
+  });
+  const modelEvent = (timestamp: string, model: string, effort?: string, runtime = "codex"): LoggedEvent => ({
+    schemaVersion: 1,
+    type: "assistant.message.completed",
+    timestamp,
+    payload: { text: "x" },
+    source: { runtime, sessionId: "s1", sourcePath: "/private/transcript" },
+    loggedAt: timestamp,
+    model,
+    ...(effort ? { effort } : {}),
+  });
+
+  it("latches in LOG APPEND ORDER, not an observedAt compare (a later-in-log event with an EARLIER timestamp still wins)", async () => {
+    const service = new RuntimeOpsSnapshotService(() => [workspace("/workspace", "ws", "app", [["worker", record("codex")]])], {
+      detect: async () => [],
+      activityLog: () => staticActivityLog([
+        modelEvent("2026-07-09T21:00:00.000Z", "gpt-5.5"), // later clock time, EARLIER in the log
+        modelEvent("2026-07-09T19:00:00.000Z", "gpt-5.6-sol"), // earlier clock time, LATER in the log — must win
+      ]),
+    });
+    expect(service.observedModelFor("/workspace", "ws", "worker")).toMatchObject({ id: "gpt-5.6-sol" });
+  });
+
+  it("a process-ROTATING boundary (restarted/started/forked) fully demotes the observed model", async () => {
+    for (const reason of ["restarted", "started", "forked"]) {
+      const service = new RuntimeOpsSnapshotService(() => [workspace("/workspace", "ws", "app", [["worker", record("codex")]])], {
+        detect: async () => [],
+        activityLog: () => staticActivityLog([
+          modelEvent("2026-07-09T19:00:00.000Z", "gpt-5.6-sol"),
+          boundary("2026-07-09T20:00:00.000Z", reason),
+        ]),
+      });
+      expect(service.observedModelFor("/workspace", "ws", "worker")).toBeUndefined();
+    }
+  });
+
+  it("a process-PRESERVING boundary (in-TUI /clear = 'new', or 'resumed') keeps the observation but flags it stale", async () => {
+    for (const reason of ["new", "resumed", "resume"]) {
+      const service = new RuntimeOpsSnapshotService(() => [workspace("/workspace", "ws", "app", [["worker", record("codex")]])], {
+        detect: async () => [],
+        activityLog: () => staticActivityLog([
+          modelEvent("2026-07-09T19:00:00.000Z", "gpt-5.6-sol"),
+          boundary("2026-07-09T20:00:00.000Z", reason),
+        ]),
+      });
+      expect(service.observedModelFor("/workspace", "ws", "worker")).toMatchObject({ id: "gpt-5.6-sol", stale: true });
+    }
+  });
+
+  it("a fresh observation AFTER a boundary in the same batch re-latches and clears staleness (append order)", async () => {
+    const service = new RuntimeOpsSnapshotService(() => [workspace("/workspace", "ws", "app", [["worker", record("codex")]])], {
+      detect: async () => [],
+      activityLog: () => staticActivityLog([
+        modelEvent("2026-07-09T19:00:00.000Z", "gpt-5.5"),
+        boundary("2026-07-09T20:00:00.000Z", "new"),
+        modelEvent("2026-07-09T20:00:05.000Z", "gpt-5.6-sol"),
+      ]),
+    });
+    expect(service.observedModelFor("/workspace", "ws", "worker")).toEqual({
+      id: "gpt-5.6-sol", effort: undefined, observedAt: "2026-07-09T20:00:05.000Z", stale: false,
+    });
+  });
+
+  it("carries effort alongside model", async () => {
+    const service = new RuntimeOpsSnapshotService(() => [workspace("/workspace", "ws", "app", [["worker", record("codex")]])], {
+      detect: async () => [],
+      activityLog: () => staticActivityLog([modelEvent("2026-07-09T19:00:00.000Z", "gpt-5.6-sol", "high")]),
+    });
+    expect(service.observedModelFor("/workspace", "ws", "worker")).toMatchObject({ id: "gpt-5.6-sol", effort: "high" });
+  });
+
+  it("regression (spec 378): the sidebar's view-independent accessor reflects a new observation WITHOUT ever calling snapshot() — RuntimeOps view never opened", async () => {
+    let events: LoggedEvent[] = [modelEvent("2026-07-09T19:00:00.000Z", "gpt-5.5")];
+    let offset = 1;
+    const log = {
+      tailFrom: () => ({ events, offset, partial: Buffer.alloc(0) }),
+      forwardFrom: (_nextOffset: number, partial: Buffer) => {
+        const appended = events.slice(offset);
+        offset += appended.length;
+        return { events: appended, offset, partial };
+      },
+      size: () => offset,
+    };
+    const service = new RuntimeOpsSnapshotService(() => [workspace("/workspace", "ws", "app", [["worker", record("codex")]])], {
+      detect: async () => [],
+      activityLog: () => log,
+    });
+
+    // snapshot() is NEVER called anywhere in this test — only the cheap per-agent accessor is.
+    expect(service.observedModelFor("/workspace", "ws", "worker")).toMatchObject({ id: "gpt-5.5" });
+
+    // a model-bearing record lands in the durable log (an activity poll tick) — the accessor alone must see it.
+    events = [...events, modelEvent("2026-07-09T19:00:05.000Z", "gpt-5.6-sol")];
+    expect(service.observedModelFor("/workspace", "ws", "worker")).toMatchObject({ id: "gpt-5.6-sol" });
+  });
+
+  it("the view-independent accessor advances the SAME cursor snapshot() uses (no double-ingest, no separate tailer)", async () => {
+    let events: LoggedEvent[] = [modelEvent("2026-07-09T19:00:00.000Z", "gpt-5.5")];
+    let offset = 1;
+    let tailCalls = 0;
+    const log = {
+      tailFrom: () => { tailCalls++; return { events, offset, partial: Buffer.alloc(0) }; },
+      forwardFrom: (_nextOffset: number, partial: Buffer) => {
+        const appended = events.slice(offset);
+        offset += appended.length;
+        return { events: appended, offset, partial };
+      },
+      size: () => offset,
+    };
+    const source = workspace("/workspace", "ws", "app", [["worker", record("codex")]]) as ReturnType<typeof workspace> & Record<string, unknown>;
+    source.manager = {
+      list: async () => [{ name: "worker", session: "pane", running: true, declared: true, dead: false, crashed: false, kind: "agent" }],
+      defOf: () => ({ cmd: "codex" }),
+      resumeReadiness: async () => true,
+    };
+    const service = new RuntimeOpsSnapshotService(() => [source as never], {
+      detect: async () => [],
+      activityLog: () => log,
+    });
+
+    expect(service.observedModelFor("/workspace", "ws", "worker")).toMatchObject({ id: "gpt-5.5" });
+    events = [...events, modelEvent("2026-07-09T19:00:05.000Z", "gpt-5.6-sol")];
+    const snapshot = await service.snapshot();
+    expect(snapshot.runtimes[0].agents[0].modelObserved).toMatchObject({ value: "GPT-5.6 Sol" });
+    expect(tailCalls).toBe(1); // the second read went through forwardFrom (shared cursor), not a fresh tail
+  });
+
+  it("projects divergence in snapshot() when the observed model differs from the declared/profile default", async () => {
+    const source = workspace("/workspace", "ws", "app", [["worker", record("codex")]]) as ReturnType<typeof workspace> & Record<string, unknown>;
+    source.manager = {
+      list: async () => [{ name: "worker", session: "pane", running: true, declared: true, dead: false, crashed: false, kind: "agent" }],
+      defOf: () => ({ cmd: "codex" }), // bare codex → declared "Codex default"
+      resumeReadiness: async () => true,
+    };
+    const service = new RuntimeOpsSnapshotService(() => [source as never], {
+      detect: async () => [],
+      activityLog: () => staticActivityLog([modelEvent("2026-07-09T19:00:00.000Z", "gpt-5.6-sol")]),
+    });
+    const snapshot = await service.snapshot();
+    const agent = snapshot.runtimes[0].agents[0];
+    expect(agent.model).toMatchObject({ value: "Codex default" }); // declared/profile column stays declared-only
+    expect(agent.modelObserved).toMatchObject({ value: "GPT-5.6 Sol" });
+    expect(agent.modelDivergence).toBe(true);
+  });
+});
+
 function workspace(root: string, wsHash: string, folderName: string, sessions: Array<[string, SessionRecord]>) {
   return { workspaceRoot: root, wsHash, folderName, ledger: { all: () => new Map(sessions) } };
 }

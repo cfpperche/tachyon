@@ -51,12 +51,14 @@ interface PendingTool {
 export function createGrokNormalizer(sourcePath?: string): ActivityNormalizer {
   const pending = new Map<string, PendingTool>();
   let seq = 0;
-  let runtimeVersion: string | undefined;
+  /** spec 378 — `assistant.model_id`, latched last-observed-wins. Previously smuggled through
+   *  `runtimeVersion` (grok has no separate CLI version source in the transcript). */
+  let model: string | undefined;
 
   const emit = <T extends ActivityEventType>(
     out: NormalizedEvent[],
     type: T,
-    rec: GrokRecord,
+    _rec: GrokRecord,
     payload: ActivityPayloads[T],
     raw: unknown,
     recordId?: string,
@@ -65,7 +67,7 @@ export function createGrokNormalizer(sourcePath?: string): ActivityNormalizer {
       type,
       runtime: "grok",
       sequence: seq++,
-      runtimeVersion: rec.model_id ?? runtimeVersion,
+      ...(model ? { model } : {}),
       recordId,
       sourcePath,
       payload,
@@ -85,7 +87,7 @@ export function createGrokNormalizer(sourcePath?: string): ActivityNormalizer {
         } catch {
           continue;
         }
-        if (typeof rec.model_id === "string" && rec.model_id) runtimeVersion = rec.model_id;
+        if (typeof rec.model_id === "string" && rec.model_id) model = rec.model_id;
         // Only stable source ids — synthetic line counters collide across restarts (ActivityLog
         // idempotency key is runtime:session:recordId) and would drop real new tail lines.
         const rid = typeof rec.id === "string" && rec.id

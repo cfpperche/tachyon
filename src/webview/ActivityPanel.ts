@@ -289,6 +289,7 @@ export class ActivityPanelManager {
     const toNormalized = (e: LoggedEvent): NormalizedEvent => ({
       type: e.type as NormalizedEvent["type"], runtime: (e.source?.runtime ?? "claude") as NormalizedEvent["runtime"],
       sequence: seq++, sessionId: e.sessionId, cwd: e.cwd, timestamp: e.timestamp, runtimeVersion: e.runtimeVersion,
+      model: e.model, effort: e.effort,
       recordId: e.source?.recordId, sourcePath: e.source?.sourcePath, payload: e.payload as NormalizedEvent["payload"], raw: undefined,
     });
 
