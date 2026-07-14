@@ -330,7 +330,11 @@ export interface AgentManagerOptions {
   materializeBridgeMcpHermes?: (name: string) => string | undefined;
   /** spec 243 — write a claude agent's per-spawn `--settings` file (the SessionStart ownership hook),
    *  returning its path; injected so activity follows a `/clear` on a shared cwd. Wired in Workspace. */
-  materializeOwnershipSettings?: (name: string, opts?: { ownershipOnly?: boolean }) => string | undefined;
+  materializeOwnershipSettings?: (name: string, opts?: {
+    ownershipOnly?: boolean;
+    cwd?: string;
+    configHome?: string;
+  }) => string | undefined;
   /** spec 303 — write Codex-compatible hook scripts and return `key=value`
    *  config override values for session-scoped `-c` injection. */
   materializeCodexSessionStartHookConfig?: (name: string, opts?: { ownershipOnly?: boolean }) => string | string[] | undefined;
@@ -1537,7 +1541,11 @@ export class AgentManager {
       name: session,
       // spec 236 Bridge + 243 ownership hook — apply ownership hook to the runtime-bridge cmd; the
       // env delta is folded into env below.
-      cmd: this.withSessionOwnership(name, def, spawnBridge.cmd, { declared: !adhoc }),
+      cmd: this.withSessionOwnership(name, def, spawnBridge.cmd, {
+        declared: !adhoc,
+        cwd,
+        configHome: spawnBuild.env.CLAUDE_CONFIG_DIR,
+      }),
       cwd,
       env: { ...spawnBuild.env, ...spawnBridge.env },
     });
@@ -1804,7 +1812,12 @@ export class AgentManager {
    * + docs/system-design.md §7.1). Harness agents: orthogonal to `--strict-mcp-config` (MCP-only) and the
    * redirected `CLAUDE_CONFIG_DIR`. The only exception is a command that opts into `--setting-sources` (never ours).
    */
-  private withSessionOwnership(name: string, def: Pick<AgentDef, "cmd">, cmd: string, opts: { declared: boolean }): string {
+  private withSessionOwnership(
+    name: string,
+    def: Pick<AgentDef, "cmd">,
+    cmd: string,
+    opts: { declared: boolean; cwd: string; configHome?: string },
+  ): string {
     const binary = binaryOf(def.cmd);
     const adapter = adapterFor(def.cmd);
     if (adapter?.mintsId && managesOwnSession(def.cmd)) {
@@ -1831,7 +1844,11 @@ export class AgentManager {
       this.opts.onSessionHooksInjected?.(name, false);
       return cmd;
     }
-    const file = this.opts.materializeOwnershipSettings?.(name, { ownershipOnly });
+    const file = this.opts.materializeOwnershipSettings?.(name, {
+      ownershipOnly,
+      cwd: opts.cwd,
+      configHome: opts.configHome,
+    });
     this.opts.onSessionHooksInjected?.(name, !!file);
     if (!file) return cmd;
     let out = `${cmd} --settings ${shellQuote(file)}`;
@@ -2253,7 +2270,11 @@ export class AgentManager {
     // onRestart UI close only on kill+new fallback — unnecessary when respawn keeps the attach.
     await this.startSessionCommand({
       session,
-      cmd: this.withSessionOwnership(name, def, restartBridge.cmd, { declared: !this.adhoc.has(name) }), // spec 236 Bridge + 243 ownership hook
+      cmd: this.withSessionOwnership(name, def, restartBridge.cmd, {
+        declared: !this.adhoc.has(name),
+        cwd,
+        configHome: restartBuild.env.CLAUDE_CONFIG_DIR,
+      }), // spec 236 Bridge + 243 ownership hook
       cwd,
       env: { ...restartBuild.env, ...restartBridge.env }, // spec 236 — opencode OPENCODE_CONFIG path folded in
       onBeforeKillNew: () => this.opts.onRestart?.(name),
@@ -2502,7 +2523,11 @@ export class AgentManager {
     // t-4d2630: respawn when a session/dead pane already exists; kill+new only as fallback.
     await this.startSessionCommand({
       session,
-      cmd: this.withSessionOwnership(name, { cmd }, resumeBridge.cmd, { declared: record.declared }),
+      cmd: this.withSessionOwnership(name, { cmd }, resumeBridge.cmd, {
+        declared: record.declared,
+        cwd,
+        configHome: resumeBuild.env.CLAUDE_CONFIG_DIR ?? persistedResumeHomeEnv.CLAUDE_CONFIG_DIR,
+      }),
       cwd,
       env: { ...resumeBuild.env, ...persistedResumeHomeEnv, ...resumeBridge.env }, // spec 236 + 380 persisted home
     });

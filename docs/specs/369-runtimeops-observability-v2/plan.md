@@ -107,8 +107,34 @@ request per provider/account scope, explicit timeouts and cancellation, bounded 
 snapshot with freshness. Hidden Runtime Ops views receive no render polling, but the observation service may refresh
 at a user-configured operational cadence because provider quota is a runtime resource, not merely UI state.
 
-This layer invokes adapters and validates `CollectorEnvelopeV1`; `RuntimeOpsSnapshotService` only projects validated
-facts. It emits changes through the existing event fan-out rather than collecting per agent or per render.
+Consent is stored in a machine-local, extension-global preference record, disabled by default. Enabling one provider
+creates a random opaque account-scope key and records explicitly selected sources in host-owned cheapest-first order;
+project
+`tachyon.yml`, ambient credentials and installed CLIs cannot enable observation. T3 exposes the persisted boundary for
+the future Runtime Ops controls but adds no temporary visual surface. Disabling or changing a provider aborts its
+in-flight request, clears its normalized last-good value and rotates the opaque scope key before a later re-enable.
+
+The source registry canonicalizes the cheapest passive/native authorized strategy first and decays only through the
+other sources explicitly present in that provider's preference. Caller order cannot promote a broader fallback ahead
+of `cli`; presence still represents a separate explicit grant. Cancellation stops the chain. Unsupported,
+unauthenticated, timeout, provider-error, not-observed and invalid-envelope results may advance to the next authorized
+source; there is no ambient discovery or implicit OAuth/file/cookie fallback. Every adapter result is revalidated before
+it can update current or last-good state. The service retains only normalized envelopes, bounds persisted last-good
+state and freshness lifetime, coalesces concurrent refreshes by opaque provider/account scope, and emits one normalized
+change event through the host fan-out. `RuntimeOpsSnapshotService` and T4 consume this cached validated state; neither
+agent rows nor view renders invoke a provider collector.
+
+Claude's transport uses the already-injected per-spawn command-line settings layer only after the Claude `cli` source
+is explicitly enabled. Anthropic documents `statusLine` as one scalar command and command-line `--settings` as an
+override of local/project/user values, so simply adding Tachyon's command would destroy a user's custom status line.
+Before materialization, Tachyon resolves the effective lower-precedence user/project/local `statusLine`, copies its
+bounded display options, and installs a small wrapper that (1) reads the raw status-line JSON only in process memory,
+(2) atomically writes only an allowlisted `rate_limits` projection into extension global storage, and (3) invokes the
+prior command with the original stdin and relays its stdout/stderr. With no prior custom command, the wrapper emits no
+Tachyon text. A user-supplied command-line `--settings`, malformed/unsafe lower-layer configuration, or a managed
+higher-precedence status line makes capture unavailable rather than being overwritten. The reader selects only a
+bounded, current capture from known Tachyon-managed Claude agents; raw session ids, paths, model/context data and
+account identity never reach disk, logs, activity, errors, snapshots or the webview.
 
 ### T4 — Runtime Ops projection
 
@@ -203,3 +229,5 @@ the current dense operational table. Preview fixtures plus real installed VSIX e
   documentation inspected 2026-07-14: `https://code.claude.com/docs/en/statusline`,
   `https://code.claude.com/docs/en/cli-usage`, `https://code.claude.com/docs/en/errors`, and
   `https://code.claude.com/docs/en/legal-and-compliance`.
+- Anthropic Claude Code settings scopes and precedence inspected 2026-07-14:
+  `https://code.claude.com/docs/en/settings`.

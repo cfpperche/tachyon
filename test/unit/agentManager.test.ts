@@ -641,7 +641,11 @@ describe("AgentManager — session resume (spec 209)", () => {
       materializeBridgeMcp?: (name: string) => string | undefined;
       materializeBridgeMcpOpencode?: (name: string, cwd: string) => string | undefined;
       materializeBridgeMcpGrok?: (name: string) => string | undefined;
-      materializeOwnershipSettings?: (name: string) => string | undefined;
+      materializeOwnershipSettings?: (name: string, opts?: {
+        ownershipOnly?: boolean;
+        cwd?: string;
+        configHome?: string;
+      }) => string | undefined;
       materializeCodexSessionStartHookConfig?: (name: string, opts?: { ownershipOnly?: boolean }) => string | string[] | undefined;
       ownedSession?: (name: string, cwd: string) => { sessionId: string; transcriptPath: string } | undefined;
       notify?: (m: string, l: "warn") => void;
@@ -3006,6 +3010,34 @@ describe("AgentManager — session resume (spec 209)", () => {
       expect(calls).toEqual([{ name: "reviewer", ownershipOnly: true }]);
     });
 
+    it("SDD 369 T3 passes the effective cwd and private Claude config home to capture materialization", async () => {
+      const details: Array<{ name: string; ownershipOnly: boolean; cwd?: string; configHome?: string }> = [];
+      const { manager, ws } = resumeHarness("agents:\n  boss:\n    cmd: claude\n", {
+        materializeHarness: ({ name }: { name: string }) => ({
+          env: { CLAUDE_CONFIG_DIR: harnessHome(ws, name) },
+          args: [],
+        }),
+        materializeOwnershipSettings: (name, opts) => {
+          details.push({
+            name,
+            ownershipOnly: !!opts?.ownershipOnly,
+            cwd: opts?.cwd,
+            configHome: opts?.configHome,
+          });
+          return `/ws/.tachyon/spawn-settings/${name}.json`;
+        },
+      });
+
+      await manager.spawn("reviewer", { cmd: "claude", parent: "boss" });
+
+      expect(details).toEqual([{
+        name: "reviewer",
+        ownershipOnly: true,
+        cwd: ws,
+        configHome: harnessHome(ws, "reviewer"),
+      }]);
+    });
+
     it("claude ad-hoc: does not override an explicit permission mode", async () => {
       const { manager, cmds } = resumeHarness("agents:\n  boss:\n    cmd: claude\n", OWN());
       await manager.spawn("reviewer", { cmd: "claude --permission-mode manual", parent: "boss" });
@@ -3036,11 +3068,13 @@ describe("AgentManager — session resume (spec 209)", () => {
 
     it("user command already sets --settings: skipped + advisory", async () => {
       const warns: string[] = [];
-      const { manager, cmds } = resumeHarness("agents:\n  claude:\n    cmd: claude --settings ./mine.json\n", { ...OWN(), notify: (m) => warns.push(m) });
+      const materialized: Array<{ name: string; ownershipOnly: boolean }> = [];
+      const { manager, cmds } = resumeHarness("agents:\n  claude:\n    cmd: claude --settings ./mine.json\n", { ...OWN(materialized), notify: (m) => warns.push(m) });
       await manager.spawn("claude");
       expect(cmds.at(-1)).toContain("claude --settings ./mine.json"); // the user's --settings is preserved
       expect(cmds.at(-1)).not.toContain("spawn-settings"); // our ownership --settings file is NOT appended
       expect(warns.some((w) => w.includes("--settings"))).toBe(true);
+      expect(materialized).toEqual([]);
     });
 
     it("no materializer wired: no injection (degrades safely)", async () => {

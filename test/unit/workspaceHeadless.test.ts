@@ -10,7 +10,7 @@ import { Bridge, derivePort } from "../../src/bridge/Bridge.js";
 import { PersistentBridgeLaunchError, PersistentBridgeService } from "../../src/bridge/PersistentBridgeService.js";
 import type { NotifyLevel } from "../../src/bridge/tools.js";
 import { agentLogId } from "../../src/activity/logStore.js";
-import { readSessionOwners, sessionOwnersFile } from "../../src/activity/sessionOwners.js";
+import { readSessionOwners, sessionOwnersFile, spawnSettingsPath } from "../../src/activity/sessionOwners.js";
 import { ReloadTransactionStore } from "../../src/host-action/index.js";
 import { __createdTerminals, __resetVscodeMock } from "../mocks/vscode.js";
 import { readDelegationRecord } from "../../src/bridge/delegationRecord.js";
@@ -183,6 +183,38 @@ function latestDelegationRecord(root: string, agent: string) {
 }
 
 describe("Workspace — headless composition smoke (spec 235)", () => {
+  it("SDD 369 T3 composes the extension-global Claude capture into the existing per-spawn settings layer", async () => {
+    const root = mkdir();
+    fs.writeFileSync(path.join(root, "tachyon.yml"), "agents:\n  claude:\n    cmd: claude\n", "utf8");
+    const host = new FakeHost(mkdir());
+    const fake = fakeTmux();
+    const requests: Array<{ workspaceRoot: string; agent: string; cwd: string; configHome?: string }> = [];
+    const ws = await Workspace.createForTest(root, {
+      host,
+      onViewsChanged: () => {},
+      claudeStatusLineCapture: {
+        materialize: (request) => {
+          requests.push(request);
+          return { type: "command", command: "node '/private/capture-wrapper.cjs'", padding: 1 };
+        },
+      },
+    }, { tmux: fake.tmux, startBridge: false });
+    try {
+      await ws.manager.spawn("claude");
+
+      expect(requests).toEqual([{ workspaceRoot: root, agent: "claude", cwd: root, configHome: undefined }]);
+      const settings = JSON.parse(fs.readFileSync(spawnSettingsPath(root, "claude"), "utf8")) as Record<string, unknown>;
+      expect(settings.statusLine).toEqual({
+        type: "command",
+        command: "node '/private/capture-wrapper.cjs'",
+        padding: 1,
+      });
+    } finally {
+      ws.dispose();
+      await fake.cleanup();
+    }
+  });
+
   it("mechanism-only canonical Delivery reuses one worktree through review completion", async () => {
     const root = mkdir(); const base = path.join(root, ".tachyon-worktrees");
     fs.writeFileSync(path.join(root, "tachyon.yml"), `settings:\n  worktree:\n    base: ${JSON.stringify(base)}\n  delivery:\n    mode: canonical\n    handoffSafety: mechanism-only\nagents:\n  boss:\n    cmd: sh\n`, "utf8");

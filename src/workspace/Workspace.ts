@@ -114,6 +114,7 @@ import { TaskNotificationService } from "./TaskNotificationService.js";
 import { BridgeSlowRequestToastPolicy } from "./bridgeSlowRequestPolicy.js";
 import { ExternalToolRegistry } from "../externalTools/registry.js";
 import { hostActionTouchesHostUi } from "../externalTools/filters.js";
+import type { ClaudeStatusLineCaptureTransport } from "../runtimeObservability/claudeStatusLineCapture.js";
 
 const ATTENTION_POLL_MS = 3000;
 
@@ -154,6 +155,8 @@ export interface WorkspaceDeps {
   onViewsChanged: (view: ViewKind) => void;
   /** host-side UI affordance for newly recorded human-approval requests. */
   onApprovalRequested?: (ws: Workspace, request: { id: string; requester: string }) => void;
+  /** Optional extension-global Claude quota transport. It remains inert unless machine-local consent enables it. */
+  claudeStatusLineCapture?: Pick<ClaudeStatusLineCaptureTransport, "materialize">;
 }
 
 /** spec 235 — the slice of the control-mode engine the Workspace lifecycle needs; a test passes a no-op. */
@@ -608,6 +611,12 @@ export class Workspace {
         {
           silentPersistence: !opts?.ownershipOnly && this.silentPersistenceHooksDesired(name),
           skipDangerousModePermissionPrompt: !!opts?.ownershipOnly,
+          statusLine: this.deps.claudeStatusLineCapture?.materialize({
+            workspaceRoot: this.workspaceRoot,
+            agent: name,
+            cwd: opts?.cwd ?? this.workspaceRoot,
+            configHome: opts?.configHome,
+          }),
         },
       ), // spec 245/312
       materializeCodexSessionStartHookConfig: (name, opts) => this.harness.materializeCodexSessionStartHookConfig(

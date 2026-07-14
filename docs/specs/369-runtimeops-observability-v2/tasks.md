@@ -47,13 +47,20 @@ implementation until its ADR is accepted._
 
 ## T3 — host observation service
 
-- [ ] Add an explicit configuration/consent boundary for enabling provider observations and source strategies.
-- [ ] Implement one in-flight collection per provider/account scope with bounded cadence, timeout, cancellation,
-  coalescing, and last-good freshness semantics.
-- [ ] Validate every adapter response before persistence/projection and keep raw output out of activity, logs, snapshots,
-  errors, and webview messages.
-- [ ] Emit normalized observation changes through the existing event fan-out without one collection per agent or render.
-- [ ] Prove native Runtime Ops data remains available when provider observation is unsupported, disabled, or failing.
+- [x] Add a machine-local persisted preference store that is disabled by default, creates opaque account-scope keys and
+  grants only explicitly selected provider/source pairs in host-owned order; workspace configuration and ambient auth
+  cannot opt a user in.
+- [x] Implement an ordered source registry whose passive/native strategy runs first and whose fallbacks run only when
+  separately granted; cancellation stops the chain and no OAuth/file/cookie source is inferred.
+- [x] Implement one in-flight collection per provider/account scope with bounded cadence, timeout, cancellation and
+  coalescing independent of agent count, Runtime Ops visibility or render frequency.
+- [x] Revalidate every adapter response before retaining it; persist only bounded normalized last-good envelopes and
+  project stale/expired states without raw output in activity, logs, errors, snapshots or webview messages.
+- [x] Add a Claude status-line wrapper/store that projects only `rate_limits`, preserves an existing user status-line
+  command and output, and fails closed when safe composition or effective precedence cannot be established.
+- [x] Emit normalized observation changes through the existing host event fan-out and expose cached validated state for
+  T4 without collecting from `RuntimeOpsSnapshotService` or the webview.
+- [x] Prove native Runtime Ops data remains available when observation is unsupported, disabled, cancelled or failing.
 
 ## T4 — Runtime Ops projection and Tachyon-owned UI
 

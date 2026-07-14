@@ -1423,7 +1423,15 @@ export class HarnessManager {
    * `.claude/` — `--settings` is an additive command-line layer, so the agent's other hooks still run.
    * Rewritten on every (re)spawn (cheap; keeps the baked-in agent id + paths fresh after a rename/move).
    */
-  materializeOwnershipSettings(agent: string, handoffPath?: string, opts: { silentPersistence?: boolean; skipDangerousModePermissionPrompt?: boolean } = {}): string {
+  materializeOwnershipSettings(
+    agent: string,
+    handoffPath?: string,
+    opts: {
+      silentPersistence?: boolean;
+      skipDangerousModePermissionPrompt?: boolean;
+      statusLine?: { type: "command"; command: string; padding?: number };
+    } = {},
+  ): string {
     const recorder = sessionOwnerRecorderPath(this.workspaceRoot);
     fs.mkdirSync(path.dirname(recorder), { recursive: true });
     // Atomic write (temp + rename): concurrent (re)spawns rewrite the SHARED recorder, and a sibling's
@@ -1455,6 +1463,7 @@ export class HarnessManager {
     }
     const settings = buildOwnershipSettings(recorder, agent, sessionOwnersFile(this.workspaceRoot), pointer, persistence, {
       skipDangerousModePermissionPrompt: opts.skipDangerousModePermissionPrompt,
+      statusLine: opts.statusLine,
     });
     const file = spawnSettingsPath(this.workspaceRoot, agent);
     fs.mkdirSync(path.dirname(file), { recursive: true });

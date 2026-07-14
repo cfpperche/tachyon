@@ -114,6 +114,32 @@ _Historical pre-ratification questions are retained below; their resolutions fol
   native Anthropic applications rather than third-party products. Future SDK rate-limit events may join the ordered
   strategy only when an already-running, explicitly authorized runtime emits them; Tachyon never spawns `claude -p`
   just to measure quota.
+- Resolved 2026-07-14 in T3 planning: provider observation preferences are machine-local, extension-global and disabled
+  by default. A workspace file, installed CLI or ambient credential cannot grant access. Each explicit provider enable
+  persists an ordered source list plus a random opaque account-scope key; disabling/changing the grant aborts collection,
+  clears last-good state and rotates the key on a later enable. T4 will own the visible controls for this T3 boundary.
+- T3 fallback is host-ordered but never ambient: the cheapest passive/native granted strategy runs first, then only
+  other separately granted sources. Caller order cannot promote OAuth ahead of `cli`; source presence is still an
+  explicit independent grant. Cancellation ends the cascade. All returned envelopes are validated again before a
+  bounded normalized last-good value or change event is retained; provider work is global per opaque scope rather than
+  per agent or render.
+- Anthropic's documented precedence makes command-line `--settings` override local/project/user scalar settings, while
+  managed settings remain higher. Therefore the Claude transport must resolve and wrap an existing lower-layer
+  `statusLine` command, relay its output, and write only a reduced `rate_limits` capture to extension global storage.
+  It skips capture for an existing command-line `--settings`, malformed/unsafe settings or effective managed override;
+  it never silently replaces a user's status line and adds no Tachyon status-line text of its own.
+- Resolved 2026-07-14 in T3 implementation: the observation host is extension-global and independent of workspace,
+  agent and view count. It serializes consent lifecycle changes, coalesces provider/account refreshes, revalidates exact
+  opaque scope/source/freshness, clones cached envelopes across every consumer boundary and isolates synchronous or
+  asynchronous fan-out listener failures. The pre-existing native `RuntimeOpsSnapshotService` remains collector-free;
+  disabled or degraded provider observation can only request its normal cached refresh and cannot remove native facts.
+- Claude capture is limited to the default Claude home or a Tachyon-owned `.tachyon/harness/<agent>` home, whose
+  credentials are seeded from the same default account. An arbitrary external `CLAUDE_CONFIG_DIR` fails closed so two
+  unknown accounts cannot be collapsed into one opaque provider/account scope. Each running session remains bound to
+  the prior status-line command resolved at its spawn, while capture files contain only bounded numeric projections of
+  `rate_limits.five_hour` and `rate_limits.seven_day`.
+- T3 visual QA opt-out: this slice deliberately adds no visible controls, fields, copy or layout. T4 owns the first
+  Runtime Ops projection and its wide/narrow visual evidence.
 
 ## Verification log
 
@@ -149,3 +175,22 @@ _Historical pre-ratification questions are retained below; their resolutions fol
   — pass; official-origin annotated `v0.43.0` baseline clean across watched Codex/Claude paths.
 - `npm run typecheck` — pass.
 - `npm run verify:full:quiet` — pass; 331 files, 3,996 passed, 3 skipped.
+
+### 2026-07-14T22:14:19Z — pass (1/1) — source: tasks.md
+- `npm run verify:full:quiet` — pass
+
+### 2026-07-14T22:21:36Z — T3 final consolidation
+
+- `npm run typecheck` — pass.
+- Focused provider preference/service, Claude capture/source, Codex source, session ownership, harness, agent manager and
+  headless workspace suites — pass, 513/513 tests.
+- `npm run dogfood:runtime-observability` — pass with real installed Codex app-server acquisition, synthetic Claude
+  process capture, same-scope request coalescing and no raw status-line persistence.
+- `npm run verify:full:quiet` — pass; 339 files, 4,121 passed, 3 skipped.
+- Security regressions: a redirected `.tachyon/harness` root or child whose real path escapes through a symlink fails
+  closed before Claude settings or capture materialization.
+
+## Dogfood log
+
+### 2026-07-14T22:14:58Z — pass (1/1) — source: tasks.md — commit: 46f181c6d7b3ade91e8570fa180494391e8539df
+- `npm run dogfood:runtime-observability` — pass
