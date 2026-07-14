@@ -297,6 +297,32 @@ pass is recorded below.
 - This is a compatibility-baseline refresh, not an amendment to ratified R1–R6. The refreshed base is
   green under `npm run typecheck` and `npm run verify:full:quiet` (333 files; 4035 passed, 3 skipped).
 
+### 2026-07-14 — T1–T4 foundation integrated
+
+- Task `t-eb926c` was implemented and reviewed in isolated worktrees, then squash-integrated as
+  `a55167b6` on `codex-soul/t-60979d-agent-soul-integration`. The accepted candidate HEAD was
+  `f25a521e`.
+- T1 now stores real `BASE_SHA=6885becd72dbd1a4eed270a3233f5d8e0a3e310e` prompt, command, and
+  send-key bytes with per-fixture provenance. The capture helper refuses after a legacy seam changes,
+  and actual resume, rebind, and native-fork tests consume the oracle while asserting the composition
+  and soul-resolution boundaries are bypassed.
+- T2 adds agent-only boolean `soul`, terminal/non-boolean rejection, last-known-good retention,
+  ASCII-folded enabled-name collision checks, schema/YAML coverage, canonical path helpers, and the
+  two machine-local ignore roots.
+- T3 adds strict descriptor-based resolution, active same-owner private manifests, exact-byte limits
+  and digests, total retry classification, private import-as-copy staging, create-only publication with
+  manifest-last activation, parent containment, and concurrent no-clobber coverage. This is deliberately
+  not the T15 transaction journal/lock/recovery system.
+- T4 centralizes launcher parsing and prompt adapters so capability reporting and `composeCommand`
+  share one registry. OpenCode reports `tui-prefill` without prematurely claiming `offered`; Hermes
+  remains native-external for soul while retaining its legacy instruction-delivery path.
+- The canonical Bridge verification record was unavailable after extension-host reloads, so the
+  coordinator reproduced the gate explicitly: the generated behavior test failed at `86f4fac9` and
+  passed at the accepted HEAD. Final focused verification passed 489 tests; `npm run typecheck` and
+  `npm run verify:full:quiet` passed with 337 files, 4066 tests passed, and 3 skipped. Two bounded
+  Claude closure probes produced no artifact (timeout, then budget exhaustion), so no model-review
+  claim is made for this slice.
+
 ## Open questions
 
 - Resolved 2026-07-14: the maintainer ratified the complete revised R1–R6 bundle without amendments.

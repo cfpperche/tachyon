@@ -11,7 +11,7 @@ implementation still requires separately assigned bounded Deliveries._
 
 ## Checkpoint A — core and lifecycle
 
-- [ ] **T1. Pin legacy behavior before refactoring.** Add exact no-soul prompt/command snapshots for
+- [x] **T1. Pin legacy behavior before refactoring.** Add exact no-soul prompt/command snapshots for
       role-only, instructions-only, role+instructions, Bridge guidance, ad-hoc contract, bound
       Delivery task, pipeline task, no-soul re-anchor, short body, and long-body pointer cases.
       Capture them before any production change from immutable BASE_SHA
@@ -22,7 +22,7 @@ implementation still requires separately assigned bounded Deliveries._
       plus spies proving they call no prompt serializer/resolver/brief compositor. Keep new
       soul-enabled characterization fixtures in a separate non-parity suite. Explicitly pin today's
       role → instructions+task → Bridge serialization.
-- [ ] **T2. Add config/schema support.** Add optional agent-only boolean `soul` to
+- [x] **T2. Add config/schema support.** Add optional agent-only boolean `soul` to
       `ManagedEntryDef`: `true` enables, while `false`/absence disable. Reject non-booleans through
       the existing whole-config rejection/last-known-good contract and reject all terminal usage;
       derive `.tachyon/agents/<agent>/SOUL.md` through shared validated helpers, update
@@ -31,7 +31,7 @@ implementation still requires separately assigned bounded Deliveries._
       the file during global config parsing; file presence alone never enables identity. Reject
       ASCII-case-insensitive collisions among soul-enabled agent names without affecting no-soul
       legacy names.
-- [ ] **T3. Implement the strict soul profile store/resolver.** Create `src/agents/soul.ts` with
+- [x] **T3. Implement the strict soul profile store/resolver.** Create `src/agents/soul.ts` with
       canonical profile derivation, a Tachyon-owned `profile.json` carrying schema version, random
       stable `profileId`, owner name, and `active|retained` state, validated agent names,
       coordinator-root containment, POSIX
@@ -44,7 +44,7 @@ implementation still requires separately assigned bounded Deliveries._
       canonical copy, discard the original path, require an active same-owner manifest at runtime,
       return `profile-adoption-required` for retained/missing/unknown ownership, and prove stable
       oversize schedules no retry.
-- [ ] **T4. Add one runtime delivery capability.** Base it on `resolveBinary`, make
+- [x] **T4. Add one runtime delivery capability.** Base it on `resolveBinary`, make
       `instructionsDeliverable` reuse it, classify prompt/native-external/unsupported runtimes, and
       test direct/`env`/package launchers, rejected shell wrappers/renamed binaries,
       OpenCode `tui-prefill/offered` state, and Hermes fail-closed diagnostics.
