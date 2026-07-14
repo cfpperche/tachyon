@@ -132,15 +132,17 @@ function BranchBadge({ a }: { a: AgentVM }) {
     a.worktreePath ? a.worktreePath : undefined,
     drift && a.worktree ? `config/isolation branch was ${a.worktree}` : undefined,
   ].filter(Boolean);
+  // Isolated stays on the green --ds-ok chip (prototype). Drift is signalled by ⚠ + tooltip only —
+  // do NOT apply .badge.warn (that paints the whole chip yellow and hid the green in dogfood).
   const cls = [
     "badge",
     "git-branch",
     !isolated ? "shared" : "",
-    drift ? "warn" : "",
+    drift ? "drift" : "",
   ].filter(Boolean).join(" ");
   return (
     <span class={cls} title={titleParts.join("\n")}>
-      ⎇ {a.liveBranch}{drift ? " ⚠" : ""}
+      ⎇ {a.liveBranch}{drift ? <span class="git-drift-mark" aria-label="diverged from config branch"> ⚠</span> : null}
     </span>
   );
 }
