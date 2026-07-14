@@ -2,11 +2,8 @@
 
 _Created 2026-07-14._
 
-**Status:** in-progress
-<!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
-     When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
-     `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
-     placeholders, and missing dogfood proof or opt-out). -->
+**Status:** shipped
+**Closure:** 2026-07-14 — User prompt templates under `.tachyon/prompts/<id>.md`; palette + sidebar inject (stage/submit) via hardened tmux delivery; busy/composer refuse on submit. Human dogfood on Dev Host F5 (fixture `prompt-templates-dogfood`, agent `dogfood`): list templates, submit "Status + next step" into live pane (toast + multi-line body observed). Unit: promptStore/injectFlow/sidebarActions/i18n 33/33. Worktree `feat/prompt-templates`. Dev Host isolation fixed under `t-2d1810` (portable WSL F5).
 
 **UI impact:** flow
 <!-- Palette + sidebar agent action inject named prose into a live agent composer.
@@ -68,48 +65,52 @@ other `.tachyon/*` artifacts) — Tachyon does not force ignore or force commit.
 
 ## Acceptance criteria
 
-- [ ] **Scenario: load templates from `.tachyon/prompts/`**
+- [x] **Scenario: load templates from `.tachyon/prompts/`**
   - **Given** one or more `.tachyon/prompts/<id>.md` files in the workspace
   - **When** the inject flow lists templates
   - **Then** each valid file becomes a selectable template with id, optional title, and body; malformed names or unreadable files are skipped with a clear diagnostic, not a crash
 
-- [ ] **Scenario: inject template into a chosen running agent (stage, default)**
+- [x] **Scenario: inject template into a chosen running agent (stage, default)**
   - **Given** at least one running AI agent and at least one loadable template
   - **When** the human runs **Tachyon: Inject Prompt Template…**, picks a template, then an agent, and confirms
   - **Then** the template body is pasted into that agent's live pane **without** submitting Enter, and a short notification confirms stage (not submit)
+  - _Note: human dogfood exercised **submit** path end-to-end; stage is default UX + unit/delivery path. Stage-only re-click optional._
 
-- [ ] **Scenario: optional submit now**
+- [x] **Scenario: optional submit now**
   - **Given** a running AI agent that is not busy (`working` / `throttled`) and whose composer is not occupied by a draft
   - **When** the human chooses the submit variant after picking template + agent
   - **Then** the body is delivered with submit, using the hardened submitted-line path when available
+  - _Human dogfood 2026-07-14: submit "Status + next step" → toast + multi-line body in `dogfood` pane._
 
-- [ ] **Scenario: busy agent refuses submit**
+- [x] **Scenario: busy agent refuses submit**
   - **Given** the target agent attention is `working` or `throttled` (or composer draft occupied when submit would clobber)
   - **When** the human chooses submit
   - **Then** Tachyon refuses with a clear message and does not paste+Enter into a live turn; stage-only remains available
+  - _Covered by unit `submitRefuseReason` + same gate as `write_input`._
 
-- [ ] **Scenario: destination picker only offers valid targets**
+- [x] **Scenario: destination picker only offers valid targets**
   - **Given** stopped, dead, non-AI terminal entries, and running AI agents
   - **When** the agent picker is shown
   - **Then** only running AI agents are selectable
+  - _Unit `injectTargets` + sidebar gate `injectPrompt` for running AI only._
 
-- [ ] **Scenario: empty library / no targets are honest**
+- [x] **Scenario: empty library / no targets are honest**
   - **Given** zero loadable templates, or zero valid running agents
   - **When** the inject command runs
   - **Then** Tachyon notifies clearly (including that templates live under `.tachyon/prompts/`) and does not open a broken empty picker path that implies success
 
-- [ ] **Scenario: sidebar action on a running AI agent**
+- [x] **Scenario: sidebar action on a running AI agent**
   - **Given** a running AI agent row in the sidebar
   - **When** the human opens the overflow menu
   - **Then** an **Inject prompt template** action is available; it pre-selects that agent and only asks for the template (+ stage vs submit)
 
-- [ ] **Scenario: templates are distinct from commands, roles, and yml**
+- [x] **Scenario: templates are distinct from commands, roles, and yml**
   - **Given** `commands:` (shell one-shots), agent `role` / `instructions` (spawn contracts), and `tachyon.yml`
   - **When** a human uses prompt templates
   - **Then** injection never runs a shell command, never rewrites role/yml `instructions`, and never requires a `prompt_templates:` (or similar) key in `tachyon.yml`
 
-- [ ] README (or operator docs) mentions `.tachyon/prompts/<id>.md` so discovery matches runtime
-- [ ] i18n: new command titles / notifications in en + pt-BR with existing drift guards green
+- [x] README (or operator docs) mentions `.tachyon/prompts/<id>.md` so discovery matches runtime
+- [x] i18n: new command titles / notifications in en + pt-BR with existing drift guards green
 
 ## Non-goals
 
@@ -126,7 +127,7 @@ other `.tachyon/*` artifacts) — Tachyon does not force ignore or force commit.
 
 ## Open questions
 
-_None blocking v1 — locked in conversation 2026-07-14 / 2026-07-14 (storage flip):_
+_None blocking v1 — locked in conversation 2026-07-14 / storage flip / Dev Host F5 dogfood:_
 
 - **Storage:** `.tachyon/prompts/<id>.md` (not `tachyon.yml`).
 - **Default delivery:** stage into composer (`submit: false`); submit is explicit.

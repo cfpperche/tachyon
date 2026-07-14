@@ -3234,7 +3234,12 @@ export class Workspace {
       try {
         await this.manager.spawn(agent);
       } catch (err) {
-        this.host.notify(this.t("autostart of '{0}' failed: {1}", agent, err instanceof Error ? err.message : String(err)), "error");
+        // Benign race with resume/re-entry/rebind: session can be live before spawn runs.
+        // Same swallow as autostartNewlyDeclared — do not toast "already running" as a failure.
+        const msg = err instanceof Error ? err.message : String(err);
+        if (!msg.includes("already running")) {
+          this.host.notify(this.t("autostart of '{0}' failed: {1}", agent, msg), "error");
+        }
       }
     }
     this.rebuildWatches();

@@ -10,7 +10,7 @@ _Generated from `plan.md` on 2026-07-14. Work top-to-bottom. Check boxes as task
 - [x] 4. Extension: palette command + item command (pick → confirm → stage/submit)
 - [x] 5. Sidebar action matrix + ACTION_CMD + package.json/nls en+pt-BR
 - [x] 6. README blurb for `.tachyon/prompts/`
-- [x] 7. Spec status `in-progress` (ship after human dogfood + closure)
+- [x] 7. Spec status shipped after human dogfood + closure
 
 ## Verification
 
