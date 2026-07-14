@@ -19,6 +19,43 @@ export class PersistentBridgeSocketPathError extends Error {
   }
 }
 
+/** Thrown when the directory a control socket would bind inside cannot be made exclusively writable by
+ *  the current user. Callers MUST treat this as fatal for the persistent proxy and fail closed to the
+ *  in-process Bridge — never bind a socket in a directory this rejects (t-88ef8c security review). */
+export class PersistentBridgeUnsafeRuntimeDirError extends Error {
+  constructor(readonly dirPath: string, readonly reason: string) {
+    super(`persistent Bridge runtime directory is unsafe, refusing to bind a socket in it: ${dirPath} (${reason})`);
+    this.name = "PersistentBridgeUnsafeRuntimeDirError";
+  }
+}
+
+/** Creates (or reuses) `dirPath` and enforces it is owned by, and exclusively writable by, the current
+ *  user before any control socket is bound inside it. `fs.mkdirSync`'s `mode` option is SILENTLY IGNORED
+ *  when the directory already exists (Node/POSIX behavior) — so a same-uid-namespace attacker who
+ *  pre-creates the deterministic runtime dir (world-writable, or owned by a different uid) before this
+ *  process runs would otherwise defeat the intended 0700 and swap in a hijacked control.sock, harvesting
+ *  every client's Bearer token (the control protocol authenticates only the public workspace hash). A lax
+ *  mode on a directory we already own is repaired in place; anything we cannot make safe (foreign-owned,
+ *  or still group/other-accessible after chmod) is refused, never used. */
+export function ensureSecureRuntimeDir(dirPath: string): void {
+  fs.mkdirSync(dirPath, { recursive: true, mode: 0o700 });
+  const uid = typeof process.getuid === "function" ? process.getuid() : 0;
+  const stat = fs.statSync(dirPath);
+  if (stat.uid !== uid) {
+    throw new PersistentBridgeUnsafeRuntimeDirError(dirPath, `owned by uid ${stat.uid}, expected ${uid}`);
+  }
+  if ((stat.mode & 0o077) !== 0) {
+    fs.chmodSync(dirPath, 0o700);
+    const repaired = fs.statSync(dirPath);
+    if ((repaired.mode & 0o077) !== 0) {
+      throw new PersistentBridgeUnsafeRuntimeDirError(
+        dirPath,
+        `mode ${(repaired.mode & 0o777).toString(8)} still group/other-accessible after chmod`,
+      );
+    }
+  }
+}
+
 export interface PersistentBridgeDescriptor {
   protocol: number;
   workspaceHash: string;

@@ -143,9 +143,11 @@ describe("container-generated delegation behavior", () => {
         socket.once("error", reject);
       });
 
-      // (3) exactly one degrade warning, no fatal "Retry Bridge" abort prompt.
+      // (3) exactly one degrade warning — no fatal abort prompt, but a live in-place remediation pair
+      // (restarting the persistent proxy must not require a full window reload).
       expect(host.notices.filter((n) => n.level === "warn")).toHaveLength(1);
-      expect(host.notices.some((n) => n.actions.some((a) => a.label === "Retry Bridge"))).toBe(false);
+      const degradeNotice = host.notices.find((n) => n.level === "warn");
+      expect(degradeNotice?.actions.map((a) => a.label)).toEqual(["Retry Bridge", "Run Doctor"]);
       expect(host.notices.filter((n) => n.level === "error")).toEqual([]);
 
       // (4) Doctor still has something to show for it.

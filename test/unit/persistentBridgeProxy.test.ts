@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
 import http from "node:http";
 import net from "node:net";
@@ -12,12 +12,14 @@ import {
   persistentBridgeSystemdLaunchError,
 } from "../../src/bridge/PersistentBridgeService.js";
 import {
+  ensureSecureRuntimeDir,
   legacyPersistentBridgeControlSocket,
   MAX_CONTROL_SOCKET_PATH_BYTES,
   persistentBridgeControlSocket,
   persistentBridgeDescriptorPath,
   persistentBridgeDir,
   PersistentBridgeSocketPathError,
+  PersistentBridgeUnsafeRuntimeDirError,
   resolvePersistentBridgeControlSocket,
   type PersistentBridgeControlRequest,
   type PersistentBridgeControlResponse,
@@ -290,6 +292,67 @@ describe("persistent Bridge proxy", () => {
       fs.mkdirSync(path.dirname(primary), { recursive: true });
       fs.writeFileSync(primary, "");
       expect(resolvePersistentBridgeControlSocket(root)).toBe(primary);
+    });
+  });
+
+  // t-88ef8c security review (j-58f2753edbf2 finding #1, BLOCKER): with XDG_RUNTIME_DIR absent, the
+  // runtime dir falls back under os.tmpdir() (a world-writable sticky dir, e.g. /tmp). fs.mkdirSync's
+  // `mode` option is silently ignored for a directory that already exists, so a same-uid-namespace
+  // attacker who pre-creates the deterministic leaf dir before this process runs can defeat the intended
+  // 0700 and later hijack control.sock. ensureSecureRuntimeDir must repair a same-uid lax mode, and must
+  // fail closed — never bind — when the directory cannot be made safe.
+  describe("runtime dir hardening (t-88ef8c security review)", () => {
+    const originalXdgRuntimeDir = process.env.XDG_RUNTIME_DIR;
+    afterEach(() => {
+      if (originalXdgRuntimeDir === undefined) delete process.env.XDG_RUNTIME_DIR;
+      else process.env.XDG_RUNTIME_DIR = originalXdgRuntimeDir;
+      vi.restoreAllMocks();
+    });
+
+    it("repairs a pre-existing world-writable runtime dir it owns back to 0700, then a real proxy can bind inside it", async () => {
+      delete process.env.XDG_RUNTIME_DIR;
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-persistent-bridge-hijack-mode-"));
+      const dir = persistentBridgeDir(root);
+      fs.mkdirSync(dir, { recursive: true });
+      fs.chmodSync(dir, 0o777); // simulates an attacker pre-creating the leaf dir wide open
+      expect(fs.statSync(dir).mode & 0o777).toBe(0o777);
+
+      ensureSecureRuntimeDir(dir);
+      expect(fs.statSync(dir).mode & 0o777).toBe(0o700);
+
+      // Proves the repair is real, not just cosmetic: a proxy actually binds inside the now-safe dir.
+      const socket = persistentBridgeControlSocket(root);
+      const proxy = await startPersistentProxy({
+        workspaceRoot: root,
+        workspaceHash: "hijckmod",
+        preferredPort: 0,
+        controlSocket: socket,
+        descriptorPath: persistentBridgeDescriptorPath(root),
+      });
+      running.push(proxy);
+      expect(fs.statSync(socket).mode & 0o777).toBe(0o600);
+    });
+
+    it("fails closed and never binds when the runtime dir is owned by a different uid", async () => {
+      delete process.env.XDG_RUNTIME_DIR;
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-persistent-bridge-hijack-uid-"));
+      const dir = persistentBridgeDir(root);
+      fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+      const realStatSync = fs.statSync.bind(fs);
+      vi.spyOn(fs, "statSync").mockImplementation((target, opts) => {
+        const stat = realStatSync(target as fs.PathLike, opts as fs.StatSyncOptions);
+        if (target === dir) return Object.assign(Object.create(Object.getPrototypeOf(stat)), stat, { uid: stat.uid + 1 });
+        return stat;
+      });
+
+      expect(() => ensureSecureRuntimeDir(dir)).toThrow(PersistentBridgeUnsafeRuntimeDirError);
+
+      // Fails closed all the way up through the real writer: ensureAndRegister rejects and never binds
+      // a socket in the unsafe dir (the caller — Workspace.startBridgeListener — degrades to in-process).
+      const socket = persistentBridgeControlSocket(root);
+      const service = new PersistentBridgeService(root, "hijckuid", "/unused");
+      await expect(service.ensureAndRegister(0, 12_345)).rejects.toThrow(PersistentBridgeUnsafeRuntimeDirError);
+      expect(fs.existsSync(socket)).toBe(false);
     });
   });
 });

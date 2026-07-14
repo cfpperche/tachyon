@@ -507,12 +507,11 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
       // Activation never aborts: the Bridge listener started twice — once for the persistent-proxy
       // backend attempt (ephemeral port), once again bound directly to `preferred` for the degrade.
       expect(start.mock.calls).toEqual([[0], [derivePort(workspaceHash(root))]]);
-      expect(host.notices.some((n) => n.actions.some((a) => a.label === "Retry Bridge"))).toBe(false);
       expect(host.notices.filter((n) => n.level === "error")).toEqual([]);
       const notice = host.notices.find((n) => n.level === "warn" && n.message.includes("in-process Bridge"));
       expect(notice?.message).toContain("wsl --shutdown");
       expect(notice?.message).not.toContain("Failed to connect to bus");
-      expect(notice?.actions).toEqual([]);
+      expect(notice?.actions.map((a) => a.label)).toEqual(["Retry Bridge", "Run Doctor"]);
       expect(ws.bridgeStartFailureInfo()).toEqual({
         code: "SYSTEMD_USER_UNAVAILABLE",
         message: launchError.message,

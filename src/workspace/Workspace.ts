@@ -1905,6 +1905,20 @@ export class Workspace {
     this.host.notify(
       this.t("Bridge: the persistent proxy is unavailable ({0}) — continuing with the in-process Bridge only. Run Tachyon: Doctor for details.", failure.message),
       "warn",
+      [
+        {
+          label: "Retry Bridge",
+          run: async () => {
+            try {
+              await this.restartBridge();
+              this.host.notify("Bridge restarted.");
+            } catch (retryError) {
+              this.notifyBridgeStartFailure(retryError);
+            }
+          },
+        },
+        { label: "Run Doctor", run: () => this.host.executeCommand("tachyon.doctor", this.wsHash).then(() => undefined) },
+      ],
     );
     return port;
   }
