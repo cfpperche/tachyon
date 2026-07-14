@@ -334,6 +334,7 @@ export interface AgentManagerOptions {
     ownershipOnly?: boolean;
     cwd?: string;
     configHome?: string;
+    statusLineCapture?: boolean;
   }) => string | undefined;
   /** spec 303 — write Codex-compatible hook scripts and return `key=value`
    *  config override values for session-scoped `-c` injection. */
@@ -375,6 +376,9 @@ export interface AgentManagerOptions {
   fileExists?: (path: string) => boolean;
   /** Home dir resolver (default os.homedir) — injected for tests. */
   homeDir?: () => string;
+  /** Effective host Claude config home inherited by non-harness sessions. Workspace supplies the same
+   *  value used as HarnessManager's credential source so capture/resume never assume a different account. */
+  defaultClaudeConfigHome?: string;
   /**
    * spec 210 — resolve the cwd a session is born in (worktree isolation). Given the spawn
    * context, returns the cwd + an optional worktree record to persist, or null to use the
@@ -901,8 +905,8 @@ export class AgentManager {
   /**
    * spec 226 (H2) — the config home that holds this agent's claude transcripts (`<home>/projects/…`).
    * A harness agent's home is redirected to `.tachyon/harness/<name>` (its CLAUDE_CONFIG_DIR); every
-   * other agent uses the OS home's `~/.claude`. The resume/readiness transcript checks must use THIS,
-   * or a harness agent's transcript is invisible and resume falsely reports "no transcript".
+   * other agent uses the host's effective default Claude home (normally `~/.claude`). The resume/readiness
+   * transcript checks must use THIS, or redirected/default-override transcripts become invisible.
    */
   private runtimeConfigHome(runtime: ResumeRuntime, name: string, def: AgentDef | undefined): string {
     if (runtime === "opencode" && (def?.harness || def?.isolate === "transcript")) return path.join(harnessHome(this.opts.workspaceRoot, name), "data");
@@ -925,7 +929,11 @@ export class AgentManager {
     if (runtime === "opencode") return defaultRealOpencodeDataHome(process.env, home);
     if (runtime === "grok") return path.join(home, ".grok");
     if (runtime === "hermes") return path.join(home, ".hermes");
-    return path.join(home, ".claude");
+    return this.defaultClaudeConfigHome();
+  }
+
+  private defaultClaudeConfigHome(): string {
+    return this.opts.defaultClaudeConfigHome ?? path.join((this.opts.homeDir ?? os.homedir)(), ".claude");
   }
 
   private isWrongRuntimeDefaultHome(runtime: ResumeRuntime, configHome: string | undefined): boolean {
@@ -1816,7 +1824,7 @@ export class AgentManager {
     name: string,
     def: Pick<AgentDef, "cmd">,
     cmd: string,
-    opts: { declared: boolean; cwd: string; configHome?: string },
+    opts: { declared: boolean; cwd: string; configHome?: string; preservePermissionMode?: boolean },
   ): string {
     const binary = binaryOf(def.cmd);
     const adapter = adapterFor(def.cmd);
@@ -1847,12 +1855,18 @@ export class AgentManager {
     const file = this.opts.materializeOwnershipSettings?.(name, {
       ownershipOnly,
       cwd: opts.cwd,
-      configHome: opts.configHome,
+      configHome: opts.configHome ?? this.defaultClaudeConfigHome(),
+      // An explicit source filter changes which lower-precedence statusLine Claude would see. Until Tachyon parses
+      // that CLI value exactly, keep lifecycle hooks but omit capture instead of reviving an excluded user setting.
+      statusLineCapture: !/(^|\s)--setting-sources(=|\s|$)/.test(def.cmd),
     });
     this.opts.onSessionHooksInjected?.(name, !!file);
     if (!file) return cmd;
     let out = `${cmd} --settings ${shellQuote(file)}`;
-    if (ownershipOnly && !/(^|\s)--permission-mode(=|\s|$)/.test(out) && !/(^|\s)--dangerously-skip-permissions(=|\s|$)/.test(out)) {
+    if (ownershipOnly
+      && !opts.preservePermissionMode
+      && !/(^|\s)--permission-mode(=|\s|$)/.test(out)
+      && !/(^|\s)--dangerously-skip-permissions(=|\s|$)/.test(out)) {
       out += " --permission-mode auto";
     }
     return out;
@@ -2506,7 +2520,7 @@ export class AgentManager {
     // transient `isolate` definition that originally caused applyHarness to set CLAUDE_CONFIG_DIR.
     // Do not set the env for Claude's real default home: an explicit CLAUDE_CONFIG_DIR changes where
     // Claude looks for its top-level .claude.json, so default-home behavior must stay byte-compatible.
-    const defaultClaudeHome = path.join((this.opts.homeDir ?? os.homedir)(), ".claude");
+    const defaultClaudeHome = this.defaultClaudeConfigHome();
     const persistedResumeHomeEnv = runtime === "claude"
       && adapter.harness
       && !resumeDef?.harness
@@ -2716,8 +2730,9 @@ export class AgentManager {
       // Worktree fork → seed the source transcript into the new cwd's project dir (claude --resume is
       // cwd-scoped). FAIL CLOSED: if the seed can't land, abort rather than spawn a context-less fork.
       if (worktree && adapter.transcriptPath && path.resolve(cwd) !== path.resolve(src.sourceCwd)) {
-        // spec 226 — a harness source is blocked from fork; this source's transcripts are under ~/.claude.
-        const configHome = path.join((this.opts.homeDir ?? os.homedir)(), ".claude");
+        // spec 226 / SDD 369 — a harness source is blocked from fork; use the explicit inherited home when
+        // present, otherwise the same effective host-default home used to resolve the source transcript.
+        const configHome = src.env?.CLAUDE_CONFIG_DIR ?? this.defaultClaudeConfigHome();
         const seeded = (this.opts.seedTranscript ?? defaultSeedTranscript)(
           adapter.transcriptPath(configHome, src.sourceCwd, src.sourceId),
           adapter.transcriptPath(configHome, cwd, src.sourceId),
@@ -2735,7 +2750,15 @@ export class AgentManager {
       const forkBridge = this.withRuntimeBridge(forkName, { cmd: src.baseCmd }, forkCmd, cwd);
       await this.opts.tmux.newSession({
         name: session,
-        cmd: forkBridge.cmd,
+        cmd: this.withSessionOwnership(forkName, { cmd: src.baseCmd }, forkBridge.cmd, {
+          declared: false,
+          cwd,
+          // Harness-backed sources cannot fork. Preserve an explicit source override; otherwise use the
+          // same host-default account home used by transcript resolution and HarnessManager seeding.
+          configHome: src.env?.CLAUDE_CONFIG_DIR ?? this.defaultClaudeConfigHome(),
+          // A user-created fork inherits the source command's permission posture; capture must not widen it.
+          preservePermissionMode: true,
+        }),
         cwd,
         env: { ...this.opts.getExtraEnv?.(), ...this.opts.mintAgentToken?.(forkName), ...src.env, ...forkBridge.env, TACHYON_AGENT_NAME: forkName },
       });

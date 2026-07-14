@@ -131,10 +131,14 @@ Before materialization, Tachyon resolves the effective lower-precedence user/pro
 bounded display options, and installs a small wrapper that (1) reads the raw status-line JSON only in process memory,
 (2) atomically writes only an allowlisted `rate_limits` projection into extension global storage, and (3) invokes the
 prior command with the original stdin and relays its stdout/stderr. With no prior custom command, the wrapper emits no
-Tachyon text. A user-supplied command-line `--settings`, malformed/unsafe lower-layer configuration, or a managed
-higher-precedence status line makes capture unavailable rather than being overwritten. The reader selects only a
-bounded, current capture from known Tachyon-managed Claude agents; raw session ids, paths, model/context data and
-account identity never reach disk, logs, activity, errors, snapshots or the webview.
+Tachyon text. A user-supplied command-line `--settings` or `--setting-sources`, malformed/unsafe lower-layer
+configuration, or a managed higher-precedence status line makes capture unavailable rather than being overwritten.
+Revocation disables parsing and deletes reduced captures while leaving the bounded relay needed by already-running
+sessions to continue the user's original status line. The reader selects only a bounded, current capture from known
+Tachyon-managed Claude agents; raw session ids, paths, model/context data and account identity never reach disk, logs,
+activity, errors, snapshots or the webview. Spawn, restart, resume and fork pass the same effective host-default or
+Tachyon-harness config home used by transcript resolution; an arbitrary external `CLAUDE_CONFIG_DIR` fails capture
+closed instead of being conflated with the explicitly granted default account scope.
 
 ### T4 — Runtime Ops projection
 

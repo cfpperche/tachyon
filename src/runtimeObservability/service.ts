@@ -59,7 +59,7 @@ export interface ProviderObservationServiceOptions {
   intervalMs?: number;
   collectionTimeoutMs?: number;
   staleAfterMs?: number;
-  /** Delete provider-specific passive capture material when a grant changes or is disabled. */
+  /** Revoke passive capture and remove reduced observations when a grant changes or is disabled. */
   onPreferenceChanged?: (provider: RuntimeObservabilityProviderV1) => void | Promise<void>;
 }
 
@@ -93,7 +93,7 @@ export class ProviderObservationService {
   private disposed = false;
 
   constructor(
-    readonly preferences: ProviderObservationPreferences,
+    private readonly preferences: ProviderObservationPreferences,
     sources: readonly ProviderObservationSource[],
     options: ProviderObservationServiceOptions,
   ) {
@@ -158,8 +158,10 @@ export class ProviderObservationService {
     this.abortProvider(provider);
     this.lastGood.delete(provider);
     this.current.delete(provider);
-    await this.persistLastGood();
+    // Revoke passive acquisition before any potentially slow state write. A user disable must stop new captures
+    // immediately even when global-state persistence is delayed.
     await this.onPreferenceChanged?.(provider);
+    await this.persistLastGood();
 
     const envelope = after
       ? unavailableEnvelope(after.scope, "not-observed", this.timestamp(), after.sources[0])
@@ -221,6 +223,10 @@ export class ProviderObservationService {
         return this.getCurrent(provider);
       }
       const withFreshness = await this.applyLastGood(provider, preference, envelope);
+      const latestPreference = this.preferences.get(provider);
+      if (!latestPreference || latestPreference.scope.key !== preference.scope.key || this.disposed) {
+        return this.getCurrent(provider);
+      }
       return this.publish(provider, withFreshness);
     }).finally(() => {
       if (this.inFlight.get(key) === collection) this.inFlight.delete(key);

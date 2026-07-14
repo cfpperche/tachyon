@@ -530,7 +530,8 @@ export class Workspace {
         await this.manager.kill(input.executionAgent);
       } },
     });
-    this.harness = new HarnessManager(workspaceRoot, realConfigHome(), undefined, undefined, undefined, (message) => this.host.notify(message, "warn"));
+    const defaultClaudeConfigHome = realConfigHome();
+    this.harness = new HarnessManager(workspaceRoot, defaultClaudeConfigHome, undefined, undefined, undefined, (message) => this.host.notify(message, "warn"));
     // spec 226 (H2) — when an agent has an isolated harness, its claude transcripts live under the
     // redirected config home; pass it to the resolvers as `claudeHome` so by-title/by-cwd scans hit it.
     const resolverEnv = (runtime: string, configHome?: string) =>
@@ -545,6 +546,9 @@ export class Workspace {
       tmux: this.tmux,
       wsHash: this.wsHash,
       workspaceRoot,
+      // SDD 369 T3 — ordinary Claude sessions inherit this account home. Capture and transcript
+      // resolution must use the same value; an unknown external home then fails capture closed.
+      defaultClaudeConfigHome,
       gitExec: this.gitExec,
       ledger: this.ledger,
       // spec 364 — stamp bound_generation from the live coordinator (0 until first listener-ready bump).
@@ -611,12 +615,14 @@ export class Workspace {
         {
           silentPersistence: !opts?.ownershipOnly && this.silentPersistenceHooksDesired(name),
           skipDangerousModePermissionPrompt: !!opts?.ownershipOnly,
-          statusLine: this.deps.claudeStatusLineCapture?.materialize({
-            workspaceRoot: this.workspaceRoot,
-            agent: name,
-            cwd: opts?.cwd ?? this.workspaceRoot,
-            configHome: opts?.configHome,
-          }),
+          statusLine: opts?.statusLineCapture === false
+            ? undefined
+            : this.deps.claudeStatusLineCapture?.materialize({
+              workspaceRoot: this.workspaceRoot,
+              agent: name,
+              cwd: opts?.cwd ?? this.workspaceRoot,
+              configHome: opts?.configHome,
+            }),
         },
       ), // spec 245/312
       materializeCodexSessionStartHookConfig: (name, opts) => this.harness.materializeCodexSessionStartHookConfig(

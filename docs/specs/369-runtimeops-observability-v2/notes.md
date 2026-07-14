@@ -138,6 +138,13 @@ _Historical pre-ratification questions are retained below; their resolutions fol
   unknown accounts cannot be collapsed into one opaque provider/account scope. Each running session remains bound to
   the prior status-line command resolved at its spawn, while capture files contain only bounded numeric projections of
   `rate_limits.five_hour` and `rate_limits.seven_day`.
+- Pre-merge T3 review: capture relays are bounded and scope-neutral so revocation can atomically remove the active
+  marker and reduced captures without deleting the command needed by a live Claude session to preserve its prior user
+  status line. A revoked wrapper no longer buffers or parses status-line input. Claude forks now cross the same settings
+  composition path, while explicit `--setting-sources` keeps ownership hooks but fails capture closed. The host's
+  effective default `CLAUDE_CONFIG_DIR` now follows every lifecycle path and the same HarnessManager credential source;
+  an ambient or inherited external account therefore reaches the transport boundary and is rejected rather than being
+  silently treated as `~/.claude`.
 - T3 visual QA opt-out: this slice deliberately adds no visible controls, fields, copy or layout. T4 owns the first
   Runtime Ops projection and its wide/narrow visual evidence.
 
@@ -190,7 +197,26 @@ _Historical pre-ratification questions are retained below; their resolutions fol
 - Security regressions: a redirected `.tachyon/harness` root or child whose real path escapes through a symlink fails
   closed before Claude settings or capture materialization.
 
+### 2026-07-14T23:18:38Z — pass (1/1) — source: tasks.md
+
+- `npm run verify:full:quiet` — pass
+
+### 2026-07-14T23:20:00Z — T3 pre-merge review hardening
+
+- Review found and fixed three lifecycle blockers: revocation no longer breaks an already-running user status line,
+  Claude forks now receive the same capture/settings composition, and a preference change cannot publish a late result.
+- Explicit `--setting-sources` keeps ownership hooks but omits capture; capture never adds a fork permission mode.
+- The host's effective default Claude config home now follows spawn, restart, resume, fork and transcript resolution;
+  inherited external homes reach the transport boundary and fail closed instead of being treated as `~/.claude`.
+- `npm run typecheck` — pass.
+- Nine focused provider/capture/lifecycle suites — pass, 520/520 tests.
+- `npm run dogfood:runtime-observability` — pass through the SDD dogfood runner.
+- `npm run verify:full:quiet` — pass; 339 files, 4,128 passed, 3 skipped.
+
 ## Dogfood log
 
 ### 2026-07-14T22:14:58Z — pass (1/1) — source: tasks.md — commit: 46f181c6d7b3ade91e8570fa180494391e8539df
+- `npm run dogfood:runtime-observability` — pass
+
+### 2026-07-14T23:18:32Z — pass (1/1) — source: tasks.md — commit: dfa9137417c40e0e22cec26076ff86051d9606dd
 - `npm run dogfood:runtime-observability` — pass

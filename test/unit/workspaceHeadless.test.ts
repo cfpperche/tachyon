@@ -15,6 +15,7 @@ import { ReloadTransactionStore } from "../../src/host-action/index.js";
 import { __createdTerminals, __resetVscodeMock } from "../mocks/vscode.js";
 import { readDelegationRecord } from "../../src/bridge/delegationRecord.js";
 import { canonicalBehaviorStubPath } from "../../src/bridge/behaviorStub.js";
+import { realConfigHome } from "../../src/harness/HarnessManager.js";
 
 /**
  * spec 235 — the headless Workspace smoke test (the deferred spec-233 payoff): drive the orchestrator with
@@ -202,13 +203,51 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     try {
       await ws.manager.spawn("claude");
 
-      expect(requests).toEqual([{ workspaceRoot: root, agent: "claude", cwd: root, configHome: undefined }]);
+      expect(requests).toEqual([{
+        workspaceRoot: root,
+        agent: "claude",
+        cwd: root,
+        configHome: realConfigHome(),
+      }]);
       const settings = JSON.parse(fs.readFileSync(spawnSettingsPath(root, "claude"), "utf8")) as Record<string, unknown>;
       expect(settings.statusLine).toEqual({
         type: "command",
         command: "node '/private/capture-wrapper.cjs'",
         padding: 1,
       });
+    } finally {
+      ws.dispose();
+      await fake.cleanup();
+    }
+  });
+
+  it("SDD 369 T3 does not compose capture across an explicit Claude settings-source filter", async () => {
+    const root = mkdir();
+    fs.writeFileSync(
+      path.join(root, "tachyon.yml"),
+      "agents:\n  claude:\n    cmd: claude --setting-sources project\n",
+      "utf8",
+    );
+    const host = new FakeHost(mkdir());
+    const fake = fakeTmux();
+    const requests: unknown[] = [];
+    const ws = await Workspace.createForTest(root, {
+      host,
+      onViewsChanged: () => {},
+      claudeStatusLineCapture: {
+        materialize: (request) => {
+          requests.push(request);
+          return { type: "command", command: "node '/private/capture-wrapper.cjs'" };
+        },
+      },
+    }, { tmux: fake.tmux, startBridge: false });
+    try {
+      await ws.manager.spawn("claude");
+
+      expect(requests).toEqual([]);
+      const settings = JSON.parse(fs.readFileSync(spawnSettingsPath(root, "claude"), "utf8")) as Record<string, unknown>;
+      expect(settings.statusLine).toBeUndefined();
+      expect(settings.hooks).toBeDefined();
     } finally {
       ws.dispose();
       await fake.cleanup();

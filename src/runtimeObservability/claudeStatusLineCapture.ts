@@ -9,8 +9,11 @@ const TRANSPORT_SCHEMA_VERSION = 1 as const;
 const TRANSPORT_DIR = "runtime-observability-v1";
 const CLAUDE_DIR = "claude-status-line";
 const WRAPPER_FILE = "capture-wrapper.cjs";
+const RELAY_DIR = "relays";
+const CAPTURE_MARKER_FILE = "capture-enabled.json";
 const MAX_SETTINGS_BYTES = 64 * 1024;
 const MAX_CAPTURE_BYTES = 8 * 1024;
+const MAX_MARKER_BYTES = 512;
 const MAX_CAPTURE_FILES = 256;
 const MAX_DIRECTORY_ENTRIES = MAX_CAPTURE_FILES * 2 + 16;
 const DEFAULT_MAX_CAPTURE_AGE_MS = 10 * 60_000;
@@ -18,6 +21,7 @@ const MAX_CAPTURE_AGE_MS = 24 * 60 * 60_000;
 const MAX_FUTURE_SKEW_MS = 60_000;
 const SAFE_SCOPE_KEY = /^ps_[0-9a-f]{16,64}$/u;
 const SAFE_CAPTURE_FILE = /^[0-9a-f]{32}\.capture\.json$/u;
+const SAFE_RELAY_FILE = /^[0-9a-f]{32}\.relay\.json$/u;
 const MAX_STATUS_LINE_COMMAND_BYTES = 4 * 1024;
 
 export interface ClaudeStatusLineSetting {
@@ -77,6 +81,7 @@ export class ClaudeStatusLineCaptureTransport {
       MAX_CAPTURE_AGE_MS,
       "capture lifetime",
     );
+    this.reconcileConsent();
   }
 
   materialize(request: ClaudeStatusLineMaterializeRequest): ClaudeStatusLineSetting | undefined {
@@ -97,9 +102,10 @@ export class ClaudeStatusLineCaptureTransport {
     if (!prior.ok) return undefined;
 
     try {
-      const scopeDir = this.ensureScopeDirectory(preference.scope.key);
+      this.ensureScopeDirectory(preference.scope.key);
+      const relayDir = path.join(this.root, RELAY_DIR);
+      ensurePrivateDirectory(relayDir);
       const wrapper = path.join(this.root, WRAPPER_FILE);
-      atomicPrivateWrite(wrapper, CLAUDE_STATUS_LINE_CAPTURE_WRAPPER_SOURCE);
       const target = crypto.createHash("sha256")
         .update(path.resolve(request.workspaceRoot))
         .update("\0")
@@ -110,10 +116,18 @@ export class ClaudeStatusLineCaptureTransport {
         .update(prior.setting?.command ?? "")
         .digest("hex")
         .slice(0, 32);
-      const relay = path.join(scopeDir, `${target}.relay.json`);
+      const relayName = `${target}.relay.json`;
+      if (!hasRelayCapacity(relayDir, relayName)) return undefined;
+      const relay = path.join(relayDir, relayName);
+      atomicPrivateWrite(wrapper, CLAUDE_STATUS_LINE_CAPTURE_WRAPPER_SOURCE);
       atomicPrivateWrite(relay, `${JSON.stringify({
         schemaVersion: TRANSPORT_SCHEMA_VERSION,
         priorCommand: prior.setting?.command ?? null,
+      })}\n`);
+      this.removeInactiveScopeDirectories(preference.scope.key);
+      atomicPrivateWrite(path.join(this.root, CAPTURE_MARKER_FILE), `${JSON.stringify({
+        schemaVersion: TRANSPORT_SCHEMA_VERSION,
+        accountScopeKey: preference.scope.key,
       })}\n`);
       return {
         type: "command",
@@ -130,6 +144,8 @@ export class ClaudeStatusLineCaptureTransport {
     if (signal.aborted) throw abortError();
     const preference = this.preferences.get("claude");
     if (!preference || !preference.sources.includes("cli") || !SAFE_SCOPE_KEY.test(preference.scope.key)) return null;
+    if (!isPrivateDirectory(this.root)) return null;
+    if (readCaptureMarker(path.join(this.root, CAPTURE_MARKER_FILE)) !== preference.scope.key) return null;
     const scopeDir = path.join(this.root, preference.scope.key);
     if (!isPrivateDirectory(scopeDir)) return null;
 
@@ -170,20 +186,9 @@ export class ClaudeStatusLineCaptureTransport {
 
   clearProvider(provider: "codex" | "claude"): void {
     if (provider !== "claude") return;
-    try {
-      const stat = fs.lstatSync(this.root);
-      if (stat.isSymbolicLink() || !stat.isDirectory()) {
-        fs.unlinkSync(this.root);
-        return;
-      }
-      const trash = `${this.root}.removing-${process.pid}-${crypto.randomBytes(4).toString("hex")}`;
-      fs.renameSync(this.root, trash);
-      fs.rmSync(trash, { recursive: true, force: true });
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-        // Cleanup remains best-effort; preference revocation must not be rolled back by stale capture debris.
-      }
-    }
+    if (!isPrivateDirectory(this.root)) return;
+    removeRegularFile(path.join(this.root, CAPTURE_MARKER_FILE));
+    this.removeInactiveScopeDirectories();
   }
 
   private ensureScopeDirectory(scopeKey: string): string {
@@ -193,6 +198,31 @@ export class ClaudeStatusLineCaptureTransport {
     const scopeDir = path.join(this.root, scopeKey);
     ensurePrivateDirectory(scopeDir);
     return scopeDir;
+  }
+
+  private reconcileConsent(): void {
+    if (!isPrivateDirectory(this.root)) return;
+    const preference = this.preferences.get("claude");
+    const expected = preference?.sources.includes("cli") ? preference.scope.key : undefined;
+    const marker = readCaptureMarker(path.join(this.root, CAPTURE_MARKER_FILE));
+    const active = marker !== undefined && marker === expected ? marker : undefined;
+    if (!active) removeRegularFile(path.join(this.root, CAPTURE_MARKER_FILE));
+    this.removeInactiveScopeDirectories(active);
+  }
+
+  private removeInactiveScopeDirectories(keep?: string): void {
+    let entries: string[];
+    try {
+      const stat = fs.lstatSync(this.root);
+      if (stat.isSymbolicLink() || !stat.isDirectory()) return;
+      entries = fs.readdirSync(this.root);
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (!SAFE_SCOPE_KEY.test(entry) || entry === keep) continue;
+      removeScopeDirectory(this.root, entry);
+    }
   }
 
   private isKnownConfigHome(workspaceRoot: string, configHome: string | undefined): boolean {
@@ -355,6 +385,64 @@ function isPrivateDirectory(dir: string): boolean {
   }
 }
 
+function hasRelayCapacity(relayDir: string, relayName: string): boolean {
+  try {
+    const entries = fs.readdirSync(relayDir);
+    if (entries.length >= MAX_DIRECTORY_ENTRIES) return false;
+    if (entries.includes(relayName)) return true;
+    return entries.filter((entry) => SAFE_RELAY_FILE.test(entry)).length < MAX_CAPTURE_FILES;
+  } catch {
+    return false;
+  }
+}
+
+function readCaptureMarker(file: string): string | undefined {
+  let fd: number | undefined;
+  try {
+    const stat = fs.lstatSync(file);
+    if (stat.isSymbolicLink() || !stat.isFile() || stat.size > MAX_MARKER_BYTES) return undefined;
+    fd = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0));
+    const opened = fs.fstatSync(fd);
+    if (!opened.isFile() || opened.size > MAX_MARKER_BYTES || (opened.mode & 0o077) !== 0) return undefined;
+    if (typeof process.getuid === "function" && opened.uid !== process.getuid()) return undefined;
+    const raw = JSON.parse(fs.readFileSync(fd, "utf8")) as unknown;
+    if (!record(raw)
+      || raw.schemaVersion !== TRANSPORT_SCHEMA_VERSION
+      || typeof raw.accountScopeKey !== "string"
+      || !SAFE_SCOPE_KEY.test(raw.accountScopeKey)) return undefined;
+    return raw.accountScopeKey;
+  } catch {
+    return undefined;
+  } finally {
+    if (fd !== undefined) try { fs.closeSync(fd); } catch { /* best effort */ }
+  }
+}
+
+function removeRegularFile(file: string): void {
+  try {
+    const stat = fs.lstatSync(file);
+    if (!stat.isDirectory()) fs.unlinkSync(file);
+  } catch {
+    // Revocation cleanup is best-effort; an unsafe marker still fails closed in both host and wrapper readers.
+  }
+}
+
+function removeScopeDirectory(root: string, scopeKey: string): void {
+  const scopeDir = path.join(root, scopeKey);
+  try {
+    const stat = fs.lstatSync(scopeDir);
+    if (stat.isSymbolicLink() || !stat.isDirectory()) {
+      fs.unlinkSync(scopeDir);
+      return;
+    }
+    const trash = path.join(root, `.scope-removing-${process.pid}-${crypto.randomBytes(4).toString("hex")}`);
+    fs.renameSync(scopeDir, trash);
+    fs.rmSync(trash, { recursive: true, force: true });
+  } catch {
+    // Preference revocation remains authoritative even if stale reduced captures cannot be deleted immediately.
+  }
+}
+
 function atomicPrivateWrite(file: string, content: string): void {
   const tmp = `${file}.tmp-${process.pid}-${crypto.randomBytes(4).toString("hex")}`;
   let fd: number | undefined;
@@ -415,8 +503,11 @@ const path = require("node:path");
 const { spawn } = require("node:child_process");
 const MAX_INPUT_BYTES = 64 * 1024;
 const MAX_RELAY_BYTES = 8 * 1024;
+const MAX_MARKER_BYTES = 512;
 const MAX_COMMAND_BYTES = 4 * 1024;
 const MAX_RESET_EPOCH_SECONDS = 253402300799;
+const CAPTURE_MARKER_FILE = "capture-enabled.json";
+const SAFE_SCOPE_KEY = /^ps_[0-9a-f]{16,64}$/;
 
 function ownPrivateFile(file) {
   let fd;
@@ -424,9 +515,14 @@ function ownPrivateFile(file) {
     const resolved = path.resolve(file);
     if (!/^[0-9a-f]{32}\.relay\.json$/.test(path.basename(resolved))) return null;
     const dir = path.dirname(resolved);
+    if (path.basename(dir) !== "relays") return null;
+    const root = path.dirname(dir);
     const dirStat = fs.lstatSync(dir);
     if (dirStat.isSymbolicLink() || !dirStat.isDirectory() || (dirStat.mode & 0o077) !== 0) return null;
     if (typeof process.getuid === "function" && dirStat.uid !== process.getuid()) return null;
+    const rootStat = fs.lstatSync(root);
+    if (rootStat.isSymbolicLink() || !rootStat.isDirectory() || (rootStat.mode & 0o077) !== 0) return null;
+    if (typeof process.getuid === "function" && rootStat.uid !== process.getuid()) return null;
     fd = fs.openSync(resolved, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
     const stat = fs.fstatSync(fd);
     if (!stat.isFile() || stat.size > MAX_RELAY_BYTES || (stat.mode & 0o077) !== 0) return null;
@@ -435,7 +531,30 @@ function ownPrivateFile(file) {
     if (!raw || typeof raw !== "object" || Array.isArray(raw) || raw.schemaVersion !== 1) return null;
     const command = raw.priorCommand;
     if (command !== null && (typeof command !== "string" || command.length === 0 || command.indexOf("\0") >= 0 || Buffer.byteLength(command) > MAX_COMMAND_BYTES)) return null;
-    return { command, capture: resolved.replace(/\.relay\.json$/, ".capture.json") };
+    return { command, root, target: path.basename(resolved).replace(/\.relay\.json$/, "") };
+  } catch {
+    return null;
+  } finally {
+    if (fd !== undefined) try { fs.closeSync(fd); } catch {}
+  }
+}
+
+function activeScope(root) {
+  let fd;
+  try {
+    const marker = path.join(root, CAPTURE_MARKER_FILE);
+    fd = fs.openSync(marker, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
+    const stat = fs.fstatSync(fd);
+    if (!stat.isFile() || stat.size > MAX_MARKER_BYTES || (stat.mode & 0o077) !== 0) return null;
+    if (typeof process.getuid === "function" && stat.uid !== process.getuid()) return null;
+    const raw = JSON.parse(fs.readFileSync(fd, "utf8"));
+    if (!raw || typeof raw !== "object" || Array.isArray(raw) || raw.schemaVersion !== 1
+      || typeof raw.accountScopeKey !== "string" || !SAFE_SCOPE_KEY.test(raw.accountScopeKey)) return null;
+    const scopeDir = path.join(root, raw.accountScopeKey);
+    const scopeStat = fs.lstatSync(scopeDir);
+    if (scopeStat.isSymbolicLink() || !scopeStat.isDirectory() || (scopeStat.mode & 0o077) !== 0) return null;
+    if (typeof process.getuid === "function" && scopeStat.uid !== process.getuid()) return null;
+    return raw.accountScopeKey;
   } catch {
     return null;
   } finally {
@@ -482,14 +601,16 @@ function projection(input, oversized) {
   }
 }
 
-function atomicCapture(file, rateLimits) {
-  const dir = path.dirname(file);
-  const stat = fs.lstatSync(dir);
-  if (stat.isSymbolicLink() || !stat.isDirectory() || (stat.mode & 0o077) !== 0) return;
-  if (typeof process.getuid === "function" && stat.uid !== process.getuid()) return;
+function atomicCapture(target, rateLimits) {
+  if (!target || activeScope(target.root) !== target.scope) return;
+  const file = path.join(target.root, target.scope, target.target + ".capture.json");
   const tmp = file + ".tmp-" + process.pid + "-" + require("node:crypto").randomBytes(4).toString("hex");
   let fd;
   try {
+    const dir = path.dirname(file);
+    const stat = fs.lstatSync(dir);
+    if (stat.isSymbolicLink() || !stat.isDirectory() || (stat.mode & 0o077) !== 0) return;
+    if (typeof process.getuid === "function" && stat.uid !== process.getuid()) return;
     fd = fs.openSync(tmp, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | (fs.constants.O_NOFOLLOW || 0), 0o600);
     fs.writeFileSync(fd, JSON.stringify({ schemaVersion: 1, observedAt: new Date().toISOString(), rate_limits: rateLimits }) + "\n", "utf8");
     fs.closeSync(fd);
@@ -506,6 +627,8 @@ if (!relay) {
   process.exitCode = 1;
   process.stdin.resume();
 } else {
+  const scope = activeScope(relay.root);
+  const capture = scope ? { root: relay.root, scope, target: relay.target } : null;
   let child = null;
   if (relay.command) {
     try {
@@ -520,15 +643,20 @@ if (!relay) {
       process.exitCode = 1;
     }
   }
-  let bytes = 0;
-  let oversized = false;
-  const chunks = [];
-  process.stdin.on("data", function (chunk) {
-    const value = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-    bytes += value.length;
-    if (!oversized && bytes <= MAX_INPUT_BYTES) chunks.push(value);
-    else { oversized = true; chunks.length = 0; }
-  });
-  process.stdin.on("end", function () { atomicCapture(relay.capture, projection(chunks, oversized)); });
+  if (capture) {
+    let bytes = 0;
+    let oversized = false;
+    const chunks = [];
+    process.stdin.on("data", function (chunk) {
+      const value = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      bytes += value.length;
+      if (!oversized && bytes <= MAX_INPUT_BYTES) chunks.push(value);
+      else { oversized = true; chunks.length = 0; }
+    });
+    process.stdin.on("end", function () { atomicCapture(capture, projection(chunks, oversized)); });
+  } else if (!child) {
+    // Consent was revoked (or not yet granted): consume stdin without buffering or parsing it.
+    process.stdin.resume();
+  }
 }
 `;

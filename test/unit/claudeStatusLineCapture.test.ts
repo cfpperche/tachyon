@@ -199,6 +199,33 @@ describe("ClaudeStatusLineCaptureTransport", () => {
     expect(fs.existsSync(path.join(root, "storage"))).toBe(false);
   });
 
+  it("fails closed without traversing a symlinked global transport root", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-claude-root-symlink-"));
+    roots.push(root);
+    const storage = path.join(root, "storage");
+    const transportParent = path.join(storage, "runtime-observability-v1");
+    const victim = path.join(root, "victim");
+    fs.mkdirSync(transportParent, { recursive: true, mode: 0o700 });
+    fs.mkdirSync(victim, { mode: 0o700 });
+    const victimMarker = path.join(victim, "capture-enabled.json");
+    fs.writeFileSync(victimMarker, "KEEP", { mode: 0o600 });
+    fs.symlinkSync(victim, path.join(transportParent, "claude-status-line"));
+    const state = new MemoryState();
+    const preferences = new ProviderObservationPreferences(state, () => "1".repeat(32));
+    await preferences.configure("claude", {
+      state: "granted",
+      consent: "explicit-user",
+      sources: ["cli"],
+    });
+
+    const transport = new ClaudeStatusLineCaptureTransport(storage, preferences, { managedSettingsPaths: [] });
+
+    expect(transport.materialize({ workspaceRoot: root, agent: "claude", cwd: root })).toBeUndefined();
+    await expect(transport.readCapture(new AbortController().signal)).resolves.toBeNull();
+    transport.clearProvider("claude");
+    expect(fs.readFileSync(victimMarker, "utf8")).toBe("KEEP");
+  });
+
   it("refuses an alternate external Claude config home that could represent another account", async () => {
     const h = await harness();
     const alternate = path.join(h.root, "alternate-claude-account");
@@ -247,7 +274,14 @@ describe("ClaudeStatusLineCaptureTransport", () => {
     const h = await harness();
     const setting = h.transport.materialize({ workspaceRoot: h.cwd, agent: "claude", cwd: h.cwd });
     const relay = findFile(h.storage, ".relay.json");
-    const capture = relay.replace(/\.relay\.json$/u, ".capture.json");
+    const scopeKey = h.preferences.get("claude")!.scope.key;
+    const capture = path.join(
+      h.storage,
+      "runtime-observability-v1",
+      "claude-status-line",
+      scopeKey,
+      path.basename(relay).replace(/\.relay\.json$/u, ".capture.json"),
+    );
     const victim = path.join(h.root, "victim.txt");
     fs.writeFileSync(victim, "KEEP", "utf8");
     fs.symlinkSync(victim, capture);
@@ -289,14 +323,75 @@ describe("ClaudeStatusLineCaptureTransport", () => {
     await expect(h.transport.readCapture(new AbortController().signal)).resolves.toBeNull();
   });
 
-  it("cancels reads and removes provider transport debris on revocation", async () => {
+  it("bounds retained relays instead of growing transport state per agent forever", async () => {
     const h = await harness();
-    h.transport.materialize({ workspaceRoot: h.cwd, agent: "claude", cwd: h.cwd });
+    for (let index = 0; index < 256; index += 1) {
+      expect(h.transport.materialize({
+        workspaceRoot: h.cwd,
+        agent: `claude-${index}`,
+        cwd: h.cwd,
+      })).toMatchObject({ type: "command" });
+    }
+
+    expect(h.transport.materialize({
+      workspaceRoot: h.cwd,
+      agent: "claude-over-capacity",
+      cwd: h.cwd,
+    })).toBeUndefined();
+    expect(fs.readdirSync(path.join(
+      h.storage,
+      "runtime-observability-v1",
+      "claude-status-line",
+      "relays",
+    ))).toHaveLength(256);
+  });
+
+  it("cancels reads and revokes capture without breaking an existing user status line", async () => {
+    const h = await harness();
+    writeJson(path.join(h.home, ".claude", "settings.json"), {
+      statusLine: { type: "command", command: "printf USER-LINE" },
+    });
+    const setting = h.transport.materialize({ workspaceRoot: h.cwd, agent: "claude", cwd: h.cwd });
+    expect(runStatusLine(setting!.command, h.cwd, { rate_limits: {} }).stdout).toBe("USER-LINE");
+    const capture = findFile(h.storage, ".capture.json");
     const controller = new AbortController();
     controller.abort();
 
     await expect(h.transport.readCapture(controller.signal)).rejects.toMatchObject({ name: "AbortError" });
+    await h.preferences.configure("claude", { state: "disabled" });
     h.transport.clearProvider("claude");
-    expect(fs.existsSync(path.join(h.storage, "runtime-observability-v1", "claude-status-line"))).toBe(false);
+    expect(fs.existsSync(capture)).toBe(false);
+
+    const afterRevocation = runStatusLine(setting!.command, h.cwd, { rate_limits: {} });
+    expect(afterRevocation.status).toBe(0);
+    expect(afterRevocation.stdout).toBe("USER-LINE");
+    expect(afterRevocation.stderr).toBe("");
+    expect(fs.existsSync(capture)).toBe(false);
+    expect(findFile(h.storage, ".relay.json")).toBeTruthy();
+    await expect(h.transport.readCapture(new AbortController().signal)).resolves.toBeNull();
+  });
+
+  it("recovers an interrupted revocation on extension-host restart", async () => {
+    const h = await harness();
+    writeJson(path.join(h.home, ".claude", "settings.json"), {
+      statusLine: { type: "command", command: "printf USER-LINE" },
+    });
+    const setting = h.transport.materialize({ workspaceRoot: h.cwd, agent: "claude", cwd: h.cwd });
+    expect(runStatusLine(setting!.command, h.cwd, { rate_limits: {} }).stdout).toBe("USER-LINE");
+    const capture = findFile(h.storage, ".capture.json");
+    await h.preferences.configure("claude", { state: "disabled" });
+
+    new ClaudeStatusLineCaptureTransport(h.storage, h.preferences, {
+      homeDir: h.home,
+      managedSettingsPaths: [],
+    });
+
+    expect(fs.existsSync(capture)).toBe(false);
+    expect(runStatusLine(setting!.command, h.cwd, { rate_limits: {} })).toMatchObject({
+      status: 0,
+      stdout: "USER-LINE",
+      stderr: "",
+    });
+    expect(fs.existsSync(capture)).toBe(false);
   });
 });

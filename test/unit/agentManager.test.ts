@@ -623,6 +623,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       resolveCaptureSession?: (rt: string, cwd: string, configHome?: string, id?: string) => Promise<{ id: string; path: string } | null>;
       resolveCurrentSession?: (rt: string, cwd: string) => Promise<string | null>;
       homeDir?: () => string;
+      defaultClaudeConfigHome?: string;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       worktreeDirty?: (rec: any) => Promise<boolean>;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -645,6 +646,7 @@ describe("AgentManager — session resume (spec 209)", () => {
         ownershipOnly?: boolean;
         cwd?: string;
         configHome?: string;
+        statusLineCapture?: boolean;
       }) => string | undefined;
       materializeCodexSessionStartHookConfig?: (name: string, opts?: { ownershipOnly?: boolean }) => string | string[] | undefined;
       ownedSession?: (name: string, cwd: string) => { sessionId: string; transcriptPath: string } | undefined;
@@ -751,6 +753,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       resolveCaptureSession: opts.resolveCaptureSession,
       resolveCurrentSession: opts.resolveCurrentSessionFull ?? opts.resolveCurrentSession,
       homeDir: opts.homeDir,
+      defaultClaudeConfigHome: opts.defaultClaudeConfigHome,
       resolveSpawnCwd: opts.resolveSpawnCwd,
       worktreeDirty: opts.worktreeDirty,
       createForkWorktree: opts.createForkWorktree,
@@ -2047,13 +2050,30 @@ describe("AgentManager — session resume (spec 209)", () => {
   });
 
   it("commitFork (no worktree): spawns the fork-session combo and records a persistent sibling row", async () => {
-    const { manager, ledger, cmds, ws } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", { resolveCurrentSession: async () => UUID });
+    const settings: Array<{ name: string; ownershipOnly: boolean; cwd?: string; configHome?: string }> = [];
+    const { manager, ledger, cmds, ws } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
+      resolveCurrentSession: async () => UUID,
+      defaultClaudeConfigHome: "/accounts/default-claude",
+      materializeOwnershipSettings: (name, opts) => {
+        settings.push({ name, ownershipOnly: !!opts?.ownershipOnly, cwd: opts?.cwd, configHome: opts?.configHome });
+        return `/ws/.tachyon/spawn-settings/${name}.json`;
+      },
+    });
     await manager.spawn("claude");
+    settings.length = 0;
     const plan = await manager.planFork("claude");
     const forkName = await manager.commitFork(plan);
     expect(forkName).toBe("claude-fork-1");
     const forkSession = `tachyon-${path.basename(ws)}-claude-fork-1`;
-    expect(cmds.at(-1)).toBe(`claude -n ${forkSession} --resume ${UUID} --fork-session`);
+    expect(cmds.at(-1)).toBe(
+      `claude -n ${forkSession} --resume ${UUID} --fork-session --settings '/ws/.tachyon/spawn-settings/claude-fork-1.json'`,
+    );
+    expect(settings).toEqual([{
+      name: "claude-fork-1",
+      ownershipOnly: true,
+      cwd: ws,
+      configHome: "/accounts/default-claude",
+    }]);
     expect(ledger.get("claude-fork-1")).toMatchObject({
       def: { cmd: "claude", kind: "agent", fork: true }, // base cmd → a later resume uses the normal named path, never re-forks
       resume: { runtime: "claude", sessionId: forkSession }, // the fork's OWN name (captured → uuid later)
@@ -2081,6 +2101,26 @@ describe("AgentManager — session resume (spec 209)", () => {
     await manager.commitFork(await manager.planFork("claude"));
     // persisted on the fork's ledger def → rehydrate/restart/resume re-apply it (not just the first spawn)
     expect(ledger.get("claude-fork-1")?.def?.env).toEqual({ ANTHROPIC_BASE_URL: "https://api.glm.example" });
+  });
+
+  it("SDD 369 T3 passes a fork's inherited explicit Claude config home to capture materialization", async () => {
+    const homes: Array<string | undefined> = [];
+    const { manager } = resumeHarness(
+      "agents:\n  claude:\n    cmd: claude\n    env:\n      CLAUDE_CONFIG_DIR: /accounts/external-claude\n",
+      {
+        resolveCurrentSession: async () => UUID,
+        materializeOwnershipSettings: (_name, opts) => {
+          homes.push(opts?.configHome);
+          return "/ws/.tachyon/spawn-settings/claude.json";
+        },
+      },
+    );
+    await manager.spawn("claude");
+    homes.length = 0;
+
+    await manager.commitFork(await manager.planFork("claude"));
+
+    expect(homes).toEqual(["/accounts/external-claude"]);
   });
 
   it("a forked sibling survives a Stop (persistent) and is dropped only on Dismiss", async () => {
@@ -3036,6 +3076,24 @@ describe("AgentManager — session resume (spec 209)", () => {
         cwd: ws,
         configHome: harnessHome(ws, "reviewer"),
       }]);
+    });
+
+    it("SDD 369 T3 keeps ownership settings but fails capture closed for explicit --setting-sources", async () => {
+      const details: Array<{ statusLineCapture?: boolean }> = [];
+      const { manager, cmds } = resumeHarness(
+        "agents:\n  claude:\n    cmd: claude --setting-sources project\n",
+        {
+          materializeOwnershipSettings: (_name, opts) => {
+            details.push({ statusLineCapture: opts?.statusLineCapture });
+            return "/ws/.tachyon/spawn-settings/claude.json";
+          },
+        },
+      );
+
+      await manager.spawn("claude");
+
+      expect(cmds.at(-1)).toContain("--settings '/ws/.tachyon/spawn-settings/claude.json'");
+      expect(details).toEqual([{ statusLineCapture: false }]);
     });
 
     it("claude ad-hoc: does not override an explicit permission mode", async () => {

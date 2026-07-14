@@ -376,6 +376,49 @@ describe("ProviderObservationService", () => {
     });
   });
 
+  it("does not publish a completed observation after consent revocation has started", async () => {
+    const state = new MemoryState();
+    const captureRevoked = deferred<void>();
+    const h = await configuredHarness({
+      state,
+      adapters: [fakeSource("claude", "cli", async (request) => (
+        quota(request.scope, "cli", "2026-07-14T21:45:00.000Z")
+      ))],
+      onPreferenceChanged: () => { captureRevoked.resolve(undefined); },
+    });
+    const persistenceStarted = deferred<void>();
+    const persistenceRelease = deferred<void>();
+    const disabledPersisted = deferred<void>();
+    const baseUpdate = state.update.bind(state);
+    let blockFirstLastGood = true;
+    (state as { update: ProviderObservationStatePort["update"] }).update = (key, value) => {
+      if (blockFirstLastGood && key === PROVIDER_OBSERVATION_LAST_GOOD_STATE_KEY) {
+        blockFirstLastGood = false;
+        persistenceStarted.resolve(undefined);
+        return persistenceRelease.promise.then(() => baseUpdate(key, value));
+      }
+      const result = baseUpdate(key, value);
+      if (key !== PROVIDER_OBSERVATION_LAST_GOOD_STATE_KEY) disabledPersisted.resolve(undefined);
+      return result;
+    };
+    const changes: CollectorEnvelopeV1[] = [];
+    h.service.onDidChange(({ envelope }) => { changes.push(envelope); });
+
+    const refresh = h.service.refresh("claude");
+    await persistenceStarted.promise;
+    const disabled = h.service.configureProvider("claude", { state: "disabled" });
+    await disabledPersisted.promise;
+    expect(h.preferences.get("claude")).toBeUndefined();
+    await captureRevoked.promise;
+    persistenceRelease.resolve(undefined);
+
+    await expect(refresh).resolves.toMatchObject({
+      facts: [{ kind: "provider-unavailable", reason: "source-disabled" }],
+    });
+    await disabled;
+    expect(changes.some((envelope) => envelope.facts.some((fact) => fact.kind === "provider-quota"))).toBe(false);
+  });
+
   it("serializes same-provider consent lifecycle side effects", async () => {
     const cleanupStarted = deferred<void>();
     const cleanupRelease = deferred<void>();
