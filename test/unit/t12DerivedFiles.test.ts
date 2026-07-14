@@ -15,6 +15,8 @@ describe("T12 private derived agent files", () => {
     const anchor = path.join(workspaceRoot, ".tachyon", "anchors", `${agent}.md`);
     const canonical = path.join(workspaceRoot, ".tachyon", "agents", `${agent}.md`);
 
+    expect(fs.readFileSync(path.join(process.cwd(), ".gitignore"), "utf8")).toMatch(/^\.tachyon\/$/m);
+
     deliverableBody(workspaceRoot, agent, firstBody);
     deliverableBody(workspaceRoot, agent, finalBody);
     fs.mkdirSync(path.dirname(anchor), { recursive: true, mode: 0o700 });

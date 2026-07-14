@@ -11,8 +11,8 @@
  * review briefs (spec 363 notes) and reanchor's `.tachyon/roles/<agent>.md` (Workspace.reanchor):
  * the long artifact goes to a file under the gitignored `.tachyon/` dir, the pane gets a pointer.
  */
-import fs from "node:fs";
 import path from "node:path";
+import { writePrivateFileAtomic } from "./derivedFile.js";
 
 /** Comfortably under the measured ~16.3KB tmux hard-fail ceiling, with headroom for primer +
  *  before-finishing framing and shell-quoting overhead added after this check runs. */
@@ -36,16 +36,16 @@ export function briefFilePath(workspaceRoot: string, agent: string): string {
  * fs error instead of sending an oversized body onward to tmux's less actionable hard reject.
  */
 export function deliverableBody(workspaceRoot: string, agent: string, body: string): string {
-  if (body.length <= BRIEF_FILE_THRESHOLD) return body;
+  const bytes = Buffer.byteLength(body, "utf8");
+  if (bytes <= BRIEF_FILE_THRESHOLD) return body;
   const file = briefFilePath(workspaceRoot, agent);
   try {
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, body, "utf8");
+    writePrivateFileAtomic(file, body);
   } catch (err) {
-    if (body.length > SAFE_INLINE_CEILING) {
+    if (bytes > SAFE_INLINE_CEILING) {
       const message = err instanceof Error ? err.message : String(err);
       throw new Error(
-        `spawn brief is ${body.length} chars, above the safe inline ceiling (${SAFE_INLINE_CEILING} chars), ` +
+        `spawn brief is ${bytes} bytes, above the safe inline ceiling (${SAFE_INLINE_CEILING} bytes), ` +
           `and writing it to ${file} failed: ${message}`,
       );
     }

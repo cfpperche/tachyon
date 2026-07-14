@@ -2307,6 +2307,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       "session-owner ledger rows",
       "private harness/config home",
       "per-spawn settings file",
+      "generated spawn brief and soul anchor",
     ]);
   });
 

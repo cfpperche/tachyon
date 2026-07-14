@@ -17,7 +17,7 @@ describe("container-generated delegation behavior", () => {
     });
 
     expect(() => deliverableBody(workspaceRoot, "oversized", body)).toThrow(
-      new RegExp(`${body.length} chars.*safe inline ceiling.*EACCES: permission denied, open spawn brief`),
+      new RegExp(`${Buffer.byteLength(body)} bytes.*safe inline ceiling.*EACCES: permission denied, open spawn brief`),
     );
   });
 
@@ -42,5 +42,15 @@ describe("container-generated delegation behavior", () => {
     expect(file).toBe(path.join(workspaceRoot, ".tachyon", "briefs", "spawn", "writer.md"));
     expect(pointer).toContain(file);
     expect(fs.readFileSync(file, "utf8")).toBe(body);
+  });
+
+  it("measures transport ceilings in UTF-8 bytes without altering the body", () => {
+    const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), "cx-brief-"));
+    const body = "🧭".repeat(BRIEF_FILE_THRESHOLD / 2);
+    expect(body.length).toBeLessThanOrEqual(BRIEF_FILE_THRESHOLD);
+    expect(Buffer.byteLength(body)).toBeGreaterThan(BRIEF_FILE_THRESHOLD);
+
+    expect(deliverableBody(workspaceRoot, "utf8", body)).toContain(briefFilePath(workspaceRoot, "utf8"));
+    expect(fs.readFileSync(briefFilePath(workspaceRoot, "utf8"), "utf8")).toBe(body);
   });
 });

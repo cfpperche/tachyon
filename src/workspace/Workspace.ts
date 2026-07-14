@@ -87,6 +87,7 @@ import { classifyInjection, injectionText, type Transition } from "../continuity
 import { agentLogId } from "../activity/logStore.js";
 import { compactSessionOwnerRows, compactSpawnSettings, latestOwnerFor, persistenceHookFailureFile, readPersistenceHookFailures, readSessionOwners, sessionOwnersFile } from "../activity/sessionOwners.js";
 import { forgetAgent as forgetAgentFootprint } from "../agents/forgetAgent.js";
+import { writePrivateFileAtomic } from "../agents/derivedFile.js";
 import { Terminals } from "../presentation/Terminals.js";
 import { detectInstalledClis } from "../webview/cliDetect.js";
 import { validateForm, blockingErrors, toEntry } from "../webview/formLogic.js";
@@ -2003,11 +2004,7 @@ export class Workspace {
         }).body ?? "";
         const dir = path.join(this.workspaceRoot, ".tachyon", "anchors");
         const abs = path.join(dir, `${agent}.md`);
-        const tmp = path.join(dir, `.${agent}.${process.pid}.${Date.now()}.tmp`);
-        fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-        fs.writeFileSync(tmp, `${body}\n`, { encoding: "utf8", mode: 0o600, flag: "wx" });
-        fs.renameSync(tmp, abs);
-        fs.chmodSync(abs, 0o600);
+        writePrivateFileAtomic(abs, `${body}\n`);
         const transition = previous?.soul.sha256 && previous.soul.sha256 !== soul.sha256 ? ` (${previous.soul.sha256.slice(0, 12)}→${soul.sha256.slice(0, 12)})` : "";
         const pointer = `[Tachyon] Re-anchor identity${transition}: read the complete current contract with: cat ${shellQuote(abs)}`;
         await this.tmux.sendKeys(session, `${primer}\n\n${pointer}\n\n${beforeFinishing}`, true);
