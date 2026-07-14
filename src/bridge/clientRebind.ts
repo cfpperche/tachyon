@@ -4,8 +4,8 @@
  * After the extension host reloads, surviving tmux agents keep valid 351 tokens but their
  * in-process MCP clients are half-open. This module owns the durable bridge generation,
  * reconstructs suspects from the session ledger, and under default `auto` runs a governed
- * stop → wait-dead → hard-kill-if-needed → resume rebind (injectPrimer:false — reconnect
- * only; do not re-paste the 363 primer into composers — t-762940). No peer tool; no cold spawn.
+ * stop → wait-dead → hard-kill-if-needed → resume rebind (reconnect only; resume default is
+ * injectPrimer:false for all callers — t-762940 / 2026-07-14). No peer tool; no cold spawn.
  *
  * Host-agnostic: all side effects go through injected ports (no vscode imports).
  */
@@ -67,8 +67,7 @@ export interface BridgeClientRebindDeps {
   /**
    * Resume via existing sidebar rules. MUST call resume (not cold spawn).
    * Receives the pre-stop ledger snapshot so a race cannot drop the row.
-   * Callers MUST pass injectPrimer:false — rebind reconnects MCP only; re-pasting the
-   * 363 primer after host reload strands draft text in composers (t-762940).
+   * Resume defaults to injectPrimer:false for all callers; rebind still passes false explicitly.
    */
   resume: (name: string, record: SessionRecord, opts?: { injectPrimer?: boolean }) => Promise<void>;
   /**

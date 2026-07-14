@@ -65,8 +65,10 @@ and the Bridge-side event witness, not a second gate.
 
 ### 1. The generated primer (push — advisory orientation)
 
-A short, fixed-format, delimited section the brief compositor prepends at the four EXISTING injection moments
-— spawn, restart, resume, re-anchor (no new channels, no event detection in v1). Content is hybrid: a curated
+A short, fixed-format, delimited section the brief compositor prepends at the **three** EXISTING injection moments
+— **spawn, restart, re-anchor** (no new channels, no event detection in v1). **Resume does not push the primer**
+(amendment 2026-07-14): it re-attaches the on-disk transcript + Bridge only; pasting primer+Enter on every
+stop/resume polluted TUI composers for every runtime. Content is hybrid: a curated
 skeleton with generated slots, so it is never stale and never generic:
 
 - **Identity:** agent name, delegator/parent, gated? (behavior test + owns, with the PROTOCOL-IDENTIFIER
@@ -77,9 +79,10 @@ skeleton with generated slots, so it is never stale and never generic:
   separate, l10n rule.
 - **Pointer:** "self-serve re-orientation: call `orient`".
 
-Dose per moment: **always the full compact primer** at all four moments (dueto major #3: delta-dosing needs
+Dose per moment: **always the full compact primer** at spawn, restart, and re-anchor (dueto major #3: delta-dosing needs
 the container to model what the agent retained — hidden state that under-informs exactly when recovery is
-needed; a ~30-line resend costs less than the ambiguity). A short generated delta section may APPEND changed
+needed; a ~30-line resend costs less than the ambiguity). Resume is re-attach only (no push); re-anchor remains
+the human/Bridge path for mid-session re-orientation. A short generated delta section may APPEND changed
 facts, never replace the canon. HARD budget ~30 lines (deep/static knowledge lives behind `orient` —
 push-minimal, pull-complete). Runtime-aware flavoring (claude vs codex) only in phrasing, never in content.
 
