@@ -323,6 +323,24 @@ pass is recorded below.
   Claude closure probes produced no artifact (timeout, then budget exhaustion), so no model-review
   claim is made for this slice.
 
+### 2026-07-14 — T5–T11 lifecycle slice integrated
+
+- Task `t-dac8d0` was implemented in an isolated worktree and integrated through commits
+  `209fbb78` through `f78b2343` on `codex-soul/t-60979d-agent-soul-integration`.
+- T5–T8 add typed soul/role/instructions/Bridge/task composition, exact no-soul parity, typed
+  `taskBrief`, fail-closed spawn/restart preflight with bounded transient retry, metadata-only launch
+  reservations, and fork metadata copying without re-resolving or re-injecting identity.
+- T10–T11 add defensive metadata-only ledger parsing and private atomic soul-aware re-anchor files,
+  including degradation metadata and compaction retry suppression. No soul body or import path is
+  persisted in the ledger or launch reservation.
+- T9's declared Delivery, pipeline, schedule, coordinator-root, and non-inheritance lifecycle slice
+  is present. Its rename/retention/adoption transaction clause remains deliberately open with T15;
+  the T9 checkbox is therefore not closed early.
+- The coordinator reproduced the executable gate: the A2 behavior stub failed before production
+  changes and passed after integration. Final independent execution passed the 460-test focused
+  lifecycle/parity suite, `npm run typecheck`, and `npm run verify:full:quiet` with 338 files,
+  4073 tests passed, and 3 skipped. T12, T14, T15, product docs, and dogfood remain out of this slice.
+
 ## Open questions
 
 - Resolved 2026-07-14: the maintainer ratified the complete revised R1–R6 bundle without amendments.

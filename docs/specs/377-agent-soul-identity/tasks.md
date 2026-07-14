@@ -48,14 +48,14 @@ implementation still requires separately assigned bounded Deliveries._
       `instructionsDeliverable` reuse it, classify prompt/native-external/unsupported runtimes, and
       test direct/`env`/package launchers, rejected shell wrappers/renamed binaries,
       OpenCode `tui-prefill/offered` state, and Hermes fail-closed diagnostics.
-- [ ] **T5. Implement typed prompt layers.** Create `src/agents/promptLayers.ts` with the soul →
+- [x] **T5. Implement typed prompt layers.** Create `src/agents/promptLayers.ts` with the soul →
       role → persistent instructions → Bridge guidance → task order, identity precedence copy, and
       the explicit legacy serializer that joins instructions+task before Bridge. Make all T1 golden
       snapshots stay byte-identical when `soul` is absent.
-- [ ] **T6. Separate the execution task.** Replace internal `appendInstructions` with `taskBrief`
+- [x] **T6. Separate the execution task.** Replace internal `appendInstructions` with `taskBrief`
       across `AgentManager`, Bridge/bound Delivery plumbing, pipeline/schedule call sites, helpers,
       and typed persistence; preserve the public Bridge request shape.
-- [ ] **T7. Integrate fresh spawn/restart.** Preflight source/capability at the outer boundary before
+- [x] **T7. Integrate fresh spawn/restart.** Preflight source/capability at the outer boundary before
       worktree/stub/Delivery lease/token/harness/pane side effects, fail closed on unsupported/
       missing/invalid sources, preserve a live process on restart failure, compose through the
       shared layer model, latch deterministic unattended failures immediately, retry only enumerated
@@ -65,7 +65,7 @@ implementation still requires separately assigned bounded Deliveries._
       an honest channel-specific `offered` snapshot after launch handoff. Serialize profile preflight
       with mutations and persist/rollback a short-lived profile ID/digest launch reservation before
       releasing the shared lock.
-- [ ] **T8. Integrate resume/rebind/fork.** Pin exact BASE_SHA runtime command and send-key output for
+- [x] **T8. Integrate resume/rebind/fork.** Pin exact BASE_SHA runtime command and send-key output for
       each path; prove none calls any legacy/soul prompt serializer, soul resolver, or long-brief
       compositor; prove resume/rebind never reload/inject soul, native fork never duplicates it, and
       fork metadata keeps enablement/canonical profile identity/digest for later restart/re-anchor.
@@ -74,11 +74,11 @@ implementation still requires separately assigned bounded Deliveries._
       parent ad-hoc non-inheritance, isolated worktree coordinator-root resolution, and rename
       transaction/collision/rollback plus clear/delete profile retention and explicit adoption on
       later name reuse.
-- [ ] **T10. Extend the ledger defensively.** Add typed optional role/soul/task and metadata-only
+- [x] **T10. Extend the ledger defensively.** Add typed optional role/soul/task and metadata-only
       identity offer/health fields; migrate by absence, drop malformed snapshots safely, support
       `identity-degraded` without body/error-text leakage, and assert a distinctive soul body never
       appears in serialized ledger JSON.
-- [ ] **T11. Add soul-aware re-anchor.** Resolve and compose a complete private/atomic
+- [x] **T11. Add soul-aware re-anchor.** Resolve and compose a complete private/atomic
       `.tachyon/anchors/<agent>.md` before injection, send a shell-quoted absolute pointer that works
       from worktrees/paths with spaces, update offered metadata only after success, show A→B digest
       transitions, persist degraded state/latch attention/pause auto retry on compaction failure
