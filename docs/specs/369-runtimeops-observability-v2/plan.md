@@ -1,6 +1,6 @@
 # 369 — RuntimeOps Observability V2 — plan
 
-_Drafted from `spec.md` on 2026-07-10. Implementation after the T0 vendor-strategy gate is ratified._
+_Drafted from `spec.md` on 2026-07-10. T0 strategy and cost boundaries ratified 2026-07-14._
 
 ## Approach
 
@@ -8,9 +8,10 @@ Deliver one Tachyon-owned observability pipeline with two deliberately separate 
 
 1. **Native execution facts** continue to come from normalized Tachyon activity (`usage.updated`) and retain each
    runtime's cumulative-versus-delta semantics and agent/workspace attribution.
-2. **Provider/account facts** come from a headless collection engine derived from CodexBar collectors, then cross a
-   versioned, bounded process boundary into a Tachyon-owned neutral model. They are never assigned to an agent merely
-   because that agent uses the same runtime.
+2. **Provider/account facts** come from small Tachyon-owned TypeScript adapters for Codex and Claude, then cross a
+   versioned, bounded observation-source boundary into a neutral model. CodexBar remains a development reference and
+   conformance oracle, not a runtime dependency. Provider facts are never assigned to an agent merely because that
+   agent uses the same runtime.
 
 The implementation starts with a feasibility gate rather than assuming a source layout:
 
@@ -39,7 +40,8 @@ The spike ends in an ADR-style section in `notes.md` choosing one of:
 - **Selective TypeScript port:** port provider collectors only if Swift extraction/build/upstream maintenance is worse
   than owning the implementations.
 
-No product collector or UI work starts until this gate is ratified.
+The maintainer ratified the selective TypeScript port and quota-only first slice on 2026-07-14. Product work begins
+only after the spike branch is reviewed and merged.
 
 ### T1 — neutral observability domain
 
@@ -49,24 +51,24 @@ Add a domain below Runtime Ops, not inside its webview snapshot service. Its fir
   and observed time;
 - `ProviderQuotaFact`: provider, redacted account scope, named window, used percent or remaining amount, reset, window
   duration, confidence, source strategy, observed time, freshness, and unavailable reason;
-- optional `ProviderCostFact`: currency/unit-safe aggregate and time range, only if the post-spike ratification includes
-  it;
-- `CollectorEnvelopeV1`: schema version, engine version/build, collector/provider, generated time, facts, and bounded
-  typed diagnostics.
+- future `ProviderCostFact`: currency/unit-safe aggregate and time range, explicitly deferred from the first slice;
+- `CollectorEnvelopeV1`: schema version, collector implementation/reference version, provider, generated time, facts,
+  and bounded typed diagnostics.
 
 Validation is allowlist-by-construction. It rejects non-finite numbers, out-of-range percentages, invalid timestamps,
 unknown required enums, oversized arrays/strings, raw error bodies, and any prohibited credential/path/account fields.
 Unknown additive fields remain forward-compatible.
 
-### T2 — headless engine and distribution
+### T2 — native provider acquisition
 
-Implement the T0 decision outside Tachyon's UI. The expected shape is a downstream headless engine repository or
-source subtree that emits `CollectorEnvelopeV1`, plus a first-party `tachyon-plugins` plugin that provisions signed or
-checksum-pinned artifacts for supported platforms. The plugin manifest and consent surface disclose that the binary
-may invoke provider CLIs/read configured local sources and makes unsupported platforms explicit.
+Implement one small TypeScript adapter each for Codex and Claude behind a `ProviderObservationSource` interface. Each
+adapter owns a fixed source allowlist, source-specific consent/configuration, bounded network/file/CLI reads and raw
+response confinement. It emits only `CollectorEnvelopeV1`; browser cookies, Keychain, broad dashboard scraping,
+automatic cross-source fallback and cost scans stay out of the first slice.
 
-Keep an upstream provenance manifest containing repository URL, tag/commit, license files, downstream patch list,
-toolchain/dependency pins, and artifact SHA-256 values. Do not silently execute an unpinned system `codexbar` binary.
+Keep a reference manifest containing the CodexBar repository/tag/commit used for behavioral comparison, fixture
+provenance and any MIT attribution required by actually derived code. CodexBar source, binaries and Swift build inputs
+must not enter the Tachyon product or release graph.
 
 ### T3 — host observation service
 
@@ -75,8 +77,8 @@ request per provider/account scope, explicit timeouts and cancellation, bounded 
 snapshot with freshness. Hidden Runtime Ops views receive no render polling, but the observation service may refresh
 at a user-configured operational cadence because provider quota is a runtime resource, not merely UI state.
 
-This layer owns process execution and validates `CollectorEnvelopeV1`; `RuntimeOpsSnapshotService` only projects
-validated facts. It emits changes through the existing event fan-out rather than spawning collectors per agent.
+This layer invokes adapters and validates `CollectorEnvelopeV1`; `RuntimeOpsSnapshotService` only projects validated
+facts. It emits changes through the existing event fan-out rather than collecting per agent or per render.
 
 ### T4 — Runtime Ops projection
 
@@ -92,10 +94,11 @@ placement.
 ### T5 — security, compatibility, and dogfood
 
 Use hostile contract fixtures to prove no secrets, absolute paths, raw responses, emails/account ids, session tokens,
-terminal lines, or unbounded vendor strings cross into the webview. Pin a fixture corpus for the chosen engine build
-and add an upgrade check that runs the new candidate engine against the adapter before changing the pin.
+terminal lines, or unbounded vendor strings cross into the webview. Pin a fixture corpus to the chosen reference
+baseline and add an upstream-radar check that identifies relevant provider changes for intentional review.
 
-Dogfood Codex and Claude separately: compare engine facts with their source of truth, verify reset/freshness behavior,
+Dogfood Codex and Claude separately: compare native adapter facts with their source of truth and, optionally during
+development, the pinned CodexBar reference; verify reset/freshness behavior,
 stop the collector mid-request, remove credentials, hide/reveal Runtime Ops, and confirm native usage remains available
 when provider collection fails.
 
@@ -103,11 +106,11 @@ when provider collection fails.
 
 - **One Tachyon UI, one neutral domain** — CodexBar UI reuse is explicitly rejected; Runtime Ops remains the visual
   cockpit and consumes only Tachyon contracts.
-- **Spike before source commitment** — the engine is mature but Swift/platform/source-closure and upstream-sync costs
-  are material; choosing a fork or port without evidence would turn a dependency decision into permanent architecture.
-- **First-party plugin distribution** — Tachyon's existing policy keeps headless capabilities out of core and already
-  provides consented, checksum-pinned binary provisioning; bundling a large Swift engine in the VSIX is rejected.
-- **Tachyon contract at the process boundary** — adopting CodexBar's provider-rich `UsageSnapshot` is rejected because
+- **Spike before source commitment** — CodexBar is mature, but its Swift/platform/source-closure and upstream-sync
+  costs are material; the measurements justified choosing a native selective port instead of a foreign runtime.
+- **Native TypeScript acquisition** — two narrow provider adapters fit Tachyon's build, security tests and lifecycle;
+  shipping a large Swift helper and second release matrix for quota-only acquisition is rejected.
+- **Tachyon contract at the adapter boundary** — adopting CodexBar's provider-rich `UsageSnapshot` is rejected because
   it couples Runtime Ops to upstream fields and currently lacks a general schema-version envelope.
 - **Account quota is not agent attribution** — correlation is visible, but only native events may claim agent/task
   ownership.
@@ -119,30 +122,27 @@ when provider collection fails.
 ## Candidate files and repositories
 
 - `docs/specs/369-runtimeops-observability-v2/*` — contract, plan, execution tasks, spike evidence, and ADR.
-- `src/runtimeObservability/{types,validate,service,sources}.ts` — proposed neutral domain, validation, scheduling, and
-  source adapters; exact layout is ratified after T0.
+- `src/runtimeObservability/{types,validate,service}.ts` and `src/runtimeObservability/providers/{codex,claude}.ts` —
+  neutral domain, validation, scheduling, and native source adapters.
 - `src/runtimeOps/{types,model,snapshotService}.ts` — project validated quota facts into the existing Runtime Ops
   snapshot without acquiring data itself.
 - `src/webview/runtime-ops/{App.tsx,runtime-ops.css}` — Tachyon-owned quota/freshness rendering.
 - `test/unit/runtimeObservability*.test.ts`, `test/unit/runtimeOps*.test.ts` — contract, hostile input, scheduling,
   provenance, separation, and projection tests.
 - `test/browser/runtimeOpsView.test.ts`, `scripts/webview-preview/fixtures/runtime-ops.ts` — visual fixtures and layout.
-- `cfpperche/tachyon-plugins/<runtime-observability-plugin>/` — first-party manifest/config and pinned engine artifacts.
-- Dedicated downstream engine fork/repository or plugin source subtree — chosen by T0; never copied into the VSIX core
-  without a new maintainer decision.
+- `docs/research/codexbar-headless-vendor-spike.md` plus a small reference manifest/fixture corpus — upstream radar and
+  conformance evidence without a shipping CodexBar dependency.
 
 ## Risks & unknowns
 
-- CodexBar changes quickly; a raw source copy would accumulate security and provider drift. The chosen method needs a
-  reproducible upstream merge/audit routine, not occasional manual copying.
-- `CodexBarCore` is large and its common `UsageSnapshot` contains provider-specific fields. The actual minimal source
-  closure may make selective extraction less maintainable than a fork.
-- Swift runtime/toolchain and binary size may be unacceptable on some Tachyon platforms. Released static Linux assets
-  are large enough that size must be measured rather than dismissed.
+- CodexBar changes quickly; the native adapters need a reproducible upstream behavior audit rather than occasional
+  manual copying. The reference is a radar, not an authority over Tachyon's contract.
+- Native adapters own fast-moving provider protocol and authentication behavior. Keep them small, source-explicit,
+  fixture-driven and independently degradable so drift cannot corrupt the neutral domain.
 - Provider endpoints and CLI RPCs are not stable public contracts. Every source needs timeout, typed degradation,
   fixtures, and provenance; upstream success does not remove Tachyon's responsibility.
-- Host-initiated plugin tool execution on a cadence may be a new authority seam. It must not become a generic
-  execute-any-plugin command or bypass install consent.
+- Host-initiated provider reads remain a new capability seam even without an external tool. Consent must be
+  source-specific and must not expand into generic filesystem/network authority.
 - Browser cookies, OAuth, Keychain, config files, and account identifiers create a larger privacy boundary than current
   local activity logs. V1 should prefer local/CLI sources and keep richer sources separately enabled.
 - Provider quota and native usage can be temporally misaligned. The UI must show independent timestamps and must not
