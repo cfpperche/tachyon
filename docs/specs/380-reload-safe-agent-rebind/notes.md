@@ -99,9 +99,15 @@ None.
 ### 2026-07-14T16:23:57Z — pass (1/1) — source: tasks.md
 - `npx vitest run test/unit/agentManager.test.ts test/unit/bridgeClientRebind.test.ts && npm run typecheck` — pass
 
+### 2026-07-14T18:44:56Z — pass (1/1) — source: tasks.md
+- `npx vitest run test/unit/agentManager.test.ts test/unit/bridgeClientRebind.test.ts && npm run typecheck` — pass
+
 ## Dogfood log
 
 ### 2026-07-14T16:24:17Z — pass (1/1) — source: tasks.md — commit: f49c56be7d53e3380dfc5a7710c2a22829804c33
+- `npx vitest run test/unit/agentManager.test.ts test/unit/bridgeClientRebind.test.ts -t "reload-safe"` — pass
+
+### 2026-07-14T18:46:24Z — pass (1/1) — source: tasks.md — commit: b85da800ae32f61fecb21499a3e4f542d5492c0e
 - `npx vitest run test/unit/agentManager.test.ts test/unit/bridgeClientRebind.test.ts -t "reload-safe"` — pass
 
 ## Installed 0.56.3 dogfood finding — 2026-07-14
@@ -118,6 +124,5 @@ None.
   `graceMs`, Delivery authority, or the existing destructive preflight.  The new `reload-safe` regression
   starts with an empty inventory, reveals a wired survivor only during settlement, and forces its exact
   stop/resume/stamp path.
-
-### 2026-07-14T18:44:56Z — pass (1/1) — source: tasks.md
-- `npx vitest run test/unit/agentManager.test.ts test/unit/bridgeClientRebind.test.ts && npm run typecheck` — pass
+- The new regression failed against parent `ac6722e8` with `inventorySettled=false` and passed at
+  `b85da800`.  The complete AgentManager + rebind focus passed 317/317; typecheck and diff-check passed.
