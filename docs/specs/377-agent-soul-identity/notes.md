@@ -9,8 +9,9 @@ _Created 2026-07-13. Append-only after this planning checkpoint._
 - Identity must remain distinct from `role`. Spec 216 explicitly defined role templates as reusable
   task contracts and excluded persona prompting; this feature adds the missing layer rather than
   changing that meaning.
-- Use one explicit per-agent `soul` file reference. A shared soul is expressed by two agents pointing
-  to the same path, not by hidden inheritance.
+- Original draft: use one explicit workspace-relative file reference, optionally shared. Superseded
+  by the 2026-07-14 maintainer direction below: `soul: true` activates only the canonical managed
+  `.tachyon/agents/<agent>/SOUL.md` copy.
 - Resolve from the coordinating workspace root. Worktree/cwd resolution would let an executing
   branch alter its own control context on restart or re-anchor.
 - Preflight identity before worktree/Delivery/pane side effects; a bad edit must not consume a
@@ -76,8 +77,8 @@ _Created 2026-07-13. Append-only after this planning checkpoint._
   identity/role ambiguity this feature must remove.
 - The browser shell cannot read files directly; filesystem actions must use typed host domain
   messages through `AgentStudioPanel`/`AgentStudioAdapter`.
-- The existing domain action is a cwd folder picker. Soul needs separate file select/create/open/
-  preview actions, not an overloaded browse reply.
+- The existing domain action is a cwd folder picker. Soul needs separate import/create/open/preview
+  actions, not an overloaded browse reply; import copies into the canonical profile.
 - Full soul editing should remain in the Markdown editor so Agent Studio does not create a second
   unsaved source of truth.
 
@@ -100,6 +101,9 @@ _Created 2026-07-13. Append-only after this planning checkpoint._
 | Reuse `instructions` | Zero schema/code change | Keeps identity and operational specialization indistinguishable; cannot support clear lifecycle/Studio UX |
 | Inline `soul: | ...` | Simple YAML | Duplicates `instructions` under a new name, poor Markdown editing/reuse, bloats config |
 | Implicit root `SOUL.md` | Familiar upstream convention | Creates global hidden inheritance and worktree drift; not per-agent |
+| Arbitrary workspace-relative soul reference | Reuse/version any file directly | Rejected by maintainer: fragments agent configuration and gives future persistence no canonical subtree |
+| Implicit `.tachyon/agents/<agent>/SOUL.md` discovery | No config field | A retained/remote-restored file could unexpectedly activate identity; explicit `soul: true` keeps old configs inert |
+| Keep the selected import source linked | No duplicate local file | External edits/path availability would bypass canonical ownership and future sync; import must copy and discard the source path |
 | Top-level named `souls:` registry | Reusable aliases/defaults | Adds inheritance/profile semantics before a single source model is proven |
 | Array/includes of identity files | Composable | Introduces ordering, cycle, provenance, and limit complexity |
 | Materialize native files for every runtime | Potentially higher-priority context | Each runtime has different path, reload, profile, and priority rules; Claude/Codex files also carry repo instructions |
@@ -123,6 +127,12 @@ _Created 2026-07-13. Append-only after this planning checkpoint._
 - Coordinator-root resolution means an identity edit made only in an agent worktree does not take
   effect until integrated. That friction is intentional: the executing agent cannot self-modify its
   next identity injection.
+- Canonical import duplicates the selected file once. That cost is intentional: afterward
+  `.tachyon/agents/<agent>/SOUL.md` is the only live source, making backup/sync/rename ownership
+  deterministic.
+- Keying the v1 profile directory by validated agent name makes rename a filesystem transaction.
+  A minimal Tachyon-owned manifest therefore assigns a random stable `profileId` now; it prevents
+  silent same-name inheritance without defining any future remote-persistence protocol or schema.
 - Prompt composition gives consistent Tachyon semantics but not native system-prompt priority.
   Product copy must stay honest about that distinction.
 - A metadata digest helps audit which version a transcript received, but v1 deliberately avoids
@@ -131,6 +141,23 @@ _Created 2026-07-13. Append-only after this planning checkpoint._
   would simplify code but silently rewrite every existing agent's opening prompt.
 
 ## Review log
+
+### 2026-07-14 — maintainer storage direction
+
+- The maintainer rejected arbitrary workspace soul references and directed Tachyon to centralize
+  durable agent identity under `.tachyon` for future local/remote persistence.
+- Repository inspection confirmed no `.tachyon/agents/` root exists. Existing
+  `.tachyon/harness/<agent>`, `.tachyon/roles/`, and `.tachyon/continuity/` have runtime-home,
+  generated-contract, and working-state ownership respectively, so none is an appropriate profile
+  root.
+- `.tachyon/transactions/` is also unavailable: plugin tool provisioning owns its journal schema and
+  TTL GC, which can reclaim unknown directories. All profile mutations therefore use the isolated
+  `.tachyon/agent-profile-transactions/` root.
+- Revised R1/R5 use boolean soul enablement plus
+  `.tachyon/agents/<agent>/SOUL.md`. Agent Studio imports an exact copy into that path, never retains
+  the original path, and uses confirmed/transactional replace, rename, and delete behavior.
+- V1 deliberately leaves operational config in `tachyon.yml` and implements no remote sync; the new
+  directory is the stable persistence boundary those later features can adopt.
 
 ### 2026-07-13 — independent Claude adversarial review
 
@@ -214,9 +241,45 @@ accepted product tradeoffs.
 - This is a planning judgment, not implementation evidence; the future diff, BASE_SHA fixtures,
   targeted tests, dogfood, and repository gate remain mandatory.
 
+### 2026-07-14 — canonical-profile adversarial review
+
+- Initial probe `probe-8d270d12-42aa-4ca3-bcc1-1e8a8e382c5c` timed out at 120 seconds without an
+  artifact.
+- Reduced read-only probe `probe-84fd3239-faa1-46c4-88c4-6481f046582b` completed with seven majors
+  and one minor (cost reported by the probe: USD 0.400075). It reviewed only the maintainer-directed
+  `.tachyon/agents` revision, not previously ratified product tradeoffs.
+
+| Finding | Resolution in this draft |
+|---|---|
+| Retained profile could be inherited when an agent name is reused | Added Tachyon-owned `profile.json` with random stable `profileId`, owner, schema, and `active|retained`; retained/missing/unknown ownership is inert until explicit digest-backed adoption |
+| Whole-`tachyon.yml` transaction hashes make unrelated edits block recovery, and degraded state had no exit | Journals compare only affected stanza hashes/name presence, profile ID, paths/digests, and phase; a confirmed Repair action can Complete or Roll Back a provably reconcilable journal |
+| Only rename was serialized against lifecycle, leaving import/replace/delete races | Every profile mutation shares one admission lock with spawn/restart/re-anchor; Replace uses digest CAS, delete rechecks sessions, and lifecycle records a short-lived launch reservation |
+| Case-only rename temp state/collision semantics were incomplete | Journal records the unique temporary sibling before the first move and exempts only the same folded-name/profile ID while rejecting a distinct destination profile |
+| Atomic replace did not define power-loss durability | Stage on the destination filesystem, quarantine and verify the confirmed old digest with separate rollback bytes, publish no-replace, flush file/directory on POSIX or use/document the strongest Windows primitive, then reopen strictly and verify before config/manifest commit |
+| `soul` values other than `true` were underspecified and `false` was unnaturally invalid | R1 is now an optional boolean: `true` enables, `false`/absence disable, and non-booleans follow the existing whole-config rejection/last-known-good contract |
+| ASCII lowercase uniqueness could be weaker than general filesystem case folding | Existing agent names are explicitly ASCII-only, so ASCII lowercase covers the complete accepted alphabet; transactions also reject distinct active/retained manifests with the same fold, while case-only moves of the same profile use the journaled temporary sibling |
+| Permanent profile deletion could be blocked forever by resumable rows | Studio links to permanent Dismiss/session purge or offers a separately second-confirmed combined purge-and-delete action; the lock rechecks no live session and cleared resume pointers |
+
+All eight findings are incorporated across `spec.md`, `plan.md`, and `tasks.md`; the narrow closure
+pass is recorded below.
+
+### 2026-07-14 — canonical-profile closure verdict
+
+- Probe `probe-6269b5ff-9ac7-42fa-b617-67c37df216f8` was non-substantive because its bounded
+  environment could not read the isolated worktree (cost reported by the probe: USD 0.063423).
+- Inline-excerpt retry `probe-8d67473a-effd-4541-a29a-ac7de18c21f2` timed out at 120 seconds without
+  an artifact.
+- Micro-probe `probe-3ebe1bca-3107-4ece-812e-221e6dd2bf8c` reviewed the authoritative eight-item
+  closure matrix on Claude Haiku 4.5 and returned `SHIP` (cost reported by the probe: USD 0.051219).
+- It found the boolean lifecycle, active/retained ownership, transaction journal/repair, shared lock
+  and launch reservation, case-fold/case-only rename rules, durable no-replace publication, and
+  bounded purge-before-delete contract mutually consistent. No blocker or major remains in this
+  planning revision; implementation evidence and maintainer R1–R6 ratification remain pending.
+
 ## Open questions
 
-- Does the maintainer accept `R1`–`R6` as one recommended bundle, or want any exception?
+- R1/R5 reflect the maintainer's canonical-storage direction; does the maintainer ratify the full
+  revised R1–R6 bundle?
 - After ratification, should Checkpoint A and Checkpoint B be separate Mission Control Deliveries or
   one feature branch with two review gates? Recommendation: separate bounded Deliveries, one
   integration branch/spec.

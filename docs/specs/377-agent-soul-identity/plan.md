@@ -9,7 +9,7 @@ the maintainer ratifies `R1`–`R6` in the spec.
 
 | Seam | Current behavior | Design consequence |
 |---|---|---|
-| `src/config/loadConfig.ts` | `ManagedEntryDef` has `role` and `instructions`, but no identity source; `INSTRUCTION_ARG` supports Claude, Codex, Agy, Gemini, OpenCode, and Grok | Add an agent-only `soul` reference and expose one authoritative opening-prompt capability predicate |
+| `src/config/loadConfig.ts` | `ManagedEntryDef` has `role` and `instructions`, but no identity enablement; `INSTRUCTION_ARG` supports Claude, Codex, Agy, Gemini, OpenCode, and Grok | Add an agent-only boolean `soul` and expose one authoritative opening-prompt capability predicate |
 | `src/config/tachyon.schema.json` | Describes `instructions` as a role prompt and `role` as an operational template | Add `soul` schema/docs and correct the identity/role/instructions vocabulary |
 | `src/config/YamlConfigEditor.ts` | Full agent upsert preserves known fields; terminal sanitization removes `kind`/`instructions` | Round-trip `soul` and strip/reject it for terminals |
 | `src/roles/templates.ts` | Explicitly defines roles as task contracts, composes template → instructions, adds Bridge guidance, and builds `.tachyon/roles/<agent>.md` | Preserve role semantics; move multi-layer composition and identity anchoring to a dedicated module |
@@ -20,14 +20,15 @@ the maintainer ratifies `R1`–`R6` in the spec.
 | `src/bridge/primer.ts` | Primer is prepended; before-finishing is appended; precedence says task wins task-specifics and primer wins protocol | Keep both envelope positions and make soul explicitly subordinate to protocol/authority |
 | `src/agents/briefFile.ts` | Body over 4,000 chars is written losslessly to `.tachyon/briefs/spawn/<agent>.md` and replaced by a pointer | Compose all body layers before this boundary; harden derived-file permissions without changing short legacy delivery |
 | `src/resume/adapters.ts` | Resume replays the same transcript and intentionally never redelivers instructions | Soul follows the same no-duplicate resume rule |
-| `src/resume/SessionLedger.ts` | Persists restart definition and resume metadata; no role/soul/task layer or identity-offer digest | Persist references/typed task data and an identity snapshot, never the body |
+| `src/resume/SessionLedger.ts` | Persists restart definition and resume metadata; no role/soul/task layer or identity-offer digest | Persist enablement/typed task data and a canonical profile identity snapshot, never the body/import path |
 | `AgentManager.restart` | Reuses `effectiveCmd` and therefore recomposes persistent prompt input | Reload current soul |
 | `AgentManager.resume` | Rebuilds runtime resume command; optionally re-injects only the compact primer | Do not resolve or inject soul |
-| `AgentManager.commitFork` | Native transcript fork; no opening instructions are recomposed | Copy soul reference/digest metadata; use current source only on later restart/re-anchor |
+| `AgentManager.commitFork` | Native transcript fork; no opening instructions are recomposed | Copy soul enablement/profile digest metadata; use current canonical source only on later restart/re-anchor |
 | `deliveryDefinitionSnapshot` | Clones a declared definition for a bound ephemeral Delivery | Preserve `soul` while stripping lifecycle/worktree ownership fields |
 | `Workspace.reanchor` | Writes role + instructions to `.tachyon/roles/<agent>.md` and sends a pointer plus primer | Soul-enabled agents get a full generated anchor from the same typed compositor; existing no-soul role anchoring stays compatible |
 | `src/harness/HarnessManager.ts` | Materializes Claude `CLAUDE.md` rules and Codex `AGENTS.md` instructions in private homes | Do not overload harness files with soul in phase 1; they are runtime-native repo/instruction channels |
-| Agent Studio | Shows “Role template” and “Instructions (role prompt)”; browser shell has only a cwd picker domain action | Add a separate Identity/SOUL section and host-backed select/create/open/preview actions |
+| `.tachyon` storage | Has per-agent harness homes plus separate role and continuity artifacts, but no general `.tachyon/agents/` profile root | Add a new canonical `.tachyon/agents/<agent>/` root; never reuse harness/roles/continuity because their ownership and cleanup semantics differ |
+| Agent Studio | Shows “Role template” and “Instructions (role prompt)”; browser shell has only a cwd picker domain action | Add a separate Identity/SOUL section and host-backed import/create/open/preview actions against the canonical profile |
 | `docs/runtimes/parity.md` | Brief delivery is capability row 1; secondary runtime limitations are documented | Add an identity-delivery row/subsection with verified prompt/native/unsupported status |
 
 ## Approach
@@ -38,21 +39,40 @@ Extend the agent definition with:
 
 ```ts
 interface ManagedEntryDef {
-  soul?: string; // workspace-relative Markdown source
+  soul?: boolean; // true enables; false/absence disables; source is derived from name
 }
 ```
 
-The value is a path only, stored with portable forward slashes. `loadConfig` performs structural
-validation (non-empty string, relative, no backslashes/traversal/NUL, agent-only). Agent Studio
-normalizes native picker results to that form; an already-valid configured string round-trips
-unchanged. Source existence/content is validated at the lifecycle boundary, not during global
-config parsing, so one temporarily missing local file does not force the whole workspace onto the
-last-known-good config. A fresh start still fails closed for that specific agent.
+`loadConfig` accepts booleans on agent entries and rejects the field on terminals. `false` and
+absence are disabled; other types use the existing whole-config rejection/LKG behavior. File
+presence is deliberately not discovery: an old/cached profile does nothing when the field is absent.
+Source existence/content is validated at the lifecycle boundary, not during global config parsing,
+so one temporarily missing local file does not force the whole workspace onto the last-known-good
+config. A fresh start still fails closed for that specific soul-enabled agent.
 
-No new top-level `souls:` registry, `settings.soul` default, profile inheritance, or inline object is
-introduced. Reuse is explicit: multiple agents can point at the same file. Agent Studio's create
-action suggests `.tachyon/souls/<agent>/SOUL.md`, a local/gitignored convention; users may choose a
-versioned workspace path when sharing identity is intentional.
+Add shared helpers such as `agentProfileDir(workspaceRoot, name)` and
+`agentSoulPath(workspaceRoot, name)` that validate the existing agent-name grammar and derive only
+`.tachyon/agents/<agent>/SOUL.md`. This new directory is Tachyon-owned profile data, gitignored by
+default, and intentionally separate from `.tachyon/harness/<agent>` (runtime home/auth/transcripts),
+`.tachyon/roles` (generated re-anchor contracts), and `.tachyon/continuity` (agent-authored working
+state). It is the future persistence/sync boundary, but v1 adds no sync protocol. Each directory has
+a Tachyon-owned `profile.json` containing only schema version, random stable `profileId`, owner name,
+and `active|retained` state; no body/import path.
+Operational `cmd`, `role`, `instructions`, and orchestration fields stay in `tachyon.yml`.
+
+At config cross-validation, reject two `soul: true` entries whose ASCII-lowercased names match. Agent
+names already use the ASCII-only `[a-zA-Z][a-zA-Z0-9_-]*` grammar. This
+portable uniqueness rule prevents separate logical profiles collapsing on a case-insensitive volume
+or during future cross-platform sync while leaving all no-soul legacy agent names untouched. Because
+disabled profiles can be retained, every create/import/adopt/rename transaction also scans manifest
+owners under the lock and rejects a distinct active or retained `profileId` with the same ASCII-folded
+owner/path; case-only self-moves are the sole exemption.
+
+No top-level `souls:` registry, arbitrary soul path, shared live source, `settings.soul` default,
+profile inheritance, inline object, or implicit file discovery is introduced. Agent Studio may copy
+bytes from an explicitly selected local file, but only the canonical managed copy is used afterward.
+Runtime activation also requires an `active` manifest for the same owner; missing/unknown/retained
+metadata returns `profile-adoption-required` until a digest-backed journaled Adopt action succeeds.
 
 ### 2. Resolve identity through one strict, testable boundary
 
@@ -60,7 +80,8 @@ Add `src/agents/soul.ts` with no UI or runtime dependencies:
 
 ```ts
 interface ResolvedSoul {
-  source: string;       // forward-slash workspace-relative display path
+  source: string;       // derived `.tachyon/agents/<agent>/SOUL.md` display path
+  profileId: string;    // stable identity from the active same-owner manifest
   body: string;         // exact decoded payload, never persisted in ledger
   sha256: string;
   chars: number;
@@ -69,6 +90,7 @@ interface ResolvedSoul {
 
 interface SoulSnapshot {
   source: string;
+  profileId: string;
   sha256: string;
   chars: number;
   bytes: number;
@@ -80,9 +102,9 @@ interface SoulSnapshot {
 
 Resolution algorithm:
 
-1. Reject empty, absolute, NUL-containing, or syntactically traversing input.
-2. Resolve against `workspaceRoot`, not `cwd`/worktree.
-3. Canonicalize the real workspace root and parent directory; require containment.
+1. Validate the agent name with the shared config grammar; never accept a caller-supplied soul path.
+2. Derive the canonical path against `workspaceRoot`, not `cwd`/worktree.
+3. Canonicalize the real workspace/profile parent and require containment as defense in depth.
 4. On POSIX, open with `O_NOFOLLOW`, `fstat` the descriptor, and require a regular file. On Windows,
    compare pre-open `lstat` with the opened file identity/`fstat` where Node exposes it. Document the
    residual same-user parent-replacement race instead of claiming a portable no-race guarantee
@@ -177,8 +199,8 @@ The public Bridge `instructions` argument remains compatible: for an ad-hoc dele
 additional contract prose, but the resulting rendered contract is placed in `taskBrief` rather than
 mutating the declared agent's persistent `instructions`.
 
-Extend `SessionDef` defensively with optional `role`, `soul`, and `taskBrief` so an ad-hoc bound
-execution/fork can reconstruct its layers after host reload. Extend `SessionRecord` with:
+Extend `SessionDef` defensively with optional `role`, boolean soul enablement, and `taskBrief` so an
+ad-hoc bound execution/fork can reconstruct its layers after host reload. Extend `SessionRecord` with:
 
 ```ts
 identity?: {
@@ -207,7 +229,10 @@ rebind preserves it; fork copies it.
 
 #### Fresh spawn and restart
 
-- Resolve only when `def.soul` is present.
+- Resolve only when `def.soul === true`; derive the canonical profile path from the validated name.
+- Enter the shared profile admission lock before checking transaction health/resolving. Persist a
+  short-lived launch reservation with profile ID/digest before releasing the lock, so concurrent
+  delete/rename cannot pass a stale no-session check; clear the reservation on launch rollback.
 - Consult runtime capability before launching.
 - Compose once and carry the resulting digest to the ledger.
 - Split identity preflight from final prompt composition so capability/source validation happens
@@ -259,20 +284,45 @@ rebind preserves it; fork copies it.
 #### Fork
 
 - Native transcript fork remains the identity carrier; never render another soul block.
-- Copy `SessionDef.soul` and `SessionRecord.identity` to the fork row.
+- Copy `SessionDef.soul` enablement and `SessionRecord.identity` to the fork row.
 - A later fork restart/re-anchor resolves the current source from the coordinator root.
 - A parent soul is not inherited by an unrelated ad-hoc child.
 
 #### Bound Delivery, pipeline, schedule, worktree, rename
 
-- `deliveryDefinitionSnapshot` retains `soul` and `role`.
-- Bound executions carry the declared principal's identity reference; their Delivery contract is
+- `deliveryDefinitionSnapshot` retains boolean soul enablement and `role`.
+- Bound executions carry the declared principal's canonical profile identity; their Delivery contract is
   `taskBrief`.
 - Pipeline/schedule runs selected from a declared agent behave the same.
 - All source resolution uses the coordinating root even when execution `cwd` is a Delivery/
   pipeline/worktree checkout.
-- Rename changes only the agent key. Studio warns when the conventional path still contains the old
-  name; moving the source is an explicit separate file operation.
+- Rename of a soul-enabled declared agent is one profile transaction: after explicit confirmation,
+  validate the new name, refuse when `.tachyon/agents/<new>` exists, atomically rename the
+  Tachyon-owned profile directory, and commit the config rename only after that succeeds. Before any
+  profile mutation (import/create/replace/adopt/enable/disable/rename/delete), acquire the same
+  workspace profile admission lock used by spawn/restart/re-anchor and durably journal intent,
+  hashes of only the affected old/new agent stanzas, expected name presence, stable `profileId`,
+  affected paths/digests, rollback material, and phase under
+  `.tachyon/agent-profile-transactions/<id>/`. Do not reuse `.tachyon/transactions/`: that root and
+  its schema/TTL garbage collector belong to plugin tool provisioning and may reclaim unknown
+  journals. On an ordinary failure, compensate to the recorded prior bytes/config. On
+  startup/reload, reconcile any incomplete profile transaction by comparing only the affected
+  stanzas/name presence, manifest/profile ID, destination digests, and journal phase; unrelated
+  `tachyon.yml` edits never invalidate recovery. Then finish or restore the complete state. If neither
+  state can be proven or compensation fails, keep the journal, block starts for every affected name,
+  and surface `profile-transaction-degraded`; never report rename success. Remove the journal only after the
+  converged config/directory state is fsynced. Agent Studio and a command-palette **Repair Agent
+  Profile Transaction** action inspect the journal/current state and, after showing profile ID and
+  digests, let the operator explicitly Complete or Roll Back; the same lock/CAS checks apply.
+  A case-only rename records its unique private sibling path before the first move and stages
+  `old → temp → new`; collision checks treat the same profile ID with equal folded old/new names as
+  self-rename, while every profile-creating/adopting/renaming action still rejects any distinct active
+  or retained manifest with the same folded owner/path.
+- Clearing/disabling soul and deleting the declared roster entry run under the profile transaction,
+  set the manifest to `retained`, and retain bytes. A separate explicit destructive profile-delete
+  action is required. Recreating/re-enabling the same name with a retained/missing/unknown manifest
+  fails `profile-adoption-required`; Studio shows profile ID/digest and journaled Adopt/Replace rather
+  than inheriting it silently.
 
 ### 6. Replace implicit runtime guessing with an identity capability
 
@@ -323,22 +373,46 @@ adapter entity. Replace “Instructions (role prompt)” with “Persistent inst
 
 Place a new open `Identity (SOUL.md)` section before Role/Instructions:
 
-- relative path input;
-- **Select file**: native file picker rooted at the workspace, returning only an accepted relative
-  path;
-- **Create SOUL.md**: save dialog defaulting to
-  `.tachyon/souls/<agent-or-new-agent>/SOUL.md`, then a minimal template write after explicit
-  confirmation; revalidate containment after the dialog and use exclusive creation so a raced or
-  existing file is never overwritten silently;
-- **Open**: open the real file in the editor;
-- **Preview**: read-only bounded preview plus source size/digest/status from the host;
-- **Clear**: clears the reference only, never deletes the file.
+- read-only canonical path `.tachyon/agents/<agent>/SOUL.md` and explicit enabled/disabled state;
+- **Import SOUL.md**: native local file picker; open the chosen regular file without following a
+  final symlink, validate the same byte/UTF-8/NUL/empty/character limits as runtime resolution, then
+  stage the exact bytes with private permissions in the profile transaction store. Under the profile
+  lock, atomically quarantine any existing destination into the same-filesystem journal, strictly
+  verify that quarantined file against the digest the user confirmed, and fsync a separate immutable
+  rollback copy. Publish the staged file with an atomic no-replace primitive so an editor that
+  recreates the canonical path causes an abort/reconciliation instead of silent overwrite; then
+  enable `soul: true`. Finalize only after config and bytes match the journal. Never persist
+  or log the original path. If the destination exists, show old/new digest and require explicit
+  replace confirmation; the quarantine verification is the destination digest CAS, and a mismatch is
+  restored when provably safe or held for explicit reconciliation rather than overwritten.
+  `fsync` the staged file before rename and the containing directory after rename on POSIX; use the
+  strongest available flush/replace primitive on Windows and document its residual power-loss
+  guarantee. Reopen the canonical file through the strict resolver and verify the journaled digest
+  before config/manifest commit. Cancel or an ordinary failure restores the exact prior config and
+  destination; an unprovable concurrent external edit enters the repairable degraded state. If the
+  selected file is already the canonical destination, treat it as digest-backed Adopt/Enable without
+  copying;
+- **Create SOUL.md**: use the same journaled transaction to exclusively publish a minimal canonical
+  template and enable soul; if retained profile data already exists, offer Adopt/Open/Replace rather
+  than a save dialog or silent overwrite;
+- **Open**: open the canonical managed copy in the editor;
+- **Preview**: read-only bounded preview plus canonical size/digest/status from the host;
+- **Clear**: under the shared lock, write disabled state and mark the manifest retained while keeping
+  the profile file;
+- **Delete profile data**: a separate destructive action with explicit confirmation, unavailable
+  until soul is disabled and no live session remains. Resumable rows are bounded by the existing
+  permanent Dismiss/session-purge action; Studio links to it, or offers one combined second-confirmed
+  action that invalidates resume metadata/generated pointers before journaled profile deletion. The
+  delete precondition and lifecycle admission are rechecked under the shared lock;
+- **Rename agent**: if soul/profile data exists, confirm and transactionally rename the profile
+  directory before committing the config key change; refuse collisions and roll back on failure.
 
 Do not edit the full body in a webview textarea. That avoids two unsaved copies, preserves normal
 Markdown/editor tooling, and makes file ownership clear.
 
-Extend the shell protocol with distinct domain messages (`pickSoul`, `createSoul`, `openSoul`,
-`refreshSoul`) and typed host replies. All filesystem reads/writes stay in `AgentStudioPanel`/
+Extend the shell protocol with distinct domain messages (`importSoul`, `createSoul`, `openSoul`,
+`refreshSoul`, `adoptSoulProfile`, `deleteSoulProfile`, `renameSoulProfile`,
+`repairSoulProfileTransaction`) and typed host replies. All filesystem reads/writes stay in `AgentStudioPanel`/
 `AgentStudioAdapter`, not the browser bundle.
 
 Validation/state text must distinguish:
@@ -346,8 +420,8 @@ Validation/state text must distinguish:
 - identity versus role versus persistent instructions;
 - “applies on fresh start/restart/re-anchor, not resume/rebind”;
 - supported prompt delivery versus Hermes externally managed versus unsupported;
-- missing/outside/symlink/invalid/oversize errors;
-- rename preserving the old reference;
+- missing canonical source and invalid import/symlink/special/UTF-8/oversize errors;
+- import-is-a-copy, retained-on-clear/delete, rename transaction, and collision status;
 - “not for secrets”.
 
 Accessibility:
@@ -356,13 +430,15 @@ Accessibility:
 - `aria-live` status/error updates;
 - preview region with an accessible name and scroll behavior;
 - no status conveyed by color alone;
-- no modal confirmation for read-only select/open/preview; creation uses the native save dialog.
+- no modal confirmation for read-only open/preview or merely choosing an import source; replacing,
+  profile rename, and profile deletion require explicit confirmation.
 
 ### 8. Document exposure instead of promising secrecy
 
 The feature docs state exactly where a soul can appear:
 
-- source file chosen by the user;
+- canonical `.tachyon/agents/<agent>/SOUL.md` profile file (and the selected import source only while
+  the explicit copy action is executing);
 - provider request/runtime transcript;
 - process argv for short opening prompts on current positional-argument runtimes;
 - `.tachyon/briefs/spawn/<agent>.md` for long composed bodies;
@@ -375,19 +451,25 @@ is local argv exposure, so “not confidential / not for secrets” is part of t
 not a hidden implementation detail. If the maintainer prefers forced-file privacy, R4 must change
 before implementation and the delivery-strength tradeoff must be re-dogfooded.
 
-Ledger, task records, config diagnostics, and ordinary UI telemetry contain only the relative
-reference, digest, sizes, channel, offered/health state, and timestamps. Derived brief/anchor writes
+Ledger, task records, config diagnostics, and ordinary UI telemetry contain only soul enablement,
+canonical profile identity, digest, sizes, channel, offered/health state, and timestamps; the
+original import path is discarded. Derived brief/anchor writes
 use atomic replace and mode `0600` on POSIX; Windows relies on workspace ACLs and the UI makes no
-stronger confidentiality promise. The source creator uses private permissions for the conventional
-`.tachyon` path.
+stronger confidentiality promise. Profile import/create uses private permissions for the canonical
+`.tachyon/agents` destination.
 
 Retention is pointer-safe:
 
-- `.tachyon` is already gitignored and a test pins that `souls`/`briefs`/`anchors` remain ignored;
+- add `.tachyon/agents/` and `.tachyon/agent-profile-transactions/` to Tachyon Init's machine-local
+  ignore set and pin that profile/journal/brief/anchor bodies remain ignored; future local/remote
+  persistence is an application sync concern, not Git;
 - one brief/anchor path per agent is overwritten on a new offer;
 - stop/resume retains the file because the transcript may still contain its pointer;
 - permanent dismiss, ledger/ephemeral cleanup, or deletion of a declared agent removes generated
-  brief/anchor copies (never the user-authored soul source);
+  brief/anchor copies but retains the canonical profile by default;
+- clear or roster deletion never deletes profile data; rename moves it transactionally; explicit
+  profile deletion is refused until soul is disabled and no live session remains, and any resumable
+  metadata/pointers have been permanently dismissed or purged by a separately confirmed action;
 - cleanup tests search for a distinctive body to prove no orphaned generated copy remains.
 
 Do not add heuristic “prompt injection detection”. It gives false confidence and cannot distinguish
@@ -415,13 +497,14 @@ Hermes native materialization is outside both checkpoints and remains a separate
 
 ## Key decisions and rejected alternatives
 
-- **Explicit `soul: <path>` per agent (R1)** — chosen because identity is inspectable, reusable, and
-  unambiguous; rejected implicit root `SOUL.md` because it creates workspace-global inheritance and
-  lets a worktree unexpectedly change identity.
+- **Explicit `soul: true` + canonical profile (R1)** — maintainer-directed so all durable agent
+  identity lives under `.tachyon/agents/<agent>/SOUL.md`, ready for a future persistence boundary;
+  rejected arbitrary live paths and implicit file discovery because they fragment ownership and make
+  leftover files unexpectedly active.
 - **Real file, no inline soul (R1)** — chosen because the feature is intended to model durable
   identity and upstream ecosystems use files; rejected inline text because it recreates
   `instructions` with a new label and bloats `tachyon.yml`.
-- **Coordinator-root resolution (R1/R4)** — chosen because identity is maintainer-owned control
+- **Coordinator profile-root resolution (R1/R4)** — chosen because identity is maintainer-owned control
   context; rejected `cwd`/worktree resolution because an executing agent could modify the identity it
   receives on restart/re-anchor.
 - **Typed task layer + legacy serializer (R6)** — chosen because current-task precedence cannot be
@@ -455,9 +538,12 @@ Hermes native materialization is outside both checkpoints and remains a separate
 - **Visible degraded state (R3/R4)** — chosen because a failed post-compaction re-anchor otherwise
   leaves the session silently identity-less; automatic retries pause and digest transitions are
   surfaced without killing the conversation.
-- **Path + external editor in Studio (R5)** — chosen to keep one canonical file and normal Markdown
-  editing; rejected a large inline editor because it creates concurrent unsaved state and hides the
-  source-of-truth boundary.
+- **Managed import + external editor in Studio (R5)** — maintainer-directed so file selection copies
+  into one canonical Tachyon-owned profile and later persistence has a stable unit; rejected retaining
+  external references or a large inline editor because both fragment the source-of-truth boundary.
+- **Profile retention and transactional rename (R5)** — clear/roster deletion preserve durable
+  profile data, rename moves it only with confirmation and rollback, and destructive deletion is a
+  separate action; rejected automatic cleanup because future persistence must not lose user identity.
 - **No injection scanner (R4)** — chosen because soul is trusted workspace configuration and model
   prose scanning is not enforcement; rejected keyword heuristics as security theater.
 - **No ad-hoc inheritance (R1/R6)** — chosen because identity belongs to a declared principal;
@@ -467,11 +553,19 @@ Hermes native materialization is outside both checkpoints and remains a separate
 
 ### Core/config
 
-- `src/config/loadConfig.ts` — `soul` field, agent-only structural validation, shared opening-prompt
-  capability.
+- `src/config/loadConfig.ts` — boolean `soul` semantics, agent-only validation, and existing
+  whole-config/LKG behavior for non-booleans.
 - `src/config/tachyon.schema.json` — schema and user-facing field semantics.
-- `src/config/YamlConfigEditor.ts` — path round-trip and terminal sanitization.
-- `src/agents/soul.ts` (new) — strict resolver, limits, digest, stable errors.
+- `src/config/YamlConfigEditor.ts` — enablement round-trip and terminal sanitization.
+- `src/agents/soul.ts` (new) — canonical profile helpers, strict resolver/import validation, limits,
+  digest, stable errors, and private atomic copy.
+- `src/agents/profileTransaction.ts` (new) — serialized
+  import/create/replace/adopt/enable/disable/rename/delete journal, shared lifecycle admission lock,
+  same-filesystem staging/backup and durable flush, affected-stanza/profile-ID/digest CAS,
+  compensation, startup recovery, collision checks, explicit Complete/Roll Back repair, and
+  degraded-state diagnostics.
+- `src/init/initLogic.ts` — add `.tachyon/agents/` and `.tachyon/agent-profile-transactions/` to the
+  machine-local ignore set.
 - `src/agents/promptLayers.ts` (new) — typed layer composition and legacy-compatible renderer.
 - `src/roles/templates.ts` — keep role primitives; expose them to the new compositor and retain
   no-soul anchor behavior.
@@ -495,8 +589,9 @@ Hermes native materialization is outside both checkpoints and remains a separate
 ### Agent Studio
 
 - `src/webview/formLogic.ts` — form field, validation codes, round-trip.
-- `src/webview/AgentStudioAdapter.ts` — source status/preview and authoritative save validation.
-- `src/webview/AgentStudioPanel.ts` — native file select/create/open actions.
+- `src/webview/AgentStudioAdapter.ts` — canonical profile status/preview and authoritative
+  enable/import/replace/rename/delete validation.
+- `src/webview/AgentStudioPanel.ts` — native import/create/open plus transactional profile actions.
 - `src/webview/agent-studio-shell/domain.ts`, `messages.ts`, `types.ts`, `App.tsx`,
   `agent-studio-shell.css` — typed protocol and accessible identity UI.
 - `src/webview/agent-studio-fixture/*` — fixture parity if it remains a supported visual route.
@@ -520,21 +615,27 @@ Hermes native materialization is outside both checkpoints and remains a separate
 |---|---|
 | Prompt order changes existing agents | Conditional legacy renderer plus exact command snapshots with no soul |
 | A task is lost while replacing `appendInstructions` | Typed task persistence and spawn/restart/re-anchor tests for ad-hoc, bound Delivery, pipeline, and schedule |
-| Identity file escapes workspace or changes during read | Coordinator-root containment, POSIX no-follow + descriptor read/hash, Windows lstat/fstat best effort with residual same-user race documented |
+| Canonical identity escapes its profile or changes during read | Derived/validated coordinator path, POSIX no-follow + descriptor read/hash, Windows lstat/fstat best effort with residual same-user race documented |
+| Import leaves external linkage or leaks its path | Copy exact validated bytes into the canonical profile, discard the source path, and prove later source edits do not propagate |
+| Profile mutation partially overwrites profile or config | Private same-filesystem staging/backup, durable flush/reopen verification, explicit destructive confirmation, destination-collision refusal, one serialized journal for import/create/replace/adopt/enable/disable/rename/delete, affected-stanza/profile-ID/digest CAS, crash recovery, operator repair, and compensation tests |
+| Lifecycle admission races profile mutation | One shared lock, durable launch reservation, affected-stanza/digest CAS, and concurrency tests for every mutation versus spawn/restart/re-anchor |
+| Two profile names collide cross-platform | Require ASCII-case-insensitive uniqueness for soul-enabled names and journal case-only rename through a sibling temp path |
 | Invalid soul consumes a worktree/Delivery lease or kills a running pane | Identity preflight at the outer acquisition boundary before those side effects; rollback tests at every spawn/restart entry |
 | Unsupported/wrapped runtime silently ignores soul | `resolveBinary`-based capability lookup, explicit wrapper failure, blocking lifecycle error, Studio status, runtime matrix |
 | Invalid soul creates unattended retry/outage ambiguity | Deterministic preflight class stops retry, latches attention, records execution failure, and never falls back identity-less |
 | Resume receives a duplicate/new identity | Negative resolver/injection assertions on resume and rebind |
-| Fork loses future identity after reload | Persist soul reference + offered snapshot on the fork definition/record |
+| Fork loses future identity after reload | Persist soul enablement/canonical profile identity + offered snapshot on the fork definition/record |
 | Re-anchor injects partial/stale content | Resolve/compose/write atomically before terminal input; on failure persist degraded state + attention; show A→B transitions |
 | Worktree agent cannot read coordinator anchor | Shell-quoted absolute pointer and a path-with-spaces worktree test |
 | Large soul exceeds tmux argument limit | Existing long-brief transport after full composition; max-size tests |
 | Soul leaks sensitive text | “Not for secrets” UX/docs, metadata-only ledger, private derived files, explicit argv/transcript/provider disclosure |
 | Raw digest differs across CRLF/LF checkouts | Define exact-byte payload/digest and Unicode scalar count; test both forms and document the intentional difference |
-| Generated body copies outlive identity | Gitignore assertion, per-agent overwrite, pointer-safe stop/resume retention, permanent cleanup tests |
+| Generated body copies outlive identity | Gitignore assertion, per-agent overwrite, pointer-safe stop/resume retention, permanent generated-copy cleanup tests |
+| Clear/delete loses future-persisted profile data | Retain `.tachyon/agents/<agent>` by default; destructive profile deletion is separate, confirmed, and pointer-safe |
+| A newly declared agent silently inherits a retained same-name identity | Stable random `profileId`, active/retained owner manifest, inert file presence, and explicit digest-backed adoption before reactivation |
 | Soul prose attempts to override protocol | Trusted-source model, precedence header, machine enforcement remains outside prompt |
 | Agent edits its own soul in a worktree | Always resolve from coordinating root |
-| UI create leaves an orphan file after form cancel | Creation is an explicit native save action; never delete implicitly; document that clearing/canceling does not delete |
+| UI action leaves ambiguous profile state | Canonical path/status, import-is-copy wording, adopt/replace choices, and atomic config/file transactions |
 | Hermes integration corrupts ambient profile | Phase-1 unsupported state; separate native-home proof before any materialization |
 | Studio protocol grows filesystem logic in browser | Host-only file actions with typed domain messages |
 | Subjective dogfood falsely “proves personality” | Mechanical proof checks offered prompt identity; human dogfood is qualitative and labeled advisory |
@@ -543,7 +644,8 @@ Hermes native materialization is outside both checkpoints and remains a separate
 
 ### Unit and integration
 
-- Table-test structural config/path failures and exact diagnostic codes.
+- Table-test boolean enablement (`true`, `false`, absence, and non-boolean rejection), terminal
+  rejection, canonical path derivation, existing whole-config/LKG behavior, and exact diagnostic codes.
 - Use temporary real directories/files for containment, symlink, FIFO/special-file, UTF-8, NUL,
   Unicode-scalar count, byte-count, CRLF/LF digest, POSIX no-follow, and documented Windows fallback
   cases.
@@ -566,14 +668,17 @@ Hermes native materialization is outside both checkpoints and remains a separate
 - Assert snapshots say `offered` with an accurate channel, never claim provider consumption, and
   degraded/transition records contain no body.
 - Test declared, bound Delivery, pipeline, schedule, worktree (including coordinator paths with
-  spaces), rename, and parent/subagent behavior.
+  spaces), stable profile-ID ownership/adoption, transactional rename/collision/rollback, clear/delete
+  retention, affected-stanza recovery across unrelated config edits, operator transaction repair,
+  bounded resume purge, and parent/subagent behavior.
 - Exercise short and long prompt transport.
 - Exercise deterministic and unknown-error crash/autostart/schedule/pipeline latching,
   transient-only 2s/4s/8s retry exhaustion, concrete same-handle source-change detection,
   transient human-restart preservation, later-execution recovery, re-anchor degraded recovery, and
   generated-file retention/cleanup.
-- Test Studio protocol decoding, dirty restore, create/select/open replies, validation, rename warning,
-  and keyboard/ARIA structure.
+- Test Studio protocol decoding, dirty restore, create/import/adopt/replace/open/delete/repair replies,
+  original-path non-persistence, digest CAS, durable flush/reopen verification, canonical/case-only
+  rename rollback, and keyboard/ARIA structure.
 - Run typecheck, targeted Vitest, browser tests, then `npm run verify:full:quiet`.
 
 ### Headless dogfood
@@ -583,19 +688,21 @@ Add a deterministic local capture executable under the test/dogfood area and exp
 
 - agents `direct-a` and `direct-b`;
 - the same `role: reviewer` and persistent instructions;
-- different `SOUL.md` files;
+- `soul: true` and different canonical `.tachyon/agents/<agent>/SOUL.md` files;
 - a runtime name routed through a verified opening-prompt adapter without calling a provider.
 
 The command launches both through the real spawn/composition/shell-quote boundary and asserts:
 
 - each captured opening prompt contains exactly one own soul and zero sibling soul;
 - role/instructions/task are equal and ordered correctly;
-- ledger JSON contains channel-specific `offered` digests but neither distinctive body;
+- ledger JSON contains canonical-profile/channel-specific `offered` digests but neither distinctive
+  body nor any simulated import-source path;
 - editing A then resume does not resolve/inject the edit;
 - restart or re-anchor does;
 - an invalid restart preserves the live pane, unattended preflight does not retry/fallback, and a
   failed compaction re-anchor records degraded state;
-- permanent cleanup removes generated body copies while stop/resume retains live pointers;
+- permanent cleanup removes generated body copies while stop/resume retains live pointers and clear/
+  roster deletion retain canonical profiles;
 - the command exits nonzero on any mismatch.
 
 No paid inference is required.
@@ -603,12 +710,13 @@ No paid inference is required.
 ### Human dogfood
 
 1. In Agent Studio create two Claude or Codex agents with the same reviewer role.
-2. Create/select different souls using only keyboard controls; inspect preview and status.
+2. Import different souls using only keyboard controls; inspect the canonical path, preview, and
+   copy/replace status.
 3. Start both and ask the same neutral introduction/review question.
 4. Confirm qualitatively distinct voice, then inspect the actual opening prompts/metadata for the
    mechanical proof.
 5. Edit one soul; resume and confirm no automatic refresh; restart/re-anchor and confirm refresh.
-6. Rename one agent and verify its source path was not moved.
+6. Rename one agent and verify its canonical profile moved transactionally without changing bytes.
 
 Human observations are recorded as advisory evidence, not an acceptance claim of deterministic model
 obedience.
@@ -616,21 +724,23 @@ obedience.
 ## Visual impact
 
 Agent Studio gains a first-class Identity section and relabels the current instructions section.
-Likely visual risks are hierarchy confusion, an overly tall form, long path overflow, preview scroll
-behavior, status text competing with validation, and narrow-panel button wrapping.
+Likely visual risks are hierarchy confusion, an overly tall form, canonical-path overflow, preview
+scroll behavior, import/replace/retained-profile status competing with validation, and narrow-panel
+button wrapping.
 
 During implementation run the `visual-qa` skill against the Agent Studio preview/live surface with
 this anchor: “Identity is clearly separate and earlier than Role/Persistent instructions; file
 actions remain compact, status is readable at narrow width, and advanced worktree/harness sections
-retain natural document flow.” Capture normal, missing-file, unsupported-runtime, and long-path
-states at wide and narrow widths. Visual QA is advisory; browser/unit gates remain functional proof.
+retain natural document flow.” Capture normal, import/replace, retained-profile, missing-file, and
+unsupported-runtime states at wide and narrow widths. Visual QA is advisory; browser/unit gates
+remain functional proof.
 
 ## Sources consulted
 
 ### Tachyon code and shipped design
 
-- `src/config/loadConfig.ts`, `src/config/tachyon.schema.json`, and
-  `src/config/YamlConfigEditor.ts`.
+- `src/config/loadConfig.ts`, `src/config/tachyon.schema.json`, `src/config/YamlConfigEditor.ts`, and
+  `src/init/initLogic.ts`.
 - `src/roles/templates.ts`, `src/agents/AgentManager.ts`,
   `src/agents/briefFile.ts`, `src/bridge/primer.ts`, and
   `src/bridge/spawnContract.ts`.

@@ -5,8 +5,9 @@ checked._
 
 ## Ratification
 
-- [ ] **T0. Lock R1–R6 with the maintainer.** Record accepted/changed choices and date in
-      `spec.md`; update this task list if scope changes before delegating code.
+- [ ] **T0. Lock R1–R6 with the maintainer.** R1/R5 already carry the 2026-07-14 maintainer direction
+      for canonical `.tachyon/agents/<agent>` storage and import-as-copy; ratify the full revised
+      bundle and record the date in `spec.md` before delegating code.
 
 ## Checkpoint A — core and lifecycle
 
@@ -21,18 +22,28 @@ checked._
       plus spies proving they call no prompt serializer/resolver/brief compositor. Keep new
       soul-enabled characterization fixtures in a separate non-parity suite. Explicitly pin today's
       role → instructions+task → Bridge serialization.
-- [ ] **T2. Add config/schema support.** Add optional agent-only `soul: <relative-path>` to
-      `ManagedEntryDef`, parser keys/validation, terminal rejection/sanitization,
-      `tachyon.schema.json`, and YAML round-trip tests. Do not read the file during global config
-      parsing.
-- [ ] **T3. Implement the strict soul resolver.** Create `src/agents/soul.ts` with coordinator-root
-      containment, forward-slash config paths, POSIX no-follow descriptor read/hash, documented
+- [ ] **T2. Add config/schema support.** Add optional agent-only boolean `soul` to
+      `ManagedEntryDef`: `true` enables, while `false`/absence disable. Reject non-booleans through
+      the existing whole-config rejection/last-known-good contract and reject all terminal usage;
+      derive `.tachyon/agents/<agent>/SOUL.md` through shared validated helpers, update
+      `tachyon.schema.json`/YAML round-trip tests, and add `.tachyon/agents/` plus
+      `.tachyon/agent-profile-transactions/` to Tachyon Init's machine-local ignore set. Do not read
+      the file during global config parsing; file presence alone never enables identity. Reject
+      ASCII-case-insensitive collisions among soul-enabled agent names without affecting no-soul
+      legacy names.
+- [ ] **T3. Implement the strict soul profile store/resolver.** Create `src/agents/soul.ts` with
+      canonical profile derivation, a Tachyon-owned `profile.json` carrying schema version, random
+      stable `profileId`, owner name, and `active|retained` state, validated agent names,
+      coordinator-root containment, POSIX
+      no-follow descriptor read/hash, documented
       Windows lstat/fstat residual race, fatal UTF-8, no normalization, NUL/empty rejection,
       Unicode-scalar/byte caps, exact-byte SHA-256 metadata, stable errors with an explicit
       total deterministic/transient `retryable` classification, same-handle double-read source
       change detection only after stable-size/sentinel oversize rejection, unknown-error fail-closed
-      default, and adversarial/CRLF filesystem tests. Prove a stable file above 64 KiB schedules no
-      retry.
+      default, and adversarial/CRLF filesystem tests. Add exact-byte import staging for a private
+      canonical copy, discard the original path, require an active same-owner manifest at runtime,
+      return `profile-adoption-required` for retained/missing/unknown ownership, and prove stable
+      oversize schedules no retry.
 - [ ] **T4. Add one runtime delivery capability.** Base it on `resolveBinary`, make
       `instructionsDeliverable` reuse it, classify prompt/native-external/unsupported runtimes, and
       test direct/`env`/package launchers, rejected shell wrappers/renamed binaries,
@@ -51,15 +62,18 @@ checked._
       transient failures at 2s/4s/8s before latching, never fall back identity-less, retain long-brief
       transport, preserve the current process through deterministic or transient-exhausted human
       restart, ensure stable oversize input takes the zero-retry deterministic path, and record only
-      an honest channel-specific `offered` snapshot after launch handoff.
+      an honest channel-specific `offered` snapshot after launch handoff. Serialize profile preflight
+      with mutations and persist/rollback a short-lived profile ID/digest launch reservation before
+      releasing the shared lock.
 - [ ] **T8. Integrate resume/rebind/fork.** Pin exact BASE_SHA runtime command and send-key output for
       each path; prove none calls any legacy/soul prompt serializer, soul resolver, or long-brief
       compositor; prove resume/rebind never reload/inject soul, native fork never duplicates it, and
-      fork metadata keeps the source reference/digest for later restart/re-anchor.
+      fork metadata keeps enablement/canonical profile identity/digest for later restart/re-anchor.
 - [ ] **T9. Integrate declared executions.** Preserve `soul` in
       `deliveryDefinitionSnapshot`; cover bound Delivery, pipeline, schedule, declared subagent,
       parent ad-hoc non-inheritance, isolated worktree coordinator-root resolution, and rename
-      reference preservation.
+      transaction/collision/rollback plus clear/delete profile retention and explicit adoption on
+      later name reuse.
 - [ ] **T10. Extend the ledger defensively.** Add typed optional role/soul/task and metadata-only
       identity offer/health fields; migrate by absence, drop malformed snapshots safely, support
       `identity-degraded` without body/error-text leakage, and assert a distinctive soul body never
@@ -70,32 +84,60 @@ checked._
       transitions, persist degraded state/latch attention/pause auto retry on compaction failure
       until human retry without disrupting the session or adding a background watcher, and retain
       exact no-soul `.tachyon/roles` behavior.
-- [ ] **T12. Harden derived files.** Use atomic/private writes for soul-bearing spawn briefs and
+- [ ] **T12. Harden managed and derived files.** Use atomic/private writes for canonical imports,
+      soul-bearing spawn briefs and
       anchors; test lossless max-size transport and actionable write failure while retaining the
-      current safe inline fallback rules. Pin `.tachyon` gitignore coverage, per-agent overwrite,
-      stop/resume retention, and permanent dismiss/delete cleanup with no orphaned body.
+      current safe inline fallback rules. Pin `.tachyon/agents` gitignore coverage, profile retention
+      on clear/roster deletion, confirmed/collision-safe rename/delete, per-agent derived overwrite,
+      stop/resume retention, and generated-copy cleanup with no orphaned body.
 - [ ] **T13. Run core adversarial review.** Use a different model family to review path security,
       lifecycle duplication, task-loss risk, ledger leakage, runtime honesty, and legacy
       compatibility. Fix every blocker/major and record accepted minors in `notes.md`.
 
 ## Checkpoint B — Agent Studio and product closure
 
-- [ ] **T14. Add the Studio form field.** Round-trip `soul` through `FormState`, defaults, dirty
-      restore, `fromDef`/`toEntry`, host validation, and error codes. Relabel the existing textarea
-      “Persistent instructions”.
-- [ ] **T15. Add typed host file actions.** Implement select/create/open/refresh/preview domain
-      messages with workspace containment and bounded previews. Creation defaults to
-      `.tachyon/souls/<agent>/SOUL.md`, revalidates the native save-dialog result, creates
-      exclusively without silent overwrite, and never deletes/moves on clear/cancel/rename.
+- [ ] **T14. Add Studio soul enablement.** Round-trip boolean soul enablement through `FormState`,
+      defaults, dirty restore, `fromDef`/`toEntry`, host validation, and error codes: accept explicit
+      `false` as disabled and emit `true` or omission from the two-state control. Relabel the existing
+      textarea “Persistent instructions”.
+- [ ] **T15. Add typed canonical profile actions.** Implement import/create/open/refresh/preview/
+      adopt/enable/disable/delete/rename/repair domain messages. Import explicitly reads a selected
+      local regular file, validates
+      and stages exact bytes for `.tachyon/agents/<agent>/SOUL.md`, never persists the source path,
+      treats self-selection as Adopt/Enable, and requires digest-backed replace confirmation. Create
+      a stable random `profileId`; Clear/roster deletion mark its manifest retained and retain data.
+      Every import/create/replace/adopt/enable/disable/rename/delete mutation is serialized through a
+      durable `.tachyon/agent-profile-transactions/` journal with same-filesystem staging/backup,
+      affected-stanza/name-presence compare-and-swap, profile ID/digests, compensation/startup
+      recovery, and blocking `profile-transaction-degraded` state; unrelated `tachyon.yml` edits do
+      not invalidate recovery. Add a confirmed Repair action that can Complete or Roll Back a
+      provably reconcilable journal; never reuse
+      plugin-owned `.tachyon/transactions/`. Profile deletion remains a separate,
+      destructive, confirmed action allowed only with soul disabled and no live session; any resumable
+      row must first be permanently dismissed/purged, optionally through a second-confirmed combined
+      action. Recheck those preconditions under the shared lock. Case-only rename must record its
+      unique temporary sibling before journaling `old → temporary sibling → new`, treat the same
+      folded-name/profile ID as self-rename, reject any distinct active/retained folded manifest on
+      create/import/adopt/rename, and recover every phase. Durably flush staged bytes,
+      quarantine/verify a confirmed Replace destination with separate rollback bytes, publish through
+      an atomic no-replace primitive, flush the directory where supported, then reopen through the
+      strict resolver and verify the expected digest before committing config/manifest state.
 - [ ] **T16. Build the accessible Identity UI.** Place Identity before Role/Instructions, show
       lifecycle/runtime/not-for-secrets status, provide keyboard-operable file actions,
       `aria-live` feedback, labeled preview, narrow-width wrapping, and non-color-only states.
 - [ ] **T17. Cover Studio behavior.** Add form, adapter, panel, shell protocol, browser-surface, and
-      extension integration tests for valid/missing/oversize/outside/unsupported/Hermes states,
-      create/select/open/clear, dirty restore, long path, and rename warning.
+      extension integration tests for valid/missing/oversize/import-symlink/unsupported/Hermes states,
+      create/import/adopt/replace/open/clear/delete, dirty restore, source-path non-persistence, and
+      every profile-mutation success/collision/rollback plus crash injection at every journal phase.
+      Prove retained-profile/name-reuse adoption, stable profile IDs, affected-stanza recovery despite
+      unrelated config edits, active/retained folded-name collision refusal, operator Complete/Roll
+      Back repair, and bounded resume purge before deletion. Race every mutation and Replace digest
+      confirmation against spawn/restart/re-anchor
+      admission; assert stale digests and launch reservations block conflicting writes.
 - [ ] **T18. Update product/runtime docs.** Update `README.md`, `docs/funcionalidades.html`, and
       `docs/runtimes/parity.md` with identity-vs-role-vs-instructions, configuration, precedence,
-      lifecycle, raw-byte/CRLF semantics, argv/retention exposure, offered-vs-consumed channel state,
+      canonical profile/import-copy semantics, lifecycle, raw-byte/CRLF semantics, argv/retention
+      exposure, future-persistence boundary, offered-vs-consumed channel state,
       prompt/prefill/native/unsupported matrix, wrapper limits, and the Hermes follow-up boundary.
 - [ ] **T19. Add deterministic headless dogfood.** Add `npm run dogfood:agent-soul` with two
       same-role agents, distinct souls, real composition/shell delivery, no paid inference,
@@ -110,11 +152,13 @@ checked._
 
 ## Verification
 
-- [ ] Config/schema/YAML tests prove `soul` round-trip, agent-only validation, and old-config
-      compatibility.
-- [ ] Soul resolver tests prove containment, regular-file/no-symlink, UTF-8/NUL/empty, two limits,
-      exact-byte/CRLF digest, Unicode-scalar counting, documented platform behavior, and actionable
-      errors.
+- [ ] Config/schema/YAML tests prove boolean `soul` semantics (`true`, `false`, absence, and rejected
+      non-booleans), canonical path derivation, agent-only validation, inert leftover files, init
+      gitignore coverage, existing whole-config/LKG behavior, and old-config compatibility.
+- [ ] Soul profile/resolver tests prove import-as-copy and source-path disposal, atomic private writes,
+      containment, regular-file/no-symlink, UTF-8/NUL/empty, two limits, exact-byte/CRLF digest,
+      Unicode-scalar counting, manifest/profile-ID ownership and adoption-required states, durable
+      flush/reopen/digest verification, documented platform behavior, and actionable errors.
 - [ ] Prompt tests prove exact soul-enabled order and `BASE_SHA`-provenanced golden byte-identical
       no-soul rendering across spawn/restart/re-anchor/Delivery/pipeline/short/long paths, with
       manifest/per-fixture SHA enforcement, exact resume/rebind/fork command/send-key parity, and
@@ -123,13 +167,17 @@ checked._
       degraded recovery; deterministic and unknown-error immediate latch; concrete source-change
       detection only for within-cap reads; zero-retry stable oversize; transient-only 2s/4s/8s
       exhaustion including live-process-preserving human restart; and bound/pipeline/schedule/
-      worktree/rename semantics.
-- [ ] Persistence/privacy tests prove reference/digest/channel/offer/health-only ledger state,
-      pointer-safe generated-file cleanup, and documented transcript/argv/provider exposure.
+      worktree/canonical rename/retention semantics, including journaled crash recovery and blocking
+      degraded transactions, affected-stanza recovery across unrelated config edits, case-only
+      rename recovery, and operator Complete/Roll Back repair.
+- [ ] Persistence/privacy tests prove enablement/canonical-profile/digest/channel/offer/health-only
+      ledger state, no original import path, clear/delete retention, pointer-safe explicit profile
+      deletion/generated-file cleanup, and documented transcript/argv/provider exposure.
 - [ ] Runtime tests prove prompt-capable delivery and fail-closed native-external/unsupported
       behavior, including recognized launchers, rejected wrappers, OpenCode prefill, and Hermes.
-- [ ] Agent Studio unit/browser/integration tests prove file actions, validation, accessibility
-      structure, and clear conceptual hierarchy.
+- [ ] Agent Studio unit/browser/integration tests prove canonical create/import/adopt/replace/open/
+      clear/rename/delete/repair actions, digest compare-and-swap, bounded resume purge, validation,
+      accessibility, and clear conceptual hierarchy.
 - [ ] Headless dogfood proves two same-role agents receive only their distinct souls without provider
       inference.
 - [ ] Full repository gate is green and the worktree is clean.
@@ -148,13 +196,14 @@ checked._
 
 **Dogfood:** `npm run dogfood:agent-soul`
 
-**Human dogfood:** Create two same-role Claude/Codex agents with distinct files in Agent Studio;
-compare the same neutral prompt, edit one source, verify resume does not refresh and restart/re-anchor
-does, then rename and confirm the file was not moved. Provider use requires maintainer approval.
+**Human dogfood:** Create two same-role Claude/Codex agents, import distinct files, and verify only
+their canonical `.tachyon/agents/<agent>/SOUL.md` copies are used. Compare the same neutral prompt,
+edit one canonical copy, verify resume does not refresh and restart/re-anchor does, then rename and
+confirm the profile moved transactionally. Provider use requires maintainer approval.
 
 ## Visual QA
 
-- [ ] Evidence: wide and narrow Agent Studio captures for valid soul, missing file, unsupported
-      runtime, Hermes externally managed, and long path.
+- [ ] Evidence: wide and narrow Agent Studio captures for valid soul, import/replace confirmation,
+      retained profile, missing file, unsupported runtime, and Hermes externally managed.
 - [ ] Verdict: Identity reads as “who”, Role/Instructions as “work”; file actions/status remain
       usable and advanced sections keep natural flow.
