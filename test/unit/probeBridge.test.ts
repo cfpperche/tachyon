@@ -105,14 +105,23 @@ describe("probe_agent Bridge tool (D2/D3/OQ1)", () => {
 
   it("sync cap is shorter than the default subprocess timeout", async () => {
     let seenTimeoutMs = 0;
+    // runFn runs behind several real awaits (detectCapability, store.writeMeta, store.scratchDir) that
+    // are NOT synchronized with the Bridge's sync-cap timer — under load they can outlast the 20ms cap,
+    // so `done` racing the cap can resolve to "running" before runFn is even invoked. Signal invocation
+    // explicitly and wait on it, rather than assuming it happened by the time the call settles.
+    let resolveInvoked!: () => void;
+    const invoked = new Promise<void>((res) => (resolveInvoked = res));
     wire({
       runFn: async (_adapter, spec) => {
         seenTimeoutMs = spec.timeoutMs;
+        resolveInvoked();
         return new Promise<ProbeResult>(() => {});
       },
       probeSyncCapMs: 20,
     });
-    const env = await call("probe_agent", { runtime: "claude", archetype: "adversarial-review", task: "slow review", wait: "sync" });
+    const envPromise = call("probe_agent", { runtime: "claude", archetype: "adversarial-review", task: "slow review", wait: "sync" });
+    await invoked;
+    const env = await envPromise;
     expect(env.status).toBe("running");
     expect(seenTimeoutMs).toBe(DEFAULT_CLAUDE_REVIEW_TIMEOUT_MS);
     expect(seenTimeoutMs).toBeGreaterThan(20);
