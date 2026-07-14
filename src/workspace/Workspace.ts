@@ -1892,9 +1892,21 @@ export class Workspace {
       return descriptor.port;
     } catch (error) {
       await this.bridge.dispose();
-      this.rememberBridgeStartFailure(error);
-      throw error;
+      return this.degradeToInProcessBridge(preferred, error);
     }
+  }
+
+  /** t-88ef8c — a persistent-proxy start failure (long-path AF_UNIX EINVAL, systemd unavailable, a dead
+   *  control socket, ...) must never leave the workspace without a Bridge: fall back to the same direct
+   *  listener used when the persistent proxy is disabled, with one warning instead of aborting activation. */
+  private async degradeToInProcessBridge(preferred: number, error: unknown): Promise<number> {
+    const failure = this.rememberBridgeStartFailure(error);
+    const port = await this.bridge.start(preferred);
+    this.host.notify(
+      this.t("Bridge: the persistent proxy is unavailable ({0}) — continuing with the in-process Bridge only. Run Tachyon: Doctor for details.", failure.message),
+      "warn",
+    );
+    return port;
   }
 
   private rememberBridgeStartFailure(error: unknown): BridgeStartFailureInfo {

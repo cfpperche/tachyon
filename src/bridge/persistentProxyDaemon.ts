@@ -9,6 +9,13 @@ import {
   type PersistentBridgeControlResponse,
   type PersistentBridgeDescriptor,
 } from "./persistentProxyProtocol.js";
+// Re-exported so scripts/dogfood/persistent-bridge.mjs (a plain .mjs, run outside the TS build) can
+// `require()` the ONE shared path derivation off this bundle instead of keeping a second copy (t-88ef8c).
+export {
+  persistentBridgeControlSocket,
+  persistentBridgeDescriptorPath,
+  persistentBridgeDir,
+} from "./persistentProxyProtocol.js";
 
 export interface PersistentProxyDaemonOptions {
   workspaceRoot: string;

@@ -8,6 +8,7 @@ import {
   persistentBridgeControlSocket,
   persistentBridgeDescriptorPath,
   persistentBridgeDir,
+  resolvePersistentBridgeControlSocket,
   type PersistentBridgeControlRequest,
   type PersistentBridgeControlResponse,
   type PersistentBridgeDescriptor,
@@ -143,7 +144,8 @@ export class PersistentBridgeService {
   }
 
   private request(request: PersistentBridgeControlRequest): Promise<PersistentBridgeControlResponse> {
-    const socketPath = persistentBridgeControlSocket(this.workspaceRoot);
+    // Reader: an already-running daemon may still be a pre-upgrade one at the legacy in-workspace path.
+    const socketPath = resolvePersistentBridgeControlSocket(this.workspaceRoot);
     return new Promise((resolve, reject) => {
       const socket = net.createConnection(socketPath);
       let data = "";
