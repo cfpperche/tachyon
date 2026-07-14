@@ -21,6 +21,13 @@ pins, journals, or commits should map the old vocabulary here:
 | Interim | `npm run dogfood:edh` (+ alias `dogfood:edh-palliative`) | Same scripts; shorter entry while still under the palliative path. |
 | Current (`t-2d1810`) | **Dev Host** / `npm run dogfood:dev-host` / `scripts/dev-host/` | Semantic product name: isolated Extension Development Host for worktree/fixture dogfood. F5 pointer is first-class (`point` / `point-status` / `point-clear`). |
 
+**F5 launch shape (WSL):** do not pass private `--extensions-dir` / `--user-data-dir` when F5-launching
+from a WSL-remote parent window — that drops `ms-vscode-remote.remote-wsl` and the EDH opens
+**Disconnected from WSL** with an empty UI (fixture name in the title, no Explorer). F5 only sets the
+fixture folder + `--extensionDevelopmentPath` (same shape as **Run Tachyon (demo)**), plus private
+`TMUX_TMPDIR` / `XDG_CACHE_HOME`. CLI `launch` / `headless` may still use private profile dirs under
+the fixture.
+
 **Deliberately not kept as runtime aliases:** `dogfood:edh` and `dogfood:edh-palliative` were removed
 after the rename so there is one canonical command. History lives in this section, the stub
 [`edh-palliative-dogfood.md`](./edh-palliative-dogfood.md), git renames under `scripts/dev-host/`,
