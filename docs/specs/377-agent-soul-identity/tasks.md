@@ -15,7 +15,7 @@ implementation still requires separately assigned bounded Deliveries._
       role-only, instructions-only, role+instructions, Bridge guidance, ad-hoc contract, bound
       Delivery task, pipeline task, no-soul re-anchor, short body, and long-body pointer cases.
       Capture them before any production change from immutable BASE_SHA
-      `23130cea1c1cf8046c1b09ac306de80d92c1bb0e`; pin it in a manifest and every fixture, fail tests on
+      `6885becd72dbd1a4eed270a3233f5d8e0a3e310e`; pin it in a manifest and every fixture, fail tests on
       any SHA mismatch, and make the one-time capture helper refuse unless all imported legacy
       production seams are unchanged from that commit. Never regenerate expected bytes from the new
       renderer. Add BASE_SHA exact command/send-key fixtures for resume, host rebind, and native fork

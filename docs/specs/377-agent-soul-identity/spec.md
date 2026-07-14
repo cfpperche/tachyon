@@ -9,8 +9,9 @@ _Created 2026-07-13._
 **Ratification:** locked on 2026-07-14. The maintainer accepted the complete revised R1–R6 bundle
 without amendments. Implementation has not started.
 
-**Legacy compatibility baseline:** `23130cea1c1cf8046c1b09ac306de80d92c1bb0e`. This single
-feature `BASE_SHA` is immutable for every no-soul parity fixture.
+**Legacy compatibility baseline:** `6885becd72dbd1a4eed270a3233f5d8e0a3e310e`. This single
+feature `BASE_SHA` is immutable for every no-soul parity fixture. It was refreshed to the current
+pre-feature `main` during implementation rebase without changing R1–R6.
 
 ## Intent
 
@@ -334,7 +335,7 @@ Hermes SOUL as externally managed.
     separately confirmed action before deletion, and no operation writes through a stale name
 - [ ] **Scenario: existing agents are unchanged**
   - **Given** any valid pre-feature agent with no `soul`, the immutable baseline
-    `23130cea1c1cf8046c1b09ac306de80d92c1bb0e`, and a parity-fixture manifest pinned to that exact SHA
+    `6885becd72dbd1a4eed270a3233f5d8e0a3e310e`, and a parity-fixture manifest pinned to that exact SHA
   - **When** fresh spawn, restart, no-soul re-anchor, bound Delivery/pipeline task composition, and
     the pre-existing no-soul short/long-brief transport are exercised
   - **Then** fixtures captured before any compositor/task-layer change prove byte-identical prompts,

@@ -173,7 +173,7 @@ Compatibility is an explicit branch, not an assumption. When `soul` is absent, f
 `composeInstructions(role, legacyInstructions)` and only then `withBridgeGuidance`. This reproduces
 today's exact role → instructions+task → Bridge order even though task is typed internally. Golden
 snapshots pin byte equality for every legacy combination. Before any production refactor, T1 captures
-them from exactly `23130cea1c1cf8046c1b09ac306de80d92c1bb0e` into
+them from exactly `6885becd72dbd1a4eed270a3233f5d8e0a3e310e` into
 `test/fixtures/agent-soul/legacy-parity/`; its manifest and every fixture record that same SHA, and a
 test fails on any mismatch. The one-time capture helper first refuses unless `git diff` proves every
 legacy production seam it imports is unchanged from that SHA; it is not a routine snapshot-update
@@ -651,7 +651,7 @@ Hermes native materialization is outside both checkpoints and remains a separate
   Unicode-scalar count, byte-count, CRLF/LF digest, POSIX no-follow, and documented Windows fallback
   cases.
 - Before compositor changes, capture no-soul golden fixtures from immutable baseline
-  `23130cea1c1cf8046c1b09ac306de80d92c1bb0e`, store it in a manifest and every fixture, and fail the
+  `6885becd72dbd1a4eed270a3233f5d8e0a3e310e`, store it in a manifest and every fixture, and fail the
   suite if any SHA differs. Make the one-time capture helper refuse when any imported legacy
   production seam differs from that commit; never expose a normal golden-update path through the new
   renderer.

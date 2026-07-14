@@ -284,6 +284,19 @@ pass is recorded below.
   coordination step.
 - Planning task `t-60979d` is complete once this ratification record is committed and verified.
 
+### 2026-07-14 — implementation-base refresh
+
+- The isolated integration worktree was created from current `main` at
+  `6885becd72dbd1a4eed270a3233f5d8e0a3e310e`, then received the three ratified SDD commits.
+- Since the original planning snapshot, current main changed legacy composition/lifecycle seams in
+  `AgentManager`, `loadConfig`, resume adapters, role templates, and `Workspace`. Capturing parity
+  against the older SHA would therefore reject the current pre-feature tree or freeze obsolete bytes.
+- The live spec/plan/tasks now pin `BASE_SHA` to `6885becd72dbd1a4eed270a3233f5d8e0a3e310e`.
+  Earlier references to `23130cea1c1cf8046c1b09ac306de80d92c1bb0e` in the historical review log
+  describe the planning-time review only and are superseded for implementation fixtures.
+- This is a compatibility-baseline refresh, not an amendment to ratified R1–R6. The refreshed base is
+  green under `npm run typecheck` and `npm run verify:full:quiet` (333 files; 4035 passed, 3 skipped).
+
 ## Open questions
 
 - Resolved 2026-07-14: the maintainer ratified the complete revised R1–R6 bundle without amendments.
