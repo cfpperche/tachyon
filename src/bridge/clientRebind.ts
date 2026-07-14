@@ -34,6 +34,11 @@ export const DEFAULT_BRIDGE_CLIENT_REBIND: BridgeClientRebindSettings = {
   circuitFailCount: 3,
 };
 
+/** A replacement that exits during startup is not a successful rebind.  This is intentionally
+ * process-liveness only: it catches immediate CLI/config/auth exits without inventing a runtime UI
+ * classifier. */
+const POST_RESUME_STABILITY_MS = 1_500;
+
 export type RebindReason = "host_generation_bump" | "peer_request";
 
 export interface RebindAuditEvent {
@@ -61,6 +66,9 @@ export interface BridgeClientRebindDeps {
   kindOf: (name: string) => "agent" | "terminal";
   /** Still RUNNING? (preflight + wait loops). */
   isRunning: (name: string) => Promise<boolean>;
+  /** Read-only proof that the generic resume path is currently available.  This must run before
+   * any expected-death marker or stop so Delivery-owned executions are never torn down first. */
+  canResume: (name: string, record: SessionRecord) => Promise<boolean>;
   stopGracefully: (name: string) => Promise<void>;
   /** Hard kill the tmux session WITHOUT wiping ledger/adhoc (unlike AgentManager.kill). */
   hardKillSession: (name: string) => Promise<void>;
@@ -69,7 +77,7 @@ export interface BridgeClientRebindDeps {
    * Receives the pre-stop ledger snapshot so a race cannot drop the row.
    * Resume defaults to injectPrimer:false for all callers; rebind still passes false explicitly.
    */
-  resume: (name: string, record: SessionRecord, opts?: { injectPrimer?: boolean }) => Promise<void>;
+  resume: (name: string, record: SessionRecord, opts?: { injectPrimer?: boolean; deferBridgeStamp?: boolean }) => Promise<void>;
   /**
    * Stamp durable bridgeClient on the ledger at resume-time generation.
    * Called after a successful resume (AgentManager also stamps on ordinary spawn/resume).
@@ -438,6 +446,9 @@ export class BridgeClientRebindCoordinator {
         finalState: pre.state,
         error: pre.reason,
       });
+      if (pre.state === "failed") {
+        this.deps.notify(`Bridge client rebind of '${name}' skipped before stop: ${pre.reason} (agent left running)`, "error");
+      }
       return;
     }
 
@@ -535,7 +546,18 @@ export class BridgeClientRebindCoordinator {
       // ── Resume (never cold spawn) ────────────────────────────────────────
       // Re-read ledger in case stop refreshed ownership; fall back to snapshot.
       const record = this.deps.getLedger(name) ?? ledgerSnapshot;
-      await this.deps.resume(name, record, { injectPrimer: false });
+      // AgentManager must not stamp the replacement healthy yet.  Rebind owns that proof and only
+      // commits it after the bounded liveness window below.
+      await this.deps.resume(name, record, { injectPrimer: false, deferBridgeStamp: true });
+
+      const stableUntil = now() + POST_RESUME_STABILITY_MS;
+      for (let i = 0; i < 10_000; i++) {
+        if (!(await this.deps.isRunning(name))) throw new Error("replacement exited during post-resume stability window");
+        const remaining = stableUntil - now();
+        if (remaining <= 0) break;
+        await sleep(Math.min(100, remaining));
+      }
+      if (!(await this.deps.isRunning(name))) throw new Error("replacement exited during post-resume stability window");
 
       // Stamp at CURRENT generation (may have advanced during rebind).
       const stampG = this.getGeneration();
@@ -618,6 +640,24 @@ export class BridgeClientRebindCoordinator {
     if (!isWiredSuspect(this.deps.getLedger(name), G)) {
       rt.clientState = "ok";
       return { ok: false, reason: "already bound to current generation", state: "ok" };
+    }
+    const record = this.deps.getLedger(name);
+    if (!record) {
+      rt.clientState = "failed";
+      return { ok: false, reason: "no ledger record for resume", state: "failed" };
+    }
+    try {
+      if (!(await this.deps.canResume(name, record))) {
+        rt.clientState = "failed";
+        return { ok: false, reason: "generic resume is unavailable or its transcript is not ready", state: "failed" };
+      }
+    } catch (err) {
+      rt.clientState = "failed";
+      return {
+        ok: false,
+        reason: `resume preflight failed: ${err instanceof Error ? err.message : String(err)}`,
+        state: "failed",
+      };
     }
     // Still require bound < G (durable); suspectG is informational.
     if (rt.suspectGeneration !== undefined && rt.suspectGeneration > G) {

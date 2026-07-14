@@ -43,15 +43,17 @@ function makeDeps(opts: {
   state?: Map<string, unknown>;
   auditPath: string;
   initiator?: string;
-  resumeImpl?: (name: string, record: SessionRecord, opts?: { injectPrimer?: boolean }) => Promise<void>;
+  resumeImpl?: (name: string, record: SessionRecord, opts?: { injectPrimer?: boolean; deferBridgeStamp?: boolean }) => Promise<void>;
+  canResumeImpl?: (name: string, record: SessionRecord) => Promise<boolean>;
   stopImpl?: (name: string) => Promise<void>;
+  onSleep?: (ms: number) => void;
 }): BridgeClientRebindDeps & {
   state: Map<string, unknown>;
   notices: string[];
   notifies: Array<{ m: string; l: string }>;
   expectedDeath: string[];
   resumes: string[];
-  resumeOpts: Array<{ name: string; injectPrimer?: boolean }>;
+  resumeOpts: Array<{ name: string; injectPrimer?: boolean; deferBridgeStamp?: boolean }>;
   stops: string[];
   hardKills: string[];
 } {
@@ -60,7 +62,7 @@ function makeDeps(opts: {
   const notifies: Array<{ m: string; l: string }> = [];
   const expectedDeath: string[] = [];
   const resumes: string[] = [];
-  const resumeOpts: Array<{ name: string; injectPrimer?: boolean }> = [];
+  const resumeOpts: Array<{ name: string; injectPrimer?: boolean; deferBridgeStamp?: boolean }> = [];
   const stops: string[] = [];
   const hardKills: string[] = [];
   const settings = opts.settings ?? { ...DEFAULT_BRIDGE_CLIENT_REBIND };
@@ -73,7 +75,7 @@ function makeDeps(opts: {
     notifies: Array<{ m: string; l: string }>;
     expectedDeath: string[];
     resumes: string[];
-    resumeOpts: Array<{ name: string; injectPrimer?: boolean }>;
+    resumeOpts: Array<{ name: string; injectPrimer?: boolean; deferBridgeStamp?: boolean }>;
     stops: string[];
     hardKills: string[];
   } = {
@@ -96,6 +98,7 @@ function makeDeps(opts: {
     listRunning: async () => [...opts.running],
     kindOf: (name) => opts.kinds?.get(name) ?? "agent",
     isRunning: async (name) => opts.running.has(name),
+    canResume: (name, record) => opts.canResumeImpl?.(name, record) ?? Promise.resolve(true),
     stopGracefully: async (name) => {
       stops.push(name);
       if (opts.stopImpl) await opts.stopImpl(name);
@@ -107,7 +110,11 @@ function makeDeps(opts: {
     },
     resume: async (name, record, resumeCallOpts) => {
       resumes.push(name);
-      resumeOpts.push({ name, injectPrimer: resumeCallOpts?.injectPrimer });
+      resumeOpts.push({
+        name,
+        injectPrimer: resumeCallOpts?.injectPrimer,
+        deferBridgeStamp: resumeCallOpts?.deferBridgeStamp,
+      });
       if (opts.resumeImpl) await opts.resumeImpl(name, record, resumeCallOpts);
       else {
         opts.running.add(name);
@@ -115,7 +122,7 @@ function makeDeps(opts: {
         const gen = (state.get(bridgeGenerationStateKey("abcd1234", "inst01")) as number) ?? 0;
         opts.ledger.set(name, {
           ...record,
-          bridgeClient: { boundGeneration: gen, wired: true },
+          ...(resumeCallOpts?.deferBridgeStamp ? {} : { bridgeClient: { boundGeneration: gen, wired: true } }),
           updatedAt: new Date().toISOString(),
         });
       }
@@ -147,6 +154,7 @@ function makeDeps(opts: {
     now: () => clock,
     sleep: async (ms) => {
       clock += ms;
+      opts.onSleep?.(ms);
     },
   };
   return deps;
@@ -316,6 +324,60 @@ describe("BridgeClientRebindCoordinator", () => {
     for (const d of dirs.splice(0)) fs.rmSync(d, { recursive: true, force: true });
   });
 
+  it("reload-safe: refuses an unsafe Delivery resume before every teardown side effect", async () => {
+    const auditDir = tmpDir();
+    dirs.push(auditDir);
+    const ledger = new Map([["delivery-worker", baseRecord({ bridgeClient: { boundGeneration: 0, wired: true } })]]);
+    const running = new Set(["delivery-worker"]);
+    const deps = makeDeps({
+      ledger,
+      running,
+      auditPath: path.join(auditDir, "delivery.jsonl"),
+      canResumeImpl: async () => false,
+    });
+
+    const coordinator = new BridgeClientRebindCoordinator(deps);
+    await coordinator.onListenerReady();
+
+    expect(running.has("delivery-worker")).toBe(true);
+    expect(deps.expectedDeath).toEqual([]);
+    expect(deps.stops).toEqual([]);
+    expect(deps.hardKills).toEqual([]);
+    expect(deps.resumes).toEqual([]);
+    expect(ledger.get("delivery-worker")?.bridgeClient?.boundGeneration).toBe(0);
+  });
+
+  it("reload-safe: replacement death inside the stability window is resume_fail, never resume_ok", async () => {
+    const auditDir = tmpDir();
+    dirs.push(auditDir);
+    const ledger = new Map([["reviewer", baseRecord({ bridgeClient: { boundGeneration: 0, wired: true } })]]);
+    const running = new Set(["reviewer"]);
+    let replacementStarted = false;
+    const auditPath = path.join(auditDir, "early-exit.jsonl");
+    const deps = makeDeps({
+      ledger,
+      running,
+      auditPath,
+      canResumeImpl: async () => true,
+      resumeImpl: async (name) => {
+        replacementStarted = true;
+        running.add(name);
+      },
+      onSleep: () => {
+        if (replacementStarted) running.delete("reviewer");
+      },
+    });
+    const coordinator = new BridgeClientRebindCoordinator(deps);
+    await coordinator.onListenerReady();
+
+    const audit = fs.readFileSync(auditPath, "utf8");
+    expect(coordinator.getClientState("reviewer")).toBe("failed");
+    expect(audit).toContain('"phase":"resume_fail"');
+    expect(audit).not.toContain('"phase":"resume_ok"');
+    expect(ledger.get("reviewer")?.bridgeClient?.boundGeneration).toBe(0);
+    expect(deps.notifies.some(({ m, l }) => l === "error" && m.includes("post-resume stability window"))).toBe(true);
+  });
+
   it("bumps generation once per onListenerReady and reconstructs suspects after reload", async () => {
     const auditDir = tmpDir();
     dirs.push(auditDir);
@@ -381,7 +443,7 @@ describe("BridgeClientRebindCoordinator", () => {
     const c = new BridgeClientRebindCoordinator(deps);
     await c.onListenerReady();
     expect(deps.resumes).toEqual(["grok"]);
-    expect(deps.resumeOpts).toEqual([{ name: "grok", injectPrimer: false }]);
+    expect(deps.resumeOpts).toEqual([{ name: "grok", injectPrimer: false, deferBridgeStamp: true }]);
   });
 
   it("policy off does not bump or rebind", async () => {

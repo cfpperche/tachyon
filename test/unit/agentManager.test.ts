@@ -2450,6 +2450,42 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(envFromTmuxArgs(startArgs.at(-1)!).CLAUDE_CONFIG_DIR).toBe("/h/researcher");
   });
 
+  it("reload-safe: resume binds a legacy ad-hoc Claude session to its persisted private configHome", async () => {
+    const privateHome = "/persisted/private/reviewer";
+    const sessionId = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+    const { manager, cmds, startArgs } = resumeHarness("agents:\n  boss:\n    cmd: claude\n", {
+      fileExists: () => true,
+    });
+    await manager.resume("reviewer", {
+      def: { cmd: "claude --model sonnet", kind: "agent", parent: "boss" },
+      resume: { runtime: "claude", sessionId, configHome: privateHome },
+      cwd: "/ws",
+      declared: false,
+      updatedAt: "t",
+    });
+
+    const args = startArgs.at(-1)!;
+    expect(cmds.at(-1)).toContain(`--resume ${sessionId}`);
+    expect(envFromTmuxArgs(args).CLAUDE_CONFIG_DIR).toBe(privateHome);
+  });
+
+  it("reload-safe: resume preserves Claude's implicit global home instead of exporting CLAUDE_CONFIG_DIR", async () => {
+    const globalHome = "/home/test/.claude";
+    const { manager, startArgs } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
+      fileExists: () => true,
+      homeDir: () => "/home/test",
+    });
+    await manager.resume("claude", {
+      def: { cmd: "claude", kind: "agent" },
+      resume: { runtime: "claude", sessionId: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee", configHome: globalHome },
+      cwd: "/ws",
+      declared: true,
+      updatedAt: "t",
+    });
+
+    expect(envFromTmuxArgs(startArgs.at(-1)!).CLAUDE_CONFIG_DIR).toBeUndefined();
+  });
+
   it("H2: resume scopes the session resolver + transcript check to the harness config home", async () => {
     const seen: { configHome?: string } = {};
     const fileExistsPaths: string[] = [];
@@ -2560,6 +2596,25 @@ describe("AgentManager — session resume (spec 209)", () => {
       ledger.record("claude", { ...record, bridgeClient: { boundGeneration: 7, wired: true } });
       await manager.resume("claude", ledger.get("claude")!);
       expect(ledger.get("claude")?.bridgeClient).toEqual({ boundGeneration: 7, wired: false });
+    });
+
+    it("reload-safe: deferred resume leaves the prior Bridge stamp untouched for coordinator proof", async () => {
+      const { manager, ledger } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
+        ...BRIDGE(),
+        getBridgeGeneration: () => 7,
+        fileExists: () => true,
+      });
+      ledger.record("claude", {
+        def: { cmd: "claude", kind: "agent" },
+        resume: { runtime: "claude", sessionId: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee" },
+        cwd: "/ws",
+        declared: true,
+        bridgeClient: { boundGeneration: 6, wired: true },
+      });
+
+      await manager.resume("claude", ledger.get("claude")!, { injectPrimer: false, deferBridgeStamp: true });
+
+      expect(ledger.get("claude")?.bridgeClient).toEqual({ boundGeneration: 6, wired: true });
     });
 
     it("resume re-injects the Bridge (the BLOCKER fix — resume rebuilds the command)", async () => {

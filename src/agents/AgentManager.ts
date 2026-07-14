@@ -2403,8 +2403,10 @@ export class AgentManager {
    *   only. Pasting primer+Enter on every stop/resume stranded draft noise in TUI composers
    *   (dogfood 2026-07-14) and was already forbidden for host rebind (t-762940 / spec 364).
    *   Spawn, restart, and re-anchor still deliver the primer; opt-in true remains for rare callers.
+   * @param opts.deferBridgeStamp — internal spec-380 rebind handoff: the coordinator owns the
+   *   healthy stamp after its post-launch liveness proof. Ordinary human resume leaves this false.
    */
-  async resume(name: string, record: SessionRecord, opts?: { injectPrimer?: boolean }): Promise<void> {
+  async resume(name: string, record: SessionRecord, opts?: { injectPrimer?: boolean; deferBridgeStamp?: boolean }): Promise<void> {
     // SDD 368 T14 — refuse before mutating readiness cache (markers + snapshot deny set).
     this.assertNotDeliveryLifecycleDenied(name, "resume", record);
     this.readinessCache.delete(name); // spec 221: resuming changes the session → drop the cached badge
@@ -2478,6 +2480,18 @@ export class AgentManager {
     const resumeDelegatedOpencode = (this.lineage.get(name) || this.delegators.get(name) || resumeDelegationRecord) && record.worktree
       ? { workspaceRoot: this.opts.workspaceRoot, worktreesBase: this.worktreesBaseFor(cwd, record.worktree) }
       : undefined;
+    // spec 380 — transcript lookup already treats resume.configHome as authoritative (spec 240), so
+    // the replacement process must use that same home.  A rehydrated ad-hoc Claude row can lack the
+    // transient `isolate` definition that originally caused applyHarness to set CLAUDE_CONFIG_DIR.
+    // Do not set the env for Claude's real default home: an explicit CLAUDE_CONFIG_DIR changes where
+    // Claude looks for its top-level .claude.json, so default-home behavior must stay byte-compatible.
+    const defaultClaudeHome = path.join((this.opts.homeDir ?? os.homedir)(), ".claude");
+    const persistedResumeHomeEnv = runtime === "claude"
+      && adapter.harness
+      && !resumeDef?.harness
+      && path.resolve(configHome) !== path.resolve(defaultClaudeHome)
+      ? { [adapter.harness.configHomeEnv]: configHome }
+      : {};
     const resumeBuild = this.applyHarness(name, resumeDef, cwd, adapter.resumeCommand(cmd, id), { ...this.opts.getExtraEnv?.(), ...this.opts.mintAgentToken?.(name), ...resumeDef?.env, TACHYON_AGENT_NAME: name });
     this.applyDelegatedOpencodeHarnessPermission(resumeDef, resumeBuild.env, resumeDelegatedOpencode);
     // spec 236 (BLOCKER fix) — resume rebuilds the command, so it must re-inject the Bridge or a resumed
@@ -2490,13 +2504,13 @@ export class AgentManager {
       session,
       cmd: this.withSessionOwnership(name, { cmd }, resumeBridge.cmd, { declared: record.declared }),
       cwd,
-      env: { ...resumeBuild.env, ...resumeBridge.env }, // spec 236 — opencode OPENCODE_CONFIG path folded in
+      env: { ...resumeBuild.env, ...persistedResumeHomeEnv, ...resumeBridge.env }, // spec 236 + 380 persisted home
     });
     // Resume re-attaches to existing state; only its newly launched session is disposable.
     await this.observeLaunchReadiness(name, cmd, session);
     this.opts.ledger?.record(name, { ...record, resume: this.withConfigHome(name, this.definitionOf(name), { ...record.resume, runtime, sessionId: id }) }); // spec 240 — preserve persisted configHome
     // spec 364 — stamp bound_generation at resume time (rebind + human resume both land here).
-    this.stampBridgeClientBinding(name, resumeBridge.wired);
+    if (!opts?.deferBridgeStamp) this.stampBridgeClientBinding(name, resumeBridge.wired);
     this.opts.onSpawned?.(name, true); // resume is activation/human-driven — reveal
 
     // Resume does not recompose def.instructions (transcript carries the original brief) and does
