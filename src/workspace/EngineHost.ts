@@ -1,4 +1,5 @@
 import type { NotifyLevel } from "../bridge/tools.js";
+import type { TerminalPresentation, TerminalPresentationOptions } from "./TerminalPresentation.js";
 
 /**
  * spec 233 — the host port the engine depends on instead of `vscode`. The VS Code shell implements it
@@ -72,6 +73,10 @@ export interface EngineHost {
   mediaPath(...segments: string[]): string;
   /** opaque extension root handle the shell needs for webviews; the engine only passes it through. */
   webviewRoot(): unknown;
+
+  // ShellPresentationPort — optional because a daemon/headless host has no terminal-tab surface.
+  // Workspace falls back to a headless implementation; the VS Code host supplies the real adapter.
+  createTerminalPresentation?(options: TerminalPresentationOptions): TerminalPresentation;
 
   // WorkspaceEvents
   onViewsChanged(view: ViewKind): void;

@@ -4,6 +4,7 @@ import type { NotifyLevel } from "../bridge/tools.js";
 import { DaemonStateStore } from "../engine-service/daemonStateStore.js";
 import { PollingFileWatcher } from "../engine-service/pollingWatcher.js";
 import type { EngineHost, HostDisposable, NoticeAction, ViewKind, WatchEvents } from "./EngineHost.js";
+import { HeadlessTerminalPresentation, type TerminalPresentation } from "./TerminalPresentation.js";
 
 export interface DaemonSettingsSnapshot {
   global?: Record<string, unknown>;
@@ -177,6 +178,10 @@ export class DaemonEngineHost implements EngineHost {
   }
 
   webviewRoot(): unknown { return undefined; }
+
+  createTerminalPresentation(): TerminalPresentation {
+    return new HeadlessTerminalPresentation();
+  }
 
   onViewsChanged(view: ViewKind): void {
     this.assertActive();

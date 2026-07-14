@@ -1,5 +1,12 @@
 import * as vscode from "vscode";
 import { SOCKET_NAME, utf8LocaleEnv } from "../tmux/TmuxService.js";
+import type {
+  TerminalManifestStore,
+  TerminalPresentation,
+  TerminalRestoreEntry,
+} from "../workspace/TerminalPresentation.js";
+
+export type { TerminalManifestStore, TerminalRestoreEntry } from "../workspace/TerminalPresentation.js";
 
 /** The editor-tab icon for an opened session, by what it IS. ThemeIcons tint themselves with the tab
  *  foreground (active/inactive), unlike a custom SVG — so each kind reads clearly: an AI agent shows a
@@ -16,7 +23,7 @@ function sessionIcon(agent: string, kind: "agent" | "terminal"): vscode.ThemeIco
  * here never fights another client over geometry. Closing the terminal detaches;
  * it never kills the underlying process.
  */
-export class Terminals {
+export class Terminals implements TerminalPresentation {
   private byAgent = new Map<string, vscode.Terminal>();
   private disposables: vscode.Disposable[] = [];
 
@@ -40,7 +47,7 @@ export class Terminals {
   }
 
   /** Opens (or reveals) the editor-area terminal attached to a managed entry's tmux session. */
-  open(agent: string, session: string, viewColumn?: vscode.ViewColumn, title?: string): vscode.Terminal {
+  open(agent: string, session: string, viewColumn?: number, title?: string): vscode.Terminal {
     const existing = this.byAgent.get(agent);
     if (existing) {
       existing.show(false);
@@ -115,7 +122,7 @@ export class Terminals {
     if (prunedMalformed) this.saveManifestEntries(entries.filter(isTerminalRestoreEntry));
   }
 
-  private saveManifestEntry(agent: string, session: string, viewColumn: vscode.ViewColumn | undefined, title: string | undefined): void {
+  private saveManifestEntry(agent: string, session: string, viewColumn: number | undefined, title: string | undefined): void {
     if (!this.manifest) return;
     const entries: TerminalRestoreEntry[] = this.readManifest().filter((entry): entry is TerminalRestoreEntry => isTerminalRestoreEntry(entry) && entry.agent !== agent);
     entries.push({
@@ -144,19 +151,6 @@ export class Terminals {
     const entries = this.manifest?.read();
     return Array.isArray(entries) ? entries : [];
   }
-}
-
-export interface TerminalManifestStore {
-  read(): unknown;
-  write(entries: TerminalRestoreEntry[]): void;
-}
-
-export interface TerminalRestoreEntry {
-  schemaVersion: 1;
-  agent: string;
-  session: string;
-  viewColumn?: vscode.ViewColumn;
-  title?: string;
 }
 
 function isTerminalRestoreEntry(value: unknown): value is TerminalRestoreEntry {

@@ -1,6 +1,8 @@
 import * as vscode from "vscode";
 import type { NotifyLevel } from "../bridge/tools.js";
 import type { EngineHost, HostDisposable, NoticeAction, ViewKind, WatchEvents } from "./EngineHost.js";
+import type { TerminalPresentationOptions } from "./TerminalPresentation.js";
+import { Terminals } from "../presentation/Terminals.js";
 import { showNotificationActions } from "./NotificationService.js";
 
 /**
@@ -83,6 +85,10 @@ export class VsCodeHost implements EngineHost {
 
   webviewRoot(): unknown {
     return this.context.extensionUri;
+  }
+
+  createTerminalPresentation(options: TerminalPresentationOptions): Terminals {
+    return new Terminals(options.onReveal, options.kindOf, options.manifest);
   }
 
   onViewsChanged(view: ViewKind): void {

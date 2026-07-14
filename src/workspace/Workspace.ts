@@ -85,7 +85,10 @@ import { classifyInjection, injectionText, type Transition } from "../continuity
 import { agentLogId } from "../activity/logStore.js";
 import { compactSessionOwnerRows, compactSpawnSettings, latestOwnerFor, persistenceHookFailureFile, readPersistenceHookFailures, readSessionOwners, sessionOwnersFile } from "../activity/sessionOwners.js";
 import { forgetAgent as forgetAgentFootprint } from "../agents/forgetAgent.js";
-import { Terminals } from "../presentation/Terminals.js";
+import {
+  HeadlessTerminalPresentation,
+  type TerminalPresentation,
+} from "./TerminalPresentation.js";
 import { detectInstalledClis } from "../webview/cliDetect.js";
 import { validateForm, blockingErrors, toEntry } from "../webview/formLogic.js";
 import type { StudioSubmit, StudioDeps } from "../webview/studioSubmit.js";
@@ -172,6 +175,8 @@ export interface WorkspaceSeams {
   startBridge?: boolean;
   /** production uses the detached stable proxy; headless tests opt in explicitly. */
   persistentBridge?: boolean;
+  /** test-only presentation override; production obtains the adapter from EngineHost. */
+  terminals?: TerminalPresentation;
 }
 
 export interface BridgeStartFailureInfo {
@@ -261,7 +266,7 @@ export class Workspace {
   readonly gitExec: GitExec;
   readonly wsHash: string;
   readonly tmux: TmuxService;
-  readonly terminals: Terminals;
+  readonly terminals: TerminalPresentation;
   readonly manager: AgentManager;
   readonly ledger: SessionLedger;
   readonly worktrees: WorktreeManager;
@@ -421,14 +426,17 @@ export class Workspace {
       this.engine = engine;
       this.tmux.useExecutor(engine.makeExecutor());
     }
-    this.terminals = new Terminals(
-      (_agent, session) => void this.tmux.refreshClients(session),
-      (agent) => this.manager.kindOf(agent),
-      {
+    const terminalOptions = {
+      onReveal: (_agent: string, session: string) => void this.tmux.refreshClients(session),
+      kindOf: (agent: string) => this.manager.kindOf(agent),
+      manifest: {
         read: () => deps.host.getState(this.terminalManifestStateKey()),
-        write: (entries) => deps.host.setState(this.terminalManifestStateKey(), entries),
+        write: (entries: import("./TerminalPresentation.js").TerminalRestoreEntry[]) => deps.host.setState(this.terminalManifestStateKey(), entries),
       },
-    );
+    };
+    this.terminals = seams.terminals
+      ?? deps.host.createTerminalPresentation?.(terminalOptions)
+      ?? new HeadlessTerminalPresentation();
 
     // Auth: stable per-workspace token (extension storage — never in a committable file).
     const earlyFile = this.configPath();

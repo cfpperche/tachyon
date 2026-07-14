@@ -13,6 +13,8 @@ import { agentLogId } from "../../src/activity/logStore.js";
 import { readSessionOwners, sessionOwnersFile } from "../../src/activity/sessionOwners.js";
 import { ReloadTransactionStore } from "../../src/host-action/index.js";
 import { __createdTerminals, __resetVscodeMock } from "../mocks/vscode.js";
+import { Terminals } from "../../src/presentation/Terminals.js";
+import type { TerminalPresentationOptions } from "../../src/workspace/TerminalPresentation.js";
 import { readDelegationRecord } from "../../src/bridge/delegationRecord.js";
 import { canonicalBehaviorStubPath } from "../../src/bridge/behaviorStub.js";
 
@@ -69,6 +71,9 @@ class FakeHost implements EngineHost {
   }
   webviewRoot(): unknown {
     return undefined;
+  }
+  createTerminalPresentation(options: TerminalPresentationOptions): Terminals {
+    return new Terminals(options.onReveal, options.kindOf, options.manifest);
   }
   onViewsChanged(_view: ViewKind): void {}
   constructor(private readonly storageDir: string, private readonly settings: Record<string, unknown> = {}) {}

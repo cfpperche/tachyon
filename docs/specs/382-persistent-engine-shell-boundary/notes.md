@@ -103,3 +103,13 @@ None.
 - Thirty-two focused tests across the five slices pass with typecheck, engine-boundary and diff-check.
   The journal primitives are complete, but the production daemon still needs to feed `DaemonHostEvent`
   records into them and build real Workspace projections.
+
+## Sixth implementation slice — 2026-07-14
+
+- The first real-daemon composition audit exposed a transitive shell dependency missed by the old
+  direct-import boundary check: `Workspace` constructed `presentation/Terminals`, which imports `vscode`.
+- Terminal presentation is now a host-supplied port.  `VsCodeHost` preserves native terminal tabs and
+  manifest restore; `DaemonEngineHost` supplies an explicit headless implementation and the operational
+  `Workspace` no longer imports the VS Code presentation module.
+- The existing terminal/Workspace/daemon focused suites pass 47/47 with typecheck.  This was a required
+  boundary correction before a standalone Node process could honestly construct production Workspace.
