@@ -50,3 +50,17 @@ None.
   version directory, re-verifies reuse, and refuses to overwrite a corrupt existing bundle.
 - Seven focused tests force manifest traversal/duplicates/missing entrypoint, protocol incompatibility,
   stable ids, zero-config platform roots, source tampering, verified reuse and corrupt-target refusal.
+
+## Second implementation slice — 2026-07-14
+
+- Added a private local engine-control server with versioned `health`, `attach`, `touch`, `snapshot` and
+  `detach` envelopes.  Attach proves the canonical workspace and protocol overlap, then returns a
+  token-bound ephemeral shell lease without invoking any engine lifecycle operation.
+- Duplicate attach for the same shell hello converges on the same session token; distinct windows keep
+  independent leases.  Identity/capability drift, wrong workspaces, expired or forged tokens and invalid
+  engine snapshots fail closed.
+- Snapshot validation happens before a new or existing shell lease is mutated, so a failed resnapshot
+  cannot leave a phantom attachment or extend a stale lease.  The private socket has bounded requests,
+  idle timeouts, connection cleanup and inode-checked unlink ownership.
+- Thirteen focused tests across the first two slices pass together with typecheck, the engine-boundary rule
+  and diff-check.  The server is not wired to extension activation or the persistent daemon yet.

@@ -60,6 +60,37 @@ export interface EngineShellHelloV1 {
   settingsDigest: string;
 }
 
+export interface EngineShellSessionV1 {
+  schemaVersion: 1;
+  shellId: string;
+  sessionToken: string;
+  protocol: number;
+  engine: EngineServiceIdentityV1;
+  snapshotSeq: number;
+  leaseExpiresAt: string;
+}
+
+export interface WorkspaceSnapshotEnvelopeV1 {
+  schemaVersion: 1;
+  engineInstanceId: string;
+  seq: number;
+  projections: Record<string, unknown>;
+}
+
+export type EngineControlRequestV1 =
+  | { schemaVersion: 1; op: "health"; workspaceHash: string }
+  | { schemaVersion: 1; op: "attach"; workspaceHash: string; hello: EngineShellHelloV1 }
+  | { schemaVersion: 1; op: "touch"; workspaceHash: string; shellId: string; sessionToken: string }
+  | { schemaVersion: 1; op: "snapshot"; workspaceHash: string; shellId: string; sessionToken: string }
+  | { schemaVersion: 1; op: "detach"; workspaceHash: string; shellId: string; sessionToken: string };
+
+export type EngineControlResponseV1 =
+  | { ok: true; op: "health"; engine: EngineServiceIdentityV1; shellCount: number }
+  | { ok: true; op: "attach" | "touch"; session: EngineShellSessionV1 }
+  | { ok: true; op: "snapshot"; snapshot: WorkspaceSnapshotEnvelopeV1 }
+  | { ok: true; op: "detach"; detached: true }
+  | { ok: false; code: string; message: string };
+
 const SHA256_RE = /^[a-f0-9]{64}$/;
 const GIT_ID_RE = /^[a-f0-9]{7,64}$/;
 
@@ -103,6 +134,22 @@ export function isEngineBundleManifestV1(value: unknown): value is EngineBundleM
     && typeof value.build.treeSha === "string"
     && GIT_ID_RE.test(value.build.treeSha)
     && typeof value.build.workingTreeClean === "boolean";
+}
+
+export function isEngineShellHelloV1(value: unknown): value is EngineShellHelloV1 {
+  if (!isRecord(value) || value.schemaVersion !== 1 || value.op !== "attach") return false;
+  if (typeof value.workspaceRoot !== "string" || value.workspaceRoot.length === 0) return false;
+  if (typeof value.workspaceHash !== "string" || value.workspaceHash.length === 0) return false;
+  if (!isRecord(value.shell)
+    || typeof value.shell.id !== "string" || value.shell.id.length < 8 || value.shell.id.length > 128
+    || typeof value.shell.version !== "string" || value.shell.version.length === 0
+    || typeof value.shell.locale !== "string" || value.shell.locale.length === 0) return false;
+  if (!isEngineProtocolRangeV1(value.protocol)) return false;
+  if (!Array.isArray(value.capabilities)
+    || value.capabilities.length > 128
+    || value.capabilities.some((capability) => typeof capability !== "string" || capability.length === 0 || capability.length > 128)
+    || new Set(value.capabilities).size !== value.capabilities.length) return false;
+  return isSha256(value.settingsDigest);
 }
 
 /** Highest mutually supported protocol, or undefined when the ranges do not overlap. */
