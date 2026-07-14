@@ -1950,27 +1950,36 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(cmds.at(-1)).toBe("codex resume captured-id");
   });
 
-  it("t-762940: default resume injects the 363 primer into the pane", async () => {
+  it("default resume does not paste the 363 primer (all runtimes; re-attach only)", async () => {
     const { manager, paneInjections } = resumeHarness("agents:\n  codex:\n    cmd: codex\n", {
       resolveCaptureId: async () => "captured-id",
     });
     const rec = { def: { cmd: "codex", kind: "agent" as const }, resume: { runtime: "codex" as const, sessionId: "" }, cwd: "/ws", declared: true, updatedAt: "t" };
     await manager.resume("codex", rec);
     const joined = paneInjections.join("\n");
-    expect(joined).toContain("── TACHYON PRIMER ──");
-    expect(joined).toContain("── END BEFORE FINISHING ──");
+    expect(joined).not.toContain("── TACHYON PRIMER ──");
+    expect(joined).not.toContain("── END BEFORE FINISHING ──");
+    expect(paneInjections).toEqual([]);
   });
 
-  it("t-762940: resume({ injectPrimer: false }) skips primer paste (rebind path)", async () => {
+  it("t-762940: resume({ injectPrimer: false }) remains a no-op paste (rebind / explicit)", async () => {
     const { manager, paneInjections } = resumeHarness("agents:\n  codex:\n    cmd: codex\n", {
       resolveCaptureId: async () => "captured-id",
     });
     const rec = { def: { cmd: "codex", kind: "agent" as const }, resume: { runtime: "codex" as const, sessionId: "" }, cwd: "/ws", declared: true, updatedAt: "t" };
     await manager.resume("codex", rec, { injectPrimer: false });
-    const joined = paneInjections.join("\n");
-    expect(joined).not.toContain("── TACHYON PRIMER ──");
-    expect(joined).not.toContain("── END BEFORE FINISHING ──");
     expect(paneInjections).toEqual([]);
+  });
+
+  it("resume({ injectPrimer: true }) opt-in still pastes the 363 primer", async () => {
+    const { manager, paneInjections } = resumeHarness("agents:\n  codex:\n    cmd: codex\n", {
+      resolveCaptureId: async () => "captured-id",
+    });
+    const rec = { def: { cmd: "codex", kind: "agent" as const }, resume: { runtime: "codex" as const, sessionId: "" }, cwd: "/ws", declared: true, updatedAt: "t" };
+    await manager.resume("codex", rec, { injectPrimer: true });
+    const joined = paneInjections.join("\n");
+    expect(joined).toContain("── TACHYON PRIMER ──");
+    expect(joined).toContain("── END BEFORE FINISHING ──");
   });
 
   it("resume() throws ResumeUnavailableError when the transcript is gone (fallback signal)", async () => {

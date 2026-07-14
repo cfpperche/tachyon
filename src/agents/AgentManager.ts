@@ -2398,10 +2398,11 @@ export class AgentManager {
    * id, resolves it from disk by cwd. Throws ResumeUnavailableError when the id can't
    * be resolved or the transcript is gone — the caller falls back to a fresh spawn.
    *
-   * @param opts.injectPrimer — when true (default), re-types the spec 363 primer into the
-   *   pane after launch. Spec 364 host-generation rebind MUST pass false: rebind only needs a
-   *   live MCP client, not a re-onboarding paste that strands draft text in idle composers
-   *   (t-762940).
+   * @param opts.injectPrimer — when true, re-types the spec 363 primer into the pane after
+   *   launch. **Default is false** for all runtimes: resume re-attaches the transcript + Bridge
+   *   only. Pasting primer+Enter on every stop/resume stranded draft noise in TUI composers
+   *   (dogfood 2026-07-14) and was already forbidden for host rebind (t-762940 / spec 364).
+   *   Spawn, restart, and re-anchor still deliver the primer; opt-in true remains for rare callers.
    */
   async resume(name: string, record: SessionRecord, opts?: { injectPrimer?: boolean }): Promise<void> {
     // SDD 368 T14 — refuse before mutating readiness cache (markers + snapshot deny set).
@@ -2498,12 +2499,12 @@ export class AgentManager {
     this.stampBridgeClientBinding(name, resumeBridge.wired);
     this.opts.onSpawned?.(name, true); // resume is activation/human-driven — reveal
 
-    // spec 363 T3 — resume doesn't recompose def.instructions (the transcript already carries the
-    // original brief). Human/sidebar/autostart resume re-delivers the full compact primer (spec.md:
-    // four moments). Spec 364 rebind passes injectPrimer:false so a host reload only reconnects MCP
-    // and does not paste primer into every idle composer (t-762940).
+    // Resume does not recompose def.instructions (transcript carries the original brief) and does
+    // NOT paste the 363 primer by default — all runtimes, all callers (sidebar / autostart / rebind).
+    // Spec 363 injection moments are spawn, restart, and re-anchor; resume is re-attach only.
+    // Opt-in injectPrimer:true remains for rare deliberate re-orientation after resume.
     // Advisory/best-effort: never blocks a resume.
-    if (opts?.injectPrimer === false) return;
+    if (opts?.injectPrimer !== true) return;
     // (resumeDelegationRecord computed above, alongside resumeDelegatedOpencode — reused here.)
     const { primer, beforeFinishing } = renderPrimer({
       agentName: name,
