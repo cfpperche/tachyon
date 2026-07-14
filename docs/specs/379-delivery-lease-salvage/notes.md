@@ -32,3 +32,14 @@ spec should generalize/expose it rather than invent a new transition:
 - salvage-without-successor (release the lease with nobody joining, e.g. for prune/verify of a
   finished branch) is the genuinely missing piece — the 378 wedge became unrecoverable the
   moment its branch merged+deleted (expected_head unresolvable ⇒ no recovery join possible).
+
+## Happy-path verification finding (t-c5c204, 2026-07-14)
+
+The healthy `d-spawn-39638e6a…` refusal was not caused by `UnavailableProcessFence`:
+`DeliveryVerificationLeaseService` does not consult ProcessFence. Canonical gated spawn persisted
+`principal=<agent>` on its initial segment but omitted the same attribution from the held holder,
+so strict holder/tail identity rejected every such record before reaching the intentional live-tail
+guard. The narrow correction writes both sides for new spawns and auditably repairs only the old,
+attested canonical-spawn shape during verification. A genuinely live tail still blocks verification
+because `verify_task` temporarily checks out other SHAs; stop it and retry. The dead-holder salvage
+problem remains the separate scope of spec 379.

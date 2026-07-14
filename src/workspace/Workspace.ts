@@ -2434,7 +2434,7 @@ export class Workspace {
         taskRef: input.worktree.branch,
         ...(input.gate.stubPath ? { stubPath: input.gate.stubPath } : {}),
       },
-      lease: { state: "held", holder: { segmentId: `seg-${spawnKey.slice(0, 16)}`, executionAgent: input.name, ...(executionNonce ? { executionNonce } : {}), ...(identity?.state === "exact" ? { process: { pid: identity.pid, processStart: identity.processStart, bootId: identity.bootId } } : {}) }, expectedHeadSha: input.baseSha, changedAt: now },
+      lease: { state: "held", holder: { segmentId: `seg-${spawnKey.slice(0, 16)}`, executionAgent: input.name, principal: input.name, ...(executionNonce ? { executionNonce } : {}), ...(identity?.state === "exact" ? { process: { pid: identity.pid, processStart: identity.processStart, bootId: identity.bootId } } : {}) }, expectedHeadSha: input.baseSha, changedAt: now },
       segments: [{
         id: `seg-${spawnKey.slice(0, 16)}`, index: 0, role: "implementer", executionAgent: input.name,
         principal: input.name, grantedBy: actor, ownsSubset: owns, grantedHeadSha: input.baseSha, grantedAt: now,
@@ -2471,6 +2471,7 @@ export class Workspace {
       || tail.releasedAt
       || tail.id !== holder.segmentId
       || tail.executionAgent !== holder.executionAgent
+      || tail.principal !== holder.principal
       || holder.executionAgent !== input.name
     ) {
       throw new Error(

@@ -23,7 +23,8 @@ function writeCommit(cwd: string, file: string, body: string, message: string): 
   return git(cwd, "rev-parse", "HEAD");
 }
 
-async function fixture(options: { segments?: DelegationSegment[]; lease?: DeliveryLease; multiTail?: boolean } = {}) {
+async function fixture(options: { segments?: DelegationSegment[]; lease?: DeliveryLease; multiTail?: boolean;
+  canonicalSpawnPrincipalOmission?: boolean; canonicalSpawnAttested?: boolean } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-verification-lease-"));
   roots.push(root);
   git(root, "init", "-b", "main");
@@ -36,7 +37,8 @@ async function fixture(options: { segments?: DelegationSegment[]; lease?: Delive
   const delivered = writeCommit(worktree, "src/feature.ts", "feature\n", "t-0b5723 feature");
   const store = new DeliveryStore(root);
   const gitDeliveries = new GitDeliveryStore(root, { id: () => "gd-verify" });
-  const projection = await gitDeliveries.open({ workspaceId: "ws", createdBy: actor, deliveryId: "d-verify", agent: "tail",
+  const deliveryId = options.canonicalSpawnPrincipalOmission ? "d-spawn-known-writer" : "d-verify";
+  const projection = await gitDeliveries.open({ workspaceId: "ws", createdBy: actor, deliveryId, agent: "tail",
     branchRef: "task", worktreePath: worktree, tachyonCreatedBranch: true, baseRef: base, currentHeadSha: delivered });
   const defaultSegments: DelegationSegment[] = [{ id: "seg-0", index: 0, role: "implementer", executionAgent: "tail",
     grantedBy: actor, ownsSubset: ["src"], grantedHeadSha: base, grantedAt: "2026-07-11T00:00:00.000Z",
@@ -46,12 +48,22 @@ async function fixture(options: { segments?: DelegationSegment[]; lease?: Delive
     { id: "seg-1", index: 1, role: "fixer" as const, executionAgent: "live-tail", grantedBy: actor, ownsSubset: ["src"],
       grantedHeadSha: base, grantedAt: "2026-07-11T00:00:30.000Z", releasedAt: "2026-07-11T00:01:00.000Z",
       releasedHeadSha: delivered, outcome: "completed" as const },
-  ] : options.segments ?? defaultSegments;
-  await store.create({ id: "d-verify", workspaceId: "ws", createdBy: actor,
+  ] : options.canonicalSpawnPrincipalOmission
+    ? [{ ...defaultSegments[0]!, principal: "tail", releasedAt: undefined, releasedHeadSha: undefined, outcome: undefined }]
+    : options.segments ?? defaultSegments;
+  const lease = options.canonicalSpawnPrincipalOmission
+    ? { state: "held" as const, holder: { segmentId: "seg-0", executionAgent: "tail",
+      process: { pid: 42, processStart: "100", bootId: "boot" }, executionNonce: "execution" },
+      expectedHeadSha: delivered, changedAt: "2026-07-11T00:01:00.000Z" }
+    : options.lease ?? { state: "free" as const, changedAt: "2026-07-11T00:01:00.000Z" };
+  await store.create({ id: deliveryId, workspaceId: "ws", createdBy: actor,
     contract: { baseSha: base, behaviorTest: "behavior", owns: ["src"], taskRef: "task" },
-    segments, lease: options.lease ?? { state: "free", changedAt: "2026-07-11T00:01:00.000Z" },
+    segments, lease,
+    events: options.canonicalSpawnPrincipalOmission && options.canonicalSpawnAttested !== false ? [{ id: "projection-event", at: "2026-07-11T00:00:30.000Z",
+      type: "projection.intent", by: actor,
+      detail: { action: "open", gitDeliveryId: projection.id, payload: { reason: "canonical gated spawn" } } }] : [],
     gitDeliveryId: projection.id });
-  return { root, worktree, base, delivered, store, gitDeliveries, projection };
+  return { root, worktree, base, delivered, store, gitDeliveries, projection, deliveryId };
 }
 
 function service(f: Awaited<ReturnType<typeof fixture>>, options: { epoch?: string; running?: (name: string) => boolean } = {}) {
@@ -99,9 +111,35 @@ describe("DeliveryVerificationLeaseService (SDD 368 T9)", () => {
     let executed = false;
     await expect(service(f, { running: (name) => name === "live-tail" }).run("d-verify", actor, async () => {
       executed = true; throw new Error("must not execute");
-    })).rejects.toMatchObject({ code: "WORKTREE_OCCUPIED", retryable: true });
+    })).rejects.toMatchObject({ code: "WORKTREE_OCCUPIED", retryable: true,
+      detail: { next: { action: "kill_agent", name: "live-tail", then: "retry verify_task with the same delivery_id" } } });
     expect(executed).toBe(false);
     expect((await f.store.get("d-verify"))!.lease.state).toBe("free");
+  });
+
+  it("repairs the attested canonical-spawn principal omission and verifies after the tail stops", async () => {
+    const f = await fixture({ canonicalSpawnPrincipalOmission: true });
+    const result = await service(f).run(f.deliveryId, actor, async () => ({ publish: async () => ({
+      result: "accepted",
+      evidence: { refSha: f.delivered, treeSha: git(f.worktree, "rev-parse", "HEAD^{tree}"),
+        verdict: "accept", integrityHash: "hash", recordPath: "record" },
+    }) }));
+    expect(result).toBe("accepted");
+    const repaired = (await f.store.get(f.deliveryId))!;
+    expect(repaired.lease.holder).toMatchObject({ executionAgent: "tail", principal: "tail" });
+    expect(repaired.events.map((event) => event.type)).toEqual([
+      "projection.intent", "canonical_spawn_principal_repaired", "verification_started", "verification_completed",
+    ]);
+  });
+
+  it("does not infer a missing holder principal without the canonical-spawn attestation", async () => {
+    const f = await fixture({ canonicalSpawnPrincipalOmission: true, canonicalSpawnAttested: false });
+
+    await expect(service(f).run(f.deliveryId, actor, async () => { throw new Error("must not execute"); }))
+      .rejects.toMatchObject({ code: "WORKTREE_OCCUPIED", retryable: true });
+    const refused = (await f.store.get(f.deliveryId))!;
+    expect(refused.lease.holder?.principal).toBeUndefined();
+    expect(refused.events).toEqual([]);
   });
 
   it("allows one verifying CAS and refuses a same-epoch contender before checkout", async () => {

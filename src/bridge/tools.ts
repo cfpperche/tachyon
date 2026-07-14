@@ -1271,7 +1271,11 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         "is rejected (it would blanket-waive every scope breach). A self-caller (the agent named in `agent` " +
         "verifying itself) is rejected whenever waivers are present — waivers are coordinator-authored, " +
         "never self-authored; self-verification with no waivers stays allowed. The resolved caller is " +
-        "recorded on the verification record for after-the-fact attribution. When any waiver was applied, " +
+        "recorded on the verification record for after-the-fact attribution. Canonical verification temporarily " +
+        "checks out immutable SHAs, so its current tail agent must be stopped first; a live tail is refused with " +
+        "kill_agent-then-retry guidance. This gate records verification evidence but does not complete a canonical " +
+        "review: review closure requires delivery_join(role=reviewer, owns_subset=[]) followed by " +
+        "delivery_complete_review. When any waiver was applied, " +
         "the output text leads with an unmissable 'WAIVED' verdict line. Advisory: returns accept or " +
         "precise blockers; it does not merge.",
       inputSchema: {
@@ -2589,7 +2593,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
   mcp.registerTool(
     "delivery_complete_review",
     {
-      description: "Complete an exact canonical Delivery review. Mechanism-only root death is best-effort; descendants are unproven.",
+      description: "Complete an exact canonical Delivery review after delivery_join created the live tail reviewer segment with owns_subset=[]. This operation validates and stops that exact reviewer; it is distinct from verify_task evidence. Mechanism-only root death is best-effort; descendants are unproven.",
       inputSchema: { delivery_id: z.string().min(1), expected_reviewed_head_sha: z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i, "must be a SHA-1 or SHA-256 object id"), verdict: z.enum(["ACCEPT", "FINDINGS"]), operation_id: z.string().min(1) },
     },
     async ({ delivery_id, expected_reviewed_head_sha, verdict, operation_id }) => {
