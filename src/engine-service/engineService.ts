@@ -19,9 +19,12 @@ import {
   isEngineServiceIdentityV1,
   isSha256,
   workspaceCommandSuccessV1,
+  workspaceProbeViewSuccessV1,
   type EngineServiceIdentityV1,
   type WorkspaceCommandResultV1,
   type WorkspaceCommandV1,
+  type WorkspaceQueryResultV1,
+  type WorkspaceQueryV1,
   type WorkspaceSnapshotEnvelopeV1,
 } from "./protocol.js";
 
@@ -120,6 +123,7 @@ export async function startDaemonEngineService(
       identity,
       getSnapshot,
       readEvents: (afterSeq, limit) => journal.readAfter(afterSeq, limit),
+      query: (query) => executeWorkspaceQuery(runningWorkspace, query),
       invoke: (command) => executeWorkspaceCommand(runningWorkspace, runningActivityLog, command),
     });
     const runningControl = control;
@@ -142,6 +146,13 @@ export async function startDaemonEngineService(
     host.dispose();
     throw error;
   }
+}
+
+async function executeWorkspaceQuery(
+  workspace: Workspace,
+  query: WorkspaceQueryV1,
+): Promise<WorkspaceQueryResultV1> {
+  return workspaceProbeViewSuccessV1(await workspace.probeView(query.input.caller));
 }
 
 async function executeWorkspaceCommand(

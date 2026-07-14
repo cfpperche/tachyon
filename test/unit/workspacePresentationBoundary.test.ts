@@ -43,11 +43,13 @@ describe("persistent workspace presentation boundary", () => {
       "src/webview/ScheduleStudioPanel.ts",
       "src/webview/TerminalStudioAdapter.ts",
       "src/webview/TerminalStudioPanel.ts",
+      "src/webview/ProbeResultPanel.ts",
+      "src/presentation/items.ts",
     ];
     for (const relative of migrated) {
       const source = fs.readFileSync(path.join(root, relative), "utf8");
       expect(source, relative).not.toMatch(/workspace\/Workspace(?:\.js)?/);
-      expect(source, relative).toMatch(/Workspace(?:Presentation|GitPresentation|Studio)Target/);
+      expect(source, relative).toMatch(/Workspace(?:Presentation|GitPresentation|ProbePresentation|Studio)Target/);
     }
   });
 

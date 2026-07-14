@@ -5,7 +5,12 @@ import path from "node:path";
 import { startEngineControlServer, type RunningEngineControlServer } from "../../src/engine-service/controlServer.js";
 import { EngineEventJournal } from "../../src/engine-service/eventJournal.js";
 import type { StagedEngineBundle } from "../../src/engine-service/engineBundleStore.js";
-import { workspaceCommandSuccessV1, type EngineServiceIdentityV1, type WorkspaceSnapshotEnvelopeV1 } from "../../src/engine-service/protocol.js";
+import {
+  workspaceCommandSuccessV1,
+  workspaceProbeViewSuccessV1,
+  type EngineServiceIdentityV1,
+  type WorkspaceSnapshotEnvelopeV1,
+} from "../../src/engine-service/protocol.js";
 import { connectRemoteWorkspaceClient } from "../../src/shell/WorkspaceClient.js";
 import { workspaceHash } from "../../src/tmux/TmuxService.js";
 
@@ -29,6 +34,7 @@ describe("remote WorkspaceClient", () => {
     const firstIdentity = identity(canonicalRoot, "engine-one", "bridge-one");
     let now = 1_000;
     let commandExecutions = 0;
+    let queryReads = 0;
     const firstJournal = new EngineEventJournal({
       filePath: path.join(root, "events-one.jsonl"),
       engineInstanceId: firstIdentity.instanceId,
@@ -42,6 +48,13 @@ describe("remote WorkspaceClient", () => {
       identity: firstIdentity,
       getSnapshot: () => firstSnapshot,
       readEvents: (afterSeq, limit) => firstJournal.readAfter(afterSeq, limit),
+      query: async (query) => {
+        queryReads += 1;
+        return workspaceProbeViewSuccessV1({
+          rows: [], total: 0, running: 0, completed: 0, failed: 0, empty: true,
+          ...(query.input.caller ? { caller: query.input.caller } : {}),
+        });
+      },
       invoke: async (command) => {
         commandExecutions += 1;
         return workspaceCommandSuccessV1(command);
@@ -104,6 +117,13 @@ describe("remote WorkspaceClient", () => {
     expect(ensureCalls).toBe(2);
     expect(currentServer.shellCount()).toBe(1);
 
+    // A read-only query may safely reattach and retry after a proven expired lease.
+    now += 101;
+    expect(await client.query({ schemaVersion: 1, method: "probe.view", input: { caller: "codex" } }))
+      .toMatchObject({ status: "ok", view: { caller: "codex", empty: true } });
+    expect(queryReads).toBe(1);
+    expect(ensureCalls).toBe(3);
+
     // Expiry is a proven pre-invocation refusal, so reattach then replaying the SAME operation id is safe.
     now += 101;
     const command = { schemaVersion: 1 as const, method: "agent.start" as const, input: { agent: "worker" } };
@@ -111,7 +131,7 @@ describe("remote WorkspaceClient", () => {
     expect(invoked).toMatchObject({ status: "ok", method: "agent.start" });
     expect(await client.invoke("operation-client-shell-0001", command)).toEqual(invoked);
     expect(commandExecutions).toBe(1);
-    expect(ensureCalls).toBe(3);
+    expect(ensureCalls).toBe(4);
 
     // Replace the server with a genuinely new incarnation on the same endpoint.
     await currentServer.close();
@@ -135,13 +155,14 @@ describe("remote WorkspaceClient", () => {
     expect(recovered).toMatchObject({ events: [], resynced: true, engineChanged: true });
     expect(recovered.snapshot.projections.marker).toBe("new-incarnation");
     expect(client.identity).toEqual(secondIdentity);
-    expect(ensureCalls).toBe(4);
+    expect(ensureCalls).toBe(5);
 
     // Getters and listeners receive clones rather than authority over the client's cached state.
     recovered.snapshot.projections.marker = "caller-mutated";
     expect(client.snapshot.projections.marker).toBe("new-incarnation");
     expect(observed).toEqual([
       { resynced: false, engineChanged: false, marker: "event-one" },
+      { resynced: true, engineChanged: false, marker: "gap-resnapshot" },
       { resynced: true, engineChanged: false, marker: "gap-resnapshot" },
       { resynced: true, engineChanged: false, marker: "gap-resnapshot" },
       { resynced: true, engineChanged: false, marker: "gap-resnapshot" },

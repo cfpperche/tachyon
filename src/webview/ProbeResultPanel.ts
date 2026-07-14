@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { panelIcon } from "./shared/panelIcon.js";
-import type { Workspace } from "../workspace/Workspace.js";
+import type { WorkspaceProbePresentationTarget } from "../shell/WorkspacePresentation.js";
 import { renderWebviewShell } from "./shared/shell.js";
 import { READY } from "./shared/ready.js";
 import { probesMessage, type ProbesVM } from "./probes/messages.js";
@@ -28,7 +28,7 @@ export class ProbeResultPanelManager {
 
   constructor(
     private readonly extensionUri: vscode.Uri,
-    private readonly getWorkspaces: () => Workspace[],
+    private readonly getWorkspaces: () => WorkspaceProbePresentationTarget[],
   ) {}
 
   /** spec 322 — panels are keyed per (workspace, caller) so two agents' probe views can sit side by side

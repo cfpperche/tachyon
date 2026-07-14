@@ -14,11 +14,14 @@ import {
   ENGINE_SHELL_PROTOCOL,
   isEngineOperationId,
   isWorkspaceCommandV1,
+  isWorkspaceQueryV1,
   type EngineServiceIdentityV1,
   type EngineShellHelloV1,
   type WorkspaceEventV1,
   type WorkspaceCommandResultV1,
   type WorkspaceCommandV1,
+  type WorkspaceQueryResultV1,
+  type WorkspaceQueryV1,
   type WorkspaceSnapshotEnvelopeV1,
 } from "../engine-service/protocol.js";
 import { workspaceHash } from "../tmux/TmuxService.js";
@@ -51,6 +54,7 @@ export interface WorkspaceClient {
   readonly presentation: WorkspacePresentationSnapshotV1;
   readonly bridgeUrl: string;
   sync(limit?: number): Promise<WorkspaceClientSyncResult>;
+  query(query: WorkspaceQueryV1): Promise<WorkspaceQueryResultV1>;
   invoke(operationId: string, command: WorkspaceCommandV1): Promise<WorkspaceCommandResultV1>;
   subscribe(listener: WorkspaceClientListener): () => void;
   /** Detaches only this shell lease.  It never stops, restarts or disposes the engine. */
@@ -195,6 +199,17 @@ export class RemoteWorkspaceClient implements WorkspaceClient {
     return result;
   }
 
+  query(query: WorkspaceQueryV1): Promise<WorkspaceQueryResultV1> {
+    if (!isWorkspaceQueryV1(query)) {
+      return Promise.reject(new RemoteWorkspaceClientError("INVALID_QUERY", "workspace query is invalid"));
+    }
+    if (this.closeRequested) return Promise.reject(new RemoteWorkspaceClientError("CLIENT_CLOSED", "workspace client is closed"));
+    const request = cloneJson(query);
+    const result = this.tail.then(() => this.queryOnce(request));
+    this.tail = result.then(() => undefined, () => undefined);
+    return result;
+  }
+
   invoke(operationId: string, command: WorkspaceCommandV1): Promise<WorkspaceCommandResultV1> {
     if (!isEngineOperationId(operationId) || !isWorkspaceCommandV1(command)) {
       return Promise.reject(new RemoteWorkspaceClientError("INVALID_COMMAND", "workspace command or operation id is invalid"));
@@ -260,6 +275,16 @@ export class RemoteWorkspaceClient implements WorkspaceClient {
     const result = this.result([], true, !sameIncarnation(previous, attached.identity));
     this.emit(result);
     return result;
+  }
+
+  private async queryOnce(query: WorkspaceQueryV1): Promise<WorkspaceQueryResultV1> {
+    try {
+      return await this.control.query(query);
+    } catch (error) {
+      if (!isRecoverableConnectionLoss(error)) throw error;
+      await this.reconnect();
+      return this.control.query(query);
+    }
   }
 
   private async invokeOnce(operationId: string, command: WorkspaceCommandV1): Promise<WorkspaceCommandResultV1> {

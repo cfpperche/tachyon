@@ -3,9 +3,13 @@ import {
   isWorkspaceEventV1,
   isWorkspaceCommandResultV1,
   isWorkspaceCommandV1,
+  isWorkspaceQueryResultV1,
+  isWorkspaceQueryV1,
   type EngineServiceIdentityV1,
   type WorkspaceCommandResultV1,
   type WorkspaceCommandV1,
+  type WorkspaceQueryResultV1,
+  type WorkspaceQueryV1,
   type WorkspaceEventV1,
   type WorkspaceSnapshotEnvelopeV1,
 } from "../engine-service/protocol.js";
@@ -28,6 +32,7 @@ export interface FakeWorkspaceClientOptions {
     operationId: string,
     command: WorkspaceCommandV1,
   ) => WorkspaceCommandResultV1 | Promise<WorkspaceCommandResultV1>;
+  query?: (query: WorkspaceQueryV1) => WorkspaceQueryResultV1 | Promise<WorkspaceQueryResultV1>;
 }
 
 interface QueuedSync {
@@ -55,6 +60,7 @@ export class FakeWorkspaceClient implements WorkspaceClient {
   readonly workspaceRoot: string;
   readonly workspaceHash: string;
   readonly invocations: Array<{ operationId: string; command: WorkspaceCommandV1 }> = [];
+  readonly queries: WorkspaceQueryV1[] = [];
   private readonly listeners = new Set<WorkspaceClientListener>();
   private readonly queued: QueuedSync[] = [];
   private readonly operations = new Map<string, FakeOperation>();
@@ -144,6 +150,27 @@ export class FakeWorkspaceClient implements WorkspaceClient {
     return result;
   }
 
+  async query(query: WorkspaceQueryV1): Promise<WorkspaceQueryResultV1> {
+    this.requireOpen();
+    if (!isWorkspaceQueryV1(query)) {
+      throw new FakeWorkspaceClientError("INVALID_QUERY", "workspace query is invalid");
+    }
+    const cloned = cloneJson(query);
+    this.queries.push(cloned);
+    if (!this.options.query) return queryError(query, "UNSUPPORTED_OPERATION", "fake query handler is unavailable");
+    try {
+      const result = await this.options.query(cloned);
+      if (!isWorkspaceQueryResultV1(result)
+        || result.method !== query.method
+        || (result.status === "ok" && result.view.caller !== query.input.caller)) {
+        return queryError(query, "INVALID_QUERY_RESULT", "fake query handler returned an invalid result");
+      }
+      return cloneJson(result);
+    } catch (error) {
+      return queryError(query, "QUERY_FAILED", error instanceof Error ? error.message : String(error));
+    }
+  }
+
   invoke(operationId: string, command: WorkspaceCommandV1): Promise<WorkspaceCommandResultV1> {
     try { this.requireOpen(); }
     catch (error) { return Promise.reject(error); }
@@ -225,6 +252,16 @@ function commandError(command: WorkspaceCommandV1, code: string, message: string
     status: "error",
     code,
     message: message.replace(/\s+/g, " ").trim().slice(0, 1_000) || "fake command failed",
+  };
+}
+
+function queryError(query: WorkspaceQueryV1, code: string, message: string): WorkspaceQueryResultV1 {
+  return {
+    schemaVersion: 1,
+    method: query.method,
+    status: "error",
+    code,
+    message: message.replace(/\s+/g, " ").trim().slice(0, 1_000) || "fake query failed",
   };
 }
 

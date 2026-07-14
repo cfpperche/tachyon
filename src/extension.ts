@@ -55,6 +55,7 @@ import type {
 } from "./presentation/items.js";
 import { isAdhocItem } from "./presentation/contextValue.js";
 import { Workspace, type ViewKind } from "./workspace/Workspace.js";
+import type { WorkspacePresentationTarget } from "./shell/WorkspacePresentation.js";
 import { VsCodeHost } from "./workspace/VsCodeHost.js";
 import type { WorktreeRecord } from "./worktree/WorktreeManager.js";
 import { createGitExec, worktreeShowFile, resolveBase } from "./worktree/WorktreeManager.js";
@@ -302,11 +303,15 @@ function targetOf(hash?: string): Workspace | undefined {
 }
 
 /**
- * Tree items carry their Workspace; integration tests and external automation
- * pass plain objects — those resolve to the single active workspace.
+ * Presentation items carry only workspace identity. During the legacy phase,
+ * resolve that identity back to the current concrete registry entry instead of
+ * retaining a stale operational object inside the UI item.
  */
-function wsOf<T extends { ws?: Workspace }>(item: T): Workspace | undefined {
-  const ws = item.ws ?? byHash(undefined);
+function wsOf<T extends { ws?: WorkspacePresentationTarget }>(item: T): Workspace | undefined {
+  const target = item.ws;
+  const ws = target
+    ? workspaces().find((candidate) => candidate.wsHash === target.wsHash && candidate.workspaceRoot === target.workspaceRoot)
+    : byHash(undefined);
   if (!ws) notify(vscode.l10n.t("no Tachyon workspace is active"), "warn");
   return ws;
 }

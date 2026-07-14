@@ -56,6 +56,13 @@ describe("daemon engine service", () => {
       bridge: { port: identity.bridge.port, instanceId: identity.bridge.instanceId, direct: true },
       agents: { total: 1, truncated: false, items: [{ name: "worker", declared: true, running: false }] },
     });
+    expect(await first.query({ schemaVersion: 1, method: "probe.view", input: { caller: "worker" } }))
+      .toEqual({
+        schemaVersion: 1,
+        method: "probe.view",
+        status: "ok",
+        view: { rows: [], total: 0, running: 0, completed: 0, failed: 0, empty: true, caller: "worker" },
+      });
 
     const beforeInvalidStudio = fs.readFileSync(configPath, "utf8");
     const invalidStudio = await first.invoke("operation-studio-invalid-0001", {

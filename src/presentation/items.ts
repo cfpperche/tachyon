@@ -4,14 +4,14 @@
  * tree used to pass TreeItem instances carrying the same fields. Handlers must read ONLY these fields, so
  * the command layer is UI-agnostic — it works whether the caller is the webview, a test, or a future client.
  */
-import type { Workspace } from "../workspace/Workspace.js";
 import type { PipelineRun } from "../pipeline/runState.js";
+import type { WorkspacePresentationTarget } from "../shell/WorkspacePresentation.js";
 
-export interface AgentItem { ws?: Workspace; agentName: string; contextValue?: string }
-export interface PinItem { ws?: Workspace; pinId: string }
-export interface CommandItem { ws?: Workspace; commandName: string }
-export interface RunbookItem { ws?: Workspace; runbookName: string }
-export interface ScheduleItem { ws?: Workspace; scheduleName: string }
-export interface ProposalItem { ws?: Workspace; proposalId: string; label?: string }
-export interface PipelineDefItem { ws?: Workspace; pipelineName: string; run?: PipelineRun }
-export interface PipelineNodeItem { ws?: Workspace; runId?: string; nodeId?: string; run?: PipelineRun }
+export interface AgentItem { ws?: WorkspacePresentationTarget; agentName: string; contextValue?: string }
+export interface PinItem { ws?: WorkspacePresentationTarget; pinId: string }
+export interface CommandItem { ws?: WorkspacePresentationTarget; commandName: string }
+export interface RunbookItem { ws?: WorkspacePresentationTarget; runbookName: string }
+export interface ScheduleItem { ws?: WorkspacePresentationTarget; scheduleName: string }
+export interface ProposalItem { ws?: WorkspacePresentationTarget; proposalId: string; label?: string }
+export interface PipelineDefItem { ws?: WorkspacePresentationTarget; pipelineName: string; run?: PipelineRun }
+export interface PipelineNodeItem { ws?: WorkspacePresentationTarget; runId?: string; nodeId?: string; run?: PipelineRun }

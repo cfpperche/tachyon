@@ -7,6 +7,7 @@ import { createHash } from "node:crypto";
 import { startEngineControlServer, type RunningEngineControlServer } from "../../src/engine-service/controlServer.js";
 import {
   workspaceCommandSuccessV1,
+  workspaceProbeViewSuccessV1,
   type EngineControlRequestV1,
   type EngineControlResponseV1,
   type EngineServiceIdentityV1,
@@ -183,6 +184,54 @@ describe("persistent engine shell control", () => {
     await server.close();
     await disconnected;
     expect(fs.existsSync(f.socketPath)).toBe(false);
+  });
+
+  it("authenticates read-only queries without caching them in the mutation registry", async () => {
+    const f = fixture();
+    let reads = 0;
+    const server = await startEngineControlServer({
+      socketPath: f.socketPath,
+      identity: f.identity,
+      getSnapshot: f.snapshot,
+      query: async (query, context) => {
+        reads++;
+        expect(context.shellId).toBe("shell-query");
+        return workspaceProbeViewSuccessV1({
+          rows: [],
+          total: 0,
+          running: 0,
+          completed: 0,
+          failed: 0,
+          empty: true,
+          ...(query.input.caller ? { caller: query.input.caller } : {}),
+        });
+      },
+    });
+    servers.push(server);
+    const attached = await control(f.socketPath, {
+      schemaVersion: 1,
+      op: "attach",
+      workspaceHash: "abc12345",
+      hello: hello(f.root, "shell-query"),
+    });
+    const request: EngineControlRequestV1 = {
+      schemaVersion: 1,
+      op: "query",
+      workspaceHash: "abc12345",
+      shellId: "shell-query",
+      sessionToken: attachedToken(attached),
+      query: { schemaVersion: 1, method: "probe.view", input: { caller: "codex" } },
+    };
+    expect(await control(f.socketPath, request)).toMatchObject({
+      ok: true,
+      op: "query",
+      result: { status: "ok", view: { caller: "codex", empty: true } },
+    });
+    await control(f.socketPath, request);
+    expect(reads).toBe(2);
+    expect(await control(f.socketPath, { ...request, sessionToken: "wrong" }))
+      .toMatchObject({ ok: false, code: "SHELL_SESSION_INVALID" });
+    expect(reads).toBe(2);
   });
 
   it("executes one operation once across concurrent shells and binds replay to the exact intent", async () => {

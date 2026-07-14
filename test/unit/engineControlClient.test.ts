@@ -7,7 +7,12 @@ import { createHash } from "node:crypto";
 import { EngineControlClient } from "../../src/engine-service/controlClient.js";
 import { startEngineControlServer, type RunningEngineControlServer } from "../../src/engine-service/controlServer.js";
 import { EngineEventJournal } from "../../src/engine-service/eventJournal.js";
-import { workspaceCommandSuccessV1, type EngineServiceIdentityV1, type EngineShellHelloV1 } from "../../src/engine-service/protocol.js";
+import {
+  workspaceCommandSuccessV1,
+  workspaceProbeViewSuccessV1,
+  type EngineServiceIdentityV1,
+  type EngineShellHelloV1,
+} from "../../src/engine-service/protocol.js";
 
 const roots: string[] = [];
 const servers: RunningEngineControlServer[] = [];
@@ -157,6 +162,31 @@ describe("EngineControlClient", () => {
       resyncRequired: false,
       events: [{ seq: 4, kind: "four", payload: { view: "agents" } }],
     });
+  });
+
+  it("binds an authenticated Probe query response to the requested caller", async () => {
+    const f = fixture();
+    const server = await startEngineControlServer({
+      socketPath: f.socketPath,
+      identity: f.identity,
+      getSnapshot: f.snapshot,
+      query: async (query) => workspaceProbeViewSuccessV1({
+        rows: [],
+        total: 0,
+        running: 0,
+        completed: 0,
+        failed: 0,
+        empty: true,
+        caller: query.input.caller === "mismatch" ? "other" : query.input.caller,
+      }),
+    });
+    servers.push(server);
+    const client = new EngineControlClient({ socketPath: f.socketPath, hello: f.hello });
+    await client.attach();
+    expect(await client.query({ schemaVersion: 1, method: "probe.view", input: { caller: "codex" } }))
+      .toMatchObject({ status: "ok", view: { caller: "codex", empty: true } });
+    expect(await client.query({ schemaVersion: 1, method: "probe.view", input: { caller: "mismatch" } }))
+      .toMatchObject({ status: "error", code: "INVALID_QUERY_RESULT" });
   });
 
   it("invokes an operation by exact id without transport-level retries", async () => {

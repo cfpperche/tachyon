@@ -7,11 +7,15 @@ import {
   isSafeBundlePath,
   isWorkspaceCommandResultV1,
   isWorkspaceCommandV1,
+  isWorkspaceQueryResultV1,
+  isWorkspaceQueryV1,
   negotiateEngineShellProtocol,
   workspaceCommandSuccessV1,
+  workspaceProbeViewSuccessV1,
   type EngineBundleFileV1,
   type EngineBundleManifestV1,
   type WorkspaceCommandV1,
+  type WorkspaceProbeViewV1,
   type WorkspaceStudioFormV1,
 } from "../../src/engine-service/protocol.js";
 
@@ -113,6 +117,61 @@ describe("persistent engine protocol", () => {
       command,
       Array.from({ length: 51 }, (_, index) => `error-${index}`),
     )).toMatchObject({ errors: expect.arrayContaining(["error-0"]), truncated: true });
+  });
+
+  it("keeps authenticated Probe reads separate, exact and response-bounded", () => {
+    const query = { schemaVersion: 1, method: "probe.view", input: { caller: "codex" } } as const;
+    expect(isWorkspaceQueryV1(query)).toBe(true);
+    expect(isWorkspaceQueryV1({ ...query, input: { caller: "../escape" } })).toBe(false);
+    expect(isWorkspaceQueryV1({ ...query, input: { caller: "codex", extra: true } })).toBe(false);
+
+    const view: WorkspaceProbeViewV1 = {
+      rows: [{
+        runId: "probe-12345678",
+        shortId: "12345678",
+        runtime: "codex",
+        archetype: "adversarial-review",
+        caller: "codex",
+        status: "completed",
+        reason: "ok",
+        ageLabel: "2s ago",
+        excerpt: "accepted",
+      }],
+      total: 99,
+      running: 99,
+      completed: 0,
+      failed: 0,
+      empty: true,
+      caller: "codex",
+    };
+    const result = workspaceProbeViewSuccessV1(view);
+    expect(result).toMatchObject({
+      method: "probe.view",
+      status: "ok",
+      view: { total: 1, running: 0, completed: 1, failed: 0, empty: false, caller: "codex" },
+    });
+    expect(isWorkspaceQueryResultV1(result)).toBe(true);
+    if (result.status !== "ok") throw new Error("expected Probe view result");
+    expect(isWorkspaceQueryResultV1({ ...result, view: { ...result.view, total: 2 } })).toBe(false);
+    expect(() => workspaceProbeViewSuccessV1({
+      ...view,
+      rows: [{ ...view.rows[0], excerpt: "x".repeat(241) }],
+    })).toThrow(/wire limit/);
+    expect(() => workspaceProbeViewSuccessV1({ ...view, caller: "../escape" })).toThrow(/caller is invalid/);
+    const maxRow = {
+      ...view.rows[0],
+      runId: "r".repeat(128),
+      shortId: "s".repeat(16),
+      runtime: "r".repeat(64),
+      archetype: "a".repeat(64),
+      caller: "c".repeat(128),
+      reason: "r".repeat(128),
+      ageLabel: "a".repeat(32),
+      excerpt: "e".repeat(240),
+    };
+    const maximal = workspaceProbeViewSuccessV1({ ...view, rows: Array.from({ length: 50 }, () => maxRow) });
+    expect(Buffer.byteLength(JSON.stringify({ ok: true, op: "query", result: maximal }), "utf8"))
+      .toBeLessThan(64 * 1024);
   });
 });
 

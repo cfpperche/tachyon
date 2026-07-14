@@ -325,3 +325,23 @@ None.
   converged two clients, executed remote Studio/start/restart/kill, reused the exact engine and cleaned its
   unit, process and listener.  The first reviewable global proof remains current; no extra full run was
   justified before final closure.
+
+## Sixteenth implementation slice — 2026-07-14
+
+- Added an authenticated, strictly validated `probe.view` query seam.  Read-only queries deliberately do
+  not enter the mutation operation registry: repeated reads execute again, while authentication, lease
+  renewal, caller binding, row/count consistency and the 64 KiB response boundary remain fail-closed.
+- `RemoteWorkspaceClient` serializes queries with snapshot/command work and may reconnect and repeat this
+  side-effect-free read after a proven session or transport loss.  `FakeWorkspaceClient` records the same
+  queries without adding false idempotency behavior, and both paths clone caller-owned inputs/results.
+- Migrated the Probe result panel and all presentation item types from concrete `Workspace` to narrow
+  identity/query contracts.  Legacy command handlers resolve an item's current workspace by root+hash
+  instead of retaining an operational object in the tree item.  The executable concrete-import inventory
+  shrank from 13 to 11 files.
+- The focused protocol/control/client/Probe/service matrix passes 39/39 with typecheck, extension+engine
+  build, daemon import closure (164 files), presentation boundary and diff-check green.  Packaged
+  `systemd --user` dogfood queried the real daemon, executed the existing remote Studio/agent lifecycle,
+  reused the exact engine and left no unit, process or listener behind.
+- No second global full run was made: the first reviewable proof (343 files, 4,068 passed, 3 skipped)
+  remains current and this vertical slice has focused wire, process and packaged-host coverage.  Production
+  activation remains intentionally legacy until the remaining eleven concrete presentation consumers move.

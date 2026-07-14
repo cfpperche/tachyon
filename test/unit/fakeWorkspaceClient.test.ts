@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { FakeWorkspaceClient } from "../../src/shell/FakeWorkspaceClient.js";
-import { workspaceGitPresentationTarget, workspacePresentationTarget } from "../../src/shell/WorkspacePresentation.js";
-import { workspaceCommandSuccessV1 } from "../../src/engine-service/protocol.js";
+import {
+  workspaceGitPresentationTarget,
+  workspacePresentationTarget,
+  workspaceProbePresentationTarget,
+} from "../../src/shell/WorkspacePresentation.js";
+import { workspaceCommandSuccessV1, workspaceProbeViewSuccessV1 } from "../../src/engine-service/protocol.js";
 import { projectedAgent, projectionIdentity, projectionSnapshot } from "./fixtures/workspaceProjection.js";
 
 describe("FakeWorkspaceClient", () => {
@@ -16,6 +20,15 @@ describe("FakeWorkspaceClient", () => {
         expect(operationId).toBe("operation-fake-0001");
         return workspaceCommandSuccessV1(command);
       },
+      query: async (query) => workspaceProbeViewSuccessV1({
+        rows: [],
+        total: 0,
+        running: 0,
+        completed: 0,
+        failed: 0,
+        empty: true,
+        ...(query.input.caller ? { caller: query.input.caller } : {}),
+      }),
     });
     const observed: number[] = [];
     fake.subscribe((result) => {
@@ -44,6 +57,13 @@ describe("FakeWorkspaceClient", () => {
     });
     const gitExec = async () => ({ stdout: "", stderr: "", code: 0 });
     expect(workspaceGitPresentationTarget(fake, gitExec).gitExec).toBe(gitExec);
+    expect(await workspaceProbePresentationTarget(fake).probeView("worker"))
+      .toMatchObject({ caller: "worker", empty: true });
+    expect(fake.queries).toEqual([{
+      schemaVersion: 1,
+      method: "probe.view",
+      input: { caller: "worker" },
+    }]);
     const command = { schemaVersion: 1 as const, method: "agent.start" as const, input: { agent: "worker" } };
     const first = await fake.invoke("operation-fake-0001", command);
     expect(await fake.invoke("operation-fake-0001", command)).toEqual(first);
@@ -67,6 +87,8 @@ describe("FakeWorkspaceClient", () => {
 
     await fake.close();
     await expect(fake.sync()).rejects.toMatchObject({ code: "CLIENT_CLOSED" });
+    await expect(fake.query({ schemaVersion: 1, method: "probe.view", input: {} }))
+      .rejects.toMatchObject({ code: "CLIENT_CLOSED" });
     await expect(fake.invoke("operation-fake-0002", {
       schemaVersion: 1,
       method: "agent.kill",

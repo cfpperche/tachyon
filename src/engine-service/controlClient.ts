@@ -4,6 +4,7 @@ import {
   isEngineControlResponseV1,
   isEngineOperationId,
   isWorkspaceCommandV1,
+  isWorkspaceQueryV1,
   type EngineControlRequestV1,
   type EngineControlResponseV1,
   type EngineServiceIdentityV1,
@@ -12,6 +13,8 @@ import {
   type WorkspaceEventBatchV1,
   type WorkspaceCommandResultV1,
   type WorkspaceCommandV1,
+  type WorkspaceQueryResultV1,
+  type WorkspaceQueryV1,
   type WorkspaceSnapshotEnvelopeV1,
 } from "./protocol.js";
 
@@ -142,6 +145,30 @@ export class EngineControlClient {
       this.lastEventSeq = last;
     }
     return batch;
+  }
+
+  /** Sends one authenticated side-effect-free read outside the mutation operation registry. */
+  async query(query: WorkspaceQueryV1): Promise<WorkspaceQueryResultV1> {
+    if (!isWorkspaceQueryV1(query)) {
+      throw new EngineControlClientError("INVALID_RESPONSE", "engine query request is invalid");
+    }
+    const session = this.requireSession();
+    const response = await this.request({
+      schemaVersion: 1,
+      op: "query",
+      workspaceHash: this.options.hello.workspaceHash,
+      shellId: session.shellId,
+      sessionToken: session.sessionToken,
+      query,
+    }, this.commandTimeoutMs);
+    const success = this.unwrap(response);
+    if (success.op !== "query" || success.result.method !== query.method) {
+      throw invalidResponse("query response does not match its request");
+    }
+    if (success.result.status === "ok" && success.result.view.caller !== query.input.caller) {
+      throw invalidResponse("query response belongs to a different Probe caller");
+    }
+    return success.result;
   }
 
   /** Sends one idempotency-keyed mutation. Transport failures are deliberately not retried here. */

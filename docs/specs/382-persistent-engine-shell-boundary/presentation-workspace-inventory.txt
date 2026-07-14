@@ -2,13 +2,11 @@
 # This list is executable debt: workspacePresentationBoundary.test.ts must match it exactly and it may only shrink.
 src/extension.ts
 src/plugins/ui/host.ts
-src/presentation/items.ts
 src/webview/ActivityPanel.ts
 src/webview/HandoffPanel.ts
 src/webview/MissionControlPanel.ts
 src/webview/PinStudioAdapter.ts
 src/webview/PinStudioPanel.ts
-src/webview/ProbeResultPanel.ts
 src/webview/SidebarPrototype.ts
 src/webview/TaskDetailPanel.ts
 src/webview/TaskStudioAdapter.ts

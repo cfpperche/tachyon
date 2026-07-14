@@ -9,6 +9,8 @@ import {
   isEngineOperationId,
   isWorkspaceCommandResultV1,
   isWorkspaceCommandV1,
+  isWorkspaceQueryResultV1,
+  isWorkspaceQueryV1,
   negotiateEngineShellProtocol,
   type EngineControlRequestV1,
   type EngineControlResponseV1,
@@ -19,6 +21,8 @@ import {
   type WorkspaceEventBatchV1,
   type WorkspaceCommandResultV1,
   type WorkspaceCommandV1,
+  type WorkspaceQueryResultV1,
+  type WorkspaceQueryV1,
   type WorkspaceSnapshotEnvelopeV1,
 } from "./protocol.js";
 
@@ -33,11 +37,16 @@ export interface EngineCommandContextV1 {
   operationId: string;
 }
 
+export interface EngineQueryContextV1 {
+  shellId: string;
+}
+
 export interface EngineControlServerOptions {
   socketPath: string;
   identity: EngineServiceIdentityV1;
   getSnapshot: () => unknown | Promise<unknown>;
   readEvents?: (afterSeq: number, limit: number) => unknown | Promise<unknown>;
+  query?: (query: WorkspaceQueryV1, context: EngineQueryContextV1) => WorkspaceQueryResultV1 | Promise<WorkspaceQueryResultV1>;
   invoke?: (command: WorkspaceCommandV1, context: EngineCommandContextV1) => WorkspaceCommandResultV1 | Promise<WorkspaceCommandResultV1>;
   leaseMs?: number;
   now?: () => number;
@@ -98,7 +107,9 @@ export async function startEngineControlServer(options: EngineControlServerOptio
       if (newline < 0) return;
       handled = true;
       const parsed = parseRequest(input.slice(0, newline));
-      if (!("ok" in parsed) && parsed.op === "invoke") socket.setTimeout(CONTROL_COMMAND_TIMEOUT_MS);
+      if (!("ok" in parsed) && (parsed.op === "invoke" || parsed.op === "query")) {
+        socket.setTimeout(CONTROL_COMMAND_TIMEOUT_MS);
+      }
       void handle(parsed).then(
         (response) => respond(socket, response),
         (error) => respond(socket, fail("INTERNAL", error instanceof Error ? error.message : String(error))),
@@ -145,6 +156,10 @@ export async function startEngineControlServer(options: EngineControlServerOptio
 
     const session = authenticateSession(sessions, parsed.shellId, parsed.sessionToken);
     if (!session) return fail("SHELL_SESSION_INVALID", "shell session is missing, expired or invalid");
+    if (parsed.op === "query") {
+      session.expiresAt = now() + leaseMs;
+      return { ok: true, op: "query", result: await runQuery(parsed.query, parsed.shellId) };
+    }
     if (parsed.op === "invoke") {
       session.expiresAt = now() + leaseMs;
       return {
@@ -177,6 +192,21 @@ export async function startEngineControlServer(options: EngineControlServerOptio
     }
     sessions.delete(parsed.shellId);
     return { ok: true, op: "detach", detached: true };
+  };
+
+  const runQuery = async (query: WorkspaceQueryV1, shellId: string): Promise<WorkspaceQueryResultV1> => {
+    if (!options.query) return queryFailure(query, "UNSUPPORTED_OPERATION", "engine query is unavailable");
+    try {
+      const result = await options.query(query, { shellId });
+      if (!isWorkspaceQueryResultV1(result)
+        || result.method !== query.method
+        || (result.status === "ok" && result.view.caller !== query.input.caller)) {
+        return queryFailure(query, "INVALID_QUERY_RESULT", "engine query returned an invalid result");
+      }
+      return result;
+    } catch (error) {
+      return queryFailure(query, "QUERY_FAILED", error instanceof Error ? error.message : String(error));
+    }
   };
 
   const invokeOnce = async (
@@ -271,9 +301,13 @@ function parseRequest(raw: string): EngineControlRequestV1 | EngineControlRespon
   }
   if (request.op === "health") return request as EngineControlRequestV1;
   if (request.op === "attach" && "hello" in request) return request as EngineControlRequestV1;
-  if ((request.op === "touch" || request.op === "snapshot" || request.op === "detach" || request.op === "events" || request.op === "invoke")
+  if ((request.op === "touch" || request.op === "snapshot" || request.op === "detach" || request.op === "events" || request.op === "query" || request.op === "invoke")
     && "shellId" in request && typeof request.shellId === "string"
     && "sessionToken" in request && typeof request.sessionToken === "string") {
+    if (request.op === "query") {
+      if ("query" in request && isWorkspaceQueryV1(request.query)) return request as EngineControlRequestV1;
+      return fail("BAD_REQUEST", "unknown or incomplete engine control request");
+    }
     if (request.op === "invoke") {
       if ("operationId" in request && isEngineOperationId(request.operationId)
         && "command" in request && isWorkspaceCommandV1(request.command)) return request as EngineControlRequestV1;
@@ -369,6 +403,11 @@ function commandFailure(
 ): WorkspaceCommandResultV1 {
   const bounded = message.replace(/\s+/g, " ").trim().slice(0, 1_000) || "engine command failed";
   return { schemaVersion: 1, method: command.method, status: "error", code, message: bounded };
+}
+
+function queryFailure(query: WorkspaceQueryV1, code: string, message: string): WorkspaceQueryResultV1 {
+  const bounded = message.replace(/\s+/g, " ").trim().slice(0, 1_000) || "engine query failed";
+  return { schemaVersion: 1, method: query.method, status: "error", code, message: bounded };
 }
 
 function respond(socket: net.Socket, response: EngineControlResponseV1): void {

@@ -80,6 +80,10 @@ try {
   if (snapshot.engineInstanceId !== identity.instanceId || second.snapshot.engineInstanceId !== identity.instanceId) {
     throw new Error("shell attach/snapshot crossed engine identities");
   }
+  const probes = await first.query({ schemaVersion: 1, method: "probe.view", input: { caller: "dogfood-worker" } });
+  if (probes.status !== "ok" || probes.view.caller !== "dogfood-worker" || !probes.view.empty) {
+    throw new Error(`remote Probe query failed: ${JSON.stringify(probes)}`);
+  }
   const studio = new ClientWorkspaceStudioTarget(first, {
     extensionUri: {} as StudioDeps["extensionUri"],
     detectClis: async () => [],
@@ -135,6 +139,7 @@ try {
     engine: { pid: identity.pid, instanceId: identity.instanceId, bundleId: identity.bundleId },
     bridge: identity.bridge,
     snapshotSeq: snapshot.seq,
+    queries: [probes.method],
     commands: ["studio.submit", started.method, restarted.method, killed.method],
   }, null, 2)}\n`);
 } finally {

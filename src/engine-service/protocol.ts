@@ -170,12 +170,59 @@ export type WorkspaceCommandResultV1 =
       message: string;
     };
 
+export type WorkspaceQueryMethodV1 = "probe.view";
+
+export interface WorkspaceProbeViewRowV1 {
+  runId: string;
+  shortId: string;
+  runtime: string;
+  archetype: string;
+  caller: string;
+  status: "running" | "completed" | "failed";
+  reason: string;
+  ageLabel: string;
+  excerpt: string;
+}
+
+export interface WorkspaceProbeViewV1 {
+  rows: WorkspaceProbeViewRowV1[];
+  total: number;
+  running: number;
+  completed: number;
+  failed: number;
+  empty: boolean;
+  caller?: string;
+}
+
+/** Authenticated, side-effect-free reads do not enter the mutation operation registry. */
+export type WorkspaceQueryV1 = {
+  schemaVersion: 1;
+  method: "probe.view";
+  input: { caller?: string };
+};
+
+export type WorkspaceQueryResultV1 =
+  | {
+      schemaVersion: 1;
+      method: "probe.view";
+      status: "ok";
+      view: WorkspaceProbeViewV1;
+    }
+  | {
+      schemaVersion: 1;
+      method: WorkspaceQueryMethodV1;
+      status: "error";
+      code: string;
+      message: string;
+    };
+
 export type EngineControlRequestV1 =
   | { schemaVersion: 1; op: "health"; workspaceHash: string }
   | { schemaVersion: 1; op: "attach"; workspaceHash: string; hello: EngineShellHelloV1 }
   | { schemaVersion: 1; op: "touch"; workspaceHash: string; shellId: string; sessionToken: string }
   | { schemaVersion: 1; op: "snapshot"; workspaceHash: string; shellId: string; sessionToken: string }
   | { schemaVersion: 1; op: "events"; workspaceHash: string; shellId: string; sessionToken: string; afterSeq: number; limit: number }
+  | { schemaVersion: 1; op: "query"; workspaceHash: string; shellId: string; sessionToken: string; query: WorkspaceQueryV1 }
   | { schemaVersion: 1; op: "invoke"; workspaceHash: string; shellId: string; sessionToken: string; operationId: string; command: WorkspaceCommandV1 }
   | { schemaVersion: 1; op: "detach"; workspaceHash: string; shellId: string; sessionToken: string };
 
@@ -184,6 +231,7 @@ export type EngineControlResponseV1 =
   | { ok: true; op: "attach" | "touch"; session: EngineShellSessionV1 }
   | { ok: true; op: "snapshot"; snapshot: WorkspaceSnapshotEnvelopeV1 }
   | { ok: true; op: "events"; batch: WorkspaceEventBatchV1 }
+  | { ok: true; op: "query"; result: WorkspaceQueryResultV1 }
   | { ok: true; op: "invoke"; operationId: string; result: WorkspaceCommandResultV1 }
   | { ok: true; op: "detach"; detached: true }
   | { ok: false; code: string; message: string };
@@ -245,6 +293,69 @@ export function isWorkspaceCommandResultV1(value: unknown): value is WorkspaceCo
     && typeof value.message === "string"
     && value.message.length > 0
     && value.message.length <= 1_000;
+}
+
+export function isWorkspaceQueryV1(value: unknown): value is WorkspaceQueryV1 {
+  if (!isRecord(value)
+    || !hasOnlyKeys(value, ["schemaVersion", "method", "input"])
+    || value.schemaVersion !== 1
+    || value.method !== "probe.view"
+    || !isRecord(value.input)) return false;
+  const keys = Object.keys(value.input);
+  return keys.every((key) => key === "caller")
+    && (value.input.caller === undefined
+      || (typeof value.input.caller === "string" && AGENT_NAME_RE.test(value.input.caller)));
+}
+
+export function isWorkspaceQueryResultV1(value: unknown): value is WorkspaceQueryResultV1 {
+  if (!isRecord(value) || value.schemaVersion !== 1 || value.method !== "probe.view") return false;
+  if (value.status === "ok") {
+    return hasOnlyKeys(value, ["schemaVersion", "method", "status", "view"])
+      && isWorkspaceProbeViewV1(value.view);
+  }
+  return value.status === "error"
+    && hasOnlyKeys(value, ["schemaVersion", "method", "status", "code", "message"])
+    && typeof value.code === "string"
+    && /^[A-Z][A-Z0-9_]{1,63}$/.test(value.code)
+    && typeof value.message === "string"
+    && value.message.length > 0
+    && value.message.length <= 1_000;
+}
+
+/** Bound the daemon-owned Probe model before it crosses the 64 KiB control response boundary. */
+export function workspaceProbeViewSuccessV1(view: WorkspaceProbeViewV1): WorkspaceQueryResultV1 {
+  if (!Array.isArray(view.rows) || view.rows.length > 50) throw new Error("probe view exceeds its row limit");
+  const rows = view.rows.map((row) => {
+    if (row.status !== "running" && row.status !== "completed" && row.status !== "failed") {
+      throw new Error("probe view contains an invalid status");
+    }
+    return {
+      runId: queryText(row.runId, 1, 128, "probe runId"),
+      shortId: queryText(row.shortId, 1, 16, "probe shortId"),
+      runtime: queryText(row.runtime, 1, 64, "probe runtime"),
+      archetype: queryText(row.archetype, 1, 64, "probe archetype"),
+      caller: queryText(row.caller, 1, 128, "probe caller"),
+      status: row.status,
+      reason: queryText(row.reason, 1, 128, "probe reason"),
+      ageLabel: queryText(row.ageLabel, 1, 32, "probe ageLabel"),
+      excerpt: queryText(row.excerpt, 0, 240, "probe excerpt"),
+    } satisfies WorkspaceProbeViewRowV1;
+  });
+  const caller = view.caller === undefined ? undefined : queryAgentName(view.caller, "probe view caller");
+  return {
+    schemaVersion: 1,
+    method: "probe.view",
+    status: "ok",
+    view: {
+      rows,
+      total: rows.length,
+      running: rows.filter((row) => row.status === "running").length,
+      completed: rows.filter((row) => row.status === "completed").length,
+      failed: rows.filter((row) => row.status === "failed").length,
+      empty: rows.length === 0,
+      ...(caller !== undefined ? { caller } : {}),
+    },
+  };
 }
 
 export function workspaceCommandSuccessV1(
@@ -444,6 +555,7 @@ export function isEngineControlResponseV1(value: unknown): value is EngineContro
   if (value.op === "attach" || value.op === "touch") return isEngineShellSessionV1(value.session);
   if (value.op === "snapshot") return isWorkspaceSnapshotEnvelopeV1(value.snapshot);
   if (value.op === "events") return isWorkspaceEventBatchV1(value.batch);
+  if (value.op === "query") return isWorkspaceQueryResultV1(value.result);
   if (value.op === "invoke") {
     return isEngineOperationId(value.operationId)
       && isWorkspaceCommandResultV1(value.result);
@@ -487,4 +599,55 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function hasOnlyKeys(value: Record<string, unknown>, expected: string[]): boolean {
   const keys = Object.keys(value);
   return keys.length === expected.length && keys.every((key) => expected.includes(key));
+}
+
+function isWorkspaceProbeViewV1(value: unknown): value is WorkspaceProbeViewV1 {
+  if (!isRecord(value)) return false;
+  const expected = ["rows", "total", "running", "completed", "failed", "empty"];
+  if (value.caller !== undefined) expected.push("caller");
+  if (!hasOnlyKeys(value, expected)
+    || !Array.isArray(value.rows)
+    || value.rows.length > 50
+    || typeof value.empty !== "boolean"
+    || (value.caller !== undefined
+      && (typeof value.caller !== "string" || !AGENT_NAME_RE.test(value.caller)))) return false;
+  const counts = [value.total, value.running, value.completed, value.failed];
+  if (counts.some((count) => !Number.isSafeInteger(count) || (count as number) < 0 || (count as number) > 50)) return false;
+  if ((value.total as number) !== value.rows.length
+    || value.empty !== (value.rows.length === 0)
+    || (value.running as number) + (value.completed as number) + (value.failed as number) !== value.rows.length) return false;
+  let running = 0;
+  let completed = 0;
+  let failed = 0;
+  for (const row of value.rows) {
+    if (!isRecord(row)
+      || !hasOnlyKeys(row, ["runId", "shortId", "runtime", "archetype", "caller", "status", "reason", "ageLabel", "excerpt"])
+      || !queryTextValid(row.runId, 1, 128)
+      || !queryTextValid(row.shortId, 1, 16)
+      || !queryTextValid(row.runtime, 1, 64)
+      || !queryTextValid(row.archetype, 1, 64)
+      || !queryTextValid(row.caller, 1, 128)
+      || !queryTextValid(row.reason, 1, 128)
+      || !queryTextValid(row.ageLabel, 1, 32)
+      || !queryTextValid(row.excerpt, 0, 240)) return false;
+    if (row.status === "running") running++;
+    else if (row.status === "completed") completed++;
+    else if (row.status === "failed") failed++;
+    else return false;
+  }
+  return running === value.running && completed === value.completed && failed === value.failed;
+}
+
+function queryText(value: unknown, min: number, max: number, label: string): string {
+  if (!queryTextValid(value, min, max)) throw new Error(`${label} is invalid or exceeds its wire limit`);
+  return value;
+}
+
+function queryAgentName(value: unknown, label: string): string {
+  if (typeof value !== "string" || !AGENT_NAME_RE.test(value)) throw new Error(`${label} is invalid`);
+  return value;
+}
+
+function queryTextValid(value: unknown, min: number, max: number): value is string {
+  return typeof value === "string" && value.length >= min && value.length <= max;
 }
