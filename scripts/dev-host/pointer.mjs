@@ -114,6 +114,101 @@ function readShortSha(worktreeAbs) {
   }
 }
 
+
+const LAUNCH_CONFIG_NAME = "Tachyon: Dev Host";
+
+/** VS Code WSL often fails to open a *symlink* as the EDH folder (empty window / NO FOLDER OPENED).
+ *  point() therefore rewrites the Dev Host launch entry with absolute real paths. */
+export function writeAbsoluteLaunchConfig(repoRoot, worktreeAbs, workspaceAbs) {
+  const launchPath = path.join(repoRoot, ".vscode", "launch.json");
+  if (!fs.existsSync(launchPath)) {
+    // Tests and bare checkouts without .vscode — pointer still works for CLI status.
+    return null;
+  }
+  const raw = fs.readFileSync(launchPath, "utf8");
+  let doc;
+  try {
+    doc = JSON.parse(raw);
+  } catch (err) {
+    throw new Error(`${SELF}: ${launchPath} is not valid JSON: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  if (!Array.isArray(doc.configurations)) {
+    throw new Error(`${SELF}: ${launchPath} has no configurations array`);
+  }
+  const p = pathsOf(repoRoot);
+  const idx = doc.configurations.findIndex((c) => c && c.name === LAUNCH_CONFIG_NAME);
+  const cfg = {
+    name: LAUNCH_CONFIG_NAME,
+    type: "extensionHost",
+    request: "launch",
+    args: [
+      workspaceAbs,
+      `--extensionDevelopmentPath=${worktreeAbs}`,
+      `--user-data-dir=${p.userData}`,
+      `--extensions-dir=${p.extensions}`,
+      "--disable-workspace-trust",
+      "--use-inmemory-secretstorage",
+    ],
+    env: {
+      TMUX_TMPDIR: p.tmux,
+      XDG_CACHE_HOME: p.cache,
+    },
+    outFiles: [`${worktreeAbs}/dist/**/*.js`],
+    preLaunchTask: "tachyon: build-dev-host",
+    presentation: {
+      hidden: false,
+      group: "dogfood",
+      order: 1,
+    },
+  };
+  if (idx >= 0) doc.configurations[idx] = cfg;
+  else doc.configurations.unshift(cfg);
+  fs.mkdirSync(path.dirname(launchPath), { recursive: true });
+  fs.writeFileSync(launchPath, `${JSON.stringify(doc, null, 2)}\n`, "utf8");
+  return launchPath;
+}
+
+/** Restore portable template paths so machine-local absolute paths are not left committed. */
+export function restoreTemplateLaunchConfig(repoRoot) {
+  const launchPath = path.join(repoRoot, ".vscode", "launch.json");
+  if (!fs.existsSync(launchPath)) return { restored: false, reason: "no launch.json" };
+  let doc;
+  try {
+    doc = JSON.parse(fs.readFileSync(launchPath, "utf8"));
+  } catch {
+    return { restored: false, reason: "invalid launch.json" };
+  }
+  if (!Array.isArray(doc.configurations)) return { restored: false, reason: "no configurations" };
+  const idx = doc.configurations.findIndex((c) => c && c.name === LAUNCH_CONFIG_NAME);
+  if (idx < 0) return { restored: false, reason: "Dev Host entry missing" };
+  doc.configurations[idx] = {
+    name: LAUNCH_CONFIG_NAME,
+    type: "extensionHost",
+    request: "launch",
+    args: [
+      "${workspaceFolder}/.tachyon/dev-host/workspace",
+      "--extensionDevelopmentPath=${workspaceFolder}/.tachyon/dev-host/extension",
+      "--user-data-dir=${workspaceFolder}/.tachyon/dev-host/user-data",
+      "--extensions-dir=${workspaceFolder}/.tachyon/dev-host/extensions",
+      "--disable-workspace-trust",
+      "--use-inmemory-secretstorage",
+    ],
+    env: {
+      TMUX_TMPDIR: "${workspaceFolder}/.tachyon/dev-host/tmux",
+      XDG_CACHE_HOME: "${workspaceFolder}/.tachyon/dev-host/cache",
+    },
+    outFiles: ["${workspaceFolder}/.tachyon/dev-host/extension/dist/**/*.js"],
+    preLaunchTask: "tachyon: build-dev-host",
+    presentation: {
+      hidden: false,
+      group: "dogfood",
+      order: 1,
+    },
+  };
+  fs.writeFileSync(launchPath, `${JSON.stringify(doc, null, 2)}\n`, "utf8");
+  return { restored: true, path: launchPath };
+}
+
 /**
  * Point the stable Dev Host launcher at a worktree + fixture.
  * @returns {object} meta written to disk
@@ -165,6 +260,14 @@ export function point(opts) {
     ],
   };
   fs.writeFileSync(p.meta, `${JSON.stringify(meta, null, 2)}\n`, "utf8");
+  // WSL: Extension Host must open real directories, not symlink paths (empty window otherwise).
+  const launchPath = writeAbsoluteLaunchConfig(repoRoot, worktree, workspace);
+  if (launchPath) {
+    meta.launchJson = launchPath;
+    meta.launchNote =
+      "launch.json Dev Host entry now uses absolute paths for WSL; leave uncommitted or run point-clear to restore template";
+  }
+  fs.writeFileSync(p.meta, `${JSON.stringify(meta, null, 2)}\n`, "utf8");
   return meta;
 }
 
@@ -197,7 +300,8 @@ export function clear(repoRoot) {
   }
   // Only remove pointer + isolation dirs under .tachyon/dev-host — never the worktree/fixture targets
   fs.rmSync(p.root, { recursive: true, force: true });
-  return { cleared: true };
+  const launch = restoreTemplateLaunchConfig(repoRoot);
+  return { cleared: true, launch };
 }
 
 export function parseArgs(argv) {
@@ -231,12 +335,13 @@ export function main(argv = process.argv.slice(2)) {
 
   if (sub === "help" || sub === "-h" || sub === "--help") {
     console.log(`Usage:
-  npm run dogfood:dev-host -- dev-host point --worktree PATH --workspace PATH [--spec NNN] [--slug SLUG] [--owner NAME]
-  npm run dogfood:dev-host -- dev-host status
+  npm run dogfood:dev-host -- point --worktree PATH --workspace PATH [--spec NNN] [--slug SLUG] [--owner NAME]
+  npm run dogfood:dev-host -- point-status
   npm run dogfood:dev-host -- point-clear
 
 Stable F5 config name: "Tachyon: Dev Host"
 Pointer dir: <repo>/.tachyon/dev-host/
+On point: rewrites launch.json Dev Host entry with ABSOLUTE paths (WSL-safe; do not commit machine paths).
 `);
     return 0;
   }
@@ -259,6 +364,8 @@ Pointer dir: <repo>/.tachyon/dev-host/
     console.log(`  sha:       ${meta.sha}`);
     if (meta.spec) console.log(`  spec:      ${meta.spec}`);
     if (meta.slug) console.log(`  slug:      ${meta.slug}`);
+    console.log("");
+    console.log(`  launch.json: absolute paths written for WSL (do not commit)`);
     console.log("");
     console.log("Human next step:");
     for (const line of meta.howTo) console.log(`  • ${line}`);

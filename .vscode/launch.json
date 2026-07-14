@@ -35,7 +35,9 @@
         "${env:HOME}/tachyon-examples",
         "--extensionDevelopmentPath=${workspaceFolder}"
       ],
-      "outFiles": ["${workspaceFolder}/dist/**/*.js"],
+      "outFiles": [
+        "${workspaceFolder}/dist/**/*.js"
+      ],
       "preLaunchTask": "tachyon: build"
     },
     {
@@ -46,7 +48,9 @@
         "${env:HOME}/tachyon-examples/orbit.code-workspace",
         "--extensionDevelopmentPath=${workspaceFolder}"
       ],
-      "outFiles": ["${workspaceFolder}/dist/**/*.js"],
+      "outFiles": [
+        "${workspaceFolder}/dist/**/*.js"
+      ],
       "preLaunchTask": "tachyon: build"
     },
     {
@@ -57,7 +61,9 @@
         "${workspaceFolder}/test/fixtures/sample-workspace",
         "--extensionDevelopmentPath=${workspaceFolder}"
       ],
-      "outFiles": ["${workspaceFolder}/dist/**/*.js"],
+      "outFiles": [
+        "${workspaceFolder}/dist/**/*.js"
+      ],
       "preLaunchTask": "tachyon: build"
     }
   ]

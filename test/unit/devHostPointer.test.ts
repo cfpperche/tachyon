@@ -79,4 +79,33 @@ describe("dev-host pointer", () => {
     expect(fs.lstatSync(wtNm).isSymbolicLink()).toBe(true);
     expect(fs.realpathSync(wtNm)).toBe(path.resolve(repo, "node_modules"));
   });
+
+  it("writes absolute paths into launch.json Dev Host entry (WSL-safe)", () => {
+    const vscode = path.join(repo, ".vscode");
+    fs.mkdirSync(vscode, { recursive: true });
+    fs.writeFileSync(
+      path.join(vscode, "launch.json"),
+      JSON.stringify({
+        version: "0.2.0",
+        configurations: [{
+          name: "Tachyon: Dev Host",
+          type: "extensionHost",
+          request: "launch",
+          args: ["${workspaceFolder}/.tachyon/dev-host/workspace"],
+        }],
+      }, null, 2),
+    );
+    point({ repoRoot: repo, worktree, workspace: fixture, spec: "381" });
+    const launch = JSON.parse(fs.readFileSync(path.join(vscode, "launch.json"), "utf8"));
+    const cfg = launch.configurations.find((c: { name: string }) => c.name === "Tachyon: Dev Host");
+    expect(cfg.args[0]).toBe(path.resolve(fixture));
+    expect(cfg.args[1]).toContain(path.resolve(worktree));
+    expect(cfg.args[1].startsWith("--extensionDevelopmentPath=")).toBe(true);
+    const cleared = clear(repo);
+    expect(cleared.cleared).toBe(true);
+    const restored = JSON.parse(fs.readFileSync(path.join(vscode, "launch.json"), "utf8"));
+    const cfg2 = restored.configurations.find((c: { name: string }) => c.name === "Tachyon: Dev Host");
+    expect(cfg2.args[0]).toContain("${workspaceFolder}");
+  });
+
 });
