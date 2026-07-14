@@ -75,8 +75,11 @@ export class ActivityLogWriter {
 
   /** Record a Tachyon lifecycle action (spawn/restart/resume/fork). Set BEFORE the async action; `ready=false`
    *  until `arm()` confirms the action settled, so a poll DURING the action can't act prematurely. `ready=true`
-   *  is used for a fork (buffered + applied after the action already returned). */
+   *  is used for a fork (buffered + applied after the action already returned).
+   *  t-9f2641 MINOR fix — a genuine Tachyon action already in flight (not yet armed) must win the boundary
+   *  label over a same-tick "rotation-follow" decision; skip the overwrite rather than clobber it. */
   noteLifecycle(action: string, ready = false): void {
+    if (action === "rotation-follow" && this.pendingLifecycle && !this.pendingLifecycle.ready) return;
     this.pendingLifecycle = { action, ready, polls: 0 };
   }
 

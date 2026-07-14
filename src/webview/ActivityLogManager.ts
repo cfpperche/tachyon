@@ -1,7 +1,16 @@
+import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import type { Workspace } from "../workspace/Workspace.js";
 import { ActivityLogWriter, type SessionLoc } from "../activity/logWriter.js";
+import { appendOwnerRow, readSessionOwners, resolveRotationFollow, sessionOwnersFile } from "../activity/sessionOwners.js";
 import { isResumable } from "../resume/SessionLedger.js";
+import { encodeClaudeCwd } from "../resume/adapters.js";
+
+/** t-9f2641 — a resolved claude transcript that hasn't grown for this long is a candidate for rotation-follow
+ *  (a mid-run rotation left it dead while the process kept running). Matches the incident's "no growth for
+ *  >=60s" threshold; short of this, a merely-quiet agent must not be mistaken for a dead transcript. */
+const ROTATION_DEAD_THRESHOLD_MS = 60_000;
 
 /**
  * spec 239 inc 3b — runs ONE always-on durable-log writer per resumable agent, independent of any Activity
@@ -15,8 +24,24 @@ import { isResumable } from "../resume/SessionLedger.js";
  * `resolveEveryMs`) can be missed — the cached location keeps ingesting the old session. Real /clear–/resume
  * flows are seconds+ apart, so this is an accepted boundary, not a correctness hole for normal use.
  */
+interface DeadTranscriptTrack {
+  path: string;
+  lastMtimeMs: number;
+  /** wall-clock time the tracked path last showed growth (or was first observed) — the stall clock. */
+  sinceMs: number;
+}
+
+interface WriterEntry {
+  writer: ActivityLogWriter;
+  loc?: SessionLoc;
+  resolvedAt: number;
+  /** t-9f2641 — growth tracking for the currently-resolved transcript, so a mid-run rotation can be detected
+   *  without a single stat guessing at "dead" (a session can legitimately go quiet for a while). */
+  deadTrack?: DeadTranscriptTrack;
+}
+
 export class ActivityLogManager {
-  private readonly writers = new Map<string, { writer: ActivityLogWriter; loc?: SessionLoc; resolvedAt: number }>();
+  private readonly writers = new Map<string, WriterEntry>();
   private readonly pendingNotes = new Map<string, string>(); // lifecycle actions for writers not created yet (fork)
   private timer?: ReturnType<typeof setInterval>;
   private ticking = false;
@@ -26,6 +51,7 @@ export class ActivityLogManager {
     private readonly tickMs = 2000,
     private readonly resolveEveryMs = 3000,
     private readonly onAppended?: (workspaceHash: string, agent: string, count: number) => void,
+    private readonly now: () => number = () => Date.now(),
   ) {}
 
   start(): void {
@@ -68,7 +94,7 @@ export class ActivityLogManager {
     if (this.ticking) return; // never overlap (a slow resolve must not stack ticks)
     this.ticking = true;
     try {
-      const now = Date.now();
+      const now = this.now();
       const live = new Set<string>();
       for (const ws of this.getWorkspaces()) {
         const dir = path.join(ws.workspaceRoot, ".tachyon", "activity");
@@ -95,6 +121,26 @@ export class ActivityLogManager {
                 ? { path: loc.path, sessionId: sessionIdFromTranscriptPath(loc.path, loc.runtime), runtime: loc.runtime }
                 : undefined;
             } catch { entry.loc = undefined; } // gap, never guess
+
+            // t-9f2641 — a harness-driven rotation can mint a new claude transcript with no ownership row
+            // (the hook that would have recorded it never fired), so `transcriptPathOf` keeps re-resolving to
+            // the SAME dead file forever. Track growth of whatever is currently resolved; once it has stalled
+            // past the incident threshold, ask the ownership ledger for an unambiguous newer sibling — never
+            // a disk guess — and follow it.
+            if (entry.loc && entry.loc.runtime === "claude") {
+              entry.deadTrack = updateDeadTrack(entry.deadTrack, entry.loc.path, now);
+              if (now - entry.deadTrack.sinceMs >= ROTATION_DEAD_THRESHOLD_MS) {
+                const liveDirs = liveClaudeTranscriptDirs(ws.ledger.all(), name);
+                const follow = followRotation(ws.workspaceRoot, name, rec.cwd, entry.loc.path, liveDirs, entry.deadTrack.lastMtimeMs);
+                if (follow) {
+                  entry.loc = { path: follow.transcriptPath, sessionId: follow.sessionId, runtime: entry.loc.runtime };
+                  entry.deadTrack = undefined;
+                  entry.writer.noteLifecycle("rotation-follow", true); // decided now, not an in-flight Tachyon action
+                }
+              }
+            } else {
+              entry.deadTrack = undefined;
+            }
           }
           // pin p-4dadd3: a tick snapshots ledger.all() at the top, but the awaits below (transcriptPathOf for
           // any agent) yield — a dismiss that removes the row AND deletes the log can land mid-tick. Re-check
@@ -126,4 +172,66 @@ export function sessionIdFromTranscriptPath(transcriptPath: string, runtime?: st
     return path.basename(path.dirname(transcriptPath));
   }
   return base;
+}
+
+/** t-9f2641 — advance (or reset) the stall clock for the currently-resolved transcript. A path change or a
+ *  growing mtime restarts the clock; anything else (same path, no growth) leaves `sinceMs` untouched so the
+ *  stall duration keeps accumulating across resolve cycles. */
+function updateDeadTrack(prev: DeadTranscriptTrack | undefined, filePath: string, now: number): DeadTranscriptTrack {
+  let mtime: number | undefined;
+  try { mtime = fs.statSync(filePath).mtimeMs; } catch { mtime = undefined; }
+  if (!prev || prev.path !== filePath) return { path: filePath, lastMtimeMs: mtime ?? now, sinceMs: now };
+  if (mtime !== undefined && mtime > prev.lastMtimeMs) return { path: filePath, lastMtimeMs: mtime, sinceMs: now };
+  return prev;
+}
+
+/** t-9f2641 — the resolved transcript has shown no growth for `ROTATION_DEAD_THRESHOLD_MS`: consult the
+ *  ownership ledger for an unambiguous newer sibling (`resolveRotationFollow` never guesses) and, on a hit,
+ *  mint a durable "rotation-follow" owner row so the decision is auditable and future resolves (via
+ *  Workspace's `ownedSession`, which reads this same file) land on the new session directly.
+ *  `liveDirs` and `deadMtimeBaseline` close review gaps found on the first delivery: `liveDirs` is the
+ *  TOCTOU fix (a currently-declared sibling's dir counts as ambiguous even before its own owner row exists);
+ *  `deadMtimeBaseline` lets the resolver evidence "newer than" even once the dead file itself is pruned. */
+function followRotation(
+  workspaceRoot: string,
+  agent: string,
+  cwd: string,
+  deadTranscriptPath: string,
+  liveDirs: string[],
+  deadMtimeBaseline: number,
+): { transcriptPath: string; sessionId: string } | undefined {
+  const ownersFile = sessionOwnersFile(workspaceRoot);
+  const follow = resolveRotationFollow(readSessionOwners(ownersFile), agent, deadTranscriptPath, {
+    liveTranscriptDirs: liveDirs,
+    deadMtimeBaseline,
+  });
+  if (!follow) return undefined;
+  appendOwnerRow(ownersFile, {
+    agent,
+    sessionId: follow.sessionId,
+    transcriptPath: follow.transcriptPath,
+    cwd,
+    source: "rotation-follow",
+    ts: new Date().toISOString(),
+  });
+  return follow;
+}
+
+/** t-9f2641 MAJOR fix — the transcript directory a live (currently-declared) claude agent's OWN session
+ *  would land in, computed the same way claude/Tachyon derive it (`${configHome}/projects/${encodeClaudeCwd(cwd)}`),
+ *  defaulting to `~/.claude` when the ledger row has no persisted config home yet. `ws.ledger.all()` is a
+ *  synchronous in-memory snapshot — no I/O, race-free within the same tick — so this closes the TOCTOU where
+ *  a sibling's brand-new first session appears on disk before its SessionStart hook records its owner row. */
+function liveClaudeTranscriptDirs(
+  ledgerEntries: Iterable<[string, { resume?: { runtime?: string; configHome?: string }; cwd: string }]>,
+  excludeAgent: string,
+): string[] {
+  const dirs: string[] = [];
+  for (const [otherAgent, rec] of ledgerEntries) {
+    if (otherAgent === excludeAgent) continue;
+    if (rec.resume?.runtime !== "claude") continue;
+    const configHome = rec.resume.configHome ?? path.join(os.homedir(), ".claude");
+    dirs.push(path.join(configHome, "projects", encodeClaudeCwd(path.resolve(rec.cwd))));
+  }
+  return dirs;
 }

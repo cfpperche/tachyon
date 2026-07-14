@@ -170,6 +170,40 @@ describe("ActivityLogWriter (spec 239 inc 3b)", () => {
     expect(reasons).toEqual(["restarted"]);
   });
 
+  it("t-9f2641 MINOR fix: a pending not-yet-armed Tachyon action is not clobbered by a same-tick 'rotation-follow' note", () => {
+    const root = freshRoot();
+    const adir = path.join(root, "activity");
+    const a = path.join(root, "A.jsonl");
+    const b = path.join(root, "B.jsonl");
+    fs.writeFileSync(a, `${rec("a1", "A", "a")}\n`);
+    fs.writeFileSync(b, `${rec("b1", "B", "b")}\n`);
+    const w = new ActivityLogWriter(adir, "claude", clock);
+    w.poll(loc(a, "A"));
+    w.noteLifecycle("restarted"); // in-flight Tachyon action, NOT armed yet
+    w.noteLifecycle("rotation-follow", true); // must NOT clobber the in-flight "restarted" note
+    w.arm(); // the ORIGINAL ("restarted") action settles
+    w.poll(loc(b, "B")); // uuid change consumes the pending action
+    const reasons = new ActivityLog(adir, "claude").readTail(50)
+      .filter((e) => e.type === "session.boundary").map((e) => (e.payload as { reason?: string }).reason);
+    expect(reasons).toEqual(["restarted"]); // NOT "rotation-follow"
+  });
+
+  it("rotation-follow labels the boundary normally when no other lifecycle action is pending", () => {
+    const root = freshRoot();
+    const adir = path.join(root, "activity");
+    const a = path.join(root, "A.jsonl");
+    const b = path.join(root, "B.jsonl");
+    fs.writeFileSync(a, `${rec("a1", "A", "a")}\n`);
+    fs.writeFileSync(b, `${rec("b1", "B", "b")}\n`);
+    const w = new ActivityLogWriter(adir, "claude", clock);
+    w.poll(loc(a, "A"));
+    w.noteLifecycle("rotation-follow", true); // decided now, not in-flight — nothing to clobber
+    w.poll(loc(b, "B"));
+    const reasons = new ActivityLog(adir, "claude").readTail(50)
+      .filter((e) => e.type === "session.boundary").map((e) => (e.payload as { reason?: string }).reason);
+    expect(reasons).toEqual(["rotation-follow"]);
+  });
+
   it("a fork marks its own (fresh) log with a 'forked' boundary at the start", () => {
     const root = freshRoot();
     const adir = path.join(root, "activity");

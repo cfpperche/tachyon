@@ -273,8 +273,8 @@ describe("RuntimeOpsSnapshotService — spec 378 observed model latch", () => {
     }
   });
 
-  it("a process-PRESERVING boundary (in-TUI /clear = 'new', or 'resumed') keeps the observation but flags it stale", async () => {
-    for (const reason of ["new", "resumed", "resume"]) {
+  it("a process-PRESERVING boundary (in-TUI /clear = 'new', 'resumed', or a t-9f2641 rotation-follow) keeps the observation but flags it stale", async () => {
+    for (const reason of ["new", "resumed", "resume", "rotation-follow"]) {
       const service = new RuntimeOpsSnapshotService(() => [workspace("/workspace", "ws", "app", [["worker", record("codex")]])], {
         detect: async () => [],
         activityLog: () => staticActivityLog([
