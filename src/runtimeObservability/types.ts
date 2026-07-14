@@ -81,6 +81,7 @@ export type ProviderUnavailableReasonV1 =
   | "unauthenticated"
   | "timeout"
   | "cancelled"
+  | "not-observed"
   | "provider-error"
   | "invalid-payload"
   | "stale-expired";

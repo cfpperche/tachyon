@@ -79,6 +79,23 @@ documented duration up to one day as `session`, over one day through fourteen da
 `tertiary`; only a missing duration falls back to the historical primary/session and secondary/weekly slots. If two
 windows collapse into the same bounded semantic lane, the response fails closed instead of inventing a label.
 
+The Claude adapter's first source is passive `cli` telemetry from Claude Code's documented status-line JSON contract.
+For an explicitly granted source, a narrow reader supplies one bounded captured JSON value to the adapter; the adapter
+projects only `rate_limits.five_hour` and `rate_limits.seven_day` percentages/reset epochs and discards session ids,
+paths, model/context data and every additive field. It does not launch an inference turn: Anthropic documents status-line
+execution as local and token-free. A missing capture falls back only to the documented fixed command
+`claude auth status --json`, used to distinguish unauthenticated from authenticated-but-not-yet-observed. It never
+supplies quota and its identity/organization fields are discarded without projection. Missing passive telemetry becomes
+a typed `not-observed` unavailable state rather than zero or a fabricated limit.
+
+T2b deliberately stops at this bounded adapter/reader boundary. T3 owns transport from already-running Tachyon Claude
+sessions and must compose non-destructively with any user status line; T2b neither writes user/project settings nor
+overrides an existing `statusLine`. A future native SDK rate-limit event may be another pre-authorized strategy when the
+existing runtime already emits it, but Tachyon must not spawn `claude -p` merely to observe quota. Direct subscription
+OAuth/credential-file HTTP is rejected even as an automatic fallback: it expands the credential boundary and Anthropic's
+published authentication terms do not permit third-party products to route requests through Claude plan OAuth
+credentials. Interactive `/usage`, cookies, Keychain, UI scraping and unconsented cross-source fallback remain excluded.
+
 Keep a reference manifest containing the CodexBar repository/tag/commit used for behavioral comparison, fixture
 provenance and any MIT attribution required by actually derived code. CodexBar source, binaries and Swift build inputs
 must not enter the Tachyon product or release graph.
@@ -182,3 +199,7 @@ the current dense operational table. Preview fixtures plus real installed VSIX e
   `Sources/CodexBarCore`, `Sources/CodexBarCLI`, and its architecture, provider, CLI, refresh, license, CI, and release
   documentation inspected 2026-07-14.
 - CodexBar MIT license — modification/distribution permitted with copyright and license notice preservation.
+- Installed Claude Code `2.1.209` help plus Anthropic's official status-line, CLI/authentication, error, and legal
+  documentation inspected 2026-07-14: `https://code.claude.com/docs/en/statusline`,
+  `https://code.claude.com/docs/en/cli-usage`, `https://code.claude.com/docs/en/errors`, and
+  `https://code.claude.com/docs/en/legal-and-compliance`.

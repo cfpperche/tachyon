@@ -1,0 +1,143 @@
+{
+  "schemaVersion": 1,
+  "synthetic": true,
+  "provenance": {
+    "cliVersion": "2.1.209",
+    "statusLineDocumentation": "https://code.claude.com/docs/en/statusline",
+    "cliDocumentation": "https://code.claude.com/docs/en/cli-usage",
+    "legalDocumentation": "https://code.claude.com/docs/en/legal-and-compliance",
+    "sourceFields": [
+      "rate_limits.five_hour.used_percentage",
+      "rate_limits.five_hour.resets_at",
+      "rate_limits.seven_day.used_percentage",
+      "rate_limits.seven_day.resets_at"
+    ],
+    "codexBarReference": {
+      "tag": "v0.43.0",
+      "commit": "5a0cbc07119ac04d998e2fd5267442ed9358fff0"
+    },
+    "derivedCode": false
+  },
+  "auth": {
+    "loggedIn": {
+      "loggedIn": true,
+      "authMethod": "synthetic-subscription",
+      "apiProvider": "synthetic-first-party",
+      "email": "fixture@example.invalid",
+      "orgId": "MUST_NOT_CROSS_ORG_ID",
+      "orgName": "MUST_NOT_CROSS_ORG_NAME",
+      "subscriptionType": "synthetic-pro"
+    },
+    "loggedOut": {
+      "loggedIn": false,
+      "authMethod": "none",
+      "email": "MUST_NOT_CROSS_LOGGED_OUT_IDENTITY"
+    },
+    "malformed": {
+      "loggedIn": "yes",
+      "email": "MUST_NOT_CROSS_MALFORMED_AUTH"
+    }
+  },
+  "transport": {
+    "providerError": {
+      "exitCode": 2,
+      "stdout": "",
+      "stderr": "MUST_NOT_CROSS_AUTH_ERROR at /home/private/.claude/.credentials.json"
+    },
+    "timeout": {
+      "responses": []
+    }
+  },
+  "cases": {
+    "success": {
+      "observedAt": "2026-07-14T20:30:00.000Z",
+      "payload": {
+        "version": "2.1.209",
+        "session_id": "MUST_NOT_CROSS_SESSION_ID",
+        "cwd": "/home/private/project",
+        "transcript_path": "/home/private/.claude/projects/secret/transcript.jsonl",
+        "model": {
+          "id": "MUST_NOT_CROSS_MODEL_ID",
+          "display_name": "MUST_NOT_CROSS_MODEL_NAME"
+        },
+        "context_window": {
+          "used_percentage": 42,
+          "future_token_field": "MUST_NOT_CROSS_CONTEXT_FIELD"
+        },
+        "rate_limits": {
+          "five_hour": {
+            "used_percentage": 31,
+            "resets_at": 1784077200,
+            "future_window_field": "MUST_NOT_CROSS_WINDOW_FIELD"
+          },
+          "seven_day": {
+            "used_percentage": 68,
+            "resets_at": 1784682000
+          },
+          "future_limit": {
+            "used_percentage": 99
+          }
+        },
+        "future_top_level": {
+          "authorization": "MUST_NOT_CROSS_AUTHORIZATION"
+        }
+      }
+    },
+    "partialSevenDayOnly": {
+      "observedAt": "2026-07-14T20:31:00.000Z",
+      "payload": {
+        "rate_limits": {
+          "five_hour": null,
+          "seven_day": {
+            "used_percentage": 54,
+            "resets_at": 1784682000
+          }
+        }
+      }
+    },
+    "missingRateLimits": {
+      "observedAt": "2026-07-14T20:32:00.000Z",
+      "payload": {
+        "version": "2.1.209",
+        "session_id": "MUST_NOT_CROSS_NO_SAMPLE_SESSION"
+      }
+    },
+    "emptyRateLimits": {
+      "observedAt": "2026-07-14T20:33:00.000Z",
+      "payload": {
+        "rate_limits": {
+          "five_hour": null,
+          "seven_day": null
+        }
+      }
+    },
+    "malformedPercent": {
+      "observedAt": "2026-07-14T20:34:00.000Z",
+      "payload": {
+        "rate_limits": {
+          "five_hour": {
+            "used_percentage": "31",
+            "resets_at": 1784077200
+          }
+        }
+      }
+    },
+    "malformedReset": {
+      "observedAt": "2026-07-14T20:35:00.000Z",
+      "payload": {
+        "rate_limits": {
+          "seven_day": {
+            "used_percentage": 68,
+            "resets_at": 253402300800
+          }
+        }
+      }
+    },
+    "malformedRateLimits": {
+      "observedAt": "2026-07-14T20:36:00.000Z",
+      "payload": {
+        "rate_limits": "MUST_NOT_CROSS_MALFORMED_RATE_LIMITS"
+      }
+    }
+  }
+}
