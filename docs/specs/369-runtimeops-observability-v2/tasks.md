@@ -5,21 +5,21 @@ implementation until its ADR is accepted._
 
 ## T0 — vendor-strategy spike
 
-- [ ] Record the exact CodexBar release/tag/commit, license, dependency lock, release artifact hashes, toolchain, and
+- [x] Record the exact CodexBar release/tag/commit, license, dependency lock, release artifact hashes, toolchain, and
   supported platform matrix used by the spike.
-- [ ] Build or execute the headless core/CLI on Linux x86_64 and prove the required macOS/Linux architecture path from
+- [x] Build or execute the headless core/CLI on Linux x86_64 and prove the required macOS/Linux architecture path from
   release artifacts or CI, without importing any UI target.
-- [ ] Capture redacted Codex and Claude fixtures for success, unavailable, auth failure, timeout, partial data, stale or
+- [x] Capture redacted Codex and Claude fixtures for success, unavailable, auth failure, timeout, partial data, stale or
   last-good behavior, and local cost output where available.
-- [ ] Measure one-shot and any viable persistent mode: cold/warm latency, RSS, artifact size, process count, timeout,
+- [x] Measure one-shot and any viable persistent mode: cold/warm latency, RSS, artifact size, process count, timeout,
   cancellation, and behavior when the provider CLI is already active.
-- [ ] Map the minimal transitive source/dependency closure for descriptors, strategies, fetchers, cache, confidence,
+- [x] Map the minimal transitive source/dependency closure for descriptors, strategies, fetchers, cache, confidence,
   quota windows, and cost; identify macOS-only and sensitive host APIs.
-- [ ] Prototype a Tachyon-owned `CollectorEnvelopeV1` wrapper around upstream output and prove additive-field tolerance,
+- [x] Prototype a Tachyon-owned `CollectorEnvelopeV1` wrapper around upstream output and prove additive-field tolerance,
   critical-field fail-closed behavior, numeric/timestamp bounds, and engine/schema version reporting.
-- [ ] Audit the existing provisioned-tool launcher against host-initiated periodic reads; document whether it is
+- [x] Audit the existing provisioned-tool launcher against host-initiated periodic reads; document whether it is
   sufficient or a new narrow plugin data-source port is required.
-- [ ] Append an ADR to `notes.md` recommending headless Swift fork, extracted Swift subset, or selective TypeScript
+- [x] Append an ADR to `notes.md` recommending headless Swift fork, extracted Swift subset, or selective TypeScript
   port, including repository layout, upstream-sync workflow, rejected alternatives, and estimated maintenance cost.
 - [ ] Obtain maintainer ratification of the ADR and whether local Codex/Claude cost totals join the first vertical slice.
 
@@ -82,7 +82,7 @@ implementation until its ADR is accepted._
   provider response, terminal line, or unbounded vendor text.
 - [ ] Installed-host dogfood proves Runtime Ops remains Tachyon-owned and usable when provider collection fails.
 
-**Verify:** `npm run verify:full`
+**Verify:** `npm run verify:full:quiet`
 
 ## Dogfood
 

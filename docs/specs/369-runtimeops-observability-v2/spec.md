@@ -27,7 +27,7 @@ source configuration.
 
 ## Acceptance criteria
 
-- [ ] **Scenario: Compare vendor strategies before choosing an implementation**
+- [x] **Scenario: Compare vendor strategies before choosing an implementation**
   - **Given** CodexBar's current released core/CLI and Tachyon's plugin/runtime boundaries
   - **When** the vendor-strategy spike exercises Codex and Claude collection on supported hosts
   - **Then** it records reproducible build/runtime evidence, source closure, binary footprint, cold/warm latency,

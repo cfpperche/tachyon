@@ -16,8 +16,9 @@ The implementation starts with a feasibility gate rather than assuming a source 
 
 ### T0 — vendor-strategy spike
 
-Use the latest stable CodexBar release available when the spike starts (`v0.41.0` is the 2026-07-10 baseline) and
-record its exact commit. Build or consume the released CLI on Linux x86_64 first, then prove the supported macOS/Linux
+Use the latest stable CodexBar release available when the spike starts (`v0.43.0`, commit
+`5a0cbc07119ac04d998e2fd5267442ed9358fff0`, superseded the 2026-07-10 `v0.41.0` baseline) and record its exact
+commit. Build or consume the released CLI on Linux x86_64 first, then prove the supported macOS/Linux
 matrix needed by Tachyon. Exercise only Codex and Claude, with fixture or already-authorized local sources; do not add
 new secrets merely to complete the spike.
 
@@ -164,6 +165,7 @@ the current dense operational table. Preview fixtures plus real installed VSIX e
   cumulative/delta usage semantics.
 - `src/plugins/{toolPlan,toolTransaction,consentViewModel,dataLauncher}.ts` and specs 265/276/285/287 — consented,
   checksum-pinned tool distribution and external-capability boundaries.
-- CodexBar `v0.41.0` repository, `Package.swift`, `Sources/CodexBarCore`, `Sources/CodexBarCLI`, and its architecture,
-  provider, CLI, refresh, license, CI, and release documentation inspected 2026-07-10.
+- CodexBar `v0.43.0` repository at `5a0cbc07119ac04d998e2fd5267442ed9358fff0`, `Package.swift`,
+  `Sources/CodexBarCore`, `Sources/CodexBarCLI`, and its architecture, provider, CLI, refresh, license, CI, and release
+  documentation inspected 2026-07-14.
 - CodexBar MIT license — modification/distribution permitted with copyright and license notice preservation.
