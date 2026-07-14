@@ -5,7 +5,7 @@ import type { ManagedEntryInfo } from "../agents/AgentManager.js";
 import { runtimeOf } from "../resume/adapters.js";
 import { isResumable, type SessionRecord } from "../resume/SessionLedger.js";
 import { buildRuntimeUsageSource, runtimeUsageSemantics, type RuntimeUsageUpdate } from "../runtimeUsage/model.js";
-import { modelFromCommand } from "../sidebar/agentModel.js";
+import { modelFromCommand, resolveModelFact, type ObservedModelInput } from "../sidebar/agentModel.js";
 import { detectInstalledClis } from "../webview/cliDetect.js";
 import { buildRuntimeOpsSnapshot, type RuntimeOpsAgentInput } from "./model.js";
 import type { RuntimeOpsSnapshotV1 } from "./types.js";
@@ -50,11 +50,24 @@ interface ActivityProjection {
   lastActivity?: string;
   runtimeVersion?: string;
   versionObservedAt?: string;
+  /** spec 378 — the latched observed model fact, advanced in LOG APPEND ORDER (not `observedAt` compare —
+   *  a host-stamped boundary could out-stamp and suppress a newer real observation). */
+  model?: string;
+  modelEffort?: string;
+  modelObservedAt?: string;
+  /** true after a process-preserving session boundary until a fresh observation re-latches. */
+  modelStale: boolean;
   summedUsage: RuntimeUsageUpdate;
   latestCumulativeUsage?: RuntimeUsageUpdate;
 }
 
 const ACTIVITY_TAIL_RECORDS = 5000;
+
+/** logWriter lifecycle labels that ROTATE the runtime process (spec 378 plan: "restarted/started/fork") — the
+ *  new process provably reverted to its spawn command, so a demoted observed model must not survive the
+ *  boundary. Process-PRESERVING boundaries (unlabeled "new" = in-TUI `/clear`, inferred "resume", or the
+ *  Tachyon-labeled "resumed") instead retain the observation but flag it `stale` until re-observed. */
+const PROCESS_ROTATING_BOUNDARY_REASONS = new Set(["restarted", "started", "forked"]);
 
 export class RuntimeOpsSnapshotService {
   private detection?: { value: string[]; expiresAt: number };
@@ -109,6 +122,10 @@ export class RuntimeOpsSnapshotService {
         activeActivityKeys.add(key);
         const activity = this.activityProjection(key, workspace.workspaceRoot, agentName);
         const usageSemantics = runtimeUsageSemantics(runtime);
+        const observed: ObservedModelInput | undefined = activity.model
+          ? { id: activity.model, effort: activity.modelEffort, observedAt: activity.modelObservedAt, stale: activity.modelStale }
+          : undefined;
+        const modelFact = resolveModelFact(definition?.cmd, observed);
         agents.push({
           workspaceKey: workspace.wsHash,
           workspaceLabel: labels.get(workspace.wsHash) ?? workspace.folderName,
@@ -123,6 +140,16 @@ export class RuntimeOpsSnapshotService {
           status: lifecycleStatus(entry),
           attention: projectAttention(workspace.attentionOf?.(agentName)),
           model: projectModel(definition?.cmd),
+          modelObserved: modelFact?.source === "observed"
+            ? {
+                state: "available",
+                value: modelFact.label,
+                effort: observed?.effort,
+                observedAt: modelFact.observedAt,
+                stale: modelFact.stale,
+              }
+            : { state: "unavailable" },
+          modelDivergence: modelFact?.divergence === true,
           resume: await projectResume(agentName, record, entryByName.get(agentName), workspace.manager),
           bridge: workspace.runtimeOpsBridgeHealth?.(agentName),
         });
@@ -142,6 +169,7 @@ export class RuntimeOpsSnapshotService {
         offset: tail.offset,
         partial: tail.partial,
         summedUsage: {},
+        modelStale: false,
       };
       this.ingest(projection, tail.events);
       this.activity.set(key, projection);
@@ -155,6 +183,10 @@ export class RuntimeOpsSnapshotService {
       projection.lastActivity = undefined;
       projection.runtimeVersion = undefined;
       projection.versionObservedAt = undefined;
+      projection.model = undefined;
+      projection.modelEffort = undefined;
+      projection.modelObservedAt = undefined;
+      projection.modelStale = false;
       projection.summedUsage = {};
       projection.latestCumulativeUsage = undefined;
       this.ingest(projection, tail.events);
@@ -172,15 +204,58 @@ export class RuntimeOpsSnapshotService {
     for (const event of events) {
       const observedAt = event.timestamp ?? event.loggedAt;
       if (observedAt && (!projection.lastActivity || observedAt > projection.lastActivity)) projection.lastActivity = observedAt;
-      if (event.runtimeVersion && (!projection.versionObservedAt || observedAt >= projection.versionObservedAt)) {
-        projection.runtimeVersion = event.runtimeVersion;
+      // grok/opencode no longer stamp `runtimeVersion` (spec 378 un-overload) — fall back to their `model`
+      // field so the RuntimeOps version column keeps working via the new field.
+      const versionSource = event.runtimeVersion
+        ?? ((event.source.runtime === "grok" || event.source.runtime === "opencode") ? event.model : undefined);
+      if (versionSource && (!projection.versionObservedAt || observedAt >= projection.versionObservedAt)) {
+        projection.runtimeVersion = versionSource;
         projection.versionObservedAt = observedAt;
+      }
+      if (event.type === "session.boundary") {
+        const reason = (event.payload as { reason?: string } | undefined)?.reason;
+        if (reason && PROCESS_ROTATING_BOUNDARY_REASONS.has(reason)) {
+          // The new process provably reverted to its spawn command — the prior observation cannot be trusted.
+          projection.model = undefined;
+          projection.modelEffort = undefined;
+          projection.modelObservedAt = undefined;
+          projection.modelStale = false;
+        } else if (projection.model) {
+          // Process-preserving boundary (in-TUI /clear, resume) — keep the observation, flag it stale.
+          projection.modelStale = true;
+        }
+      }
+      // Latched in LOG APPEND ORDER (not an `observedAt` compare — a host-stamped boundary above could
+      // out-stamp and suppress a newer real observation that follows it in the same batch).
+      if (event.model) {
+        projection.model = event.model;
+        projection.modelEffort = event.effort;
+        projection.modelObservedAt = observedAt;
+        projection.modelStale = false;
       }
       if (event.type !== "usage.updated") continue;
       const update = { ...(event.payload as Omit<RuntimeUsageUpdate, "timestamp">), timestamp: observedAt };
       projection.latestCumulativeUsage = update;
       projection.summedUsage = sumUsage(projection.summedUsage, update);
     }
+  }
+
+  /**
+   * Cheap, VIEW-INDEPENDENT accessor (spec 378): advances this agent's shared activity projection itself —
+   * no CLI detection, no whole-fleet snapshot — and returns its latched observed model fact. Used by both
+   * `snapshot()` and the sidebar's live model-provenance gather, so a model update reaches the sidebar even
+   * when the RuntimeOps webview is never opened (`RuntimeOpsView.refresh()` no-ops while hidden).
+   */
+  observedModelFor(workspaceRoot: string, wsHash: string, agentName: string): ObservedModelInput | undefined {
+    const key = `${wsHash}::${agentName}`;
+    const projection = this.activityProjection(key, workspaceRoot, agentName);
+    if (!projection.model) return undefined;
+    return {
+      id: projection.model,
+      effort: projection.modelEffort,
+      observedAt: projection.modelObservedAt,
+      stale: projection.modelStale,
+    };
   }
 
   private async detectCached(): Promise<string[]> {

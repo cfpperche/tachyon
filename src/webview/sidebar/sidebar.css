@@ -101,6 +101,9 @@
   .sdot.crashed { background: var(--ds-err); }
   .name { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   .model-sep, .model { color: var(--ds-muted); font-size: 11px; font-weight: 400; opacity: .85; }
+  /* spec 378 — textual provenance marker (never styling alone: the marker's own text carries the meaning). */
+  .model-marker { font-size: 11px; font-weight: 400; opacity: .85; }
+  .model-marker.warn { color: var(--ds-warn); opacity: 1; }
   /* A child row no longer reserves the disclosure gutter (see the `!nested` guard in App.tsx) — its dot
      sits directly at this padding-left, one modest step past the aligned level-0 column (12px row padding
      + 13px gutter + 8px gap = 33px from the row's left edge), not a second gutter stacked on top of it. */

@@ -72,6 +72,20 @@ describe("runtime profiles (spec 358 phase 1)", () => {
     expect(hasVerifiedTranscriptIsolation(profile!.isolation, { isolatedWorktree: true })).toBe(true);
   });
 
+  it("declares hermes isolation as measured private-home (HERMES_HOME)", () => {
+    const profile = runtimeProfile("hermes");
+    expect(profile?.label).toBe("Hermes Agent");
+    expect(profile?.isolation).toMatchObject({
+      mechanism: "private-home",
+      source: "measured",
+      verified: true,
+      verifiedAt: "2026-07-13",
+    });
+    expect(profile?.permission?.alwaysApproveFlag).toBe("--yolo");
+    expect(hasVerifiedTranscriptIsolation(profile!.isolation)).toBe(true);
+    expect(() => assertVerifiedTranscriptIsolation("hermes", { name: "h1", parented: true })).not.toThrow();
+  });
+
   it("fails closed for known runtimes without a measured profile", () => {
     expect(isolationMechanismForCommand("gemini")).toMatchObject({ mechanism: "unknown", source: "assumed", verified: false });
     expect(() => assertVerifiedTranscriptIsolation("gemini", { name: "helper" })).toThrow(/runtime transcript isolation is not verified/);

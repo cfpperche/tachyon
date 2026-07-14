@@ -4,6 +4,7 @@ import type {
   RuntimeOpsContextPressureV1,
   RuntimeOpsModelLabel,
   RuntimeOpsModelV1,
+  RuntimeOpsObservedModelV1,
   RuntimeOpsRateLimitV1,
   RuntimeOpsRuntimeV1,
   RuntimeOpsSnapshotV1,
@@ -32,6 +33,15 @@ export interface RuntimeOpsModelInput {
   reason?: unknown;
 }
 
+/** spec 378 — host input for the observed model fact (see `RuntimeOpsObservedModelV1`). */
+export interface RuntimeOpsObservedModelInput {
+  state: "available" | "unavailable";
+  value?: unknown;
+  effort?: unknown;
+  observedAt?: unknown;
+  stale?: unknown;
+}
+
 export interface RuntimeOpsResumeInput {
   state?: unknown;
   reason?: unknown;
@@ -55,6 +65,8 @@ export interface RuntimeOpsAgentInput {
   status?: RuntimeOpsAgentRefV1["status"];
   attention?: RuntimeOpsAttentionInput;
   model?: RuntimeOpsModelInput;
+  modelObserved?: RuntimeOpsObservedModelInput;
+  modelDivergence?: unknown;
   resume?: RuntimeOpsResumeInput;
   bridge?: RuntimeOpsBridgeHealthInput;
   contextPressure?: RuntimeOpsContextPressureInput;
@@ -145,6 +157,8 @@ function projectRuntime(runtime: string, pathDetected: boolean, agents: RuntimeO
       status: normalizeStatus(agent.status),
       attention: normalizeAttention(agent.attention),
       model: normalizeModel(agent.model),
+      modelObserved: normalizeObservedModel(agent.modelObserved),
+      modelDivergence: agent.modelDivergence === true,
       resume: normalizeResume(agent.resume),
       bridge: projectBridgeHealth(agent.bridge),
       contextPressure: normalizeContextPressure(agent.contextPressure),
@@ -263,6 +277,26 @@ function normalizeModelLabel(value: unknown): RuntimeOpsModelLabel | undefined {
     default:
       return undefined;
   }
+}
+
+/** spec 378 — validated-open charset/length gate for an observed model id (or its title-cased label —
+ *  `labelModel` only inserts spaces/capitalizes, so a validated raw id stays within this charset). Mirrors
+ *  `sidebar/agentModel.ts`'s gate at this second protocol boundary. */
+const OBSERVED_MODEL_RE = /^[A-Za-z0-9 ._:/-]{1,64}$/;
+
+function normalizeObservedModel(input: RuntimeOpsObservedModelInput | undefined): RuntimeOpsObservedModelV1 {
+  if (input?.state !== "available") return { state: "unavailable" };
+  const value = typeof input.value === "string" && OBSERVED_MODEL_RE.test(input.value) ? input.value : undefined;
+  if (!value) return { state: "unavailable" };
+  const effort = typeof input.effort === "string" ? input.effort : undefined;
+  const observedAt = normalizeTimestamp(input.observedAt);
+  return {
+    state: "available",
+    value,
+    ...(effort ? { effort } : {}),
+    ...(observedAt ? { observedAt } : {}),
+    ...(input.stale === true ? { stale: true } : {}),
+  };
 }
 
 function normalizeResume(input: RuntimeOpsResumeInput | undefined): RuntimeOpsAgentRefV1["resume"] {

@@ -19,6 +19,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import type { HarnessDef } from "../config/loadConfig.js";
 import type { ResumeAdapter } from "../resume/adapters.js";
 import {
@@ -159,21 +160,187 @@ function isReadableJsonObjectFile(file: string): boolean {
   }
 }
 
-function promoteNewerPrivateAuth(privateAuth: string, realAuth: string): void {
+/**
+ * Grok (and Hermes) write `auth.json` via create+rename under a redirected home, which **replaces**
+ * a symlink with a regular file. OIDC refresh tokens are typically single-use / rotate: each private
+ * home can end up with a *different* live key, and only the newest is valid server-side.
+ * Ranking uses OIDC `create_time` when present (more accurate than mtime after copies).
+ */
+export function authCredentialRank(file: string): { mtimeMs: number; createTimeMs: number } {
+  let mtimeMs = 0;
+  try {
+    mtimeMs = fs.statSync(file).mtimeMs;
+  } catch {
+    return { mtimeMs: 0, createTimeMs: 0 };
+  }
+  let createTimeMs = 0;
+  try {
+    const parsed = JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, unknown>;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      for (const value of Object.values(parsed)) {
+        if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+        const ct = (value as { create_time?: unknown }).create_time;
+        if (typeof ct !== "string") continue;
+        const ms = Date.parse(ct);
+        if (Number.isFinite(ms) && ms > createTimeMs) createTimeMs = ms;
+      }
+    }
+  } catch {
+    /* rank by mtime only */
+  }
+  return { mtimeMs, createTimeMs };
+}
+
+function authRankBetter(a: { mtimeMs: number; createTimeMs: number }, b: { mtimeMs: number; createTimeMs: number }): boolean {
+  if (a.createTimeMs !== b.createTimeMs) return a.createTimeMs > b.createTimeMs;
+  return a.mtimeMs > b.mtimeMs;
+}
+
+/**
+ * If `privateAuth` is a regular file newer/fresher than `realAuth`, copy it onto the real path
+ * (mode 600). No-op for missing/symlink/unreadable private files. Used by rematerialize and by
+ * workspace-wide reconcile so stop/resume does not strand fresh tokens in a per-agent home.
+ */
+export function promoteNewerPrivateAuth(privateAuth: string, realAuth: string): boolean {
   let privateStat: fs.Stats;
   try {
     privateStat = fs.lstatSync(privateAuth);
   } catch (e) {
-    if (isErrnoCode(e, "ENOENT")) return;
+    if (isErrnoCode(e, "ENOENT")) return false;
     throw e;
   }
-  if (!privateStat.isFile() || privateStat.isSymbolicLink()) return;
+  if (!privateStat.isFile() || privateStat.isSymbolicLink()) return false;
+  if (!isReadableJsonObjectFile(privateAuth)) return false;
 
-  const realStat = fs.statSync(realAuth);
-  if (privateStat.mtimeMs <= realStat.mtimeMs || !isReadableJsonObjectFile(privateAuth)) return;
+  let realExists = false;
+  try {
+    fs.statSync(realAuth);
+    realExists = true;
+  } catch (e) {
+    if (!isErrnoCode(e, "ENOENT")) throw e;
+  }
 
+  if (realExists) {
+    const privateRank = authCredentialRank(privateAuth);
+    const realRank = authCredentialRank(realAuth);
+    if (!authRankBetter(privateRank, realRank)) return false;
+  }
+
+  fs.mkdirSync(path.dirname(realAuth), { recursive: true });
   fs.copyFileSync(privateAuth, realAuth);
   fs.chmodSync(realAuth, 0o600);
+  return true;
+}
+
+/** Force `linkPath` to be a symlink to `target` (absolute). Replaces a regular file or broken link. */
+export function ensureAuthSymlink(linkPath: string, target: string): void {
+  fs.mkdirSync(path.dirname(linkPath), { recursive: true });
+  try {
+    const st = fs.lstatSync(linkPath);
+    if (st.isSymbolicLink() && fs.readlinkSync(linkPath) === target) return;
+  } catch (e) {
+    if (!isErrnoCode(e, "ENOENT")) throw e;
+  }
+  try {
+    fs.unlinkSync(linkPath);
+  } catch (e) {
+    if (!isErrnoCode(e, "ENOENT")) throw e;
+  }
+  fs.symlinkSync(target, linkPath);
+}
+
+/**
+ * Discover private Grok homes under this workspace (bridge-mcp `*.grok` + harness agent `/.grok`).
+ * Pure path scan — does not create directories.
+ */
+export function listWorkspaceGrokPrivateHomes(workspaceRoot: string): string[] {
+  const homes: string[] = [];
+  const bridgeRoot = bridgeMcpRoot(workspaceRoot);
+  try {
+    for (const ent of fs.readdirSync(bridgeRoot, { withFileTypes: true })) {
+      if (ent.isDirectory() && ent.name.endsWith(".grok")) {
+        homes.push(path.join(bridgeRoot, ent.name));
+      }
+    }
+  } catch (e) {
+    if (!isErrnoCode(e, "ENOENT")) throw e;
+  }
+  const hRoot = harnessRoot(workspaceRoot);
+  try {
+    for (const ent of fs.readdirSync(hRoot, { withFileTypes: true })) {
+      if (!ent.isDirectory()) continue;
+      const grokHome = path.join(hRoot, ent.name, ".grok");
+      try {
+        if (fs.statSync(grokHome).isDirectory()) homes.push(grokHome);
+      } catch {
+        /* no .grok under this harness agent */
+      }
+    }
+  } catch (e) {
+    if (!isErrnoCode(e, "ENOENT")) throw e;
+  }
+  return homes;
+}
+
+/**
+ * Workspace-wide Grok auth reconcile (fix multi-agent re-login wall):
+ * 1. Harvest every private regular `auth.json` (symlink replacements from Grok token refresh).
+ * 2. Promote the freshest credential (OIDC create_time, then mtime) into the real `~/.grok/auth.json`.
+ * 3. Re-symlink every private home to that single real file so all agents share one live token.
+ *
+ * Safe to call when no private homes exist. Fail-closed if real auth is missing after harvest
+ * (caller still cannot spawn without `grok login` once).
+ */
+export function reconcileWorkspaceGrokAuth(workspaceRoot: string, realGrokHome: string): { promoted: boolean; relinked: number } {
+  const realAuth = path.join(realGrokHome, "auth.json");
+  const privateHomes = listWorkspaceGrokPrivateHomes(workspaceRoot);
+  let promoted = false;
+  let bestPrivate: string | undefined;
+  let bestRank = { mtimeMs: 0, createTimeMs: 0 };
+
+  for (const home of privateHomes) {
+    const privateAuth = path.join(home, "auth.json");
+    let st: fs.Stats;
+    try {
+      st = fs.lstatSync(privateAuth);
+    } catch {
+      continue;
+    }
+    if (!st.isFile() || st.isSymbolicLink()) continue;
+    if (!isReadableJsonObjectFile(privateAuth)) continue;
+    const rank = authCredentialRank(privateAuth);
+    if (!bestPrivate || authRankBetter(rank, bestRank)) {
+      bestPrivate = privateAuth;
+      bestRank = rank;
+    }
+  }
+
+  if (bestPrivate) {
+    promoted = promoteNewerPrivateAuth(bestPrivate, realAuth);
+    // Even if mtime/create_time tie-break said "not newer", still ensure real exists when only private had content.
+    if (!fs.existsSync(realAuth) && isReadableJsonObjectFile(bestPrivate)) {
+      fs.mkdirSync(path.dirname(realAuth), { recursive: true });
+      fs.copyFileSync(bestPrivate, realAuth);
+      fs.chmodSync(realAuth, 0o600);
+      promoted = true;
+    }
+  }
+
+  if (!fs.existsSync(realAuth)) return { promoted, relinked: 0 };
+
+  let relinked = 0;
+  for (const home of privateHomes) {
+    const privateAuth = path.join(home, "auth.json");
+    // Only touch homes that already have (or had) an auth path — avoid creating empty agent dirs.
+    try {
+      fs.lstatSync(privateAuth);
+    } catch {
+      continue;
+    }
+    ensureAuthSymlink(privateAuth, realAuth);
+    relinked += 1;
+  }
+  return { promoted, relinked };
 }
 
 /** The per-agent config home. Agent names are already fs-safe (NAME_RE). */
@@ -219,6 +386,81 @@ export function bridgeOpencodeMcpPath(workspaceRoot: string, agent: string): str
  */
 export function bridgeGrokHome(workspaceRoot: string, agent: string): string {
   return path.join(bridgeMcpRoot(workspaceRoot), `${agent}.grok`);
+}
+
+/**
+ * Private `HERMES_HOME` for a NON-harness hermes agent. Hermes reads MCP from
+ * `$HERMES_HOME/config.yaml` (`mcp_servers`) and OAuth from `$HERMES_HOME/auth.json`.
+ * Distinct dirname so a shared agent name never collides with grok/claude bridge files.
+ */
+export function bridgeHermesHome(workspaceRoot: string, agent: string): string {
+  return path.join(bridgeMcpRoot(workspaceRoot), `${agent}.hermes`);
+}
+
+/** True when `p` is a Tachyon-managed private Hermes home (bridge-mcp or harness). */
+export function isTachyonManagedHermesHome(p: string): boolean {
+  const n = path.resolve(p).replace(/\\/g, "/");
+  return n.includes("/.tachyon/bridge-mcp/") || n.includes("/.tachyon/harness/");
+}
+
+/**
+ * Real Hermes home used as the **auth/config source** for private homes.
+ * Honors `HERMES_HOME` unless it is a Tachyon-managed private path.
+ */
+export function defaultRealHermesHome(env: NodeJS.ProcessEnv = process.env, homeDir: string = os.homedir()): string {
+  const override = env.HERMES_HOME?.trim();
+  if (override && override.length > 0 && !isTachyonManagedHermesHome(override)) return override;
+  return path.join(homeDir, ".hermes");
+}
+
+/** Fail-closed: private HERMES_HOME must resolve to a readable auth.json object. */
+export function assertReadableHermesAuth(agent: string, privateHome: string, realAuthTarget: string): void {
+  const authPath = path.join(privateHome, "auth.json");
+  try {
+    const parsed = JSON.parse(fs.readFileSync(authPath, "utf8")) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new Error("auth.json is not a JSON object");
+    }
+  } catch (e) {
+    const detail = e instanceof Error ? e.message : String(e);
+    throw new HarnessUnavailableError(
+      agent,
+      `hermes credentials unreadable at ${authPath} (source ${realAuthTarget}): ${detail} — run hermes auth / hermes model first (a redirected HERMES_HOME starts logged out)`,
+    );
+  }
+}
+
+/**
+ * Merge `mcp_servers.<name>` into a Hermes `config.yaml` body. Bearer stays a literal
+ * `${TACHYON_AGENT_BRIDGE_TOKEN}` ref (Hermes expands `${VAR}` at connect time).
+ * Pure string helper — unit-tested without fs.
+ */
+export function setHermesMcpServer(
+  yamlText: string | undefined,
+  name: string,
+  server: { url?: string; headers?: Record<string, string>; enabled?: boolean },
+): string {
+  let doc: Record<string, unknown> = {};
+  if (yamlText && yamlText.trim().length > 0) {
+    try {
+      const parsed = parseYaml(yamlText);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        doc = { ...(parsed as Record<string, unknown>) };
+      }
+    } catch {
+      doc = {};
+    }
+  }
+  const existing =
+    doc.mcp_servers && typeof doc.mcp_servers === "object" && !Array.isArray(doc.mcp_servers)
+      ? { ...(doc.mcp_servers as Record<string, unknown>) }
+      : {};
+  const entry: Record<string, unknown> = { enabled: server.enabled ?? true };
+  if (server.url) entry.url = server.url;
+  if (server.headers && Object.keys(server.headers).length > 0) entry.headers = { ...server.headers };
+  existing[name] = entry;
+  doc.mcp_servers = existing;
+  return stringifyYaml(doc);
 }
 
 /**
@@ -415,6 +657,8 @@ export class HarnessManager {
     private readonly realOpencodeDataHome: string = defaultRealOpencodeDataHome(procEnv),
     /** Source Grok home for auth/config seeding. */
     private readonly realGrokHome: string = defaultRealGrokHome(procEnv),
+    /** Source Hermes home for auth/config seeding. */
+    private readonly realHermesHome: string = defaultRealHermesHome(procEnv),
   ) {}
 
   home(agent: string): string {
@@ -489,6 +733,11 @@ export class HarnessManager {
       });
       this.materializeSkills(agent, def, home);
       return { home, env: { [h.configHomeEnv]: this.grokHome(home), ...secretEnv }, args };
+    }
+    if (adapter.runtime === "hermes") {
+      // HERMES_HOME is the harness home itself (config.yaml + auth + skills under the same root).
+      this.materializeSkills(agent, def, home);
+      return { home, env: { [h.configHomeEnv]: home, ...secretEnv }, args };
     }
     if (adapter.runtime === "codex") {
       this.materializeCodexInstructions(agent, def, home);
@@ -638,31 +887,49 @@ export class HarnessManager {
     // H1 — seed auth by symlinking the credential file to the real home (never a copy → no stale token).
     // Fail closed if the real credential is absent (claude not logged in) — else a fresh home spawns
     // unauthenticated (codex impl-review M3): a dangling symlink "succeeds" but the agent can't start.
-    const authSourceHome = adapter.runtime === "codex" ? this.realCodexHome : adapter.runtime === "grok" ? this.realGrokHome : this.realHome;
+    // Grok: harvest private regular auth.json files first (token refresh replaces the symlink).
+    if (adapter.runtime === "grok") {
+      this.reconcileGrokAuthFromWorkspace();
+    }
+    const authSourceHome =
+      adapter.runtime === "codex"
+        ? this.realCodexHome
+        : adapter.runtime === "grok"
+          ? this.realGrokHome
+          : adapter.runtime === "hermes"
+            ? this.realHermesHome
+            : this.realHome;
     const authDestHome = adapter.runtime === "grok" ? this.grokHome(home) : home;
     for (const authFile of h.authFiles) {
       const authLink = path.join(authDestHome, authFile);
       const authTarget = path.join(authSourceHome, authFile);
       if (!fs.existsSync(authTarget)) {
-        const login = adapter.runtime === "codex" ? "codex login" : adapter.runtime === "grok" ? "grok login" : "claude /login";
+        const login =
+          adapter.runtime === "codex"
+            ? "codex login"
+            : adapter.runtime === "grok"
+              ? "grok login"
+              : adapter.runtime === "hermes"
+                ? "hermes auth / hermes model"
+                : "claude /login";
         throw new HarnessUnavailableError(agent, `no credentials at ${authTarget} — run ${login} first (a redirected config home starts logged out)`);
       }
-      // unlinkSync (NOT rmSync) — it removes the symlink ITSELF without following it; rmSync({force})
-      // follows a broken link, hits ENOENT on the missing target, silently no-ops, and leaves the stale
-      // link → EEXIST on re-symlink. Ignore ENOENT (nothing to remove on first materialize).
-      try {
-        fs.unlinkSync(authLink);
-      } catch (e) {
-        if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
+      // Hermes can also replace the auth symlink with a regular file after OAuth refresh — promote first.
+      if (adapter.runtime === "hermes") {
+        promoteNewerPrivateAuth(authLink, authTarget);
       }
-      fs.mkdirSync(path.dirname(authLink), { recursive: true });
-      fs.symlinkSync(authTarget, authLink);
+      ensureAuthSymlink(authLink, authTarget);
     }
 
-    if (adapter.runtime === "codex" || adapter.runtime === "grok") {
+    if (adapter.runtime === "codex" || adapter.runtime === "grok" || adapter.runtime === "hermes") {
       // t-303f2b — harness/isolate-transcript private homes must also prove credentials before spawn.
       if (adapter.runtime === "grok") {
         assertReadableGrokAuth(agent, authDestHome, path.join(authSourceHome, "auth.json"));
+      }
+      if (adapter.runtime === "hermes") {
+        assertReadableHermesAuth(agent, authDestHome, path.join(authSourceHome, "auth.json"));
+        // Seed model/provider settings from the real home so a private HERMES_HOME is not blank.
+        this.seedHermesConfigFromReal(authDestHome);
       }
       return home;
     }
@@ -708,6 +975,7 @@ export class HarnessManager {
     if (!h) throw new Error(`runtime '${adapter.runtime}' does not support an isolated config home`);
     if (adapter.runtime === "codex") this.seedCodexHomeOnlyConfig(home);
     if (adapter.runtime === "grok") return { home, env: { [h.configHomeEnv]: this.grokHome(home) }, args: [] };
+    if (adapter.runtime === "hermes") return { home, env: { [h.configHomeEnv]: home }, args: [] };
     if (h.xdg) {
       // spec t-e2ebe3 — mirror materialize()'s xdg branch: point all three XDG vars at the subdirs
       // materializeHome already created/seeded, not the home root (else XDG_DATA_HOME/XDG_STATE_HOME
@@ -734,6 +1002,12 @@ export class HarnessManager {
       const configPath = path.join(this.grokHome(home), h.mcp.fileName);
       fs.mkdirSync(path.dirname(configPath), { recursive: true });
       fs.writeFileSync(configPath, this.buildGrokHarnessConfig(def, bridgeEntry), "utf8");
+      return [];
+    }
+    if (adapter.runtime === "hermes") {
+      const configPath = path.join(home, h.mcp.fileName);
+      fs.mkdirSync(path.dirname(configPath), { recursive: true });
+      fs.writeFileSync(configPath, this.buildHermesHarnessConfig(def, bridgeEntry), "utf8");
       return [];
     }
     const configPath = path.join(configRoot, h.mcp.fileName);
@@ -862,6 +1136,81 @@ export class HarnessManager {
     return `${lines.join("\n")}\n`;
   }
 
+  /** Seed private Hermes home config.yaml from the real home (model/provider), without Bridge yet. */
+  private seedHermesConfigFromReal(home: string): void {
+    const target = path.join(home, "config.yaml");
+    const realCfg = path.join(this.realHermesHome, "config.yaml");
+    try {
+      if (!fs.existsSync(target) && fs.existsSync(realCfg)) {
+        fs.copyFileSync(realCfg, target);
+      }
+    } catch {
+      /* best-effort — materializeMcpConfig may still write Bridge-only */
+    }
+    // Symlink .env when present so API-key providers keep working under HERMES_HOME.
+    const envLink = path.join(home, ".env");
+    const envTarget = path.join(this.realHermesHome, ".env");
+    if (fs.existsSync(envTarget)) {
+      try {
+        fs.unlinkSync(envLink);
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
+      }
+      try {
+        fs.symlinkSync(envTarget, envLink);
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
+  private buildHermesHarnessConfig(def: HarnessDef, bridgeEntry?: Record<string, unknown>): string {
+    let base = "";
+    const tryRead = (p: string): string => {
+      try {
+        return fs.readFileSync(p, "utf8");
+      } catch {
+        return "";
+      }
+    };
+    if (def.inherit === "workspace") {
+      base = tryRead(path.join(this.workspaceRoot, ".hermes", "config.yaml")) || tryRead(path.join(this.realHermesHome, "config.yaml"));
+    } else {
+      base = tryRead(path.join(this.realHermesHome, "config.yaml"));
+    }
+    let yaml = base;
+    for (const [name, server] of Object.entries(def.mcp ?? {})) {
+      if (!server.command) continue;
+      try {
+        const doc = (yaml.trim() ? parseYaml(yaml) : {}) as Record<string, unknown>;
+        if (!doc || typeof doc !== "object" || Array.isArray(doc)) continue;
+        const mcp =
+          doc.mcp_servers && typeof doc.mcp_servers === "object" && !Array.isArray(doc.mcp_servers)
+            ? { ...(doc.mcp_servers as Record<string, unknown>) }
+            : {};
+        mcp[name] = {
+          command: server.command,
+          ...(server.args?.length ? { args: server.args } : {}),
+          ...(server.env ? { env: server.env } : {}),
+          enabled: true,
+        };
+        doc.mcp_servers = mcp;
+        yaml = stringifyYaml(doc);
+      } catch {
+        /* keep prior yaml */
+      }
+    }
+    if (bridgeEntry) {
+      const url = typeof bridgeEntry.url === "string" ? bridgeEntry.url : "";
+      const headers =
+        bridgeEntry.headers && typeof bridgeEntry.headers === "object" && !Array.isArray(bridgeEntry.headers)
+          ? (bridgeEntry.headers as Record<string, string>)
+          : {};
+      if (url) yaml = setHermesMcpServer(yaml, "tachyon_bridge", { url, headers, enabled: true });
+    }
+    return yaml.endsWith("\n") || yaml.length === 0 ? yaml : `${yaml}\n`;
+  }
+
   private seedCodexHomeOnlyConfig(home: string): void {
     const target = path.join(home, "config.toml");
     try {
@@ -964,26 +1313,32 @@ export class HarnessManager {
    * Grok home (fail-closed when the real credential is absent, same as the harness path). Never
    * mutates the user's real `~/.grok/config.toml`. Rewritten on every (re)spawn.
    */
+  /**
+   * Harvest private Grok auth files across the workspace into `~/.grok/auth.json` and re-symlink
+   * every private home. Call on stop/kill as well as materialize so a token refresh during a session
+   * is not stranded in one agent home until the next spawn of *that* agent.
+   */
+  reconcileGrokAuthFromWorkspace(): { promoted: boolean; relinked: number } {
+    return reconcileWorkspaceGrokAuth(this.workspaceRoot, this.realGrokHome);
+  }
+
   materializeBridgeMcpGrok(agent: string, bridgeEntry: Record<string, unknown>): string {
     const home = bridgeGrokHome(this.workspaceRoot, agent);
     fs.mkdirSync(home, { recursive: true });
 
     const authLink = path.join(home, "auth.json");
     const authTarget = path.join(this.realGrokHome, "auth.json");
+    // Workspace-wide harvest first: multi-agent OIDC refresh leaves *different* keys in each
+    // private home; promoting only this agent can re-symlink it to a revoked sibling token.
+    this.reconcileGrokAuthFromWorkspace();
     if (!fs.existsSync(authTarget)) {
       throw new HarnessUnavailableError(
         agent,
         `no credentials at ${authTarget} — run grok login first (a redirected GROK_HOME starts logged out)`,
       );
     }
-    promoteNewerPrivateAuth(authLink, authTarget);
-    // unlinkSync (NOT rmSync) — removes the symlink itself without following a broken target.
-    try {
-      fs.unlinkSync(authLink);
-    } catch (e) {
-      if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
-    }
-    fs.symlinkSync(authTarget, authLink);
+    // Ensure *this* home is linked even if it was just created (reconcile skips missing auth paths).
+    ensureAuthSymlink(authLink, authTarget);
     // t-303f2b — never hand the agent a GROK_HOME that looks seeded but cannot read credentials
     // (dangling/unreadable symlink → interactive "Approve in your browser" instead of a hard spawn error).
     assertReadableGrokAuth(agent, home, authTarget);
@@ -1002,11 +1357,63 @@ export class HarnessManager {
     return home;
   }
 
-  /** Remove the agent's Bridge-only MCP artifacts (claude file + opencode file + grok home; GC, best-effort). */
+  /**
+   * Materialize a private `HERMES_HOME` for a NON-harness hermes agent and return its path
+   * (injected as `HERMES_HOME`). Writes `$home/config.yaml` with Bridge `mcp_servers.tachyon_bridge`
+   * (`Authorization: Bearer ${TACHYON_AGENT_BRIDGE_TOKEN}`) and symlinks `auth.json` → real home.
+   * Never mutates the user's real `~/.hermes/config.yaml`. Rewritten on every (re)spawn.
+   */
+  materializeBridgeMcpHermes(agent: string, bridgeEntry: Record<string, unknown>): string {
+    const home = bridgeHermesHome(this.workspaceRoot, agent);
+    fs.mkdirSync(home, { recursive: true });
+
+    const authLink = path.join(home, "auth.json");
+    const authTarget = path.join(this.realHermesHome, "auth.json");
+    if (!fs.existsSync(authTarget)) {
+      throw new HarnessUnavailableError(
+        agent,
+        `no credentials at ${authTarget} — run hermes auth / hermes model first (a redirected HERMES_HOME starts logged out)`,
+      );
+    }
+    promoteNewerPrivateAuth(authLink, authTarget);
+    try {
+      fs.unlinkSync(authLink);
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
+    }
+    fs.symlinkSync(authTarget, authLink);
+    assertReadableHermesAuth(agent, home, authTarget);
+
+    this.seedHermesConfigFromReal(home);
+
+    const url = typeof bridgeEntry.url === "string" ? bridgeEntry.url : "";
+    const headers =
+      bridgeEntry.headers && typeof bridgeEntry.headers === "object" && !Array.isArray(bridgeEntry.headers)
+        ? (bridgeEntry.headers as Record<string, string>)
+        : {};
+    const configPath = path.join(home, "config.yaml");
+    let existing = "";
+    try {
+      existing = fs.readFileSync(configPath, "utf8");
+    } catch {
+      try {
+        existing = fs.readFileSync(path.join(this.realHermesHome, "config.yaml"), "utf8");
+      } catch {
+        existing = "";
+      }
+    }
+    let yaml = existing;
+    if (url) yaml = setHermesMcpServer(yaml, "tachyon_bridge", { url, headers, enabled: true });
+    fs.writeFileSync(configPath, yaml.endsWith("\n") || yaml.length === 0 ? yaml : `${yaml}\n`, "utf8");
+    return home;
+  }
+
+  /** Remove the agent's Bridge-only MCP artifacts (claude file + opencode file + grok/hermes homes; GC, best-effort). */
   removeBridgeMcp(agent: string): void {
     fs.rmSync(bridgeMcpPath(this.workspaceRoot, agent), { force: true });
     fs.rmSync(bridgeOpencodeMcpPath(this.workspaceRoot, agent), { force: true });
     fs.rmSync(bridgeGrokHome(this.workspaceRoot, agent), { recursive: true, force: true });
+    fs.rmSync(bridgeHermesHome(this.workspaceRoot, agent), { recursive: true, force: true });
   }
 
   /**

@@ -1,6 +1,6 @@
 # Runtime capability parity (living document)
 
-**Status:** living · **Owner:** Tachyon maintainers · **Last verified:** 2026-07-12 (t-9874be Grok Activity)  
+**Status:** living · **Owner:** Tachyon maintainers · **Last verified:** 2026-07-13 (Hermes secondary promotion wiring; prior inventory + 2026-07-12 t-9874be Grok Activity)  
 **Seams (code of record):** `src/resume/adapters.ts`, `src/runtime/runtimeProfile.ts`, `src/agents/AgentManager.ts` (`withRuntimeBridge`, `effectiveCmd`), `src/harness/HarnessManager.ts`, `src/activity/*Normalizer.ts`, `src/attention/patterns.ts`, `src/config/loadConfig.ts` (`INSTRUCTION_ARG`)
 
 This document is the **source of truth** for how Tachyon treats AI CLIs as first-class runtimes.  
@@ -47,7 +47,7 @@ What “first-class” means in Tachyon (ordered for reading, not strict priorit
 | 10 | **Label / profile** | `runtimeProfile` entry with enough for UI/governance: at least isolation + stop; `label` when present. “Full” means the sections peers use (composer, permission, model aliases) — not a marketing adjective. |
 | 11 | **Restart** | Kill + respawn with same definition; Bridge re-injected. |
 
-Also real, uneven seams (not full matrix rows yet — see open gaps): **session-id strategy** (mint vs capture), **deterministic `transcriptPath`** (Claude-only), **session-ownership hooks** (Claude `--settings`), **model-label normalization** (Claude/Codex).
+Also real, uneven seams (not full matrix rows yet — see open gaps): **session-id strategy** (mint vs capture), **deterministic `transcriptPath`** (Claude-only), **session-ownership hooks** (Claude `--settings`), **model-label normalization** (Claude/Codex), **live/observed model provenance** (spec 378 — claude/codex/grok transcript-latched `{model, effort?}` with declared-vs-observed divergence; opencode/gemini/qwen/etc. stay declared-only).
 
 **Host-only policies** (e.g. `run_host_action` allowlists) are **product governance**, not runtime capability — [§5](#5-host-governance-not-runtime-parity).
 
@@ -163,6 +163,7 @@ Detail dump: [`docs/runtimes/opencode.md`](./opencode.md) (narrative may still s
 | Antigravity | ✓ (`--prompt-interactive`) | ✓ (`--conversation` / `--continue`) | — | — | — | Thin overall |
 | Qwen | — | ✓ (`--continue` style) | — | — | — | Thin |
 | Continue | — | ✓ (`--resume <id>`) | — | — | — | Thin (not “no resume”) |
+| Hermes | ✓ (`HERMES_TUI_QUERY`) | ✓ adapter (`--resume`/`-c`) | ✓ (`HERMES_HOME` + `config.yaml` mcp) | ✓ (`HERMES_HOME` harness) | — | Secondary promotion 2026-07-13 (unit: config/resume/harness/runtimeProfile). Brief via env not argv. No fork. Activity normalizer still open. Detail: [`hermes.md`](./hermes.md). |
 
 Promoting a secondary runtime means walking §2 with **native** measurements, then filling the summary table.
 
@@ -187,7 +188,7 @@ These diverge; the summary table alone cannot show them:
 4. **Gaps:** open a **normal** board task when prioritized — never a permanent matrix owner task.  
 5. **Disputes:** code wins; fix the doc in the same change set when possible.
 
-### Open gaps (as of 2026-07-12, post t-9874be)
+### Open gaps (as of 2026-07-13)
 
 | Gap | Focus |
 |-----|--------|
@@ -199,6 +200,8 @@ These diverge; the summary table alone cannot show them:
 | Codex fork | only if Codex CLI gains stable native fork |
 | ~~Grok auth rematerialize~~ | **Closed t-2b0a08** — promote private regular `auth.json` before re-symlink; see Grok auth note above |
 | Release hygiene | versioned VSIX that includes Bridge Grok path (no hand-patch of installed `dist`) |
+| ~~Hermes Brief/Resume/Bridge/Harness~~ | **Closed 2026-07-13** (worktree `feat/hermes-runtime-parity`) — see [`hermes.md`](./hermes.md). Residual: Activity (`state.db` normalizer), gracefulStop measurement, `--yolo` spawn inject reader, live dogfood of Bridge tools. |
+| RuntimeOps panel model column | still declared/profile-only (spec 378 exposes the observed model + declared-vs-observed `modelDivergence` fact in the snapshot payload for agent consumers; the panel's own Model cell doesn't render it yet — a small follow-up once the sidebar usage is dogfooded) |
 
 ---
 
@@ -219,6 +222,7 @@ Document those in host-action / security docs; mention here only to avoid mis-sc
 |-----|------|
 | [`docs/system-design.md`](../system-design.md) | Engine vs shell; Bridge as control surface |
 | [`docs/runtimes/opencode.md`](./opencode.md) | Deep OpenCode measurement report |
+| [`docs/runtimes/hermes.md`](./hermes.md) | Hermes gap inventory (native CLI vs Tachyon seams; promotion path) |
 | `src/runtime/runtimeProfile.ts` | Machine-readable profile fragments |
 | `src/resume/adapters.ts` | Resume/fork/harness descriptors |
 | `.tachyon/reviews/parity-doc-claude.md` | 2026-07-09 adversarial review |
@@ -230,6 +234,9 @@ Document those in host-action / security docs; mention here only to avoid mis-sc
 
 | Date | Change |
 |------|--------|
+| 2026-07-13 | **spec 378 live-model-sidebar:** claude/codex/grok now latch a transcript-observed `{model, effort?}` (claude `message.model` filtering sidechain/synthetic; codex `turn_context.payload`; grok `assistant.model_id`, un-overloaded off `runtimeVersion` alongside opencode). `RuntimeOpsSnapshotService` projects a boundary-aware observed-vs-declared model fact + divergence; the sidebar row shows it with textual provenance (`· declared`/`· stale`/`≠ declared`). RuntimeOps panel's own Model column stays declared-only (follow-up, see open gaps). Interim honesty: pre-existing durable logs show `declared`/`profile` until the next model-bearing record is appended (no backfill — additive-only log format, no `schemaVersion` bump). Codex per-turn latency: a mid-turn `/model` switch shows the prior model until the next `turn_context` record lands (`observedAt` makes this honest, not hidden). |
+| 2026-07-13 | **Hermes secondary promotion:** Brief (`HERMES_TUI_QUERY`), Resume adapter, Bridge `HERMES_HOME`+`config.yaml`, harness shape, `runtimeProfile.hermes`. Activity still `—`. Units in config/resume/harness/runtimeProfile. |
+| 2026-07-13 | **Hermes secondary inventory:** §3.3 row (all Tachyon seams `—`); open gap + related link to [`hermes.md`](./hermes.md). Product discovery only — no adapter/Bridge yet. CLI v0.18.2 measured. |
 | 2026-07-09 | Initial living matrix; supersedes board task `t-4891dd`. Grok Bridge non-harness marked ✓ after t-843576 dogfood. |
 | 2026-07-09 | Fold Claude + Codex adversarial reviews: Grok Brief → ✗; Grok Permission inject → ✗; OpenCode profile/permission → ~; Attention wording + Grok Attention → ~; Claude/Codex stop → ~ until measured; harness/non-harness axis §3.4; secondary brief inversion (Gemini/Antigravity); open gaps refreshed. |
 | 2026-07-09 | **Cap 1 Grok closed:** `INSTRUCTION_ARG.grok = (q) => q` + unit test; matrix Brief Grok → ✓. |

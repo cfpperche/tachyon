@@ -194,7 +194,8 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     try {
       await ws.manager.spawn("implementer", { cmd: "claude", delegator: "boss", contract, gate: { behaviorTest: "mechanism-only canonical Delivery reuses one worktree through review completion", owns: ["src"] }, reveal: false });
       const initial = (await ws.deliveries.list())[0]!; const canonical = fs.realpathSync(ws.ledger.get("implementer")!.worktree!.path);
-      expect(initial.lease.holder).toMatchObject({ executionAgent: "implementer" });
+      expect(initial.lease.holder).toMatchObject({ executionAgent: "implementer", principal: "implementer" });
+      expect(initial.segments[0]).toMatchObject({ executionAgent: "implementer", principal: "implementer" });
       expect(initial.lease.holder?.process?.pid).toBeGreaterThan(0); expect(initial.lease.holder?.executionNonce).toBeTruthy();
       const head = git(canonical, ["rev-parse", "HEAD"]);
       const join = async (name: string, role: "reviewer" | "fixer", operation: string) => ws.manager.spawn(name, { cmd: "claude", reveal: false, deliveryJoin: { deliveryId: initial.id, role, ownsSubset: role === "reviewer" ? [] : ["src"], expectedHead: head, operationId: operation } });

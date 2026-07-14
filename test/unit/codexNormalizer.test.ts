@@ -48,6 +48,34 @@ describe("Codex activity normalizer (spec 305)", () => {
     expect(normalizeCodex(["not json", line({ type: "unknown", value: 1 }, "event_msg")])).toEqual([]);
   });
 
+  it("spec 378: latches model+effort from turn_context.payload only — session_meta/token_count never latch", () => {
+    const events = normalizeCodex([
+      // session_meta carries `cli_version` (runtimeVersion) but NO model — must not latch.
+      line({ id: "sid", cwd: "/repo", cli_version: "0.142.4" }, "session_meta"),
+      line({ type: "token_count", info: { total_token_usage: { input_tokens: 1, output_tokens: 1 } } }, "event_msg"),
+      line({ turn_id: "t1", cwd: "/repo", model: "gpt-5.6-sol", effort: "high" }, "turn_context"),
+      line({ type: "message", id: "a1", role: "assistant", content: [{ type: "output_text", text: "Vou investigar." }] }),
+    ], "/tmp/rollout.jsonl");
+
+    const usage = events.find((e) => e.type === "usage.updated");
+    expect(usage?.model).toBeUndefined();
+    expect(usage?.effort).toBeUndefined();
+    const assistant = events.find((e) => e.type === "assistant.message.completed");
+    expect(assistant).toMatchObject({ model: "gpt-5.6-sol", effort: "high" });
+  });
+
+  it("spec 378: a later turn_context re-latches model+effort (in-TUI /model switch)", () => {
+    const events = normalizeCodex([
+      line({ turn_id: "t1", cwd: "/repo", model: "gpt-5.5", effort: "medium" }, "turn_context"),
+      line({ type: "message", id: "a1", role: "assistant", content: [{ type: "output_text", text: "first" }] }),
+      line({ turn_id: "t2", cwd: "/repo", model: "gpt-5.6-sol", effort: "high" }, "turn_context"),
+      line({ type: "message", id: "a2", role: "assistant", content: [{ type: "output_text", text: "second" }] }),
+    ]);
+    const assistants = events.filter((e) => e.type === "assistant.message.completed");
+    expect(assistants[0]).toMatchObject({ model: "gpt-5.5", effort: "medium" });
+    expect(assistants[1]).toMatchObject({ model: "gpt-5.6-sol", effort: "high" });
+  });
+
   it("deduplicates message records mirrored as response_item and event_msg", () => {
     const events = normalizeCodex([
       line({ id: "sid", cwd: "/repo", cli_version: "0.142.5" }, "session_meta"),

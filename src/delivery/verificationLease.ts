@@ -84,6 +84,13 @@ export class DeliveryVerificationLeaseService {
         throw new DeliveryLeaseError("DELIVERY_ABANDONED", false, "Delivery is permanently abandoned", { deliveryId: current.id });
       }
 
+      // t-c5c204 — early canonical gated spawns persisted principal on their sole
+      // segment but omitted the identical attribution field on the holder. Repair
+      // only that attested writer shape; never infer a principal for joins/imports.
+      current = await this.repairCanonicalSpawnPrincipal(current);
+      linked = await this.requireProjection(current);
+      this.assertProjection(current, linked, lockPath);
+
       const tail = resolveOperationalSegment(current);
       if (current.lease.state !== "free" && current.lease.state !== "held") {
         throw this.occupied(current, `Delivery lease state '${current.lease.state}' cannot be repurposed for verification`);
@@ -94,7 +101,9 @@ export class DeliveryVerificationLeaseService {
         throw this.occupied(current, "current lease holder does not exactly match the tail segment");
       }
       if (await this.deps.isAgentRunning(tail.executionAgent)) {
-        throw this.occupied(current, `tail execution '${tail.executionAgent}' is still live`);
+        throw this.occupied(current, `tail execution '${tail.executionAgent}' is still live`, {
+          next: { action: "kill_agent", name: tail.executionAgent, then: "retry verify_task with the same delivery_id" },
+        });
       }
       const inspected = await this.inspect(lockPath);
       const deliveredHeadSha = await this.revParse(lockPath, current.contract.taskRef);
@@ -297,6 +306,52 @@ export class DeliveryVerificationLeaseService {
     return projection;
   }
 
+  private async repairCanonicalSpawnPrincipal(delivery: Delivery): Promise<Delivery> {
+    const principal = this.canonicalSpawnPrincipalOmission(delivery);
+    if (!principal) return delivery;
+    try {
+      return await this.deps.store.update(delivery.id, delivery.version, (record) => {
+        const currentPrincipal = this.canonicalSpawnPrincipalOmission(record);
+        if (currentPrincipal !== principal || !record.lease.holder) {
+          throw this.occupied(record, "Delivery changed before canonical spawn identity repair");
+        }
+        record.lease.holder = { ...record.lease.holder, principal };
+        record.events.push({
+          id: this.eventId(),
+          at: this.now(),
+          type: "canonical_spawn_principal_repaired",
+          by: { kind: "system" },
+          detail: { principal, reason: "canonical gated spawn omitted holder principal" },
+        });
+        return record;
+      });
+    } catch (error) {
+      if (error instanceof DeliveryVersionConflictError) {
+        const latest = await this.requireDelivery(delivery.id);
+        if (!this.canonicalSpawnPrincipalOmission(latest)) return latest;
+        throw this.occupied(latest, "Delivery changed before canonical spawn identity repair");
+      }
+      if (error instanceof DeliveryStoreBusyError) throw this.busy(error);
+      throw error;
+    }
+  }
+
+  private canonicalSpawnPrincipalOmission(delivery: Delivery): string | undefined {
+    if (!delivery.id.startsWith("d-spawn-") || delivery.lease.state !== "held" || delivery.segments.length !== 1) return undefined;
+    const holder = delivery.lease.holder;
+    const tail = delivery.segments[0];
+    if (!holder || holder.principal !== undefined || !tail || tail.releasedAt || tail.role !== "implementer"
+      || !tail.principal || tail.principal !== tail.executionAgent || holder.segmentId !== tail.id
+      || holder.executionAgent !== tail.executionAgent) return undefined;
+    const attested = delivery.events.some((event) => {
+      const payload = event.detail?.payload;
+      return event.type === "projection.intent" && !!payload && typeof payload === "object"
+        && event.detail?.action === "open" && event.detail?.gitDeliveryId === delivery.gitDeliveryId
+        && (payload as Record<string, unknown>).reason === "canonical gated spawn";
+    });
+    return attested ? tail.principal : undefined;
+  }
+
   private assertProjection(delivery: Delivery, projection: GitDelivery, worktreePath: string): void {
     if (projection.id !== delivery.gitDeliveryId || projection.deliveryId !== delivery.id
       || projection.workspaceId !== delivery.workspaceId || projection.branchRef !== delivery.contract.taskRef
@@ -329,8 +384,10 @@ export class DeliveryVerificationLeaseService {
   private now(): string { return this.deps.now?.() ?? new Date().toISOString(); }
   private eventId(): string { return this.deps.eventId?.() ?? `event-${randomBytes(8).toString("hex")}`; }
   private message(error: unknown): string { return error instanceof Error ? error.message : String(error); }
-  private occupied(delivery: Delivery, message: string): DeliveryLeaseError {
-    return new DeliveryLeaseError("WORKTREE_OCCUPIED", true, message, { deliveryId: delivery.id, version: delivery.version, state: delivery.lease.state });
+  private occupied(delivery: Delivery, message: string, detail: Record<string, unknown> = {}): DeliveryLeaseError {
+    return new DeliveryLeaseError("WORKTREE_OCCUPIED", true, message, {
+      deliveryId: delivery.id, version: delivery.version, state: delivery.lease.state, ...detail,
+    });
   }
 
   private busy(error: DeliveryStoreBusyError): DeliveryLeaseError {

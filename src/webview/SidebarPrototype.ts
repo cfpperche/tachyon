@@ -5,7 +5,7 @@ import type { Workspace } from "../workspace/Workspace.js";
 import { isResumable } from "../resume/SessionLedger.js";
 import { adapterFor, forkable, managesOwnSession } from "../resume/adapters.js";
 import type { FleetVM, AgentStatus, Verify, AgentVM, RunState, PinPreviewAttachmentVM, PinPreviewVM, EvidenceBadge } from "../sidebar/types.js";
-import { toAgentVM } from "../sidebar/agentModel.js";
+import { toAgentVM, type ObservedModelInput } from "../sidebar/agentModel.js";
 import { evidenceBadge } from "../worktree/evidence.js";
 import { degradedRosterExtras, toConfigErrorVM } from "../config/configFailure.js";
 import { fleetMessage } from "./sidebar/messages.js";
@@ -107,6 +107,9 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     private readonly extensionUri: vscode.Uri,
     private readonly getWorkspaces: () => Workspace[],
     private readonly memento?: vscode.Memento, // spec 242 — persists the sort prefs (context.globalState)
+    // spec 378 — the shared, view-independent observed-model accessor (RuntimeOpsSnapshotService); optional
+    // so a bare provider (e.g. tests) degrades to declared/profile-only rows instead of throwing.
+    private readonly observedModelFor?: (ws: Workspace, agentName: string) => ObservedModelInput | undefined,
   ) {}
 
   private sortCache?: SortPrefs; // synchronous mirror so overlapping setSort writes don't lose a section (codex)
@@ -431,6 +434,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
           attention: live?.state,
           // t-35d95a — request_human_attention's latch, surfaced as its own badge (independent of attention).
           awaitingHuman: live?.awaitingHuman ? { reason: live.awaitingHumanReason ?? "" } : undefined,
+          model: this.observedModelFor?.(ws, a.name), // spec 378 — precedence/labeling stays in the pure mapper
           worktree: worktrees.get(a.name),
           verify: verifyOf.get(a.name),
           verifiable: verifyOf.has(a.name),

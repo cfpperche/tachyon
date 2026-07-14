@@ -231,9 +231,14 @@ const issueMessage = (issue: { code: string; param?: string }, t: Translate): st
     case "instructions-not-deliverable":
       return t("note: this CLI doesn't accept a startup prompt — instructions will be saved but not auto-delivered");
     case "harness-claude-only":
-      return t("isolated harness: supported for Claude/Codex agents only");
+      return t("isolated harness: supported for Claude, Codex, OpenCode, Grok, and Hermes agents only");
     case "codex-harness-mcp-only":
       return t("isolated harness: Codex does not support rules; use instruction files instead");
+    case "harness-home-config-only":
+      return t(
+        "isolated harness: {0} supports MCP / skills / hooks only (no rules or instruction files)",
+        issue.param ?? "this runtime",
+      );
     case "harness-empty":
       return t("isolated harness: declare at least one of MCP / rules / skills / hooks");
     case "harness-mcp-invalid":
@@ -529,7 +534,8 @@ export class Workspace {
       configHome ? {
         home: os.homedir(),
         ...(runtime === "codex" ? { codexHome: configHome } : {}),
-        ...(runtime !== "codex" ? { claudeHome: configHome } : {}),
+        ...(runtime === "hermes" ? { hermesHome: configHome } : {}),
+        ...(runtime !== "codex" && runtime !== "hermes" ? { claudeHome: configHome } : {}),
       } : undefined;
     const resolveOpencode = (cwd: string, dataHome?: string, id?: string) => resolveOpencodeStorageSession(cwd, dataHome ?? defaultRealOpencodeDataHome(), id);
     this.manager = new AgentManager({
@@ -588,6 +594,11 @@ export class Workspace {
       materializeBridgeMcpGrok: (name) => {
         const entry = this.bridgeEntry();
         return entry ? this.harness.materializeBridgeMcpGrok(name, entry) : undefined;
+      },
+      // Private HERMES_HOME for non-harness hermes (Bridge MCP in config.yaml + auth.json symlink).
+      materializeBridgeMcpHermes: (name) => {
+        const entry = this.bridgeEntry();
+        return entry ? this.harness.materializeBridgeMcpHermes(name, entry) : undefined;
       },
       // spec 243 — per-spawn --settings SessionStart ownership hook (claude); the resolver reads the ledger
       // it writes so Activity follows a /clear/resume rotation even on a shared cwd.
@@ -666,8 +677,13 @@ export class Workspace {
         this.adhocBackstop.reset(name);
         deps.onViewsChanged("agents");
       },
-      onStopping: () => deps.onViewsChanged("agents"),
+      onStopping: (name) => {
+        // Grok replaces auth.json symlink with a regular file on token refresh — harvest before teardown.
+        this.reconcileGrokAuthIfGrokAgent(name);
+        deps.onViewsChanged("agents");
+      },
       onKilled: (name) => {
+        this.reconcileGrokAuthIfGrokAgent(name);
         this.terminals.close(name);
         this.pendingAnchor.delete(name); // spec 216: don't carry a re-anchor flag past the session
         this.agentIncarnations.delete(name);
@@ -2418,7 +2434,7 @@ export class Workspace {
         taskRef: input.worktree.branch,
         ...(input.gate.stubPath ? { stubPath: input.gate.stubPath } : {}),
       },
-      lease: { state: "held", holder: { segmentId: `seg-${spawnKey.slice(0, 16)}`, executionAgent: input.name, ...(executionNonce ? { executionNonce } : {}), ...(identity?.state === "exact" ? { process: { pid: identity.pid, processStart: identity.processStart, bootId: identity.bootId } } : {}) }, expectedHeadSha: input.baseSha, changedAt: now },
+      lease: { state: "held", holder: { segmentId: `seg-${spawnKey.slice(0, 16)}`, executionAgent: input.name, principal: input.name, ...(executionNonce ? { executionNonce } : {}), ...(identity?.state === "exact" ? { process: { pid: identity.pid, processStart: identity.processStart, bootId: identity.bootId } } : {}) }, expectedHeadSha: input.baseSha, changedAt: now },
       segments: [{
         id: `seg-${spawnKey.slice(0, 16)}`, index: 0, role: "implementer", executionAgent: input.name,
         principal: input.name, grantedBy: actor, ownsSubset: owns, grantedHeadSha: input.baseSha, grantedAt: now,
@@ -2455,6 +2471,7 @@ export class Workspace {
       || tail.releasedAt
       || tail.id !== holder.segmentId
       || tail.executionAgent !== holder.executionAgent
+      || tail.principal !== holder.principal
       || holder.executionAgent !== input.name
     ) {
       throw new Error(
@@ -2880,6 +2897,29 @@ export class Workspace {
       this.deps.onViewsChanged("agents");
       this.deps.onViewsChanged("commands");
     }, 250);
+  }
+
+  /**
+   * Grok token refresh under a private GROK_HOME replaces `auth.json` (symlink → regular file).
+   * On stop/kill, harvest the freshest private credential into `~/.grok/auth.json` and re-symlink
+   * every private home so resume / sibling agents do not hit a re-login wall with a revoked key.
+   */
+  private reconcileGrokAuthIfGrokAgent(name: string): void {
+    try {
+      const cmd = this.manager.defOf(name)?.cmd ?? "";
+      const runtime = this.ledger.get(name)?.resume?.runtime;
+      const isGrok = binaryOf(cmd) === "grok" || runtime === "grok";
+      // Also cover ad-hoc / ledger-only rows where cmd is empty but the private home exists.
+      if (!isGrok && !fs.existsSync(path.join(this.workspaceRoot, ".tachyon", "bridge-mcp", `${name}.grok`, "auth.json"))) {
+        return;
+      }
+      this.harness.reconcileGrokAuthFromWorkspace();
+    } catch (err) {
+      this.host.notify(
+        `grok auth reconcile failed for '${name}': ${err instanceof Error ? err.message : String(err)}`,
+        "warn",
+      );
+    }
   }
 
   /**

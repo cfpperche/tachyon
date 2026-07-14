@@ -189,6 +189,7 @@ export interface FormIssue {
     | "target-required"
     | "harness-claude-only"
     | "codex-harness-mcp-only"
+    | "harness-home-config-only"
     | "harness-empty"
     | "harness-mcp-invalid"
     | "harness-hooks-invalid";
@@ -196,9 +197,24 @@ export interface FormIssue {
   param?: string;
 }
 
-export function harnessRuntimeOf(cmd: string): "claude" | "codex" | undefined {
+/** Studio runtimes that expose Isolated harness (must match ResumeAdapter.harness + loadConfig). */
+export type HarnessStudioRuntime = "claude" | "codex" | "opencode" | "grok" | "hermes";
+
+const HARNESS_STUDIO_BINS = new Set<string>(["claude", "codex", "opencode", "grok", "hermes"]);
+
+export function harnessRuntimeOf(cmd: string): HarnessStudioRuntime | undefined {
   const binary = binaryOf(cmd);
-  return binary === "claude" || binary === "codex" ? binary : undefined;
+  return HARNESS_STUDIO_BINS.has(binary) ? (binary as HarnessStudioRuntime) : undefined;
+}
+
+/** True when the studio may show CLAUDE.md-style rules for this harness runtime. */
+export function harnessShowsRules(runtime: HarnessStudioRuntime | undefined): boolean {
+  return runtime === "claude";
+}
+
+/** True when the studio may show Codex AGENTS.md instruction files for this harness runtime. */
+export function harnessShowsInstructions(runtime: HarnessStudioRuntime | undefined): boolean {
+  return runtime === "codex";
 }
 
 export function validateForm(state: FormState, takenNames: string[], editingName?: string): FormIssue[] {
@@ -234,12 +250,25 @@ export function validateForm(state: FormState, takenNames: string[], editingName
     if (runtime === "codex" && parseSteps(state.harnessRules).length > 0) {
       issues.push({ code: "codex-harness-mcp-only", blocking: true });
     }
+    // opencode/grok/hermes: mcp/skills/hooks only — rules/instructions fields are hidden but
+    // still validate if a stale form state carries them.
+    if (
+      runtime &&
+      !harnessShowsRules(runtime) &&
+      !harnessShowsInstructions(runtime) &&
+      (parseSteps(state.harnessRules).length > 0 || parseSteps(state.harnessInstructions).length > 0)
+    ) {
+      issues.push({ code: "harness-home-config-only", blocking: true, param: runtime });
+    }
     const hasAny =
       state.harnessMcp.trim().length > 0 ||
       state.harnessHooks.trim().length > 0 ||
       parseSteps(state.harnessInstructions).length > 0 ||
       parseSteps(state.harnessRules).length > 0 ||
       parseSteps(state.harnessSkills).length > 0;
+    // Codex already has a private home by default — empty harness is meaningless.
+    // Other harnessable runtimes allow `harness: {}` (private home + Bridge only) via yml;
+    // Studio still requires at least one field when the toggle is on (matches prior claude UX).
     if (!hasAny) issues.push({ code: "harness-empty", blocking: true });
   }
   return issues;

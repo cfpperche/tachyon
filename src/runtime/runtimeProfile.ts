@@ -250,6 +250,50 @@ export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = 
     },
     gracefulStop: GROK_GRACEFUL_STOP,
   },
+  hermes: {
+    runtime: "hermes",
+    profileVersion: 1,
+    label: "Hermes Agent",
+    model: {
+      defaultModel: "Hermes default",
+      source: "declared",
+      verified: false,
+      notes: "Model comes from ~/.hermes/config.yaml (or private HERMES_HOME); no stable CLI default to pin here yet.",
+    },
+    isolation: {
+      mechanism: "private-home",
+      source: "measured",
+      verified: true,
+      verifiedAt: "2026-07-13",
+      notes:
+        "HERMES_HOME redirects the full home (config.yaml, auth.json, state.db). Tachyon materializes " +
+        "a private home for Bridge (bridge-mcp/<agent>.hermes) and harness/isolate paths.",
+    },
+    permission: {
+      modes: ["default", "yolo"],
+      alwaysApproveFlag: "--yolo",
+      source: "declared",
+      verified: false,
+      notes: "CLI --yolo bypasses dangerous-command approvals; spawn inject is a follow-up (readers required).",
+    },
+    composer: {
+      tailLines: 8,
+      promptLine: /^\s*(?:[│┃]\s*)?(?:❯|>|›)\s?.*$/,
+      occupiedLine: /^\s*(?:[│┃]\s*)?(?:❯|>|›)\s?\S.*$/,
+      source: "assumed",
+      verified: false,
+      notes: "Conservative peer-shaped composer guard; Hermes TUI prompt not measured yet.",
+    },
+    gracefulStop: {
+      steps: [
+        { type: "sendKey", key: "C-c" },
+        { type: "sendKey", key: "C-c" },
+      ],
+      source: "declared",
+      verified: false,
+      notes: "Hermes docs: Ctrl+C interrupt; double within 2s force-exits. Unmeasured in Tachyon pane.",
+    },
+  },
 };
 
 export function runtimeProfile(runtime: ResumeRuntime): RuntimeProfile | undefined {

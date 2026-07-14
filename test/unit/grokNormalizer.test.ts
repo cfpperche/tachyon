@@ -69,7 +69,10 @@ describe("Grok activity normalizer (t-9874be)", () => {
     expect(events[5].payload).toEqual({ path: "src/foo.ts", tool: "read_file" });
     expect(events[9].payload).toMatchObject({ toolUseId: "call-2", name: "search_replace" });
     expect(events[10].payload).toEqual({ path: "src/foo.ts", tool: "search_replace" });
-    expect(events.some((e) => e.runtimeVersion === "grok-4.5")).toBe(true);
+    // spec 378 — `assistant.model_id` is exposed via the dedicated `model` field, not smuggled through
+    // `runtimeVersion` (grok has no separate CLI version source in the transcript).
+    expect(events.some((e) => e.model === "grok-4.5")).toBe(true);
+    expect(events.some((e) => e.runtimeVersion === "grok-4.5")).toBe(false);
     expect(events[3].sourcePath).toBe("/tmp/chat_history.jsonl");
   });
 

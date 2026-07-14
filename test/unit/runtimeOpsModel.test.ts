@@ -66,6 +66,72 @@ describe("Runtime Ops projection", () => {
     expect(grok.usage).toEqual({ state: "unavailable" });
     expect(grok.version).toEqual({ state: "unavailable" });
   });
+
+  describe("spec 378 — observed model + divergence projection", () => {
+    it("projects an available observed model with effort/observedAt/stale, and divergence", () => {
+      const snapshot = buildRuntimeOpsSnapshot({
+        generatedAt: "2026-07-09T21:00:00.000Z",
+        detectedRuntimes: ["codex"],
+        agents: [{
+          workspaceKey: "ws", workspaceLabel: "app", agentName: "worker", runtime: "codex",
+          modelObserved: { state: "available", value: "GPT-5.6 Sol", effort: "high", observedAt: "2026-07-09T20:00:00.000Z", stale: true },
+          modelDivergence: true,
+        }],
+      });
+      const agent = snapshot.runtimes[0].agents[0];
+      expect(agent.modelObserved).toEqual({ state: "available", value: "GPT-5.6 Sol", effort: "high", observedAt: "2026-07-09T20:00:00.000Z", stale: true });
+      expect(agent.modelDivergence).toBe(true);
+    });
+
+    it("open-fallback: an observed value outside the closed RuntimeOpsModelLabel enum still projects (validated-open, not 'Unavailable')", () => {
+      const snapshot = buildRuntimeOpsSnapshot({
+        generatedAt: "2026-07-09T21:00:00.000Z",
+        detectedRuntimes: ["codex"],
+        agents: [{
+          workspaceKey: "ws", workspaceLabel: "app", agentName: "worker", runtime: "codex",
+          modelObserved: { state: "available", value: "This Model Definitely Does Not Exist Xyz123" },
+        }],
+      });
+      expect(snapshot.runtimes[0].agents[0].modelObserved).toMatchObject({ state: "available", value: "This Model Definitely Does Not Exist Xyz123" });
+    });
+
+    it("charset/length gate rejects an invalid observed value instead of rendering it", () => {
+      const snapshot = buildRuntimeOpsSnapshot({
+        generatedAt: "2026-07-09T21:00:00.000Z",
+        detectedRuntimes: ["codex"],
+        agents: [{
+          workspaceKey: "ws", workspaceLabel: "app", agentName: "worker", runtime: "codex",
+          modelObserved: { state: "available", value: "<script>bad</script>" },
+        }],
+      });
+      expect(snapshot.runtimes[0].agents[0].modelObserved).toEqual({ state: "unavailable" });
+    });
+
+    it("defaults modelObserved to unavailable and modelDivergence to false when absent", () => {
+      const snapshot = buildRuntimeOpsSnapshot({
+        generatedAt: "2026-07-09T21:00:00.000Z",
+        detectedRuntimes: ["codex"],
+        agents: [{ workspaceKey: "ws", workspaceLabel: "app", agentName: "worker", runtime: "codex" }],
+      });
+      const agent = snapshot.runtimes[0].agents[0];
+      expect(agent.modelObserved).toEqual({ state: "unavailable" });
+      expect(agent.modelDivergence).toBe(false);
+    });
+
+    it("the declared/profile model field is untouched by an observed value (RuntimeOps table stays declared-only)", () => {
+      const snapshot = buildRuntimeOpsSnapshot({
+        generatedAt: "2026-07-09T21:00:00.000Z",
+        detectedRuntimes: ["codex"],
+        agents: [{
+          workspaceKey: "ws", workspaceLabel: "app", agentName: "worker", runtime: "codex",
+          model: { state: "available", value: "Codex default", source: "runtime-profile" },
+          modelObserved: { state: "available", value: "GPT-5.6 Sol" },
+          modelDivergence: true,
+        }],
+      });
+      expect(snapshot.runtimes[0].agents[0].model).toEqual({ state: "available", value: "Codex default", source: "runtime-profile" });
+    });
+  });
 });
 
 describe("Runtime Ops operational projection", () => {

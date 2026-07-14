@@ -9,6 +9,9 @@ import type { ExternalToolsSummaryVM } from "../externalTools/types.js";
 
 export type AgentStatus = "running" | "needs" | "throttled" | "idle" | "stopping" | "stop-failed" | "stopped" | "crashed";
 export type Verify = "pass" | "fail" | "stale";
+/** spec 378 — where `AgentVM.model` came from: a live transcript observation, an explicit `--model` flag,
+ *  or the runtime's profile default (no explicit flag, no observation yet). */
+export type ModelSource = "observed" | "declared" | "profile";
 /** spec 241 — per-agent continuity brief freshness: missing (none yet) | stale (behind activity) | fresh. */
 export type ContinuityBadge = "fresh" | "stale" | "missing";
 export type PersistenceHookBadge = "active" | "skipped" | "failed" | "unknown";
@@ -22,8 +25,18 @@ export interface EvidenceBadge {
 
 export interface AgentVM {
   name: string;
-  /** Active LLM model label, derived from the runtime command. */
+  /** Active LLM model label — observed from the runtime's own transcript when available, else the declared
+   *  `--model` flag, else the runtime's profile default (spec 378). */
   model?: string;
+  /** spec 378 — provenance for `model`; undefined only when `model` itself is undefined. */
+  modelSource?: ModelSource;
+  /** spec 378 — when `modelSource === "observed"`, the transcript timestamp of that observation. */
+  modelObservedAt?: string;
+  /** spec 378 — an observed model carried across a process-preserving session boundary (in-TUI `/clear`,
+   *  resume) without a fresh observation yet. */
+  modelStale?: boolean;
+  /** spec 378 — the observed model differs from the declared/profile model (same alias table both sides). */
+  modelDivergence?: boolean;
   status: AgentStatus;
   attention?: string;
   parent?: string;

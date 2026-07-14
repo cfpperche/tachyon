@@ -24,7 +24,7 @@ import {
 } from "../../src/resume/SessionLedger.js";
 import { EVIDENCE_SCHEMA_VERSION, VERIFY_PRODUCER, STEP_RESULT_KIND, type WorktreeEvidence } from "../../src/worktree/evidence.js";
 import { planResume, autoResumes, offers } from "../../src/resume/planResume.js";
-import { resolveCodexId, resolveCodexSession, resolveOpencodeId, resolveAntigravityId, resolveCaptureId, resolveCaptureSession, resolveClaudeId, resolveClaudeIdByTitle, resolveCurrentSession } from "../../src/resume/resolvers.js";
+import { resolveCodexId, resolveCodexSession, resolveOpencodeId, resolveAntigravityId, resolveCaptureId, resolveCaptureSession, resolveClaudeId, resolveClaudeIdByTitle, resolveCurrentSession, resolveHermesId } from "../../src/resume/resolvers.js";
 
 describe("runtimeOf / binaryOf", () => {
   it("detects each supported runtime by binary", () => {
@@ -36,6 +36,7 @@ describe("runtimeOf / binaryOf", () => {
     expect(runtimeOf("qwen")).toBe("qwen");
     expect(runtimeOf("cn")).toBe("continue");
     expect(runtimeOf("grok")).toBe("grok");
+    expect(runtimeOf("hermes")).toBe("hermes");
   });
 
   it("sees through launchers and env assignments", () => {
@@ -181,10 +182,25 @@ describe("ResumeAdapter — capture runtimes", () => {
     expect(a.resumesWithoutId).toBeFalsy();
   });
 
-  it("capture runtimes have no deterministic transcript path", () => {
+  it("hermes: capture resume via --resume / --continue, harness shape, no fork", () => {
+    const a = adapterForRuntime("hermes")!;
+    expect(a.mintsId).toBe(false);
+    expect(a.resumesWithoutId).toBe(true);
+    expect(a.injectId("hermes", "s1")).toBe("hermes");
+    expect(a.resumeCommand("hermes", "20260713_185208_da5df2")).toBe("hermes --resume 20260713_185208_da5df2");
+    expect(a.resumeCommand("hermes --tui", "")).toBe("hermes --tui --continue");
+    expect(a.forkCommand).toBeUndefined();
+    expect(a.harness?.configHomeEnv).toBe("HERMES_HOME");
+    expect(a.harness?.mcp).toMatchObject({ mode: "home-config", fileName: "config.yaml" });
+    expect(a.transcriptPath!("/ws/.tachyon/bridge-mcp/h.hermes", "/ws", "sid")).toBe(
+      "/ws/.tachyon/bridge-mcp/h.hermes/state.db#sid",
+    );
+  });
+
+  it("capture runtimes have no deterministic transcript path (except hermes state.db locator)", () => {
     for (const rt of ["codex", "gemini", "antigravity", "opencode", "qwen", "continue"] as ResumeRuntime[]) {
       // gemini mints but its path is not derivable either
-      if (rt === "claude" || rt === "grok") continue;
+      if (rt === "claude" || rt === "grok" || rt === "hermes") continue;
       expect(adapterForRuntime(rt)!.transcriptPath).toBeUndefined();
     }
   });
@@ -586,6 +602,48 @@ describe("capture-id resolvers (spec 209 task 6)", () => {
 
   it("resolveCodexId returns null when no codex dir / no match", () => {
     expect(resolveCodexId("/ws", { home: tmpHome() })).toBeNull();
+  });
+
+  it("resolveHermesId reads newest session for cwd from state.db", () => {
+    const home = tmpHome();
+    const hermesHome = path.join(home, ".hermes");
+    fs.mkdirSync(hermesHome, { recursive: true });
+    const dbPath = path.join(hermesHome, "state.db");
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { DatabaseSync } = require("node:sqlite") as typeof import("node:sqlite");
+    const db = new DatabaseSync(dbPath);
+    db.exec(`
+      CREATE TABLE sessions (
+        id TEXT PRIMARY KEY,
+        cwd TEXT,
+        started_at REAL,
+        ended_at REAL
+      );
+    `);
+    db.prepare("INSERT INTO sessions (id, cwd, started_at, ended_at) VALUES (?, ?, ?, ?)").run(
+      "20260713_old",
+      "/ws/proj",
+      1000,
+      null,
+    );
+    db.prepare("INSERT INTO sessions (id, cwd, started_at, ended_at) VALUES (?, ?, ?, ?)").run(
+      "20260713_new",
+      "/ws/proj",
+      2000,
+      null,
+    );
+    db.prepare("INSERT INTO sessions (id, cwd, started_at, ended_at) VALUES (?, ?, ?, ?)").run(
+      "other",
+      "/ws/other",
+      3000,
+      null,
+    );
+    db.close();
+    expect(resolveHermesId("/ws/proj", { home })).toBe("20260713_new");
+    expect(resolveHermesId("/ws/other", { home })).toBe("other");
+    expect(resolveHermesId("/ws/proj", { home }, "20260713_old")).toBe("20260713_old");
+    expect(resolveHermesId("/ws/none", { home })).toBeNull();
+    expect(resolveHermesId("/ws/proj", { home: tmpHome() })).toBeNull();
   });
 
   it("resolveOpencodeId maps worktree->hash then picks the newest ses_*", () => {

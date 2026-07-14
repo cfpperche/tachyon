@@ -213,10 +213,30 @@ describe("formLogic", () => {
       expect(issues.some((i) => i.code === "harness-claude-only" && i.blocking)).toBe(true);
     });
 
+    it("Agent Studio recognizes grok/hermes/opencode as harness-capable (form visibility + validateForm)", () => {
+      expect(harnessRuntimeOf("grok")).toBe("grok");
+      expect(harnessRuntimeOf("hermes --tui")).toBe("hermes");
+      expect(harnessRuntimeOf("opencode")).toBe("opencode");
+      expect(harnessRuntimeOf("agy")).toBeUndefined();
+
+      for (const cmd of ["grok", "hermes", "opencode"]) {
+        const ok = validateForm({ ...BASE, harness: true, cmd, harnessMcp: HARNESS.harnessMcp, harnessRules: "" }, []);
+        expect(ok.filter((i) => i.blocking)).toEqual([]);
+        const blocked = validateForm({
+          ...BASE,
+          harness: true,
+          cmd,
+          harnessMcp: HARNESS.harnessMcp,
+          harnessRules: "rules/x.md",
+        }, []);
+        expect(blocked.some((i) => i.code === "harness-home-config-only" && i.blocking)).toBe(true);
+      }
+    });
+
     it("spec 311: Agent Studio recognizes Codex as harness-capable, accepts instructions/skills/hooks, and still blocks rules", () => {
       expect(harnessRuntimeOf("codex --yolo")).toBe("codex");
       expect(harnessRuntimeOf("claude --model sonnet")).toBe("claude");
-      expect(harnessRuntimeOf("opencode")).toBeUndefined();
+      expect(harnessRuntimeOf("opencode")).toBe("opencode");
 
       const accepted = validateForm({
         ...BASE,

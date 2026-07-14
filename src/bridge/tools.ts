@@ -1271,7 +1271,11 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         "is rejected (it would blanket-waive every scope breach). A self-caller (the agent named in `agent` " +
         "verifying itself) is rejected whenever waivers are present — waivers are coordinator-authored, " +
         "never self-authored; self-verification with no waivers stays allowed. The resolved caller is " +
-        "recorded on the verification record for after-the-fact attribution. When any waiver was applied, " +
+        "recorded on the verification record for after-the-fact attribution. Canonical verification temporarily " +
+        "checks out immutable SHAs, so its current tail agent must be stopped first; a live tail is refused with " +
+        "kill_agent-then-retry guidance. This gate records verification evidence but does not complete a canonical " +
+        "review: review closure requires delivery_join(role=reviewer, owns_subset=[]) followed by " +
+        "delivery_complete_review. When any waiver was applied, " +
         "the output text leads with an unmissable 'WAIVED' verdict line. Advisory: returns accept or " +
         "precise blockers; it does not merge.",
       inputSchema: {
@@ -1679,9 +1683,11 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     {
       description:
         "Pin a finding to the project's shared checklist (visible to the human in the sidebar and " +
-        "to every agent via list_pins). Use for discoveries worth keeping: bugs found out of scope, " +
-        "constraints learned the hard way, decisions other agents must know. If you know the task id and " +
-        "are writing a task-local scratchpad note, use append_task_note instead.",
+        "to every agent via list_pins). Use for knowledge worth keeping that is NOT work: constraints " +
+        "learned the hard way, decisions other agents must know, gotchas. A bug or any actionable defect " +
+        "is WORK — file it with create_task (kind: 'bug') so it enters triage; a pinned bug is invisible " +
+        "to the queue. If you know the task id and are writing a task-local scratchpad note, use " +
+        "append_task_note instead.",
       inputSchema: {
         title: z.string().min(1).max(200).optional().describe("short sidebar title; prefer this when the finding needs a longer detail body"),
         text: z.string().min(1).max(8000).optional().describe("legacy/full finding text; if long or multiline, Tachyon derives a short title and stores the full text as detail"),
@@ -1789,6 +1795,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       description:
         "Create a project Task in the shared Mission Control queue. Tasks are work items, not reminders: " +
         "new tasks land in inbox with no priority/assignee so a human or agent can triage them deliberately. " +
+        "Bugs and defects discovered mid-work belong here (kind: 'bug', evidence in the body) — never in pins. " +
         "artifact_refs is optional and open-ended; type:'sdd' enables best-effort local spec enrichment only.",
       inputSchema: {
         title: z.string().min(1).max(300),
@@ -2599,7 +2606,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
   mcp.registerTool(
     "delivery_complete_review",
     {
-      description: "Complete an exact canonical Delivery review. Mechanism-only root death is best-effort; descendants are unproven.",
+      description: "Complete an exact canonical Delivery review after delivery_join created the live tail reviewer segment with owns_subset=[]. This operation validates and stops that exact reviewer; it is distinct from verify_task evidence. Mechanism-only root death is best-effort; descendants are unproven.",
       inputSchema: { delivery_id: z.string().min(1), expected_reviewed_head_sha: z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i, "must be a SHA-1 or SHA-256 object id"), verdict: z.enum(["ACCEPT", "FINDINGS"]), operation_id: z.string().min(1) },
     },
     async ({ delivery_id, expected_reviewed_head_sha, verdict, operation_id }) => {

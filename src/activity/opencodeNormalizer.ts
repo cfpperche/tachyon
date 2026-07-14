@@ -46,13 +46,14 @@ export function createOpencodeNormalizer(sourcePath?: string): OpencodeNormalize
     raw: unknown,
     recordId?: string,
   ): void => {
+    const model = modelLabel(rec.message);
     out.push({
       type,
       runtime: "opencode",
       sequence: seq++,
       sessionId: rec.message.sessionID,
       timestamp: timestamp(rec),
-      runtimeVersion: modelLabel(rec.message),
+      ...(model ? { model } : {}),
       recordId,
       sourcePath: rec.sourcePath ?? sourcePath,
       payload,
