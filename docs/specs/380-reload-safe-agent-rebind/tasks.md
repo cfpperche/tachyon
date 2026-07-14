@@ -8,7 +8,9 @@ _Generated from `plan.md` on 2026-07-14. Work top-to-bottom. Check boxes as task
 - [x] Wire Workspace to the existing AgentManager generic-resume readiness authority.
 - [x] Reapply the persisted single-home runtime environment during resume.
 - [x] Require bounded replacement liveness before `resume_ok` and generation stamping.
+- [x] Rescan wired survivors once after bounded host-inventory settlement before enqueue.
 - [x] Add deterministic regressions for Delivery no-stop, private Claude home, early exit, and healthy resume.
+- [x] Add a deterministic regression for a live survivor omitted by the first host inventory.
 
 ## Verification
 

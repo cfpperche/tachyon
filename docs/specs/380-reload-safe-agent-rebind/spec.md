@@ -42,6 +42,10 @@ crashed replacement healthy.
   - **Given** a non-Delivery Bridge-wired agent with a readable transcript
   - **When** generation-bump rebind runs and the replacement remains alive
   - **Then** it records `resume_ok`, stamps the current generation, and preserves existing concurrency/circuit behavior
+- [x] **Scenario: host inventory omits a live wired survivor during activation**
+  - **Given** a live agent whose tmux row is absent from the first activation-time inventory snapshot
+  - **When** the bounded host-inventory settle completes
+  - **Then** rebind scans again and subjects that survivor to the same preflight and governed rebind path
 - [x] Regression coverage includes the two deterministic failure classes behind all four real
   2026-07-14 outcomes: Delivery refusal before stop and private-Claude immediate exit.
 

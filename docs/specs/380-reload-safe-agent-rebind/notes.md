@@ -103,3 +103,21 @@ None.
 
 ### 2026-07-14T16:24:17Z — pass (1/1) — source: tasks.md — commit: f49c56be7d53e3380dfc5a7710c2a22829804c33
 - `npx vitest run test/unit/agentManager.test.ts test/unit/bridgeClientRebind.test.ts -t "reload-safe"` — pass
+
+## Installed 0.56.3 dogfood finding — 2026-07-14
+
+- Reload activated installed 0.56.3 and started its persistent Bridge daemon; a fresh MCP initialize
+  worked through both proxy and backend, and `codex-budget` completed ordinary `resume_ok`.
+- The live `codex` tmux session was absent from the generation-46 rebind audit, retained durable bound
+  generation 45, and its pre-reload MCP client hung on both `list_agents` and `get_task`.  A fresh MCP
+  client against the same proxy returned immediately, isolating the failure to the missed survivor.
+- Root cause class: `onListenerReady()` took exactly one running-session snapshot before enqueue and
+  returned immediately when it was empty/incomplete.  A restored session omitted by that snapshot was
+  never reconsidered.
+- Follow-up `t-25cc1c` adds a bounded 100 ms host-inventory settle plus one rescan.  It does not change
+  `graceMs`, Delivery authority, or the existing destructive preflight.  The new `reload-safe` regression
+  starts with an empty inventory, reveals a wired survivor only during settlement, and forces its exact
+  stop/resume/stamp path.
+
+### 2026-07-14T18:44:56Z — pass (1/1) — source: tasks.md
+- `npx vitest run test/unit/agentManager.test.ts test/unit/bridgeClientRebind.test.ts && npm run typecheck` — pass

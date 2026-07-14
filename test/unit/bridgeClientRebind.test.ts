@@ -347,6 +347,34 @@ describe("BridgeClientRebindCoordinator", () => {
     expect(ledger.get("delivery-worker")?.bridgeClient?.boundGeneration).toBe(0);
   });
 
+  it("reload-safe: rescans a wired survivor that appears only after host inventory settles", async () => {
+    const auditDir = tmpDir();
+    dirs.push(auditDir);
+    const ledger = new Map([["late-codex", baseRecord({ bridgeClient: { boundGeneration: 0, wired: true } })]]);
+    const running = new Set<string>();
+    let inventorySettled = false;
+    const deps = makeDeps({
+      ledger,
+      running,
+      auditPath: path.join(auditDir, "late-inventory.jsonl"),
+      onSleep: () => {
+        if (!inventorySettled) {
+          inventorySettled = true;
+          running.add("late-codex");
+        }
+      },
+    });
+
+    const coordinator = new BridgeClientRebindCoordinator(deps);
+    await coordinator.onListenerReady();
+
+    expect(inventorySettled).toBe(true);
+    expect(deps.expectedDeath).toEqual(["late-codex"]);
+    expect(deps.stops).toEqual(["late-codex"]);
+    expect(deps.resumes).toEqual(["late-codex"]);
+    expect(ledger.get("late-codex")?.bridgeClient?.boundGeneration).toBe(1);
+  });
+
   it("reload-safe: replacement death inside the stability window is resume_fail, never resume_ok", async () => {
     const auditDir = tmpDir();
     dirs.push(auditDir);

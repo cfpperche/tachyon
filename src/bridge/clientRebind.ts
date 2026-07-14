@@ -39,6 +39,11 @@ export const DEFAULT_BRIDGE_CLIENT_REBIND: BridgeClientRebindSettings = {
  * classifier. */
 const POST_RESUME_STABILITY_MS = 1_500;
 
+/** The extension host can become Bridge-ready a fraction before tmux's restored-session
+ * inventory is complete.  This is not a client self-heal grace period: it is one bounded
+ * inventory settle before the authoritative second scan. */
+const HOST_INVENTORY_SETTLE_MS = 100;
+
 export type RebindReason = "host_generation_bump" | "peer_request";
 
 export interface RebindAuditEvent {
@@ -228,13 +233,14 @@ export class BridgeClientRebindCoordinator {
     }
     const G = this.bumpGeneration();
     const suspects = await this.markSuspects(G);
-    if (suspects.length === 0) return;
 
     if (settings.onHostGenerationBump === "notify") {
-      this.deps.notify(
-        `Bridge client rebind: ${suspects.length} wired survivor(s) marked suspect after host generation ${G} (policy: notify)`,
-        "info",
-      );
+      if (suspects.length > 0) {
+        this.deps.notify(
+          `Bridge client rebind: ${suspects.length} wired survivor(s) marked suspect after host generation ${G} (policy: notify)`,
+          "info",
+        );
+      }
       return;
     }
 
@@ -256,6 +262,9 @@ export class BridgeClientRebindCoordinator {
       if (!isWiredSuspect(rec, G)) continue;
 
       const rt = this.ensure(name);
+      // A second scan must discover survivors omitted by the first tmux snapshot without
+      // undoing an explicit stop/manual-heal decision already made for this generation.
+      if (rt.suspectGeneration === G) continue;
       if (rt.clientState === "rebinding") {
         rt.pendingRecheck = true;
         continue;
@@ -347,7 +356,14 @@ export class BridgeClientRebindCoordinator {
     const run = async (): Promise<void> => {
       this.generationBumpGraceTimer = undefined;
       if (this.disposed) return;
-      await this.enqueueStillSuspect(names, G, reason);
+      // Default grace remains zero.  Give only the host inventory a short bounded settle,
+      // then rescan: an alive session missed by the activation-time snapshot must not keep
+      // its half-open MCP client forever.  A configured positive grace already provides
+      // this settle window.
+      if (graceMs <= 0) await (this.deps.sleep ?? sleepDefault)(HOST_INVENTORY_SETTLE_MS);
+      if (this.disposed) return;
+      const lateSuspects = await this.markSuspects(G);
+      await this.enqueueStillSuspect([...new Set([...names, ...lateSuspects])], G, reason);
       await this.drain();
     };
     if (graceMs <= 0) return run();

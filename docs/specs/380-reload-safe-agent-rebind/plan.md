@@ -18,6 +18,12 @@ After `resume()` returns, keep the rebind in `rebinding` state for one short, bo
 Only a replacement that remains present through that window may be stamped/current and audited as
 `resume_ok`.  An early exit follows the existing failure path and leaves no healthy stamp.
 
+The installed 0.56.3 dogfood exposed a separate activation race: the first tmux inventory omitted a
+live Codex survivor, so it never entered the rebind queue and kept a half-open MCP client.  Keep
+`graceMs: 0` semantics for client healing, but allow 100 ms for host inventory settlement and take one
+authoritative second scan before enqueueing the union.  Decisions already made for agents seen in the
+first scan are not reset by the second.
+
 ## Key decisions
 
 - **Reuse `resumeReadiness()` for destructive preflight** — it is the existing generic-resume policy
@@ -31,13 +37,16 @@ Only a replacement that remains present through that window may be stamped/curre
   would not protect Delivery agents before stop.
 - **No automatic recovery of Delivery executions** — a generic host rebind has no lease authority.
   It must leave them alive/suspect for a Delivery-owned future path rather than broaden spec 368.
+- **Inventory settlement is not client grace** — the fixed 100 ms wait exists only to make restored
+  tmux discovery stable.  It neither lets an MCP call self-clear suspicion nor changes the configured
+  `graceMs` policy.
 
 ## Files touched
 
-- `src/bridge/clientRebind.ts` — pre-stop eligibility and post-resume stability proof.
+- `src/bridge/clientRebind.ts` — post-settle inventory rescan, pre-stop eligibility, and post-resume stability proof.
 - `src/workspace/Workspace.ts` — wire the eligibility port to AgentManager's canonical read-only check.
 - `src/agents/AgentManager.ts` — apply the persisted config-home environment on resume.
-- `test/unit/bridgeClientRebind.test.ts` — force no-stop Delivery refusal and early-exit audit behavior.
+- `test/unit/bridgeClientRebind.test.ts` — force late-visible survivor, no-stop Delivery refusal, and early-exit audit behavior.
 - `test/unit/agentManager.test.ts` — force legacy private Claude config-home resume wiring.
 - `docs/specs/380-reload-safe-agent-rebind/*` — contract and evidence.
 
