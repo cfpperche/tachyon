@@ -7,7 +7,16 @@ import type { HandoffViewModel, HandoffNoteVM, HandoffDistillTargetVM } from "./
 import { renderWebviewShell } from "./shared/shell.js";
 import { READY } from "./shared/ready.js";
 import { handoffMessage, type HandoffAction } from "./handoff/messages.js";
-import { buildHandoffDistillCommand, buildHandoffDistillPrompt, HANDOFF_DISTILL_PROFILES, normalizeAdditionalInstruction, normalizeHandoffDistillArgs, resolveHandoffDistillProfile, type HandoffDistillRuntime } from "./handoff/distill.js";
+import {
+  buildDistillTargets,
+  buildHandoffDistillCommand,
+  buildHandoffDistillPrompt,
+  HANDOFF_DISTILL_PROFILES,
+  normalizeAdditionalInstruction,
+  normalizeHandoffDistillArgs,
+  resolveHandoffDistillProfile,
+  type HandoffDistillRuntime,
+} from "./handoff/distill.js";
 import { notify } from "../workspace/NotificationService.js";
 
 export const HANDOFF_VIEW_TYPE = "tachyonHandoff";
@@ -93,7 +102,7 @@ export class HandoffPanelManager {
           updatedBy: snap.meta?.updated_by ?? "",
           revision: snap.revision,
           notes,
-          distillTargets: await runningDistillTargets(ws),
+          distillTargets: await distillTargets(ws),
           distillProfiles: HANDOFF_DISTILL_PROFILES,
         };
         void panel.webview.postMessage(handoffMessage(vm));
@@ -149,10 +158,44 @@ export class HandoffPanelManager {
   }
 }
 
-async function runningDistillTargets(ws: Workspace): Promise<HandoffDistillTargetVM[]> {
-  return (await ws.manager.list())
-    .filter((a) => a.kind === "agent" && a.running && !a.dead && !a.stopping)
-    .map((a) => ({ name: a.name, description: a.declared ? "declared agent" : "ad-hoc agent" }));
+/** t-1ba76d — declared agents (any state) + live ad-hoc; ordered running → resumable → stopped. */
+async function distillTargets(ws: Workspace): Promise<HandoffDistillTargetVM[]> {
+  const rows = await ws.manager.list();
+  const resumable = new Set(ws.resumableAgents());
+  // Ledger resume rows still count when the activation offer list was already consumed.
+  for (const [name, rec] of ws.ledger.all()) {
+    if (rec.resume) resumable.add(name);
+  }
+  return buildDistillTargets(rows, resumable);
+}
+
+const DISTILL_READY_TIMEOUT_MS = 45_000;
+const DISTILL_READY_POLL_MS = 250;
+
+async function waitUntilAgentLive(ws: Workspace, name: string, timeoutMs = DISTILL_READY_TIMEOUT_MS): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const row = (await ws.manager.list()).find((a) => a.name === name);
+    if (row && row.kind === "agent" && row.running && !row.dead && !row.stopping) return;
+    await new Promise((r) => setTimeout(r, DISTILL_READY_POLL_MS));
+  }
+  throw new Error(`agent '${name}' did not become ready in time for distillation`);
+}
+
+async function ensureDistillAgentLive(ws: Workspace, agent: string): Promise<void> {
+  const row = (await ws.manager.list()).find((a) => a.name === agent);
+  if (!row || row.kind !== "agent") throw new Error(`agent '${agent}' is not a managed AI agent`);
+  if (row.running && !row.dead && !row.stopping) return;
+
+  const hasResume = !!ws.ledger.get(agent)?.resume || ws.resumableAgents().includes(agent);
+  if (hasResume) {
+    await ws.resumeAgent(agent);
+  } else if (row.declared) {
+    await ws.manager.spawn(agent, { reveal: true });
+  } else {
+    throw new Error(`agent '${agent}' is stopped and cannot be resumed or respawned`);
+  }
+  await waitUntilAgentLive(ws, agent);
 }
 
 async function startDistill(ws: Workspace, action: Extract<HandoffAction, { type: "distill" }>): Promise<void> {
@@ -160,8 +203,9 @@ async function startDistill(ws: Workspace, action: Extract<HandoffAction, { type
   if (action.mode === "existing") {
     const agent = typeof action.agent === "string" ? action.agent.trim() : "";
     if (!agent) throw new Error("missing target agent");
-    const target = (await runningDistillTargets(ws)).find((t) => t.name === agent);
-    if (!target) throw new Error(`agent '${agent}' is not a running AI agent`);
+    const target = (await distillTargets(ws)).find((t) => t.name === agent);
+    if (!target) throw new Error(`agent '${agent}' is not a distill target (declared or running ad-hoc)`);
+    await ensureDistillAgentLive(ws, agent);
     await ws.tmux.sendKeys(ws.manager.session(agent), prompt, true);
     notify(`Handoff distillation task sent to '${agent}'.`);
     return;

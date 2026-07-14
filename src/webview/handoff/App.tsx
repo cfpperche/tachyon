@@ -7,7 +7,8 @@ import { buildHandoffDistillCommand, reconcileDistillSelection, type HandoffDist
 // spec 245 inc D — the Project Handoff panel (Preact, render-only). A calm, curated DOCUMENT view (not a
 // dashboard): a compact header + staleness badge, a metadata subline, the canonical handoff rendered as
 // markdown, then the pending-note lane as a quiet secondary list. Read-only; never imports vscode.
-// t-4eb7c0 — Distill re-requests a host snapshot on open so runningDistillTargets match live panes.
+// t-4eb7c0 — Distill re-requests a host snapshot on open so distillTargets match the fleet.
+// t-1ba76d — "existing" lists declared agents (running/resumable/stopped), not only live panes.
 
 const Icon = ({ name }: { name: string }) => <span class={`codicon codicon-${name}`} aria-hidden="true" />;
 
@@ -74,7 +75,7 @@ function DistillBox({ vm, dispatch, onClose }: { vm: HandoffViewModel; dispatch:
         <label>
           Target
           <select value={mode} onChange={(e) => setMode((e.currentTarget as HTMLSelectElement).value as HandoffDistillMode)}>
-            <option value="existing" disabled={!canUseExisting}>Running agent</option>
+            <option value="existing" disabled={!canUseExisting}>Declared / running agent</option>
             <option value="adhoc">Ad-hoc agent</option>
           </select>
         </label>

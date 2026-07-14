@@ -15,9 +15,14 @@ export interface HandoffNoteVM {
   evidence: string[];
 }
 
+export type HandoffDistillTargetState = "running" | "resumable" | "stopped";
+
 export interface HandoffDistillTargetVM {
   name: string;
   description: string;
+  /** t-1ba76d — optional for older snapshots; host always sets it. */
+  state?: HandoffDistillTargetState;
+  declared?: boolean;
 }
 
 /** The single message payload the host posts to the webview. */

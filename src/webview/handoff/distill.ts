@@ -67,6 +67,58 @@ export function buildHandoffDistillPrompt(opts: { additionalInstruction?: unknow
 
 export type HandoffDistillMode = "existing" | "adhoc";
 
+/** Live-pane vs stopped declared agent (t-1ba76d). Ad-hoc only appears while running. */
+export type HandoffDistillTargetState = "running" | "resumable" | "stopped";
+
+export interface HandoffDistillTargetRow {
+  name: string;
+  /** UI sublabel after the name, e.g. `running · declared`. */
+  description: string;
+  state: HandoffDistillTargetState;
+  declared: boolean;
+}
+
+/** Minimal list() row fields the distill target builder needs (keeps pure helpers free of AgentManager). */
+export interface DistillListRow {
+  name: string;
+  kind: string;
+  running: boolean;
+  dead?: boolean;
+  stopping?: boolean;
+  declared: boolean;
+}
+
+/**
+ * t-1ba76d — Distill "existing" targets: all **declared** agents (running or not) plus live ad-hoc agents.
+ * Order: running first, then resumable, then stopped (each group alpha by name).
+ */
+export function buildDistillTargets(
+  rows: ReadonlyArray<DistillListRow>,
+  resumableNames: ReadonlyArray<string> | ReadonlySet<string> = [],
+): HandoffDistillTargetRow[] {
+  const resumable = resumableNames instanceof Set ? resumableNames : new Set(resumableNames);
+  const out: HandoffDistillTargetRow[] = [];
+  for (const a of rows) {
+    if (a.kind !== "agent") continue;
+    const live = a.running && !a.dead && !a.stopping;
+    if (!a.declared && !live) continue; // ad-hoc only while running
+    let state: HandoffDistillTargetState;
+    if (live) state = "running";
+    else if (resumable.has(a.name)) state = "resumable";
+    else state = "stopped";
+    const ownership = a.declared ? "declared" : "ad-hoc";
+    out.push({
+      name: a.name,
+      state,
+      declared: a.declared,
+      description: `${state} · ${ownership}`,
+    });
+  }
+  const rank = (s: HandoffDistillTargetState): number => (s === "running" ? 0 : s === "resumable" ? 1 : 2);
+  out.sort((a, b) => rank(a.state) - rank(b.state) || a.name.localeCompare(b.name));
+  return out;
+}
+
 /**
  * t-4eb7c0 — keep Distill mode/agent selection valid after an async host refresh reposts distillTargets.
  * - No running targets ⇒ force adhoc (existing is disabled in the UI).
@@ -84,7 +136,7 @@ export function reconcileDistillSelection(
     if (names.has(prev.agent)) return { mode: "existing", agent: prev.agent };
     return { mode: "existing", agent: targets[0]!.name };
   }
-  // Opened with a stale empty list (forced adhoc) then refresh filled targets — surface Running agent.
+  // Opened with a stale empty list (forced adhoc) then refresh filled targets — surface declared/running list.
   if (!prev.agent) return { mode: "existing", agent: targets[0]!.name };
   return { mode: "adhoc", agent: prev.agent };
 }
