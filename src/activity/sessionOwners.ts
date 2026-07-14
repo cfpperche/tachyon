@@ -141,6 +141,108 @@ export function readSessionOwners(file: string): OwnerRow[] {
   try { return parseOwnerRows(fs.readFileSync(file, "utf8")); } catch { return []; }
 }
 
+/** Append one ownership row directly to the ledger (e.g. a resolver-minted "rotation-follow" row, t-9f2641).
+ *  Mirrors the SessionStart hook recorder's own append so the durable ledger stays the single source of
+ *  truth for "who owns which session now" regardless of whether a hook or the resolver wrote the row. */
+export function appendOwnerRow(file: string, row: OwnerRow): void {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.appendFileSync(file, `${JSON.stringify(row)}\n`);
+}
+
+/**
+ * t-9f2641 — mid-run transcript rotation follow. A harness-driven resume (or any rotation that keeps the
+ * process alive) can mint a NEW transcript file while the ownership ledger's last row for this agent still
+ * names the OLD one; if the old file is still readable on disk, `latestOwnerFor`'s row looks "valid" forever
+ * and the resolver stays pinned to a dead file. This is the disk-side half of the fix: given the CALLER has
+ * already decided the currently-resolved transcript is DEAD (no growth for its own threshold — that requires
+ * multi-poll state the caller holds, not this pure-ish helper), find an unambiguous newer sibling to follow.
+ *
+ * Ambiguity discipline (reused from resume-ownership refresh, spec 243/244): a transcript directory is a
+ * function of (cwd, config home) — two agents sharing BOTH land their sessions in the SAME directory, while
+ * an isolated home (or a different worktree's cwd) is its own namespace. So "is this directory ambiguous"
+ * reduces to "does any OTHER agent's current owned row live in this same directory" — no config-home plumbing
+ * needed. If so, NEVER follow (stay pinned) — this is the never-guess invariant; a fixture must prove two
+ * same-cwd agents can never steal each other's rotation.
+ *
+ * Returns undefined (never a guess) when ambiguous, the dead file itself is unreadable, or no STRICTLY newer
+ * sibling `.jsonl` exists in the directory.
+ *
+ * Review correction round (t-9f2641): `rows` alone is a TOCTOU gap — a sibling agent's brand-new first
+ * session can land on disk (newest mtime) before its own SessionStart hook has appended ITS owner row, so
+ * a row-only ambiguity check can momentarily see "no other agent here yet" and steal the sibling's session.
+ * `opts.liveTranscriptDirs` closes this: the caller passes the transcript directories of every OTHER
+ * currently-declared agent (from the in-memory ledger, race-free within one tick — no extra I/O), and any
+ * match makes the dir ambiguous exactly like a historical row would. `opts.deadMtimeBaseline` handles the
+ * dead file being fully GONE (rotated AND pruned): with no mtime of its own to compare against, the resolver
+ * would otherwise freeze forever; given the caller's last-known mtime for it, we follow ONLY when exactly
+ * ONE sibling `.jsonl` is strictly newer (never a guess among several candidates).
+ */
+export function resolveRotationFollow(
+  rows: OwnerRow[],
+  agent: string,
+  deadTranscriptPath: string,
+  opts: {
+    listDir?: (dir: string) => string[];
+    mtimeMs?: (file: string) => number | undefined;
+    liveTranscriptDirs?: Iterable<string>;
+    deadMtimeBaseline?: number;
+  } = {},
+): { transcriptPath: string; sessionId: string } | undefined {
+  const dir = path.resolve(path.dirname(deadTranscriptPath));
+  // Latest row per agent (append order ⇒ last write wins), mirroring latestOwnerFor's own selection.
+  const latestByAgent = new Map<string, OwnerRow>();
+  for (const r of rows) latestByAgent.set(r.agent, r);
+  for (const [otherAgent, r] of latestByAgent) {
+    if (otherAgent === agent) continue;
+    if (r.transcriptPath && path.resolve(path.dirname(r.transcriptPath)) === dir) return undefined; // shared dir ⇒ ambiguous
+  }
+  for (const liveDir of opts.liveTranscriptDirs ?? []) {
+    if (path.resolve(liveDir) === dir) return undefined; // a live sibling's OWN session lives here — never guess
+  }
+
+  const listDir = opts.listDir ?? defaultListDir;
+  const mtimeMs = opts.mtimeMs ?? defaultMtimeMs;
+  const deadMtime = mtimeMs(deadTranscriptPath);
+
+  if (deadMtime === undefined) {
+    if (opts.deadMtimeBaseline === undefined) return undefined; // no evidence at all — stay pinned
+    const baseline = opts.deadMtimeBaseline;
+    let only: { file: string; mtime: number } | undefined;
+    let count = 0;
+    for (const entry of listDir(dir)) {
+      if (!entry.endsWith(".jsonl")) continue;
+      const file = path.join(dir, entry);
+      if (path.resolve(file) === path.resolve(deadTranscriptPath)) continue;
+      const mtime = mtimeMs(file);
+      if (mtime === undefined || mtime <= baseline) continue; // must be STRICTLY newer than the last-known mtime
+      count++;
+      only = { file, mtime };
+    }
+    if (count !== 1 || !only) return undefined; // none, or more than one candidate — ambiguous, stay pinned
+    return { transcriptPath: only.file, sessionId: path.basename(only.file, ".jsonl") };
+  }
+
+  let newest: { file: string; mtime: number } | undefined;
+  for (const entry of listDir(dir)) {
+    if (!entry.endsWith(".jsonl")) continue;
+    const file = path.join(dir, entry);
+    if (path.resolve(file) === path.resolve(deadTranscriptPath)) continue;
+    const mtime = mtimeMs(file);
+    if (mtime === undefined || mtime <= deadMtime) continue; // must be STRICTLY newer
+    if (!newest || mtime > newest.mtime) newest = { file, mtime };
+  }
+  if (!newest) return undefined;
+  return { transcriptPath: newest.file, sessionId: path.basename(newest.file, ".jsonl") };
+}
+
+function defaultListDir(dir: string): string[] {
+  try { return fs.readdirSync(dir); } catch { return []; }
+}
+
+function defaultMtimeMs(file: string): number | undefined {
+  try { return fs.statSync(file).mtimeMs; } catch { return undefined; }
+}
+
 /** Remove all ownership rows for one agent when its ledger row is truly deleted. Best-effort; never throws. */
 export function removeSessionOwnerRows(file: string, agent: string): void {
   try {

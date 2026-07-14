@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
-import { parseOwnerRows, latestOwnerFor, buildCodexSessionStartHookConfig, buildOwnershipSettings, PERSISTENCE_STOP_RECORDER_SOURCE, SESSION_CONTINUITY_POINTER_SOURCE, SESSION_HANDOFF_POINTER_SOURCE, SESSION_OWNER_RECORDER_SOURCE, compactSessionOwnerRows, compactSpawnSettings, persistenceHookFailureFile, prunePersistenceLedger, removeSessionOwnerRows, removeSpawnSettings, spawnSettingsPath } from "../../src/activity/sessionOwners.js";
+import { parseOwnerRows, latestOwnerFor, buildCodexSessionStartHookConfig, buildOwnershipSettings, PERSISTENCE_STOP_RECORDER_SOURCE, SESSION_CONTINUITY_POINTER_SOURCE, SESSION_HANDOFF_POINTER_SOURCE, SESSION_OWNER_RECORDER_SOURCE, appendOwnerRow, compactSessionOwnerRows, compactSpawnSettings, persistenceHookFailureFile, prunePersistenceLedger, readSessionOwners, removeSessionOwnerRows, removeSpawnSettings, resolveRotationFollow, sessionOwnersFile, spawnSettingsPath } from "../../src/activity/sessionOwners.js";
 
 describe("sessionOwners — pure ledger helpers (spec 243)", () => {
   const row = (o: Record<string, unknown>) => JSON.stringify(o);
@@ -108,6 +108,106 @@ describe("sessionOwners — pure ledger helpers (spec 243)", () => {
     expect(fs.existsSync(spawnSettingsPath(tmp, "live"))).toBe(true);
     expect(fs.existsSync(spawnSettingsPath(tmp, "stale"))).toBe(false);
     expect(fs.existsSync(path.join(tmp, ".tachyon", "spawn-settings", "README.txt"))).toBe(true);
+  });
+
+  it("appendOwnerRow appends one durable row, creating the directory if needed", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-owner-append-"));
+    const file = sessionOwnersFile(tmp);
+    appendOwnerRow(file, { agent: "a", sessionId: "s1", transcriptPath: "/p/s1.jsonl", cwd: "/ws", source: "rotation-follow", ts: "2026-07-14T00:00:00Z" });
+    appendOwnerRow(file, { agent: "a", sessionId: "s2", transcriptPath: "/p/s2.jsonl", cwd: "/ws", source: "rotation-follow", ts: "2026-07-14T00:01:00Z" });
+    const rows = readSessionOwners(file);
+    expect(rows.map((r) => r.sessionId)).toEqual(["s1", "s2"]);
+    expect(latestOwnerFor(rows, "a", "/ws")?.sessionId).toBe("s2");
+  });
+
+  describe("resolveRotationFollow (t-9f2641 — mid-run transcript rotation follow)", () => {
+    const mk = (files: Record<string, number>) => {
+      const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-rotation-follow-"));
+      for (const [name, mtimeMs] of Object.entries(files)) {
+        const p = path.join(tmp, name);
+        fs.writeFileSync(p, "{}\n", "utf8");
+        const t = new Date(mtimeMs);
+        fs.utimesSync(p, t, t);
+      }
+      return tmp;
+    };
+
+    it("follows the newest STRICTLY-newer sibling .jsonl when unambiguous", () => {
+      const dir = mk({ "old.jsonl": 1000, "new.jsonl": 5000, "newest.jsonl": 9000, "note.txt": 9999 });
+      const follow = resolveRotationFollow([], "me", path.join(dir, "old.jsonl"));
+      expect(follow).toEqual({ transcriptPath: path.join(dir, "newest.jsonl"), sessionId: "newest" });
+    });
+
+    it("never follows when another agent's current row shares the same transcript directory (never-guess)", () => {
+      const dir = mk({ "old.jsonl": 1000, "new.jsonl": 5000 });
+      const rows = parseOwnerRows([
+        row({ agent: "sibling", sessionId: "sib", transcriptPath: path.join(dir, "old.jsonl"), cwd: "/ws" }),
+      ].join("\n"));
+      expect(resolveRotationFollow(rows, "me", path.join(dir, "old.jsonl"))).toBeUndefined();
+    });
+
+    it("ignores another agent's row that lives in a DIFFERENT directory (isolated cwd/home stays unambiguous)", () => {
+      const dir = mk({ "old.jsonl": 1000, "new.jsonl": 5000 });
+      const rows = parseOwnerRows([
+        row({ agent: "elsewhere", sessionId: "e1", transcriptPath: "/other/dir/e1.jsonl", cwd: "/other" }),
+      ].join("\n"));
+      expect(resolveRotationFollow(rows, "me", path.join(dir, "old.jsonl"))?.sessionId).toBe("new");
+    });
+
+    it("returns undefined when no strictly-newer sibling exists", () => {
+      const dir = mk({ "old.jsonl": 5000, "older.jsonl": 1000 });
+      expect(resolveRotationFollow([], "me", path.join(dir, "old.jsonl"))).toBeUndefined();
+    });
+
+    it("returns undefined when the dead file's own mtime can't be read (no evidence of 'newer than')", () => {
+      const dir = mk({ "new.jsonl": 5000 });
+      expect(resolveRotationFollow([], "me", path.join(dir, "missing.jsonl"))).toBeUndefined();
+    });
+
+    it("t-9f2641 MAJOR fix: a live (currently-declared) sibling's transcript dir is ambiguous even with NO owner row for it yet (TOCTOU close)", () => {
+      // The exact race: sibling's brand-new session file is on disk (newest mtime) BEFORE its SessionStart
+      // hook has appended its own owner row — `rows` alone can't see it, so `liveTranscriptDirs` must.
+      const dir = mk({ "old.jsonl": 1000, "sib-new.jsonl": 5000 });
+      expect(resolveRotationFollow([], "me", path.join(dir, "old.jsonl"), { liveTranscriptDirs: [dir] })).toBeUndefined();
+    });
+
+    it("t-9f2641 MAJOR fix: a live sibling's dir in a DIFFERENT directory never makes an isolated dir ambiguous", () => {
+      const dir = mk({ "old.jsonl": 1000, "new.jsonl": 5000 });
+      expect(resolveRotationFollow([], "me", path.join(dir, "old.jsonl"), { liveTranscriptDirs: ["/other/dir"] })?.sessionId).toBe("new");
+    });
+
+    it("t-9f2641 addendum: a deleted dead transcript follows the sole candidate strictly newer than the caller's last-known mtime", () => {
+      const dir = mk({ "new.jsonl": 5000 });
+      const deadPath = path.join(dir, "gone.jsonl"); // rotated AND pruned — no mtime of its own
+      expect(resolveRotationFollow([], "me", deadPath, { deadMtimeBaseline: 1000 })).toEqual({
+        transcriptPath: path.join(dir, "new.jsonl"),
+        sessionId: "new",
+      });
+    });
+
+    it("t-9f2641 addendum: a deleted dead transcript stays pinned with NO baseline at all", () => {
+      const dir = mk({ "new.jsonl": 5000 });
+      expect(resolveRotationFollow([], "me", path.join(dir, "gone.jsonl"))).toBeUndefined();
+    });
+
+    it("t-9f2641 addendum: a deleted dead transcript stays pinned when MULTIPLE candidates are newer than the baseline (still conservative)", () => {
+      const dir = mk({ "a.jsonl": 5000, "b.jsonl": 6000 });
+      expect(resolveRotationFollow([], "me", path.join(dir, "gone.jsonl"), { deadMtimeBaseline: 1000 })).toBeUndefined();
+    });
+
+    it("t-9f2641 addendum: a deleted dead transcript stays pinned when nothing is newer than the baseline", () => {
+      const dir = mk({ "old-sibling.jsonl": 500 });
+      expect(resolveRotationFollow([], "me", path.join(dir, "gone.jsonl"), { deadMtimeBaseline: 1000 })).toBeUndefined();
+    });
+
+    it("t-9f2641 addendum: a deleted dead transcript still respects row + live-dir ambiguity", () => {
+      const dir = mk({ "new.jsonl": 5000 });
+      const deadPath = path.join(dir, "gone.jsonl");
+      const rows = parseOwnerRows([
+        row({ agent: "sibling", sessionId: "sib", transcriptPath: path.join(dir, "new.jsonl"), cwd: "/ws" }),
+      ].join("\n"));
+      expect(resolveRotationFollow(rows, "me", deadPath, { deadMtimeBaseline: 1000 })).toBeUndefined();
+    });
   });
 
   it("buildOwnershipSettings produces a SessionStart command hook with the agent + paths shell-quoted", () => {

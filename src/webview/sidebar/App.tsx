@@ -535,9 +535,20 @@ function MoreMenu({ menu, onClose }: { menu: MenuState | null; onClose: () => vo
         list[next]?.focus();
       }
     };
+    // Webview is an iframe: clicks on the editor never hit .menu-backdrop. Close when the
+    // webview loses focus (blur) or is hidden so the overflow menu does not stay stuck.
+    const dismissOnFocusLoss = () => onClose();
+    const onVisibility = () => { if (document.hidden) onClose(); };
     document.addEventListener("keydown", h);
-    return () => { document.removeEventListener("keydown", h); trigger?.focus?.(); };
-  }, [menu]);
+    window.addEventListener("blur", dismissOnFocusLoss);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      document.removeEventListener("keydown", h);
+      window.removeEventListener("blur", dismissOnFocusLoss);
+      document.removeEventListener("visibilitychange", onVisibility);
+      trigger?.focus?.();
+    };
+  }, [menu]); // onClose is stable enough for this session menu; avoid re-bind loops from inline lambdas
   useLayoutEffect(() => {
     if (!menu) return;
     setPos(estimate);
