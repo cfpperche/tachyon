@@ -23,6 +23,20 @@ _In-flight design memory — decisions, deviations, tradeoffs, and open question
 - 2026-07-14 integration review hardened the experimental envelope timestamp boundary: JavaScript `Date.parse`
   normalizes impossible calendar dates, so accepted RFC 3339 input must round-trip to the identical canonical instant
   or fail closed.
+- 2026-07-14 T1 established `CollectorEnvelopeV1` as a fresh allowlisted projection rather than a trusted cast. One
+  malformed required fact rejects the whole envelope to a bounded typed unavailable result; unknown additive fields
+  are ignored, hostile getters are read once, arrays are dense and bounded, and no input value enters diagnostics.
+- 2026-07-14 T1 made attribution structurally disjoint: native usage requires an agent/workspace scope, while quota
+  requires a provider-account scope with a Tachyon-owned opaque `ps_` digest key. Neither scope can validate as the
+  other, so aggregate account quota cannot silently acquire an agent identity.
+- 2026-07-14 quota-only is enforced in the schema: `ProviderCostFactV1` reserves a unit-safe future shape, but it is not
+  a member of `RuntimeObservationFactV1` and `CollectorEnvelopeV1` rejects `provider-cost` in V1. No cost source,
+  scanner, scheduler, persistence, projection or UI was added.
+- 2026-07-14 CodexBar provenance stays outside the runtime contract. The development-only reference manifest pins
+  `v0.43.0`, its annotated tag/commit, MIT license and synthetic fixture hashes; normalized envelopes contain only a
+  Tachyon collector id/version. `npm run check:runtime-observability-reference` validates those pins and can compare a
+  candidate checkout only across allowlisted Codex/Claude paths. No CodexBar source, binary, Swift input or package
+  dependency enters the product graph, and no upstream code was copied, so there is no derived-code NOTICE obligation.
 - Mission Control context: parent design task `t-ed03b3`; vendor-strategy research task `t-79dee5`.
 
 ## Deviations
@@ -67,7 +81,9 @@ _Historical pre-ratification questions are retained below; their resolutions fol
 - Resolved 2026-07-14: no downstream engine fork or production CodexBar binary. Build native TypeScript provider
   adapters behind an internal read-only observation-source interface.
 - Resolved 2026-07-14: ship Codex and Claude quota windows first; defer cost.
-- Remaining design work: define exact source-specific consent/configuration and a lightweight upstream-radar check.
+- Resolved 2026-07-14 in T1: the lightweight upstream radar is a read-only development command over a pinned manifest,
+  fixture hashes and an explicit watched-path allowlist; it is not a release/runtime dependency.
+- Remaining design work: define exact source-specific consent/configuration for the native T2 adapters.
 
 ## Verification log
 
@@ -76,3 +92,13 @@ _Historical pre-ratification questions are retained below; their resolutions fol
 
 ### 2026-07-14T17:34:58Z — pass (1/1) — source: tasks.md
 - `npm run verify:full:quiet` — pass
+
+### 2026-07-14T18:13:54Z — T1 neutral contract
+
+- `npm exec vitest run test/unit/runtimeObservabilityValidate.test.ts test/unit/runtimeObservabilityReference.test.ts`
+  — pass, 28/28 focused tests.
+- `npm run check:runtime-observability-reference` — pass; manifest and pinned fixture hashes valid.
+- `npm run check:runtime-observability-reference -- --repo .tachyon/reference/codexbar-v0.43.0 --candidate HEAD`
+  — pass; official-origin annotated `v0.43.0` baseline clean across watched Codex/Claude paths.
+- `npm run typecheck` — pass.
+- `npm run verify:full:quiet` — pass; 331 files, 3,996 passed, 3 skipped.

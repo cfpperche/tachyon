@@ -25,13 +25,13 @@ implementation until its ADR is accepted._
 
 ## T1 — neutral observability contract
 
-- [ ] Define versioned native-usage, provider-quota, optional provider-cost, unavailable, confidence, freshness, and
+- [x] Define versioned native-usage, provider-quota, optional provider-cost, unavailable, confidence, freshness, and
   collector-envelope types outside the webview layer.
-- [ ] Implement bounded validation/redaction and hostile fixtures covering secrets, account identifiers, paths, raw
+- [x] Implement bounded validation/redaction and hostile fixtures covering secrets, account identifiers, paths, raw
   errors, oversized values, unknown enums, non-finite numbers, invalid percentages, and invalid timestamps.
-- [ ] Add compatibility fixtures for the pinned CodexBar reference baseline and an upstream-radar command for relevant
+- [x] Add compatibility fixtures for the pinned CodexBar reference baseline and an upstream-radar command for relevant
   provider changes.
-- [ ] Prove native per-agent facts and aggregate provider/account facts cannot collapse into one attribution record.
+- [x] Prove native per-agent facts and aggregate provider/account facts cannot collapse into one attribution record.
 
 ## T2 — native TypeScript provider acquisition
 
