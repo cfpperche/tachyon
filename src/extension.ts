@@ -148,26 +148,27 @@ async function checkTachyonBuildProvenance(context: vscode.ExtensionContext): Pr
   }
 }
 
-interface WorkspaceMembershipRefreshDeps {
-  registry: Map<string, { dispose(): void | Promise<void> }>;
+interface WorkspaceMembershipRefreshDeps<T extends object> {
+  registry: Map<string, T>;
+  detachWorkspace: (workspace: T) => void | Promise<void>;
   hasConfig: (folderPath: string) => boolean;
   currentWorktreesBase: () => string;
-  addWorkspace: (folderPath: string, autostart: boolean, refreshOnSuccess?: boolean) => Promise<{ dispose(): void | Promise<void> }>;
+  addWorkspace: (folderPath: string, autostart: boolean, refreshOnSuccess?: boolean) => Promise<T>;
   refreshAll: () => void;
   reportError: (error: unknown) => void;
 }
 
 /** Registers the live multi-root membership path after activation has built its refresh fan-out. */
-export function registerWorkspaceMembershipRefresh(
+export function registerWorkspaceMembershipRefresh<T extends object>(
   onDidChangeWorkspaceFolders: (listener: (event: vscode.WorkspaceFoldersChangeEvent) => void) => vscode.Disposable,
-  deps: WorkspaceMembershipRefreshDeps,
+  deps: WorkspaceMembershipRefreshDeps<T>,
 ): vscode.Disposable {
   return onDidChangeWorkspaceFolders((event) => {
     void refreshWorkspaceMembership(event, deps).catch((error) => reportWorkspaceMembershipError(deps, error));
   });
 }
 
-function reportWorkspaceMembershipError(deps: WorkspaceMembershipRefreshDeps, error: unknown): void {
+function reportWorkspaceMembershipError<T extends object>(deps: WorkspaceMembershipRefreshDeps<T>, error: unknown): void {
   try {
     deps.reportError(error);
   } catch {
@@ -175,14 +176,14 @@ function reportWorkspaceMembershipError(deps: WorkspaceMembershipRefreshDeps, er
   }
 }
 
-async function refreshWorkspaceMembership(event: vscode.WorkspaceFoldersChangeEvent, deps: WorkspaceMembershipRefreshDeps): Promise<void> {
+async function refreshWorkspaceMembership<T extends object>(event: vscode.WorkspaceFoldersChangeEvent, deps: WorkspaceMembershipRefreshDeps<T>): Promise<void> {
   try {
     for (const removed of event.removed) {
       try {
         const ws = deps.registry.get(removed.uri.fsPath);
         if (ws) {
           deps.registry.delete(removed.uri.fsPath);
-          await ws.dispose(); // tmux sessions survive — reattach when the folder returns
+          await deps.detachWorkspace(ws);
         }
       } catch (error) {
         reportWorkspaceMembershipError(deps, error);
@@ -990,9 +991,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // outlived the worktrees themselves (a deploy reload finds them already cleaned up), so the
   // persisted .code-workspace can carry stale entries forward across reloads otherwise.
   applyWorktreeFolderReveal();
-  // Folders added/removed live (multi-root): create with config, dispose on removal.
+  // Folders added/removed live (multi-root): create with config, then use the registry's explicit detach path.
   const folderWatcher = registerWorkspaceMembershipRefresh(vscode.workspace.onDidChangeWorkspaceFolders, {
     registry,
+    // Compatibility path until the final cutover.  The persistent shell registry supplies client.close()
+    // here instead, which detaches only its lease and has no engine-stop capability.
+    detachWorkspace: (workspace) => workspace.dispose(),
     hasConfig,
     currentWorktreesBase,
     addWorkspace,

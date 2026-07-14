@@ -13,7 +13,6 @@ src/webview/HandoffPanel.ts
 src/webview/MissionControlPanel.ts
 src/webview/PinStudioAdapter.ts
 src/webview/PinStudioPanel.ts
-src/webview/PluginsPanel.ts
 src/webview/ProbeResultPanel.ts
 src/webview/RunbookStudioAdapter.ts
 src/webview/RunbookStudioPanel.ts

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { FakeWorkspaceClient } from "../../src/shell/FakeWorkspaceClient.js";
-import { workspacePresentationTarget } from "../../src/shell/WorkspacePresentation.js";
+import { workspaceGitPresentationTarget, workspacePresentationTarget } from "../../src/shell/WorkspacePresentation.js";
 import { projectedAgent, projectionIdentity, projectionSnapshot } from "./fixtures/workspaceProjection.js";
 
 describe("FakeWorkspaceClient", () => {
@@ -41,6 +41,8 @@ describe("FakeWorkspaceClient", () => {
       wsHash: identity.workspaceHash,
       folderName: "tachyon-fake-workspace",
     });
+    const gitExec = async () => ({ stdout: "", stderr: "", code: 0 });
+    expect(workspaceGitPresentationTarget(fake, gitExec).gitExec).toBe(gitExec);
     const command = { schemaVersion: 1 as const, method: "agent.start" as const, input: { agent: "worker" } };
     const first = await fake.invoke("operation-fake-0001", command);
     expect(await fake.invoke("operation-fake-0001", command)).toEqual(first);

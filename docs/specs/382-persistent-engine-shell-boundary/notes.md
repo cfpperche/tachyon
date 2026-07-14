@@ -242,3 +242,26 @@ None.
 - Remaining before activation cutover: migrate the other 25 consumers, add their missing typed
   projections/actions and only then replace `extension.ts` ownership.  The production extension still
   constructs exactly the legacy Workspace in this checkpoint; no dual engine is activated.
+
+## Twelfth implementation slice — 2026-07-14
+
+- Added a shell-owned `WorkspaceClientRegistry` keyed by canonical workspace root.  Concurrent attaches
+  share one connection; an in-flight attach cancelled by folder removal closes only the returned client
+  lease and cannot reinsert itself.  Registry shutdown likewise has no engine stop/restart capability.
+- The registry remembers the original folder alias, so removal still detaches after the path has already
+  disappeared.  Ready clients are sorted by canonical root, and the legacy short workspace hash is
+  rejected as ambiguous when it collides instead of silently selecting the wrong workspace.
+- Generalized the existing live membership helper with an explicit `detachWorkspace` callback.  The
+  current compatibility registry passes legacy `Workspace.dispose()` visibly; the persistent shell
+  registry can pass `WorkspaceClient.close()` at cutover without changing membership behavior or gaining
+  an engine lifecycle path.
+- Migrated Plugins off concrete Workspace onto a shell-owned identity + Git executor contract.  Plugin
+  installation remains an editor-side, user-consented filesystem/Git action; the future client adapter
+  supplies the same local Git executor without reaching into the daemon.  The executable concrete-import
+  inventory therefore shrank from 25 to 24 files.
+- Registry/membership/fake/presentation coverage passes 23/23 with typecheck, extension/engine builds,
+  daemon import boundary and diff-check green.  Engine code and the strict snapshot format were unchanged,
+  so the preceding real systemd dogfood remains the relevant host proof and no extra global full was run.
+- The new registry is not yet installed in `extension.ts`; doing so before the remaining presentation
+  consumers migrate would create the forbidden mixed mode.  Production continues on the explicit legacy
+  callback until the single final activation cutover.

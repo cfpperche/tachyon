@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import { panelIcon } from "./shared/panelIcon.js";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { Workspace } from "../workspace/Workspace.js";
+import type { WorkspaceGitPresentationTarget } from "../shell/WorkspacePresentation.js";
 import {
   detectRuntimes,
   loadPluginFromSource,
@@ -121,7 +121,7 @@ export class PluginsPanelManager {
 
   constructor(
     private readonly extensionUri: vscode.Uri,
-    private readonly getWorkspaces: () => Workspace[],
+    private readonly getWorkspaces: () => WorkspaceGitPresentationTarget[],
     private readonly onPluginsChanged: () => void = () => undefined,
   ) {}
 
@@ -200,7 +200,7 @@ export class PluginsPanelManager {
   }
 
   /** Route one inbound webview message. Network/apply ops are serialized by a `busy` flag (one at a time). */
-  private async onMessage(ws: Workspace, m: InboundMsg, io: PanelIO): Promise<void> {
+  private async onMessage(ws: WorkspaceGitPresentationTarget, m: InboundMsg, io: PanelIO): Promise<void> {
     switch (m.type) {
       case "ready":
       case "refresh":
@@ -270,7 +270,7 @@ export class PluginsPanelManager {
     }
   }
 
-  private async checkOnePluginUpdate(ws: Workspace, p: PluginLock): Promise<UpdateCheck> {
+  private async checkOnePluginUpdate(ws: WorkspaceGitPresentationTarget, p: PluginLock): Promise<UpdateCheck> {
     if (!p.source) return { kind: "error", detail: "plugin has no recorded source" };
     try {
       // spec 266 — for a semver-tag pin, evaluate against the repo's highest semver tag (else the exact pin).
@@ -284,7 +284,7 @@ export class PluginsPanelManager {
   }
 
   /** Re-resolve every sourced installed plugin and previewUpdate it → per-plugin status (clears `unknown`). */
-  private async checkUpdates(ws: Workspace, io: PanelIO): Promise<void> {
+  private async checkUpdates(ws: WorkspaceGitPresentationTarget, io: PanelIO): Promise<void> {
     io.postBusy("Checking for updates…");
     const lock = this.lockfile(ws);
     const next: Record<string, UpdateCheck> = {};
@@ -297,7 +297,7 @@ export class PluginsPanelManager {
   }
 
   /** Re-resolve one sourced installed plugin and merge its status without clearing unrelated update checks. */
-  private async checkPluginUpdate(ws: Workspace, name: string, io: PanelIO): Promise<void> {
+  private async checkPluginUpdate(ws: WorkspaceGitPresentationTarget, name: string, io: PanelIO): Promise<void> {
     const p = this.lockfile(ws)?.plugins[name];
     if (!p) { io.postResult(false, `Plugin '${name}' is not installed.`); return; }
     if (!p.source) { io.postResult(false, `'${name}' has no recorded source to check.`); return; }
@@ -306,7 +306,7 @@ export class PluginsPanelManager {
     io.post();
   }
 
-  private async previewInstallOp(ws: Workspace, spec: string, io: PanelIO): Promise<void> {
+  private async previewInstallOp(ws: WorkspaceGitPresentationTarget, spec: string, io: PanelIO): Promise<void> {
     io.postBusy(`Resolving ${spec}…`);
     let loaded;
     try {
@@ -342,7 +342,7 @@ export class PluginsPanelManager {
   private readonly externalInstalling = new Set<string>();
 
   /** the DRAWER assisted install — resolves the requirement from the pending install op's manifest. */
-  private async installExternalOp(ws: Workspace, toolName: string, io: PanelIO): Promise<void> {
+  private async installExternalOp(ws: WorkspaceGitPresentationTarget, toolName: string, io: PanelIO): Promise<void> {
     const op = io.getPending();
     if (!op || op.kind !== "install") { io.postResult(false, "Re-open the install to assist-install a tool."); return; }
     const decl = op.plugin.manifest.externalTools[toolName];
@@ -353,7 +353,7 @@ export class PluginsPanelManager {
   /** spec 287 (D4) — the INSTALLED-CARD assisted install: resolve the requirement from the LOCKFILE (not a pending
    *  consent op), adapt its `Record<pm, string[]>` install map into the `{ argv }` shape, then run the SAME
    *  consent-gated machinery. Security is equivalent — buildAssistedInstall re-validates + re-normalizes the argv. */
-  private async installExternalFromCardOp(ws: Workspace, pluginName: string, toolName: string, io: PanelIO): Promise<void> {
+  private async installExternalFromCardOp(ws: WorkspaceGitPresentationTarget, pluginName: string, toolName: string, io: PanelIO): Promise<void> {
     const lock = this.lockfile(ws);
     const plugin = lock?.plugins[pluginName];
     if (!plugin) { io.postResult(false, `Plugin '${pluginName}' is not installed.`); return; }
@@ -367,7 +367,7 @@ export class PluginsPanelManager {
   /** spec 285/287 — the shared privileged assisted-install: build the NORMALIZED argv (trusted realpaths), show the
    *  strong modal ack, run it argv-directly in a VISIBLE terminal (the OS owns the password prompt), guard against a
    *  duplicate in-flight install, and re-detect (re-post) when the terminal closes. Tachyon never sees the credential. */
-  private async runAssistedInstall(ws: Workspace, toolName: string, install: Partial<Record<PackageManager, ExternalToolInstall>>, manual: string, io: PanelIO): Promise<void> {
+  private async runAssistedInstall(ws: WorkspaceGitPresentationTarget, toolName: string, install: Partial<Record<PackageManager, ExternalToolInstall>>, manual: string, io: PanelIO): Promise<void> {
     const key = `${ws.wsHash}:${toolName}`;
     if (this.externalInstalling.has(key)) { notify(`An install of ${toolName} is already in progress — finish it in the terminal.`); return; }
     // buildAssistedInstall NORMALIZES the argv to trusted absolute realpaths (sudo + the package manager); a
@@ -403,7 +403,7 @@ export class PluginsPanelManager {
    *  its external-tool statuses re-detect (a tool just assist-installed flips missing→present) and re-post the consent.
    *  Mirrors `reselectOp` (re-preview + setPending + postConsent) so the held fingerprint stays consistent. No-op when
    *  the assisted install came from an installed card (no pending op) — that path is covered by io.post()/gather. */
-  private async refreshInstallDrawer(ws: Workspace, io: PanelIO): Promise<void> {
+  private async refreshInstallDrawer(ws: WorkspaceGitPresentationTarget, io: PanelIO): Promise<void> {
     const op = io.getPending();
     if (!op || op.kind !== "install") return;
     const present = detectRuntimes(ws.workspaceRoot);
@@ -418,7 +418,7 @@ export class PluginsPanelManager {
 
   /** spec 264 — gather the (async) git-hook state for a plugin that ships git-hooks; undefined otherwise. The
    *  sync `previewInstall` consumes it so the preview fingerprint matches what `applyInstall` recomputes. */
-  private async gitState(ws: Workspace, plugin: LoadedPlugin) {
+  private async gitState(ws: WorkspaceGitPresentationTarget, plugin: LoadedPlugin) {
     return plugin.gitHooks.length > 0 ? await gatherGitHookState(ws.workspaceRoot, plugin.gitHooks.map((g) => g.event), this.gitRun(ws)) : undefined;
   }
 
@@ -445,7 +445,7 @@ export class PluginsPanelManager {
 
   /** spec 263 — re-preview the pending install for a new runtime selection (host-owned recompute on each drawer
    *  toggle), re-posting consent with the fresh fingerprint. Selection is intersected with the declared runtimes. */
-  private async reselectOp(ws: Workspace, runtimes: string[], io: PanelIO): Promise<void> {
+  private async reselectOp(ws: WorkspaceGitPresentationTarget, runtimes: string[], io: PanelIO): Promise<void> {
     const op = io.getPending();
     if (!op || op.kind !== "install") return;
     const present = detectRuntimes(ws.workspaceRoot);
@@ -458,7 +458,7 @@ export class PluginsPanelManager {
     io.postConsent(buildInstallConsent(preview, op.provenance, present));
   }
 
-  private async previewUpdateOp(ws: Workspace, name: string, io: PanelIO, forceReinstall: boolean): Promise<void> {
+  private async previewUpdateOp(ws: WorkspaceGitPresentationTarget, name: string, io: PanelIO, forceReinstall: boolean): Promise<void> {
     const lock = this.lockfile(ws);
     const entry = lock?.plugins[name];
     if (!entry?.source) {
@@ -488,7 +488,7 @@ export class PluginsPanelManager {
     io.postConsent(buildUpdateConsent(preview, loaded.provenance, forceReinstall, present));
   }
 
-  private async previewRemoveOp(ws: Workspace, name: string, io: PanelIO): Promise<void> {
+  private async previewRemoveOp(ws: WorkspaceGitPresentationTarget, name: string, io: PanelIO): Promise<void> {
     const lock = this.lockfile(ws);
     const version = lock?.plugins[name]?.version ?? "";
     const preview = previewRemove(name, ws.workspaceRoot);
@@ -497,7 +497,7 @@ export class PluginsPanelManager {
   }
 
   /** Apply the held op (token-matched) — the engine apply re-previews + lost-update-guards before writing. */
-  private async confirmOp(ws: Workspace, token: string, skillDecisions: Record<string, "keep" | "replace">, mcpDecisions: Record<string, "keep" | "replace">, mcpConfirmed: boolean, gitHookConfirmed: boolean, toolConfirmed: boolean, dataConfirmed: boolean, viewConfirmed: boolean, fleetReadConfirmed: boolean, actionConfirmed: Record<string, boolean>, io: PanelIO): Promise<void> {
+  private async confirmOp(ws: WorkspaceGitPresentationTarget, token: string, skillDecisions: Record<string, "keep" | "replace">, mcpDecisions: Record<string, "keep" | "replace">, mcpConfirmed: boolean, gitHookConfirmed: boolean, toolConfirmed: boolean, dataConfirmed: boolean, viewConfirmed: boolean, fleetReadConfirmed: boolean, actionConfirmed: Record<string, boolean>, io: PanelIO): Promise<void> {
     const op = io.getPending();
     io.setPending(undefined);
     if (!op) return;
@@ -536,7 +536,7 @@ export class PluginsPanelManager {
 
   /** spec 265 — re-provision the workspace's tools from the committed lockfile (clone/CI where `.tachyon/bin`
    *  is gitignored). Explicit + user-triggered; re-resolves Node + re-materializes the launcher; never a silent fetch. */
-  private async rehydrateOp(ws: Workspace, io: PanelIO): Promise<void> {
+  private async rehydrateOp(ws: WorkspaceGitPresentationTarget, io: PanelIO): Promise<void> {
     io.postBusy("Rehydrating tools…");
     const onProgress = (p: ProvisionProgress) => io.postBusy(progressBusyLabel(p));
     const r = await rehydrateTools(ws.workspaceRoot, { launcherBundlePath: this.launcherBundlePath(), onProgress });
@@ -548,13 +548,13 @@ export class PluginsPanelManager {
     io.post();
   }
 
-  private gitRun(ws: Workspace): GitRun {
+  private gitRun(ws: WorkspaceGitPresentationTarget): GitRun {
     return (args, cwd) => ws.gitExec(args, cwd ?? ws.workspaceRoot);
   }
 
   /** spec 264 — re-claim core.hooksPath after a clone whose managed git-hook state is intact but hooksPath
    *  drifted. Explicit + consent-gated by the user clicking Repair; never auto-claimed. */
-  private async repairOp(ws: Workspace, io: PanelIO): Promise<void> {
+  private async repairOp(ws: WorkspaceGitPresentationTarget, io: PanelIO): Promise<void> {
     const r = await repairGitHooks(ws.workspaceRoot, this.gitRun(ws));
     io.postResult(r.repaired, r.repaired ? `Re-activated git-hooks (${r.reason}).` : `Nothing to repair: ${r.reason}.`);
     io.setChecks({});
@@ -563,7 +563,7 @@ export class PluginsPanelManager {
 
   /** spec 270 — open a plugin's human-owned config file in an editor (the Config button + post-install nav).
    *  Returns whether a config file was opened (absent config → false, no-op). */
-  private async openConfigFile(ws: Workspace, name: string): Promise<boolean> {
+  private async openConfigFile(ws: WorkspaceGitPresentationTarget, name: string): Promise<boolean> {
     const cfg = this.lockfile(ws)?.plugins[name]?.config;
     if (!cfg) return false;
     try {
@@ -575,13 +575,13 @@ export class PluginsPanelManager {
   }
 
   /** spec 270 — open a plugin's docs URL externally. https-guarded AT CLICK (defense in depth over manifest parse). */
-  private async openDocs(ws: Workspace, name: string): Promise<void> {
+  private async openDocs(ws: WorkspaceGitPresentationTarget, name: string): Promise<void> {
     const url = this.lockfile(ws)?.plugins[name]?.docsUrl;
     if (typeof url === "string" && /^https:\/\//.test(url)) await vscode.env.openExternal(vscode.Uri.parse(url));
   }
 
   /** Parse the committed lockfile (best-effort; undefined on absence/corruption — callers degrade gracefully). */
-  private lockfile(ws: Workspace): { plugins: Record<string, PluginLock> } | undefined {
+  private lockfile(ws: WorkspaceGitPresentationTarget): { plugins: Record<string, PluginLock> } | undefined {
     try {
       const { lockfile } = parseLockfile(fs.readFileSync(path.join(ws.workspaceRoot, LOCKFILE_REL_PATH), "utf8"));
       return lockfile;
@@ -592,7 +592,7 @@ export class PluginsPanelManager {
 
   /** Assemble the render-ready model: present runtimes + the committed lockfile + any update-checks → VM.
    *  Update-checks are LAZY (the user runs "Check for updates"); absent ⇒ every status is `unknown`. */
-  private gather(ws: Workspace, updateChecks: Record<string, UpdateCheck>): PluginsViewModel {
+  private gather(ws: WorkspaceGitPresentationTarget, updateChecks: Record<string, UpdateCheck>): PluginsViewModel {
     const present = detectRuntimes(ws.workspaceRoot);
     let lockfileText: string | undefined;
     try {
@@ -613,7 +613,7 @@ export class PluginsPanelManager {
    *  assisted install is offered. SPAWN-FREE: `detectExternalToolPresence` resolves on the clean PATH in JS (no
    *  `command -v` subprocess, no detect probe), and each unique tool is resolved at most once per gather (the
    *  storm guard). Recomputed every gather, so install/remove/refresh/terminal-close naturally re-detect (D5). */
-  private externalStatuses(ws: Workspace): Record<string, ExternalToolVM[]> {
+  private externalStatuses(ws: WorkspaceGitPresentationTarget): Record<string, ExternalToolVM[]> {
     const lock = this.lockfile(ws);
     if (!lock) return {};
     // dedupe per UNIQUE candidate SET within this gather (many plugins can declare ffmpeg) — the storm guard. Keyed by
@@ -636,7 +636,7 @@ export class PluginsPanelManager {
    *  runtime is intact iff every target it recorded (settings file / skill dir / mcp config) still exists. This
    *  is the honest "installed & present" signal for the card pills — unlike `detectRuntimes`, it is correct for
    *  a skills-only install that lands in `.agents/skills/` and never creates a `.codex/` dir. */
-  private intactRuntimes(ws: Workspace): Record<string, Runtime[]> {
+  private intactRuntimes(ws: WorkspaceGitPresentationTarget): Record<string, Runtime[]> {
     const lock = this.lockfile(ws);
     const out: Record<string, Runtime[]> = {};
     for (const p of Object.values(lock?.plugins ?? {})) {

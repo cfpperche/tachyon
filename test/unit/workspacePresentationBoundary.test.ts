@@ -30,11 +30,11 @@ describe("persistent workspace presentation boundary", () => {
   });
 
   it("keeps migrated panels off the concrete Workspace class", () => {
-    const migrated = ["src/webview/ApprovalPanel.ts"];
+    const migrated = ["src/webview/ApprovalPanel.ts", "src/webview/PluginsPanel.ts"];
     for (const relative of migrated) {
       const source = fs.readFileSync(path.join(root, relative), "utf8");
       expect(source, relative).not.toMatch(/workspace\/Workspace(?:\.js)?/);
-      expect(source, relative).toMatch(/WorkspacePresentationTarget/);
+      expect(source, relative).toMatch(/Workspace(?:Git)?PresentationTarget/);
     }
   });
 

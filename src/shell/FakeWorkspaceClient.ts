@@ -87,6 +87,10 @@ export class FakeWorkspaceClient implements WorkspaceClient {
     return `http://127.0.0.1:${this.currentIdentity.bridge.port}/mcp`;
   }
 
+  get isClosed(): boolean {
+    return this.closed;
+  }
+
   enqueueSync(update: {
     snapshot: WorkspaceSnapshotEnvelopeV1;
     events?: WorkspaceEventV1[];

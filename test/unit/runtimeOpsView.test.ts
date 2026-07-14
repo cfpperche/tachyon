@@ -272,11 +272,11 @@ describe("Runtime Ops contribution and focus", () => {
     const view = fakeView(true);
     runtimeOps.resolveWebviewView(view as unknown as vscode.WebviewView);
 
-    const removedWorkspace = { dispose: vi.fn(async () => {}) } as unknown as { dispose(): Promise<void> };
+    const removedWorkspace = { close: vi.fn(async () => {}) };
     const registry = new Map<string, typeof removedWorkspace>([["/removed", removedWorkspace]]);
     const listeners: Array<(event: vscode.WorkspaceFoldersChangeEvent) => void> = [];
     const addWorkspace = vi.fn(async (folderPath: string) => {
-      const workspace = { dispose: vi.fn(async () => {}) } as unknown as typeof removedWorkspace;
+      const workspace = { close: vi.fn(async () => {}) };
       registry.set(folderPath, workspace);
       return workspace;
     });
@@ -292,6 +292,7 @@ describe("Runtime Ops contribution and focus", () => {
       },
       {
         registry,
+        detachWorkspace: (workspace) => workspace.close(),
         hasConfig: (folderPath) => folderPath === "/added",
         currentWorktreesBase: () => "/worktrees",
         addWorkspace,
@@ -308,7 +309,7 @@ describe("Runtime Ops contribution and focus", () => {
     await tick();
 
     expect(listenerResult).toBeUndefined();
-    expect(removedWorkspace.dispose).toHaveBeenCalledOnce();
+    expect(removedWorkspace.close).toHaveBeenCalledOnce();
     expect(addWorkspace).toHaveBeenCalledWith("/added", true, false);
     expect(refreshAll).toHaveBeenCalledOnce();
     expect(buildSnapshot).toHaveBeenCalledOnce();
@@ -336,6 +337,7 @@ describe("Runtime Ops contribution and focus", () => {
       },
       {
         registry,
+        detachWorkspace: (workspace) => workspace.dispose(),
         hasConfig: () => false,
         currentWorktreesBase: () => "/worktrees",
         addWorkspace: vi.fn(),
@@ -382,6 +384,7 @@ describe("Runtime Ops contribution and focus", () => {
       },
       {
         registry,
+        detachWorkspace: (workspace) => workspace.dispose(),
         hasConfig: (folderPath) => folderPath === "/added",
         currentWorktreesBase: () => "/worktrees",
         addWorkspace,
@@ -423,6 +426,7 @@ describe("Runtime Ops contribution and focus", () => {
       },
       {
         registry,
+        detachWorkspace: (workspace) => workspace.dispose(),
         hasConfig: (folderPath) => folderPath === "/failed" || folderPath === "/added",
         currentWorktreesBase: () => "/worktrees",
         addWorkspace,
