@@ -1,7 +1,14 @@
+import * as fs from "node:fs";
 import * as path from "node:path";
 import type { Workspace } from "../workspace/Workspace.js";
 import { ActivityLogWriter, type SessionLoc } from "../activity/logWriter.js";
+import { appendOwnerRow, readSessionOwners, resolveRotationFollow, sessionOwnersFile } from "../activity/sessionOwners.js";
 import { isResumable } from "../resume/SessionLedger.js";
+
+/** t-9f2641 — a resolved claude transcript that hasn't grown for this long is a candidate for rotation-follow
+ *  (a mid-run rotation left it dead while the process kept running). Matches the incident's "no growth for
+ *  >=60s" threshold; short of this, a merely-quiet agent must not be mistaken for a dead transcript. */
+const ROTATION_DEAD_THRESHOLD_MS = 60_000;
 
 /**
  * spec 239 inc 3b — runs ONE always-on durable-log writer per resumable agent, independent of any Activity
@@ -15,8 +22,24 @@ import { isResumable } from "../resume/SessionLedger.js";
  * `resolveEveryMs`) can be missed — the cached location keeps ingesting the old session. Real /clear–/resume
  * flows are seconds+ apart, so this is an accepted boundary, not a correctness hole for normal use.
  */
+interface DeadTranscriptTrack {
+  path: string;
+  lastMtimeMs: number;
+  /** wall-clock time the tracked path last showed growth (or was first observed) — the stall clock. */
+  sinceMs: number;
+}
+
+interface WriterEntry {
+  writer: ActivityLogWriter;
+  loc?: SessionLoc;
+  resolvedAt: number;
+  /** t-9f2641 — growth tracking for the currently-resolved transcript, so a mid-run rotation can be detected
+   *  without a single stat guessing at "dead" (a session can legitimately go quiet for a while). */
+  deadTrack?: DeadTranscriptTrack;
+}
+
 export class ActivityLogManager {
-  private readonly writers = new Map<string, { writer: ActivityLogWriter; loc?: SessionLoc; resolvedAt: number }>();
+  private readonly writers = new Map<string, WriterEntry>();
   private readonly pendingNotes = new Map<string, string>(); // lifecycle actions for writers not created yet (fork)
   private timer?: ReturnType<typeof setInterval>;
   private ticking = false;
@@ -26,6 +49,7 @@ export class ActivityLogManager {
     private readonly tickMs = 2000,
     private readonly resolveEveryMs = 3000,
     private readonly onAppended?: (workspaceHash: string, agent: string, count: number) => void,
+    private readonly now: () => number = () => Date.now(),
   ) {}
 
   start(): void {
