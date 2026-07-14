@@ -320,6 +320,10 @@ export interface AgentManagerOptions {
    *  + auth.json symlink), returning its path (undefined when the Bridge isn't up). Injected into
    *  the spawn env as GROK_HOME. Wired in Workspace where the Bridge URL/token live. */
   materializeBridgeMcpGrok?: (name: string) => string | undefined;
+  /** Materialize a non-harness hermes agent's private HERMES_HOME (Bridge MCP in config.yaml +
+   *  auth.json symlink), returning its path (undefined when the Bridge isn't up). Injected as
+   *  HERMES_HOME. Wired in Workspace where the Bridge URL/token live. */
+  materializeBridgeMcpHermes?: (name: string) => string | undefined;
   /** spec 243 — write a claude agent's per-spawn `--settings` file (the SessionStart ownership hook),
    *  returning its path; injected so activity follows a `/clear` on a shared cwd. Wired in Workspace. */
   materializeOwnershipSettings?: (name: string, opts?: { ownershipOnly?: boolean }) => string | undefined;
@@ -806,7 +810,16 @@ export class AgentManager {
    * full contract, staying well clear of tmux's hard per-argument ceiling. A body at or under the
    * threshold passes through unchanged — short-brief delivery stays byte-identical.
    */
-  private effectiveCmd(name: string, def: AgentDef, parent: string | undefined, primerCtx?: { delegator?: string; gate?: DelegationGate; freshWorktree?: boolean }): string {
+  /**
+   * Composed spawn brief (role + instructions + primer + brief-file diversion). Shared by
+   * `effectiveCmd` (argv delivery) and Hermes `HERMES_TUI_QUERY` (env delivery).
+   */
+  private effectiveInstructions(
+    name: string,
+    def: AgentDef,
+    parent: string | undefined,
+    primerCtx?: { delegator?: string; gate?: DelegationGate; freshWorktree?: boolean },
+  ): string | undefined {
     const guidance = !!parent && (this.opts.getConfig()?.settings.bridgeGuidance ?? true);
     const composed = withBridgeGuidance(composeInstructions(def.role, def.instructions), guidance);
     const deliverable = composed ? deliverableBody(this.opts.workspaceRoot, name, composed) : composed;
@@ -821,7 +834,27 @@ export class AgentManager {
           verify: this.opts.getConfig()?.settings.verify,
         })
       : composed;
-    return composeCommand({ cmd: def.cmd, instructions });
+    return instructions?.trim() ? instructions : undefined;
+  }
+
+  private effectiveCmd(name: string, def: AgentDef, parent: string | undefined, primerCtx?: { delegator?: string; gate?: DelegationGate; freshWorktree?: boolean }): string {
+    return composeCommand({ cmd: def.cmd, instructions: this.effectiveInstructions(name, def, parent, primerCtx) });
+  }
+
+  /**
+   * Hermes has no interactive positional prompt — the TUI reads HERMES_TUI_QUERY as STARTUP_QUERY.
+   * Inject the same composed brief used by effectiveCmd so contracts are not silently dropped.
+   */
+  private hermesBriefEnv(
+    name: string,
+    def: AgentDef,
+    parent: string | undefined,
+    primerCtx?: { delegator?: string; gate?: DelegationGate; freshWorktree?: boolean },
+  ): Record<string, string> {
+    if (binaryOf(def.cmd) !== "hermes") return {};
+    const brief = this.effectiveInstructions(name, def, parent, primerCtx);
+    if (!brief) return {};
+    return { HERMES_TUI_QUERY: brief };
   }
 
   /**
@@ -859,10 +892,15 @@ export class AgentManager {
     if (runtime === "grok" && this.opts.materializeBridgeMcpGrok) {
       return path.join(this.opts.workspaceRoot, ".tachyon", "bridge-mcp", `${name}.grok`);
     }
+    // Non-harness hermes with Bridge wiring uses the private bridge HERMES_HOME (state.db lives there).
+    if (runtime === "hermes" && this.opts.materializeBridgeMcpHermes) {
+      return path.join(this.opts.workspaceRoot, ".tachyon", "bridge-mcp", `${name}.hermes`);
+    }
     const home = (this.opts.homeDir ?? os.homedir)();
     if (runtime === "codex") return path.join(home, ".codex");
     if (runtime === "opencode") return defaultRealOpencodeDataHome(process.env, home);
     if (runtime === "grok") return path.join(home, ".grok");
+    if (runtime === "hermes") return path.join(home, ".hermes");
     return path.join(home, ".claude");
   }
 
@@ -1424,8 +1462,10 @@ export class AgentManager {
       // (same path as declared agents). Auto isolate:transcript would materialize a *second* private
       // home under .tachyon/harness/ and race GROK_HOME with withRuntimeBridge; cold dual-homes have
       // surfaced as interactive "Approve in your browser" instead of reusing ~/.grok auth.
-      const grokUsesBridgePrivateHome = adapter.runtime === "grok" && !!this.opts.materializeBridgeMcpGrok;
-      if (!grokUsesBridgePrivateHome) {
+      const usesBridgePrivateHome =
+        (adapter.runtime === "grok" && !!this.opts.materializeBridgeMcpGrok) ||
+        (adapter.runtime === "hermes" && !!this.opts.materializeBridgeMcpHermes);
+      if (!usesBridgePrivateHome) {
         def = { ...def, isolate: "transcript" };
       }
     }
@@ -1459,12 +1499,13 @@ export class AgentManager {
     const tokenEnv = this.opts.mintAgentToken?.(name);
     if (forced?.attempt && tokenEnv !== undefined) forced.attempt.token = true;
     if (forced?.attempt) forced.attempt.materialized = "attempted";
+    const primerCtx = { delegator, gate: opts?.gate, freshWorktree: !!worktree };
     const spawnBuild = this.applyHarness(
       name,
       def,
       cwd,
       effectiveCmd,
-      { ...extraEnv, ...tokenEnv, ...def.env, ...(opts?.env ?? {}), TACHYON_AGENT_NAME: name },
+      { ...extraEnv, ...tokenEnv, ...def.env, ...(opts?.env ?? {}), TACHYON_AGENT_NAME: name, ...this.hermesBriefEnv(name, def, parent, primerCtx) },
     );
     if (forced?.attempt) forced.attempt.materialized = "completed";
     this.applyDelegatedOpencodeHarnessPermission(def, spawnBuild.env, delegatedOpencode);
@@ -1607,6 +1648,8 @@ export class AgentManager {
    *   - grok (non-harness, t-843576) → no argv change; materialize a private GROK_HOME with
    *     `config.toml` carrying `[mcp_servers.tachyon_bridge]` (`Authorization: Bearer ${TACHYON_AGENT_BRIDGE_TOKEN}`)
    *     + `auth.json` symlink, and inject `GROK_HOME=<home>`. Never mutates the user's real `~/.grok`.
+   *   - hermes (non-harness) → no argv change; materialize a private HERMES_HOME with
+   *     `config.yaml` carrying `mcp_servers.tachyon_bridge` + `auth.json` symlink, inject `HERMES_HOME`.
    * No-op when the Bridge URL is absent (self-heals on the next (re)start). Generalizes spec 232 (the
    * pipeline-node gate is dropped — all codex/opencode-bridge spawns get it via this one call).
    */
@@ -1654,6 +1697,11 @@ export class AgentManager {
       const home = this.opts.materializeBridgeMcpGrok?.(name);
       if (!home) return { cmd, env: {}, wired: false };
       return { cmd, env: { GROK_HOME: home }, wired: true };
+    }
+    if (binary === "hermes") {
+      const home = this.opts.materializeBridgeMcpHermes?.(name);
+      if (!home) return { cmd, env: {}, wired: false };
+      return { cmd, env: { HERMES_HOME: home }, wired: true };
     }
     return { cmd, env: {}, wired: false };
   }
@@ -2158,18 +2206,26 @@ export class AgentManager {
     const restartDelegatedOpencode = (this.lineage.get(name) || this.delegators.get(name) || restartDelegationRecord) && worktree
       ? { workspaceRoot: this.opts.workspaceRoot, worktreesBase: this.worktreesBaseFor(cwd, worktree) }
       : undefined;
+    const restartPrimerCtx = {
+      delegator: this.delegators.get(name),
+      gate: restartDelegationRecord
+        ? { behaviorTest: restartDelegationRecord.behaviorTest, owns: restartDelegationRecord.owns, stubPath: restartDelegationRecord.stubPath }
+        : undefined,
+      freshWorktree: false as const,
+    };
+    const restartParent = this.lineage.get(name);
     const restartBuild = this.applyHarness(
       name,
       def,
       cwd,
-      this.effectiveCmd(name, def, this.lineage.get(name), {
-        delegator: this.delegators.get(name),
-        gate: restartDelegationRecord
-          ? { behaviorTest: restartDelegationRecord.behaviorTest, owns: restartDelegationRecord.owns, stubPath: restartDelegationRecord.stubPath }
-          : undefined,
-        freshWorktree: false,
-      }),
-      { ...this.opts.getExtraEnv?.(), ...this.opts.mintAgentToken?.(name), ...def.env, TACHYON_AGENT_NAME: name },
+      this.effectiveCmd(name, def, restartParent, restartPrimerCtx),
+      {
+        ...this.opts.getExtraEnv?.(),
+        ...this.opts.mintAgentToken?.(name),
+        ...def.env,
+        TACHYON_AGENT_NAME: name,
+        ...this.hermesBriefEnv(name, def, restartParent, restartPrimerCtx),
+      },
     );
     this.applyDelegatedOpencodeHarnessPermission(def, restartBuild.env, restartDelegatedOpencode);
     const restartBridge = this.withRuntimeBridge(name, def, restartBuild.cmd, cwd, restartDelegatedOpencode);

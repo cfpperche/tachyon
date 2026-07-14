@@ -14,7 +14,7 @@ import type { AgentStudioEntity, AgentStudioFields, AgentStudioHostMessage } fro
  * command + flag chips, role template, instructions, autostart/restart/attention,
  * worktree section, isolated-harness section) rendered inside StudioFrame's fields region (contiguous
  * document flow under Working directory — t-a1ba6c) instead of the old hand-rolled chrome. Faithful port
- * of the fields — same field names, same show/hide rules (harness only for a claude/codex command) —
+ * of the fields — same field names, same show/hide rules (harness for claude/codex/opencode/grok/hermes) —
  * just no kind tabs (this studio only ever creates/edits `kind: "agent"`).
  *
  * `firstToken`/`harnessRuntimeOfCmd` are deliberately reimplemented here (not imported from formLogic.ts) —
@@ -28,9 +28,11 @@ export interface AgentStudioDispatch {
 }
 
 const firstToken = (cmd: string): string => (cmd.trim().split(/\s+/)[0] || "").split("/").pop() || "";
-const harnessRuntimeOfCmd = (cmd: string): "claude" | "codex" | undefined => {
+/** Keep in sync with formLogic.harnessRuntimeOf / loadConfig HARNESS_BINS. */
+const HARNESS_STUDIO_BINS = new Set(["claude", "codex", "opencode", "grok", "hermes"]);
+const harnessRuntimeOfCmd = (cmd: string): string | undefined => {
   const bin = firstToken(cmd);
-  return bin === "claude" || bin === "codex" ? bin : undefined;
+  return HARNESS_STUDIO_BINS.has(bin) ? bin : undefined;
 };
 
 export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
@@ -130,7 +132,18 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
   const flags = entity.flagMap[firstToken(fields.cmd)] ?? [];
   const harnessRuntime = harnessRuntimeOfCmd(fields.cmd);
   const showHarness = !!harnessRuntime;
-  const codexHarness = harnessRuntime === "codex";
+  const showHarnessRules = harnessRuntime === "claude";
+  const showHarnessInstructions = harnessRuntime === "codex";
+  const harnessCheckboxLabel =
+    harnessRuntime === "codex"
+      ? "Give this Codex agent its own config, skills, hooks, and MCP"
+      : harnessRuntime === "grok"
+        ? "Give this Grok agent its own GROK_HOME (config, skills, hooks, MCP)"
+        : harnessRuntime === "hermes"
+          ? "Give this Hermes agent its own HERMES_HOME (config, skills, hooks, MCP)"
+          : harnessRuntime === "opencode"
+            ? "Give this OpenCode agent its own XDG home (config, skills, hooks, MCP)"
+            : "Give this agent its own MCP / skills / rules / hooks";
 
   return (
     <StudioFrame
@@ -228,7 +241,7 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
             {showHarness && (
               <details open={fields.harness}>
                 <summary>Isolated harness</summary>
-                <label class="check"><input type="checkbox" checked={fields.harness} onChange={(e) => set("harness", (e.currentTarget as HTMLInputElement).checked)} /> {codexHarness ? "Give this Codex agent its own config, skills, hooks, and MCP" : "Give this agent its own MCP / skills / rules / hooks"}</label>
+                <label class="check"><input type="checkbox" checked={fields.harness} onChange={(e) => set("harness", (e.currentTarget as HTMLInputElement).checked)} /> {harnessCheckboxLabel}</label>
                 <label class="ash-label" for="ash-inherit">Inherit</label>
                 <Select id="ash-inherit" value={fields.harnessInherit} onChange={(e) => set("harnessInherit", (e.currentTarget as HTMLSelectElement).value)}>
                   <option value="workspace">workspace</option>
@@ -236,12 +249,13 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
                 </Select>
                 <label class="ash-label" for="ash-mcp">MCP servers (YAML)</label>
                 <Textarea id="ash-mcp" rows={6} value={fields.harnessMcp} onInput={(e) => set("harnessMcp", (e.currentTarget as HTMLTextAreaElement).value)} />
-                {codexHarness ? (
+                {showHarnessInstructions && (
                   <>
                     <label class="ash-label" for="ash-instructions">Instruction files — one path per line</label>
                     <Textarea id="ash-instructions" rows={2} value={fields.harnessInstructions} onInput={(e) => set("harnessInstructions", (e.currentTarget as HTMLTextAreaElement).value)} />
                   </>
-                ) : (
+                )}
+                {showHarnessRules && (
                   <>
                     <label class="ash-label" for="ash-rules">Rule files — one path per line</label>
                     <Textarea id="ash-rules" rows={2} value={fields.harnessRules} onInput={(e) => set("harnessRules", (e.currentTarget as HTMLTextAreaElement).value)} />

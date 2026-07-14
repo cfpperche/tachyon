@@ -231,9 +231,14 @@ const issueMessage = (issue: { code: string; param?: string }, t: Translate): st
     case "instructions-not-deliverable":
       return t("note: this CLI doesn't accept a startup prompt — instructions will be saved but not auto-delivered");
     case "harness-claude-only":
-      return t("isolated harness: supported for Claude/Codex agents only");
+      return t("isolated harness: supported for Claude, Codex, OpenCode, Grok, and Hermes agents only");
     case "codex-harness-mcp-only":
       return t("isolated harness: Codex does not support rules; use instruction files instead");
+    case "harness-home-config-only":
+      return t(
+        "isolated harness: {0} supports MCP / skills / hooks only (no rules or instruction files)",
+        issue.param ?? "this runtime",
+      );
     case "harness-empty":
       return t("isolated harness: declare at least one of MCP / rules / skills / hooks");
     case "harness-mcp-invalid":
@@ -529,7 +534,8 @@ export class Workspace {
       configHome ? {
         home: os.homedir(),
         ...(runtime === "codex" ? { codexHome: configHome } : {}),
-        ...(runtime !== "codex" ? { claudeHome: configHome } : {}),
+        ...(runtime === "hermes" ? { hermesHome: configHome } : {}),
+        ...(runtime !== "codex" && runtime !== "hermes" ? { claudeHome: configHome } : {}),
       } : undefined;
     const resolveOpencode = (cwd: string, dataHome?: string, id?: string) => resolveOpencodeStorageSession(cwd, dataHome ?? defaultRealOpencodeDataHome(), id);
     this.manager = new AgentManager({
@@ -588,6 +594,11 @@ export class Workspace {
       materializeBridgeMcpGrok: (name) => {
         const entry = this.bridgeEntry();
         return entry ? this.harness.materializeBridgeMcpGrok(name, entry) : undefined;
+      },
+      // Private HERMES_HOME for non-harness hermes (Bridge MCP in config.yaml + auth.json symlink).
+      materializeBridgeMcpHermes: (name) => {
+        const entry = this.bridgeEntry();
+        return entry ? this.harness.materializeBridgeMcpHermes(name, entry) : undefined;
       },
       // spec 243 — per-spawn --settings SessionStart ownership hook (claude); the resolver reads the ledger
       // it writes so Activity follows a /clear/resume rotation even on a shared cwd.
