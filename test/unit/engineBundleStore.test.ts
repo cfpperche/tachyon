@@ -6,6 +6,7 @@ import { createHash } from "node:crypto";
 import {
   EngineBundleError,
   engineBundleInstallRoot,
+  stagePackagedEngineBundle,
   stageEngineBundle,
 } from "../../src/engine-service/engineBundleStore.js";
 import type { EngineBundleManifestV1 } from "../../src/engine-service/protocol.js";
@@ -96,5 +97,36 @@ describe("engine bundle store", () => {
     expect(engineBundleInstallRoot("darwin", {}, "/Users/u")).toBe("/Users/u/Library/Application Support/Tachyon/engine-bundles");
     expect(engineBundleInstallRoot("win32", { LOCALAPPDATA: "C:\\Local" }, "C:\\Users\\u"))
       .toBe(path.join("C:\\Local", "Tachyon", "engine-bundles"));
+  });
+
+  it("materializes the verified packaged bundle outside the disposable extension root", () => {
+    const extensionRoot = temp("tachyon-packaged-extension-");
+    const sourceRoot = path.join(extensionRoot, "dist", "engine");
+    const installRoot = path.join(temp("tachyon-packaged-install-"), "bundles");
+    const content = "packaged-engine";
+    fs.mkdirSync(sourceRoot, { recursive: true, mode: 0o700 });
+    fs.writeFileSync(path.join(sourceRoot, "engine-daemon.cjs"), content);
+    const manifest: EngineBundleManifestV1 = {
+      schemaVersion: 1,
+      engineVersion: "0.57.0",
+      protocol: { min: 1, max: 1 },
+      entrypoint: "engine-daemon.cjs",
+      files: [{ path: "engine-daemon.cjs", sha256: sha256(content) }],
+      build: { commit: "a".repeat(40), treeSha: "b".repeat(40), workingTreeClean: true },
+    };
+    fs.writeFileSync(path.join(sourceRoot, "engine-manifest.json"), `${JSON.stringify(manifest)}\n`);
+
+    const staged = stagePackagedEngineBundle({ extensionRoot, installRoot });
+    expect(staged.entrypoint.startsWith(path.resolve(extensionRoot) + path.sep)).toBe(false);
+    expect(fs.readFileSync(staged.entrypoint, "utf8")).toBe(content);
+    expect(stagePackagedEngineBundle({ extensionRoot, installRoot })).toMatchObject({
+      bundleId: staged.bundleId,
+      root: staged.root,
+      reused: true,
+    });
+
+    fs.writeFileSync(path.join(sourceRoot, "engine-manifest.json"), "not-json");
+    expect(() => stagePackagedEngineBundle({ extensionRoot, installRoot }))
+      .toThrowError(expect.objectContaining({ code: "PACKAGED_MANIFEST_UNREADABLE" }));
   });
 });

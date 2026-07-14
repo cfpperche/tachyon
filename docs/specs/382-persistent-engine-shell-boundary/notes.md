@@ -161,3 +161,29 @@ None.
   the service unit, daemon PID, control socket and its tmux anchor were gone after graceful stop.
 - This checkpoint does **not** wire extension activation yet.  Installing the VSIX is not zero-step until
   the next shell-cutover slice stages this emitted bundle and calls the supervisor automatically.
+
+## Ninth implementation slice — 2026-07-14
+
+- Added the first plain `WorkspaceClient` contract and remote implementation.  The client owns only an
+  ephemeral shell id/token, cached snapshot and event cursor; `close()` detaches that lease and contains
+  no service-stop path.  It never exposes `Workspace`, manager, store or VS Code objects.
+- Sync is serialized and monotonic.  Ordinary events trigger a coherent new snapshot; a compacted/ahead
+  cursor forces an explicit full resnapshot.  Lease expiry and bounded transport loss re-run supervisor
+  identity proof before attach; a changed process/incarnation/Bridge is reported as `engineChanged`, while
+  a same-engine lease renewal is not misclassified as operational recovery.
+- Supervisor-health and attach identities must match exactly.  A daemon change in that interval detaches
+  the raced lease and retries at most once, preventing an unverified replacement from entering the shell.
+  Settings are canonical-digested and cloned at construction so later caller mutation cannot make ensure
+  inputs diverge from the hello fingerprint.
+- Added the installed-extension staging entrypoint: it reads `dist/engine/engine-manifest.json`, validates
+  it, and atomically materializes the immutable bundle outside the disposable extension root.  Production
+  remains clean-build-only; the dogfood-only override is explicit.
+- Two client tests force incremental sync, retained-tail gap, session expiry, same-endpoint engine
+  replacement, caller/listener clone isolation, idempotent detach and the supervisor/attach race.  The
+  focused engine/client matrix is 84/84 with typecheck and boundary green.
+- Real `systemd --user` dogfood now goes through packaged staging plus **two remote WorkspaceClients**;
+  they converge `started + contended`, both snapshot one engine, detach to zero shell leases, reuse the
+  exact engine, and leave no unit/process/socket/tmux anchor after stop.
+- Remaining before activation cutover: a typed command/invoke protocol and enough projection/action
+  adapters for presentation consumers.  `extension.ts` still owns the legacy local Workspace in this
+  checkpoint, intentionally avoiding a mixed dual-engine activation.

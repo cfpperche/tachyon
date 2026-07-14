@@ -16,6 +16,13 @@ export interface StageEngineBundleInput {
   requireCleanBuild?: boolean;
 }
 
+export interface StagePackagedEngineBundleInput {
+  extensionRoot: string;
+  installRoot?: string;
+  /** Test/local-build override. Installed production bundles remain clean-only. */
+  requireCleanBuild?: boolean;
+}
+
 export interface StagedEngineBundle {
   bundleId: string;
   root: string;
@@ -29,6 +36,31 @@ export class EngineBundleError extends Error {
     super(message);
     this.name = "EngineBundleError";
   }
+}
+
+/**
+ * Extension-shell entrypoint: locate the engine shipped inside the installed extension, validate the
+ * manifest before trusting any of its paths, then reuse the same atomic immutable staging primitive as
+ * every other caller.  The returned entrypoint never points into the disposable extension directory.
+ */
+export function stagePackagedEngineBundle(input: StagePackagedEngineBundleInput): StagedEngineBundle {
+  const extensionRoot = path.resolve(input.extensionRoot);
+  const sourceRoot = path.join(extensionRoot, "dist", "engine");
+  const manifestPath = path.join(sourceRoot, "engine-manifest.json");
+  let manifest: unknown;
+  try { manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8")); }
+  catch (error) {
+    throw new EngineBundleError("PACKAGED_MANIFEST_UNREADABLE", `packaged engine manifest is unreadable: ${String(error)}`);
+  }
+  if (!isEngineBundleManifestV1(manifest)) {
+    throw new EngineBundleError("INVALID_PACKAGED_MANIFEST", "packaged engine manifest is invalid");
+  }
+  return stageEngineBundle({
+    sourceRoot,
+    manifest,
+    installRoot: input.installRoot,
+    requireCleanBuild: input.requireCleanBuild,
+  });
 }
 
 export function engineBundleInstallRoot(
