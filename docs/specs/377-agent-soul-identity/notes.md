@@ -341,6 +341,25 @@ pass is recorded below.
   lifecycle/parity suite, `npm run typecheck`, and `npm run verify:full:quiet` with 338 files,
   4073 tests passed, and 3 skipped. T12, T14, T15, product docs, and dogfood remain out of this slice.
 
+### 2026-07-14 — T12–T13 core hardening integrated
+
+- Task `t-2f380c` was implemented in an isolated worktree and integrated as `2752c577` through
+  `da36969a` on `codex-soul/t-60979d-agent-soul-integration`.
+- T12 adds same-directory atomic writes for derived briefs and anchors, private `0700` directories
+  and `0600` files, UTF-8 byte-ceiling enforcement, cleanup after failed publication, deterministic
+  overwrite, and permanent-forget cleanup of generated copies while retaining canonical
+  `.tachyon/agents/<agent>/SOUL.md` profiles. Canonical profile mutations and their durable
+  rename/delete transactions remain owned by T15.
+- The independent Claude-family T13 review found one blocker: Delivery-join and reuse-worktree
+  launches returned un-awaited promises from inside the reservation `try/finally`. Commit
+  `da36969a` adds the two required `return await` operations and deterministic tests that hold each
+  launch pending, observe the live reservation, then prove cleanup after settlement. The closure
+  review returned `SHIP` with no remaining blocker or major; no accepted minor was recorded.
+- Coordinator verification on the integrated HEAD passed the 381-test focused core/lifecycle/parity
+  suite, `npm run typecheck`, and `npm run verify:full:quiet` with 339 files, 4078 tests passed, and
+  3 skipped. The integration worktree was clean after removing the verification-only dependency
+  symlink.
+
 ## Open questions
 
 - Resolved 2026-07-14: the maintainer ratified the complete revised R1–R6 bundle without amendments.

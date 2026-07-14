@@ -84,13 +84,13 @@ implementation still requires separately assigned bounded Deliveries._
       transitions, persist degraded state/latch attention/pause auto retry on compaction failure
       until human retry without disrupting the session or adding a background watcher, and retain
       exact no-soul `.tachyon/roles` behavior.
-- [ ] **T12. Harden managed and derived files.** Use atomic/private writes for canonical imports,
+- [x] **T12. Harden managed and derived files.** Use atomic/private writes for canonical imports,
       soul-bearing spawn briefs and
       anchors; test lossless max-size transport and actionable write failure while retaining the
       current safe inline fallback rules. Pin `.tachyon/agents` gitignore coverage, profile retention
       on clear/roster deletion, confirmed/collision-safe rename/delete, per-agent derived overwrite,
       stop/resume retention, and generated-copy cleanup with no orphaned body.
-- [ ] **T13. Run core adversarial review.** Use a different model family to review path security,
+- [x] **T13. Run core adversarial review.** Use a different model family to review path security,
       lifecycle duplication, task-loss risk, ledger leakage, runtime honesty, and legacy
       compatibility. Fix every blocker/major and record accepted minors in `notes.md`.
 
