@@ -541,6 +541,22 @@ export class WorktreeManager {
   }
 
   /**
+   * spec 384 — current branch name at `cwd` (agent session / worktree / workspace root).
+   * Best-effort: `undefined` on git failure, detached HEAD (`HEAD`), or unborn branch.
+   */
+  async currentBranch(cwd: string): Promise<string | undefined> {
+    try {
+      const r = await this.git(gitArgs.currentBranch(), cwd);
+      if (r.code !== 0) return undefined;
+      const branch = r.stdout.trim();
+      if (!branch || branch === "HEAD") return undefined;
+      return branch;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
    * C3 (spec 214) — the worktree's current HEAD sha + a cheap dirty flag, for verify staleness.
    * Best-effort: "" / false on any git failure (removed/absent), which the badge reads as stale.
    */

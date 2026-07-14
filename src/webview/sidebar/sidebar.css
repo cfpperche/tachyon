@@ -123,6 +123,10 @@
   .badge.ok { color: var(--ds-ok); border-color: color-mix(in srgb, var(--ds-ok) 55%, transparent); }
   .badge.err { color: var(--ds-err); border-color: color-mix(in srgb, var(--ds-err) 55%, transparent); }
   .badge.warn { color: var(--ds-warn); border-color: color-mix(in srgb, var(--ds-warn) 55%, transparent); }
+  /* spec 384 — live HEAD branch badge (always first in meta). Isolated = ok green; shared = quiet; drift uses .warn. */
+  .badge.git-branch { color: var(--ds-ok); border-color: color-mix(in srgb, var(--ds-ok) 55%, transparent); font-family: var(--vscode-editor-font-family, ui-monospace, monospace); }
+  .badge.git-branch.shared { color: var(--ds-muted); border-color: var(--ds-border); }
+  .badge.git-branch.warn { color: var(--ds-warn); border-color: color-mix(in srgb, var(--ds-warn) 55%, transparent); }
   button.badge { background: transparent; font-family: inherit; cursor: pointer; }
   button.badge:hover { background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,.2)); color: var(--vscode-foreground); }
 

@@ -121,16 +121,41 @@ function ModelProvenance({ a }: { a: AgentVM }) {
   return <span class="model-marker" title={a.modelSource === "declared" ? "From the declared --model flag; not yet observed live" : "Runtime profile default; not yet observed live"}> · {a.modelSource}</span>;
 }
 
+/** spec 384 — live HEAD badge; always first in the meta list. Isolation config stays on `worktree` for actions. */
+function BranchBadge({ a }: { a: AgentVM }) {
+  if (!a.liveBranch) return null;
+  const isolated = !!a.worktree;
+  const drift = !!a.branchDrift;
+  const titleParts = [
+    isolated ? "Worktree session" : "Shared workspace cwd",
+    `HEAD ${a.liveBranch}`,
+    a.worktreePath ? a.worktreePath : undefined,
+    drift && a.worktree ? `config/isolation branch was ${a.worktree}` : undefined,
+  ].filter(Boolean);
+  const cls = [
+    "badge",
+    "git-branch",
+    !isolated ? "shared" : "",
+    drift ? "warn" : "",
+  ].filter(Boolean).join(" ");
+  return (
+    <span class={cls} title={titleParts.join("\n")}>
+      ⎇ {a.liveBranch}{drift ? " ⚠" : ""}
+    </span>
+  );
+}
+
 function AgentBadges({ a }: { a: AgentVM }) {
   const externalToolLabel = externalToolBadgeLabel(a);
   return (
     <>
+      {/* spec 384 — branch/worktree badge is FIXED first in the list */}
+      <BranchBadge a={a} />
       {a.configInvalid && <span class="badge err" title="tachyon.yml is invalid — row shown from session ledger or last-known-good snapshot (read-only for spawn)">config invalid</span>}
       {a.delegator && a.parent && <span class="badge" title="Gated delegation requester">delegated by {a.delegator}</span>}
       {a.declaredOwner && (a.parent || a.delegator) && <span class="badge" title="Declared owner from tachyon.yml subagents">owned by {a.declaredOwner}</span>}
       {a.attention && <span class="badge attn">{a.attention}</span>}
       {a.awaitingHuman && <span class="badge warn" title={a.awaitingHuman.reason || "needs a human — request_human_attention"}>◆ needs you</span>}
-      {a.worktree && <span class="badge">⎇ {a.worktree}</span>}
       {a.verify === "pass" && <span class="badge ok">✓ verified</span>}
       {a.verify === "fail" && <span class="badge err">✗ verify</span>}
       {a.verify === "stale" && <span class="badge">⊘ stale</span>}
@@ -172,7 +197,7 @@ function AgentBadges({ a }: { a: AgentVM }) {
 export function AgentRow({ a, flash, nested = false, hasChildren = false, collapsed = false, hiddenCount = 0, hiddenNeedsAttention = false, onToggle }: { a: AgentVM; flash: boolean; nested?: boolean; hasChildren?: boolean; collapsed?: boolean; hiddenCount?: number; hiddenNeedsAttention?: boolean; onToggle?: () => void }) {
   const d = useContext(DispatchCtx);
   const hasHidden = collapsed && hiddenCount > 0;
-  const hasMeta = a.configInvalid || a.parent || a.delegator || a.declaredOwner || a.sub || a.attention || a.awaitingHuman || a.worktree || a.verify || a.externalTools?.active || a.harness || a.resumable || a.forked || (a.continuity && a.continuity !== "fresh") || a.persistenceHooks || hasHidden;
+  const hasMeta = a.configInvalid || a.parent || a.delegator || a.declaredOwner || a.sub || a.attention || a.awaitingHuman || a.liveBranch || a.worktree || a.verify || a.externalTools?.active || a.harness || a.resumable || a.forked || (a.continuity && a.continuity !== "fresh") || a.persistenceHooks || hasHidden;
   return (
     <div class={`row${nested ? " child" : ""}${flash ? " flash" : ""}`} data-name={a.name.toLowerCase()}>
       <div class="row-top">
