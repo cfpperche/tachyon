@@ -77,3 +77,17 @@ None.
 - Eighteen focused tests across the first three slices pass with typecheck, engine-boundary and diff-check.
   The subprocess fixture proves process/lifetime semantics only; it does not yet construct production
   `Workspace` or replace the current proxy daemon.
+
+## Fourth implementation slice — 2026-07-14
+
+- Added `DaemonEngineHost`: the real `Workspace` can now be constructed with no `ExtensionContext` and no
+  `vscode` import.  It owns an allowlisted settings projection, private atomic JSON state/secrets,
+  bundle-contained media paths, headless `UI_UNAVAILABLE` behavior and plain view/notice events whose
+  callbacks remain in the engine across shell reloads.
+- Added a Node-only hybrid watcher.  `fs.watch` is only a low-latency hint; bounded polling snapshots are
+  authoritative, handle missing directories and nested globstars, do not follow symlinked directories,
+  support the VS Code glob subset Tachyon currently uses and fail visibly on traversal, scan overflow or
+  unsupported extglob syntax.
+- Twenty-eight focused tests across all four slices pass with typecheck, engine-boundary and diff-check.
+  This host is not complete until its events/notices are journaled and projected through the control
+  protocol; the current production extension still constructs `VsCodeHost`/`Workspace`.
