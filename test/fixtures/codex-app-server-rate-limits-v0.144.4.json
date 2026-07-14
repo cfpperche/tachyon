@@ -1,0 +1,147 @@
+{
+  "schemaVersion": 1,
+  "synthetic": true,
+  "provenance": {
+    "repository": "https://github.com/openai/codex",
+    "tag": "rust-v0.144.4",
+    "commit": "8c68d4c87dc54d38861f5114e920c3de2efa5876",
+    "protocolMethod": "account/rateLimits/read",
+    "codexBarReference": {
+      "tag": "v0.43.0",
+      "commit": "5a0cbc07119ac04d998e2fd5267442ed9358fff0"
+    },
+    "derivedCode": false
+  },
+  "account": {
+    "chatgpt": {
+      "account": {
+        "type": "chatgpt",
+        "email": "fixture@example.invalid",
+        "planType": "pro",
+        "futureCredentialField": "MUST_NOT_CROSS_ACCOUNT_FIELD"
+      },
+      "requiresOpenaiAuth": true
+    },
+    "unauthenticated": {
+      "account": null,
+      "requiresOpenaiAuth": true
+    },
+    "apiKey": {
+      "account": {
+        "type": "apiKey"
+      },
+      "requiresOpenaiAuth": true
+    }
+  },
+  "transport": {
+    "providerError": {
+      "code": -32603,
+      "message": "MUST_NOT_CROSS_PROVIDER_ERROR at /home/private/auth.json"
+    },
+    "timeout": {
+      "responses": []
+    }
+  },
+  "cases": {
+    "success": {
+      "rateLimits": {
+        "primary": {
+          "usedPercent": 28,
+          "windowDurationMins": 300,
+          "resetsAt": 1784077200,
+          "futureWindowField": "MUST_NOT_CROSS_WINDOW_FIELD"
+        },
+        "secondary": {
+          "usedPercent": 64,
+          "windowDurationMins": 10080,
+          "resetsAt": 1784682000
+        },
+        "planType": "pro",
+        "credits": {
+          "balance": "MUST_NOT_CROSS_CREDIT_BALANCE"
+        }
+      },
+      "rateLimitsByLimitId": {
+        "codex": {
+          "limitName": "MUST_NOT_CROSS_LIMIT_NAME"
+        }
+      },
+      "rateLimitResetCredits": {
+        "availableCount": 2,
+        "credits": [
+          {
+            "id": "MUST_NOT_CROSS_RESET_ID",
+            "title": "MUST_NOT_CROSS_RESET_TITLE"
+          }
+        ]
+      },
+      "futureTopLevelField": {
+        "authorization": "MUST_NOT_CROSS_AUTHORIZATION"
+      }
+    },
+    "partialSecondaryOnly": {
+      "rateLimits": {
+        "primary": null,
+        "secondary": {
+          "usedPercent": 63,
+          "windowDurationMins": 10080,
+          "resetsAt": 1784682000
+        }
+      }
+    },
+    "primaryWeeklyOnly": {
+      "rateLimits": {
+        "primary": {
+          "usedPercent": 73,
+          "windowDurationMins": 10080,
+          "resetsAt": 1784682000
+        },
+        "secondary": null
+      }
+    },
+    "primaryMonthlyOnly": {
+      "rateLimits": {
+        "primary": {
+          "usedPercent": 12,
+          "windowDurationMins": 43200,
+          "resetsAt": 1786669200
+        },
+        "secondary": null
+      }
+    },
+    "duplicateShortWindows": {
+      "rateLimits": {
+        "primary": {
+          "usedPercent": 35,
+          "windowDurationMins": 120
+        },
+        "secondary": {
+          "usedPercent": 50,
+          "windowDurationMins": 180
+        }
+      }
+    },
+    "malformedPercent": {
+      "rateLimits": {
+        "primary": {
+          "usedPercent": "63",
+          "windowDurationMins": 300
+        },
+        "secondary": null
+      }
+    },
+    "missingSnapshot": {
+      "futureRateLimits": {
+        "primary": {
+          "usedPercent": 50
+        }
+      }
+    },
+    "noWindows": {
+      "rateLimits": {
+        "primary": null,
+        "secondary": null
+      }
+    }
+  }
+}

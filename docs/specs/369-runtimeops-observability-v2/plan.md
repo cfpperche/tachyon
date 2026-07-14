@@ -66,6 +66,19 @@ adapter owns a fixed source allowlist, source-specific consent/configuration, bo
 response confinement. It emits only `CollectorEnvelopeV1`; browser cookies, Keychain, broad dashboard scraping,
 automatic cross-source fallback and cost scans stay out of the first slice.
 
+The Codex adapter's only first-slice source is the installed Codex CLI's documented stable app-server protocol. After
+an explicit `cli` quota-read grant, Tachyon launches `codex -s read-only -a untrusted app-server --stdio`, completes the
+documented initialize handshake, checks `account/read` without requesting a proactive token refresh, and reads
+`account/rateLimits/read`. Codex remains the credential owner: Tachyon never opens `auth.json`, never accepts a token,
+and never calls the private ChatGPT usage endpoint directly. Account identity, raw JSON-RPC replies and stderr remain
+inside the adapter and are discarded after allowlisted quota projection. Disabled consent must not launch a process;
+there is no OAuth, cookie, Keychain, HTTP or automatic fallback path in this adapter.
+
+Codex app-server's `primary` and `secondary` fields are positional rather than semantic. The adapter classifies a
+documented duration up to one day as `session`, over one day through fourteen days as `weekly`, and longer durations as
+`tertiary`; only a missing duration falls back to the historical primary/session and secondary/weekly slots. If two
+windows collapse into the same bounded semantic lane, the response fails closed instead of inventing a label.
+
 Keep a reference manifest containing the CodexBar repository/tag/commit used for behavioral comparison, fixture
 provenance and any MIT attribution required by actually derived code. CodexBar source, binaries and Swift build inputs
 must not enter the Tachyon product or release graph.

@@ -83,7 +83,26 @@ _Historical pre-ratification questions are retained below; their resolutions fol
 - Resolved 2026-07-14: ship Codex and Claude quota windows first; defer cost.
 - Resolved 2026-07-14 in T1: the lightweight upstream radar is a read-only development command over a pinned manifest,
   fixture hashes and an explicit watched-path allowlist; it is not a release/runtime dependency.
-- Remaining design work: define exact source-specific consent/configuration for the native T2 adapters.
+- Resolved 2026-07-14 in T2a: the first Codex source is the installed Codex CLI's stable app-server method
+  `account/rateLimits/read`, exposed by Codex `0.144.4` / tag `rust-v0.144.4` / commit
+  `8c68d4c87dc54d38861f5114e920c3de2efa5876`. It is classified as source `cli`, not `oauth`: Codex owns token storage,
+  refresh and the upstream request while Tachyon owns the bounded JSON-RPC client and quota projection.
+- T2a consent is fail-closed and source-specific. Only an explicit user-controlled `provider-quota-read` grant for
+  `cli` may launch `codex -s read-only -a untrusted app-server --stdio`; disabled or mismatched selection launches
+  nothing. Browser cookies, Keychain, direct `auth.json`, direct ChatGPT HTTP, broad `auto` fallback, account usage,
+  reset-credit consumption and cost remain unavailable.
+- The Codex protocol sequence is fixed: `initialize`, `initialized`, `account/read` with `refreshToken: false`, then
+  `account/rateLimits/read`. The account read exists only to distinguish unauthenticated/unsupported states; email,
+  plan, credentials, raw replies, JSON-RPC error text and stderr are never copied into diagnostics or envelopes.
+  Official Codex documentation warns that file-backed `auth.json` contains access tokens and must be treated as a
+  password, which is why direct credential-file access was rejected even though CodexBar's OAuth path proved viable.
+- A live adapter dogfood on 2026-07-14 returned a sole 10,080-minute window in app-server's `primary` slot. That proved
+  the slot name is not a safe `session` label. T2a now classifies bounded lanes by `windowDurationMins` (short/session,
+  medium/weekly, long/tertiary), uses slot order only when duration is absent, and fails duplicate semantic lanes closed.
+  The dogfood emitted one validated quota fact, no diagnostics, and left no app-server child behind; no raw response,
+  identity, percentage or reset timestamp was recorded in the repository.
+- Remaining T2 design work is the separate Claude source decision; it must reuse the neutral consent/source contract
+  without expanding the Codex adapter's allowlist.
 
 ## Verification log
 
@@ -92,6 +111,14 @@ _Historical pre-ratification questions are retained below; their resolutions fol
 
 ### 2026-07-14T17:34:58Z — pass (1/1) — source: tasks.md
 - `npm run verify:full:quiet` — pass
+
+### 2026-07-14T19:01:40Z — pass (5/5) — source: task t-71f42a
+- `npx vitest run test/unit/codexAppServerSource.test.ts test/unit/runtimeObservabilityValidate.test.ts` — 44 passed
+- `npm run check:runtime-observability-reference` — pinned fixtures pass
+- `npm run typecheck` — pass
+- `npm run verify:full:quiet` — 334 files passed; 4,055 tests passed; 3 skipped
+- Live explicit-grant Codex app-server dogfood — one validated weekly quota fact, no diagnostic, no surviving child;
+  raw response and account identity were neither printed nor persisted.
 
 ### 2026-07-14T18:13:54Z — T1 neutral contract
 
