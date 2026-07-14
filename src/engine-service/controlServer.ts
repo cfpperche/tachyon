@@ -5,6 +5,9 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { ensureSecureRuntimeDir } from "../bridge/persistentProxyProtocol.js";
 import {
   isEngineShellHelloV1,
+  isEngineOperationId,
+  isWorkspaceCommandResultV1,
+  isWorkspaceCommandV1,
   negotiateEngineShellProtocol,
   type EngineControlRequestV1,
   type EngineControlResponseV1,
@@ -13,18 +16,28 @@ import {
   type EngineShellSessionV1,
   isWorkspaceEventBatchV1,
   type WorkspaceEventBatchV1,
+  type WorkspaceCommandResultV1,
+  type WorkspaceCommandV1,
   type WorkspaceSnapshotEnvelopeV1,
 } from "./protocol.js";
 
 const MAX_CONTROL_REQUEST_BYTES = 64 * 1024;
 const DEFAULT_SHELL_LEASE_MS = 30_000;
 const CONTROL_REQUEST_TIMEOUT_MS = 5_000;
+const CONTROL_COMMAND_TIMEOUT_MS = 60_000;
+const MAX_OPERATION_RECORDS = 2_048;
+
+export interface EngineCommandContextV1 {
+  shellId: string;
+  operationId: string;
+}
 
 export interface EngineControlServerOptions {
   socketPath: string;
   identity: EngineServiceIdentityV1;
   getSnapshot: () => unknown | Promise<unknown>;
   readEvents?: (afterSeq: number, limit: number) => unknown | Promise<unknown>;
+  invoke?: (command: WorkspaceCommandV1, context: EngineCommandContextV1) => WorkspaceCommandResultV1 | Promise<WorkspaceCommandResultV1>;
   leaseMs?: number;
   now?: () => number;
 }
@@ -42,6 +55,12 @@ interface LiveShellSession {
   expiresAt: number;
 }
 
+interface OperationRecord {
+  fingerprint: string;
+  promise: Promise<WorkspaceCommandResultV1>;
+  settled: boolean;
+}
+
 export async function startEngineControlServer(options: EngineControlServerOptions): Promise<RunningEngineControlServer> {
   const now = options.now ?? Date.now;
   const leaseMs = options.leaseMs ?? DEFAULT_SHELL_LEASE_MS;
@@ -49,6 +68,7 @@ export async function startEngineControlServer(options: EngineControlServerOptio
   ensureSecureRuntimeDir(path.dirname(options.socketPath));
 
   const sessions = new Map<string, LiveShellSession>();
+  const operations = new Map<string, OperationRecord>();
   const connections = new Set<net.Socket>();
   let closing = false;
   const purgeExpired = () => {
@@ -76,7 +96,9 @@ export async function startEngineControlServer(options: EngineControlServerOptio
       const newline = input.indexOf("\n");
       if (newline < 0) return;
       handled = true;
-      void handle(parseRequest(input.slice(0, newline))).then(
+      const parsed = parseRequest(input.slice(0, newline));
+      if (!("ok" in parsed) && parsed.op === "invoke") socket.setTimeout(CONTROL_COMMAND_TIMEOUT_MS);
+      void handle(parsed).then(
         (response) => respond(socket, response),
         (error) => respond(socket, fail("INTERNAL", error instanceof Error ? error.message : String(error))),
       );
@@ -122,6 +144,15 @@ export async function startEngineControlServer(options: EngineControlServerOptio
 
     const session = authenticateSession(sessions, parsed.shellId, parsed.sessionToken);
     if (!session) return fail("SHELL_SESSION_INVALID", "shell session is missing, expired or invalid");
+    if (parsed.op === "invoke") {
+      session.expiresAt = now() + leaseMs;
+      return {
+        ok: true,
+        op: "invoke",
+        operationId: parsed.operationId,
+        result: await invokeOnce(parsed.operationId, parsed.command, parsed.shellId),
+      };
+    }
     if (parsed.op === "touch") {
       const validated = validateSnapshot(await options.getSnapshot(), options.identity);
       session.expiresAt = now() + leaseMs;
@@ -147,6 +178,54 @@ export async function startEngineControlServer(options: EngineControlServerOptio
     return { ok: true, op: "detach", detached: true };
   };
 
+  const invokeOnce = async (
+    operationId: string,
+    command: WorkspaceCommandV1,
+    shellId: string,
+  ): Promise<WorkspaceCommandResultV1> => {
+    const fingerprint = commandFingerprint(command);
+    const existing = operations.get(operationId);
+    if (existing) {
+      if (existing.fingerprint !== fingerprint) {
+        return commandFailure(command, "OPERATION_ID_CONFLICT", "operation id was already used for a different command");
+      }
+      return existing.promise;
+    }
+    if (operations.size >= MAX_OPERATION_RECORDS) {
+      for (const [id, record] of operations) {
+        if (!record.settled) continue;
+        operations.delete(id);
+        if (operations.size < MAX_OPERATION_RECORDS) break;
+      }
+    }
+    if (operations.size >= MAX_OPERATION_RECORDS) {
+      return commandFailure(command, "OPERATION_CAPACITY", "engine operation registry is temporarily full");
+    }
+    const record: OperationRecord = {
+      fingerprint,
+      settled: false,
+      promise: Promise.resolve().then(async () => {
+        if (!options.invoke) return commandFailure(command, "UNSUPPORTED_OPERATION", "engine command invocation is unavailable");
+        try {
+          const result = await options.invoke(command, { shellId, operationId });
+          if (!isWorkspaceCommandResultV1(result) || result.method !== command.method) {
+            return commandFailure(command, "INVALID_COMMAND_RESULT", "engine command returned an invalid result");
+          }
+          return result;
+        } catch (error) {
+          return commandFailure(
+            command,
+            "COMMAND_FAILED",
+            error instanceof Error ? error.message : String(error),
+          );
+        }
+      }),
+    };
+    operations.set(operationId, record);
+    void record.promise.finally(() => { record.settled = true; });
+    return record.promise;
+  };
+
   await listen(server, options.socketPath);
   fs.chmodSync(options.socketPath, 0o600);
   const socketIdentity = fs.lstatSync(options.socketPath);
@@ -164,6 +243,7 @@ export async function startEngineControlServer(options: EngineControlServerOptio
       closing = true;
       clearInterval(timer);
       sessions.clear();
+      operations.clear();
       for (const socket of connections) socket.destroy();
       await closeServer(server);
       try {
@@ -190,9 +270,14 @@ function parseRequest(raw: string): EngineControlRequestV1 | EngineControlRespon
   }
   if (request.op === "health") return request as EngineControlRequestV1;
   if (request.op === "attach" && "hello" in request) return request as EngineControlRequestV1;
-  if ((request.op === "touch" || request.op === "snapshot" || request.op === "detach" || request.op === "events")
+  if ((request.op === "touch" || request.op === "snapshot" || request.op === "detach" || request.op === "events" || request.op === "invoke")
     && "shellId" in request && typeof request.shellId === "string"
     && "sessionToken" in request && typeof request.sessionToken === "string") {
+    if (request.op === "invoke") {
+      if ("operationId" in request && isEngineOperationId(request.operationId)
+        && "command" in request && isWorkspaceCommandV1(request.command)) return request as EngineControlRequestV1;
+      return fail("BAD_REQUEST", "unknown or incomplete engine control request");
+    }
     if (request.op !== "events") return request as EngineControlRequestV1;
     if ("afterSeq" in request && Number.isSafeInteger(request.afterSeq)
       && (request.afterSeq as number) >= 0
@@ -274,6 +359,21 @@ function helloFingerprint(hello: EngineShellHelloV1): string {
 
 function fail(code: string, message: string): EngineControlResponseV1 {
   return { ok: false, code, message };
+}
+
+function commandFailure(
+  command: WorkspaceCommandV1,
+  code: string,
+  message: string,
+): WorkspaceCommandResultV1 {
+  const bounded = message.replace(/\s+/g, " ").trim().slice(0, 1_000) || "engine command failed";
+  return { schemaVersion: 1, method: command.method, status: "error", code, message: bounded };
+}
+
+function commandFingerprint(command: WorkspaceCommandV1): string {
+  return createHash("sha256")
+    .update(JSON.stringify([command.schemaVersion, command.method, command.input.agent]))
+    .digest("hex");
 }
 
 function respond(socket: net.Socket, response: EngineControlResponseV1): void {

@@ -96,12 +96,40 @@ export interface WorkspaceEventBatchV1 {
   events: WorkspaceEventV1[];
 }
 
+export type WorkspaceCommandMethodV1 =
+  | "agent.start"
+  | "agent.stop"
+  | "agent.kill"
+  | "agent.restart"
+  | "agent.resume";
+
+export interface WorkspaceCommandV1 {
+  schemaVersion: 1;
+  method: WorkspaceCommandMethodV1;
+  input: { agent: string };
+}
+
+export type WorkspaceCommandResultV1 =
+  | {
+      schemaVersion: 1;
+      method: WorkspaceCommandMethodV1;
+      status: "ok";
+    }
+  | {
+      schemaVersion: 1;
+      method: WorkspaceCommandMethodV1;
+      status: "error";
+      code: string;
+      message: string;
+    };
+
 export type EngineControlRequestV1 =
   | { schemaVersion: 1; op: "health"; workspaceHash: string }
   | { schemaVersion: 1; op: "attach"; workspaceHash: string; hello: EngineShellHelloV1 }
   | { schemaVersion: 1; op: "touch"; workspaceHash: string; shellId: string; sessionToken: string }
   | { schemaVersion: 1; op: "snapshot"; workspaceHash: string; shellId: string; sessionToken: string }
   | { schemaVersion: 1; op: "events"; workspaceHash: string; shellId: string; sessionToken: string; afterSeq: number; limit: number }
+  | { schemaVersion: 1; op: "invoke"; workspaceHash: string; shellId: string; sessionToken: string; operationId: string; command: WorkspaceCommandV1 }
   | { schemaVersion: 1; op: "detach"; workspaceHash: string; shellId: string; sessionToken: string };
 
 export type EngineControlResponseV1 =
@@ -109,14 +137,56 @@ export type EngineControlResponseV1 =
   | { ok: true; op: "attach" | "touch"; session: EngineShellSessionV1 }
   | { ok: true; op: "snapshot"; snapshot: WorkspaceSnapshotEnvelopeV1 }
   | { ok: true; op: "events"; batch: WorkspaceEventBatchV1 }
+  | { ok: true; op: "invoke"; operationId: string; result: WorkspaceCommandResultV1 }
   | { ok: true; op: "detach"; detached: true }
   | { ok: false; code: string; message: string };
 
 const SHA256_RE = /^[a-f0-9]{64}$/;
 const GIT_ID_RE = /^[a-f0-9]{7,64}$/;
+const OPERATION_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/;
+const AGENT_NAME_RE = /^[A-Za-z][A-Za-z0-9_-]{0,127}$/;
+const WORKSPACE_COMMAND_METHODS = new Set<WorkspaceCommandMethodV1>([
+  "agent.start",
+  "agent.stop",
+  "agent.kill",
+  "agent.restart",
+  "agent.resume",
+]);
 
 export function isSha256(value: unknown): value is string {
   return typeof value === "string" && SHA256_RE.test(value);
+}
+
+export function isEngineOperationId(value: unknown): value is string {
+  return typeof value === "string" && OPERATION_ID_RE.test(value);
+}
+
+export function isWorkspaceCommandV1(value: unknown): value is WorkspaceCommandV1 {
+  if (!isRecord(value)
+    || !hasOnlyKeys(value, ["schemaVersion", "method", "input"])
+    || value.schemaVersion !== 1
+    || typeof value.method !== "string"
+    || !WORKSPACE_COMMAND_METHODS.has(value.method as WorkspaceCommandMethodV1)
+    || !isRecord(value.input)
+    || !hasOnlyKeys(value.input, ["agent"])) return false;
+  return typeof value.input.agent === "string" && AGENT_NAME_RE.test(value.input.agent);
+}
+
+export function isWorkspaceCommandResultV1(value: unknown): value is WorkspaceCommandResultV1 {
+  if (!isRecord(value)
+    || value.schemaVersion !== 1
+    || typeof value.method !== "string"
+    || !WORKSPACE_COMMAND_METHODS.has(value.method as WorkspaceCommandMethodV1)) return false;
+  if (value.status === "ok") {
+    return hasOnlyKeys(value, ["schemaVersion", "method", "status"]);
+  }
+  return value.status === "error"
+    && hasOnlyKeys(value, ["schemaVersion", "method", "status", "code", "message"])
+    && typeof value.code === "string"
+    && /^[A-Z][A-Z0-9_]{1,63}$/.test(value.code)
+    && typeof value.message === "string"
+    && value.message.length > 0
+    && value.message.length <= 1_000;
 }
 
 /** Bundle paths are canonical POSIX relative paths on every host. */
@@ -269,6 +339,10 @@ export function isEngineControlResponseV1(value: unknown): value is EngineContro
   if (value.op === "attach" || value.op === "touch") return isEngineShellSessionV1(value.session);
   if (value.op === "snapshot") return isWorkspaceSnapshotEnvelopeV1(value.snapshot);
   if (value.op === "events") return isWorkspaceEventBatchV1(value.batch);
+  if (value.op === "invoke") {
+    return isEngineOperationId(value.operationId)
+      && isWorkspaceCommandResultV1(value.result);
+  }
   return value.op === "detach" && value.detached === true;
 }
 
@@ -303,4 +377,9 @@ export function engineBundleId(manifest: EngineBundleManifestV1): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function hasOnlyKeys(value: Record<string, unknown>, expected: string[]): boolean {
+  const keys = Object.keys(value);
+  return keys.length === expected.length && keys.every((key) => expected.includes(key));
 }

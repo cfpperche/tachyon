@@ -77,6 +77,22 @@ try {
   if (snapshot.engineInstanceId !== identity.instanceId || second.snapshot.engineInstanceId !== identity.instanceId) {
     throw new Error("shell attach/snapshot crossed engine identities");
   }
+  const startCommand = { schemaVersion: 1 as const, method: "agent.start" as const, input: { agent: "dogfood-worker" } };
+  const started = await first.invoke("dogfood-operation-start-0001", startCommand);
+  if (started.status !== "ok" || (await first.invoke("dogfood-operation-start-0001", startCommand)).status !== "ok") {
+    throw new Error("idempotent remote agent start failed");
+  }
+  if (!agentRunning((await first.sync()).snapshot, "dogfood-worker")) {
+    throw new Error("remote agent start did not reach the engine projection");
+  }
+  const killed = await first.invoke("dogfood-operation-kill-0001", {
+    schemaVersion: 1,
+    method: "agent.kill",
+    input: { agent: "dogfood-worker" },
+  });
+  if (killed.status !== "ok" || agentRunning((await first.sync()).snapshot, "dogfood-worker")) {
+    throw new Error("remote agent kill did not reach the engine projection");
+  }
   await Promise.all([first.close(), second.close()]);
 
   const reused = await ensureDaemonEngine(ensureOptions);
@@ -100,6 +116,7 @@ try {
     engine: { pid: identity.pid, instanceId: identity.instanceId, bundleId: identity.bundleId },
     bridge: identity.bridge,
     snapshotSeq: snapshot.seq,
+    commands: [started.method, killed.method],
   }, null, 2)}\n`);
 } finally {
   try { execFileSync("systemctl", ["--user", "stop", unitName], { stdio: "ignore" }); } catch { /* absent/failed unit */ }
@@ -138,4 +155,11 @@ async function waitUntil(predicate: () => boolean, timeoutMs: number): Promise<v
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
   throw new Error("persistent engine cleanup timed out");
+}
+
+function agentRunning(snapshot: { projections: Record<string, unknown> }, name: string): boolean {
+  const projection = snapshot.projections.agents;
+  if (!projection || typeof projection !== "object" || !Array.isArray((projection as { items?: unknown }).items)) return false;
+  return ((projection as { items: Array<{ name?: unknown; running?: unknown }> }).items)
+    .some((agent) => agent.name === name && agent.running === true);
 }

@@ -3,7 +3,10 @@ import { createHash } from "node:crypto";
 import {
   engineBundleId,
   isEngineBundleManifestV1,
+  isEngineOperationId,
   isSafeBundlePath,
+  isWorkspaceCommandResultV1,
+  isWorkspaceCommandV1,
   negotiateEngineShellProtocol,
   type EngineBundleFileV1,
   type EngineBundleManifestV1,
@@ -47,5 +50,34 @@ describe("persistent engine protocol", () => {
     const b = { path: "assets/helper.js", sha256: hash("helper") };
     expect(engineBundleId(manifest([a, b]))).toBe(engineBundleId(manifest([b, a])));
     expect(engineBundleId(manifest([a]))).not.toBe(engineBundleId(manifest([a, b])));
+  });
+
+  it("accepts only closed idempotency-keyed workspace commands and typed results", () => {
+    const command = { schemaVersion: 1, method: "agent.start", input: { agent: "worker-1" } };
+    expect(isWorkspaceCommandV1(command)).toBe(true);
+    expect(isWorkspaceCommandV1({ ...command, method: "shell.exec" })).toBe(false);
+    expect(isWorkspaceCommandV1({ ...command, input: { agent: "../escape" } })).toBe(false);
+    expect(isWorkspaceCommandV1({ ...command, input: { agent: "worker", extra: true } })).toBe(false);
+    expect(isWorkspaceCommandV1({ ...command, extra: true })).toBe(false);
+    expect(isEngineOperationId("op-12345678")).toBe(true);
+    expect(isEngineOperationId("short")).toBe(false);
+    expect(isWorkspaceCommandResultV1({
+      schemaVersion: 1,
+      method: "agent.start",
+      status: "ok",
+    })).toBe(true);
+    expect(isWorkspaceCommandResultV1({
+      schemaVersion: 1,
+      method: "agent.start",
+      status: "error",
+      code: "COMMAND_FAILED",
+      message: "already running",
+    })).toBe(true);
+    expect(isWorkspaceCommandResultV1({
+      schemaVersion: 1,
+      method: "agent.start",
+      status: "ok",
+      changed: false,
+    })).toBe(false);
   });
 });

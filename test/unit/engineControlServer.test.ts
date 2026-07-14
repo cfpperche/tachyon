@@ -182,6 +182,109 @@ describe("persistent engine shell control", () => {
     await disconnected;
     expect(fs.existsSync(f.socketPath)).toBe(false);
   });
+
+  it("executes one operation once across concurrent shells and binds replay to the exact intent", async () => {
+    const f = fixture();
+    let executions = 0;
+    let release!: () => void;
+    let observedStart!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const started = new Promise<void>((resolve) => { observedStart = resolve; });
+    const server = await startEngineControlServer({
+      socketPath: f.socketPath,
+      identity: f.identity,
+      getSnapshot: f.snapshot,
+      invoke: async (command) => {
+        executions += 1;
+        if (command.input.agent === "failure") throw new Error("forced command failure");
+        observedStart();
+        await gate;
+        return { schemaVersion: 1, method: command.method, status: "ok" };
+      },
+    });
+    servers.push(server);
+    const firstAttach = await control(f.socketPath, {
+      schemaVersion: 1,
+      op: "attach",
+      workspaceHash: "abc12345",
+      hello: hello(f.root, "shell-0001"),
+    });
+    const secondAttach = await control(f.socketPath, {
+      schemaVersion: 1,
+      op: "attach",
+      workspaceHash: "abc12345",
+      hello: hello(f.root, "shell-0002"),
+    });
+    const command = { schemaVersion: 1 as const, method: "agent.start" as const, input: { agent: "worker" } };
+    const first = control(f.socketPath, {
+      schemaVersion: 1,
+      op: "invoke",
+      workspaceHash: "abc12345",
+      shellId: "shell-0001",
+      sessionToken: attachedToken(firstAttach),
+      operationId: "operation-shared-0001",
+      command,
+    });
+    await started;
+    const replay = control(f.socketPath, {
+      schemaVersion: 1,
+      op: "invoke",
+      workspaceHash: "abc12345",
+      shellId: "shell-0002",
+      sessionToken: attachedToken(secondAttach),
+      operationId: "operation-shared-0001",
+      command,
+    });
+    release();
+    const [firstResult, replayResult] = await Promise.all([first, replay]);
+    expect(replayResult).toEqual(firstResult);
+    expect(firstResult).toMatchObject({ ok: true, op: "invoke", result: { status: "ok" } });
+    expect(executions).toBe(1);
+
+    expect(await control(f.socketPath, {
+      schemaVersion: 1,
+      op: "invoke",
+      workspaceHash: "abc12345",
+      shellId: "shell-0002",
+      sessionToken: attachedToken(secondAttach),
+      operationId: "operation-shared-0001",
+      command: { input: { agent: "worker" }, method: "agent.start", schemaVersion: 1 },
+    })).toEqual(firstResult);
+    expect(executions).toBe(1);
+
+    expect(await control(f.socketPath, {
+      schemaVersion: 1,
+      op: "invoke",
+      workspaceHash: "abc12345",
+      shellId: "shell-0002",
+      sessionToken: attachedToken(secondAttach),
+      operationId: "operation-shared-0001",
+      command: { ...command, input: { agent: "other" } },
+    })).toMatchObject({
+      ok: true,
+      op: "invoke",
+      result: { status: "error", code: "OPERATION_ID_CONFLICT" },
+    });
+    expect(executions).toBe(1);
+
+    const failureRequest: EngineControlRequestV1 = {
+      schemaVersion: 1,
+      op: "invoke",
+      workspaceHash: "abc12345",
+      shellId: "shell-0001",
+      sessionToken: attachedToken(firstAttach),
+      operationId: "operation-failure-0001",
+      command: { ...command, input: { agent: "failure" } },
+    };
+    const failure = await control(f.socketPath, failureRequest);
+    expect(failure).toMatchObject({ ok: true, op: "invoke", result: { status: "error", code: "COMMAND_FAILED" } });
+    expect(await control(f.socketPath, failureRequest)).toEqual(failure);
+    expect(executions).toBe(2);
+
+    expect(await control(f.socketPath, { ...failureRequest, operationId: "operation-unauth-0001", sessionToken: "wrong" }))
+      .toMatchObject({ ok: false, code: "SHELL_SESSION_INVALID" });
+    expect(executions).toBe(2);
+  });
 });
 
 function attachedToken(response: EngineControlResponseV1): string {

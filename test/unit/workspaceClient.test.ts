@@ -28,6 +28,7 @@ describe("remote WorkspaceClient", () => {
     const canonicalRoot = fs.realpathSync(workspaceRoot);
     const firstIdentity = identity(canonicalRoot, "engine-one", "bridge-one");
     let now = 1_000;
+    let commandExecutions = 0;
     const firstJournal = new EngineEventJournal({
       filePath: path.join(root, "events-one.jsonl"),
       engineInstanceId: firstIdentity.instanceId,
@@ -41,6 +42,10 @@ describe("remote WorkspaceClient", () => {
       identity: firstIdentity,
       getSnapshot: () => firstSnapshot,
       readEvents: (afterSeq, limit) => firstJournal.readAfter(afterSeq, limit),
+      invoke: async (command) => {
+        commandExecutions += 1;
+        return { schemaVersion: 1, method: command.method, status: "ok" };
+      },
       leaseMs: 100,
       now: () => now,
     });
@@ -94,6 +99,15 @@ describe("remote WorkspaceClient", () => {
     expect(ensureCalls).toBe(2);
     expect(currentServer.shellCount()).toBe(1);
 
+    // Expiry is a proven pre-invocation refusal, so reattach then replaying the SAME operation id is safe.
+    now += 101;
+    const command = { schemaVersion: 1 as const, method: "agent.start" as const, input: { agent: "worker" } };
+    const invoked = await client.invoke("operation-client-shell-0001", command);
+    expect(invoked).toMatchObject({ status: "ok", method: "agent.start" });
+    expect(await client.invoke("operation-client-shell-0001", command)).toEqual(invoked);
+    expect(commandExecutions).toBe(1);
+    expect(ensureCalls).toBe(3);
+
     // Replace the server with a genuinely new incarnation on the same endpoint.
     await currentServer.close();
     servers.splice(servers.indexOf(currentServer), 1);
@@ -116,13 +130,14 @@ describe("remote WorkspaceClient", () => {
     expect(recovered).toMatchObject({ events: [], resynced: true, engineChanged: true });
     expect(recovered.snapshot.projections).toEqual({ marker: "new-incarnation" });
     expect(client.identity).toEqual(secondIdentity);
-    expect(ensureCalls).toBe(3);
+    expect(ensureCalls).toBe(4);
 
     // Getters and listeners receive clones rather than authority over the client's cached state.
     recovered.snapshot.projections.marker = "caller-mutated";
     expect(client.snapshot.projections.marker).toBe("new-incarnation");
     expect(observed).toEqual([
       { resynced: false, engineChanged: false, marker: "event-one" },
+      { resynced: true, engineChanged: false, marker: "gap-resnapshot" },
       { resynced: true, engineChanged: false, marker: "gap-resnapshot" },
       { resynced: true, engineChanged: false, marker: "gap-resnapshot" },
       { resynced: true, engineChanged: true, marker: "new-incarnation" },
@@ -177,6 +192,65 @@ describe("remote WorkspaceClient", () => {
     expect(calls).toBe(2);
     expect(client.identity).toEqual(liveIdentity);
     expect(server.shellCount()).toBe(1);
+    await client.close();
+  });
+
+  it("never replays a mutation when the transport loses its result", async () => {
+    const root = temp("tachyon-workspace-client-unknown-");
+    const workspaceRoot = path.join(root, "workspace");
+    const runtimeRoot = path.join(root, "runtime");
+    fs.mkdirSync(workspaceRoot, { mode: 0o700 });
+    fs.mkdirSync(runtimeRoot, { mode: 0o700 });
+    const socketPath = path.join(runtimeRoot, "control.sock");
+    const liveIdentity = identity(fs.realpathSync(workspaceRoot), "engine-live", "bridge-live");
+    let executions = 0;
+    let release!: () => void;
+    let observedStart!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const started = new Promise<void>((resolve) => { observedStart = resolve; });
+    const server = await startEngineControlServer({
+      socketPath,
+      identity: liveIdentity,
+      getSnapshot: () => snapshot(liveIdentity, 0, "live"),
+      readEvents: () => ({
+        schemaVersion: 1,
+        engineInstanceId: liveIdentity.instanceId,
+        afterSeq: 0,
+        oldestSeq: 1,
+        latestSeq: 0,
+        resyncRequired: false,
+        events: [],
+      }),
+      invoke: async (command) => {
+        executions += 1;
+        observedStart();
+        await gate;
+        return { schemaVersion: 1, method: command.method, status: "ok" };
+      },
+    });
+    servers.push(server);
+    const client = await connectRemoteWorkspaceClient({
+      workspaceRoot,
+      bundle: dummyBundle(root),
+      shell: { id: "shell-unknown-outcome", version: "test", locale: "en" },
+      ensure: async () => ({
+        identity: liveIdentity,
+        controlSocketPath: socketPath,
+        disposition: "reused-exact",
+      }),
+    });
+
+    const pending = client.invoke("operation-unknown-0001", {
+      schemaVersion: 1,
+      method: "agent.start",
+      input: { agent: "worker" },
+    });
+    await started;
+    await server.close();
+    servers.splice(servers.indexOf(server), 1);
+    release();
+    await expect(pending).rejects.toMatchObject({ code: "OPERATION_OUTCOME_UNKNOWN" });
+    expect(executions).toBe(1);
     await client.close();
   });
 });

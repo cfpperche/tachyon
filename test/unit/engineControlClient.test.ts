@@ -158,4 +158,26 @@ describe("EngineControlClient", () => {
       events: [{ seq: 4, kind: "four", payload: { view: "agents" } }],
     });
   });
+
+  it("invokes an operation by exact id without transport-level retries", async () => {
+    const f = fixture();
+    let executions = 0;
+    const server = await startEngineControlServer({
+      socketPath: f.socketPath,
+      identity: f.identity,
+      getSnapshot: f.snapshot,
+      invoke: async (command) => {
+        executions += 1;
+        return { schemaVersion: 1, method: command.method, status: "ok" };
+      },
+    });
+    servers.push(server);
+    const client = new EngineControlClient({ socketPath: f.socketPath, hello: f.hello });
+    await client.attach();
+    const command = { schemaVersion: 1 as const, method: "agent.start" as const, input: { agent: "worker" } };
+    const first = await client.invoke("operation-client-0001", command);
+    expect(first).toEqual({ schemaVersion: 1, method: "agent.start", status: "ok" });
+    expect(await client.invoke("operation-client-0001", command)).toEqual(first);
+    expect(executions).toBe(1);
+  });
 });

@@ -187,3 +187,30 @@ None.
 - Remaining before activation cutover: a typed command/invoke protocol and enough projection/action
   adapters for presentation consumers.  `extension.ts` still owns the legacy local Workspace in this
   checkpoint, intentionally avoiding a mixed dual-engine activation.
+
+## Tenth implementation slice — 2026-07-14
+
+- Added a closed, schema-validated `invoke` protocol for the five essential agent lifecycle actions:
+  start, graceful stop, kill, restart and resume.  Commands carry a bounded operation id and return an
+  exact typed success/error result; successful state is read from the subsequent engine projection
+  rather than an unreliable `changed` claim.
+- One engine incarnation owns a bounded operation registry.  Concurrent shells using the same operation
+  id and canonical intent share one pending/result promise, including cached failures; reuse with a
+  different intent fails with `OPERATION_ID_CONFLICT`.  Authentication happens before registry access.
+- A proven expired shell lease is a pre-invocation refusal, so the remote client may reattach and submit
+  the same operation id.  A timeout, disconnect or invalid response after send is instead reported as
+  `OPERATION_OUTCOME_UNKNOWN`: the client reconnects only for future work and never repeats the mutation.
+- Operation records are deliberately scoped to the service incarnation.  Exactly-once execution across
+  an actual engine crash is not claimed by this slice; a later recovery slice must either durably persist
+  the registry or preserve the current fail-ambiguous/no-automatic-replay contract.
+- The real process test now starts and kills a real tmux-backed agent through the daemon-owned Workspace,
+  verifies both running projections and proves duplicate start executes once.  Focused protocol/client/
+  engine tests force concurrent duplicate calls, canonical key order, conflicting intent, cached failure,
+  unauthenticated refusal, lease expiry and transport loss after execution begins.
+- Real `systemd --user` dogfood invoked remote `agent.start` twice with one operation id, observed the
+  running projection, invoked `agent.kill`, observed removal, then proved exact engine reuse and clean
+  service/process/socket/tmux teardown.  The focused engine matrix is 88/88 with typecheck, daemon import
+  boundary and diff-check green; the earlier reviewable global gate remains the current full-suite proof.
+- Remaining before activation cutover: projection/action adapters for presentation consumers and their
+  deterministic fake.  `extension.ts` still owns the legacy local Workspace; no mixed production mode is
+  enabled by this checkpoint.

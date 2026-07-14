@@ -12,6 +12,8 @@ import {
   isEngineServiceIdentityV1,
   isSha256,
   type EngineServiceIdentityV1,
+  type WorkspaceCommandResultV1,
+  type WorkspaceCommandV1,
   type WorkspaceSnapshotEnvelopeV1,
 } from "./protocol.js";
 
@@ -101,6 +103,7 @@ export async function startDaemonEngineService(
       identity,
       getSnapshot,
       readEvents: (afterSeq, limit) => journal.readAfter(afterSeq, limit),
+      invoke: (command) => executeWorkspaceCommand(runningWorkspace, command),
     });
     const runningControl = control;
 
@@ -121,6 +124,31 @@ export async function startDaemonEngineService(
     host.dispose();
     throw error;
   }
+}
+
+async function executeWorkspaceCommand(
+  workspace: Workspace,
+  command: WorkspaceCommandV1,
+): Promise<WorkspaceCommandResultV1> {
+  const agent = command.input.agent;
+  switch (command.method) {
+    case "agent.start":
+      await workspace.manager.spawn(agent);
+      break;
+    case "agent.stop":
+      await workspace.manager.stopGracefully(agent);
+      break;
+    case "agent.kill":
+      await workspace.manager.kill(agent);
+      break;
+    case "agent.restart":
+      await workspace.manager.restart(agent);
+      break;
+    case "agent.resume":
+      await workspace.resumeAgent(agent);
+      break;
+  }
+  return { schemaVersion: 1, method: command.method, status: "ok" };
 }
 
 class EngineProjectionCoordinator {

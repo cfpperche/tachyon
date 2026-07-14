@@ -12,9 +12,13 @@ import {
 } from "../engine-service/engineSupervisor.js";
 import {
   ENGINE_SHELL_PROTOCOL,
+  isEngineOperationId,
+  isWorkspaceCommandV1,
   type EngineServiceIdentityV1,
   type EngineShellHelloV1,
   type WorkspaceEventV1,
+  type WorkspaceCommandResultV1,
+  type WorkspaceCommandV1,
   type WorkspaceSnapshotEnvelopeV1,
 } from "../engine-service/protocol.js";
 import { workspaceHash } from "../tmux/TmuxService.js";
@@ -41,6 +45,7 @@ export interface WorkspaceClient {
   readonly snapshot: WorkspaceSnapshotEnvelopeV1;
   readonly bridgeUrl: string;
   sync(limit?: number): Promise<WorkspaceClientSyncResult>;
+  invoke(operationId: string, command: WorkspaceCommandV1): Promise<WorkspaceCommandResultV1>;
   subscribe(listener: WorkspaceClientListener): () => void;
   /** Detaches only this shell lease.  It never stops, restarts or disposes the engine. */
   close(): Promise<void>;
@@ -179,6 +184,16 @@ export class RemoteWorkspaceClient implements WorkspaceClient {
     return result;
   }
 
+  invoke(operationId: string, command: WorkspaceCommandV1): Promise<WorkspaceCommandResultV1> {
+    if (!isEngineOperationId(operationId) || !isWorkspaceCommandV1(command)) {
+      return Promise.reject(new RemoteWorkspaceClientError("INVALID_COMMAND", "workspace command or operation id is invalid"));
+    }
+    if (this.closeRequested) return Promise.reject(new RemoteWorkspaceClientError("CLIENT_CLOSED", "workspace client is closed"));
+    const result = this.tail.then(() => this.invokeOnce(operationId, command));
+    this.tail = result.then(() => undefined, () => undefined);
+    return result;
+  }
+
   subscribe(listener: WorkspaceClientListener): () => void {
     if (this.closeRequested) throw new RemoteWorkspaceClientError("CLIENT_CLOSED", "workspace client is closed");
     this.listeners.add(listener);
@@ -234,6 +249,30 @@ export class RemoteWorkspaceClient implements WorkspaceClient {
     return result;
   }
 
+  private async invokeOnce(operationId: string, command: WorkspaceCommandV1): Promise<WorkspaceCommandResultV1> {
+    try {
+      return await this.control.invoke(operationId, command);
+    } catch (error) {
+      if (isRejectedBeforeInvocation(error)) {
+        await this.reconnect();
+        try {
+          return await this.control.invoke(operationId, command);
+        } catch (retryError) {
+          if (isAmbiguousInvokeTransport(retryError)) {
+            await this.reconnect().catch(() => undefined);
+            throw unknownOperationOutcome(operationId);
+          }
+          throw retryError;
+        }
+      }
+      if (isAmbiguousInvokeTransport(error)) {
+        await this.reconnect().catch(() => undefined);
+        throw unknownOperationOutcome(operationId);
+      }
+      throw error;
+    }
+  }
+
   private async attachVerified(): Promise<{
     control: EngineControlClient;
     identity: EngineServiceIdentityV1;
@@ -283,6 +322,24 @@ function isRecoverableConnectionLoss(error: unknown): boolean {
     && (error.code === "UNAVAILABLE"
       || error.code === "TIMEOUT"
       || (error.code === "REMOTE" && error.remoteCode === "SHELL_SESSION_INVALID"));
+}
+
+function isRejectedBeforeInvocation(error: unknown): boolean {
+  return error instanceof EngineControlClientError
+    && error.code === "REMOTE"
+    && error.remoteCode === "SHELL_SESSION_INVALID";
+}
+
+function isAmbiguousInvokeTransport(error: unknown): boolean {
+  return error instanceof EngineControlClientError
+    && (error.code === "UNAVAILABLE" || error.code === "TIMEOUT" || error.code === "INVALID_RESPONSE");
+}
+
+function unknownOperationOutcome(operationId: string): RemoteWorkspaceClientError {
+  return new RemoteWorkspaceClientError(
+    "OPERATION_OUTCOME_UNKNOWN",
+    `engine connection was lost after operation '${operationId}' was sent; Tachyon will not repeat it automatically`,
+  );
 }
 
 function isExpectedDetachLoss(error: unknown): boolean {

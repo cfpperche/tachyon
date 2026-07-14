@@ -2,16 +2,21 @@ import fs from "node:fs";
 import net from "node:net";
 import {
   isEngineControlResponseV1,
+  isEngineOperationId,
+  isWorkspaceCommandV1,
   type EngineControlRequestV1,
   type EngineControlResponseV1,
   type EngineServiceIdentityV1,
   type EngineShellHelloV1,
   type EngineShellSessionV1,
   type WorkspaceEventBatchV1,
+  type WorkspaceCommandResultV1,
+  type WorkspaceCommandV1,
   type WorkspaceSnapshotEnvelopeV1,
 } from "./protocol.js";
 
 const DEFAULT_CONTROL_TIMEOUT_MS = 2_000;
+const DEFAULT_COMMAND_TIMEOUT_MS = 60_000;
 const MAX_CONTROL_RESPONSE_BYTES = 64 * 1024;
 
 export type EngineControlClientErrorCode = "UNAVAILABLE" | "TIMEOUT" | "INVALID_RESPONSE" | "REMOTE" | "NOT_ATTACHED";
@@ -32,6 +37,7 @@ export interface EngineControlClientOptions {
   socketPath: string;
   hello: EngineShellHelloV1;
   timeoutMs?: number;
+  commandTimeoutMs?: number;
 }
 
 /**
@@ -43,11 +49,16 @@ export class EngineControlClient {
   private lastSnapshotSeq: number | undefined;
   private lastEventSeq: number | undefined;
   private readonly timeoutMs: number;
+  private readonly commandTimeoutMs: number;
 
   constructor(private readonly options: EngineControlClientOptions) {
     this.timeoutMs = options.timeoutMs ?? DEFAULT_CONTROL_TIMEOUT_MS;
+    this.commandTimeoutMs = options.commandTimeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS;
     if (!Number.isSafeInteger(this.timeoutMs) || this.timeoutMs <= 0) {
       throw new Error("engine control timeoutMs must be a positive integer");
+    }
+    if (!Number.isSafeInteger(this.commandTimeoutMs) || this.commandTimeoutMs <= 0) {
+      throw new Error("engine command timeoutMs must be a positive integer");
     }
   }
 
@@ -133,6 +144,30 @@ export class EngineControlClient {
     return batch;
   }
 
+  /** Sends one idempotency-keyed mutation. Transport failures are deliberately not retried here. */
+  async invoke(operationId: string, command: WorkspaceCommandV1): Promise<WorkspaceCommandResultV1> {
+    if (!isEngineOperationId(operationId) || !isWorkspaceCommandV1(command)) {
+      throw new EngineControlClientError("INVALID_RESPONSE", "engine command request is invalid");
+    }
+    const session = this.requireSession();
+    const response = await this.request({
+      schemaVersion: 1,
+      op: "invoke",
+      workspaceHash: this.options.hello.workspaceHash,
+      shellId: session.shellId,
+      sessionToken: session.sessionToken,
+      operationId,
+      command,
+    }, this.commandTimeoutMs);
+    const success = this.unwrap(response);
+    if (success.op !== "invoke"
+      || success.operationId !== operationId
+      || success.result.method !== command.method) {
+      throw invalidResponse("invoke response does not match its operation or command");
+    }
+    return success.result;
+  }
+
   async detach(): Promise<void> {
     const session = this.currentSession;
     this.currentSession = undefined;
@@ -144,9 +179,9 @@ export class EngineControlClient {
     if (success.op !== "detach" || !success.detached) throw invalidResponse("detach request returned the wrong operation");
   }
 
-  private async request(request: EngineControlRequestV1): Promise<EngineControlResponseV1> {
+  private async request(request: EngineControlRequestV1, timeoutMs = this.timeoutMs): Promise<EngineControlResponseV1> {
     try {
-      return await requestEngineControl(this.options.socketPath, request, this.timeoutMs);
+      return await requestEngineControl(this.options.socketPath, request, timeoutMs);
     } catch (error) {
       if (error instanceof EngineControlClientError) throw error;
       throw new EngineControlClientError(

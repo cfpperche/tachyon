@@ -56,6 +56,24 @@ describe("daemon engine service", () => {
       agents: { total: 1, truncated: false, items: [{ name: "worker", declared: true, running: false }] },
     });
 
+    const startCommand = { schemaVersion: 1 as const, method: "agent.start" as const, input: { agent: "worker" } };
+    const started = await first.invoke("operation-engine-start-0001", startCommand);
+    expect(started).toEqual({ schemaVersion: 1, method: "agent.start", status: "ok" });
+    expect(await first.invoke("operation-engine-start-0001", startCommand)).toEqual(started);
+    await waitForEvent(first, (event) => event.kind === "views-changed" && event.payload.view === "agents");
+    expect(await first.snapshot()).toMatchObject({
+      projections: { agents: { items: [{ name: "worker", running: true }] } },
+    });
+    expect(await first.invoke("operation-engine-kill-0001", {
+      schemaVersion: 1,
+      method: "agent.kill",
+      input: { agent: "worker" },
+    })).toMatchObject({ status: "ok", method: "agent.kill" });
+    await waitForEvent(first, (event) => event.kind === "views-changed" && event.payload.view === "agents");
+    expect(await first.snapshot()).toMatchObject({
+      projections: { agents: { items: [{ name: "worker", running: false }] } },
+    });
+
     // Model Extension Host replacement: the old shell disappears without owning any engine teardown.
     const replacement = new EngineControlClient({ socketPath, hello: hello(identity, "shell-new") });
     const replacementSession = await replacement.attach();
