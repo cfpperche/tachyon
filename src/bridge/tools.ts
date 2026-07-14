@@ -1666,9 +1666,11 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     {
       description:
         "Pin a finding to the project's shared checklist (visible to the human in the sidebar and " +
-        "to every agent via list_pins). Use for discoveries worth keeping: bugs found out of scope, " +
-        "constraints learned the hard way, decisions other agents must know. If you know the task id and " +
-        "are writing a task-local scratchpad note, use append_task_note instead.",
+        "to every agent via list_pins). Use for knowledge worth keeping that is NOT work: constraints " +
+        "learned the hard way, decisions other agents must know, gotchas. A bug or any actionable defect " +
+        "is WORK — file it with create_task (kind: 'bug') so it enters triage; a pinned bug is invisible " +
+        "to the queue. If you know the task id and are writing a task-local scratchpad note, use " +
+        "append_task_note instead.",
       inputSchema: {
         title: z.string().min(1).max(200).optional().describe("short sidebar title; prefer this when the finding needs a longer detail body"),
         text: z.string().min(1).max(8000).optional().describe("legacy/full finding text; if long or multiline, Tachyon derives a short title and stores the full text as detail"),
@@ -1776,6 +1778,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       description:
         "Create a project Task in the shared Mission Control queue. Tasks are work items, not reminders: " +
         "new tasks land in inbox with no priority/assignee so a human or agent can triage them deliberately. " +
+        "Bugs and defects discovered mid-work belong here (kind: 'bug', evidence in the body) — never in pins. " +
         "artifact_refs is optional and open-ended; type:'sdd' enables best-effort local spec enrichment only.",
       inputSchema: {
         title: z.string().min(1).max(300),
