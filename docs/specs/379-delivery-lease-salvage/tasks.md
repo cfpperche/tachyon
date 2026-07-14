@@ -4,40 +4,46 @@ _Generated from `plan.md` on 2026-07-14. Work top-to-bottom. Check boxes as task
 
 ## Implementation
 
-- [ ] {{task — small, unambiguous, ordered}}
-- [ ] {{task}}
-- [ ] {{task}}
+- [ ] Delivery model: `salvaged` restricted state + fence-domain fields on the holder +
+      audit event vocabulary (types.ts, store.ts migration; existing rows classify without
+      history rewrite)
+- [ ] Kill path: `kill_agent` → atomic `held → draining` (kill-attempt id, holder snapshot)
+      BEFORE termination; AgentManager records termination outcome + descendant handling;
+      kill never releases authority
+- [ ] Draining observer: fence-death evidence + worktree-quiescence recheck (bounded,
+      stable HEAD/index/status) → recoverable; anything unprovable stays `draining`
+- [ ] Salvage transition: CAS on {state, lease version, holder tuple, fence domain} +
+      atomic consumption of a bound single-use human-approval capability → `salvaged`
+      (forensics preserved); `free` only via authorized verify/prune/recovery disposition
+- [ ] Approval capability: nonce, expiry, bound digest {lease version, segment, holder
+      tuple, fence-domain digest, probe digest, expected HEAD, status digest, disposition,
+      caller}; replay/mismatch rejected; human-legible binding in the approval card
+- [ ] Linux fence production wiring as EVIDENCE (capability-checked fence domain;
+      inconsistency ⇒ ambiguous, never dead); UnavailableProcessFence fallback intact
+- [ ] Bridge surface: `delivery_salvage` tool + structured `next` hints on
+      verify_task/git_delivery_prune/delivery_join dead-holder refusals
+- [ ] Tests: state machine + CAS/TOCTOU races + approval binding/replay + fence-domain
+      ambiguity matrix + kill→draining + 378-wedge-shaped fixture salvage + no-weakening
+      regressions (occupied deliveries still refuse everything)
 
 ## Verification
 
-_Acceptance checks tied to `spec.md`. Each should map to a checklist item there._
+- [ ] All spec.md acceptance scenarios (as re-scoped by plan.md) have green tests
+- [ ] Probe blockers re-checked one-by-one against the implementation (SECURITY review)
+- [ ] verify_task gate green on the delegated branch
 
-- [ ] {{verify criterion}}
-- [ ] {{verify criterion}}
-
-**Headless check:** `{{command, or "none"}}`
-<!-- A mechanical command an agent can run to validate this spec's implementation
-     without a human (tests / build / lint). Kept green = the spec stays delivered.
-     To make `/sdd verify` re-run it, also declare it on a **Verify:** line, e.g.:
-       **Verify:** `npm test`
-     `/sdd verify` reads the FIRST backtick span per **Verify:** line, previews by
-     default, and runs only with --run. Multiple **Verify:** lines run in order. -->
+**Verify:** `npx vitest run test/unit/leaseSalvage*.test.ts test/unit/deliveryStore.test.ts`
+**Verify:** `npm run typecheck`
 
 ## Dogfood
 
-**Dogfood:** `{{representative headless dogfood command}}`
-<!-- A representative command that exercises the shipped behavior end-to-end.
-     `/sdd dogfood` previews by default and runs only with --run, then logs under
-     notes.md `## Dogfood log`. If no meaningful headless dogfood exists, replace
-     the Dogfood line with: **Dogfood-Opt-Out:** <non-empty reason>. -->
+**Dogfood:** `npx vitest run test/unit/leaseSalvage*.test.ts`
 
-**Human dogfood:** optional
-<!-- Opt-in: a short walkthrough a human follows to approve the spec (demo steps,
-     UI routes, things to eyeball). Name the steps here when human sign-off matters. -->
+**Human dogfood:** salvage the REAL wedged delivery d-spawn-79f528dd… (approval card →
+salvaged → prune disposition) and confirm verify_task/prune stop refusing; then verify the
+ownrot delivery post-kill drains and salvages cleanly.
 
 ## Visual QA
 
-_Optional for UI/interface/rendered-output work. Keep prose-based: real surface inspected, evidence captured, verdict recorded. If not useful, declare `**Visual QA Opt-Out:** <reason>`._
-
-- [ ] Evidence:
+- [ ] Evidence: screenshot of the salvage approval card (binding digest human-legible)
 - [ ] Verdict:
