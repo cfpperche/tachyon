@@ -6,9 +6,8 @@ _Created 2026-07-13._
 
 **Planning task:** `t-60979d`
 
-**Ratification:** partial. On 2026-07-14 the maintainer directed canonical
-`.tachyon/agents/<agent>/` storage and import-as-copy (R1/R5); the complete revised R1–R6 bundle
-still requires ratification before implementation.
+**Ratification:** locked on 2026-07-14. The maintainer accepted the complete revised R1–R6 bundle
+without amendments. Implementation has not started.
 
 **Legacy compatibility baseline:** `23130cea1c1cf8046c1b09ac306de80d92c1bb0e`. This single
 feature `BASE_SHA` is immutable for every no-soul parity fixture.
@@ -474,22 +473,22 @@ Hermes SOUL as externally managed.
 
 ## Maintainer ratification
 
-- **R1 — configuration (maintainer-directed):** boolean `soul` per declared agent (`true` enabled,
+- **R1 — configuration (locked 2026-07-14):** boolean `soul` per declared agent (`true` enabled,
   `false`/absence disabled) with the
   only canonical source at `.tachyon/agents/<agent>/SOUL.md`; no arbitrary path, auto-discovery,
   inline body, shared live source, global default, or profile inheritance in v1.
-- **R2 — runtime rollout (recommended):** phase 1 supports only syntactically recognized verified
+- **R2 — runtime rollout (locked 2026-07-14):** phase 1 supports only syntactically recognized verified
   opening-prompt adapters, fails closed for wrappers/native-external/unsupported runtimes, and defers
   Hermes native per-profile support to a separately proven home/profile adapter.
-- **R3 — lifecycle (recommended):** refresh on fresh spawn, restart, and re-anchor; never duplicate on
+- **R3 — lifecycle (locked 2026-07-14):** refresh on fresh spawn, restart, and re-anchor; never duplicate on
   resume, rebind, or native fork.
-- **R4 — limits/trust/availability (recommended):** 20,000 Unicode scalar values plus 64 KiB raw
+- **R4 — limits/trust/availability (locked 2026-07-14):** 20,000 Unicode scalar values plus 64 KiB raw
   byte ceiling, exact-byte digest/no truncation, trusted-workspace posture, current inline/long-file
   transport with explicit argv exposure, no automatic identity-less fallback, and visible
   `identity-degraded` state after failed compaction recovery.
-- **R5 — Studio ownership (maintainer-directed):** Agent Studio creates or imports an exact local
+- **R5 — Studio ownership (locked 2026-07-14):** Agent Studio creates or imports an exact local
   copy into the canonical profile, opens/previews that copy, requires explicit replace/rename/delete
   confirmation, and never retains the import source path; editing remains in the Markdown editor.
-- **R6 — typed composition (recommended):** separate current-task metadata from persistent
+- **R6 — typed composition (locked 2026-07-14):** separate current-task metadata from persistent
   `instructions`, but retain a golden-pinned legacy serializer for no-soul agents; only soul-enabled
   prompts adopt the new canonical task-after-Bridge section order.

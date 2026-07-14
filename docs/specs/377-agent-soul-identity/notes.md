@@ -276,10 +276,17 @@ pass is recorded below.
   bounded purge-before-delete contract mutually consistent. No blocker or major remains in this
   planning revision; implementation evidence and maintainer R1–R6 ratification remain pending.
 
+### 2026-07-14 — maintainer ratification
+
+- The maintainer replied “está aceito” to the presented complete revised R1–R6 bundle.
+- R1–R6 are locked without amendments on 2026-07-14. This resolves the planning gate but does not
+  itself start production/test implementation; bounded implementation Deliveries remain the next
+  coordination step.
+- Planning task `t-60979d` is complete once this ratification record is committed and verified.
+
 ## Open questions
 
-- R1/R5 reflect the maintainer's canonical-storage direction; does the maintainer ratify the full
-  revised R1–R6 bundle?
+- Resolved 2026-07-14: the maintainer ratified the complete revised R1–R6 bundle without amendments.
 - After ratification, should Checkpoint A and Checkpoint B be separate Mission Control Deliveries or
   one feature branch with two review gates? Recommendation: separate bounded Deliveries, one
   integration branch/spec.

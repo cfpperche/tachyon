@@ -1,13 +1,13 @@
 # 377 — agent-soul-identity — tasks
 
-_Generated from `plan.md` on 2026-07-13. Do not start implementation until the ratification gate is
-checked._
+_Generated from `plan.md` on 2026-07-13. The ratification gate was locked on 2026-07-14;
+implementation still requires separately assigned bounded Deliveries._
 
 ## Ratification
 
-- [ ] **T0. Lock R1–R6 with the maintainer.** R1/R5 already carry the 2026-07-14 maintainer direction
-      for canonical `.tachyon/agents/<agent>` storage and import-as-copy; ratify the full revised
-      bundle and record the date in `spec.md` before delegating code.
+- [x] **T0. Lock R1–R6 with the maintainer.** On 2026-07-14 the maintainer accepted the complete
+      revised bundle without amendments, including canonical `.tachyon/agents/<agent>` storage,
+      import-as-copy, and the R2–R4/R6 recommendations. The lock date is recorded in `spec.md`.
 
 ## Checkpoint A — core and lifecycle
 

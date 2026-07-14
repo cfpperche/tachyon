@@ -2,8 +2,9 @@
 
 _Drafted from `spec.md` on 2026-07-13._
 
-This is an implementation plan, not implementation authorization. Production work starts only after
-the maintainer ratifies `R1`–`R6` in the spec.
+This is an implementation plan, not an implementation diff. The maintainer locked `R1`–`R6` on
+2026-07-14; production work still begins only through separately assigned, bounded implementation
+Deliveries.
 
 ## Current-state inventory
 
@@ -770,10 +771,10 @@ remain functional proof.
 
 ## Ratification gate
 
-Before implementation:
+**R1–R6 locked by the maintainer on 2026-07-14.** Before implementation:
 
-1. maintainer accepts or edits `R1`–`R6`;
-2. update `spec.md` from “recommended” to “locked” with the ratification date;
+1. [x] maintainer accepts or edits `R1`–`R6`;
+2. [x] update `spec.md` from “recommended” to “locked” with the ratification date;
 3. split implementation into bounded Mission Control deliveries by the ownership groups in
    `tasks.md`;
 4. require a different-model adversarial review of core/security and a separate Visual QA pass for
