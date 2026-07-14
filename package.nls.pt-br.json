@@ -94,5 +94,7 @@
   "command.forkAgentItem": "Bifurcar sessão",
   "command.reanchorAgentItem": "Reancorar papel",
   "command.reinjectContinuityItem": "Reinjetar continuidade",
+  "command.injectPromptTemplate": "Injetar template de prompt…",
+  "command.injectPromptTemplateItem": "Injetar template de prompt",
   "view.pluginSurfaces": "Superfícies de plugin"
 }

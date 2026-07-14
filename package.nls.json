@@ -94,5 +94,7 @@
   "command.forkAgentItem": "Fork session",
   "command.reanchorAgentItem": "Re-anchor Role",
   "command.reinjectContinuityItem": "Re-inject Continuity",
+  "command.injectPromptTemplate": "Inject Prompt Template…",
+  "command.injectPromptTemplateItem": "Inject Prompt Template",
   "view.pluginSurfaces": "Plugin Surfaces"
 }

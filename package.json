@@ -188,6 +188,16 @@
         "icon": "$(history)"
       },
       {
+        "command": "tachyon.injectPromptTemplate",
+        "title": "%command.injectPromptTemplate%",
+        "icon": "$(symbol-snippet)"
+      },
+      {
+        "command": "tachyon.injectPromptTemplateItem",
+        "title": "%command.injectPromptTemplateItem%",
+        "icon": "$(symbol-snippet)"
+      },
+      {
         "command": "tachyon.promoteAgentItem",
         "title": "%command.promoteAgentItem%",
         "icon": "$(save)"
@@ -571,6 +581,10 @@
         },
         {
           "command": "tachyon.reinjectContinuityItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.injectPromptTemplateItem",
           "when": "false"
         },
         {
