@@ -4,42 +4,42 @@ _Generated from `plan.md` on 2026-07-13. Work top-to-bottom. Check boxes as task
 
 ## Implementation
 
-- [ ] Activity vocabulary: add optional `model` + `effort` to `NormalizedEvent` (types.ts);
+- [x] Activity vocabulary: add optional `model` + `effort` to `NormalizedEvent` (types.ts);
       hoist both in logStore flatten/hydrate (mirror the `runtimeVersion` lines); no
       schemaVersion bump
-- [ ] claudeNormalizer: latch `message.model` from assistant records — skip
+- [x] claudeNormalizer: latch `message.model` from assistant records — skip
       `isSidechain: true` and `"<synthetic>"`; fixture with an in-file sidechain record
       carrying a different model
-- [ ] codexNormalizer: extract `payload.model` + `effort` from `turn_context`; fixture from
+- [x] codexNormalizer: extract `payload.model` + `effort` from `turn_context`; fixture from
       a real rollout shape (session_meta/token_count carry no model — assert they don't latch)
-- [ ] grokNormalizer + opencodeNormalizer: emit the model via the new field; stop smuggling
+- [x] grokNormalizer + opencodeNormalizer: emit the model via the new field; stop smuggling
       through `runtimeVersion`; activityView header prefers the model field for these runtimes
-- [ ] snapshotService: model latch in ActivityProjection advanced in log append order (not
+- [x] snapshotService: model latch in ActivityProjection advanced in log append order (not
       timestamp compare); keep `modelObservedAt` as display metadata; project BOTH declared
       and observed + `divergence` (same alias table both sides, parser unified with
       agentModel's `modelFromCommand`)
-- [ ] View-independent per-agent accessor on the shared projection (advances the cursor
+- [x] View-independent per-agent accessor on the shared projection (advances the cursor
       itself); extension.ts onAppended: advance → compare `(label, source, stale,
       divergence)` tuple → sidebar refresh on change only; regression test: model update
       observed with the RuntimeOps view never opened
-- [ ] Boundary-aware precedence in the projection: process-rotating session boundaries
+- [x] Boundary-aware precedence in the projection: process-rotating session boundaries
       (restarted/started/fork) demote observed; process-preserving ("new"/resumed) keep it
       with `stale: true`
-- [ ] Label policy: validated-open fallback for observed ids (charset/length gate;
+- [x] Label policy: validated-open fallback for observed ids (charset/length gate;
       raw/title-cased render, never "Unavailable"); RuntimeOpsModelLabel keeps the closed
       union for declared/profile defaults
-- [ ] Sidebar VM: AgentExtras model input; `modelSource`/`modelObservedAt`/`modelStale`/
+- [x] Sidebar VM: AgentExtras model input; `modelSource`/`modelObservedAt`/`modelStale`/
       `modelDivergence` siblings on AgentVM; precedence in the pure mapper; SidebarPrototype
       modelOf gather (verifyOf pattern)
-- [ ] Sidebar webview row: observed label + textual provenance marker (declared suffix /
+- [x] Sidebar webview row: observed label + textual provenance marker (declared suffix /
       stale · divergence glyph with tooltip), never styling alone
-- [ ] Docs: upgrade note (pre-existing logs show `declared` until next observation); codex
+- [x] Docs: upgrade note (pre-existing logs show `declared` until next observation); codex
       per-turn latency note; RuntimeOps-panel follow-up recorded in parity.md seam list
 
 ## Verification
 
-- [ ] All spec.md acceptance scenarios have a matching green unit/fixture test
-- [ ] `npm run typecheck` clean; full suite green
+- [x] All spec.md acceptance scenarios have a matching green unit/fixture test
+- [x] `npm run typecheck` clean; full suite green
 - [ ] verify_task gate green on the delegated branch (behavior test fails at BASE_SHA,
       passes at HEAD; no scope breach beyond owns)
 
