@@ -96,6 +96,38 @@ namespace on this host) plus one unrelated pre-existing sidebar/config drift —
 Focused suites green (persistentBridgeProxy.test.ts, workspaceHeadless.test.ts, sockfix3Behavior.gen.test.ts —
 69 tests), `npm run typecheck` clean, real user-systemd dogfood passes.
 
+## 2026-07-14 — t-88ef8c security correction round 2: deleted the os.tmpdir() fallback
+
+Adversarial re-review (j-d0f57760d567) found round 1's leaf-only permission check (uid+mode, with a
+chmod-repair path) insufficient: on the `os.tmpdir()/tachyon-<uid>` fallback used when `XDG_RUNTIME_DIR` is
+unset, the check validated only the LEAF directory, never its parent. An attacker who pre-creates that
+equally-deterministic PARENT (before the victim's first no-XDG session) gets a victim-owned, correctly-permed
+leaf created inside their own directory by the victim's own `mkdirSync` — passing the round-1 check outright —
+and can then delete/replace that leaf at any later time using only their parent-write access (no race needed).
+A second, independently-sufficient gap: the check used `statSync` (follows symlinks) instead of `lstatSync`, so
+a leaf that was actually a symlink to an unrelated victim-owned directory also passed validation.
+
+Fix (minimal, delete rather than harden further): `persistentBridgeRuntimeBaseDir` no longer has an
+`os.tmpdir()` fallback at all — the runtime dir is now ONLY `$XDG_RUNTIME_DIR/tachyon` (pam_systemd guarantees
+`$XDG_RUNTIME_DIR` is a 0700-per-uid tmpfs, so no attacker-controllable parent can exist under it). When
+`XDG_RUNTIME_DIR` is unset, `persistentBridgeRuntimeBaseDir` throws `PersistentBridgeUnavailableError`
+immediately — every path derivation (read or write) fails, and `Workspace.startBridgeListener`'s existing catch
+degrades to the in-process Bridge, same UX as any other persistent-proxy start failure. Product consequence: on
+a host with no `XDG_RUNTIME_DIR` (SSH without pam_systemd, some containers, WSL without systemd), the persistent
+proxy is simply unavailable — no insecure fallback is offered as a substitute. `ensureSecureRuntimeDir` dropped
+its chmod-repair path (itself a TOCTOU gap) in favor of `lstatSync` + outright refusal (not a real directory /
+foreign uid / group-or-other-accessible mode), and a new `ensureSecurePersistentBridgeDir` choke point
+validates both the `tachyon` base dir and the per-workspace leaf before any writer binds a socket.
+
+Not in scope (follow-up t-faa36e): `SO_PEERCRED` peer-uid verification on the control socket as
+defense-in-depth. The private-directory fix above closes the actual attack (filesystem permissions are the
+entire trust boundary today, since `validDescriptor` only checks the public workspace hash + realpath); a
+kernel-level peer-credential check is additional hardening for later, not required to close this hole.
+
+Focused suites green (persistentBridgeProxy.test.ts incl. 3 new hostile-runtime-dir scenarios,
+sockfix4Behavior.gen.test.ts, workspaceHeadless.test.ts — 65 tests), `npm run typecheck` clean, real
+user-systemd dogfood passes.
+
 ## Dogfood log
 
 ### 2026-07-14T14:55:00Z — pass (1/1) — source: t-88ef8c — commit: 4055b91c

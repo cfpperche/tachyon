@@ -1,10 +1,9 @@
 import fs from "node:fs";
 import http from "node:http";
 import net from "node:net";
-import path from "node:path";
 import { randomUUID } from "node:crypto";
 import {
-  ensureSecureRuntimeDir,
+  ensureSecurePersistentBridgeDir,
   PERSISTENT_BRIDGE_PROTOCOL,
   type PersistentBridgeControlRequest,
   type PersistentBridgeControlResponse,
@@ -65,7 +64,7 @@ export function stripHopByHopHeaders(headers: http.IncomingHttpHeaders): http.Ou
 
 export async function startPersistentProxy(options: PersistentProxyDaemonOptions): Promise<RunningPersistentProxy> {
   const canonicalRoot = fs.realpathSync(options.workspaceRoot);
-  ensureSecureRuntimeDir(path.dirname(options.controlSocket));
+  ensureSecurePersistentBridgeDir(options.workspaceRoot);
   let backendPort: number | undefined;
   let closing = false;
 

@@ -1,5 +1,4 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { workspaceHash } from "../tmux/TmuxService.js";
 
@@ -19,8 +18,8 @@ export class PersistentBridgeSocketPathError extends Error {
   }
 }
 
-/** Thrown when the directory a control socket would bind inside cannot be made exclusively writable by
- *  the current user. Callers MUST treat this as fatal for the persistent proxy and fail closed to the
+/** Thrown when the directory a control socket would bind inside cannot be trusted to be private to the
+ *  current user. Callers MUST treat this as fatal for the persistent proxy and fail closed to the
  *  in-process Bridge — never bind a socket in a directory this rejects (t-88ef8c security review). */
 export class PersistentBridgeUnsafeRuntimeDirError extends Error {
   constructor(readonly dirPath: string, readonly reason: string) {
@@ -29,30 +28,33 @@ export class PersistentBridgeUnsafeRuntimeDirError extends Error {
   }
 }
 
-/** Creates (or reuses) `dirPath` and enforces it is owned by, and exclusively writable by, the current
- *  user before any control socket is bound inside it. `fs.mkdirSync`'s `mode` option is SILENTLY IGNORED
- *  when the directory already exists (Node/POSIX behavior) — so a same-uid-namespace attacker who
- *  pre-creates the deterministic runtime dir (world-writable, or owned by a different uid) before this
- *  process runs would otherwise defeat the intended 0700 and swap in a hijacked control.sock, harvesting
- *  every client's Bearer token (the control protocol authenticates only the public workspace hash). A lax
- *  mode on a directory we already own is repaired in place; anything we cannot make safe (foreign-owned,
- *  or still group/other-accessible after chmod) is refused, never used. */
+/** Thrown when there is no OS-private location to derive the persistent Bridge runtime dir from at all.
+ *  Callers MUST treat this as fatal and fail closed to the in-process Bridge (t-88ef8c security review). */
+export class PersistentBridgeUnavailableError extends Error {
+  constructor(readonly reason: string) {
+    super(`persistent Bridge is unavailable: ${reason}`);
+    this.name = "PersistentBridgeUnavailableError";
+  }
+}
+
+/** Creates (or reuses) `dirPath` and REFUSES it outright unless it is a real directory (not a symlink —
+ *  `fs.mkdirSync`'s recursive mode silently no-ops on an existing symlink-to-directory, and a naive
+ *  `statSync` follows symlinks, so only `lstatSync` on the leaf itself is trustworthy), owned by the
+ *  current user, and exclusively user-accessible (`mode & 0o077 === 0`). No repair path: a directory that
+ *  fails this check is never made safe in place (t-88ef8c round 2 — the round-1 chmod-repair was itself a
+ *  TOCTOU gap), the caller must fail closed instead. */
 export function ensureSecureRuntimeDir(dirPath: string): void {
   fs.mkdirSync(dirPath, { recursive: true, mode: 0o700 });
   const uid = typeof process.getuid === "function" ? process.getuid() : 0;
-  const stat = fs.statSync(dirPath);
+  const stat = fs.lstatSync(dirPath);
+  if (!stat.isDirectory()) {
+    throw new PersistentBridgeUnsafeRuntimeDirError(dirPath, "not a real directory (symlink or other non-directory entry)");
+  }
   if (stat.uid !== uid) {
     throw new PersistentBridgeUnsafeRuntimeDirError(dirPath, `owned by uid ${stat.uid}, expected ${uid}`);
   }
   if ((stat.mode & 0o077) !== 0) {
-    fs.chmodSync(dirPath, 0o700);
-    const repaired = fs.statSync(dirPath);
-    if ((repaired.mode & 0o077) !== 0) {
-      throw new PersistentBridgeUnsafeRuntimeDirError(
-        dirPath,
-        `mode ${(repaired.mode & 0o777).toString(8)} still group/other-accessible after chmod`,
-      );
-    }
+    throw new PersistentBridgeUnsafeRuntimeDirError(dirPath, `mode ${(stat.mode & 0o777).toString(8)} is group/other-accessible`);
   }
 }
 
@@ -79,18 +81,44 @@ export type PersistentBridgeControlResponse =
 
 /** Outside the workspace, keyed only by the 8-hex-char workspace hash — never the workspace path itself —
  *  so a control socket underneath it can never grow past `sun_path` no matter how deep the checkout lives
- *  (t-88ef8c: a worktree under `~/.cache/tachyon/worktrees/...` alone is already 122+ bytes). */
+ *  (t-88ef8c: a worktree under `~/.cache/tachyon/worktrees/...` alone is already 122+ bytes).
+ *
+ *  ONLY `$XDG_RUNTIME_DIR/tachyon` — pam_systemd guarantees `$XDG_RUNTIME_DIR` (`/run/user/<uid>`) is a
+ *  0700 tmpfs private to the current user, so nothing beneath it is attacker-creatable. There is
+ *  deliberately NO `os.tmpdir()` fallback (t-88ef8c round 2): a `/tmp`-rooted path is a world-writable
+ *  sticky dir whose PARENT (not just the leaf) any local user can pre-create, which let an attacker plant
+ *  a hijacked control.sock underneath a leaf that still passed a leaf-only permission check (security
+ *  re-review j-d0f57760d567, findings #1/#3). When there is no private runtime dir to use, the persistent
+ *  proxy is simply unavailable — the caller must fail closed to the in-process Bridge, never bind here. */
 function persistentBridgeRuntimeBaseDir(): string {
   const xdgRuntimeDir = process.env.XDG_RUNTIME_DIR?.trim();
-  if (xdgRuntimeDir) return path.join(xdgRuntimeDir, "tachyon");
-  const uid = typeof process.getuid === "function" ? process.getuid() : 0;
-  return path.join(os.tmpdir(), `tachyon-${uid}`);
+  if (!xdgRuntimeDir) {
+    throw new PersistentBridgeUnavailableError(
+      "XDG_RUNTIME_DIR is not set — no OS-private per-user runtime directory to bind the control socket in",
+    );
+  }
+  return path.join(xdgRuntimeDir, "tachyon");
 }
 
 /** The single writer-side derivation. Every consumer that STARTS or OWNS a daemon (PersistentBridgeService,
- *  the dogfood harness) must go through this — never re-derive the path independently. */
+ *  the dogfood harness) must go through this — never re-derive the path independently. Pure (no fs access)
+ *  so read-only/length-check callers can use it without side effects; throws PersistentBridgeUnavailableError
+ *  when there is no private runtime dir (see persistentBridgeRuntimeBaseDir). */
 export function persistentBridgeDir(workspaceRoot: string): string {
   return path.join(persistentBridgeRuntimeBaseDir(), workspaceHash(workspaceRoot));
+}
+
+/** The single BINDING choke point: every consumer that is about to create/own a control socket (as
+ *  opposed to merely computing where one would live) must go through this instead of mkdir'ing
+ *  `persistentBridgeDir()` directly. Validates both the shared `tachyon` base dir and the per-workspace
+ *  leaf beneath it — each must be a real, current-user-owned, exclusively-accessible directory — before
+ *  returning the leaf path a socket may bind inside (t-88ef8c round 2, j-2cf52fee3827). */
+export function ensureSecurePersistentBridgeDir(workspaceRoot: string): string {
+  const base = persistentBridgeRuntimeBaseDir();
+  ensureSecureRuntimeDir(base);
+  const leaf = path.join(base, workspaceHash(workspaceRoot));
+  ensureSecureRuntimeDir(leaf);
+  return leaf;
 }
 
 export function persistentBridgeDescriptorPath(workspaceRoot: string): string {

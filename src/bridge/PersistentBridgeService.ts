@@ -4,7 +4,7 @@ import path from "node:path";
 import { randomBytes } from "node:crypto";
 import { spawn } from "node:child_process";
 import {
-  ensureSecureRuntimeDir,
+  ensureSecurePersistentBridgeDir,
   isPersistentBridgeDescriptor,
   persistentBridgeControlSocket,
   persistentBridgeDescriptorPath,
@@ -72,7 +72,7 @@ export class PersistentBridgeService {
     if (existing && !existing.ok) throw new Error(`${existing.code}: ${existing.message}`);
     if (existing?.ok) throw new Error("persistent Bridge identity mismatch");
 
-    ensureSecureRuntimeDir(persistentBridgeDir(this.workspaceRoot));
+    ensureSecurePersistentBridgeDir(this.workspaceRoot);
     const lock = path.join(persistentBridgeDir(this.workspaceRoot), "start.lock");
     const lockFd = this.tryAcquireStartLock(lock);
     if (lockFd === undefined) return this.waitForReadyAndRegister(backendPort);

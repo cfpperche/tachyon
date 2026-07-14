@@ -19,6 +19,7 @@ import {
   persistentBridgeDescriptorPath,
   persistentBridgeDir,
   PersistentBridgeSocketPathError,
+  PersistentBridgeUnavailableError,
   PersistentBridgeUnsafeRuntimeDirError,
   resolvePersistentBridgeControlSocket,
   type PersistentBridgeControlRequest,
@@ -295,64 +296,85 @@ describe("persistent Bridge proxy", () => {
     });
   });
 
-  // t-88ef8c security review (j-58f2753edbf2 finding #1, BLOCKER): with XDG_RUNTIME_DIR absent, the
-  // runtime dir falls back under os.tmpdir() (a world-writable sticky dir, e.g. /tmp). fs.mkdirSync's
-  // `mode` option is silently ignored for a directory that already exists, so a same-uid-namespace
-  // attacker who pre-creates the deterministic leaf dir before this process runs can defeat the intended
-  // 0700 and later hijack control.sock. ensureSecureRuntimeDir must repair a same-uid lax mode, and must
-  // fail closed — never bind — when the directory cannot be made safe.
-  describe("runtime dir hardening (t-88ef8c security review)", () => {
+  // t-88ef8c security review round 2 (j-2cf52fee3827, following j-d0f57760d567's adversarial re-review):
+  // round 1's leaf-only permission check missed that the LEAF's *parent* was equally attacker-creatable
+  // under the old os.tmpdir()/tachyon-<uid> fallback — an attacker who pre-creates the parent (not the
+  // leaf) still gets a victim-owned "safe" leaf inside their own directory, and can delete/replace it at
+  // any later time regardless of the leaf's own mode. Round 2 deletes the fallback outright: the runtime
+  // dir now lives ONLY under $XDG_RUNTIME_DIR/tachyon (a pam_systemd-guaranteed 0700-per-uid tmpfs), so no
+  // attacker-controllable parent can ever exist. Round 1's chmod-repair path is dropped too (it was its
+  // own TOCTOU gap) — ensureSecureRuntimeDir now refuses outright instead of repairing.
+  describe("runtime dir hardening (t-88ef8c security review round 2)", () => {
     const originalXdgRuntimeDir = process.env.XDG_RUNTIME_DIR;
     afterEach(() => {
       if (originalXdgRuntimeDir === undefined) delete process.env.XDG_RUNTIME_DIR;
       else process.env.XDG_RUNTIME_DIR = originalXdgRuntimeDir;
-      vi.restoreAllMocks();
     });
 
-    it("repairs a pre-existing world-writable runtime dir it owns back to 0700, then a real proxy can bind inside it", async () => {
+    it("(a) refuses to derive any path — and never mkdirs the deleted os.tmpdir() fallback — when XDG_RUNTIME_DIR is unset", async () => {
       delete process.env.XDG_RUNTIME_DIR;
-      const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-persistent-bridge-hijack-mode-"));
-      const dir = persistentBridgeDir(root);
-      fs.mkdirSync(dir, { recursive: true });
-      fs.chmodSync(dir, 0o777); // simulates an attacker pre-creating the leaf dir wide open
-      expect(fs.statSync(dir).mode & 0o777).toBe(0o777);
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-persistent-bridge-no-xdg-"));
 
-      ensureSecureRuntimeDir(dir);
-      expect(fs.statSync(dir).mode & 0o777).toBe(0o700);
+      expect(() => persistentBridgeDir(root)).toThrow(PersistentBridgeUnavailableError);
+      expect(() => persistentBridgeControlSocket(root)).toThrow(PersistentBridgeUnavailableError);
 
-      // Proves the repair is real, not just cosmetic: a proxy actually binds inside the now-safe dir.
+      // Fails closed all the way up through the real writer: ensureAndRegister rejects (Workspace's
+      // caller degrades to in-process Bridge). Prove the deleted os.tmpdir()/tachyon-<uid> fallback dir
+      // (the exact name the pre-round-2 code used to mkdir) is never mkdir'd by this call — spied rather
+      // than existsSync-checked because a shared host may already have that dir from unrelated processes.
+      const uid = typeof process.getuid === "function" ? process.getuid() : 0;
+      const deletedFallbackDir = path.join(os.tmpdir(), `tachyon-${uid}`);
+      const realMkdirSync = fs.mkdirSync.bind(fs);
+      const mkdirTargets: unknown[] = [];
+      const mkdirSpy = vi.spyOn(fs, "mkdirSync").mockImplementation((target, opts) => {
+        mkdirTargets.push(target);
+        return realMkdirSync(target as fs.PathLike, opts as fs.MakeDirectoryOptions);
+      });
+      try {
+        const service = new PersistentBridgeService(root, "noxdg001", "/unused");
+        await expect(service.ensureAndRegister(0, 12_345)).rejects.toThrow(PersistentBridgeUnavailableError);
+      } finally {
+        mkdirSpy.mockRestore();
+      }
+      expect(mkdirTargets).not.toContain(deletedFallbackDir);
+    });
+
+    it("(b) refuses a leaf that is a symlink, even to an otherwise-valid same-uid 0700 directory", async () => {
+      const xdgBase = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-persistent-bridge-xdg-"));
+      process.env.XDG_RUNTIME_DIR = xdgBase;
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-persistent-bridge-symlink-"));
+
+      const realTarget = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-persistent-bridge-symlink-target-"));
+      fs.chmodSync(realTarget, 0o700);
+      const leaf = persistentBridgeDir(root);
+      fs.mkdirSync(path.dirname(leaf), { recursive: true, mode: 0o700 });
+      fs.symlinkSync(realTarget, leaf, "dir");
+
+      expect(() => ensureSecureRuntimeDir(leaf)).toThrow(PersistentBridgeUnsafeRuntimeDirError);
+
+      const service = new PersistentBridgeService(root, "symlink1", "/unused");
+      await expect(service.ensureAndRegister(0, 12_345)).rejects.toThrow(PersistentBridgeUnsafeRuntimeDirError);
+      expect(fs.existsSync(persistentBridgeControlSocket(root))).toBe(false);
+    });
+
+    it("(c) binds a real proxy under $XDG_RUNTIME_DIR/tachyon on the normal (XDG-present) path", async () => {
+      const xdgBase = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-persistent-bridge-xdg-normal-"));
+      process.env.XDG_RUNTIME_DIR = xdgBase;
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-persistent-bridge-xdg-normal-root-"));
+
       const socket = persistentBridgeControlSocket(root);
+      expect(socket.startsWith(path.join(xdgBase, "tachyon"))).toBe(true);
       const proxy = await startPersistentProxy({
         workspaceRoot: root,
-        workspaceHash: "hijckmod",
+        workspaceHash: "xdgnorm1",
         preferredPort: 0,
         controlSocket: socket,
         descriptorPath: persistentBridgeDescriptorPath(root),
       });
       running.push(proxy);
       expect(fs.statSync(socket).mode & 0o777).toBe(0o600);
-    });
-
-    it("fails closed and never binds when the runtime dir is owned by a different uid", async () => {
-      delete process.env.XDG_RUNTIME_DIR;
-      const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-persistent-bridge-hijack-uid-"));
-      const dir = persistentBridgeDir(root);
-      fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-      const realStatSync = fs.statSync.bind(fs);
-      vi.spyOn(fs, "statSync").mockImplementation((target, opts) => {
-        const stat = realStatSync(target as fs.PathLike, opts as fs.StatSyncOptions);
-        if (target === dir) return Object.assign(Object.create(Object.getPrototypeOf(stat)), stat, { uid: stat.uid + 1 });
-        return stat;
-      });
-
-      expect(() => ensureSecureRuntimeDir(dir)).toThrow(PersistentBridgeUnsafeRuntimeDirError);
-
-      // Fails closed all the way up through the real writer: ensureAndRegister rejects and never binds
-      // a socket in the unsafe dir (the caller — Workspace.startBridgeListener — degrades to in-process).
-      const socket = persistentBridgeControlSocket(root);
-      const service = new PersistentBridgeService(root, "hijckuid", "/unused");
-      await expect(service.ensureAndRegister(0, 12_345)).rejects.toThrow(PersistentBridgeUnsafeRuntimeDirError);
-      expect(fs.existsSync(socket)).toBe(false);
+      expect(fs.statSync(path.dirname(socket)).mode & 0o777).toBe(0o700);
+      expect(fs.statSync(path.join(xdgBase, "tachyon")).mode & 0o777).toBe(0o700);
     });
   });
 });
