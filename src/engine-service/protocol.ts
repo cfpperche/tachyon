@@ -152,6 +152,65 @@ export function isEngineShellHelloV1(value: unknown): value is EngineShellHelloV
   return isSha256(value.settingsDigest);
 }
 
+export function isEngineServiceIdentityV1(value: unknown): value is EngineServiceIdentityV1 {
+  if (!isRecord(value) || value.schemaVersion !== 1) return false;
+  if (typeof value.workspaceRoot !== "string" || value.workspaceRoot.length === 0 || value.workspaceRoot.length > 4_096) return false;
+  if (typeof value.workspaceHash !== "string" || value.workspaceHash.length === 0 || value.workspaceHash.length > 128) return false;
+  if (typeof value.instanceId !== "string" || value.instanceId.length < 8 || value.instanceId.length > 128) return false;
+  if (!Number.isSafeInteger(value.pid) || (value.pid as number) <= 0) return false;
+  if (typeof value.processStartIdentity !== "string" || value.processStartIdentity.length === 0 || value.processStartIdentity.length > 256) return false;
+  if (typeof value.startedAt !== "string" || !Number.isFinite(Date.parse(value.startedAt))) return false;
+  if (!isSha256(value.bundleId)) return false;
+  if (typeof value.engineVersion !== "string" || value.engineVersion.length === 0 || value.engineVersion.length > 128) return false;
+  if (!isEngineProtocolRangeV1(value.protocol) || !isRecord(value.bridge)) return false;
+  return typeof value.bridge.instanceId === "string"
+    && value.bridge.instanceId.length >= 8
+    && value.bridge.instanceId.length <= 128
+    && Number.isSafeInteger(value.bridge.port)
+    && (value.bridge.port as number) > 0
+    && (value.bridge.port as number) <= 65_535;
+}
+
+export function isWorkspaceSnapshotEnvelopeV1(value: unknown): value is WorkspaceSnapshotEnvelopeV1 {
+  return isRecord(value)
+    && value.schemaVersion === 1
+    && typeof value.engineInstanceId === "string"
+    && value.engineInstanceId.length >= 8
+    && value.engineInstanceId.length <= 128
+    && Number.isSafeInteger(value.seq)
+    && (value.seq as number) >= 0
+    && isRecord(value.projections);
+}
+
+export function isEngineShellSessionV1(value: unknown): value is EngineShellSessionV1 {
+  if (!isRecord(value) || value.schemaVersion !== 1) return false;
+  if (typeof value.shellId !== "string" || value.shellId.length < 8 || value.shellId.length > 128) return false;
+  if (typeof value.sessionToken !== "string" || value.sessionToken.length < 32 || value.sessionToken.length > 256) return false;
+  if (!Number.isSafeInteger(value.protocol) || (value.protocol as number) <= 0) return false;
+  if (!isEngineServiceIdentityV1(value.engine)) return false;
+  if (!Number.isSafeInteger(value.snapshotSeq) || (value.snapshotSeq as number) < 0) return false;
+  return typeof value.leaseExpiresAt === "string" && Number.isFinite(Date.parse(value.leaseExpiresAt));
+}
+
+export function isEngineControlResponseV1(value: unknown): value is EngineControlResponseV1 {
+  if (!isRecord(value) || typeof value.ok !== "boolean") return false;
+  if (!value.ok) {
+    return typeof value.code === "string"
+      && /^[A-Z][A-Z0-9_]{1,63}$/.test(value.code)
+      && typeof value.message === "string"
+      && value.message.length > 0
+      && value.message.length <= 4_096;
+  }
+  if (value.op === "health") {
+    return isEngineServiceIdentityV1(value.engine)
+      && Number.isSafeInteger(value.shellCount)
+      && (value.shellCount as number) >= 0;
+  }
+  if (value.op === "attach" || value.op === "touch") return isEngineShellSessionV1(value.session);
+  if (value.op === "snapshot") return isWorkspaceSnapshotEnvelopeV1(value.snapshot);
+  return value.op === "detach" && value.detached === true;
+}
+
 /** Highest mutually supported protocol, or undefined when the ranges do not overlap. */
 export function negotiateEngineShellProtocol(
   engine: EngineProtocolRangeV1,

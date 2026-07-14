@@ -1,0 +1,127 @@
+import { afterEach, describe, expect, it } from "vitest";
+import fs from "node:fs";
+import net from "node:net";
+import os from "node:os";
+import path from "node:path";
+import { createHash } from "node:crypto";
+import { EngineControlClient } from "../../src/engine-service/controlClient.js";
+import { startEngineControlServer, type RunningEngineControlServer } from "../../src/engine-service/controlServer.js";
+import type { EngineServiceIdentityV1, EngineShellHelloV1 } from "../../src/engine-service/protocol.js";
+
+const roots: string[] = [];
+const servers: RunningEngineControlServer[] = [];
+
+afterEach(async () => {
+  await Promise.all(servers.splice(0).map((server) => server.close()));
+  for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
+});
+
+function fixture() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-engine-client-"));
+  roots.push(root);
+  const runtime = path.join(root, "runtime");
+  fs.mkdirSync(runtime, { mode: 0o700 });
+  const identity: EngineServiceIdentityV1 = {
+    schemaVersion: 1,
+    workspaceRoot: fs.realpathSync(root),
+    workspaceHash: "abc12345",
+    instanceId: "engine-instance-1",
+    pid: process.pid,
+    processStartIdentity: "proc-start-1",
+    startedAt: new Date(0).toISOString(),
+    bundleId: "a".repeat(64),
+    engineVersion: "0.57.0",
+    protocol: { min: 1, max: 1 },
+    bridge: { instanceId: "bridge-instance-1", port: 42_897 },
+  };
+  let seq = 7;
+  const hello: EngineShellHelloV1 = {
+    schemaVersion: 1,
+    op: "attach",
+    workspaceRoot: root,
+    workspaceHash: identity.workspaceHash,
+    shell: { id: "shell-0001", version: "0.57.0", locale: "pt-BR" },
+    protocol: { min: 1, max: 1 },
+    capabilities: ["editor.diff"],
+    settingsDigest: createHash("sha256").update("settings").digest("hex"),
+  };
+  return {
+    root,
+    socketPath: path.join(runtime, "engine.sock"),
+    identity,
+    hello,
+    snapshot: () => ({ schemaVersion: 1 as const, engineInstanceId: identity.instanceId, seq, projections: { agents: [] } }),
+    setSeq: (next: number) => { seq = next; },
+  };
+}
+
+describe("EngineControlClient", () => {
+  it("attaches, resnapshots and detaches without owning engine lifecycle", async () => {
+    const f = fixture();
+    const server = await startEngineControlServer({ socketPath: f.socketPath, identity: f.identity, getSnapshot: f.snapshot });
+    servers.push(server);
+    const client = new EngineControlClient({ socketPath: f.socketPath, hello: f.hello });
+    expect((await client.health()).engine.instanceId).toBe(f.identity.instanceId);
+    expect((await client.attach()).snapshotSeq).toBe(7);
+    f.setSeq(8);
+    expect(await client.snapshot()).toMatchObject({ seq: 8, projections: { agents: [] } });
+    expect((await client.touch()).snapshotSeq).toBe(8);
+    await client.detach();
+    expect(client.attached).toBe(false);
+    expect((await client.health()).shellCount).toBe(0);
+  });
+
+  it("fails closed when a snapshot sequence moves backwards", async () => {
+    const f = fixture();
+    const server = await startEngineControlServer({ socketPath: f.socketPath, identity: f.identity, getSnapshot: f.snapshot });
+    servers.push(server);
+    const client = new EngineControlClient({ socketPath: f.socketPath, hello: f.hello });
+    await client.attach();
+    f.setSeq(6);
+    await expect(client.snapshot()).rejects.toMatchObject({ code: "INVALID_RESPONSE" });
+  });
+
+  it("forgets an expired remote lease and requires a fresh attach", async () => {
+    const f = fixture();
+    let now = 1_000;
+    const server = await startEngineControlServer({
+      socketPath: f.socketPath,
+      identity: f.identity,
+      getSnapshot: f.snapshot,
+      leaseMs: 100,
+      now: () => now,
+    });
+    servers.push(server);
+    const client = new EngineControlClient({ socketPath: f.socketPath, hello: f.hello });
+    await client.attach();
+    now += 101;
+    await expect(client.snapshot()).rejects.toMatchObject({
+      code: "REMOTE",
+      remoteCode: "SHELL_SESSION_INVALID",
+    });
+    expect(client.attached).toBe(false);
+    await expect(client.touch()).rejects.toMatchObject({ code: "NOT_ATTACHED" });
+  });
+
+  it("rejects a local service response that does not match the versioned protocol", async () => {
+    const f = fixture();
+    const connections = new Set<net.Socket>();
+    const malformed = net.createServer((socket) => {
+      connections.add(socket);
+      socket.once("close", () => connections.delete(socket));
+      socket.end('{"ok":true}\n');
+    });
+    await new Promise<void>((resolve, reject) => {
+      malformed.once("error", reject);
+      malformed.listen(f.socketPath, resolve);
+    });
+    try {
+      const client = new EngineControlClient({ socketPath: f.socketPath, hello: f.hello });
+      await expect(client.health()).rejects.toMatchObject({ code: "INVALID_RESPONSE" });
+    } finally {
+      for (const connection of connections) connection.destroy();
+      await new Promise<void>((resolve) => malformed.close(() => resolve()));
+      try { fs.unlinkSync(f.socketPath); } catch { /* already removed by Node */ }
+    }
+  });
+});

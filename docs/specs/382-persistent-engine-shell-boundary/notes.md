@@ -64,3 +64,16 @@ None.
   idle timeouts, connection cleanup and inode-checked unlink ownership.
 - Thirteen focused tests across the first two slices pass together with typecheck, the engine-boundary rule
   and diff-check.  The server is not wired to extension activation or the persistent daemon yet.
+
+## Third implementation slice — 2026-07-14
+
+- Added the shell-side control client with bounded local transport, strict response validation, typed
+  unavailable/timeout/protocol/remote errors, token-bound attach/touch/snapshot/detach and monotonic
+  snapshot enforcement.  An invalid or expired remote lease clears only shell state.
+- Added a real subprocess boundary proof: one independent engine-control process keeps the same PID,
+  process-start identity, engine incarnation and Bridge identity while an old shell generation is left
+  attached, its replacement attaches, both later detach, and the service continues healthy with zero
+  attached shells.
+- Eighteen focused tests across the first three slices pass with typecheck, engine-boundary and diff-check.
+  The subprocess fixture proves process/lifetime semantics only; it does not yet construct production
+  `Workspace` or replace the current proxy daemon.
