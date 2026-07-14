@@ -43,12 +43,12 @@ _Generated from `plan.md` on 2026-07-13. Work top-to-bottom. Check boxes as task
 - [ ] verify_task gate green on the delegated branch (behavior test fails at BASE_SHA,
       passes at HEAD; no scope breach beyond owns)
 
-**Verify:** `npx vitest run test/unit/liveModelBehavior.gen.test.ts test/unit/agentModel.test.ts`
+**Verify:** `npx vitest run test/unit/livemodel2Behavior.gen.test.ts test/unit/agentModel.test.ts`
 **Verify:** `npm run typecheck`
 
 ## Dogfood
 
-**Dogfood:** `npx vitest run test/unit/liveModelBehavior.gen.test.ts`
+**Dogfood:** `npx vitest run test/unit/livemodel2Behavior.gen.test.ts`
 
 **Human dogfood:** with the fleet running, switch `/model` inside the codex TUI and watch the
 sidebar row update within ~2s of the next turn start; confirm a freshly spawned agent shows

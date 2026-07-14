@@ -59,3 +59,11 @@ _In-flight design memory — decisions, deviations, tradeoffs, and open question
   switch-forces-new-session semantics) are unchanged by this implementation — they're live-dogfood
   confirmations, not implementation blockers, and the code degrades honestly either way (per-turn latency is
   timestamped via `observedAt`; grok's `summary.json` was explicitly out of scope for this spec).
+
+## Dogfood log
+
+### 2026-07-14T12:50:01Z — fail (0/1) — source: tasks.md — commit: 3a09f51a73ef1b8d28581f496ab2fd9cd3ed9c59
+- `npx vitest run test/unit/liveModelBehavior.gen.test.ts` — fail
+
+### 2026-07-14T12:50:28Z — pass (1/1) — source: tasks.md — commit: 3a09f51a73ef1b8d28581f496ab2fd9cd3ed9c59
+- `npx vitest run test/unit/livemodel2Behavior.gen.test.ts` — pass
