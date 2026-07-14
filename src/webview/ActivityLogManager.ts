@@ -92,7 +92,7 @@ export class ActivityLogManager {
     if (this.ticking) return; // never overlap (a slow resolve must not stack ticks)
     this.ticking = true;
     try {
-      const now = Date.now();
+      const now = this.now();
       const live = new Set<string>();
       for (const ws of this.getWorkspaces()) {
         const dir = path.join(ws.workspaceRoot, ".tachyon", "activity");
@@ -119,6 +119,25 @@ export class ActivityLogManager {
                 ? { path: loc.path, sessionId: sessionIdFromTranscriptPath(loc.path, loc.runtime), runtime: loc.runtime }
                 : undefined;
             } catch { entry.loc = undefined; } // gap, never guess
+
+            // t-9f2641 — a harness-driven rotation can mint a new claude transcript with no ownership row
+            // (the hook that would have recorded it never fired), so `transcriptPathOf` keeps re-resolving to
+            // the SAME dead file forever. Track growth of whatever is currently resolved; once it has stalled
+            // past the incident threshold, ask the ownership ledger for an unambiguous newer sibling — never
+            // a disk guess — and follow it.
+            if (entry.loc && entry.loc.runtime === "claude") {
+              entry.deadTrack = updateDeadTrack(entry.deadTrack, entry.loc.path, now);
+              if (now - entry.deadTrack.sinceMs >= ROTATION_DEAD_THRESHOLD_MS) {
+                const follow = followRotation(ws.workspaceRoot, name, rec.cwd, entry.loc.path);
+                if (follow) {
+                  entry.loc = { path: follow.transcriptPath, sessionId: follow.sessionId, runtime: entry.loc.runtime };
+                  entry.deadTrack = undefined;
+                  entry.writer.noteLifecycle("rotation-follow", true); // decided now, not an in-flight Tachyon action
+                }
+              }
+            } else {
+              entry.deadTrack = undefined;
+            }
           }
           // pin p-4dadd3: a tick snapshots ledger.all() at the top, but the awaits below (transcriptPathOf for
           // any agent) yield — a dismiss that removes the row AND deletes the log can land mid-tick. Re-check
@@ -150,4 +169,39 @@ export function sessionIdFromTranscriptPath(transcriptPath: string, runtime?: st
     return path.basename(path.dirname(transcriptPath));
   }
   return base;
+}
+
+/** t-9f2641 — advance (or reset) the stall clock for the currently-resolved transcript. A path change or a
+ *  growing mtime restarts the clock; anything else (same path, no growth) leaves `sinceMs` untouched so the
+ *  stall duration keeps accumulating across resolve cycles. */
+function updateDeadTrack(prev: DeadTranscriptTrack | undefined, filePath: string, now: number): DeadTranscriptTrack {
+  let mtime: number | undefined;
+  try { mtime = fs.statSync(filePath).mtimeMs; } catch { mtime = undefined; }
+  if (!prev || prev.path !== filePath) return { path: filePath, lastMtimeMs: mtime ?? now, sinceMs: now };
+  if (mtime !== undefined && mtime > prev.lastMtimeMs) return { path: filePath, lastMtimeMs: mtime, sinceMs: now };
+  return prev;
+}
+
+/** t-9f2641 — the resolved transcript has shown no growth for `ROTATION_DEAD_THRESHOLD_MS`: consult the
+ *  ownership ledger for an unambiguous newer sibling (`resolveRotationFollow` never guesses) and, on a hit,
+ *  mint a durable "rotation-follow" owner row so the decision is auditable and future resolves (via
+ *  Workspace's `ownedSession`, which reads this same file) land on the new session directly. */
+function followRotation(
+  workspaceRoot: string,
+  agent: string,
+  cwd: string,
+  deadTranscriptPath: string,
+): { transcriptPath: string; sessionId: string } | undefined {
+  const ownersFile = sessionOwnersFile(workspaceRoot);
+  const follow = resolveRotationFollow(readSessionOwners(ownersFile), agent, deadTranscriptPath);
+  if (!follow) return undefined;
+  appendOwnerRow(ownersFile, {
+    agent,
+    sessionId: follow.sessionId,
+    transcriptPath: follow.transcriptPath,
+    cwd,
+    source: "rotation-follow",
+    ts: new Date().toISOString(),
+  });
+  return follow;
 }
