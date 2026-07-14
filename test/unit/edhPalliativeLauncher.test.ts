@@ -1,0 +1,276 @@
+import { afterEach, describe, expect, it } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import net from "node:net";
+import { spawn, spawnSync } from "node:child_process";
+// The production resolver is an owned ESM CLI; Vitest loads it directly while the repository's
+// test typecheck target remains CommonJS.
+// @ts-expect-error -- static ESM import is intentional for this executable module test.
+import { isWslRemoteCli, resolveEdhCode } from "../../scripts/edh-palliative/resolve-code.mjs";
+// @ts-expect-error -- static ESM import is intentional for this executable module test.
+import { stopFixtureBridge } from "../../scripts/edh-palliative/stop-bridge.mjs";
+
+const launcher = path.resolve("scripts/edh-palliative/edh-palliative.sh");
+const temporaryRoots: string[] = [];
+
+function temporaryRoot(label: string): string {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), `tachyon-${label}-`));
+  temporaryRoots.push(root);
+  return root;
+}
+
+function executable(file: string, body = "#!/usr/bin/env bash\nexit 0\n"): string {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, body, { mode: 0o755 });
+  return file;
+}
+
+afterEach(() => {
+  for (const root of temporaryRoots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
+});
+
+describe("EDH VS Code resolver", () => {
+  it("prefers the newest architecture-compatible worktree cache", () => {
+    const repo = temporaryRoot("edh-code-local");
+    executable(path.join(repo, ".vscode-test/vscode-linux-x64-1.9.0/code"));
+    const newest = executable(path.join(repo, ".vscode-test/vscode-linux-x64-1.10.0/code"));
+
+    expect(resolveEdhCode({ repo, commonRoot: undefined, pathCandidate: undefined })).toEqual({
+      path: fs.realpathSync(newest),
+      source: "worktree-cache",
+    });
+  });
+
+  it("falls back to the primary checkout cache for an isolated worktree", () => {
+    const repo = temporaryRoot("edh-code-worktree");
+    const shared = temporaryRoot("edh-code-shared");
+    const cached = executable(path.join(shared, ".vscode-test/vscode-linux-x64-1.128.0/code"));
+
+    expect(resolveEdhCode({ repo, commonRoot: shared, pathCandidate: undefined })).toEqual({
+      path: fs.realpathSync(cached),
+      source: "shared-checkout-cache",
+    });
+  });
+
+  it("rejects an explicit path and PATH candidate that resolve to WSL remote-cli/code", () => {
+    const repo = temporaryRoot("edh-code-reject");
+    const remote = executable(path.join(repo, ".vscode-server/bin/hash/bin/remote-cli/code"));
+    const alias = path.join(repo, "code");
+    fs.symlinkSync(remote, alias);
+
+    expect(isWslRemoteCli(alias)).toBe(true);
+    expect(() => resolveEdhCode({ repo, explicit: alias, commonRoot: undefined, pathCandidate: undefined })).toThrow(/remote-cli\/code/);
+    expect(() => resolveEdhCode({ repo, commonRoot: undefined, pathCandidate: remote })).toThrow(/remote-cli\/code/);
+  });
+
+  it("does not accept a cache entry whose code binary resolves to WSL remote-cli/code", () => {
+    const repo = temporaryRoot("edh-code-cache-reject");
+    const remote = executable(path.join(repo, ".vscode-server/bin/hash/bin/remote-cli/code"));
+    const cache = path.join(repo, `.vscode-test/vscode-linux-${process.arch}-1.128.0`);
+    fs.mkdirSync(cache, { recursive: true });
+    fs.symlinkSync(remote, path.join(cache, "code"));
+
+    expect(() => resolveEdhCode({ repo, commonRoot: undefined, pathCandidate: "" })).toThrow(/no compatible VS Code executable/);
+  });
+});
+
+describe("EDH child launch isolation", () => {
+  it("scrubs live agent identity, uses fixture-private state, and enables in-memory secret storage", () => {
+    const root = temporaryRoot("edh-launch");
+    const base = path.join(root, "fixtures");
+    const capture = path.join(root, "capture");
+    const fakeCode = executable(
+      path.join(root, "native-code"),
+      '#!/usr/bin/env bash\nprintf "%s\\n" "$@" >"${EDH_TEST_CAPTURE}.args"\nenv >"${EDH_TEST_CAPTURE}.env"\n',
+    );
+    const result = spawnSync("bash", [launcher, "launch"], {
+      cwd: path.resolve("."),
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        TACHYON_EDH_PALLIATIVE_BASE: base,
+        TACHYON_EDH_PALLIATIVE_ID: "isolation",
+        TACHYON_EDH_CODE: fakeCode,
+        TACHYON_EDH_FOREGROUND: "1",
+        EDH_TEST_CAPTURE: capture,
+        ELECTRON_RUN_AS_NODE: "1",
+        TACHYON_AGENT_BRIDGE_TOKEN: "agent-secret",
+        TACHYON_AGENT_NAME: "live-agent",
+        TACHYON_BRIDGE_TOKEN: "bridge-secret",
+        TACHYON_BRIDGE_URL: "http://live.invalid",
+        TACHYON_NODE_ID: "live-node",
+        TACHYON_NODE_NONCE: "live-nonce",
+        TACHYON_RUN_ID: "live-run",
+        TACHYON_WORKSPACE_ROOT: "/live/workspace",
+        TACHYON_WORKTREE_ROOT: "/live/worktree",
+        TMUX: "/live/tmux",
+        TMUX_PANE: "%99",
+        TMUX_TMPDIR: "/live/tmux-tmp",
+        XDG_CACHE_HOME: "/live/cache",
+        CODEX_HOME: "/live/codex",
+        CODEX_THREAD_ID: "live-thread",
+        CODEX_CI: "1",
+      },
+    });
+
+    expect(result.status, result.stderr || result.stdout).toBe(0);
+    const args = fs.readFileSync(`${capture}.args`, "utf8").trim().split("\n");
+    const childEnv = new Map(
+      fs.readFileSync(`${capture}.env`, "utf8").trim().split("\n").map((line) => {
+        const separator = line.indexOf("=");
+        return [line.slice(0, separator), line.slice(separator + 1)];
+      }),
+    );
+
+    for (const key of [
+      "ELECTRON_RUN_AS_NODE",
+      "TACHYON_AGENT_BRIDGE_TOKEN",
+      "TACHYON_AGENT_NAME",
+      "TACHYON_BRIDGE_TOKEN",
+      "TACHYON_BRIDGE_URL",
+      "TACHYON_NODE_ID",
+      "TACHYON_NODE_NONCE",
+      "TACHYON_RUN_ID",
+      "TACHYON_WORKSPACE_ROOT",
+      "TACHYON_WORKTREE_ROOT",
+      "TMUX",
+      "TMUX_PANE",
+      "CODEX_HOME",
+      "CODEX_THREAD_ID",
+      "CODEX_CI",
+    ]) {
+      expect(childEnv.has(key), key).toBe(false);
+    }
+    expect(childEnv.get("TMUX_TMPDIR")).toBe(path.join(base, "isolation/.tmux"));
+    expect(childEnv.get("XDG_CACHE_HOME")).toBe(path.join(base, "isolation/.cache"));
+    expect(args).toContain("--use-inmemory-secretstorage");
+    expect(args).toContain(`--extensionDevelopmentPath=${path.resolve(".")}`);
+    expect(args.at(-1)).toBe(path.join(base, "isolation/workspace"));
+    expect(fs.statSync(path.join(base, "isolation")).mode & 0o077).toBe(0);
+  });
+});
+
+describe("EDH fixture cleanup", () => {
+  it("stops the matching persistent Bridge through its control socket before removal", async () => {
+    const fixture = temporaryRoot("edh-clean");
+    const workspace = path.join(fixture, "workspace");
+    const serviceDir = path.join(workspace, ".tachyon", "bridge-service");
+    const socketPath = path.join(serviceDir, "control.sock");
+    fs.mkdirSync(serviceDir, { recursive: true });
+    const descriptor = {
+      protocol: 1,
+      workspaceHash: "abc12345",
+      workspaceRoot: fs.realpathSync(workspace),
+      instanceId: "fixture-instance",
+      pid: process.pid,
+      port: 42_000,
+      controlSocket: socketPath,
+      startedAt: new Date().toISOString(),
+    };
+    fs.writeFileSync(path.join(serviceDir, "service.json"), JSON.stringify(descriptor));
+
+    const server = net.createServer((socket) => {
+      socket.setEncoding("utf8");
+      socket.once("data", (raw) => {
+        expect(JSON.parse(String(raw))).toEqual({ op: "stop", workspaceHash: "abc12345" });
+        socket.end(`${JSON.stringify({ ok: true, descriptor })}\n`, () => server.close());
+      });
+    });
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(socketPath, resolve);
+    });
+
+    try {
+      await expect(stopFixtureBridge(fixture, { timeoutMs: 1_000 })).resolves.toEqual({ state: "stopped" });
+      expect(fs.existsSync(socketPath)).toBe(false);
+    } finally {
+      if (server.listening) await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it("refuses a symlinked descriptor instead of stopping an untrusted socket", async () => {
+    const fixture = temporaryRoot("edh-clean-symlink");
+    const serviceDir = path.join(fixture, "workspace", ".tachyon", "bridge-service");
+    fs.mkdirSync(serviceDir, { recursive: true });
+    const outside = path.join(fixture, "outside.json");
+    fs.writeFileSync(outside, "{}");
+    fs.symlinkSync(outside, path.join(serviceDir, "service.json"));
+
+    await expect(stopFixtureBridge(fixture)).rejects.toThrow(/descriptor must not be a symlink/);
+  });
+
+  it("refuses a descriptor whose canonical workspace identity does not match the fixture", async () => {
+    const fixture = temporaryRoot("edh-clean-identity");
+    const serviceDir = path.join(fixture, "workspace", ".tachyon", "bridge-service");
+    fs.mkdirSync(serviceDir, { recursive: true });
+    fs.writeFileSync(path.join(serviceDir, "service.json"), JSON.stringify({
+      protocol: 1,
+      workspaceHash: "abc12345",
+      workspaceRoot: "/tmp/not-this-fixture",
+      controlSocket: path.join(serviceDir, "control.sock"),
+    }));
+
+    await expect(stopFixtureBridge(fixture)).rejects.toThrow(/does not match the fixture workspace/);
+  });
+
+  it("refuses cleanup while the recorded fixture EDH process is still running", async () => {
+    const fixture = temporaryRoot("edh-clean-live");
+    fs.mkdirSync(path.join(fixture, "workspace"), { recursive: true });
+    const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 60_000)", "--", `--user-data-dir=${path.join(fixture, ".edh-user-data")}`], {
+      stdio: "ignore",
+    });
+    fs.writeFileSync(path.join(fixture, ".edh.pid"), `${child.pid}\n`);
+
+    try {
+      await expect(stopFixtureBridge(fixture)).rejects.toThrow(/still alive|still running/);
+    } finally {
+      child.kill("SIGKILL");
+    }
+  });
+
+  it("fails closed on a malformed EDH pid file", async () => {
+    const fixture = temporaryRoot("edh-clean-bad-pid");
+    fs.mkdirSync(path.join(fixture, "workspace"), { recursive: true });
+    fs.writeFileSync(path.join(fixture, ".edh.pid"), "not-a-pid\n");
+
+    await expect(stopFixtureBridge(fixture)).rejects.toThrow(/EDH pid file is invalid/);
+  });
+
+  it("bounds the persistent Bridge descriptor before parsing it", async () => {
+    const fixture = temporaryRoot("edh-clean-large-descriptor");
+    const serviceDir = path.join(fixture, "workspace", ".tachyon", "bridge-service");
+    fs.mkdirSync(serviceDir, { recursive: true });
+    fs.writeFileSync(path.join(serviceDir, "service.json"), "x".repeat(33 * 1024));
+
+    await expect(stopFixtureBridge(fixture)).rejects.toThrow(/descriptor is too large/);
+  });
+
+  it("the shell cleanup stops the fixture-private tmux server before deleting the fixture", () => {
+    const root = temporaryRoot("edh-clean-tmux");
+    const base = path.join(root, "fixtures");
+    const env = {
+      ...process.env,
+      TACHYON_EDH_PALLIATIVE_BASE: base,
+      TACHYON_EDH_PALLIATIVE_ID: "tmux-cleanup",
+    };
+    const seeded = spawnSync("bash", [launcher, "seed"], { cwd: path.resolve("."), encoding: "utf8", env });
+    expect(seeded.status, seeded.stderr || seeded.stdout).toBe(0);
+    const tmuxDir = path.join(base, "tmux-cleanup/.tmux");
+    const started = spawnSync("tmux", ["-L", "tachyon", "new-session", "-d", "-s", "fixture-cleanup"], {
+      encoding: "utf8",
+      env: { ...env, TMUX_TMPDIR: tmuxDir },
+    });
+    expect(started.status, started.stderr || started.stdout).toBe(0);
+
+    const cleaned = spawnSync("bash", [launcher, "clean"], { cwd: path.resolve("."), encoding: "utf8", env });
+    expect(cleaned.status, cleaned.stderr || cleaned.stdout).toBe(0);
+    expect(fs.existsSync(path.join(base, "tmux-cleanup"))).toBe(false);
+    const probe = spawnSync("tmux", ["-L", "tachyon", "has-session", "-t", "fixture-cleanup"], {
+      encoding: "utf8",
+      env: { ...env, TMUX_TMPDIR: tmuxDir },
+    });
+    expect(probe.status).not.toBe(0);
+  });
+});

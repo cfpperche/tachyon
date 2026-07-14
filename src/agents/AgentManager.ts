@@ -31,7 +31,11 @@ import { deliverableBody } from "./briefFile.js";
 import { ReuseWorktreeError, resolveReuseTarget, isOwnsSubset, type ReuseTarget } from "./reuseWorktree.js";
 import { isExplicitCodexModelCommand, parseLaunchCommand, RuntimeLaunchPreflightError, type RuntimeLaunchPreflightPort } from "../runtime/launchPreflight.js";
 import { CodexLaunchPreflight } from "../runtime/adapters/codexLaunchPreflight.js";
-import { CodexLaunchReadiness } from "../runtime/adapters/codexLaunchReadiness.js";
+import {
+  CodexLaunchReadiness,
+  matchCodexBootstrapInput,
+  type CodexBootstrapInputMatch,
+} from "../runtime/adapters/codexLaunchReadiness.js";
 import { LaunchReadiness, type LaunchReadinessPort } from "../runtime/launchReadiness.js";
 
 /** t-815796 MEDIUM fix — is `pid` still alive? `process.kill(pid, 0)` sends no signal, only probes.
@@ -595,6 +599,22 @@ export class AgentManager {
     }
     if (observed?.state === "rejected") await this.opts.tmux.killSession(this.session(name)).catch(() => undefined);
     return false;
+  }
+
+  /**
+   * SDD 370 live-dogfood recovery: admit only an input that matches the currently visible,
+   * measured Codex bootstrap screen. This never promotes readiness and never applies to a
+   * non-Codex runtime. The Bridge still requires explicit answering intent.
+   */
+  async matchBootstrapInput(name: string, text: string, submit: boolean): Promise<CodexBootstrapInputMatch | undefined> {
+    if (this.readyAgents.has(name)) return undefined;
+    const def = this.definitionOf(name);
+    if (def?.kind !== "agent" || binaryOf(def.cmd) !== "codex") return undefined;
+    if (!(await this.opts.tmux.hasSession(this.session(name)).catch(() => false))) return undefined;
+    const pane = await this.opts.tmux
+      .capturePane(this.session(name), { lines: 80, joinWrapped: true })
+      .catch(() => "");
+    return matchCodexBootstrapInput(pane, text, submit);
   }
 
   private async observeLaunchReadiness(name: string, cmd: string, session: string, cleanup?: () => Promise<void>): Promise<void> {

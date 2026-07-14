@@ -874,7 +874,7 @@
     "verify:full:quiet": "node scripts/verify-full.mjs",
     "dogfood:edh-palliative": "bash scripts/edh-palliative/edh-palliative.sh",
     "dogfood:edh": "bash scripts/edh-palliative/edh-palliative.sh",
-    "dogfood:runtime-launch-preflight": "node scripts/edh-palliative/lane.mjs run --owner sdd-370-headless --target worktree -- npm exec vitest run test/unit/codexCatalogStream.test.ts test/unit/runtimeLaunchPreflight.test.ts test/unit/edhDogfoodLane.test.ts",
+    "dogfood:runtime-launch-preflight": "node scripts/edh-palliative/lane.mjs run --owner sdd-370-headless --target worktree -- npm exec vitest run test/unit/codexCatalogStream.test.ts test/unit/runtimeLaunchPreflight.test.ts test/unit/edhDogfoodLane.test.ts test/unit/edhPalliativeLauncher.test.ts test/unit/persistentBridgeProxy.test.ts test/unit/launchReadinessRecovery.test.ts test/unit/bridge.test.ts",
     "dogfood:ui-shortlist": "bash scripts/edh-palliative/run-shortlist.sh",
     "test:browser": "vitest run --config vitest.browser.config.ts",
     "test:integration": "vscode-test",

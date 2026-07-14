@@ -1150,6 +1150,74 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     await client.callTool({ name: "kill_agent", arguments: { name: "boot-codex" } });
   });
 
+  it("SDD 370: write_input admits only explicit measured bootstrap answers and keeps assignment gated", async () => {
+    await client.callTool({
+      name: "spawn_agent",
+      arguments: { name: "boot-codex-input", cmd: "codex", parent: "claude", skip_contract_reason: "test fixture bounded bootstrap input" },
+    });
+    const session = `tachyon-${HASH}-boot-codex-input`;
+    panes.set(session, 'WARNING: TERM is set to "dumb". Continue anyway? [y/N]:');
+
+    const noIntent = await client.callTool({
+      name: "write_input",
+      arguments: { name: "boot-codex-input", text: "y" },
+    });
+    expect(noIntent.isError).toBe(true);
+    expect(JSON.stringify(noIntent.content)).toContain("refused-not-ready");
+
+    const contract = await client.callTool({
+      name: "write_input",
+      arguments: { name: "boot-codex-input", text: "FIRST CONTRACT: implement the thing", answering: true },
+    });
+    expect(contract.isError).toBe(true);
+    expect(JSON.stringify(contract.content)).toContain("refused-not-ready");
+
+    const terminal = await client.callTool({
+      name: "write_input",
+      arguments: { name: "boot-codex-input", text: "y", answering: true },
+    });
+    expect(terminal.isError).toBeFalsy();
+    expect(JSON.stringify(terminal.content)).toContain("answered-bootstrap; prompt: terminal-warning");
+
+    panes.set(session, [
+      "Hooks",
+      "Lifecycle hooks from config and enabled plugins.",
+      "⚠ 1 hook needs review before it can run.",
+      "Press t to trust all; enter to review hooks; esc to close",
+    ].join("\n"));
+    const unsafeRaw = await client.callTool({
+      name: "write_input",
+      arguments: { name: "boot-codex-input", text: "FIRST CONTRACT", submit: false, answering: true },
+    });
+    expect(unsafeRaw.isError).toBe(true);
+    expect(JSON.stringify(unsafeRaw.content)).toContain("refused-not-ready");
+
+    const escape = await client.callTool({
+      name: "write_input",
+      arguments: { name: "boot-codex-input", text: "\u001b", submit: false, answering: true },
+    });
+    expect(escape.isError).toBeFalsy();
+    expect(JSON.stringify(escape.content)).toContain("answered-bootstrap; prompt: hooks-overview");
+    expect(sessions.get(session)).toBe("\u001b");
+
+    const created = await client.callTool({ name: "create_task", arguments: { title: "Bootstrap remains provisional", agent: "claude" } });
+    const task = JSON.parse((created.content as Array<{ text: string }>)[0].text);
+    await client.callTool({ name: "update_task", arguments: { id: task.id, status: "triaged" } });
+    const assignment = await client.callTool({ name: "update_task", arguments: { id: task.id, assignee: "boot-codex-input" } });
+    expect(assignment.isError).toBe(true);
+    expect(JSON.stringify(assignment.content)).toMatch(/before its runtime is ready/);
+    await client.callTool({ name: "update_task", arguments: { id: task.id, status: "dropped" } });
+
+    panes.set(session, "› Use /skills to list available skills\n\n  gpt-5.6-terra default · /tmp/fixture/workspace");
+    const afterReady = await client.callTool({
+      name: "write_input",
+      arguments: { name: "boot-codex-input", text: "FIRST CONTRACT: implement the thing" },
+    });
+    expect(afterReady.isError).toBeFalsy();
+    expect(JSON.stringify(afterReady.content)).toContain("receipt: submitted");
+    await client.callTool({ name: "kill_agent", arguments: { name: "boot-codex-input" } });
+  });
+
   it("t-f87651: notify_agent refuses while a Codex agent is still bootstrapping (not ready)", async () => {
     await client.callTool({
       name: "spawn_agent",

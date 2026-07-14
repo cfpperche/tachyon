@@ -1512,8 +1512,11 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         "(receipt: refused-busy) if the recipient is working/throttled — write_input is a direct command " +
         "gesture, so a busy recipient is never queued silently; use notify_agent or wait for idle instead. " +
         "Also REFUSED (receipt: refused-not-ready, t-f87651) while a Codex-class agent is still bootstrapping " +
-        "(runtime not ready) — a spawn receipt is not proof the first contract landed; wait for ready or " +
-        "persist the contract to the task journal and notify a short pointer after ready. " +
+        "(runtime not ready) — except an explicit answering=true response that exactly matches a measured " +
+        "Codex bootstrap screen and its closed input grammar (receipt: answered-bootstrap). A spawn receipt " +
+        "is not proof the first contract landed; otherwise wait for ready or persist the contract to the task " +
+        "journal and notify a short pointer after ready. Measured hook screens use submit=false with one literal " +
+        "key (`t` or U+001B/Escape); ordinary raw pre-ready input remains refused. " +
         "A non-empty runtime composer draft is refused with receipt: refused-composer unless answering=true " +
         "and the recipient is needs-input. " +
         "needs-input is ALLOWED (t-8605be): that state means the recipient is blocked on an interactive prompt, " +
@@ -1528,7 +1531,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         answering: z
           .boolean()
           .optional()
-          .describe("set true when this text answers the recipient's needs-input prompt — documents intent and yields an answered-prompt receipt"),
+          .describe("set true when this text answers the recipient's needs-input or measured bootstrap prompt — documents intent and yields an answer receipt"),
       },
     },
     async ({ name, text, submit, answering }) => {
@@ -1538,10 +1541,20 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           return fail(new Error(`agent '${name}' is not running`));
         }
         // t-f87651 — first-contract bootstrap gate: spawn/restart success and tmux submit receipts
-        // are not proof the runtime has finished booting. While a Codex (or other gated) agent is
-        // provisional/not-ready, refuse so callers cannot believe a long contract was delivered.
-        // Persist to the task journal and re-notify a short pointer after ready (the confirmed workaround).
+        // are not proof the runtime has finished booting. SDD 370 admits only an explicit answer
+        // matching a measured Codex bootstrap screen; arbitrary text still cannot cross this gate.
         if (deps.manager.kindOf(name) === "agent" && !(await deps.manager.isReady(name))) {
+          const bootstrap = answering ? await deps.manager.matchBootstrapInput(name, text, submit) : undefined;
+          if (bootstrap) {
+            if (bootstrap.delivery === "literal-key") {
+              await deps.tmux.sendKeys(session, text, false);
+            } else if (typeof deps.tmux.sendSubmittedLine === "function") {
+              await deps.tmux.sendSubmittedLine(session, text);
+            } else {
+              await deps.tmux.sendKeys(session, text, true);
+            }
+            return ok(`bootstrap input delivered to '${name}' (receipt: answered-bootstrap; prompt: ${bootstrap.kind})`);
+          }
           return fail(
             new Error(
               `recipient '${name}' is still bootstrapping (runtime not ready) — refused-not-ready: wait for the runtime prompt, or persist the contract to the task journal and notify a short pointer after ready`,

@@ -31,8 +31,18 @@ _Implementation authorized after maintainer ratification on 2026-07-10._
 - [x] Unit-test `gpt-5.6-sol` acceptance without a static Tachyon model list.
 - [ ] Prove known-invalid and probe-failure paths leave no tmux, ledger, lineage, task notice, or worktree.
 - [ ] Prove all lifecycle entry points revalidate after catalog drift.
-- [ ] Dogfood invalid then valid Codex model launches with no task assignment between rejection and readiness.
+- [x] Dogfood invalid then valid Codex model launches with no task assignment between rejection and readiness.
 - [ ] Run full verification and inspect the installed sidebar/terminal behavior.
+
+## T4 — live dogfood recovery hardening
+
+- [x] Resolve EDH executables from explicit/current/shared-checkout native caches and reject WSL remote CLI paths.
+- [x] Sanitize inherited Tachyon/Codex/tmux identity and use in-memory secret storage for GUI and headless EDH.
+- [x] Classify the measured Codex bootstrap prompts with closed answer grammars.
+- [x] Permit only exact `answering=true` submitted-line/literal-key pairs while preserving all other readiness gates.
+- [x] Prove arbitrary contracts, raw typing, mismatched answers, notifications, and Task assignment remain refused.
+- [x] Run the persistent Bridge daemon in Node mode under native Electron and stop it before fixture removal.
+- [x] Repeat deterministic and live EDH dogfood, retain bounded evidence, and clean all fixture-owned processes/files.
 
 ## Verification
 

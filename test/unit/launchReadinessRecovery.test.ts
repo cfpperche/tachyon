@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { AgentManager } from "../../src/agents/AgentManager.js";
-import { CodexLaunchReadiness } from "../../src/runtime/adapters/codexLaunchReadiness.js";
+import {
+  CodexLaunchReadiness,
+  matchCodexBootstrapInput,
+} from "../../src/runtime/adapters/codexLaunchReadiness.js";
 
 describe("CodexLaunchReadiness", () => {
   it("t-40a28c: recognizes the rotating composer plus stable footer used by Codex 0.144.1", () => {
@@ -24,6 +27,70 @@ describe("CodexLaunchReadiness", () => {
       state: "rejected",
       code: "runtime_auth_rejected",
     });
+  });
+
+  it("recognizes the prompt plus a structurally truncated narrow-pane footer", () => {
+    const adapter = new CodexLaunchReadiness();
+    expect(adapter.classify([
+      "› Use /skills to list available skills",
+      "",
+      "  gpt-5.6-terra default · /tmp/fixture/workspace",
+    ].join("\n"))).toEqual({ state: "ready" });
+    expect(adapter.classify("› transcript text\n  not-a-footer default words")).toBeUndefined();
+    expect(adapter.classify("› transcript text\n  status default · ready")).toBeUndefined();
+  });
+});
+
+describe("Codex bounded bootstrap input", () => {
+  it("matches measured line-oriented screens and refuses unsafe or mismatched answers", () => {
+    const terminal = 'WARNING: TERM is set to "dumb". Continue anyway? [y/N]:';
+    expect(matchCodexBootstrapInput(terminal, "y", true)).toEqual({ kind: "terminal-warning", delivery: "submitted-line" });
+    expect(matchCodexBootstrapInput(terminal, "FIRST CONTRACT", true)).toBeUndefined();
+    expect(matchCodexBootstrapInput(terminal, "y", false)).toBeUndefined();
+
+    const update = [
+      "✨ Update available! 0.144.1 -> 0.144.3",
+      "› 1. Update now (runs npm install)",
+      "  2. Skip",
+      "  3. Skip until next version",
+      "  Press enter to continue",
+    ].join("\n");
+    expect(matchCodexBootstrapInput(update, "1", true)).toBeUndefined();
+    expect(matchCodexBootstrapInput(update, "3", true)).toEqual({ kind: "update-notice", delivery: "submitted-line" });
+    expect(matchCodexBootstrapInput(`${update}\nUnrelated current prompt`, "3", true)).toBeUndefined();
+
+    const trust = [
+      "Do you trust the contents of this directory?",
+      "Trusting the directory allows project-local config, hooks, and exec policies to load.",
+      "› 1. Yes, continue",
+      "  2. No, quit",
+      "  Press enter to continue",
+    ].join("\n");
+    expect(matchCodexBootstrapInput(trust, "1", true)).toEqual({ kind: "directory-trust", delivery: "submitted-line" });
+    expect(matchCodexBootstrapInput(trust, "t", false)).toBeUndefined();
+    expect(matchCodexBootstrapInput(`${trust}\nUnrelated current prompt`, "1", true)).toBeUndefined();
+  });
+
+  it("supports only measured hook-review key gestures, including the safe escape path", () => {
+    const overview = [
+      "Hooks",
+      "Lifecycle hooks from config and enabled plugins.",
+      "⚠ 1 hook needs review before it can run.",
+      "Press t to trust all; enter to review hooks; esc to close",
+    ].join("\n");
+    expect(matchCodexBootstrapInput(overview, "", true)).toEqual({ kind: "hooks-overview", delivery: "submitted-line" });
+    expect(matchCodexBootstrapInput(overview, "t", false)).toEqual({ kind: "hooks-overview", delivery: "literal-key" });
+    expect(matchCodexBootstrapInput(overview, "\u001b", false)).toEqual({ kind: "hooks-overview", delivery: "literal-key" });
+    expect(matchCodexBootstrapInput(overview, "t", true)).toBeUndefined();
+    expect(matchCodexBootstrapInput(`${overview}\nUnrelated current prompt`, "\u001b", false)).toBeUndefined();
+
+    const review = [
+      "SessionStart hooks",
+      "1 hook needs review before it can run.",
+      "Press t to trust; esc to go back",
+    ].join("\n");
+    expect(matchCodexBootstrapInput(review, "\u001b", false)).toEqual({ kind: "hook-review", delivery: "literal-key" });
+    expect(matchCodexBootstrapInput(review, "FIRST CONTRACT", true)).toBeUndefined();
   });
 });
 

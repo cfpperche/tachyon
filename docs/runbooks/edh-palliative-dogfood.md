@@ -39,8 +39,10 @@ Evidence is bounded to owner, target, timestamps, exit code, and signal at
 `${TACHYON_EDH_EVIDENCE:-<resolved-lane-base>/evidence}/latest.json`. `TACHYON_EDH_LANE_BASE` remains available for
 isolated tests. Otherwise the lane uses a private `XDG_RUNTIME_DIR` when valid, falling back to
 `~/.tachyon/runtime/edh-lane-v1`; `status` prints the resolved base.
-It never captures stdout, environment, catalogs, credentials, or prompts. Fixture cleanup only removes the printed
-fixture directory. Lease release only removes the lane's `owner.lease` directory.
+It never captures stdout, environment, catalogs, credentials, or prompts. Fixture cleanup refuses a still-running
+recorded EDH, then stops the matching persistent Bridge and fixture-private tmux server before removing only the printed
+fixture directory; suspicious, oversized, or symlinked ownership metadata refuses cleanup. Lease release only removes
+the lane's `owner.lease` directory.
 
 ## Delegation contract
 
@@ -76,16 +78,22 @@ These exist so palliative EDH **cannot** strangle Codex/368 or the human’s liv
 3. **Private tmux + cache namespaces** (the seed script sets these for the EDH process only):
    - `TMUX_TMPDIR` → fixture-local (not the default shared socket)
    - `XDG_CACHE_HOME` → fixture-local (worktrees never land in `~/.cache/tachyon/worktrees` used by 368)
+   - inherited live Tachyon Bridge/agent identity, Codex session identity, `TMUX`, and `TMUX_PANE` are removed from the
+     EDH child; both GUI and headless launches use `--use-inmemory-secretstorage`
 
-4. **One human/agent drives the EDH window under the lane lease.** No second agent sends keys into it.
+4. **Use a compatible executable.** `npm run dogfood:edh -- resolve-code` prefers the current worktree test cache,
+   then the primary checkout cache derived from Git's common directory. It rejects WSL `remote-cli/code`, which cannot
+   honor the isolated Extension Development Host flags.
 
-5. **Forbidden while palliative EDH is up:**
+5. **One human/agent drives the EDH window under the lane lease.** No second agent sends keys into it.
+
+6. **Forbidden while palliative EDH is up:**
    - editing monorepo `tachyon.yml` “to see what happens”
    - `kill-server` on the default tmux socket
    - pruning/removing worktrees under `~/.cache/tachyon/worktrees/b349073a/*` belonging to 368
    - claiming you “dogfooded” without the fixture path + SHA recorded
 
-6. **When palliative EDH is insufficient** (must still do installed-VSIX or main-window checks later):
+7. **When palliative EDH is insufficient** (must still do installed-VSIX or main-window checks later):
    - packaging / activation / `contributes` ship boundary
    - trust/approval modals that only appear on marketplace installs
    - multi-window rebind after real extension-host crash of the *installed* build
@@ -114,7 +122,8 @@ What it asserts (S1 / t-8354ae):
 Report: `$FIXTURE/headless-out/result.json` (+ `host.log` on failure).
 PNG evidence: `$FIXTURE/headless-out/shots/fail-visible.png` (copied to `.tachyon/evidence/edh-palliative/`).
 
-Requirements: `Xvfb`, VS Code test binary (`.vscode-test/...` or `TACHYON_EDH_CODE`).
+Requirements: `Xvfb`, and a compatible VS Code test/native binary. The resolver also sees the primary checkout's
+`.vscode-test` cache when this command runs from an isolated worktree.
 
 ---
 
@@ -156,9 +165,12 @@ Record in the task note / PR:
 Cleanup:
 
 ```bash
+# Close the isolated EDH window first; a live recorded EDH makes cleanup fail closed.
 npm run dogfood:edh -- clean
-# or: rm -rf "$FIXTURE"  (only the printed fixture dir)
 ```
+
+Do not substitute a raw `rm -rf`: a closed desktop EDH intentionally leaves its persistent Bridge alive until the lane
+cleanup sends the identity-matched stop request, and fixture agents may leave a private tmux server to terminate.
 
 ---
 
@@ -194,11 +206,16 @@ Open EDH, confirm sidebar loads, Bridge line present, `Tachyon: Doctor` runs wit
 npm run dogfood:runtime-launch-preflight
 ```
 
-This exercises exact-model accept/reject and malformed/timeout/non-zero/oversized handling from bounded fixtures,
-plus lane ownership and cleanup. It intentionally makes no live model-catalog or inference call. The known live
-explicit-model spawn can still fail because the raw Codex catalog exceeds the product preflight limit; this command
-exposes that class deterministically without logging the catalog. A real delegated launch remains a separate,
-coordinator-owned GUI pilot after the RuntimeOps product integration lands.
+This exercises exact-model accept/reject, bounded catalog streaming, malformed/timeout/non-zero/oversized handling,
+EDH executable/environment isolation, readiness/bootstrap authorization, lane ownership, and cleanup. It makes no
+live model-catalog or inference call. A real delegated launch remains a separate coordinator-owned GUI pilot.
+
+For a clean Codex home, keep the agent provisional while answering only the bootstrap screen actually visible in
+`read_output`. Use `write_input(..., answering: true)` for the terminal warning (`y`), update deferral (`2` or `3`),
+and directory selector (`1` or `2`). Hook screens are key-driven: the safe no-trust path is
+`write_input(..., text: "\\u001b", submit: false, answering: true)`; trusting uses literal `t` with `submit:false` and
+must be an explicit source-reviewed choice. Every other pre-ready input, `notify_agent`, and Task assignment remains
+refused. Re-read the pane after each answer and assign work only after the normal composer/footer is visible.
 
 ---
 
