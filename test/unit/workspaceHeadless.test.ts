@@ -163,6 +163,18 @@ async function makeWorkspace(onViewsChanged: (view: ViewKind) => void = () => {}
   return { ws, host, tmux, sessions, dead, sent, panes, calls };
 }
 
+it("rejects nonboolean soul on reload and retains the prior known-good config", async () => {
+  const { ws } = await makeWorkspace(() => {}, { tachyonYaml: "agents:\n  ada:\n    cmd: codex\n    soul: true\n" });
+  expect(ws.config?.agents.ada.soul).toBe(true);
+  fs.writeFileSync(path.join(ws.workspaceRoot, "tachyon.yml"), "agents:\n  ada:\n    cmd: codex\n    soul: SOUL.md\n", "utf8");
+
+  expect(ws.reloadConfig()).toBe(false);
+  expect(ws.configFailure?.errors).toContain("agents.ada.soul: must be a boolean");
+  expect(ws.config?.agents.ada.soul).toBe(true);
+  expect(ws.readConfigLkg()?.agents.map((agent) => agent.name)).toContain("ada");
+  ws.dispose();
+});
+
 /** Flushes the best-effort async poke chain (`tmux.hasSession(...).then(...)`) that `pokeParentOnDeath`
  *  fires without the lifecycle tick awaiting it. */
 const flush = () => new Promise((r) => setTimeout(r, 0));

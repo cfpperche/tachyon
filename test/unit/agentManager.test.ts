@@ -19,6 +19,18 @@ import { boundDeliveryPreReservationRefusals, exerciseBoundDeliveryPreReservatio
 
 const WS = "/repo";
 const HASH = workspaceHash(WS);
+const SOUL_LEGACY_LIFECYCLE = JSON.parse(fs.readFileSync(path.resolve("test/fixtures/agent-soul-legacy/lifecycle-bypass-cases.json"), "utf8")) as {
+  cases: Array<{ name: string; bytes: string; sendKeys: string[] }>;
+};
+function soulLegacyLifecycleCase(name: string) {
+  return SOUL_LEGACY_LIFECYCLE.cases.find((item) => item.name === name)!;
+}
+function soulLifecycleBypassSpies(manager: AgentManager) {
+  const compositor = vi.spyOn(manager as never, "effectiveCmd" as never);
+  const soulResolver = vi.fn();
+  Object.defineProperty(manager, "resolveSoul", { configurable: true, value: soulResolver });
+  return { compositor, soulResolver };
+}
 
 describe("Delivery pre-reservation refusals", () => {
   it.each(boundDeliveryPreReservationRefusals)("refuses %s with the complete zero-effect vector", async (refusal) => {
@@ -1787,10 +1799,16 @@ describe("AgentManager — session resume (spec 209)", () => {
     });
     await manager.spawn("claude"); // mint
     await manager.kill("claude"); // simulate process/session gone
+    const { compositor, soulResolver } = soulLifecycleBypassSpies(manager);
+    compositor.mockClear();
     const rec = { def: { cmd: "claude --permission-mode plan", kind: "agent" as const }, resume: { runtime: "claude" as const, sessionId: "uuid-1" }, cwd: "/ws", declared: true, updatedAt: "t" };
     await manager.resume("claude", rec);
-    expect(cmds.at(-1)).toBe("claude --permission-mode plan --resume uuid-1");
+    const oracle = soulLegacyLifecycleCase("resume-command");
+    expect(cmds.at(-1)).toBe(oracle.bytes);
     expect(ledger.get("claude")!.resume!.sessionId).toBe("uuid-1");
+    expect(compositor).not.toHaveBeenCalled();
+    expect(soulResolver).not.toHaveBeenCalled();
+    expect(oracle.sendKeys).toEqual([]);
   });
 
   it("t-4d2630: resume with an existing session uses respawn-pane -k (not kill+new)", async () => {
@@ -1963,12 +1981,17 @@ describe("AgentManager — session resume (spec 209)", () => {
   });
 
   it("t-762940: resume({ injectPrimer: false }) remains a no-op paste (rebind / explicit)", async () => {
-    const { manager, paneInjections } = resumeHarness("agents:\n  codex:\n    cmd: codex\n", {
-      resolveCaptureId: async () => "captured-id",
+    const { manager, paneInjections, cmds } = resumeHarness("agents:\n  claude:\n    cmd: claude --model sonnet\n", {
+      fileExists: () => true,
     });
-    const rec = { def: { cmd: "codex", kind: "agent" as const }, resume: { runtime: "codex" as const, sessionId: "" }, cwd: "/ws", declared: true, updatedAt: "t" };
-    await manager.resume("codex", rec, { injectPrimer: false });
-    expect(paneInjections).toEqual([]);
+    const rec = { def: { cmd: "claude --model sonnet", kind: "agent" as const }, resume: { runtime: "claude" as const, sessionId: "session-a" }, cwd: "/ws", declared: true, updatedAt: "t" };
+    const { compositor, soulResolver } = soulLifecycleBypassSpies(manager);
+    await manager.resume("claude", rec, { injectPrimer: false });
+    const oracle = soulLegacyLifecycleCase("host-rebind-command");
+    expect(cmds.at(-1)).toBe(oracle.bytes);
+    expect(paneInjections).toEqual(oracle.sendKeys);
+    expect(compositor).not.toHaveBeenCalled();
+    expect(soulResolver).not.toHaveBeenCalled();
   });
 
   it("resume({ injectPrimer: true }) opt-in still pastes the 363 primer", async () => {
@@ -2046,10 +2069,14 @@ describe("AgentManager — session resume (spec 209)", () => {
     const { manager, ledger, cmds, ws } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", { resolveCurrentSession: async () => UUID });
     await manager.spawn("claude");
     const plan = await manager.planFork("claude");
+    const { compositor, soulResolver } = soulLifecycleBypassSpies(manager);
+    compositor.mockClear();
     const forkName = await manager.commitFork(plan);
     expect(forkName).toBe("claude-fork-1");
     const forkSession = `tachyon-${path.basename(ws)}-claude-fork-1`;
-    expect(cmds.at(-1)).toBe(`claude -n ${forkSession} --resume ${UUID} --fork-session`);
+    const oracle = soulLegacyLifecycleCase("native-fork-command");
+    expect(cmds.at(-1)?.replace(forkSession, "<FORK_SESSION>")).toBe(oracle.bytes);
+    expect(oracle.sendKeys).toEqual([]);
     expect(ledger.get("claude-fork-1")).toMatchObject({
       def: { cmd: "claude", kind: "agent", fork: true }, // base cmd → a later resume uses the normal named path, never re-forks
       resume: { runtime: "claude", sessionId: forkSession }, // the fork's OWN name (captured → uuid later)
@@ -2059,6 +2086,8 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(ledger.get("claude-fork-1")?.def?.parent).toBeUndefined(); // sibling, NOT a lineage child
     const names = (await manager.list()).map((a) => a.name);
     expect(names).toContain("claude-fork-1");
+    expect(compositor).not.toHaveBeenCalled();
+    expect(soulResolver).not.toHaveBeenCalled();
   });
 
   it("commitFork injects the fork's own TACHYON_AGENT_NAME", async () => {

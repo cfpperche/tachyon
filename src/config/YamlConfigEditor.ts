@@ -7,7 +7,7 @@ import { parseDocument, stringify, YAMLMap, YAMLSeq } from "yaml";
  * entry. No parallel state, ever: hand-editing and UI editing stay equivalent.
  */
 
-const NAME_RE = /^[a-zA-Z][a-zA-Z0-9_-]*$/;
+import { AGENT_NAME_PATTERN } from "./nameValidation.js";
 
 export interface EditResult {
   text: string;
@@ -43,16 +43,16 @@ function entryCount(doc: ReturnType<typeof parseDocument>): number {
   return (mapOf(doc, "agents")?.items.length ?? 0) + (mapOf(doc, "terminals")?.items.length ?? 0);
 }
 
-/** A `terminals:` entry must not carry kind/instructions (kind is implied; no AI) — strip them. */
+/** A `terminals:` entry must not carry AI-only fields (kind is implied; no AI) — strip them. */
 function sanitizeForSection(section: Section, entry: Record<string, unknown>): Record<string, unknown> {
   if (section !== "terminals") return entry;
-  const { kind: _kind, instructions: _instructions, ...rest } = entry;
+  const { kind: _kind, instructions: _instructions, soul: _soul, ...rest } = entry;
   return rest;
 }
 
 function assertValidName(name: string): void {
-  if (!NAME_RE.test(name)) {
-    throw new Error(`invalid agent name '${name}' (must match ${NAME_RE})`);
+  if (!AGENT_NAME_PATTERN.test(name)) {
+    throw new Error(`invalid agent name '${name}' (must match ${AGENT_NAME_PATTERN})`);
   }
 }
 
