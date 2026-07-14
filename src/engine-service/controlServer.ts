@@ -11,6 +11,8 @@ import {
   type EngineServiceIdentityV1,
   type EngineShellHelloV1,
   type EngineShellSessionV1,
+  isWorkspaceEventBatchV1,
+  type WorkspaceEventBatchV1,
   type WorkspaceSnapshotEnvelopeV1,
 } from "./protocol.js";
 
@@ -22,6 +24,7 @@ export interface EngineControlServerOptions {
   socketPath: string;
   identity: EngineServiceIdentityV1;
   getSnapshot: () => unknown | Promise<unknown>;
+  readEvents?: (afterSeq: number, limit: number) => unknown | Promise<unknown>;
   leaseMs?: number;
   now?: () => number;
 }
@@ -129,6 +132,17 @@ export async function startEngineControlServer(options: EngineControlServerOptio
       session.expiresAt = now() + leaseMs;
       return { ok: true, op: "snapshot", snapshot };
     }
+    if (parsed.op === "events") {
+      if (!options.readEvents) return fail("UNSUPPORTED_OPERATION", "engine event reads are unavailable");
+      const batch = validateEventBatch(
+        await options.readEvents(parsed.afterSeq, parsed.limit),
+        options.identity,
+        parsed.afterSeq,
+        parsed.limit,
+      );
+      session.expiresAt = now() + leaseMs;
+      return { ok: true, op: "events", batch };
+    }
     sessions.delete(parsed.shellId);
     return { ok: true, op: "detach", detached: true };
   };
@@ -176,10 +190,31 @@ function parseRequest(raw: string): EngineControlRequestV1 | EngineControlRespon
   }
   if (request.op === "health") return request as EngineControlRequestV1;
   if (request.op === "attach" && "hello" in request) return request as EngineControlRequestV1;
-  if ((request.op === "touch" || request.op === "snapshot" || request.op === "detach")
+  if ((request.op === "touch" || request.op === "snapshot" || request.op === "detach" || request.op === "events")
     && "shellId" in request && typeof request.shellId === "string"
-    && "sessionToken" in request && typeof request.sessionToken === "string") return request as EngineControlRequestV1;
+    && "sessionToken" in request && typeof request.sessionToken === "string") {
+    if (request.op !== "events") return request as EngineControlRequestV1;
+    if ("afterSeq" in request && Number.isSafeInteger(request.afterSeq)
+      && (request.afterSeq as number) >= 0
+      && "limit" in request && Number.isSafeInteger(request.limit)
+      && (request.limit as number) > 0 && (request.limit as number) <= 200) return request as EngineControlRequestV1;
+  }
   return fail("BAD_REQUEST", "unknown or incomplete engine control request");
+}
+
+function validateEventBatch(
+  batch: unknown,
+  identity: EngineServiceIdentityV1,
+  afterSeq: number,
+  limit: number,
+): WorkspaceEventBatchV1 {
+  if (!isWorkspaceEventBatchV1(batch)
+    || batch.engineInstanceId !== identity.instanceId
+    || batch.afterSeq !== afterSeq
+    || batch.events.length > limit) {
+    throw new Error("engine event batch violates its identity/sequence contract");
+  }
+  return batch;
 }
 
 function validateSnapshot(snapshot: unknown, identity: EngineServiceIdentityV1): WorkspaceSnapshotEnvelopeV1 {

@@ -6,6 +6,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { EngineControlClient } from "../../src/engine-service/controlClient.js";
 import { startEngineControlServer, type RunningEngineControlServer } from "../../src/engine-service/controlServer.js";
+import { EngineEventJournal } from "../../src/engine-service/eventJournal.js";
 import type { EngineServiceIdentityV1, EngineShellHelloV1 } from "../../src/engine-service/protocol.js";
 
 const roots: string[] = [];
@@ -123,5 +124,38 @@ describe("EngineControlClient", () => {
       await new Promise<void>((resolve) => malformed.close(() => resolve()));
       try { fs.unlinkSync(f.socketPath); } catch { /* already removed by Node */ }
     }
+  });
+
+  it("streams contiguous events and requests a full snapshot after journal compaction", async () => {
+    const f = fixture();
+    const journal = new EngineEventJournal({
+      filePath: path.join(f.root, "events", "engine.jsonl"),
+      engineInstanceId: f.identity.instanceId,
+      maxEvents: 2,
+    });
+    const server = await startEngineControlServer({
+      socketPath: f.socketPath,
+      identity: f.identity,
+      getSnapshot: () => ({
+        schemaVersion: 1,
+        engineInstanceId: f.identity.instanceId,
+        seq: journal.latestSeq,
+        projections: { agents: [] },
+      }),
+      readEvents: (afterSeq, limit) => journal.readAfter(afterSeq, limit),
+    });
+    servers.push(server);
+    const client = new EngineControlClient({ socketPath: f.socketPath, hello: f.hello });
+    await client.attach();
+    journal.append("one", {});
+    journal.append("two", {});
+    journal.append("three", {});
+    expect(await client.events()).toMatchObject({ resyncRequired: true, oldestSeq: 2, latestSeq: 3, events: [] });
+    expect((await client.snapshot()).seq).toBe(3);
+    journal.append("four", { view: "agents" });
+    expect(await client.events()).toMatchObject({
+      resyncRequired: false,
+      events: [{ seq: 4, kind: "four", payload: { view: "agents" } }],
+    });
   });
 });

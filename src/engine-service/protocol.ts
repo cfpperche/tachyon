@@ -77,17 +77,38 @@ export interface WorkspaceSnapshotEnvelopeV1 {
   projections: Record<string, unknown>;
 }
 
+export interface WorkspaceEventV1 {
+  schemaVersion: 1;
+  engineInstanceId: string;
+  seq: number;
+  at: string;
+  kind: string;
+  payload: Record<string, unknown>;
+}
+
+export interface WorkspaceEventBatchV1 {
+  schemaVersion: 1;
+  engineInstanceId: string;
+  afterSeq: number;
+  oldestSeq: number;
+  latestSeq: number;
+  resyncRequired: boolean;
+  events: WorkspaceEventV1[];
+}
+
 export type EngineControlRequestV1 =
   | { schemaVersion: 1; op: "health"; workspaceHash: string }
   | { schemaVersion: 1; op: "attach"; workspaceHash: string; hello: EngineShellHelloV1 }
   | { schemaVersion: 1; op: "touch"; workspaceHash: string; shellId: string; sessionToken: string }
   | { schemaVersion: 1; op: "snapshot"; workspaceHash: string; shellId: string; sessionToken: string }
+  | { schemaVersion: 1; op: "events"; workspaceHash: string; shellId: string; sessionToken: string; afterSeq: number; limit: number }
   | { schemaVersion: 1; op: "detach"; workspaceHash: string; shellId: string; sessionToken: string };
 
 export type EngineControlResponseV1 =
   | { ok: true; op: "health"; engine: EngineServiceIdentityV1; shellCount: number }
   | { ok: true; op: "attach" | "touch"; session: EngineShellSessionV1 }
   | { ok: true; op: "snapshot"; snapshot: WorkspaceSnapshotEnvelopeV1 }
+  | { ok: true; op: "events"; batch: WorkspaceEventBatchV1 }
   | { ok: true; op: "detach"; detached: true }
   | { ok: false; code: string; message: string };
 
@@ -192,6 +213,45 @@ export function isEngineShellSessionV1(value: unknown): value is EngineShellSess
   return typeof value.leaseExpiresAt === "string" && Number.isFinite(Date.parse(value.leaseExpiresAt));
 }
 
+export function isWorkspaceEventV1(value: unknown): value is WorkspaceEventV1 {
+  return isRecord(value)
+    && value.schemaVersion === 1
+    && typeof value.engineInstanceId === "string"
+    && value.engineInstanceId.length >= 8
+    && value.engineInstanceId.length <= 128
+    && Number.isSafeInteger(value.seq)
+    && (value.seq as number) > 0
+    && typeof value.at === "string"
+    && Number.isFinite(Date.parse(value.at))
+    && typeof value.kind === "string"
+    && /^[a-z][a-z0-9.-]{0,63}$/.test(value.kind)
+    && isRecord(value.payload);
+}
+
+export function isWorkspaceEventBatchV1(value: unknown): value is WorkspaceEventBatchV1 {
+  if (!isRecord(value) || value.schemaVersion !== 1) return false;
+  if (typeof value.engineInstanceId !== "string" || value.engineInstanceId.length < 8 || value.engineInstanceId.length > 128) return false;
+  if (!Number.isSafeInteger(value.afterSeq) || (value.afterSeq as number) < 0
+    || !Number.isSafeInteger(value.oldestSeq) || (value.oldestSeq as number) < 1
+    || !Number.isSafeInteger(value.latestSeq) || (value.latestSeq as number) < 0
+    || typeof value.resyncRequired !== "boolean" || !Array.isArray(value.events) || value.events.length > 200) return false;
+  if ((value.oldestSeq as number) > (value.latestSeq as number) + 1) return false;
+  const shouldResync = (value.afterSeq as number) > (value.latestSeq as number)
+    || (value.afterSeq as number) < (value.oldestSeq as number) - 1;
+  if (value.resyncRequired !== shouldResync) return false;
+  let previous = value.afterSeq as number;
+  for (const event of value.events) {
+    if (!isWorkspaceEventV1(event)
+      || event.engineInstanceId !== value.engineInstanceId
+      || event.seq !== previous + 1
+      || event.seq > (value.latestSeq as number)) return false;
+    previous = event.seq;
+  }
+  if (value.resyncRequired && value.events.length > 0) return false;
+  if (!value.resyncRequired && (value.afterSeq as number) < (value.latestSeq as number) && value.events.length === 0) return false;
+  return true;
+}
+
 export function isEngineControlResponseV1(value: unknown): value is EngineControlResponseV1 {
   if (!isRecord(value) || typeof value.ok !== "boolean") return false;
   if (!value.ok) {
@@ -208,6 +268,7 @@ export function isEngineControlResponseV1(value: unknown): value is EngineContro
   }
   if (value.op === "attach" || value.op === "touch") return isEngineShellSessionV1(value.session);
   if (value.op === "snapshot") return isWorkspaceSnapshotEnvelopeV1(value.snapshot);
+  if (value.op === "events") return isWorkspaceEventBatchV1(value.batch);
   return value.op === "detach" && value.detached === true;
 }
 

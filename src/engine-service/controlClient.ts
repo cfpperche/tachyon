@@ -7,6 +7,7 @@ import {
   type EngineServiceIdentityV1,
   type EngineShellHelloV1,
   type EngineShellSessionV1,
+  type WorkspaceEventBatchV1,
   type WorkspaceSnapshotEnvelopeV1,
 } from "./protocol.js";
 
@@ -39,6 +40,7 @@ export interface EngineControlClientOptions {
 export class EngineControlClient {
   private currentSession: EngineShellSessionV1 | undefined;
   private lastSnapshotSeq: number | undefined;
+  private lastEventSeq: number | undefined;
   private readonly timeoutMs: number;
 
   constructor(private readonly options: EngineControlClientOptions) {
@@ -76,6 +78,7 @@ export class EngineControlClient {
     this.assertSession(success.session);
     this.currentSession = success.session;
     this.lastSnapshotSeq = success.session.snapshotSeq;
+    this.lastEventSeq = success.session.snapshotSeq;
     return success.session;
   }
 
@@ -99,13 +102,41 @@ export class EngineControlClient {
       throw invalidResponse("snapshot belongs to a different engine incarnation");
     }
     this.assertMonotonic(success.snapshot.seq);
+    this.lastEventSeq = success.snapshot.seq;
     return success.snapshot;
+  }
+
+  async events(limit = 100): Promise<WorkspaceEventBatchV1> {
+    const session = this.requireSession();
+    const afterSeq = this.lastEventSeq ?? session.snapshotSeq;
+    const response = await this.request({
+      schemaVersion: 1,
+      op: "events",
+      workspaceHash: this.options.hello.workspaceHash,
+      shellId: session.shellId,
+      sessionToken: session.sessionToken,
+      afterSeq,
+      limit,
+    });
+    const success = this.unwrap(response);
+    if (success.op !== "events") throw invalidResponse("events request returned the wrong operation");
+    const batch = success.batch;
+    if (batch.engineInstanceId !== session.engine.instanceId || batch.afterSeq !== afterSeq) {
+      throw invalidResponse("event batch belongs to a different engine or cursor");
+    }
+    if (!batch.resyncRequired) {
+      const last = batch.events.at(-1)?.seq ?? afterSeq;
+      if (last < afterSeq || last > batch.latestSeq) throw invalidResponse("event batch cursor is invalid");
+      this.lastEventSeq = last;
+    }
+    return batch;
   }
 
   async detach(): Promise<void> {
     const session = this.currentSession;
     this.currentSession = undefined;
     this.lastSnapshotSeq = undefined;
+    this.lastEventSeq = undefined;
     if (!session) return;
     const response = await this.request(this.sessionRequest("detach", session));
     const success = this.unwrap(response);
@@ -126,6 +157,7 @@ export class EngineControlClient {
     if (response.code === "SHELL_SESSION_INVALID") {
       this.currentSession = undefined;
       this.lastSnapshotSeq = undefined;
+      this.lastEventSeq = undefined;
     }
     throw new EngineControlClientError("REMOTE", response.message, response.code);
   }

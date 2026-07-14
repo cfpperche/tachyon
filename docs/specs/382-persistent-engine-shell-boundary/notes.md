@@ -91,3 +91,15 @@ None.
 - Twenty-eight focused tests across all four slices pass with typecheck, engine-boundary and diff-check.
   This host is not complete until its events/notices are journaled and projected through the control
   protocol; the current production extension still constructs `VsCodeHost`/`Workspace`.
+
+## Fifth implementation slice — 2026-07-14
+
+- Added a private append/compact event journal with monotonic engine-scoped sequence numbers, cloned and
+  size-bounded JSON payloads, torn-tail recovery, strict complete-record validation and a bounded retained
+  tail.  Old or ahead cursors return `resyncRequired` instead of an ambiguous partial replay.
+- Extended the control protocol/server/client with authenticated cursor reads.  Batches are validated for
+  engine identity, caller cursor, request limit and exact contiguous sequence; a full snapshot resets the
+  shell cursor after compaction.
+- Thirty-two focused tests across the five slices pass with typecheck, engine-boundary and diff-check.
+  The journal primitives are complete, but the production daemon still needs to feed `DaemonHostEvent`
+  records into them and build real Workspace projections.
