@@ -38,6 +38,11 @@ import { syncToolLauncher } from "./plugins/toolProvisionRun.js";
 import { buildOffers, type RegistrationOffer } from "./registration/adapters.js";
 import { executeWait, type BridgeDeps } from "./bridge/tools.js";
 import { RuntimeOpsSnapshotService } from "./runtimeOps/snapshotService.js";
+import { CodexAppServerObservationSource } from "./runtimeObservability/codexAppServerSource.js";
+import { ClaudeStatusLineObservationSource } from "./runtimeObservability/claudeStatusLineSource.js";
+import { ClaudeStatusLineCaptureTransport } from "./runtimeObservability/claudeStatusLineCapture.js";
+import { ProviderObservationPreferences, type ProviderObservationStatePort } from "./runtimeObservability/preferences.js";
+import { ProviderObservationService } from "./runtimeObservability/service.js";
 import type {
   AgentItem,
   PinItem,
@@ -745,6 +750,30 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     },
   });
 
+  // SDD 369 T3 — one extension-host provider service, independent of workspace/agent/view count. Persisted
+  // preferences are machine-local and disabled by default; merely finding an installed CLI cannot start collection.
+  const providerObservationState: ProviderObservationStatePort = {
+    get: <T>(key: string) => context.globalState.get<T>(key),
+    update: (key, value) => context.globalState.update(key, value),
+  };
+  const providerObservationPreferences = new ProviderObservationPreferences(providerObservationState);
+  const claudeStatusLineCapture = new ClaudeStatusLineCaptureTransport(
+    context.globalStorageUri.fsPath,
+    providerObservationPreferences,
+  );
+  const providerObservations = new ProviderObservationService(
+    providerObservationPreferences,
+    [
+      new CodexAppServerObservationSource(),
+      new ClaudeStatusLineObservationSource({ readCapture: claudeStatusLineCapture.readCapture }),
+    ],
+    {
+      state: providerObservationState,
+      onPreferenceChanged: (provider) => claudeStatusLineCapture.clearProvider(provider),
+    },
+  );
+  context.subscriptions.push({ dispose: () => providerObservations.dispose() });
+
   // spec 237 — the Preact webview sidebar is THE Tachyon view (the native tree was retired). refreshAll
   // pushes the live fleet to it on every state change; it's registered below.
   const runtimeOpsSnapshots = new RuntimeOpsSnapshotService(workspaces);
@@ -754,6 +783,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     runtimeOpsSnapshots.observedModelFor(ws.workspaceRoot, ws.wsHash, agentName),
   );
   const runtimeOps = new RuntimeOpsViewProvider(context.extensionUri, () => runtimeOpsSnapshots.snapshot());
+  context.subscriptions.push(providerObservations.onDidChange(() => runtimeOps.refresh()));
+  providerObservations.start();
   // spec 238 — the editor-area Runtime Activity View (normalized cockpit; reads the durable per-agent log).
   const activityPanels = new ActivityPanelManager(context.extensionUri, workspaces);
   context.subscriptions.push({ dispose: () => activityPanels.dispose() });
@@ -1006,6 +1037,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const ws = await Workspace.create(folderPath, {
       onViewsChanged,
       host: new VsCodeHost(context, onViewsChanged),
+      claudeStatusLineCapture,
       onApprovalRequested: (workspace, request) => {
         const open = "Review";
         void showNotification(`Approval request ${request.id} from '${request.requester}'`, "info", [open]).then((picked) => {

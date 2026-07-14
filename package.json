@@ -889,6 +889,7 @@
     "verify:full:quiet": "node scripts/verify-full.mjs",
     "dogfood:dev-host": "bash scripts/dev-host/cli.sh",
     "dogfood:runtime-launch-preflight": "node scripts/dev-host/lane.mjs run --owner sdd-370-headless --target worktree -- npm exec vitest run test/unit/codexCatalogStream.test.ts test/unit/runtimeLaunchPreflight.test.ts test/unit/devHostLane.test.ts test/unit/devHostLauncher.test.ts test/unit/persistentBridgeProxy.test.ts test/unit/launchReadinessRecovery.test.ts test/unit/bridge.test.ts",
+    "dogfood:runtime-observability": "vite-node --script scripts/runtime-observability-dogfood.ts",
     "dogfood:ui-shortlist": "bash scripts/dev-host/run-shortlist.sh",
     "test:browser": "vitest run --config vitest.browser.config.ts",
     "test:integration": "vscode-test",
