@@ -2905,16 +2905,16 @@ export class Workspace {
    */
   private reconcileGrokAuthIfGrokAgent(name: string): void {
     try {
-      const cmd = this.manager.definitionOf(name)?.cmd ?? "";
+      const cmd = this.manager.defOf(name)?.cmd ?? "";
       const runtime = this.ledger.get(name)?.resume?.runtime;
       const isGrok = binaryOf(cmd) === "grok" || runtime === "grok";
       // Also cover ad-hoc / ledger-only rows where cmd is empty but the private home exists.
-      if (!isGrok && !fs.existsSync(path.join(this.root, ".tachyon", "bridge-mcp", `${name}.grok`, "auth.json"))) {
+      if (!isGrok && !fs.existsSync(path.join(this.workspaceRoot, ".tachyon", "bridge-mcp", `${name}.grok`, "auth.json"))) {
         return;
       }
       this.harness.reconcileGrokAuthFromWorkspace();
     } catch (err) {
-      this.deps.notify?.(
+      this.host.notify(
         `grok auth reconcile failed for '${name}': ${err instanceof Error ? err.message : String(err)}`,
         "warn",
       );
