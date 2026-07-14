@@ -718,7 +718,8 @@ export interface CardMenuState { taskId: string; x: number; y: number; actions: 
 /** t-c0e711 — the board card's right-click menu. Mirrors the sidebar's MoreMenu (sidebar/App.tsx) exactly:
  *  a full-screen transparent backdrop closes on click-outside, a fixed-position panel styled with the same
  *  `.menu-backdrop`/`.more-menu`/`.more-item` design-system language, Escape/arrow-key handling via a
- *  document-level listener while open. */
+ *  document-level listener while open. Also dismisses on webview blur/visibility (editor click is outside
+ *  the iframe and never hits the backdrop). */
 function CardMenu({ menu, onRun, onClose }: { menu: CardMenuState | null; onRun(actionId: string, taskId: string): void; onClose(): void }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -735,9 +736,17 @@ function CardMenu({ menu, onRun, onClose }: { menu: CardMenuState | null; onRun(
         list[next]?.focus();
       }
     };
+    const dismissOnFocusLoss = () => onClose();
+    const onVisibility = () => { if (document.hidden) onClose(); };
     document.addEventListener("keydown", h);
-    return () => document.removeEventListener("keydown", h);
-  }, [menu]);
+    window.addEventListener("blur", dismissOnFocusLoss);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      document.removeEventListener("keydown", h);
+      window.removeEventListener("blur", dismissOnFocusLoss);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [menu]); // onClose is an inline lambda at the call site — do not re-bind every render
   if (!menu || menu.actions.length === 0) return null;
   const left = Math.max(6, Math.min(menu.x, window.innerWidth - 186));
   const top = Math.min(menu.y, window.innerHeight - (menu.actions.length * 28 + 16));
