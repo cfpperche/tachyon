@@ -14,7 +14,7 @@
  * (the conversation already holds them) but DO re-pass the original flags.
  */
 
-export type ResumeRuntime = "claude" | "codex" | "gemini" | "antigravity" | "opencode" | "qwen" | "continue" | "grok";
+export type ResumeRuntime = "claude" | "codex" | "gemini" | "antigravity" | "opencode" | "qwen" | "continue" | "grok" | "hermes";
 
 export interface ResumeAdapter {
   runtime: ResumeRuntime;
@@ -144,6 +144,7 @@ const RUNTIME_BY_BIN: Record<string, ResumeRuntime> = {
   cn: "continue",
   continue: "continue",
   grok: "grok",
+  hermes: "hermes",
 };
 
 export function runtimeOf(cmd: string): ResumeRuntime | null {
@@ -335,6 +336,26 @@ const ADAPTERS: ResumeAdapter[] = [
     mintsId: false,
     injectId: (cmd) => cmd,
     resumeCommand: (cmd, id) => append(cmd, "--resume", id),
+  },
+  {
+    // Hermes Agent (Nous Research): capture-style session ids (e.g. 20260713_185208_da5df2)
+    // in `$HERMES_HOME/state.db`. No native fork. Brief is env HERMES_TUI_QUERY (not argv).
+    runtime: "hermes",
+    mintsId: false,
+    resumesWithoutId: true,
+    injectId: (cmd) => cmd,
+    resumeCommand: (cmd, id) => (id ? append(cmd, "--resume", id) : append(cmd, "--continue")),
+    // Activity v1 still uses state.db (not a per-session jsonl path); keep a stable locator.
+    transcriptPath: (configHome, _cwd, id) => `${configHome}/state.db#${id}`,
+    harness: {
+      configHomeEnv: "HERMES_HOME",
+      authFiles: ["auth.json"],
+      projectsSubdir: "sessions",
+      mcp: {
+        mode: "home-config",
+        fileName: "config.yaml",
+      },
+    },
   },
 ];
 

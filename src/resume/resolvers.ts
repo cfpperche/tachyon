@@ -24,6 +24,8 @@ export interface ResolverEnv {
   codexHome?: string;
   /** spec 327 — redirected Antigravity app home. Defaults to `<home>/.gemini/antigravity-cli`. */
   antigravityHome?: string;
+  /** Hermes private/real home (dir that contains `state.db`). Defaults to `<home>/.hermes`. */
+  hermesHome?: string;
 }
 
 const defaultEnv = (): ResolverEnv => ({ home: os.homedir() });
@@ -41,6 +43,48 @@ function codexSessionsHome(env: ResolverEnv): string {
 /** Antigravity's CLI app state dir — the home that contains `cache/last_conversations.json`. */
 function antigravityCliHome(env: ResolverEnv): string {
   return env.antigravityHome ?? path.join(env.home, ".gemini", "antigravity-cli");
+}
+
+/** Hermes home containing `state.db` — harness/bridge override, else `<home>/.hermes`. */
+function hermesStateHome(env: ResolverEnv): string {
+  return env.hermesHome ?? path.join(env.home, ".hermes");
+}
+
+/**
+ * Hermes: sessions live in `$HERMES_HOME/state.db` (SQLite). Pick the newest row whose `cwd`
+ * matches (or empty id filter). Uses node:sqlite when available; returns null on any failure.
+ */
+export function resolveHermesId(cwd: string, env: ResolverEnv = defaultEnv(), id?: string): string | null {
+  const dbPath = path.join(hermesStateHome(env), "state.db");
+  if (!fs.existsSync(dbPath)) return null;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { DatabaseSync } = require("node:sqlite") as typeof import("node:sqlite");
+    const db = new DatabaseSync(dbPath, { readOnly: true });
+    try {
+      if (id) {
+        const row = db.prepare("SELECT id FROM sessions WHERE id = ? LIMIT 1").get(id) as { id?: string } | undefined;
+        return typeof row?.id === "string" && row.id ? row.id : null;
+      }
+      const row = db
+        .prepare(
+          "SELECT id FROM sessions WHERE cwd = ? ORDER BY COALESCE(ended_at, started_at) DESC, started_at DESC LIMIT 1",
+        )
+        .get(cwd) as { id?: string } | undefined;
+      if (typeof row?.id === "string" && row.id) return row.id;
+      // Older rows may have NULL cwd — only then fall back to the newest overall session.
+      const nullCwd = db
+        .prepare(
+          "SELECT id FROM sessions WHERE cwd IS NULL OR cwd = '' ORDER BY COALESCE(ended_at, started_at) DESC, started_at DESC LIMIT 1",
+        )
+        .get() as { id?: string } | undefined;
+      return typeof nullCwd?.id === "string" && nullCwd.id ? nullCwd.id : null;
+    } finally {
+      db.close();
+    }
+  } catch {
+    return null;
+  }
 }
 
 /** Newest-first list of files under `dir` (recursively) whose name matches `re`. */
@@ -241,6 +285,8 @@ export async function resolveCurrentSession(
       return resolveAntigravityId(cwd, env);
     case "opencode":
       return resolveOpencodeId(cwd, env);
+    case "hermes":
+      return resolveHermesId(cwd, env);
     default:
       return null; // gemini / qwen / continue — not derivable; keep the stored id
   }
@@ -255,6 +301,8 @@ export async function resolveCaptureId(runtime: ResumeRuntime, cwd: string, env 
       return resolveAntigravityId(cwd, env);
     case "opencode":
       return resolveOpencodeId(cwd, env);
+    case "hermes":
+      return resolveHermesId(cwd, env);
     // qwen (sessions in the working dir) and continue (no documented on-disk map)
     // are not yet resolved from disk — they resume only when an id was captured at
     // runtime. Tracked for a later pass.

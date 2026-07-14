@@ -142,7 +142,7 @@ export function parseBridgeClientRebindSettings(raw: unknown): BridgeClientRebin
  * Runtimes for which Tachyon's spawn path materializes the Bridge (withRuntimeBridge /
  * harness fold). Used to infer wiring for pre-364 / never-stamped survivors.
  */
-const TACHYON_BRIDGE_RUNTIMES = new Set(["claude", "grok", "opencode", "codex"]);
+const TACHYON_BRIDGE_RUNTIMES = new Set(["claude", "grok", "opencode", "codex", "hermes"]);
 
 /**
  * Durable stamp preferred; if absent (agents spawned before 364 stamps), infer from

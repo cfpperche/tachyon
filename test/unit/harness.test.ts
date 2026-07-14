@@ -12,6 +12,7 @@ import {
   bridgeMcpPath,
   bridgeOpencodeMcpPath,
   bridgeGrokHome,
+  bridgeHermesHome,
   mergeServers,
   buildMcpConfig,
   harnessWiring,
@@ -21,7 +22,10 @@ import {
   realConfigHome,
   defaultRealCodexHome,
   defaultRealGrokHome,
+  defaultRealHermesHome,
   isTachyonManagedGrokHome,
+  isTachyonManagedHermesHome,
+  setHermesMcpServer,
   opencodeHarnessDirs,
 } from "../../src/harness/HarnessManager.js";
 import { adapterForRuntime } from "../../src/resume/adapters.js";
@@ -466,6 +470,79 @@ describe("HarnessManager materialize (fs)", () => {
     ).toThrow(HarnessUnavailableError);
     expect(fs.lstatSync(privateAuth).isFile()).toBe(true);
     expect(fs.readFileSync(privateAuth, "utf8")).toBe('{"token":"PRIVATE_ONLY"}');
+  });
+
+  it("setHermesMcpServer merges tachyon_bridge into config.yaml without secrets", () => {
+    const out = setHermesMcpServer("model:\n  provider: openai-codex\n", "tachyon_bridge", {
+      url: "http://127.0.0.1:9/mcp",
+      headers: { Authorization: "Bearer ${TACHYON_AGENT_BRIDGE_TOKEN}" },
+      enabled: true,
+    });
+    expect(out).toContain("tachyon_bridge");
+    expect(out).toContain("http://127.0.0.1:9/mcp");
+    expect(out).toContain("Bearer ${TACHYON_AGENT_BRIDGE_TOKEN}");
+    expect(out).toContain("openai-codex");
+    expect(out).not.toMatch(/Bearer\s+[a-f0-9]{16,}/i);
+  });
+
+  it("materializeBridgeMcpHermes writes private HERMES_HOME with Bridge yaml + auth symlink", () => {
+    const realHermesHome = path.join(path.dirname(ws), "real-hermes");
+    fs.mkdirSync(realHermesHome, { recursive: true });
+    fs.writeFileSync(path.join(realHermesHome, "auth.json"), '{"tokens":{"access_token":"x"}}');
+    fs.writeFileSync(path.join(realHermesHome, "config.yaml"), "model:\n  default: gpt-5.6-sol\n  provider: openai-codex\n");
+    // ctor: (ws, realHome, procEnv, realClaudeJson, realCodexHome, warn, realOpencodeDataHome, realGrokHome, realHermesHome)
+    const mgr = new HarnessManager(
+      ws,
+      realHome,
+      PROC,
+      path.join(realHome, ".claude.json"),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      realHermesHome,
+    );
+    const bridge = {
+      type: "http",
+      url: "http://127.0.0.1:9/mcp",
+      headers: { Authorization: "Bearer ${TACHYON_AGENT_BRIDGE_TOKEN}" },
+    };
+    const home = mgr.materializeBridgeMcpHermes("solo", bridge);
+    expect(home).toBe(bridgeHermesHome(ws, "solo"));
+    expect(fs.lstatSync(path.join(home, "auth.json")).isSymbolicLink()).toBe(true);
+    expect(fs.readlinkSync(path.join(home, "auth.json"))).toBe(path.join(realHermesHome, "auth.json"));
+    const yaml = fs.readFileSync(path.join(home, "config.yaml"), "utf8");
+    expect(yaml).toContain("tachyon_bridge");
+    expect(yaml).toContain("http://127.0.0.1:9/mcp");
+    expect(yaml).toContain("Bearer ${TACHYON_AGENT_BRIDGE_TOKEN}");
+    expect(yaml).toContain("gpt-5.6-sol");
+    expect(yaml).not.toMatch(/Bearer\s+[a-f0-9]{16,}/i);
+    expect(isTachyonManagedHermesHome(home)).toBe(true);
+    expect(defaultRealHermesHome({ HERMES_HOME: home }, "/home/me")).toBe(path.join("/home/me", ".hermes"));
+    mgr.removeBridgeMcp("solo");
+    expect(fs.existsSync(home)).toBe(false);
+  });
+
+  it("materializeBridgeMcpHermes fails closed when real hermes auth is missing", () => {
+    const emptyHermes = path.join(path.dirname(ws), "empty-hermes");
+    fs.mkdirSync(emptyHermes, { recursive: true });
+    const mgr = new HarnessManager(
+      ws,
+      realHome,
+      PROC,
+      path.join(realHome, ".claude.json"),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      emptyHermes,
+    );
+    expect(() =>
+      mgr.materializeBridgeMcpHermes("solo", {
+        url: "http://127.0.0.1:9/mcp",
+        headers: { Authorization: "Bearer ${TACHYON_AGENT_BRIDGE_TOKEN}" },
+      }),
+    ).toThrow(HarnessUnavailableError);
   });
 
   it("spec 243: materializeOwnershipSettings writes the recorder + per-spawn --settings hook (atomic, no temp left)", () => {

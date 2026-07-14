@@ -607,4 +607,13 @@ describe("resolveBinary / inferKind / composeCommand — launcher see-through (s
     // empty / whitespace instructions: bare cmd (no trailing empty arg)
     expect(composeCommand({ cmd: "grok", instructions: "  " })).toBe("grok");
   });
+
+  it("composeCommand marks hermes deliverable but leaves argv bare (brief via HERMES_TUI_QUERY)", () => {
+    expect(resolveBinary("hermes")).toBe("hermes");
+    expect(inferKind("hermes")).toBe("agent");
+    // No positional / -z (oneshot exits); AgentManager injects HERMES_TUI_QUERY separately.
+    expect(composeCommand({ cmd: "hermes", instructions: "TASK: ship it" })).toBe("hermes");
+    expect(composeCommand({ cmd: "hermes --tui", instructions: "hello" })).toBe("hermes --tui");
+    expect(composeCommand({ cmd: "hermes", instructions: "  " })).toBe("hermes");
+  });
 });

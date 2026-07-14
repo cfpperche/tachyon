@@ -177,6 +177,10 @@ const INSTRUCTION_ARG: Record<string, (quoted: string) => string> = {
   // injectResumeId applies `-s <uuid>` onto def.cmd *before* effectiveCmd/composeCommand, so the
   // final argv is `grok -s <uuid> '<brief>'` (options before prompt).
   grok: (q) => q,
+  // Hermes has no interactive positional prompt. Presence in INSTRUCTION_ARG marks the brief as
+  // deliverable; composeCommand leaves argv unchanged and AgentManager injects HERMES_TUI_QUERY
+  // (Hermes TUI reads it as STARTUP_QUERY). -z/--oneshot exits after one turn — wrong for Bridge.
+  hermes: (_q) => "",
 };
 
 /** POSIX single-quote escaping — safe inside the shell command tmux runs. */
@@ -311,7 +315,12 @@ export function composeCommand(def: Pick<AgentDef, "cmd" | "instructions">): str
   const base = resolveBinary(def.cmd); // see through npx/bunx/env so `npx claude` still gets its prompt (codex #1)
   const template = INSTRUCTION_ARG[base];
   if (!template) return def.cmd; // unknown CLI — stored but not delivered (documented)
-  return `${def.cmd} ${template(shellQuote(def.instructions.trim()))}`;
+  // Hermes: brief rides in HERMES_TUI_QUERY (AgentManager), not argv — empty template must not
+  // append a trailing space that would look like a malformed subcommand token.
+  if (base === "hermes") return def.cmd;
+  const arg = template(shellQuote(def.instructions.trim()));
+  if (!arg) return def.cmd;
+  return `${def.cmd} ${arg}`;
 }
 
 // spec 234 — GridShape / LayoutDef removed (layouts feature retired; `layouts:` stays a tolerated, ignored key).
