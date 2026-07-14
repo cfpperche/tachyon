@@ -101,19 +101,66 @@ export type WorkspaceCommandMethodV1 =
   | "agent.stop"
   | "agent.kill"
   | "agent.restart"
-  | "agent.resume";
+  | "agent.resume"
+  | "studio.submit";
 
-export interface WorkspaceCommandV1 {
-  schemaVersion: 1;
-  method: WorkspaceCommandMethodV1;
-  input: { agent: string };
+export type WorkspaceAgentCommandMethodV1 = Exclude<WorkspaceCommandMethodV1, "studio.submit">;
+
+/** Exact versioned wire shape of the five config-backed Studio forms. */
+export interface WorkspaceStudioFormV1 {
+  name: string;
+  cmd: string;
+  kind: "agent" | "terminal" | "command" | "runbook" | "schedule";
+  instructions: string;
+  role: string;
+  watch: string;
+  steps: string;
+  cwd: string;
+  autostart: boolean;
+  restartOnCrash: boolean;
+  attention: boolean;
+  worktree: boolean;
+  branch: string;
+  worktreeSetup: string;
+  verify: string;
+  harness: boolean;
+  harnessInherit: string;
+  harnessMcp: string;
+  harnessRules: string;
+  harnessInstructions: string;
+  harnessSkills: string;
+  harnessHooks: string;
+  isolate: boolean;
+  schedTiming: "every" | "at";
+  schedEvery: string;
+  schedAt: string;
+  schedAction: "run" | "spawn";
+  schedTarget: string;
+  catchUp: boolean;
 }
+
+export type WorkspaceCommandV1 = {
+  schemaVersion: 1;
+  method: WorkspaceAgentCommandMethodV1;
+  input: { agent: string };
+} | {
+  schemaVersion: 1;
+  method: "studio.submit";
+  input: { state: WorkspaceStudioFormV1; editingName?: string };
+};
 
 export type WorkspaceCommandResultV1 =
   | {
       schemaVersion: 1;
-      method: WorkspaceCommandMethodV1;
+      method: WorkspaceAgentCommandMethodV1;
       status: "ok";
+    }
+  | {
+      schemaVersion: 1;
+      method: "studio.submit";
+      status: "ok";
+      errors: string[];
+      truncated: boolean;
     }
   | {
       schemaVersion: 1;
@@ -151,6 +198,7 @@ const WORKSPACE_COMMAND_METHODS = new Set<WorkspaceCommandMethodV1>([
   "agent.kill",
   "agent.restart",
   "agent.resume",
+  "studio.submit",
 ]);
 
 export function isSha256(value: unknown): value is string {
@@ -167,9 +215,11 @@ export function isWorkspaceCommandV1(value: unknown): value is WorkspaceCommandV
     || value.schemaVersion !== 1
     || typeof value.method !== "string"
     || !WORKSPACE_COMMAND_METHODS.has(value.method as WorkspaceCommandMethodV1)
-    || !isRecord(value.input)
-    || !hasOnlyKeys(value.input, ["agent"])) return false;
-  return typeof value.input.agent === "string" && AGENT_NAME_RE.test(value.input.agent);
+    || !isRecord(value.input)) return false;
+  if (value.method === "studio.submit") return isWorkspaceStudioSubmitInputV1(value.input);
+  return hasOnlyKeys(value.input, ["agent"])
+    && typeof value.input.agent === "string"
+    && AGENT_NAME_RE.test(value.input.agent);
 }
 
 export function isWorkspaceCommandResultV1(value: unknown): value is WorkspaceCommandResultV1 {
@@ -177,8 +227,16 @@ export function isWorkspaceCommandResultV1(value: unknown): value is WorkspaceCo
     || value.schemaVersion !== 1
     || typeof value.method !== "string"
     || !WORKSPACE_COMMAND_METHODS.has(value.method as WorkspaceCommandMethodV1)) return false;
+  if (value.status === "ok" && value.method === "studio.submit") {
+    return hasOnlyKeys(value, ["schemaVersion", "method", "status", "errors", "truncated"])
+      && Array.isArray(value.errors)
+      && value.errors.length <= 50
+      && value.errors.every((error) => typeof error === "string" && error.length > 0 && error.length <= 1_000)
+      && typeof value.truncated === "boolean";
+  }
   if (value.status === "ok") {
-    return hasOnlyKeys(value, ["schemaVersion", "method", "status"]);
+    return hasOnlyKeys(value, ["schemaVersion", "method", "status"])
+      && value.method !== "studio.submit";
   }
   return value.status === "error"
     && hasOnlyKeys(value, ["schemaVersion", "method", "status", "code", "message"])
@@ -187,6 +245,53 @@ export function isWorkspaceCommandResultV1(value: unknown): value is WorkspaceCo
     && typeof value.message === "string"
     && value.message.length > 0
     && value.message.length <= 1_000;
+}
+
+export function workspaceCommandSuccessV1(
+  command: WorkspaceCommandV1,
+  studioErrors: readonly string[] = [],
+): WorkspaceCommandResultV1 {
+  if (command.method !== "studio.submit") {
+    return { schemaVersion: 1, method: command.method, status: "ok" };
+  }
+  const normalized = studioErrors.map((error) => error.trim() || "Studio validation failed");
+  return {
+    schemaVersion: 1,
+    method: command.method,
+    status: "ok",
+    errors: normalized.slice(0, 50).map((error) => error.slice(0, 1_000)),
+    truncated: normalized.length > 50 || normalized.some((error) => error.length > 1_000),
+  };
+}
+
+const STUDIO_FORM_STRING_KEYS = [
+  "name", "cmd", "instructions", "role", "watch", "steps", "cwd", "branch", "worktreeSetup",
+  "verify", "harnessInherit", "harnessMcp", "harnessRules", "harnessInstructions", "harnessSkills",
+  "harnessHooks", "schedEvery", "schedAt", "schedTarget",
+] as const;
+const STUDIO_FORM_BOOLEAN_KEYS = [
+  "autostart", "restartOnCrash", "attention", "worktree", "harness", "isolate", "catchUp",
+] as const;
+const STUDIO_FORM_KEYS = [
+  ...STUDIO_FORM_STRING_KEYS,
+  ...STUDIO_FORM_BOOLEAN_KEYS,
+  "kind", "schedTiming", "schedAction",
+];
+
+function isWorkspaceStudioSubmitInputV1(value: Record<string, unknown>): boolean {
+  const inputKeys = Object.keys(value);
+  if (!("state" in value)
+    || inputKeys.some((key) => key !== "state" && key !== "editingName")
+    || !isRecord(value.state)) return false;
+  if (value.editingName !== undefined
+    && (typeof value.editingName !== "string" || !AGENT_NAME_RE.test(value.editingName))) return false;
+  const state = value.state;
+  if (!hasOnlyKeys(state, STUDIO_FORM_KEYS)) return false;
+  if (STUDIO_FORM_STRING_KEYS.some((key) => typeof state[key] !== "string" || (state[key] as string).length > 32_768)) return false;
+  if (STUDIO_FORM_BOOLEAN_KEYS.some((key) => typeof state[key] !== "boolean")) return false;
+  return ["agent", "terminal", "command", "runbook", "schedule"].includes(state.kind as string)
+    && (state.schedTiming === "every" || state.schedTiming === "at")
+    && (state.schedAction === "run" || state.schedAction === "spawn");
 }
 
 /** Bundle paths are canonical POSIX relative paths on every host. */

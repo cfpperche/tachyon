@@ -282,3 +282,25 @@ None.
 - This is dependency isolation, not the final remote Studio implementation.  A later slice must provide a
   shell-local target backed by daemon projection plus the exact existing persistence semantics before the
   registry can replace the legacy Workspace during activation; production remains single-mode legacy here.
+
+## Fourteenth implementation slice — 2026-07-14
+
+- Added the exact, bounded `studio.submit` wire command for all five config-backed Studios.  The daemon
+  executes it through the existing authoritative `Workspace.studioSubmit` path, so validation, atomic YAML
+  mutation, reload, scheduler activation and newly-created autostart behavior are not reimplemented in the
+  editor shell.
+- Operation replay now fingerprints the complete canonical nested command.  Key order cannot split one
+  intent, while reusing an operation id with any changed form field fails with `OPERATION_ID_CONFLICT`.
+  The real server and deterministic fake share this single identity helper.
+- Added `ClientWorkspaceStudioTarget`: form population and best-effort suggestions remain local reads, but
+  every mutation crosses the authenticated `WorkspaceClient.invoke` seam with a fresh operation id.  An
+  invalid config preserves the last-known-good form state; a genuinely removed config clears it.
+- The five adapters retain their synchronous legacy behavior and also accept the remote async result.  The
+  focused protocol/control/client/real-daemon/Studio matrix passes 87/87; typecheck, extension build,
+  daemon import closure (156 files), engine-boundary and diff-check are green.
+- Packaged `systemd --user` dogfood converged two clients on one engine, persisted and replayed one remote
+  Studio command, started/killed a real agent through the same engine, reused the exact service after both
+  shells detached and left no unit/process/socket/tmux residue.
+- The production extension is still not wired to this target and no mixed-mode cutover was enabled.  The
+  first reviewable global proof (343 files, 4,068 passed, 3 skipped) remains current; no extra full run was
+  justified for this focused vertical slice.

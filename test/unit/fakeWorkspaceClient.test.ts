@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { FakeWorkspaceClient } from "../../src/shell/FakeWorkspaceClient.js";
 import { workspaceGitPresentationTarget, workspacePresentationTarget } from "../../src/shell/WorkspacePresentation.js";
+import { workspaceCommandSuccessV1 } from "../../src/engine-service/protocol.js";
 import { projectedAgent, projectionIdentity, projectionSnapshot } from "./fixtures/workspaceProjection.js";
 
 describe("FakeWorkspaceClient", () => {
@@ -13,7 +14,7 @@ describe("FakeWorkspaceClient", () => {
       invoke: async (operationId, command) => {
         executions += 1;
         expect(operationId).toBe("operation-fake-0001");
-        return { schemaVersion: 1, method: command.method, status: "ok" };
+        return workspaceCommandSuccessV1(command);
       },
     });
     const observed: number[] = [];

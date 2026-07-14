@@ -1,4 +1,5 @@
 import type { WorkspaceStudioTarget } from "../shell/WorkspacePresentation.js";
+import { mapStudioSubmitResult } from "./studioSubmit.js";
 import { fromRunbookDef } from "./formLogic.js";
 import type { StudioHostAdapter, StudioLoadResult, StudioSaveResult } from "./shared/studio/adapter.js";
 import { NO_VALIDATION_ERRORS, type StudioValidationResult } from "./shared/studio/errorTaxonomy.js";
@@ -45,11 +46,10 @@ export class RunbookStudioAdapter implements StudioHostAdapter<RunbookStudioEnti
     return NO_VALIDATION_ERRORS;
   }
 
-  save(entityId: string | undefined, patch: RunbookStudioPatch): StudioSaveResult {
-    const errors = this.ws.studioSubmit({ state: patch, editingName: entityId });
-    if (errors && errors.length > 0) {
-      return { status: "error", error: { code: "validation/runbook-save-failed", message: errors.join("; "), source: "validation" } };
-    }
-    return { status: "ok" };
+  save(entityId: string | undefined, patch: RunbookStudioPatch): StudioSaveResult | Promise<StudioSaveResult> {
+    return mapStudioSubmitResult(
+      this.ws.studioSubmit({ state: patch, editingName: entityId }),
+      "validation/runbook-save-failed",
+    );
   }
 }

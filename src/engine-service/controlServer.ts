@@ -3,6 +3,7 @@ import net from "node:net";
 import path from "node:path";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { ensureSecureRuntimeDir } from "../bridge/persistentProxyProtocol.js";
+import { workspaceCommandFingerprint } from "./commandIdentity.js";
 import {
   isEngineShellHelloV1,
   isEngineOperationId,
@@ -183,7 +184,7 @@ export async function startEngineControlServer(options: EngineControlServerOptio
     command: WorkspaceCommandV1,
     shellId: string,
   ): Promise<WorkspaceCommandResultV1> => {
-    const fingerprint = commandFingerprint(command);
+    const fingerprint = workspaceCommandFingerprint(command);
     const existing = operations.get(operationId);
     if (existing) {
       if (existing.fingerprint !== fingerprint) {
@@ -368,12 +369,6 @@ function commandFailure(
 ): WorkspaceCommandResultV1 {
   const bounded = message.replace(/\s+/g, " ").trim().slice(0, 1_000) || "engine command failed";
   return { schemaVersion: 1, method: command.method, status: "error", code, message: bounded };
-}
-
-function commandFingerprint(command: WorkspaceCommandV1): string {
-  return createHash("sha256")
-    .update(JSON.stringify([command.schemaVersion, command.method, command.input.agent]))
-    .digest("hex");
 }
 
 function respond(socket: net.Socket, response: EngineControlResponseV1): void {

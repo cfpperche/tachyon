@@ -4,7 +4,7 @@ _Generated from `plan.md` on 2026-07-14. Work top-to-bottom. No automatic integr
 
 ## Contract and inventory
 
-- [ ] Freeze the complete production inventory of shell code that constructs, disposes or directly reads
+- [x] Freeze the complete production inventory of shell code that constructs, disposes or directly reads
   concrete `Workspace`/manager/store objects; add a boundary test for the final forbidden set.
 - [ ] Freeze the allowlist of EngineHost state/settings/secrets/media/watch capabilities that the daemon
   must own or import; record migration source, destination and rollback for each key.
@@ -17,14 +17,14 @@ _Generated from `plan.md` on 2026-07-14. Work top-to-bottom. No automatic integr
   last-known-compatible rollback bundle; no runtime path points into the extension version directory.
 - [x] Implement `DaemonEngineHost` with atomic state/private-secret stores, daemon media resolution,
   locale substitution, durable notices/events and a Node watcher plus bounded polling fallback.
-- [ ] Evolve the persistent service entrypoint to construct/start exactly one `Workspace`, own the public
+- [x] Evolve the persistent service entrypoint to construct/start exactly one `Workspace`, own the public
   Bridge listener directly and expose health/attach/snapshot/events/invoke/explicit-stop control methods.
-- [ ] Make concurrent starters and duplicate attach/invoke operations converge by exact workspace,
+- [x] Make concurrent starters and duplicate attach/invoke operations converge by exact workspace,
   service-incarnation and operation identity.
 
 ## Shell cutover
 
-- [ ] Introduce `WorkspaceClient` and a remote implementation with full snapshot, monotonic event cursor,
+- [x] Introduce `WorkspaceClient` and a remote implementation with full snapshot, monotonic event cursor,
   reconnect/resync and typed command results; add a deterministic fake for presentation tests.
 - [ ] Migrate sidebar, Activity/Mission Control/Studios, commands, notifications and terminal presentation
   from concrete `Workspace` access to `WorkspaceClient` projections/actions.

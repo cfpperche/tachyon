@@ -28,11 +28,11 @@ import { expectedAgentClaudeEntry, expectedAgentOpencodeEntry } from "../registr
 import { adapterFor, binaryOf, harnessable, managesOwnSession } from "../resume/adapters.js";
 import { nodeCanSignal, nodeRuntimeOf } from "../pipeline/preflight.js";
 import os from "node:os";
-import { effectiveVerify, verifySteps, verifyStale, verifyBadge, worktreeUnchanged, suggestVerify, type VerifyState, type VerifyBadge } from "../worktree/verify.js";
+import { effectiveVerify, verifySteps, verifyStale, verifyBadge, worktreeUnchanged, type VerifyState, type VerifyBadge } from "../worktree/verify.js";
 import { EVIDENCE_SCHEMA_VERSION, VERIFY_PRODUCER, STEP_RESULT_KIND, summarizeEvidence, viewEvidence, isSafeArtifactRef, type WorktreeEvidence, type Severity, type EvidenceSummary, type EvidenceView } from "../worktree/evidence.js";
 import { copyEvidenceArtifacts } from "../worktree/evidenceArtifacts.js";
 import type { AttachEvidenceInput } from "../bridge/tools.js";
-import { detectStack, type DetectedProject } from "../init/initLogic.js";
+import { collectVerifyCandidates } from "../config/verifyCandidates.js";
 import { resolveCaptureId, resolveCaptureSession, resolveCurrentSession } from "../resume/resolvers.js";
 import { planResume, autoResumes, offers, type ResumePlanItem } from "../resume/planResume.js";
 import { LifecycleMonitor } from "../agents/LifecycleMonitor.js";
@@ -3492,22 +3492,7 @@ export class Workspace {
    * names. Offered as pick-or-edit chips; the human always has the final word (can type their own).
    */
   verifyCandidates(): string[] {
-    const manifests = ["package.json", "composer.json", "Cargo.toml", "go.mod", "pyproject.toml", "requirements.txt", "Gemfile"];
-    const files = manifests.filter((f) => fs.existsSync(path.join(this.workspaceRoot, f)));
-    let packageJson: DetectedProject["packageJson"];
-    if (files.includes("package.json")) {
-      try {
-        packageJson = JSON.parse(fs.readFileSync(path.join(this.workspaceRoot, "package.json"), "utf8"));
-      } catch {
-        /* unreadable/invalid → no script suggestions */
-      }
-    }
-    const readText = (f: string) => (files.includes(f) ? safeRead(path.join(this.workspaceRoot, f)) : undefined);
-    const stack = detectStack({ files, packageJson, composerJson: readText("composer.json"), gemfile: readText("Gemfile"), installedClis: [] });
-    const fromStack = suggestVerify(stack.label, packageJson?.scripts ?? {});
-    const commands = Object.keys(this.config?.commands ?? {});
-    const runbooks = Object.keys(this.config?.runbooks ?? {});
-    return [...new Set([...fromStack, ...commands, ...runbooks])];
+    return collectVerifyCandidates(this.workspaceRoot, this.config);
   }
 
   /**

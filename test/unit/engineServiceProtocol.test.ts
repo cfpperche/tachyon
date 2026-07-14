@@ -8,8 +8,11 @@ import {
   isWorkspaceCommandResultV1,
   isWorkspaceCommandV1,
   negotiateEngineShellProtocol,
+  workspaceCommandSuccessV1,
   type EngineBundleFileV1,
   type EngineBundleManifestV1,
+  type WorkspaceCommandV1,
+  type WorkspaceStudioFormV1,
 } from "../../src/engine-service/protocol.js";
 
 function hash(text: string): string {
@@ -80,4 +83,69 @@ describe("persistent engine protocol", () => {
       changed: false,
     })).toBe(false);
   });
+
+  it("validates the exact bounded Studio submit wire shape and result", () => {
+    const state = studioForm();
+    const command = {
+      schemaVersion: 1,
+      method: "studio.submit",
+      input: { state, editingName: "lint" },
+    } satisfies WorkspaceCommandV1;
+    expect(isWorkspaceCommandV1(command)).toBe(true);
+    expect(isWorkspaceCommandV1({ ...command, input: { state: { ...state, extra: true } } })).toBe(false);
+    const { cwd: _cwd, ...missing } = state;
+    expect(isWorkspaceCommandV1({ ...command, input: { state: missing } })).toBe(false);
+    expect(isWorkspaceCommandV1({ ...command, input: { state: { ...state, kind: "unknown" } } })).toBe(false);
+    expect(isWorkspaceCommandV1({ ...command, input: { state: { ...state, cmd: "x".repeat(32_769) } } })).toBe(false);
+    expect(isWorkspaceCommandV1({ ...command, input: { state, editingName: "../escape" } })).toBe(false);
+
+    const result = workspaceCommandSuccessV1(command, ["bad command"]);
+    expect(result).toEqual({
+      schemaVersion: 1,
+      method: "studio.submit",
+      status: "ok",
+      errors: ["bad command"],
+      truncated: false,
+    });
+    expect(isWorkspaceCommandResultV1(result)).toBe(true);
+    expect(isWorkspaceCommandResultV1({ schemaVersion: 1, method: "studio.submit", status: "ok" })).toBe(false);
+    expect(workspaceCommandSuccessV1(
+      command,
+      Array.from({ length: 51 }, (_, index) => `error-${index}`),
+    )).toMatchObject({ errors: expect.arrayContaining(["error-0"]), truncated: true });
+  });
 });
+
+function studioForm(): WorkspaceStudioFormV1 {
+  return {
+    name: "lint",
+    cmd: "npm run lint",
+    kind: "command",
+    instructions: "",
+    role: "",
+    watch: "",
+    steps: "",
+    cwd: "",
+    autostart: false,
+    restartOnCrash: false,
+    attention: false,
+    worktree: false,
+    branch: "",
+    worktreeSetup: "",
+    verify: "",
+    harness: false,
+    harnessInherit: "workspace",
+    harnessMcp: "",
+    harnessRules: "",
+    harnessInstructions: "",
+    harnessSkills: "",
+    harnessHooks: "",
+    isolate: false,
+    schedTiming: "every",
+    schedEvery: "1h",
+    schedAt: "09:00",
+    schedAction: "run",
+    schedTarget: "",
+    catchUp: false,
+  };
+}

@@ -64,17 +64,17 @@ describe("CommandStudioAdapter", () => {
     expect(adapter.load("frontend").status).toBe("not-found");
   });
 
-  it("delegates save to Workspace.studioSubmit with the edit name", () => {
+  it("delegates save to Workspace.studioSubmit with the edit name", async () => {
     const { ws, submits } = fakeWorkspace();
     const patch = { ...blankCommandFields(), name: "dev", cmd: "npm run dev" };
-    const result = new CommandStudioAdapter(ws).save("dev", patch);
+    const result = await new CommandStudioAdapter(ws).save("dev", patch);
     expect(result).toEqual({ status: "ok" });
     expect(submits).toEqual([{ state: patch, editingName: "dev" }]);
   });
 
-  it("surfaces studioSubmit validation failures", () => {
+  it("surfaces studioSubmit validation failures", async () => {
     const { ws } = fakeWorkspace({ submitResult: ["command: required"] });
-    const result = new CommandStudioAdapter(ws).save(undefined, { ...blankCommandFields(), name: "dev" });
+    const result = await new CommandStudioAdapter(ws).save(undefined, { ...blankCommandFields(), name: "dev" });
     expect(result.status).toBe("error");
     if (result.status !== "error") throw new Error("unreachable");
     expect(result.error).toMatchObject({ code: "validation/command-save-failed", source: "validation" });

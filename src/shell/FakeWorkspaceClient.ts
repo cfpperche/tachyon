@@ -9,6 +9,7 @@ import {
   type WorkspaceEventV1,
   type WorkspaceSnapshotEnvelopeV1,
 } from "../engine-service/protocol.js";
+import { workspaceCommandFingerprint } from "../engine-service/commandIdentity.js";
 import {
   assertWorkspacePresentationIdentity,
   projectWorkspacePresentation,
@@ -149,7 +150,7 @@ export class FakeWorkspaceClient implements WorkspaceClient {
     if (!isEngineOperationId(operationId) || !isWorkspaceCommandV1(command)) {
       return Promise.reject(new FakeWorkspaceClientError("INVALID_COMMAND", "workspace command or operation id is invalid"));
     }
-    const fingerprint = `${command.schemaVersion}\0${command.method}\0${command.input.agent}`;
+    const fingerprint = workspaceCommandFingerprint(command);
     const existing = this.operations.get(operationId);
     if (existing) {
       if (existing.fingerprint !== fingerprint) {

@@ -5,7 +5,7 @@ import path from "node:path";
 import { startEngineControlServer, type RunningEngineControlServer } from "../../src/engine-service/controlServer.js";
 import { EngineEventJournal } from "../../src/engine-service/eventJournal.js";
 import type { StagedEngineBundle } from "../../src/engine-service/engineBundleStore.js";
-import type { EngineServiceIdentityV1, WorkspaceSnapshotEnvelopeV1 } from "../../src/engine-service/protocol.js";
+import { workspaceCommandSuccessV1, type EngineServiceIdentityV1, type WorkspaceSnapshotEnvelopeV1 } from "../../src/engine-service/protocol.js";
 import { connectRemoteWorkspaceClient } from "../../src/shell/WorkspaceClient.js";
 import { workspaceHash } from "../../src/tmux/TmuxService.js";
 
@@ -44,7 +44,7 @@ describe("remote WorkspaceClient", () => {
       readEvents: (afterSeq, limit) => firstJournal.readAfter(afterSeq, limit),
       invoke: async (command) => {
         commandExecutions += 1;
-        return { schemaVersion: 1, method: command.method, status: "ok" };
+        return workspaceCommandSuccessV1(command);
       },
       leaseMs: 100,
       now: () => now,
@@ -263,7 +263,7 @@ describe("remote WorkspaceClient", () => {
         executions += 1;
         observedStart();
         await gate;
-        return { schemaVersion: 1, method: command.method, status: "ok" };
+        return workspaceCommandSuccessV1(command);
       },
     });
     servers.push(server);

@@ -5,12 +5,14 @@ import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { startEngineControlServer, type RunningEngineControlServer } from "../../src/engine-service/controlServer.js";
-import type {
-  EngineControlRequestV1,
-  EngineControlResponseV1,
-  EngineServiceIdentityV1,
-  EngineShellHelloV1,
+import {
+  workspaceCommandSuccessV1,
+  type EngineControlRequestV1,
+  type EngineControlResponseV1,
+  type EngineServiceIdentityV1,
+  type EngineShellHelloV1,
 } from "../../src/engine-service/protocol.js";
+import { blankCommandFields } from "../../src/webview/command-studio-shell/domain.js";
 
 const roots: string[] = [];
 const servers: RunningEngineControlServer[] = [];
@@ -196,10 +198,11 @@ describe("persistent engine shell control", () => {
       getSnapshot: f.snapshot,
       invoke: async (command) => {
         executions += 1;
+        if (command.method === "studio.submit") throw new Error("unexpected Studio command");
         if (command.input.agent === "failure") throw new Error("forced command failure");
         observedStart();
         await gate;
-        return { schemaVersion: 1, method: command.method, status: "ok" };
+        return workspaceCommandSuccessV1(command);
       },
     });
     servers.push(server);
@@ -284,6 +287,53 @@ describe("persistent engine shell control", () => {
     expect(await control(f.socketPath, { ...failureRequest, operationId: "operation-unauth-0001", sessionToken: "wrong" }))
       .toMatchObject({ ok: false, code: "SHELL_SESSION_INVALID" });
     expect(executions).toBe(2);
+  });
+
+  it("canonicalizes the nested Studio intent before idempotency comparison", async () => {
+    const f = fixture();
+    let executions = 0;
+    const server = await startEngineControlServer({
+      socketPath: f.socketPath,
+      identity: f.identity,
+      getSnapshot: f.snapshot,
+      invoke: async (command) => {
+        executions += 1;
+        return workspaceCommandSuccessV1(command);
+      },
+    });
+    servers.push(server);
+    const attach = await control(f.socketPath, {
+      schemaVersion: 1,
+      op: "attach",
+      workspaceHash: "abc12345",
+      hello: hello(f.root, "shell-studio"),
+    });
+    const state = { ...blankCommandFields(), name: "lint", cmd: "npm run lint" };
+    const request: EngineControlRequestV1 = {
+      schemaVersion: 1,
+      op: "invoke",
+      workspaceHash: "abc12345",
+      shellId: "shell-studio",
+      sessionToken: attachedToken(attach),
+      operationId: "operation-studio-0001",
+      command: { schemaVersion: 1, method: "studio.submit", input: { state } },
+    };
+    const first = await control(f.socketPath, request);
+    const reordered = Object.fromEntries(Object.entries(state).reverse()) as typeof state;
+    expect(await control(f.socketPath, {
+      ...request,
+      command: { input: { state: reordered }, method: "studio.submit", schemaVersion: 1 },
+    })).toEqual(first);
+    expect(executions).toBe(1);
+    expect(await control(f.socketPath, {
+      ...request,
+      command: {
+        schemaVersion: 1,
+        method: "studio.submit",
+        input: { state: { ...state, cmd: "npm run lint -- --fix" } },
+      },
+    })).toMatchObject({ ok: true, result: { status: "error", code: "OPERATION_ID_CONFLICT" } });
+    expect(executions).toBe(1);
   });
 });
 

@@ -87,12 +87,13 @@ describe("AgentStudioAdapter — validate", () => {
 });
 
 describe("AgentStudioAdapter — save", () => {
-  it("delegates to Workspace.studioSubmit (WRAPS toEntry/upsertAgent — no parallel write path)", () => {
+  it("delegates to Workspace.studioSubmit (WRAPS toEntry/upsertAgent — no parallel write path)", async () => {
     const { ws, submits } = fakeWorkspace({ submitResult: undefined });
     const adapter = new AgentStudioAdapter(ws);
     const patch = { ...blankAgentFields(), name: "frontend", cmd: "claude" };
     const result = adapter.save(undefined, patch);
-    expect(result).toEqual({ status: "ok" });
+    expect(result).not.toBeInstanceOf(Promise);
+    expect(await result).toEqual({ status: "ok" });
     expect(submits).toEqual([{ state: patch, editingName: undefined }]);
   });
 
@@ -104,10 +105,10 @@ describe("AgentStudioAdapter — save", () => {
     expect(submits[0]?.editingName).toBe("frontend");
   });
 
-  it("surfaces a studioSubmit failure as a blocking validation-source error, not a silent no-op", () => {
+  it("surfaces a studioSubmit failure as a blocking validation-source error, not a silent no-op", async () => {
     const { ws } = fakeWorkspace({ submitResult: ["name 'frontend' already exists"] });
     const adapter = new AgentStudioAdapter(ws);
-    const result = adapter.save(undefined, { ...blankAgentFields(), name: "frontend", cmd: "claude" });
+    const result = await adapter.save(undefined, { ...blankAgentFields(), name: "frontend", cmd: "claude" });
     expect(result.status).toBe("error");
     if (result.status !== "error") throw new Error("unreachable");
     expect(result.error.source).toBe("validation");

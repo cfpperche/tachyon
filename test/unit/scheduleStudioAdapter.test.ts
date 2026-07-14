@@ -68,24 +68,24 @@ describe("ScheduleStudioAdapter", () => {
     expect(adapter.load("ghost").status).toBe("not-found");
   });
 
-  it("delegates save to Workspace.studioSubmit with the edit name", () => {
+  it("delegates save to Workspace.studioSubmit with the edit name", async () => {
     const { ws, submits } = fakeWorkspace();
     const patch = { ...blankScheduleFields(), name: "hourly", schedTarget: "lint" };
-    const result = new ScheduleStudioAdapter(ws).save("hourly", patch);
+    const result = await new ScheduleStudioAdapter(ws).save("hourly", patch);
     expect(result).toEqual({ status: "ok" });
     expect(submits).toEqual([{ state: patch, editingName: "hourly" }]);
   });
 
-  it("preserves scheduler activation by saving through Workspace.studioSubmit", () => {
+  it("preserves scheduler activation by saving through Workspace.studioSubmit", async () => {
     const { ws, schedulerActivations } = fakeWorkspace({ activateOnSubmit: true });
     const patch = { ...blankScheduleFields(), name: "hourly", schedTarget: "lint" };
-    expect(new ScheduleStudioAdapter(ws).save(undefined, patch)).toEqual({ status: "ok" });
+    expect(await new ScheduleStudioAdapter(ws).save(undefined, patch)).toEqual({ status: "ok" });
     expect(schedulerActivations()).toBe(1);
   });
 
-  it("surfaces studioSubmit validation failures", () => {
+  it("surfaces studioSubmit validation failures", async () => {
     const { ws } = fakeWorkspace({ submitResult: ["target: required"] });
-    const result = new ScheduleStudioAdapter(ws).save(undefined, { ...blankScheduleFields(), name: "hourly" });
+    const result = await new ScheduleStudioAdapter(ws).save(undefined, { ...blankScheduleFields(), name: "hourly" });
     expect(result.status).toBe("error");
     if (result.status !== "error") throw new Error("unreachable");
     expect(result.error).toMatchObject({ code: "validation/schedule-save-failed", source: "validation" });

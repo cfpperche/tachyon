@@ -7,7 +7,7 @@ import { createHash } from "node:crypto";
 import { EngineControlClient } from "../../src/engine-service/controlClient.js";
 import { startEngineControlServer, type RunningEngineControlServer } from "../../src/engine-service/controlServer.js";
 import { EngineEventJournal } from "../../src/engine-service/eventJournal.js";
-import type { EngineServiceIdentityV1, EngineShellHelloV1 } from "../../src/engine-service/protocol.js";
+import { workspaceCommandSuccessV1, type EngineServiceIdentityV1, type EngineShellHelloV1 } from "../../src/engine-service/protocol.js";
 
 const roots: string[] = [];
 const servers: RunningEngineControlServer[] = [];
@@ -168,7 +168,7 @@ describe("EngineControlClient", () => {
       getSnapshot: f.snapshot,
       invoke: async (command) => {
         executions += 1;
-        return { schemaVersion: 1, method: command.method, status: "ok" };
+        return workspaceCommandSuccessV1(command);
       },
     });
     servers.push(server);

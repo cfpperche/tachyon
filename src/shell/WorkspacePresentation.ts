@@ -22,7 +22,7 @@ export interface WorkspaceGitPresentationTarget extends WorkspacePresentationTar
 export interface WorkspaceStudioTarget extends WorkspacePresentationTarget {
   readonly config: TachyonConfig | undefined;
   studioDeps(): StudioDeps;
-  studioSubmit(submit: StudioSubmit): string[] | undefined;
+  studioSubmit(submit: StudioSubmit): string[] | undefined | Promise<string[] | undefined>;
 }
 
 export function workspacePresentationTarget(client: WorkspaceClient): WorkspacePresentationTarget {

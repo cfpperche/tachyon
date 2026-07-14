@@ -8,6 +8,7 @@ import { createHash } from "node:crypto";
 import { EngineControlClient } from "../../src/engine-service/controlClient.js";
 import type { EngineServiceIdentityV1, EngineShellHelloV1, WorkspaceEventV1 } from "../../src/engine-service/protocol.js";
 import { TmuxService, workspaceHash } from "../../src/tmux/TmuxService.js";
+import { blankCommandFields } from "../../src/webview/command-studio-shell/domain.js";
 
 const roots: string[] = [];
 const children: ChildProcessWithoutNullStreams[] = [];
@@ -55,6 +56,28 @@ describe("daemon engine service", () => {
       bridge: { port: identity.bridge.port, instanceId: identity.bridge.instanceId, direct: true },
       agents: { total: 1, truncated: false, items: [{ name: "worker", declared: true, running: false }] },
     });
+
+    const beforeInvalidStudio = fs.readFileSync(configPath, "utf8");
+    const invalidStudio = await first.invoke("operation-studio-invalid-0001", {
+      schemaVersion: 1,
+      method: "studio.submit",
+      input: { state: { ...blankCommandFields(), name: "", cmd: "npm test" } },
+    });
+    expect(invalidStudio).toMatchObject({ method: "studio.submit", status: "ok", truncated: false });
+    if (invalidStudio.method !== "studio.submit" || invalidStudio.status !== "ok") throw new Error("unexpected Studio result");
+    expect(invalidStudio.errors).toEqual([expect.stringMatching(/name/i)]);
+    expect(fs.readFileSync(configPath, "utf8")).toBe(beforeInvalidStudio);
+
+    const createStudioCommand = {
+      schemaVersion: 1 as const,
+      method: "studio.submit" as const,
+      input: { state: { ...blankCommandFields(), name: "lint", cmd: "npm run lint" } },
+    };
+    const createdStudio = await first.invoke("operation-studio-create-0001", createStudioCommand);
+    expect(createdStudio).toEqual({ schemaVersion: 1, method: "studio.submit", status: "ok", errors: [], truncated: false });
+    expect(await first.invoke("operation-studio-create-0001", createStudioCommand)).toEqual(createdStudio);
+    expect(fs.readFileSync(configPath, "utf8")).toContain("lint:");
+    await waitForEvent(first, (event) => event.kind === "views-changed" && event.payload.view === "commands");
 
     const startCommand = { schemaVersion: 1 as const, method: "agent.start" as const, input: { agent: "worker" } };
     const started = await first.invoke("operation-engine-start-0001", startCommand);

@@ -1,4 +1,5 @@
 import type { WorkspaceStudioTarget } from "../shell/WorkspacePresentation.js";
+import { mapStudioSubmitResult } from "./studioSubmit.js";
 import { FLAG_SUGGESTIONS, fromDef, quickAddChips } from "./formLogic.js";
 import type { StudioHostAdapter, StudioLoadResult, StudioSaveResult } from "./shared/studio/adapter.js";
 import {
@@ -69,11 +70,10 @@ export class AgentStudioAdapter implements StudioHostAdapter<AgentStudioEntity, 
     return NO_VALIDATION_ERRORS;
   }
 
-  save(entityId: string | undefined, patch: AgentStudioPatch): StudioSaveResult {
-    const errors = this.ws.studioSubmit({ state: patch, editingName: entityId });
-    if (errors && errors.length > 0) {
-      return { status: "error", error: { code: "validation/agent-save-failed", message: errors.join("; "), source: "validation" } };
-    }
-    return { status: "ok" };
+  save(entityId: string | undefined, patch: AgentStudioPatch): StudioSaveResult | Promise<StudioSaveResult> {
+    return mapStudioSubmitResult(
+      this.ws.studioSubmit({ state: patch, editingName: entityId }),
+      "validation/agent-save-failed",
+    );
   }
 }

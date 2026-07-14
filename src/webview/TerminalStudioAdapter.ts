@@ -1,4 +1,5 @@
 import type { WorkspaceStudioTarget } from "../shell/WorkspacePresentation.js";
+import { mapStudioSubmitResult } from "./studioSubmit.js";
 import { FLAG_SUGGESTIONS, fromDef } from "./formLogic.js";
 import type { StudioHostAdapter, StudioLoadResult, StudioSaveResult } from "./shared/studio/adapter.js";
 import { NO_VALIDATION_ERRORS, type StudioValidationResult } from "./shared/studio/errorTaxonomy.js";
@@ -47,11 +48,10 @@ export class TerminalStudioAdapter implements StudioHostAdapter<TerminalStudioEn
     return NO_VALIDATION_ERRORS;
   }
 
-  save(entityId: string | undefined, patch: TerminalStudioPatch): StudioSaveResult {
-    const errors = this.ws.studioSubmit({ state: patch, editingName: entityId });
-    if (errors && errors.length > 0) {
-      return { status: "error", error: { code: "validation/terminal-save-failed", message: errors.join("; "), source: "validation" } };
-    }
-    return { status: "ok" };
+  save(entityId: string | undefined, patch: TerminalStudioPatch): StudioSaveResult | Promise<StudioSaveResult> {
+    return mapStudioSubmitResult(
+      this.ws.studioSubmit({ state: patch, editingName: entityId }),
+      "validation/terminal-save-failed",
+    );
   }
 }

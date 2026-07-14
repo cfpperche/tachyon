@@ -52,17 +52,17 @@ describe("RunbookStudioAdapter", () => {
     expect(adapter.load("ghost").status).toBe("not-found");
   });
 
-  it("delegates save to Workspace.studioSubmit with the edit name", () => {
+  it("delegates save to Workspace.studioSubmit with the edit name", async () => {
     const { ws, submits } = fakeWorkspace();
     const patch = { ...blankRunbookFields(), name: "ship", steps: "lint\ntest" };
-    const result = new RunbookStudioAdapter(ws).save("ship", patch);
+    const result = await new RunbookStudioAdapter(ws).save("ship", patch);
     expect(result).toEqual({ status: "ok" });
     expect(submits).toEqual([{ state: patch, editingName: "ship" }]);
   });
 
-  it("surfaces studioSubmit validation failures", () => {
+  it("surfaces studioSubmit validation failures", async () => {
     const { ws } = fakeWorkspace({ submitResult: ["steps: required"] });
-    const result = new RunbookStudioAdapter(ws).save(undefined, { ...blankRunbookFields(), name: "ship" });
+    const result = await new RunbookStudioAdapter(ws).save(undefined, { ...blankRunbookFields(), name: "ship" });
     expect(result.status).toBe("error");
     if (result.status !== "error") throw new Error("unreachable");
     expect(result.error).toMatchObject({ code: "validation/runbook-save-failed", source: "validation" });

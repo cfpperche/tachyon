@@ -12,6 +12,7 @@ import {
   ENGINE_SHELL_PROTOCOL,
   isEngineServiceIdentityV1,
   isSha256,
+  workspaceCommandSuccessV1,
   type EngineServiceIdentityV1,
   type WorkspaceCommandResultV1,
   type WorkspaceCommandV1,
@@ -131,6 +132,9 @@ async function executeWorkspaceCommand(
   workspace: Workspace,
   command: WorkspaceCommandV1,
 ): Promise<WorkspaceCommandResultV1> {
+  if (command.method === "studio.submit") {
+    return workspaceCommandSuccessV1(command, workspace.studioSubmit(command.input));
+  }
   const agent = command.input.agent;
   switch (command.method) {
     case "agent.start":
@@ -149,7 +153,7 @@ async function executeWorkspaceCommand(
       await workspace.resumeAgent(agent);
       break;
   }
-  return { schemaVersion: 1, method: command.method, status: "ok" };
+  return workspaceCommandSuccessV1(command);
 }
 
 class EngineProjectionCoordinator {

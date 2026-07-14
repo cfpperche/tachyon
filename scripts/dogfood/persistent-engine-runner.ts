@@ -11,8 +11,11 @@ import {
   ensureDaemonEngine,
 } from "../../src/engine-service/engineSupervisor.js";
 import type { EngineServiceIdentityV1 } from "../../src/engine-service/protocol.js";
-import { connectRemoteWorkspaceClient } from "../../src/shell/WorkspaceClient.js";
+import { connectRemoteWorkspaceClient, type WorkspaceClient } from "../../src/shell/WorkspaceClient.js";
+import { ClientWorkspaceStudioTarget } from "../../src/shell/ClientWorkspaceStudioTarget.js";
 import { TmuxService } from "../../src/tmux/TmuxService.js";
+import { blankCommandFields } from "../../src/webview/command-studio-shell/domain.js";
+import type { StudioDeps } from "../../src/webview/studioSubmit.js";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-engine-dogfood-"));
 const workspaceRoot = path.join(root, "workspace");
@@ -22,7 +25,7 @@ for (const directory of [workspaceRoot, storageRoot]) fs.mkdirSync(directory, { 
 fs.writeFileSync(path.join(workspaceRoot, "tachyon.yml"), [
   "agents:",
   "  dogfood-worker:",
-  "    cmd: sh",
+  "    cmd: sleep 300",
   "    autostart: false",
   "",
 ].join("\n"), "utf8");
@@ -77,22 +80,31 @@ try {
   if (snapshot.engineInstanceId !== identity.instanceId || second.snapshot.engineInstanceId !== identity.instanceId) {
     throw new Error("shell attach/snapshot crossed engine identities");
   }
+  const studio = new ClientWorkspaceStudioTarget(first, {
+    extensionUri: {} as StudioDeps["extensionUri"],
+    detectClis: async () => [],
+    operationId: () => "dogfood-operation-studio-0001",
+  });
+  const studioSubmit = { state: { ...blankCommandFields(), name: "dogfood-check", cmd: "printf dogfood" } };
+  if (await studio.studioSubmit(studioSubmit) !== undefined
+    || await studio.studioSubmit(studioSubmit) !== undefined
+    || studio.config?.commands["dogfood-check"]?.cmd !== "printf dogfood") {
+    throw new Error("idempotent remote Studio submit did not persist through the engine");
+  }
   const startCommand = { schemaVersion: 1 as const, method: "agent.start" as const, input: { agent: "dogfood-worker" } };
   const started = await first.invoke("dogfood-operation-start-0001", startCommand);
-  if (started.status !== "ok" || (await first.invoke("dogfood-operation-start-0001", startCommand)).status !== "ok") {
-    throw new Error("idempotent remote agent start failed");
+  const replayedStart = await first.invoke("dogfood-operation-start-0001", startCommand);
+  if (started.status !== "ok" || replayedStart.status !== "ok") {
+    throw new Error(`idempotent remote agent start failed: ${JSON.stringify({ started, replayedStart })}`);
   }
-  if (!agentRunning((await first.sync()).snapshot, "dogfood-worker")) {
-    throw new Error("remote agent start did not reach the engine projection");
-  }
+  await waitForAgentProjection(first, "dogfood-worker", true);
   const killed = await first.invoke("dogfood-operation-kill-0001", {
     schemaVersion: 1,
     method: "agent.kill",
     input: { agent: "dogfood-worker" },
   });
-  if (killed.status !== "ok" || agentRunning((await first.sync()).snapshot, "dogfood-worker")) {
-    throw new Error("remote agent kill did not reach the engine projection");
-  }
+  if (killed.status !== "ok") throw new Error(`remote agent kill failed: ${JSON.stringify(killed)}`);
+  await waitForAgentProjection(first, "dogfood-worker", false);
   await Promise.all([first.close(), second.close()]);
 
   const reused = await ensureDaemonEngine(ensureOptions);
@@ -116,7 +128,7 @@ try {
     engine: { pid: identity.pid, instanceId: identity.instanceId, bundleId: identity.bundleId },
     bridge: identity.bridge,
     snapshotSeq: snapshot.seq,
-    commands: [started.method, killed.method],
+    commands: ["studio.submit", started.method, killed.method],
   }, null, 2)}\n`);
 } finally {
   try { execFileSync("systemctl", ["--user", "stop", unitName], { stdio: "ignore" }); } catch { /* absent/failed unit */ }
@@ -162,4 +174,21 @@ function agentRunning(snapshot: { projections: Record<string, unknown> }, name: 
   if (!projection || typeof projection !== "object" || !Array.isArray((projection as { items?: unknown }).items)) return false;
   return ((projection as { items: Array<{ name?: unknown; running?: unknown }> }).items)
     .some((agent) => agent.name === name && agent.running === true);
+}
+
+async function waitForAgentProjection(
+  client: WorkspaceClient,
+  name: string,
+  running: boolean,
+  timeoutMs = 3_000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  let observed: unknown;
+  while (Date.now() < deadline) {
+    const snapshot = (await client.sync()).snapshot;
+    observed = snapshot.projections.agents;
+    if (agentRunning(snapshot, name) === running) return;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`remote agent projection did not converge to running=${running}: ${JSON.stringify(observed)}`);
 }
