@@ -668,6 +668,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       failDeliveryJoin?: (name: string, request: any, prepared: any, error: unknown) => Promise<void>;
       /** SDD 368 T14 — snapshot deny set for marker-less crash-window agents. */
       isDeliveryLifecycleDenied?: (name: string) => boolean;
+      failNewSession?: boolean;
     } = {},
   ) {
     const ws = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-am-"));
@@ -688,6 +689,7 @@ describe("AgentManager — session resume (spec 209)", () => {
         return args[i + 1].replace(/^=/, "").replace(/:$/, "");
       };
       if (args.includes("new-session")) {
+        if (opts.failNewSession) throw new Error("injected downstream newSession failure");
         sessions.add(args[args.indexOf("-s") + 1]);
         applyTmuxEnvToSession(sessionEnv, args);
         cmds.push(args[args.length - 1]);
@@ -1836,6 +1838,17 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(sessions.has(`tachyon-${hash}-reviewer`)).toBe(true);
     expect(respawnArgs).toEqual([]);
     expect(ledger.get("reviewer")?.identity).toEqual(before);
+    expect(fs.readdirSync(path.join(ws, ".tachyon", "agent-profile-transactions", "launch-reservations"))).toEqual([]);
+  });
+
+  it("cleans an already-created soul reservation when downstream session launch fails", async () => {
+    const { manager, ws } = resumeHarness("agents:\n  reviewer:\n    cmd: codex\n    soul: true\n", { failNewSession: true });
+    const profile = path.join(ws, ".tachyon", "agents", "reviewer");
+    fs.mkdirSync(profile, { recursive: true, mode: 0o700 });
+    fs.writeFileSync(path.join(profile, "SOUL.md"), "Exact identity", { mode: 0o600 });
+    fs.writeFileSync(path.join(profile, "profile.json"), JSON.stringify({ schemaVersion: 1, profileId: "123e4567-e89b-42d3-a456-426614174000", owner: "reviewer", state: "active" }), { mode: 0o600 });
+
+    await expect(manager.spawn("reviewer")).rejects.toThrow("injected downstream newSession failure");
     expect(fs.readdirSync(path.join(ws, ".tachyon", "agent-profile-transactions", "launch-reservations"))).toEqual([]);
   });
 
