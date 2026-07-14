@@ -568,6 +568,11 @@ export class HarnessManager {
       this.materializeSkills(agent, def, home);
       return { home, env: { [h.configHomeEnv]: this.grokHome(home), ...secretEnv }, args };
     }
+    if (adapter.runtime === "hermes") {
+      // HERMES_HOME is the harness home itself (config.yaml + auth + skills under the same root).
+      this.materializeSkills(agent, def, home);
+      return { home, env: { [h.configHomeEnv]: home, ...secretEnv }, args };
+    }
     if (adapter.runtime === "codex") {
       this.materializeCodexInstructions(agent, def, home);
       this.materializeSkills(agent, def, home);

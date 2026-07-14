@@ -249,3 +249,4 @@ mcp_servers:
 |------|--------|
 | 2026-07-13 | Initial inventory from install + Codex OAuth smoke + code/docs seam read. Hermes **not** first-class; native CLI strong; Tachyon wiring absent. |
 | 2026-07-13 | Secondary promotion on branch `feat/hermes-runtime-parity`: Brief env, Resume, Bridge `HERMES_HOME`, harness, profile. Activity residual. |
+| 2026-07-13 | Agent Studio Isolated harness form: show for grok/hermes/opencode (was claude/codex-only); loadConfig accepts harness on grok/hermes. |

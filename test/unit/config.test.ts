@@ -463,8 +463,35 @@ describe("parseConfig", () => {
       expect(errors.some((e) => e.includes("codex requires the env key to match its reference"))).toBe(true);
     });
 
-    it("rejects harness on a non-claude/codex/opencode agent (v1)", () => {
-      expect(parseConfig(`agents:\n  c:\n    cmd: gemini\n    harness:\n      mcp:\n        s:\n          command: x\n`).errors.some((e) => e.includes("only supported for claude/codex/opencode agents"))).toBe(true);
+    it("rejects harness on a non-harnessable agent (v1)", () => {
+      expect(
+        parseConfig(`agents:\n  c:\n    cmd: gemini\n    harness:\n      mcp:\n        s:\n          command: x\n`).errors.some((e) =>
+          e.includes("only supported for claude/codex/opencode/grok/hermes"),
+        ),
+      ).toBe(true);
+    });
+
+    it("accepts harness on grok and hermes (private home + mcp/skills/hooks)", () => {
+      for (const bin of ["grok", "hermes"]) {
+        const empty = parseConfig(`agents:\n  a:\n    cmd: ${bin}\n    harness: {}\n`);
+        expect(empty.errors).toEqual([]);
+        expect(empty.config?.agents.a.harness).toEqual({ inherit: "workspace" });
+
+        const withMcp = parseConfig(
+          `agents:\n  a:\n    cmd: ${bin}\n    harness:\n      mcp:\n        s:\n          command: x\n      skills: ["skills/research"]\n`,
+        );
+        expect(withMcp.errors).toEqual([]);
+        expect(withMcp.config?.agents.a.harness?.mcp?.s.command).toBe("x");
+        expect(withMcp.config?.agents.a.harness?.skills).toEqual(["skills/research"]);
+
+        const bad = parseConfig(`agents:\n  a:\n    cmd: ${bin}\n    harness:\n      rules: ["r.md"]\n      mcp:\n        s:\n          command: x\n`);
+        expect(bad.errors.some((e) => e.includes("does not support 'rules'/'instructions'"))).toBe(true);
+
+        const owned = parseConfig(
+          `agents:\n  a:\n    cmd: ${bin}\n    env:\n      ${bin === "grok" ? "GROK_HOME" : "HERMES_HOME"}: /tmp/x\n    harness:\n      mcp:\n        s:\n          command: x\n`,
+        );
+        expect(owned.errors.some((e) => e.includes("Tachyon owns the config home"))).toBe(true);
+      }
     });
 
     it("spec t-e2ebe3: accepts harness on an opencode agent (XDG layout)", () => {

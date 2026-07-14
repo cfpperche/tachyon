@@ -465,10 +465,13 @@ function parseHarness(name: string, raw: unknown, cmd: string, env: Record<strin
     return undefined;
   }
   const binary = binaryOf(cmd);
-  // spec t-e2ebe3 — opencode joins claude/codex as harnessable. It uses an XDG layout (the adapter's
-  // `harness.xdg` shape) so the user must not own the XDG_*_HOME plumbing (H4 analogue).
-  if (binary !== "claude" && binary !== "codex" && binary !== "opencode") {
-    errors.push(`agents.${name}.harness: only supported for claude/codex/opencode agents in v1 (got '${binary || cmd}')`);
+  // Harnessable CLIs with a ResumeAdapter.harness shape: claude, codex, opencode (XDG), grok, hermes.
+  // Others fail closed (gemini/agy/… have no private-home materializer yet).
+  const HARNESS_BINS = new Set(["claude", "codex", "opencode", "grok", "hermes"]);
+  if (!HARNESS_BINS.has(binary)) {
+    errors.push(
+      `agents.${name}.harness: only supported for claude/codex/opencode/grok/hermes agents (got '${binary || cmd}')`,
+    );
     return undefined;
   }
   // H4 — Tachyon owns CLAUDE_CONFIG_DIR + the strict-mcp flags for a harness agent. Match both the
@@ -483,7 +486,16 @@ function parseHarness(name: string, raw: unknown, cmd: string, env: Record<strin
       }
     }
   }
-  const ownedEnv = binary === "codex" ? "CODEX_HOME" : binary === "opencode" ? undefined : "CLAUDE_CONFIG_DIR";
+  const ownedEnv =
+    binary === "codex"
+      ? "CODEX_HOME"
+      : binary === "grok"
+        ? "GROK_HOME"
+        : binary === "hermes"
+          ? "HERMES_HOME"
+          : binary === "opencode"
+            ? undefined
+            : "CLAUDE_CONFIG_DIR";
   // spec t-e2ebe3 — opencode's harness redirects XDG_CONFIG/DATA/STATE_HOME and (for a non-harness opencode
   // agent) sets OPENCODE_CONFIG; ALL are Tachyon-owned, so reject a user-declared any of them (H4).
   if (binary === "opencode") {
@@ -512,12 +524,13 @@ function parseHarness(name: string, raw: unknown, cmd: string, env: Record<strin
     if (unsupported.length > 0) {
       errors.push(`agents.${name}.harness: codex does not support 'rules'; use 'instructions' for AGENTS.md guidance`);
     }
-  } else if (binary === "opencode") {
-    // spec t-e2ebe3 — v1 opencode harness: mcp/skills/hooks only (no claude CLAUDE.md `rules` or codex
-    // AGENTS.md `instructions`; opencode has no custom instruction-file convention materialized yet).
+  } else if (binary === "opencode" || binary === "grok" || binary === "hermes") {
+    // opencode/grok/hermes v1 harness: mcp/skills/hooks only (no CLAUDE.md `rules` or codex AGENTS.md `instructions`).
     const unsupported = ["rules", "instructions"].filter((key) => raw[key] !== undefined);
     if (unsupported.length > 0) {
-      errors.push(`agents.${name}.harness: opencode does not support 'rules'/'instructions' in v1 (use 'mcp'/'skills'/'hooks')`);
+      errors.push(
+        `agents.${name}.harness: ${binary} does not support 'rules'/'instructions' in v1 (use 'mcp'/'skills'/'hooks')`,
+      );
     }
   } else if (raw.instructions !== undefined) {
     errors.push(`agents.${name}.harness.instructions: only supported for codex agents; use 'rules' for claude`);
@@ -630,12 +643,16 @@ function parseHarness(name: string, raw: unknown, cmd: string, env: Record<strin
   const skills = parsePathList("skills");
   if (skills) harness.skills = skills;
 
-  // At least one capability must actually be ACCEPTED, except for Claude's now-explicit `harness: {}` private
-  // home replacement for deprecated `isolate: transcript`. spec t-e2ebe3 — opencode `harness: {}` is the
-  // same "private home + Bridge only" opt-in (its XDG layout gives transcript isolation independent of cwd,
-  // and HarnessManager folds the Bridge MCP into the materialized XDG_CONFIG_HOME/opencode/opencode.json).
+  // At least one capability must actually be ACCEPTED, except for explicit `harness: {}` private-home
+  // opt-in (claude isolate-transcript replacement; opencode/grok/hermes private home + Bridge only).
+  // Codex still requires at least one capability (it is already private-home by default).
   if (!harness.mcp && !harness.hooks && !harness.rules && !harness.instructions && !harness.skills) {
-    if ((binary === "claude" || binary === "opencode") && Object.keys(raw).length === 0) return harness;
+    if (
+      (binary === "claude" || binary === "opencode" || binary === "grok" || binary === "hermes") &&
+      Object.keys(raw).length === 0
+    ) {
+      return harness;
+    }
     errors.push(`agents.${name}.harness: declare at least one of mcp, skills, rules, instructions, hooks`);
     return undefined;
   }

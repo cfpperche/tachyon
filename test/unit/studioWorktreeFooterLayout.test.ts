@@ -19,6 +19,8 @@ describe("t-a1ba6c studio worktree sections are in-flow fields (not sideActions 
     const src = readSrc("src/webview/agent-studio-shell/App.tsx");
     expect(src).toContain("Git worktree isolation");
     expect(src).toContain("Isolated harness");
+    // harness form is not claude/codex-only — grok/hermes/opencode chips must surface the section
+    expect(src).toMatch(/HARNESS_STUDIO_BINS|grok.*hermes|\"grok\".*\"hermes\"/);
     expect(src).toContain("ash-cwd");
     // worktree markup is inside the fields region tree, not a sideActions prop
     expect(src).not.toMatch(/sideActions\s*:/);

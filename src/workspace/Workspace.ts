@@ -231,9 +231,14 @@ const issueMessage = (issue: { code: string; param?: string }, t: Translate): st
     case "instructions-not-deliverable":
       return t("note: this CLI doesn't accept a startup prompt — instructions will be saved but not auto-delivered");
     case "harness-claude-only":
-      return t("isolated harness: supported for Claude/Codex agents only");
+      return t("isolated harness: supported for Claude, Codex, OpenCode, Grok, and Hermes agents only");
     case "codex-harness-mcp-only":
       return t("isolated harness: Codex does not support rules; use instruction files instead");
+    case "harness-home-config-only":
+      return t(
+        "isolated harness: {0} supports MCP / skills / hooks only (no rules or instruction files)",
+        issue.param ?? "this runtime",
+      );
     case "harness-empty":
       return t("isolated harness: declare at least one of MCP / rules / skills / hooks");
     case "harness-mcp-invalid":
