@@ -438,6 +438,75 @@ describe("HarnessManager materialize (fs)", () => {
     expect(fs.readFileSync(realAuth, "utf8")).toBe('{"token":"GROK"}');
   });
 
+  it("reconcileWorkspaceGrokAuth promotes the freshest multi-agent OIDC key and re-symlinks every private home", () => {
+    const realGrokHome = path.join(path.dirname(ws), "real-grok-multi");
+    fs.mkdirSync(realGrokHome, { recursive: true });
+    const realAuth = path.join(realGrokHome, "auth.json");
+    fs.writeFileSync(
+      realAuth,
+      JSON.stringify({
+        "https://auth.x.ai::old": {
+          key: "OLD_KEY",
+          auth_mode: "oidc",
+          create_time: "2026-07-13T12:00:00.000Z",
+        },
+      }),
+    );
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), undefined, undefined, undefined, realGrokHome);
+    const bridge = {
+      type: "http",
+      url: "http://127.0.0.1:9/mcp",
+      headers: { Authorization: "Bearer ${TACHYON_AGENT_BRIDGE_TOKEN}" },
+    };
+
+    const homeA = mgr.materializeBridgeMcpGrok("alpha", bridge);
+    const homeB = mgr.materializeBridgeMcpGrok("beta", bridge);
+    // Simulate Grok token refresh: replace each symlink with a distinct regular file (newer OIDC create_time wins).
+    const authA = path.join(homeA, "auth.json");
+    const authB = path.join(homeB, "auth.json");
+    fs.unlinkSync(authA);
+    fs.unlinkSync(authB);
+    fs.writeFileSync(
+      authA,
+      JSON.stringify({
+        "https://auth.x.ai::scope": {
+          key: "KEY_A",
+          auth_mode: "oidc",
+          create_time: "2026-07-14T10:00:00.000Z",
+        },
+      }),
+    );
+    fs.writeFileSync(
+      authB,
+      JSON.stringify({
+        "https://auth.x.ai::scope": {
+          key: "KEY_B_NEWEST",
+          auth_mode: "oidc",
+          create_time: "2026-07-14T11:00:00.000Z",
+        },
+      }),
+    );
+    // mtime trap: make A look "newer" on disk while B has the fresher OIDC create_time.
+    const older = new Date("2026-07-14T10:00:00.000Z");
+    const newerMtime = new Date("2026-07-14T12:00:00.000Z");
+    fs.utimesSync(authB, older, older);
+    fs.utimesSync(authA, newerMtime, newerMtime);
+
+    const result = mgr.reconcileGrokAuthFromWorkspace();
+    expect(result.promoted).toBe(true);
+    expect(result.relinked).toBeGreaterThanOrEqual(2);
+
+    const real = JSON.parse(fs.readFileSync(realAuth, "utf8")) as { "https://auth.x.ai::scope": { key: string } };
+    expect(real["https://auth.x.ai::scope"].key).toBe("KEY_B_NEWEST");
+    expect(fs.lstatSync(authA).isSymbolicLink()).toBe(true);
+    expect(fs.lstatSync(authB).isSymbolicLink()).toBe(true);
+    expect(fs.readlinkSync(authA)).toBe(realAuth);
+    expect(fs.readlinkSync(authB)).toBe(realAuth);
+    // Both agents now read the same promoted credential.
+    expect(fs.readFileSync(authA, "utf8")).toBe(fs.readFileSync(realAuth, "utf8"));
+    expect(fs.readFileSync(authB, "utf8")).toBe(fs.readFileSync(realAuth, "utf8"));
+  });
+
   it("t-303f2b: defaultRealGrokHome ignores Tachyon-managed private GROK_HOME overrides", () => {
     expect(isTachyonManagedGrokHome("/ws/.tachyon/bridge-mcp/agent.grok")).toBe(true);
     expect(isTachyonManagedGrokHome("/ws/.tachyon/harness/agent/.grok")).toBe(true);
@@ -458,18 +527,34 @@ describe("HarnessManager materialize (fs)", () => {
     ).toThrow(/credentials unreadable|not a JSON object|Unexpected token|not-json|JSON/i);
   });
 
-  it("t-843576: materializeBridgeMcpGrok fails closed when real grok auth is missing", () => {
+  it("t-843576: materializeBridgeMcpGrok fails closed when no real and no private grok auth exist", () => {
     const emptyGrok = path.join(path.dirname(ws), "empty-grok");
     fs.mkdirSync(emptyGrok, { recursive: true });
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), undefined, undefined, undefined, emptyGrok);
+    expect(() =>
+      mgr.materializeBridgeMcpGrok("solo", { url: "http://127.0.0.1:9/mcp", headers: { Authorization: "Bearer ${TACHYON_AGENT_BRIDGE_TOKEN}" } }),
+    ).toThrow(HarnessUnavailableError);
+  });
+
+  it("materializeBridgeMcpGrok recovers when real auth is missing but a private regular auth exists", () => {
+    // Dogfood: Grok login under redirected GROK_HOME left tokens only in the private home; real
+    // ~/.grok/auth.json was never updated. Stop/resume must promote private → real, not fail closed.
+    const emptyGrok = path.join(path.dirname(ws), "empty-grok-recover");
+    fs.mkdirSync(emptyGrok, { recursive: true });
+    const realAuth = path.join(emptyGrok, "auth.json");
     const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), undefined, undefined, undefined, emptyGrok);
     const privateAuth = path.join(bridgeGrokHome(ws, "solo"), "auth.json");
     fs.mkdirSync(path.dirname(privateAuth), { recursive: true });
     fs.writeFileSync(privateAuth, '{"token":"PRIVATE_ONLY"}');
-    expect(() =>
-      mgr.materializeBridgeMcpGrok("solo", { url: "http://127.0.0.1:9/mcp", headers: { Authorization: "Bearer ${TACHYON_AGENT_BRIDGE_TOKEN}" } }),
-    ).toThrow(HarnessUnavailableError);
-    expect(fs.lstatSync(privateAuth).isFile()).toBe(true);
-    expect(fs.readFileSync(privateAuth, "utf8")).toBe('{"token":"PRIVATE_ONLY"}');
+
+    const home = mgr.materializeBridgeMcpGrok("solo", {
+      url: "http://127.0.0.1:9/mcp",
+      headers: { Authorization: "Bearer ${TACHYON_AGENT_BRIDGE_TOKEN}" },
+    });
+    expect(home).toBe(bridgeGrokHome(ws, "solo"));
+    expect(fs.readFileSync(realAuth, "utf8")).toBe('{"token":"PRIVATE_ONLY"}');
+    expect(fs.lstatSync(privateAuth).isSymbolicLink()).toBe(true);
+    expect(fs.readlinkSync(privateAuth)).toBe(realAuth);
   });
 
   it("setHermesMcpServer merges tachyon_bridge into config.yaml without secrets", () => {

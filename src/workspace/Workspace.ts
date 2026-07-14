@@ -677,8 +677,13 @@ export class Workspace {
         this.adhocBackstop.reset(name);
         deps.onViewsChanged("agents");
       },
-      onStopping: () => deps.onViewsChanged("agents"),
+      onStopping: (name) => {
+        // Grok replaces auth.json symlink with a regular file on token refresh — harvest before teardown.
+        this.reconcileGrokAuthIfGrokAgent(name);
+        deps.onViewsChanged("agents");
+      },
       onKilled: (name) => {
+        this.reconcileGrokAuthIfGrokAgent(name);
         this.terminals.close(name);
         this.pendingAnchor.delete(name); // spec 216: don't carry a re-anchor flag past the session
         this.agentIncarnations.delete(name);
@@ -2891,6 +2896,29 @@ export class Workspace {
       this.deps.onViewsChanged("agents");
       this.deps.onViewsChanged("commands");
     }, 250);
+  }
+
+  /**
+   * Grok token refresh under a private GROK_HOME replaces `auth.json` (symlink → regular file).
+   * On stop/kill, harvest the freshest private credential into `~/.grok/auth.json` and re-symlink
+   * every private home so resume / sibling agents do not hit a re-login wall with a revoked key.
+   */
+  private reconcileGrokAuthIfGrokAgent(name: string): void {
+    try {
+      const cmd = this.manager.definitionOf(name)?.cmd ?? "";
+      const runtime = this.ledger.get(name)?.resume?.runtime;
+      const isGrok = binaryOf(cmd) === "grok" || runtime === "grok";
+      // Also cover ad-hoc / ledger-only rows where cmd is empty but the private home exists.
+      if (!isGrok && !fs.existsSync(path.join(this.root, ".tachyon", "bridge-mcp", `${name}.grok`, "auth.json"))) {
+        return;
+      }
+      this.harness.reconcileGrokAuthFromWorkspace();
+    } catch (err) {
+      this.deps.notify?.(
+        `grok auth reconcile failed for '${name}': ${err instanceof Error ? err.message : String(err)}`,
+        "warn",
+      );
+    }
   }
 
   /**

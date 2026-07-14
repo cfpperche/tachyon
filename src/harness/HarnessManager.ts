@@ -160,21 +160,187 @@ function isReadableJsonObjectFile(file: string): boolean {
   }
 }
 
-function promoteNewerPrivateAuth(privateAuth: string, realAuth: string): void {
+/**
+ * Grok (and Hermes) write `auth.json` via create+rename under a redirected home, which **replaces**
+ * a symlink with a regular file. OIDC refresh tokens are typically single-use / rotate: each private
+ * home can end up with a *different* live key, and only the newest is valid server-side.
+ * Ranking uses OIDC `create_time` when present (more accurate than mtime after copies).
+ */
+export function authCredentialRank(file: string): { mtimeMs: number; createTimeMs: number } {
+  let mtimeMs = 0;
+  try {
+    mtimeMs = fs.statSync(file).mtimeMs;
+  } catch {
+    return { mtimeMs: 0, createTimeMs: 0 };
+  }
+  let createTimeMs = 0;
+  try {
+    const parsed = JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, unknown>;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      for (const value of Object.values(parsed)) {
+        if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+        const ct = (value as { create_time?: unknown }).create_time;
+        if (typeof ct !== "string") continue;
+        const ms = Date.parse(ct);
+        if (Number.isFinite(ms) && ms > createTimeMs) createTimeMs = ms;
+      }
+    }
+  } catch {
+    /* rank by mtime only */
+  }
+  return { mtimeMs, createTimeMs };
+}
+
+function authRankBetter(a: { mtimeMs: number; createTimeMs: number }, b: { mtimeMs: number; createTimeMs: number }): boolean {
+  if (a.createTimeMs !== b.createTimeMs) return a.createTimeMs > b.createTimeMs;
+  return a.mtimeMs > b.mtimeMs;
+}
+
+/**
+ * If `privateAuth` is a regular file newer/fresher than `realAuth`, copy it onto the real path
+ * (mode 600). No-op for missing/symlink/unreadable private files. Used by rematerialize and by
+ * workspace-wide reconcile so stop/resume does not strand fresh tokens in a per-agent home.
+ */
+export function promoteNewerPrivateAuth(privateAuth: string, realAuth: string): boolean {
   let privateStat: fs.Stats;
   try {
     privateStat = fs.lstatSync(privateAuth);
   } catch (e) {
-    if (isErrnoCode(e, "ENOENT")) return;
+    if (isErrnoCode(e, "ENOENT")) return false;
     throw e;
   }
-  if (!privateStat.isFile() || privateStat.isSymbolicLink()) return;
+  if (!privateStat.isFile() || privateStat.isSymbolicLink()) return false;
+  if (!isReadableJsonObjectFile(privateAuth)) return false;
 
-  const realStat = fs.statSync(realAuth);
-  if (privateStat.mtimeMs <= realStat.mtimeMs || !isReadableJsonObjectFile(privateAuth)) return;
+  let realExists = false;
+  try {
+    fs.statSync(realAuth);
+    realExists = true;
+  } catch (e) {
+    if (!isErrnoCode(e, "ENOENT")) throw e;
+  }
 
+  if (realExists) {
+    const privateRank = authCredentialRank(privateAuth);
+    const realRank = authCredentialRank(realAuth);
+    if (!authRankBetter(privateRank, realRank)) return false;
+  }
+
+  fs.mkdirSync(path.dirname(realAuth), { recursive: true });
   fs.copyFileSync(privateAuth, realAuth);
   fs.chmodSync(realAuth, 0o600);
+  return true;
+}
+
+/** Force `linkPath` to be a symlink to `target` (absolute). Replaces a regular file or broken link. */
+export function ensureAuthSymlink(linkPath: string, target: string): void {
+  fs.mkdirSync(path.dirname(linkPath), { recursive: true });
+  try {
+    const st = fs.lstatSync(linkPath);
+    if (st.isSymbolicLink() && fs.readlinkSync(linkPath) === target) return;
+  } catch (e) {
+    if (!isErrnoCode(e, "ENOENT")) throw e;
+  }
+  try {
+    fs.unlinkSync(linkPath);
+  } catch (e) {
+    if (!isErrnoCode(e, "ENOENT")) throw e;
+  }
+  fs.symlinkSync(target, linkPath);
+}
+
+/**
+ * Discover private Grok homes under this workspace (bridge-mcp `*.grok` + harness agent `/.grok`).
+ * Pure path scan — does not create directories.
+ */
+export function listWorkspaceGrokPrivateHomes(workspaceRoot: string): string[] {
+  const homes: string[] = [];
+  const bridgeRoot = bridgeMcpRoot(workspaceRoot);
+  try {
+    for (const ent of fs.readdirSync(bridgeRoot, { withFileTypes: true })) {
+      if (ent.isDirectory() && ent.name.endsWith(".grok")) {
+        homes.push(path.join(bridgeRoot, ent.name));
+      }
+    }
+  } catch (e) {
+    if (!isErrnoCode(e, "ENOENT")) throw e;
+  }
+  const hRoot = harnessRoot(workspaceRoot);
+  try {
+    for (const ent of fs.readdirSync(hRoot, { withFileTypes: true })) {
+      if (!ent.isDirectory()) continue;
+      const grokHome = path.join(hRoot, ent.name, ".grok");
+      try {
+        if (fs.statSync(grokHome).isDirectory()) homes.push(grokHome);
+      } catch {
+        /* no .grok under this harness agent */
+      }
+    }
+  } catch (e) {
+    if (!isErrnoCode(e, "ENOENT")) throw e;
+  }
+  return homes;
+}
+
+/**
+ * Workspace-wide Grok auth reconcile (fix multi-agent re-login wall):
+ * 1. Harvest every private regular `auth.json` (symlink replacements from Grok token refresh).
+ * 2. Promote the freshest credential (OIDC create_time, then mtime) into the real `~/.grok/auth.json`.
+ * 3. Re-symlink every private home to that single real file so all agents share one live token.
+ *
+ * Safe to call when no private homes exist. Fail-closed if real auth is missing after harvest
+ * (caller still cannot spawn without `grok login` once).
+ */
+export function reconcileWorkspaceGrokAuth(workspaceRoot: string, realGrokHome: string): { promoted: boolean; relinked: number } {
+  const realAuth = path.join(realGrokHome, "auth.json");
+  const privateHomes = listWorkspaceGrokPrivateHomes(workspaceRoot);
+  let promoted = false;
+  let bestPrivate: string | undefined;
+  let bestRank = { mtimeMs: 0, createTimeMs: 0 };
+
+  for (const home of privateHomes) {
+    const privateAuth = path.join(home, "auth.json");
+    let st: fs.Stats;
+    try {
+      st = fs.lstatSync(privateAuth);
+    } catch {
+      continue;
+    }
+    if (!st.isFile() || st.isSymbolicLink()) continue;
+    if (!isReadableJsonObjectFile(privateAuth)) continue;
+    const rank = authCredentialRank(privateAuth);
+    if (!bestPrivate || authRankBetter(rank, bestRank)) {
+      bestPrivate = privateAuth;
+      bestRank = rank;
+    }
+  }
+
+  if (bestPrivate) {
+    promoted = promoteNewerPrivateAuth(bestPrivate, realAuth);
+    // Even if mtime/create_time tie-break said "not newer", still ensure real exists when only private had content.
+    if (!fs.existsSync(realAuth) && isReadableJsonObjectFile(bestPrivate)) {
+      fs.mkdirSync(path.dirname(realAuth), { recursive: true });
+      fs.copyFileSync(bestPrivate, realAuth);
+      fs.chmodSync(realAuth, 0o600);
+      promoted = true;
+    }
+  }
+
+  if (!fs.existsSync(realAuth)) return { promoted, relinked: 0 };
+
+  let relinked = 0;
+  for (const home of privateHomes) {
+    const privateAuth = path.join(home, "auth.json");
+    // Only touch homes that already have (or had) an auth path — avoid creating empty agent dirs.
+    try {
+      fs.lstatSync(privateAuth);
+    } catch {
+      continue;
+    }
+    ensureAuthSymlink(privateAuth, realAuth);
+    relinked += 1;
+  }
+  return { promoted, relinked };
 }
 
 /** The per-agent config home. Agent names are already fs-safe (NAME_RE). */
@@ -721,6 +887,10 @@ export class HarnessManager {
     // H1 — seed auth by symlinking the credential file to the real home (never a copy → no stale token).
     // Fail closed if the real credential is absent (claude not logged in) — else a fresh home spawns
     // unauthenticated (codex impl-review M3): a dangling symlink "succeeds" but the agent can't start.
+    // Grok: harvest private regular auth.json files first (token refresh replaces the symlink).
+    if (adapter.runtime === "grok") {
+      this.reconcileGrokAuthFromWorkspace();
+    }
     const authSourceHome =
       adapter.runtime === "codex"
         ? this.realCodexHome
@@ -744,16 +914,11 @@ export class HarnessManager {
                 : "claude /login";
         throw new HarnessUnavailableError(agent, `no credentials at ${authTarget} — run ${login} first (a redirected config home starts logged out)`);
       }
-      // unlinkSync (NOT rmSync) — it removes the symlink ITSELF without following it; rmSync({force})
-      // follows a broken link, hits ENOENT on the missing target, silently no-ops, and leaves the stale
-      // link → EEXIST on re-symlink. Ignore ENOENT (nothing to remove on first materialize).
-      try {
-        fs.unlinkSync(authLink);
-      } catch (e) {
-        if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
+      // Hermes can also replace the auth symlink with a regular file after OAuth refresh — promote first.
+      if (adapter.runtime === "hermes") {
+        promoteNewerPrivateAuth(authLink, authTarget);
       }
-      fs.mkdirSync(path.dirname(authLink), { recursive: true });
-      fs.symlinkSync(authTarget, authLink);
+      ensureAuthSymlink(authLink, authTarget);
     }
 
     if (adapter.runtime === "codex" || adapter.runtime === "grok" || adapter.runtime === "hermes") {
@@ -1148,26 +1313,32 @@ export class HarnessManager {
    * Grok home (fail-closed when the real credential is absent, same as the harness path). Never
    * mutates the user's real `~/.grok/config.toml`. Rewritten on every (re)spawn.
    */
+  /**
+   * Harvest private Grok auth files across the workspace into `~/.grok/auth.json` and re-symlink
+   * every private home. Call on stop/kill as well as materialize so a token refresh during a session
+   * is not stranded in one agent home until the next spawn of *that* agent.
+   */
+  reconcileGrokAuthFromWorkspace(): { promoted: boolean; relinked: number } {
+    return reconcileWorkspaceGrokAuth(this.workspaceRoot, this.realGrokHome);
+  }
+
   materializeBridgeMcpGrok(agent: string, bridgeEntry: Record<string, unknown>): string {
     const home = bridgeGrokHome(this.workspaceRoot, agent);
     fs.mkdirSync(home, { recursive: true });
 
     const authLink = path.join(home, "auth.json");
     const authTarget = path.join(this.realGrokHome, "auth.json");
+    // Workspace-wide harvest first: multi-agent OIDC refresh leaves *different* keys in each
+    // private home; promoting only this agent can re-symlink it to a revoked sibling token.
+    this.reconcileGrokAuthFromWorkspace();
     if (!fs.existsSync(authTarget)) {
       throw new HarnessUnavailableError(
         agent,
         `no credentials at ${authTarget} — run grok login first (a redirected GROK_HOME starts logged out)`,
       );
     }
-    promoteNewerPrivateAuth(authLink, authTarget);
-    // unlinkSync (NOT rmSync) — removes the symlink itself without following a broken target.
-    try {
-      fs.unlinkSync(authLink);
-    } catch (e) {
-      if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
-    }
-    fs.symlinkSync(authTarget, authLink);
+    // Ensure *this* home is linked even if it was just created (reconcile skips missing auth paths).
+    ensureAuthSymlink(authLink, authTarget);
     // t-303f2b — never hand the agent a GROK_HOME that looks seeded but cannot read credentials
     // (dangling/unreadable symlink → interactive "Approve in your browser" instead of a hard spawn error).
     assertReadableGrokAuth(agent, home, authTarget);
