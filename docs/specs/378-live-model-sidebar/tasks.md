@@ -40,8 +40,11 @@ _Generated from `plan.md` on 2026-07-13. Work top-to-bottom. Check boxes as task
 
 - [x] All spec.md acceptance scenarios have a matching green unit/fixture test
 - [x] `npm run typecheck` clean; full suite green
-- [ ] verify_task gate green on the delegated branch (behavior test fails at BASE_SHA,
-      passes at HEAD; no scope breach beyond owns)
+- [x] Verification record (canonical verify_task impossible — Delivery lease wedge, t-19026b):
+      coordinator ran the manual equivalent — behavior suite 11/11 FAIL at BASE c0274b7b and
+      11/11 PASS at delivered HEAD (scratch worktree); scope vs owns audited (1 out-of-owns
+      file waived by name: src/webview/ActivityPanel.ts, load-bearing, reviewer-verified);
+      suppression scan clean (only strengthened assertions)
 
 **Verify:** `npx vitest run test/unit/livemodel2Behavior.gen.test.ts test/unit/agentModel.test.ts`
 **Verify:** `npm run typecheck`
@@ -60,5 +63,9 @@ sidebar row update within ~2s of the next turn start; confirm a freshly spawned 
 _Sidebar row gains a live label + textual provenance marker; risk: marker crowding at narrow
 widths, raw-id overflow._
 
-- [ ] Evidence: screenshot of the live sidebar with observed + declared + divergent rows
-- [ ] Verdict:
+- [x] Evidence: .tachyon/evidence/spec-378/dogfood-sidebar-live.png (installed branch build:
+      provenance markers live — codex "GPT-5.6 Sol · declared", bare agents "· profile") +
+      maintainer live dogfood 2026-07-14
+- [x] Verdict: pass — maintainer confirmed codex-budget flip to observed "GPT-5.6 Sol" within
+      seconds of a turn; markers legible at sidebar width; divergence-on-profile-default
+      accepted as informative
