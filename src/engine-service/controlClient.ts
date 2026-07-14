@@ -21,6 +21,7 @@ export class EngineControlClientError extends Error {
     readonly code: EngineControlClientErrorCode,
     message: string,
     readonly remoteCode?: string,
+    readonly systemCode?: string,
   ) {
     super(message);
     this.name = "EngineControlClientError";
@@ -148,7 +149,12 @@ export class EngineControlClient {
       return await requestEngineControl(this.options.socketPath, request, this.timeoutMs);
     } catch (error) {
       if (error instanceof EngineControlClientError) throw error;
-      throw new EngineControlClientError("UNAVAILABLE", error instanceof Error ? error.message : String(error));
+      throw new EngineControlClientError(
+        "UNAVAILABLE",
+        error instanceof Error ? error.message : String(error),
+        undefined,
+        (error as NodeJS.ErrnoException | undefined)?.code,
+      );
     }
   }
 
@@ -261,7 +267,14 @@ export function requestEngineControl(
       finish({ response: parsed });
     });
     socket.once("error", (error) => {
-      finish({ error: new EngineControlClientError("UNAVAILABLE", error.message) });
+      finish({
+        error: new EngineControlClientError(
+          "UNAVAILABLE",
+          error.message,
+          undefined,
+          (error as NodeJS.ErrnoException).code,
+        ),
+      });
     });
     socket.once("end", () => {
       if (!settled) finish({ error: invalidResponse("engine control connection ended without a complete response") });

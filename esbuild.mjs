@@ -1,5 +1,6 @@
 import * as esbuild from "esbuild";
-import { copyFileSync, cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
@@ -20,11 +21,48 @@ function buildStamp() {
   }
 }
 
+const buildStampSnapshot = buildStamp();
+const packageVersion = JSON.parse(readFileSync("package.json", "utf8")).version;
+
+function sha256File(file) {
+  return createHash("sha256").update(readFileSync(file)).digest("hex");
+}
+
+function writeEngineManifest() {
+  const manifest = {
+    schemaVersion: 1,
+    engineVersion: packageVersion,
+    protocol: { min: 1, max: 1 },
+    entrypoint: "engine-daemon.cjs",
+    files: [
+      { path: "engine-daemon.cjs", sha256: sha256File("dist/engine/engine-daemon.cjs") },
+      { path: "media/clipboard-copy.sh", sha256: sha256File("dist/engine/media/clipboard-copy.sh"), executable: true },
+    ],
+    build: {
+      commit: buildStampSnapshot.commit ?? "0".repeat(40),
+      treeSha: buildStampSnapshot.treeSha ?? "0".repeat(40),
+      workingTreeClean: buildStampSnapshot.commit !== null
+        && buildStampSnapshot.treeSha !== null
+        && !buildStampSnapshot.dirty,
+    },
+  };
+  writeFileSync("dist/engine/engine-manifest.json", `${JSON.stringify(manifest, null, 2)}\n`);
+}
+
+const engineManifestPlugin = {
+  name: "tachyon-engine-manifest",
+  setup(build) {
+    build.onEnd((result) => {
+      if (result.errors.length === 0) writeEngineManifest();
+    });
+  },
+};
+
 // VS Code's extension host can expose `navigator` as a throwing migration getter. Some bundled deps probe
 // `typeof navigator`; in the Node bundles Tachyon never needs browser navigator, so erase it at build time.
 const nodeDefines = {
   navigator: "undefined",
-  __TACHYON_BUILD__: JSON.stringify(buildStamp()),
+  __TACHYON_BUILD__: JSON.stringify(buildStampSnapshot),
 };
 
 // spec 342 — the Kit legacy-fallback kill switch (shared/ui/kit/flags.ts): ONE build-time define per
@@ -102,6 +140,22 @@ const persistentBridgeDaemon = {
   define: nodeDefines,
   sourcemap: false,
   logLevel: "info",
+};
+
+// spec 382 — standalone workspace engine.  The Extension Host stages this immutable bundle outside the
+// extension-version directory, then the Linux user-service manager owns its lifetime across reloads.
+// The manifest plugin hashes the exact emitted daemon and its only runtime media dependency.
+const engineDaemon = {
+  entryPoints: ["src/engine-service/daemonMain.ts"],
+  bundle: true,
+  outfile: "dist/engine/engine-daemon.cjs",
+  platform: "node",
+  format: "cjs",
+  target: "node20",
+  define: nodeDefines,
+  sourcemap: false,
+  logLevel: "info",
+  plugins: [engineManifestPlugin],
 };
 
 // spec 342 — every "react"-shaped import (Radix's own internals, not just our JSX) resolves to preact's
@@ -361,6 +415,9 @@ function buildTailwind() {
 }
 
 mkdirSync("dist/webview", { recursive: true });
+rmSync("dist/engine", { recursive: true, force: true });
+mkdirSync("dist/engine/media", { recursive: true });
+copyFileSync("media/clipboard-copy.sh", "dist/engine/media/clipboard-copy.sh");
 buildTailwind();
 copyFileSync("src/config/tachyon.schema.json", "dist/tachyon.schema.json");
 copyFileSync("node_modules/@vscode/codicons/dist/codicon.css", "dist/webview/codicon.css");
@@ -417,7 +474,7 @@ if (existsSync(excalidrawAssets)) {
   cpSync(excalidrawAssets, "dist/webview/excalidraw-assets", { recursive: true });
 }
 
-const targets = [extension, toolLauncher, dataResolver, externalResolver, persistentBridgeDaemon, sidebar, activity, handoff, approval, plugins, probes, inspector, pinPreview, pinStudio, missionControl, taskDetail, taskStudio, runtimeOps, pipelineStudio, agentStudioFixture, agentStudioShell, terminalStudioShell, commandStudioShell, runbookStudioShell, scheduleStudioShell, pluginHost, excalidraw, mermaid, katex, preview, uiGate];
+const targets = [extension, toolLauncher, dataResolver, externalResolver, persistentBridgeDaemon, engineDaemon, sidebar, activity, handoff, approval, plugins, probes, inspector, pinPreview, pinStudio, missionControl, taskDetail, taskStudio, runtimeOps, pipelineStudio, agentStudioFixture, agentStudioShell, terminalStudioShell, commandStudioShell, runbookStudioShell, scheduleStudioShell, pluginHost, excalidraw, mermaid, katex, preview, uiGate];
 if (watch) {
   const ctxs = await Promise.all(targets.map((c) => esbuild.context(c)));
   await Promise.all(ctxs.map((c) => c.watch()));

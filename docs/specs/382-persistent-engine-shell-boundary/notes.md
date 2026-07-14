@@ -23,6 +23,10 @@ None.
 
 - A controlled real engine upgrade may interrupt the service briefly.  This is accepted to keep one
   authoritative engine process; allowing a VS Code reload to cause that interruption is not accepted.
+- The Linux launcher copies only an explicit non-secret environment allowlist into the user service.
+  Runtime login files remain available through `HOME`; compatibility for users who rely exclusively on
+  provider API keys inherited from the VS Code process must be proven before global cutover.  Arbitrary
+  extension-host environment variables are not placed on the `systemd-run` command line.
 
 ## Open questions
 
@@ -133,3 +137,27 @@ None.
   transitive `Terminals` leak that the old direct-import grep missed.
 - The focused engine/host/Workspace matrix passes 76/76, typecheck and diff-check pass, and the first
   reviewable global gate passes: 343 files, 4,068 tests passed, 3 skipped.
+
+## Eighth implementation slice — 2026-07-14
+
+- Added the Linux/WSL engine supervisor and standalone daemon entrypoint.  The deterministic
+  `tachyon-engine-<canonical-root-sha256>.service` transient user unit is the cross-process election:
+  one concurrent `systemd-run` wins, contenders wait on the same authenticated control health, and no
+  second file-lock authority exists.  The unit restarts real crashes, uses control-group teardown and
+  receives only a bounded non-secret environment allowlist.
+- Runtime socket/state identities now use 128-bit canonical-root keys rather than the legacy 32-bit
+  display hash.  Every engine-created runtime hierarchy level is independently checked as a private,
+  real directory; control-path collisions, symlinks and non-socket entries fail closed.  A daemon probes
+  an existing socket before stale cleanup and never unlinks a live owner's endpoint.
+- The build now emits `dist/engine/engine-daemon.cjs`, its clipboard helper and a hash/provenance-pinned
+  manifest.  The daemon's full 154-file runtime import closure remains `vscode`-free and package pruning
+  retains the bundle automatically under `dist/`.
+- A deterministic unit test forces two starters past the absent-engine probe before either may launch;
+  exactly one real Workspace/Bridge process starts, the other contends, both attach to the same identity,
+  exact and compatible bundles reuse it, incompatible/corrupt bundles refuse, and a manual duplicate
+  cannot steal its live socket.  Five supervisor tests and two packaging tests pass.
+- Real-host dogfood used the production `systemd --user` launcher: concurrent outcomes were
+  `started + contended`, repeat ensure was `reused-exact`, attach/snapshot/zero-shell health passed, and
+  the service unit, daemon PID, control socket and its tmux anchor were gone after graceful stop.
+- This checkpoint does **not** wire extension activation yet.  Installing the VSIX is not zero-step until
+  the next shell-cutover slice stages this emitted bundle and calls the supervisor automatically.

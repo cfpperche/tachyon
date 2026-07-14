@@ -3,10 +3,10 @@ import path from "node:path";
 import ts from "typescript";
 
 const repoRoot = process.cwd();
-const entry = path.join(repoRoot, "src", "engine-service", "engineService.ts");
+const entries = ["engineService.ts", "daemonMain.ts"].map((name) => path.join(repoRoot, "src", "engine-service", name));
 const visited = new Set();
 const parent = new Map();
-const queue = [entry];
+const queue = [...entries];
 
 while (queue.length > 0) {
   const file = queue.shift();
