@@ -2,14 +2,9 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import {
-  assertWorkspaceNotRepoRoot,
-  clear,
-  ensurePortableLaunchConfig,
-  materializeWorkspaceMirror,
-  point,
-  status,
-} from "../../scripts/dev-host/pointer.mjs";
+// Owned ESM CLI; Vitest loads it directly while the repo typecheck target is CommonJS.
+// @ts-expect-error -- static ESM import is intentional for this executable module test (same as resolve-code.mjs).
+import { assertWorkspaceNotRepoRoot, clear, ensurePortableLaunchConfig, materializeWorkspaceMirror, point, status } from "../../scripts/dev-host/pointer.mjs";
 
 function writePkg(dir: string, name = "tachyon") {
   fs.mkdirSync(dir, { recursive: true });
