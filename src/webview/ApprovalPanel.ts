@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import type { Workspace } from "../workspace/Workspace.js";
+import type { WorkspacePresentationTarget } from "../shell/WorkspacePresentation.js";
 import { panelIcon } from "./shared/panelIcon.js";
 import { renderWebviewShell } from "./shared/shell.js";
 import { READY } from "./shared/ready.js";
@@ -19,7 +19,7 @@ export class ApprovalPanelManager {
 
   constructor(
     private readonly extensionUri: vscode.Uri,
-    private readonly getWorkspaces: () => Workspace[],
+    private readonly getWorkspaces: () => WorkspacePresentationTarget[],
   ) {}
 
   dispose(): void {
@@ -27,7 +27,7 @@ export class ApprovalPanelManager {
     this.panels.clear();
   }
 
-  open(ws: Workspace): void {
+  open(ws: WorkspacePresentationTarget): void {
     const existing = this.panels.get(ws.wsHash);
     if (existing) {
       existing.reveal(vscode.ViewColumn.Active);
@@ -64,7 +64,7 @@ export class ApprovalPanelManager {
     }
   }
 
-  private revive(panel: vscode.WebviewPanel, ws: Workspace): void {
+  private revive(panel: vscode.WebviewPanel, ws: WorkspacePresentationTarget): void {
     const root = vscode.Uri.joinPath(this.extensionUri, "dist", "webview");
     const uri = (f: string): string => panel.webview.asWebviewUri(vscode.Uri.joinPath(root, f)).toString();
     panel.webview.html = renderWebviewShell({
@@ -84,7 +84,7 @@ export class ApprovalPanelManager {
     this.post(panel, ws);
   }
 
-  private post(panel: vscode.WebviewPanel, ws: Workspace): void {
+  private post(panel: vscode.WebviewPanel, ws: WorkspacePresentationTarget): void {
     try {
       const vm = buildApprovalViewModel({ workspaceRoot: ws.workspaceRoot, folder: ws.folderName, wsHash: ws.wsHash });
       void panel.webview.postMessage(approvalsMessage(vm));

@@ -23,6 +23,11 @@ import {
 } from "../engine-service/protocol.js";
 import { workspaceHash } from "../tmux/TmuxService.js";
 import type { DaemonSettingsSnapshot } from "../workspace/DaemonEngineHost.js";
+import {
+  assertWorkspacePresentationIdentity,
+  projectWorkspacePresentation,
+  type WorkspacePresentationSnapshotV1,
+} from "../runtime-api/workspaceProjection.js";
 
 const DEFAULT_EVENT_LIMIT = 100;
 const MAX_ATTACH_RACE_ATTEMPTS = 2;
@@ -43,6 +48,7 @@ export interface WorkspaceClient {
   readonly workspaceHash: string;
   readonly identity: EngineServiceIdentityV1;
   readonly snapshot: WorkspaceSnapshotEnvelopeV1;
+  readonly presentation: WorkspacePresentationSnapshotV1;
   readonly bridgeUrl: string;
   sync(limit?: number): Promise<WorkspaceClientSyncResult>;
   invoke(operationId: string, command: WorkspaceCommandV1): Promise<WorkspaceCommandResultV1>;
@@ -116,6 +122,7 @@ export class RemoteWorkspaceClient implements WorkspaceClient {
   private control!: EngineControlClient;
   private currentIdentity!: EngineServiceIdentityV1;
   private currentSnapshot!: WorkspaceSnapshotEnvelopeV1;
+  private currentPresentation!: WorkspacePresentationSnapshotV1;
   private tail: Promise<void> = Promise.resolve();
   private closePromise: Promise<void> | undefined;
   private closeRequested = false;
@@ -170,6 +177,10 @@ export class RemoteWorkspaceClient implements WorkspaceClient {
     return cloneJson(this.currentSnapshot);
   }
 
+  get presentation(): WorkspacePresentationSnapshotV1 {
+    return cloneJson(this.currentPresentation);
+  }
+
   get bridgeUrl(): string {
     return `http://127.0.0.1:${this.currentIdentity.bridge.port}/mcp`;
   }
@@ -219,7 +230,8 @@ export class RemoteWorkspaceClient implements WorkspaceClient {
     const attached = await this.attachVerified();
     this.control = attached.control;
     this.currentIdentity = attached.identity;
-    this.currentSnapshot = attached.snapshot;
+    this.currentSnapshot = cloneJson(attached.snapshot);
+    this.currentPresentation = attached.presentation;
   }
 
   private async syncOnce(limit: number): Promise<WorkspaceClientSyncResult> {
@@ -228,7 +240,7 @@ export class RemoteWorkspaceClient implements WorkspaceClient {
       if (batch.events.length === 0 && !batch.resyncRequired) {
         return this.result([], false, false);
       }
-      this.currentSnapshot = await this.control.snapshot();
+      this.acceptSnapshot(await this.control.snapshot(), this.currentIdentity);
       const result = this.result(batch.events, batch.resyncRequired, false);
       this.emit(result);
       return result;
@@ -243,7 +255,8 @@ export class RemoteWorkspaceClient implements WorkspaceClient {
     const attached = await this.attachVerified();
     this.control = attached.control;
     this.currentIdentity = attached.identity;
-    this.currentSnapshot = attached.snapshot;
+    this.currentSnapshot = cloneJson(attached.snapshot);
+    this.currentPresentation = attached.presentation;
     const result = this.result([], true, !sameIncarnation(previous, attached.identity));
     this.emit(result);
     return result;
@@ -277,6 +290,7 @@ export class RemoteWorkspaceClient implements WorkspaceClient {
     control: EngineControlClient;
     identity: EngineServiceIdentityV1;
     snapshot: WorkspaceSnapshotEnvelopeV1;
+    presentation: WorkspacePresentationSnapshotV1;
   }> {
     for (let attempt = 1; attempt <= MAX_ATTACH_RACE_ATTEMPTS; attempt += 1) {
       const ensured = await this.ensureEngine(this.ensureOptions);
@@ -288,7 +302,8 @@ export class RemoteWorkspaceClient implements WorkspaceClient {
           continue;
         }
         const snapshot = await control.snapshot();
-        return { control, identity: session.engine, snapshot };
+        const presentation = this.validatePresentation(snapshot, session.engine);
+        return { control, identity: session.engine, snapshot, presentation };
       } catch (error) {
         await control.detach().catch(() => undefined);
         if (attempt < MAX_ATTACH_RACE_ATTEMPTS && isRecoverableConnectionLoss(error)) continue;
@@ -299,6 +314,27 @@ export class RemoteWorkspaceClient implements WorkspaceClient {
       "ENGINE_ATTACH_RACE",
       "persistent engine identity changed repeatedly between verification and shell attach",
     );
+  }
+
+  private acceptSnapshot(snapshot: WorkspaceSnapshotEnvelopeV1, identity: EngineServiceIdentityV1): void {
+    const presentation = this.validatePresentation(snapshot, identity);
+    this.currentSnapshot = cloneJson(snapshot);
+    this.currentPresentation = presentation;
+  }
+
+  private validatePresentation(
+    snapshot: WorkspaceSnapshotEnvelopeV1,
+    identity: EngineServiceIdentityV1,
+  ): WorkspacePresentationSnapshotV1 {
+    const presentation = projectWorkspacePresentation(snapshot);
+    assertWorkspacePresentationIdentity(presentation, {
+      workspaceRoot: this.workspaceRoot,
+      workspaceHash: this.workspaceHash,
+      engineInstanceId: identity.instanceId,
+      bridgeInstanceId: identity.bridge.instanceId,
+      bridgePort: identity.bridge.port,
+    });
+    return presentation;
   }
 
   private result(events: WorkspaceEventV1[], resynced: boolean, engineChanged: boolean): WorkspaceClientSyncResult {

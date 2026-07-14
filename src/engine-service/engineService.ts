@@ -5,6 +5,7 @@ import { workspaceHash } from "../tmux/TmuxService.js";
 import { readLinuxProcessIdentity } from "../delivery/reloadReconciliation.js";
 import { DaemonEngineHost, type DaemonHostEvent, type DaemonSettingsSnapshot } from "../workspace/DaemonEngineHost.js";
 import { Workspace } from "../workspace/Workspace.js";
+import type { WorkspaceCoreProjectionsV1 } from "../runtime-api/workspaceProjection.js";
 import { startEngineControlServer, type RunningEngineControlServer } from "./controlServer.js";
 import { EngineEventJournal } from "./eventJournal.js";
 import {
@@ -199,7 +200,7 @@ class EngineProjectionCoordinator {
 async function buildProjections(
   workspace: Workspace,
   identity: EngineServiceIdentityV1,
-): Promise<Record<string, unknown>> {
+): Promise<WorkspaceCoreProjectionsV1 & Record<string, unknown>> {
   const agents = await workspace.manager.list();
   const tasks = workspace.taskStore.listRaw();
   const pins = workspace.pinStore.list();
@@ -239,7 +240,7 @@ async function buildProjections(
     bridge: {
       instanceId: identity.bridge.instanceId,
       port: identity.bridge.port,
-      url: workspace.bridgeUrl(),
+      url: workspace.bridgeUrl() ?? null,
       direct: workspace.bridge.listenerPort === identity.bridge.port,
     },
     agents: boundedList(agents, AGENT_SNAPSHOT_LIMIT, (agent) => ({
@@ -283,7 +284,7 @@ async function buildProjections(
       lastRun: schedule.lastRun ?? null,
       nextRun: schedule.nextRun ?? null,
     })),
-  };
+  } satisfies WorkspaceCoreProjectionsV1 & Record<string, unknown>;
 }
 
 function boundedList<T, R>(values: readonly T[], limit: number, map: (value: T) => R): {

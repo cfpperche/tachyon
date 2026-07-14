@@ -63,7 +63,12 @@ describe("remote WorkspaceClient", () => {
       },
     });
     expect(client.identity).toEqual(firstIdentity);
-    expect(client.snapshot.projections).toEqual({ marker: "initial" });
+    expect(client.snapshot.projections.marker).toBe("initial");
+    expect(client.presentation).toMatchObject({
+      workspace: { root: canonicalRoot, hash: firstIdentity.workspaceHash },
+      bridge: { instanceId: firstIdentity.bridge.instanceId, port: firstIdentity.bridge.port },
+      agents: { total: 0, truncated: false, items: [] },
+    });
     expect(client.bridgeUrl).toBe(`http://127.0.0.1:${firstIdentity.bridge.port}/mcp`);
     expect(currentServer.shellCount()).toBe(1);
     expect(ensureCalls).toBe(1);
@@ -80,7 +85,7 @@ describe("remote WorkspaceClient", () => {
     const incremental = await client.sync();
     expect(incremental).toMatchObject({ resynced: false, engineChanged: false });
     expect(incremental.events.map((event) => event.kind)).toEqual(["views-changed"]);
-    expect(incremental.snapshot.projections).toEqual({ marker: "event-one" });
+    expect(incremental.snapshot.projections.marker).toBe("event-one");
     expect(ensureCalls).toBe(1);
 
     // Cursor 1 falls behind a two-record retained tail after seq 4, forcing an honest full resnapshot.
@@ -90,7 +95,7 @@ describe("remote WorkspaceClient", () => {
     firstSnapshot = snapshot(firstIdentity, firstJournal.latestSeq, "gap-resnapshot");
     const gap = await client.sync();
     expect(gap).toMatchObject({ events: [], resynced: true, engineChanged: false });
-    expect(gap.snapshot.projections).toEqual({ marker: "gap-resnapshot" });
+    expect(gap.snapshot.projections.marker).toBe("gap-resnapshot");
 
     // Expiring only the shell lease reattaches to the same engine; no service lifecycle call exists here.
     now += 101;
@@ -128,7 +133,7 @@ describe("remote WorkspaceClient", () => {
 
     const recovered = await client.sync();
     expect(recovered).toMatchObject({ events: [], resynced: true, engineChanged: true });
-    expect(recovered.snapshot.projections).toEqual({ marker: "new-incarnation" });
+    expect(recovered.snapshot.projections.marker).toBe("new-incarnation");
     expect(client.identity).toEqual(secondIdentity);
     expect(ensureCalls).toBe(4);
 
@@ -193,6 +198,39 @@ describe("remote WorkspaceClient", () => {
     expect(client.identity).toEqual(liveIdentity);
     expect(server.shellCount()).toBe(1);
     await client.close();
+  });
+
+  it("refuses an attached engine whose presentation projection is incomplete", async () => {
+    const root = temp("tachyon-workspace-client-projection-");
+    const workspaceRoot = path.join(root, "workspace");
+    const runtimeRoot = path.join(root, "runtime");
+    fs.mkdirSync(workspaceRoot, { mode: 0o700 });
+    fs.mkdirSync(runtimeRoot, { mode: 0o700 });
+    const socketPath = path.join(runtimeRoot, "control.sock");
+    const liveIdentity = identity(fs.realpathSync(workspaceRoot), "engine-projection", "bridge-projection");
+    const server = await startEngineControlServer({
+      socketPath,
+      identity: liveIdentity,
+      getSnapshot: () => ({
+        schemaVersion: 1,
+        engineInstanceId: liveIdentity.instanceId,
+        seq: 0,
+        projections: {},
+      }),
+    });
+    servers.push(server);
+
+    await expect(connectRemoteWorkspaceClient({
+      workspaceRoot,
+      bundle: dummyBundle(root),
+      shell: { id: "shell-invalid-projection", version: "test", locale: "en" },
+      ensure: async () => ({
+        identity: liveIdentity,
+        controlSocketPath: socketPath,
+        disposition: "reused-exact",
+      }),
+    })).rejects.toMatchObject({ code: "INVALID_PROJECTION" });
+    expect(server.shellCount()).toBe(0);
   });
 
   it("never replays a mutation when the transport loses its result", async () => {
@@ -276,7 +314,23 @@ function snapshot(identity: EngineServiceIdentityV1, seq: number, marker: string
     schemaVersion: 1,
     engineInstanceId: identity.instanceId,
     seq,
-    projections: { marker },
+    projections: {
+      marker,
+      workspace: {
+        root: identity.workspaceRoot,
+        hash: identity.workspaceHash,
+        folderName: path.basename(identity.workspaceRoot),
+        configValid: true,
+        configFailure: null,
+      },
+      bridge: {
+        instanceId: identity.bridge.instanceId,
+        port: identity.bridge.port,
+        url: `http://127.0.0.1:${identity.bridge.port}/mcp`,
+        direct: true,
+      },
+      agents: { total: 0, truncated: false, items: [] },
+    },
   };
 }
 

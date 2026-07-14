@@ -214,3 +214,31 @@ None.
 - Remaining before activation cutover: projection/action adapters for presentation consumers and their
   deterministic fake.  `extension.ts` still owns the legacy local Workspace; no mixed production mode is
   enabled by this checkpoint.
+
+## Eleventh implementation slice — 2026-07-14
+
+- Added the first closed Runtime API projection for workspace identity, direct Bridge identity and the
+  bounded agent roster.  Every consumed field is exact and bounded; contradictory config state,
+  duplicate agents, unknown row fields and a non-loopback/mismatched Bridge URL fail closed.
+- `RemoteWorkspaceClient` now validates the presentation projection before accepting an attachment or
+  refreshed snapshot and cross-binds workspace root/hash, engine incarnation and Bridge instance/port to
+  the supervisor-proven identity.  A malformed daemon snapshot detaches its temporary shell lease rather
+  than entering presentation state.
+- Added a deterministic, editor-free `FakeWorkspaceClient` for presentation tests.  It clones authority
+  boundaries, queues snapshots/events, isolates listener failures, records commands and converges the same
+  operation id/intent to one result without pretending unsupported operations succeeded.
+- Migrated the Approvals panel off the concrete `Workspace` class onto the narrow
+  `WorkspacePresentationTarget`; current production behavior is unchanged because the legacy Workspace
+  structurally supplies that read-only identity, while the remote client now has an explicit adapter.
+- Froze the remaining shell/presentation debt in `presentation-workspace-inventory.txt`: 25 source files
+  still import concrete Workspace after this first migration.  An executable boundary walks every relevant
+  source directory, rejects new imports and requires that inventory to shrink explicitly.
+- The complete focused engine/projection/client/Approvals matrix passes 98/98 with typecheck,
+  daemon import boundary and diff-check green.  No second global full run was made: the first reviewable
+  global proof remains current until final closure, per the spec gate policy.
+- A fresh packaged `systemd --user` dogfood passed through the strict projection validator, converged
+  concurrent starters, remotely started/killed an agent, reused the exact engine and cleaned the unit,
+  process, socket and tmux anchor.  This specifically proves the emitted daemon matches the new shell API.
+- Remaining before activation cutover: migrate the other 25 consumers, add their missing typed
+  projections/actions and only then replace `extension.ts` ownership.  The production extension still
+  constructs exactly the legacy Workspace in this checkpoint; no dual engine is activated.
