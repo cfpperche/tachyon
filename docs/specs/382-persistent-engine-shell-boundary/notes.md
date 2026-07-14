@@ -113,3 +113,23 @@ None.
   `Workspace` no longer imports the VS Code presentation module.
 - The existing terminal/Workspace/daemon focused suites pass 47/47 with typecheck.  This was a required
   boundary correction before a standalone Node process could honestly construct production Workspace.
+
+## Seventh implementation slice — 2026-07-14
+
+- Added the production `Workspace.createDaemon` path and a complete `startDaemonEngineService`
+  composition.  It canonicalizes one workspace, owns daemon state/watchers/scheduler, binds the public
+  Bridge directly (no proxy registration), journals host events and exposes authenticated
+  health/attach/snapshot/events through the private control socket.
+- Snapshot reads are serialized behind a small barrier: host events raised while an asynchronous
+  projection is being built are buffered and appended immediately after it, so the snapshot cursor can
+  never skip a transition.  Bootstrap lists and strings are explicitly bounded below the 64 KiB control
+  response ceiling and report total/truncation instead of silently pretending completeness.
+- A real independent Node process now constructs and starts production Workspace with real tmux and a
+  real Bridge.  Two shell generations attach to the same process/Bridge identity; a live config edit is
+  observed through the Node watcher and event journal; the Bridge remains reachable at zero attached
+  shells; graceful shutdown removes both the control socket and tmux control anchor.
+- Strengthened `check:engine-boundary` with a runtime import-closure walk from the daemon entrypoint.  It
+  currently proves all 150 reachable source files are `vscode`-free, preventing a repeat of the
+  transitive `Terminals` leak that the old direct-import grep missed.
+- The focused engine/host/Workspace matrix passes 76/76, typecheck and diff-check pass, and the first
+  reviewable global gate passes: 343 files, 4,068 tests passed, 3 skipped.

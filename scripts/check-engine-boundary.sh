@@ -21,3 +21,4 @@ if [ -n "$offenders" ]; then
   exit 1
 fi
 echo "engine-boundary: OK — no 'vscode' import outside the shell allowlist"
+node scripts/check-engine-import-closure.mjs

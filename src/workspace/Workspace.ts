@@ -1737,6 +1737,14 @@ export class Workspace {
     return Workspace._create(workspaceRoot, deps, { persistentBridge: true });
   }
 
+  /**
+   * Persistent-engine entry: the daemon owns the public Bridge listener directly.  Unlike the
+   * Extension Host compatibility path above, it never starts or registers the legacy Bridge proxy.
+   */
+  static async createDaemon(workspaceRoot: string, deps: WorkspaceDeps): Promise<Workspace> {
+    return Workspace._create(workspaceRoot, deps, { persistentBridge: false });
+  }
+
   /** spec 235 — headless test entry: inject a fake-exec tmux + no-op engine + `startBridge:false` to drive
    *  the Workspace with no Electron / real tmux / bound port. Delegates to the same impl as `create`. */
   static async createForTest(workspaceRoot: string, deps: WorkspaceDeps, seams: WorkspaceSeams): Promise<Workspace> {

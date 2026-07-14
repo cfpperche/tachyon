@@ -13,9 +13,9 @@ _Generated from `plan.md` on 2026-07-14. Work top-to-bottom. No automatic integr
 
 ## Persistent engine
 
-- [ ] Implement content-addressed bundled-engine staging with atomic hash/provenance verification and a
+- [x] Implement content-addressed bundled-engine staging with atomic hash/provenance verification and a
   last-known-compatible rollback bundle; no runtime path points into the extension version directory.
-- [ ] Implement `DaemonEngineHost` with atomic state/private-secret stores, daemon media resolution,
+- [x] Implement `DaemonEngineHost` with atomic state/private-secret stores, daemon media resolution,
   locale substitution, durable notices/events and a Node watcher plus bounded polling fallback.
 - [ ] Evolve the persistent service entrypoint to construct/start exactly one `Workspace`, own the public
   Bridge listener directly and expose health/attach/snapshot/events/invoke/explicit-stop control methods.
