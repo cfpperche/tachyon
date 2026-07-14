@@ -1,0 +1,107 @@
+{
+  "fixtureVersion": 1,
+  "upstream": {
+    "tag": "v0.43.0",
+    "commit": "5a0cbc07119ac04d998e2fd5267442ed9358fff0"
+  },
+  "redaction": "Synthetic values only. No account identity, credential, absolute path, raw error, or provider body.",
+  "cases": {
+    "codexPartialSuccess": {
+      "provider": "codex",
+      "source": "oauth",
+      "version": "0.0.0-fixture",
+      "usage": {
+        "primary": null,
+        "secondary": {
+          "usedPercent": 63,
+          "windowMinutes": 10080,
+          "resetsAt": "2026-07-19T19:19:41Z"
+        },
+        "tertiary": null,
+        "updatedAt": "2026-07-14T16:11:52Z",
+        "dataConfidence": "exact"
+      }
+    },
+    "claudeSuccess": {
+      "provider": "claude",
+      "source": "oauth",
+      "usage": {
+        "primary": {
+          "usedPercent": 80,
+          "windowMinutes": 300,
+          "resetsAt": "2026-07-14T17:39:59Z"
+        },
+        "secondary": {
+          "usedPercent": 11,
+          "windowMinutes": 10080,
+          "resetsAt": "2026-07-21T10:59:59Z"
+        },
+        "updatedAt": "2026-07-14T16:12:13Z"
+      }
+    },
+    "unavailable": {
+      "provider": "claude",
+      "source": "auto",
+      "error": {
+        "kind": "provider",
+        "code": 1,
+        "message": "REDACTED"
+      }
+    },
+    "authFailure": {
+      "provider": "codex",
+      "source": "oauth",
+      "error": {
+        "kind": "authentication",
+        "code": 2,
+        "message": "REDACTED"
+      }
+    },
+    "timeout": {
+      "provider": "codex",
+      "source": "oauth",
+      "error": {
+        "kind": "timeout",
+        "code": 4,
+        "message": "REDACTED"
+      }
+    },
+    "staleLastGood": {
+      "provider": "codex",
+      "source": "oauth",
+      "usage": {
+        "primary": null,
+        "secondary": {
+          "usedPercent": 63,
+          "windowMinutes": 10080,
+          "resetsAt": "2026-07-19T19:19:41Z"
+        },
+        "tertiary": null,
+        "updatedAt": "2026-07-14T15:45:00Z",
+        "dataConfidence": "exact"
+      },
+      "fixtureExpectedFreshness": "stale-unmarked-last-good"
+    },
+    "hostile": {
+      "provider": "codex",
+      "source": "oauth",
+      "usage": {
+        "primary": {
+          "usedPercent": 101,
+          "windowMinutes": 0,
+          "resetsAt": "not-a-date"
+        },
+        "updatedAt": "not-a-date"
+      },
+      "unknownFutureField": {
+        "ignored": true
+      }
+    },
+    "costShape": {
+      "providers": ["codex", "claude"],
+      "source": "local",
+      "fields": ["sessionTokens", "sessionCostUSD", "last30DaysTokens", "last30DaysCostUSD", "daily", "totals"],
+      "codexProjectPathsRedacted": true
+    }
+  }
+}

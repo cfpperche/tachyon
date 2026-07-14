@@ -2,7 +2,7 @@
 
 _Created 2026-07-10 from the maintainer discussion about token economics and CodexBar._
 
-**Status:** draft
+**Status:** in-progress
 
 ## Intent
 
@@ -13,12 +13,12 @@ the operational question behind a long agent run: what did this run consume, whi
 and when is capacity available again?
 
 Build the next observability layer behind Tachyon's existing Runtime Ops interface. Tachyon keeps its own UI and owns
-the canonical, versioned usage/quota domain. A headless collection engine derived from the MIT-licensed CodexBar
-engine is the leading implementation candidate because its provider collectors, fallback strategies, quota windows,
-cost scanner, confidence, caching, and stale/error behavior already cover much of the acquisition problem. The first
-step is a bounded vendor-strategy spike that decides whether to maintain a headless Swift fork, extract a smaller
-Swift subset, or port selected collectors. No CodexBar visual surface, menu-bar behavior, or application state enters
-Tachyon.
+the canonical, versioned usage/quota domain. The MIT-licensed CodexBar engine is a mature behavioral reference because
+its provider collectors, fallback strategies, quota windows, cost scanner, confidence, caching, and stale/error
+behavior cover much of the acquisition problem. A bounded vendor-strategy spike compared a headless Swift fork, a
+smaller Swift extraction and selected native collectors. The maintainer ratified small TypeScript adapters for the
+required Codex and Claude quota paths; CodexBar remains a non-shipping reference/oracle. No CodexBar visual surface,
+Swift runtime component, menu-bar behavior, or application state enters Tachyon.
 
 The first product slice correlates Tachyon-native per-agent token facts with provider/account quota facts for Codex
 and Claude. It preserves provenance and unavailable states, never treats aggregate account usage as per-agent
@@ -27,7 +27,7 @@ source configuration.
 
 ## Acceptance criteria
 
-- [ ] **Scenario: Compare vendor strategies before choosing an implementation**
+- [x] **Scenario: Compare vendor strategies before choosing an implementation**
   - **Given** CodexBar's current released core/CLI and Tachyon's plugin/runtime boundaries
   - **When** the vendor-strategy spike exercises Codex and Claude collection on supported hosts
   - **Then** it records reproducible build/runtime evidence, source closure, binary footprint, cold/warm latency,
@@ -69,9 +69,9 @@ source configuration.
   usage, provider quota, context pressure, monetary cost, rate-limit events, and user-defined budgets as different facts
 - [ ] Codex and Claude are the only required provider collectors for the first vertical slice; additional providers use
   the same adapter contract and are follow-up work
-- [ ] Vendored or forked source and distributed binaries preserve required MIT copyright/license notices and record the
-  exact upstream repository, tag/commit, downstream patches, build inputs, and artifact hashes
-- [ ] The collection engine remains headless and replaceable: Runtime Ops consumes Tachyon's normalized domain, never
+- [ ] Any code actually derived from CodexBar preserves required MIT copyright/license notices and records the exact
+  upstream repository/tag/commit; behavioral reference fixtures identify their comparison baseline
+- [ ] The collector layer remains headless and replaceable: Runtime Ops consumes Tachyon's normalized domain, never
   the CodexBar `UsageSnapshot` or CLI payload directly
 
 ## Non-goals
@@ -98,14 +98,14 @@ source configuration.
   and governed automation.
 - **Sensitive sources are capability-gated.** Local or already-authenticated sources are preferred, but are not assumed
   harmless; every source keeps provenance and an explicit access boundary.
+- **Native selective port.** Codex and Claude quota acquisition is implemented as Tachyon-owned TypeScript adapters;
+  CodexBar is used only for research, fixture comparison, and monitoring relevant upstream behavior.
+- **Quota-only first slice.** Local cost scanning is deferred because its measured latency, memory and project-path
+  exposure create a separate performance/privacy capability.
 
 ## Open questions
 
-- **Vendor shape — spike-owned:** headless downstream fork of `CodexBarCore`, extracted Swift subset, or selected
-  TypeScript port. The spike must recommend one and state the rejected alternatives.
-- **Repository shape — spike-owned:** a dedicated Tachyon usage-engine fork plus a first-party plugin that provisions
-  its artifacts, or a source subtree inside the plugin repository. The Tachyon core remains free of bundled plugins.
-- **Host invocation seam — design-owned:** whether the existing provisioned-tool launcher is sufficient for a
-  host-initiated read-only observation source or a narrow, consented plugin data-source port is required.
-- **Cost boundary — maintainer ratification after spike:** whether Codex/Claude local cost totals join the first slice
-  or land immediately after quota windows; historical charts remain out of scope either way.
+- **Source capability shape — T1/T2-owned:** exact consent/configuration for each OAuth, file or provider-CLI read while
+  keeping raw credentials and responses inside its adapter.
+- **Upstream radar — T2-owned:** the smallest repeatable check that identifies relevant CodexBar provider changes
+  without making its source or binary a Tachyon build/runtime dependency.
