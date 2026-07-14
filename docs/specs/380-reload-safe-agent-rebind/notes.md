@@ -68,3 +68,38 @@ None.
 - Reconciled `npm run verify:full:quiet` passed: 328 files; 3952 passed, 3 skipped.
 - Human installed-build dogfood remains pending; no merge, package, install, Bridge restart, or VS
   Code window action was performed by the agent.
+
+## Acceptance review — 2026-07-14
+
+**Verdict:** ACCEPT for deliberate integration review; not yet shipped.
+
+- Delivery authority: `BridgeClientRebindCoordinator.preflight()` calls Workspace's
+  `AgentManager.resumeReadiness()` adapter before `markExpectedDeath` or either stop path.
+  `resumeReadiness()` checks the record marker and reload deny set before its cache, so the reproduced
+  Delivery-bound survivors remain running with their old generation stamp.
+- Private Claude continuity: transcript lookup and launch both use the persisted
+  `resume.configHome`; the override is limited to non-default Claude homes, and the global-home
+  compatibility regression proves no new `CLAUDE_CONFIG_DIR` is exported for ordinary sessions.
+- Honest lifecycle result: rebind passes `deferBridgeStamp`, proves 1.5 seconds of replacement
+  liveness, and only then writes `resume_ok` plus the current generation.  The forced early-exit test
+  proves `resume_fail`, no generation advance, and an operator notification.
+- Main compatibility: the intervening resume-without-primer default remains unchanged; ordinary
+  human resume still owns its immediate Bridge stamp, while only spec-380 rebind defers it.
+- Scope audit: nine intended paths only; no Delivery recovery, ProcessFence, UI, configuration
+  schema, or automatic integration changes.
+- SDD review found and corrected one documentation defect: `tasks.md` used a non-executable
+  `Headless check` label.  It now declares `Verify`, and both `sdd verify --run` and
+  `sdd dogfood --run` pass with durable logs below.
+- Non-blocking residuals remain explicit: the stability proof is process-liveness, not an MCP
+  application handshake; a Delivery marker appearing after the read-only preflight is outside the
+  known deterministic failure closure; installed Reload Window dogfood still requires the maintainer.
+
+## Verification log
+
+### 2026-07-14T16:23:57Z — pass (1/1) — source: tasks.md
+- `npx vitest run test/unit/agentManager.test.ts test/unit/bridgeClientRebind.test.ts && npm run typecheck` — pass
+
+## Dogfood log
+
+### 2026-07-14T16:24:17Z — pass (1/1) — source: tasks.md — commit: f49c56be7d53e3380dfc5a7710c2a22829804c33
+- `npx vitest run test/unit/agentManager.test.ts test/unit/bridgeClientRebind.test.ts -t "reload-safe"` — pass

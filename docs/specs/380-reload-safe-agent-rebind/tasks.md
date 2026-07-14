@@ -19,13 +19,8 @@ _Acceptance checks tied to `spec.md`. Each should map to a checklist item there.
 - [x] `npm run verify:full:quiet` passes once at the reviewable candidate.
 - [x] Complete diff audit finds no Delivery authority expansion or unrelated file changes.
 
-**Headless check:** `npx vitest run test/unit/agentManager.test.ts test/unit/bridgeClientRebind.test.ts && npm run typecheck`
-<!-- A mechanical command an agent can run to validate this spec's implementation
-     without a human (tests / build / lint). Kept green = the spec stays delivered.
-     To make `/sdd verify` re-run it, also declare it on a **Verify:** line, e.g.:
-       **Verify:** `npm test`
-     `/sdd verify` reads the FIRST backtick span per **Verify:** line, previews by
-     default, and runs only with --run. Multiple **Verify:** lines run in order. -->
+**Verify:** `npx vitest run test/unit/agentManager.test.ts test/unit/bridgeClientRebind.test.ts && npm run typecheck`
+<!-- Canonical mechanical check for `/sdd verify`; preview by default, run only with --run. -->
 
 ## Dogfood
 
