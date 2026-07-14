@@ -15,6 +15,7 @@ import { addAgent, cloneAgent, deleteAgent, agentEntryLine, deleteCommand, comma
 import type { StudioSubmit } from "./webview/studioSubmit.js";
 import { openServerInspector, SERVER_INSPECTOR_VIEW_TYPE, type ServerInspectorPanelState, type InspectorDeps } from "./webview/ServerInspector.js";
 import { SidebarPrototypeProvider, PIN_PREVIEW_VIEW_TYPE, type PinPreviewPanelState } from "./webview/SidebarPrototype.js";
+import { resolveModelFact } from "./sidebar/agentModel.js";
 import { RuntimeOpsViewProvider } from "./webview/RuntimeOpsView.js";
 import { ActivityPanelManager, ACTIVITY_VIEW_TYPE, type ActivityPanelState } from "./webview/ActivityPanel.js";
 import { PluginsPanelManager, PLUGINS_VIEW_TYPE, type PluginsPanelState } from "./webview/PluginsPanel.js";
@@ -619,8 +620,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   // spec 237 — the Preact webview sidebar is THE Tachyon view (the native tree was retired). refreshAll
   // pushes the live fleet to it on every state change; it's registered below.
-  const sidebarProto = new SidebarPrototypeProvider(context.extensionUri, workspaces, context.globalState);
   const runtimeOpsSnapshots = new RuntimeOpsSnapshotService(workspaces);
+  // spec 378 — the sidebar's model row gathers the same view-independent observed-model accessor the
+  // RuntimeOps snapshot uses, so a row shows the live transcript model even when RuntimeOps is never opened.
+  const sidebarProto = new SidebarPrototypeProvider(context.extensionUri, workspaces, context.globalState, (ws, agentName) =>
+    runtimeOpsSnapshots.observedModelFor(ws.workspaceRoot, ws.wsHash, agentName),
+  );
   const runtimeOps = new RuntimeOpsViewProvider(context.extensionUri, () => runtimeOpsSnapshots.snapshot());
   // spec 238 — the editor-area Runtime Activity View (normalized cockpit; reads the durable per-agent log).
   const activityPanels = new ActivityPanelManager(context.extensionUri, workspaces);
@@ -668,7 +673,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push({ dispose: () => missionControlPanels.dispose() });
   // spec 239 inc 3b — always-on durable-log writers (one per resumable agent), so the agent's full activity
   // history is captured across /clear, /resume, compaction and fresh starts even with no Activity panel open.
-  const activityLog = new ActivityLogManager(workspaces, 2000, 3000, () => runtimeOps.refresh());
+  // spec 378 — a model-bearing record landing in an agent's durable log must advance the shared projection and
+  // refresh the sidebar even when RuntimeOps is never opened (RuntimeOpsView.refresh() no-ops while hidden).
+  // The projection cursor is advanced here (observedModelFor), independent of runtimeOps.refresh() below.
+  const modelFactSignatures = new Map<string, string>();
+  const activityLog = new ActivityLogManager(workspaces, 2000, 3000, (wsHash, agentName) => {
+    runtimeOps.refresh();
+    const ws = workspaces().find((w) => w.wsHash === wsHash);
+    if (!ws) return;
+    const observed = runtimeOpsSnapshots.observedModelFor(ws.workspaceRoot, wsHash, agentName);
+    const fact = resolveModelFact(ws.manager.defOf(agentName)?.cmd, observed);
+    const signature = fact ? `${fact.label} ${fact.source} ${fact.stale} ${fact.divergence}` : "";
+    const key = `${wsHash}::${agentName}`;
+    if (modelFactSignatures.get(key) === signature) return; // unchanged (label, source, stale, divergence) tuple — no refresh
+    modelFactSignatures.set(key, signature);
+    sidebarProto.refresh();
+  });
   activityLog.start();
   context.subscriptions.push({ dispose: () => activityLog.dispose() });
   const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 50);
