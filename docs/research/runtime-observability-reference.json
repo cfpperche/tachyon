@@ -21,6 +21,10 @@
     {
       "path": "test/fixtures/runtime-observability-v1.json",
       "sha256": "fda23004bda234a09acf5e003747dbc6ddc0c05de2162ad57824a24141e0efd7"
+    },
+    {
+      "path": "test/fixtures/codex-app-server-rate-limits-v0.144.4.json",
+      "sha256": "da6491cf5d8a2ec9483b1bdb1894cf1502570346507732065454fc204f665c18"
     }
   ],
   "watchedPaths": [
