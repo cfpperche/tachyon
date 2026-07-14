@@ -1,4 +1,4 @@
-import type { AgentVM, AgentStatus, Verify, ContinuityBadge, EvidenceBadge, PersistenceHookBadge } from "./types";
+import type { AgentVM, AgentStatus, Verify, ContinuityBadge, EvidenceBadge, PersistenceHookBadge, ModelSource } from "./types";
 import type { ExternalToolsSummaryVM } from "../externalTools/types.js";
 import { runtimeOf } from "../resume/adapters.js";
 import { modelLabelForRuntime } from "../runtime/runtimeProfile.js";
@@ -75,6 +75,46 @@ function labelModel(runtime: ReturnType<typeof runtimeOf>, modelId: string | und
   return runtime ? modelLabelForRuntime(runtime, trimmed) : trimmed;
 }
 
+/** Whether a declared spawn command pinned an explicit model, and the raw token it pinned (t-140242/378). */
+export interface DeclaredModelInfo {
+  /** Raw model id/token as declared on the command line — undefined when no explicit flag matched. */
+  id?: string;
+  /** True for `--model`/`-m`/`-c model=`; false for a bare runtime falling back to its profile default. */
+  explicit: boolean;
+}
+
+/**
+ * The declared model id parsed from a spawn command line (t-140242/t-140a24/spec 378) — the SAME token scan
+ * `modelFromCommand` uses for its label, exposed as the raw id + explicitness so callers (RuntimeOps'
+ * `source` field, the observed/declared divergence check) don't each re-implement the scan (plan: "unify the
+ * two parallel declared-parsers"). Leftmost token that resolves to a non-empty label wins.
+ */
+export function declaredModelFromCommand(cmd: string | undefined): DeclaredModelInfo {
+  if (!cmd?.trim()) return { explicit: false };
+  const tokens = tokenizeCommand(cmd);
+  const runtime = runtimeOf(cmd);
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i]!;
+    if (token === "--model" || token === "-m") {
+      const id = tokens[i + 1];
+      if (labelModel(runtime, id)) return { id: id!.trim(), explicit: true };
+      continue;
+    }
+    if (token.startsWith("--model=")) {
+      const id = token.slice("--model=".length);
+      if (labelModel(runtime, id)) return { id: id.trim(), explicit: true };
+      continue;
+    }
+    // Codex TOML override: `-c model=gpt-5.6-terra` (two tokens after shell tokenize)
+    if (token === "-c") {
+      const id = modelIdFromCodexConfigOverride(tokens[i + 1]);
+      if (labelModel(runtime, id)) return { id, explicit: true };
+      continue;
+    }
+  }
+  return { explicit: false };
+}
+
 /**
  * Best-effort model label from a spawn command line.
  * Supports Claude/Grok `--model`/`-m`/`--model=`, and Codex fleet form `-c model=<id>`
@@ -82,31 +122,68 @@ function labelModel(runtime: ReturnType<typeof runtimeOf>, modelId: string | und
  */
 export function modelFromCommand(cmd: string | undefined): string | undefined {
   if (!cmd?.trim()) return undefined;
-  const tokens = tokenizeCommand(cmd);
   const runtime = runtimeOf(cmd);
-  for (let i = 0; i < tokens.length; i++) {
-    const token = tokens[i]!;
-    if (token === "--model" || token === "-m") {
-      const labeled = labelModel(runtime, tokens[i + 1]);
-      if (labeled) return labeled;
-      continue;
-    }
-    if (token.startsWith("--model=")) {
-      const labeled = labelModel(runtime, token.slice("--model=".length));
-      if (labeled) return labeled;
-      continue;
-    }
-    // Codex TOML override: `-c model=gpt-5.6-terra` (two tokens after shell tokenize)
-    if (token === "-c") {
-      const labeled = labelModel(runtime, modelIdFromCodexConfigOverride(tokens[i + 1]));
-      if (labeled) {
-        i += 1;
-        return labeled;
-      }
-      continue;
-    }
+  const declared = declaredModelFromCommand(cmd);
+  if (declared.id) {
+    const labeled = labelModel(runtime, declared.id);
+    if (labeled) return labeled;
   }
   return runtime ? modelLabelForRuntime(runtime) : undefined;
+}
+
+/** spec 378 — an observed id from a transcript must be charset/length-gated before it's trusted as a label
+ *  (transcripts are less trusted than a declared spawn command); never "Unavailable" for an unknown-but-valid
+ *  id — `labelModel` already falls back to a raw/title-cased render. */
+const OBSERVED_MODEL_ID_RE = /^[A-Za-z0-9 ._:/-]{1,64}$/;
+
+export function validatedObservedModelId(id: string | undefined): string | undefined {
+  const trimmed = id?.trim();
+  return trimmed && OBSERVED_MODEL_ID_RE.test(trimmed) ? trimmed : undefined;
+}
+
+/** The transcript-latched observed model fact gathered by the host (spec 378) — raw, pre-precedence. */
+export interface ObservedModelInput {
+  /** Raw observed model id (validated internally before use). */
+  id?: string;
+  effort?: string;
+  observedAt?: string;
+  /** True when a process-preserving session boundary (in-TUI `/clear`, resume) was crossed since this
+   *  observation, so it's carried forward but flagged as awaiting re-observation. */
+  stale: boolean;
+}
+
+/** The resolved (label, source, stale, divergence) model fact for one agent row (spec 378). */
+export interface ModelFact {
+  label: string;
+  source: ModelSource;
+  observedAt?: string;
+  stale: boolean;
+  divergence: boolean;
+}
+
+/**
+ * Precedence: observed > declared > profile (spec 378 acceptance). Divergence compares the declared and
+ * observed LABELS (both normalized through the same alias table via `labelModel`/`modelLabelForRuntime`) —
+ * not the raw ids, so e.g. a bare `codex` (declared: "Codex default") vs an observed `gpt-5.6-sol`
+ * ("GPT-5.6 Sol") correctly reads as divergent. Boundary-aware demotion happens upstream (the caller clears
+ * `observed.id` on a process-rotating boundary, or sets `stale: true` on a process-preserving one) — this
+ * function only applies straightforward precedence to whatever it's given.
+ */
+export function resolveModelFact(cmd: string | undefined, observed?: ObservedModelInput): ModelFact | undefined {
+  const declaredLabel = modelFromCommand(cmd);
+  if (!declaredLabel || !cmd) return undefined;
+  const declaredSource: ModelSource = declaredModelFromCommand(cmd).explicit ? "declared" : "profile";
+  const runtime = runtimeOf(cmd);
+  const validId = runtime ? validatedObservedModelId(observed?.id) : undefined;
+  if (!validId) return { label: declaredLabel, source: declaredSource, stale: false, divergence: false };
+  const observedLabel = labelModel(runtime, validId) ?? validId;
+  return {
+    label: observedLabel,
+    source: "observed",
+    ...(observed?.observedAt ? { observedAt: observed.observedAt } : {}),
+    stale: observed?.stale === true,
+    divergence: observedLabel !== declaredLabel,
+  };
 }
 export interface AgentExtras {
   /** monitor attention state: "working" | "idle" | "needs-input" | "throttled" (undefined when not monitored) */
@@ -132,6 +209,9 @@ export interface AgentExtras {
   awaitingHuman?: { reason: string };
   /** t-8354ae — row rendered under invalid config (ledger/LKG degraded mode). */
   configInvalid?: boolean;
+  /** spec 378 — the transcript-latched observed model fact (undefined = no observation yet; the row falls
+   *  back to declared/profile). */
+  model?: ObservedModelInput;
 }
 
 /** The sidebar grouping bucket. NOTE: mixes lifecycle (running/stopped/crashed) with running-attention
@@ -155,10 +235,18 @@ export function toAgentVM(a: AgentRaw, x: AgentExtras = {}): AgentVM {
   const sub = a.dead ? (a.crashed ? `exited (${a.exitCode ?? 1})` : "exited (0)") : a.cleanExited ? "exited (0)" : undefined;
   const stopping = a.stopping && !a.dead ? "stopping..." : undefined;
   const stopFailed = a.stopFailed && !a.dead ? "stop failed" : undefined;
-  const model = x.ai === false ? undefined : modelFromCommand(a.cmd);
+  const modelFact = x.ai === false ? undefined : resolveModelFact(a.cmd, x.model);
   return {
     name: a.name,
-    ...(model ? { model } : {}),
+    ...(modelFact
+      ? {
+          model: modelFact.label,
+          modelSource: modelFact.source,
+          ...(modelFact.observedAt ? { modelObservedAt: modelFact.observedAt } : {}),
+          ...(modelFact.stale ? { modelStale: true } : {}),
+          ...(modelFact.divergence ? { modelDivergence: true } : {}),
+        }
+      : {}),
     status: statusOf(a, visibleAttention),
     ...(attention ? { attention } : {}),
     ...(a.parent ? { parent: a.parent } : {}),
