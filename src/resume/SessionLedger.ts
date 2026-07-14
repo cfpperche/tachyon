@@ -7,6 +7,7 @@ import { appendCapped, replaceVerifySet, EVIDENCE_SCHEMA_VERSION, type WorktreeE
 import type { VerifyState } from "../worktree/verify.js";
 import type { SpawnContract } from "../bridge/spawnContract.js";
 import type { Role } from "../roles/templates.js";
+import type { SoulSnapshot } from "../agents/promptLayers.js";
 
 /**
  * Per-workspace session ledger (spec 209 + 211): `agentName -> SessionRecord`,
@@ -148,16 +149,10 @@ export interface SessionRecord {
 }
 
 export interface SessionIdentity {
-  enabled: true;
-  profileId: string;
-  source: string;
-  sha256: string;
-  chars: number;
-  bytes: number;
-  offeredAt: string;
-  channel: "startup-argument" | "tui-prefill";
-  health: "healthy" | "identity-degraded";
-  attention?: boolean;
+  soul: SoulSnapshot;
+  health: "offered" | "identity-degraded";
+  degradedAt?: string;
+  degradedCode?: string;
 }
 
 /** A row may drive resume only when it has a runtime AND that runtime still has an adapter. */
@@ -405,13 +400,19 @@ function parseDef(d: unknown): SessionDef | undefined {
 function parseIdentity(value: unknown): SessionIdentity | undefined {
   if (typeof value !== "object" || value === null) return undefined;
   const o = value as Record<string, unknown>;
-  if (o.enabled !== true || typeof o.profileId !== "string" || typeof o.source !== "string" ||
-      typeof o.sha256 !== "string" || !/^[0-9a-f]{64}$/.test(o.sha256) || typeof o.chars !== "number" ||
-      typeof o.bytes !== "number" || typeof o.offeredAt !== "string" ||
-      (o.channel !== "startup-argument" && o.channel !== "tui-prefill") ||
-      (o.health !== "healthy" && o.health !== "identity-degraded")) return undefined;
-  return { enabled: true, profileId: o.profileId, source: o.source, sha256: o.sha256, chars: o.chars, bytes: o.bytes,
-    offeredAt: o.offeredAt, channel: o.channel, health: o.health, ...(o.attention === true ? { attention: true } : {}) };
+  if (typeof o.soul !== "object" || o.soul === null || (o.health !== "offered" && o.health !== "identity-degraded")) return undefined;
+  const s = o.soul as Record<string, unknown>;
+  if (typeof s.profileId !== "string" || typeof s.source !== "string" || typeof s.sha256 !== "string" ||
+      !/^[0-9a-f]{64}$/.test(s.sha256) || typeof s.chars !== "number" || typeof s.bytes !== "number" ||
+      typeof s.offeredAt !== "string" || s.state !== "offered" ||
+      (s.channel !== "startup-argument" && s.channel !== "tui-prefill" && s.channel !== "reanchor-pointer")) return undefined;
+  return {
+    soul: { profileId: s.profileId, source: s.source, sha256: s.sha256, chars: s.chars, bytes: s.bytes,
+      offeredAt: s.offeredAt, channel: s.channel, state: "offered" },
+    health: o.health,
+    ...(typeof o.degradedAt === "string" ? { degradedAt: o.degradedAt } : {}),
+    ...(typeof o.degradedCode === "string" ? { degradedCode: o.degradedCode } : {}),
+  };
 }
 
 /** A persisted spawn-contract (spec 246) — the three required string slots + the deliverable/done_when pair. */

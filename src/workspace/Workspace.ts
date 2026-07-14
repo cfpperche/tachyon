@@ -6,7 +6,7 @@ import { TmuxService, workspaceHash, SESSION_PREFIX } from "../tmux/TmuxService.
 import { ControlModeClient } from "../tmux/ControlModeClient.js";
 import { loadConfigFile, parseConfig, CONFIG_FILENAMES, inferKind, shellQuote, type TachyonConfig } from "../config/loadConfig.js";
 import { composeAgentPrompt } from "../agents/promptLayers.js";
-import { openingPromptCapability } from "../agents/openingPromptCapability.js";
+import { SoulError } from "../agents/soul.js";
 import { snapshotFromConfig, writeConfigLkg, readConfigLkg, type ConfigLkgSnapshot } from "../config/configLkg.js";
 import {
   type ConfigFailure,
@@ -2000,16 +2000,14 @@ export class Workspace {
         fs.writeFileSync(tmp, `${primer}\n\n${body}\n\n${beforeFinishing}\n`, { encoding: "utf8", mode: 0o600, flag: "wx" });
         fs.renameSync(tmp, abs);
         fs.chmodSync(abs, 0o600);
-        const transition = previous?.sha256 && previous.sha256 !== soul.sha256 ? ` (${previous.sha256.slice(0, 12)}→${soul.sha256.slice(0, 12)})` : "";
+        const transition = previous?.soul.sha256 && previous.soul.sha256 !== soul.sha256 ? ` (${previous.soul.sha256.slice(0, 12)}→${soul.sha256.slice(0, 12)})` : "";
         await this.tmux.sendKeys(session, `[Tachyon] Re-anchor identity${transition}: read the complete current contract with: cat ${shellQuote(abs)}`, true);
-        const capability = openingPromptCapability(def.cmd);
-        if (capability.status !== "prompt") throw new Error(`Soul delivery is unsupported for ${capability.runtime}`);
         const rec = this.ledger.get(agent);
-        if (rec) this.ledger.record(agent, { ...rec, identity: { enabled: true, profileId: soul.profileId, source: soul.source, sha256: soul.sha256, chars: soul.chars, bytes: soul.bytes, offeredAt: new Date().toISOString(), channel: capability.channel, health: "healthy" } });
+        if (rec) this.ledger.record(agent, { ...rec, identity: { soul: { profileId: soul.profileId, source: soul.source, sha256: soul.sha256, chars: soul.chars, bytes: soul.bytes, offeredAt: new Date().toISOString(), channel: "reanchor-pointer", state: "offered" }, health: "offered" } });
         return;
       } catch (error) {
         const rec = this.ledger.get(agent);
-        if (rec?.identity) this.ledger.record(agent, { ...rec, identity: { ...rec.identity, health: "identity-degraded", attention: true } });
+        if (rec?.identity) this.ledger.record(agent, { ...rec, identity: { ...rec.identity, health: "identity-degraded", degradedAt: new Date().toISOString(), degradedCode: error instanceof SoulError ? error.code : "soul/io-error" } });
         throw error;
       }
     }

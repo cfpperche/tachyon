@@ -491,8 +491,8 @@ export function newlyDeclaredAutostart(
  * which does not survive an extension restart by design.
  */
 export class AgentManager {
-  private soulSnapshot(soul: ResolvedSoul, channel: "startup-argument" | "tui-prefill"): SoulSnapshot & { offeredAt: string; channel: "startup-argument" | "tui-prefill"; health: "healthy" } {
-    return { enabled: true, profileId: soul.profileId, source: soul.source, sha256: soul.sha256, chars: soul.chars, bytes: soul.bytes, offeredAt: new Date().toISOString(), channel, health: "healthy" };
+  private soulSnapshot(soul: ResolvedSoul, channel: SoulSnapshot["channel"]): SoulSnapshot {
+    return { profileId: soul.profileId, source: soul.source, sha256: soul.sha256, chars: soul.chars, bytes: soul.bytes, offeredAt: new Date().toISOString(), channel, state: "offered" };
   }
 
   private async preflightSoul(name: string, def: AgentDef): Promise<ResolvedSoul> {
@@ -1063,6 +1063,7 @@ export class AgentManager {
     const effective = commandOverride ?? definition?.cmd ?? opts.cmd ?? this.definitionOf(name)?.cmd;
     if (!effective) throw new UnknownAgentError(name);
     await this.assertLaunchPreflight(name, effective, { ...(definition?.env ?? this.definitionOf(name)?.env), ...(opts.env ?? {}) });
+    const resolvedSoul = definition?.soul ? await this.preflightSoul(bound!, definition) : undefined;
     const preflight: DeliveryPreflightProof = { [deliveryPreflightProof]: true };
     // Preparation is not an acquisition boundary: a same-named session can appear while
     // the Delivery reservation is being prepared.  The inner spawn boundary records
@@ -1075,7 +1076,7 @@ export class AgentManager {
     const attempt: DeliveryLaunchAttempt = { mode, acquired: false, token: false, materialized: "not-started", session: "not-started", ledger: false };
     const prepared = await this.opts.prepareDeliveryJoin(name, request);
     try {
-      await this.spawnCore(name, opts, { cwd: prepared.cwd, worktree: prepared.worktree, commandOverride, definition, ephemeral: mode !== "declared", preflight, attempt });
+      await this.spawnCore(name, opts, { cwd: prepared.cwd, worktree: prepared.worktree, commandOverride, definition, ephemeral: mode !== "declared", preflight, attempt, resolvedSoul });
       await this.opts.confirmDeliveryJoin(name, request, prepared, await this.tryPanePid(name));
       // SDD 368 T14 — reverse binding after confirm; failure is a failed join (never unbound successful holder).
       this.persistDeliveryBinding(name, {
@@ -1406,7 +1407,7 @@ export class AgentManager {
    * parentCwd and ignores it), so reuse cannot ride `opts.cwd`/`resolveSpawnCwd` and instead short-circuits
    * both here.
    */
-  private async spawnCore(name: string, opts?: SpawnOptions, forced?: { cwd: string; worktree: WorktreeRecord; commandOverride?: string; definition?: AgentDef; ephemeral?: boolean; preflight?: DeliveryPreflightProof; attempt?: DeliveryLaunchAttempt }): Promise<void> {
+  private async spawnCore(name: string, opts?: SpawnOptions, forced?: { cwd: string; worktree: WorktreeRecord; commandOverride?: string; definition?: AgentDef; ephemeral?: boolean; preflight?: DeliveryPreflightProof; attempt?: DeliveryLaunchAttempt; resolvedSoul?: ResolvedSoul }): Promise<void> {
     const clearTransientState = () => {
       this.readyAgents.delete(name);
       this.readinessCache.delete(name);
@@ -1466,7 +1467,7 @@ export class AgentManager {
     // SDD 370: authoritative validation precedes cwd/worktree preparation and every durable/runtime
     // side effect. The parser never evaluates shell syntax; ambiguous composition remains unverifiable.
     if (!forced?.preflight || forced.preflight[deliveryPreflightProof] !== true) await this.assertLaunchPreflight(name, def.cmd, { ...def.env, ...(opts?.env ?? {}) });
-    const resolvedSoul = def.soul ? await this.preflightSoul(name, def) : undefined;
+    const resolvedSoul = forced?.resolvedSoul ?? (def.soul ? await this.preflightSoul(name, def) : undefined);
 
     let cwd = resolveCwd(this.opts.workspaceRoot, def.cwd);
     const adhoc = !!opts?.cmd || !!forced?.ephemeral;
@@ -1609,7 +1610,7 @@ export class AgentManager {
       const resumeBlock = adapter && !selfManaged ? this.withConfigHome(name, def, { runtime: adapter.runtime, sessionId: resumeId }) : undefined; // spec 240
       const promptCapability = openingPromptCapability(def.cmd);
       const identity = resolvedSoul ? this.soulSnapshot(resolvedSoul, promptCapability.status === "prompt" ? promptCapability.channel : "startup-argument") : undefined;
-      this.opts.ledger.record(name, { def: defBlock, resume: resumeBlock, worktree, cwd, declared: !adhoc, identity });
+      this.opts.ledger.record(name, { def: defBlock, resume: resumeBlock, worktree, cwd, declared: !adhoc, ...(identity ? { identity: { soul: identity, health: "offered" } } : {}) });
       if (forced?.attempt) forced.attempt.ledger = true;
     }
     // spec 364 — durable Bridge-client stamp after successful spawn with materialization.
@@ -2308,7 +2309,8 @@ export class AgentManager {
           { ...existing?.resume, runtime: injected.adapter.runtime, sessionId: injected.resumeId, configHome: this.runtimeConfigHome(injected.adapter.runtime, name, def) }
         : existing?.resume;
       const capability = openingPromptCapability(def.cmd);
-      const identity = resolvedSoul && capability.status === "prompt" ? this.soulSnapshot(resolvedSoul, capability.channel) : existing?.identity;
+      const soul = resolvedSoul && capability.status === "prompt" ? this.soulSnapshot(resolvedSoul, capability.channel) : existing?.identity?.soul;
+      const identity = soul ? { soul, health: "offered" as const } : existing?.identity;
       this.opts.ledger.record(name, { ...(existing ?? { declared: !this.adhoc.has(name) }), cwd, ...(worktree ? { worktree } : {}), resume, identity });
     }
     // spec 364 — restart is a fresh process with Bridge re-injection; stamp generation.
