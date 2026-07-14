@@ -1,0 +1,939 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>381 — Prompt templates · interactive prototype</title>
+  <style>
+    :root {
+      --bg: #1e1e1e;
+      --bg-2: #252526;
+      --bg-3: #2d2d2d;
+      --bg-sidebar: #181818;
+      --bg-input: #3c3c3c;
+      --bg-hover: #2a2d2e;
+      --bg-active: #094771;
+      --bg-modal: #252526;
+      --fg: #cccccc;
+      --fg-bright: #ffffff;
+      --muted: #9d9d9d;
+      --border: #3c3c3c;
+      --accent: #3794ff;
+      --accent-2: #0e639c;
+      --ok: #89d185;
+      --warn: #cca700;
+      --err: #f48771;
+      --chip: #3a3d41;
+      --mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+      --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+      --radius: 6px;
+      --shadow: 0 12px 40px rgba(0,0,0,.45);
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: #111; color: var(--fg); font: 13px/1.45 var(--sans); }
+    body { display: grid; grid-template-rows: auto 1fr; min-height: 100vh; }
+
+    /* ── top chrome ── */
+    .proto-bar {
+      display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+      padding: 10px 16px; background: #141414; border-bottom: 1px solid #2a2a2a;
+      position: sticky; top: 0; z-index: 50;
+    }
+    .proto-bar h1 { margin: 0; font-size: 13px; font-weight: 600; color: var(--fg-bright); letter-spacing: .02em; }
+    .proto-bar .badge {
+      font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+      padding: 3px 8px; border-radius: 999px; background: #3a2f12; color: #e2c08d; border: 1px solid #5a4a20;
+    }
+    .proto-bar .meta { color: var(--muted); font-size: 12px; }
+    .proto-bar .spacer { flex: 1; }
+    .steps { display: flex; gap: 6px; flex-wrap: wrap; }
+    .step-btn {
+      border: 1px solid var(--border); background: var(--bg-2); color: var(--fg);
+      border-radius: 999px; padding: 5px 10px; cursor: pointer; font: inherit; font-size: 12px;
+    }
+    .step-btn:hover { border-color: #555; background: var(--bg-hover); }
+    .step-btn.active { background: var(--bg-active); border-color: var(--accent); color: var(--fg-bright); }
+    .step-btn.done { border-color: #2f5d36; color: var(--ok); }
+
+    /* ── layout ── */
+    .stage { display: grid; grid-template-columns: 280px 1fr; min-height: 0; height: calc(100vh - 52px); }
+    .narration {
+      background: #161616; border-right: 1px solid #2a2a2a; padding: 16px; overflow: auto;
+    }
+    .narration h2 { margin: 0 0 8px; font-size: 14px; color: var(--fg-bright); }
+    .narration p { margin: 0 0 12px; color: var(--muted); }
+    .narration ul { margin: 0 0 16px; padding-left: 18px; color: var(--fg); }
+    .narration li { margin: 0 0 6px; }
+    .narration code, .callout code, .toast code, .file code {
+      font-family: var(--mono); font-size: 11.5px; background: #2a2a2a; padding: 1px 5px; border-radius: 3px;
+    }
+    .callout {
+      border: 1px solid #3a3a3a; border-left: 3px solid var(--accent); background: #1b1b1b;
+      border-radius: 4px; padding: 10px 12px; margin: 12px 0; color: var(--fg);
+    }
+    .callout.warn { border-left-color: var(--warn); }
+    .callout.ok { border-left-color: var(--ok); }
+    .nav-row { display: flex; gap: 8px; margin-top: 18px; }
+    .btn {
+      border: 1px solid transparent; border-radius: var(--radius); padding: 7px 12px;
+      font: inherit; cursor: pointer; background: var(--accent-2); color: #fff;
+    }
+    .btn:hover { filter: brightness(1.08); }
+    .btn.ghost { background: transparent; border-color: var(--border); color: var(--fg); }
+    .btn.ghost:hover { background: var(--bg-hover); }
+    .btn.warn { background: #6b4f00; }
+    .btn.danger { background: #5a1d1d; }
+
+    .canvas-wrap { position: relative; overflow: hidden; background: #111; }
+    .canvas {
+      position: absolute; inset: 16px; display: grid; grid-template-columns: 240px 1fr;
+      border: 1px solid #333; border-radius: 10px; overflow: hidden; background: var(--bg);
+      box-shadow: var(--shadow);
+    }
+
+    /* ── fake VS Code ── */
+    .sb {
+      background: var(--bg-sidebar); border-right: 1px solid var(--border);
+      display: flex; flex-direction: column; min-width: 0;
+    }
+    .sb-head {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 12px 8px; border-bottom: 1px solid #222;
+    }
+    .sb-head strong { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+    .sb-section {
+      padding: 10px 8px 4px; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted);
+    }
+    .agent-row {
+      display: grid; grid-template-columns: 1fr auto; gap: 4px; align-items: center;
+      margin: 2px 6px; padding: 7px 8px; border-radius: 5px; cursor: pointer; border: 1px solid transparent;
+    }
+    .agent-row:hover, .agent-row.focus { background: var(--bg-hover); }
+    .agent-row.selected { background: var(--bg-active); border-color: color-mix(in srgb, var(--accent) 50%, transparent); }
+    .agent-row .name { color: var(--fg-bright); font-weight: 600; display: flex; align-items: center; gap: 6px; }
+    .agent-row .sub { color: var(--muted); font-size: 11px; margin-top: 2px; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); display: inline-block; }
+    .dot.busy { background: var(--warn); }
+    .dot.dead { background: #666; }
+    .icon-btn {
+      width: 24px; height: 24px; border-radius: 4px; border: 0; background: transparent;
+      color: var(--muted); cursor: pointer; font-size: 14px; line-height: 1;
+    }
+    .icon-btn:hover { background: #333; color: var(--fg-bright); }
+
+    .main { display: grid; grid-template-rows: auto 1fr auto; min-width: 0; background: var(--bg); }
+    .tabs {
+      display: flex; gap: 0; background: var(--bg-2); border-bottom: 1px solid var(--border); padding: 0 8px;
+    }
+    .tab {
+      padding: 8px 12px; color: var(--muted); border-bottom: 2px solid transparent; font-size: 12px;
+    }
+    .tab.active { color: var(--fg-bright); border-bottom-color: var(--accent); background: color-mix(in srgb, var(--bg) 70%, transparent); }
+    .pane {
+      padding: 14px 16px; overflow: auto; font-family: var(--mono); font-size: 12.5px; line-height: 1.55;
+      color: #d4d4d4; white-space: pre-wrap;
+    }
+    .pane .dim { color: #6a6a6a; }
+    .pane .human { color: #9cdcfe; }
+    .pane .assistant { color: #ce9178; }
+    .pane .sys { color: #6a9955; }
+    .composer {
+      border-top: 1px solid var(--border); background: var(--bg-2); padding: 10px 12px;
+      display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: end;
+    }
+    .composer-box {
+      min-height: 52px; border: 1px solid var(--border); border-radius: var(--radius);
+      background: var(--bg-input); color: var(--fg-bright); padding: 8px 10px;
+      font-family: var(--mono); font-size: 12.5px; white-space: pre-wrap;
+    }
+    .composer-box.empty { color: #777; }
+    .composer-box.staged { border-color: var(--accent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent); }
+    .composer-box.sent { border-color: var(--ok); }
+    .composer .hint { grid-column: 1 / -1; color: var(--muted); font-size: 11px; }
+
+    /* ── overlays ── */
+    .overlay {
+      position: absolute; inset: 0; background: rgba(0,0,0,.35); display: none; align-items: flex-start;
+      justify-content: center; padding-top: 72px; z-index: 20;
+    }
+    .overlay.show { display: flex; }
+    .quickpick, .modal, .menu, .toast, .palette {
+      background: var(--bg-modal); border: 1px solid #454545; border-radius: 8px; box-shadow: var(--shadow);
+      color: var(--fg); min-width: 420px; max-width: min(560px, 92%);
+    }
+    .palette { width: 520px; }
+    .qp-head, .modal-head {
+      padding: 10px 12px; border-bottom: 1px solid var(--border); display: flex; gap: 8px; align-items: center;
+    }
+    .qp-head input, .palette input {
+      flex: 1; background: var(--bg-input); border: 1px solid var(--border); border-radius: 4px;
+      color: var(--fg-bright); padding: 7px 9px; font: inherit;
+    }
+    .qp-list { max-height: 280px; overflow: auto; padding: 4px; }
+    .qp-item {
+      display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; padding: 8px 10px;
+      border-radius: 5px; cursor: pointer;
+    }
+    .qp-item:hover, .qp-item.active { background: var(--bg-active); }
+    .qp-item .label { color: var(--fg-bright); font-weight: 600; }
+    .qp-item .desc { color: var(--muted); font-size: 11.5px; grid-column: 1 / -1; }
+    .qp-item .tag {
+      font-size: 10px; color: var(--muted); background: var(--chip); border-radius: 999px; padding: 2px 7px;
+      align-self: start;
+    }
+    .modal { width: 520px; }
+    .modal-body { padding: 12px 14px; }
+    .modal-body pre {
+      margin: 10px 0 0; padding: 10px; background: #1b1b1b; border: 1px solid #333; border-radius: 6px;
+      white-space: pre-wrap; font-family: var(--mono); font-size: 12px; color: #dcdcdc; max-height: 180px; overflow: auto;
+    }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 0 14px 14px; }
+    .menu {
+      position: absolute; min-width: 220px; padding: 4px; z-index: 25; display: none;
+    }
+    .menu.show { display: block; }
+    .menu-item {
+      padding: 7px 10px; border-radius: 4px; cursor: pointer; display: flex; justify-content: space-between; gap: 12px;
+    }
+    .menu-item:hover { background: var(--bg-active); }
+    .menu-item .k { color: var(--muted); font-size: 11px; }
+    .menu-sep { height: 1px; background: var(--border); margin: 4px 2px; }
+    .toast {
+      position: absolute; right: 28px; bottom: 28px; min-width: 280px; max-width: 420px;
+      padding: 12px 14px; display: none; z-index: 30; border-left: 3px solid var(--accent);
+    }
+    .toast.show { display: block; animation: pop .18s ease-out; }
+    .toast.warn { border-left-color: var(--warn); }
+    .toast.ok { border-left-color: var(--ok); }
+    .toast .t { color: var(--fg-bright); font-weight: 600; margin-bottom: 4px; }
+    .toast .d { color: var(--muted); font-size: 12px; }
+
+    /* ── storage scene ── */
+    .files {
+      grid-column: 1 / -1; display: grid; grid-template-columns: 220px 1fr; min-height: 0;
+    }
+    .tree { background: var(--bg-sidebar); border-right: 1px solid var(--border); padding: 12px; font-family: var(--mono); font-size: 12px; }
+    .tree .dir { color: var(--muted); margin: 6px 0 4px; }
+    .tree .file {
+      padding: 5px 8px; border-radius: 4px; cursor: pointer; color: var(--fg);
+    }
+    .tree .file:hover, .tree .file.active { background: var(--bg-active); color: var(--fg-bright); }
+    .editor {
+      display: grid; grid-template-rows: auto 1fr; min-width: 0;
+    }
+    .editor-tabs { background: var(--bg-2); border-bottom: 1px solid var(--border); padding: 8px 12px; color: var(--muted); font-size: 12px; }
+    .editor-tabs strong { color: var(--fg-bright); font-weight: 500; }
+    .editor pre {
+      margin: 0; padding: 16px; overflow: auto; font-family: var(--mono); font-size: 12.5px; line-height: 1.55;
+      color: #d4d4d4; white-space: pre-wrap;
+    }
+    .editor .fm { color: #c586c0; }
+    .editor .key { color: #9cdcfe; }
+    .editor .str { color: #ce9178; }
+
+    /* ── map scene ── */
+    .map {
+      grid-column: 1 / -1; padding: 24px; overflow: auto; background:
+        radial-gradient(circle at 20% 20%, #1a2330 0%, transparent 40%),
+        radial-gradient(circle at 80% 70%, #1a2a22 0%, transparent 35%),
+        var(--bg);
+    }
+    .map-grid {
+      display: grid; grid-template-columns: repeat(3, minmax(180px, 1fr)); gap: 14px; max-width: 980px; margin: 0 auto;
+    }
+    .card {
+      background: var(--bg-2); border: 1px solid var(--border); border-radius: 10px; padding: 14px;
+      min-height: 120px;
+    }
+    .card h3 { margin: 0 0 6px; font-size: 13px; color: var(--fg-bright); }
+    .card p { margin: 0; color: var(--muted); font-size: 12px; }
+    .card .chip-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+    .chip {
+      font-size: 10px; letter-spacing: .04em; text-transform: uppercase; font-weight: 700;
+      padding: 3px 7px; border-radius: 999px; background: #2a2a2a; color: var(--muted); border: 1px solid #3a3a3a;
+    }
+    .chip.in { color: #9cdcfe; border-color: #355; }
+    .chip.out { color: var(--ok); border-color: #35553a; }
+    .chip.no { color: var(--err); border-color: #553535; }
+    .flow-arrow {
+      grid-column: 1 / -1; text-align: center; color: var(--muted); font-size: 12px; letter-spacing: .08em;
+      text-transform: uppercase; padding: 4px 0;
+    }
+    .legend {
+      max-width: 980px; margin: 18px auto 0; display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+    }
+    .legend .card h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+
+    @keyframes pop { from { transform: translateY(6px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+    @media (max-width: 960px) {
+      .stage { grid-template-columns: 1fr; grid-template-rows: auto 1fr; height: auto; min-height: calc(100vh - 52px); }
+      .narration { border-right: 0; border-bottom: 1px solid #2a2a2a; }
+      .canvas-wrap { min-height: 640px; }
+      .map-grid { grid-template-columns: 1fr; }
+      .legend { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header class="proto-bar">
+    <h1>381 · Prompt templates</h1>
+    <span class="badge">Interactive prototype · not product UI</span>
+    <span class="meta">Storage: <code style="font-family:var(--mono);font-size:11px;background:#2a2a2a;padding:2px 6px;border-radius:3px">.tachyon/prompts/*.md</code></span>
+    <div class="spacer"></div>
+    <nav class="steps" id="steps"></nav>
+  </header>
+
+  <div class="stage">
+    <aside class="narration" id="narration"></aside>
+    <div class="canvas-wrap">
+      <div class="canvas" id="canvas"></div>
+
+      <!-- shared overlays -->
+      <div class="overlay" id="overlay"></div>
+      <div class="menu" id="menu"></div>
+      <div class="toast" id="toast"></div>
+    </div>
+  </div>
+
+  <script>
+    const TEMPLATES = [
+      {
+        id: "review-auth",
+        title: "Review auth module",
+        body: "Review only auth-related changes.\\nFlag correctness + regression risk.\\nDo not edit code unless I ask.\\nReport findings ordered by severity.",
+      },
+      {
+        id: "status-next",
+        title: "Status + next step",
+        body: "Summarize current state in 5 bullets.\\nPropose the single next step and why.\\nIf blocked, name the blocker and who owns it.",
+      },
+      {
+        id: "check-report",
+        title: "Run check, report failures",
+        body: "Run the project verification check.\\nReport only failures (command + relevant tail).\\nIf green, say so in one line.",
+      },
+    ];
+
+    const AGENTS = [
+      { name: "codex", status: "idle", label: "idle · ai", busy: false },
+      { name: "claude", status: "working", label: "working · ai", busy: true },
+      { name: "devserver", status: "running", label: "terminal", ai: false, busy: false },
+      { name: "reviewer", status: "stopped", label: "stopped · ai", dead: true, busy: false },
+    ];
+
+    const STEPS = [
+      { id: "map", label: "1 · Overview" },
+      { id: "storage", label: "2 · Storage" },
+      { id: "sidebar", label: "3 · Sidebar" },
+      { id: "palette", label: "4 · Palette flow" },
+      { id: "confirm", label: "5 · Stage vs submit" },
+      { id: "result", label: "6 · In composer" },
+      { id: "busy", label: "7 · Busy refuse" },
+    ];
+
+    const state = {
+      step: "map",
+      selectedAgent: "codex",
+      selectedTemplate: TEMPLATES[0],
+      mode: "stage", // stage | submit
+      composer: { text: "", kind: "empty" }, // empty | staged | sent
+      transcript: [
+        { cls: "dim", t: "› session ready" },
+        { cls: "human", t: "human: look at the auth PR branch" },
+        { cls: "assistant", t: "assistant: opened the auth module and related tests…" },
+      ],
+      openFile: "review-auth.md",
+    };
+
+    const $ = (id) => document.getElementById(id);
+
+    function renderSteps() {
+      $("steps").innerHTML = STEPS.map((s, i) => {
+        const idx = STEPS.findIndex((x) => x.id === state.step);
+        const cls = s.id === state.step ? "active" : i < idx ? "done" : "";
+        return `<button class="step-btn ${cls}" data-step="${s.id}">${s.label}</button>`;
+      }).join("");
+      $("steps").querySelectorAll("button").forEach((b) => {
+        b.onclick = () => go(b.dataset.step);
+      });
+    }
+
+    function go(step) {
+      state.step = step;
+      hideOverlays();
+      if (step === "result" && state.composer.kind === "empty") {
+        state.composer = { text: bodyOf(state.selectedTemplate), kind: "staged" };
+      }
+      if (step === "busy") {
+        state.selectedAgent = "claude";
+        state.mode = "submit";
+      }
+      if (step === "sidebar" || step === "palette" || step === "confirm") {
+        if (state.selectedAgent === "claude") state.selectedAgent = "codex";
+      }
+      render();
+    }
+
+    function bodyOf(t) {
+      return t.body.replace(/\\n/g, "\n");
+    }
+
+    function hideOverlays() {
+      $("overlay").className = "overlay";
+      $("overlay").innerHTML = "";
+      $("menu").className = "menu";
+      $("menu").innerHTML = "";
+      $("toast").className = "toast";
+      $("toast").innerHTML = "";
+    }
+
+    function showToast(title, detail, kind = "") {
+      const el = $("toast");
+      el.className = `toast show ${kind}`;
+      el.innerHTML = `<div class="t">${title}</div><div class="d">${detail}</div>`;
+    }
+
+    function nav(prev, next) {
+      return `<div class="nav-row">
+        ${prev ? `<button class="btn ghost" data-go="${prev}">← Back</button>` : ""}
+        ${next ? `<button class="btn" data-go="${next}">Next →</button>` : `<button class="btn ghost" data-go="map">Back to overview</button>`}
+      </div>`;
+    }
+
+    function wireNav(root) {
+      root.querySelectorAll("[data-go]").forEach((b) => b.onclick = () => go(b.dataset.go));
+    }
+
+    /* ───────── scenes ───────── */
+
+    function sceneMap() {
+      $("narration").innerHTML = `
+        <h2>What this feature is</h2>
+        <p>Operator macros: named prompt snippets you re-use mid-session, injected into the agent you choose.</p>
+        <ul>
+          <li><strong>Not</strong> shell <code>commands:</code> (those run processes).</li>
+          <li><strong>Not</strong> agent <code>role</code> / spawn instructions.</li>
+          <li><strong>Not</strong> in <code>tachyon.yml</code> — lives under <code>.tachyon/prompts/</code>.</li>
+        </ul>
+        <div class="callout">Default delivery is <strong>stage</strong> into the composer (no Enter). Submit is explicit and can refuse when the agent is busy.</div>
+        ${nav(null, "storage")}
+      `;
+      $("canvas").innerHTML = `
+        <div class="map">
+          <div class="map-grid">
+            <div class="card">
+              <h3>1. Library</h3>
+              <p>Markdown files in <code>.tachyon/prompts/&lt;id&gt;.md</code> with optional <code>title</code> frontmatter.</p>
+              <div class="chip-row"><span class="chip in">read on inject</span><span class="chip">workspace-local</span></div>
+            </div>
+            <div class="card">
+              <h3>2. Human picks</h3>
+              <p>Palette <em>Inject Prompt Template…</em> or sidebar overflow on a running AI agent.</p>
+              <div class="chip-row"><span class="chip in">template</span><span class="chip in">agent</span><span class="chip in">stage | submit</span></div>
+            </div>
+            <div class="card">
+              <h3>3. Delivery</h3>
+              <p>Paste into the live pane composer via the existing hardened tmux path.</p>
+              <div class="chip-row"><span class="chip out">stage default</span><span class="chip out">submit optional</span></div>
+            </div>
+            <div class="flow-arrow">boundaries</div>
+            <div class="card">
+              <h3>Targets</h3>
+              <p>Only <strong>running AI</strong> agents. Terminals, stopped, and dead rows stay out of the picker.</p>
+              <div class="chip-row"><span class="chip out">codex idle</span><span class="chip no">devserver</span><span class="chip no">stopped</span></div>
+            </div>
+            <div class="card">
+              <h3>Busy policy</h3>
+              <p>Submit refuses on <code>working</code> / <code>throttled</code> (and occupied composer). Stage still allowed.</p>
+              <div class="chip-row"><span class="chip out">stage ok</span><span class="chip no">submit refuse</span></div>
+            </div>
+            <div class="card">
+              <h3>Out of v1</h3>
+              <p>No <code>{{vars}}</code>, no Bridge tools, no Studio CRUD, no multi-agent fan-out.</p>
+              <div class="chip-row"><span class="chip no">yml key</span><span class="chip no">cloud sync</span></div>
+            </div>
+          </div>
+          <div class="legend">
+            <div class="card">
+              <h3>vs role templates</h3>
+              <p>Roles are spawn-time task contracts. Prompt templates are mid-session human gestures — they do not rewrite role or yml instructions.</p>
+            </div>
+            <div class="card">
+              <h3>vs commands:</h3>
+              <p><code>commands:</code> run shell one-shots. Prompt templates inject prose into an AI composer. Different noun, different UI.</p>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function sceneStorage() {
+      const files = {
+        "review-auth.md": `<span class="fm">---</span>
+<span class="key">title</span>: <span class="str">Review auth module</span>
+<span class="fm">---</span>
+Review only auth-related changes.
+Flag correctness + regression risk.
+Do not edit code unless I ask.
+Report findings ordered by severity.`,
+        "status-next.md": `<span class="fm">---</span>
+<span class="key">title</span>: <span class="str">Status + next step</span>
+<span class="fm">---</span>
+Summarize current state in 5 bullets.
+Propose the single next step and why.
+If blocked, name the blocker and who owns it.`,
+        "check-report.md": `<span class="fm">---</span>
+<span class="key">title</span>: <span class="str">Run check, report failures</span>
+<span class="fm">---</span>
+Run the project verification check.
+Report only failures (command + relevant tail).
+If green, say so in one line.`,
+      };
+      $("narration").innerHTML = `
+        <h2>Storage under <code>.tachyon</code></h2>
+        <p>Operator macros are workspace runtime data — same neighborhood as pins, tasks, roles — not project process config.</p>
+        <ul>
+          <li>Path: <code>.tachyon/prompts/&lt;id&gt;.md</code></li>
+          <li>Optional frontmatter <code>title</code> for the picker label</li>
+          <li>Body after frontmatter = exact text injected</li>
+          <li>Git-track or ignore: team's call</li>
+        </ul>
+        <div class="callout ok">Click files in the tree to preview. No <code>prompt_templates:</code> key in <code>tachyon.yml</code>.</div>
+        ${nav("map", "sidebar")}
+      `;
+      $("canvas").innerHTML = `
+        <div class="files">
+          <div class="tree">
+            <div class="dir">.tachyon/</div>
+            <div class="dir" style="padding-left:10px">prompts/</div>
+            ${Object.keys(files).map((f) =>
+              `<div class="file ${state.openFile === f ? "active" : ""}" data-file="${f}" style="margin-left:18px">${f}</div>`
+            ).join("")}
+            <div class="dir" style="margin-top:16px;opacity:.7">pins.json</div>
+            <div class="dir" style="opacity:.7">tasks/</div>
+            <div class="dir" style="opacity:.7">roles/</div>
+          </div>
+          <div class="editor">
+            <div class="editor-tabs">.tachyon/prompts/<strong id="openName">${state.openFile}</strong></div>
+            <pre id="openBody">${files[state.openFile]}</pre>
+          </div>
+        </div>
+      `;
+      $("canvas").querySelectorAll("[data-file]").forEach((el) => {
+        el.onclick = () => {
+          state.openFile = el.dataset.file;
+          sceneStorage();
+          wireNav($("narration"));
+        };
+      });
+    }
+
+    function agentRows(opts = {}) {
+      return AGENTS.map((a) => {
+        const selected = a.name === state.selectedAgent;
+        const cls = [
+          "agent-row",
+          selected ? "selected" : "",
+          opts.highlight === a.name ? "focus" : "",
+        ].join(" ");
+        const dot = a.dead ? "dead" : a.busy ? "busy" : "ok";
+        const more = a.ai !== false && !a.dead ? `<button class="icon-btn" data-more="${a.name}" title="More">⋯</button>` : `<span></span>`;
+        return `<div class="${cls}" data-agent="${a.name}">
+          <div>
+            <div class="name"><span class="dot ${dot}"></span>${a.name}</div>
+            <div class="sub">${a.label}</div>
+          </div>
+          ${more}
+        </div>`;
+      }).join("");
+    }
+
+    function vscodeShell({ paneExtra = "", composerKind = state.composer.kind, composerText = state.composer.text, showMenuFor = null } = {}) {
+      const empty = !composerText;
+      const boxCls = [
+        "composer-box",
+        empty ? "empty" : "",
+        composerKind === "staged" ? "staged" : "",
+        composerKind === "sent" ? "sent" : "",
+      ].join(" ");
+      const boxText = empty ? "Message codex…" : escapeHtml(composerText);
+      const transcript = state.transcript.map((l) => `<div class="${l.cls}">${escapeHtml(l.t)}</div>`).join("");
+      return `
+        <div class="sb">
+          <div class="sb-head"><strong>Tachyon</strong><span style="color:var(--muted);font-size:11px">fleet</span></div>
+          <div class="sb-section">Agents</div>
+          ${agentRows({ highlight: showMenuFor })}
+        </div>
+        <div class="main">
+          <div class="tabs">
+            <div class="tab active">${state.selectedAgent} · terminal</div>
+            <div class="tab">Activity</div>
+          </div>
+          <div class="pane" id="termPane">${transcript}${paneExtra}</div>
+          <div class="composer">
+            <div class="${boxCls}" id="composerBox">${boxText}</div>
+            <button class="btn" style="height:34px" disabled title="prototype">↵</button>
+            <div class="hint" id="composerHint">${composerHint(composerKind)}</div>
+          </div>
+        </div>
+      `;
+    }
+
+    function composerHint(kind) {
+      if (kind === "staged") return "Staged from prompt template — not submitted. Human reviews, then Enter.";
+      if (kind === "sent") return "Submitted into the agent turn.";
+      return "Composer empty.";
+    }
+
+    function escapeHtml(s) {
+      return String(s)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;");
+    }
+
+    function sceneSidebar() {
+      $("narration").innerHTML = `
+        <h2>Sidebar entry point</h2>
+        <p>On a <strong>running AI</strong> agent, overflow ⋯ exposes <em>Inject prompt template</em>. Agent is pre-selected; you only pick the template and stage/submit.</p>
+        <ul>
+          <li>Shown with re-anchor / re-inject continuity family (mid-session ops)</li>
+          <li>Hidden for terminals and stopped rows</li>
+        </ul>
+        <div class="callout">Click <strong>⋯</strong> on <code>codex</code> to open the menu, then the inject action.</div>
+        ${nav("storage", "palette")}
+      `;
+      $("canvas").innerHTML = vscodeShell();
+      wireAgentChrome({ openMenuOn: null });
+    }
+
+    function wireAgentChrome() {
+      $("canvas").querySelectorAll("[data-more]").forEach((btn) => {
+        btn.onclick = (e) => {
+          e.stopPropagation();
+          const rect = btn.getBoundingClientRect();
+          const host = $("canvas").getBoundingClientRect();
+          const menu = $("menu");
+          menu.className = "menu show";
+          menu.style.left = `${rect.right - host.left - 200}px`;
+          menu.style.top = `${rect.bottom - host.top + 4}px`;
+          menu.innerHTML = `
+            <div class="menu-item">Open terminal</div>
+            <div class="menu-item">Activity</div>
+            <div class="menu-sep"></div>
+            <div class="menu-item">Re-anchor to role</div>
+            <div class="menu-item">Re-inject continuity</div>
+            <div class="menu-item" id="menuInject" style="color:var(--fg-bright);font-weight:600">
+              Inject prompt template <span class="k">new</span>
+            </div>
+            <div class="menu-sep"></div>
+            <div class="menu-item">Stop graceful</div>
+          `;
+          $("menuInject").onclick = () => {
+            state.selectedAgent = btn.dataset.more;
+            openTemplatePicker({ agentFixed: true });
+          };
+        };
+      });
+      $("canvas").querySelectorAll("[data-agent]").forEach((row) => {
+        row.onclick = () => {
+          const a = AGENTS.find((x) => x.name === row.dataset.agent);
+          if (!a || a.dead || a.ai === false) return;
+          state.selectedAgent = a.name;
+          sceneSidebar();
+          wireNav($("narration"));
+        };
+      });
+    }
+
+    function openTemplatePicker({ agentFixed }) {
+      $("menu").className = "menu";
+      const ov = $("overlay");
+      ov.className = "overlay show";
+      ov.innerHTML = `
+        <div class="quickpick">
+          <div class="qp-head">
+            <input value="Inject prompt template" readonly />
+          </div>
+          <div class="qp-list">
+            ${TEMPLATES.map((t, i) => `
+              <div class="qp-item ${i === 0 ? "active" : ""}" data-tid="${t.id}">
+                <div class="label">${escapeHtml(t.title)}</div>
+                <div class="tag">${escapeHtml(t.id)}</div>
+                <div class="desc">${escapeHtml(bodyOf(t).split("\n")[0])}</div>
+              </div>
+            `).join("")}
+          </div>
+        </div>
+      `;
+      ov.querySelectorAll("[data-tid]").forEach((el) => {
+        el.onclick = () => {
+          state.selectedTemplate = TEMPLATES.find((t) => t.id === el.dataset.tid);
+          if (agentFixed) openModePicker();
+          else openAgentPicker();
+        };
+      });
+    }
+
+    function openAgentPicker() {
+      const valid = AGENTS.filter((a) => a.ai !== false && !a.dead && a.status !== "stopped");
+      const invalidNote = AGENTS.filter((a) => a.ai === false || a.dead);
+      const ov = $("overlay");
+      ov.className = "overlay show";
+      ov.innerHTML = `
+        <div class="quickpick">
+          <div class="qp-head"><input value="Send to agent" readonly /></div>
+          <div class="qp-list">
+            ${valid.map((a, i) => `
+              <div class="qp-item ${i === 0 ? "active" : ""}" data-aname="${a.name}">
+                <div class="label">${a.name}${a.busy ? "  · busy" : ""}</div>
+                <div class="tag">${a.busy ? "working" : "idle"}</div>
+                <div class="desc">${a.busy ? "Submit may refuse · stage still ok" : "Running AI agent"}</div>
+              </div>
+            `).join("")}
+            ${invalidNote.map((a) => `
+              <div class="qp-item" style="opacity:.35;cursor:not-allowed">
+                <div class="label">${a.name}</div>
+                <div class="tag">hidden</div>
+                <div class="desc">${a.ai === false ? "terminal — not AI" : "stopped / dead"}</div>
+              </div>
+            `).join("")}
+          </div>
+        </div>
+      `;
+      ov.querySelectorAll("[data-aname]").forEach((el) => {
+        el.onclick = () => {
+          state.selectedAgent = el.dataset.aname;
+          openModePicker();
+        };
+      });
+    }
+
+    function openModePicker() {
+      const ov = $("overlay");
+      ov.className = "overlay show";
+      ov.innerHTML = `
+        <div class="quickpick" style="min-width:460px">
+          <div class="qp-head"><input value="Delivery for ‘${escapeHtml(state.selectedTemplate.title)}’ → ${state.selectedAgent}" readonly /></div>
+          <div class="qp-list">
+            <div class="qp-item active" data-mode="stage">
+              <div class="label">Stage in composer</div>
+              <div class="tag">default</div>
+              <div class="desc">Paste body without Enter — human reviews before sending</div>
+            </div>
+            <div class="qp-item" data-mode="submit">
+              <div class="label">Submit now</div>
+              <div class="tag">explicit</div>
+              <div class="desc">Paste + Enter via hardened path · refuses when busy</div>
+            </div>
+          </div>
+        </div>
+      `;
+      ov.querySelectorAll("[data-mode]").forEach((el) => {
+        el.onclick = () => {
+          state.mode = el.dataset.mode;
+          openConfirm();
+        };
+      });
+    }
+
+    function openConfirm() {
+      const t = state.selectedTemplate;
+      const body = bodyOf(t);
+      const ov = $("overlay");
+      ov.className = "overlay show";
+      ov.innerHTML = `
+        <div class="modal">
+          <div class="modal-head">
+            <strong style="color:var(--fg-bright)">${state.mode === "stage" ? "Stage" : "Submit"} prompt template?</strong>
+          </div>
+          <div class="modal-body">
+            <div style="color:var(--muted);font-size:12px">
+              Template <code>${escapeHtml(t.id)}</code> → agent <code>${state.selectedAgent}</code>
+              · mode <strong style="color:var(--fg-bright)">${state.mode}</strong>
+            </div>
+            <pre>${escapeHtml(body)}</pre>
+          </div>
+          <div class="modal-actions">
+            <button class="btn ghost" id="cancelConfirm">Cancel</button>
+            <button class="btn" id="okConfirm">${state.mode === "stage" ? "Stage" : "Submit"}</button>
+          </div>
+        </div>
+      `;
+      $("cancelConfirm").onclick = () => hideOverlays();
+      $("okConfirm").onclick = () => applyDelivery();
+    }
+
+    function applyDelivery() {
+      const agent = AGENTS.find((a) => a.name === state.selectedAgent);
+      const body = bodyOf(state.selectedTemplate);
+      if (state.mode === "submit" && agent?.busy) {
+        hideOverlays();
+        state.composer = { text: "", kind: "empty" };
+        $("canvas").innerHTML = vscodeShell();
+        showToast(
+          "Submit refused — agent busy",
+          `recipient '${state.selectedAgent}' is working — use Stage, or wait for idle.`,
+          "warn",
+        );
+        // stay on a sensible step for the busy demo if user is exploring
+        if (state.step === "busy" || state.step === "confirm" || state.step === "palette" || state.step === "sidebar") {
+          /* keep */
+        }
+        return;
+      }
+      if (state.mode === "stage") {
+        state.composer = { text: body, kind: "staged" };
+        hideOverlays();
+        $("canvas").innerHTML = vscodeShell();
+        showToast(
+          "Prompt template staged",
+          `‘${state.selectedTemplate.title}’ pasted into '${state.selectedAgent}' (not submitted).`,
+          "ok",
+        );
+        if (state.step !== "result") {
+          /* leave user where they are if demoing mid-flow */
+        }
+      } else {
+        state.composer = { text: "", kind: "empty" };
+        state.transcript = [
+          ...state.transcript,
+          { cls: "human", t: `human: ${body.replace(/\n/g, " ⏎ ")}` },
+          { cls: "sys", t: "…agent turn started" },
+        ];
+        hideOverlays();
+        $("canvas").innerHTML = vscodeShell();
+        showToast(
+          "Prompt template submitted",
+          `‘${state.selectedTemplate.title}’ delivered to '${state.selectedAgent}'.`,
+          "ok",
+        );
+      }
+      // re-bind chrome if still on sidebar-like canvas
+      if (["sidebar", "palette", "confirm", "result", "busy"].includes(state.step)) {
+        wireAgentChrome();
+      }
+    }
+
+    function scenePalette() {
+      state.composer = { text: "", kind: "empty" };
+      $("narration").innerHTML = `
+        <h2>Command palette flow</h2>
+        <p>Global entry when you don't start from a sidebar row:</p>
+        <ul>
+          <li><code>Tachyon: Inject Prompt Template…</code></li>
+          <li>Pick template → pick running AI agent → stage | submit → confirm</li>
+        </ul>
+        <div class="callout">Press the button below to walk the QuickPicks. Invalid targets appear dimmed only for teaching — product hides them.</div>
+        <div class="nav-row">
+          <button class="btn ghost" data-go="sidebar">← Back</button>
+          <button class="btn" id="runPalette">Run palette flow</button>
+          <button class="btn ghost" data-go="confirm">Skip to confirm →</button>
+        </div>
+      `;
+      $("canvas").innerHTML = vscodeShell();
+      wireAgentChrome();
+      $("runPalette").onclick = () => openTemplatePicker({ agentFixed: false });
+    }
+
+    function sceneConfirm() {
+      $("narration").innerHTML = `
+        <h2>Stage vs submit</h2>
+        <p>Confirmation shows the exact body, target agent, and mode.</p>
+        <ul>
+          <li><strong>Stage</strong> (default) — paste, no Enter</li>
+          <li><strong>Submit</strong> — paste + Enter; may refuse if busy</li>
+        </ul>
+        <div class="callout warn">Demo: open the confirm for <code>codex</code> idle (stage), or jump to step 7 for busy refuse on <code>claude</code>.</div>
+        <div class="nav-row">
+          <button class="btn ghost" data-go="palette">← Back</button>
+          <button class="btn" id="demoStage">Demo stage confirm</button>
+          <button class="btn ghost" data-go="result">Next →</button>
+        </div>
+      `;
+      state.selectedAgent = "codex";
+      state.mode = "stage";
+      state.composer = { text: "", kind: "empty" };
+      $("canvas").innerHTML = vscodeShell();
+      $("demoStage").onclick = () => openConfirm();
+    }
+
+    function sceneResult() {
+      if (state.composer.kind === "empty") {
+        state.composer = { text: bodyOf(state.selectedTemplate), kind: "staged" };
+      }
+      $("narration").innerHTML = `
+        <h2>Landed in the command bar</h2>
+        <p>After stage, the composer holds the template body. The human can edit, then send — or clear it.</p>
+        <ul>
+          <li>Blue border = staged from a template</li>
+          <li>No automatic Enter in the default path</li>
+        </ul>
+        <div class="callout ok">This is the core payoff: re-use without retyping, still under human control.</div>
+        <div class="nav-row">
+          <button class="btn ghost" data-go="confirm">← Back</button>
+          <button class="btn" id="demoSubmitOk">Simulate submit (idle)</button>
+          <button class="btn ghost" data-go="busy">Next: busy →</button>
+        </div>
+      `;
+      $("canvas").innerHTML = vscodeShell();
+      $("demoSubmitOk").onclick = () => {
+        state.mode = "submit";
+        state.selectedAgent = "codex";
+        applyDelivery();
+      };
+    }
+
+    function sceneBusy() {
+      state.selectedAgent = "claude";
+      state.mode = "submit";
+      state.composer = { text: "", kind: "empty" };
+      $("narration").innerHTML = `
+        <h2>Busy refuse (submit)</h2>
+        <p><code>claude</code> is <strong>working</strong>. Submit must not blind-paste into a live turn.</p>
+        <ul>
+          <li>Same spirit as <code>write_input</code> refused-busy</li>
+          <li>Stage remains available as the safe gesture</li>
+        </ul>
+        <div class="callout warn">Click the demo buttons to see refuse vs stage-on-busy.</div>
+        <div class="nav-row">
+          <button class="btn ghost" data-go="result">← Back</button>
+          <button class="btn warn" id="trySubmitBusy">Try submit now</button>
+          <button class="btn" id="tryStageBusy">Stage instead</button>
+        </div>
+      `;
+      $("canvas").innerHTML = vscodeShell({
+        paneExtra: `\n<div class="dim">… tool: Edit src/auth/session.ts</div>\n<div class="assistant">assistant: applying patch…</div>`,
+      });
+      $("trySubmitBusy").onclick = () => {
+        state.mode = "submit";
+        applyDelivery();
+      };
+      $("tryStageBusy").onclick = () => {
+        state.mode = "stage";
+        applyDelivery();
+      };
+    }
+
+    function render() {
+      renderSteps();
+      hideOverlays();
+      const scenes = {
+        map: sceneMap,
+        storage: sceneStorage,
+        sidebar: sceneSidebar,
+        palette: scenePalette,
+        confirm: sceneConfirm,
+        result: sceneResult,
+        busy: sceneBusy,
+      };
+      scenes[state.step]();
+      wireNav($("narration"));
+    }
+
+    render();
+  </script>
+</body>
+</html>

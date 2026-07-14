@@ -738,6 +738,20 @@ agents:
 These are **task contracts, not personas** — they scope the job (what to do, boundaries, how to
 verify, what to report), they don't role-play a character.
 
+**Prompt templates (operator macros).** Mid-session reusable prompts live as markdown under
+`.tachyon/prompts/<id>.md` (optional YAML frontmatter `title:`). They are **not** shell
+`commands:` and **not** spawn roles — use **Tachyon: Inject Prompt Template…** (or the agent
+sidebar overflow) to stage (default) or submit the body into a running AI agent's composer.
+
+```markdown
+<!-- .tachyon/prompts/status-next.md -->
+---
+title: Status + next step
+---
+Summarize current state in 5 bullets.
+Propose the single next step and why.
+```
+
 **Bridge-coordination guidance.** An agent spawned by another agent via the Bridge gets a short
 note appended to its instructions: coordinate through the Bridge tools, and spawn sub-work through
 the Bridge so it stays visible in Tachyon (a CLI's built-in sub-agents run work Tachyon can't see).

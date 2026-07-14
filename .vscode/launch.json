@@ -13,17 +13,6 @@
       "preLaunchTask": "tachyon: build"
     },
     {
-      "name": "Run Tachyon (multi-root demo)",
-      "type": "extensionHost",
-      "request": "launch",
-      "args": [
-        "${env:HOME}/tachyon-examples/orbit.code-workspace",
-        "--extensionDevelopmentPath=${workspaceFolder}"
-      ],
-      "outFiles": ["${workspaceFolder}/dist/**/*.js"],
-      "preLaunchTask": "tachyon: build"
-    },
-    {
       "name": "Run Tachyon (test fixture)",
       "type": "extensionHost",
       "request": "launch",
