@@ -166,26 +166,61 @@ export function appendOwnerRow(file: string, row: OwnerRow): void {
  *
  * Returns undefined (never a guess) when ambiguous, the dead file itself is unreadable, or no STRICTLY newer
  * sibling `.jsonl` exists in the directory.
+ *
+ * Review correction round (t-9f2641): `rows` alone is a TOCTOU gap — a sibling agent's brand-new first
+ * session can land on disk (newest mtime) before its own SessionStart hook has appended ITS owner row, so
+ * a row-only ambiguity check can momentarily see "no other agent here yet" and steal the sibling's session.
+ * `opts.liveTranscriptDirs` closes this: the caller passes the transcript directories of every OTHER
+ * currently-declared agent (from the in-memory ledger, race-free within one tick — no extra I/O), and any
+ * match makes the dir ambiguous exactly like a historical row would. `opts.deadMtimeBaseline` handles the
+ * dead file being fully GONE (rotated AND pruned): with no mtime of its own to compare against, the resolver
+ * would otherwise freeze forever; given the caller's last-known mtime for it, we follow ONLY when exactly
+ * ONE sibling `.jsonl` is strictly newer (never a guess among several candidates).
  */
 export function resolveRotationFollow(
   rows: OwnerRow[],
   agent: string,
   deadTranscriptPath: string,
-  opts: { listDir?: (dir: string) => string[]; mtimeMs?: (file: string) => number | undefined } = {},
+  opts: {
+    listDir?: (dir: string) => string[];
+    mtimeMs?: (file: string) => number | undefined;
+    liveTranscriptDirs?: Iterable<string>;
+    deadMtimeBaseline?: number;
+  } = {},
 ): { transcriptPath: string; sessionId: string } | undefined {
-  const dir = path.dirname(deadTranscriptPath);
+  const dir = path.resolve(path.dirname(deadTranscriptPath));
   // Latest row per agent (append order ⇒ last write wins), mirroring latestOwnerFor's own selection.
   const latestByAgent = new Map<string, OwnerRow>();
   for (const r of rows) latestByAgent.set(r.agent, r);
   for (const [otherAgent, r] of latestByAgent) {
     if (otherAgent === agent) continue;
-    if (r.transcriptPath && path.dirname(r.transcriptPath) === dir) return undefined; // shared dir ⇒ ambiguous
+    if (r.transcriptPath && path.resolve(path.dirname(r.transcriptPath)) === dir) return undefined; // shared dir ⇒ ambiguous
+  }
+  for (const liveDir of opts.liveTranscriptDirs ?? []) {
+    if (path.resolve(liveDir) === dir) return undefined; // a live sibling's OWN session lives here — never guess
   }
 
   const listDir = opts.listDir ?? defaultListDir;
   const mtimeMs = opts.mtimeMs ?? defaultMtimeMs;
   const deadMtime = mtimeMs(deadTranscriptPath);
-  if (deadMtime === undefined) return undefined; // can't evidence "newer than" without the dead file's own mtime
+
+  if (deadMtime === undefined) {
+    if (opts.deadMtimeBaseline === undefined) return undefined; // no evidence at all — stay pinned
+    const baseline = opts.deadMtimeBaseline;
+    let only: { file: string; mtime: number } | undefined;
+    let count = 0;
+    for (const entry of listDir(dir)) {
+      if (!entry.endsWith(".jsonl")) continue;
+      const file = path.join(dir, entry);
+      if (path.resolve(file) === path.resolve(deadTranscriptPath)) continue;
+      const mtime = mtimeMs(file);
+      if (mtime === undefined || mtime <= baseline) continue; // must be STRICTLY newer than the last-known mtime
+      count++;
+      only = { file, mtime };
+    }
+    if (count !== 1 || !only) return undefined; // none, or more than one candidate — ambiguous, stay pinned
+    return { transcriptPath: only.file, sessionId: path.basename(only.file, ".jsonl") };
+  }
 
   let newest: { file: string; mtime: number } | undefined;
   for (const entry of listDir(dir)) {

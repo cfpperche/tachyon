@@ -1,9 +1,11 @@
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import type { Workspace } from "../workspace/Workspace.js";
 import { ActivityLogWriter, type SessionLoc } from "../activity/logWriter.js";
 import { appendOwnerRow, readSessionOwners, resolveRotationFollow, sessionOwnersFile } from "../activity/sessionOwners.js";
 import { isResumable } from "../resume/SessionLedger.js";
+import { encodeClaudeCwd } from "../resume/adapters.js";
 
 /** t-9f2641 — a resolved claude transcript that hasn't grown for this long is a candidate for rotation-follow
  *  (a mid-run rotation left it dead while the process kept running). Matches the incident's "no growth for
@@ -128,7 +130,8 @@ export class ActivityLogManager {
             if (entry.loc && entry.loc.runtime === "claude") {
               entry.deadTrack = updateDeadTrack(entry.deadTrack, entry.loc.path, now);
               if (now - entry.deadTrack.sinceMs >= ROTATION_DEAD_THRESHOLD_MS) {
-                const follow = followRotation(ws.workspaceRoot, name, rec.cwd, entry.loc.path);
+                const liveDirs = liveClaudeTranscriptDirs(ws.ledger.all(), name);
+                const follow = followRotation(ws.workspaceRoot, name, rec.cwd, entry.loc.path, liveDirs, entry.deadTrack.lastMtimeMs);
                 if (follow) {
                   entry.loc = { path: follow.transcriptPath, sessionId: follow.sessionId, runtime: entry.loc.runtime };
                   entry.deadTrack = undefined;
@@ -185,15 +188,23 @@ function updateDeadTrack(prev: DeadTranscriptTrack | undefined, filePath: string
 /** t-9f2641 — the resolved transcript has shown no growth for `ROTATION_DEAD_THRESHOLD_MS`: consult the
  *  ownership ledger for an unambiguous newer sibling (`resolveRotationFollow` never guesses) and, on a hit,
  *  mint a durable "rotation-follow" owner row so the decision is auditable and future resolves (via
- *  Workspace's `ownedSession`, which reads this same file) land on the new session directly. */
+ *  Workspace's `ownedSession`, which reads this same file) land on the new session directly.
+ *  `liveDirs` and `deadMtimeBaseline` close review gaps found on the first delivery: `liveDirs` is the
+ *  TOCTOU fix (a currently-declared sibling's dir counts as ambiguous even before its own owner row exists);
+ *  `deadMtimeBaseline` lets the resolver evidence "newer than" even once the dead file itself is pruned. */
 function followRotation(
   workspaceRoot: string,
   agent: string,
   cwd: string,
   deadTranscriptPath: string,
+  liveDirs: string[],
+  deadMtimeBaseline: number,
 ): { transcriptPath: string; sessionId: string } | undefined {
   const ownersFile = sessionOwnersFile(workspaceRoot);
-  const follow = resolveRotationFollow(readSessionOwners(ownersFile), agent, deadTranscriptPath);
+  const follow = resolveRotationFollow(readSessionOwners(ownersFile), agent, deadTranscriptPath, {
+    liveTranscriptDirs: liveDirs,
+    deadMtimeBaseline,
+  });
   if (!follow) return undefined;
   appendOwnerRow(ownersFile, {
     agent,
@@ -204,4 +215,23 @@ function followRotation(
     ts: new Date().toISOString(),
   });
   return follow;
+}
+
+/** t-9f2641 MAJOR fix — the transcript directory a live (currently-declared) claude agent's OWN session
+ *  would land in, computed the same way claude/Tachyon derive it (`${configHome}/projects/${encodeClaudeCwd(cwd)}`),
+ *  defaulting to `~/.claude` when the ledger row has no persisted config home yet. `ws.ledger.all()` is a
+ *  synchronous in-memory snapshot — no I/O, race-free within the same tick — so this closes the TOCTOU where
+ *  a sibling's brand-new first session appears on disk before its SessionStart hook records its owner row. */
+function liveClaudeTranscriptDirs(
+  ledgerEntries: Iterable<[string, { resume?: { runtime?: string; configHome?: string }; cwd: string }]>,
+  excludeAgent: string,
+): string[] {
+  const dirs: string[] = [];
+  for (const [otherAgent, rec] of ledgerEntries) {
+    if (otherAgent === excludeAgent) continue;
+    if (rec.resume?.runtime !== "claude") continue;
+    const configHome = rec.resume.configHome ?? path.join(os.homedir(), ".claude");
+    dirs.push(path.join(configHome, "projects", encodeClaudeCwd(path.resolve(rec.cwd))));
+  }
+  return dirs;
 }

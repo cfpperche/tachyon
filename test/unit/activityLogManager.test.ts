@@ -5,6 +5,7 @@ import * as path from "node:path";
 import { ActivityLogManager, sessionIdFromTranscriptPath } from "../../src/webview/ActivityLogManager.js";
 import { agentLogId } from "../../src/activity/logStore.js";
 import { readSessionOwners, sessionOwnersFile } from "../../src/activity/sessionOwners.js";
+import { encodeClaudeCwd } from "../../src/resume/adapters.js";
 
 const dirs: string[] = [];
 const freshDir = (): string => { const d = fs.mkdtempSync(path.join(os.tmpdir(), "alm-")); dirs.push(d); return d; };
@@ -149,6 +150,58 @@ describe("ActivityLogManager — mid-run transcript rotation follow (t-9f2641)",
     expect(mgr.writers.get(key).loc?.path).toBe(oldPath);
     expect(noteCalls).toEqual([]);
     expect(readSessionOwners(ownersFile)).toHaveLength(1); // no new row minted for AGENT
+  });
+
+  it("t-9f2641 MAJOR fix: never follows a LIVE sibling's brand-new session that's on disk BEFORE its own owner row exists (TOCTOU race)", async () => {
+    const ws = freshDir();
+    let now = 0;
+    // The sibling's transcript dir, computed the real way (configHome/projects/encodeClaudeCwd(cwd)) — a
+    // sync ledger snapshot, not a disk guess. `sibCwd` has no dots/slashes so encodeClaudeCwd is the identity.
+    const configHome = ws;
+    const sibCwd = "/sib-repo"; // absolute + no dots so path.resolve() (applied by production code) is a no-op
+    const dir = path.join(configHome, "projects", encodeClaudeCwd(path.resolve(sibCwd)));
+    fs.mkdirSync(dir, { recursive: true });
+
+    const oldPath = path.join(dir, "old.jsonl"); // AGENT's dead transcript — same directory the sibling uses
+    const sibNewPath = path.join(dir, "sib-new.jsonl"); // sibling's brand-new session file: on disk...
+    fs.writeFileSync(oldPath, "{}\n", "utf8");
+    fs.utimesSync(oldPath, new Date(1000), new Date(1000));
+    fs.writeFileSync(sibNewPath, "{}\n", "utf8"); // ...newest mtime, but NO owner row for it yet (hook hasn't fired)
+
+    const wsStub = {
+      workspaceRoot: ws,
+      wsHash: "h",
+      ledger: {
+        all: () => [
+          [AGENT, { resume: { runtime: "claude", sessionId: "old" }, declared: true, cwd: CWD }],
+          ["sibling", { resume: { runtime: "claude", sessionId: "sib-new", configHome }, declared: true, cwd: sibCwd }],
+        ] as Array<[string, unknown]>,
+        get: () => ({ resume: { runtime: "claude", sessionId: "old" }, declared: true, cwd: CWD }),
+      },
+      // the sibling is ALSO iterated as its own ledger entry (tick() processes every resumable row) — it
+      // must resolve to ITS OWN (already-current, non-stalled) session, not AGENT's dead one.
+      manager: {
+        transcriptPathOf: async (name: string) => ({ path: name === "sibling" ? sibNewPath : oldPath, runtime: "claude" as const }),
+      },
+    };
+    const key = "h::claude-a";
+    const noteCalls: Array<[string, boolean]> = [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const mgr = new ActivityLogManager(() => [wsStub as any], 9999, 0, undefined, () => now);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (mgr as any).writers.set(key, { writer: { poll: () => 0, noteLifecycle: (a: string, r?: boolean) => noteCalls.push([a, !!r]) }, resolvedAt: 0 });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (mgr as any).tick();
+    now = 61_000;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (mgr as any).tick();
+
+    // stayed pinned — the sibling's LIVE (row-less) session made the dir ambiguous, never stolen as AGENT's rotation
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((mgr as any).writers.get(key).loc?.path).toBe(oldPath);
+    expect(noteCalls).toEqual([]);
+    expect(readSessionOwners(sessionOwnersFile(ws))).toEqual([]);
   });
 });
 
