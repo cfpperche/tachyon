@@ -29,6 +29,7 @@ export type DaemonUiRequest =
 
 export type DaemonHostEvent =
   | { kind: "views-changed"; view: ViewKind; at: string }
+  | { kind: "activity-appended"; agent: string; count: number; at: string }
   | { kind: "notice"; id: string; message: string; level: NotifyLevel; actions: Array<{ id: string; label: string }>; at: string }
   | { kind: "ui-unavailable"; request: DaemonUiRequest; at: string };
 
@@ -186,6 +187,11 @@ export class DaemonEngineHost implements EngineHost {
   onViewsChanged(view: ViewKind): void {
     this.assertActive();
     this.emit({ kind: "views-changed", view, at: new Date().toISOString() });
+  }
+
+  onActivityAppended(agent: string, count: number): void {
+    this.assertActive();
+    this.emit({ kind: "activity-appended", agent, count, at: new Date().toISOString() });
   }
 
   dispose(): void {

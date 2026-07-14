@@ -110,16 +110,41 @@ describe("parseActivityMap", () => {
 });
 
 describe("ControlModeClient", () => {
-  it("guard block marks ready, then subscribes to dead-map and activity", async () => {
+  it("publishes ready only after both bootstrap subscriptions settle", async () => {
     const { client, procs, events } = makeClient();
     await client.start();
     expect(client.isUp).toBe(false);
     guard(procs[0]);
     await tick();
-    expect(client.isUp).toBe(true);
-    expect(events.states).toEqual([true]);
+    expect(client.isUp).toBe(false);
+    expect(events.states).toEqual([]);
     expect(procs[0].written[0]).toContain(`refresh-client -B '${DEADMAP_SUBSCRIPTION}::`);
     expect(procs[0].written[1]).toContain(`refresh-client -B '${ACTIVITY_SUBSCRIPTION}::`);
+    procs[0].stdout.write(
+      "%begin 100 2 0\n%end 100 2 0\n" +
+      "%begin 100 3 0\nunsupported subscription\n%error 100 3 0\n",
+    );
+    expect(client.isUp).toBe(true);
+    expect(events.states).toEqual([true]);
+  });
+
+  it("keeps external work out of the bootstrap FIFO", async () => {
+    const { client, procs, fallbackCalls } = makeClient();
+    await client.start();
+    guard(procs[0]);
+    await tick();
+
+    const exec = client.makeExecutor();
+    await expect(exec(["-L", "tachyon", "has-session", "-t", "=worker"]))
+      .resolves.toEqual({ stdout: "fallback\n", stderr: "" });
+    expect(fallbackCalls.some((args) => args.includes("has-session"))).toBe(true);
+    expect(procs[0].written).toHaveLength(2);
+
+    ackSubs(procs[0]);
+    const ready = exec(["-L", "tachyon", "display-message", "-p", "ready"]);
+    expect(procs[0].written.at(-1)).toBe("display-message -p ready");
+    procs[0].stdout.write("%begin 100 4 0\nready\n%end 100 4 0\n");
+    await expect(ready).resolves.toEqual({ stdout: "ready\n", stderr: "" });
   });
 
   it("executor routes through the channel with FIFO framing; semantic errors reject", async () => {
@@ -204,6 +229,7 @@ describe("ControlModeClient", () => {
     expect(procs).toHaveLength(2); // respawned
     guard(procs[1]);
     await tick();
+    ackSubs(procs[1]);
     expect(events.states).toEqual([true, false, true]);
     expect(procs[1].written[0]).toContain("refresh-client -B"); // resubscribed
     expect(procs[1].written[1]).toContain(ACTIVITY_SUBSCRIPTION);
@@ -277,6 +303,8 @@ describe("ControlModeClient", () => {
     const { client, procs, events } = makeClient({ fallbackExec: fallback, backoffMs: [10] });
     await client.start();
     guard(procs[0]);
+    await vi.advanceTimersByTimeAsync(0);
+    ackSubs(procs[0]);
     await vi.advanceTimersByTimeAsync(0);
     procs[0].proc.emit("exit", 1);
 
@@ -393,6 +421,8 @@ describe("ControlModeClient", () => {
     await client.start();
     guard(procs[0]);
     await vi.advanceTimersByTimeAsync(0);
+    ackSubs(procs[0]);
+    await vi.advanceTimersByTimeAsync(0);
     procs[0].proc.emit("exit", 1);
 
     await vi.advanceTimersByTimeAsync(10); // first bootstrap fails before spawn
@@ -401,6 +431,8 @@ describe("ControlModeClient", () => {
     expect(procs).toHaveLength(2);
     expect(anchorAttempts).toBe(3);
     guard(procs[1]);
+    await vi.advanceTimersByTimeAsync(0);
+    ackSubs(procs[1]);
     await vi.advanceTimersByTimeAsync(0);
     expect(client.isUp).toBe(true);
     await client.dispose();

@@ -64,9 +64,11 @@ describe("DaemonEngineHost", () => {
     const f = fixture();
     let invoked = 0;
     f.host.onViewsChanged("agents");
+    f.host.onActivityAppended("codex", 2);
     f.host.notify("ready", "info", [{ label: "Open", run: () => { invoked++; } }]);
     expect(f.events[0]).toMatchObject({ kind: "views-changed", view: "agents" });
-    const notice = f.events[1];
+    expect(f.events[1]).toMatchObject({ kind: "activity-appended", agent: "codex", count: 2 });
+    const notice = f.events[2];
     expect(notice).toMatchObject({ kind: "notice", message: "ready", actions: [{ label: "Open" }] });
     if (notice.kind !== "notice") throw new Error("expected notice event");
     await f.host.invokeNoticeAction(notice.id, notice.actions[0].id);

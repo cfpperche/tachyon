@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { ActivityLogManager, sessionIdFromTranscriptPath } from "../../src/webview/ActivityLogManager.js";
+import { ActivityLogManager, sessionIdFromTranscriptPath } from "../../src/activity/ActivityLogManager.js";
 import { agentLogId } from "../../src/activity/logStore.js";
 import { readSessionOwners, sessionOwnersFile } from "../../src/activity/sessionOwners.js";
 import { encodeClaudeCwd } from "../../src/resume/adapters.js";
@@ -79,6 +79,39 @@ describe("ActivityLogManager append notification (spec 367)", () => {
     writers.set("hash::agent", { writer: { poll: () => 0 }, loc: undefined, resolvedAt: Date.now() });
     await (manager as unknown as { tick(): Promise<void> }).tick();
     expect(appended).toHaveLength(1);
+  });
+
+  it("awaits an in-flight filesystem pass before daemon teardown may dispose its Workspace", async () => {
+    const root = freshDir();
+    const rec = { resume: { runtime: "claude", sessionId: "session-1" }, declared: true, cwd: root };
+    let release!: () => void;
+    let entered!: () => void;
+    const enteredResolve = new Promise<void>((resolve) => { entered = resolve; });
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const wsStub = {
+      workspaceRoot: root,
+      wsHash: "hash",
+      ledger: { all: () => new Map([["agent", rec]]), get: () => rec },
+      manager: {
+        transcriptPathOf: async () => {
+          entered();
+          await gate;
+          return undefined;
+        },
+      },
+    };
+    const manager = new ActivityLogManager(() => [wsStub as never], 9_999, 0);
+    manager.start();
+    await enteredResolve;
+
+    let stopped = false;
+    const stopping = manager.stop().then(() => { stopped = true; });
+    await Promise.resolve();
+    expect(stopped).toBe(false);
+
+    release();
+    await stopping;
+    expect(stopped).toBe(true);
   });
 });
 

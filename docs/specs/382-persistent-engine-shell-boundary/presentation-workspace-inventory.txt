@@ -3,7 +3,6 @@
 src/extension.ts
 src/plugins/ui/host.ts
 src/presentation/items.ts
-src/webview/ActivityLogManager.ts
 src/webview/ActivityPanel.ts
 src/webview/HandoffPanel.ts
 src/webview/MissionControlPanel.ts

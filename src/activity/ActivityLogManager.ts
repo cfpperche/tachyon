@@ -2,8 +2,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { Workspace } from "../workspace/Workspace.js";
-import { ActivityLogWriter, type SessionLoc } from "../activity/logWriter.js";
-import { appendOwnerRow, readSessionOwners, resolveRotationFollow, sessionOwnersFile } from "../activity/sessionOwners.js";
+import { ActivityLogWriter, type SessionLoc } from "./logWriter.js";
+import { appendOwnerRow, readSessionOwners, resolveRotationFollow, sessionOwnersFile } from "./sessionOwners.js";
 import { isResumable } from "../resume/SessionLedger.js";
 import { encodeClaudeCwd } from "../resume/adapters.js";
 
@@ -45,6 +45,7 @@ export class ActivityLogManager {
   private readonly pendingNotes = new Map<string, string>(); // lifecycle actions for writers not created yet (fork)
   private timer?: ReturnType<typeof setInterval>;
   private ticking = false;
+  private currentTick: Promise<void> | undefined;
 
   constructor(
     private readonly getWorkspaces: () => Workspace[],
@@ -56,15 +57,31 @@ export class ActivityLogManager {
 
   start(): void {
     if (this.timer) return;
-    this.timer = setInterval(() => void this.tick(), this.tickMs);
-    void this.tick();
+    this.timer = setInterval(() => this.requestTick(), this.tickMs);
+    this.requestTick();
   }
 
   dispose(): void {
+    void this.stop();
+  }
+
+  /** Stop admitting ticks and await the current filesystem pass before its Workspace is disposed. */
+  async stop(): Promise<void> {
     if (this.timer) clearInterval(this.timer);
     this.timer = undefined;
+    await this.currentTick;
     this.writers.clear();
     this.pendingNotes.clear();
+  }
+
+  private requestTick(): void {
+    if (this.currentTick) return;
+    const tick = this.tick();
+    this.currentTick = tick;
+    const finish = (): void => {
+      if (this.currentTick === tick) this.currentTick = undefined;
+    };
+    void tick.then(finish, finish);
   }
 
   /** Record a Tachyon-initiated lifecycle action (call BEFORE the async action) so the agent's log boundary is
@@ -158,6 +175,70 @@ export class ActivityLogManager {
     } finally {
       this.ticking = false;
     }
+  }
+}
+
+/** One authoritative human/client start path shared by the legacy shell and persistent engine. */
+export interface ActivityLifecycleWorkspace {
+  wsHash: string;
+  manager: {
+    spawn(agent: string): Promise<unknown>;
+    restart(agent: string): Promise<unknown>;
+  };
+  lifecycle: { resetBackoff(agent: string): void };
+  checkpointBeforeTeardown(agent: string): Promise<void>;
+  resumeAgent(agent: string): Promise<void>;
+}
+
+export interface ActivityLifecycleRecorder {
+  noteLifecycle(workspaceHash: string, agent: string, action: string): void;
+  armLifecycle(workspaceHash: string, agent: string): void;
+  clearLifecycle(workspaceHash: string, agent: string): void;
+}
+
+export async function startAgentWithActivity(
+  workspace: ActivityLifecycleWorkspace,
+  activityLog: ActivityLifecycleRecorder,
+  agent: string,
+): Promise<void> {
+  await loggedLifecycleAction(activityLog, workspace.wsHash, agent, "started", () => workspace.manager.spawn(agent));
+}
+
+/** Preserve the exact manual-restart policy while moving command execution into the persistent engine. */
+export async function restartAgentWithActivity(
+  workspace: ActivityLifecycleWorkspace,
+  activityLog: ActivityLifecycleRecorder,
+  agent: string,
+): Promise<void> {
+  workspace.lifecycle.resetBackoff(agent);
+  await workspace.checkpointBeforeTeardown(agent);
+  await loggedLifecycleAction(activityLog, workspace.wsHash, agent, "restarted", () => workspace.manager.restart(agent));
+}
+
+/** Preserve the manual-resume backoff reset and durable Activity boundary on both execution paths. */
+export async function resumeAgentWithActivity(
+  workspace: ActivityLifecycleWorkspace,
+  activityLog: ActivityLifecycleRecorder,
+  agent: string,
+): Promise<void> {
+  workspace.lifecycle.resetBackoff(agent);
+  await loggedLifecycleAction(activityLog, workspace.wsHash, agent, "resumed", () => workspace.resumeAgent(agent));
+}
+
+async function loggedLifecycleAction(
+  activityLog: ActivityLifecycleRecorder,
+  workspaceHash: string,
+  agent: string,
+  action: string,
+  run: () => Promise<unknown>,
+): Promise<void> {
+  activityLog.noteLifecycle(workspaceHash, agent, action);
+  try {
+    await run();
+    activityLog.armLifecycle(workspaceHash, agent);
+  } catch (error) {
+    activityLog.clearLifecycle(workspaceHash, agent);
+    throw error;
   }
 }
 

@@ -99,6 +99,7 @@ interface Pending {
   reject: (e: Error) => void;
   args: string[];
   timer: ReturnType<typeof setTimeout> | undefined;
+  bootstrap: boolean;
 }
 
 export interface ControlModeOptions {
@@ -124,10 +125,13 @@ export class ControlModeClient {
   /** Serializes anchor creation/removal across replacement instances in this process. */
   private static readonly anchorTails = new Map<string, Promise<void>>();
   private proc: ChildProcessWithoutNullStreams | undefined;
+  /** The transport can enqueue its own bootstrap commands once connected. */
   private up = false;
+  /** External commands only enter the FIFO after every bootstrap reply settles. */
+  private ready = false;
+  private bootstrapReplies = 0;
   private disposed = false;
   private disposePromise: Promise<void> | undefined;
-  private wasUp = false;
   private awaitingGuard = true;
   private buffer = "";
   private frameTag: string | null = null;
@@ -148,7 +152,7 @@ export class ControlModeClient {
   }
 
   get isUp(): boolean {
-    return this.up;
+    return this.ready;
   }
 
   /** Boots the engine: anchor session, control client, dead-map + activity subscriptions. */
@@ -187,6 +191,9 @@ export class ControlModeClient {
         return;
       }
       this.awaitingGuard = true;
+      this.up = false;
+      this.ready = false;
+      this.bootstrapReplies = 0;
       this.buffer = "";
       this.frameTag = null;
 
@@ -204,7 +211,7 @@ export class ControlModeClient {
   makeExecutor(): TmuxExecutor {
     return (args: string[], options: TmuxExecOptions = {}) => {
       const [flag, socket, ...cmd] = args;
-      if (!this.up || flag !== "-L" || socket !== this.socket || !lineSafe(cmd) || cmd.length === 0) {
+      if (!this.ready || flag !== "-L" || socket !== this.socket || !lineSafe(cmd) || cmd.length === 0) {
         return this.fallback(args, options);
       }
       return this.exec(cmd, options).catch((err: unknown) => {
@@ -215,14 +222,14 @@ export class ControlModeClient {
   }
 
   /** Sends one command line over the client; resolves with its framed reply. */
-  private exec(cmd: string[], options: TmuxExecOptions = {}): Promise<ExecResult> {
+  private exec(cmd: string[], options: TmuxExecOptions = {}, bootstrap = false): Promise<ExecResult> {
     return new Promise<ExecResult>((resolve, reject) => {
       const proc = this.proc;
       if (!proc || !this.up) {
         reject(new TransportError("control client down"));
         return;
       }
-      const pending: Pending = { resolve, reject, args: cmd, timer: undefined };
+      const pending: Pending = { resolve, reject, args: cmd, timer: undefined, bootstrap };
       if (options.timeoutMs !== undefined) {
         pending.timer = setTimeout(() => {
           if (proc !== this.proc || !this.pending.includes(pending)) return;
@@ -295,17 +302,18 @@ export class ControlModeClient {
 
   private settleFrame(isError: boolean, body: string): void {
     if (this.awaitingGuard) {
-      // The implicit attach reply — marks the channel ready.
+      // The implicit attach reply makes the internal channel usable. External
+      // work remains on the subprocess fallback until both subscription
+      // replies have left this generation's FIFO.
       this.awaitingGuard = false;
       this.up = true;
-      this.wasUp = true;
-      this.reconnectAttempt = 0;
-      this.opts.onStateChange?.(true);
+      this.ready = false;
+      this.bootstrapReplies = 2;
       // Subscribe AFTER the guard so the reply queue stays aligned.
-      void this.exec(["refresh-client", "-B", `${DEADMAP_SUBSCRIPTION}::${DEADMAP_FORMAT}`]).catch(() => {
+      void this.exec(["refresh-client", "-B", `${DEADMAP_SUBSCRIPTION}::${DEADMAP_FORMAT}`], {}, true).catch(() => {
         /* old tmux without -B: command channel still works, events degrade to the heartbeat */
       });
-      void this.exec(["refresh-client", "-B", `${ACTIVITY_SUBSCRIPTION}::${ACTIVITY_FORMAT}`]).catch(() => {
+      void this.exec(["refresh-client", "-B", `${ACTIVITY_SUBSCRIPTION}::${ACTIVITY_FORMAT}`], {}, true).catch(() => {
         /* old tmux without -B / window_activity: AttentionMonitor falls back to full capture polling */
       });
       return;
@@ -313,6 +321,7 @@ export class ControlModeClient {
     const pending = this.pending.shift();
     if (!pending) return; // unsolicited frame (e.g. session switches) — ignore
     if (pending.timer) clearTimeout(pending.timer);
+    if (pending.bootstrap) this.settleBootstrapReply();
     if (isError) {
       pending.reject(new TmuxError(body.trim() || "tmux command failed", pending.args));
     } else {
@@ -320,10 +329,21 @@ export class ControlModeClient {
     }
   }
 
+  private settleBootstrapReply(): void {
+    if (this.bootstrapReplies <= 0) return;
+    this.bootstrapReplies--;
+    if (this.bootstrapReplies !== 0 || !this.up || !this.proc || this.disposed) return;
+    this.ready = true;
+    this.reconnectAttempt = 0;
+    this.opts.onStateChange?.(true);
+  }
+
   private onClientDown(proc: ChildProcessWithoutNullStreams, error = new TransportError("control client died")): void {
     if (proc !== this.proc) return; // an old client's late event
-    const hadBeenUp = this.up;
+    const hadBeenReady = this.ready;
     this.up = false;
+    this.ready = false;
+    this.bootstrapReplies = 0;
     this.proc = undefined;
     this.buffer = "";
     this.frameTag = null;
@@ -333,7 +353,7 @@ export class ControlModeClient {
       p.reject(error);
     }
     if (this.disposed) return;
-    if (hadBeenUp || this.wasUp) this.opts.onStateChange?.(false);
+    if (hadBeenReady) this.opts.onStateChange?.(false);
     this.scheduleReconnect();
   }
 
@@ -363,6 +383,8 @@ export class ControlModeClient {
     const proc = this.proc;
     this.proc = undefined;
     this.up = false;
+    this.ready = false;
+    this.bootstrapReplies = 0;
     this.buffer = "";
     this.frameTag = null;
     this.frameBody = [];

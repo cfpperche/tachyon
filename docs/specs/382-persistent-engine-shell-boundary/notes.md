@@ -304,3 +304,24 @@ None.
 - The production extension is still not wired to this target and no mixed-mode cutover was enabled.  The
   first reviewable global proof (343 files, 4,068 passed, 3 skipped) remains current; no extra full run was
   justified for this focused vertical slice.
+
+## Fifteenth implementation slice — 2026-07-14
+
+- Moved the always-on Activity writer out of the webview layer and made it operational engine state.  The
+  daemon now owns one writer for its Workspace, journals bounded append notifications and awaits any
+  in-flight filesystem pass before disposing the Workspace.  The concrete presentation inventory shrank
+  from 14 to 13 files.
+- Centralized start, restart and resume lifecycle semantics for the legacy shell and daemon.  Both paths
+  now preserve the same backoff reset, pre-restart checkpoint, Activity note/arm ordering and failure
+  cleanup instead of letting the remote restart silently skip shell-only behavior.
+- The real service test exposed an existing control-mode bootstrap race: the channel advertised readiness
+  after its attach guard but before the two internal subscription replies left the FIFO.  External work now
+  remains on the safe subprocess path until both replies settle; readiness and outage events describe only
+  generations that are actually usable.  The start/restart/kill process test passed three consecutive runs
+  after removing the diagnostic tmux query that had hidden the race.
+- The focused lifecycle/Activity/control/protocol/client/service matrix, including real tmux control,
+  passes 87/87 with typecheck, extension+engine build, daemon import closure (164 files) and diff-check
+  green.  Packaged systemd dogfood
+  converged two clients, executed remote Studio/start/restart/kill, reused the exact engine and cleaned its
+  unit, process and listener.  The first reviewable global proof remains current; no extra full run was
+  justified before final closure.

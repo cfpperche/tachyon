@@ -98,6 +98,13 @@ try {
     throw new Error(`idempotent remote agent start failed: ${JSON.stringify({ started, replayedStart })}`);
   }
   await waitForAgentProjection(first, "dogfood-worker", true);
+  const restarted = await first.invoke("dogfood-operation-restart-0001", {
+    schemaVersion: 1,
+    method: "agent.restart",
+    input: { agent: "dogfood-worker" },
+  });
+  if (restarted.status !== "ok") throw new Error(`remote agent restart failed: ${JSON.stringify(restarted)}`);
+  await waitForAgentProjection(first, "dogfood-worker", true);
   const killed = await first.invoke("dogfood-operation-kill-0001", {
     schemaVersion: 1,
     method: "agent.kill",
@@ -128,7 +135,7 @@ try {
     engine: { pid: identity.pid, instanceId: identity.instanceId, bundleId: identity.bundleId },
     bridge: identity.bridge,
     snapshotSeq: snapshot.seq,
-    commands: ["studio.submit", started.method, killed.method],
+    commands: ["studio.submit", started.method, restarted.method, killed.method],
   }, null, 2)}\n`);
 } finally {
   try { execFileSync("systemctl", ["--user", "stop", unitName], { stdio: "ignore" }); } catch { /* absent/failed unit */ }

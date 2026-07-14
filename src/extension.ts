@@ -32,7 +32,12 @@ import { CommandStudioPanelManager, COMMAND_STUDIO_SHELL_VIEW_TYPE, type Command
 import { RunbookStudioPanelManager, RUNBOOK_STUDIO_SHELL_VIEW_TYPE, type RunbookStudioPanelState } from "./webview/RunbookStudioPanel.js";
 import { ScheduleStudioPanelManager, SCHEDULE_STUDIO_SHELL_VIEW_TYPE, type ScheduleStudioPanelState } from "./webview/ScheduleStudioPanel.js";
 import { PipelineStudioPanelManager, PIPELINE_STUDIO_VIEW_TYPE, type PipelineStudioPanelState } from "./webview/PipelineStudioPanel.js";
-import { ActivityLogManager } from "./webview/ActivityLogManager.js";
+import {
+  ActivityLogManager,
+  restartAgentWithActivity,
+  resumeAgentWithActivity,
+  startAgentWithActivity,
+} from "./activity/ActivityLogManager.js";
 import { PluginSurfaceHost } from "./plugins/ui/host.js";
 import { syncToolLauncher } from "./plugins/toolProvisionRun.js";
 import { buildOffers, type RegistrationOffer } from "./registration/adapters.js";
@@ -1515,11 +1520,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const ws = wsOf(item);
       if (!ws) return;
       try {
-        activityLog.noteLifecycle(ws.wsHash, item.agentName, "started"); // spec 239 — note BEFORE the action, arm AFTER
-        await ws.manager.spawn(item.agentName);
-        activityLog.armLifecycle(ws.wsHash, item.agentName);
+        await startAgentWithActivity(ws, activityLog, item.agentName);
       } catch (err) {
-        activityLog.clearLifecycle(ws.wsHash, item.agentName);
         notify(`${err instanceof Error ? err.message : String(err)}`, "error");
       }
     }),
@@ -1548,13 +1550,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const ws = wsOf(item);
       if (!ws) return;
       try {
-        ws.lifecycle.resetBackoff(item.agentName); // human took over — clear crash-loop history
-        await ws.checkpointBeforeTeardown(item.agentName); // spec 241 OQ6 — bounded last-chance checkpoint (idle + stale only)
-        activityLog.noteLifecycle(ws.wsHash, item.agentName, "restarted"); // spec 239 — note BEFORE the action, arm AFTER
-        await ws.manager.restart(item.agentName);
-        activityLog.armLifecycle(ws.wsHash, item.agentName);
+        await restartAgentWithActivity(ws, activityLog, item.agentName);
       } catch (err) {
-        activityLog.clearLifecycle(ws.wsHash, item.agentName);
         notify(`${err instanceof Error ? err.message : String(err)}`, "error");
       }
     }),
@@ -1603,12 +1600,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const ws = wsOf(item);
       if (!ws) return;
       try {
-        ws.lifecycle.resetBackoff(item.agentName);
-        activityLog.noteLifecycle(ws.wsHash, item.agentName, "resumed"); // spec 239 — note BEFORE the action, arm AFTER
-        await ws.resumeAgent(item.agentName);
-        activityLog.armLifecycle(ws.wsHash, item.agentName);
+        await resumeAgentWithActivity(ws, activityLog, item.agentName);
       } catch (err) {
-        activityLog.clearLifecycle(ws.wsHash, item.agentName);
         notify(`${err instanceof Error ? err.message : String(err)}`, "error");
       }
     }),
@@ -2115,12 +2108,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const agent = await pickAgent(ws, vscode.l10n.t("Restart which agent?"), false);
       if (!agent) return;
       try {
-        activityLog.noteLifecycle(ws.wsHash, agent, "restarted"); // spec 239 — note BEFORE the action, arm AFTER
-        await ws.manager.restart(agent);
-        activityLog.armLifecycle(ws.wsHash, agent);
+        await restartAgentWithActivity(ws, activityLog, agent);
         notify(vscode.l10n.t("'{0}' restarted", agent));
       } catch (err) {
-        activityLog.clearLifecycle(ws.wsHash, agent);
         notify(`${err instanceof Error ? err.message : String(err)}`, "error");
       }
     }),

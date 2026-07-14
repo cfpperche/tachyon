@@ -2,6 +2,12 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { workspaceHash } from "../tmux/TmuxService.js";
+import {
+  ActivityLogManager,
+  restartAgentWithActivity,
+  resumeAgentWithActivity,
+  startAgentWithActivity,
+} from "../activity/ActivityLogManager.js";
 import { readLinuxProcessIdentity } from "../delivery/reloadReconciliation.js";
 import { DaemonEngineHost, type DaemonHostEvent, type DaemonSettingsSnapshot } from "../workspace/DaemonEngineHost.js";
 import { Workspace } from "../workspace/Workspace.js";
@@ -72,6 +78,7 @@ export async function startDaemonEngineService(
 
   let workspace: Workspace | undefined;
   let control: RunningEngineControlServer | undefined;
+  let activityLog: ActivityLogManager | undefined;
   try {
     workspace = await Workspace.createDaemon(canonicalRoot, {
       host,
@@ -79,6 +86,14 @@ export async function startDaemonEngineService(
     });
     await workspace.start();
     const runningWorkspace = workspace;
+    activityLog = new ActivityLogManager(
+      () => [runningWorkspace],
+      2_000,
+      3_000,
+      (_workspaceHash, agent, count) => host.onActivityAppended(agent, count),
+    );
+    activityLog.start();
+    const runningActivityLog = activityLog;
 
     const bridgePort = runningWorkspace.bridge.listenerPort;
     if (bridgePort === undefined || runningWorkspace.bridge.port !== bridgePort) {
@@ -105,7 +120,7 @@ export async function startDaemonEngineService(
       identity,
       getSnapshot,
       readEvents: (afterSeq, limit) => journal.readAfter(afterSeq, limit),
-      invoke: (command) => executeWorkspaceCommand(runningWorkspace, command),
+      invoke: (command) => executeWorkspaceCommand(runningWorkspace, runningActivityLog, command),
     });
     const runningControl = control;
 
@@ -116,12 +131,13 @@ export async function startDaemonEngineService(
       snapshot: getSnapshot,
       shellCount: () => runningControl.shellCount(),
       close: () => {
-        closing ??= closeService(runningControl, runningWorkspace, host);
+        closing ??= closeService(runningControl, runningWorkspace, runningActivityLog, host);
         return closing;
       },
     };
   } catch (error) {
     await control?.close().catch(() => undefined);
+    await activityLog?.stop().catch(() => undefined);
     await workspace?.dispose().catch(() => undefined);
     host.dispose();
     throw error;
@@ -130,6 +146,7 @@ export async function startDaemonEngineService(
 
 async function executeWorkspaceCommand(
   workspace: Workspace,
+  activityLog: ActivityLogManager,
   command: WorkspaceCommandV1,
 ): Promise<WorkspaceCommandResultV1> {
   if (command.method === "studio.submit") {
@@ -138,7 +155,7 @@ async function executeWorkspaceCommand(
   const agent = command.input.agent;
   switch (command.method) {
     case "agent.start":
-      await workspace.manager.spawn(agent);
+      await startAgentWithActivity(workspace, activityLog, agent);
       break;
     case "agent.stop":
       await workspace.manager.stopGracefully(agent);
@@ -147,10 +164,10 @@ async function executeWorkspaceCommand(
       await workspace.manager.kill(agent);
       break;
     case "agent.restart":
-      await workspace.manager.restart(agent);
+      await restartAgentWithActivity(workspace, activityLog, agent);
       break;
     case "agent.resume":
-      await workspace.resumeAgent(agent);
+      await resumeAgentWithActivity(workspace, activityLog, agent);
       break;
   }
   return workspaceCommandSuccessV1(command);
@@ -347,10 +364,12 @@ function validateOptions(options: StartDaemonEngineServiceOptions): void {
 async function closeService(
   control: RunningEngineControlServer,
   workspace: Workspace,
+  activityLog: ActivityLogManager,
   host: DaemonEngineHost,
 ): Promise<void> {
   const errors: unknown[] = [];
   try { await control.close(); } catch (error) { errors.push(error); }
+  try { await activityLog.stop(); } catch (error) { errors.push(error); }
   try { await workspace.dispose(); } catch (error) { errors.push(error); }
   try { host.dispose(); } catch (error) { errors.push(error); }
   if (errors.length > 0) throw new AggregateError(errors, "persistent engine shutdown failed");
