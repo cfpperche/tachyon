@@ -10,6 +10,7 @@ import { TaskAttachmentStore } from "../../src/tasks/TaskAttachmentStore.js";
 import { ValidationStore } from "../../src/validations/ValidationStore.js";
 import { MissionControlPanelManager } from "../../src/webview/MissionControlPanel.js";
 import { legacyMissionControlTarget } from "../../src/shell/MissionControlTarget.js";
+import { legacyTaskDetailTarget } from "../../src/shell/TaskDetailTarget.js";
 import { TaskDetailPanelManager } from "../../src/webview/TaskDetailPanel.js";
 import { TaskStudioPanelManager } from "../../src/webview/TaskStudioPanel.js";
 import { envelope } from "../../src/webview/shared/studio/protocol.js";
@@ -61,11 +62,16 @@ function wireManagers(ws: Workspace) {
     taskStudioPanels.refreshAll();
   };
   const taskStudioPanels = new TaskStudioPanelManager(Uri.file("/ext"), onTasksChanged);
-  taskDetailPanels = new TaskDetailPanelManager(Uri.file("/ext"), (w, id) => taskStudioPanels.openExisting(w, id), onTasksChanged);
+  taskDetailPanels = new TaskDetailPanelManager(
+    Uri.file("/ext"),
+    () => [legacyTaskDetailTarget(ws)],
+    (_target, id) => taskStudioPanels.openExisting(ws, id),
+    onTasksChanged,
+  );
   missionControlPanels = new MissionControlPanelManager(
     Uri.file("/ext"),
     () => [legacyMissionControlTarget(ws)],
-    (_target, id) => taskDetailPanels.open(ws, id),
+    (_target, id) => taskDetailPanels.open(legacyTaskDetailTarget(ws), id),
     (_target, id) => { if (id) taskStudioPanels.openExisting(ws, id); else taskStudioPanels.openNew(ws); },
     onTasksChanged,
   );

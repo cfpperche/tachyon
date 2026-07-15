@@ -11,6 +11,7 @@ import {
   workspaceCommandSuccessV1,
   workspaceMissionControlViewSuccessV1,
   workspaceProbeViewSuccessV1,
+  workspaceTaskDetailViewSuccessV1,
   type EngineServiceIdentityV1,
   type EngineShellHelloV1,
 } from "../../src/engine-service/protocol.js";
@@ -234,6 +235,50 @@ describe("EngineControlClient", () => {
         status: "ok",
         view: { board: { views: expect.arrayContaining([expect.objectContaining({ task: expect.objectContaining({ id: "t-000000" }) })]) } },
       });
+  });
+
+  it("allows the dedicated Task Detail envelope above the ordinary 64 KiB response limit", async () => {
+    const f = fixture();
+    const result = workspaceTaskDetailViewSuccessV1({
+      schemaVersion: 1,
+      detail: {
+        schemaVersion: 1,
+        task: {
+          id: "t-abc123",
+          title: "large journal",
+          status: "inbox",
+          author: "human",
+          createdAt: "2026-07-14T12:00:00.000Z",
+          updatedAt: "2026-07-14T12:00:00.000Z",
+        },
+        journal: Array.from({ length: 20 }, (_, index) => ({
+          id: `j-${index.toString(16).padStart(12, "0")}`,
+          ts: "2026-07-14T12:00:00.000Z",
+          author: "codex",
+          text: "x".repeat(4_000),
+        })),
+        deps: [],
+        imageAttachments: [],
+        prototypes: { readOnly: false, prototypes: [] },
+      },
+    });
+    expect(Buffer.byteLength(JSON.stringify({ ok: true, op: "query", result }), "utf8")).toBeGreaterThan(64 * 1024);
+    const server = await startEngineControlServer({
+      socketPath: f.socketPath,
+      identity: f.identity,
+      getSnapshot: f.snapshot,
+      query: async (query) => {
+        if (query.method !== "task.detail") throw new Error("unexpected query");
+        return result;
+      },
+    });
+    servers.push(server);
+    const client = new EngineControlClient({ socketPath: f.socketPath, hello: f.hello });
+    await client.attach();
+    expect(await client.query({ schemaVersion: 1, method: "task.detail", input: { id: "t-abc123" } }))
+      .toMatchObject({ method: "task.detail", status: "ok", view: { detail: { journal: expect.arrayContaining([
+        expect.objectContaining({ id: "j-000000000000" }),
+      ]) } } });
   });
 
   it("invokes an operation by exact id without transport-level retries", async () => {

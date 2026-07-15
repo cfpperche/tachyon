@@ -12,6 +12,15 @@ import {
   parseMissionControlViewV1,
   type MissionControlViewV1,
 } from "../runtime-api/missionControlProjection.js";
+import {
+  isTaskPrototypeReviewInputV1,
+  type TaskPrototypeReviewInputV1,
+} from "../runtime-api/taskDetailCommands.js";
+import {
+  isTaskDetailViewV1,
+  parseTaskDetailViewV1,
+  type TaskDetailViewV1,
+} from "../runtime-api/taskDetailProjection.js";
 
 export const ENGINE_BUNDLE_SCHEMA_VERSION = 1 as const;
 export const ENGINE_SHELL_PROTOCOL = 1 as const;
@@ -118,7 +127,8 @@ export type WorkspaceCommandMethodV1 =
   | "studio.submit"
   | "task.update"
   | "task.reorder-lane"
-  | "validation.close";
+  | "validation.close"
+  | "task.prototype.review";
 
 export type WorkspaceAgentCommandMethodV1 = Extract<WorkspaceCommandMethodV1, `agent.${string}`>;
 export type WorkspaceSimpleCommandMethodV1 = Exclude<WorkspaceCommandMethodV1, "studio.submit">;
@@ -176,6 +186,10 @@ export type WorkspaceCommandV1 = {
   schemaVersion: 1;
   method: "validation.close";
   input: MissionControlValidationCloseInputV1;
+} | {
+  schemaVersion: 1;
+  method: "task.prototype.review";
+  input: TaskPrototypeReviewInputV1;
 };
 
 export type WorkspaceCommandResultV1 =
@@ -199,7 +213,7 @@ export type WorkspaceCommandResultV1 =
       message: string;
     };
 
-export type WorkspaceQueryMethodV1 = "probe.view" | "task.board";
+export type WorkspaceQueryMethodV1 = "probe.view" | "task.board" | "task.detail";
 
 export interface WorkspaceProbeViewRowV1 {
   runId: string;
@@ -234,6 +248,11 @@ export type WorkspaceQueryV1 =
       schemaVersion: 1;
       method: "task.board";
       input: { liveAdhocAgents: string[] };
+    }
+  | {
+      schemaVersion: 1;
+      method: "task.detail";
+      input: { id: string };
     };
 
 export type WorkspaceQueryResultV1 =
@@ -248,6 +267,12 @@ export type WorkspaceQueryResultV1 =
       method: "task.board";
       status: "ok";
       view: MissionControlViewV1;
+    }
+  | {
+      schemaVersion: 1;
+      method: "task.detail";
+      status: "ok";
+      view: TaskDetailViewV1;
     }
   | {
       schemaVersion: 1;
@@ -282,6 +307,7 @@ const GIT_ID_RE = /^[a-f0-9]{7,64}$/;
 const OPERATION_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/;
 const AGENT_NAME_RE = /^[A-Za-z][A-Za-z0-9_-]{0,127}$/;
 export const MISSION_CONTROL_RESPONSE_MAX_BYTES = 32 * 1024 * 1024;
+export const TASK_DETAIL_RESPONSE_MAX_BYTES = 2 * 1024 * 1024;
 const WORKSPACE_COMMAND_METHODS = new Set<WorkspaceCommandMethodV1>([
   "agent.start",
   "agent.stop",
@@ -292,6 +318,7 @@ const WORKSPACE_COMMAND_METHODS = new Set<WorkspaceCommandMethodV1>([
   "task.update",
   "task.reorder-lane",
   "validation.close",
+  "task.prototype.review",
 ]);
 
 export function isSha256(value: unknown): value is string {
@@ -313,6 +340,7 @@ export function isWorkspaceCommandV1(value: unknown): value is WorkspaceCommandV
   if (value.method === "task.update") return isMissionControlTaskUpdateInputV1(value.input);
   if (value.method === "task.reorder-lane") return isMissionControlTaskReorderInputV1(value.input);
   if (value.method === "validation.close") return isMissionControlValidationCloseInputV1(value.input);
+  if (value.method === "task.prototype.review") return isTaskPrototypeReviewInputV1(value.input);
   return hasOnlyKeys(value.input, ["agent"])
     && typeof value.input.agent === "string"
     && AGENT_NAME_RE.test(value.input.agent);
@@ -355,6 +383,11 @@ export function isWorkspaceQueryV1(value: unknown): value is WorkspaceQueryV1 {
       && value.input.liveAdhocAgents.every((agent) => typeof agent === "string" && AGENT_NAME_RE.test(agent))
       && new Set(value.input.liveAdhocAgents).size === value.input.liveAdhocAgents.length;
   }
+  if (value.method === "task.detail") {
+    return hasOnlyKeys(value.input, ["id"])
+      && typeof value.input.id === "string"
+      && /^t-[0-9a-f]{6}$/.test(value.input.id);
+  }
   if (value.method !== "probe.view") return false;
   const keys = Object.keys(value.input);
   return keys.every((key) => key === "caller")
@@ -364,10 +397,14 @@ export function isWorkspaceQueryV1(value: unknown): value is WorkspaceQueryV1 {
 
 export function isWorkspaceQueryResultV1(value: unknown): value is WorkspaceQueryResultV1 {
   if (!isRecord(value) || value.schemaVersion !== 1
-    || (value.method !== "probe.view" && value.method !== "task.board")) return false;
+    || (value.method !== "probe.view" && value.method !== "task.board" && value.method !== "task.detail")) return false;
   if (value.status === "ok") {
     return hasOnlyKeys(value, ["schemaVersion", "method", "status", "view"])
-      && (value.method === "probe.view" ? isWorkspaceProbeViewV1(value.view) : isMissionControlViewV1(value.view));
+      && (value.method === "probe.view"
+        ? isWorkspaceProbeViewV1(value.view)
+        : value.method === "task.board"
+          ? isMissionControlViewV1(value.view)
+          : isTaskDetailViewV1(value.view));
   }
   return value.status === "error"
     && hasOnlyKeys(value, ["schemaVersion", "method", "status", "code", "message"])
@@ -376,6 +413,21 @@ export function isWorkspaceQueryResultV1(value: unknown): value is WorkspaceQuer
     && typeof value.message === "string"
     && value.message.length > 0
     && value.message.length <= 1_000;
+}
+
+/** Bounds the journal/prototype metadata response without moving attachment bytes through control. */
+export function workspaceTaskDetailViewSuccessV1(view: TaskDetailViewV1): WorkspaceQueryResultV1 {
+  const result = {
+    schemaVersion: 1,
+    method: "task.detail",
+    status: "ok",
+    view: parseTaskDetailViewV1(view),
+  } as const;
+  const transportEnvelope = { ok: true as const, op: "query" as const, result };
+  if (Buffer.byteLength(`${JSON.stringify(transportEnvelope)}\n`, "utf8") > TASK_DETAIL_RESPONSE_MAX_BYTES) {
+    throw new Error("Task Detail view exceeds its dedicated response size limit");
+  }
+  return result;
 }
 
 /** Builds and bounds the large board read without relaxing the 64 KiB limit of any other control response. */

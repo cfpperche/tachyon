@@ -45,13 +45,14 @@ describe("persistent workspace presentation boundary", () => {
       "src/webview/TerminalStudioPanel.ts",
       "src/webview/ProbeResultPanel.ts",
       "src/webview/MissionControlPanel.ts",
+      "src/webview/TaskDetailPanel.ts",
       "src/presentation/items.ts",
       "src/plugins/ui/host.ts",
     ];
     for (const relative of migrated) {
       const source = fs.readFileSync(path.join(root, relative), "utf8");
       expect(source, relative).not.toMatch(/workspace\/Workspace(?:\.js)?/);
-      expect(source, relative).toMatch(/Workspace(?:Presentation|GitPresentation|ProbePresentation|PluginPresentation|MissionControl|Studio)Target/);
+      expect(source, relative).toMatch(/Workspace(?:Presentation|GitPresentation|ProbePresentation|PluginPresentation|MissionControl|TaskDetail|Studio)Target/);
     }
   });
 
@@ -60,8 +61,11 @@ describe("persistent workspace presentation boundary", () => {
       "src/runtime-api/workspaceProjection.ts",
       "src/runtime-api/missionControlCommands.ts",
       "src/runtime-api/missionControlProjection.ts",
+      "src/runtime-api/taskDetailCommands.ts",
+      "src/runtime-api/taskDetailProjection.ts",
       "src/shell/FakeWorkspaceClient.ts",
       "src/shell/MissionControlTarget.ts",
+      "src/shell/TaskDetailTarget.ts",
       "src/shell/WorkspacePresentation.ts",
     ]) {
       const source = fs.readFileSync(path.join(root, relative), "utf8");

@@ -2,6 +2,7 @@ import fs from "node:fs";
 import net from "node:net";
 import {
   MISSION_CONTROL_RESPONSE_MAX_BYTES,
+  TASK_DETAIL_RESPONSE_MAX_BYTES,
   isEngineControlResponseV1,
   isEngineOperationId,
   isWorkspaceCommandV1,
@@ -294,8 +295,12 @@ export function requestEngineControl(
   timeoutMs = DEFAULT_CONTROL_TIMEOUT_MS,
 ): Promise<EngineControlResponseV1> {
   return new Promise((resolve, reject) => {
-    const maxResponseBytes = request.op === "query" && request.query.method === "task.board"
-      ? MISSION_CONTROL_RESPONSE_MAX_BYTES
+    const maxResponseBytes = request.op === "query"
+      ? request.query.method === "task.board"
+        ? MISSION_CONTROL_RESPONSE_MAX_BYTES
+        : request.query.method === "task.detail"
+          ? TASK_DETAIL_RESPONSE_MAX_BYTES
+          : MAX_CONTROL_RESPONSE_BYTES
       : MAX_CONTROL_RESPONSE_BYTES;
     const socket = net.createConnection(socketPath);
     let output = "";

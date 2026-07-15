@@ -388,3 +388,29 @@ None.
   stopped-state assertions it passed 13 consecutive runs, including 3/3 against the final rebuilt bundle.
 - No additional global full run was made: the first reviewable proof (343 files, 4,068 passed, 3 skipped)
   remains the declared intermediate gate, and the next global run is reserved for final closure.
+
+## Nineteenth implementation slice — 2026-07-14
+
+- Added a strict daemon-owned Task Detail projection for the complete read-only panel model: task fields,
+  journal, derived/attention state, resolved dependencies, image attachment metadata and prototype metadata.
+  Attachment and prototype bytes never cross the control socket; the shell maps verified workspace-local
+  files through traversal-safe stores and revalidates prototype integrity/policy before assembling `srcdoc`.
+- Added exact `task.detail` and idempotency-keyed `task.prototype.review` protocol operations.  Task Detail
+  has a dedicated 2 MiB response budget measured over the exact newline-terminated outer envelope, while
+  ordinary control responses remain at 64 KiB.  Legacy and remote adapters validate the same narrow update
+  and review shapes and share one prototype-review/reconciliation service.
+- Migrated `TaskDetailPanel` from concrete Workspace/Task/attachment/prototype store access to
+  `WorkspaceTaskDetailTarget`.  Async generations prevent an older remote response from overwriting a newer
+  refresh, and the concrete presentation inventory shrank from 9 to 8 files.  Task Studio remains a separate
+  later slice because its provisional 10 MiB attachments require an explicit media transport contract.
+- Prototype review now emits an authoritative `views-changed(tasks)` event from the daemon.  This is required
+  for note/rejection mutations that touch only `attachments/<task>/prototypes.json`; a real-process test proves
+  another shell observes the event without relying on the top-level task-file watcher.
+- The final related matrix passes 159/159 with typecheck, extension+engine build, 172-file editor-free daemon
+  import closure, presentation boundary and diff-check green.  Packaged `systemd --user` dogfood queried Task
+  Detail, hydrated verified image/prototype media, reconciled a prototype decision, exercised the narrow task
+  update, retained the existing Mission Control/Studio/agent/plugin lifecycle and passed 3/3 against the final
+  rebuilt bundle.  Its first run correctly rejected a fixture that moved a P1 task through the no-priority
+  reorder lane; the fixture now exercises the actual P1 lane rather than weakening production validation.
+- No additional global full run was made: the first reviewable proof (343 files, 4,068 passed, 3 skipped)
+  remains the declared intermediate gate, and the next global run is reserved for final closure.

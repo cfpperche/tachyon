@@ -13,6 +13,7 @@ import {
   workspaceCommandSuccessV1,
   workspaceMissionControlViewSuccessV1,
   workspaceProbeViewSuccessV1,
+  workspaceTaskDetailViewSuccessV1,
   type EngineBundleFileV1,
   type EngineBundleManifestV1,
   type WorkspaceCommandV1,
@@ -158,6 +159,53 @@ describe("persistent engine protocol", () => {
     });
     expect(isWorkspaceQueryResultV1(result)).toBe(true);
     if (result.status !== "ok" || result.method !== "task.board") throw new Error("expected Mission Control result");
+    expect(isWorkspaceQueryResultV1({ ...result, view: { ...result.view, extra: true } })).toBe(false);
+  });
+
+  it("accepts only exact Task Detail reads and prototype-review mutations", () => {
+    const approve = {
+      schemaVersion: 1,
+      method: "task.prototype.review",
+      input: {
+        taskId: "t-abc123",
+        prototypeId: "p-0123456789ab",
+        action: "approve",
+        expectUpdatedAt: "2026-07-14T12:00:00.000Z",
+        review: "ship it",
+      },
+    } as const;
+    const note = { ...approve, input: { ...approve.input, action: "note" as const } };
+    expect(isWorkspaceCommandV1(approve)).toBe(true);
+    expect(isWorkspaceCommandV1(note)).toBe(true);
+    expect(isWorkspaceCommandResultV1(workspaceCommandSuccessV1(approve))).toBe(true);
+    expect(isWorkspaceCommandV1({ ...note, input: { ...note.input, review: undefined } })).toBe(false);
+    expect(isWorkspaceCommandV1({ ...approve, input: { ...approve.input, extra: true } })).toBe(false);
+    expect(isWorkspaceCommandV1({ ...approve, input: { ...approve.input, prototypeId: "../escape" } })).toBe(false);
+
+    const query = { schemaVersion: 1, method: "task.detail", input: { id: "t-abc123" } } as const;
+    expect(isWorkspaceQueryV1(query)).toBe(true);
+    expect(isWorkspaceQueryV1({ ...query, input: { id: "../escape" } })).toBe(false);
+    expect(isWorkspaceQueryV1({ ...query, input: { id: "t-abc123", extra: true } })).toBe(false);
+    const result = workspaceTaskDetailViewSuccessV1({
+      schemaVersion: 1,
+      detail: {
+        schemaVersion: 1,
+        task: {
+          id: "t-abc123",
+          title: "remote detail",
+          status: "inbox",
+          author: "human",
+          createdAt: "2026-07-14T12:00:00.000Z",
+          updatedAt: "2026-07-14T12:00:00.000Z",
+        },
+        journal: [],
+        deps: [],
+        imageAttachments: [],
+        prototypes: { readOnly: false, prototypes: [] },
+      },
+    });
+    expect(isWorkspaceQueryResultV1(result)).toBe(true);
+    if (result.status !== "ok" || result.method !== "task.detail") throw new Error("expected Task Detail result");
     expect(isWorkspaceQueryResultV1({ ...result, view: { ...result.view, extra: true } })).toBe(false);
   });
 

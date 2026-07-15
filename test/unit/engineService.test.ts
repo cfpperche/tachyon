@@ -10,6 +10,9 @@ import type { EngineServiceIdentityV1, EngineShellHelloV1, WorkspaceEventV1 } fr
 import { TmuxService, workspaceHash } from "../../src/tmux/TmuxService.js";
 import { blankCommandFields } from "../../src/webview/command-studio-shell/domain.js";
 import { TaskStore } from "../../src/tasks/TaskStore.js";
+import { TaskAttachmentStore } from "../../src/tasks/TaskAttachmentStore.js";
+import { TaskDetailStore, hashBody } from "../../src/tasks/TaskDetailStore.js";
+import { TaskPrototypeStore } from "../../src/tasks/TaskPrototypeStore.js";
 import { ValidationStore } from "../../src/validations/ValidationStore.js";
 
 const roots: string[] = [];
@@ -33,12 +36,49 @@ describe("daemon engine service", () => {
     }
     const configPath = path.join(workspaceRoot, "tachyon.yml");
     fs.writeFileSync(configPath, config("worker"), "utf8");
-    const seedTask = await new TaskStore(workspaceRoot).create({
+    const seedTaskStore = new TaskStore(workspaceRoot);
+    let seedTask = await seedTaskStore.create({
       id: "t-abc123",
       title: "remote Mission Control",
       author: "human",
       body: "engine-owned body",
       now: "2026-07-14T12:00:00.000Z",
+    });
+    seedTaskStore.journal.append(seedTask.id, {
+      author: "codex",
+      text: "daemon-owned detail note",
+      now: "2026-07-14T12:00:01.000Z",
+    });
+    const seedAttachments = new TaskAttachmentStore(workspaceRoot, seedTask.id);
+    const seedImage = seedAttachments.putImage({
+      data: Buffer.from("daemon image bytes"),
+      mediaType: "image/png",
+      name: "daemon.png",
+      source: "paste",
+    });
+    new TaskDetailStore(workspaceRoot).write({
+      schemaVersion: 1,
+      taskId: seedTask.id,
+      doc: { type: "doc", content: [] },
+      attachments: [seedImage],
+      bodyHash: hashBody(seedTask.body!),
+      taskUpdatedAt: seedTask.updatedAt,
+    });
+    const seedPrototype = new TaskPrototypeStore(workspaceRoot, seedTask.id).createDraft({
+      html: "<main>daemon prototype</main>",
+      title: "Daemon proposal",
+      author: "codex",
+      now: "2026-07-14T12:00:02.000Z",
+    });
+    const seedRevision = seedPrototype.prototypes[0]!;
+    seedTask = await seedTaskStore.update(seedTask.id, {
+      awaitingHuman: {
+        reason: "Review daemon proposal",
+        kind: "decision",
+        since: "2026-07-14T12:00:03.000Z",
+        subject: { type: "task-prototype", prototypeId: seedRevision.id },
+      },
+      now: "2026-07-14T12:00:03.000Z",
     });
     const seedValidation = await new ValidationStore(workspaceRoot).create({
       title: "remote dogfood",
@@ -91,6 +131,63 @@ describe("daemon engine service", () => {
         },
       },
     });
+    const initialDetail = await first.query({ schemaVersion: 1, method: "task.detail", input: { id: seedTask.id } });
+    expect(initialDetail).toMatchObject({
+      method: "task.detail",
+      status: "ok",
+      view: {
+        detail: {
+          task: { id: seedTask.id, title: "remote Mission Control" },
+          journal: [{ author: "codex", text: "daemon-owned detail note" }],
+          imageAttachments: [{ id: seedImage.id, blobRef: seedImage.blobRef, available: true }],
+          prototypes: {
+            updatedAt: seedPrototype.updatedAt,
+            prototypes: [{ id: seedRevision.id, available: true, integrity: "verified", state: "draft" }],
+          },
+        },
+      },
+    });
+    const notePrototype = {
+      schemaVersion: 1 as const,
+      method: "task.prototype.review" as const,
+      input: {
+        taskId: seedTask.id,
+        prototypeId: seedRevision.id,
+        action: "note" as const,
+        expectUpdatedAt: seedPrototype.updatedAt!,
+        review: "reviewed through daemon",
+      },
+    };
+    expect(await first.invoke("operation-prototype-note-0001", notePrototype))
+      .toEqual({ schemaVersion: 1, method: "task.prototype.review", status: "ok" });
+    await waitForEvent(first, (event) => event.kind === "views-changed" && event.payload.view === "tasks");
+    const notedPrototype = new TaskPrototypeStore(workspaceRoot, seedTask.id).read();
+    const approvePrototype = {
+      schemaVersion: 1 as const,
+      method: "task.prototype.review" as const,
+      input: {
+        taskId: seedTask.id,
+        prototypeId: seedRevision.id,
+        action: "approve" as const,
+        expectUpdatedAt: notedPrototype.updatedAt!,
+        review: "approved through daemon",
+      },
+    };
+    const approved = await first.invoke("operation-prototype-review-0001", approvePrototype);
+    expect(approved).toEqual({ schemaVersion: 1, method: "task.prototype.review", status: "ok" });
+    expect(await first.invoke("operation-prototype-review-0001", approvePrototype)).toEqual(approved);
+    expect(seedTaskStore.get(seedTask.id).awaitingHuman).toBeUndefined();
+    expect(new TaskPrototypeStore(workspaceRoot, seedTask.id).read().approved).toMatchObject({
+      id: seedRevision.id,
+      state: "approved",
+      approvedBy: "human",
+    });
+    const approvedDetail = await first.query({ schemaVersion: 1, method: "task.detail", input: { id: seedTask.id } });
+    expect(approvedDetail).toMatchObject({
+      status: "ok",
+      view: { detail: { prototypes: { prototypes: [{ id: seedRevision.id, state: "approved" }] } } },
+    });
+    seedTask = seedTaskStore.get(seedTask.id);
     const updateTask = {
       schemaVersion: 1 as const,
       method: "task.update" as const,

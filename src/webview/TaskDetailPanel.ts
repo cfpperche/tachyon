@@ -1,21 +1,20 @@
 import * as vscode from "vscode";
 import { panelIcon } from "./shared/panelIcon.js";
-import type { Workspace } from "../workspace/Workspace.js";
 import { renderWebviewShell } from "./shared/shell.js";
 import { READY } from "./shared/ready.js";
-import type { Task, TaskDerived, TaskAttention, TaskUpdateInput, TaskView } from "../tasks/types.js";
-import { taskMessage, taskDetailErrorMessage, type TaskDetailAction, type TaskDetailVM, type TaskDepVM } from "./task-detail/messages.js";
-import { TaskDetailStore } from "../tasks/TaskDetailStore.js";
-import { TaskAttachmentStore } from "../tasks/TaskAttachmentStore.js";
-import { TaskPrototypeStore, type TaskPrototypeSnapshot } from "../tasks/TaskPrototypeStore.js";
+import { taskMessage, taskDetailErrorMessage, type TaskDetailAction, type TaskDetailVM } from "./task-detail/messages.js";
 import { assembleUntrustedSrcdoc } from "./shared/untrustedSrcdoc.js";
+import type { TaskDetailProjectionV1 } from "../runtime-api/taskDetailProjection.js";
+import type { WorkspaceTaskDetailTarget } from "../shell/TaskDetailTarget.js";
 
 interface PanelEntry {
   panel: vscode.WebviewPanel;
-  ws: Workspace;
+  ws: WorkspaceTaskDetailTarget;
   taskId: string;
-  lastKnown?: TaskView;
-  post: () => void;
+  lastKnown?: TaskDetailProjectionV1;
+  post: () => void | Promise<void>;
+  generation: number;
+  disposed: boolean;
 }
 
 export const TASK_DETAIL_VIEW_TYPE = "tachyonTaskDetail";
@@ -38,26 +37,26 @@ export class TaskDetailPanelManager {
 
   constructor(
     private readonly extensionUri: vscode.Uri,
-    getWorkspacesOrOpenTaskStudio: (() => Workspace[]) | ((ws: Workspace, id: string) => void),
-    openTaskStudioOrOnTasksChanged: ((ws: Workspace, id: string) => void) | (() => void),
+    getWorkspacesOrOpenTaskStudio: (() => WorkspaceTaskDetailTarget[]) | ((ws: WorkspaceTaskDetailTarget, id: string) => void),
+    openTaskStudioOrOnTasksChanged: ((ws: WorkspaceTaskDetailTarget, id: string) => void) | (() => void),
     onTasksChangedMaybe?: () => void,
   ) {
     if (onTasksChangedMaybe) {
-      this.getWorkspaces = getWorkspacesOrOpenTaskStudio as () => Workspace[];
-      this.openTaskStudio = openTaskStudioOrOnTasksChanged as (ws: Workspace, id: string) => void;
+      this.getWorkspaces = getWorkspacesOrOpenTaskStudio as () => WorkspaceTaskDetailTarget[];
+      this.openTaskStudio = openTaskStudioOrOnTasksChanged as (ws: WorkspaceTaskDetailTarget, id: string) => void;
       this.onTasksChanged = onTasksChangedMaybe;
     } else {
       this.getWorkspaces = () => [];
-      this.openTaskStudio = getWorkspacesOrOpenTaskStudio as (ws: Workspace, id: string) => void;
+      this.openTaskStudio = getWorkspacesOrOpenTaskStudio as (ws: WorkspaceTaskDetailTarget, id: string) => void;
       this.onTasksChanged = openTaskStudioOrOnTasksChanged as () => void;
     }
   }
 
-  private readonly getWorkspaces: () => Workspace[];
-  private readonly openTaskStudio: (ws: Workspace, id: string) => void;
+  private readonly getWorkspaces: () => WorkspaceTaskDetailTarget[];
+  private readonly openTaskStudio: (ws: WorkspaceTaskDetailTarget, id: string) => void;
   private readonly onTasksChanged: () => void;
 
-  open(ws: Workspace, taskId: string): void {
+  open(ws: WorkspaceTaskDetailTarget, taskId: string): void {
     const key = panelKey(ws, taskId);
     const existing = this.panels.get(key);
     if (existing) { existing.panel.reveal(vscode.ViewColumn.Active); return; }
@@ -65,7 +64,7 @@ export class TaskDetailPanelManager {
     const root = vscode.Uri.joinPath(this.extensionUri, "dist", "webview");
     // dogfood round 1 (#5, spec 339) — the blob dir is registered here (not just in Task Studio's panel) so
     // asWebviewUri() below can actually resolve `attachment:<id>` refs the body carries.
-    const blobRoot = vscode.Uri.file(new TaskAttachmentStore(ws.workspaceRoot, taskId).blobDir);
+    const blobRoot = vscode.Uri.file(ws.attachmentBlobRoot(taskId));
     const panel = vscode.window.createWebviewPanel(
       TASK_DETAIL_VIEW_TYPE,
       `Task ${taskId}`,
@@ -82,16 +81,16 @@ export class TaskDetailPanelManager {
     this.attachPanel(panel, ws, state.taskId);
   }
 
-  private workspaceFor(wsHash: string): Workspace | undefined {
+  private workspaceFor(wsHash: string): WorkspaceTaskDetailTarget | undefined {
     return this.getWorkspaces().find((w) => w.wsHash === wsHash);
   }
 
-  private attachPanel(panel: vscode.WebviewPanel, ws: Workspace, taskId: string): void {
+  private attachPanel(panel: vscode.WebviewPanel, ws: WorkspaceTaskDetailTarget, taskId: string): void {
     const key = panelKey(ws, taskId);
     const existing = this.panels.get(key);
     if (existing && existing.panel !== panel) existing.panel.dispose();
     const root = vscode.Uri.joinPath(this.extensionUri, "dist", "webview");
-    const blobRoot = vscode.Uri.file(new TaskAttachmentStore(ws.workspaceRoot, taskId).blobDir);
+    const blobRoot = vscode.Uri.file(ws.attachmentBlobRoot(taskId));
     panel.title = `Task ${taskId}`;
     panel.webview.options = { enableScripts: true, localResourceRoots: [root, blobRoot] };
     panel.iconPath = panelIcon(this.extensionUri, "note");
@@ -106,20 +105,27 @@ export class TaskDetailPanelManager {
       persistedState: { schemaVersion: 1, view: TASK_DETAIL_VIEW_TYPE, wsHash: ws.wsHash, taskId } satisfies TaskDetailPanelState,
     });
 
-    const entry: PanelEntry = { panel, ws, taskId, post: () => {} };
-    entry.post = (): void => this.postFor(entry);
+    const entry: PanelEntry = { panel, ws, taskId, post: () => {}, generation: 0, disposed: false };
+    entry.post = (): Promise<void> => this.postFor(entry);
     panel.webview.onDidReceiveMessage((m: Partial<TaskDetailAction>) => void this.handleMessage(entry, m));
-    panel.onDidDispose(() => { this.panels.delete(key); });
+    panel.onDidDispose(() => {
+      entry.disposed = true;
+      entry.generation += 1;
+      this.panels.delete(key);
+    });
     this.panels.set(key, entry);
-    entry.post();
+    void entry.post();
   }
 
-  private postFor(entry: PanelEntry): void {
+  private async postFor(entry: PanelEntry): Promise<void> {
+    const generation = ++entry.generation;
     try {
-      const view = entry.ws.taskStore.getView(entry.taskId, { includeJournal: true });
-      entry.lastKnown = view;
-      void entry.panel.webview.postMessage(taskMessage(this.vmFor(entry.panel, entry.ws, entry.taskId, view, false)));
+      const detail = await entry.ws.loadTaskDetail(entry.taskId);
+      if (entry.disposed || entry.generation !== generation) return;
+      entry.lastKnown = detail;
+      void entry.panel.webview.postMessage(taskMessage(this.vmFor(entry.panel, entry.ws, entry.taskId, detail, false)));
     } catch {
+      if (entry.disposed || entry.generation !== generation) return;
       // the file disappeared or became unparseable — render a tombstone from the LAST KNOWN state, never
       // dispose the panel out from under the user (dueto F8).
       if (entry.lastKnown) {
@@ -134,18 +140,20 @@ export class TaskDetailPanelManager {
    *  that only Task Studio used to resolve; the detail tab rendered them verbatim, and DOMPurify's URI
    *  allowlist (https:/mailto:/#) then stripped the unresolved `src` outright. Read-only: resolves against
    *  the sidecar's OWN attachment list, never writes anything. */
-  private resolveAttachmentRefs(panel: vscode.WebviewPanel, ws: Workspace, taskId: string, body: string): string {
+  private resolveAttachmentRefs(
+    panel: vscode.WebviewPanel,
+    ws: WorkspaceTaskDetailTarget,
+    taskId: string,
+    body: string,
+    attachments: TaskDetailProjectionV1["imageAttachments"],
+  ): string {
     if (!body.includes("attachment:")) return body;
-    const detailStore = new TaskDetailStore(ws.workspaceRoot);
-    const read = detailStore.read(taskId);
-    if (read.status !== "ok" || read.detail.attachments.length === 0) return body;
-    const store = new TaskAttachmentStore(ws.workspaceRoot, taskId);
     let out = body;
-    for (const att of detailStore.resolveAttachments(taskId, read.detail.attachments)) {
-      if (att.kind !== "image" || !att.available) continue;
+    for (const att of attachments) {
+      if (!att.available) continue;
       let uri: string;
       try {
-        uri = panel.webview.asWebviewUri(vscode.Uri.file(store.blobPath(att.blobRef))).toString();
+        uri = panel.webview.asWebviewUri(vscode.Uri.file(ws.attachmentBlobPath(taskId, att.blobRef))).toString();
       } catch {
         continue; // invalid blob ref — leave as-is (same broken-image outcome as today, not a crash)
       }
@@ -154,11 +162,14 @@ export class TaskDetailPanelManager {
     return out;
   }
 
-  private vmFor(panel: vscode.WebviewPanel, ws: Workspace, id: string, view: TaskView, tombstone: boolean): TaskDetailVM {
-    const task: Task = view.task;
-    const deps = resolveDeps(ws, task.deps ?? []);
-    const derived: TaskDerived | undefined = view.derived;
-    const attention: TaskAttention[] | undefined = view.attention;
+  private vmFor(
+    panel: vscode.WebviewPanel,
+    ws: WorkspaceTaskDetailTarget,
+    id: string,
+    detail: TaskDetailProjectionV1,
+    tombstone: boolean,
+  ): TaskDetailVM {
+    const task = detail.task;
     return {
       wsHash: ws.wsHash,
       id,
@@ -166,7 +177,7 @@ export class TaskDetailPanelManager {
       task: {
         id: task.id,
         title: task.title,
-        ...(task.body !== undefined ? { body: this.resolveAttachmentRefs(panel, ws, id, task.body) } : {}),
+        ...(task.body !== undefined ? { body: this.resolveAttachmentRefs(panel, ws, id, task.body, detail.imageAttachments) } : {}),
         status: task.status,
         ...(task.priority !== undefined ? { priority: task.priority } : {}),
         ...(task.kind !== undefined ? { kind: task.kind } : {}),
@@ -176,17 +187,19 @@ export class TaskDetailPanelManager {
         createdAt: task.createdAt,
         updatedAt: task.updatedAt,
       },
-      journal: view.journal ?? [],
-      ...(derived ? { derived } : {}),
-      ...(attention?.length ? { attention } : {}),
-      deps,
-      prototypes: this.prototypeVm(ws, id),
+      journal: detail.journal,
+      ...(detail.derived ? { derived: detail.derived } : {}),
+      ...(detail.attention?.length ? { attention: detail.attention } : {}),
+      deps: detail.deps,
+      prototypes: this.prototypeVm(ws, id, detail.prototypes),
     };
   }
 
-  private prototypeVm(ws: Workspace, id: string) {
-    const store = new TaskPrototypeStore(ws.workspaceRoot, id);
-    const snapshot = store.read();
+  private prototypeVm(
+    ws: WorkspaceTaskDetailTarget,
+    id: string,
+    snapshot: TaskDetailProjectionV1["prototypes"],
+  ) {
     return {
       ...(snapshot.updatedAt ? { updatedAt: snapshot.updatedAt } : {}),
       readOnly: snapshot.readOnly,
@@ -195,17 +208,25 @@ export class TaskDetailPanelManager {
         id: p.id, sha256: p.sha256, state: p.state, title: p.title, author: p.author, createdAt: p.createdAt,
         available: p.available, integrity: p.integrity,
         ...(p.needsTaskReconciliation ? { needsTaskReconciliation: true } : {}),
-        ...(p.available ? { staticSrcdoc: assembleUntrustedSrcdoc(store.readHtml(p.id), { mode: "prototype-static" }) } : {}),
+        ...(p.available ? this.prototypeSrcdoc(ws, id, p.id) : {}),
       })),
     };
   }
 
+  private prototypeSrcdoc(ws: WorkspaceTaskDetailTarget, taskId: string, prototypeId: string): { staticSrcdoc?: string } {
+    try {
+      return { staticSrcdoc: assembleUntrustedSrcdoc(ws.prototypeHtml(taskId, prototypeId), { mode: "prototype-static" }) };
+    } catch {
+      return {};
+    }
+  }
+
   private async handleMessage(entry: PanelEntry, m: Partial<TaskDetailAction>): Promise<void> {
     if (!m?.type) return;
-    if (m.type === READY || m.type === "requestSnapshot") { entry.post(); return; }
+    if (m.type === READY || m.type === "requestSnapshot") { void entry.post(); return; }
     if (m.type === "updateTask" && m.patch) {
       try {
-        await entry.ws.taskStore.update(entry.taskId, m.patch as TaskUpdateInput);
+        await entry.ws.updateTask(entry.taskId, m.patch);
         // dogfood round 1 (#1) — the one shared fan-out (injected from extension.ts): re-posts this panel,
         // every other Detail panel, every Mission Control panel, and the sidebar.
         this.onTasksChanged();
@@ -221,22 +242,13 @@ export class TaskDetailPanelManager {
     if ((m.type === "approvePrototype" || m.type === "rejectPrototype" || m.type === "notePrototype") &&
         typeof m.prototypeId === "string" && typeof m.expectUpdatedAt === "string") {
       try {
-        const store = new TaskPrototypeStore(entry.ws.workspaceRoot, entry.taskId);
-        if (m.type === "approvePrototype") {
-          const taskBefore = entry.ws.taskStore.get(entry.taskId);
-          let snapshot = store.approve(m.prototypeId, { expectUpdatedAt: m.expectUpdatedAt, ...(m.review ? { review: m.review } : {}) });
-          if (taskBefore.awaitingHuman?.subject?.type === "task-prototype" && taskBefore.awaitingHuman.subject.prototypeId === m.prototypeId) {
-            try {
-              await entry.ws.taskStore.update(entry.taskId, { awaitingHuman: null, expect: { updatedAt: taskBefore.updatedAt } });
-            } catch {
-              snapshot = store.markNeedsTaskReconciliation(m.prototypeId, snapshot.updatedAt!, true);
-            }
-          }
-        } else if (m.type === "rejectPrototype") {
-          await this.rejectAndReconcile(entry, store, m.prototypeId, m.expectUpdatedAt, m.review);
-        } else if (typeof m.review === "string") {
-          store.addReview(m.prototypeId, { expectUpdatedAt: m.expectUpdatedAt, text: m.review });
-        }
+        const action = m.type === "approvePrototype" ? "approve" : m.type === "rejectPrototype" ? "reject" : "note";
+        await entry.ws.reviewPrototype(entry.taskId, {
+          prototypeId: m.prototypeId,
+          action,
+          expectUpdatedAt: m.expectUpdatedAt,
+          ...(m.review ? { review: m.review } : {}),
+        });
         this.onTasksChanged();
       } catch (err) {
         void entry.panel.webview.postMessage(taskDetailErrorMessage(err instanceof Error ? err.message : String(err)));
@@ -251,21 +263,11 @@ export class TaskDetailPanelManager {
     }
   }
 
-  private async rejectAndReconcile(entry: PanelEntry, store: TaskPrototypeStore, prototypeId: string, expectUpdatedAt: string, review?: string): Promise<TaskPrototypeSnapshot> {
-    const taskBefore = entry.ws.taskStore.get(entry.taskId);
-    const snapshot = store.reject(prototypeId, { expectUpdatedAt, ...(review ? { review } : {}) });
-    if (taskBefore.awaitingHuman?.subject?.type === "task-prototype" && taskBefore.awaitingHuman.subject.prototypeId === prototypeId) {
-      try { await entry.ws.taskStore.update(entry.taskId, { awaitingHuman: null, expect: { updatedAt: taskBefore.updatedAt } }); }
-      catch { /* rejection is authoritative; stale advisory remains visibly awaiting rather than being guessed away */ }
-    }
-    return snapshot;
-  }
-
   /** Re-post to every open detail panel — independent of any board filter (dueto F8); part of the shared
    *  onTasksChanged fan-out (extension.ts), wired into onViewsChanged("tasks") and called directly by both
    *  panel managers after their own engine-side mutations. */
   refreshAll(): void {
-    for (const entry of this.panels.values()) entry.post();
+    for (const entry of this.panels.values()) void entry.post();
   }
 
   dispose(): void {
@@ -274,17 +276,6 @@ export class TaskDetailPanelManager {
   }
 }
 
-function panelKey(ws: Workspace, taskId: string): string {
+function panelKey(ws: WorkspaceTaskDetailTarget, taskId: string): string {
   return `${ws.wsHash}:${taskId}`;
-}
-
-function resolveDeps(ws: Workspace, deps: string[]): TaskDepVM[] {
-  return deps.map((id) => {
-    try {
-      const dep = ws.taskStore.get(id);
-      return { id, title: dep.title, status: dep.status, missing: false };
-    } catch {
-      return { id, missing: true };
-    }
-  });
 }

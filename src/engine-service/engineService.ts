@@ -14,6 +14,8 @@ import { Workspace } from "../workspace/Workspace.js";
 import type { WorkspaceCoreProjectionsV1 } from "../runtime-api/workspaceProjection.js";
 import { buildBoardSnapshot } from "../tasks/boardSnapshot.js";
 import { projectMissionControlBoard } from "../runtime-api/missionControlProjection.js";
+import { projectTaskDetail } from "../runtime-api/taskDetailProjection.js";
+import { reviewTaskPrototype } from "../tasks/taskPrototypeReview.js";
 import { startEngineControlServer, type RunningEngineControlServer } from "./controlServer.js";
 import { EngineEventJournal } from "./eventJournal.js";
 import {
@@ -23,6 +25,7 @@ import {
   workspaceCommandSuccessV1,
   workspaceMissionControlViewSuccessV1,
   workspaceProbeViewSuccessV1,
+  workspaceTaskDetailViewSuccessV1,
   type EngineServiceIdentityV1,
   type WorkspaceCommandResultV1,
   type WorkspaceCommandV1,
@@ -127,7 +130,12 @@ export async function startDaemonEngineService(
       getSnapshot,
       readEvents: (afterSeq, limit) => journal.readAfter(afterSeq, limit),
       query: (query) => executeWorkspaceQuery(runningWorkspace, query),
-      invoke: (command) => executeWorkspaceCommand(runningWorkspace, runningActivityLog, command),
+      invoke: (command) => executeWorkspaceCommand(
+        runningWorkspace,
+        runningActivityLog,
+        command,
+        (view) => host.onViewsChanged(view),
+      ),
     });
     const runningControl = control;
 
@@ -167,6 +175,12 @@ async function executeWorkspaceQuery(
       })),
     });
   }
+  if (query.method === "task.detail") {
+    return workspaceTaskDetailViewSuccessV1({
+      schemaVersion: 1,
+      detail: projectTaskDetail(workspace.taskStore, workspace.workspaceRoot, query.input.id),
+    });
+  }
   return workspaceProbeViewSuccessV1(await workspace.probeView(query.input.caller));
 }
 
@@ -174,6 +188,7 @@ async function executeWorkspaceCommand(
   workspace: Workspace,
   activityLog: ActivityLogManager,
   command: WorkspaceCommandV1,
+  onViewsChanged: (view: "tasks") => void,
 ): Promise<WorkspaceCommandResultV1> {
   if (command.method === "studio.submit") {
     return workspaceCommandSuccessV1(command, workspace.studioSubmit(command.input));
@@ -194,6 +209,13 @@ async function executeWorkspaceCommand(
       outcome: command.input.outcome,
       result_note: command.input.result_note,
     });
+    return workspaceCommandSuccessV1(command);
+  }
+  if (command.method === "task.prototype.review") {
+    await reviewTaskPrototype(workspace.workspaceRoot, workspace.taskStore, command.input);
+    // Unlike task.update, a note/rejection may mutate only attachments/<task>/prototypes.json, outside the
+    // Workspace task-file watcher. Emit the authoritative view invalidation so every attached shell refreshes.
+    onViewsChanged("tasks");
     return workspaceCommandSuccessV1(command);
   }
   const agent = command.input.agent;

@@ -15,7 +15,11 @@ import { connectRemoteWorkspaceClient, type WorkspaceClient } from "../../src/sh
 import { ClientWorkspaceStudioTarget } from "../../src/shell/ClientWorkspaceStudioTarget.js";
 import { workspacePluginPresentationTarget } from "../../src/shell/WorkspacePresentation.js";
 import { workspaceMissionControlTarget } from "../../src/shell/MissionControlTarget.js";
+import { workspaceTaskDetailTarget } from "../../src/shell/TaskDetailTarget.js";
 import { sessionName, TmuxService, workspaceHash } from "../../src/tmux/TmuxService.js";
+import { TaskAttachmentStore } from "../../src/tasks/TaskAttachmentStore.js";
+import { TaskDetailStore, hashBody } from "../../src/tasks/TaskDetailStore.js";
+import { TaskPrototypeStore } from "../../src/tasks/TaskPrototypeStore.js";
 import { TaskStore } from "../../src/tasks/TaskStore.js";
 import { ValidationStore } from "../../src/validations/ValidationStore.js";
 import { blankCommandFields } from "../../src/webview/command-studio-shell/domain.js";
@@ -34,11 +38,42 @@ fs.writeFileSync(path.join(workspaceRoot, "tachyon.yml"), [
   "    autostart: false",
   "",
 ].join("\n"), "utf8");
-const dogfoodTask = await new TaskStore(workspaceRoot).create({
+const dogfoodTaskStore = new TaskStore(workspaceRoot);
+let dogfoodTask = await dogfoodTaskStore.create({
   id: "t-d06f00",
   title: "persistent Mission Control dogfood",
   body: "remote board body",
   author: "human",
+});
+dogfoodTaskStore.journal.append(dogfoodTask.id, { author: "codex", text: "persistent Task Detail note" });
+const dogfoodAttachments = new TaskAttachmentStore(workspaceRoot, dogfoodTask.id);
+const dogfoodImage = dogfoodAttachments.putImage({
+  data: Buffer.from("persistent detail image"),
+  mediaType: "image/png",
+  name: "detail.png",
+  source: "paste",
+});
+new TaskDetailStore(workspaceRoot).write({
+  schemaVersion: 1,
+  taskId: dogfoodTask.id,
+  doc: { type: "doc", content: [] },
+  attachments: [dogfoodImage],
+  bodyHash: hashBody(dogfoodTask.body!),
+  taskUpdatedAt: dogfoodTask.updatedAt,
+});
+const dogfoodPrototype = new TaskPrototypeStore(workspaceRoot, dogfoodTask.id).createDraft({
+  html: "<main>persistent Task Detail prototype</main>",
+  title: "Persistent proposal",
+  author: "codex",
+});
+const dogfoodRevision = dogfoodPrototype.prototypes[0]!;
+dogfoodTask = await dogfoodTaskStore.update(dogfoodTask.id, {
+  awaitingHuman: {
+    reason: "Review persistent proposal",
+    kind: "decision",
+    since: new Date().toISOString(),
+    subject: { type: "task-prototype", prototypeId: dogfoodRevision.id },
+  },
 });
 const dogfoodValidation = await new ValidationStore(workspaceRoot).create({
   title: "persistent Mission Control validation",
@@ -111,6 +146,35 @@ try {
     || initialBoard.validations?.items[0]?.id !== dogfoodValidation.id) {
     throw new Error(`remote Mission Control projection failed: ${JSON.stringify(initialBoard)}`);
   }
+  const taskDetail = workspaceTaskDetailTarget(first);
+  const initialDetail = await taskDetail.loadTaskDetail(dogfoodTask.id);
+  if (initialDetail.journal[0]?.text !== "persistent Task Detail note"
+    || initialDetail.imageAttachments[0]?.blobRef !== dogfoodImage.blobRef
+    || initialDetail.prototypes.prototypes[0]?.id !== dogfoodRevision.id
+    || JSON.stringify(initialDetail).includes("persistent detail image")
+    || JSON.stringify(initialDetail).includes("persistent Task Detail prototype")) {
+    throw new Error(`remote Task Detail projection failed: ${JSON.stringify(initialDetail)}`);
+  }
+  if (fs.readFileSync(taskDetail.attachmentBlobPath(dogfoodTask.id, dogfoodImage.blobRef), "utf8") !== "persistent detail image"
+    || taskDetail.prototypeHtml(dogfoodTask.id, dogfoodRevision.id) !== "<main>persistent Task Detail prototype</main>") {
+    throw new Error("Task Detail shell media hydration failed");
+  }
+  await taskDetail.reviewPrototype(dogfoodTask.id, {
+    prototypeId: dogfoodRevision.id,
+    action: "approve",
+    expectUpdatedAt: dogfoodPrototype.updatedAt!,
+    review: "packaged dogfood approved",
+  });
+  dogfoodTask = dogfoodTaskStore.get(dogfoodTask.id);
+  if (dogfoodTask.awaitingHuman !== undefined
+    || new TaskPrototypeStore(workspaceRoot, dogfoodTask.id).read().approved?.id !== dogfoodRevision.id) {
+    throw new Error("remote Task Detail prototype review did not reconcile");
+  }
+  await taskDetail.updateTask(dogfoodTask.id, {
+    priority: 1,
+    expect: { updatedAt: dogfoodTask.updatedAt },
+  });
+  dogfoodTask = dogfoodTaskStore.get(dogfoodTask.id);
   await missionControl.updateTask(dogfoodTask.id, {
     status: "triaged",
     expect: { status: "inbox", updatedAt: dogfoodTask.updatedAt },
@@ -118,7 +182,7 @@ try {
   const updatedBoard = await missionControl.boardSnapshot([]);
   const updatedTask = updatedBoard.views.find((view) => view.task.id === dogfoodTask.id)?.task;
   if (!updatedTask || updatedTask.status !== "triaged") throw new Error("remote Mission Control task update did not persist");
-  await missionControl.reorderLane("triaged", undefined, {
+  await missionControl.reorderLane("triaged", 1, {
     orderedIds: [dogfoodTask.id],
     expect: { [dogfoodTask.id]: updatedTask.updatedAt },
   });
@@ -190,9 +254,9 @@ try {
     engine: { pid: identity.pid, instanceId: identity.instanceId, bundleId: identity.bundleId },
     bridge: identity.bridge,
     snapshotSeq: snapshot.seq,
-    queries: [probes.method, "task.board"],
+    queries: [probes.method, "task.board", "task.detail"],
     pluginFleet: pluginFleet.agents.map((agent) => ({ name: agent.name, status: agent.status })),
-    commands: ["task.update", "task.reorder-lane", "validation.close", "studio.submit", started.method, restarted.method, killed.method],
+    commands: ["task.prototype.review", "task.update", "task.reorder-lane", "validation.close", "studio.submit", started.method, restarted.method, killed.method],
   }, null, 2)}\n`);
 } finally {
   try { execFileSync("systemctl", ["--user", "stop", unitName], { stdio: "ignore" }); } catch { /* absent/failed unit */ }

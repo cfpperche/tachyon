@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -9,6 +9,8 @@ import { TaskDetailStore, hashBody } from "../../src/tasks/TaskDetailStore.js";
 import { TaskAttachmentStore } from "../../src/tasks/TaskAttachmentStore.js";
 import { TaskDetailPanelManager } from "../../src/webview/TaskDetailPanel.js";
 import { TaskPrototypeStore } from "../../src/tasks/TaskPrototypeStore.js";
+import { legacyTaskDetailTarget, type WorkspaceTaskDetailTarget } from "../../src/shell/TaskDetailTarget.js";
+import type { TaskDetailProjectionV1 } from "../../src/runtime-api/taskDetailProjection.js";
 import type { Workspace } from "../../src/workspace/Workspace.js";
 
 const dirs: string[] = [];
@@ -27,9 +29,19 @@ function fakeWorkspace(root = mkroot()) {
   return { wsHash: "ws-1", folderName: "Project", workspaceRoot: root, taskStore: new TaskStore(root) } as unknown as Workspace;
 }
 
-function lastVm(): { vm: { tombstone: boolean; task?: { title: string; body?: string }; journal: Array<{ author: string; text: string }>; deps: unknown[] } } {
-  const msgs = __createdPanels[__createdPanels.length - 1].webview.posted.filter((m) => (m as { type?: string }).type === "task");
-  return msgs[msgs.length - 1] as { vm: { tombstone: boolean; task?: { title: string; body?: string }; journal: Array<{ author: string; text: string }>; deps: unknown[] } };
+function detailTarget(ws: Workspace): WorkspaceTaskDetailTarget {
+  return legacyTaskDetailTarget(ws);
+}
+
+async function lastVm(
+  predicate: (vm: { tombstone: boolean }) => boolean = () => true,
+): Promise<{ vm: { tombstone: boolean; task?: { title: string; body?: string }; journal: Array<{ author: string; text: string }>; deps: unknown[] } }> {
+  return vi.waitFor(() => {
+    const msgs = __createdPanels[__createdPanels.length - 1].webview.posted.filter((m) => (m as { type?: string }).type === "task");
+    const latest = msgs[msgs.length - 1] as { vm: { tombstone: boolean; task?: { title: string; body?: string }; journal: Array<{ author: string; text: string }>; deps: unknown[] } } | undefined;
+    if (!latest || !predicate(latest.vm)) throw new Error("matching Task Detail view-model not posted yet");
+    return latest;
+  });
 }
 
 describe("TaskDetailPanelManager", () => {
@@ -39,9 +51,9 @@ describe("TaskDetailPanelManager", () => {
     const b = await ws.taskStore.create({ title: "b", author: "human" });
     const manager = new TaskDetailPanelManager(Uri.file("/ext"), () => {}, () => {});
 
-    manager.open(ws, a.id);
-    manager.open(ws, b.id);
-    manager.open(ws, a.id);
+    manager.open(detailTarget(ws), a.id);
+    manager.open(detailTarget(ws), b.id);
+    manager.open(detailTarget(ws), a.id);
 
     expect(__createdPanels).toHaveLength(2);
     expect(__createdPanels[0].revealCount).toBe(1);
@@ -53,9 +65,9 @@ describe("TaskDetailPanelManager", () => {
     const t = await ws.taskStore.create({ title: "root", author: "human", deps: [dep.id, "t-ffffff"] });
     const manager = new TaskDetailPanelManager(Uri.file("/ext"), () => {}, () => {});
 
-    manager.open(ws, t.id);
+    manager.open(detailTarget(ws), t.id);
 
-    const vm = lastVm().vm;
+    const vm = (await lastVm()).vm;
     expect(vm.deps).toContainEqual({ id: dep.id, title: "dependency", status: "inbox", missing: false });
     expect(vm.deps).toContainEqual({ id: "t-ffffff", missing: true });
   });
@@ -66,7 +78,7 @@ describe("TaskDetailPanelManager", () => {
     await ws.taskStore.update(t.id, { status: "triaged" });
     let boardRefreshed = 0;
     const manager = new TaskDetailPanelManager(Uri.file("/ext"), () => {}, () => { boardRefreshed += 1; });
-    manager.open(ws, t.id);
+    manager.open(detailTarget(ws), t.id);
 
     const startUpdatedAt = ws.taskStore.get(t.id).updatedAt;
     __createdPanels[0].webview.__receive({ type: "updateTask", patch: { assignee: "codex", expect: { updatedAt: startUpdatedAt } } });
@@ -80,14 +92,15 @@ describe("TaskDetailPanelManager", () => {
     const ws = fakeWorkspace();
     const t = await ws.taskStore.create({ title: "stale edit", author: "human" });
     const manager = new TaskDetailPanelManager(Uri.file("/ext"), () => {}, () => {});
-    manager.open(ws, t.id);
+    manager.open(detailTarget(ws), t.id);
 
-    __createdPanels[0].webview.__receive({ type: "updateTask", patch: { title: "late", expect: { updatedAt: "2000-01-01T00:00:00.000Z" } } });
+    __createdPanels[0].webview.__receive({ type: "updateTask", patch: { priority: 1, expect: { updatedAt: "2000-01-01T00:00:00.000Z" } } });
     await new Promise((r) => setTimeout(r, 0));
 
     const errMsg = __createdPanels[0].webview.posted.find((m) => (m as { type?: string }).type === "taskError") as { message: string };
     expect(errMsg.message).toMatch(/precondition-failed/);
     expect(ws.taskStore.get(t.id).title).toBe("stale edit");
+    expect(ws.taskStore.get(t.id).priority).toBeUndefined();
   });
 
   it("never disposes the panel when the task file disappears — renders a tombstone from the last known state", async () => {
@@ -95,14 +108,14 @@ describe("TaskDetailPanelManager", () => {
     const ws = fakeWorkspace(root);
     const t = await ws.taskStore.create({ title: "vanishing", author: "human" });
     const manager = new TaskDetailPanelManager(Uri.file("/ext"), () => {}, () => {});
-    manager.open(ws, t.id);
-    expect(lastVm().vm.tombstone).toBe(false);
+    manager.open(detailTarget(ws), t.id);
+    expect((await lastVm()).vm.tombstone).toBe(false);
 
     fs.rmSync(ws.taskStore.pathFor(t.id));
     manager.refreshAll();
 
     expect(__createdPanels[0].disposed).toBe(false);
-    const vm = lastVm().vm;
+    const vm = (await lastVm((value) => value.tombstone)).vm;
     expect(vm.tombstone).toBe(true);
     expect(vm.task?.title).toBe("vanishing"); // last known state, not blank
   });
@@ -115,20 +128,47 @@ describe("TaskDetailPanelManager", () => {
     await ws.taskStore.update(t.id, { status: "done" });
     const manager = new TaskDetailPanelManager(Uri.file("/ext"), () => {}, () => {});
 
-    manager.open(ws, t.id);
+    manager.open(detailTarget(ws), t.id);
     manager.refreshAll();
 
     expect(__createdPanels[0].disposed).toBe(false);
-    expect(lastVm().vm.task?.title).toBe("finished");
+    expect((await lastVm()).vm.task?.title).toBe("finished");
+  });
+
+  it("never lets an older remote response overwrite a newer refresh", async () => {
+    const root = mkroot();
+    const first = deferred<TaskDetailProjectionV1>();
+    const second = deferred<TaskDetailProjectionV1>();
+    const loads = [first.promise, second.promise];
+    const target: WorkspaceTaskDetailTarget = {
+      workspaceRoot: root,
+      wsHash: "ws-remote",
+      folderName: "Remote",
+      loadTaskDetail: async () => loads.shift()!,
+      updateTask: async () => {},
+      reviewPrototype: async () => {},
+      attachmentBlobRoot: () => root,
+      attachmentBlobPath: () => root,
+      prototypeHtml: () => { throw new Error("no prototype"); },
+    };
+    const manager = new TaskDetailPanelManager(Uri.file("/ext"), () => {}, () => {});
+    manager.open(target, "t-abc123");
+
+    __createdPanels[0].webview.__receive({ type: "requestSnapshot" });
+    second.resolve(projection("fresh"));
+    expect((await lastVm()).vm.task?.title).toBe("fresh");
+    first.resolve(projection("stale"));
+    await Promise.resolve();
+    expect((await lastVm()).vm.task?.title).toBe("fresh");
   });
 
   // spec 339 — the detail tab's "Open in Studio" button.
   it("routes openTaskStudio to the injected callback for THIS panel's own task", async () => {
     const ws = fakeWorkspace();
     const t = await ws.taskStore.create({ title: "x", author: "human" });
-    let opened: [Workspace, string] | undefined;
+    let opened: [WorkspaceTaskDetailTarget, string] | undefined;
     const manager = new TaskDetailPanelManager(Uri.file("/ext"), (w, id) => { opened = [w, id]; }, () => {});
-    manager.open(ws, t.id);
+    manager.open(detailTarget(ws), t.id);
 
     __createdPanels[0].webview.__receive({ type: "openTaskStudio" });
     expect(opened?.[0].wsHash).toBe(ws.wsHash);
@@ -141,7 +181,7 @@ describe("TaskDetailPanelManager", () => {
     const ws = fakeWorkspace();
     const t = await ws.taskStore.create({ title: "x", author: "human" });
     const manager = new TaskDetailPanelManager(Uri.file("/ext"), () => {}, () => {});
-    manager.open(ws, t.id);
+    manager.open(detailTarget(ws), t.id);
 
     __createdPanels[0].webview.__receive({ type: "openTaskStudio" });
     expect(__createdPanels[0].disposed).toBe(true);
@@ -168,9 +208,9 @@ describe("TaskDetailPanelManager", () => {
     await ws.taskStore.update(t.id, { body });
 
     const manager = new TaskDetailPanelManager(Uri.file("/ext"), () => {}, () => {});
-    manager.open(ws, t.id);
+    manager.open(detailTarget(ws), t.id);
 
-    const resolvedBody = lastVm().vm.task?.body ?? "";
+    const resolvedBody = (await lastVm()).vm.task?.body ?? "";
     expect(resolvedBody).not.toContain(`attachment:${att.id}`);
     expect(resolvedBody).toContain(attStore.blobPath(att.blobRef));
   });
@@ -180,9 +220,9 @@ describe("TaskDetailPanelManager", () => {
     const t = await ws.taskStore.create({ title: "orphan ref", author: "human", body: "![x](attachment:missing)" });
     const manager = new TaskDetailPanelManager(Uri.file("/ext"), () => {}, () => {});
 
-    manager.open(ws, t.id);
+    manager.open(detailTarget(ws), t.id);
 
-    expect(lastVm().vm.task?.body).toBe("![x](attachment:missing)");
+    expect((await lastVm()).vm.task?.body).toBe("![x](attachment:missing)");
   });
 
   it("materializes the append-only journal into the detail VM", async () => {
@@ -191,9 +231,9 @@ describe("TaskDetailPanelManager", () => {
     ws.taskStore.journal.append(t.id, { author: "codex", text: "<script>alert(1)</script>\n[bad](javascript:alert(1))" });
     const manager = new TaskDetailPanelManager(Uri.file("/ext"), () => {}, () => {});
 
-    manager.open(ws, t.id);
+    manager.open(detailTarget(ws), t.id);
 
-    expect(lastVm().vm.journal).toEqual([
+    expect((await lastVm()).vm.journal).toEqual([
       expect.objectContaining({ author: "codex", text: "<script>alert(1)</script>\n[bad](javascript:alert(1))" }),
     ]);
   });
@@ -206,7 +246,7 @@ describe("TaskDetailPanelManager", () => {
     const draft = snapshot.prototypes[0]!;
     await ws.taskStore.update(task.id, { awaitingHuman: { reason: "Review", kind: "decision", since: "2026-01-01T00:00:02.000Z", subject: { type: "task-prototype", prototypeId: draft.id } }, now: "2026-01-01T00:00:02.000Z" });
     const manager = new TaskDetailPanelManager(Uri.file("/ext"), () => {}, () => {});
-    manager.open(ws, task.id);
+    manager.open(detailTarget(ws), task.id);
 
     __createdPanels[0].webview.__receive({ type: "approvePrototype", prototypeId: draft.id, expectUpdatedAt: snapshot.updatedAt, review: "Ship this layout" });
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -223,7 +263,7 @@ describe("TaskDetailPanelManager", () => {
     const second = store.createDraft({ html: "<p>Two</p>", title: "Two", author: "agent", now: "2026-01-01T00:00:02.000Z" });
     await ws.taskStore.update(task.id, { awaitingHuman: { reason: "Review one", kind: "decision", since: "2026-01-01T00:00:03.000Z", subject: { type: "task-prototype", prototypeId: first.prototypes[0]!.id } }, now: "2026-01-01T00:00:03.000Z" });
     const manager = new TaskDetailPanelManager(Uri.file("/ext"), () => {}, () => {});
-    manager.open(ws, task.id);
+    manager.open(detailTarget(ws), task.id);
 
     __createdPanels[0].webview.__receive({ type: "approvePrototype", prototypeId: second.prototypes.at(-1)!.id, expectUpdatedAt: second.updatedAt });
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -231,3 +271,27 @@ describe("TaskDetailPanelManager", () => {
     expect(ws.taskStore.get(task.id).awaitingHuman?.subject?.prototypeId).toBe(first.prototypes[0]!.id);
   });
 });
+
+function projection(title: string): TaskDetailProjectionV1 {
+  return {
+    schemaVersion: 1,
+    task: {
+      id: "t-abc123",
+      title,
+      status: "inbox",
+      author: "human",
+      createdAt: "2026-07-14T12:00:00.000Z",
+      updatedAt: "2026-07-14T12:00:00.000Z",
+    },
+    journal: [],
+    deps: [],
+    imageAttachments: [],
+    prototypes: { readOnly: false, prototypes: [] },
+  };
+}
+
+function deferred<T>(): { promise: Promise<T>; resolve(value: T): void } {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => { resolve = done; });
+  return { promise, resolve };
+}

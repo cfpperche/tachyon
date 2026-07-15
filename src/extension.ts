@@ -57,6 +57,7 @@ import { isAdhocItem } from "./presentation/contextValue.js";
 import { Workspace, type ViewKind } from "./workspace/Workspace.js";
 import type { WorkspacePresentationTarget } from "./shell/WorkspacePresentation.js";
 import { legacyMissionControlTarget } from "./shell/MissionControlTarget.js";
+import { legacyTaskDetailTarget } from "./shell/TaskDetailTarget.js";
 import { VsCodeHost } from "./workspace/VsCodeHost.js";
 import type { WorktreeRecord } from "./worktree/WorktreeManager.js";
 import { createGitExec, worktreeShowFile, resolveBase } from "./worktree/WorktreeManager.js";
@@ -676,14 +677,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // can inject an `openTaskStudio` callback into their own constructors below.
   const taskStudioPanels = new TaskStudioPanelManager(context.extensionUri, workspaces, onTasksChanged);
   context.subscriptions.push({ dispose: () => taskStudioPanels.dispose() });
-  taskDetailPanels = new TaskDetailPanelManager(context.extensionUri, workspaces, (ws, id) => taskStudioPanels.openExisting(ws, id), onTasksChanged);
+  taskDetailPanels = new TaskDetailPanelManager(
+    context.extensionUri,
+    () => workspaces().map(legacyTaskDetailTarget),
+    (target, id) => {
+      const ws = wsOf({ ws: target });
+      if (ws) taskStudioPanels.openExisting(ws, id);
+    },
+    onTasksChanged,
+  );
   context.subscriptions.push({ dispose: () => taskDetailPanels.dispose() });
   missionControlPanels = new MissionControlPanelManager(
     context.extensionUri,
     () => workspaces().map(legacyMissionControlTarget),
     (target, id) => {
       const ws = wsOf({ ws: target });
-      if (ws) taskDetailPanels.open(ws, id);
+      if (ws) taskDetailPanels.open(legacyTaskDetailTarget(ws), id);
     },
     (target, id) => {
       const ws = wsOf({ ws: target });
