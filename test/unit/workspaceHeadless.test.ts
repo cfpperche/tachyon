@@ -16,6 +16,8 @@ import { __createdTerminals, __resetVscodeMock } from "../mocks/vscode.js";
 import { readDelegationRecord } from "../../src/bridge/delegationRecord.js";
 import { canonicalBehaviorStubPath } from "../../src/bridge/behaviorStub.js";
 import { realConfigHome } from "../../src/harness/HarnessManager.js";
+import { blankAgentFields } from "../../src/webview/agent-studio-shell/domain.js";
+import type { FormState } from "../../src/webview/formLogic.js";
 
 /**
  * spec 235 — the headless Workspace smoke test (the deferred spec-233 payoff): drive the orchestrator with
@@ -163,6 +165,28 @@ async function makeWorkspace(onViewsChanged: (view: ViewKind) => void = () => {}
   const ws = await Workspace.createForTest(root, { host, onViewsChanged }, { tmux, startBridge: false });
   return { ws, host, tmux, sessions, dead, sent, panes, calls };
 }
+
+it("rejects nonboolean soul on reload and retains the prior known-good config", async () => {
+  const { ws } = await makeWorkspace(() => {}, { tachyonYaml: "agents:\n  ada:\n    cmd: codex\n    soul: true\n" });
+  expect(ws.config?.agents.ada.soul).toBe(true);
+  fs.writeFileSync(path.join(ws.workspaceRoot, "tachyon.yml"), "agents:\n  ada:\n    cmd: codex\n    soul: SOUL.md\n", "utf8");
+
+  expect(ws.reloadConfig()).toBe(false);
+  expect(ws.configFailure?.errors).toContain("agents.ada.soul: must be a boolean");
+  expect(ws.config?.agents.ada.soul).toBe(true);
+  expect(ws.readConfigLkg()?.agents.map((agent) => agent.name)).toContain("ada");
+  ws.dispose();
+});
+
+it("returns actionable Agent Studio messages for invalid soul values and unsupported runtimes", async () => {
+  const { ws } = await makeWorkspace();
+  const invalid = { ...blankAgentFields(), name: "invalid", cmd: "codex", soul: "yes" } as unknown as FormState;
+  expect(ws.studioSubmit({ state: invalid })).toEqual(["soul: choose enabled or disabled, then try again"]);
+  expect(ws.studioSubmit({ state: { ...blankAgentFields(), name: "wrapped", cmd: "bash -lc codex", soul: true } })).toEqual([
+    "soul: bash cannot receive a Tachyon-managed soul — use a supported direct agent command or disable soul",
+  ]);
+  ws.dispose();
+});
 
 /** Flushes the best-effort async poke chain (`tmux.hasSession(...).then(...)`) that `pokeParentOnDeath`
  *  fires without the lifecycle tick awaiting it. */

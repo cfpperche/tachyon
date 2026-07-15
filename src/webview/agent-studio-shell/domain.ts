@@ -22,7 +22,44 @@ import type { FormState, QuickAddChip } from "../formLogic.js";
  * fields formLogic's shared FormState type carries along are always left at their blank defaults.
  */
 
-export const AGENT_STUDIO_DOMAIN_MESSAGE_NAMES = ["browse", "cwd"] as const;
+/**
+ * spec 377 T15A — typed common-path profile protocol names (plus legacy browse/cwd).
+ * Final Identity UI layout is T16; these names are the explicit host/webview contract.
+ */
+export const AGENT_STUDIO_DOMAIN_MESSAGE_NAMES = [
+  "browse",
+  "cwd",
+  "createSoul",
+  "importSoul",
+  "openSoul",
+  "refreshSoul",
+  "previewSoul",
+  "adoptSoulProfile",
+  "enableSoul",
+  "disableSoul",
+  "soulProfileStatus",
+  "soulProfileError",
+] as const;
+
+export type AgentStudioDomainMessageName = (typeof AGENT_STUDIO_DOMAIN_MESSAGE_NAMES)[number];
+
+/** Host-facing profile status snapshot (no import source path). */
+export interface SoulProfileStatusMessage {
+  agent: string;
+  relativePath: string;
+  lifecycle: "missing" | "active" | "retained" | "unowned" | "invalid";
+  profileId?: string;
+  sha256?: string;
+  chars?: number;
+  bytes?: number;
+  soulEnabled: boolean;
+  resolvable: boolean;
+  transactionDegraded: boolean;
+  preview?: string;
+  /** Which action produced this status, when applicable. */
+  action?: "create" | "import" | "open" | "refresh" | "preview" | "adopt" | "enable" | "disable";
+  selfSelected?: boolean;
+}
 
 /** The load-time snapshot: the agent's current FormState (kind fixed "agent") plus the reference data the
  *  form needs to render (quick-add chips, flag suggestions, default cwd, verify-gate suggestions). Mirrors
@@ -48,6 +85,7 @@ export function blankAgentFields(): FormState {
     cmd: "",
     kind: "agent",
     instructions: "",
+    soul: false,
     role: "",
     watch: "",
     steps: "",

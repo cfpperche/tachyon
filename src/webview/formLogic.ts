@@ -1,5 +1,5 @@
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
-import { inferKind, instructionsDeliverable, parseEvery, parseAt, type AgentDef, type EntryKind, type ScheduleDef } from "../config/loadConfig.js";
+import { inferKind, instructionsDeliverable, openingPromptCapability, parseEvery, parseAt, type AgentDef, type EntryKind, type ScheduleDef } from "../config/loadConfig.js";
 import { binaryOf } from "../resume/adapters.js";
 
 /**
@@ -99,6 +99,8 @@ export interface FormState {
   cmd: string;
   kind: StudioKind;
   instructions: string;
+  /** spec 377 T14 — opt in to the agent's persistent soul profile. */
+  soul: boolean;
   /** spec 216 — built-in role template ("" = none); agent kind only */
   role: string;
   /** comma-separated globs (terminal kind) — parsed into the watch list */
@@ -185,6 +187,8 @@ export interface FormIssue {
     | "cmd-required"
     | "steps-required"
     | "instructions-not-deliverable"
+    | "soul-invalid"
+    | "soul-runtime-unsupported"
     | "timing-invalid"
     | "target-required"
     | "harness-claude-only"
@@ -239,6 +243,14 @@ export function validateForm(state: FormState, takenNames: string[], editingName
   if (state.cmd.trim().length === 0) issues.push({ code: "cmd-required", blocking: true });
   if (state.instructions.trim().length > 0 && !instructionsDeliverable(state.cmd)) {
     issues.push({ code: "instructions-not-deliverable", blocking: false });
+  }
+  if (state.soul !== undefined && typeof state.soul !== "boolean") {
+    issues.push({ code: "soul-invalid", blocking: true });
+  } else if (state.kind === "agent" && state.soul) {
+    const capability = openingPromptCapability(state.cmd);
+    if (capability.status !== "prompt") {
+      issues.push({ code: "soul-runtime-unsupported", blocking: true, param: capability.runtime });
+    }
   }
   // spec 226/228 — isolated harness (agent kind). The deep rules (${VAR}-only mcp env, reserved cmd
   // flags) are enforced by loadConfig on write; the Studio catches the obvious mistakes early.
@@ -307,6 +319,7 @@ export function toEntry(state: FormState): Record<string, unknown> {
   if (state.kind !== inferred) entry.kind = state.kind;
   if (state.kind === "agent" && state.instructions.trim().length > 0) entry.instructions = state.instructions.trim();
   if (state.kind === "agent" && state.role.trim().length > 0) entry.role = state.role.trim();
+  if (state.kind === "agent" && state.soul === true) entry.soul = true;
   const watch = state.kind === "terminal" ? parseWatch(state.watch) : [];
   if (watch.length === 1) entry.watch = watch[0];
   else if (watch.length > 1) entry.watch = watch;
@@ -375,6 +388,7 @@ export function fromScheduleDef(name: string, def: ScheduleDef): FormState {
     worktreeSetup: "",
     verify: "",
     instructions: def.instructions ?? "",
+    soul: false,
     role: "",
     watch: "",
     steps: "",
@@ -403,6 +417,7 @@ export function fromCommandDef(name: string, def: { cmd: string; cwd?: string })
     worktreeSetup: "",
     verify: "",
     instructions: "",
+    soul: false,
     role: "",
     watch: "",
     steps: "",
@@ -426,6 +441,7 @@ export function fromRunbookDef(name: string, def: { steps: string[] }): FormStat
     worktreeSetup: "",
     verify: "",
     instructions: "",
+    soul: false,
     role: "",
     watch: "",
     steps: def.steps.join("\n"),
@@ -446,6 +462,7 @@ export function fromDef(name: string, def: AgentDef): FormState {
     cmd: def.cmd,
     kind: def.kind,
     instructions: def.instructions ?? "",
+    soul: def.soul === true,
     role: def.role ?? "",
     watch: def.watch.join(", "),
     steps: "",
