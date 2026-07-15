@@ -26,11 +26,11 @@ _Generated from `plan.md` on 2026-07-14. Work top-to-bottom. No automatic integr
 
 - [x] Introduce `WorkspaceClient` and a remote implementation with full snapshot, monotonic event cursor,
   reconnect/resync and typed command results; add a deterministic fake for presentation tests.
-- [ ] Migrate sidebar, Activity/Mission Control/Studios, commands, notifications and terminal presentation
+- [x] Migrate sidebar, Activity/Mission Control/Studios, commands, notifications and terminal presentation
   from concrete `Workspace` access to `WorkspaceClient` projections/actions.
 - [ ] Route editor-only capabilities through bounded shell requests; return `UI_UNAVAILABLE` when no
   capable shell is attached and prevent duplicate claims across windows.
-- [ ] Change extension activation to ensure/stage/attach only; change deactivate/folder removal to detach
+- [x] Change extension activation to ensure/stage/attach only; change deactivate/folder removal to detach
   only; remove all production `Workspace.create`, `Workspace.start`, `Workspace.dispose` and backend
   registration calls from the shell.
 - [ ] Remove embedded-engine fallback, proxy-to-ephemeral-backend mode and shell-generation Bridge-client

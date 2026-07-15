@@ -3,19 +3,14 @@ import path from "node:path";
 import fs from "node:fs";
 import crypto from "node:crypto";
 import { doctor, findServerPids, probeServer, recoverWedgedServer, snapshotServerPids, socketPath, TmuxService, SESSION_PREFIX, SOCKET_NAME, type ServerProbe } from "./tmux/TmuxService.js";
-import { buildDoctorReport, formatDoctorReport } from "./workspace/doctorReport.js";
-import net from "node:net";
 import { watchdogStep, type WatchdogState } from "./tmux/wedgeWatchdog.js";
-import { isResumable } from "./resume/SessionLedger.js";
-import { degradedRosterExtras } from "./config/configFailure.js";
 import { subtreeCpuTicks } from "./attention/cpu.js";
 import { classifySession } from "./inspector/classify.js";
-import { CONFIG_FILENAMES, inferKind, loadConfigFile, type ScheduleDef } from "./config/loadConfig.js";
-import { addAgent, cloneAgent, deleteAgent, agentEntryLine, deleteCommand, commandEntryLine, deleteRunbook, runbookEntryLine, scheduleEntryLine } from "./config/YamlConfigEditor.js";
+import { CONFIG_FILENAMES, inferKind, type ScheduleDef } from "./config/loadConfig.js";
+import { agentEntryLine, commandEntryLine, runbookEntryLine, scheduleEntryLine } from "./config/YamlConfigEditor.js";
 import type { StudioSubmit } from "./webview/studioSubmit.js";
 import { openServerInspector, SERVER_INSPECTOR_VIEW_TYPE, type ServerInspectorPanelState, type InspectorDeps } from "./webview/ServerInspector.js";
 import { SidebarPrototypeProvider, PIN_PREVIEW_VIEW_TYPE, type PinPreviewPanelState } from "./webview/SidebarPrototype.js";
-import { resolveModelFact } from "./sidebar/agentModel.js";
 import { RuntimeOpsViewProvider } from "./webview/RuntimeOpsView.js";
 import { ActivityPanelManager, ACTIVITY_VIEW_TYPE, type ActivityPanelState } from "./webview/ActivityPanel.js";
 import { PluginsPanelManager, PLUGINS_VIEW_TYPE, type PluginsPanelState } from "./webview/PluginsPanel.js";
@@ -32,17 +27,10 @@ import { CommandStudioPanelManager, COMMAND_STUDIO_SHELL_VIEW_TYPE, type Command
 import { RunbookStudioPanelManager, RUNBOOK_STUDIO_SHELL_VIEW_TYPE, type RunbookStudioPanelState } from "./webview/RunbookStudioPanel.js";
 import { ScheduleStudioPanelManager, SCHEDULE_STUDIO_SHELL_VIEW_TYPE, type ScheduleStudioPanelState } from "./webview/ScheduleStudioPanel.js";
 import { PipelineStudioPanelManager, PIPELINE_STUDIO_VIEW_TYPE, type PipelineStudioPanelState } from "./webview/PipelineStudioPanel.js";
-import {
-  ActivityLogManager,
-  restartAgentWithActivity,
-  resumeAgentWithActivity,
-  startAgentWithActivity,
-} from "./activity/ActivityLogManager.js";
-import { legacyPluginSurfaceTarget, PluginSurfaceHost } from "./plugins/ui/host.js";
+import { PluginSurfaceHost } from "./plugins/ui/host.js";
 import { syncToolLauncher } from "./plugins/toolProvisionRun.js";
 import { buildOffers, type RegistrationOffer } from "./registration/adapters.js";
-import { executeWait, type BridgeDeps } from "./bridge/tools.js";
-import { RuntimeOpsSnapshotService } from "./runtimeOps/snapshotService.js";
+import { runtimeOpsFleetView } from "./shell/RuntimeOpsTarget.js";
 import type {
   AgentItem,
   PinItem,
@@ -54,24 +42,14 @@ import type {
   PipelineNodeItem,
 } from "./presentation/items.js";
 import { isAdhocItem } from "./presentation/contextValue.js";
-import { Workspace, type ViewKind } from "./workspace/Workspace.js";
 import type { WorkspacePresentationTarget } from "./shell/WorkspacePresentation.js";
-import { legacyActivityTarget } from "./shell/ActivityTarget.js";
-import { legacyHandoffTarget } from "./shell/HandoffTarget.js";
-import { legacyMissionControlTarget } from "./shell/MissionControlTarget.js";
-import { legacyPinStudioTarget } from "./shell/PinStudioTarget.js";
-import { legacySidebarTarget } from "./shell/SidebarTarget.js";
-import { legacyTaskDetailTarget } from "./shell/TaskDetailTarget.js";
-import { legacyTaskStudioTarget } from "./shell/TaskStudioTarget.js";
-import { VsCodeHost } from "./workspace/VsCodeHost.js";
-import type { WorktreeRecord } from "./worktree/WorktreeManager.js";
+import type { WorktreeRecord, WorktreeStatus } from "./worktree/WorktreeManager.js";
 import { createGitExec, worktreeShowFile, resolveBase } from "./worktree/WorktreeManager.js";
 import { resolveGitBinary } from "./worktree/gitBinary.js";
-import { emptySides, baseSidePath, diffTitle } from "./worktree/review.js";
+import { emptySides, baseSidePath, diffTitle, type ChangedFile } from "./worktree/review.js";
 import { probePrReadiness, composePrTitle, composePrBody, createWorktreePr, isWorktreeDirty } from "./worktree/pr.js";
 import { computeWorkspaceFolderOps, shouldActivateFolder } from "./workspace/workspaceFolderOps.js";
-import * as domainActions from "./workspace/domainActions.js";
-import { resolveApproval, type ApprovalDecision } from "./bridge/approvalRequest.js";
+import type { ViewKind } from "./workspace/EngineHost.js";
 
 /** spec 213 — URI scheme for the base side of a worktree diff (git show <ref>:<file>). */
 const WT_DIFF_SCHEME = "tachyon-worktree";
@@ -83,20 +61,25 @@ import { registerDisposePanelSerializer, registerTrustedPanelSerializer } from "
 import { openRuntimeOps } from "./runtimeOps/openRuntimeOps.js";
 import { assessBuildProvenance, type BuildStamp } from "./provenance/verify.js";
 import { readEmbeddedProvenanceRecord } from "./provenance/record.js";
+import { Terminals } from "./presentation/Terminals.js";
+import { connectPackagedWorkspaceClient } from "./shell/WorkspaceClient.js";
+import { WorkspaceClientRegistry } from "./shell/WorkspaceClientRegistry.js";
+import { WorkspaceShellHandle } from "./shell/WorkspaceShellHandle.js";
+import { DAEMON_SETTING_KEYS, type DaemonSettingsSnapshot } from "./workspace/DaemonEngineHost.js";
+import type { ExtensionCommandV1, ExtensionQueryV1, JsonValue } from "./runtime-api/extensionOperations.js";
 
 /**
- * Thin shell over a REGISTRY of Workspaces (multi-root, F9): one Workspace per
- * folder carrying a tachyon.yml, created/disposed live as folders come and go.
- * Commands registered once, globally; each resolves its target folder from the
- * clicked item (`item.ws`), an explicit wsHash argument, or — for palette
- * commands with several folders active — a folder QuickPick.
+ * Thin multi-root shell: one detachable client handle per Tachyon workspace.
+ * Commands are registered once and resolve their target from presentation identity,
+ * an explicit workspace hash, or a folder picker.
  */
 
-const registry = new Map<string, Workspace>(); // folder fsPath -> Workspace
+const registry = new Map<string, WorkspaceShellHandle>(); // folder fsPath -> ephemeral shell handle
+let activeClientRegistry: WorkspaceClientRegistry | undefined;
 
 declare const __TACHYON_BUILD__: BuildStamp;
 
-function workspaces(): Workspace[] {
+function workspaces(): WorkspaceShellHandle[] {
   return [...registry.values()];
 }
 
@@ -152,9 +135,11 @@ async function checkTachyonBuildProvenance(context: vscode.ExtensionContext): Pr
     });
     for (const warning of warnings) {
       notify(warning.message, "warn");
-      for (const ws of workspaces()) {
-        ws.handoffStore.appendNote({ agent: "tachyon", kind: "gotcha", summary: warning.message, evidence: warning.kind === "dist-mismatch" ? [warning.file] : [] });
-      }
+      await Promise.allSettled(workspaces().map((ws) => ws.extension.invoke({
+        action: "handoff.note",
+        summary: warning.message,
+        evidence: warning.kind === "dist-mismatch" ? [warning.file] : [],
+      })));
     }
   } catch (err) {
     console.debug(`[tachyon] build provenance check skipped: ${err instanceof Error ? err.message : String(err)}`);
@@ -226,11 +211,56 @@ async function refreshWorkspaceMembership<T extends object>(event: vscode.Worksp
 // workspace, and self-heal any left over from a prior reload (see computeWorkspaceFolderOps).
 let notifiedSingleFolderNoReveal = false;
 
-function liveWorktreesAcrossWorkspaces(): { path: string; agent: string }[] {
+function jsonObject(value: unknown, label: string): Record<string, JsonValue> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} returned an invalid object`);
+  return value as Record<string, JsonValue>;
+}
+
+function jsonArray(value: unknown, label: string): JsonValue[] {
+  if (!Array.isArray(value)) throw new Error(`${label} returned an invalid list`);
+  return value;
+}
+
+function configPathOf(ws: WorkspaceShellHandle): string | undefined {
+  return CONFIG_FILENAMES.map((name) => path.join(ws.workspaceRoot, name)).find((file) => fs.existsSync(file));
+}
+
+async function extensionQuery(ws: WorkspaceShellHandle, input: ExtensionQueryV1): Promise<JsonValue> {
+  return ws.extension.query(input);
+}
+
+async function extensionInvoke(ws: WorkspaceShellHandle, input: ExtensionCommandV1): Promise<JsonValue> {
+  return ws.extension.invoke(input);
+}
+
+async function invokeAgentLifecycle(
+  ws: WorkspaceShellHandle,
+  method: "agent.start" | "agent.stop" | "agent.kill" | "agent.restart" | "agent.resume",
+  agent: string,
+): Promise<void> {
+  const result = await ws.client.invoke(`vscode-agent:${crypto.randomUUID()}`, {
+    schemaVersion: 1,
+    method,
+    input: { agent },
+  });
+  if (result.status === "error") throw new Error(result.message);
+  if (result.method !== method) throw new Error("persistent engine returned a mismatched agent result");
+}
+
+function agentProjection(ws: WorkspaceShellHandle, agent: string) {
+  return ws.client.presentation.agents.items.find((row) => row.name === agent);
+}
+
+async function liveWorktreesAcrossWorkspaces(): Promise<{ path: string; agent: string }[]> {
   const out: { path: string; agent: string }[] = [];
   for (const ws of workspaces()) {
-    for (const [name, rec] of ws.ledger.all()) {
-      if (rec.worktree) out.push({ path: rec.worktree.path, agent: name });
+    const payload = jsonObject(await extensionQuery(ws, { action: "worktrees.list" }), "worktrees.list");
+    for (const entry of jsonArray(payload.worktrees, "worktrees.list")) {
+      const row = jsonObject(entry, "worktrees.list row");
+      const record = jsonObject(row.record, "worktrees.list record");
+      if (typeof row.agent === "string" && typeof record.path === "string") {
+        out.push({ path: record.path, agent: row.agent });
+      }
     }
   }
   return out;
@@ -245,7 +275,7 @@ function currentWorktreesBase(): string {
   return resolveBase({});
 }
 
-function applyWorktreeFolderReveal(): void {
+async function applyWorktreeFolderReveal(): Promise<void> {
   const reveal = vscode.workspace.getConfiguration("tachyon").get<boolean>("worktrees.revealInWorkspace", true);
   if (!reveal) return;
   // A single-folder window has no .code-workspace file: the FIRST updateWorkspaceFolders call
@@ -261,7 +291,14 @@ function applyWorktreeFolderReveal(): void {
     return;
   }
   const currentFolders = (vscode.workspace.workspaceFolders ?? []).map((f) => ({ path: f.uri.fsPath, name: f.name }));
-  const ops = computeWorkspaceFolderOps(currentFolders, liveWorktreesAcrossWorkspaces(), currentWorktreesBase());
+  let live: { path: string; agent: string }[];
+  try {
+    live = await liveWorktreesAcrossWorkspaces();
+  } catch (error) {
+    console.debug(`[tachyon] worktree reveal snapshot unavailable: ${error instanceof Error ? error.message : String(error)}`);
+    return;
+  }
+  const ops = computeWorkspaceFolderOps(currentFolders, live, currentWorktreesBase());
   if (ops.add.length === 0 && ops.remove.length === 0) return;
   // Remove highest index first so earlier indices in the same batch stay valid, then append adds.
   for (const idx of [...ops.remove].sort((a, b) => b - a)) vscode.workspace.updateWorkspaceFolders(idx, 1);
@@ -271,7 +308,7 @@ function applyWorktreeFolderReveal(): void {
   }
 }
 
-function byHash(hash?: string): Workspace | undefined {
+function byHash(hash?: string): WorkspaceShellHandle | undefined {
   if (hash) return workspaces().find((ws) => ws.wsHash === hash);
   const all = workspaces();
   return all.length === 1 ? all[0] : undefined;
@@ -283,12 +320,12 @@ function byHash(hash?: string): Workspace | undefined {
  * unconfigured folder on demand (ensureWorkspaceFor), which then lingers in the
  * registry; hasConfig() is the robust "is this a Tachyon project" predicate.
  */
-function configuredWorkspaces(): Workspace[] {
+function configuredWorkspaces(): WorkspaceShellHandle[] {
   return workspaces().filter((ws) => hasConfig(ws.workspaceRoot));
 }
 
 /** Folder disambiguation: 0 configured → undefined+warn, 1 → it, N → QuickPick (configured only). */
-async function pickWorkspace(): Promise<Workspace | undefined> {
+async function pickWorkspace(): Promise<WorkspaceShellHandle | undefined> {
   const all = configuredWorkspaces();
   if (all.length === 0) {
     notify(vscode.l10n.t("no Tachyon workspace is active"), "warn");
@@ -296,37 +333,32 @@ async function pickWorkspace(): Promise<Workspace | undefined> {
   }
   if (all.length === 1) return all[0];
   const picked = await vscode.window.showQuickPick(
-    all.map((ws) => ({ label: ws.folderName, description: ws.bridgeUrl() ?? "", ws })),
+    all.map((ws) => ({ label: ws.folderName, description: ws.bridgeUrl, ws })),
     { placeHolder: vscode.l10n.t("Which folder?") },
   );
   return picked?.ws;
 }
 
 /** Resolves the target for arg-style commands: explicit hash beats the single default. */
-function targetOf(hash?: string): Workspace | undefined {
+function targetOf(hash?: string): WorkspaceShellHandle | undefined {
   const ws = byHash(hash);
   if (!ws) notify(vscode.l10n.t("no Tachyon workspace is active"), "warn");
   return ws;
 }
 
-/**
- * Presentation items carry only workspace identity. During the legacy phase,
- * resolve that identity back to the current concrete registry entry instead of
- * retaining a stale operational object inside the UI item.
- */
-function wsOf<T extends { ws?: WorkspacePresentationTarget }>(item: T): Workspace | undefined {
+/** Presentation items carry only identity; resolve them against the current shell-client registry. */
+function wsOf<T extends { ws?: WorkspacePresentationTarget; workspaceHash?: string }>(item: T): WorkspaceShellHandle | undefined {
   const target = item.ws;
   const ws = target
     ? workspaces().find((candidate) => candidate.wsHash === target.wsHash && candidate.workspaceRoot === target.workspaceRoot)
-    : byHash(undefined);
+    : byHash(item.workspaceHash);
   if (!ws) notify(vscode.l10n.t("no Tachyon workspace is active"), "warn");
   return ws;
 }
 
 /** spec 213 / 230 — quick-pick the changed files of a worktree (base ↔ current), each opening VS Code's
  *  native diff. Shared by the agent worktree review and the pipeline run "View changes". */
-async function reviewWorktreeDiff(ws: Workspace, rec: WorktreeRecord, label: string): Promise<void> {
-  const changes = await ws.worktrees.changedFiles(rec.path, rec.baseRef);
+async function reviewWorktreeDiff(rec: WorktreeRecord, changes: ChangedFile[], label: string): Promise<void> {
   if (changes.length === 0) {
     notify(vscode.l10n.t("Nothing to review — '{0}' has no changes yet.", label), "info");
     return;
@@ -367,9 +399,10 @@ const stripInputComments = (raw: string): string =>
  * is edited in a real `.md` file (NOT a single-line InputBox — codex MINOR); the non-modal notification
  * lets the human edit + save, then Start. Falls through to a plain start for `input: none` pipelines.
  */
-async function startPipelineWithInput(ws: Workspace, name: string): Promise<void> {
-  if (!ws.pipelineNeedsInput(name)) {
-    await ws.startPipeline(name);
+async function startPipelineWithInput(ws: WorkspaceShellHandle, name: string): Promise<void> {
+  const inspected = jsonObject(await extensionQuery(ws, { action: "pipeline.inspect", name }), "pipeline.inspect");
+  if (inspected.needsInput !== true) {
+    await extensionInvoke(ws, { action: "pipeline.start", name });
     return;
   }
   const draftPath = path.join(ws.workspaceRoot, ".tachyon", "runs", `draft-${name}.input.md`);
@@ -399,8 +432,8 @@ async function startPipelineWithInput(ws: Workspace, name: string): Promise<void
     notify(vscode.l10n.t("pipeline '{0}' not started — the input is empty", name), "warn");
     return;
   }
-  const runId = await ws.startPipeline(name, text);
-  if (runId) {
+  const started = jsonObject(await extensionInvoke(ws, { action: "pipeline.start", name, input: text }), "pipeline.start");
+  if (typeof started.runId === "string") {
     try {
       fs.rmSync(draftPath, { force: true });
     } catch {
@@ -418,17 +451,87 @@ async function startPipelineWithInput(ws: Workspace, name: string): Promise<void
  * confirm, so committed-but-unmerged work is never lost in one click. Returns the outcome
  * so the caller knows whether to proceed with removing the agent itself.
  */
+function worktreeRecordFrom(value: unknown): WorktreeRecord {
+  const row = jsonObject(value, "worktree record");
+  if (typeof row.path !== "string" || typeof row.branch !== "string"
+    || typeof row.tachyonCreatedBranch !== "boolean" || typeof row.baseRef !== "string"
+    || typeof row.createdAt !== "string") throw new Error("worktree record is incomplete");
+  return {
+    path: row.path,
+    branch: row.branch,
+    tachyonCreatedBranch: row.tachyonCreatedBranch,
+    baseRef: row.baseRef,
+    ...(typeof row.baseBranch === "string" ? { baseBranch: row.baseBranch } : {}),
+    createdAt: row.createdAt,
+  };
+}
+
+function worktreeStatusFrom(value: unknown): WorktreeStatus {
+  const row = jsonObject(value, "worktree status");
+  const numbers = ["staged", "unstaged", "untracked", "conflicts", "aheadOfBase", "unpushed"] as const;
+  if (numbers.some((key) => typeof row[key] !== "number")
+    || typeof row.detached !== "boolean" || (row.branch !== null && typeof row.branch !== "string")
+    || typeof row.hasUpstream !== "boolean") throw new Error("worktree status is incomplete");
+  return row as unknown as WorktreeStatus;
+}
+
+function changedFilesFrom(value: unknown): ChangedFile[] {
+  return jsonArray(value, "worktree changed files").map((entry) => {
+    const row = jsonObject(entry, "worktree changed file");
+    if ((row.status !== "A" && row.status !== "M" && row.status !== "D" && row.status !== "R" && row.status !== "C")
+      || typeof row.path !== "string" || (row.from !== undefined && typeof row.from !== "string")) {
+      throw new Error("worktree changed file is invalid");
+    }
+    return { status: row.status, path: row.path, ...(typeof row.from === "string" ? { from: row.from } : {}) };
+  });
+}
+
+async function worktreeReview(
+  ws: WorkspaceShellHandle,
+  input: { agent: string } | { runId: string },
+): Promise<{ record: WorktreeRecord | null; status: WorktreeStatus | null; changedFiles: ChangedFile[]; verify?: JsonValue }> {
+  const payload = jsonObject(await extensionQuery(ws, { action: "worktree.review", ...input }), "worktree.review");
+  return {
+    record: payload.record === null ? null : worktreeRecordFrom(payload.record),
+    status: payload.status === null ? null : worktreeStatusFrom(payload.status),
+    changedFiles: changedFilesFrom(payload.changedFiles),
+    ...(payload.verify !== undefined ? { verify: payload.verify } : {}),
+  };
+}
+
+async function agentInspection(ws: WorkspaceShellHandle, agent: string): Promise<{
+  descendants: string[];
+  record: Record<string, JsonValue> | null;
+  worktree: WorktreeRecord | null;
+  status: WorktreeStatus | null;
+  declared: boolean;
+}> {
+  const payload = jsonObject(await extensionQuery(ws, { action: "agent.inspect", agent }), "agent.inspect");
+  const descendants = jsonArray(payload.descendants, "agent descendants").map((entry) => {
+    if (typeof entry !== "string") throw new Error("agent descendant name is invalid");
+    return entry;
+  });
+  const record = payload.record === null ? null : jsonObject(payload.record, "agent record");
+  const worktree = record?.worktree === undefined ? null : worktreeRecordFrom(record.worktree);
+  const status = payload.worktreeStatus === null ? null : worktreeStatusFrom(payload.worktreeStatus);
+  if (typeof payload.declared !== "boolean") throw new Error("agent inspection declaration is invalid");
+  return { descendants, record, worktree, status, declared: payload.declared };
+}
+
 async function confirmAndRemoveWorktree(
-  ws: Workspace,
+  ws: WorkspaceShellHandle,
   name: string,
   rec: WorktreeRecord,
+  knownStatus?: WorktreeStatus | null,
 ): Promise<"removed" | "kept" | "blocked"> {
-  const live = await ws.manager.liveDescendants(name);
+  const inspected = await agentInspection(ws, name);
+  const live = inspected.descendants;
   if (live.length > 0) {
     notify(vscode.l10n.t("Stop '{0}'s sub-agents first ({1}) — they share its worktree.", name, live.join(", ")), "warn");
     return "blocked";
   }
-  const st = await ws.worktrees.status(rec.path, rec.baseRef);
+  const st = knownStatus ?? inspected.status;
+  if (!st) throw new Error(`worktree status for '${name}' is unavailable`);
   const dirty = st.staged + st.unstaged + st.untracked + st.conflicts;
   const lines = [
     vscode.l10n.t("Worktree: {0}", rec.path),
@@ -444,27 +547,9 @@ async function confirmAndRemoveWorktree(
   const keepLabel = vscode.l10n.t("Keep worktree");
   const answer = await showNotification(lines.join("\n"), "warn", [removeLabel, keepLabel], { modal: true });
   if (answer !== removeLabel) return "kept"; // dismiss/Esc OR explicit keep → destroy nothing
-  // Never remove a worktree out from under the agent's own running process — stop it first,
-  // and if the stop genuinely fails (session still present), abort rather than yank the cwd
-  // (review fixes: removal used to run before the kill, and a failed kill was swallowed).
-  if ((await ws.manager.agentStates()).has(name)) {
-    try {
-      await ws.manager.kill(name);
-    } catch {
-      /* may already be gone — re-check below */
-    }
-    if ((await ws.manager.agentStates()).has(name)) {
-      notify(vscode.l10n.t("Could not stop '{0}' — its worktree was left intact.", name), "error");
-      return "kept";
-    }
-  }
-  const res = await ws.worktrees.remove(rec, true); // safe-deletes a merged Tachyon branch; keeps anything unmerged/human
-  if (!res.removed) {
-    notify(vscode.l10n.t("Worktree removal failed: {0}", res.error ?? ""), "error");
-    return "kept";
-  }
-  ws.ledger.clearWorktree(name);
-  if (res.branchDeleted) {
+  const res = jsonObject(await extensionInvoke(ws, { action: "worktree.remove", agent: name }), "worktree.remove");
+  if (res.removed !== true) throw new Error(`worktree removal for '${name}' was not confirmed`);
+  if (res.branchDeleted === true) {
     notify(vscode.l10n.t("Removed worktree and merged branch '{0}'.", rec.branch), "info");
     return "removed";
   }
@@ -476,7 +561,8 @@ async function confirmAndRemoveWorktree(
   const del = vscode.l10n.t("Force-delete '{0}'", rec.branch);
   const a2 = await showNotification(reason, "warn", [del], { modal: true });
   if (a2 === del) {
-    const ok = await ws.worktrees.deleteBranch(rec.branch);
+    const deleted = jsonObject(await extensionInvoke(ws, { action: "worktree.delete-branch", branch: rec.branch }), "worktree.delete-branch");
+    const ok = deleted.deleted === true;
     notify(ok ? vscode.l10n.t("Branch '{0}' deleted.", rec.branch) : vscode.l10n.t("Could not delete '{0}' (unmerged? checked out?).", rec.branch), ok ? "info" : "warn");
   }
   return "removed";
@@ -486,9 +572,10 @@ function hasConfig(folderPath: string): boolean {
   return CONFIG_FILENAMES.some((name) => fs.existsSync(path.join(folderPath, name)));
 }
 
-async function pickAgent(ws: Workspace, placeholder: string, runningOnly: boolean): Promise<string | undefined> {
-  const agents = await ws.manager.list();
-  const candidates = runningOnly ? agents.filter((a) => a.running) : agents;
+async function pickAgent(ws: WorkspaceShellHandle, placeholder: string, runningOnly: boolean): Promise<string | undefined> {
+  const agents = ws.client.presentation.agents;
+  if (agents.truncated) throw new Error("agent list is truncated");
+  const candidates = runningOnly ? agents.items.filter((agent) => agent.running) : agents.items;
   if (candidates.length === 0) {
     notify(runningOnly ? vscode.l10n.t("no agents running") : vscode.l10n.t("no agents declared or running"), "warn");
     return undefined;
@@ -499,8 +586,8 @@ async function pickAgent(ws: Workspace, placeholder: string, runningOnly: boolea
   );
 }
 
-async function connectRuntime(ws: Workspace): Promise<void> {
-  const url = ws.bridge.url;
+async function connectRuntime(ws: WorkspaceShellHandle): Promise<void> {
+  const url = ws.bridgeUrl;
   if (!url) {
     notify(vscode.l10n.t("Bridge is not running"), "error");
     return;
@@ -548,6 +635,39 @@ async function connectRuntime(ws: Workspace): Promise<void> {
     await vscode.env.clipboard.writeText(offer.snippet);
     notify(vscode.l10n.t("{0}: snippet opened and copied to clipboard", offer.title));
   }
+}
+
+function daemonSettingsSnapshot(workspaceRoot: string): DaemonSettingsSnapshot {
+  const scopes = {
+    global: {} as Record<string, unknown>,
+    workspace: {} as Record<string, unknown>,
+    workspaceFolder: {} as Record<string, unknown>,
+  };
+  const resource = vscode.Uri.file(workspaceRoot);
+  for (const qualified of DAEMON_SETTING_KEYS) {
+    const split = qualified.indexOf(".");
+    const section = qualified.slice(0, split);
+    const key = qualified.slice(split + 1);
+    const inspected = vscode.workspace.getConfiguration(section, resource).inspect<unknown>(key);
+    if (inspected?.globalValue !== undefined) scopes.global[qualified] = inspected.globalValue;
+    if (inspected?.workspaceValue !== undefined) scopes.workspace[qualified] = inspected.workspaceValue;
+    if (inspected?.workspaceFolderValue !== undefined) scopes.workspaceFolder[qualified] = inspected.workspaceFolderValue;
+  }
+  return Object.fromEntries(Object.entries(scopes).filter(([, values]) => Object.keys(values).length > 0));
+}
+
+function viewKind(value: unknown): ViewKind | undefined {
+  return value === "agents" || value === "pins" || value === "tasks" || value === "commands"
+    || value === "schedules" || value === "handoff" || value === "probes" ? value : undefined;
+}
+
+function proposalSchedule(schedule: ScheduleDef): Extract<ExtensionCommandV1, { action: "proposal.create" }>["schedule"] {
+  const catchUp = schedule.catchUp === undefined ? {} : { catchUp: schedule.catchUp };
+  if (schedule.every && schedule.run) return { every: schedule.every, run: schedule.run, ...catchUp };
+  if (schedule.at && schedule.run) return { at: schedule.at, run: schedule.run, ...catchUp };
+  if (schedule.every && schedule.spawn) return { every: schedule.every, spawn: schedule.spawn, ...(schedule.instructions ? { instructions: schedule.instructions } : {}), ...catchUp };
+  if (schedule.at && schedule.spawn) return { at: schedule.at, spawn: schedule.spawn, ...(schedule.instructions ? { instructions: schedule.instructions } : {}), ...catchUp };
+  throw new Error("schedule proposal is incomplete");
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
@@ -638,42 +758,40 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   // spec 237 — the Preact webview sidebar is THE Tachyon view (the native tree was retired). refreshAll
   // pushes the live fleet to it on every state change; it's registered below.
-  const runtimeOpsSnapshots = new RuntimeOpsSnapshotService(workspaces);
-  // spec 378 — the legacy adapter and daemon target both gather observed model state at the engine boundary.
   const sidebarProto = new SidebarPrototypeProvider(
     context.extensionUri,
-    () => workspaces().map((ws) => legacySidebarTarget(
-      ws,
-      (agentName) => runtimeOpsSnapshots.observedModelFor(ws.workspaceRoot, ws.wsHash, agentName),
-    )),
+    () => workspaces().map((ws) => ws.sidebar),
     context.globalState,
   );
-  const runtimeOps = new RuntimeOpsViewProvider(context.extensionUri, () => runtimeOpsSnapshots.snapshot());
+  const runtimeOps = new RuntimeOpsViewProvider(
+    context.extensionUri,
+    () => runtimeOpsFleetView(workspaces().map((ws) => ws.runtimeOps)),
+  );
   // spec 238 — the editor-area Runtime Activity View (normalized cockpit; reads the durable per-agent log).
   const activityPanels = new ActivityPanelManager(
     context.extensionUri,
-    () => workspaces().map(legacyActivityTarget),
+    () => workspaces().map((ws) => ws.activity),
   );
   context.subscriptions.push({ dispose: () => activityPanels.dispose() });
   // spec 245 — the editor-area Project Handoff panel (read-only doc + pending notes + staleness; one per root).
   const handoffPanels = new HandoffPanelManager(
     context.extensionUri,
-    () => workspaces().map(legacyHandoffTarget),
+    () => workspaces().map((ws) => ws.handoff),
   );
   context.subscriptions.push({ dispose: () => handoffPanels.dispose() });
   // spec 349 — first-party host for untrusted plugin UI surfaces. It reads committed plugin lockfiles and
   // revokes open channels when an installed view target disappears.
   const pluginSurfaces = new PluginSurfaceHost(
     context.extensionUri,
-    () => workspaces().map(legacyPluginSurfaceTarget),
+    () => workspaces().map((ws) => ws.plugin),
   );
   context.subscriptions.push({ dispose: () => pluginSurfaces.dispose() });
   // spec 250 — the editor-area Plugins View (browse/install/update/remove; one per root), opened by the
   // sidebar title button. Step B = read-only render of the installed list from the committed lockfile.
-  const pluginsPanels = new PluginsPanelManager(context.extensionUri, workspaces, () => pluginSurfaces.refreshAll());
+  const pluginsPanels = new PluginsPanelManager(context.extensionUri, () => workspaces().map((ws) => ws.git), () => pluginSurfaces.refreshAll());
   context.subscriptions.push({ dispose: () => pluginsPanels.dispose() });
   // spec 257 — the editor-area Probes inspector (read-only list of captured probe runs, one per root).
-  const probePanels = new ProbeResultPanelManager(context.extensionUri, workspaces);
+  const probePanels = new ProbeResultPanelManager(context.extensionUri, () => workspaces().map((ws) => ws.probe));
   context.subscriptions.push({ dispose: () => probePanels.dispose() });
   // spec 335 — Mission Control (the Task board) + its per-task Detail tab. Declared with `let` so each manager
   // can close over the other before both exist (openTask ↔ onTasksChanged), assigned in dependency order below.
@@ -692,56 +810,36 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // can inject an `openTaskStudio` callback into their own constructors below.
   const taskStudioPanels = new TaskStudioPanelManager(
     context.extensionUri,
-    () => workspaces().map(legacyTaskStudioTarget),
+    () => workspaces().map((ws) => ws.taskStudio),
     onTasksChanged,
   );
   context.subscriptions.push({ dispose: () => taskStudioPanels.dispose() });
   taskDetailPanels = new TaskDetailPanelManager(
     context.extensionUri,
-    () => workspaces().map(legacyTaskDetailTarget),
+    () => workspaces().map((ws) => ws.taskDetail),
     (target, id) => {
       const ws = wsOf({ ws: target });
-      if (ws) taskStudioPanels.openExisting(legacyTaskStudioTarget(ws), id);
+      if (ws) taskStudioPanels.openExisting(ws.taskStudio, id);
     },
     onTasksChanged,
   );
   context.subscriptions.push({ dispose: () => taskDetailPanels.dispose() });
   missionControlPanels = new MissionControlPanelManager(
     context.extensionUri,
-    () => workspaces().map(legacyMissionControlTarget),
+    () => workspaces().map((ws) => ws.missionControl),
     (target, id) => {
       const ws = wsOf({ ws: target });
-      if (ws) taskDetailPanels.open(legacyTaskDetailTarget(ws), id);
+      if (ws) taskDetailPanels.open(ws.taskDetail, id);
     },
     (target, id) => {
       const ws = wsOf({ ws: target });
       if (!ws) return;
-      const studio = legacyTaskStudioTarget(ws);
+      const studio = ws.taskStudio;
       if (id) taskStudioPanels.openExisting(studio, id); else taskStudioPanels.openNew(studio);
     },
     onTasksChanged,
   );
   context.subscriptions.push({ dispose: () => missionControlPanels.dispose() });
-  // spec 239 inc 3b — always-on durable-log writers (one per resumable agent), so the agent's full activity
-  // history is captured across /clear, /resume, compaction and fresh starts even with no Activity panel open.
-  // spec 378 — a model-bearing record landing in an agent's durable log must advance the shared projection and
-  // refresh the sidebar even when RuntimeOps is never opened (RuntimeOpsView.refresh() no-ops while hidden).
-  // The projection cursor is advanced here (observedModelFor), independent of runtimeOps.refresh() below.
-  const modelFactSignatures = new Map<string, string>();
-  const activityLog = new ActivityLogManager(workspaces, 2000, 3000, (wsHash, agentName) => {
-    runtimeOps.refresh();
-    const ws = workspaces().find((w) => w.wsHash === wsHash);
-    if (!ws) return;
-    const observed = runtimeOpsSnapshots.observedModelFor(ws.workspaceRoot, wsHash, agentName);
-    const fact = resolveModelFact(ws.manager.defOf(agentName)?.cmd, observed);
-    const signature = fact ? `${fact.label} ${fact.source} ${fact.stale} ${fact.divergence}` : "";
-    const key = `${wsHash}::${agentName}`;
-    if (modelFactSignatures.get(key) === signature) return; // unchanged (label, source, stale, divergence) tuple — no refresh
-    modelFactSignatures.set(key, signature);
-    sidebarProto.refresh();
-  });
-  activityLog.start();
-  context.subscriptions.push({ dispose: () => activityLog.dispose() });
   const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 50);
   const runtimeUsageStatusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 49);
   let lastBridgeLagNoticeAt = 0;
@@ -764,9 +862,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       runtimeUsageStatusBar.hide();
       return;
     }
-    const ports = all.map((ws) => ws.bridgeUrl()?.split(":")[2]?.replace("/mcp", "")).filter(Boolean);
+    const ports = all.map((ws) => ws.bridgeUrl.split(":")[2]?.replace("/mcp", "")).filter(Boolean);
     statusBar.text = all.length === 1 ? `$(zap) Tachyon :${ports[0] ?? "—"}` : `$(zap) Tachyon ×${all.length}`;
-    statusBar.tooltip = all.map((ws) => `${ws.folderName} — ${ws.bridgeUrl() ?? vscode.l10n.t("not running")}`).join("\n");
+    statusBar.tooltip = all.map((ws) => `${ws.folderName} — ${ws.bridgeUrl}`).join("\n");
     statusBar.command = "tachyon.copyBridgeUrl";
     statusBar.show();
     runtimeUsageStatusBar.text = "$(pulse) Runtime";
@@ -784,11 +882,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     if (view === "pins") approvalPanels.refreshAll();
     if (view === "commands") runbookStudioPanels.refreshReferenceData();
     if (view === "commands" || view === "agents") scheduleStudioPanels.refreshReferenceData();
-    if (view === "agents") applyWorktreeFolderReveal(); // spec 210/263 — onSpawned/onStopping/onKilled fire this
+    if (view === "agents") void applyWorktreeFolderReveal(); // spec 210/263 — onSpawned/onStopping/onKilled fire this
     sidebarProto.refresh();
   };
   const refreshAll = () => {
-    applyWorktreeFolderReveal(); // spec 210/263 — the worktree-remove commands only re-render through here
+    void applyWorktreeFolderReveal(); // spec 210/263 — the worktree-remove commands only re-render through here
     sidebarProto.refresh();
     runtimeOps.refresh();
     pluginSurfaces.refreshAll();
@@ -799,7 +897,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   };
   const pinStudioPanels = new PinStudioPanelManager(
     context.extensionUri,
-    () => workspaces().map(legacyPinStudioTarget),
+    () => workspaces().map((ws) => ws.pinStudio),
     refreshAll,
   );
   context.subscriptions.push({ dispose: () => pinStudioPanels.dispose() });
@@ -930,23 +1028,87 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     if (r.errors.length > 0) notify(vscode.l10n.t("Tachyon tool launcher sync failed: {0}", r.errors.join("; ")), "warn");
   };
 
-  const addWorkspace = async (folderPath: string, autostart: boolean, refreshOnSuccess = true): Promise<Workspace> => {
-    const ws = await Workspace.create(folderPath, {
-      onViewsChanged,
-      host: new VsCodeHost(context, onViewsChanged),
-      onApprovalRequested: (workspace, request) => {
-        const open = "Review";
-        void showNotification(`Approval request ${request.id} from '${request.requester}'`, "info", [open]).then((picked) => {
-          if (picked === open) approvalPanels.open(workspace);
-        });
-        approvalPanels.refreshAll();
-      },
+  const terminalTmux = new TmuxService();
+  const terminals = new Terminals(
+    (_agent, session) => { void terminalTmux.refreshClients(session); },
+    (agent) => workspaces().map((ws) => agentProjection(ws, agent)).find((row) => row)?.kind ?? "agent",
+  );
+  context.subscriptions.push({ dispose: () => terminals.dispose() });
+
+  const versionValue = (context.extension.packageJSON as { version?: unknown }).version;
+  const shellVersion = typeof versionValue === "string" && versionValue.trim() ? versionValue : "development";
+  const clientRegistry = new WorkspaceClientRegistry({
+    connect: (workspaceRoot) => connectPackagedWorkspaceClient({
+      workspaceRoot,
+      extensionRoot: context.extensionUri.fsPath,
+      requireCleanBuild: context.extensionMode === vscode.ExtensionMode.Production,
+      shell: { version: shellVersion, locale: vscode.env.language },
+      capabilities: ["vscode.diff", "vscode.editor", "vscode.notifications", "vscode.terminal"],
+      settings: daemonSettingsSnapshot(workspaceRoot),
+    }),
+  });
+  activeClientRegistry = clientRegistry;
+  const syncStops = new Map<string, () => void>();
+
+  const startClientSync = (ws: WorkspaceShellHandle): void => {
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let connectionWarningShown = false;
+    const unsubscribe = ws.client.subscribe((result) => {
+      if (result.resynced || result.engineChanged) refreshAll();
+      for (const event of result.events) {
+        if (event.kind === "views-changed") {
+          const view = viewKind(event.payload.view);
+          if (view) onViewsChanged(view);
+        } else if (event.kind === "activity-appended") {
+          runtimeOps.refresh();
+          sidebarProto.refresh();
+        } else if (event.kind === "notice" && typeof event.payload.message === "string") {
+          const level = event.payload.level === "warn" || event.payload.level === "error" ? event.payload.level : "info";
+          notify(event.payload.message, level);
+        }
+      }
     });
+    const poll = async (): Promise<void> => {
+      try {
+        await ws.client.sync(200);
+        connectionWarningShown = false;
+      } catch (error) {
+        if (!stopped && !connectionWarningShown) {
+          connectionWarningShown = true;
+          notify(vscode.l10n.t("Tachyon engine connection is unavailable: {0}", error instanceof Error ? error.message : String(error)), "warn");
+        }
+      } finally {
+        if (!stopped) timer = setTimeout(() => void poll(), 1_000);
+      }
+    };
+    timer = setTimeout(() => void poll(), 1_000);
+    syncStops.set(ws.workspaceRoot, () => {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+      unsubscribe();
+    });
+  };
+
+  const detachWorkspace = async (ws: WorkspaceShellHandle): Promise<void> => {
+    syncStops.get(ws.workspaceRoot)?.();
+    syncStops.delete(ws.workspaceRoot);
+    await clientRegistry.detach(ws.workspaceRoot);
+  };
+
+  const addWorkspace = async (folderPath: string, _autostart: boolean, refreshOnSuccess = true): Promise<WorkspaceShellHandle> => {
+    const client = await clientRegistry.attach(folderPath).catch((error: unknown) => {
+      notify(vscode.l10n.t("Tachyon persistent engine could not start: {0}", error instanceof Error ? error.message : String(error)), "error");
+      throw error;
+    });
+    const gitExec = createGitExec(() => resolveGitBinary({
+      configuredPath: vscode.workspace.getConfiguration("tachyon", vscode.Uri.file(client.workspaceRoot)).get<string>("gitPath"),
+      gitExtensionPath: vscode.workspace.getConfiguration("git", vscode.Uri.file(client.workspaceRoot)).get<string | string[]>("path"),
+    }));
+    const ws = new WorkspaceShellHandle(client, { extensionUri: context.extensionUri, gitExec });
     registry.set(folderPath, ws);
+    startClientSync(ws);
     if (hasConfig(folderPath)) syncWorkspaceToolLauncher(folderPath);
-    if (autostart && hasConfig(folderPath)) {
-      await ws.start();
-    }
     if (refreshOnSuccess) refreshAll();
     return ws;
   };
@@ -954,7 +1116,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // Boot a folder on demand — used by creation commands so a fresh folder gets a
   // Workspace the moment the user ACTS (Init / New Agent / Studio), not just by
   // having the extension installed.
-  const ensureWorkspaceFor = async (folderPath: string): Promise<Workspace> => {
+  const ensureWorkspaceFor = async (folderPath: string): Promise<WorkspaceShellHandle> => {
     return registry.get(folderPath) ?? (await addWorkspace(folderPath, false));
   };
 
@@ -1001,12 +1163,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // unconfigured ones never appear. The ONE divergence is the zero-configured tail:
   // there it falls back to every open folder and boots the chosen one on demand, so
   // first-run creation is itself the opt-in (the bootstrap path Init also covers).
-  const pickFolderForCreate = async (): Promise<Workspace | undefined> => {
+  const pickFolderForCreate = async (): Promise<WorkspaceShellHandle | undefined> => {
     const configured = configuredWorkspaces();
     if (configured.length === 1) return configured[0];
     if (configured.length > 1) {
       const picked = await vscode.window.showQuickPick(
-        configured.map((ws) => ({ label: ws.folderName, description: ws.bridgeUrl() ?? "", ws })),
+        configured.map((ws) => ({ label: ws.folderName, description: ws.bridgeUrl, ws })),
         { placeHolder: vscode.l10n.t("Which folder?") },
       );
       return picked?.ws;
@@ -1044,13 +1206,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // spec 210/263 — self-heal ONCE at activation: a prior window's worktree folders may have
   // outlived the worktrees themselves (a deploy reload finds them already cleaned up), so the
   // persisted .code-workspace can carry stale entries forward across reloads otherwise.
-  applyWorktreeFolderReveal();
+  void applyWorktreeFolderReveal();
   // Folders added/removed live (multi-root): create with config, then use the registry's explicit detach path.
   const folderWatcher = registerWorkspaceMembershipRefresh(vscode.workspace.onDidChangeWorkspaceFolders, {
     registry,
-    // Compatibility path until the final cutover.  The persistent shell registry supplies client.close()
-    // here instead, which detaches only its lease and has no engine-stop capability.
-    detachWorkspace: (workspace) => workspace.dispose(),
+    detachWorkspace,
     hasConfig,
     currentWorktreesBase,
     addWorkspace,
@@ -1099,61 +1259,97 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     folderWatcher,
     {
       dispose: () => {
-        for (const ws of workspaces()) void ws.dispose();
+        for (const stop of syncStops.values()) stop();
+        syncStops.clear();
+        void clientRegistry.close();
         registry.clear();
+        if (activeClientRegistry === clientRegistry) activeClientRegistry = undefined;
       },
     },
     // ---- internal seams (integration tests; default to the single workspace) ----
-    vscode.commands.registerCommand("tachyon._agents", (hash?: string) => byHash(hash)?.manager.list() ?? []),
-    vscode.commands.registerCommand("tachyon._seedPipelineRun", (name: string, hash?: string) => byHash(hash)?.seedPipelineRun(name) ?? null),
+    vscode.commands.registerCommand("tachyon._agents", (hash?: string) => {
+      const ws = byHash(hash);
+      return ws ? extensionQuery(ws, { action: "agents.list" }) : [];
+    }),
+    vscode.commands.registerCommand("tachyon._seedPipelineRun", async (name: string, hash?: string) => {
+      const ws = byHash(hash);
+      if (!ws) return null;
+      const result = jsonObject(await extensionInvoke(ws, { action: "pipeline.seed", name }), "pipeline.seed");
+      return typeof result.runId === "string" ? result.runId : null;
+    }),
     vscode.commands.registerCommand(
       "tachyon._spawn",
-      (name: string, opts?: { cmd?: string; cwd?: string; instructions?: string; parent?: string }, hash?: string) =>
-        byHash(hash)?.manager.spawn(name, opts),
+      (name: string, opts?: { cmd?: string; cwd?: string; instructions?: string; parent?: string }, hash?: string) => {
+        const ws = byHash(hash);
+        return ws ? extensionInvoke(ws, { action: "agent.spawn", agent: name, options: opts }) : undefined;
+      },
     ),
     vscode.commands.registerCommand("tachyon._wait", (name: string, until: "idle" | "needs-input" | "dead", timeoutSec: number, hash?: string) => {
       const ws = byHash(hash);
       if (!ws) return { met: false, state: "gone" };
-      return executeWait(
-        { manager: ws.manager, attentionOf: (a) => ws.monitor.stateOf(a)?.state, waiters: ws.waiters } as Pick<BridgeDeps, "manager" | "attentionOf" | "waiters">,
-        name,
-        until,
-        timeoutSec,
-      );
+      return extensionQuery(ws, { action: "agent.wait", agent: name, until, timeoutSec });
     }),
     vscode.commands.registerCommand("tachyon._attention", (hash?: string) => {
-      const out: Record<string, { state: string; matchedLine?: string }> = {};
-      for (const [agent, att] of byHash(hash)?.monitor.states() ?? new Map()) {
-        out[agent] = { state: att.state, matchedLine: att.matchedLine };
-      }
-      return out;
+      const ws = byHash(hash);
+      return ws ? extensionQuery(ws, { action: "attention.list" }) : {};
     }),
-    vscode.commands.registerCommand("tachyon._pins", (hash?: string) => byHash(hash)?.pinStore.list() ?? []),
-    vscode.commands.registerCommand("tachyon._pin", (text: string, by?: string, done?: boolean, hash?: string) => {
+    vscode.commands.registerCommand("tachyon._pins", (hash?: string) => {
+      const ws = byHash(hash);
+      return ws ? extensionQuery(ws, { action: "pins.list" }) : [];
+    }),
+    vscode.commands.registerCommand("tachyon._pin", async (text: string, by?: string, done?: boolean, hash?: string) => {
       const ws = byHash(hash);
       if (!ws) return;
-      const pin = ws.pinStore.create(text, by ?? "claude");
-      if (done) ws.pinStore.setDone(pin.id, true);
+      await extensionInvoke(ws, { action: "pin.create", text, by: by ?? "claude", done: done ?? false });
       refreshAll();
     }),
     vscode.commands.registerCommand("tachyon._upsertAgent", (submit: StudioSubmit, hash?: string) => byHash(hash)?.studioSubmit(submit)),
-    vscode.commands.registerCommand("tachyon._runCommand", (name: string, hash?: string) => byHash(hash)?.commandRunner.run(name)),
-    vscode.commands.registerCommand("tachyon._commands", (hash?: string) => byHash(hash)?.commandRunner.list() ?? []),
-    vscode.commands.registerCommand("tachyon._commandTick", (hash?: string) => byHash(hash)?.commandRunner.tick()),
-    vscode.commands.registerCommand("tachyon._runRunbook", (name: string, hash?: string) => byHash(hash)?.runbookRunner.run(name)),
-    vscode.commands.registerCommand("tachyon._runbooks", (hash?: string) => byHash(hash)?.runbookRunner.list() ?? []),
-    vscode.commands.registerCommand("tachyon._schedules", (hash?: string) => byHash(hash)?.scheduler.list() ?? []),
-    vscode.commands.registerCommand("tachyon._proposals", (hash?: string) => byHash(hash)?.proposals.list() ?? []),
-    vscode.commands.registerCommand("tachyon._propose", (name: string, schedule: ScheduleDef, reason?: string, hash?: string) => {
-      byHash(hash)?.proposals.create(name, schedule, "agent", reason);
+    vscode.commands.registerCommand("tachyon._runCommand", (name: string, hash?: string) => {
+      const ws = byHash(hash);
+      return ws ? extensionInvoke(ws, { action: "command.run", name }) : undefined;
+    }),
+    vscode.commands.registerCommand("tachyon._commands", (hash?: string) => {
+      const ws = byHash(hash);
+      return ws ? extensionQuery(ws, { action: "commands.list" }) : [];
+    }),
+    vscode.commands.registerCommand("tachyon._commandTick", (hash?: string) => {
+      const ws = byHash(hash);
+      return ws ? extensionInvoke(ws, { action: "command.tick" }) : undefined;
+    }),
+    vscode.commands.registerCommand("tachyon._runRunbook", (name: string, hash?: string) => {
+      const ws = byHash(hash);
+      return ws ? extensionInvoke(ws, { action: "runbook.run", name }) : undefined;
+    }),
+    vscode.commands.registerCommand("tachyon._runbooks", (hash?: string) => {
+      const ws = byHash(hash);
+      return ws ? extensionQuery(ws, { action: "runbooks.list" }) : [];
+    }),
+    vscode.commands.registerCommand("tachyon._schedules", (hash?: string) => {
+      const ws = byHash(hash);
+      return ws ? extensionQuery(ws, { action: "schedules.list" }) : [];
+    }),
+    vscode.commands.registerCommand("tachyon._proposals", (hash?: string) => {
+      const ws = byHash(hash);
+      return ws ? extensionQuery(ws, { action: "proposals.list" }) : [];
+    }),
+    vscode.commands.registerCommand("tachyon._propose", async (name: string, schedule: ScheduleDef, reason?: string, hash?: string) => {
+      const ws = byHash(hash);
+      if (!ws) return;
+      await extensionInvoke(ws, { action: "proposal.create", name, schedule: proposalSchedule(schedule), by: "agent", ...(reason ? { reason } : {}) });
       refreshAll();
     }),
-    vscode.commands.registerCommand("tachyon._approveProposal", (id: string, hash?: string) => byHash(hash)?.approveProposal(id)),
-    vscode.commands.registerCommand("tachyon._rejectProposal", (id: string, hash?: string) => byHash(hash)?.rejectProposal(id)),
+    vscode.commands.registerCommand("tachyon._approveProposal", (id: string, hash?: string) => {
+      const ws = byHash(hash);
+      return ws ? extensionInvoke(ws, { action: "proposal.approve", id }) : undefined;
+    }),
+    vscode.commands.registerCommand("tachyon._rejectProposal", (id: string, hash?: string) => {
+      const ws = byHash(hash);
+      return ws ? extensionInvoke(ws, { action: "proposal.reject", id }) : undefined;
+    }),
     // ---- schedules (F23) ----
-    vscode.commands.registerCommand("tachyon.approveProposalItem", (item: ProposalItem) => {
+    vscode.commands.registerCommand("tachyon.approveProposalItem", async (item: ProposalItem) => {
       const ws = wsOf(item);
-      if (ws) domainActions.approveProposal(ws, item.proposalId, { onChanged: () => refreshAll() });
+      if (ws) await ws.sidebar.mutateSidebar({ action: "proposal.approve", id: item.proposalId });
     }),
     vscode.commands.registerCommand("tachyon.rejectProposalItem", async (item: ProposalItem) => {
       const ws = wsOf(item);
@@ -1164,13 +1360,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         [vscode.l10n.t("Reject")],
         { modal: true },
       );
-      if (answer === vscode.l10n.t("Reject")) domainActions.rejectProposal(ws, item.proposalId, { onChanged: () => refreshAll() });
+      if (answer === vscode.l10n.t("Reject")) await ws.sidebar.mutateSidebar({ action: "proposal.reject", id: item.proposalId });
     }),
-    vscode.commands.registerCommand("tachyon.toggleSchedulePauseItem", (item: ScheduleItem) => {
+    vscode.commands.registerCommand("tachyon.toggleSchedulePauseItem", async (item: ScheduleItem) => {
       const ws = wsOf(item);
-      if (ws) domainActions.toggleSchedulePause(ws, item.scheduleName, { onChanged: () => refreshAll() });
+      if (ws) await ws.sidebar.mutateSidebar({ action: "schedule.toggle-pause", id: item.scheduleName });
     }),
-    vscode.commands.registerCommand("tachyon._togglePause", (name: string, hash?: string) => byHash(hash)?.toggleSchedulePause(name)),
+    vscode.commands.registerCommand("tachyon._togglePause", (name: string, hash?: string) => byHash(hash)?.sidebar.mutateSidebar({ action: "schedule.toggle-pause", id: name })),
     vscode.commands.registerCommand("tachyon.deleteScheduleItem", async (item: ScheduleItem) => {
       const ws = wsOf(item);
       if (!ws) return;
@@ -1180,12 +1376,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         [vscode.l10n.t("Delete")],
         { modal: true },
       );
-      if (answer === vscode.l10n.t("Delete")) domainActions.deleteSchedule(ws, item.scheduleName, { onChanged: () => refreshAll() });
+      if (answer === vscode.l10n.t("Delete")) await ws.sidebar.mutateSidebar({ action: "schedule.delete", id: item.scheduleName });
     }),
     vscode.commands.registerCommand("tachyon.editScheduleItem", async (item: ScheduleItem) => {
       const ws = wsOf(item);
       if (!ws) return;
-      const file = ws.configPath();
+      const file = configPathOf(ws);
       if (!file) {
         notify(vscode.l10n.t("no tachyon.yml in this workspace"), "warn");
         return;
@@ -1199,7 +1395,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
       }
     }),
-    vscode.commands.registerCommand("tachyon._workspaces", () => workspaces().map((ws) => ({ folder: ws.folderName, root: ws.workspaceRoot, hash: ws.wsHash, bridge: ws.bridgeUrl() }))),
+    vscode.commands.registerCommand("tachyon._workspaces", () => workspaces().map((ws) => ({ folder: ws.folderName, root: ws.workspaceRoot, hash: ws.wsHash, bridge: ws.bridgeUrl }))),
     /**
      * t-8354ae / EDH palliative — read-only health probe for headless dogfood.
      * Reloads config from disk, returns failure surface + degraded roster extras + LKG-spawn check.
@@ -1208,59 +1404,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon._configHealth", async (hash?: string) => {
       const ws = hash ? byHash(hash) : workspaces()[0];
       if (!ws) return { ok: false as const, error: "no-workspace" };
-      const reloadOk = ws.reloadConfig();
-      const failure = ws.configFailure ?? null;
-      const lkg = typeof ws.readConfigLkg === "function" ? ws.readConfigLkg() : null;
-      const ledgerPairs = [...ws.ledger.all()];
-      const live = await ws.manager.list();
-      const extras = degradedRosterExtras({
-        existingNames: new Set(live.map((a) => a.name)),
-        ledger: ledgerPairs,
-        lkg,
-      });
-      const rosterNames = [...new Set([...live.map((a) => a.name), ...extras.map((e) => e.name)])].sort();
-      let lkgSpawn: { name: string; refused: boolean; message?: string } | undefined;
-      if (failure && lkg?.agents.length) {
-        // Prefer a name that is only recoverable via LKG/ledger render, not a live def.
-        const candidate =
-          extras.find((e) => e.source === "lkg")?.name
-          ?? lkg.agents.find((a) => !ws.config?.agents[a.name] && !ws.manager.defOf(a.name))?.name
-          ?? lkg.agents[0]?.name;
-        if (candidate) {
-          try {
-            await ws.manager.spawn(candidate);
-            lkgSpawn = { name: candidate, refused: false };
-          } catch (err) {
-            const message = err instanceof Error ? err.message : String(err);
-            lkgSpawn = {
-              name: candidate,
-              refused: /render-only|config is invalid|cannot spawn|unknown agent/i.test(message),
-              message,
-            };
-          }
-        }
-      }
-      return {
-        ok: true as const,
-        reloadOk,
-        configFailure: failure
-          ? { file: failure.file, path: failure.path, errors: failure.errors, at: failure.at }
-          : null,
-        lkg: lkg
-          ? { savedAt: lkg.savedAt, sourceFile: lkg.sourceFile, agents: lkg.agents.map((a) => a.name) }
-          : null,
-        ledger: ledgerPairs.map(([name, rec]) => ({
-          name,
-          declared: rec.declared,
-          resumable: isResumable(rec),
-        })),
-        live: live.map((a) => ({ name: a.name, running: a.running, declared: a.declared, kind: a.kind })),
-        extras: extras.map((e) => ({ name: e.name, source: e.source, declared: e.declared, resumable: e.resumable })),
-        rosterNames,
-        lkgSpawn,
-        // Sidebar must not be empty-only while failure + known agents exist
-        emptyRosterOnly: !!failure && rosterNames.length === 0,
-      };
+      return extensionInvoke(ws, { action: "config.health" });
     }),
     // ---- views ----
     vscode.commands.registerCommand("tachyon.refreshViews", refreshAll),
@@ -1268,23 +1412,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const ws = hash ? byHash(hash) : await pickWorkspace();
       if (ws) approvalPanels.open(ws);
     }),
-    vscode.commands.registerCommand("tachyon.resolveApproval", async (arg: { id?: string; decision?: ApprovalDecision; wsHash?: string }) => {
+    vscode.commands.registerCommand("tachyon.resolveApproval", async (arg: { id?: string; decision?: "approved" | "denied"; wsHash?: string }) => {
       const ws = targetOf(arg?.wsHash);
       if (!ws || !arg?.id || (arg.decision !== "approved" && arg.decision !== "denied")) return;
       try {
-        const result = await resolveApproval({
-          workspaceRoot: ws.workspaceRoot,
-          id: arg.id,
-          decision: arg.decision,
-          resolvedBy: "vscode",
-          currentSessionOwner: async (session) => (await ws.manager.list()).find((entry) => entry.session === session && entry.running)?.name,
-          inject: async (session, text) => {
-            await ws.tmux.sendSubmittedLine(session, text);
-            return { receipt: `tmux:${session}` };
-          },
-          completePin: (pinId) => ws.pinStore.setDone(pinId, true),
-        });
-        notify(`approval request ${result.request.id} ${arg.decision}`);
+        await extensionInvoke(ws, { action: "approval.resolve", id: arg.id, decision: arg.decision });
+        notify(`approval request ${arg.id} ${arg.decision}`);
         refreshAll();
       } catch (err) {
         notify(err instanceof Error ? err.message : String(err), "error");
@@ -1324,84 +1457,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         notify(vscode.l10n.t("no Tachyon workspace is active"), "warn");
         return;
       }
-      const configPath = ws.configPath();
-      const fileExists = !!configPath && fs.existsSync(configPath);
-      // Prefer the durable failure recorded by reloadConfig; re-probe so the report is fresh.
-      let configValid = !ws.configFailure && !!ws.config;
-      let configFailure = ws.configFailure ?? null;
-      if (configPath && fileExists) {
-        const { errors } = loadConfigFile(configPath);
-        if (errors.length > 0) {
-          configValid = false;
-          configFailure = {
-            path: configPath,
-            file: path.basename(configPath),
-            errors: [...errors],
-            at: new Date().toISOString(),
-          };
-        } else {
-          configValid = true;
-          configFailure = null;
-        }
+      const report = jsonObject(await extensionQuery(ws, { action: "doctor.report" }), "doctor.report");
+      if (typeof report.text !== "string" || typeof report.hasErrors !== "boolean") {
+        throw new Error("Tachyon Doctor returned an invalid report");
       }
-      const states = await ws.manager.agentStates();
-      const liveSessions = new Set([...states].filter(([, s]) => !s.dead).map(([n]) => n));
-      const knownSessions = new Set(states.keys());
-      const transcriptPresence = new Map<string, boolean>();
-      for (const [name, rec] of ws.ledger.all()) {
-        if (!isResumable(rec)) continue;
-        try {
-          transcriptPresence.set(name, await ws.manager.resumeReadiness(name, rec));
-        } catch {
-          transcriptPresence.set(name, false);
-        }
-      }
-      let reachable: boolean | undefined;
-      if (ws.bridge.port) {
-        reachable = await new Promise<boolean>((resolve) => {
-          const sock = net.connect({ host: "127.0.0.1", port: ws.bridge.port! }, () => {
-            sock.end();
-            resolve(true);
-          });
-          sock.setTimeout(800);
-          sock.on("error", () => resolve(false));
-          sock.on("timeout", () => {
-            sock.destroy();
-            resolve(false);
-          });
-        });
-      }
-      const report = buildDoctorReport({
-        workspaceRoot: ws.workspaceRoot,
-        configPath,
-        configFailure,
-        configFileExists: fileExists,
-        configValid,
-        lkg: ws.readConfigLkg(),
-        ledger: [...ws.ledger.all()],
-        liveSessions,
-        knownSessions,
-        bridge: {
-          port: ws.bridge.port,
-          url: ws.bridge.url,
-          reachable,
-          authConfigured: ws.authEnabled,
-          failure: ws.bridgeStartFailureInfo(),
-        },
-        transcriptPresence,
-        mechanismOnlyDelivery: ws.config?.settings.delivery?.mode === "canonical" && ws.config?.settings.delivery?.handoffSafety === "mechanism-only",
-      });
-      const text = formatDoctorReport(report);
       const channel = vscode.window.createOutputChannel("Tachyon Doctor");
       channel.clear();
-      channel.append(text);
+      channel.append(report.text);
       channel.show(true);
-      const hasErr = report.findings.some((f) => f.severity === "error");
       notify(
-        hasErr
+        report.hasErrors
           ? vscode.l10n.t("Tachyon Doctor found problems — see the Output panel")
           : vscode.l10n.t("Tachyon Doctor report ready — see the Output panel"),
-        hasErr ? "warn" : "info",
+        report.hasErrors ? "warn" : "info",
       );
     }),
     vscode.commands.registerCommand("tachyon.openConfig", async (hash?: string) => {
@@ -1410,7 +1478,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         notify(vscode.l10n.t("no Tachyon workspace is active"), "warn");
         return;
       }
-      const file = ws.configPath() ?? path.join(ws.workspaceRoot, "tachyon.yml");
+      const file = configPathOf(ws) ?? path.join(ws.workspaceRoot, "tachyon.yml");
       try {
         const doc = await vscode.workspace.openTextDocument(file);
         await vscode.window.showTextDocument(doc, { preview: false });
@@ -1431,12 +1499,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       notify(vscode.l10n.t("tmux server is healthy — nothing to recover."));
     }),
     vscode.commands.registerCommand("tachyon.restartBridge", async (hash?: string) => {
-      const targets = hash ? [byHash(hash)].filter((ws): ws is Workspace => !!ws) : workspaces();
+      const targets = hash ? [byHash(hash)].filter((ws): ws is WorkspaceShellHandle => !!ws) : workspaces();
       if (targets.length === 0) {
         notify(vscode.l10n.t("no Tachyon workspace is active"), "warn");
         return;
       }
-      const results = await Promise.allSettled(targets.map((ws) => ws.restartBridge()));
+      const results = await Promise.allSettled(targets.map((ws) => extensionInvoke(ws, { action: "bridge.restart" })));
       const failures = results.filter((r): r is PromiseRejectedResult => r.status === "rejected");
       if (failures.length > 0) {
         notify(vscode.l10n.t("Bridge restart failed: {0}", failures.map((f) => f.reason instanceof Error ? f.reason.message : String(f.reason)).join("; ")), "error");
@@ -1446,12 +1514,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       notify(vscode.l10n.t("Bridge restarted for {0} workspace(s).", targets.length));
     }),
     vscode.commands.registerCommand("tachyon.stopBridge", async (hash?: string) => {
-      const targets = hash ? [byHash(hash)].filter((ws): ws is Workspace => !!ws) : workspaces();
+      const targets = hash ? [byHash(hash)].filter((ws): ws is WorkspaceShellHandle => !!ws) : workspaces();
       if (targets.length === 0) {
         notify(vscode.l10n.t("no Tachyon workspace is active"), "warn");
         return;
       }
-      const results = await Promise.allSettled(targets.map((ws) => ws.stopBridge()));
+      const results = await Promise.allSettled(targets.map((ws) => extensionInvoke(ws, { action: "bridge.stop" })));
       const failures = results.filter((r): r is PromiseRejectedResult => r.status === "rejected");
       if (failures.length > 0) {
         notify(`Bridge stop failed: ${failures.map((f) => f.reason instanceof Error ? f.reason.message : String(f.reason)).join("; ")}`, "error");
@@ -1535,26 +1603,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       // Invoked with preset text (programmatic), a category tree node (inline +),
       // or nothing (palette).
       const text = typeof arg === "string" ? arg : undefined;
-      const node = arg && typeof arg === "object" ? (arg as { ws?: Workspace }) : undefined;
-      const ws = node?.ws ?? (await pickWorkspace());
+      const node = arg && typeof arg === "object" ? (arg as { workspaceHash?: string; ws?: WorkspacePresentationTarget }) : undefined;
+      const ws = (node?.workspaceHash ? byHash(node.workspaceHash) : node?.ws ? wsOf({ ws: node.ws }) : undefined) ?? (await pickWorkspace());
       if (!ws) return;
       if (text === undefined) {
-        pinStudioPanels.openNew(legacyPinStudioTarget(ws));
+        pinStudioPanels.openNew(ws.pinStudio);
         return;
       }
       if (text.trim().length === 0) return;
       try {
-        ws.pinStore.create(text, "human");
+        await extensionInvoke(ws, { action: "pin.create", text, by: "human", done: false });
         refreshAll();
       } catch (err) {
         notify(`${err instanceof Error ? err.message : String(err)}`, "error");
       }
     }),
-    vscode.commands.registerCommand("tachyon.deletePinItem", (item: PinItem) => {
+    vscode.commands.registerCommand("tachyon.deletePinItem", async (item: PinItem) => {
       const ws = wsOf(item);
       if (!ws) return;
       try {
-        domainActions.deletePin(ws, item.pinId, { onChanged: () => refreshAll() });
+        await ws.sidebar.mutateSidebar({ action: "pin.delete", id: item.pinId });
       } catch (err) {
         notify(`${err instanceof Error ? err.message : String(err)}`, "error");
       }
@@ -1562,14 +1630,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon.editPinItem", async (item: PinItem) => {
       const ws = wsOf(item);
       if (!ws) return;
-      pinStudioPanels.openExisting(legacyPinStudioTarget(ws), item.pinId);
+      pinStudioPanels.openExisting(ws.pinStudio, item.pinId);
     }),
     // ---- agents ----
     vscode.commands.registerCommand("tachyon.spawnAgentItem", async (item: AgentItem) => {
       const ws = wsOf(item);
       if (!ws) return;
       try {
-        await startAgentWithActivity(ws, activityLog, item.agentName);
+        await invokeAgentLifecycle(ws, "agent.start", item.agentName);
       } catch (err) {
         notify(`${err instanceof Error ? err.message : String(err)}`, "error");
       }
@@ -1578,8 +1646,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const ws = wsOf(item);
       if (!ws) return;
       try {
-        await ws.manager.stopGracefully(item.agentName);
-        ws.terminals.close(item.agentName);
+        await invokeAgentLifecycle(ws, "agent.stop", item.agentName);
+        terminals.close(item.agentName);
       } catch (err) {
         console.log(`[tachyon] stopAgentItem failed agent=${item.agentName}: ${err instanceof Error ? err.stack ?? err.message : String(err)}`);
         notify(`${err instanceof Error ? err.message : String(err)}`, "error");
@@ -1589,7 +1657,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const ws = wsOf(item);
       if (!ws) return;
       try {
-        await ws.manager.kill(item.agentName);
+        await invokeAgentLifecycle(ws, "agent.kill", item.agentName);
       } catch (err) {
         console.log(`[tachyon] killAgentItem failed agent=${item.agentName}: ${err instanceof Error ? err.stack ?? err.message : String(err)}`);
         notify(`${err instanceof Error ? err.message : String(err)}`, "error");
@@ -1599,14 +1667,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const ws = wsOf(item);
       if (!ws) return;
       try {
-        await restartAgentWithActivity(ws, activityLog, item.agentName);
+        await invokeAgentLifecycle(ws, "agent.restart", item.agentName);
       } catch (err) {
         notify(`${err instanceof Error ? err.message : String(err)}`, "error");
       }
     }),
     vscode.commands.registerCommand("tachyon.openAgentTerminalItem", (agent: string, hash?: string) => {
       const ws = targetOf(hash);
-      if (ws) ws.terminals.open(agent, ws.manager.session(agent));
+      const projected = ws ? agentProjection(ws, agent) : undefined;
+      if (ws && projected) terminals.open(agent, projected.session);
     }),
     // spec 238 — open the normalized activity cockpit for an agent (the terminal stays the escape hatch).
     vscode.commands.registerCommand("tachyon.openAgentActivity", (agent: string, hash?: string) => activityPanels.open(agent, hash)),
@@ -1635,7 +1704,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // webview's openTaskStudio action instead of a command).
     vscode.commands.registerCommand("tachyon.taskStudio.new", async (hash?: string) => {
       const ws = hash ? byHash(hash) : await pickWorkspace();
-      if (ws) taskStudioPanels.openNew(legacyTaskStudioTarget(ws));
+      if (ws) taskStudioPanels.openNew(ws.taskStudio);
     }),
     // spec 322 — per-agent probes: the agent row's "…" action passes (hash, agent) and gets that agent's
     // probes only. The no-arg/agent-less form opens the UNFILTERED list — an internal/debug escape hatch for
@@ -1649,7 +1718,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const ws = wsOf(item);
       if (!ws) return;
       try {
-        await resumeAgentWithActivity(ws, activityLog, item.agentName);
+        await invokeAgentLifecycle(ws, "agent.resume", item.agentName);
       } catch (err) {
         notify(`${err instanceof Error ? err.message : String(err)}`, "error");
       }
@@ -1658,45 +1727,48 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon.forkAgentItem", async (item: AgentItem) => {
       const ws = wsOf(item);
       if (!ws) return;
-      let forkName: string | undefined;
       try {
         // Fail-closed plan first (resolves the live uuid; throws if not forkable yet) — then confirm.
-        const plan = await ws.manager.planFork(item.agentName);
+        const plan = jsonObject(await extensionQuery(ws, { action: "agent.fork-preview", agent: item.agentName }), "agent.fork-preview");
+        if (typeof plan.forkName !== "string") throw new Error("fork preview did not return a sibling name");
         const lines = [
           vscode.l10n.t("Fork '{0}' into a new sibling agent '{1}'?", item.agentName, plan.forkName),
           vscode.l10n.t("The fork carries the conversation up to now; the original keeps running, untouched."),
         ];
-        if (plan.sourceWorktree) lines.push(vscode.l10n.t("It gets its own worktree, branched off '{0}' (committed work only).", plan.sourceWorktree.branch));
-        if (plan.dirty) lines.push(vscode.l10n.t("⚠ Uncommitted changes in the original are NOT carried into the fork."));
+        if (plan.sourceWorktree && typeof plan.sourceWorktree === "object" && !Array.isArray(plan.sourceWorktree)) {
+          const source = jsonObject(plan.sourceWorktree, "fork source worktree");
+          if (typeof source.branch === "string") lines.push(vscode.l10n.t("It gets its own worktree, branched off '{0}' (committed work only).", source.branch));
+        }
+        if (plan.dirty === true) lines.push(vscode.l10n.t("⚠ Uncommitted changes in the original are NOT carried into the fork."));
         const forkLabel = vscode.l10n.t("Fork");
         const answer = await showNotification(lines.join("\n"), "warn", [forkLabel], { modal: true });
         if (answer !== forkLabel) return;
-        // spec 239 — note BEFORE commitFork (before the fork's ledger row exists), so the buffered note is in
-        // place before reconcile could create the fork's writer. Buffered notes are born ready.
-        forkName = plan.forkName;
-        activityLog.noteLifecycle(ws.wsHash, forkName, "forked");
-        const created = await ws.manager.commitFork(plan);
-        ws.snapshotContinuityForFork(item.agentName, created); // spec 241 D8 — paused snapshot of the parent brief
+        const result = jsonObject(await extensionInvoke(ws, { action: "agent.fork", agent: item.agentName }), "agent.fork");
+        if (typeof result.agent !== "string") throw new Error("fork did not return the created agent");
+        const created = result.agent;
         notify(vscode.l10n.t("Forked '{0}' → '{1}'", item.agentName, created));
         refreshAll();
       } catch (err) {
-        if (forkName) activityLog.clearLifecycle(ws.wsHash, forkName); // fork failed — drop the buffered note
         notify(`${err instanceof Error ? err.message : String(err)}`, "warn");
       }
     }),
     vscode.commands.registerCommand("tachyon.resumeAll", async () => {
-      const targets = workspaces().filter((ws) => ws.resumableAgents().length > 0);
+      const targets: WorkspaceShellHandle[] = [];
+      for (const ws of workspaces()) {
+        const fleet = await ws.sidebar.loadSidebar();
+        if ([...fleet.agents, ...fleet.terminals].some((agent) => agent.resumable)) targets.push(ws);
+      }
       if (targets.length === 0) {
         notify(vscode.l10n.t("no agents to resume"));
         return;
       }
-      for (const ws of targets) await ws.resumeAllOffered();
+      for (const ws of targets) await extensionInvoke(ws, { action: "agent.resume-all" });
     }),
     vscode.commands.registerCommand("tachyon.runPipeline", async () => {
       const ws = await pickWorkspace();
       if (!ws) return;
-      ws.reloadConfig();
-      const names = ws.listPipelines();
+      const inspected = jsonObject(await extensionQuery(ws, { action: "pipeline.inspect" }), "pipeline.inspect");
+      const names = jsonArray(inspected.names, "pipeline names").filter((name): name is string => typeof name === "string");
       if (names.length === 0) {
         notify(vscode.l10n.t("no pipelines found — add one under .tachyon/pipelines/<name>.yml"), "warn");
         return;
@@ -1705,13 +1777,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (!name) return;
       await startPipelineWithInput(ws, name);
     }),
-    vscode.commands.registerCommand("tachyon.approvePipelineNodeItem", (item: PipelineNodeItem) => {
+    vscode.commands.registerCommand("tachyon.approvePipelineNodeItem", async (item: PipelineNodeItem) => {
       const ws = wsOf(item);
-      if (ws && item.runId && item.nodeId) ws.pipelines.approve(item.runId, item.nodeId);
+      if (ws && item.runId && item.nodeId) await extensionInvoke(ws, { action: "pipeline.approve", runId: item.runId, nodeId: item.nodeId });
     }),
-    vscode.commands.registerCommand("tachyon.rejectPipelineNodeItem", (item: PipelineNodeItem) => {
+    vscode.commands.registerCommand("tachyon.rejectPipelineNodeItem", async (item: PipelineNodeItem) => {
       const ws = wsOf(item);
-      if (ws && item.runId && item.nodeId) ws.pipelines.reject(item.runId, item.nodeId);
+      if (ws && item.runId && item.nodeId) await extensionInvoke(ws, { action: "pipeline.reject", runId: item.runId, nodeId: item.nodeId });
     }),
     vscode.commands.registerCommand("tachyon.runPipelineItem", async (item: PipelineDefItem) => {
       const ws = wsOf(item);
@@ -1720,17 +1792,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon.editPipelineInputItem", async (item: PipelineDefItem) => {
       const ws = wsOf(item);
       if (!ws || !item.run) return;
-      if (!fs.existsSync(ws.runInputFilePath(item.run.id))) {
+      const inspected = jsonObject(await extensionQuery(ws, { action: "pipeline.inspect", runId: item.run.id }), "pipeline.inspect");
+      if (inspected.inputExists !== true || typeof inspected.inputPath !== "string") {
         notify(vscode.l10n.t("run '{0}' has no input (this pipeline declares input: none)", item.run.id), "info");
         return;
       }
-      await vscode.window.showTextDocument(vscode.Uri.file(ws.runInputFilePath(item.run.id)));
+      await vscode.window.showTextDocument(vscode.Uri.file(inspected.inputPath));
       const pick = await showNotification(
         vscode.l10n.t("Edit the input for run '{0}', save, then Apply (only not-yet-started nodes use it).", item.run.id),
         "info",
         [vscode.l10n.t("Apply")],
       );
-      if (pick === vscode.l10n.t("Apply")) ws.applyRunInput(item.run.id);
+      if (pick === vscode.l10n.t("Apply")) await extensionInvoke(ws, { action: "pipeline.apply-input", runId: item.run.id });
     }),
     vscode.commands.registerCommand("tachyon.cancelPipelineItem", async (item: PipelineDefItem) => {
       const ws = wsOf(item);
@@ -1741,7 +1814,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         [vscode.l10n.t("Cancel run")],
         { modal: true },
       );
-      if (ok) { ws.pipelines.cancel(item.run.id); refreshAll(); } // cancel finalizes+removes the run with no tick → refresh like dismiss
+      if (ok) { await extensionInvoke(ws, { action: "pipeline.cancel", runId: item.run.id }); refreshAll(); }
     }),
     vscode.commands.registerCommand("tachyon.rerunPipelineNodeItem", async (item: PipelineNodeItem) => {
       const ws = wsOf(item);
@@ -1752,17 +1825,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         [vscode.l10n.t("Re-run")],
         { modal: true },
       );
-      if (ok) await ws.pipelines.rerunFrom(item.runId, item.nodeId);
+      if (ok) await extensionInvoke(ws, { action: "pipeline.rerun", runId: item.runId, nodeId: item.nodeId });
     }),
     vscode.commands.registerCommand("tachyon.dismissPipelineRunItem", async (item: PipelineDefItem) => {
       const ws = wsOf(item);
       if (!ws || !item.run) return;
-      ws.pipelines.dismiss(item.run.id);
+      await extensionInvoke(ws, { action: "pipeline.dismiss", runId: item.run.id });
       refreshAll(); // dismiss() just finalizes+deletes the run (no engine tick) → refresh both UIs ourselves
     }),
     vscode.commands.registerCommand("tachyon.editPipelineItem", async (item: PipelineDefItem) => {
       const ws = wsOf(item);
-      if (ws) await vscode.window.showTextDocument(vscode.Uri.file(ws.pipelineFilePath(item.pipelineName)));
+      if (ws) {
+        const inspected = jsonObject(await extensionQuery(ws, { action: "pipeline.inspect", name: item.pipelineName }), "pipeline.inspect");
+        if (typeof inspected.filePath === "string") await vscode.window.showTextDocument(vscode.Uri.file(inspected.filePath));
+      }
     }),
     vscode.commands.registerCommand("tachyon.deletePipelineItem", async (item: PipelineDefItem) => {
       const ws = wsOf(item);
@@ -1773,36 +1849,31 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         [vscode.l10n.t("Delete")],
         { modal: true },
       );
-      if (ok) ws.deletePipelineFile(item.pipelineName);
+      if (ok) await extensionInvoke(ws, { action: "pipeline.delete", name: item.pipelineName });
     }),
     vscode.commands.registerCommand("tachyon.agentStudio", async () => {
       const ws = await pickFolderForCreate();
       if (!ws) return;
-      ws.reloadConfig();
       agentStudioPanels.openNew(ws);
     }),
     vscode.commands.registerCommand("tachyon.newAgentStudio", async () => {
       const ws = await pickFolderForCreate();
       if (!ws) return;
-      ws.reloadConfig();
       agentStudioPanels.openNew(ws);
     }),
     vscode.commands.registerCommand("tachyon.terminalStudio", async () => {
       const ws = await pickFolderForCreate();
       if (!ws) return;
-      ws.reloadConfig();
       terminalStudioPanels.openNew(ws);
     }),
     vscode.commands.registerCommand("tachyon.runbookStudio", async () => {
       const ws = await pickFolderForCreate();
       if (!ws) return;
-      ws.reloadConfig();
       runbookStudioPanels.openNew(ws);
     }),
     vscode.commands.registerCommand("tachyon.editAgentStudioItem", async (item: AgentItem) => {
       const ws = wsOf(item);
       if (!ws) return;
-      ws.reloadConfig();
       const def = ws.config?.agents[item.agentName];
       if (!def) {
         notify(vscode.l10n.t("'{0}' is not declared in tachyon.yml (ad-hoc agents have no stored definition)", item.agentName), "warn");
@@ -1846,9 +1917,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         kind = picked.value as "agent" | "terminal";
       }
       const finalKind = kind && kind !== inferKind(agentCmd) ? kind : undefined; // write only when it differs from inference
-      if (ws.mutateConfig((text) => addAgent(text, agentName, agentCmd, finalKind), () => refreshAll())) {
-        notify(vscode.l10n.t("'{0}' added — ▶ in the sidebar starts it", agentName));
-      }
+      await extensionInvoke(ws, { action: "config.agent.add", agent: agentName, cmd: agentCmd, ...(finalKind ? { kind: finalKind } : {}) });
+      notify(vscode.l10n.t("'{0}' added — ▶ in the sidebar starts it", agentName));
     }),
     vscode.commands.registerCommand("tachyon.cloneAgentItem", async (item: AgentItem, newNameArg?: string) => {
       const ws = wsOf(item);
@@ -1861,7 +1931,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           validateInput: (v) => (/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(v) ? undefined : vscode.l10n.t("letters/digits/_/-, starting with a letter")),
         }));
       if (!newName) return;
-      ws.mutateConfig((text) => cloneAgent(text ?? "", item.agentName, newName), () => refreshAll());
+      await extensionInvoke(ws, { action: "config.agent.clone", agent: item.agentName, newName });
     }),
     vscode.commands.registerCommand("tachyon.renameAgentItem", async (item: AgentItem, newNameArg?: string) => {
       const ws = wsOf(item);
@@ -1875,9 +1945,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }));
       if (!newName || newName === item.agentName) return;
       try {
-        // Works on running agents too: the tmux session is renamed in place and
-        // every name-keyed subsystem follows (Workspace.renameAgent).
-        await ws.renameAgent(item.agentName, newName);
+        await extensionInvoke(ws, { action: "config.agent.rename", agent: item.agentName, newName });
         refreshAll();
       } catch (err) {
         notify(`${err instanceof Error ? err.message : String(err)}`, "error");
@@ -1887,34 +1955,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const ws = wsOf(item);
       if (!ws) return;
       const adhoc = isAdhocItem(item.contextValue);
-      const states = await ws.manager.agentStates();
-      const hasSession = states.has(item.agentName);
-      let sessionKilled = false;
-      const wtRec = ws.ledger.get(item.agentName)?.worktree;
+      const inspected = await agentInspection(ws, item.agentName);
+      const hasSession = agentProjection(ws, item.agentName)?.running === true;
+      const wtRec = inspected.worktree;
       if (wtRec) {
         // spec 210 — a worktree agent's confirmation IS the worktree-cleanup modal; when it succeeds,
         // continue with the unified Remove flow below (undeclare/forget + durable per-agent cleanup).
         if (forceArg) {
-          if ((await ws.manager.liveDescendants(item.agentName)).length === 0) {
-            if (hasSession) {
-              try {
-                await ws.manager.kill(item.agentName); // stop before removing the cwd it runs in
-              } catch {
-                /* may already be gone — re-check */
-              }
-              sessionKilled = !(await ws.manager.agentStates()).has(item.agentName);
-            }
-            // only remove if the session is genuinely gone (don't yank a still-running cwd)
-            if (!(await ws.manager.agentStates()).has(item.agentName)) {
-              const r = await ws.worktrees.remove(wtRec, true);
-              if (r.removed) ws.ledger.clearWorktree(item.agentName);
-            }
-          }
+          await extensionInvoke(ws, { action: "worktree.remove", agent: item.agentName });
         } else {
-          const outcome = await confirmAndRemoveWorktree(ws, item.agentName, wtRec);
+          const outcome = await confirmAndRemoveWorktree(ws, item.agentName, wtRec, inspected.status);
           if (outcome === "blocked") return;
           if (outcome === "kept") return; // declined or failed worktree removal: destroy nothing else
-          sessionKilled = true; // confirmAndRemoveWorktree stopped the session before removing the worktree
         }
       } else if (!forceArg) {
         const effects = adhoc
@@ -1929,53 +1981,33 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const answer = await showNotification(prompt, "warn", [confirmLabel], { modal: true });
         if (answer !== confirmLabel) return;
       }
-      if (hasSession && !sessionKilled) {
-        try {
-          await ws.manager.kill(item.agentName);
-        } catch (err) {
-          notify(`${err instanceof Error ? err.message : String(err)}`, "error");
-        }
-        if ((await ws.manager.agentStates()).has(item.agentName)) {
-          notify(vscode.l10n.t("Could not stop '{0}' — it was not removed.", item.agentName), "error");
-          return;
-        }
-      }
-      if (adhoc) {
-        // Ad-hoc agents aren't in tachyon.yml — forget the def, lineage and persisted per-agent state so a
-        // sessionless/finished one stops rehydrating. If it was running, kill() already revoked/killed; the
-        // dismiss path is idempotent and owns the durable cleanup.
-        ws.manager.dismissAdhoc(item.agentName);
-        refreshAll();
-      } else {
-        // Remove a DECLARED agent: remove it from tachyon.yml AND forget its durable footprint — else the
-        // ledger row/log/session-owner rows private harness home can keep the instance visible or resumable.
-        // Drop them only AFTER the YAML delete succeeds, so a failed edit can't leave state inconsistent.
-        ws.mutateConfig((text) => deleteAgent(text ?? "", item.agentName), () => { ws.forgetAgent(item.agentName); refreshAll(); });
-      }
+      await extensionInvoke(ws, { action: "config.agent.delete", agent: item.agentName, removeWorktree: false });
+      refreshAll();
     }),
     vscode.commands.registerCommand("tachyon.removeWorktreeItem", async (item: AgentItem) => {
       // spec 210 — standalone "Remove worktree" (Decision 3): clean up the worktree while
       // keeping the agent entry. Same descendant guard + ownership-aware confirmation.
       const ws = wsOf(item);
       if (!ws) return;
-      const rec = ws.ledger.get(item.agentName)?.worktree;
+      const inspected = await agentInspection(ws, item.agentName);
+      const rec = inspected.worktree;
       if (!rec) {
         notify(vscode.l10n.t("'{0}' has no worktree", item.agentName), "warn");
         return;
       }
-      await confirmAndRemoveWorktree(ws, item.agentName, rec);
+      await confirmAndRemoveWorktree(ws, item.agentName, rec, inspected.status);
       refreshAll();
     }),
     vscode.commands.registerCommand("tachyon.reviewWorktreeItem", async (item: AgentItem) => {
       // spec 213 / C2 — review the agent's work: a quick-pick of changed files (base ↔ current).
       const ws = wsOf(item);
       if (!ws) return;
-      const rec = ws.ledger.get(item.agentName)?.worktree;
-      if (!rec) {
+      const review = await worktreeReview(ws, { agent: item.agentName });
+      if (!review.record) {
         notify(vscode.l10n.t("'{0}' has no worktree", item.agentName), "warn");
         return;
       }
-      await reviewWorktreeDiff(ws, rec, item.agentName);
+      await reviewWorktreeDiff(review.record, review.changedFiles, item.agentName);
     }),
     vscode.commands.registerCommand("tachyon.reviewPipelineItem", async (item: PipelineNodeItem | PipelineDefItem) => {
       // spec 230 — "View changes": review the RUN's worktree diff (what a pipeline produced), so the
@@ -1984,12 +2016,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (!ws) return;
       const runId = "runId" in item ? item.runId : item.run?.id;
       if (!runId) return;
-      const rec = ws.pipelineRunWorktree(runId);
-      if (!rec) {
+      const review = await worktreeReview(ws, { runId });
+      if (!review.record) {
         notify(vscode.l10n.t("no active run worktree to review"), "warn");
         return;
       }
-      await reviewWorktreeDiff(ws, rec, runId);
+      await reviewWorktreeDiff(review.record, review.changedFiles, runId);
     }),
     vscode.commands.registerCommand("tachyon.verifyAgentItem", async (item: AgentItem) => {
       // spec 214 / C3 — run the agent's declared verify-gate in its worktree, update the badge.
@@ -1997,7 +2029,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const ws = wsOf(item);
       if (!ws) return;
       try {
-        await ws.runVerify(item.agentName);
+        await extensionInvoke(ws, { action: "agent.verify", agent: item.agentName });
       } catch (err) {
         notify(err instanceof Error ? err.message : String(err), "warn");
       }
@@ -2009,7 +2041,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       // editable title + a modal body preview confirm before `gh pr create` fires.
       const ws = wsOf(item);
       if (!ws) return;
-      const rec = ws.ledger.get(item.agentName)?.worktree;
+      const review = await worktreeReview(ws, { agent: item.agentName });
+      const rec = review.record;
       if (!rec) {
         notify(vscode.l10n.t("'{0}' has no worktree", item.agentName), "warn");
         return;
@@ -2018,7 +2051,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         notify(vscode.l10n.t("'{0}'s worktree path no longer exists", item.agentName), "warn");
         return;
       }
-      const readiness = await probePrReadiness(rec.path, true, ws.gitExec);
+      const readiness = await probePrReadiness(rec.path, true, ws.git.gitExec);
       if (!readiness.ready) {
         notify(vscode.l10n.t("Can't open a PR: {0}", readiness.reason ?? "not ready"), "warn");
         return;
@@ -2029,11 +2062,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // default and say so in the confirm (honest > a confident wrong guess). Detect dirty too
         // (uncommitted changes are NOT pushed → would silently miss the PR).
         const base = rec.baseBranch ?? null;
-        const [dirty, verifyInfo] = await Promise.all([isWorktreeDirty(rec.path, ws.gitExec), ws.verifyInfo(item.agentName)]);
+        const verifyInfo = review.verify && typeof review.verify === "object" && !Array.isArray(review.verify)
+          ? jsonObject(review.verify, "worktree verify")
+          : undefined;
+        const dirty = await isWorktreeDirty(rec.path, ws.git.gitExec);
         const body = composePrBody({
           branch: rec.branch,
           base: base ?? undefined,
-          verify: verifyInfo ? { badge: verifyInfo.badge, command: verifyInfo.command } : undefined,
+          verify: verifyInfo && (verifyInfo.badge === "verified" || verifyInfo.badge === "failing" || verifyInfo.badge === "stale") && typeof verifyInfo.command === "string"
+            ? { badge: verifyInfo.badge, command: verifyInfo.command }
+            : undefined,
         });
         const title = await vscode.window.showInputBox({
           title: vscode.l10n.t("Create PR for '{0}'", item.agentName),
@@ -2052,7 +2090,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           { modal: true, detail: `${meta.join("\n")}\n\n${title}\n\n${body}` },
         );
         if (!ok) return;
-        const result = await createWorktreePr(rec, { title, body, base: base ?? undefined }, ws.gitExec);
+        const result = await createWorktreePr(rec, { title, body, base: base ?? undefined }, ws.git.gitExec);
         if ("error" in result) {
           notify(vscode.l10n.t("PR failed: {0}", result.error), "error");
           return;
@@ -2074,7 +2112,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const ws = wsOf(item);
       if (!ws) return;
       try {
-        await ws.reanchor(item.agentName);
+        await extensionInvoke(ws, { action: "agent.reanchor", agent: item.agentName });
       } catch (err) {
         notify(err instanceof Error ? err.message : String(err), "warn");
       }
@@ -2085,7 +2123,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const ws = wsOf(item);
       if (!ws) return;
       try {
-        await ws.injectContinuity(item.agentName, "manual", { origin: "ui" });
+        await extensionInvoke(ws, { action: "agent.inject-continuity", agent: item.agentName });
       } catch (err) {
         notify(err instanceof Error ? err.message : String(err), "warn");
       }
@@ -2096,30 +2134,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const ws = wsOf(item);
       if (!ws) return;
       const name = item.agentName;
-      const rec = ws.ledger.get(name);
-      const def = rec?.def;
-      if (!def) {
-        notify(vscode.l10n.t("'{0}' has no stored definition to save.", name), "warn");
-        return;
-      }
-      if (ws.config?.agents[name] !== undefined) {
-        notify(vscode.l10n.t("'{0}' is already declared in tachyon.yml.", name), "warn");
-        return;
-      }
-      const ok = ws.mutateConfig((text) => addAgent(text ?? "", name, def.cmd, def.kind, def.instructions), () => refreshAll());
-      if (!ok) return;
-      // Transition the ledger: an adapter-backed agent keeps its row (flip to
-      // declared, still resumable); a def-only row is removed (now it's in the yml).
-      if (rec && isResumable(rec)) ws.ledger.record(name, { ...rec, declared: true });
-      else ws.ledger.remove(name);
-      ws.manager.forgetAdhoc(name); // config is now authoritative — drop the ad-hoc shadow
+      await extensionInvoke(ws, { action: "config.agent.promote", agent: name });
       refreshAll();
       notify(vscode.l10n.t("'{0}' saved to tachyon.yml.", name));
     }),
     vscode.commands.registerCommand("tachyon.editAgentItem", async (item: AgentItem) => {
       const ws = wsOf(item);
       if (!ws) return;
-      const file = ws.configPath();
+      const file = configPathOf(ws);
       if (!file) {
         notify(vscode.l10n.t("no tachyon.yml in this workspace"), "warn");
         return;
@@ -2136,17 +2158,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // ---- lifecycle ----
     vscode.commands.registerCommand("tachyon.start", async () => {
       for (const ws of workspaces()) {
-        await ws.start();
+        await ws.client.sync();
       }
       refreshAll();
     }),
     vscode.commands.registerCommand("tachyon.stopAll", async () => {
       let total = 0;
       for (const ws of workspaces()) {
-        const killed = await ws.manager.killAll();
-        await ws.commandRunner.killAll();
-        await ws.runbookRunner.killAll();
-        total += killed.length;
+        const result = jsonObject(await extensionInvoke(ws, { action: "workspace.stop-all" }), "workspace.stop-all");
+        if (typeof result.stoppedAgents === "number") total += result.stoppedAgents;
       }
       notify(total > 0 ? vscode.l10n.t("stopped {0} agent(s)", total) : vscode.l10n.t("no agents running"));
       refreshAll();
@@ -2157,7 +2177,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const agent = await pickAgent(ws, vscode.l10n.t("Restart which agent?"), false);
       if (!agent) return;
       try {
-        await restartAgentWithActivity(ws, activityLog, agent);
+        await invokeAgentLifecycle(ws, "agent.restart", agent);
         notify(vscode.l10n.t("'{0}' restarted", agent));
       } catch (err) {
         notify(`${err instanceof Error ? err.message : String(err)}`, "error");
@@ -2167,7 +2187,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const ws = await pickWorkspace();
       if (!ws) return;
       const agent = await pickAgent(ws, vscode.l10n.t("Open which agent's terminal?"), true);
-      if (agent) ws.terminals.open(agent, ws.manager.session(agent));
+      const projected = agent ? agentProjection(ws, agent) : undefined;
+      if (agent && projected) terminals.open(agent, projected.session);
     }),
     // spec 234 — tachyon.applyLayout removed (layouts feature retired).
     // spec 233 — tachyon.saveLayoutAs removed (layouts feature discontinued; was the engine's last vscode use).
@@ -2175,28 +2196,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon.copyBridgeToken", async () => {
       const ws = await pickWorkspace();
       if (!ws) return;
-      if (!ws.externalToken) {
+      const tokenResult = jsonObject(await extensionQuery(ws, { action: "bridge.token" }), "bridge.token");
+      if (typeof tokenResult.token !== "string") {
         notify(vscode.l10n.t("Bridge auth is disabled (settings.auth: false) — no token"), "warn");
         return;
       }
-      await vscode.env.clipboard.writeText(ws.externalToken);
+      await vscode.env.clipboard.writeText(tokenResult.token);
       notify(vscode.l10n.t("Bridge token copied — export it as TACHYON_BRIDGE_TOKEN for external agents"));
     }),
     vscode.commands.registerCommand("tachyon.copyBridgeUrl", async (hash?: string) => {
       const ws = byHash(hash) ?? (await pickWorkspace());
       if (!ws) return;
-      if (!ws.bridge.url) {
-        notify(vscode.l10n.t("Bridge is not running"), "error");
-        return;
-      }
-      await vscode.env.clipboard.writeText(ws.bridge.url);
-      notify(vscode.l10n.t("Bridge URL copied: {0}", ws.bridge.url));
+      await vscode.env.clipboard.writeText(ws.bridgeUrl);
+      notify(vscode.l10n.t("Bridge URL copied: {0}", ws.bridgeUrl));
     }),
     vscode.commands.registerCommand("tachyon.showRuntimeUsage", async () => {
       await openRuntimeOps();
     }),
-    vscode.commands.registerCommand("tachyon.refreshRuntimeOps", () => {
-      runtimeOpsSnapshots.invalidateDetection();
+    vscode.commands.registerCommand("tachyon.refreshRuntimeOps", async () => {
+      await runtimeOpsFleetView(workspaces().map((ws) => ws.runtimeOps), true);
       runtimeOps.refresh();
     }),
     vscode.commands.registerCommand("tachyon.connectRuntime", async () => {
@@ -2208,32 +2226,33 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const ws = wsOf(item);
       if (!ws) return;
       try {
-        await ws.commandRunner.run(item.commandName);
+        await extensionInvoke(ws, { action: "command.run", name: item.commandName });
         refreshAll();
-        ws.openCommandPane(item.commandName);
+        terminals.open(`cmd:${item.commandName}`, `tachyon-cmd-${ws.wsHash}-${item.commandName}`, undefined, `$ ${item.commandName}`);
       } catch (err) {
         notify(`${err instanceof Error ? err.message : String(err)}`, "error");
       }
     }),
     vscode.commands.registerCommand("tachyon.openCommandTerminalItem", (name: string, hash?: string) => {
-      targetOf(hash)?.openCommandPane(name);
+      const ws = targetOf(hash);
+      if (ws) terminals.open(`cmd:${name}`, `tachyon-cmd-${ws.wsHash}-${name}`, undefined, `$ ${name}`);
     }),
     vscode.commands.registerCommand("tachyon.runRunbookItem", (item: RunbookItem) => {
       const ws = wsOf(item);
       if (!ws) return;
-      // fire-and-forget: progress is observable in the tree; onFinished toasts
-      void ws.runbookRunner.run(item.runbookName).catch((err) => {
+      void extensionInvoke(ws, { action: "runbook.run", name: item.runbookName }).catch((err) => {
         notify(`${err instanceof Error ? err.message : String(err)}`, "error");
       });
       setTimeout(() => refreshAll(), 50); // pick up "running" promptly
     }),
     vscode.commands.registerCommand("tachyon.openRunbookStepItem", (runbook: string, index: number, hash?: string) => {
-      targetOf(hash)?.openRunbookStepPane(runbook, index);
+      const ws = targetOf(hash);
+      if (ws) terminals.open(`rb:${runbook}:${index}`, `tachyon-rb-${ws.wsHash}-${runbook}-${index}`, undefined, `$ ${runbook}#${index + 1}`);
     }),
     vscode.commands.registerCommand("tachyon.editCommandItem", async (item: CommandItem) => {
       const ws = wsOf(item);
       if (!ws) return;
-      const file = ws.configPath();
+      const file = configPathOf(ws);
       if (!file) {
         notify(vscode.l10n.t("no tachyon.yml in this workspace"), "warn");
         return;
@@ -2259,12 +2278,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         );
         if (answer !== vscode.l10n.t("Delete")) return;
       }
-      ws.mutateConfig((text) => deleteCommand(text ?? "", item.commandName), () => refreshAll());
+      await extensionInvoke(ws, { action: "config.command.delete", name: item.commandName });
     }),
     vscode.commands.registerCommand("tachyon.editCommandStudioItem", async (item: CommandItem) => {
       const ws = wsOf(item);
       if (!ws) return;
-      ws.reloadConfig();
       const def = ws.config?.commands[item.commandName];
       if (!def) {
         notify(vscode.l10n.t("'{0}' is not declared in tachyon.yml", item.commandName), "warn");
@@ -2275,19 +2293,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon.commandStudio", async () => {
       const ws = await pickFolderForCreate();
       if (!ws) return;
-      ws.reloadConfig();
       commandStudioPanels.openNew(ws);
     }),
     vscode.commands.registerCommand("tachyon.scheduleStudio", async () => {
       const ws = await pickFolderForCreate();
       if (!ws) return;
-      ws.reloadConfig();
       scheduleStudioPanels.openNew(ws);
     }),
     vscode.commands.registerCommand("tachyon.editScheduleStudioItem", async (item: ScheduleItem) => {
       const ws = wsOf(item);
       if (!ws) return;
-      ws.reloadConfig();
       const def = ws.config?.schedules[item.scheduleName];
       if (!def) {
         notify(vscode.l10n.t("'{0}' is not declared in tachyon.yml", item.scheduleName), "warn");
@@ -2298,7 +2313,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon.editRunbookStudioItem", async (item: RunbookItem) => {
       const ws = wsOf(item);
       if (!ws) return;
-      ws.reloadConfig();
       const def = ws.config?.runbooks[item.runbookName];
       if (!def) {
         notify(vscode.l10n.t("'{0}' is not declared in tachyon.yml", item.runbookName), "warn");
@@ -2309,7 +2323,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon.editRunbookItem", async (item: RunbookItem) => {
       const ws = wsOf(item);
       if (!ws) return;
-      const file = ws.configPath();
+      const file = configPathOf(ws);
       if (!file) {
         notify(vscode.l10n.t("no tachyon.yml in this workspace"), "warn");
         return;
@@ -2326,10 +2340,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon.deleteRunbookItem", async (item: RunbookItem, forceArg?: boolean) => {
       const ws = wsOf(item);
       if (!ws) return;
-      if (ws.runbookRunner.isRunning(item.runbookName)) {
-        notify(vscode.l10n.t("runbook '{0}' is running — wait for it to finish before deleting", item.runbookName), "warn");
-        return;
-      }
       if (!forceArg) {
         const answer = await showNotification(
           vscode.l10n.t("Delete runbook '{0}' from tachyon.yml?", item.runbookName),
@@ -2339,7 +2349,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         );
         if (answer !== vscode.l10n.t("Delete")) return;
       }
-      ws.mutateConfig((text) => deleteRunbook(text ?? "", item.runbookName), () => refreshAll());
+      try {
+        await extensionInvoke(ws, { action: "config.runbook.delete", name: item.runbookName });
+      } catch (error) {
+        notify(error instanceof Error ? error.message : String(error), "warn");
+      }
     }),
   );
 
@@ -2347,7 +2361,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 }
 
 export function deactivate(): void {
-  // tmux sessions intentionally survive — Tachyon re-attaches on next activation.
-  for (const ws of registry.values()) void ws.dispose();
+  // Detach only the editor leases. The persistent engine, Bridge and agents survive.
+  void activeClientRegistry?.close();
+  activeClientRegistry = undefined;
   registry.clear();
 }

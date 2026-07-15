@@ -582,3 +582,25 @@ None.
 - Typecheck, extension/engine build and the 210-file editor-free daemon import closure are green.  The next
   slice is the one atomic `extension.ts` registry/command cutover; no second full verification was run before
   that production activation boundary.
+
+## Twenty-seventh implementation slice — 2026-07-15
+
+- Replaced the production extension registry atomically with detachable `WorkspaceClient` shell handles.
+  Activation now stages/attaches to the packaged persistent engine; folder removal, extension disposal and
+  `deactivate()` stop only synchronization and client leases.  Production `extension.ts` contains no concrete
+  `Workspace` import, construction, start, dispose, manager, store, watcher or Bridge ownership.
+- Collected the migrated Sidebar, Activity, Handoff, Mission Control, Task/Pin Studios, Runtime Ops and remaining
+  extension operations behind one `WorkspaceShellHandle`.  The editor retains only VS Code gestures and local
+  presentation adapters; operational commands cross closed authenticated query/invoke contracts.
+- Added the final bounded compatibility operations needed by activation: Pin/worktree reads and provenance
+  Handoff notes.  The real daemon test proves each against the owning Workspace.  Approval resolution remains
+  engine-owned, and its generated behavior contract now checks that boundary instead of requiring the removed
+  host-side call.
+- Preserved the existing Runtime Ops Refresh behavior by adding an optional exact `refreshDetection: true` bit
+  to its closed query.  The daemon invalidates its own detector before rebuilding the snapshot; ordinary reads
+  remain unchanged and false/extra fields fail validation.
+- Focused presentation, protocol, target and real-service suites pass; typecheck, extension/engine build, the
+  210-file editor-free daemon import closure and diff-check are green.  Packaged persistent-engine dogfood
+  converged concurrent starters, reused the exact engine/Bridge, exercised remote views and lifecycle commands,
+  and cleaned its disposable service.  The intermediate full proof remains the prior 343-file / 4,068-pass run;
+  the next global run stays reserved for final closure after reconciling compatible work that landed on `main`.

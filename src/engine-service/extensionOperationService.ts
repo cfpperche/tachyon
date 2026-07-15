@@ -54,6 +54,8 @@ export async function executeExtensionQuery(
       }
       return json(out);
     }
+    case "pins.list":
+      return json(workspace.pinStore.list());
     case "commands.list":
       return json(await workspace.commandRunner.list());
     case "runbooks.list":
@@ -70,6 +72,11 @@ export async function executeExtensionQuery(
       return inspectAgent(workspace, query.agent);
     case "agent.fork-preview":
       return json(await workspace.manager.planFork(query.agent));
+    case "worktrees.list":
+      return json({
+        worktrees: [...workspace.ledger.all()].flatMap(([agent, record]) =>
+          record.worktree ? [{ agent, record: record.worktree }] : []),
+      });
     case "worktree.review":
       return inspectWorktree(workspace, "agent" in query ? query.agent : query.runId, "agent" in query);
     case "pipeline.inspect":
@@ -230,6 +237,15 @@ export async function executeExtensionCommand(
     case "bridge.stop":
       await workspace.stopBridge();
       return json({ stopped: true });
+    case "handoff.note":
+      workspace.handoffStore.appendNote({
+        agent: "tachyon",
+        kind: "gotcha",
+        summary: command.summary,
+        evidence: command.evidence,
+      });
+      onViewsChanged("handoff");
+      return json({ changed: true });
   }
 }
 

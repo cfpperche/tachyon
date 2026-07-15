@@ -4,14 +4,15 @@ import type { WorkspaceClient } from "./WorkspaceClient.js";
 import { workspacePresentationTarget, type WorkspacePresentationTarget } from "./WorkspacePresentation.js";
 
 export interface WorkspaceRuntimeOpsTarget extends WorkspacePresentationTarget {
-  runtimeOpsView(): Promise<RuntimeOpsSnapshotV1>;
+  runtimeOpsView(refreshDetection?: boolean): Promise<RuntimeOpsSnapshotV1>;
 }
 
 export function workspaceRuntimeOpsTarget(client: WorkspaceClient): WorkspaceRuntimeOpsTarget {
   return {
     ...workspacePresentationTarget(client),
-    runtimeOpsView: async () => {
-      const result = await client.query({ schemaVersion: 1, method: "runtime-ops.view", input: {} });
+    runtimeOpsView: async (refreshDetection = false) => {
+      const input = refreshDetection ? { refreshDetection: true as const } : {};
+      const result = await client.query({ schemaVersion: 1, method: "runtime-ops.view", input });
       if (result.status === "error") throw new Error(result.message);
       if (result.method !== "runtime-ops.view") throw new Error("Runtime Ops query returned the wrong view");
       return result.view;
@@ -21,6 +22,7 @@ export function workspaceRuntimeOpsTarget(client: WorkspaceClient): WorkspaceRun
 
 export async function runtimeOpsFleetView(
   targets: readonly WorkspaceRuntimeOpsTarget[],
+  refreshDetection = false,
 ): Promise<RuntimeOpsSnapshotV1> {
-  return mergeRuntimeOpsSnapshotsV1(await Promise.all(targets.map((target) => target.runtimeOpsView())));
+  return mergeRuntimeOpsSnapshotsV1(await Promise.all(targets.map((target) => target.runtimeOpsView(refreshDetection))));
 }

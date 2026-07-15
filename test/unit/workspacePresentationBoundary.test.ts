@@ -63,6 +63,16 @@ describe("persistent workspace presentation boundary", () => {
     }
   });
 
+  it("keeps production activation on shell attach/detach only", () => {
+    const source = fs.readFileSync(path.join(root, "src/extension.ts"), "utf8");
+    expect(source).not.toMatch(/workspace\/Workspace(?:\.js)?/);
+    expect(source).not.toMatch(/\bWorkspace\.(?:create|start|dispose)\b/);
+    expect(source).not.toMatch(/\b(?:ws|workspace)\.(?:start|dispose)\s*\(/);
+    expect(source).toContain("connectPackagedWorkspaceClient");
+    expect(source).toContain("clientRegistry.detach");
+    expect(source).toContain("clientRegistry.close");
+  });
+
   it("keeps the runtime projection and deterministic client fake editor-free", () => {
     for (const relative of [
       "src/activity/attributionGap.ts",

@@ -21,9 +21,9 @@ const schedule = z.union([
 ]);
 
 export const EXTENSION_QUERY_ACTIONS = [
-  "agents.list", "attention.list", "commands.list", "runbooks.list", "schedules.list", "proposals.list",
+  "agents.list", "attention.list", "pins.list", "commands.list", "runbooks.list", "schedules.list", "proposals.list",
   "doctor.report", "bridge.token", "agent.inspect", "agent.fork-preview", "worktree.review",
-  "pipeline.inspect", "agent.wait",
+  "worktrees.list", "pipeline.inspect", "agent.wait",
 ] as const;
 
 export const EXTENSION_COMMAND_ACTIONS = [
@@ -34,6 +34,7 @@ export const EXTENSION_COMMAND_ACTIONS = [
   "agent.inject-continuity", "agent.resume-all", "workspace.stop-all", "pipeline.start", "pipeline.approve",
   "pipeline.reject", "pipeline.cancel", "pipeline.rerun", "pipeline.dismiss", "pipeline.apply-input", "pipeline.delete",
   "bridge.restart", "bridge.stop", "config.health",
+  "handoff.note",
 ] as const;
 
 const extensionQueryActionSchema = z.enum(EXTENSION_QUERY_ACTIONS);
@@ -42,6 +43,7 @@ const extensionCommandActionSchema = z.enum(EXTENSION_COMMAND_ACTIONS);
 export const extensionQuerySchema = z.union([
   z.object({ action: z.literal("agents.list") }).strict(),
   z.object({ action: z.literal("attention.list") }).strict(),
+  z.object({ action: z.literal("pins.list") }).strict(),
   z.object({ action: z.literal("commands.list") }).strict(),
   z.object({ action: z.literal("runbooks.list") }).strict(),
   z.object({ action: z.literal("schedules.list") }).strict(),
@@ -50,6 +52,7 @@ export const extensionQuerySchema = z.union([
   z.object({ action: z.literal("bridge.token") }).strict(),
   z.object({ action: z.literal("agent.inspect"), agent: name }).strict(),
   z.object({ action: z.literal("agent.fork-preview"), agent: name }).strict(),
+  z.object({ action: z.literal("worktrees.list") }).strict(),
   z.object({ action: z.literal("worktree.review"), agent: name }).strict(),
   z.object({ action: z.literal("worktree.review"), runId: text(128, 1) }).strict(),
   z.object({ action: z.literal("pipeline.inspect"), name: name.optional(), runId: text(128, 1).optional() }).strict(),
@@ -101,6 +104,11 @@ export const extensionCommandSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("pipeline.delete"), name }).strict(),
   z.object({ action: z.literal("bridge.restart") }).strict(),
   z.object({ action: z.literal("bridge.stop") }).strict(),
+  z.object({
+    action: z.literal("handoff.note"),
+    summary: text(4_000, 1),
+    evidence: z.array(text(4_096, 1)).max(20),
+  }).strict(),
 ]);
 
 export type ExtensionCommandV1 = z.infer<typeof extensionCommandSchema>;

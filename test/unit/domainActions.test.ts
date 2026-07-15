@@ -89,20 +89,21 @@ describe("domainActions", () => {
     ]);
   });
 
-  it("keeps matching VS Code command handlers on the shared action contract", () => {
+  it("routes matching VS Code command handlers through the persistent sidebar mutation contract", () => {
     const source = fs.readFileSync("src/extension.ts", "utf8");
 
     for (const [command, action] of [
-      ["tachyon.approveProposalItem", "domainActions.approveProposal"],
-      ["tachyon.rejectProposalItem", "domainActions.rejectProposal"],
-      ["tachyon.toggleSchedulePauseItem", "domainActions.toggleSchedulePause"],
-      ["tachyon.deleteScheduleItem", "domainActions.deleteSchedule"],
-      ["tachyon.deletePinItem", "domainActions.deletePin"],
+      ["tachyon.approveProposalItem", 'action: "proposal.approve"'],
+      ["tachyon.rejectProposalItem", 'action: "proposal.reject"'],
+      ["tachyon.toggleSchedulePauseItem", 'action: "schedule.toggle-pause"'],
+      ["tachyon.deleteScheduleItem", 'action: "schedule.delete"'],
+      ["tachyon.deletePinItem", 'action: "pin.delete"'],
     ]) {
       const start = source.indexOf(`registerCommand("${command}"`);
       expect(start, `${command} is registered`).toBeGreaterThanOrEqual(0);
       const next = source.indexOf("vscode.commands.registerCommand", start + 1);
       const block = source.slice(start, next >= 0 ? next : undefined);
+      expect(block, `${command} uses the remote sidebar mutation`).toContain("sidebar.mutateSidebar");
       expect(block, `${command} delegates to ${action}`).toContain(action);
     }
   });

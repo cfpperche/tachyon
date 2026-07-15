@@ -19,7 +19,7 @@ import type { Workspace } from "../../src/workspace/Workspace.js";
 describe("container-generated delegation behavior", () => {
   beforeEach(() => __resetVscodeMock());
 
-  it("the approval view resolves host-side with a verbatim payload and refuses a stale-session injection", async () => {
+  it("the approval view routes resolution through the persistent engine with a verbatim payload and refuses a stale-session injection", async () => {
     const ws = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-cx-approval-"));
     const request = buildApprovalRequest({
       id: "a-abc123",
@@ -49,7 +49,11 @@ describe("container-generated delegation behavior", () => {
 
     const extensionSource = fs.readFileSync(path.join(process.cwd(), "src/extension.ts"), "utf8");
     expect(extensionSource).toContain('vscode.commands.registerCommand("tachyon.resolveApproval"');
-    expect(extensionSource).toContain("await resolveApproval({");
+    expect(extensionSource).toContain('await extensionInvoke(ws, { action: "approval.resolve"');
+    expect(extensionSource).not.toContain("await resolveApproval({");
+    const serviceSource = fs.readFileSync(path.join(process.cwd(), "src/engine-service/extensionOperationService.ts"), "utf8");
+    expect(serviceSource).toContain('case "approval.resolve"');
+    expect(serviceSource).toContain("await resolveApproval({");
     const toolsSource = fs.readFileSync(path.join(process.cwd(), "src/bridge/tools.ts"), "utf8");
     expect(toolsSource).toContain('"list_pending_approvals"');
     expect(toolsSource).not.toMatch(/registerTool\(\s*["'](?:resolve|approve|deny|decide)_?approval/i);

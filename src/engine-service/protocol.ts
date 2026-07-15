@@ -443,7 +443,7 @@ export type WorkspaceQueryV1 =
   | {
       schemaVersion: 1;
       method: "runtime-ops.view";
-      input: Record<string, never>;
+      input: { refreshDetection?: true };
     }
   | {
       schemaVersion: 1;
@@ -731,7 +731,12 @@ export function isWorkspaceQueryV1(value: unknown): value is WorkspaceQueryV1 {
       && /^p-[0-9a-f]{6}$/.test(value.input.id);
   }
   if (value.method === "handoff.view") return hasOnlyKeys(value.input, []);
-  if (value.method === "sidebar.view" || value.method === "runtime-ops.view") return hasOnlyKeys(value.input, []);
+  if (value.method === "sidebar.view") return hasOnlyKeys(value.input, []);
+  if (value.method === "runtime-ops.view") {
+    const expected = value.input.refreshDetection === undefined ? [] : ["refreshDetection"];
+    return hasOnlyKeys(value.input, expected)
+      && (value.input.refreshDetection === undefined || value.input.refreshDetection === true);
+  }
   if (value.method === "extension.query") return isExtensionQueryV1(value.input);
   if (value.method !== "probe.view") return false;
   const keys = Object.keys(value.input);

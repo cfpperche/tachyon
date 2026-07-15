@@ -237,6 +237,7 @@ async function executeWorkspaceQuery(
     }));
   }
   if (query.method === "runtime-ops.view") {
+    if (query.input.refreshDetection === true) runtimeOpsSnapshots.invalidateDetection();
     return workspaceRuntimeOpsViewSuccessV1(await runtimeOpsSnapshots.snapshot());
   }
   if (query.method === "extension.query") {

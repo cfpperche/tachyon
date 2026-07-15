@@ -8,7 +8,7 @@ import {
   parseRuntimeOpsSnapshotV1,
 } from "../../src/runtime-api/runtimeOpsProjection.js";
 import type { RuntimeOpsSnapshotV1 } from "../../src/runtimeOps/types.js";
-import { workspaceRuntimeOpsViewSuccessV1 } from "../../src/engine-service/protocol.js";
+import { isWorkspaceQueryV1, workspaceRuntimeOpsViewSuccessV1 } from "../../src/engine-service/protocol.js";
 import { FakeWorkspaceClient } from "../../src/shell/FakeWorkspaceClient.js";
 import { runtimeOpsFleetView, workspaceRuntimeOpsTarget } from "../../src/shell/RuntimeOpsTarget.js";
 import { projectionIdentity, projectionSnapshot } from "./fixtures/workspaceProjection.js";
@@ -36,6 +36,10 @@ describe("Runtime Ops persistent projection", () => {
         agents: [{ ...value.runtimes[0]!.agents[0]!, attention: { state: "working", stale: false, rateLimit: { scope: "5h" } } }],
       }],
     })).toBe(false);
+    expect(isWorkspaceQueryV1({ schemaVersion: 1, method: "runtime-ops.view", input: {} })).toBe(true);
+    expect(isWorkspaceQueryV1({ schemaVersion: 1, method: "runtime-ops.view", input: { refreshDetection: true } })).toBe(true);
+    expect(isWorkspaceQueryV1({ schemaVersion: 1, method: "runtime-ops.view", input: { refreshDetection: false } })).toBe(false);
+    expect(isWorkspaceQueryV1({ schemaVersion: 1, method: "runtime-ops.view", input: { extra: true } })).toBe(false);
   });
 
   it("merges authoritative per-workspace rows without losing usage or fleet identity", () => {
@@ -69,6 +73,18 @@ describe("Runtime Ops persistent projection", () => {
     expect(view.summary).toMatchObject({ runtimes: 1, managedAgents: 2 });
     expect(first.queries).toEqual([{ schemaVersion: 1, method: "runtime-ops.view", input: {} }]);
     expect(second.queries).toEqual([{ schemaVersion: 1, method: "runtime-ops.view", input: {} }]);
+  });
+
+  it("requests an explicit daemon-side detection refresh without widening the query", async () => {
+    const targetClient = client("ws-one", "alpha", "2026-07-14T12:00:00.000Z", 10);
+
+    await runtimeOpsFleetView([workspaceRuntimeOpsTarget(targetClient)], true);
+
+    expect(targetClient.queries).toEqual([{
+      schemaVersion: 1,
+      method: "runtime-ops.view",
+      input: { refreshDetection: true },
+    }]);
   });
 });
 

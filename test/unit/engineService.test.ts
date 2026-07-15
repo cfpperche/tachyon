@@ -508,6 +508,20 @@ describe("daemon engine service", () => {
       value: { text: "created through extension operations", done: true },
     });
     expect(await first.invoke("operation-extension-pin-0001", createPin)).toEqual(createdPin);
+    expect(await first.query({ schemaVersion: 1, method: "extension.query", input: { action: "pins.list" } }))
+      .toMatchObject({
+        action: "pins.list",
+        value: expect.arrayContaining([expect.objectContaining({ text: "created through extension operations", done: true })]),
+      });
+    expect(await first.query({ schemaVersion: 1, method: "extension.query", input: { action: "worktrees.list" } }))
+      .toMatchObject({ action: "worktrees.list", value: { worktrees: [] } });
+    expect(await first.invoke("operation-extension-handoff-note-0001", {
+      schemaVersion: 1,
+      method: "extension.invoke",
+      input: { action: "handoff.note", summary: "persistent shell provenance", evidence: ["dist/extension.js"] },
+    })).toMatchObject({ status: "ok", action: "handoff.note", value: { changed: true } });
+    expect(await first.query({ schemaVersion: 1, method: "handoff.view", input: {} }))
+      .toMatchObject({ view: { handoff: { notes: [expect.objectContaining({ summary: "persistent shell provenance" })] } } });
     expect(await first.invoke("operation-extension-agent-add-0001", {
       schemaVersion: 1,
       method: "extension.invoke",
