@@ -91,12 +91,12 @@ export function deliverableBody(
   const file = briefFilePath(workspaceRoot, agent, purpose);
   let temporaryFile: string | undefined;
   try {
-    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
     // Preserve an already-delivered contract if this replacement write fails. The temporary lives
     // beside the destination so rename is atomic on the same filesystem; `wx` also prevents an
     // improbable pid/random collision from overwriting another writer's file.
     temporaryFile = `${file}.${process.pid}.${crypto.randomBytes(8).toString("hex")}.tmp`;
-    fs.writeFileSync(temporaryFile, body, { encoding: "utf8", flag: "wx" });
+    fs.writeFileSync(temporaryFile, body, { encoding: "utf8", flag: "wx", mode: 0o600 });
     fs.renameSync(temporaryFile, file);
     temporaryFile = undefined;
   } catch (err) {

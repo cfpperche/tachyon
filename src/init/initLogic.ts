@@ -116,6 +116,8 @@ export const TACHYON_GITIGNORE_ENTRIES = [
   ".tachyon/harness/",
   ".tachyon/bridge-mcp/",
   ".tachyon/continuity/",
+  ".tachyon/agents/",
+  ".tachyon/agent-profile-transactions/",
   ".tachyon/handoff-notes.jsonl",
   ".tachyon/git-deliveries/",
   ".tachyon/pins/",

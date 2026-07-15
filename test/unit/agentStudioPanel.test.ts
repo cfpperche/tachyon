@@ -7,6 +7,7 @@ import { blankAgentFields } from "../../src/webview/agent-studio-shell/domain.js
 import type { Workspace } from "../../src/workspace/Workspace.js";
 import type { StudioSubmit } from "../../src/webview/studioSubmit.js";
 import type { AgentDef } from "../../src/config/loadConfig.js";
+import { SoulError } from "../../src/agents/soul.js";
 
 /**
  * spec 350 Phase 3 T2 — AgentStudioPanelManager's full shell lifecycle against a REAL AgentStudioAdapter (not
@@ -211,5 +212,79 @@ describe("AgentStudioPanelManager — Phase 3 pilot full lifecycle", () => {
     await flush();
     const err = findType(__createdPanels[0].webview.posted, "error").at(-1);
     expect(err).toMatchObject({ blocking: true });
+  });
+
+  it("binds profile actions to the saved panel entity and rejects cross-agent or extra-field tampering", async () => {
+    const { ws } = fakeWorkspace({ agents: { Ada: agentDef() } });
+    let creates = 0;
+    Object.assign(ws, {
+      createSoulProfile: async () => {
+        creates += 1;
+        return {
+          status: {
+            agent: "Ada",
+            canonicalPath: "/private/workspace/.tachyon/agents/Ada/SOUL.md",
+            relativePath: ".tachyon/agents/Ada/SOUL.md",
+            lifecycle: "active",
+            profileId: "123e4567-e89b-42d3-a456-426614174000",
+            sha256: "a".repeat(64),
+            soulEnabled: true,
+            resolvable: true,
+            transactionDegraded: false,
+          },
+        };
+      },
+    });
+    const manager = new AgentStudioPanelManager(Uri.file("/ext"));
+    manager.openExisting(ws, "Ada");
+    await flush();
+    const webview = __createdPanels[0].webview;
+
+    webview.__receive(envelope({ type: "createSoul" as const, agent: "Bea" }));
+    webview.__receive(envelope({ type: "createSoul" as const, agent: "Ada", canonicalPath: "/tmp/tampered" }));
+    await flush();
+    expect(creates).toBe(0);
+    expect(findType(webview.posted, "soulProfileError").at(-1)).toMatchObject({ agent: "Ada", code: "soul/path-invalid" });
+
+    webview.__receive(envelope({ type: "createSoul" as const, agent: "Ada" }));
+    await flush();
+    expect(creates).toBe(1);
+    const status = findType(webview.posted, "soulProfileStatus").at(-1);
+    expect(status).toMatchObject({ status: { agent: "Ada", relativePath: ".tachyon/agents/Ada/SOUL.md" } });
+    expect(JSON.stringify(status)).not.toContain("/private/workspace");
+    expect(JSON.stringify(status)).not.toContain("canonicalPath");
+  });
+
+  it("rejects profile actions from an unsaved new-agent panel", async () => {
+    const { ws } = fakeWorkspace();
+    let creates = 0;
+    Object.assign(ws, { createSoulProfile: async () => { creates += 1; throw new Error("must not run"); } });
+    const manager = new AgentStudioPanelManager(Uri.file("/ext"));
+    manager.openNew(ws);
+    await flush();
+    const webview = __createdPanels[0].webview;
+    webview.__receive(envelope({ type: "createSoul" as const, agent: "Ada" }));
+    await flush();
+    expect(creates).toBe(0);
+    expect(findType(webview.posted, "soulProfileError").at(-1)).toMatchObject({ code: "soul/path-invalid" });
+  });
+
+  it("never reflects a selected import source path in a Studio error response", async () => {
+    const source = "/private/operator/source/identity.md";
+    __setOpenDialogResult([Uri.file(source)]);
+    const { ws } = fakeWorkspace({ agents: { Ada: agentDef() } });
+    Object.assign(ws, {
+      importSoulProfile: async () => { throw new SoulError("soul/permission-denied", `Permission denied reading ${source}`); },
+    });
+    const manager = new AgentStudioPanelManager(Uri.file("/ext"));
+    manager.openExisting(ws, "Ada");
+    await flush();
+    const webview = __createdPanels[0].webview;
+    webview.__receive(envelope({ type: "importSoul" as const, agent: "Ada" }));
+    await flush();
+    const error = findType(webview.posted, "soulProfileError").at(-1);
+    expect(error).toMatchObject({ agent: "Ada", code: "soul/permission-denied" });
+    expect(JSON.stringify(error)).not.toContain(source);
+    expect(JSON.stringify(error)).not.toContain("/private/operator");
   });
 });

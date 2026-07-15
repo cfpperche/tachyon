@@ -49,6 +49,7 @@ const denseEntity: AgentStudioEntity = {
     ...blankAgentFields(),
     name: "reviewer",
     cmd: "claude --model sonnet",
+    soul: true,
     role: "reviewer",
     instructions: "you are a code reviewer; read the diff and flag correctness issues before style ones.",
     autostart: true,

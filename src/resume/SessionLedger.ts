@@ -6,6 +6,8 @@ import type { WorktreeRecord } from "../worktree/WorktreeManager.js";
 import { appendCapped, replaceVerifySet, EVIDENCE_SCHEMA_VERSION, type WorktreeEvidence, type Severity } from "../worktree/evidence.js";
 import type { VerifyState } from "../worktree/verify.js";
 import type { SpawnContract } from "../bridge/spawnContract.js";
+import type { Role } from "../roles/templates.js";
+import type { SoulSnapshot } from "../agents/promptLayers.js";
 
 /**
  * Per-workspace session ledger (spec 209 + 211): `agentName -> SessionRecord`,
@@ -26,6 +28,9 @@ export interface SessionDef {
   cmd: string; // the ORIGINAL spawn command (no minted-id injection)
   kind: EntryKind;
   instructions?: string;
+  role?: Role;
+  soul?: boolean;
+  taskBrief?: string;
   parent?: string; // lineage — who spawned it
   /** spec 362 — the Bridge-resolved requester of a GATED delegation (t-bae303). Gated spawns force
    *  `parent` undefined and record this instead; persisted here so it survives a reload — rehydrate
@@ -139,7 +144,15 @@ export interface SessionRecord {
    * Presence of any marker excludes generic auto-resume/offer/restart.
    */
   delivery?: SessionDeliveryMarker;
+  identity?: SessionIdentity;
   updatedAt: string;
+}
+
+export interface SessionIdentity {
+  soul: SoulSnapshot;
+  health: "offered" | "identity-degraded";
+  degradedAt?: string;
+  degradedCode?: string;
 }
 
 /** A row may drive resume only when it has a runtime AND that runtime still has an adapter. */
@@ -331,15 +344,16 @@ function normalize(r: unknown): SessionRecord | null {
   const updatedAt = typeof o.updatedAt === "string" ? o.updatedAt : new Date(0).toISOString();
 
   // New (211) shape: a def and/or resume object (+ spec 210 worktree + spec 364 bridgeClient + SDD 368 T14 delivery).
-  if (o.def !== undefined || o.resume !== undefined || o.worktree !== undefined || o.bridgeClient !== undefined || o.delivery !== undefined) {
+  if (o.def !== undefined || o.resume !== undefined || o.worktree !== undefined || o.bridgeClient !== undefined || o.delivery !== undefined || o.identity !== undefined) {
     const def = parseDef(o.def);
     const resume = parseResume(o.resume);
     const worktree = parseWorktree(o.worktree);
     const bridgeClient = parseBridgeClient(o.bridgeClient);
     // delivery field present → always keep a marker (valid or invalid); never drop it into an ordinary row.
     const delivery = o.delivery !== undefined ? parseDeliveryMarker(o.delivery) : undefined;
-    if (!def && !resume && !worktree && !bridgeClient && delivery === undefined) return null;
-    return stripDeclaredParent({ def, resume, worktree, bridgeClient, delivery, cwd: o.cwd, declared, updatedAt });
+    const identity = parseIdentity(o.identity);
+    if (!def && !resume && !worktree && !bridgeClient && delivery === undefined && !identity) return null;
+    return stripDeclaredParent({ def, resume, worktree, bridgeClient, delivery, identity, cwd: o.cwd, declared, updatedAt });
   }
 
   // Pre-211 flat record → migrate.
@@ -370,6 +384,9 @@ function parseDef(d: unknown): SessionDef | undefined {
     cmd: o.cmd,
     kind,
     ...(typeof o.instructions === "string" ? { instructions: o.instructions } : {}),
+    ...(o.role === "coder" || o.role === "reviewer" || o.role === "tester" || o.role === "orchestrator" || o.role === "custom" ? { role: o.role } : {}),
+    ...(o.soul === true ? { soul: true as const } : {}),
+    ...(typeof o.taskBrief === "string" ? { taskBrief: o.taskBrief } : {}),
     ...(typeof o.parent === "string" ? { parent: o.parent } : {}),
     ...(typeof o.delegator === "string" ? { delegator: o.delegator } : {}),
     ...(isStringMap(o.env) ? { env: o.env as Record<string, string> } : {}),
@@ -377,6 +394,28 @@ function parseDef(d: unknown): SessionDef | undefined {
     ...(isPipelineRef(o.pipeline) ? { pipeline: o.pipeline as { runId: string; nodeId: string } } : {}), // spec 230
     ...(isSpawnContract(o.contract) ? { contract: o.contract as SpawnContract } : {}), // spec 246
     ...(typeof o.contractSkipReason === "string" ? { contractSkipReason: o.contractSkipReason } : {}), // spec 246 D6
+  };
+}
+
+function parseIdentity(value: unknown): SessionIdentity | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const o = value as Record<string, unknown>;
+  if (typeof o.soul !== "object" || o.soul === null || (o.health !== "offered" && o.health !== "identity-degraded")) return undefined;
+  const s = o.soul as Record<string, unknown>;
+  if (typeof s.profileId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s.profileId) ||
+      typeof s.source !== "string" || !/^\.tachyon\/agents\/[a-zA-Z][a-zA-Z0-9_-]*\/SOUL\.md$/.test(s.source) ||
+      typeof s.sha256 !== "string" || !/^[0-9a-f]{64}$/.test(s.sha256) ||
+      !Number.isInteger(s.chars) || (s.chars as number) < 1 || (s.chars as number) > 20_000 ||
+      !Number.isInteger(s.bytes) || (s.bytes as number) < 1 || (s.bytes as number) > 65_536 ||
+      typeof s.offeredAt !== "string" || !Number.isFinite(Date.parse(s.offeredAt)) || s.state !== "offered" ||
+      (s.channel !== "startup-argument" && s.channel !== "tui-prefill" && s.channel !== "reanchor-pointer")) return undefined;
+  if (o.degradedAt !== undefined && (typeof o.degradedAt !== "string" || !Number.isFinite(Date.parse(o.degradedAt)))) return undefined;
+  return {
+    soul: { profileId: s.profileId, source: s.source, sha256: s.sha256, chars: s.chars as number, bytes: s.bytes as number,
+      offeredAt: s.offeredAt, channel: s.channel, state: "offered" },
+    health: o.health,
+    ...(typeof o.degradedAt === "string" ? { degradedAt: o.degradedAt } : {}),
+    ...(typeof o.degradedCode === "string" && /^soul\/[a-z-]+$/.test(o.degradedCode) ? { degradedCode: o.degradedCode } : {}),
   };
 }
 

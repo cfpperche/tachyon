@@ -20,6 +20,7 @@ export function blankRunbookFields(): FormState {
     cmd: "",
     kind: "runbook",
     instructions: "",
+    soul: false,
     role: "",
     watch: "",
     steps: "",

@@ -1,11 +1,11 @@
-import { execFileSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
+import { execFileSync } from "node:child_process";
 
 describe("container-generated delegation behavior", () => {
-  it("spec 377 T15A transaction recovery and Studio trust closure", () => {
+  it("cmd:npx vitest run test/unit/soul-profile-t15a-implBehavior.gen.test.ts", () => {
     expect(() => execFileSync(
       "npx",
-      ["vitest", "run", "test/unit/soul-t15a-correctionsBehavior.gen.test.ts"],
+      ["vitest", "run", "test/unit/soul-profile-t15a-implBehavior.gen.test.ts"],
       { cwd: process.cwd(), stdio: "pipe" },
     )).not.toThrow();
   }, 120_000);
