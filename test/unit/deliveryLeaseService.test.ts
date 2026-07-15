@@ -341,7 +341,8 @@ describe("DeliveryLeaseService (SDD 368 T5)", () => {
       const add = vi.spyOn(controller.signal, "addEventListener");
       const remove = vi.spyOn(controller.signal, "removeEventListener");
       const waiting = waitForDeliveryLease(store, { deliveryId: "d-lease", timeoutMs: 1_000 }, undefined, controller.signal);
-      await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(1));
+      await vi.waitFor(() => expect(add).toHaveBeenCalledTimes(1));
+      expect(get).toHaveBeenCalledTimes(1);
       expect(vi.getTimerCount()).toBe(1);
 
       controller.abort();
@@ -445,6 +446,107 @@ describe("DeliveryLeaseService (SDD 368 T5)", () => {
       state: "held", holder: { executionAgent: "fixer", executionNonce: "nonce", process: { pid: 42, processStart: "100", bootId: "boot" } },
     });
     expect(held.lease.holder).not.toHaveProperty("reservationNonce");
+  });
+
+  it("does not let stale acquire or confirmation receipts trigger another spawn or resurrect a holder", async () => {
+    const { store, worktree, input } = fixture();
+    await store.create(input);
+    const lease = service(store, worktree);
+    const acquireInput = {
+      deliveryId: "d-lease", expectedHeadSha: "b", canonicalWorktree: worktree,
+      role: "fixer" as const, executionAgent: "fixer", grantedBy: actor,
+      ownsSubset: ["src"], operationId: "stale-acquire",
+    };
+    await lease.acquire(acquireInput);
+    const process = { pid: 42, processStart: "100", bootId: "boot" };
+    await lease.confirmHeld("d-lease", "nonce", process, "stale-confirm");
+
+    let spawnEffects = 0;
+    const replayAcquireThenSpawn = async () => {
+      const reservation = await lease.acquire(acquireInput);
+      spawnEffects += 1;
+      return reservation;
+    };
+    await expect(replayAcquireThenSpawn()).rejects.toThrow("historical receipt");
+    expect(spawnEffects).toBe(0);
+
+    await lease.failJoin("d-lease", "nonce", "join failed after confirmation", "stale-confirm-compensation");
+    await expect(lease.confirmHeld("d-lease", "nonce", process, "stale-confirm"))
+      .rejects.toThrow("historical receipt");
+    expect((await store.get("d-lease"))?.lease.state).toBe("quarantined");
+  });
+
+  it("rejects a winning acquire receipt made historical between replay precheck and store.update with zero spawn effect", async () => {
+    const { store, worktree, input } = fixture();
+    await store.create(input);
+    const acquireInput = {
+      deliveryId: "d-lease", expectedHeadSha: "b", canonicalWorktree: worktree,
+      role: "fixer" as const, executionAgent: "fixer", grantedBy: actor,
+      ownsSubset: ["src"], operationId: "raced-acquire",
+    };
+    const winnerStore = new DeliveryStore(store.workspaceRoot, { now: () => now });
+    const winner = service(winnerStore, worktree);
+    const originalUpdate = store.update.bind(store);
+    const originalGet = store.get.bind(store);
+    const replayChecks = vi.spyOn(store, "getOperationResult");
+    vi.spyOn(store, "update").mockImplementationOnce(async (...args) => {
+      // The losing service has completed both replay checks and is crossing into its store CAS.
+      expect(replayChecks).toHaveBeenCalledTimes(2);
+      vi.spyOn(store, "get").mockImplementationOnce(async (deliveryId) => {
+        const staleObserved = await originalGet(deliveryId);
+        const reserved = await winner.acquire(acquireInput);
+        await winner.failPending(
+          acquireInput.deliveryId,
+          reserved.reservationNonce,
+          "winner compensation before loser CAS",
+          "raced-acquire-compensation",
+        );
+        // updateInternal now holds a version-one observation while SQLite contains the winning
+        // version-two receipt followed by version-three compensation. Its in-transaction replay
+        // must reject that historical receipt instead of returning authority to the caller.
+        return staleObserved;
+      });
+      return originalUpdate(...args);
+    });
+
+    let spawnEffects = 0;
+    const acquireThenSpawn = async () => {
+      const reservation = await service(store, worktree).acquire(acquireInput);
+      spawnEffects += 1;
+      return reservation;
+    };
+
+    await expect(acquireThenSpawn()).rejects.toThrow("historical receipt");
+    expect(spawnEffects).toBe(0);
+    expect((await store.get("d-lease"))?.lease.state).toBe("quarantined");
+  });
+
+  it("does not let a stale handoff receipt trigger another successor spawn after compensation", async () => {
+    const { store, worktree, input } = heldFixture();
+    await store.create(input);
+    const first = service(store, worktree);
+    const request = handoffInput(worktree, "stale-handoff");
+    const reserved = await first.handoff(request);
+    await first.failPending("d-lease", reserved.reservationNonce, "successor spawn failed", "stale-handoff-compensation");
+
+    const fenceEffects: string[] = [];
+    const retryFence: ProcessFencePort = {
+      capability: () => ({ supported: true, domain: "test" }),
+      freeze: async () => { fenceEffects.push("freeze"); },
+      terminate: async () => { fenceEffects.push("terminate"); },
+      proveEmpty: async () => { fenceEffects.push("proveEmpty"); return { state: "proven_empty" }; },
+    };
+    let spawnEffects = 0;
+    const replayHandoffThenSpawn = async () => {
+      const reservation = await service(store, worktree, retryFence).handoff(request);
+      spawnEffects += 1;
+      return reservation;
+    };
+
+    await expect(replayHandoffThenSpawn()).rejects.toThrow("historical receipt");
+    expect(spawnEffects).toBe(0);
+    expect(fenceEffects).toEqual([]);
+    expect((await store.get("d-lease"))?.lease.state).toBe("quarantined");
   });
 
   it("hands a held lease to one pending successor and fences outside both locks", async () => {

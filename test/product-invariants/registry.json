@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "active": [
+    {
+      "id": "PI-001",
+      "file": "test/product-invariants/PI-001-project-guidance-ownership.test.ts",
+      "source": "docs/specs/383-primer-project-guidance-boundary/spec.md"
+    }
+  ]
+}

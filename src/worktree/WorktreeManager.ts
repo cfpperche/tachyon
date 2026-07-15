@@ -135,6 +135,17 @@ export function validateReuse(args: {
   return { ok: true };
 }
 
+function listedWorktree(output: string, targetPath: string): { locked: boolean } | undefined {
+  const target = path.resolve(targetPath);
+  for (const block of output.split(/\n\n+/u)) {
+    const lines = block.split("\n");
+    const worktreeLine = lines.find((line) => line.startsWith("worktree "));
+    if (!worktreeLine || path.resolve(worktreeLine.slice("worktree ".length)) !== target) continue;
+    return { locked: lines.some((line) => line === "locked" || line.startsWith("locked ")) };
+  }
+  return undefined;
+}
+
 // ── Pure git-arg builders (no execution) ─────────────────────────────────────
 // One place owns the exact argv so the side-effecting layer and the tests agree.
 
@@ -142,8 +153,14 @@ export const gitArgs = {
   prune: (): string[] => ["worktree", "prune"],
   /** create a NEW branch off baseRef and check it out in a fresh worktree */
   addNewBranch: (wtPath: string, branch: string, baseRef: string): string[] => ["worktree", "add", "-b", branch, wtPath, baseRef],
+  /** A quarantined fresh checkout starts Git-locked until durable launch ownership is recorded. */
+  addNewBranchLocked: (wtPath: string, branch: string, baseRef: string): string[] => ["worktree", "add", "--lock", "-b", branch, wtPath, baseRef],
   /** attach an EXISTING branch into a fresh worktree (no -b) */
   attachBranch: (wtPath: string, branch: string): string[] => ["worktree", "add", wtPath, branch],
+  attachBranchLocked: (wtPath: string, branch: string): string[] => ["worktree", "add", "--lock", wtPath, branch],
+  // Keep this compatible with Git versions that support `worktree lock` but predate `--reason`.
+  lock: (wtPath: string): string[] => ["worktree", "lock", wtPath],
+  unlock: (wtPath: string): string[] => ["worktree", "unlock", wtPath],
   remove: (wtPath: string): string[] => ["worktree", "remove", "--force", wtPath],
   /** SAFE delete — git refuses if the branch isn't fully merged into HEAD/upstream (no work lost). */
   deleteBranchSafe: (branch: string): string[] => ["branch", "-d", branch],
@@ -222,7 +239,7 @@ export interface WorktreeStatus {
 export class WorktreeUnavailableError extends Error {
   constructor(
     message: string,
-    public readonly reason: "no-git" | "not-repo" | "unborn" | "bare" | "add-failed" | "reuse-invalid",
+    public readonly reason: "no-git" | "not-repo" | "unborn" | "bare" | "add-failed" | "reuse-invalid" | "preparation-failed" | "recovery-preserved",
   ) {
     super(message);
     this.name = "WorktreeUnavailableError";
@@ -234,6 +251,9 @@ export interface EnsureOptions {
   branch: string; // already resolved via branchFor
   /** prior persisted record for this agent, if any — drives validated reuse */
   prior?: WorktreeRecord;
+  /** Acquire a durable Git quarantine lock for this launch attempt, including validated reuse.
+   * AgentManager releases it only after ownership/delegation records are durable. */
+  quarantineForLaunch?: boolean;
   /**
    * Run worktreeSetup in the freshly-created checkout — invoked by ensure() UNDER the
    * per-agent lock, only when it created the worktree, so a concurrent spawn can't reuse
@@ -315,47 +335,183 @@ export class WorktreeManager {
 
   /** True when the workspace is a usable git repo with at least one commit (a worktree needs a HEAD to fork from). */
   async isUsableRepo(): Promise<{ ok: true } | { ok: false; reason: WorktreeUnavailableError["reason"]; message: string }> {
-    let gitDir: GitResult;
     try {
-      gitDir = await this.git(["rev-parse", "--git-dir"], this.opts.workspaceRoot);
+      const gitDir = await this.git(["rev-parse", "--git-dir"], this.opts.workspaceRoot);
+      if (gitDir.code !== 0) return { ok: false, reason: "not-repo", message: "not a git repository" };
+      const bare = await this.git(["rev-parse", "--is-bare-repository"], this.opts.workspaceRoot);
+      if (bare.code !== 0) return { ok: false, reason: "not-repo", message: "cannot inspect repository type" };
+      if (bare.stdout.trim() === "true") return { ok: false, reason: "bare", message: "bare repositories cannot host a worktree" };
+      // unborn = a repo with no commits → no HEAD to fork a worktree from.
+      const headRef = await this.git(["rev-parse", "HEAD"], this.opts.workspaceRoot);
+      if (headRef.code !== 0) return { ok: false, reason: "unborn", message: "repository has no commits yet" };
+      return { ok: true };
     } catch (err) {
       return { ok: false, reason: "no-git", message: err instanceof Error ? err.message : "git binary not found" };
     }
-    if (gitDir.code !== 0) return { ok: false, reason: "not-repo", message: "not a git repository" };
-    const bare = await this.git(["rev-parse", "--is-bare-repository"], this.opts.workspaceRoot);
-    if (bare.stdout.trim() === "true") return { ok: false, reason: "bare", message: "bare repositories cannot host a worktree" };
-    // unborn = a repo with no commits → no HEAD to fork a worktree from.
-    const headRef = await this.git(["rev-parse", "HEAD"], this.opts.workspaceRoot);
-    if (headRef.code !== 0) return { ok: false, reason: "unborn", message: "repository has no commits yet" };
-    return { ok: true };
   }
 
   /**
    * Ensure agent's worktree exists and is on `branch`; return its record. Reuses a validated
    * prior worktree (same repo + branch), else creates per the branch-state matrix. Throws
-   * WorktreeUnavailableError on any git problem so the caller falls back to the workspace root.
+   * WorktreeUnavailableError on git problems; recovery/quarantine failures are explicitly
+   * distinguished so launch callers can fail closed instead of falling back to the shared root.
    */
-  ensure(o: EnsureOptions): Promise<{ record: WorktreeRecord; created: boolean }> {
+  ensure(o: EnsureOptions): Promise<{ record: WorktreeRecord; created: boolean; initialHead?: string; preparationLocked?: boolean }> {
     // Lock by the WORKTREE PATH (deterministic per agent) — the same key remove() uses —
     // so ensure/remove for one agent never race (review fix: keys were agent vs path).
-    const key = pathFor(resolveBase(this.opts.getSettings()), this.opts.wsHash, o.agent);
+    const key = o.prior?.path ?? pathFor(resolveBase(this.opts.getSettings()), this.opts.wsHash, o.agent);
     return this.withLock(key, () => this.ensureLocked(o));
   }
 
-  /** `created` = we ran `git worktree add` (a fresh checkout → worktreeSetup should run); false on validated reuse. */
-  private async ensureLocked(o: EnsureOptions): Promise<{ record: WorktreeRecord; created: boolean }> {
-    const usable = await this.isUsableRepo();
-    if (!usable.ok) throw new WorktreeUnavailableError(usable.message, usable.reason);
+  /**
+   * Preserve a fresh `ensure()` when later launch preparation fails. Even an exact HEAD plus a clean
+   * status is only a snapshot: a setup child or same-user process can create ignored work between the
+   * probe and `git worktree remove`, which would silently delete it. Automatic failure compensation is
+   * therefore deliberately non-destructive; the error exposes the recovery path for explicit cleanup.
+   */
+  rollbackCreated(rec: WorktreeRecord, initialHead: string | undefined, expectedPreparedHead: string): Promise<void> {
+    return this.withLock(rec.path, async () => {
+      const initial = initialHead ? `; initial HEAD ${initialHead}` : "";
+      throw new Error(
+        `fresh worktree recovery state was preserved at ${rec.path} ` +
+          `(prepared HEAD ${expectedPreparedHead}${initial}); automatic rollback cannot exclude a concurrent ignored-file write`,
+      );
+    });
+  }
 
-    // Validate the branch name authoritatively (the literal pre-filter ran at config time).
-    const fmt = await this.git(gitArgs.checkRefFormat(o.branch), this.opts.workspaceRoot);
-    if (fmt.code !== 0) throw new WorktreeUnavailableError(`invalid branch name '${o.branch}'`, "add-failed");
+  /**
+   * Preserve an already-existing worktree when launch preparation advanced its HEAD. A clean-status
+   * probe followed by `reset --hard` has the same check/use race as removal, so automatic compensation
+   * never rewinds a checkout that another process could still be writing. Equal HEADs still retain
+   * the quarantine receipt and therefore return an explicit recovery diagnostic.
+   */
+  rollbackPreparation(rec: WorktreeRecord, beforeHead: string, expectedPreparedHead: string): Promise<void> {
+    return this.withLock(rec.path, async () => {
+      if (beforeHead === expectedPreparedHead) {
+        throw new Error(
+          `prepared worktree recovery state was preserved at ${rec.path} ` +
+            `(HEAD remained ${expectedPreparedHead}); its launch quarantine still requires explicit recovery`,
+        );
+      }
+      throw new Error(
+        `prepared worktree recovery state was preserved at ${rec.path} ` +
+          `(HEAD advanced from ${beforeHead} to ${expectedPreparedHead}); automatic reset cannot exclude a concurrent write`,
+      );
+    });
+  }
+
+  /**
+   * Mark a quarantined checkout reusable only after its caller has durably recorded launch
+   * ownership (and, for a gate, its delegation record). Until this point Git's worktree lock is a
+   * crash-safe quarantine receipt, not an authorization for any destructive cleanup.
+   */
+  completePreparation(rec: WorktreeRecord): Promise<void> {
+    return this.withLock(rec.path, async () => {
+      const unlock = await this.git(gitArgs.unlock(rec.path), this.opts.workspaceRoot);
+      if (unlock.code !== 0) {
+        throw new Error(`prepared worktree could not be unlocked: ${unlock.stderr.trim() || unlock.stdout.trim()}`);
+      }
+    });
+  }
+
+  /** Reconcile the narrow crash window after quarantine unlock but before the durable ready-state
+   * write. A surviving lock is not auto-recovered: it still requires explicit human inspection.
+   * This method only proves that an already-unlocked checkout remains the expected clean branch/tip. */
+  completePersistedPreparation(rec: WorktreeRecord): Promise<void> {
+    return this.withLock(rec.path, async () => {
+      if (!this.exists(rec.path)) throw new Error(`persisted worktree checkout is missing: ${rec.path}`);
+      const listedProbe = await this.git(gitArgs.listWorktrees(), this.opts.workspaceRoot);
+      if (listedProbe.code !== 0) throw new Error(`persisted worktree metadata could not be inspected: ${rec.path}`);
+      const listed = listedWorktree(listedProbe.stdout, rec.path);
+      if (!listed) throw new Error(`persisted worktree is not registered with Git: ${rec.path}`);
+      if (listed.locked) {
+        throw new Error(`persisted worktree remains Git-locked and requires explicit recovery: ${rec.path}`);
+      }
+
+      const repoCommon = (await this.git(["rev-parse", "--git-common-dir"], this.opts.workspaceRoot)).stdout.trim();
+      const wtCommonProbe = await this.git(["rev-parse", "--git-common-dir"], rec.path);
+      const branchProbe = await this.git(gitArgs.currentBranch(), rec.path);
+      const reuse = validateReuse({
+        repoCommonDir: path.resolve(this.opts.workspaceRoot, repoCommon),
+        worktreeCommonDir: wtCommonProbe.code === 0 ? path.resolve(rec.path, wtCommonProbe.stdout.trim()) : null,
+        currentBranch: branchProbe.code === 0 && branchProbe.stdout.trim() !== "HEAD" ? branchProbe.stdout.trim() : null,
+        expectedBranch: rec.branch,
+      });
+      if (!reuse.ok) throw new Error(`persisted worktree recovery validation failed at ${rec.path}: ${reuse.reason}`);
+      const headProbe = await this.git(gitArgs.headRef(), rec.path);
+      if (headProbe.code !== 0 || headProbe.stdout.trim() !== rec.baseRef) {
+        throw new Error(`persisted worktree HEAD drifted before ready-state recovery: ${rec.path}`);
+      }
+      const status = await this.git(["status", "--porcelain=v1", "--untracked-files=all"], rec.path);
+      if (status.code !== 0 || status.stdout.length > 0) {
+        throw new Error(`persisted worktree is not clean enough for automatic ready-state recovery: ${rec.path}`);
+      }
+    });
+  }
+
+  /** `created` = we ran `git worktree add` (a fresh checkout → worktreeSetup should run); false on validated reuse. */
+  private async ensureLocked(o: EnsureOptions): Promise<{ record: WorktreeRecord; created: boolean; initialHead?: string; preparationLocked?: boolean }> {
+    const wtPath = o.prior?.path ?? pathFor(resolveBase(this.opts.getSettings()), this.opts.wsHash, o.agent);
+    const usable = await this.isUsableRepo();
+    if (!usable.ok) {
+      throw new WorktreeUnavailableError(
+        usable.message,
+        o.quarantineForLaunch && (o.prior !== undefined || this.exists(wtPath)) ? "recovery-preserved" : usable.reason,
+      );
+    }
 
     await this.git(gitArgs.prune(), this.opts.workspaceRoot);
-    const wtPath = pathFor(resolveBase(this.opts.getSettings()), this.opts.wsHash, o.agent);
+    // A persisted record remains the source of truth across settings.worktree.base changes. Cleanup,
+    // restart and recovery must inspect the checkout actually owned by the ledger, not a newly-derived path.
+
+    // Git's administrative metadata is authoritative even when the checkout directory was removed
+    // or its branch became unreadable. Detect a surviving quarantine receipt before any path/branch
+    // validation can downgrade it to an ordinary fallback-to-root error.
+    const listedProbe = await this.git(gitArgs.listWorktrees(), this.opts.workspaceRoot);
+    if (listedProbe.code !== 0 && o.quarantineForLaunch) {
+      throw new WorktreeUnavailableError(`cannot inspect Git worktree quarantine state for ${wtPath}`, "recovery-preserved");
+    }
+    const listed = listedProbe.code === 0 ? listedWorktree(listedProbe.stdout, wtPath) : undefined;
+    if (listed?.locked) {
+      throw new WorktreeUnavailableError(
+        `cannot reuse preserved worktree at ${wtPath}: its Git preparation lock is still present; inspect it and unlock explicitly`,
+        "recovery-preserved",
+      );
+    }
+    if (listed && !this.exists(wtPath) && o.quarantineForLaunch) {
+      throw new WorktreeUnavailableError(
+        `cannot prepare worktree at ${wtPath}: Git metadata survives but the checkout path is missing; inspect and recover it explicitly`,
+        "recovery-preserved",
+      );
+    }
+
+    // Validate the requested branch only after preserved metadata/receipts have been classified.
+    // A config drift to an invalid template must never hide an existing locked checkout and fall back.
+    const fmt = await this.git(gitArgs.checkRefFormat(o.branch), this.opts.workspaceRoot);
+    if (fmt.code !== 0) {
+      throw new WorktreeUnavailableError(
+        `invalid branch name '${o.branch}'`,
+        o.quarantineForLaunch && (listed !== undefined || this.exists(wtPath) || o.prior !== undefined)
+          ? "recovery-preserved"
+          : "add-failed",
+      );
+    }
 
     // Reuse path — only when validated.
     if (this.exists(wtPath)) {
+      const lockPathProbe = await this.git(["rev-parse", "--git-path", "locked"], wtPath);
+      const lockPath = lockPathProbe.code === 0 && lockPathProbe.stdout.trim()
+        ? path.resolve(wtPath, lockPathProbe.stdout.trim())
+        : undefined;
+      if (lockPath && fs.existsSync(lockPath)) {
+        throw new WorktreeUnavailableError(
+          `cannot reuse preserved worktree at ${wtPath}: its Git preparation lock is still present; inspect it and unlock explicitly`,
+          "recovery-preserved",
+        );
+      }
+      if (!lockPath && o.quarantineForLaunch) {
+        throw new WorktreeUnavailableError(`cannot inspect preparation lock for worktree at ${wtPath}`, "recovery-preserved");
+      }
       const repoCommon = (await this.git(["rev-parse", "--git-common-dir"], this.opts.workspaceRoot)).stdout.trim();
       const wtCommonProbe = await this.git(["rev-parse", "--git-common-dir"], wtPath);
       const wtCommon = wtCommonProbe.code === 0 ? path.resolve(wtPath, wtCommonProbe.stdout.trim()) : null;
@@ -367,22 +523,70 @@ export class WorktreeManager {
         currentBranch: cur,
         expectedBranch: o.branch,
       });
-      if (!reuse.ok) throw new WorktreeUnavailableError(`cannot reuse worktree at ${wtPath}: ${reuse.reason}`, "reuse-invalid");
+      if (!reuse.ok) {
+        throw new WorktreeUnavailableError(
+          `cannot reuse worktree at ${wtPath}: ${reuse.reason}`,
+          o.quarantineForLaunch ? "recovery-preserved" : "reuse-invalid",
+        );
+      }
+      // Quarantined checkouts are unlocked only after durable launch ownership is recorded. A
+      // surviving lock is durable evidence of an interrupted attempt; never turn that preserved
+      // state into a normal retry implicitly.
+      if (!lockPath) {
+        throw new WorktreeUnavailableError(
+          `cannot inspect preparation lock for worktree at ${wtPath}`,
+          o.quarantineForLaunch ? "recovery-preserved" : "reuse-invalid",
+        );
+      }
+      if (o.quarantineForLaunch) {
+        const locked = await this.git(gitArgs.lock(wtPath), this.opts.workspaceRoot);
+        if (locked.code !== 0) {
+          throw new WorktreeUnavailableError(
+            `cannot quarantine worktree at ${wtPath} for launch: ${locked.stderr.trim() || locked.stdout.trim()}`,
+            "recovery-preserved",
+          );
+        }
+        // Close the validation-to-lock race. The Git lock is a durable quarantine receipt, not a
+        // filesystem mutex, so re-read branch and HEAD and leave recovery state locked on drift.
+        const lockedBranch = await this.git(gitArgs.currentBranch(), wtPath);
+        const lockedHead = await this.git(gitArgs.headRef(), wtPath);
+        if (lockedBranch.code !== 0 || lockedBranch.stdout.trim() !== o.branch || lockedHead.code !== 0 || !lockedHead.stdout.trim()) {
+          throw new WorktreeUnavailableError(
+            `worktree at ${wtPath} changed while launch quarantine was acquired; recovery state remains locked`,
+            "recovery-preserved",
+          );
+        }
+      }
       // Return a record reflecting the CURRENT validated state (path + branch just verified),
       // carrying forward only the prior's ownership/baseRef/createdAt — never the prior's
       // possibly-drifted path/branch (review fix: stale prior could mis-target cleanup).
+      const currentHeadProbe = await this.git(gitArgs.headRef(), wtPath);
+      if (currentHeadProbe.code !== 0 || !currentHeadProbe.stdout.trim()) {
+        throw new WorktreeUnavailableError(
+          o.quarantineForLaunch
+            ? `cannot resolve HEAD after quarantining worktree at ${wtPath}; recovery state remains locked`
+            : `cannot reuse worktree at ${wtPath}: HEAD could not be resolved`,
+          o.quarantineForLaunch ? "recovery-preserved" : "reuse-invalid",
+        );
+      }
+      const currentHead = currentHeadProbe.stdout.trim();
       const record: WorktreeRecord = {
         path: wtPath,
         branch: o.branch,
         tachyonCreatedBranch: o.prior?.tachyonCreatedBranch ?? false, // unknown without a prior → assume human-owned (safe: never force-deleted)
-        baseRef: o.prior?.baseRef ?? (await this.git(gitArgs.headRef(), wtPath)).stdout.trim(),
+        baseRef: o.prior?.baseRef ?? currentHead,
         ...(o.prior?.baseBranch ? { baseBranch: o.prior.baseBranch } : {}), // carry forward (spec 223)
         createdAt: o.prior?.createdAt ?? this.nowIso(),
         // spec 214 — carry the persisted verify result across reuse/restart (review fix: a restart
         // wrote a fresh record and dropped the badge; staleness re-checks HEAD/dirty anyway).
         ...(o.prior?.verify ? { verify: o.prior.verify } : {}),
       };
-      return { record, created: false };
+      return {
+        record,
+        created: false,
+        initialHead: currentHead,
+        ...(o.quarantineForLaunch ? { preparationLocked: true } : {}),
+      };
     }
 
     // Create — resolve the branch state, then act.
@@ -398,15 +602,37 @@ export class WorktreeManager {
     // base unknown (codex MAJOR — don't persist a wrong base for attach). "HEAD"/empty = detached.
     const srcBranch = action.kind === "create" ? (await this.git(gitArgs.currentBranch(), this.opts.workspaceRoot)).stdout.trim() : "";
     const baseBranch = srcBranch && srcBranch !== "HEAD" ? srcBranch : undefined;
-    const addArgs = action.kind === "create" ? gitArgs.addNewBranch(wtPath, o.branch, baseRef) : gitArgs.attachBranch(wtPath, o.branch);
+    const initialHead = action.kind === "create"
+      ? baseRef
+      : (await this.git(["rev-parse", `refs/heads/${o.branch}`], this.opts.workspaceRoot)).stdout.trim();
+    if (!initialHead) throw new WorktreeUnavailableError(`branch '${o.branch}' HEAD could not be resolved`, "add-failed");
+    const quarantine = o.quarantineForLaunch === true || o.runSetup !== undefined;
+    const addArgs = action.kind === "create"
+      ? quarantine ? gitArgs.addNewBranchLocked(wtPath, o.branch, baseRef) : gitArgs.addNewBranch(wtPath, o.branch, baseRef)
+      : quarantine ? gitArgs.attachBranchLocked(wtPath, o.branch) : gitArgs.attachBranch(wtPath, o.branch);
     const add = await this.git(addArgs, this.opts.workspaceRoot);
     if (add.code !== 0) throw new WorktreeUnavailableError(`git worktree add failed: ${add.stderr.trim() || add.stdout.trim()}`, "add-failed");
 
     const record: WorktreeRecord = { path: wtPath, branch: o.branch, tachyonCreatedBranch: action.tachyonCreatedBranch, baseRef, ...(baseBranch ? { baseBranch } : {}), createdAt: this.nowIso() };
-    // Fresh checkout (create or attach) → run setup HERE, still holding the lock, so no
-    // concurrent reuse-spawn can race into the half-set-up worktree.
-    if (o.runSetup) await o.runSetup(record);
-    return { record, created: true };
+    try {
+      const initialHeadProbe = await this.git(gitArgs.headRef(), wtPath);
+      if (initialHeadProbe.code !== 0 || initialHeadProbe.stdout.trim() !== initialHead) {
+        throw new Error("fresh worktree HEAD could not be resolved at its expected branch tip");
+      }
+      // Fresh checkout (create or attach) → run setup HERE, still holding the lock, so no
+      // concurrent reuse-spawn can race into the half-set-up worktree.
+      if (o.runSetup) await o.runSetup(record);
+      return { record, created: true, initialHead, ...(quarantine ? { preparationLocked: true } : {}) };
+    } catch (primary) {
+      const preserved = new Error(
+        `fresh worktree recovery state was preserved at ${wtPath}; automatic rollback cannot exclude a concurrent write`,
+      );
+      throw new AggregateError(
+        [primary, preserved],
+        `fresh worktree preparation failed and its checkout was preserved: ${wtPath}`,
+        { cause: primary },
+      );
+    }
   }
 
   /**
@@ -433,7 +659,7 @@ export class WorktreeManager {
       // baseRef = the original branch's committed tip (the fork's fork-point, for ahead/behind in status).
       const baseRefProbe = await this.git(["rev-parse", baseBranch], this.opts.workspaceRoot);
       const baseRef = baseRefProbe.code === 0 ? baseRefProbe.stdout.trim() : "";
-      const add = await this.git(gitArgs.addNewBranch(wtPath, forkBranch, baseBranch), this.opts.workspaceRoot);
+      const add = await this.git(gitArgs.addNewBranchLocked(wtPath, forkBranch, baseBranch), this.opts.workspaceRoot);
       if (add.code !== 0) throw new WorktreeUnavailableError(`git worktree add failed: ${add.stderr.trim() || add.stdout.trim()}`, "add-failed");
       // baseBranch = the original's branch (what the fork forked from) — the natural PR base (spec 223).
       return { path: wtPath, branch: forkBranch, tachyonCreatedBranch: true, baseRef, baseBranch, createdAt: this.nowIso() };
@@ -620,14 +846,15 @@ export interface WorktreeResolveDeps {
  * Side-effecting via deps (so it unit-tests with git mocked):
  *   - sub-agent (parent set): inherit the parent's cwd unless `worktree:true` opts into its own worktree.
  *   - top-level + worktree:true: ensure() the worktree, run setup once on create, return its path;
- *     any git problem (no-git / not-repo / unborn / bare / add-fail / reuse-invalid) → notice + null
- *     (fall back to the root, never block the agent).
+ *     ordinary unavailability (no-git / not-repo / unborn / bare / add-fail / reuse-invalid) → notice
+ *     + null (fall back to root). Once a quarantine/recovery receipt may exist, errors propagate
+ *     fail-closed so an isolated launch never silently moves to the shared root.
  *   - otherwise: null (default).
  */
 export async function resolveWorktreeCwd(
   ctx: WorktreeSpawnCtx,
   deps: WorktreeResolveDeps,
-): Promise<{ cwd: string; worktree?: WorktreeRecord } | null> {
+): Promise<{ cwd: string; worktree?: WorktreeRecord; created?: boolean; preparationLocked?: boolean; rollbackHeadSha?: string } | null> {
   if (ctx.parent && !ctx.worktree) {
     const inherited = deps.parentCwd(ctx.parent);
     return inherited ? { cwd: inherited } : null; // null → AgentManager uses the root
@@ -638,23 +865,52 @@ export async function resolveWorktreeCwd(
   try {
     branch = branchFor(ctx.name, deps.settings, { branch: ctx.branch });
   } catch (err) {
-    deps.notify(`worktree disabled for '${ctx.name}': ${err instanceof Error ? err.message : String(err)}`, "error");
-    return null;
+    const recoveryPath = deps.priorRecord?.path ?? deps.manager.pathForAgent(ctx.name);
+    const primary = err instanceof Error ? err : new Error(String(err));
+    throw new WorktreeUnavailableError(
+      `cannot resolve isolated branch for '${ctx.name}'; recovery checkout: ${recoveryPath}: ${primary.message}`,
+      deps.priorRecord || fs.existsSync(recoveryPath) ? "recovery-preserved" : "add-failed",
+    );
   }
   // Setup runs ONCE, only on a fresh create (not restart) — handed to ensure() so it runs
   // under the per-agent lock (review fix: setup must not race a concurrent reuse-spawn).
   const wantSetup = !ctx.isRestart && !!ctx.worktreeSetup && ctx.worktreeSetup.length > 0;
   try {
-    const { record: rec } = await deps.manager.ensure({
+    const { record: rec, created, initialHead, preparationLocked } = await deps.manager.ensure({
       agent: ctx.name,
       branch,
       prior: deps.priorRecord,
+      // Every process launch, including restart, gets a durable quarantine receipt. If a restart
+      // has to recreate a missing checkout, this also ensures its fresh `worktree add` is finalized.
+      quarantineForLaunch: true,
       runSetup: wantSetup ? (r) => deps.runSetup(r, ctx.worktreeSetup as string[]) : undefined,
     });
-    return { cwd: rec.path, worktree: rec };
+    return {
+      cwd: rec.path,
+      worktree: rec,
+      created,
+      ...(preparationLocked ? { preparationLocked: true } : {}),
+      ...(initialHead ? { rollbackHeadSha: initialHead } : {}),
+    };
   } catch (err) {
-    const reason = err instanceof WorktreeUnavailableError ? err.message : err instanceof Error ? err.message : String(err);
-    deps.notify(`'${ctx.name}' falling back to the workspace root — ${reason}`, "warn");
-    return null;
+    // Once `git worktree add` succeeded, a preparation failure preserves a recovery checkout. Never
+    // silently turn the requested isolated launch into a root launch or hide that preserved state.
+    if (err instanceof AggregateError
+      || (err instanceof WorktreeUnavailableError
+        && (err.reason === "preparation-failed" || err.reason === "recovery-preserved"))) {
+      throw err;
+    }
+    if (err instanceof WorktreeUnavailableError) {
+      deps.notify(`'${ctx.name}' falling back to the workspace root — ${err.message}`, "warn");
+      return null;
+    }
+    // A rejected Git probe can occur after worktree creation or quarantine. Its side effects are
+    // unknowable, so an opt-in isolated launch must never turn that raw error into a root launch.
+    const recoveryPath = deps.priorRecord?.path ?? deps.manager.pathForAgent(ctx.name);
+    const primary = err instanceof Error ? err : new Error(String(err));
+    throw new WorktreeUnavailableError(
+      `isolated worktree inspection failed for '${ctx.name}'; recovery checkout: ${recoveryPath}: ${primary.message}`,
+      "recovery-preserved",
+    );
   }
 }

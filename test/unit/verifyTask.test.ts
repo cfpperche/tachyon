@@ -1,13 +1,15 @@
 import { describe, it, expect, beforeEach, afterEach, vi, type Mock } from "vitest";
 import fs from "node:fs";
+import crypto from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync, spawn } from "node:child_process";
+import { DatabaseSync } from "node:sqlite";
 import { verifyTask, writeVerificationRecord, type VerifyTaskRecord } from "../../src/bridge/verifyTask.js";
-import { delegationRecordFromSpawn, writeDelegationRecord } from "../../src/bridge/delegationRecord.js";
+import { delegationRecordFromSpawn, writeDelegationRecord as writeRawDelegationRecord } from "../../src/bridge/delegationRecord.js";
 import { appendDoorbellEvent } from "../../src/bridge/doorbell.js";
 import { registerTools, type BridgeDeps } from "../../src/bridge/tools.js";
-import { DeliveryStore } from "../../src/delivery/store.js";
+import { DeliveryInvariantError, DeliveryStore, type DeliveryAuthorityHeadPort } from "../../src/delivery/store.js";
 import { deliveryToVerificationRecord, resolveOperationalSegment } from "../../src/delivery/verifyAdapter.js";
 import type { DelegationSegment, Delivery } from "../../src/delivery/types.js";
 import { GitDeliveryStore } from "../../src/git-delivery/store.js";
@@ -19,8 +21,84 @@ import { DeliveryVerificationLeaseService } from "../../src/delivery/verificatio
 // hitting real git/npx/behavior-command execution through the tools.ts handler (which has no runner override).
 vi.mock("../../src/bridge/verifyTask.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/bridge/verifyTask.js")>();
-  return { ...actual, verifyTask: vi.fn(actual.verifyTask) };
+  return {
+    ...actual,
+    verifyTask: vi.fn((input: Parameters<typeof actual.verifyTask>[0]) => actual.verifyTask({
+      authorityIntegrityKey: Buffer.alloc(32, 0x42),
+      canonicalAuthorityHead: CANONICAL_AUTHORITY_HEAD,
+      legacyAuthorityHead: async (identity) => LEGACY_AUTHORITY_HEADS.get(identity),
+      ...input,
+    })),
+  };
 });
+
+const LEGACY_AUTHORITY_KEY = Buffer.alloc(32, 0x42);
+const LEGACY_AUTHORITY_HEADS = new Map<string, { revision: number; mac: string }>();
+const CANONICAL_AUTHORITY_HEADS = new Map<string, { revision: number; mac: string }>();
+const CANONICAL_AUTHORITY_HEAD: DeliveryAuthorityHeadPort = {
+  current: async (identity) => CANONICAL_AUTHORITY_HEADS.get(identity),
+  prepare: async (identity, next, expectedMac) => {
+    const current = CANONICAL_AUTHORITY_HEADS.get(identity);
+    if (expectedMac === undefined) {
+      if (current !== undefined || next.revision !== 1) throw new Error("unexpected canonical authority creation head");
+    } else if (!current || current.mac !== expectedMac || next.revision !== current.revision + 1) {
+      throw new Error("unexpected canonical authority update head");
+    }
+    CANONICAL_AUTHORITY_HEADS.set(identity, { ...next });
+  },
+};
+
+function authorityDeliveryStore(workspaceRoot: string): DeliveryStore {
+  return new DeliveryStore(workspaceRoot, {
+    authorityIntegrityKey: () => LEGACY_AUTHORITY_KEY,
+    authorityHead: CANONICAL_AUTHORITY_HEAD,
+  });
+}
+
+function storedDeliveryRecord(workspaceRoot: string, deliveryId: string): string {
+  const database = new DatabaseSync(path.join(workspaceRoot, ".tachyon", "deliveries-v2.sqlite3"));
+  try {
+    const row = database.prepare("SELECT record_json FROM deliveries WHERE id = ?").get(deliveryId) as
+      | { record_json: string }
+      | undefined;
+    if (!row) throw new Error(`Delivery '${deliveryId}' was not persisted`);
+    return row.record_json;
+  } finally {
+    database.close();
+  }
+}
+
+function replaceStoredDeliveryRecord(workspaceRoot: string, deliveryId: string, recordJson: string): void {
+  const database = new DatabaseSync(path.join(workspaceRoot, ".tachyon", "deliveries-v2.sqlite3"));
+  try {
+    database.prepare("UPDATE deliveries SET record_json = ? WHERE id = ?").run(recordJson, deliveryId);
+  } finally {
+    database.close();
+  }
+}
+
+function tamperDeliveryRecord(workspaceRoot: string, deliveryId: string, mutate: (record: Record<string, unknown>) => void): void {
+  const database = new DatabaseSync(path.join(workspaceRoot, ".tachyon", "deliveries-v2.sqlite3"));
+  try {
+    const row = database.prepare("SELECT record_json FROM deliveries WHERE id = ?").get(deliveryId) as
+      | { record_json: string }
+      | undefined;
+    if (!row) throw new Error(`Delivery '${deliveryId}' was not persisted`);
+    const record = JSON.parse(row.record_json) as Record<string, unknown>;
+    mutate(record);
+    database.prepare("UPDATE deliveries SET record_json = ? WHERE id = ?").run(JSON.stringify(record), deliveryId);
+  } finally {
+    database.close();
+  }
+}
+
+function writeDelegationRecord(workspaceRoot: string, delegation: Parameters<typeof writeRawDelegationRecord>[1]): string {
+  const file = writeRawDelegationRecord(workspaceRoot, delegation, LEGACY_AUTHORITY_KEY);
+  const persisted = JSON.parse(fs.readFileSync(file, "utf8")) as { id?: string; authorityIntegrity?: { mac?: string } };
+  if (!persisted.id || !persisted.authorityIntegrity?.mac) throw new Error("test delegation did not receive an authority seal");
+  LEGACY_AUTHORITY_HEADS.set(persisted.id, { revision: 1, mac: persisted.authorityIntegrity.mac });
+  return file;
+}
 
 const ENV = {
   ...process.env,
@@ -38,6 +116,12 @@ function git(cwd: string, args: string[]): string {
 function write(file: string, body: string): void {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, body, "utf8");
+}
+
+function verificationCloneParent(repo: string): string {
+  const root = fs.realpathSync(repo);
+  const workspaceHash = crypto.createHash("sha256").update(root).digest("hex").slice(0, 24);
+  return path.join(os.tmpdir(), `tachyon-verification-${workspaceHash}`);
 }
 
 function makeRepo(initial = "old"): { repo: string; wt: string; baseSha: string } {
@@ -58,11 +142,12 @@ function makeRepo(initial = "old"): { repo: string; wt: string; baseSha: string 
       "const fs = require('fs');",
       "const args = process.argv.slice(2);",
       "const pattern = args[args.indexOf('-t') + 1];",
+      "const name = pattern?.replace(/\\$$/, '').replace(/\\\\([.*+?^${}()|[\\]\\\\])/g, '$1');",
       "const feature = fs.readFileSync('src/feature.txt', 'utf8').trim();",
-      "const report = (passed, failed, pending, name) => console.log(JSON.stringify({ numTotalTests: 1, numPassedTests: passed, numFailedTests: failed, numPendingTests: pending, testResults: [{ assertionResults: name ? [{ fullName: name, status: failed ? 'failed' : 'passed' }] : [] }] }));",
-      "if (pattern !== 'quote \"x\" (case)' && pattern !== 'generated behavior stays canonical') { report(0, 0, 1); process.exit(0); }",
-      "if (feature === 'new') { report(1, 0, 0, pattern); process.exit(0); }",
-      "report(0, 1, 0, pattern); process.exit(1);",
+      "const report = (passed, failed, pending, name) => { const title = name ?? 'another behavior'; console.log(JSON.stringify({ numTotalTests: 1, numPassedTests: passed, numFailedTests: failed, numPendingTests: pending, testResults: [{ name: 'test/unit/workerBehavior.gen.test.ts', assertionResults: [{ title, fullName: title, status: failed ? 'failed' : passed ? 'passed' : 'skipped' }] }] })); };",
+      "if (name !== 'quote \"x\" (case) costs $5' && name !== 'generated behavior stays canonical') { report(0, 0, 1); process.exit(0); }",
+      "if (feature === 'new') { report(1, 0, 0, name); process.exit(0); }",
+      "report(0, 1, 0, name); process.exit(1);",
       "",
     ].join("\n"),
   );
@@ -73,8 +158,28 @@ function makeRepo(initial = "old"): { repo: string; wt: string; baseSha: string 
   return { repo, wt, baseSha };
 }
 
-function record(repo: string, baseSha: string, owns: string[] = ["src"], behaviorTest = "cmd:node behavior.js", delegator?: string, stubPath?: string): string {
+function record(
+  repo: string,
+  baseSha: string,
+  owns: string[] = ["src"],
+  behaviorTest = "cmd:node behavior.js",
+  delegator?: string,
+  stubPath?: string,
+  verifySettings?: Parameters<typeof delegationRecordFromSpawn>[0]["verifySettings"],
+): string {
   const createdAt = new Date().toISOString();
+  const behaviorSettings = verifySettings?.behavior ?? (stubPath ? EXPLICIT_VITEST_VERIFY_SETTINGS.behavior : undefined);
+  const oracleHash = stubPath
+    ? crypto.createHash("sha256").update(execFileSync("git", ["show", `${baseSha}:./${stubPath}`], { cwd: repo, env: ENV })).digest("hex")
+    : undefined;
+  const executorHashes = behaviorSettings
+    ? Object.fromEntries(behaviorSettings.executorPaths.map((executorPath) => [
+        executorPath,
+        crypto.createHash("sha256")
+          .update(execFileSync("git", ["show", `${baseSha}:./${executorPath}`], { cwd: repo, env: ENV }))
+          .digest("hex"),
+      ]))
+    : undefined;
   writeDelegationRecord(
     repo,
     delegationRecordFromSpawn({
@@ -84,6 +189,9 @@ function record(repo: string, baseSha: string, owns: string[] = ["src"], behavio
       taskRef: "tachyon/worker",
       gate: { behaviorTest, owns },
       ...(stubPath ? { stubPath } : {}),
+      ...(oracleHash ? { oracleHash } : {}),
+      ...(executorHashes ? { executorHashes } : {}),
+      ...(verifySettings ? { verifySettings } : {}),
       contract: { task: "ship behavior", context: "fixture", constraints: "none", doneWhen: "behavior passes" },
       createdAt,
     }),
@@ -110,8 +218,57 @@ async function testRunner(cwd: string, argv: string[], _opts?: { timeout?: numbe
   }
 }
 
+const VITEST_AFFECTED_COMMAND = "npx vitest related --run";
+const EXPLICIT_VITEST_VERIFY_SETTINGS = {
+  prepare: "node -e \"\"",
+  affected: VITEST_AFFECTED_COMMAND,
+  behavior: {
+    adapter: "vitest-name" as const,
+    command: "npm test --",
+    stubPath: "test/unit/{agent}Behavior.gen.test.ts",
+    executorPaths: ["package.json", "npm-behavior.js"],
+  },
+};
+
+/** Existing gate regressions opt into the pre-spec-385 Vitest mechanics explicitly. */
 function runVerify(input: Parameters<typeof verifyTask>[0]) {
-  return verifyTask({ runner: testRunner, ...input });
+  return verifyTask({ runner: testRunner, verifySettings: EXPLICIT_VITEST_VERIFY_SETTINGS, ...input });
+}
+
+function vitestReport(file: string, title: string, status: "passed" | "failed" | "pending" | "todo", fullName = title): string {
+  return JSON.stringify({
+    numTotalTests: 1,
+    numPassedTests: status === "passed" ? 1 : 0,
+    numFailedTests: status === "failed" ? 1 : 0,
+    numPendingTests: status === "pending" ? 1 : 0,
+    numTodoTests: status === "todo" ? 1 : 0,
+    testResults: [{
+      name: file,
+      assertionResults: [{ title, fullName, status }],
+    }],
+  });
+}
+
+function vitestReportForAssertions(
+  file: string,
+  assertions: Array<{ title: string; fullName?: string; status: "passed" | "failed" | "pending" | "skipped" | "todo" }>,
+): string {
+  const count = (statuses: string[]) => assertions.filter((assertion) => statuses.includes(assertion.status)).length;
+  return JSON.stringify({
+    numTotalTests: assertions.length,
+    numPassedTests: count(["passed"]),
+    numFailedTests: count(["failed"]),
+    numPendingTests: count(["pending", "skipped"]),
+    numTodoTests: count(["todo"]),
+    testResults: [{
+      name: file,
+      assertionResults: assertions.map((assertion) => ({
+        title: assertion.title,
+        fullName: assertion.fullName ?? assertion.title,
+        status: assertion.status,
+      })),
+    }],
+  });
 }
 
 async function waitForFiles(files: string[]): Promise<void> {
@@ -137,6 +294,9 @@ function wireVerifyTaskTool(workspaceRoot: string, caller: BridgeDeps["caller"])
     workspaceRoot,
     manager: { agentStates: async () => new Map() },
     caller,
+    authorityIntegrityKey: () => LEGACY_AUTHORITY_KEY,
+    canonicalAuthorityHead: CANONICAL_AUTHORITY_HEAD,
+    legacyAuthorityHead: async (identity: string) => LEGACY_AUTHORITY_HEADS.get(identity),
   } as unknown as BridgeDeps;
   registerTools(mcp as never, deps);
   return mcp;
@@ -153,6 +313,8 @@ describe("verifyTask", () => {
 
   beforeEach(() => {
     roots.length = 0;
+    LEGACY_AUTHORITY_HEADS.clear();
+    CANONICAL_AUTHORITY_HEADS.clear();
   });
 
   afterEach(() => {
@@ -162,7 +324,7 @@ describe("verifyTask", () => {
 
   function fixture(initial?: string) {
     const f = makeRepo(initial);
-    roots.push(f.repo, f.wt);
+    roots.push(f.repo, f.wt, verificationCloneParent(f.repo));
     return f;
   }
 
@@ -180,9 +342,122 @@ describe("verifyTask", () => {
     expect(result.record.baseSha).toBe(baseSha);
     expect(result.record.refSha).toMatch(/^[0-9a-f]{40}$/);
     expect(result.record.integrityHash).toMatch(/^[0-9a-f]{64}$/);
-    expect(result.record.commands.map((c) => c.name)).toEqual(["affected_tests", "behavior_head_expect_pass", "behavior_base_expect_fail"]);
-    expect(result.record.commands[1]).toMatchObject({ argv: ["node", "behavior.js"] });
+    expect(result.record.commands.map((c) => c.name)).toEqual([
+      "verification_prepare_base",
+      "behavior_base_expect_fail",
+      "verification_prepare_head_tiers",
+      "affected_tests",
+      "verification_prepare_head",
+      "behavior_head_expect_pass",
+    ]);
+    expect(result.record.commands.find((command) => command.name === "behavior_base_expect_fail"))
+      .toMatchObject({ argv: ["node", "behavior.js"] });
     expect(fs.existsSync(path.join(repo, ".tachyon", "verifications", `${result.record.refSha}.json`))).toBe(true);
+  });
+
+  it("fails closed before execution when a sealed legacy delegation authority is edited on disk", async () => {
+    const { repo, wt, baseSha } = fixture();
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    git(wt, ["add", "src/feature.txt"]);
+    git(wt, ["commit", "-qm", "t-123abc implement behavior"]);
+    record(repo, baseSha);
+
+    const delegationDir = path.join(repo, ".tachyon", "delegations");
+    const delegationPath = path.join(delegationDir, fs.readdirSync(delegationDir)[0]!);
+    const persisted = JSON.parse(fs.readFileSync(delegationPath, "utf8")) as Record<string, unknown>;
+    persisted.behaviorTest = "cmd:node -e \"process.exit(0)\"";
+    persisted.owns = ["."];
+    fs.writeFileSync(delegationPath, `${JSON.stringify(persisted, null, 2)}\n`, "utf8");
+    const runner = vi.fn(testRunner);
+
+    const error = await runVerify({ workspaceRoot: repo, agent: "worker", runner }).catch((caught) => caught);
+
+    expect(error).toMatchObject({ code: "LEGACY_DELEGATION_INTEGRITY_INVALID" });
+    expect(runner).not.toHaveBeenCalled();
+    expect(fs.existsSync(path.join(repo, ".tachyon", "verifications"))).toBe(false);
+  });
+
+  it("rejects a valid sealed legacy delegation replayed into another workspace", async () => {
+    const source = fixture();
+    const target = fixture();
+    record(source.repo, source.baseSha);
+    const sourceDir = path.join(source.repo, ".tachyon", "delegations");
+    const sourcePath = path.join(sourceDir, fs.readdirSync(sourceDir)[0]!);
+    const targetDir = path.join(target.repo, ".tachyon", "delegations");
+    const targetPath = path.join(targetDir, path.basename(sourcePath));
+    fs.mkdirSync(targetDir, { recursive: true });
+    fs.copyFileSync(sourcePath, targetPath);
+    const runner = vi.fn(testRunner);
+
+    const error = await runVerify({ workspaceRoot: target.repo, agent: "worker", runner }).catch((caught) => caught);
+
+    expect(error).toMatchObject({ code: "LEGACY_DELEGATION_INTEGRITY_INVALID" });
+    expect(runner).not.toHaveBeenCalled();
+    expect(fs.existsSync(path.join(target.repo, ".tachyon", "verifications"))).toBe(false);
+  });
+
+  it("fails closed before execution when the host key for a sealed legacy delegation is unavailable", async () => {
+    const { repo, wt, baseSha } = fixture();
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    git(wt, ["add", "src/feature.txt"]);
+    git(wt, ["commit", "-qm", "t-123abc implement behavior"]);
+    record(repo, baseSha);
+    const runner = vi.fn(testRunner);
+
+    const error = await runVerify({
+      workspaceRoot: repo,
+      agent: "worker",
+      runner,
+      authorityIntegrityKey: undefined,
+    }).catch((caught) => caught);
+
+    expect(error).toMatchObject({ code: "LEGACY_DELEGATION_INTEGRITY_REQUIRED" });
+    expect(runner).not.toHaveBeenCalled();
+    expect(fs.existsSync(path.join(repo, ".tachyon", "verifications"))).toBe(false);
+  });
+
+  it("fails closed before execution when the host freshness head for a legacy delegation is unavailable", async () => {
+    const { repo, wt, baseSha } = fixture();
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    git(wt, ["add", "src/feature.txt"]);
+    git(wt, ["commit", "-qm", "t-123abc implement behavior"]);
+    record(repo, baseSha);
+    const runner = vi.fn(testRunner);
+    const actual = await vi.importActual<typeof import("../../src/bridge/verifyTask.js")>("../../src/bridge/verifyTask.js");
+
+    const error = await actual.verifyTask({
+      workspaceRoot: repo,
+      agent: "worker",
+      runner,
+      verifySettings: EXPLICIT_VITEST_VERIFY_SETTINGS,
+      authorityIntegrityKey: LEGACY_AUTHORITY_KEY,
+    }).catch((caught) => caught);
+
+    expect(error).toMatchObject({ code: "LEGACY_DELEGATION_FRESHNESS_REQUIRED" });
+    expect(runner).not.toHaveBeenCalled();
+    expect(fs.existsSync(path.join(repo, ".tachyon", "verifications"))).toBe(false);
+  });
+
+  it("rejects a legacy freshness head with a non-positive revision even when its MAC matches", async () => {
+    const { repo, wt, baseSha } = fixture();
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    git(wt, ["add", "src/feature.txt"]);
+    git(wt, ["commit", "-qm", "t-123abc implement behavior"]);
+    record(repo, baseSha);
+    const delegationDir = path.join(repo, ".tachyon", "delegations");
+    const delegationPath = path.join(delegationDir, fs.readdirSync(delegationDir)[0]!);
+    const persisted = JSON.parse(fs.readFileSync(delegationPath, "utf8")) as {
+      id: string;
+      authorityIntegrity: { mac: string };
+    };
+    LEGACY_AUTHORITY_HEADS.set(persisted.id, { revision: 0, mac: persisted.authorityIntegrity.mac });
+    const runner = vi.fn(testRunner);
+
+    const error = await runVerify({ workspaceRoot: repo, agent: "worker", runner }).catch((caught) => caught);
+
+    expect(error).toMatchObject({ code: "LEGACY_DELEGATION_INTEGRITY_INVALID" });
+    expect(runner).not.toHaveBeenCalled();
+    expect(fs.existsSync(path.join(repo, ".tachyon", "verifications"))).toBe(false);
   });
 
   it("serializes different legacy identities across processes so exactly one record remains canonical", async () => {
@@ -348,7 +623,7 @@ describe("verifyTask", () => {
     write(path.join(wt, "src", "feature.txt"), "new\n");
     git(wt, ["add", "src/feature.txt"]);
     git(wt, ["commit", "-qm", "t-delivery implement behavior"]);
-    const store = new DeliveryStore(repo);
+    const store = authorityDeliveryStore(repo);
     await store.create({
       id: "d-verify-explicit",
       workspaceId: "ws",
@@ -378,7 +653,7 @@ describe("verifyTask", () => {
     write(path.join(wt, "src", "feature.txt"), "new\n");
     git(wt, ["add", "src/feature.txt"]); git(wt, ["commit", "-qm", "t-delivery canonical evidence"]);
     const delivered = git(wt, ["rev-parse", "HEAD"]);
-    const store = new DeliveryStore(repo);
+    const store = authorityDeliveryStore(repo);
     const gitDeliveries = new GitDeliveryStore(repo, { id: () => `gd-${id}` });
     const projection = await gitDeliveries.open({ workspaceId: "ws", createdBy: actor, deliveryId: id, agent: "worker",
       branchRef: "tachyon/worker", worktreePath: wt, tachyonCreatedBranch: true, baseRef: baseSha, currentHeadSha: delivered });
@@ -388,6 +663,92 @@ describe("verifyTask", () => {
         grantedBy: actor, ownsSubset: ["src"], grantedHeadSha: baseSha, grantedAt: "2026-01-01T00:00:00.000Z" }] });
     return { repo, wt, baseSha, delivered, store, gitDeliveries };
   }
+
+  it("fails closed before execution when canonical Delivery authority is edited directly in SQLite", async () => {
+    const f = await canonicalFixture("d-tampered-authority");
+    tamperDeliveryRecord(f.repo, "d-tampered-authority", (record) => {
+      const contract = record.contract as Record<string, unknown>;
+      contract.behaviorTest = "cmd:node -e \"process.exit(0)\"";
+      contract.owns = ["."];
+    });
+    const runner = vi.fn(testRunner);
+
+    const error = await runVerify({
+      workspaceRoot: f.repo,
+      deliveryId: "d-tampered-authority",
+      deliveryVerification: await canonicalVerification(f.store, f.gitDeliveries),
+      runner,
+    }).catch((caught) => caught);
+
+    expect(error).toBeInstanceOf(DeliveryInvariantError);
+    expect(error.message).toContain("authority integrity check failed");
+    expect(runner).not.toHaveBeenCalled();
+    expect(fs.existsSync(path.join(f.repo, ".tachyon", "verifications"))).toBe(false);
+  });
+
+  it("rejects rollback to an older correctly signed canonical Delivery before execution", async () => {
+    const f = await canonicalFixture("d-stale-authority");
+    const staleRecord = storedDeliveryRecord(f.repo, "d-stale-authority");
+    await f.store.update("d-stale-authority", 1, (delivery) => ({
+      ...delivery,
+      events: [...delivery.events, {
+        id: "ev-authority-advanced",
+        at: "2026-01-01T00:01:00.000Z",
+        type: "authority_advanced",
+        by: actor,
+      }],
+    }));
+    replaceStoredDeliveryRecord(f.repo, "d-stale-authority", staleRecord);
+    const runner = vi.fn(testRunner);
+
+    const error = await runVerify({
+      workspaceRoot: f.repo,
+      deliveryId: "d-stale-authority",
+      deliveryVerification: await canonicalVerification(f.store, f.gitDeliveries),
+      runner,
+    }).catch((caught) => caught);
+
+    expect(error).toBeInstanceOf(DeliveryInvariantError);
+    expect(error.message).toContain("authority head mismatch");
+    expect(runner).not.toHaveBeenCalled();
+    expect(fs.existsSync(path.join(f.repo, ".tachyon", "verifications"))).toBe(false);
+  });
+
+  it("fails closed before canonical execution when the host authority key is unavailable", async () => {
+    const f = await canonicalFixture("d-missing-authority-key");
+    const runner = vi.fn(testRunner);
+
+    const error = await runVerify({
+      workspaceRoot: f.repo,
+      deliveryId: "d-missing-authority-key",
+      deliveryVerification: await canonicalVerification(f.store, f.gitDeliveries),
+      runner,
+      authorityIntegrityKey: undefined,
+    }).catch((caught) => caught);
+
+    expect(error).toMatchObject({ code: "DELIVERY_AUTHORITY_INTEGRITY_REQUIRED" });
+    expect(runner).not.toHaveBeenCalled();
+    expect(fs.existsSync(path.join(f.repo, ".tachyon", "verifications"))).toBe(false);
+  });
+
+  it("fails closed before canonical execution when the host freshness head is unavailable", async () => {
+    const f = await canonicalFixture("d-missing-authority-head");
+    const runner = vi.fn(testRunner);
+    const actual = await vi.importActual<typeof import("../../src/bridge/verifyTask.js")>("../../src/bridge/verifyTask.js");
+
+    const error = await actual.verifyTask({
+      workspaceRoot: f.repo,
+      deliveryId: "d-missing-authority-head",
+      deliveryVerification: await canonicalVerification(f.store, f.gitDeliveries),
+      runner,
+      verifySettings: EXPLICIT_VITEST_VERIFY_SETTINGS,
+      authorityIntegrityKey: LEGACY_AUTHORITY_KEY,
+    }).catch((caught) => caught);
+
+    expect(error).toMatchObject({ code: "DELIVERY_AUTHORITY_FRESHNESS_REQUIRED" });
+    expect(runner).not.toHaveBeenCalled();
+    expect(fs.existsSync(path.join(f.repo, ".tachyon", "verifications"))).toBe(false);
+  });
 
   it("atomically publishes canonical evidence, cleans only its failed temp, and retries past an unrelated partial temp", async () => {
     const f = await canonicalFixture("d-atomic-rename");
@@ -464,7 +825,7 @@ describe("verifyTask", () => {
     write(path.join(wt, "src", "third", "value.txt"), "third\n");
     git(wt, ["add", "src/third/value.txt"]); git(wt, ["commit", "-qm", "t-delivery segment two"]);
     const delivered = git(wt, ["rev-parse", "HEAD"]);
-    const store = new DeliveryStore(repo);
+    const store = authorityDeliveryStore(repo);
     const gitDeliveries = new GitDeliveryStore(repo, { id: () => "gd-three-segment" });
     const projection = await gitDeliveries.open({ workspaceId: "ws", createdBy: { kind: "agent", name: "coordinator" },
       deliveryId: "d-three-segment", agent: "fixer-2", branchRef: "tachyon/worker", worktreePath: wt,
@@ -504,7 +865,7 @@ describe("verifyTask", () => {
     write(path.join(unrelatedWt, "src", "unrelated.txt"), "unrelated\n");
     git(unrelatedWt, ["add", "src/unrelated.txt"]); git(unrelatedWt, ["commit", "-qm", "unrelated history"]);
     const unrelated = git(unrelatedWt, ["rev-parse", "HEAD"]);
-    const store = new DeliveryStore(repo);
+    const store = authorityDeliveryStore(repo);
     const gitDeliveries = new GitDeliveryStore(repo, { id: () => "gd-nonlinear" });
     const projection = await gitDeliveries.open({ workspaceId: "ws", createdBy: actor, deliveryId: "d-nonlinear", agent: "fixer",
       branchRef: "tachyon/worker", worktreePath: wt, tachyonCreatedBranch: true, baseRef: baseSha, currentHeadSha: delivered });
@@ -529,7 +890,7 @@ describe("verifyTask", () => {
     write(path.join(wt, "src", "feature.txt"), "new\n");
     git(wt, ["add", "src/feature.txt"]); git(wt, ["commit", "-qm", "t-delivery unknown role"]);
     const delivered = git(wt, ["rev-parse", "HEAD"]);
-    const store = new DeliveryStore(repo);
+    const store = authorityDeliveryStore(repo);
     const gitDeliveries = new GitDeliveryStore(repo, { id: () => "gd-unknown-role" });
     const projection = await gitDeliveries.open({ workspaceId: "ws", createdBy: actor, deliveryId: "d-unknown-role", agent: "worker",
       branchRef: "tachyon/worker", worktreePath: wt, tachyonCreatedBranch: true, baseRef: baseSha, currentHeadSha: delivered });
@@ -554,7 +915,7 @@ describe("verifyTask", () => {
     write(path.join(wt, "src", "feature.txt"), "new\n");
     git(wt, ["add", "src/feature.txt"]); git(wt, ["commit", "-qm", "t-delivery invalid scope"]);
     const delivered = git(wt, ["rev-parse", "HEAD"]);
-    const store = new DeliveryStore(repo);
+    const store = authorityDeliveryStore(repo);
     const gitDeliveries = new GitDeliveryStore(repo, { id: () => `gd-invalid-scope-${ownsSubset.length}` });
     const projection = await gitDeliveries.open({ workspaceId: "ws", createdBy: actor, deliveryId: "d-invalid-scope", agent: "worker",
       branchRef: "tachyon/worker", worktreePath: wt, tachyonCreatedBranch: true, baseRef: baseSha, currentHeadSha: delivered });
@@ -577,7 +938,7 @@ describe("verifyTask", () => {
     { label: "widened", ownsSubset: ["test"] },
   ])("validates $label writer authority even when the segment writes nothing", async ({ ownsSubset }) => {
     const { repo, wt, baseSha } = fixture();
-    const store = new DeliveryStore(repo);
+    const store = authorityDeliveryStore(repo);
     const gitDeliveries = new GitDeliveryStore(repo, { id: () => "gd-zero-write" });
     const projection = await gitDeliveries.open({ workspaceId: "ws", createdBy: actor, deliveryId: "d-zero-write", agent: "worker",
       branchRef: "tachyon/worker", worktreePath: wt, tachyonCreatedBranch: true, baseRef: baseSha, currentHeadSha: baseSha });
@@ -596,7 +957,7 @@ describe("verifyTask", () => {
   /** Builds a Delivery on the fixture's taskRef. `segments` are given tail-last. */
   async function delivery(repo: string, wt: string, id: string, baseSha: string, agents: string[], running: (name: string) => boolean = () => false,
     taskRef = "tachyon/worker") {
-    const store = new DeliveryStore(repo);
+    const store = authorityDeliveryStore(repo);
     const gitDeliveries = new GitDeliveryStore(repo, { id: () => `gd-${id}` });
     const delivered = git(wt, ["rev-parse", "HEAD"]);
     const projection = await gitDeliveries.open({ workspaceId: "ws", createdBy: actor, deliveryId: id,
@@ -854,60 +1215,400 @@ describe("verifyTask", () => {
     expect(coordinator.record.identity).toMatchObject({ occupants: ["worker", "fixer-1", "fixer-2"] });
   });
 
-  it("runs behavior checks in the agent worktree so ignored node_modules tools are available", async () => {
+  it("refuses an ignored runner planted in the trusted source checkout and removes clone remotes", async () => {
     const { repo, wt, baseSha } = fixture();
     write(
-      path.join(wt, "node_modules", ".bin", "behavior-runner"),
+      path.join(repo, "node_modules", ".bin", "behavior-runner"),
       "#!/usr/bin/env node\nconst fs = require('fs'); process.exit(fs.readFileSync('src/feature.txt', 'utf8').trim() === 'new' ? 0 : 1);\n",
     );
-    fs.chmodSync(path.join(wt, "node_modules", ".bin", "behavior-runner"), 0o755);
+    fs.chmodSync(path.join(repo, "node_modules", ".bin", "behavior-runner"), 0o755);
     write(path.join(wt, "src", "feature.txt"), "new\n");
     git(wt, ["add", "src/feature.txt"]);
     git(wt, ["commit", "-qm", "t-123abc implement behavior"]);
     record(repo, baseSha, ["src"], "cmd:node_modules/.bin/behavior-runner");
 
-    const result = await runVerify({ workspaceRoot: repo, agent: "worker" });
+    const result = await runVerify({
+      workspaceRoot: repo,
+      agent: "worker",
+      runner: async (cwd, argv, opts) => {
+        expect(git(cwd, ["remote"])).toBe("");
+        return testRunner(cwd, argv, opts);
+      },
+    });
 
-    expect(result.verdict).toBe("accept");
-    expect(result.record.commands.map((c) => c.cwd)).toEqual([wt, wt, wt]);
-    expect(result.record.commands[1]).toMatchObject({ argv: ["node_modules/.bin/behavior-runner"] });
+    expect(result.verdict).toBe("blocked");
+    expect(result.blockers.map((blocker) => blocker.code)).toContain("behavior_failed");
+    expect(result.record.commands.every((command) => command.cwd !== wt)).toBe(true);
+    expect(result.record.commands.every((command) => command.cwd.startsWith(verificationCloneParent(repo)))).toBe(true);
+    expect(result.record.commands.find((command) => command.name === "behavior_base_expect_fail"))
+      .toMatchObject({ argv: ["node_modules/.bin/behavior-runner"] });
+    expect(fs.existsSync(path.join(repo, "node_modules", ".bin", "behavior-runner"))).toBe(true);
     expect(git(wt, ["rev-parse", "--abbrev-ref", "HEAD"])).toBe("tachyon/worker");
   });
 
-  it("passes plain behavior tests to npm as an argv array without shell interpolation", async () => {
+  it("runs cmd behavior without implicit npm, Vitest, or affected-test commands when verification is unconfigured", async () => {
     const { repo, wt, baseSha } = fixture();
     write(path.join(wt, "src", "feature.txt"), "new\n");
     git(wt, ["add", "src/feature.txt"]);
     git(wt, ["commit", "-qm", "t-123abc implement behavior"]);
-    record(repo, baseSha, ["src"], 'quote "x" (case)');
+    record(repo, baseSha);
+    const runner = vi.fn(testRunner);
+
+    const result = await verifyTask({ workspaceRoot: repo, agent: "worker", runner });
+
+    expect(result.verdict).toBe("accept");
+    expect(result.record.commands.map((command) => command.name)).toEqual([
+      "behavior_base_expect_fail",
+      "behavior_head_expect_pass",
+    ]);
+    expect(result.record.commands.map((command) => command.argv)).toEqual([
+      ["node", "behavior.js"],
+      ["node", "behavior.js"],
+    ]);
+    expect(runner.mock.calls.map(([, argv]) => argv[0])).toEqual(["node", "node"]);
+  });
+
+  it("uses the project prepare command for independent cmd-verifier BASE and HEAD environments", async () => {
+    const { repo, wt } = fixture();
+    write(
+      path.join(wt, "behavior.js"),
+      "const fs = require('fs'); const prepared = fs.existsSync('node_modules/prepared'); const feature = fs.readFileSync('src/feature.txt', 'utf8').trim(); process.exit(prepared && feature === 'new' ? 0 : 1);\n",
+    );
+    git(wt, ["add", "behavior.js"]);
+    git(wt, ["commit", "-qm", "project cmd verifier requires preparation"]);
+    const baseSha = git(wt, ["rev-parse", "HEAD"]);
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    git(wt, ["add", "src/feature.txt"]);
+    git(wt, ["commit", "-qm", "t-123abc implement prepared behavior"]);
+    const prepare = "node -e \"const fs=require('fs');fs.mkdirSync('node_modules',{recursive:true});fs.writeFileSync('node_modules/prepared','ok')\"";
+    record(repo, baseSha, ["src", "behavior.js"], "cmd:node behavior.js", undefined, undefined, { prepare });
+
+    const result = await verifyTask({ workspaceRoot: repo, agent: "worker", runner: testRunner });
+
+    expect(result.verdict).toBe("accept");
+    expect(result.record.commands.map((command) => command.name)).toEqual([
+      "verification_prepare_base",
+      "behavior_base_expect_fail",
+      "verification_prepare_head",
+      "behavior_head_expect_pass",
+    ]);
+    const prepareCwds = result.record.commands
+      .filter((command) => command.name.startsWith("verification_prepare_"))
+      .map((command) => command.cwd);
+    expect(new Set(prepareCwds).size).toBe(2);
+    expect(prepareCwds.every((cwd) => cwd.startsWith(verificationCloneParent(repo)))).toBe(true);
+    expect(fs.existsSync(path.join(repo, "node_modules", "prepared"))).toBe(false);
+    expect(fs.existsSync(path.join(wt, "node_modules", "prepared"))).toBe(false);
+  });
+
+  it("keeps an explicit empty verifier snapshot instead of adopting commands added after spawn", async () => {
+    const { repo, wt, baseSha } = fixture();
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    git(wt, ["add", "src/feature.txt"]);
+    git(wt, ["commit", "-qm", "t-123abc implement behavior"]);
+    record(repo, baseSha, ["src"], "cmd:node behavior.js", undefined, undefined, {});
+    write(
+      path.join(repo, "tachyon.yml"),
+      "agents:\n  worker:\n    cmd: codex\nsettings:\n  verify:\n    affected: node hostile-after-spawn.js\n",
+    );
+    const runner = vi.fn(testRunner);
+
+    const result = await verifyTask({ workspaceRoot: repo, agent: "worker", runner });
+
+    expect(result.verdict).toBe("accept");
+    expect(result.record.commands.map((command) => command.name)).toEqual([
+      "behavior_base_expect_fail",
+      "behavior_head_expect_pass",
+    ]);
+    expect(runner.mock.calls.flatMap(([, argv]) => argv)).not.toContain("hostile-after-spawn.js");
+  });
+
+  it("blocks a plain behavior name when no project behavior adapter is configured", async () => {
+    const { repo, wt, baseSha } = fixture();
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    git(wt, ["add", "src/feature.txt"]);
+    git(wt, ["commit", "-qm", "t-123abc implement behavior"]);
+    record(repo, baseSha, ["src"], "PI-UNCONFIGURED");
+    const runner = vi.fn(testRunner);
+
+    const result = await verifyTask({ workspaceRoot: repo, agent: "worker", verifySettings: {}, runner });
+
+    expect(result.verdict).toBe("blocked");
+    expect(result.blockers).toContainEqual({
+      code: "behavior_failed",
+      detail: expect.stringContaining("requires settings.verify.behavior"),
+    });
+    expect(result.record.commands.map((command) => command.name)).toEqual([
+      "behavior_base_expect_fail",
+      "behavior_head_expect_pass",
+    ]);
+    expect(result.record.commands.every((command) => command.argv.length === 0)).toBe(true);
+    expect(runner).not.toHaveBeenCalled();
+  });
+
+  it("blocks a configured named gate with no recorded canonical stubPath before executing it", async () => {
+    const { repo, wt, baseSha } = fixture();
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    git(wt, ["add", "src/feature.txt"]);
+    git(wt, ["commit", "-qm", "t-123abc implement behavior"]);
+    record(repo, baseSha, ["src"], "missing recorded stub");
+    const runner = vi.fn(testRunner);
+
+    const result = await verifyTask({
+      workspaceRoot: repo,
+      agent: "worker",
+      verifySettings: { behavior: EXPLICIT_VITEST_VERIFY_SETTINGS.behavior },
+      runner,
+    });
+
+    expect(result.verdict).toBe("blocked");
+    expect(result.blockers).toContainEqual({
+      code: "behavior_base_unproven",
+      detail: "named Vitest behavior gate 'missing recorded stub' has no recorded fixed oracle path/hash",
+    });
+    expect(result.record.commands).toEqual([]);
+    expect(runner).not.toHaveBeenCalled();
+  });
+
+  it("blocks a recorded stubPath that differs from the configured template rendered for the agent", async () => {
+    const { repo, wt } = fixture();
+    const recordedStubPath = "test/unit/workerBehavior.gen.test.ts";
+    const behaviorTest = "generated behavior stays canonical";
+    write(path.join(wt, recordedStubPath), `it('${behaviorTest}', () => {});\n`);
+    git(wt, ["add", recordedStubPath]);
+    git(wt, ["commit", "-qm", "tachyon setup: recorded canonical behavior stub"]);
+    const baseSha = git(wt, ["rev-parse", "HEAD"]);
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    git(wt, ["add", "src/feature.txt"]);
+    git(wt, ["commit", "-qm", "t-123abc implement behavior"]);
+    const verifySettings = {
+      behavior: {
+        ...EXPLICIT_VITEST_VERIFY_SETTINGS.behavior,
+        stubPath: "test/invariants/{agent}.test.ts",
+      },
+    };
+    record(repo, baseSha, ["src", recordedStubPath], behaviorTest, undefined, recordedStubPath, verifySettings);
+    const runner = vi.fn(testRunner);
+
+    const result = await verifyTask({ workspaceRoot: repo, agent: "worker", runner });
+
+    expect(result.verdict).toBe("blocked");
+    expect(result.blockers).toContainEqual({
+      code: "behavior_base_unproven",
+      detail: `recorded canonical stubPath '${recordedStubPath}' does not match configured path 'test/invariants/worker.test.ts' for agent 'worker'`,
+      file: recordedStubPath,
+    });
+    expect(result.record.commands).toEqual([]);
+    expect(runner).not.toHaveBeenCalled();
+  });
+
+  it("blocks full:true without inventing a full verification command", async () => {
+    const { repo, wt, baseSha } = fixture();
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    git(wt, ["add", "src/feature.txt"]);
+    git(wt, ["commit", "-qm", "t-123abc implement behavior"]);
+    record(repo, baseSha);
+    const runner = vi.fn(testRunner);
+
+    const result = await verifyTask({ workspaceRoot: repo, agent: "worker", full: true, verifySettings: {}, runner });
+
+    expect(result.verdict).toBe("blocked");
+    expect(result.blockers.map((blocker) => blocker.code)).toEqual([
+      "verification_config_missing",
+      "behavior_not_run",
+    ]);
+    expect(result.record.commands).toEqual([]);
+    expect(runner).not.toHaveBeenCalled();
+  });
+
+  it("omits the affected-test tier when settings.verify.affected is absent", async () => {
+    const { repo, wt, baseSha } = fixture();
+    write(path.join(wt, "typecheck.js"), "process.exit(0);\n");
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    git(wt, ["add", "src/feature.txt", "typecheck.js"]);
+    git(wt, ["commit", "-qm", "t-123abc implement behavior"]);
+    record(repo, baseSha, ["src", "typecheck.js"]);
+
+    const result = await verifyTask({
+      workspaceRoot: repo,
+      agent: "worker",
+      verifySettings: { typecheck: "node typecheck.js" },
+      runner: testRunner,
+    });
+
+    expect(result.verdict).toBe("accept");
+    expect(result.record.commands.map((command) => command.name)).toEqual([
+      "behavior_base_expect_fail",
+      "typecheck",
+      "behavior_head_expect_pass",
+    ]);
+    expect(result.record.commands.some((command) => command.name === "affected_tests")).toBe(false);
+  });
+
+  it("passes explicitly configured Vitest-name behavior tests to npm as an argv array without shell interpolation", async () => {
+    const { repo, wt } = fixture();
+    const stubPath = "test/unit/workerBehavior.gen.test.ts";
+    write(path.join(wt, stubPath), "it('quote \\\"x\\\" (case) costs $5', () => {});\n");
+    git(wt, ["add", stubPath]);
+    git(wt, ["commit", "-qm", "tachyon setup: canonical behavior stub"]);
+    const baseSha = git(wt, ["rev-parse", "HEAD"]);
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    git(wt, ["add", "src/feature.txt"]);
+    git(wt, ["commit", "-qm", "t-123abc implement behavior"]);
+    record(repo, baseSha, ["src", stubPath], 'quote "x" (case) costs $5', undefined, stubPath);
 
     const result = await runVerify({ workspaceRoot: repo, agent: "worker" });
 
     expect(result.verdict).toBe("accept");
-    expect(result.record.commands[1]).toMatchObject({ argv: ["npm", "test", "--", "--run", "-t", 'quote "x" (case)', "--reporter=json"] });
-    expect(result.record.commands[1].command).not.toContain("sh -lc");
+    const baseBehavior = result.record.commands.find((command) => command.name === "behavior_base_expect_fail");
+    expect(baseBehavior).toMatchObject({
+      argv: ["npm", "test", "--", "--run", "-t", 'quote "x" \\(case\\) costs \\$5$', "--reporter=json"],
+    });
+    expect(baseBehavior?.command).not.toContain("sh -lc");
+    expect(result.record.behaviorEvidence).toMatchObject({
+      identifier: 'quote "x" (case) costs $5',
+      mode: "vitest-name",
+      stubPath,
+      executorHashes: expect.objectContaining({
+        "package.json": expect.stringMatching(/^[0-9a-f]{64}$/),
+        "npm-behavior.js": expect.stringMatching(/^[0-9a-f]{64}$/),
+      }),
+      baseAssertions: [{ title: 'quote "x" (case) costs $5', status: "failed" }],
+      headAssertions: [{ title: 'quote "x" (case) costs $5', status: "passed" }],
+    });
+    const { integrityHash, ...integrityBody } = result.record;
+    expect(crypto.createHash("sha256").update(JSON.stringify(integrityBody, null, 2)).digest("hex"))
+      .toBe(integrityHash);
   });
 
   it("blocks plain behavior tests when the Vitest name filter matches no executable tests", async () => {
-    const { repo, wt, baseSha } = fixture();
+    const { repo, wt } = fixture();
+    const stubPath = "test/unit/workerBehavior.gen.test.ts";
+    write(path.join(wt, stubPath), "it('missing behavior name', () => {});\n");
+    git(wt, ["add", stubPath]);
+    git(wt, ["commit", "-qm", "tachyon setup: canonical behavior stub"]);
+    const baseSha = git(wt, ["rev-parse", "HEAD"]);
     write(path.join(wt, "src", "feature.txt"), "new\n");
     git(wt, ["add", "src/feature.txt"]);
     git(wt, ["commit", "-qm", "t-123abc implement behavior"]);
-    record(repo, baseSha, ["src"], "missing behavior name");
+    record(repo, baseSha, ["src", stubPath], "missing behavior name", undefined, stubPath);
 
     const result = await runVerify({ workspaceRoot: repo, agent: "worker" });
 
     expect(result.verdict).toBe("blocked");
     expect(result.blockers).toContainEqual({
-      code: "behavior_failed",
-      detail: expect.stringContaining("matched no executable Vitest tests"),
+      code: "behavior_test_renamed",
+      detail: `canonical behavior test 'missing behavior name' was not reported passed from ${stubPath}`,
+      file: stubPath,
     });
-    expect(result.record.commands.map((c) => c.name)).toEqual(["affected_tests", "behavior_head_expect_pass", "behavior_base_expect_fail"]);
-    expect(result.record.commands[1]).toMatchObject({
-      argv: ["npm", "test", "--", "--run", "-t", "missing behavior name", "--reporter=json"],
+    expect(result.blockers).toContainEqual({
+      code: "behavior_base_unproven",
+      detail: `canonical behavior test 'missing behavior name' was not executed from ${stubPath} at baseSha`,
+      file: stubPath,
+    });
+    expect(result.record.commands.map((c) => c.name)).toEqual([
+      "verification_prepare_base",
+      "behavior_base_expect_fail",
+      "verification_prepare_head_tiers",
+      "affected_tests",
+      "verification_prepare_head",
+      "behavior_head_expect_pass",
+    ]);
+    expect(result.record.commands[5]).toMatchObject({
+      argv: ["npm", "test", "--", "--run", "-t", "missing behavior name$", "--reporter=json"],
       exitCode: 86,
-      stderr: "plain behaviorTest 'missing behavior name' matched no executable Vitest tests",
+      stderr: "plain behaviorTest 'missing behavior name' matched no executable exact Vitest test",
     });
+  });
+
+  it("blocks an agent that makes RED turn GREEN by editing the fixed oracle body", async () => {
+    const { repo, wt } = fixture();
+    const stubPath = "test/unit/workerBehavior.gen.test.ts";
+    const behaviorTest = "fixed oracle proves behavior";
+    write(path.join(wt, stubPath), `it('${behaviorTest}', () => { throw new Error('RED'); });\n`);
+    git(wt, ["add", stubPath]);
+    git(wt, ["commit", "-qm", "project-owned failing oracle"]);
+    const baseSha = git(wt, ["rev-parse", "HEAD"]);
+    write(path.join(wt, stubPath), `it('${behaviorTest}', () => { expect(true).toBe(true); });\n`);
+    write(path.join(wt, "src", "feature.txt"), "cosmetic only\n");
+    git(wt, ["add", stubPath, "src/feature.txt"]);
+    git(wt, ["commit", "-qm", "t-123abc edit the oracle instead of behavior"]);
+    record(repo, baseSha, ["src", stubPath], behaviorTest, undefined, stubPath);
+
+    let behaviorRuns = 0;
+    const result = await verifyTask({
+      workspaceRoot: repo,
+      agent: "worker",
+      verifySettings: { behavior: EXPLICIT_VITEST_VERIFY_SETTINGS.behavior },
+      runner: async (cwd, argv) => {
+        behaviorRuns += 1;
+        const status = behaviorRuns === 1 ? "failed" : "passed";
+        return {
+          command: argv.join(" "),
+          argv,
+          exitCode: status === "failed" ? 1 : 0,
+          stdout: vitestReport(path.join(cwd, stubPath), behaviorTest, status),
+          stderr: "",
+        };
+      },
+    });
+
+    expect(result.verdict).toBe("blocked");
+    expect(result.blockers).toContainEqual({
+      code: "behavior_oracle_changed",
+      detail: `canonical behavior oracle bytes changed at refSha: ${stubPath}`,
+      file: stubPath,
+    });
+    expect(behaviorRuns).toBe(1);
+  });
+
+  it("blocks a fake GREEN produced by changing the spawn-bound package executor", async () => {
+    const { repo, wt } = fixture();
+    const stubPath = "test/unit/workerBehavior.gen.test.ts";
+    const behaviorTest = "generated behavior stays canonical";
+    write(path.join(wt, stubPath), `it('${behaviorTest}', () => {});\n`);
+    git(wt, ["add", stubPath]);
+    git(wt, ["commit", "-qm", "project-owned failing oracle"]);
+    const baseSha = git(wt, ["rev-parse", "HEAD"]);
+
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    write(path.join(wt, "package.json"), JSON.stringify({ scripts: { test: "node fake-green.js" } }, null, 2));
+    write(
+      path.join(wt, "fake-green.js"),
+      `console.log(JSON.stringify({numTotalTests:1,numPassedTests:1,numFailedTests:0,numPendingTests:0,testResults:[{name:${JSON.stringify(stubPath)},assertionResults:[{title:${JSON.stringify(behaviorTest)},fullName:${JSON.stringify(behaviorTest)},status:"passed"}]}]}));\n`,
+    );
+    git(wt, ["add", "src/feature.txt", "package.json", "fake-green.js"]);
+    git(wt, ["commit", "-qm", "t-123abc replace the verifier with fake green"]);
+    record(
+      repo,
+      baseSha,
+      ["src", "package.json", "fake-green.js", stubPath],
+      behaviorTest,
+      undefined,
+      stubPath,
+      EXPLICIT_VITEST_VERIFY_SETTINGS,
+    );
+
+    let fakeGreenExecuted = false;
+    const result = await verifyTask({
+      workspaceRoot: repo,
+      agent: "worker",
+      runner: async (cwd, argv, opts) => {
+        if (argv[0] === "npm" && fs.readFileSync(path.join(cwd, "src", "feature.txt"), "utf8").trim() === "new") {
+          fakeGreenExecuted = true;
+        }
+        return testRunner(cwd, argv, opts);
+      },
+    });
+
+    expect(result.verdict).toBe("blocked");
+    expect(result.blockers).toContainEqual({
+      code: "behavior_executor_changed",
+      detail: `fixed behavior executor bytes changed at refSha: package.json`,
+      file: "package.json",
+    });
+    expect(fakeGreenExecuted).toBe(false);
+    expect(result.record.commands.some((command) => command.name === "behavior_head_expect_pass")).toBe(false);
   });
 
   it("blocks when the generated canonical behavior stub is renamed", async () => {
@@ -975,20 +1676,26 @@ describe("verifyTask", () => {
     const result = await verifyTask({
       workspaceRoot: repo,
       agent: "worker",
+      verifySettings: EXPLICIT_VITEST_VERIFY_SETTINGS,
       runner: async (_cwd, argv) => {
         if (argv[0] === "npx") return { command: argv.join(" "), argv, exitCode: 0, stdout: "related ok\n", stderr: "" };
         behaviorRuns += 1;
-        const exitCode = behaviorRuns === 1 ? 0 : 1;
+        const isBase = behaviorRuns === 1;
+        const exitCode = isBase ? 1 : 0;
+        const title = isBase ? "generated behavior stays canonical" : "renamed behavior";
         return {
           command: argv.join(" "),
           argv,
           exitCode,
           stdout: JSON.stringify({
             numTotalTests: 1,
-            numPassedTests: exitCode === 0 ? 1 : 0,
-            numFailedTests: exitCode === 0 ? 0 : 1,
+            numPassedTests: isBase ? 0 : 1,
+            numFailedTests: isBase ? 1 : 0,
             numPendingTests: 0,
-            testResults: [{ assertionResults: [{ fullName: "renamed behavior", status: exitCode === 0 ? "passed" : "failed" }] }],
+            testResults: [{
+              name: path.join(wt, stubPath),
+              assertionResults: [{ title, fullName: title, status: isBase ? "failed" : "passed" }],
+            }],
           }),
           stderr: "",
         };
@@ -998,12 +1705,12 @@ describe("verifyTask", () => {
     expect(result.verdict).toBe("blocked");
     expect(result.blockers).toContainEqual({
       code: "behavior_test_renamed",
-      detail: `canonical behavior test 'generated behavior stays canonical' was not observed in ${stubPath}`,
+      detail: `canonical behavior test 'generated behavior stays canonical' was not reported passed from ${stubPath}`,
       file: stubPath,
     });
   });
 
-  it("accepts a generated canonical behavior test reported with its describe wrapper in Vitest fullName", async () => {
+  it("accepts a relative reporter file for the canonical stub and a describe wrapper in Vitest fullName", async () => {
     const { repo, wt } = fixture();
     const stubPath = "test/unit/workerBehavior.gen.test.ts";
     write(
@@ -1029,10 +1736,11 @@ describe("verifyTask", () => {
     const result = await verifyTask({
       workspaceRoot: repo,
       agent: "worker",
+      verifySettings: EXPLICIT_VITEST_VERIFY_SETTINGS,
       runner: async (_cwd, argv) => {
         if (argv[0] === "npx") return { command: argv.join(" "), argv, exitCode: 0, stdout: "related ok\n", stderr: "" };
         behaviorRuns += 1;
-        const exitCode = behaviorRuns === 1 ? 0 : 1;
+        const exitCode = behaviorRuns === 1 ? 1 : 0;
         return {
           command: argv.join(" "),
           argv,
@@ -1044,6 +1752,7 @@ describe("verifyTask", () => {
             numPendingTests: 0,
             testResults: [
               {
+                name: stubPath,
                 assertionResults: [
                   {
                     ancestorTitles: ["container-generated delegation behavior"],
@@ -1064,9 +1773,652 @@ describe("verifyTask", () => {
     expect(result.blockers).toEqual([]);
   });
 
+  it.each([
+    {
+      label: "mixed failed/passed assertions at BASE",
+      baseStatuses: ["failed", "passed"] as const,
+      headStatuses: ["passed"] as const,
+      blockerCode: "behavior_base_unproven",
+    },
+    {
+      label: "duplicate passed assertions at HEAD",
+      baseStatuses: ["failed"] as const,
+      headStatuses: ["passed", "passed"] as const,
+      blockerCode: "behavior_test_renamed",
+    },
+  ])("rejects $label instead of accepting any matching status", async ({ baseStatuses, headStatuses, blockerCode }) => {
+    const { repo, wt } = fixture();
+    const stubPath = "test/unit/workerBehavior.gen.test.ts";
+    const behaviorTest = "generated behavior stays canonical";
+    write(path.join(wt, stubPath), `it('${behaviorTest}', () => {});\n`);
+    git(wt, ["add", stubPath]);
+    git(wt, ["commit", "-qm", "tachyon setup: canonical behavior stub"]);
+    const baseSha = git(wt, ["rev-parse", "HEAD"]);
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    git(wt, ["add", "src/feature.txt"]);
+    git(wt, ["commit", "-qm", "t-123abc implement behavior"]);
+    record(repo, baseSha, ["src", stubPath], behaviorTest, undefined, stubPath);
+
+    let behaviorRuns = 0;
+    const result = await verifyTask({
+      workspaceRoot: repo,
+      agent: "worker",
+      verifySettings: { behavior: EXPLICIT_VITEST_VERIFY_SETTINGS.behavior },
+      runner: async (_cwd, argv) => {
+        behaviorRuns += 1;
+        const isBase = behaviorRuns === 1;
+        const statuses = isBase ? baseStatuses : headStatuses;
+        return {
+          command: argv.join(" "),
+          argv,
+          exitCode: isBase ? 1 : 0,
+          stdout: vitestReportForAssertions(
+            stubPath,
+            statuses.map((status) => ({ title: behaviorTest, status })),
+          ),
+          stderr: "",
+        };
+      },
+    });
+
+    expect(result.verdict).toBe("blocked");
+    expect(result.blockers).toContainEqual(expect.objectContaining({
+      code: blockerCode,
+      detail: expect.stringContaining("must report exactly one assertion"),
+      file: stubPath,
+    }));
+  });
+
+  it("requires the canonical assertion identity to stay the same from BASE to HEAD", async () => {
+    const { repo, wt } = fixture();
+    const stubPath = "test/unit/workerBehavior.gen.test.ts";
+    const behaviorTest = "generated behavior stays canonical";
+    write(path.join(wt, stubPath), `it('${behaviorTest}', () => {});\n`);
+    git(wt, ["add", stubPath]);
+    git(wt, ["commit", "-qm", "tachyon setup: canonical behavior stub"]);
+    const baseSha = git(wt, ["rev-parse", "HEAD"]);
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    git(wt, ["add", "src/feature.txt"]);
+    git(wt, ["commit", "-qm", "t-123abc implement behavior"]);
+    record(repo, baseSha, ["src", stubPath], behaviorTest, undefined, stubPath);
+
+    let behaviorRuns = 0;
+    const result = await verifyTask({
+      workspaceRoot: repo,
+      agent: "worker",
+      verifySettings: { behavior: EXPLICIT_VITEST_VERIFY_SETTINGS.behavior },
+      runner: async (_cwd, argv) => {
+        behaviorRuns += 1;
+        const isBase = behaviorRuns === 1;
+        return {
+          command: argv.join(" "),
+          argv,
+          exitCode: isBase ? 1 : 0,
+          stdout: vitestReportForAssertions(stubPath, [{
+            title: behaviorTest,
+            fullName: `${isBase ? "suite A" : "suite B"} ${behaviorTest}`,
+            status: isBase ? "failed" : "passed",
+          }]),
+          stderr: "",
+        };
+      },
+    });
+
+    expect(result.verdict).toBe("blocked");
+    expect(result.blockers).toContainEqual({
+      code: "behavior_test_renamed",
+      detail: `canonical behavior assertion identity changed between baseSha and refSha: ${behaviorTest}`,
+      file: stubPath,
+    });
+  });
+
+  it("rejects a fake report-shaped JSON payload before the actual Vitest reporter payload", async () => {
+    const { repo, wt } = fixture();
+    const stubPath = "test/unit/workerBehavior.gen.test.ts";
+    const behaviorTest = "generated behavior stays canonical";
+    write(path.join(wt, stubPath), `it('${behaviorTest}', () => {});\n`);
+    git(wt, ["add", stubPath]);
+    git(wt, ["commit", "-qm", "tachyon setup: canonical behavior stub"]);
+    const baseSha = git(wt, ["rev-parse", "HEAD"]);
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    git(wt, ["add", "src/feature.txt"]);
+    git(wt, ["commit", "-qm", "t-123abc implement behavior"]);
+    record(repo, baseSha, ["src", stubPath], behaviorTest, undefined, stubPath);
+
+    let behaviorRuns = 0;
+    const result = await verifyTask({
+      workspaceRoot: repo,
+      agent: "worker",
+      verifySettings: { behavior: EXPLICIT_VITEST_VERIFY_SETTINGS.behavior },
+      runner: async (_cwd, argv) => {
+        behaviorRuns += 1;
+        const isBase = behaviorRuns === 1;
+        const reporter = vitestReport(stubPath, behaviorTest, "failed");
+        const fakeGreen = vitestReport(stubPath, behaviorTest, "passed");
+        return {
+          command: argv.join(" "),
+          argv,
+          exitCode: isBase ? 1 : 0,
+          stdout: isBase ? reporter : `${fakeGreen}\n${reporter}`,
+          stderr: "",
+        };
+      },
+    });
+
+    expect(result.verdict).toBe("blocked");
+    expect(result.record.commands.at(-1)).toMatchObject({
+      name: "behavior_head_expect_pass",
+      exitCode: 86,
+      stderr: expect.stringContaining("emitted 2 Vitest JSON reporter-shaped payloads"),
+    });
+  });
+
+  it("rejects Vitest summary counts that disagree with the reported assertions", async () => {
+    const { repo, wt } = fixture();
+    const stubPath = "test/unit/workerBehavior.gen.test.ts";
+    const behaviorTest = "generated behavior stays canonical";
+    write(path.join(wt, stubPath), `it('${behaviorTest}', () => {});\n`);
+    git(wt, ["add", stubPath]);
+    git(wt, ["commit", "-qm", "tachyon setup: canonical behavior stub"]);
+    const baseSha = git(wt, ["rev-parse", "HEAD"]);
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    git(wt, ["add", "src/feature.txt"]);
+    git(wt, ["commit", "-qm", "t-123abc implement behavior"]);
+    record(repo, baseSha, ["src", stubPath], behaviorTest, undefined, stubPath);
+
+    let behaviorRuns = 0;
+    const result = await verifyTask({
+      workspaceRoot: repo,
+      agent: "worker",
+      verifySettings: { behavior: EXPLICIT_VITEST_VERIFY_SETTINGS.behavior },
+      runner: async (_cwd, argv) => {
+        behaviorRuns += 1;
+        const isBase = behaviorRuns === 1;
+        return {
+          command: argv.join(" "),
+          argv,
+          exitCode: isBase ? 1 : 0,
+          stdout: isBase
+            ? vitestReport(stubPath, behaviorTest, "failed")
+            : JSON.stringify({
+                numTotalTests: 1,
+                numPassedTests: 0,
+                numFailedTests: 1,
+                numPendingTests: 0,
+                numTodoTests: 0,
+                testResults: [{
+                  name: stubPath,
+                  assertionResults: [{ title: behaviorTest, fullName: behaviorTest, status: "passed" }],
+                }],
+              }),
+          stderr: "",
+        };
+      },
+    });
+
+    expect(result.verdict).toBe("blocked");
+    expect(result.record.commands.at(-1)).toMatchObject({
+      name: "behavior_head_expect_pass",
+      exitCode: 86,
+      stderr: expect.stringContaining("summary counts do not match assertion results"),
+    });
+  });
+
+  it("blocks when a nonzero BASE Vitest run does not prove the exact canonical assertion", async () => {
+    const { repo, wt } = fixture();
+    const stubPath = "test/unit/workerBehavior.gen.test.ts";
+    const behaviorTest = "generated behavior stays canonical";
+    write(path.join(wt, stubPath), `it('${behaviorTest}', () => {});\n`);
+    git(wt, ["add", stubPath]);
+    git(wt, ["commit", "-qm", "tachyon setup: canonical behavior stub"]);
+    const baseSha = git(wt, ["rev-parse", "HEAD"]);
+
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    git(wt, ["add", "src/feature.txt"]);
+    git(wt, ["commit", "-qm", "t-123abc implement behavior"]);
+    record(repo, baseSha, ["src", stubPath], behaviorTest, undefined, stubPath);
+
+    let behaviorRuns = 0;
+    const result = await verifyTask({
+      workspaceRoot: repo,
+      agent: "worker",
+      verifySettings: { behavior: EXPLICIT_VITEST_VERIFY_SETTINGS.behavior },
+      runner: async (_cwd, argv) => {
+        behaviorRuns += 1;
+        if (behaviorRuns === 1) {
+          return { command: argv.join(" "), argv, exitCode: 1, stdout: "", stderr: "expected red\n" };
+        }
+        return {
+          command: argv.join(" "),
+          argv,
+          exitCode: 0,
+          stdout: vitestReport(path.join(wt, stubPath), behaviorTest, "passed"),
+          stderr: "",
+        };
+      },
+    });
+
+    expect(result.verdict).toBe("blocked");
+    expect(result.blockers).toContainEqual({
+      code: "behavior_base_unproven",
+      detail: `canonical behavior test '${behaviorTest}' was not executed from ${stubPath} at baseSha`,
+      file: stubPath,
+    });
+    expect(result.record.commands.map((command) => command.name)).toEqual([
+      "behavior_base_expect_fail",
+      "behavior_head_expect_pass",
+    ]);
+  });
+
+  it("does not let an exact duplicate assertion in another file satisfy the canonical stub", async () => {
+    const { repo, wt } = fixture();
+    const stubPath = "test/unit/workerBehavior.gen.test.ts";
+    const duplicatePath = "test/unit/duplicateBehavior.test.ts";
+    const behaviorTest = "generated behavior stays canonical";
+    write(path.join(wt, stubPath), `it('${behaviorTest}', () => {});\n`);
+    git(wt, ["add", stubPath]);
+    git(wt, ["commit", "-qm", "tachyon setup: canonical behavior stub"]);
+    const baseSha = git(wt, ["rev-parse", "HEAD"]);
+
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    write(path.join(wt, duplicatePath), `it('${behaviorTest}', () => {});\n`);
+    git(wt, ["add", "src/feature.txt", duplicatePath]);
+    git(wt, ["commit", "-qm", "t-123abc duplicate behavior elsewhere"]);
+    record(repo, baseSha, ["src", stubPath, duplicatePath], behaviorTest, undefined, stubPath);
+
+    let behaviorRuns = 0;
+    const result = await verifyTask({
+      workspaceRoot: repo,
+      agent: "worker",
+      verifySettings: { behavior: EXPLICIT_VITEST_VERIFY_SETTINGS.behavior },
+      runner: async (_cwd, argv) => {
+        behaviorRuns += 1;
+        const isBase = behaviorRuns === 1;
+        return {
+          command: argv.join(" "),
+          argv,
+          exitCode: isBase ? 1 : 0,
+          stdout: vitestReport(path.join(wt, isBase ? stubPath : duplicatePath), behaviorTest, isBase ? "failed" : "passed"),
+          stderr: "",
+        };
+      },
+    });
+
+    expect(result.verdict).toBe("blocked");
+    expect(result.blockers).toContainEqual({
+      code: "behavior_test_renamed",
+      detail: `canonical behavior test '${behaviorTest}' was not reported passed from ${stubPath}`,
+      file: stubPath,
+    });
+  });
+
+  it("blocks a canonical stub changed into a symlink before executing the HEAD verifier", async () => {
+    const { repo, wt } = fixture();
+    const stubPath = "test/unit/workerBehavior.gen.test.ts";
+    const duplicatePath = "test/unit/duplicateBehavior.test.ts";
+    const behaviorTest = "generated behavior stays canonical";
+    write(path.join(wt, stubPath), `it('${behaviorTest}', () => {});\n`);
+    git(wt, ["add", stubPath]);
+    git(wt, ["commit", "-qm", "tachyon setup: canonical behavior stub"]);
+    const baseSha = git(wt, ["rev-parse", "HEAD"]);
+
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    write(path.join(wt, duplicatePath), `it('${behaviorTest}', () => {});\n`);
+    fs.rmSync(path.join(wt, stubPath));
+    fs.symlinkSync(path.basename(duplicatePath), path.join(wt, stubPath));
+    git(wt, ["add", "src/feature.txt", stubPath, duplicatePath]);
+    git(wt, ["commit", "-qm", "t-123abc replace canonical stub with symlink"]);
+    record(repo, baseSha, ["src", stubPath, duplicatePath], behaviorTest, undefined, stubPath);
+
+    let behaviorRuns = 0;
+    const result = await verifyTask({
+      workspaceRoot: repo,
+      agent: "worker",
+      verifySettings: { behavior: EXPLICIT_VITEST_VERIFY_SETTINGS.behavior },
+      runner: async (_cwd, argv) => {
+        behaviorRuns += 1;
+        return {
+          command: argv.join(" "),
+          argv,
+          exitCode: 1,
+          stdout: vitestReport(path.join(wt, stubPath), behaviorTest, "failed"),
+          stderr: "",
+        };
+      },
+    });
+
+    expect(result.verdict).toBe("blocked");
+    expect(result.blockers).toContainEqual({
+      code: "behavior_test_renamed",
+      detail: `canonical behavior stub is not a regular non-symlink file at refSha: ${stubPath}`,
+      file: stubPath,
+    });
+    expect(result.blockers).toContainEqual({
+      code: "behavior_test_renamed",
+      detail: `canonical behavior test stub changed file type: ${stubPath}`,
+      file: stubPath,
+    });
+    expect(behaviorRuns).toBe(1);
+  });
+
+  it.each([
+    { label: "skipped", status: "pending" as const },
+    { label: "todo", status: "todo" as const },
+  ])("does not accept a canonical behavior assertion reported as $label", async ({ status }) => {
+    const { repo, wt } = fixture();
+    const stubPath = "test/unit/workerBehavior.gen.test.ts";
+    const behaviorTest = "generated behavior stays canonical";
+    write(path.join(wt, stubPath), `it('${behaviorTest}', () => {});\n`);
+    git(wt, ["add", stubPath]);
+    git(wt, ["commit", "-qm", "tachyon setup: canonical behavior stub"]);
+    const baseSha = git(wt, ["rev-parse", "HEAD"]);
+
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    git(wt, ["add", "src/feature.txt"]);
+    git(wt, ["commit", "-qm", `t-123abc ${status} canonical behavior`]);
+    record(repo, baseSha, ["src", stubPath], behaviorTest, undefined, stubPath);
+
+    let behaviorRuns = 0;
+    const result = await verifyTask({
+      workspaceRoot: repo,
+      agent: "worker",
+      verifySettings: { behavior: EXPLICIT_VITEST_VERIFY_SETTINGS.behavior },
+      runner: async (_cwd, argv) => {
+        behaviorRuns += 1;
+        const isBase = behaviorRuns === 1;
+        return {
+          command: argv.join(" "),
+          argv,
+          exitCode: isBase ? 1 : 0,
+          stdout: vitestReport(path.join(wt, stubPath), behaviorTest, isBase ? "failed" : status),
+          stderr: "",
+        };
+      },
+    });
+
+    expect(result.verdict).toBe("blocked");
+    expect(result.blockers).toContainEqual({
+      code: "behavior_test_renamed",
+      detail: `canonical behavior test '${behaviorTest}' was not reported passed from ${stubPath}`,
+      file: stubPath,
+    });
+    expect(result.record.commands.at(-1)).toMatchObject({
+      name: "behavior_head_expect_pass",
+      exitCode: 86,
+      stderr: `plain behaviorTest '${behaviorTest}' was skipped, todo, or pending instead of executed`,
+    });
+  });
+
+  it("runs BASE before HEAD so ignored HEAD state cannot contaminate the RED proof", async () => {
+    const { repo, wt, baseSha } = fixture();
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    git(wt, ["add", "src/feature.txt"]);
+    git(wt, ["commit", "-qm", "t-123abc implement behavior"]);
+    record(repo, baseSha);
+
+    const observations: Array<{ feature: string; markerExists: boolean }> = [];
+    const result = await verifyTask({
+      workspaceRoot: repo,
+      agent: "worker",
+      verifySettings: {},
+      runner: async (cwd, argv) => {
+        const marker = path.join(cwd, "node_modules", "head-marker");
+        const feature = fs.readFileSync(path.join(cwd, "src", "feature.txt"), "utf8").trim();
+        const markerExists = fs.existsSync(marker);
+        observations.push({ feature, markerExists });
+        if (feature === "new") write(marker, "created by HEAD\n");
+        return {
+          command: argv.join(" "),
+          argv,
+          exitCode: feature === "new" || markerExists ? 0 : 1,
+          stdout: "",
+          stderr: "",
+        };
+      },
+    });
+
+    expect(result.verdict).toBe("accept");
+    expect(observations).toEqual([
+      { feature: "old", markerExists: false },
+      { feature: "new", markerExists: false },
+    ]);
+    expect(result.record.commands.map((command) => command.name)).toEqual([
+      "behavior_base_expect_fail",
+      "behavior_head_expect_pass",
+    ]);
+  });
+
+  it("does not let a HEAD tier manufacture the GREEN proof through ignored state", async () => {
+    const { repo, wt } = fixture();
+    write(
+      path.join(wt, "behavior.js"),
+      "const fs = require('fs'); process.exit(fs.existsSync('node_modules/tier-marker') ? 0 : 1);\n",
+    );
+    write(
+      path.join(wt, "tier.js"),
+      "const fs = require('fs'); fs.mkdirSync('node_modules', { recursive: true }); fs.writeFileSync('node_modules/tier-marker', 'created by tier');\n",
+    );
+    git(wt, ["add", "behavior.js", "tier.js"]);
+    git(wt, ["commit", "-qm", "project verifier and affected tier"]);
+    const baseSha = git(wt, ["rev-parse", "HEAD"]);
+    write(path.join(wt, "src", "feature.txt"), "irrelevant change\n");
+    git(wt, ["add", "src/feature.txt"]);
+    git(wt, ["commit", "-qm", "t-123abc unrelated implementation change"]);
+    record(repo, baseSha, ["src"], "cmd:node behavior.js", undefined, undefined, { affected: "node tier.js" });
+
+    const result = await verifyTask({ workspaceRoot: repo, agent: "worker", runner: testRunner });
+
+    expect(result.verdict).toBe("blocked");
+    expect(result.blockers.map((blocker) => blocker.code)).toContain("behavior_failed");
+    expect(result.record.commands.map((command) => command.name)).toEqual([
+      "behavior_base_expect_fail",
+      "affected_tests",
+      "behavior_head_expect_pass",
+    ]);
+    const tier = result.record.commands.find((command) => command.name === "affected_tests");
+    const headBehavior = result.record.commands.find((command) => command.name === "behavior_head_expect_pass");
+    expect(tier).toMatchObject({ exitCode: 0 });
+    expect(headBehavior).toMatchObject({ exitCode: 1 });
+    expect(tier?.cwd).not.toBe(headBehavior?.cwd);
+  });
+
+  it("does not accept RED then GREEN that depends only on a shared host temp marker", async () => {
+    const { repo, wt } = fixture();
+    write(
+      path.join(wt, "behavior.js"),
+      [
+        "const fs = require('fs');",
+        "const os = require('os');",
+        "const path = require('path');",
+        "const marker = path.join(os.tmpdir(), 'tachyon-shared-state-marker');",
+        "const seen = fs.existsSync(marker);",
+        "fs.writeFileSync(marker, 'state');",
+        "console.log(JSON.stringify({ temporary: os.tmpdir(), nodePath: process.env.NODE_PATH }));",
+        "process.exit(seen ? 0 : 1);",
+        "",
+      ].join("\n"),
+    );
+    git(wt, ["add", "behavior.js"]);
+    git(wt, ["commit", "-qm", "project verifier with temp-state tripwire"]);
+    const baseSha = git(wt, ["rev-parse", "HEAD"]);
+    write(path.join(wt, "src", "feature.txt"), "irrelevant change\n");
+    git(wt, ["add", "src/feature.txt"]);
+    git(wt, ["commit", "-qm", "t-123abc unrelated implementation change"]);
+    record(repo, baseSha, ["src", "behavior.js"], "cmd:node behavior.js", undefined, undefined, {});
+
+    const priorNodePath = process.env.NODE_PATH;
+    process.env.NODE_PATH = path.join(repo, "node_modules", "ambient-injection");
+    let result: Awaited<ReturnType<typeof verifyTask>>;
+    try {
+      result = await verifyTask({ workspaceRoot: repo, agent: "worker" });
+    } finally {
+      if (priorNodePath === undefined) delete process.env.NODE_PATH;
+      else process.env.NODE_PATH = priorNodePath;
+    }
+
+    expect(result.verdict).toBe("blocked");
+    expect(result.blockers.map((blocker) => blocker.code)).toContain("behavior_failed");
+    const behaviorCommands = result.record.commands.filter((command) => command.name.startsWith("behavior_"));
+    expect(behaviorCommands).toHaveLength(2);
+    const observations = behaviorCommands.map((command) => JSON.parse(command.stdout!.trim()) as { temporary: string; nodePath?: string });
+    expect(observations.map((observation) => observation.nodePath)).toEqual([undefined, undefined]);
+    const phaseTemps = observations.map((observation) => observation.temporary);
+    expect(phaseTemps.every((temporary) => temporary?.startsWith(verificationCloneParent(repo)))).toBe(true);
+    expect(new Set(phaseTemps).size).toBe(2);
+  });
+
+  it("neutralizes shared checkout hooks and reaps only a provably abandoned owned clone", async () => {
+    const { repo, wt, baseSha } = fixture();
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    git(wt, ["add", "src/feature.txt"]);
+    git(wt, ["commit", "-qm", "t-123abc implement behavior"]);
+    record(repo, baseSha, ["src"], "cmd:node behavior.js", undefined, undefined, {});
+
+    const hookMarker = path.join(repo, ".tachyon", "post-checkout-ran");
+    const hook = path.join(repo, ".git", "hooks", "post-checkout");
+    write(hook, `#!/bin/sh\nprintf hook > ${JSON.stringify(hookMarker)}\n`);
+    fs.chmodSync(hook, 0o755);
+
+    const cloneParent = verificationCloneParent(repo);
+    const workspaceHash = crypto.createHash("sha256").update(fs.realpathSync(repo)).digest("hex").slice(0, 24);
+    const stale = path.join(cloneParent, "verify-stale-owned");
+    fs.mkdirSync(cloneParent, { recursive: true, mode: 0o700 });
+    fs.mkdirSync(stale);
+    write(path.join(stale, "owner.json"), JSON.stringify({
+      version: 1,
+      workspaceHash,
+      pid: 2_147_483_647,
+      nonce: "a".repeat(32),
+      createdAt: "2020-01-01T00:00:00.000Z",
+    }));
+    const invalid = path.join(cloneParent, "verify-invalid-owner");
+    fs.mkdirSync(invalid);
+    write(path.join(invalid, "owner.json"), JSON.stringify({
+      version: 1,
+      workspaceHash,
+      pid: -1,
+      processStart: { forged: true },
+      nonce: "not-hex",
+      createdAt: "2020-01-01T00:00:00.000Z",
+    }));
+    const zeroStart = path.join(cloneParent, "verify-zero-process-start");
+    fs.mkdirSync(zeroStart);
+    write(path.join(zeroStart, "owner.json"), JSON.stringify({
+      version: 1,
+      workspaceHash,
+      pid: process.pid,
+      processStart: "0",
+      nonce: "b".repeat(32),
+      createdAt: "2020-01-01T00:00:00.000Z",
+    }));
+
+    const result = await verifyTask({ workspaceRoot: repo, agent: "worker", runner: testRunner });
+
+    expect(result.verdict).toBe("accept");
+    expect(fs.existsSync(hookMarker)).toBe(false);
+    expect(fs.existsSync(stale)).toBe(false);
+    expect(fs.existsSync(invalid)).toBe(true);
+    expect(fs.existsSync(zeroStart)).toBe(true);
+    expect(fs.readdirSync(cloneParent).filter((entry) => entry.startsWith("verify-")).sort()).toEqual([
+      "verify-invalid-owner",
+      "verify-zero-process-start",
+    ]);
+  });
+
+  it("stores verification-clone Git objects independently from the trusted source repository", async () => {
+    const { repo, wt, baseSha } = fixture();
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    git(wt, ["add", "src/feature.txt"]);
+    git(wt, ["commit", "-qm", "t-123abc implement behavior"]);
+    record(repo, baseSha, ["src"], "cmd:node behavior.js", undefined, undefined, {});
+
+    // A fully packed source makes the old `clone --local` path observably dangerous: its clone would
+    // hardlink these pack files. The verifier must instead receive independently stored object bytes.
+    git(repo, ["gc", "--prune=now"]);
+    const sourcePackDir = path.join(repo, ".git", "objects", "pack");
+    const sourcePackNames = fs.readdirSync(sourcePackDir).filter((name) => name.endsWith(".pack"));
+    expect(sourcePackNames.length).toBeGreaterThan(0);
+    const sourceBytes = new Map(sourcePackNames.map((name) => [
+      name,
+      fs.readFileSync(path.join(sourcePackDir, name)),
+    ]));
+    let provedIndependentStorage = false;
+
+    const result = await verifyTask({
+      workspaceRoot: repo,
+      agent: "worker",
+      verifySettings: {},
+      runner: async (cwd, argv, opts) => {
+        if (!provedIndependentStorage) {
+          const clonePackDir = path.join(cwd, ".git", "objects", "pack");
+          const clonePackName = fs.readdirSync(clonePackDir).find((name) => name.endsWith(".pack"));
+          expect(clonePackName).toBeDefined();
+          const clonePack = path.join(clonePackDir, clonePackName!);
+          const cloneBefore = fs.readFileSync(clonePack);
+          expect(cloneBefore.length).toBeGreaterThan(0);
+
+          const sameNamedSource = path.join(sourcePackDir, clonePackName!);
+          if (fs.existsSync(sameNamedSource)) {
+            const sourceStat = fs.statSync(sameNamedSource);
+            const cloneStat = fs.statSync(clonePack);
+            expect({ dev: cloneStat.dev, ino: cloneStat.ino }).not.toEqual({ dev: sourceStat.dev, ino: sourceStat.ino });
+          }
+
+          const mutated = Buffer.from(cloneBefore);
+          mutated[mutated.length - 1] ^= 0xff;
+          const cloneMode = fs.statSync(clonePack).mode;
+          fs.chmodSync(clonePack, cloneMode | 0o200);
+          fs.writeFileSync(clonePack, mutated);
+          try {
+            for (const [name, before] of sourceBytes) {
+              expect(fs.readFileSync(path.join(sourcePackDir, name)).equals(before)).toBe(true);
+            }
+          } finally {
+            fs.writeFileSync(clonePack, cloneBefore);
+            fs.chmodSync(clonePack, cloneMode);
+          }
+          provedIndependentStorage = true;
+        }
+        return testRunner(cwd, argv, opts);
+      },
+    });
+
+    expect(result.verdict).toBe("accept");
+    expect(provedIndependentStorage).toBe(true);
+  });
+
+  it("prefixes a root affected path beginning with a dash before passing it to the project command", async () => {
+    const { repo, wt, baseSha } = fixture();
+    write(path.join(wt, "--passWithNoTests"), "not a CLI option\n");
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    git(wt, ["add", "--", "--passWithNoTests", "src/feature.txt"]);
+    git(wt, ["commit", "-qm", "t-123abc add option-shaped file"]);
+    record(repo, baseSha, ["src", "--passWithNoTests"]);
+
+    const result = await verifyTask({
+      workspaceRoot: repo,
+      agent: "worker",
+      verifySettings: { affected: VITEST_AFFECTED_COMMAND },
+      runner: testRunner,
+    });
+
+    expect(result.verdict).toBe("accept");
+    expect(result.record.commands.find((command) => command.name === "affected_tests")?.argv).toEqual([
+      "npx",
+      "vitest",
+      "related",
+      "--run",
+      "./--passWithNoTests",
+      "src/feature.txt",
+    ]);
+  });
+
   it("runs configured typecheck and affected tests on every verification but skips full by default", async () => {
     const { repo, wt, baseSha } = fixture();
-    write(path.join(repo, "tachyon.yml"), "agents:\n  worker:\n    cmd: codex\nsettings:\n  verify:\n    typecheck: node typecheck.js\n    full: node full.js\n");
+    write(
+      path.join(repo, "tachyon.yml"),
+      "agents:\n  worker:\n    cmd: codex\nsettings:\n  verify:\n    typecheck: node typecheck.js\n    affected: npx vitest related --run\n    full: node full.js\n",
+    );
     write(path.join(wt, "typecheck.js"), "process.exit(0);\n");
     write(path.join(wt, "full.js"), "process.exit(0);\n");
     write(path.join(wt, "src", "feature.txt"), "new\n");
@@ -1074,12 +2426,12 @@ describe("verifyTask", () => {
     git(wt, ["commit", "-qm", "t-123abc implement behavior"]);
     record(repo, baseSha, ["src", "typecheck.js", "full.js"]);
 
-    const result = await runVerify({ workspaceRoot: repo, agent: "worker" });
+    const result = await verifyTask({ workspaceRoot: repo, agent: "worker", runner: testRunner });
 
     expect(result.verdict).toBe("accept");
-    expect(result.record.commands.map((c) => c.name)).toEqual(["typecheck", "affected_tests", "behavior_head_expect_pass", "behavior_base_expect_fail"]);
-    expect(result.record.commands[0].argv).toEqual(["node", "typecheck.js"]);
-    expect(result.record.commands[1].argv).toEqual(["npx", "vitest", "related", "--run", "full.js", "src/feature.txt", "typecheck.js"]);
+    expect(result.record.commands.map((c) => c.name)).toEqual(["behavior_base_expect_fail", "typecheck", "affected_tests", "behavior_head_expect_pass"]);
+    expect(result.record.commands[1].argv).toEqual(["node", "typecheck.js"]);
+    expect(result.record.commands[2].argv).toEqual(["npx", "vitest", "related", "--run", "full.js", "src/feature.txt", "typecheck.js"]);
   });
 
   it("filters affected-test files to paths that still exist at refSha", async () => {
@@ -1094,26 +2446,33 @@ describe("verifyTask", () => {
     git(wt, ["commit", "-qm", "t-123abc implement behavior and delete file"]);
     record(repo, taskBase, ["src"]);
 
-    const result = await runVerify({ workspaceRoot: repo, agent: "worker" });
+    const result = await runVerify({
+      workspaceRoot: repo,
+      agent: "worker",
+      verifySettings: { affected: VITEST_AFFECTED_COMMAND },
+    });
 
     expect(result.verdict).toBe("accept");
-    expect(result.record.commands[0].argv).toEqual(["npx", "vitest", "related", "--run", "src/feature.txt"]);
+    expect(result.record.commands[1].argv).toEqual(["npx", "vitest", "related", "--run", "src/feature.txt"]);
   });
 
   it("runs the configured full command only when full:true is requested", async () => {
     const { repo, wt, baseSha } = fixture();
-    write(path.join(repo, "tachyon.yml"), "agents:\n  worker:\n    cmd: codex\nsettings:\n  verify:\n    full: node full.js\n");
+    write(
+      path.join(repo, "tachyon.yml"),
+      "agents:\n  worker:\n    cmd: codex\nsettings:\n  verify:\n    affected: npx vitest related --run\n    full: node full.js\n",
+    );
     write(path.join(wt, "full.js"), "process.exit(0);\n");
     write(path.join(wt, "src", "feature.txt"), "new\n");
     git(wt, ["add", "src/feature.txt", "full.js"]);
     git(wt, ["commit", "-qm", "t-123abc implement behavior"]);
     record(repo, baseSha, ["src", "full.js"]);
 
-    const result = await runVerify({ workspaceRoot: repo, agent: "worker", full: true });
+    const result = await verifyTask({ workspaceRoot: repo, agent: "worker", full: true, runner: testRunner });
 
     expect(result.verdict).toBe("accept");
-    expect(result.record.commands.map((c) => c.name)).toEqual(["affected_tests", "full_tests", "behavior_head_expect_pass", "behavior_base_expect_fail"]);
-    expect(result.record.commands[1].argv).toEqual(["node", "full.js"]);
+    expect(result.record.commands.map((c) => c.name)).toEqual(["behavior_base_expect_fail", "affected_tests", "full_tests", "behavior_head_expect_pass"]);
+    expect(result.record.commands[2].argv).toEqual(["node", "full.js"]);
   });
 
   it("blocks when a tiered verification command fails", async () => {
@@ -1126,6 +2485,7 @@ describe("verifyTask", () => {
     const result = await verifyTask({
       workspaceRoot: repo,
       agent: "worker",
+      verifySettings: { affected: VITEST_AFFECTED_COMMAND },
       runner: async (cwd, argv, opts) => {
         if (argv[0] === "npx") return { command: argv.join(" "), argv, exitCode: 1, stdout: "", stderr: "related failed\n" };
         return testRunner(cwd, argv, opts);
@@ -1135,7 +2495,7 @@ describe("verifyTask", () => {
     expect(result.verdict).toBe("blocked");
     expect(result.blockers.map((b) => b.code)).toContain("affected_tests_failed");
     expect(result.blockers.map((b) => b.code)).toContain("behavior_not_run");
-    expect(result.record.commands.map((c) => c.name)).toEqual(["affected_tests"]);
+    expect(result.record.commands.map((c) => c.name)).toEqual(["behavior_base_expect_fail", "affected_tests"]);
   });
 
   it("blocks when the task ref has no new commit", async () => {
@@ -1367,12 +2727,17 @@ describe("verifyTask", () => {
   });
 
   it("blocks suppression tripwires unless coordinator waivers match the finding", async () => {
-    const { repo, wt, baseSha } = fixture();
+    const { repo, wt } = fixture();
+    const stubPath = "test/unit/workerBehavior.gen.test.ts";
+    write(path.join(wt, stubPath), "it('generated behavior stays canonical', () => {});\n");
+    git(wt, ["add", stubPath]);
+    git(wt, ["commit", "-qm", "tachyon setup: canonical behavior stub"]);
+    const baseSha = git(wt, ["rev-parse", "HEAD"]);
     write(path.join(wt, "src", "feature.txt"), "new\n");
     write(path.join(wt, "test", "feature.test.ts"), "it.skip('old behavior', () => {});\n");
     git(wt, ["add", "src/feature.txt", "test/feature.test.ts"]);
     git(wt, ["commit", "-qm", "t-123abc behavior with suppression"]);
-    record(repo, baseSha, ["src", "test"]);
+    record(repo, baseSha, ["src", "test"], "generated behavior stays canonical", undefined, stubPath);
 
     const blocked = await runVerify({ workspaceRoot: repo, agent: "worker" });
     expect(blocked.verdict).toBe("blocked");
@@ -1385,6 +2750,20 @@ describe("verifyTask", () => {
     });
     expect(waived.verdict).toBe("accept");
     expect(waived.record.waivers).toHaveLength(1);
+  });
+
+  it("does not apply Vitest suppression policy to a cmd gate even when a global adapter is configured", async () => {
+    const { repo, wt, baseSha } = fixture();
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    write(path.join(wt, "test", "feature.test.ts"), "it.skip('project-owned policy', () => {});\n");
+    git(wt, ["add", "src/feature.txt", "test/feature.test.ts"]);
+    git(wt, ["commit", "-qm", "t-123abc cmd behavior with project test marker"]);
+    record(repo, baseSha, ["src", "test"]);
+
+    const result = await runVerify({ workspaceRoot: repo, agent: "worker" });
+
+    expect(result.verdict).toBe("accept");
+    expect(result.blockers.map((blocker) => blocker.code)).not.toContain("test_suppression");
   });
 
   it("surfaces waived findings at the top level of the result, not just buried in record.findings", async () => {

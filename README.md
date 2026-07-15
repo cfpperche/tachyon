@@ -970,8 +970,16 @@ agents:
 - **Sub-agents share the parent's worktree** (one unit of work = one branch = one PR);
   `worktree: true` on a child is a no-op + warning. Spawn top-level to isolate.
 - **Setup** runs only on create (not restart/reuse), sequentially, stop-on-first-failure,
-  with `TACHYON_WORKSPACE_ROOT` / `TACHYON_WORKTREE_ROOT` set; failure is surfaced but the
-  agent still starts.
+  with `TACHYON_WORKSPACE_ROOT` / `TACHYON_WORKTREE_ROOT` set. A failed setup prevents the
+  agent from starting and preserves the checkout for recovery; Tachyon never automatically
+  removes or rewinds a checkout after a fallible setup/launch step.
+- **Interrupted-launch recovery is explicit.** Tachyon Git-locks a launch checkout until its
+  session ownership (and, for a gate, delegation record) is durable. A surviving lock means an
+  attempt was interrupted or finalization failed, so automatic retry refuses to reuse it. Inspect
+  the path and its `git status`/`git log`, then, only when you have decided the preserved state is
+  safe to reuse or remove, run `git -C <workspace> worktree unlock <path>`. Retry the launch or use
+  **Remove Worktree** afterwards. A normally completed/cleanly stopped checkout is already unlocked
+  and may be reused even if its ephemeral session row is gone.
 - **Cleanup is human-decided.** Dismissing a worktree agent (or the **Remove Worktree**
   action) shows the path, uncommitted changes, commits-ahead/unpushed, and branch ownership.
   `git worktree remove --force` runs on confirm. The branch is auto-deleted **only when it's
@@ -1051,13 +1059,55 @@ English on purpose — their audience is the models reading the MCP schema.
 ```bash
 npm ci
 npm run build          # esbuild bundle -> dist/
-npm test               # vitest: unit + real-tmux integration (auto-skips without tmux)
+npm test               # aggregate Vitest gate: unit + integration + Product Invariants
+npm run test:invariants   # focused stable promises under test/product-invariants/
 npm run test:integration   # @vscode/test-cli host suites (single-root + multi-root; downloads VSCode once)
 npm run typecheck
 ```
 
-CI runs the portable core (typecheck + build + unit, including a real-tmux subset). The xvfb
-editor-host integration suites are a local gate — run them on tmux ≥ 3.6.
+CI runs the portable core (typecheck + build + unit, including a real-tmux subset) and exposes Product
+Invariants as a distinct gate. The xvfb editor-host integration suites are a local gate — run them on
+tmux ≥ 3.6.
+
+### Product invariants and explicit verification migration
+
+Tachyon's own stable product promises are registered in
+[`docs/architecture/product-invariant-testing.md`](docs/architecture/product-invariant-testing.md).
+“Product Invariant” is the semantic contract; browser, full-stack, `e2e`, component and installed-system
+are possible execution topologies. The focused command above and the normal full suite execute the same
+files rather than maintaining two sources of truth.
+
+Gated delegation verification no longer assumes that a consumer project uses npm, Vitest or `test/unit`.
+Projects that want full, changed-file and named-test verification declare those mechanics explicitly. For
+example, this repository opts into its own Node/Vitest conventions with:
+
+```yaml
+settings:
+  verify:
+    full: npm run verify:full:quiet
+    typecheck: npm run typecheck
+    prepare: npm ci --ignore-scripts --prefer-offline --no-audit --no-fund
+    affected: npx vitest related --run
+    behavior:
+      adapter: vitest-name
+      command: npm test --
+      stubPath: test/unit/{agent}Behavior.gen.test.ts
+      executorPaths: [package.json, package-lock.json, vitest.config.ts, tsconfig.json]
+```
+
+These values are examples owned by this repository, not Tachyon defaults. `affected` is the argv prefix
+to which Tachyon appends existing changed paths as option-safe relative arguments. A plain `behavior_test` name requires an explicit `behavior`
+adapter; configure the `vitest-name` adapter when that is the project's chosen contract, or use
+`cmd:<command>` for an explicit runner-neutral verifier. For a named adapter, `stubPath` is the compatibility
+key for a **pre-existing, tracked, project-owned test oracle**: Tachyon hashes its committed bytes at spawn
+and requires the same bytes at BASE and HEAD. It never turns behavior prose into an assertion, generates a
+placeholder, or authorizes the implementer to edit the oracle. Top-level `settings.verify.prepare`
+provisions a fresh verifier environment in each external isolated clone for named and `cmd:` gates;
+`executorPaths` names every tracked manifest, lockfile and
+runner/config input whose committed hashes must also stay identical. This avoids trusting the agent
+worktree's package scripts, ignored dependencies, hooks or remotes as verification evidence. Requesting
+full verification without `settings.verify.full`, or named verification without an adapter, is reported as
+missing project configuration rather than silently replaced with an npm/Vitest command.
 
 ## Support
 

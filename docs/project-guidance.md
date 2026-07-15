@@ -23,6 +23,15 @@ policy and must not be imposed on projects that consume Tachyon.
 - Commit the same explicit path scope with one plain `git commit -m ... -- <paths>` invocation from
   the repository root. Include the Tachyon task id in the message when the work has one.
 
+## Product invariant testing
+
+- Before implementing a behavior-changing Task or SDD spec, declare
+  `Affected Product Invariants: PI-*` or `Affected Product Invariants: none — <reason>`.
+- Follow `docs/architecture/product-invariant-testing.md`: Product Invariant names the stable promise;
+  `e2e`/full-stack names only an execution topology. Do not derive or relax the registered fixed oracle.
+- When a `PI-*` promise intentionally changes, land the ratified product decision, registry metadata and
+  executable assertions together. Run `npm run test:invariants` for affected entries.
+
 ## Localization ownership
 
 - New or changed strings shown to people through the VS Code UI use `vscode.l10n.t(...)` or the

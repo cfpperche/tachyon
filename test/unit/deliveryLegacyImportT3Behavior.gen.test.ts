@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { applyLegacyImport, previewLegacyImport } from "../../src/delivery/legacyImport.js";
-import { DeliveryStore } from "../../src/delivery/store.js";
+import { DeliveryStore, DeliveryStoreBusyError } from "../../src/delivery/store.js";
 import type { DelegationRecord } from "../../src/bridge/delegationRecord.js";
 import type { GitDelivery } from "../../src/git-delivery/types.js";
 import { GitDeliveryStore } from "../../src/git-delivery/store.js";
@@ -27,6 +27,28 @@ describe("container-generated delegation behavior", () => {
     expect("id" in right && right.id).toBe(preview.delivery.id);
     expect(await delivery.list()).toHaveLength(1);
     expect(await git.get("gd-concurrent")).toMatchObject({ deliveryId: preview.delivery.id, legacyImport: { state: "linked", deliveryId: preview.delivery.id, intentFingerprint: preview.intentFingerprint } });
+  });
+
+  it("bounds retries when legacy-import storage remains busy", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-import-busy-"));
+    const worktree = path.join(root, "worktree"); fs.mkdirSync(worktree);
+    const record: DelegationRecord = { id: "legacy-busy", agent: "worker", baseSha: "base", taskRef: "task/busy", worktreePath: worktree, owns: ["src/a.ts"], behaviorTest: "bounded contention", contract: { task: "bounded" }, createdAt: "2026-07-10T00:00:00.000Z" };
+    const waits: number[] = [];
+    const deps = { isAncestor: async () => true, now: () => "2026-07-10T01:00:00.000Z", sleep: async (ms: number) => { waits.push(ms); } };
+    const git = new GitDeliveryStore(root, { now: deps.now, id: () => "gd-busy" });
+    await git.open({ workspaceId: "ws", createdBy: { kind: "system" }, agent: record.agent, branchRef: record.taskRef, worktreePath: worktree, tachyonCreatedBranch: true, baseRef: "main", currentHeadSha: "base" });
+    const preview = await previewLegacyImport({ workspaceId: "ws", record, gitDeliveries: await git.list() }, deps);
+    expect(preview.ok).toBe(true); if (!preview.ok) return;
+    let attempts = 0;
+    const blocked = {
+      async get() { return undefined; },
+      async createLegacyImport() { attempts += 1; throw new DeliveryStoreBusyError("busy.sqlite3"); },
+    } as unknown as DeliveryStore;
+
+    await expect(applyLegacyImport({ workspaceId: "ws", record, fingerprint: preview.fingerprint, operationId: "op-busy" }, { delivery: blocked, git }, deps))
+      .rejects.toBeInstanceOf(DeliveryStoreBusyError);
+    expect(attempts).toBe(4);
+    expect(waits).toEqual([0, 10, 50]);
   });
 
   it("recovers identical legacy intent under a new operation id after create failure and post-create crash", async () => {

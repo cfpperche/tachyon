@@ -158,7 +158,7 @@ describe("container-generated delegation behavior", () => {
       fs.mkdirSync(worktreePath, { recursive: true });
       fs.writeFileSync(path.join(worktreePath, "opencode.json"), `${JSON.stringify({ mcp: {} }, null, 2)}\n`);
 
-      writeDelegationRecord(ws, {
+      const delegationRecord = {
         agent: "child",
         delegator: "boss",
         baseSha: "sha1",
@@ -167,7 +167,8 @@ describe("container-generated delegation behavior", () => {
         behaviorTest: "test/unit/cxPermBehavior.gen.test.ts",
         contract: { task: "do the gated thing" },
         createdAt: "2026-01-01T00:00:00.000Z",
-      });
+      };
+      const delegationPath = writeDelegationRecord(ws, delegationRecord);
 
       const newSessionEnvs: Record<string, string>[] = [];
       const exec = makeExec(newSessionEnvs);
@@ -183,6 +184,11 @@ describe("container-generated delegation behavior", () => {
         getMaxAgents: () => 8,
         getExtraEnv: () => ({ TACHYON_BRIDGE_URL: bridgeUrl, TACHYON_BRIDGE_TOKEN: "shared" }),
         mintAgentToken: (name) => ({ TACHYON_AGENT_BRIDGE_TOKEN: `agent-token-${name}` }),
+        // AgentManager deliberately never trusts workspace JSON directly. This fixture's concern is
+        // resume permission propagation, so provide the record through the host-authenticated port.
+        readAuthenticatedLegacyDelegation: async (agent) => agent === "child"
+          ? { path: delegationPath, record: delegationRecord }
+          : undefined,
         materializeBridgeMcpOpencode: (name, cwd) => {
           const projectOpencodeJson = fs.existsSync(path.join(cwd, "opencode.json")) ? fs.readFileSync(path.join(cwd, "opencode.json"), "utf8") : undefined;
           return harness.materializeBridgeMcpOpencode(name, expectedAgentOpencodeEntry(bridgeUrl, true), projectOpencodeJson);

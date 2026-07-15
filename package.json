@@ -885,6 +885,7 @@
     "activity:preview": "node scripts/activity-preview.mjs",
     "record:provenance": "node scripts/record-provenance.mjs",
     "test": "vitest run",
+    "test:invariants": "node scripts/run-product-invariants.mjs",
     "verify:full": "node esbuild.mjs && vitest run",
     "verify:full:quiet": "node scripts/verify-full.mjs",
     "dogfood:dev-host": "bash scripts/dev-host/cli.sh",

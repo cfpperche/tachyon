@@ -6,7 +6,7 @@ import { AgentManager } from "../../src/agents/AgentManager.js";
 import { SessionLedger } from "../../src/resume/SessionLedger.js";
 import { parseConfig } from "../../src/config/loadConfig.js";
 import { TmuxService, workspaceHash, type ExecResult } from "../../src/tmux/TmuxService.js";
-import { writeDelegationRecord, delegationRecordFromSpawn } from "../../src/bridge/delegationRecord.js";
+import { writeDelegationRecord, delegationRecordFromSpawn, readLatestDelegationRecord } from "../../src/bridge/delegationRecord.js";
 
 /** Minimal tmux exec stub: tracks live session names, no real process behind them. */
 function makeExec(): (args: string[]) => Promise<ExecResult> {
@@ -52,6 +52,9 @@ describe("container-generated delegation behavior", () => {
       const { config } = parseConfig("agents:\n  boss:\n    cmd: claude\n");
       const wsHash = workspaceHash(ws);
       const ledger = new SessionLedger(ws);
+      // Production Workspace authenticates this read before returning it. This focused AgentManager
+      // fixture supplies the same host-trusted boundary while retaining a pre-hardening record shape.
+      const readAuthenticatedLegacyDelegation = async (agent: string) => readLatestDelegationRecord(ws, agent);
 
       const spawnManager = new AgentManager({
         tmux: new TmuxService(makeExec()),
@@ -95,8 +98,9 @@ describe("container-generated delegation behavior", () => {
         getConfig: () => config,
         getMaxAgents: () => 8,
         ledger,
+        readAuthenticatedLegacyDelegation,
       });
-      reloadedManager.rehydrateFromLedger();
+      await reloadedManager.rehydrateFromLedger();
 
       const reloaded = (await reloadedManager.list()).find((a) => a.name === "reviewer");
       expect(reloaded?.parent).toBeUndefined();
@@ -132,8 +136,9 @@ describe("container-generated delegation behavior", () => {
         getConfig: () => config,
         getMaxAgents: () => 8,
         ledger,
+        readAuthenticatedLegacyDelegation,
       });
-      fallbackManager.rehydrateFromLedger();
+      await fallbackManager.rehydrateFromLedger();
 
       const legacy = (await fallbackManager.list()).find((a) => a.name === "legacy");
       expect(legacy?.delegator).toBe("boss");

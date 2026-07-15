@@ -45,6 +45,9 @@ const removedProjectPolicies = [
   "task id",
   "vscode.l10n",
   "`orient`",
+  "Product Invariant",
+  "Affected Product Invariants",
+  "PI-",
 ];
 
 describe("renderPrimer (spec 363 T3, ownership boundary from spec 383)", () => {
@@ -53,9 +56,9 @@ describe("renderPrimer (spec 363 T3, ownership boundary from spec 383)", () => {
     expect(primer.startsWith(PRIMER_OPEN)).toBe(true);
     expect(primer.endsWith(PRIMER_CLOSE)).toBe(true);
     expect(primer).toContain('spawned by "claude"');
-    expect(primer).toContain('"renders the primer for a gated delegation"');
+    expect(primer).toContain('canonical behavior verifier: "renders the primer for a gated delegation"');
     expect(primer).toContain("test/unit/primerT3Behavior.gen.test.ts");
-    expect(primer).toMatch(/PROTOCOL IDENTIFIER/);
+    expect(primer).toMatch(/FIXED PROJECT ORACLE/);
     expect(primer).toContain('notify_agent(to: "claude"');
     expect(primer).toContain("Configured verification (source: workspace config settings.verify):");
     expect(primer.split("\n")).toContain(`  - full: ${fullCheck}`);
@@ -69,7 +72,7 @@ describe("renderPrimer (spec 363 T3, ownership boundary from spec 383)", () => {
     expect(beforeFinishing.split("\n")).toContain(
       `Run configured check (workspace config settings.verify.typecheck): ${typecheck}`,
     );
-    expect(beforeFinishing).toContain('Make "renders the primer for a gated delegation" pass WITHOUT renaming');
+    expect(beforeFinishing).toContain('Make "renders the primer for a gated delegation" pass by changing implementation; do NOT edit its fixed oracle.');
     expect(beforeFinishing).toContain('notify_agent(to: "claude"');
     expect(beforeFinishing).not.toMatch(/green|tree clean|full verify/i);
   });
@@ -91,15 +94,20 @@ describe("renderPrimer (spec 363 T3, ownership boundary from spec 383)", () => {
     expect(beforeFinishing).toContain('notify_agent(to: "claude"');
   });
 
-  it("does not invent a language-specific stub path when the gate did not provide one", () => {
-    const { primer } = renderPrimer({
+  it("keeps a runner-neutral verifier free of stub and rename instructions", () => {
+    const { primer, beforeFinishing } = renderPrimer({
       agentName: "language-neutral",
       parent: "parent",
-      gate: { behaviorTest: "preserves a configured invariant" },
+      gate: { behaviorTest: "cmd:node scripts/check-behavior.mjs" },
     });
-    expect(primer).toContain('canonical behavior test: "preserves a configured invariant".');
-    expect(primer).not.toContain("test/unit/");
-    expect(primer).not.toContain(".ts");
+    const combined = `${primer}\n${beforeFinishing}`;
+    expect(primer).toContain('canonical behavior verifier: "cmd:node scripts/check-behavior.mjs".');
+    expect(combined).not.toContain("test/unit/");
+    expect(combined).not.toContain(".ts");
+    expect(combined).not.toMatch(/renam/i);
+    expect(beforeFinishing).toContain(
+      'Make canonical verifier "cmd:node scripts/check-behavior.mjs" fail at BASE_SHA and pass at delivered HEAD.',
+    );
   });
 
   it("declared agent without lineage receives no placeholder or doorbell instruction", () => {
@@ -136,20 +144,32 @@ describe("renderPrimer (spec 363 T3, ownership boundary from spec 383)", () => {
     expect(renderPrimer({ ...gatedAdhoc })).toEqual(renderPrimer({ ...gatedAdhoc }));
   });
 
+  it.each([
+    { label: "agent name", input: { agentName: "worker\u001b[2J" } },
+    { label: "behavior identifier", input: { agentName: "worker", gate: { behaviorTest: "promise\u001b]8;;https://example.test\u0007" } } },
+    { label: "owned path", input: { agentName: "worker", gate: { behaviorTest: "promise", owns: ["src\u001b[2J"] } } },
+    { label: "configured check", input: { agentName: "worker", verify: { full: "npm test\u007f" } } },
+    { label: "C1 behavior identifier", input: { agentName: "worker", gate: { behaviorTest: "promise\u009b2J" } } },
+    { label: "Unicode line separator", input: { agentName: "worker", verify: { full: "npm test\u2028spoof" } } },
+    { label: "bidi isolate", input: { agentName: "worker", gate: { behaviorTest: "promise", owns: ["src\u2066spoof"] } } },
+  ])("rejects control characters in interpolated $label facts", ({ input }) => {
+    expect(() => renderPrimer(input)).toThrow(/control characters/);
+  });
+
   it("budget guard: the maximal-content primer stays within the hard line budgets", () => {
     const { primer, beforeFinishing } = renderPrimer(gatedAdhoc);
     expect(primer.split("\n").length).toBeLessThanOrEqual(PRIMER_LINE_BUDGET);
     expect(beforeFinishing.split("\n").length).toBeLessThanOrEqual(BEFORE_FINISHING_LINE_BUDGET);
   });
 
-  it("single source: both sections agree on the real doorbell target and canonical test name", () => {
+  it("single source: both sections agree on the real doorbell target and canonical verifier name", () => {
     const rendered = renderPrimer(gatedAdhoc);
     const doorbellInPrimer = rendered.primer.match(/notify_agent\(to: "([^"]+)"/)?.[1];
     const doorbellInBeforeFinishing = rendered.beforeFinishing.match(/notify_agent\(to: "([^"]+)"/)?.[1];
     expect(doorbellInPrimer).toBe("claude");
     expect(doorbellInPrimer).toBe(doorbellInBeforeFinishing);
 
-    const testInPrimer = rendered.primer.match(/canonical behavior test: "([^"]+)"/)?.[1];
+    const testInPrimer = rendered.primer.match(/canonical behavior verifier: "([^"]+)"/)?.[1];
     const testInBeforeFinishing = rendered.beforeFinishing.match(/Make "([^"]+)" pass/)?.[1];
     expect(testInPrimer).toBe(gatedAdhoc.gate!.behaviorTest);
     expect(testInPrimer).toBe(testInBeforeFinishing);

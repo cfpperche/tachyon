@@ -63,9 +63,12 @@ describe("spec 230 spike — run-scoped worktree + cwd override (real git)", () 
     expect(branch).toBe("tachyon/run-abc123");
 
     // node A spawns → allocate the run worktree
-    const a = await m.ensure({ agent: key, branch });
+    const a = await m.ensure({ agent: key, branch, quarantineForLaunch: true });
     expect(a.created).toBe(true);
+    expect(a.preparationLocked).toBe(true);
     expect(a.record.path).toBe(path.join(base, "h", key));
+    // Workspace records run ownership before allowing any node spawn, then finalizes the receipt.
+    await m.completePreparation(a.record);
 
     // node B spawns later in the same run → reuse the identical worktree, not a new one
     const b = await m.ensure({ agent: key, branch, prior: a.record });

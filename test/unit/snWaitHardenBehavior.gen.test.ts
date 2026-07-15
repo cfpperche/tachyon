@@ -99,7 +99,7 @@ describe("container-generated delegation behavior", () => {
       // `child` is currently declared in config, so rehydrateFromLedger's loop skips it (declared
       // names are config's to own) — this is the exact regression: rehydrate never touches it, so
       // only the parentOf ledger-union fix (not rehydrate) can recover the link.
-      reloaded.rehydrateFromLedger();
+      await reloaded.rehydrateFromLedger();
 
       // (a) the exact regression: parentOf resolves via the ledger even though in-memory lineage
       // never saw it, and that resolution is what inWaitOutputScope needs to permit the parent's wait.

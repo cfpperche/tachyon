@@ -2,13 +2,14 @@ import { describe, it, expect } from "vitest";
 import { parseNameStatus, mergeChanges, emptySides, baseSidePath, diffTitle } from "../../src/worktree/review.js";
 
 describe("worktree diff-review — pure helpers (spec 213)", () => {
-  it("parseNameStatus handles A/M/D and rename/copy from -z NUL output (incl. a path with a space)", () => {
+  it("parseNameStatus handles A/M/D/T and rename/copy from -z NUL output (incl. a path with a space)", () => {
     // `git diff --name-status -z`: status\0path\0 ; rename/copy: R###\0old\0new\0
-    const out = "M\0src/a.ts\0A\0docs/my notes.md\0D\0old.ts\0R096\0src/old.ts\0src/new.ts\0C075\0lib/x.ts\0lib/copy.ts\0";
+    const out = "M\0src/a.ts\0A\0docs/my notes.md\0D\0old.ts\0T\0link.ts\0R096\0src/old.ts\0src/new.ts\0C075\0lib/x.ts\0lib/copy.ts\0";
     expect(parseNameStatus(out)).toEqual([
       { status: "M", path: "src/a.ts" },
       { status: "A", path: "docs/my notes.md" }, // space survives (no quoting under -z)
       { status: "D", path: "old.ts" },
+      { status: "T", path: "link.ts" },
       { status: "R", from: "src/old.ts", path: "src/new.ts" },
       { status: "C", from: "lib/x.ts", path: "lib/copy.ts" },
     ]);

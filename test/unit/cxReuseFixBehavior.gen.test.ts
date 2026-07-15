@@ -122,7 +122,7 @@ describe("container-generated delegation behavior", () => {
         cmd: "sh",
         delegator: "boss",
         contract: { task: "fix reuse", context: "durable delegation record", constraints: "stay scoped", doneWhen: "reuse resolves" },
-        gate: { behaviorTest: "reuse durable worktree path", owns: ["src"] },
+        gate: { behaviorTest: "cmd:node scripts/check-reuse.mjs", owns: ["src"] },
         reveal: false,
       });
 
@@ -152,7 +152,7 @@ describe("container-generated delegation behavior", () => {
       expect(readDelegationRecord(legacyPath).worktreePath).toBeUndefined();
       await expect(
         ws.manager.spawn("legacy-fixer", { cmd: "sh", reuseWorktree: { delegationId: "legacy-no-worktree-path", ownsSubset: ["src"] }, reveal: false }),
-      ).rejects.toThrow(/legacy record with no persisted worktreePath/);
+      ).rejects.toThrow(/REUSE_AUTHORITY_INTEGRITY_INVALID/);
 
       ws.dispose();
     } finally {

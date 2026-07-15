@@ -8,6 +8,8 @@
  * spawnContract.ts's shape.
  */
 
+import { containsUnsafeFramingCharacter } from "../config/framingSafety.js";
+
 /** Mirrors delegationRecord.ts's DelegationGate — duplicated as a narrow read-only shape so this
  *  module stays a leaf (no bridge-internal coupling beyond the pure stub-path helper). */
 export interface PrimerGate {
@@ -68,8 +70,10 @@ function identityLines(input: PrimerInput): string[] {
   const lines = [`Identity: you are agent "${input.agentName}"${spawner ? `, spawned by "${spawner}"` : " (no delegator/parent on record)"}.`];
   if (input.gate) {
     lines.push(
-      `Gated delegation — canonical behavior test: "${input.gate.behaviorTest}"${input.gate.stubPath ? ` at ${input.gate.stubPath}` : ""}.`,
-      "⚠ PROTOCOL IDENTIFIER: this exact test name is checked by verify_task — make it pass, NEVER rename or remove it.",
+      `Gated delegation — canonical behavior verifier: "${input.gate.behaviorTest}"${input.gate.stubPath ? ` at ${input.gate.stubPath}` : ""}.`,
+      ...(input.gate.stubPath
+        ? ["⚠ FIXED PROJECT ORACLE: verify_task checks this exact name and file hash — change the implementation, NEVER edit, rename, or remove the oracle."]
+        : ["⚠ PROTOCOL IDENTIFIER: verify_task checks this exact verifier fail-before/pass-after — do not replace it."]),
     );
     if (input.gate.owns && input.gate.owns.length > 0) lines.push(`Owns: ${input.gate.owns.join(", ")}.`);
   }
@@ -113,6 +117,19 @@ function beforeFinishingVerificationLines(input: PrimerInput): string[] {
 /** Renders both sections from ONE pass over the input (single source of truth — spec.md dueto #7):
  *  precedence, spawner, gate and verify facts are computed once and read by both outputs. */
 export function renderPrimer(input: PrimerInput): RenderedPrimer {
+  const interpolated = [
+    input.agentName,
+    input.delegator,
+    input.parent,
+    input.gate?.behaviorTest,
+    ...(input.gate?.owns ?? []),
+    input.gate?.stubPath,
+    input.verify?.full,
+    input.verify?.typecheck,
+  ].filter((value): value is string => value !== undefined);
+  if (interpolated.some(containsUnsafeFramingCharacter)) {
+    throw new Error("primer facts must not contain control characters");
+  }
   const spawner = spawnerOf(input);
   const primerLines = [
     PRIMER_OPEN,
@@ -126,7 +143,11 @@ export function renderPrimer(input: PrimerInput): RenderedPrimer {
   const beforeFinishingLines = [
     BEFORE_FINISHING_OPEN,
     ...beforeFinishingVerificationLines(input),
-    ...(input.gate ? [`Make "${input.gate.behaviorTest}" pass WITHOUT renaming or removing it.`] : []),
+    ...(input.gate?.stubPath
+      ? [`Make "${input.gate.behaviorTest}" pass by changing implementation; do NOT edit its fixed oracle.`]
+      : input.gate
+        ? [`Make canonical verifier "${input.gate.behaviorTest}" fail at BASE_SHA and pass at delivered HEAD.`]
+        : []),
     ...(spawner
       ? [`Call notify_agent(to: "${spawner}", summary: <one-line result>) — the doorbell; do not skip it.`]
       : []),

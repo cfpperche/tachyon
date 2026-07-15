@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -15,6 +15,7 @@ const mkws = () => {
   return d;
 };
 afterEach(() => {
+  vi.restoreAllMocks();
   for (const d of dirs.splice(0)) fs.rmSync(d, { recursive: true, force: true });
 });
 
@@ -73,6 +74,7 @@ describe("RunLedger persists/loads/lists/removes a run", () => {
     expect(loaded?.worktreeKey).toBe("run-r1");
     expect(loaded?.nodes.a.status).toBe("running");
     expect(loaded?.pipeline.name).toBe("feature");
+    expect(loaded?.worktreeReady).toBe(true);
 
     expect(led.list().map((r) => r.id)).toEqual(["r1"]);
     led.remove("r1");
@@ -89,6 +91,42 @@ describe("RunLedger persists/loads/lists/removes a run", () => {
     fs.writeFileSync(path.join(led.dir, "bad.json"), "{ not json");
     expect(led.load("bad")).toBeNull();
     expect(led.list()).toEqual([]);
+  });
+
+  it("required persistence retains the pre-node worktree recovery handle and readiness phase", () => {
+    const led = new RunLedger(mkws());
+    const worktree = {
+      path: "/wt/r0",
+      branch: "tachyon/run-r0",
+      tachyonCreatedBranch: true,
+      baseRef: "base",
+      createdAt: "t",
+    };
+    led.saveRequired(initRun("r0", PIPE, "run-r0", undefined, worktree, false));
+
+    expect(led.load("r0")).toMatchObject({ worktree, worktreeReady: false });
+  });
+
+  it("keeps the prior durable owner intact when a best-effort progress replace fails", () => {
+    const led = new RunLedger(mkws());
+    const worktree = {
+      path: "/wt/r0",
+      branch: "tachyon/run-r0",
+      tachyonCreatedBranch: true,
+      baseRef: "base",
+      createdAt: "t",
+    };
+    const owned = initRun("r0", PIPE, "run-r0", undefined, worktree, true);
+    led.saveRequired(owned);
+    const destination = path.join(led.dir, "r0.json");
+    const before = fs.readFileSync(destination, "utf8");
+    vi.spyOn(fs, "renameSync").mockImplementationOnce(() => { throw new Error("injected atomic replace failure"); });
+
+    led.save(startNode(owned, "a"));
+
+    expect(fs.readFileSync(destination, "utf8")).toBe(before);
+    expect(led.load("r0")).toMatchObject({ worktree, worktreeReady: true, nodes: { a: { status: "pending" } } });
+    expect(fs.readdirSync(led.dir).filter((name) => name.includes(".tmp-"))).toEqual([]);
   });
 
   // spec 231 — input + summaries persistence + back-compat with pre-231 rows.
@@ -112,5 +150,6 @@ describe("RunLedger persists/loads/lists/removes a run", () => {
     expect(loaded?.id).toBe("r3");
     expect(loaded?.input).toBeUndefined();
     expect(loaded?.summaries).toEqual([]);
+    expect(loaded?.worktreeReady).toBe(true);
   });
 });

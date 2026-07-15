@@ -6,6 +6,9 @@ import { execFileSync } from "node:child_process";
 import { verifyTask } from "../../src/bridge/verifyTask.js";
 import { delegationRecordFromSpawn, writeDelegationRecord } from "../../src/bridge/delegationRecord.js";
 
+const AUTHORITY_INTEGRITY_KEY = Buffer.alloc(32, 0x42);
+const AUTHORITY_HEADS = new Map<string, { revision: number; mac: string }>();
+
 const ENV = {
   ...process.env,
   GIT_AUTHOR_NAME: "tachyon-test",
@@ -49,7 +52,7 @@ function makeRepo(): { repo: string; wt: string; baseSha: string; cleanup: () =>
 }
 
 function writeRecord(repo: string, baseSha: string): void {
-  writeDelegationRecord(
+  const recordPath = writeDelegationRecord(
     repo,
     delegationRecordFromSpawn({
       agent: "worker",
@@ -59,7 +62,24 @@ function writeRecord(repo: string, baseSha: string): void {
       contract: { task: "ship behavior", context: "fixture", constraints: "none", doneWhen: "behavior passes" },
       createdAt: new Date().toISOString(),
     }),
+    AUTHORITY_INTEGRITY_KEY,
   );
+  const persisted = JSON.parse(fs.readFileSync(recordPath, "utf8")) as {
+    id?: string;
+    authorityIntegrity?: { mac?: string };
+  };
+  if (!persisted.id || !persisted.authorityIntegrity?.mac) {
+    throw new Error("test delegation did not receive an authority seal");
+  }
+  AUTHORITY_HEADS.set(persisted.id, { revision: 1, mac: persisted.authorityIntegrity.mac });
+}
+
+function runVerify(input: Parameters<typeof verifyTask>[0]) {
+  return verifyTask({
+    authorityIntegrityKey: AUTHORITY_INTEGRITY_KEY,
+    legacyAuthorityHead: async (identity) => AUTHORITY_HEADS.get(identity),
+    ...input,
+  });
 }
 
 async function testRunner(cwd: string, argv: string[]) {
@@ -91,12 +111,12 @@ describe("container-generated delegation behavior", () => {
       git(first.wt, ["commit", "-qm", "t-7acc58 implement behavior"]);
       writeRecord(first.repo, first.baseSha);
 
-      const blocked = await verifyTask({ workspaceRoot: first.repo, agent: "worker", runner: testRunner });
+      const blocked = await runVerify({ workspaceRoot: first.repo, agent: "worker", runner: testRunner });
       expect(blocked.verdict).toBe("blocked");
       expect(blocked.blockers).toContainEqual({ code: "scope_breach", detail: "changed file is outside declared owns paths", file: "README.md" });
 
       const waiver = { finding: "README.md", reason: "coordinator confirms README change is required by task scope" };
-      const waived = await verifyTask({ workspaceRoot: first.repo, agent: "worker", waivers: [waiver], runner: testRunner });
+      const waived = await runVerify({ workspaceRoot: first.repo, agent: "worker", waivers: [waiver], runner: testRunner });
       expect(waived.verdict).toBe("accept");
       expect(waived.blockers.map((b) => b.code)).not.toContain("scope_breach");
       expect(waived.record.waivers).toEqual([waiver]);
@@ -121,7 +141,7 @@ describe("container-generated delegation behavior", () => {
       git(second.wt, ["commit", "-qm", "t-7acc58 implement behavior"]);
       writeRecord(second.repo, second.baseSha);
 
-      const unrelated = await verifyTask({
+      const unrelated = await runVerify({
         workspaceRoot: second.repo,
         agent: "worker",
         waivers: [{ finding: "README.md", reason: "coordinator confirms README change is required by task scope" }],
@@ -146,7 +166,7 @@ describe("container-generated delegation behavior", () => {
       writeRecord(fixture.repo, fixture.baseSha);
 
       await expect(
-        verifyTask({
+        runVerify({
           workspaceRoot: fixture.repo,
           agent: "worker",
           waivers: [{ finding: "scope_breach", reason: "blanket-waive every scope breach" }],
@@ -169,14 +189,14 @@ describe("container-generated delegation behavior", () => {
 
       const waiver = { finding: "README.md", reason: "coordinator confirms README change is required by task scope" };
 
-      const legacy = await verifyTask({ workspaceRoot: fixture.repo, agent: "worker", waivers: [waiver], runner: testRunner });
+      const legacy = await runVerify({ workspaceRoot: fixture.repo, agent: "worker", waivers: [waiver], runner: testRunner });
       expect(legacy.verdict).toBe("accept");
       expect(legacy.waivedFindings).toContainEqual(
         expect.objectContaining({ code: "scope_breach", file: "README.md", blocking: false, waiver }),
       );
       expect(legacy.record.verifierCaller).toEqual({ kind: "legacy" });
 
-      const coordinated = await verifyTask({
+      const coordinated = await runVerify({
         workspaceRoot: fixture.repo,
         agent: "worker",
         waivers: [waiver],
