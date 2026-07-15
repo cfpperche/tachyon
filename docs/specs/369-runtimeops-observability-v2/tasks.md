@@ -64,12 +64,12 @@ implementation until its ADR is accepted._
 
 ## T4 — Runtime Ops projection and Tachyon-owned UI
 
-- [ ] Extend the Runtime Ops host snapshot with bounded provider quota/source/confidence/freshness/unavailable fields
+- [x] Extend the Runtime Ops host snapshot with bounded provider quota/source/confidence/freshness/unavailable fields
   while preserving the current allowlist and schema-version discipline.
-- [ ] Render native token usage and provider/account quota as separate labeled lanes with independent timestamps.
-- [ ] Add deterministic fixtures for healthy, exhausted, partial, unauthenticated, stale, timeout, invalid-schema, and
+- [x] Render native token usage and provider/account quota as separate labeled lanes with independent timestamps.
+- [x] Add deterministic fixtures for healthy, exhausted, partial, unauthenticated, stale, timeout, invalid-schema, and
   collector-disabled states at wide and narrow widths.
-- [ ] Keep all layout, copy, theming, controls, navigation, and assets in the Tachyon Runtime Ops implementation; add a
+- [x] Keep all layout, copy, theming, controls, navigation, and assets in the Tachyon Runtime Ops implementation; add a
   source guard proving no CodexBar UI module or asset is imported.
 
 ## T5 — verification and dogfood

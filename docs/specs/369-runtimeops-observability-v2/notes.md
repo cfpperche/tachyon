@@ -220,3 +220,33 @@ _Historical pre-ratification questions are retained below; their resolutions fol
 
 ### 2026-07-14T23:18:32Z — pass (1/1) — source: tasks.md — commit: dfa9137417c40e0e22cec26076ff86051d9606dd
 - `npm run dogfood:runtime-observability` — pass
+
+## T4 implementation log
+
+### 2026-07-14 — Runtime Ops provider-capacity projection and UI
+
+- Runtime Ops now emits schema V2 with a bounded top-level `providerCapacity` lane while retaining schema V1 as a
+  mounted-webview compatibility input. Provider capacity is structurally account-wide: neither the opaque host scope
+  key nor any workspace/agent identity crosses the webview boundary.
+- `RuntimeOpsSnapshotService` receives a narrow synchronous cached-state reader. Snapshot construction and rendering
+  never launch a collector; a broken cached reader degrades only provider capacity and leaves native inventory intact.
+- Codex and Claude have explicit disabled-by-default CLI controls in the Tachyon-owned Runtime Ops UI. Enabling commits
+  the source-specific consent before the observation service refreshes in the background; disabling revokes that
+  provider source. Webview actions are a closed provider/boolean allowlist and cannot select or inject a source.
+- Native token usage and provider quota are separate labeled lanes with independent observation timestamps. The
+  provider lane discloses source, confidence, freshness, resets and honest unavailable reasons; the actual T3 stale
+  shape of one bounded last-good quota fact plus an unavailable companion is projected without exposing diagnostics.
+- Deterministic preview fixtures cover healthy, exhausted, partial, unauthenticated, stale, timeout, invalid-schema and
+  disabled states. Browser coverage exercises every state at 1100x760 and 340x900, including horizontal-overflow,
+  attribution, redaction and keyboard-focus checks.
+- Advisory visual QA passed for the Tachyon-owned dense operational layout after changing the ambiguous `Disable CLI`
+  copy to `Disable source`. Captures are staged under `.tachyon/vqa/visual-qa/` for post-commit evidence attachment.
+  Installed VSIX/live Codex and Claude dogfood remains deliberately open in T5; this T4 commit is not closure evidence.
+
+### 2026-07-15T00:26:58Z — T4 verification
+
+- Focused Runtime Ops projection, snapshot, view and preview suites — pass, 80/80 tests.
+- `npm run typecheck` — pass.
+- `npx vitest run --config vitest.browser.config.ts test/browser/runtimeOpsView.test.ts --reporter=verbose` — pass,
+  4/4 browser tests across all provider states at wide and narrow widths.
+- `npm run verify:full:quiet` — pass; 342 files, 4,148 tests passed, 3 skipped.

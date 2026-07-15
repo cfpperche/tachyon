@@ -679,6 +679,150 @@
     ]
   },
   {
+    "view": "runtime-ops",
+    "fixture": "provider-healthy",
+    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=provider-healthy",
+    "frame": {
+      "w": 1100,
+      "h": 360
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Runtime Ops",
+    "aliases": [
+      "runtime ops",
+      "runtime usage",
+      "usage"
+    ]
+  },
+  {
+    "view": "runtime-ops",
+    "fixture": "provider-exhausted",
+    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=provider-exhausted",
+    "frame": {
+      "w": 1100,
+      "h": 360
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Runtime Ops",
+    "aliases": [
+      "runtime ops",
+      "runtime usage",
+      "usage"
+    ]
+  },
+  {
+    "view": "runtime-ops",
+    "fixture": "provider-partial",
+    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=provider-partial",
+    "frame": {
+      "w": 1100,
+      "h": 360
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Runtime Ops",
+    "aliases": [
+      "runtime ops",
+      "runtime usage",
+      "usage"
+    ]
+  },
+  {
+    "view": "runtime-ops",
+    "fixture": "provider-unauthenticated",
+    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=provider-unauthenticated",
+    "frame": {
+      "w": 1100,
+      "h": 360
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Runtime Ops",
+    "aliases": [
+      "runtime ops",
+      "runtime usage",
+      "usage"
+    ]
+  },
+  {
+    "view": "runtime-ops",
+    "fixture": "provider-stale",
+    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=provider-stale",
+    "frame": {
+      "w": 1100,
+      "h": 360
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Runtime Ops",
+    "aliases": [
+      "runtime ops",
+      "runtime usage",
+      "usage"
+    ]
+  },
+  {
+    "view": "runtime-ops",
+    "fixture": "provider-timeout",
+    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=provider-timeout",
+    "frame": {
+      "w": 1100,
+      "h": 360
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Runtime Ops",
+    "aliases": [
+      "runtime ops",
+      "runtime usage",
+      "usage"
+    ]
+  },
+  {
+    "view": "runtime-ops",
+    "fixture": "provider-invalid",
+    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=provider-invalid",
+    "frame": {
+      "w": 1100,
+      "h": 360
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Runtime Ops",
+    "aliases": [
+      "runtime ops",
+      "runtime usage",
+      "usage"
+    ]
+  },
+  {
+    "view": "runtime-ops",
+    "fixture": "provider-disabled",
+    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=provider-disabled",
+    "frame": {
+      "w": 1100,
+      "h": 360
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Runtime Ops",
+    "aliases": [
+      "runtime ops",
+      "runtime usage",
+      "usage"
+    ]
+  },
+  {
     "view": "task-studio",
     "fixture": "default",
     "url": "/scripts/webview-preview/index.html?view=task-studio&fixture=default",

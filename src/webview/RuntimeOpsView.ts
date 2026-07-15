@@ -1,14 +1,23 @@
 import * as vscode from "vscode";
-import { emptyRuntimeOpsSnapshot, type RuntimeOpsSnapshotV1 } from "../runtimeOps/types.js";
+import {
+  emptyRuntimeOpsSnapshot,
+  type RuntimeOpsProviderV2,
+  type RuntimeOpsSnapshot,
+} from "../runtimeOps/types.js";
 import { renderWebviewShell } from "./shared/shell.js";
 import { READY } from "./shared/ready.js";
 import {
   runtimeOpsSnapshotMessage,
   runtimeOpsSnapshotUnavailableMessage,
+  isRuntimeOpsSetProviderObservationAction,
   type RuntimeOpsSnapshotMessage,
 } from "./runtime-ops/messages.js";
 
-export type RuntimeOpsSnapshotBuilder = () => RuntimeOpsSnapshotV1 | Promise<RuntimeOpsSnapshotV1>;
+export type RuntimeOpsSnapshotBuilder = () => RuntimeOpsSnapshot | Promise<RuntimeOpsSnapshot>;
+export type RuntimeOpsProviderObservationConfigurator = (
+  provider: RuntimeOpsProviderV2,
+  enabled: boolean,
+) => void | Promise<void>;
 
 export class RuntimeOpsViewProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = "tachyonRuntimeOpsView";
@@ -16,11 +25,13 @@ export class RuntimeOpsViewProvider implements vscode.WebviewViewProvider {
   private renderToken = 0;
   private refreshTimer?: ReturnType<typeof setTimeout>;
   private retainedFailure?: RuntimeOpsSnapshotMessage;
+  private configurationQueue: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly extensionUri: vscode.Uri,
     private readonly buildSnapshot: RuntimeOpsSnapshotBuilder = emptyRuntimeOpsSnapshot,
     private readonly coalesceMs = 75,
+    private readonly configureProviderObservation?: RuntimeOpsProviderObservationConfigurator,
   ) {}
 
   resolveWebviewView(view: vscode.WebviewView): void {
@@ -41,11 +52,13 @@ export class RuntimeOpsViewProvider implements vscode.WebviewViewProvider {
       scriptCspSource: false,
     });
 
-    const ready = view.webview.onDidReceiveMessage((message: { type?: string } | undefined) => {
-      if (message?.type === READY) {
+    const ready = view.webview.onDidReceiveMessage((message: unknown) => {
+      if (typeof message === "object" && message !== null && (message as { type?: unknown }).type === READY) {
         if (this.retainedFailure) void this.publishRetainedFailure(view);
         else void this.push(view);
+        return;
       }
+      if (isRuntimeOpsSetProviderObservationAction(message)) this.enqueueProviderConfiguration(message);
     });
     const visibility = view.onDidChangeVisibility(() => {
       if (view.visible) {
@@ -74,6 +87,25 @@ export class RuntimeOpsViewProvider implements vscode.WebviewViewProvider {
   private clearRefreshTimer(): void {
     if (this.refreshTimer) clearTimeout(this.refreshTimer);
     this.refreshTimer = undefined;
+  }
+
+  private enqueueProviderConfiguration(action: {
+    provider: RuntimeOpsProviderV2;
+    enabled: boolean;
+  }): void {
+    if (!this.configureProviderObservation) return;
+    const configure = async (): Promise<void> => {
+      try {
+        await this.configureProviderObservation?.(action.provider, action.enabled);
+      } catch {
+        // The next snapshot reflects the last committed preference; raw host/provider failures never cross the view.
+      }
+      const view = this.view;
+      if (!view?.visible) return;
+      this.clearRefreshTimer();
+      await this.push(view);
+    };
+    this.configurationQueue = this.configurationQueue.then(configure, configure);
   }
 
   private async push(view: vscode.WebviewView): Promise<void> {

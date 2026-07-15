@@ -7,11 +7,12 @@ import type {
   RuntimeOpsObservedModelV1,
   RuntimeOpsRateLimitV1,
   RuntimeOpsRuntimeV1,
-  RuntimeOpsSnapshotV1,
+  RuntimeOpsSnapshotV2,
   RuntimeOpsThrottleRuntime,
   RuntimeOpsThrottleScope,
   RuntimeOpsUsageV1,
 } from "./types.js";
+import { projectRuntimeOpsProviderCapacity } from "./providerProjection.js";
 
 export interface RuntimeOpsAttentionInput {
   state: RuntimeOpsAgentRefV1["attention"]["state"];
@@ -83,16 +84,18 @@ export interface RuntimeOpsProjectionInput {
   generatedAt: string;
   detectedRuntimes: string[];
   agents: RuntimeOpsAgentInput[];
+  /** Cached host observation state only. Projection must never invoke a provider collector. */
+  providerObservations?: unknown;
 }
 
-export function buildRuntimeOpsSnapshot(input: RuntimeOpsProjectionInput): RuntimeOpsSnapshotV1 {
+export function buildRuntimeOpsSnapshot(input: RuntimeOpsProjectionInput): RuntimeOpsSnapshotV2 {
   const runtimeIds = new Set(input.detectedRuntimes);
   for (const agent of input.agents) runtimeIds.add(agent.runtime);
   const runtimes = [...runtimeIds]
     .sort((a, b) => runtimeLabel(a).localeCompare(runtimeLabel(b)) || a.localeCompare(b))
     .map((runtime) => projectRuntime(runtime, input.detectedRuntimes.includes(runtime), input.agents.filter((agent) => agent.runtime === runtime)));
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     generatedAt: input.generatedAt,
     summary: {
       runtimes: runtimes.length,
@@ -105,6 +108,7 @@ export function buildRuntimeOpsSnapshot(input: RuntimeOpsProjectionInput): Runti
       }).length,
     },
     runtimes,
+    providerCapacity: projectRuntimeOpsProviderCapacity(input.providerObservations, input.generatedAt),
   };
 }
 

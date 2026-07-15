@@ -776,13 +776,30 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   // spec 237 — the Preact webview sidebar is THE Tachyon view (the native tree was retired). refreshAll
   // pushes the live fleet to it on every state change; it's registered below.
-  const runtimeOpsSnapshots = new RuntimeOpsSnapshotService(workspaces);
+  const runtimeOpsSnapshots = new RuntimeOpsSnapshotService(workspaces, {
+    providerObservations: () => ({
+      preferences: providerObservationPreferences.all(),
+      observations: providerObservations.snapshot(),
+    }),
+  });
   // spec 378 — the sidebar's model row gathers the same view-independent observed-model accessor the
   // RuntimeOps snapshot uses, so a row shows the live transcript model even when RuntimeOps is never opened.
   const sidebarProto = new SidebarPrototypeProvider(context.extensionUri, workspaces, context.globalState, (ws, agentName) =>
     runtimeOpsSnapshots.observedModelFor(ws.workspaceRoot, ws.wsHash, agentName),
   );
-  const runtimeOps = new RuntimeOpsViewProvider(context.extensionUri, () => runtimeOpsSnapshots.snapshot());
+  const runtimeOps = new RuntimeOpsViewProvider(
+    context.extensionUri,
+    () => runtimeOpsSnapshots.snapshot(),
+    75,
+    async (provider, enabled) => {
+      await providerObservations.configureProvider(provider, enabled
+        ? { state: "granted", consent: "explicit-user", sources: ["cli"] }
+        : { state: "disabled" });
+      // Configuration is committed before returning to the webview. Collection remains owned by the headless
+      // observation service and publishes a later cached-state change instead of blocking the control on a CLI read.
+      if (enabled) void providerObservations.refresh(provider).catch(() => undefined);
+    },
+  );
   context.subscriptions.push(providerObservations.onDidChange(() => runtimeOps.refresh()));
   providerObservations.start();
   // spec 238 — the editor-area Runtime Activity View (normalized cockpit; reads the durable per-agent log).
@@ -2326,6 +2343,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
     vscode.commands.registerCommand("tachyon.refreshRuntimeOps", () => {
       runtimeOpsSnapshots.invalidateDetection();
+      // This explicit user command may refresh already-consented provider sources. Snapshot construction and view
+      // rendering remain cached reads; the observation service publishes the later result through its normal fan-out.
+      void providerObservations.refreshAll().catch(() => undefined);
       runtimeOps.refresh();
     }),
     vscode.commands.registerCommand("tachyon.connectRuntime", async () => {

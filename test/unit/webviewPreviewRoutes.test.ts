@@ -120,7 +120,23 @@ describe("preview route table", () => {
     expect(route.bundle).toBe("/dist/webview/runtime-ops.js");
     expect(route.cssLinks).toEqual(["/dist/webview/design-system.css", "/dist/webview/runtime-ops.css"]);
     expect(Object.keys(route.fixtures).sort()).toEqual([
-      "default", "duplicate-workspace", "empty", "error", "loading", "long-label", "mixed", "stale-bridge", "throttled",
+      "default",
+      "duplicate-workspace",
+      "empty",
+      "error",
+      "loading",
+      "long-label",
+      "mixed",
+      "provider-disabled",
+      "provider-exhausted",
+      "provider-healthy",
+      "provider-invalid",
+      "provider-partial",
+      "provider-stale",
+      "provider-timeout",
+      "provider-unauthenticated",
+      "stale-bridge",
+      "throttled",
     ]);
     expect((route.makeMessage(route.fixtures.default.vm) as { type: string }).type).toBe("runtimeOpsSnapshot");
     expect((route.makeMessage(route.fixtures.loading.vm) as { type: string }).type).toBe("runtimeOpsLoading");

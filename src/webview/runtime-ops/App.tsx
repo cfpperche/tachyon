@@ -1,6 +1,17 @@
-import type { RuntimeOpsAgentRefV1, RuntimeOpsModelV1, RuntimeOpsRuntimeV1, RuntimeOpsSnapshotV1, RuntimeOpsUsageV1, RuntimeOpsValue } from "../../runtimeOps/types";
+import type {
+  RuntimeOpsAgentRefV1,
+  RuntimeOpsModelV1,
+  RuntimeOpsProviderCapacityV2,
+  RuntimeOpsProviderQuotaWindowV2,
+  RuntimeOpsProviderUnavailableReasonV2,
+  RuntimeOpsProviderV2,
+  RuntimeOpsRuntimeV1,
+  RuntimeOpsSnapshot,
+  RuntimeOpsUsageV1,
+  RuntimeOpsValue,
+} from "../../runtimeOps/types";
 
-const SUMMARY: Array<{ key: keyof RuntimeOpsSnapshotV1["summary"]; label: string }> = [
+const SUMMARY: Array<{ key: keyof RuntimeOpsSnapshot["summary"]; label: string }> = [
   { key: "runtimes", label: "Runtimes" },
   { key: "managedAgents", label: "Managed agents" },
   { key: "activeAgents", label: "Active agents" },
@@ -8,7 +19,13 @@ const SUMMARY: Array<{ key: keyof RuntimeOpsSnapshotV1["summary"]; label: string
   { key: "bridgeIssues", label: "Bridge issues" },
 ];
 
-export function App({ snapshot }: { snapshot: RuntimeOpsSnapshotV1 | undefined }) {
+export function App({
+  snapshot,
+  onSetProviderObservation,
+}: {
+  snapshot: RuntimeOpsSnapshot | undefined;
+  onSetProviderObservation: (provider: RuntimeOpsProviderV2, enabled: boolean) => void;
+}) {
   if (!snapshot) {
     return <main class="runtime-ops" aria-busy="true"><div class="runtime-ops-state">Loading runtime inventory...</div></main>;
   }
@@ -23,6 +40,7 @@ export function App({ snapshot }: { snapshot: RuntimeOpsSnapshotV1 | undefined }
       </main>
     );
   }
+  const providerCapacity = snapshot.schemaVersion === 2 ? snapshot.providerCapacity : [];
   return (
     <main class="runtime-ops">
       <section class="runtime-ops-summary" aria-label="Runtime summary">
@@ -37,9 +55,16 @@ export function App({ snapshot }: { snapshot: RuntimeOpsSnapshotV1 | undefined }
         </time>
       </section>
 
+      {providerCapacity.length > 0 && (
+        <ProviderCapacity
+          providers={providerCapacity}
+          onSetProviderObservation={onSetProviderObservation}
+        />
+      )}
+
       <section class="runtime-ops-table" aria-label="Runtime inventory" role="table">
         <div class="runtime-ops-header" role="row" aria-hidden="true">
-          <span role="columnheader">Runtime</span><span role="columnheader">Usage</span><span role="columnheader">Agents</span><span role="columnheader">Last activity</span><span role="columnheader">Version</span>
+          <span role="columnheader">Runtime</span><span role="columnheader">Native usage</span><span role="columnheader">Agents</span><span role="columnheader">Last activity</span><span role="columnheader">Version</span>
         </div>
         {snapshot.runtimes.length === 0 ? (
           <div class="runtime-ops-state">
@@ -52,6 +77,110 @@ export function App({ snapshot }: { snapshot: RuntimeOpsSnapshotV1 | undefined }
   );
 }
 
+function ProviderCapacity({
+  providers,
+  onSetProviderObservation,
+}: {
+  providers: RuntimeOpsProviderCapacityV2[];
+  onSetProviderObservation: (provider: RuntimeOpsProviderV2, enabled: boolean) => void;
+}) {
+  return (
+    <section class="runtime-ops-capacity" aria-label="Provider account capacity">
+      <header class="runtime-ops-capacity-header">
+        <div>
+          <h2>Provider capacity</h2>
+          <p>Account-wide quota. These limits are not attributed to a runtime, workspace, or agent.</p>
+        </div>
+      </header>
+      <div class="runtime-ops-provider-list">
+        {providers.map((provider) => (
+          <ProviderCapacityRow
+            key={provider.provider}
+            provider={provider}
+            onSetProviderObservation={onSetProviderObservation}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ProviderCapacityRow({
+  provider,
+  onSetProviderObservation,
+}: {
+  provider: RuntimeOpsProviderCapacityV2;
+  onSetProviderObservation: (provider: RuntimeOpsProviderV2, enabled: boolean) => void;
+}) {
+  const enabled = provider.configuration.state === "enabled";
+  const label = providerLabel(provider.provider);
+  return (
+    <div
+      class={`runtime-ops-provider-row ${provider.quota.state === "available" ? provider.quota.freshness.state : provider.quota.reason}`}
+      data-provider={provider.provider}
+    >
+      <div class="runtime-ops-provider-identity">
+        <strong>{label}</strong>
+        <span>{providerSourceDisclosure(provider.provider)}</span>
+      </div>
+      <div class="runtime-ops-provider-quota">
+        {provider.quota.state === "available" ? (
+          <>
+            <div class="runtime-ops-quota-windows">
+              {provider.quota.windows.map((window) => <QuotaWindow window={window} key={window.name} />)}
+            </div>
+            <span class={`runtime-ops-provider-observation ${provider.quota.freshness.state}`}>
+              {providerQuotaMetadata(provider)}
+            </span>
+          </>
+        ) : (
+          <div class="runtime-ops-provider-unavailable" role={provider.quota.reason === "source-disabled" ? undefined : "status"}>
+            <strong>{providerUnavailableLabel(provider.quota.reason)}</strong>
+            <span>{providerUnavailableDetail(provider)}</span>
+          </div>
+        )}
+      </div>
+      <div class="runtime-ops-provider-control">
+        <span>{enabled ? `${enabledSources(provider)} enabled` : "Disabled by default"}</span>
+        <button
+          type="button"
+          aria-label={`${enabled ? "Disable" : "Enable"} ${label} CLI quota observation`}
+          aria-pressed={enabled}
+          onClick={() => onSetProviderObservation(provider.provider, !enabled)}
+        >
+          {enabled ? "Disable source" : "Enable CLI"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function QuotaWindow({ window }: { window: RuntimeOpsProviderQuotaWindowV2 }) {
+  const used = Math.min(100, Math.max(0, window.usedPercent));
+  const exhausted = used >= 100;
+  return (
+    <div class={`runtime-ops-quota-window${exhausted ? " exhausted" : ""}`}>
+      <div class="runtime-ops-quota-label">
+        <strong>{quotaWindowLabel(window.name)}</strong>
+        <span>{formatPercent(used)} used</span>
+      </div>
+      <div
+        class="runtime-ops-quota-meter"
+        role="progressbar"
+        aria-label={`${quotaWindowLabel(window.name)} quota used`}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={used}
+      >
+        <span style={{ width: `${used}%` }} />
+      </div>
+      <span class="runtime-ops-quota-reset">
+        {window.resetsAt ? `Resets ${formatTimestamp(window.resetsAt)}` : "Reset time unavailable"}
+      </span>
+    </div>
+  );
+}
+
 function RuntimeRow({ runtime }: { runtime: RuntimeOpsRuntimeV1 }) {
   const workspaceLabels = runtime.workspaces.map((workspace) => workspace.label).join(", ");
   return (
@@ -61,7 +190,7 @@ function RuntimeRow({ runtime }: { runtime: RuntimeOpsRuntimeV1 }) {
           <strong>{runtime.label}</strong>
           <span>{availabilityCopy(runtime)}</span>
         </div>
-        <div class="runtime-ops-cell" data-label="Usage" role="cell">
+        <div class="runtime-ops-cell" data-label="Native usage" role="cell">
           <Usage value={runtime.usage} />
         </div>
         <div class="runtime-ops-cell" data-label="Agents" role="cell">
@@ -117,9 +246,132 @@ function Usage({ value }: { value: RuntimeOpsValue<RuntimeOpsUsageV1> }) {
   return (
     <>
       <strong>{formatTokens(usage.inputTokens)} in / {formatTokens(usage.outputTokens)} out{cache > 0 ? ` / ${formatTokens(cache)} cache` : ""}</strong>
-      <span>{usage.semantics === "latest-cumulative" ? "Latest cumulative snapshot" : "Summed activity deltas"}</span>
+      <span>
+        {usage.semantics === "latest-cumulative" ? "Latest cumulative snapshot" : "Summed activity deltas"}
+        {value.observedAt ? ` · Observed ${formatTimestamp(value.observedAt)}` : ""}
+      </span>
     </>
   );
+}
+
+function providerLabel(provider: RuntimeOpsProviderV2): string {
+  return provider === "codex" ? "Codex" : "Claude";
+}
+
+function providerSourceDisclosure(provider: RuntimeOpsProviderV2): string {
+  return provider === "codex"
+    ? "Read-only Codex CLI app-server; credentials stay with Codex."
+    : "Reduced Claude CLI status-line telemetry; no inference turn.";
+}
+
+function providerQuotaMetadata(provider: RuntimeOpsProviderCapacityV2): string {
+  const quota = provider.quota;
+  if (quota.state !== "available") return "";
+  const metadata = [
+    `Observed ${formatTimestamp(quota.observedAt)}`,
+    providerSourceLabel(quota.source),
+    `${confidenceLabel(quota.confidence)} confidence`,
+  ];
+  if (quota.freshness.state === "stale") {
+    metadata.push(`Stale; last good ${formatTimestamp(quota.freshness.lastGoodAt)}`);
+  } else {
+    metadata.push("Fresh");
+  }
+  return metadata.join(" · ");
+}
+
+function providerUnavailableLabel(reason: RuntimeOpsProviderUnavailableReasonV2): string {
+  switch (reason) {
+    case "source-disabled":
+      return "Observation disabled";
+    case "unauthenticated":
+      return "Authentication required";
+    case "timeout":
+      return "Provider timed out";
+    case "cancelled":
+      return "Observation cancelled";
+    case "not-observed":
+      return "Waiting for quota data";
+    case "invalid-payload":
+      return "Incompatible quota data";
+    case "stale-expired":
+      return "Last observation expired";
+    case "provider-error":
+      return "Provider unavailable";
+    case "unsupported":
+    default:
+      return "Quota source unsupported";
+  }
+}
+
+function providerUnavailableDetail(provider: RuntimeOpsProviderCapacityV2): string {
+  const quota = provider.quota;
+  if (quota.state !== "unavailable") return "";
+  let detail: string;
+  switch (quota.reason) {
+    case "source-disabled":
+      detail = "Enable the CLI source to observe account-wide quota.";
+      break;
+    case "unauthenticated":
+      detail = "The provider CLI is not authenticated; native usage remains available.";
+      break;
+    case "timeout":
+      detail = "The bounded CLI read timed out; native usage remains available.";
+      break;
+    case "cancelled":
+      detail = "The provider read was cancelled; native usage remains available.";
+      break;
+    case "not-observed":
+      detail = "The source is enabled and awaiting its first valid observation.";
+      break;
+    case "provider-error":
+      detail = "The provider could not supply quota; native usage remains available.";
+      break;
+    case "invalid-payload":
+      detail = "The provider returned an incompatible quota schema; no raw response was retained.";
+      break;
+    case "stale-expired":
+      detail = "The bounded last-good observation is too old to display as current quota.";
+      break;
+    case "unsupported":
+    default:
+      detail = "This provider does not expose a supported quota source on this host.";
+      break;
+  }
+  const metadata = quota.reason === "source-disabled"
+    ? []
+    : [
+        quota.source ? providerSourceLabel(quota.source) : undefined,
+        `Observed ${formatTimestamp(quota.observedAt)}`,
+        quota.lastGoodAt ? `Last good ${formatTimestamp(quota.lastGoodAt)}` : undefined,
+      ].filter((value): value is string => value !== undefined);
+  return metadata.length > 0 ? `${detail} ${metadata.join(" · ")}.` : detail;
+}
+
+function enabledSources(provider: RuntimeOpsProviderCapacityV2): string {
+  if (provider.configuration.state !== "enabled") return "No source";
+  return provider.configuration.sources.map(providerSourceLabel).join(" + ");
+}
+
+function providerSourceLabel(source: "cli" | "oauth"): string {
+  return source === "cli" ? "CLI source" : "OAuth source";
+}
+
+function confidenceLabel(confidence: "exact" | "estimated" | "unknown"): string {
+  if (confidence === "exact") return "Exact";
+  if (confidence === "estimated") return "Estimated";
+  return "Unknown";
+}
+
+function quotaWindowLabel(name: RuntimeOpsProviderQuotaWindowV2["name"]): string {
+  if (name === "session") return "Session";
+  if (name === "weekly") return "Weekly";
+  return "Extended";
+}
+
+function formatPercent(value: number): string {
+  const rounded = Math.round(value * 10) / 10;
+  return `${rounded}%`;
 }
 
 function SourcedText({ value, kind, format = (text) => text }: { value: RuntimeOpsValue<string>; kind: "activity" | "version"; format?: (text: string) => string }) {

@@ -8,7 +8,8 @@ import { buildRuntimeUsageSource, runtimeUsageSemantics, type RuntimeUsageUpdate
 import { modelFromCommand, resolveModelFact, type ObservedModelInput } from "../sidebar/agentModel.js";
 import { detectInstalledClis } from "../webview/cliDetect.js";
 import { buildRuntimeOpsSnapshot, type RuntimeOpsAgentInput } from "./model.js";
-import type { RuntimeOpsSnapshotV1 } from "./types.js";
+import type { RuntimeOpsProviderObservationSnapshotInput } from "./providerProjection.js";
+import type { RuntimeOpsSnapshotV2 } from "./types.js";
 import { buildWorkspaceLabels, type RuntimeOpsWorkspaceInput } from "./workspaceLabels.js";
 
 export interface RuntimeOpsWorkspaceSource {
@@ -35,6 +36,8 @@ export interface RuntimeOpsSnapshotServiceOptions {
   now?: () => number;
   detectionTtlMs?: number;
   activityLog?: (workspaceRoot: string, agent: string) => RuntimeOpsActivityLog;
+  /** Synchronous cached read port. It must not collect or wait on a provider from the snapshot/render path. */
+  providerObservations?: () => RuntimeOpsProviderObservationSnapshotInput;
 }
 
 export interface RuntimeOpsActivityLog {
@@ -77,6 +80,7 @@ export class RuntimeOpsSnapshotService {
   private readonly now: () => number;
   private readonly detectionTtlMs: number;
   private readonly activityLog: NonNullable<RuntimeOpsSnapshotServiceOptions["activityLog"]>;
+  private readonly providerObservations?: NonNullable<RuntimeOpsSnapshotServiceOptions["providerObservations"]>;
   private readonly activity = new Map<string, ActivityProjection>();
 
   constructor(
@@ -88,6 +92,7 @@ export class RuntimeOpsSnapshotService {
     this.detectionTtlMs = options.detectionTtlMs ?? 60_000;
     this.activityLog = options.activityLog ?? ((workspaceRoot, agent) =>
       new ActivityLog(path.join(workspaceRoot, ".tachyon", "activity"), agent));
+    this.providerObservations = options.providerObservations;
   }
 
   invalidateDetection(): void {
@@ -95,7 +100,7 @@ export class RuntimeOpsSnapshotService {
     this.detection = undefined;
   }
 
-  async snapshot(): Promise<RuntimeOpsSnapshotV1> {
+  async snapshot(): Promise<RuntimeOpsSnapshotV2> {
     const detectedRuntimes = await this.detectCached();
     const workspaces = this.getWorkspaces();
     const workspaceInputs: RuntimeOpsWorkspaceInput[] = workspaces.map((workspace) => ({
@@ -156,7 +161,18 @@ export class RuntimeOpsSnapshotService {
       }
     }
     for (const key of this.activity.keys()) if (!activeActivityKeys.has(key)) this.activity.delete(key);
-    return buildRuntimeOpsSnapshot({ generatedAt: new Date(this.now()).toISOString(), detectedRuntimes, agents });
+    let providerObservations: unknown;
+    try {
+      providerObservations = this.providerObservations?.();
+    } catch {
+      // Provider observation is additive. A broken cached accessor must not remove native runtime inventory.
+    }
+    return buildRuntimeOpsSnapshot({
+      generatedAt: new Date(this.now()).toISOString(),
+      detectedRuntimes,
+      agents,
+      providerObservations,
+    });
   }
 
   private activityProjection(key: string, workspaceRoot: string, agent: string): ActivityProjection {

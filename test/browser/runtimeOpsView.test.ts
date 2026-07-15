@@ -110,6 +110,56 @@ describe("Runtime Ops view (spec 367 Phase 4)", () => {
     await duplicateWorkspace.close();
   });
 
+  it("renders every provider capacity state at wide and narrow widths without false agent attribution", async () => {
+    const fixtures: Array<[string, string]> = [
+      ["provider-healthy", "Exact confidence"],
+      ["provider-exhausted", "100% used"],
+      ["provider-partial", "Estimated confidence"],
+      ["provider-unauthenticated", "Authentication required"],
+      ["provider-stale", "Stale; last good"],
+      ["provider-timeout", "Provider timed out"],
+      ["provider-invalid", "Incompatible quota data"],
+      ["provider-disabled", "Observation disabled"],
+    ];
+    const page = await browser.newPage();
+
+    for (const [fixture, expected] of fixtures) {
+      for (const viewport of [{ width: 1100, height: 760 }, { width: 340, height: 900 }]) {
+        await openRuntimeOpsFixture(page, server.origin, fixture, viewport);
+        const text = await page.$eval(".runtime-ops", (element) => element.textContent ?? "");
+        expect(text).toContain("Provider capacity");
+        expect(text).toContain("Account-wide quota");
+        expect(text).toContain(expected);
+        expect(await page.$$eval(".runtime-ops-provider-row", (rows) => rows.length)).toBe(2);
+        expect(await hasNoHorizontalOverflow(page)).toBe(true);
+        expect(await page.$eval(".runtime-ops-provider-row", (element) => getComputedStyle(element).display))
+          .toBe(viewport.width === 1100 ? "grid" : "flex");
+      }
+    }
+
+    await openRuntimeOpsFixture(page, server.origin, "provider-invalid", { width: 1100, height: 760 });
+    const invalidDom = await page.content();
+    for (const marker of [
+      "RAW_ACCOUNT_MUST_NOT_RENDER",
+      "RAW_PROVIDER_TOKEN_MUST_NOT_RENDER",
+      "RAW_PROVIDER_ERROR_MUST_NOT_RENDER",
+    ]) expect(invalidDom).not.toContain(marker);
+
+    await openRuntimeOpsFixture(page, server.origin, "provider-healthy", { width: 1100, height: 760 });
+    expect(await page.$eval(".runtime-ops-header", (element) => element.textContent)).toContain("Native usage");
+    expect(await page.$eval(".runtime-ops-table", (element) => element.textContent)).toContain("Summed activity deltas · Observed");
+    expect(await page.$eval(".runtime-ops-capacity", (element) => element.textContent)).not.toContain("managed agent");
+    expect(await page.$$eval("[role='progressbar']", (meters) => meters.length)).toBe(4);
+    await page.focus(".runtime-ops-provider-control button");
+    const controlFocus = await page.$eval(".runtime-ops-provider-control button", (element) => ({
+      active: document.activeElement === element,
+      outlineWidth: getComputedStyle(element).outlineWidth,
+      outlineStyle: getComputedStyle(element).outlineStyle,
+    }));
+    expect(controlFocus).toEqual({ active: true, outlineWidth: "2px", outlineStyle: "solid" });
+    await page.close();
+  });
+
   it("uses the wide table at 1100x360 with keyboard-operable agent details and visible focus", async () => {
     const page = await browser.newPage();
     await openRuntimeOpsFixture(page, server.origin, "mixed", { width: 1100, height: 360 });
