@@ -5,8 +5,10 @@
 - Live HEAD badge on every agent row
 - Always **first** badge in the list
 - Shared cwd: quiet badge, no worktree actions
-- Drift: warn when live ≠ config/ledger branch
+- Isolated: green `--ds-ok` chip (prototype-like soft fill)
+- Drift: `⚠` + tooltip; chip stays green (not full-warn yellow)
 - v1: no VS Code status bar, no folder identity branch chip
+- Agent-block vertical rhythm + hairlines between top-level agents
 - Work in isolated git worktree: `grok/t-c64647-agent-live-branch`
 
 ## Worktree
@@ -17,18 +19,19 @@
 
 ## Verification log
 
-- 2026-07-14 — `./node_modules/.bin/vitest run test/unit/agentModel.test.ts test/unit/agentLiveBranchBadge.test.ts test/unit/sidebarActions.test.ts` → 74 passed
-- 2026-07-14 — `./node_modules/.bin/tsc --noEmit` exit 0
-- 2026-07-14 — `./node_modules/.bin/tsc -p tsconfig.webview.json --noEmit` exit 0
+- 2026-07-14 — `vitest` subset (agentModel, liveBranch badge/dogfood, sidebarRowAlignment, sidebarActions) → 79 passed
+- 2026-07-14 — `tsc --noEmit` + `tsc -p tsconfig.webview.json --noEmit` exit 0
+- 2026-07-14 — headless EDH S1 via lane → PASS
+- 2026-07-14 — maintainer EDH dogfood: green chip OK; spacing refinement OK; **approved to land**
 
 ## Dogfood log
 
-- 2026-07-14 — **real git** `vitest run test/unit/agentLiveBranch.dogfood.test.ts` → PASS (shared main, worktree aligned, checkout drift, detached omit)
-- 2026-07-14 — **webview preview** `?view=sidebar&fixture=default` after `npm run build` → screenshot `evidence/sidebar-sample-live-branch.png`
-  - Verdict: branch badge is first on every row; shared `⎇ main` quiet; isolated green; `feature-billing` shows `⎇ feat/billing-wip ⚠` drift before other badges
-- 2026-07-14 — **headless EDH S1** via `lane.mjs run --owner grok --target worktree -- npm run dogfood:dev-host -- headless` → PASS (SHA 8f3ab5b1); roster pilot/reviewer; evidence `evidence/edh-fail-visible.png`
+- Real git: `test/unit/agentLiveBranch.dogfood.test.ts` (shared / aligned / drift / detached)
+- Preview SAMPLE: `evidence/sidebar-sample-live-branch.png`, `evidence/sidebar-ux-after.png`
+- Headless EDH S1: `evidence/edh-fail-visible.png`
+- Human EDH: fixture `live-branch-384`; see `DOGFOOD.md`
 
 ## Visual QA
 
-- Evidence: `docs/specs/384-agent-live-branch-badge/evidence/sidebar-sample-live-branch.png`
-- Verdict: first-badge order and drift/shared tones match the locked UX; no status bar changes (v1 non-goal)
+- Evidence: `evidence/sidebar-ux-after.png`, `evidence/sidebar-sample-live-branch.png`
+- Verdict: first-badge order, green isolated chip, shared quiet, drift ⚠, agent-block hairlines; no status bar changes

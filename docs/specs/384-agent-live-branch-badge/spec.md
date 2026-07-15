@@ -2,10 +2,12 @@
 
 _Created 2026-07-14._
 
-**Status:** in-progress
+**Status:** shipped
 
 **Task:** `t-c64647`
 **Branch / worktree:** `grok/t-c64647-agent-live-branch` @ `/home/goat/tachyon-worktrees/t-c64647-agent-live-branch`
+
+**Closure:** Shipped 2026-07-14 on branch `grok/t-c64647-agent-live-branch` (maintainer-approved). Live HEAD badge first on every agent row; isolated green `--ds-ok` chip; shared quiet; drift via `⚠` + tooltip (chip stays green); agent-block vertical rhythm. Evidence: unit/dogfood tests, headless EDH S1, human EDH dogfood, preview screenshots under `evidence/`.
 
 ## Intent
 
@@ -15,36 +17,36 @@ With several agents working in parallel (isolated worktrees or shared cwd), the 
 
 ## Acceptance criteria
 
-- [ ] **Scenario: worktree agent shows live HEAD**
+- [x] **Scenario: worktree agent shows live HEAD**
   - **Given** an agent with a worktree record whose ledger branch is `tachyon/foo` and the worktree HEAD is still `tachyon/foo`
   - **When** the sidebar gathers the fleet
   - **Then** the row's first badge is `⎇ tachyon/foo` (live HEAD)
-- [ ] **Scenario: checkout updates the badge**
+- [x] **Scenario: checkout updates the badge**
   - **Given** a worktree agent whose HEAD was `tachyon/foo`
   - **When** HEAD in that worktree moves to `feat/x` and the sidebar refreshes
   - **Then** the first badge reads `⎇ feat/x` (not the stale config branch alone)
-- [ ] **Scenario: drift is visible**
+- [x] **Scenario: drift is visible**
   - **Given** a worktree agent with config/ledger branch `tachyon/foo` and live HEAD `feat/x`
   - **When** the row renders
-  - **Then** the branch badge uses a warn tone and indicates drift (glyph/tooltip — not color alone)
-- [ ] **Scenario: shared-cwd agent still shows branch**
+  - **Then** the branch badge keeps the green isolated chip and indicates drift with `⚠` + tooltip (not color alone; chip does not go full-warn yellow)
+- [x] **Scenario: shared-cwd agent still shows branch**
   - **Given** an agent without worktree isolation whose session cwd is the workspace root on `main`
   - **When** the sidebar gathers the fleet
   - **Then** the first badge is `⎇ main` (quiet tone; does **not** enable worktree-only actions)
-- [ ] **Scenario: badge order is fixed**
+- [x] **Scenario: badge order is fixed**
   - **Given** an agent with live branch and any other badges (`working`, `continuity stale`, …)
   - **When** the row meta renders
   - **Then** the branch badge is the **first** badge in the list
-- [ ] **Scenario: sub-agent inherits cwd (same live branch)**
+- [x] **Scenario: sub-agent inherits cwd (same live branch)**
   - **Given** a child agent whose session cwd is the parent's worktree
   - **When** the fleet is gathered
   - **Then** the child shows the same live HEAD as that cwd (no separate false branch)
-- [ ] **Scenario: worktree actions still gated by isolation**
+- [x] **Scenario: worktree actions still gated by isolation**
   - **Given** a shared-cwd agent showing `⎇ main`
   - **When** row actions are computed
   - **Then** Review worktree / Create PR / Remove worktree are **not** offered (only true worktree records)
-- [ ] Tooltip on the branch badge includes the session cwd (and config branch when drift)
-- [ ] VS Code status bar and sidebar folder identity line are **not** changed in this spec
+- [x] Tooltip on the branch badge includes the session cwd (and config branch when drift)
+- [x] VS Code status bar and sidebar folder identity line are **not** changed in this spec
 
 ## Non-goals
 
@@ -57,4 +59,4 @@ With several agents working in parallel (isolated worktrees or shared cwd), the 
 
 ## Open questions
 
-None — product decisions locked with maintainer 2026-07-14 (prototype + written definition + badge-first order).
+None — product decisions locked with maintainer 2026-07-14 (prototype + written definition + badge-first order). Maintainer approved land 2026-07-14.
