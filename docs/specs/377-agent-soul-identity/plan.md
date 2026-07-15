@@ -375,8 +375,9 @@ adapter entity. Replace “Instructions (role prompt)” with “Persistent inst
 Place a new open `Identity (SOUL.md)` section before Role/Instructions:
 
 - read-only canonical path `.tachyon/agents/<agent>/SOUL.md` and explicit enabled/disabled state;
-- **Import SOUL.md**: native local file picker; open the chosen regular file without following a
-  final symlink, validate the same byte/UTF-8/NUL/empty/character limits as runtime resolution, then
+- **Import SOUL.md**: in-Studio drop/choose picker; accept Markdown/text files, bound the browser read
+  to 64 KiB, send only canonical base64 bytes (never a local path), validate the same
+  byte/UTF-8/NUL/empty/character limits as runtime resolution, then
   stage the exact bytes with private permissions in the profile transaction store. Under the profile
   lock, atomically quarantine any existing destination into the same-filesystem journal, strictly
   verify that quarantined file against the digest the user confirmed, and fsync a separate immutable
@@ -592,7 +593,7 @@ Hermes native materialization is outside both checkpoints and remains a separate
 - `src/webview/formLogic.ts` — form field, validation codes, round-trip.
 - `src/webview/AgentStudioAdapter.ts` — canonical profile status/preview and authoritative
   enable/import/replace/rename/delete validation.
-- `src/webview/AgentStudioPanel.ts` — native import/create/open plus transactional profile actions.
+- `src/webview/AgentStudioPanel.ts` — byte-backed import/create/open plus transactional profile actions.
 - `src/webview/agent-studio-shell/domain.ts`, `messages.ts`, `types.ts`, `App.tsx`,
   `agent-studio-shell.css` — typed protocol and accessible identity UI.
 - `src/webview/agent-studio-fixture/*` — fixture parity if it remains a supported visual route.

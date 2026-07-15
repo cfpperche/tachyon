@@ -101,9 +101,9 @@ implementation still requires separately assigned bounded Deliveries._
       `false` as disabled and emit `true` or omission from the two-state control. Relabel the existing
       textarea “Persistent instructions”.
 - [ ] **T15. Add typed canonical profile actions.** Implement import/create/open/refresh/preview/
-      adopt/enable/disable/delete/rename/repair domain messages. Import explicitly reads a selected
-      local regular file, validates
-      and stages exact bytes for `.tachyon/agents/<agent>/SOUL.md`, never persists the source path,
+      adopt/enable/disable/delete/rename/repair domain messages. Import uses an in-Studio picker to
+      read a bounded selected file, validates and stages exact bytes for
+      `.tachyon/agents/<agent>/SOUL.md`, never sends or persists the source path,
       treats self-selection as Adopt/Enable, and requires digest-backed replace confirmation. Create
       a stable random `profileId`; Clear/roster deletion mark its manifest retained and retain data.
       Every import/create/replace/adopt/enable/disable/rename/delete mutation is serialized through a

@@ -687,6 +687,9 @@ async function readPrivateManifestAnyState(source: string, owner: string): Promi
 
 /** Validate import/create bytes without publishing. Does not accept or return a source path. */
 export function validateSoulBytes(bytes: Buffer): { body: string; chars: number; sha256: string } {
+  if (bytes.length > SOUL_MAX_BYTES) {
+    throw new SoulError("soul/too-many-bytes", `Soul contains ${bytes.length} bytes; maximum is ${SOUL_MAX_BYTES} bytes (and ${SOUL_MAX_CHARS} Unicode scalar values)`);
+  }
   const { body, chars } = decodeSoul(bytes);
   return { body, chars, sha256: createHash("sha256").update(bytes).digest("hex") };
 }

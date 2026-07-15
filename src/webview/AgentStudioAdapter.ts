@@ -67,6 +67,7 @@ export class AgentStudioAdapter implements StudioHostAdapter<AgentStudioEntity, 
   /** Journaled common-path profile actions — authoritative host path for T15A protocol. */
   createSoulProfile(agent: string) { return this.ws.createSoulProfile(agent); }
   importSoulProfile(agent: string, sourcePath: string) { return this.ws.importSoulProfile(agent, sourcePath); }
+  importSoulProfileBytes(agent: string, bytes: Buffer) { return this.ws.importSoulProfileBytes(agent, bytes); }
   adoptSoulProfile(agent: string, expectedDigest: string) { return this.ws.adoptSoulProfile(agent, expectedDigest); }
   enableSoulProfile(agent: string) { return this.ws.enableSoulProfile(agent); }
   disableSoulProfile(agent: string) { return this.ws.disableSoulProfile(agent); }

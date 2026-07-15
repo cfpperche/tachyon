@@ -55,7 +55,7 @@ describe("container-generated delegation behavior", () => {
       "adoptSoulProfile", "enableSoul", "disableSoul",
     ]));
     expect(createSoulMessage("Ada").type).toBe("createSoul");
-    expect(importSoulMessage("Ada").type).toBe("importSoul");
+    expect(importSoulMessage("Ada", Buffer.from("# Ada\n").toString("base64")).type).toBe("importSoul");
 
     const root = await mkdtemp(path.join(tmpdir(), "tachyon-t15a-gate-"));
     const file = path.join(root, "tachyon.yml");

@@ -5,10 +5,13 @@ import {
   AGENT_STUDIO_DOMAIN_MESSAGE_NAMES,
   AGENT_STUDIO_HOST_MESSAGE_NAMES,
   AGENT_STUDIO_WEBVIEW_MESSAGE_NAMES,
+  SOUL_IMPORT_MAX_BYTES,
+  isAllowedSoulImportFileName,
   validateAgentStudioHostDomainMessage,
   validateAgentStudioInboundMessage,
   type SoulProfileStatusMessage,
 } from "../../src/webview/agent-studio-shell/domain.js";
+import { SOUL_MAX_BYTES } from "../../src/agents/soul.js";
 import {
   adoptSoulProfileMessage,
   createSoulMessage,
@@ -27,11 +30,13 @@ import { agentStanzaCasToken, setAgentSoulEnablement } from "../../src/config/Ya
 describe("Agent Studio soul profile protocol (T15A)", () => {
   it("renders a state-focused Identity action surface before Role with secondary actions collapsed", () => {
     const source = fs.readFileSync(path.resolve("src/webview/agent-studio-shell/App.tsx"), "utf8");
+    const pickerSource = fs.readFileSync(path.resolve("src/webview/shared/ui/kit/KitFilePicker.tsx"), "utf8");
+    const hostSource = fs.readFileSync(path.resolve("src/webview/AgentStudioPanel.ts"), "utf8");
     expect(source.indexOf("Identity (SOUL.md)")).toBeGreaterThan(-1);
     expect(source.indexOf("Role template")).toBeGreaterThan(source.indexOf("Identity (SOUL.md)"));
     for (const action of [
       "createSoulMessage(savedAgent)",
-      "importSoulMessage(savedAgent)",
+      "importSoulMessage(savedAgent, contentBase64)",
       "openSoulMessage(savedAgent)",
       "refreshSoulMessage(savedAgent)",
       "previewSoulMessage(savedAgent)",
@@ -47,6 +52,14 @@ describe("Agent Studio soul profile protocol (T15A)", () => {
     expect(source).toContain('<KitDropdownContent align="start">');
     expect(source.indexOf("<KitDropdown>")).toBeLessThan(source.indexOf("refreshSoulMessage(savedAgent)", source.indexOf("<KitDropdown>")));
     expect(source).toContain("Adopt existing file");
+    expect(source).toContain("<KitFilePicker");
+    expect(source).not.toContain('type="file"');
+    expect(source).toContain("file.arrayBuffer()");
+    expect(pickerSource).toContain('type="file"');
+    expect(pickerSource).toContain("onDrop=");
+    expect(pickerSource).toContain("<Button disabled={disabled}");
+    expect(hostSource).not.toContain("Import SOUL.md (copied into the canonical profile)");
+    expect(hostSource).toContain("ws.importSoulProfileBytes(agent, bytes)");
     expect(source).toContain('aria-live="polite"');
     expect(source).toContain('aria-label="SOUL.md preview"');
     expect(source).toContain("Profile recovery is required. Mutating actions are disabled.");
@@ -77,8 +90,9 @@ describe("Agent Studio soul profile protocol (T15A)", () => {
   });
 
   it("builds typed webview→host and host→webview envelopes without source paths", () => {
+    const contentBase64 = Buffer.from("# Identity\n", "utf8").toString("base64");
     expect(createSoulMessage("Ada")).toMatchObject({ type: "createSoul", agent: "Ada" });
-    expect(importSoulMessage("Ada")).toMatchObject({ type: "importSoul", agent: "Ada" });
+    expect(importSoulMessage("Ada", contentBase64)).toMatchObject({ type: "importSoul", agent: "Ada", contentBase64 });
     expect(openSoulMessage("Ada")).toMatchObject({ type: "openSoul", agent: "Ada" });
     expect(refreshSoulMessage("Ada")).toMatchObject({ type: "refreshSoul", agent: "Ada" });
     expect(previewSoulMessage("Ada")).toMatchObject({ type: "previewSoul", agent: "Ada" });
@@ -117,6 +131,16 @@ describe("Agent Studio soul profile protocol (T15A)", () => {
     expect(validateAgentStudioInboundMessage({ ...inbound, canonicalPath: "/tmp/escape" })).toBeUndefined();
     expect(validateAgentStudioInboundMessage(adoptSoulProfileMessage("Ada", "short"))).toBeUndefined();
 
+    const imported = importSoulMessage("Ada", Buffer.from("# Ada\n").toString("base64"));
+    expect(validateAgentStudioInboundMessage(imported)).toEqual({
+      type: "importSoul",
+      agent: "Ada",
+      contentBase64: Buffer.from("# Ada\n").toString("base64"),
+    });
+    expect(validateAgentStudioInboundMessage({ ...imported, fileName: "../identity.md" })).toBeUndefined();
+    expect(validateAgentStudioInboundMessage({ ...imported, contentBase64: "not base64" })).toBeUndefined();
+    expect(validateAgentStudioInboundMessage({ ...imported, contentBase64: Buffer.alloc(SOUL_IMPORT_MAX_BYTES + 1, 1).toString("base64") })).toBeUndefined();
+
     const status = soulProfileStatusMessage({
       agent: "Ada",
       relativePath: ".tachyon/agents/Ada/SOUL.md",
@@ -131,6 +155,15 @@ describe("Agent Studio soul profile protocol (T15A)", () => {
     expect(validateAgentStudioHostDomainMessage(status)).toBe(true);
     expect(validateAgentStudioHostDomainMessage({ ...status, status: { ...status.status, relativePath: "/absolute/SOUL.md" } })).toBe(false);
     expect(decodeStudioMessage(status, AGENT_STUDIO_WEBVIEW_MESSAGE_NAMES).ok).toBe(false);
+  });
+
+  it("keeps the browser import cap aligned with the authoritative soul byte cap", () => {
+    expect(SOUL_IMPORT_MAX_BYTES).toBe(SOUL_MAX_BYTES);
+    expect(isAllowedSoulImportFileName("identity.md")).toBe(true);
+    expect(isAllowedSoulImportFileName("identity.markdown")).toBe(true);
+    expect(isAllowedSoulImportFileName("identity.txt")).toBe(true);
+    expect(isAllowedSoulImportFileName("identity.pdf")).toBe(false);
+    expect(isAllowedSoulImportFileName("../identity.md")).toBe(false);
   });
 
   it("setAgentSoulEnablement only mutates the soul field of the target agent", () => {

@@ -610,23 +610,18 @@ export function createSoulProfile(workspaceRoot: string, name: string, access: P
   });
 }
 
-export async function importSoulProfileTransaction(
+function importSoulProfileBytesProviderTransaction(
   workspaceRoot: string,
   name: string,
-  importSource: string,
+  provideBytes: () => Promise<Buffer>,
   access: ProfileTxConfigAccess,
 ): Promise<ProfileMutationResult> {
-  if (isCanonicalSoulPath(workspaceRoot, name, importSource)) {
-    const snapshot = await readCanonicalSoulBytes(workspaceRoot, name);
-    if (!snapshot) throw new SoulError("soul/missing", `No canonical soul bytes to adopt for '${name}'`);
-    return adoptSoulProfile(workspaceRoot, name, access, { expectedDigest: digest(snapshot), enable: true });
-  }
   return runMutation(workspaceRoot, name, access, "import", async ({ txDir, journal, prior }) => {
     if (prior.priorManifestState !== "missing" || prior.priorSoulDigest !== null) {
       throw new SoulError("soul/profile-adoption-required", `Canonical profile already exists for '${name}'; explicit adoption or replace is required`);
     }
     if (!journal.priorConfig.present) throw new SoulError("soul/path-invalid", `Agent '${name}' is not declared in tachyon.yml`);
-    const bytes = await readValidatedSoulSourceBytes(importSource);
+    const bytes = await provideBytes();
     const validated = validateSoulBytes(bytes);
     const profileId = randomUUID();
     const manifest: SoulProfileManifest = { schemaVersion: 1, profileId, owner: name, state: "active" };
@@ -648,6 +643,31 @@ export async function importSoulProfileTransaction(
     if (resolved.sha256 !== validated.sha256 || resolved.profileId !== profileId) throw new SoulError("soul/digest-mismatch", `Imported soul tuple mismatch for '${name}'`);
     return { journal: next, profileId, sha256: published.sha256, chars: published.chars, bytes: published.bytes };
   });
+}
+
+export async function importSoulProfileTransaction(
+  workspaceRoot: string,
+  name: string,
+  importSource: string,
+  access: ProfileTxConfigAccess,
+): Promise<ProfileMutationResult> {
+  if (isCanonicalSoulPath(workspaceRoot, name, importSource)) {
+    const snapshot = await readCanonicalSoulBytes(workspaceRoot, name);
+    if (!snapshot) throw new SoulError("soul/missing", `No canonical soul bytes to adopt for '${name}'`);
+    return adoptSoulProfile(workspaceRoot, name, access, { expectedDigest: digest(snapshot), enable: true });
+  }
+  return importSoulProfileBytesProviderTransaction(workspaceRoot, name, () => readValidatedSoulSourceBytes(importSource), access);
+}
+
+/** Journaled import for bytes already selected inside a webview; no source path exists or is persisted. */
+export function importSoulProfileBytesTransaction(
+  workspaceRoot: string,
+  name: string,
+  bytes: Buffer,
+  access: ProfileTxConfigAccess,
+): Promise<ProfileMutationResult> {
+  const snapshot = Buffer.from(bytes);
+  return importSoulProfileBytesProviderTransaction(workspaceRoot, name, async () => snapshot, access);
 }
 
 export function adoptSoulProfile(

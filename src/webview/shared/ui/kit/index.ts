@@ -23,4 +23,5 @@ export {
   KitPopoverTitle,
   KitPopoverDescription,
 } from "./KitPopover";
+export { KitFilePicker, type KitFilePickerProps } from "./KitFilePicker";
 export { KIT_FLAGS } from "./flags";

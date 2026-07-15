@@ -10,8 +10,9 @@ export const browseMessage = () => envelope({ type: "browse" as const });
 
 /** Webview → host: create minimal canonical SOUL.md under a journaled transaction. */
 export const createSoulMessage = (agent: string) => envelope({ type: "createSoul" as const, agent });
-/** Webview → host: open native picker then import-as-copy (or self-select adopt). */
-export const importSoulMessage = (agent: string) => envelope({ type: "importSoul" as const, agent });
+/** Webview → host: import exact bytes selected by the in-Studio picker; no local path crosses the boundary. */
+export const importSoulMessage = (agent: string, contentBase64: string) =>
+  envelope({ type: "importSoul" as const, agent, contentBase64 });
 /** Webview → host: open the canonical managed copy in the editor. */
 export const openSoulMessage = (agent: string) => envelope({ type: "openSoul" as const, agent });
 /** Webview → host: re-read profile status. */

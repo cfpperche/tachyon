@@ -113,7 +113,7 @@ export class AgentStudioPanelManager {
       return;
     }
     if (m.type === "createSoul") { void this.runProfileAction(ws, ctx, agent, "create", () => ws.createSoulProfile(agent)); return; }
-    if (m.type === "importSoul") { void this.importSoul(ws, ctx, agent); return; }
+    if (m.type === "importSoul") { void this.importSoul(ws, ctx, agent, m.contentBase64); return; }
     if (m.type === "openSoul") { void this.openSoul(ws, ctx, agent); return; }
     if (m.type === "refreshSoul") { void this.refreshSoul(ws, ctx, agent, "refresh"); return; }
     if (m.type === "previewSoul") { void this.refreshSoul(ws, ctx, agent, "preview"); return; }
@@ -135,19 +135,13 @@ export class AgentStudioPanelManager {
     if (picked?.[0]) ctx.post(envelope({ type: "cwd" as const, value: picked[0].fsPath }));
   }
 
-  private async importSoul(ws: Workspace, ctx: StudioDomainMessageContext, agent: string): Promise<void> {
-    const picked = await vscode.window.showOpenDialog({
-      canSelectFiles: true,
-      canSelectFolders: false,
-      canSelectMany: false,
-      filters: { Markdown: ["md", "markdown", "txt"], "All files": ["*"] },
-      title: "Import SOUL.md (copied into the canonical profile)",
-      defaultUri: vscode.Uri.file(ws.workspaceRoot),
-    });
-    const file = picked?.[0]?.fsPath;
-    if (!file) return;
-    // Source path stays local to this turn — never posted back or journaled.
-    await this.runProfileAction(ws, ctx, agent, "import", () => ws.importSoulProfile(agent, file));
+  private async importSoul(ws: Workspace, ctx: StudioDomainMessageContext, agent: string, contentBase64: string): Promise<void> {
+    const bytes = Buffer.from(contentBase64, "base64");
+    if (bytes.toString("base64") !== contentBase64) {
+      this.postProfileError(ctx, agent, new SoulError("soul/path-invalid", "Rejected malformed Agent Studio import bytes"));
+      return;
+    }
+    await this.runProfileAction(ws, ctx, agent, "import", () => ws.importSoulProfileBytes(agent, bytes));
   }
 
   private async openSoul(ws: Workspace, ctx: StudioDomainMessageContext, agent: string): Promise<void> {

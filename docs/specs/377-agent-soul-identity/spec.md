@@ -95,8 +95,9 @@ not a direct rename assumption. Under the profile lock, every create/import/adop
 a distinct active or retained manifest whose owner/path has the same ASCII fold; legacy agent names
 without profile data remain unaffected.
 
-Agent Studio's **Import SOUL.md** action may read a user-selected local Markdown file, including one
-outside the workspace because that picker action is explicit, validate it, and copy its exact bytes
+Agent Studio's **Import SOUL.md** action uses an in-Studio drop/choose picker rather than a VS Code
+filesystem dialog. It may read a user-selected local Markdown file, including one outside the
+workspace because that picker action is explicit, validate it, and send only its bounded exact bytes
 into the canonical path through a private, durable profile transaction that also commits
 `soul: true`. It never stores the selected source path or keeps the files linked. **Create** writes a
 starter through the same transaction. An existing

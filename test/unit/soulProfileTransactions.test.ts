@@ -8,6 +8,7 @@ import {
   createSoulProfile,
   disableSoulProfile,
   enableSoulProfile,
+  importSoulProfileBytesTransaction,
   importSoulProfileTransaction,
   adoptSoulProfile,
   reconcileProfileTransactions,
@@ -19,7 +20,7 @@ import {
   type ProfileTxConfigAccess,
   type ProfileTransactionJournal,
 } from "../../src/agents/soulProfileTransactions.js";
-import { agentSoulManifestPath, agentSoulPath, cleanupStaleSoulLaunchReservationsSync, SOUL_LAUNCH_RESERVATION_BOOT_ID, SoulError, soulLaunchReservationsDir, SOUL_MINIMAL_TEMPLATE, withSoulProfileAdmission } from "../../src/agents/soul.js";
+import { agentSoulManifestPath, agentSoulPath, cleanupStaleSoulLaunchReservationsSync, SOUL_LAUNCH_RESERVATION_BOOT_ID, SoulError, soulLaunchReservationsDir, SOUL_MAX_BYTES, SOUL_MINIMAL_TEMPLATE, withSoulProfileAdmission } from "../../src/agents/soul.js";
 import { agentStanzaCasToken, setAgentSoulEnablement } from "../../src/config/YamlConfigEditor.js";
 import { parseConfig } from "../../src/config/loadConfig.js";
 
@@ -75,6 +76,23 @@ describe("soul profile transactions (T15A)", () => {
     await expect(importSoulProfileTransaction(root, "Ada", source, access)).rejects.toMatchObject({
       code: "soul/profile-adoption-required",
     });
+  });
+
+  it("imports bounded webview bytes without a source path and rejects oversized payloads", async () => {
+    const imported = await workspace();
+    const bytes = Buffer.from("Voice\r\nValues\n");
+    const result = await importSoulProfileBytesTransaction(imported.root, "Ada", bytes, imported.access);
+    expect(result.sha256).toBe(createHash("sha256").update(bytes).digest("hex"));
+    expect(await readFile(agentSoulPath(imported.root, "Ada"))).toEqual(bytes);
+
+    const oversized = await workspace();
+    await expect(importSoulProfileBytesTransaction(
+      oversized.root,
+      "Ada",
+      Buffer.alloc(SOUL_MAX_BYTES + 1, 1),
+      oversized.access,
+    )).rejects.toMatchObject({ code: "soul/too-many-bytes" });
+    await expect(readFile(agentSoulPath(oversized.root, "Ada"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("treats self-selection of the canonical path as digest-backed adopt/enable", async () => {

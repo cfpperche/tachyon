@@ -286,22 +286,26 @@ describe("AgentStudioPanelManager — Phase 3 pilot full lifecycle", () => {
     expect(findType(webview.posted, "soulProfileError").at(-1)).toMatchObject({ code: "soul/path-invalid" });
   });
 
-  it("never reflects a selected import source path in a Studio error response", async () => {
-    const source = "/private/operator/source/identity.md";
-    __setOpenDialogResult([Uri.file(source)]);
+  it("imports webview-selected bytes without invoking a VS Code file path or reflecting payload data", async () => {
+    const body = "# Private identity\n";
+    const contentBase64 = Buffer.from(body).toString("base64");
+    let received: Buffer | undefined;
     const { ws } = fakeWorkspace({ agents: { Ada: agentDef() } });
     Object.assign(ws, {
-      importSoulProfile: async () => { throw new SoulError("soul/permission-denied", `Permission denied reading ${source}`); },
+      importSoulProfileBytes: async (_agent: string, bytes: Buffer) => {
+        received = Buffer.from(bytes);
+        throw new SoulError("soul/io-error", "Unable to import identity profile");
+      },
     });
     const manager = new AgentStudioPanelManager(Uri.file("/ext"));
     manager.openExisting(ws, "Ada");
     await flush();
     const webview = __createdPanels[0].webview;
-    webview.__receive(envelope({ type: "importSoul" as const, agent: "Ada" }));
+    webview.__receive(envelope({ type: "importSoul" as const, agent: "Ada", contentBase64 }));
     await flush();
     const error = findType(webview.posted, "soulProfileError").at(-1);
-    expect(error).toMatchObject({ agent: "Ada", code: "soul/permission-denied" });
-    expect(JSON.stringify(error)).not.toContain(source);
-    expect(JSON.stringify(error)).not.toContain("/private/operator");
+    expect(received?.toString("utf8")).toBe(body);
+    expect(error).toMatchObject({ agent: "Ada", code: "soul/io-error" });
+    expect(JSON.stringify(error)).not.toContain(contentBase64);
   });
 });

@@ -4,8 +4,16 @@ import { StudioFrame } from "../shared/studio/StudioFrame";
 import { canSave as computeCanSave } from "../shared/studio/dirtyGating";
 import type { StudioError } from "../shared/studio/errorTaxonomy";
 import { Button, Chip, Input, Select, Textarea } from "../shared/ui";
-import { KitDropdown, KitDropdownContent, KitDropdownItem, KitDropdownTrigger } from "../shared/ui/kit";
-import { AGENT_STUDIO_HOST_MESSAGE_NAMES, agentStudioTitleFor, blankAgentFields, computeAgentDirty, validateAgentStudioHostDomainMessage } from "./domain";
+import { KitDropdown, KitDropdownContent, KitDropdownItem, KitDropdownTrigger, KitFilePicker } from "../shared/ui/kit";
+import {
+  AGENT_STUDIO_HOST_MESSAGE_NAMES,
+  SOUL_IMPORT_MAX_BYTES,
+  agentStudioTitleFor,
+  blankAgentFields,
+  computeAgentDirty,
+  isAllowedSoulImportFileName,
+  validateAgentStudioHostDomainMessage,
+} from "./domain";
 import {
   adoptSoulProfileMessage,
   browseMessage,
@@ -51,6 +59,66 @@ const harnessRuntimeOfCmd = (cmd: string): string | undefined => {
   return HARNESS_STUDIO_BINS.has(bin) ? bin : undefined;
 };
 
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+  }
+  return btoa(binary);
+}
+
+function SoulImportPicker({ onCancel, onSelect }: {
+  onCancel(): void;
+  onSelect(contentBase64: string): void;
+}) {
+  const [reading, setReading] = useState(false);
+  const [error, setError] = useState<string | undefined>(undefined);
+
+  const selectFile = async (file: File | undefined) => {
+    if (!file) return;
+    setError(undefined);
+    if (!isAllowedSoulImportFileName(file.name)) {
+      setError("Choose a .md, .markdown, or .txt file.");
+      return;
+    }
+    if (file.size === 0) {
+      setError("The selected file is empty.");
+      return;
+    }
+    if (file.size > SOUL_IMPORT_MAX_BYTES) {
+      setError("The selected file is larger than 64 KB.");
+      return;
+    }
+    setReading(true);
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      if (bytes.length === 0 || bytes.length > SOUL_IMPORT_MAX_BYTES) {
+        setError(bytes.length === 0 ? "The selected file is empty." : "The selected file is larger than 64 KB.");
+        return;
+      }
+      onSelect(bytesToBase64(bytes));
+    } catch {
+      setError("Tachyon could not read the selected file.");
+    } finally {
+      setReading(false);
+    }
+  };
+
+  return (
+    <KitFilePicker
+      title="Import identity file"
+      description={<>Markdown or text, up to 64 KB. Tachyon copies the contents into this agent&apos;s managed SOUL.md.</>}
+      accept=".md,.markdown,.txt,text/markdown,text/plain"
+      disabled={reading}
+      error={error}
+      draggingLabel="Drop to import"
+      cancelLabel="Cancel import"
+      onFile={selectFile}
+      onCancel={onCancel}
+    />
+  );
+}
+
 export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
   const [mode, setMode] = useState<"new" | "edit">("new");
   const [entityId, setEntityId] = useState<string | undefined>(undefined);
@@ -61,6 +129,7 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
   const [saveInFlight, setSaveInFlight] = useState(false);
   const [soulStatus, setSoulStatus] = useState<SoulProfileStatusMessage | undefined>(undefined);
   const [soulBusy, setSoulBusy] = useState<string | undefined>(undefined);
+  const [soulImportOpen, setSoulImportOpen] = useState(false);
   const [ready, setReady] = useState(false);
   const entityRef = useRef<AgentStudioEntity | undefined>(undefined);
 
@@ -97,6 +166,7 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
         setLoadFailed(false);
         setSoulStatus(undefined);
         setSoulBusy(d.entity.name ? "Refreshing profile" : undefined);
+        setSoulImportOpen(false);
         setReady(true);
         if (d.entity.name) dispatch.post(refreshSoulMessage(d.entity.name));
       } else if (d.type === "error") {
@@ -119,6 +189,7 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
         setHostError(undefined);
         setSoulStatus(d.status);
         setSoulBusy(undefined);
+        if (d.status.lifecycle !== "missing") setSoulImportOpen(false);
         const current = entityRef.current;
         if (current && current.fields.soul !== d.status.soulEnabled) {
           const updated = { ...current, fields: { ...current.fields, soul: d.status.soulEnabled } };
@@ -209,7 +280,7 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
     && soulStatus.resolvable
     && !soulStatus.soulEnabled;
   const showDisable = !!soulStatus?.soulEnabled;
-  const canCreateOrImport = showCreateOrImport && !mutationDisabled;
+  const canCreateOrImport = showCreateOrImport && !mutationDisabled && !soulImportOpen;
   const canAdopt = showAdopt && !mutationDisabled;
   const canEnable = showEnable && !mutationDisabled;
   const canDisable = showDisable && !mutationDisabled;
@@ -270,7 +341,7 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
                     {showCreateOrImport && (
                       <>
                         <Button variant="primary" icon="new-file" disabled={!canCreateOrImport} onClick={() => runSoulAction("Creating profile", createSoulMessage(savedAgent))}>Create</Button>
-                        <Button icon="folder-opened" disabled={!canCreateOrImport} onClick={() => runSoulAction("Importing profile", importSoulMessage(savedAgent))}>Import</Button>
+                        <Button icon="folder-opened" disabled={!canCreateOrImport} onClick={() => { setHostError(undefined); setSoulImportOpen(true); }}>Import</Button>
                       </>
                     )}
                     {profilePresent && (
@@ -299,6 +370,16 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
                       </KitDropdown>
                     )}
                   </div>
+
+                  {soulImportOpen && (
+                    <SoulImportPicker
+                      onCancel={() => setSoulImportOpen(false)}
+                      onSelect={(contentBase64) => {
+                        setSoulImportOpen(false);
+                        runSoulAction("Importing profile", importSoulMessage(savedAgent, contentBase64));
+                      }}
+                    />
+                  )}
 
                   <div class="ash-soul-status" role="status" aria-live="polite">
                     {soulBusy

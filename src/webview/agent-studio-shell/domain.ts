@@ -55,9 +55,36 @@ export type AgentStudioDomainMessageName = (typeof AGENT_STUDIO_DOMAIN_MESSAGE_N
 const AGENT_NAME_RE = /^[A-Za-z][A-Za-z0-9_-]*$/;
 const SHA256_RE = /^[0-9a-f]{64}$/;
 const PROFILE_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const BASE64_RE = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+const BASE64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+/** Browser-side guard; the host repeats the authoritative SOUL_MAX_BYTES validation. */
+export const SOUL_IMPORT_MAX_BYTES = 64 * 1024;
+export const SOUL_IMPORT_MAX_BASE64_CHARS = 4 * Math.ceil(SOUL_IMPORT_MAX_BYTES / 3);
+
+export function isAllowedSoulImportFileName(value: unknown): value is string {
+  return typeof value === "string"
+    && value.length > 0
+    && value.length <= 255
+    && !/[\\/\0]/.test(value)
+    && /\.(?:md|markdown|txt)$/i.test(value);
+}
+
+/** Strict canonical base64 so the host receives bounded, unambiguous bytes rather than a local path. */
+export function isCanonicalSoulImportBase64(value: unknown): value is string {
+  if (typeof value !== "string" || value.length === 0 || value.length > SOUL_IMPORT_MAX_BASE64_CHARS
+    || value.length % 4 !== 0 || !BASE64_RE.test(value)) return false;
+  const padding = value.endsWith("==") ? 2 : value.endsWith("=") ? 1 : 0;
+  const decodedBytes = (value.length / 4) * 3 - padding;
+  if (decodedBytes <= 0 || decodedBytes > SOUL_IMPORT_MAX_BYTES) return false;
+  if (padding === 2 && (BASE64_ALPHABET.indexOf(value[value.length - 3]!) & 0x0f) !== 0) return false;
+  if (padding === 1 && (BASE64_ALPHABET.indexOf(value[value.length - 2]!) & 0x03) !== 0) return false;
+  return true;
+}
 
 export type AgentStudioSoulActionMessage =
-  | { type: "createSoul" | "importSoul" | "openSoul" | "refreshSoul" | "previewSoul" | "enableSoul" | "disableSoul"; agent: string }
+  | { type: "createSoul" | "openSoul" | "refreshSoul" | "previewSoul" | "enableSoul" | "disableSoul"; agent: string }
+  | { type: "importSoul"; agent: string; contentBase64: string }
   | { type: "adoptSoulProfile"; agent: string; expectedDigest: string };
 
 export type AgentStudioInboundDomainMessage = { type: "browse" } | AgentStudioSoulActionMessage;
@@ -78,8 +105,13 @@ export function validateAgentStudioInboundMessage(raw: unknown): AgentStudioInbo
     if (!exactKeys(value, ["type", "agent", "expectedDigest"]) || typeof value.expectedDigest !== "string" || !SHA256_RE.test(value.expectedDigest)) return undefined;
     return { type: "adoptSoulProfile", agent: value.agent, expectedDigest: value.expectedDigest };
   }
+  if (value.type === "importSoul") {
+    if (!exactKeys(value, ["type", "agent", "contentBase64"])
+      || !isCanonicalSoulImportBase64(value.contentBase64)) return undefined;
+    return { type: "importSoul", agent: value.agent, contentBase64: value.contentBase64 };
+  }
   if (!exactKeys(value, ["type", "agent"])) return undefined;
-  return { type: value.type as Exclude<AgentStudioSoulActionMessage["type"], "adoptSoulProfile">, agent: value.agent };
+  return { type: value.type as Exclude<AgentStudioSoulActionMessage["type"], "adoptSoulProfile" | "importSoul">, agent: value.agent };
 }
 
 /** Host-facing profile status snapshot (no import source path). */
