@@ -1,0 +1,123 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+import {
+  isRuntimeOpsSnapshotV1,
+  mergeRuntimeOpsSnapshotsV1,
+  parseRuntimeOpsSnapshotV1,
+} from "../../src/runtime-api/runtimeOpsProjection.js";
+import type { RuntimeOpsSnapshotV1 } from "../../src/runtimeOps/types.js";
+import { workspaceRuntimeOpsViewSuccessV1 } from "../../src/engine-service/protocol.js";
+import { FakeWorkspaceClient } from "../../src/shell/FakeWorkspaceClient.js";
+import { runtimeOpsFleetView, workspaceRuntimeOpsTarget } from "../../src/shell/RuntimeOpsTarget.js";
+import { projectionIdentity, projectionSnapshot } from "./fixtures/workspaceProjection.js";
+
+const roots: string[] = [];
+
+afterEach(() => {
+  for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
+});
+
+describe("Runtime Ops persistent projection", () => {
+  it("strictly validates identities, counts and closed nested values", () => {
+    const value = snapshot("ws-one", "alpha", "2026-07-14T12:00:00.000Z", 10);
+    expect(parseRuntimeOpsSnapshotV1(value)).toEqual(value);
+    expect(isRuntimeOpsSnapshotV1({ ...value, extra: true })).toBe(false);
+    expect(isRuntimeOpsSnapshotV1({ ...value, summary: { ...value.summary, managedAgents: 2 } })).toBe(false);
+    expect(isRuntimeOpsSnapshotV1({
+      ...value,
+      runtimes: [{ ...value.runtimes[0]!, agents: [{ ...value.runtimes[0]!.agents[0]!, key: "redirected" }] }],
+    })).toBe(false);
+    expect(isRuntimeOpsSnapshotV1({
+      ...value,
+      runtimes: [{
+        ...value.runtimes[0]!,
+        agents: [{ ...value.runtimes[0]!.agents[0]!, attention: { state: "working", stale: false, rateLimit: { scope: "5h" } } }],
+      }],
+    })).toBe(false);
+  });
+
+  it("merges authoritative per-workspace rows without losing usage or fleet identity", () => {
+    const first = snapshot("ws-one", "alpha", "2026-07-14T12:00:00.000Z", 10);
+    const second = snapshot("ws-two", "beta", "2026-07-14T12:01:00.000Z", 20);
+
+    const merged = mergeRuntimeOpsSnapshotsV1([first, second]);
+
+    expect(merged).toMatchObject({
+      generatedAt: "2026-07-14T12:01:00.000Z",
+      summary: { runtimes: 1, managedAgents: 2, activeAgents: 2 },
+      runtimes: [{
+        runtime: "codex",
+        availability: { pathDetected: true, managed: true },
+        usage: { state: "available", value: { inputTokens: 30, semantics: "latest-cumulative" } },
+        workspaces: [{ key: "ws-one" }, { key: "ws-two" }],
+        agents: [{ key: "ws-one:alpha" }, { key: "ws-two:beta" }],
+      }],
+    });
+  });
+
+  it("queries each authenticated client and builds one fleet view", async () => {
+    const first = client("ws-one", "alpha", "2026-07-14T12:00:00.000Z", 10);
+    const second = client("ws-two", "beta", "2026-07-14T12:01:00.000Z", 20);
+
+    const view = await runtimeOpsFleetView([
+      workspaceRuntimeOpsTarget(first),
+      workspaceRuntimeOpsTarget(second),
+    ]);
+
+    expect(view.summary).toMatchObject({ runtimes: 1, managedAgents: 2 });
+    expect(first.queries).toEqual([{ schemaVersion: 1, method: "runtime-ops.view", input: {} }]);
+    expect(second.queries).toEqual([{ schemaVersion: 1, method: "runtime-ops.view", input: {} }]);
+  });
+});
+
+function client(workspaceKey: string, agent: string, generatedAt: string, inputTokens: number): FakeWorkspaceClient {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "runtime-ops-target-"));
+  roots.push(root);
+  const identity = projectionIdentity(root);
+  return new FakeWorkspaceClient({
+    identity,
+    snapshot: projectionSnapshot(identity),
+    query: async (query) => {
+      if (query.method !== "runtime-ops.view") throw new Error("unexpected query");
+      return workspaceRuntimeOpsViewSuccessV1(snapshot(workspaceKey, agent, generatedAt, inputTokens));
+    },
+  });
+}
+
+function snapshot(workspaceKey: string, agentName: string, generatedAt: string, inputTokens: number): RuntimeOpsSnapshotV1 {
+  return {
+    schemaVersion: 1,
+    generatedAt,
+    summary: { runtimes: 1, managedAgents: 1, activeAgents: 1, throttled: 0, bridgeIssues: 0 },
+    runtimes: [{
+      key: "runtime:codex",
+      runtime: "codex",
+      label: "Codex",
+      availability: { pathDetected: true, managed: true },
+      usage: {
+        state: "available",
+        value: { inputTokens, outputTokens: 1, cacheReadTokens: 0, cacheCreationTokens: 0, semantics: "latest-cumulative" },
+        source: "activity-log",
+        observedAt: generatedAt,
+      },
+      lastActivity: { state: "available", value: generatedAt, source: "activity-log", observedAt: generatedAt },
+      version: { state: "available", value: "0.56.4", source: "activity-log", observedAt: generatedAt },
+      workspaces: [{ key: workspaceKey, label: workspaceKey }],
+      agents: [{
+        key: `${workspaceKey}:${agentName}`,
+        name: agentName,
+        workspaceKey,
+        status: "running",
+        attention: { state: "working", stale: false },
+        model: { state: "available", value: "Codex default", source: "runtime-profile" },
+        modelObserved: { state: "unavailable" },
+        modelDivergence: false,
+        resume: { state: "live" },
+        bridge: { state: "ok", currentGeneration: 1, boundGeneration: 1 },
+        contextPressure: { state: "unavailable" },
+      }],
+    }],
+  };
+}

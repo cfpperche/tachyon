@@ -29,6 +29,11 @@ import {
   type SidebarViewV1,
 } from "../runtime-api/sidebarProjection.js";
 import {
+  isRuntimeOpsSnapshotV1,
+  parseRuntimeOpsSnapshotV1,
+} from "../runtime-api/runtimeOpsProjection.js";
+import type { RuntimeOpsSnapshotV1 } from "../runtimeOps/types.js";
+import {
   isMissionControlTaskReorderInputV1,
   isMissionControlTaskUpdateInputV1,
   isMissionControlValidationCloseInputV1,
@@ -347,7 +352,7 @@ export type WorkspaceCommandResultV1 =
       message: string;
     };
 
-export type WorkspaceQueryMethodV1 = "activity.context" | "probe.view" | "task.board" | "task.detail" | "task.studio" | "pin.studio" | "handoff.view" | "sidebar.view";
+export type WorkspaceQueryMethodV1 = "activity.context" | "probe.view" | "task.board" | "task.detail" | "task.studio" | "pin.studio" | "handoff.view" | "sidebar.view" | "runtime-ops.view";
 
 export interface WorkspaceProbeViewRowV1 {
   runId: string;
@@ -412,6 +417,11 @@ export type WorkspaceQueryV1 =
       schemaVersion: 1;
       method: "sidebar.view";
       input: Record<string, never>;
+    }
+  | {
+      schemaVersion: 1;
+      method: "runtime-ops.view";
+      input: Record<string, never>;
     };
 
 export type WorkspaceQueryResultV1 =
@@ -465,6 +475,12 @@ export type WorkspaceQueryResultV1 =
     }
   | {
       schemaVersion: 1;
+      method: "runtime-ops.view";
+      status: "ok";
+      view: RuntimeOpsSnapshotV1;
+    }
+  | {
+      schemaVersion: 1;
       method: WorkspaceQueryMethodV1;
       status: "error";
       code: string;
@@ -501,6 +517,7 @@ export const TASK_STUDIO_RESPONSE_MAX_BYTES = 32 * 1024 * 1024;
 export const PIN_STUDIO_RESPONSE_MAX_BYTES = 32 * 1024 * 1024;
 export const HANDOFF_VIEW_RESPONSE_MAX_BYTES = 16 * 1024 * 1024;
 export const SIDEBAR_VIEW_RESPONSE_MAX_BYTES = 16 * 1024 * 1024;
+export const RUNTIME_OPS_VIEW_RESPONSE_MAX_BYTES = 2 * 1024 * 1024;
 const WORKSPACE_COMMAND_METHODS = new Set<WorkspaceCommandMethodV1>([
   "agent.start",
   "agent.stop",
@@ -671,7 +688,7 @@ export function isWorkspaceQueryV1(value: unknown): value is WorkspaceQueryV1 {
       && /^p-[0-9a-f]{6}$/.test(value.input.id);
   }
   if (value.method === "handoff.view") return hasOnlyKeys(value.input, []);
-  if (value.method === "sidebar.view") return hasOnlyKeys(value.input, []);
+  if (value.method === "sidebar.view" || value.method === "runtime-ops.view") return hasOnlyKeys(value.input, []);
   if (value.method !== "probe.view") return false;
   const keys = Object.keys(value.input);
   return keys.every((key) => key === "caller")
@@ -681,7 +698,7 @@ export function isWorkspaceQueryV1(value: unknown): value is WorkspaceQueryV1 {
 
 export function isWorkspaceQueryResultV1(value: unknown): value is WorkspaceQueryResultV1 {
   if (!isRecord(value) || value.schemaVersion !== 1
-    || (value.method !== "activity.context" && value.method !== "probe.view" && value.method !== "task.board" && value.method !== "task.detail" && value.method !== "task.studio" && value.method !== "pin.studio" && value.method !== "handoff.view" && value.method !== "sidebar.view")) return false;
+    || (value.method !== "activity.context" && value.method !== "probe.view" && value.method !== "task.board" && value.method !== "task.detail" && value.method !== "task.studio" && value.method !== "pin.studio" && value.method !== "handoff.view" && value.method !== "sidebar.view" && value.method !== "runtime-ops.view")) return false;
   if (value.status === "ok") {
     return hasOnlyKeys(value, ["schemaVersion", "method", "status", "view"])
       && (value.method === "activity.context"
@@ -698,7 +715,9 @@ export function isWorkspaceQueryResultV1(value: unknown): value is WorkspaceQuer
                   ? isPinStudioViewV1(value.view)
                   : value.method === "handoff.view"
                     ? isHandoffViewV1(value.view)
-                    : isSidebarViewV1(value.view));
+                    : value.method === "sidebar.view"
+                      ? isSidebarViewV1(value.view)
+                      : isRuntimeOpsSnapshotV1(value.view));
   }
   return value.status === "error"
     && hasOnlyKeys(value, ["schemaVersion", "method", "status", "code", "message"])
@@ -810,6 +829,20 @@ export function workspaceSidebarViewSuccessV1(view: SidebarViewV1): WorkspaceQue
   const transportEnvelope = { ok: true as const, op: "query" as const, result };
   if (Buffer.byteLength(`${JSON.stringify(transportEnvelope)}\n`, "utf8") > SIDEBAR_VIEW_RESPONSE_MAX_BYTES) {
     throw new Error("sidebar view exceeds its dedicated response size limit");
+  }
+  return result;
+}
+
+export function workspaceRuntimeOpsViewSuccessV1(view: RuntimeOpsSnapshotV1): WorkspaceQueryResultV1 {
+  const result = {
+    schemaVersion: 1,
+    method: "runtime-ops.view",
+    status: "ok",
+    view: parseRuntimeOpsSnapshotV1(view),
+  } as const;
+  const transportEnvelope = { ok: true as const, op: "query" as const, result };
+  if (Buffer.byteLength(`${JSON.stringify(transportEnvelope)}\n`, "utf8") > RUNTIME_OPS_VIEW_RESPONSE_MAX_BYTES) {
+    throw new Error("Runtime Ops view exceeds its dedicated response size limit");
   }
   return result;
 }

@@ -549,3 +549,19 @@ None.
   remains the intermediate gate reserved until final closure.  Production activation intentionally still uses
   compatibility targets; the next and final cutover slice must replace the extension registry and operational
   command handlers atomically, then delete shell-owned Workspace construction rather than ship a mixed mode.
+
+## Twenty-fifth implementation slice — 2026-07-14
+
+- Added the strict authenticated `runtime-ops.view` query owned by the persistent engine.  The daemon's
+  existing activity cursor, ledger, manager and CLI-detection cache now produce the view; the editor no longer
+  needs to reconstruct those operational facts when the registry switches to `WorkspaceClient`.
+- Added a closed Runtime Ops wire validator for every nested identity, enum, count and timestamp plus a
+  dedicated 2 MiB response limit.  Workspace/agent keys, managed and summary counts, throttling metadata and
+  usage semantics are cross-checked rather than accepted by shape alone.
+- Added the shell target and deterministic multi-workspace merger.  Each daemon remains authoritative for its
+  own rows; the editor only unions workspaces/agents and recomputes fleet totals, rejecting conflicting usage
+  semantics.  No manager, ledger, activity watcher or runtime detector is reintroduced in the shell.
+- The focused protocol/client/target/Runtime Ops/real-service matrix passes 71/71 with typecheck, extension and
+  engine build, the 207-file editor-free daemon import closure, presentation boundary and diff-check green.
+  The first reviewable global proof remains current; no additional full run was justified before the final
+  activation cutover.

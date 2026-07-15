@@ -154,6 +154,15 @@ describe("daemon engine service", () => {
         },
       },
     });
+    expect(await first.query({ schemaVersion: 1, method: "runtime-ops.view", input: {} })).toMatchObject({
+      method: "runtime-ops.view",
+      status: "ok",
+      view: {
+        schemaVersion: 1,
+        summary: { managedAgents: 0 },
+        runtimes: expect.any(Array),
+      },
+    });
     const toggleSidebarPin = {
       schemaVersion: 1 as const,
       method: "sidebar.mutate" as const,

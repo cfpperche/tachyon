@@ -64,6 +64,7 @@ import {
   workspaceHandoffViewSuccessV1,
   workspaceSidebarMutationSuccessV1,
   workspaceSidebarViewSuccessV1,
+  workspaceRuntimeOpsViewSuccessV1,
   workspaceMissionControlViewSuccessV1,
   workspacePinStudioApplySuccessV1,
   workspacePinStudioViewSuccessV1,
@@ -231,6 +232,9 @@ async function executeWorkspaceQuery(
     return workspaceSidebarViewSuccessV1(await projectSidebarView(workspace, {
       observedModelFor: (agent) => runtimeOpsSnapshots.observedModelFor(workspace.workspaceRoot, workspace.wsHash, agent),
     }));
+  }
+  if (query.method === "runtime-ops.view") {
+    return workspaceRuntimeOpsViewSuccessV1(await runtimeOpsSnapshots.snapshot());
   }
   if (query.method === "task.board") {
     return workspaceMissionControlViewSuccessV1({
