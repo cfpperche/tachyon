@@ -1,8 +1,14 @@
 import { render } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { App } from "./App";
-import { RUNTIME_OPS_LOADING, RUNTIME_OPS_SNAPSHOT, readyMessage, type RuntimeOpsHostMessage } from "./messages";
-import type { RuntimeOpsSnapshotV1 } from "../../runtimeOps/types";
+import {
+  RUNTIME_OPS_LOADING,
+  RUNTIME_OPS_SNAPSHOT,
+  readyMessage,
+  runtimeOpsSetProviderObservationAction,
+  type RuntimeOpsHostMessage,
+} from "./messages";
+import type { RuntimeOpsProviderV2, RuntimeOpsSnapshot } from "../../runtimeOps/types";
 import { persistWebviewState, type TachyonVsCodeApi } from "../shared/clientState";
 
 declare function acquireVsCodeApi(): TachyonVsCodeApi;
@@ -15,7 +21,7 @@ function signalReady(): void {
 }
 
 function Root() {
-  const [snapshot, setSnapshot] = useState<RuntimeOpsSnapshotV1>();
+  const [snapshot, setSnapshot] = useState<RuntimeOpsSnapshot>();
   useEffect(() => {
     const onMessage = (event: MessageEvent): void => {
       const message = event.data as Partial<RuntimeOpsHostMessage> | undefined;
@@ -26,7 +32,12 @@ function Root() {
     signalReady();
     return () => window.removeEventListener("message", onMessage);
   }, []);
-  return <App snapshot={snapshot} />;
+  const setProviderObservation = (provider: RuntimeOpsProviderV2, enabled: boolean): void => {
+    const message = runtimeOpsSetProviderObservationAction(provider, enabled);
+    if (vscode) vscode.postMessage(message);
+    else window.postMessage(message, "*");
+  };
+  return <App snapshot={snapshot} onSetProviderObservation={setProviderObservation} />;
 }
 
 const root = document.getElementById("root");

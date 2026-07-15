@@ -39,10 +39,10 @@ import {
   type SidebarViewV1,
 } from "../runtime-api/sidebarProjection.js";
 import {
-  isRuntimeOpsSnapshotV1,
-  parseRuntimeOpsSnapshotV1,
+  isRuntimeOpsSnapshot,
+  parseRuntimeOpsSnapshot,
 } from "../runtime-api/runtimeOpsProjection.js";
-import type { RuntimeOpsSnapshotV1 } from "../runtimeOps/types.js";
+import type { RuntimeOpsSnapshot } from "../runtimeOps/types.js";
 import {
   isMissionControlTaskReorderInputV1,
   isMissionControlTaskUpdateInputV1,
@@ -504,7 +504,7 @@ export type WorkspaceQueryResultV1 =
       schemaVersion: 1;
       method: "runtime-ops.view";
       status: "ok";
-      view: RuntimeOpsSnapshotV1;
+      view: RuntimeOpsSnapshot;
     }
   | {
       schemaVersion: 1;
@@ -771,7 +771,7 @@ export function isWorkspaceQueryResultV1(value: unknown): value is WorkspaceQuer
                     ? isHandoffViewV1(value.view)
                     : value.method === "sidebar.view"
                       ? isSidebarViewV1(value.view)
-                      : isRuntimeOpsSnapshotV1(value.view));
+                      : isRuntimeOpsSnapshot(value.view));
   }
   return value.status === "error"
     && hasOnlyKeys(value, ["schemaVersion", "method", "status", "code", "message"])
@@ -901,12 +901,12 @@ export function workspaceSidebarViewSuccessV1(view: SidebarViewV1): WorkspaceQue
   return result;
 }
 
-export function workspaceRuntimeOpsViewSuccessV1(view: RuntimeOpsSnapshotV1): WorkspaceQueryResultV1 {
+export function workspaceRuntimeOpsViewSuccessV1(view: RuntimeOpsSnapshot): WorkspaceQueryResultV1 {
   const result = {
     schemaVersion: 1,
     method: "runtime-ops.view",
     status: "ok",
-    view: parseRuntimeOpsSnapshotV1(view),
+    view: parseRuntimeOpsSnapshot(view),
   } as const;
   const transportEnvelope = { ok: true as const, op: "query" as const, result };
   if (Buffer.byteLength(`${JSON.stringify(transportEnvelope)}\n`, "utf8") > RUNTIME_OPS_VIEW_RESPONSE_MAX_BYTES) {

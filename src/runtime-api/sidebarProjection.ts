@@ -80,6 +80,13 @@ const agent = z.object({
   declaredOwner: name.optional(),
   sub: text(2_000, 1).optional(),
   worktree: text(512, 1).optional(),
+  liveBranch: text(512, 1).optional(),
+  branchDrift: z.boolean().optional(),
+  worktreePath: text(4_096, 1).optional(),
+  resources: z.object({
+    cpuPct: z.number().finite().min(0).max(999).optional(),
+    memMb: count,
+  }).strict().optional(),
   verify: z.enum(["pass", "fail", "stale"]).optional(),
   harness: z.boolean().optional(),
   resumable: z.boolean().optional(),
@@ -107,6 +114,9 @@ const agent = z.object({
   }
   if (value.freshStart && !value.resumable) {
     context.addIssue({ code: z.ZodIssueCode.custom, message: "sidebar fresh-start flag requires resumable state" });
+  }
+  if (value.branchDrift && (value.worktree === undefined || value.liveBranch === undefined)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "sidebar branch drift requires configured and live branches" });
   }
 });
 

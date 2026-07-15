@@ -1,4 +1,6 @@
 import type { CallerSnapshot } from "../bridge/callerIdentity.js";
+import type { TachyonConfig } from "../config/loadConfig.js";
+import type { AuthorityIntegrity } from "./authorityIntegrity.js";
 
 export const DELIVERY_SCHEMA_VERSION = 1;
 
@@ -14,6 +16,9 @@ export interface DeliveryContract {
   owns: string[];
   taskRef: string;
   stubPath?: string;
+  oracleHash?: string;
+  executorHashes?: Record<string, string>;
+  verifySettings?: TachyonConfig["settings"]["verify"];
 }
 
 export type DeliveryLeaseState = "free" | "pending" | "held" | "draining" | "verifying" | "quarantined" | "abandoned";
@@ -110,6 +115,8 @@ export interface Delivery {
   legacy?: DeliveryLegacySource;
   createdAt: string;
   updatedAt: string;
+  /** Host-authenticated seal over the complete durable authority record. */
+  authorityIntegrity?: AuthorityIntegrity;
 }
 
 export interface DeliveryCreateInput {

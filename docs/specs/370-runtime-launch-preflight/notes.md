@@ -112,11 +112,11 @@ _Alternatives weighed mid-build. The chosen path + what was given up + why it wa
 - `npm run dogfood:runtime-launch-preflight` — pass
 
 ### 2026-07-14T16:04:20Z — main EDH product-path pass — commit: 002f7066c09d371e775a8efbc273bf8a76b0341a
-- `node scripts/edh-palliative/lane.mjs run --owner codex-budget --target main -- npm run dogfood:edh -- headless` — pass
+- `node scripts/dev-host/lane.mjs run --owner codex-budget --target main -- npm run dogfood:dev-host -- headless` — pass
 - Native Extension Development Host S1 passed all eight checks: fail-visible frame, config failure, degraded and
   disk-backed roster, LKG visibility and spawn refusal, Doctor execution, and config recovery.
-- Screenshot: `.tachyon/evidence/edh-palliative/fail-visible.png`.
-- Governed cleanup removed `/tmp/tachyon-edh-palliative/default`; persistent Bridge was absent and the lane lease is free.
+- Screenshot: `.tachyon/evidence/dev-host/fail-visible.png`.
+- Governed cleanup removed `/tmp/tachyon-dev-host/default`; persistent Bridge was absent and the lane lease is free.
 
 ## Verification log
 

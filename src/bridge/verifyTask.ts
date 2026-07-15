@@ -1,22 +1,34 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createRequire } from "node:module";
-import { findNonArchivedDelegationRecordsByAgent, type DelegationRecord } from "./delegationRecord.js";
-import { DeliveryStore } from "../delivery/store.js";
+import {
+  delegationAuthorityIdentity,
+  findNonArchivedDelegationRecordsByAgent,
+  verifyDelegationRecordAuthority,
+  verifyDelegationRecordLocation,
+  type DelegationRecord,
+} from "./delegationRecord.js";
+import { authorityRecordMac, type AuthorityHead } from "../delivery/authorityIntegrity.js";
+import { DeliveryStore, type DeliveryAuthorityHeadPort } from "../delivery/store.js";
 import { DeliveryIdentityError, deliveryToVerificationRecord } from "../delivery/verifyAdapter.js";
 import { hasDoorbellRung } from "./doorbell.js";
 import { CONFIG_FILENAMES, loadConfigFile, type TachyonConfig } from "../config/loadConfig.js";
 import type { CallerSnapshot } from "./callerIdentity.js";
 import type { Delivery } from "../delivery/types.js";
 import type { DeliveryVerificationContext, DeliveryVerificationLeaseService, PreparedDeliveryVerification } from "../delivery/verificationLease.js";
+import { parseArgvCommand } from "../config/argvCommand.js";
+import { parseNameStatus, type ChangedFile } from "../worktree/review.js";
+import { behaviorStubPathError, configuredBehaviorStubPath } from "../config/behaviorVerification.js";
 
 const execFileP = promisify(execFile);
-const VERIFIER_VERSION = "363-phase1";
-/** spec 363 T3 — exported so primer.ts falls back to the same default verify_task uses. */
-export const DEFAULT_FULL_VERIFY = "npm test";
+const VERIFIER_VERSION = "385-project-owned-verifiers";
+/** spec 385 — retained as an exported compatibility symbol to make the absence of a product-global
+ * package-manager default explicit. Full verification now requires settings.verify.full. */
+export const DEFAULT_FULL_VERIFY: undefined = undefined;
 const NO_MATCH_EXIT_CODE = 86;
 
 export interface VerifyTaskWaiver {
@@ -43,6 +55,19 @@ export interface VerifyTaskCommand {
   exitCode: number;
   stdout?: string;
   stderr?: string;
+}
+
+export interface VerifyTaskBehaviorEvidence {
+  identifier: string;
+  mode: "cmd" | "vitest-name" | "unconfigured";
+  prepare?: string;
+  /** Exact project adapter snapshot used for this proof; omitted for runner-neutral cmd: gates. */
+  adapter?: NonNullable<NonNullable<TachyonConfig["settings"]["verify"]>["behavior"]>;
+  stubPath?: string;
+  oracleHash?: string;
+  executorHashes?: Record<string, string>;
+  baseAssertions: VitestAssertionObservation[];
+  headAssertions: VitestAssertionObservation[];
 }
 
 /** F3 — who this verification is about, bound into the record (and therefore into its integrity hash).
@@ -80,6 +105,8 @@ export interface VerifyTaskRecord {
   taskId?: string;
   verifierVersion: string;
   commands: VerifyTaskCommand[];
+  /** Oracle/adapter/assertion facts covered by integrityHash; optional only for legacy records on disk. */
+  behaviorEvidence?: VerifyTaskBehaviorEvidence;
   findings: VerifyTaskBlocker[];
   waivers: VerifyTaskWaiver[];
   verdict: "accept" | "blocked";
@@ -118,14 +145,25 @@ export type VerifyTaskInput = {
   verifierCaller?: { kind: CallerSnapshot["kind"]; name?: string };
   /** Canonical Delivery path only; Workspace owns this lifecycle service once per host epoch. */
   deliveryVerification?: DeliveryVerificationLeaseService;
+  /** Machine-local SecretStorage key required before a legacy JSON record can be treated as authority. */
+  authorityIntegrityKey?: Buffer;
+  /** Host-custodied exact canonical Delivery head required to reject a valid-but-stale SQLite replay. */
+  canonicalAuthorityHead?: DeliveryAuthorityHeadPort;
+  /** SecretStorage-custodied exact MAC head required to reject a valid-but-stale legacy replay. */
+  legacyAuthorityHead?: (identity: string) => Promise<AuthorityHead | undefined>;
 };
 
 export type VerifyTaskErrorCode =
   | "VERIFY_TASK_IDENTITY_REQUIRED"
   | "DELIVERY_VERIFICATION_REQUIRED"
+  | "DELIVERY_AUTHORITY_INTEGRITY_REQUIRED"
+  | "DELIVERY_AUTHORITY_FRESHNESS_REQUIRED"
   | "DELIVERY_NOT_FOUND"
   | "LEGACY_DELEGATION_NOT_FOUND"
   | "AMBIGUOUS_LEGACY_DELEGATION"
+  | "LEGACY_DELEGATION_INTEGRITY_REQUIRED"
+  | "LEGACY_DELEGATION_FRESHNESS_REQUIRED"
+  | "LEGACY_DELEGATION_INTEGRITY_INVALID"
   | "DELIVERY_SEGMENTS_MISSING"
   | "DELIVERY_IDENTITY_AMBIGUOUS"
   | "SELF_WAIVER_FORBIDDEN"
@@ -158,7 +196,16 @@ interface VerificationTarget {
 
 async function resolveVerificationTarget(input: VerifyTaskInput): Promise<VerificationTarget> {
   if (input.deliveryId) {
-    const delivery = await new DeliveryStore(input.workspaceRoot).get(input.deliveryId);
+    if (!input.authorityIntegrityKey) {
+      throw new VerifyTaskResolutionError("DELIVERY_AUTHORITY_INTEGRITY_REQUIRED", "canonical Delivery verification requires the host authority-integrity key");
+    }
+    if (!input.canonicalAuthorityHead) {
+      throw new VerifyTaskResolutionError("DELIVERY_AUTHORITY_FRESHNESS_REQUIRED", "canonical Delivery verification requires the host-custodied freshness head");
+    }
+    const delivery = await new DeliveryStore(input.workspaceRoot, {
+      authorityIntegrityKey: () => input.authorityIntegrityKey,
+      authorityHead: input.canonicalAuthorityHead,
+    }).get(input.deliveryId);
     if (!delivery) throw new VerifyTaskResolutionError("DELIVERY_NOT_FOUND", `Delivery '${input.deliveryId}' was not found`);
     try {
       const view = deliveryToVerificationRecord(delivery);
@@ -181,6 +228,38 @@ async function resolveVerificationTarget(input: VerifyTaskInput): Promise<Verifi
     throw new VerifyTaskResolutionError(
       "AMBIGUOUS_LEGACY_DELEGATION",
       `agent '${input.agent}' matches ${matches.length} non-archived delegation records; use delivery_id`,
+      candidates,
+    );
+  }
+  if (!input.authorityIntegrityKey) {
+    throw new VerifyTaskResolutionError(
+      "LEGACY_DELEGATION_INTEGRITY_REQUIRED",
+      "legacy delegation verification requires the host authority-integrity key; use canonical delivery_id if legacy authority cannot be authenticated",
+      candidates,
+    );
+  }
+  if (!input.legacyAuthorityHead) {
+    throw new VerifyTaskResolutionError(
+      "LEGACY_DELEGATION_FRESHNESS_REQUIRED",
+      "legacy delegation verification requires the host-custodied freshness head",
+      candidates,
+    );
+  }
+  const selected = matches[0]!;
+  let identity: string;
+  try { identity = delegationAuthorityIdentity(selected.record); }
+  catch {
+    throw new VerifyTaskResolutionError("LEGACY_DELEGATION_INTEGRITY_INVALID", "legacy delegation authority identity is missing", candidates);
+  }
+  const mac = authorityRecordMac(selected.record as DelegationRecord & Record<string, unknown>);
+  const head = await input.legacyAuthorityHead(identity);
+  if (selected.record.agent !== input.agent
+    || !verifyDelegationRecordLocation(input.workspaceRoot, selected.path, selected.record)
+    || !verifyDelegationRecordAuthority(selected.record, input.authorityIntegrityKey, input.workspaceRoot)
+    || !mac || !head || head.mac !== mac || !Number.isSafeInteger(head.revision) || head.revision < 1) {
+    throw new VerifyTaskResolutionError(
+      "LEGACY_DELEGATION_INTEGRITY_INVALID",
+      `legacy delegation authority failed authentication or freshness validation: ${selected.path}`,
       candidates,
     );
   }
@@ -241,11 +320,27 @@ export interface CommandResult {
   stdout: string;
   stderr: string;
   observedTestNames?: string[];
+  observedVitestAssertions?: VitestAssertionObservation[];
 }
 
-export type VerifyTaskRunner = (cwd: string, argv: string[], opts?: { timeout?: number }) => Promise<CommandResult>;
+export interface VitestAssertionObservation {
+  file?: string;
+  title?: string;
+  fullName?: string;
+  status: string;
+}
 
-async function runArgv(cwd: string, argv: string[], opts: { timeout?: number } = {}): Promise<CommandResult> {
+export type VerifyTaskRunner = (
+  cwd: string,
+  argv: string[],
+  opts?: { timeout?: number; env?: NodeJS.ProcessEnv },
+) => Promise<CommandResult>;
+
+async function runArgv(
+  cwd: string,
+  argv: string[],
+  opts: { timeout?: number; env?: NodeJS.ProcessEnv } = {},
+): Promise<CommandResult> {
   const [file, ...args] = argv;
   const command = argv.join(" ");
   if (!file) return { command, argv, exitCode: 1, stdout: "", stderr: "empty command" };
@@ -255,6 +350,7 @@ async function runArgv(cwd: string, argv: string[], opts: { timeout?: number } =
       encoding: "utf8",
       maxBuffer: 32 * 1024 * 1024,
       timeout: opts.timeout ?? 120_000,
+      env: opts.env,
     });
     return { command, argv, exitCode: 0, stdout, stderr };
   } catch (err) {
@@ -278,102 +374,447 @@ async function git(cwd: string, args: string[], opts: { okExitCodes?: number[] }
   }
 }
 
-type BehaviorCommand = { argv: string[]; mode: "cmd" | "vitest-name" };
-type VitestSummary = { total: number; passed: number; failed: number; pending: number; names: string[] };
+type BehaviorCommand = { argv: string[]; mode: "cmd" | "vitest-name" | "unconfigured"; error?: string };
+type VitestSummary = {
+  total: number;
+  passed: number;
+  failed: number;
+  pending: number;
+  todo: number;
+  assertions: VitestAssertionObservation[];
+};
 
-function parseCmdBehavior(behaviorTest: string): BehaviorCommand {
-  const explicit = behaviorTest.match(/^cmd:\s*(.+)$/s)?.[1];
-  if (!explicit) return { argv: ["npm", "test", "--", "--run", "-t", behaviorTest, "--reporter=json"], mode: "vitest-name" };
-  const argv = explicit.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g)?.map((part) => part.replace(/^(['"])(.*)\1$/, "$2")) ?? [];
-  return { argv, mode: "cmd" };
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function parseCommandLine(command: string): string[] {
-  return command.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g)?.map((part) => part.replace(/^(['"])(.*)\1$/, "$2")) ?? [];
+function parseCmdBehavior(
+  behaviorTest: string,
+  settings: TachyonConfig["settings"]["verify"] | undefined,
+): BehaviorCommand {
+  const explicitMatch = behaviorTest.match(/^cmd:\s*(.*)$/s);
+  if (explicitMatch) {
+    try {
+      return { argv: parseArgvCommand(explicitMatch[1] ?? ""), mode: "cmd" };
+    } catch (error) {
+      return { argv: [], mode: "unconfigured", error: `invalid cmd: behavior verifier (${error instanceof Error ? error.message : String(error)})` };
+    }
+  }
+  const configured = settings?.behavior;
+  if (!configured) return { argv: [], mode: "unconfigured" };
+  let prefix: string[];
+  try {
+    prefix = parseArgvCommand(configured.command);
+  } catch (error) {
+    return { argv: [], mode: "unconfigured", error: `invalid settings.verify.behavior.command (${error instanceof Error ? error.message : String(error)})` };
+  }
+  return {
+    argv: [...prefix, "--run", "-t", `${escapeRegExp(behaviorTest)}$`, "--reporter=json"],
+    mode: "vitest-name",
+  };
 }
 
-async function runBehavior(cwd: string, behaviorTest: string, runner: VerifyTaskRunner): Promise<CommandResult> {
-  const behavior = parseCmdBehavior(behaviorTest);
+async function runBehavior(
+  cwd: string,
+  behaviorTest: string,
+  settings: TachyonConfig["settings"]["verify"] | undefined,
+  runner: VerifyTaskRunner,
+): Promise<CommandResult> {
+  const behavior = parseCmdBehavior(behaviorTest, settings);
+  if (behavior.mode === "unconfigured") {
+    return {
+      command: "",
+      argv: [],
+      exitCode: NO_MATCH_EXIT_CODE,
+      stdout: "",
+      stderr: behavior.error ?? `plain behaviorTest '${behaviorTest}' requires settings.verify.behavior; use cmd:<command> for a runner-neutral verifier`,
+    };
+  }
   const result = await runner(cwd, behavior.argv, { timeout: 120_000 });
   if (behavior.mode !== "vitest-name") return result;
   return normalizeVitestNameFilterResult(result, behaviorTest);
 }
 
-function collectVitestNames(value: unknown, out: string[] = []): string[] {
-  if (!value || typeof value !== "object") return out;
-  if (Array.isArray(value)) {
-    for (const item of value) collectVitestNames(item, out);
-    return out;
+async function runVerificationPrepare(
+  cwd: string,
+  prepare: string,
+  runner: VerifyTaskRunner,
+): Promise<CommandResult> {
+  let argv: string[];
+  try {
+    argv = parseArgvCommand(prepare);
+  } catch (error) {
+    return {
+      command: "",
+      argv: [],
+      exitCode: NO_MATCH_EXIT_CODE,
+      stdout: "",
+      stderr: `invalid settings.verify.prepare (${error instanceof Error ? error.message : String(error)})`,
+    };
   }
-  const obj = value as Record<string, unknown>;
-  const status = obj.status;
-  const fullName = obj.fullName;
-  const title = obj.title;
-  if (typeof status === "string" && typeof fullName === "string" && fullName.trim()) {
-    out.push(fullName);
-  }
-  if (typeof status === "string" && typeof title === "string" && title.trim()) {
-    out.push(title);
-  }
-  for (const key of ["testResults", "assertionResults", "children", "tests"]) {
-    collectVitestNames(obj[key], out);
-  }
-  return out;
+  return runner(cwd, argv, { timeout: 600_000 });
 }
 
-function parseVitestJsonReporter(stdout: string): VitestSummary | undefined {
-  const trimmed = stdout.trim();
-  if (!trimmed) return undefined;
-  const candidates = [trimmed, ...trimmed.split(/\r?\n/).filter((line) => line.trim().startsWith("{"))];
-  for (const candidate of candidates) {
-    try {
-      const parsed = JSON.parse(candidate) as Partial<Record<"numTotalTests" | "numPassedTests" | "numFailedTests" | "numPendingTests", unknown>>;
-      const total = typeof parsed.numTotalTests === "number" ? parsed.numTotalTests : undefined;
-      const passed = typeof parsed.numPassedTests === "number" ? parsed.numPassedTests : undefined;
-      const failed = typeof parsed.numFailedTests === "number" ? parsed.numFailedTests : undefined;
-      const pending = typeof parsed.numPendingTests === "number" ? parsed.numPendingTests : undefined;
-      if (total !== undefined && passed !== undefined && failed !== undefined && pending !== undefined) {
-        return { total, passed, failed, pending, names: [...new Set(collectVitestNames(parsed))] };
+type VitestReporterParseResult = { summary?: VitestSummary; error?: string };
+
+/** Extract top-level JSON objects without mistaking nested assertion objects for extra reporters. */
+function jsonObjectPayloads(stdout: string): unknown[] {
+  const payloads: unknown[] = [];
+  for (let start = 0; start < stdout.length; start += 1) {
+    if (stdout[start] !== "{") continue;
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    let end = start;
+    for (; end < stdout.length; end += 1) {
+      const character = stdout[end]!;
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (character === "\\") escaped = true;
+        else if (character === '"') inString = false;
+        continue;
       }
+      if (character === '"') inString = true;
+      else if (character === "{") depth += 1;
+      else if (character === "}") {
+        depth -= 1;
+        if (depth === 0) break;
+      }
+    }
+    if (depth !== 0) continue;
+    try {
+      payloads.push(JSON.parse(stdout.slice(start, end + 1)));
+      start = end;
     } catch {
-      // Keep scanning; npm wrappers can print warnings before the JSON reporter payload.
+      // A log line may contain a non-JSON brace. Advance one character so nested/later payloads
+      // remain discoverable instead of letting malformed prefix text hide the real reporter.
+    }
+  }
+  return payloads;
+}
+
+function vitestReportShaped(value: unknown): value is Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const report = value as Record<string, unknown>;
+  return ["numTotalTests", "numPassedTests", "numFailedTests", "numPendingTests"]
+    .every((key) => Object.hasOwn(report, key));
+}
+
+function parseVitestJsonReporter(stdout: string): VitestReporterParseResult {
+  const reports = jsonObjectPayloads(stdout).filter(vitestReportShaped);
+  if (reports.length === 0) return {};
+  if (reports.length !== 1) {
+    return { error: `emitted ${reports.length} Vitest JSON reporter-shaped payloads; exactly one is required` };
+  }
+
+  const report = reports[0]!;
+  const count = (key: string, optional = false): number | undefined => {
+    if (optional && !Object.hasOwn(report, key)) return 0;
+    const value = report[key];
+    return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
+  };
+  const total = count("numTotalTests");
+  const passed = count("numPassedTests");
+  const failed = count("numFailedTests");
+  const pending = count("numPendingTests");
+  const todo = count("numTodoTests", true);
+  if ([total, passed, failed, pending, todo].some((value) => value === undefined)) {
+    return { error: "emitted a Vitest JSON reporter payload with invalid test counts" };
+  }
+  if (total !== passed! + failed! + pending! + todo!) {
+    return { error: "emitted an inconsistent Vitest JSON reporter payload: total does not equal passed + failed + pending + todo" };
+  }
+  if (!Array.isArray(report.testResults)) {
+    return { error: "emitted an inconsistent Vitest JSON reporter payload: testResults is missing" };
+  }
+
+  const assertions: VitestAssertionObservation[] = [];
+  const observedCounts = { passed: 0, failed: 0, pending: 0, todo: 0 };
+  for (const testResult of report.testResults) {
+    if (!testResult || typeof testResult !== "object" || Array.isArray(testResult)) {
+      return { error: "emitted an inconsistent Vitest JSON reporter payload: testResults contains a non-object" };
+    }
+    const result = testResult as Record<string, unknown>;
+    if (!Array.isArray(result.assertionResults)) {
+      return { error: "emitted an inconsistent Vitest JSON reporter payload: assertionResults is missing" };
+    }
+    const file = typeof result.name === "string" ? result.name : undefined;
+    for (const assertion of result.assertionResults) {
+      if (!assertion || typeof assertion !== "object" || Array.isArray(assertion)) {
+        return { error: "emitted an inconsistent Vitest JSON reporter payload: assertionResults contains a non-object" };
+      }
+      const item = assertion as Record<string, unknown>;
+      if (typeof item.status !== "string"
+        || (item.title !== undefined && typeof item.title !== "string")
+        || (item.fullName !== undefined && typeof item.fullName !== "string")) {
+        return { error: "emitted an inconsistent Vitest JSON reporter payload: assertion identity/status is invalid" };
+      }
+      const bucket = item.status === "passed" || item.status === "failed" || item.status === "todo"
+        ? item.status
+        : item.status === "pending" || item.status === "skipped" || item.status === "disabled"
+          ? "pending"
+          : undefined;
+      if (!bucket) {
+        return { error: `emitted an inconsistent Vitest JSON reporter payload: unknown assertion status '${item.status}'` };
+      }
+      observedCounts[bucket] += 1;
+      assertions.push({
+        ...(file ? { file } : {}),
+        ...(typeof item.title === "string" ? { title: item.title } : {}),
+        ...(typeof item.fullName === "string" ? { fullName: item.fullName } : {}),
+        status: item.status,
+      });
+    }
+  }
+  if (assertions.length !== total
+    || observedCounts.passed !== passed
+    || observedCounts.failed !== failed
+    || observedCounts.pending !== pending
+    || observedCounts.todo !== todo) {
+    return { error: "emitted an inconsistent Vitest JSON reporter payload: summary counts do not match assertion results" };
+  }
+  return { summary: { total, passed, failed, pending, todo, assertions } as VitestSummary };
+}
+
+function assertionTitleMatches(assertion: VitestAssertionObservation, behaviorTest: string): boolean {
+  return assertion.title === behaviorTest || (!assertion.title && assertion.fullName === behaviorTest);
+}
+
+function assertionFileMatches(assertion: VitestAssertionObservation, cwd: string, stubPath?: string): boolean {
+  if (!stubPath) return true;
+  if (!assertion.file) return false;
+  const observed = path.isAbsolute(assertion.file)
+    ? path.resolve(assertion.file)
+    : path.resolve(cwd, assertion.file);
+  const expected = path.resolve(cwd, ...stubPath.split("/"));
+  // Compare the reporter identity lexically. Realpathing here would let a symlinked canonical
+  // stub inherit another file identity; regular-file/containment checks run inside each checkout.
+  const canonical = (candidate: string): string =>
+    process.platform === "win32" ? path.normalize(candidate).toLowerCase() : path.normalize(candidate);
+  return canonical(observed) === canonical(expected);
+}
+
+function canonicalBehaviorStubFileFinding(
+  cwd: string,
+  stubPath: string,
+  phase: "baseSha" | "refSha",
+): VerifyTaskBlocker | undefined {
+  const pathError = behaviorStubPathError(stubPath);
+  if (pathError) {
+    return {
+      code: "behavior_test_renamed",
+      detail: `canonical behavior stub has an unsafe recorded path at ${phase}: ${pathError}`,
+      file: stubPath,
+    };
+  }
+  let root: string;
+  try {
+    root = fs.realpathSync.native(cwd);
+  } catch (error) {
+    return {
+      code: "behavior_test_renamed",
+      detail: `canonical behavior stub worktree cannot be resolved at ${phase}: ${error instanceof Error ? error.message : String(error)}`,
+      file: stubPath,
+    };
+  }
+  let current = root;
+  const segments = stubPath.split("/");
+  for (let index = 0; index < segments.length; index++) {
+    current = path.join(current, segments[index]!);
+    let stat: fs.Stats;
+    try {
+      stat = fs.lstatSync(current);
+    } catch {
+      return {
+        code: "behavior_test_renamed",
+        detail: `canonical behavior stub is missing at ${phase}: ${stubPath}`,
+        file: stubPath,
+      };
+    }
+    const leaf = index === segments.length - 1;
+    if (stat.isSymbolicLink() || (leaf ? !stat.isFile() : !stat.isDirectory())) {
+      return {
+        code: "behavior_test_renamed",
+        detail: `canonical behavior stub is not a regular non-symlink file at ${phase}: ${stubPath}`,
+        file: stubPath,
+      };
+    }
+    let canonical: string;
+    try {
+      canonical = fs.realpathSync.native(current);
+    } catch {
+      return {
+        code: "behavior_test_renamed",
+        detail: `canonical behavior stub cannot be resolved at ${phase}: ${stubPath}`,
+        file: stubPath,
+      };
+    }
+    const relative = path.relative(root, canonical);
+    if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+      return {
+        code: "behavior_test_renamed",
+        detail: `canonical behavior stub resolves outside the worktree at ${phase}: ${stubPath}`,
+        file: stubPath,
+      };
     }
   }
   return undefined;
 }
 
-function exactVitestNameObserved(result: CommandResult, behaviorTest: string): boolean | undefined {
-  if (result.observedTestNames) return result.observedTestNames.includes(behaviorTest);
-  const summary = parseVitestJsonReporter(result.stdout);
-  if (!summary) return undefined;
-  return summary.names.includes(behaviorTest);
+function canonicalBehaviorOracleHashFinding(
+  cwd: string,
+  stubPath: string,
+  expectedHash: string,
+  phase: "baseSha" | "refSha",
+): VerifyTaskBlocker | undefined {
+  if (!/^[0-9a-f]{64}$/i.test(expectedHash)) {
+    return {
+      code: "behavior_oracle_changed",
+      detail: `canonical behavior oracle has no valid recorded SHA-256 at ${phase}: ${stubPath}`,
+      file: stubPath,
+    };
+  }
+  let actual: string;
+  try {
+    actual = crypto.createHash("sha256").update(fs.readFileSync(path.resolve(cwd, ...stubPath.split("/")))).digest("hex");
+  } catch (error) {
+    return {
+      code: "behavior_oracle_changed",
+      detail: `canonical behavior oracle could not be hashed at ${phase}: ${error instanceof Error ? error.message : String(error)}`,
+      file: stubPath,
+    };
+  }
+  if (actual !== expectedHash) {
+    return {
+      code: "behavior_oracle_changed",
+      detail: `canonical behavior oracle bytes changed at ${phase}: ${stubPath}`,
+      file: stubPath,
+    };
+  }
+  return undefined;
+}
+
+function behaviorExecutorHashFinding(
+  cwd: string,
+  executorPath: string,
+  expectedHash: string,
+  phase: "baseSha" | "refSha",
+): VerifyTaskBlocker | undefined {
+  const fileFinding = canonicalBehaviorStubFileFinding(cwd, executorPath, phase);
+  if (fileFinding) {
+    return {
+      code: "behavior_executor_changed",
+      detail: `fixed behavior executor file is missing, unsafe, or replaced at ${phase}: ${executorPath}`,
+      file: executorPath,
+    };
+  }
+  if (!/^[0-9a-f]{64}$/i.test(expectedHash)) {
+    return {
+      code: "behavior_executor_changed",
+      detail: `fixed behavior executor has no valid recorded SHA-256 at ${phase}: ${executorPath}`,
+      file: executorPath,
+    };
+  }
+  try {
+    const actual = crypto.createHash("sha256")
+      .update(fs.readFileSync(path.resolve(cwd, ...executorPath.split("/"))))
+      .digest("hex");
+    if (actual === expectedHash) return undefined;
+  } catch (error) {
+    return {
+      code: "behavior_executor_changed",
+      detail: `fixed behavior executor could not be hashed at ${phase}: ${error instanceof Error ? error.message : String(error)}`,
+      file: executorPath,
+    };
+  }
+  return {
+    code: "behavior_executor_changed",
+    detail: `fixed behavior executor bytes changed at ${phase}: ${executorPath}`,
+    file: executorPath,
+  };
+}
+
+function behaviorExecutorBindingsFinding(
+  settings: NonNullable<NonNullable<TachyonConfig["settings"]["verify"]>["behavior"]>,
+  hashes: Record<string, string> | undefined,
+): VerifyTaskBlocker | undefined {
+  const configured = [...settings.executorPaths].sort();
+  const recorded = hashes ? Object.keys(hashes).sort() : [];
+  if (configured.length === recorded.length && configured.every((entry, index) => entry === recorded[index])) return undefined;
+  return {
+    code: "behavior_executor_changed",
+    detail: "named behavior verifier has no exact spawn-bound hash for every configured executor path",
+  };
+}
+
+function firstBehaviorExecutorFinding(
+  cwd: string,
+  hashes: Record<string, string>,
+  phase: "baseSha" | "refSha",
+): VerifyTaskBlocker | undefined {
+  for (const executorPath of Object.keys(hashes).sort()) {
+    const finding = behaviorExecutorHashFinding(cwd, executorPath, hashes[executorPath]!, phase);
+    if (finding) return finding;
+  }
+  return undefined;
+}
+
+function canonicalVitestAssertions(
+  result: CommandResult,
+  behaviorTest: string,
+  cwd: string,
+  stubPath?: string,
+): VitestAssertionObservation[] {
+  return (result.observedVitestAssertions ?? [])
+    .filter((assertion) => assertionTitleMatches(assertion, behaviorTest))
+    .filter((assertion) => assertionFileMatches(assertion, cwd, stubPath));
+}
+
+function exactVitestAssertions(result: CommandResult, behaviorTest: string): VitestAssertionObservation[] {
+  return (result.observedVitestAssertions ?? [])
+    .filter((assertion) => assertionTitleMatches(assertion, behaviorTest));
+}
+
+function sameVitestAssertionIdentity(
+  base: VitestAssertionObservation,
+  head: VitestAssertionObservation,
+): boolean {
+  // The phase-specific absolute checkout prefix is intentionally excluded. Both observations have
+  // already been proven to resolve lexically to the same spawn-bound canonical stubPath.
+  return base.title === head.title && base.fullName === head.fullName;
 }
 
 function normalizeVitestNameFilterResult(result: CommandResult, behaviorTest: string): CommandResult {
-  const summary = parseVitestJsonReporter(result.stdout);
-  if (!summary) {
-    if (result.exitCode === 0) {
-      return {
-        ...result,
-        exitCode: NO_MATCH_EXIT_CODE,
-        stderr: `plain behaviorTest '${behaviorTest}' did not emit Vitest JSON; use cmd:<command> for non-Vitest behavior verifiers`,
-      };
-    }
-    return result;
+  const parsed = parseVitestJsonReporter(result.stdout);
+  if (!parsed.summary) {
+    return {
+      ...result,
+      exitCode: NO_MATCH_EXIT_CODE,
+      stderr: parsed.error
+        ? `plain behaviorTest '${behaviorTest}' ${parsed.error}`
+        : `plain behaviorTest '${behaviorTest}' did not emit Vitest JSON; use cmd:<command> for non-Vitest behavior verifiers`,
+    };
   }
+  const summary = parsed.summary;
   const executed = summary.passed + summary.failed;
-  const observedTestNames = summary.names;
-  const stdout = `vitest behavior tests: total=${summary.total} executed=${executed} passed=${summary.passed} failed=${summary.failed} pending=${summary.pending}`;
-  if (executed === 0) {
+  const observedTestNames = [...new Set(summary.assertions.flatMap((assertion) => [assertion.title, assertion.fullName].filter((name): name is string => !!name)))];
+  const observedVitestAssertions = summary.assertions;
+  const matching = summary.assertions.filter((assertion) => assertionTitleMatches(assertion, behaviorTest));
+  const executableMatching = matching.filter((assertion) => assertion.status === "passed" || assertion.status === "failed");
+  const stdout = `vitest behavior tests: total=${summary.total} executed=${executed} passed=${summary.passed} failed=${summary.failed} pending=${summary.pending} todo=${summary.todo}`;
+  if (executableMatching.length === 0) {
     return {
       ...result,
       exitCode: NO_MATCH_EXIT_CODE,
       stdout,
-      stderr: `plain behaviorTest '${behaviorTest}' matched no executable Vitest tests`,
+      stderr: matching.length > 0
+        ? `plain behaviorTest '${behaviorTest}' was skipped, todo, or pending instead of executed`
+        : `plain behaviorTest '${behaviorTest}' matched no executable exact Vitest test`,
       observedTestNames,
+      observedVitestAssertions,
     };
   }
-  return { ...result, stdout, observedTestNames };
+  return { ...result, stdout, observedTestNames, observedVitestAssertions };
 }
 
 function firstLine(s: string | undefined): string | undefined {
@@ -486,7 +927,9 @@ async function canonicalSegmentBlockers(delivery: Delivery, refSha: string, cwd:
       continue;
     }
     if (segment.grantedHeadSha === end) continue;
-    const files = (await git(cwd, ["diff", "--name-only", `${segment.grantedHeadSha}..${end}`])).stdout.split(/\r?\n/).filter(Boolean);
+    const files = (await git(cwd, ["diff", "-z", "--name-only", `${segment.grantedHeadSha}..${end}`])).stdout
+      .split("\0")
+      .filter(Boolean);
     for (const file of files) {
       if (!withinOwns(file, owns)) blockers.push({ code: "scope_breach", detail: `changed file is outside ownsSubset for segment '${segment.id}' (${segment.grantedHeadSha}..${end})`, file });
     }
@@ -505,14 +948,15 @@ function isSuppressionPath(file: string): boolean {
   );
 }
 
-function suppressionFindings(nameStatus: string, patch: string): VerifyTaskBlocker[] {
+function suppressionFindings(changes: ChangedFile[], patch: string, vitestAdapterEnabled: boolean): VerifyTaskBlocker[] {
+  if (!vitestAdapterEnabled) return [];
   const findings: VerifyTaskBlocker[] = [];
-  for (const line of nameStatus.split(/\r?\n/).filter(Boolean)) {
-    const [status, ...rest] = line.split(/\t/);
-    const file = rest[rest.length - 1];
-    if (!file || !isSuppressionPath(file)) continue;
-    if (status.startsWith("D")) findings.push({ code: "test_deleted", detail: `test file deleted: ${file}`, file });
-    if (status.startsWith("R")) findings.push({ code: "test_renamed", detail: `test file renamed: ${rest.join(" -> ")}`, file });
+  for (const change of changes) {
+    const file = change.path;
+    if (!isSuppressionPath(file)) continue;
+    if (change.status === "D") findings.push({ code: "test_deleted", detail: `test file deleted: ${file}`, file });
+    if (change.status === "R") findings.push({ code: "test_renamed", detail: `test file renamed: ${change.from ?? file} -> ${file}`, file });
+    if (change.status === "T") findings.push({ code: "test_suppression", detail: `test file type changed: ${file}`, file });
     if (/^vitest\.config\.[cm]?[jt]s$/.test(file)) findings.push({ code: "test_config_changed", detail: `test config changed: ${file}`, file });
   }
   let currentFile: string | undefined;
@@ -520,7 +964,7 @@ function suppressionFindings(nameStatus: string, patch: string): VerifyTaskBlock
     const fileMatch = line.match(/^\+\+\+ b\/(.+)$/);
     if (fileMatch) currentFile = fileMatch[1];
     if (!line.startsWith("+") || line.startsWith("+++")) continue;
-    if (/\b(?:describe|it|test)\.(?:skip|only)\b|\b(?:xit|xdescribe|xfail)\b/.test(line)) {
+    if (/\b(?:describe|it|test)\.(?:skip|only|todo)\b|\b(?:xit|xdescribe|xfail)\b/.test(line)) {
       findings.push({
         code: "test_suppression",
         detail: `suppression marker added: ${line.slice(1).trim()}`,
@@ -531,19 +975,19 @@ function suppressionFindings(nameStatus: string, patch: string): VerifyTaskBlock
   return findings;
 }
 
-function canonicalBehaviorStubFindings(record: DelegationRecord, nameStatus: string): VerifyTaskBlocker[] {
+function canonicalBehaviorStubFindings(record: DelegationRecord, changes: ChangedFile[]): VerifyTaskBlocker[] {
   if (!record.stubPath) return [];
   const findings: VerifyTaskBlocker[] = [];
-  for (const line of nameStatus.split(/\r?\n/).filter(Boolean)) {
-    const [status, ...rest] = line.split(/\t/);
-    if (!status || rest.length === 0) continue;
-    const oldPath = rest[0];
-    const newPath = rest[rest.length - 1];
+  for (const change of changes) {
+    const oldPath = change.from ?? change.path;
+    const newPath = change.path;
     if (oldPath !== record.stubPath && newPath !== record.stubPath) continue;
-    if (status.startsWith("D")) {
+    if (change.status === "D") {
       findings.push({ code: "behavior_test_renamed", detail: `canonical behavior test stub was removed: ${record.stubPath}`, file: record.stubPath });
-    } else if (status.startsWith("R")) {
-      findings.push({ code: "behavior_test_renamed", detail: `canonical behavior test stub was renamed: ${rest.join(" -> ")}`, file: record.stubPath });
+    } else if (change.status === "R") {
+      findings.push({ code: "behavior_test_renamed", detail: `canonical behavior test stub was renamed: ${oldPath} -> ${newPath}`, file: record.stubPath });
+    } else if (change.status === "T") {
+      findings.push({ code: "behavior_test_renamed", detail: `canonical behavior test stub changed file type: ${record.stubPath}`, file: record.stubPath });
     }
   }
   return findings;
@@ -592,7 +1036,7 @@ function verificationRecordPath(dir: string, record: VerifyTaskRecord): string {
   const { deliveryId, segmentId } = record.identity;
   if (!deliveryId) return path.join(dir, `${record.refSha}.json`);
   // Hashed rather than interpolated: delivery and segment ids must never reach the filesystem as path text.
-  const scope = crypto.createHash("sha256").update(`${deliveryId} ${segmentId ?? ""}`).digest("hex").slice(0, 16);
+  const scope = crypto.createHash("sha256").update(`${deliveryId}\0${segmentId ?? ""}`).digest("hex").slice(0, 16);
   return path.join(dir, `${record.refSha}.${scope}.json`);
 }
 
@@ -729,23 +1173,196 @@ async function worktreePathForRef(workspaceRoot: string, taskRef: string): Promi
   return undefined;
 }
 
-async function runAtSha<T>(worktreePath: string, taskRef: string, sha: string, fn: () => Promise<T>): Promise<T> {
-  await git(worktreePath, ["checkout", "--detach", "--force", sha]);
+type VerificationCloneOwner = {
+  version: 1;
+  workspaceHash: string;
+  pid: number;
+  processStart?: string;
+  nonce: string;
+  createdAt: string;
+};
+
+function linuxProcessStart(pid: number): string | undefined {
   try {
-    return await fn();
-  } finally {
-    await git(worktreePath, ["reset", "--hard"]);
-    await git(worktreePath, ["clean", "-fd"]);
-    await git(worktreePath, ["checkout", "--force", taskRef]);
+    const stat = fs.readFileSync(`/proc/${pid}/stat`, "utf8");
+    const close = stat.lastIndexOf(")");
+    if (close < 0) return undefined;
+    return stat.slice(close + 2).trim().split(/\s+/)[19]; // proc(5): field 22, after pid+comm
+  } catch {
+    return undefined;
   }
 }
 
-async function runBehaviorAtSha(worktreePath: string, taskRef: string, sha: string, behaviorTest: string, runner: VerifyTaskRunner): Promise<CommandResult> {
-  return runAtSha(worktreePath, taskRef, sha, () => runBehavior(worktreePath, behaviorTest, runner));
+function ownerStillLive(owner: VerificationCloneOwner): boolean {
+  try { process.kill(owner.pid, 0); }
+  catch (error) { return (error as NodeJS.ErrnoException).code !== "ESRCH"; }
+  const currentStart = linuxProcessStart(owner.pid);
+  return !owner.processStart || !currentStart || currentStart === owner.processStart;
 }
 
-async function runBehaviorInCurrentCheckout(worktreePath: string, behaviorTest: string, runner: VerifyTaskRunner): Promise<CommandResult> {
-  return runBehavior(worktreePath, behaviorTest, runner);
+/** Reap only directories carrying Tachyon's exact owner marker whose process is provably gone. */
+function reapAbandonedVerificationClones(parent: string, workspaceHash: string): void {
+  for (const entry of fs.readdirSync(parent, { withFileTypes: true })) {
+    if (!entry.isDirectory() || !entry.name.startsWith("verify-")) continue;
+    const owned = path.join(parent, entry.name);
+    try {
+      const marker = JSON.parse(fs.readFileSync(path.join(owned, "owner.json"), "utf8")) as Partial<VerificationCloneOwner>;
+      if (marker.version !== 1
+        || marker.workspaceHash !== workspaceHash
+        || !Number.isSafeInteger(marker.pid)
+        || marker.pid! <= 0
+        || typeof marker.nonce !== "string"
+        || !/^[0-9a-f]{32}$/.test(marker.nonce)
+        || (marker.processStart !== undefined
+          && (typeof marker.processStart !== "string" || !/^[1-9][0-9]*$/.test(marker.processStart)))
+        || typeof marker.createdAt !== "string") continue;
+      const owner = marker as VerificationCloneOwner;
+      if (!ownerStillLive(owner)) fs.rmSync(owned, { recursive: true, force: true });
+    } catch {
+      // Unknown or partially-created paths are not ours to delete.
+    }
+  }
+}
+
+function isolatedVerificationEnvironment(root: string, ownedPath: string, checkoutPath: string): NodeJS.ProcessEnv {
+  const temporary = path.join(ownedPath, "tmp");
+  const cache = path.join(ownedPath, "cache");
+  for (const directory of [temporary, cache]) {
+    fs.mkdirSync(directory, { mode: 0o700 });
+  }
+
+  const source = process.env.PATH ?? process.env.Path ?? "";
+  const boundedPath = source
+    .split(path.delimiter)
+    .filter(Boolean)
+    .filter((entry) => {
+      const resolved = path.resolve(entry);
+      const relative = path.relative(root, resolved);
+      const insideRoot = relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+      return !insideRoot && !resolved.split(path.sep).includes("node_modules");
+    })
+    .join(path.delimiter);
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    TMPDIR: temporary,
+    TMP: temporary,
+    TEMP: temporary,
+    XDG_CACHE_HOME: cache,
+    npm_config_cache: path.join(cache, "npm"),
+    NPM_CONFIG_CACHE: path.join(cache, "npm"),
+    YARN_CACHE_FOLDER: path.join(cache, "yarn"),
+    PIP_CACHE_DIR: path.join(cache, "pip"),
+    UV_CACHE_DIR: path.join(cache, "uv"),
+    PATH: boundedPath,
+    PWD: checkoutPath,
+  };
+  // Do not let ambient language/shell startup hooks inject code or source-tree dependencies into
+  // both phases. A project that deliberately needs one can set it inside its tracked prepare/runner
+  // wrapper; silently inherited host hooks are not verification evidence.
+  const directCodeInjectionVariables = new Set([
+    "NODE_OPTIONS", "NODE_PATH",
+    "BASH_ENV", "ENV",
+    "PYTHONHOME", "PYTHONPATH",
+    "RUBYOPT", "RUBYLIB",
+    "PERL5OPT", "PERL5LIB",
+  ]);
+  for (const key of Object.keys(env)) {
+    if (directCodeInjectionVariables.has(key.toUpperCase())) delete env[key];
+  }
+  if (process.platform === "win32") env.Path = boundedPath;
+  return env;
+}
+
+/**
+ * Execute one verification phase in a brand-new tracked-only clone outside the source repository.
+ * The project adapter must prepare its own environment in this clone. This prevents ignored ancestor
+ * dependencies and shared hooks/config/remotes from becoming evidence. BASE and HEAD receive different
+ * clones plus phase-private temporary and common package-cache roots. This is not a filesystem sandbox:
+ * HOME, project-selected toolchain configuration, ordinary explicit environment and deliberately absolute
+ * external paths remain trusted project environment, and must not be used to derive the expected result.
+ * Direct ambient language/shell code-injection variables are removed; tracked wrappers may set them explicitly.
+ */
+async function runAtIsolatedSha<T>(
+  workspaceRoot: string,
+  sha: string,
+  fn: (checkoutPath: string, environment: NodeJS.ProcessEnv) => Promise<T>,
+): Promise<T> {
+  const root = fs.realpathSync(workspaceRoot);
+  const workspaceHash = crypto.createHash("sha256").update(root).digest("hex").slice(0, 24);
+  const parent = path.join(os.tmpdir(), `tachyon-verification-${workspaceHash}`);
+  fs.mkdirSync(parent, { recursive: true, mode: 0o700 });
+  const parentStat = fs.lstatSync(parent);
+  if (parentStat.isSymbolicLink() || !parentStat.isDirectory()) {
+    throw new Error(`verification checkout parent is not a real directory: ${parent}`);
+  }
+  if (typeof process.getuid === "function" && parentStat.uid !== process.getuid()) {
+    throw new Error(`verification checkout parent is not owned by the verifier process user: ${parent}`);
+  }
+  if ((parentStat.mode & 0o077) !== 0) {
+    throw new Error(`verification checkout parent must not be group/world accessible: ${parent}`);
+  }
+  const canonicalParent = fs.realpathSync(parent);
+  const relativeToRoot = path.relative(root, canonicalParent);
+  if (relativeToRoot === "" || (!relativeToRoot.startsWith("..") && !path.isAbsolute(relativeToRoot))) {
+    throw new Error(`verification checkout parent must be outside the source repository: ${canonicalParent}`);
+  }
+  reapAbandonedVerificationClones(canonicalParent, workspaceHash);
+  const ownedPath = fs.mkdtempSync(path.join(canonicalParent, "verify-"));
+  let primary: unknown;
+  try {
+    // Everything after mkdtemp belongs to this cleanup transaction. If marker creation or any later
+    // setup step fails, the unmarked partial directory is still removed by finally.
+    const nonce = crypto.randomBytes(16).toString("hex");
+    const processStart = linuxProcessStart(process.pid);
+    const owner: VerificationCloneOwner = {
+      version: 1,
+      workspaceHash,
+      pid: process.pid,
+      ...(processStart ? { processStart } : {}),
+      nonce,
+      createdAt: new Date().toISOString(),
+    };
+    fs.writeFileSync(path.join(ownedPath, "owner.json"), `${JSON.stringify(owner)}\n`, { encoding: "utf8", mode: 0o600, flag: "wx" });
+    const emptyHooks = path.join(ownedPath, "hooks");
+    fs.mkdirSync(emptyHooks, { mode: 0o700 });
+    const checkoutPath = path.join(ownedPath, "repo");
+    const environment = isolatedVerificationEnvironment(root, ownedPath, checkoutPath);
+    // `--local` may hardlink object files. Verification executes project code inside this clone, so
+    // sharing an inode with the source object database would let that code corrupt the trusted repo.
+    // Force the transport path: object bytes may be identical, but their storage is independent.
+    await git(root, ["clone", "-c", `core.hooksPath=${emptyHooks}`, "--no-local", "--no-checkout", "--no-tags", "--", root, checkoutPath]);
+    await git(checkoutPath, ["remote", "remove", "origin"]);
+    await git(checkoutPath, ["-c", `core.hooksPath=${emptyHooks}`, "checkout", "--detach", "--force", sha]);
+    const cleanBefore = await git(checkoutPath, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]);
+    if (cleanBefore.stdout.length > 0) throw new Error("isolated verification clone was dirty before command execution");
+    const result = await fn(checkoutPath, environment);
+    const cleanAfter = await git(checkoutPath, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]);
+    if (cleanAfter.stdout.length > 0) throw new Error("verification command mutated tracked or untracked project files");
+    return result;
+  } catch (error) {
+    primary = error;
+    throw error;
+  } finally {
+    const cleanupFailures: unknown[] = [];
+    try { fs.rmSync(ownedPath, { recursive: true, force: true }); }
+    catch (error) { cleanupFailures.push(error); }
+    if (cleanupFailures.length > 0) {
+      throw new AggregateError(
+        primary === undefined ? cleanupFailures : [primary, ...cleanupFailures],
+        "isolated verification checkout cleanup failed",
+        primary === undefined ? undefined : { cause: primary },
+      );
+    }
+  }
+}
+
+async function runBehaviorInCurrentCheckout(
+  worktreePath: string,
+  behaviorTest: string,
+  settings: TachyonConfig["settings"]["verify"] | undefined,
+  runner: VerifyTaskRunner,
+): Promise<CommandResult> {
+  return runBehavior(worktreePath, behaviorTest, settings, runner);
 }
 
 function commandRecord(name: string, cwd: string, result: CommandResult): VerifyTaskCommand {
@@ -778,29 +1395,42 @@ async function runTieredTestsInCurrentCheckout(input: {
   changed: string[];
   settings: TachyonConfig["settings"]["verify"] | undefined;
   full: boolean;
-  fullCommand: string;
+  fullCommand?: string;
   runner: VerifyTaskRunner;
   commands: VerifyTaskCommand[];
   blockers: VerifyTaskBlocker[];
 }): Promise<void> {
   if (input.settings?.typecheck) {
-    const typecheck = await input.runner(input.worktreePath, parseCommandLine(input.settings.typecheck), { timeout: 300_000 });
+    const typecheck = await input.runner(input.worktreePath, parseArgvCommand(input.settings.typecheck), { timeout: 300_000 });
     input.commands.push(commandRecord("typecheck", input.worktreePath, typecheck));
     if (typecheck.exitCode !== 0) {
       input.blockers.push({ code: "typecheck_failed", detail: `typecheck failed: ${firstLine(typecheck.stderr) ?? firstLine(typecheck.stdout) ?? input.settings.typecheck}` });
     }
   }
 
-  const existingChanged = input.changed.filter((file) => fs.existsSync(path.join(input.worktreePath, file)));
-  const relatedArgv = ["npx", "vitest", "related", "--run", ...existingChanged];
-  const related = await input.runner(input.worktreePath, relatedArgv, { timeout: 300_000 });
-  input.commands.push(commandRecord("affected_tests", input.worktreePath, related));
-  if (related.exitCode !== 0) {
-    input.blockers.push({ code: "affected_tests_failed", detail: `affected tests failed: ${firstLine(related.stderr) ?? firstLine(related.stdout) ?? related.command}` });
+  if (input.settings?.affected) {
+    const existingChanged = input.changed.filter((file) => fs.existsSync(path.join(input.worktreePath, file)));
+    // Git permits root-level filenames beginning with `-`. Prefix those with `./` so an arbitrary
+    // project runner receives a path argument rather than an injected CLI option, without assuming
+    // that the configured command supports a `--` terminator.
+    const affectedPaths = existingChanged.map((file) => file.startsWith("-") ? `./${file}` : file);
+    const affectedArgv = [...parseArgvCommand(input.settings.affected), ...affectedPaths];
+    const affected = await input.runner(input.worktreePath, affectedArgv, { timeout: 300_000 });
+    input.commands.push(commandRecord("affected_tests", input.worktreePath, affected));
+    if (affected.exitCode !== 0) {
+      input.blockers.push({ code: "affected_tests_failed", detail: `affected tests failed: ${firstLine(affected.stderr) ?? firstLine(affected.stdout) ?? affected.command}` });
+    }
   }
 
   if (input.full) {
-    const full = await input.runner(input.worktreePath, parseCommandLine(input.fullCommand), { timeout: 600_000 });
+    if (!input.fullCommand) {
+      input.blockers.push({
+        code: "verification_config_missing",
+        detail: "verify_task full=true requires the project to configure settings.verify.full",
+      });
+      return;
+    }
+    const full = await input.runner(input.worktreePath, parseArgvCommand(input.fullCommand), { timeout: 600_000 });
     input.commands.push(commandRecord("full_tests", input.worktreePath, full));
     if (full.exitCode !== 0) {
       input.blockers.push({ code: "full_tests_failed", detail: `full verify failed: ${firstLine(full.stderr) ?? firstLine(full.stdout) ?? input.fullCommand}` });
@@ -832,6 +1462,12 @@ export async function verifyTask(input: VerifyTaskInput): Promise<VerifyTaskResu
   const verifierCaller = input.verifierCaller ?? { kind: "legacy" as const };
   if (input.deliveryId && !input.deliveryVerification) {
     throw new VerifyTaskResolutionError("DELIVERY_VERIFICATION_REQUIRED", "verify_task: deliveryId requires the Workspace-owned verification lease service");
+  }
+  if (input.deliveryId && !input.authorityIntegrityKey) {
+    throw new VerifyTaskResolutionError("DELIVERY_AUTHORITY_INTEGRITY_REQUIRED", "verify_task: deliveryId requires the host authority-integrity key");
+  }
+  if (input.deliveryId && !input.canonicalAuthorityHead) {
+    throw new VerifyTaskResolutionError("DELIVERY_AUTHORITY_FRESHNESS_REQUIRED", "verify_task: deliveryId requires the host-custodied freshness head");
   }
   if (input.deliveryId && input.deliveryVerification) {
     return input.deliveryVerification.run(input.deliveryId, verifierCaller, async (context): Promise<PreparedDeliveryVerification<VerifyTaskResult>> => {
@@ -866,22 +1502,37 @@ async function verifyTaskResolved(input: VerifyTaskInput, target: VerificationTa
   const occupant = identity.canonical;
   const blockers: VerifyTaskBlocker[] = [];
   const commands: VerifyTaskCommand[] = [];
+  let baseBehaviorAssertions: VitestAssertionObservation[] = [];
+  let headBehaviorAssertions: VitestAssertionObservation[] = [];
   const runner = input.runner ?? runArgv;
-  const verifySettings = input.verifySettings ?? loadVerifySettings(input.workspaceRoot);
+  // A delegation snapshot wins even when it is the explicit empty object. Callers may provide settings
+  // only for legacy records that predate snapshots; later root-config changes cannot replace the contract.
+  const verifySettings = record.verifySettings ?? input.verifySettings ?? loadVerifySettings(input.workspaceRoot);
+  const missingRequestedFull = input.full === true && !verifySettings?.full;
+  if (missingRequestedFull) {
+    blockers.push({
+      code: "verification_config_missing",
+      detail: "verify_task full=true requires the project to configure settings.verify.full",
+    });
+  }
 
   const refSha = canonical?.deliveredHeadSha ?? (await git(input.workspaceRoot, ["rev-parse", record.taskRef])).stdout.trim();
   const treeSha = (await git(input.workspaceRoot, ["rev-parse", `${refSha}^{tree}`])).stdout.trim();
   const noCommit = refSha === record.baseSha;
   if (noCommit) blockers.push({ code: "no_commit", detail: `task ref ${record.taskRef} is still at baseSha ${record.baseSha}` });
 
-  const changed = (await git(input.workspaceRoot, ["diff", "--name-only", `${record.baseSha}..${refSha}`])).stdout.split(/\r?\n/).filter(Boolean);
+  const changed = (await git(input.workspaceRoot, ["diff", "-z", "--name-only", `${record.baseSha}..${refSha}`])).stdout
+    .split("\0")
+    .filter(Boolean);
   if (changed.length === 0) blockers.push({ code: "no_changed_files", detail: `no files changed between baseSha and ${refSha}` });
   if (record.taskId) {
     const messages = (await git(input.workspaceRoot, ["log", "--format=%B", `${record.baseSha}..${refSha}`])).stdout;
     if (!messages.includes(record.taskId)) blockers.push({ code: "task_id_missing", detail: `no commit message between baseSha and refSha mentions task id ${record.taskId}` });
   }
   const gitDiffNameOnly = async (from: string, to: string): Promise<string[]> =>
-    (await git(input.workspaceRoot, ["diff", "--name-only", `${from}..${to}`])).stdout.split(/\r?\n/).filter(Boolean);
+    (await git(input.workspaceRoot, ["diff", "-z", "--name-only", `${from}..${to}`])).stdout
+      .split("\0")
+      .filter(Boolean);
   const waivedFindings: VerifyTaskBlocker[] = [];
   const scopeFindings = canonical
     ? await canonicalSegmentBlockers(canonical.delivery, refSha, canonical.worktreePath)
@@ -893,7 +1544,7 @@ async function verifyTaskResolved(input: VerifyTaskInput, target: VerificationTa
   waivedFindings.push(...scopedWaivers.waived);
 
   const wtPath = canonical?.worktreePath ?? await worktreePathForRef(input.workspaceRoot, record.taskRef);
-  let canRunBehavior = !noCommit && !blockers.some((finding) => ["non_linear_segment_history", "invalid_segment_scope", "invalid_segment_role"].includes(finding.code));
+  let canRunBehavior = !noCommit && !missingRequestedFull && !blockers.some((finding) => ["non_linear_segment_history", "invalid_segment_scope", "invalid_segment_role"].includes(finding.code));
   if (!wtPath) {
     blockers.push({ code: "worktree_missing", detail: `task ref ${record.taskRef} is not checked out in an isolated worktree` });
     canRunBehavior = false;
@@ -915,51 +1566,254 @@ async function verifyTaskResolved(input: VerifyTaskInput, target: VerificationTa
       }
       if (!canRunBehavior) return;
 
-      const blockersBeforeTiered = blockers.length;
-      const fullCommand = verifySettings?.full ?? DEFAULT_FULL_VERIFY;
-      const runAtVerificationSha = canonical
-        ? canonical.runAtSha
-        : <T>(sha: string, fn: () => Promise<T>) => runAtSha(wtPath, record.taskRef, sha, fn);
-      await runAtVerificationSha(refSha, async () => {
-        await runTieredTestsInCurrentCheckout({
-          worktreePath: wtPath,
-          changed,
-          settings: verifySettings,
-          full: input.full === true,
-          fullCommand,
-          runner,
-          commands,
-          blockers,
-        });
-
-        if (blockers.length > blockersBeforeTiered) return;
-        const headRun = await runBehaviorInCurrentCheckout(wtPath, record.behaviorTest, runner);
-        commands.push(commandRecord("behavior_head_expect_pass", wtPath, headRun));
-        if (record.stubPath && exactVitestNameObserved(headRun, record.behaviorTest) === false) {
-          blockers.push({
-            code: "behavior_test_renamed",
-            detail: `canonical behavior test '${record.behaviorTest}' was not observed in ${record.stubPath}`,
-            file: record.stubPath,
-          });
-        }
-        if (headRun.exitCode !== 0) {
-          blockers.push({
-            code: "behavior_failed",
-            detail: `behaviorTest failed at refSha ${refSha}: ${firstLine(headRun.stderr) ?? firstLine(headRun.stdout) ?? record.behaviorTest}`,
-          });
-        }
+      const fullCommand = verifySettings?.full;
+      const prepareCommand = verifySettings?.prepare;
+      const runAtVerificationSha = <T>(
+        sha: string,
+        fn: (checkoutPath: string, phaseRunner: VerifyTaskRunner, prepareRunner: VerifyTaskRunner) => Promise<T>,
+      ) => runAtIsolatedSha(input.workspaceRoot, sha, (checkoutPath, environment) => {
+        const phaseRunner: VerifyTaskRunner = (cwd, argv, opts) =>
+          runner(cwd, argv, { ...opts, env: environment });
+        const prepareRunner: VerifyTaskRunner = (cwd, argv, opts) =>
+          runArgv(cwd, argv, { ...opts, env: environment });
+        return fn(checkoutPath, phaseRunner, prepareRunner);
       });
-
-      if (blockers.length > blockersBeforeTiered && !blockers.some((b) => b.code === "behavior_failed")) {
-        blockers.push({ code: "behavior_not_run", detail: "behavior verifier skipped because a cheaper tier already blocked verification" });
+      const namedVitestGate = !record.behaviorTest.startsWith("cmd:") && verifySettings?.behavior?.adapter === "vitest-name";
+      const namedBehaviorSettings = namedVitestGate ? verifySettings!.behavior! : undefined;
+      let stubTemplateFinding: VerifyTaskBlocker | undefined;
+      if (namedBehaviorSettings && record.stubPath) {
+        try {
+          const expectedStubPath = configuredBehaviorStubPath(record.agent, namedBehaviorSettings.stubPath);
+          if (record.stubPath !== expectedStubPath) {
+            stubTemplateFinding = {
+              code: "behavior_base_unproven",
+              detail: `recorded canonical stubPath '${record.stubPath}' does not match configured path '${expectedStubPath}' for agent '${record.agent}'`,
+              file: record.stubPath,
+            };
+          }
+        } catch (error) {
+          stubTemplateFinding = {
+            code: "behavior_base_unproven",
+            detail: `named Vitest behavior gate cannot render its configured stubPath for agent '${record.agent}': ${error instanceof Error ? error.message : String(error)}`,
+            file: record.stubPath,
+          };
+        }
+      }
+      const executorBindingsFinding = namedBehaviorSettings
+        ? behaviorExecutorBindingsFinding(namedBehaviorSettings, record.executorHashes)
+        : undefined;
+      if (namedVitestGate && (!record.stubPath || !record.oracleHash || stubTemplateFinding || executorBindingsFinding)) {
+        blockers.push(stubTemplateFinding ?? {
+          code: "behavior_base_unproven",
+          detail: !record.stubPath || !record.oracleHash
+            ? `named Vitest behavior gate '${record.behaviorTest}' has no recorded fixed oracle path/hash`
+            : executorBindingsFinding!.detail,
+        });
+        blockers.push({
+          code: "behavior_not_run",
+          detail: "named Vitest behavior verifier requires the configured project-owned oracle path and every executor path bound by SHA-256",
+        });
         return;
       }
 
-      const baseRun = canonical
-        ? await canonical.runAtSha(record.baseSha, () => runBehaviorInCurrentCheckout(wtPath, record.behaviorTest, runner))
-        : await runBehaviorAtSha(wtPath, record.taskRef, record.baseSha, record.behaviorTest, runner);
-      commands.push(commandRecord("behavior_base_expect_fail", wtPath, baseRun));
-      if (baseRun.exitCode === 0) blockers.push({ code: "behavior_already_passed", detail: `behaviorTest passed at baseSha and proves no delivered change: ${record.behaviorTest}` });
+      const fixedNamedFinding = (checkoutPath: string, phase: "baseSha" | "refSha"): VerifyTaskBlocker | undefined => {
+        if (!namedVitestGate || !record.stubPath || !record.executorHashes) return undefined;
+        return firstBehaviorExecutorFinding(checkoutPath, record.executorHashes, phase)
+          ?? canonicalBehaviorStubFileFinding(checkoutPath, record.stubPath, phase)
+          ?? canonicalBehaviorOracleHashFinding(checkoutPath, record.stubPath, record.oracleHash ?? "", phase);
+      };
+      const blockedCommand = (detail: string): CommandResult => ({
+        command: "",
+        argv: [],
+        exitCode: NO_MATCH_EXIT_CODE,
+        stdout: "",
+        stderr: detail,
+      });
+
+      // Prove RED before any delivered-HEAD command runs. A named adapter first provisions an
+      // independent environment from its frozen project command and rechecks every fixed input.
+      let baseFixedFinding: VerifyTaskBlocker | undefined;
+      let basePrepareFailed = false;
+      let baseCheckoutPath = wtPath;
+      let canonicalBaseIdentity: VitestAssertionObservation | undefined;
+      const baseRun = await runAtVerificationSha(record.baseSha, async (checkoutPath, phaseRunner, prepareRunner) => {
+        baseCheckoutPath = checkoutPath;
+        baseFixedFinding = fixedNamedFinding(checkoutPath, "baseSha");
+        if (baseFixedFinding) return blockedCommand(baseFixedFinding.detail);
+        if (prepareCommand) {
+          const prepareRun = await runVerificationPrepare(checkoutPath, prepareCommand, prepareRunner);
+          commands.push(commandRecord("verification_prepare_base", checkoutPath, prepareRun));
+          if (prepareRun.exitCode !== 0) {
+            basePrepareFailed = true;
+            blockers.push({
+              code: "verification_prepare_failed",
+              detail: `project verifier preparation failed at baseSha: ${firstLine(prepareRun.stderr) ?? firstLine(prepareRun.stdout) ?? prepareCommand}`,
+            });
+            return blockedCommand("project verifier preparation failed at baseSha");
+          }
+          baseFixedFinding = fixedNamedFinding(checkoutPath, "baseSha");
+          if (baseFixedFinding) return blockedCommand(baseFixedFinding.detail);
+        }
+        const result = await runBehaviorInCurrentCheckout(checkoutPath, record.behaviorTest, verifySettings, phaseRunner);
+        baseFixedFinding = fixedNamedFinding(checkoutPath, "baseSha");
+        return result;
+      });
+      commands.push(commandRecord("behavior_base_expect_fail", baseCheckoutPath, baseRun));
+      if (baseFixedFinding) {
+        blockers.push(baseFixedFinding);
+      } else if (namedVitestGate && !basePrepareFailed) {
+        const exactBase = exactVitestAssertions(baseRun, record.behaviorTest);
+        const canonicalBase = canonicalVitestAssertions(baseRun, record.behaviorTest, baseCheckoutPath, record.stubPath);
+        baseBehaviorAssertions = structuredClone(canonicalBase);
+        if (canonicalBase.length === 0) {
+          blockers.push({
+            code: "behavior_base_unproven",
+            detail: `canonical behavior test '${record.behaviorTest}' was not executed from ${record.stubPath ?? "the configured Vitest adapter"} at baseSha`,
+            ...(record.stubPath ? { file: record.stubPath } : {}),
+          });
+        } else if (canonicalBase.length !== 1 || exactBase.length !== 1) {
+          blockers.push({
+            code: "behavior_base_unproven",
+            detail: `canonical behavior test '${record.behaviorTest}' must report exactly one assertion at baseSha; observed ${canonicalBase.length} canonical and ${exactBase.length} exact-name assertions`,
+            ...(record.stubPath ? { file: record.stubPath } : {}),
+          });
+        } else if (canonicalBase[0]!.status !== "failed" || baseRun.exitCode === 0) {
+          blockers.push({
+            code: canonicalBase[0]!.status === "passed" ? "behavior_already_passed" : "behavior_base_unproven",
+            detail: canonicalBase[0]!.status === "passed"
+              ? `canonical behavior test passed at baseSha and proves no delivered change: ${record.behaviorTest}`
+              : `canonical behavior test did not report a failed assertion at baseSha: ${record.behaviorTest}`,
+            ...(record.stubPath ? { file: record.stubPath } : {}),
+          });
+        } else {
+          canonicalBaseIdentity = structuredClone(canonicalBase[0]!);
+        }
+      } else if (baseRun.exitCode === 0) {
+        blockers.push({ code: "behavior_already_passed", detail: `behaviorTest passed at baseSha and proves no delivered change: ${record.behaviorTest}` });
+      }
+
+      const blockersBeforeTiered = blockers.length;
+      let behaviorHeadRan = false;
+      const hasTieredHeadCommands = Boolean(verifySettings?.typecheck || verifySettings?.affected || input.full === true);
+
+      // Tier commands are project-owned and may write ignored build/cache state. Run them in their own
+      // checkout so that none of those writes can manufacture the independent GREEN behavior proof.
+      if (hasTieredHeadCommands) {
+        await runAtVerificationSha(refSha, async (checkoutPath, phaseRunner, prepareRunner) => {
+          let tierFixedFinding = fixedNamedFinding(checkoutPath, "refSha");
+          if (tierFixedFinding) {
+            blockers.push(tierFixedFinding);
+            return;
+          }
+          if (prepareCommand) {
+            const prepareRun = await runVerificationPrepare(checkoutPath, prepareCommand, prepareRunner);
+            commands.push(commandRecord("verification_prepare_head_tiers", checkoutPath, prepareRun));
+            if (prepareRun.exitCode !== 0) {
+              blockers.push({
+                code: "verification_prepare_failed",
+                detail: `project verifier preparation failed at refSha ${refSha}: ${firstLine(prepareRun.stderr) ?? firstLine(prepareRun.stdout) ?? prepareCommand}`,
+              });
+              return;
+            }
+            tierFixedFinding = fixedNamedFinding(checkoutPath, "refSha");
+            if (tierFixedFinding) {
+              blockers.push(tierFixedFinding);
+              return;
+            }
+          }
+          await runTieredTestsInCurrentCheckout({
+            worktreePath: checkoutPath,
+            changed,
+            settings: verifySettings,
+            full: input.full === true,
+            fullCommand,
+            runner: phaseRunner,
+            commands,
+            blockers,
+          });
+
+          if (blockers.length > blockersBeforeTiered) return;
+          tierFixedFinding = fixedNamedFinding(checkoutPath, "refSha");
+          if (tierFixedFinding) blockers.push(tierFixedFinding);
+        });
+      }
+
+      if (blockers.length === blockersBeforeTiered) {
+        // Mirror the BASE proof in a new checkout prepared from the same frozen command. This keeps
+        // HEAD behavior evidence independent from both the live worktree and every preceding tier.
+        await runAtVerificationSha(refSha, async (checkoutPath, phaseRunner, prepareRunner) => {
+          let headFixedFinding = fixedNamedFinding(checkoutPath, "refSha");
+          if (headFixedFinding) {
+            blockers.push(headFixedFinding);
+            return;
+          }
+          if (prepareCommand) {
+            const prepareRun = await runVerificationPrepare(checkoutPath, prepareCommand, prepareRunner);
+            commands.push(commandRecord("verification_prepare_head", checkoutPath, prepareRun));
+            if (prepareRun.exitCode !== 0) {
+              blockers.push({
+                code: "verification_prepare_failed",
+                detail: `project verifier preparation failed at refSha ${refSha}: ${firstLine(prepareRun.stderr) ?? firstLine(prepareRun.stdout) ?? prepareCommand}`,
+              });
+              return;
+            }
+            headFixedFinding = fixedNamedFinding(checkoutPath, "refSha");
+            if (headFixedFinding) {
+              blockers.push(headFixedFinding);
+              return;
+            }
+          }
+          const headRun = await runBehaviorInCurrentCheckout(checkoutPath, record.behaviorTest, verifySettings, phaseRunner);
+          behaviorHeadRan = true;
+          headFixedFinding = fixedNamedFinding(checkoutPath, "refSha");
+          if (headFixedFinding) blockers.push(headFixedFinding);
+          commands.push(commandRecord("behavior_head_expect_pass", checkoutPath, headRun));
+          let canonicalHeadPassed = !namedVitestGate;
+          if (namedVitestGate && !headFixedFinding) {
+            const exactHead = exactVitestAssertions(headRun, record.behaviorTest);
+            const canonicalHead = canonicalVitestAssertions(headRun, record.behaviorTest, checkoutPath, record.stubPath);
+            headBehaviorAssertions = structuredClone(canonicalHead);
+            if (canonicalHead.length === 0) {
+              blockers.push({
+                code: record.stubPath ? "behavior_test_renamed" : "behavior_failed",
+                detail: `canonical behavior test '${record.behaviorTest}' was not reported passed from ${record.stubPath ?? "the configured Vitest adapter"}`,
+                ...(record.stubPath ? { file: record.stubPath } : {}),
+              });
+            } else if (canonicalHead.length !== 1 || exactHead.length !== 1) {
+              blockers.push({
+                code: record.stubPath ? "behavior_test_renamed" : "behavior_failed",
+                detail: `canonical behavior test '${record.behaviorTest}' must report exactly one assertion at refSha; observed ${canonicalHead.length} canonical and ${exactHead.length} exact-name assertions`,
+                ...(record.stubPath ? { file: record.stubPath } : {}),
+              });
+            } else if (canonicalBaseIdentity && !sameVitestAssertionIdentity(canonicalBaseIdentity, canonicalHead[0]!)) {
+              blockers.push({
+                code: record.stubPath ? "behavior_test_renamed" : "behavior_failed",
+                detail: `canonical behavior assertion identity changed between baseSha and refSha: ${record.behaviorTest}`,
+                ...(record.stubPath ? { file: record.stubPath } : {}),
+              });
+            } else if (canonicalHead[0]!.status !== "passed") {
+              blockers.push({
+                code: record.stubPath ? "behavior_test_renamed" : "behavior_failed",
+                detail: `canonical behavior test '${record.behaviorTest}' was not reported passed from ${record.stubPath ?? "the configured Vitest adapter"}`,
+                ...(record.stubPath ? { file: record.stubPath } : {}),
+              });
+            } else {
+              canonicalHeadPassed = true;
+            }
+          }
+          if (headRun.exitCode !== 0 && canonicalHeadPassed) {
+            blockers.push({
+              code: "behavior_failed",
+              detail: `behaviorTest failed at refSha ${refSha}: ${firstLine(headRun.stderr) ?? firstLine(headRun.stdout) ?? record.behaviorTest}`,
+            });
+          }
+        });
+      }
+
+      if (!behaviorHeadRan) {
+        blockers.push({ code: "behavior_not_run", detail: "behavior verifier skipped because a cheaper tier already blocked verification" });
+        return;
+      }
     });
   }
 
@@ -967,10 +1821,19 @@ async function verifyTaskResolved(input: VerifyTaskInput, target: VerificationTa
     blockers.push({ code: "behavior_not_run", detail: "behavior verifier requires the agent worktree to exist and be clean" });
   }
 
-  const nameStatus = (await git(input.workspaceRoot, ["diff", "--name-status", `${record.baseSha}..${refSha}`])).stdout;
+  const changes = parseNameStatus(
+    (await git(input.workspaceRoot, ["diff", "-z", "--name-status", `${record.baseSha}..${refSha}`])).stdout,
+  );
   const patch = (await git(input.workspaceRoot, ["diff", `${record.baseSha}..${refSha}`])).stdout;
-  blockers.push(...canonicalBehaviorStubFindings(record, nameStatus));
-  const suppressionWaivers = waiveFindings(suppressionFindings(nameStatus, patch), waivers);
+  blockers.push(...canonicalBehaviorStubFindings(record, changes));
+  const suppressionWaivers = waiveFindings(
+    suppressionFindings(
+      changes,
+      patch,
+      !record.behaviorTest.startsWith("cmd:") && verifySettings?.behavior?.adapter === "vitest-name",
+    ),
+    waivers,
+  );
   blockers.push(...suppressionWaivers.unwaived);
   waivedFindings.push(...suppressionWaivers.waived);
 
@@ -986,6 +1849,7 @@ async function verifyTaskResolved(input: VerifyTaskInput, target: VerificationTa
 
   const blockingFindings = blockers.filter((b) => b.blocking !== false);
   const verdict = blockingFindings.length === 0 ? "accept" : "blocked";
+  const behaviorMode = parseCmdBehavior(record.behaviorTest, verifySettings).mode;
   const verification = recordWithHash({
     refSha,
     treeSha,
@@ -996,6 +1860,19 @@ async function verifyTaskResolved(input: VerifyTaskInput, target: VerificationTa
     ...(record.taskId ? { taskId: record.taskId } : {}),
     verifierVersion: VERIFIER_VERSION,
     commands,
+    behaviorEvidence: {
+      identifier: record.behaviorTest,
+      mode: behaviorMode,
+      ...(verifySettings?.prepare ? { prepare: verifySettings.prepare } : {}),
+      ...(behaviorMode === "vitest-name" && verifySettings?.behavior
+        ? { adapter: structuredClone(verifySettings.behavior) }
+        : {}),
+      ...(record.stubPath ? { stubPath: record.stubPath } : {}),
+      ...(record.oracleHash ? { oracleHash: record.oracleHash } : {}),
+      ...(record.executorHashes ? { executorHashes: structuredClone(record.executorHashes) } : {}),
+      baseAssertions: baseBehaviorAssertions,
+      headAssertions: headBehaviorAssertions,
+    },
     findings: [...blockers, ...waivedFindings],
     waivers,
     verdict,

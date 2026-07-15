@@ -40,6 +40,11 @@ describe("daemon engine service", () => {
     }
     const configPath = path.join(workspaceRoot, "tachyon.yml");
     fs.writeFileSync(configPath, config("worker"), "utf8");
+    const promptBody = "printf 'prompt-once\\n' >> .tachyon-prompt-proof";
+    const promptSha256 = createHash("sha256").update(promptBody, "utf8").digest("hex");
+    const promptDir = path.join(workspaceRoot, ".tachyon", "prompts");
+    fs.mkdirSync(promptDir, { recursive: true });
+    fs.writeFileSync(path.join(promptDir, "persistent-check.md"), `---\ntitle: Persistent check\n---\n${promptBody}\n`, "utf8");
     const seedTaskStore = new TaskStore(workspaceRoot);
     let seedTask = await seedTaskStore.create({
       id: "t-abc123",
@@ -158,9 +163,23 @@ describe("daemon engine service", () => {
       method: "runtime-ops.view",
       status: "ok",
       view: {
-        schemaVersion: 1,
+        schemaVersion: 2,
         summary: { managedAgents: 0 },
         runtimes: expect.any(Array),
+        providerCapacity: [
+          {
+            provider: "codex",
+            scope: "provider-account",
+            configuration: { state: "disabled" },
+            quota: { state: "unavailable", reason: "source-disabled" },
+          },
+          {
+            provider: "claude",
+            scope: "provider-account",
+            configuration: { state: "disabled" },
+            quota: { state: "unavailable", reason: "source-disabled" },
+          },
+        ],
       },
     });
     const toggleSidebarPin = {
@@ -515,6 +534,29 @@ describe("daemon engine service", () => {
       });
     expect(await first.query({ schemaVersion: 1, method: "extension.query", input: { action: "worktrees.list" } }))
       .toMatchObject({ action: "worktrees.list", value: { worktrees: [] } });
+    expect(await first.query({ schemaVersion: 1, method: "extension.query", input: { action: "prompt.catalog" } }))
+      .toMatchObject({
+        action: "prompt.catalog",
+        value: {
+          templates: [{ id: "persistent-check", title: "Persistent check", body: promptBody, sha256: promptSha256 }],
+          targets: [],
+        },
+      });
+    expect(await first.invoke("operation-prompt-mismatch-0001", {
+      schemaVersion: 1,
+      method: "extension.invoke",
+      input: {
+        action: "prompt.inject",
+        agent: "worker",
+        templateId: "persistent-check",
+        expectedSha256: "0".repeat(64),
+        submit: true,
+      },
+    })).toMatchObject({
+      status: "error",
+      code: "COMMAND_FAILED",
+      message: expect.stringMatching(/changed after preview/),
+    });
     expect(await first.invoke("operation-extension-handoff-note-0001", {
       schemaVersion: 1,
       method: "extension.invoke",
@@ -548,6 +590,26 @@ describe("daemon engine service", () => {
     expect(await first.snapshot()).toMatchObject({
       projections: { agents: { items: [{ name: "worker", running: true }] } },
     });
+    expect(await first.query({ schemaVersion: 1, method: "extension.query", input: { action: "prompt.catalog" } }))
+      .toMatchObject({ value: { targets: [{ name: "worker", description: "running AI agent" }] } });
+    const promptProof = path.join(workspaceRoot, ".tachyon-prompt-proof");
+    expect(await first.invoke("operation-prompt-submit-0001", {
+      schemaVersion: 1,
+      method: "extension.invoke",
+      input: {
+        action: "prompt.inject",
+        agent: "worker",
+        templateId: "persistent-check",
+        expectedSha256: promptSha256,
+        submit: true,
+      },
+    })).toMatchObject({
+      status: "ok",
+      action: "prompt.inject",
+      value: { injected: true, title: "Persistent check", mode: "submit" },
+    });
+    await waitUntil(() => fs.existsSync(promptProof));
+    expect(fs.readFileSync(promptProof, "utf8")).toBe("prompt-once\n");
     const agentInputProof = path.join(workspaceRoot, ".tachyon-agent-input-proof");
     const agentInput = {
       schemaVersion: 1 as const,

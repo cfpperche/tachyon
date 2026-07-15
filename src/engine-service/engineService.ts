@@ -23,6 +23,12 @@ import { projectHandoffView } from "../runtime-api/handoffProjection.js";
 import { projectSidebarView } from "../runtime-api/sidebarProjection.js";
 import { applySidebarMutation } from "../sidebar/sidebarMutationService.js";
 import { RuntimeOpsSnapshotService } from "../runtimeOps/snapshotService.js";
+import { CodexAppServerObservationSource } from "../runtimeObservability/codexAppServerSource.js";
+import { ClaudeStatusLineObservationSource } from "../runtimeObservability/claudeStatusLineSource.js";
+import { ClaudeStatusLineCaptureTransport } from "../runtimeObservability/claudeStatusLineCapture.js";
+import { ProviderObservationPreferences, type ProviderObservationStatePort } from "../runtimeObservability/preferences.js";
+import { ProviderObservationService } from "../runtimeObservability/service.js";
+import { ResourceSampler } from "../attention/resourceSample.js";
 import { executeExtensionCommand, executeExtensionQuery } from "./extensionOperationService.js";
 import type { WorkspaceCoreProjectionsV1 } from "../runtime-api/workspaceProjection.js";
 import { buildBoardSnapshot } from "../tasks/boardSnapshot.js";
@@ -139,10 +145,30 @@ export async function startDaemonEngineService(
   let workspace: Workspace | undefined;
   let control: RunningEngineControlServer | undefined;
   let activityLog: ActivityLogManager | undefined;
+  let providerObservations: ProviderObservationService | undefined;
+  let providerObservationSubscription: { dispose(): void } | undefined;
   try {
+    const providerState: ProviderObservationStatePort = {
+      get: <T>(key: string) => host.getState<T>(key),
+      update: (key, value) => host.setState(key, value),
+    };
+    const providerPreferences = new ProviderObservationPreferences(providerState);
+    const claudeStatusLineCapture = new ClaudeStatusLineCaptureTransport(host.globalStoragePath(), providerPreferences);
+    providerObservations = new ProviderObservationService(
+      providerPreferences,
+      [
+        new CodexAppServerObservationSource(),
+        new ClaudeStatusLineObservationSource({ readCapture: claudeStatusLineCapture.readCapture }),
+      ],
+      {
+        state: providerState,
+        onPreferenceChanged: (provider) => claudeStatusLineCapture.clearProvider(provider),
+      },
+    );
     workspace = await Workspace.createDaemon(canonicalRoot, {
       host,
       onViewsChanged: (view) => host.onViewsChanged(view),
+      claudeStatusLineCapture,
     });
     await workspace.start();
     const runningWorkspace = workspace;
@@ -154,7 +180,16 @@ export async function startDaemonEngineService(
     );
     activityLog.start();
     const runningActivityLog = activityLog;
-    const runtimeOpsSnapshots = new RuntimeOpsSnapshotService(() => [runningWorkspace]);
+    const runningProviderObservations = providerObservations;
+    providerObservationSubscription = runningProviderObservations.onDidChange(() => host.onViewsChanged("agents"));
+    runningProviderObservations.start();
+    const runtimeOpsSnapshots = new RuntimeOpsSnapshotService(() => [runningWorkspace], {
+      providerObservations: () => ({
+        preferences: providerPreferences.all(),
+        observations: runningProviderObservations.snapshot(),
+      }),
+    });
+    const sidebarResources = new ResourceSampler();
 
     const bridgePort = runningWorkspace.bridge.listenerPort;
     if (bridgePort === undefined || runningWorkspace.bridge.port !== bridgePort) {
@@ -181,13 +216,20 @@ export async function startDaemonEngineService(
       identity,
       getSnapshot,
       readEvents: (afterSeq, limit) => journal.readAfter(afterSeq, limit),
-      query: (query) => executeWorkspaceQuery(runningWorkspace, query, runtimeOpsSnapshots),
+      query: (query) => executeWorkspaceQuery(
+        runningWorkspace,
+        query,
+        runtimeOpsSnapshots,
+        runningProviderObservations,
+        sidebarResources,
+      ),
       invoke: (command) => executeWorkspaceCommand(
         runningWorkspace,
         runningActivityLog,
         stagedPayloads,
         command,
         (view) => host.onViewsChanged(view),
+        runningProviderObservations,
       ),
     });
     const runningControl = control;
@@ -199,13 +241,22 @@ export async function startDaemonEngineService(
       snapshot: getSnapshot,
       shellCount: () => runningControl.shellCount(),
       close: () => {
-        closing ??= closeService(runningControl, runningWorkspace, runningActivityLog, host);
+        closing ??= closeService(
+          runningControl,
+          runningWorkspace,
+          runningActivityLog,
+          runningProviderObservations,
+          providerObservationSubscription,
+          host,
+        );
         return closing;
       },
     };
   } catch (error) {
     await control?.close().catch(() => undefined);
     await activityLog?.stop().catch(() => undefined);
+    providerObservationSubscription?.dispose();
+    providerObservations?.dispose();
     await workspace?.dispose().catch(() => undefined);
     host.dispose();
     throw error;
@@ -216,6 +267,8 @@ async function executeWorkspaceQuery(
   workspace: Workspace,
   query: WorkspaceQueryV1,
   runtimeOpsSnapshots: RuntimeOpsSnapshotService,
+  providerObservations: ProviderObservationService,
+  sidebarResources: ResourceSampler,
 ): Promise<WorkspaceQueryResultV1> {
   if (query.method === "activity.context") {
     return workspaceActivityContextSuccessV1({
@@ -234,10 +287,14 @@ async function executeWorkspaceQuery(
   if (query.method === "sidebar.view") {
     return workspaceSidebarViewSuccessV1(await projectSidebarView(workspace, {
       observedModelFor: (agent) => runtimeOpsSnapshots.observedModelFor(workspace.workspaceRoot, workspace.wsHash, agent),
+      resourceSampler: sidebarResources,
     }));
   }
   if (query.method === "runtime-ops.view") {
-    if (query.input.refreshDetection === true) runtimeOpsSnapshots.invalidateDetection();
+    if (query.input.refreshDetection === true) {
+      runtimeOpsSnapshots.invalidateDetection();
+      await providerObservations.refreshAll();
+    }
     return workspaceRuntimeOpsViewSuccessV1(await runtimeOpsSnapshots.snapshot());
   }
   if (query.method === "extension.query") {
@@ -282,6 +339,7 @@ async function executeWorkspaceCommand(
   stagedPayloads: StagedPayloadStore,
   command: WorkspaceCommandV1,
   onViewsChanged: (view: ViewKind) => void,
+  providerObservations: ProviderObservationService,
 ): Promise<WorkspaceCommandResultV1> {
   if (command.method === "handoff.ensure") {
     const ensured = ensureProjectHandoffFile(workspace.workspaceRoot, workspace.handoffStore);
@@ -384,7 +442,7 @@ async function executeWorkspaceCommand(
   }
   if (command.method === "extension.invoke") {
     const value = await executeExtensionCommand(
-      { workspace, activityLog, onViewsChanged },
+      { workspace, activityLog, providerObservations, onViewsChanged },
       command.input,
     );
     return workspaceExtensionCommandSuccessV1(command, value);
@@ -606,11 +664,15 @@ async function closeService(
   control: RunningEngineControlServer,
   workspace: Workspace,
   activityLog: ActivityLogManager,
+  providerObservations: ProviderObservationService,
+  providerObservationSubscription: { dispose(): void } | undefined,
   host: DaemonEngineHost,
 ): Promise<void> {
   const errors: unknown[] = [];
   try { await control.close(); } catch (error) { errors.push(error); }
   try { await activityLog.stop(); } catch (error) { errors.push(error); }
+  try { providerObservationSubscription?.dispose(); } catch (error) { errors.push(error); }
+  try { providerObservations.dispose(); } catch (error) { errors.push(error); }
   try { await workspace.dispose(); } catch (error) { errors.push(error); }
   try { host.dispose(); } catch (error) { errors.push(error); }
   if (errors.length > 0) throw new AggregateError(errors, "persistent engine shutdown failed");

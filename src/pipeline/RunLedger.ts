@@ -21,10 +21,27 @@ export class RunLedger {
 
   save(run: PipelineRun): void {
     try {
-      fs.mkdirSync(this.dir, { recursive: true });
-      fs.writeFileSync(this.file(run.id), `${JSON.stringify(run, null, 2)}\n`, "utf8");
+      this.writeAtomic(run);
     } catch {
-      /* best-effort — never block the run on a write failure */
+      /* best-effort — the prior complete receipt remains intact on a progress-write failure */
+    }
+  }
+
+  /** Required allocation-boundary write. Unlike routine progress persistence, failures propagate so
+   * a quarantined worktree is never unlocked on the strength of an in-memory-only owner. */
+  saveRequired(run: PipelineRun): void {
+    this.writeAtomic(run);
+  }
+
+  private writeAtomic(run: PipelineRun): void {
+    fs.mkdirSync(this.dir, { recursive: true });
+    const destination = this.file(run.id);
+    const temporary = `${destination}.tmp-${process.pid}-${Date.now().toString(36)}-${Math.random().toString(16).slice(2)}`;
+    try {
+      fs.writeFileSync(temporary, `${JSON.stringify(run, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
+      fs.renameSync(temporary, destination);
+    } finally {
+      try { fs.rmSync(temporary, { force: true }); } catch { /* best effort temp cleanup */ }
     }
   }
 
@@ -71,5 +88,17 @@ function parseRun(v: unknown): PipelineRun | null {
   // state machine + node-prompt assembly assume the array exists); leave `input` undefined (input: none).
   if (!Array.isArray(o.summaries)) o.summaries = [];
   if (o.input !== undefined && typeof o.input !== "string") delete o.input;
+  // Runs persisted before the allocation transaction existed had already started nodes; preserve
+  // their historical ready state. New runs always persist an explicit boolean.
+  if (typeof o.worktreeReady !== "boolean") o.worktreeReady = true;
+  if (o.worktree !== undefined) {
+    const worktree = o.worktree as Record<string, unknown>;
+    if (typeof worktree !== "object" || worktree === null
+      || typeof worktree.path !== "string"
+      || typeof worktree.branch !== "string"
+      || typeof worktree.tachyonCreatedBranch !== "boolean"
+      || typeof worktree.baseRef !== "string"
+      || typeof worktree.createdAt !== "string") return null;
+  }
   return o as unknown as PipelineRun;
 }

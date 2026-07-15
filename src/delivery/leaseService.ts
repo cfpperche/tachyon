@@ -973,7 +973,7 @@ export class DeliveryLeaseService {
     if (!delivery) return undefined;
     const event = delivery.events.find((candidate) => candidate.type === eventType && isDeepStrictEqual(candidate.detail?.intent, intent));
     if (!event || delivery.lease.state !== state) throw new DeliveryInvariantError(`operation id '${operationId}' does not match this quarantine recovery intent`);
-    return delivery;
+    return this.currentReceiptProjection(operationId, delivery, event);
   }
 
   private async recoveryFailure<T>(error: unknown, operationId: string, deliveryId: string, intent: Record<string, unknown>, eventType: string, state: Delivery["lease"]["state"]): Promise<T> {
@@ -1095,7 +1095,7 @@ export class DeliveryLeaseService {
       || tail.grantedHeadSha !== expectedHead || detail.headSha !== expectedHead || tail.releasedHeadSha !== expectedHead) {
       throw new DeliveryInvariantError(`operation id '${operationId}' does not match this holder reconciliation intent`);
     }
-    return delivery;
+    return this.currentReceiptProjection(operationId, delivery, event);
   }
 
   private async replayReconcileQuarantine(operationId: string, deliveryId: string, intent: Record<string, unknown>): Promise<Delivery | undefined> {
@@ -1109,7 +1109,7 @@ export class DeliveryLeaseService {
       || !isDeepStrictEqual(event.detail?.tail, tail) || event.detail?.expectedHeadSha !== delivery.lease.expectedHeadSha) {
       throw new DeliveryInvariantError(`operation id '${operationId}' does not match this holder quarantine intent`);
     }
-    return delivery;
+    return this.currentReceiptProjection(operationId, delivery, event);
   }
 
   private assertReviewHolder(delivery: Delivery, state: "held" | "draining", expectedHead: string): DeliveryLeaseHolder {
@@ -1181,7 +1181,8 @@ export class DeliveryLeaseService {
     if (!event || delivery.lease.state !== "draining" || !delivery.lease.holder?.executionNonce) {
       throw new DeliveryInvariantError(`operation id '${operationId}' does not match this review drain intent`);
     }
-    return structuredClone(delivery.lease.holder);
+    const current = await this.currentReceiptProjection(operationId, delivery, event);
+    return structuredClone(current.lease.holder!);
   }
 
   private async replayReviewCompletion(operationId: string, deliveryId: string, intent: Record<string, unknown>, historicalSafety = false): Promise<Delivery | undefined> {
@@ -1189,7 +1190,7 @@ export class DeliveryLeaseService {
     if (!delivery) return undefined;
     const event = delivery.events.find((candidate) => candidate.type === "review_completed" && this.replayIntentMatches(candidate.detail?.intent, intent, historicalSafety));
     if (!event || delivery.lease.state !== "free") throw new DeliveryInvariantError(`operation id '${operationId}' does not match this review completion intent`);
-    return delivery;
+    return this.currentReceiptProjection(operationId, delivery, event);
   }
 
   private assertHandoffAuthority(delivery: Delivery, input: DeliveryLeaseHandoffInput, ownsSubset: string[], canonicalWorktree: string): void {
@@ -1254,7 +1255,8 @@ export class DeliveryLeaseService {
     if (!event || !this.replayIntentMatches(event.detail?.intent, intent, historicalSafety) || typeof nonce !== "string" || delivery.lease.holder?.reservationNonce !== nonce) {
       throw new DeliveryInvariantError(`operation id '${operationId}' does not match this handoff intent`);
     }
-    return { delivery, reservationNonce: nonce };
+    const current = await this.currentReceiptProjection(operationId, delivery, event);
+    return { delivery: current, reservationNonce: current.lease.holder!.reservationNonce! };
   }
 
   private async replayDrain(operationId: string, deliveryId: string, baseOperationId: string, intent: Record<string, unknown>): Promise<DeliveryLeaseHolder | undefined> {
@@ -1266,7 +1268,8 @@ export class DeliveryLeaseService {
       || typeof holder.executionNonce !== "string" || event.detail?.executionNonce !== holder.executionNonce) {
       throw new DeliveryInvariantError(`operation id '${operationId}' does not match this handoff drain intent`);
     }
-    return structuredClone(holder);
+    const current = await this.currentReceiptProjection(operationId, delivery, event);
+    return structuredClone(current.lease.holder!);
   }
 
   private async replayEvent(operationId: string, deliveryId: string, type: string, intent: Record<string, unknown>, state: string): Promise<Delivery | undefined> {
@@ -1274,7 +1277,7 @@ export class DeliveryLeaseService {
     if (!delivery) return undefined;
     const event = delivery.events.find((candidate) => candidate.type === type && isDeepStrictEqual(candidate.detail?.intent, intent));
     if (!event || delivery.lease.state !== state) throw new DeliveryInvariantError(`operation id '${operationId}' does not match durable event intent`);
-    return delivery;
+    return this.currentReceiptProjection(operationId, delivery, event);
   }
 
   private now(): string { return this.deps.now?.() ?? new Date().toISOString(); }
@@ -1313,7 +1316,8 @@ export class DeliveryLeaseService {
       || typeof holder.reservationNonce !== "string") {
       throw new DeliveryInvariantError(`operation id '${operationId}' does not match this lease acquisition intent`);
     }
-    return { delivery, reservationNonce: holder.reservationNonce };
+    const current = await this.currentReceiptProjection(operationId, delivery, event);
+    return { delivery: current, reservationNonce: current.lease.holder!.reservationNonce! };
   }
 
   /** Completed receipts bind to their recorded safety level; every other input remains exact. */
@@ -1333,7 +1337,28 @@ export class DeliveryLeaseService {
     if (!event || !isDeepStrictEqual(event.detail?.intent, intent) || delivery.lease.state !== "held") {
       throw new DeliveryInvariantError(`operation id '${operationId}' does not match this lease confirmation intent`);
     }
-    return delivery;
+    return this.currentReceiptProjection(operationId, delivery, event);
+  }
+
+  /** Operation receipts prove that a mutation committed, but their lease projection is historical.
+   * Re-authorizing a nonce, holder, or terminal state requires the authenticated current row to
+   * retain the exact lease boundary, open/closed tail, and durable event proved by the receipt. */
+  private async currentReceiptProjection(
+    operationId: string,
+    receipt: Delivery,
+    event: Delivery["events"][number],
+  ): Promise<Delivery> {
+    const current = await this.deps.store.get(receipt.id);
+    const currentEvent = current?.events.find((candidate) => candidate.id === event.id);
+    if (!current || current.version < receipt.version
+      || !isDeepStrictEqual(currentEvent, event)
+      || !isDeepStrictEqual(current.lease, receipt.lease)
+      || !isDeepStrictEqual(current.segments.at(-1), receipt.segments.at(-1))) {
+      throw new DeliveryInvariantError(
+        `operation id '${operationId}' is a historical receipt that no longer authorizes the current Delivery lease`,
+      );
+    }
+    return current;
   }
 
   private handoffSafety(): DeliveryHandoffSafety {

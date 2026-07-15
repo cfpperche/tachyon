@@ -2,6 +2,29 @@
   "version": "0.2.0",
   "configurations": [
     {
+      "name": "Tachyon: Dev Host",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "${workspaceFolder}/.tachyon/dev-host/workspace",
+        "--extensionDevelopmentPath=${workspaceFolder}/.tachyon/dev-host/extension",
+        "--disable-workspace-trust"
+      ],
+      "env": {
+        "TMUX_TMPDIR": "${workspaceFolder}/.tachyon/dev-host/tmux",
+        "XDG_CACHE_HOME": "${workspaceFolder}/.tachyon/dev-host/cache"
+      },
+      "outFiles": [
+        "${workspaceFolder}/.tachyon/dev-host/extension/dist/**/*.js"
+      ],
+      "preLaunchTask": "tachyon: build-dev-host",
+      "presentation": {
+        "hidden": false,
+        "group": "dogfood",
+        "order": 1
+      }
+    },
+    {
       "name": "Run Tachyon (demo)",
       "type": "extensionHost",
       "request": "launch",
@@ -9,7 +32,9 @@
         "${env:HOME}/tachyon-examples",
         "--extensionDevelopmentPath=${workspaceFolder}"
       ],
-      "outFiles": ["${workspaceFolder}/dist/**/*.js"],
+      "outFiles": [
+        "${workspaceFolder}/dist/**/*.js"
+      ],
       "preLaunchTask": "tachyon: build"
     },
     {
@@ -20,7 +45,9 @@
         "${env:HOME}/tachyon-examples/orbit.code-workspace",
         "--extensionDevelopmentPath=${workspaceFolder}"
       ],
-      "outFiles": ["${workspaceFolder}/dist/**/*.js"],
+      "outFiles": [
+        "${workspaceFolder}/dist/**/*.js"
+      ],
       "preLaunchTask": "tachyon: build"
     },
     {
@@ -31,7 +58,9 @@
         "${workspaceFolder}/test/fixtures/sample-workspace",
         "--extensionDevelopmentPath=${workspaceFolder}"
       ],
-      "outFiles": ["${workspaceFolder}/dist/**/*.js"],
+      "outFiles": [
+        "${workspaceFolder}/dist/**/*.js"
+      ],
       "preLaunchTask": "tachyon: build"
     }
   ]

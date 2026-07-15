@@ -33,6 +33,8 @@ const UNAVAILABLE_REASONS: ReadonlySet<string> = new Set<ProviderUnavailableReas
   "source-disabled",
   "unauthenticated",
   "timeout",
+  "cancelled",
+  "not-observed",
   "provider-error",
   "invalid-payload",
   "stale-expired",
@@ -40,6 +42,7 @@ const UNAVAILABLE_REASONS: ReadonlySet<string> = new Set<ProviderUnavailableReas
 const DIAGNOSTIC_CODES: ReadonlySet<string> = new Set<CollectorDiagnosticCodeV1>([
   "SOURCE_UNAVAILABLE",
   "SOURCE_TIMEOUT",
+  "SOURCE_CANCELLED",
   "INVALID_PAYLOAD",
   "STALE_LAST_GOOD",
 ]);

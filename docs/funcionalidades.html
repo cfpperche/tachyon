@@ -390,9 +390,15 @@ Esta página é gerada a partir do <b>código atual</b>, não do README (que, po
   <code>context</code> / <code>constraints</code> + exatamente um de <code>deliverable</code> ou
   <code>doneWhen</code>, mais o gate (<code>behavior_test</code> + <code>owns</code>). Briefs longos vão
   losslessly para arquivo (<code>.tachyon/briefs/spawn/</code>) com só um ponteiro no pane (o tmux rejeita
-  payloads grandes); teto rígido de 64KB por rejeição explícita, nunca truncamento silencioso. O <b>stub de
-  comportamento</b> — um teste vitest que <em>falha</em> — é commitado com identidade git do container
-  (<code>tachyon-container</code>), estabelecendo a baseline expect-fail que o <code>verify_task</code> cobra.
+  payloads grandes); teto rígido de 64KB por rejeição explícita, nunca truncamento silencioso. Para um
+  <code>behavior_test</code> nomeado, o <b>projeto</b> configura explicitamente
+  <code>settings.verify.behavior</code> (adapter, preparo isolado, comando, template do oracle e arquivos do executor). O arquivo deve existir,
+  estar versionado e pertencer ao projeto antes do spawn; Tachyon fixa o hash dos seus bytes e exige o mesmo
+  oracle em BASE e HEAD — nunca transforma prosa em asserção nem autoriza o implementador a editá-lo. O
+  preparo cria o ambiente do runner em clones externos separados, e manifests/lockfiles/configs declarados
+  também ficam presos aos hashes do spawn, sem confiar em dependências ignoradas do worktree. Como alternativa neutra de runner,
+  <code>cmd:&lt;comando&gt;</code> verifica o comportamento sem presumir Vitest, npm ou
+  <code>test/unit</code>; identificadores nomeados sem adapter são recusados de forma explícita pelo gate.
   Um <b>primer</b> advisory (TACHYON PRIMER no início, BEFORE FINISHING no fim, orçamentos de linha rígidos)
   deriva das mesmas configurações que o gate aplica — o exibido e o cobrado não podem divergir. Worktree de
   fixer é reutilizada por id de delegação, com recusa a alargar <code>owns</code> e a HEAD movida.</p>

@@ -36,6 +36,136 @@
 
 .runtime-ops-updated { margin-left: auto; min-width: 0; overflow-wrap: anywhere; white-space: nowrap; }
 
+.runtime-ops-capacity {
+  min-width: 0;
+  border-bottom: 1px solid var(--ds-border);
+}
+
+.runtime-ops-capacity-header {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  padding: var(--ds-3) var(--ds-2) var(--ds-2);
+}
+
+.runtime-ops-capacity-header h2 {
+  margin: 0;
+  color: var(--ds-fg);
+  font-size: var(--ds-body);
+  font-weight: var(--tachyon-weight-semibold);
+}
+
+.runtime-ops-capacity-header p {
+  margin: var(--ds-1) 0 0;
+  color: var(--ds-muted);
+  font-size: var(--ds-micro);
+  line-height: 1.4;
+}
+
+.runtime-ops-provider-list { min-width: 0; }
+
+.runtime-ops-provider-row {
+  display: grid;
+  grid-template-columns: minmax(150px, .75fr) minmax(260px, 2fr) minmax(132px, .65fr);
+  align-items: center;
+  gap: var(--ds-4);
+  min-width: 0;
+  padding: var(--ds-3) var(--ds-2);
+  border-top: 1px solid color-mix(in srgb, var(--ds-border) 70%, transparent);
+}
+
+.runtime-ops-provider-identity,
+.runtime-ops-provider-quota,
+.runtime-ops-provider-control,
+.runtime-ops-provider-unavailable {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-1);
+  min-width: 0;
+}
+
+.runtime-ops-provider-identity strong,
+.runtime-ops-provider-unavailable strong {
+  color: var(--ds-fg);
+  font-weight: var(--tachyon-weight-medium);
+}
+
+.runtime-ops-provider-identity span,
+.runtime-ops-provider-observation,
+.runtime-ops-provider-control span,
+.runtime-ops-provider-unavailable span,
+.runtime-ops-quota-reset {
+  color: var(--ds-muted);
+  font-size: var(--ds-micro);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.runtime-ops-quota-windows {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(108px, 1fr));
+  gap: var(--ds-3);
+  min-width: 0;
+}
+
+.runtime-ops-quota-window {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-1);
+  min-width: 0;
+}
+
+.runtime-ops-quota-label {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--ds-2);
+  min-width: 0;
+  font-size: var(--ds-small);
+}
+
+.runtime-ops-quota-label strong { font-weight: var(--tachyon-weight-medium); }
+.runtime-ops-quota-label span { color: var(--ds-muted); white-space: nowrap; }
+
+.runtime-ops-quota-meter {
+  height: 4px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--ds-fg) 12%, transparent);
+}
+
+.runtime-ops-quota-meter > span {
+  display: block;
+  height: 100%;
+  max-width: 100%;
+  background: var(--ds-link);
+}
+
+.runtime-ops-quota-window.exhausted .runtime-ops-quota-meter > span { background: var(--ds-err); }
+.runtime-ops-quota-window.exhausted .runtime-ops-quota-label span { color: var(--ds-err); }
+.runtime-ops-provider-observation.stale { color: var(--ds-warn); }
+.runtime-ops-provider-row.timeout .runtime-ops-provider-unavailable strong,
+.runtime-ops-provider-row.provider-error .runtime-ops-provider-unavailable strong,
+.runtime-ops-provider-row.invalid-payload .runtime-ops-provider-unavailable strong,
+.runtime-ops-provider-row.stale-expired .runtime-ops-provider-unavailable strong { color: var(--ds-warn); }
+
+.runtime-ops-provider-control { align-items: flex-end; }
+
+.runtime-ops-provider-control button {
+  max-width: 100%;
+  padding: var(--ds-1) var(--ds-3);
+  border: 1px solid var(--vscode-button-border, transparent);
+  border-radius: 2px;
+  background: var(--vscode-button-secondaryBackground, color-mix(in srgb, var(--ds-fg) 12%, transparent));
+  color: var(--vscode-button-secondaryForeground, var(--ds-fg));
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--ds-small);
+  overflow-wrap: anywhere;
+}
+
+.runtime-ops-provider-control button:hover {
+  background: var(--vscode-button-secondaryHoverBackground, color-mix(in srgb, var(--ds-fg) 18%, transparent));
+}
+
 .runtime-ops-table { min-width: 0; max-width: 100%; }
 
 .runtime-ops-header {
@@ -78,7 +208,8 @@
 }
 
 .runtime-ops-agents summary:focus-visible,
-.runtime-ops-refresh:focus-visible {
+.runtime-ops-refresh:focus-visible,
+.runtime-ops-provider-control button:focus-visible {
   outline: 2px solid var(--ds-focus);
   outline-offset: 2px;
 }
@@ -162,6 +293,10 @@
   .runtime-ops-summary { align-items: flex-start; flex-wrap: wrap; gap: var(--ds-2) var(--ds-4); padding-block: var(--ds-2); }
   .runtime-ops-summary-item { white-space: normal; }
   .runtime-ops-updated { width: 100%; margin-left: 0; white-space: normal; }
+  .runtime-ops-provider-row { display: flex; flex-direction: column; align-items: stretch; gap: var(--ds-3); }
+  .runtime-ops-quota-windows { grid-template-columns: 1fr; }
+  .runtime-ops-provider-control { flex-direction: row; align-items: center; justify-content: space-between; gap: var(--ds-3); }
+  .runtime-ops-provider-control button { flex: none; }
   .runtime-ops-header { display: none; }
   .runtime-ops-row { display: flex; flex-direction: column; gap: 0; padding: 0; }
   .runtime-ops-cell {

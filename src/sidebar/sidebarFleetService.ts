@@ -21,6 +21,8 @@ import { toAgentVM, type ObservedModelInput } from "./agentModel.js";
 import type { AgentStatus, AgentVM, EvidenceBadge, FleetVM, RunState, Verify } from "./types.js";
 import type { TmuxService } from "../tmux/TmuxService.js";
 import { evidenceBadge, type EvidenceSummary } from "../worktree/evidence.js";
+import type { WorktreeManager } from "../worktree/WorktreeManager.js";
+import type { ResourceSampler } from "../attention/resourceSample.js";
 
 export interface SidebarFleetSource {
   workspaceRoot: string;
@@ -30,6 +32,7 @@ export interface SidebarFleetSource {
   manager: Pick<AgentManager, "list" | "defOf" | "resumeReadiness" | "session">;
   ledger: Pick<SessionLedger, "all" | "get">;
   tmux: Pick<TmuxService, "panePid">;
+  worktrees: Pick<WorktreeManager, "currentBranch">;
   config: TachyonConfig | undefined;
   configFailure: ConfigFailure | undefined;
   commandRunner: Pick<CommandRunner, "list">;
@@ -58,6 +61,7 @@ export interface SidebarFleetSource {
 export interface SidebarFleetServiceOptions {
   observedModelFor?: (agentName: string) => ObservedModelInput | undefined;
   now?: () => number;
+  resourceSampler?: Pick<ResourceSampler, "sample" | "clear" | "keys">;
 }
 
 /** Builds the complete sidebar projection at the operational authority, never in the editor shell. */
@@ -69,6 +73,7 @@ export async function buildSidebarFleet(
   const ledger = [...source.ledger.all()];
   const resumable = new Set(ledger.filter(([, record]) => isResumable(record)).map(([name]) => name));
   const worktrees = new Map(ledger.filter(([, record]) => record.worktree).map(([name, record]) => [name, record.worktree!.branch]));
+  const ledgerByName = new Map(ledger);
   const canFork = (name: string, running: boolean, kind: string): boolean => {
     if (!running || kind !== "agent") return false;
     const definition = source.manager.defOf(name);
@@ -83,6 +88,21 @@ export async function buildSidebarFleet(
     if (info) verifyOf.set(name, info.badge === "verified" ? "pass" : info.badge === "failing" ? "fail" : "stale");
     const badge = evidenceBadge(await source.evidenceHandoff(name));
     if (badge) evidenceOf.set(name, badge);
+  }));
+
+  type LiveGit = { liveBranch?: string; worktreePath: string; branchDrift?: boolean };
+  const liveGitOf = new Map<string, LiveGit>();
+  await Promise.all(all.filter((agent) => agent.kind === "agent").map(async (agent) => {
+    const record = ledgerByName.get(agent.name);
+    const cwd = record?.cwd || record?.worktree?.path || source.workspaceRoot;
+    let liveBranch: string | undefined;
+    try { liveBranch = await source.worktrees.currentBranch(cwd); } catch { /* additive best-effort fact */ }
+    const configuredBranch = record?.worktree?.branch;
+    liveGitOf.set(agent.name, {
+      worktreePath: cwd,
+      ...(liveBranch ? { liveBranch } : {}),
+      ...(liveBranch && configuredBranch && liveBranch !== configuredBranch ? { branchDrift: true } : {}),
+    });
   }));
 
   const running = new Set(all.filter((agent) => agent.running).map((agent) => agent.name));
@@ -101,6 +121,17 @@ export async function buildSidebarFleet(
     }
   }
   externalTools.reconcile({ isPidAlive });
+  const resourcesOf = new Map<string, { cpuPct?: number; memMb: number }>();
+  if (options.resourceSampler) {
+    const livePane = new Set(paneRoots.map((row) => row.agent));
+    for (const { agent, panePid } of paneRoots) {
+      const sample = options.resourceSampler.sample(agent, panePid);
+      if (sample) resourcesOf.set(agent, sample);
+    }
+    for (const agent of options.resourceSampler.keys()) {
+      if (!livePane.has(agent)) options.resourceSampler.clear(agent);
+    }
+  }
 
   const resumeReadyOf = new Map<string, boolean>();
   await Promise.all([...resumable].filter((name) => !running.has(name)).map(async (name) => {
@@ -116,11 +147,16 @@ export async function buildSidebarFleet(
       const live = agent.running ? source.attentionOf(agent.name) : undefined;
       const hookHealth = agent.declared ? source.persistenceHookHealth(agent.name) : undefined;
       const externalSummary = externalTools.summary(agent.name);
+      const liveGit = liveGitOf.get(agent.name);
       return toAgentVM({ ...agent, cmd: definition?.cmd }, {
         attention: live?.state,
         awaitingHuman: live?.awaitingHuman ? { reason: live.awaitingHumanReason ?? "" } : undefined,
         model: options.observedModelFor?.(agent.name),
         worktree: worktrees.get(agent.name),
+        liveBranch: liveGit?.liveBranch,
+        branchDrift: liveGit?.branchDrift,
+        worktreePath: liveGit?.worktreePath,
+        resources: agent.running && !agent.dead ? resourcesOf.get(agent.name) : undefined,
         verify: verifyOf.get(agent.name),
         verifiable: verifyOf.has(agent.name),
         evidence: evidenceOf.get(agent.name),

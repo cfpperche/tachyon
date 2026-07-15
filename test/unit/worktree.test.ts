@@ -132,7 +132,7 @@ describe("WorktreeManager — pure resolvers (spec 210)", () => {
     it("top-level worktree:true → ensure + run setup once on create", async () => {
       const h = deps();
       const r = await resolveWorktreeCwd({ name: "rev", worktree: true, worktreeSetup: ["pnpm i"], isRestart: false }, h.d);
-      expect(r).toEqual({ cwd: "/wt/h/rev", worktree: REC });
+      expect(r).toEqual({ cwd: "/wt/h/rev", worktree: REC, created: true });
       expect(h.setupRuns).toEqual([REC]); // setup ran
     });
 
@@ -155,7 +155,7 @@ describe("WorktreeManager — pure resolvers (spec 210)", () => {
     it("parented worktree:true opts into its own isolated worktree", async () => {
       const h = deps({ parentCwd: (p) => (p === "boss" ? "/wt/h/boss" : undefined) });
       const r = await resolveWorktreeCwd({ name: "helper", worktree: true, parent: "boss", isRestart: false }, h.d);
-      expect(r).toEqual({ cwd: "/wt/h/rev", worktree: REC });
+      expect(r).toEqual({ cwd: "/wt/h/rev", worktree: REC, created: true });
       expect(h.notices).toEqual([]);
     });
 
@@ -172,11 +172,110 @@ describe("WorktreeManager — pure resolvers (spec 210)", () => {
       expect(r).toBeNull();
       expect(h.notices.some((n) => n.includes("falling back to the workspace root"))).toBe(true);
     });
+
+    it("propagates a launch-quarantine collision instead of falling back to the workspace root", async () => {
+      const h = deps({
+        manager: {
+          pathForAgent: () => "/wt/h/rev",
+          ensure: async () => {
+            throw new WorktreeUnavailableError("preparation lock is already held", "recovery-preserved");
+          },
+        } as unknown as WorktreeResolveDeps["manager"],
+      });
+
+      await expect(resolveWorktreeCwd({ name: "rev", worktree: true, isRestart: false }, h.d))
+        .rejects.toMatchObject({ reason: "recovery-preserved" });
+      expect(h.notices).toEqual([]);
+    });
+
+    it("preserves a prior checkout when repository probes fail instead of falling back to root", async () => {
+      const manager = new WorktreeManager({
+        workspaceRoot: "/repo",
+        wsHash: "h",
+        getSettings: () => settings({ worktree: { base: "/wt" } }),
+        pathExists: (candidate) => candidate === REC.path,
+        git: async () => ({ stdout: "", stderr: "injected repository probe failure", code: 1 }),
+      });
+      const notices: string[] = [];
+
+      await expect(resolveWorktreeCwd(
+        { name: "rev", worktree: true, branch: REC.branch, isRestart: true },
+        {
+          manager,
+          settings: settings({ worktree: { base: "/wt" } }),
+          parentCwd: () => undefined,
+          priorRecord: REC,
+          runSetup: async () => {},
+          notify: (message) => notices.push(message),
+        },
+      )).rejects.toMatchObject({ reason: "recovery-preserved" });
+      expect(notices).toEqual([]);
+    });
+
+    it("refuses invalid branch-template drift with the persisted recovery path", async () => {
+      let ensured = false;
+      const h = deps({
+        priorRecord: REC,
+        settings: settings({ worktree: { branch: "shared-without-placeholder" } }),
+        manager: {
+          pathForAgent: () => "/new/config/path/rev",
+          ensure: async () => { ensured = true; throw new Error("must not run"); },
+        } as unknown as WorktreeResolveDeps["manager"],
+      });
+
+      await expect(resolveWorktreeCwd({ name: "rev", worktree: true, isRestart: true }, h.d))
+        .rejects.toMatchObject({
+          reason: "recovery-preserved",
+          message: expect.stringContaining(REC.path),
+        });
+      expect(ensured).toBe(false);
+      expect(h.notices).toEqual([]);
+    });
+
+    it("fails closed with a recovery path on an unexpected Git rejection", async () => {
+      const h = deps({
+        manager: {
+          pathForAgent: () => REC.path,
+          ensure: async () => { throw new Error("injected later Git spawn failure"); },
+        } as unknown as WorktreeResolveDeps["manager"],
+      });
+
+      await expect(resolveWorktreeCwd({ name: "rev", worktree: true, isRestart: false }, h.d))
+        .rejects.toMatchObject({
+          reason: "recovery-preserved",
+          message: expect.stringContaining(REC.path),
+        });
+      expect(h.notices).toEqual([]);
+    });
+  });
+
+  it.each([2, 3])("isUsableRepo normalizes a rejection from Git probe %i", async (rejectAt) => {
+    let calls = 0;
+    const manager = new WorktreeManager({
+      workspaceRoot: "/repo",
+      wsHash: "h",
+      getSettings: () => settings({}),
+      git: async () => {
+        calls += 1;
+        if (calls === rejectAt) throw new Error(`probe ${rejectAt} unavailable`);
+        return { stdout: calls === 1 ? ".git\n" : calls === 2 ? "false\n" : "abc\n", stderr: "", code: 0 };
+      },
+    });
+
+    await expect(manager.isUsableRepo()).resolves.toMatchObject({
+      ok: false,
+      reason: "no-git",
+      message: `probe ${rejectAt} unavailable`,
+    });
   });
 
   it("gitArgs builds the exact argv each side agrees on", () => {
     expect(gitArgs.addNewBranch("/wt", "tachyon/rev", "HEAD")).toEqual(["worktree", "add", "-b", "tachyon/rev", "/wt", "HEAD"]);
+    expect(gitArgs.addNewBranchLocked("/wt", "tachyon/rev", "HEAD")).toEqual(["worktree", "add", "--lock", "-b", "tachyon/rev", "/wt", "HEAD"]);
     expect(gitArgs.attachBranch("/wt", "feature/x")).toEqual(["worktree", "add", "/wt", "feature/x"]);
+    expect(gitArgs.attachBranchLocked("/wt", "feature/x")).toEqual(["worktree", "add", "--lock", "/wt", "feature/x"]);
+    expect(gitArgs.lock("/wt")).toEqual(["worktree", "lock", "/wt"]);
+    expect(gitArgs.unlock("/wt")).toEqual(["worktree", "unlock", "/wt"]);
     expect(gitArgs.remove("/wt")).toEqual(["worktree", "remove", "--force", "/wt"]);
     expect(gitArgs.deleteBranch("tachyon/rev")).toEqual(["branch", "-D", "tachyon/rev"]);
     expect(gitArgs.checkRefFormat("a/b")).toEqual(["check-ref-format", "--branch", "a/b"]);

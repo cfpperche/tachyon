@@ -604,3 +604,24 @@ None.
   converged concurrent starters, reused the exact engine/Bridge, exercised remote views and lifecycle commands,
   and cleaned its disposable service.  The intermediate full proof remains the prior 343-file / 4,068-pass run;
   the next global run stays reserved for final closure after reconciling compatible work that landed on `main`.
+
+## Twenty-eighth implementation slice — 2026-07-15
+
+- Reconciled the isolated branch with the current local `main` without integrating the candidate back into
+  `main`.  Parallel work from specs 369, 381, 383, 384, 385 and 386 was retained, then adapted at the lifecycle
+  boundary instead of restoring editor-owned operational state.
+- Moved provider observation into the persistent daemon and extended the closed Runtime Ops protocol/merger to
+  accept schema V1 and V2.  Multi-workspace merges preserve the newest observation only when provider
+  configuration agrees; conflicting configuration now fails closed.  The VS Code shell keeps only selection
+  and presentation.
+- Routed prompt-template catalog and injection through closed engine operations.  The daemon re-reads the exact
+  template, binds it to the previewed SHA-256, revalidates the live AI target and session, and performs the tmux
+  write.  A real daemon test proves stale preview refusal and one successful submitted prompt.
+- Kept live branch and resource sampling in the daemon-owned Sidebar projection.  The shell consumes the bounded
+  model only; the spec 384 structural test now asserts the new authority rather than requiring Git access in the
+  webview host.  Hermes ingestion remains attached to the daemon-owned ActivityLogManager.
+- Focused reconciliation gates are green: Runtime Ops 47/47, Sidebar 54/54, daemon/prompt 83/83 and Activity/
+  Hermes 70/70, plus typecheck, build, the 229-file editor-free daemon import closure and diff-check.  Packaged
+  persistent-engine dogfood again converged concurrent starters, reused one exact engine/Bridge and exercised
+  the remote lifecycle successfully.  No second global full run was made; final closure remains reserved until
+  the announced SOUL merge and the remaining upgrade/recovery tasks are reconciled.

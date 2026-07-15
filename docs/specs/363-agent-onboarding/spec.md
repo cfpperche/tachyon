@@ -9,6 +9,27 @@ _Ratified 2026-07-07 — all 3 maintainer decisions resolved (see the ratified s
 _Debated with the maintainer 2026-07-07 (t-0cfbd6 unfrozen by that debate). The load-bearing architectural
 decision was made there; the MAINTAINER DECISIONS section below holds only the remaining calls._
 
+## 2026-07-14 amendment — superseded by spec 383
+
+Spec 383 preserves this spec's load-bearing architecture: Tachyon owns onboarding transport instead of
+depending on runtime-specific context-file discovery, the primer is advisory, the protocol gate is the
+control, and resume remains transcript-only. It supersedes the repository-policy and exact-composition
+claims below:
+
+- The product-global primer now contains universal Tachyon orchestration protocol plus only project facts
+  explicitly configured in `tachyon.yml`; it no longer authors package-manager, Git, commit-message, or
+  localization policy and never invents a verification fallback.
+- A project may explicitly declare `settings.projectGuidance.files`. Tachyon carries those project-owned
+  files through its existing push channel in a separately labelled block; this is not `AGENTS.md`,
+  `CLAUDE.md`, or other implicit runtime-file discovery.
+- Spec 383 owns the current spawn/restart/re-anchor composition and ordering. Resume still reattaches the
+  transcript without pushing onboarding. The planned `orient` pull tool remains deferred, and no primer
+  points agents to that unavailable tool.
+
+Historical motivation and Phase 1 evidence remain below; references to `npm ci`, pathspec commits,
+localization, a repository-discipline primer section, or an `orient` pointer describe the superseded 363
+design rather than the current product-global primer contract.
+
 ## Intent
 
 Every spawned or restarted agent pays a cold-start tax: it must learn what Tachyon is, discover the Bridge
@@ -36,7 +57,10 @@ uniformly through two channels it owns; onboarding uses exactly those two:
   a generated PRIMER section prepended at container-controlled moments.
 - **PULL — the Bridge** (MCP): an `orient` tool for self-serve re-orientation mid-session.
 
-Context files on disk are demoted to human-facing documentation, OUT of the agent-onboarding mechanism.
+Implicit runtime context files on disk are demoted to human-facing documentation, OUT of the
+agent-onboarding mechanism. As amended by spec 383, a project can explicitly nominate project-owned source
+documents for Tachyon to transport through the existing push channel; Tachyon still does not discover or
+defer to runtime-specific filenames.
 
 ## Design
 
@@ -63,7 +87,7 @@ served the calls), so the gate checks observables:
 These land as findings in the 362 verification record (the machinery exists); 363 adds the protocol checks
 and the Bridge-side event witness, not a second gate.
 
-### 1. The generated primer (push — advisory orientation)
+### 1. The generated primer (push — advisory orientation; repository-policy details superseded by spec 383)
 
 A short, fixed-format, delimited section the brief compositor prepends at the **three** EXISTING injection moments
 — **spawn, restart, re-anchor** (no new channels, no event detection in v1). **Resume does not push the primer**
@@ -101,7 +125,7 @@ the `Before finishing:` block, and the delegation-contract boilerplate are all R
 mechanical: the task contract wins for task-specific requirements, the primer canon wins for global protocol,
 and the gate enforces both.
 
-### 2. The `orient` Bridge tool (pull — convenience, never authority)
+### 2. The `orient` Bridge tool (pull — convenience, never authority; still deferred)
 
 One call returns the full orientation for the CALLER: identity (name, delegator, gate status), the complete
 protocol, `settings.verify` commands, the CANONICAL behavior-test name/command for the caller's delegation

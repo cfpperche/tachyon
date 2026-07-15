@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
-# EDH dogfood lane v1 (promoted in place from the palliative helper).
-# Isolates fixture workspace + tmux/cache so concurrent SDD 368 work is not touched.
+# Dev Host dogfood lane — isolated Extension Development Host for worktree/fixture dogfood.
+# Isolates fixture workspace + tmux/cache so concurrent fleet work is not touched.
+#
+# Evolution: was scripts/edh-palliative/edh-palliative.sh ("EDH palliative"); renamed t-2d1810.
+# See docs/runbooks/dev-host.md § Evolution. Do not reintroduce dogfood:edh* npm aliases.
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -8,18 +11,18 @@ CMD="${1:-help}"
 shift || true
 
 # Stable base under TMP so we never nest worktrees inside the monorepo or ~/.cache/tachyon used by 368.
-BASE="${TACHYON_EDH_PALLIATIVE_BASE:-${TMPDIR:-/tmp}/tachyon-edh-palliative}"
+BASE="${TACHYON_DEV_HOST_BASE:-${TACHYON_EDH_PALLIATIVE_BASE:-${TMPDIR:-/tmp}/tachyon-dev-host}}"
 # Optional sticky id so seed/launch/clean share the same fixture in one shell session.
-ID="${TACHYON_EDH_PALLIATIVE_ID:-default}"
+ID="${TACHYON_DEV_HOST_ID:-${TACHYON_EDH_PALLIATIVE_ID:-default}}"
 FIXTURE="${BASE}/${ID}"
 WS="${FIXTURE}/workspace"
-USER_DATA="${FIXTURE}/.edh-user-data"
-EXT_DIR="${FIXTURE}/.edh-extensions"
+USER_DATA="${FIXTURE}/.dev-host-user-data"
+EXT_DIR="${FIXTURE}/.dev-host-extensions"
 TMUX_DIR="${FIXTURE}/.tmux"
 CACHE_HOME="${FIXTURE}/.cache"
-PID_FILE="${FIXTURE}/.edh.pid"
-RESOLVE_CODE="$REPO/scripts/edh-palliative/resolve-code.mjs"
-STOP_BRIDGE="$REPO/scripts/edh-palliative/stop-bridge.mjs"
+PID_FILE="${FIXTURE}/.dev-host.pid"
+RESOLVE_CODE="$REPO/scripts/dev-host/resolve-code.mjs"
+STOP_BRIDGE="$REPO/scripts/dev-host/stop-bridge.mjs"
 
 # Only the EDH child receives these removals. The caller's shell/session remains untouched.
 EDH_ENV=(
@@ -42,8 +45,8 @@ EDH_ENV=(
   "XDG_CACHE_HOME=$CACHE_HOME"
 )
 
-die() { echo "edh-palliative: $*" >&2; exit 1; }
-info() { echo "edh-palliative: $*"; }
+die() { echo "dev-host: $*" >&2; exit 1; }
+info() { echo "dev-host: $*"; }
 
 record_edh_pid() {
   local pid="$1"
@@ -79,7 +82,7 @@ write_valid_config() {
   # kind: agent is explicit — bare `echo` would infer terminal and reject subagents.
   cat >"$WS/tachyon.yml" <<'YAML'
 # EDH palliative fixture — NOT the monorepo fleet.
-# Safe to break for fail-visible dogfood (S1 in docs/runbooks/edh-palliative-dogfood.md).
+# Safe to break for fail-visible dogfood (S1 in docs/runbooks/dev-host.md).
 agents:
   pilot:
     cmd: echo pilot-agent
@@ -92,7 +95,7 @@ agents:
     autostart: false
 commands:
   hello:
-    cmd: "echo edh-palliative-ok"
+    cmd: "echo dev-host-ok"
 YAML
 }
 
@@ -175,9 +178,9 @@ seed() {
 
 Isolated dogfood workspace. Do **not** open the monorepo root for this scenario.
 
-- Runbook: \`docs/runbooks/edh-palliative-dogfood.md\`
-- Break config: \`npm run dogfood:edh-palliative -- break\` (from monorepo)
-- Restore config: \`npm run dogfood:edh-palliative -- restore\`
+- Runbook: \`docs/runbooks/dev-host.md\`
+- Break config: \`npm run dogfood:dev-host -- break\` (from monorepo)
+- Restore config: \`npm run dogfood:dev-host -- restore\`
 - Fixture id: \`${ID}\`
 - Created: $(date -u +%Y-%m-%dT%H:%M:%SZ)
 EOF
@@ -187,7 +190,7 @@ EOF
 }
 
 break_config() {
-  [ -d "$WS" ] || die "no fixture — run: npm run dogfood:edh-palliative -- seed"
+  [ -d "$WS" ] || die "no fixture — run: npm run dogfood:dev-host -- seed"
   write_broken_config
   info "wrote BROKEN tachyon.yml (dangling subagents: [ghost])"
   info "In EDH only: Developer: Reload Window → expect fail-visible banner + degraded roster"
@@ -221,8 +224,8 @@ env -u ELECTRON_RUN_AS_NODE -u TACHYON_AGENT_BRIDGE_TOKEN -u TACHYON_AGENT_NAME 
   '$WS'
 ---------------------------
 Record SHA: $(git -C "$REPO" rev-parse --short HEAD 2>/dev/null || echo unknown)
-Runbook:    docs/runbooks/edh-palliative-dogfood.md
-Scenario:   S1 fail-visible → npm run dogfood:edh-palliative -- break
+Runbook:    docs/runbooks/dev-host.md
+Scenario:   S1 fail-visible → npm run dogfood:dev-host -- break
 
 EOF
 }
@@ -245,7 +248,7 @@ launch() {
   info "launching EDH with $code_bin"
   info "isolation: TMUX_TMPDIR=$TMUX_DIR XDG_CACHE_HOME=$CACHE_HOME"
   # Background: return control to the caller (Codex/368 stays untouched).
-  if [ "${TACHYON_EDH_FOREGROUND:-}" = "1" ]; then
+  if [ "${TACHYON_DEV_HOST_FOREGROUND:-${TACHYON_EDH_FOREGROUND:-}}" = "1" ]; then
     record_edh_pid "$$"
     exec env "${EDH_ENV[@]}" "$code_bin" \
       --extensionDevelopmentPath="$REPO" \
@@ -335,10 +338,10 @@ headless() {
 }
 JSON
 
-  local disp="${TACHYON_EDH_DISPLAY:-:96}"
+  local disp="${TACHYON_DEV_HOST_DISPLAY:-${TACHYON_EDH_DISPLAY:-:96}}"
   local sha
   sha="$(git -C "$REPO" rev-parse --short HEAD 2>/dev/null || echo unknown)"
-  local runner="$REPO/scripts/edh-palliative/headless-runner.js"
+  local runner="$REPO/scripts/dev-host/headless-runner.js"
   [ -f "$runner" ] || die "missing $runner"
 
   info "starting Xvfb on $disp"
@@ -352,10 +355,10 @@ JSON
   info "launching headless EDH (code=$code_bin)"
   env "${EDH_ENV[@]}" \
     DISPLAY="$disp" \
-    EDH_PALLIATIVE_RESULT="$result" \
-    EDH_PALLIATIVE_WS="$WS" \
-    EDH_PALLIATIVE_SHA="$sha" \
-    EDH_PALLIATIVE_SHOTDIR="$shot_dir" \
+    DEV_HOST_RESULT="$result" EDH_PALLIATIVE_RESULT="$result" \
+    DEV_HOST_WS="$WS" EDH_PALLIATIVE_WS="$WS" \
+    DEV_HOST_SHA="$sha" EDH_PALLIATIVE_SHA="$sha" \
+    DEV_HOST_SHOTDIR="$shot_dir" EDH_PALLIATIVE_SHOTDIR="$shot_dir" \
     "$code_bin" \
       --extensionDevelopmentPath="$REPO" \
       --extensionTestsPath="$runner" \
@@ -371,7 +374,7 @@ JSON
   local host_pid=$!
 
   # While the host is up, grab Xvfb frames for each ready-* marker (capture.sh pattern).
-  local timeout_s="${TACHYON_EDH_HEADLESS_TIMEOUT:-120}"
+  local timeout_s="${TACHYON_DEV_HOST_HEADLESS_TIMEOUT:-${TACHYON_EDH_HEADLESS_TIMEOUT:-120}}"
   local start_ts
   start_ts="$(date +%s)"
   while kill -0 "$host_pid" 2>/dev/null; do
@@ -413,7 +416,7 @@ JSON
   fi
 
   # Copy PNGs into repo evidence (gitignored under .tachyon/) for local inspection.
-  local evidence_dir="$REPO/.tachyon/evidence/edh-palliative"
+  local evidence_dir="$REPO/.tachyon/evidence/dev-host"
   mkdir -p "$evidence_dir"
   for png in "$shot_dir"/*.png; do
     [ -f "$png" ] || continue
@@ -460,48 +463,55 @@ shortlist() {
   # Headless Chromium captures of top UI surfaces missing visual evidence
   # (mermaid Activity, Grok Activity feed, Handoff Distill targets).
   # Extra args after shortlist are scene names; default = the three.
-  bash "$REPO/scripts/edh-palliative/run-shortlist.sh" "$@"
+  bash "$REPO/scripts/dev-host/run-shortlist.sh" "$@"
+}
+
+point_cmd() {
+  node "$REPO/scripts/dev-host/pointer.mjs" "$@"
 }
 
 help() {
   cat <<'EOF'
-Usage: npm run dogfood:edh -- <command>
+Usage: npm run dogfood:dev-host -- <command>
 
 Commands:
-  seed      Create isolated fixture (valid config + LKG + ledger)
-  break     Arm t-8354ae fail-visible scenario (dangling subagent)
-  restore   Restore valid tachyon.yml in the fixture
-  launch    Open GUI Extension Development Host (interactive)
-  resolve-code Print the compatible VS Code executable selected for EDH
-  headless  Xvfb EDH + in-host runner (S1 fail-visible asserts)
-  shortlist Headless Chromium screenshots: mermaid | grok-activity | handoff-distill
-            (default: all three). Pass scene names to subset.
-  status    Show fixture path / broken-or-valid
-  clean     Delete the fixture directory
-  lease ... Atomic owner lease (acquire|release|status|run); see runbook
-  help      This text
+  seed         Create isolated fixture (valid config + LKG + ledger)
+  break        Arm fail-visible scenario (dangling subagent)
+  restore      Restore valid tachyon.yml in the fixture
+  launch       Open GUI Extension Development Host (interactive)
+  resolve-code Print the compatible VS Code executable for Dev Host
+  headless     Xvfb Dev Host + in-host runner (S1 fail-visible asserts)
+  shortlist    Headless Chromium screenshots: mermaid | grok-activity | handoff-distill
+  status       Show fixture path / broken-or-valid
+  clean        Delete the fixture directory
+  lease ...    Atomic owner lease (acquire|release|status|run); see runbook
+  point        Arm stable F5 "Tachyon: Dev Host" (worktree + fixture)
+  point-status Show the F5 pointer status
+  point-clear  Clear the F5 pointer
+  help         This text
 
 Examples:
-  npm run dogfood:edh-palliative -- shortlist
-  npm run dogfood:edh-palliative -- shortlist mermaid handoff-distill
-  npm run dogfood:edh-palliative -- shortlist fail-visible   # also runs EDH S1
+  npm run dogfood:dev-host -- point --worktree ~/tachyon-worktrees/foo \
+       --workspace ~/tachyon-worktrees/foo/test/fixtures/foo-dogfood --spec 381 --slug foo
+  npm run dogfood:dev-host -- headless
+  npm run dogfood:dev-host -- shortlist mermaid
 
-Env:
-  TACHYON_EDH_PALLIATIVE_ID   fixture id (default: default)
-  TACHYON_EDH_PALLIATIVE_BASE parent dir (default: $TMPDIR/tachyon-edh-palliative)
-  TACHYON_EDH_CODE            path to VS Code / test binary
-  TACHYON_EDH_DISPLAY         Xvfb display (default: :96)
-  TACHYON_EDH_HEADLESS_TIMEOUT  seconds (default: 120)
-  TACHYON_EDH_FOREGROUND=1    launch (GUI) in foreground (exec)
+Env (new preferred; old still accepted):
+  TACHYON_DEV_HOST_ID / TACHYON_EDH_PALLIATIVE_ID     fixture id (default: default)
+  TACHYON_DEV_HOST_BASE / TACHYON_EDH_PALLIATIVE_BASE parent dir (default: $TMPDIR/tachyon-dev-host)
+  TACHYON_DEV_HOST_CODE / TACHYON_EDH_CODE            VS Code / test binary
+  TACHYON_DEV_HOST_DISPLAY / TACHYON_EDH_DISPLAY      Xvfb display (default: :96)
+  TACHYON_DEV_HOST_HEADLESS_TIMEOUT / TACHYON_EDH_HEADLESS_TIMEOUT  seconds (default: 120)
+  TACHYON_DEV_HOST_FOREGROUND=1 / TACHYON_EDH_FOREGROUND=1  launch GUI in foreground
   TACHYON_SHORTLIST_OUT       evidence root (default .tachyon/evidence/ui-shortlist)
   TACHYON_CHROME              Chrome/Chromium binary for preview shots
 
-See docs/runbooks/edh-palliative-dogfood.md (EDH lane v1)
+See docs/runbooks/dev-host.md
 EOF
 }
 
 case "$CMD" in
-  lease) node "$REPO/scripts/edh-palliative/lane.mjs" "${@:-status}" ;;
+  lease) node "$REPO/scripts/dev-host/lane.mjs" "${@:-status}" ;;
   seed) seed ;;
   break) break_config ;;
   restore) restore_config ;;
@@ -511,6 +521,9 @@ case "$CMD" in
   shortlist) shortlist "$@" ;;
   status) status ;;
   clean) clean ;;
+  point) point_cmd point "$@" ;;
+  point-status) point_cmd status "$@" ;;
+  point-clear) point_cmd clear "$@" ;;
   help|-h|--help) help ;;
   *) die "unknown command '$CMD' (try help)" ;;
 esac

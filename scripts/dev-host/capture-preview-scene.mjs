@@ -4,7 +4,7 @@
  * Used by the UI shortlist dogfood (mermaid / grok activity / handoff distill).
  *
  * Usage:
- *   node scripts/edh-palliative/capture-preview-scene.mjs \
+ *   node scripts/dev-host/capture-preview-scene.mjs \
  *     --view activity --fixture mermaid-nav --out /tmp/shot.png [--width 900] [--theme dark]
  */
 import http from "node:http";

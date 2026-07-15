@@ -111,8 +111,18 @@ describe("sidebar action matrix (spec 237)", () => {
     expect(primaryActions(A({ status: "running" }))).not.toContain("probes"); // "…" menu only
     expect(moreActions(A({ status: "running" }))).toContain("probes");
   });
+  it("spec 381 — injectPrompt is offered for running AI only (with reanchor family)", () => {
+    expect(actionsFor(A({ status: "running", ai: true }))).toContain("injectPrompt");
+    expect(actionsFor(A({ status: "idle", ai: true }))).toContain("injectPrompt");
+    expect(actionsFor(A({ status: "running", ai: false }))).not.toContain("injectPrompt");
+    expect(actionsFor(A({ status: "stopped", ai: true }))).not.toContain("injectPrompt");
+    expect(primaryActions(A({ status: "running", ai: true }))).not.toContain("injectPrompt");
+    expect(moreActions(A({ status: "running", ai: true }))).toContain("injectPrompt");
+  });
+
   it("spec 306 — a throttled agent is running-like: keeps reanchor/reinjectContinuity", () => {
     expect(actionsFor(A({ status: "throttled", ai: true }))).toContain("reanchor");
+    expect(actionsFor(A({ status: "throttled", ai: true }))).toContain("injectPrompt");
     expect(actionsFor(A({ status: "throttled", ai: true }))).toContain("reinjectContinuity");
     expect(actionsFor(A({ status: "throttled" }))).toContain("stop");
     expect(actionsFor(A({ status: "throttled" }))).toContain("kill");

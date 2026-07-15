@@ -10,17 +10,28 @@ import { buildStarterYaml, type DetectedProject } from "../../src/init/initLogic
  * since anything on this list becoming a product default/output is exactly the boundary crossing
  * the doc warns about.
  */
-const TACHYON_BUILD_MARKERS = ["verify:full", "esbuild", "vsce", "record:provenance", ".tachyon/deploys", "npm run build", "docs/specs"];
+const TACHYON_BUILD_MARKERS = [
+  "verify:full",
+  "esbuild",
+  "vsce",
+  "record:provenance",
+  ".tachyon/deploys",
+  "npm run build",
+  "docs/specs",
+  "test:invariants",
+  "product-invariant-testing",
+  "Product Invariant",
+  "PI-",
+];
 
 const baseFixture = (over: Partial<DetectedProject> = {}): DetectedProject => ({ files: [], installedClis: ["claude"], ...over });
 
 describe("container-generated delegation behavior", () => {
-  it("project-agnostic defaults are pinned: verify_task default, configuration defaults and init output carry no Tachyon-build markers", () => {
-    // (1) docs/architecture/dogfood-product-boundary.md — "verify_task default stays generic (npm test),
-    // never Tachyon's build-aware verify:full". The default must never assume the Tachyon repo: verify:full
-    // assumes esbuild/dist and would break every non-Tachyon project's gate. Tachyon itself opts into
-    // verify:full via its own tachyon.yml settings.verify, not via this default.
-    expect(DEFAULT_FULL_VERIFY).toBe("npm test");
+  it("project-agnostic boundaries are pinned: verify_task, configuration defaults and init output carry no Tachyon-build assumptions", () => {
+    // (1) docs/architecture/dogfood-product-boundary.md — verify_task has no product-global full-suite
+    // command. Even a seemingly generic `npm test` would impose a package manager on consumer projects;
+    // Tachyon's own repository opts into verify:full through its tracked tachyon.yml instead.
+    expect(DEFAULT_FULL_VERIFY).toBeUndefined();
 
     // (2) docs/architecture/dogfood-product-boundary.md — "contributes.configuration defaults carry no
     // Tachyon-repo assumptions". Read the shipped package.json directly (not via import) so this pins the

@@ -1,7 +1,10 @@
 import { z } from "zod";
 import type {
+  RuntimeOpsProviderCapacityV2,
   RuntimeOpsRuntimeV1,
+  RuntimeOpsSnapshot,
   RuntimeOpsSnapshotV1,
+  RuntimeOpsSnapshotV2,
 } from "../runtimeOps/types.js";
 
 const MAX_RUNTIMES = 64;
@@ -134,7 +137,52 @@ const runtime = z.object({
   }
 });
 
-const snapshot = z.object({
+const providerSource = z.enum(["cli", "oauth"]);
+const providerQuota = z.discriminatedUnion("state", [
+  z.object({
+    state: z.literal("available"),
+    source: providerSource,
+    confidence: z.enum(["exact", "estimated", "unknown"]),
+    observedAt: timestamp,
+    freshness: z.discriminatedUnion("state", [
+      z.object({ state: z.literal("fresh") }).strict(),
+      z.object({ state: z.literal("stale"), lastGoodAt: timestamp }).strict(),
+    ]),
+    windows: z.array(z.object({
+      name: z.enum(["session", "weekly", "tertiary"]),
+      usedPercent: z.number().finite().min(0).max(100),
+      windowMinutes: count.refine((value) => value > 0).optional(),
+      resetsAt: timestamp.optional(),
+    }).strict()).max(3),
+  }).strict(),
+  z.object({
+    state: z.literal("unavailable"),
+    source: providerSource.optional(),
+    observedAt: timestamp,
+    reason: z.enum([
+      "unsupported", "source-disabled", "unauthenticated", "timeout", "cancelled",
+      "not-observed", "provider-error", "invalid-payload", "stale-expired",
+    ]),
+    lastGoodAt: timestamp.optional(),
+  }).strict(),
+]);
+
+const providerCapacity = z.object({
+  provider: z.enum(["codex", "claude"]),
+  scope: z.literal("provider-account"),
+  configuration: z.discriminatedUnion("state", [
+    z.object({ state: z.literal("disabled") }).strict(),
+    z.object({ state: z.literal("enabled"), sources: z.array(providerSource).min(1).max(2) }).strict(),
+  ]),
+  quota: providerQuota,
+}).strict().superRefine((value, context) => {
+  if (value.configuration.state === "enabled"
+    && new Set(value.configuration.sources).size !== value.configuration.sources.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "provider sources must be unique" });
+  }
+});
+
+const snapshotV1 = z.object({
   schemaVersion: z.literal(1),
   generatedAt: timestamp,
   summary: z.object({
@@ -146,7 +194,35 @@ const snapshot = z.object({
   }).strict(),
   runtimes: z.array(runtime).max(MAX_RUNTIMES),
   error: z.object({ code: z.literal("snapshot-unavailable") }).strict().optional(),
+}).strict().superRefine(validateSnapshotFacts);
+
+const snapshotV2 = z.object({
+  schemaVersion: z.literal(2),
+  generatedAt: timestamp,
+  summary: z.object({
+    runtimes: count,
+    managedAgents: count,
+    activeAgents: count.optional(),
+    throttled: count.optional(),
+    bridgeIssues: count.optional(),
+  }).strict(),
+  runtimes: z.array(runtime).max(MAX_RUNTIMES),
+  providerCapacity: z.array(providerCapacity).length(2),
+  error: z.object({ code: z.literal("snapshot-unavailable") }).strict().optional(),
 }).strict().superRefine((value, context) => {
+  validateSnapshotFacts(value, context);
+  const providers = value.providerCapacity.map((entry) => entry.provider);
+  if (providers.length !== new Set(providers).size || !providers.includes("codex") || !providers.includes("claude")) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "provider capacity must bind codex and claude exactly once" });
+  }
+});
+
+const snapshot = z.union([snapshotV1, snapshotV2]);
+
+function validateSnapshotFacts(
+  value: { summary: RuntimeOpsSnapshotV1["summary"]; runtimes: RuntimeOpsRuntimeV1[] },
+  context: z.RefinementCtx,
+): void {
   if (value.summary.runtimes !== value.runtimes.length) {
     context.addIssue({ code: z.ZodIssueCode.custom, message: "runtime summary count is contradictory" });
   }
@@ -167,19 +243,27 @@ const snapshot = z.object({
     || value.summary.bridgeIssues !== undefined && value.summary.bridgeIssues !== bridgeIssues) {
     context.addIssue({ code: z.ZodIssueCode.custom, message: "runtime agent summary is contradictory" });
   }
-});
+}
 
 export function parseRuntimeOpsSnapshotV1(value: unknown): RuntimeOpsSnapshotV1 {
-  return snapshot.parse(value) as RuntimeOpsSnapshotV1;
+  return snapshotV1.parse(value) as RuntimeOpsSnapshotV1;
 }
 
 export function isRuntimeOpsSnapshotV1(value: unknown): value is RuntimeOpsSnapshotV1 {
+  return snapshotV1.safeParse(value).success;
+}
+
+export function parseRuntimeOpsSnapshot(value: unknown): RuntimeOpsSnapshot {
+  return snapshot.parse(value) as RuntimeOpsSnapshot;
+}
+
+export function isRuntimeOpsSnapshot(value: unknown): value is RuntimeOpsSnapshot {
   return snapshot.safeParse(value).success;
 }
 
 /** Combines independently authoritative per-workspace rows into the one fleet view owned by the editor. */
-export function mergeRuntimeOpsSnapshotsV1(values: readonly RuntimeOpsSnapshotV1[]): RuntimeOpsSnapshotV1 {
-  const parsed = values.map(parseRuntimeOpsSnapshotV1);
+export function mergeRuntimeOpsSnapshotsV1(values: readonly RuntimeOpsSnapshot[]): RuntimeOpsSnapshot {
+  const parsed = values.map(parseRuntimeOpsSnapshot);
   const runtimes = new Map<string, RuntimeOpsRuntimeV1[]>();
   for (const value of parsed) {
     for (const row of value.runtimes) {
@@ -192,8 +276,7 @@ export function mergeRuntimeOpsSnapshotsV1(values: readonly RuntimeOpsSnapshotV1
     .map(([runtimeId, rows]) => mergeRuntime(runtimeId, rows))
     .sort((left, right) => left.label.localeCompare(right.label) || left.runtime.localeCompare(right.runtime));
   const agents = merged.flatMap((row) => row.agents);
-  return parseRuntimeOpsSnapshotV1({
-    schemaVersion: 1,
+  const base = {
     generatedAt: latestTimestamp(parsed.map((value) => value.generatedAt)) ?? new Date(0).toISOString(),
     summary: {
       runtimes: merged.length,
@@ -204,6 +287,19 @@ export function mergeRuntimeOpsSnapshotsV1(values: readonly RuntimeOpsSnapshotV1
     },
     runtimes: merged,
     ...(parsed.some((value) => value.error) ? { error: { code: "snapshot-unavailable" as const } } : {}),
+  };
+  const v2 = parsed.filter((value): value is RuntimeOpsSnapshotV2 => value.schemaVersion === 2);
+  if (v2.length === 0) return parseRuntimeOpsSnapshotV1({ schemaVersion: 1, ...base });
+  const providerCapacity = mergeProviderCapacity(v2);
+  return parseRuntimeOpsSnapshot({ schemaVersion: 2, ...base, providerCapacity });
+}
+
+function mergeProviderCapacity(values: readonly RuntimeOpsSnapshotV2[]): RuntimeOpsProviderCapacityV2[] {
+  return (["codex", "claude"] as const).map((provider) => {
+    const entries = values.map((value) => value.providerCapacity.find((entry) => entry.provider === provider)!);
+    const configurations = new Set(entries.map((entry) => JSON.stringify(entry.configuration)));
+    if (configurations.size !== 1) throw new Error(`Runtime Ops provider configuration disagrees for '${provider}'`);
+    return [...entries].sort((left, right) => left.quota.observedAt.localeCompare(right.quota.observedAt)).at(-1)!;
   });
 }
 

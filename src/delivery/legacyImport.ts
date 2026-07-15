@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { DelegationRecord } from "../bridge/delegationRecord.js";
 import type { GitDelivery } from "../git-delivery/types.js";
-import { DeliveryInvariantError, type DeliveryStore } from "./store.js";
+import { DeliveryInvariantError, DeliveryStoreBusyError, type DeliveryStore } from "./store.js";
 import { GitDeliveryVersionConflictError } from "../git-delivery/store.js";
 import type { DelegationSegment, Delivery, DeliveryCreateInput } from "./types.js";
 
@@ -44,6 +44,8 @@ export interface LegacyImportDependencies {
   realpath?: (value: string) => string;
   isAncestor: (older: string, newer: string) => boolean | Promise<boolean>;
   now?: () => string;
+  /** Test seam for the bounded SQLite contention retry used by the idempotent apply path. */
+  sleep?: (ms: number) => Promise<void>;
 }
 
 export interface LegacyImportGitStore {
@@ -84,6 +86,27 @@ function matchesPlannedDelivery(existing: Delivery, planned: DeliveryCreateInput
   const comparable = ({ id, workspaceId, createdBy, contract, lease, segments, events, gitDeliveryId, legacy }: DeliveryCreateInput & { id: string }) =>
     ({ id, workspaceId, createdBy, contract, lease, segments, events, gitDeliveryId, legacy });
   return stableJson(comparable(existing)) === stableJson(comparable(planned));
+}
+
+// The freshness head must become durable while SQLite's writer lock is held, so two identical
+// applies may briefly contend. Only this deterministic-id reconciliation path may absorb that
+// transient busy result; ordinary DeliveryStore callers still receive it immediately.
+const legacyImportBusyRetryDelaysMs = [0, 10, 50] as const;
+
+async function createLegacyImportWithBoundedRetry(
+  input: DeliveryCreateInput & { id: string },
+  store: DeliveryStore,
+  sleep: (ms: number) => Promise<void>,
+): Promise<Delivery> {
+  for (let retry = 0; ; retry += 1) {
+    try {
+      return await store.createLegacyImport(input);
+    } catch (error) {
+      const delayMs = legacyImportBusyRetryDelaysMs[retry];
+      if (!(error instanceof DeliveryStoreBusyError) || delayMs === undefined) throw error;
+      await sleep(delayMs);
+    }
+  }
 }
 
 export async function previewLegacyImport(input: LegacyImportPreviewInput, deps: LegacyImportDependencies): Promise<LegacyImportPreview> {
@@ -146,7 +169,7 @@ export async function previewLegacyImport(input: LegacyImportPreviewInput, deps:
   const delivery: DeliveryCreateInput & { id: string } = {
     id: deliveryId, workspaceId: input.workspaceId,
     createdBy: record.delegator ? { kind: "agent", name: record.delegator } : actors,
-    contract: { ...(record.taskId ? { taskId: record.taskId } : {}), baseSha: record.baseSha, behaviorTest: record.behaviorTest, owns: [...record.owns], taskRef: record.taskRef, ...(record.stubPath ? { stubPath: record.stubPath } : {}) },
+    contract: { ...(record.taskId ? { taskId: record.taskId } : {}), baseSha: record.baseSha, behaviorTest: record.behaviorTest, owns: [...record.owns], taskRef: record.taskRef, ...(record.stubPath ? { stubPath: record.stubPath } : {}), ...(record.oracleHash ? { oracleHash: record.oracleHash } : {}), ...(record.executorHashes ? { executorHashes: structuredClone(record.executorHashes) } : {}), ...(record.verifySettings ? { verifySettings: structuredClone(record.verifySettings) } : {}) },
     lease: { state: "free", changedAt: importedAt }, segments,
     events: [{ id: `event-${hash({ deliveryId, type: "legacy_import" }).slice(0, 24)}`, at: importedAt, type: "legacy_import", by: actors, detail: { archived: record.archived === true } }],
     ...(git ? { gitDeliveryId: git.id } : {}),
@@ -214,7 +237,11 @@ export async function applyLegacyImport(input: LegacyImportApplyInput, stores: {
   // full intent comparison makes that Delivery the idempotent create result for any identical retry.
   let delivery: Delivery;
   try {
-    delivery = await stores.delivery.createLegacyImport({ ...plan.delivery, operationId: input.operationId });
+    delivery = await createLegacyImportWithBoundedRetry(
+      { ...plan.delivery, operationId: input.operationId },
+      stores.delivery,
+      deps.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms))),
+    );
   } catch (error) {
     if (error instanceof DeliveryInvariantError) {
       return { ok: false, code: "GIT_PROJECTION_DRIFT", message: error.message };

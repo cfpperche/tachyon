@@ -44,6 +44,7 @@ import type {
 import { isAdhocItem } from "./presentation/contextValue.js";
 import type { WorkspacePresentationTarget } from "./shell/WorkspacePresentation.js";
 import type { WorktreeRecord, WorktreeStatus } from "./worktree/WorktreeManager.js";
+import { previewBody } from "./prompts/injectFlow.js";
 import { createGitExec, worktreeShowFile, resolveBase } from "./worktree/WorktreeManager.js";
 import { resolveGitBinary } from "./worktree/gitBinary.js";
 import { emptySides, baseSidePath, diffTitle, type ChangedFile } from "./worktree/review.js";
@@ -354,6 +355,109 @@ function wsOf<T extends { ws?: WorkspacePresentationTarget; workspaceHash?: stri
     : byHash(item.workspaceHash);
   if (!ws) notify(vscode.l10n.t("no Tachyon workspace is active"), "warn");
   return ws;
+}
+
+
+/** spec 381 — shell selection/confirmation; the persistent engine revalidates and delivers. */
+async function injectPromptTemplateFlow(ws: WorkspaceShellHandle, preselectedAgent?: string): Promise<void> {
+  const catalog = jsonObject(await extensionQuery(ws, { action: "prompt.catalog" }), "prompt.catalog");
+  const relDir = typeof catalog.relDir === "string" ? catalog.relDir : ".tachyon/prompts";
+  const skippedCount = typeof catalog.skippedCount === "number" ? catalog.skippedCount : 0;
+  const templates = jsonArray(catalog.templates, "prompt.catalog templates").map((value) => {
+    const row = jsonObject(value, "prompt template");
+    if (typeof row.id !== "string" || typeof row.title !== "string"
+      || typeof row.body !== "string" || typeof row.sha256 !== "string") {
+      throw new Error("prompt catalog returned an invalid template");
+    }
+    return { id: row.id, title: row.title, body: row.body, sha256: row.sha256 };
+  });
+  const targets = jsonArray(catalog.targets, "prompt.catalog targets").map((value) => {
+    const row = jsonObject(value, "prompt target");
+    if (typeof row.name !== "string" || typeof row.description !== "string") {
+      throw new Error("prompt catalog returned an invalid target");
+    }
+    return { name: row.name, description: row.description };
+  });
+  if (templates.length === 0) {
+    const skipHint = skippedCount > 0 ? vscode.l10n.t(" ({0} file(s) skipped)", skippedCount) : "";
+    notify(vscode.l10n.t("No prompt templates in {0}/ — add <id>.md files there.{1}", relDir, skipHint), "warn");
+    return;
+  }
+
+  const tplPick = await vscode.window.showQuickPick(
+    templates.map((template) => ({
+      label: template.title,
+      description: template.id,
+      detail: template.body.split("\n")[0]?.slice(0, 120),
+      template,
+    })),
+    { title: vscode.l10n.t("Inject prompt template"), placeHolder: vscode.l10n.t("Choose a template") },
+  );
+  if (!tplPick) return;
+  const template = tplPick.template;
+
+  let agentName = preselectedAgent;
+  if (!agentName) {
+    if (targets.length === 0) {
+      notify(vscode.l10n.t("No running AI agent available for prompt injection."), "warn");
+      return;
+    }
+    const agentPick = await vscode.window.showQuickPick(
+      targets.map((target) => ({ label: target.name, description: target.description })),
+      { title: vscode.l10n.t("Send to agent"), placeHolder: vscode.l10n.t("Choose a running AI agent") },
+    );
+    if (!agentPick) return;
+    agentName = agentPick.label;
+  }
+
+  const modePick = await vscode.window.showQuickPick(
+    [
+      {
+        label: vscode.l10n.t("Stage in composer"),
+        description: vscode.l10n.t("default"),
+        detail: vscode.l10n.t("Paste without Enter — review before sending"),
+        mode: "stage" as const,
+      },
+      {
+        label: vscode.l10n.t("Submit now"),
+        description: vscode.l10n.t("explicit"),
+        detail: vscode.l10n.t("Paste + Enter — refused when the agent is busy"),
+        mode: "submit" as const,
+      },
+    ],
+    {
+      title: vscode.l10n.t("Delivery for '{0}' → {1}", template.title, agentName),
+      placeHolder: vscode.l10n.t("Stage or submit?"),
+    },
+  );
+  if (!modePick) return;
+  const submit = modePick.mode === "submit";
+
+  const actionLabel = submit ? vscode.l10n.t("Submit") : vscode.l10n.t("Stage");
+  const ok = await showNotification(
+    submit
+      ? vscode.l10n.t("Submit prompt template into '{0}'?", agentName)
+      : vscode.l10n.t("Stage prompt template into '{0}'?", agentName),
+    "info",
+    [actionLabel],
+    { modal: true, detail: previewBody(template.body) },
+  );
+  if (ok !== actionLabel) return;
+
+  try {
+    await extensionInvoke(ws, {
+      action: "prompt.inject",
+      agent: agentName,
+      templateId: template.id,
+      expectedSha256: template.sha256,
+      submit,
+    });
+    notify(submit
+      ? vscode.l10n.t("Prompt template '{0}' submitted to '{1}'.", template.title, agentName)
+      : vscode.l10n.t("Prompt template '{0}' staged into '{1}' (not submitted).", template.title, agentName));
+  } catch (error) {
+    notify(error instanceof Error ? error.message : String(error), "warn");
+  }
 }
 
 /** spec 213 / 230 — quick-pick the changed files of a worktree (base ↔ current), each opening VS Code's
@@ -766,6 +870,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const runtimeOps = new RuntimeOpsViewProvider(
     context.extensionUri,
     () => runtimeOpsFleetView(workspaces().map((ws) => ws.runtimeOps)),
+    75,
+    async (provider, enabled) => {
+      await Promise.all(workspaces().map((ws) => extensionInvoke(ws, {
+        action: "runtime-ops.provider.configure",
+        provider,
+        enabled,
+      })));
+      runtimeOps.refresh();
+    },
   );
   // spec 238 — the editor-area Runtime Activity View (normalized cockpit; reads the durable per-agent log).
   const activityPanels = new ActivityPanelManager(
@@ -2127,6 +2240,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       } catch (err) {
         notify(err instanceof Error ? err.message : String(err), "warn");
       }
+    }),
+
+    vscode.commands.registerCommand("tachyon.injectPromptTemplate", async () => {
+      // spec 381 — palette: pick template → agent → stage|submit → deliver
+      const ws = await pickWorkspace();
+      if (!ws) return;
+      await injectPromptTemplateFlow(ws);
+    }),
+    vscode.commands.registerCommand("tachyon.injectPromptTemplateItem", async (item: AgentItem) => {
+      // spec 381 — sidebar: agent preselected
+      const ws = wsOf(item);
+      if (!ws) return;
+      await injectPromptTemplateFlow(ws, item.agentName);
     }),
     vscode.commands.registerCommand("tachyon.promoteAgentItem", async (item: AgentItem) => {
       // Spec 211: promote an ad-hoc (MCP-spawned) agent to a declared one in

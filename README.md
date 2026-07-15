@@ -738,6 +738,20 @@ agents:
 These are **task contracts, not personas** — they scope the job (what to do, boundaries, how to
 verify, what to report), they don't role-play a character.
 
+**Prompt templates (operator macros).** Mid-session reusable prompts live as markdown under
+`.tachyon/prompts/<id>.md` (optional YAML frontmatter `title:`). They are **not** shell
+`commands:` and **not** spawn roles — use **Tachyon: Inject Prompt Template…** (or the agent
+sidebar overflow) to stage (default) or submit the body into a running AI agent's composer.
+
+```markdown
+<!-- .tachyon/prompts/status-next.md -->
+---
+title: Status + next step
+---
+Summarize current state in 5 bullets.
+Propose the single next step and why.
+```
+
 **Bridge-coordination guidance.** An agent spawned by another agent via the Bridge gets a short
 note appended to its instructions: coordinate through the Bridge tools, and spawn sub-work through
 the Bridge so it stays visible in Tachyon (a CLI's built-in sub-agents run work Tachyon can't see).
@@ -879,12 +893,50 @@ backstop; CPU sampling for attention stays polled — tmux has no events for tha
   `tachyon.yml` takes precedence.
 - In `tachyon.yml` → `settings:`: `maxAgents`, `bridgePort`, `auth`, `tmux`, `worktree`,
   `bridgeGuidance` (default true — append Bridge-coordination guidance to Bridge-spawned children),
+  `projectGuidance` (explicit project-owned guidance files; no default),
   `anchor.auto` (default false — opt-in role re-anchoring after a detected compaction; see *Instructions — agents as roles*),
   `clipboard` (`auto` default — clean UTF-8 copy on plain drag-select; `off` restores OSC 52).
 - `settings.tmux` — tmux options for Tachyon's dedicated socket (applied as `set -g <key> <value>`).
   Tachyon's defaults (`mouse on`, `focus-events on`, `history-limit 10000`) apply first and your
   map overlays them; `remain-on-exit` is reserved. Your `~/.tmux.conf` is never loaded (Tachyon
   runs config-isolated), so this is the only door to tune tmux.
+
+### Project-owned agent guidance
+
+Projects can opt in to repository conventions that Tachyon should deliver to agents without making
+those conventions part of Tachyon's product-global primer:
+
+```yaml
+settings:
+  projectGuidance:
+    files:
+      - docs/agent-guidance.md
+      - docs/testing-conventions.md
+```
+
+`files` is an ordered, non-empty list. Tachyon reads each file from the **source workspace** that
+owns `tachyon.yml` (never from an agent's delegated worktree or process cwd), preserves its content
+verbatim, labels its source, and places it in a separate `PROJECT GUIDANCE (PROJECT-OWNED)` block.
+There is no process-global content cache, so the next supported startup push (spawn or restart) or
+re-anchor sees the current files. Omit `projectGuidance` to deliver no project-owned block. Startup
+delivery uses Tachyon's existing prompt-capable adapters (including Hermes through
+`HERMES_TUI_QUERY`); commands that explicitly manage/resume their own transcript and runtimes with
+no startup-prompt adapter are launched without primer or project guidance so Tachyon does not alter
+their command semantics. Manual re-anchor remains an explicit live-pane push for running agents.
+
+The active system/user instructions and task contract remain authoritative for their scopes;
+Tachyon's primer owns orchestration protocol; project guidance owns repository conventions and
+cannot override that protocol. Tachyon does **not** auto-discover `AGENTS.md`, `CLAUDE.md`,
+`GEMINI.md`, or another runtime-specific context filename. Only the explicitly listed files enter
+this Tachyon-owned delivery channel.
+
+The list accepts 1–8 unique POSIX-style relative paths. Each path is limited to 256 UTF-8 bytes;
+absolute, drive/UNC, backslash, control-character, empty, `.`, `..`, and trailing-slash forms are
+rejected. Every target must remain canonically inside the source workspace and be a readable,
+regular, non-symlink UTF-8 file without NUL bytes. The combined file content is limited to 64 KiB.
+Validation is all-or-nothing and fail-closed: one missing, unreadable, escaping, malformed, or
+oversized source prevents session creation/replacement or re-anchor before any partial guidance is
+typed.
 
 ## Worktree isolation — parallel agents, one branch each
 
@@ -918,8 +970,16 @@ agents:
 - **Sub-agents share the parent's worktree** (one unit of work = one branch = one PR);
   `worktree: true` on a child is a no-op + warning. Spawn top-level to isolate.
 - **Setup** runs only on create (not restart/reuse), sequentially, stop-on-first-failure,
-  with `TACHYON_WORKSPACE_ROOT` / `TACHYON_WORKTREE_ROOT` set; failure is surfaced but the
-  agent still starts.
+  with `TACHYON_WORKSPACE_ROOT` / `TACHYON_WORKTREE_ROOT` set. A failed setup prevents the
+  agent from starting and preserves the checkout for recovery; Tachyon never automatically
+  removes or rewinds a checkout after a fallible setup/launch step.
+- **Interrupted-launch recovery is explicit.** Tachyon Git-locks a launch checkout until its
+  session ownership (and, for a gate, delegation record) is durable. A surviving lock means an
+  attempt was interrupted or finalization failed, so automatic retry refuses to reuse it. Inspect
+  the path and its `git status`/`git log`, then, only when you have decided the preserved state is
+  safe to reuse or remove, run `git -C <workspace> worktree unlock <path>`. Retry the launch or use
+  **Remove Worktree** afterwards. A normally completed/cleanly stopped checkout is already unlocked
+  and may be reused even if its ephemeral session row is gone.
 - **Cleanup is human-decided.** Dismissing a worktree agent (or the **Remove Worktree**
   action) shows the path, uncommitted changes, commits-ahead/unpushed, and branch ownership.
   `git worktree remove --force` runs on confirm. The branch is auto-deleted **only when it's
@@ -999,13 +1059,55 @@ English on purpose — their audience is the models reading the MCP schema.
 ```bash
 npm ci
 npm run build          # esbuild bundle -> dist/
-npm test               # vitest: unit + real-tmux integration (auto-skips without tmux)
+npm test               # aggregate Vitest gate: unit + integration + Product Invariants
+npm run test:invariants   # focused stable promises under test/product-invariants/
 npm run test:integration   # @vscode/test-cli host suites (single-root + multi-root; downloads VSCode once)
 npm run typecheck
 ```
 
-CI runs the portable core (typecheck + build + unit, including a real-tmux subset). The xvfb
-editor-host integration suites are a local gate — run them on tmux ≥ 3.6.
+CI runs the portable core (typecheck + build + unit, including a real-tmux subset) and exposes Product
+Invariants as a distinct gate. The xvfb editor-host integration suites are a local gate — run them on
+tmux ≥ 3.6.
+
+### Product invariants and explicit verification migration
+
+Tachyon's own stable product promises are registered in
+[`docs/architecture/product-invariant-testing.md`](docs/architecture/product-invariant-testing.md).
+“Product Invariant” is the semantic contract; browser, full-stack, `e2e`, component and installed-system
+are possible execution topologies. The focused command above and the normal full suite execute the same
+files rather than maintaining two sources of truth.
+
+Gated delegation verification no longer assumes that a consumer project uses npm, Vitest or `test/unit`.
+Projects that want full, changed-file and named-test verification declare those mechanics explicitly. For
+example, this repository opts into its own Node/Vitest conventions with:
+
+```yaml
+settings:
+  verify:
+    full: npm run verify:full:quiet
+    typecheck: npm run typecheck
+    prepare: npm ci --ignore-scripts --prefer-offline --no-audit --no-fund
+    affected: npx vitest related --run
+    behavior:
+      adapter: vitest-name
+      command: npm test --
+      stubPath: test/unit/{agent}Behavior.gen.test.ts
+      executorPaths: [package.json, package-lock.json, vitest.config.ts, tsconfig.json]
+```
+
+These values are examples owned by this repository, not Tachyon defaults. `affected` is the argv prefix
+to which Tachyon appends existing changed paths as option-safe relative arguments. A plain `behavior_test` name requires an explicit `behavior`
+adapter; configure the `vitest-name` adapter when that is the project's chosen contract, or use
+`cmd:<command>` for an explicit runner-neutral verifier. For a named adapter, `stubPath` is the compatibility
+key for a **pre-existing, tracked, project-owned test oracle**: Tachyon hashes its committed bytes at spawn
+and requires the same bytes at BASE and HEAD. It never turns behavior prose into an assertion, generates a
+placeholder, or authorizes the implementer to edit the oracle. Top-level `settings.verify.prepare`
+provisions a fresh verifier environment in each external isolated clone for named and `cmd:` gates;
+`executorPaths` names every tracked manifest, lockfile and
+runner/config input whose committed hashes must also stay identical. This avoids trusting the agent
+worktree's package scripts, ignored dependencies, hooks or remotes as verification evidence. Requesting
+full verification without `settings.verify.full`, or named verification without an adapter, is reported as
+missing project configuration rather than silently replaced with an npm/Vitest command.
 
 ## Support
 

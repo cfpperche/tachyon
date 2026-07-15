@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { LoggedEvent } from "../../src/activity/logStore.js";
 import type { SessionRecord } from "../../src/resume/SessionLedger.js";
+import type { RuntimeOpsProviderObservationSnapshotInput } from "../../src/runtimeOps/providerProjection.js";
 import { RuntimeOpsSnapshotService } from "../../src/runtimeOps/snapshotService.js";
 
 describe("RuntimeOpsSnapshotService", () => {
@@ -226,6 +227,65 @@ describe("RuntimeOpsSnapshotService", () => {
     await service.snapshot();
 
     expect(logsCreated).toBe(2);
+  });
+
+  it("projects only the injected cached provider state and does not couple it to agent count", async () => {
+    const providerState: RuntimeOpsProviderObservationSnapshotInput = {
+      preferences: {
+        codex: {
+          scope: { kind: "provider-account", provider: "codex", key: "ps_1111111111111111" },
+          sources: ["cli"],
+        },
+      },
+      observations: {
+        codex: {
+          schemaVersion: 1,
+          collector: { id: "tachyon-codex-test", version: "1.0.0" },
+          generatedAt: "2026-07-09T21:00:00.000Z",
+          facts: [{
+            kind: "provider-quota",
+            scope: { kind: "provider-account", provider: "codex", key: "ps_1111111111111111" },
+            source: "cli",
+            confidence: "exact",
+            observedAt: "2026-07-09T20:59:00.000Z",
+            freshness: { state: "fresh" },
+            windows: [{ name: "session", usedPercent: 12 }],
+          }],
+          diagnostics: [],
+        },
+      },
+    };
+    const cachedProviderState = vi.fn(() => providerState);
+    const service = new RuntimeOpsSnapshotService(() => [workspace("/workspace", "ws", "app", [
+      ["one", record("codex")],
+      ["two", record("codex")],
+    ])], {
+      detect: async () => [],
+      activityLog: () => staticActivityLog([]),
+      providerObservations: cachedProviderState,
+    });
+
+    const first = await service.snapshot();
+    const second = await service.snapshot();
+    expect(first.providerCapacity[0].quota).toMatchObject({ state: "available", windows: [{ usedPercent: 12 }] });
+    expect(second.summary.managedAgents).toBe(2);
+    expect(cachedProviderState).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps native inventory available when the cached provider accessor fails", async () => {
+    const service = new RuntimeOpsSnapshotService(() => [], {
+      detect: async () => ["codex"],
+      now: () => Date.parse("2026-07-09T21:00:00.000Z"),
+      providerObservations: () => { throw new Error("RAW_PROVIDER_FAILURE_MUST_NOT_CROSS"); },
+    });
+
+    const snapshot = await service.snapshot();
+    expect(snapshot.runtimes.map((runtime) => runtime.runtime)).toEqual(["codex"]);
+    expect(snapshot.providerCapacity[0]).toMatchObject({
+      configuration: { state: "disabled" },
+      quota: { state: "unavailable", reason: "source-disabled" },
+    });
+    expect(JSON.stringify(snapshot)).not.toContain("RAW_PROVIDER_FAILURE_MUST_NOT_CROSS");
   });
 });
 

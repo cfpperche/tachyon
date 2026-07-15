@@ -135,7 +135,13 @@ export class ActivityLogManager {
               // and returns undefined (a gap) in the genuinely-ambiguous id-less case — never another agent's.
               const loc = await ws.manager.transcriptPathOf(name, { live: true });
               entry.loc = loc
-                ? { path: loc.path, sessionId: sessionIdFromTranscriptPath(loc.path, loc.runtime), runtime: loc.runtime }
+                ? {
+                    path: loc.path,
+                    // Hermes (and any host that already resolved the session id) must not re-derive
+                    // from basename — state.db would collapse every session to "state".
+                    sessionId: loc.sessionId ?? sessionIdFromTranscriptPath(loc.path, loc.runtime),
+                    runtime: loc.runtime,
+                  }
                 : undefined;
             } catch { entry.loc = undefined; } // gap, never guess
 
@@ -246,8 +252,13 @@ async function loggedLifecycleAction(
  * Session uuid for ActivityLogWriter. Claude/Codex/OpenCode use `<uuid>.jsonl` basenames;
  * Grok uses `…/<uuid>/chat_history.jsonl` — basename alone would be the constant `chat_history`
  * and collapse every session into one writer key (t-9874be).
+ * Hermes uses `$HERMES_HOME/state.db` — basename is always `state`; prefer `loc.sessionId` from
+ * transcriptPathOf. Fallback keeps a non-empty string for logging only.
  */
 export function sessionIdFromTranscriptPath(transcriptPath: string, runtime?: string): string {
+  if (runtime === "hermes" || path.basename(transcriptPath) === "state.db") {
+    return path.basename(path.dirname(transcriptPath)) || "hermes";
+  }
   const base = path.basename(transcriptPath, ".jsonl");
   if (base === "chat_history" || runtime === "grok") {
     return path.basename(path.dirname(transcriptPath));

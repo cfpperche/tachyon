@@ -183,6 +183,10 @@ agents:
 
 settings:
   auth: true # require a Bearer token on the MCP Bridge (recommended)
+  projectGuidance:
+    files:
+      - docs/project-guidance.md
+      - docs/architecture/product-invariant-testing.md
   # SDD 368 dogfood — exact-root handoff safety only; descendants remain unproven until T14.6C.
   delivery:
     mode: canonical
@@ -192,11 +196,20 @@ settings:
   # spec 365 — coordinators may prune orphan GitDeliveries after waves (Bridge identity = agent name).
   gitDelivery:
     prunePrincipals: [ grok, claude, codex ]
-  # spec 362 — canonical verification commands for verify_task (read from the SOURCE tree, tamper-proof):
-  # full builds dist/ first (the plugin-ui e2e needs bundles; a fresh worktree has none — T4 dogfood finding).
+  # specs 362/385 — this repository's explicit verify_task commands/adapter (no product-global runner defaults):
+  # full builds dist/ first (the plugin-ui full-stack topology needs bundles; a fresh worktree has none).
   verify:
     full: npm run verify:full:quiet
     typecheck: npm run typecheck
+    prepare: npm ci --ignore-scripts --prefer-offline --no-audit --no-fund
+    affected: npx vitest related --run
+    behavior:
+      adapter: vitest-name
+      command: npm test --
+      # Compatibility key: this names a pre-existing tracked project oracle; Tachyon never generates it.
+      stubPath: test/unit/{agent}Behavior.gen.test.ts
+      # These tracked files define dependency and runner mechanics; their spawn hashes must match BASE/HEAD.
+      executorPaths: [ package.json, package-lock.json, vitest.config.ts, tsconfig.json ]
   # worktree:
   #   branch: "tachyon/{agent}"   # template for per-agent worktree branch names
   # maxAgents: 8                  # fork-bomb guardrail (default 8)

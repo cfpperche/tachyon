@@ -2,7 +2,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import * as vscode from "vscode";
 import { RuntimeOpsViewProvider } from "../../src/webview/RuntimeOpsView.js";
-import { RUNTIME_OPS_SNAPSHOT } from "../../src/webview/runtime-ops/messages.js";
+import {
+  RUNTIME_OPS_SNAPSHOT,
+  runtimeOpsSetProviderObservationAction,
+} from "../../src/webview/runtime-ops/messages.js";
 import type { RuntimeOpsSnapshotV1 } from "../../src/runtimeOps/types.js";
 import { RUNTIME_OPS_CONTAINER_COMMAND, RUNTIME_OPS_VIEW_FOCUS_COMMAND, openRuntimeOps } from "../../src/runtimeOps/openRuntimeOps.js";
 import { registerWorkspaceMembershipRefresh } from "../../src/extension.js";
@@ -30,7 +33,7 @@ describe("RuntimeOpsViewProvider (spec 367 Phase 1)", () => {
     expect(view.webview.posted).toHaveLength(1);
     expect(view.webview.posted[0]).toMatchObject({
       type: RUNTIME_OPS_SNAPSHOT,
-      snapshot: { schemaVersion: 1, summary: { runtimes: 0, managedAgents: 0 }, runtimes: [] },
+      snapshot: { schemaVersion: 2, summary: { runtimes: 0, managedAgents: 0 }, runtimes: [] },
     });
   });
 
@@ -239,6 +242,54 @@ describe("RuntimeOpsViewProvider (spec 367 Phase 1)", () => {
       snapshot: expect.objectContaining({ error: { code: "snapshot-unavailable" } }),
     }]);
   });
+
+  it("accepts only closed provider enable/disable actions and republishes committed state", async () => {
+    const buildSnapshot = vi.fn(() => snapshot(0));
+    const configureProvider = vi.fn(async () => undefined);
+    const provider = new RuntimeOpsViewProvider(
+      vscode.Uri.file("/extension"),
+      buildSnapshot,
+      0,
+      configureProvider,
+    );
+    const view = fakeView(true);
+    provider.resolveWebviewView(view as unknown as vscode.WebviewView);
+
+    view.webview.receive(runtimeOpsSetProviderObservationAction("codex", true));
+    await tick();
+    view.webview.receive(runtimeOpsSetProviderObservationAction("codex", false));
+    await tick();
+
+    expect(configureProvider.mock.calls).toEqual([["codex", true], ["codex", false]]);
+    expect(buildSnapshot).toHaveBeenCalledTimes(2);
+    expect(view.webview.posted).toHaveLength(2);
+
+    for (const invalid of [
+      { type: "runtimeOpsSetProviderObservation", provider: "grok", enabled: true },
+      { type: "runtimeOpsSetProviderObservation", provider: "codex", enabled: "yes" },
+      { type: "runtimeOpsSetProviderObservation", provider: "codex", enabled: true, source: "oauth" },
+      { type: "runtimeOpsSetProviderObservation", provider: "codex" },
+    ]) view.webview.receive(invalid);
+    await tick();
+    expect(configureProvider).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps raw provider configuration failures outside webview messages", async () => {
+    const raw = "token=RAW_PROVIDER_TOKEN path=/private/provider.json";
+    const provider = new RuntimeOpsViewProvider(
+      vscode.Uri.file("/extension"),
+      () => snapshot(0),
+      0,
+      async () => { throw new Error(raw); },
+    );
+    const view = fakeView(true);
+    provider.resolveWebviewView(view as unknown as vscode.WebviewView);
+    view.webview.receive(runtimeOpsSetProviderObservationAction("claude", true));
+    await tick();
+
+    expect(view.webview.posted).toHaveLength(1);
+    expect(JSON.stringify(view.webview.posted)).not.toContain(raw);
+  });
 });
 
 describe("Runtime Ops contribution and focus", () => {
@@ -259,6 +310,18 @@ describe("Runtime Ops contribution and focus", () => {
       when: "view == tachyonRuntimeOpsView",
     }));
     expect(readFileSync("src/extension.ts", "utf8")).not.toContain("_showRuntimeUsageQuickPick");
+  });
+
+  it("keeps the Runtime Ops UI Tachyon-owned with no CodexBar UI, Swift, or asset imports", () => {
+    const files = [
+      "src/webview/RuntimeOpsView.ts",
+      "src/webview/runtime-ops/App.tsx",
+      "src/webview/runtime-ops/main.tsx",
+      "src/webview/runtime-ops/messages.ts",
+      "src/webview/runtime-ops/runtime-ops.css",
+    ];
+    const source = files.map((file) => readFileSync(file, "utf8")).join("\n");
+    expect(source).not.toMatch(/codexbar|\.swift\b|Sources\/CodexBar|CodexBar\.app/iu);
   });
 
   it("refreshes visible Runtime Ops after live workspace membership changes", async () => {

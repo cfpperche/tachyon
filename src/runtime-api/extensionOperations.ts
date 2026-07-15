@@ -22,7 +22,7 @@ const schedule = z.union([
 
 export const EXTENSION_QUERY_ACTIONS = [
   "agents.list", "attention.list", "pins.list", "commands.list", "runbooks.list", "schedules.list", "proposals.list",
-  "doctor.report", "bridge.token", "agent.inspect", "agent.fork-preview", "worktree.review",
+  "doctor.report", "bridge.token", "agent.inspect", "agent.fork-preview", "prompt.catalog", "worktree.review",
   "worktrees.list", "pipeline.inspect", "agent.wait",
 ] as const;
 
@@ -34,7 +34,7 @@ export const EXTENSION_COMMAND_ACTIONS = [
   "agent.inject-continuity", "agent.resume-all", "workspace.stop-all", "pipeline.start", "pipeline.approve",
   "pipeline.reject", "pipeline.cancel", "pipeline.rerun", "pipeline.dismiss", "pipeline.apply-input", "pipeline.delete",
   "bridge.restart", "bridge.stop", "config.health",
-  "handoff.note",
+  "handoff.note", "prompt.inject", "runtime-ops.provider.configure",
 ] as const;
 
 const extensionQueryActionSchema = z.enum(EXTENSION_QUERY_ACTIONS);
@@ -52,6 +52,7 @@ export const extensionQuerySchema = z.union([
   z.object({ action: z.literal("bridge.token") }).strict(),
   z.object({ action: z.literal("agent.inspect"), agent: name }).strict(),
   z.object({ action: z.literal("agent.fork-preview"), agent: name }).strict(),
+  z.object({ action: z.literal("prompt.catalog") }).strict(),
   z.object({ action: z.literal("worktrees.list") }).strict(),
   z.object({ action: z.literal("worktree.review"), agent: name }).strict(),
   z.object({ action: z.literal("worktree.review"), runId: text(128, 1) }).strict(),
@@ -104,6 +105,18 @@ export const extensionCommandSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("pipeline.delete"), name }).strict(),
   z.object({ action: z.literal("bridge.restart") }).strict(),
   z.object({ action: z.literal("bridge.stop") }).strict(),
+  z.object({
+    action: z.literal("runtime-ops.provider.configure"),
+    provider: z.enum(["codex", "claude"]),
+    enabled: z.boolean(),
+  }).strict(),
+  z.object({
+    action: z.literal("prompt.inject"),
+    agent: name,
+    templateId: name,
+    expectedSha256: z.string().regex(/^[0-9a-f]{64}$/),
+    submit: z.boolean(),
+  }).strict(),
   z.object({
     action: z.literal("handoff.note"),
     summary: text(4_000, 1),

@@ -42,6 +42,8 @@ describe("runtimeOf / binaryOf", () => {
   it("sees through launchers and env assignments", () => {
     expect(binaryOf("npx claude")).toBe("claude");
     expect(binaryOf("env FOO=1 codex")).toBe("codex");
+    expect(binaryOf("env -u TOKEN codex")).toBe("codex");
+    expect(binaryOf("env --chdir /repo hermes")).toBe("hermes");
     expect(binaryOf("/usr/local/bin/claude --permission-mode plan")).toBe("claude");
   });
 
@@ -129,6 +131,7 @@ describe("ResumeAdapter — mint runtimes (claude, gemini, grok)", () => {
     expect(managesOwnSession("npx codex -c model=gpt-5.6-terra")).toBe(false);
     expect(managesOwnSession("codex resume thread-1")).toBe(true);
     expect(managesOwnSession("codex exec resume thread-1")).toBe(true);
+    expect(managesOwnSession("env -u TOKEN codex resume thread-1")).toBe(true);
   });
 
   it("claude transcript path uses the cwd-encoding under the config home (spec 226: configHome arg)", () => {
@@ -193,7 +196,7 @@ describe("ResumeAdapter — capture runtimes", () => {
     expect(a.harness?.configHomeEnv).toBe("HERMES_HOME");
     expect(a.harness?.mcp).toMatchObject({ mode: "home-config", fileName: "config.yaml" });
     expect(a.transcriptPath!("/ws/.tachyon/bridge-mcp/h.hermes", "/ws", "sid")).toBe(
-      "/ws/.tachyon/bridge-mcp/h.hermes/state.db#sid",
+      "/ws/.tachyon/bridge-mcp/h.hermes/state.db",
     );
   });
 

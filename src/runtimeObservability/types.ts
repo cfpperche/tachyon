@@ -80,6 +80,8 @@ export type ProviderUnavailableReasonV1 =
   | "source-disabled"
   | "unauthenticated"
   | "timeout"
+  | "cancelled"
+  | "not-observed"
   | "provider-error"
   | "invalid-payload"
   | "stale-expired";
@@ -101,6 +103,7 @@ export type RuntimeObservationFactV1 =
 export type CollectorDiagnosticCodeV1 =
   | "SOURCE_UNAVAILABLE"
   | "SOURCE_TIMEOUT"
+  | "SOURCE_CANCELLED"
   | "INVALID_PAYLOAD"
   | "STALE_LAST_GOOD";
 

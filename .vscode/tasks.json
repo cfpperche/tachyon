@@ -8,6 +8,19 @@
       "options": { "cwd": "${workspaceFolder}" },
       "problemMatcher": [],
       "presentation": { "reveal": "silent" }
+    },
+    {
+      "label": "tachyon: build-dev-host",
+      "type": "shell",
+      "command": "set -euo pipefail; PTR=\"${workspaceFolder}/.tachyon/dev-host\"; test -e \"$PTR/extension\" || { echo \"Tachyon Dev Host is not armed. Run: npm run dogfood:dev-host -- point --worktree <path> --workspace <fixture>\" >&2; exit 1; }; EXT=\"$(cd \"$PTR/extension\" && pwd -P)\"; test -d \"$EXT/node_modules\" || ln -sfn \"${workspaceFolder}/node_modules\" \"$EXT/node_modules\"; npm run build --prefix \"$EXT\"",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "silent",
+        "panel": "shared"
+      }
     }
   ]
 }

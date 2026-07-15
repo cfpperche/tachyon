@@ -17,6 +17,13 @@ import {
   type DeliveryStoreCapabilityValidator,
   type StructuredDeliveryStoreError,
 } from "./types.js";
+import {
+  sealAuthorityRecord,
+  verifyAuthorityRecord,
+  workspaceAuthorityDomain,
+  type AuthorityHead,
+  type AuthorityHeadPort,
+} from "./authorityIntegrity.js";
 
 export class DeliveryNotFoundError extends Error {
   constructor(id: string) {
@@ -69,6 +76,10 @@ export class DeliveryProjectionClaimError extends Error implements StructuredDel
   }
 }
 
+export type DeliveryAuthorityHead = AuthorityHead;
+/** Host-custodied freshness anchor. It is deliberately outside the workspace database. */
+export type DeliveryAuthorityHeadPort = AuthorityHeadPort;
+
 export interface DeliveryStoreOptions {
   now?: () => string;
   id?: () => string;
@@ -78,6 +89,10 @@ export interface DeliveryStoreOptions {
   projectionOwnerIdentity?: () => DeliveryProjectionOwnerIdentity;
   /** Test seam: classify an observed claim owner (alive / dead / ambiguous). */
   projectionOwnerStatus?: (owner: DeliveryProjectionOwnerIdentity) => "alive" | "dead" | "ambiguous";
+  /** Host SecretStorage key. When configured, every authority read must verify and every write is resealed. */
+  authorityIntegrityKey?: () => Buffer | undefined;
+  /** Host-custodied anti-rollback head. Requires `authorityIntegrityKey`. */
+  authorityHead?: DeliveryAuthorityHeadPort;
 }
 
 type SqlRow = Record<string, unknown>;
@@ -123,8 +138,9 @@ const STORE_SCHEMA = `
 `;
 
 /**
- * SQLite is the sole physical exclusion and crash-recovery mechanism for this store.
- * Long-running work belongs before/after these methods, never inside their short write transaction.
+ * SQLite is the physical exclusion and crash-recovery mechanism for workspace rows.
+ * Caller-controlled work stays outside its short transactions; the host head prepare is the
+ * deliberate exception because freshness must become durable before the row can commit.
  */
 export class DeliveryStore {
   readonly databasePath: string;
@@ -145,14 +161,14 @@ export class DeliveryStore {
   }
 
   async listWithCorrupt(): Promise<{ records: Delivery[]; corrupt: DeliveryCorruptRecord[] }> {
-    return this.withDatabase((db) => {
+    return this.withDatabaseAsync(async (db) => {
       const records: Delivery[] = [];
       const corrupt: DeliveryCorruptRecord[] = [];
       const rows = db.prepare("SELECT id, record_json FROM deliveries ORDER BY id").all() as SqlRow[];
       for (const row of rows) {
         const id = String(row.id);
         try {
-          records.push(parseRecord(String(row.record_json)));
+          records.push(await this.parseStoredRecord(String(row.record_json), id));
         } catch (error) {
           corrupt.push({ id, path: this.databasePath, error: error instanceof Error ? error.message : String(error) });
         }
@@ -163,9 +179,11 @@ export class DeliveryStore {
 
   async get(id: string): Promise<Delivery | undefined> {
     assertDeliveryId(id);
-    return this.withDatabase((db) => {
+    return this.withDatabaseAsync(async (db) => {
       const row = db.prepare("SELECT record_json FROM deliveries WHERE id = ?").get(id) as SqlRow | undefined;
-      return row ? structuredClone(parseRecord(String(row.record_json))) : undefined;
+      if (row) return structuredClone(await this.parseStoredRecord(String(row.record_json), id));
+      await this.assertAuthorityHeadAbsent(id);
+      return undefined;
     });
   }
 
@@ -174,16 +192,19 @@ export class DeliveryStore {
   async getOperationResult(operationId: string, kind: "create" | "update", deliveryId: string): Promise<Delivery | undefined> {
     assertOperationId(operationId);
     assertDeliveryId(deliveryId);
-    return this.withDatabase((db) => {
+    return this.withDatabaseAsync(async (db) => {
       const row = db.prepare(`
-        SELECT operation_kind, delivery_id, result_json
-        FROM delivery_operation_receipts WHERE operation_id = ?
+        SELECT receipt.operation_kind, receipt.delivery_id, receipt.result_json,
+               current.record_json AS current_json
+        FROM delivery_operation_receipts AS receipt
+        LEFT JOIN deliveries AS current ON current.id = receipt.delivery_id
+        WHERE receipt.operation_id = ?
       `).get(operationId) as SqlRow | undefined;
       if (!row) return undefined;
       if (row.operation_kind !== kind || row.delivery_id !== deliveryId) {
         throw new DeliveryInvariantError(`operation id '${operationId}' was already used for another mutation`);
       }
-      return structuredClone(parseRecord(String(row.result_json)));
+      return structuredClone(await this.parseAuthenticatedReceipt(row, operationId, deliveryId));
     });
   }
 
@@ -192,7 +213,7 @@ export class DeliveryStore {
     assertDeliveryId(id);
     assertOperationId(input.operationId);
     const now = this.now();
-    const record: Delivery = {
+    const unsigned: Delivery = {
       schemaVersion: DELIVERY_SCHEMA_VERSION,
       id,
       version: 1,
@@ -207,13 +228,17 @@ export class DeliveryStore {
       createdAt: now,
       updatedAt: now,
     };
-    validateRecord(record);
+    validateRecord(unsigned);
+    const record = this.sealStoredRecord(unsigned);
 
-    return this.writeTransaction((db) => {
+    return this.writeAuthorityTransaction(async (db) => {
       // When id was generated, the receipt is how a caller learns that id after response loss.
       const fingerprint = fingerprintIntent({ kind: "create", input: { ...input, operationId: undefined } });
-      const replay = input.operationId && this.readReceipt(db, input.operationId, "create", fingerprint, input.id);
+      const replay = input.operationId && await this.readReceipt(db, input.operationId, "create", fingerprint, input.id);
       if (replay) return replay;
+      const existing = db.prepare("SELECT id FROM deliveries WHERE id = ?").get(id) as SqlRow | undefined;
+      if (existing) throw new DeliveryInvariantError(`Delivery '${id}' already exists`);
+      await this.prepareAuthorityHead(record);
       try {
         db.prepare("INSERT INTO deliveries(id, record_json) VALUES (?, ?)").run(id, JSON.stringify(record));
       } catch (error) {
@@ -230,7 +255,7 @@ export class DeliveryStore {
     assertDeliveryId(input.id);
     assertOperationId(input.operationId);
     const now = this.now();
-    const record: Delivery = {
+    const unsigned: Delivery = {
       schemaVersion: DELIVERY_SCHEMA_VERSION,
       id: input.id,
       version: 1,
@@ -245,16 +270,18 @@ export class DeliveryStore {
       createdAt: now,
       updatedAt: now,
     };
-    validateRecord(record);
-    return this.writeTransaction((db) => {
+    validateRecord(unsigned);
+    const record = this.sealStoredRecord(unsigned);
+    return this.writeAuthorityTransaction(async (db) => {
       const row = db.prepare("SELECT record_json FROM deliveries WHERE id = ?").get(input.id) as SqlRow | undefined;
       if (row) {
-        const existing = parseRecord(String(row.record_json));
+        const existing = await this.parseStoredRecord(String(row.record_json), input.id);
         if (!sameLegacyImportIntent(existing, input)) {
           throw new DeliveryInvariantError(`Delivery '${input.id}' conflicts with the canonical legacy intent`);
         }
         return structuredClone(existing);
       }
+      await this.prepareAuthorityHead(record);
       db.prepare("INSERT INTO deliveries(id, record_json) VALUES (?, ?)").run(input.id, JSON.stringify(record));
       return structuredClone(record);
     });
@@ -377,7 +404,9 @@ export class DeliveryStore {
     const observed = await this.get(id);
     if (!observed) throw new DeliveryNotFoundError(id);
     if (observed.version !== expectedVersion) {
-      const replay = options.operationId && this.withDatabase((db) => this.readReceipt(db, options.operationId!, "update", fingerprint, id));
+      const replay = options.operationId && await this.withDatabaseAsync((db) => this.readReceipt(
+        db, options.operationId!, "update", fingerprint, id, true,
+      ));
       if (replay) return replay;
       throw new DeliveryVersionConflictError(id, expectedVersion, observed.version);
     }
@@ -385,8 +414,8 @@ export class DeliveryStore {
     assertAllowedMutation(observed, candidate);
     const updatedAt = this.now();
 
-    return this.writeTransaction((db) => {
-      const replay = options.operationId && this.readReceipt(db, options.operationId, "update", fingerprint, id);
+    return this.writeAuthorityTransaction(async (db) => {
+      const replay = options.operationId && await this.readReceipt(db, options.operationId, "update", fingerprint, id, true);
       if (replay) return replay;
       const claimRow = db.prepare("SELECT nonce FROM delivery_projection_claims WHERE delivery_id = ?").get(id) as SqlRow | undefined;
       if (claim) {
@@ -401,14 +430,16 @@ export class DeliveryStore {
       }
       const row = db.prepare("SELECT record_json FROM deliveries WHERE id = ?").get(id) as SqlRow | undefined;
       if (!row) throw new DeliveryNotFoundError(id);
-      const current = parseRecord(String(row.record_json));
+      const current = await this.parseStoredRecord(String(row.record_json), id);
       if (current.version !== expectedVersion) throw new DeliveryVersionConflictError(id, expectedVersion, current.version);
       // Revalidate against the state protected by BEGIN IMMEDIATE, not only the earlier snapshot.
       assertAllowedMutation(current, candidate);
-      const committed = structuredClone(candidate);
-      committed.version = current.version + 1;
-      committed.updatedAt = updatedAt;
-      validateRecord(committed);
+      const unsignedCommitted = structuredClone(candidate);
+      unsignedCommitted.version = current.version + 1;
+      unsignedCommitted.updatedAt = updatedAt;
+      validateRecord(unsignedCommitted);
+      const committed = this.sealStoredRecord(unsignedCommitted);
+      await this.prepareAuthorityHead(committed, current);
       const changed = db.prepare("UPDATE deliveries SET record_json = ? WHERE id = ?").run(JSON.stringify(committed), id);
       if (Number(changed.changes) !== 1) throw new DeliveryNotFoundError(id);
       if (options.operationId) this.writeReceipt(db, options.operationId, "update", fingerprint, committed, committed.updatedAt);
@@ -445,11 +476,34 @@ export class DeliveryStore {
   }
 
   private withDatabase<T>(fn: (db: DatabaseSync) => T): T {
-    if (!this.capability.supported) throw new DeliveryStoreUnsupportedError("locking domain is unavailable");
-    fs.mkdirSync(path.dirname(this.databasePath), { recursive: true });
     let db: DatabaseSync | undefined;
     try {
-      db = new this.Database(this.databasePath, { timeout: this.opts.busyTimeoutMs ?? 0 });
+      db = this.openDatabase();
+      return fn(db);
+    } catch (error) {
+      return this.rethrowDatabaseError(error);
+    } finally {
+      db?.close();
+    }
+  }
+
+  private async withDatabaseAsync<T>(fn: (db: DatabaseSync) => Promise<T>): Promise<T> {
+    let db: DatabaseSync | undefined;
+    try {
+      db = this.openDatabase();
+      return await fn(db);
+    } catch (error) {
+      return this.rethrowDatabaseError(error);
+    } finally {
+      db?.close();
+    }
+  }
+
+  private openDatabase(): DatabaseSync {
+    if (!this.capability.supported) throw new DeliveryStoreUnsupportedError("locking domain is unavailable");
+    fs.mkdirSync(path.dirname(this.databasePath), { recursive: true });
+    const db = new this.Database(this.databasePath, { timeout: this.opts.busyTimeoutMs ?? 0 });
+    try {
       db.exec("PRAGMA journal_mode=DELETE; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON;");
       db.exec(STORE_SCHEMA);
       const receiptColumns = db.prepare("PRAGMA table_info(delivery_operation_receipts)").all() as SqlRow[];
@@ -471,18 +525,26 @@ export class DeliveryStore {
         throw new DeliveryStoreUnsupportedError("SQLite DELETE journal with FULL synchronous durability could not be established");
       }
       this.migrateLegacyJson(db);
-      return fn(db);
+      return db;
     } catch (error) {
-      if (isBusyError(error)) throw new DeliveryStoreBusyError(this.databasePath);
+      db.close();
       throw error;
-    } finally {
-      db?.close();
     }
+  }
+
+  private rethrowDatabaseError(error: unknown): never {
+    if (isBusyError(error)) throw new DeliveryStoreBusyError(this.databasePath);
+    throw error;
   }
 
   private migrateLegacyJson(db: DatabaseSync): void {
     const legacyDir = path.join(this.workspaceRoot, ".tachyon", "deliveries");
     const archiveDir = path.join(this.workspaceRoot, ".tachyon", "deliveries.migrated-v1");
+    if (this.opts.authorityHead && fs.existsSync(legacyDir)) {
+      throw new DeliveryInvariantError(
+        "automatic legacy Delivery migration is refused while an external authority head is configured",
+      );
+    }
     const marker = db.prepare("SELECT value FROM delivery_store_metadata WHERE key = ?").get(legacyMigrationKey) as SqlRow | undefined;
     if (marker && marker.value !== legacyMigrationComplete) {
       throw new DeliveryInvariantError("legacy Delivery migration has an unsupported or partial state");
@@ -498,7 +560,20 @@ export class DeliveryStore {
         }
         if (!lockedMarker) {
           const insert = db.prepare("INSERT INTO deliveries(id, record_json) VALUES (?, ?)");
-          for (const record of records) insert.run(record.id, JSON.stringify(record));
+          for (const record of records) {
+            const authorityKey = this.authorityKey();
+            if (authorityKey && !verifyAuthorityRecord(
+              record as Delivery & Record<string, unknown>,
+              authorityKey,
+              this.authorityDomain(),
+            )) {
+              throw new DeliveryInvariantError(
+                `legacy Delivery '${record.id}' is unsigned, tampered, or belongs to another workspace; explicit retirement/import is required`,
+              );
+            }
+            const sealed = this.sealStoredRecord(record);
+            insert.run(sealed.id, JSON.stringify(sealed));
+          }
           db.prepare("INSERT INTO delivery_store_metadata(key, value) VALUES (?, ?)")
             .run(legacyMigrationKey, legacyMigrationComplete);
         }
@@ -539,16 +614,76 @@ export class DeliveryStore {
     });
   }
 
-  private readReceipt(db: DatabaseSync, operationId: string, kind: string, fingerprint: string, deliveryId?: string): Delivery | undefined {
+  /**
+   * Authority mutations intentionally hold SQLite's writer lock across the host
+   * head prepare. The external freshness anchor becomes durable first; only
+   * then may the workspace row and its receipt become visible atomically.
+   */
+  private async writeAuthorityTransaction<T>(fn: (db: DatabaseSync) => Promise<T>): Promise<T> {
+    return this.withDatabaseAsync(async (db) => {
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        const result = await fn(db);
+        db.exec("COMMIT");
+        return result;
+      } catch (error) {
+        if (db.isTransaction) db.exec("ROLLBACK");
+        throw error;
+      }
+    });
+  }
+
+  /** Implicit `update()` replay has no domain projection step of its own, so it may return only an
+   * exact current receipt. Explicit historical recovery remains `getOperationResult()` plus the
+   * caller's domain-specific current projection validation. */
+  private async readReceipt(
+    db: DatabaseSync,
+    operationId: string,
+    kind: string,
+    fingerprint: string,
+    deliveryId?: string,
+    requireCurrentAuthority = false,
+  ): Promise<Delivery | undefined> {
     const row = db.prepare(`
-      SELECT operation_kind, delivery_id, result_json, intent_fingerprint
-      FROM delivery_operation_receipts WHERE operation_id = ?
+      SELECT receipt.operation_kind, receipt.delivery_id, receipt.result_json, receipt.intent_fingerprint,
+             current.record_json AS current_json
+      FROM delivery_operation_receipts AS receipt
+      LEFT JOIN deliveries AS current ON current.id = receipt.delivery_id
+      WHERE receipt.operation_id = ?
     `).get(operationId) as SqlRow | undefined;
     if (!row) return undefined;
     if (row.operation_kind !== kind || row.intent_fingerprint !== fingerprint || (deliveryId !== undefined && row.delivery_id !== deliveryId)) {
       throw new DeliveryInvariantError(`operation id '${operationId}' was already used for another mutation`);
     }
-    return structuredClone(parseRecord(String(row.result_json)));
+    return structuredClone(await this.parseAuthenticatedReceipt(
+      row,
+      operationId,
+      String(row.delivery_id),
+      requireCurrentAuthority,
+    ));
+  }
+
+  /** A receipt is immutable historical proof, never a standalone freshness anchor. Before it
+   * can be replayed, the same SQLite snapshot must also contain a currently authenticated row. */
+  private async parseAuthenticatedReceipt(
+    row: SqlRow,
+    operationId: string,
+    deliveryId: string,
+    requireCurrentAuthority = false,
+  ): Promise<Delivery> {
+    if (row.current_json === undefined || row.current_json === null) {
+      throw new DeliveryInvariantError(
+        `operation id '${operationId}' refers to Delivery '${deliveryId}' without a current authority row`,
+      );
+    }
+    const current = await this.parseStoredRecord(String(row.current_json), deliveryId);
+    const receipt = await this.parseStoredRecord(String(row.result_json), deliveryId, true);
+    if (requireCurrentAuthority && !same(current, receipt)) {
+      throw new DeliveryInvariantError(
+        `operation id '${operationId}' is a historical receipt that no longer matches current Delivery '${deliveryId}' authority`,
+      );
+    }
+    return receipt;
   }
 
   private writeReceipt(db: DatabaseSync, operationId: string, kind: string, fingerprint: string, result: Delivery, committedAt: string): void {
@@ -558,8 +693,95 @@ export class DeliveryStore {
     `).run(operationId, kind, result.id, JSON.stringify(result), fingerprint, committedAt);
   }
 
+  private authorityKey(): Buffer | undefined {
+    if (!this.opts.authorityIntegrityKey) {
+      if (this.opts.authorityHead) {
+        throw new DeliveryInvariantError("Delivery authority head requires an authority integrity key");
+      }
+      return undefined;
+    }
+    const key = this.opts.authorityIntegrityKey();
+    if (!key) throw new DeliveryInvariantError("Delivery authority integrity key is unavailable");
+    return key;
+  }
+
+  private sealStoredRecord(record: Delivery): Delivery {
+    const key = this.authorityKey();
+    return key
+      ? sealAuthorityRecord(record as Delivery & Record<string, unknown>, key, this.authorityDomain())
+      : record;
+  }
+
+  private async parseStoredRecord(json: string, expectedId: string, historicalReceipt = false): Promise<Delivery> {
+    const record = parseRecord(json);
+    if (record.id !== expectedId) {
+      throw new DeliveryInvariantError(
+        `Delivery row identity '${expectedId}' does not match payload identity '${record.id}'`,
+      );
+    }
+    const key = this.authorityKey();
+    if (key && !verifyAuthorityRecord(record as Delivery & Record<string, unknown>, key, this.authorityDomain())) {
+      throw new DeliveryInvariantError(`Delivery '${record.id}' authority integrity check failed`);
+    }
+    if (!historicalReceipt && this.opts.authorityHead) await this.assertAuthorityHead(record);
+    return record;
+  }
+
+  private async prepareAuthorityHead(nextRecord: Delivery, expectedRecord?: Delivery): Promise<void> {
+    const key = this.authorityKey();
+    const port = this.opts.authorityHead;
+    if (!port) return;
+    if (!key) throw new DeliveryInvariantError("Delivery authority head requires an authority integrity key");
+
+    const next = this.headFor(nextRecord);
+    let expectedMac: string | undefined;
+    if (expectedRecord) {
+      await this.assertAuthorityHead(expectedRecord);
+      expectedMac = this.headFor(expectedRecord).mac;
+    } else if (await port.current(nextRecord.id) !== undefined) {
+      throw new DeliveryInvariantError(`Delivery '${nextRecord.id}' authority head expected no current revision`);
+    }
+
+    await port.prepare(nextRecord.id, next, expectedMac);
+    const prepared = await port.current(nextRecord.id);
+    if (!sameAuthorityHead(prepared, next)) {
+      throw new DeliveryInvariantError(`Delivery '${nextRecord.id}' authority head prepare was not durable or exact`);
+    }
+  }
+
+  private async assertAuthorityHead(record: Delivery): Promise<void> {
+    const port = this.opts.authorityHead;
+    if (!port) return;
+    const expected = this.headFor(record);
+    if (!sameAuthorityHead(await port.current(record.id), expected)) {
+      throw new DeliveryInvariantError(`Delivery '${record.id}' authority head mismatch (rollback or incomplete commit)`);
+    }
+  }
+
+  private async assertAuthorityHeadAbsent(id: string): Promise<void> {
+    const key = this.authorityKey();
+    if (!this.opts.authorityHead) return;
+    if (!key) throw new DeliveryInvariantError("Delivery authority head requires an authority integrity key");
+    if (await this.opts.authorityHead.current(id) !== undefined) {
+      throw new DeliveryInvariantError(`Delivery '${id}' is absent while its authority head still exists`);
+    }
+  }
+
+  private headFor(record: Delivery): DeliveryAuthorityHead {
+    const mac = record.authorityIntegrity?.mac;
+    if (!mac || !/^[0-9a-f]{64}$/.test(mac)) {
+      throw new DeliveryInvariantError(`Delivery '${record.id}' has no valid authority MAC for its freshness head`);
+    }
+    return { revision: record.version, mac };
+  }
+
   private now(): string { return this.opts.now?.() ?? new Date().toISOString(); }
   private newId(): string { return this.opts.id?.() ?? `d-${randomBytes(8).toString("hex")}`; }
+  private authorityDomain(): string { return workspaceAuthorityDomain("canonical-delivery", this.workspaceRoot); }
+}
+
+function sameAuthorityHead(actual: DeliveryAuthorityHead | undefined, expected: DeliveryAuthorityHead): boolean {
+  return actual?.revision === expected.revision && actual.mac === expected.mac;
 }
 
 function isMissingPathError(error: unknown): error is NodeJS.ErrnoException {
@@ -623,10 +845,15 @@ function readLegacyRecords(legacyDir: string): Delivery[] {
 function verifyLegacyMatchesDatabase(db: DatabaseSync, legacyDir: string): void {
   for (const legacy of readLegacyRecords(legacyDir)) {
     const row = db.prepare("SELECT record_json FROM deliveries WHERE id = ?").get(legacy.id) as SqlRow | undefined;
-    if (!row || !same(parseRecord(String(row.record_json)), legacy)) {
+    if (!row || !same(withoutAuthorityIntegrity(parseRecord(String(row.record_json))), withoutAuthorityIntegrity(legacy))) {
       throw new DeliveryInvariantError(`legacy Delivery '${legacy.id}' does not match the durable migrated record`);
     }
   }
+}
+
+function withoutAuthorityIntegrity(record: Delivery): Omit<Delivery, "authorityIntegrity"> {
+  const { authorityIntegrity: _integrity, ...unsigned } = record;
+  return unsigned;
 }
 
 function fingerprintIntent(value: unknown): string {

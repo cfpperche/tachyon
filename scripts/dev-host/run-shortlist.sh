@@ -31,7 +31,7 @@ run_preview() {
   local name="$1" view="$2" fixture="$3" width="${4:-900}"
   local png="$OUT/${name}.png"
   echo "shortlist: capture $name (view=$view fixture=$fixture)"
-  if node "$REPO/scripts/edh-palliative/capture-preview-scene.mjs" \
+  if node "$REPO/scripts/dev-host/capture-preview-scene.mjs" \
     --view "$view" --fixture "$fixture" --out "$png" --width "$width"; then
     passed+=("$name")
     shots+=("$png")
@@ -56,11 +56,11 @@ for scene in "${SCENES[@]}"; do
       ;;
     fail-visible|edh)
       echo "shortlist: EDH fail-visible scene"
-      if npm run dogfood:edh-palliative -- headless; then
+      if npm run dogfood:dev-host -- headless; then
         passed+=("fail-visible")
         # copy latest fail-visible png if present
-        if [ -f "$REPO/.tachyon/evidence/edh-palliative/fail-visible.png" ]; then
-          cp -f "$REPO/.tachyon/evidence/edh-palliative/fail-visible.png" "$OUT/fail-visible.png"
+        if [ -f "$REPO/.tachyon/evidence/dev-host/fail-visible.png" ]; then
+          cp -f "$REPO/.tachyon/evidence/dev-host/fail-visible.png" "$OUT/fail-visible.png"
           shots+=("$OUT/fail-visible.png")
         fi
       else

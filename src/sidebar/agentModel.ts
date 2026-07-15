@@ -188,7 +188,16 @@ export function resolveModelFact(cmd: string | undefined, observed?: ObservedMod
 export interface AgentExtras {
   /** monitor attention state: "working" | "idle" | "needs-input" | "throttled" (undefined when not monitored) */
   attention?: string;
-  worktree?: string; // branch name
+  /** isolation/config branch from the ledger worktree record (gates worktree actions). */
+  worktree?: string;
+  /** spec 384 — live HEAD branch at session cwd. */
+  liveBranch?: string;
+  /** spec 384 — live HEAD ≠ config/isolation branch. */
+  branchDrift?: boolean;
+  /** spec 384 — session cwd for tooltip. */
+  worktreePath?: string;
+  /** spec 386 — live resource sample for the pane subtree. */
+  resources?: { cpuPct?: number; memMb: number };
   harness?: boolean;
   /** this agent IS a forked sibling (spec 225 def.fork) → ⑂ badge. */
   forked?: boolean;
@@ -256,6 +265,10 @@ export function toAgentVM(a: AgentRaw, x: AgentExtras = {}): AgentVM {
     ...((a.dead && !a.crashed) || a.cleanExited ? { exited: true } : {}),
     ...(a.cleanExited ? { pane: false } : {}),
     ...(x.worktree ? { worktree: x.worktree } : {}),
+    ...(x.liveBranch ? { liveBranch: x.liveBranch } : {}),
+    ...(x.branchDrift ? { branchDrift: true } : {}),
+    ...(x.worktreePath ? { worktreePath: x.worktreePath } : {}),
+    ...(x.resources ? { resources: x.resources } : {}),
     ...(x.verify ? { verify: x.verify } : {}),
     ...(x.harness ? { harness: true } : {}),
     ...(x.resumable ? { resumable: true } : {}),

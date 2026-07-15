@@ -1,10 +1,10 @@
-import type { RuntimeOpsSnapshotV1 } from "../runtimeOps/types.js";
+import type { RuntimeOpsSnapshot } from "../runtimeOps/types.js";
 import { mergeRuntimeOpsSnapshotsV1 } from "../runtime-api/runtimeOpsProjection.js";
 import type { WorkspaceClient } from "./WorkspaceClient.js";
 import { workspacePresentationTarget, type WorkspacePresentationTarget } from "./WorkspacePresentation.js";
 
 export interface WorkspaceRuntimeOpsTarget extends WorkspacePresentationTarget {
-  runtimeOpsView(refreshDetection?: boolean): Promise<RuntimeOpsSnapshotV1>;
+  runtimeOpsView(refreshDetection?: boolean): Promise<RuntimeOpsSnapshot>;
 }
 
 export function workspaceRuntimeOpsTarget(client: WorkspaceClient): WorkspaceRuntimeOpsTarget {
@@ -23,6 +23,6 @@ export function workspaceRuntimeOpsTarget(client: WorkspaceClient): WorkspaceRun
 export async function runtimeOpsFleetView(
   targets: readonly WorkspaceRuntimeOpsTarget[],
   refreshDetection = false,
-): Promise<RuntimeOpsSnapshotV1> {
+): Promise<RuntimeOpsSnapshot> {
   return mergeRuntimeOpsSnapshotsV1(await Promise.all(targets.map((target) => target.runtimeOpsView(refreshDetection))));
 }

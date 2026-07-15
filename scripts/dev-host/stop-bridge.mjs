@@ -166,12 +166,12 @@ async function main() {
   const fixture = process.argv[2];
   if (!fixture) throw new Error("usage: stop-bridge.mjs <fixture-root>");
   const result = await stopFixtureBridge(fixture);
-  process.stdout.write(`edh-palliative: persistent Bridge ${result.state}\n`);
+  process.stdout.write(`dev-host: persistent Bridge ${result.state}\n`);
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   void main().catch((error) => {
-    process.stderr.write(`edh-palliative: ${error instanceof Error ? error.message : String(error)}\n`);
+    process.stderr.write(`dev-host: ${error instanceof Error ? error.message : String(error)}\n`);
     process.exitCode = 1;
   });
 }

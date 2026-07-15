@@ -66,6 +66,36 @@ adapter owns a fixed source allowlist, source-specific consent/configuration, bo
 response confinement. It emits only `CollectorEnvelopeV1`; browser cookies, Keychain, broad dashboard scraping,
 automatic cross-source fallback and cost scans stay out of the first slice.
 
+The Codex adapter's only first-slice source is the installed Codex CLI's documented stable app-server protocol. After
+an explicit `cli` quota-read grant, Tachyon launches `codex -s read-only -a untrusted app-server --stdio`, completes the
+documented initialize handshake, checks `account/read` without requesting a proactive token refresh, and reads
+`account/rateLimits/read`. Codex remains the credential owner: Tachyon never opens `auth.json`, never accepts a token,
+and never calls the private ChatGPT usage endpoint directly. Account identity, raw JSON-RPC replies and stderr remain
+inside the adapter and are discarded after allowlisted quota projection. Disabled consent must not launch a process;
+there is no OAuth, cookie, Keychain, HTTP or automatic fallback path in this adapter.
+
+Codex app-server's `primary` and `secondary` fields are positional rather than semantic. The adapter classifies a
+documented duration up to one day as `session`, over one day through fourteen days as `weekly`, and longer durations as
+`tertiary`; only a missing duration falls back to the historical primary/session and secondary/weekly slots. If two
+windows collapse into the same bounded semantic lane, the response fails closed instead of inventing a label.
+
+The Claude adapter's first source is passive `cli` telemetry from Claude Code's documented status-line JSON contract.
+For an explicitly granted source, a narrow reader supplies one bounded captured JSON value to the adapter; the adapter
+projects only `rate_limits.five_hour` and `rate_limits.seven_day` percentages/reset epochs and discards session ids,
+paths, model/context data and every additive field. It does not launch an inference turn: Anthropic documents status-line
+execution as local and token-free. A missing capture falls back only to the documented fixed command
+`claude auth status --json`, used to distinguish unauthenticated from authenticated-but-not-yet-observed. It never
+supplies quota and its identity/organization fields are discarded without projection. Missing passive telemetry becomes
+a typed `not-observed` unavailable state rather than zero or a fabricated limit.
+
+T2b deliberately stops at this bounded adapter/reader boundary. T3 owns transport from already-running Tachyon Claude
+sessions and must compose non-destructively with any user status line; T2b neither writes user/project settings nor
+overrides an existing `statusLine`. A future native SDK rate-limit event may be another pre-authorized strategy when the
+existing runtime already emits it, but Tachyon must not spawn `claude -p` merely to observe quota. Direct subscription
+OAuth/credential-file HTTP is rejected even as an automatic fallback: it expands the credential boundary and Anthropic's
+published authentication terms do not permit third-party products to route requests through Claude plan OAuth
+credentials. Interactive `/usage`, cookies, Keychain, UI scraping and unconsented cross-source fallback remain excluded.
+
 Keep a reference manifest containing the CodexBar repository/tag/commit used for behavioral comparison, fixture
 provenance and any MIT attribution required by actually derived code. CodexBar source, binaries and Swift build inputs
 must not enter the Tachyon product or release graph.
@@ -77,8 +107,38 @@ request per provider/account scope, explicit timeouts and cancellation, bounded 
 snapshot with freshness. Hidden Runtime Ops views receive no render polling, but the observation service may refresh
 at a user-configured operational cadence because provider quota is a runtime resource, not merely UI state.
 
-This layer invokes adapters and validates `CollectorEnvelopeV1`; `RuntimeOpsSnapshotService` only projects validated
-facts. It emits changes through the existing event fan-out rather than collecting per agent or per render.
+Consent is stored in a machine-local, extension-global preference record, disabled by default. Enabling one provider
+creates a random opaque account-scope key and records explicitly selected sources in host-owned cheapest-first order;
+project
+`tachyon.yml`, ambient credentials and installed CLIs cannot enable observation. T3 exposes the persisted boundary for
+the future Runtime Ops controls but adds no temporary visual surface. Disabling or changing a provider aborts its
+in-flight request, clears its normalized last-good value and rotates the opaque scope key before a later re-enable.
+
+The source registry canonicalizes the cheapest passive/native authorized strategy first and decays only through the
+other sources explicitly present in that provider's preference. Caller order cannot promote a broader fallback ahead
+of `cli`; presence still represents a separate explicit grant. Cancellation stops the chain. Unsupported,
+unauthenticated, timeout, provider-error, not-observed and invalid-envelope results may advance to the next authorized
+source; there is no ambient discovery or implicit OAuth/file/cookie fallback. Every adapter result is revalidated before
+it can update current or last-good state. The service retains only normalized envelopes, bounds persisted last-good
+state and freshness lifetime, coalesces concurrent refreshes by opaque provider/account scope, and emits one normalized
+change event through the host fan-out. `RuntimeOpsSnapshotService` and T4 consume this cached validated state; neither
+agent rows nor view renders invoke a provider collector.
+
+Claude's transport uses the already-injected per-spawn command-line settings layer only after the Claude `cli` source
+is explicitly enabled. Anthropic documents `statusLine` as one scalar command and command-line `--settings` as an
+override of local/project/user values, so simply adding Tachyon's command would destroy a user's custom status line.
+Before materialization, Tachyon resolves the effective lower-precedence user/project/local `statusLine`, copies its
+bounded display options, and installs a small wrapper that (1) reads the raw status-line JSON only in process memory,
+(2) atomically writes only an allowlisted `rate_limits` projection into extension global storage, and (3) invokes the
+prior command with the original stdin and relays its stdout/stderr. With no prior custom command, the wrapper emits no
+Tachyon text. A user-supplied command-line `--settings` or `--setting-sources`, malformed/unsafe lower-layer
+configuration, or a managed higher-precedence status line makes capture unavailable rather than being overwritten.
+Revocation disables parsing and deletes reduced captures while leaving the bounded relay needed by already-running
+sessions to continue the user's original status line. The reader selects only a bounded, current capture from known
+Tachyon-managed Claude agents; raw session ids, paths, model/context data and account identity never reach disk, logs,
+activity, errors, snapshots or the webview. Spawn, restart, resume and fork pass the same effective host-default or
+Tachyon-harness config home used by transcript resolution; an arbitrary external `CLAUDE_CONFIG_DIR` fails capture
+closed instead of being conflated with the explicitly granted default account scope.
 
 ### T4 — Runtime Ops projection
 
@@ -88,8 +148,8 @@ Codex/Claude rows may share provider facts by redacted account scope, but agent 
 consumption.
 
 The existing dense-table and narrow-layout contracts remain. Add deterministic fixtures for healthy, partial,
-unauthenticated, stale, incompatible-schema, and exhausted-window states, then inspect the installed panel and sidebar
-placement.
+unauthenticated, stale, incompatible-schema, and exhausted-window states, then inspect the panel and sidebar placement
+inside a VS Code Extension Development Host.
 
 ### T5 — security, compatibility, and dogfood
 
@@ -155,7 +215,8 @@ when provider collection fails.
 Runtime Ops gains a provider-capacity lane and detail for window usage, reset, confidence, source, freshness, and
 unavailable state. No CodexBar visuals are reused. Risk is concentrated in distinguishing account quota from agent
 tokens, narrow layouts, multiple windows, stale/error density, and avoiding a dashboard-card aesthetic that breaks
-the current dense operational table. Preview fixtures plus real installed VSIX evidence are required before shipping.
+the current dense operational table. Preview fixtures plus real dev-host evidence are required before shipping; this
+track does not package or install a VSIX for dogfood.
 
 ## Sources consulted
 
@@ -169,3 +230,9 @@ the current dense operational table. Preview fixtures plus real installed VSIX e
   `Sources/CodexBarCore`, `Sources/CodexBarCLI`, and its architecture, provider, CLI, refresh, license, CI, and release
   documentation inspected 2026-07-14.
 - CodexBar MIT license — modification/distribution permitted with copyright and license notice preservation.
+- Installed Claude Code `2.1.209` help plus Anthropic's official status-line, CLI/authentication, error, and legal
+  documentation inspected 2026-07-14: `https://code.claude.com/docs/en/statusline`,
+  `https://code.claude.com/docs/en/cli-usage`, `https://code.claude.com/docs/en/errors`, and
+  `https://code.claude.com/docs/en/legal-and-compliance`.
+- Anthropic Claude Code settings scopes and precedence inspected 2026-07-14:
+  `https://code.claude.com/docs/en/settings`.

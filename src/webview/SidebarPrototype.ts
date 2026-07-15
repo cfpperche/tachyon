@@ -55,6 +55,7 @@ const ACTION_CMD: Record<Exclude<ActionId, "inspect" | "activity" | "probes">, s
   verify: "tachyon.verifyAgentItem",
   reanchor: "tachyon.reanchorAgentItem",
   reinjectContinuity: "tachyon.reinjectContinuityItem",
+  injectPrompt: "tachyon.injectPromptTemplateItem",
   promote: "tachyon.promoteAgentItem",
   reviewWorktree: "tachyon.reviewWorktreeItem",
   createPr: "tachyon.createWorktreePrItem",

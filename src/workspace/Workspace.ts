@@ -6,6 +6,7 @@ import { TmuxService, workspaceHash, SESSION_PREFIX } from "../tmux/TmuxService.
 import { ControlModeClient } from "../tmux/ControlModeClient.js";
 import { loadConfigFile, parseConfig, CONFIG_FILENAMES, inferKind, type TachyonConfig } from "../config/loadConfig.js";
 import { snapshotFromConfig, writeConfigLkg, readConfigLkg, type ConfigLkgSnapshot } from "../config/configLkg.js";
+import { containsUnsafeFramingCharacter } from "../config/framingSafety.js";
 import {
   type ConfigFailure,
   isLkgOnlySpawn,
@@ -14,13 +15,13 @@ import {
 import { upsertAgent, upsertCommand, upsertRunbook, upsertSchedule, deleteSchedule, renameAgent as renameAgentInYml } from "../config/YamlConfigEditor.js";
 import { AgentManager, ResumeUnavailableError, WatchController, newlyDeclaredAutostart, type DeliveryJoinRequest, type PreparedDeliveryJoin } from "../agents/AgentManager.js";
 import { agentLaunchPath } from "../agents/spawnPath.js";
-import { SessionLedger, durableBoundGeneration } from "../resume/SessionLedger.js";
+import { SessionLedger, durableBoundGeneration, type SessionDeliveryBinding, type SessionRecord } from "../resume/SessionLedger.js";
 import { WorktreeManager, resolveWorktreeCwd, branchFor, type WorktreeRecord } from "../worktree/WorktreeManager.js";
 import { PipelineManager, type PipelineDeps } from "../pipeline/PipelineManager.js";
 import { RunLedger } from "../pipeline/RunLedger.js";
 import { loadPipeline, nodeSpawnName } from "../pipeline/loadPipeline.js";
 import { assembleNodePrompt } from "../pipeline/nodePrompt.js";
-import { initRun, runStatus, type PipelineRun } from "../pipeline/runState.js";
+import { initRun, type PipelineRun } from "../pipeline/runState.js";
 import { createHash, randomBytes } from "node:crypto";
 import { isWorktreeDirty } from "../worktree/pr.js";
 import { HarnessManager, defaultRealOpencodeDataHome, realConfigHome } from "../harness/HarnessManager.js";
@@ -55,9 +56,24 @@ import {
   type BridgeClientRebindSettings,
   type ClientRebindState,
 } from "../bridge/clientRebind.js";
-import { delegationRecordFromSpawn, readLatestDelegationRecord, writeDelegationRecordAsync } from "../bridge/delegationRecord.js";
-import { writeAndCommitCanonicalBehaviorStub } from "../bridge/behaviorStub.js";
-import { renderPrimer } from "../bridge/primer.js";
+import {
+  appendFixerAttemptAsync,
+  delegationRecordFromSpawn,
+  findNonArchivedDelegationRecordsByAgent,
+  verifyDelegationRecordAuthority,
+  verifyDelegationRecordFreshness,
+  verifyDelegationRecordLocation,
+  writeDelegationRecordAsync,
+  type DelegationRecord,
+} from "../bridge/delegationRecord.js";
+import { resolveReuseTarget, type ReuseTarget } from "../agents/reuseWorktree.js";
+import type { AuthorityHead, AuthorityHeadPort } from "../delivery/authorityIntegrity.js";
+import { resolveCanonicalBehaviorOracle } from "../bridge/behaviorStub.js";
+import { behaviorTestError } from "../config/behaviorVerification.js";
+import { parseArgvCommand } from "../config/argvCommand.js";
+import { wrapWithPrimer } from "../bridge/primer.js";
+import { loadAndRenderProjectGuidance } from "../config/projectGuidance.js";
+import { assertSafeBriefTransport, deliverableBody, previewDeliverableBody } from "../agents/briefFile.js";
 import { loadOrCreateExternalToken, loadOrCreateToken, TOKEN_ENV_VAR, URL_ENV_VAR, AGENT_TOKEN_ENV_VAR } from "../bridge/token.js";
 import { CallerIdentityRegistry, loadOrCreateHmacKey, type CallerScope, type CallerSnapshot, type PersistableEntry } from "../bridge/callerIdentity.js";
 import { redactSecrets } from "../bridge/redact.js";
@@ -112,11 +128,12 @@ import { resolveGitDeliverySettings } from "../git-delivery/settings.js";
 import { createGitExec, type GitExec } from "../worktree/WorktreeManager.js";
 import { resolveGitBinaryForHost } from "../worktree/gitBinary.js";
 import type { GitDelivery, GitDeliveryActor } from "../git-delivery/types.js";
-import { hasDeliveryMarker, isValidDeliveryBinding } from "../resume/SessionLedger.js";
+import { hasDeliveryMarker, isInvalidDeliveryMarker, isValidDeliveryBinding, sameDeliveryBinding } from "../resume/SessionLedger.js";
 import { TaskNotificationService } from "./TaskNotificationService.js";
 import { BridgeSlowRequestToastPolicy } from "./bridgeSlowRequestPolicy.js";
 import { ExternalToolRegistry } from "../externalTools/registry.js";
 import { hostActionTouchesHostUi } from "../externalTools/filters.js";
+import type { ClaudeStatusLineCaptureTransport } from "../runtimeObservability/claudeStatusLineCapture.js";
 
 const ATTENTION_POLL_MS = 3000;
 
@@ -150,6 +167,73 @@ function failureIsCurrent(failureTs: string, injectionTs: string): boolean {
   return failureMs > injectionMs;
 }
 
+function parseAuthorityHeads(raw: string | undefined): Map<string, AuthorityHead> {
+  if (raw === undefined || raw.length === 0) return new Map();
+  let value: unknown;
+  try { value = JSON.parse(raw); }
+  catch (error) { throw new Error(`authority freshness heads are corrupt: ${error instanceof Error ? error.message : String(error)}`); }
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("authority freshness heads must be an object");
+  const heads = new Map<string, AuthorityHead>();
+  for (const [key, candidate] of Object.entries(value as Record<string, unknown>)) {
+    if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) throw new Error(`authority head '${key}' is malformed`);
+    const revision = (candidate as Record<string, unknown>).revision;
+    const mac = (candidate as Record<string, unknown>).mac;
+    if (!Number.isSafeInteger(revision) || (revision as number) < 1 || typeof mac !== "string" || !/^[0-9a-f]{64}$/.test(mac)) {
+      throw new Error(`authority head '${key}' is malformed`);
+    }
+    heads.set(key, { revision: revision as number, mac });
+  }
+  return heads;
+}
+
+function serializeAuthorityHeads(heads: Map<string, AuthorityHead>): string {
+  return JSON.stringify(Object.fromEntries([...heads.entries()].sort(([a], [b]) => a.localeCompare(b))));
+}
+
+/**
+ * A gated launch is deliberately persisted with an invalid Delivery marker until its
+ * authority is durable. Canonical Delivery creation resolves the exact binding while
+ * that marker is still present; the AgentManager then removes the marker with one
+ * ledger.record call. Promote the staged binding in that same write so no crash window
+ * can leave a restartable, unbound row between those two lifecycle phases.
+ */
+class CanonicalSessionLedger extends SessionLedger {
+  private readonly stagedBindings = new Map<string, SessionDeliveryBinding>();
+
+  stageCanonicalBinding(name: string, binding: SessionDeliveryBinding): void {
+    if (!isValidDeliveryBinding(binding)) {
+      throw new Error(`cannot stage canonical Delivery for '${name}': binding is invalid`);
+    }
+    const current = this.get(name);
+    if (!isInvalidDeliveryMarker(current?.delivery)) {
+      throw new Error(`cannot stage canonical Delivery for '${name}': pending lifecycle marker is missing`);
+    }
+    const staged = this.stagedBindings.get(name);
+    if (staged) {
+      if (sameDeliveryBinding(staged, binding)) return;
+      throw new Error(`cannot stage canonical Delivery for '${name}': staged binding differs`);
+    }
+    this.stagedBindings.set(name, { ...binding });
+  }
+
+  override record(name: string, rec: Omit<SessionRecord, "updatedAt"> & { updatedAt?: string }): void {
+    const staged = this.stagedBindings.get(name);
+    const current = staged ? this.get(name) : undefined;
+    if (staged && rec.delivery === undefined && isInvalidDeliveryMarker(current?.delivery)) {
+      // The pending-marker removal and canonical reverse binding are one durable sessions.json write.
+      super.record(name, { ...rec, delivery: staged });
+      this.stagedBindings.delete(name);
+      return;
+    }
+    super.record(name, rec);
+  }
+
+  override remove(name: string): void {
+    super.remove(name);
+    if (!this.get(name)) this.stagedBindings.delete(name);
+  }
+}
+
 export interface WorkspaceDeps {
   /** spec 233 — the host port the engine calls instead of `vscode` (the VS Code shell passes a VsCodeHost). */
   host: EngineHost;
@@ -157,6 +241,8 @@ export interface WorkspaceDeps {
   onViewsChanged: (view: ViewKind) => void;
   /** host-side UI affordance for newly recorded human-approval requests. */
   onApprovalRequested?: (ws: Workspace, request: { id: string; requester: string }) => void;
+  /** Optional extension-global Claude quota transport. It remains inert unless machine-local consent enables it. */
+  claudeStatusLineCapture?: Pick<ClaudeStatusLineCaptureTransport, "materialize">;
 }
 
 /** spec 235 — the slice of the control-mode engine the Workspace lifecycle needs; a test passes a no-op. */
@@ -269,6 +355,7 @@ export class Workspace {
   readonly terminals: TerminalPresentation;
   readonly manager: AgentManager;
   readonly ledger: SessionLedger;
+  private readonly canonicalLedger: CanonicalSessionLedger;
   readonly worktrees: WorktreeManager;
   readonly gitDeliveries: GitDeliveryStore;
   readonly deliveries: DeliveryStore;
@@ -348,6 +435,12 @@ export class Workspace {
   /** spec 351 — the digest-only per-agent token registry; undefined until the HMAC key is loaded (async,
    *  set at the tail of `_create` before the Bridge/any agent could actually use it). */
   private callerRegistry: CallerIdentityRegistry | undefined;
+  /** SecretStorage key, domain-separated from caller digests for durable authority seals. */
+  private authorityIntegrityKey: Buffer | undefined;
+  /** SecretStorage-backed exact MAC heads; kept outside agent-writable workspace metadata. */
+  private authorityHeads = new Map<string, AuthorityHead>();
+  /** Serializes the async SecretStorage read/prepare/readback sequence inside this extension host. */
+  private authorityHeadPrepareTail: Promise<void> = Promise.resolve();
   private readonly reloadTransactions: ReloadTransactionStore;
   private readonly hostActionAuditPath: string;
   private readonly hostActionSessionEpoch: number;
@@ -461,10 +554,14 @@ export class Workspace {
     this.hostActionSessionEpoch = (deps.host.getState<number>(epochKey) ?? 0) + 1;
     deps.host.setState(epochKey, this.hostActionSessionEpoch);
 
-    this.ledger = new SessionLedger(workspaceRoot);
+    this.canonicalLedger = new CanonicalSessionLedger(workspaceRoot);
+    this.ledger = this.canonicalLedger;
     this.externalTools = new ExternalToolRegistry(workspaceRoot);
     this.gitDeliveries = new GitDeliveryStore(workspaceRoot);
-    this.deliveries = new DeliveryStore(workspaceRoot);
+    this.deliveries = new DeliveryStore(workspaceRoot, {
+      authorityIntegrityKey: () => this.authorityIntegrityKey,
+      authorityHead: this.canonicalAuthorityHeadPort(),
+    });
     this.worktrees = new WorktreeManager({
       workspaceRoot,
       wsHash: this.wsHash,
@@ -535,7 +632,8 @@ export class Workspace {
         await this.manager.kill(input.executionAgent);
       } },
     });
-    this.harness = new HarnessManager(workspaceRoot, realConfigHome(), undefined, undefined, undefined, (message) => this.host.notify(message, "warn"));
+    const defaultClaudeConfigHome = realConfigHome();
+    this.harness = new HarnessManager(workspaceRoot, defaultClaudeConfigHome, undefined, undefined, undefined, (message) => this.host.notify(message, "warn"));
     // spec 226 (H2) — when an agent has an isolated harness, its claude transcripts live under the
     // redirected config home; pass it to the resolvers as `claudeHome` so by-title/by-cwd scans hit it.
     const resolverEnv = (runtime: string, configHome?: string) =>
@@ -550,6 +648,9 @@ export class Workspace {
       tmux: this.tmux,
       wsHash: this.wsHash,
       workspaceRoot,
+      // SDD 369 T3 — ordinary Claude sessions inherit this account home. Capture and transcript
+      // resolution must use the same value; an unknown external home then fails capture closed.
+      defaultClaudeConfigHome,
       gitExec: this.gitExec,
       ledger: this.ledger,
       // spec 364 — stamp bound_generation from the live coordinator (0 until first listener-ready bump).
@@ -616,6 +717,14 @@ export class Workspace {
         {
           silentPersistence: !opts?.ownershipOnly && this.silentPersistenceHooksDesired(name),
           skipDangerousModePermissionPrompt: !!opts?.ownershipOnly,
+          statusLine: opts?.statusLineCapture === false
+            ? undefined
+            : this.deps.claudeStatusLineCapture?.materialize({
+              workspaceRoot: this.workspaceRoot,
+              agent: name,
+              cwd: opts?.cwd ?? this.workspaceRoot,
+              configHome: opts?.configHome,
+            }),
         },
       ), // spec 245/312
       materializeCodexSessionStartHookConfig: (name, opts) => this.harness.materializeCodexSessionStartHookConfig(
@@ -718,6 +827,34 @@ export class Workspace {
       // spec 230 — a pipeline node spawns into its RUN's worktree (registered just before spawnNode);
       // this overrides the per-agent worktree path so the chain shares one checkout.
       resolveSpawnCwd: async (ctx) => {
+        if (ctx.gate) {
+          const gateError = behaviorTestError(ctx.gate.behaviorTest);
+          if (gateError) throw new Error(`gated delegation behavior_test ${gateError}`);
+          for (const [index, ownedPath] of (ctx.gate.owns ?? []).entries()) {
+            if (containsUnsafeFramingCharacter(ownedPath)) {
+              throw new Error(`gated delegation owns[${index}] must not contain control characters`);
+            }
+          }
+        }
+        const explicitBehaviorCommand = ctx.gate?.behaviorTest.match(/^cmd:\s*(.*)$/s);
+        if (explicitBehaviorCommand) {
+          try {
+            parseArgvCommand(explicitBehaviorCommand[1] ?? "");
+          } catch (error) {
+            throw new Error(
+              `gated delegation behavior_test has an invalid cmd: verifier: ${error instanceof Error ? error.message : String(error)}`,
+            );
+          }
+        }
+        const namedBehaviorSettings = ctx.gate && !explicitBehaviorCommand
+          ? ctx.verifySettings?.behavior
+          : undefined;
+        if (ctx.gate && !explicitBehaviorCommand && !namedBehaviorSettings) {
+          throw new Error(
+            "plain gated delegation behavior_test requires the project to configure " +
+              "settings.verify.behavior; otherwise use an explicit cmd:<command> verifier",
+          );
+        }
         const pl = this.pipelineNodeCwd.get(ctx.name);
         if (pl) return { cwd: pl.cwd, worktree: pl.worktree };
         const forceWorktree = ctx.gate ? true : ctx.def.worktree;
@@ -742,23 +879,124 @@ export class Workspace {
             notify: (m, level) => this.host.notify(m, level ?? "info"),
           },
         );
-        if (!ctx.gate || !resolved?.worktree) return resolved;
-        const { stubPath } = await writeAndCommitCanonicalBehaviorStub({
-          worktreePath: resolved.cwd,
-          agent: ctx.name,
-          behaviorTest: ctx.gate.behaviorTest,
-        });
-        ctx.gate.owns = ctx.gate.owns?.includes(stubPath) ? ctx.gate.owns : [...(ctx.gate.owns ?? []), stubPath];
-        ctx.gate.stubPath = stubPath;
-        const { headRef } = await this.worktrees.headState(resolved.cwd);
-        if (!headRef) throw new Error(`gated delegation '${ctx.name}' could not resolve the task worktree HEAD`);
-        return { ...resolved, delegationBaseSha: headRef };
+        if (!resolved?.worktree) return resolved;
+        if (!ctx.gate) {
+          let exactPreparedHead: string | undefined;
+          try {
+            const { headRef } = await this.worktrees.headState(resolved.cwd);
+            if (!headRef) throw new Error(`agent '${ctx.name}' could not resolve its prepared worktree HEAD`);
+            exactPreparedHead = headRef;
+            return {
+              ...resolved,
+              ...(resolved.rollbackHeadSha ? { preparationHeadBefore: resolved.rollbackHeadSha } : {}),
+              preparationHeadAfter: headRef,
+            };
+          } catch (primary) {
+            if (resolved.created && exactPreparedHead) {
+              try { await this.worktrees.rollbackCreated(resolved.worktree, resolved.rollbackHeadSha, exactPreparedHead); }
+              catch (preservation) {
+                throw new AggregateError(
+                  [primary, preservation],
+                  `agent '${ctx.name}' worktree preparation failed; recovery state was preserved`,
+                );
+              }
+            } else if (resolved.created) {
+              throw new AggregateError(
+                [primary, new Error("fresh worktree recovery state was preserved because its exact prepared HEAD is unknown")],
+                `agent '${ctx.name}' worktree preparation failed without a recovery HEAD observation`,
+              );
+            }
+            if (resolved.rollbackHeadSha) {
+              try {
+                await this.worktrees.rollbackPreparation(resolved.worktree, resolved.rollbackHeadSha, resolved.rollbackHeadSha);
+              } catch (preservation) {
+                throw new AggregateError(
+                  [primary, preservation],
+                  `agent '${ctx.name}' worktree preparation failed; its reused recovery checkout is preserved at ${resolved.worktree.path}`,
+                );
+              }
+            }
+            throw new AggregateError(
+              [primary, new Error(`reused worktree recovery state was preserved at ${resolved.worktree.path}; its prepared HEAD is unknown`)],
+              `agent '${ctx.name}' worktree preparation failed; recovery checkout: ${resolved.worktree.path}`,
+            );
+          }
+        }
+        const preparationHeadBefore = resolved.rollbackHeadSha;
+        let preparationHeadAfter: string | undefined;
+        try {
+          const preparedState = await this.worktrees.headState(resolved.cwd);
+          if (!preparedState.headRef) throw new Error(`gated delegation '${ctx.name}' could not resolve its prepared worktree HEAD`);
+          preparationHeadAfter = preparedState.headRef;
+          if (!explicitBehaviorCommand) {
+            const { stubPath, oracleHash, executorHashes, headRef } = await resolveCanonicalBehaviorOracle({
+              worktreePath: resolved.cwd,
+              agent: ctx.name,
+              settings: namedBehaviorSettings!,
+            });
+            preparationHeadAfter = headRef;
+            ctx.gate.stubPath = stubPath;
+            ctx.gate.oracleHash = oracleHash;
+            ctx.gate.executorHashes = executorHashes;
+          }
+          // A reused gated worktree must anchor to its current HEAD, not the original worktree baseRef.
+          // Named adapters bind existing project-owned oracle/executor bytes without mutating the checkout.
+          const { headRef } = await this.worktrees.headState(resolved.cwd);
+          if (!headRef) throw new Error(`gated delegation '${ctx.name}' could not resolve the task worktree HEAD`);
+          preparationHeadAfter = headRef;
+          return {
+            ...resolved,
+            delegationBaseSha: headRef,
+            ...(preparationHeadBefore ? { preparationHeadBefore } : {}),
+            ...(preparationHeadAfter ? { preparationHeadAfter } : {}),
+          };
+        } catch (primary) {
+          if (resolved.created) {
+            if (!preparationHeadAfter) {
+              throw new AggregateError(
+                [primary, new Error("fresh gated worktree recovery state was preserved because its exact prepared HEAD is unknown")],
+                `gated delegation '${ctx.name}' preparation failed without a recovery HEAD observation`,
+              );
+            }
+            try {
+              await this.worktrees.rollbackCreated(resolved.worktree, resolved.rollbackHeadSha, preparationHeadAfter);
+            } catch (preservation) {
+              throw new AggregateError(
+                [primary, preservation],
+                `gated delegation '${ctx.name}' preparation failed; its fresh worktree recovery state was preserved`,
+              );
+            }
+          } else if (preparationHeadBefore && preparationHeadAfter) {
+            try {
+              await this.worktrees.rollbackPreparation(resolved.worktree, preparationHeadBefore, preparationHeadAfter);
+            } catch (preservation) {
+              throw new AggregateError(
+                [primary, preservation],
+                `gated delegation '${ctx.name}' preparation failed; its reused worktree recovery state was preserved`,
+              );
+            }
+          } else {
+            throw new AggregateError(
+              [primary, new Error(`reused gated worktree recovery state was preserved at ${resolved.worktree.path}; complete HEAD observations are unavailable`)],
+              `gated delegation '${ctx.name}' preparation failed; recovery checkout: ${resolved.worktree.path}`,
+            );
+          }
+          throw primary;
+        }
       },
-      recordDelegation: async ({ name, delegator, gate, contract, worktree, baseSha }) => {
+      recordDelegation: async ({ name, delegator, gate, contract, worktree, baseSha, verifySettings }) => {
         if (this.config?.settings.delivery?.mode === "canonical") {
-          await this.recordCanonicalDelivery({ name, delegator, gate, worktree, baseSha });
+          await this.recordCanonicalDelivery({
+            name,
+            delegator,
+            gate,
+            worktree,
+            baseSha,
+            verifySettings,
+          });
           return;
         }
+        if (!this.authorityIntegrityKey) throw new Error("legacy delegation authority key is unavailable");
         await writeDelegationRecordAsync(
           this.workspaceRoot,
           delegationRecordFromSpawn({
@@ -768,9 +1006,20 @@ export class Workspace {
             taskRef: worktree.branch,
             gate,
             stubPath: gate.stubPath,
+            oracleHash: gate.oracleHash,
+            executorHashes: gate.executorHashes,
+            verifySettings,
             contract,
           }),
+          this.authorityIntegrityKey,
+          this.legacyAuthorityHeadPort(),
         );
+      },
+      readAuthenticatedLegacyDelegation: (agent) => this.readAuthenticatedLegacyDelegation(agent),
+      resolveAuthenticatedLegacyReuseTarget: (target) => this.resolveAuthenticatedLegacyReuseTarget(target),
+      appendLegacyFixerAttempt: async (delegationPath, attempt) => {
+        const authorityKey = this.requireAuthorityIntegrityKey("reuse_worktree");
+        await appendFixerAttemptAsync(this.workspaceRoot, delegationPath, attempt, authorityKey, this.legacyAuthorityHeadPort());
       },
       // spec 225 — fork: probe the source worktree for the dirty warning, and create the fork's own
       // worktree branched off the source's committed HEAD (its branch).
@@ -785,9 +1034,18 @@ export class Workspace {
           return null;
         }
       },
-      removeForkWorktree: async (rec) => {
-        await this.worktrees.remove(rec, true); // rollback a half-built fork — Tachyon-created branch, safe to drop
+      rollbackPreparedWorktree: async (rec, initialHead, beforeHead, afterHead, created) => {
+        if (created) {
+          if (!afterHead) throw new Error(`fresh worktree cleanup was withheld without a prepared HEAD observation: ${rec.path}`);
+          await this.worktrees.rollbackCreated(rec, initialHead, afterHead);
+          return;
+        }
+        if (!beforeHead || !afterHead) {
+          throw new Error(`reused worktree cleanup was withheld without preparation HEAD observations: ${rec.path}`);
+        }
+        await this.worktrees.rollbackPreparation(rec, beforeHead, afterHead);
       },
+      completePreparedWorktree: (rec) => this.worktrees.completePreparation(rec),
       removeHarnessHome: (name) => this.harness.remove(name),
     });
 
@@ -1137,6 +1395,9 @@ export class Workspace {
         },
         withWorktreeLock: (agent, fn) => this.worktrees.withAgentPathLock(agent, fn),
         deliveryVerification: this.deliveryVerification,
+        authorityIntegrityKey: () => this.authorityIntegrityKey,
+        canonicalAuthorityHead: this.canonicalAuthorityHeadPort(),
+        legacyAuthorityHead: (identity) => this.currentAuthorityHead("legacy", identity),
         deliveryLease: this.deliveryLease,
         deliverySafety: () => this.effectiveDeliverySafety(),
         // spec 273 — the worktree evidence channel over MCP.
@@ -1376,13 +1637,26 @@ export class Workspace {
       allocateWorktree: async (runId) => {
         const agent = `run-${runId}`;
         const branch = branchFor(agent, this.config?.settings ?? {}, {});
-        const { record } = await this.worktrees.ensure({ agent, branch });
+        const { record, preparationLocked } = await this.worktrees.ensure({ agent, branch, quarantineForLaunch: true });
+        if (!preparationLocked) throw new Error(`pipeline worktree '${record.path}' was not quarantined during allocation`);
         this.pipelineRunWt.set(agent, record);
-        return { cwd: record.path, key: agent };
+        // PipelineManager invokes this only after its initial RunLedger record is crash-durable and
+        // before the first node can spawn. Failure leaves both the durable run and Git receipt intact.
+        return {
+          cwd: record.path,
+          key: agent,
+          worktree: record,
+          finalizeOwnership: () => this.worktrees.completePreparation(record),
+        };
       },
       releaseWorktree: async (key) => {
         const rec = this.pipelineRunWt.get(key);
-        if (rec) await this.worktrees.remove(rec, true); // Tachyon-created run branch — safe to drop
+        if (rec) {
+          const removed = await this.worktrees.remove(rec, true); // Tachyon-created run branch — safe to drop
+          if (!removed.removed) {
+            throw new Error(`pipeline worktree remains preserved at ${rec.path}: ${removed.error ?? "removal was refused"}`);
+          }
+        }
         this.pipelineRunWt.delete(key);
       },
       spawnNode: async ({ runId, nodeId, def, cwd, env, input, upstream }) => {
@@ -1441,16 +1715,22 @@ export class Workspace {
       dismissNode: (runId, nodeId) => {
         const def = nodeDefOf(runId, nodeId);
         const name = nodeSpawnName(runId, nodeId, def ?? {});
-        // drop the maps BEFORE killing so onKilled doesn't re-enter the executor for this node.
-        this.pipelineNodeCwd.delete(name);
-        this.pipelineNodeOf.delete(name);
         // kill the session + drop the pipeline-tagged ledger row. A DECLARED `agent:` node reverts to a
         // clean config-listed STOPPED agent (no stale def.pipeline/nonce/run-worktree overlay — codex M1,
         // so planResume/verify never read a removed worktree); an inline `cmd:` node vanishes entirely.
-        return this.manager
-          .kill(name)
-          .catch(() => {}) // may already be gone (the node process exited)
-          .then(() => {
+        return this.manager.kill(name)
+          .catch(async (error) => {
+            // A naturally exited/missing pane is already safe. Any still-live or unprovable pane keeps
+            // every cwd/ledger map so PipelineManager cannot release the run worktree underneath it.
+            if (await this.tmux.hasSession(this.manager.session(name))) throw error;
+          })
+          .then(async () => {
+            if (await this.tmux.hasSession(this.manager.session(name))) {
+              throw new Error(`pipeline node '${name}' is still live after teardown`);
+            }
+            // Only absence proof permits removal of the runtime ownership handles.
+            this.pipelineNodeCwd.delete(name);
+            this.pipelineNodeOf.delete(name);
             // pin p-4dadd3 (a) / spec 247: an inline `cmd:` node (`pl-<runId>-<nodeId>`) vanishes entirely —
             // drop its orphaned durable log WITH the row (one named operation). A DECLARED `agent:` node reverts
             // to a persistent stopped agent and KEEPS its log (it has a real, reusable sidebar row) — row-only.
@@ -1460,6 +1740,7 @@ export class Workspace {
           });
       },
       persist: (run) => this.runLedger.save(run),
+      persistInitial: (run) => this.runLedger.saveRequired(run),
       onChange: () => this.deps.onViewsChanged("agents"),
       setTimer: (ms, fn) => {
         const t = setTimeout(fn, ms);
@@ -1474,16 +1755,30 @@ export class Workspace {
    * "unknown or closed pipeline run/node"). Run graph ← run ledger; each running node's nonce/cwd ←
    * the session-ledger row (def.env). Terminal or worktree-gone runs are dropped.
    */
-  private rehydratePipelines(): void {
+  private async rehydratePipelines(): Promise<void> {
     const restored: Array<{ run: PipelineRun; cwd: string; nonces: Record<string, string> }> = [];
-    for (const run of this.runLedger.list()) {
-      const status = runStatus(run);
-      if (status === "completed" || status === "failed") {
-        this.runLedger.remove(run.id); // a finished run left on disk → nothing to restore
-        continue;
-      }
+    for (const persistedRun of this.runLedger.list()) {
+      let run = persistedRun;
       const nonces: Record<string, string> = {};
-      let cwd = "";
+      let cwd = run.worktree?.path ?? "";
+      if (run.worktreeReady === false) {
+        if (!run.worktree) {
+          this.host.notify(this.t("pipeline {0} has an incomplete worktree receipt without a recovery record", run.id), "warn");
+          continue;
+        }
+        try {
+          await this.worktrees.completePersistedPreparation(run.worktree);
+          run = { ...run, worktreeReady: true };
+          this.runLedger.saveRequired(run);
+        } catch (error) {
+          this.host.notify(
+            this.t("pipeline {0} worktree remains locked for recovery: {1}", run.id, error instanceof Error ? error.message : String(error)),
+            "warn",
+          );
+          continue;
+        }
+      }
+      if (run.worktree) this.pipelineRunWt.set(run.worktreeKey, run.worktree);
       for (const nodeId of Object.keys(run.nodes)) {
         const name = nodeSpawnName(run.id, nodeId, run.pipeline.nodes[nodeId] ?? {});
         const rec = this.ledger.get(name);
@@ -1591,6 +1886,95 @@ export class Workspace {
 
   private callerRegistryStateKey(): string {
     return `tachyon.callerIdentity.registry.${this.wsHash}`;
+  }
+
+  private authorityHeadsSecretKey(): string {
+    return `tachyon.authorityHeads.v1.${this.wsHash}`;
+  }
+
+  private authorityHeadMapKey(kind: "legacy" | "canonical", identity: string): string {
+    return `${kind}:${identity}`;
+  }
+
+  private async currentAuthorityHead(kind: "legacy" | "canonical", identity: string): Promise<AuthorityHead | undefined> {
+    // A process-local snapshot is not an anti-rollback anchor: another extension host may have
+    // advanced custody since this Workspace was created. Do not interleave this read with this
+    // host's own read/modify/write, then refresh durable custody on every authority decision.
+    await this.authorityHeadPrepareTail;
+    const persisted = parseAuthorityHeads(await this.host.getSecret(this.authorityHeadsSecretKey()));
+    this.authorityHeads = persisted;
+    const head = persisted.get(this.authorityHeadMapKey(kind, identity));
+    return head ? { ...head } : undefined;
+  }
+
+  private async prepareAuthorityHead(
+    kind: "legacy" | "canonical",
+    identity: string,
+    next: AuthorityHead,
+    expectedMac?: string,
+  ): Promise<void> {
+    const prepared = this.authorityHeadPrepareTail.then(() =>
+      this.prepareAuthorityHeadSerialized(kind, identity, next, expectedMac)
+    );
+    // A refusal must not poison unrelated later preparations, while every caller still
+    // receives its own exact failure.
+    this.authorityHeadPrepareTail = prepared.catch(() => undefined);
+    return prepared;
+  }
+
+  private async prepareAuthorityHeadSerialized(
+    kind: "legacy" | "canonical",
+    identity: string,
+    next: AuthorityHead,
+    expectedMac?: string,
+  ): Promise<void> {
+    if (!identity || !Number.isSafeInteger(next.revision) || next.revision < 1 || !/^[0-9a-f]{64}$/.test(next.mac)) {
+      throw new Error("invalid authority freshness head");
+    }
+    // Refresh immediately before the RMW. Canonical writers are already serialized across
+    // hosts by DeliveryStore's SQLite BEGIN IMMEDIATE; this merge prevents a second host's
+    // committed head for another Delivery from being overwritten by a stale local snapshot.
+    // If a host did race outside that lock, the readback below refuses rather than trusting it.
+    this.authorityHeads = parseAuthorityHeads(await this.host.getSecret(this.authorityHeadsSecretKey()));
+    const mapKey = this.authorityHeadMapKey(kind, identity);
+    const current = this.authorityHeads.get(mapKey);
+    if (expectedMac === undefined) {
+      if (current) {
+        if (current.revision === next.revision && current.mac === next.mac) return;
+        throw new Error(`authority head '${mapKey}' already exists with different state`);
+      }
+      if (next.revision !== 1) throw new Error(`initial authority head '${mapKey}' must start at revision 1`);
+    } else {
+      if (!current || current.mac !== expectedMac || next.revision !== current.revision + 1) {
+        throw new Error(`authority head '${mapKey}' changed or attempted a non-monotonic update`);
+      }
+    }
+    const updated = new Map(this.authorityHeads);
+    updated.set(mapKey, { ...next });
+    const serialized = serializeAuthorityHeads(updated);
+    // SecretStorage is prepared before the workspace/SQLite commit. A crash after this await leaves
+    // the head ahead of workspace state, which is an explicit fail-closed recovery condition.
+    await this.host.setSecret(this.authorityHeadsSecretKey(), serialized);
+    const persisted = parseAuthorityHeads(await this.host.getSecret(this.authorityHeadsSecretKey()));
+    if (serializeAuthorityHeads(persisted) !== serialized) {
+      this.authorityHeads = persisted;
+      throw new Error(`authority head '${mapKey}' changed during durable prepare`);
+    }
+    this.authorityHeads = persisted;
+  }
+
+  private legacyAuthorityHeadPort(): AuthorityHeadPort {
+    return {
+      current: (identity) => this.currentAuthorityHead("legacy", identity),
+      prepare: (identity, next, expectedMac) => this.prepareAuthorityHead("legacy", identity, next, expectedMac),
+    };
+  }
+
+  private canonicalAuthorityHeadPort(): AuthorityHeadPort {
+    return {
+      current: (identity) => this.currentAuthorityHead("canonical", identity),
+      prepare: (identity, next, expectedMac) => this.prepareAuthorityHead("canonical", identity, next, expectedMac),
+    };
   }
 
   /** spec 351 T6 — persist the digest-only registry snapshot after every mint/revoke, so a surviving tmux
@@ -1762,9 +2146,13 @@ export class Workspace {
     // A headless test host (no getSecret wired) degrades to no per-agent tokens (legacy path only).
     try {
       const persisted = deps.host.getState<PersistableEntry[]>(ws.callerRegistryStateKey()) ?? [];
-      ws.callerRegistry = new CallerIdentityRegistry(await loadOrCreateHmacKey(deps.host), persisted);
+      const hmacKey = await loadOrCreateHmacKey(deps.host);
+      const authorityHeads = parseAuthorityHeads(await deps.host.getSecret(ws.authorityHeadsSecretKey()));
+      ws.authorityIntegrityKey = hmacKey;
+      ws.authorityHeads = authorityHeads;
+      ws.callerRegistry = new CallerIdentityRegistry(hmacKey, persisted);
     } catch (err) {
-      ws.host.notify(ws.t("per-agent Bridge tokens unavailable: {0} (falling back to the shared token)", err instanceof Error ? err.message : String(err)), "warn");
+      ws.host.notify(ws.t("per-agent Bridge tokens and authority custody unavailable: {0} (falling back to the shared token; gated authority remains fail-closed)", err instanceof Error ? err.message : String(err)), "warn");
     }
 
     try {
@@ -1984,6 +2372,41 @@ export class Workspace {
    * opt-in auto path (on idle-after-compaction) and the always-on manual command/Bridge tool.
    * Best-effort: no-op if the agent isn't running.
    */
+  private requireAuthorityIntegrityKey(operation: string): Buffer {
+    if (!this.authorityIntegrityKey) {
+      throw new Error(`${operation}: host authority integrity key is unavailable`);
+    }
+    return this.authorityIntegrityKey;
+  }
+
+  private async readAuthenticatedLegacyDelegation(agent: string): Promise<{ path: string; record: DelegationRecord } | undefined> {
+    const matches = findNonArchivedDelegationRecordsByAgent(this.workspaceRoot, agent);
+    if (matches.length === 0) return undefined;
+    if (matches.length !== 1) {
+      throw new Error(`AMBIGUOUS_LEGACY_DELEGATION: '${agent}' has ${matches.length} active delegation records`);
+    }
+    const found = matches[0]!;
+    const authorityKey = this.requireAuthorityIntegrityKey(`legacy delegation '${agent}'`);
+    if (found.record.agent !== agent
+      || !verifyDelegationRecordLocation(this.workspaceRoot, found.path, found.record)
+      || !verifyDelegationRecordAuthority(found.record, authorityKey, this.workspaceRoot)
+      || !await verifyDelegationRecordFreshness(found.record, this.legacyAuthorityHeadPort())) {
+      throw new Error(`LEGACY_DELEGATION_INTEGRITY_INVALID: delegation authority for '${agent}' is unsigned, stale, or tampered`);
+    }
+    return found;
+  }
+
+  private async resolveAuthenticatedLegacyReuseTarget(target: ReuseTarget): Promise<{ path: string; record: DelegationRecord }> {
+    const found = resolveReuseTarget(this.workspaceRoot, target);
+    const authorityKey = this.requireAuthorityIntegrityKey("reuse_worktree");
+    if (!verifyDelegationRecordLocation(this.workspaceRoot, found.path, found.record)
+      || !verifyDelegationRecordAuthority(found.record, authorityKey, this.workspaceRoot)
+      || !await verifyDelegationRecordFreshness(found.record, this.legacyAuthorityHeadPort())) {
+      throw new Error("REUSE_AUTHORITY_INTEGRITY_INVALID: selected delegation is unsigned, stale, tampered, or belongs to another workspace");
+    }
+    return found;
+  }
+
   async reanchor(agent: string): Promise<void> {
     // spec 216 (codex r1 M3): re-anchoring types a role reminder into the pane — agents only.
     // The UI menu gates on `-ai`, but the Bridge tool calls this directly, so guard here too:
@@ -1993,6 +2416,13 @@ export class Workspace {
     if (!(await this.tmux.hasSession(session))) throw new Error(`agent '${agent}' is not running`);
     const def = this.manager.defOf(agent);
     const relPath = path.join(".tachyon", "roles", `${agent}.md`);
+    // Resolve the complete project-owned block before writing the role artifact or touching the
+    // pane. A configured-but-invalid source must leave the running agent exactly as it was.
+    const projectGuidance = loadAndRenderProjectGuidance(
+      this.workspaceRoot,
+      this.config?.settings.projectGuidance,
+    );
+    const delegationRecord = (await this.readAuthenticatedLegacyDelegation(agent))?.record;
     try {
       const abs = path.join(this.workspaceRoot, relPath);
       fs.mkdirSync(path.dirname(abs), { recursive: true });
@@ -2000,19 +2430,28 @@ export class Workspace {
     } catch {
       // a missing role doc just weakens the reminder; the inline role name still re-anchors
     }
-    // spec 363 T3 — re-anchor is one of the four primer moments (spawn/restart/resume/re-anchor):
-    // always the FULL primer (spec.md — no delta dosing), typed in AFTER the short role reminder
-    // so recency still favors the role-doc pointer while the primer restores protocol/repo facts.
-    const delegationRecord = readLatestDelegationRecord(this.workspaceRoot, agent)?.record;
-    const { primer, beforeFinishing } = renderPrimer({
+    // Specs 363/383 — re-anchor uses the same ownership ordering as startup: Tachyon protocol,
+    // project-owned body, then the closing protocol reminder. Long bodies go to a purpose-specific
+    // file so the original spawn contract remains intact and tmux receives only a compact pointer.
+    const body = [projectGuidance, roleReminder(def?.role, relPath)]
+      .filter((part): part is string => !!part?.trim())
+      .join("\n\n");
+    const frame = (deliverable: string): string => wrapWithPrimer(deliverable, {
       agentName: agent,
       delegator: this.manager.delegatorOf(agent),
       parent: this.manager.parentOf(agent),
       gate: delegationRecord ? { behaviorTest: delegationRecord.behaviorTest, owns: delegationRecord.owns, stubPath: delegationRecord.stubPath } : undefined,
-      freshWorktree: false,
-      verify: this.config?.settings.verify,
+      verify: delegationRecord?.verifySettings ?? this.config?.settings.verify,
     });
-    await this.tmux.sendKeys(session, `${roleReminder(def?.role, relPath)}\n\n${primer}\n\n${beforeFinishing}`, true);
+    // Preflight the exact pointer framing before replacing a prior re-anchor artifact.
+    assertSafeBriefTransport(
+      frame(previewDeliverableBody(this.workspaceRoot, agent, body, "reanchor")),
+      `agent '${agent}' re-anchor brief`,
+    );
+    const deliverable = deliverableBody(this.workspaceRoot, agent, body, "reanchor");
+    const injection = frame(deliverable);
+    assertSafeBriefTransport(injection, `agent '${agent}' re-anchor brief`);
+    await this.tmux.sendKeys(session, injection, true);
   }
 
   // ───────────────────────── spec 241 — per-agent continuity ─────────────────────────
@@ -2183,8 +2622,9 @@ export class Workspace {
         try {
           this.pendingAnchor.delete(agent);
           await this.reanchor(agent);
-        } catch {
-          /* best-effort */
+        } catch (error) {
+          const detail = error instanceof Error ? error.message : String(error);
+          this.host.notify(this.t("could not re-anchor agent '{0}': {1}", agent, detail), "warn");
         }
       }
       this.detectSessionDiscontinuity(agent);
@@ -2444,14 +2884,18 @@ export class Workspace {
   private async recordCanonicalDelivery(input: {
     name: string;
     delegator?: string;
-    gate: { behaviorTest: string; owns?: string[]; stubPath?: string };
+    gate: { behaviorTest: string; owns?: string[]; stubPath?: string; oracleHash?: string; executorHashes?: Record<string, string> };
     worktree: WorktreeRecord;
     baseSha: string;
+    verifySettings?: NonNullable<TachyonConfig["settings"]>["verify"];
   }): Promise<void> {
     const owns = [...new Set(input.gate.owns ?? [])];
     const spawnKey = createHash("sha256").update(JSON.stringify({
       agent: input.name, delegator: input.delegator, baseSha: input.baseSha,
       taskRef: input.worktree.branch, behaviorTest: input.gate.behaviorTest, owns,
+      oracleHash: input.gate.oracleHash,
+      executorHashes: input.gate.executorHashes,
+      verifySettings: input.verifySettings,
     })).digest("hex");
     const deliveryId = `d-spawn-${spawnKey.slice(0, 32)}`;
     const actor = input.delegator ? { kind: "agent" as const, name: input.delegator } : { kind: "system" as const, name: "tachyon" };
@@ -2479,6 +2923,9 @@ export class Workspace {
         owns,
         taskRef: input.worktree.branch,
         ...(input.gate.stubPath ? { stubPath: input.gate.stubPath } : {}),
+        ...(input.gate.oracleHash ? { oracleHash: input.gate.oracleHash } : {}),
+        ...(input.gate.executorHashes ? { executorHashes: structuredClone(input.gate.executorHashes) } : {}),
+        ...(input.verifySettings ? { verifySettings: structuredClone(input.verifySettings) } : {}),
       },
       lease: { state: "held", holder: { segmentId: `seg-${spawnKey.slice(0, 16)}`, executionAgent: input.name, principal: input.name, ...(executionNonce ? { executionNonce } : {}), ...(identity?.state === "exact" ? { process: { pid: identity.pid, processStart: identity.processStart, bootId: identity.bootId } } : {}) }, expectedHeadSha: input.baseSha, changedAt: now },
       segments: [{
@@ -2528,7 +2975,11 @@ export class Workspace {
     if (safety !== "disabled" && (!holder.executionNonce || !holder.process)) {
       throw new Error("DELIVERY_PROCESS_IDENTITY_MISSING: sequential canonical holder lacks nonce or process identity");
     }
-    this.ledger.bindDelivery(input.name, { deliveryId: delivery.id, segmentId: holder.segmentId, executionNonce: holder.executionNonce });
+    this.canonicalLedger.stageCanonicalBinding(input.name, {
+      deliveryId: delivery.id,
+      segmentId: holder.segmentId,
+      executionNonce: holder.executionNonce,
+    });
   }
 
   /** Single live source for creation, lease, Bridge diagnostics, and reload. */
@@ -2572,7 +3023,13 @@ export class Workspace {
    * (callers use `attemptDeliveryReloadSnapshot` for fail-closed handling).
    */
   private async refreshDeliveryReloadSnapshot(): Promise<ReloadReconciliationSnapshot> {
-    const deliveries = await this.deliveries.list();
+    const deliveryList = await this.deliveries.listWithCorrupt();
+    if (deliveryList.corrupt.length > 0) {
+      throw new Error(
+        `canonical Delivery authority is corrupt or stale: ${deliveryList.corrupt.map((record) => record.id).join(", ")}`,
+      );
+    }
+    const deliveries = deliveryList.records;
     const gitList = await this.gitDeliveries.list();
     const linkedProjections: LinkedGitProjection[] = [];
     for (const g of gitList) {
@@ -3180,7 +3637,7 @@ export class Workspace {
     // Spec 211: rebuild ad-hoc defs + lineage from the ledger BEFORE planning resume,
     // so a re-discovered ad-hoc agent is restartable and re-nests under its parent.
     // t-8354ae — also run when config is invalid so the sidebar can list ledger agents.
-    this.manager.rehydrateFromLedger();
+    await this.manager.rehydrateFromLedger();
 
     if (!configOk) {
       // t-8354ae — fail VISIBLE, not silent wipe: rehydrate + surface views, but never
@@ -3218,7 +3675,7 @@ export class Workspace {
     const declaredInConfig = new Set(Object.keys(this.config?.agents ?? {}));
     this.gcLedger(declaredInConfig, liveSessions); // spec 239: prune stale declared rows
     this.compactSessionOwners(declaredInConfig, liveSessions); // t-123143: prune stale session-owner rows
-    this.rehydratePipelines(); // spec 230: restore pipeline runs so a reloaded run's surviving nodes can still complete
+    await this.rehydratePipelines(); // spec 230: restore pipeline runs so a reloaded run's surviving nodes can still complete
     // SDD 368 T14/R4 — recompute after ledger rehydration/GC (same attempt helper as _create).
     // Reflects post-rehydrate truth and allows a prior failed create/start to become ready.
     await this.attemptDeliveryReloadSnapshot();
@@ -3250,7 +3707,12 @@ export class Workspace {
       try {
         await this.manager.spawn(agent);
       } catch (err) {
-        this.host.notify(this.t("autostart of '{0}' failed: {1}", agent, err instanceof Error ? err.message : String(err)), "error");
+        // Benign race with resume/re-entry/rebind: session can be live before spawn runs.
+        // Same swallow as autostartNewlyDeclared — do not toast "already running" as a failure.
+        const msg = err instanceof Error ? err.message : String(err);
+        if (!msg.includes("already running")) {
+          this.host.notify(this.t("autostart of '{0}' failed: {1}", agent, msg), "error");
+        }
       }
     }
     this.rebuildWatches();
@@ -3318,18 +3780,28 @@ export class Workspace {
     this.deps.onViewsChanged("agents");
   }
 
-  /** Resume every currently-offered agent (best-effort; a failure falls back to fresh). */
+  /** Resume every currently-offered agent; declared stale sessions fall back to fresh spawn. */
   async resumeAllOffered(): Promise<void> {
+    const failed: typeof this.resumable = [];
     for (const item of [...this.resumable]) {
       try {
         await this.manager.resume(item.name, item.record);
       } catch (err) {
-        if (err instanceof ResumeUnavailableError && item.record.declared) {
-          await this.manager.spawn(item.name).catch(() => undefined);
+        try {
+          if (err instanceof ResumeUnavailableError && item.record.declared) {
+            await this.manager.spawn(item.name);
+          } else {
+            throw err;
+          }
+        } catch (fallbackError) {
+          failed.push(item);
+          const detail = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+          this.host.notify(this.t("could not resume agent '{0}': {1}", item.name, detail), "error");
         }
       }
     }
-    this.resumable = [];
+    // Keep failed offers actionable instead of silently discarding their recovery path.
+    this.resumable = failed;
     this.deps.onViewsChanged("agents");
   }
 

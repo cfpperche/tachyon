@@ -7,11 +7,11 @@ import { spawn, spawnSync } from "node:child_process";
 // The production resolver is an owned ESM CLI; Vitest loads it directly while the repository's
 // test typecheck target remains CommonJS.
 // @ts-expect-error -- static ESM import is intentional for this executable module test.
-import { isWslRemoteCli, resolveEdhCode } from "../../scripts/edh-palliative/resolve-code.mjs";
+import { isWslRemoteCli, resolveEdhCode } from "../../scripts/dev-host/resolve-code.mjs";
 // @ts-expect-error -- static ESM import is intentional for this executable module test.
-import { stopFixtureBridge } from "../../scripts/edh-palliative/stop-bridge.mjs";
+import { stopFixtureBridge } from "../../scripts/dev-host/stop-bridge.mjs";
 
-const launcher = path.resolve("scripts/edh-palliative/edh-palliative.sh");
+const launcher = path.resolve("scripts/dev-host/cli.sh");
 const temporaryRoots: string[] = [];
 
 function temporaryRoot(label: string): string {
@@ -30,7 +30,7 @@ afterEach(() => {
   for (const root of temporaryRoots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
 });
 
-describe("EDH VS Code resolver", () => {
+describe("Dev Host VS Code resolver", () => {
   it("prefers the newest architecture-compatible worktree cache", () => {
     const repo = temporaryRoot("edh-code-local");
     executable(path.join(repo, ".vscode-test/vscode-linux-x64-1.9.0/code"));
@@ -75,7 +75,7 @@ describe("EDH VS Code resolver", () => {
   });
 });
 
-describe("EDH child launch isolation", () => {
+describe("Dev Host child launch isolation", () => {
   it("scrubs live agent identity, uses fixture-private state, and enables in-memory secret storage", () => {
     const root = temporaryRoot("edh-launch");
     const base = path.join(root, "fixtures");
@@ -89,8 +89,8 @@ describe("EDH child launch isolation", () => {
       encoding: "utf8",
       env: {
         ...process.env,
-        TACHYON_EDH_PALLIATIVE_BASE: base,
-        TACHYON_EDH_PALLIATIVE_ID: "isolation",
+        TACHYON_DEV_HOST_BASE: base,
+        TACHYON_DEV_HOST_ID: "isolation",
         TACHYON_EDH_CODE: fakeCode,
         TACHYON_EDH_FOREGROUND: "1",
         EDH_TEST_CAPTURE: capture,
@@ -252,8 +252,8 @@ describe("EDH fixture cleanup", () => {
     const base = path.join(root, "fixtures");
     const env = {
       ...process.env,
-      TACHYON_EDH_PALLIATIVE_BASE: base,
-      TACHYON_EDH_PALLIATIVE_ID: "tmux-cleanup",
+      TACHYON_DEV_HOST_BASE: base,
+      TACHYON_DEV_HOST_ID: "tmux-cleanup",
     };
     const seeded = spawnSync("bash", [launcher, "seed"], { cwd: path.resolve("."), encoding: "utf8", env });
     expect(seeded.status, seeded.stderr || seeded.stdout).toBe(0);

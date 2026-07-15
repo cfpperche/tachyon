@@ -116,12 +116,15 @@ export function harnessable(adapter: ResumeAdapter | null | undefined): boolean 
 }
 
 const LAUNCHERS = new Set(["npx", "bunx", "pnpx", "env"]);
+/** GNU env options whose operand is a separate token, not the wrapped runtime binary. */
+const ENV_OPERAND_FLAGS = new Set(["-u", "--unset", "-C", "--chdir", "-S", "--split-string"]);
 
 /** Index of the actual binary token, seeing through `env X=1`, `npx`, leading flags. */
 export function binaryIndex(tokens: string[]): number {
   for (let i = 0; i < tokens.length; i++) {
     const base = tokens[i].split("/").pop() ?? tokens[i];
     if (LAUNCHERS.has(base)) continue; // launcher (npx/bunx/env) — keep scanning
+    if (ENV_OPERAND_FLAGS.has(base)) { i++; continue; } // env option + operand
     if (base.includes("=") || base.startsWith("-")) continue; // env assignment / flag
     return i; // first real binary token
   }
@@ -345,8 +348,8 @@ const ADAPTERS: ResumeAdapter[] = [
     resumesWithoutId: true,
     injectId: (cmd) => cmd,
     resumeCommand: (cmd, id) => (id ? append(cmd, "--resume", id) : append(cmd, "--continue")),
-    // Activity v1 still uses state.db (not a per-session jsonl path); keep a stable locator.
-    transcriptPath: (configHome, _cwd, id) => `${configHome}/state.db#${id}`,
+    // Activity reads `$HERMES_HOME/state.db` (SQLite); session id is carried separately by the host.
+    transcriptPath: (configHome, _cwd, _id) => `${configHome}/state.db`,
     harness: {
       configHomeEnv: "HERMES_HOME",
       authFiles: ["auth.json"],

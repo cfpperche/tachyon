@@ -79,9 +79,9 @@ export function resolveEdhCode({
   if (!repo) throw new Error("repository path is required");
 
   if (explicit) {
-    if (!executable(explicit)) throw new Error("TACHYON_EDH_CODE is not an executable file");
+    if (!executable(explicit)) throw new Error("TACHYON_DEV_HOST_CODE/TACHYON_EDH_CODE is not an executable file");
     if (isWslRemoteCli(explicit)) {
-      throw new Error("TACHYON_EDH_CODE resolves to WSL remote-cli/code, which cannot launch an isolated Extension Development Host");
+      throw new Error("TACHYON_DEV_HOST_CODE/TACHYON_EDH_CODE resolves to WSL remote-cli/code, which cannot launch an isolated Extension Development Host");
     }
     return { path: canonical(explicit), source: "explicit" };
   }
@@ -97,21 +97,21 @@ export function resolveEdhCode({
   if (pathCandidate) {
     if (!executable(pathCandidate)) throw new Error("the code executable found on PATH is not executable");
     if (isWslRemoteCli(pathCandidate)) {
-      throw new Error("code on PATH resolves to WSL remote-cli/code; run the integration suite once to seed .vscode-test or set TACHYON_EDH_CODE to a native VS Code binary");
+      throw new Error("code on PATH resolves to WSL remote-cli/code; run the integration suite once to seed .vscode-test or set TACHYON_DEV_HOST_CODE/TACHYON_EDH_CODE to a native VS Code binary");
     }
     return { path: canonical(pathCandidate), source: "path" };
   }
 
-  throw new Error("no compatible VS Code executable found; run the integration suite once to seed .vscode-test or set TACHYON_EDH_CODE");
+  throw new Error("no compatible VS Code executable found; run the integration suite once to seed .vscode-test or set TACHYON_DEV_HOST_CODE/TACHYON_EDH_CODE");
 }
 
 function main() {
   const repo = process.argv[2];
   try {
-    const resolved = resolveEdhCode({ repo, explicit: process.env.TACHYON_EDH_CODE });
+    const resolved = resolveEdhCode({ repo, explicit: process.env.TACHYON_DEV_HOST_CODE || process.env.TACHYON_EDH_CODE });
     process.stdout.write(`${resolved.path}\n`);
   } catch (error) {
-    process.stderr.write(`edh-palliative: ${error instanceof Error ? error.message : String(error)}\n`);
+    process.stderr.write(`dev-host: ${error instanceof Error ? error.message : String(error)}\n`);
     process.exitCode = 1;
   }
 }

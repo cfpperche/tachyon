@@ -1,0 +1,5 @@
+# EDH isolation dirs created on F5 / launch (local only)
+.edh-user-data/
+.edh-extensions/
+.edh-tmux/
+.edh-cache/

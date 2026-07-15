@@ -3,11 +3,13 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  isRuntimeOpsSnapshot,
   isRuntimeOpsSnapshotV1,
   mergeRuntimeOpsSnapshotsV1,
+  parseRuntimeOpsSnapshot,
   parseRuntimeOpsSnapshotV1,
 } from "../../src/runtime-api/runtimeOpsProjection.js";
-import type { RuntimeOpsSnapshotV1 } from "../../src/runtimeOps/types.js";
+import type { RuntimeOpsSnapshotV1, RuntimeOpsSnapshotV2 } from "../../src/runtimeOps/types.js";
 import { isWorkspaceQueryV1, workspaceRuntimeOpsViewSuccessV1 } from "../../src/engine-service/protocol.js";
 import { FakeWorkspaceClient } from "../../src/shell/FakeWorkspaceClient.js";
 import { runtimeOpsFleetView, workspaceRuntimeOpsTarget } from "../../src/shell/RuntimeOpsTarget.js";
@@ -59,6 +61,39 @@ describe("Runtime Ops persistent projection", () => {
         agents: [{ key: "ws-one:alpha" }, { key: "ws-two:beta" }],
       }],
     });
+  });
+
+  it("preserves schema V2 and selects the newest agreed provider observation", () => {
+    const first = snapshotV2("ws-one", "alpha", "2026-07-14T12:00:00.000Z", 10);
+    const second = snapshotV2("ws-two", "beta", "2026-07-14T12:01:00.000Z", 20, true);
+
+    expect(parseRuntimeOpsSnapshot(first)).toEqual(first);
+    expect(isRuntimeOpsSnapshot(first)).toBe(true);
+    expect(mergeRuntimeOpsSnapshotsV1([first, second])).toMatchObject({
+      schemaVersion: 2,
+      generatedAt: "2026-07-14T12:01:00.000Z",
+      providerCapacity: [
+        {
+          provider: "codex",
+          configuration: { state: "enabled", sources: ["cli"] },
+          quota: { state: "available", observedAt: "2026-07-14T12:01:00.000Z", windows: [{ usedPercent: 37 }] },
+        },
+        { provider: "claude", configuration: { state: "disabled" } },
+      ],
+    });
+  });
+
+  it("refuses to merge conflicting provider configuration across workspace engines", () => {
+    const first = snapshotV2("ws-one", "alpha", "2026-07-14T12:00:00.000Z", 10);
+    const second = snapshotV2("ws-two", "beta", "2026-07-14T12:01:00.000Z", 20);
+    second.providerCapacity[0] = {
+      provider: "codex",
+      scope: "provider-account",
+      configuration: { state: "disabled" },
+      quota: { state: "unavailable", observedAt: second.generatedAt, reason: "source-disabled" },
+    };
+
+    expect(() => mergeRuntimeOpsSnapshotsV1([first, second])).toThrow(/configuration disagrees/);
   });
 
   it("queries each authenticated client and builds one fleet view", async () => {
@@ -135,5 +170,42 @@ function snapshot(workspaceKey: string, agentName: string, generatedAt: string, 
         contextPressure: { state: "unavailable" },
       }],
     }],
+  };
+}
+
+function snapshotV2(
+  workspaceKey: string,
+  agentName: string,
+  generatedAt: string,
+  inputTokens: number,
+  quotaAvailable = false,
+): RuntimeOpsSnapshotV2 {
+  const base = snapshot(workspaceKey, agentName, generatedAt, inputTokens);
+  return {
+    ...base,
+    schemaVersion: 2,
+    providerCapacity: [
+      {
+        provider: "codex",
+        scope: "provider-account",
+        configuration: { state: "enabled", sources: ["cli"] },
+        quota: quotaAvailable
+          ? {
+              state: "available",
+              source: "cli",
+              confidence: "exact",
+              observedAt: generatedAt,
+              freshness: { state: "fresh" },
+              windows: [{ name: "session", usedPercent: 37 }],
+            }
+          : { state: "unavailable", source: "cli", observedAt: generatedAt, reason: "not-observed" },
+      },
+      {
+        provider: "claude",
+        scope: "provider-account",
+        configuration: { state: "disabled" },
+        quota: { state: "unavailable", observedAt: generatedAt, reason: "source-disabled" },
+      },
+    ],
   };
 }

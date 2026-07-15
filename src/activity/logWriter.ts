@@ -16,6 +16,7 @@ import { ActivityLog, agentLogId } from "./logStore.js";
 import { createClaudeNormalizer } from "./claudeNormalizer.js";
 import { createCodexNormalizer, type ActivityNormalizer } from "./codexNormalizer.js";
 import { createGrokNormalizer } from "./grokNormalizer.js";
+import { HermesStorageReader, type HermesReaderState } from "./hermesStorageReader.js";
 import { OpencodeStorageReader, type OpencodeReaderState } from "./opencodeStorageReader.js";
 import { readForward, readTailWindow } from "./tailReader.js";
 import type { NormalizedEvent } from "./types.js";
@@ -42,7 +43,7 @@ export interface SessionLoc {
   runtime: string;
 }
 
-interface WriterState extends OpencodeReaderState {
+interface WriterState extends OpencodeReaderState, HermesReaderState {
   sessions: Record<string, { offset: number }>;
   active?: string;
   /** Monotonic count of session transitions — makes each `session.boundary` id unique so a repeated toggle
@@ -56,6 +57,7 @@ export class ActivityLogWriter {
   private state: WriterState = { sessions: {} };
   private norm: ActivityNormalizer = createClaudeNormalizer();
   private opencode?: OpencodeStorageReader;
+  private hermes?: HermesStorageReader;
   private normalizerKey?: string;
   private loaded = false;
   // A Tachyon lifecycle action awaiting a boundary. `ready` is false while the action is still in-flight (set
@@ -118,6 +120,24 @@ export class ActivityLogWriter {
         this.state.active = cur.sessionId;
       }
       appended += this.opencode!.poll(opencodeStorageRoot(cur), cur.sessionId);
+      this.state.active = cur.sessionId;
+      this.save();
+      return appended;
+    }
+
+    if (cur.runtime === "hermes") {
+      this.ensureHermesReader();
+      let appended = 0;
+      const isNewSession = !this.state.hermes?.sessions[cur.sessionId];
+      const lc = this.pendingLifecycle?.ready ? this.pendingLifecycle : undefined;
+      if (cur.sessionId !== this.state.active) {
+        const reason = lc ? lc.action : isNewSession ? "new" : "resume";
+        if (this.state.active) appended += this.emitBoundary(cur, this.state.active, cur.sessionId, reason);
+        else if (lc) appended += this.emitBoundary(cur, "", cur.sessionId, lc.action);
+        if (lc) this.pendingLifecycle = undefined;
+        this.state.active = cur.sessionId;
+      }
+      appended += this.hermes!.poll(cur.path, cur.sessionId);
       this.state.active = cur.sessionId;
       this.save();
       return appended;
@@ -212,6 +232,7 @@ export class ActivityLogWriter {
     this.norm = createNormalizer();
     this.normalizerKey = undefined;
     this.opencode = undefined;
+    this.hermes = undefined;
   }
 
   private save(): void {
@@ -234,12 +255,17 @@ export class ActivityLogWriter {
   private ensureOpencodeReader(): void {
     this.opencode ??= new OpencodeStorageReader(this.log, this.state, this.now);
   }
+
+  private ensureHermesReader(): void {
+    this.hermes ??= new HermesStorageReader(this.log, this.state, this.now);
+  }
 }
 
 function createNormalizer(runtime = "claude", sourcePath?: string): ActivityNormalizer {
   if (runtime === "claude") return createClaudeNormalizer(sourcePath);
   if (runtime === "codex") return createCodexNormalizer(sourcePath);
   if (runtime === "grok") return createGrokNormalizer(sourcePath);
+  // Hermes uses HermesStorageReader (SQLite), not line-tail normalizers.
   return { push: () => [] };
 }
 

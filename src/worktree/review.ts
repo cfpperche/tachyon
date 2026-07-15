@@ -5,7 +5,7 @@
  * git output and decides which side of a diff is empty — unit-tested with no git.
  */
 
-export type ChangeStatus = "A" | "M" | "D" | "R" | "C";
+export type ChangeStatus = "A" | "M" | "D" | "R" | "C" | "T";
 
 export interface ChangedFile {
   status: ChangeStatus;
@@ -27,7 +27,7 @@ export function parseNameStatus(out: string): ChangedFile[] {
   let i = 0;
   while (i < tokens.length) {
     const code = tokens[i][0] as ChangeStatus;
-    if (!"AMDRC".includes(code)) {
+    if (!"AMDRCT".includes(code)) {
       i += 1; // skip an unexpected token rather than misalign
       continue;
     }

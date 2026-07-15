@@ -111,6 +111,62 @@ export interface RuntimeOpsRuntimeV1 {
   agents: RuntimeOpsAgentRefV1[];
 }
 
+export type RuntimeOpsProviderV2 = "codex" | "claude";
+export type RuntimeOpsProviderSourceV2 = "cli" | "oauth";
+export type RuntimeOpsProviderConfidenceV2 = "exact" | "estimated" | "unknown";
+
+export interface RuntimeOpsProviderQuotaWindowV2 {
+  name: "session" | "weekly" | "tertiary";
+  usedPercent: number;
+  windowMinutes?: number;
+  resetsAt?: string;
+}
+
+export type RuntimeOpsProviderFreshnessV2 =
+  | { state: "fresh" }
+  | { state: "stale"; lastGoodAt: string };
+
+export type RuntimeOpsProviderUnavailableReasonV2 =
+  | "unsupported"
+  | "source-disabled"
+  | "unauthenticated"
+  | "timeout"
+  | "cancelled"
+  | "not-observed"
+  | "provider-error"
+  | "invalid-payload"
+  | "stale-expired";
+
+export type RuntimeOpsProviderQuotaV2 =
+  | {
+      state: "available";
+      source: RuntimeOpsProviderSourceV2;
+      confidence: RuntimeOpsProviderConfidenceV2;
+      observedAt: string;
+      freshness: RuntimeOpsProviderFreshnessV2;
+      windows: RuntimeOpsProviderQuotaWindowV2[];
+    }
+  | {
+      state: "unavailable";
+      source?: RuntimeOpsProviderSourceV2;
+      observedAt: string;
+      reason: RuntimeOpsProviderUnavailableReasonV2;
+      lastGoodAt?: string;
+    };
+
+/**
+ * Provider quota is account-wide and deliberately has no agent/workspace key. The opaque host account-scope key
+ * also stays host-side: the webview only needs the fixed scope class to avoid false per-agent attribution.
+ */
+export interface RuntimeOpsProviderCapacityV2 {
+  provider: RuntimeOpsProviderV2;
+  scope: "provider-account";
+  configuration:
+    | { state: "disabled" }
+    | { state: "enabled"; sources: RuntimeOpsProviderSourceV2[] };
+  quota: RuntimeOpsProviderQuotaV2;
+}
+
 /**
  * Versioned, allowlisted host-to-webview contract for Runtime Ops.
  * Phase 1 intentionally publishes no runtime rows; later phases extend the row union without exposing raw logs.
@@ -127,20 +183,42 @@ export interface RuntimeOpsSnapshotV1 {
   error?: RuntimeOpsSnapshotErrorV1;
 }
 
+/**
+ * Schema V2 adds a bounded account-capacity lane while retaining V1 runtime rows unchanged. Consumers accept V1 so
+ * an already-mounted webview can degrade to native-only data during an extension-host/webview version transition.
+ */
+export interface RuntimeOpsSnapshotV2 {
+  schemaVersion: 2;
+  generatedAt: string;
+  summary: RuntimeOpsSummaryV1;
+  runtimes: RuntimeOpsRuntimeV1[];
+  providerCapacity: RuntimeOpsProviderCapacityV2[];
+  error?: RuntimeOpsSnapshotErrorV1;
+}
+
+export type RuntimeOpsSnapshot = RuntimeOpsSnapshotV1 | RuntimeOpsSnapshotV2;
+
 export interface RuntimeOpsSnapshotErrorV1 {
   code: "snapshot-unavailable";
 }
 
-export function emptyRuntimeOpsSnapshot(now = new Date()): RuntimeOpsSnapshotV1 {
+export function emptyRuntimeOpsSnapshot(now = new Date()): RuntimeOpsSnapshotV2 {
+  const observedAt = now.toISOString();
   return {
-    schemaVersion: 1,
-    generatedAt: now.toISOString(),
+    schemaVersion: 2,
+    generatedAt: observedAt,
     summary: { runtimes: 0, managedAgents: 0 },
     runtimes: [],
+    providerCapacity: ["codex", "claude"].map((provider) => ({
+      provider: provider as RuntimeOpsProviderV2,
+      scope: "provider-account" as const,
+      configuration: { state: "disabled" as const },
+      quota: { state: "unavailable" as const, observedAt, reason: "source-disabled" as const },
+    })),
   };
 }
 
-export function unavailableRuntimeOpsSnapshot(now = new Date()): RuntimeOpsSnapshotV1 {
+export function unavailableRuntimeOpsSnapshot(now = new Date()): RuntimeOpsSnapshotV2 {
   return {
     ...emptyRuntimeOpsSnapshot(now),
     error: { code: "snapshot-unavailable" },

@@ -7,7 +7,8 @@ import { AgentManager } from "../../src/agents/AgentManager.js";
 import { TmuxService, workspaceHash, type ExecResult } from "../../src/tmux/TmuxService.js";
 import { parseConfig } from "../../src/config/loadConfig.js";
 import { SessionLedger } from "../../src/resume/SessionLedger.js";
-import { delegationRecordFromSpawn, writeDelegationRecord, readDelegationRecord, type DelegationRecord } from "../../src/bridge/delegationRecord.js";
+import { appendFixerAttempt, delegationRecordFromSpawn, writeDelegationRecord, readDelegationRecord, type DelegationRecord } from "../../src/bridge/delegationRecord.js";
+import { resolveReuseTarget } from "../../src/agents/reuseWorktree.js";
 import type { GitExec } from "../../src/worktree/WorktreeManager.js";
 
 /** Stateful in-memory tmux fake (same shape as agentManager.test.ts's fakeTmux): tracks live sessions
@@ -72,7 +73,22 @@ function fakeGitExec(headByPath: Map<string, string>): GitExec {
     if (args[0] === "rev-parse" && args[1] === "HEAD") {
       return { stdout: `${headByPath.get(cwd) ?? "sha0"}\n`, stderr: "", code: 0 };
     }
+    if (args[0] === "rev-parse" && args[1] === "--abbrev-ref") {
+      return { stdout: `tachyon/${path.basename(cwd)}\n`, stderr: "", code: 0 };
+    }
     return { stdout: "", stderr: "", code: 0 };
+  };
+}
+
+/** Unit fixture for the host-owned legacy authority boundary. Production supplies integrity-verifying
+ * callbacks from Workspace; these behavior tests deliberately keep raw JSON mechanics behind the same
+ * trusted callback surface so AgentManager itself never reads or rewrites authority files. */
+function hostTrustedLegacyCallbacks(workspaceRoot: string) {
+  return {
+    resolveAuthenticatedLegacyReuseTarget: async (target: Parameters<typeof resolveReuseTarget>[1]) => resolveReuseTarget(workspaceRoot, target),
+    appendLegacyFixerAttempt: (delegationPath: string, attempt: Parameters<typeof appendFixerAttempt>[1]) => {
+      appendFixerAttempt(delegationPath, attempt);
+    },
   };
 }
 
@@ -94,6 +110,7 @@ describe("container-generated delegation behavior", () => {
         getMaxAgents: () => 8,
         ledger,
         gitExec: fakeGitExec(headByPath),
+        ...hostTrustedLegacyCallbacks(ws),
       });
 
       /** Registers a fresh delegation (an original gated agent's finished worktree, never itself
@@ -216,6 +233,7 @@ describe("container-generated delegation behavior", () => {
         getMaxAgents: () => 8,
         ledger,
         gitExec: fakeGitExec(new Map()),
+        ...hostTrustedLegacyCallbacks(ws),
       });
 
       // Two non-archived delegations for the SAME agent NAME (e.g. the name was reused across two
@@ -261,6 +279,7 @@ describe("container-generated delegation behavior", () => {
         getMaxAgents: () => 8,
         ledger,
         gitExec: fakeGitExec(headByPath),
+        ...hostTrustedLegacyCallbacks(ws),
       });
 
       const worktreePath = path.join(base, "worktrees", "owner-pid-alive");
@@ -326,6 +345,7 @@ describe("container-generated delegation behavior", () => {
         getMaxAgents: () => 8,
         ledger,
         gitExec: fakeGitExec(headByPath),
+        ...hostTrustedLegacyCallbacks(ws),
       });
 
       const worktreePath = path.join(base, "worktrees", "owner-pid-dead");

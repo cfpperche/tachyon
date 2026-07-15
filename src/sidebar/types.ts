@@ -44,7 +44,16 @@ export interface AgentVM {
   delegator?: string;
   declaredOwner?: string;
   sub?: string;
+  /** Config/ledger branch when the agent has worktree isolation (gates Review/PR/Remove). Not necessarily live HEAD. */
   worktree?: string;
+  /** spec 384 — live HEAD branch name in the agent's session cwd (sidebar badge). */
+  liveBranch?: string;
+  /** spec 384 — live HEAD differs from the isolation/config branch (`worktree`). */
+  branchDrift?: boolean;
+  /** spec 384 — absolute session cwd (worktree path or workspace root); tooltip only. */
+  worktreePath?: string;
+  /** spec 386 — live CPU/RSS for the agent pane subtree (running agents only). */
+  resources?: { cpuPct?: number; memMb: number };
   verify?: Verify;
   harness?: boolean;
   resumable?: boolean;
@@ -196,15 +205,15 @@ export const SAMPLE: FleetVM = {
   handoff: { exists: true, staleness: "needs_distill", pendingCount: 3 },
   bridge: { port: "42551", connected: true },
   agents: [
-    { name: "orchestrator", model: "Opus 4.8", status: "running", attention: "working", ai: true },
-    { name: "reviewer", model: "Sonnet 5", status: "running", parent: "orchestrator", harness: true, ai: true, adhoc: true },
-    { name: "feature-auth", model: "GPT-5.1 Codex", status: "running", attention: "needs input", worktree: "tachyon/feature-auth", verify: "pass", verifiable: true, forked: true, forkable: true, ai: true },
-    { name: "researcher", status: "needs", attention: "needs input", harness: true, ai: true },
-    { name: "docs-writer", status: "idle", ai: true },
-    { name: "feature-billing", status: "idle", worktree: "tachyon/feature-billing", verify: "stale", verifiable: true, ai: true },
-    { name: "migration", status: "crashed", sub: "exited (1)", verify: "fail", verifiable: true, ai: true },
-    { name: "old-spike", status: "stopped", resumable: true, ai: true, adhoc: true },
-    { name: "qa", status: "stopped", resumable: true, worktree: "tachyon/qa", verifiable: true, ai: true },
+    { name: "orchestrator", model: "Opus 4.8", status: "running", attention: "working", liveBranch: "main", worktreePath: "/ws", resources: { cpuPct: 12, memMb: 420 }, ai: true },
+    { name: "reviewer", model: "Sonnet 5", status: "running", parent: "orchestrator", harness: true, liveBranch: "main", worktreePath: "/ws", resources: { cpuPct: 8, memMb: 310 }, ai: true, adhoc: true },
+    { name: "feature-auth", model: "GPT-5.1 Codex", status: "running", attention: "needs input", worktree: "tachyon/feature-auth", liveBranch: "tachyon/feature-auth", worktreePath: "/cache/feature-auth", resources: { cpuPct: 55, memMb: 920 }, verify: "pass", verifiable: true, forked: true, forkable: true, ai: true },
+    { name: "researcher", status: "needs", attention: "needs input", harness: true, liveBranch: "main", worktreePath: "/ws", ai: true },
+    { name: "docs-writer", status: "idle", liveBranch: "main", worktreePath: "/ws", ai: true },
+    { name: "feature-billing", status: "idle", worktree: "tachyon/feature-billing", liveBranch: "feat/billing-wip", branchDrift: true, worktreePath: "/cache/feature-billing", verify: "stale", verifiable: true, ai: true },
+    { name: "migration", status: "crashed", sub: "exited (1)", liveBranch: "main", worktreePath: "/ws", verify: "fail", verifiable: true, ai: true },
+    { name: "old-spike", status: "stopped", resumable: true, liveBranch: "main", worktreePath: "/ws", ai: true, adhoc: true },
+    { name: "qa", status: "stopped", resumable: true, worktree: "tachyon/qa", liveBranch: "tachyon/qa", worktreePath: "/cache/qa", verifiable: true, ai: true },
   ],
   terminals: [
     { name: "dev", status: "running", sub: "npm run dev" },

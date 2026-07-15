@@ -46,6 +46,7 @@ import { hostActionName, type HostActionBrokerResult } from "../host-action/inde
 import type { DelegationGate } from "./delegationRecord.js";
 import { verifyTask, VerifyTaskStructuredError } from "./verifyTask.js";
 import type { DeliveryVerificationLeaseService } from "../delivery/verificationLease.js";
+import type { AuthorityHead } from "../delivery/authorityIntegrity.js";
 import {
   buildApprovalRequest,
   writeApprovalRequest,
@@ -73,7 +74,7 @@ import type { TaskNotificationEvent } from "../tasks/taskNotificationPolicy.js";
 import { TaskPrototypeStore, type TaskPrototypeSnapshot } from "../tasks/TaskPrototypeStore.js";
 import type { DeliveryLeaseService, WaitForDeliveryLeaseInput, WaitForDeliveryLeaseResult } from "../delivery/leaseService.js";
 import type { DeliveryProjectionService } from "../delivery/projectionService.js";
-import type { DeliveryStore } from "../delivery/store.js";
+import type { DeliveryAuthorityHeadPort, DeliveryStore } from "../delivery/store.js";
 import type { Delivery } from "../delivery/types.js";
 import type { ReloadReconciliationSnapshot } from "../delivery/reloadReconciliation.js";
 
@@ -155,6 +156,12 @@ export interface BridgeDeps {
   withWorktreeLock?: <T>(agent: string, fn: () => Promise<T>) => Promise<T>;
   /** spec 368 T9 — Workspace-owned canonical system verification lease lifecycle. */
   deliveryVerification?: DeliveryVerificationLeaseService;
+  /** Machine-local SecretStorage authority key; legacy verification fails closed when unavailable. */
+  authorityIntegrityKey?: () => Buffer | undefined;
+  /** SecretStorage-custodied freshness head for canonical Deliveries. */
+  canonicalAuthorityHead?: DeliveryAuthorityHeadPort;
+  /** SecretStorage-custodied freshness head for legacy DelegationRecords. */
+  legacyAuthorityHead?: (identity: string) => Promise<AuthorityHead | undefined>;
   /** spec 273 — attach one non-binary evidence record to a worktree agent. Enables attach_evidence. */
   attachEvidence?: (input: AttachEvidenceInput) => Promise<{ ok: boolean; id?: string; reason?: string }>;
   /** spec 273 — read a worktree agent's evidence records (fresh + stale-flagged). Enables list_evidence. */
@@ -924,9 +931,10 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           .object({
             behavior_test: z
               .string()
+              .max(2048)
               .optional()
               .describe(
-                "Vitest test name/pattern that must match at least one executable test, fail at BASE_SHA, and pass at delivered HEAD; use cmd:<command> for an explicit non-Vitest verifier",
+                "canonical behavior verifier that must fail at BASE_SHA and pass at delivered HEAD: use cmd:<command> for a runner-neutral verifier, or a plain identifier only when the project explicitly configures settings.verify.behavior",
               ),
             owns: z.array(z.string().min(1)).optional().describe("declared owned paths for this delegated task"),
           })
@@ -1281,7 +1289,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       inputSchema: {
         delivery_id: z.string().min(1).optional().describe("canonical Delivery identity (preferred; takes precedence over legacy agent sugar)"),
         agent: AGENT_NAME.optional().describe("legacy agent-name sugar; accepted only for exactly one non-archived delegation"),
-        full: z.boolean().optional().describe("run the canonical full verification command from settings.verify.full (default: npm test) in addition to typecheck and affected tests"),
+        full: z.boolean().optional().describe("run the project-owned settings.verify.full command in addition to configured typecheck/affected tiers; full=true is blocked when that command is not configured"),
         waivers: z
           .array(
             z.object({
@@ -1319,6 +1327,9 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           },
           withWorktreeLock: deps.withWorktreeLock,
           deliveryVerification: deps.deliveryVerification,
+          authorityIntegrityKey: deps.authorityIntegrityKey?.(),
+          canonicalAuthorityHead: deps.canonicalAuthorityHead,
+          legacyAuthorityHead: deps.legacyAuthorityHead,
           verifierCaller: caller,
         });
         // t-7acc58 — an unmissable marker at the very top of the tool output text when waivers were

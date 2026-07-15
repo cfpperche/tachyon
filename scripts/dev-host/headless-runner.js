@@ -6,39 +6,47 @@
  * Optionally handshakes with the shell for an Xvfb screenshot (ready-/done- markers).
  *
  * Env:
- *   EDH_PALLIATIVE_RESULT  — path to write JSON report (required for shell to reap status)
- *   EDH_PALLIATIVE_WS      — workspace root (optional; defaults to first folder)
- *   EDH_PALLIATIVE_SHOTDIR — if set, write ready-<name> and wait for done-<name> (ffmpeg outside)
+ *   DEV_HOST_RESULT / EDH_PALLIATIVE_RESULT  — path to write JSON report
+ *   DEV_HOST_WS / EDH_PALLIATIVE_WS          — workspace root (optional)
+ *   DEV_HOST_SHOTDIR / EDH_PALLIATIVE_SHOTDIR — screenshot handshake dir
+ *   DEV_HOST_SHA / EDH_PALLIATIVE_SHA         — recorded SHA
  */
 const vscode = require("vscode");
 const fs = require("fs");
 const path = require("path");
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const envFirst = (...keys) => {
+  for (const k of keys) {
+    const v = process.env[k];
+    if (v !== undefined && v !== "") return v;
+  }
+  return undefined;
+};
 
 function writeResult(payload) {
-  const out = process.env.EDH_PALLIATIVE_RESULT;
+  const out = envFirst("DEV_HOST_RESULT", "EDH_PALLIATIVE_RESULT");
   if (!out) {
-    console.log("[edh-palliative] result:", JSON.stringify(payload, null, 2));
+    console.log("[dev-host] result:", JSON.stringify(payload, null, 2));
     return;
   }
   try {
     fs.mkdirSync(path.dirname(out), { recursive: true });
     fs.writeFileSync(out, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
   } catch (err) {
-    console.error("[edh-palliative] failed to write result:", err);
+    console.error("[dev-host] failed to write result:", err);
   }
 }
 
 function check(asserts, ok, id, detail) {
   asserts.push({ id, ok: !!ok, detail: detail ?? "" });
-  if (!ok) console.error(`[edh-palliative] FAIL ${id}: ${detail ?? ""}`);
-  else console.log(`[edh-palliative] ok   ${id}${detail ? ` — ${detail}` : ""}`);
+  if (!ok) console.error(`[dev-host] FAIL ${id}: ${detail ?? ""}`);
+  else console.log(`[dev-host] ok   ${id}${detail ? ` — ${detail}` : ""}`);
 }
 
 /** Signal the outer shell to grab an Xvfb frame (mirrors scripts/screenshots/capture.sh). */
 async function frame(name) {
-  const shotDir = process.env.EDH_PALLIATIVE_SHOTDIR;
+  const shotDir = envFirst("DEV_HOST_SHOTDIR", "EDH_PALLIATIVE_SHOTDIR");
   if (!shotDir) return false;
   try {
     fs.mkdirSync(shotDir, { recursive: true });
@@ -50,13 +58,13 @@ async function frame(name) {
       /* ignore */
     }
     fs.writeFileSync(ready, "");
-    console.log(`[edh-palliative] frame ready: ${name}`);
+    console.log(`[dev-host] frame ready: ${name}`);
     for (let i = 0; i < 60 && !fs.existsSync(done); i++) await sleep(500);
     const ok = fs.existsSync(done);
-    console.log(`[edh-palliative] frame ${ok ? "captured" : "TIMEOUT"}: ${name}`);
+    console.log(`[dev-host] frame ${ok ? "captured" : "TIMEOUT"}: ${name}`);
     return ok;
   } catch (err) {
-    console.warn("[edh-palliative] frame handshake failed:", err);
+    console.warn("[dev-host] frame handshake failed:", err);
     return false;
   }
 }
@@ -99,7 +107,7 @@ exports.run = async function run() {
     try {
       await vscode.commands.executeCommand("tachyon.start");
     } catch (err) {
-      console.warn("[edh-palliative] tachyon.start threw (may be expected when config invalid):", err);
+      console.warn("[dev-host] tachyon.start threw (may be expected when config invalid):", err);
     }
     await sleep(1500);
 
@@ -118,7 +126,7 @@ exports.run = async function run() {
 
     // Visual evidence: Xvfb grab of fail-visible state (banner + roster when UI is up).
     frames["fail-visible"] = await frame("fail-visible");
-    if (process.env.EDH_PALLIATIVE_SHOTDIR) {
+    if (envFirst("DEV_HOST_SHOTDIR", "EDH_PALLIATIVE_SHOTDIR")) {
       check(asserts, frames["fail-visible"] === true, "frame.fail-visible", frames["fail-visible"] ? "png ok" : "no done marker");
     }
 
@@ -156,7 +164,7 @@ exports.run = async function run() {
 
     // Optional: restore valid config and confirm recovery path.
     const wsRoot =
-      process.env.EDH_PALLIATIVE_WS
+      envFirst("DEV_HOST_WS", "EDH_PALLIATIVE_WS")
       || vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
       || "";
     if (wsRoot) {
@@ -173,7 +181,7 @@ exports.run = async function run() {
     autostart: false
 commands:
   hello:
-    cmd: "echo edh-palliative-ok"
+    cmd: "echo dev-host-ok"
 `;
       fs.writeFileSync(yml, valid, "utf8");
       const recovered = await vscode.commands.executeCommand("tachyon._configHealth");
@@ -189,14 +197,14 @@ commands:
       health,
       doctorText,
       frames,
-      shotDir: process.env.EDH_PALLIATIVE_SHOTDIR ?? null,
-      sha: process.env.EDH_PALLIATIVE_SHA ?? null,
+      shotDir: envFirst("DEV_HOST_SHOTDIR", "EDH_PALLIATIVE_SHOTDIR") ?? null,
+      sha: envFirst("DEV_HOST_SHA", "EDH_PALLIATIVE_SHA") ?? null,
     };
     writeResult(payload);
     if (failed.length) {
-      throw new Error(`edh-palliative headless failed: ${failed.map((f) => f.id).join(", ")}`);
+      throw new Error(`dev-host headless failed: ${failed.map((f) => f.id).join(", ")}`);
     }
-    console.log("[edh-palliative] PASSED");
+    console.log("[dev-host] PASSED");
   } catch (err) {
     const payload = {
       ok: false,
@@ -206,7 +214,7 @@ commands:
       health,
       frames,
       error: err instanceof Error ? err.message : String(err),
-      sha: process.env.EDH_PALLIATIVE_SHA ?? null,
+      sha: envFirst("DEV_HOST_SHA", "EDH_PALLIATIVE_SHA") ?? null,
     };
     writeResult(payload);
     throw err;

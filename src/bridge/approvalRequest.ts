@@ -276,7 +276,7 @@ export function composeFixedApprovalResponse(request: ApprovalRequest, decision:
  * Provenance (requester + session + createdAt + request id) sits ABOVE the verbatim payload so the human
  * cannot miss it; the four child-authored fields follow, each labeled and reproduced byte-for-byte.
  *
- * Returned as plain text (not vscode.l10n — primer: Brief/UI strings here are plain text).
+ * Returned as plain text because this Bridge payload is rendered outside the VS Code UI host.
  */
 export function composeApprovalPinDetail(request: ApprovalRequest): string {
   const p = request.payload;

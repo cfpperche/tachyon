@@ -19,20 +19,50 @@ const settle = async () => {
   for (let i = 0; i < 10; i++) await new Promise((r) => setTimeout(r, 0));
 };
 
-function makeHarness(opts?: { verify?: (nodeId: string) => { passed: boolean; stale: boolean }; failSpawn?: Set<string> }) {
+function makeHarness(opts?: {
+  verify?: (nodeId: string) => { passed: boolean; stale: boolean };
+  failSpawn?: Set<string>;
+  failPersist?: boolean;
+  failFinalize?: boolean;
+  dismissNode?: (nodeId: string) => void | Promise<void>;
+  releaseWorktree?: () => void | Promise<void>;
+}) {
   const spawns: SpawnNodeArgs[] = [];
   const verifyCalls: string[] = [];
   const released: string[] = [];
   const dismissed: string[] = [];
   const timers: Array<{ ms: number; fn: () => void; cancelled: boolean }> = [];
+  const initialWrites: Array<{ worktreeReady: boolean; worktree?: { path: string } }> = [];
   let nonceN = 0;
+  const startOrder: string[] = [];
 
   const deps: PipelineDeps = {
-    allocateWorktree: async (runId) => ({ cwd: `/wt/${runId}`, key: `run-${runId}` }),
-    releaseWorktree: async (key) => void released.push(key),
-    dismissNode: (_runId, nodeId) => void dismissed.push(nodeId),
+    allocateWorktree: async (runId) => ({
+      cwd: `/wt/${runId}`,
+      key: `run-${runId}`,
+      worktree: {
+        path: `/wt/${runId}`,
+        branch: `tachyon/run-${runId}`,
+        tachyonCreatedBranch: true,
+        baseRef: "base",
+        createdAt: "t",
+      },
+      finalizeOwnership: async () => {
+        startOrder.push("finalize");
+        if (opts?.failFinalize) throw new Error("injected quarantine-finalization failure");
+      },
+    }),
+    releaseWorktree: async (key) => {
+      await opts?.releaseWorktree?.();
+      released.push(key);
+    },
+    dismissNode: async (_runId, nodeId) => {
+      await opts?.dismissNode?.(nodeId);
+      dismissed.push(nodeId);
+    },
     spawnNode: async (args) => {
       if (opts?.failSpawn?.has(args.nodeId)) throw new Error(`agent for '${args.nodeId}' is already running`);
+      startOrder.push("spawn");
       spawns.push(args);
     },
     runVerify: async ({ nodeId }) => {
@@ -41,7 +71,14 @@ function makeHarness(opts?: { verify?: (nodeId: string) => { passed: boolean; st
     },
     mintNonce: () => `nonce-${++nonceN}`,
     genRunId: () => "r1",
-    persist: () => {},
+    persist: () => {
+      startOrder.push("persist");
+    },
+    persistInitial: (run) => {
+      startOrder.push(`persist-initial:${run.worktreeReady}`);
+      if (opts?.failPersist) throw new Error("injected run-ledger failure");
+      initialWrites.push(structuredClone(run));
+    },
     setTimer: (ms, fn) => {
       const t = { ms, fn, cancelled: false };
       timers.push(t);
@@ -50,7 +87,7 @@ function makeHarness(opts?: { verify?: (nodeId: string) => { passed: boolean; st
   };
   const manager = new PipelineManager(deps);
   const nonceOf = (nodeId: string) => spawns.find((s) => s.nodeId === nodeId)!.env.TACHYON_NODE_NONCE;
-  return { manager, spawns, verifyCalls, released, dismissed, timers, nonceOf };
+  return { manager, spawns, verifyCalls, released, dismissed, timers, nonceOf, startOrder, initialWrites };
 }
 
 describe("PipelineManager — full run", () => {
@@ -58,6 +95,8 @@ describe("PipelineManager — full run", () => {
     const h = makeHarness();
     const id = await h.manager.start(PIPELINE);
     await settle();
+
+    expect(h.startOrder.slice(0, 4)).toEqual(["persist-initial:false", "finalize", "persist-initial:true", "spawn"]);
 
     // research spawned into the run worktree with its nonce env
     expect(h.spawns.map((s) => s.nodeId)).toEqual(["research"]);
@@ -94,6 +133,27 @@ describe("PipelineManager — full run", () => {
 });
 
 describe("PipelineManager — failure paths", () => {
+  it("never finalizes or spawns when initial durable run ownership cannot be persisted", async () => {
+    const h = makeHarness({ failPersist: true });
+    const failure = await h.manager.start(PIPELINE).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(AggregateError);
+    expect(failure).toMatchObject({ message: expect.stringContaining("locked recovery checkout: /wt/r1") });
+    expect(h.startOrder).toEqual(["persist-initial:false"]);
+    expect(h.spawns).toEqual([]);
+  });
+
+  it("persists ownership before finalization and never spawns when unlock fails", async () => {
+    const h = makeHarness({ failFinalize: true });
+    const failure = await h.manager.start(PIPELINE).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(AggregateError);
+    expect(failure).toMatchObject({ message: expect.stringContaining("locked recovery checkout: /wt/r1") });
+    expect(h.startOrder).toEqual(["persist-initial:false", "finalize"]);
+    expect(h.spawns).toEqual([]);
+    // The rejected start is not executable in memory, but the required ledger write is its durable handle.
+    expect(h.manager.getRun("r1")).toBeUndefined();
+    expect(h.initialWrites).toMatchObject([{ worktreeReady: false, worktree: { path: "/wt/r1" } }]);
+  });
+
   it("a red verify fails the node, blocks downstream, releases the worktree", async () => {
     const h = makeHarness({ verify: () => ({ passed: false, stale: false }) });
     const id = await h.manager.start(PIPELINE);
@@ -118,6 +178,80 @@ describe("PipelineManager — failure paths", () => {
     await settle();
     expect(h.manager.getRun(id)!.nodes.research).toMatchObject({ status: "failed", reason: "timed out" });
     expect(runStatus(h.manager.getRun(id)!)).toBe("failed");
+  });
+
+  it("waits for terminal runtime teardown before releasing the run worktree", async () => {
+    let releaseReview!: () => void;
+    const reviewTeardown = new Promise<void>((resolve) => { releaseReview = resolve; });
+    const h = makeHarness({ dismissNode: (nodeId) => nodeId === "review" ? reviewTeardown : undefined });
+    const id = await h.manager.start(PIPELINE);
+    await settle();
+    await h.manager.completeSignal({ runId: id, nodeId: "research", nonce: h.nonceOf("research") });
+    await settle();
+    await h.manager.completeSignal({ runId: id, nodeId: "implement", nonce: h.nonceOf("implement") });
+    await settle();
+    await h.manager.completeSignal({ runId: id, nodeId: "review", nonce: h.nonceOf("review") });
+    await settle();
+    h.manager.approve(id, "review");
+    await settle();
+
+    expect(h.released).toEqual([]);
+    expect(h.manager.getRun(id)).toBeDefined();
+    releaseReview();
+    await settle();
+    expect(h.released).toEqual(["run-r1"]);
+    expect(h.manager.getRun(id)).toBeUndefined();
+  });
+
+  it("preserves the completed run and worktree when runtime teardown fails", async () => {
+    let failReview = true;
+    const h = makeHarness({
+      dismissNode: (nodeId) => {
+        if (nodeId === "review" && failReview) throw new Error("injected live-session refusal");
+      },
+    });
+    const id = await h.manager.start(PIPELINE);
+    await settle();
+    await h.manager.completeSignal({ runId: id, nodeId: "research", nonce: h.nonceOf("research") });
+    await settle();
+    await h.manager.completeSignal({ runId: id, nodeId: "implement", nonce: h.nonceOf("implement") });
+    await settle();
+    await h.manager.completeSignal({ runId: id, nodeId: "review", nonce: h.nonceOf("review") });
+    await settle();
+    h.manager.approve(id, "review");
+    await settle();
+
+    expect(h.released).toEqual([]);
+    expect(h.manager.getRun(id)).toBeDefined();
+    failReview = false;
+    h.manager.dismiss(id);
+    await settle();
+    expect(h.released).toEqual(["run-r1"]);
+    expect(h.manager.getRun(id)).toBeUndefined();
+  });
+
+  it("preserves all run handles when worktree release is refused", async () => {
+    let failRelease = true;
+    const h = makeHarness({ releaseWorktree: () => {
+      if (failRelease) throw new Error("injected occupancy refusal");
+    } });
+    const id = await h.manager.start(PIPELINE);
+    await settle();
+    await h.manager.completeSignal({ runId: id, nodeId: "research", nonce: h.nonceOf("research") });
+    await settle();
+    await h.manager.completeSignal({ runId: id, nodeId: "implement", nonce: h.nonceOf("implement") });
+    await settle();
+    await h.manager.completeSignal({ runId: id, nodeId: "review", nonce: h.nonceOf("review") });
+    await settle();
+    h.manager.approve(id, "review");
+    await settle();
+
+    expect(h.released).toEqual([]);
+    expect(h.manager.getRun(id)).toBeDefined();
+    failRelease = false;
+    h.manager.dismiss(id);
+    await settle();
+    expect(h.released).toEqual(["run-r1"]);
   });
 });
 

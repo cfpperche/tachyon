@@ -4,6 +4,7 @@ import type { NodeSignals } from "./doneContract.js";
 import { advance } from "./pipelineDriver.js";
 import { sanitizeSummary, type UpstreamHandoff } from "./nodePrompt.js";
 import { validateCompleteNode, type CompleteNodeInput, type CompleteNodeVerdict, type NodeAuthState } from "./completeNode.js";
+import type { WorktreeRecord } from "../worktree/WorktreeManager.js";
 
 /**
  * spec 230 — the executor. Owns run state + side effects; all the DECISION logic lives in the pure
@@ -27,7 +28,9 @@ export interface SpawnNodeArgs {
 }
 
 export interface PipelineDeps {
-  allocateWorktree(runId: string): Promise<{ cwd: string; key: string }>;
+  /** Allocate a quarantined checkout. `finalizeOwnership` may run only after the initial run record
+   * has been persisted; it releases the durable Git preparation receipt. */
+  allocateWorktree(runId: string): Promise<{ cwd: string; key: string; worktree: WorktreeRecord; finalizeOwnership: () => Promise<void> }>;
   releaseWorktree(key: string): Promise<void>;
   spawnNode(args: SpawnNodeArgs): Promise<void>;
   runVerify(args: { runId: string; nodeId: string; cwd: string }): Promise<{ passed: boolean; stale: boolean }>;
@@ -37,6 +40,8 @@ export interface PipelineDeps {
    *  old session is gone before re-spawning under the same name. */
   dismissNode?(runId: string, nodeId: string): void | Promise<void>;
   persist(run: PipelineRun): void;
+  /** Required/throwing persistence used by the allocation transaction before any node may spawn. */
+  persistInitial(run: PipelineRun): void;
   onChange?(run: PipelineRun): void;
   /** schedule fn after ms; returns a canceller. */
   setTimer(ms: number, fn: () => void): () => void;
@@ -55,6 +60,7 @@ export class PipelineManager {
   private wtKey = new Map<string, string>(); // runId -> worktree key
   private spawned = new Set<string>(); // runId/nodeId — a node whose agent was spawned
   private dismissed = new Set<string>(); // runId/nodeId — a node whose agent was already dismissed
+  private dismissing = new Map<string, Promise<boolean>>(); // runId/nodeId -> proven runtime teardown
 
   constructor(private readonly deps: PipelineDeps) {}
 
@@ -62,12 +68,48 @@ export class PipelineManager {
    *  ledger-canonical from here on). Returns the run id. */
   async start(pipeline: PipelineDef, input?: string): Promise<string> {
     const runId = this.deps.genRunId();
-    const { cwd, key: wtKey } = await this.deps.allocateWorktree(runId);
+    const { cwd, key: wtKey, worktree, finalizeOwnership } = await this.deps.allocateWorktree(runId);
+    const allocatedRun = initRun(runId, pipeline, wtKey, input, worktree, false);
+    try {
+      // The run ledger is the crash-durable owner. Never release the allocation receipt merely
+      // because an in-memory map exists; a process crash would erase that claim.
+      this.deps.persistInitial(allocatedRun);
+    } catch (error) {
+      const primary = error instanceof Error ? error : new Error(String(error));
+      throw new AggregateError(
+        [primary, new Error(`pipeline worktree recovery state was preserved at ${cwd}`)],
+        `pipeline '${runId}' could not persist ownership; locked recovery checkout: ${cwd}`,
+        { cause: primary },
+      );
+    }
+    try {
+      await finalizeOwnership();
+    } catch (error) {
+      const primary = error instanceof Error ? error : new Error(String(error));
+      throw new AggregateError(
+        [primary, new Error(`pipeline ownership is durable, but its worktree remains locked at ${cwd}`)],
+        `pipeline '${runId}' could not finalize its worktree quarantine; locked recovery checkout: ${cwd}`,
+        { cause: primary },
+      );
+    }
+    const run: PipelineRun = { ...allocatedRun, worktreeReady: true };
+    try {
+      // A crash after unlock but before this write reloads the explicit false phase and reconciles
+      // it before tick; it can never mistake an unfinalized receipt for an executable run.
+      this.deps.persistInitial(run);
+    } catch (error) {
+      const primary = error instanceof Error ? error : new Error(String(error));
+      throw new AggregateError(
+        [primary, new Error(`pipeline worktree readiness could not be recorded for ${cwd}`)],
+        `pipeline '${runId}' could not persist finalized worktree ownership; recovery checkout: ${cwd}`,
+        { cause: primary },
+      );
+    }
     this.cwd.set(runId, cwd);
     this.wtKey.set(runId, wtKey);
     this.signals.set(runId, {});
     this.verifyRequested.set(runId, new Set());
-    this.runs.set(runId, initRun(runId, pipeline, wtKey, input));
+    this.runs.set(runId, run);
     this.tick(runId);
     return runId;
   }
@@ -239,8 +281,7 @@ export class PipelineManager {
         this.timers.delete(k);
       }
       if (status !== "awaiting-approval" && !this.dismissed.has(k)) {
-        this.dismissed.add(k);
-        this.deps.dismissNode?.(runId, nodeId);
+        this.beginDismissal(runId, nodeId);
       }
     }
 
@@ -298,6 +339,28 @@ export class PipelineManager {
     this.tick(runId);
   }
 
+  /** Start one idempotent terminal-node teardown. A rejected kill never becomes a completed
+   * dismissal: finalize keeps the run/worktree receipt and a later explicit retry can try again. */
+  private beginDismissal(runId: string, nodeId: string): Promise<boolean> {
+    const k = key(runId, nodeId);
+    if (this.dismissed.has(k)) return Promise.resolve(true);
+    const active = this.dismissing.get(k);
+    if (active) return active;
+    const attempt = Promise.resolve().then(() => this.deps.dismissNode?.(runId, nodeId)).then(
+      () => {
+        this.dismissed.add(k);
+        this.dismissing.delete(k);
+        return true;
+      },
+      () => {
+        this.dismissing.delete(k);
+        return false;
+      },
+    );
+    this.dismissing.set(k, attempt);
+    return attempt;
+  }
+
   /** Tear down a run: release the run worktree + clear all registries + drop the run from memory.
    *  Called on completion, and explicitly by cancel()/dismiss(). NOT called on a natural failure (the
    *  worktree + run are kept so the human can re-run from a step or dismiss). */
@@ -305,6 +368,33 @@ export class PipelineManager {
     const run = this.runs.get(runId);
     // never release the worktree while a node is still running (defensive; linear MVP shouldn't hit it)
     if (run && Object.values(run.nodes).some((n) => n.status === "running")) return;
+    const terminalDismissals = run
+      ? Object.keys(run.nodes)
+          .filter((nodeId) => this.spawned.has(key(runId, nodeId)) && run.nodes[nodeId].status !== "awaiting-approval")
+          .map((nodeId) => this.beginDismissal(runId, nodeId))
+      : [];
+    if ((await Promise.all(terminalDismissals)).some((dismissed) => !dismissed)) {
+      // The durable completed/failed run remains the recovery handle; never release a checkout while
+      // a node runtime may still have it as cwd.
+      if (run) {
+        this.deps.persist(run);
+        this.deps.onChange?.(run);
+      }
+      return;
+    }
+    const wtKey = this.wtKey.get(runId);
+    if (wtKey) {
+      try {
+        await this.deps.releaseWorktree(wtKey);
+      } catch {
+        // Removal refusal/failure preserves every map and the durable run for an explicit retry.
+        if (run) {
+          this.deps.persist(run);
+          this.deps.onChange?.(run);
+        }
+        return;
+      }
+    }
     for (const [k, cancel] of this.timers) {
       if (k.startsWith(`${runId}/`)) {
         cancel();
@@ -318,14 +408,13 @@ export class PipelineManager {
       this.nonces.delete(k);
       this.spawned.delete(k);
       this.dismissed.delete(k);
+      this.dismissing.delete(k);
     }
     this.signals.delete(runId);
     this.verifyRequested.delete(runId);
     this.cwd.delete(runId);
     this.runs.delete(runId); // terminal teardown — the run leaves memory (the def tree shows it idle)
-    const wtKey = this.wtKey.get(runId);
     this.wtKey.delete(runId);
-    if (wtKey) await this.deps.releaseWorktree(wtKey);
   }
 
   /** Explicitly tear down a run (the human dismissed a failed/completed run) — releases the worktree. */
@@ -349,6 +438,7 @@ export class PipelineManager {
       this.nonces.delete(k);
       this.spawned.delete(k);
       this.dismissed.delete(k);
+      this.dismissing.delete(k);
       const cancel = this.timers.get(k);
       if (cancel) {
         cancel();

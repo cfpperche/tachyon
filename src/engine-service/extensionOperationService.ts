@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import type { ActivityLogManager } from "../activity/ActivityLogManager.js";
 import { executeWait, type BridgeDeps } from "../bridge/tools.js";
 import { resolveApproval } from "../bridge/approvalRequest.js";
@@ -14,6 +15,8 @@ import {
   deleteRunbook,
 } from "../config/YamlConfigEditor.js";
 import { isResumable } from "../resume/SessionLedger.js";
+import { PromptStore } from "../prompts/PromptStore.js";
+import { injectTargets, submitRefuseReason } from "../prompts/injectFlow.js";
 import {
   isJsonValue,
   scheduleDefFromExtensionCommand,
@@ -23,11 +26,13 @@ import {
 } from "../runtime-api/extensionOperations.js";
 import type { ViewKind } from "../workspace/EngineHost.js";
 import type { Workspace } from "../workspace/Workspace.js";
+import type { ProviderObservationService } from "../runtimeObservability/service.js";
 import { buildDoctorReport, formatDoctorReport } from "../workspace/doctorReport.js";
 
 export interface ExtensionOperationContext {
   workspace: Workspace;
   activityLog: ActivityLogManager;
+  providerObservations: ProviderObservationService;
   onViewsChanged(view: ViewKind): void;
 }
 
@@ -72,6 +77,20 @@ export async function executeExtensionQuery(
       return inspectAgent(workspace, query.agent);
     case "agent.fork-preview":
       return json(await workspace.manager.planFork(query.agent));
+    case "prompt.catalog": {
+      const library = new PromptStore(workspace.workspaceRoot).list();
+      return json({
+        relDir: ".tachyon/prompts",
+        skippedCount: library.skipped.length,
+        templates: library.templates.map((template) => ({
+          id: template.id,
+          title: template.title,
+          body: template.body,
+          sha256: createHash("sha256").update(template.body, "utf8").digest("hex"),
+        })),
+        targets: injectTargets(await workspace.manager.list()),
+      });
+    }
     case "worktrees.list":
       return json({
         worktrees: [...workspace.ledger.all()].flatMap(([agent, record]) =>
@@ -151,6 +170,30 @@ export async function executeExtensionCommand(
       });
       onViewsChanged("pins");
       return json(result);
+    }
+    case "prompt.inject": {
+      const template = new PromptStore(workspace.workspaceRoot).list().templates
+        .find((candidate) => candidate.id === command.templateId);
+      if (!template) throw new Error(`prompt template '${command.templateId}' is unavailable`);
+      const sha256 = createHash("sha256").update(template.body, "utf8").digest("hex");
+      if (sha256 !== command.expectedSha256) {
+        throw new Error(`prompt template '${command.templateId}' changed after preview — review it again`);
+      }
+      const live = (await workspace.manager.list()).find((agent) => agent.name === command.agent);
+      if (!live || live.kind !== "agent" || !live.running || live.dead || live.stopping) {
+        throw new Error(`agent '${command.agent}' is no longer available`);
+      }
+      const session = workspace.manager.session(command.agent);
+      if (!(await workspace.tmux.hasSession(session))) throw new Error(`agent '${command.agent}' is not running`);
+      if (command.submit) {
+        const attention = workspace.attentionOf(command.agent);
+        const refused = submitRefuseReason(attention?.state, attention?.composerOccupied);
+        if (refused) throw new Error(`prompt submit refused — '${command.agent}' is ${refused}`);
+        await workspace.tmux.sendSubmittedLine(session, template.body);
+      } else {
+        await workspace.tmux.sendKeys(session, template.body, false);
+      }
+      return json({ injected: true, title: template.title, mode: command.submit ? "submit" : "stage" });
     }
     case "config.health":
       return configHealth(workspace);
@@ -237,6 +280,14 @@ export async function executeExtensionCommand(
     case "bridge.stop":
       await workspace.stopBridge();
       return json({ stopped: true });
+    case "runtime-ops.provider.configure": {
+      await context.providerObservations.configureProvider(command.provider, command.enabled
+        ? { state: "granted", consent: "explicit-user", sources: ["cli"] }
+        : { state: "disabled" });
+      if (command.enabled) void context.providerObservations.refresh(command.provider).catch(() => undefined);
+      onViewsChanged("agents");
+      return json({ changed: true, provider: command.provider, enabled: command.enabled });
+    }
     case "handoff.note":
       workspace.handoffStore.appendNote({
         agent: "tachyon",

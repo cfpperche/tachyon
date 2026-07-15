@@ -30,6 +30,10 @@ describe("WorktreeManager — git side (real git, tmp repo)", () => {
     return new WorktreeManager({ workspaceRoot, wsHash: "h", getSettings: () => settings, occupancy: async () => undefined });
   }
 
+  async function complete(m: WorktreeManager, record: Awaited<ReturnType<WorktreeManager["ensure"]>>["record"]): Promise<void> {
+    await m.completePreparation(record);
+  }
+
   beforeEach(() => {
     repo = mkRepo();
     base = fs.mkdtempSync(path.join(os.tmpdir(), "wt-base-"));
@@ -51,15 +55,74 @@ describe("WorktreeManager — git side (real git, tmp repo)", () => {
   });
 
   it("ensure CREATES a worktree on a new Tachyon-owned branch", async () => {
-    const { record: rec } = await mgr().ensure({ agent: "rev", branch: "tachyon/rev" });
+    const m = mgr();
+    const { record: rec } = await m.ensure({ agent: "rev", branch: "tachyon/rev" });
     expect(rec.path).toBe(path.join(base, "h", "rev"));
     expect(rec.branch).toBe("tachyon/rev");
     expect(rec.tachyonCreatedBranch).toBe(true);
     expect(fs.existsSync(rec.path)).toBe(true);
     expect(git(["rev-parse", "--abbrev-ref", "HEAD"], rec.path).trim()).toBe("tachyon/rev");
+    expect(git(["worktree", "list", "--porcelain"], repo)).not.toMatch(/worktree .*\/rev\n[\s\S]*?locked(?: .*)?\n/);
     // edits in the worktree don't touch the main tree
     fs.writeFileSync(path.join(rec.path, "only-here.txt"), "x");
     expect(fs.existsSync(path.join(repo, "only-here.txt"))).toBe(false);
+  });
+
+  it("preserves even an unchanged clean worktree when setup fails so a late ignored write cannot be lost", async () => {
+    const m = mgr();
+    await expect(m.ensure({
+      agent: "failed-clean",
+      branch: "tachyon/failed-clean",
+      runSetup: async () => { throw new Error("setup failed"); },
+    })).rejects.toBeInstanceOf(AggregateError);
+
+    expect(fs.existsSync(path.join(base, "h", "failed-clean"))).toBe(true);
+    expect(git(["rev-parse", "--verify", "tachyon/failed-clean"], repo).trim()).toBeTruthy();
+    expect(git(["worktree", "list", "--porcelain"], repo)).toMatch(/worktree .*failed-clean[\s\S]*\nlocked(?: .*)?(?:\n|$)/);
+    await expect(m.ensure({
+      agent: "failed-clean",
+      branch: "tachyon/failed-clean",
+    })).rejects.toMatchObject({ reason: "recovery-preserved" });
+  });
+
+  it("preserves ignored setup payload when setup fails", async () => {
+    fs.writeFileSync(path.join(repo, ".gitignore"), "node_modules/\n", "utf8");
+    git(["add", ".gitignore"], repo);
+    git(["commit", "-m", "ignore dependencies"], repo);
+    const m = mgr();
+    const worktreePath = path.join(base, "h", "failed-ignored");
+
+    await expect(m.ensure({
+      agent: "failed-ignored",
+      branch: "tachyon/failed-ignored",
+      runSetup: async (record) => {
+        fs.mkdirSync(path.join(record.path, "node_modules"), { recursive: true });
+        fs.writeFileSync(path.join(record.path, "node_modules", "recovery.txt"), "keep me\n", "utf8");
+        throw new Error("setup failed after writing ignored state");
+      },
+    })).rejects.toBeInstanceOf(AggregateError);
+
+    expect(fs.readFileSync(path.join(worktreePath, "node_modules", "recovery.txt"), "utf8")).toBe("keep me\n");
+    expect(git(["rev-parse", "--verify", "tachyon/failed-ignored"], repo).trim()).toBeTruthy();
+  });
+
+  it("preserves a new commit when setup fails after advancing HEAD", async () => {
+    const m = mgr();
+    const worktreePath = path.join(base, "h", "failed-commit");
+
+    await expect(m.ensure({
+      agent: "failed-commit",
+      branch: "tachyon/failed-commit",
+      runSetup: async (record) => {
+        fs.writeFileSync(path.join(record.path, "recovery.txt"), "committed recovery\n", "utf8");
+        git(["add", "recovery.txt"], record.path);
+        git(["commit", "-m", "setup recovery commit"], record.path);
+        throw new Error("setup failed after commit");
+      },
+    })).rejects.toBeInstanceOf(AggregateError);
+
+    expect(fs.readFileSync(path.join(worktreePath, "recovery.txt"), "utf8")).toBe("committed recovery\n");
+    expect(git(["log", "-1", "--format=%s", "tachyon/failed-commit"], repo).trim()).toBe("setup recovery commit");
   });
 
   it("ensure REUSES a valid existing worktree (same repo + branch)", async () => {
@@ -67,6 +130,136 @@ describe("WorktreeManager — git side (real git, tmp repo)", () => {
     const { record: first } = await m.ensure({ agent: "rev", branch: "tachyon/rev" });
     const { record: again } = await m.ensure({ agent: "rev", branch: "tachyon/rev", prior: first });
     expect(again).toEqual(first); // no throw, reused
+  });
+
+  it("reuses a successfully prepared unlocked worktree after an ephemeral ledger row is gone", async () => {
+    const m = mgr();
+    const { record: first } = await m.ensure({ agent: "respawn", branch: "tachyon/respawn" });
+    expect(git(["worktree", "list", "--porcelain"], repo)).not.toMatch(/worktree .*respawn[\s\S]*\nlocked(?: .*)?(?:\n|$)/);
+
+    const { record: again, created } = await m.ensure({ agent: "respawn", branch: "tachyon/respawn" });
+
+    expect(created).toBe(false);
+    expect(again.path).toBe(first.path);
+    expect(again.branch).toBe(first.branch);
+  });
+
+  it("quarantines a reused checkout for each new launch until ownership becomes durable", async () => {
+    const m = mgr();
+    await m.ensure({ agent: "retry", branch: "tachyon/retry" });
+
+    const attempted = await m.ensure({
+      agent: "retry",
+      branch: "tachyon/retry",
+      quarantineForLaunch: true,
+    });
+    expect(attempted).toMatchObject({ created: false, preparationLocked: true });
+    await expect(m.ensure({ agent: "retry", branch: "tachyon/retry" }))
+      .rejects.toMatchObject({ reason: "recovery-preserved" });
+
+    await complete(m, attempted.record);
+    await expect(m.ensure({ agent: "retry", branch: "tachyon/retry" })).resolves.toMatchObject({ created: false });
+  });
+
+  it("never falls back to root when a locked recovery checkout has branch drift", async () => {
+    const m = mgr();
+    const attempt = await m.ensure({ agent: "locked-drift", branch: "tachyon/locked-drift", quarantineForLaunch: true });
+    git(["checkout", "-b", "drifted-after-lock"], attempt.record.path);
+    const notices: string[] = [];
+
+    await expect(resolveWorktreeCwd(
+      { name: "locked-drift", worktree: true, branch: "tachyon/locked-drift", isRestart: false },
+      { manager: m, settings: { worktree: { base } }, parentCwd: () => undefined, runSetup: async () => {}, notify: (message) => notices.push(message) },
+    )).rejects.toMatchObject({ reason: "recovery-preserved" });
+    expect(notices).toEqual([]);
+  });
+
+  it("classifies a surviving receipt before an invalid expected branch can trigger root fallback", async () => {
+    const m = mgr();
+    await m.ensure({ agent: "invalid-after-lock", branch: "tachyon/invalid-after-lock", quarantineForLaunch: true });
+
+    await expect(resolveWorktreeCwd(
+      { name: "invalid-after-lock", worktree: true, branch: "bad branch", isRestart: false },
+      { manager: m, settings: { worktree: { base } }, parentCwd: () => undefined, runSetup: async () => {}, notify: () => {} },
+    )).rejects.toMatchObject({ reason: "recovery-preserved" });
+  });
+
+  it("uses the persisted worktree path across base-setting drift", async () => {
+    const oldBase = base;
+    const firstManager = mgr();
+    const first = await firstManager.ensure({ agent: "moved-base", branch: "tachyon/moved-base", quarantineForLaunch: true });
+    await firstManager.completePreparation(first.record);
+    const newBase = fs.mkdtempSync(path.join(os.tmpdir(), "wt-new-base-"));
+    dirs.push(newBase);
+    const movedSettings: TachyonConfig["settings"] = { worktree: { base: newBase } };
+    const movedManager = mgr(repo, movedSettings);
+
+    const reused = await movedManager.ensure({
+      agent: "moved-base",
+      branch: "tachyon/moved-base",
+      prior: first.record,
+      quarantineForLaunch: true,
+    });
+    expect(reused.record.path).toBe(path.join(oldBase, "h", "moved-base"));
+    expect(reused.record.path).not.toContain(newBase);
+    expect(reused.preparationLocked).toBe(true);
+    await movedManager.completePreparation(reused.record);
+  });
+
+  it("never bypasses a locked prior checkout after the configured base changes", async () => {
+    const firstManager = mgr();
+    const first = await firstManager.ensure({ agent: "locked-old-base", branch: "tachyon/locked-old-base", quarantineForLaunch: true });
+    const newBase = fs.mkdtempSync(path.join(os.tmpdir(), "wt-new-base-"));
+    dirs.push(newBase);
+    const movedManager = mgr(repo, { worktree: { base: newBase } });
+
+    await expect(resolveWorktreeCwd(
+      { name: "locked-old-base", worktree: true, branch: "tachyon/locked-old-base", isRestart: true },
+      {
+        manager: movedManager,
+        settings: { worktree: { base: newBase } },
+        parentCwd: () => undefined,
+        priorRecord: first.record,
+        runSetup: async () => {},
+        notify: () => {},
+      },
+    )).rejects.toMatchObject({ reason: "recovery-preserved" });
+  });
+
+  it("detects locked Git metadata even when the checkout directory is missing", async () => {
+    const m = mgr();
+    const attempt = await m.ensure({ agent: "missing-locked", branch: "tachyon/missing-locked", quarantineForLaunch: true });
+    fs.rmSync(attempt.record.path, { recursive: true, force: true });
+
+    await expect(resolveWorktreeCwd(
+      { name: "missing-locked", worktree: true, branch: "tachyon/missing-locked", isRestart: false },
+      { manager: m, settings: { worktree: { base } }, parentCwd: () => undefined, runSetup: async () => {}, notify: () => {} },
+    )).rejects.toMatchObject({ reason: "recovery-preserved" });
+  });
+
+  it("reconciles a persisted pipeline owner before allowing its pre-node run to resume", async () => {
+    const m = mgr();
+    const attempt = await m.ensure({ agent: "pipeline-reload", branch: "tachyon/pipeline-reload", quarantineForLaunch: true });
+    expect(git(["worktree", "list", "--porcelain"], repo)).toMatch(/worktree .*pipeline-reload[\s\S]*\nlocked(?: .*)?(?:\n|$)/);
+
+    await expect(m.completePersistedPreparation(attempt.record)).rejects.toThrow(/requires explicit recovery/);
+    // Simulate the distinct crash window after the normal finalizer unlocked but before the run's
+    // ready=true write. That already-unlocked, unchanged checkout can be reconciled automatically.
+    await m.completePreparation(attempt.record);
+    await m.completePersistedPreparation(attempt.record);
+    expect(git(["worktree", "list", "--porcelain"], repo)).not.toMatch(/worktree .*pipeline-reload[\s\S]*\nlocked(?: .*)?(?:\n|$)/);
+    await expect(m.completePersistedPreparation(attempt.record)).resolves.toBeUndefined();
+  });
+
+  it("fails closed when an existing checkout's lock state cannot be inspected", async () => {
+    const m = mgr();
+    const attempt = await m.ensure({ agent: "broken-metadata", branch: "tachyon/broken-metadata" });
+    fs.writeFileSync(path.join(attempt.record.path, ".git"), "gitdir: /missing/tachyon-metadata\n", "utf8");
+
+    await expect(resolveWorktreeCwd(
+      { name: "broken-metadata", worktree: true, branch: "tachyon/broken-metadata", isRestart: false },
+      { manager: m, settings: { worktree: { base } }, parentCwd: () => undefined, runSetup: async () => {}, notify: () => {} },
+    )).rejects.toMatchObject({ reason: "recovery-preserved" });
   });
 
   it("reuse carries the prior verify state forward (spec 214 — restart keeps the badge)", async () => {
@@ -129,9 +322,12 @@ describe("WorktreeManager — git side (real git, tmp repo)", () => {
       },
     );
     expect(r?.cwd).toBe(path.join(base, "h", "rev"));
+    expect(r?.preparationLocked).toBe(true);
+    expect(git(["worktree", "list", "--porcelain"], repo)).toMatch(/worktree .*\/rev\n[\s\S]*?locked(?: .*)?\n/);
     expect(git(["rev-parse", "--abbrev-ref", "HEAD"], r!.cwd).trim()).toBe("tachyon/rev"); // on its branch
     expect(fs.readFileSync(path.join(r!.cwd, "setup-marker.txt"), "utf8").trim()).toBe("hi"); // setup ran
     expect(fs.readFileSync(path.join(r!.cwd, "env-marker.txt"), "utf8").trim()).toBe(r!.cwd); // TACHYON_WORKTREE_ROOT injected
+    await complete(m, r!.worktree!); // AgentManager does this only after its durable ledger/delegation record.
     const st = await m.status(r!.cwd, r!.worktree!.baseRef);
     expect(st.untracked).toBeGreaterThan(0); // setup files are untracked → cleanup would warn
     const rm = await m.remove(r!.worktree!, true);
