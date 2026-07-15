@@ -241,7 +241,7 @@ _Historical pre-ratification questions are retained below; their resolutions fol
   attribution, redaction and keyboard-focus checks.
 - Advisory visual QA passed for the Tachyon-owned dense operational layout after changing the ambiguous `Disable CLI`
   copy to `Disable source`. Captures are staged under `.tachyon/vqa/visual-qa/` for post-commit evidence attachment.
-  Installed VSIX/live Codex and Claude dogfood remains deliberately open in T5; this T4 commit is not closure evidence.
+  Dev-host/live Codex and Claude dogfood remains deliberately open in T5; this T4 commit is not closure evidence.
 
 ### 2026-07-15T00:26:58Z — T4 verification
 
@@ -250,3 +250,8 @@ _Historical pre-ratification questions are retained below; their resolutions fol
 - `npx vitest run --config vitest.browser.config.ts test/browser/runtimeOpsView.test.ts --reporter=verbose` — pass,
   4/4 browser tests across all provider states at wide and narrow widths.
 - `npm run verify:full:quiet` — pass; 342 files, 4,148 tests passed, 3 skipped.
+
+### 2026-07-15 — T5 dogfood host decision
+
+- Maintainer direction: exercise Runtime Ops through a VS Code Extension Development Host. Do not package, release or
+  install a VSIX for SDD 369 dogfood; retain preview/browser evidence and collect the live provider verdict in dev-host.

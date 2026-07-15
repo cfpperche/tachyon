@@ -148,8 +148,8 @@ Codex/Claude rows may share provider facts by redacted account scope, but agent 
 consumption.
 
 The existing dense-table and narrow-layout contracts remain. Add deterministic fixtures for healthy, partial,
-unauthenticated, stale, incompatible-schema, and exhausted-window states, then inspect the installed panel and sidebar
-placement.
+unauthenticated, stale, incompatible-schema, and exhausted-window states, then inspect the panel and sidebar placement
+inside a VS Code Extension Development Host.
 
 ### T5 — security, compatibility, and dogfood
 
@@ -215,7 +215,8 @@ when provider collection fails.
 Runtime Ops gains a provider-capacity lane and detail for window usage, reset, confidence, source, freshness, and
 unavailable state. No CodexBar visuals are reused. Risk is concentrated in distinguishing account quota from agent
 tokens, narrow layouts, multiple windows, stale/error density, and avoiding a dashboard-card aesthetic that breaks
-the current dense operational table. Preview fixtures plus real installed VSIX evidence are required before shipping.
+the current dense operational table. Preview fixtures plus real dev-host evidence are required before shipping; this
+track does not package or install a VSIX for dogfood.
 
 ## Sources consulted
 

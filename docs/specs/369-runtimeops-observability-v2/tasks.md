@@ -88,7 +88,7 @@ implementation until its ADR is accepted._
 - [x] The T0 ADR and cost-boundary decision are ratified before T1–T4 implementation begins.
 - [ ] Security fixtures prove the webview projection contains no credential, account identity, absolute path, raw
   provider response, terminal line, or unbounded vendor text.
-- [ ] Installed-host dogfood proves Runtime Ops remains Tachyon-owned and usable when provider collection fails.
+- [ ] Dev-host dogfood proves Runtime Ops remains Tachyon-owned and usable when provider collection fails.
 
 **Verify:** `npm run verify:full:quiet`
 
@@ -96,9 +96,10 @@ implementation until its ADR is accepted._
 
 **Dogfood:** `npm run dogfood:runtime-observability`
 
-**Human dogfood:** Open the installed Runtime Ops panel with Codex and Claude observations enabled; compare each quota
-window and reset with its provider source, inspect native token separation, then disable/remove the collector and
-confirm the panel degrades to honest native-only data.
+**Human dogfood:** Launch Tachyon in a VS Code Extension Development Host and open Runtime Ops with Codex and Claude
+observations enabled; compare each quota window and reset with its provider source, inspect native token separation,
+then disable/remove the collector and confirm the panel degrades to honest native-only data. Do not package or install
+a VSIX for this dogfood lane.
 
 ## Visual QA
 
