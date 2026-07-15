@@ -5,9 +5,24 @@ import { canSave as computeCanSave } from "../shared/studio/dirtyGating";
 import type { StudioError } from "../shared/studio/errorTaxonomy";
 import { Button, Chip, Input, Select, Textarea } from "../shared/ui";
 import { AGENT_STUDIO_HOST_MESSAGE_NAMES, agentStudioTitleFor, blankAgentFields, computeAgentDirty, validateAgentStudioHostDomainMessage } from "./domain";
-import { browseMessage, cancelMessage, dirtyMessage, patchMessage, readyMessage, saveMessage } from "./messages";
+import {
+  adoptSoulProfileMessage,
+  browseMessage,
+  cancelMessage,
+  createSoulMessage,
+  dirtyMessage,
+  disableSoulMessage,
+  enableSoulMessage,
+  importSoulMessage,
+  openSoulMessage,
+  patchMessage,
+  previewSoulMessage,
+  readyMessage,
+  refreshSoulMessage,
+  saveMessage,
+} from "./messages";
 import { RuntimeLogo } from "./runtimeLogos";
-import type { AgentStudioEntity, AgentStudioFields, AgentStudioHostMessage } from "./types";
+import type { AgentStudioEntity, AgentStudioFields, AgentStudioHostMessage, SoulProfileStatusMessage } from "./types";
 
 /**
  * spec 350 Phase 3 T3 — the Agent-kind studio's webview surface: quick-add chips, name,
@@ -43,6 +58,8 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
   const [hostError, setHostError] = useState<StudioError | undefined>(undefined);
   const [loadFailed, setLoadFailed] = useState(false);
   const [saveInFlight, setSaveInFlight] = useState(false);
+  const [soulStatus, setSoulStatus] = useState<SoulProfileStatusMessage | undefined>(undefined);
+  const [soulBusy, setSoulBusy] = useState<string | undefined>(undefined);
   const [ready, setReady] = useState(false);
   const entityRef = useRef<AgentStudioEntity | undefined>(undefined);
 
@@ -77,11 +94,15 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
         setSaveInFlight(!!d.saveInFlight);
         setHostError(undefined);
         setLoadFailed(false);
+        setSoulStatus(undefined);
+        setSoulBusy(d.entity.name ? "Refreshing profile" : undefined);
         setReady(true);
+        if (d.entity.name) dispatch.post(refreshSoulMessage(d.entity.name));
       } else if (d.type === "error") {
         setHostError({ code: d.code, message: d.message, source: d.source ?? "persistence", blocking: d.blocking });
         if (!entityRef.current) setLoadFailed(true);
         setSaveInFlight(false);
+        setSoulBusy(undefined);
         setReady(true);
       } else if (d.type === "restore") {
         if (d.snapshot?.patch) setFields(d.snapshot.patch);
@@ -95,11 +116,23 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
           return;
         }
         setHostError(undefined);
+        setSoulStatus(d.status);
+        setSoulBusy(undefined);
+        const current = entityRef.current;
+        if (current && current.fields.soul !== d.status.soulEnabled) {
+          const updated = { ...current, fields: { ...current.fields, soul: d.status.soulEnabled } };
+          entityRef.current = updated;
+          setEntity(updated);
+        }
+        setFields((currentFields) => currentFields.soul === d.status.soulEnabled
+          ? currentFields
+          : { ...currentFields, soul: d.status.soulEnabled });
       } else if (d.type === "soulProfileError") {
         if (entityRef.current?.name !== d.agent) {
           setHostError({ code: "transport/protocol", message: "studio protocol: profile error belongs to another agent", source: "transport", blocking: true });
           return;
         }
+        setSoulBusy(undefined);
         setHostError({ code: d.code, message: d.message, source: "persistence", blocking: false });
       }
     };
@@ -163,6 +196,33 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
             ? "Give this OpenCode agent its own XDG home (config, skills, hooks, MCP)"
             : "Give this agent its own MCP / skills / rules / hooks";
 
+  const savedAgent = entity.name;
+  const profilePresent = !!soulStatus && soulStatus.lifecycle !== "missing";
+  const profileReadable = profilePresent && soulStatus?.lifecycle !== "invalid";
+  const readActionDisabled = !savedAgent || !!soulBusy;
+  const mutationDisabled = readActionDisabled || !soulStatus || soulStatus.transactionDegraded;
+  const canCreateOrImport = !mutationDisabled && soulStatus?.lifecycle === "missing";
+  const canAdopt = !mutationDisabled
+    && !!soulStatus?.sha256
+    && (soulStatus.lifecycle === "retained" || soulStatus.lifecycle === "unowned");
+  const canEnable = !mutationDisabled
+    && soulStatus?.lifecycle === "active"
+    && soulStatus.resolvable
+    && !soulStatus.soulEnabled;
+  const canDisable = !mutationDisabled && !!soulStatus?.soulEnabled;
+  const lifecycleLabel: Record<SoulProfileStatusMessage["lifecycle"], string> = {
+    missing: "Missing",
+    active: "Active",
+    retained: "Retained",
+    unowned: "Needs adoption",
+    invalid: "Invalid",
+  };
+  const runSoulAction = (label: string, message: unknown) => {
+    setHostError(undefined);
+    setSoulBusy(label);
+    dispatch.post(message);
+  };
+
   return (
     <StudioFrame
       title={agentStudioTitleFor(mode, entityId, entity)}
@@ -188,11 +248,62 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
               </div>
             </div>
 
-            <div class="ash-grid ash-grid-compact">
-              <div class="ash-field">
-                <label><input type="checkbox" checked={fields.soul} onChange={(e) => set("soul", (e.currentTarget as HTMLInputElement).checked)} /> Enable soul</label>
+            <section class="ash-identity" aria-labelledby="ash-identity-title">
+              <div class="ash-identity-heading">
+                <div>
+                  <div class="ash-label" id="ash-identity-title">Identity (SOUL.md)</div>
+                  <div class="hint">Stable identity for this agent. Keep operational instructions in the separate field below.</div>
+                </div>
+                <span class={`ash-soul-state ash-soul-state-${soulStatus?.lifecycle ?? "loading"}`}>
+                  {savedAgent
+                    ? soulStatus ? lifecycleLabel[soulStatus.lifecycle] : "Loading status"
+                    : "Save agent first"}
+                </span>
               </div>
 
+              {savedAgent ? (
+                <>
+                  <div class="ash-identity-actions" role="group" aria-label="SOUL.md actions">
+                    <Button icon="new-file" disabled={!canCreateOrImport} onClick={() => runSoulAction("Creating profile", createSoulMessage(savedAgent))}>Create</Button>
+                    <Button icon="folder-opened" disabled={!canCreateOrImport} onClick={() => runSoulAction("Importing profile", importSoulMessage(savedAgent))}>Import</Button>
+                    <Button icon="go-to-file" disabled={readActionDisabled || !profilePresent} onClick={() => runSoulAction("Opening profile", openSoulMessage(savedAgent))}>Open</Button>
+                    <Button icon="refresh" disabled={readActionDisabled} onClick={() => runSoulAction("Refreshing profile", refreshSoulMessage(savedAgent))}>Refresh</Button>
+                    <Button icon="eye" disabled={readActionDisabled || !profileReadable} onClick={() => runSoulAction("Loading preview", previewSoulMessage(savedAgent))}>Preview</Button>
+                    <Button icon="verified" disabled={!canAdopt} onClick={() => runSoulAction("Adopting profile", adoptSoulProfileMessage(savedAgent, soulStatus!.sha256!))}>Adopt</Button>
+                    <Button icon="check" disabled={!canEnable} onClick={() => runSoulAction("Enabling soul", enableSoulMessage(savedAgent))}>Enable soul</Button>
+                    <Button disabled={!canDisable} onClick={() => runSoulAction("Disabling soul", disableSoulMessage(savedAgent))}>Disable soul</Button>
+                  </div>
+
+                  <div class="ash-soul-status" role="status" aria-live="polite">
+                    {soulBusy
+                      ? `${soulBusy}…`
+                      : soulStatus
+                        ? `${lifecycleLabel[soulStatus.lifecycle]} · ${soulStatus.soulEnabled ? "enabled for future starts" : "disabled"}`
+                        : "Profile status unavailable. Refresh to try again."}
+                  </div>
+
+                  {soulStatus?.transactionDegraded && (
+                    <div class="ash-soul-warning" role="alert">Profile recovery is required. Mutating actions are disabled.</div>
+                  )}
+
+                  {soulStatus && (
+                    <div class="ash-soul-meta">
+                      <span>{soulStatus.relativePath}</span>
+                      {soulStatus.bytes !== undefined && <span>{soulStatus.bytes} bytes</span>}
+                      {soulStatus.sha256 && <span title={soulStatus.sha256}>SHA-256 {soulStatus.sha256.slice(0, 12)}…</span>}
+                    </div>
+                  )}
+
+                  {soulStatus?.preview !== undefined && (
+                    <pre class="ash-soul-preview" aria-label="SOUL.md preview" tabIndex={0}>{soulStatus.preview}</pre>
+                  )}
+                </>
+              ) : (
+                <div class="ash-soul-status" role="status">Save this agent before creating or importing its identity profile.</div>
+              )}
+            </section>
+
+            <div class="ash-grid ash-grid-compact">
               <div class="ash-field">
                 <label class="ash-label" for="ash-name">Name</label>
                 <Input id="ash-name" value={fields.name} placeholder="frontend, revisor, dev..." onInput={(e) => set("name", (e.currentTarget as HTMLInputElement).value)} />

@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   AGENT_STUDIO_DOMAIN_MESSAGE_NAMES,
@@ -23,6 +25,25 @@ import { assertNoDomainNameCollision, decodeStudioMessage } from "../../src/webv
 import { agentStanzaCasToken, setAgentSoulEnablement } from "../../src/config/YamlConfigEditor.js";
 
 describe("Agent Studio soul profile protocol (T15A)", () => {
+  it("renders the functional Identity action surface before Role with accessible status and preview", () => {
+    const source = fs.readFileSync(path.resolve("src/webview/agent-studio-shell/App.tsx"), "utf8");
+    expect(source.indexOf("Identity (SOUL.md)")).toBeGreaterThan(-1);
+    expect(source.indexOf("Role template")).toBeGreaterThan(source.indexOf("Identity (SOUL.md)"));
+    for (const action of [
+      "createSoulMessage(savedAgent)",
+      "importSoulMessage(savedAgent)",
+      "openSoulMessage(savedAgent)",
+      "refreshSoulMessage(savedAgent)",
+      "previewSoulMessage(savedAgent)",
+      "adoptSoulProfileMessage(savedAgent",
+      "enableSoulMessage(savedAgent)",
+      "disableSoulMessage(savedAgent)",
+    ]) expect(source).toContain(action);
+    expect(source).toContain('aria-live="polite"');
+    expect(source).toContain('aria-label="SOUL.md preview"');
+    expect(source).toContain("Profile recovery is required. Mutating actions are disabled.");
+  });
+
   it("registers explicit common-path domain message names without core collisions", () => {
     expect(AGENT_STUDIO_DOMAIN_MESSAGE_NAMES).toEqual(expect.arrayContaining([
       "createSoul",
