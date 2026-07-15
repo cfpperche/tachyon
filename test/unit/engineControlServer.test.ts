@@ -254,6 +254,50 @@ describe("persistent engine shell control", () => {
     expect(fs.existsSync(f.socketPath)).toBe(false);
   });
 
+  it("survives an abrupt shell disconnect while a response is in flight", async () => {
+    const f = fixture();
+    let releaseSnapshot!: () => void;
+    let observeSnapshot!: () => void;
+    const snapshotGate = new Promise<void>((resolve) => { releaseSnapshot = resolve; });
+    const snapshotStarted = new Promise<void>((resolve) => { observeSnapshot = resolve; });
+    const server = await startEngineControlServer({
+      socketPath: f.socketPath,
+      identity: f.identity,
+      getSnapshot: async () => {
+        observeSnapshot();
+        await snapshotGate;
+        return {
+          ...f.snapshot(),
+          projections: { payload: "x".repeat(4 * 1024 * 1024) },
+        };
+      },
+    });
+    servers.push(server);
+
+    const abandoned = net.createConnection(f.socketPath);
+    await new Promise<void>((resolve, reject) => {
+      abandoned.once("connect", resolve);
+      abandoned.once("error", reject);
+    });
+    abandoned.write(`${JSON.stringify({
+      schemaVersion: 1,
+      op: "attach",
+      workspaceHash: "abc12345",
+      hello: hello(f.root, "shell-abandoned"),
+    })}\n`);
+    await snapshotStarted;
+    const disconnected = new Promise<void>((resolve) => abandoned.once("close", () => resolve()));
+    abandoned.destroy();
+    await disconnected;
+    releaseSnapshot();
+
+    await expect(control(f.socketPath, {
+      schemaVersion: 1,
+      op: "health",
+      workspaceHash: "abc12345",
+    })).resolves.toMatchObject({ ok: true, op: "health", engine: { instanceId: f.identity.instanceId } });
+  });
+
   it("authenticates read-only queries without caching them in the mutation registry", async () => {
     const f = fixture();
     let reads = 0;

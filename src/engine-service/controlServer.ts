@@ -103,6 +103,11 @@ export async function startEngineControlServer(options: EngineControlServerOptio
   const server = net.createServer((socket) => {
     connections.add(socket);
     socket.once("close", () => connections.delete(socket));
+    socket.on("error", () => {
+      // A shell can disappear mid-request when its Extension Host reloads or crashes.
+      // The connection is disposable; its failure must never terminate the engine.
+      socket.destroy();
+    });
     socket.setTimeout(CONTROL_REQUEST_TIMEOUT_MS, () => socket.destroy());
     socket.setEncoding("utf8");
     let input = "";
