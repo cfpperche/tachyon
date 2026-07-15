@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
 import { parseConfig, inferKind, composeCommand, resolveBinary } from "../../src/config/loadConfig.js";
 import { PROJECT_GUIDANCE_MAX_FILES } from "../../src/config/projectGuidance.js";
 
@@ -40,6 +41,16 @@ describe("parseConfig", () => {
     expect(config?.agents.dev.env).toEqual({ PORT: "3000" });
     expect((config as unknown as { layouts?: unknown }).layouts).toBeUndefined(); // spec 234 — layouts: tolerated but not parsed
     expect(config?.settings.maxAgents).toBe(4);
+  });
+
+  it("t-1a8ae3: keeps the RuntimeOps dev-host fixture inert until the maintainer starts an observer", () => {
+    const yaml = readFileSync("test/fixtures/runtimeops-observability-dogfood/tachyon.yml", "utf8");
+    const { config, errors, warnings } = parseConfig(yaml);
+
+    expect(errors).toEqual([]);
+    expect(warnings).toEqual([]);
+    expect(Object.keys(config?.agents ?? {})).toEqual(["codex-observer", "claude-observer"]);
+    expect(Object.values(config?.agents ?? {}).every((agent) => agent.kind === "agent" && !agent.autostart)).toBe(true);
   });
 
   it("normalizes watch lists", () => {

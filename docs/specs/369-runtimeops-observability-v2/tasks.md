@@ -96,10 +96,22 @@ implementation until its ADR is accepted._
 
 **Dogfood:** `npm run dogfood:runtime-observability`
 
-**Human dogfood:** Launch Tachyon in a VS Code Extension Development Host and open Runtime Ops with Codex and Claude
-observations enabled; compare each quota window and reset with its provider source, inspect native token separation,
-then disable/remove the collector and confirm the panel degrades to honest native-only data. Do not package or install
-a VSIX for this dogfood lane.
+**Human dogfood:** From the monorepo window select **Tachyon: Dev Host** and press **F5**. The prepared pointer opens
+`test/fixtures/runtimeops-observability-dogfood`; do not package or install a VSIX. In the EDH window only:
+
+1. Run **Tachyon: Open Runtime Ops**. F5 may retain prior Extension Host `globalState`; if either source is enabled,
+   disable it first. Establish the baseline with both rows at `Observation disabled` and native runtimes separate.
+2. Enable the Codex CLI source, refresh once, and record every visible window, used percentage, reset, source,
+   confidence, observed time and freshness. If unavailable, record the typed reason without attempting credential reads.
+3. Refresh and immediately disable Codex once to exercise cancellation/revocation; confirm no late result restores the
+   provider lane and native runtime inventory remains present. Re-enable only if another observation is needed.
+4. Enable the Claude CLI source before manually starting the fixture's `claude-observer`. Do not send an inference
+   prompt merely to obtain quota; wait for passive status-line telemetry, refresh, and record the same bounded fields.
+5. Stop `claude-observer`, disable both sources, and confirm account quota degrades honestly while native rows remain.
+6. Resize Runtime Ops to a wide bottom panel and a narrow panel/sidebar width. Capture healthy plus one degraded state;
+   verify no clipping, horizontal page scroll, identity/path/raw-response text, false agent attribution or CodexBar UI.
+7. Close the EDH window and report pass/fail plus screenshots to the coordinator. Leave T5 checkboxes open until that
+   live verdict is recorded.
 
 ## Visual QA
 

@@ -1,0 +1,14 @@
+# SDD 369 RuntimeOps dogfood fixture — Extension Development Host only.
+# Both real CLIs are manual so pressing F5 cannot start an inference runtime or consume provider quota.
+agents:
+  codex-observer:
+    cmd: codex
+    kind: agent
+    autostart: false
+  claude-observer:
+    cmd: claude
+    kind: agent
+    autostart: false
+
+settings:
+  maxAgents: 2

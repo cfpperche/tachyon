@@ -255,3 +255,12 @@ _Historical pre-ratification questions are retained below; their resolutions fol
 
 - Maintainer direction: exercise Runtime Ops through a VS Code Extension Development Host. Do not package, release or
   install a VSIX for SDD 369 dogfood; retain preview/browser evidence and collect the live provider verdict in dev-host.
+
+### 2026-07-15 — T5 dev-host handoff prepared, not executed
+
+- The existing portable `Tachyon: Dev Host` profile remains the single F5 entrypoint. A dedicated inert fixture now
+  declares non-autostart Codex and Claude observer agents, and the human checklist fixes consent/order, cancellation,
+  passive Claude capture, native-only degradation, wide/narrow evidence and redaction checks.
+- Preparation deliberately does not launch VS Code, open an Extension Development Host, enable a provider, start an
+  observer, run the SDD dogfood command, install dependencies or package/install a VSIX. The machine-local pointer is
+  armed only after the review commit and recorded in task `t-1a8ae3`; all T5/live evidence boxes remain open.
