@@ -23,6 +23,7 @@ import { PinAttachmentStore } from "../pins/PinAttachmentStore.js";
 import * as domainActions from "../workspace/domainActions.js";
 import { ExternalToolRegistry } from "../externalTools/registry.js";
 import { isPidAlive, readProcEnvironAgent, readProcEntries, scanExternalToolProcesses } from "../externalTools/procScanner.js";
+import { ResourceSampler } from "../attention/resourceSample.js";
 
 export const PIN_PREVIEW_VIEW_TYPE = "tachyonPinPreview";
 
@@ -103,6 +104,8 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = "tachyonSidebarPrototype";
   private view?: vscode.WebviewView;
   private lastFleets: FleetVM[] = [];
+  /** spec 386 — process-lifetime CPU tick deltas per agent (pane subtree). */
+  private readonly resourceSampler = new ResourceSampler();
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -443,6 +446,17 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       for (const sighting of scanExternalToolProcesses(paneRoots, readProcEntries(), Date.now(), readProcEnvironAgent)) externalTools.upsert(sighting);
     }
     externalTools.reconcile({ isPidAlive });
+    // spec 386 — live CPU/RSS samples for running agents with a pane pid (Linux /proc; omit cleanly elsewhere).
+    const resourcesOf = new Map<string, { cpuPct?: number; memMb: number }>();
+    const livePane = new Set(paneRoots.map((p) => p.agent));
+    for (const { agent, panePid } of paneRoots) {
+      const sample = this.resourceSampler.sample(agent, panePid);
+      if (sample) resourcesOf.set(agent, sample);
+    }
+    // drop sampler state for agents that are no longer live so a restart gets a clean first sample
+    for (const name of this.resourceSampler.keys()) {
+      if (!livePane.has(name)) this.resourceSampler.clear(name);
+    }
     const resumeReadyOf = new Map<string, boolean>();
     await Promise.all([...resumable].filter((n) => !running.has(n)).map(async (name) => {
       const rec = ws.ledger.get(name);
@@ -464,6 +478,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
           liveBranch: git?.liveBranch,
           branchDrift: git?.branchDrift,
           worktreePath: git?.worktreePath,
+          resources: a.running && !a.dead ? resourcesOf.get(a.name) : undefined,
           verify: verifyOf.get(a.name),
           verifiable: verifyOf.has(a.name),
           evidence: evidenceOf.get(a.name),

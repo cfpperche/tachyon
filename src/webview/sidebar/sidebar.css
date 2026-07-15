@@ -45,9 +45,18 @@
   .tab .codicon { font-size: 16px; }
 
   /* active section title */
-  .sec { display: flex; align-items: baseline; gap: 6px; padding: 9px 12px 2px; }
+  .sec { display: flex; align-items: center; gap: 6px; padding: 9px 12px 2px; }
   .sec b { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--ds-muted); }
   .sec .sec-new { margin-left: auto; }
+  /* spec 386 — Expand/Collapse metrics (session-local; independent of hierarchy collapse) */
+  .sec .sec-metrics { display: inline-flex; align-items: center; gap: 4px; margin-left: 6px; }
+  .sec-metrics-btn {
+    font: inherit; font-size: 10px; font-weight: 500; color: var(--ds-muted);
+    border: 1px solid var(--ds-border); background: transparent; border-radius: 4px;
+    padding: 1px 6px; cursor: pointer; text-transform: none; letter-spacing: 0;
+  }
+  .sec-metrics-btn:hover:not(:disabled) { color: var(--vscode-foreground); border-color: var(--ds-focus); }
+  .sec-metrics-btn:disabled { opacity: .4; cursor: default; }
   /* spec 242 — sort control in the section header */
   .sec .sec-actions { margin-left: auto; display: inline-flex; align-items: center; gap: 2px; }
   .sec .pin-filter { gap: 4px; }
@@ -74,18 +83,74 @@
   .grp.collapsed + .grp-body { display: none; }
 
   /* Rows — agent blocks: name line + meta chips. After live-branch badges (spec 384) the meta line is
-     denser, so vertical rhythm + inter-agent hairlines keep each agent scannable (same info, more air). */
+     denser, so vertical rhythm + inter-agent hairlines keep each agent scannable (same info, more air).
+     spec 386 — optional metrics detail lanes; L1 reserves right gutter for hover actions. */
   .row {
     display: flex;
     flex-direction: column;
     gap: 4px; /* name → badges (was 1px — felt glued) */
     padding: 8px 12px; /* --ds-2 vertical; was 4px — blocks blended together */
     position: relative;
+    --action-gutter: 80px;
   }
+  .row.metrics-open { background: color-mix(in srgb, var(--ds-focus) 5%, transparent); }
   .row:hover { background: var(--hover); }
   .row.flash, .pin.flash { animation: flash 1s ease-out; }
   @keyframes flash { 0%,28% { background: var(--sel); } 100% { background: transparent; } }
-  .row-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .row-top { display: flex; align-items: center; gap: 6px; min-width: 0; padding-right: var(--action-gutter); }
+  /* spec 386 — metrics toggle (independent of hierarchy .agent-toggle) + collapsed peek */
+  .metrics-toggle {
+    width: 18px; height: 18px; flex: none; display: grid; place-items: center;
+    border: 1px solid var(--ds-border); background: transparent; color: var(--ds-muted);
+    cursor: pointer; border-radius: 4px; padding: 0; font: inherit; font-size: 11px; line-height: 1;
+  }
+  .metrics-toggle:hover { color: var(--vscode-foreground); border-color: var(--ds-focus); }
+  .metrics-toggle.open {
+    color: var(--ds-focus);
+    border-color: color-mix(in srgb, var(--ds-focus) 55%, var(--ds-border));
+    background: color-mix(in srgb, var(--ds-focus) 12%, transparent);
+  }
+  .metrics-toggle .glyph { opacity: .9; }
+  .peek {
+    flex: none; font-family: var(--ds-mono, var(--tachyon-font-mono, ui-monospace, monospace));
+    font-size: 10px; color: var(--ds-muted); border: 1px solid transparent; border-radius: 3px;
+    padding: 0 5px; cursor: pointer; background: transparent; margin-left: auto;
+  }
+  .peek:hover { color: var(--vscode-foreground); border-color: var(--ds-border); background: var(--hover); }
+  .peek .c { color: var(--vscode-charts-blue, var(--ds-info, #4fc1ff)); }
+  .peek .m { color: var(--vscode-charts-purple, #c586c0); }
+  .peek.hot .c { color: var(--ds-warn); }
+  .row:hover .peek { opacity: .55; }
+  .row:hover .peek:hover { opacity: 1; }
+  .row-detail {
+    display: flex; flex-direction: column; gap: 5px;
+    padding: 4px 0 2px 28px;
+    border-left: 2px solid color-mix(in srgb, var(--ds-focus) 30%, transparent);
+    margin-left: 5px;
+  }
+  .lane { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 11px; color: var(--ds-muted); }
+  .lane .lab {
+    flex: none; width: 36px; font-size: 9px; text-transform: uppercase;
+    letter-spacing: .05em; opacity: .8;
+  }
+  .lane .body { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; }
+  .meter {
+    flex: 1; min-width: 0; height: 6px; border-radius: 3px;
+    background: color-mix(in srgb, var(--vscode-foreground) 10%, transparent); overflow: hidden;
+  }
+  .meter > i {
+    display: block; height: 100%; border-radius: 3px;
+    background: var(--vscode-charts-blue, var(--ds-info, #4fc1ff)); width: 0%;
+  }
+  .meter.mem > i { background: var(--vscode-charts-purple, #c586c0); }
+  .meter.hot > i { background: var(--ds-warn); }
+  .val {
+    flex: none; font-family: var(--ds-mono, var(--tachyon-font-mono, ui-monospace, monospace));
+    font-size: 10px; min-width: 4.5ch; text-align: right; color: var(--vscode-foreground);
+  }
+  .val.cpu { color: var(--vscode-charts-blue, var(--ds-info, #4fc1ff)); }
+  .val.mem { color: var(--vscode-charts-purple, #c586c0); }
+  .val.hot { color: var(--ds-warn); }
   /* spec t-b8ff2c — the disclosure-toggle gutter is reserved on EVERY row (shared width/margin below),
      whether it holds the real toggle button or a same-sized spacer, so sdot+name align regardless of
      hasChildren. */
@@ -169,8 +234,9 @@
   button.badge { background: transparent; font-family: inherit; cursor: pointer; }
   button.badge:hover { background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,.2)); color: var(--vscode-foreground); }
 
-  /* hover action overlay — toolbar idiom; absolute so it never widens the row */
-  .actions { display: flex; opacity: 0; pointer-events: none; transition: opacity .1s; position: absolute; right: 8px; top: 6px; gap: 0; background: var(--vscode-sideBar-background, var(--vscode-editor-background)); padding: 1px 2px; border-radius: 4px; box-shadow: 0 0 0 1px var(--ds-border); }
+  /* hover action overlay — toolbar idiom; absolute so it never widens the row.
+     L1 padding-right (--action-gutter) keeps name + metrics peek clear of this strip (spec 386). */
+  .actions { display: flex; opacity: 0; pointer-events: none; transition: opacity .1s; position: absolute; right: 8px; top: 6px; gap: 0; z-index: 2; background: var(--vscode-sideBar-background, var(--vscode-editor-background)); padding: 1px 2px; border-radius: 4px; box-shadow: 0 0 0 1px var(--ds-border); }
   .row:hover .actions, .row:focus-within .actions { opacity: 1; pointer-events: auto; }
   .act { width: 22px; height: 22px; display: grid; place-items: center; border-radius: 4px; cursor: pointer; color: var(--ds-muted); }
   .act .codicon { font-size: 14px; }

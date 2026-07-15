@@ -65,6 +65,10 @@ describe("agentModel.toAgentVM (spec 237)", () => {
     expect(vm).toMatchObject({ name: "child", parent: "orch", worktree: "tachyon/x", harness: true, forked: true, forkable: true });
     expect(vm.resumable).toBeUndefined(); // false flags are omitted, not set
   });
+  it("spec 386: maps resources sample", () => {
+    const vm = toAgentVM(raw({ name: "r", running: true }), { resources: { cpuPct: 10, memMb: 99 } });
+    expect(vm.resources).toEqual({ cpuPct: 10, memMb: 99 });
+  });
   it("spec 384: maps live branch, path, and drift (false flags omitted)", () => {
     const aligned = toAgentVM(raw({ name: "wt", running: true }), {
       worktree: "tachyon/wt",
