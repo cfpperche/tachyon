@@ -90,3 +90,13 @@ manipulate the VS Code window.
   upgraded once rather than silently reusing the pre-fix daemon.
 - [x] Focused tests, typecheck, production build, engine boundary, diff-check, packaged dogfood and final
   `npm run verify:full:quiet` closure gate pass on the complete candidate.
+
+## Installed notification-starvation follow-up — 2026-07-15
+
+- [x] Prove a visible `notice.present` whose native VS Code promise remains unresolved cannot block shell
+      synchronization or a read-only sidebar query.
+- [x] Complete claimed notification UI work outside the shell client's serialized operational tail while
+      preserving the broker's single claimant, exact operation id and at-most-once engine action.
+- [x] Prove notification completion still reaches the engine, run the focused shell suite, typecheck and
+      repository-wide `npm test` on the final source candidate.
+- [ ] Package the clean `0.56.10` candidate and complete maintainer-driven installed reload validation.

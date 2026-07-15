@@ -311,12 +311,30 @@ export class RemoteWorkspaceClient implements WorkspaceClient {
   }
 
   private async serviceUiRequest(): Promise<void> {
-    if (!this.uiHandler) return;
-    const request = await this.control.claimUiRequest();
+    const uiHandler = this.uiHandler;
+    if (!uiHandler) return;
+    const control = this.control;
+    const request = await control.claimUiRequest();
     if (!request) return;
+    const completion = this.executeAndCompleteUiRequest(control, request, uiHandler);
+    if (request.kind === "notice.present") {
+      // A native notification deliberately stays unresolved while it is visible. It has already been
+      // atomically claimed, so completing it in the background preserves at-most-once action execution
+      // without starving sync/query/invoke behind the client's serialized operational tail.
+      void completion.catch(() => undefined);
+      return;
+    }
+    await completion;
+  }
+
+  private async executeAndCompleteUiRequest(
+    control: EngineControlClient,
+    request: EngineUiRequestV1,
+    uiHandler: WorkspaceUiRequestHandler,
+  ): Promise<void> {
     let completion: Parameters<EngineControlClient["completeUiRequest"]>[0];
     try {
-      const raw = await this.uiHandler(request);
+      const raw = await uiHandler(request);
       const value = raw === undefined ? null : raw;
       if (!isJsonValue(value)) throw new Error("editor UI handler returned a non-JSON value");
       completion = {
@@ -336,7 +354,7 @@ export class RemoteWorkspaceClient implements WorkspaceClient {
         message,
       };
     }
-    await this.control.completeUiRequest(completion);
+    await control.completeUiRequest(completion);
   }
 
   private async reconnect(): Promise<WorkspaceClientSyncResult> {

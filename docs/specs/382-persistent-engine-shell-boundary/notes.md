@@ -818,3 +818,22 @@ None.
   closure, protocol-3 manifest assertion, diff-check and the full persistent-engine dogfood all pass; the latter
   proved concurrent upgrade/reuse, failed-upgrade rollback, crash restart, zero-shell Bridge work and monitor-led
   agent restart before the final repository-wide gate.
+
+## Thirty-sixth implementation slice — 2026-07-15 installed notification starvation
+
+- Installed `0.56.9` correctly quarantined 21 independently invalid pre-authority Delivery rows and kept the
+  persistent engine healthy. A direct authenticated `sidebar.view` control query returned the complete fleet,
+  while the attached VS Code shell still rendered `No Tachyon workspace` with the quarantine notification open.
+- Root cause is in the shell boundary, not reload reconciliation: `RemoteWorkspaceClient.syncOnce()` services a
+  claimed UI request before reading events, and `notice.present` awaits the native notification promise. That
+  promise intentionally remains unresolved while the notification is visible, so the client's shared serialized
+  tail also starves every later sync, query and sidebar projection.
+- The bounded correction is to keep the engine broker's atomic claim and completion contract, but execute only
+  `notice.present` completion outside the operational tail. Other editor operations remain serialized. A
+  deterministic regression must hold a notification open, observe sync and query complete, then resolve the
+  original action through the same claimed operation exactly once.
+- The new regression failed against the prior client because sync stayed pending for the full one-second bound.
+  It passes after the correction together with the 35-test shell/control/broker/host matrix and typecheck. The
+  production bundle was regenerated at `0.56.10`; repository-wide `npm test` passes at 409 files, 4,670 passed
+  and 3 skipped. The first global attempt found only the expected stale `0.56.9` ignored bundle artifact after
+  the version bump; rebuilding the bundle closed it before the final green run.
