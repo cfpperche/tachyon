@@ -201,15 +201,17 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
   const profileReadable = profilePresent && soulStatus?.lifecycle !== "invalid";
   const readActionDisabled = !savedAgent || !!soulBusy;
   const mutationDisabled = readActionDisabled || !soulStatus || soulStatus.transactionDegraded;
-  const canCreateOrImport = !mutationDisabled && soulStatus?.lifecycle === "missing";
-  const canAdopt = !mutationDisabled
-    && !!soulStatus?.sha256
+  const showCreateOrImport = soulStatus?.lifecycle === "missing";
+  const showAdopt = !!soulStatus?.sha256
     && (soulStatus.lifecycle === "retained" || soulStatus.lifecycle === "unowned");
-  const canEnable = !mutationDisabled
-    && soulStatus?.lifecycle === "active"
+  const showEnable = soulStatus?.lifecycle === "active"
     && soulStatus.resolvable
     && !soulStatus.soulEnabled;
-  const canDisable = !mutationDisabled && !!soulStatus?.soulEnabled;
+  const showDisable = !!soulStatus?.soulEnabled;
+  const canCreateOrImport = showCreateOrImport && !mutationDisabled;
+  const canAdopt = showAdopt && !mutationDisabled;
+  const canEnable = showEnable && !mutationDisabled;
+  const canDisable = showDisable && !mutationDisabled;
   const lifecycleLabel: Record<SoulProfileStatusMessage["lifecycle"], string> = {
     missing: "Missing",
     active: "Active",
@@ -264,14 +266,35 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
               {savedAgent ? (
                 <>
                   <div class="ash-identity-actions" role="group" aria-label="SOUL.md actions">
-                    <Button icon="new-file" disabled={!canCreateOrImport} onClick={() => runSoulAction("Creating profile", createSoulMessage(savedAgent))}>Create</Button>
-                    <Button icon="folder-opened" disabled={!canCreateOrImport} onClick={() => runSoulAction("Importing profile", importSoulMessage(savedAgent))}>Import</Button>
-                    <Button icon="go-to-file" disabled={readActionDisabled || !profilePresent} onClick={() => runSoulAction("Opening profile", openSoulMessage(savedAgent))}>Open</Button>
-                    <Button icon="refresh" disabled={readActionDisabled} onClick={() => runSoulAction("Refreshing profile", refreshSoulMessage(savedAgent))}>Refresh</Button>
-                    <Button icon="eye" disabled={readActionDisabled || !profileReadable} onClick={() => runSoulAction("Loading preview", previewSoulMessage(savedAgent))}>Preview</Button>
-                    <Button icon="verified" disabled={!canAdopt} onClick={() => runSoulAction("Adopting profile", adoptSoulProfileMessage(savedAgent, soulStatus!.sha256!))}>Adopt</Button>
-                    <Button icon="check" disabled={!canEnable} onClick={() => runSoulAction("Enabling soul", enableSoulMessage(savedAgent))}>Enable soul</Button>
-                    <Button disabled={!canDisable} onClick={() => runSoulAction("Disabling soul", disableSoulMessage(savedAgent))}>Disable soul</Button>
+                    {showCreateOrImport && (
+                      <>
+                        <Button variant="primary" icon="new-file" disabled={!canCreateOrImport} onClick={() => runSoulAction("Creating profile", createSoulMessage(savedAgent))}>Create</Button>
+                        <Button icon="folder-opened" disabled={!canCreateOrImport} onClick={() => runSoulAction("Importing profile", importSoulMessage(savedAgent))}>Import</Button>
+                      </>
+                    )}
+                    {profilePresent && (
+                      <Button icon="go-to-file" disabled={readActionDisabled} onClick={() => runSoulAction("Opening profile", openSoulMessage(savedAgent))}>Edit file</Button>
+                    )}
+                    {showEnable && (
+                      <Button variant="primary" icon="check" disabled={!canEnable} onClick={() => runSoulAction("Enabling soul", enableSoulMessage(savedAgent))}>Enable soul</Button>
+                    )}
+                    {showDisable && (
+                      <Button disabled={!canDisable} onClick={() => runSoulAction("Disabling soul", disableSoulMessage(savedAgent))}>Disable soul</Button>
+                    )}
+                    {soulStatus && (
+                      <details class="ash-identity-more">
+                        <summary aria-label="More SOUL.md actions"><span class="codicon codicon-ellipsis" aria-hidden="true" />More</summary>
+                        <div class="ash-identity-secondary-actions" role="group" aria-label="Secondary SOUL.md actions">
+                          <Button icon="refresh" disabled={readActionDisabled} onClick={() => runSoulAction("Refreshing profile", refreshSoulMessage(savedAgent))}>Refresh</Button>
+                          {profileReadable && (
+                            <Button icon="eye" disabled={readActionDisabled} onClick={() => runSoulAction("Loading preview", previewSoulMessage(savedAgent))}>Preview</Button>
+                          )}
+                          {showAdopt && (
+                            <Button icon="verified" disabled={!canAdopt} onClick={() => runSoulAction("Adopting profile", adoptSoulProfileMessage(savedAgent, soulStatus.sha256!))}>Adopt existing file</Button>
+                          )}
+                        </div>
+                      </details>
+                    )}
                   </div>
 
                   <div class="ash-soul-status" role="status" aria-live="polite">

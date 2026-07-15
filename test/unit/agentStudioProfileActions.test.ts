@@ -25,7 +25,7 @@ import { assertNoDomainNameCollision, decodeStudioMessage } from "../../src/webv
 import { agentStanzaCasToken, setAgentSoulEnablement } from "../../src/config/YamlConfigEditor.js";
 
 describe("Agent Studio soul profile protocol (T15A)", () => {
-  it("renders the functional Identity action surface before Role with accessible status and preview", () => {
+  it("renders a state-focused Identity action surface before Role with secondary actions collapsed", () => {
     const source = fs.readFileSync(path.resolve("src/webview/agent-studio-shell/App.tsx"), "utf8");
     expect(source.indexOf("Identity (SOUL.md)")).toBeGreaterThan(-1);
     expect(source.indexOf("Role template")).toBeGreaterThan(source.indexOf("Identity (SOUL.md)"));
@@ -39,6 +39,13 @@ describe("Agent Studio soul profile protocol (T15A)", () => {
       "enableSoulMessage(savedAgent)",
       "disableSoulMessage(savedAgent)",
     ]) expect(source).toContain(action);
+    expect(source).toContain("showCreateOrImport &&");
+    expect(source).toContain("profilePresent &&");
+    expect(source).toContain("showEnable &&");
+    expect(source).toContain("showDisable &&");
+    expect(source).toContain('<details class="ash-identity-more">');
+    expect(source.indexOf('<details class="ash-identity-more">')).toBeLessThan(source.indexOf("refreshSoulMessage(savedAgent)", source.indexOf('<details class="ash-identity-more">')));
+    expect(source).toContain("Adopt existing file");
     expect(source).toContain('aria-live="polite"');
     expect(source).toContain('aria-label="SOUL.md preview"');
     expect(source).toContain("Profile recovery is required. Mutating actions are disabled.");

@@ -23,6 +23,11 @@
 .ash-identity { display: grid; gap: var(--ds-2); padding: var(--ds-3); border: 1px solid var(--ds-border); border-radius: var(--ds-radius); background: color-mix(in srgb, var(--vscode-editor-background) 92%, var(--vscode-focusBorder)); }
 .ash-identity-heading { display: flex; gap: var(--ds-3); align-items: flex-start; justify-content: space-between; }
 .ash-identity-actions { display: flex; flex-wrap: wrap; gap: var(--ds-1); }
+.ash-identity-more { margin: 0; padding: 0; border: 0; }
+.ash-identity-more > summary { display: inline-flex; align-items: center; gap: var(--ds-icon-gap); padding: var(--ds-1) var(--ds-3); border: 1px solid var(--ds-border); border-radius: 4px; color: var(--ds-fg); font-size: inherit; text-transform: none; letter-spacing: normal; list-style: none; }
+.ash-identity-more > summary::-webkit-details-marker { display: none; }
+.ash-identity-more > summary:hover, .ash-identity-more[open] > summary { background: var(--ds-hover); }
+.ash-identity-secondary-actions { display: flex; flex-wrap: wrap; gap: var(--ds-1); margin-top: var(--ds-1); }
 .ash-soul-state { flex: none; padding: 2px var(--ds-2); border: 1px solid var(--ds-border); border-radius: 999px; font-size: var(--ds-small); font-weight: 600; }
 .ash-soul-state-active { border-color: var(--vscode-testing-iconPassed); }
 .ash-soul-state-invalid, .ash-soul-state-unowned { border-color: var(--vscode-errorForeground); }
