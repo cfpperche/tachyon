@@ -58,6 +58,7 @@ import { Workspace, type ViewKind } from "./workspace/Workspace.js";
 import type { WorkspacePresentationTarget } from "./shell/WorkspacePresentation.js";
 import { legacyMissionControlTarget } from "./shell/MissionControlTarget.js";
 import { legacyTaskDetailTarget } from "./shell/TaskDetailTarget.js";
+import { legacyTaskStudioTarget } from "./shell/TaskStudioTarget.js";
 import { VsCodeHost } from "./workspace/VsCodeHost.js";
 import type { WorktreeRecord } from "./worktree/WorktreeManager.js";
 import { createGitExec, worktreeShowFile, resolveBase } from "./worktree/WorktreeManager.js";
@@ -675,14 +676,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   };
   // spec 339 — Task Studio: constructed first (no forward declaration needed) so the board/detail panels
   // can inject an `openTaskStudio` callback into their own constructors below.
-  const taskStudioPanels = new TaskStudioPanelManager(context.extensionUri, workspaces, onTasksChanged);
+  const taskStudioPanels = new TaskStudioPanelManager(
+    context.extensionUri,
+    () => workspaces().map(legacyTaskStudioTarget),
+    onTasksChanged,
+  );
   context.subscriptions.push({ dispose: () => taskStudioPanels.dispose() });
   taskDetailPanels = new TaskDetailPanelManager(
     context.extensionUri,
     () => workspaces().map(legacyTaskDetailTarget),
     (target, id) => {
       const ws = wsOf({ ws: target });
-      if (ws) taskStudioPanels.openExisting(ws, id);
+      if (ws) taskStudioPanels.openExisting(legacyTaskStudioTarget(ws), id);
     },
     onTasksChanged,
   );
@@ -697,7 +702,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     (target, id) => {
       const ws = wsOf({ ws: target });
       if (!ws) return;
-      if (id) taskStudioPanels.openExisting(ws, id); else taskStudioPanels.openNew(ws);
+      const studio = legacyTaskStudioTarget(ws);
+      if (id) taskStudioPanels.openExisting(studio, id); else taskStudioPanels.openNew(studio);
     },
     onTasksChanged,
   );
@@ -1611,7 +1617,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // webview's openTaskStudio action instead of a command).
     vscode.commands.registerCommand("tachyon.taskStudio.new", async (hash?: string) => {
       const ws = hash ? byHash(hash) : await pickWorkspace();
-      if (ws) taskStudioPanels.openNew(ws);
+      if (ws) taskStudioPanels.openNew(legacyTaskStudioTarget(ws));
     }),
     // spec 322 — per-agent probes: the agent row's "…" action passes (hash, agent) and gets that agent's
     // probes only. The no-arg/agent-less form opens the UNFILTERED list — an internal/debug escape hatch for

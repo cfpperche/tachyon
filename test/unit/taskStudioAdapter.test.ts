@@ -5,14 +5,13 @@ import path from "node:path";
 import { TaskStore, mintTaskId } from "../../src/tasks/TaskStore.js";
 import { TaskDetailStore, hashBody } from "../../src/tasks/TaskDetailStore.js";
 import { TaskAttachmentStore } from "../../src/tasks/TaskAttachmentStore.js";
+import { legacyTaskStudioTarget } from "../../src/shell/TaskStudioTarget.js";
 import { TaskStudioAdapter } from "../../src/webview/TaskStudioAdapter.js";
 import type { Workspace } from "../../src/workspace/Workspace.js";
 import { computeTaskDirty, serializeTaskPatch, canDiscardTaskFields, type TaskFields } from "../../src/webview/task-studio/domain.js";
 
-/** spec 350 T1 — TaskStudioAdapter in isolation: no vscode, no panel, no protocol — just the
- *  StudioHostAdapter<TaskDetailEntity,TaskFields,TaskPatch> contract wrapping TaskDetailStore/
- *  TaskAttachmentStore/TaskStore. The end-to-end panel behavior stays covered by taskStudioPanel.test.ts
- *  until T2 migrates the panel itself onto this adapter. */
+/** TaskStudioAdapter in isolation: no vscode or panel, with the legacy target proving the same narrow
+ *  contract that the persistent WorkspaceClient target implements. */
 
 function mkroot(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "task-studio-adapter-"));
@@ -45,10 +44,10 @@ function baseFields(overrides: Partial<TaskFields> = {}): TaskFields {
 }
 
 describe("TaskStudioAdapter — load", () => {
-  it("returns an empty new-task entity when entityId is undefined", () => {
+  it("returns an empty new-task entity when entityId is undefined", async () => {
     const ws = fakeWorkspace();
-    const adapter = new TaskStudioAdapter(ws);
-    const result = adapter.load(undefined);
+    const adapter = new TaskStudioAdapter(legacyTaskStudioTarget(ws));
+    const result = await adapter.load(undefined);
     expect(result.status).toBe("ok");
     if (result.status !== "ok") throw new Error("unreachable");
     expect(result.entity.title).toBe("");
@@ -56,11 +55,11 @@ describe("TaskStudioAdapter — load", () => {
     expect(result.entity.expectUpdatedAt).toBeUndefined();
   });
 
-  it("returns an empty entity for a pre-minted id with no task behind it yet (staged new-mode)", () => {
+  it("returns an empty entity for a pre-minted id with no task behind it yet (staged new-mode)", async () => {
     const ws = fakeWorkspace();
-    const adapter = new TaskStudioAdapter(ws);
+    const adapter = new TaskStudioAdapter(legacyTaskStudioTarget(ws));
     const id = mintTaskId();
-    const result = adapter.load(id);
+    const result = await adapter.load(id);
     expect(result.status).toBe("ok");
     if (result.status !== "ok") throw new Error("unreachable");
     expect(result.entity.taskId).toBe(id);
@@ -70,8 +69,8 @@ describe("TaskStudioAdapter — load", () => {
   it("reimports the doc from body when there is no sidecar yet", async () => {
     const ws = fakeWorkspace();
     const task = await ws.taskStore.create({ title: "x", author: "human", body: "**bold** body" });
-    const adapter = new TaskStudioAdapter(ws);
-    const result = adapter.load(task.id);
+    const adapter = new TaskStudioAdapter(legacyTaskStudioTarget(ws));
+    const result = await adapter.load(task.id);
     if (result.status !== "ok") throw new Error("unreachable");
     expect(result.entity.anchor).toBe("reimport");
     expect(JSON.stringify(result.entity.doc)).toContain("bold");
@@ -90,8 +89,8 @@ describe("TaskStudioAdapter — load", () => {
       bodyHash: hashBody("hello"),
       taskUpdatedAt: task.updatedAt,
     });
-    const adapter = new TaskStudioAdapter(ws);
-    const result = adapter.load(task.id);
+    const adapter = new TaskStudioAdapter(legacyTaskStudioTarget(ws));
+    const result = await adapter.load(task.id);
     if (result.status !== "ok") throw new Error("unreachable");
     expect(result.entity.anchor).toBe("load");
     expect(result.entity.doc).toMatchObject({ content: [{ type: "heading" }] });
@@ -103,8 +102,8 @@ describe("TaskStudioAdapter — load", () => {
     const detailStore = new TaskDetailStore(ws.workspaceRoot);
     fs.mkdirSync(detailStore.detailsDir, { recursive: true });
     fs.writeFileSync(detailStore.detailPath(task.id), "{ not json", "utf8");
-    const adapter = new TaskStudioAdapter(ws);
-    const result = adapter.load(task.id);
+    const adapter = new TaskStudioAdapter(legacyTaskStudioTarget(ws));
+    const result = await adapter.load(task.id);
     if (result.status !== "ok") throw new Error("unreachable");
     expect(result.entity.anchor).toBe("read-only");
     expect(result.entity.anchorError).toMatch(/not valid JSON/);
@@ -117,8 +116,8 @@ describe("TaskStudioAdapter — load", () => {
     const att = attStore.putImage({ data: Buffer.from("fake-png-bytes"), mediaType: "image/png", source: "paste" });
     const detailStore = new TaskDetailStore(ws.workspaceRoot);
     detailStore.write({ schemaVersion: 1, taskId: task.id, doc: EMPTY_DOC, attachments: [att], bodyHash: hashBody("hello"), taskUpdatedAt: task.updatedAt });
-    const adapter = new TaskStudioAdapter(ws);
-    const result = adapter.load(task.id);
+    const adapter = new TaskStudioAdapter(legacyTaskStudioTarget(ws));
+    const result = await adapter.load(task.id);
     if (result.status !== "ok") throw new Error("unreachable");
     expect(result.entity.attachments).toHaveLength(1);
     expect(result.entity.attachments[0]!.uri).toMatch(/^data:image\/png;base64,/);
@@ -130,8 +129,8 @@ describe("TaskStudioAdapter — load", () => {
     const task = await ws.taskStore.create({ title: "x", author: "human", deps: [dep.id] });
     // a dangling id that was never created
     await ws.taskStore.update(task.id, { deps: [dep.id, "t-000000"] });
-    const adapter = new TaskStudioAdapter(ws);
-    const result = adapter.load(task.id);
+    const adapter = new TaskStudioAdapter(legacyTaskStudioTarget(ws));
+    const result = await adapter.load(task.id);
     if (result.status !== "ok") throw new Error("unreachable");
     expect(result.entity.deps).toEqual([
       { id: dep.id, title: "dep", missing: false },
@@ -143,7 +142,7 @@ describe("TaskStudioAdapter — load", () => {
 describe("TaskStudioAdapter — save (staged create)", () => {
   it("mints via the staged transaction and derives body from the doc", async () => {
     const ws = fakeWorkspace();
-    const adapter = new TaskStudioAdapter(ws);
+    const adapter = new TaskStudioAdapter(legacyTaskStudioTarget(ws));
     const id = mintTaskId();
     const patch = baseFields({
       title: "from studio",
@@ -163,7 +162,7 @@ describe("TaskStudioAdapter — save (staged create)", () => {
 
   it("never lets assignee be set in create mode even if the patch carried one (325 mutability table)", async () => {
     const ws = fakeWorkspace();
-    const adapter = new TaskStudioAdapter(ws);
+    const adapter = new TaskStudioAdapter(legacyTaskStudioTarget(ws));
     const id = mintTaskId();
     const result = await adapter.save(id, baseFields({ title: "x", assignee: "someone", dirty: { title: true } }));
     expect(result.status).toBe("ok");
@@ -172,7 +171,7 @@ describe("TaskStudioAdapter — save (staged create)", () => {
 
   it("cleans up the provisional attachment namespace when the staged create fails", async () => {
     const ws = fakeWorkspace();
-    const adapter = new TaskStudioAdapter(ws);
+    const adapter = new TaskStudioAdapter(legacyTaskStudioTarget(ws));
     const id = mintTaskId();
     const attachmentStore = new TaskAttachmentStore(ws.workspaceRoot, id);
     attachmentStore.putImage({ data: Buffer.from("during-editing"), mediaType: "image/png", source: "paste" });
@@ -192,7 +191,7 @@ describe("TaskStudioAdapter — save (CAS update)", () => {
   it("composes a dirty-field-only patch and never touches status/rank", async () => {
     const ws = fakeWorkspace();
     const task = await ws.taskStore.create({ title: "old title", author: "human", kind: "chore", body: "b" });
-    const adapter = new TaskStudioAdapter(ws);
+    const adapter = new TaskStudioAdapter(legacyTaskStudioTarget(ws));
     const result = await adapter.save(task.id, baseFields({ title: "old title", kind: "bug", dirty: { kind: true }, expectUpdatedAt: task.updatedAt }));
     expect(result.status).toBe("ok");
     const updated = ws.taskStore.get(task.id);
@@ -204,7 +203,7 @@ describe("TaskStudioAdapter — save (CAS update)", () => {
   it("derives body from the doc and writes the sidecar only when the doc itself was dirty", async () => {
     const ws = fakeWorkspace();
     const task = await ws.taskStore.create({ title: "x", author: "human", body: "original" });
-    const adapter = new TaskStudioAdapter(ws);
+    const adapter = new TaskStudioAdapter(legacyTaskStudioTarget(ws));
     const result = await adapter.save(
       task.id,
       baseFields({ title: "x", doc: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "new body" }] }] }, docDirty: true, expectUpdatedAt: task.updatedAt }),
@@ -217,7 +216,7 @@ describe("TaskStudioAdapter — save (CAS update)", () => {
   it("does not write a no-op body when a reimported doc serializes back to its original body", async () => {
     const ws = fakeWorkspace();
     const task = await ws.taskStore.create({ title: "x", author: "human", body: "original body" });
-    const adapter = new TaskStudioAdapter(ws);
+    const adapter = new TaskStudioAdapter(legacyTaskStudioTarget(ws));
     const result = await adapter.save(
       task.id,
       baseFields({ title: "x", doc: docWithText("original body"), bodyBaseline: "original body", docDirty: true, expectUpdatedAt: task.updatedAt }),
@@ -230,7 +229,7 @@ describe("TaskStudioAdapter — save (CAS update)", () => {
   it("writes the body from a reimported doc when it differs from the original imported body", async () => {
     const ws = fakeWorkspace();
     const task = await ws.taskStore.create({ title: "x", author: "human", body: "original body" });
-    const adapter = new TaskStudioAdapter(ws);
+    const adapter = new TaskStudioAdapter(legacyTaskStudioTarget(ws));
     const result = await adapter.save(
       task.id,
       baseFields({ title: "x", doc: docWithText("edited body"), bodyBaseline: "original body", docDirty: true, expectUpdatedAt: task.updatedAt }),
@@ -244,7 +243,7 @@ describe("TaskStudioAdapter — save (CAS update)", () => {
     const ws = fakeWorkspace();
     const task = await ws.taskStore.create({ title: "x", author: "human", body: "b" });
     const before = ws.taskStore.get(task.id).updatedAt;
-    const adapter = new TaskStudioAdapter(ws);
+    const adapter = new TaskStudioAdapter(legacyTaskStudioTarget(ws));
     const result = await adapter.save(task.id, baseFields({ title: "x", expectUpdatedAt: task.updatedAt }));
     expect(result.status).toBe("ok");
     expect(ws.taskStore.get(task.id).updatedAt).toBe(before);
@@ -256,7 +255,7 @@ describe("TaskStudioAdapter — save (CAS update)", () => {
     const staleExpectUpdatedAt = task.updatedAt;
     await ws.taskStore.update(task.id, { title: "changed underneath", now: "2026-07-03T00:00:01.000Z" });
 
-    const adapter = new TaskStudioAdapter(ws);
+    const adapter = new TaskStudioAdapter(legacyTaskStudioTarget(ws));
     const result = await adapter.save(task.id, baseFields({ title: "my edit", dirty: { title: true }, expectUpdatedAt: staleExpectUpdatedAt }));
     expect(result.status).toBe("conflict");
     if (result.status !== "conflict") throw new Error("unreachable");
@@ -269,9 +268,9 @@ describe("TaskStudioAdapter — concurrency + dirty hooks", () => {
   it("declares cas concurrency and revisionOf reads expectUpdatedAt", async () => {
     const ws = fakeWorkspace();
     const task = await ws.taskStore.create({ title: "x", author: "human" });
-    const adapter = new TaskStudioAdapter(ws);
+    const adapter = new TaskStudioAdapter(legacyTaskStudioTarget(ws));
     expect(adapter.concurrency).toEqual({ kind: "cas" });
-    const result = adapter.load(task.id);
+    const result = await adapter.load(task.id);
     if (result.status !== "ok") throw new Error("unreachable");
     expect(adapter.revisionOf!(result.entity)).toBe(task.updatedAt);
   });

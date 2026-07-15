@@ -90,7 +90,7 @@ const prototype = z.object({
   }
 });
 
-const prototypes = z.object({
+export const taskPrototypeListProjectionV1Schema = z.object({
   updatedAt: timestamp.optional(),
   readOnly: z.boolean(),
   error: boundedText(2_000).optional(),
@@ -109,7 +109,7 @@ const projection = z.object({
   attention: z.array(attention).max(16).optional(),
   deps: z.array(dependency).max(500),
   imageAttachments: z.array(imageAttachment).max(500),
-  prototypes,
+  prototypes: taskPrototypeListProjectionV1Schema,
 }).strict().superRefine((value, context) => {
   if (new Set(value.deps.map((row) => row.id)).size !== value.deps.length) {
     context.addIssue({ code: z.ZodIssueCode.custom, message: "duplicate dependency ids" });
@@ -120,6 +120,7 @@ const projection = z.object({
 });
 
 export type TaskDetailProjectionV1 = z.infer<typeof projection>;
+export type TaskPrototypeListProjectionV1 = z.infer<typeof taskPrototypeListProjectionV1Schema>;
 
 export interface TaskDetailViewV1 {
   schemaVersion: 1;
@@ -143,6 +144,10 @@ export function isTaskDetailViewV1(value: unknown): value is TaskDetailViewV1 {
   try { parseTaskDetailViewV1(value); return true; } catch { return false; }
 }
 
+export function parseTaskPrototypeListProjectionV1(value: unknown): TaskPrototypeListProjectionV1 {
+  return taskPrototypeListProjectionV1Schema.parse(value);
+}
+
 export function projectTaskDetail(store: TaskStore, workspaceRoot: string, id: string): TaskDetailProjectionV1 {
   const view = store.getView(id, { includeJournal: true });
   const detailStore = new TaskDetailStore(workspaceRoot);
@@ -152,7 +157,7 @@ export function projectTaskDetail(store: TaskStore, workspaceRoot: string, id: s
       .filter((attachment) => attachment.kind === "image")
       .map((attachment) => ({ id: attachment.id, blobRef: attachment.blobRef, available: attachment.available }))
     : [];
-  const prototypeSnapshot = new TaskPrototypeStore(workspaceRoot, id).read();
+  const prototypeProjection = projectTaskPrototypeList(workspaceRoot, id);
   return parseTaskDetailProjectionV1({
     schemaVersion: 1,
     task: {
@@ -180,22 +185,27 @@ export function projectTaskDetail(store: TaskStore, workspaceRoot: string, id: s
       }
     }),
     imageAttachments,
-    prototypes: {
-      ...(prototypeSnapshot.updatedAt ? { updatedAt: prototypeSnapshot.updatedAt } : {}),
-      readOnly: prototypeSnapshot.readOnly,
-      ...(prototypeSnapshot.error ? { error: prototypeSnapshot.error } : {}),
-      prototypes: prototypeSnapshot.prototypes.map((row) => ({
-        id: row.id,
-        sha256: row.sha256,
-        state: row.state,
-        title: row.title,
-        author: row.author,
-        createdAt: row.createdAt,
-        available: row.available,
-        integrity: row.integrity,
-        ...(row.needsTaskReconciliation ? { needsTaskReconciliation: true } : {}),
-      })),
-    },
+    prototypes: prototypeProjection,
+  });
+}
+
+export function projectTaskPrototypeList(workspaceRoot: string, id: string): TaskPrototypeListProjectionV1 {
+  const snapshot = new TaskPrototypeStore(workspaceRoot, id).read();
+  return parseTaskPrototypeListProjectionV1({
+    ...(snapshot.updatedAt ? { updatedAt: snapshot.updatedAt } : {}),
+    readOnly: snapshot.readOnly,
+    ...(snapshot.error ? { error: snapshot.error } : {}),
+    prototypes: snapshot.prototypes.map((row) => ({
+      id: row.id,
+      sha256: row.sha256,
+      state: row.state,
+      title: row.title,
+      author: row.author,
+      createdAt: row.createdAt,
+      available: row.available,
+      integrity: row.integrity,
+      ...(row.needsTaskReconciliation ? { needsTaskReconciliation: true } : {}),
+    })),
   });
 }
 

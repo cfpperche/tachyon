@@ -6,5 +6,3 @@ src/webview/HandoffPanel.ts
 src/webview/PinStudioAdapter.ts
 src/webview/PinStudioPanel.ts
 src/webview/SidebarPrototype.ts
-src/webview/TaskStudioAdapter.ts
-src/webview/TaskStudioPanel.ts

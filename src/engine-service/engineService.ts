@@ -15,9 +15,22 @@ import type { WorkspaceCoreProjectionsV1 } from "../runtime-api/workspaceProject
 import { buildBoardSnapshot } from "../tasks/boardSnapshot.js";
 import { projectMissionControlBoard } from "../runtime-api/missionControlProjection.js";
 import { projectTaskDetail } from "../runtime-api/taskDetailProjection.js";
+import { projectTaskStudio } from "../runtime-api/taskStudioProjection.js";
+import {
+  parseTaskStudioStagedPayloadV1,
+  TASK_STUDIO_STAGED_PAYLOAD_MAX_BYTES,
+} from "../runtime-api/taskStudioCommands.js";
 import { reviewTaskPrototype } from "../tasks/taskPrototypeReview.js";
+import {
+  cancelTaskStudio,
+  importTaskStudioPrototype,
+  putTaskStudioImage,
+  putTaskStudioSketch,
+  saveTaskStudio,
+} from "../tasks/taskStudioService.js";
 import { startEngineControlServer, type RunningEngineControlServer } from "./controlServer.js";
 import { EngineEventJournal } from "./eventJournal.js";
+import { StagedPayloadStore } from "./stagedPayloadStore.js";
 import {
   ENGINE_SHELL_PROTOCOL,
   isEngineServiceIdentityV1,
@@ -26,6 +39,8 @@ import {
   workspaceMissionControlViewSuccessV1,
   workspaceProbeViewSuccessV1,
   workspaceTaskDetailViewSuccessV1,
+  workspaceTaskStudioApplySuccessV1,
+  workspaceTaskStudioViewSuccessV1,
   type EngineServiceIdentityV1,
   type WorkspaceCommandResultV1,
   type WorkspaceCommandV1,
@@ -77,6 +92,8 @@ export async function startDaemonEngineService(
     engineInstanceId: instanceId,
   });
   const projections = new EngineProjectionCoordinator(journal, instanceId);
+  const stagedPayloads = new StagedPayloadStore(path.dirname(options.controlSocketPath));
+  stagedPayloads.cleanupStale();
   const host = new DaemonEngineHost({
     storageRoot: path.join(options.storageRoot, "state"),
     mediaRoot: options.mediaRoot,
@@ -133,6 +150,7 @@ export async function startDaemonEngineService(
       invoke: (command) => executeWorkspaceCommand(
         runningWorkspace,
         runningActivityLog,
+        stagedPayloads,
         command,
         (view) => host.onViewsChanged(view),
       ),
@@ -181,12 +199,19 @@ async function executeWorkspaceQuery(
       detail: projectTaskDetail(workspace.taskStore, workspace.workspaceRoot, query.input.id),
     });
   }
+  if (query.method === "task.studio") {
+    return workspaceTaskStudioViewSuccessV1({
+      schemaVersion: 1,
+      studio: projectTaskStudio(workspace.taskStore, workspace.workspaceRoot, query.input.id),
+    });
+  }
   return workspaceProbeViewSuccessV1(await workspace.probeView(query.input.caller));
 }
 
 async function executeWorkspaceCommand(
   workspace: Workspace,
   activityLog: ActivityLogManager,
+  stagedPayloads: StagedPayloadStore,
   command: WorkspaceCommandV1,
   onViewsChanged: (view: "tasks") => void,
 ): Promise<WorkspaceCommandResultV1> {
@@ -217,6 +242,38 @@ async function executeWorkspaceCommand(
     // Workspace task-file watcher. Emit the authoritative view invalidation so every attached shell refreshes.
     onViewsChanged("tasks");
     return workspaceCommandSuccessV1(command);
+  }
+  if (command.method === "task.studio.cancel") {
+    cancelTaskStudio(workspace.workspaceRoot, workspace.taskStore, command.input.taskId);
+    return workspaceCommandSuccessV1(command);
+  }
+  if (command.method === "task.studio.apply") {
+    const bytes = stagedPayloads.consume(command.input.payload, TASK_STUDIO_STAGED_PAYLOAD_MAX_BYTES);
+    const payload = parseTaskStudioStagedPayloadV1(command.input.action, bytes);
+    if (command.input.action === "save") {
+      if (!("patch" in payload)) throw new Error("Task Studio save payload has the wrong shape");
+      const saved = await saveTaskStudio(workspace.workspaceRoot, workspace.taskStore, command.input.taskId, payload.patch);
+      if (saved.status === "error") throw new Error(saved.message);
+      if (saved.status === "conflict") {
+        return workspaceTaskStudioApplySuccessV1(command, { outcome: "conflict", message: saved.message });
+      }
+      onViewsChanged("tasks");
+      return workspaceTaskStudioApplySuccessV1(command, { outcome: "saved" });
+    }
+    if (command.input.action === "put-image") {
+      if (!("dataBase64" in payload) || !("mediaType" in payload)) throw new Error("Task Studio image payload has the wrong shape");
+      const stored = putTaskStudioImage(workspace.workspaceRoot, command.input.taskId, payload);
+      return workspaceTaskStudioApplySuccessV1(command, { outcome: "attachment-stored", ...stored });
+    }
+    if (command.input.action === "put-sketch") {
+      if (!("sceneJson" in payload)) throw new Error("Task Studio sketch payload has the wrong shape");
+      const stored = putTaskStudioSketch(workspace.workspaceRoot, command.input.taskId, payload);
+      return workspaceTaskStudioApplySuccessV1(command, { outcome: "attachment-stored", ...stored });
+    }
+    if (!("html" in payload)) throw new Error("Task Studio prototype payload has the wrong shape");
+    importTaskStudioPrototype(workspace.workspaceRoot, command.input.taskId, payload);
+    onViewsChanged("tasks");
+    return workspaceTaskStudioApplySuccessV1(command, { outcome: "prototype-imported" });
   }
   const agent = command.input.agent;
   switch (command.method) {

@@ -16,6 +16,7 @@ import { ClientWorkspaceStudioTarget } from "../../src/shell/ClientWorkspaceStud
 import { workspacePluginPresentationTarget } from "../../src/shell/WorkspacePresentation.js";
 import { workspaceMissionControlTarget } from "../../src/shell/MissionControlTarget.js";
 import { workspaceTaskDetailTarget } from "../../src/shell/TaskDetailTarget.js";
+import { workspaceTaskStudioTarget } from "../../src/shell/TaskStudioTarget.js";
 import { sessionName, TmuxService, workspaceHash } from "../../src/tmux/TmuxService.js";
 import { TaskAttachmentStore } from "../../src/tasks/TaskAttachmentStore.js";
 import { TaskDetailStore, hashBody } from "../../src/tasks/TaskDetailStore.js";
@@ -159,6 +160,40 @@ try {
     || taskDetail.prototypeHtml(dogfoodTask.id, dogfoodRevision.id) !== "<main>persistent Task Detail prototype</main>") {
     throw new Error("Task Detail shell media hydration failed");
   }
+  const taskStudio = workspaceTaskStudioTarget(first);
+  const initialStudio = await taskStudio.loadTaskStudio(dogfoodTask.id);
+  if (initialStudio.taskId !== dogfoodTask.id
+    || initialStudio.title !== "persistent Mission Control dogfood"
+    || initialStudio.attachments[0]?.id !== dogfoodImage.id
+    || initialStudio.anchor !== "load") {
+    throw new Error(`remote Task Studio projection failed: ${JSON.stringify(initialStudio)}`);
+  }
+  const studioSaved = await taskStudio.saveTaskStudio(dogfoodTask.id, {
+    title: "persistent Task Studio dogfood",
+    deps: [],
+    artifact_refs: [],
+    doc: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "remote Task Studio body" }] }] },
+    attachments: [dogfoodImage],
+    bodyBaseline: dogfoodTask.body,
+    dirty: { title: true },
+    docDirty: true,
+    expectUpdatedAt: dogfoodTask.updatedAt,
+  });
+  if (studioSaved.status !== "ok") throw new Error(`remote Task Studio save failed: ${JSON.stringify(studioSaved)}`);
+  dogfoodTask = dogfoodTaskStore.get(dogfoodTask.id);
+  if (dogfoodTask.title !== "persistent Task Studio dogfood" || dogfoodTask.body !== "remote Task Studio body") {
+    throw new Error("remote Task Studio save did not persist through the engine");
+  }
+  const taskStudioImage = await taskStudio.putTaskStudioImage(dogfoodTask.id, {
+    data: Buffer.from("persistent Task Studio image"),
+    mediaType: "image/png",
+    name: "task-studio.png",
+    source: "paste",
+  });
+  if (taskStudioImage.attachment.kind !== "image"
+    || taskStudioImage.attachment.uri !== `data:image/png;base64,${Buffer.from("persistent Task Studio image").toString("base64")}`) {
+    throw new Error("remote Task Studio image staging/hydration failed");
+  }
   await taskDetail.reviewPrototype(dogfoodTask.id, {
     prototypeId: dogfoodRevision.id,
     action: "approve",
@@ -169,6 +204,14 @@ try {
   if (dogfoodTask.awaitingHuman !== undefined
     || new TaskPrototypeStore(workspaceRoot, dogfoodTask.id).read().approved?.id !== dogfoodRevision.id) {
     throw new Error("remote Task Detail prototype review did not reconcile");
+  }
+  await taskStudio.importTaskStudioPrototype(dogfoodTask.id, {
+    title: "task-studio.html",
+    html: "<main>persistent Task Studio import</main>",
+  });
+  if (!new TaskPrototypeStore(workspaceRoot, dogfoodTask.id).read().prototypes
+    .some((prototype) => prototype.title === "task-studio.html" && prototype.state === "draft")) {
+    throw new Error("remote Task Studio prototype import did not persist through the engine");
   }
   await taskDetail.updateTask(dogfoodTask.id, {
     priority: 1,
@@ -254,9 +297,9 @@ try {
     engine: { pid: identity.pid, instanceId: identity.instanceId, bundleId: identity.bundleId },
     bridge: identity.bridge,
     snapshotSeq: snapshot.seq,
-    queries: [probes.method, "task.board", "task.detail"],
+    queries: [probes.method, "task.board", "task.detail", "task.studio"],
     pluginFleet: pluginFleet.agents.map((agent) => ({ name: agent.name, status: agent.status })),
-    commands: ["task.prototype.review", "task.update", "task.reorder-lane", "validation.close", "studio.submit", started.method, restarted.method, killed.method],
+    commands: ["task.studio.apply", "task.prototype.review", "task.update", "task.reorder-lane", "validation.close", "studio.submit", started.method, restarted.method, killed.method],
   }, null, 2)}\n`);
 } finally {
   try { execFileSync("systemctl", ["--user", "stop", unitName], { stdio: "ignore" }); } catch { /* absent/failed unit */ }

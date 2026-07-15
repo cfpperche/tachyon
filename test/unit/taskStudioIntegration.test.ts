@@ -11,6 +11,7 @@ import { ValidationStore } from "../../src/validations/ValidationStore.js";
 import { MissionControlPanelManager } from "../../src/webview/MissionControlPanel.js";
 import { legacyMissionControlTarget } from "../../src/shell/MissionControlTarget.js";
 import { legacyTaskDetailTarget } from "../../src/shell/TaskDetailTarget.js";
+import { legacyTaskStudioTarget } from "../../src/shell/TaskStudioTarget.js";
 import { TaskDetailPanelManager } from "../../src/webview/TaskDetailPanel.js";
 import { TaskStudioPanelManager } from "../../src/webview/TaskStudioPanel.js";
 import { envelope } from "../../src/webview/shared/studio/protocol.js";
@@ -61,18 +62,19 @@ function wireManagers(ws: Workspace) {
     taskDetailPanels.refreshAll();
     taskStudioPanels.refreshAll();
   };
+  const studio = legacyTaskStudioTarget(ws);
   const taskStudioPanels = new TaskStudioPanelManager(Uri.file("/ext"), onTasksChanged);
   taskDetailPanels = new TaskDetailPanelManager(
     Uri.file("/ext"),
     () => [legacyTaskDetailTarget(ws)],
-    (_target, id) => taskStudioPanels.openExisting(ws, id),
+    (_target, id) => taskStudioPanels.openExisting(studio, id),
     onTasksChanged,
   );
   missionControlPanels = new MissionControlPanelManager(
     Uri.file("/ext"),
     () => [legacyMissionControlTarget(ws)],
     (_target, id) => taskDetailPanels.open(legacyTaskDetailTarget(ws), id),
-    (_target, id) => { if (id) taskStudioPanels.openExisting(ws, id); else taskStudioPanels.openNew(ws); },
+    (_target, id) => { if (id) taskStudioPanels.openExisting(studio, id); else taskStudioPanels.openNew(studio); },
     onTasksChanged,
   );
   return { missionControlPanels, taskDetailPanels, taskStudioPanels, fanOuts: () => fanOuts };
@@ -161,7 +163,7 @@ describe("attachment add/remove GC through the actual Save path (spec F13, T3 ex
     const image = attachmentStore.putImage({ data: Buffer.from("screenshot-bytes"), mediaType: "image/png", source: "paste" });
 
     const { taskStudioPanels } = wireManagers(ws);
-    taskStudioPanels.openExisting(ws, task.id);
+    taskStudioPanels.openExisting(legacyTaskStudioTarget(ws), task.id);
     const entity = await studioEntityOf(0);
 
     // first Save: the doc references the image — GC must NOT remove it
@@ -180,7 +182,7 @@ describe("attachment add/remove GC through the actual Save path (spec F13, T3 ex
     expect(__createdPanels[0].disposed).toBe(true); // a successful edit Save closes the panel (pin-studio convention)
 
     // re-open (a fresh panel, since the first one disposed) for a second Save that drops the image entirely
-    taskStudioPanels.openExisting(ws, task.id);
+    taskStudioPanels.openExisting(legacyTaskStudioTarget(ws), task.id);
     const entity2 = await studioEntityOf(1);
 
     saveVia(1, {
@@ -208,7 +210,7 @@ describe("imported Task Studio body save regression", () => {
     const updateSpy = vi.spyOn(ws.taskStore, "update");
     const { taskStudioPanels } = wireManagers(ws);
 
-    taskStudioPanels.openExisting(ws, task.id);
+    taskStudioPanels.openExisting(legacyTaskStudioTarget(ws), task.id);
     const entity = await studioEntityOf(0);
     expect(entity.anchor).toBe("reimport");
     expect(new TaskDetailStore(ws.workspaceRoot).read(task.id).status).toBe("missing");

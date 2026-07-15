@@ -414,3 +414,33 @@ None.
   reorder lane; the fixture now exercises the actual P1 lane rather than weakening production validation.
 - No additional global full run was made: the first reviewable proof (343 files, 4,068 passed, 3 skipped)
   remains the declared intermediate gate, and the next global run is reserved for final closure.
+
+## Twentieth implementation slice — 2026-07-14
+
+- Added a strict daemon-owned Task Studio projection and exact `task.studio`/`task.studio.apply`/
+  `task.studio.cancel` protocol.  Existing task anchoring, dirty-field CAS, staged create, attachment GC and
+  prototype persistence now live in one shared application service used by both the legacy and daemon
+  targets; the editor panel no longer imports a concrete Workspace or any Task store.
+- Large authoring payloads use one private staged-file channel under the existing engine runtime directory,
+  not another socket or daemon.  Commands carry only a random token, exact byte size and SHA-256.  The daemon
+  opens with `O_NOFOLLOW`, verifies type/owner/mode/link count/size/hash against the open descriptor, consumes
+  once and removes by inode identity.  Shell success and failure paths both discard leftovers, and startup
+  removes only stale regular files from the private namespace.
+- Operation replay remains exact after consumption: the control server resolves the operation id and complete
+  command fingerprint before invoking the Task Studio handler.  The real-process test saves through a staged
+  payload, proves the file is gone, then replays the same operation successfully without rereading it.  A new
+  protocol test also exposed and fixed a validator bug that had required physically-present optional result
+  fields even for a valid `saved` outcome.
+- Task Studio images, sketches and prototypes are hydrated from traversal-safe workspace-local stores rather
+  than copied back through the control response.  The panel preserves native file pickers and soft-limit UX;
+  cancellation remains best-effort so an unavailable daemon cannot trap the user in the editor.  The concrete
+  presentation inventory shrank from eight files to six.
+- The final focused protocol/control/staging/target/adapter/panel/boundary/real-service matrix passes 79/79;
+  typecheck, extension+engine build, the 180-file editor-free daemon import closure and diff-check are green.
+  Packaged `systemd --user` dogfood converged two clients, remotely loaded/saved Task Studio, staged image and
+  prototype media, reused the exact engine, exercised the existing agent lifecycle and cleaned its disposable
+  unit/process/socket/tmux state.
+- No additional global full run was made: the first reviewable proof (343 files, 4,068 passed, 3 skipped)
+  remains the declared intermediate gate, and the next global run is reserved for final closure.  Production
+  activation is still intentionally legacy until every remaining presentation consumer is migrated and the
+  registry can replace it in one atomic cutover.

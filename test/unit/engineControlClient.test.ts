@@ -12,6 +12,7 @@ import {
   workspaceMissionControlViewSuccessV1,
   workspaceProbeViewSuccessV1,
   workspaceTaskDetailViewSuccessV1,
+  workspaceTaskStudioViewSuccessV1,
   type EngineServiceIdentityV1,
   type EngineShellHelloV1,
 } from "../../src/engine-service/protocol.js";
@@ -279,6 +280,39 @@ describe("EngineControlClient", () => {
       .toMatchObject({ method: "task.detail", status: "ok", view: { detail: { journal: expect.arrayContaining([
         expect.objectContaining({ id: "j-000000000000" }),
       ]) } } });
+  });
+
+  it("allows the dedicated Task Studio envelope above the ordinary 64 KiB response limit", async () => {
+    const f = fixture();
+    const result = workspaceTaskStudioViewSuccessV1({
+      schemaVersion: 1,
+      studio: {
+        schemaVersion: 1,
+        taskId: "t-abc123",
+        title: "large Task Studio document",
+        deps: [],
+        artifact_refs: [],
+        doc: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "x".repeat(80_000) }] }] },
+        attachments: [],
+        anchor: "load",
+        prototypes: { readOnly: false, prototypes: [] },
+      },
+    });
+    expect(Buffer.byteLength(JSON.stringify({ ok: true, op: "query", result }), "utf8")).toBeGreaterThan(64 * 1024);
+    const server = await startEngineControlServer({
+      socketPath: f.socketPath,
+      identity: f.identity,
+      getSnapshot: f.snapshot,
+      query: async (query) => {
+        if (query.method !== "task.studio") throw new Error("unexpected query");
+        return result;
+      },
+    });
+    servers.push(server);
+    const client = new EngineControlClient({ socketPath: f.socketPath, hello: f.hello });
+    await client.attach();
+    expect(await client.query({ schemaVersion: 1, method: "task.studio", input: { id: "t-abc123" } }))
+      .toMatchObject({ method: "task.studio", status: "ok", view: { studio: { taskId: "t-abc123" } } });
   });
 
   it("invokes an operation by exact id without transport-level retries", async () => {

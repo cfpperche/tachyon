@@ -6,7 +6,9 @@ import path from "node:path";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createHash } from "node:crypto";
 import { EngineControlClient } from "../../src/engine-service/controlClient.js";
+import { StagedPayloadStore } from "../../src/engine-service/stagedPayloadStore.js";
 import type { EngineServiceIdentityV1, EngineShellHelloV1, WorkspaceEventV1 } from "../../src/engine-service/protocol.js";
+import { encodeTaskStudioStagedPayloadV1 } from "../../src/runtime-api/taskStudioCommands.js";
 import { TmuxService, workspaceHash } from "../../src/tmux/TmuxService.js";
 import { blankCommandFields } from "../../src/webview/command-studio-shell/domain.js";
 import { TaskStore } from "../../src/tasks/TaskStore.js";
@@ -147,6 +149,84 @@ describe("daemon engine service", () => {
         },
       },
     });
+    const initialStudio = await first.query({ schemaVersion: 1, method: "task.studio", input: { id: seedTask.id } });
+    expect(initialStudio).toMatchObject({
+      method: "task.studio",
+      status: "ok",
+      view: {
+        studio: {
+          taskId: seedTask.id,
+          title: "remote Mission Control",
+          attachments: [{ id: seedImage.id, kind: "image" }],
+          anchor: "load",
+          expectUpdatedAt: seedTask.updatedAt,
+        },
+      },
+    });
+
+    const stagedPayloads = new StagedPayloadStore(runtimeRoot);
+    const stagedSave = stagedPayloads.stage(encodeTaskStudioStagedPayloadV1({
+      schemaVersion: 1,
+      patch: {
+        title: "edited through remote Task Studio",
+        deps: [],
+        artifact_refs: [],
+        doc: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "engine studio body" }] }] },
+        attachments: [seedImage],
+        bodyBaseline: seedTask.body,
+        dirty: { title: true },
+        docDirty: true,
+        expectUpdatedAt: seedTask.updatedAt,
+      },
+    }));
+    const saveStudioCommand = {
+      schemaVersion: 1 as const,
+      method: "task.studio.apply" as const,
+      input: { taskId: seedTask.id, action: "save" as const, payload: stagedSave },
+    };
+    const savedStudio = await first.invoke("operation-task-studio-save-0001", saveStudioCommand);
+    expect(savedStudio).toEqual({
+      schemaVersion: 1,
+      method: "task.studio.apply",
+      status: "ok",
+      action: "save",
+      outcome: "saved",
+    });
+    expect(fs.existsSync(path.join(stagedPayloads.directory, stagedSave.token))).toBe(false);
+    // Exact replay is resolved by the operation registry before the already-consumed payload is touched.
+    expect(await first.invoke("operation-task-studio-save-0001", saveStudioCommand)).toEqual(savedStudio);
+    await waitForEvent(first, (event) => event.kind === "views-changed" && event.payload.view === "tasks");
+    expect(seedTaskStore.get(seedTask.id)).toMatchObject({
+      title: "edited through remote Task Studio",
+      body: "engine studio body",
+    });
+    const savedStudioView = await first.query({ schemaVersion: 1, method: "task.studio", input: { id: seedTask.id } });
+    expect(savedStudioView).toMatchObject({
+      status: "ok",
+      view: { studio: { title: "edited through remote Task Studio", anchor: "load" } },
+    });
+
+    const stagedImage = stagedPayloads.stage(encodeTaskStudioStagedPayloadV1({
+      schemaVersion: 1,
+      mediaType: "image/png",
+      name: "engine-studio.png",
+      source: "paste",
+      dataBase64: Buffer.from("remote Task Studio image").toString("base64"),
+    }));
+    const storedImage = await first.invoke("operation-task-studio-image-0001", {
+      schemaVersion: 1,
+      method: "task.studio.apply",
+      input: { taskId: seedTask.id, action: "put-image", payload: stagedImage },
+    });
+    expect(storedImage).toMatchObject({
+      status: "ok",
+      action: "put-image",
+      outcome: "attachment-stored",
+      attachment: { kind: "image", name: "engine-studio.png" },
+      overSoftLimit: false,
+    });
+    expect(fs.existsSync(path.join(stagedPayloads.directory, stagedImage.token))).toBe(false);
+
     const notePrototype = {
       schemaVersion: 1 as const,
       method: "task.prototype.review" as const,
@@ -187,6 +267,20 @@ describe("daemon engine service", () => {
       status: "ok",
       view: { detail: { prototypes: { prototypes: [{ id: seedRevision.id, state: "approved" }] } } },
     });
+    const stagedPrototype = stagedPayloads.stage(encodeTaskStudioStagedPayloadV1({
+      schemaVersion: 1,
+      title: "engine-studio.html",
+      html: "<main>imported through remote Task Studio</main>",
+    }));
+    expect(await first.invoke("operation-task-studio-prototype-0001", {
+      schemaVersion: 1,
+      method: "task.studio.apply",
+      input: { taskId: seedTask.id, action: "import-prototype", payload: stagedPrototype },
+    })).toMatchObject({ status: "ok", action: "import-prototype", outcome: "prototype-imported" });
+    expect(fs.existsSync(path.join(stagedPayloads.directory, stagedPrototype.token))).toBe(false);
+    await waitForEvent(first, (event) => event.kind === "views-changed" && event.payload.view === "tasks");
+    expect(new TaskPrototypeStore(workspaceRoot, seedTask.id).read().prototypes)
+      .toEqual(expect.arrayContaining([expect.objectContaining({ title: "engine-studio.html", state: "draft" })]));
     seedTask = seedTaskStore.get(seedTask.id);
     const updateTask = {
       schemaVersion: 1 as const,

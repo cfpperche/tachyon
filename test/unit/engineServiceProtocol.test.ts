@@ -14,6 +14,8 @@ import {
   workspaceMissionControlViewSuccessV1,
   workspaceProbeViewSuccessV1,
   workspaceTaskDetailViewSuccessV1,
+  workspaceTaskStudioApplySuccessV1,
+  workspaceTaskStudioViewSuccessV1,
   type EngineBundleFileV1,
   type EngineBundleManifestV1,
   type WorkspaceCommandV1,
@@ -206,6 +208,58 @@ describe("persistent engine protocol", () => {
     });
     expect(isWorkspaceQueryResultV1(result)).toBe(true);
     if (result.status !== "ok" || result.method !== "task.detail") throw new Error("expected Task Detail result");
+    expect(isWorkspaceQueryResultV1({ ...result, view: { ...result.view, extra: true } })).toBe(false);
+  });
+
+  it("binds Task Studio staged commands, projections and outcomes to one exact action", () => {
+    const payload = {
+      schemaVersion: 1 as const,
+      token: "a".repeat(48),
+      sha256: "b".repeat(64),
+      byteSize: 123,
+    };
+    const save = {
+      schemaVersion: 1 as const,
+      method: "task.studio.apply" as const,
+      input: { taskId: "t-abc123", action: "save" as const, payload },
+    };
+    expect(isWorkspaceCommandV1(save)).toBe(true);
+    expect(isWorkspaceCommandV1({ ...save, input: { ...save.input, action: "unknown" } })).toBe(false);
+    expect(isWorkspaceCommandV1({ ...save, input: { ...save.input, payload: { ...payload, token: "../escape" } } })).toBe(false);
+    expect(isWorkspaceCommandV1({ ...save, input: { ...save.input, payload: { ...payload, byteSize: 0 } } })).toBe(false);
+    expect(() => workspaceCommandSuccessV1(save)).toThrow(/exact outcome/);
+
+    const saved = workspaceTaskStudioApplySuccessV1(save, { outcome: "saved" });
+    expect(saved).toEqual({
+      schemaVersion: 1,
+      method: "task.studio.apply",
+      status: "ok",
+      action: "save",
+      outcome: "saved",
+    });
+    expect(isWorkspaceCommandResultV1(saved)).toBe(true);
+    expect(isWorkspaceCommandResultV1({ ...saved, action: "put-image" })).toBe(false);
+    expect(isWorkspaceCommandResultV1({ ...saved, message: "not allowed" })).toBe(false);
+
+    const query = { schemaVersion: 1, method: "task.studio", input: { id: "t-abc123" } } as const;
+    expect(isWorkspaceQueryV1(query)).toBe(true);
+    expect(isWorkspaceQueryV1({ ...query, input: { id: "../escape" } })).toBe(false);
+    const result = workspaceTaskStudioViewSuccessV1({
+      schemaVersion: 1,
+      studio: {
+        schemaVersion: 1,
+        taskId: "t-abc123",
+        title: "remote studio",
+        deps: [],
+        artifact_refs: [],
+        doc: { type: "doc", content: [{ type: "paragraph" }] },
+        attachments: [],
+        anchor: "load",
+        prototypes: { readOnly: false, prototypes: [] },
+      },
+    });
+    expect(isWorkspaceQueryResultV1(result)).toBe(true);
+    if (result.status !== "ok" || result.method !== "task.studio") throw new Error("expected Task Studio result");
     expect(isWorkspaceQueryResultV1({ ...result, view: { ...result.view, extra: true } })).toBe(false);
   });
 

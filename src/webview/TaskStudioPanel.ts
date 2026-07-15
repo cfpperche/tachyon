@@ -1,26 +1,20 @@
 import * as vscode from "vscode";
 import fs from "node:fs";
 import path from "node:path";
-import type { Workspace } from "../workspace/Workspace.js";
+import type { WorkspaceTaskStudioTarget } from "../shell/TaskStudioTarget.js";
 import { StudioPanelManagerBase, type StudioDomainMessageContext, type StudioPanelState, type StudioSurfaceConfig } from "./shared/studio/StudioPanelManagerBase.js";
 import type { StudioRestoreSnapshot } from "./shared/studio/protocol.js";
 import { envelope } from "./shared/studio/protocol.js";
 import { TaskStudioAdapter } from "./TaskStudioAdapter.js";
-import { TaskAttachmentStore, TASK_BLOB_SOFT_LIMIT_BYTES } from "../tasks/TaskAttachmentStore.js";
-import { TaskDetailStore } from "../tasks/TaskDetailStore.js";
 import { mintTaskId } from "../tasks/TaskStore.js";
-import type { RichDocAttachment } from "../richDoc/types.js";
 import { attachmentStoredMessage } from "./task-studio/messages.js";
 import type { TaskDetailEntity, TaskFields, TaskPatch } from "./task-studio/domain.js";
 import { notify } from "../workspace/NotificationService.js";
-import { TaskPrototypeStore } from "../tasks/TaskPrototypeStore.js";
 
 /**
- * spec 350 T2 — Task Studio's host wiring: thin over `StudioPanelManagerBase` + `TaskStudioAdapter`. Public
- * entry points (`openNew`/`openExisting`/`refreshAll`/`dispose`) are UNCHANGED from 339 — extension.ts's
- * wiring (src/extension.ts:451-459,1046) needed zero edits. One `StudioPanelManagerBase` instance per
- * workspace (keyed by `wsHash`) since the base itself has no workspace concept — the adapter is what's
- * workspace-scoped (`new TaskStudioAdapter(ws)`).
+ * Task Studio's editor-only host wiring: thin over `StudioPanelManagerBase` + `TaskStudioAdapter`. One base
+ * instance is keyed by the target's `wsHash`; all reads and mutations cross `WorkspaceTaskStudioTarget`, so
+ * neither the panel nor adapter retains a concrete Workspace/store lifecycle.
  *
  * `openNew` mints a task id up front (`mintTaskId()`) and routes through the base's `openExisting`, exactly
  * like 339 did — the pre-minted id (and its attachment namespace) stays stable through the whole edit
@@ -57,7 +51,7 @@ export const TASK_STUDIO_VIEW_TYPE = surface.viewType;
 export type TaskStudioPanelState = StudioPanelState<TaskPatch>;
 
 interface WorkspaceEntry {
-  ws: Workspace;
+  target: WorkspaceTaskStudioTarget;
   base: StudioPanelManagerBase<TaskDetailEntity, TaskFields, TaskPatch>;
 }
 
@@ -68,11 +62,11 @@ export class TaskStudioPanelManager {
 
   constructor(
     private readonly extensionUri: vscode.Uri,
-    getWorkspacesOrOnTasksChanged: (() => Workspace[]) | (() => void),
+    getWorkspacesOrOnTasksChanged: (() => WorkspaceTaskStudioTarget[]) | (() => void),
     onTasksChangedMaybe?: () => void,
   ) {
     if (onTasksChangedMaybe) {
-      this.getWorkspaces = getWorkspacesOrOnTasksChanged as () => Workspace[];
+      this.getWorkspaces = getWorkspacesOrOnTasksChanged as () => WorkspaceTaskStudioTarget[];
       this.onTasksChanged = onTasksChangedMaybe;
     } else {
       this.getWorkspaces = () => [];
@@ -80,19 +74,19 @@ export class TaskStudioPanelManager {
     }
   }
 
-  private readonly getWorkspaces: () => Workspace[];
+  private readonly getWorkspaces: () => WorkspaceTaskStudioTarget[];
   private readonly onTasksChanged: () => void;
 
-  openNew(ws: Workspace): void {
-    const base = this.baseFor(ws);
-    const pending = this.pendingNewId.get(ws.wsHash);
-    const id = pending !== undefined && base.captureSnapshot(ws.wsHash, pending) !== undefined ? pending : mintTaskId();
-    this.pendingNewId.set(ws.wsHash, id);
-    base.openExisting(ws.wsHash, id);
+  openNew(target: WorkspaceTaskStudioTarget): void {
+    const base = this.baseFor(target);
+    const pending = this.pendingNewId.get(target.wsHash);
+    const id = pending !== undefined && base.captureSnapshot(target.wsHash, pending) !== undefined ? pending : mintTaskId();
+    this.pendingNewId.set(target.wsHash, id);
+    base.openExisting(target.wsHash, id);
   }
 
-  openExisting(ws: Workspace, taskId: string): void {
-    this.baseFor(ws).openExisting(ws.wsHash, taskId);
+  openExisting(target: WorkspaceTaskStudioTarget, taskId: string): void {
+    this.baseFor(target).openExisting(target.wsHash, taskId);
   }
 
   refreshAll(): void {
@@ -104,12 +98,12 @@ export class TaskStudioPanelManager {
     this.workspaces.clear();
   }
 
-  captureSnapshot(ws: Workspace, entityId?: string): StudioRestoreSnapshot<string, TaskPatch> | undefined {
-    return this.workspaces.get(ws.wsHash)?.base.captureSnapshot(ws.wsHash, entityId);
+  captureSnapshot(target: WorkspaceTaskStudioTarget, entityId?: string): StudioRestoreSnapshot<string, TaskPatch> | undefined {
+    return this.workspaces.get(target.wsHash)?.base.captureSnapshot(target.wsHash, entityId);
   }
 
-  restoreFromSnapshot(ws: Workspace, snapshot: StudioRestoreSnapshot<string, TaskPatch>): void {
-    this.baseFor(ws).restoreFromSnapshot(ws.wsHash, snapshot);
+  restoreFromSnapshot(target: WorkspaceTaskStudioTarget, snapshot: StudioRestoreSnapshot<string, TaskPatch>): void {
+    this.baseFor(target).restoreFromSnapshot(target.wsHash, snapshot);
   }
 
   deserialize(panel: vscode.WebviewPanel, state: TaskStudioPanelState): void {
@@ -118,30 +112,30 @@ export class TaskStudioPanelManager {
     this.baseFor(ws).deserializePanel(panel, state);
   }
 
-  private baseFor(ws: Workspace): StudioPanelManagerBase<TaskDetailEntity, TaskFields, TaskPatch> {
-    let entry = this.workspaces.get(ws.wsHash);
+  private baseFor(target: WorkspaceTaskStudioTarget): StudioPanelManagerBase<TaskDetailEntity, TaskFields, TaskPatch> {
+    let entry = this.workspaces.get(target.wsHash);
     if (!entry) {
       const base = new StudioPanelManagerBase<TaskDetailEntity, TaskFields, TaskPatch>(
         this.extensionUri,
         surface,
-        new TaskStudioAdapter(ws),
+        new TaskStudioAdapter(target),
         this.onTasksChanged,
-        (ctx, message) => this.handleDomainMessage(ws, ctx, message),
+        (ctx, message) => this.handleDomainMessage(target, ctx, message),
       );
-      entry = { ws, base };
-      this.workspaces.set(ws.wsHash, entry);
+      entry = { target, base };
+      this.workspaces.set(target.wsHash, entry);
     }
     return entry.base;
   }
 
-  private handleDomainMessage(ws: Workspace, ctx: StudioDomainMessageContext, message: { type: string }): void {
-    if (message.type === "importImage") { void this.importImage(ws, ctx); return; }
-    if (message.type === "importPrototype") { void this.importPrototype(ws, ctx); return; }
-    if (message.type === "attachImage") { this.attachImage(ws, ctx, message as Extract<TaskStudioDomainMessage, { type: "attachImage" }>); return; }
-    if (message.type === "storeSketch") { this.storeSketch(ws, ctx, message as Extract<TaskStudioDomainMessage, { type: "storeSketch" }>); return; }
+  private handleDomainMessage(target: WorkspaceTaskStudioTarget, ctx: StudioDomainMessageContext, message: { type: string }): void {
+    if (message.type === "importImage") { void this.importImage(target, ctx); return; }
+    if (message.type === "importPrototype") { void this.importPrototype(target, ctx); return; }
+    if (message.type === "attachImage") { void this.attachImage(target, ctx, message as Extract<TaskStudioDomainMessage, { type: "attachImage" }>); return; }
+    if (message.type === "storeSketch") { void this.storeSketch(target, ctx, message as Extract<TaskStudioDomainMessage, { type: "storeSketch" }>); return; }
   }
 
-  private async importPrototype(ws: Workspace, ctx: StudioDomainMessageContext): Promise<void> {
+  private async importPrototype(target: WorkspaceTaskStudioTarget, ctx: StudioDomainMessageContext): Promise<void> {
     if (!ctx.entityId) return;
     const picked = await vscode.window.showOpenDialog({ canSelectFiles: true, canSelectFolders: false, canSelectMany: false, filters: { HTML: ["html", "htm"] }, title: "Import static task prototype" });
     const file = picked?.[0]?.fsPath;
@@ -150,14 +144,14 @@ export class TaskStudioPanelManager {
       const stat = fs.statSync(file);
       if (stat.size > 512 * 1024) throw new Error("prototype HTML exceeds 524288 bytes");
       const html = fs.readFileSync(file, "utf8");
-      new TaskPrototypeStore(ws.workspaceRoot, ctx.entityId).createDraft({ html, title: path.basename(file), author: "human" });
+      await target.importTaskStudioPrototype(ctx.entityId, { html, title: path.basename(file) });
       this.onTasksChanged();
     } catch (err) {
       postDomainError(ctx, err instanceof Error ? err.message : String(err));
     }
   }
 
-  private async importImage(ws: Workspace, ctx: StudioDomainMessageContext): Promise<void> {
+  private async importImage(target: WorkspaceTaskStudioTarget, ctx: StudioDomainMessageContext): Promise<void> {
     const picked = await vscode.window.showOpenDialog({
       canSelectFiles: true,
       canSelectFolders: false,
@@ -170,58 +164,51 @@ export class TaskStudioPanelManager {
     const mediaType = mediaTypeFor(file);
     if (!mediaType) { postDomainError(ctx, "Unsupported image type"); return; }
     try {
-      const data = fs.readFileSync(file);
-      this.storeImageAttachment(ws, ctx, data, mediaType, path.basename(file), "import");
+      if (!ctx.entityId) return;
+      const stored = await target.putTaskStudioImage(ctx.entityId, {
+        data: fs.readFileSync(file),
+        mediaType,
+        name: path.basename(file),
+        source: "import",
+      });
+      ctx.post(attachmentStoredMessage(stored.attachment));
+      if (stored.overSoftLimit) notifyImageSoftLimit();
     } catch (err) {
       postDomainError(ctx, err instanceof Error ? err.message : String(err));
     }
   }
 
-  private attachImage(ws: Workspace, ctx: StudioDomainMessageContext, m: Extract<TaskStudioDomainMessage, { type: "attachImage" }>): void {
+  private async attachImage(target: WorkspaceTaskStudioTarget, ctx: StudioDomainMessageContext, m: Extract<TaskStudioDomainMessage, { type: "attachImage" }>): Promise<void> {
     try {
+      if (!ctx.entityId) return;
       const estimated = Math.floor((m.dataBase64.length * 3) / 4);
       if (estimated > 10 * 1024 * 1024 + 8) throw new Error("task image exceeds 10 MB limit");
-      this.storeImageAttachment(ws, ctx, Buffer.from(stripDataPrefix(m.dataBase64), "base64"), m.mediaType, m.name, m.source);
+      const stored = await target.putTaskStudioImage(ctx.entityId, {
+        data: Buffer.from(stripDataPrefix(m.dataBase64), "base64"),
+        mediaType: m.mediaType,
+        ...(m.name !== undefined ? { name: m.name } : {}),
+        source: m.source,
+      });
+      ctx.post(attachmentStoredMessage(stored.attachment));
+      if (stored.overSoftLimit) notifyImageSoftLimit();
     } catch (err) {
       postDomainError(ctx, err instanceof Error ? err.message : String(err));
     }
   }
 
-  private storeImageAttachment(
-    ws: Workspace,
-    ctx: StudioDomainMessageContext,
-    data: Buffer,
-    mediaType: string,
-    name: string | undefined,
-    source: Extract<RichDocAttachment, { kind: "image" }>["source"],
-  ): void {
-    if (!ctx.entityId) return;
-    const store = new TaskAttachmentStore(ws.workspaceRoot, ctx.entityId);
-    const att = store.putImage({ data, mediaType, name, source });
-    ctx.post(attachmentStoredMessage(resolveAttachmentInline(store, att)));
-    if (store.totalBlobBytes() > TASK_BLOB_SOFT_LIMIT_BYTES) {
-      notify("Tachyon task images exceed 50 MB in this workspace; saves still work, but consider pruning old screenshots.", "warn", { prefix: false });
-    }
-  }
-
-  private storeSketch(ws: Workspace, ctx: StudioDomainMessageContext, m: Extract<TaskStudioDomainMessage, { type: "storeSketch" }>): void {
+  private async storeSketch(target: WorkspaceTaskStudioTarget, ctx: StudioDomainMessageContext, m: Extract<TaskStudioDomainMessage, { type: "storeSketch" }>): Promise<void> {
     if (!ctx.entityId) return;
     try {
-      const store = new TaskAttachmentStore(ws.workspaceRoot, ctx.entityId);
-      const existingRead = new TaskDetailStore(ws.workspaceRoot).read(ctx.entityId);
-      const existingAtt = existingRead.status === "ok" ? existingRead.detail.attachments.find((a) => a.kind === "excalidraw" && a.id === m.attachmentId) : undefined;
-      const att = store.putExcalidraw({
+      const stored = await target.putTaskStudioSketch(ctx.entityId, {
+        ...(m.attachmentId !== undefined ? { attachmentId: m.attachmentId } : {}),
         sceneJson: m.sceneJson,
         previewData: Buffer.from(stripDataPrefix(m.previewBase64), "base64"),
-        name: m.name,
+        ...(m.name !== undefined ? { name: m.name } : {}),
         source: m.source,
         ...(m.baseImageAttachmentId ? { baseImageAttachmentId: m.baseImageAttachmentId } : {}),
-        ...(existingAtt?.kind === "excalidraw" ? { existing: existingAtt } : {}),
       });
-      ctx.post(attachmentStoredMessage(resolveAttachmentInline(store, att)));
-      if (store.totalBlobBytes() > TASK_BLOB_SOFT_LIMIT_BYTES) {
-        notify("Tachyon task visual artifacts exceed 50 MB in this workspace; saves still work, but consider pruning old screenshots/sketches.", "warn", { prefix: false });
-      }
+      ctx.post(attachmentStoredMessage(stored.attachment));
+      if (stored.overSoftLimit) notifySketchSoftLimit();
     } catch (err) {
       postDomainError(ctx, err instanceof Error ? err.message : String(err));
     }
@@ -240,20 +227,12 @@ function postDomainError(ctx: StudioDomainMessageContext, message: string): void
   ctx.post(envelope({ type: "error" as const, code: "persistence/unknown", message, blocking: true }));
 }
 
-function resolveAttachmentInline(store: TaskAttachmentStore, att: RichDocAttachment) {
-  const resolved = store.resolveAttachment(att);
-  if (resolved.kind === "excalidraw") {
-    return {
-      ...resolved,
-      ...(resolved.previewAvailable ? { previewUri: dataUri("image/png", fs.readFileSync(store.blobPath(resolved.previewBlobRef))) } : {}),
-      ...(resolved.sceneAvailable ? { sceneJson: store.readExcalidrawScene(resolved) } : {}),
-    };
-  }
-  return { ...resolved, ...(resolved.available ? { uri: dataUri(resolved.mediaType, fs.readFileSync(store.blobPath(resolved.blobRef))) } : {}) };
+function notifyImageSoftLimit(): void {
+  notify("Tachyon task images exceed 50 MB in this workspace; saves still work, but consider pruning old screenshots.", "warn", { prefix: false });
 }
 
-function dataUri(mediaType: string, data: Buffer): string {
-  return `data:${mediaType};base64,${data.toString("base64")}`;
+function notifySketchSoftLimit(): void {
+  notify("Tachyon task visual artifacts exceed 50 MB in this workspace; saves still work, but consider pruning old screenshots/sketches.", "warn", { prefix: false });
 }
 
 function stripDataPrefix(value: string): string {

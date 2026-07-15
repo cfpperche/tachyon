@@ -7,6 +7,7 @@ import { __createdPanels, __resetVscodeMock } from "../mocks/vscode.js";
 import { TaskStore } from "../../src/tasks/TaskStore.js";
 import { TaskDetailStore, hashBody } from "../../src/tasks/TaskDetailStore.js";
 import { TaskAttachmentStore } from "../../src/tasks/TaskAttachmentStore.js";
+import { legacyTaskStudioTarget } from "../../src/shell/TaskStudioTarget.js";
 import { TaskStudioPanelManager } from "../../src/webview/TaskStudioPanel.js";
 import { envelope } from "../../src/webview/shared/studio/protocol.js";
 import type { Workspace } from "../../src/workspace/Workspace.js";
@@ -32,6 +33,10 @@ function fakeWorkspace(root = mkroot(), agents: Record<string, unknown> = {}) {
     taskStore: new TaskStore(root),
     config: { agents },
   } as unknown as Workspace;
+}
+
+function studioTarget(ws: Workspace) {
+  return legacyTaskStudioTarget(ws);
 }
 
 const EMPTY_DOC = { type: "doc", content: [{ type: "paragraph" }] };
@@ -62,8 +67,8 @@ describe("TaskStudioPanelManager — panel identity", () => {
   it("reveals the existing new-task panel instead of opening a second one per workspace", () => {
     const ws = fakeWorkspace();
     const manager = new TaskStudioPanelManager(Uri.file("/ext"), () => {});
-    manager.openNew(ws);
-    manager.openNew(ws);
+    manager.openNew(studioTarget(ws));
+    manager.openNew(studioTarget(ws));
     expect(__createdPanels).toHaveLength(1);
     expect(__createdPanels[0].revealCount).toBe(1);
   });
@@ -72,8 +77,8 @@ describe("TaskStudioPanelManager — panel identity", () => {
     const ws = fakeWorkspace();
     const task = await ws.taskStore.create({ title: "x", author: "human" });
     const manager = new TaskStudioPanelManager(Uri.file("/ext"), () => {});
-    manager.openExisting(ws, task.id);
-    manager.openExisting(ws, task.id);
+    manager.openExisting(studioTarget(ws), task.id);
+    manager.openExisting(studioTarget(ws), task.id);
     expect(__createdPanels).toHaveLength(1);
     expect(__createdPanels[0].revealCount).toBe(1);
   });
@@ -84,7 +89,7 @@ describe("TaskStudioPanelManager — create (staged transaction)", () => {
     let refreshed = 0;
     const ws = fakeWorkspace();
     const manager = new TaskStudioPanelManager(Uri.file("/ext"), () => { refreshed += 1; });
-    manager.openNew(ws);
+    manager.openNew(studioTarget(ws));
     const entity = await entityOf();
     expect(entity.expectUpdatedAt).toBeUndefined(); // new mode: no task behind this pre-minted id yet
     expect(entity.assignee).toBeUndefined();
@@ -113,7 +118,7 @@ describe("TaskStudioPanelManager — create (staged transaction)", () => {
   it("never lets assignee be set in create mode even if the webview sent one (325 mutability table)", async () => {
     const ws = fakeWorkspace();
     const manager = new TaskStudioPanelManager(Uri.file("/ext"), () => {});
-    manager.openNew(ws);
+    manager.openNew(studioTarget(ws));
     saveVia(0, { title: "x", assignee: "someone", deps: [], artifact_refs: [], doc: EMPTY_DOC, attachments: [], dirty: { title: true }, docDirty: false } as TaskPatch);
     await settled(() => expect(ws.taskStore.listRaw()).toHaveLength(1));
     const [task] = ws.taskStore.listRaw();
@@ -123,7 +128,7 @@ describe("TaskStudioPanelManager — create (staged transaction)", () => {
   it("cleans up the provisional attachment namespace when the staged create fails", async () => {
     const ws = fakeWorkspace();
     const manager = new TaskStudioPanelManager(Uri.file("/ext"), () => {});
-    manager.openNew(ws);
+    manager.openNew(studioTarget(ws));
     const entity = await entityOf();
     const attachmentStore = new TaskAttachmentStore(ws.workspaceRoot, entity.taskId);
     attachmentStore.putImage({ data: Buffer.from("during-editing"), mediaType: "image/png", source: "paste" });
@@ -143,7 +148,7 @@ describe("TaskStudioPanelManager — create (staged transaction)", () => {
   it("cleans up the provisional attachment namespace on cancel", async () => {
     const ws = fakeWorkspace();
     const manager = new TaskStudioPanelManager(Uri.file("/ext"), () => {});
-    manager.openNew(ws);
+    manager.openNew(studioTarget(ws));
     const entity = await entityOf();
     const attachmentStore = new TaskAttachmentStore(ws.workspaceRoot, entity.taskId);
     attachmentStore.putImage({ data: Buffer.from("abandoned"), mediaType: "image/png", source: "paste" });
@@ -160,7 +165,7 @@ describe("TaskStudioPanelManager — edit (anchoring + dirty patch + CAS)", () =
     const ws = fakeWorkspace();
     const task = await ws.taskStore.create({ title: "x", author: "human", body: "**bold** body" });
     const manager = new TaskStudioPanelManager(Uri.file("/ext"), () => {});
-    manager.openExisting(ws, task.id);
+    manager.openExisting(studioTarget(ws), task.id);
     const entity = await entityOf();
     expect(entity.anchor).toBe("reimport");
     expect(JSON.stringify(entity.doc)).toContain("bold");
@@ -172,7 +177,7 @@ describe("TaskStudioPanelManager — edit (anchoring + dirty patch + CAS)", () =
     const detailStore = new TaskDetailStore(ws.workspaceRoot);
     detailStore.write({ schemaVersion: 1, taskId: task.id, doc: { type: "doc", content: [{ type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "rich" }] }] }, attachments: [], bodyHash: hashBody("hello"), taskUpdatedAt: task.updatedAt });
     const manager = new TaskStudioPanelManager(Uri.file("/ext"), () => {});
-    manager.openExisting(ws, task.id);
+    manager.openExisting(studioTarget(ws), task.id);
     const entity = await entityOf();
     expect(entity.anchor).toBe("load");
     expect(entity.doc).toMatchObject({ content: [{ type: "heading" }] });
@@ -185,7 +190,7 @@ describe("TaskStudioPanelManager — edit (anchoring + dirty patch + CAS)", () =
     fs.mkdirSync(detailStore.detailsDir, { recursive: true });
     fs.writeFileSync(detailStore.detailPath(task.id), "{ not json", "utf8");
     const manager = new TaskStudioPanelManager(Uri.file("/ext"), () => {});
-    manager.openExisting(ws, task.id);
+    manager.openExisting(studioTarget(ws), task.id);
     const entity = await entityOf();
     expect(entity.anchor).toBe("read-only");
     expect(entity.anchorError).toMatch(/not valid JSON/);
@@ -195,7 +200,7 @@ describe("TaskStudioPanelManager — edit (anchoring + dirty patch + CAS)", () =
     const ws = fakeWorkspace();
     const task = await ws.taskStore.create({ title: "old title", author: "human", kind: "chore", body: "b" });
     const manager = new TaskStudioPanelManager(Uri.file("/ext"), () => {});
-    manager.openExisting(ws, task.id);
+    manager.openExisting(studioTarget(ws), task.id);
     const entity = await entityOf();
 
     saveVia(0, {
@@ -221,7 +226,7 @@ describe("TaskStudioPanelManager — edit (anchoring + dirty patch + CAS)", () =
     const ws = fakeWorkspace();
     const task = await ws.taskStore.create({ title: "x", author: "human", body: "original" });
     const manager = new TaskStudioPanelManager(Uri.file("/ext"), () => {});
-    manager.openExisting(ws, task.id);
+    manager.openExisting(studioTarget(ws), task.id);
     const entity = await entityOf();
 
     saveVia(0, {
@@ -245,7 +250,7 @@ describe("TaskStudioPanelManager — edit (anchoring + dirty patch + CAS)", () =
     const task = await ws.taskStore.create({ title: "x", author: "human", body: "b" });
     const before = ws.taskStore.get(task.id).updatedAt;
     const manager = new TaskStudioPanelManager(Uri.file("/ext"), () => {});
-    manager.openExisting(ws, task.id);
+    manager.openExisting(studioTarget(ws), task.id);
     const entity = await entityOf();
     saveVia(0, { title: entity.title, deps: [], artifact_refs: [], doc: EMPTY_DOC, attachments: [], dirty: {}, docDirty: false, expectUpdatedAt: entity.expectUpdatedAt } as TaskPatch);
     await settled(() => expect(__createdPanels[0].disposed).toBe(true));
@@ -256,7 +261,7 @@ describe("TaskStudioPanelManager — edit (anchoring + dirty patch + CAS)", () =
     const ws = fakeWorkspace();
     const task = await ws.taskStore.create({ title: "x", author: "human", body: "b", now: "2026-07-03T00:00:00.000Z" });
     const manager = new TaskStudioPanelManager(Uri.file("/ext"), () => {});
-    manager.openExisting(ws, task.id);
+    manager.openExisting(studioTarget(ws), task.id);
     const entity = await entityOf();
 
     // someone else updates the task first — an explicit, later `now` guarantees a genuinely different
@@ -286,7 +291,7 @@ describe("TaskStudioPanelManager — edit (anchoring + dirty patch + CAS)", () =
     const ws = fakeWorkspace();
     const task = await ws.taskStore.create({ title: "x", author: "human", body: "b" });
     const manager = new TaskStudioPanelManager(Uri.file("/ext"), () => {});
-    manager.openExisting(ws, task.id);
+    manager.openExisting(studioTarget(ws), task.id);
     await entityOf();
     await ws.taskStore.update(task.id, { title: "renamed elsewhere" });
     __createdPanels[0].webview.__receive(envelope({ type: "ready" }));

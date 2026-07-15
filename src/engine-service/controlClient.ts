@@ -3,6 +3,7 @@ import net from "node:net";
 import {
   MISSION_CONTROL_RESPONSE_MAX_BYTES,
   TASK_DETAIL_RESPONSE_MAX_BYTES,
+  TASK_STUDIO_RESPONSE_MAX_BYTES,
   isEngineControlResponseV1,
   isEngineOperationId,
   isWorkspaceCommandV1,
@@ -300,6 +301,8 @@ export function requestEngineControl(
         ? MISSION_CONTROL_RESPONSE_MAX_BYTES
         : request.query.method === "task.detail"
           ? TASK_DETAIL_RESPONSE_MAX_BYTES
+          : request.query.method === "task.studio"
+            ? TASK_STUDIO_RESPONSE_MAX_BYTES
           : MAX_CONTROL_RESPONSE_BYTES
       : MAX_CONTROL_RESPONSE_BYTES;
     const socket = net.createConnection(socketPath);

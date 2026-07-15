@@ -19,10 +19,13 @@ import {
   projectWorkspacePresentation,
   type WorkspacePresentationSnapshotV1,
 } from "../runtime-api/workspaceProjection.js";
+import { createHash } from "node:crypto";
+import type { StagedPayloadRefV1 } from "../runtime-api/stagedPayload.js";
 import {
   type WorkspaceClient,
   type WorkspaceClientListener,
   type WorkspaceClientSyncResult,
+  type WorkspaceStagedPayload,
 } from "./WorkspaceClient.js";
 
 export interface FakeWorkspaceClientOptions {
@@ -61,6 +64,7 @@ export class FakeWorkspaceClient implements WorkspaceClient {
   readonly workspaceHash: string;
   readonly invocations: Array<{ operationId: string; command: WorkspaceCommandV1 }> = [];
   readonly queries: WorkspaceQueryV1[] = [];
+  readonly stagedPayloads: Array<{ ref: StagedPayloadRefV1; data: Buffer; discarded: boolean }> = [];
   private readonly listeners = new Set<WorkspaceClientListener>();
   private readonly queued: QueuedSync[] = [];
   private readonly operations = new Map<string, FakeOperation>();
@@ -69,6 +73,7 @@ export class FakeWorkspaceClient implements WorkspaceClient {
   private currentPresentation: WorkspacePresentationSnapshotV1;
   private closed = false;
   private closePromise: Promise<void> | undefined;
+  private stagedPayloadSequence = 0;
 
   constructor(private readonly options: FakeWorkspaceClientOptions) {
     this.currentIdentity = cloneJson(options.identity);
@@ -201,6 +206,25 @@ export class FakeWorkspaceClient implements WorkspaceClient {
     });
     this.operations.set(operationId, { fingerprint, promise });
     return promise;
+  }
+
+  stagePayload(data: Buffer): WorkspaceStagedPayload {
+    this.requireOpen();
+    if (!Buffer.isBuffer(data) || data.byteLength <= 0) {
+      throw new FakeWorkspaceClientError("INVALID_PAYLOAD", "fake staged payload must be a non-empty Buffer");
+    }
+    const ref: StagedPayloadRefV1 = {
+      schemaVersion: 1,
+      token: (++this.stagedPayloadSequence).toString(16).padStart(48, "0"),
+      sha256: createHash("sha256").update(data).digest("hex"),
+      byteSize: data.byteLength,
+    };
+    const record = { ref, data: Buffer.from(data), discarded: false };
+    this.stagedPayloads.push(record);
+    return {
+      ref,
+      discard: () => { record.discarded = true; },
+    };
   }
 
   subscribe(listener: WorkspaceClientListener): () => void {

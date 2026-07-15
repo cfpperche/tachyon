@@ -21,6 +21,21 @@ import {
   parseTaskDetailViewV1,
   type TaskDetailViewV1,
 } from "../runtime-api/taskDetailProjection.js";
+import {
+  isTaskStudioApplyInputV1,
+  isTaskStudioCancelInputV1,
+  type TaskStudioApplyActionV1,
+  type TaskStudioApplyInputV1,
+  type TaskStudioCancelInputV1,
+} from "../runtime-api/taskStudioCommands.js";
+import {
+  isTaskStudioViewV1,
+  parseTaskStudioViewV1,
+  taskStudioAttachmentV1Schema,
+  type TaskStudioViewV1,
+} from "../runtime-api/taskStudioProjection.js";
+
+export { isStagedPayloadRefV1, type StagedPayloadRefV1 } from "../runtime-api/stagedPayload.js";
 
 export const ENGINE_BUNDLE_SCHEMA_VERSION = 1 as const;
 export const ENGINE_SHELL_PROTOCOL = 1 as const;
@@ -128,10 +143,12 @@ export type WorkspaceCommandMethodV1 =
   | "task.update"
   | "task.reorder-lane"
   | "validation.close"
-  | "task.prototype.review";
+  | "task.prototype.review"
+  | "task.studio.apply"
+  | "task.studio.cancel";
 
 export type WorkspaceAgentCommandMethodV1 = Extract<WorkspaceCommandMethodV1, `agent.${string}`>;
-export type WorkspaceSimpleCommandMethodV1 = Exclude<WorkspaceCommandMethodV1, "studio.submit">;
+export type WorkspaceSimpleCommandMethodV1 = Exclude<WorkspaceCommandMethodV1, "studio.submit" | "task.studio.apply">;
 
 /** Exact versioned wire shape of the five config-backed Studio forms. */
 export interface WorkspaceStudioFormV1 {
@@ -190,6 +207,14 @@ export type WorkspaceCommandV1 = {
   schemaVersion: 1;
   method: "task.prototype.review";
   input: TaskPrototypeReviewInputV1;
+} | {
+  schemaVersion: 1;
+  method: "task.studio.apply";
+  input: TaskStudioApplyInputV1;
+} | {
+  schemaVersion: 1;
+  method: "task.studio.cancel";
+  input: TaskStudioCancelInputV1;
 };
 
 export type WorkspaceCommandResultV1 =
@@ -207,13 +232,23 @@ export type WorkspaceCommandResultV1 =
     }
   | {
       schemaVersion: 1;
+      method: "task.studio.apply";
+      status: "ok";
+      action: TaskStudioApplyActionV1;
+      outcome: "saved" | "conflict" | "attachment-stored" | "prototype-imported";
+      message?: string;
+      attachment?: import("../richDoc/types.js").RichDocAttachment;
+      overSoftLimit?: boolean;
+    }
+  | {
+      schemaVersion: 1;
       method: WorkspaceCommandMethodV1;
       status: "error";
       code: string;
       message: string;
     };
 
-export type WorkspaceQueryMethodV1 = "probe.view" | "task.board" | "task.detail";
+export type WorkspaceQueryMethodV1 = "probe.view" | "task.board" | "task.detail" | "task.studio";
 
 export interface WorkspaceProbeViewRowV1 {
   runId: string;
@@ -253,6 +288,11 @@ export type WorkspaceQueryV1 =
       schemaVersion: 1;
       method: "task.detail";
       input: { id: string };
+    }
+  | {
+      schemaVersion: 1;
+      method: "task.studio";
+      input: { id: string };
     };
 
 export type WorkspaceQueryResultV1 =
@@ -273,6 +313,12 @@ export type WorkspaceQueryResultV1 =
       method: "task.detail";
       status: "ok";
       view: TaskDetailViewV1;
+    }
+  | {
+      schemaVersion: 1;
+      method: "task.studio";
+      status: "ok";
+      view: TaskStudioViewV1;
     }
   | {
       schemaVersion: 1;
@@ -308,6 +354,7 @@ const OPERATION_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/;
 const AGENT_NAME_RE = /^[A-Za-z][A-Za-z0-9_-]{0,127}$/;
 export const MISSION_CONTROL_RESPONSE_MAX_BYTES = 32 * 1024 * 1024;
 export const TASK_DETAIL_RESPONSE_MAX_BYTES = 2 * 1024 * 1024;
+export const TASK_STUDIO_RESPONSE_MAX_BYTES = 32 * 1024 * 1024;
 const WORKSPACE_COMMAND_METHODS = new Set<WorkspaceCommandMethodV1>([
   "agent.start",
   "agent.stop",
@@ -319,6 +366,8 @@ const WORKSPACE_COMMAND_METHODS = new Set<WorkspaceCommandMethodV1>([
   "task.reorder-lane",
   "validation.close",
   "task.prototype.review",
+  "task.studio.apply",
+  "task.studio.cancel",
 ]);
 
 export function isSha256(value: unknown): value is string {
@@ -341,6 +390,8 @@ export function isWorkspaceCommandV1(value: unknown): value is WorkspaceCommandV
   if (value.method === "task.reorder-lane") return isMissionControlTaskReorderInputV1(value.input);
   if (value.method === "validation.close") return isMissionControlValidationCloseInputV1(value.input);
   if (value.method === "task.prototype.review") return isTaskPrototypeReviewInputV1(value.input);
+  if (value.method === "task.studio.apply") return isTaskStudioApplyInputV1(value.input);
+  if (value.method === "task.studio.cancel") return isTaskStudioCancelInputV1(value.input);
   return hasOnlyKeys(value.input, ["agent"])
     && typeof value.input.agent === "string"
     && AGENT_NAME_RE.test(value.input.agent);
@@ -358,9 +409,35 @@ export function isWorkspaceCommandResultV1(value: unknown): value is WorkspaceCo
       && value.errors.every((error) => typeof error === "string" && error.length > 0 && error.length <= 1_000)
       && typeof value.truncated === "boolean";
   }
+  if (value.status === "ok" && value.method === "task.studio.apply") {
+    const expectedKeys = ["schemaVersion", "method", "status", "action", "outcome"];
+    if (value.message !== undefined) expectedKeys.push("message");
+    if (value.attachment !== undefined) expectedKeys.push("attachment");
+    if (value.overSoftLimit !== undefined) expectedKeys.push("overSoftLimit");
+    if (!hasOnlyKeys(value, expectedKeys)
+      || (value.action !== "save" && value.action !== "put-image" && value.action !== "put-sketch" && value.action !== "import-prototype")
+      || (value.outcome !== "saved" && value.outcome !== "conflict" && value.outcome !== "attachment-stored" && value.outcome !== "prototype-imported")) return false;
+    if (value.action === "save") {
+      return (value.outcome === "saved" || value.outcome === "conflict")
+        && (value.outcome !== "conflict" || (typeof value.message === "string" && value.message.length > 0 && value.message.length <= 1_000))
+        && (value.outcome !== "saved" || value.message === undefined)
+        && value.attachment === undefined && value.overSoftLimit === undefined;
+    }
+    if (value.action === "import-prototype") {
+      return value.outcome === "prototype-imported" && value.message === undefined
+        && value.attachment === undefined && value.overSoftLimit === undefined;
+    }
+    const attachment = taskStudioAttachmentV1Schema.safeParse(value.attachment);
+    return value.outcome === "attachment-stored" && value.message === undefined
+      && attachment.success
+      && ((value.action === "put-image" && attachment.data.kind === "image")
+        || (value.action === "put-sketch" && attachment.data.kind === "excalidraw"))
+      && typeof value.overSoftLimit === "boolean";
+  }
   if (value.status === "ok") {
     return hasOnlyKeys(value, ["schemaVersion", "method", "status"])
-      && value.method !== "studio.submit";
+      && value.method !== "studio.submit"
+      && value.method !== "task.studio.apply";
   }
   return value.status === "error"
     && hasOnlyKeys(value, ["schemaVersion", "method", "status", "code", "message"])
@@ -383,7 +460,7 @@ export function isWorkspaceQueryV1(value: unknown): value is WorkspaceQueryV1 {
       && value.input.liveAdhocAgents.every((agent) => typeof agent === "string" && AGENT_NAME_RE.test(agent))
       && new Set(value.input.liveAdhocAgents).size === value.input.liveAdhocAgents.length;
   }
-  if (value.method === "task.detail") {
+  if (value.method === "task.detail" || value.method === "task.studio") {
     return hasOnlyKeys(value.input, ["id"])
       && typeof value.input.id === "string"
       && /^t-[0-9a-f]{6}$/.test(value.input.id);
@@ -397,14 +474,16 @@ export function isWorkspaceQueryV1(value: unknown): value is WorkspaceQueryV1 {
 
 export function isWorkspaceQueryResultV1(value: unknown): value is WorkspaceQueryResultV1 {
   if (!isRecord(value) || value.schemaVersion !== 1
-    || (value.method !== "probe.view" && value.method !== "task.board" && value.method !== "task.detail")) return false;
+    || (value.method !== "probe.view" && value.method !== "task.board" && value.method !== "task.detail" && value.method !== "task.studio")) return false;
   if (value.status === "ok") {
     return hasOnlyKeys(value, ["schemaVersion", "method", "status", "view"])
       && (value.method === "probe.view"
         ? isWorkspaceProbeViewV1(value.view)
         : value.method === "task.board"
           ? isMissionControlViewV1(value.view)
-          : isTaskDetailViewV1(value.view));
+          : value.method === "task.detail"
+            ? isTaskDetailViewV1(value.view)
+            : isTaskStudioViewV1(value.view));
   }
   return value.status === "error"
     && hasOnlyKeys(value, ["schemaVersion", "method", "status", "code", "message"])
@@ -426,6 +505,20 @@ export function workspaceTaskDetailViewSuccessV1(view: TaskDetailViewV1): Worksp
   const transportEnvelope = { ok: true as const, op: "query" as const, result };
   if (Buffer.byteLength(`${JSON.stringify(transportEnvelope)}\n`, "utf8") > TASK_DETAIL_RESPONSE_MAX_BYTES) {
     throw new Error("Task Detail view exceeds its dedicated response size limit");
+  }
+  return result;
+}
+
+export function workspaceTaskStudioViewSuccessV1(view: TaskStudioViewV1): WorkspaceQueryResultV1 {
+  const result = {
+    schemaVersion: 1,
+    method: "task.studio",
+    status: "ok",
+    view: parseTaskStudioViewV1(view),
+  } as const;
+  const transportEnvelope = { ok: true as const, op: "query" as const, result };
+  if (Buffer.byteLength(`${JSON.stringify(transportEnvelope)}\n`, "utf8") > TASK_STUDIO_RESPONSE_MAX_BYTES) {
+    throw new Error("Task Studio view exceeds its dedicated response size limit");
   }
   return result;
 }
@@ -487,6 +580,9 @@ export function workspaceCommandSuccessV1(
   command: WorkspaceCommandV1,
   studioErrors: readonly string[] = [],
 ): WorkspaceCommandResultV1 {
+  if (command.method === "task.studio.apply") {
+    throw new Error("Task Studio apply commands require an exact outcome");
+  }
   if (command.method !== "studio.submit") {
     return { schemaVersion: 1, method: command.method, status: "ok" };
   }
@@ -498,6 +594,25 @@ export function workspaceCommandSuccessV1(
     errors: normalized.slice(0, 50).map((error) => error.slice(0, 1_000)),
     truncated: normalized.length > 50 || normalized.some((error) => error.length > 1_000),
   };
+}
+
+export function workspaceTaskStudioApplySuccessV1(
+  command: Extract<WorkspaceCommandV1, { method: "task.studio.apply" }>,
+  outcome:
+    | { outcome: "saved" }
+    | { outcome: "conflict"; message: string }
+    | { outcome: "attachment-stored"; attachment: import("../richDoc/types.js").RichDocAttachment; overSoftLimit: boolean }
+    | { outcome: "prototype-imported" },
+): WorkspaceCommandResultV1 {
+  const candidate: WorkspaceCommandResultV1 = {
+    schemaVersion: 1,
+    method: command.method,
+    status: "ok",
+    action: command.input.action,
+    ...outcome,
+  };
+  if (!isWorkspaceCommandResultV1(candidate)) throw new Error("Task Studio apply result contradicts its action");
+  return candidate;
 }
 
 const STUDIO_FORM_STRING_KEYS = [

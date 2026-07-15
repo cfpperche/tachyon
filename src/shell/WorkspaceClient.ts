@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { EngineControlClient, EngineControlClientError } from "../engine-service/controlClient.js";
 import {
@@ -25,6 +26,8 @@ import {
   type WorkspaceSnapshotEnvelopeV1,
 } from "../engine-service/protocol.js";
 import { workspaceHash } from "../tmux/TmuxService.js";
+import type { StagedPayloadRefV1 } from "../runtime-api/stagedPayload.js";
+import { StagedPayloadStore } from "../engine-service/stagedPayloadStore.js";
 import type { DaemonSettingsSnapshot } from "../workspace/DaemonEngineHost.js";
 import {
   assertWorkspacePresentationIdentity,
@@ -46,6 +49,11 @@ export interface WorkspaceClientSyncResult {
 
 export type WorkspaceClientListener = (result: WorkspaceClientSyncResult) => void;
 
+export interface WorkspaceStagedPayload {
+  readonly ref: StagedPayloadRefV1;
+  discard(): void;
+}
+
 export interface WorkspaceClient {
   readonly workspaceRoot: string;
   readonly workspaceHash: string;
@@ -56,6 +64,7 @@ export interface WorkspaceClient {
   sync(limit?: number): Promise<WorkspaceClientSyncResult>;
   query(query: WorkspaceQueryV1): Promise<WorkspaceQueryResultV1>;
   invoke(operationId: string, command: WorkspaceCommandV1): Promise<WorkspaceCommandResultV1>;
+  stagePayload(data: Buffer): WorkspaceStagedPayload;
   subscribe(listener: WorkspaceClientListener): () => void;
   /** Detaches only this shell lease.  It never stops, restarts or disposes the engine. */
   close(): Promise<void>;
@@ -127,6 +136,7 @@ export class RemoteWorkspaceClient implements WorkspaceClient {
   private currentIdentity!: EngineServiceIdentityV1;
   private currentSnapshot!: WorkspaceSnapshotEnvelopeV1;
   private currentPresentation!: WorkspacePresentationSnapshotV1;
+  private stagedPayloads!: StagedPayloadStore;
   private tail: Promise<void> = Promise.resolve();
   private closePromise: Promise<void> | undefined;
   private closeRequested = false;
@@ -220,6 +230,20 @@ export class RemoteWorkspaceClient implements WorkspaceClient {
     return result;
   }
 
+  stagePayload(data: Buffer): WorkspaceStagedPayload {
+    if (this.closeRequested) throw new RemoteWorkspaceClientError("CLIENT_CLOSED", "workspace client is closed");
+    const ref = this.stagedPayloads.stage(data);
+    let discarded = false;
+    return {
+      ref,
+      discard: () => {
+        if (discarded) return;
+        discarded = true;
+        this.stagedPayloads.discard(ref);
+      },
+    };
+  }
+
   subscribe(listener: WorkspaceClientListener): () => void {
     if (this.closeRequested) throw new RemoteWorkspaceClientError("CLIENT_CLOSED", "workspace client is closed");
     this.listeners.add(listener);
@@ -244,6 +268,7 @@ export class RemoteWorkspaceClient implements WorkspaceClient {
     if (this.closeRequested) throw new RemoteWorkspaceClientError("CLIENT_CLOSED", "workspace client is closed");
     const attached = await this.attachVerified();
     this.control = attached.control;
+    this.stagedPayloads = attached.stagedPayloads;
     this.currentIdentity = attached.identity;
     this.currentSnapshot = cloneJson(attached.snapshot);
     this.currentPresentation = attached.presentation;
@@ -269,6 +294,7 @@ export class RemoteWorkspaceClient implements WorkspaceClient {
     const previous = this.currentIdentity;
     const attached = await this.attachVerified();
     this.control = attached.control;
+    this.stagedPayloads = attached.stagedPayloads;
     this.currentIdentity = attached.identity;
     this.currentSnapshot = cloneJson(attached.snapshot);
     this.currentPresentation = attached.presentation;
@@ -316,6 +342,7 @@ export class RemoteWorkspaceClient implements WorkspaceClient {
     identity: EngineServiceIdentityV1;
     snapshot: WorkspaceSnapshotEnvelopeV1;
     presentation: WorkspacePresentationSnapshotV1;
+    stagedPayloads: StagedPayloadStore;
   }> {
     for (let attempt = 1; attempt <= MAX_ATTACH_RACE_ATTEMPTS; attempt += 1) {
       const ensured = await this.ensureEngine(this.ensureOptions);
@@ -328,7 +355,9 @@ export class RemoteWorkspaceClient implements WorkspaceClient {
         }
         const snapshot = await control.snapshot();
         const presentation = this.validatePresentation(snapshot, session.engine);
-        return { control, identity: session.engine, snapshot, presentation };
+        const stagedPayloads = new StagedPayloadStore(path.dirname(ensured.controlSocketPath));
+        stagedPayloads.cleanupStale();
+        return { control, identity: session.engine, snapshot, presentation, stagedPayloads };
       } catch (error) {
         await control.detach().catch(() => undefined);
         if (attempt < MAX_ATTACH_RACE_ATTEMPTS && isRecoverableConnectionLoss(error)) continue;
