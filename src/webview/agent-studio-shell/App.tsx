@@ -26,7 +26,6 @@ import {
   importSoulMessage,
   openSoulMessage,
   patchMessage,
-  previewSoulMessage,
   readyMessage,
   refreshSoulMessage,
   saveMessage,
@@ -279,7 +278,6 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
 
   const savedAgent = entity.name;
   const profilePresent = !!soulStatus && soulStatus.lifecycle !== "missing";
-  const profileReadable = profilePresent && soulStatus?.lifecycle !== "invalid";
   const readActionDisabled = !savedAgent || !!soulBusy;
   const mutationDisabled = readActionDisabled || !soulStatus || soulStatus.transactionDegraded;
   const showCreateOrImport = soulStatus?.lifecycle === "missing";
@@ -383,9 +381,6 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
                         </KitDropdownTrigger>
                         <KitDropdownContent align="start">
                           <KitDropdownItem disabled={readActionDisabled} onSelect={() => runSoulAction("Refreshing profile", refreshSoulMessage(savedAgent))}>Refresh</KitDropdownItem>
-                          {profileReadable && (
-                            <KitDropdownItem disabled={readActionDisabled} onSelect={() => runSoulAction("Loading preview", previewSoulMessage(savedAgent))}>Preview</KitDropdownItem>
-                          )}
                           {showDelete && (
                             <>
                               <KitDropdownSeparator />

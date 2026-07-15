@@ -40,7 +40,6 @@ describe("Agent Studio soul profile protocol (T15A)", () => {
       "importSoulMessage(savedAgent, contentBase64)",
       "openSoulMessage(savedAgent)",
       "refreshSoulMessage(savedAgent)",
-      "previewSoulMessage(savedAgent)",
       "adoptSoulProfileMessage(savedAgent",
       "enableSoulMessage(savedAgent)",
       "disableSoulMessage(savedAgent)",
@@ -59,6 +58,8 @@ describe("Agent Studio soul profile protocol (T15A)", () => {
     expect(source).not.toContain("Needs adoption");
     expect(source).toContain("Ready to enable");
     expect(source).toContain("enableRequiresOwnershipClaim");
+    expect(source).not.toContain(">Preview</KitDropdownItem>");
+    expect(source).toContain('aria-label="SOUL.md preview"');
     expect(hostSource).toContain("Refresh and choose Enable Soul.");
     expect(hostSource).not.toContain("explicit digest-backed adoption");
     expect(source).toContain("<KitFilePicker");

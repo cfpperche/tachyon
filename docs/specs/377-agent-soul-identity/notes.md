@@ -394,6 +394,9 @@ pass is recorded below.
   claim for retained/unowned bytes as the same primary `Enable Soul` action. `Disable Soul` is the
   inverse action. The internal adoption transaction and digest guard remain unchanged, but the
   technical adoption term is no longer exposed in the common-path UI.
+- Human dogfood also exposed that the explicit `Preview` action merely reloaded content already
+  included in every profile status. The redundant button was removed; the bounded inline preview
+  remains automatic.
 
 ## Open questions
 
