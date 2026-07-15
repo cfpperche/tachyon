@@ -44,6 +44,24 @@ None.
   The source allowlist/migration inventory remains a separate executable artifact; these aggregate
   counts are orientation, not the frozen contract.
 
+## Frozen legacy-state allowlist — 2026-07-15
+
+- `globalState` imports only the workspace's Bridge instance id, digest-only caller registry,
+  host-action session epoch, Bridge-client generation, prior Tachyon version and explicit provider
+  observation preferences. Settings are supplied separately through the already-allowlisted daemon
+  settings snapshot; media and watchers come from the verified bundle and daemon host.
+- `SecretStorage` imports only the caller-identity HMAC key and the workspace's authority freshness
+  heads. Global-storage files import only the exact master and external Bridge token filenames for the
+  workspace hash. Unknown keys are never enumerated or copied.
+- Terminal restore manifests remain shell presentation state. Reload-pending transactions, reload
+  initiators and audit logs are transient evidence from the retired Extension Host lifecycle and are
+  deliberately not imported into the new engine incarnation.
+- The shell writes a private, versioned pending envelope before any destination file. Fresh state and
+  secrets are installed as whole atomic documents, tokens use create-only writes, and a completion
+  marker is written last. An interrupted retry replays the frozen pending envelope; once complete,
+  later ambient ExtensionContext changes are ignored. Any pre-existing daemon state/secrets pair wins
+  as one authority. The legacy source is retained for rollback rather than destructively deleted.
+
 ## First implementation slice — 2026-07-14
 
 - Added the versioned engine bundle/protocol primitives under `src/engine-service/`: strict safe relative
@@ -644,3 +662,18 @@ None.
 - Typecheck and the focused removal matrix pass (134/134 across the retirement guard, Bridge, Workspace,
   engine supervisor/service, packaging and staged payloads).  Build, the 228-file editor-free daemon import
   closure and packaged persistent-engine dogfood are green; the stale proxy bundle is absent after build.
+
+## Thirtieth implementation slice — 2026-07-15
+
+- Implemented the frozen one-time migration from VS Code-owned operational state into the private per-workspace
+  engine store. Exact state/secret/token names are shared with their real consumers, so source-key drift fails
+  the executable allowlist instead of silently copying arbitrary ExtensionContext data.
+- A private pending envelope freezes the source before atomic whole-document installation; the completion marker
+  contains only its fingerprint and outcomes. Interrupted replay, later ambient source changes and pre-existing
+  daemon authority are deterministic, while the old source remains intact for rollback.
+- Legacy collection is lazy: a healthy engine is reused before any source read, and an absent engine with a
+  completion marker restarts without consulting VS Code globalState, SecretStorage or old token files. Migration
+  data is consumed by the supervisor and is never encoded into daemon argv.
+- The focused migration/supervisor/client matrix passes 14/14; the adjacent identity/token/Workspace matrix
+  passes 106/106. Typecheck, build, the 230-file editor-free daemon closure and diff-check are green. The final
+  full run remains reserved for the post-SOUL reconciliation and closure audit.

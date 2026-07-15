@@ -75,6 +75,13 @@ import { loadAndRenderProjectGuidance } from "../config/projectGuidance.js";
 import { assertSafeBriefTransport, deliverableBody, previewDeliverableBody } from "../agents/briefFile.js";
 import { loadOrCreateExternalToken, loadOrCreateToken, TOKEN_ENV_VAR, URL_ENV_VAR, AGENT_TOKEN_ENV_VAR } from "../bridge/token.js";
 import { CallerIdentityRegistry, loadOrCreateHmacKey, type CallerScope, type CallerSnapshot, type PersistableEntry } from "../bridge/callerIdentity.js";
+import {
+  authorityHeadsSecretKey,
+  callerIdentityInstanceIdStateKey,
+  callerIdentityRegistryStateKey,
+  hostActionSessionEpochStateKey,
+  workspaceVersionStateKey,
+} from "./operationalStateKeys.js";
 import { redactSecrets } from "../bridge/redact.js";
 import { CMD_WAIT_PREFIX } from "../bridge/tools.js";
 import { FileHashChainAuditSink, HostActionBroker, hostActionName, hostActionPolicyPaths, loadPinnedExternalPolicy, restorePinnedExternalPolicy, type HostActionCallerResolver } from "../host-action/index.js";
@@ -1872,19 +1879,19 @@ export class Workspace {
   }
 
   private bridgeInstanceIdStateKey(): string {
-    return `tachyon.callerIdentity.instanceId.${this.wsHash}`;
+    return callerIdentityInstanceIdStateKey(this.wsHash);
   }
 
   private hostActionSessionEpochStateKey(): string {
-    return `tachyon.hostAction.sessionEpoch.${this.wsHash}`;
+    return hostActionSessionEpochStateKey(this.wsHash);
   }
 
   private callerRegistryStateKey(): string {
-    return `tachyon.callerIdentity.registry.${this.wsHash}`;
+    return callerIdentityRegistryStateKey(this.wsHash);
   }
 
   private authorityHeadsSecretKey(): string {
-    return `tachyon.authorityHeads.v1.${this.wsHash}`;
+    return authorityHeadsSecretKey(this.wsHash);
   }
 
   private authorityHeadMapKey(kind: "legacy" | "canonical", identity: string): string {
@@ -2212,7 +2219,7 @@ export class Workspace {
 
     // Upgrade notice: MCP clients cache the Bridge tool schema at THEIR session start.
     const currentVersion = deps.host.appVersion();
-    const lastVersion = deps.host.getState<string>(`tachyon.version.${ws.wsHash}`);
+    const lastVersion = deps.host.getState<string>(workspaceVersionStateKey(ws.wsHash));
     if (lastVersion && lastVersion !== currentVersion && (await ws.manager.runningAgents()).length > 0) {
       ws.host.notify(
         ws.t(
@@ -2223,7 +2230,7 @@ export class Workspace {
         "warn",
       );
     }
-    deps.host.setState(`tachyon.version.${ws.wsHash}`, currentVersion);
+    deps.host.setState(workspaceVersionStateKey(ws.wsHash), currentVersion);
 
     return ws;
   }

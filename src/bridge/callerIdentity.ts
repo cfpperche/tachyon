@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { CALLER_IDENTITY_HMAC_SECRET_KEY } from "../workspace/operationalStateKeys.js";
 
 /**
  * spec 351 (layer B) — the Bridge RESOLVES the caller instead of trusting self-declared params. This
@@ -16,8 +17,6 @@ export interface SecretPort {
   setSecret(key: string, value: string): Promise<void>;
 }
 
-const HMAC_KEY_SECRET_ID = "tachyon.callerIdentity.hmacKey";
-
 /**
  * Machine-local HMAC key custody (dueto key-decision): created once via VS Code SecretStorage, reused
  * across every workspace Bridge on this machine — never synced, never in workspaceState, never a
@@ -25,10 +24,10 @@ const HMAC_KEY_SECRET_ID = "tachyon.callerIdentity.hmacKey";
  * invariant extends to "no reversible-without-the-key" for whatever persists).
  */
 export async function loadOrCreateHmacKey(host: SecretPort): Promise<Buffer> {
-  const existing = await host.getSecret(HMAC_KEY_SECRET_ID);
+  const existing = await host.getSecret(CALLER_IDENTITY_HMAC_SECRET_KEY);
   if (existing && /^[0-9a-f]{64}$/.test(existing)) return Buffer.from(existing, "hex");
   const key = crypto.randomBytes(32);
-  await host.setSecret(HMAC_KEY_SECRET_ID, key.toString("hex"));
+  await host.setSecret(CALLER_IDENTITY_HMAC_SECRET_KEY, key.toString("hex"));
   return key;
 }
 

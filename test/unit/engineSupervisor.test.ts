@@ -21,8 +21,11 @@ import {
   type EngineDaemonLauncher,
   type EngineDaemonOptionsV1,
 } from "../../src/engine-service/engineSupervisor.js";
+import { DaemonStateStore } from "../../src/engine-service/daemonStateStore.js";
+import type { EngineStateMigrationV1 } from "../../src/engine-service/stateMigration.js";
+import { workspaceVersionStateKey } from "../../src/workspace/operationalStateKeys.js";
 import type { EngineBundleManifestV1, EngineServiceIdentityV1, EngineShellHelloV1 } from "../../src/engine-service/protocol.js";
-import { TmuxService } from "../../src/tmux/TmuxService.js";
+import { TmuxService, workspaceHash } from "../../src/tmux/TmuxService.js";
 
 const roots: string[] = [];
 const children: ChildProcessWithoutNullStreams[] = [];
@@ -219,6 +222,30 @@ describe("persistent engine supervisor", () => {
     })).rejects.toMatchObject({ code: "CONTROL_PATH_UNSAFE" });
     expect(launches).toBe(0);
     expect(fs.readFileSync(fixture.socket, "utf8")).toBe("do not replace");
+  });
+
+  it("imports shell-authored legacy state before launch without putting it in daemon argv", async () => {
+    const fixture = workspaceFixture();
+    const hash = workspaceHash(fs.realpathSync(fixture.workspace));
+    const migration: EngineStateMigrationV1 = {
+      schemaVersion: 1,
+      workspaceHash: hash,
+      state: { lastVersion: "0.56.4" },
+      secrets: { callerIdentityHmacKey: "a".repeat(64) },
+      tokens: { bridge: "b".repeat(64) },
+    };
+    await expect(ensureDaemonEngine({
+      workspaceRoot: fixture.workspace,
+      bundle: fixture.bundle,
+      storageRoot: fixture.storage,
+      controlSocketPath: fixture.socket,
+      migrationProvider: async () => migration,
+      launcher: async (input) => {
+        expect(new DaemonStateStore(fixture.storage).getState(workspaceVersionStateKey(hash))).toBe("0.56.4");
+        expect(decodeEngineDaemonOptions(input.encodedOptions)).not.toHaveProperty("migration");
+        throw new Error("launch observed");
+      },
+    })).rejects.toThrow("launch observed");
   });
 });
 

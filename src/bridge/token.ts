@@ -27,12 +27,20 @@ function loadOrCreateStoredToken(storageDir: string, fileName: string, reject?: 
 }
 
 export function loadOrCreateToken(storageDir: string, wsHash: string): string {
-  return loadOrCreateStoredToken(storageDir, `bridge-token-${wsHash}`);
+  return loadOrCreateStoredToken(storageDir, bridgeTokenFileName(wsHash));
 }
 
 /** Dedicated external-client Bridge token, deliberately distinct from the legacy master token. */
 export function loadOrCreateExternalToken(storageDir: string, wsHash: string, masterToken: string): string {
-  return loadOrCreateStoredToken(storageDir, `bridge-external-token-${wsHash}`, masterToken);
+  return loadOrCreateStoredToken(storageDir, externalBridgeTokenFileName(wsHash), masterToken);
+}
+
+export function bridgeTokenFileName(wsHash: string): string {
+  return `bridge-token-${wsHash}`;
+}
+
+export function externalBridgeTokenFileName(wsHash: string): string {
+  return `bridge-external-token-${wsHash}`;
 }
 
 /** Constant-time bearer comparison (hash both sides to fixed length first). */

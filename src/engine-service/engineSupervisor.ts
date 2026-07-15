@@ -9,6 +9,7 @@ import { workspaceHash } from "../tmux/TmuxService.js";
 import { DAEMON_SETTING_KEYS, type DaemonSettingsSnapshot } from "../workspace/DaemonEngineHost.js";
 import { EngineControlClientError, requestEngineControl } from "./controlClient.js";
 import { verifyStagedBundle, type StagedEngineBundle } from "./engineBundleStore.js";
+import { ensureEngineStateMigration, type EngineStateMigrationProvider } from "./stateMigration.js";
 import {
   engineBundleId,
   isEngineBundleManifestV1,
@@ -58,6 +59,8 @@ export interface EnsureDaemonEngineOptions {
   workspaceRoot: string;
   bundle: StagedEngineBundle;
   settings?: DaemonSettingsSnapshot;
+  /** Lazily reads the exact legacy allowlist before first launch; never enters daemon argv. */
+  migrationProvider?: EngineStateMigrationProvider;
   launcher?: EngineDaemonLauncher;
   startTimeoutMs?: number;
   pollMs?: number;
@@ -109,6 +112,7 @@ export async function ensureDaemonEngine(options: EnsureDaemonEngineOptions): Pr
     };
   }
   assertAbsentOrStaleSocket(controlSocketPath);
+  if (options.migrationProvider) await ensureEngineStateMigration(storageRoot, hash, options.migrationProvider);
 
   const daemonOptions: EngineDaemonOptionsV1 = {
     schemaVersion: 1,

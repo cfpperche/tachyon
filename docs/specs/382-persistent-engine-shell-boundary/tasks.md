@@ -6,7 +6,7 @@ _Generated from `plan.md` on 2026-07-14. Work top-to-bottom. No automatic integr
 
 - [x] Freeze the complete production inventory of shell code that constructs, disposes or directly reads
   concrete `Workspace`/manager/store objects; add a boundary test for the final forbidden set.
-- [ ] Freeze the allowlist of EngineHost state/settings/secrets/media/watch capabilities that the daemon
+- [x] Freeze the allowlist of EngineHost state/settings/secrets/media/watch capabilities that the daemon
   must own or import; record migration source, destination and rollback for each key.
 - [ ] Add executable schemas and compatibility rules for bundle manifest, service descriptor, shell
   hello/session, snapshot, event, command and typed error envelopes.
@@ -38,7 +38,7 @@ _Generated from `plan.md` on 2026-07-14. Work top-to-bottom. No automatic integr
 
 ## Upgrade, recovery and compatibility
 
-- [ ] Implement one-time allowlisted migration from VS Code global/secret state with atomic completion
+- [x] Implement one-time allowlisted migration from VS Code global/secret state with atomic completion
   marker, idempotent replay and rollback proof.
 - [ ] Implement compatible attach, verified bundle upgrade, incompatible refusal, crash restart and
   last-known-compatible rollback with exact incarnation audit.

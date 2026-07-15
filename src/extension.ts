@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import path from "node:path";
 import fs from "node:fs";
 import crypto from "node:crypto";
-import { doctor, findServerPids, probeServer, recoverWedgedServer, snapshotServerPids, socketPath, TmuxService, SESSION_PREFIX, SOCKET_NAME, type ServerProbe } from "./tmux/TmuxService.js";
+import { doctor, findServerPids, probeServer, recoverWedgedServer, snapshotServerPids, socketPath, TmuxService, workspaceHash, SESSION_PREFIX, SOCKET_NAME, type ServerProbe } from "./tmux/TmuxService.js";
 import { watchdogStep, type WatchdogState } from "./tmux/wedgeWatchdog.js";
 import { subtreeCpuTicks } from "./attention/cpu.js";
 import { classifySession } from "./inspector/classify.js";
@@ -64,6 +64,7 @@ import { assessBuildProvenance, type BuildStamp } from "./provenance/verify.js";
 import { readEmbeddedProvenanceRecord } from "./provenance/record.js";
 import { Terminals } from "./presentation/Terminals.js";
 import { connectPackagedWorkspaceClient } from "./shell/WorkspaceClient.js";
+import { collectLegacyEngineStateMigration } from "./engine-service/stateMigration.js";
 import { WorkspaceClientRegistry } from "./shell/WorkspaceClientRegistry.js";
 import { WorkspaceShellHandle } from "./shell/WorkspaceShellHandle.js";
 import { DAEMON_SETTING_KEYS, type DaemonSettingsSnapshot } from "./workspace/DaemonEngineHost.js";
@@ -1158,6 +1159,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       shell: { version: shellVersion, locale: vscode.env.language },
       capabilities: ["vscode.diff", "vscode.editor", "vscode.notifications", "vscode.terminal"],
       settings: daemonSettingsSnapshot(workspaceRoot),
+      migrationProvider: () => collectLegacyEngineStateMigration(workspaceHash(workspaceRoot), {
+        globalStorageRoot: context.globalStorageUri.fsPath,
+        getState: <T>(key: string) => context.globalState.get<T>(key),
+        getSecret: (key: string) => Promise.resolve(context.secrets.get(key)),
+      }),
     }),
   });
   activeClientRegistry = clientRegistry;

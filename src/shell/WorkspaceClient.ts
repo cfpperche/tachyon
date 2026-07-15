@@ -29,6 +29,7 @@ import { workspaceHash } from "../tmux/TmuxService.js";
 import type { StagedPayloadRefV1 } from "../runtime-api/stagedPayload.js";
 import { StagedPayloadStore } from "../engine-service/stagedPayloadStore.js";
 import type { DaemonSettingsSnapshot } from "../workspace/DaemonEngineHost.js";
+import type { EngineStateMigrationProvider } from "../engine-service/stateMigration.js";
 import {
   assertWorkspacePresentationIdentity,
   projectWorkspacePresentation,
@@ -82,7 +83,8 @@ export interface ConnectRemoteWorkspaceClientOptions {
   };
   capabilities?: string[];
   settings?: DaemonSettingsSnapshot;
-  supervisor?: Omit<EnsureDaemonEngineOptions, "workspaceRoot" | "bundle" | "settings">;
+  migrationProvider?: EngineStateMigrationProvider;
+  supervisor?: Omit<EnsureDaemonEngineOptions, "workspaceRoot" | "bundle" | "settings" | "migrationProvider">;
   /** Deterministic test/platform seam; production uses ensureDaemonEngine. */
   ensure?: EnsureEngine;
 }
@@ -174,6 +176,7 @@ export class RemoteWorkspaceClient implements WorkspaceClient {
       workspaceRoot: this.workspaceRoot,
       bundle: { ...options.bundle },
       settings,
+      migrationProvider: options.migrationProvider,
     };
   }
 
