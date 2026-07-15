@@ -1,60 +1,56 @@
 # 386 — dogfood via Dev Host (F5)
 
-**Status prep:** armado 2026-07-14 (corrigido após F5 falhar sem fixture/point).
+## Por que a sidebar “vazia” / sem métricas
 
-## Já preparado
+1. **Point precisa de fixture** (não monorepo root).
+2. Fixture antigo usava `echo` + `autostart: false` → agentes **não ficam running** → **sem peek/CPU/mem** (e parecia “nada”).
+3. Fixture atual: `pilot`, `reviewer`, `busy` com **loop + autostart: true**.
 
-| Item | Valor |
-|---|---|
-| Worktree (extensão) | `/home/goat/tachyon-worktrees/agent-live-resource-metrics` |
-| Point monorepo | `~/tachyon/.tachyon/dev-host/extension` → worktree |
-| Fixture workspace | `/tmp/tachyon-dev-host/metrics-386/workspace` |
-| preLaunch dry-run | exit 0 |
+## Prep (já refeito)
 
-> **Não** use a raiz do monorepo como workspace do EDH — o point recusa. O F5 abre o **fixture**.
-
-## O que você faz
-
-1. No monorepo VS Code (`~/tachyon`)
-2. **Run and Debug** → **`Tachyon: Dev Host`** (não “Run Tachyon”)
-3. **F5**
-4. Janela **`[Extension Development Host]`** com folder do fixture (não a frota monorepo)
-
-## Checklist UI (fixture)
-
-Fixture tem agents `pilot` / `reviewer` (`echo`) — CPU baixa, mas:
-
-1. Se running com pane: peek / ▤ / lanes (pode precisar **Start** no agent)
-2. Expand metrics / Collapse metrics no header Agents
-3. Chevron ▾ esquerdo (se houver filhos) ≠ ▤ métricas
-4. Hover toolbar sem cobrir o nome
-
-Para **CPU real**, use frota monorepo com EDH apontando o worktree (opcional):
-
-```bash
-CODE=$(node /home/goat/tachyon-worktrees/agent-live-resource-metrics/scripts/dev-host/resolve-code.mjs /home/goat/tachyon-worktrees/agent-live-resource-metrics)
-"$CODE" \
-  --extensionDevelopmentPath=/home/goat/tachyon-worktrees/agent-live-resource-metrics \
-  /home/goat/tachyon
+```text
+extension → …/agent-live-resource-metrics
+workspace → /tmp/tachyon-dev-host/metrics-386/workspace
+agents:    pilot, reviewer, busy (autostart loops)
 ```
 
-## Se F5 falhar de novo
+## Seu F5
+
+1. Monorepo `~/tachyon`
+2. **Run and Debug → Tachyon: Dev Host → F5**
+3. Só a janela **`[Extension Development Host]`**
+4. Activity bar → **Tachyon** → Agents
+
+### Esperado
+
+| | |
+|---|---|
+| Rows | `pilot`, `reviewer` (filho), `busy` |
+| ~1–2s depois | peek `N% · XM` nos running |
+| ▤ | abre CPU / Mem |
+| ▾ em pilot | colapsa `reviewer` (+1) |
+| Header | Expand metrics / Collapse metrics |
+| `busy` | CPU alto (busy loop) |
+
+Se rows não aparecerem: Command Palette → **Tachyon: Doctor** no EDH; confirme que o folder aberto é o fixture mirror (não `~/tachyon` monorepo fleet).
+
+## Re-armar se precisar
 
 ```bash
 export TACHYON_DEV_HOST_ID=metrics-386
 cd /home/goat/tachyon
-bash scripts/dev-host/cli.sh seed
+# yml já está no fixture; re-point:
 bash scripts/dev-host/cli.sh point \
   --worktree /home/goat/tachyon-worktrees/agent-live-resource-metrics \
   --workspace /tmp/tachyon-dev-host/metrics-386/workspace \
   --spec 386 --slug agent-live-resource-metrics
-# Show Errors no dialog do preLaunch se ainda falhar
+cd /home/goat/tachyon-worktrees/agent-live-resource-metrics && npm run build
 ```
 
-## Cleanup (depois)
+## Cleanup
 
 ```bash
-# fechar EDH primeiro
+# fechar EDH
 export TACHYON_DEV_HOST_ID=metrics-386
 cd /home/goat/tachyon
 npm run dogfood:dev-host -- clean
