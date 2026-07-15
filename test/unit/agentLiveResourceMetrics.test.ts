@@ -27,10 +27,11 @@ describe("spec 386 — agent live resource metrics", () => {
     expect(appTsx).toMatch(/class=\{`peek/);
     expect(appTsx).toMatch(/metricsOpen/);
     expect(appTsx).toMatch(/onToggleMetrics/);
-    // all-metrics is one icon act (graph), not Expand/Collapse text pair
-    expect(appTsx).toMatch(/graph/);
-    expect(appTsx).not.toMatch(/Expand metrics/);
-    expect(appTsx).not.toMatch(/Collapse metrics/);
+    // all-metrics is one icon act (graph) in sec-actions, not a text button pair
+    expect(appTsx).toMatch(/name="graph"/);
+    expect(appTsx).not.toMatch(/sec-metrics-btn/);
+    expect(appTsx).not.toMatch(/>Expand metrics</);
+    expect(appTsx).not.toMatch(/>Collapse metrics</);
   });
 
   it("reserves action gutter and defines detail lanes", () => {
