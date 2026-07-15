@@ -4,7 +4,10 @@ import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { requestEngineControl } from "../../src/engine-service/controlClient.js";
+import { bridgeTokenFileName } from "../../src/bridge/token.js";
 import { stageEngineBundle, stagePackagedEngineBundle } from "../../src/engine-service/engineBundleStore.js";
 import {
   engineRuntimeDir,
@@ -380,13 +383,7 @@ try {
   });
   if (restarted.status !== "ok") throw new Error(`remote agent restart failed: ${JSON.stringify(restarted)}`);
   await waitForAgentProjection(first, "dogfood-worker", true);
-  const killed = await first.invoke("dogfood-operation-kill-0001", {
-    schemaVersion: 1,
-    method: "agent.kill",
-    input: { agent: "dogfood-worker" },
-  });
-  if (killed.status !== "ok") throw new Error(`remote agent kill failed: ${JSON.stringify(killed)}`);
-  await waitForAgentProjection(first, "dogfood-worker", false);
+  const agentPidBeforeDetach = await new TmuxService().panePid(dogfoodSession);
   await Promise.all([first.close(), second.close()]);
 
   const reused = await ensureDaemonEngine(ensureOptions);
@@ -401,6 +398,50 @@ try {
   if (!health.ok || health.op !== "health" || health.shellCount !== 0) {
     throw new Error("detached dogfood shells leaked a live lease");
   }
+  if (await new TmuxService().panePid(dogfoodSession) !== agentPidBeforeDetach) {
+    throw new Error("the live agent process changed during the no-shell interval");
+  }
+  const bridgeToken = fs.readFileSync(
+    path.join(storageRoot, "state", bridgeTokenFileName(identity.workspaceHash)),
+    "utf8",
+  ).trim();
+  const noShellBridge = new Client({ name: "persistent-engine-dogfood", version: "1.0.0" });
+  let noShellToolCount = 0;
+  try {
+    await noShellBridge.connect(new StreamableHTTPClientTransport(
+      new URL(`http://127.0.0.1:${identity.bridge.port}/mcp`),
+      { requestInit: { headers: { Authorization: `Bearer ${bridgeToken}` } } },
+    ));
+    noShellToolCount = (await noShellBridge.listTools()).tools.length;
+    const listAgents = await noShellBridge.callTool({ name: "list_agents", arguments: {} });
+    if (noShellToolCount === 0 || listAgents.isError === true) {
+      throw new Error("Bridge tool execution failed while no editor shell was attached");
+    }
+  } finally {
+    await noShellBridge.close().catch(() => undefined);
+  }
+  const reattached = await connectRemoteWorkspaceClient({
+    workspaceRoot,
+    bundle,
+    shell: { id: "dogfood-shell-three", version: "dogfood", locale: "en" },
+    supervisor: ensureOptions,
+  });
+  if (reattached.identity.instanceId !== identity.instanceId
+    || reattached.identity.bridge.instanceId !== identity.bridge.instanceId) {
+    throw new Error("shell reattach changed the persistent engine or Bridge identity");
+  }
+  await waitForAgentProjection(reattached, "dogfood-worker", true);
+  if (await new TmuxService().panePid(dogfoodSession) !== agentPidBeforeDetach) {
+    throw new Error("shell reattach changed the live agent process identity");
+  }
+  const killed = await reattached.invoke("dogfood-operation-kill-0001", {
+    schemaVersion: 1,
+    method: "agent.kill",
+    input: { agent: "dogfood-worker" },
+  });
+  if (killed.status !== "ok") throw new Error(`remote agent kill failed: ${JSON.stringify(killed)}`);
+  await waitForAgentProjection(reattached, "dogfood-worker", false);
+  await reattached.close();
 
   const brokenSource = path.join(root, "broken-engine-source");
   fs.cpSync(bundle.root, brokenSource, { recursive: true });
@@ -463,6 +504,7 @@ try {
     upgradedFrom: { pid: prior.identity.pid, instanceId: prior.identity.instanceId, bundleId: prior.identity.bundleId },
     rolledBackFrom: { bundleId: brokenBundle.bundleId, engineVersion: brokenManifest.engineVersion },
     crashRestartedFrom: { pid: beforeCrash.pid, instanceId: beforeCrash.instanceId },
+    noShell: { bridgeToolCount: noShellToolCount, agentPid: agentPidBeforeDetach },
     reused: reused.disposition,
     engine: { pid: identity.pid, instanceId: identity.instanceId, bundleId: identity.bundleId },
     bridge: identity.bridge,

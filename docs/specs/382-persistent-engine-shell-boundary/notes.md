@@ -714,3 +714,29 @@ None.
   shell targets. Typecheck, build and the 238-file editor-free daemon import closure are green. The remaining
   work is the spec-wide audit, declared dogfood and final full verification; no additional product follow-up
   was created by the SOUL reconciliation.
+
+## Thirty-third implementation slice — 2026-07-15
+
+- Added a serialized, process-identity-bound engine transition for a strictly newer staged bundle. Concurrent
+  shells converge through a private atomic upgrade lock; an older compatible shell reuses the newer engine and
+  cannot drive a downgrade. Same-version rebuilds remain compatible reuse rather than creating a ping-pong.
+- The running bundle id reopens the immutable sibling bundle and re-verifies its manifest and bytes before the
+  old process is stopped. Every transition writes a private exact-incarnation audit (`prepared`, `committed`,
+  `rolled-back` or failure); a changed process/unit identity fails closed instead of stopping a replacement.
+- A failed new bundle is stopped under the same transition lock and the verified prior bundle is relaunched as
+  a new incarnation. If either rollback material or rollback launch is unavailable, the supervisor reports a
+  bounded typed failure instead of falling back to an embedded engine.
+- Focused supervisor/bundle coverage proves concurrent one-time activation, no downgrade and verified rollback.
+  The production `systemd --user` dogfood independently proved upgrade from a lower version, rollback from a
+  deliberately exiting higher version, and exact-bundle restart after `SIGKILL`.
+- The same packaged dogfood now exercises SOUL create/replace/disable through the remote engine, keeps a live
+  agent PID unchanged while all editor shell leases are detached, calls the authenticated Bridge during that
+  no-shell interval, then reattaches without changing engine, Bridge or agent identity. The candidate version is
+  `0.56.5`; installed VSIX reload/visual evidence and the final global verification remain the closure gates.
+- `tachyon-0.56.5-t-82f4e6.vsix` was built with the repository's prepublish/prune/provenance path. Inspection of
+  the archive proves the `0.56.5` extension contains the protocol-2 engine manifest, hashed daemon entrypoint and
+  engine media; no separate engine installation step is present.
+- Final reconciliation incorporated `main` through `dcba7360` (SOUL plus sidebar status filters). The first global
+  gate exposed two parallel-integration regressions: six missing pt-BR strings and a hand-authored sidebar filter
+  control bypassing the component kit. Both were corrected at the integration boundary; their focused matrix is
+  38/38 and the complete final `npm run verify:full:quiet` is green at **407 files, 4,644 passed, 3 skipped**.

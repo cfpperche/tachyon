@@ -432,5 +432,11 @@
   "busy ({0})": "ocupado ({0})",
   "Submit refused — '{0}' is {1}. Use Stage, or wait for idle.": "Envio recusado — '{0}' está {1}. Use Preparar, ou aguarde idle.",
   "Prompt template '{0}' submitted to '{1}'.": "Template de prompt '{0}' enviado para '{1}'.",
-  "Prompt template '{0}' staged into '{1}' (not submitted).": "Template de prompt '{0}' preparado em '{1}' (não enviado)."
+  "Prompt template '{0}' staged into '{1}' (not submitted).": "Template de prompt '{0}' preparado em '{1}' (não enviado).",
+  "Tachyon engine connection is unavailable: {0}": "A conexão com a engine do Tachyon está indisponível: {0}",
+  "Tachyon persistent engine could not start: {0}": "Não foi possível iniciar a engine persistente do Tachyon: {0}",
+  "Could not refresh Sidebar: {0}": "Não foi possível atualizar a barra lateral: {0}",
+  "Could not copy pin: {0}": "Não foi possível copiar o pin: {0}",
+  "Could not load proposal: {0}": "Não foi possível carregar a proposta: {0}",
+  "Could not update sidebar state: {0}": "Não foi possível atualizar o estado da barra lateral: {0}"
 }

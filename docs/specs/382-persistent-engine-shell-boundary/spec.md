@@ -44,34 +44,34 @@ identity, audit and compatibility behavior.
   - **When** agents use Bridge tools or schedules/monitors become due
   - **Then** orchestration, Tasks, handoff, approvals, Delivery, verification and managed-agent lifecycle continue
   - **And** an operation that genuinely requires an editor surface returns bounded `UI_UNAVAILABLE` or a durable UI request; it never hangs or pretends success
-- [ ] **Scenario: multiple shells attach to one engine**
+- [x] **Scenario: multiple shells attach to one engine**
   - **Given** two windows open the same canonical workspace concurrently
   - **When** both ensure and attach
   - **Then** atomic identity checks elect exactly one engine service and both shells attach to it
   - **And** disconnecting either shell cannot stop the service or invalidate the other shell
   - **And** notification/UI-request claiming is idempotent and cannot execute one engine action twice
-- [ ] **Scenario: engine state does not depend on ExtensionContext**
+- [x] **Scenario: engine state does not depend on ExtensionContext**
   - **Given** an existing installation with operational keys in VS Code global/secret storage
   - **When** the persistent engine is first activated
   - **Then** an allowlisted, versioned, one-time migration transfers the required state to machine-private engine storage atomically
   - **And** subsequent engine starts work without VS Code SecretStorage, globalState, media paths or settings APIs
   - **And** secrets, bearer tokens and descriptors retain their existing local-user security boundary and never enter the workspace or a syncable store
-- [ ] **Scenario: engine crash and engine upgrade are not shell reloads**
+- [x] **Scenario: engine crash and engine upgrade are not shell reloads**
   - **Given** a running engine and compatible persistent state
   - **When** the engine actually crashes or a verified new engine bundle is activated
   - **Then** the supervisor reports a bounded outage, proves the exact old/new incarnation, and performs deterministic recovery or rollback
   - **And** compatible shells negotiate the versioned protocol; incompatible shells fail visibly without constructing an embedded engine
   - **And** any client recovery/rebind is scoped to the real engine-incarnation change, never a VS Code lifecycle event
-- [ ] **Scenario: shell-only capabilities remain shell-owned**
+- [x] **Scenario: shell-only capabilities remain shell-owned**
   - **Given** an attached shell advertises editor capabilities
   - **When** a user asks to open a diff, settings, walkthrough, editor terminal or other VS Code-only surface
   - **Then** a typed, operation-id-bound shell request performs the presentation action
   - **And** the engine itself imports no `vscode`, editor object or render model
-- [ ] The production extension no longer constructs or disposes `Workspace`; it constructs a versioned
+- [x] The production extension no longer constructs or disposes `Workspace`; it constructs a versioned
   shell client.  A boundary test fails if `extension.ts` regains engine ownership.
-- [ ] `deactivate()`, folder removal, panel disposal and client disconnect contain no engine/Bridge stop
+- [x] `deactivate()`, folder removal, panel disposal and client disconnect contain no engine/Bridge stop
   path.  Only explicit Stop/Restart/Upgrade commands or service crash policy alter engine lifecycle.
-- [ ] The old embedded-engine and persistent-proxy-to-ephemeral-backend production paths are removed
+- [x] The old embedded-engine and persistent-proxy-to-ephemeral-backend production paths are removed
   after cutover; compatibility preserves data/protocols, not two competing lifecycle architectures.
 
 ## Non-goals

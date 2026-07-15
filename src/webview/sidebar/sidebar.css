@@ -72,7 +72,7 @@
     border-bottom-color: color-mix(in srgb, var(--ds-focus) 35%, transparent);
     background: color-mix(in srgb, var(--ds-focus) 4%, transparent);
   }
-  .agent-filter-chip {
+  .agent-filter-control {
     appearance: none;
     border: 1px solid var(--ds-border);
     background: color-mix(in srgb, var(--vscode-foreground) 4%, transparent);
@@ -90,41 +90,41 @@
     line-height: 16px;
     max-width: 100%;
   }
-  .agent-filter-chip:hover:not(:disabled) {
+  .agent-filter-control:hover:not(:disabled) {
     color: var(--vscode-foreground);
     border-color: color-mix(in srgb, var(--vscode-foreground) 35%, transparent);
     background: var(--hover);
   }
-  .agent-filter-chip:focus-visible { outline: 1px solid var(--ds-focus); outline-offset: 1px; }
-  .agent-filter-chip .af-dot {
+  .agent-filter-control:focus-visible { outline: 1px solid var(--ds-focus); outline-offset: 1px; }
+  .agent-filter-control .af-dot {
     width: 7px; height: 7px; border-radius: 50%; flex: none;
     background: var(--idle);
   }
-  .agent-filter-chip.f-live .af-dot { background: var(--ds-ok); }
-  .agent-filter-chip.f-attention .af-dot {
+  .agent-filter-control.f-live .af-dot { background: var(--ds-ok); }
+  .agent-filter-control.f-attention .af-dot {
     background: var(--ds-warn);
     box-shadow: 0 0 4px var(--ds-warn);
   }
-  .agent-filter-chip.f-stopped .af-dot {
+  .agent-filter-control.f-stopped .af-dot {
     background: transparent;
     border: 1px solid var(--idle);
     box-sizing: border-box;
   }
-  .agent-filter-chip .af-n {
+  .agent-filter-control .af-n {
     font-variant-numeric: tabular-nums;
     font-weight: 700;
     opacity: .9;
   }
-  .agent-filter-chip.on {
+  .agent-filter-control.on {
     color: var(--vscode-foreground);
     border-color: var(--ds-focus);
     background: color-mix(in srgb, var(--ds-focus) 16%, transparent);
   }
-  .agent-filter-chip.f-live.on { border-color: color-mix(in srgb, var(--ds-ok) 55%, var(--ds-border)); }
-  .agent-filter-chip.f-attention.on { border-color: color-mix(in srgb, var(--ds-warn) 55%, var(--ds-border)); }
-  .agent-filter-chip.f-stopped.on { border-color: color-mix(in srgb, var(--idle) 70%, var(--ds-border)); }
-  .agent-filter-chip.zero,
-  .agent-filter-chip:disabled {
+  .agent-filter-control.f-live.on { border-color: color-mix(in srgb, var(--ds-ok) 55%, var(--ds-border)); }
+  .agent-filter-control.f-attention.on { border-color: color-mix(in srgb, var(--ds-warn) 55%, var(--ds-border)); }
+  .agent-filter-control.f-stopped.on { border-color: color-mix(in srgb, var(--idle) 70%, var(--ds-border)); }
+  .agent-filter-control.zero,
+  .agent-filter-control:disabled {
     opacity: .4;
     cursor: default;
   }

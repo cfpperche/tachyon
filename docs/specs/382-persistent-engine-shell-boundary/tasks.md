@@ -8,7 +8,7 @@ _Generated from `plan.md` on 2026-07-14. Work top-to-bottom. No automatic integr
   concrete `Workspace`/manager/store objects; add a boundary test for the final forbidden set.
 - [x] Freeze the allowlist of EngineHost state/settings/secrets/media/watch capabilities that the daemon
   must own or import; record migration source, destination and rollback for each key.
-- [ ] Add executable schemas and compatibility rules for bundle manifest, service descriptor, shell
+- [x] Add executable schemas and compatibility rules for bundle manifest, service descriptor, shell
   hello/session, snapshot, event, command and typed error envelopes.
 
 ## Persistent engine
@@ -40,20 +40,20 @@ _Generated from `plan.md` on 2026-07-14. Work top-to-bottom. No automatic integr
 
 - [x] Implement one-time allowlisted migration from VS Code global/secret state with atomic completion
   marker, idempotent replay and rollback proof.
-- [ ] Implement compatible attach, verified bundle upgrade, incompatible refusal, crash restart and
+- [x] Implement compatible attach, verified bundle upgrade, incompatible refusal, crash restart and
   last-known-compatible rollback with exact incarnation audit.
-- [ ] Implement zero-step launcher adapters for every declared supported platform or keep that platform
+- [x] Implement zero-step launcher adapters for every declared supported platform or keep that platform
   explicitly unsupported without falling back to the embedded architecture.
 
 ## Verification
 
-- [ ] Focused protocol/state/service/shell tests force concurrent ensure, duplicate invoke, event gaps,
+- [x] Focused protocol/state/service/shell tests force concurrent ensure, duplicate invoke, event gaps,
   state migration, missing UI, crash, incompatible version and rollback.
 - [ ] A real process test proves repeated shell detach/attach keeps engine/Bridge/agent/Delivery/scheduler
   identities unchanged and emits no lifecycle side effects.
 - [ ] A no-shell interval proves Bridge tools and one scheduled/monitor action remain functional.
-- [ ] Packaging/provenance tests prove the VSIX contains the engine and first use requires no manual step.
-- [ ] `npm run typecheck`, engine-boundary/diff checks and `npm run verify:full:quiet` pass.
+- [x] Packaging/provenance tests prove the VSIX contains the engine and first use requires no manual step.
+- [x] `npm run typecheck`, engine-boundary/diff checks and `npm run verify:full:quiet` pass.
 
 **Verify:** `npm run typecheck && npm run check:engine-boundary && npm run verify:full:quiet`
 

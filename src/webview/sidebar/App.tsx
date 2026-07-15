@@ -1,5 +1,6 @@
 import { createContext } from "preact";
 import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
+import { Button } from "../shared/ui";
 import {
   SAMPLE, TABS, searchIndex,
   type FleetVM, type TabId, type AgentVM, type AgentStatus, type SearchItem,
@@ -945,10 +946,9 @@ export function App({ fleets = [SAMPLE], dispatch, prefs = {}, collapsedKeys = [
             const on = agentFilter === f;
             const zero = f !== "all" && n === 0;
             return (
-              <button
+              <Button
                 key={f}
-                type="button"
-                class={`agent-filter-chip f-${f}${on ? " on" : ""}${zero ? " zero" : ""}`}
+                class={`agent-filter-control f-${f}${on ? " on" : ""}${zero ? " zero" : ""}`}
                 title={AGENT_STATUS_FILTER_TITLE[f]}
                 aria-label={`${AGENT_STATUS_FILTER_LABEL[f]}, ${n} agents`}
                 aria-pressed={on}
@@ -958,7 +958,7 @@ export function App({ fleets = [SAMPLE], dispatch, prefs = {}, collapsedKeys = [
                 <span class="af-dot" aria-hidden="true" />
                 <span class="af-label">{AGENT_STATUS_FILTER_LABEL[f]}</span>
                 <span class="af-n">{n}</span>
-              </button>
+              </Button>
             );
           })}
         </div>
