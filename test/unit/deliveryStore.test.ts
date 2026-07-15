@@ -4,6 +4,8 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
 import {
+  type DeliveryAuthorityHead,
+  type DeliveryAuthorityHeadPort,
   DeliveryInvariantError,
   DeliveryStore,
   DeliveryStoreBusyError,
@@ -14,8 +16,36 @@ import type { Delivery, DeliveryCreateInput } from "../../src/delivery/types.js"
 
 const actor = { kind: "agent" as const, name: "coordinator" };
 const now = "2026-07-10T12:00:00.000Z";
+const AUTHORITY_KEY = Buffer.alloc(32, 0x42);
 
 function root(): string { return fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-delivery-")); }
+
+function authorityHeadHarness(): {
+  port: DeliveryAuthorityHeadPort;
+  heads: Map<string, DeliveryAuthorityHead>;
+  setPrepareHook(hook: ((id: string, next: DeliveryAuthorityHead) => Promise<void>) | undefined): void;
+} {
+  const heads = new Map<string, DeliveryAuthorityHead>();
+  let prepareHook: ((id: string, next: DeliveryAuthorityHead) => Promise<void>) | undefined;
+  return {
+    heads,
+    setPrepareHook(hook) { prepareHook = hook; },
+    port: {
+      async current(id) {
+        const head = heads.get(id);
+        return head ? { ...head } : undefined;
+      },
+      async prepare(id, next, expectedMac) {
+        const current = heads.get(id);
+        if (expectedMac === undefined ? current !== undefined : current?.mac !== expectedMac) {
+          throw new Error("authority head compare-and-swap mismatch");
+        }
+        await prepareHook?.(id, next);
+        heads.set(id, { ...next });
+      },
+    },
+  };
+}
 
 function input(id = "d-test", operationId?: string): DeliveryCreateInput {
   return {
@@ -83,6 +113,235 @@ describe("DeliveryStore SQLite (spec 368)", () => {
       .rejects.toBeInstanceOf(DeliveryInvariantError);
   });
 
+  it("fails closed when a host-authenticated Delivery is edited directly in SQLite", async () => {
+    const workspace = root();
+    const store = new DeliveryStore(workspace, {
+      now: () => now,
+      authorityIntegrityKey: () => AUTHORITY_KEY,
+    });
+    const created = await store.create(input("d-tampered-authority"));
+    const database = new DatabaseSync(store.databasePath);
+    try {
+      const row = database.prepare("SELECT record_json FROM deliveries WHERE id = ?").get(created.id) as
+        | { record_json: string }
+        | undefined;
+      expect(row).toBeDefined();
+      const record = JSON.parse(row!.record_json) as Record<string, unknown>;
+      const contract = record.contract as Record<string, unknown>;
+      contract.behaviorTest = "attacker-controlled verifier";
+      contract.owns = ["."];
+      database.prepare("UPDATE deliveries SET record_json = ? WHERE id = ?").run(JSON.stringify(record), created.id);
+    } finally {
+      database.close();
+    }
+
+    await expect(store.get(created.id)).rejects.toThrow("authority integrity check failed");
+    await expect(store.listWithCorrupt()).resolves.toMatchObject({
+      records: [],
+      corrupt: [expect.objectContaining({ id: created.id, error: expect.stringContaining("authority integrity check failed") })],
+    });
+  });
+
+  it("fails closed when a configured Delivery authority key becomes unavailable", async () => {
+    const workspace = root();
+    let key: Buffer | undefined = AUTHORITY_KEY;
+    const store = new DeliveryStore(workspace, {
+      now: () => now,
+      authorityIntegrityKey: () => key,
+    });
+    const created = await store.create(input("d-missing-authority-key"));
+    key = undefined;
+
+    await expect(store.get(created.id)).rejects.toThrow("authority integrity key is unavailable");
+    await expect(store.update(created.id, created.version, (record) => record))
+      .rejects.toThrow("authority integrity key is unavailable");
+  });
+
+  it("rejects a valid host-authenticated Delivery replayed into another workspace", async () => {
+    const source = new DeliveryStore(root(), {
+      now: () => now,
+      authorityIntegrityKey: () => AUTHORITY_KEY,
+    });
+    const target = new DeliveryStore(root(), {
+      now: () => now,
+      authorityIntegrityKey: () => AUTHORITY_KEY,
+    });
+    const sourceRecord = await source.create(input("d-cross-workspace-replay"));
+    await target.create(input("d-cross-workspace-replay"));
+    const sourceDatabase = new DatabaseSync(source.databasePath);
+    const targetDatabase = new DatabaseSync(target.databasePath);
+    try {
+      const sourceRow = sourceDatabase.prepare("SELECT record_json FROM deliveries WHERE id = ?").get(sourceRecord.id) as
+        | { record_json: string }
+        | undefined;
+      expect(sourceRow).toBeDefined();
+      targetDatabase.prepare("UPDATE deliveries SET record_json = ? WHERE id = ?")
+        .run(sourceRow!.record_json, sourceRecord.id);
+    } finally {
+      sourceDatabase.close();
+      targetDatabase.close();
+    }
+
+    await expect(source.get(sourceRecord.id)).resolves.toMatchObject({ id: sourceRecord.id });
+    await expect(target.get(sourceRecord.id)).rejects.toThrow("authority integrity check failed");
+  });
+
+  it("keeps historical receipts readable only while the current signed row matches its freshness head", async () => {
+    const workspace = root();
+    const authority = authorityHeadHarness();
+    const store = new DeliveryStore(workspace, {
+      now: () => now,
+      authorityIntegrityKey: () => AUTHORITY_KEY,
+      authorityHead: authority.port,
+    });
+    const created = await store.create(input("d-authority-rollback", "op-authority-create"));
+    const database = new DatabaseSync(store.databasePath);
+    let versionOneJson: string;
+    try {
+      const row = database.prepare("SELECT record_json FROM deliveries WHERE id = ?").get(created.id) as
+        | { record_json: string }
+        | undefined;
+      expect(row).toBeDefined();
+      versionOneJson = row!.record_json;
+    } finally {
+      database.close();
+    }
+    const updated = await store.update(created.id, created.version, (record) => {
+      record.events.push({ id: "event-version-two", at: now, type: "advanced", by: actor });
+      return record;
+    });
+    expect(authority.heads.get(created.id)).toMatchObject({ revision: updated.version });
+    await expect(store.getOperationResult("op-authority-create", "create", created.id))
+      .resolves.toEqual(created);
+
+    const attacker = new DatabaseSync(store.databasePath);
+    try {
+      attacker.prepare("UPDATE deliveries SET record_json = ? WHERE id = ?").run(versionOneJson, created.id);
+    } finally {
+      attacker.close();
+    }
+
+    await expect(store.get(created.id)).rejects.toThrow("authority head mismatch");
+    await expect(store.getOperationResult("op-authority-create", "create", created.id))
+      .rejects.toThrow("authority head mismatch");
+  });
+
+  it("rejects a valid signed payload stored under a different SQLite row id", async () => {
+    const store = new DeliveryStore(root(), {
+      now: () => now,
+      authorityIntegrityKey: () => AUTHORITY_KEY,
+    });
+    const expected = await store.create(input("d-row-identity", "op-row-identity"));
+    const alias = await store.create(input("d-payload-identity"));
+    const database = new DatabaseSync(store.databasePath);
+    try {
+      const aliasRow = database.prepare("SELECT record_json FROM deliveries WHERE id = ?").get(alias.id) as
+        | { record_json: string }
+        | undefined;
+      database.prepare("UPDATE deliveries SET record_json = ? WHERE id = ?")
+        .run(aliasRow!.record_json, expected.id);
+      database.prepare("UPDATE delivery_operation_receipts SET result_json = ? WHERE operation_id = ?")
+        .run(aliasRow!.record_json, "op-row-identity");
+    } finally {
+      database.close();
+    }
+
+    await expect(store.get(expected.id)).rejects.toThrow(
+      "row identity 'd-row-identity' does not match payload identity 'd-payload-identity'",
+    );
+    await expect(store.getOperationResult("op-row-identity", "create", expected.id)).rejects.toThrow(
+      "row identity 'd-row-identity' does not match payload identity 'd-payload-identity'",
+    );
+  });
+
+  it("rolls SQLite back when authority head prepare fails", async () => {
+    const authority = authorityHeadHarness();
+    const store = new DeliveryStore(root(), {
+      now: () => now,
+      authorityIntegrityKey: () => AUTHORITY_KEY,
+      authorityHead: authority.port,
+    });
+    const created = await store.create(input("d-prepare-failure"));
+    authority.setPrepareHook(async () => { throw new Error("host head unavailable"); });
+
+    await expect(store.update(created.id, created.version, (record) => {
+      record.events.push({ id: "event-must-not-commit", at: now, type: "rejected", by: actor });
+      return record;
+    })).rejects.toThrow("host head unavailable");
+
+    authority.setPrepareHook(undefined);
+    await expect(store.get(created.id)).resolves.toEqual(created);
+    const database = new DatabaseSync(store.databasePath);
+    try {
+      const row = database.prepare("SELECT record_json FROM deliveries WHERE id = ?").get(created.id) as
+        | { record_json: string }
+        | undefined;
+      expect(JSON.parse(row!.record_json)).toMatchObject({ version: 1, events: [{ id: "event-0" }] });
+    } finally {
+      database.close();
+    }
+  });
+
+  it("prepares the external head before INSERT and UPDATE while BEGIN IMMEDIATE remains held", async () => {
+    const workspace = root();
+    const authority = authorityHeadHarness();
+    let store: DeliveryStore;
+    const observations: Array<{ revision: number; sqlRevision: number | undefined; writerBlocked: boolean }> = [];
+    authority.setPrepareHook(async (id, next) => {
+      const observer = new DatabaseSync(store.databasePath, { timeout: 0 });
+      try {
+        const row = observer.prepare("SELECT record_json FROM deliveries WHERE id = ?").get(id) as
+          | { record_json: string }
+          | undefined;
+        let writerBlocked = false;
+        try {
+          observer.exec("BEGIN IMMEDIATE; ROLLBACK");
+        } catch (error) {
+          writerBlocked = error instanceof Error && /busy|locked/i.test(error.message);
+        }
+        observations.push({
+          revision: next.revision,
+          sqlRevision: row ? Number((JSON.parse(row.record_json) as { version: number }).version) : undefined,
+          writerBlocked,
+        });
+      } finally {
+        observer.close();
+      }
+    });
+    store = new DeliveryStore(workspace, {
+      now: () => now,
+      authorityIntegrityKey: () => AUTHORITY_KEY,
+      authorityHead: authority.port,
+    });
+
+    const created = await store.create(input("d-prepare-order"));
+    await store.update(created.id, created.version, (record) => {
+      record.events.push({ id: "event-prepare-order", at: now, type: "advanced", by: actor });
+      return record;
+    });
+
+    expect(observations).toEqual([
+      { revision: 1, sqlRevision: undefined, writerBlocked: true },
+      { revision: 2, sqlRevision: 1, writerBlocked: true },
+    ]);
+  });
+
+  it("refuses automatic legacy JSON migration when an external authority head is configured", async () => {
+    const workspace = root();
+    const legacyDir = path.join(workspace, ".tachyon", "deliveries");
+    fs.mkdirSync(legacyDir, { recursive: true });
+    fs.writeFileSync(path.join(legacyDir, "d-legacy.json"), JSON.stringify({}), "utf8");
+    const authority = authorityHeadHarness();
+    const store = new DeliveryStore(workspace, {
+      now: () => now,
+      authorityIntegrityKey: () => AUTHORITY_KEY,
+      authorityHead: authority.port,
+    });
+
+    await expect(store.list()).rejects.toThrow("automatic legacy Delivery migration is refused");
+    expect(fs.existsSync(path.join(workspace, ".tachyon", "deliveries.migrated-v1"))).toBe(false);
+  });
+
   it("atomically closes the tail and appends one unique segment while events stay append-only", async () => {
     const store = new DeliveryStore(root(), { now: () => now });
     const created = await store.create(input());
@@ -136,6 +395,34 @@ describe("DeliveryStore SQLite (spec 368)", () => {
     const generatedFirst = await generated.create({ ...input(undefined, "op-generated"), id: undefined });
     const generatedReplay = await generated.create({ ...input(undefined, "op-generated"), id: undefined });
     expect(generatedReplay.id).toBe(generatedFirst.id);
+  });
+
+  it("refuses a direct update replay once its authenticated receipt is historical", async () => {
+    const store = new DeliveryStore(root(), { now: () => now });
+    await store.create(input("d-historical-update"));
+    const intent = { eventId: "event-authority-grant" };
+    const committed = await store.update("d-historical-update", 1, (record) => {
+      record.events.push({ id: "event-authority-grant", at: now, type: "authority_granted", by: actor });
+      return record;
+    }, { operationId: "op-authority-grant", intent });
+
+    await expect(store.update("d-historical-update", 1, (record) => record, {
+      operationId: "op-authority-grant", intent,
+    })).resolves.toEqual(committed);
+
+    await store.update("d-historical-update", committed.version, (record) => {
+      record.events.push({ id: "event-authority-revoked", at: now, type: "authority_revoked", by: actor });
+      return record;
+    });
+    let replayEffects = 0;
+    await expect(store.update("d-historical-update", 1, (record) => {
+      replayEffects += 1;
+      return record;
+    }, { operationId: "op-authority-grant", intent })).rejects.toThrow("historical receipt");
+
+    expect(replayEffects).toBe(0);
+    await expect(store.getOperationResult("op-authority-grant", "update", "d-historical-update"))
+      .resolves.toEqual(committed);
   });
 
   it("returns a structured retryable refusal under independent-store contention", async () => {

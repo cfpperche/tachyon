@@ -74,21 +74,22 @@ implementation until its ADR is accepted._
 
 ## T5 — verification and dogfood
 
-- [ ] Run focused unit tests for contracts, hostile validation, scheduling, stale/last-good behavior, attribution
+- [x] Run focused unit tests for contracts, hostile validation, scheduling, stale/last-good behavior, attribution
   separation, collector disablement, and projection.
-- [ ] Run browser tests and capture wide/narrow Runtime Ops evidence for mixed native/quota and degraded states.
-- [ ] Dogfood Codex and Claude independently against the selected source, compare resets/percentages/freshness, cancel
-  an in-flight collector, remove/expire access, and confirm graceful native-only degradation.
-- [ ] Run the full Tachyon verification gate and native provider-adapter gates.
-- [ ] Record reference/collector versions, screenshots, commands, and verdict in `notes.md` before closure.
+- [x] Run browser tests and inspect wide/narrow Runtime Ops rendering for mixed native/quota and degraded states.
+- [x] Obtain maintainer acceptance of live Codex and Claude dev-host dogfood, including quota/reset/freshness projection
+  and graceful native-only degradation; on 2026-07-15 the maintainer accepted the live EDH evidence as sufficient and
+  waived additional manual interaction captures.
+- [x] Run the full Tachyon verification gate and native provider-adapter gates.
+- [x] Record reference/collector versions, screenshots, commands, and verdict in `notes.md` before closure.
 
 ## Verification
 
-- [ ] Every acceptance criterion in `spec.md` has focused evidence.
+- [x] Every acceptance criterion in `spec.md` has focused evidence.
 - [x] The T0 ADR and cost-boundary decision are ratified before T1–T4 implementation begins.
-- [ ] Security fixtures prove the webview projection contains no credential, account identity, absolute path, raw
+- [x] Security fixtures prove the webview projection contains no credential, account identity, absolute path, raw
   provider response, terminal line, or unbounded vendor text.
-- [ ] Dev-host dogfood proves Runtime Ops remains Tachyon-owned and usable when provider collection fails.
+- [x] Dev-host dogfood proves Runtime Ops remains Tachyon-owned and usable when provider collection fails.
 
 **Verify:** `npm run verify:full:quiet`
 
@@ -96,12 +97,25 @@ implementation until its ADR is accepted._
 
 **Dogfood:** `npm run dogfood:runtime-observability`
 
-**Human dogfood:** Launch Tachyon in a VS Code Extension Development Host and open Runtime Ops with Codex and Claude
-observations enabled; compare each quota window and reset with its provider source, inspect native token separation,
-then disable/remove the collector and confirm the panel degrades to honest native-only data. Do not package or install
-a VSIX for this dogfood lane.
+**Human dogfood:** From the monorepo window select **Tachyon: Dev Host** and press **F5**. The prepared pointer opens
+`test/fixtures/runtimeops-observability-dogfood`; do not package or install a VSIX. In the EDH window only:
+
+1. Run **Tachyon: Open Runtime Ops**. F5 may retain prior Extension Host `globalState`; if either source is enabled,
+   disable it first. Establish the baseline with both rows at `Observation disabled` and native runtimes separate.
+2. Enable the Codex CLI source, refresh once, and record every visible window, used percentage, reset, source,
+   confidence, observed time and freshness. If unavailable, record the typed reason without attempting credential reads.
+3. Refresh and immediately disable Codex once to exercise cancellation/revocation; confirm no late result restores the
+   provider lane and native runtime inventory remains present. Re-enable only if another observation is needed.
+4. Enable the Claude CLI source before manually starting the fixture's `claude-observer`. Do not send an inference
+   prompt merely to obtain quota; wait for passive status-line telemetry, refresh, and record the same bounded fields.
+5. Stop `claude-observer`, disable both sources, and confirm account quota degrades honestly while native rows remain.
+6. Resize Runtime Ops to a wide bottom panel and a narrow panel/sidebar width. Capture healthy plus one degraded state;
+   verify no clipping, horizontal page scroll, identity/path/raw-response text, false agent attribution or CodexBar UI.
+7. Close the EDH window and report pass/fail plus screenshots to the coordinator. Leave T5 checkboxes open until that
+   live verdict is recorded.
 
 ## Visual QA
 
-- [ ] Evidence: wide bottom-panel and narrow sidebar screenshots for mixed, stale, exhausted, and unavailable states.
-- [ ] Verdict: no clipping, horizontal page scroll, source ambiguity, false attribution, or CodexBar visual reuse.
+- [x] Evidence: maintainer-provided wide live EDH capture plus deterministic wide/narrow browser coverage for mixed,
+  stale, exhausted and unavailable states; additional manual captures were explicitly waived on 2026-07-15.
+- [x] Verdict: no clipping, horizontal page scroll, source ambiguity, false attribution, or CodexBar visual reuse.

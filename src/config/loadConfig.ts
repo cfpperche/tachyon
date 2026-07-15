@@ -12,6 +12,13 @@ import { openingPromptCapability, resolveBinary } from "../agents/openingPromptC
 import { AGENT_NAME_PATTERN, asciiFoldAgentName } from "./nameValidation.js";
 import { runtimePromptAdapter } from "../agents/runtimePromptAdapters.js";
 export { openingPromptCapability, resolveBinary } from "../agents/openingPromptCapability.js";
+import {
+  behaviorStubPathError,
+  behaviorStubPathTemplateError,
+  type BehaviorVerificationSettings,
+} from "./behaviorVerification.js";
+import { parseArgvCommand } from "./argvCommand.js";
+import { containsUnsafeFramingCharacter } from "./framingSafety.js";
 
 export interface AttentionDef {
   enabled: boolean;
@@ -327,8 +334,17 @@ export interface TachyonConfig {
     tmux?: Record<string, string>;
     /** spec 210 — global worktree location root + branch-name template ({agent} placeholder); spec 214 — global default verify-gate */
     worktree?: { base?: string; branch?: string; verify?: string };
-    /** spec 362 — workspace verification commands for verify_task's tiered test execution. */
-    verify?: { full?: string; typecheck?: string };
+    /** spec 362/385 — project-owned commands and named-behavior adapter for verify_task. */
+    verify?: {
+      full?: string;
+      typecheck?: string;
+      /** Optional argv command that materializes dependencies independently in every BASE/HEAD clone. */
+      prepare?: string;
+      /** Argv prefix; existing changed paths are appended as option-safe relative args. Omitted means no affected-test tier. */
+      affected?: string;
+      /** Opt-in adapter for plain behavior identifiers. `cmd:` verifiers do not use this. */
+      behavior?: BehaviorVerificationSettings;
+    };
     /** spec 383 — explicit project-owned onboarding documents, transported verbatim by Tachyon. */
     projectGuidance?: ProjectGuidanceSettings;
     /** spec 216 — auto re-anchor an agent's role after a detected compaction (OFF by default; risky live injection) */
@@ -866,6 +882,21 @@ function buildDeclaredOwner(
 }
 
 /** Validates the parsed YAML by hand — keeps the extension dependency-light; the JSON Schema covers editor-time validation. */
+function normalizedArgvCommand(value: unknown, field: string, errors: string[]): string | undefined {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    errors.push(`${field}: must be a non-empty argv command string`);
+    return undefined;
+  }
+  const normalized = value.trim();
+  try {
+    parseArgvCommand(normalized);
+  } catch (error) {
+    errors.push(`${field}: invalid argv command (${error instanceof Error ? error.message : String(error)})`);
+    return undefined;
+  }
+  return normalized;
+}
+
 export function parseConfig(yamlText: string): ParseResult {
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -1180,26 +1211,91 @@ export function parseConfig(yamlText: string): ParseResult {
       }
       if (raw.settings.verify !== undefined) {
         if (!isPlainObject(raw.settings.verify)) {
-          errors.push("settings.verify: must be a mapping with 'full' and/or 'typecheck'");
+          errors.push("settings.verify: must be a mapping with project-owned verification commands");
         } else {
           const vf = raw.settings.verify;
-          const out: { full?: string; typecheck?: string } = {};
+          const out: NonNullable<TachyonConfig["settings"]["verify"]> = {};
           if (vf.full !== undefined) {
-            if (typeof vf.full !== "string" || vf.full.trim().length === 0) {
-              errors.push("settings.verify.full: must be a non-empty command string");
-            } else {
-              out.full = vf.full.trim();
-            }
+            const command = normalizedArgvCommand(vf.full, "settings.verify.full", errors);
+            if (command) out.full = command;
           }
           if (vf.typecheck !== undefined) {
-            if (typeof vf.typecheck !== "string" || vf.typecheck.trim().length === 0) {
-              errors.push("settings.verify.typecheck: must be a non-empty command string");
+            const command = normalizedArgvCommand(vf.typecheck, "settings.verify.typecheck", errors);
+            if (command) out.typecheck = command;
+          }
+          if (vf.prepare !== undefined) {
+            const command = normalizedArgvCommand(vf.prepare, "settings.verify.prepare", errors);
+            if (command) out.prepare = command;
+          }
+          if (vf.affected !== undefined) {
+            const command = normalizedArgvCommand(vf.affected, "settings.verify.affected", errors);
+            if (command) out.affected = command;
+          }
+          if (vf.behavior !== undefined) {
+            if (!isPlainObject(vf.behavior)) {
+              errors.push("settings.verify.behavior: must be a mapping with adapter, command, stubPath, and executorPaths");
             } else {
-              out.typecheck = vf.typecheck.trim();
+              const behavior = vf.behavior;
+              const errorCountBefore = errors.length;
+              for (const key of Object.keys(behavior)) {
+                if (!["adapter", "command", "stubPath", "executorPaths"].includes(key)) {
+                  errors.push(`settings.verify.behavior: unknown key '${key}'`);
+                }
+              }
+              if (behavior.adapter !== "vitest-name") {
+                errors.push("settings.verify.behavior.adapter: must be 'vitest-name'");
+              }
+              const behaviorCommand = normalizedArgvCommand(
+                behavior.command,
+                "settings.verify.behavior.command",
+                errors,
+              );
+              if (typeof behavior.stubPath !== "string") {
+                errors.push("settings.verify.behavior.stubPath: must be a workspace-relative template containing {agent}");
+              } else {
+                const pathError = behaviorStubPathTemplateError(behavior.stubPath);
+                if (pathError) errors.push(`settings.verify.behavior.stubPath: ${pathError}`);
+              }
+              const executorPaths: string[] = [];
+              if (!Array.isArray(behavior.executorPaths) || behavior.executorPaths.length === 0) {
+                errors.push("settings.verify.behavior.executorPaths: must be a non-empty list of tracked workspace-relative paths");
+              } else {
+                const seen = new Set<string>();
+                for (const [index, candidate] of behavior.executorPaths.entries()) {
+                  if (typeof candidate !== "string") {
+                    errors.push(`settings.verify.behavior.executorPaths[${index}]: must be a workspace-relative path string`);
+                    continue;
+                  }
+                  const pathError = behaviorStubPathError(candidate);
+                  if (pathError) {
+                    errors.push(`settings.verify.behavior.executorPaths[${index}]: ${pathError}`);
+                    continue;
+                  }
+                  if (seen.has(candidate)) {
+                    errors.push(`settings.verify.behavior.executorPaths[${index}]: duplicate path '${candidate}'`);
+                    continue;
+                  }
+                  seen.add(candidate);
+                  executorPaths.push(candidate);
+                }
+              }
+              if (errors.length === errorCountBefore) {
+                out.behavior = {
+                  adapter: "vitest-name",
+                  command: behaviorCommand!,
+                  stubPath: behavior.stubPath as string,
+                  executorPaths,
+                };
+              }
+              if (!out.prepare) {
+                errors.push("settings.verify.behavior requires settings.verify.prepare to provision independent BASE/HEAD verifier environments");
+              }
             }
           }
           for (const key of Object.keys(vf)) {
-            if (!["full", "typecheck"].includes(key)) errors.push(`settings.verify: unknown key '${key}'`);
+            if (!["full", "typecheck", "prepare", "affected", "behavior"].includes(key)) {
+              errors.push(`settings.verify: unknown key '${key}'`);
+            }
           }
           settings.verify = out;
         }
@@ -1228,7 +1324,7 @@ export function parseConfig(yamlText: string): ParseResult {
                 errors.push(`settings.projectGuidance.files[${index}]: must be a path string`);
                 continue;
               }
-              if (/[\u0000-\u001f\u007f-\u009f]/u.test(rawPath)) {
+              if (containsUnsafeFramingCharacter(rawPath)) {
                 errors.push(`settings.projectGuidance.files[${index}]: must not contain control characters`);
                 continue;
               }

@@ -1,5 +1,6 @@
 import type { PipelineDef } from "./loadPipeline.js";
 import type { UpstreamHandoff } from "./nodePrompt.js";
+import type { WorktreeRecord } from "../worktree/WorktreeManager.js";
 
 /**
  * spec 230 — pure pipeline-run state machine. Immutable transitions (each returns a NEW run); the
@@ -19,6 +20,10 @@ export interface PipelineRun {
   id: string;
   pipeline: PipelineDef;
   worktreeKey: string;
+  /** Durable recovery handle for crashes before the first node owns a session ledger row. */
+  worktree?: WorktreeRecord;
+  /** False while the allocation's Git quarantine receipt has not been durably finalized. */
+  worktreeReady: boolean;
   nodes: Record<string, NodeState>;
   /** spec 231 — the run input snapshot (the issue), read once at start; ledger-canonical at runtime. */
   input?: string;
@@ -26,10 +31,26 @@ export interface PipelineRun {
   summaries: UpstreamHandoff[];
 }
 
-export function initRun(id: string, pipeline: PipelineDef, worktreeKey: string, input?: string): PipelineRun {
+export function initRun(
+  id: string,
+  pipeline: PipelineDef,
+  worktreeKey: string,
+  input?: string,
+  worktree?: WorktreeRecord,
+  worktreeReady = true,
+): PipelineRun {
   const nodes: Record<string, NodeState> = {};
   for (const nid of Object.keys(pipeline.nodes)) nodes[nid] = { status: "pending" };
-  return { id, pipeline, worktreeKey, nodes, ...(input !== undefined ? { input } : {}), summaries: [] };
+  return {
+    id,
+    pipeline,
+    worktreeKey,
+    ...(worktree ? { worktree } : {}),
+    worktreeReady,
+    nodes,
+    ...(input !== undefined ? { input } : {}),
+    summaries: [],
+  };
 }
 
 /**

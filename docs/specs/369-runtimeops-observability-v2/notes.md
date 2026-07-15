@@ -255,3 +255,37 @@ _Historical pre-ratification questions are retained below; their resolutions fol
 
 - Maintainer direction: exercise Runtime Ops through a VS Code Extension Development Host. Do not package, release or
   install a VSIX for SDD 369 dogfood; retain preview/browser evidence and collect the live provider verdict in dev-host.
+
+### 2026-07-15 — T5 dev-host handoff prepared, not executed
+
+- The existing portable `Tachyon: Dev Host` profile remains the single F5 entrypoint. A dedicated inert fixture now
+  declares non-autostart Codex and Claude observer agents, and the human checklist fixes consent/order, cancellation,
+  passive Claude capture, native-only degradation, wide/narrow evidence and redaction checks.
+- Preparation deliberately does not launch VS Code, open an Extension Development Host, enable a provider, start an
+  observer, run the SDD dogfood command, install dependencies or package/install a VSIX. The machine-local pointer is
+  armed only after the review commit and recorded in task `t-1a8ae3`; all T5/live evidence boxes remain open.
+
+### 2026-07-15 — T5 live dev-host verdict
+
+- Evidence: maintainer-provided live capture at
+  `/mnt/c/Users/cfpp/Pictures/Screenshots/Screenshot 2026-07-15 103538.png`, opened in the prepared
+  `[Extension Development Host]` fixture without packaging or installing a VSIX.
+- The capture shows two managed and active observer agents, zero throttled runtimes, zero Bridge issues, Codex weekly
+  usage at 51% (matching the Codex terminal's 49% remaining), and Claude session/weekly usage at 17%/16%. Both provider
+  lanes disclose CLI source, exact confidence, fresh state, observation time and reset time while the native runtime
+  inventory remains a separate table.
+- Visual verdict: the live wide bottom-panel view has no visible clipping, horizontal page scroll, account identity,
+  absolute path, raw response, false agent attribution or CodexBar visual reuse. Deterministic browser coverage already
+  exercises the mixed and degraded fixtures at 1100x760 and 340x900.
+- Maintainer verdict: **PASS**. On 2026-07-15 the maintainer declared the dogfood proven by the live image and explicitly
+  accepted it as sufficient closure evidence; no additional manual disable/cancellation or narrow capture is required.
+- Final review-candidate gate: `npm run verify:full:quiet` passed with 351 files, 4,233 tests passed and 3 skipped.
+
+### 2026-07-15 — post-v1 product direction
+
+- Informed consent in Tachyon's onboarding/terms authorizes the collection Runtime Ops needs. Security remains a data
+  confinement, redaction, integrity and transparency requirement; it must not be used to remove useful observability
+  fields or sources from product scope.
+- Provider breadth is intentionally limited to Codex, Claude and Grok for the next slices. Optimize depth and
+  reliability for those three rather than matching CodexBar's provider catalog. The quota-only V1 is a foundation;
+  cost/token history, richer windows, accounts, pace and forecasting are follow-up work.

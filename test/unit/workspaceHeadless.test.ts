@@ -3,6 +3,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
+import { createHash } from "node:crypto";
+import { DatabaseSync } from "node:sqlite";
 import { Workspace } from "../../src/workspace/Workspace.js";
 import { ResumeUnavailableError } from "../../src/agents/AgentManager.js";
 import type { EngineHost, NoticeAction, ViewKind, WatchEvents } from "../../src/workspace/EngineHost.js";
@@ -14,13 +16,20 @@ import { agentLogId } from "../../src/activity/logStore.js";
 import { readSessionOwners, sessionOwnersFile, spawnSettingsPath } from "../../src/activity/sessionOwners.js";
 import { ReloadTransactionStore } from "../../src/host-action/index.js";
 import { __createdTerminals, __resetVscodeMock } from "../mocks/vscode.js";
-import { readDelegationRecord } from "../../src/bridge/delegationRecord.js";
+import {
+  appendFixerAttemptAsync,
+  delegationRecordFromSpawn,
+  readDelegationRecord,
+  writeDelegationRecordAsync,
+} from "../../src/bridge/delegationRecord.js";
+import type { AuthorityHeadPort } from "../../src/delivery/authorityIntegrity.js";
 import { canonicalBehaviorStubPath } from "../../src/bridge/behaviorStub.js";
 import { realConfigHome } from "../../src/harness/HarnessManager.js";
 import { briefFilePath } from "../../src/agents/briefFile.js";
 import { blankAgentFields } from "../../src/webview/agent-studio-shell/domain.js";
 import type { FormState } from "../../src/webview/formLogic.js";
 import { agentSoulPath } from "../../src/agents/soul.js";
+import { loadOrCreateHmacKey } from "../../src/bridge/callerIdentity.js";
 
 /**
  * spec 235 — the headless Workspace smoke test (the deferred spec-233 payoff): drive the orchestrator with
@@ -78,6 +87,19 @@ class FakeHost implements EngineHost {
   }
   onViewsChanged(_view: ViewKind): void {}
   constructor(private readonly storageDir: string, private readonly settings: Record<string, unknown> = {}) {}
+}
+
+class SharedSecretHost extends FakeHost {
+  constructor(storageDir: string, private readonly backend: Map<string, string>) {
+    super(storageDir);
+  }
+  override getSecret(key: string): Promise<string | undefined> {
+    return Promise.resolve(this.backend.get(key));
+  }
+  override setSecret(key: string, value: string): Promise<void> {
+    this.backend.set(key, value);
+    return Promise.resolve();
+  }
 }
 
 /** fake-exec tmux: a real TmuxService whose command channel is a fake (same pattern as the manager suites). */
@@ -233,6 +255,31 @@ function latestDelegationRecord(root: string, agent: string) {
   const dir = path.join(root, ".tachyon", "delegations");
   const files = fs.readdirSync(dir).filter((f) => f.startsWith(`${agent}-`)).sort();
   return readDelegationRecord(path.join(dir, files.at(-1)!));
+}
+
+const DEFAULT_BEHAVIOR_STUB_TEMPLATE = "test/unit/{agent}Behavior.gen.test.ts";
+
+function namedBehaviorSettings(stubPath = DEFAULT_BEHAVIOR_STUB_TEMPLATE) {
+  return {
+    adapter: "vitest-name" as const,
+    command: "npm test --",
+    stubPath,
+    executorPaths: ["README.md"],
+  };
+}
+
+function namedBehaviorVerifyYaml(stubPath = DEFAULT_BEHAVIOR_STUB_TEMPLATE): string {
+  const settings = namedBehaviorSettings(stubPath);
+  return [
+    "  verify:",
+    "    prepare: node -e \"\"",
+    "    behavior:",
+    `      adapter: ${settings.adapter}`,
+    `      command: ${JSON.stringify(settings.command)}`,
+    `      stubPath: ${JSON.stringify(settings.stubPath)}`,
+    `      executorPaths: ${JSON.stringify(settings.executorPaths)}`,
+    "",
+  ].join("\n");
 }
 
 describe("Workspace — headless composition smoke (spec 235)", () => {
@@ -430,18 +477,29 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
 
   it("mechanism-only canonical Delivery reuses one worktree through review completion", async () => {
     const root = mkdir(); const base = path.join(root, ".tachyon-worktrees");
-    fs.writeFileSync(path.join(root, "tachyon.yml"), `settings:\n  worktree:\n    base: ${JSON.stringify(base)}\n  delivery:\n    mode: canonical\n    handoffSafety: mechanism-only\nagents:\n  boss:\n    cmd: sh\n`, "utf8");
+    fs.writeFileSync(path.join(root, "tachyon.yml"), `settings:\n${namedBehaviorVerifyYaml()}  worktree:\n    base: ${JSON.stringify(base)}\n  delivery:\n    mode: canonical\n    handoffSafety: mechanism-only\nagents:\n  boss:\n    cmd: sh\n`, "utf8");
     git(root, ["init"]); git(root, ["config", "user.email", "test@example.com"]); git(root, ["config", "user.name", "Test User"]);
     fs.writeFileSync(path.join(root, "README.md"), "base\n"); git(root, ["add", "README.md"]); git(root, ["commit", "-m", "base"]);
     const host = new FakeHost(mkdir()); const fake = fakeTmux({ realPaneProcesses: true });
     const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux: fake.tmux, startBridge: false });
     const contract = { task: "implement", context: "real lifecycle", constraints: "scoped", doneWhen: "complete" };
     try {
-      await ws.manager.spawn("implementer", { cmd: "claude", delegator: "boss", contract, gate: { behaviorTest: "mechanism-only canonical Delivery reuses one worktree through review completion", owns: ["src"] }, reveal: false });
+      await ws.manager.spawn("implementer", { cmd: "claude", delegator: "boss", contract, gate: { behaviorTest: "cmd:node scripts/check-behavior.mjs", owns: ["src"] }, reveal: false });
       const initial = (await ws.deliveries.list())[0]!; const canonical = fs.realpathSync(ws.ledger.get("implementer")!.worktree!.path);
       expect(initial.lease.holder).toMatchObject({ executionAgent: "implementer", principal: "implementer" });
       expect(initial.segments[0]).toMatchObject({ executionAgent: "implementer", principal: "implementer" });
       expect(initial.lease.holder?.process?.pid).toBeGreaterThan(0); expect(initial.lease.holder?.executionNonce).toBeTruthy();
+      expect(ws.ledger.get("implementer")?.delivery).toEqual({
+        deliveryId: initial.id,
+        segmentId: initial.lease.holder!.segmentId,
+        executionNonce: initial.lease.holder!.executionNonce,
+      });
+      const initialHeads = JSON.parse(await host.getSecret(`tachyon.authorityHeads.v1.${workspaceHash(root)}`) ?? "{}") as Record<string, unknown>;
+      expect(initialHeads[`canonical:${initial.id}`]).toEqual({
+        revision: initial.version,
+        mac: initial.authorityIntegrity?.mac,
+      });
+      await expect(ws.manager.restart("implementer")).rejects.toThrow(/Delivery/);
       const head = git(canonical, ["rev-parse", "HEAD"]);
       const join = async (name: string, role: "reviewer" | "fixer", operation: string) => ws.manager.spawn(name, { cmd: "claude", reveal: false, deliveryJoin: { deliveryId: initial.id, role, ownsSubset: role === "reviewer" ? [] : ["src"], expectedHead: head, operationId: operation } });
       await join("reviewer-1", "reviewer", "review-1");
@@ -452,6 +510,11 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
       await ws.deliveryLease.completeReview({ deliveryId: initial.id, canonicalWorktree: canonical, expectedReviewedHeadSha: head, verdict: "ACCEPT", actor: { kind: "agent", name: "boss" }, operationId: "accept" });
       const final = await ws.deliveries.get(initial.id);
       expect(final?.lease.state).toBe("free"); expect(final?.segments.map((s) => s.role)).toEqual(["implementer", "reviewer", "fixer", "reviewer"]);
+      const finalHeads = JSON.parse(await host.getSecret(`tachyon.authorityHeads.v1.${workspaceHash(root)}`) ?? "{}") as Record<string, unknown>;
+      expect(finalHeads[`canonical:${initial.id}`]).toEqual({
+        revision: final?.version,
+        mac: final?.authorityIntegrity?.mac,
+      });
       expect((await ws.gitDeliveries.list()).filter((g) => g.deliveryId === initial.id)).toHaveLength(1);
       expect(fs.readdirSync(base).filter((x) => fs.statSync(path.join(base, x)).isDirectory())).toHaveLength(1);
     } finally { await fake.cleanup(); ws.dispose(); }
@@ -461,13 +524,13 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     // Dogfood 0.55.94: R1 exits cleanly first; delivery_join must accept already-gone exact
     // process identity without invoking the live-pane stopper (which needs pane/ledger liveness).
     const root = mkdir(); const base = path.join(root, ".tachyon-worktrees");
-    fs.writeFileSync(path.join(root, "tachyon.yml"), `settings:\n  worktree:\n    base: ${JSON.stringify(base)}\n  delivery:\n    mode: canonical\n    handoffSafety: mechanism-only\nagents:\n  boss:\n    cmd: sh\n`, "utf8");
+    fs.writeFileSync(path.join(root, "tachyon.yml"), `settings:\n${namedBehaviorVerifyYaml()}  worktree:\n    base: ${JSON.stringify(base)}\n  delivery:\n    mode: canonical\n    handoffSafety: mechanism-only\nagents:\n  boss:\n    cmd: sh\n`, "utf8");
     git(root, ["init"]); git(root, ["config", "user.email", "test@example.com"]); git(root, ["config", "user.name", "Test User"]);
     fs.writeFileSync(path.join(root, "README.md"), "base\n"); git(root, ["add", "README.md"]); git(root, ["commit", "-m", "base"]);
     const host = new FakeHost(mkdir()); const fake = fakeTmux({ realPaneProcesses: true });
     const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux: fake.tmux, startBridge: false });
     try {
-      await ws.manager.spawn("implementer", { cmd: "claude", delegator: "boss", contract: { task: "implement", context: "clean exit then join", constraints: "scoped", doneWhen: "complete" }, gate: { behaviorTest: "mechanism-only successor join reuses the worktree after a cleanly ended predecessor without exact stop", owns: ["src"] }, reveal: false });
+      await ws.manager.spawn("implementer", { cmd: "claude", delegator: "boss", contract: { task: "implement", context: "clean exit then join", constraints: "scoped", doneWhen: "complete" }, gate: { behaviorTest: "cmd:node scripts/check-behavior.mjs", owns: ["src"] }, reveal: false });
       const initial = (await ws.deliveries.list())[0]!;
       const canonical = fs.realpathSync(ws.ledger.get("implementer")!.worktree!.path);
       const holderBefore = structuredClone((await ws.deliveries.get(initial.id))!.lease.holder!);
@@ -492,17 +555,218 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
 
   it("quarantines a replacement pane PID without touching the replacement session", async () => {
     const root = mkdir(); const base = path.join(root, ".tachyon-worktrees");
-    fs.writeFileSync(path.join(root, "tachyon.yml"), `settings:\n  worktree:\n    base: ${JSON.stringify(base)}\n  delivery:\n    mode: canonical\n    handoffSafety: mechanism-only\nagents:\n  boss:\n    cmd: sh\n`, "utf8");
+    fs.writeFileSync(path.join(root, "tachyon.yml"), `settings:\n${namedBehaviorVerifyYaml()}  worktree:\n    base: ${JSON.stringify(base)}\n  delivery:\n    mode: canonical\n    handoffSafety: mechanism-only\nagents:\n  boss:\n    cmd: sh\n`, "utf8");
     git(root, ["init"]); git(root, ["config", "user.email", "test@example.com"]); git(root, ["config", "user.name", "Test User"]); fs.writeFileSync(path.join(root, "README.md"), "base\n"); git(root, ["add", "README.md"]); git(root, ["commit", "-m", "base"]);
     const fake = fakeTmux({ realPaneProcesses: true }); const ws = await Workspace.createForTest(root, { host: new FakeHost(mkdir()), onViewsChanged: () => {} }, { tmux: fake.tmux, startBridge: false }); let original: ChildProcess | undefined;
     try {
-      await ws.manager.spawn("implementer", { cmd: "claude", delegator: "boss", contract: { task: "implement", context: "replacement", constraints: "scoped", doneWhen: "complete" }, gate: { behaviorTest: "replacement PID is refused", owns: ["src"] }, reveal: false });
+      await ws.manager.spawn("implementer", { cmd: "claude", delegator: "boss", contract: { task: "implement", context: "replacement", constraints: "scoped", doneWhen: "complete" }, gate: { behaviorTest: "cmd:node scripts/check-behavior.mjs", owns: ["src"] }, reveal: false });
       const delivery = (await ws.deliveries.list())[0]!; const cwd = fs.realpathSync(ws.ledger.get("implementer")!.cwd); const head = git(cwd, ["rev-parse", "HEAD"]); original = fake.children.get(ws.manager.session("implementer"));
       const replacement = await fake.replacePaneProcess(ws.manager.session("implementer"));
       await expect(ws.manager.spawn("reviewer", { cmd: "claude", reveal: false, deliveryJoin: { deliveryId: delivery.id, role: "reviewer", ownsSubset: [], expectedHead: head, operationId: "replacement" } })).rejects.toThrow(/DELIVERY_QUARANTINED|DELIVERY_EXACT_STOP_REFUSED/);
       expect(replacement.exitCode).toBeNull(); expect(fake.sessions.has(ws.manager.session("implementer"))).toBe(true);
       expect((await ws.deliveries.get(delivery.id))?.lease.state).toBe("quarantined");
     } finally { if (original?.exitCode === null) original.kill("SIGKILL"); await fake.cleanup(); ws.dispose(); }
+  });
+
+  it("serializes host authority-head prepares so concurrent updates cannot lose sibling heads", async () => {
+    const root = mkdir();
+    fs.writeFileSync(path.join(root, "tachyon.yml"), "agents:\n  a:\n    cmd: sh\n", "utf8");
+    const host = new FakeHost(mkdir());
+    const fake = fakeTmux();
+    const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux: fake.tmux, startBridge: false });
+    const secretKey = `tachyon.authorityHeads.v1.${workspaceHash(root)}`;
+    const originalSetSecret = host.setSecret.bind(host);
+    const writes: string[] = [];
+    let enterFirst!: () => void;
+    let releaseFirst!: () => void;
+    const firstEntered = new Promise<void>((resolve) => { enterFirst = resolve; });
+    const firstReleased = new Promise<void>((resolve) => { releaseFirst = resolve; });
+    host.setSecret = async (key, value) => {
+      if (key === secretKey) {
+        writes.push(value);
+        if (writes.length === 1) {
+          enterFirst();
+          await firstReleased;
+        }
+      }
+      await originalSetSecret(key, value);
+    };
+    const prepare = (ws as unknown as {
+      prepareAuthorityHead(kind: "legacy" | "canonical", identity: string, next: { revision: number; mac: string }, expectedMac?: string): Promise<void>;
+    }).prepareAuthorityHead.bind(ws);
+    try {
+      const first = prepare("legacy", "delegation-a", { revision: 1, mac: "a".repeat(64) });
+      await firstEntered;
+      const second = prepare("canonical", "delivery-b", { revision: 1, mac: "b".repeat(64) });
+      await flushMicrotasks();
+      expect(writes).toHaveLength(1);
+
+      releaseFirst();
+      await Promise.all([first, second]);
+
+      const persisted = JSON.parse(await host.getSecret(secretKey) ?? "{}") as Record<string, unknown>;
+      expect(persisted).toEqual({
+        "canonical:delivery-b": { revision: 1, mac: "b".repeat(64) },
+        "legacy:delegation-a": { revision: 1, mac: "a".repeat(64) },
+      });
+    } finally {
+      ws.dispose();
+    }
+  });
+
+  it("refreshes shared authority custody before a stale host prepares another head", async () => {
+    const root = mkdir();
+    fs.writeFileSync(path.join(root, "tachyon.yml"), "agents:\n  a:\n    cmd: sh\n", "utf8");
+    const secrets = new Map<string, string>();
+    const firstFake = fakeTmux();
+    const secondFake = fakeTmux();
+    const first = await Workspace.createForTest(
+      root,
+      { host: new SharedSecretHost(mkdir(), secrets), onViewsChanged: () => {} },
+      { tmux: firstFake.tmux, startBridge: false },
+    );
+    const second = await Workspace.createForTest(
+      root,
+      { host: new SharedSecretHost(mkdir(), secrets), onViewsChanged: () => {} },
+      { tmux: secondFake.tmux, startBridge: false },
+    );
+    const prepareFirst = (first as unknown as {
+      prepareAuthorityHead(kind: "legacy" | "canonical", identity: string, next: { revision: number; mac: string }): Promise<void>;
+    }).prepareAuthorityHead.bind(first);
+    const prepareSecond = (second as unknown as {
+      prepareAuthorityHead(kind: "legacy" | "canonical", identity: string, next: { revision: number; mac: string }): Promise<void>;
+    }).prepareAuthorityHead.bind(second);
+    try {
+      await prepareFirst("legacy", "delegation-a", { revision: 1, mac: "c".repeat(64) });
+      await prepareSecond("canonical", "delivery-b", { revision: 1, mac: "d".repeat(64) });
+
+      const secretKey = `tachyon.authorityHeads.v1.${workspaceHash(root)}`;
+      expect(JSON.parse(secrets.get(secretKey) ?? "{}")).toEqual({
+        "canonical:delivery-b": { revision: 1, mac: "d".repeat(64) },
+        "legacy:delegation-a": { revision: 1, mac: "c".repeat(64) },
+      });
+    } finally {
+      first.dispose();
+      second.dispose();
+    }
+  });
+
+  it("rejects a signed canonical rollback from another host and fails the reload snapshot closed", async () => {
+    const root = mkdir();
+    fs.writeFileSync(path.join(root, "tachyon.yml"), "agents:\n  a:\n    cmd: sh\n    autostart: false\n", "utf8");
+    const secrets = new Map<string, string>();
+    const firstFake = fakeTmux();
+    const secondFake = fakeTmux();
+    const first = await Workspace.createForTest(root, { host: new SharedSecretHost(mkdir(), secrets), onViewsChanged: () => {} }, { tmux: firstFake.tmux, startBridge: false });
+    const secondHost = new SharedSecretHost(mkdir(), secrets);
+    const second = await Workspace.createForTest(root, { host: secondHost, onViewsChanged: () => {} }, { tmux: secondFake.tmux, startBridge: false });
+    try {
+      const created = await first.deliveries.create({
+        id: "d-shared-rollback",
+        workspaceId: workspaceHash(root),
+        createdBy: { kind: "system", name: "tachyon" },
+        contract: { baseSha: "base", behaviorTest: "gate", owns: ["src"], taskRef: "tachyon/shared" },
+        events: [{ id: "event-created", at: "2026-07-15T12:00:00.000Z", type: "created", by: { kind: "system", name: "tachyon" } }],
+      });
+      const database = new DatabaseSync(first.deliveries.databasePath);
+      let versionOneJson: string;
+      try {
+        versionOneJson = String((database.prepare("SELECT record_json FROM deliveries WHERE id = ?").get(created.id) as { record_json: string }).record_json);
+      } finally {
+        database.close();
+      }
+      const updated = await first.deliveries.update(created.id, created.version, (record) => {
+        record.events.push({ id: "event-version-two", at: "2026-07-15T12:01:00.000Z", type: "advanced", by: { kind: "system", name: "tachyon" } });
+        return record;
+      });
+      await expect(second.deliveries.get(created.id)).resolves.toMatchObject({ version: updated.version });
+
+      const attacker = new DatabaseSync(first.deliveries.databasePath);
+      try {
+        attacker.prepare("UPDATE deliveries SET record_json = ? WHERE id = ?").run(versionOneJson, created.id);
+      } finally {
+        attacker.close();
+      }
+
+      await expect(second.deliveries.get(created.id)).rejects.toThrow("authority head mismatch");
+      await second.start();
+      expect(second.deliveryReloadPhase()).toBe("failed");
+      expect(second.deliveryReloadState()).toBeUndefined();
+      expect(secondHost.notices.some((notice) => /canonical Delivery authority is corrupt or stale/.test(notice.message))).toBe(true);
+    } finally {
+      first.dispose();
+      second.dispose();
+    }
+  });
+
+  it("refreshes a previously absent canonical head after another host creates the Delivery", async () => {
+    const root = mkdir();
+    fs.writeFileSync(path.join(root, "tachyon.yml"), "agents:\n  a:\n    cmd: sh\n    autostart: false\n", "utf8");
+    const secrets = new Map<string, string>();
+    const firstFake = fakeTmux();
+    const secondFake = fakeTmux();
+    const first = await Workspace.createForTest(root, { host: new SharedSecretHost(mkdir(), secrets), onViewsChanged: () => {} }, { tmux: firstFake.tmux, startBridge: false });
+    const second = await Workspace.createForTest(root, { host: new SharedSecretHost(mkdir(), secrets), onViewsChanged: () => {} }, { tmux: secondFake.tmux, startBridge: false });
+    try {
+      await expect(second.deliveries.get("d-created-elsewhere")).resolves.toBeUndefined();
+      const created = await first.deliveries.create({
+        id: "d-created-elsewhere",
+        workspaceId: workspaceHash(root),
+        createdBy: { kind: "system", name: "tachyon" },
+        contract: { baseSha: "base", behaviorTest: "gate", owns: [], taskRef: "tachyon/shared" },
+      });
+      await expect(second.deliveries.get(created.id)).resolves.toEqual(created);
+    } finally {
+      first.dispose();
+      second.dispose();
+    }
+  });
+
+  it("rejects a signed legacy rollback using another host's freshly read custody head", async () => {
+    const root = mkdir();
+    fs.writeFileSync(path.join(root, "tachyon.yml"), "agents:\n  a:\n    cmd: sh\n    autostart: false\n", "utf8");
+    const secrets = new Map<string, string>();
+    const firstHost = new SharedSecretHost(mkdir(), secrets);
+    const secondHost = new SharedSecretHost(mkdir(), secrets);
+    const firstFake = fakeTmux();
+    const secondFake = fakeTmux();
+    const first = await Workspace.createForTest(root, { host: firstHost, onViewsChanged: () => {} }, { tmux: firstFake.tmux, startBridge: false });
+    const second = await Workspace.createForTest(root, { host: secondHost, onViewsChanged: () => {} }, { tmux: secondFake.tmux, startBridge: false });
+    const firstHead = (first as unknown as { legacyAuthorityHeadPort(): AuthorityHeadPort }).legacyAuthorityHeadPort();
+    const readSecond = (second as unknown as {
+      readAuthenticatedLegacyDelegation(agent: string): Promise<{ record: unknown } | undefined>;
+    }).readAuthenticatedLegacyDelegation.bind(second);
+    try {
+      const authorityKey = await loadOrCreateHmacKey(firstHost);
+      const file = await writeDelegationRecordAsync(root, delegationRecordFromSpawn({
+        agent: "legacy-worker",
+        baseSha: "base",
+        taskRef: "tachyon/legacy-worker",
+        worktreePath: root,
+        gate: { behaviorTest: "gate", owns: ["src"] },
+        contract: {
+          task: "preserve legacy freshness",
+          context: "shared host authority",
+          constraints: "reject rollback",
+          doneWhen: "stale file is refused",
+        },
+        createdAt: "2026-07-15T12:00:00.000Z",
+      }), authorityKey, firstHead);
+      const versionOneJson = fs.readFileSync(file, "utf8");
+      await appendFixerAttemptAsync(root, file, {
+        occupantAgent: "fixer",
+        requestedOwnsSubset: ["src"],
+        grantedAt: "2026-07-15T12:01:00.000Z",
+        branchHeadAtGrant: "head-v2",
+      }, authorityKey, firstHead);
+      await expect(readSecond("legacy-worker")).resolves.toBeDefined();
+
+      fs.writeFileSync(file, versionOneJson, "utf8");
+      await expect(readSecond("legacy-worker")).rejects.toThrow(/unsigned, stale, or tampered/);
+    } finally {
+      first.dispose();
+      second.dispose();
+    }
   });
 
   it("builds + starts with no Electron / real tmux / bound port; start() auto-launches the declared agent", async () => {
@@ -613,7 +877,59 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     await ws.dispose();
   });
 
-  it("gated delegation records the reused task worktree HEAD, not the source HEAD (spec 362 T1)", async () => {
+  it("explicit cmd verifier preserves the pre-spawn HEAD without creating a stub or setup commit", async () => {
+    const root = mkdir();
+    const wtBase = path.join(root, ".tachyon-test-worktrees");
+    fs.writeFileSync(
+      path.join(root, "tachyon.yml"),
+      `settings:\n  worktree:\n    base: ${JSON.stringify(wtBase)}\nagents:\n  boss:\n    cmd: sh\n`,
+      "utf8",
+    );
+    git(root, ["init"]);
+    git(root, ["config", "user.email", "test@example.com"]);
+    git(root, ["config", "user.name", "Test User"]);
+    fs.writeFileSync(path.join(root, "README.md"), "base\n", "utf8");
+    git(root, ["add", "README.md"]);
+    git(root, ["commit", "-m", "base"]);
+    const headBeforeSpawn = git(root, ["rev-parse", "HEAD"]);
+
+    const fake = fakeTmux();
+    const ws = await Workspace.createForTest(
+      root,
+      { host: new FakeHost(mkdir()), onViewsChanged: () => {} },
+      { tmux: fake.tmux, startBridge: false },
+    );
+    try {
+      await ws.manager.spawn("command-gate", {
+        cmd: "sh",
+        delegator: "boss",
+        contract: {
+          task: "preserve behavior",
+          context: "project-owned command verifier",
+          constraints: "stay scoped",
+          doneWhen: "command passes",
+        },
+        gate: { behaviorTest: "cmd:node scripts/check-behavior.mjs", owns: ["src"] },
+        reveal: false,
+      });
+
+      const record = latestDelegationRecord(root, "command-gate");
+      const wt = ws.ledger.get("command-gate")?.worktree;
+      expect(wt).toBeTruthy();
+      expect(record.stubPath).toBeUndefined();
+      expect(record.verifySettings).toEqual({});
+      expect(record.owns).toEqual(["src"]);
+      expect(record.baseSha).toBe(headBeforeSpawn);
+      expect(git(wt!.path, ["rev-parse", "HEAD"])).toBe(headBeforeSpawn);
+      expect(git(wt!.path, ["log", "--format=%s"])).toBe("base");
+      expect(fs.existsSync(path.join(wt!.path, "test"))).toBe(false);
+      expect(fake.sessions.size).toBe(1);
+    } finally {
+      await ws.dispose();
+    }
+  });
+
+  it("preserves a freshly created gated worktree when preparation fails without an exact HEAD token", async () => {
     const root = mkdir();
     const wtBase = path.join(root, ".tachyon-test-worktrees");
     fs.writeFileSync(
@@ -628,11 +944,242 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     git(root, ["add", "README.md"]);
     git(root, ["commit", "-m", "base"]);
 
+    const fake = fakeTmux();
+    const ws = await Workspace.createForTest(
+      root,
+      { host: new FakeHost(mkdir()), onViewsChanged: () => {} },
+      { tmux: fake.tmux, startBridge: false },
+    );
+    const rollback = vi.spyOn(ws.worktrees, "rollbackCreated");
+    vi.spyOn(ws.worktrees, "headState").mockResolvedValueOnce({ headRef: "", dirty: false });
+    try {
+      await expect(ws.manager.spawn("rollback-gate", {
+        cmd: "sh",
+        delegator: "boss",
+        contract: {
+          task: "prepare safely",
+          context: "forced HEAD resolution failure",
+          constraints: "leave no worktree",
+          doneWhen: "preparation is atomic",
+        },
+        gate: { behaviorTest: "cmd:node scripts/check-behavior.mjs", owns: ["src"] },
+        reveal: false,
+      })).rejects.toThrow(/failed without a recovery HEAD observation/);
+
+      expect(rollback).not.toHaveBeenCalled();
+      expect(git(root, ["worktree", "list", "--porcelain"]).split("\n").filter((line) => line.startsWith("worktree "))).toHaveLength(2);
+      expect(git(root, ["branch", "--list", "tachyon/rollback-gate"])).toContain("tachyon/rollback-gate");
+      expect(ws.ledger.get("rollback-gate")).toBeUndefined();
+      expect(fake.sessions.size).toBe(0);
+    } finally {
+      await ws.dispose();
+    }
+  });
+
+  it("preserves an attached human-branch worktree when post-oracle launch preparation fails", async () => {
+    const root = mkdir();
+    const wtBase = path.join(root, ".tachyon-test-worktrees");
+    fs.writeFileSync(
+      path.join(root, "tachyon.yml"),
+      `settings:\n${namedBehaviorVerifyYaml()}  worktree:\n    base: ${JSON.stringify(wtBase)}\nagents:\n  attached:\n    cmd: sh\n    branch: human/attached\n`,
+      "utf8",
+    );
+    git(root, ["init"]);
+    git(root, ["config", "user.email", "test@example.com"]);
+    git(root, ["config", "user.name", "Test User"]);
+    fs.writeFileSync(path.join(root, "README.md"), "base\n", "utf8");
+    const attachedOracle = path.join(root, "test", "unit", "attachedBehavior.gen.test.ts");
+    fs.mkdirSync(path.dirname(attachedOracle), { recursive: true });
+    fs.writeFileSync(attachedOracle, "it('attached branch keeps ownership', () => { throw new Error('RED'); });\n", "utf8");
+    git(root, ["add", "README.md", "test/unit/attachedBehavior.gen.test.ts"]);
+    git(root, ["commit", "-m", "base"]);
+    git(root, ["branch", "human/attached"]);
+    const humanHead = git(root, ["rev-parse", "human/attached"]);
+
+    const fake = fakeTmux();
+    const ws = await Workspace.createForTest(
+      root,
+      { host: new FakeHost(mkdir()), onViewsChanged: () => {} },
+      { tmux: fake.tmux, startBridge: false },
+    );
+    vi.spyOn(ws.manager as unknown as { effectiveInstructions: () => string }, "effectiveInstructions")
+      .mockImplementationOnce(() => { throw new Error("forced primer preparation failure"); });
+    try {
+      const failure = await ws.manager.spawn("attached", {
+        delegator: "boss",
+        contract: {
+          task: "prepare attached branch safely",
+          context: "stub commit must be compensated",
+          constraints: "preserve the human branch",
+          doneWhen: "failure leaves its original HEAD",
+        },
+        gate: { behaviorTest: "attached branch keeps ownership", owns: ["src"] },
+        reveal: false,
+      }).catch((error: unknown) => error);
+      expect(failure).toBeInstanceOf(AggregateError);
+      expect((failure as AggregateError).errors[0]).toMatchObject({ message: "forced primer preparation failure" });
+      expect((failure as AggregateError).errors[1]).toMatchObject({ message: expect.stringContaining("recovery state was preserved") });
+
+      expect(git(root, ["rev-parse", "human/attached"])).toBe(humanHead);
+      expect(git(root, ["worktree", "list", "--porcelain"]).split("\n").filter((line) => line.startsWith("worktree "))).toHaveLength(2);
+      expect(ws.ledger.get("attached")).toBeUndefined();
+      expect(fake.sessions.size).toBe(0);
+
+      await expect(ws.manager.spawn("attached", {
+        delegator: "boss",
+        contract: {
+          task: "prepare attached branch safely",
+          context: "retry must not adopt quarantined state",
+          constraints: "preserve the human branch",
+          doneWhen: "an explicit recovery precedes reuse",
+        },
+        gate: { behaviorTest: "attached branch keeps ownership", owns: ["src"] },
+        reveal: false,
+      })).rejects.toMatchObject({ reason: "recovery-preserved" });
+      expect(fake.sessions.size).toBe(0);
+    } finally {
+      await ws.dispose();
+    }
+  });
+
+  it("plain verifier without project behavior settings fails before worktree or tmux creation", async () => {
+    const root = mkdir();
+    const wtBase = path.join(root, ".tachyon-test-worktrees");
+    fs.writeFileSync(
+      path.join(root, "tachyon.yml"),
+      `settings:\n  worktree:\n    base: ${JSON.stringify(wtBase)}\nagents:\n  boss:\n    cmd: sh\n`,
+      "utf8",
+    );
+    git(root, ["init"]);
+    git(root, ["config", "user.email", "test@example.com"]);
+    git(root, ["config", "user.name", "Test User"]);
+    fs.writeFileSync(path.join(root, "README.md"), "base\n", "utf8");
+    git(root, ["add", "README.md"]);
+    git(root, ["commit", "-m", "base"]);
+
+    const fake = fakeTmux();
+    const ws = await Workspace.createForTest(
+      root,
+      { host: new FakeHost(mkdir()), onViewsChanged: () => {} },
+      { tmux: fake.tmux, startBridge: false },
+    );
+    try {
+      await expect(ws.manager.spawn("unconfigured", {
+        cmd: "sh",
+        delegator: "boss",
+        contract: {
+          task: "preserve behavior",
+          context: "missing project adapter",
+          constraints: "stay scoped",
+          doneWhen: "verifier passes",
+        },
+        gate: { behaviorTest: "project invariant remains true", owns: ["src"] },
+        reveal: false,
+      })).rejects.toThrow(/settings\.verify\.behavior/);
+
+      const worktrees = git(root, ["worktree", "list", "--porcelain"])
+        .split("\n")
+        .filter((line) => line.startsWith("worktree "));
+      expect(worktrees).toHaveLength(1);
+      expect(fs.existsSync(wtBase) ? fs.readdirSync(wtBase) : []).toHaveLength(0);
+      expect(ws.ledger.get("unconfigured")).toBeUndefined();
+      expect(fake.sessions.size).toBe(0);
+      expect(fake.calls.some((args) => args.includes("new-session"))).toBe(false);
+    } finally {
+      await ws.dispose();
+    }
+  });
+
+  it("rejects oversized or control-bearing gate facts before worktree, oracle, or tmux creation", async () => {
+    const root = mkdir();
+    const wtBase = path.join(root, ".tachyon-test-worktrees");
+    fs.writeFileSync(
+      path.join(root, "tachyon.yml"),
+      `settings:\n${namedBehaviorVerifyYaml()}  worktree:\n    base: ${JSON.stringify(wtBase)}\nagents:\n  boss:\n    cmd: sh\n`,
+      "utf8",
+    );
+    git(root, ["init"]);
+    git(root, ["config", "user.email", "test@example.com"]);
+    git(root, ["config", "user.name", "Test User"]);
+    fs.writeFileSync(path.join(root, "README.md"), "base\n", "utf8");
+    git(root, ["add", "README.md"]);
+    git(root, ["commit", "-m", "base"]);
+
+    const fake = fakeTmux();
+    const ws = await Workspace.createForTest(
+      root,
+      { host: new FakeHost(mkdir()), onViewsChanged: () => {} },
+      { tmux: fake.tmux, startBridge: false },
+    );
+    try {
+      await expect(ws.manager.spawn("oversized-gate", {
+        cmd: "sh",
+        delegator: "boss",
+        contract: {
+          task: "reject oversized verifier",
+          context: "preparation must have no side effects",
+          constraints: "keep the workspace clean",
+          doneWhen: "the request fails before setup",
+        },
+        gate: { behaviorTest: "x".repeat(2049), owns: ["src"] },
+        reveal: false,
+      })).rejects.toThrow(/at most 2048 UTF-8 bytes/);
+
+      await expect(ws.manager.spawn("control-gate", {
+        cmd: "sh",
+        delegator: "boss",
+        contract: {
+          task: "reject terminal injection",
+          context: "preparation must have no side effects",
+          constraints: "keep the workspace clean",
+          doneWhen: "the request fails before setup",
+        },
+        gate: { behaviorTest: "project promise\u001b[2J", owns: ["src"] },
+        reveal: false,
+      })).rejects.toThrow(/behavior_test must not contain control characters/);
+
+      await expect(ws.manager.spawn("control-owns", {
+        cmd: "sh",
+        delegator: "boss",
+        contract: {
+          task: "reject terminal injection",
+          context: "preparation must have no side effects",
+          constraints: "keep the workspace clean",
+          doneWhen: "the request fails before setup",
+        },
+        gate: { behaviorTest: "cmd:node scripts/check-behavior.mjs", owns: ["src\u001b]8;;https://example.test\u0007"] },
+        reveal: false,
+      })).rejects.toThrow(/owns\[0\] must not contain control characters/);
+
+      expect(git(root, ["worktree", "list", "--porcelain"]).split("\n").filter((line) => line.startsWith("worktree "))).toHaveLength(1);
+      expect(fs.existsSync(wtBase) ? fs.readdirSync(wtBase) : []).toHaveLength(0);
+      expect(ws.ledger.get("oversized-gate")).toBeUndefined();
+      expect(fake.sessions.size).toBe(0);
+    } finally {
+      await ws.dispose();
+    }
+  });
+
+  it("gated delegation records the reused task worktree HEAD, not the source HEAD (spec 362 T1)", async () => {
+    const root = mkdir();
+    const wtBase = path.join(root, ".tachyon-test-worktrees");
+    fs.writeFileSync(
+      path.join(root, "tachyon.yml"),
+      `settings:\n${namedBehaviorVerifyYaml()}  worktree:\n    base: ${JSON.stringify(wtBase)}\nagents:\n  boss:\n    cmd: sh\n`,
+      "utf8",
+    );
+    git(root, ["init"]);
+    git(root, ["config", "user.email", "test@example.com"]);
+    git(root, ["config", "user.name", "Test User"]);
+    fs.writeFileSync(path.join(root, "README.md"), "base\n", "utf8");
+    git(root, ["add", "README.md"]);
+    git(root, ["commit", "-m", "base"]);
+
     const host = new FakeHost(mkdir());
     const { tmux } = fakeTmux();
     const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux, startBridge: false });
     const contract = { task: "change behavior", context: "regression fixture", constraints: "stay scoped", doneWhen: "behavior test passes" };
-    await ws.manager.spawn("reviewer", { cmd: "sh", contract, gate: { behaviorTest: "behavior regression" }, reveal: false });
+    await ws.manager.spawn("reviewer", { cmd: "sh", contract, gate: { behaviorTest: "cmd:node scripts/check-behavior.mjs" }, reveal: false });
     const first = latestDelegationRecord(root, "reviewer");
     const wt = ws.ledger.get("reviewer")?.worktree;
     expect(wt).toBeTruthy();
@@ -648,7 +1195,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     expect(taskBranchHead).not.toBe(sourceHead);
 
     await ws.manager.kill("reviewer");
-    await ws.manager.spawn("reviewer", { cmd: "sh", contract, gate: { behaviorTest: "behavior regression" }, reveal: false });
+    await ws.manager.spawn("reviewer", { cmd: "sh", contract, gate: { behaviorTest: "cmd:node scripts/check-behavior.mjs" }, reveal: false });
     const second = latestDelegationRecord(root, "reviewer");
 
     expect(first.baseSha).not.toBe(taskBranchHead);
@@ -657,19 +1204,25 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     ws.dispose();
   });
 
-  it("gated spawn commits a canonical behavior test stub", async () => {
+  it("configured named gate binds a pre-existing project-owned oracle without authorizing edits", async () => {
     const root = mkdir();
     const wtBase = path.join(root, ".tachyon-test-worktrees");
+    const behaviorSettings = namedBehaviorSettings("test/generated-gates/{agent}.behavior.test.ts");
     fs.writeFileSync(
       path.join(root, "tachyon.yml"),
-      `settings:\n  worktree:\n    base: ${JSON.stringify(wtBase)}\nagents:\n  boss:\n    cmd: sh\n`,
+      `settings:\n${namedBehaviorVerifyYaml(behaviorSettings.stubPath)}  worktree:\n    base: ${JSON.stringify(wtBase)}\nagents:\n  boss:\n    cmd: sh\n`,
       "utf8",
     );
     git(root, ["init"]);
     git(root, ["config", "user.email", "test@example.com"]);
     git(root, ["config", "user.name", "Test User"]);
     fs.writeFileSync(path.join(root, "README.md"), "base\n", "utf8");
-    git(root, ["add", "README.md"]);
+    const stubPath = canonicalBehaviorStubPath("stubber", behaviorSettings);
+    const oracleBody = "it('generated behavior stays canonical', () => { throw new Error('RED'); });\n";
+    const oraclePath = path.join(root, ...stubPath.split("/"));
+    fs.mkdirSync(path.dirname(oraclePath), { recursive: true });
+    fs.writeFileSync(oraclePath, oracleBody, "utf8");
+    git(root, ["add", "README.md", stubPath]);
     git(root, ["commit", "-m", "base"]);
 
     const host = new FakeHost(mkdir());
@@ -686,15 +1239,13 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
 
     const record = latestDelegationRecord(root, "stubber");
     const wt = ws.ledger.get("stubber")?.worktree;
-    const stubPath = canonicalBehaviorStubPath("stubber");
-
     expect(wt).toBeTruthy();
     expect(record.stubPath).toBe(stubPath);
-    expect(record.owns).toEqual(["src", stubPath]);
+    expect(record.owns).toEqual(["src"]);
+    expect(record.oracleHash).toBe(createHash("sha256").update(oracleBody).digest("hex"));
     expect(record.baseSha).toBe(git(wt!.path, ["rev-parse", "HEAD"]));
-    expect(git(wt!.path, ["show", "--format=%an <%ae>", "--no-patch", record.baseSha])).toBe("tachyon-container <tachyon@example.invalid>");
-    expect(git(wt!.path, ["show", "--format=", "--name-only", record.baseSha])).toBe(stubPath);
-    expect(fs.readFileSync(path.join(wt!.path, ...stubPath.split("/")), "utf8")).toContain('it("generated behavior stays canonical"');
+    expect(git(wt!.path, ["show", "--format=%an <%ae>", "--no-patch", record.baseSha])).toBe("Test User <test@example.com>");
+    expect(fs.readFileSync(path.join(wt!.path, ...stubPath.split("/")), "utf8")).toBe(oracleBody);
     ws.dispose();
   });
 
@@ -978,8 +1529,24 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
       "utf8",
     );
     const now = "2026-07-12T00:00:00.000Z";
+    const host = new FakeHost(mkdir());
+    const authorityKey = await loadOrCreateHmacKey(host);
+    const canonicalHeads = new Map<string, { revision: number; mac: string }>();
     // Durable Delivery + Git projection, but NO ledger reverse binding (crash window).
-    const store = new DeliveryStore(root, { now: () => now });
+    const store = new DeliveryStore(root, {
+      now: () => now,
+      authorityIntegrityKey: () => authorityKey,
+      authorityHead: {
+        current: async (id) => canonicalHeads.get(id),
+        prepare: async (id, next, expectedMac) => {
+          const current = canonicalHeads.get(id);
+          if (expectedMac === undefined ? current !== undefined : current?.mac !== expectedMac) {
+            throw new Error("test authority head compare-and-swap mismatch");
+          }
+          canonicalHeads.set(id, { ...next });
+        },
+      },
+    });
     await store.create({
       id: "d-crash",
       workspaceId: "ws",
@@ -1009,6 +1576,9 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
       events: [],
       gitDeliveryId: "gd-crash",
     });
+    await host.setSecret(`tachyon.authorityHeads.v1.${workspaceHash(root)}`, JSON.stringify({
+      "canonical:d-crash": canonicalHeads.get("d-crash"),
+    }));
     await new GitDeliveryStore(root, { id: () => "gd-crash", now: () => now }).open({
       workspaceId: "ws",
       createdBy: { kind: "system", name: "tachyon" },
@@ -1036,7 +1606,6 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
       },
     }), "utf8");
 
-    const host = new FakeHost(mkdir());
     const { tmux, sessions } = fakeTmux();
     const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux, startBridge: false });
     await ws.start();
@@ -1094,8 +1663,8 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     await ws.manager.kill("ordinary");
 
     // Force a real Workspace.start store-read failure on the Delivery store list path.
-    const originalList = ws.deliveries.list.bind(ws.deliveries);
-    (ws.deliveries as { list: () => Promise<unknown> }).list = async () => {
+    const originalListWithCorrupt = ws.deliveries.listWithCorrupt.bind(ws.deliveries);
+    (ws.deliveries as { listWithCorrupt: () => Promise<unknown> }).listWithCorrupt = async () => {
       throw new Error("forced Delivery store-read failure");
     };
     await ws.start();
@@ -1149,7 +1718,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     expect(await ws.manager.runningAgents()).toContain("joiner");
 
     // Successful start retry: restore store list → failed→ready; generic lifecycle unblocked.
-    (ws.deliveries as { list: typeof originalList }).list = originalList;
+    (ws.deliveries as { listWithCorrupt: typeof originalListWithCorrupt }).listWithCorrupt = originalListWithCorrupt;
     await ws.start();
     expect(ws.deliveryReloadPhase()).toBe("ready");
     expect(ws.deliveryReloadState()).toBeDefined();

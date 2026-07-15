@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { TextDecoder } from "node:util";
+import { containsUnsafeFramingCharacter } from "./framingSafety.js";
 
 /** Explicit, project-owned onboarding sources declared in tachyon.yml. */
 export interface ProjectGuidanceSettings {
@@ -22,7 +23,6 @@ export const PROJECT_GUIDANCE_MAX_TOTAL_BYTES = 64 * 1024;
 export const PROJECT_GUIDANCE_START = "── PROJECT GUIDANCE (PROJECT-OWNED) ──";
 export const PROJECT_GUIDANCE_END = "── END PROJECT GUIDANCE ──";
 
-const CONTROL_CHAR_RE = /[\u0000-\u001f\u007f-\u009f]/u;
 const WINDOWS_DRIVE_RE = /^[a-zA-Z]:/;
 
 /**
@@ -37,7 +37,7 @@ export function projectGuidancePathError(sourcePath: string): string | undefined
   if (Buffer.byteLength(sourcePath, "utf8") > PROJECT_GUIDANCE_MAX_PATH_BYTES) {
     return `must be at most ${PROJECT_GUIDANCE_MAX_PATH_BYTES} UTF-8 bytes`;
   }
-  if (CONTROL_CHAR_RE.test(sourcePath)) return "must not contain control characters";
+  if (containsUnsafeFramingCharacter(sourcePath)) return "must not contain control characters";
   if (sourcePath.includes("\\")) return "must use POSIX '/' separators (backslashes are not allowed)";
   if (path.posix.isAbsolute(sourcePath) || WINDOWS_DRIVE_RE.test(sourcePath)) {
     return "must be workspace-relative (absolute and drive-letter paths are not allowed)";
@@ -74,7 +74,7 @@ function settingsPaths(settings: ProjectGuidanceSettings): string[] {
     }
     // Spaces at the edges are config formatting, but control characters are
     // never path syntax and must not disappear through trim().
-    if (CONTROL_CHAR_RE.test(raw)) {
+    if (containsUnsafeFramingCharacter(raw)) {
       throw new Error(`settings.projectGuidance.files[${index}] must not contain control characters`);
     }
     const sourcePath = raw.trim();

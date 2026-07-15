@@ -3,8 +3,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { AgentManager } from "../../src/agents/AgentManager.js";
+import { resolveReuseTarget } from "../../src/agents/reuseWorktree.js";
 import { parseConfig } from "../../src/config/loadConfig.js";
-import { delegationRecordFromSpawn, writeDelegationRecord } from "../../src/bridge/delegationRecord.js";
+import { appendFixerAttempt, delegationRecordFromSpawn, writeDelegationRecord } from "../../src/bridge/delegationRecord.js";
 import { SessionLedger } from "../../src/resume/SessionLedger.js";
 import { TmuxService, workspaceHash, type ExecResult } from "../../src/tmux/TmuxService.js";
 import type { GitExec } from "../../src/worktree/WorktreeManager.js";
@@ -44,6 +45,7 @@ function fakeTmux() {
 function fakeGitExec(head = "head-after-review"): GitExec {
   return async (args) => {
     if (args[0] === "rev-parse" && args[1] === "HEAD") return { stdout: `${head}\n`, stderr: "", code: 0 };
+    if (args[0] === "rev-parse" && args[1] === "--abbrev-ref") return { stdout: "tachyon/owner\n", stderr: "", code: 0 };
     return { stdout: "", stderr: "", code: 0 };
   };
 }
@@ -71,6 +73,12 @@ describe("container-generated delegation behavior", () => {
         worktreePath,
       });
       writeDelegationRecord(ws, ownerRecord);
+      const trustedLegacyAuthority = {
+        resolveAuthenticatedLegacyReuseTarget: async (target: Parameters<typeof resolveReuseTarget>[1]) => resolveReuseTarget(ws, target),
+        appendLegacyFixerAttempt: async (delegationPath: string, attempt: Parameters<typeof appendFixerAttempt>[1]) => {
+          appendFixerAttempt(delegationPath, attempt);
+        },
+      };
       ledger.record("owner", {
         worktree: { path: worktreePath, branch: "tachyon/owner", tachyonCreatedBranch: true, baseRef: "base-owner", createdAt: "2026-07-08T20:00:00.000Z" },
         cwd: worktreePath,
@@ -85,6 +93,7 @@ describe("container-generated delegation behavior", () => {
         getMaxAgents: () => 8,
         ledger,
         gitExec: fakeGitExec(),
+        ...trustedLegacyAuthority,
       });
       await beforeReload.spawn("fixer-1", {
         cmd: "claude",
@@ -101,8 +110,9 @@ describe("container-generated delegation behavior", () => {
         getMaxAgents: () => 8,
         ledger,
         gitExec: fakeGitExec(),
+        ...trustedLegacyAuthority,
       });
-      afterReload.rehydrateFromLedger();
+      await afterReload.rehydrateFromLedger();
 
       await expect(
         afterReload.spawn("fixer-2", {

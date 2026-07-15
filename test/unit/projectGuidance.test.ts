@@ -51,6 +51,8 @@ describe("projectGuidancePathError", () => {
     ["docs//guide.md", "empty path segments"],
     ["docs/", "trailing slash"],
     ["docs/\0guide.md", "control characters"],
+    ["docs/guide\u009b.md", "control characters"],
+    ["docs/guide\u2028spoof.md", "control characters"],
     [" docs/guide.md ", "leading or trailing"],
     [`docs/${"é".repeat(130)}.md`, "256 UTF-8 bytes"],
   ])("rejects %j", (sourcePath, expected) => {
