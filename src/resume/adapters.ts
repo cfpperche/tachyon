@@ -348,8 +348,8 @@ const ADAPTERS: ResumeAdapter[] = [
     resumesWithoutId: true,
     injectId: (cmd) => cmd,
     resumeCommand: (cmd, id) => (id ? append(cmd, "--resume", id) : append(cmd, "--continue")),
-    // Activity v1 still uses state.db (not a per-session jsonl path); keep a stable locator.
-    transcriptPath: (configHome, _cwd, id) => `${configHome}/state.db#${id}`,
+    // Activity reads `$HERMES_HOME/state.db` (SQLite); session id is carried separately by the host.
+    transcriptPath: (configHome, _cwd, _id) => `${configHome}/state.db`,
     harness: {
       configHomeEnv: "HERMES_HOME",
       authFiles: ["auth.json"],
