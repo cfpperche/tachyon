@@ -147,6 +147,44 @@ function BranchBadge({ a }: { a: AgentVM }) {
   );
 }
 
+/** spec 386 — format helpers (mirror attention/resourceSample pure formatters; keep webview free of node imports). */
+function fmtCpu(n: number): string { return `${Math.round(n)}%`; }
+function fmtMem(mb: number): string {
+  if (mb >= 1024) {
+    const g = mb / 1024;
+    return `${g >= 10 ? g.toFixed(0) : g.toFixed(1).replace(/\.0$/, "")}G`;
+  }
+  return `${Math.round(mb)}M`;
+}
+
+/** spec 386 — collapsible CPU/Mem lanes (L3–L4). */
+function ResourceDetail({ a }: { a: AgentVM }) {
+  const r = a.resources;
+  if (!r) return null;
+  const cpu = r.cpuPct;
+  const hot = cpu !== undefined && cpu >= 80;
+  const cpuW = cpu === undefined ? 0 : Math.min(100, cpu);
+  const memW = Math.min(100, (r.memMb / 2048) * 100);
+  return (
+    <div class="row-detail">
+      <div class="lane" title="CPU of the agent pane process subtree">
+        <span class="lab">CPU</span>
+        <div class="body">
+          <span class={`meter cpu${hot ? " hot" : ""}`}><i style={{ width: `${cpuW}%` }} /></span>
+          <span class={`val cpu${hot ? " hot" : ""}`}>{cpu === undefined ? "—" : fmtCpu(cpu)}</span>
+        </div>
+      </div>
+      <div class="lane" title="Resident set size of the pane process subtree">
+        <span class="lab">Mem</span>
+        <div class="body">
+          <span class="meter mem"><i style={{ width: `${memW}%` }} /></span>
+          <span class="val mem">{fmtMem(r.memMb)}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AgentBadges({ a }: { a: AgentVM }) {
   const externalToolLabel = externalToolBadgeLabel(a);
   return (
@@ -196,19 +234,27 @@ function AgentBadges({ a }: { a: AgentVM }) {
   );
 }
 
-export function AgentRow({ a, flash, nested = false, hasChildren = false, collapsed = false, hiddenCount = 0, hiddenNeedsAttention = false, onToggle }: { a: AgentVM; flash: boolean; nested?: boolean; hasChildren?: boolean; collapsed?: boolean; hiddenCount?: number; hiddenNeedsAttention?: boolean; onToggle?: () => void }) {
+export function AgentRow({ a, flash, nested = false, hasChildren = false, collapsed = false, hiddenCount = 0, hiddenNeedsAttention = false, onToggle, metricsOpen = false, onToggleMetrics }: {
+  a: AgentVM; flash: boolean; nested?: boolean; hasChildren?: boolean; collapsed?: boolean; hiddenCount?: number; hiddenNeedsAttention?: boolean; onToggle?: () => void;
+  /** spec 386 — metrics detail lanes open for this agent (independent of hierarchy collapse). */
+  metricsOpen?: boolean;
+  onToggleMetrics?: () => void;
+}) {
   const d = useContext(DispatchCtx);
   const hasHidden = collapsed && hiddenCount > 0;
+  const hasResources = !!a.resources && (a.status === "running" || a.status === "idle" || a.status === "needs" || a.status === "throttled" || a.status === "stop-failed");
   const hasMeta = a.configInvalid || a.parent || a.delegator || a.declaredOwner || a.sub || a.attention || a.awaitingHuman || a.liveBranch || a.worktree || a.verify || a.externalTools?.active || a.harness || a.resumable || a.forked || (a.continuity && a.continuity !== "fresh") || a.persistenceHooks || hasHidden;
+  const cpu = a.resources?.cpuPct;
+  const hot = cpu !== undefined && cpu >= 80;
   return (
-    <div class={`row${nested ? " child" : ""}${flash ? " flash" : ""}`} data-name={a.name.toLowerCase()}>
+    <div class={`row${nested ? " child" : ""}${flash ? " flash" : ""}${metricsOpen && hasResources ? " metrics-open" : ""}`} data-name={a.name.toLowerCase()}>
       <div class="row-top">
         {hasChildren ? (
           <button
             class={`agent-toggle${collapsed ? " collapsed" : ""}`}
             type="button"
-            title={`${collapsed ? "Expand" : "Collapse"} ${a.name}`}
-            aria-label={`${collapsed ? "Expand" : "Collapse"} ${a.name}`}
+            title={`${collapsed ? "Expand" : "Collapse"} children of ${a.name}`}
+            aria-label={`${collapsed ? "Expand" : "Collapse"} children of ${a.name}`}
             aria-expanded={!collapsed}
             onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggle?.(); }}
           >
@@ -221,6 +267,21 @@ export function AgentRow({ a, flash, nested = false, hasChildren = false, collap
         )}
         <span class={`sdot ${a.status}`} role="img" title={STATUS_LABEL[a.status]} aria-label={STATUS_LABEL[a.status]} />
         <span class="name">{a.name}{a.model && <><span class="model-sep"> — </span><span class="model">{a.model}</span><ModelProvenance a={a} /></>}</span>
+        {/* spec 386 — metrics pill only (no extra ▤ control): click expands L3–L4, click again collapses */}
+        {hasResources && (
+          <button
+            type="button"
+            class={`peek${hot ? " hot" : ""}${metricsOpen ? " open" : ""}`}
+            title={metricsOpen ? `Collapse metrics — ${a.name}` : `Expand metrics — ${a.name}`}
+            aria-label={metricsOpen ? `Collapse metrics — ${a.name}` : `Expand metrics — ${a.name}`}
+            aria-expanded={metricsOpen}
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggleMetrics?.(); }}
+          >
+            <span class="c">{cpu === undefined ? "—" : fmtCpu(cpu)}</span>
+            {" · "}
+            <span class="m">{fmtMem(a.resources!.memMb)}</span>
+          </button>
+        )}
       </div>
       {hasMeta && (
         <div class="row-meta">
@@ -229,6 +290,7 @@ export function AgentRow({ a, flash, nested = false, hasChildren = false, collap
           <AgentBadges a={a} />
         </div>
       )}
+      {metricsOpen && hasResources && <ResourceDetail a={a} />}
       <div class="actions" role="group" aria-label={`${a.name} actions`}>
         {primaryActions(a).map((id) => <Act icon={ACTION_META[id].icon} title={ACTION_META[id].label} on={() => d.action(id, a.name)} />)}
         {moreActions(a).length > 0 && <MoreBtn items={moreActions(a).map((id) => ({ label: ACTION_META[id].label, icon: ACTION_META[id].icon, run: () => d.action(id, a.name) }))} />}
@@ -307,7 +369,12 @@ function HandoffBtn({ handoff, onOpen }: { handoff?: import("../../sidebar/types
   );
 }
 
-function Panel({ tab, fleet, scope, collapsed, toggle, flashName, agentSort, terminalSort, activePinTag, onPinTag }: { tab: TabId; fleet: FleetVM; scope: string; collapsed: Set<string>; toggle: (k: string) => void; flashName: string | null; agentSort: SortMode; terminalSort: SortMode; activePinTag: string | null; onPinTag: (tag: string | null) => void }) {
+function Panel({ tab, fleet, scope, collapsed, toggle, flashName, agentSort, terminalSort, activePinTag, onPinTag, metricsOpen, onToggleMetrics }: {
+  tab: TabId; fleet: FleetVM; scope: string; collapsed: Set<string>; toggle: (k: string) => void; flashName: string | null; agentSort: SortMode; terminalSort: SortMode; activePinTag: string | null; onPinTag: (tag: string | null) => void;
+  /** spec 386 — scoped keys `${scope}:m:${agent}` that currently show resource detail lanes. */
+  metricsOpen: Set<string>;
+  onToggleMetrics: (agentName: string) => void;
+}) {
   const d = useContext(DispatchCtx);
   // Collapse keys are scoped to the folder so multi-root groups with the same name don't collapse together.
   const k = (suffix: string) => `${scope}:${suffix}`;
@@ -329,7 +396,21 @@ function Panel({ tab, fleet, scope, collapsed, toggle, flashName, agentSort, ter
     const rows = agentHierarchyRows(grouped, collapsedAgents);
     return <>
       {banner}
-      {rows.map((r) => <AgentRow key={r.agent.name} a={r.agent} flash={r.agent.name === flashName} nested={r.nested} hasChildren={r.hasChildren} collapsed={r.collapsed} hiddenCount={r.hiddenCount} hiddenNeedsAttention={r.hiddenNeedsAttention} onToggle={() => toggle(k(`a:${r.agent.name}`))} />)}
+      {rows.map((r) => (
+        <AgentRow
+          key={r.agent.name}
+          a={r.agent}
+          flash={r.agent.name === flashName}
+          nested={r.nested}
+          hasChildren={r.hasChildren}
+          collapsed={r.collapsed}
+          hiddenCount={r.hiddenCount}
+          hiddenNeedsAttention={r.hiddenNeedsAttention}
+          onToggle={() => toggle(k(`a:${r.agent.name}`))}
+          metricsOpen={metricsOpen.has(k(`m:${r.agent.name}`))}
+          onToggleMetrics={() => onToggleMetrics(r.agent.name)}
+        />
+      ))}
     </>;
   }
   if (tab === "Terminals") {
@@ -610,6 +691,8 @@ export function App({ fleets = [SAMPLE], dispatch, prefs = {}, collapsedKeys = [
   const [tab, setTab] = useState<TabId>("Agents");
   const [open, setOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set(collapsedKeys));
+  /** spec 386 — which agents show resource detail lanes (`${wsHash}:m:${name}`); session-local. */
+  const [metricsOpen, setMetricsOpen] = useState<Set<string>>(() => new Set());
   const [flashName, setFlashName] = useState<string | null>(null);
   const [activePinTag, setActivePinTag] = useState<string | null>(null);
   // spec 242 — sort: the host's persisted pref seeds it; a user choice this session OVERRIDES (and persists),
@@ -634,7 +717,34 @@ export function App({ fleets = [SAMPLE], dispatch, prefs = {}, collapsedKeys = [
     });
   };
   const toggle = (k: string) => updateCollapsed((c) => { const n = new Set(c); n.has(k) ? n.delete(k) : n.add(k); return n; });
+  const toggleMetrics = (scope: string, agentName: string) => {
+    const key = `${scope}:m:${agentName}`;
+    setMetricsOpen((cur) => {
+      const n = new Set(cur);
+      n.has(key) ? n.delete(key) : n.add(key);
+      return n;
+    });
+  };
+  const setAllMetrics = (open: boolean) => {
+    setMetricsOpen(() => {
+      const n = new Set<string>();
+      if (open) {
+        for (const f of fleets) {
+          const scope = f.folder?.hash ?? "";
+          for (const a of f.agents) {
+            if (a.resources) n.add(`${scope}:m:${a.name}`);
+          }
+        }
+      }
+      return n;
+    });
+  };
   const pinTags = useMemo(() => [...new Set(fleets.flatMap((f) => f.pins.flatMap((p) => p.tags)))].sort((a, b) => a.localeCompare(b)), [fleets]);
+  const metricsCapable = useMemo(
+    () => fleets.reduce((n, f) => n + f.agents.filter((a) => a.resources).length, 0),
+    [fleets],
+  );
+  const metricsOpenCount = metricsOpen.size;
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); setOpen((o) => !o); } };
@@ -723,7 +833,20 @@ export function App({ fleets = [SAMPLE], dispatch, prefs = {}, collapsedKeys = [
   const renderFolder = (f: FleetVM) => (
     <DispatchCtx.Provider value={ctxFor(f.folder?.hash)}>
       <div class="ws-scope" data-ws={f.folder?.hash ?? ""}>
-        <Panel tab={tab} fleet={f} scope={f.folder?.hash ?? ""} collapsed={collapsed} toggle={toggle} flashName={flashName} agentSort={sortAgents} terminalSort={sortTerminals} activePinTag={activePinTag} onPinTag={setActivePinTag} />
+        <Panel
+          tab={tab}
+          fleet={f}
+          scope={f.folder?.hash ?? ""}
+          collapsed={collapsed}
+          toggle={toggle}
+          flashName={flashName}
+          agentSort={sortAgents}
+          terminalSort={sortTerminals}
+          activePinTag={activePinTag}
+          onPinTag={setActivePinTag}
+          metricsOpen={metricsOpen}
+          onToggleMetrics={(name) => toggleMetrics(f.folder?.hash ?? "", name)}
+        />
       </div>
     </DispatchCtx.Provider>
   );
@@ -750,8 +873,23 @@ export function App({ fleets = [SAMPLE], dispatch, prefs = {}, collapsedKeys = [
           const active = section === "agents" ? sortAgents : sortTerminals;
           // A–Z ⇄ Z–A toggle (one click flips direction); no menu — there are only two alphabetical modes.
           const flipSort = () => changeSort(section, active === "name-asc" ? "name-desc" : "name-asc");
+          // spec 386 — one icon toggle for all metrics (same act affordance as sort/add), not two text buttons.
+          const allMetricsOpen = metricsCapable > 0 && metricsOpenCount >= metricsCapable;
+          const flipAllMetrics = () => setAllMetrics(!allMetricsOpen);
           return <>
             <span class="sec-actions">
+              {tab === "Agents" && metricsCapable > 0 && (
+                <button
+                  class={`act${allMetricsOpen ? " on" : ""}`}
+                  type="button"
+                  title={allMetricsOpen ? "Collapse all resource metrics" : "Expand all resource metrics"}
+                  aria-label={allMetricsOpen ? "Collapse all resource metrics" : "Expand all resource metrics"}
+                  aria-pressed={allMetricsOpen}
+                  onClick={flipAllMetrics}
+                >
+                  <Icon name="graph" />
+                </button>
+              )}
               <button class="act" type="button" title={`Sort ${section} — ${SORT_LABEL[active]} (click to flip)`} aria-label={`Sort ${section} (${SORT_LABEL[active]}); click to flip`} onClick={flipSort}><SortIcon dir={active} /></button>
               {STUDIO_OF[tab] && <Act icon="add" title={STUDIO_OF[tab]!.label} on={() => dispatch?.global(STUDIO_OF[tab]!.op)} />}
             </span>

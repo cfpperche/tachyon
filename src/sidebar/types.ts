@@ -52,6 +52,8 @@ export interface AgentVM {
   branchDrift?: boolean;
   /** spec 384 — absolute session cwd (worktree path or workspace root); tooltip only. */
   worktreePath?: string;
+  /** spec 386 — live CPU/RSS for the agent pane subtree (running agents only). */
+  resources?: { cpuPct?: number; memMb: number };
   verify?: Verify;
   harness?: boolean;
   resumable?: boolean;
@@ -196,9 +198,9 @@ export const SAMPLE: FleetVM = {
   handoff: { exists: true, staleness: "needs_distill", pendingCount: 3 },
   bridge: { port: "42551", connected: true },
   agents: [
-    { name: "orchestrator", model: "Opus 4.8", status: "running", attention: "working", liveBranch: "main", worktreePath: "/ws", ai: true },
-    { name: "reviewer", model: "Sonnet 5", status: "running", parent: "orchestrator", harness: true, liveBranch: "main", worktreePath: "/ws", ai: true, adhoc: true },
-    { name: "feature-auth", model: "GPT-5.1 Codex", status: "running", attention: "needs input", worktree: "tachyon/feature-auth", liveBranch: "tachyon/feature-auth", worktreePath: "/cache/feature-auth", verify: "pass", verifiable: true, forked: true, forkable: true, ai: true },
+    { name: "orchestrator", model: "Opus 4.8", status: "running", attention: "working", liveBranch: "main", worktreePath: "/ws", resources: { cpuPct: 12, memMb: 420 }, ai: true },
+    { name: "reviewer", model: "Sonnet 5", status: "running", parent: "orchestrator", harness: true, liveBranch: "main", worktreePath: "/ws", resources: { cpuPct: 8, memMb: 310 }, ai: true, adhoc: true },
+    { name: "feature-auth", model: "GPT-5.1 Codex", status: "running", attention: "needs input", worktree: "tachyon/feature-auth", liveBranch: "tachyon/feature-auth", worktreePath: "/cache/feature-auth", resources: { cpuPct: 55, memMb: 920 }, verify: "pass", verifiable: true, forked: true, forkable: true, ai: true },
     { name: "researcher", status: "needs", attention: "needs input", harness: true, liveBranch: "main", worktreePath: "/ws", ai: true },
     { name: "docs-writer", status: "idle", liveBranch: "main", worktreePath: "/ws", ai: true },
     { name: "feature-billing", status: "idle", worktree: "tachyon/feature-billing", liveBranch: "feat/billing-wip", branchDrift: true, worktreePath: "/cache/feature-billing", verify: "stale", verifiable: true, ai: true },
