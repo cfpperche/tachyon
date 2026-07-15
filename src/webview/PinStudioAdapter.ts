@@ -1,14 +1,10 @@
-import type { Workspace } from "../workspace/Workspace.js";
-import { PinAttachmentStore } from "../pins/PinAttachmentStore.js";
-import type { ResolvedRichDocAttachment } from "../richDoc/types.js";
+import type { WorkspacePinStudioTarget } from "../shell/PinStudioTarget.js";
 import type { StudioHostAdapter, StudioLoadContext } from "./shared/studio/adapter.js";
 import { NO_VALIDATION_ERRORS, type StudioValidationResult } from "./shared/studio/errorTaxonomy.js";
-import type { PinStudioAttachmentVM } from "./pin-studio/types.js";
 import {
   PIN_STUDIO_DOMAIN_MESSAGE_NAMES,
   canDiscardPinFields,
   computePinDirty,
-  isEmptyDoc,
   pinStudioTitleFor,
   serializePinPatch,
   type PinDetailEntity,
@@ -16,6 +12,7 @@ import {
   type PinPatch,
 } from "./pin-studio/domain.js";
 
+/** Presentation adapter only; Pin persistence and media mutation live behind WorkspacePinStudioTarget. */
 export class PinStudioAdapter implements StudioHostAdapter<PinDetailEntity, PinFields, PinPatch> {
   readonly entityType = "pin";
   readonly domainMessageNames = PIN_STUDIO_DOMAIN_MESSAGE_NAMES;
@@ -29,7 +26,7 @@ export class PinStudioAdapter implements StudioHostAdapter<PinDetailEntity, PinF
     canDiscard: canDiscardPinFields,
   };
 
-  constructor(private readonly ws: Workspace) {}
+  constructor(private readonly target: WorkspacePinStudioTarget) {}
 
   setInitialTitle(title: string): void {
     this.pendingInitialTitle = title;
@@ -39,36 +36,13 @@ export class PinStudioAdapter implements StudioHostAdapter<PinDetailEntity, PinF
     return pinStudioTitleFor(mode, entityId, entity);
   }
 
-  load(entityId: string | undefined, context?: StudioLoadContext) {
-    if (!entityId) {
-      return {
-        status: "ok" as const,
-        entity: {
-          workspaceHash: this.ws.wsHash,
-          folder: this.ws.folderName,
-          title: this.pendingInitialTitle,
-          tags: [],
-          doc: null,
-          attachments: [],
-        },
-      };
-    }
+  async load(entityId: string | undefined, context?: StudioLoadContext) {
     try {
-      const detail = this.ws.pinStore.readDetail(entityId);
-      return {
-        status: "ok" as const,
-        entity: {
-          workspaceHash: this.ws.wsHash,
-          folder: this.ws.folderName,
-          pinId: entityId,
-          title: detail.summary.text,
-          tags: detail.summary.tags ?? [],
-          doc: detail.doc,
-          attachments: resolveAttachmentsForWebview(detail.attachments, new PinAttachmentStore(this.ws.workspaceRoot), context),
-        },
-      };
-    } catch (err) {
-      return { status: "error" as const, error: err instanceof Error ? err.message : String(err) };
+      const entity = await this.target.loadPinStudio(entityId, context);
+      if (!entityId) entity.title = this.pendingInitialTitle;
+      return { status: "ok" as const, entity };
+    } catch (error) {
+      return { status: "error" as const, error: error instanceof Error ? error.message : String(error) };
     }
   }
 
@@ -79,44 +53,6 @@ export class PinStudioAdapter implements StudioHostAdapter<PinDetailEntity, PinF
   }
 
   save(entityId: string | undefined, patch: PinPatch) {
-    try {
-      const title = patch.title.trim();
-      const rich = !isEmptyDoc(patch.doc) || patch.attachments.length > 0;
-      const tags = patch.tags ?? [];
-      if (entityId) {
-        if (rich) this.ws.pinStore.saveDetail(entityId, { text: title, tags, doc: patch.doc, attachments: patch.attachments });
-        else this.ws.pinStore.clearDetail(entityId, title, new Date().toISOString(), tags);
-      } else if (rich) {
-        this.ws.pinStore.createRich(title, "human", { tags, doc: patch.doc, attachments: patch.attachments });
-      } else {
-        this.ws.pinStore.create(title, "human", { tags });
-      }
-      return { status: "ok" as const };
-    } catch (err) {
-      return {
-        status: "error" as const,
-        error: {
-          code: "pin/save-failed",
-          message: err instanceof Error ? err.message : String(err),
-          source: "persistence" as const,
-        },
-      };
-    }
+    return this.target.savePinStudio(entityId, patch);
   }
-}
-
-function resolveAttachmentsForWebview(attachments: ResolvedRichDocAttachment[], store: PinAttachmentStore, context: StudioLoadContext | undefined): PinStudioAttachmentVM[] {
-  return attachments.map((att) => {
-    if (att.kind === "excalidraw") {
-      return {
-        ...att,
-        ...(att.previewAvailable ? { previewUri: context?.asWebviewUri(store.blobPath(att.previewBlobRef)) ?? store.blobPath(att.previewBlobRef) } : {}),
-        ...(att.sceneAvailable ? { sceneJson: store.readExcalidrawScene(att) } : {}),
-      };
-    }
-    return {
-      ...att,
-      ...(att.available ? { uri: context?.asWebviewUri(store.blobPath(att.blobRef)) ?? store.blobPath(att.blobRef) } : {}),
-    };
-  });
 }

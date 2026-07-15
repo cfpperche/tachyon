@@ -10,6 +10,7 @@ import { EngineEventJournal } from "../../src/engine-service/eventJournal.js";
 import {
   workspaceCommandSuccessV1,
   workspaceMissionControlViewSuccessV1,
+  workspacePinStudioViewSuccessV1,
   workspaceProbeViewSuccessV1,
   workspaceTaskDetailViewSuccessV1,
   workspaceTaskStudioViewSuccessV1,
@@ -313,6 +314,36 @@ describe("EngineControlClient", () => {
     await client.attach();
     expect(await client.query({ schemaVersion: 1, method: "task.studio", input: { id: "t-abc123" } }))
       .toMatchObject({ method: "task.studio", status: "ok", view: { studio: { taskId: "t-abc123" } } });
+  });
+
+  it("allows the dedicated Pin Studio envelope above the ordinary 64 KiB response limit", async () => {
+    const f = fixture();
+    const result = workspacePinStudioViewSuccessV1({
+      schemaVersion: 1,
+      studio: {
+        schemaVersion: 1,
+        pinId: "p-abc123",
+        title: "x".repeat(80_000),
+        tags: [],
+        doc: { type: "doc", content: [{ type: "paragraph" }] },
+        attachments: [],
+      },
+    });
+    expect(Buffer.byteLength(JSON.stringify({ ok: true, op: "query", result }), "utf8")).toBeGreaterThan(64 * 1024);
+    const server = await startEngineControlServer({
+      socketPath: f.socketPath,
+      identity: f.identity,
+      getSnapshot: f.snapshot,
+      query: async (query) => {
+        if (query.method !== "pin.studio") throw new Error("unexpected query");
+        return result;
+      },
+    });
+    servers.push(server);
+    const client = new EngineControlClient({ socketPath: f.socketPath, hello: f.hello });
+    await client.attach();
+    expect(await client.query({ schemaVersion: 1, method: "pin.studio", input: { id: "p-abc123" } }))
+      .toMatchObject({ method: "pin.studio", status: "ok", view: { studio: { pinId: "p-abc123" } } });
   });
 
   it("invokes an operation by exact id without transport-level retries", async () => {

@@ -1,15 +1,22 @@
 import { z } from "zod";
 import type { RichDocAttachment } from "../richDoc/types.js";
 import type { ArtifactRef, TaskPriority } from "../tasks/types.js";
+import {
+  decodeRichDocBase64,
+  isTiptapDoc,
+  RICH_DOC_IMAGE_MAX_BYTES,
+  richDocAttachmentV1Schema,
+  richDocImagePayloadV1Schema,
+  richDocSketchPayloadV1Schema,
+  type RichDocImagePayloadV1,
+  type RichDocSketchPayloadV1,
+} from "./richDocWire.js";
 import { isStagedPayloadRefV1, type StagedPayloadRefV1 } from "./stagedPayload.js";
-import { isTiptapDoc, taskStudioAttachmentV1Schema } from "./taskStudioProjection.js";
 
 export const TASK_STUDIO_STAGED_PAYLOAD_MAX_BYTES = 64 * 1024 * 1024;
-export const TASK_STUDIO_IMAGE_MAX_BYTES = 10 * 1024 * 1024;
+export const TASK_STUDIO_IMAGE_MAX_BYTES = RICH_DOC_IMAGE_MAX_BYTES;
 export const TASK_STUDIO_PROTOTYPE_MAX_BYTES = 512 * 1024;
-const MAX_IMAGE_BASE64_CHARS = Math.ceil(TASK_STUDIO_IMAGE_MAX_BYTES / 3) * 4;
 const taskId = z.string().regex(/^t-[0-9a-f]{6}$/);
-const attachmentId = z.string().regex(/^att-[0-9a-f]{6}$/);
 const boundedBytes = (max: number, label: string) => z.string().refine(
   (value) => Buffer.byteLength(value, "utf8") <= max,
   `${label} exceeds ${max} bytes`,
@@ -49,23 +56,8 @@ export interface TaskStudioPatchV1 {
   expectUpdatedAt?: string;
 }
 
-export interface TaskStudioImagePayloadV1 {
-  schemaVersion: 1;
-  mediaType: "image/png" | "image/jpeg" | "image/webp" | "image/gif";
-  name?: string;
-  source: "paste" | "drop" | "import";
-  dataBase64: string;
-}
-
-export interface TaskStudioSketchPayloadV1 {
-  schemaVersion: 1;
-  attachmentId?: string;
-  name?: string;
-  source: "blank" | "annotate-image";
-  baseImageAttachmentId?: string;
-  sceneJson: string;
-  previewBase64: string;
-}
+export type TaskStudioImagePayloadV1 = RichDocImagePayloadV1;
+export type TaskStudioSketchPayloadV1 = RichDocSketchPayloadV1;
 
 export interface TaskStudioPrototypePayloadV1 {
   schemaVersion: 1;
@@ -101,11 +93,13 @@ const patch = z.object({
   deps: z.array(taskId).max(500),
   artifact_refs: z.array(artifactRef).max(10),
   doc: z.custom<TaskStudioPatchV1["doc"]>(isTiptapDoc, "invalid bounded Tiptap document"),
-  attachments: z.array(taskStudioAttachmentV1Schema).max(500),
+  attachments: z.array(richDocAttachmentV1Schema).max(500),
   bodyBaseline: z.string().max(4_000).optional(),
   dirty,
   docDirty: z.boolean(),
-  expectUpdatedAt: z.string().min(1).max(64).optional(),
+  expectUpdatedAt: z.string().min(1).max(64)
+    .refine((value) => Number.isFinite(Date.parse(value)), "invalid expected task timestamp")
+    .optional(),
 }).strict().superRefine((value, context) => {
   if (new Set(value.deps).size !== value.deps.length) context.addIssue({ code: z.ZodIssueCode.custom, message: "duplicate task dependencies" });
   if (new Set(value.attachments.map((row) => row.id)).size !== value.attachments.length) {
@@ -113,22 +107,6 @@ const patch = z.object({
   }
 });
 const savePayload = z.object({ schemaVersion: z.literal(1), patch }).strict();
-const imagePayload = z.object({
-  schemaVersion: z.literal(1),
-  mediaType: z.enum(["image/png", "image/jpeg", "image/webp", "image/gif"]),
-  name: z.string().max(500).optional(),
-  source: z.enum(["paste", "drop", "import"]),
-  dataBase64: z.string().min(1).max(MAX_IMAGE_BASE64_CHARS).refine(isCanonicalBase64, "image payload is not canonical base64"),
-}).strict();
-const sketchPayload = z.object({
-  schemaVersion: z.literal(1),
-  attachmentId: attachmentId.optional(),
-  name: z.string().max(500).optional(),
-  source: z.enum(["blank", "annotate-image"]),
-  baseImageAttachmentId: attachmentId.optional(),
-  sceneJson: boundedBytes(48 * 1024 * 1024, "Excalidraw scene"),
-  previewBase64: z.string().min(1).max(MAX_IMAGE_BASE64_CHARS).refine(isCanonicalBase64, "sketch preview is not canonical base64"),
-}).strict();
 const prototypePayload = z.object({
   schemaVersion: z.literal(1),
   title: boundedBytes(200, "prototype title").refine((value) => value.trim().length > 0, "prototype title is empty"),
@@ -163,8 +141,8 @@ export function parseTaskStudioStagedPayloadV1(
   try { value = JSON.parse(bytes.toString("utf8")); }
   catch { throw new Error("Task Studio staged payload is not valid JSON"); }
   if (action === "save") return savePayload.parse(value) as { schemaVersion: 1; patch: TaskStudioPatchV1 };
-  if (action === "put-image") return imagePayload.parse(value) as TaskStudioImagePayloadV1;
-  if (action === "put-sketch") return sketchPayload.parse(value) as TaskStudioSketchPayloadV1;
+  if (action === "put-image") return richDocImagePayloadV1Schema.parse(value) as TaskStudioImagePayloadV1;
+  if (action === "put-sketch") return richDocSketchPayloadV1Schema.parse(value) as TaskStudioSketchPayloadV1;
   return prototypePayload.parse(value) as TaskStudioPrototypePayloadV1;
 }
 
@@ -173,14 +151,5 @@ export function encodeTaskStudioStagedPayloadV1(value: TaskStudioStagedPayloadV1
 }
 
 export function decodeTaskStudioBase64(value: string, label: string): Buffer {
-  if (!isCanonicalBase64(value)) throw new Error(`${label} is not canonical base64`);
-  const data = Buffer.from(value, "base64");
-  if (data.byteLength > TASK_STUDIO_IMAGE_MAX_BYTES) throw new Error(`${label} exceeds 10 MB`);
-  return data;
-}
-
-function isCanonicalBase64(value: string): boolean {
-  if (!value || value.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/.test(value)) return false;
-  try { return Buffer.from(value, "base64").toString("base64") === value; }
-  catch { return false; }
+  return decodeRichDocBase64(value, label);
 }

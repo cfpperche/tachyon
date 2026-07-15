@@ -22,6 +22,17 @@ import {
   type TaskDetailViewV1,
 } from "../runtime-api/taskDetailProjection.js";
 import {
+  isPinStudioApplyInputV1,
+  type PinStudioApplyActionV1,
+  type PinStudioApplyInputV1,
+} from "../runtime-api/pinStudioCommands.js";
+import {
+  isPinStudioViewV1,
+  parsePinStudioViewV1,
+  type PinStudioViewV1,
+} from "../runtime-api/pinStudioProjection.js";
+import { richDocAttachmentV1Schema } from "../runtime-api/richDocWire.js";
+import {
   isTaskStudioApplyInputV1,
   isTaskStudioCancelInputV1,
   type TaskStudioApplyActionV1,
@@ -31,7 +42,6 @@ import {
 import {
   isTaskStudioViewV1,
   parseTaskStudioViewV1,
-  taskStudioAttachmentV1Schema,
   type TaskStudioViewV1,
 } from "../runtime-api/taskStudioProjection.js";
 
@@ -145,10 +155,11 @@ export type WorkspaceCommandMethodV1 =
   | "validation.close"
   | "task.prototype.review"
   | "task.studio.apply"
-  | "task.studio.cancel";
+  | "task.studio.cancel"
+  | "pin.studio.apply";
 
 export type WorkspaceAgentCommandMethodV1 = Extract<WorkspaceCommandMethodV1, `agent.${string}`>;
-export type WorkspaceSimpleCommandMethodV1 = Exclude<WorkspaceCommandMethodV1, "studio.submit" | "task.studio.apply">;
+export type WorkspaceSimpleCommandMethodV1 = Exclude<WorkspaceCommandMethodV1, "studio.submit" | "task.studio.apply" | "pin.studio.apply">;
 
 /** Exact versioned wire shape of the five config-backed Studio forms. */
 export interface WorkspaceStudioFormV1 {
@@ -215,6 +226,10 @@ export type WorkspaceCommandV1 = {
   schemaVersion: 1;
   method: "task.studio.cancel";
   input: TaskStudioCancelInputV1;
+} | {
+  schemaVersion: 1;
+  method: "pin.studio.apply";
+  input: PinStudioApplyInputV1;
 };
 
 export type WorkspaceCommandResultV1 =
@@ -242,13 +257,23 @@ export type WorkspaceCommandResultV1 =
     }
   | {
       schemaVersion: 1;
+      method: "pin.studio.apply";
+      status: "ok";
+      action: PinStudioApplyActionV1;
+      outcome: "saved" | "attachment-stored";
+      pinId?: string;
+      attachment?: import("../richDoc/types.js").RichDocAttachment;
+      overSoftLimit?: boolean;
+    }
+  | {
+      schemaVersion: 1;
       method: WorkspaceCommandMethodV1;
       status: "error";
       code: string;
       message: string;
     };
 
-export type WorkspaceQueryMethodV1 = "probe.view" | "task.board" | "task.detail" | "task.studio";
+export type WorkspaceQueryMethodV1 = "probe.view" | "task.board" | "task.detail" | "task.studio" | "pin.studio";
 
 export interface WorkspaceProbeViewRowV1 {
   runId: string;
@@ -293,6 +318,11 @@ export type WorkspaceQueryV1 =
       schemaVersion: 1;
       method: "task.studio";
       input: { id: string };
+    }
+  | {
+      schemaVersion: 1;
+      method: "pin.studio";
+      input: { id: string };
     };
 
 export type WorkspaceQueryResultV1 =
@@ -319,6 +349,12 @@ export type WorkspaceQueryResultV1 =
       method: "task.studio";
       status: "ok";
       view: TaskStudioViewV1;
+    }
+  | {
+      schemaVersion: 1;
+      method: "pin.studio";
+      status: "ok";
+      view: PinStudioViewV1;
     }
   | {
       schemaVersion: 1;
@@ -355,6 +391,7 @@ const AGENT_NAME_RE = /^[A-Za-z][A-Za-z0-9_-]{0,127}$/;
 export const MISSION_CONTROL_RESPONSE_MAX_BYTES = 32 * 1024 * 1024;
 export const TASK_DETAIL_RESPONSE_MAX_BYTES = 2 * 1024 * 1024;
 export const TASK_STUDIO_RESPONSE_MAX_BYTES = 32 * 1024 * 1024;
+export const PIN_STUDIO_RESPONSE_MAX_BYTES = 32 * 1024 * 1024;
 const WORKSPACE_COMMAND_METHODS = new Set<WorkspaceCommandMethodV1>([
   "agent.start",
   "agent.stop",
@@ -368,6 +405,7 @@ const WORKSPACE_COMMAND_METHODS = new Set<WorkspaceCommandMethodV1>([
   "task.prototype.review",
   "task.studio.apply",
   "task.studio.cancel",
+  "pin.studio.apply",
 ]);
 
 export function isSha256(value: unknown): value is string {
@@ -392,6 +430,7 @@ export function isWorkspaceCommandV1(value: unknown): value is WorkspaceCommandV
   if (value.method === "task.prototype.review") return isTaskPrototypeReviewInputV1(value.input);
   if (value.method === "task.studio.apply") return isTaskStudioApplyInputV1(value.input);
   if (value.method === "task.studio.cancel") return isTaskStudioCancelInputV1(value.input);
+  if (value.method === "pin.studio.apply") return isPinStudioApplyInputV1(value.input);
   return hasOnlyKeys(value.input, ["agent"])
     && typeof value.input.agent === "string"
     && AGENT_NAME_RE.test(value.input.agent);
@@ -427,8 +466,28 @@ export function isWorkspaceCommandResultV1(value: unknown): value is WorkspaceCo
       return value.outcome === "prototype-imported" && value.message === undefined
         && value.attachment === undefined && value.overSoftLimit === undefined;
     }
-    const attachment = taskStudioAttachmentV1Schema.safeParse(value.attachment);
+    const attachment = richDocAttachmentV1Schema.safeParse(value.attachment);
     return value.outcome === "attachment-stored" && value.message === undefined
+      && attachment.success
+      && ((value.action === "put-image" && attachment.data.kind === "image")
+        || (value.action === "put-sketch" && attachment.data.kind === "excalidraw"))
+      && typeof value.overSoftLimit === "boolean";
+  }
+  if (value.status === "ok" && value.method === "pin.studio.apply") {
+    const expectedKeys = ["schemaVersion", "method", "status", "action", "outcome"];
+    if (value.pinId !== undefined) expectedKeys.push("pinId");
+    if (value.attachment !== undefined) expectedKeys.push("attachment");
+    if (value.overSoftLimit !== undefined) expectedKeys.push("overSoftLimit");
+    if (!hasOnlyKeys(value, expectedKeys)
+      || (value.action !== "save" && value.action !== "put-image" && value.action !== "put-sketch")
+      || (value.outcome !== "saved" && value.outcome !== "attachment-stored")) return false;
+    if (value.action === "save") {
+      return value.outcome === "saved"
+        && typeof value.pinId === "string" && /^p-[0-9a-f]{6}$/.test(value.pinId)
+        && value.attachment === undefined && value.overSoftLimit === undefined;
+    }
+    const attachment = richDocAttachmentV1Schema.safeParse(value.attachment);
+    return value.outcome === "attachment-stored" && value.pinId === undefined
       && attachment.success
       && ((value.action === "put-image" && attachment.data.kind === "image")
         || (value.action === "put-sketch" && attachment.data.kind === "excalidraw"))
@@ -437,7 +496,8 @@ export function isWorkspaceCommandResultV1(value: unknown): value is WorkspaceCo
   if (value.status === "ok") {
     return hasOnlyKeys(value, ["schemaVersion", "method", "status"])
       && value.method !== "studio.submit"
-      && value.method !== "task.studio.apply";
+      && value.method !== "task.studio.apply"
+      && value.method !== "pin.studio.apply";
   }
   return value.status === "error"
     && hasOnlyKeys(value, ["schemaVersion", "method", "status", "code", "message"])
@@ -465,6 +525,11 @@ export function isWorkspaceQueryV1(value: unknown): value is WorkspaceQueryV1 {
       && typeof value.input.id === "string"
       && /^t-[0-9a-f]{6}$/.test(value.input.id);
   }
+  if (value.method === "pin.studio") {
+    return hasOnlyKeys(value.input, ["id"])
+      && typeof value.input.id === "string"
+      && /^p-[0-9a-f]{6}$/.test(value.input.id);
+  }
   if (value.method !== "probe.view") return false;
   const keys = Object.keys(value.input);
   return keys.every((key) => key === "caller")
@@ -474,7 +539,7 @@ export function isWorkspaceQueryV1(value: unknown): value is WorkspaceQueryV1 {
 
 export function isWorkspaceQueryResultV1(value: unknown): value is WorkspaceQueryResultV1 {
   if (!isRecord(value) || value.schemaVersion !== 1
-    || (value.method !== "probe.view" && value.method !== "task.board" && value.method !== "task.detail" && value.method !== "task.studio")) return false;
+    || (value.method !== "probe.view" && value.method !== "task.board" && value.method !== "task.detail" && value.method !== "task.studio" && value.method !== "pin.studio")) return false;
   if (value.status === "ok") {
     return hasOnlyKeys(value, ["schemaVersion", "method", "status", "view"])
       && (value.method === "probe.view"
@@ -483,7 +548,9 @@ export function isWorkspaceQueryResultV1(value: unknown): value is WorkspaceQuer
           ? isMissionControlViewV1(value.view)
           : value.method === "task.detail"
             ? isTaskDetailViewV1(value.view)
-            : isTaskStudioViewV1(value.view));
+            : value.method === "task.studio"
+              ? isTaskStudioViewV1(value.view)
+              : isPinStudioViewV1(value.view));
   }
   return value.status === "error"
     && hasOnlyKeys(value, ["schemaVersion", "method", "status", "code", "message"])
@@ -519,6 +586,20 @@ export function workspaceTaskStudioViewSuccessV1(view: TaskStudioViewV1): Worksp
   const transportEnvelope = { ok: true as const, op: "query" as const, result };
   if (Buffer.byteLength(`${JSON.stringify(transportEnvelope)}\n`, "utf8") > TASK_STUDIO_RESPONSE_MAX_BYTES) {
     throw new Error("Task Studio view exceeds its dedicated response size limit");
+  }
+  return result;
+}
+
+export function workspacePinStudioViewSuccessV1(view: PinStudioViewV1): WorkspaceQueryResultV1 {
+  const result = {
+    schemaVersion: 1,
+    method: "pin.studio",
+    status: "ok",
+    view: parsePinStudioViewV1(view),
+  } as const;
+  const transportEnvelope = { ok: true as const, op: "query" as const, result };
+  if (Buffer.byteLength(`${JSON.stringify(transportEnvelope)}\n`, "utf8") > PIN_STUDIO_RESPONSE_MAX_BYTES) {
+    throw new Error("Pin Studio view exceeds its dedicated response size limit");
   }
   return result;
 }
@@ -580,8 +661,8 @@ export function workspaceCommandSuccessV1(
   command: WorkspaceCommandV1,
   studioErrors: readonly string[] = [],
 ): WorkspaceCommandResultV1 {
-  if (command.method === "task.studio.apply") {
-    throw new Error("Task Studio apply commands require an exact outcome");
+  if (command.method === "task.studio.apply" || command.method === "pin.studio.apply") {
+    throw new Error("staged Studio apply commands require an exact outcome");
   }
   if (command.method !== "studio.submit") {
     return { schemaVersion: 1, method: command.method, status: "ok" };
@@ -612,6 +693,27 @@ export function workspaceTaskStudioApplySuccessV1(
     ...outcome,
   };
   if (!isWorkspaceCommandResultV1(candidate)) throw new Error("Task Studio apply result contradicts its action");
+  return candidate;
+}
+
+export function workspacePinStudioApplySuccessV1(
+  command: Extract<WorkspaceCommandV1, { method: "pin.studio.apply" }>,
+  outcome:
+    | { outcome: "saved"; pinId: string }
+    | { outcome: "attachment-stored"; attachment: import("../richDoc/types.js").RichDocAttachment; overSoftLimit: boolean },
+): WorkspaceCommandResultV1 {
+  if (command.input.action === "save" && command.input.pinId !== undefined
+    && outcome.outcome === "saved" && outcome.pinId !== command.input.pinId) {
+    throw new Error("Pin Studio save result changed the requested pin identity");
+  }
+  const candidate: WorkspaceCommandResultV1 = {
+    schemaVersion: 1,
+    method: command.method,
+    status: "ok",
+    action: command.input.action,
+    ...outcome,
+  };
+  if (!isWorkspaceCommandResultV1(candidate)) throw new Error("Pin Studio apply result contradicts its action");
   return candidate;
 }
 

@@ -444,3 +444,31 @@ None.
   remains the declared intermediate gate, and the next global run is reserved for final closure.  Production
   activation is still intentionally legacy until every remaining presentation consumer is migrated and the
   registry can replace it in one atomic cutover.
+
+## Twenty-first implementation slice — 2026-07-14
+
+- Added a strict daemon-owned Pin Studio projection plus exact `pin.studio` and staged
+  `pin.studio.apply` operations for save, image and sketch persistence.  The existing PinStore and
+  content-addressed attachment store remain the single persistence authorities behind one shared service;
+  the editor never receives attachment bytes through the control response and rehydrates only validated
+  workspace-local blob references.
+- Extracted the Task/Pin rich-document wire rules into one bounded validator for Tiptap trees, attachment
+  metadata, canonical base64 and sketch payloads.  Task Studio retained its public aliases while gaining an
+  explicit timestamp check for its save precondition, so the extraction did not create a second document
+  dialect.
+- Migrated `PinStudioAdapter` and `PinStudioPanel` off concrete Workspace, PinStore and attachment-store
+  ownership onto `WorkspacePinStudioTarget`.  Native file picking and webview URI creation remain shell
+  capabilities; legacy and remote targets call the same application service.  The concrete presentation
+  inventory shrank from six files to four.
+- Bound successful entity reads to the requested Task/Pin id at the authenticated control-server boundary.
+  Existing-Pin saves are also bound to the requested pin id in both the protocol result constructor and the
+  shell target, so a validly shaped response cannot silently redirect the editor to another entity.
+- The final related matrix passes 108/108, including a real daemon Workspace; typecheck, extension/engine
+  build, the 185-file editor-free daemon import closure and diff-check are green.  Packaged systemd dogfood
+  remotely loaded/saved Pin Studio, staged and hydrated an image, retained all previous Task/Mission Control/
+  Studio/agent flows, reused the exact engine and cleaned its unit, process, socket and tmux state.
+- The first dogfood attempt encountered nine stale sessions whose exact test-only names ended in
+  `dogfood-worker`; those pre-existing residues were removed without touching real agents, and the clean rerun
+  passed with no remaining session or unit.  No additional global full run was made: the first reviewable
+  proof (343 files, 4,068 passed, 3 skipped) remains the intermediate gate reserved until final closure.
+  Production activation is still intentionally legacy until the last four presentation consumers migrate.

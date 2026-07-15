@@ -3,6 +3,4 @@
 src/extension.ts
 src/webview/ActivityPanel.ts
 src/webview/HandoffPanel.ts
-src/webview/PinStudioAdapter.ts
-src/webview/PinStudioPanel.ts
 src/webview/SidebarPrototype.ts

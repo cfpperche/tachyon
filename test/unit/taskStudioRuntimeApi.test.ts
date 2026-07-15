@@ -34,6 +34,8 @@ describe("Task Studio Runtime API", () => {
     });
     expect(() => parseTaskStudioStagedPayloadV1("put-image", savePayload())).toThrow();
     expect(() => parseTaskStudioStagedPayloadV1("save", savePayload({ extra: true }))).toThrow();
+    expect(() => parseTaskStudioStagedPayloadV1("save", savePayload({ expectUpdatedAt: "not-a-timestamp" })))
+      .toThrow(/invalid expected task timestamp/);
     expect(() => parseTaskStudioStagedPayloadV1("save", Buffer.from("not-json"))).toThrow(/not valid JSON/);
   });
 

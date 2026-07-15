@@ -15,8 +15,10 @@ import { connectRemoteWorkspaceClient, type WorkspaceClient } from "../../src/sh
 import { ClientWorkspaceStudioTarget } from "../../src/shell/ClientWorkspaceStudioTarget.js";
 import { workspacePluginPresentationTarget } from "../../src/shell/WorkspacePresentation.js";
 import { workspaceMissionControlTarget } from "../../src/shell/MissionControlTarget.js";
+import { workspacePinStudioTarget } from "../../src/shell/PinStudioTarget.js";
 import { workspaceTaskDetailTarget } from "../../src/shell/TaskDetailTarget.js";
 import { workspaceTaskStudioTarget } from "../../src/shell/TaskStudioTarget.js";
+import { PinStore } from "../../src/pins/PinStore.js";
 import { sessionName, TmuxService, workspaceHash } from "../../src/tmux/TmuxService.js";
 import { TaskAttachmentStore } from "../../src/tasks/TaskAttachmentStore.js";
 import { TaskDetailStore, hashBody } from "../../src/tasks/TaskDetailStore.js";
@@ -81,6 +83,8 @@ const dogfoodValidation = await new ValidationStore(workspaceRoot).create({
   author: "human",
   executor: "human",
 });
+const dogfoodPinStore = new PinStore(workspaceRoot);
+const dogfoodPin = dogfoodPinStore.create("persistent Pin Studio dogfood", "human", { tags: ["ui"] });
 
 const unitName = engineSystemdUnitName(workspaceRoot);
 const dogfoodSession = sessionName(workspaceHash(fs.realpathSync(workspaceRoot)), "dogfood-worker");
@@ -194,6 +198,32 @@ try {
     || taskStudioImage.attachment.uri !== `data:image/png;base64,${Buffer.from("persistent Task Studio image").toString("base64")}`) {
     throw new Error("remote Task Studio image staging/hydration failed");
   }
+  const pinStudio = workspacePinStudioTarget(first);
+  const pinContext = { asWebviewUri: (file: string) => file };
+  const initialPin = await pinStudio.loadPinStudio(dogfoodPin.id, pinContext);
+  if (initialPin.pinId !== dogfoodPin.id || initialPin.title !== "persistent Pin Studio dogfood" || initialPin.tags[0] !== "ui") {
+    throw new Error(`remote Pin Studio projection failed: ${JSON.stringify(initialPin)}`);
+  }
+  const pinSaved = await pinStudio.savePinStudio(dogfoodPin.id, {
+    title: "persistent Pin Studio edited",
+    tags: ["docs"],
+    doc: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "remote Pin Studio body" }] }] },
+    attachments: [],
+  });
+  if (pinSaved.status !== "ok"
+    || dogfoodPinStore.readDetail(dogfoodPin.id).summary.text !== "persistent Pin Studio edited") {
+    throw new Error(`remote Pin Studio save failed: ${JSON.stringify(pinSaved)}`);
+  }
+  const pinImage = await pinStudio.putPinStudioImage({
+    data: Buffer.from("persistent Pin Studio image"),
+    mediaType: "image/png",
+    name: "pin-studio.png",
+    source: "paste",
+  }, pinContext);
+  if (pinImage.attachment.kind !== "image" || !pinImage.attachment.uri
+    || fs.readFileSync(pinImage.attachment.uri, "utf8") !== "persistent Pin Studio image") {
+    throw new Error("remote Pin Studio image staging/hydration failed");
+  }
   await taskDetail.reviewPrototype(dogfoodTask.id, {
     prototypeId: dogfoodRevision.id,
     action: "approve",
@@ -297,9 +327,9 @@ try {
     engine: { pid: identity.pid, instanceId: identity.instanceId, bundleId: identity.bundleId },
     bridge: identity.bridge,
     snapshotSeq: snapshot.seq,
-    queries: [probes.method, "task.board", "task.detail", "task.studio"],
+    queries: [probes.method, "task.board", "task.detail", "task.studio", "pin.studio"],
     pluginFleet: pluginFleet.agents.map((agent) => ({ name: agent.name, status: agent.status })),
-    commands: ["task.studio.apply", "task.prototype.review", "task.update", "task.reorder-lane", "validation.close", "studio.submit", started.method, restarted.method, killed.method],
+    commands: ["pin.studio.apply", "task.studio.apply", "task.prototype.review", "task.update", "task.reorder-lane", "validation.close", "studio.submit", started.method, restarted.method, killed.method],
   }, null, 2)}\n`);
 } finally {
   try { execFileSync("systemctl", ["--user", "stop", unitName], { stdio: "ignore" }); } catch { /* absent/failed unit */ }

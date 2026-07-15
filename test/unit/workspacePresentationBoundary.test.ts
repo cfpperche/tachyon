@@ -48,13 +48,15 @@ describe("persistent workspace presentation boundary", () => {
       "src/webview/TaskDetailPanel.ts",
       "src/webview/TaskStudioAdapter.ts",
       "src/webview/TaskStudioPanel.ts",
+      "src/webview/PinStudioAdapter.ts",
+      "src/webview/PinStudioPanel.ts",
       "src/presentation/items.ts",
       "src/plugins/ui/host.ts",
     ];
     for (const relative of migrated) {
       const source = fs.readFileSync(path.join(root, relative), "utf8");
       expect(source, relative).not.toMatch(/workspace\/Workspace(?:\.js)?/);
-      expect(source, relative).toMatch(/Workspace(?:Presentation|GitPresentation|ProbePresentation|PluginPresentation|MissionControl|TaskDetail|TaskStudio|Studio)Target/);
+      expect(source, relative).toMatch(/Workspace(?:Presentation|GitPresentation|ProbePresentation|PluginPresentation|MissionControl|PinStudio|TaskDetail|TaskStudio|Studio)Target/);
     }
   });
 
@@ -63,6 +65,9 @@ describe("persistent workspace presentation boundary", () => {
       "src/runtime-api/workspaceProjection.ts",
       "src/runtime-api/missionControlCommands.ts",
       "src/runtime-api/missionControlProjection.ts",
+      "src/runtime-api/pinStudioCommands.ts",
+      "src/runtime-api/pinStudioProjection.ts",
+      "src/runtime-api/richDocWire.ts",
       "src/runtime-api/taskDetailCommands.ts",
       "src/runtime-api/taskDetailProjection.ts",
       "src/runtime-api/stagedPayload.ts",
@@ -70,6 +75,7 @@ describe("persistent workspace presentation boundary", () => {
       "src/runtime-api/taskStudioProjection.ts",
       "src/shell/FakeWorkspaceClient.ts",
       "src/shell/MissionControlTarget.ts",
+      "src/shell/PinStudioTarget.ts",
       "src/shell/TaskDetailTarget.ts",
       "src/shell/TaskStudioTarget.ts",
       "src/shell/WorkspacePresentation.ts",

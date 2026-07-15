@@ -57,6 +57,7 @@ import { isAdhocItem } from "./presentation/contextValue.js";
 import { Workspace, type ViewKind } from "./workspace/Workspace.js";
 import type { WorkspacePresentationTarget } from "./shell/WorkspacePresentation.js";
 import { legacyMissionControlTarget } from "./shell/MissionControlTarget.js";
+import { legacyPinStudioTarget } from "./shell/PinStudioTarget.js";
 import { legacyTaskDetailTarget } from "./shell/TaskDetailTarget.js";
 import { legacyTaskStudioTarget } from "./shell/TaskStudioTarget.js";
 import { VsCodeHost } from "./workspace/VsCodeHost.js";
@@ -783,7 +784,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     approvalPanels.refreshAll();
     updateStatusBar();
   };
-  const pinStudioPanels = new PinStudioPanelManager(context.extensionUri, workspaces, refreshAll);
+  const pinStudioPanels = new PinStudioPanelManager(
+    context.extensionUri,
+    () => workspaces().map(legacyPinStudioTarget),
+    refreshAll,
+  );
   context.subscriptions.push({ dispose: () => pinStudioPanels.dispose() });
   const agentStudioPanels = new AgentStudioPanelManager(context.extensionUri, workspaces, refreshAll);
   context.subscriptions.push({ dispose: () => agentStudioPanels.dispose() });
@@ -1521,7 +1526,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const ws = node?.ws ?? (await pickWorkspace());
       if (!ws) return;
       if (text === undefined) {
-        pinStudioPanels.openNew(ws);
+        pinStudioPanels.openNew(legacyPinStudioTarget(ws));
         return;
       }
       if (text.trim().length === 0) return;
@@ -1544,7 +1549,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon.editPinItem", async (item: PinItem) => {
       const ws = wsOf(item);
       if (!ws) return;
-      pinStudioPanels.openExisting(ws, item.pinId);
+      pinStudioPanels.openExisting(legacyPinStudioTarget(ws), item.pinId);
     }),
     // ---- agents ----
     vscode.commands.registerCommand("tachyon.spawnAgentItem", async (item: AgentItem) => {

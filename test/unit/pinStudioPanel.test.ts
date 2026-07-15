@@ -5,6 +5,7 @@ import path from "node:path";
 import { Uri } from "vscode";
 import { __createdPanels, __resetVscodeMock, __setOpenDialogResult } from "../mocks/vscode.js";
 import { PinStore } from "../../src/pins/PinStore.js";
+import { legacyPinStudioTarget } from "../../src/shell/PinStudioTarget.js";
 import { PinStudioPanelManager } from "../../src/webview/PinStudioPanel.js";
 import { envelope } from "../../src/webview/shared/studio/protocol.js";
 import type { Workspace } from "../../src/workspace/Workspace.js";
@@ -32,14 +33,18 @@ function fakeWorkspace(root = mkroot()) {
   } as unknown as Workspace;
 }
 
+function studioTarget(ws: Workspace) {
+  return legacyPinStudioTarget(ws);
+}
+
 describe("PinStudioPanelManager", () => {
   it("reveals an existing editor for the same rich pin instead of opening a second panel", () => {
     const ws = fakeWorkspace();
     const pin = ws.pinStore.create("reuse me", "human");
     const manager = new PinStudioPanelManager(Uri.file("/ext"), () => {});
 
-    manager.openExisting(ws, pin.id);
-    manager.openExisting(ws, pin.id);
+    manager.openExisting(studioTarget(ws), pin.id);
+    manager.openExisting(studioTarget(ws), pin.id);
 
     expect(__createdPanels).toHaveLength(1);
     expect(__createdPanels[0].revealCount).toBe(1);
@@ -50,7 +55,7 @@ describe("PinStudioPanelManager", () => {
     const ws = fakeWorkspace();
     const manager = new PinStudioPanelManager(Uri.file("/ext"), () => { refreshed += 1; });
 
-    manager.openNew(ws);
+    manager.openNew(studioTarget(ws));
     __createdPanels[0].webview.__receive(envelope({ type: "save", patch: { title: "just text", tags: ["Docs"], doc: { type: "doc", content: [{ type: "paragraph" }] }, attachments: [] } }));
     await flush();
 
@@ -67,7 +72,7 @@ describe("PinStudioPanelManager", () => {
   it("stores pasted image bytes transiently and saves a rich pin without base64 payloads", async () => {
     const ws = fakeWorkspace();
     const manager = new PinStudioPanelManager(Uri.file("/ext"), () => {});
-    manager.openNew(ws);
+    manager.openNew(studioTarget(ws));
 
     __createdPanels[0].webview.__receive(envelope({
       type: "attachImage",
@@ -107,7 +112,7 @@ describe("PinStudioPanelManager", () => {
     const manager = new PinStudioPanelManager(Uri.file("/ext"), () => {});
     __setOpenDialogResult([Uri.file(img)]);
 
-    manager.openNew(ws);
+    manager.openNew(studioTarget(ws));
     __createdPanels[0].webview.__receive(envelope({ type: "importImage" }));
     await new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -118,13 +123,13 @@ describe("PinStudioPanelManager", () => {
   it("stores sketch scenes through Tachyon blobs without persisting inline image payloads", async () => {
     const ws = fakeWorkspace();
     const manager = new PinStudioPanelManager(Uri.file("/ext"), () => {});
-    manager.openNew(ws);
+    manager.openNew(studioTarget(ws));
 
     __createdPanels[0].webview.__receive(envelope({
       type: "storeSketch",
       name: "annotated flow",
       source: "annotate-image",
-      baseImageAttachmentId: "att-base",
+      baseImageAttachmentId: "att-aabbcc",
       sceneJson: JSON.stringify({
         type: "excalidraw",
         elements: [{ id: "el-1", type: "image", fileId: "file-1" }],
@@ -176,7 +181,7 @@ describe("PinStudioPanelManager", () => {
     const pin = ws.pinStore.create("old", "human", { tags: ["bug"] });
     const manager = new PinStudioPanelManager(Uri.file("/ext"), () => {});
 
-    manager.openExisting(ws, pin.id);
+    manager.openExisting(studioTarget(ws), pin.id);
     await flush();
     const loadMsg = __createdPanels[0].webview.posted.find((m) => (m as { type?: string }).type === "load") as { entity: { tags: string[] } };
     expect(loadMsg.entity.tags).toEqual(["bug"]);

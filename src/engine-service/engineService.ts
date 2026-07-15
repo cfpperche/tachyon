@@ -14,6 +14,11 @@ import { Workspace } from "../workspace/Workspace.js";
 import type { WorkspaceCoreProjectionsV1 } from "../runtime-api/workspaceProjection.js";
 import { buildBoardSnapshot } from "../tasks/boardSnapshot.js";
 import { projectMissionControlBoard } from "../runtime-api/missionControlProjection.js";
+import { projectPinStudio } from "../runtime-api/pinStudioProjection.js";
+import {
+  parsePinStudioStagedPayloadV1,
+  PIN_STUDIO_STAGED_PAYLOAD_MAX_BYTES,
+} from "../runtime-api/pinStudioCommands.js";
 import { projectTaskDetail } from "../runtime-api/taskDetailProjection.js";
 import { projectTaskStudio } from "../runtime-api/taskStudioProjection.js";
 import {
@@ -21,6 +26,11 @@ import {
   TASK_STUDIO_STAGED_PAYLOAD_MAX_BYTES,
 } from "../runtime-api/taskStudioCommands.js";
 import { reviewTaskPrototype } from "../tasks/taskPrototypeReview.js";
+import {
+  putPinStudioImage,
+  putPinStudioSketch,
+  savePinStudio,
+} from "../pins/pinStudioService.js";
 import {
   cancelTaskStudio,
   importTaskStudioPrototype,
@@ -37,6 +47,8 @@ import {
   isSha256,
   workspaceCommandSuccessV1,
   workspaceMissionControlViewSuccessV1,
+  workspacePinStudioApplySuccessV1,
+  workspacePinStudioViewSuccessV1,
   workspaceProbeViewSuccessV1,
   workspaceTaskDetailViewSuccessV1,
   workspaceTaskStudioApplySuccessV1,
@@ -205,6 +217,12 @@ async function executeWorkspaceQuery(
       studio: projectTaskStudio(workspace.taskStore, workspace.workspaceRoot, query.input.id),
     });
   }
+  if (query.method === "pin.studio") {
+    return workspacePinStudioViewSuccessV1({
+      schemaVersion: 1,
+      studio: projectPinStudio(workspace.pinStore, query.input.id),
+    });
+  }
   return workspaceProbeViewSuccessV1(await workspace.probeView(query.input.caller));
 }
 
@@ -213,7 +231,7 @@ async function executeWorkspaceCommand(
   activityLog: ActivityLogManager,
   stagedPayloads: StagedPayloadStore,
   command: WorkspaceCommandV1,
-  onViewsChanged: (view: "tasks") => void,
+  onViewsChanged: (view: "tasks" | "pins") => void,
 ): Promise<WorkspaceCommandResultV1> {
   if (command.method === "studio.submit") {
     return workspaceCommandSuccessV1(command, workspace.studioSubmit(command.input));
@@ -274,6 +292,25 @@ async function executeWorkspaceCommand(
     importTaskStudioPrototype(workspace.workspaceRoot, command.input.taskId, payload);
     onViewsChanged("tasks");
     return workspaceTaskStudioApplySuccessV1(command, { outcome: "prototype-imported" });
+  }
+  if (command.method === "pin.studio.apply") {
+    const bytes = stagedPayloads.consume(command.input.payload, PIN_STUDIO_STAGED_PAYLOAD_MAX_BYTES);
+    const payload = parsePinStudioStagedPayloadV1(command.input.action, bytes);
+    if (command.input.action === "save") {
+      if (!("patch" in payload)) throw new Error("Pin Studio save payload has the wrong shape");
+      const saved = savePinStudio(workspace.pinStore, command.input.pinId, payload.patch);
+      if (saved.status === "error") throw new Error(saved.message);
+      onViewsChanged("pins");
+      return workspacePinStudioApplySuccessV1(command, { outcome: "saved", pinId: saved.pinId });
+    }
+    if (command.input.action === "put-image") {
+      if (!("dataBase64" in payload) || !("mediaType" in payload)) throw new Error("Pin Studio image payload has the wrong shape");
+      const stored = putPinStudioImage(workspace.workspaceRoot, payload);
+      return workspacePinStudioApplySuccessV1(command, { outcome: "attachment-stored", ...stored });
+    }
+    if (!("sceneJson" in payload)) throw new Error("Pin Studio sketch payload has the wrong shape");
+    const stored = putPinStudioSketch(workspace.workspaceRoot, workspace.pinStore, command.input.pinId, payload);
+    return workspacePinStudioApplySuccessV1(command, { outcome: "attachment-stored", ...stored });
   }
   const agent = command.input.agent;
   switch (command.method) {

@@ -7,6 +7,7 @@ import { createHash } from "node:crypto";
 import { startEngineControlServer, type RunningEngineControlServer } from "../../src/engine-service/controlServer.js";
 import {
   workspaceCommandSuccessV1,
+  workspacePinStudioViewSuccessV1,
   workspaceProbeViewSuccessV1,
   type EngineControlRequestV1,
   type EngineControlResponseV1,
@@ -233,6 +234,45 @@ describe("persistent engine shell control", () => {
     expect(await control(f.socketPath, { ...request, sessionToken: "wrong" }))
       .toMatchObject({ ok: false, code: "SHELL_SESSION_INVALID" });
     expect(reads).toBe(2);
+  });
+
+  it("refuses a valid query result whose entity identity differs from the request", async () => {
+    const f = fixture();
+    const server = await startEngineControlServer({
+      socketPath: f.socketPath,
+      identity: f.identity,
+      getSnapshot: f.snapshot,
+      query: async () => workspacePinStudioViewSuccessV1({
+        schemaVersion: 1,
+        studio: {
+          schemaVersion: 1,
+          pinId: "p-def456",
+          title: "wrong pin",
+          tags: [],
+          doc: null,
+          attachments: [],
+        },
+      }),
+    });
+    servers.push(server);
+    const attached = await control(f.socketPath, {
+      schemaVersion: 1,
+      op: "attach",
+      workspaceHash: "abc12345",
+      hello: hello(f.root, "shell-query-identity"),
+    });
+    expect(await control(f.socketPath, {
+      schemaVersion: 1,
+      op: "query",
+      workspaceHash: "abc12345",
+      shellId: "shell-query-identity",
+      sessionToken: attachedToken(attached),
+      query: { schemaVersion: 1, method: "pin.studio", input: { id: "p-abc123" } },
+    })).toMatchObject({
+      ok: true,
+      op: "query",
+      result: { status: "error", method: "pin.studio", code: "INVALID_QUERY_RESULT" },
+    });
   });
 
   it("executes one operation once across concurrent shells and binds replay to the exact intent", async () => {

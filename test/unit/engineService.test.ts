@@ -8,7 +8,9 @@ import { createHash } from "node:crypto";
 import { EngineControlClient } from "../../src/engine-service/controlClient.js";
 import { StagedPayloadStore } from "../../src/engine-service/stagedPayloadStore.js";
 import type { EngineServiceIdentityV1, EngineShellHelloV1, WorkspaceEventV1 } from "../../src/engine-service/protocol.js";
+import { encodePinStudioStagedPayloadV1 } from "../../src/runtime-api/pinStudioCommands.js";
 import { encodeTaskStudioStagedPayloadV1 } from "../../src/runtime-api/taskStudioCommands.js";
+import { PinStore } from "../../src/pins/PinStore.js";
 import { TmuxService, workspaceHash } from "../../src/tmux/TmuxService.js";
 import { blankCommandFields } from "../../src/webview/command-studio-shell/domain.js";
 import { TaskStore } from "../../src/tasks/TaskStore.js";
@@ -88,6 +90,8 @@ describe("daemon engine service", () => {
       executor: "human",
       now: "2026-07-14T12:00:00.000Z",
     });
+    const seedPinStore = new PinStore(workspaceRoot);
+    const seedPin = seedPinStore.create("remote Pin Studio", "human", { tags: ["ui"] });
     const socketPath = path.join(runtimeRoot, "engine.sock");
     const viteNode = path.join(process.cwd(), "node_modules/vite-node/vite-node.mjs");
     const worker = path.join(process.cwd(), "test/fixtures/daemonEngineServiceWorker.ts");
@@ -165,6 +169,61 @@ describe("daemon engine service", () => {
     });
 
     const stagedPayloads = new StagedPayloadStore(runtimeRoot);
+    expect(await first.query({ schemaVersion: 1, method: "pin.studio", input: { id: seedPin.id } })).toMatchObject({
+      method: "pin.studio",
+      status: "ok",
+      view: { studio: { pinId: seedPin.id, title: "remote Pin Studio", tags: ["ui"], doc: null, attachments: [] } },
+    });
+    const stagedPinSave = stagedPayloads.stage(encodePinStudioStagedPayloadV1({
+      schemaVersion: 1,
+      patch: {
+        title: "edited through remote Pin Studio",
+        tags: ["docs"],
+        doc: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "engine pin body" }] }] },
+        attachments: [],
+      },
+    }));
+    const savePinCommand = {
+      schemaVersion: 1 as const,
+      method: "pin.studio.apply" as const,
+      input: { action: "save" as const, pinId: seedPin.id, payload: stagedPinSave },
+    };
+    const savedPin = await first.invoke("operation-pin-studio-save-0001", savePinCommand);
+    expect(savedPin).toEqual({
+      schemaVersion: 1,
+      method: "pin.studio.apply",
+      status: "ok",
+      action: "save",
+      outcome: "saved",
+      pinId: seedPin.id,
+    });
+    expect(fs.existsSync(path.join(stagedPayloads.directory, stagedPinSave.token))).toBe(false);
+    expect(await first.invoke("operation-pin-studio-save-0001", savePinCommand)).toEqual(savedPin);
+    await waitForEvent(first, (event) => event.kind === "views-changed" && event.payload.view === "pins");
+    expect(seedPinStore.readDetail(seedPin.id)).toMatchObject({
+      summary: { text: "edited through remote Pin Studio", tags: ["docs"], detail: true },
+      doc: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "engine pin body" }] }] },
+    });
+    const stagedPinImage = stagedPayloads.stage(encodePinStudioStagedPayloadV1({
+      schemaVersion: 1,
+      mediaType: "image/png",
+      name: "engine-pin.png",
+      source: "paste",
+      dataBase64: Buffer.from("remote Pin Studio image").toString("base64"),
+    }));
+    expect(await first.invoke("operation-pin-studio-image-0001", {
+      schemaVersion: 1,
+      method: "pin.studio.apply",
+      input: { action: "put-image", payload: stagedPinImage },
+    })).toMatchObject({
+      status: "ok",
+      action: "put-image",
+      outcome: "attachment-stored",
+      attachment: { kind: "image", name: "engine-pin.png" },
+      overSoftLimit: false,
+    });
+    expect(fs.existsSync(path.join(stagedPayloads.directory, stagedPinImage.token))).toBe(false);
+
     const stagedSave = stagedPayloads.stage(encodeTaskStudioStagedPayloadV1({
       schemaVersion: 1,
       patch: {

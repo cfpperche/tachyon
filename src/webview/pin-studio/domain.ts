@@ -1,4 +1,5 @@
 import type { PinAttachment } from "../../pins/types.js";
+import { isEmptyPinDoc } from "../../pins/pinStudioModel.js";
 import { assertNoDomainNameCollision } from "../shared/studio/protocol.js";
 import type { PinStudioAttachmentVM, TiptapJSON } from "./types.js";
 
@@ -47,13 +48,7 @@ export function canDiscardPinFields(fields: PinFields): boolean {
   return !fields.title.trim() && fields.tags.length === 0 && isEmptyDoc(fields.doc) && fields.attachments.length === 0;
 }
 
-export function isEmptyDoc(doc: TiptapJSON): boolean {
-  const content = doc.content ?? [];
-  if (content.length === 0) return true;
-  if (content.length !== 1) return false;
-  const only = content[0];
-  return only?.type === "paragraph" && (!only.content || only.content.length === 0);
-}
+export const isEmptyDoc = isEmptyPinDoc;
 
 function emptyDoc(): TiptapJSON {
   return { type: "doc", content: [{ type: "paragraph" }] };
