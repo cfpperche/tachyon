@@ -740,3 +740,61 @@ None.
   gate exposed two parallel-integration regressions: six missing pt-BR strings and a hand-authored sidebar filter
   control bypassing the component kit. Both were corrected at the integration boundary; their focused matrix is
   38/38 and the complete final `npm run verify:full:quiet` is green at **407 files, 4,644 passed, 3 skipped**.
+
+## Dogfood log
+
+### 2026-07-15T19:42:57Z — pass (1/1) — source: tasks.md — commit: 82baca8f181489b7c1f667bff3dba2f668a48da4
+- `node scripts/dogfood/persistent-engine.mjs` — pass
+
+
+### 2026-07-15T19:47:24Z — pass (1/1) — source: tasks.md — commit: 82baca8f181489b7c1f667bff3dba2f668a48da4
+- `node scripts/dogfood/persistent-engine.mjs` — pass
+## Verification log
+
+### 2026-07-15T19:43:15Z — pass (1/1) — source: tasks.md
+- `npm run typecheck && npm run check:engine-boundary && npm run verify:full:quiet` — pass
+
+### 2026-07-15T19:49:01Z — pass (1/1) — source: tasks.md
+- `npm run typecheck && npm run check:engine-boundary && npm run verify:full:quiet` — pass
+
+## Thirty-fourth implementation slice — 2026-07-15 installed acceptance candidate
+
+- Installed dogfood exposed two real defects before acceptance. First, the initial `0.56.5` VSIX carried
+  dirty provenance and was correctly refused by the production launcher. Packaging now fails before build
+  whenever tracked or non-ignored source is dirty; ignored output artifacts remain allowed. Second, legacy
+  state was initially imported into the engine storage parent while the daemon read its `state/` child. One
+  canonical `engineDaemonStateRoot()` now binds migration and every daemon consumer to the same directory.
+- Reload Window then reproduced a third defect at the actual process boundary: an Extension Host disappearing
+  while a control response was in flight emitted an unhandled socket `ECONNRESET`/`EPIPE` and terminated the
+  engine. The regression fails without the fix using a real Unix socket and a 4 MiB in-flight response. Client
+  socket errors are now contained to that disposable connection; the engine remains healthy for the next call.
+- The clean installed candidate is `tachyon-0.56.7-t-82f4e6.vsix`, SHA-256
+  `b567cbdf07d7f053ea4546225a6b6b652a454c59a42d0fd6973ae8808f56278d`, built from clean commit
+  `82baca8f181489b7c1f667bff3dba2f668a48da4`. Installation required no service, CLI or setup step beyond the
+  ordinary VSIX install and workspace open.
+- A controlled first boot moved the contaminated `0.56.6` engine state intact to
+  `/home/goat/.local/state/tachyon/dogfood-backups/t-82f4e6-20260715-162648/engine-state-0.56.6-contaminated`.
+  The new store contains state, secrets, both Bridge tokens and the migration marker only under canonical
+  `state/`; no duplicate authority remains in its parent. The pre-reset state is retained for rollback.
+- Before and after a maintainer-executed Reload Window, systemd reported the same PID `1880313`, invocation
+  `9e7c4cf655d94dd19a1cf8fc9c1bc091`, engine instance
+  `0d2eff8c-6b54-4aa0-8643-e477fe9eef32`, bundle
+  `a3d7e13fff0cea2054c63324699b37f75eae593d834484c4fd767bdb0755c621`, Bridge instance
+  `17d985997c3b64b7` and port `42897`. The existing Codex process remained PID `178692`; the engine journal
+  recorded no stop, crash or restart, and the Bridge-client rebind audit remained the one startup record.
+- The migrated pre-existing agent bearer authenticated with HTTP 200 before and after reload. A real MCP
+  `list_agents` call returned nine declared agents and exactly one live agent (`codex`), proving the Bridge
+  operation rather than only its listener. Visual evidence is recorded in
+  `.tachyon/evidence/t-82f4e6-installed-dogfood/04-clean-boot-before-reload.png` and
+  `.tachyon/evidence/t-82f4e6-installed-dogfood/05-after-idempotent-reload.png`.
+- The declared packaged dogfood now forces both parts of the no-shell contract. It first proves an attached
+  agent PID stays unchanged while an authenticated Bridge tool runs with zero shell leases. It then kills that
+  temporary process deliberately and requires the daemon-owned lifecycle monitor to restart it while shell
+  count remains zero; reattach must observe the restarted PID without changing engine or Bridge identity.
+- Generic resume of old Delivery-bound stopped agents remains intentionally refused pending the separate
+  Delivery recovery work recorded by spec 380. That existing policy is not caused or weakened by this process
+  boundary and is outside spec 382's non-goals.
+- The candidate remains isolated on `codex/t-82f4e6-persistent-engine`; nothing was integrated into `main`.
+  Its merge base is the current local `main` at `dcba7360`, so no accepted parallel mainline change is missing.
+- The final declared dogfood and the final `typecheck + engine-boundary + verify:full:quiet` gate both pass
+  after the no-shell monitor forcing was added. No further global verification run is justified before review.

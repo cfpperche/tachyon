@@ -49,9 +49,9 @@ _Generated from `plan.md` on 2026-07-14. Work top-to-bottom. No automatic integr
 
 - [x] Focused protocol/state/service/shell tests force concurrent ensure, duplicate invoke, event gaps,
   state migration, missing UI, crash, incompatible version and rollback.
-- [ ] A real process test proves repeated shell detach/attach keeps engine/Bridge/agent/Delivery/scheduler
+- [x] A real process test proves repeated shell detach/attach keeps engine/Bridge/agent/Delivery/scheduler
   identities unchanged and emits no lifecycle side effects.
-- [ ] A no-shell interval proves Bridge tools and one scheduled/monitor action remain functional.
+- [x] A no-shell interval proves Bridge tools and one scheduled/monitor action remain functional.
 - [x] Packaging/provenance tests prove the VSIX contains the engine and first use requires no manual step.
 - [x] `npm run typecheck`, engine-boundary/diff checks and `npm run verify:full:quiet` pass.
 
@@ -69,5 +69,7 @@ manipulate the VS Code window.
 
 ## Visual QA
 
-- [ ] Evidence: installed before/during/after-reload screenshots of connection state and restored views.
-- [ ] Verdict: no duplicate rows/actions, stale state, connection flicker or manual-setup prompt.
+- [x] Evidence: `.tachyon/evidence/t-82f4e6-installed-dogfood/04-clean-boot-before-reload.png`
+  and `.tachyon/evidence/t-82f4e6-installed-dogfood/05-after-idempotent-reload.png`.
+- [x] Verdict: the installed sidebar and shell views restored with one live Codex row, the Bridge connected,
+  no duplicate action/row and no manual-setup prompt; engine identity remained unchanged underneath the UI.

@@ -27,19 +27,19 @@ identity, audit and compatibility behavior.
 
 ## Acceptance criteria
 
-- [ ] **Scenario: installing the extension is the complete installation flow**
+- [x] **Scenario: installing the extension is the complete installation flow**
   - **Given** a supported host with no Tachyon service or prior Tachyon state
   - **When** the user installs the VSIX and first opens/acts on a Tachyon workspace
   - **Then** the extension verifies and materializes its bundled engine and starts the per-workspace service automatically
   - **And** the user does not install a CLI, run a system command, configure a service, or complete a second installer
   - **And** a missing host prerequisite produces one actionable Tachyon error rather than a silent embedded fallback
-- [ ] **Scenario: Reload Window is operationally idempotent**
+- [x] **Scenario: Reload Window is operationally idempotent**
   - **Given** a healthy persistent engine, live agents and an attached VS Code shell
   - **When** the window reloads once or repeatedly
   - **Then** engine PID/start identity/incarnation, public Bridge instance/port, agent tmux sessions/PIDs, Delivery leases and scheduler epoch are unchanged
   - **And** the audit contains shell detach/attach only: no engine restart, Bridge generation bump, agent rebind, stop, resume, autostart or hook materialization
   - **And** the new shell receives a coherent snapshot plus subsequent events without duplicating side effects
-- [ ] **Scenario: the engine works with no editor window**
+- [x] **Scenario: the engine works with no editor window**
   - **Given** the last attached VS Code shell closes or crashes
   - **When** agents use Bridge tools or schedules/monitors become due
   - **Then** orchestration, Tasks, handoff, approvals, Delivery, verification and managed-agent lifecycle continue

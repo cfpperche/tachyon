@@ -46,6 +46,7 @@ fs.writeFileSync(path.join(workspaceRoot, "tachyon.yml"), [
   "    cmd: sleep 300",
   "    kind: agent",
   "    autostart: false",
+  "    restart: on-crash",
   "",
 ].join("\n"), "utf8");
 const dogfoodTaskStore = new TaskStore(workspaceRoot);
@@ -420,6 +421,22 @@ try {
   } finally {
     await noShellBridge.close().catch(() => undefined);
   }
+  if (await new TmuxService().panePid(dogfoodSession) !== agentPidBeforeDetach) {
+    throw new Error("the live agent process changed during the no-shell Bridge call");
+  }
+  process.kill(agentPidBeforeDetach, "SIGKILL");
+  const agentPidAfterMonitorRestart = await waitForPanePidChange(dogfoodSession, agentPidBeforeDetach, 20_000);
+  const healthAfterMonitorRestart = await requestEngineControl(reused.controlSocketPath, {
+    schemaVersion: 1,
+    op: "health",
+    workspaceHash: identity.workspaceHash,
+  });
+  if (!healthAfterMonitorRestart.ok || healthAfterMonitorRestart.op !== "health"
+    || healthAfterMonitorRestart.shellCount !== 0
+    || healthAfterMonitorRestart.engine.instanceId !== identity.instanceId
+    || healthAfterMonitorRestart.engine.bridge.instanceId !== identity.bridge.instanceId) {
+    throw new Error("no-shell lifecycle recovery changed the persistent engine or Bridge identity");
+  }
   const reattached = await connectRemoteWorkspaceClient({
     workspaceRoot,
     bundle,
@@ -431,8 +448,8 @@ try {
     throw new Error("shell reattach changed the persistent engine or Bridge identity");
   }
   await waitForAgentProjection(reattached, "dogfood-worker", true);
-  if (await new TmuxService().panePid(dogfoodSession) !== agentPidBeforeDetach) {
-    throw new Error("shell reattach changed the live agent process identity");
+  if (await new TmuxService().panePid(dogfoodSession) !== agentPidAfterMonitorRestart) {
+    throw new Error("shell reattach changed the monitor-restarted agent process identity");
   }
   const killed = await reattached.invoke("dogfood-operation-kill-0001", {
     schemaVersion: 1,
@@ -504,7 +521,11 @@ try {
     upgradedFrom: { pid: prior.identity.pid, instanceId: prior.identity.instanceId, bundleId: prior.identity.bundleId },
     rolledBackFrom: { bundleId: brokenBundle.bundleId, engineVersion: brokenManifest.engineVersion },
     crashRestartedFrom: { pid: beforeCrash.pid, instanceId: beforeCrash.instanceId },
-    noShell: { bridgeToolCount: noShellToolCount, agentPid: agentPidBeforeDetach },
+    noShell: {
+      bridgeToolCount: noShellToolCount,
+      preservedAgentPid: agentPidBeforeDetach,
+      monitorRestartedAgentPid: agentPidAfterMonitorRestart,
+    },
     reused: reused.disposition,
     engine: { pid: identity.pid, instanceId: identity.instanceId, bundleId: identity.bundleId },
     bridge: identity.bridge,
@@ -569,6 +590,20 @@ async function waitUntil(predicate: () => boolean, timeoutMs: number): Promise<v
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
   throw new Error("persistent engine cleanup timed out");
+}
+
+async function waitForPanePidChange(session: string, priorPid: number, timeoutMs: number): Promise<number> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const pid = await new TmuxService().panePid(session);
+      if (pid !== priorPid) return pid;
+    } catch {
+      // The crashed pane may disappear briefly before the lifecycle monitor recreates it.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error("no-shell lifecycle monitor did not restart the crashed agent");
 }
 
 async function waitForEngineRestart(
