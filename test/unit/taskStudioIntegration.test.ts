@@ -9,6 +9,7 @@ import { TaskDetailStore } from "../../src/tasks/TaskDetailStore.js";
 import { TaskAttachmentStore } from "../../src/tasks/TaskAttachmentStore.js";
 import { ValidationStore } from "../../src/validations/ValidationStore.js";
 import { MissionControlPanelManager } from "../../src/webview/MissionControlPanel.js";
+import { legacyMissionControlTarget } from "../../src/shell/MissionControlTarget.js";
 import { TaskDetailPanelManager } from "../../src/webview/TaskDetailPanel.js";
 import { TaskStudioPanelManager } from "../../src/webview/TaskStudioPanel.js";
 import { envelope } from "../../src/webview/shared/studio/protocol.js";
@@ -63,9 +64,9 @@ function wireManagers(ws: Workspace) {
   taskDetailPanels = new TaskDetailPanelManager(Uri.file("/ext"), (w, id) => taskStudioPanels.openExisting(w, id), onTasksChanged);
   missionControlPanels = new MissionControlPanelManager(
     Uri.file("/ext"),
-    () => [ws],
-    (w, id) => taskDetailPanels.open(w, id),
-    (w, id) => { if (id) taskStudioPanels.openExisting(w, id); else taskStudioPanels.openNew(w); },
+    () => [legacyMissionControlTarget(ws)],
+    (_target, id) => taskDetailPanels.open(ws, id),
+    (_target, id) => { if (id) taskStudioPanels.openExisting(ws, id); else taskStudioPanels.openNew(ws); },
     onTasksChanged,
   );
   return { missionControlPanels, taskDetailPanels, taskStudioPanels, fanOuts: () => fanOuts };

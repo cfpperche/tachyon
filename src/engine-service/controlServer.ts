@@ -200,7 +200,8 @@ export async function startEngineControlServer(options: EngineControlServerOptio
       const result = await options.query(query, { shellId });
       if (!isWorkspaceQueryResultV1(result)
         || result.method !== query.method
-        || (result.status === "ok" && result.view.caller !== query.input.caller)) {
+        || (query.method === "probe.view" && result.status === "ok" && result.method === "probe.view"
+          && result.view.caller !== query.input.caller)) {
         return queryFailure(query, "INVALID_QUERY_RESULT", "engine query returned an invalid result");
       }
       return result;

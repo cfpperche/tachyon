@@ -56,6 +56,7 @@ import type {
 import { isAdhocItem } from "./presentation/contextValue.js";
 import { Workspace, type ViewKind } from "./workspace/Workspace.js";
 import type { WorkspacePresentationTarget } from "./shell/WorkspacePresentation.js";
+import { legacyMissionControlTarget } from "./shell/MissionControlTarget.js";
 import { VsCodeHost } from "./workspace/VsCodeHost.js";
 import type { WorktreeRecord } from "./worktree/WorktreeManager.js";
 import { createGitExec, worktreeShowFile, resolveBase } from "./worktree/WorktreeManager.js";
@@ -679,9 +680,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push({ dispose: () => taskDetailPanels.dispose() });
   missionControlPanels = new MissionControlPanelManager(
     context.extensionUri,
-    workspaces,
-    (ws, id) => taskDetailPanels.open(ws, id),
-    (ws, id) => { if (id) taskStudioPanels.openExisting(ws, id); else taskStudioPanels.openNew(ws); },
+    () => workspaces().map(legacyMissionControlTarget),
+    (target, id) => {
+      const ws = wsOf({ ws: target });
+      if (ws) taskDetailPanels.open(ws, id);
+    },
+    (target, id) => {
+      const ws = wsOf({ ws: target });
+      if (!ws) return;
+      if (id) taskStudioPanels.openExisting(ws, id); else taskStudioPanels.openNew(ws);
+    },
     onTasksChanged,
   );
   context.subscriptions.push({ dispose: () => missionControlPanels.dispose() });

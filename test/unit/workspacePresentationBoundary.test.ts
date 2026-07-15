@@ -44,20 +44,24 @@ describe("persistent workspace presentation boundary", () => {
       "src/webview/TerminalStudioAdapter.ts",
       "src/webview/TerminalStudioPanel.ts",
       "src/webview/ProbeResultPanel.ts",
+      "src/webview/MissionControlPanel.ts",
       "src/presentation/items.ts",
       "src/plugins/ui/host.ts",
     ];
     for (const relative of migrated) {
       const source = fs.readFileSync(path.join(root, relative), "utf8");
       expect(source, relative).not.toMatch(/workspace\/Workspace(?:\.js)?/);
-      expect(source, relative).toMatch(/Workspace(?:Presentation|GitPresentation|ProbePresentation|PluginPresentation|Studio)Target/);
+      expect(source, relative).toMatch(/Workspace(?:Presentation|GitPresentation|ProbePresentation|PluginPresentation|MissionControl|Studio)Target/);
     }
   });
 
   it("keeps the runtime projection and deterministic client fake editor-free", () => {
     for (const relative of [
       "src/runtime-api/workspaceProjection.ts",
+      "src/runtime-api/missionControlCommands.ts",
+      "src/runtime-api/missionControlProjection.ts",
       "src/shell/FakeWorkspaceClient.ts",
+      "src/shell/MissionControlTarget.ts",
       "src/shell/WorkspacePresentation.ts",
     ]) {
       const source = fs.readFileSync(path.join(root, relative), "utf8");

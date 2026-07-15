@@ -364,3 +364,27 @@ None.
 - The first dogfood fixture used `sleep` without `kind: agent`; Tachyon correctly classified it as a terminal
   and the Agents-only plugin projection was empty.  The fixture now declares the intended taxonomy rather
   than weakening production filtering.  No additional global full run was justified before final closure.
+
+## Eighteenth implementation slice — 2026-07-14
+
+- Added a strict daemon-owned Mission Control projection.  It keeps the task body and every board-rendered
+  field, removes task refs/deps and validation histories the board does not consume, replaces chip task
+  copies with task ids, and validates all identities, enums, counts, references and bounded collection sizes
+  before either side accepts the payload.
+- Added one dedicated 32 MiB `task.board` response budget while every other control response remains capped
+  at 64 KiB.  The bound measures the exact outer transport envelope including its newline; a maximal ordinary
+  500-card board fits, while an adversarial attention-heavy board fails before transport.
+- Added exact, idempotency-keyed `task.update`, `task.reorder-lane` and `validation.close` commands.  The wire
+  surface includes only mutations the board actually emits and delegates execution to the existing Task and
+  Validation stores instead of recreating their transition, CAS or persistence rules.
+- Migrated `MissionControlPanel` from concrete Workspace/store/manager access to a narrow presentation target,
+  with explicit legacy and `WorkspaceClient` adapters.  The liveness timeout/coalescing behavior is preserved,
+  truncated remote agent projections fail visibly, and the executable concrete-import inventory shrank from
+  10 to 9 files.  Production activation remains intentionally legacy until the single final registry cutover.
+- Focused projection/target/protocol/control/client/panel/real-daemon coverage passes 63/63 with typecheck,
+  extension+engine build, daemon import closure (169 files) and diff-check green.  The packaged systemd dogfood
+  queried and mutated Mission Control, replayed a task update, retained the existing Studio/agent/plugin flow,
+  reused the exact engine and cleaned its disposable session; after hardening failure cleanup and explicit
+  stopped-state assertions it passed 13 consecutive runs, including 3/3 against the final rebuilt bundle.
+- No additional global full run was made: the first reviewable proof (343 files, 4,068 passed, 3 skipped)
+  remains the declared intermediate gate, and the next global run is reserved for final closure.

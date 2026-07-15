@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import net from "node:net";
 import {
+  MISSION_CONTROL_RESPONSE_MAX_BYTES,
   isEngineControlResponseV1,
   isEngineOperationId,
   isWorkspaceCommandV1,
@@ -165,7 +166,8 @@ export class EngineControlClient {
     if (success.op !== "query" || success.result.method !== query.method) {
       throw invalidResponse("query response does not match its request");
     }
-    if (success.result.status === "ok" && success.result.view.caller !== query.input.caller) {
+    if (query.method === "probe.view" && success.result.status === "ok"
+      && success.result.method === "probe.view" && success.result.view.caller !== query.input.caller) {
       throw invalidResponse("query response belongs to a different Probe caller");
     }
     return success.result;
@@ -292,6 +294,9 @@ export function requestEngineControl(
   timeoutMs = DEFAULT_CONTROL_TIMEOUT_MS,
 ): Promise<EngineControlResponseV1> {
   return new Promise((resolve, reject) => {
+    const maxResponseBytes = request.op === "query" && request.query.method === "task.board"
+      ? MISSION_CONTROL_RESPONSE_MAX_BYTES
+      : MAX_CONTROL_RESPONSE_BYTES;
     const socket = net.createConnection(socketPath);
     let output = "";
     let settled = false;
@@ -309,7 +314,7 @@ export function requestEngineControl(
     socket.once("connect", () => socket.write(`${JSON.stringify(request)}\n`));
     socket.on("data", (chunk: string) => {
       output += chunk;
-      if (Buffer.byteLength(output, "utf8") > MAX_CONTROL_RESPONSE_BYTES) {
+      if (Buffer.byteLength(output, "utf8") > maxResponseBytes) {
         finish({ error: invalidResponse("engine control response exceeds the size limit") });
         return;
       }

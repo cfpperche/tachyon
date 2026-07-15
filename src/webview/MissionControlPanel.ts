@@ -1,14 +1,13 @@
 import * as vscode from "vscode";
 import { panelIcon } from "./shared/panelIcon.js";
-import type { Workspace } from "../workspace/Workspace.js";
-import { buildBoardSnapshot } from "../tasks/boardSnapshot.js";
+import type { MissionControlAgentRow, WorkspaceMissionControlTarget } from "../shell/MissionControlTarget.js";
 import { renderWebviewShell } from "./shared/shell.js";
 import { READY } from "./shared/ready.js";
 import { snapshotMessage, taskErrorMessage, type MissionControlAction, type MissionControlVM } from "./mission-control/messages.js";
 
 interface PanelEntry {
   panel: vscode.WebviewPanel;
-  ws: Workspace;
+  ws: WorkspaceMissionControlTarget;
   post: () => void | Promise<void>;
   generation: number;
   agentLists: Map<string, AgentListRequest>;
@@ -17,7 +16,7 @@ interface PanelEntry {
 
 export const MISSION_CONTROL_AGENT_LIST_TIMEOUT_MS = 250;
 
-type ManagedAgent = Awaited<ReturnType<Workspace["manager"]["list"]>>[number];
+type ManagedAgent = MissionControlAgentRow;
 
 interface AgentListResult {
   agents: ManagedAgent[];
@@ -67,7 +66,7 @@ export interface MissionControlPanelState {
 /**
  * spec 335 — the Mission Control board: a singleton editor-area panel per workspace (HandoffPanel pattern),
  * fed by ONE engine-side board-snapshot pass per push (dueto F4 — every card/chip/spotlight in a push reflects
- * a single consistent filesystem view). All mutations route through `ws.taskStore` directly — the board is
+ * a single consistent filesystem view). All mutations route through a typed engine target — the board is
  * engine-side, never MCP. `openTaskDetail`/`openTaskStudio` are injected so this module never imports
  * TaskDetailPanel/TaskStudioPanel directly (kept as independent panel managers, wired in extension.ts).
  */
@@ -76,9 +75,9 @@ export class MissionControlPanelManager {
 
   constructor(
     private readonly extensionUri: vscode.Uri,
-    private readonly getWorkspaces: () => Workspace[],
-    private readonly openTaskDetail: (ws: Workspace, id: string) => void,
-    private readonly openTaskStudio: (ws: Workspace, id?: string) => void,
+    private readonly getWorkspaces: () => WorkspaceMissionControlTarget[],
+    private readonly openTaskDetail: (ws: WorkspaceMissionControlTarget, id: string) => void,
+    private readonly openTaskStudio: (ws: WorkspaceMissionControlTarget, id?: string) => void,
     private readonly onTasksChanged: () => void,
   ) {}
 
@@ -105,7 +104,7 @@ export class MissionControlPanelManager {
     this.attachPanel(panel, ws);
   }
 
-  private attachPanel(panel: vscode.WebviewPanel, ws: Workspace): void {
+  private attachPanel(panel: vscode.WebviewPanel, ws: WorkspaceMissionControlTarget): void {
     const key = ws.wsHash;
     const existing = this.panels.get(key);
     if (existing && existing.panel !== panel) existing.panel.dispose();
@@ -127,11 +126,11 @@ export class MissionControlPanelManager {
       const generation = ++entry.generation;
       const current = entry.ws;
       try {
-        const declaredAgents = Object.keys(current.config?.agents ?? {});
+        const declaredAgents = current.declaredAgentNames();
         const declared = new Set(declaredAgents);
         let request = entry.agentLists.get(current.wsHash);
         if (!request) {
-          const source = Promise.resolve().then(() => current.manager.list());
+          const source = Promise.resolve().then(() => current.listMissionControlAgents());
           request = { source, bounded: undefined!, fellBack: false, trailing: false };
           request.bounded = boundedAgentList(() => source, () => { request!.fellBack = true; });
           entry.agentLists.set(current.wsHash, request);
@@ -157,13 +156,7 @@ export class MissionControlPanelManager {
           wsHash: current.wsHash,
           workspaces: this.getWorkspaces().map((w) => ({ hash: w.wsHash, folder: w.folderName })),
           agentLiveness: agentList.status,
-          snapshot: buildBoardSnapshot({
-            store: current.taskStore,
-            declaredAgents,
-            liveAdhocAgents,
-            validationStore: current.validationStore,
-            workspaceRoot: current.workspaceRoot,
-          }),
+          snapshot: await current.boardSnapshot(liveAdhocAgents),
         };
         void panel.webview.postMessage(snapshotMessage(vm));
       } catch (err) {
@@ -189,7 +182,7 @@ export class MissionControlPanelManager {
     if (m.type === READY || m.type === "requestSnapshot") { void entry.post(); return; }
     if (m.type === "updateTask" && typeof m.id === "string" && m.patch) {
       try {
-        await entry.ws.taskStore.update(m.id, m.patch);
+        await entry.ws.updateTask(m.id, m.patch);
         // dogfood round 1 (#1) — the one shared fan-out (injected from extension.ts): re-posts this panel,
         // every other Mission Control/Detail panel, and the sidebar, so no engine-side mutation is board-only.
         this.onTasksChanged();
@@ -200,7 +193,7 @@ export class MissionControlPanelManager {
     }
     if (m.type === "reorderLane" && typeof m.status === "string" && Array.isArray(m.orderedIds) && m.expect) {
       try {
-        await entry.ws.taskStore.reorderLane(m.status, m.priority, { orderedIds: m.orderedIds, expect: m.expect });
+        await entry.ws.reorderLane(m.status, m.priority, { orderedIds: m.orderedIds, expect: m.expect });
         this.onTasksChanged();
       } catch (err) {
         void entry.panel.webview.postMessage(taskErrorMessage(err instanceof Error ? err.message : String(err)));
@@ -209,7 +202,7 @@ export class MissionControlPanelManager {
     }
     if (m.type === "closeValidation" && typeof m.id === "string" && typeof m.result_note === "string" && m.outcome) {
       try {
-        await entry.ws.validationStore.closeRound(m.id, { outcome: m.outcome, result_note: m.result_note });
+        await entry.ws.closeValidation(m.id, { outcome: m.outcome, result_note: m.result_note });
         this.onTasksChanged();
       } catch (err) {
         void entry.panel.webview.postMessage(taskErrorMessage(err instanceof Error ? err.message : String(err), m.id));

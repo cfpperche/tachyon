@@ -196,6 +196,7 @@ describe("persistent engine shell control", () => {
       query: async (query, context) => {
         reads++;
         expect(context.shellId).toBe("shell-query");
+        if (query.method !== "probe.view") throw new Error("unexpected query");
         return workspaceProbeViewSuccessV1({
           rows: [],
           total: 0,
@@ -247,7 +248,7 @@ describe("persistent engine shell control", () => {
       getSnapshot: f.snapshot,
       invoke: async (command) => {
         executions += 1;
-        if (command.method === "studio.submit") throw new Error("unexpected Studio command");
+        if (!("agent" in command.input)) throw new Error("unexpected non-agent command");
         if (command.input.agent === "failure") throw new Error("forced command failure");
         observedStart();
         await gate;

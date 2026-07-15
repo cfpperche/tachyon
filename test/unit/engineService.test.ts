@@ -9,6 +9,8 @@ import { EngineControlClient } from "../../src/engine-service/controlClient.js";
 import type { EngineServiceIdentityV1, EngineShellHelloV1, WorkspaceEventV1 } from "../../src/engine-service/protocol.js";
 import { TmuxService, workspaceHash } from "../../src/tmux/TmuxService.js";
 import { blankCommandFields } from "../../src/webview/command-studio-shell/domain.js";
+import { TaskStore } from "../../src/tasks/TaskStore.js";
+import { ValidationStore } from "../../src/validations/ValidationStore.js";
 
 const roots: string[] = [];
 const children: ChildProcessWithoutNullStreams[] = [];
@@ -31,6 +33,19 @@ describe("daemon engine service", () => {
     }
     const configPath = path.join(workspaceRoot, "tachyon.yml");
     fs.writeFileSync(configPath, config("worker"), "utf8");
+    const seedTask = await new TaskStore(workspaceRoot).create({
+      id: "t-abc123",
+      title: "remote Mission Control",
+      author: "human",
+      body: "engine-owned body",
+      now: "2026-07-14T12:00:00.000Z",
+    });
+    const seedValidation = await new ValidationStore(workspaceRoot).create({
+      title: "remote dogfood",
+      author: "human",
+      executor: "human",
+      now: "2026-07-14T12:00:00.000Z",
+    });
     const socketPath = path.join(runtimeRoot, "engine.sock");
     const viteNode = path.join(process.cwd(), "node_modules/vite-node/vite-node.mjs");
     const worker = path.join(process.cwd(), "test/fixtures/daemonEngineServiceWorker.ts");
@@ -63,6 +78,44 @@ describe("daemon engine service", () => {
         status: "ok",
         view: { rows: [], total: 0, running: 0, completed: 0, failed: 0, empty: true, caller: "worker" },
       });
+
+    const initialBoard = await first.query({ schemaVersion: 1, method: "task.board", input: { liveAdhocAgents: ["reviewer"] } });
+    expect(initialBoard).toMatchObject({
+      method: "task.board",
+      status: "ok",
+      view: {
+        board: {
+          views: [{ task: { id: seedTask.id, title: "remote Mission Control", body: "engine-owned body", status: "inbox" } }],
+          chips: [{ agent: "worker" }, { agent: "human" }, { agent: "reviewer" }],
+          validations: { pendingCount: 1, humanPendingCount: 1, items: [{ id: seedValidation.id }] },
+        },
+      },
+    });
+    const updateTask = {
+      schemaVersion: 1 as const,
+      method: "task.update" as const,
+      input: { id: seedTask.id, patch: { status: "triaged" as const, expect: { status: "inbox" as const, updatedAt: seedTask.updatedAt } } },
+    };
+    const updatedTask = await first.invoke("operation-task-update-0001", updateTask);
+    expect(updatedTask).toEqual({ schemaVersion: 1, method: "task.update", status: "ok" });
+    expect(await first.invoke("operation-task-update-0001", updateTask)).toEqual(updatedTask);
+    const updatedBoard = await first.query({ schemaVersion: 1, method: "task.board", input: { liveAdhocAgents: [] } });
+    if (updatedBoard.status !== "ok" || updatedBoard.method !== "task.board") throw new Error("unexpected board result");
+    const updatedAt = updatedBoard.view.board.views[0]?.task.updatedAt;
+    expect(updatedBoard.view.board.views[0]?.task.status).toBe("triaged");
+    if (!updatedAt) throw new Error("updated task timestamp is missing");
+    expect(await first.invoke("operation-task-reorder-0001", {
+      schemaVersion: 1,
+      method: "task.reorder-lane",
+      input: { status: "triaged", orderedIds: [seedTask.id], expect: { [seedTask.id]: updatedAt } },
+    })).toMatchObject({ status: "ok", method: "task.reorder-lane" });
+    expect(await first.invoke("operation-validation-close-0001", {
+      schemaVersion: 1,
+      method: "validation.close",
+      input: { id: seedValidation.id, outcome: "passed", result_note: "installed dogfood passed" },
+    })).toMatchObject({ status: "ok", method: "validation.close" });
+    const closedBoard = await first.query({ schemaVersion: 1, method: "task.board", input: { liveAdhocAgents: [] } });
+    expect(closedBoard).toMatchObject({ status: "ok", view: { board: { validations: { pendingCount: 0, items: [] } } } });
 
     const beforeInvalidStudio = fs.readFileSync(configPath, "utf8");
     const invalidStudio = await first.invoke("operation-studio-invalid-0001", {

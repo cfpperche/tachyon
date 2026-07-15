@@ -14,7 +14,10 @@ import type { EngineServiceIdentityV1 } from "../../src/engine-service/protocol.
 import { connectRemoteWorkspaceClient, type WorkspaceClient } from "../../src/shell/WorkspaceClient.js";
 import { ClientWorkspaceStudioTarget } from "../../src/shell/ClientWorkspaceStudioTarget.js";
 import { workspacePluginPresentationTarget } from "../../src/shell/WorkspacePresentation.js";
-import { TmuxService } from "../../src/tmux/TmuxService.js";
+import { workspaceMissionControlTarget } from "../../src/shell/MissionControlTarget.js";
+import { sessionName, TmuxService, workspaceHash } from "../../src/tmux/TmuxService.js";
+import { TaskStore } from "../../src/tasks/TaskStore.js";
+import { ValidationStore } from "../../src/validations/ValidationStore.js";
 import { blankCommandFields } from "../../src/webview/command-studio-shell/domain.js";
 import type { StudioDeps } from "../../src/webview/studioSubmit.js";
 
@@ -31,8 +34,20 @@ fs.writeFileSync(path.join(workspaceRoot, "tachyon.yml"), [
   "    autostart: false",
   "",
 ].join("\n"), "utf8");
+const dogfoodTask = await new TaskStore(workspaceRoot).create({
+  id: "t-d06f00",
+  title: "persistent Mission Control dogfood",
+  body: "remote board body",
+  author: "human",
+});
+const dogfoodValidation = await new ValidationStore(workspaceRoot).create({
+  title: "persistent Mission Control validation",
+  author: "human",
+  executor: "human",
+});
 
 const unitName = engineSystemdUnitName(workspaceRoot);
+const dogfoodSession = sessionName(workspaceHash(fs.realpathSync(workspaceRoot)), "dogfood-worker");
 let identity: EngineServiceIdentityV1 | undefined;
 try {
   const bundle = stagePackagedEngineBundle({
@@ -82,10 +97,37 @@ try {
   if (snapshot.engineInstanceId !== identity.instanceId || second.snapshot.engineInstanceId !== identity.instanceId) {
     throw new Error("shell attach/snapshot crossed engine identities");
   }
+  if (agentRunning(snapshot, "dogfood-worker")) throw new Error("dogfood agent started before any explicit lifecycle command");
   const probes = await first.query({ schemaVersion: 1, method: "probe.view", input: { caller: "dogfood-worker" } });
-  if (probes.status !== "ok" || probes.view.caller !== "dogfood-worker" || !probes.view.empty) {
+  if (probes.status !== "ok" || probes.method !== "probe.view"
+    || probes.view.caller !== "dogfood-worker" || !probes.view.empty) {
     throw new Error(`remote Probe query failed: ${JSON.stringify(probes)}`);
   }
+  const missionControl = workspaceMissionControlTarget(first);
+  const initialBoard = await missionControl.boardSnapshot(["dogfood-reviewer"]);
+  if (initialBoard.views[0]?.task.id !== dogfoodTask.id
+    || initialBoard.views[0]?.task.body !== "remote board body"
+    || !initialBoard.chips.some((chip) => chip.agent === "dogfood-reviewer")
+    || initialBoard.validations?.items[0]?.id !== dogfoodValidation.id) {
+    throw new Error(`remote Mission Control projection failed: ${JSON.stringify(initialBoard)}`);
+  }
+  await missionControl.updateTask(dogfoodTask.id, {
+    status: "triaged",
+    expect: { status: "inbox", updatedAt: dogfoodTask.updatedAt },
+  });
+  const updatedBoard = await missionControl.boardSnapshot([]);
+  const updatedTask = updatedBoard.views.find((view) => view.task.id === dogfoodTask.id)?.task;
+  if (!updatedTask || updatedTask.status !== "triaged") throw new Error("remote Mission Control task update did not persist");
+  await missionControl.reorderLane("triaged", undefined, {
+    orderedIds: [dogfoodTask.id],
+    expect: { [dogfoodTask.id]: updatedTask.updatedAt },
+  });
+  await missionControl.closeValidation(dogfoodValidation.id, { outcome: "passed", result_note: "packaged dogfood passed" });
+  const closedBoard = await missionControl.boardSnapshot([]);
+  if (closedBoard.validations?.pendingCount !== 0 || closedBoard.validations.items.length !== 0) {
+    throw new Error("remote Mission Control validation close did not persist");
+  }
+  await expectAgentStopped(first, "after Mission Control reads and mutations");
   const studio = new ClientWorkspaceStudioTarget(first, {
     extensionUri: {} as StudioDeps["extensionUri"],
     detectClis: async () => [],
@@ -97,6 +139,7 @@ try {
     || studio.config?.commands["dogfood-check"]?.cmd !== "printf dogfood") {
     throw new Error("idempotent remote Studio submit did not persist through the engine");
   }
+  await expectAgentStopped(first, "after Studio config reload");
   const startCommand = { schemaVersion: 1 as const, method: "agent.start" as const, input: { agent: "dogfood-worker" } };
   const started = await first.invoke("dogfood-operation-start-0001", startCommand);
   const replayedStart = await first.invoke("dogfood-operation-start-0001", startCommand);
@@ -147,12 +190,13 @@ try {
     engine: { pid: identity.pid, instanceId: identity.instanceId, bundleId: identity.bundleId },
     bridge: identity.bridge,
     snapshotSeq: snapshot.seq,
-    queries: [probes.method],
+    queries: [probes.method, "task.board"],
     pluginFleet: pluginFleet.agents.map((agent) => ({ name: agent.name, status: agent.status })),
-    commands: ["studio.submit", started.method, restarted.method, killed.method],
+    commands: ["task.update", "task.reorder-lane", "validation.close", "studio.submit", started.method, restarted.method, killed.method],
   }, null, 2)}\n`);
 } finally {
   try { execFileSync("systemctl", ["--user", "stop", unitName], { stdio: "ignore" }); } catch { /* absent/failed unit */ }
+  await new TmuxService().killSession(dogfoodSession).catch(() => undefined);
   await waitUntil(() => !fs.existsSync(path.join(engineRuntimeDir(workspaceRoot), "control.sock")), 10_000)
     .catch(() => undefined);
   if (identity && await new TmuxService().hasSession(`tachyon-ctl-${identity.workspaceHash}`)) {
@@ -212,4 +256,12 @@ async function waitForAgentProjection(
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
   throw new Error(`remote agent projection did not converge to running=${running}: ${JSON.stringify(observed)}`);
+}
+
+async function expectAgentStopped(client: WorkspaceClient, stage: string): Promise<void> {
+  const snapshot = (await client.sync()).snapshot;
+  if (agentRunning(snapshot, "dogfood-worker")) throw new Error(`dogfood agent started unexpectedly ${stage}`);
+  if (await new TmuxService().hasSession(dogfoodSession)) {
+    throw new Error(`dogfood tmux session appeared unexpectedly ${stage}`);
+  }
 }

@@ -21,15 +21,18 @@ describe("FakeWorkspaceClient", () => {
         expect(operationId).toBe("operation-fake-0001");
         return workspaceCommandSuccessV1(command);
       },
-      query: async (query) => workspaceProbeViewSuccessV1({
-        rows: [],
-        total: 0,
-        running: 0,
-        completed: 0,
-        failed: 0,
-        empty: true,
-        ...(query.input.caller ? { caller: query.input.caller } : {}),
-      }),
+      query: async (query) => {
+        if (query.method !== "probe.view") throw new Error("unexpected query");
+        return workspaceProbeViewSuccessV1({
+          rows: [],
+          total: 0,
+          running: 0,
+          completed: 0,
+          failed: 0,
+          empty: true,
+          ...(query.input.caller ? { caller: query.input.caller } : {}),
+        });
+      },
     });
     const observed: number[] = [];
     fake.subscribe((result) => {

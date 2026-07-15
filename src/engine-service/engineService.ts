@@ -12,6 +12,8 @@ import { readLinuxProcessIdentity } from "../delivery/reloadReconciliation.js";
 import { DaemonEngineHost, type DaemonHostEvent, type DaemonSettingsSnapshot } from "../workspace/DaemonEngineHost.js";
 import { Workspace } from "../workspace/Workspace.js";
 import type { WorkspaceCoreProjectionsV1 } from "../runtime-api/workspaceProjection.js";
+import { buildBoardSnapshot } from "../tasks/boardSnapshot.js";
+import { projectMissionControlBoard } from "../runtime-api/missionControlProjection.js";
 import { startEngineControlServer, type RunningEngineControlServer } from "./controlServer.js";
 import { EngineEventJournal } from "./eventJournal.js";
 import {
@@ -19,6 +21,7 @@ import {
   isEngineServiceIdentityV1,
   isSha256,
   workspaceCommandSuccessV1,
+  workspaceMissionControlViewSuccessV1,
   workspaceProbeViewSuccessV1,
   type EngineServiceIdentityV1,
   type WorkspaceCommandResultV1,
@@ -152,6 +155,18 @@ async function executeWorkspaceQuery(
   workspace: Workspace,
   query: WorkspaceQueryV1,
 ): Promise<WorkspaceQueryResultV1> {
+  if (query.method === "task.board") {
+    return workspaceMissionControlViewSuccessV1({
+      schemaVersion: 1,
+      board: projectMissionControlBoard(buildBoardSnapshot({
+        store: workspace.taskStore,
+        declaredAgents: Object.keys(workspace.config?.agents ?? {}),
+        liveAdhocAgents: query.input.liveAdhocAgents,
+        validationStore: workspace.validationStore,
+        workspaceRoot: workspace.workspaceRoot,
+      })),
+    });
+  }
   return workspaceProbeViewSuccessV1(await workspace.probeView(query.input.caller));
 }
 
@@ -162,6 +177,24 @@ async function executeWorkspaceCommand(
 ): Promise<WorkspaceCommandResultV1> {
   if (command.method === "studio.submit") {
     return workspaceCommandSuccessV1(command, workspace.studioSubmit(command.input));
+  }
+  if (command.method === "task.update") {
+    await workspace.taskStore.update(command.input.id, command.input.patch);
+    return workspaceCommandSuccessV1(command);
+  }
+  if (command.method === "task.reorder-lane") {
+    await workspace.taskStore.reorderLane(command.input.status, command.input.priority, {
+      orderedIds: command.input.orderedIds,
+      expect: command.input.expect,
+    });
+    return workspaceCommandSuccessV1(command);
+  }
+  if (command.method === "validation.close") {
+    await workspace.validationStore.closeRound(command.input.id, {
+      outcome: command.input.outcome,
+      result_note: command.input.result_note,
+    });
+    return workspaceCommandSuccessV1(command);
   }
   const agent = command.input.agent;
   switch (command.method) {

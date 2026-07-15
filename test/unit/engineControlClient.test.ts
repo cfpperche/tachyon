@@ -9,6 +9,7 @@ import { startEngineControlServer, type RunningEngineControlServer } from "../..
 import { EngineEventJournal } from "../../src/engine-service/eventJournal.js";
 import {
   workspaceCommandSuccessV1,
+  workspaceMissionControlViewSuccessV1,
   workspaceProbeViewSuccessV1,
   type EngineServiceIdentityV1,
   type EngineShellHelloV1,
@@ -170,15 +171,18 @@ describe("EngineControlClient", () => {
       socketPath: f.socketPath,
       identity: f.identity,
       getSnapshot: f.snapshot,
-      query: async (query) => workspaceProbeViewSuccessV1({
-        rows: [],
-        total: 0,
-        running: 0,
-        completed: 0,
-        failed: 0,
-        empty: true,
-        caller: query.input.caller === "mismatch" ? "other" : query.input.caller,
-      }),
+      query: async (query) => {
+        if (query.method !== "probe.view") throw new Error("unexpected query");
+        return workspaceProbeViewSuccessV1({
+          rows: [],
+          total: 0,
+          running: 0,
+          completed: 0,
+          failed: 0,
+          empty: true,
+          caller: query.input.caller === "mismatch" ? "other" : query.input.caller,
+        });
+      },
     });
     servers.push(server);
     const client = new EngineControlClient({ socketPath: f.socketPath, hello: f.hello });
@@ -187,6 +191,49 @@ describe("EngineControlClient", () => {
       .toMatchObject({ status: "ok", view: { caller: "codex", empty: true } });
     expect(await client.query({ schemaVersion: 1, method: "probe.view", input: { caller: "mismatch" } }))
       .toMatchObject({ status: "error", code: "INVALID_QUERY_RESULT" });
+  });
+
+  it("allows the dedicated bounded board envelope without relaxing ordinary control responses", async () => {
+    const f = fixture();
+    const views = Array.from({ length: 20 }, (_, index) => ({
+      task: {
+        id: `t-${index.toString(16).padStart(6, "0")}`,
+        title: `task ${index}`,
+        body: "x".repeat(4_000),
+        status: "inbox" as const,
+        author: "human",
+        createdAt: "2026-07-14T12:00:00.000Z",
+        updatedAt: "2026-07-14T12:00:00.000Z",
+      },
+    }));
+    const result = workspaceMissionControlViewSuccessV1({
+      schemaVersion: 1,
+      board: {
+        schemaVersion: 1,
+        views,
+        allowedDropStatuses: Object.fromEntries(views.map((view) => [view.task.id, ["triaged", "dropped"]])),
+        chips: [],
+      },
+    });
+    expect(Buffer.byteLength(JSON.stringify({ ok: true, op: "query", result }), "utf8")).toBeGreaterThan(64 * 1024);
+    const server = await startEngineControlServer({
+      socketPath: f.socketPath,
+      identity: f.identity,
+      getSnapshot: f.snapshot,
+      query: async (query) => {
+        if (query.method !== "task.board") throw new Error("unexpected query");
+        return result;
+      },
+    });
+    servers.push(server);
+    const client = new EngineControlClient({ socketPath: f.socketPath, hello: f.hello });
+    await client.attach();
+    expect(await client.query({ schemaVersion: 1, method: "task.board", input: { liveAdhocAgents: [] } }))
+      .toMatchObject({
+        method: "task.board",
+        status: "ok",
+        view: { board: { views: expect.arrayContaining([expect.objectContaining({ task: expect.objectContaining({ id: "t-000000" }) })]) } },
+      });
   });
 
   it("invokes an operation by exact id without transport-level retries", async () => {

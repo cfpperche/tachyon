@@ -7,6 +7,7 @@ import { __createdPanels, __resetVscodeMock } from "../mocks/vscode.js";
 import { TaskStore } from "../../src/tasks/TaskStore.js";
 import { ValidationStore } from "../../src/validations/ValidationStore.js";
 import { MISSION_CONTROL_AGENT_LIST_TIMEOUT_MS, MissionControlPanelManager } from "../../src/webview/MissionControlPanel.js";
+import { legacyMissionControlTarget } from "../../src/shell/MissionControlTarget.js";
 import type { Workspace } from "../../src/workspace/Workspace.js";
 
 describe("container-generated delegation behavior", () => {
@@ -25,7 +26,7 @@ describe("container-generated delegation behavior", () => {
         manager: { list: () => new Promise<never>(() => {}) },
       } as unknown as Workspace;
       const task = await ws.taskStore.create({ title: "Task data wins", author: "human" });
-      const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [ws], () => {}, () => {}, () => {});
+      const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [legacyMissionControlTarget(ws)], () => {}, () => {}, () => {});
 
       manager.open(ws.wsHash);
       await vi.advanceTimersByTimeAsync(MISSION_CONTROL_AGENT_LIST_TIMEOUT_MS - 1);

@@ -1,4 +1,17 @@
 import { createHash } from "node:crypto";
+import {
+  isMissionControlTaskReorderInputV1,
+  isMissionControlTaskUpdateInputV1,
+  isMissionControlValidationCloseInputV1,
+  type MissionControlTaskReorderInputV1,
+  type MissionControlTaskUpdateInputV1,
+  type MissionControlValidationCloseInputV1,
+} from "../runtime-api/missionControlCommands.js";
+import {
+  isMissionControlViewV1,
+  parseMissionControlViewV1,
+  type MissionControlViewV1,
+} from "../runtime-api/missionControlProjection.js";
 
 export const ENGINE_BUNDLE_SCHEMA_VERSION = 1 as const;
 export const ENGINE_SHELL_PROTOCOL = 1 as const;
@@ -102,9 +115,13 @@ export type WorkspaceCommandMethodV1 =
   | "agent.kill"
   | "agent.restart"
   | "agent.resume"
-  | "studio.submit";
+  | "studio.submit"
+  | "task.update"
+  | "task.reorder-lane"
+  | "validation.close";
 
-export type WorkspaceAgentCommandMethodV1 = Exclude<WorkspaceCommandMethodV1, "studio.submit">;
+export type WorkspaceAgentCommandMethodV1 = Extract<WorkspaceCommandMethodV1, `agent.${string}`>;
+export type WorkspaceSimpleCommandMethodV1 = Exclude<WorkspaceCommandMethodV1, "studio.submit">;
 
 /** Exact versioned wire shape of the five config-backed Studio forms. */
 export interface WorkspaceStudioFormV1 {
@@ -147,12 +164,24 @@ export type WorkspaceCommandV1 = {
   schemaVersion: 1;
   method: "studio.submit";
   input: { state: WorkspaceStudioFormV1; editingName?: string };
+} | {
+  schemaVersion: 1;
+  method: "task.update";
+  input: MissionControlTaskUpdateInputV1;
+} | {
+  schemaVersion: 1;
+  method: "task.reorder-lane";
+  input: MissionControlTaskReorderInputV1;
+} | {
+  schemaVersion: 1;
+  method: "validation.close";
+  input: MissionControlValidationCloseInputV1;
 };
 
 export type WorkspaceCommandResultV1 =
   | {
       schemaVersion: 1;
-      method: WorkspaceAgentCommandMethodV1;
+      method: WorkspaceSimpleCommandMethodV1;
       status: "ok";
     }
   | {
@@ -170,7 +199,7 @@ export type WorkspaceCommandResultV1 =
       message: string;
     };
 
-export type WorkspaceQueryMethodV1 = "probe.view";
+export type WorkspaceQueryMethodV1 = "probe.view" | "task.board";
 
 export interface WorkspaceProbeViewRowV1 {
   runId: string;
@@ -195,11 +224,17 @@ export interface WorkspaceProbeViewV1 {
 }
 
 /** Authenticated, side-effect-free reads do not enter the mutation operation registry. */
-export type WorkspaceQueryV1 = {
-  schemaVersion: 1;
-  method: "probe.view";
-  input: { caller?: string };
-};
+export type WorkspaceQueryV1 =
+  | {
+      schemaVersion: 1;
+      method: "probe.view";
+      input: { caller?: string };
+    }
+  | {
+      schemaVersion: 1;
+      method: "task.board";
+      input: { liveAdhocAgents: string[] };
+    };
 
 export type WorkspaceQueryResultV1 =
   | {
@@ -207,6 +242,12 @@ export type WorkspaceQueryResultV1 =
       method: "probe.view";
       status: "ok";
       view: WorkspaceProbeViewV1;
+    }
+  | {
+      schemaVersion: 1;
+      method: "task.board";
+      status: "ok";
+      view: MissionControlViewV1;
     }
   | {
       schemaVersion: 1;
@@ -240,6 +281,7 @@ const SHA256_RE = /^[a-f0-9]{64}$/;
 const GIT_ID_RE = /^[a-f0-9]{7,64}$/;
 const OPERATION_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/;
 const AGENT_NAME_RE = /^[A-Za-z][A-Za-z0-9_-]{0,127}$/;
+export const MISSION_CONTROL_RESPONSE_MAX_BYTES = 32 * 1024 * 1024;
 const WORKSPACE_COMMAND_METHODS = new Set<WorkspaceCommandMethodV1>([
   "agent.start",
   "agent.stop",
@@ -247,6 +289,9 @@ const WORKSPACE_COMMAND_METHODS = new Set<WorkspaceCommandMethodV1>([
   "agent.restart",
   "agent.resume",
   "studio.submit",
+  "task.update",
+  "task.reorder-lane",
+  "validation.close",
 ]);
 
 export function isSha256(value: unknown): value is string {
@@ -265,6 +310,9 @@ export function isWorkspaceCommandV1(value: unknown): value is WorkspaceCommandV
     || !WORKSPACE_COMMAND_METHODS.has(value.method as WorkspaceCommandMethodV1)
     || !isRecord(value.input)) return false;
   if (value.method === "studio.submit") return isWorkspaceStudioSubmitInputV1(value.input);
+  if (value.method === "task.update") return isMissionControlTaskUpdateInputV1(value.input);
+  if (value.method === "task.reorder-lane") return isMissionControlTaskReorderInputV1(value.input);
+  if (value.method === "validation.close") return isMissionControlValidationCloseInputV1(value.input);
   return hasOnlyKeys(value.input, ["agent"])
     && typeof value.input.agent === "string"
     && AGENT_NAME_RE.test(value.input.agent);
@@ -299,8 +347,15 @@ export function isWorkspaceQueryV1(value: unknown): value is WorkspaceQueryV1 {
   if (!isRecord(value)
     || !hasOnlyKeys(value, ["schemaVersion", "method", "input"])
     || value.schemaVersion !== 1
-    || value.method !== "probe.view"
     || !isRecord(value.input)) return false;
+  if (value.method === "task.board") {
+    return hasOnlyKeys(value.input, ["liveAdhocAgents"])
+      && Array.isArray(value.input.liveAdhocAgents)
+      && value.input.liveAdhocAgents.length <= 500
+      && value.input.liveAdhocAgents.every((agent) => typeof agent === "string" && AGENT_NAME_RE.test(agent))
+      && new Set(value.input.liveAdhocAgents).size === value.input.liveAdhocAgents.length;
+  }
+  if (value.method !== "probe.view") return false;
   const keys = Object.keys(value.input);
   return keys.every((key) => key === "caller")
     && (value.input.caller === undefined
@@ -308,10 +363,11 @@ export function isWorkspaceQueryV1(value: unknown): value is WorkspaceQueryV1 {
 }
 
 export function isWorkspaceQueryResultV1(value: unknown): value is WorkspaceQueryResultV1 {
-  if (!isRecord(value) || value.schemaVersion !== 1 || value.method !== "probe.view") return false;
+  if (!isRecord(value) || value.schemaVersion !== 1
+    || (value.method !== "probe.view" && value.method !== "task.board")) return false;
   if (value.status === "ok") {
     return hasOnlyKeys(value, ["schemaVersion", "method", "status", "view"])
-      && isWorkspaceProbeViewV1(value.view);
+      && (value.method === "probe.view" ? isWorkspaceProbeViewV1(value.view) : isMissionControlViewV1(value.view));
   }
   return value.status === "error"
     && hasOnlyKeys(value, ["schemaVersion", "method", "status", "code", "message"])
@@ -320,6 +376,23 @@ export function isWorkspaceQueryResultV1(value: unknown): value is WorkspaceQuer
     && typeof value.message === "string"
     && value.message.length > 0
     && value.message.length <= 1_000;
+}
+
+/** Builds and bounds the large board read without relaxing the 64 KiB limit of any other control response. */
+export function workspaceMissionControlViewSuccessV1(view: MissionControlViewV1): WorkspaceQueryResultV1 {
+  const result = {
+    schemaVersion: 1,
+    method: "task.board",
+    status: "ok",
+    view: parseMissionControlViewV1(view),
+  } as const;
+  const transportEnvelope = { ok: true as const, op: "query" as const, result };
+  // The control server terminates every response with a newline. Measure the exact bytes the
+  // client receives so a payload at the boundary cannot pass here and fail one byte later.
+  if (Buffer.byteLength(`${JSON.stringify(transportEnvelope)}\n`, "utf8") > MISSION_CONTROL_RESPONSE_MAX_BYTES) {
+    throw new Error("Mission Control view exceeds its dedicated response size limit");
+  }
+  return result;
 }
 
 /** Bound the daemon-owned Probe model before it crosses the 64 KiB control response boundary. */

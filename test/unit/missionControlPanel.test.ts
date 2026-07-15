@@ -7,6 +7,7 @@ import { __createdPanels, __getClipboardText, __resetVscodeMock } from "../mocks
 import { TaskStore } from "../../src/tasks/TaskStore.js";
 import { ValidationStore } from "../../src/validations/ValidationStore.js";
 import { MISSION_CONTROL_AGENT_LIST_TIMEOUT_MS, MissionControlPanelManager } from "../../src/webview/MissionControlPanel.js";
+import { legacyMissionControlTarget, type WorkspaceMissionControlTarget } from "../../src/shell/MissionControlTarget.js";
 import type { Workspace } from "../../src/workspace/Workspace.js";
 
 const dirs: string[] = [];
@@ -55,10 +56,12 @@ function fakeWorkspace(root = mkroot(), agents: Record<string, unknown> = {}, op
   } as unknown as Workspace;
 }
 
+const target = (workspace: Workspace): WorkspaceMissionControlTarget => legacyMissionControlTarget(workspace);
+
 describe("MissionControlPanelManager", () => {
   it("reveals an existing panel per workspace instead of opening a second one", () => {
     const ws = fakeWorkspace();
-    const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [ws], () => {}, () => {}, () => {});
+    const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [target(ws)], () => {}, () => {}, () => {});
     manager.open(ws.wsHash);
     manager.open(ws.wsHash);
     expect(__createdPanels).toHaveLength(1);
@@ -73,7 +76,7 @@ describe("MissionControlPanelManager", () => {
     await ws.taskStore.update(done.id, { status: "triaged", assignee: "dead-ad-hoc" });
     await ws.taskStore.update(done.id, { status: "active" });
     await ws.taskStore.update(done.id, { status: "done" });
-    const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [ws], () => {}, () => {}, () => {});
+    const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [target(ws)], () => {}, () => {}, () => {});
 
     manager.open(ws.wsHash);
     await flush();
@@ -91,7 +94,7 @@ describe("MissionControlPanelManager", () => {
       const ws = fakeWorkspace();
       ws.manager.list = () => new Promise((_, reject) => { rejectList = reject; });
       await ws.taskStore.create({ title: "task store survives", author: "human" });
-      const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [ws], () => {}, () => {}, () => {});
+      const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [target(ws)], () => {}, () => {}, () => {});
 
       manager.open(ws.wsHash);
       await vi.advanceTimersByTimeAsync(MISSION_CONTROL_AGENT_LIST_TIMEOUT_MS);
@@ -121,7 +124,7 @@ describe("MissionControlPanelManager", () => {
       ws.manager.list = vi.fn()
         .mockImplementationOnce(() => pending.promise)
         .mockResolvedValueOnce([]);
-      const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [ws], () => {}, () => {}, () => {});
+      const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [target(ws)], () => {}, () => {}, () => {});
 
       manager.open(ws.wsHash);
       __createdPanels[0].webview.__receive({ type: "requestSnapshot" });
@@ -156,7 +159,7 @@ describe("MissionControlPanelManager", () => {
 
   it("posts workspace selector options even when there is only one workspace", async () => {
     const ws = fakeWorkspace();
-    const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [ws], () => {}, () => {}, () => {});
+    const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [target(ws)], () => {}, () => {}, () => {});
 
     manager.open(ws.wsHash);
     await flush();
@@ -170,7 +173,7 @@ describe("MissionControlPanelManager", () => {
     const wsA = fakeWorkspace(mkroot(), {}, { hash: "ws-a", name: "Alpha" });
     const wsB = fakeWorkspace(mkroot(), {}, { hash: "ws-b", name: "Beta" });
     await wsB.taskStore.create({ title: "beta task", author: "human" });
-    const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [wsA, wsB], () => {}, () => {}, () => {});
+    const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [target(wsA), target(wsB)], () => {}, () => {}, () => {});
     manager.open(wsA.wsHash);
 
     __createdPanels[0].webview.__receive({ type: "switchWorkspace", wsHash: "ws-b" });
@@ -193,7 +196,7 @@ describe("MissionControlPanelManager", () => {
       wsA.manager.list = vi.fn(() => oldList.promise);
       wsB.manager.list = vi.fn(async () => []);
       await wsB.taskStore.create({ title: "newest beta snapshot", author: "human" });
-      const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [wsA, wsB], () => {}, () => {}, () => {});
+      const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [target(wsA), target(wsB)], () => {}, () => {}, () => {});
 
       manager.open(wsA.wsHash);
       __createdPanels[0].webview.__receive({ type: "switchWorkspace", wsHash: wsB.wsHash });
@@ -223,7 +226,7 @@ describe("MissionControlPanelManager", () => {
   it("reveals an already-open target workspace panel instead of duplicating it", () => {
     const wsA = fakeWorkspace(mkroot(), {}, { hash: "ws-a", name: "Alpha" });
     const wsB = fakeWorkspace(mkroot(), {}, { hash: "ws-b", name: "Beta" });
-    const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [wsA, wsB], () => {}, () => {}, () => {});
+    const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [target(wsA), target(wsB)], () => {}, () => {}, () => {});
     manager.open(wsA.wsHash);
     manager.open(wsB.wsHash);
 
@@ -237,7 +240,7 @@ describe("MissionControlPanelManager", () => {
   it("posts validation counts in the Mission Control snapshot", async () => {
     const ws = fakeWorkspace();
     await ws.validationStore.create({ title: "Manual dogfood", author: "human", executor: "human" });
-    const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [ws], () => {}, () => {}, () => {});
+    const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [target(ws)], () => {}, () => {}, () => {});
 
     manager.open(ws.wsHash);
     await flush();
@@ -250,7 +253,7 @@ describe("MissionControlPanelManager", () => {
     const ws = fakeWorkspace();
     const validation = await ws.validationStore.create({ title: "Manual dogfood", author: "human", executor: "human" });
     let fanOuts = 0;
-    const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [ws], () => {}, () => {}, () => { fanOuts += 1; });
+    const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [target(ws)], () => {}, () => {}, () => { fanOuts += 1; });
     manager.open(ws.wsHash);
 
     __createdPanels[0].webview.__receive({ type: "closeValidation", id: validation.id, outcome: "passed", result_note: "Checked installed VSIX manually" });
@@ -267,8 +270,8 @@ describe("MissionControlPanelManager", () => {
   // action..." case per tasks.md's "spec-335 quick-add tests are UPDATED to cover the new path, not deleted."
   it("routes openTaskStudio (new-task, no id) to the injected callback", () => {
     const ws = fakeWorkspace();
-    let opened: [Workspace, string | undefined] | undefined;
-    const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [ws], () => {}, (w, id) => { opened = [w, id]; }, () => {});
+    let opened: [WorkspaceMissionControlTarget, string | undefined] | undefined;
+    const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [target(ws)], () => {}, (w, id) => { opened = [w, id]; }, () => {});
     manager.open(ws.wsHash);
 
     __createdPanels[0].webview.__receive({ type: "openTaskStudio" });
@@ -278,8 +281,8 @@ describe("MissionControlPanelManager", () => {
 
   it("routes openTaskStudio (edit, with id) to the injected callback — the card menu's 'Edit in Studio'", () => {
     const ws = fakeWorkspace();
-    let opened: [Workspace, string | undefined] | undefined;
-    const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [ws], () => {}, (w, id) => { opened = [w, id]; }, () => {});
+    let opened: [WorkspaceMissionControlTarget, string | undefined] | undefined;
+    const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [target(ws)], () => {}, (w, id) => { opened = [w, id]; }, () => {});
     manager.open(ws.wsHash);
 
     __createdPanels[0].webview.__receive({ type: "openTaskStudio", id: "t-abc123" });
@@ -290,7 +293,7 @@ describe("MissionControlPanelManager", () => {
   it("applies a status-transition update and re-posts a fresh snapshot", async () => {
     const ws = fakeWorkspace();
     const t = await ws.taskStore.create({ title: "flow", author: "human" });
-    const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [ws], () => {}, () => {}, () => {});
+    const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [target(ws)], () => {}, () => {}, () => {});
     manager.open(ws.wsHash);
 
     __createdPanels[0].webview.__receive({ type: "updateTask", id: t.id, patch: { status: "triaged" } });
@@ -302,7 +305,7 @@ describe("MissionControlPanelManager", () => {
   it("posts a taskError (no throw) when a drop is rejected by the store — the board never optimistically moved the card", async () => {
     const ws = fakeWorkspace();
     const t = await ws.taskStore.create({ title: "gate", author: "human" });
-    const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [ws], () => {}, () => {}, () => {});
+    const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [target(ws)], () => {}, () => {}, () => {});
     manager.open(ws.wsHash);
 
     // inbox -> done is not an allowed transition
@@ -317,8 +320,8 @@ describe("MissionControlPanelManager", () => {
 
   it("routes openTask to the injected callback", () => {
     const ws = fakeWorkspace();
-    let opened: [Workspace, string] | undefined;
-    const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [ws], (w, id) => { opened = [w, id]; }, () => {}, () => {});
+    let opened: [WorkspaceMissionControlTarget, string] | undefined;
+    const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [target(ws)], (w, id) => { opened = [w, id]; }, () => {}, () => {});
     manager.open(ws.wsHash);
 
     __createdPanels[0].webview.__receive({ type: "openTask", id: "t-abc123" });
@@ -328,7 +331,7 @@ describe("MissionControlPanelManager", () => {
 
   it("copies a task id through the host clipboard", async () => {
     const ws = fakeWorkspace();
-    const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [ws], () => {}, () => {}, () => {});
+    const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [target(ws)], () => {}, () => {}, () => {});
     manager.open(ws.wsHash);
 
     __createdPanels[0].webview.__receive({ type: "copyTaskId", id: "t-abc123" });
@@ -341,7 +344,7 @@ describe("MissionControlPanelManager", () => {
     const ws = fakeWorkspace();
     const t = await ws.taskStore.create({ title: "flow", author: "human" });
     let fanOuts = 0;
-    const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [ws], () => {}, () => {}, () => { fanOuts += 1; });
+    const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [target(ws)], () => {}, () => {}, () => { fanOuts += 1; });
     manager.open(ws.wsHash);
 
     __createdPanels[0].webview.__receive({ type: "updateTask", id: t.id, patch: { status: "triaged" } });
@@ -353,7 +356,7 @@ describe("MissionControlPanelManager", () => {
     const ws = fakeWorkspace();
     const t = await ws.taskStore.create({ title: "gate", author: "human" });
     let fanOuts = 0;
-    const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [ws], () => {}, () => {}, () => { fanOuts += 1; });
+    const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [target(ws)], () => {}, () => {}, () => { fanOuts += 1; });
     manager.open(ws.wsHash);
 
     __createdPanels[0].webview.__receive({ type: "updateTask", id: t.id, patch: { status: "done" } });

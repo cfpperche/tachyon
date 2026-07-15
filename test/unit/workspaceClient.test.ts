@@ -50,6 +50,7 @@ describe("remote WorkspaceClient", () => {
       readEvents: (afterSeq, limit) => firstJournal.readAfter(afterSeq, limit),
       query: async (query) => {
         queryReads += 1;
+        if (query.method !== "probe.view") throw new Error("unexpected query");
         return workspaceProbeViewSuccessV1({
           rows: [], total: 0, running: 0, completed: 0, failed: 0, empty: true,
           ...(query.input.caller ? { caller: query.input.caller } : {}),

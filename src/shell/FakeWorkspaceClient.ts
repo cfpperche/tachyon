@@ -162,7 +162,8 @@ export class FakeWorkspaceClient implements WorkspaceClient {
       const result = await this.options.query(cloned);
       if (!isWorkspaceQueryResultV1(result)
         || result.method !== query.method
-        || (result.status === "ok" && result.view.caller !== query.input.caller)) {
+        || (query.method === "probe.view" && result.status === "ok" && result.method === "probe.view"
+          && result.view.caller !== query.input.caller)) {
         return queryError(query, "INVALID_QUERY_RESULT", "fake query handler returned an invalid result");
       }
       return cloneJson(result);

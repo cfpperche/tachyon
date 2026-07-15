@@ -11,6 +11,7 @@ import {
   isWorkspaceQueryV1,
   negotiateEngineShellProtocol,
   workspaceCommandSuccessV1,
+  workspaceMissionControlViewSuccessV1,
   workspaceProbeViewSuccessV1,
   type EngineBundleFileV1,
   type EngineBundleManifestV1,
@@ -117,6 +118,47 @@ describe("persistent engine protocol", () => {
       command,
       Array.from({ length: 51 }, (_, index) => `error-${index}`),
     )).toMatchObject({ errors: expect.arrayContaining(["error-0"]), truncated: true });
+  });
+
+  it("accepts only exact Mission Control reads and idempotency-keyed mutations", () => {
+    const updatedAt = "2026-07-14T12:00:00.000Z";
+    const update = {
+      schemaVersion: 1,
+      method: "task.update",
+      input: { id: "t-abc123", patch: { status: "triaged", expect: { status: "inbox", updatedAt } } },
+    } as const;
+    const reorder = {
+      schemaVersion: 1,
+      method: "task.reorder-lane",
+      input: { status: "triaged", priority: 1, orderedIds: ["t-abc123"], expect: { "t-abc123": updatedAt } },
+    } as const;
+    const close = {
+      schemaVersion: 1,
+      method: "validation.close",
+      input: { id: "v-abc123", outcome: "passed", result_note: "installed dogfood passed" },
+    } as const;
+    for (const command of [update, reorder, close]) {
+      expect(isWorkspaceCommandV1(command), command.method).toBe(true);
+      expect(isWorkspaceCommandResultV1(workspaceCommandSuccessV1(command as WorkspaceCommandV1))).toBe(true);
+    }
+    expect(isWorkspaceCommandV1({ ...update, input: { ...update.input, patch: { status: "triaged", now: updatedAt } } })).toBe(false);
+    expect(isWorkspaceCommandV1({ ...update, input: { ...update.input, patch: { title: "not a board mutation" } } })).toBe(false);
+    expect(isWorkspaceCommandV1({ ...update, input: { ...update.input, patch: {} } })).toBe(false);
+    expect(isWorkspaceCommandV1({ ...reorder, input: { ...reorder.input, expect: {} } })).toBe(false);
+    expect(isWorkspaceCommandV1({ ...reorder, input: { ...reorder.input, orderedIds: ["t-abc123", "t-abc123"] } })).toBe(false);
+    expect(isWorkspaceCommandV1({ ...close, input: { ...close.input, result_note: " " } })).toBe(false);
+
+    const query = { schemaVersion: 1, method: "task.board", input: { liveAdhocAgents: ["reviewer"] } } as const;
+    expect(isWorkspaceQueryV1(query)).toBe(true);
+    expect(isWorkspaceQueryV1({ ...query, input: { liveAdhocAgents: ["reviewer", "reviewer"] } })).toBe(false);
+    expect(isWorkspaceQueryV1({ ...query, input: { liveAdhocAgents: ["../escape"] } })).toBe(false);
+    const result = workspaceMissionControlViewSuccessV1({
+      schemaVersion: 1,
+      board: { schemaVersion: 1, views: [], allowedDropStatuses: {}, chips: [] },
+    });
+    expect(isWorkspaceQueryResultV1(result)).toBe(true);
+    if (result.status !== "ok" || result.method !== "task.board") throw new Error("expected Mission Control result");
+    expect(isWorkspaceQueryResultV1({ ...result, view: { ...result.view, extra: true } })).toBe(false);
   });
 
   it("keeps authenticated Probe reads separate, exact and response-bounded", () => {

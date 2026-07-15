@@ -62,6 +62,7 @@ export function workspaceProbePresentationTarget(client: WorkspaceClient): Works
         input: { ...(caller !== undefined ? { caller } : {}) },
       });
       if (result.status === "error") throw new Error(result.message);
+      if (result.method !== "probe.view") throw new Error("Probe query returned the wrong view");
       return result.view;
     },
   };
