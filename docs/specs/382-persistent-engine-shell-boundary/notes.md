@@ -837,3 +837,10 @@ None.
   production bundle was regenerated at `0.56.10`; repository-wide `npm test` passes at 409 files, 4,670 passed
   and 3 skipped. The first global attempt found only the expected stale `0.56.9` ignored bundle artifact after
   the version bump; rebuilding the bundle closed it before the final green run.
+- Maintainer-installed dogfood passed with the original trigger deliberately still visible: the quarantine
+  notification remained open while the Tachyon sidebar populated normally. Evidence is
+  `/mnt/c/Users/cfpp/Pictures/Screenshots/Screenshot 2026-07-15 201603.png`. The installed bundle upgraded the
+  engine from `0.56.9` to `0.56.10` in one committed transition; the live identity is instance
+  `f6979675-4175-4e92-9673-49e6bfd4da25`, PID `2773037`, bundle
+  `e054490dc37527c156b15c5f504bcb2144d2532d5aeaddb89b4441a573e364a5`, with the existing Bridge instance
+  `17d985997c3b64b7` still on port `42897`.

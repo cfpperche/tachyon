@@ -99,4 +99,4 @@ manipulate the VS Code window.
       preserving the broker's single claimant, exact operation id and at-most-once engine action.
 - [x] Prove notification completion still reaches the engine, run the focused shell suite, typecheck and
       repository-wide `npm test` on the final source candidate.
-- [ ] Package the clean `0.56.10` candidate and complete maintainer-driven installed reload validation.
+- [x] Package the clean `0.56.10` candidate and complete maintainer-driven installed reload validation.
