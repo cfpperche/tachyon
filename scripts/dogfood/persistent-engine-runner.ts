@@ -12,6 +12,7 @@ import {
 } from "../../src/engine-service/engineSupervisor.js";
 import type { EngineServiceIdentityV1 } from "../../src/engine-service/protocol.js";
 import { connectRemoteWorkspaceClient, type WorkspaceClient } from "../../src/shell/WorkspaceClient.js";
+import { workspaceActivityTarget } from "../../src/shell/ActivityTarget.js";
 import { ClientWorkspaceStudioTarget } from "../../src/shell/ClientWorkspaceStudioTarget.js";
 import { workspacePluginPresentationTarget } from "../../src/shell/WorkspacePresentation.js";
 import { workspaceMissionControlTarget } from "../../src/shell/MissionControlTarget.js";
@@ -142,6 +143,11 @@ try {
   if (probes.status !== "ok" || probes.method !== "probe.view"
     || probes.view.caller !== "dogfood-worker" || !probes.view.empty) {
     throw new Error(`remote Probe query failed: ${JSON.stringify(probes)}`);
+  }
+  const activity = workspaceActivityTarget(first);
+  const activityContext = await activity.activityContext("dogfood-worker");
+  if (activityContext.agent !== "dogfood-worker" || activityContext.sharedCwd || activityContext.targets.total !== 0) {
+    throw new Error(`remote Activity context failed: ${JSON.stringify(activityContext)}`);
   }
   const missionControl = workspaceMissionControlTarget(first);
   const initialBoard = await missionControl.boardSnapshot(["dogfood-reviewer"]);
@@ -284,6 +290,7 @@ try {
     throw new Error(`idempotent remote agent start failed: ${JSON.stringify({ started, replayedStart })}`);
   }
   await waitForAgentProjection(first, "dogfood-worker", true);
+  await activity.sendAgentInput("dogfood-worker", "persistent Activity share dogfood", false);
   const pluginFleet = await workspacePluginPresentationTarget(first).pluginFleet();
   if (pluginFleet.agents.length !== 1
     || pluginFleet.agents[0]?.name !== "dogfood-worker"
@@ -327,9 +334,9 @@ try {
     engine: { pid: identity.pid, instanceId: identity.instanceId, bundleId: identity.bundleId },
     bridge: identity.bridge,
     snapshotSeq: snapshot.seq,
-    queries: [probes.method, "task.board", "task.detail", "task.studio", "pin.studio"],
+    queries: ["activity.context", probes.method, "task.board", "task.detail", "task.studio", "pin.studio"],
     pluginFleet: pluginFleet.agents.map((agent) => ({ name: agent.name, status: agent.status })),
-    commands: ["pin.studio.apply", "task.studio.apply", "task.prototype.review", "task.update", "task.reorder-lane", "validation.close", "studio.submit", started.method, restarted.method, killed.method],
+    commands: ["agent.input", "pin.studio.apply", "task.studio.apply", "task.prototype.review", "task.update", "task.reorder-lane", "validation.close", "studio.submit", started.method, restarted.method, killed.method],
   }, null, 2)}\n`);
 } finally {
   try { execFileSync("systemctl", ["--user", "stop", unitName], { stdio: "ignore" }); } catch { /* absent/failed unit */ }

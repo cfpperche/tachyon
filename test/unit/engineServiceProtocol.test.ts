@@ -7,10 +7,12 @@ import {
   isSafeBundlePath,
   isWorkspaceCommandResultV1,
   isWorkspaceCommandV1,
+  isWorkspaceQueryResultBoundToInput,
   isWorkspaceQueryResultV1,
   isWorkspaceQueryV1,
   negotiateEngineShellProtocol,
   workspaceCommandSuccessV1,
+  workspaceActivityContextSuccessV1,
   workspaceMissionControlViewSuccessV1,
   workspacePinStudioApplySuccessV1,
   workspacePinStudioViewSuccessV1,
@@ -92,6 +94,41 @@ describe("persistent engine protocol", () => {
       status: "ok",
       changed: false,
     })).toBe(false);
+  });
+
+  it("binds bounded agent input and Activity context to exact identities", () => {
+    const input = {
+      schemaVersion: 1 as const,
+      method: "agent.input" as const,
+      input: { agent: "reviewer", text: "review this", submit: false },
+    };
+    expect(isWorkspaceCommandV1(input)).toBe(true);
+    expect(workspaceCommandSuccessV1(input)).toEqual({
+      schemaVersion: 1,
+      method: "agent.input",
+      status: "ok",
+    });
+    expect(isWorkspaceCommandV1({ ...input, input: { ...input.input, submit: "no" } })).toBe(false);
+    expect(isWorkspaceCommandV1({ ...input, input: { ...input.input, text: "x".repeat(48 * 1024 + 1) } })).toBe(false);
+
+    const query = { schemaVersion: 1, method: "activity.context", input: { agent: "codex" } } as const;
+    const result = workspaceActivityContextSuccessV1({
+      schemaVersion: 1,
+      context: {
+        schemaVersion: 1,
+        agent: "codex",
+        sharedCwd: false,
+        attention: null,
+        targets: { total: 1, truncated: false, items: [{ name: "reviewer", declared: true }] },
+      },
+    });
+    expect(isWorkspaceQueryV1(query)).toBe(true);
+    expect(isWorkspaceQueryResultV1(result)).toBe(true);
+    expect(isWorkspaceQueryResultBoundToInput(query, result)).toBe(true);
+    expect(isWorkspaceQueryResultBoundToInput(
+      { ...query, input: { agent: "reviewer" } },
+      result,
+    )).toBe(false);
   });
 
   it("validates the exact bounded Studio submit wire shape and result", () => {

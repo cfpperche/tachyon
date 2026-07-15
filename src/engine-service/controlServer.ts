@@ -9,6 +9,7 @@ import {
   isEngineOperationId,
   isWorkspaceCommandResultV1,
   isWorkspaceCommandV1,
+  isWorkspaceQueryResultBoundToInput,
   isWorkspaceQueryResultV1,
   isWorkspaceQueryV1,
   negotiateEngineShellProtocol,
@@ -199,15 +200,7 @@ export async function startEngineControlServer(options: EngineControlServerOptio
     try {
       const result = await options.query(query, { shellId });
       if (!isWorkspaceQueryResultV1(result)
-        || result.method !== query.method
-        || (query.method === "probe.view" && result.status === "ok" && result.method === "probe.view"
-          && result.view.caller !== query.input.caller)
-        || (query.method === "task.detail" && result.status === "ok" && result.method === "task.detail"
-          && result.view.detail.task.id !== query.input.id)
-        || (query.method === "task.studio" && result.status === "ok" && result.method === "task.studio"
-          && result.view.studio.taskId !== query.input.id)
-        || (query.method === "pin.studio" && result.status === "ok" && result.method === "pin.studio"
-          && result.view.studio.pinId !== query.input.id)) {
+        || !isWorkspaceQueryResultBoundToInput(query, result)) {
         return queryFailure(query, "INVALID_QUERY_RESULT", "engine query returned an invalid result");
       }
       return result;

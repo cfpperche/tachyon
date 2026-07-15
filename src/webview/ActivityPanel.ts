@@ -2,14 +2,13 @@ import * as vscode from "vscode";
 import { panelIcon } from "./shared/panelIcon.js";
 import * as fs from "node:fs";
 import * as nodePath from "node:path";
-import type { Workspace } from "../workspace/Workspace.js";
+import type { WorkspaceActivityTarget } from "../shell/ActivityTarget.js";
 import { createActivityBuilder, type ActivityBuilder, type ActivityViewModel } from "../activity/activityView.js";
 import { activityMessage, COPY_SHARE_TEXT, imageDataMessage, SHARE_EXTERNAL, SHARE_TO_AGENT, type ActivityWebviewMessage } from "./activity/messages.js";
 import { renderWebviewShell } from "./shared/shell.js";
 import { ActivityLog, type LoggedEvent } from "../activity/logStore.js";
 import type { NormalizedEvent } from "../activity/types.js";
 import { internalSharePrompt, resolveActivityShare, withActivityShareKeys, type ActivitySharePayload } from "../activity/activityShare.js";
-import { hasSharedCwdAttributionGap } from "./activity/attributionGap.js";
 import { notify, showNotification } from "../workspace/NotificationService.js";
 
 /** Cap the feed posted to the webview so payloads stay bounded on a long session (only the rendered tail). */
@@ -55,7 +54,7 @@ export class ActivityPanelManager {
 
   constructor(
     private readonly extensionUri: vscode.Uri,
-    private readonly getWorkspaces: () => Workspace[],
+    private readonly getWorkspaces: () => WorkspaceActivityTarget[],
   ) {}
 
   open(agent: string, wsHash?: string): void {
@@ -81,7 +80,7 @@ export class ActivityPanelManager {
     this.attachPanel(panel, ws, state.agent);
   }
 
-  private attachPanel(panel: vscode.WebviewPanel, ws: Workspace, agent: string): void {
+  private attachPanel(panel: vscode.WebviewPanel, ws: WorkspaceActivityTarget, agent: string): void {
     const key = `${ws.wsHash}::${agent}`;
     const existing = this.panels.get(key);
     if (existing && existing.panel !== panel) existing.panel.dispose();
@@ -129,15 +128,15 @@ export class ActivityPanelManager {
       // spec 306 — "throttled" has no Activity-view equivalent yet (neither "typing" nor "needs your input" is
       // true); the sidebar dot/badge/toast already cover visibility, so this narrower live-state hint just omits
       // it rather than misrepresenting it or growing AgentActivityState for a surface this spec doesn't touch.
-      const rawState = ws.attentionOf(agent)?.state;
+      const rawState = ws.activityAttention(agent);
       const agentState = rawState === "throttled" ? undefined : rawState;
       // spec 278 — POST via the shared envelope (the dev preview harness uses the same constructor).
       void panel.webview.postMessage(activityMessage({ ...shareVm, agentState, sharedCwd }, prepended));
     };
-    void hasSharedCwdAttributionGap(ws, agent).then((gap) => {
-      sharedCwd = gap;
+    void ws.activityContext(agent).then((context) => {
+      sharedCwd = context.sharedCwd;
       if (latestVm) post(latestVm);
-    });
+    }).catch(() => undefined);
     // Images are big base64 blobs — post each ONCE on a side channel keyed by id (never re-sent in the
     // per-render view-model), so a long chat with screenshots never bloats the per-change payload.
     const postImage = (id: string, dataUri: string): void => void panel.webview.postMessage(imageDataMessage(id, dataUri));
@@ -167,7 +166,9 @@ export class ActivityPanelManager {
       } else if (m?.type === SHARE_EXTERNAL) {
         void this.shareExternal(agent, latestVm, m.sequence, m.key);
       } else if (m?.type === SHARE_TO_AGENT) {
-        void this.shareToAgent(ws, agent, latestVm, m.sequence, m.key);
+        void this.shareToAgent(ws, agent, latestVm, m.sequence, m.key).catch((error) => {
+          notify(`Could not share Activity context: ${error instanceof Error ? error.message : String(error)}`, "warn");
+        });
       }
     });
     this.activeKey = key;
@@ -232,7 +233,7 @@ export class ActivityPanelManager {
     notify("Activity share text copied.");
   }
 
-  private async shareToAgent(ws: Workspace, sourceAgent: string, vm: ActivityViewModel | undefined, sequence: unknown, key: unknown): Promise<void> {
+  private async shareToAgent(ws: WorkspaceActivityTarget, sourceAgent: string, vm: ActivityViewModel | undefined, sequence: unknown, key: unknown): Promise<void> {
     const payload = this.resolveShare(sourceAgent, vm, sequence, key);
     if (!payload) return;
     const targets = await this.runningAgentTargets(ws, sourceAgent);
@@ -251,14 +252,16 @@ export class ActivityPanelManager {
     const preview = prompt.length > 1400 ? `${prompt.slice(0, 1400).trimEnd()}\n\n[preview truncated]` : prompt;
     const ok = await showNotification(`Paste Activity context into '${picked.label}'?`, "info", ["Paste"], { modal: true, detail: preview });
     if (ok !== "Paste") return;
-    await ws.tmux.sendKeys(ws.manager.session(picked.label), prompt, false);
+    await ws.sendAgentInput(picked.label, prompt, false);
     notify(`Activity context pasted into '${picked.label}' (not submitted).`);
   }
 
-  private async runningAgentTargets(ws: Workspace, sourceAgent: string): Promise<Array<{ name: string; description: string }>> {
-    return (await ws.manager.list())
-      .filter((a) => a.name !== sourceAgent && a.kind === "agent" && a.running && !a.dead && !a.stopping)
-      .map((a) => ({ name: a.name, description: a.declared ? "declared agent" : "ad-hoc agent" }));
+  private async runningAgentTargets(ws: WorkspaceActivityTarget, sourceAgent: string): Promise<Array<{ name: string; description: string }>> {
+    const context = await ws.activityContext(sourceAgent);
+    return context.targets.items.map((target) => ({
+      name: target.name,
+      description: target.declared ? "declared agent" : "ad-hoc agent",
+    }));
   }
 
   /**
@@ -268,7 +271,7 @@ export class ActivityPanelManager {
    * log as the writer appends (offset + raw-byte partial — the same inc-2 seam, now on the log). Multi-session
    * stitch is automatic (the log already spans sessions); `session.boundary` records render as separators.
    */
-  private watch(ws: Workspace, agent: string, post: (vm: ActivityViewModel, prepended?: boolean) => void, postImage: (id: string, dataUri: string) => void): { stop: () => void; replay: () => void; loadOlder: () => void } {
+  private watch(ws: WorkspaceActivityTarget, agent: string, post: (vm: ActivityViewModel, prepended?: boolean) => void, postImage: (id: string, dataUri: string) => void): { stop: () => void; replay: () => void; loadOlder: () => void } {
     let disposed = false;
     const dir = nodePath.join(ws.workspaceRoot, ".tachyon", "activity");
     const log = new ActivityLog(dir, agent);
@@ -376,7 +379,7 @@ export class ActivityPanelManager {
     let lastState: string | undefined;
     const stateTimer = setInterval(() => {
       if (disposed) return;
-      const st = ws.attentionOf(agent)?.state;
+      const st = ws.activityAttention(agent);
       if (st !== lastState) { lastState = st; render(); }
     }, 1000);
     return { stop: () => { disposed = true; clearInterval(stateTimer); fs.unwatchFile(logFile, onChange); }, replay, loadOlder };

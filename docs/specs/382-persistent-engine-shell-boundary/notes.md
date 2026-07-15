@@ -472,3 +472,28 @@ None.
   passed with no remaining session or unit.  No additional global full run was made: the first reviewable
   proof (343 files, 4,068 passed, 3 skipped) remains the intermediate gate reserved until final closure.
   Production activation is still intentionally legacy until the last four presentation consumers migrate.
+
+## Twenty-second implementation slice — 2026-07-14
+
+- Added a strict `activity.context` projection for the selected agent's attribution state, attention and bounded
+  live share targets.  Transcript-attribution logic moved out of the webview namespace and now runs at the
+  daemon authority; the Activity panel continues reading its durable normalized log and image blobs locally,
+  without receiving runtime managers, ledgers or transcript resolvers.
+- Added exact, 48 KiB-bounded `agent.input` commands.  The engine revalidates that the target is a live,
+  non-stopping AI agent immediately before sending literal text through tmux; submit remains an explicit bit.
+  Activity uses it with `submit: false`, preserving the existing confirmation and non-submitting share behavior
+  while removing the last shell-side tmux mutation.
+- Centralized successful query identity binding in one protocol helper used by both the real control server and
+  `FakeWorkspaceClient`.  Probe caller, Task Detail/Studio ids, Pin Studio id and Activity agent can no longer
+  diverge between production and deterministic presentation tests.
+- Migrated `ActivityPanel` to `WorkspaceActivityTarget`; workspace identity and local durable-log reading remain
+  shell-owned, while attention/context/input cross the narrow target.  Transport failures during sharing now
+  surface one warning instead of becoming an unhandled promise.  The concrete presentation inventory shrank
+  from four files to three.
+- The final related matrix passes 103/103, including a real daemon command whose exact replay writes to the live
+  agent pane only once; typecheck, extension/engine build, the 189-file editor-free daemon import closure and
+  diff-check are green.  Packaged systemd dogfood exercised both `activity.context` and `agent.input`, retained
+  every previous flow, reused the exact engine and cleaned its disposable runtime state.
+- No additional global full run was made: the first reviewable proof (343 files, 4,068 passed, 3 skipped)
+  remains the intermediate gate reserved until final closure.  Production activation remains legacy; Handoff,
+  SidebarPrototype and `extension.ts` are the three remaining concrete Workspace consumers.

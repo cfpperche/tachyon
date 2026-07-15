@@ -50,19 +50,24 @@ describe("persistent workspace presentation boundary", () => {
       "src/webview/TaskStudioPanel.ts",
       "src/webview/PinStudioAdapter.ts",
       "src/webview/PinStudioPanel.ts",
+      "src/webview/ActivityPanel.ts",
       "src/presentation/items.ts",
       "src/plugins/ui/host.ts",
     ];
     for (const relative of migrated) {
       const source = fs.readFileSync(path.join(root, relative), "utf8");
       expect(source, relative).not.toMatch(/workspace\/Workspace(?:\.js)?/);
-      expect(source, relative).toMatch(/Workspace(?:Presentation|GitPresentation|ProbePresentation|PluginPresentation|MissionControl|PinStudio|TaskDetail|TaskStudio|Studio)Target/);
+      expect(source, relative).toMatch(/Workspace(?:Presentation|GitPresentation|ProbePresentation|PluginPresentation|Activity|MissionControl|PinStudio|TaskDetail|TaskStudio|Studio)Target/);
     }
   });
 
   it("keeps the runtime projection and deterministic client fake editor-free", () => {
     for (const relative of [
+      "src/activity/attributionGap.ts",
+      "src/agents/agentInputService.ts",
       "src/runtime-api/workspaceProjection.ts",
+      "src/runtime-api/activityProjection.ts",
+      "src/runtime-api/agentInputCommands.ts",
       "src/runtime-api/missionControlCommands.ts",
       "src/runtime-api/missionControlProjection.ts",
       "src/runtime-api/pinStudioCommands.ts",
@@ -74,6 +79,7 @@ describe("persistent workspace presentation boundary", () => {
       "src/runtime-api/taskStudioCommands.ts",
       "src/runtime-api/taskStudioProjection.ts",
       "src/shell/FakeWorkspaceClient.ts",
+      "src/shell/ActivityTarget.ts",
       "src/shell/MissionControlTarget.ts",
       "src/shell/PinStudioTarget.ts",
       "src/shell/TaskDetailTarget.ts",

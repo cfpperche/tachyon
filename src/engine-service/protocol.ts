@@ -1,5 +1,14 @@
 import { createHash } from "node:crypto";
 import {
+  isAgentInputCommandV1,
+  type AgentInputCommandV1,
+} from "../runtime-api/agentInputCommands.js";
+import {
+  isActivityContextViewV1,
+  parseActivityContextViewV1,
+  type ActivityContextViewV1,
+} from "../runtime-api/activityProjection.js";
+import {
   isMissionControlTaskReorderInputV1,
   isMissionControlTaskUpdateInputV1,
   isMissionControlValidationCloseInputV1,
@@ -149,6 +158,7 @@ export type WorkspaceCommandMethodV1 =
   | "agent.kill"
   | "agent.restart"
   | "agent.resume"
+  | "agent.input"
   | "studio.submit"
   | "task.update"
   | "task.reorder-lane"
@@ -159,6 +169,7 @@ export type WorkspaceCommandMethodV1 =
   | "pin.studio.apply";
 
 export type WorkspaceAgentCommandMethodV1 = Extract<WorkspaceCommandMethodV1, `agent.${string}`>;
+export type WorkspaceAgentLifecycleCommandMethodV1 = Exclude<WorkspaceAgentCommandMethodV1, "agent.input">;
 export type WorkspaceSimpleCommandMethodV1 = Exclude<WorkspaceCommandMethodV1, "studio.submit" | "task.studio.apply" | "pin.studio.apply">;
 
 /** Exact versioned wire shape of the five config-backed Studio forms. */
@@ -196,8 +207,12 @@ export interface WorkspaceStudioFormV1 {
 
 export type WorkspaceCommandV1 = {
   schemaVersion: 1;
-  method: WorkspaceAgentCommandMethodV1;
+  method: WorkspaceAgentLifecycleCommandMethodV1;
   input: { agent: string };
+} | {
+  schemaVersion: 1;
+  method: "agent.input";
+  input: AgentInputCommandV1;
 } | {
   schemaVersion: 1;
   method: "studio.submit";
@@ -273,7 +288,7 @@ export type WorkspaceCommandResultV1 =
       message: string;
     };
 
-export type WorkspaceQueryMethodV1 = "probe.view" | "task.board" | "task.detail" | "task.studio" | "pin.studio";
+export type WorkspaceQueryMethodV1 = "activity.context" | "probe.view" | "task.board" | "task.detail" | "task.studio" | "pin.studio";
 
 export interface WorkspaceProbeViewRowV1 {
   runId: string;
@@ -301,6 +316,11 @@ export interface WorkspaceProbeViewV1 {
 export type WorkspaceQueryV1 =
   | {
       schemaVersion: 1;
+      method: "activity.context";
+      input: { agent: string };
+    }
+  | {
+      schemaVersion: 1;
       method: "probe.view";
       input: { caller?: string };
     }
@@ -326,6 +346,12 @@ export type WorkspaceQueryV1 =
     };
 
 export type WorkspaceQueryResultV1 =
+  | {
+      schemaVersion: 1;
+      method: "activity.context";
+      status: "ok";
+      view: ActivityContextViewV1;
+    }
   | {
       schemaVersion: 1;
       method: "probe.view";
@@ -398,6 +424,7 @@ const WORKSPACE_COMMAND_METHODS = new Set<WorkspaceCommandMethodV1>([
   "agent.kill",
   "agent.restart",
   "agent.resume",
+  "agent.input",
   "studio.submit",
   "task.update",
   "task.reorder-lane",
@@ -424,6 +451,7 @@ export function isWorkspaceCommandV1(value: unknown): value is WorkspaceCommandV
     || !WORKSPACE_COMMAND_METHODS.has(value.method as WorkspaceCommandMethodV1)
     || !isRecord(value.input)) return false;
   if (value.method === "studio.submit") return isWorkspaceStudioSubmitInputV1(value.input);
+  if (value.method === "agent.input") return isAgentInputCommandV1(value.input);
   if (value.method === "task.update") return isMissionControlTaskUpdateInputV1(value.input);
   if (value.method === "task.reorder-lane") return isMissionControlTaskReorderInputV1(value.input);
   if (value.method === "validation.close") return isMissionControlValidationCloseInputV1(value.input);
@@ -513,6 +541,11 @@ export function isWorkspaceQueryV1(value: unknown): value is WorkspaceQueryV1 {
     || !hasOnlyKeys(value, ["schemaVersion", "method", "input"])
     || value.schemaVersion !== 1
     || !isRecord(value.input)) return false;
+  if (value.method === "activity.context") {
+    return hasOnlyKeys(value.input, ["agent"])
+      && typeof value.input.agent === "string"
+      && AGENT_NAME_RE.test(value.input.agent);
+  }
   if (value.method === "task.board") {
     return hasOnlyKeys(value.input, ["liveAdhocAgents"])
       && Array.isArray(value.input.liveAdhocAgents)
@@ -539,18 +572,20 @@ export function isWorkspaceQueryV1(value: unknown): value is WorkspaceQueryV1 {
 
 export function isWorkspaceQueryResultV1(value: unknown): value is WorkspaceQueryResultV1 {
   if (!isRecord(value) || value.schemaVersion !== 1
-    || (value.method !== "probe.view" && value.method !== "task.board" && value.method !== "task.detail" && value.method !== "task.studio" && value.method !== "pin.studio")) return false;
+    || (value.method !== "activity.context" && value.method !== "probe.view" && value.method !== "task.board" && value.method !== "task.detail" && value.method !== "task.studio" && value.method !== "pin.studio")) return false;
   if (value.status === "ok") {
     return hasOnlyKeys(value, ["schemaVersion", "method", "status", "view"])
-      && (value.method === "probe.view"
-        ? isWorkspaceProbeViewV1(value.view)
-        : value.method === "task.board"
-          ? isMissionControlViewV1(value.view)
-          : value.method === "task.detail"
-            ? isTaskDetailViewV1(value.view)
-            : value.method === "task.studio"
-              ? isTaskStudioViewV1(value.view)
-              : isPinStudioViewV1(value.view));
+      && (value.method === "activity.context"
+        ? isActivityContextViewV1(value.view)
+        : value.method === "probe.view"
+          ? isWorkspaceProbeViewV1(value.view)
+          : value.method === "task.board"
+            ? isMissionControlViewV1(value.view)
+            : value.method === "task.detail"
+              ? isTaskDetailViewV1(value.view)
+              : value.method === "task.studio"
+                ? isTaskStudioViewV1(value.view)
+                : isPinStudioViewV1(value.view));
   }
   return value.status === "error"
     && hasOnlyKeys(value, ["schemaVersion", "method", "status", "code", "message"])
@@ -559,6 +594,40 @@ export function isWorkspaceQueryResultV1(value: unknown): value is WorkspaceQuer
     && typeof value.message === "string"
     && value.message.length > 0
     && value.message.length <= 1_000;
+}
+
+/** Cross-binds every successful query result to the identity supplied by the authenticated request. */
+export function isWorkspaceQueryResultBoundToInput(
+  query: WorkspaceQueryV1,
+  result: WorkspaceQueryResultV1,
+): boolean {
+  if (query.method !== result.method) return false;
+  if (result.status === "error") return true;
+  if (query.method === "activity.context" && result.method === "activity.context") {
+    return result.view.context.agent === query.input.agent;
+  }
+  if (query.method === "probe.view" && result.method === "probe.view") {
+    return result.view.caller === query.input.caller;
+  }
+  if (query.method === "task.detail" && result.method === "task.detail") {
+    return result.view.detail.task.id === query.input.id;
+  }
+  if (query.method === "task.studio" && result.method === "task.studio") {
+    return result.view.studio.taskId === query.input.id;
+  }
+  if (query.method === "pin.studio" && result.method === "pin.studio") {
+    return result.view.studio.pinId === query.input.id;
+  }
+  return true;
+}
+
+export function workspaceActivityContextSuccessV1(view: ActivityContextViewV1): WorkspaceQueryResultV1 {
+  return {
+    schemaVersion: 1,
+    method: "activity.context",
+    status: "ok",
+    view: parseActivityContextViewV1(view),
+  };
 }
 
 /** Bounds the journal/prototype metadata response without moving attachment bytes through control. */

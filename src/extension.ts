@@ -56,6 +56,7 @@ import type {
 import { isAdhocItem } from "./presentation/contextValue.js";
 import { Workspace, type ViewKind } from "./workspace/Workspace.js";
 import type { WorkspacePresentationTarget } from "./shell/WorkspacePresentation.js";
+import { legacyActivityTarget } from "./shell/ActivityTarget.js";
 import { legacyMissionControlTarget } from "./shell/MissionControlTarget.js";
 import { legacyPinStudioTarget } from "./shell/PinStudioTarget.js";
 import { legacyTaskDetailTarget } from "./shell/TaskDetailTarget.js";
@@ -643,7 +644,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   );
   const runtimeOps = new RuntimeOpsViewProvider(context.extensionUri, () => runtimeOpsSnapshots.snapshot());
   // spec 238 — the editor-area Runtime Activity View (normalized cockpit; reads the durable per-agent log).
-  const activityPanels = new ActivityPanelManager(context.extensionUri, workspaces);
+  const activityPanels = new ActivityPanelManager(
+    context.extensionUri,
+    () => workspaces().map(legacyActivityTarget),
+  );
   context.subscriptions.push({ dispose: () => activityPanels.dispose() });
   // spec 245 — the editor-area Project Handoff panel (read-only doc + pending notes + staleness; one per root).
   const handoffPanels = new HandoffPanelManager(context.extensionUri, workspaces);

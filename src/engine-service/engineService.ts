@@ -11,6 +11,8 @@ import {
 import { readLinuxProcessIdentity } from "../delivery/reloadReconciliation.js";
 import { DaemonEngineHost, type DaemonHostEvent, type DaemonSettingsSnapshot } from "../workspace/DaemonEngineHost.js";
 import { Workspace } from "../workspace/Workspace.js";
+import { sendManagedAgentInput } from "../agents/agentInputService.js";
+import { projectActivityContext } from "../runtime-api/activityProjection.js";
 import type { WorkspaceCoreProjectionsV1 } from "../runtime-api/workspaceProjection.js";
 import { buildBoardSnapshot } from "../tasks/boardSnapshot.js";
 import { projectMissionControlBoard } from "../runtime-api/missionControlProjection.js";
@@ -45,6 +47,7 @@ import {
   ENGINE_SHELL_PROTOCOL,
   isEngineServiceIdentityV1,
   isSha256,
+  workspaceActivityContextSuccessV1,
   workspaceCommandSuccessV1,
   workspaceMissionControlViewSuccessV1,
   workspacePinStudioApplySuccessV1,
@@ -193,6 +196,12 @@ async function executeWorkspaceQuery(
   workspace: Workspace,
   query: WorkspaceQueryV1,
 ): Promise<WorkspaceQueryResultV1> {
+  if (query.method === "activity.context") {
+    return workspaceActivityContextSuccessV1({
+      schemaVersion: 1,
+      context: await projectActivityContext(workspace, query.input.agent),
+    });
+  }
   if (query.method === "task.board") {
     return workspaceMissionControlViewSuccessV1({
       schemaVersion: 1,
@@ -311,6 +320,10 @@ async function executeWorkspaceCommand(
     if (!("sceneJson" in payload)) throw new Error("Pin Studio sketch payload has the wrong shape");
     const stored = putPinStudioSketch(workspace.workspaceRoot, workspace.pinStore, command.input.pinId, payload);
     return workspacePinStudioApplySuccessV1(command, { outcome: "attachment-stored", ...stored });
+  }
+  if (command.method === "agent.input") {
+    await sendManagedAgentInput(workspace, command.input.agent, command.input.text, command.input.submit);
+    return workspaceCommandSuccessV1(command);
   }
   const agent = command.input.agent;
   switch (command.method) {

@@ -1,6 +1,6 @@
 import * as nodePath from "node:path";
-import { isResumable, type SessionRecord } from "../../resume/SessionLedger.js";
-import type { ResumeRuntime } from "../../resume/adapters.js";
+import { isResumable, type SessionRecord } from "../resume/SessionLedger.js";
+import type { ResumeRuntime } from "../resume/adapters.js";
 
 type LedgerLike = {
   get(name: string): SessionRecord | undefined;
@@ -18,8 +18,7 @@ export type ActivityAttributionWorkspace = {
 
 /**
  * True when another resumable agent shares this agent's cwd AND transcript namespace,
- * and Tachyon cannot currently resolve this agent's owned transcript. This is the
- * Activity panel's "history unavailable" condition.
+ * and Tachyon cannot currently resolve this agent's owned transcript.
  */
 export async function hasSharedCwdAttributionGap(ws: ActivityAttributionWorkspace, agent: string): Promise<boolean> {
   const mine = ws.ledger.get(agent);

@@ -3,6 +3,7 @@ import {
   isWorkspaceEventV1,
   isWorkspaceCommandResultV1,
   isWorkspaceCommandV1,
+  isWorkspaceQueryResultBoundToInput,
   isWorkspaceQueryResultV1,
   isWorkspaceQueryV1,
   type EngineServiceIdentityV1,
@@ -166,9 +167,7 @@ export class FakeWorkspaceClient implements WorkspaceClient {
     try {
       const result = await this.options.query(cloned);
       if (!isWorkspaceQueryResultV1(result)
-        || result.method !== query.method
-        || (query.method === "probe.view" && result.status === "ok" && result.method === "probe.view"
-          && result.view.caller !== query.input.caller)) {
+        || !isWorkspaceQueryResultBoundToInput(query, result)) {
         return queryError(query, "INVALID_QUERY_RESULT", "fake query handler returned an invalid result");
       }
       return cloneJson(result);

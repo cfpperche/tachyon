@@ -124,6 +124,22 @@ describe("daemon engine service", () => {
         status: "ok",
         view: { rows: [], total: 0, running: 0, completed: 0, failed: 0, empty: true, caller: "worker" },
       });
+    expect(await first.query({ schemaVersion: 1, method: "activity.context", input: { agent: "worker" } }))
+      .toEqual({
+        schemaVersion: 1,
+        method: "activity.context",
+        status: "ok",
+        view: {
+          schemaVersion: 1,
+          context: {
+            schemaVersion: 1,
+            agent: "worker",
+            sharedCwd: false,
+            attention: null,
+            targets: { total: 0, truncated: false, items: [] },
+          },
+        },
+      });
 
     const initialBoard = await first.query({ schemaVersion: 1, method: "task.board", input: { liveAdhocAgents: ["reviewer"] } });
     expect(initialBoard).toMatchObject({
@@ -400,6 +416,17 @@ describe("daemon engine service", () => {
     expect(await first.snapshot()).toMatchObject({
       projections: { agents: { items: [{ name: "worker", running: true }] } },
     });
+    const agentInputProof = path.join(workspaceRoot, ".tachyon-agent-input-proof");
+    const agentInput = {
+      schemaVersion: 1 as const,
+      method: "agent.input" as const,
+      input: { agent: "worker", text: "printf 'once\\n' >> .tachyon-agent-input-proof", submit: true },
+    };
+    const inputSent = await first.invoke("operation-agent-input-0001", agentInput);
+    expect(inputSent).toEqual({ schemaVersion: 1, method: "agent.input", status: "ok" });
+    expect(await first.invoke("operation-agent-input-0001", agentInput)).toEqual(inputSent);
+    await waitUntil(() => fs.existsSync(agentInputProof));
+    expect(fs.readFileSync(agentInputProof, "utf8")).toBe("once\n");
     expect(await first.invoke("operation-engine-restart-0001", {
       schemaVersion: 1,
       method: "agent.restart",
@@ -451,7 +478,7 @@ describe("daemon engine service", () => {
 });
 
 function config(...agents: string[]): string {
-  return `agents:\n${agents.map((name) => `  ${name}:\n    cmd: sh\n    autostart: false\n`).join("")}`;
+  return `agents:\n${agents.map((name) => `  ${name}:\n    cmd: sh\n    kind: agent\n    autostart: false\n`).join("")}`;
 }
 
 function hello(identity: EngineServiceIdentityV1, shellId: string): EngineShellHelloV1 {
@@ -504,6 +531,15 @@ async function waitForEvent(
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
   throw new Error("daemon engine event timed out");
+}
+
+async function waitUntil(predicate: () => boolean, timeoutMs = 2_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error("daemon engine condition timed out");
 }
 
 function expectLoopbackListener(port: number): Promise<void> {
