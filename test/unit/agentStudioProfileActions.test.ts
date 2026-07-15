@@ -26,6 +26,7 @@ import {
   soulProfileStatusMessage,
 } from "../../src/webview/agent-studio-shell/messages.js";
 import { assertNoDomainNameCollision, decodeStudioMessage } from "../../src/webview/shared/studio/protocol.js";
+import { openingPromptCapability, parseConfig } from "../../src/config/loadConfig.js";
 import { agentStanzaCasToken, setAgentSoulEnablement } from "../../src/config/YamlConfigEditor.js";
 
 describe("Agent Studio soul profile protocol (T15A)", () => {
@@ -181,6 +182,25 @@ describe("Agent Studio soul profile protocol (T15A)", () => {
     expect(isAllowedSoulImportFileName("identity.txt")).toBe(true);
     expect(isAllowedSoulImportFileName("identity.pdf")).toBe(false);
     expect(isAllowedSoulImportFileName("../identity.md")).toBe(false);
+  });
+
+  it("prepares one enabled direct agent and identity marker per dogfood runtime", () => {
+    const fixture = path.resolve("test/fixtures/agent-soul-dogfood");
+    const parsed = parseConfig(fs.readFileSync(path.join(fixture, "tachyon.yml"), "utf8"));
+    expect(parsed.errors).toEqual([]);
+    const expected = {
+      "soul-claude": { runtime: "claude", channel: "startup-argument", marker: "SOUL-CLAUDE-OK" },
+      "soul-codex": { runtime: "codex", channel: "startup-argument", marker: "SOUL-CODEX-OK" },
+      "soul-grok": { runtime: "grok", channel: "startup-argument", marker: "SOUL-GROK-OK" },
+      "soul-opencode": { runtime: "opencode", channel: "tui-prefill", marker: "SOUL-OPENCODE-OK" },
+    } as const;
+    expect(Object.keys(parsed.config!.agents)).toEqual(Object.keys(expected));
+    for (const [name, target] of Object.entries(expected)) {
+      const def = parsed.config!.agents[name]!;
+      expect(def).toMatchObject({ cmd: target.runtime, kind: "agent", soul: true, autostart: false });
+      expect(openingPromptCapability(def.cmd)).toEqual({ status: "prompt", runtime: target.runtime, channel: target.channel });
+      expect(fs.readFileSync(path.join(fixture, `identity-${target.runtime}.md`), "utf8")).toContain(target.marker);
+    }
   });
 
   it("setAgentSoulEnablement only mutates the soul field of the target agent", () => {

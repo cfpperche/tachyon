@@ -1,10 +1,22 @@
-# Spec 377 isolated Dev Host fixture. Agents never autostart during the profile-action smoke.
+# Spec 377 isolated Dev Host fixture. Start one runtime at a time during Soul dogfood.
 agents:
-  soul-alpha:
-    cmd: codex
-    kind: agent
-    autostart: false
-  soul-beta:
+  soul-claude:
     cmd: claude
     kind: agent
+    soul: true
+    autostart: false
+  soul-codex:
+    cmd: codex
+    kind: agent
+    soul: true
+    autostart: false
+  soul-grok:
+    cmd: grok
+    kind: agent
+    soul: true
+    autostart: false
+  soul-opencode:
+    cmd: opencode
+    kind: agent
+    soul: true
     autostart: false

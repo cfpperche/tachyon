@@ -397,6 +397,9 @@ pass is recorded below.
 - Human dogfood also exposed that the explicit `Preview` action merely reloaded content already
   included in every profile status. The redundant button was removed; the bounded inline preview
   remains automatic.
+- The Dev Host fixture now declares one direct Claude, Codex, Grok, and OpenCode agent with distinct
+  identity-marker source files for fresh-start A/B dogfood. Runtime-local canonical profiles are
+  seeded privately when the lane is prepared rather than committed with unsafe checkout modes.
 
 ## Open questions
 

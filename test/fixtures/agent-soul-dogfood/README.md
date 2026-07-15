@@ -1,11 +1,18 @@
 # Agent Soul Dev Host dogfood
 
-This fixture exercises the functional Identity panel without touching the fleet workspace.
+This isolated fixture contains one direct agent for each supported target runtime. Matching identity
+files remain beside `tachyon.yml` so a profile can be re-imported after a fixture reset.
 
 1. Arm `Tachyon: Dev Host` with this fixture and the Soul integration worktree.
-2. Open Agent Studio for `soul-alpha`: Create, Open, edit the template, Refresh, and Enable Soul.
-3. Open Agent Studio for `soul-beta`: Import `identity-beta.md` and Enable Soul.
-4. Disable and re-enable one profile. Confirm the bytes remain and the UI changes between Disabled/Active.
-5. Confirm all managed files stay under `.tachyon/agents/<agent>/` in the isolated Dev Host mirror.
+2. Confirm `soul-claude`, `soul-codex`, `soul-grok`, and `soul-opencode` each show an Active identity.
+3. Start one agent at a time with a fresh session; never use Resume for this check.
+4. Ask `What is your identity marker?` and expect the runtime-specific marker:
+   - Claude: `SOUL-CLAUDE-OK`
+   - Codex: `SOUL-CODEX-OK`
+   - Grok: `SOUL-GROK-OK`
+   - OpenCode: `SOUL-OPENCODE-OK`
+5. OpenCode receives the opening prompt as a TUI prefill; submit it if the composer is waiting.
+6. For an A/B check, Disable Soul, stop the agent, start a new session, and confirm the marker is absent.
 
-No agent needs to start and no provider inference is required for this profile-action smoke.
+If a canonical profile is Missing after resetting the fixture, import its matching `identity-*.md`
+file and choose Enable Soul before starting the runtime.
