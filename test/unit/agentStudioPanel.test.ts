@@ -308,4 +308,36 @@ describe("AgentStudioPanelManager — Phase 3 pilot full lifecycle", () => {
     expect(error).toMatchObject({ agent: "Ada", code: "soul/io-error" });
     expect(JSON.stringify(error)).not.toContain(contentBase64);
   });
+
+  it("routes permanent identity deletion through the saved agent and returns a missing profile status", async () => {
+    let deleted = 0;
+    const { ws } = fakeWorkspace({ agents: { Ada: agentDef() } });
+    Object.assign(ws, {
+      deleteSoulProfile: async (agent: string) => {
+        deleted += 1;
+        expect(agent).toBe("Ada");
+        return {
+          status: {
+            agent: "Ada",
+            canonicalPath: "/private/workspace/.tachyon/agents/Ada/SOUL.md",
+            relativePath: ".tachyon/agents/Ada/SOUL.md",
+            lifecycle: "missing",
+            soulEnabled: false,
+            resolvable: false,
+            transactionDegraded: false,
+          },
+        };
+      },
+    });
+    const manager = new AgentStudioPanelManager(Uri.file("/ext"));
+    manager.openExisting(ws, "Ada");
+    await flush();
+    const webview = __createdPanels[0].webview;
+    webview.__receive(envelope({ type: "deleteSoulProfile" as const, agent: "Ada" }));
+    await flush();
+    expect(deleted).toBe(1);
+    const status = findType(webview.posted, "soulProfileStatus").at(-1);
+    expect(status).toMatchObject({ status: { lifecycle: "missing", soulEnabled: false, action: "delete" } });
+    expect(JSON.stringify(status)).not.toContain("/private/workspace");
+  });
 });

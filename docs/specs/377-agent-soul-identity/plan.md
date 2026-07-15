@@ -401,7 +401,9 @@ Place a new open `Identity (SOUL.md)` section before Role/Instructions:
 - **Preview**: read-only bounded preview plus canonical size/digest/status from the host;
 - **Clear**: under the shared lock, write disabled state and mark the manifest retained while keeping
   the profile file;
-- **Delete profile data**: a separate destructive action with explicit confirmation, unavailable
+- **Delete identity permanently**: a separate destructive action whose confirmation names the exact
+  Soul-owned artifacts. It deletes only `.tachyon/agents/<agent>/SOUL.md` and `profile.json`; it
+  preserves the agent directory and every unrelated or future per-agent file. The action is unavailable
   until soul is disabled and no live session remains. Resumable rows are bounded by the existing
   permanent Dismiss/session-purge action; Studio links to it, or offers one combined second-confirmed
   action that invalidates resume metadata/generated pointers before journaled profile deletion. The

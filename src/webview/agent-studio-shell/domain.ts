@@ -36,6 +36,7 @@ export const AGENT_STUDIO_WEBVIEW_MESSAGE_NAMES = [
   "adoptSoulProfile",
   "enableSoul",
   "disableSoul",
+  "deleteSoulProfile",
 ] as const;
 
 export const AGENT_STUDIO_HOST_MESSAGE_NAMES = [
@@ -83,7 +84,7 @@ export function isCanonicalSoulImportBase64(value: unknown): value is string {
 }
 
 export type AgentStudioSoulActionMessage =
-  | { type: "createSoul" | "openSoul" | "refreshSoul" | "previewSoul" | "enableSoul" | "disableSoul"; agent: string }
+  | { type: "createSoul" | "openSoul" | "refreshSoul" | "previewSoul" | "enableSoul" | "disableSoul" | "deleteSoulProfile"; agent: string }
   | { type: "importSoul"; agent: string; contentBase64: string }
   | { type: "adoptSoulProfile"; agent: string; expectedDigest: string };
 
@@ -128,7 +129,7 @@ export interface SoulProfileStatusMessage {
   transactionDegraded: boolean;
   preview?: string;
   /** Which action produced this status, when applicable. */
-  action?: "create" | "import" | "open" | "refresh" | "preview" | "adopt" | "enable" | "disable";
+  action?: "create" | "import" | "open" | "refresh" | "preview" | "adopt" | "enable" | "disable" | "delete";
   selfSelected?: boolean;
 }
 
@@ -165,7 +166,7 @@ export function isSoulProfileStatusMessage(raw: unknown): raw is SoulProfileStat
   if (value.chars !== undefined && (!Number.isSafeInteger(value.chars) || value.chars < 0)) return false;
   if (value.bytes !== undefined && (!Number.isSafeInteger(value.bytes) || value.bytes < 0)) return false;
   if (value.preview !== undefined && (typeof value.preview !== "string" || value.preview.length > 2_002)) return false;
-  if (value.action !== undefined && !["create", "import", "open", "refresh", "preview", "adopt", "enable", "disable"].includes(value.action)) return false;
+  if (value.action !== undefined && !["create", "import", "open", "refresh", "preview", "adopt", "enable", "disable", "delete"].includes(value.action)) return false;
   return value.selfSelected === undefined || typeof value.selfSelected === "boolean";
 }
 

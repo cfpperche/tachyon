@@ -106,6 +106,8 @@ implementation still requires separately assigned bounded Deliveries._
       `.tachyon/agents/<agent>/SOUL.md`, never sends or persists the source path,
       treats self-selection as Adopt/Enable, and requires digest-backed replace confirmation. Create
       a stable random `profileId`; Clear/roster deletion mark its manifest retained and retain data.
+      Explicit permanent deletion requires confirmation and removes only canonical `SOUL.md` plus
+      Soul-owned `profile.json`, never the containing agent directory or unrelated per-agent files.
       Every import/create/replace/adopt/enable/disable/rename/delete mutation is serialized through a
       durable `.tachyon/agent-profile-transactions/` journal with same-filesystem staging/backup,
       affected-stanza/name-presence compare-and-swap, profile ID/digests, compensation/startup

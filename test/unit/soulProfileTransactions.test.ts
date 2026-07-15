@@ -6,6 +6,7 @@ import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
   createSoulProfile,
+  deleteSoulProfile,
   disableSoulProfile,
   enableSoulProfile,
   importSoulProfileBytesTransaction,
@@ -126,6 +127,45 @@ describe("soul profile transactions (T15A)", () => {
     });
     await adoptSoulProfile(root, "Ada", access, { expectedDigest: retained.sha256!, enable: true });
     await expect(enableSoulProfile(root, "Ada", access)).resolves.toMatchObject({ action: "enable" });
+  });
+
+  it("confirmed-delete backend removes only Soul files for created or imported profiles", async () => {
+    for (const origin of ["created", "imported"] as const) {
+      const { root, access, read } = await workspace();
+      if (origin === "created") await createSoulProfile(root, "Ada", access);
+      else await importSoulProfileBytesTransaction(root, "Ada", Buffer.from("Imported identity\n"), access);
+
+      const profileDir = path.dirname(agentSoulPath(root, "Ada"));
+      const unrelated = path.join(profileDir, "future-agent-config.json");
+      await writeFile(unrelated, '{"keep":true}\n');
+
+      await expect(deleteSoulProfile(root, "Ada", access)).rejects.toMatchObject({ code: "soul/profile-enabled" });
+      expect(await readFile(agentSoulPath(root, "Ada"), "utf8")).toBeTruthy();
+
+      await disableSoulProfile(root, "Ada", access);
+      const deleted = await deleteSoulProfile(root, "Ada", access);
+      expect(deleted).toMatchObject({ action: "delete", status: { lifecycle: "missing", soulEnabled: false } });
+      await expect(readFile(agentSoulPath(root, "Ada"))).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(readFile(agentSoulManifestPath(root, "Ada"))).rejects.toMatchObject({ code: "ENOENT" });
+      expect(await readFile(unrelated, "utf8")).toBe('{"keep":true}\n');
+      expect(fs.existsSync(profileDir)).toBe(true);
+      expect(await readdir(profileDir)).toEqual(["future-agent-config.json"]);
+      expect(read()).not.toContain("soul:");
+    }
+  });
+
+  it("restores both Soul files when permanent deletion fails before commit", async () => {
+    const { root, access } = await workspace();
+    await createSoulProfile(root, "Ada", access);
+    await disableSoulProfile(root, "Ada", access);
+    const priorSoul = await readFile(agentSoulPath(root, "Ada"));
+    const priorManifest = await readFile(agentSoulManifestPath(root, "Ada"));
+    access.writeConfigText = () => { throw new Error("injected config failure after file deletion"); };
+
+    await expect(deleteSoulProfile(root, "Ada", access)).rejects.toMatchObject({ code: "soul/io-error" });
+    expect(await readFile(agentSoulPath(root, "Ada"))).toEqual(priorSoul);
+    expect(await readFile(agentSoulManifestPath(root, "Ada"))).toEqual(priorManifest);
+    expect(await listDegradedTransactions(root, "Ada")).toEqual([]);
   });
 
   it("rejects mutations while a launch reservation is active", async () => {

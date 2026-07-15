@@ -4,7 +4,7 @@ import { StudioFrame } from "../shared/studio/StudioFrame";
 import { canSave as computeCanSave } from "../shared/studio/dirtyGating";
 import type { StudioError } from "../shared/studio/errorTaxonomy";
 import { Button, Chip, Input, Select, Textarea } from "../shared/ui";
-import { KitDropdown, KitDropdownContent, KitDropdownItem, KitDropdownTrigger, KitFilePicker } from "../shared/ui/kit";
+import { KitDropdown, KitDropdownContent, KitDropdownItem, KitDropdownSeparator, KitDropdownTrigger, KitFilePicker } from "../shared/ui/kit";
 import {
   AGENT_STUDIO_HOST_MESSAGE_NAMES,
   SOUL_IMPORT_MAX_BYTES,
@@ -19,6 +19,7 @@ import {
   browseMessage,
   cancelMessage,
   createSoulMessage,
+  deleteSoulProfileMessage,
   dirtyMessage,
   disableSoulMessage,
   enableSoulMessage,
@@ -130,8 +131,10 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
   const [soulStatus, setSoulStatus] = useState<SoulProfileStatusMessage | undefined>(undefined);
   const [soulBusy, setSoulBusy] = useState<string | undefined>(undefined);
   const [soulImportOpen, setSoulImportOpen] = useState(false);
+  const [soulDeleteConfirmOpen, setSoulDeleteConfirmOpen] = useState(false);
   const [ready, setReady] = useState(false);
   const entityRef = useRef<AgentStudioEntity | undefined>(undefined);
+  const deleteCancelButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     const onMsg = (e: MessageEvent) => {
@@ -167,6 +170,7 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
         setSoulStatus(undefined);
         setSoulBusy(d.entity.name ? "Refreshing profile" : undefined);
         setSoulImportOpen(false);
+        setSoulDeleteConfirmOpen(false);
         setReady(true);
         if (d.entity.name) dispatch.post(refreshSoulMessage(d.entity.name));
       } else if (d.type === "error") {
@@ -190,6 +194,7 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
         setSoulStatus(d.status);
         setSoulBusy(undefined);
         if (d.status.lifecycle !== "missing") setSoulImportOpen(false);
+        if (d.status.lifecycle === "missing") setSoulDeleteConfirmOpen(false);
         const current = entityRef.current;
         if (current && current.fields.soul !== d.status.soulEnabled) {
           const updated = { ...current, fields: { ...current.fields, soul: d.status.soulEnabled } };
@@ -221,6 +226,10 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
     dispatch.post(patchMessage(fields));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, dirty, fields]);
+
+  useEffect(() => {
+    if (soulDeleteConfirmOpen) deleteCancelButtonRef.current?.focus();
+  }, [soulDeleteConfirmOpen]);
 
   if (!ready || !entity) {
     return <div class="ds-degrade"><span class="codicon codicon-loading" /><div>Loading Agent Studio...</div></div>;
@@ -280,10 +289,12 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
     && soulStatus.resolvable
     && !soulStatus.soulEnabled;
   const showDisable = !!soulStatus?.soulEnabled;
+  const showDelete = profilePresent && !soulStatus?.soulEnabled;
   const canCreateOrImport = showCreateOrImport && !mutationDisabled && !soulImportOpen;
   const canAdopt = showAdopt && !mutationDisabled;
   const canEnable = showEnable && !mutationDisabled;
   const canDisable = showDisable && !mutationDisabled;
+  const canDelete = showDelete && !mutationDisabled;
   const lifecycleLabel: Record<SoulProfileStatusMessage["lifecycle"], string> = {
     missing: "Missing",
     active: "Active",
@@ -293,6 +304,8 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
   };
   const runSoulAction = (label: string, message: unknown) => {
     setHostError(undefined);
+    setSoulImportOpen(false);
+    setSoulDeleteConfirmOpen(false);
     setSoulBusy(label);
     dispatch.post(message);
   };
@@ -366,6 +379,20 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
                           {showAdopt && (
                             <KitDropdownItem disabled={!canAdopt} onSelect={() => runSoulAction("Adopting profile", adoptSoulProfileMessage(savedAgent, soulStatus.sha256!))}>Adopt existing file</KitDropdownItem>
                           )}
+                          {showDelete && (
+                            <>
+                              <KitDropdownSeparator />
+                              <KitDropdownItem
+                                variant="destructive"
+                                disabled={!canDelete}
+                                onSelect={() => {
+                                  setHostError(undefined);
+                                  setSoulImportOpen(false);
+                                  setSoulDeleteConfirmOpen(true);
+                                }}
+                              >Delete identity permanently…</KitDropdownItem>
+                            </>
+                          )}
                         </KitDropdownContent>
                       </KitDropdown>
                     )}
@@ -379,6 +406,27 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
                         runSoulAction("Importing profile", importSoulMessage(savedAgent, contentBase64));
                       }}
                     />
+                  )}
+
+                  {soulDeleteConfirmOpen && soulStatus && (
+                    <div class="ash-soul-delete-confirm" aria-labelledby="ash-soul-delete-confirm-title">
+                      <div class="ash-soul-delete-confirm-title" id="ash-soul-delete-confirm-title">Delete this identity permanently?</div>
+                      <div>This removes only the Soul-owned files:</div>
+                      <ul>
+                        <li><code>{soulStatus.relativePath}</code></li>
+                        <li><code>{`.tachyon/agents/${savedAgent}/profile.json`}</code></li>
+                      </ul>
+                      <div>The agent directory and every other file inside it will remain.</div>
+                      <div class="ash-soul-delete-confirm-actions">
+                        <Button ref={deleteCancelButtonRef} onClick={() => setSoulDeleteConfirmOpen(false)}>Cancel</Button>
+                        <Button
+                          variant="danger"
+                          icon="trash"
+                          disabled={!canDelete}
+                          onClick={() => runSoulAction("Deleting identity", deleteSoulProfileMessage(savedAgent))}
+                        >Delete identity permanently</Button>
+                      </div>
+                    </div>
                   )}
 
                   <div class="ash-soul-status" role="status" aria-live="polite">

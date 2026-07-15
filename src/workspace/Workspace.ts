@@ -10,6 +10,7 @@ import { SoulError, agentSoulPath, readCanonicalSoulBytes } from "../agents/soul
 import {
   adoptSoulProfile,
   createSoulProfile,
+  deleteSoulProfile,
   disableSoulProfile,
   enableSoulProfile,
   importSoulProfileBytesTransaction,
@@ -3534,6 +3535,10 @@ export class Workspace {
 
   async disableSoulProfile(agentName: string): Promise<ProfileMutationResult> {
     return disableSoulProfile(this.workspaceRoot, agentName, this.soulProfileConfigAccess(agentName));
+  }
+
+  async deleteSoulProfile(agentName: string): Promise<ProfileMutationResult> {
+    return deleteSoulProfile(this.workspaceRoot, agentName, this.soulProfileConfigAccess(agentName));
   }
 
   async refreshSoulProfile(agentName: string): Promise<SoulProfileStatus> {

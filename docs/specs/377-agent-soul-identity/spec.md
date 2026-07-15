@@ -423,7 +423,9 @@ Hermes SOUL as externally managed.
   - **When** soul is cleared, the agent is deleted, or the agent is renamed
   - **Then** clear/delete retain the profile by default; rename requires confirmation and atomically
     moves it to `.tachyon/agents/<new>/SOUL.md`, while collision or I/O failure leaves both config and
-    profile at the old name; profile deletion is a separate explicit destructive action permitted
+    profile at the old name; profile deletion is a separate explicit destructive action that removes
+    only the canonical `SOUL.md` and Soul-owned `profile.json`, preserving the agent directory and all
+    unrelated per-agent artifacts, and is permitted
     only after soul is disabled, no live session remains, and any resumable metadata/generated
     pointers are explicitly purged
   - **And** crash injection before/after the directory move and config write proves startup recovery

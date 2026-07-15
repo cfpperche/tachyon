@@ -21,4 +21,5 @@ export type AgentStudioWebviewMessage =
   | StudioDomainMessage<{ type: "previewSoul"; agent: string }>
   | StudioDomainMessage<{ type: "adoptSoulProfile"; agent: string; expectedDigest: string }>
   | StudioDomainMessage<{ type: "enableSoul"; agent: string }>
-  | StudioDomainMessage<{ type: "disableSoul"; agent: string }>;
+  | StudioDomainMessage<{ type: "disableSoul"; agent: string }>
+  | StudioDomainMessage<{ type: "deleteSoulProfile"; agent: string }>;

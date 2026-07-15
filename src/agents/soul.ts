@@ -235,7 +235,8 @@ export type SoulErrorCode =
   | "soul/not-regular" | "soul/permission-denied" | "soul/invalid-utf8" | "soul/empty"
   | "soul/too-many-chars" | "soul/too-many-bytes" | "soul/source-changed-during-read"
   | "soul/profile-adoption-required" | "soul/runtime-unsupported" | "soul/io-error"
-  | "soul/profile-transaction-degraded" | "soul/profile-collision" | "soul/digest-mismatch";
+  | "soul/profile-transaction-degraded" | "soul/profile-collision" | "soul/digest-mismatch"
+  | "soul/profile-enabled";
 
 /** Minimal template exclusively published by Create SOUL.md (spec 377 T15). */
 export const SOUL_MINIMAL_TEMPLATE = "# Soul\n\nDescribe this agent's identity, voice, and non-negotiables.\n";

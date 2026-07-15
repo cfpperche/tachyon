@@ -48,7 +48,7 @@ import {
 export const PROFILE_TRANSACTIONS_REL = ".tachyon/agent-profile-transactions";
 export const PROFILE_TX_SCHEMA_VERSION = 1 as const;
 
-export type ProfileTransactionAction = "create" | "import" | "adopt" | "enable" | "disable";
+export type ProfileTransactionAction = "create" | "import" | "adopt" | "enable" | "disable" | "delete";
 export type ProfileTransactionPhase =
   | "intent"
   | "staged"
@@ -118,7 +118,7 @@ interface CurrentTuple {
   profileId?: string;
 }
 
-const ACTIONS = new Set<ProfileTransactionAction>(["create", "import", "adopt", "enable", "disable"]);
+const ACTIONS = new Set<ProfileTransactionAction>(["create", "import", "adopt", "enable", "disable", "delete"]);
 const PHASES = new Set<ProfileTransactionPhase>(["intent", "staged", "published", "config-written", "committed", "compensating", "degraded"]);
 const DIGEST_RE = /^[0-9a-f]{64}$/;
 const PROFILE_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -555,7 +555,7 @@ async function runMutation(
   access: ProfileTxConfigAccess,
   action: ProfileTransactionAction,
   body: (ctx: { txDir: string; journal: ProfileTransactionJournal; prior: CapturedProfile }) => Promise<{ journal: ProfileTransactionJournal; profileId?: string; sha256?: string; chars?: number; bytes?: number; selfSelected?: boolean }>,
-  expectedSoulEnabled = action !== "disable",
+  expectedSoulEnabled = action !== "disable" && action !== "delete",
 ): Promise<ProfileMutationResult> {
   return withSoulProfileAdmission(workspaceRoot, name, async () => {
     const { txDir, journal: started, prior } = await beginJournal(workspaceRoot, name, action, access, expectedSoulEnabled);
@@ -752,6 +752,33 @@ export function disableSoulProfile(workspaceRoot: string, name: string, access: 
     next = await transition(txDir, next, { phase: "config-written" });
     return { journal: next, profileId, sha256: prior.priorSoulDigest ?? undefined };
   });
+}
+
+/** Permanently remove only Soul-owned files; the per-agent directory and unrelated artifacts survive. */
+export function deleteSoulProfile(workspaceRoot: string, name: string, access: ProfileTxConfigAccess): Promise<ProfileMutationResult> {
+  return runMutation(workspaceRoot, name, access, "delete", async ({ txDir, journal, prior }) => {
+    if (!journal.priorConfig.present) throw new SoulError("soul/path-invalid", `Agent '${name}' is not declared in tachyon.yml`);
+    if (journal.priorConfig.soulEnabled) {
+      throw new SoulError("soul/profile-enabled", `Disable soul for '${name}' before permanently deleting its identity`);
+    }
+    if (prior.priorSoulDigest === null && prior.priorManifestDigest === null) {
+      throw new SoulError("soul/missing", `No Soul identity data exists for '${name}'`);
+    }
+    let next = await transition(txDir, journal, {
+      phase: "staged",
+      profileId: undefined,
+      targetProfileId: undefined,
+      targetSoulDigest: null,
+      targetManifestDigest: null,
+      targetManifestState: "missing",
+    });
+    await durableUnlink(agentSoulPath(workspaceRoot, name));
+    await durableUnlink(agentSoulManifestPath(workspaceRoot, name));
+    next = await transition(txDir, next, { phase: "published" });
+    await applyConfigSoul(access, name, next);
+    next = await transition(txDir, next, { phase: "config-written" });
+    return { journal: next };
+  }, false);
 }
 
 export async function refreshSoulProfileStatus(

@@ -123,6 +123,7 @@ export class AgentStudioPanelManager {
     }
     if (m.type === "enableSoul") { void this.runProfileAction(ws, ctx, agent, "enable", () => ws.enableSoulProfile(agent)); return; }
     if (m.type === "disableSoul") { void this.runProfileAction(ws, ctx, agent, "disable", () => ws.disableSoulProfile(agent)); return; }
+    if (m.type === "deleteSoulProfile") { void this.runProfileAction(ws, ctx, agent, "delete", () => ws.deleteSoulProfile(agent)); return; }
   }
 
   private async browse(ws: Workspace, ctx: StudioDomainMessageContext): Promise<void> {
@@ -194,6 +195,7 @@ export class AgentStudioPanelManager {
         "soul/final-symlink": "The canonical SOUL.md must be a regular file, not a symlink.",
         "soul/permission-denied": "Permission denied while accessing the selected profile file.",
         "soul/profile-transaction-degraded": "The profile transaction is degraded and blocks further actions.",
+        "soul/profile-enabled": "Disable soul before permanently deleting its identity files.",
         "soul/path-invalid": "The profile action or canonical path is invalid.",
       };
       ctx.post(soulProfileErrorMessage(agent, error.code, safeMessage[error.code] ?? "The profile action could not be completed."));

@@ -26,6 +26,8 @@ export const adoptSoulProfileMessage = (agent: string, expectedDigest: string) =
 export const enableSoulMessage = (agent: string) => envelope({ type: "enableSoul" as const, agent });
 /** Webview → host: disable soul, retain bytes, mark retained. */
 export const disableSoulMessage = (agent: string) => envelope({ type: "disableSoul" as const, agent });
+/** Webview → host: permanently delete only the confirmed Soul-owned canonical files. */
+export const deleteSoulProfileMessage = (agent: string) => envelope({ type: "deleteSoulProfile" as const, agent });
 
 /** Host → webview: profile status / preview reply. */
 export const soulProfileStatusMessage = (status: SoulProfileStatusMessage) =>

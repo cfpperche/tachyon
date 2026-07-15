@@ -114,6 +114,10 @@ _Created 2026-07-13. Append-only after this planning checkpoint._
 
 ## Deviations
 
+- 2026-07-15 maintainer dogfood expanded the bounded T16 MVP to include permanent identity deletion.
+  The confirmed action owns only `SOUL.md` and Soul `profile.json`; `.tachyon/agents/<agent>/` is a
+  shared future per-agent configuration boundary and must remain intact with unrelated contents.
+
 - Planning is being performed in isolated worktree
   `/home/goat/tachyon-worktrees/t-60979d` on branch
   `codex-soul/t-60979d-agent-soul-identity`.

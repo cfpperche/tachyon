@@ -15,6 +15,7 @@ import { SOUL_MAX_BYTES } from "../../src/agents/soul.js";
 import {
   adoptSoulProfileMessage,
   createSoulMessage,
+  deleteSoulProfileMessage,
   disableSoulMessage,
   enableSoulMessage,
   importSoulMessage,
@@ -43,6 +44,7 @@ describe("Agent Studio soul profile protocol (T15A)", () => {
       "adoptSoulProfileMessage(savedAgent",
       "enableSoulMessage(savedAgent)",
       "disableSoulMessage(savedAgent)",
+      "deleteSoulProfileMessage(savedAgent)",
     ]) expect(source).toContain(action);
     expect(source).toContain("showCreateOrImport &&");
     expect(source).toContain("profilePresent &&");
@@ -58,6 +60,9 @@ describe("Agent Studio soul profile protocol (T15A)", () => {
     expect(pickerSource).toContain('type="file"');
     expect(pickerSource).toContain("onDrop=");
     expect(pickerSource).toContain("<Button disabled={disabled}");
+    expect(source).toContain("Delete this identity permanently?");
+    expect(source).toContain("The agent directory and every other file inside it will remain.");
+    expect(source).toContain('variant="danger"');
     expect(hostSource).not.toContain("Import SOUL.md (copied into the canonical profile)");
     expect(hostSource).toContain("ws.importSoulProfileBytes(agent, bytes)");
     expect(source).toContain('aria-live="polite"');
@@ -75,6 +80,7 @@ describe("Agent Studio soul profile protocol (T15A)", () => {
       "adoptSoulProfile",
       "enableSoul",
       "disableSoul",
+      "deleteSoulProfile",
       "soulProfileStatus",
       "soulProfileError",
       "browse",
@@ -99,6 +105,7 @@ describe("Agent Studio soul profile protocol (T15A)", () => {
     expect(adoptSoulProfileMessage("Ada", "a".repeat(64))).toMatchObject({ type: "adoptSoulProfile", agent: "Ada", expectedDigest: "a".repeat(64) });
     expect(enableSoulMessage("Ada")).toMatchObject({ type: "enableSoul", agent: "Ada" });
     expect(disableSoulMessage("Ada")).toMatchObject({ type: "disableSoul", agent: "Ada" });
+    expect(deleteSoulProfileMessage("Ada")).toMatchObject({ type: "deleteSoulProfile", agent: "Ada" });
 
     const status: SoulProfileStatusMessage = {
       agent: "Ada",
@@ -140,6 +147,8 @@ describe("Agent Studio soul profile protocol (T15A)", () => {
     expect(validateAgentStudioInboundMessage({ ...imported, fileName: "../identity.md" })).toBeUndefined();
     expect(validateAgentStudioInboundMessage({ ...imported, contentBase64: "not base64" })).toBeUndefined();
     expect(validateAgentStudioInboundMessage({ ...imported, contentBase64: Buffer.alloc(SOUL_IMPORT_MAX_BYTES + 1, 1).toString("base64") })).toBeUndefined();
+    expect(validateAgentStudioInboundMessage(deleteSoulProfileMessage("Ada"))).toEqual({ type: "deleteSoulProfile", agent: "Ada" });
+    expect(validateAgentStudioInboundMessage({ ...deleteSoulProfileMessage("Ada"), confirmed: true })).toBeUndefined();
 
     const status = soulProfileStatusMessage({
       agent: "Ada",
