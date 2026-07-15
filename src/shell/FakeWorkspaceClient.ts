@@ -1,6 +1,7 @@
 import {
   isEngineOperationId,
   isWorkspaceEventV1,
+  isWorkspaceCommandResultBoundToInput,
   isWorkspaceCommandResultV1,
   isWorkspaceCommandV1,
   isWorkspaceQueryResultBoundToInput,
@@ -195,7 +196,7 @@ export class FakeWorkspaceClient implements WorkspaceClient {
       if (!this.options.invoke) return commandError(command, "UNSUPPORTED_OPERATION", "fake command handler is unavailable");
       try {
         const result = await this.options.invoke(operationId, cloneJson(command));
-        if (!isWorkspaceCommandResultV1(result) || result.method !== command.method) {
+        if (!isWorkspaceCommandResultV1(result) || !isWorkspaceCommandResultBoundToInput(command, result)) {
           return commandError(command, "INVALID_COMMAND_RESULT", "fake command handler returned an invalid result");
         }
         return cloneJson(result);

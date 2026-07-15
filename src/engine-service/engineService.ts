@@ -23,6 +23,7 @@ import { projectHandoffView } from "../runtime-api/handoffProjection.js";
 import { projectSidebarView } from "../runtime-api/sidebarProjection.js";
 import { applySidebarMutation } from "../sidebar/sidebarMutationService.js";
 import { RuntimeOpsSnapshotService } from "../runtimeOps/snapshotService.js";
+import { executeExtensionCommand, executeExtensionQuery } from "./extensionOperationService.js";
 import type { WorkspaceCoreProjectionsV1 } from "../runtime-api/workspaceProjection.js";
 import { buildBoardSnapshot } from "../tasks/boardSnapshot.js";
 import { projectMissionControlBoard } from "../runtime-api/missionControlProjection.js";
@@ -65,6 +66,8 @@ import {
   workspaceSidebarMutationSuccessV1,
   workspaceSidebarViewSuccessV1,
   workspaceRuntimeOpsViewSuccessV1,
+  workspaceExtensionCommandSuccessV1,
+  workspaceExtensionQuerySuccessV1,
   workspaceMissionControlViewSuccessV1,
   workspacePinStudioApplySuccessV1,
   workspacePinStudioViewSuccessV1,
@@ -236,6 +239,9 @@ async function executeWorkspaceQuery(
   if (query.method === "runtime-ops.view") {
     return workspaceRuntimeOpsViewSuccessV1(await runtimeOpsSnapshots.snapshot());
   }
+  if (query.method === "extension.query") {
+    return workspaceExtensionQuerySuccessV1(query, await executeExtensionQuery({ workspace }, query.input));
+  }
   if (query.method === "task.board") {
     return workspaceMissionControlViewSuccessV1({
       schemaVersion: 1,
@@ -374,6 +380,13 @@ async function executeWorkspaceCommand(
   if (command.method === "agent.input") {
     await sendManagedAgentInput(workspace, command.input.agent, command.input.text, command.input.submit);
     return workspaceCommandSuccessV1(command);
+  }
+  if (command.method === "extension.invoke") {
+    const value = await executeExtensionCommand(
+      { workspace, activityLog, onViewsChanged },
+      command.input,
+    );
+    return workspaceExtensionCommandSuccessV1(command, value);
   }
   const agent = command.input.agent;
   switch (command.method) {

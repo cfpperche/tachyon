@@ -5,6 +5,7 @@ import {
   isEngineBundleManifestV1,
   isEngineOperationId,
   isSafeBundlePath,
+  isWorkspaceCommandResultBoundToInput,
   isWorkspaceCommandResultV1,
   isWorkspaceCommandV1,
   isWorkspaceQueryResultBoundToInput,
@@ -12,6 +13,8 @@ import {
   isWorkspaceQueryV1,
   negotiateEngineShellProtocol,
   workspaceCommandSuccessV1,
+  workspaceExtensionCommandSuccessV1,
+  workspaceExtensionQuerySuccessV1,
   workspaceActivityContextSuccessV1,
   workspaceHandoffDistillSuccessV1,
   workspaceHandoffEnsureSuccessV1,
@@ -99,6 +102,43 @@ describe("persistent engine protocol", () => {
       status: "ok",
       changed: false,
     })).toBe(false);
+  });
+
+  it("validates and cross-binds the closed extension operation contract", () => {
+    const query = {
+      schemaVersion: 1,
+      method: "extension.query",
+      input: { action: "agent.inspect", agent: "worker-1" },
+    } as const;
+    expect(isWorkspaceQueryV1(query)).toBe(true);
+    expect(isWorkspaceQueryV1({ ...query, input: { action: "agent.inspect", agent: "../escape" } })).toBe(false);
+    expect(isWorkspaceQueryV1({ ...query, input: { action: "unknown" } })).toBe(false);
+    const queryResult = workspaceExtensionQuerySuccessV1(query, { session: "tachyon-worker-1" });
+    expect(isWorkspaceQueryResultV1(queryResult)).toBe(true);
+    expect(isWorkspaceQueryResultBoundToInput(query, queryResult)).toBe(true);
+    expect(isWorkspaceQueryResultBoundToInput(
+      { schemaVersion: 1, method: "extension.query", input: { action: "agents.list" } },
+      queryResult,
+    )).toBe(false);
+
+    const command = {
+      schemaVersion: 1,
+      method: "extension.invoke",
+      input: { action: "proposal.create", name: "nightly", schedule: { at: "03:00", spawn: "worker-1", instructions: "audit" }, by: "codex" },
+    } as const;
+    expect(isWorkspaceCommandV1(command)).toBe(true);
+    expect(isWorkspaceCommandV1({ ...command, input: { ...command.input, schedule: { at: "03:00", run: "lint", spawn: "worker-1" } } })).toBe(false);
+    const commandResult = workspaceExtensionCommandSuccessV1(command, { id: "proposal-1" });
+    expect(isWorkspaceCommandResultV1(commandResult)).toBe(true);
+    expect(isWorkspaceCommandResultBoundToInput(command, commandResult)).toBe(true);
+    expect(isWorkspaceCommandResultBoundToInput(
+      { schemaVersion: 1, method: "extension.invoke", input: { action: "command.tick" } },
+      commandResult,
+    )).toBe(false);
+    expect(() => workspaceExtensionQuerySuccessV1(
+      { schemaVersion: 1, method: "extension.query", input: { action: "agents.list" } },
+      "x".repeat(2 * 1024 * 1024),
+    )).toThrow(/size limit/);
   });
 
   it("binds bounded agent input and Activity context to exact identities", () => {

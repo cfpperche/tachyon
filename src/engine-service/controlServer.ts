@@ -8,6 +8,7 @@ import {
   isEngineShellHelloV1,
   isEngineOperationId,
   isWorkspaceCommandResultV1,
+  isWorkspaceCommandResultBoundToInput,
   isWorkspaceCommandV1,
   isWorkspaceQueryResultBoundToInput,
   isWorkspaceQueryResultV1,
@@ -239,7 +240,7 @@ export async function startEngineControlServer(options: EngineControlServerOptio
         if (!options.invoke) return commandFailure(command, "UNSUPPORTED_OPERATION", "engine command invocation is unavailable");
         try {
           const result = await options.invoke(command, { shellId, operationId });
-          if (!isWorkspaceCommandResultV1(result) || result.method !== command.method) {
+          if (!isWorkspaceCommandResultV1(result) || !isWorkspaceCommandResultBoundToInput(command, result)) {
             return commandFailure(command, "INVALID_COMMAND_RESULT", "engine command returned an invalid result");
           }
           return result;

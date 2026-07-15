@@ -1,9 +1,11 @@
 import fs from "node:fs";
 import net from "node:net";
 import {
+  EXTENSION_OPERATION_RESPONSE_MAX_BYTES,
   HANDOFF_VIEW_RESPONSE_MAX_BYTES,
   MISSION_CONTROL_RESPONSE_MAX_BYTES,
   PIN_STUDIO_RESPONSE_MAX_BYTES,
+  RUNTIME_OPS_VIEW_RESPONSE_MAX_BYTES,
   SIDEBAR_VIEW_RESPONSE_MAX_BYTES,
   TASK_DETAIL_RESPONSE_MAX_BYTES,
   TASK_STUDIO_RESPONSE_MAX_BYTES,
@@ -312,8 +314,14 @@ export function requestEngineControl(
                 ? HANDOFF_VIEW_RESPONSE_MAX_BYTES
                 : request.query.method === "sidebar.view"
                   ? SIDEBAR_VIEW_RESPONSE_MAX_BYTES
-          : MAX_CONTROL_RESPONSE_BYTES
-      : MAX_CONTROL_RESPONSE_BYTES;
+                  : request.query.method === "runtime-ops.view"
+                    ? RUNTIME_OPS_VIEW_RESPONSE_MAX_BYTES
+                    : request.query.method === "extension.query"
+                      ? EXTENSION_OPERATION_RESPONSE_MAX_BYTES
+                      : MAX_CONTROL_RESPONSE_BYTES
+      : request.op === "invoke" && request.command.method === "extension.invoke"
+        ? EXTENSION_OPERATION_RESPONSE_MAX_BYTES
+        : MAX_CONTROL_RESPONSE_BYTES;
     const socket = net.createConnection(socketPath);
     let output = "";
     let settled = false;

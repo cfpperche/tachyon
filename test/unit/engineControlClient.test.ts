@@ -9,6 +9,8 @@ import { startEngineControlServer, type RunningEngineControlServer } from "../..
 import { EngineEventJournal } from "../../src/engine-service/eventJournal.js";
 import {
   workspaceCommandSuccessV1,
+  workspaceExtensionCommandSuccessV1,
+  workspaceExtensionQuerySuccessV1,
   workspaceHandoffViewSuccessV1,
   workspaceMissionControlViewSuccessV1,
   workspacePinStudioViewSuccessV1,
@@ -423,6 +425,34 @@ describe("EngineControlClient", () => {
       .toMatchObject({ method: "sidebar.view", status: "ok", view: { fleet: { pins: expect.arrayContaining([
         expect.objectContaining({ id: "p-000000" }),
       ]) } } });
+  });
+
+  it("allows bounded extension query and command envelopes above the ordinary 64 KiB limit", async () => {
+    const f = fixture();
+    const large = `payload-${"x".repeat(80_000)}`;
+    const server = await startEngineControlServer({
+      socketPath: f.socketPath,
+      identity: f.identity,
+      getSnapshot: f.snapshot,
+      query: async (query) => {
+        if (query.method !== "extension.query") throw new Error("unexpected query");
+        return workspaceExtensionQuerySuccessV1(query, large);
+      },
+      invoke: async (command) => {
+        if (command.method !== "extension.invoke") throw new Error("unexpected command");
+        return workspaceExtensionCommandSuccessV1(command, large);
+      },
+    });
+    servers.push(server);
+    const client = new EngineControlClient({ socketPath: f.socketPath, hello: f.hello });
+    await client.attach();
+    await expect(client.query({ schemaVersion: 1, method: "extension.query", input: { action: "agents.list" } }))
+      .resolves.toMatchObject({ status: "ok", action: "agents.list", value: large });
+    await expect(client.invoke("operation-extension-large-0001", {
+      schemaVersion: 1,
+      method: "extension.invoke",
+      input: { action: "command.tick" },
+    })).resolves.toMatchObject({ status: "ok", action: "command.tick", value: large });
   });
 
   it("invokes an operation by exact id without transport-level retries", async () => {

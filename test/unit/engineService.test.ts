@@ -484,6 +484,48 @@ describe("daemon engine service", () => {
       projections: { agents: { items: [{ name: "worker", running: false }] } },
     });
 
+    const extensionAgents = await first.query({
+      schemaVersion: 1,
+      method: "extension.query",
+      input: { action: "agents.list" },
+    });
+    expect(extensionAgents).toMatchObject({
+      method: "extension.query",
+      status: "ok",
+      action: "agents.list",
+      value: [{ name: "worker", declared: true, running: false }],
+    });
+    const createPin = {
+      schemaVersion: 1 as const,
+      method: "extension.invoke" as const,
+      input: { action: "pin.create" as const, text: "created through extension operations", by: "human", done: true },
+    };
+    const createdPin = await first.invoke("operation-extension-pin-0001", createPin);
+    expect(createdPin).toMatchObject({
+      method: "extension.invoke",
+      status: "ok",
+      action: "pin.create",
+      value: { text: "created through extension operations", done: true },
+    });
+    expect(await first.invoke("operation-extension-pin-0001", createPin)).toEqual(createdPin);
+    expect(await first.invoke("operation-extension-agent-add-0001", {
+      schemaVersion: 1,
+      method: "extension.invoke",
+      input: { action: "config.agent.add", agent: "temporary", cmd: "sh", kind: "agent" },
+    })).toMatchObject({ status: "ok", action: "config.agent.add", value: { changed: true } });
+    expect(await first.query({ schemaVersion: 1, method: "extension.query", input: { action: "agents.list" } }))
+      .toMatchObject({ value: expect.arrayContaining([expect.objectContaining({ name: "temporary", declared: true })]) });
+    expect(await first.invoke("operation-extension-agent-delete-0001", {
+      schemaVersion: 1,
+      method: "extension.invoke",
+      input: { action: "config.agent.delete", agent: "temporary", removeWorktree: false },
+    })).toMatchObject({ status: "ok", action: "config.agent.delete", value: { changed: true } });
+    expect(await first.invoke("operation-extension-stop-all-0001", {
+      schemaVersion: 1,
+      method: "extension.invoke",
+      input: { action: "workspace.stop-all" },
+    })).toMatchObject({ status: "ok", action: "workspace.stop-all", value: { stoppedAgents: expect.any(Number) } });
+
     const startCommand = { schemaVersion: 1 as const, method: "agent.start" as const, input: { agent: "worker" } };
     const started = await first.invoke("operation-engine-start-0001", startCommand);
     expect(started).toEqual({ schemaVersion: 1, method: "agent.start", status: "ok" });

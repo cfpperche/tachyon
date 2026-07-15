@@ -17,6 +17,16 @@ import {
   parseHandoffViewV1,
   type HandoffViewV1,
 } from "../runtime-api/handoffProjection.js";
+import {
+  isExtensionCommandActionV1,
+  isExtensionCommandV1,
+  isExtensionQueryActionV1,
+  isExtensionQueryV1,
+  isJsonValue,
+  type ExtensionCommandV1,
+  type ExtensionQueryV1,
+  type JsonValue,
+} from "../runtime-api/extensionOperations.js";
 import { isSafeHandoffRelativePath } from "../handoff/handoffPath.js";
 import {
   isSidebarMutationResultIdentityV1,
@@ -194,13 +204,14 @@ export type WorkspaceCommandMethodV1 =
   | "pin.studio.apply"
   | "handoff.ensure"
   | "handoff.distill"
-  | "sidebar.mutate";
+  | "sidebar.mutate"
+  | "extension.invoke";
 
 export type WorkspaceAgentCommandMethodV1 = Extract<WorkspaceCommandMethodV1, `agent.${string}`>;
 export type WorkspaceAgentLifecycleCommandMethodV1 = Exclude<WorkspaceAgentCommandMethodV1, "agent.input">;
 export type WorkspaceSimpleCommandMethodV1 = Exclude<
   WorkspaceCommandMethodV1,
-  "studio.submit" | "task.studio.apply" | "pin.studio.apply" | "handoff.ensure" | "handoff.distill" | "sidebar.mutate"
+  "studio.submit" | "task.studio.apply" | "pin.studio.apply" | "handoff.ensure" | "handoff.distill" | "sidebar.mutate" | "extension.invoke"
 >;
 
 /** Exact versioned wire shape of the five config-backed Studio forms. */
@@ -288,6 +299,10 @@ export type WorkspaceCommandV1 = {
   schemaVersion: 1;
   method: "sidebar.mutate";
   input: SidebarMutationInputV1;
+} | {
+  schemaVersion: 1;
+  method: "extension.invoke";
+  input: ExtensionCommandV1;
 };
 
 export type WorkspaceCommandResultV1 =
@@ -346,13 +361,20 @@ export type WorkspaceCommandResultV1 =
     }
   | {
       schemaVersion: 1;
+      method: "extension.invoke";
+      status: "ok";
+      action: ExtensionCommandV1["action"];
+      value: JsonValue;
+    }
+  | {
+      schemaVersion: 1;
       method: WorkspaceCommandMethodV1;
       status: "error";
       code: string;
       message: string;
     };
 
-export type WorkspaceQueryMethodV1 = "activity.context" | "probe.view" | "task.board" | "task.detail" | "task.studio" | "pin.studio" | "handoff.view" | "sidebar.view" | "runtime-ops.view";
+export type WorkspaceQueryMethodV1 = "activity.context" | "probe.view" | "task.board" | "task.detail" | "task.studio" | "pin.studio" | "handoff.view" | "sidebar.view" | "runtime-ops.view" | "extension.query";
 
 export interface WorkspaceProbeViewRowV1 {
   runId: string;
@@ -422,6 +444,11 @@ export type WorkspaceQueryV1 =
       schemaVersion: 1;
       method: "runtime-ops.view";
       input: Record<string, never>;
+    }
+  | {
+      schemaVersion: 1;
+      method: "extension.query";
+      input: ExtensionQueryV1;
     };
 
 export type WorkspaceQueryResultV1 =
@@ -481,6 +508,13 @@ export type WorkspaceQueryResultV1 =
     }
   | {
       schemaVersion: 1;
+      method: "extension.query";
+      status: "ok";
+      action: ExtensionQueryV1["action"];
+      value: JsonValue;
+    }
+  | {
+      schemaVersion: 1;
       method: WorkspaceQueryMethodV1;
       status: "error";
       code: string;
@@ -518,6 +552,7 @@ export const PIN_STUDIO_RESPONSE_MAX_BYTES = 32 * 1024 * 1024;
 export const HANDOFF_VIEW_RESPONSE_MAX_BYTES = 16 * 1024 * 1024;
 export const SIDEBAR_VIEW_RESPONSE_MAX_BYTES = 16 * 1024 * 1024;
 export const RUNTIME_OPS_VIEW_RESPONSE_MAX_BYTES = 2 * 1024 * 1024;
+export const EXTENSION_OPERATION_RESPONSE_MAX_BYTES = 2 * 1024 * 1024;
 const WORKSPACE_COMMAND_METHODS = new Set<WorkspaceCommandMethodV1>([
   "agent.start",
   "agent.stop",
@@ -536,6 +571,7 @@ const WORKSPACE_COMMAND_METHODS = new Set<WorkspaceCommandMethodV1>([
   "handoff.ensure",
   "handoff.distill",
   "sidebar.mutate",
+  "extension.invoke",
 ]);
 
 export function isSha256(value: unknown): value is string {
@@ -565,6 +601,7 @@ export function isWorkspaceCommandV1(value: unknown): value is WorkspaceCommandV
   if (value.method === "handoff.ensure") return hasOnlyKeys(value.input, []);
   if (value.method === "handoff.distill") return isHandoffDistillInputV1(value.input);
   if (value.method === "sidebar.mutate") return isSidebarMutationInputV1(value.input);
+  if (value.method === "extension.invoke") return isExtensionCommandV1(value.input);
   return hasOnlyKeys(value.input, ["agent"])
     && typeof value.input.agent === "string"
     && AGENT_NAME_RE.test(value.input.agent);
@@ -642,6 +679,11 @@ export function isWorkspaceCommandResultV1(value: unknown): value is WorkspaceCo
       && isSidebarMutationResultIdentityV1(value.action, value.id)
       && typeof value.changed === "boolean";
   }
+  if (value.status === "ok" && value.method === "extension.invoke") {
+    return hasOnlyKeys(value, ["schemaVersion", "method", "status", "action", "value"])
+      && isExtensionCommandActionV1(value.action)
+      && isJsonValue(value.value);
+  }
   if (value.status === "ok") {
     return hasOnlyKeys(value, ["schemaVersion", "method", "status"])
       && value.method !== "studio.submit"
@@ -649,7 +691,8 @@ export function isWorkspaceCommandResultV1(value: unknown): value is WorkspaceCo
       && value.method !== "pin.studio.apply"
       && value.method !== "handoff.ensure"
       && value.method !== "handoff.distill"
-      && value.method !== "sidebar.mutate";
+      && value.method !== "sidebar.mutate"
+      && value.method !== "extension.invoke";
   }
   return value.status === "error"
     && hasOnlyKeys(value, ["schemaVersion", "method", "status", "code", "message"])
@@ -689,6 +732,7 @@ export function isWorkspaceQueryV1(value: unknown): value is WorkspaceQueryV1 {
   }
   if (value.method === "handoff.view") return hasOnlyKeys(value.input, []);
   if (value.method === "sidebar.view" || value.method === "runtime-ops.view") return hasOnlyKeys(value.input, []);
+  if (value.method === "extension.query") return isExtensionQueryV1(value.input);
   if (value.method !== "probe.view") return false;
   const keys = Object.keys(value.input);
   return keys.every((key) => key === "caller")
@@ -698,8 +742,13 @@ export function isWorkspaceQueryV1(value: unknown): value is WorkspaceQueryV1 {
 
 export function isWorkspaceQueryResultV1(value: unknown): value is WorkspaceQueryResultV1 {
   if (!isRecord(value) || value.schemaVersion !== 1
-    || (value.method !== "activity.context" && value.method !== "probe.view" && value.method !== "task.board" && value.method !== "task.detail" && value.method !== "task.studio" && value.method !== "pin.studio" && value.method !== "handoff.view" && value.method !== "sidebar.view" && value.method !== "runtime-ops.view")) return false;
+    || (value.method !== "activity.context" && value.method !== "probe.view" && value.method !== "task.board" && value.method !== "task.detail" && value.method !== "task.studio" && value.method !== "pin.studio" && value.method !== "handoff.view" && value.method !== "sidebar.view" && value.method !== "runtime-ops.view" && value.method !== "extension.query")) return false;
   if (value.status === "ok") {
+    if (value.method === "extension.query") {
+      return hasOnlyKeys(value, ["schemaVersion", "method", "status", "action", "value"])
+        && isExtensionQueryActionV1(value.action)
+        && isJsonValue(value.value);
+    }
     return hasOnlyKeys(value, ["schemaVersion", "method", "status", "view"])
       && (value.method === "activity.context"
         ? isActivityContextViewV1(value.view)
@@ -750,7 +799,21 @@ export function isWorkspaceQueryResultBoundToInput(
   if (query.method === "pin.studio" && result.method === "pin.studio") {
     return result.view.studio.pinId === query.input.id;
   }
+  if (query.method === "extension.query" && result.method === "extension.query") {
+    return result.action === query.input.action;
+  }
   return true;
+}
+
+/** Cross-binds exact extension-operation success identity to the authenticated command. */
+export function isWorkspaceCommandResultBoundToInput(
+  command: WorkspaceCommandV1,
+  result: WorkspaceCommandResultV1,
+): boolean {
+  if (command.method !== result.method) return false;
+  if (result.status === "error") return true;
+  return command.method !== "extension.invoke"
+    || (result.method === "extension.invoke" && result.action === command.input.action);
 }
 
 export function workspaceActivityContextSuccessV1(view: ActivityContextViewV1): WorkspaceQueryResultV1 {
@@ -847,6 +910,22 @@ export function workspaceRuntimeOpsViewSuccessV1(view: RuntimeOpsSnapshotV1): Wo
   return result;
 }
 
+export function workspaceExtensionQuerySuccessV1(
+  query: Extract<WorkspaceQueryV1, { method: "extension.query" }>,
+  value: JsonValue,
+): WorkspaceQueryResultV1 {
+  const result = {
+    schemaVersion: 1,
+    method: "extension.query",
+    status: "ok",
+    action: query.input.action,
+    value,
+  } as const;
+  assertExtensionOperationResponseBounded("query", result);
+  if (!isWorkspaceQueryResultV1(result)) throw new Error("extension query result is invalid");
+  return result;
+}
+
 /** Builds and bounds the large board read without relaxing the 64 KiB limit of any other control response. */
 export function workspaceMissionControlViewSuccessV1(view: MissionControlViewV1): WorkspaceQueryResultV1 {
   const result = {
@@ -865,7 +944,9 @@ export function workspaceMissionControlViewSuccessV1(view: MissionControlViewV1)
 }
 
 /** Bound the daemon-owned Probe model before it crosses the 64 KiB control response boundary. */
-export function workspaceProbeViewSuccessV1(view: WorkspaceProbeViewV1): WorkspaceQueryResultV1 {
+export function workspaceProbeViewSuccessV1(
+  view: WorkspaceProbeViewV1,
+): Extract<WorkspaceQueryResultV1, { method: "probe.view"; status: "ok" }> {
   if (!Array.isArray(view.rows) || view.rows.length > 50) throw new Error("probe view exceeds its row limit");
   const rows = view.rows.map((row) => {
     if (row.status !== "running" && row.status !== "completed" && row.status !== "failed") {
@@ -906,7 +987,7 @@ export function workspaceCommandSuccessV1(
 ): WorkspaceCommandResultV1 {
   if (command.method === "task.studio.apply" || command.method === "pin.studio.apply"
     || command.method === "handoff.ensure" || command.method === "handoff.distill"
-    || command.method === "sidebar.mutate") {
+    || command.method === "sidebar.mutate" || command.method === "extension.invoke") {
     throw new Error("command requires an exact outcome");
   }
   if (command.method !== "studio.submit") {
@@ -920,6 +1001,34 @@ export function workspaceCommandSuccessV1(
     errors: normalized.slice(0, 50).map((error) => error.slice(0, 1_000)),
     truncated: normalized.length > 50 || normalized.some((error) => error.length > 1_000),
   };
+}
+
+export function workspaceExtensionCommandSuccessV1(
+  command: Extract<WorkspaceCommandV1, { method: "extension.invoke" }>,
+  value: JsonValue,
+): WorkspaceCommandResultV1 {
+  const result = {
+    schemaVersion: 1,
+    method: "extension.invoke",
+    status: "ok",
+    action: command.input.action,
+    value,
+  } as const;
+  assertExtensionOperationResponseBounded("invoke", result);
+  if (!isWorkspaceCommandResultV1(result)) throw new Error("extension command result is invalid");
+  return result;
+}
+
+function assertExtensionOperationResponseBounded(
+  op: "query" | "invoke",
+  result: WorkspaceQueryResultV1 | WorkspaceCommandResultV1,
+): void {
+  const envelope = op === "query"
+    ? { ok: true as const, op, result }
+    : { ok: true as const, op, operationId: "x".repeat(128), result };
+  if (Buffer.byteLength(`${JSON.stringify(envelope)}\n`, "utf8") > EXTENSION_OPERATION_RESPONSE_MAX_BYTES) {
+    throw new Error(`extension ${op} result exceeds its dedicated response size limit`);
+  }
 }
 
 export function workspaceHandoffEnsureSuccessV1(

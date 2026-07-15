@@ -565,3 +565,20 @@ None.
   engine build, the 207-file editor-free daemon import closure, presentation boundary and diff-check green.
   The first reviewable global proof remains current; no additional full run was justified before the final
   activation cutover.
+
+## Twenty-sixth implementation slice — 2026-07-15
+
+- Added one closed, versioned `extension.query` / `extension.invoke` compatibility contract for the
+  operational commands that remain outside the already-migrated panel contracts.  Every action has a strict
+  executable schema, request/result action binding, finite JSON validation and a dedicated 2 MiB response
+  ceiling; arbitrary manager/store methods cannot cross the socket.
+- Added the daemon dispatcher by composition over the existing Workspace services.  Agent/config/worktree,
+  approvals, Pins, commands/runbooks, pipelines, Doctor, Bridge and internal integration seams still execute
+  their existing domain rules inside the persistent process.  Editor confirmation, selection, clipboard,
+  terminal and document opening remain intentionally absent from the dispatcher.
+- Added the shell `WorkspaceExtensionTarget` and fail-closed result identity checks.  A real daemon process
+  proved agent reads, idempotent Pin creation, config add/delete and Stop All through the authenticated control
+  socket; protocol/client/target/service coverage is 29/29.
+- Typecheck, extension/engine build and the 210-file editor-free daemon import closure are green.  The next
+  slice is the one atomic `extension.ts` registry/command cutover; no second full verification was run before
+  that production activation boundary.
