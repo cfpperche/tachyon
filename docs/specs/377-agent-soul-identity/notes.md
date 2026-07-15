@@ -387,6 +387,14 @@ pass is recorded below.
 - T15 profile actions, profile transactions, product documentation, and final dogfood remain open;
   no import/create/open/preview/replace/rename/delete/repair behavior was added in this slice.
 
+### 2026-07-15 — Common-path enablement wording
+
+- Human dogfood confirmed permanent Soul deletion works and preserves the agent directory.
+- Agent Studio now presents both an already-owned disabled profile and the digest-backed ownership
+  claim for retained/unowned bytes as the same primary `Enable Soul` action. `Disable Soul` is the
+  inverse action. The internal adoption transaction and digest guard remain unchanged, but the
+  technical adoption term is no longer exposed in the common-path UI.
+
 ## Open questions
 
 - Resolved 2026-07-14: the maintainer ratified the complete revised R1–R6 bundle without amendments.

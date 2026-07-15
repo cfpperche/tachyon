@@ -759,7 +759,7 @@ export function deleteSoulProfile(workspaceRoot: string, name: string, access: P
   return runMutation(workspaceRoot, name, access, "delete", async ({ txDir, journal, prior }) => {
     if (!journal.priorConfig.present) throw new SoulError("soul/path-invalid", `Agent '${name}' is not declared in tachyon.yml`);
     if (journal.priorConfig.soulEnabled) {
-      throw new SoulError("soul/profile-enabled", `Disable soul for '${name}' before permanently deleting its identity`);
+      throw new SoulError("soul/profile-enabled", `Disable Soul for '${name}' before permanently deleting its identity`);
     }
     if (prior.priorSoulDigest === null && prior.priorManifestDigest === null) {
       throw new SoulError("soul/missing", `No Soul identity data exists for '${name}'`);

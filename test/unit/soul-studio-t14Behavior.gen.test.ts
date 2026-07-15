@@ -47,7 +47,7 @@ describe("spec 377 T14 soul enablement in Agent Studio", () => {
 
   it("renders the smallest two-state control before Role and labels the text area Persistent instructions", () => {
     const source = fs.readFileSync(path.resolve("src/webview/agent-studio-shell/App.tsx"), "utf8");
-    const soul = source.indexOf("Enable soul");
+    const soul = source.indexOf("Enable Soul");
     const role = source.indexOf("Role template");
     expect(soul).toBeGreaterThan(-1);
     expect(role).toBeGreaterThan(soul);

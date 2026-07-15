@@ -53,7 +53,14 @@ describe("Agent Studio soul profile protocol (T15A)", () => {
     expect(source).toContain("<KitDropdown>");
     expect(source).toContain('<KitDropdownContent align="start">');
     expect(source.indexOf("<KitDropdown>")).toBeLessThan(source.indexOf("refreshSoulMessage(savedAgent)", source.indexOf("<KitDropdown>")));
-    expect(source).toContain("Adopt existing file");
+    expect(source).toContain(">Enable Soul</Button>");
+    expect(source).toContain(">Disable Soul</Button>");
+    expect(source).not.toContain("Adopt existing file");
+    expect(source).not.toContain("Needs adoption");
+    expect(source).toContain("Ready to enable");
+    expect(source).toContain("enableRequiresOwnershipClaim");
+    expect(hostSource).toContain("Refresh and choose Enable Soul.");
+    expect(hostSource).not.toContain("explicit digest-backed adoption");
     expect(source).toContain("<KitFilePicker");
     expect(source).not.toContain('type="file"');
     expect(source).toContain("file.arrayBuffer()");

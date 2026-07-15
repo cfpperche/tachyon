@@ -188,14 +188,14 @@ export class AgentStudioPanelManager {
   private postProfileError(ctx: StudioDomainMessageContext, agent: string, error: unknown): void {
     if (error instanceof SoulError) {
       const safeMessage: Record<string, string> = {
-        "soul/profile-adoption-required": "The canonical profile requires explicit digest-backed adoption.",
+        "soul/profile-adoption-required": "This identity is not enabled yet. Refresh and choose Enable Soul.",
         "soul/digest-mismatch": "The profile changed; refresh it before trying again.",
         "soul/missing": "The canonical SOUL.md is missing.",
         "soul/outside-workspace": "The canonical profile path is outside the workspace.",
         "soul/final-symlink": "The canonical SOUL.md must be a regular file, not a symlink.",
         "soul/permission-denied": "Permission denied while accessing the selected profile file.",
         "soul/profile-transaction-degraded": "The profile transaction is degraded and blocks further actions.",
-        "soul/profile-enabled": "Disable soul before permanently deleting its identity files.",
+        "soul/profile-enabled": "Disable Soul before permanently deleting its identity files.",
         "soul/path-invalid": "The profile action or canonical path is invalid.",
       };
       ctx.post(soulProfileErrorMessage(agent, error.code, safeMessage[error.code] ?? "The profile action could not be completed."));

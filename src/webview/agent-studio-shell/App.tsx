@@ -283,23 +283,22 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
   const readActionDisabled = !savedAgent || !!soulBusy;
   const mutationDisabled = readActionDisabled || !soulStatus || soulStatus.transactionDegraded;
   const showCreateOrImport = soulStatus?.lifecycle === "missing";
-  const showAdopt = !!soulStatus?.sha256
+  const enableRequiresOwnershipClaim = !!soulStatus?.sha256
     && (soulStatus.lifecycle === "retained" || soulStatus.lifecycle === "unowned");
-  const showEnable = soulStatus?.lifecycle === "active"
+  const showEnable = enableRequiresOwnershipClaim || (soulStatus?.lifecycle === "active"
     && soulStatus.resolvable
-    && !soulStatus.soulEnabled;
+    && !soulStatus.soulEnabled);
   const showDisable = !!soulStatus?.soulEnabled;
   const showDelete = profilePresent && !soulStatus?.soulEnabled;
   const canCreateOrImport = showCreateOrImport && !mutationDisabled && !soulImportOpen;
-  const canAdopt = showAdopt && !mutationDisabled;
   const canEnable = showEnable && !mutationDisabled;
   const canDisable = showDisable && !mutationDisabled;
   const canDelete = showDelete && !mutationDisabled;
   const lifecycleLabel: Record<SoulProfileStatusMessage["lifecycle"], string> = {
     missing: "Missing",
     active: "Active",
-    retained: "Retained",
-    unowned: "Needs adoption",
+    retained: "Disabled",
+    unowned: "Ready to enable",
     invalid: "Invalid",
   };
   const runSoulAction = (label: string, message: unknown) => {
@@ -309,6 +308,12 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
     setSoulBusy(label);
     dispatch.post(message);
   };
+  const runEnableSoul = () => runSoulAction(
+    "Enabling Soul",
+    enableRequiresOwnershipClaim && soulStatus?.sha256
+      ? adoptSoulProfileMessage(savedAgent, soulStatus.sha256)
+      : enableSoulMessage(savedAgent),
+  );
 
   return (
     <StudioFrame
@@ -361,10 +366,15 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
                       <Button icon="go-to-file" disabled={readActionDisabled} onClick={() => runSoulAction("Opening profile", openSoulMessage(savedAgent))}>Edit file</Button>
                     )}
                     {showEnable && (
-                      <Button variant="primary" icon="check" disabled={!canEnable} onClick={() => runSoulAction("Enabling soul", enableSoulMessage(savedAgent))}>Enable soul</Button>
+                      <Button
+                        variant="primary"
+                        icon="check"
+                        disabled={!canEnable}
+                        onClick={runEnableSoul}
+                      >Enable Soul</Button>
                     )}
                     {showDisable && (
-                      <Button disabled={!canDisable} onClick={() => runSoulAction("Disabling soul", disableSoulMessage(savedAgent))}>Disable soul</Button>
+                      <Button disabled={!canDisable} onClick={() => runSoulAction("Disabling Soul", disableSoulMessage(savedAgent))}>Disable Soul</Button>
                     )}
                     {soulStatus && (
                       <KitDropdown>
@@ -375,9 +385,6 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
                           <KitDropdownItem disabled={readActionDisabled} onSelect={() => runSoulAction("Refreshing profile", refreshSoulMessage(savedAgent))}>Refresh</KitDropdownItem>
                           {profileReadable && (
                             <KitDropdownItem disabled={readActionDisabled} onSelect={() => runSoulAction("Loading preview", previewSoulMessage(savedAgent))}>Preview</KitDropdownItem>
-                          )}
-                          {showAdopt && (
-                            <KitDropdownItem disabled={!canAdopt} onSelect={() => runSoulAction("Adopting profile", adoptSoulProfileMessage(savedAgent, soulStatus.sha256!))}>Adopt existing file</KitDropdownItem>
                           )}
                           {showDelete && (
                             <>
@@ -433,7 +440,11 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
                     {soulBusy
                       ? `${soulBusy}…`
                       : soulStatus
-                        ? `${lifecycleLabel[soulStatus.lifecycle]} · ${soulStatus.soulEnabled ? "enabled for future starts" : "disabled"}`
+                        ? soulStatus.soulEnabled
+                          ? "Soul enabled for future starts"
+                          : profilePresent
+                            ? "Soul disabled for future starts"
+                            : "No Soul identity configured"
                         : "Profile status unavailable. Refresh to try again."}
                   </div>
 
