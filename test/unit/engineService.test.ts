@@ -141,6 +141,40 @@ describe("daemon engine service", () => {
         },
       });
 
+    expect(await first.query({ schemaVersion: 1, method: "sidebar.view", input: {} })).toMatchObject({
+      method: "sidebar.view",
+      status: "ok",
+      view: {
+        fleet: {
+          folder: { hash: identity.workspaceHash, name: "workspace" },
+          bridge: { port: String(identity.bridge.port), connected: true },
+          agents: [{ name: "worker", status: "stopped" }],
+          pins: [{ id: seedPin.id, text: "remote Pin Studio", done: false, tags: ["ui"] }],
+          handoff: { exists: false, pendingCount: 0 },
+        },
+      },
+    });
+    const toggleSidebarPin = {
+      schemaVersion: 1 as const,
+      method: "sidebar.mutate" as const,
+      input: { action: "pin.toggle" as const, id: seedPin.id, done: true },
+    };
+    const toggledSidebarPin = await first.invoke("operation-sidebar-pin-toggle-0001", toggleSidebarPin);
+    expect(toggledSidebarPin).toEqual({
+      schemaVersion: 1,
+      method: "sidebar.mutate",
+      status: "ok",
+      action: "pin.toggle",
+      id: seedPin.id,
+      changed: true,
+    });
+    expect(await first.invoke("operation-sidebar-pin-toggle-0001", toggleSidebarPin)).toEqual(toggledSidebarPin);
+    await waitForEvent(first, (event) => event.kind === "views-changed" && event.payload.view === "pins");
+    expect(await first.query({ schemaVersion: 1, method: "sidebar.view", input: {} })).toMatchObject({
+      status: "ok",
+      view: { fleet: { pins: [{ id: seedPin.id, done: true }] } },
+    });
+
     const coldHandoff = await first.query({ schemaVersion: 1, method: "handoff.view", input: {} });
     expect(coldHandoff).toMatchObject({
       method: "handoff.view",

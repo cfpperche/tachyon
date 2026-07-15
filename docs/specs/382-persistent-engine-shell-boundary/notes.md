@@ -525,3 +525,27 @@ None.
   remains the intermediate gate reserved until final closure.  Production activation is still intentionally
   legacy; the next slice migrates `SidebarPrototype`, then the single registry cutover removes shell-owned
   Workspace construction rather than enabling mixed lifecycle ownership.
+
+## Twenty-fourth implementation slice — 2026-07-14
+
+- Moved the complete Sidebar fleet assembly out of the VS Code webview and into an editor-free engine service.
+  Agents, terminals, commands, runbooks, Pins, schedules, proposals, pipelines, Handoff, degraded config state,
+  evidence, runtime model observations and external-tool summaries now cross one strict, bounded `sidebar.view`
+  projection.  Pipeline inspect identity is projected by the engine instead of recomputed in the shell.
+- Added exact `sidebar.mutate` operations for the six mutations the webview previously performed directly:
+  Pin toggle/delete, schedule pause/delete and proposal approve/reject.  They reuse the existing application
+  actions, are operation-id replay protected by the persistent service and bind every result to its requested
+  action and entity.  Sidebar reads are also bound to the attached workspace identity.
+- Migrated `SidebarPrototype` to `WorkspaceSidebarTarget`.  It reuses the existing Pin Studio target for rich
+  previews, suppresses out-of-order asynchronous projections, reports engine read/write failures, and derives
+  copied Pin titles plus proposal confirmation names from authoritative projections rather than webview text.
+  The concrete presentation inventory shrank from two files to the final `extension.ts` cutover only.
+- The related matrix passes 55/55, including a real daemon and a Sidebar response above the ordinary 64 KiB
+  control limit; typecheck, extension/engine build, the 206-file editor-free daemon import closure and
+  diff-check are green.  Packaged `systemd --user` dogfood remotely loaded and mutated Sidebar state, retained
+  every previous flow, converged concurrent starts, reused the exact engine and cleaned its unit/process/tmux
+  state.
+- No additional global full run was made: the first reviewable proof (343 files, 4,068 passed, 3 skipped)
+  remains the intermediate gate reserved until final closure.  Production activation intentionally still uses
+  compatibility targets; the next and final cutover slice must replace the extension registry and operational
+  command handlers atomically, then delete shell-owned Workspace construction rather than ship a mixed mode.

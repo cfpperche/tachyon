@@ -13,6 +13,7 @@ import {
   workspaceMissionControlViewSuccessV1,
   workspacePinStudioViewSuccessV1,
   workspaceProbeViewSuccessV1,
+  workspaceSidebarViewSuccessV1,
   workspaceTaskDetailViewSuccessV1,
   workspaceTaskStudioViewSuccessV1,
   type EngineServiceIdentityV1,
@@ -379,6 +380,49 @@ describe("EngineControlClient", () => {
     await client.attach();
     expect(await client.query({ schemaVersion: 1, method: "handoff.view", input: {} }))
       .toMatchObject({ method: "handoff.view", status: "ok", view: { handoff: { exists: true } } });
+  });
+
+  it("allows the dedicated Sidebar envelope above the ordinary 64 KiB response limit", async () => {
+    const f = fixture();
+    const result = workspaceSidebarViewSuccessV1({
+      schemaVersion: 1,
+      fleet: {
+        folder: { hash: f.identity.workspaceHash, name: "workspace" },
+        bridge: { port: String(f.identity.bridge.port), connected: true },
+        agents: [],
+        terminals: [],
+        commands: [],
+        runbooks: [],
+        pins: Array.from({ length: 40 }, (_, index) => ({
+          id: `p-${index.toString(16).padStart(6, "0")}`,
+          text: `pin-${index}-${"x".repeat(1_990)}`,
+          done: false,
+          by: "human",
+          tags: [],
+        })),
+        schedules: [],
+        pipelines: [],
+        proposals: [],
+        handoff: { exists: false, staleness: "fresh", pendingCount: 0 },
+      },
+    });
+    expect(Buffer.byteLength(JSON.stringify({ ok: true, op: "query", result }), "utf8")).toBeGreaterThan(64 * 1024);
+    const server = await startEngineControlServer({
+      socketPath: f.socketPath,
+      identity: f.identity,
+      getSnapshot: f.snapshot,
+      query: async (query) => {
+        if (query.method !== "sidebar.view") throw new Error("unexpected query");
+        return result;
+      },
+    });
+    servers.push(server);
+    const client = new EngineControlClient({ socketPath: f.socketPath, hello: f.hello });
+    await client.attach();
+    expect(await client.query({ schemaVersion: 1, method: "sidebar.view", input: {} }))
+      .toMatchObject({ method: "sidebar.view", status: "ok", view: { fleet: { pins: expect.arrayContaining([
+        expect.objectContaining({ id: "p-000000" }),
+      ]) } } });
   });
 
   it("invokes an operation by exact id without transport-level retries", async () => {

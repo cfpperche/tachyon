@@ -60,6 +60,7 @@ import { legacyActivityTarget } from "./shell/ActivityTarget.js";
 import { legacyHandoffTarget } from "./shell/HandoffTarget.js";
 import { legacyMissionControlTarget } from "./shell/MissionControlTarget.js";
 import { legacyPinStudioTarget } from "./shell/PinStudioTarget.js";
+import { legacySidebarTarget } from "./shell/SidebarTarget.js";
 import { legacyTaskDetailTarget } from "./shell/TaskDetailTarget.js";
 import { legacyTaskStudioTarget } from "./shell/TaskStudioTarget.js";
 import { VsCodeHost } from "./workspace/VsCodeHost.js";
@@ -638,10 +639,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // spec 237 — the Preact webview sidebar is THE Tachyon view (the native tree was retired). refreshAll
   // pushes the live fleet to it on every state change; it's registered below.
   const runtimeOpsSnapshots = new RuntimeOpsSnapshotService(workspaces);
-  // spec 378 — the sidebar's model row gathers the same view-independent observed-model accessor the
-  // RuntimeOps snapshot uses, so a row shows the live transcript model even when RuntimeOps is never opened.
-  const sidebarProto = new SidebarPrototypeProvider(context.extensionUri, workspaces, context.globalState, (ws, agentName) =>
-    runtimeOpsSnapshots.observedModelFor(ws.workspaceRoot, ws.wsHash, agentName),
+  // spec 378 — the legacy adapter and daemon target both gather observed model state at the engine boundary.
+  const sidebarProto = new SidebarPrototypeProvider(
+    context.extensionUri,
+    () => workspaces().map((ws) => legacySidebarTarget(
+      ws,
+      (agentName) => runtimeOpsSnapshots.observedModelFor(ws.workspaceRoot, ws.wsHash, agentName),
+    )),
+    context.globalState,
   );
   const runtimeOps = new RuntimeOpsViewProvider(context.extensionUri, () => runtimeOpsSnapshots.snapshot());
   // spec 238 — the editor-area Runtime Activity View (normalized cockpit; reads the durable per-agent log).

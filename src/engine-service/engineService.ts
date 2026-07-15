@@ -20,6 +20,9 @@ import {
 import { ensureProjectHandoffFile } from "../handoff/handoffFileService.js";
 import { projectActivityContext } from "../runtime-api/activityProjection.js";
 import { projectHandoffView } from "../runtime-api/handoffProjection.js";
+import { projectSidebarView } from "../runtime-api/sidebarProjection.js";
+import { applySidebarMutation } from "../sidebar/sidebarMutationService.js";
+import { RuntimeOpsSnapshotService } from "../runtimeOps/snapshotService.js";
 import type { WorkspaceCoreProjectionsV1 } from "../runtime-api/workspaceProjection.js";
 import { buildBoardSnapshot } from "../tasks/boardSnapshot.js";
 import { projectMissionControlBoard } from "../runtime-api/missionControlProjection.js";
@@ -59,6 +62,8 @@ import {
   workspaceHandoffDistillSuccessV1,
   workspaceHandoffEnsureSuccessV1,
   workspaceHandoffViewSuccessV1,
+  workspaceSidebarMutationSuccessV1,
+  workspaceSidebarViewSuccessV1,
   workspaceMissionControlViewSuccessV1,
   workspacePinStudioApplySuccessV1,
   workspacePinStudioViewSuccessV1,
@@ -145,6 +150,7 @@ export async function startDaemonEngineService(
     );
     activityLog.start();
     const runningActivityLog = activityLog;
+    const runtimeOpsSnapshots = new RuntimeOpsSnapshotService(() => [runningWorkspace]);
 
     const bridgePort = runningWorkspace.bridge.listenerPort;
     if (bridgePort === undefined || runningWorkspace.bridge.port !== bridgePort) {
@@ -171,7 +177,7 @@ export async function startDaemonEngineService(
       identity,
       getSnapshot,
       readEvents: (afterSeq, limit) => journal.readAfter(afterSeq, limit),
-      query: (query) => executeWorkspaceQuery(runningWorkspace, query),
+      query: (query) => executeWorkspaceQuery(runningWorkspace, query, runtimeOpsSnapshots),
       invoke: (command) => executeWorkspaceCommand(
         runningWorkspace,
         runningActivityLog,
@@ -205,6 +211,7 @@ export async function startDaemonEngineService(
 async function executeWorkspaceQuery(
   workspace: Workspace,
   query: WorkspaceQueryV1,
+  runtimeOpsSnapshots: RuntimeOpsSnapshotService,
 ): Promise<WorkspaceQueryResultV1> {
   if (query.method === "activity.context") {
     return workspaceActivityContextSuccessV1({
@@ -218,6 +225,11 @@ async function executeWorkspaceQuery(
       store: workspace.handoffStore,
       lastActivityAt: workspace.lastActivityAt(),
       distill: workspaceHandoffDistillOperations(workspace, { reveal: false }),
+    }));
+  }
+  if (query.method === "sidebar.view") {
+    return workspaceSidebarViewSuccessV1(await projectSidebarView(workspace, {
+      observedModelFor: (agent) => runtimeOpsSnapshots.observedModelFor(workspace.workspaceRoot, workspace.wsHash, agent),
     }));
   }
   if (query.method === "task.board") {
@@ -271,6 +283,10 @@ async function executeWorkspaceCommand(
       command.input,
     );
     return workspaceHandoffDistillSuccessV1(command, result);
+  }
+  if (command.method === "sidebar.mutate") {
+    const result = applySidebarMutation(workspace, command.input, onViewsChanged);
+    return workspaceSidebarMutationSuccessV1(command, result);
   }
   if (command.method === "studio.submit") {
     return workspaceCommandSuccessV1(command, workspace.studioSubmit(command.input));

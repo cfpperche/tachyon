@@ -20,6 +20,8 @@ import {
   workspacePinStudioApplySuccessV1,
   workspacePinStudioViewSuccessV1,
   workspaceProbeViewSuccessV1,
+  workspaceSidebarMutationSuccessV1,
+  workspaceSidebarViewSuccessV1,
   workspaceTaskDetailViewSuccessV1,
   workspaceTaskStudioApplySuccessV1,
   workspaceTaskStudioViewSuccessV1,
@@ -413,6 +415,53 @@ describe("persistent engine protocol", () => {
     expect(isWorkspaceQueryResultV1({ ...result, view: { ...result.view, extra: true } })).toBe(false);
   });
 
+  it("validates a closed Sidebar projection and identity-bound mutations", () => {
+    const query = { schemaVersion: 1, method: "sidebar.view", input: {} } as const;
+    const toggle = {
+      schemaVersion: 1,
+      method: "sidebar.mutate",
+      input: { action: "pin.toggle", id: "p-abc123", done: true },
+    } as const;
+    expect(isWorkspaceQueryV1(query)).toBe(true);
+    expect(isWorkspaceQueryV1({ ...query, input: { extra: true } })).toBe(false);
+    expect(isWorkspaceCommandV1(toggle)).toBe(true);
+    expect(isWorkspaceCommandV1({ ...toggle, input: { ...toggle.input, id: "p-nope00" } })).toBe(false);
+    expect(isWorkspaceCommandV1({ ...toggle, input: { ...toggle.input, extra: true } })).toBe(false);
+    expect(isWorkspaceCommandV1({ ...toggle, input: { action: "proposal.reject", id: "abcdef123456" } })).toBe(true);
+    expect(() => workspaceCommandSuccessV1(toggle)).toThrow(/exact outcome/i);
+
+    const mutation = workspaceSidebarMutationSuccessV1(toggle, {
+      action: "pin.toggle",
+      id: "p-abc123",
+      changed: true,
+    });
+    expect(mutation).toEqual({
+      schemaVersion: 1,
+      method: "sidebar.mutate",
+      status: "ok",
+      action: "pin.toggle",
+      id: "p-abc123",
+      changed: true,
+    });
+    expect(isWorkspaceCommandResultV1(mutation)).toBe(true);
+    expect(isWorkspaceCommandResultV1({ ...mutation, id: "p-nope00" })).toBe(false);
+    expect(() => workspaceSidebarMutationSuccessV1(toggle, {
+      action: "pin.delete",
+      id: "p-abc123",
+      changed: true,
+    })).toThrow(/does not match/i);
+
+    const result = workspaceSidebarViewSuccessV1(sidebarView());
+    expect(isWorkspaceQueryResultV1(result)).toBe(true);
+    expect(isWorkspaceQueryResultBoundToInput(query, result)).toBe(true);
+    if (result.status !== "ok" || result.method !== "sidebar.view") throw new Error("expected Sidebar result");
+    expect(isWorkspaceQueryResultV1({ ...result, view: { ...result.view, extra: true } })).toBe(false);
+    expect(() => workspaceSidebarViewSuccessV1({
+      ...sidebarView(),
+      fleet: { ...sidebarView().fleet, pins: [{ ...sidebarView().fleet.pins[0]!, id: "p-nope00" }] },
+    })).toThrow(/invalid_string|regex|invalid/i);
+  });
+
   it("keeps authenticated Probe reads separate, exact and response-bounded", () => {
     const query = { schemaVersion: 1, method: "probe.view", input: { caller: "codex" } } as const;
     expect(isWorkspaceQueryV1(query)).toBe(true);
@@ -468,6 +517,25 @@ describe("persistent engine protocol", () => {
       .toBeLessThan(64 * 1024);
   });
 });
+
+function sidebarView() {
+  return {
+    schemaVersion: 1 as const,
+    fleet: {
+      folder: { hash: "workspace-hash", name: "workspace" },
+      bridge: { port: "42897", connected: true },
+      agents: [],
+      terminals: [],
+      commands: [],
+      runbooks: [],
+      pins: [{ id: "p-abc123", text: "Pinned", done: false, by: "human", tags: ["ui"] }],
+      schedules: [],
+      pipelines: [],
+      proposals: [],
+      handoff: { exists: false, staleness: "fresh" as const, pendingCount: 0 },
+    },
+  };
+}
 
 function studioForm(): WorkspaceStudioFormV1 {
   return {

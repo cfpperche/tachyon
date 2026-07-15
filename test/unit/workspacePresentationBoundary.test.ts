@@ -52,13 +52,14 @@ describe("persistent workspace presentation boundary", () => {
       "src/webview/PinStudioPanel.ts",
       "src/webview/ActivityPanel.ts",
       "src/webview/HandoffPanel.ts",
+      "src/webview/SidebarPrototype.ts",
       "src/presentation/items.ts",
       "src/plugins/ui/host.ts",
     ];
     for (const relative of migrated) {
       const source = fs.readFileSync(path.join(root, relative), "utf8");
       expect(source, relative).not.toMatch(/workspace\/Workspace(?:\.js)?/);
-      expect(source, relative).toMatch(/Workspace(?:Presentation|GitPresentation|ProbePresentation|PluginPresentation|Activity|Handoff|MissionControl|PinStudio|TaskDetail|TaskStudio|Studio)Target/);
+      expect(source, relative).toMatch(/Workspace(?:Presentation|GitPresentation|ProbePresentation|PluginPresentation|Activity|Handoff|MissionControl|PinStudio|Sidebar|TaskDetail|TaskStudio|Studio)Target/);
     }
   });
 
@@ -77,6 +78,8 @@ describe("persistent workspace presentation boundary", () => {
       "src/runtime-api/handoffProjection.ts",
       "src/runtime-api/missionControlCommands.ts",
       "src/runtime-api/missionControlProjection.ts",
+      "src/runtime-api/sidebarCommands.ts",
+      "src/runtime-api/sidebarProjection.ts",
       "src/runtime-api/pinStudioCommands.ts",
       "src/runtime-api/pinStudioProjection.ts",
       "src/runtime-api/richDocWire.ts",
@@ -89,10 +92,13 @@ describe("persistent workspace presentation boundary", () => {
       "src/shell/ActivityTarget.ts",
       "src/shell/HandoffTarget.ts",
       "src/shell/MissionControlTarget.ts",
+      "src/shell/SidebarTarget.ts",
       "src/shell/PinStudioTarget.ts",
       "src/shell/TaskDetailTarget.ts",
       "src/shell/TaskStudioTarget.ts",
       "src/shell/WorkspacePresentation.ts",
+      "src/sidebar/sidebarFleetService.ts",
+      "src/sidebar/sidebarMutationService.ts",
     ]) {
       const source = fs.readFileSync(path.join(root, relative), "utf8");
       expect(source, relative).not.toMatch(/from\s+["']vscode["']/);

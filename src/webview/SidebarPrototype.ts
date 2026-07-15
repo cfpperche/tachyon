@@ -1,28 +1,16 @@
 import * as vscode from "vscode";
 import { panelIcon } from "./shared/panelIcon.js";
-import path from "node:path";
-import type { Workspace } from "../workspace/Workspace.js";
-import { isResumable } from "../resume/SessionLedger.js";
-import { adapterFor, forkable, managesOwnSession } from "../resume/adapters.js";
-import type { FleetVM, AgentStatus, Verify, AgentVM, RunState, PinPreviewAttachmentVM, PinPreviewVM, EvidenceBadge } from "../sidebar/types.js";
-import { toAgentVM, type ObservedModelInput } from "../sidebar/agentModel.js";
-import { evidenceBadge } from "../worktree/evidence.js";
-import { degradedRosterExtras, toConfigErrorVM } from "../config/configFailure.js";
+import type { FleetVM, AgentVM, PinPreviewAttachmentVM, PinPreviewVM } from "../sidebar/types.js";
 import { fleetMessage } from "./sidebar/messages.js";
 import { READY } from "./shared/ready.js";
 import { renderWebviewShell } from "./shared/shell.js";
 import { pinPreviewMessage } from "./pin-preview/messages.js";
 import type { ActionId } from "../sidebar/actions.js";
 import { agentContextValue } from "../presentation/contextValue.js";
-import { runStatus } from "../pipeline/runState.js";
-import { nodeSpawnName } from "../pipeline/loadPipeline.js";
 import { notify } from "../workspace/notify.js";
 import { showNotification } from "../workspace/NotificationService.js";
-import type { TiptapJSON } from "../pins/PinStore.js";
-import { PinAttachmentStore } from "../pins/PinAttachmentStore.js";
-import * as domainActions from "../workspace/domainActions.js";
-import { ExternalToolRegistry } from "../externalTools/registry.js";
-import { isPidAlive, readProcEnvironAgent, readProcEntries, scanExternalToolProcesses } from "../externalTools/procScanner.js";
+import type { TiptapJSON } from "../richDoc/types.js";
+import type { WorkspaceSidebarTarget, SidebarShellCommandContext } from "../shell/SidebarTarget.js";
 
 export const PIN_PREVIEW_VIEW_TYPE = "tachyonPinPreview";
 
@@ -31,20 +19,6 @@ export interface PinPreviewPanelState {
   view: typeof PIN_PREVIEW_VIEW_TYPE;
   wsHash: string;
   pinId: string;
-}
-
-/** Relative time like "in 5m" / "12s ago" (was in the tree; lives here now that the tree is gone). */
-function relTime(ms: number, now = Date.now()): string {
-  const d = Math.round((ms - now) / 1000);
-  const abs = Math.abs(d);
-  const unit = abs < 90 ? `${abs}s` : abs < 5400 ? `${Math.round(abs / 60)}m` : `${Math.round(abs / 3600)}h`;
-  return d >= 0 ? `in ${unit}` : `${unit} ago`;
-}
-/** Human cadence summary for a schedule/proposal def, e.g. "every 1h · run lint". */
-function scheduleSummary(def: { every?: string; at?: string; run?: string; spawn?: string }): string {
-  const when = def.every ? `every ${def.every}` : `at ${def.at}`;
-  const what = def.run ? `run ${def.run}` : `spawn ${def.spawn}`;
-  return `${when} · ${what}`;
 }
 
 /** Messages the webview posts to the host. */
@@ -102,14 +76,12 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = "tachyonSidebarPrototype";
   private view?: vscode.WebviewView;
   private lastFleets: FleetVM[] = [];
+  private pushGeneration = 0;
 
   constructor(
     private readonly extensionUri: vscode.Uri,
-    private readonly getWorkspaces: () => Workspace[],
+    private readonly getWorkspaces: () => WorkspaceSidebarTarget[],
     private readonly memento?: vscode.Memento, // spec 242 — persists the sort prefs (context.globalState)
-    // spec 378 — the shared, view-independent observed-model accessor (RuntimeOpsSnapshotService); optional
-    // so a bare provider (e.g. tests) degrades to declared/profile-only rows instead of throwing.
-    private readonly observedModelFor?: (ws: Workspace, agentName: string) => ObservedModelInput | undefined,
   ) {}
 
   private sortCache?: SortPrefs; // synchronous mirror so overlapping setSort writes don't lose a section (codex)
@@ -138,11 +110,16 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       scriptCspSource: false,
     });
     void this.push();
-    view.onDidDispose(() => { if (this.view === view) this.view = undefined; });
+    view.onDidDispose(() => {
+      if (this.view === view) {
+        this.pushGeneration += 1;
+        this.view = undefined;
+      }
+    });
   }
 
   /** Resolve the workspace an action targets — its folder hash (multi-root), or the first when unspecified. */
-  private wsFor(hash?: string): Workspace | undefined {
+  private wsFor(hash?: string): WorkspaceSidebarTarget | undefined {
     const wss = this.getWorkspaces();
     // Only default to the first workspace when NO hash was sent. A supplied-but-unmatched hash (stale
     // message after a folder was removed, or a bad value) must resolve to nothing — never act on ws 0.
@@ -157,7 +134,18 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
   private async push(): Promise<void> {
     const view = this.view;
     if (!view) return;
-    this.lastFleets = await Promise.all(this.getWorkspaces().map((ws) => this.gatherOne(ws)));
+    const generation = ++this.pushGeneration;
+    let fleets: FleetVM[];
+    try {
+      fleets = await Promise.all(this.getWorkspaces().map((ws) => ws.loadSidebar()));
+    } catch (error) {
+      if (this.view === view && generation === this.pushGeneration) {
+        notify(vscode.l10n.t("Could not refresh Sidebar: {0}", error instanceof Error ? error.message : String(error)), "error");
+      }
+      return;
+    }
+    if (this.view !== view || generation !== this.pushGeneration) return;
+    this.lastFleets = fleets;
     // spec 242 — prefs travel WITH the fleet so the first render is already in the saved order (D8 no flicker).
     // spec 278 — built via the shared envelope so a `fleet`-shape drift breaks the build, not the preview harness.
     void view.webview.postMessage(fleetMessage(this.lastFleets, this.sortPrefs(), this.collapsedKeys()));
@@ -192,35 +180,46 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       if (m.op === "openConfig") return void vscode.commands.executeCommand("tachyon.openConfig", m.hash); // t-8354ae
       if (m.op === "doctor") return void vscode.commands.executeCommand("tachyon.doctor", m.hash); // t-8354ae
       const ws = this.wsFor(m.hash);
-      if (ws && m.op === "addPin") void vscode.commands.executeCommand("tachyon.addPin", { ws });
+      if (ws && m.op === "addPin") void vscode.commands.executeCommand(
+        "tachyon.addPin",
+        ...ws.shellCommandArgs({ kind: "workspace" }),
+      );
       return;
     }
-    if (m?.type === "section" && m.op && m.id) return this.runSection(m.op, m.id, m.done, m.label, m.hash);
+    if (m?.type === "section" && m.op && m.id) return this.runSection(m.op, m.id, m.done, m.hash);
     if (m?.type === "pipeline" && m.op && m.name) return this.runPipeline(m.op, m.name, m.nodeId, m.hash);
   }
 
   /** Route a section-row action to its existing VS Code command (duck-typed item) or store mutation. */
-  private async runSection(op: string, id: string, done?: boolean, label?: string, wsHash?: string): Promise<void> {
+  private async runSection(op: string, id: string, done?: boolean, wsHash?: string): Promise<void> {
     const ws = this.wsFor(wsHash);
     if (!ws) return;
-    const exec = (cmd: string, item: Record<string, unknown>) => void vscode.commands.executeCommand(cmd, item);
+    const exec = (cmd: string, context: SidebarShellCommandContext) => {
+      void vscode.commands.executeCommand(cmd, ...ws.shellCommandArgs(context));
+    };
     switch (op) {
-      case "command:run": return exec("tachyon.runCommandItem", { ws, commandName: id });
+      case "command:run": return exec("tachyon.runCommandItem", { kind: "command", commandName: id });
       case "command:open": return void vscode.commands.executeCommand("tachyon.openCommandTerminalItem", id, ws.wsHash);
-      case "command:edit": return exec("tachyon.editCommandStudioItem", { ws, commandName: id });
-      case "command:editYaml": return exec("tachyon.editCommandItem", { ws, commandName: id });
-      case "command:delete": return exec("tachyon.deleteCommandItem", { ws, commandName: id });
-      case "runbook:run": return exec("tachyon.runRunbookItem", { ws, runbookName: id });
-      case "runbook:edit": return exec("tachyon.editRunbookStudioItem", { ws, runbookName: id });
-      case "runbook:editYaml": return exec("tachyon.editRunbookItem", { ws, runbookName: id });
-      case "runbook:delete": return exec("tachyon.deleteRunbookItem", { ws, runbookName: id });
+      case "command:edit": return exec("tachyon.editCommandStudioItem", { kind: "command", commandName: id });
+      case "command:editYaml": return exec("tachyon.editCommandItem", { kind: "command", commandName: id });
+      case "command:delete": return exec("tachyon.deleteCommandItem", { kind: "command", commandName: id });
+      case "runbook:run": return exec("tachyon.runRunbookItem", { kind: "runbook", runbookName: id });
+      case "runbook:edit": return exec("tachyon.editRunbookStudioItem", { kind: "runbook", runbookName: id });
+      case "runbook:editYaml": return exec("tachyon.editRunbookItem", { kind: "runbook", runbookName: id });
+      case "runbook:delete": return exec("tachyon.deleteRunbookItem", { kind: "runbook", runbookName: id });
       case "runbook:step": { const hash = id.indexOf("#"); return void vscode.commands.executeCommand("tachyon.openRunbookStepItem", id.slice(0, hash), Number(id.slice(hash + 1)), ws.wsHash); }
-      case "pin:toggle": domainActions.togglePinDone(ws, id, !!done, { onChanged: () => this.refresh() }); return;
+      case "pin:toggle": return this.mutateSidebar(ws, { action: "pin.toggle", id, done: !!done });
       case "pin:preview": return void this.previewPin(ws, id);
       case "pin:copy": {
-        const title = ws.pinStore.list().find((p) => p.id === id)?.text ?? label ?? id;
-        await vscode.env.clipboard.writeText(`ID: ${id}\nTitle: ${title}`);
-        notify(vscode.l10n.t("Pin copied: {0}", id));
+        // Never trust the label echoed by the webview. The first projection may still be in flight after
+        // activation, so read the authoritative engine projection for this gesture as well.
+        try {
+          const title = (await ws.loadSidebar()).pins.find((pin) => pin.id === id)?.text ?? id;
+          await vscode.env.clipboard.writeText(`ID: ${id}\nTitle: ${title}`);
+          notify(vscode.l10n.t("Pin copied: {0}", id));
+        } catch (error) {
+          notify(vscode.l10n.t("Could not copy pin: {0}", error instanceof Error ? error.message : String(error)), "error");
+        }
         return;
       }
       case "pin:copyId": {
@@ -228,11 +227,11 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
         notify(vscode.l10n.t("Pin ID copied: {0}", id));
         return;
       }
-      case "pin:edit": return exec("tachyon.editPinItem", { ws, pinId: id });
-      case "pin:delete": domainActions.deletePin(ws, id, { onChanged: () => this.refresh() }); return;
-      case "schedule:pause": domainActions.toggleSchedulePause(ws, id, { onChanged: () => this.refresh() }); return;
-      case "schedule:edit": return exec("tachyon.editScheduleStudioItem", { ws, scheduleName: id });
-      case "schedule:editYaml": return exec("tachyon.editScheduleItem", { ws, scheduleName: id });
+      case "pin:edit": return exec("tachyon.editPinItem", { kind: "pin", pinId: id });
+      case "pin:delete": return this.mutateSidebar(ws, { action: "pin.delete", id });
+      case "schedule:pause": return this.mutateSidebar(ws, { action: "schedule.toggle-pause", id });
+      case "schedule:edit": return exec("tachyon.editScheduleStudioItem", { kind: "schedule", scheduleName: id });
+      case "schedule:editYaml": return exec("tachyon.editScheduleItem", { kind: "schedule", scheduleName: id });
       case "schedule:delete": {
         const answer = await showNotification(
           vscode.l10n.t("Delete schedule '{0}' from tachyon.yml?", id),
@@ -240,54 +239,77 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
           [vscode.l10n.t("Delete")],
           { modal: true },
         );
-        if (answer === vscode.l10n.t("Delete")) domainActions.deleteSchedule(ws, id, { onChanged: () => this.refresh() });
+        if (answer === vscode.l10n.t("Delete")) await this.mutateSidebar(ws, { action: "schedule.delete", id });
         return;
       }
-      case "proposal:approve": domainActions.approveProposal(ws, id, { onChanged: () => this.refresh() }); return;
+      case "proposal:approve": return this.mutateSidebar(ws, { action: "proposal.approve", id });
       case "proposal:reject": {
+        let proposalName: string;
+        try {
+          proposalName = (await ws.loadSidebar()).proposals.find((proposal) => proposal.id === id)?.name ?? id;
+        } catch (error) {
+          notify(vscode.l10n.t("Could not load proposal: {0}", error instanceof Error ? error.message : String(error)), "error");
+          return;
+        }
         const answer = await showNotification(
-          vscode.l10n.t("Reject the proposed schedule '{0}'?", label ?? id),
+          vscode.l10n.t("Reject the proposed schedule '{0}'?", proposalName),
           "warn",
           [vscode.l10n.t("Reject")],
           { modal: true },
         );
-        if (answer === vscode.l10n.t("Reject")) domainActions.rejectProposal(ws, id, { onChanged: () => this.refresh() });
+        if (answer === vscode.l10n.t("Reject")) await this.mutateSidebar(ws, { action: "proposal.reject", id });
         return;
       }
+    }
+  }
+
+  private async mutateSidebar(
+    ws: WorkspaceSidebarTarget,
+    input: Parameters<WorkspaceSidebarTarget["mutateSidebar"]>[0],
+  ): Promise<void> {
+    try {
+      await ws.mutateSidebar(input);
+      this.refresh();
+    } catch (error) {
+      notify(vscode.l10n.t("Could not update sidebar state: {0}", error instanceof Error ? error.message : String(error)), "error");
     }
   }
 
   deserializePinPreview(panel: vscode.WebviewPanel, state: PinPreviewPanelState): void {
     const ws = this.wsFor(state.wsHash);
     if (!ws) { panel.dispose(); return; }
-    this.previewPin(ws, state.pinId, panel);
+    void this.previewPin(ws, state.pinId, panel);
   }
 
-  private previewPin(ws: Workspace, id: string, revivedPanel?: vscode.WebviewPanel): void {
+  private async previewPin(ws: WorkspaceSidebarTarget, id: string, revivedPanel?: vscode.WebviewPanel): Promise<void> {
+    let panel: vscode.WebviewPanel | undefined;
     try {
-      const detail = ws.pinStore.readDetail(id);
       const root = vscode.Uri.joinPath(this.extensionUri, "dist", "webview");
-      const blobRoot = vscode.Uri.file(new PinAttachmentStore(ws.workspaceRoot).blobDir);
+      const blobRoot = vscode.Uri.file(ws.pinAttachmentBlobRoot());
       // spec 279 — scripts ON to load the preact bundle. SAFE because the bundle renders all pin content as
       // TEXT (preact escapes by default), never innerHTML, under a strict nonce'd CSP (the shell). Images load
       // only from host-resolved asWebviewUri blobs in blobRoot.
-      const panel = revivedPanel ?? vscode.window.createWebviewPanel(
+      panel = revivedPanel ?? vscode.window.createWebviewPanel(
         PIN_PREVIEW_VIEW_TYPE,
         `Pin Preview — ${id}`,
         { viewColumn: vscode.ViewColumn.Active, preserveFocus: false },
         // t-b5e6e5 — the native VS Code find widget (Ctrl+F), piggybacking on Mission Control's validation.
         { enableScripts: true, localResourceRoots: [root, blobRoot], enableFindWidget: true },
       );
-      panel.title = `Pin Preview — ${id}`;
-      panel.webview.options = { enableScripts: true, localResourceRoots: [root, blobRoot] };
-      panel.iconPath = panelIcon(this.extensionUri, "eye"); // spec 282 — contextual editor-tab icon
+      const activePanel = panel;
+      activePanel.title = `Pin Preview — ${id}`;
+      activePanel.webview.options = { enableScripts: true, localResourceRoots: [root, blobRoot] };
+      activePanel.iconPath = panelIcon(this.extensionUri, "eye"); // spec 282 — contextual editor-tab icon
+      const detail = await ws.loadPinPreview(id, {
+        asWebviewUri: (filePath) => activePanel.webview.asWebviewUri(vscode.Uri.file(filePath)).toString(),
+      });
       const preview: PinPreviewVM = {
         id,
-        title: detail.summary.text,
-        ...(detail.summary.by ? { by: detail.summary.by } : {}),
-        done: detail.summary.done,
-        tags: detail.summary.tags ?? [],
-        body: pinDocPreview(detail.doc) || detail.summary.text,
+        title: detail.title,
+        ...(detail.by ? { by: detail.by } : {}),
+        done: detail.done,
+        tags: detail.tags,
+        body: pinDocPreview(detail.doc) || detail.title,
         // t-321e9d — the raw doc travels alongside the flattened `body` fallback; pin-preview's App resolves
         // it through the SAME `toEditorDoc` pipeline the Studio/editor uses (webview URIs via `attachments`)
         // instead of rendering the flattened "[Image]"/"[Sketch]" text placeholders.
@@ -299,7 +321,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
               kind: "image",
               name: att.name,
               available: att.available,
-              ...(att.available ? { uri: panel.webview.asWebviewUri(vscode.Uri.file(path.join(ws.workspaceRoot, att.path))).toString() } : {}),
+              ...(att.available && att.uri ? { uri: att.uri } : {}),
               detail: `${att.mediaType.replace(/^image\//, "").toUpperCase()} · ${Math.round(att.size / 1024)} KB`,
             };
           }
@@ -308,14 +330,14 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
             kind: "excalidraw",
             name: att.name,
             available: att.previewAvailable,
-            ...(att.previewAvailable ? { previewUri: panel.webview.asWebviewUri(vscode.Uri.file(path.join(ws.workspaceRoot, att.previewPath))).toString() } : {}),
+            ...(att.previewAvailable && att.previewUri ? { previewUri: att.previewUri } : {}),
             detail: `Sketch · ${att.elementCount} element${att.elementCount === 1 ? "" : "s"} · ${Math.round(att.previewSize / 1024)} KB preview`,
           };
         }),
       };
-      const uri = (f: string): string => panel.webview.asWebviewUri(vscode.Uri.joinPath(root, f)).toString();
-      panel.webview.html = renderWebviewShell({
-        cspSource: panel.webview.cspSource,
+      const uri = (f: string): string => activePanel.webview.asWebviewUri(vscode.Uri.joinPath(root, f)).toString();
+      activePanel.webview.html = renderWebviewShell({
+        cspSource: activePanel.webview.cspSource,
         title: `Pin Preview — ${id}`,
         styles: [uri("codicon.css"), uri("design-system.css"), uri("pin-preview.css")],
         bundle: uri("pin-preview.js"),
@@ -324,38 +346,40 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
         persistedState: { schemaVersion: 1, view: PIN_PREVIEW_VIEW_TYPE, wsHash: ws.wsHash, pinId: id } satisfies PinPreviewPanelState,
       });
       // preact-static: post the VM once the bundle signals ready.
-      panel.webview.onDidReceiveMessage((m: { type?: string } | undefined) => {
-        if (m?.type === READY) void panel.webview.postMessage(pinPreviewMessage(preview));
+      activePanel.webview.onDidReceiveMessage((m: { type?: string } | undefined) => {
+        if (m?.type === READY) void activePanel.webview.postMessage(pinPreviewMessage(preview));
       });
     } catch (err) {
-      revivedPanel?.dispose();
+      panel?.dispose();
       notify(vscode.l10n.t("Could not preview pin: {0}", err instanceof Error ? err.message : String(err)), "error");
     }
   }
 
-  /** Route a pipeline action (def- or node-level). The provider looks up the active run server-side so the
-   *  command handlers get the {ws, pipelineName, run} / {ws, runId, nodeId, run} item they expect. */
+  /** Route a pipeline shell gesture using the engine-authored active-node identity from the latest fleet. */
   private runPipeline(op: string, name: string, nodeId?: string, wsHash?: string): void {
     const ws = this.wsFor(wsHash);
     if (!ws) return;
-    const exec = (cmd: string, item: Record<string, unknown>) => void vscode.commands.executeCommand(cmd, item);
-    const run = ws.pipelines.allRuns().find((r) => r.pipeline.name === name && runStatus(r) !== "completed");
-    const def = { ws, pipelineName: name, run };
-    const node = { ws, runId: run?.id, nodeId, run };
+    const exec = (cmd: string, context: SidebarShellCommandContext) => {
+      void vscode.commands.executeCommand(cmd, ...ws.shellCommandArgs(context));
+    };
+    const definition = { kind: "pipeline", pipelineName: name } as const;
+    const node = { kind: "pipeline", pipelineName: name, ...(nodeId ? { nodeId } : {}) } as const;
     switch (op) {
-      case "run": return exec("tachyon.runPipelineItem", def);
-      case "cancel": return exec("tachyon.cancelPipelineItem", def);
-      case "dismiss": return exec("tachyon.dismissPipelineRunItem", def);
-      case "review": return exec("tachyon.reviewPipelineItem", def);
-      case "editInput": return exec("tachyon.editPipelineInputItem", def);
-      case "edit": return exec("tachyon.editPipelineItem", def);
-      case "delete": return exec("tachyon.deletePipelineItem", def);
+      case "run": return exec("tachyon.runPipelineItem", definition);
+      case "cancel": return exec("tachyon.cancelPipelineItem", definition);
+      case "dismiss": return exec("tachyon.dismissPipelineRunItem", definition);
+      case "review": return exec("tachyon.reviewPipelineItem", definition);
+      case "editInput": return exec("tachyon.editPipelineInputItem", definition);
+      case "edit": return exec("tachyon.editPipelineItem", definition);
+      case "delete": return exec("tachyon.deletePipelineItem", definition);
       case "node:approve": return exec("tachyon.approvePipelineNodeItem", node);
       case "node:reject": return exec("tachyon.rejectPipelineNodeItem", node);
       case "node:rerun": return exec("tachyon.rerunPipelineNodeItem", node);
       case "node:review": return exec("tachyon.reviewPipelineItem", node);
-      case "node:inspect": { // open the node agent's terminal (best-effort; a dismissed cmd node has none)
-        if (run && nodeId) void vscode.commands.executeCommand("tachyon.openAgentTerminalItem", nodeSpawnName(run.id, nodeId, run.pipeline.nodes[nodeId] ?? {}), ws.wsHash);
+      case "node:inspect": {
+        const agentName = this.lastFleets.find((fleet) => fleet.folder?.hash === ws.wsHash)?.pipelines
+          .find((pipeline) => pipeline.name === name)?.nodes.find((entry) => entry.id === nodeId)?.agentName;
+        if (agentName) void vscode.commands.executeCommand("tachyon.openAgentTerminalItem", agentName, ws.wsHash);
         return;
       }
     }
@@ -375,216 +399,15 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     if (id === "probes") { void vscode.commands.executeCommand("tachyon.openProbes", ws.wsHash, agent); return; } // spec 322 — this agent's probes only
     const fleet = this.lastFleets.find((f) => f.folder?.hash === ws.wsHash);
     const vm = fleet?.agents.find((x) => x.name === agent) ?? fleet?.terminals.find((x) => x.name === agent);
-    const item = { ws, agentName: agent, contextValue: vm ? ctxOf(vm) : `agent-running` };
-    void vscode.commands.executeCommand(ACTION_CMD[id], item).then(undefined, (err) => {
+    void vscode.commands.executeCommand(
+      ACTION_CMD[id],
+      ...ws.shellCommandArgs({ kind: "agent", agentName: agent, contextValue: vm ? ctxOf(vm) : "agent-running" }),
+    ).then(undefined, (err) => {
       console.log(`[tachyon] sidebar command failed id=${id} agent=${agent}: ${err instanceof Error ? err.stack ?? err.message : String(err)}`);
       notify(`${err instanceof Error ? err.message : String(err)}`, "error");
     });
   }
 
-  /** Build one workspace's live view-model (the webview groups by folder when there's more than one). */
-  private async gatherOne(ws: Workspace): Promise<FleetVM> {
-    const all = await ws.manager.list();
-    const ledger = [...ws.ledger.all()];
-    const resumable = new Set(ledger.filter(([, r]) => isResumable(r)).map(([n]) => n));
-    const worktrees = new Map(ledger.filter(([, r]) => r.worktree).map(([n, r]) => [n, r.worktree!.branch]));
-    const canFork = (name: string, running: boolean, kind: string): boolean => {
-      if (!running || kind !== "agent") return false;
-      const def = ws.manager.defOf(name);
-      const cmd = def?.cmd;
-      return !!cmd && !def?.harness && forkable(adapterFor(cmd)) && !managesOwnSession(cmd);
-    };
-    // verify-gate state for worktree agents (small set), like the tree does it.
-    const verifyOf = new Map<string, Verify>();
-    const evidenceOf = new Map<string, EvidenceBadge>();
-    await Promise.all([...worktrees.keys()].map(async (name) => {
-      const info = await ws.verifyInfo(name);
-      if (info) verifyOf.set(name, info.badge === "verified" ? "pass" : info.badge === "failing" ? "fail" : "stale");
-      const badge = evidenceBadge(await ws.evidenceHandoff(name)); // spec 273 — non-binary evidence indicator
-      if (badge) evidenceOf.set(name, badge);
-    }));
-    // spec 221 — for each resumable, stopped agent, whether the transcript is still on disk (↻ restores
-    // context) vs gone (↻ degrades to fresh). Small set, read-only — same probe the tree does.
-    const running = new Set(all.filter((a) => a.running).map((a) => a.name));
-    const externalTools = ws.externalTools ?? new ExternalToolRegistry();
-    const liveAgents = all.filter((a) => a.kind === "agent" && a.running && !a.dead);
-    const paneRoots = (await Promise.all(liveAgents.map(async (a) => {
-      try {
-        return { agent: a.name, panePid: await ws.tmux.panePid(ws.manager.session(a.name)) };
-      } catch {
-        return undefined;
-      }
-    }))).filter((p): p is { agent: string; panePid: number } => !!p);
-    if (paneRoots.length > 0) {
-      for (const sighting of scanExternalToolProcesses(paneRoots, readProcEntries(), Date.now(), readProcEnvironAgent)) externalTools.upsert(sighting);
-    }
-    externalTools.reconcile({ isPidAlive });
-    const resumeReadyOf = new Map<string, boolean>();
-    await Promise.all([...resumable].filter((n) => !running.has(n)).map(async (name) => {
-      const rec = ws.ledger.get(name);
-      if (rec) resumeReadyOf.set(name, await ws.manager.resumeReadiness(name, rec));
-    }));
-    const configFailure = ws.configFailure;
-    const agents: AgentVM[] = all
-      .filter((a) => a.kind === "agent")
-      .map((a) => {
-        const def = ws.manager.defOf(a.name);
-        const live = a.running ? ws.attentionOf(a.name) : undefined;
-        return toAgentVM({ ...a, cmd: def?.cmd }, {
-          attention: live?.state,
-          // t-35d95a — request_human_attention's latch, surfaced as its own badge (independent of attention).
-          awaitingHuman: live?.awaitingHuman ? { reason: live.awaitingHumanReason ?? "" } : undefined,
-          model: this.observedModelFor?.(ws, a.name), // spec 378 — precedence/labeling stays in the pure mapper
-          worktree: worktrees.get(a.name),
-          verify: verifyOf.get(a.name),
-          verifiable: verifyOf.has(a.name),
-          evidence: evidenceOf.get(a.name),
-          harness: !!def?.harness,
-          forkable: canFork(a.name, a.running, a.kind),
-          forked: ws.ledger.get(a.name)?.def?.fork === true, // spec 225 — IS a forked sibling
-
-          resumable: !a.running && resumable.has(a.name),
-          freshStart: !a.running && resumable.has(a.name) && resumeReadyOf.get(a.name) === false,
-          ai: true,
-          adhoc: !a.declared,
-          continuity: a.running && a.declared ? ws.continuityBadge(a.name) : undefined, // spec 241/307 — declared agents only
-          persistenceHooks: a.declared && typeof ws.persistenceHookHealth === "function" ? ws.persistenceHookHealth(a.name) : undefined,
-          externalTools: externalTools.summary(a.name),
-          canDismiss: !a.declared && !a.running,
-          ...(configFailure ? { configInvalid: true } : {}),
-        });
-      });
-    // Terminals are managed entries with ai:false → same model + action matrix, reduced set (no resume-context/
-    // fork/verify/re-anchor). A stopped terminal thus gets ▶ Start; a running one Open/Restart/Kill.
-    const terminals: AgentVM[] = all
-      .filter((a) => a.kind === "terminal")
-      .map((a) => {
-        const vm = toAgentVM(a, {
-          ai: false,
-          adhoc: !a.declared,
-          resumable: !a.running && resumable.has(a.name),
-          ...(configFailure ? { configInvalid: true } : {}),
-        });
-        if (!a.declared && !a.running) vm.canDismiss = true;
-        const cmd = ws.manager.defOf(a.name)?.cmd;
-        return cmd && !vm.sub ? { ...vm, sub: cmd } : vm;
-      });
-
-    // t-8354ae — when config is invalid, surface ledger + LKG names that manager.list() missed
-    // (declared never-ran agents disappear from list when config is null).
-    if (configFailure) {
-      const existing = new Set([...agents, ...terminals].map((a) => a.name));
-      const extras = degradedRosterExtras({
-        existingNames: existing,
-        ledger,
-        lkg: typeof ws.readConfigLkg === "function" ? ws.readConfigLkg() : null,
-      });
-      for (const extra of extras) {
-        const raw = {
-          name: extra.name,
-          cmd: extra.cmd,
-          running: false,
-          dead: false,
-          crashed: false,
-          parent: extra.parent,
-          delegator: extra.delegator,
-          declaredOwner: extra.declaredOwner,
-        };
-        if (extra.kind === "terminal") {
-          const vm = toAgentVM(raw, {
-            ai: false,
-            adhoc: !extra.declared,
-            resumable: extra.resumable,
-            configInvalid: true,
-          });
-          if (extra.cmd && !vm.sub) vm.sub = extra.cmd;
-          terminals.push(vm);
-        } else {
-          agents.push(toAgentVM(raw, {
-            ai: true,
-            adhoc: !extra.declared,
-            resumable: extra.resumable,
-            worktree: extra.worktreeBranch,
-            configInvalid: true,
-          }));
-        }
-      }
-    }
-
-    const bridge = { port: ws.bridge.port?.toString() ?? "—", connected: !!ws.bridge.url };
-
-    // Other sections — live, read-only (no per-row actions yet). Secondary fields are best-effort.
-    const commands = (await ws.commandRunner.list()).map((c) => {
-      const dur = c.lastRun?.finishedAt !== undefined ? c.lastRun.finishedAt - c.lastRun.startedAt : undefined;
-      const detail =
-        c.state === "running" ? "running"
-          : c.state === "passed" ? (dur !== undefined ? `exit 0 · ${Math.round(dur / 1000)}s` : "exit 0")
-            : c.state === "failed" ? `exit ${c.exitCode ?? "?"}`
-              : "never run";
-      return { name: c.name, cmd: ws.config?.commands?.[c.name]?.cmd ?? "", state: c.state, detail };
-    });
-    const runbooks = ws.runbookRunner.list().map((r) => {
-      const job = r.lastJob;
-      const failed = job?.outcome === "failed";
-      const detail = r.running ? "running"
-        : job?.outcome === "passed" ? `passed · ${job.steps.length} steps`
-          : failed ? `failed at step ${(job.steps.find((s) => s.state === "failed")?.index ?? 0) + 1}`
-            : "never run";
-      const steps = (job?.steps ?? []).map((s) => ({
-        n: s.index + 1,
-        label: s.step,
-        state: s.state,
-        detail: s.state === "passed" ? (s.durationMs !== undefined ? `${Math.round(s.durationMs / 1000)}s` : undefined)
-          : s.state === "failed" ? `exit ${s.exitCode ?? "?"}` : undefined,
-      }));
-      return { name: r.name, running: r.running, failed, detail, steps };
-    });
-    // spec 245 — the per-folder Project Handoff badge state (read-only snapshot; cheap).
-    const hsnap = ws.handoffStore.snapshot(ws.lastActivityAt?.() ?? null);
-    const handoff = { exists: hsnap.exists, staleness: hsnap.staleness, pendingCount: hsnap.pendingCount };
-    const pins = ws.pinStore.list().map((p) => ({
-      id: p.id,
-      text: p.text,
-      done: p.done,
-      by: p.by,
-      tags: p.tags ?? [],
-      detail: p.detail,
-      attachmentCount: p.attachmentCount,
-    }));
-    const proposals = ws.proposals.list().map((p) => ({ id: p.id, name: p.name, by: p.by, reason: p.reason, when: scheduleSummary(p.schedule) }));
-    const schedules = ws.scheduler.list().map((s) => ({
-      name: s.name,
-      when: scheduleSummary(s.def as { every?: string; at?: string; run?: string; spawn?: string }),
-      next: s.paused ? "paused" : s.nextRun ? `next ${relTime(s.nextRun)}` : "not scheduled",
-      paused: !!s.paused,
-    }));
-    const pipelines = ws.listPipelines().map((name) => {
-      const run = ws.pipelines.allRuns().find((r) => r.pipeline.name === name && runStatus(r) !== "completed");
-      const nodes = run ? Object.entries(run.nodes).map(([id, st]) => ({ id, status: nodeStatus(st.status), label: String(st.status), reason: st.reason })) : [];
-      // run is guaranteed non-completed here → status is idle|running|paused|failed.
-      const status = (run ? runStatus(run) : "idle") as RunState;
-      return { name, status, nodes };
-    });
-    return {
-      folder: { hash: ws.wsHash, name: ws.folderName },
-      bridge,
-      agents,
-      terminals,
-      commands,
-      runbooks,
-      pins,
-      schedules,
-      pipelines,
-      proposals,
-      handoff,
-      ...(configFailure ? { configError: toConfigErrorVM(configFailure) } : {}),
-    };
-  }
-}
-
-/** Map a pipeline node status to the sidebar dot color bucket. */
-function nodeStatus(s: string): AgentStatus {
-  return s === "running" ? "running" : s === "done" || s === "completed" ? "idle" : s === "failed" ? "crashed" : "stopped";
 }
 
 /** Reconstruct the contextValue the command handlers expect, from the agent VM's capability flags. */

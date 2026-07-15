@@ -1,0 +1,298 @@
+import type { AgentManager } from "../agents/AgentManager.js";
+import type { AgentAttention } from "../attention/AttentionMonitor.js";
+import type { CommandRunner } from "../commands/CommandRunner.js";
+import type { RunbookRunner } from "../commands/RunbookRunner.js";
+import type { ConfigFailure } from "../config/configFailure.js";
+import { degradedRosterExtras, toConfigErrorVM } from "../config/configFailure.js";
+import type { ConfigLkgSnapshot } from "../config/configLkg.js";
+import type { TachyonConfig } from "../config/loadConfig.js";
+import { ExternalToolRegistry } from "../externalTools/registry.js";
+import { isPidAlive, readProcEnvironAgent, readProcEntries, scanExternalToolProcesses } from "../externalTools/procScanner.js";
+import type { ProjectHandoffStore } from "../handoff/ProjectHandoffStore.js";
+import { nodeSpawnName } from "../pipeline/loadPipeline.js";
+import type { PipelineManager } from "../pipeline/PipelineManager.js";
+import { runStatus } from "../pipeline/runState.js";
+import type { PinStore } from "../pins/PinStore.js";
+import { adapterFor, forkable, managesOwnSession } from "../resume/adapters.js";
+import { isResumable, type SessionLedger } from "../resume/SessionLedger.js";
+import type { ProposalStore } from "../schedule/ProposalStore.js";
+import type { Scheduler } from "../schedule/Scheduler.js";
+import { toAgentVM, type ObservedModelInput } from "./agentModel.js";
+import type { AgentStatus, AgentVM, EvidenceBadge, FleetVM, RunState, Verify } from "./types.js";
+import type { TmuxService } from "../tmux/TmuxService.js";
+import { evidenceBadge, type EvidenceSummary } from "../worktree/evidence.js";
+
+export interface SidebarFleetSource {
+  workspaceRoot: string;
+  wsHash: string;
+  folderName: string;
+  bridge: { port?: number; url?: string };
+  manager: Pick<AgentManager, "list" | "defOf" | "resumeReadiness" | "session">;
+  ledger: Pick<SessionLedger, "all" | "get">;
+  tmux: Pick<TmuxService, "panePid">;
+  config: TachyonConfig | undefined;
+  configFailure: ConfigFailure | undefined;
+  commandRunner: Pick<CommandRunner, "list">;
+  runbookRunner: Pick<RunbookRunner, "list">;
+  handoffStore: Pick<ProjectHandoffStore, "snapshot">;
+  pinStore: Pick<PinStore, "list">;
+  proposals: Pick<ProposalStore, "list">;
+  scheduler: Pick<Scheduler, "list">;
+  pipelines: Pick<PipelineManager, "allRuns">;
+  externalTools?: ExternalToolRegistry;
+  listPipelines(): string[];
+  lastActivityAt(): string | null;
+  attentionOf(agent: string): AgentAttention | undefined;
+  continuityBadge(agent: string): "fresh" | "stale" | "missing" | undefined;
+  persistenceHookHealth(agent: string): {
+    state: "active" | "skipped" | "failed" | "unknown";
+    reason?: string;
+    path?: string;
+    updatedAt?: string;
+  } | undefined;
+  verifyInfo(agent: string): Promise<{ badge: "verified" | "failing" | "stale" } | undefined>;
+  evidenceHandoff(agent: string): Promise<EvidenceSummary | undefined>;
+  readConfigLkg(): ConfigLkgSnapshot | null;
+}
+
+export interface SidebarFleetServiceOptions {
+  observedModelFor?: (agentName: string) => ObservedModelInput | undefined;
+  now?: () => number;
+}
+
+/** Builds the complete sidebar projection at the operational authority, never in the editor shell. */
+export async function buildSidebarFleet(
+  source: SidebarFleetSource,
+  options: SidebarFleetServiceOptions = {},
+): Promise<FleetVM> {
+  const all = await source.manager.list();
+  const ledger = [...source.ledger.all()];
+  const resumable = new Set(ledger.filter(([, record]) => isResumable(record)).map(([name]) => name));
+  const worktrees = new Map(ledger.filter(([, record]) => record.worktree).map(([name, record]) => [name, record.worktree!.branch]));
+  const canFork = (name: string, running: boolean, kind: string): boolean => {
+    if (!running || kind !== "agent") return false;
+    const definition = source.manager.defOf(name);
+    const command = definition?.cmd;
+    return !!command && !definition?.harness && forkable(adapterFor(command)) && !managesOwnSession(command);
+  };
+
+  const verifyOf = new Map<string, Verify>();
+  const evidenceOf = new Map<string, EvidenceBadge>();
+  await Promise.all([...worktrees.keys()].map(async (name) => {
+    const info = await source.verifyInfo(name);
+    if (info) verifyOf.set(name, info.badge === "verified" ? "pass" : info.badge === "failing" ? "fail" : "stale");
+    const badge = evidenceBadge(await source.evidenceHandoff(name));
+    if (badge) evidenceOf.set(name, badge);
+  }));
+
+  const running = new Set(all.filter((agent) => agent.running).map((agent) => agent.name));
+  const externalTools = source.externalTools ?? new ExternalToolRegistry();
+  const liveAgents = all.filter((agent) => agent.kind === "agent" && agent.running && !agent.dead);
+  const paneRoots = (await Promise.all(liveAgents.map(async (agent) => {
+    try {
+      return { agent: agent.name, panePid: await source.tmux.panePid(source.manager.session(agent.name)) };
+    } catch {
+      return undefined;
+    }
+  }))).filter((row): row is { agent: string; panePid: number } => !!row);
+  if (paneRoots.length > 0) {
+    for (const sighting of scanExternalToolProcesses(paneRoots, readProcEntries(), options.now?.() ?? Date.now(), readProcEnvironAgent)) {
+      externalTools.upsert(sighting);
+    }
+  }
+  externalTools.reconcile({ isPidAlive });
+
+  const resumeReadyOf = new Map<string, boolean>();
+  await Promise.all([...resumable].filter((name) => !running.has(name)).map(async (name) => {
+    const record = source.ledger.get(name);
+    if (record) resumeReadyOf.set(name, await source.manager.resumeReadiness(name, record));
+  }));
+
+  const configFailure = source.configFailure;
+  const agents: AgentVM[] = all
+    .filter((agent) => agent.kind === "agent")
+    .map((agent) => {
+      const definition = source.manager.defOf(agent.name);
+      const live = agent.running ? source.attentionOf(agent.name) : undefined;
+      const hookHealth = agent.declared ? source.persistenceHookHealth(agent.name) : undefined;
+      const externalSummary = externalTools.summary(agent.name);
+      return toAgentVM({ ...agent, cmd: definition?.cmd }, {
+        attention: live?.state,
+        awaitingHuman: live?.awaitingHuman ? { reason: live.awaitingHumanReason ?? "" } : undefined,
+        model: options.observedModelFor?.(agent.name),
+        worktree: worktrees.get(agent.name),
+        verify: verifyOf.get(agent.name),
+        verifiable: verifyOf.has(agent.name),
+        evidence: evidenceOf.get(agent.name),
+        harness: !!definition?.harness,
+        forkable: canFork(agent.name, agent.running, agent.kind),
+        forked: source.ledger.get(agent.name)?.def?.fork === true,
+        resumable: !agent.running && resumable.has(agent.name),
+        freshStart: !agent.running && resumable.has(agent.name) && resumeReadyOf.get(agent.name) === false,
+        ai: true,
+        adhoc: !agent.declared,
+        continuity: agent.running && agent.declared ? source.continuityBadge(agent.name) : undefined,
+        persistenceHooks: hookHealth ? {
+          state: hookHealth.state,
+          ...(hookHealth.reason !== undefined ? { reason: hookHealth.reason } : {}),
+          ...(hookHealth.path !== undefined ? { path: hookHealth.path } : {}),
+          ...(hookHealth.updatedAt !== undefined ? { updatedAt: hookHealth.updatedAt } : {}),
+        } : undefined,
+        externalTools: externalSummary ? { ...externalSummary, items: externalSummary.items.slice(0, 100) } : undefined,
+        canDismiss: !agent.declared && !agent.running,
+        ...(configFailure ? { configInvalid: true } : {}),
+      });
+    });
+
+  const terminals: AgentVM[] = all
+    .filter((agent) => agent.kind === "terminal")
+    .map((agent) => {
+      const view = toAgentVM(agent, {
+        ai: false,
+        adhoc: !agent.declared,
+        resumable: !agent.running && resumable.has(agent.name),
+        ...(configFailure ? { configInvalid: true } : {}),
+      });
+      if (!agent.declared && !agent.running) view.canDismiss = true;
+      const command = source.manager.defOf(agent.name)?.cmd;
+      return command && !view.sub ? { ...view, sub: command } : view;
+    });
+
+  if (configFailure) {
+    const existing = new Set([...agents, ...terminals].map((agent) => agent.name));
+    const extras = degradedRosterExtras({ existingNames: existing, ledger, lkg: source.readConfigLkg() });
+    for (const extra of extras) {
+      const raw = {
+        name: extra.name,
+        cmd: extra.cmd,
+        running: false,
+        dead: false,
+        crashed: false,
+        parent: extra.parent,
+        delegator: extra.delegator,
+        declaredOwner: extra.declaredOwner,
+      };
+      if (extra.kind === "terminal") {
+        const view = toAgentVM(raw, {
+          ai: false,
+          adhoc: !extra.declared,
+          resumable: extra.resumable,
+          configInvalid: true,
+        });
+        if (extra.cmd && !view.sub) view.sub = extra.cmd;
+        terminals.push(view);
+      } else {
+        agents.push(toAgentVM(raw, {
+          ai: true,
+          adhoc: !extra.declared,
+          resumable: extra.resumable,
+          worktree: extra.worktreeBranch,
+          configInvalid: true,
+        }));
+      }
+    }
+  }
+
+  const commands = (await source.commandRunner.list()).map((command) => {
+    const duration = command.lastRun?.finishedAt !== undefined
+      ? command.lastRun.finishedAt - command.lastRun.startedAt
+      : undefined;
+    const detail = command.state === "running" ? "running"
+      : command.state === "passed" ? (duration !== undefined ? `exit 0 · ${Math.round(duration / 1000)}s` : "exit 0")
+        : command.state === "failed" ? `exit ${command.exitCode ?? "?"}`
+          : "never run";
+    return { name: command.name, cmd: source.config?.commands?.[command.name]?.cmd ?? "", state: command.state, detail };
+  });
+  const runbooks = source.runbookRunner.list().map((runbook) => {
+    const job = runbook.lastJob;
+    const failed = job?.outcome === "failed";
+    const detail = runbook.running ? "running"
+      : job?.outcome === "passed" ? `passed · ${job.steps.length} steps`
+        : failed ? `failed at step ${(job.steps.find((step) => step.state === "failed")?.index ?? 0) + 1}`
+          : "never run";
+    const steps = (job?.steps ?? []).map((step) => ({
+      n: step.index + 1,
+      label: step.step,
+      state: step.state,
+      detail: step.state === "passed" ? (step.durationMs !== undefined ? `${Math.round(step.durationMs / 1000)}s` : undefined)
+        : step.state === "failed" ? `exit ${step.exitCode ?? "?"}` : undefined,
+    }));
+    return { name: runbook.name, running: runbook.running, failed, detail, steps };
+  });
+  const handoffSnapshot = source.handoffStore.snapshot(source.lastActivityAt());
+  const pins = source.pinStore.list().map((pin) => ({
+    id: pin.id,
+    text: pin.text,
+    done: pin.done,
+    by: pin.by,
+    tags: pin.tags ?? [],
+    detail: pin.detail,
+    attachmentCount: pin.attachmentCount,
+  }));
+  const proposals = source.proposals.list().map((proposal) => ({
+    id: proposal.id,
+    name: proposal.name,
+    by: proposal.by,
+    reason: proposal.reason,
+    when: scheduleSummary(proposal.schedule),
+  }));
+  const now = options.now?.() ?? Date.now();
+  const schedules = source.scheduler.list().map((schedule) => ({
+    name: schedule.name,
+    when: scheduleSummary(schedule.def),
+    next: schedule.paused ? "paused" : schedule.nextRun ? `next ${relativeTime(schedule.nextRun, now)}` : "not scheduled",
+    paused: !!schedule.paused,
+  }));
+  const pipelines = source.listPipelines().map((name) => {
+    const run = source.pipelines.allRuns().find((candidate) => candidate.pipeline.name === name && runStatus(candidate) !== "completed");
+    const nodes = run ? Object.entries(run.nodes).map(([id, state]) => ({
+      id,
+      status: nodeStatus(state.status),
+      label: String(state.status),
+      reason: state.reason,
+      agentName: nodeSpawnName(run.id, id, run.pipeline.nodes[id] ?? {}),
+    })) : [];
+    const status = (run ? runStatus(run) : "idle") as RunState;
+    return { name, status, nodes };
+  });
+
+  return {
+    folder: { hash: source.wsHash, name: source.folderName },
+    bridge: { port: source.bridge.port?.toString() ?? "—", connected: !!source.bridge.url },
+    agents,
+    terminals,
+    commands,
+    runbooks,
+    pins,
+    schedules,
+    pipelines,
+    proposals,
+    handoff: {
+      exists: handoffSnapshot.exists,
+      staleness: handoffSnapshot.staleness,
+      pendingCount: handoffSnapshot.pendingCount,
+    },
+    ...(configFailure ? { configError: toConfigErrorVM(configFailure) } : {}),
+  };
+}
+
+function relativeTime(milliseconds: number, now: number): string {
+  const delta = Math.round((milliseconds - now) / 1000);
+  const absolute = Math.abs(delta);
+  const unit = absolute < 90 ? `${absolute}s`
+    : absolute < 5400 ? `${Math.round(absolute / 60)}m`
+      : `${Math.round(absolute / 3600)}h`;
+  return delta >= 0 ? `in ${unit}` : `${unit} ago`;
+}
+
+function scheduleSummary(definition: { every?: string; at?: string; run?: string; spawn?: string }): string {
+  const when = definition.every ? `every ${definition.every}` : `at ${definition.at}`;
+  const what = definition.run ? `run ${definition.run}` : `spawn ${definition.spawn}`;
+  return `${when} · ${what}`;
+}
+
+function nodeStatus(status: string): AgentStatus {
+  return status === "running" ? "running"
+    : status === "done" || status === "completed" ? "idle"
+      : status === "failed" ? "crashed" : "stopped";
+}

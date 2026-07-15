@@ -79,7 +79,14 @@ export interface AgentVM {
   canDismiss?: boolean; // legacy capability bit: stopped ad-hoc postmortem row is removable without tachyon.yml edits
 }
 export type RunState = "idle" | "running" | "paused" | "failed";
-export interface PipelineNodeVM { id: string; status: AgentStatus; label: string; reason?: string }
+export interface PipelineNodeVM {
+  id: string;
+  status: AgentStatus;
+  label: string;
+  reason?: string;
+  /** Exact managed-entry name for the node's inspect gesture; projected by the engine, not recomputed in the shell. */
+  agentName?: string;
+}
 export interface PipelineVM { name: string; status: RunState; nodes: PipelineNodeVM[] }
 export interface ScheduleVM { name: string; when: string; next: string; paused: boolean }
 export type CommandState = "running" | "passed" | "failed" | "idle";

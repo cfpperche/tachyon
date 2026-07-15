@@ -1,4 +1,7 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as vscode from "vscode";
 import { __createdPanels, __getClipboardText, __getExecutedCommands, __getWarningMessageCalls, __resetVscodeMock, __setWarningMessageResult } from "../mocks/vscode.js";
 import { pinDocPreview, SidebarPrototypeProvider } from "../../src/webview/SidebarPrototype.js";
@@ -7,22 +10,48 @@ import type { Workspace } from "../../src/workspace/Workspace.js";
 import type { Pin } from "../../src/pins/PinStore.js";
 import type { PinDetailRead } from "../../src/pins/PinStore.js";
 import type { AgentInfo } from "../../src/agents/AgentManager.js";
+import { legacySidebarTarget, type LegacySidebarSource, type WorkspaceSidebarTarget } from "../../src/shell/SidebarTarget.js";
+import type { ObservedModelInput } from "../../src/sidebar/agentModel.js";
+import type { FleetVM } from "../../src/sidebar/types.js";
+import type { SidebarFleetV1 } from "../../src/runtime-api/sidebarProjection.js";
+import type { ScheduleProposal } from "../../src/schedule/ProposalStore.js";
 
-function fakeWorkspace(pins: Pin[] = [], opts: { hash?: string; name?: string; root?: string; readDetail?: (id: string) => PinDetailRead; calls?: string[]; agents?: AgentInfo[]; attentionOf?: (agent: string) => { state: string } | undefined; continuityBadge?: (agent: string) => "fresh" | "stale" | "missing" | undefined } = {}): Workspace {
-  return {
+const temporaryRoots: string[] = [];
+
+function fakeWorkspace(pins: Pin[] = [], opts: {
+  hash?: string;
+  name?: string;
+  root?: string;
+  readDetail?: (id: string) => PinDetailRead;
+  calls?: string[];
+  agents?: AgentInfo[];
+  attentionOf?: (agent: string) => { state: string } | undefined;
+  continuityBadge?: (agent: string) => "fresh" | "stale" | "missing" | undefined;
+  observedModel?: (agent: string) => ObservedModelInput | undefined;
+  proposals?: ScheduleProposal[];
+} = {}): Workspace & WorkspaceSidebarTarget {
+  const source = {
     wsHash: opts.hash ?? "demohash",
     folderName: opts.name ?? "Demo",
     workspaceRoot: opts.root ?? "/workspace/Demo",
     bridge: { port: 42462, url: "http://127.0.0.1:42462/mcp" },
-    manager: { list: async () => opts.agents ?? [], defOf: () => undefined },
+    manager: {
+      list: async () => opts.agents ?? [],
+      defOf: () => undefined,
+      resumeReadiness: async () => true,
+      session: (agent: string) => `tachyon-${opts.hash ?? "demohash"}-${agent}`,
+    },
     ledger: { all: () => [], get: () => undefined },
+    tmux: { panePid: async () => { throw new Error("no fake pane"); } },
     verifyInfo: async () => undefined,
+    evidenceHandoff: async () => undefined,
     attentionOf: opts.attentionOf ?? (() => undefined),
     continuityBadge: opts.continuityBadge ?? (() => undefined),
+    persistenceHookHealth: () => undefined,
     commandRunner: { list: async () => [] },
     config: {},
     runbookRunner: { list: () => [] },
-    handoffStore: { snapshot: () => ({ exists: false, staleness: "missing", pendingCount: 0 }) },
+    handoffStore: { snapshot: () => ({ exists: false, staleness: "fresh", pendingCount: 0 }) },
     lastActivityAt: () => null,
     pinStore: {
       list: () => pins,
@@ -43,7 +72,7 @@ function fakeWorkspace(pins: Pin[] = [], opts: { hash?: string; name?: string; r
         attachments: [],
       },
     },
-    proposals: { list: () => [] },
+    proposals: { list: () => opts.proposals ?? [] },
     scheduler: { list: () => [] },
     toggleSchedulePause: (name: string) => { opts.calls?.push(`pause:${name}`); },
     deleteScheduleEntry: (name: string) => { opts.calls?.push(`delete-schedule:${name}`); },
@@ -51,12 +80,23 @@ function fakeWorkspace(pins: Pin[] = [], opts: { hash?: string; name?: string; r
     rejectProposal: (id: string) => { opts.calls?.push(`reject:${id}`); },
     listPipelines: () => [],
     pipelines: { allRuns: () => [] },
+    configFailure: undefined,
+    readConfigLkg: () => null,
     probeService: { active: () => 0 }, // spec 257 — transient running-probe count
   } as unknown as Workspace;
+  return Object.assign(
+    source,
+    legacySidebarTarget(source as unknown as LegacySidebarSource, opts.observedModel),
+  );
 }
 
 async function flushPromises(): Promise<void> {
   await new Promise((resolve) => setImmediate(resolve));
+}
+
+function deferred<T>(): { promise: Promise<T>; resolve(value: T): void } {
+  let resolve!: (value: T) => void;
+  return { promise: new Promise<T>((done) => { resolve = done; }), resolve };
 }
 
 function fakeMemento(seed: Record<string, unknown> = {}): vscode.Memento {
@@ -102,6 +142,10 @@ describe("SidebarPrototypeProvider", () => {
     initializeNativeNotifications();
   });
 
+  afterEach(() => {
+    for (const root of temporaryRoots.splice(0)) rmSync(root, { recursive: true, force: true });
+  });
+
   it("does not miss the first fleet when the webview posts ready during html assignment", async () => {
     const provider = new SidebarPrototypeProvider(vscode.Uri.file("/extension"), () => [fakeWorkspace()]);
     const { view, posted } = fakeView((handlers) => {
@@ -141,6 +185,28 @@ describe("SidebarPrototypeProvider", () => {
     const fleetMsgs = posted.filter((m) => (m as { type?: string }).type === "fleet") as Array<{ fleets: Array<{ folder?: { hash?: string } }> }>;
     expect(fleetMsgs).toHaveLength(3);
     expect(fleetMsgs.every((m) => m.fleets[0]?.folder?.hash === "demohash")).toBe(true);
+  });
+
+  it("does not let an older asynchronous projection overwrite a newer Sidebar view", async () => {
+    const ws = fakeWorkspace();
+    const base = await ws.loadSidebar();
+    const older = deferred<SidebarFleetV1>();
+    const newer = deferred<SidebarFleetV1>();
+    let reads = 0;
+    ws.loadSidebar = () => (++reads === 1 ? older.promise : newer.promise);
+    const provider = new SidebarPrototypeProvider(vscode.Uri.file("/extension"), () => [ws]);
+    const { view, posted, receive } = fakeView();
+
+    provider.resolveWebviewView(view);
+    receive({ type: "ready" });
+    newer.resolve({ ...base, folder: { ...base.folder!, name: "newer" } });
+    await flushPromises();
+    older.resolve({ ...base, folder: { ...base.folder!, name: "older" } });
+    await flushPromises();
+
+    const fleetMsgs = posted.filter((message) => (message as { type?: string }).type === "fleet") as Array<{ fleets: FleetVM[] }>;
+    expect(fleetMsgs).toHaveLength(1);
+    expect(fleetMsgs[0]?.fleets[0]?.folder?.name).toBe("newer");
   });
 
   it("persists sidebar collapse keys through the host memento", async () => {
@@ -203,86 +269,95 @@ describe("SidebarPrototypeProvider", () => {
 
   it("removes a deleted pin from the sidebar fleet immediately", async () => {
     const ws = fakeWorkspace([
-      { id: "p-delete", text: "Delete me", done: false, by: "human", createdAt: "2026-06-24T00:00:00.000Z" },
-      { id: "p-keep", text: "Keep me", done: false, by: "human", createdAt: "2026-06-24T00:00:00.000Z" },
+      { id: "p-de1e7e", text: "Delete me", done: false, by: "human", createdAt: "2026-06-24T00:00:00.000Z" },
+      { id: "p-0ee001", text: "Keep me", done: false, by: "human", createdAt: "2026-06-24T00:00:00.000Z" },
     ]);
     const provider = new SidebarPrototypeProvider(vscode.Uri.file("/extension"), () => [ws]);
     const { view, posted, receive } = fakeView();
 
     provider.resolveWebviewView(view);
     await flushPromises();
-    receive({ type: "section", op: "pin:delete", id: "p-delete", hash: "demohash" });
+    receive({ type: "section", op: "pin:delete", id: "p-de1e7e", hash: "demohash" });
     await flushPromises();
     await flushPromises();
 
     const fleetMsgs = posted.filter((m) => (m as { type?: string }).type === "fleet") as Array<{ fleets: Array<{ pins: Array<{ id: string; text: string }> }> }>;
-    expect(fleetMsgs.at(-1)?.fleets[0]?.pins.map((p) => p.id)).toEqual(["p-keep"]);
+    expect(fleetMsgs.at(-1)?.fleets[0]?.pins.map((p) => p.id)).toEqual(["p-0ee001"]);
   });
 
   it("does not route sidebar domain mutations through VS Code commands", async () => {
     const calls: string[] = [];
     const ws = fakeWorkspace([
-      { id: "p-toggle", text: "Toggle me", done: false, by: "human", createdAt: "2026-06-24T00:00:00.000Z" },
-      { id: "p-delete", text: "Delete me", done: false, by: "human", createdAt: "2026-06-24T00:00:00.000Z" },
+      { id: "p-700001", text: "Toggle me", done: false, by: "human", createdAt: "2026-06-24T00:00:00.000Z" },
+      { id: "p-de1e7e", text: "Delete me", done: false, by: "human", createdAt: "2026-06-24T00:00:00.000Z" },
     ], { calls });
     const provider = new SidebarPrototypeProvider(vscode.Uri.file("/extension"), () => [ws]);
     const { view, receive } = fakeView();
 
     provider.resolveWebviewView(view);
     await flushPromises();
-    receive({ type: "section", op: "pin:toggle", id: "p-toggle", done: true, hash: "demohash" });
-    receive({ type: "section", op: "pin:delete", id: "p-delete", hash: "demohash" });
+    receive({ type: "section", op: "pin:toggle", id: "p-700001", done: true, hash: "demohash" });
+    receive({ type: "section", op: "pin:delete", id: "p-de1e7e", hash: "demohash" });
     receive({ type: "section", op: "schedule:pause", id: "nightly", hash: "demohash" });
     receive({ type: "section", op: "schedule:delete", id: "nightly", hash: "demohash" });
-    receive({ type: "section", op: "proposal:approve", id: "proposal-1", hash: "demohash" });
-    receive({ type: "section", op: "proposal:reject", id: "proposal-2", hash: "demohash" });
+    receive({ type: "section", op: "proposal:approve", id: "abcdef123456", hash: "demohash" });
+    receive({ type: "section", op: "proposal:reject", id: "abcdef123457", hash: "demohash" });
     await flushPromises();
 
     expect(__getExecutedCommands().map((c) => c.command)).toEqual([]);
-    expect(ws.pinStore.list().map((p) => [p.id, p.done])).toEqual([["p-toggle", true]]);
-    expect(calls).toEqual(["pause:nightly", "approve:proposal-1"]);
+    expect(ws.pinStore.list().map((p) => [p.id, p.done])).toEqual([["p-700001", true]]);
+    expect(calls).toEqual(["pause:nightly", "approve:abcdef123456"]);
   });
 
   it("keeps destructive sidebar domain actions behind modal confirmation", async () => {
     const calls: string[] = [];
-    const ws = fakeWorkspace([], { calls });
+    const ws = fakeWorkspace([], {
+      calls,
+      proposals: [{
+        id: "abcdef123457",
+        name: "actual-nightly",
+        by: "codex",
+        createdAt: "2026-07-14T00:00:00.000Z",
+        schedule: { every: "1h", run: "test" },
+      }],
+    });
     const provider = new SidebarPrototypeProvider(vscode.Uri.file("/extension"), () => [ws]);
     const { view, receive } = fakeView();
 
     provider.resolveWebviewView(view);
     await flushPromises();
     receive({ type: "section", op: "schedule:delete", id: "nightly", hash: "demohash" });
-    receive({ type: "section", op: "proposal:reject", id: "proposal-2", label: "Nightly", hash: "demohash" });
+    receive({ type: "section", op: "proposal:reject", id: "abcdef123457", label: "Nightly", hash: "demohash" });
     await flushPromises();
     expect(calls).toEqual([]);
     expect(__getWarningMessageCalls()).toEqual([
       { message: "Tachyon: Delete schedule 'nightly' from tachyon.yml?", options: { modal: true }, actions: ["Delete"] },
-      { message: "Tachyon: Reject the proposed schedule 'Nightly'?", options: { modal: true }, actions: ["Reject"] },
+      { message: "Tachyon: Reject the proposed schedule 'actual-nightly'?", options: { modal: true }, actions: ["Reject"] },
     ]);
 
     __setWarningMessageResult("Delete");
     receive({ type: "section", op: "schedule:delete", id: "nightly", hash: "demohash" });
     await flushPromises();
     __setWarningMessageResult("Reject");
-    receive({ type: "section", op: "proposal:reject", id: "proposal-2", label: "Nightly", hash: "demohash" });
+    receive({ type: "section", op: "proposal:reject", id: "abcdef123457", label: "Nightly", hash: "demohash" });
     await flushPromises();
 
-    expect(calls).toEqual(["delete-schedule:nightly", "reject:proposal-2"]);
+    expect(calls).toEqual(["delete-schedule:nightly", "reject:abcdef123457"]);
   });
 
   it("ignores stale workspace hashes for sidebar domain mutations", async () => {
     const ws = fakeWorkspace([
-      { id: "p-delete", text: "Delete me", done: false, by: "human", createdAt: "2026-06-24T00:00:00.000Z" },
+      { id: "p-de1e7e", text: "Delete me", done: false, by: "human", createdAt: "2026-06-24T00:00:00.000Z" },
     ]);
     const provider = new SidebarPrototypeProvider(vscode.Uri.file("/extension"), () => [ws]);
     const { view, posted, receive } = fakeView();
 
     provider.resolveWebviewView(view);
     await flushPromises();
-    receive({ type: "section", op: "pin:delete", id: "p-delete", hash: "stalehash" });
+    receive({ type: "section", op: "pin:delete", id: "p-de1e7e", hash: "stalehash" });
     await flushPromises();
 
-    expect(ws.pinStore.list().map((p) => p.id)).toEqual(["p-delete"]);
+    expect(ws.pinStore.list().map((p) => p.id)).toEqual(["p-de1e7e"]);
     expect(__getExecutedCommands().map((c) => c.command)).toEqual([]);
     const fleetMsgs = posted.filter((m) => (m as { type?: string }).type === "fleet");
     expect(fleetMsgs).toHaveLength(1);
@@ -291,11 +366,12 @@ describe("SidebarPrototypeProvider", () => {
   it("spec 378: gathers the observed model via the injected accessor and surfaces provenance on the row", async () => {
     const ws = fakeWorkspace([], {
       agents: [{ name: "worker", session: "tachyon-demohash-worker", running: true, declared: true, dead: false, crashed: false, kind: "agent" }],
+      observedModel: () => ({
+        id: "gpt-5.6-sol", observedAt: "2026-07-13T00:00:00Z", stale: false,
+      }),
     });
     (ws.manager as { defOf: (name: string) => { cmd: string } | undefined }).defOf = () => ({ cmd: "codex" });
-    const provider = new SidebarPrototypeProvider(vscode.Uri.file("/extension"), () => [ws], undefined, () => ({
-      id: "gpt-5.6-sol", observedAt: "2026-07-13T00:00:00Z", stale: false,
-    }));
+    const provider = new SidebarPrototypeProvider(vscode.Uri.file("/extension"), () => [ws]);
     const { view, posted } = fakeView();
 
     provider.resolveWebviewView(view);
@@ -311,7 +387,7 @@ describe("SidebarPrototypeProvider", () => {
       agents: [{ name: "worker", session: "tachyon-demohash-worker", running: true, declared: true, dead: false, crashed: false, kind: "agent" }],
     });
     (ws.manager as { defOf: (name: string) => { cmd: string } | undefined }).defOf = () => ({ cmd: "codex" });
-    const provider = new SidebarPrototypeProvider(vscode.Uri.file("/extension"), () => [ws], undefined, () => undefined);
+    const provider = new SidebarPrototypeProvider(vscode.Uri.file("/extension"), () => [ws]);
     const { view, posted } = fakeView();
 
     provider.resolveWebviewView(view);
@@ -425,13 +501,23 @@ describe("SidebarPrototypeProvider", () => {
   });
 
   it("opens a readonly editor webview preview from the targeted workspace", async () => {
+    const fixtureRoot = mkdtempSync(join(tmpdir(), "tachyon-sidebar-preview-"));
+    temporaryRoots.push(fixtureRoot);
+    const wrongRoot = join(fixtureRoot, "Wrong");
+    const rightRoot = join(fixtureRoot, "Right");
+    const blobRoot = join(rightRoot, ".tachyon", "pins", "blobs");
+    mkdirSync(wrongRoot, { recursive: true });
+    mkdirSync(blobRoot, { recursive: true });
+    writeFileSync(join(blobRoot, "a".repeat(64)), "image");
+    writeFileSync(join(blobRoot, "b".repeat(64)), JSON.stringify({ type: "excalidraw", elements: [], appState: {}, files: {} }));
+    writeFileSync(join(blobRoot, "c".repeat(64)), "preview");
     const targetPin = { id: "p-123abc", text: "Preview me", done: false, by: "human", tags: ["ui"], createdAt: "2026-06-24T00:00:00.000Z", detail: true, attachmentCount: 1 };
     const provider = new SidebarPrototypeProvider(vscode.Uri.file("/extension"), () => [
-      fakeWorkspace([{ id: "p-wrong1", text: "Wrong", done: false, by: "human", createdAt: "2026-06-24T00:00:00.000Z" }], { hash: "wronghash", name: "Wrong", root: "/workspace/Wrong" }),
+      fakeWorkspace([{ id: "p-000001", text: "Wrong", done: false, by: "human", createdAt: "2026-06-24T00:00:00.000Z" }], { hash: "wronghash", name: "Wrong", root: wrongRoot }),
       fakeWorkspace([targetPin], {
         hash: "righthash",
         name: "Right",
-        root: "/workspace/Right",
+        root: rightRoot,
         readDetail: () => ({
           summary: targetPin,
           detail: true,
@@ -439,12 +525,12 @@ describe("SidebarPrototypeProvider", () => {
             type: "doc",
             content: [
               { type: "paragraph", content: [{ type: "text", text: "Readonly body" }] },
-              { type: "image", attrs: { attachmentId: "att-1", blobRef: "a".repeat(64) } },
+              { type: "image", attrs: { attachmentId: "att-000001", blobRef: "a".repeat(64) } },
             ],
           },
           attachments: [
             {
-              id: "att-1",
+              id: "att-000001",
               kind: "image",
               blobRef: "a".repeat(64),
               mediaType: "image/png",
@@ -457,7 +543,7 @@ describe("SidebarPrototypeProvider", () => {
               available: true,
             },
             {
-              id: "att-2",
+              id: "att-000002",
               kind: "excalidraw",
               name: "sketch.excalidraw",
               sceneBlobRef: "b".repeat(64),
@@ -501,12 +587,12 @@ describe("SidebarPrototypeProvider", () => {
     // flattened "[Image]" text placeholder.
     expect(msg?.vm.doc).toMatchObject({ content: [{ type: "paragraph" }, { type: "image" }] });
     const img = msg?.vm.attachments.find((a) => a.name === "screen.png");
-    expect(img?.uri).toContain("/workspace/Right/.tachyon/pins/blobs/");
+    expect(img?.uri).toContain(`${rightRoot}/.tachyon/pins/blobs/`);
     // the excalidraw thumbnail resolves under its own `previewUri` field (not `uri`, which is image-only).
     const sketch = msg?.vm.attachments.find((a) => a.name === "sketch.excalidraw");
-    expect(sketch?.previewUri).toContain("/workspace/Right/.tachyon/pins/blobs/");
+    expect(sketch?.previewUri).toContain(`${rightRoot}/.tachyon/pins/blobs/`);
     expect(sketch?.uri).toBeUndefined();
-    expect(JSON.stringify(msg?.vm)).not.toContain("/workspace/Wrong/.tachyon/pins/blobs/");
+    expect(JSON.stringify(msg?.vm)).not.toContain(`${wrongRoot}/.tachyon/pins/blobs/`);
   });
 
   it("extracts a readable preview from rich pin documents", () => {

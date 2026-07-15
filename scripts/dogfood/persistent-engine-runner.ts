@@ -18,6 +18,7 @@ import { ClientWorkspaceStudioTarget } from "../../src/shell/ClientWorkspaceStud
 import { workspacePluginPresentationTarget } from "../../src/shell/WorkspacePresentation.js";
 import { workspaceMissionControlTarget } from "../../src/shell/MissionControlTarget.js";
 import { workspacePinStudioTarget } from "../../src/shell/PinStudioTarget.js";
+import { workspaceSidebarTarget } from "../../src/shell/SidebarTarget.js";
 import { workspaceTaskDetailTarget } from "../../src/shell/TaskDetailTarget.js";
 import { workspaceTaskStudioTarget } from "../../src/shell/TaskStudioTarget.js";
 import { PinStore } from "../../src/pins/PinStore.js";
@@ -163,6 +164,21 @@ try {
     throw new Error("remote Project Handoff ensure/hydration failed");
   }
   if (!(await handoff.loadHandoff()).exists) throw new Error("remote Project Handoff did not observe its ensured file");
+  const sidebar = workspaceSidebarTarget(first);
+  const initialSidebar = await sidebar.loadSidebar();
+  if (initialSidebar.folder.hash !== identity.workspaceHash
+    || initialSidebar.bridge.port !== String(identity.bridge.port)
+    || initialSidebar.agents[0]?.name !== "dogfood-worker"
+    || initialSidebar.agents[0]?.status !== "stopped"
+    || initialSidebar.pins[0]?.id !== dogfoodPin.id
+    || !initialSidebar.handoff.exists) {
+    throw new Error(`remote Sidebar projection failed: ${JSON.stringify(initialSidebar)}`);
+  }
+  const sidebarMutation = await sidebar.mutateSidebar({ action: "pin.toggle", id: dogfoodPin.id, done: true });
+  if (!sidebarMutation.changed
+    || !(await sidebar.loadSidebar()).pins.some((pin) => pin.id === dogfoodPin.id && pin.done)) {
+    throw new Error(`remote Sidebar mutation failed: ${JSON.stringify(sidebarMutation)}`);
+  }
   const missionControl = workspaceMissionControlTarget(first);
   const initialBoard = await missionControl.boardSnapshot(["dogfood-reviewer"]);
   if (initialBoard.views[0]?.task.id !== dogfoodTask.id
@@ -348,9 +364,9 @@ try {
     engine: { pid: identity.pid, instanceId: identity.instanceId, bundleId: identity.bundleId },
     bridge: identity.bridge,
     snapshotSeq: snapshot.seq,
-    queries: ["activity.context", probes.method, "handoff.view", "task.board", "task.detail", "task.studio", "pin.studio"],
+    queries: ["activity.context", probes.method, "handoff.view", "sidebar.view", "task.board", "task.detail", "task.studio", "pin.studio"],
     pluginFleet: pluginFleet.agents.map((agent) => ({ name: agent.name, status: agent.status })),
-    commands: ["handoff.ensure", "agent.input", "pin.studio.apply", "task.studio.apply", "task.prototype.review", "task.update", "task.reorder-lane", "validation.close", "studio.submit", started.method, restarted.method, killed.method],
+    commands: ["handoff.ensure", "sidebar.mutate", "agent.input", "pin.studio.apply", "task.studio.apply", "task.prototype.review", "task.update", "task.reorder-lane", "validation.close", "studio.submit", started.method, restarted.method, killed.method],
   }, null, 2)}\n`);
 } finally {
   try { execFileSync("systemctl", ["--user", "stop", unitName], { stdio: "ignore" }); } catch { /* absent/failed unit */ }

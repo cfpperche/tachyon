@@ -4,6 +4,7 @@ import {
   HANDOFF_VIEW_RESPONSE_MAX_BYTES,
   MISSION_CONTROL_RESPONSE_MAX_BYTES,
   PIN_STUDIO_RESPONSE_MAX_BYTES,
+  SIDEBAR_VIEW_RESPONSE_MAX_BYTES,
   TASK_DETAIL_RESPONSE_MAX_BYTES,
   TASK_STUDIO_RESPONSE_MAX_BYTES,
   isEngineControlResponseV1,
@@ -309,6 +310,8 @@ export function requestEngineControl(
               ? PIN_STUDIO_RESPONSE_MAX_BYTES
               : request.query.method === "handoff.view"
                 ? HANDOFF_VIEW_RESPONSE_MAX_BYTES
+                : request.query.method === "sidebar.view"
+                  ? SIDEBAR_VIEW_RESPONSE_MAX_BYTES
           : MAX_CONTROL_RESPONSE_BYTES
       : MAX_CONTROL_RESPONSE_BYTES;
     const socket = net.createConnection(socketPath);
