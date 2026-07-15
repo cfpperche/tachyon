@@ -11,6 +11,7 @@ import {
   enableSoulProfile,
   importSoulProfileBytesTransaction,
   importSoulProfileTransaction,
+  replaceSoulProfileBytesTransaction,
   adoptSoulProfile,
   reconcileProfileTransactions,
   refreshSoulProfileStatus,
@@ -94,6 +95,66 @@ describe("soul profile transactions (T15A)", () => {
       oversized.access,
     )).rejects.toMatchObject({ code: "soul/too-many-bytes" });
     await expect(readFile(agentSoulPath(oversized.root, "Ada"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("replaces confirmed bytes by digest while preserving profile identity and enablement", async () => {
+    for (const enabled of [true, false]) {
+      const { root, access } = await workspace();
+      const created = await createSoulProfile(root, "Ada", access);
+      if (!enabled) await disableSoulProfile(root, "Ada", access);
+      const before = await readFile(agentSoulPath(root, "Ada"));
+      const replacement = Buffer.from(`# Replacement\n\nSoul stays ${enabled ? "enabled" : "disabled"}.\n`);
+
+      const result = await replaceSoulProfileBytesTransaction(
+        root,
+        "Ada",
+        replacement,
+        createHash("sha256").update(before).digest("hex"),
+        access,
+      );
+
+      expect(result).toMatchObject({
+        action: "replace",
+        profileId: created.profileId,
+        sha256: createHash("sha256").update(replacement).digest("hex"),
+        status: {
+          lifecycle: enabled ? "active" : "retained",
+          soulEnabled: enabled,
+        },
+      });
+      expect(await readFile(agentSoulPath(root, "Ada"))).toEqual(replacement);
+    }
+  });
+
+  it("rejects stale replacement confirmation and restores prior files after a later failure", async () => {
+    const stale = await workspace();
+    await createSoulProfile(stale.root, "Ada", stale.access);
+    const stalePrior = await readFile(agentSoulPath(stale.root, "Ada"));
+    await expect(replaceSoulProfileBytesTransaction(
+      stale.root,
+      "Ada",
+      Buffer.from("Replacement\n"),
+      "a".repeat(64),
+      stale.access,
+    )).rejects.toMatchObject({ code: "soul/digest-mismatch" });
+    expect(await readFile(agentSoulPath(stale.root, "Ada"))).toEqual(stalePrior);
+    expect(await listDegradedTransactions(stale.root, "Ada")).toEqual([]);
+
+    const rollback = await workspace();
+    await createSoulProfile(rollback.root, "Ada", rollback.access);
+    const priorSoul = await readFile(agentSoulPath(rollback.root, "Ada"));
+    const priorManifest = await readFile(agentSoulManifestPath(rollback.root, "Ada"));
+    rollback.access.writeConfigText = () => { throw new Error("injected config failure after replacement"); };
+    await expect(replaceSoulProfileBytesTransaction(
+      rollback.root,
+      "Ada",
+      Buffer.from("Replacement that must roll back\n"),
+      createHash("sha256").update(priorSoul).digest("hex"),
+      rollback.access,
+    )).rejects.toMatchObject({ code: "soul/io-error" });
+    expect(await readFile(agentSoulPath(rollback.root, "Ada"))).toEqual(priorSoul);
+    expect(await readFile(agentSoulManifestPath(rollback.root, "Ada"))).toEqual(priorManifest);
+    expect(await listDegradedTransactions(rollback.root, "Ada")).toEqual([]);
   });
 
   it("treats self-selection of the canonical path as digest-backed adopt/enable", async () => {

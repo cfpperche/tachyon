@@ -68,6 +68,7 @@ export class AgentStudioAdapter implements StudioHostAdapter<AgentStudioEntity, 
   createSoulProfile(agent: string) { return this.ws.createSoulProfile(agent); }
   importSoulProfile(agent: string, sourcePath: string) { return this.ws.importSoulProfile(agent, sourcePath); }
   importSoulProfileBytes(agent: string, bytes: Buffer) { return this.ws.importSoulProfileBytes(agent, bytes); }
+  replaceSoulProfileBytes(agent: string, bytes: Buffer, expectedDigest: string) { return this.ws.replaceSoulProfileBytes(agent, bytes, expectedDigest); }
   adoptSoulProfile(agent: string, expectedDigest: string) { return this.ws.adoptSoulProfile(agent, expectedDigest); }
   enableSoulProfile(agent: string) { return this.ws.enableSoulProfile(agent); }
   disableSoulProfile(agent: string) { return this.ws.disableSoulProfile(agent); }

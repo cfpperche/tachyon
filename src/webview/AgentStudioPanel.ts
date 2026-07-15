@@ -114,6 +114,7 @@ export class AgentStudioPanelManager {
     }
     if (m.type === "createSoul") { void this.runProfileAction(ws, ctx, agent, "create", () => ws.createSoulProfile(agent)); return; }
     if (m.type === "importSoul") { void this.importSoul(ws, ctx, agent, m.contentBase64); return; }
+    if (m.type === "replaceSoul") { void this.replaceSoul(ws, ctx, agent, m.contentBase64, m.expectedDigest); return; }
     if (m.type === "openSoul") { void this.openSoul(ws, ctx, agent); return; }
     if (m.type === "refreshSoul") { void this.refreshSoul(ws, ctx, agent, "refresh"); return; }
     if (m.type === "previewSoul") { void this.refreshSoul(ws, ctx, agent, "preview"); return; }
@@ -143,6 +144,21 @@ export class AgentStudioPanelManager {
       return;
     }
     await this.runProfileAction(ws, ctx, agent, "import", () => ws.importSoulProfileBytes(agent, bytes));
+  }
+
+  private async replaceSoul(
+    ws: Workspace,
+    ctx: StudioDomainMessageContext,
+    agent: string,
+    contentBase64: string,
+    expectedDigest: string,
+  ): Promise<void> {
+    const bytes = Buffer.from(contentBase64, "base64");
+    if (bytes.toString("base64") !== contentBase64) {
+      this.postProfileError(ctx, agent, new SoulError("soul/path-invalid", "Rejected malformed Agent Studio replacement bytes"));
+      return;
+    }
+    await this.runProfileAction(ws, ctx, agent, "replace", () => ws.replaceSoulProfileBytes(agent, bytes, expectedDigest));
   }
 
   private async openSoul(ws: Workspace, ctx: StudioDomainMessageContext, agent: string): Promise<void> {

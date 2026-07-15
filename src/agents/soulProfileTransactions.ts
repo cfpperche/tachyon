@@ -48,7 +48,7 @@ import {
 export const PROFILE_TRANSACTIONS_REL = ".tachyon/agent-profile-transactions";
 export const PROFILE_TX_SCHEMA_VERSION = 1 as const;
 
-export type ProfileTransactionAction = "create" | "import" | "adopt" | "enable" | "disable" | "delete";
+export type ProfileTransactionAction = "create" | "import" | "replace" | "adopt" | "enable" | "disable" | "delete";
 export type ProfileTransactionPhase =
   | "intent"
   | "staged"
@@ -118,7 +118,7 @@ interface CurrentTuple {
   profileId?: string;
 }
 
-const ACTIONS = new Set<ProfileTransactionAction>(["create", "import", "adopt", "enable", "disable", "delete"]);
+const ACTIONS = new Set<ProfileTransactionAction>(["create", "import", "replace", "adopt", "enable", "disable", "delete"]);
 const PHASES = new Set<ProfileTransactionPhase>(["intent", "staged", "published", "config-written", "committed", "compensating", "degraded"]);
 const DIGEST_RE = /^[0-9a-f]{64}$/;
 const PROFILE_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -366,7 +366,7 @@ async function beginJournal(
   name: string,
   action: ProfileTransactionAction,
   access: ProfileTxConfigAccess,
-  expectedSoulEnabled: boolean,
+  expectedSoulEnabled: boolean | "preserve",
 ): Promise<{ txDir: string; journal: ProfileTransactionJournal; prior: CapturedProfile }> {
   validateSoulAgentName(name);
   await assertNoActiveLaunchReservation(workspaceRoot, name);
@@ -384,6 +384,7 @@ async function beginJournal(
   await syncDirectory(root);
   const configText = access.readConfigText();
   const priorConfig = agentStanzaCasToken(configText, name);
+  const targetSoulEnabled = expectedSoulEnabled === "preserve" ? priorConfig.soulEnabled : expectedSoulEnabled;
   const prior = await capturePriorProfile(workspaceRoot, name, txDir);
   const journal: ProfileTransactionJournal = {
     schemaVersion: PROFILE_TX_SCHEMA_VERSION,
@@ -401,8 +402,8 @@ async function beginJournal(
     priorManifestState: prior.priorManifestState,
     targetManifestState: prior.priorManifestState,
     priorConfig,
-    targetConfig: desiredConfigToken(configText, name, expectedSoulEnabled, priorConfig),
-    expectedSoulEnabled,
+    targetConfig: desiredConfigToken(configText, name, targetSoulEnabled, priorConfig),
+    expectedSoulEnabled: targetSoulEnabled,
     createdAt: new Date().toISOString(),
   };
   await writeJournal(txDir, journal);
@@ -555,7 +556,7 @@ async function runMutation(
   access: ProfileTxConfigAccess,
   action: ProfileTransactionAction,
   body: (ctx: { txDir: string; journal: ProfileTransactionJournal; prior: CapturedProfile }) => Promise<{ journal: ProfileTransactionJournal; profileId?: string; sha256?: string; chars?: number; bytes?: number; selfSelected?: boolean }>,
-  expectedSoulEnabled = action !== "disable" && action !== "delete",
+  expectedSoulEnabled: boolean | "preserve" = action !== "disable" && action !== "delete",
 ): Promise<ProfileMutationResult> {
   return withSoulProfileAdmission(workspaceRoot, name, async () => {
     const { txDir, journal: started, prior } = await beginJournal(workspaceRoot, name, action, access, expectedSoulEnabled);
@@ -668,6 +669,59 @@ export function importSoulProfileBytesTransaction(
 ): Promise<ProfileMutationResult> {
   const snapshot = Buffer.from(bytes);
   return importSoulProfileBytesProviderTransaction(workspaceRoot, name, async () => snapshot, access);
+}
+
+/**
+ * Confirmed replacement for bytes selected inside Agent Studio.
+ * The caller supplies the digest shown during confirmation; a stale digest fails before canonical files change.
+ * Replacement preserves the agent's enabled/disabled state and stable profile ID.
+ */
+export function replaceSoulProfileBytesTransaction(
+  workspaceRoot: string,
+  name: string,
+  bytes: Buffer,
+  expectedDigest: string,
+  access: ProfileTxConfigAccess,
+): Promise<ProfileMutationResult> {
+  if (!DIGEST_RE.test(expectedDigest)) {
+    return Promise.reject(new SoulError("soul/digest-mismatch", `Replace requires a valid expected soul digest for '${name}'`));
+  }
+  const snapshot = Buffer.from(bytes);
+  return runMutation(workspaceRoot, name, access, "replace", async ({ txDir, journal, prior }) => {
+    if (!journal.priorConfig.present) throw new SoulError("soul/path-invalid", `Agent '${name}' is not declared in tachyon.yml`);
+    if (prior.priorSoulDigest === null) throw new SoulError("soul/missing", `No canonical soul bytes exist for '${name}'`);
+    if (prior.priorSoulDigest !== expectedDigest) {
+      throw new SoulError("soul/digest-mismatch", `Replace digest mismatch for '${name}'`);
+    }
+
+    const validated = validateSoulBytes(snapshot);
+    const profileId = prior.priorManifest?.profileId ?? randomUUID();
+    const state = journal.expectedSoulEnabled ? "active" : "retained";
+    const manifest: SoulProfileManifest = { schemaVersion: 1, profileId, owner: name, state };
+    const serializedManifest = manifestBytes(manifest);
+    let next = await transition(txDir, journal, {
+      phase: "staged",
+      profileId,
+      targetProfileId: profileId,
+      targetSoulDigest: validated.sha256,
+      targetManifestDigest: digest(serializedManifest),
+      targetManifestState: state,
+    });
+    await durableWriteNew(stagedSoulPath(txDir), snapshot);
+    await atomicReplacePrivate(agentSoulPath(workspaceRoot, name), snapshot);
+    await writeSoulManifestState(workspaceRoot, name, manifest, { expectedDigest: prior.priorManifestDigest });
+    next = await transition(txDir, next, { phase: "published" });
+    await applyConfigSoul(access, name, next);
+    next = await transition(txDir, next, { phase: "config-written" });
+
+    const currentSoul = await readCanonicalSoulBytes(workspaceRoot, name);
+    const currentManifest = await readSoulManifestAnyState(workspaceRoot, name);
+    if (!currentSoul || digest(currentSoul) !== validated.sha256
+      || currentManifest.profileId !== profileId || currentManifest.state !== state) {
+      throw new SoulError("soul/digest-mismatch", `Replaced soul tuple mismatch for '${name}'`);
+    }
+    return { journal: next, profileId, sha256: validated.sha256, chars: validated.chars, bytes: snapshot.length };
+  }, "preserve");
 }
 
 export function adoptSoulProfile(

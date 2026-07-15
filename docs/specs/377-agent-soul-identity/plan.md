@@ -383,7 +383,8 @@ Place a new open `Identity (SOUL.md)` section before Role/Instructions:
   verify that quarantined file against the digest the user confirmed, and fsync a separate immutable
   rollback copy. Publish the staged file with an atomic no-replace primitive so an editor that
   recreates the canonical path causes an abort/reconciliation instead of silent overwrite; then
-  enable `soul: true`. Finalize only after config and bytes match the journal. Never persist
+  enable `soul: true` for an initial import; replacement preserves the existing enabled/disabled
+  state. Finalize only after config and bytes match the journal. Never persist
   or log the original path. If the destination exists, show old/new digest and require explicit
   replace confirmation; the quarantine verification is the destination digest CAS, and a mismatch is
   restored when provably safe or held for explicit reconciliation rather than overwritten.
@@ -414,7 +415,7 @@ Place a new open `Identity (SOUL.md)` section before Role/Instructions:
 Do not edit the full body in a webview textarea. That avoids two unsaved copies, preserves normal
 Markdown/editor tooling, and makes file ownership clear.
 
-Extend the shell protocol with distinct domain messages (`importSoul`, `createSoul`, `openSoul`,
+Extend the shell protocol with distinct domain messages (`importSoul`, `replaceSoul`, `createSoul`, `openSoul`,
 `refreshSoul`, `adoptSoulProfile`, `deleteSoulProfile`, `renameSoulProfile`,
 `repairSoulProfileTransaction`) and typed host replies. All filesystem reads/writes stay in `AgentStudioPanel`/
 `AgentStudioAdapter`, not the browser bundle.

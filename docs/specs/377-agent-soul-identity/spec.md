@@ -102,7 +102,8 @@ into the canonical path through a private, durable profile transaction that also
 `soul: true`. It never stores the selected source path or keeps the files linked. **Create** writes a
 starter through the same transaction. An existing
 canonical file is never overwritten without an explicit replace confirmation, and the imported
-source is never modified or deleted. Selecting the canonical file itself is an Adopt/Enable no-op,
+source is never modified or deleted. Confirmed replacement preserves the existing profile ID and
+enabled/disabled state. Selecting the canonical file itself is an Adopt/Enable no-op,
 not a self-copy or overwrite.
 
 There is no implicit discovery: a leftover profile file is inert unless `soul: true` is present and

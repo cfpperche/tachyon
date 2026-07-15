@@ -34,6 +34,13 @@
 .ash-soul-delete-confirm ul { margin: 0; padding-left: var(--ds-5); }
 .ash-soul-delete-confirm code { overflow-wrap: anywhere; }
 .ash-soul-delete-confirm-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--ds-2); }
+.ash-soul-replace-confirm { display: grid; gap: var(--ds-2); padding: var(--ds-3); border: 1px solid var(--vscode-focusBorder); border-radius: var(--ds-radius); background: var(--ds-card); }
+.ash-soul-replace-confirm-title { font-weight: var(--tachyon-weight-semibold); }
+.ash-soul-replace-confirm code { overflow-wrap: anywhere; }
+.ash-soul-replace-digests { display: grid; gap: var(--ds-1); margin: 0; color: var(--ds-muted); font-size: var(--ds-small); }
+.ash-soul-replace-digests > div { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--ds-2); }
+.ash-soul-replace-digests dt, .ash-soul-replace-digests dd { margin: 0; }
+.ash-soul-replace-confirm-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--ds-2); }
 .ash-soul-preview { max-height: 220px; overflow: auto; margin: 0; padding: var(--ds-3); border: 1px solid var(--ds-border); border-radius: var(--ds-radius); background: var(--vscode-textCodeBlock-background); color: var(--vscode-editor-foreground); font: var(--vscode-editor-font-size) / 1.45 var(--vscode-editor-font-family); white-space: pre-wrap; overflow-wrap: anywhere; }
 .checks { display: flex; flex-direction: column; gap: var(--ds-1); font-size: var(--ds-small); }
 .ash-check-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--ds-2); }

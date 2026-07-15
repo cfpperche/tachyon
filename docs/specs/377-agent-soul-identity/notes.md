@@ -401,6 +401,23 @@ pass is recorded below.
   identity-marker source files for fresh-start A/B dogfood. Runtime-local canonical profiles are
   seeded privately when the lane is prepared rather than committed with unsafe checkout modes.
 
+### 2026-07-15 — Confirmed common-path replacement and four-runtime dogfood
+
+- Human dogfood confirmed fresh-start Soul behavior in all four prepared runtimes: Claude, Codex,
+  Grok, and OpenCode. Grok reused the shared global credential after that expired credential was
+  refreshed once globally; no per-agent login was required.
+- Agent Studio keeps **Import** visible for an existing profile. Choosing a file first shows an
+  explicit replacement confirmation with source name/size, canonical destination, current/new
+  SHA-256, and enabled-state retention. Cancel sends no mutation; confirm sends only bounded bytes
+  plus the displayed expected destination digest.
+- The host performs a journaled `replace` mutation, rejects a stale expected digest, retains the
+  stable `profileId` and current enabled/disabled state, and compensates both canonical Soul files
+  after a later config failure. The selected source file remains untouched and its path is never
+  sent or persisted.
+- This closes the common-path UX requested during dogfood. T15 remains open for its broader
+  rename/repair and adversarial external-editor publication requirements; this bounded change does
+  not claim those remaining clauses.
+
 ## Open questions
 
 - Resolved 2026-07-14: the maintainer ratified the complete revised R1–R6 bundle without amendments.

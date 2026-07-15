@@ -30,6 +30,7 @@ export const AGENT_STUDIO_WEBVIEW_MESSAGE_NAMES = [
   "browse",
   "createSoul",
   "importSoul",
+  "replaceSoul",
   "openSoul",
   "refreshSoul",
   "previewSoul",
@@ -86,6 +87,7 @@ export function isCanonicalSoulImportBase64(value: unknown): value is string {
 export type AgentStudioSoulActionMessage =
   | { type: "createSoul" | "openSoul" | "refreshSoul" | "previewSoul" | "enableSoul" | "disableSoul" | "deleteSoulProfile"; agent: string }
   | { type: "importSoul"; agent: string; contentBase64: string }
+  | { type: "replaceSoul"; agent: string; contentBase64: string; expectedDigest: string }
   | { type: "adoptSoulProfile"; agent: string; expectedDigest: string };
 
 export type AgentStudioInboundDomainMessage = { type: "browse" } | AgentStudioSoulActionMessage;
@@ -111,8 +113,14 @@ export function validateAgentStudioInboundMessage(raw: unknown): AgentStudioInbo
       || !isCanonicalSoulImportBase64(value.contentBase64)) return undefined;
     return { type: "importSoul", agent: value.agent, contentBase64: value.contentBase64 };
   }
+  if (value.type === "replaceSoul") {
+    if (!exactKeys(value, ["type", "agent", "contentBase64", "expectedDigest"])
+      || !isCanonicalSoulImportBase64(value.contentBase64)
+      || typeof value.expectedDigest !== "string" || !SHA256_RE.test(value.expectedDigest)) return undefined;
+    return { type: "replaceSoul", agent: value.agent, contentBase64: value.contentBase64, expectedDigest: value.expectedDigest };
+  }
   if (!exactKeys(value, ["type", "agent"])) return undefined;
-  return { type: value.type as Exclude<AgentStudioSoulActionMessage["type"], "adoptSoulProfile" | "importSoul">, agent: value.agent };
+  return { type: value.type as Exclude<AgentStudioSoulActionMessage["type"], "adoptSoulProfile" | "importSoul" | "replaceSoul">, agent: value.agent };
 }
 
 /** Host-facing profile status snapshot (no import source path). */
@@ -129,7 +137,7 @@ export interface SoulProfileStatusMessage {
   transactionDegraded: boolean;
   preview?: string;
   /** Which action produced this status, when applicable. */
-  action?: "create" | "import" | "open" | "refresh" | "preview" | "adopt" | "enable" | "disable" | "delete";
+  action?: "create" | "import" | "replace" | "open" | "refresh" | "preview" | "adopt" | "enable" | "disable" | "delete";
   selfSelected?: boolean;
 }
 
@@ -166,7 +174,7 @@ export function isSoulProfileStatusMessage(raw: unknown): raw is SoulProfileStat
   if (value.chars !== undefined && (!Number.isSafeInteger(value.chars) || value.chars < 0)) return false;
   if (value.bytes !== undefined && (!Number.isSafeInteger(value.bytes) || value.bytes < 0)) return false;
   if (value.preview !== undefined && (typeof value.preview !== "string" || value.preview.length > 2_002)) return false;
-  if (value.action !== undefined && !["create", "import", "open", "refresh", "preview", "adopt", "enable", "disable", "delete"].includes(value.action)) return false;
+  if (value.action !== undefined && !["create", "import", "replace", "open", "refresh", "preview", "adopt", "enable", "disable", "delete"].includes(value.action)) return false;
   return value.selfSelected === undefined || typeof value.selfSelected === "boolean";
 }
 

@@ -16,6 +16,7 @@ export type AgentStudioWebviewMessage =
   | StudioDomainMessage<{ type: "browse" }>
   | StudioDomainMessage<{ type: "createSoul"; agent: string }>
   | StudioDomainMessage<{ type: "importSoul"; agent: string; contentBase64: string }>
+  | StudioDomainMessage<{ type: "replaceSoul"; agent: string; contentBase64: string; expectedDigest: string }>
   | StudioDomainMessage<{ type: "openSoul"; agent: string }>
   | StudioDomainMessage<{ type: "refreshSoul"; agent: string }>
   | StudioDomainMessage<{ type: "previewSoul"; agent: string }>

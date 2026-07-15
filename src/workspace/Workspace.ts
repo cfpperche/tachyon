@@ -14,6 +14,7 @@ import {
   disableSoulProfile,
   enableSoulProfile,
   importSoulProfileBytesTransaction,
+  replaceSoulProfileBytesTransaction,
   importSoulProfileTransaction,
   reconcileProfileTransactions,
   refreshSoulProfileStatus,
@@ -3520,6 +3521,10 @@ export class Workspace {
 
   async importSoulProfileBytes(agentName: string, bytes: Buffer): Promise<ProfileMutationResult> {
     return importSoulProfileBytesTransaction(this.workspaceRoot, agentName, bytes, this.soulProfileConfigAccess(agentName));
+  }
+
+  async replaceSoulProfileBytes(agentName: string, bytes: Buffer, expectedDigest: string): Promise<ProfileMutationResult> {
+    return replaceSoulProfileBytesTransaction(this.workspaceRoot, agentName, bytes, expectedDigest, this.soulProfileConfigAccess(agentName));
   }
 
   async adoptSoulProfile(agentName: string, expectedDigest: string): Promise<ProfileMutationResult> {

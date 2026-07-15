@@ -309,6 +309,45 @@ describe("AgentStudioPanelManager — Phase 3 pilot full lifecycle", () => {
     expect(JSON.stringify(error)).not.toContain(contentBase64);
   });
 
+  it("routes only an explicit digest-backed replacement message", async () => {
+    const body = "# Replacement identity\n";
+    const contentBase64 = Buffer.from(body).toString("base64");
+    const expectedDigest = "a".repeat(64);
+    let received: { bytes: Buffer; expectedDigest: string } | undefined;
+    const { ws } = fakeWorkspace({ agents: { Ada: agentDef() } });
+    Object.assign(ws, {
+      replaceSoulProfileBytes: async (_agent: string, bytes: Buffer, digest: string) => {
+        received = { bytes: Buffer.from(bytes), expectedDigest: digest };
+        return {
+          status: {
+            agent: "Ada",
+            canonicalPath: "/private/workspace/.tachyon/agents/Ada/SOUL.md",
+            relativePath: ".tachyon/agents/Ada/SOUL.md",
+            lifecycle: "active",
+            sha256: "b".repeat(64),
+            soulEnabled: true,
+            resolvable: true,
+            transactionDegraded: false,
+          },
+        };
+      },
+    });
+    const manager = new AgentStudioPanelManager(Uri.file("/ext"));
+    manager.openExisting(ws, "Ada");
+    await flush();
+    const webview = __createdPanels[0].webview;
+
+    webview.__receive(envelope({ type: "replaceSoul" as const, agent: "Ada", contentBase64, expectedDigest: "stale" }));
+    await flush();
+    expect(received).toBeUndefined();
+
+    webview.__receive(envelope({ type: "replaceSoul" as const, agent: "Ada", contentBase64, expectedDigest }));
+    await flush();
+    expect(received?.bytes.toString("utf8")).toBe(body);
+    expect(received?.expectedDigest).toBe(expectedDigest);
+    expect(findType(webview.posted, "soulProfileStatus").at(-1)).toMatchObject({ status: { action: "replace" } });
+  });
+
   it("routes permanent identity deletion through the saved agent and returns a missing profile status", async () => {
     let deleted = 0;
     const { ws } = fakeWorkspace({ agents: { Ada: agentDef() } });

@@ -13,6 +13,9 @@ export const createSoulMessage = (agent: string) => envelope({ type: "createSoul
 /** Webview → host: import exact bytes selected by the in-Studio picker; no local path crosses the boundary. */
 export const importSoulMessage = (agent: string, contentBase64: string) =>
   envelope({ type: "importSoul" as const, agent, contentBase64 });
+/** Webview → host: explicitly confirmed replacement guarded by the digest shown to the user. */
+export const replaceSoulMessage = (agent: string, contentBase64: string, expectedDigest: string) =>
+  envelope({ type: "replaceSoul" as const, agent, contentBase64, expectedDigest });
 /** Webview → host: open the canonical managed copy in the editor. */
 export const openSoulMessage = (agent: string) => envelope({ type: "openSoul" as const, agent });
 /** Webview → host: re-read profile status. */

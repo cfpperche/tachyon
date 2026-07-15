@@ -792,11 +792,11 @@ export async function inspectSoulProfile(
     status.lifecycle = manifest.state;
     const bytes = await readCanonicalSoulBytes(workspaceRoot, name);
     if (bytes) {
+      status.sha256 = createHash("sha256").update(bytes).digest("hex");
+      status.bytes = bytes.length;
       try {
         const validated = validateSoulBytes(bytes);
-        status.sha256 = validated.sha256;
         status.chars = validated.chars;
-        status.bytes = bytes.length;
         if (opts?.includePreview !== false) {
           status.preview = validated.body.length > PREVIEW_MAX_CHARS
             ? `${validated.body.slice(0, PREVIEW_MAX_CHARS)}\n…`
@@ -813,7 +813,22 @@ export async function inspectSoulProfile(
   } catch (error) {
     if (error instanceof SoulError && error.code === "soul/profile-adoption-required") {
       const bytes = await readCanonicalSoulBytes(workspaceRoot, name);
-      if (bytes) status.lifecycle = "unowned";
+      if (bytes) {
+        status.lifecycle = "unowned";
+        status.sha256 = createHash("sha256").update(bytes).digest("hex");
+        status.bytes = bytes.length;
+        try {
+          const validated = validateSoulBytes(bytes);
+          status.chars = validated.chars;
+          if (opts?.includePreview !== false) {
+            status.preview = validated.body.length > PREVIEW_MAX_CHARS
+              ? `${validated.body.slice(0, PREVIEW_MAX_CHARS)}\n…`
+              : validated.body;
+          }
+        } catch {
+          status.lifecycle = "invalid";
+        }
+      }
     } else if (error instanceof SoulError && error.code !== "soul/missing") throw error;
     else if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }

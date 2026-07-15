@@ -21,6 +21,7 @@ import {
   importSoulMessage,
   openSoulMessage,
   previewSoulMessage,
+  replaceSoulMessage,
   refreshSoulMessage,
   soulProfileErrorMessage,
   soulProfileStatusMessage,
@@ -38,7 +39,8 @@ describe("Agent Studio soul profile protocol (T15A)", () => {
     expect(source.indexOf("Role template")).toBeGreaterThan(source.indexOf("Identity (SOUL.md)"));
     for (const action of [
       "createSoulMessage(savedAgent)",
-      "importSoulMessage(savedAgent, contentBase64)",
+      "importSoulMessage(savedAgent, selection.contentBase64)",
+      "replaceSoulMessage(savedAgent, soulReplacePending.contentBase64, soulStatus.sha256!)",
       "openSoulMessage(savedAgent)",
       "refreshSoulMessage(savedAgent)",
       "adoptSoulProfileMessage(savedAgent",
@@ -48,6 +50,10 @@ describe("Agent Studio soul profile protocol (T15A)", () => {
     ]) expect(source).toContain(action);
     expect(source).toContain("showCreateOrImport &&");
     expect(source).toContain("profilePresent &&");
+    expect(source).toContain("Replace existing identity?");
+    expect(source).toContain("The selected source file will not be modified.");
+    expect(source).toContain("Current SHA-256");
+    expect(source).toContain("New SHA-256");
     expect(source).toContain("showEnable &&");
     expect(source).toContain("showDisable &&");
     expect(source).toContain("<KitDropdown>");
@@ -74,6 +80,7 @@ describe("Agent Studio soul profile protocol (T15A)", () => {
     expect(source).toContain('variant="danger"');
     expect(hostSource).not.toContain("Import SOUL.md (copied into the canonical profile)");
     expect(hostSource).toContain("ws.importSoulProfileBytes(agent, bytes)");
+    expect(hostSource).toContain("ws.replaceSoulProfileBytes(agent, bytes, expectedDigest)");
     expect(source).toContain('aria-live="polite"');
     expect(source).toContain('aria-label="SOUL.md preview"');
     expect(source).toContain("Profile recovery is required. Mutating actions are disabled.");
@@ -83,6 +90,7 @@ describe("Agent Studio soul profile protocol (T15A)", () => {
     expect(AGENT_STUDIO_DOMAIN_MESSAGE_NAMES).toEqual(expect.arrayContaining([
       "createSoul",
       "importSoul",
+      "replaceSoul",
       "openSoul",
       "refreshSoul",
       "previewSoul",
@@ -108,6 +116,12 @@ describe("Agent Studio soul profile protocol (T15A)", () => {
     const contentBase64 = Buffer.from("# Identity\n", "utf8").toString("base64");
     expect(createSoulMessage("Ada")).toMatchObject({ type: "createSoul", agent: "Ada" });
     expect(importSoulMessage("Ada", contentBase64)).toMatchObject({ type: "importSoul", agent: "Ada", contentBase64 });
+    expect(replaceSoulMessage("Ada", contentBase64, "a".repeat(64))).toMatchObject({
+      type: "replaceSoul",
+      agent: "Ada",
+      contentBase64,
+      expectedDigest: "a".repeat(64),
+    });
     expect(openSoulMessage("Ada")).toMatchObject({ type: "openSoul", agent: "Ada" });
     expect(refreshSoulMessage("Ada")).toMatchObject({ type: "refreshSoul", agent: "Ada" });
     expect(previewSoulMessage("Ada")).toMatchObject({ type: "previewSoul", agent: "Ada" });
@@ -156,6 +170,15 @@ describe("Agent Studio soul profile protocol (T15A)", () => {
     expect(validateAgentStudioInboundMessage({ ...imported, fileName: "../identity.md" })).toBeUndefined();
     expect(validateAgentStudioInboundMessage({ ...imported, contentBase64: "not base64" })).toBeUndefined();
     expect(validateAgentStudioInboundMessage({ ...imported, contentBase64: Buffer.alloc(SOUL_IMPORT_MAX_BYTES + 1, 1).toString("base64") })).toBeUndefined();
+    const replacement = replaceSoulMessage("Ada", Buffer.from("# New Ada\n").toString("base64"), "b".repeat(64));
+    expect(validateAgentStudioInboundMessage(replacement)).toEqual({
+      type: "replaceSoul",
+      agent: "Ada",
+      contentBase64: Buffer.from("# New Ada\n").toString("base64"),
+      expectedDigest: "b".repeat(64),
+    });
+    expect(validateAgentStudioInboundMessage({ ...replacement, expectedDigest: "stale" })).toBeUndefined();
+    expect(validateAgentStudioInboundMessage({ ...replacement, confirmed: true })).toBeUndefined();
     expect(validateAgentStudioInboundMessage(deleteSoulProfileMessage("Ada"))).toEqual({ type: "deleteSoulProfile", agent: "Ada" });
     expect(validateAgentStudioInboundMessage({ ...deleteSoulProfileMessage("Ada"), confirmed: true })).toBeUndefined();
 

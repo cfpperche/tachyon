@@ -27,6 +27,7 @@ import {
   openSoulMessage,
   patchMessage,
   readyMessage,
+  replaceSoulMessage,
   refreshSoulMessage,
   saveMessage,
 } from "./messages";
@@ -67,9 +68,21 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
+async function sha256Hex(bytes: Uint8Array): Promise<string> {
+  const hash = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(hash), (value) => value.toString(16).padStart(2, "0")).join("");
+}
+
+interface SoulImportSelection {
+  contentBase64: string;
+  fileName: string;
+  bytes: number;
+  sha256: string;
+}
+
 function SoulImportPicker({ onCancel, onSelect }: {
   onCancel(): void;
-  onSelect(contentBase64: string): void;
+  onSelect(selection: SoulImportSelection): void;
 }) {
   const [reading, setReading] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
@@ -96,7 +109,12 @@ function SoulImportPicker({ onCancel, onSelect }: {
         setError(bytes.length === 0 ? "The selected file is empty." : "The selected file is larger than 64 KB.");
         return;
       }
-      onSelect(bytesToBase64(bytes));
+      onSelect({
+        contentBase64: bytesToBase64(bytes),
+        fileName: file.name,
+        bytes: bytes.length,
+        sha256: await sha256Hex(bytes),
+      });
     } catch {
       setError("Tachyon could not read the selected file.");
     } finally {
@@ -130,10 +148,12 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
   const [soulStatus, setSoulStatus] = useState<SoulProfileStatusMessage | undefined>(undefined);
   const [soulBusy, setSoulBusy] = useState<string | undefined>(undefined);
   const [soulImportOpen, setSoulImportOpen] = useState(false);
+  const [soulReplacePending, setSoulReplacePending] = useState<SoulImportSelection | undefined>(undefined);
   const [soulDeleteConfirmOpen, setSoulDeleteConfirmOpen] = useState(false);
   const [ready, setReady] = useState(false);
   const entityRef = useRef<AgentStudioEntity | undefined>(undefined);
   const deleteCancelButtonRef = useRef<HTMLButtonElement>(null);
+  const replaceCancelButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     const onMsg = (e: MessageEvent) => {
@@ -169,6 +189,7 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
         setSoulStatus(undefined);
         setSoulBusy(d.entity.name ? "Refreshing profile" : undefined);
         setSoulImportOpen(false);
+        setSoulReplacePending(undefined);
         setSoulDeleteConfirmOpen(false);
         setReady(true);
         if (d.entity.name) dispatch.post(refreshSoulMessage(d.entity.name));
@@ -192,6 +213,7 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
         setHostError(undefined);
         setSoulStatus(d.status);
         setSoulBusy(undefined);
+        setSoulReplacePending(undefined);
         if (d.status.lifecycle !== "missing") setSoulImportOpen(false);
         if (d.status.lifecycle === "missing") setSoulDeleteConfirmOpen(false);
         const current = entityRef.current;
@@ -229,6 +251,10 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
   useEffect(() => {
     if (soulDeleteConfirmOpen) deleteCancelButtonRef.current?.focus();
   }, [soulDeleteConfirmOpen]);
+
+  useEffect(() => {
+    if (soulReplacePending) replaceCancelButtonRef.current?.focus();
+  }, [soulReplacePending]);
 
   if (!ready || !entity) {
     return <div class="ds-degrade"><span class="codicon codicon-loading" /><div>Loading Agent Studio...</div></div>;
@@ -288,7 +314,9 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
     && !soulStatus.soulEnabled);
   const showDisable = !!soulStatus?.soulEnabled;
   const showDelete = profilePresent && !soulStatus?.soulEnabled;
-  const canCreateOrImport = showCreateOrImport && !mutationDisabled && !soulImportOpen;
+  const canCreate = showCreateOrImport && !mutationDisabled && !soulImportOpen;
+  const canImport = !mutationDisabled && !soulImportOpen && !soulReplacePending
+    && (!profilePresent || !!soulStatus?.sha256);
   const canEnable = showEnable && !mutationDisabled;
   const canDisable = showDisable && !mutationDisabled;
   const canDelete = showDelete && !mutationDisabled;
@@ -302,6 +330,7 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
   const runSoulAction = (label: string, message: unknown) => {
     setHostError(undefined);
     setSoulImportOpen(false);
+    setSoulReplacePending(undefined);
     setSoulDeleteConfirmOpen(false);
     setSoulBusy(label);
     dispatch.post(message);
@@ -355,13 +384,22 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
                 <>
                   <div class="ash-identity-actions" role="group" aria-label="SOUL.md actions">
                     {showCreateOrImport && (
-                      <>
-                        <Button variant="primary" icon="new-file" disabled={!canCreateOrImport} onClick={() => runSoulAction("Creating profile", createSoulMessage(savedAgent))}>Create</Button>
-                        <Button icon="folder-opened" disabled={!canCreateOrImport} onClick={() => { setHostError(undefined); setSoulImportOpen(true); }}>Import</Button>
-                      </>
+                      <Button variant="primary" icon="new-file" disabled={!canCreate} onClick={() => runSoulAction("Creating profile", createSoulMessage(savedAgent))}>Create</Button>
                     )}
                     {profilePresent && (
                       <Button icon="go-to-file" disabled={readActionDisabled} onClick={() => runSoulAction("Opening profile", openSoulMessage(savedAgent))}>Edit file</Button>
+                    )}
+                    {soulStatus && (
+                      <Button
+                        icon="folder-opened"
+                        disabled={!canImport}
+                        onClick={() => {
+                          setHostError(undefined);
+                          setSoulDeleteConfirmOpen(false);
+                          setSoulReplacePending(undefined);
+                          setSoulImportOpen(true);
+                        }}
+                      >Import</Button>
                     )}
                     {showEnable && (
                       <Button
@@ -390,6 +428,7 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
                                 onSelect={() => {
                                   setHostError(undefined);
                                   setSoulImportOpen(false);
+                                  setSoulReplacePending(undefined);
                                   setSoulDeleteConfirmOpen(true);
                                 }}
                               >Delete identity permanently…</KitDropdownItem>
@@ -403,11 +442,38 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
                   {soulImportOpen && (
                     <SoulImportPicker
                       onCancel={() => setSoulImportOpen(false)}
-                      onSelect={(contentBase64) => {
+                      onSelect={(selection) => {
                         setSoulImportOpen(false);
-                        runSoulAction("Importing profile", importSoulMessage(savedAgent, contentBase64));
+                        if (profilePresent && soulStatus?.sha256) {
+                          setSoulReplacePending(selection);
+                        } else {
+                          runSoulAction("Importing profile", importSoulMessage(savedAgent, selection.contentBase64));
+                        }
                       }}
                     />
+                  )}
+
+                  {soulReplacePending && soulStatus?.sha256 && (
+                    <div class="ash-soul-replace-confirm" aria-labelledby="ash-soul-replace-confirm-title">
+                      <div class="ash-soul-replace-confirm-title" id="ash-soul-replace-confirm-title">Replace existing identity?</div>
+                      <div><strong>{soulReplacePending.fileName}</strong> ({soulReplacePending.bytes} bytes) will replace <code>{soulStatus.relativePath}</code>.</div>
+                      <div>The selected source file will not be modified. Soul will remain {soulStatus.soulEnabled ? "enabled" : "disabled"}.</div>
+                      <dl class="ash-soul-replace-digests">
+                        <div><dt>Current SHA-256</dt><dd><code>{soulStatus.sha256}</code></dd></div>
+                        <div><dt>New SHA-256</dt><dd><code>{soulReplacePending.sha256}</code></dd></div>
+                      </dl>
+                      <div class="ash-soul-replace-confirm-actions">
+                        <Button ref={replaceCancelButtonRef} onClick={() => setSoulReplacePending(undefined)}>Cancel</Button>
+                        <Button
+                          variant="danger"
+                          disabled={mutationDisabled}
+                          onClick={() => runSoulAction(
+                            "Replacing identity",
+                            replaceSoulMessage(savedAgent, soulReplacePending.contentBase64, soulStatus.sha256!),
+                          )}
+                        >Replace identity</Button>
+                      </div>
+                    </div>
                   )}
 
                   {soulDeleteConfirmOpen && soulStatus && (
