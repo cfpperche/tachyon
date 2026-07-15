@@ -5,6 +5,7 @@ import { createHash, randomBytes } from "node:crypto";
 import {
   engineBundleId,
   isEngineBundleManifestV1,
+  isSha256,
   type EngineBundleManifestV1,
 } from "./protocol.js";
 
@@ -133,6 +134,27 @@ export function stageEngineBundle(input: StageEngineBundleInput): StagedEngineBu
   } finally {
     fs.rmSync(temp, { recursive: true, force: true });
   }
+}
+
+/**
+ * Reopens one immutable bundle that was staged beside the requested install.  Upgrade rollback uses the
+ * running engine's signed bundle id rather than a mutable "current" pointer, then re-verifies every byte
+ * before the old entrypoint can be launched again.
+ */
+export function loadStagedEngineBundle(installRoot: string, bundleId: string): StagedEngineBundle {
+  if (!isSha256(bundleId)) throw new EngineBundleError("INVALID_BUNDLE_ID", "staged engine bundle id is invalid");
+  const root = path.join(path.resolve(installRoot), bundleId);
+  const manifestPath = path.join(root, "engine-manifest.json");
+  let manifest: unknown;
+  try { manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8")); }
+  catch (error) {
+    throw new EngineBundleError("STAGED_MANIFEST_UNREADABLE", `staged engine manifest is unreadable: ${String(error)}`);
+  }
+  if (!isEngineBundleManifestV1(manifest) || engineBundleId(manifest) !== bundleId) {
+    throw new EngineBundleError("STAGED_MANIFEST_MISMATCH", "staged engine manifest does not match its bundle id");
+  }
+  verifyStagedBundle(root, manifest);
+  return stagedResult(root, manifest, bundleId, true);
 }
 
 export function verifyStagedBundle(root: string, expected: EngineBundleManifestV1): void {

@@ -2,15 +2,16 @@ import fs from "node:fs";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { requestEngineControl } from "../../src/engine-service/controlClient.js";
-import { stagePackagedEngineBundle } from "../../src/engine-service/engineBundleStore.js";
+import { stageEngineBundle, stagePackagedEngineBundle } from "../../src/engine-service/engineBundleStore.js";
 import {
   engineRuntimeDir,
   engineSystemdUnitName,
   ensureDaemonEngine,
 } from "../../src/engine-service/engineSupervisor.js";
-import type { EngineServiceIdentityV1 } from "../../src/engine-service/protocol.js";
+import type { EngineBundleManifestV1, EngineServiceIdentityV1 } from "../../src/engine-service/protocol.js";
 import { connectRemoteWorkspaceClient, type WorkspaceClient } from "../../src/shell/WorkspaceClient.js";
 import { workspaceActivityTarget } from "../../src/shell/ActivityTarget.js";
 import { workspaceHandoffTarget } from "../../src/shell/HandoffTarget.js";
@@ -106,6 +107,17 @@ try {
     startTimeoutMs: 15_000,
     pollMs: 25,
   } as const;
+  const packagedManifest = JSON.parse(fs.readFileSync(bundle.manifestPath, "utf8")) as EngineBundleManifestV1;
+  const previousBundle = stageEngineBundle({
+    sourceRoot: bundle.root,
+    manifest: { ...packagedManifest, engineVersion: previousDogfoodVersion(packagedManifest.engineVersion) },
+    installRoot,
+    requireCleanBuild: false,
+  });
+  const prior = await ensureDaemonEngine({ ...ensureOptions, bundle: previousBundle });
+  if (prior.disposition !== "started" || prior.identity.bundleId !== previousBundle.bundleId) {
+    throw new Error("dogfood could not establish the verified prior engine bundle");
+  }
   const dispositions: string[] = [];
   const ensure = async (options: Parameters<typeof ensureDaemonEngine>[0]) => {
     const result = await ensureDaemonEngine(options);
@@ -133,6 +145,11 @@ try {
     || first.identity.pid !== second.identity.pid
     || first.identity.bridge.instanceId !== second.identity.bridge.instanceId) {
     throw new Error("concurrent systemd starters did not converge on one engine identity");
+  }
+  if (!dispositions.includes("upgraded")
+    || first.identity.instanceId === prior.identity.instanceId
+    || first.identity.bundleId !== bundle.bundleId) {
+    throw new Error(`controlled systemd upgrade did not activate the packaged bundle: ${JSON.stringify(dispositions)}`);
   }
   identity = first.identity;
   await expectLoopbackListener(identity.bridge.port);
@@ -301,6 +318,35 @@ try {
     throw new Error("remote Mission Control validation close did not persist");
   }
   await expectAgentStopped(first, "after Mission Control reads and mutations");
+  let soulOperation = 0;
+  const soulStudio = new ClientWorkspaceStudioTarget(first, {
+    extensionUri: {} as StudioDeps["extensionUri"],
+    detectClis: async () => [],
+    operationId: () => `dogfood-soul-operation-${String(++soulOperation).padStart(4, "0")}`,
+  });
+  const soulCreated = await soulStudio.createSoulProfile("dogfood-worker");
+  if (soulCreated.status.lifecycle !== "active"
+    || !soulCreated.status.soulEnabled
+    || !soulCreated.status.sha256) {
+    throw new Error(`remote SOUL creation failed: ${JSON.stringify(soulCreated)}`);
+  }
+  const soulReplacement = Buffer.from("# Dogfood worker\n\nPersistent-engine SOUL replacement.\n");
+  const soulReplaced = await soulStudio.replaceSoulProfileBytes(
+    "dogfood-worker",
+    soulReplacement,
+    soulCreated.status.sha256,
+  );
+  if (soulReplaced.status.lifecycle !== "active"
+    || soulReplaced.status.sha256 === soulCreated.status.sha256
+    || fs.readFileSync(await soulStudio.canonicalSoulPathForOpen("dogfood-worker")).compare(soulReplacement) !== 0) {
+    throw new Error(`remote SOUL replacement failed: ${JSON.stringify(soulReplaced)}`);
+  }
+  const soulDisabled = await soulStudio.disableSoulProfile("dogfood-worker");
+  if (soulDisabled.status.lifecycle !== "retained"
+    || soulDisabled.status.soulEnabled
+    || soulDisabled.status.resolvable) {
+    throw new Error(`remote SOUL disable/retention failed: ${JSON.stringify(soulDisabled)}`);
+  }
   const studio = new ClientWorkspaceStudioTarget(first, {
     extensionUri: {} as StudioDeps["extensionUri"],
     detectClis: async () => [],
@@ -356,17 +402,74 @@ try {
     throw new Error("detached dogfood shells leaked a live lease");
   }
 
+  const brokenSource = path.join(root, "broken-engine-source");
+  fs.cpSync(bundle.root, brokenSource, { recursive: true });
+  const brokenEntrypoint = path.join(brokenSource, ...packagedManifest.entrypoint.split("/"));
+  const brokenEntrypointBytes = Buffer.from("process.exit(1);\n");
+  fs.chmodSync(brokenEntrypoint, 0o600);
+  fs.writeFileSync(brokenEntrypoint, brokenEntrypointBytes);
+  const brokenManifest: EngineBundleManifestV1 = {
+    ...packagedManifest,
+    engineVersion: nextDogfoodVersion(packagedManifest.engineVersion),
+    files: packagedManifest.files.map((file) => file.path === packagedManifest.entrypoint
+      ? { ...file, sha256: createHash("sha256").update(brokenEntrypointBytes).digest("hex") }
+      : file),
+  };
+  const brokenBundle = stageEngineBundle({
+    sourceRoot: brokenSource,
+    manifest: brokenManifest,
+    installRoot,
+    requireCleanBuild: false,
+  });
+  const beforeRollback = identity;
+  let rollbackCode: unknown;
+  try {
+    await ensureDaemonEngine({ ...ensureOptions, bundle: brokenBundle, startTimeoutMs: 3_000 });
+  } catch (error) {
+    rollbackCode = (error as { code?: unknown }).code;
+  }
+  if (rollbackCode !== "ENGINE_UPGRADE_ROLLED_BACK") {
+    throw new Error(`failed packaged engine did not produce a verified rollback: ${String(rollbackCode)}`);
+  }
+  const afterRollback = await ensureDaemonEngine(ensureOptions);
+  if (afterRollback.disposition !== "reused-exact"
+    || afterRollback.identity.bundleId !== bundle.bundleId
+    || afterRollback.identity.instanceId === beforeRollback.instanceId) {
+    throw new Error("verified rollback did not restore the packaged engine as a new incarnation");
+  }
+  identity = afterRollback.identity;
+  const beforeCrash = identity;
+  process.kill(beforeCrash.pid, "SIGKILL");
+  await waitForEngineRestart(
+    afterRollback.controlSocketPath,
+    beforeCrash.workspaceHash,
+    beforeCrash.instanceId,
+    beforeCrash.bundleId,
+    15_000,
+  );
+  const afterCrash = await ensureDaemonEngine(ensureOptions);
+  if (afterCrash.disposition !== "reused-exact"
+    || afterCrash.identity.bundleId !== beforeCrash.bundleId
+    || afterCrash.identity.instanceId === beforeCrash.instanceId
+    || afterCrash.identity.processStartIdentity === beforeCrash.processStartIdentity) {
+    throw new Error("systemd crash recovery did not restart the exact staged bundle as a new incarnation");
+  }
+  identity = afterCrash.identity;
+
   process.stdout.write(`${JSON.stringify({
     ok: true,
     unitName,
     concurrent: dispositions,
+    upgradedFrom: { pid: prior.identity.pid, instanceId: prior.identity.instanceId, bundleId: prior.identity.bundleId },
+    rolledBackFrom: { bundleId: brokenBundle.bundleId, engineVersion: brokenManifest.engineVersion },
+    crashRestartedFrom: { pid: beforeCrash.pid, instanceId: beforeCrash.instanceId },
     reused: reused.disposition,
     engine: { pid: identity.pid, instanceId: identity.instanceId, bundleId: identity.bundleId },
     bridge: identity.bridge,
     snapshotSeq: snapshot.seq,
-    queries: ["activity.context", probes.method, "handoff.view", "sidebar.view", "task.board", "task.detail", "task.studio", "pin.studio"],
+    queries: ["activity.context", probes.method, "handoff.view", "sidebar.view", "task.board", "task.detail", "task.studio", "pin.studio", "soul.profile.status"],
     pluginFleet: pluginFleet.agents.map((agent) => ({ name: agent.name, status: agent.status })),
-    commands: ["handoff.ensure", "sidebar.mutate", "agent.input", "pin.studio.apply", "task.studio.apply", "task.prototype.review", "task.update", "task.reorder-lane", "validation.close", "studio.submit", started.method, restarted.method, killed.method],
+    commands: ["handoff.ensure", "sidebar.mutate", "agent.input", "pin.studio.apply", "task.studio.apply", "task.prototype.review", "task.update", "task.reorder-lane", "validation.close", "studio.submit", "soul.profile.create", "soul.profile.replace", "soul.profile.disable", started.method, restarted.method, killed.method],
   }, null, 2)}\n`);
 } finally {
   try { execFileSync("systemctl", ["--user", "stop", unitName], { stdio: "ignore" }); } catch { /* absent/failed unit */ }
@@ -399,6 +502,24 @@ function expectLoopbackListener(port: number): Promise<void> {
   });
 }
 
+function previousDogfoodVersion(version: string): string {
+  const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(version);
+  if (!match) throw new Error(`packaged engine version is not a stable semantic version: ${version}`);
+  const major = Number(match[1]);
+  const minor = Number(match[2]);
+  const patch = Number(match[3]);
+  if (patch > 0) return `${major}.${minor}.${patch - 1}`;
+  if (minor > 0) return `${major}.${minor - 1}.999999`;
+  if (major > 0) return `${major - 1}.999999.999999`;
+  throw new Error("packaged engine version has no lower dogfood predecessor");
+}
+
+function nextDogfoodVersion(version: string): string {
+  const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(version);
+  if (!match) throw new Error(`packaged engine version is not a stable semantic version: ${version}`);
+  return `${Number(match[1])}.${Number(match[2])}.${Number(match[3]) + 1}`;
+}
+
 async function waitUntil(predicate: () => boolean, timeoutMs: number): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -406,6 +527,32 @@ async function waitUntil(predicate: () => boolean, timeoutMs: number): Promise<v
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
   throw new Error("persistent engine cleanup timed out");
+}
+
+async function waitForEngineRestart(
+  socketPath: string,
+  expectedWorkspaceHash: string,
+  priorInstanceId: string,
+  expectedBundleId: string,
+  timeoutMs: number,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const response = await requestEngineControl(socketPath, {
+        schemaVersion: 1,
+        op: "health",
+        workspaceHash: expectedWorkspaceHash,
+      }, 750);
+      if (response.ok && response.op === "health"
+        && response.engine.instanceId !== priorInstanceId
+        && response.engine.bundleId === expectedBundleId) return;
+    } catch {
+      // The old socket is briefly absent/refused while systemd starts the exact staged bundle again.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error("persistent engine crash restart timed out");
 }
 
 function agentRunning(snapshot: { projections: Record<string, unknown> }, name: string): boolean {

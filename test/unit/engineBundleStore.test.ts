@@ -6,6 +6,7 @@ import { createHash } from "node:crypto";
 import {
   EngineBundleError,
   engineBundleInstallRoot,
+  loadStagedEngineBundle,
   stagePackagedEngineBundle,
   stageEngineBundle,
 } from "../../src/engine-service/engineBundleStore.js";
@@ -61,6 +62,14 @@ describe("engine bundle store", () => {
 
     const second = stageEngineBundle({ sourceRoot: source, manifest, installRoot });
     expect(second).toMatchObject({ bundleId: first.bundleId, root: first.root, reused: true });
+    expect(loadStagedEngineBundle(installRoot, first.bundleId)).toMatchObject({
+      bundleId: first.bundleId,
+      root: first.root,
+      entrypoint: first.entrypoint,
+      reused: true,
+    });
+    expect(() => loadStagedEngineBundle(installRoot, "not-a-digest"))
+      .toThrowError(expect.objectContaining({ code: "INVALID_BUNDLE_ID" }));
     expect(fs.readdirSync(installRoot).filter((name) => name.startsWith(".") && name.endsWith(".tmp"))).toEqual([]);
   });
 

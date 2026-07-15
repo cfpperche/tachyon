@@ -20,6 +20,7 @@ import {
   type EngineDaemonLaunchInput,
   type EngineDaemonLauncher,
   type EngineDaemonOptionsV1,
+  type EngineDaemonStopper,
 } from "../../src/engine-service/engineSupervisor.js";
 import { DaemonStateStore } from "../../src/engine-service/daemonStateStore.js";
 import type { EngineStateMigrationV1 } from "../../src/engine-service/stateMigration.js";
@@ -209,6 +210,128 @@ describe("persistent engine supervisor", () => {
     expect(await new TmuxService().hasSession(`tachyon-ctl-${first.identity.workspaceHash}`)).toBe(false);
   }, 25_000);
 
+  it("serializes concurrent newer-bundle activation and records the exact old/new incarnations", async () => {
+    const fixture = workspaceFixture();
+    let active: ChildProcessWithoutNullStreams | undefined;
+    let starts = 0;
+    let stops = 0;
+    const launcher: EngineDaemonLauncher = async (input) => {
+      starts += 1;
+      active = spawnWorker(input.encodedOptions);
+      return "started";
+    };
+    const stopper: EngineDaemonStopper = async (input) => {
+      if (input.expectedIdentity && active?.pid !== input.expectedIdentity.pid) {
+        throw new Error("stopper identity mismatch");
+      }
+      if (!active) return;
+      stops += 1;
+      const child = active;
+      active = undefined;
+      await stopChild(child);
+    };
+    const baseOptions = {
+      workspaceRoot: fixture.workspace,
+      bundle: fixture.bundle,
+      storageRoot: fixture.storage,
+      controlSocketPath: fixture.socket,
+      launcher,
+      stopper,
+      startTimeoutMs: 10_000,
+      pollMs: 20,
+    } as const;
+    const original = await ensureDaemonEngine(baseOptions);
+    const newer = stageTestBundle(
+      fixture.root,
+      "engine-v2",
+      { min: ENGINE_SHELL_PROTOCOL, max: ENGINE_SHELL_PROTOCOL },
+      "0.58.0",
+    );
+
+    const [first, second] = await Promise.all([
+      ensureDaemonEngine({ ...baseOptions, bundle: newer }),
+      ensureDaemonEngine({ ...baseOptions, bundle: newer }),
+    ]);
+
+    expect([first.disposition, second.disposition].sort()).toEqual(["reused-exact", "upgraded"]);
+    expect(first.identity).toEqual(second.identity);
+    expect(first.identity.bundleId).toBe(newer.bundleId);
+    expect(first.identity.instanceId).not.toBe(original.identity.instanceId);
+    expect(starts).toBe(2);
+    expect(stops).toBe(1);
+    const olderShell = await ensureDaemonEngine(baseOptions);
+    expect(olderShell).toMatchObject({ identity: first.identity, disposition: "reused-compatible" });
+    expect(starts).toBe(2);
+    expect(stops).toBe(1);
+    const audit = fs.readFileSync(path.join(fixture.storage, "supervisor", "transitions.jsonl"), "utf8")
+      .trim().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(audit.map((row) => row.phase)).toEqual(["prepared", "committed"]);
+    expect(audit[0]).toMatchObject({
+      from: { instanceId: original.identity.instanceId, bundleId: fixture.bundle.bundleId },
+      to: { bundleId: newer.bundleId, engineVersion: "0.58.0" },
+    });
+    expect(audit[1]).toMatchObject({
+      from: { instanceId: original.identity.instanceId },
+      to: { instanceId: first.identity.instanceId, bundleId: newer.bundleId },
+    });
+  }, 25_000);
+
+  it("restores the verified prior bundle when the newer engine cannot launch", async () => {
+    const fixture = workspaceFixture();
+    let active: ChildProcessWithoutNullStreams | undefined;
+    let refusedBundleId: string | undefined;
+    const launcher: EngineDaemonLauncher = async (input) => {
+      if (input.options.bundleId === refusedBundleId) throw new Error("injected new-engine launch failure");
+      active = spawnWorker(input.encodedOptions);
+      return "started";
+    };
+    const stopper: EngineDaemonStopper = async (input) => {
+      if (input.expectedIdentity && active?.pid !== input.expectedIdentity.pid) {
+        throw new Error("stopper identity mismatch");
+      }
+      if (!active) return;
+      const child = active;
+      active = undefined;
+      await stopChild(child);
+    };
+    const baseOptions = {
+      workspaceRoot: fixture.workspace,
+      bundle: fixture.bundle,
+      storageRoot: fixture.storage,
+      controlSocketPath: fixture.socket,
+      launcher,
+      stopper,
+      startTimeoutMs: 10_000,
+      pollMs: 20,
+    } as const;
+    const original = await ensureDaemonEngine(baseOptions);
+    const broken = stageTestBundle(
+      fixture.root,
+      "engine-broken-v2",
+      { min: ENGINE_SHELL_PROTOCOL, max: ENGINE_SHELL_PROTOCOL },
+      "0.58.0",
+    );
+    refusedBundleId = broken.bundleId;
+
+    await expect(ensureDaemonEngine({ ...baseOptions, bundle: broken }))
+      .rejects.toMatchObject({ code: "ENGINE_UPGRADE_ROLLED_BACK" });
+
+    const restored = await ensureDaemonEngine({
+      ...baseOptions,
+      launcher: async () => { throw new Error("restored engine must be reused"); },
+    });
+    expect(restored.disposition).toBe("reused-exact");
+    expect(restored.identity.bundleId).toBe(fixture.bundle.bundleId);
+    expect(restored.identity.instanceId).not.toBe(original.identity.instanceId);
+    const audit = fs.readFileSync(path.join(fixture.storage, "supervisor", "transitions.jsonl"), "utf8")
+      .trim().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(audit.map((row) => row.phase)).toEqual(["prepared", "rolled-back"]);
+    expect(audit[1]).toMatchObject({
+      attemptedBundleId: broken.bundleId,
+      restored: { bundleId: fixture.bundle.bundleId, instanceId: restored.identity.instanceId },
+    });
+  }, 25_000);
+
   it("refuses a non-socket control entry before invoking the launcher", async () => {
     const fixture = workspaceFixture();
     fs.writeFileSync(fixture.socket, "do not replace", { mode: 0o600 });
@@ -281,6 +404,7 @@ function stageTestBundle(
   root: string,
   name: string,
   protocol: EngineBundleManifestV1["protocol"],
+  engineVersion = `0.57.0-${name}`,
 ): StagedEngineBundle {
   const source = path.join(root, `source-${name}`);
   const installRoot = path.join(root, "installed-bundles");
@@ -289,7 +413,7 @@ function stageTestBundle(
   fs.writeFileSync(path.join(source, "engine-daemon.cjs"), content, "utf8");
   const manifest: EngineBundleManifestV1 = {
     schemaVersion: 1,
-    engineVersion: `0.57.0-${name}`,
+    engineVersion,
     protocol,
     entrypoint: "engine-daemon.cjs",
     files: [{ path: "engine-daemon.cjs", sha256: sha256(content), executable: true }],
