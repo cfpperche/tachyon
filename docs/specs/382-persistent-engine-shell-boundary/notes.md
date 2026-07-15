@@ -31,7 +31,8 @@ None.
 ## Open questions
 
 - Freeze the supported-platform launcher matrix before switching the global default.
-- Freeze the legacy globalState/SecretStorage allowlist from source before implementing migration.
+- Resolved on 2026-07-15: the executable legacy state/secret allowlist and one-time migration are implemented
+  in the thirtieth slice; unknown keys are not copied.
 
 ## Boundary inventory — 2026-07-14
 
@@ -695,3 +696,21 @@ None.
   from silently reusing a pre-UI-request engine. A packaging assertion binds the emitted manifest to the source
   protocol constant. Build, typecheck, the 231-file editor-free daemon closure and the focused ten-file matrix
   (53/53) pass; diff-check is clean. The final global run remains reserved for the post-SOUL reconciliation.
+
+## Thirty-second implementation slice — 2026-07-15
+
+- Reconciled the isolated candidate with the accepted SOUL mainline merge at `7761e46d` without integrating
+  the candidate back into `main`. The merge produced two semantic conflicts only: Agent Studio's new identity
+  actions and `Workspace`'s terminal/derived-file imports.
+- Preserved SOUL's journaled lifecycle and UI while keeping the editor shell free of concrete `Workspace`.
+  Agent Studio now depends on a narrow remote target; status reads and create/adopt/enable/disable/delete
+  mutations cross the existing authenticated engine operation contract. Import and replacement bytes use the
+  private digest-bound staged-payload transport, so the 64 KiB SOUL limit never overflows the control socket
+  and no local source path crosses the process boundary.
+- SOUL failures remain typed for the Studio without exposing daemon paths: the engine returns a closed
+  success/error outcome, the shell validates agent/path/status identity and reconstructs only a finite
+  `SoulError` code. The canonical path is opened by VS Code only after an engine-owned status/read proof.
+- The merged focused matrix passes 514/514 across SOUL, AgentManager, Workspace, real engine, UI broker and
+  shell targets. Typecheck, build and the 238-file editor-free daemon import closure are green. The remaining
+  work is the spec-wide audit, declared dogfood and final full verification; no additional product follow-up
+  was created by the SOUL reconciliation.

@@ -22,7 +22,176 @@ import type { FormState, QuickAddChip } from "../formLogic.js";
  * fields formLogic's shared FormState type carries along are always left at their blank defaults.
  */
 
-export const AGENT_STUDIO_DOMAIN_MESSAGE_NAMES = ["browse", "cwd"] as const;
+/**
+ * spec 377 T15A — typed common-path profile protocol names (plus legacy browse/cwd).
+ * Final Identity UI layout is T16; these names are the explicit host/webview contract.
+ */
+export const AGENT_STUDIO_WEBVIEW_MESSAGE_NAMES = [
+  "browse",
+  "createSoul",
+  "importSoul",
+  "replaceSoul",
+  "openSoul",
+  "refreshSoul",
+  "previewSoul",
+  "adoptSoulProfile",
+  "enableSoul",
+  "disableSoul",
+  "deleteSoulProfile",
+] as const;
+
+export const AGENT_STUDIO_HOST_MESSAGE_NAMES = [
+  "cwd",
+  "soulProfileStatus",
+  "soulProfileError",
+] as const;
+
+/** Complete surface vocabulary for collision checks only; boundary decoders use the directional lists. */
+export const AGENT_STUDIO_DOMAIN_MESSAGE_NAMES = [
+  ...AGENT_STUDIO_WEBVIEW_MESSAGE_NAMES,
+  ...AGENT_STUDIO_HOST_MESSAGE_NAMES,
+] as const;
+
+export type AgentStudioDomainMessageName = (typeof AGENT_STUDIO_DOMAIN_MESSAGE_NAMES)[number];
+
+const AGENT_NAME_RE = /^[A-Za-z][A-Za-z0-9_-]*$/;
+const SHA256_RE = /^[0-9a-f]{64}$/;
+const PROFILE_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const BASE64_RE = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+const BASE64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+/** Browser-side guard; the host repeats the authoritative SOUL_MAX_BYTES validation. */
+export const SOUL_IMPORT_MAX_BYTES = 64 * 1024;
+export const SOUL_IMPORT_MAX_BASE64_CHARS = 4 * Math.ceil(SOUL_IMPORT_MAX_BYTES / 3);
+
+export function isAllowedSoulImportFileName(value: unknown): value is string {
+  return typeof value === "string"
+    && value.length > 0
+    && value.length <= 255
+    && !/[\\/\0]/.test(value)
+    && /\.(?:md|markdown|txt)$/i.test(value);
+}
+
+/** Strict canonical base64 so the host receives bounded, unambiguous bytes rather than a local path. */
+export function isCanonicalSoulImportBase64(value: unknown): value is string {
+  if (typeof value !== "string" || value.length === 0 || value.length > SOUL_IMPORT_MAX_BASE64_CHARS
+    || value.length % 4 !== 0 || !BASE64_RE.test(value)) return false;
+  const padding = value.endsWith("==") ? 2 : value.endsWith("=") ? 1 : 0;
+  const decodedBytes = (value.length / 4) * 3 - padding;
+  if (decodedBytes <= 0 || decodedBytes > SOUL_IMPORT_MAX_BYTES) return false;
+  if (padding === 2 && (BASE64_ALPHABET.indexOf(value[value.length - 3]!) & 0x0f) !== 0) return false;
+  if (padding === 1 && (BASE64_ALPHABET.indexOf(value[value.length - 2]!) & 0x03) !== 0) return false;
+  return true;
+}
+
+export type AgentStudioSoulActionMessage =
+  | { type: "createSoul" | "openSoul" | "refreshSoul" | "previewSoul" | "enableSoul" | "disableSoul" | "deleteSoulProfile"; agent: string }
+  | { type: "importSoul"; agent: string; contentBase64: string }
+  | { type: "replaceSoul"; agent: string; contentBase64: string; expectedDigest: string }
+  | { type: "adoptSoulProfile"; agent: string; expectedDigest: string };
+
+export type AgentStudioInboundDomainMessage = { type: "browse" } | AgentStudioSoulActionMessage;
+
+function exactKeys(value: Record<string, unknown>, expected: readonly string[]): boolean {
+  const keys = Object.keys(value).filter((key) => key !== "studioProtocolVersion").sort();
+  return keys.join("\0") === [...expected].sort().join("\0");
+}
+
+/** Runtime validation after the shared envelope/name decoder, before any host filesystem action. */
+export function validateAgentStudioInboundMessage(raw: unknown): AgentStudioInboundDomainMessage | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const value = raw as Record<string, unknown>;
+  if (value.type === "browse") return exactKeys(value, ["type"]) ? { type: "browse" } : undefined;
+  if (typeof value.type !== "string" || !AGENT_STUDIO_WEBVIEW_MESSAGE_NAMES.includes(value.type as never)
+    || value.type === "browse" || typeof value.agent !== "string" || !AGENT_NAME_RE.test(value.agent)) return undefined;
+  if (value.type === "adoptSoulProfile") {
+    if (!exactKeys(value, ["type", "agent", "expectedDigest"]) || typeof value.expectedDigest !== "string" || !SHA256_RE.test(value.expectedDigest)) return undefined;
+    return { type: "adoptSoulProfile", agent: value.agent, expectedDigest: value.expectedDigest };
+  }
+  if (value.type === "importSoul") {
+    if (!exactKeys(value, ["type", "agent", "contentBase64"])
+      || !isCanonicalSoulImportBase64(value.contentBase64)) return undefined;
+    return { type: "importSoul", agent: value.agent, contentBase64: value.contentBase64 };
+  }
+  if (value.type === "replaceSoul") {
+    if (!exactKeys(value, ["type", "agent", "contentBase64", "expectedDigest"])
+      || !isCanonicalSoulImportBase64(value.contentBase64)
+      || typeof value.expectedDigest !== "string" || !SHA256_RE.test(value.expectedDigest)) return undefined;
+    return { type: "replaceSoul", agent: value.agent, contentBase64: value.contentBase64, expectedDigest: value.expectedDigest };
+  }
+  if (!exactKeys(value, ["type", "agent"])) return undefined;
+  return { type: value.type as Exclude<AgentStudioSoulActionMessage["type"], "adoptSoulProfile" | "importSoul" | "replaceSoul">, agent: value.agent };
+}
+
+/** Host-facing profile status snapshot (no import source path). */
+export interface SoulProfileStatusMessage {
+  agent: string;
+  relativePath: string;
+  lifecycle: "missing" | "active" | "retained" | "unowned" | "invalid";
+  profileId?: string;
+  sha256?: string;
+  chars?: number;
+  bytes?: number;
+  soulEnabled: boolean;
+  resolvable: boolean;
+  transactionDegraded: boolean;
+  preview?: string;
+  /** Which action produced this status, when applicable. */
+  action?: "create" | "import" | "replace" | "open" | "refresh" | "preview" | "adopt" | "enable" | "disable" | "delete";
+  selfSelected?: boolean;
+}
+
+export function projectSoulProfileStatus(
+  value: SoulProfileStatusMessage,
+  extras?: Pick<SoulProfileStatusMessage, "action" | "selfSelected">,
+): SoulProfileStatusMessage {
+  return {
+    agent: value.agent,
+    relativePath: value.relativePath,
+    lifecycle: value.lifecycle,
+    ...(value.profileId !== undefined ? { profileId: value.profileId } : {}),
+    ...(value.sha256 !== undefined ? { sha256: value.sha256 } : {}),
+    ...(value.chars !== undefined ? { chars: value.chars } : {}),
+    ...(value.bytes !== undefined ? { bytes: value.bytes } : {}),
+    soulEnabled: value.soulEnabled,
+    resolvable: value.resolvable,
+    transactionDegraded: value.transactionDegraded,
+    ...(value.preview !== undefined ? { preview: value.preview } : {}),
+    ...(extras?.action !== undefined ? { action: extras.action } : value.action !== undefined ? { action: value.action } : {}),
+    ...(extras?.selfSelected !== undefined ? { selfSelected: extras.selfSelected } : value.selfSelected !== undefined ? { selfSelected: value.selfSelected } : {}),
+  };
+}
+
+export function isSoulProfileStatusMessage(raw: unknown): raw is SoulProfileStatusMessage {
+  if (!raw || typeof raw !== "object") return false;
+  const value = raw as Partial<SoulProfileStatusMessage>;
+  if (typeof value.agent !== "string" || !AGENT_NAME_RE.test(value.agent)
+    || value.relativePath !== `.tachyon/agents/${value.agent}/SOUL.md`
+    || !["missing", "active", "retained", "unowned", "invalid"].includes(value.lifecycle ?? "")
+    || typeof value.soulEnabled !== "boolean" || typeof value.resolvable !== "boolean" || typeof value.transactionDegraded !== "boolean") return false;
+  if (value.profileId !== undefined && !PROFILE_ID_RE.test(value.profileId)) return false;
+  if (value.sha256 !== undefined && !SHA256_RE.test(value.sha256)) return false;
+  if (value.chars !== undefined && (!Number.isSafeInteger(value.chars) || value.chars < 0)) return false;
+  if (value.bytes !== undefined && (!Number.isSafeInteger(value.bytes) || value.bytes < 0)) return false;
+  if (value.preview !== undefined && (typeof value.preview !== "string" || value.preview.length > 2_002)) return false;
+  if (value.action !== undefined && !["create", "import", "replace", "open", "refresh", "preview", "adopt", "enable", "disable", "delete"].includes(value.action)) return false;
+  return value.selfSelected === undefined || typeof value.selfSelected === "boolean";
+}
+
+/** Runtime validation for the three host-only domain responses consumed by the browser shell. */
+export function validateAgentStudioHostDomainMessage(raw: unknown): boolean {
+  if (!raw || typeof raw !== "object") return false;
+  const value = raw as Record<string, unknown>;
+  if (value.type === "cwd") return exactKeys(value, ["type", "value"]) && typeof value.value === "string";
+  if (value.type === "soulProfileStatus") return exactKeys(value, ["type", "status"]) && isSoulProfileStatusMessage(value.status);
+  if (value.type === "soulProfileError") {
+    return exactKeys(value, ["type", "agent", "code", "message"])
+      && typeof value.agent === "string" && AGENT_NAME_RE.test(value.agent)
+      && typeof value.code === "string" && /^soul\/[a-z0-9-]+$/.test(value.code)
+      && typeof value.message === "string" && value.message.length <= 2_000;
+  }
+  return false;
+}
 
 /** The load-time snapshot: the agent's current FormState (kind fixed "agent") plus the reference data the
  *  form needs to render (quick-add chips, flag suggestions, default cwd, verify-gate suggestions). Mirrors
@@ -48,6 +217,7 @@ export function blankAgentFields(): FormState {
     cmd: "",
     kind: "agent",
     instructions: "",
+    soul: false,
     role: "",
     watch: "",
     steps: "",

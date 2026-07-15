@@ -19,11 +19,12 @@ design review). **They are namespaced so they can never be import-confused:**
 | --- | --- | --- |
 | Plugins panel (`src/webview/plugins/`) | `KitSelect` (installed-list sort), `KitDropdown` (per-card overflow menu) | Pilot A (T5). Primary card actions (Update/Reinstall/Remove) stay `Button`. |
 | Task Studio (`src/webview/task-studio/`) | `KitFieldRow`, `KitLabeledInput` (Kind, Assignee), `KitSelect` (Priority) | Pilot B (T7). `ts-chip-fields` (Deps/Artifacts) is untouched — a bespoke chip-input pattern, not Select/Input. |
-| Every other panel (sidebar, activity, handoff, probes, inspector, agent-studio, pin-preview, pin-studio, mission-control, task-detail) | legacy `.ds-*` only | Byte-untouched by this spec (spec.md's "no regression outside the pilots" acceptance). |
+| Agent Studio (`src/webview/agent-studio-shell/`) | `KitDropdown` (secondary Soul actions), `KitFilePicker` (Soul import); legacy form primitives | Soul work introduced the two new interaction patterns without rewriting the existing form. |
+| Every other panel (sidebar, activity, handoff, probes, inspector, pin-preview, pin-studio, mission-control, task-detail) | legacy `.ds-*` only | Byte-untouched by this spec (spec.md's "no regression outside the pilots" acceptance). |
 
 ## The adoption rule
 
-- **New UI = `kit/`.** If you're building a Select, a labeled input, a dropdown menu, or a popover for a new
+- **New UI = `kit/`.** If you're building a Select, a labeled input, a dropdown menu, a popover, or a file picker for a new
   surface (or a surface not yet migrated), import from `shared/ui/kit`, not `shared/ui`'s legacy primitives
   and not `shared/ui/vendor` directly.
 - **Legacy migrates only with a reason.** Don't rewrite a working `.ds-*` control to Kit just to "modernize"

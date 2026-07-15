@@ -135,6 +135,29 @@ describe("persistent engine protocol", () => {
       { schemaVersion: 1, method: "extension.invoke", input: { action: "command.tick" } },
       commandResult,
     )).toBe(false);
+
+    const soulQuery = {
+      schemaVersion: 1 as const,
+      method: "extension.query" as const,
+      input: { action: "soul.profile.status" as const, agent: "worker-1" },
+    };
+    expect(isWorkspaceQueryV1(soulQuery)).toBe(true);
+    expect(isWorkspaceQueryV1({ ...soulQuery, input: { ...soulQuery.input, agent: "../escape" } })).toBe(false);
+    const soulPayload = { schemaVersion: 1 as const, token: "a".repeat(48), sha256: "b".repeat(64), byteSize: 64 * 1024 };
+    const soulReplace = {
+      schemaVersion: 1 as const,
+      method: "extension.invoke" as const,
+      input: {
+        action: "soul.profile.replace" as const,
+        agent: "worker-1",
+        payload: soulPayload,
+        expectedDigest: "c".repeat(64),
+      },
+    };
+    expect(isWorkspaceCommandV1(soulReplace)).toBe(true);
+    expect(isWorkspaceCommandV1({ ...soulReplace, input: { ...soulReplace.input, payload: { ...soulPayload, byteSize: 64 * 1024 + 1 } } })).toBe(false);
+    expect(isWorkspaceCommandV1({ ...soulReplace, input: { ...soulReplace.input, expectedDigest: "stale" } })).toBe(false);
+    expect(isWorkspaceCommandV1({ ...soulReplace, input: { ...soulReplace.input, sourcePath: "/tmp/SOUL.md" } })).toBe(false);
     expect(() => workspaceExtensionQuerySuccessV1(
       { schemaVersion: 1, method: "extension.query", input: { action: "agents.list" } },
       "x".repeat(2 * 1024 * 1024),
@@ -590,6 +613,7 @@ function studioForm(): WorkspaceStudioFormV1 {
     autostart: false,
     restartOnCrash: false,
     attention: false,
+    soul: false,
     worktree: false,
     branch: "",
     worktreeSetup: "",

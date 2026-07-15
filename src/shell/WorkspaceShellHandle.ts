@@ -18,6 +18,7 @@ import {
   type WorkspaceGitPresentationTarget,
   type WorkspacePluginPresentationTarget,
   type WorkspaceProbePresentationTarget,
+  type WorkspaceAgentStudioTarget,
   type WorkspaceStudioTarget,
 } from "./WorkspacePresentation.js";
 
@@ -31,7 +32,7 @@ export interface WorkspaceShellHandleOptions {
  * manager, store, watcher, Bridge or agent lifecycle; every operational gesture
  * crosses WorkspaceClient while the editor keeps only presentation adapters.
  */
-export class WorkspaceShellHandle implements WorkspaceStudioTarget {
+export class WorkspaceShellHandle implements WorkspaceAgentStudioTarget {
   readonly sidebar: WorkspaceSidebarTarget;
   readonly activity: WorkspaceActivityTarget;
   readonly handoff: WorkspaceHandoffTarget;
@@ -75,4 +76,15 @@ export class WorkspaceShellHandle implements WorkspaceStudioTarget {
   studioSubmit(submit: StudioSubmit): string[] | undefined | Promise<string[] | undefined> {
     return this.studio.studioSubmit(submit);
   }
+  createSoulProfile(agent: string) { return this.studio.createSoulProfile(agent); }
+  importSoulProfileBytes(agent: string, bytes: Buffer) { return this.studio.importSoulProfileBytes(agent, bytes); }
+  replaceSoulProfileBytes(agent: string, bytes: Buffer, expectedDigest: string) {
+    return this.studio.replaceSoulProfileBytes(agent, bytes, expectedDigest);
+  }
+  adoptSoulProfile(agent: string, expectedDigest: string) { return this.studio.adoptSoulProfile(agent, expectedDigest); }
+  enableSoulProfile(agent: string) { return this.studio.enableSoulProfile(agent); }
+  disableSoulProfile(agent: string) { return this.studio.disableSoulProfile(agent); }
+  deleteSoulProfile(agent: string) { return this.studio.deleteSoulProfile(agent); }
+  refreshSoulProfile(agent: string) { return this.studio.refreshSoulProfile(agent); }
+  canonicalSoulPathForOpen(agent: string) { return this.studio.canonicalSoulPathForOpen(agent); }
 }

@@ -22,6 +22,7 @@ export function blankCommandFields(): FormState {
     cmd: "",
     kind: "command",
     instructions: "",
+    soul: false,
     role: "",
     watch: "",
     steps: "",

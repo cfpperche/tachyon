@@ -8,6 +8,10 @@ import {
   projectGuidancePathError,
   type ProjectGuidanceSettings,
 } from "./projectGuidance.js";
+import { openingPromptCapability, resolveBinary } from "../agents/openingPromptCapability.js";
+import { AGENT_NAME_PATTERN, asciiFoldAgentName } from "./nameValidation.js";
+import { runtimePromptAdapter } from "../agents/runtimePromptAdapters.js";
+export { openingPromptCapability, resolveBinary } from "../agents/openingPromptCapability.js";
 import {
   behaviorStubPathError,
   behaviorStubPathTemplateError,
@@ -47,35 +51,6 @@ export const KNOWN_AI_CLIS = [
   "verboo",
 ];
 
-const LAUNCHERS = new Set(["npx", "bunx", "pnpx"]);
-/** GNU `env` options that consume the FOLLOWING token as an operand (so it's not the command). */
-const ENV_OPERAND_FLAGS = new Set(["-u", "--unset", "-C", "--chdir", "-S", "--split-string"]);
-
-/**
- * The effective binary base name, seeing through `npx/bunx/pnpx <bin>` and
- * `env [-i] [-u NAME] [-C DIR] [NAME=VAL]… <bin>`. SHARED by `inferKind` (classification) and
- * `composeCommand` (prompt delivery) so they always agree — a spawn classified as an AI agent
- * (and thus gated by the spec-246 contract) MUST also receive its brief (codex impl review #1/#3).
- */
-export function resolveBinary(cmd: string): string {
-  const tokens = cmd.trim().split(/\s+/);
-  const head = (tokens[0] ?? "").split("/").pop() ?? "";
-  if (LAUNCHERS.has(head)) {
-    const bin = tokens.slice(1).find((t) => !t.startsWith("-") && !t.includes("="));
-    return (bin ?? tokens[0] ?? "").split("/").pop() ?? "";
-  }
-  if (head === "env") {
-    let i = 1;
-    while (i < tokens.length) {
-      const t = tokens[i];
-      if (ENV_OPERAND_FLAGS.has(t)) { i += 2; continue; } // flag + its operand are not the command
-      if (t.startsWith("-") || t.includes("=")) { i++; continue; } // other env flag / NAME=VALUE
-      break; // first remaining token is the command
-    }
-    return (tokens[i] ?? "").split("/").pop() ?? "";
-  }
-  return head;
-}
 
 /** agent = known AI CLI; everything else (servers, shells, builds) = terminal. Explicit `kind:` wins. */
 export function inferKind(cmd: string): EntryKind {
@@ -133,6 +108,8 @@ export interface ManagedEntryDef {
   /** spec 216 — built-in role template (coder/reviewer/tester/orchestrator/custom); composed
    *  with `instructions` at delivery (template first). agents-only — terminals have no AI. */
   role?: Role;
+  /** spec 377 — enable the canonical, Tachyon-owned per-agent SOUL.md profile. */
+  soul?: boolean;
   /** spec 210 — run this agent in its own git worktree+branch (opt-in, off by default) */
   worktree?: boolean;
   /** per-agent literal branch name (overrides the global template); authoritatively validated via git check-ref-format at worktree-create */
@@ -171,37 +148,14 @@ export function validateBranchLiteral(branch: string): string | null {
   return null;
 }
 
-/** Per-runtime template turning instructions into CLI args; absent = not deliverable. */
-const INSTRUCTION_ARG: Record<string, (quoted: string) => string> = {
-  claude: (q) => q,
-  codex: (q) => q,
-  agy: (q) => `--prompt-interactive ${q}`,
-  gemini: (q) => `-i ${q}`,
-  // t-6a5dae: `opencode` (bare, TUI) pre-fills its composer from `--prompt <msg>` — the interactive
-  // counterpart to `opencode run <msg>` (headless). Without this entry composeCommand fell through
-  // to "unknown CLI" and returned the bare cmd, so a gated opencode spawn's brief was silently dropped
-  // (empty composer on spawn AND restart) even though inferKind/KNOWN_AI_CLIS already treat it as an agent.
-  opencode: (q) => `--prompt ${q}`,
-  // Cap 1 parity (docs/runtimes/parity.md): Grok accepts a positional [PROMPT] after options
-  // (`grok [OPTIONS] [PROMPT]`). Same shape as claude/codex. Without this key, composeCommand
-  // returned bare `grok` and spawn contracts (task/context/constraints) were silently dropped —
-  // cold-start implementers sat idle with an empty composer (e.g. gxAgentForm / t-a1ba6c).
-  // injectResumeId applies `-s <uuid>` onto def.cmd *before* effectiveCmd/composeCommand, so the
-  // final argv is `grok -s <uuid> '<brief>'` (options before prompt).
-  grok: (q) => q,
-  // Hermes has no interactive positional prompt. Presence in INSTRUCTION_ARG marks the brief as
-  // deliverable; composeCommand leaves argv unchanged and AgentManager injects HERMES_TUI_QUERY
-  // (Hermes TUI reads it as STARTUP_QUERY). -z/--oneshot exits after one turn — wrong for Bridge.
-  hermes: (_q) => "",
-};
-
 /** POSIX single-quote escaping — safe inside the shell command tmux runs. */
 export function shellQuote(text: string): string {
   return `'${text.replace(/'/g, `'\\''`)}'`;
 }
 
 export function instructionsDeliverable(cmd: string): boolean {
-  return resolveBinary(cmd) in INSTRUCTION_ARG;
+  const capability = openingPromptCapability(cmd);
+  return capability.status === "prompt" || capability.status === "native-external";
 }
 
 /**
@@ -322,13 +276,12 @@ export function codexFlagCmd(cmd: string, flag: string): string {
 /** The command actually spawned: cmd + instructions arg when the runtime accepts one. */
 export function composeCommand(def: Pick<AgentDef, "cmd" | "instructions">): string {
   if (!def.instructions || def.instructions.trim().length === 0) return def.cmd;
-  const base = resolveBinary(def.cmd); // see through npx/bunx/env so `npx claude` still gets its prompt (codex #1)
-  const template = INSTRUCTION_ARG[base];
-  if (!template) return def.cmd; // unknown CLI — stored but not delivered (documented)
+  const adapter = runtimePromptAdapter(def.cmd);
+  if (!adapter) return def.cmd; // unknown CLI — stored but not delivered (documented)
   // Hermes: brief rides in HERMES_TUI_QUERY (AgentManager), not argv — empty template must not
   // append a trailing space that would look like a malformed subcommand token.
-  if (base === "hermes") return def.cmd;
-  const arg = template(shellQuote(def.instructions.trim()));
+  if (!adapter.compose) return def.cmd;
+  const arg = adapter.compose(shellQuote(def.instructions.trim()));
   if (!arg) return def.cmd;
   return `${def.cmd} ${arg}`;
 }
@@ -459,7 +412,7 @@ export interface ParseResult {
 
 export const CONFIG_FILENAMES = ["tachyon.yml", "tachyon.yaml"];
 
-const NAME_RE = /^[a-zA-Z][a-zA-Z0-9_-]*$/;
+const NAME_RE = AGENT_NAME_PATTERN;
 function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
@@ -467,7 +420,7 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
 /** Every recognized entry key. `isolate` remains recognized only as a deprecated read-compat key. `kind`/
  *  `instructions` are recognized everywhere (so they're never "unknown"); under `terminals:` they're rejected
  *  explicitly with a clearer message instead. */
-const AGENT_KEYS = ["cmd", "cwd", "env", "autostart", "watch", "attention", "restart", "kind", "instructions", "role", "worktree", "branch", "worktreeSetup", "verify", "harness", "isolate", "subagents"];
+const AGENT_KEYS = ["cmd", "cwd", "env", "autostart", "watch", "attention", "restart", "kind", "instructions", "role", "soul", "worktree", "branch", "worktreeSetup", "verify", "harness", "isolate", "subagents"];
 
 /** Recognized harness keys (spec 226 mcp + spec 228 hooks/rules/skills). */
 const HARNESS_KEYS = ["inherit", "mcp", "hooks", "rules", "instructions", "skills"];
@@ -705,6 +658,7 @@ function parseAgentEntry(section: "agents" | "terminals", name: string, def: Rec
   if (forceTerminal) {
     if (def.kind !== undefined) errors.push(`terminals.${name}: remove 'kind' — entries under terminals: are always terminals`);
     if (def.instructions !== undefined) errors.push(`terminals.${name}: 'instructions' applies only to agents (declare it under agents: with kind: agent)`);
+    if (def.soul !== undefined) errors.push(`terminals.${name}: 'soul' applies only to agents (declare it under agents: with kind: agent)`);
   } else if (def.kind !== undefined) {
     if (def.kind !== "agent" && def.kind !== "terminal") errors.push(`agents.${name}.kind: must be 'agent' or 'terminal'`);
     else agent.kind = def.kind;
@@ -784,6 +738,15 @@ function parseAgentEntry(section: "agents" | "terminals", name: string, def: Rec
       errors.push(`agents.${name}.role: must be one of ${ROLES.join(", ")}`);
     } else {
       agent.role = def.role;
+    }
+  }
+  if (def.soul !== undefined) {
+    if (forceTerminal || agent.kind === "terminal") {
+      if (!forceTerminal) errors.push(`${section}.${name}: 'soul' applies only to agents (this entry is a terminal — it has no AI identity)`);
+    } else if (typeof def.soul !== "boolean") {
+      errors.push(`agents.${name}.soul: must be a boolean`);
+    } else {
+      agent.soul = def.soul;
     }
   }
   if (def.restart !== undefined) {
@@ -977,6 +940,17 @@ export function parseConfig(yamlText: string): ParseResult {
       }
       const agent = parseAgentEntry("agents", name, def, errors, warnings);
       if (agent) agents[name] = agent;
+    }
+    const enabledByFold = new Map<string, string>();
+    for (const [name, agent] of Object.entries(agents)) {
+      if (agent.soul !== true) continue;
+      const folded = asciiFoldAgentName(name);
+      const prior = enabledByFold.get(folded);
+      if (prior !== undefined) {
+        errors.push(`agents.${name}.soul: conflicts with soul-enabled agent '${prior}' after ASCII case folding`);
+      } else {
+        enabledByFold.set(folded, name);
+      }
     }
   }
 

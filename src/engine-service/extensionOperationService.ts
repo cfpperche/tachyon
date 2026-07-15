@@ -3,6 +3,8 @@ import net from "node:net";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import type { ActivityLogManager } from "../activity/ActivityLogManager.js";
+import { SoulError, SOUL_MAX_BYTES, type SoulProfileStatus } from "../agents/soul.js";
+import type { ProfileMutationResult } from "../agents/soulProfileTransactions.js";
 import { executeWait, type BridgeDeps } from "../bridge/tools.js";
 import { resolveApproval } from "../bridge/approvalRequest.js";
 import { degradedRosterExtras } from "../config/configFailure.js";
@@ -28,11 +30,13 @@ import type { ViewKind } from "../workspace/EngineHost.js";
 import type { Workspace } from "../workspace/Workspace.js";
 import type { ProviderObservationService } from "../runtimeObservability/service.js";
 import { buildDoctorReport, formatDoctorReport } from "../workspace/doctorReport.js";
+import type { StagedPayloadStore } from "./stagedPayloadStore.js";
 
 export interface ExtensionOperationContext {
   workspace: Workspace;
   activityLog: ActivityLogManager;
   providerObservations: ProviderObservationService;
+  stagedPayloads?: StagedPayloadStore;
   onViewsChanged(view: ViewKind): void;
 }
 
@@ -77,6 +81,8 @@ export async function executeExtensionQuery(
       return inspectAgent(workspace, query.agent);
     case "agent.fork-preview":
       return json(await workspace.manager.planFork(query.agent));
+    case "soul.profile.status":
+      return soulProfileOutcome(() => workspace.refreshSoulProfile(query.agent));
     case "prompt.catalog": {
       const library = new PromptStore(workspace.workspaceRoot).list();
       return json({
@@ -118,7 +124,7 @@ export async function executeExtensionCommand(
   context: ExtensionOperationContext,
   command: ExtensionCommandV1,
 ): Promise<JsonValue> {
-  const { workspace, activityLog, onViewsChanged } = context;
+  const { workspace, activityLog, onViewsChanged, stagedPayloads } = context;
   switch (command.action) {
     case "pipeline.seed":
       return json({ runId: workspace.seedPipelineRun(command.name) });
@@ -280,6 +286,29 @@ export async function executeExtensionCommand(
     case "bridge.stop":
       await workspace.stopBridge();
       return json({ stopped: true });
+    case "soul.profile.create":
+      return soulProfileMutation(() => workspace.createSoulProfile(command.agent), onViewsChanged);
+    case "soul.profile.import": {
+      if (!stagedPayloads) throw new Error("Soul payload transport is unavailable");
+      const bytes = stagedPayloads.consume(command.payload, SOUL_MAX_BYTES);
+      return soulProfileMutation(() => workspace.importSoulProfileBytes(command.agent, bytes), onViewsChanged);
+    }
+    case "soul.profile.replace": {
+      if (!stagedPayloads) throw new Error("Soul payload transport is unavailable");
+      const bytes = stagedPayloads.consume(command.payload, SOUL_MAX_BYTES);
+      return soulProfileMutation(
+        () => workspace.replaceSoulProfileBytes(command.agent, bytes, command.expectedDigest),
+        onViewsChanged,
+      );
+    }
+    case "soul.profile.adopt":
+      return soulProfileMutation(() => workspace.adoptSoulProfile(command.agent, command.expectedDigest), onViewsChanged);
+    case "soul.profile.enable":
+      return soulProfileMutation(() => workspace.enableSoulProfile(command.agent), onViewsChanged);
+    case "soul.profile.disable":
+      return soulProfileMutation(() => workspace.disableSoulProfile(command.agent), onViewsChanged);
+    case "soul.profile.delete":
+      return soulProfileMutation(() => workspace.deleteSoulProfile(command.agent), onViewsChanged);
     case "runtime-ops.provider.configure": {
       await context.providerObservations.configureProvider(command.provider, command.enabled
         ? { state: "granted", consent: "explicit-user", sources: ["cli"] }
@@ -298,6 +327,53 @@ export async function executeExtensionCommand(
       onViewsChanged("handoff");
       return json({ changed: true });
   }
+}
+
+async function soulProfileMutation(
+  run: () => Promise<ProfileMutationResult>,
+  onViewsChanged: (view: ViewKind) => void,
+): Promise<JsonValue> {
+  const outcome = await soulProfileOutcome(run);
+  if (isSuccessfulSoulProfileOutcome(outcome)) onViewsChanged("agents");
+  return outcome;
+}
+
+async function soulProfileOutcome(
+  run: () => Promise<ProfileMutationResult | SoulProfileStatus>,
+): Promise<JsonValue> {
+  try {
+    const raw = await run();
+    const mutation: ProfileMutationResult | undefined = "status" in raw ? raw : undefined;
+    const status: SoulProfileStatus = mutation ? mutation.status : raw as SoulProfileStatus;
+    return json({
+      outcome: "ok",
+      status: projectSoulProfileStatus(status),
+      ...(mutation?.selfSelected !== undefined ? { selfSelected: mutation.selfSelected } : {}),
+    });
+  } catch (error) {
+    if (error instanceof SoulError) return json({ outcome: "error", code: error.code });
+    throw error;
+  }
+}
+
+function projectSoulProfileStatus(status: SoulProfileStatus): JsonValue {
+  return json({
+    agent: status.agent,
+    relativePath: status.relativePath,
+    lifecycle: status.lifecycle,
+    ...(status.profileId !== undefined ? { profileId: status.profileId } : {}),
+    ...(status.sha256 !== undefined ? { sha256: status.sha256 } : {}),
+    ...(status.chars !== undefined ? { chars: status.chars } : {}),
+    ...(status.bytes !== undefined ? { bytes: status.bytes } : {}),
+    soulEnabled: status.soulEnabled,
+    resolvable: status.resolvable,
+    transactionDegraded: status.transactionDegraded,
+    ...(status.preview !== undefined ? { preview: status.preview } : {}),
+  });
+}
+
+function isSuccessfulSoulProfileOutcome(value: JsonValue): boolean {
+  return !!value && typeof value === "object" && !Array.isArray(value) && value.outcome === "ok";
 }
 
 async function configHealth(workspace: Workspace): Promise<JsonValue> {

@@ -1,0 +1,5 @@
+# Dev Host isolation dirs created locally during F5 dogfood.
+.edh-user-data/
+.edh-extensions/
+.edh-tmux/
+.edh-cache/

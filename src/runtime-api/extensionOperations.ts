@@ -1,9 +1,13 @@
 import { z } from "zod";
 import type { ScheduleDef } from "../config/loadConfig.js";
+import { isStagedPayloadRefV1, type StagedPayloadRefV1 } from "./stagedPayload.js";
 
 const name = z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,127}$/);
 const text = (max: number, min = 0) => z.string().min(min).max(max);
 const decision = z.enum(["approved", "denied"]);
+const sha256 = z.string().regex(/^[0-9a-f]{64}$/);
+const soulPayload = z.custom<StagedPayloadRefV1>(isStagedPayloadRefV1)
+  .refine((value) => value.byteSize <= 64 * 1024, "Soul payload exceeds 64 KiB");
 
 const spawnOptions = z.object({
   cmd: text(16_384, 1).optional(),
@@ -23,7 +27,7 @@ const schedule = z.union([
 export const EXTENSION_QUERY_ACTIONS = [
   "agents.list", "attention.list", "pins.list", "commands.list", "runbooks.list", "schedules.list", "proposals.list",
   "doctor.report", "bridge.token", "agent.inspect", "agent.fork-preview", "prompt.catalog", "worktree.review",
-  "worktrees.list", "pipeline.inspect", "agent.wait",
+  "worktrees.list", "pipeline.inspect", "agent.wait", "soul.profile.status",
 ] as const;
 
 export const EXTENSION_COMMAND_ACTIONS = [
@@ -35,6 +39,8 @@ export const EXTENSION_COMMAND_ACTIONS = [
   "pipeline.reject", "pipeline.cancel", "pipeline.rerun", "pipeline.dismiss", "pipeline.apply-input", "pipeline.delete",
   "bridge.restart", "bridge.stop", "config.health",
   "handoff.note", "prompt.inject", "runtime-ops.provider.configure",
+  "soul.profile.create", "soul.profile.import", "soul.profile.replace", "soul.profile.adopt",
+  "soul.profile.enable", "soul.profile.disable", "soul.profile.delete",
 ] as const;
 
 const extensionQueryActionSchema = z.enum(EXTENSION_QUERY_ACTIONS);
@@ -52,6 +58,7 @@ export const extensionQuerySchema = z.union([
   z.object({ action: z.literal("bridge.token") }).strict(),
   z.object({ action: z.literal("agent.inspect"), agent: name }).strict(),
   z.object({ action: z.literal("agent.fork-preview"), agent: name }).strict(),
+  z.object({ action: z.literal("soul.profile.status"), agent: name }).strict(),
   z.object({ action: z.literal("prompt.catalog") }).strict(),
   z.object({ action: z.literal("worktrees.list") }).strict(),
   z.object({ action: z.literal("worktree.review"), agent: name }).strict(),
@@ -105,6 +112,13 @@ export const extensionCommandSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("pipeline.delete"), name }).strict(),
   z.object({ action: z.literal("bridge.restart") }).strict(),
   z.object({ action: z.literal("bridge.stop") }).strict(),
+  z.object({ action: z.literal("soul.profile.create"), agent: name }).strict(),
+  z.object({ action: z.literal("soul.profile.import"), agent: name, payload: soulPayload }).strict(),
+  z.object({ action: z.literal("soul.profile.replace"), agent: name, payload: soulPayload, expectedDigest: sha256 }).strict(),
+  z.object({ action: z.literal("soul.profile.adopt"), agent: name, expectedDigest: sha256 }).strict(),
+  z.object({ action: z.literal("soul.profile.enable"), agent: name }).strict(),
+  z.object({ action: z.literal("soul.profile.disable"), agent: name }).strict(),
+  z.object({ action: z.literal("soul.profile.delete"), agent: name }).strict(),
   z.object({
     action: z.literal("runtime-ops.provider.configure"),
     provider: z.enum(["codex", "claude"]),
@@ -114,7 +128,7 @@ export const extensionCommandSchema = z.discriminatedUnion("action", [
     action: z.literal("prompt.inject"),
     agent: name,
     templateId: name,
-    expectedSha256: z.string().regex(/^[0-9a-f]{64}$/),
+    expectedSha256: sha256,
     submit: z.boolean(),
   }).strict(),
   z.object({

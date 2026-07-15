@@ -7,6 +7,7 @@ import { blankAgentFields } from "../../src/webview/agent-studio-shell/domain.js
 import type { Workspace } from "../../src/workspace/Workspace.js";
 import type { StudioSubmit } from "../../src/webview/studioSubmit.js";
 import type { AgentDef } from "../../src/config/loadConfig.js";
+import { SoulError } from "../../src/agents/soul.js";
 
 /**
  * spec 350 Phase 3 T2 — AgentStudioPanelManager's full shell lifecycle against a REAL AgentStudioAdapter (not
@@ -89,6 +90,23 @@ describe("AgentStudioPanelManager — Phase 3 pilot full lifecycle", () => {
       light: Uri.file("/ext/media/icons/light/hubot.svg"),
       dark: Uri.file("/ext/media/icons/dark/hubot.svg"),
     });
+  });
+
+  it("loads the UI Kit token bridge and Tailwind utilities before Agent Studio styles", async () => {
+    const { ws } = fakeWorkspace();
+    const manager = new AgentStudioPanelManager(Uri.file("/ext"));
+    manager.openNew(ws);
+    await flush();
+    const html = __createdPanels[0].webview.html;
+    const styles = [...html.matchAll(/<link rel="stylesheet" href="([^"]+)"/g)].map((match) => match[1]);
+    expect(styles.map((style) => style.split("/").pop())).toEqual([
+      "codicon.css",
+      "design-system.css",
+      "vscode-theme.css",
+      "agent-studio-shell.tailwind.css",
+      "studio-frame.css",
+      "agent-studio-shell.css",
+    ]);
   });
 
   it("edit mode loads the persisted agent-kind entry via formLogic's fromDef", async () => {
@@ -211,5 +229,154 @@ describe("AgentStudioPanelManager — Phase 3 pilot full lifecycle", () => {
     await flush();
     const err = findType(__createdPanels[0].webview.posted, "error").at(-1);
     expect(err).toMatchObject({ blocking: true });
+  });
+
+  it("binds profile actions to the saved panel entity and rejects cross-agent or extra-field tampering", async () => {
+    const { ws } = fakeWorkspace({ agents: { Ada: agentDef() } });
+    let creates = 0;
+    Object.assign(ws, {
+      createSoulProfile: async () => {
+        creates += 1;
+        return {
+          status: {
+            agent: "Ada",
+            canonicalPath: "/private/workspace/.tachyon/agents/Ada/SOUL.md",
+            relativePath: ".tachyon/agents/Ada/SOUL.md",
+            lifecycle: "active",
+            profileId: "123e4567-e89b-42d3-a456-426614174000",
+            sha256: "a".repeat(64),
+            soulEnabled: true,
+            resolvable: true,
+            transactionDegraded: false,
+          },
+        };
+      },
+    });
+    const manager = new AgentStudioPanelManager(Uri.file("/ext"));
+    manager.openExisting(ws, "Ada");
+    await flush();
+    const webview = __createdPanels[0].webview;
+
+    webview.__receive(envelope({ type: "createSoul" as const, agent: "Bea" }));
+    webview.__receive(envelope({ type: "createSoul" as const, agent: "Ada", canonicalPath: "/tmp/tampered" }));
+    await flush();
+    expect(creates).toBe(0);
+    expect(findType(webview.posted, "soulProfileError").at(-1)).toMatchObject({ agent: "Ada", code: "soul/path-invalid" });
+
+    webview.__receive(envelope({ type: "createSoul" as const, agent: "Ada" }));
+    await flush();
+    expect(creates).toBe(1);
+    const status = findType(webview.posted, "soulProfileStatus").at(-1);
+    expect(status).toMatchObject({ status: { agent: "Ada", relativePath: ".tachyon/agents/Ada/SOUL.md" } });
+    expect(JSON.stringify(status)).not.toContain("/private/workspace");
+    expect(JSON.stringify(status)).not.toContain("canonicalPath");
+  });
+
+  it("rejects profile actions from an unsaved new-agent panel", async () => {
+    const { ws } = fakeWorkspace();
+    let creates = 0;
+    Object.assign(ws, { createSoulProfile: async () => { creates += 1; throw new Error("must not run"); } });
+    const manager = new AgentStudioPanelManager(Uri.file("/ext"));
+    manager.openNew(ws);
+    await flush();
+    const webview = __createdPanels[0].webview;
+    webview.__receive(envelope({ type: "createSoul" as const, agent: "Ada" }));
+    await flush();
+    expect(creates).toBe(0);
+    expect(findType(webview.posted, "soulProfileError").at(-1)).toMatchObject({ code: "soul/path-invalid" });
+  });
+
+  it("imports webview-selected bytes without invoking a VS Code file path or reflecting payload data", async () => {
+    const body = "# Private identity\n";
+    const contentBase64 = Buffer.from(body).toString("base64");
+    let received: Buffer | undefined;
+    const { ws } = fakeWorkspace({ agents: { Ada: agentDef() } });
+    Object.assign(ws, {
+      importSoulProfileBytes: async (_agent: string, bytes: Buffer) => {
+        received = Buffer.from(bytes);
+        throw new SoulError("soul/io-error", "Unable to import identity profile");
+      },
+    });
+    const manager = new AgentStudioPanelManager(Uri.file("/ext"));
+    manager.openExisting(ws, "Ada");
+    await flush();
+    const webview = __createdPanels[0].webview;
+    webview.__receive(envelope({ type: "importSoul" as const, agent: "Ada", contentBase64 }));
+    await flush();
+    const error = findType(webview.posted, "soulProfileError").at(-1);
+    expect(received?.toString("utf8")).toBe(body);
+    expect(error).toMatchObject({ agent: "Ada", code: "soul/io-error" });
+    expect(JSON.stringify(error)).not.toContain(contentBase64);
+  });
+
+  it("routes only an explicit digest-backed replacement message", async () => {
+    const body = "# Replacement identity\n";
+    const contentBase64 = Buffer.from(body).toString("base64");
+    const expectedDigest = "a".repeat(64);
+    let received: { bytes: Buffer; expectedDigest: string } | undefined;
+    const { ws } = fakeWorkspace({ agents: { Ada: agentDef() } });
+    Object.assign(ws, {
+      replaceSoulProfileBytes: async (_agent: string, bytes: Buffer, digest: string) => {
+        received = { bytes: Buffer.from(bytes), expectedDigest: digest };
+        return {
+          status: {
+            agent: "Ada",
+            canonicalPath: "/private/workspace/.tachyon/agents/Ada/SOUL.md",
+            relativePath: ".tachyon/agents/Ada/SOUL.md",
+            lifecycle: "active",
+            sha256: "b".repeat(64),
+            soulEnabled: true,
+            resolvable: true,
+            transactionDegraded: false,
+          },
+        };
+      },
+    });
+    const manager = new AgentStudioPanelManager(Uri.file("/ext"));
+    manager.openExisting(ws, "Ada");
+    await flush();
+    const webview = __createdPanels[0].webview;
+
+    webview.__receive(envelope({ type: "replaceSoul" as const, agent: "Ada", contentBase64, expectedDigest: "stale" }));
+    await flush();
+    expect(received).toBeUndefined();
+
+    webview.__receive(envelope({ type: "replaceSoul" as const, agent: "Ada", contentBase64, expectedDigest }));
+    await flush();
+    expect(received?.bytes.toString("utf8")).toBe(body);
+    expect(received?.expectedDigest).toBe(expectedDigest);
+    expect(findType(webview.posted, "soulProfileStatus").at(-1)).toMatchObject({ status: { action: "replace" } });
+  });
+
+  it("routes permanent identity deletion through the saved agent and returns a missing profile status", async () => {
+    let deleted = 0;
+    const { ws } = fakeWorkspace({ agents: { Ada: agentDef() } });
+    Object.assign(ws, {
+      deleteSoulProfile: async (agent: string) => {
+        deleted += 1;
+        expect(agent).toBe("Ada");
+        return {
+          status: {
+            agent: "Ada",
+            canonicalPath: "/private/workspace/.tachyon/agents/Ada/SOUL.md",
+            relativePath: ".tachyon/agents/Ada/SOUL.md",
+            lifecycle: "missing",
+            soulEnabled: false,
+            resolvable: false,
+            transactionDegraded: false,
+          },
+        };
+      },
+    });
+    const manager = new AgentStudioPanelManager(Uri.file("/ext"));
+    manager.openExisting(ws, "Ada");
+    await flush();
+    const webview = __createdPanels[0].webview;
+    webview.__receive(envelope({ type: "deleteSoulProfile" as const, agent: "Ada" }));
+    await flush();
+    expect(deleted).toBe(1);
+    const status = findType(webview.posted, "soulProfileStatus").at(-1);
+    expect(status).toMatchObject({ status: { lifecycle: "missing", soulEnabled: false, action: "delete" } });
+    expect(JSON.stringify(status)).not.toContain("/private/workspace");
   });
 });

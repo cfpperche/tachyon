@@ -443,7 +443,7 @@ async function executeWorkspaceCommand(
   }
   if (command.method === "extension.invoke") {
     const value = await executeExtensionCommand(
-      { workspace, activityLog, providerObservations, onViewsChanged },
+      { workspace, activityLog, providerObservations, stagedPayloads, onViewsChanged },
       command.input,
     );
     return workspaceExtensionCommandSuccessV1(command, value);

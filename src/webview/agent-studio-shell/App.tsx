@@ -4,10 +4,35 @@ import { StudioFrame } from "../shared/studio/StudioFrame";
 import { canSave as computeCanSave } from "../shared/studio/dirtyGating";
 import type { StudioError } from "../shared/studio/errorTaxonomy";
 import { Button, Chip, Input, Select, Textarea } from "../shared/ui";
-import { agentStudioTitleFor, blankAgentFields, computeAgentDirty } from "./domain";
-import { browseMessage, cancelMessage, dirtyMessage, patchMessage, readyMessage, saveMessage } from "./messages";
+import { KitDropdown, KitDropdownContent, KitDropdownItem, KitDropdownSeparator, KitDropdownTrigger, KitFilePicker } from "../shared/ui/kit";
+import {
+  AGENT_STUDIO_HOST_MESSAGE_NAMES,
+  SOUL_IMPORT_MAX_BYTES,
+  agentStudioTitleFor,
+  blankAgentFields,
+  computeAgentDirty,
+  isAllowedSoulImportFileName,
+  validateAgentStudioHostDomainMessage,
+} from "./domain";
+import {
+  adoptSoulProfileMessage,
+  browseMessage,
+  cancelMessage,
+  createSoulMessage,
+  deleteSoulProfileMessage,
+  dirtyMessage,
+  disableSoulMessage,
+  enableSoulMessage,
+  importSoulMessage,
+  openSoulMessage,
+  patchMessage,
+  readyMessage,
+  replaceSoulMessage,
+  refreshSoulMessage,
+  saveMessage,
+} from "./messages";
 import { RuntimeLogo } from "./runtimeLogos";
-import type { AgentStudioEntity, AgentStudioFields, AgentStudioHostMessage } from "./types";
+import type { AgentStudioEntity, AgentStudioFields, AgentStudioHostMessage, SoulProfileStatusMessage } from "./types";
 
 /**
  * spec 350 Phase 3 T3 — the Agent-kind studio's webview surface: quick-add chips, name,
@@ -35,6 +60,83 @@ const harnessRuntimeOfCmd = (cmd: string): string | undefined => {
   return HARNESS_STUDIO_BINS.has(bin) ? bin : undefined;
 };
 
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+  }
+  return btoa(binary);
+}
+
+async function sha256Hex(bytes: Uint8Array): Promise<string> {
+  const hash = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(hash), (value) => value.toString(16).padStart(2, "0")).join("");
+}
+
+interface SoulImportSelection {
+  contentBase64: string;
+  fileName: string;
+  bytes: number;
+  sha256: string;
+}
+
+function SoulImportPicker({ onCancel, onSelect }: {
+  onCancel(): void;
+  onSelect(selection: SoulImportSelection): void;
+}) {
+  const [reading, setReading] = useState(false);
+  const [error, setError] = useState<string | undefined>(undefined);
+
+  const selectFile = async (file: File | undefined) => {
+    if (!file) return;
+    setError(undefined);
+    if (!isAllowedSoulImportFileName(file.name)) {
+      setError("Choose a .md, .markdown, or .txt file.");
+      return;
+    }
+    if (file.size === 0) {
+      setError("The selected file is empty.");
+      return;
+    }
+    if (file.size > SOUL_IMPORT_MAX_BYTES) {
+      setError("The selected file is larger than 64 KB.");
+      return;
+    }
+    setReading(true);
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      if (bytes.length === 0 || bytes.length > SOUL_IMPORT_MAX_BYTES) {
+        setError(bytes.length === 0 ? "The selected file is empty." : "The selected file is larger than 64 KB.");
+        return;
+      }
+      onSelect({
+        contentBase64: bytesToBase64(bytes),
+        fileName: file.name,
+        bytes: bytes.length,
+        sha256: await sha256Hex(bytes),
+      });
+    } catch {
+      setError("Tachyon could not read the selected file.");
+    } finally {
+      setReading(false);
+    }
+  };
+
+  return (
+    <KitFilePicker
+      title="Import identity file"
+      description={<>Markdown or text, up to 64 KB. Tachyon copies the contents into this agent&apos;s managed SOUL.md.</>}
+      accept=".md,.markdown,.txt,text/markdown,text/plain"
+      disabled={reading}
+      error={error}
+      draggingLabel="Drop to import"
+      cancelLabel="Cancel import"
+      onFile={selectFile}
+      onCancel={onCancel}
+    />
+  );
+}
+
 export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
   const [mode, setMode] = useState<"new" | "edit">("new");
   const [entityId, setEntityId] = useState<string | undefined>(undefined);
@@ -43,12 +145,19 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
   const [hostError, setHostError] = useState<StudioError | undefined>(undefined);
   const [loadFailed, setLoadFailed] = useState(false);
   const [saveInFlight, setSaveInFlight] = useState(false);
+  const [soulStatus, setSoulStatus] = useState<SoulProfileStatusMessage | undefined>(undefined);
+  const [soulBusy, setSoulBusy] = useState<string | undefined>(undefined);
+  const [soulImportOpen, setSoulImportOpen] = useState(false);
+  const [soulReplacePending, setSoulReplacePending] = useState<SoulImportSelection | undefined>(undefined);
+  const [soulDeleteConfirmOpen, setSoulDeleteConfirmOpen] = useState(false);
   const [ready, setReady] = useState(false);
   const entityRef = useRef<AgentStudioEntity | undefined>(undefined);
+  const deleteCancelButtonRef = useRef<HTMLButtonElement>(null);
+  const replaceCancelButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     const onMsg = (e: MessageEvent) => {
-      const decoded = decodeStudioMessage<AgentStudioHostMessage>(e.data, ["cwd"]);
+      const decoded = decodeStudioMessage<AgentStudioHostMessage>(e.data, AGENT_STUDIO_HOST_MESSAGE_NAMES);
       if (!decoded.ok || !decoded.message) {
         setHostError({
           code: "transport/protocol",
@@ -62,6 +171,12 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
         return;
       }
       const d = decoded.message;
+      if (AGENT_STUDIO_HOST_MESSAGE_NAMES.includes(d.type as never) && !validateAgentStudioHostDomainMessage(d)) {
+        setHostError({ code: "transport/protocol", message: "studio protocol: malformed Agent Studio host response", source: "transport", blocking: true });
+        setSaveInFlight(false);
+        setReady(true);
+        return;
+      }
       if (d.type === "load") {
         entityRef.current = d.entity;
         setEntity(d.entity);
@@ -71,11 +186,18 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
         setSaveInFlight(!!d.saveInFlight);
         setHostError(undefined);
         setLoadFailed(false);
+        setSoulStatus(undefined);
+        setSoulBusy(d.entity.name ? "Refreshing profile" : undefined);
+        setSoulImportOpen(false);
+        setSoulReplacePending(undefined);
+        setSoulDeleteConfirmOpen(false);
         setReady(true);
+        if (d.entity.name) dispatch.post(refreshSoulMessage(d.entity.name));
       } else if (d.type === "error") {
         setHostError({ code: d.code, message: d.message, source: d.source ?? "persistence", blocking: d.blocking });
         if (!entityRef.current) setLoadFailed(true);
         setSaveInFlight(false);
+        setSoulBusy(undefined);
         setReady(true);
       } else if (d.type === "restore") {
         if (d.snapshot?.patch) setFields(d.snapshot.patch);
@@ -83,6 +205,33 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
         setHostError(undefined);
         setLoadFailed(false);
         setFields((f) => ({ ...f, cwd: d.value }));
+      } else if (d.type === "soulProfileStatus") {
+        if (entityRef.current?.name !== d.status.agent) {
+          setHostError({ code: "transport/protocol", message: "studio protocol: profile status belongs to another agent", source: "transport", blocking: true });
+          return;
+        }
+        setHostError(undefined);
+        setSoulStatus(d.status);
+        setSoulBusy(undefined);
+        setSoulReplacePending(undefined);
+        if (d.status.lifecycle !== "missing") setSoulImportOpen(false);
+        if (d.status.lifecycle === "missing") setSoulDeleteConfirmOpen(false);
+        const current = entityRef.current;
+        if (current && current.fields.soul !== d.status.soulEnabled) {
+          const updated = { ...current, fields: { ...current.fields, soul: d.status.soulEnabled } };
+          entityRef.current = updated;
+          setEntity(updated);
+        }
+        setFields((currentFields) => currentFields.soul === d.status.soulEnabled
+          ? currentFields
+          : { ...currentFields, soul: d.status.soulEnabled });
+      } else if (d.type === "soulProfileError") {
+        if (entityRef.current?.name !== d.agent) {
+          setHostError({ code: "transport/protocol", message: "studio protocol: profile error belongs to another agent", source: "transport", blocking: true });
+          return;
+        }
+        setSoulBusy(undefined);
+        setHostError({ code: d.code, message: d.message, source: "persistence", blocking: false });
       }
     };
     window.addEventListener("message", onMsg);
@@ -98,6 +247,14 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
     dispatch.post(patchMessage(fields));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, dirty, fields]);
+
+  useEffect(() => {
+    if (soulDeleteConfirmOpen) deleteCancelButtonRef.current?.focus();
+  }, [soulDeleteConfirmOpen]);
+
+  useEffect(() => {
+    if (soulReplacePending) replaceCancelButtonRef.current?.focus();
+  }, [soulReplacePending]);
 
   if (!ready || !entity) {
     return <div class="ds-degrade"><span class="codicon codicon-loading" /><div>Loading Agent Studio...</div></div>;
@@ -145,6 +302,46 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
             ? "Give this OpenCode agent its own XDG home (config, skills, hooks, MCP)"
             : "Give this agent its own MCP / skills / rules / hooks";
 
+  const savedAgent = entity.name;
+  const profilePresent = !!soulStatus && soulStatus.lifecycle !== "missing";
+  const readActionDisabled = !savedAgent || !!soulBusy;
+  const mutationDisabled = readActionDisabled || !soulStatus || soulStatus.transactionDegraded;
+  const showCreateOrImport = soulStatus?.lifecycle === "missing";
+  const enableRequiresOwnershipClaim = !!soulStatus?.sha256
+    && (soulStatus.lifecycle === "retained" || soulStatus.lifecycle === "unowned");
+  const showEnable = enableRequiresOwnershipClaim || (soulStatus?.lifecycle === "active"
+    && soulStatus.resolvable
+    && !soulStatus.soulEnabled);
+  const showDisable = !!soulStatus?.soulEnabled;
+  const showDelete = profilePresent && !soulStatus?.soulEnabled;
+  const canCreate = showCreateOrImport && !mutationDisabled && !soulImportOpen;
+  const canImport = !mutationDisabled && !soulImportOpen && !soulReplacePending
+    && (!profilePresent || !!soulStatus?.sha256);
+  const canEnable = showEnable && !mutationDisabled;
+  const canDisable = showDisable && !mutationDisabled;
+  const canDelete = showDelete && !mutationDisabled;
+  const lifecycleLabel: Record<SoulProfileStatusMessage["lifecycle"], string> = {
+    missing: "Missing",
+    active: "Active",
+    retained: "Disabled",
+    unowned: "Ready to enable",
+    invalid: "Invalid",
+  };
+  const runSoulAction = (label: string, message: unknown) => {
+    setHostError(undefined);
+    setSoulImportOpen(false);
+    setSoulReplacePending(undefined);
+    setSoulDeleteConfirmOpen(false);
+    setSoulBusy(label);
+    dispatch.post(message);
+  };
+  const runEnableSoul = () => runSoulAction(
+    "Enabling Soul",
+    enableRequiresOwnershipClaim && soulStatus?.sha256
+      ? adoptSoulProfileMessage(savedAgent, soulStatus.sha256)
+      : enableSoulMessage(savedAgent),
+  );
+
   return (
     <StudioFrame
       title={agentStudioTitleFor(mode, entityId, entity)}
@@ -169,6 +366,169 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
                 ))}
               </div>
             </div>
+
+            <section class="ash-identity" aria-labelledby="ash-identity-title">
+              <div class="ash-identity-heading">
+                <div>
+                  <div class="ash-label" id="ash-identity-title">Identity (SOUL.md)</div>
+                  <div class="hint">Stable identity for this agent. Keep operational instructions in the separate field below.</div>
+                </div>
+                <span class={`ash-soul-state ash-soul-state-${soulStatus?.lifecycle ?? "loading"}`}>
+                  {savedAgent
+                    ? soulStatus ? lifecycleLabel[soulStatus.lifecycle] : "Loading status"
+                    : "Save agent first"}
+                </span>
+              </div>
+
+              {savedAgent ? (
+                <>
+                  <div class="ash-identity-actions" role="group" aria-label="SOUL.md actions">
+                    {showCreateOrImport && (
+                      <Button variant="primary" icon="new-file" disabled={!canCreate} onClick={() => runSoulAction("Creating profile", createSoulMessage(savedAgent))}>Create</Button>
+                    )}
+                    {profilePresent && (
+                      <Button icon="go-to-file" disabled={readActionDisabled} onClick={() => runSoulAction("Opening profile", openSoulMessage(savedAgent))}>Edit file</Button>
+                    )}
+                    {soulStatus && (
+                      <Button
+                        icon="folder-opened"
+                        disabled={!canImport}
+                        onClick={() => {
+                          setHostError(undefined);
+                          setSoulDeleteConfirmOpen(false);
+                          setSoulReplacePending(undefined);
+                          setSoulImportOpen(true);
+                        }}
+                      >Import</Button>
+                    )}
+                    {showEnable && (
+                      <Button
+                        variant="primary"
+                        icon="check"
+                        disabled={!canEnable}
+                        onClick={runEnableSoul}
+                      >Enable Soul</Button>
+                    )}
+                    {showDisable && (
+                      <Button disabled={!canDisable} onClick={() => runSoulAction("Disabling Soul", disableSoulMessage(savedAgent))}>Disable Soul</Button>
+                    )}
+                    {soulStatus && (
+                      <KitDropdown>
+                        <KitDropdownTrigger asChild>
+                          <Button icon="ellipsis" aria-label="More SOUL.md actions">More</Button>
+                        </KitDropdownTrigger>
+                        <KitDropdownContent align="start">
+                          <KitDropdownItem disabled={readActionDisabled} onSelect={() => runSoulAction("Refreshing profile", refreshSoulMessage(savedAgent))}>Refresh</KitDropdownItem>
+                          {showDelete && (
+                            <>
+                              <KitDropdownSeparator />
+                              <KitDropdownItem
+                                variant="destructive"
+                                disabled={!canDelete}
+                                onSelect={() => {
+                                  setHostError(undefined);
+                                  setSoulImportOpen(false);
+                                  setSoulReplacePending(undefined);
+                                  setSoulDeleteConfirmOpen(true);
+                                }}
+                              >Delete identity permanently…</KitDropdownItem>
+                            </>
+                          )}
+                        </KitDropdownContent>
+                      </KitDropdown>
+                    )}
+                  </div>
+
+                  {soulImportOpen && (
+                    <SoulImportPicker
+                      onCancel={() => setSoulImportOpen(false)}
+                      onSelect={(selection) => {
+                        setSoulImportOpen(false);
+                        if (profilePresent && soulStatus?.sha256) {
+                          setSoulReplacePending(selection);
+                        } else {
+                          runSoulAction("Importing profile", importSoulMessage(savedAgent, selection.contentBase64));
+                        }
+                      }}
+                    />
+                  )}
+
+                  {soulReplacePending && soulStatus?.sha256 && (
+                    <div class="ash-soul-replace-confirm" aria-labelledby="ash-soul-replace-confirm-title">
+                      <div class="ash-soul-replace-confirm-title" id="ash-soul-replace-confirm-title">Replace existing identity?</div>
+                      <div><strong>{soulReplacePending.fileName}</strong> ({soulReplacePending.bytes} bytes) will replace <code>{soulStatus.relativePath}</code>.</div>
+                      <div>The selected source file will not be modified. Soul will remain {soulStatus.soulEnabled ? "enabled" : "disabled"}.</div>
+                      <dl class="ash-soul-replace-digests">
+                        <div><dt>Current SHA-256</dt><dd><code>{soulStatus.sha256}</code></dd></div>
+                        <div><dt>New SHA-256</dt><dd><code>{soulReplacePending.sha256}</code></dd></div>
+                      </dl>
+                      <div class="ash-soul-replace-confirm-actions">
+                        <Button ref={replaceCancelButtonRef} onClick={() => setSoulReplacePending(undefined)}>Cancel</Button>
+                        <Button
+                          variant="danger"
+                          disabled={mutationDisabled}
+                          onClick={() => runSoulAction(
+                            "Replacing identity",
+                            replaceSoulMessage(savedAgent, soulReplacePending.contentBase64, soulStatus.sha256!),
+                          )}
+                        >Replace identity</Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {soulDeleteConfirmOpen && soulStatus && (
+                    <div class="ash-soul-delete-confirm" aria-labelledby="ash-soul-delete-confirm-title">
+                      <div class="ash-soul-delete-confirm-title" id="ash-soul-delete-confirm-title">Delete this identity permanently?</div>
+                      <div>This removes only the Soul-owned files:</div>
+                      <ul>
+                        <li><code>{soulStatus.relativePath}</code></li>
+                        <li><code>{`.tachyon/agents/${savedAgent}/profile.json`}</code></li>
+                      </ul>
+                      <div>The agent directory and every other file inside it will remain.</div>
+                      <div class="ash-soul-delete-confirm-actions">
+                        <Button ref={deleteCancelButtonRef} onClick={() => setSoulDeleteConfirmOpen(false)}>Cancel</Button>
+                        <Button
+                          variant="danger"
+                          icon="trash"
+                          disabled={!canDelete}
+                          onClick={() => runSoulAction("Deleting identity", deleteSoulProfileMessage(savedAgent))}
+                        >Delete identity permanently</Button>
+                      </div>
+                    </div>
+                  )}
+
+                  <div class="ash-soul-status" role="status" aria-live="polite">
+                    {soulBusy
+                      ? `${soulBusy}…`
+                      : soulStatus
+                        ? soulStatus.soulEnabled
+                          ? "Soul enabled for future starts"
+                          : profilePresent
+                            ? "Soul disabled for future starts"
+                            : "No Soul identity configured"
+                        : "Profile status unavailable. Refresh to try again."}
+                  </div>
+
+                  {soulStatus?.transactionDegraded && (
+                    <div class="ash-soul-warning" role="alert">Profile recovery is required. Mutating actions are disabled.</div>
+                  )}
+
+                  {soulStatus && (
+                    <div class="ash-soul-meta">
+                      <span>{soulStatus.relativePath}</span>
+                      {soulStatus.bytes !== undefined && <span>{soulStatus.bytes} bytes</span>}
+                      {soulStatus.sha256 && <span title={soulStatus.sha256}>SHA-256 {soulStatus.sha256.slice(0, 12)}…</span>}
+                    </div>
+                  )}
+
+                  {soulStatus?.preview !== undefined && (
+                    <pre class="ash-soul-preview" aria-label="SOUL.md preview" tabIndex={0}>{soulStatus.preview}</pre>
+                  )}
+                </>
+              ) : (
+                <div class="ash-soul-status" role="status">Save this agent before creating or importing its identity profile.</div>
+              )}
+            </section>
 
             <div class="ash-grid ash-grid-compact">
               <div class="ash-field">
@@ -200,7 +560,7 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
             </div>
 
             <details open={!!fields.instructions}>
-              <summary>Instructions (role prompt)</summary>
+              <summary>Persistent instructions</summary>
               <Textarea rows={4} value={fields.instructions} placeholder="you are a code reviewer; read the diff and flag correctness issues…" onInput={(e) => set("instructions", (e.currentTarget as HTMLTextAreaElement).value)} />
               <div class="hint">Delivered as a startup prompt for claude / codex / agy / gemini.</div>
             </details>

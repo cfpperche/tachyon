@@ -280,6 +280,81 @@ describe("daemon engine service", () => {
     });
 
     const stagedPayloads = new StagedPayloadStore(runtimeRoot);
+    const createSoulCommand = {
+      schemaVersion: 1 as const,
+      method: "extension.invoke" as const,
+      input: { action: "soul.profile.create" as const, agent: "worker" },
+    };
+    const createdSoul = await first.invoke("operation-soul-create-0001", createSoulCommand);
+    expect(createdSoul).toMatchObject({
+      method: "extension.invoke",
+      status: "ok",
+      action: "soul.profile.create",
+      value: {
+        outcome: "ok",
+        status: {
+          agent: "worker",
+          relativePath: ".tachyon/agents/worker/SOUL.md",
+          lifecycle: "active",
+          soulEnabled: true,
+          resolvable: true,
+        },
+      },
+    });
+    expect(await first.invoke("operation-soul-create-0001", createSoulCommand)).toEqual(createdSoul);
+    await waitForEvent(first, (event) => event.kind === "views-changed" && event.payload.view === "agents");
+    const soulStatus = await first.query({
+      schemaVersion: 1,
+      method: "extension.query",
+      input: { action: "soul.profile.status", agent: "worker" },
+    });
+    expect(soulStatus).toMatchObject({
+      method: "extension.query",
+      status: "ok",
+      action: "soul.profile.status",
+      value: { outcome: "ok", status: { agent: "worker", sha256: expect.stringMatching(/^[a-f0-9]{64}$/) } },
+    });
+    if (soulStatus.status !== "ok" || soulStatus.method !== "extension.query"
+      || !soulStatus.value || typeof soulStatus.value !== "object" || Array.isArray(soulStatus.value)
+      || !soulStatus.value.status || typeof soulStatus.value.status !== "object" || Array.isArray(soulStatus.value.status)
+      || typeof soulStatus.value.status.sha256 !== "string") throw new Error("unexpected Soul status result");
+    const soulReplacement = Buffer.from("# Replacement worker identity\n", "utf8");
+    const stagedSoul = stagedPayloads.stage(soulReplacement);
+    expect(await first.invoke("operation-soul-replace-0001", {
+      schemaVersion: 1,
+      method: "extension.invoke",
+      input: {
+        action: "soul.profile.replace",
+        agent: "worker",
+        payload: stagedSoul,
+        expectedDigest: soulStatus.value.status.sha256,
+      },
+    })).toMatchObject({
+      status: "ok",
+      action: "soul.profile.replace",
+      value: { outcome: "ok", status: { agent: "worker", sha256: createHash("sha256").update(soulReplacement).digest("hex") } },
+    });
+    expect(fs.existsSync(path.join(stagedPayloads.directory, stagedSoul.token))).toBe(false);
+    expect(fs.readFileSync(path.join(workspaceRoot, ".tachyon", "agents", "worker", "SOUL.md"), "utf8"))
+      .toBe(soulReplacement.toString("utf8"));
+    expect(await first.invoke("operation-soul-delete-refused-0001", {
+      schemaVersion: 1,
+      method: "extension.invoke",
+      input: { action: "soul.profile.delete", agent: "worker" },
+    })).toMatchObject({
+      status: "ok",
+      action: "soul.profile.delete",
+      value: { outcome: "error", code: "soul/profile-enabled" },
+    });
+    expect(await first.invoke("operation-soul-disable-0001", {
+      schemaVersion: 1,
+      method: "extension.invoke",
+      input: { action: "soul.profile.disable", agent: "worker" },
+    })).toMatchObject({
+      status: "ok",
+      action: "soul.profile.disable",
+      value: { outcome: "ok", status: { agent: "worker", lifecycle: "retained", soulEnabled: false } },
+    });
     expect(await first.query({ schemaVersion: 1, method: "pin.studio", input: { id: seedPin.id } })).toMatchObject({
       method: "pin.studio",
       status: "ok",

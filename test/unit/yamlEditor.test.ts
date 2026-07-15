@@ -11,6 +11,7 @@ import {
   runbookEntryLine,
 } from "../../src/config/YamlConfigEditor.js";
 import { parseConfig } from "../../src/config/loadConfig.js";
+import schema from "../../src/config/tachyon.schema.json";
 
 /** A realistic file: user comments everywhere — they must survive every mutation. */
 const YML = `# Tachyon config — meu projeto
@@ -79,6 +80,21 @@ describe("YamlConfigEditor", () => {
     expect(childCfg.agents.claude.subagents).toEqual(["reviewer"]);
     expect(childCfg.agents.reviewer.subagents).toBeUndefined();
     expect(editedChild).not.toContain("declaredOwner");
+  });
+
+  it("round-trips agent soul and strips it from terminal entries", () => {
+    const agentText = upsertAgent(undefined, "ada", { cmd: "codex", soul: true }).text;
+    expect(expectValid(agentText).agents.ada.soul).toBe(true);
+    expect(agentText).toContain("soul: true");
+
+    const terminalText = upsertAgent(undefined, "shell", { cmd: "bash", kind: "terminal", soul: true }, undefined, "terminals").text;
+    expect(expectValid(terminalText).agents.shell.soul).toBeUndefined();
+    expect(terminalText).not.toContain("soul:");
+  });
+
+  it("declares soul as a JSON-schema boolean", () => {
+    const soul = schema.properties.agents.additionalProperties.properties.soul;
+    expect(soul.type).toBe("boolean");
   });
 
   it("cloneAgent copies the full definition under a new name", () => {

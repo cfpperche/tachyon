@@ -54,7 +54,7 @@ export async function exerciseBoundDeliveryExecution(): Promise<void> {
     // subsequently torn down.
     const principalBytes = Buffer.from(JSON.stringify(principal));
     sessions.add(manager.session("colliding-execution"));
-    await expect(manager.spawn("colliding-execution", { appendInstructions: "Bridge contract", deliveryJoin: { deliveryId: "d", role: "reviewer", ownsSubset: [], expectedHead: "head", operationId: "collision", declaredAgent: "reviewer" } })).rejects.toThrow("already in use");
+    await expect(manager.spawn("colliding-execution", { taskBrief: "Bridge contract", deliveryJoin: { deliveryId: "d", role: "reviewer", ownsSubset: [], expectedHead: "head", operationId: "collision", declaredAgent: "reviewer" } })).rejects.toThrow("already in use");
     expect(sessions.size).toBe(2);
     expect(revoked).toEqual([]);
     expect(ledger.get("reviewer")).toEqual(principal);
@@ -64,7 +64,7 @@ export async function exerciseBoundDeliveryExecution(): Promise<void> {
     // collision injected after the outer checks survive untouched.
     const beforeRace = { revoked: [...revoked], killed: [...killed], callbacks: [...callbacks], principal: structuredClone(ledger.get("reviewer")), home: fs.readFileSync(path.join(home("reviewer"), "marker")) };
     for (const name of ["racing-live", "racing-dead"]) {
-      await expect(manager.spawn(name, { appendInstructions: "Bridge contract", deliveryJoin: { deliveryId: "d", role: "reviewer", ownsSubset: [], expectedHead: "head", operationId: name, declaredAgent: "reviewer" } })).rejects.toThrow("already in use");
+      await expect(manager.spawn(name, { taskBrief: "Bridge contract", deliveryJoin: { deliveryId: "d", role: "reviewer", ownsSubset: [], expectedHead: "head", operationId: name, declaredAgent: "reviewer" } })).rejects.toThrow("already in use");
       expect(sessions.has(manager.session(name))).toBe(true);
     }
     expect({ revoked, killed, callbacks }).toEqual({ revoked: beforeRace.revoked, killed: beforeRace.killed, callbacks: beforeRace.callbacks });
@@ -108,7 +108,7 @@ export async function exerciseBoundDeliveryExecution(): Promise<void> {
     expect(callbacks).toEqual(beforeExtraEnv.callbacks);
     expect(ledger.get("reviewer")).toEqual(beforeExtraEnv.principal);
     expect(fs.readFileSync(path.join(home("reviewer"), "marker"))).toEqual(beforeExtraEnv.home);
-    await manager.spawn("review-execution", { appendInstructions: "Bridge contract", deliveryJoin: { deliveryId: "d", role: "reviewer", ownsSubset: [], expectedHead: "head", operationId: "op", declaredAgent: "reviewer" } });
+    await manager.spawn("review-execution", { taskBrief: "Bridge contract", deliveryJoin: { deliveryId: "d", role: "reviewer", ownsSubset: [], expectedHead: "head", operationId: "op", declaredAgent: "reviewer" } });
     expect(Buffer.from(JSON.stringify(ledger.get("reviewer")))).toEqual(principalBytes);
     expect(ledger.get("review-execution")?.declared).toBe(false);
     expect(minted).toEqual(["reviewer", "reviewer", "reviewer", "review-execution"]);
@@ -121,7 +121,7 @@ export async function exerciseBoundDeliveryExecution(): Promise<void> {
     expect(Buffer.from(JSON.stringify(ledger.get("reviewer")))).toEqual(principalBytes);
     expect(fs.readFileSync(path.join(home("reviewer"), "marker"))).toEqual(principalHome);
     rejectReadiness = true;
-    await expect(manager.spawn("failed-execution", { appendInstructions: "Bridge contract", deliveryJoin: { deliveryId: "d", role: "reviewer", ownsSubset: [], expectedHead: "head", operationId: "op2", declaredAgent: "reviewer" } })).rejects.toThrow("runtime_auth_rejected");
+    await expect(manager.spawn("failed-execution", { taskBrief: "Bridge contract", deliveryJoin: { deliveryId: "d", role: "reviewer", ownsSubset: [], expectedHead: "head", operationId: "op2", declaredAgent: "reviewer" } })).rejects.toThrow("runtime_auth_rejected");
     expect(sessions.size).toBe(1);
     expect(revoked).toEqual(["reviewer", "reviewer", "reviewer", "review-execution", "failed-execution"]);
     expect(failed).toEqual(["racing-live", "racing-dead", "reviewer", "reviewer", "failed-execution"]);
@@ -131,7 +131,7 @@ export async function exerciseBoundDeliveryExecution(): Promise<void> {
     expect(ledger.get("reviewer")).toEqual(principal);
     expect(fs.readFileSync(path.join(home("reviewer"), "marker"))).toEqual(principalHome);
     const beforeCmdFailure = { failed: [...failed], revoked: [...revoked] };
-    await expect(manager.spawn("failed-cmd", { cmd: "codex", appendInstructions: "Bridge contract", deliveryJoin: { deliveryId: "d", role: "reviewer", ownsSubset: [], expectedHead: "head", operationId: "cmd-op" } })).rejects.toThrow("runtime_auth_rejected");
+    await expect(manager.spawn("failed-cmd", { cmd: "codex", taskBrief: "Bridge contract", deliveryJoin: { deliveryId: "d", role: "reviewer", ownsSubset: [], expectedHead: "head", operationId: "cmd-op" } })).rejects.toThrow("runtime_auth_rejected");
     expect(sessions.has(manager.session("failed-cmd"))).toBe(false);
     expect(revoked).toEqual([...beforeCmdFailure.revoked, "failed-cmd"]);
     expect(failed).toEqual([...beforeCmdFailure.failed, "failed-cmd"]);
@@ -217,7 +217,7 @@ export async function exerciseBoundDeliveryIdentitySnapshot(): Promise<void> {
     const principalTokenHistory = [...minted];
     const principalTmux = structuredClone(launches.find(launch => launch.name === manager.session("reviewer"))!);
 
-    await manager.spawn("review-execution", { appendInstructions: "Bridge contract", deliveryJoin: { deliveryId: "d", role: "reviewer", ownsSubset: [], expectedHead: "head", operationId: "b1", declaredAgent: "reviewer" } });
+    await manager.spawn("review-execution", { taskBrief: "Bridge contract", deliveryJoin: { deliveryId: "d", role: "reviewer", ownsSubset: [], expectedHead: "head", operationId: "b1", declaredAgent: "reviewer" } });
     const execution = launches.find(launch => launch.name === manager.session("review-execution"))!;
     expect(sessions).toEqual(new Set([manager.session("reviewer"), manager.session("review-execution")]));
     expect(counters).toEqual({ preflight: 2, boundPreflight: 1, prepare: 1, confirm: 1, resolveSpawnCwd: 1, materialize: 2 });

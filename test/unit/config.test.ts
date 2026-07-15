@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
-import { parseConfig, inferKind, composeCommand, resolveBinary } from "../../src/config/loadConfig.js";
+import { parseConfig, inferKind, composeCommand, resolveBinary, instructionsDeliverable, openingPromptCapability } from "../../src/config/loadConfig.js";
 import { PROJECT_GUIDANCE_MAX_FILES } from "../../src/config/projectGuidance.js";
 
 const VALID = `
@@ -729,12 +729,23 @@ describe("parseConfig", () => {
 });
 
 describe("resolveBinary / inferKind / composeCommand — launcher see-through (spec 246 codex #1/#3)", () => {
+  it("classifies soul delivery honestly and reuses launcher resolution for instructions", () => {
+    expect(openingPromptCapability("env FOO=1 opencode")).toEqual({ status: "prompt", runtime: "opencode", channel: "tui-prefill" });
+    expect(openingPromptCapability("npx codex")).toMatchObject({ status: "prompt", runtime: "codex", channel: "startup-argument" });
+    expect(openingPromptCapability("hermes")).toMatchObject({ status: "native-external", runtime: "hermes" });
+    expect(openingPromptCapability("bash -lc codex")).toMatchObject({ status: "unsupported", runtime: "bash" });
+    expect(openingPromptCapability("company-codex")).toMatchObject({ status: "unsupported", runtime: "company-codex" });
+    expect(instructionsDeliverable("env -u TOKEN claude")).toBe(true);
+  });
   it("resolveBinary sees through npx/bunx/pnpx and env (incl. -u/-C operands)", () => {
     expect(resolveBinary("claude")).toBe("claude");
     expect(resolveBinary("npx claude")).toBe("claude");
     expect(resolveBinary("bunx codex --flag")).toBe("codex");
     expect(resolveBinary("env FOO=1 claude")).toBe("claude");
     expect(resolveBinary("env -u ANTHROPIC_API_KEY claude")).toBe("claude"); // #3: operand skipped
+    expect(resolveBinary("env --unset ANTHROPIC_API_KEY claude")).toBe("claude");
+    expect(resolveBinary("env --chdir /tmp codex")).toBe("codex");
+    expect(resolveBinary("env --split-string ignored gemini")).toBe("gemini");
     expect(resolveBinary("env -i -C /tmp BAR=2 agy")).toBe("agy");
     expect(resolveBinary("env -i -C /tmp BAR=2 gemini")).toBe("gemini");
     expect(resolveBinary("/usr/bin/sh -c 'echo'")).toBe("sh");
@@ -778,5 +789,23 @@ describe("resolveBinary / inferKind / composeCommand — launcher see-through (s
     expect(composeCommand({ cmd: "hermes", instructions: "TASK: ship it" })).toBe("hermes");
     expect(composeCommand({ cmd: "hermes --tui", instructions: "hello" })).toBe("hermes --tui");
     expect(composeCommand({ cmd: "hermes", instructions: "  " })).toBe("hermes");
+  });
+});
+
+describe("agent soul config (spec 377)", () => {
+  it("accepts true/false/absence without reading a profile", () => {
+    const result = parseConfig("agents:\n  enabled:\n    cmd: codex\n    soul: true\n  disabled:\n    cmd: claude\n    soul: false\n  legacy:\n    cmd: gemini\n");
+    expect(result.errors).toEqual([]);
+    expect(result.config?.agents.enabled.soul).toBe(true);
+    expect(result.config?.agents.disabled.soul).toBe(false);
+    expect(result.config?.agents.legacy.soul).toBeUndefined();
+  });
+
+  it("rejects non-booleans, terminals, and folded enabled-name collisions", () => {
+    expect(parseConfig("agents:\n  a:\n    cmd: codex\n    soul: SOUL.md\n").errors).toContain("agents.a.soul: must be a boolean");
+    expect(parseConfig("terminals:\n  shell:\n    cmd: bash\n    soul: true\n").errors.some((error) => error.includes("'soul' applies only to agents"))).toBe(true);
+    const collision = parseConfig("agents:\n  Reviewer:\n    cmd: codex\n    soul: true\n  reviewer:\n    cmd: claude\n    soul: true\n");
+    expect(collision.errors.some((error) => error.includes("ASCII case folding"))).toBe(true);
+    expect(parseConfig("agents:\n  Reviewer:\n    cmd: codex\n  reviewer:\n    cmd: claude\n").errors).toEqual([]);
   });
 });

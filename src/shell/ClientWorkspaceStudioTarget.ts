@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { SoulError, isSoulErrorCode } from "../agents/soul.js";
 import {
   CONFIG_FILENAMES,
   inferKind,
@@ -10,8 +11,27 @@ import {
 import { collectVerifyCandidates } from "../config/verifyCandidates.js";
 import { detectInstalledClis } from "../webview/cliDetect.js";
 import type { StudioDeps, StudioSubmit } from "../webview/studioSubmit.js";
+import {
+  isSoulProfileStatusMessage,
+  projectSoulProfileStatus,
+} from "../webview/agent-studio-shell/domain.js";
+import type { ExtensionCommandV1, JsonValue } from "../runtime-api/extensionOperations.js";
 import type { WorkspaceClient } from "./WorkspaceClient.js";
-import type { WorkspaceStudioTarget } from "./WorkspacePresentation.js";
+import type {
+  SoulProfileMutationTargetResult,
+  WorkspaceAgentStudioTarget,
+} from "./WorkspacePresentation.js";
+
+type SoulProfileCommand = Extract<ExtensionCommandV1, {
+  action:
+    | "soul.profile.create"
+    | "soul.profile.import"
+    | "soul.profile.replace"
+    | "soul.profile.adopt"
+    | "soul.profile.enable"
+    | "soul.profile.disable"
+    | "soul.profile.delete";
+}>;
 
 export interface ClientWorkspaceStudioTargetOptions {
   extensionUri: StudioDeps["extensionUri"];
@@ -30,7 +50,7 @@ export type WorkspaceConfigReadResult =
  * the shared config for form population, but every mutation crosses the
  * authenticated engine command seam and executes Workspace.studioSubmit there.
  */
-export class ClientWorkspaceStudioTarget implements WorkspaceStudioTarget {
+export class ClientWorkspaceStudioTarget implements WorkspaceAgentStudioTarget {
   private readonly detectClis: StudioDeps["detectClis"];
   private readonly readCurrentConfig: (workspaceRoot: string) => WorkspaceConfigReadResult;
   private readonly operationId: () => string;
@@ -89,12 +109,121 @@ export class ClientWorkspaceStudioTarget implements WorkspaceStudioTarget {
     return undefined;
   };
 
+  createSoulProfile(agent: string): Promise<SoulProfileMutationTargetResult> {
+    return this.invokeSoulProfile({ action: "soul.profile.create", agent });
+  }
+
+  importSoulProfileBytes(agent: string, bytes: Buffer): Promise<SoulProfileMutationTargetResult> {
+    return this.invokeSoulPayload(bytes, (payload) => ({ action: "soul.profile.import", agent, payload }));
+  }
+
+  replaceSoulProfileBytes(agent: string, bytes: Buffer, expectedDigest: string): Promise<SoulProfileMutationTargetResult> {
+    return this.invokeSoulPayload(bytes, (payload) => ({
+      action: "soul.profile.replace",
+      agent,
+      payload,
+      expectedDigest,
+    }));
+  }
+
+  adoptSoulProfile(agent: string, expectedDigest: string): Promise<SoulProfileMutationTargetResult> {
+    return this.invokeSoulProfile({ action: "soul.profile.adopt", agent, expectedDigest });
+  }
+
+  enableSoulProfile(agent: string): Promise<SoulProfileMutationTargetResult> {
+    return this.invokeSoulProfile({ action: "soul.profile.enable", agent });
+  }
+
+  disableSoulProfile(agent: string): Promise<SoulProfileMutationTargetResult> {
+    return this.invokeSoulProfile({ action: "soul.profile.disable", agent });
+  }
+
+  deleteSoulProfile(agent: string): Promise<SoulProfileMutationTargetResult> {
+    return this.invokeSoulProfile({ action: "soul.profile.delete", agent });
+  }
+
+  async refreshSoulProfile(agent: string) {
+    const result = await this.client.query({
+      schemaVersion: 1,
+      method: "extension.query",
+      input: { action: "soul.profile.status", agent },
+    });
+    if (result.status === "error") throw new Error(result.message);
+    if (result.method !== "extension.query" || result.action !== "soul.profile.status") {
+      throw new Error("persistent engine returned a mismatched Soul profile query result");
+    }
+    return decodeSoulProfileOutcome(result.value, agent).status;
+  }
+
+  async canonicalSoulPathForOpen(agent: string): Promise<string> {
+    const status = await this.refreshSoulProfile(agent);
+    if (!status.resolvable) throw new SoulError("soul/missing", `No canonical SOUL.md exists for '${agent}'`);
+    const candidate = path.resolve(this.workspaceRoot, status.relativePath);
+    const relative = path.relative(this.workspaceRoot, candidate);
+    if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) {
+      throw new SoulError("soul/outside-workspace", "Canonical SOUL.md escaped the workspace");
+    }
+    return candidate;
+  }
+
+  private async invokeSoulProfile(command: SoulProfileCommand): Promise<SoulProfileMutationTargetResult> {
+    const result = await this.client.invoke(`soul-profile:${this.operationId()}`, {
+      schemaVersion: 1,
+      method: "extension.invoke",
+      input: command,
+    });
+    if (result.status === "error") throw new Error(result.message);
+    if (result.method !== "extension.invoke" || result.action !== command.action) {
+      throw new Error("persistent engine returned a mismatched Soul profile command result");
+    }
+    const decoded = decodeSoulProfileOutcome(result.value, command.agent);
+    this.refreshConfig();
+    return decoded;
+  }
+
+  private async invokeSoulPayload(
+    bytes: Buffer,
+    command: (payload: ReturnType<WorkspaceClient["stagePayload"]>["ref"]) => SoulProfileCommand,
+  ): Promise<SoulProfileMutationTargetResult> {
+    const staged = this.client.stagePayload(bytes);
+    try {
+      return await this.invokeSoulProfile(command(staged.ref));
+    } finally {
+      staged.discard();
+    }
+  }
+
   private refreshConfig(): TachyonConfig | undefined {
     const read = this.readCurrentConfig(this.workspaceRoot);
     if (read.status === "valid") this.lastGoodConfig = read.config;
     else if (read.status === "missing") this.lastGoodConfig = undefined;
     return this.lastGoodConfig;
   }
+}
+
+function decodeSoulProfileOutcome(value: JsonValue, expectedAgent: string): SoulProfileMutationTargetResult {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("persistent engine returned an invalid Soul profile result");
+  }
+  if (value.outcome === "error") {
+    if (Object.keys(value).length !== 2 || !isSoulErrorCode(value.code)) {
+      throw new Error("persistent engine returned an invalid Soul profile error");
+    }
+    throw new SoulError(value.code, `Soul profile operation failed for '${expectedAgent}'`);
+  }
+  const keys = Object.keys(value);
+  if (value.outcome !== "ok"
+    || !keys.every((key) => key === "outcome" || key === "status" || key === "selfSelected")
+    || keys.length < 2 || keys.length > 3
+    || !isSoulProfileStatusMessage(value.status)
+    || value.status.agent !== expectedAgent
+    || (value.selfSelected !== undefined && typeof value.selfSelected !== "boolean")) {
+    throw new Error("persistent engine returned an invalid Soul profile success result");
+  }
+  return {
+    status: projectSoulProfileStatus(value.status),
+    ...(value.selfSelected !== undefined ? { selfSelected: value.selfSelected } : {}),
+  };
 }
 
 function readWorkspaceConfig(workspaceRoot: string): WorkspaceConfigReadResult {

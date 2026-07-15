@@ -25,6 +25,7 @@ const BASE: FormState = {
   cmd: "claude",
   kind: "agent",
   instructions: "",
+  soul: false,
   role: "",
   watch: "",
   steps: "",

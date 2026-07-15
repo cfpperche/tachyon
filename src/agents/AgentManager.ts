@@ -2,8 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { codexConfigCmd, codexFlagCmd, composeCommand, codexBridgeCmd, shellQuote, inferKind, instructionsDeliverable, resolveBinary, type AgentDef, type EntryKind, type TachyonConfig } from "../config/loadConfig.js";
-import { composeInstructions, withBridgeGuidance } from "../roles/templates.js";
+import { codexConfigCmd, codexFlagCmd, composeCommand, codexBridgeCmd, shellQuote, inferKind, instructionsDeliverable, type AgentDef, type EntryKind, type TachyonConfig } from "../config/loadConfig.js";
 import { TmuxService, sessionName, agentFromSession, SESSION_PREFIX } from "../tmux/TmuxService.js";
 import { adapterFor, adapterForRuntime, binaryOf, forkable, managesOwnSession, type ResumeAdapter, type ResumeRuntime } from "../resume/adapters.js";
 import { URL_ENV_VAR } from "../bridge/token.js";
@@ -38,6 +37,10 @@ import {
 } from "../runtime/adapters/codexLaunchReadiness.js";
 import { LaunchReadiness, type LaunchReadinessPort } from "../runtime/launchReadiness.js";
 import { loadAndRenderProjectGuidance } from "../config/projectGuidance.js";
+import { openingPromptCapability } from "./openingPromptCapability.js";
+import { cleanupStaleSoulLaunchReservationsSync, ensureSoulLaunchReservationsDirSync, SOUL_LAUNCH_RESERVATION_BOOT_ID, SoulError, resolveSoul, resolveSoulWithRetry, withSoulProfileAdmission, type ResolvedSoul } from "./soul.js";
+import { principalBlockedByProfileTransaction } from "./soulProfileTransactions.js";
+import { composeAgentPrompt, type SoulSnapshot } from "./promptLayers.js";
 
 /** t-815796 MEDIUM fix — is `pid` still alive? `process.kill(pid, 0)` sends no signal, only probes.
  *  ESRCH is the one unambiguous "gone" answer; any other error (e.g. EPERM — exists, owned by someone
@@ -279,7 +282,7 @@ export interface SpawnOptions {
   /** spec 230 — tag this ad-hoc spawn as a pipeline-run node; persisted to SessionDef.pipeline so the generic resume/offer path skips it (the run owns it). */
   pipeline?: { runId: string; nodeId: string };
   /** spec 230 — extra instructions appended to the agent's composed prompt (a pipeline node's task, added AFTER a declared agent's role/instructions so the specialist config is preserved). */
-  appendInstructions?: string;
+  taskBrief?: string;
   /** spec 246 — the validated delegation contract this ad-hoc AI child was spawned under (Bridge spawn-contract
    *  gate); persisted as structured metadata on the ledger def (D8). The brief itself rides in `instructions`. */
   contract?: SpawnContract;
@@ -540,6 +543,73 @@ export function newlyDeclaredAutostart(
  * which does not survive an extension restart by design.
  */
 export class AgentManager {
+  private readonly soulReservations = new Map<string, string>();
+
+  private soulPrincipal(name: string): string {
+    const source = this.opts.ledger?.get(name)?.identity?.soul.source;
+    return source?.match(/^\.tachyon\/agents\/([a-zA-Z][a-zA-Z0-9_-]*)\/SOUL\.md$/)?.[1] ?? name;
+  }
+
+  private async reserveSoulLaunch(executionName: string, principal: string, def: AgentDef): Promise<ResolvedSoul> {
+    return withSoulProfileAdmission(this.opts.workspaceRoot, principal, async () => {
+      const soul = await this.preflightSoul(principal, def);
+      const dir = ensureSoulLaunchReservationsDirSync(this.opts.workspaceRoot);
+      const file = path.join(dir, `${principal.toLowerCase()}--${executionName}--${crypto.randomUUID()}.json`);
+      const reservation = JSON.stringify({ principal, execution: executionName, profileId: soul.profileId, sha256: soul.sha256, ownerPid: process.pid, ownerBootId: SOUL_LAUNCH_RESERVATION_BOOT_ID, createdAt: new Date().toISOString() });
+      let fd: number | undefined;
+      try {
+        fd = fs.openSync(file, "wx", 0o600);
+        fs.writeFileSync(fd, reservation);
+        fs.fsyncSync(fd);
+      } finally {
+        if (fd !== undefined) fs.closeSync(fd);
+      }
+      try {
+        const dirFd = fs.openSync(dir, fs.constants.O_RDONLY);
+        try { fs.fsyncSync(dirFd); } finally { fs.closeSync(dirFd); }
+      } catch (error) {
+        if (process.platform !== "win32" && !["EINVAL", "ENOTSUP", "EISDIR"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error;
+      }
+      this.soulReservations.set(executionName, file);
+      return soul;
+    });
+  }
+
+  private releaseSoulReservation(name: string): void {
+    const file = this.soulReservations.get(name);
+    if (!file) return;
+    this.soulReservations.delete(name);
+    try {
+      fs.unlinkSync(file);
+      try {
+        const dirFd = fs.openSync(path.dirname(file), fs.constants.O_RDONLY);
+        try { fs.fsyncSync(dirFd); } finally { fs.closeSync(dirFd); }
+      } catch (error) {
+        if (process.platform !== "win32" && !["EINVAL", "ENOTSUP", "EISDIR"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error;
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") this.opts.notify?.(`failed to clear soul launch reservation for '${name}'`, "warn");
+    }
+  }
+  private soulSnapshot(soul: ResolvedSoul, channel: SoulSnapshot["channel"]): SoulSnapshot {
+    return { profileId: soul.profileId, source: soul.source, sha256: soul.sha256, chars: soul.chars, bytes: soul.bytes, offeredAt: new Date().toISOString(), channel, state: "offered" };
+  }
+
+  private async preflightSoul(name: string, def: AgentDef): Promise<ResolvedSoul> {
+    const capability = openingPromptCapability(def.cmd);
+    if (capability.status !== "prompt") {
+      throw new SoulError("soul/runtime-unsupported", `Soul delivery is unsupported for ${capability.runtime}: ${capability.detail}`);
+    }
+    if (await principalBlockedByProfileTransaction(this.opts.workspaceRoot, name)) {
+      throw new SoulError(
+        "soul/profile-transaction-degraded",
+        `Soul profile for '${name}' is blocked by a profile-transaction-degraded journal`,
+      );
+    }
+    return resolveSoulWithRetry(async () => {
+        return await resolveSoul(this.opts.workspaceRoot, name);
+    });
+  }
   static readonly STOPPING_FALLBACK_MS = 15_000;
   static readonly POSTMORTEM_MAX_LINES = 1000;
   static readonly POSTMORTEM_MAX_BYTES = 64 * 1024;
@@ -586,6 +656,7 @@ export class AgentManager {
   private provisionalAgents = new Set<string>();
 
   constructor(private readonly opts: AgentManagerOptions) {
+    cleanupStaleSoulLaunchReservationsSync(opts.workspaceRoot);
     this.launchPreflight = opts.launchPreflight ?? new CodexLaunchPreflight();
     this.launchReadiness = opts.launchReadiness ?? new LaunchReadiness();
   }
@@ -628,6 +699,14 @@ export class AgentManager {
    *  cmd/role/instructions to detect compaction and rebuild the role reminder. */
   defOf(name: string): AgentDef | undefined {
     return this.definitionOf(name);
+  }
+
+  /** Resolve the current canonical identity at an explicit lifecycle boundary. */
+  async resolveSoulForLifecycle(name: string): Promise<ResolvedSoul | undefined> {
+    const def = this.definitionOf(name);
+    if (!def?.soul) return undefined;
+    const principal = this.soulPrincipal(name);
+    return withSoulProfileAdmission(this.opts.workspaceRoot, principal, () => this.preflightSoul(principal, def));
   }
 
   /** An agent's kind (config wins, then ad-hoc def, else infer from a running session's
@@ -777,6 +856,8 @@ export class AgentManager {
         this.adhoc.set(name, {
           cmd: rec.def.cmd,
           instructions: rec.def.instructions,
+          ...(rec.def.role ? { role: rec.def.role } : {}),
+          ...(rec.def.soul ? { soul: true } : {}),
           ...(rec.def.env ? { env: rec.def.env } : {}), // spec 225 — a forked sibling's inherited env survives reload
           autostart: false,
           watch: [],
@@ -910,7 +991,9 @@ export class AgentManager {
     name: string,
     def: AgentDef,
     parent: string | undefined,
-    primerCtx?: { delegator?: string; gate?: DelegationGate; verify?: TachyonConfig["settings"]["verify"] },
+    primerCtx?: { delegator?: string; gate?: DelegationGate; freshWorktree?: boolean; verify?: TachyonConfig["settings"]["verify"] },
+    taskBrief?: string,
+    soul?: ResolvedSoul,
     projectGuidance?: string,
   ): string | undefined {
     // An explicit --resume/--continue/--session-id command owns its transcript and argv. Do not add
@@ -918,7 +1001,7 @@ export class AgentManager {
     // reinterpret extra arguments on their resume form.
     if (managesOwnSession(def.cmd) || (def.kind === "agent" && !instructionsDeliverable(def.cmd))) return undefined;
     const guidance = !!parent && (this.opts.getConfig()?.settings.bridgeGuidance ?? true);
-    const composed = withBridgeGuidance(composeInstructions(def.role, def.instructions), guidance);
+    const composed = composeAgentPrompt({ soul, role: def.role, instructions: def.instructions, bridgeGuidance: guidance, taskBrief }).body;
     // Project-owned policy is body content, not product protocol. Put it before the task/role body
     // (task-specific instructions stay more recent) and before the long-brief diversion so an
     // arbitrarily long configured document can never bypass tmux's measured payload ceiling.
@@ -966,7 +1049,7 @@ export class AgentManager {
     def: AgentDef,
     brief: string | undefined,
   ): Record<string, string> {
-    if (resolveBinary(def.cmd) !== "hermes") return {};
+    if (binaryOf(def.cmd) !== "hermes") return {};
     if (!brief) return {};
     return { HERMES_TUI_QUERY: brief };
   }
@@ -1064,24 +1147,30 @@ export class AgentManager {
   }
 
   private async spawnUnlocked(name: string, opts?: SpawnOptions): Promise<void> {
-    // t-8354ae — config-failure / LKG-only refusal (before any delivery or occupancy mutation).
-    // Ad-hoc spawns with an explicit cmd are allowed (caller supplies the def); declared LKG-only names are not.
-    if (!opts?.cmd) this.opts.assertSpawnAllowed?.(name);
-    if (opts?.deliveryJoin) {
-      if (opts.gate || opts.worktree || opts.reuseWorktree) {
-        throw new Error("spawn_agent delivery_join cannot combine with gate, worktree:true, or reuse_worktree");
+    try {
+      // t-8354ae — config-failure / LKG-only refusal (before any delivery or occupancy mutation).
+      // Ad-hoc spawns with an explicit cmd are allowed (caller supplies the def); declared LKG-only names are not.
+      if (!opts?.cmd) this.opts.assertSpawnAllowed?.(name);
+      if (opts?.deliveryJoin) {
+        if (opts.gate || opts.worktree || opts.reuseWorktree) {
+          throw new Error("spawn_agent delivery_join cannot combine with gate, worktree:true, or reuse_worktree");
+        }
+        // Explicit deliveryJoin is the only allowed route after canonical recovery/acquisition.
+        return await this.spawnDeliveryJoin(name, opts, opts.deliveryJoin);
       }
-      // Explicit deliveryJoin is the only allowed route after canonical recovery/acquisition.
-      return this.spawnDeliveryJoin(name, opts, opts.deliveryJoin);
+      // SDD 368 T14 — generic spawn (and reuse) refuse snapshot-denied agents before any mutation.
+      this.assertNotDeliveryLifecycleDenied(name, "spawn");
+      if (opts?.reuseWorktree) {
+        if (opts.gate) throw new Error("spawn_agent cannot combine reuse_worktree with gate — reuse targets an EXISTING delegation's worktree, gate creates a NEW one");
+        if (opts.worktree) throw new Error("spawn_agent cannot combine reuse_worktree with worktree:true — reuse already grants an isolated worktree");
+        const reuseDef = this.definitionOf(name);
+        const resolvedSoul = reuseDef?.soul ? await this.reserveSoulLaunch(name, this.soulPrincipal(name), reuseDef) : undefined;
+        return await this.spawnReuseWorktree(name, opts, opts.reuseWorktree, resolvedSoul);
+      }
+      return await this.spawnCore(name, opts);
+    } finally {
+      this.releaseSoulReservation(name);
     }
-    // SDD 368 T14 — generic spawn (and reuse) refuse snapshot-denied agents before any mutation.
-    this.assertNotDeliveryLifecycleDenied(name, "spawn");
-    if (opts?.reuseWorktree) {
-      if (opts.gate) throw new Error("spawn_agent cannot combine reuse_worktree with gate — reuse targets an EXISTING delegation's worktree, gate creates a NEW one");
-      if (opts.worktree) throw new Error("spawn_agent cannot combine reuse_worktree with worktree:true — reuse already grants an isolated worktree");
-      return this.spawnReuseWorktree(name, opts, opts.reuseWorktree);
-    }
-    return this.spawnCore(name, opts);
   }
 
   /**
@@ -1141,6 +1230,7 @@ export class AgentManager {
     const effective = commandOverride ?? definition?.cmd ?? opts.cmd ?? this.definitionOf(name)?.cmd;
     if (!effective) throw new UnknownAgentError(name);
     await this.assertLaunchPreflight(name, effective, { ...(definition?.env ?? this.definitionOf(name)?.env), ...(opts.env ?? {}) });
+    const resolvedSoul = definition?.soul ? await this.reserveSoulLaunch(name, bound!, definition) : undefined;
     const preflight: DeliveryPreflightProof = { [deliveryPreflightProof]: true };
     // Preparation is not an acquisition boundary: a same-named session can appear while
     // the Delivery reservation is being prepared.  The inner spawn boundary records
@@ -1153,7 +1243,7 @@ export class AgentManager {
     const attempt: DeliveryLaunchAttempt = { mode, acquired: false, token: false, materialized: "not-started", session: "not-started", ledger: false };
     const prepared = await this.opts.prepareDeliveryJoin(name, request);
     try {
-      await this.spawnCore(name, opts, { cwd: prepared.cwd, worktree: prepared.worktree, commandOverride, definition, ephemeral: mode !== "declared", preflight, attempt });
+      await this.spawnCore(name, opts, { cwd: prepared.cwd, worktree: prepared.worktree, commandOverride, definition, ephemeral: mode !== "declared", preflight, attempt, resolvedSoul });
       await this.opts.confirmDeliveryJoin(name, request, prepared, await this.tryPanePid(name));
       // SDD 368 T14 — reverse binding after confirm; failure is a failed join (never unbound successful holder).
       this.persistDeliveryBinding(name, {
@@ -1239,7 +1329,7 @@ export class AgentManager {
    * realpath). The Git lock is the cross-reload recovery receipt: every failure after it is acquired
    * leaves both that lock and dirty occupancy intact for explicit inspection.
    */
-  private async spawnReuseWorktree(name: string, opts: SpawnOptions, req: ReuseWorktreeRequest): Promise<void> {
+  private async spawnReuseWorktree(name: string, opts: SpawnOptions, req: ReuseWorktreeRequest, resolvedSoul?: ResolvedSoul): Promise<void> {
     const persistFixerAttempt = this.opts.appendLegacyFixerAttempt;
     const resolveTarget = this.opts.resolveAuthenticatedLegacyReuseTarget;
     if (!persistFixerAttempt || !resolveTarget) {
@@ -1316,7 +1406,7 @@ export class AgentManager {
         const attempt: FixerAttempt = { occupantAgent: name, requestedOwnsSubset: ownsSubset, grantedAt: new Date().toISOString(), branchHeadAtGrant };
         await persistFixerAttempt(delegationPath, attempt);
 
-        await this.spawnCore(name, opts, { cwd: worktree.path, worktree });
+        await this.spawnCore(name, opts, { cwd: worktree.path, worktree, resolvedSoul });
         this.worktreeOccupancy.set(key, { state: "live", agentId: name, cwd: worktree.path, pid: await this.tryPanePid(name) });
 
         // The authority grant and runtime recovery handle are both durable. Only now may a successful
@@ -1573,7 +1663,7 @@ export class AgentManager {
    * parentCwd and ignores it), so reuse cannot ride `opts.cwd`/`resolveSpawnCwd` and instead short-circuits
    * both here.
    */
-  private async spawnCore(name: string, opts?: SpawnOptions, forced?: { cwd: string; worktree: WorktreeRecord; commandOverride?: string; definition?: AgentDef; ephemeral?: boolean; preflight?: DeliveryPreflightProof; attempt?: DeliveryLaunchAttempt }): Promise<void> {
+  private async spawnCore(name: string, opts?: SpawnOptions, forced?: { cwd: string; worktree: WorktreeRecord; commandOverride?: string; definition?: AgentDef; ephemeral?: boolean; preflight?: DeliveryPreflightProof; attempt?: DeliveryLaunchAttempt; resolvedSoul?: ResolvedSoul }): Promise<void> {
     const clearTransientState = () => {
       this.readyAgents.delete(name);
       this.readinessCache.delete(name);
@@ -1582,9 +1672,6 @@ export class AgentManager {
       this.cleanExited.delete(name);
       this.postmortemOutput.delete(name);
     };
-    // Delivery does this only after it has created its own session.  A collision
-    // rejection must not erase the incumbent's readiness/postmortem state.
-    if (!forced?.attempt) clearTransientState();
     let def = forced?.definition ?? this.definitionOf(name);
     if (opts?.cmd) {
       def = {
@@ -1604,11 +1691,16 @@ export class AgentManager {
     if (!def) throw new UnknownAgentError(name);
     if (forced?.commandOverride) def = { ...def, cmd: forced.commandOverride };
 
-    // spec 230 — a pipeline node appends its task AFTER the declared agent's role/instructions, so the
-    // specialist's config (role/harness) is preserved and the task is delivered in the initial prompt.
-    if (opts?.appendInstructions) {
-      def = { ...def, instructions: [def.instructions, opts.appendInstructions].filter(Boolean).join("\n\n") };
-    }
+    const taskBrief = opts?.taskBrief;
+
+    // Runtime and identity preflight precede dead-pane replacement and every transient/resource
+    // mutation. A broken soul must leave the crashed pane, postmortem, and ledger recoverable.
+    if (!forced?.preflight || forced.preflight[deliveryPreflightProof] !== true) await this.assertLaunchPreflight(name, def.cmd, { ...def.env, ...(opts?.env ?? {}) });
+    const resolvedSoul = forced?.resolvedSoul ?? (def.soul ? await this.reserveSoulLaunch(name, this.soulPrincipal(name), def) : undefined);
+
+    // Delivery does this only after it has created its own session. A collision rejection must not
+    // erase the incumbent's readiness/postmortem state.
+    if (!forced?.attempt) clearTransientState();
 
     const session = this.session(name);
     let replaceDeadSession = false;
@@ -1659,10 +1751,6 @@ export class AgentManager {
     const liveCount = (await this.runningAgents()).length;
     const max = this.opts.getConfig()?.settings.maxAgents ?? this.opts.getMaxAgents();
     if (liveCount >= max) throw new MaxAgentsError(max);
-
-    // SDD 370: authoritative validation precedes cwd/worktree preparation and every durable/runtime
-    // side effect. The parser never evaluates shell syntax; ambiguous composition remains unverifiable.
-    if (!forced?.preflight || forced.preflight[deliveryPreflightProof] !== true) await this.assertLaunchPreflight(name, def.cmd, { ...def.env, ...(opts?.env ?? {}) });
 
     let cwd = resolveCwd(this.opts.workspaceRoot, def.cwd);
     // spec 210 — worktree isolation: Workspace resolves the cwd (its own worktree for a
@@ -1728,8 +1816,9 @@ export class AgentManager {
     // `resolveSpawnCwd` may bind a project-configured named verifier's existing oracle/mechanics and
     // enrich the gate with their fixed hashes. Runner-neutral `cmd:` gates deliberately do neither. Compose
     // only afterwards so the primer carries the authoritative result, before any tmux mutation.
+    const effectivePrimerCtx = { ...primerCtx, freshWorktree: !!worktree };
     const preparedLaunch = await (async () => {
-    const effectiveInstructions = this.effectiveInstructions(name, def, parent, primerCtx, projectGuidance);
+    const effectiveInstructions = this.effectiveInstructions(name, def, parent, effectivePrimerCtx, taskBrief, resolvedSoul, projectGuidance);
     // Session-resume bookkeeping (spec 209): mint a session id for runtimes that
     // accept one (claude/gemini). The ORIGINAL cmd is kept for the ledger def +
     // adhoc map; the injected one is only what we spawn.
@@ -1945,6 +2034,9 @@ export class AgentManager {
       cmd: originalCmd,
       kind: def.kind,
       ...(def.instructions ? { instructions: def.instructions } : {}),
+      ...(def.role ? { role: def.role } : {}),
+      ...(def.soul ? { soul: true } : {}),
+      ...(taskBrief ? { taskBrief } : {}),
       ...(parent ? { parent } : {}),
       ...(delegator ? { delegator } : {}), // t-bae303 — persist so rehydrate can restore gated lineage after a reload
       ...(opts?.env ? { env: opts.env } : {}), // spec 230 — persist the node env so a restart re-applies the nonce
@@ -1953,6 +2045,8 @@ export class AgentManager {
       ...(opts?.contractSkipReason ? { contractSkipReason: opts.contractSkipReason } : {}), // spec 246 D6 — auditable bypass
     };
     const resumeBlock = adapter && !selfManaged ? this.withConfigHome(name, def, { runtime: adapter.runtime, sessionId: resumeId }) : undefined; // spec 240
+    const promptCapability = openingPromptCapability(def.cmd);
+    const identity = resolvedSoul ? this.soulSnapshot(resolvedSoul, promptCapability.status === "prompt" ? promptCapability.channel : "startup-argument") : undefined;
     const shouldPersistLaunch = !!this.opts.ledger && !preservesDeclaredLedger && !!(adhoc || adapter || worktree || parent);
     // A gated launch is restart-denied from its very first durable row. The marker is removed only
     // after the host has authenticated and persisted the delegation authority. This two-phase row
@@ -1964,6 +2058,7 @@ export class AgentManager {
       worktree,
       cwd,
       declared: !adhoc,
+      ...(identity ? { identity: { soul: identity, health: "offered" as const } } : {}),
       ...(delegationPending ? { delivery: { invalid: true as const } } : {}),
     };
     try {
@@ -2735,32 +2830,45 @@ export class AgentManager {
     // state changes so an invalid configured source leaves the live pane and its status untouched.
     const projectGuidance = this.projectGuidanceFor(def);
     await this.assertLaunchPreflight(name, def.cmd, def.env);
+    const resolvedSoul = def.soul ? await this.reserveSoulLaunch(name, this.soulPrincipal(name), def) : undefined;
+    const session = this.session(name);
+    let worktree: WorktreeRecord | undefined;
+    let preparationLocked = false;
+    let restartTokenMinted = false;
+    let replacementAttempted = false;
+    try {
     const restartDelegationRecord = (await this.opts.readAuthenticatedLegacyDelegation?.(name))?.record;
     const restartPrimerCtx = {
       delegator: this.delegators.get(name),
       gate: restartDelegationRecord
         ? { behaviorTest: restartDelegationRecord.behaviorTest, owns: restartDelegationRecord.owns, stubPath: restartDelegationRecord.stubPath }
         : undefined,
+      freshWorktree: false as const,
       verify: restartDelegationRecord?.verifySettings ?? this.opts.getConfig()?.settings.verify,
     };
     const restartParent = this.lineage.get(name);
     // `effectiveInstructions` includes long-brief persistence. It must succeed before cache changes,
     // ownership refresh, respawn, or kill+new fallback can mutate the running session.
-    const restartInstructions = this.effectiveInstructions(name, def, restartParent, restartPrimerCtx, projectGuidance);
+    const restartInstructions = this.effectiveInstructions(
+      name,
+      def,
+      restartParent,
+      restartPrimerCtx,
+      this.opts.ledger?.get(name)?.def?.taskBrief,
+      resolvedSoul,
+      projectGuidance,
+    );
     this.stoppingSince.delete(name);
     this.stopFailed.delete(name);
     this.readinessCache.delete(name); // spec 221: restart is a new session → drop the cached badge
     this.cleanExited.delete(name);
     this.postmortemOutput.delete(name);
-    const session = this.session(name);
     // A3: capture an in-TUI /resume before the process is replaced (respawn or kill).
     if (await this.opts.tmux.hasSession(session)) {
       await this.refreshOwnership(name);
     }
     // spec 210 — reuse the existing worktree on restart (isRestart:true → no re-setup).
     let cwd = resolveCwd(this.opts.workspaceRoot, def.cwd);
-    let worktree: WorktreeRecord | undefined;
-    let preparationLocked = false;
     if (this.opts.resolveSpawnCwd) {
       const resolved = await this.opts.resolveSpawnCwd({ name, def, parent: this.lineage.get(name), adhoc: this.adhoc.has(name), isRestart: true });
       if (resolved) {
@@ -2769,9 +2877,6 @@ export class AgentManager {
         preparationLocked = resolved.preparationLocked === true;
       }
     }
-    let restartTokenMinted = false;
-    let replacementAttempted = false;
-    try {
     // spec 220: re-inject the resume id (claude `-n <name>`) so the RESTARTED session carries the
     // customTitle — else refreshOwnership/resume would match the pre-restart session by title and
     // resume the old conversation. Reset the ledger resume id back to the name so the next
@@ -2833,7 +2938,10 @@ export class AgentManager {
           // refreshOwnership still PRESERVE — they re-attach to an EXISTING session, where the old home is right.)
           { ...existing?.resume, runtime: injected.adapter.runtime, sessionId: injected.resumeId, configHome: this.runtimeConfigHome(injected.adapter.runtime, name, def) }
         : existing?.resume;
-      this.opts.ledger.record(name, { ...(existing ?? { declared: !this.adhoc.has(name) }), cwd, ...(worktree ? { worktree } : {}), resume });
+      const capability = openingPromptCapability(def.cmd);
+      const soul = resolvedSoul && capability.status === "prompt" ? this.soulSnapshot(resolvedSoul, capability.channel) : existing?.identity?.soul;
+      const identity = soul ? { soul, health: "offered" as const } : existing?.identity;
+      this.opts.ledger.record(name, { ...(existing ?? { declared: !this.adhoc.has(name) }), cwd, ...(worktree ? { worktree } : {}), resume, identity });
     }
     if (preparationLocked && worktree) {
       const durable = this.opts.ledger?.get(name)?.worktree;
@@ -2878,6 +2986,8 @@ export class AgentManager {
         throw new AggregateError(failures, `agent '${name}' restart failed: ${primary.message}`, { cause: primary });
       }
       throw primary;
+    } finally {
+      this.releaseSoulReservation(name);
     }
   }
 
@@ -3286,6 +3396,8 @@ export class AgentManager {
    */
   async commitFork(plan: ForkPlan): Promise<string> {
     const source = plan.source;
+    const sourceRecord = this.opts.ledger?.get(source);
+    const sourceDefinition = this.definitionOf(source);
     // RE-RESOLVE the source's CURRENT live inputs at spawn time (codex dueto round-2 MAJOR): the plan +
     // confirm modal may be stale — the source could have restarted or switched sessions while the modal
     // sat open, so trusting plan.sourceId/cwd/worktree would fork an OLD transcript. resolveForkSource
@@ -3323,10 +3435,14 @@ export class AgentManager {
         cmd: src.baseCmd,
         kind: "agent" as const,
         ...(src.instructions ? { instructions: src.instructions } : {}),
+        ...(sourceDefinition?.role ? { role: sourceDefinition.role } : sourceRecord?.def?.role ? { role: sourceRecord.def.role } : {}),
+        ...(sourceDefinition?.soul || sourceRecord?.def?.soul ? { soul: true } : {}),
+        ...(sourceRecord?.def?.taskBrief ? { taskBrief: sourceRecord.def.taskBrief } : {}),
         ...(src.env ? { env: src.env } : {}),
         fork: true,
       },
       resume: this.withConfigHome(forkName, undefined, { runtime: src.runtime, sessionId: forkClaudeName }),
+      ...(sourceRecord?.identity ? { identity: structuredClone(sourceRecord.identity) } : {}),
       ...(worktree ? { worktree } : {}),
       cwd,
       declared: false,
@@ -3459,6 +3575,8 @@ export class AgentManager {
     this.adhoc.set(forkName, {
       cmd: src.baseCmd,
       instructions: src.instructions,
+      ...(sourceDefinition?.role ? { role: sourceDefinition.role } : sourceRecord?.def?.role ? { role: sourceRecord.def.role } : {}),
+      ...(sourceDefinition?.soul || sourceRecord?.def?.soul ? { soul: true } : {}),
       ...(src.env ? { env: src.env } : {}),
       autostart: false,
       watch: [],
