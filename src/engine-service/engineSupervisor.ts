@@ -13,6 +13,7 @@ import {
   verifyStagedBundle,
   type StagedEngineBundle,
 } from "./engineBundleStore.js";
+import { engineDaemonStateRoot } from "./daemonStateStore.js";
 import { ensureEngineStateMigration, type EngineStateMigrationProvider } from "./stateMigration.js";
 import {
   engineBundleId,
@@ -151,7 +152,9 @@ export async function ensureDaemonEngine(options: EnsureDaemonEngineOptions): Pr
     };
   }
   assertAbsentOrStaleSocket(controlSocketPath);
-  if (options.migrationProvider) await ensureEngineStateMigration(storageRoot, hash, options.migrationProvider);
+  if (options.migrationProvider) {
+    await ensureEngineStateMigration(engineDaemonStateRoot(storageRoot), hash, options.migrationProvider);
+  }
   const launchInput = buildLaunchInput({
     canonicalRoot,
     storageRoot,

@@ -58,6 +58,7 @@ import {
   saveTaskStudio,
 } from "../tasks/taskStudioService.js";
 import { startEngineControlServer, type RunningEngineControlServer } from "./controlServer.js";
+import { engineDaemonStateRoot } from "./daemonStateStore.js";
 import { EngineEventJournal } from "./eventJournal.js";
 import { StagedPayloadStore } from "./stagedPayloadStore.js";
 import {
@@ -140,7 +141,7 @@ export async function startDaemonEngineService(
   let providerObservations: ProviderObservationService | undefined;
   let providerObservationSubscription: { dispose(): void } | undefined;
   const host = new DaemonEngineHost({
-    storageRoot: path.join(options.storageRoot, "state"),
+    storageRoot: engineDaemonStateRoot(options.storageRoot),
     mediaRoot: options.mediaRoot,
     appVersion: options.appVersion,
     settings: options.settings,

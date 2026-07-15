@@ -6,6 +6,11 @@ const MAX_STORE_BYTES = 8 * 1024 * 1024;
 const MAX_SECRET_BYTES = 64 * 1024;
 const FORBIDDEN_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 
+/** One canonical location for the daemon-owned state, secrets and Bridge token files. */
+export function engineDaemonStateRoot(engineStorageRoot: string): string {
+  return path.join(path.resolve(engineStorageRoot), "state");
+}
+
 export class DaemonStateStore {
   readonly root: string;
   private readonly statePath: string;

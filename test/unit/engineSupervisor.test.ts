@@ -5,6 +5,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { EngineControlClient } from "../../src/engine-service/controlClient.js";
+import { bridgeTokenFileName } from "../../src/bridge/token.js";
 import { stageEngineBundle, type StagedEngineBundle } from "../../src/engine-service/engineBundleStore.js";
 import {
   buildEngineSystemdRunArgs,
@@ -22,7 +23,7 @@ import {
   type EngineDaemonOptionsV1,
   type EngineDaemonStopper,
 } from "../../src/engine-service/engineSupervisor.js";
-import { DaemonStateStore } from "../../src/engine-service/daemonStateStore.js";
+import { DaemonStateStore, engineDaemonStateRoot } from "../../src/engine-service/daemonStateStore.js";
 import type { EngineStateMigrationV1 } from "../../src/engine-service/stateMigration.js";
 import { workspaceVersionStateKey } from "../../src/workspace/operationalStateKeys.js";
 import { ENGINE_SHELL_PROTOCOL, type EngineBundleManifestV1, type EngineServiceIdentityV1, type EngineShellHelloV1 } from "../../src/engine-service/protocol.js";
@@ -364,7 +365,11 @@ describe("persistent engine supervisor", () => {
       controlSocketPath: fixture.socket,
       migrationProvider: async () => migration,
       launcher: async (input) => {
-        expect(new DaemonStateStore(fixture.storage).getState(workspaceVersionStateKey(hash))).toBe("0.56.4");
+        const daemonStateRoot = engineDaemonStateRoot(fixture.storage);
+        expect(new DaemonStateStore(daemonStateRoot).getState(workspaceVersionStateKey(hash))).toBe("0.56.4");
+        expect(fs.readFileSync(path.join(daemonStateRoot, bridgeTokenFileName(hash)), "utf8").trim()).toBe("b".repeat(64));
+        expect(fs.existsSync(path.join(fixture.storage, "state.json"))).toBe(false);
+        expect(fs.existsSync(path.join(fixture.storage, bridgeTokenFileName(hash)))).toBe(false);
         expect(decodeEngineDaemonOptions(input.encodedOptions)).not.toHaveProperty("migration");
         throw new Error("launch observed");
       },
