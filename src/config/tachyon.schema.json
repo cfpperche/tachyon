@@ -107,8 +107,12 @@
             ]
           },
           "instructions": {
-            "description": "Role prompt for the agent (e.g. 'you are a code reviewer...'). Delivered as a startup prompt on spawn for CLIs that accept one (claude, codex, agy, gemini); stored but not auto-delivered otherwise.",
+            "description": "Persistent operational specialization for this agent. Distinct from identity and the current execution task.",
             "type": "string"
+          },
+          "soul": {
+            "description": "Enable identity from the canonical Tachyon-owned .tachyon/agents/<agent>/SOUL.md profile. true enables; false or absence disables. Agents only.",
+            "type": "boolean"
           },
           "role": {
             "description": "Built-in role template (spec 216): a reusable task contract composed with 'instructions' at delivery (template first). agents-only; not valid for a terminal.",

@@ -4,7 +4,7 @@ import { StudioFrame } from "../shared/studio/StudioFrame";
 import { canSave as computeCanSave } from "../shared/studio/dirtyGating";
 import type { StudioError } from "../shared/studio/errorTaxonomy";
 import { Button, Chip, Input, Select, Textarea } from "../shared/ui";
-import { agentStudioTitleFor, blankAgentFields, computeAgentDirty } from "./domain";
+import { AGENT_STUDIO_HOST_MESSAGE_NAMES, agentStudioTitleFor, blankAgentFields, computeAgentDirty, validateAgentStudioHostDomainMessage } from "./domain";
 import { browseMessage, cancelMessage, dirtyMessage, patchMessage, readyMessage, saveMessage } from "./messages";
 import { RuntimeLogo } from "./runtimeLogos";
 import type { AgentStudioEntity, AgentStudioFields, AgentStudioHostMessage } from "./types";
@@ -48,7 +48,7 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
 
   useEffect(() => {
     const onMsg = (e: MessageEvent) => {
-      const decoded = decodeStudioMessage<AgentStudioHostMessage>(e.data, ["cwd"]);
+      const decoded = decodeStudioMessage<AgentStudioHostMessage>(e.data, AGENT_STUDIO_HOST_MESSAGE_NAMES);
       if (!decoded.ok || !decoded.message) {
         setHostError({
           code: "transport/protocol",
@@ -62,6 +62,12 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
         return;
       }
       const d = decoded.message;
+      if (AGENT_STUDIO_HOST_MESSAGE_NAMES.includes(d.type as never) && !validateAgentStudioHostDomainMessage(d)) {
+        setHostError({ code: "transport/protocol", message: "studio protocol: malformed Agent Studio host response", source: "transport", blocking: true });
+        setSaveInFlight(false);
+        setReady(true);
+        return;
+      }
       if (d.type === "load") {
         entityRef.current = d.entity;
         setEntity(d.entity);
@@ -83,6 +89,18 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
         setHostError(undefined);
         setLoadFailed(false);
         setFields((f) => ({ ...f, cwd: d.value }));
+      } else if (d.type === "soulProfileStatus") {
+        if (entityRef.current?.name !== d.status.agent) {
+          setHostError({ code: "transport/protocol", message: "studio protocol: profile status belongs to another agent", source: "transport", blocking: true });
+          return;
+        }
+        setHostError(undefined);
+      } else if (d.type === "soulProfileError") {
+        if (entityRef.current?.name !== d.agent) {
+          setHostError({ code: "transport/protocol", message: "studio protocol: profile error belongs to another agent", source: "transport", blocking: true });
+          return;
+        }
+        setHostError({ code: d.code, message: d.message, source: "persistence", blocking: false });
       }
     };
     window.addEventListener("message", onMsg);
@@ -172,6 +190,10 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
 
             <div class="ash-grid ash-grid-compact">
               <div class="ash-field">
+                <label><input type="checkbox" checked={fields.soul} onChange={(e) => set("soul", (e.currentTarget as HTMLInputElement).checked)} /> Enable soul</label>
+              </div>
+
+              <div class="ash-field">
                 <label class="ash-label" for="ash-name">Name</label>
                 <Input id="ash-name" value={fields.name} placeholder="frontend, revisor, dev..." onInput={(e) => set("name", (e.currentTarget as HTMLInputElement).value)} />
               </div>
@@ -200,7 +222,7 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
             </div>
 
             <details open={!!fields.instructions}>
-              <summary>Instructions (role prompt)</summary>
+              <summary>Persistent instructions</summary>
               <Textarea rows={4} value={fields.instructions} placeholder="you are a code reviewer; read the diff and flag correctness issues…" onInput={(e) => set("instructions", (e.currentTarget as HTMLTextAreaElement).value)} />
               <div class="hint">Delivered as a startup prompt for claude / codex / agy / gemini.</div>
             </details>

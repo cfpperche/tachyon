@@ -17,9 +17,22 @@ import { CallerIdentityRegistry } from "../../src/bridge/callerIdentity.js";
 import { delegationRecordFromSpawn, readDelegationRecord, writeDelegationRecord } from "../../src/bridge/delegationRecord.js";
 import { boundDeliveryPreReservationRefusals, exerciseBoundDeliveryPreReservationRefusal } from "../helpers/boundDeliveryExecutionHarness.js";
 import { briefFilePath } from "../../src/agents/briefFile.js";
+import { SOUL_LAUNCH_RESERVATION_BOOT_ID, soulLaunchReservationsDir } from "../../src/agents/soul.js";
 
 const WS = "/repo";
 const HASH = workspaceHash(WS);
+const SOUL_LEGACY_LIFECYCLE = JSON.parse(fs.readFileSync(path.resolve("test/fixtures/agent-soul-legacy/lifecycle-bypass-cases.json"), "utf8")) as {
+  cases: Array<{ name: string; bytes: string; sendKeys: string[] }>;
+};
+function soulLegacyLifecycleCase(name: string) {
+  return SOUL_LEGACY_LIFECYCLE.cases.find((item) => item.name === name)!;
+}
+function soulLifecycleBypassSpies(manager: AgentManager) {
+  const compositor = vi.spyOn(manager as never, "effectiveCmd" as never);
+  const soulResolver = vi.fn();
+  Object.defineProperty(manager, "resolveSoul", { configurable: true, value: soulResolver });
+  return { compositor, soulResolver };
+}
 
 describe("Delivery pre-reservation refusals", () => {
   it.each(boundDeliveryPreReservationRefusals)("refuses %s with the complete zero-effect vector", async (refusal) => {
@@ -222,6 +235,31 @@ function makeManager(yaml: string, maxAgentsSetting = 8, tmuxOpts: { failRespawn
 }
 
 describe("AgentManager", () => {
+  it("clears legacy, prior-boot, and dead-owner launch reservations while preserving a same-boot live owner", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "agent-manager-soul-reservations-"));
+    try {
+      const dir = soulLaunchReservationsDir(root);
+      fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+      const legacy = path.join(dir, "ada--legacy--123e4567-e89b-42d3-a456-426614174000.json");
+      const reusedPid = path.join(dir, "ada--reused--123e4567-e89b-42d3-a456-426614174001.json");
+      const dead = path.join(dir, "ada--dead--123e4567-e89b-42d3-a456-426614174002.json");
+      const live = path.join(dir, "ada--live--123e4567-e89b-42d3-a456-426614174003.json");
+      fs.writeFileSync(legacy, JSON.stringify({ principal: "Ada", ownerPid: process.pid }), { mode: 0o600 });
+      fs.writeFileSync(reusedPid, JSON.stringify({ principal: "Ada", ownerPid: process.pid, ownerBootId: "prior-extension-host" }), { mode: 0o600 });
+      fs.writeFileSync(dead, JSON.stringify({ principal: "Ada", ownerPid: 2_147_483_647, ownerBootId: SOUL_LAUNCH_RESERVATION_BOOT_ID }), { mode: 0o600 });
+      fs.writeFileSync(live, JSON.stringify({ principal: "Ada", ownerPid: process.pid, ownerBootId: SOUL_LAUNCH_RESERVATION_BOOT_ID }), { mode: 0o600 });
+      const { tmux } = fakeTmux();
+      const config = configOf("agents:\n  Ada:\n    cmd: codex\n");
+      void new AgentManager({ tmux, wsHash: workspaceHash(root), workspaceRoot: root, getConfig: () => config, getMaxAgents: () => 8 });
+      expect(fs.existsSync(legacy)).toBe(false);
+      expect(fs.existsSync(reusedPid)).toBe(false);
+      expect(fs.existsSync(dead)).toBe(false);
+      expect(fs.existsSync(live)).toBe(true);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("spawns a declared agent into a namespaced session", async () => {
     const { manager, sessions, spawned } = makeManager("agents:\n  claude:\n    cmd: claude\n");
     await manager.spawn("claude");
@@ -977,12 +1015,14 @@ describe("AgentManager — session resume (spec 209)", () => {
       failDeliveryJoin?: (name: string, request: any, prepared: any, error: unknown) => Promise<void>;
       /** SDD 368 T14 — snapshot deny set for marker-less crash-window agents. */
       isDeliveryLifecycleDenied?: (name: string) => boolean;
+      failNewSession?: boolean;
     } = {},
   ) {
     const ws = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-am-"));
     dirs.push(ws);
     const hash = workspaceHash(ws);
     const sessions = new Set<string>();
+    const dead = new Set<string>();
     const sessionEnv = new Map<string, Record<string, string>>();
     const cmds: string[] = []; // last positional arg of each new-session / respawn-pane = the command
     const newSessionArgs: string[][] = []; // full args of each new-session (to assert env -e)
@@ -996,6 +1036,7 @@ describe("AgentManager — session resume (spec 209)", () => {
         return args[i + 1].replace(/^=/, "").replace(/:$/, "");
       };
       if (args.includes("new-session")) {
+        if (opts.failNewSession) throw new Error("injected downstream newSession failure");
         sessions.add(args[args.indexOf("-s") + 1]);
         applyTmuxEnvToSession(sessionEnv, args);
         cmds.push(args[args.length - 1]);
@@ -1007,6 +1048,7 @@ describe("AgentManager — session resume (spec 209)", () => {
         if (failRespawn.current) throw new Error("respawn failed");
         const t = target();
         if (!sessions.has(t)) throw new Error("can't find session");
+        dead.delete(t);
         applyTmuxEnvToSession(sessionEnv, args);
         cmds.push(args[args.length - 1]);
         respawnArgs.push(args);
@@ -1027,6 +1069,7 @@ describe("AgentManager — session resume (spec 209)", () => {
           };
         }
         case "kill-session":
+          dead.delete(target());
           sessions.delete(target());
           sessionEnv.delete(target());
           return { stdout: "", stderr: "" };
@@ -1035,7 +1078,7 @@ describe("AgentManager — session resume (spec 209)", () => {
           return { stdout: [...sessions].join("\n") + "\n", stderr: "" };
         case "list-panes":
           if (sessions.size === 0) throw new Error("no server running");
-          return { stdout: [...sessions].map((s) => `${s}\t0\t`).join("\n") + "\n", stderr: "" };
+          return { stdout: [...sessions].map((s) => `${s}\t${dead.has(s) ? 1 : 0}\t`).join("\n") + "\n", stderr: "" };
         case "send-keys":
           if (args.includes("-l")) paneInjections.push(args[args.length - 1]);
           return { stdout: "", stderr: "" };
@@ -1092,7 +1135,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       failDeliveryJoin: opts.failDeliveryJoin,
       isDeliveryLifecycleDenied: opts.isDeliveryLifecycleDenied,
     });
-    return { manager, ledger, cmds, newSessionArgs, respawnArgs, startArgs, paneInjections, failRespawn, ws, hash };
+    return { manager, ledger, sessions, dead, cmds, newSessionArgs, respawnArgs, startArgs, paneInjections, failRespawn, ws, hash };
   }
 
   it("SDD 368 T6 reuses the prepared Delivery worktree and never invokes fresh-worktree resolution", async () => {
@@ -2104,16 +2147,122 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(ledger.get("scratch")).toMatchObject({ declared: false, def: { cmd: "claude" }, resume: { sessionId: name } });
   });
 
+  it("deterministic soul preflight preserves a crashed pane, ledger and postmortem with zero resource residue", async () => {
+    let worktrees = 0;
+    let tokens = 0;
+    let harnesses = 0;
+    const { manager, ledger, sessions, dead, ws, hash } = resumeHarness("agents:\n  reviewer:\n    cmd: codex\n    soul: true\n", {
+      resolveSpawnCwd: async () => { worktrees++; return null; },
+      mintAgentToken: () => { tokens++; return {}; },
+      materializeHarness: () => { harnesses++; return undefined; },
+    });
+    const session = `tachyon-${hash}-reviewer`;
+    sessions.add(session);
+    dead.add(session);
+    const identity = { soul: { source: ".tachyon/agents/reviewer/SOUL.md", profileId: "123e4567-e89b-42d3-a456-426614174000", sha256: "a".repeat(64), chars: 5, bytes: 5, channel: "startup-argument" as const, state: "offered" as const, offeredAt: new Date(0).toISOString() }, health: "offered" as const };
+    ledger.record("reviewer", { def: { cmd: "codex", kind: "agent", soul: true }, resume: { runtime: "codex", sessionId: "prior" }, cwd: ws, declared: true, identity });
+    const postmortem = (manager as unknown as { postmortemOutput: Map<string, { text: string; truncated: boolean; maxLines: number; maxBytes: number }> }).postmortemOutput;
+    postmortem.set("reviewer", { text: "prior crash output", truncated: false, maxLines: 1000, maxBytes: 65_536 });
+
+    await expect(manager.spawn("reviewer")).rejects.toMatchObject({ code: "soul/missing" });
+    expect(sessions.has(session)).toBe(true);
+    expect(dead.has(session)).toBe(true);
+    expect(ledger.get("reviewer")?.identity).toEqual(identity);
+    expect(postmortem.get("reviewer")?.text).toBe("prior crash output");
+    expect({ worktrees, tokens, harnesses }).toEqual({ worktrees: 0, tokens: 0, harnesses: 0 });
+    expect(fs.existsSync(path.join(ws, ".tachyon", "agent-profile-transactions", "launch-reservations"))).toBe(false);
+  });
+
+  it("failed human restart preserves the live session and prior offered identity", async () => {
+    const { manager, ledger, sessions, respawnArgs, ws, hash } = resumeHarness("agents:\n  reviewer:\n    cmd: codex\n    soul: true\n");
+    const profile = path.join(ws, ".tachyon", "agents", "reviewer");
+    fs.mkdirSync(profile, { recursive: true, mode: 0o700 });
+    fs.writeFileSync(path.join(profile, "SOUL.md"), "Exact identity", { mode: 0o600 });
+    fs.writeFileSync(path.join(profile, "profile.json"), JSON.stringify({ schemaVersion: 1, profileId: "123e4567-e89b-42d3-a456-426614174000", owner: "reviewer", state: "active" }), { mode: 0o600 });
+    await manager.spawn("reviewer");
+    const before = structuredClone(ledger.get("reviewer")?.identity);
+    fs.renameSync(path.join(profile, "SOUL.md"), path.join(profile, "SOUL.removed.md"));
+
+    await expect(manager.restart("reviewer")).rejects.toMatchObject({ code: "soul/missing" });
+    expect(sessions.has(`tachyon-${hash}-reviewer`)).toBe(true);
+    expect(respawnArgs).toEqual([]);
+    expect(ledger.get("reviewer")?.identity).toEqual(before);
+    expect(fs.readdirSync(path.join(ws, ".tachyon", "agent-profile-transactions", "launch-reservations"))).toEqual([]);
+  });
+
+  it("cleans an already-created soul reservation when downstream session launch fails", async () => {
+    const { manager, ws } = resumeHarness("agents:\n  reviewer:\n    cmd: codex\n    soul: true\n", { failNewSession: true });
+    const profile = path.join(ws, ".tachyon", "agents", "reviewer");
+    fs.mkdirSync(profile, { recursive: true, mode: 0o700 });
+    fs.writeFileSync(path.join(profile, "SOUL.md"), "Exact identity", { mode: 0o600 });
+    fs.writeFileSync(path.join(profile, "profile.json"), JSON.stringify({ schemaVersion: 1, profileId: "123e4567-e89b-42d3-a456-426614174000", owner: "reviewer", state: "active" }), { mode: 0o600 });
+
+    await expect(manager.spawn("reviewer")).rejects.toThrow("injected downstream newSession failure");
+    expect(fs.readdirSync(path.join(ws, ".tachyon", "agent-profile-transactions", "launch-reservations"))).toEqual([]);
+  });
+
+  it("holds a soul reservation until a reuse-worktree launch settles", async () => {
+    const { manager, ws } = resumeHarness("agents:\n  reviewer:\n    cmd: codex\n    soul: true\n");
+    const profile = path.join(ws, ".tachyon", "agents", "reviewer");
+    fs.mkdirSync(profile, { recursive: true, mode: 0o700 });
+    fs.writeFileSync(path.join(profile, "SOUL.md"), "Exact identity", { mode: 0o600 });
+    fs.writeFileSync(path.join(profile, "profile.json"), JSON.stringify({ schemaVersion: 1, profileId: "123e4567-e89b-42d3-a456-426614174000", owner: "reviewer", state: "active" }), { mode: 0o600 });
+    let finish!: () => void;
+    const pending = new Promise<void>((resolve) => { finish = resolve; });
+    const internals = manager as unknown as {
+      spawnReuseWorktree(name: string, opts: unknown, request: unknown, resolvedSoul: unknown): Promise<void>;
+    };
+    vi.spyOn(internals, "spawnReuseWorktree").mockImplementation(async () => pending);
+
+    const launch = manager.spawn("reviewer", { reuseWorktree: { delegationId: "d-1", ownsSubset: [] } });
+    await vi.waitFor(() => expect(internals.spawnReuseWorktree).toHaveBeenCalled());
+    const reservations = path.join(ws, ".tachyon", "agent-profile-transactions", "launch-reservations");
+    expect(fs.readdirSync(reservations)).toHaveLength(1);
+    const persisted = JSON.parse(fs.readFileSync(path.join(reservations, fs.readdirSync(reservations)[0]!), "utf8")) as Record<string, unknown>;
+    expect(persisted).toMatchObject({ ownerPid: process.pid, ownerBootId: SOUL_LAUNCH_RESERVATION_BOOT_ID });
+    finish();
+    await launch;
+    expect(fs.readdirSync(reservations)).toEqual([]);
+  });
+
+  it("holds a declared soul reservation until Delivery preparation and launch settle", async () => {
+    let finish!: (prepared: { cwd: string; worktree: { path: string; branch: string; tachyonCreatedBranch: boolean; baseRef: string; createdAt: string }; reservationNonce: string; segmentId: string }) => void;
+    const pending = new Promise<Parameters<typeof finish>[0]>((resolve) => { finish = resolve; });
+    const { manager, ws } = resumeHarness("agents:\n  reviewer:\n    cmd: codex\n    soul: true\n", {
+      prepareDeliveryJoin: async () => pending,
+      confirmDeliveryJoin: async () => undefined,
+    });
+    const profile = path.join(ws, ".tachyon", "agents", "reviewer");
+    fs.mkdirSync(profile, { recursive: true, mode: 0o700 });
+    fs.writeFileSync(path.join(profile, "SOUL.md"), "Exact identity", { mode: 0o600 });
+    fs.writeFileSync(path.join(profile, "profile.json"), JSON.stringify({ schemaVersion: 1, profileId: "123e4567-e89b-42d3-a456-426614174000", owner: "reviewer", state: "active" }), { mode: 0o600 });
+
+    const launch = manager.spawn("review-run", {
+      deliveryJoin: { deliveryId: "delivery-1", role: "reviewer", ownsSubset: [], expectedHead: "abc", declaredAgent: "reviewer", operationId: "join-1" },
+    });
+    const reservations = path.join(ws, ".tachyon", "agent-profile-transactions", "launch-reservations");
+    await vi.waitFor(() => expect(fs.readdirSync(reservations)).toHaveLength(1));
+    finish({ cwd: ws, worktree: { path: ws, branch: "tachyon/delivery", tachyonCreatedBranch: true, baseRef: "abc", createdAt: "now" }, reservationNonce: "nonce", segmentId: "segment" });
+    await launch;
+    expect(fs.readdirSync(reservations)).toEqual([]);
+  });
+
   it("resume() spawns the runtime's resume command and persists the id", async () => {
     const { manager, ledger, cmds } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
       newSessionId: () => "uuid-1",
     });
     await manager.spawn("claude"); // mint
     await manager.kill("claude"); // simulate process/session gone
+    const { compositor, soulResolver } = soulLifecycleBypassSpies(manager);
+    compositor.mockClear();
     const rec = { def: { cmd: "claude --permission-mode plan", kind: "agent" as const }, resume: { runtime: "claude" as const, sessionId: "uuid-1" }, cwd: "/ws", declared: true, updatedAt: "t" };
     await manager.resume("claude", rec);
-    expect(cmds.at(-1)).toBe("claude --permission-mode plan --resume uuid-1");
+    const oracle = soulLegacyLifecycleCase("resume-command");
+    expect(cmds.at(-1)).toBe(oracle.bytes);
     expect(ledger.get("claude")!.resume!.sessionId).toBe("uuid-1");
+    expect(compositor).not.toHaveBeenCalled();
+    expect(soulResolver).not.toHaveBeenCalled();
+    expect(oracle.sendKeys).toEqual([]);
   });
 
   it("t-4d2630: resume with an existing session uses respawn-pane -k (not kill+new)", async () => {
@@ -2286,12 +2435,17 @@ describe("AgentManager — session resume (spec 209)", () => {
   });
 
   it("t-762940: resume({ injectPrimer: false }) remains a no-op paste (rebind / explicit)", async () => {
-    const { manager, paneInjections } = resumeHarness("agents:\n  codex:\n    cmd: codex\n", {
-      resolveCaptureId: async () => "captured-id",
+    const { manager, paneInjections, cmds } = resumeHarness("agents:\n  claude:\n    cmd: claude --model sonnet\n", {
+      fileExists: () => true,
     });
-    const rec = { def: { cmd: "codex", kind: "agent" as const }, resume: { runtime: "codex" as const, sessionId: "" }, cwd: "/ws", declared: true, updatedAt: "t" };
-    await manager.resume("codex", rec, { injectPrimer: false });
-    expect(paneInjections).toEqual([]);
+    const rec = { def: { cmd: "claude --model sonnet", kind: "agent" as const }, resume: { runtime: "claude" as const, sessionId: "session-a" }, cwd: "/ws", declared: true, updatedAt: "t" };
+    const { compositor, soulResolver } = soulLifecycleBypassSpies(manager);
+    await manager.resume("claude", rec, { injectPrimer: false });
+    const oracle = soulLegacyLifecycleCase("host-rebind-command");
+    expect(cmds.at(-1)).toBe(oracle.bytes);
+    expect(paneInjections).toEqual(oracle.sendKeys);
+    expect(compositor).not.toHaveBeenCalled();
+    expect(soulResolver).not.toHaveBeenCalled();
   });
 
   it("resume({ injectPrimer: true }) opt-in still pastes the 363 primer", async () => {
@@ -2378,6 +2532,8 @@ describe("AgentManager — session resume (spec 209)", () => {
     await manager.spawn("claude");
     settings.length = 0;
     const plan = await manager.planFork("claude");
+    const { compositor, soulResolver } = soulLifecycleBypassSpies(manager);
+    compositor.mockClear();
     const forkName = await manager.commitFork(plan);
     expect(forkName).toBe("claude-fork-1");
     const forkSession = `tachyon-${path.basename(ws)}-claude-fork-1`;
@@ -2390,6 +2546,12 @@ describe("AgentManager — session resume (spec 209)", () => {
       cwd: ws,
       configHome: "/accounts/default-claude",
     }]);
+    const oracle = soulLegacyLifecycleCase("native-fork-command");
+    const legacyCommand = cmds.at(-1)
+      ?.replace(forkSession, "<FORK_SESSION>")
+      .replace(/ --settings '[^']+'$/, "");
+    expect(legacyCommand).toBe(oracle.bytes);
+    expect(oracle.sendKeys).toEqual([]);
     expect(ledger.get("claude-fork-1")).toMatchObject({
       def: { cmd: "claude", kind: "agent", fork: true }, // base cmd → a later resume uses the normal named path, never re-forks
       resume: { runtime: "claude", sessionId: forkSession }, // the fork's OWN name (captured → uuid later)
@@ -2399,6 +2561,30 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(ledger.get("claude-fork-1")?.def?.parent).toBeUndefined(); // sibling, NOT a lineage child
     const names = (await manager.list()).map((a) => a.name);
     expect(names).toContain("claude-fork-1");
+    expect(compositor).not.toHaveBeenCalled();
+    expect(soulResolver).not.toHaveBeenCalled();
+  });
+
+  it("commitFork copies soul/role/task offer metadata without resolving or composing identity", async () => {
+    const { manager, ledger, ws } = resumeHarness("agents:\n  claude:\n    cmd: claude\n    role: reviewer\n    soul: true\n", { resolveCurrentSession: async () => UUID });
+    const profile = path.join(ws, ".tachyon", "agents", "claude");
+    fs.mkdirSync(profile, { recursive: true, mode: 0o700 });
+    fs.writeFileSync(path.join(profile, "SOUL.md"), "Calm and exact.", { mode: 0o600 });
+    fs.writeFileSync(path.join(profile, "profile.json"), JSON.stringify({ schemaVersion: 1, profileId: "123e4567-e89b-42d3-a456-426614174000", owner: "claude", state: "active" }), { mode: 0o600 });
+    await manager.spawn("claude", { taskBrief: "One-run objective." });
+    expect(fs.readdirSync(path.join(ws, ".tachyon", "agent-profile-transactions", "launch-reservations"))).toEqual([]);
+    const source = ledger.get("claude")!;
+    const plan = await manager.planFork("claude");
+    fs.renameSync(path.join(profile, "SOUL.md"), path.join(profile, "SOUL.removed-after-spawn.md"));
+    const { compositor, soulResolver } = soulLifecycleBypassSpies(manager);
+    compositor.mockClear();
+
+    const forkName = await manager.commitFork(plan);
+    const fork = ledger.get(forkName)!;
+    expect(fork.def).toMatchObject({ role: "reviewer", soul: true, taskBrief: "One-run objective.", fork: true });
+    expect(fork.identity).toEqual(source.identity);
+    expect(compositor).not.toHaveBeenCalled();
+    expect(soulResolver).not.toHaveBeenCalled();
   });
 
   it("commitFork injects the fork's own TACHYON_AGENT_NAME", async () => {
@@ -2557,6 +2743,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       "session-owner ledger rows",
       "private harness/config home",
       "per-spawn settings file",
+      "generated spawn brief and soul anchor",
     ]);
   });
 

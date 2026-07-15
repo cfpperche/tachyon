@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { parseDocument, stringify, YAMLMap, YAMLSeq } from "yaml";
 
 /**
@@ -7,7 +8,7 @@ import { parseDocument, stringify, YAMLMap, YAMLSeq } from "yaml";
  * entry. No parallel state, ever: hand-editing and UI editing stay equivalent.
  */
 
-const NAME_RE = /^[a-zA-Z][a-zA-Z0-9_-]*$/;
+import { AGENT_NAME_PATTERN } from "./nameValidation.js";
 
 export interface EditResult {
   text: string;
@@ -43,16 +44,16 @@ function entryCount(doc: ReturnType<typeof parseDocument>): number {
   return (mapOf(doc, "agents")?.items.length ?? 0) + (mapOf(doc, "terminals")?.items.length ?? 0);
 }
 
-/** A `terminals:` entry must not carry kind/instructions (kind is implied; no AI) — strip them. */
+/** A `terminals:` entry must not carry AI-only fields (kind is implied; no AI) — strip them. */
 function sanitizeForSection(section: Section, entry: Record<string, unknown>): Record<string, unknown> {
   if (section !== "terminals") return entry;
-  const { kind: _kind, instructions: _instructions, ...rest } = entry;
+  const { kind: _kind, instructions: _instructions, soul: _soul, ...rest } = entry;
   return rest;
 }
 
 function assertValidName(name: string): void {
-  if (!NAME_RE.test(name)) {
-    throw new Error(`invalid agent name '${name}' (must match ${NAME_RE})`);
+  if (!AGENT_NAME_PATTERN.test(name)) {
+    throw new Error(`invalid agent name '${name}' (must match ${AGENT_NAME_PATTERN})`);
   }
 }
 
@@ -316,4 +317,61 @@ export function agentEntryLine(text: string, name: string): number | undefined {
   const offset = (node?.key as { range?: [number, number, number] })?.range?.[0];
   if (offset === undefined) return undefined;
   return text.slice(0, offset).split("\n").length - 1;
+}
+
+/**
+ * spec 377 T15A — CAS token for one affected agent stanza only.
+ * Unrelated `tachyon.yml` edits outside this stanza do not change the token.
+ */
+export interface AgentStanzaCasToken {
+  present: boolean;
+  soulEnabled: boolean;
+  /** sha256 of the stable JSON form of the agent entry; null when absent. */
+  hash: string | null;
+}
+
+export function agentStanzaCasToken(text: string | undefined, name: string): AgentStanzaCasToken {
+  if (text === undefined || text.trim().length === 0) {
+    return { present: false, soulEnabled: false, hash: null };
+  }
+  const doc = load(text);
+  const section = sectionOf(doc, name);
+  if (!section) return { present: false, soulEnabled: false, hash: null };
+  const plain = doc.getIn([section, name]) as unknown;
+  const json = (plain as { toJSON?: () => unknown })?.toJSON?.() ?? plain;
+  if (json === undefined || json === null) return { present: false, soulEnabled: false, hash: null };
+  const record = typeof json === "object" && json !== null ? (json as Record<string, unknown>) : {};
+  const soulEnabled = record.soul === true;
+  const hash = createHash("sha256").update(JSON.stringify(record)).digest("hex");
+  return { present: true, soulEnabled, hash };
+}
+
+/**
+ * Set or clear only `soul` on a declared agent entry. Used by journaled profile
+ * enable/disable so recovery can CAS the affected stanza without rewriting the form.
+ * Disabled normalizes to field absence (T14).
+ */
+export function setAgentSoulEnablement(
+  text: string | undefined,
+  name: string,
+  enabled: boolean,
+): EditResult {
+  assertValidName(name);
+  if (text === undefined || text.trim().length === 0) {
+    throw new Error(`agent '${name}' does not exist`);
+  }
+  const doc = load(text);
+  const section = sectionOf(doc, name);
+  if (!section) throw new Error(`agent '${name}' does not exist`);
+  if (section === "terminals") throw new Error(`soul is not valid on terminal '${name}'`);
+  const node = doc.getIn([section, name]);
+  if (!(node instanceof YAMLMap) && (typeof node !== "object" || node === null)) {
+    throw new Error(`agent '${name}' has an unexpected shape`);
+  }
+  if (enabled) {
+    doc.setIn([section, name, "soul"], true);
+  } else {
+    doc.deleteIn([section, name, "soul"]);
+  }
+  return { text: String(doc), warnings: [] };
 }

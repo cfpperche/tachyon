@@ -4,7 +4,21 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { TmuxService, workspaceHash, SESSION_PREFIX } from "../tmux/TmuxService.js";
 import { ControlModeClient } from "../tmux/ControlModeClient.js";
-import { loadConfigFile, parseConfig, CONFIG_FILENAMES, inferKind, type TachyonConfig } from "../config/loadConfig.js";
+import { loadConfigFile, parseConfig, CONFIG_FILENAMES, inferKind, shellQuote, type TachyonConfig } from "../config/loadConfig.js";
+import { composeAgentPrompt } from "../agents/promptLayers.js";
+import { SoulError, agentSoulPath, readCanonicalSoulBytes } from "../agents/soul.js";
+import {
+  adoptSoulProfile,
+  createSoulProfile,
+  disableSoulProfile,
+  enableSoulProfile,
+  importSoulProfileTransaction,
+  reconcileProfileTransactions,
+  refreshSoulProfileStatus,
+  type ProfileMutationResult,
+  type ProfileTxConfigAccess,
+} from "../agents/soulProfileTransactions.js";
+import type { SoulProfileStatus } from "../agents/soul.js";
 import { snapshotFromConfig, writeConfigLkg, readConfigLkg, type ConfigLkgSnapshot } from "../config/configLkg.js";
 import {
   type ConfigFailure,
@@ -57,7 +71,7 @@ import {
 } from "../bridge/clientRebind.js";
 import { delegationRecordFromSpawn, readLatestDelegationRecord, writeDelegationRecordAsync } from "../bridge/delegationRecord.js";
 import { writeAndCommitCanonicalBehaviorStub } from "../bridge/behaviorStub.js";
-import { wrapWithPrimer } from "../bridge/primer.js";
+import { renderPrimer, wrapWithPrimer } from "../bridge/primer.js";
 import { loadAndRenderProjectGuidance } from "../config/projectGuidance.js";
 import { assertSafeBriefTransport, deliverableBody, previewDeliverableBody } from "../agents/briefFile.js";
 import { loadOrCreateExternalToken, loadOrCreateToken, TOKEN_ENV_VAR, URL_ENV_VAR, AGENT_TOKEN_ENV_VAR } from "../bridge/token.js";
@@ -87,6 +101,7 @@ import { classifyInjection, injectionText, type Transition } from "../continuity
 import { agentLogId } from "../activity/logStore.js";
 import { compactSessionOwnerRows, compactSpawnSettings, latestOwnerFor, persistenceHookFailureFile, readPersistenceHookFailures, readSessionOwners, sessionOwnersFile } from "../activity/sessionOwners.js";
 import { forgetAgent as forgetAgentFootprint } from "../agents/forgetAgent.js";
+import { writePrivateFileAtomic } from "../agents/derivedFile.js";
 import { Terminals } from "../presentation/Terminals.js";
 import { detectInstalledClis } from "../webview/cliDetect.js";
 import { validateForm, blockingErrors, toEntry } from "../webview/formLogic.js";
@@ -235,6 +250,10 @@ const issueMessage = (issue: { code: string; param?: string }, t: Translate): st
       return t("steps: at least one step is required");
     case "instructions-not-deliverable":
       return t("note: this CLI doesn't accept a startup prompt — instructions will be saved but not auto-delivered");
+    case "soul-invalid":
+      return t("soul: choose enabled or disabled, then try again");
+    case "soul-runtime-unsupported":
+      return t("soul: {0} cannot receive a Tachyon-managed soul — use a supported direct agent command or disable soul", issue.param ?? "this runtime");
     case "harness-claude-only":
       return t("isolated harness: supported for Claude, Codex, OpenCode, Grok, and Hermes agents only");
     case "codex-harness-mcp-only":
@@ -917,7 +936,9 @@ export class Workspace {
       // spec 241 — also mark a continuity discontinuity (compaction is in-file, so the activity transition
       // counter won't see it) so the agent's continuity is re-injected on the next idle.
       (agent) => {
-        this.pendingAnchor.add(agent);
+        // A failed soul-aware compaction anchor is a durable human-attention latch. Do not let later
+        // compaction observations create an automatic retry loop; a manual re-anchor clears health.
+        if (this.ledger.get(agent)?.identity?.health !== "identity-degraded") this.pendingAnchor.add(agent);
         if (this.manager.kindOf(agent) === "agent") this.continuityState.markDiscontinuity(agent, this.currentActivitySeq(agent));
       },
     );
@@ -1410,7 +1431,7 @@ export class Workspace {
           // (manual, or another run), spawn throws; surface a clear reason and let the node fail safely
           // (the executor never owns/kills the contended session — codex B2).
           try {
-            await this.manager.spawn(def.agent, { env, pipeline: { runId, nodeId }, reveal: false, appendInstructions: taskInstr });
+            await this.manager.spawn(def.agent, { env, pipeline: { runId, nodeId }, reveal: false, taskBrief: taskInstr });
           } catch (err) {
             if (String(err).includes("already running")) {
               this.host.notify(this.t("pipeline node '{0}' needs agent '{1}', but it's already running — stop it and re-run", nodeId, def.agent), "warn");
@@ -1421,7 +1442,7 @@ export class Workspace {
           // an inline `cmd:` node — an ephemeral ad-hoc, dismissed when done. Deliver the task +
           // complete_node protocol ONLY for an interactive signal-based LLM (e.g. `cmd: codex` with the
           // workspace default config); an exit-based one-shot (sh / codex exec) runs its command as-is.
-          await this.manager.spawn(name, { cmd: def.cmd, env, pipeline: { runId, nodeId }, reveal: false, ...(signalBased ? { instructions: taskInstr } : {}) });
+          await this.manager.spawn(name, { cmd: def.cmd, env, pipeline: { runId, nodeId }, reveal: false, ...(signalBased ? { taskBrief: taskInstr } : {}) });
         }
       },
       runVerify: async ({ runId, nodeId }) => {
@@ -1993,6 +2014,42 @@ export class Workspace {
     const session = this.manager.session(agent);
     if (!(await this.tmux.hasSession(session))) throw new Error(`agent '${agent}' is not running`);
     const def = this.manager.defOf(agent);
+    if (def?.soul) {
+      const previous = this.ledger.get(agent)?.identity;
+      try {
+        const soul = await this.manager.resolveSoulForLifecycle(agent);
+        if (!soul) throw new Error(`agent '${agent}' has no enabled soul`);
+        const delegationRecord = readLatestDelegationRecord(this.workspaceRoot, agent)?.record;
+        const { primer, beforeFinishing } = renderPrimer({
+          agentName: agent,
+          delegator: this.manager.delegatorOf(agent),
+          parent: this.manager.parentOf(agent),
+          gate: delegationRecord ? { behaviorTest: delegationRecord.behaviorTest, owns: delegationRecord.owns, stubPath: delegationRecord.stubPath } : undefined,
+          verify: this.config?.settings.verify,
+        });
+        const body = composeAgentPrompt({
+          soul,
+          role: def.role,
+          instructions: def.instructions,
+          bridgeGuidance: !!this.manager.parentOf(agent) && (this.config?.settings.bridgeGuidance ?? true),
+          taskBrief: this.ledger.get(agent)?.def?.taskBrief,
+        }).body ?? "";
+        const dir = path.join(this.workspaceRoot, ".tachyon", "anchors");
+        const abs = path.join(dir, `${agent}.md`);
+        writePrivateFileAtomic(abs, `${body}\n`);
+        const transition = previous?.soul.sha256 && previous.soul.sha256 !== soul.sha256 ? ` (${previous.soul.sha256.slice(0, 12)}→${soul.sha256.slice(0, 12)})` : "";
+        const pointer = `[Tachyon] Re-anchor identity${transition}: read the complete current contract with: cat ${shellQuote(abs)}`;
+        await this.tmux.sendKeys(session, `${primer}\n\n${pointer}\n\n${beforeFinishing}`, true);
+        const rec = this.ledger.get(agent);
+        if (rec) this.ledger.record(agent, { ...rec, identity: { soul: { profileId: soul.profileId, source: soul.source, sha256: soul.sha256, chars: soul.chars, bytes: soul.bytes, offeredAt: new Date().toISOString(), channel: "reanchor-pointer", state: "offered" }, health: "offered" } });
+        return;
+      } catch (error) {
+        const rec = this.ledger.get(agent);
+        if (rec?.identity) this.ledger.record(agent, { ...rec, identity: { ...rec.identity, health: "identity-degraded", degradedAt: new Date().toISOString(), degradedCode: error instanceof SoulError ? error.code : "soul/io-error" } });
+        this.host.notify(this.t("agent '{0}' identity re-anchor failed; repair the soul and retry re-anchor manually", agent), "warn");
+        throw error;
+      }
+    }
     const relPath = path.join(".tachyon", "roles", `${agent}.md`);
     // Resolve the complete project-owned block before writing the role artifact or touching the
     // pane. A configured-but-invalid source must leave the running agent exactly as it was.
@@ -2912,6 +2969,8 @@ export class Workspace {
     for (const warning of warnings) this.host.notify(this.t("{0}: {1}", path.basename(file), warning), "warn");
     this.config = config;
     this.configFailure = undefined;
+    // spec 377 T15A — reconcile incomplete profile journals on every successful reload.
+    void this.reconcileSoulProfileTransactions().catch(() => undefined);
     // t-8354ae — persist last-known-good roster for degraded sidebar rendering if config later breaks.
     if (config) writeConfigLkg(this.workspaceRoot, snapshotFromConfig(config, file));
     // Push the user's tmux overlay (settings.tmux) to the server-options layer;
@@ -3112,7 +3171,7 @@ export class Workspace {
     } else if (def.spawn !== undefined) {
       const running = await this.manager.runningAgents();
       if (!running.includes(def.spawn)) {
-        await this.manager.spawn(def.spawn, def.instructions ? { instructions: def.instructions } : undefined);
+        await this.manager.spawn(def.spawn, def.instructions ? { taskBrief: def.instructions } : undefined);
       } else if (def.instructions) {
         // already up — deliver the prompt to its terminal
         await this.tmux.sendKeys(this.manager.session(def.spawn), def.instructions, true);
@@ -3425,6 +3484,66 @@ export class Workspace {
   // method was dead code AND the last `vscode` touchpoint in the engine. Removing it completes the
   // engine/UI decoupling. The broader layout-surface cleanup (applyLayout, the tree provider) is a
   // separate follow.
+
+  /** spec 377 T15A — config accessor for journaled profile mutations (CAS + compensate). */
+  soulProfileConfigAccess(_agentName?: string): ProfileTxConfigAccess {
+    const file = this.configPath() ?? path.join(this.workspaceRoot, "tachyon.yml");
+    return {
+      configPath: file,
+      readConfigText: () => (fs.existsSync(file) ? fs.readFileSync(file, "utf8") : undefined),
+      writeConfigText: (text: string) => {
+        const result = this.writeTachyonConfigText(text);
+        if (!result.ok) throw new Error(result.errors[0] ?? "could not write tachyon.yml");
+        return text;
+      },
+      isSoulEnabled: (name: string) => this.config?.agents[name]?.soul === true,
+    };
+  }
+
+  private makeSoulProfileAccess(): (principal: string) => ProfileTxConfigAccess {
+    return (principal) => this.soulProfileConfigAccess(principal);
+  }
+
+  async reconcileSoulProfileTransactions(): Promise<{ reconciled: string[]; degraded: string[] }> {
+    return reconcileProfileTransactions(this.workspaceRoot, this.makeSoulProfileAccess());
+  }
+
+  async createSoulProfile(agentName: string): Promise<ProfileMutationResult> {
+    return createSoulProfile(this.workspaceRoot, agentName, this.soulProfileConfigAccess(agentName));
+  }
+
+  async importSoulProfile(agentName: string, sourcePath: string): Promise<ProfileMutationResult> {
+    return importSoulProfileTransaction(this.workspaceRoot, agentName, sourcePath, this.soulProfileConfigAccess(agentName));
+  }
+
+  async adoptSoulProfile(agentName: string, expectedDigest: string): Promise<ProfileMutationResult> {
+    return adoptSoulProfile(this.workspaceRoot, agentName, this.soulProfileConfigAccess(agentName), {
+      expectedDigest,
+      enable: true,
+    });
+  }
+
+  async enableSoulProfile(agentName: string): Promise<ProfileMutationResult> {
+    return enableSoulProfile(this.workspaceRoot, agentName, this.soulProfileConfigAccess(agentName));
+  }
+
+  async disableSoulProfile(agentName: string): Promise<ProfileMutationResult> {
+    return disableSoulProfile(this.workspaceRoot, agentName, this.soulProfileConfigAccess(agentName));
+  }
+
+  async refreshSoulProfile(agentName: string): Promise<SoulProfileStatus> {
+    return refreshSoulProfileStatus(this.workspaceRoot, agentName, this.soulProfileConfigAccess(agentName));
+  }
+
+  canonicalSoulPath(agentName: string): string {
+    return agentSoulPath(this.workspaceRoot, agentName);
+  }
+
+  async canonicalSoulPathForOpen(agentName: string): Promise<string> {
+    const bytes = await readCanonicalSoulBytes(this.workspaceRoot, agentName);
+    if (!bytes) throw new SoulError("soul/missing", `No canonical SOUL.md exists for '${agentName}'`);
+    return agentSoulPath(this.workspaceRoot, agentName);
+  }
 
   /** Agent Studio submit pipeline — webview form and the internal test seam. */
   studioSubmit = (submit: StudioSubmit): string[] | undefined => {

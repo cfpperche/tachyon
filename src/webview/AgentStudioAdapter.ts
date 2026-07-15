@@ -2,7 +2,7 @@ import type { Workspace } from "../workspace/Workspace.js";
 import { FLAG_SUGGESTIONS, fromDef, quickAddChips } from "./formLogic.js";
 import type { StudioHostAdapter, StudioLoadResult, StudioSaveResult } from "./shared/studio/adapter.js";
 import {
-  AGENT_STUDIO_DOMAIN_MESSAGE_NAMES,
+  AGENT_STUDIO_WEBVIEW_MESSAGE_NAMES,
   agentStudioTitleFor,
   blankAgentFields,
   canDiscardAgentFields,
@@ -15,29 +15,16 @@ import {
 import { NO_VALIDATION_ERRORS, type StudioValidationResult } from "./shared/studio/errorTaxonomy.js";
 
 /**
- * spec 350 Phase 3 T1 — AgentStudioAdapter: the StudioHostAdapter<AgentStudioEntity,AgentStudioFields,
- * AgentStudioPatch> for the `agent` kind ONLY (the pilot). WRAPS formLogic.ts (`fromDef` for edit-mode load)
- * and `Workspace.studioSubmit` (the build-via-formLogic + YamlConfigEditor.upsertAgent + full-config-
- * revalidate-before-write path) for persistence — no parallel write path,
- * no change to either contract. formLogic.ts's runtime is imported HERE, not from agent-studio-shell/domain.ts
- * — that module is shared with the browser bundle, and formLogic.ts transitively pulls in `node:fs` via
- * config/loadConfig.ts (confirmed empirically: esbuild's browser target can't resolve it).
+ * spec 350 Phase 3 T1 + spec 377 T15A — AgentStudioAdapter for the `agent` kind.
+ * Profile common-path mutations are journaled on Workspace (create/import/adopt/enable/disable);
+ * this adapter exposes load/save plus thin typed accessors used by host tests.
  *
- * Concurrency is `{kind:"none"}`: tachyon.yml is not CAS-versioned (last-write-wins is the existing 215
- * behavior for every studio dialect that writes it) — inventing CAS here would be a semantics change, out of
- * scope for this pilot.
- *
- * `validate()` returns `NO_VALIDATION_ERRORS` — same precedent as TaskStudioAdapter (spec 350 T1): the legacy
- * Agent Studio never client-side-gated Save on field content either (its `errors` state is populated only
- * from the host's response to a submit attempt, not live per-keystroke); `save()`'s `Workspace.studioSubmit`
- * call is the single authoritative validate-and-write path, unchanged from before this migration.
- *
- * Edit-mode `load()` only resolves entries whose `def.kind === "agent"` — a `terminals:`-block entry (or an
- * agents: entry with `kind: terminal`) reports `not-found` here on purpose.
+ * Concurrency for full-form save remains `{kind:"none"}` (legacy last-write-wins on tachyon.yml).
+ * Profile mutations use a separate affected-stanza CAS inside the profile transaction journal.
  */
 export class AgentStudioAdapter implements StudioHostAdapter<AgentStudioEntity, AgentStudioFields, AgentStudioPatch> {
   entityType = "agent";
-  domainMessageNames = AGENT_STUDIO_DOMAIN_MESSAGE_NAMES;
+  domainMessageNames = AGENT_STUDIO_WEBVIEW_MESSAGE_NAMES;
   concurrency = { kind: "none" as const };
   allowPatchRestore = true;
   dirty = { computeDirty: computeAgentDirty, serializePatch: serializeAgentPatch, canDiscard: canDiscardAgentFields };
@@ -76,4 +63,13 @@ export class AgentStudioAdapter implements StudioHostAdapter<AgentStudioEntity, 
     }
     return { status: "ok" };
   }
+
+  /** Journaled common-path profile actions — authoritative host path for T15A protocol. */
+  createSoulProfile(agent: string) { return this.ws.createSoulProfile(agent); }
+  importSoulProfile(agent: string, sourcePath: string) { return this.ws.importSoulProfile(agent, sourcePath); }
+  adoptSoulProfile(agent: string, expectedDigest: string) { return this.ws.adoptSoulProfile(agent, expectedDigest); }
+  enableSoulProfile(agent: string) { return this.ws.enableSoulProfile(agent); }
+  disableSoulProfile(agent: string) { return this.ws.disableSoulProfile(agent); }
+  refreshSoulProfile(agent: string) { return this.ws.refreshSoulProfile(agent); }
+  canonicalSoulPath(agent: string) { return this.ws.canonicalSoulPath(agent); }
 }
