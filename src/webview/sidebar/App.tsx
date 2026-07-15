@@ -961,11 +961,6 @@ export function App({ fleets = [SAMPLE], dispatch, prefs = {}, collapsedKeys = [
               </button>
             );
           })}
-          {agentFilter !== "all" && (
-            <button type="button" class="agent-filter-clear" title="Clear status filter" onClick={() => setAgentFilter("all")}>
-              Clear
-            </button>
-          )}
         </div>
       )}
       <div class="panel active" role="tabpanel" id="sidebar-panel" aria-labelledby={`tab-${tab}`} tabindex={0}>

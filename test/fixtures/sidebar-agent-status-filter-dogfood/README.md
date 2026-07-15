@@ -24,7 +24,7 @@ npm run dogfood:dev-host -- point \
    - **Live** shows only process-alive rows
    - **Stopped** shows hollow-dot / resumable cemetery
    - **Needs you** surfaces `needs` / `throttled` / `stop-failed` / awaiting-human
-   - Re-click active chip or **Clear** returns to All
+   - Click **All** (or re-click the active non-All chip) returns to unfiltered
    - Chip counts stay anchored to the full fleet (not the filtered subset)
 5. Confirm sort A–Z still works under a filter (no status regroup).
 

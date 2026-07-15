@@ -128,19 +128,6 @@
     opacity: .4;
     cursor: default;
   }
-  .agent-filter-clear {
-    appearance: none;
-    border: 0;
-    background: transparent;
-    color: var(--ds-focus);
-    font: inherit;
-    font-size: 10px;
-    font-weight: 600;
-    cursor: pointer;
-    padding: 0 2px;
-    margin-left: auto;
-  }
-  .agent-filter-clear:hover { text-decoration: underline; }
 
   .panel { display: none; }
   .panel.active { display: block; flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; }
