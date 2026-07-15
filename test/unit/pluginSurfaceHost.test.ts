@@ -6,9 +6,9 @@ import * as vscode from "vscode";
 import { __createdPanels, __getExecutedCommands, __resetVscodeMock } from "../mocks/vscode.js";
 import { applyInstall, detectRuntimes, loadPlugin, previewInstall } from "../../src/plugins/engine.js";
 import { LOCKFILE_REL_PATH } from "../../src/plugins/lockfile.js";
-import { PluginSurfaceHost } from "../../src/plugins/ui/host.js";
+import { legacyPluginSurfaceTarget, PluginSurfaceHost } from "../../src/plugins/ui/host.js";
 import { PLUGIN_UI_ACTION } from "../../src/webview/plugin-host/relay.js";
-import type { Workspace } from "../../src/workspace/Workspace.js";
+import type { WorkspacePluginPresentationTarget } from "../../src/shell/WorkspacePresentation.js";
 
 const ROOT = path.resolve(__dirname, "..", "..");
 const dirs: string[] = [];
@@ -22,7 +22,9 @@ afterEach(() => {
 describe("PluginSurfaceHost lifecycle (spec 349 hardening)", () => {
   it("revokes editor frame/session handles when an installed view target disappears", async () => {
     const wsRoot = await installFixture("spec349-mundinho");
-    const workspace = fakeWorkspace(wsRoot, "ws-editor", [{ name: "alpha", running: true, declared: true }]);
+    const workspace = fakeWorkspace(wsRoot, "ws-editor", [{
+      name: "alpha", running: true, declared: true, attention: "needs-input",
+    }]);
     const host = new PluginSurfaceHost(vscode.Uri.file(ROOT), () => [workspace]);
 
     host.openSurface({ pluginId: "spec349-mundinho", viewId: "mundinho", wsHash: "ws-editor" });
@@ -32,7 +34,10 @@ describe("PluginSurfaceHost lifecycle (spec 349 hardening)", () => {
     expect(panel.disposed).toBe(false);
     expect(panel.webview.posted.some((m) => isProjection(m))).toBe(true);
 
-    const projection = panel.webview.posted.find(isProjection) as { projection: { generation: number; agents: Array<{ handle: string }> } };
+    const projection = panel.webview.posted.find(isProjection) as {
+      projection: { generation: number; agents: Array<{ handle: string; status: string; attention?: string }> };
+    };
+    expect(projection.projection.agents[0]).toMatchObject({ status: "needs", attention: "needs-input" });
     panel.webview.__receive({
       type: PLUGIN_UI_ACTION,
       id: "before-revoke",
@@ -132,15 +137,27 @@ function makeSidebarFixture(name: "sidebar-a" | "sidebar-b"): string {
   return dir;
 }
 
-function fakeWorkspace(workspaceRoot: string, wsHash: string, entries: Array<{ name: string; running: boolean; declared: boolean }>): Workspace {
-  return {
+function fakeWorkspace(
+  workspaceRoot: string,
+  wsHash: string,
+  entries: Array<{
+    name: string;
+    running: boolean;
+    declared: boolean;
+    attention?: "working" | "idle" | "needs-input" | "throttled";
+  }>,
+): WorkspacePluginPresentationTarget {
+  return legacyPluginSurfaceTarget({
     workspaceRoot,
     wsHash,
     folderName: wsHash,
     bridge: { port: 0, url: undefined },
     manager: { list: async () => entries.map((entry) => ({ ...entry, kind: "agent" as const })) },
-    attentionOf: () => undefined,
-  } as unknown as Workspace;
+    attentionOf: (agent) => {
+      const state = entries.find((entry) => entry.name === agent)?.attention;
+      return state ? { state } : undefined;
+    },
+  });
 }
 
 function fakeWebviewView(): { webview: ReturnType<typeof fakeWebview>; onDidDispose(cb: () => void): { dispose(): void } } {

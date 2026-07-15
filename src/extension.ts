@@ -38,7 +38,7 @@ import {
   resumeAgentWithActivity,
   startAgentWithActivity,
 } from "./activity/ActivityLogManager.js";
-import { PluginSurfaceHost } from "./plugins/ui/host.js";
+import { legacyPluginSurfaceTarget, PluginSurfaceHost } from "./plugins/ui/host.js";
 import { syncToolLauncher } from "./plugins/toolProvisionRun.js";
 import { buildOffers, type RegistrationOffer } from "./registration/adapters.js";
 import { executeWait, type BridgeDeps } from "./bridge/tools.js";
@@ -646,7 +646,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push({ dispose: () => handoffPanels.dispose() });
   // spec 349 — first-party host for untrusted plugin UI surfaces. It reads committed plugin lockfiles and
   // revokes open channels when an installed view target disappears.
-  const pluginSurfaces = new PluginSurfaceHost(context.extensionUri, workspaces);
+  const pluginSurfaces = new PluginSurfaceHost(
+    context.extensionUri,
+    () => workspaces().map(legacyPluginSurfaceTarget),
+  );
   context.subscriptions.push({ dispose: () => pluginSurfaces.dispose() });
   // spec 250 — the editor-area Plugins View (browse/install/update/remove; one per root), opened by the
   // sidebar title button. Step B = read-only render of the installed list from the committed lockfile.

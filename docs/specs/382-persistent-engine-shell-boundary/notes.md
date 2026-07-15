@@ -345,3 +345,22 @@ None.
 - No second global full run was made: the first reviewable proof (343 files, 4,068 passed, 3 skipped)
   remains current and this vertical slice has focused wire, process and packaged-host coverage.  Production
   activation remains intentionally legacy until the remaining eleven concrete presentation consumers move.
+
+## Seventeenth implementation slice — 2026-07-14
+
+- Migrated the plugin UI host from concrete `Workspace` to `WorkspacePluginPresentationTarget`.  Installed
+  plugin files remain a shell-side filesystem read, while fleet data now arrives through a sparse identity,
+  Bridge and agent projection with no manager/store/lifecycle authority exposed to a plugin surface.
+- Added a production-ready `WorkspaceClient` adapter and an explicit legacy compatibility adapter used only
+  by the not-yet-cut-over activation path.  Both feed one pure fleet builder, preserving stopped/running,
+  declared/ad-hoc and needs-input/throttled semantics without duplicating status rules.
+- The daemon's bounded agent projection now carries the closed attention-state union.  The shell validator
+  rejects unknown values before rendering, and the plugin projection continues to hide agent names behind
+  its existing session-scoped handles and labels.  The concrete presentation inventory shrank from 11 to 10.
+- Focused plugin/projection/client/service coverage passes 10/10 with typecheck, extension+engine build,
+  daemon import closure (164 files), presentation boundary and diff-check green.  Packaged systemd dogfood
+  projected one real remotely-started agent through the plugin adapter, then proved exact reuse and clean
+  unit/process/listener teardown.
+- The first dogfood fixture used `sleep` without `kind: agent`; Tachyon correctly classified it as a terminal
+  and the Agents-only plugin projection was empty.  The fixture now declares the intended taxonomy rather
+  than weakening production filtering.  No additional global full run was justified before final closure.

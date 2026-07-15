@@ -9,7 +9,7 @@ describe("workspace presentation projection", () => {
   it("projects the closed workspace, bridge and agent roster slice", () => {
     const identity = projectionIdentity("/tmp/tachyon-projection-workspace");
     const snapshot = projectionSnapshot(identity, 7, [
-      projectedAgent("worker", { running: true, parent: "codex" }),
+      projectedAgent("worker", { running: true, attention: "needs-input", parent: "codex" }),
     ], { futureProjection: { remains: "opaque" } });
 
     const projected = projectWorkspacePresentation(snapshot);
@@ -18,7 +18,7 @@ describe("workspace presentation projection", () => {
       seq: 7,
       workspace: { root: identity.workspaceRoot, hash: identity.workspaceHash, configValid: true },
       bridge: { instanceId: identity.bridge.instanceId, port: identity.bridge.port, direct: true },
-      agents: { total: 1, truncated: false, items: [{ name: "worker", running: true, parent: "codex" }] },
+      agents: { total: 1, truncated: false, items: [{ name: "worker", running: true, attention: "needs-input", parent: "codex" }] },
     });
     expect(projected).not.toHaveProperty("futureProjection");
   });
@@ -31,6 +31,10 @@ describe("workspace presentation projection", () => {
 
     const duplicate = projectionSnapshot(identity, 0, [projectedAgent("worker"), projectedAgent("worker")]);
     expect(() => projectWorkspacePresentation(duplicate)).toThrow(/duplicate/i);
+
+    const invalidAttention = projectionSnapshot(identity, 0, [projectedAgent("worker")]);
+    (invalidAttention.projections.agents as { items: Array<Record<string, unknown>> }).items[0].attention = "unknown";
+    expect(() => projectWorkspacePresentation(invalidAttention)).toThrow(/attention/i);
 
     const projected = projectWorkspacePresentation(projectionSnapshot(identity));
     expect(() => assertWorkspacePresentationIdentity(projected, {

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { FakeWorkspaceClient } from "../../src/shell/FakeWorkspaceClient.js";
 import {
   workspaceGitPresentationTarget,
+  workspacePluginPresentationTarget,
   workspacePresentationTarget,
   workspaceProbePresentationTarget,
 } from "../../src/shell/WorkspacePresentation.js";
@@ -36,7 +37,7 @@ describe("FakeWorkspaceClient", () => {
       result.snapshot.projections.agents = "listener mutation";
     });
     fake.enqueueSync({
-      snapshot: projectionSnapshot(identity, 1, [projectedAgent("worker", { running: true })]),
+      snapshot: projectionSnapshot(identity, 1, [projectedAgent("worker", { running: true, attention: "needs-input" })]),
       events: [{
         schemaVersion: 1,
         engineInstanceId: identity.instanceId,
@@ -57,6 +58,11 @@ describe("FakeWorkspaceClient", () => {
     });
     const gitExec = async () => ({ stdout: "", stderr: "", code: 0 });
     expect(workspaceGitPresentationTarget(fake, gitExec).gitExec).toBe(gitExec);
+    expect(await workspacePluginPresentationTarget(fake).pluginFleet()).toMatchObject({
+      folder: { hash: identity.workspaceHash, name: "tachyon-fake-workspace" },
+      bridge: { port: "42897", connected: true },
+      agents: [{ name: "worker", status: "needs", attention: "needs-input", adhoc: false }],
+    });
     expect(await workspaceProbePresentationTarget(fake).probeView("worker"))
       .toMatchObject({ caller: "worker", empty: true });
     expect(fake.queries).toEqual([{

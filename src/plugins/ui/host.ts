@@ -5,8 +5,11 @@ import { PluginActionBroker, type PluginActionBrokerResult } from "./broker.js";
 import { PluginFleetProjectionProvider } from "./projectionProvider.js";
 import { loadManifest, type ViewDecl } from "../manifest.js";
 import { LOCKFILE_REL_PATH, parseLockfile, type MaterializedTarget } from "../lockfile.js";
-import type { Workspace } from "../../workspace/Workspace.js";
-import type { AgentStatus, AgentVM, FleetVM } from "../../sidebar/types.js";
+import {
+  pluginFleetPresentation,
+  type WorkspacePresentationTarget,
+  type WorkspacePluginPresentationTarget,
+} from "../../shell/WorkspacePresentation.js";
 import { panelIcon } from "../../webview/shared/panelIcon.js";
 import { renderWebviewShell } from "../../webview/shared/shell.js";
 import { PLUGIN_UI_ACTION, PLUGIN_UI_ACTION_RESULT, type PluginHostBootstrap, type PluginUiActionRelayMessage } from "../../webview/plugin-host/relay.js";
@@ -21,7 +24,37 @@ export interface InstalledPluginSurface {
   entryFile: string;
   fleet: ViewDecl["fleet"];
   actions: string[];
-  workspace: Workspace;
+  workspace: WorkspacePluginPresentationTarget;
+}
+
+interface LegacyPluginWorkspaceSource extends WorkspacePresentationTarget {
+  bridge: { port?: number; url?: string };
+  manager: {
+    list(): Promise<Array<{
+      name: string;
+      kind: "agent" | "terminal";
+      running: boolean;
+      declared: boolean;
+    }>>;
+  };
+  attentionOf(agent: string): { state: "working" | "idle" | "needs-input" | "throttled" } | undefined;
+}
+
+/** Compatibility adapter used only until extension activation switches to WorkspaceClient. */
+export function legacyPluginSurfaceTarget(source: LegacyPluginWorkspaceSource): WorkspacePluginPresentationTarget {
+  return {
+    workspaceRoot: source.workspaceRoot,
+    wsHash: source.wsHash,
+    folderName: source.folderName,
+    pluginFleet: async () => {
+      const entries = await source.manager.list();
+      return pluginFleetPresentation(
+        source,
+        { port: source.bridge.port, connected: !!source.bridge.url },
+        entries.map((entry) => ({ ...entry, attention: source.attentionOf(entry.name)?.state })),
+      );
+    },
+  };
 }
 
 interface PluginSurfaceSession {
@@ -42,7 +75,7 @@ export class PluginSurfaceHost implements vscode.WebviewViewProvider {
 
   constructor(
     private readonly extensionUri: vscode.Uri,
-    private readonly getWorkspaces: () => Workspace[],
+    private readonly getWorkspaces: () => WorkspacePluginPresentationTarget[],
   ) {}
 
   resolveWebviewView(view: vscode.WebviewView): void {
@@ -150,7 +183,7 @@ export class PluginSurfaceHost implements vscode.WebviewViewProvider {
         dispose();
       },
       push: async () => {
-        projection.refresh(await this.fleetFor(surface.workspace));
+        projection.refresh(await surface.workspace.pluginFleet());
       },
     };
   }
@@ -227,33 +260,4 @@ export class PluginSurfaceHost implements vscode.WebviewViewProvider {
     return out.sort((a, b) => a.key.localeCompare(b.key));
   }
 
-  private async fleetFor(ws: Workspace): Promise<FleetVM> {
-    const entries = await ws.manager.list();
-    const agents: AgentVM[] = entries
-      .filter((entry) => entry.kind === "agent")
-      .map((entry) => ({
-        name: entry.name,
-        status: entry.running ? statusFromAttention(ws.attentionOf(entry.name)?.state) : "stopped",
-        ...(ws.attentionOf(entry.name)?.state ? { attention: ws.attentionOf(entry.name)?.state } : {}),
-        ai: true,
-        adhoc: !entry.declared,
-      }));
-    return {
-      folder: { hash: ws.wsHash, name: ws.folderName },
-      bridge: { port: ws.bridge.port?.toString() ?? "-", connected: !!ws.bridge.url },
-      agents,
-      terminals: [],
-      commands: [],
-      runbooks: [],
-      pins: [],
-      schedules: [],
-      pipelines: [],
-    };
-  }
-}
-
-function statusFromAttention(attention: string | undefined): AgentStatus {
-  if (attention === "needs-input") return "needs";
-  if (attention === "throttled") return "throttled";
-  return "running";
 }

@@ -31,6 +31,7 @@ export interface WorkspaceAgentProjectionV1 {
   declared: boolean;
   dead: boolean;
   crashed: boolean;
+  attention?: "working" | "idle" | "needs-input" | "throttled";
   exitCode?: number;
   parent?: string;
   delegator?: string;
@@ -177,7 +178,7 @@ function projectAgent(value: unknown): WorkspaceAgentProjectionV1 {
   const input = record(value, "agent projection");
   const allowed = [
     "name", "session", "kind", "running", "stopping", "stopFailed", "declared", "dead", "crashed",
-    "exitCode", "parent", "delegator", "declaredOwner",
+    "attention", "exitCode", "parent", "delegator", "declaredOwner",
   ];
   if (Object.keys(input).some((key) => !allowed.includes(key))) throw invalid("agent projection has unknown fields");
   const required = allowed.slice(0, 9);
@@ -194,6 +195,13 @@ function projectAgent(value: unknown): WorkspaceAgentProjectionV1 {
     dead: boolean(input.dead, "agent dead"),
     crashed: boolean(input.crashed, "agent crashed"),
   };
+  if (input.attention !== undefined) {
+    if (input.attention !== "working" && input.attention !== "idle"
+      && input.attention !== "needs-input" && input.attention !== "throttled") {
+      throw invalid("agent attention is invalid");
+    }
+    projected.attention = input.attention;
+  }
   if (input.exitCode !== undefined) projected.exitCode = safeInteger(input.exitCode, -65_535, 65_535, "agent exitCode");
   if (input.parent !== undefined) projected.parent = boundedString(input.parent, 1, 128, "agent parent");
   if (input.delegator !== undefined) projected.delegator = boundedString(input.delegator, 1, 128, "agent delegator");

@@ -3,6 +3,8 @@ import type { GitExec } from "../worktree/WorktreeManager.js";
 import type { TachyonConfig } from "../config/loadConfig.js";
 import type { StudioDeps, StudioSubmit } from "../webview/studioSubmit.js";
 import type { ProbeView } from "../probe/probeView.js";
+import type { AgentStatus, FleetVM } from "../sidebar/types.js";
+import type { WorkspaceAgentProjectionV1 } from "../runtime-api/workspaceProjection.js";
 
 /** Narrow identity contract shared by editor panels during the shell cutover. */
 export interface WorkspacePresentationTarget {
@@ -17,6 +19,10 @@ export interface WorkspaceGitPresentationTarget extends WorkspacePresentationTar
 
 export interface WorkspaceProbePresentationTarget extends WorkspacePresentationTarget {
   probeView(caller?: string): Promise<ProbeView>;
+}
+
+export interface WorkspacePluginPresentationTarget extends WorkspacePresentationTarget {
+  pluginFleet(): Promise<FleetVM>;
 }
 
 /**
@@ -59,4 +65,59 @@ export function workspaceProbePresentationTarget(client: WorkspaceClient): Works
       return result.view;
     },
   };
+}
+
+export function workspacePluginPresentationTarget(client: WorkspaceClient): WorkspacePluginPresentationTarget {
+  return {
+    ...workspacePresentationTarget(client),
+    pluginFleet: async () => {
+      const presentation = client.presentation;
+      return pluginFleetPresentation(
+        {
+          workspaceRoot: presentation.workspace.root,
+          wsHash: presentation.workspace.hash,
+          folderName: presentation.workspace.folderName,
+        },
+        { port: presentation.bridge.port, connected: presentation.bridge.url !== null },
+        presentation.agents.items,
+      );
+    },
+  };
+}
+
+/** Builds the intentionally sparse fleet consumed by sandboxed plugin surfaces. */
+export function pluginFleetPresentation(
+  workspace: WorkspacePresentationTarget,
+  bridge: { port?: number | string; connected: boolean },
+  agents: readonly Pick<WorkspaceAgentProjectionV1, "name" | "kind" | "running" | "declared" | "attention">[],
+): FleetVM {
+  return {
+    folder: { hash: workspace.wsHash, name: workspace.folderName },
+    bridge: { port: bridge.port === undefined ? "-" : String(bridge.port), connected: bridge.connected },
+    agents: agents
+      .filter((agent) => agent.kind === "agent")
+      .map((agent) => ({
+        name: agent.name,
+        status: pluginAgentStatus(agent.running, agent.attention),
+        ...(agent.attention ? { attention: agent.attention } : {}),
+        ai: true,
+        adhoc: !agent.declared,
+      })),
+    terminals: [],
+    commands: [],
+    runbooks: [],
+    pins: [],
+    schedules: [],
+    pipelines: [],
+  };
+}
+
+function pluginAgentStatus(
+  running: boolean,
+  attention: WorkspaceAgentProjectionV1["attention"],
+): AgentStatus {
+  if (!running) return "stopped";
+  if (attention === "needs-input") return "needs";
+  if (attention === "throttled") return "throttled";
+  return "running";
 }

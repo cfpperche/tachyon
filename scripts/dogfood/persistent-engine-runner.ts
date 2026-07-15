@@ -13,6 +13,7 @@ import {
 import type { EngineServiceIdentityV1 } from "../../src/engine-service/protocol.js";
 import { connectRemoteWorkspaceClient, type WorkspaceClient } from "../../src/shell/WorkspaceClient.js";
 import { ClientWorkspaceStudioTarget } from "../../src/shell/ClientWorkspaceStudioTarget.js";
+import { workspacePluginPresentationTarget } from "../../src/shell/WorkspacePresentation.js";
 import { TmuxService } from "../../src/tmux/TmuxService.js";
 import { blankCommandFields } from "../../src/webview/command-studio-shell/domain.js";
 import type { StudioDeps } from "../../src/webview/studioSubmit.js";
@@ -26,6 +27,7 @@ fs.writeFileSync(path.join(workspaceRoot, "tachyon.yml"), [
   "agents:",
   "  dogfood-worker:",
   "    cmd: sleep 300",
+  "    kind: agent",
   "    autostart: false",
   "",
 ].join("\n"), "utf8");
@@ -102,6 +104,12 @@ try {
     throw new Error(`idempotent remote agent start failed: ${JSON.stringify({ started, replayedStart })}`);
   }
   await waitForAgentProjection(first, "dogfood-worker", true);
+  const pluginFleet = await workspacePluginPresentationTarget(first).pluginFleet();
+  if (pluginFleet.agents.length !== 1
+    || pluginFleet.agents[0]?.name !== "dogfood-worker"
+    || pluginFleet.agents[0]?.status === "stopped") {
+    throw new Error(`remote plugin fleet projection failed: ${JSON.stringify(pluginFleet.agents)}`);
+  }
   const restarted = await first.invoke("dogfood-operation-restart-0001", {
     schemaVersion: 1,
     method: "agent.restart",
@@ -140,6 +148,7 @@ try {
     bridge: identity.bridge,
     snapshotSeq: snapshot.seq,
     queries: [probes.method],
+    pluginFleet: pluginFleet.agents.map((agent) => ({ name: agent.name, status: agent.status })),
     commands: ["studio.submit", started.method, restarted.method, killed.method],
   }, null, 2)}\n`);
 } finally {
