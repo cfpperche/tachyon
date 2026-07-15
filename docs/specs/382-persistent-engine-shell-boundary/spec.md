@@ -2,7 +2,8 @@
 
 _Created 2026-07-14._
 
-**Status:** in-progress
+**Status:** shipped
+**Closure:** Shipped 2026-07-15 through accepted commit `886880d1`: version 0.56.8/protocol 3 moves the complete workspace engine behind a persistent per-workspace service on Linux/WSL, makes editor reload a detach/attach boundary, stages immutable engine and runtime bytes, preserves no-shell orchestration, and provides identity-bound upgrade/rollback, terminal/notification replay and tmux recovery. Focused acceptance, typecheck, production build, engine-boundary, full verification, packaged dogfood and installed reload evidence are green; macOS remains explicitly unsupported without an embedded fallback.
 
 ## Intent
 
