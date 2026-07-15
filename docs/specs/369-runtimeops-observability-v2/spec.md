@@ -33,45 +33,45 @@ source configuration.
   - **Then** it records reproducible build/runtime evidence, source closure, binary footprint, cold/warm latency,
     credential surfaces, output-contract gaps, upstream-sync cost, and a decision among headless fork, extracted
     subset, or selective port
-- [ ] **Scenario: Observe provider quota beside native agent usage**
+- [x] **Scenario: Observe provider quota beside native agent usage**
   - **Given** Tachyon has native activity usage for an agent and the collection engine has a valid Codex or Claude
     account-level quota observation
   - **When** Runtime Ops builds its projection
   - **Then** it shows native input/output/cache facts separately from normalized quota windows, reset times, source,
     confidence, freshness, and account scope without implying that aggregate quota consumption belongs to that agent
-- [ ] **Scenario: Explain unavailable or stale provider data**
+- [x] **Scenario: Explain unavailable or stale provider data**
   - **Given** a collector is unsupported, unauthenticated, timed out, stale, or returned an incompatible payload
   - **When** the observation reaches Runtime Ops
   - **Then** the UI exposes a bounded source-specific unavailable/stale reason and last-good timestamp without zero,
     fabricated percentages, raw provider responses, terminal text, or credentials
-- [ ] **Scenario: Keep sensitive collection opt-in and scoped**
+- [x] **Scenario: Keep sensitive collection opt-in and scoped**
   - **Given** a source could read OAuth state, cookies, Keychain entries, provider config, local histories, or invoke a CLI
   - **When** the capability is installed or enabled
   - **Then** the user sees the source and required access, Tachyon invokes only allowlisted collectors, and no secret,
     account identifier, absolute path, raw response, or session token crosses the normalized Runtime Ops projection
-- [ ] **Scenario: Survive engine and upstream changes**
+- [x] **Scenario: Survive engine and upstream changes**
   - **Given** a pinned engine build emits extra fields, omits a required field, changes a type, or reports non-finite or
     out-of-range values
   - **When** Tachyon decodes the engine response
   - **Then** unknown additive fields are tolerated, invalid critical facts fail closed to unavailable, the schema and
     engine version are recorded, and contract fixtures detect incompatible upgrades before release
-- [ ] **Scenario: Refresh without hidden polling storms**
+- [x] **Scenario: Refresh without hidden polling storms**
   - **Given** Runtime Ops is hidden or several fleet events occur in a burst
   - **When** provider observations are scheduled
   - **Then** collection follows an explicit bounded cadence, coalesces concurrent work, serves last-good data where
     policy permits, and does not introduce one background provider process per agent or per render
-- [ ] **Scenario: Render only Tachyon-owned UI**
+- [x] **Scenario: Render only Tachyon-owned UI**
   - **Given** observability data came from a CodexBar-derived collector
   - **When** a user opens Runtime Ops
   - **Then** all visible layout, labels, interaction, theming, and navigation are Tachyon-owned Runtime Ops components
     and no CodexBar SwiftUI, menu, widget, icon, screenshot, or application preference is embedded
-- [ ] The canonical host contract is versioned, allowlist-by-construction, provider-neutral, and distinguishes native
+- [x] The canonical host contract is versioned, allowlist-by-construction, provider-neutral, and distinguishes native
   usage, provider quota, context pressure, monetary cost, rate-limit events, and user-defined budgets as different facts
-- [ ] Codex and Claude are the only required provider collectors for the first vertical slice; additional providers use
+- [x] Codex and Claude are the only required provider collectors for the first vertical slice; additional providers use
   the same adapter contract and are follow-up work
-- [ ] Any code actually derived from CodexBar preserves required MIT copyright/license notices and records the exact
+- [x] Any code actually derived from CodexBar preserves required MIT copyright/license notices and records the exact
   upstream repository/tag/commit; behavioral reference fixtures identify their comparison baseline
-- [ ] The collector layer remains headless and replaceable: Runtime Ops consumes Tachyon's normalized domain, never
+- [x] The collector layer remains headless and replaceable: Runtime Ops consumes Tachyon's normalized domain, never
   the CodexBar `UsageSnapshot` or CLI payload directly
 
 ## Non-goals
