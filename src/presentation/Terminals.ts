@@ -24,7 +24,8 @@ function sessionIcon(agent: string, kind: "agent" | "terminal"): vscode.ThemeIco
  * it never kills the underlying process.
  */
 export class Terminals implements TerminalPresentation {
-  private byAgent = new Map<string, vscode.Terminal>();
+  private bySession = new Map<string, { agent: string; terminal: vscode.Terminal }>();
+  private programmaticClose = new WeakSet<vscode.Terminal>();
   private disposables: vscode.Disposable[] = [];
 
   constructor(
@@ -32,13 +33,16 @@ export class Terminals implements TerminalPresentation {
     /** Resolve an entry's kind (agent vs terminal) so the tab icon represents it. Defaults to "agent". */
     private readonly kindOf?: (agent: string) => "agent" | "terminal",
     private readonly manifest?: TerminalManifestStore,
+    /** Manual shell-tab closure is an engine intent change, not merely local presentation cleanup. */
+    private readonly onClosed?: (agent: string, session: string) => void,
   ) {
     this.disposables.push(
       vscode.window.onDidCloseTerminal((terminal) => {
-        for (const [agent, t] of this.byAgent) {
-          if (t === terminal) {
-            this.byAgent.delete(agent);
+        for (const [session, entry] of this.bySession) {
+          if (entry.terminal === terminal) {
+            this.bySession.delete(session);
             this.saveManifest();
+            if (!this.programmaticClose.has(terminal)) this.onClosed?.(entry.agent, session);
             break;
           }
         }
@@ -48,7 +52,7 @@ export class Terminals implements TerminalPresentation {
 
   /** Opens (or reveals) the editor-area terminal attached to a managed entry's tmux session. */
   open(agent: string, session: string, viewColumn?: number, title?: string): vscode.Terminal {
-    const existing = this.byAgent.get(agent);
+    const existing = this.bySession.get(session)?.terminal;
     if (existing) {
       existing.show(false);
       // A tab revealed after living hidden may hold a stale tmux client — redraw it.
@@ -72,26 +76,31 @@ export class Terminals implements TerminalPresentation {
       // Tachyon itself re-attaches surviving agents on activation.
       isTransient: true,
     });
-    this.byAgent.set(agent, terminal);
+    this.bySession.set(session, { agent, terminal });
     this.saveManifestEntry(agent, session, viewColumn, title);
     terminal.show(true);
     return terminal;
   }
 
-  close(agent: string): void {
-    this.byAgent.get(agent)?.dispose();
-    this.byAgent.delete(agent);
+  close(agent: string, session?: string): void {
+    const targets = session !== undefined
+      ? [...this.bySession].filter(([candidate]) => candidate === session)
+      : [...this.bySession].filter(([, entry]) => entry.agent === agent);
+    for (const [candidate, entry] of targets) {
+      this.programmaticClose.add(entry.terminal);
+      entry.terminal.dispose();
+      this.bySession.delete(candidate);
+    }
     this.saveManifest();
   }
 
   has(agent: string): boolean {
-    return this.byAgent.has(agent);
+    return [...this.bySession.values()].some((entry) => entry.agent === agent);
   }
 
   /** True when this agent's editor terminal is the one the user is focused on. */
   isActive(agent: string): boolean {
-    const t = this.byAgent.get(agent);
-    return t !== undefined && t === vscode.window.activeTerminal;
+    return [...this.bySession.values()].some((entry) => entry.agent === agent && entry.terminal === vscode.window.activeTerminal);
   }
 
   dispose(): void {
@@ -107,7 +116,7 @@ export class Terminals implements TerminalPresentation {
         prunedMalformed = true;
         continue;
       }
-      if (this.byAgent.has(entry.agent)) continue;
+      if (this.bySession.has(entry.session)) continue;
       let live = false;
       try {
         live = await hasSession(entry.session);
@@ -124,7 +133,7 @@ export class Terminals implements TerminalPresentation {
 
   private saveManifestEntry(agent: string, session: string, viewColumn: number | undefined, title: string | undefined): void {
     if (!this.manifest) return;
-    const entries: TerminalRestoreEntry[] = this.readManifest().filter((entry): entry is TerminalRestoreEntry => isTerminalRestoreEntry(entry) && entry.agent !== agent);
+    const entries: TerminalRestoreEntry[] = this.readManifest().filter((entry): entry is TerminalRestoreEntry => isTerminalRestoreEntry(entry) && entry.session !== session);
     entries.push({
       schemaVersion: 1,
       agent,
@@ -138,8 +147,8 @@ export class Terminals implements TerminalPresentation {
   private saveManifest(): void {
     if (!this.manifest) return;
     const previous = this.readManifest().filter(isTerminalRestoreEntry);
-    const openAgents = new Set(this.byAgent.keys());
-    this.manifest.write(previous.filter((entry) => openAgents.has(entry.agent)));
+    const openSessions = new Set(this.bySession.keys());
+    this.manifest.write(previous.filter((entry) => openSessions.has(entry.session)));
   }
 
   private saveManifestEntries(entries: TerminalRestoreEntry[]): void {

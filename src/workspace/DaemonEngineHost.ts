@@ -6,7 +6,11 @@ import type { EngineUiRequestV1 } from "../engine-service/protocol.js";
 import { DaemonStateStore } from "../engine-service/daemonStateStore.js";
 import { PollingFileWatcher } from "../engine-service/pollingWatcher.js";
 import type { EngineHost, HostDisposable, NoticeAction, ViewKind, WatchEvents } from "./EngineHost.js";
-import { HeadlessTerminalPresentation, type TerminalPresentation } from "./TerminalPresentation.js";
+import {
+  DaemonTerminalPresentation,
+  type TerminalPresentation,
+  type TerminalPresentationOptions,
+} from "./TerminalPresentation.js";
 
 export interface DaemonSettingsSnapshot {
   global?: Record<string, unknown>;
@@ -57,6 +61,9 @@ export class DaemonEngineHost implements EngineHost {
   private settings: DaemonSettingsSnapshot;
   private readonly watchers = new Set<HostDisposable>();
   private readonly noticeActions = new Map<string, Map<string, () => void | Promise<void>>>();
+  private readonly pendingNotices = new Map<string, Extract<DaemonHostEvent, { kind: "notice" }>>();
+  private noticePresentationActive = false;
+  private terminalPresentation: DaemonTerminalPresentation | undefined;
   private disposed = false;
 
   constructor(private readonly options: DaemonEngineHostOptions) {
@@ -78,15 +85,19 @@ export class DaemonEngineHost implements EngineHost {
       registered.set(actionId, action.run);
       return { id: actionId, label: action.label };
     });
-    if (registered.size > 0) {
-      this.noticeActions.set(id, registered);
-      while (this.noticeActions.size > 256) {
-        const oldest = this.noticeActions.keys().next().value as string | undefined;
-        if (!oldest) break;
-        this.noticeActions.delete(oldest);
-      }
+    if (registered.size > 0) this.noticeActions.set(id, registered);
+    const event: Extract<DaemonHostEvent, { kind: "notice" }> = {
+      kind: "notice", id, message, level, actions: publicActions, at: new Date().toISOString(),
+    };
+    this.pendingNotices.set(id, event);
+    while (this.pendingNotices.size > 256) {
+      const oldest = this.pendingNotices.keys().next().value as string | undefined;
+      if (!oldest) break;
+      this.pendingNotices.delete(oldest);
+      this.noticeActions.delete(oldest);
     }
-    this.emit({ kind: "notice", id, message, level, actions: publicActions, at: new Date().toISOString() });
+    this.emit(event);
+    this.presentNextNotice();
   }
 
   async invokeNoticeAction(noticeId: string, actionId: string): Promise<void> {
@@ -95,6 +106,7 @@ export class DaemonEngineHost implements EngineHost {
     const action = actions?.get(actionId);
     if (!action) throw new Error("notice action is missing or already consumed");
     this.noticeActions.delete(noticeId);
+    this.pendingNotices.delete(noticeId);
     await action();
   }
 
@@ -192,8 +204,17 @@ export class DaemonEngineHost implements EngineHost {
 
   webviewRoot(): unknown { return undefined; }
 
-  createTerminalPresentation(): TerminalPresentation {
-    return new HeadlessTerminalPresentation();
+  createTerminalPresentation(options: TerminalPresentationOptions): TerminalPresentation {
+    if (this.terminalPresentation) return this.terminalPresentation;
+    this.terminalPresentation = new DaemonTerminalPresentation(options, (request) => this.requestUi(request));
+    return this.terminalPresentation;
+  }
+
+  /** Replays presentation work that could not be claimed while every editor shell was absent. */
+  replayUiRequests(): void {
+    this.assertActive();
+    this.terminalPresentation?.replay();
+    this.presentNextNotice();
   }
 
   onViewsChanged(view: ViewKind): void {
@@ -211,11 +232,51 @@ export class DaemonEngineHost implements EngineHost {
     this.disposed = true;
     for (const watcher of this.watchers) watcher.dispose();
     this.watchers.clear();
+    this.terminalPresentation?.dispose();
+    this.terminalPresentation = undefined;
     this.noticeActions.clear();
+    this.pendingNotices.clear();
+    this.noticePresentationActive = false;
   }
 
   private emit(event: DaemonHostEvent): void {
     this.options.emit?.(event);
+  }
+
+  private requestUi(request: DaemonUiRequest): Promise<unknown> {
+    return this.options.requestUi?.(request) ?? Promise.reject(new EngineUiUnavailableError());
+  }
+
+  private presentNextNotice(): void {
+    if (this.disposed || this.noticePresentationActive) return;
+    const notice = this.pendingNotices.values().next().value as Extract<DaemonHostEvent, { kind: "notice" }> | undefined;
+    if (!notice) return;
+    const noticeId = notice.id;
+    this.noticePresentationActive = true;
+    void this.requestUi({
+      schemaVersion: 1,
+      operationId: randomUUID(),
+      kind: "notice.present",
+      noticeId,
+      message: notice.message,
+      level: notice.level,
+      actions: notice.actions.map((action) => ({ ...action })),
+    }).then(async (choice) => {
+      if (choice === null || choice === undefined) {
+        this.pendingNotices.delete(noticeId);
+        this.noticeActions.delete(noticeId);
+        return;
+      }
+      if (typeof choice !== "string" || !notice.actions.some((action) => action.id === choice)) {
+        throw new Error("editor shell returned an invalid notice action");
+      }
+      await this.invokeNoticeAction(noticeId, choice);
+    }).catch(() => {
+      // No shell, disconnect and timeout keep the notice pending for the next attach.
+    }).finally(() => {
+      this.noticePresentationActive = false;
+      if (!this.pendingNotices.has(noticeId)) this.presentNextNotice();
+    });
   }
 
   private assertActive(): void {

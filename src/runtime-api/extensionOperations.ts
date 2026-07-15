@@ -6,6 +6,9 @@ const name = z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,127}$/);
 const text = (max: number, min = 0) => z.string().min(min).max(max);
 const decision = z.enum(["approved", "denied"]);
 const sha256 = z.string().regex(/^[0-9a-f]{64}$/);
+const tmuxSession = z.string().min(1).max(256).regex(/^[^\0\r\n]+$/u);
+const terminalAgent = z.string().min(1).max(128).regex(/^[^\0\r\n]+$/u);
+const terminalTitle = z.string().min(1).max(256).regex(/^[^\0\r\n]+$/u);
 const soulPayload = z.custom<StagedPayloadRefV1>(isStagedPayloadRefV1)
   .refine((value) => value.byteSize <= 64 * 1024, "Soul payload exceeds 64 KiB");
 
@@ -28,6 +31,7 @@ export const EXTENSION_QUERY_ACTIONS = [
   "agents.list", "attention.list", "pins.list", "commands.list", "runbooks.list", "schedules.list", "proposals.list",
   "doctor.report", "bridge.token", "agent.inspect", "agent.fork-preview", "prompt.catalog", "worktree.review",
   "worktrees.list", "pipeline.inspect", "agent.wait", "soul.profile.status",
+  "tmux.snapshot", "tmux.health", "tmux.capture",
 ] as const;
 
 export const EXTENSION_COMMAND_ACTIONS = [
@@ -41,6 +45,7 @@ export const EXTENSION_COMMAND_ACTIONS = [
   "handoff.note", "prompt.inject", "runtime-ops.provider.configure",
   "soul.profile.create", "soul.profile.import", "soul.profile.replace", "soul.profile.adopt",
   "soul.profile.enable", "soul.profile.disable", "soul.profile.delete",
+  "tmux.kill", "tmux.recover", "terminal.open", "terminal.close",
 ] as const;
 
 const extensionQueryActionSchema = z.enum(EXTENSION_QUERY_ACTIONS);
@@ -59,6 +64,9 @@ export const extensionQuerySchema = z.union([
   z.object({ action: z.literal("agent.inspect"), agent: name }).strict(),
   z.object({ action: z.literal("agent.fork-preview"), agent: name }).strict(),
   z.object({ action: z.literal("soul.profile.status"), agent: name }).strict(),
+  z.object({ action: z.literal("tmux.snapshot") }).strict(),
+  z.object({ action: z.literal("tmux.health") }).strict(),
+  z.object({ action: z.literal("tmux.capture"), session: tmuxSession }).strict(),
   z.object({ action: z.literal("prompt.catalog") }).strict(),
   z.object({ action: z.literal("worktrees.list") }).strict(),
   z.object({ action: z.literal("worktree.review"), agent: name }).strict(),
@@ -74,6 +82,17 @@ export const extensionQuerySchema = z.union([
 
 export type ExtensionQueryV1 = z.infer<typeof extensionQuerySchema>;
 export type ExtensionQueryActionV1 = ExtensionQueryV1["action"];
+
+export const tmuxPaneIdentitySchema = z.object({
+  session: tmuxSession,
+  window: z.number().int().nonnegative(),
+  pane: z.number().int().nonnegative(),
+  pid: z.number().int().nonnegative(),
+  startCommand: text(16_384),
+  createdAt: z.number().int().nonnegative().optional(),
+}).strict();
+
+export type TmuxPaneIdentityV1 = z.infer<typeof tmuxPaneIdentitySchema>;
 
 export const extensionCommandSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("pipeline.seed"), name }).strict(),
@@ -112,6 +131,15 @@ export const extensionCommandSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("pipeline.delete"), name }).strict(),
   z.object({ action: z.literal("bridge.restart") }).strict(),
   z.object({ action: z.literal("bridge.stop") }).strict(),
+  z.object({ action: z.literal("tmux.kill"), expected: tmuxPaneIdentitySchema }).strict(),
+  z.object({ action: z.literal("tmux.recover") }).strict(),
+  z.object({
+    action: z.literal("terminal.open"),
+    agent: terminalAgent,
+    session: tmuxSession,
+    title: terminalTitle.optional(),
+  }).strict(),
+  z.object({ action: z.literal("terminal.close"), agent: terminalAgent, session: tmuxSession }).strict(),
   z.object({ action: z.literal("soul.profile.create"), agent: name }).strict(),
   z.object({ action: z.literal("soul.profile.import"), agent: name, payload: soulPayload }).strict(),
   z.object({ action: z.literal("soul.profile.replace"), agent: name, payload: soulPayload, expectedDigest: sha256 }).strict(),

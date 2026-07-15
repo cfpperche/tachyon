@@ -92,7 +92,7 @@ import {
 export { isStagedPayloadRefV1, type StagedPayloadRefV1 } from "../runtime-api/stagedPayload.js";
 
 export const ENGINE_BUNDLE_SCHEMA_VERSION = 1 as const;
-export const ENGINE_SHELL_PROTOCOL = 2 as const;
+export const ENGINE_SHELL_PROTOCOL = 3 as const;
 
 export interface EngineProtocolRangeV1 {
   min: number;
@@ -190,7 +190,26 @@ export interface WorkspaceEventBatchV1 {
 /** A daemon operation that can only be presented by one attached editor shell. */
 export type EngineUiRequestV1 =
   | { schemaVersion: 1; operationId: string; kind: "focus-primary" }
-  | { schemaVersion: 1; operationId: string; kind: "execute-command"; command: string; args: JsonValue[] };
+  | { schemaVersion: 1; operationId: string; kind: "execute-command"; command: string; args: JsonValue[] }
+  | {
+      schemaVersion: 1;
+      operationId: string;
+      kind: "terminal.present";
+      agent: string;
+      session: string;
+      viewColumn?: number;
+      title?: string;
+    }
+  | { schemaVersion: 1; operationId: string; kind: "terminal.close"; agent: string; session: string }
+  | {
+      schemaVersion: 1;
+      operationId: string;
+      kind: "notice.present";
+      noticeId: string;
+      message: string;
+      level: "info" | "warn" | "error";
+      actions: Array<{ id: string; label: string }>;
+    };
 
 export type EngineUiCompletionV1 =
   | { schemaVersion: 1; operationId: string; status: "ok"; value: JsonValue }
@@ -599,16 +618,49 @@ export function isEngineOperationId(value: unknown): value is string {
 export function isEngineUiRequestV1(value: unknown): value is EngineUiRequestV1 {
   if (!isRecord(value)
     || value.schemaVersion !== 1
-    || !isEngineOperationId(value.operationId)
-    || (value.kind !== "focus-primary" && value.kind !== "execute-command")) return false;
+    || !isEngineOperationId(value.operationId)) return false;
   if (value.kind === "focus-primary") return hasOnlyKeys(value, ["schemaVersion", "operationId", "kind"]);
-  return hasOnlyKeys(value, ["schemaVersion", "operationId", "kind", "command", "args"])
-    && typeof value.command === "string"
-    && /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/u.test(value.command)
-    && Array.isArray(value.args)
-    && value.args.length <= 32
-    && value.args.every(isJsonValue)
-    && Buffer.byteLength(JSON.stringify(value), "utf8") <= 32 * 1024;
+  if (value.kind === "execute-command") {
+    return hasOnlyKeys(value, ["schemaVersion", "operationId", "kind", "command", "args"])
+      && typeof value.command === "string"
+      && /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/u.test(value.command)
+      && Array.isArray(value.args)
+      && value.args.length <= 32
+      && value.args.every(isJsonValue)
+      && Buffer.byteLength(JSON.stringify(value), "utf8") <= 32 * 1024;
+  }
+  if (value.kind === "terminal.present") {
+    const keys = ["schemaVersion", "operationId", "kind", "agent", "session"];
+    if (value.viewColumn !== undefined) keys.push("viewColumn");
+    if (value.title !== undefined) keys.push("title");
+    return hasOnlyKeys(value, keys)
+      && isBoundedUiText(value.agent, 128)
+      && isBoundedUiText(value.session, 256)
+      && (value.viewColumn === undefined || (Number.isSafeInteger(value.viewColumn) && (value.viewColumn as number) >= -100 && (value.viewColumn as number) <= 100))
+      && (value.title === undefined || isBoundedUiText(value.title, 256));
+  }
+  if (value.kind === "terminal.close") {
+    return hasOnlyKeys(value, ["schemaVersion", "operationId", "kind", "agent", "session"])
+      && isBoundedUiText(value.agent, 128)
+      && isBoundedUiText(value.session, 256);
+  }
+  if (value.kind === "notice.present") {
+    return hasOnlyKeys(value, ["schemaVersion", "operationId", "kind", "noticeId", "message", "level", "actions"])
+      && isEngineOperationId(value.noticeId)
+      && isBoundedUiText(value.message, 4_096)
+      && (value.level === "info" || value.level === "warn" || value.level === "error")
+      && Array.isArray(value.actions)
+      && value.actions.length <= 8
+      && value.actions.every((action) => isRecord(action)
+        && hasOnlyKeys(action, ["id", "label"])
+        && isEngineOperationId(action.id)
+        && isBoundedUiText(action.label, 128));
+  }
+  return false;
+}
+
+function isBoundedUiText(value: unknown, max: number): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= max && !value.includes("\0");
 }
 
 export function isEngineUiCompletionV1(value: unknown): value is EngineUiCompletionV1 {

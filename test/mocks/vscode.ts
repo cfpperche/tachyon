@@ -38,6 +38,7 @@ export const __createdTerminals: Array<{
 const __executedCommands: Array<{ command: string; args: unknown[] }> = [];
 const __shownDocuments: Array<{ uri: Uri; options: unknown }> = [];
 const __warningMessageCalls: Array<{ message: string; options: unknown; actions: string[] }> = [];
+const __terminalCloseListeners = new Set<(terminal: typeof __createdTerminals[number]) => void>();
 
 export function __resetVscodeMock(): void {
   __createdPanels.splice(0);
@@ -46,6 +47,7 @@ export function __resetVscodeMock(): void {
   __executedCommands.splice(0);
   __shownDocuments.splice(0);
   __warningMessageCalls.splice(0);
+  __terminalCloseListeners.clear();
   __openDialogResult = undefined;
   __clipboardText = "";
   __warningMessageResult = undefined;
@@ -110,12 +112,19 @@ export const window = {
       showCalls: [] as boolean[],
       disposed: false,
       show: (preserveFocus = false) => { terminal.showCalls.push(preserveFocus); },
-      dispose: () => { terminal.disposed = true; },
+      dispose: () => {
+        if (terminal.disposed) return;
+        terminal.disposed = true;
+        for (const listener of __terminalCloseListeners) listener(terminal);
+      },
     };
     __createdTerminals.push(terminal);
     return terminal;
   },
-  onDidCloseTerminal: () => ({ dispose: () => {} }),
+  onDidCloseTerminal: (listener: (terminal: typeof __createdTerminals[number]) => void) => {
+    __terminalCloseListeners.add(listener);
+    return { dispose: () => __terminalCloseListeners.delete(listener) };
+  },
   createStatusBarItem: () => ({ show: () => {}, dispose: () => {} }),
   showQuickPick: () => Promise.resolve(undefined),
   registerWebviewPanelSerializer: (viewType: string, serializer: { deserializeWebviewPanel(panel: typeof __createdPanels[number], state: unknown): Promise<void> }) => {

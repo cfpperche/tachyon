@@ -54,6 +54,7 @@ export interface EngineControlServerOptions {
   readEvents?: (afterSeq: number, limit: number) => unknown | Promise<unknown>;
   query?: (query: WorkspaceQueryV1, context: EngineQueryContextV1) => WorkspaceQueryResultV1 | Promise<WorkspaceQueryResultV1>;
   invoke?: (command: WorkspaceCommandV1, context: EngineCommandContextV1) => WorkspaceCommandResultV1 | Promise<WorkspaceCommandResultV1>;
+  onShellAttached?: (shellId: string) => void;
   leaseMs?: number;
   uiRequestTimeoutMs?: number;
   now?: () => number;
@@ -169,6 +170,9 @@ export async function startEngineControlServer(options: EngineControlServerOptio
       session.expiresAt = now() + leaseMs;
       sessions.set(parsed.hello.shell.id, session);
       uiBroker.registerShell(parsed.hello.shell.id, parsed.hello.capabilities);
+      queueMicrotask(() => {
+        try { options.onShellAttached?.(parsed.hello.shell.id); } catch { /* attach remains authoritative */ }
+      });
       return { ok: true, op: "attach", session: publicSession(parsed.hello.shell.id, session, snapshot.seq, options.identity) };
     }
 

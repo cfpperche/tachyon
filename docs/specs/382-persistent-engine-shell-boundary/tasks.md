@@ -73,3 +73,20 @@ manipulate the VS Code window.
   and `.tachyon/evidence/t-82f4e6-installed-dogfood/05-after-idempotent-reload.png`.
 - [x] Verdict: the installed sidebar and shell views restored with one live Codex row, the Bridge connected,
   no duplicate action/row and no manual-setup prompt; engine identity remained unchanged underneath the UI.
+
+## Installed-acceptance blocker closure — 2026-07-15
+
+- [x] Declare Linux/WSL as the only supported persistent-engine targets; macOS now refuses visibly and
+  cannot fall back to the embedded lifecycle.
+- [x] Stage and re-verify the exact engine runtime in immutable Tachyon-owned storage; every initial,
+  upgrade and rollback `ExecStart` uses that staged runtime rather than a disposable VS Code path.
+- [x] Persist daemon-owned terminal intents and route exact present/close requests through the claimed
+  shell UI channel, including manual open/close and ordered replacement across shell reloads.
+- [x] Retain notifications through no-shell/disconnect intervals, present them sequentially and execute
+  an id-bound action at most once without rendering the journal event a second time.
+- [x] Move global tmux watchdog, identity-bound recovery and Inspector kill mutations into the engine;
+  the shell retains only read-only prerequisite probes and terminal redraw presentation.
+- [x] Advance extension version and shell protocol together so an installed 0.56.7/protocol-2 engine is
+  upgraded once rather than silently reusing the pre-fix daemon.
+- [x] Focused tests, typecheck, production build, engine boundary, diff-check, packaged dogfood and final
+  `npm run verify:full:quiet` closure gate pass on the complete candidate.

@@ -66,4 +66,42 @@ describe("Terminals restore manifest", () => {
     ]);
     expect(writes.at(-1)).toEqual(manifest);
   });
+
+  it("keeps same-named agents from different workspaces isolated by tmux session", () => {
+    const terminals = new Terminals();
+    const first = terminals.open("codex", "tachyon-workspace-a-codex");
+    const second = terminals.open("codex", "tachyon-workspace-b-codex");
+
+    expect(__createdTerminals).toHaveLength(2);
+    expect(first).not.toBe(second);
+    terminals.close("codex", "tachyon-workspace-a-codex");
+    expect(__createdTerminals[0].disposed).toBe(true);
+    expect(__createdTerminals[1].disposed).toBe(false);
+    expect(terminals.has("codex")).toBe(true);
+    terminals.close("codex");
+    expect(__createdTerminals[1].disposed).toBe(true);
+    expect(terminals.has("codex")).toBe(false);
+  });
+
+  it("reports a manually closed tab with its exact agent and session", () => {
+    const closed: Array<{ agent: string; session: string }> = [];
+    const terminals = new Terminals(undefined, undefined, undefined, (agent, session) => {
+      closed.push({ agent, session });
+    });
+    const terminal = terminals.open("codex", "tachyon-workspace-a-codex");
+
+    terminal.dispose();
+
+    expect(closed).toEqual([{ agent: "codex", session: "tachyon-workspace-a-codex" }]);
+  });
+
+  it("does not echo an engine-requested close back as a manual close", () => {
+    const closed: string[] = [];
+    const terminals = new Terminals(undefined, undefined, undefined, (_agent, session) => closed.push(session));
+    terminals.open("codex", "tachyon-workspace-a-codex");
+
+    terminals.close("codex", "tachyon-workspace-a-codex");
+
+    expect(closed).toEqual([]);
+  });
 });

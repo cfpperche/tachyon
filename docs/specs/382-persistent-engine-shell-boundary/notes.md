@@ -798,3 +798,23 @@ None.
   Its merge base is the current local `main` at `dcba7360`, so no accepted parallel mainline change is missing.
 - The final declared dogfood and the final `typecheck + engine-boundary + verify:full:quiet` gate both pass
   after the no-shell monitor forcing was added. No further global verification run is justified before review.
+
+## Thirty-fifth implementation slice — 2026-07-15 acceptance-blocker closure
+
+- The post-install audit found five gaps behind the otherwise-green happy path: support was still claimed for
+  macOS, systemd retained the disposable VS Code runtime path, daemon terminal presentation remained a no-op,
+  notification actions were not carried by the shell UI request, and the Extension Host still owned the global
+  tmux watchdog/recovery mutations. This slice closes those exact gaps without restoring an embedded engine.
+- The shell now copies the exact executable runtime into private content-addressed storage and the supervisor
+  re-verifies it before every initial launch, upgrade and rollback. Version `0.56.8` and protocol `3` force one
+  controlled transition away from the installed pre-fix daemon; macOS receives an honest unsupported result.
+- The daemon owns durable terminal intent and retained notification delivery. Shell attach replays live tabs and
+  queued notices through the single-claim broker; manual terminal open/close crosses a strict engine operation,
+  replacement presentation is ordered, notices are serialized, and an action callback is consumed at most once.
+- One process-identity-bound watchdog lease now governs the global tmux socket across workspace engines. Recovery
+  revalidates the PID set, process starts and socket inode before mutation, proves the killed identity departed,
+  and preserves a replacement socket. Inspector kill uses the exact displayed pane receipt and refuses drift.
+- The focused acceptance matrix is green at 72/72. Typecheck, production build, the 240-file editor-free daemon
+  closure, protocol-3 manifest assertion, diff-check and the full persistent-engine dogfood all pass; the latter
+  proved concurrent upgrade/reuse, failed-upgrade rollback, crash restart, zero-shell Bridge work and monitor-led
+  agent restart before the final repository-wide gate.

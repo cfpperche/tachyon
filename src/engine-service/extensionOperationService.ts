@@ -31,6 +31,17 @@ import type { Workspace } from "../workspace/Workspace.js";
 import type { ProviderObservationService } from "../runtimeObservability/service.js";
 import { buildDoctorReport, formatDoctorReport } from "../workspace/doctorReport.js";
 import type { StagedPayloadStore } from "./stagedPayloadStore.js";
+import {
+  doctor,
+  findServerPids,
+  probeServer,
+  SESSION_PREFIX,
+  snapshotServerPids,
+  socketPath,
+  SOCKET_NAME,
+  type PaneSnapshot,
+} from "../tmux/TmuxService.js";
+import { recoverTmuxServer } from "./tmuxAuthority.js";
 
 export interface ExtensionOperationContext {
   workspace: Workspace;
@@ -83,6 +94,29 @@ export async function executeExtensionQuery(
       return json(await workspace.manager.planFork(query.agent));
     case "soul.profile.status":
       return soulProfileOutcome(() => workspace.refreshSoulProfile(query.agent));
+    case "tmux.snapshot":
+      return json(await workspace.tmux.serverSnapshot(SESSION_PREFIX));
+    case "tmux.capture":
+      assertTachyonSession(query.session);
+      return json({ session: query.session, text: await workspace.tmux.capturePane(query.session, 200) });
+    case "tmux.health": {
+      const checkedAt = Date.now();
+      const [probe, requirement] = await Promise.all([probeServer(), doctor()]);
+      const pids = probe.state === "wedged"
+        ? probe.pids
+        : probe.state === "healthy"
+          ? await findServerPids(SOCKET_NAME).catch(() => [])
+          : [];
+      return json({
+        socketName: SOCKET_NAME,
+        socketPath: socketPath(SOCKET_NAME),
+        state: probe.state,
+        ...(requirement.ok ? { tmuxVersion: requirement.version } : {}),
+        pids,
+        diagnostics: await snapshotServerPids(pids),
+        checkedAt,
+      });
+    }
     case "prompt.catalog": {
       const library = new PromptStore(workspace.workspaceRoot).list();
       return json({
@@ -286,6 +320,29 @@ export async function executeExtensionCommand(
     case "bridge.stop":
       await workspace.stopBridge();
       return json({ stopped: true });
+    case "tmux.kill": {
+      assertTachyonSession(command.expected.session);
+      const rows = (await workspace.tmux.serverSnapshot(SESSION_PREFIX))
+        .filter((row) => row.session === command.expected.session);
+      if (rows.length !== 1 || !samePaneIdentity(rows[0], command.expected)) {
+        throw new Error(`tmux session '${command.expected.session}' changed after confirmation`);
+      }
+      await workspace.tmux.killSession(command.expected.session);
+      return json({ killed: true, session: command.expected.session });
+    }
+    case "tmux.recover":
+      return json(await recoverTmuxServer());
+    case "terminal.open":
+      assertTachyonSession(command.session);
+      if (!(await workspace.tmux.hasSession(command.session))) {
+        throw new Error(`tmux session '${command.session}' is not running`);
+      }
+      workspace.terminals.open(command.agent, command.session, undefined, command.title);
+      return json({ opened: true, session: command.session });
+    case "terminal.close":
+      assertTachyonSession(command.session);
+      workspace.terminals.close(command.agent, command.session);
+      return json({ closed: true, session: command.session });
     case "soul.profile.create":
       return soulProfileMutation(() => workspace.createSoulProfile(command.agent), onViewsChanged);
     case "soul.profile.import": {
@@ -327,6 +384,24 @@ export async function executeExtensionCommand(
       onViewsChanged("handoff");
       return json({ changed: true });
   }
+}
+
+function assertTachyonSession(session: string): void {
+  if (session !== SESSION_PREFIX && !session.startsWith(`${SESSION_PREFIX}-`)) {
+    throw new Error("tmux session is outside Tachyon's namespace");
+  }
+}
+
+function samePaneIdentity(
+  row: PaneSnapshot,
+  expected: { session: string; window: number; pane: number; pid: number; startCommand: string; createdAt?: number },
+): boolean {
+  return row.session === expected.session
+    && row.window === expected.window
+    && row.pane === expected.pane
+    && row.pid === expected.pid
+    && row.startCommand === expected.startCommand
+    && row.createdAt === expected.createdAt;
 }
 
 async function soulProfileMutation(

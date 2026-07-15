@@ -4,6 +4,7 @@ import {
   engineBundleId,
   isEngineBundleManifestV1,
   isEngineOperationId,
+  isEngineUiRequestV1,
   isSafeBundlePath,
   isWorkspaceCommandResultBoundToInput,
   isWorkspaceCommandResultV1,
@@ -34,6 +35,7 @@ import {
   type WorkspaceProbeViewV1,
   type WorkspaceStudioFormV1,
 } from "../../src/engine-service/protocol.js";
+import { isExtensionCommandV1, isExtensionQueryV1 } from "../../src/runtime-api/extensionOperations.js";
 
 function hash(text: string): string {
   return createHash("sha256").update(text).digest("hex");
@@ -66,6 +68,93 @@ describe("persistent engine protocol", () => {
   it("negotiates only overlapping protocol ranges and picks the highest shared version", () => {
     expect(negotiateEngineShellProtocol({ min: 1, max: 3 }, { min: 2, max: 4 })).toBe(3);
     expect(negotiateEngineShellProtocol({ min: 1, max: 1 }, { min: 2, max: 2 })).toBeUndefined();
+  });
+
+  it("accepts only exact bounded terminal and notification UI requests", () => {
+    const operationId = "ui-operation-0001";
+    expect(isEngineUiRequestV1({
+      schemaVersion: 1,
+      operationId,
+      kind: "terminal.present",
+      agent: "codex",
+      session: "tachyon-one-codex",
+      viewColumn: 2,
+      title: "Codex",
+    })).toBe(true);
+    expect(isEngineUiRequestV1({
+      schemaVersion: 1,
+      operationId,
+      kind: "terminal.close",
+      agent: "codex",
+      session: "tachyon-one-codex",
+    })).toBe(true);
+    expect(isEngineUiRequestV1({
+      schemaVersion: 1,
+      operationId,
+      kind: "notice.present",
+      noticeId: "notice-id-0001",
+      message: "Engine ready",
+      level: "info",
+      actions: [{ id: "notice-action-0001", label: "Open" }],
+    })).toBe(true);
+    expect(isEngineUiRequestV1({
+      schemaVersion: 1,
+      operationId,
+      kind: "terminal.present",
+      agent: "codex",
+      session: "tachyon-one-codex",
+      extra: true,
+    })).toBe(false);
+    expect(isEngineUiRequestV1({
+      schemaVersion: 1,
+      operationId,
+      kind: "notice.present",
+      noticeId: "notice-id-0001",
+      message: "x".repeat(4_097),
+      level: "info",
+      actions: [],
+    })).toBe(false);
+  });
+
+  it("validates engine-owned tmux reads and identity-bound mutations", () => {
+    const expected = {
+      session: "tachyon-abc12345-codex",
+      window: 0,
+      pane: 0,
+      pid: 4242,
+      startCommand: "codex",
+      createdAt: 1_700_000_000,
+    };
+    expect(isExtensionQueryV1({ action: "tmux.snapshot" })).toBe(true);
+    expect(isExtensionQueryV1({ action: "tmux.health" })).toBe(true);
+    expect(isExtensionQueryV1({ action: "tmux.capture", session: expected.session })).toBe(true);
+    expect(isExtensionCommandV1({ action: "tmux.kill", expected })).toBe(true);
+    expect(isExtensionCommandV1({ action: "tmux.recover" })).toBe(true);
+    expect(isExtensionCommandV1({
+      action: "terminal.open",
+      agent: "cmd:verify",
+      session: "tachyon-cmd-abc12345-verify",
+      title: "$ verify",
+    })).toBe(true);
+    expect(isExtensionCommandV1({
+      action: "terminal.close",
+      agent: "cmd:verify",
+      session: "tachyon-cmd-abc12345-verify",
+    })).toBe(true);
+    expect(isExtensionCommandV1({ action: "tmux.kill", expected: { ...expected, pid: -1 } })).toBe(false);
+    expect(isExtensionCommandV1({ action: "tmux.kill", expected: { ...expected, extra: true } })).toBe(false);
+    expect(isExtensionQueryV1({ action: "tmux.capture", session: "bad\nsession" })).toBe(false);
+    expect(isExtensionCommandV1({
+      action: "terminal.open",
+      agent: "cmd:verify",
+      session: "bad\nsession",
+    })).toBe(false);
+    expect(isExtensionCommandV1({
+      action: "terminal.close",
+      agent: "cmd:verify",
+      session: "tachyon-cmd-abc12345-verify",
+      extra: true,
+    })).toBe(false);
   });
 
   it("derives one stable bundle id independent of file declaration order", () => {

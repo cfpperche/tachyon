@@ -32,6 +32,27 @@ export interface StagedEngineBundle {
   reused: boolean;
 }
 
+export interface StageEngineRuntimeInput {
+  /** Runtime executable currently hosting the Extension Host. Symlinks are resolved before copying. */
+  sourceExecutable: string;
+  /** Test/embedding override. Production resolves a machine-private per-user data directory. */
+  installRoot?: string;
+}
+
+export interface StagedEngineRuntime {
+  runtimeId: string;
+  root: string;
+  executable: string;
+  manifestPath: string;
+  reused: boolean;
+}
+
+interface EngineRuntimeManifestV1 {
+  schemaVersion: 1;
+  sha256: string;
+  byteSize: number;
+}
+
 export class EngineBundleError extends Error {
   constructor(readonly code: string, message: string) {
     super(message);
@@ -78,6 +99,92 @@ export function engineBundleInstallRoot(
   }
   const data = env.XDG_DATA_HOME?.trim() || path.join(home, ".local", "share");
   return path.join(data, "tachyon", "engine-bundles");
+}
+
+export function engineRuntimeInstallRoot(
+  platform: NodeJS.Platform = process.platform,
+  env: NodeJS.ProcessEnv = process.env,
+  home: string = os.homedir(),
+): string {
+  if (platform === "win32") {
+    const local = env.LOCALAPPDATA?.trim() || path.join(home, "AppData", "Local");
+    return path.join(local, "Tachyon", "engine-runtimes");
+  }
+  if (platform === "darwin") {
+    return path.join(home, "Library", "Application Support", "Tachyon", "engine-runtimes");
+  }
+  const data = env.XDG_DATA_HOME?.trim() || path.join(home, ".local", "share");
+  return path.join(data, "tachyon", "engine-runtimes");
+}
+
+/**
+ * Copies the exact Node/Electron runtime used to launch the daemon into immutable Tachyon-owned
+ * storage.  A systemd unit may outlive the VS Code Server version that activated it, so it must never
+ * retain an ExecStart path inside ~/.vscode-server or an extension installation.
+ */
+export function stageEngineRuntime(input: StageEngineRuntimeInput): StagedEngineRuntime {
+  let source: string;
+  try { source = fs.realpathSync(path.resolve(input.sourceExecutable)); }
+  catch (error) {
+    throw new EngineBundleError("RUNTIME_SOURCE_UNREADABLE", `engine runtime source is unreadable: ${String(error)}`);
+  }
+  const sourceStat = fs.lstatSync(source);
+  if (!sourceStat.isFile() || sourceStat.isSymbolicLink() || (process.platform !== "win32" && (sourceStat.mode & 0o111) === 0)) {
+    throw new EngineBundleError("UNSAFE_RUNTIME_SOURCE", "engine runtime source is not a regular executable file");
+  }
+  if (process.platform !== "win32" && (sourceStat.mode & 0o022) !== 0) {
+    throw new EngineBundleError("UNSAFE_RUNTIME_SOURCE", "engine runtime source is group/other-writable");
+  }
+
+  const manifest: EngineRuntimeManifestV1 = {
+    schemaVersion: 1,
+    sha256: sha256File(source),
+    byteSize: sourceStat.size,
+  };
+  const installRoot = path.resolve(input.installRoot ?? engineRuntimeInstallRoot());
+  ensurePrivateDirectory(installRoot);
+  const destination = path.join(installRoot, manifest.sha256);
+  if (fs.existsSync(destination)) {
+    verifyRuntimeDirectory(destination, manifest);
+    return stagedRuntimeResult(destination, manifest, true);
+  }
+
+  const temp = path.join(installRoot, `.${manifest.sha256}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`);
+  fs.mkdirSync(temp, { mode: 0o700 });
+  try {
+    const executable = path.join(temp, "node");
+    fs.copyFileSync(source, executable, fs.constants.COPYFILE_EXCL);
+    fs.chmodSync(executable, 0o500);
+    fs.writeFileSync(path.join(temp, "runtime-manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`, {
+      mode: 0o400,
+      flag: "wx",
+    });
+    verifyRuntimeDirectory(temp, manifest);
+    try {
+      fs.renameSync(temp, destination);
+    } catch (error) {
+      if (!fs.existsSync(destination)) throw error;
+      verifyRuntimeDirectory(destination, manifest);
+    }
+    return stagedRuntimeResult(destination, manifest, false);
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+}
+
+export function verifyStagedEngineRuntime(runtime: StagedEngineRuntime): void {
+  if (!isSha256(runtime.runtimeId)) throw new EngineBundleError("INVALID_RUNTIME_ID", "staged engine runtime id is invalid");
+  const root = path.resolve(runtime.root);
+  if (path.basename(root) !== runtime.runtimeId
+    || path.resolve(runtime.executable) !== path.join(root, "node")
+    || path.resolve(runtime.manifestPath) !== path.join(root, "runtime-manifest.json")) {
+    throw new EngineBundleError("RUNTIME_IDENTITY_MISMATCH", "staged engine runtime paths do not match its identity");
+  }
+  const manifest = readRuntimeManifest(root);
+  if (manifest.sha256 !== runtime.runtimeId) {
+    throw new EngineBundleError("RUNTIME_IDENTITY_MISMATCH", "staged engine runtime manifest does not match its identity");
+  }
+  verifyRuntimeDirectory(root, manifest);
 }
 
 /**
@@ -200,6 +307,62 @@ function stagedResult(
   };
 }
 
+function stagedRuntimeResult(
+  root: string,
+  manifest: EngineRuntimeManifestV1,
+  reused: boolean,
+): StagedEngineRuntime {
+  return {
+    runtimeId: manifest.sha256,
+    root,
+    executable: path.join(root, "node"),
+    manifestPath: path.join(root, "runtime-manifest.json"),
+    reused,
+  };
+}
+
+function readRuntimeManifest(root: string): EngineRuntimeManifestV1 {
+  let value: unknown;
+  try { value = JSON.parse(fs.readFileSync(path.join(root, "runtime-manifest.json"), "utf8")); }
+  catch (error) {
+    throw new EngineBundleError("RUNTIME_MANIFEST_UNREADABLE", `staged engine runtime manifest is unreadable: ${String(error)}`);
+  }
+  if (!isRuntimeManifest(value)) throw new EngineBundleError("INVALID_RUNTIME_MANIFEST", "staged engine runtime manifest is invalid");
+  return value;
+}
+
+function verifyRuntimeDirectory(root: string, expected: EngineRuntimeManifestV1): void {
+  ensurePrivateDirectory(root);
+  const actual = readRuntimeManifest(root);
+  if (actual.sha256 !== expected.sha256 || actual.byteSize !== expected.byteSize) {
+    throw new EngineBundleError("RUNTIME_MANIFEST_MISMATCH", "staged engine runtime manifest changed");
+  }
+  const executable = path.join(root, "node");
+  const stat = fs.lstatSync(executable);
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.size !== expected.byteSize) {
+    throw new EngineBundleError("UNSAFE_STAGED_RUNTIME", "staged engine runtime is not a regular file of the expected size");
+  }
+  if (process.platform !== "win32") {
+    const uid = typeof process.getuid === "function" ? process.getuid() : undefined;
+    if ((uid !== undefined && stat.uid !== uid) || (stat.mode & 0o077) !== 0 || (stat.mode & 0o100) === 0) {
+      throw new EngineBundleError("UNSAFE_STAGED_RUNTIME", "staged engine runtime ownership or permissions are unsafe");
+    }
+  }
+  if (sha256File(executable) !== expected.sha256) {
+    throw new EngineBundleError("RUNTIME_HASH_MISMATCH", "staged engine runtime hash mismatch");
+  }
+}
+
+function isRuntimeManifest(value: unknown): value is EngineRuntimeManifestV1 {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  return Object.keys(record).length === 3
+    && record.schemaVersion === 1
+    && isSha256(record.sha256)
+    && Number.isSafeInteger(record.byteSize)
+    && (record.byteSize as number) > 0;
+}
+
 function containedPath(root: string, relative: string, code: string): string {
   const base = path.resolve(root);
   const candidate = path.resolve(base, ...relative.split("/"));
@@ -227,5 +390,19 @@ function ensurePrivateDirectory(dir: string): void {
 }
 
 function sha256File(file: string): string {
-  return createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+  const hash = createHash("sha256");
+  const fd = fs.openSync(file, "r");
+  const buffer = Buffer.allocUnsafe(1024 * 1024);
+  try {
+    let offset = 0;
+    while (true) {
+      const read = fs.readSync(fd, buffer, 0, buffer.length, offset);
+      if (read === 0) break;
+      hash.update(buffer.subarray(0, read));
+      offset += read;
+    }
+  } finally {
+    fs.closeSync(fd);
+  }
+  return hash.digest("hex");
 }

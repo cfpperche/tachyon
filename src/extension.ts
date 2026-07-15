@@ -2,10 +2,10 @@ import * as vscode from "vscode";
 import path from "node:path";
 import fs from "node:fs";
 import crypto from "node:crypto";
-import { doctor, findServerPids, probeServer, recoverWedgedServer, snapshotServerPids, socketPath, TmuxService, workspaceHash, SESSION_PREFIX, SOCKET_NAME, type ServerProbe } from "./tmux/TmuxService.js";
-import { watchdogStep, type WatchdogState } from "./tmux/wedgeWatchdog.js";
+import { doctor, probeServer, TmuxService, workspaceHash, SOCKET_NAME, type PaneSnapshot } from "./tmux/TmuxService.js";
 import { subtreeCpuTicks } from "./attention/cpu.js";
 import { classifySession } from "./inspector/classify.js";
+import type { TmuxServerSnapshot } from "./inspector/model.js";
 import { CONFIG_FILENAMES, inferKind, type ScheduleDef } from "./config/loadConfig.js";
 import { agentEntryLine, commandEntryLine, runbookEntryLine, scheduleEntryLine } from "./config/YamlConfigEditor.js";
 import type { StudioSubmit } from "./webview/studioSubmit.js";
@@ -69,7 +69,7 @@ import { ENGINE_UI_CAPABILITY } from "./engine-service/uiRequestBroker.js";
 import { WorkspaceClientRegistry } from "./shell/WorkspaceClientRegistry.js";
 import { WorkspaceShellHandle } from "./shell/WorkspaceShellHandle.js";
 import { DAEMON_SETTING_KEYS, type DaemonSettingsSnapshot } from "./workspace/DaemonEngineHost.js";
-import { isJsonValue, type ExtensionCommandV1, type ExtensionQueryV1, type JsonValue } from "./runtime-api/extensionOperations.js";
+import { isJsonValue, type ExtensionCommandV1, type ExtensionQueryV1, type JsonValue, type TmuxPaneIdentityV1 } from "./runtime-api/extensionOperations.js";
 
 /**
  * Thin multi-root shell: one detachable client handle per Tachyon workspace.
@@ -224,6 +224,68 @@ function jsonArray(value: unknown, label: string): JsonValue[] {
   return value;
 }
 
+function tmuxPaneSnapshots(value: unknown): PaneSnapshot[] {
+  return jsonArray(value, "tmux.snapshot").map((entry) => {
+    const row = jsonObject(entry, "tmux.snapshot row");
+    if (typeof row.session !== "string"
+      || !Number.isSafeInteger(row.window) || (row.window as number) < 0
+      || !Number.isSafeInteger(row.pane) || (row.pane as number) < 0
+      || !Number.isSafeInteger(row.pid) || (row.pid as number) < 0
+      || typeof row.dead !== "boolean"
+      || (row.exitCode !== undefined && !Number.isSafeInteger(row.exitCode))
+      || typeof row.currentCommand !== "string"
+      || typeof row.startCommand !== "string"
+      || (row.createdAt !== undefined && (!Number.isSafeInteger(row.createdAt) || (row.createdAt as number) < 0))) {
+      throw new Error("tmux.snapshot returned an invalid row");
+    }
+    return {
+      session: row.session,
+      window: row.window as number,
+      pane: row.pane as number,
+      pid: row.pid as number,
+      dead: row.dead,
+      ...(row.exitCode !== undefined ? { exitCode: row.exitCode as number } : {}),
+      currentCommand: row.currentCommand,
+      startCommand: row.startCommand,
+      ...(row.createdAt !== undefined ? { createdAt: row.createdAt as number } : {}),
+    };
+  });
+}
+
+function tmuxPaneIdentity(row: PaneSnapshot): TmuxPaneIdentityV1 {
+  return {
+    session: row.session,
+    window: row.window,
+    pane: row.pane,
+    pid: row.pid,
+    startCommand: row.startCommand,
+    ...(row.createdAt !== undefined ? { createdAt: row.createdAt } : {}),
+  };
+}
+
+function tmuxHealthSnapshot(value: unknown): TmuxServerSnapshot {
+  const result = jsonObject(value, "tmux.health");
+  const state = result.state;
+  if (typeof result.socketName !== "string"
+    || typeof result.socketPath !== "string"
+    || (state !== "healthy" && state !== "no-server" && state !== "wedged" && state !== "unknown")
+    || (result.tmuxVersion !== undefined && typeof result.tmuxVersion !== "string")
+    || !Array.isArray(result.pids) || !result.pids.every((pid) => Number.isSafeInteger(pid) && (pid as number) > 0)
+    || (result.diagnostics !== undefined && typeof result.diagnostics !== "string")
+    || !Number.isSafeInteger(result.checkedAt) || (result.checkedAt as number) < 0) {
+    throw new Error("tmux.health returned an invalid result");
+  }
+  return {
+    socketName: result.socketName,
+    socketPath: result.socketPath,
+    state,
+    ...(result.tmuxVersion !== undefined ? { tmuxVersion: result.tmuxVersion } : {}),
+    pids: result.pids as number[],
+    ...(result.diagnostics !== undefined ? { diagnostics: result.diagnostics } : {}),
+    checkedAt: result.checkedAt as number,
+  };
+}
+
 function configPathOf(ws: WorkspaceShellHandle): string | undefined {
   return CONFIG_FILENAMES.map((name) => path.join(ws.workspaceRoot, name)).find((file) => fs.existsSync(file));
 }
@@ -234,6 +296,20 @@ async function extensionQuery(ws: WorkspaceShellHandle, input: ExtensionQueryV1)
 
 async function extensionInvoke(ws: WorkspaceShellHandle, input: ExtensionCommandV1): Promise<JsonValue> {
   return ws.extension.invoke(input);
+}
+
+async function presentTerminal(
+  ws: WorkspaceShellHandle,
+  agent: string,
+  session: string,
+  title?: string,
+): Promise<void> {
+  await extensionInvoke(ws, {
+    action: "terminal.open",
+    agent,
+    session,
+    ...(title !== undefined ? { title } : {}),
+  });
 }
 
 async function invokeAgentLifecycle(
@@ -793,75 +869,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     return;
   }
 
-  // A WEDGED server (zombie: holds the socket, fails every command) would turn
-  // activation into an error storm with no obvious way out — offer the one-click
-  // recovery up front. Healthy/cleanly-down probes return in one tmux call.
-  const offerServerRecovery = async (pids: number[]): Promise<boolean> => {
-    const recover = vscode.l10n.t("Recover");
-    const pick = await showNotification(
-      vscode.l10n.t("the tmux server on Tachyon's dedicated socket looks wedged — it holds the socket but fails every command. Recover now? (kills the stuck server; its sessions are already lost)"),
-      "warn",
-      [recover],
-    );
-    if (pick !== recover) return false;
-    await recoverWedgedServer({ pids });
-    notify(vscode.l10n.t("tmux server recovered — the next start boots a fresh one."));
-    return true;
-  };
-  const startupProbe = await probeServer();
-  if (startupProbe.state === "wedged") await offerServerRecovery(startupProbe.pids);
-
-  // spec 217 — background wedge watchdog. probeServer otherwise runs only at activation + two
-  // manual commands, so a server that wedges mid-session (field incident 2026-06-14) is invisible
-  // until reload. Poll on a low-frequency timer and AUTO-recover a TWO-tick-confirmed wedge (D-B:
-  // a wedge already lost every session, so SIGKILLing the zombie loses nothing; the two-tick
-  // confirm guards a transient WSL hiccup). ONE global watchdog — the dedicated socket is
-  // process-global, not per-workspace.
-  // SELF-RESCHEDULING (not setInterval) so ticks never overlap: probeServer uses execFile with no
-  // timeout and the wedge IS a stuck-process class, so a slow probe under setInterval could complete
-  // out of order and reorder observations (e.g. wedged→healthy→wedged arriving healthy→wedged→wedged),
-  // faking the "two consecutive wedged" invariant and auto-SIGKILLing a healthy server (codex r2 MAJOR).
-  // The next probe starts only after the current one (and any recovery) fully settles.
-  let watchdog: WatchdogState = "idle";
-  let watchdogDisposed = false;
-  let watchdogTimer: ReturnType<typeof setTimeout>;
-  const WATCHDOG_MS = 30_000;
-  const tickWatchdog = async (): Promise<void> => {
-    if (watchdogDisposed) return;
-    try {
-      let probe: ServerProbe;
-      try {
-        probe = await probeServer();
-      } catch {
-        // A probe error is not a wedge confirmation — feed "unknown" so it breaks a pending arm
-        // (recovery needs two genuinely consecutive wedged ticks) without un-latching.
-        watchdog = watchdogStep(watchdog, "unknown").next;
-        return;
-      }
-      if (watchdogDisposed) return; // ignore a completion that landed after disposal
-      const { next, action } = watchdogStep(watchdog, probe.state);
-      watchdog = next;
-      if (action === "recover" && probe.state === "wedged") {
-        const snap = await snapshotServerPids(probe.pids);
-        console.warn(`[tachyon] wedged tmux server auto-recovered. Server snapshot before SIGKILL:\n${snap}`);
-        await recoverWedgedServer({ pids: probe.pids });
-        notify(
-          vscode.l10n.t("the tmux server was wedged — auto-recovered. Restart your agents to continue."),
-          "warn",
-        );
-      }
-    } finally {
-      if (!watchdogDisposed) watchdogTimer = setTimeout(() => void tickWatchdog(), WATCHDOG_MS);
-    }
-  };
-  watchdogTimer = setTimeout(() => void tickWatchdog(), WATCHDOG_MS);
-  context.subscriptions.push({
-    dispose: () => {
-      watchdogDisposed = true;
-      clearTimeout(watchdogTimer);
-    },
-  });
-
   // spec 237 — the Preact webview sidebar is THE Tachyon view (the native tree was retired). refreshAll
   // pushes the live fleet to it on every state change; it's registered below.
   const sidebarProto = new SidebarPrototypeProvider(
@@ -1032,8 +1039,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push({ dispose: () => approvalPanels.dispose() });
 
   const makeServerInspectorDeps = (): InspectorDeps => {
-    const svc = new TmuxService();
     const folderByHash = () => new Map(workspaces().map((ws) => [ws.wsHash, ws.folderName]));
+    const tmuxWorkspace = (): WorkspaceShellHandle => {
+      const workspace = workspaces()[0];
+      if (!workspace) throw new Error("no Tachyon workspace is active");
+      return workspace;
+    };
+    let displayedRows = new Map<string, PaneSnapshot>();
+    const snapshot = async (): Promise<PaneSnapshot[]> => {
+      const rows = tmuxPaneSnapshots(await extensionQuery(tmuxWorkspace(), { action: "tmux.snapshot" }));
+      displayedRows = new Map(rows.map((row) => [row.session, row]));
+      return rows;
+    };
     const prevCpu = new Map<number, { ticks: number; at: number }>();
     const cpuBusy = (rows: { pid: number; dead: boolean; session: string }[]) => {
       const now = Date.now();
@@ -1060,7 +1077,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const existing = termBySession.get(session);
       if (existing) {
         existing.show(false);
-        void svc.refreshClients(session);
         return;
       }
       const terminal = vscode.window.createTerminal({
@@ -1079,7 +1095,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         for (const [s, term] of termBySession) if (term === t) termBySession.delete(s);
       }),
     );
-    const reap = async (label: string, targets: string[]) => {
+    const killExpected = async (row: PaneSnapshot): Promise<void> => {
+      await extensionInvoke(tmuxWorkspace(), { action: "tmux.kill", expected: tmuxPaneIdentity(row) });
+    };
+    const reap = async (label: string, targets: PaneSnapshot[]) => {
       if (targets.length === 0) return 0;
       const ok = await showNotification(
         vscode.l10n.t("Kill {0} {1} session(s)? This cannot be undone.", targets.length, label),
@@ -1088,50 +1107,50 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         { modal: true },
       );
       if (!ok) return 0;
-      for (const s of targets) {
+      let killed = 0;
+      for (const row of targets) {
         try {
-          await svc.killSession(s);
+          await killExpected(row);
+          killed++;
         } catch {
-          /* already gone */
+          /* gone or replaced after confirmation: engine refuses the stale receipt */
         }
       }
-      return targets.length;
+      return killed;
     };
     return {
       extensionUri: context.extensionUri,
-      snapshot: () => svc.serverSnapshot(SESSION_PREFIX),
-      serverHealth: async () => {
-        const checkedAt = Date.now();
-        const [probe, requirement] = await Promise.all([probeServer(), doctor()]);
-        const pids = probe.state === "wedged" ? probe.pids : probe.state === "healthy" ? await findServerPids(SOCKET_NAME).catch(() => []) : [];
-        return {
-          socketName: SOCKET_NAME,
-          socketPath: socketPath(SOCKET_NAME),
-          state: probe.state,
-          tmuxVersion: requirement.ok ? requirement.version : undefined,
-          pids,
-          diagnostics: await snapshotServerPids(pids),
-          checkedAt,
-        };
-      },
+      snapshot,
+      serverHealth: async () => tmuxHealthSnapshot(await extensionQuery(tmuxWorkspace(), { action: "tmux.health" })),
       folderByHash,
       cpuBusy,
-      capture: (session) => svc.capturePane(session, 200),
+      capture: async (session) => {
+        const result = jsonObject(
+          await extensionQuery(tmuxWorkspace(), { action: "tmux.capture", session }),
+          "tmux.capture",
+        );
+        if (result.session !== session || typeof result.text !== "string") {
+          throw new Error("tmux.capture returned an invalid result");
+        }
+        return result.text;
+      },
       open: openSession,
-      kill: (session) => svc.killSession(session),
+      kill: async (session) => {
+        const expected = displayedRows.get(session);
+        if (!expected) throw new Error(`tmux session '${session}' is no longer in the displayed snapshot`);
+        await killExpected(expected);
+      },
       reapDead: async () => {
-        const snap = await svc.serverSnapshot(SESSION_PREFIX);
-        return reap(vscode.l10n.t("dead"), snap.filter((r) => r.dead).map((r) => r.session));
+        const rows = await snapshot();
+        return reap(vscode.l10n.t("dead"), rows.filter((row) => row.dead));
       },
       reapOrphans: async () => {
-        const snap = await svc.serverSnapshot(SESSION_PREFIX);
+        const rows = await snapshot();
         const open = folderByHash();
-        const targets = snap
-          .filter((r) => {
-            const h = classifySession(r.session).wsHash;
-            return h !== undefined && !open.has(h);
-          })
-          .map((r) => r.session);
+        const targets = rows.filter((row) => {
+          const h = classifySession(row.session).wsHash;
+          return h !== undefined && !open.has(h);
+        });
         return reap(vscode.l10n.t("orphaned"), targets);
       },
     };
@@ -1147,6 +1166,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const terminals = new Terminals(
     (_agent, session) => { void terminalTmux.refreshClients(session); },
     (agent) => workspaces().map((ws) => agentProjection(ws, agent)).find((row) => row)?.kind ?? "agent",
+    undefined,
+    (agent, session) => {
+      const hash = classifySession(session).wsHash;
+      const ws = hash ? byHash(hash) : undefined;
+      if (!ws) return;
+      void extensionInvoke(ws, { action: "terminal.close", agent, session }).catch((error) => {
+        console.debug(`[tachyon] terminal close intent unavailable: ${error instanceof Error ? error.message : String(error)}`);
+      });
+    },
   );
   context.subscriptions.push({ dispose: () => terminals.dispose() });
 
@@ -1169,6 +1197,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (request.kind === "focus-primary") {
           await vscode.commands.executeCommand("tachyonSidebarPrototype.focus");
           return null;
+        }
+        if (request.kind === "terminal.present") {
+          terminals.open(request.agent, request.session, request.viewColumn, request.title);
+          return null;
+        }
+        if (request.kind === "terminal.close") {
+          terminals.close(request.agent, request.session);
+          return null;
+        }
+        if (request.kind === "notice.present") {
+          const choice = await showNotification(
+            request.message,
+            request.level,
+            request.actions.map((action) => action.label),
+          );
+          return request.actions.find((action) => action.label === choice)?.id ?? null;
         }
         const value = await vscode.commands.executeCommand(request.command, ...request.args);
         if (value === undefined) return null;
@@ -1193,9 +1237,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         } else if (event.kind === "activity-appended") {
           runtimeOps.refresh();
           sidebarProto.refresh();
-        } else if (event.kind === "notice" && typeof event.payload.message === "string") {
-          const level = event.payload.level === "warn" || event.payload.level === "error" ? event.payload.level : "info";
-          notify(event.payload.message, level);
         }
       }
     });
@@ -1569,7 +1610,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (r.ok) {
         const probe = await probeServer();
         if (probe.state === "wedged") {
-          void offerServerRecovery(probe.pids);
+          notify(vscode.l10n.t("the tmux server is wedged — run 'Tachyon: Restart tmux Server' to ask the persistent engine to recover it."), "warn");
           return;
         }
         notify(vscode.l10n.t("Requirements OK — tmux {0} detected.", r.version));
@@ -1617,16 +1658,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
     }),
     vscode.commands.registerCommand("tachyon.restartTmuxServer", async () => {
-      const probe = await probeServer();
-      if (probe.state === "wedged") {
-        await offerServerRecovery(probe.pids);
+      const ws = workspaces()[0];
+      if (!ws) {
+        notify(vscode.l10n.t("no Tachyon workspace is active"), "warn");
         return;
       }
-      if (probe.state === "no-server") {
-        notify(vscode.l10n.t("no tmux server running — nothing to recover."));
-        return;
+      try {
+        const result = jsonObject(await extensionInvoke(ws, { action: "tmux.recover" }), "tmux.recover");
+        if (result.state === "recovered") {
+          notify(vscode.l10n.t("tmux server recovered — the next start boots a fresh one."));
+        } else if (result.state === "no-server") {
+          notify(vscode.l10n.t("no tmux server running — nothing to recover."));
+        } else if (result.state === "healthy") {
+          notify(vscode.l10n.t("tmux server is healthy — nothing to recover."));
+        } else if (result.state === "busy") {
+          notify(vscode.l10n.t("tmux recovery is already running in another Tachyon engine."), "warn");
+        } else {
+          notify(vscode.l10n.t("tmux recovery was refused because the server identity changed or could not be proven."), "warn");
+        }
+      } catch (error) {
+        notify(error instanceof Error ? error.message : String(error), "error");
       }
-      notify(vscode.l10n.t("tmux server is healthy — nothing to recover."));
     }),
     vscode.commands.registerCommand("tachyon.restartBridge", async (hash?: string) => {
       const targets = hash ? [byHash(hash)].filter((ws): ws is WorkspaceShellHandle => !!ws) : workspaces();
@@ -1777,7 +1829,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (!ws) return;
       try {
         await invokeAgentLifecycle(ws, "agent.stop", item.agentName);
-        terminals.close(item.agentName);
       } catch (err) {
         console.log(`[tachyon] stopAgentItem failed agent=${item.agentName}: ${err instanceof Error ? err.stack ?? err.message : String(err)}`);
         notify(`${err instanceof Error ? err.message : String(err)}`, "error");
@@ -1802,10 +1853,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         notify(`${err instanceof Error ? err.message : String(err)}`, "error");
       }
     }),
-    vscode.commands.registerCommand("tachyon.openAgentTerminalItem", (agent: string, hash?: string) => {
+    vscode.commands.registerCommand("tachyon.openAgentTerminalItem", async (agent: string, hash?: string) => {
       const ws = targetOf(hash);
       const projected = ws ? agentProjection(ws, agent) : undefined;
-      if (ws && projected) terminals.open(agent, projected.session);
+      if (!ws || !projected) return;
+      try {
+        await presentTerminal(ws, agent, projected.session);
+      } catch (error) {
+        notify(error instanceof Error ? error.message : String(error), "error");
+      }
     }),
     // spec 238 — open the normalized activity cockpit for an agent (the terminal stays the escape hatch).
     vscode.commands.registerCommand("tachyon.openAgentActivity", (agent: string, hash?: string) => activityPanels.open(agent, hash)),
@@ -2331,7 +2387,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (!ws) return;
       const agent = await pickAgent(ws, vscode.l10n.t("Open which agent's terminal?"), true);
       const projected = agent ? agentProjection(ws, agent) : undefined;
-      if (agent && projected) terminals.open(agent, projected.session);
+      if (!agent || !projected) return;
+      try {
+        await presentTerminal(ws, agent, projected.session);
+      } catch (error) {
+        notify(error instanceof Error ? error.message : String(error), "error");
+      }
     }),
     // spec 234 — tachyon.applyLayout removed (layouts feature retired).
     // spec 233 — tachyon.saveLayoutAs removed (layouts feature discontinued; was the engine's last vscode use).
@@ -2371,14 +2432,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       try {
         await extensionInvoke(ws, { action: "command.run", name: item.commandName });
         refreshAll();
-        terminals.open(`cmd:${item.commandName}`, `tachyon-cmd-${ws.wsHash}-${item.commandName}`, undefined, `$ ${item.commandName}`);
+        await presentTerminal(
+          ws,
+          `cmd:${item.commandName}`,
+          `tachyon-cmd-${ws.wsHash}-${item.commandName}`,
+          `$ ${item.commandName}`,
+        );
       } catch (err) {
         notify(`${err instanceof Error ? err.message : String(err)}`, "error");
       }
     }),
-    vscode.commands.registerCommand("tachyon.openCommandTerminalItem", (name: string, hash?: string) => {
+    vscode.commands.registerCommand("tachyon.openCommandTerminalItem", async (name: string, hash?: string) => {
       const ws = targetOf(hash);
-      if (ws) terminals.open(`cmd:${name}`, `tachyon-cmd-${ws.wsHash}-${name}`, undefined, `$ ${name}`);
+      if (!ws) return;
+      try {
+        await presentTerminal(ws, `cmd:${name}`, `tachyon-cmd-${ws.wsHash}-${name}`, `$ ${name}`);
+      } catch (error) {
+        notify(error instanceof Error ? error.message : String(error), "error");
+      }
     }),
     vscode.commands.registerCommand("tachyon.runRunbookItem", (item: RunbookItem) => {
       const ws = wsOf(item);
@@ -2388,9 +2459,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       });
       setTimeout(() => refreshAll(), 50); // pick up "running" promptly
     }),
-    vscode.commands.registerCommand("tachyon.openRunbookStepItem", (runbook: string, index: number, hash?: string) => {
+    vscode.commands.registerCommand("tachyon.openRunbookStepItem", async (runbook: string, index: number, hash?: string) => {
       const ws = targetOf(hash);
-      if (ws) terminals.open(`rb:${runbook}:${index}`, `tachyon-rb-${ws.wsHash}-${runbook}-${index}`, undefined, `$ ${runbook}#${index + 1}`);
+      if (!ws) return;
+      try {
+        await presentTerminal(
+          ws,
+          `rb:${runbook}:${index}`,
+          `tachyon-rb-${ws.wsHash}-${runbook}-${index}`,
+          `$ ${runbook}#${index + 1}`,
+        );
+      } catch (error) {
+        notify(error instanceof Error ? error.message : String(error), "error");
+      }
     }),
     vscode.commands.registerCommand("tachyon.editCommandItem", async (item: CommandItem) => {
       const ws = wsOf(item);

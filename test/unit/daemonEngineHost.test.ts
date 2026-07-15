@@ -77,6 +77,143 @@ describe("DaemonEngineHost", () => {
     await expect(f.host.invokeNoticeAction(notice.id, notice.actions[0].id)).rejects.toThrow(/consumed/);
   });
 
+  it("retains an unclaimed notice until a shell attaches and consumes its action exactly once", async () => {
+    let shellAvailable = false;
+    let invoked = 0;
+    const requests: DaemonUiRequest[] = [];
+    const f = fixture(async (request) => {
+      requests.push(request);
+      if (!shellAvailable) throw new Error("no shell");
+      if (request.kind !== "notice.present") return null;
+      return request.actions[0]?.id ?? null;
+    });
+
+    f.host.notify("ready", "info", [{ label: "Open", run: () => { invoked++; } }]);
+    await waitFor(() => requests.length === 1);
+    expect(invoked).toBe(0);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    shellAvailable = true;
+    f.host.replayUiRequests();
+    await waitFor(() => invoked === 1);
+    f.host.replayUiRequests();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(invoked).toBe(1);
+    expect(requests.filter((request) => request.kind === "notice.present")).toHaveLength(2);
+  });
+
+  it("presents retained notices sequentially so a reconnect cannot overflow the UI broker", async () => {
+    let releaseFirst!: (value: null) => void;
+    const requests: DaemonUiRequest[] = [];
+    const f = fixture((request) => {
+      requests.push(request);
+      if (requests.length === 1) return new Promise<null>((resolve) => { releaseFirst = resolve; });
+      return Promise.resolve(null);
+    });
+
+    f.host.notify("first");
+    f.host.notify("second");
+    await waitFor(() => requests.length === 1);
+    expect(requests[0]).toMatchObject({ kind: "notice.present", message: "first" });
+    releaseFirst(null);
+    await waitFor(() => requests.length === 2);
+    expect(requests[1]).toMatchObject({ kind: "notice.present", message: "second" });
+  });
+
+  it("persists terminal intents across a shell outage and replays exact present/close requests", async () => {
+    let shellAvailable = false;
+    let manifest: unknown = [];
+    const requests: DaemonUiRequest[] = [];
+    const f = fixture(async (request) => {
+      requests.push(request);
+      if (!shellAvailable) throw new Error("no shell");
+      return null;
+    });
+    const terminals = f.host.createTerminalPresentation({
+      manifest: {
+        read: () => manifest,
+        write: (entries) => { manifest = entries; },
+      },
+    });
+
+    terminals.open("codex", "tachyon-workspace-codex", 2, "Codex");
+    await waitFor(() => requests.length === 1);
+    expect(manifest).toEqual([{
+      schemaVersion: 1,
+      agent: "codex",
+      session: "tachyon-workspace-codex",
+      viewColumn: 2,
+      title: "Codex",
+    }]);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    shellAvailable = true;
+    f.host.replayUiRequests();
+    await waitFor(() => requests.length === 2);
+    expect(requests[1]).toMatchObject({
+      kind: "terminal.present",
+      agent: "codex",
+      session: "tachyon-workspace-codex",
+    });
+    terminals.close("codex", "tachyon-workspace-codex");
+    await waitFor(() => requests.length === 3);
+    expect(requests[2]).toMatchObject({
+      kind: "terminal.close",
+      agent: "codex",
+      session: "tachyon-workspace-codex",
+    });
+    expect(manifest).toEqual([]);
+  });
+
+  it("serializes replacement presentation so an in-flight old tab cannot hide the new session", async () => {
+    let releaseOld!: (value: null) => void;
+    const requests: DaemonUiRequest[] = [];
+    const f = fixture((request) => {
+      requests.push(request);
+      if (requests.length === 1) return new Promise<null>((resolve) => { releaseOld = resolve; });
+      return Promise.resolve(null);
+    });
+    const terminals = f.host.createTerminalPresentation({});
+
+    terminals.open("codex", "tachyon-workspace-codex-old");
+    terminals.close("codex", "tachyon-workspace-codex-old");
+    terminals.open("codex", "tachyon-workspace-codex-new");
+    await waitFor(() => requests.length === 1);
+    releaseOld(null);
+    await waitFor(() => requests.length === 3);
+
+    expect(requests.map((request) => ({ kind: request.kind, session: "session" in request ? request.session : undefined })))
+      .toEqual([
+        { kind: "terminal.present", session: "tachyon-workspace-codex-old" },
+        { kind: "terminal.close", session: "tachyon-workspace-codex-old" },
+        { kind: "terminal.present", session: "tachyon-workspace-codex-new" },
+      ]);
+  });
+
+  it("retains a temporarily absent terminal intent without presenting a dead session", async () => {
+    let manifest: unknown = [{
+      schemaVersion: 1,
+      agent: "codex",
+      session: "tachyon-workspace-codex",
+    }];
+    const requests: DaemonUiRequest[] = [];
+    const f = fixture(async (request) => { requests.push(request); return null; });
+    const terminals = f.host.createTerminalPresentation({
+      manifest: {
+        read: () => manifest,
+        write: (entries) => { manifest = entries; },
+      },
+    });
+
+    await terminals.restoreOpen(async () => false);
+    f.host.replayUiRequests();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(requests).toEqual([]);
+    expect(manifest).toEqual([{
+      schemaVersion: 1,
+      agent: "codex",
+      session: "tachyon-workspace-codex",
+    }]);
+  });
+
   it("routes typed editor-only operations through the attached-shell port", async () => {
     const requests: DaemonUiRequest[] = [];
     const f = fixture(async (request) => {

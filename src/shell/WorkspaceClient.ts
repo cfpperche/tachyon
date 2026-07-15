@@ -4,7 +4,9 @@ import { createHash, randomUUID } from "node:crypto";
 import { EngineControlClient, EngineControlClientError } from "../engine-service/controlClient.js";
 import {
   stagePackagedEngineBundle,
+  stageEngineRuntime,
   type StagedEngineBundle,
+  type StagedEngineRuntime,
 } from "../engine-service/engineBundleStore.js";
 import {
   ensureDaemonEngine,
@@ -80,6 +82,7 @@ type EnsureEngine = (options: EnsureDaemonEngineOptions) => Promise<EnsuredDaemo
 export interface ConnectRemoteWorkspaceClientOptions {
   workspaceRoot: string;
   bundle: StagedEngineBundle;
+  runtime: StagedEngineRuntime;
   shell: {
     id?: string;
     version: string;
@@ -89,14 +92,15 @@ export interface ConnectRemoteWorkspaceClientOptions {
   settings?: DaemonSettingsSnapshot;
   migrationProvider?: EngineStateMigrationProvider;
   uiHandler?: WorkspaceUiRequestHandler;
-  supervisor?: Omit<EnsureDaemonEngineOptions, "workspaceRoot" | "bundle" | "settings" | "migrationProvider">;
+  supervisor?: Omit<EnsureDaemonEngineOptions, "workspaceRoot" | "bundle" | "runtime" | "settings" | "migrationProvider">;
   /** Deterministic test/platform seam; production uses ensureDaemonEngine. */
   ensure?: EnsureEngine;
 }
 
-export interface ConnectPackagedWorkspaceClientOptions extends Omit<ConnectRemoteWorkspaceClientOptions, "bundle"> {
+export interface ConnectPackagedWorkspaceClientOptions extends Omit<ConnectRemoteWorkspaceClientOptions, "bundle" | "runtime"> {
   extensionRoot: string;
   bundleInstallRoot?: string;
+  runtimeInstallRoot?: string;
   /** Test/local-build override. Installed production bundles remain clean-only. */
   requireCleanBuild?: boolean;
 }
@@ -112,13 +116,14 @@ export class RemoteWorkspaceClientError extends Error {
 export async function connectPackagedWorkspaceClient(
   options: ConnectPackagedWorkspaceClientOptions,
 ): Promise<RemoteWorkspaceClient> {
-  const { extensionRoot, bundleInstallRoot, requireCleanBuild, ...clientOptions } = options;
+  const { extensionRoot, bundleInstallRoot, runtimeInstallRoot, requireCleanBuild, ...clientOptions } = options;
   const bundle = stagePackagedEngineBundle({
     extensionRoot,
     installRoot: bundleInstallRoot,
     requireCleanBuild,
   });
-  return connectRemoteWorkspaceClient({ ...clientOptions, bundle });
+  const runtime = stageEngineRuntime({ sourceExecutable: process.execPath, installRoot: runtimeInstallRoot });
+  return connectRemoteWorkspaceClient({ ...clientOptions, bundle, runtime });
 }
 
 export async function connectRemoteWorkspaceClient(
@@ -185,6 +190,7 @@ export class RemoteWorkspaceClient implements WorkspaceClient {
       ...options.supervisor,
       workspaceRoot: this.workspaceRoot,
       bundle: { ...options.bundle },
+      runtime: { ...options.runtime },
       settings,
       migrationProvider: options.migrationProvider,
     };

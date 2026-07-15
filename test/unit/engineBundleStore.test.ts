@@ -6,9 +6,12 @@ import { createHash } from "node:crypto";
 import {
   EngineBundleError,
   engineBundleInstallRoot,
+  engineRuntimeInstallRoot,
   loadStagedEngineBundle,
   stagePackagedEngineBundle,
   stageEngineBundle,
+  stageEngineRuntime,
+  verifyStagedEngineRuntime,
 } from "../../src/engine-service/engineBundleStore.js";
 import type { EngineBundleManifestV1 } from "../../src/engine-service/protocol.js";
 
@@ -106,6 +109,31 @@ describe("engine bundle store", () => {
     expect(engineBundleInstallRoot("darwin", {}, "/Users/u")).toBe("/Users/u/Library/Application Support/Tachyon/engine-bundles");
     expect(engineBundleInstallRoot("win32", { LOCALAPPDATA: "C:\\Local" }, "C:\\Users\\u"))
       .toBe(path.join("C:\\Local", "Tachyon", "engine-bundles"));
+    expect(engineRuntimeInstallRoot("linux", { XDG_DATA_HOME: "/data" }, "/home/u")).toBe("/data/tachyon/engine-runtimes");
+    expect(engineRuntimeInstallRoot("darwin", {}, "/Users/u")).toBe("/Users/u/Library/Application Support/Tachyon/engine-runtimes");
+  });
+
+  it("copies and re-verifies an immutable runtime outside its disposable source", () => {
+    const sourceRoot = temp("tachyon-runtime-source-");
+    const installRoot = path.join(temp("tachyon-runtime-install-"), "runtimes");
+    const source = path.join(sourceRoot, "node");
+    fs.writeFileSync(source, "#!/bin/sh\nexit 0\n", { mode: 0o500 });
+
+    const staged = stageEngineRuntime({ sourceExecutable: source, installRoot });
+    expect(staged.executable.startsWith(path.resolve(sourceRoot) + path.sep)).toBe(false);
+    expect(fs.readFileSync(staged.executable, "utf8")).toBe("#!/bin/sh\nexit 0\n");
+    expect(stageEngineRuntime({ sourceExecutable: source, installRoot })).toMatchObject({
+      runtimeId: staged.runtimeId,
+      executable: staged.executable,
+      reused: true,
+    });
+    fs.rmSync(sourceRoot, { recursive: true, force: true });
+    expect(() => verifyStagedEngineRuntime(staged)).not.toThrow();
+
+    fs.chmodSync(staged.executable, 0o700);
+    fs.writeFileSync(staged.executable, "tampered", "utf8");
+    expect(() => verifyStagedEngineRuntime(staged))
+      .toThrowError(expect.objectContaining({ code: "UNSAFE_STAGED_RUNTIME" }));
   });
 
   it("materializes the verified packaged bundle outside the disposable extension root", () => {

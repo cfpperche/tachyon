@@ -84,10 +84,10 @@ identity, audit and compatibility behavior.
   an editor reload causing that transition is not.
 - Moving git-visible workspace artifacts out of `.tachyon/` or changing their cleanup policy.
 
-## Open questions
+## Platform decision
 
-- Platform launch adapters must preserve the zero-step install contract on every platform Tachyon
-  declares supported.  Linux/WSL is the first installed dogfood target; the implementation may not
-  switch the global default until unsupported platforms have an honest non-embedded result.
+- The persistent engine ships first on Linux and WSL. macOS is explicitly unsupported until it has a
+  zero-step native launcher and process-identity proof; it receives a visible refusal and never falls
+  back to the embedded architecture.
 - The exact allowlist of VS Code globalState/SecretStorage keys will be frozen from a source inventory
   before migration code is written; unknown keys are not copied wholesale.

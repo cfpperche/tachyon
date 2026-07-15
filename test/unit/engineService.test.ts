@@ -11,7 +11,7 @@ import { ENGINE_SHELL_PROTOCOL, type EngineServiceIdentityV1, type EngineShellHe
 import { encodePinStudioStagedPayloadV1 } from "../../src/runtime-api/pinStudioCommands.js";
 import { encodeTaskStudioStagedPayloadV1 } from "../../src/runtime-api/taskStudioCommands.js";
 import { PinStore } from "../../src/pins/PinStore.js";
-import { TmuxService, workspaceHash } from "../../src/tmux/TmuxService.js";
+import { TmuxService, workspaceHash, type PaneSnapshot } from "../../src/tmux/TmuxService.js";
 import { blankCommandFields } from "../../src/webview/command-studio-shell/domain.js";
 import { TaskStore } from "../../src/tasks/TaskStore.js";
 import { TaskAttachmentStore } from "../../src/tasks/TaskAttachmentStore.js";
@@ -705,6 +705,64 @@ describe("daemon engine service", () => {
     expect(await first.snapshot()).toMatchObject({
       projections: { agents: { items: [{ name: "worker", running: true }] } },
     });
+    const tmuxView = await first.query({
+      schemaVersion: 1,
+      method: "extension.query",
+      input: { action: "tmux.snapshot" },
+    });
+    expect(tmuxView).toMatchObject({ status: "ok", action: "tmux.snapshot", value: expect.any(Array) });
+    if (tmuxView.status !== "ok" || tmuxView.method !== "extension.query" || tmuxView.action !== "tmux.snapshot") {
+      throw new Error("unexpected tmux snapshot result");
+    }
+    const workerPane = (tmuxView.value as unknown as PaneSnapshot[])
+      .find((row) => row.session.endsWith("-worker"));
+    if (!workerPane) throw new Error("worker pane is absent from engine-owned tmux snapshot");
+    const expectedPane = {
+      session: workerPane.session,
+      window: workerPane.window,
+      pane: workerPane.pane,
+      pid: workerPane.pid,
+      startCommand: workerPane.startCommand,
+      ...(workerPane.createdAt !== undefined ? { createdAt: workerPane.createdAt } : {}),
+    };
+    expect(await first.invoke("operation-terminal-open-0001", {
+      schemaVersion: 1,
+      method: "extension.invoke",
+      input: { action: "terminal.open", agent: "worker", session: workerPane.session },
+    })).toMatchObject({
+      status: "ok",
+      action: "terminal.open",
+      value: { opened: true, session: workerPane.session },
+    });
+    expect(await first.invoke("operation-terminal-close-0001", {
+      schemaVersion: 1,
+      method: "extension.invoke",
+      input: { action: "terminal.close", agent: "worker", session: workerPane.session },
+    })).toMatchObject({
+      status: "ok",
+      action: "terminal.close",
+      value: { closed: true, session: workerPane.session },
+    });
+    expect(await first.invoke("operation-tmux-stale-kill-0001", {
+      schemaVersion: 1,
+      method: "extension.invoke",
+      input: { action: "tmux.kill", expected: { ...expectedPane, pid: expectedPane.pid + 1 } },
+    })).toMatchObject({ status: "error", code: "COMMAND_FAILED", message: expect.stringMatching(/changed after confirmation/) });
+    const directTmux = new TmuxService();
+    expect(await directTmux.hasSession(workerPane.session)).toBe(true);
+    expect(await first.invoke("operation-tmux-exact-kill-0001", {
+      schemaVersion: 1,
+      method: "extension.invoke",
+      input: { action: "tmux.kill", expected: expectedPane },
+    })).toMatchObject({
+      status: "ok",
+      action: "tmux.kill",
+      value: { killed: true, session: workerPane.session },
+    });
+    expect(await directTmux.hasSession(workerPane.session)).toBe(false);
+    expect(await first.invoke("operation-engine-start-after-inspector-0001", startCommand))
+      .toMatchObject({ status: "ok", method: "agent.start" });
+    await waitForEvent(first, (event) => event.kind === "views-changed" && event.payload.view === "agents");
     expect(await first.invoke("operation-engine-kill-0001", {
       schemaVersion: 1,
       method: "agent.kill",

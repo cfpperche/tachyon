@@ -100,7 +100,8 @@ compatible.
 - The shell currently reaches many concrete `Workspace` stores/managers; the inventory must prevent a
   hidden direct dependency from surviving cutover.
 - Secret/global-state migration must be one-time, allowlisted and rollback-safe.
-- Node file watching must preserve config/task refresh semantics across WSL, Linux, macOS and Windows.
+- Node file watching must preserve config/task refresh semantics across the first supported targets,
+  Linux and WSL; future platform adapters inherit the same requirement before support is declared.
 - Multiple windows can duplicate notices or UI requests unless claiming is operation-id-bound.
 - A daemon bundle launched from the extension install directory would break upgrades; the content-addressed
   staging proof is a release gate.

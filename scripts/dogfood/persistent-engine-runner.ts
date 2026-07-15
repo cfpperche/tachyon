@@ -8,7 +8,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { requestEngineControl } from "../../src/engine-service/controlClient.js";
 import { bridgeTokenFileName } from "../../src/bridge/token.js";
-import { stageEngineBundle, stagePackagedEngineBundle } from "../../src/engine-service/engineBundleStore.js";
+import { stageEngineBundle, stageEngineRuntime, stagePackagedEngineBundle } from "../../src/engine-service/engineBundleStore.js";
 import {
   engineRuntimeDir,
   engineSystemdUnitName,
@@ -39,6 +39,7 @@ const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-engine-dogfood-"));
 const workspaceRoot = path.join(root, "workspace");
 const storageRoot = path.join(root, "state");
 const installRoot = path.join(root, "bundles");
+const runtimeRoot = path.join(root, "runtimes");
 for (const directory of [workspaceRoot, storageRoot]) fs.mkdirSync(directory, { mode: 0o700 });
 fs.writeFileSync(path.join(workspaceRoot, "tachyon.yml"), [
   "agents:",
@@ -104,10 +105,12 @@ try {
     // Local dogfood may intentionally run before the candidate commit. Marketplace builds remain clean-only.
     requireCleanBuild: false,
   });
+  const runtime = stageEngineRuntime({ sourceExecutable: process.execPath, installRoot: runtimeRoot });
   const ensureOptions = {
     workspaceRoot,
     storageRoot,
     bundle,
+    runtime,
     startTimeoutMs: 15_000,
     pollMs: 25,
   } as const;
@@ -133,6 +136,7 @@ try {
     connectRemoteWorkspaceClient({
       workspaceRoot,
       bundle,
+      runtime,
       shell: { id: "dogfood-shell-one", version: "dogfood", locale: "en" },
       supervisor: ensureOptions,
       ensure,
@@ -140,6 +144,7 @@ try {
     connectRemoteWorkspaceClient({
       workspaceRoot,
       bundle,
+      runtime,
       shell: { id: "dogfood-shell-two", version: "dogfood", locale: "en" },
       supervisor: ensureOptions,
       ensure,
@@ -440,6 +445,7 @@ try {
   const reattached = await connectRemoteWorkspaceClient({
     workspaceRoot,
     bundle,
+    runtime,
     shell: { id: "dogfood-shell-three", version: "dogfood", locale: "en" },
     supervisor: ensureOptions,
   });

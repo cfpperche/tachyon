@@ -11,7 +11,9 @@ import { EngineControlClientError, requestEngineControl } from "./controlClient.
 import {
   loadStagedEngineBundle,
   verifyStagedBundle,
+  verifyStagedEngineRuntime,
   type StagedEngineBundle,
+  type StagedEngineRuntime,
 } from "./engineBundleStore.js";
 import { engineDaemonStateRoot } from "./daemonStateStore.js";
 import { ensureEngineStateMigration, type EngineStateMigrationProvider } from "./stateMigration.js";
@@ -77,6 +79,8 @@ export type EngineDaemonStopper = (input: EngineDaemonStopInput) => Promise<void
 export interface EnsureDaemonEngineOptions {
   workspaceRoot: string;
   bundle: StagedEngineBundle;
+  /** Immutable Tachyon-owned runtime. Production must never launch from a VS Code version directory. */
+  runtime: StagedEngineRuntime;
   settings?: DaemonSettingsSnapshot;
   /** Lazily reads the exact legacy allowlist before first launch; never enters daemon argv. */
   migrationProvider?: EngineStateMigrationProvider;
@@ -114,6 +118,10 @@ export async function ensureDaemonEngine(options: EnsureDaemonEngineOptions): Pr
   const canonicalRoot = fs.realpathSync(options.workspaceRoot);
   if (!fs.statSync(canonicalRoot).isDirectory()) throw new EngineSupervisorError("INVALID_WORKSPACE", "workspace root is not a directory");
   const manifest = readVerifiedManifest(options.bundle);
+  try { verifyStagedEngineRuntime(options.runtime); }
+  catch (error) {
+    throw new EngineSupervisorError("RUNTIME_VERIFICATION_FAILED", "the staged Tachyon engine runtime failed verification", boundedError(error));
+  }
   const hash = workspaceHash(canonicalRoot);
   if (options.controlSocketPath && !path.isAbsolute(options.controlSocketPath)) {
     throw new EngineSupervisorError("INVALID_OPTIONS", "persistent engine control socket path must be absolute");
@@ -138,6 +146,7 @@ export async function ensureDaemonEngine(options: EnsureDaemonEngineOptions): Pr
         storageRoot,
         desiredBundle: options.bundle,
         desiredManifest: manifest,
+        runtime: options.runtime,
         settings: options.settings,
         launcher,
         stopper,
@@ -161,6 +170,7 @@ export async function ensureDaemonEngine(options: EnsureDaemonEngineOptions): Pr
     controlSocketPath,
     bundle: options.bundle,
     manifest,
+    runtime: options.runtime,
     settings: options.settings,
   });
   const outcome = await launcher(launchInput);
@@ -397,6 +407,7 @@ interface UpgradeDaemonEngineInput {
   storageRoot: string;
   desiredBundle: StagedEngineBundle;
   desiredManifest: EngineBundleManifestV1;
+  runtime: StagedEngineRuntime;
   settings?: DaemonSettingsSnapshot;
   launcher: EngineDaemonLauncher;
   stopper: EngineDaemonStopper;
@@ -419,6 +430,7 @@ async function upgradeDaemonEngine(input: UpgradeDaemonEngineInput): Promise<Ens
         controlSocketPath: input.controlSocketPath,
         bundle: input.desiredBundle,
         manifest: input.desiredManifest,
+        runtime: input.runtime,
         settings: input.settings,
       });
       const outcome = await input.launcher(launchInput);
@@ -489,6 +501,7 @@ async function upgradeDaemonEngine(input: UpgradeDaemonEngineInput): Promise<Ens
         controlSocketPath: input.controlSocketPath,
         bundle: input.desiredBundle,
         manifest: verifiedDesiredManifest,
+        runtime: input.runtime,
         settings: input.settings,
       });
       await input.launcher(desiredLaunch);
@@ -535,6 +548,7 @@ async function upgradeDaemonEngine(input: UpgradeDaemonEngineInput): Promise<Ens
           controlSocketPath: input.controlSocketPath,
           bundle: rollbackBundle,
           manifest: verifiedRollbackManifest,
+          runtime: input.runtime,
           settings: input.settings,
         });
         await input.launcher(rollbackLaunch);
@@ -584,6 +598,7 @@ function buildLaunchInput(input: {
   controlSocketPath: string;
   bundle: StagedEngineBundle;
   manifest: EngineBundleManifestV1;
+  runtime: StagedEngineRuntime;
   settings?: DaemonSettingsSnapshot;
 }): EngineDaemonLaunchInput {
   const options: EngineDaemonOptionsV1 = {
@@ -601,7 +616,7 @@ function buildLaunchInput(input: {
     daemonModule: input.bundle.entrypoint,
     encodedOptions: encodeEngineDaemonOptions(options),
     unitName: engineSystemdUnitName(input.canonicalRoot),
-    nodePath: process.execPath,
+    nodePath: input.runtime.executable,
   };
 }
 

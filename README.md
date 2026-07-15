@@ -57,7 +57,7 @@ plus any dev server, watcher or build command. No lock-in, no reselling your tok
 | Platform | Supported |
 |---|---|
 | Linux | ✅ tmux ≥ 3.2 (**3.6 recommended** — instant exit-code capture for one-shot commands) |
-| macOS | ✅ (`brew install tmux`) |
+| macOS | ❌ temporarily unsupported by the persistent engine; no embedded fallback |
 | Windows + WSL | ✅ (VSCode Remote - WSL; tmux inside the distro) |
 | Windows native | ❌ by design — use WSL |
 
@@ -268,8 +268,8 @@ terminals:
 The state is also visible to other agents via the Bridge's `list_agents` (`attention` field) —
 an orchestrating agent can spot a stuck sibling and `write_input` the answer or `notify` you.
 
-On macOS there is no `/proc`, so the CPU check degrades gracefully: pane stability alone
-drives `idle`; `needs-input` is unaffected.
+The supported Linux/WSL engine uses `/proc` CPU evidence alongside pane stability to drive
+`idle`; `needs-input` is unaffected.
 
 <br clear="right">
 

@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { startEngineControlServer, type RunningEngineControlServer } from "../../src/engine-service/controlServer.js";
 import { EngineEventJournal } from "../../src/engine-service/eventJournal.js";
-import type { StagedEngineBundle } from "../../src/engine-service/engineBundleStore.js";
+import type { StagedEngineBundle, StagedEngineRuntime } from "../../src/engine-service/engineBundleStore.js";
 import {
   ENGINE_SHELL_PROTOCOL,
   workspaceCommandSuccessV1,
@@ -71,6 +71,7 @@ describe("remote WorkspaceClient", () => {
     const client = await connectRemoteWorkspaceClient({
       workspaceRoot,
       bundle: dummyBundle(root),
+      runtime: dummyRuntime(root),
       shell: { id: "shell-client-one", version: "0.57.0-test", locale: "en" },
       capabilities: [ENGINE_UI_CAPABILITY, "open-diff"],
       uiHandler: async (request) => {
@@ -224,6 +225,7 @@ describe("remote WorkspaceClient", () => {
     const client = await connectRemoteWorkspaceClient({
       workspaceRoot,
       bundle: dummyBundle(root),
+      runtime: dummyRuntime(root),
       shell: { id: "shell-race-proof", version: "test", locale: "en" },
       ensure: async () => {
         calls += 1;
@@ -263,6 +265,7 @@ describe("remote WorkspaceClient", () => {
     await expect(connectRemoteWorkspaceClient({
       workspaceRoot,
       bundle: dummyBundle(root),
+      runtime: dummyRuntime(root),
       shell: { id: "shell-invalid-projection", version: "test", locale: "en" },
       ensure: async () => ({
         identity: liveIdentity,
@@ -310,6 +313,7 @@ describe("remote WorkspaceClient", () => {
     const client = await connectRemoteWorkspaceClient({
       workspaceRoot,
       bundle: dummyBundle(root),
+      runtime: dummyRuntime(root),
       shell: { id: "shell-unknown-outcome", version: "test", locale: "en" },
       ensure: async () => ({
         identity: liveIdentity,
@@ -380,6 +384,17 @@ function dummyBundle(root: string): StagedEngineBundle {
     root,
     entrypoint: path.join(root, "engine.cjs"),
     manifestPath: path.join(root, "engine-manifest.json"),
+    reused: true,
+  };
+}
+
+function dummyRuntime(root: string): StagedEngineRuntime {
+  const runtimeRoot = path.join(root, "engine-runtime", "b".repeat(64));
+  return {
+    runtimeId: "b".repeat(64),
+    root: runtimeRoot,
+    executable: path.join(runtimeRoot, "node"),
+    manifestPath: path.join(runtimeRoot, "runtime-manifest.json"),
     reused: true,
   };
 }

@@ -6,7 +6,12 @@ import { createHash } from "node:crypto";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { EngineControlClient } from "../../src/engine-service/controlClient.js";
 import { bridgeTokenFileName } from "../../src/bridge/token.js";
-import { stageEngineBundle, type StagedEngineBundle } from "../../src/engine-service/engineBundleStore.js";
+import {
+  stageEngineBundle,
+  stageEngineRuntime,
+  type StagedEngineBundle,
+  type StagedEngineRuntime,
+} from "../../src/engine-service/engineBundleStore.js";
 import {
   buildEngineSystemdRunArgs,
   decodeEngineDaemonOptions,
@@ -149,6 +154,7 @@ describe("persistent engine supervisor", () => {
     const ensureOptions = {
       workspaceRoot: fixture.workspace,
       bundle: fixture.bundle,
+      runtime: fixture.runtime,
       storageRoot: fixture.storage,
       controlSocketPath: fixture.socket,
       launcher,
@@ -162,6 +168,8 @@ describe("persistent engine supervisor", () => {
     ]);
     expect(launchCalls).toBe(2);
     expect(launchInputs[0]).toEqual(launchInputs[1]);
+    expect(launchInputs[0].nodePath).toBe(fixture.runtime.executable);
+    expect(launchInputs[0].nodePath).not.toBe(process.execPath);
     expect([first.disposition, second.disposition].sort()).toEqual(["contended", "started"]);
     expect(first.identity).toEqual(second.identity);
     expect(first.identity.pid).toBe(launched!.pid);
@@ -234,6 +242,7 @@ describe("persistent engine supervisor", () => {
     const baseOptions = {
       workspaceRoot: fixture.workspace,
       bundle: fixture.bundle,
+      runtime: fixture.runtime,
       storageRoot: fixture.storage,
       controlSocketPath: fixture.socket,
       launcher,
@@ -298,6 +307,7 @@ describe("persistent engine supervisor", () => {
     const baseOptions = {
       workspaceRoot: fixture.workspace,
       bundle: fixture.bundle,
+      runtime: fixture.runtime,
       storageRoot: fixture.storage,
       controlSocketPath: fixture.socket,
       launcher,
@@ -340,6 +350,7 @@ describe("persistent engine supervisor", () => {
     await expect(ensureDaemonEngine({
       workspaceRoot: fixture.workspace,
       bundle: fixture.bundle,
+      runtime: fixture.runtime,
       storageRoot: fixture.storage,
       controlSocketPath: fixture.socket,
       launcher: async () => { launches += 1; return "started"; },
@@ -361,6 +372,7 @@ describe("persistent engine supervisor", () => {
     await expect(ensureDaemonEngine({
       workspaceRoot: fixture.workspace,
       bundle: fixture.bundle,
+      runtime: fixture.runtime,
       storageRoot: fixture.storage,
       controlSocketPath: fixture.socket,
       migrationProvider: async () => migration,
@@ -383,6 +395,7 @@ function workspaceFixture(): {
   storage: string;
   socket: string;
   bundle: StagedEngineBundle;
+  runtime: StagedEngineRuntime;
 } {
   const root = temp("tachyon-engine-supervisor-live-");
   const workspace = path.join(root, "workspace");
@@ -402,7 +415,14 @@ function workspaceFixture(): {
     storage,
     socket: path.join(runtime, "control.sock"),
     bundle: stageTestBundle(root, "engine-v1", { min: ENGINE_SHELL_PROTOCOL, max: ENGINE_SHELL_PROTOCOL }),
+    runtime: stageTestRuntime(root),
   };
+}
+
+function stageTestRuntime(root: string): StagedEngineRuntime {
+  const source = path.join(root, "runtime-source");
+  fs.writeFileSync(source, "#!/bin/sh\nexit 0\n", { mode: 0o500 });
+  return stageEngineRuntime({ sourceExecutable: source, installRoot: path.join(root, "installed-runtimes") });
 }
 
 function stageTestBundle(

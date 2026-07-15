@@ -32,7 +32,7 @@ function writeEngineManifest() {
   const manifest = {
     schemaVersion: 1,
     engineVersion: packageVersion,
-    protocol: { min: 2, max: 2 },
+    protocol: { min: 3, max: 3 },
     entrypoint: "engine-daemon.cjs",
     files: [
       { path: "engine-daemon.cjs", sha256: sha256File("dist/engine/engine-daemon.cjs") },

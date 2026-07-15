@@ -70,7 +70,13 @@ function hello(root: string, shellId: string, overrides: Partial<EngineShellHell
 describe("persistent engine shell control", () => {
   it("converges duplicate attach and keeps multiple shells independent", async () => {
     const f = fixture();
-    const server = await startEngineControlServer({ socketPath: f.socketPath, identity: f.identity, getSnapshot: f.snapshot });
+    const attachedShells: string[] = [];
+    const server = await startEngineControlServer({
+      socketPath: f.socketPath,
+      identity: f.identity,
+      getSnapshot: f.snapshot,
+      onShellAttached: (shellId) => attachedShells.push(shellId),
+    });
     servers.push(server);
 
     const first = await control(f.socketPath, { schemaVersion: 1, op: "attach", workspaceHash: "abc12345", hello: hello(f.root, "shell-0001") });
@@ -82,6 +88,8 @@ describe("persistent engine shell control", () => {
     const second = await control(f.socketPath, { schemaVersion: 1, op: "attach", workspaceHash: "abc12345", hello: hello(f.root, "shell-0002") });
     expect(second).toMatchObject({ ok: true, op: "attach", session: { shellId: "shell-0002" } });
     expect(server.shellCount()).toBe(2);
+    await waitFor(() => attachedShells.length === 3);
+    expect(attachedShells).toEqual(["shell-0001", "shell-0001", "shell-0002"]);
 
     const token = attachedToken(first);
     expect(await control(f.socketPath, { schemaVersion: 1, op: "detach", workspaceHash: "abc12345", shellId: "shell-0001", sessionToken: token }))
@@ -553,4 +561,12 @@ function control(socketPath: string, request: EngineControlRequestV1): Promise<E
     socket.once("error", reject);
     socket.once("end", () => resolve(JSON.parse(output) as EngineControlResponseV1));
   });
+}
+
+async function waitFor(predicate: () => boolean): Promise<void> {
+  const deadline = Date.now() + 1_000;
+  while (!predicate()) {
+    if (Date.now() >= deadline) throw new Error("control server condition timed out");
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
 }

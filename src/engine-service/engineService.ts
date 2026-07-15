@@ -61,6 +61,7 @@ import { startEngineControlServer, type RunningEngineControlServer } from "./con
 import { engineDaemonStateRoot } from "./daemonStateStore.js";
 import { EngineEventJournal } from "./eventJournal.js";
 import { StagedPayloadStore } from "./stagedPayloadStore.js";
+import { GlobalTmuxWatchdog } from "./tmuxAuthority.js";
 import {
   ENGINE_SHELL_PROTOCOL,
   isEngineServiceIdentityV1,
@@ -140,6 +141,7 @@ export async function startDaemonEngineService(
   let activityLog: ActivityLogManager | undefined;
   let providerObservations: ProviderObservationService | undefined;
   let providerObservationSubscription: { dispose(): void } | undefined;
+  let tmuxWatchdog: GlobalTmuxWatchdog | undefined;
   const host = new DaemonEngineHost({
     storageRoot: engineDaemonStateRoot(options.storageRoot),
     mediaRoot: options.mediaRoot,
@@ -150,6 +152,17 @@ export async function startDaemonEngineService(
       ?? Promise.reject(new Error("no capable Tachyon editor shell is attached")),
   });
   try {
+    tmuxWatchdog = new GlobalTmuxWatchdog({
+      onRecovered: (outcome) => {
+        console.warn(`[tachyon] wedged tmux server recovered by persistent engine:\n${outcome.diagnostics}`);
+        host.notify("the tmux server was wedged — auto-recovered. Restart your agents to continue.", "warn");
+      },
+      onError: (error) => {
+        host.notify(`tmux watchdog failed: ${error instanceof Error ? error.message : String(error)}`, "warn");
+      },
+    });
+    await tmuxWatchdog.start();
+    const runningTmuxWatchdog = tmuxWatchdog;
     const providerState: ProviderObservationStatePort = {
       get: <T>(key: string) => host.getState<T>(key),
       update: (key, value) => host.setState(key, value),
@@ -218,6 +231,7 @@ export async function startDaemonEngineService(
       identity,
       getSnapshot,
       readEvents: (afterSeq, limit) => journal.readAfter(afterSeq, limit),
+      onShellAttached: () => host.replayUiRequests(),
       query: (query) => executeWorkspaceQuery(
         runningWorkspace,
         query,
@@ -249,6 +263,7 @@ export async function startDaemonEngineService(
           runningActivityLog,
           runningProviderObservations,
           providerObservationSubscription,
+          runningTmuxWatchdog,
           host,
         );
         return closing;
@@ -259,6 +274,7 @@ export async function startDaemonEngineService(
     await activityLog?.stop().catch(() => undefined);
     providerObservationSubscription?.dispose();
     providerObservations?.dispose();
+    tmuxWatchdog?.close();
     await workspace?.dispose().catch(() => undefined);
     host.dispose();
     throw error;
@@ -668,6 +684,7 @@ async function closeService(
   activityLog: ActivityLogManager,
   providerObservations: ProviderObservationService,
   providerObservationSubscription: { dispose(): void } | undefined,
+  tmuxWatchdog: GlobalTmuxWatchdog,
   host: DaemonEngineHost,
 ): Promise<void> {
   const errors: unknown[] = [];
@@ -675,6 +692,7 @@ async function closeService(
   try { await activityLog.stop(); } catch (error) { errors.push(error); }
   try { providerObservationSubscription?.dispose(); } catch (error) { errors.push(error); }
   try { providerObservations.dispose(); } catch (error) { errors.push(error); }
+  try { tmuxWatchdog.close(); } catch (error) { errors.push(error); }
   try { await workspace.dispose(); } catch (error) { errors.push(error); }
   try { host.dispose(); } catch (error) { errors.push(error); }
   if (errors.length > 0) throw new AggregateError(errors, "persistent engine shutdown failed");
