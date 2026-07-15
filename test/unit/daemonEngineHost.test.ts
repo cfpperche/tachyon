@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { DaemonEngineHost, EngineUiUnavailableError, type DaemonHostEvent } from "../../src/workspace/DaemonEngineHost.js";
+import { DaemonEngineHost, EngineUiUnavailableError, type DaemonHostEvent, type DaemonUiRequest } from "../../src/workspace/DaemonEngineHost.js";
 import { Workspace } from "../../src/workspace/Workspace.js";
 import { TmuxService } from "../../src/tmux/TmuxService.js";
 
@@ -14,7 +14,7 @@ afterEach(() => {
   for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
 });
 
-function fixture() {
+function fixture(requestUi?: (request: DaemonUiRequest) => Promise<unknown>) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-daemon-host-"));
   roots.push(root);
   const mediaRoot = path.join(root, "bundle");
@@ -30,6 +30,7 @@ function fixture() {
       workspaceFolder: { "tachyon.maxAgents": 2 },
     },
     emit: (event) => events.push(event),
+    requestUi,
     watchIntervalMs: 15,
   });
   hosts.push(host);
@@ -74,6 +75,24 @@ describe("DaemonEngineHost", () => {
     await f.host.invokeNoticeAction(notice.id, notice.actions[0].id);
     expect(invoked).toBe(1);
     await expect(f.host.invokeNoticeAction(notice.id, notice.actions[0].id)).rejects.toThrow(/consumed/);
+  });
+
+  it("routes typed editor-only operations through the attached-shell port", async () => {
+    const requests: DaemonUiRequest[] = [];
+    const f = fixture(async (request) => {
+      requests.push(request);
+      return request.kind === "execute-command" ? { accepted: request.command } : null;
+    });
+    f.host.focusPrimaryView();
+    await waitFor(() => requests.length === 1);
+    await expect(f.host.executeCommand("tachyon.doctor", "abc12345"))
+      .resolves.toEqual({ accepted: "tachyon.doctor" });
+    expect(requests).toMatchObject([
+      { schemaVersion: 1, kind: "focus-primary", operationId: expect.any(String) },
+      { schemaVersion: 1, kind: "execute-command", operationId: expect.any(String), command: "tachyon.doctor", args: ["abc12345"] },
+    ]);
+    expect(requests[0].operationId).not.toBe(requests[1].operationId);
+    expect(f.events.filter((event) => event.kind === "ui-unavailable")).toHaveLength(0);
   });
 
   it("uses the Node watcher while the editor shell is absent", async () => {

@@ -11,6 +11,7 @@ import {
   TASK_STUDIO_RESPONSE_MAX_BYTES,
   isEngineControlResponseV1,
   isEngineOperationId,
+  isEngineUiCompletionV1,
   isWorkspaceCommandV1,
   isWorkspaceQueryV1,
   type EngineControlRequestV1,
@@ -18,6 +19,8 @@ import {
   type EngineServiceIdentityV1,
   type EngineShellHelloV1,
   type EngineShellSessionV1,
+  type EngineUiCompletionV1,
+  type EngineUiRequestV1,
   type WorkspaceEventBatchV1,
   type WorkspaceCommandResultV1,
   type WorkspaceCommandV1,
@@ -202,6 +205,37 @@ export class EngineControlClient {
       throw invalidResponse("invoke response does not match its operation or command");
     }
     return success.result;
+  }
+
+  async claimUiRequest(): Promise<EngineUiRequestV1 | null> {
+    const session = this.requireSession();
+    const response = await this.request({
+      schemaVersion: 1,
+      op: "ui.claim",
+      workspaceHash: this.options.hello.workspaceHash,
+      shellId: session.shellId,
+      sessionToken: session.sessionToken,
+    });
+    const success = this.unwrap(response);
+    if (success.op !== "ui.claim") throw invalidResponse("UI claim returned the wrong operation");
+    return success.request;
+  }
+
+  async completeUiRequest(completion: EngineUiCompletionV1): Promise<void> {
+    if (!isEngineUiCompletionV1(completion)) throw invalidResponse("UI completion is invalid");
+    const session = this.requireSession();
+    const response = await this.request({
+      schemaVersion: 1,
+      op: "ui.complete",
+      workspaceHash: this.options.hello.workspaceHash,
+      shellId: session.shellId,
+      sessionToken: session.sessionToken,
+      completion,
+    });
+    const success = this.unwrap(response);
+    if (success.op !== "ui.complete" || success.operationId !== completion.operationId || !success.completed) {
+      throw invalidResponse("UI completion response does not match its operation");
+    }
   }
 
   async detach(): Promise<void> {

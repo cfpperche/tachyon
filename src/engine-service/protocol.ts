@@ -92,7 +92,7 @@ import {
 export { isStagedPayloadRefV1, type StagedPayloadRefV1 } from "../runtime-api/stagedPayload.js";
 
 export const ENGINE_BUNDLE_SCHEMA_VERSION = 1 as const;
-export const ENGINE_SHELL_PROTOCOL = 1 as const;
+export const ENGINE_SHELL_PROTOCOL = 2 as const;
 
 export interface EngineProtocolRangeV1 {
   min: number;
@@ -186,6 +186,15 @@ export interface WorkspaceEventBatchV1 {
   resyncRequired: boolean;
   events: WorkspaceEventV1[];
 }
+
+/** A daemon operation that can only be presented by one attached editor shell. */
+export type EngineUiRequestV1 =
+  | { schemaVersion: 1; operationId: string; kind: "focus-primary" }
+  | { schemaVersion: 1; operationId: string; kind: "execute-command"; command: string; args: JsonValue[] };
+
+export type EngineUiCompletionV1 =
+  | { schemaVersion: 1; operationId: string; status: "ok"; value: JsonValue }
+  | { schemaVersion: 1; operationId: string; status: "error"; code: string; message: string };
 
 export type WorkspaceCommandMethodV1 =
   | "agent.start"
@@ -529,6 +538,8 @@ export type EngineControlRequestV1 =
   | { schemaVersion: 1; op: "events"; workspaceHash: string; shellId: string; sessionToken: string; afterSeq: number; limit: number }
   | { schemaVersion: 1; op: "query"; workspaceHash: string; shellId: string; sessionToken: string; query: WorkspaceQueryV1 }
   | { schemaVersion: 1; op: "invoke"; workspaceHash: string; shellId: string; sessionToken: string; operationId: string; command: WorkspaceCommandV1 }
+  | { schemaVersion: 1; op: "ui.claim"; workspaceHash: string; shellId: string; sessionToken: string }
+  | { schemaVersion: 1; op: "ui.complete"; workspaceHash: string; shellId: string; sessionToken: string; completion: EngineUiCompletionV1 }
   | { schemaVersion: 1; op: "detach"; workspaceHash: string; shellId: string; sessionToken: string };
 
 export type EngineControlResponseV1 =
@@ -538,6 +549,8 @@ export type EngineControlResponseV1 =
   | { ok: true; op: "events"; batch: WorkspaceEventBatchV1 }
   | { ok: true; op: "query"; result: WorkspaceQueryResultV1 }
   | { ok: true; op: "invoke"; operationId: string; result: WorkspaceCommandResultV1 }
+  | { ok: true; op: "ui.claim"; request: EngineUiRequestV1 | null }
+  | { ok: true; op: "ui.complete"; operationId: string; completed: true }
   | { ok: true; op: "detach"; detached: true }
   | { ok: false; code: string; message: string };
 
@@ -580,6 +593,37 @@ export function isSha256(value: unknown): value is string {
 
 export function isEngineOperationId(value: unknown): value is string {
   return typeof value === "string" && OPERATION_ID_RE.test(value);
+}
+
+export function isEngineUiRequestV1(value: unknown): value is EngineUiRequestV1 {
+  if (!isRecord(value)
+    || value.schemaVersion !== 1
+    || !isEngineOperationId(value.operationId)
+    || (value.kind !== "focus-primary" && value.kind !== "execute-command")) return false;
+  if (value.kind === "focus-primary") return hasOnlyKeys(value, ["schemaVersion", "operationId", "kind"]);
+  return hasOnlyKeys(value, ["schemaVersion", "operationId", "kind", "command", "args"])
+    && typeof value.command === "string"
+    && /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/u.test(value.command)
+    && Array.isArray(value.args)
+    && value.args.length <= 32
+    && value.args.every(isJsonValue)
+    && Buffer.byteLength(JSON.stringify(value), "utf8") <= 32 * 1024;
+}
+
+export function isEngineUiCompletionV1(value: unknown): value is EngineUiCompletionV1 {
+  if (!isRecord(value) || value.schemaVersion !== 1 || !isEngineOperationId(value.operationId)) return false;
+  if (value.status === "ok") {
+    return hasOnlyKeys(value, ["schemaVersion", "operationId", "status", "value"])
+      && isJsonValue(value.value)
+      && Buffer.byteLength(JSON.stringify(value), "utf8") <= 32 * 1024;
+  }
+  return value.status === "error"
+    && hasOnlyKeys(value, ["schemaVersion", "operationId", "status", "code", "message"])
+    && typeof value.code === "string"
+    && /^[A-Z][A-Z0-9_]{1,63}$/u.test(value.code)
+    && typeof value.message === "string"
+    && value.message.length > 0
+    && value.message.length <= 1_000;
 }
 
 export function isWorkspaceCommandV1(value: unknown): value is WorkspaceCommandV1 {
@@ -1312,6 +1356,15 @@ export function isEngineControlResponseV1(value: unknown): value is EngineContro
   if (value.op === "invoke") {
     return isEngineOperationId(value.operationId)
       && isWorkspaceCommandResultV1(value.result);
+  }
+  if (value.op === "ui.claim") {
+    return hasOnlyKeys(value, ["ok", "op", "request"])
+      && (value.request === null || isEngineUiRequestV1(value.request));
+  }
+  if (value.op === "ui.complete") {
+    return hasOnlyKeys(value, ["ok", "op", "operationId", "completed"])
+      && isEngineOperationId(value.operationId)
+      && value.completed === true;
   }
   return value.op === "detach" && value.detached === true;
 }

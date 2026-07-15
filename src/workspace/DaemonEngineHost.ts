@@ -1,6 +1,8 @@
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type { NotifyLevel } from "../bridge/tools.js";
+import { isJsonValue, type JsonValue } from "../runtime-api/extensionOperations.js";
+import type { EngineUiRequestV1 } from "../engine-service/protocol.js";
 import { DaemonStateStore } from "../engine-service/daemonStateStore.js";
 import { PollingFileWatcher } from "../engine-service/pollingWatcher.js";
 import type { EngineHost, HostDisposable, NoticeAction, ViewKind, WatchEvents } from "./EngineHost.js";
@@ -23,9 +25,7 @@ export const DAEMON_SETTING_KEYS = [
 ] as const;
 const DAEMON_SETTING_KEY_SET = new Set<string>(DAEMON_SETTING_KEYS);
 
-export type DaemonUiRequest =
-  | { id: string; kind: "focus-primary" }
-  | { id: string; kind: "execute-command"; command: string; args: unknown[] };
+export type DaemonUiRequest = EngineUiRequestV1;
 
 export type DaemonHostEvent =
   | { kind: "views-changed"; view: ViewKind; at: string }
@@ -100,7 +100,7 @@ export class DaemonEngineHost implements EngineHost {
 
   focusPrimaryView(): void {
     this.assertActive();
-    const request: DaemonUiRequest = { id: randomUUID(), kind: "focus-primary" };
+    const request: DaemonUiRequest = { schemaVersion: 1, operationId: randomUUID(), kind: "focus-primary" };
     if (!this.options.requestUi) {
       this.emit({ kind: "ui-unavailable", request, at: new Date().toISOString() });
       return;
@@ -112,12 +112,24 @@ export class DaemonEngineHost implements EngineHost {
 
   async executeCommand(command: string, ...args: unknown[]): Promise<unknown> {
     this.assertActive();
-    const request: DaemonUiRequest = { id: randomUUID(), kind: "execute-command", command, args };
+    if (!args.every(isJsonValue)) throw new EngineUiUnavailableError("editor command arguments are not JSON-safe");
+    const request: DaemonUiRequest = {
+      schemaVersion: 1,
+      operationId: randomUUID(),
+      kind: "execute-command",
+      command,
+      args: cloneJson(args) as JsonValue[],
+    };
     if (!this.options.requestUi) {
       this.emit({ kind: "ui-unavailable", request, at: new Date().toISOString() });
       throw new EngineUiUnavailableError();
     }
-    return this.options.requestUi(request);
+    try {
+      return await this.options.requestUi(request);
+    } catch (error) {
+      this.emit({ kind: "ui-unavailable", request, at: new Date().toISOString() });
+      throw new EngineUiUnavailableError(error instanceof Error ? error.message : String(error));
+    }
   }
 
   watch(root: string, glob: string, events: WatchEvents, onEvent: () => void): HostDisposable {

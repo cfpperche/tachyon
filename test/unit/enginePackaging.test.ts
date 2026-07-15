@@ -3,7 +3,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { verifyStagedBundle } from "../../src/engine-service/engineBundleStore.js";
-import { engineBundleId, isEngineBundleManifestV1 } from "../../src/engine-service/protocol.js";
+import {
+  ENGINE_SHELL_PROTOCOL,
+  engineBundleId,
+  isEngineBundleManifestV1,
+} from "../../src/engine-service/protocol.js";
 
 describe("persistent engine packaging", () => {
   it("builds a self-contained verified engine bundle with its runtime media", () => {
@@ -13,6 +17,7 @@ describe("persistent engine packaging", () => {
     expect(isEngineBundleManifestV1(parsed)).toBe(true);
     if (!isEngineBundleManifestV1(parsed)) throw new Error("invalid built engine manifest");
     expect(parsed.engineVersion).toBe(JSON.parse(fs.readFileSync("package.json", "utf8")).version);
+    expect(parsed.protocol).toEqual({ min: ENGINE_SHELL_PROTOCOL, max: ENGINE_SHELL_PROTOCOL });
     expect(parsed.entrypoint).toBe("engine-daemon.cjs");
     expect(parsed.files.map((file) => file.path)).toEqual([
       "engine-daemon.cjs",

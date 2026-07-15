@@ -7,7 +7,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createHash } from "node:crypto";
 import { EngineControlClient } from "../../src/engine-service/controlClient.js";
 import { StagedPayloadStore } from "../../src/engine-service/stagedPayloadStore.js";
-import type { EngineServiceIdentityV1, EngineShellHelloV1, WorkspaceEventV1 } from "../../src/engine-service/protocol.js";
+import { ENGINE_SHELL_PROTOCOL, type EngineServiceIdentityV1, type EngineShellHelloV1, type WorkspaceEventV1 } from "../../src/engine-service/protocol.js";
 import { encodePinStudioStagedPayloadV1 } from "../../src/runtime-api/pinStudioCommands.js";
 import { encodeTaskStudioStagedPayloadV1 } from "../../src/runtime-api/taskStudioCommands.js";
 import { PinStore } from "../../src/pins/PinStore.js";
@@ -682,7 +682,7 @@ function hello(identity: EngineServiceIdentityV1, shellId: string): EngineShellH
     workspaceRoot: identity.workspaceRoot,
     workspaceHash: identity.workspaceHash,
     shell: { id: shellId, version: "0.57.0-test", locale: "en" },
-    protocol: { min: 1, max: 1 },
+    protocol: { min: ENGINE_SHELL_PROTOCOL, max: ENGINE_SHELL_PROTOCOL },
     capabilities: [],
     settingsDigest: createHash("sha256").update("settings").digest("hex"),
   };

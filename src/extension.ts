@@ -65,10 +65,11 @@ import { readEmbeddedProvenanceRecord } from "./provenance/record.js";
 import { Terminals } from "./presentation/Terminals.js";
 import { connectPackagedWorkspaceClient } from "./shell/WorkspaceClient.js";
 import { collectLegacyEngineStateMigration } from "./engine-service/stateMigration.js";
+import { ENGINE_UI_CAPABILITY } from "./engine-service/uiRequestBroker.js";
 import { WorkspaceClientRegistry } from "./shell/WorkspaceClientRegistry.js";
 import { WorkspaceShellHandle } from "./shell/WorkspaceShellHandle.js";
 import { DAEMON_SETTING_KEYS, type DaemonSettingsSnapshot } from "./workspace/DaemonEngineHost.js";
-import type { ExtensionCommandV1, ExtensionQueryV1, JsonValue } from "./runtime-api/extensionOperations.js";
+import { isJsonValue, type ExtensionCommandV1, type ExtensionQueryV1, type JsonValue } from "./runtime-api/extensionOperations.js";
 
 /**
  * Thin multi-root shell: one detachable client handle per Tachyon workspace.
@@ -1157,13 +1158,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       extensionRoot: context.extensionUri.fsPath,
       requireCleanBuild: context.extensionMode === vscode.ExtensionMode.Production,
       shell: { version: shellVersion, locale: vscode.env.language },
-      capabilities: ["vscode.diff", "vscode.editor", "vscode.notifications", "vscode.terminal"],
+      capabilities: [ENGINE_UI_CAPABILITY, "vscode.diff", "vscode.editor", "vscode.notifications", "vscode.terminal"],
       settings: daemonSettingsSnapshot(workspaceRoot),
       migrationProvider: () => collectLegacyEngineStateMigration(workspaceHash(workspaceRoot), {
         globalStorageRoot: context.globalStorageUri.fsPath,
         getState: <T>(key: string) => context.globalState.get<T>(key),
         getSecret: (key: string) => Promise.resolve(context.secrets.get(key)),
       }),
+      uiHandler: async (request) => {
+        if (request.kind === "focus-primary") {
+          await vscode.commands.executeCommand("tachyonSidebarPrototype.focus");
+          return null;
+        }
+        const value = await vscode.commands.executeCommand(request.command, ...request.args);
+        if (value === undefined) return null;
+        if (!isJsonValue(value)) throw new Error(`editor command '${request.command}' returned a non-JSON result`);
+        return value;
+      },
     }),
   });
   activeClientRegistry = clientRegistry;

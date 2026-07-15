@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { startEngineControlServer, type RunningEngineControlServer } from "../../src/engine-service/controlServer.js";
+import { ENGINE_UI_CAPABILITY } from "../../src/engine-service/uiRequestBroker.js";
 import {
   workspaceCommandSuccessV1,
   workspacePinStudioViewSuccessV1,
@@ -133,6 +134,72 @@ describe("persistent engine shell control", () => {
     expect(server.shellCount()).toBe(0);
     expect((await control(f.socketPath, { schemaVersion: 1, op: "health", workspaceHash: "abc12345" })))
       .toMatchObject({ ok: true, op: "health", engine: { instanceId: f.identity.instanceId }, shellCount: 0 });
+  });
+
+  it("routes one operation-id-bound UI request to exactly one capable shell", async () => {
+    const f = fixture();
+    const server = await startEngineControlServer({ socketPath: f.socketPath, identity: f.identity, getSnapshot: f.snapshot });
+    servers.push(server);
+    await expect(server.requestUi({ schemaVersion: 1, operationId: "ui-unavailable-0001", kind: "focus-primary" }))
+      .rejects.toMatchObject({ code: "UI_UNAVAILABLE" });
+    const first = await control(f.socketPath, {
+      schemaVersion: 1,
+      op: "attach",
+      workspaceHash: "abc12345",
+      hello: hello(f.root, "shell-ui-one", { capabilities: [ENGINE_UI_CAPABILITY] }),
+    });
+    const second = await control(f.socketPath, {
+      schemaVersion: 1,
+      op: "attach",
+      workspaceHash: "abc12345",
+      hello: hello(f.root, "shell-ui-two", { capabilities: [ENGINE_UI_CAPABILITY] }),
+    });
+    const pending = server.requestUi({
+      schemaVersion: 1,
+      operationId: "ui-control-0001",
+      kind: "execute-command",
+      command: "tachyon.doctor",
+      args: ["abc12345"],
+    });
+    expect(await control(f.socketPath, {
+      schemaVersion: 1,
+      op: "ui.claim",
+      workspaceHash: "abc12345",
+      shellId: "shell-ui-one",
+      sessionToken: attachedToken(first),
+      unexpected: true,
+    } as unknown as EngineControlRequestV1)).toMatchObject({ ok: false, code: "BAD_REQUEST" });
+    expect(await control(f.socketPath, {
+      schemaVersion: 1,
+      op: "ui.claim",
+      workspaceHash: "abc12345",
+      shellId: "shell-ui-one",
+      sessionToken: attachedToken(first),
+    })).toMatchObject({ ok: true, op: "ui.claim", request: { operationId: "ui-control-0001" } });
+    expect(await control(f.socketPath, {
+      schemaVersion: 1,
+      op: "ui.claim",
+      workspaceHash: "abc12345",
+      shellId: "shell-ui-two",
+      sessionToken: attachedToken(second),
+    })).toEqual({ ok: true, op: "ui.claim", request: null });
+    expect(await control(f.socketPath, {
+      schemaVersion: 1,
+      op: "ui.complete",
+      workspaceHash: "abc12345",
+      shellId: "shell-ui-two",
+      sessionToken: attachedToken(second),
+      completion: { schemaVersion: 1, operationId: "ui-control-0001", status: "ok", value: null },
+    })).toMatchObject({ ok: false, code: "UI_CLAIM_MISMATCH" });
+    expect(await control(f.socketPath, {
+      schemaVersion: 1,
+      op: "ui.complete",
+      workspaceHash: "abc12345",
+      shellId: "shell-ui-one",
+      sessionToken: attachedToken(first),
+      completion: { schemaVersion: 1, operationId: "ui-control-0001", status: "ok", value: { opened: true } },
+    })).toEqual({ ok: true, op: "ui.complete", operationId: "ui-control-0001", completed: true });
+    await expect(pending).resolves.toEqual({ opened: true });
   });
 
   it("refuses invalid snapshots instead of attaching a shell to ambiguous engine state", async () => {

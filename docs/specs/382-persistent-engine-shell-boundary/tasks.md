@@ -28,7 +28,7 @@ _Generated from `plan.md` on 2026-07-14. Work top-to-bottom. No automatic integr
   reconnect/resync and typed command results; add a deterministic fake for presentation tests.
 - [x] Migrate sidebar, Activity/Mission Control/Studios, commands, notifications and terminal presentation
   from concrete `Workspace` access to `WorkspaceClient` projections/actions.
-- [ ] Route editor-only capabilities through bounded shell requests; return `UI_UNAVAILABLE` when no
+- [x] Route editor-only capabilities through bounded shell requests; return `UI_UNAVAILABLE` when no
   capable shell is attached and prevent duplicate claims across windows.
 - [x] Change extension activation to ensure/stage/attach only; change deactivate/folder removal to detach
   only; remove all production `Workspace.create`, `Workspace.start`, `Workspace.dispose` and backend

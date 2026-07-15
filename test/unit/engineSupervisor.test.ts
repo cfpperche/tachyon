@@ -24,7 +24,7 @@ import {
 import { DaemonStateStore } from "../../src/engine-service/daemonStateStore.js";
 import type { EngineStateMigrationV1 } from "../../src/engine-service/stateMigration.js";
 import { workspaceVersionStateKey } from "../../src/workspace/operationalStateKeys.js";
-import type { EngineBundleManifestV1, EngineServiceIdentityV1, EngineShellHelloV1 } from "../../src/engine-service/protocol.js";
+import { ENGINE_SHELL_PROTOCOL, type EngineBundleManifestV1, type EngineServiceIdentityV1, type EngineShellHelloV1 } from "../../src/engine-service/protocol.js";
 import { TmuxService, workspaceHash } from "../../src/tmux/TmuxService.js";
 
 const roots: string[] = [];
@@ -177,7 +177,7 @@ describe("persistent engine supervisor", () => {
     });
     expect(reused).toMatchObject({ identity: first.identity, disposition: "reused-exact" });
 
-    const compatible = stageTestBundle(fixture.root, "compatible-v2", { min: 1, max: 1 });
+    const compatible = stageTestBundle(fixture.root, "compatible-v2", { min: ENGINE_SHELL_PROTOCOL, max: ENGINE_SHELL_PROTOCOL });
     const compatibleReuse = await ensureDaemonEngine({
       ...ensureOptions,
       bundle: compatible,
@@ -185,11 +185,11 @@ describe("persistent engine supervisor", () => {
     });
     expect(compatibleReuse).toMatchObject({ identity: first.identity, disposition: "reused-compatible" });
 
-    const incompatible = stageTestBundle(fixture.root, "incompatible-v2", { min: 2, max: 2 });
+    const incompatible = stageTestBundle(fixture.root, "incompatible-v2", { min: ENGINE_SHELL_PROTOCOL + 1, max: ENGINE_SHELL_PROTOCOL + 1 });
     await expect(ensureDaemonEngine({ ...ensureOptions, bundle: incompatible }))
       .rejects.toMatchObject({ code: "INCOMPATIBLE_ENGINE" });
 
-    const tampered = stageTestBundle(fixture.root, "tampered", { min: 1, max: 1 });
+    const tampered = stageTestBundle(fixture.root, "tampered", { min: ENGINE_SHELL_PROTOCOL, max: ENGINE_SHELL_PROTOCOL });
     fs.chmodSync(tampered.entrypoint, 0o600);
     fs.writeFileSync(tampered.entrypoint, "tampered after staging", "utf8");
     await expect(ensureDaemonEngine({ ...ensureOptions, bundle: tampered }))
@@ -273,7 +273,7 @@ function workspaceFixture(): {
     workspace,
     storage,
     socket: path.join(runtime, "control.sock"),
-    bundle: stageTestBundle(root, "engine-v1", { min: 1, max: 1 }),
+    bundle: stageTestBundle(root, "engine-v1", { min: ENGINE_SHELL_PROTOCOL, max: ENGINE_SHELL_PROTOCOL }),
   };
 }
 
@@ -322,7 +322,7 @@ function hello(identity: EngineServiceIdentityV1, shellId: string): EngineShellH
     workspaceRoot: identity.workspaceRoot,
     workspaceHash: identity.workspaceHash,
     shell: { id: shellId, version: "0.57.0-test", locale: "en" },
-    protocol: { min: 1, max: 1 },
+    protocol: { min: ENGINE_SHELL_PROTOCOL, max: ENGINE_SHELL_PROTOCOL },
     capabilities: [],
     settingsDigest: sha256("settings"),
   };

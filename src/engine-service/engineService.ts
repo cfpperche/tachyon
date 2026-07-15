@@ -134,19 +134,20 @@ export async function startDaemonEngineService(
   const projections = new EngineProjectionCoordinator(journal, instanceId);
   const stagedPayloads = new StagedPayloadStore(path.dirname(options.controlSocketPath));
   stagedPayloads.cleanupStale();
+  let workspace: Workspace | undefined;
+  let control: RunningEngineControlServer | undefined;
+  let activityLog: ActivityLogManager | undefined;
+  let providerObservations: ProviderObservationService | undefined;
+  let providerObservationSubscription: { dispose(): void } | undefined;
   const host = new DaemonEngineHost({
     storageRoot: path.join(options.storageRoot, "state"),
     mediaRoot: options.mediaRoot,
     appVersion: options.appVersion,
     settings: options.settings,
     emit: (event) => projections.record(event),
+    requestUi: (request) => control?.requestUi(request)
+      ?? Promise.reject(new Error("no capable Tachyon editor shell is attached")),
   });
-
-  let workspace: Workspace | undefined;
-  let control: RunningEngineControlServer | undefined;
-  let activityLog: ActivityLogManager | undefined;
-  let providerObservations: ProviderObservationService | undefined;
-  let providerObservationSubscription: { dispose(): void } | undefined;
   try {
     const providerState: ProviderObservationStatePort = {
       get: <T>(key: string) => host.getState<T>(key),

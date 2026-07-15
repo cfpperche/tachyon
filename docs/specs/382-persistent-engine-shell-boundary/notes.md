@@ -677,3 +677,21 @@ None.
 - The focused migration/supervisor/client matrix passes 14/14; the adjacent identity/token/Workspace matrix
   passes 106/106. Typecheck, build, the 230-file editor-free daemon closure and diff-check are green. The final
   full run remains reserved for the post-SOUL reconciliation and closure audit.
+
+## Thirty-first implementation slice — 2026-07-15
+
+- Added a bounded daemon-to-shell UI broker for the two editor-only host operations: focus the primary
+  Tachyon surface and execute a named VS Code command with JSON-safe arguments. A request is accepted only
+  while an attached shell explicitly advertises `tachyon.ui`; otherwise it fails immediately with
+  `UI_UNAVAILABLE` instead of waiting for an editor that does not exist.
+- Claiming is atomic across windows. Exactly one shell may execute an operation, only that authenticated shell
+  may complete it, and a claim is never reassigned after its shell disconnects because execution may already
+  have occurred. Unclaimed work may still be serviced by another capable shell; pending work is bounded by
+  count and time and is failed when the broker closes.
+- `WorkspaceClient` services the broker from its existing serialized sync loop and reports handler failures as
+  exact error completions. The VS Code shell retains command execution and focus ownership; the daemon remains
+  editor-free and receives only validated JSON results.
+- The shell negotiation protocol and packaged manifest advanced together from 1 to 2, preventing a new shell
+  from silently reusing a pre-UI-request engine. A packaging assertion binds the emitted manifest to the source
+  protocol constant. Build, typecheck, the 231-file editor-free daemon closure and the focused ten-file matrix
+  (53/53) pass; diff-check is clean. The final global run remains reserved for the post-SOUL reconciliation.

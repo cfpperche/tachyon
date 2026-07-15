@@ -6,6 +6,7 @@ import { ensureSecureRuntimeDir } from "./runtimeSecurity.js";
 import { workspaceCommandFingerprint } from "./commandIdentity.js";
 import {
   isEngineShellHelloV1,
+  isEngineUiCompletionV1,
   isEngineOperationId,
   isWorkspaceCommandResultV1,
   isWorkspaceCommandResultBoundToInput,
@@ -19,6 +20,7 @@ import {
   type EngineServiceIdentityV1,
   type EngineShellHelloV1,
   type EngineShellSessionV1,
+  type EngineUiRequestV1,
   isWorkspaceEventBatchV1,
   type WorkspaceEventBatchV1,
   type WorkspaceCommandResultV1,
@@ -27,6 +29,8 @@ import {
   type WorkspaceQueryV1,
   type WorkspaceSnapshotEnvelopeV1,
 } from "./protocol.js";
+import { EngineUiRequestBroker, EngineUiRequestError } from "./uiRequestBroker.js";
+import type { JsonValue } from "../runtime-api/extensionOperations.js";
 
 const MAX_CONTROL_REQUEST_BYTES = 64 * 1024;
 const DEFAULT_SHELL_LEASE_MS = 30_000;
@@ -51,12 +55,14 @@ export interface EngineControlServerOptions {
   query?: (query: WorkspaceQueryV1, context: EngineQueryContextV1) => WorkspaceQueryResultV1 | Promise<WorkspaceQueryResultV1>;
   invoke?: (command: WorkspaceCommandV1, context: EngineCommandContextV1) => WorkspaceCommandResultV1 | Promise<WorkspaceCommandResultV1>;
   leaseMs?: number;
+  uiRequestTimeoutMs?: number;
   now?: () => number;
 }
 
 export interface RunningEngineControlServer {
   socketPath: string;
   shellCount(): number;
+  requestUi(request: EngineUiRequestV1): Promise<JsonValue>;
   close(): Promise<void>;
 }
 
@@ -81,12 +87,16 @@ export async function startEngineControlServer(options: EngineControlServerOptio
 
   const sessions = new Map<string, LiveShellSession>();
   const operations = new Map<string, OperationRecord>();
+  const uiBroker = new EngineUiRequestBroker({ timeoutMs: options.uiRequestTimeoutMs });
   const connections = new Set<net.Socket>();
   let closing = false;
   const purgeExpired = () => {
     const at = now();
     for (const [shellId, session] of sessions) {
-      if (session.expiresAt <= at) sessions.delete(shellId);
+      if (session.expiresAt <= at) {
+        sessions.delete(shellId);
+        uiBroker.unregisterShell(shellId);
+      }
     }
   };
 
@@ -153,6 +163,7 @@ export async function startEngineControlServer(options: EngineControlServerOptio
       };
       session.expiresAt = now() + leaseMs;
       sessions.set(parsed.hello.shell.id, session);
+      uiBroker.registerShell(parsed.hello.shell.id, parsed.hello.capabilities);
       return { ok: true, op: "attach", session: publicSession(parsed.hello.shell.id, session, snapshot.seq, options.identity) };
     }
 
@@ -170,6 +181,20 @@ export async function startEngineControlServer(options: EngineControlServerOptio
         operationId: parsed.operationId,
         result: await invokeOnce(parsed.operationId, parsed.command, parsed.shellId),
       };
+    }
+    if (parsed.op === "ui.claim") {
+      session.expiresAt = now() + leaseMs;
+      return { ok: true, op: "ui.claim", request: uiBroker.claim(parsed.shellId) };
+    }
+    if (parsed.op === "ui.complete") {
+      session.expiresAt = now() + leaseMs;
+      try {
+        const operationId = uiBroker.complete(parsed.shellId, parsed.completion);
+        return { ok: true, op: "ui.complete", operationId, completed: true };
+      } catch (error) {
+        if (error instanceof EngineUiRequestError) return fail(error.code, error.message);
+        throw error;
+      }
     }
     if (parsed.op === "touch") {
       const validated = validateSnapshot(await options.getSnapshot(), options.identity);
@@ -193,6 +218,7 @@ export async function startEngineControlServer(options: EngineControlServerOptio
       return { ok: true, op: "events", batch };
     }
     sessions.delete(parsed.shellId);
+    uiBroker.unregisterShell(parsed.shellId);
     return { ok: true, op: "detach", detached: true };
   };
 
@@ -270,10 +296,12 @@ export async function startEngineControlServer(options: EngineControlServerOptio
       purgeExpired();
       return sessions.size;
     },
+    requestUi: (request) => uiBroker.request(request),
     close: async () => {
       if (closing) return;
       closing = true;
       clearInterval(timer);
+      uiBroker.close();
       sessions.clear();
       operations.clear();
       for (const socket of connections) socket.destroy();
@@ -302,7 +330,7 @@ function parseRequest(raw: string): EngineControlRequestV1 | EngineControlRespon
   }
   if (request.op === "health") return request as EngineControlRequestV1;
   if (request.op === "attach" && "hello" in request) return request as EngineControlRequestV1;
-  if ((request.op === "touch" || request.op === "snapshot" || request.op === "detach" || request.op === "events" || request.op === "query" || request.op === "invoke")
+  if ((request.op === "touch" || request.op === "snapshot" || request.op === "detach" || request.op === "events" || request.op === "query" || request.op === "invoke" || request.op === "ui.claim" || request.op === "ui.complete")
     && "shellId" in request && typeof request.shellId === "string"
     && "sessionToken" in request && typeof request.sessionToken === "string") {
     if (request.op === "query") {
@@ -314,6 +342,17 @@ function parseRequest(raw: string): EngineControlRequestV1 | EngineControlRespon
         && "command" in request && isWorkspaceCommandV1(request.command)) return request as EngineControlRequestV1;
       return fail("BAD_REQUEST", "unknown or incomplete engine control request");
     }
+    if (request.op === "ui.complete") {
+      if (hasOnlyControlKeys(request, ["schemaVersion", "op", "workspaceHash", "shellId", "sessionToken", "completion"])
+        && "completion" in request && isEngineUiCompletionV1(request.completion)) return request as EngineControlRequestV1;
+      return fail("BAD_REQUEST", "unknown or incomplete engine control request");
+    }
+    if (request.op === "ui.claim") {
+      if (hasOnlyControlKeys(request, ["schemaVersion", "op", "workspaceHash", "shellId", "sessionToken"])) {
+        return request as EngineControlRequestV1;
+      }
+      return fail("BAD_REQUEST", "unknown or incomplete engine control request");
+    }
     if (request.op !== "events") return request as EngineControlRequestV1;
     if ("afterSeq" in request && Number.isSafeInteger(request.afterSeq)
       && (request.afterSeq as number) >= 0
@@ -321,6 +360,11 @@ function parseRequest(raw: string): EngineControlRequestV1 | EngineControlRespon
       && (request.limit as number) > 0 && (request.limit as number) <= 200) return request as EngineControlRequestV1;
   }
   return fail("BAD_REQUEST", "unknown or incomplete engine control request");
+}
+
+function hasOnlyControlKeys(value: object, expected: readonly string[]): boolean {
+  const keys = Object.keys(value);
+  return keys.length === expected.length && keys.every((key) => expected.includes(key));
 }
 
 function validateEventBatch(

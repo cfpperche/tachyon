@@ -6,12 +6,14 @@ import { startEngineControlServer, type RunningEngineControlServer } from "../..
 import { EngineEventJournal } from "../../src/engine-service/eventJournal.js";
 import type { StagedEngineBundle } from "../../src/engine-service/engineBundleStore.js";
 import {
+  ENGINE_SHELL_PROTOCOL,
   workspaceCommandSuccessV1,
   workspaceProbeViewSuccessV1,
   type EngineServiceIdentityV1,
   type WorkspaceSnapshotEnvelopeV1,
 } from "../../src/engine-service/protocol.js";
 import { connectRemoteWorkspaceClient } from "../../src/shell/WorkspaceClient.js";
+import { ENGINE_UI_CAPABILITY } from "../../src/engine-service/uiRequestBroker.js";
 import { workspaceHash } from "../../src/tmux/TmuxService.js";
 
 const roots: string[] = [];
@@ -43,6 +45,7 @@ describe("remote WorkspaceClient", () => {
     let firstSnapshot = snapshot(firstIdentity, 0, "initial");
     let currentIdentity = firstIdentity;
     let ensureCalls = 0;
+    const uiRequests: string[] = [];
     let currentServer = await startEngineControlServer({
       socketPath,
       identity: firstIdentity,
@@ -69,7 +72,11 @@ describe("remote WorkspaceClient", () => {
       workspaceRoot,
       bundle: dummyBundle(root),
       shell: { id: "shell-client-one", version: "0.57.0-test", locale: "en" },
-      capabilities: ["open-diff"],
+      capabilities: [ENGINE_UI_CAPABILITY, "open-diff"],
+      uiHandler: async (request) => {
+        uiRequests.push(request.operationId);
+        return request.kind === "execute-command" ? { command: request.command } : null;
+      },
       settings: { global: { "tachyon.maxAgents": 4 } },
       ensure: async () => {
         ensureCalls += 1;
@@ -86,6 +93,17 @@ describe("remote WorkspaceClient", () => {
     expect(client.bridgeUrl).toBe(`http://127.0.0.1:${firstIdentity.bridge.port}/mcp`);
     expect(currentServer.shellCount()).toBe(1);
     expect(ensureCalls).toBe(1);
+
+    const uiOutcome = currentServer.requestUi({
+      schemaVersion: 1,
+      operationId: "ui-client-command-0001",
+      kind: "execute-command",
+      command: "tachyon.doctor",
+      args: [firstIdentity.workspaceHash],
+    });
+    await client.sync();
+    await expect(uiOutcome).resolves.toEqual({ command: "tachyon.doctor" });
+    expect(uiRequests).toEqual(["ui-client-command-0001"]);
 
     const observed: Array<{ resynced: boolean; engineChanged: boolean; marker: unknown }> = [];
     client.subscribe((result) => observed.push({
@@ -326,7 +344,7 @@ function identity(workspaceRoot: string, instanceId: string, bridgeInstanceId: s
     startedAt: new Date().toISOString(),
     bundleId: "a".repeat(64),
     engineVersion: "0.57.0-test",
-    protocol: { min: 1, max: 1 },
+    protocol: { min: ENGINE_SHELL_PROTOCOL, max: ENGINE_SHELL_PROTOCOL },
     bridge: { instanceId: bridgeInstanceId, port: instanceId === "engine-two" ? 43_002 : 43_001 },
   };
 }

@@ -18,6 +18,7 @@ import {
   isWorkspaceQueryV1,
   type EngineServiceIdentityV1,
   type EngineShellHelloV1,
+  type EngineUiRequestV1,
   type WorkspaceEventV1,
   type WorkspaceCommandResultV1,
   type WorkspaceCommandV1,
@@ -25,11 +26,13 @@ import {
   type WorkspaceQueryV1,
   type WorkspaceSnapshotEnvelopeV1,
 } from "../engine-service/protocol.js";
+import { ENGINE_UI_CAPABILITY } from "../engine-service/uiRequestBroker.js";
 import { workspaceHash } from "../tmux/TmuxService.js";
 import type { StagedPayloadRefV1 } from "../runtime-api/stagedPayload.js";
 import { StagedPayloadStore } from "../engine-service/stagedPayloadStore.js";
 import type { DaemonSettingsSnapshot } from "../workspace/DaemonEngineHost.js";
 import type { EngineStateMigrationProvider } from "../engine-service/stateMigration.js";
+import { isJsonValue, type JsonValue } from "../runtime-api/extensionOperations.js";
 import {
   assertWorkspacePresentationIdentity,
   projectWorkspacePresentation,
@@ -49,6 +52,7 @@ export interface WorkspaceClientSyncResult {
 }
 
 export type WorkspaceClientListener = (result: WorkspaceClientSyncResult) => void;
+export type WorkspaceUiRequestHandler = (request: EngineUiRequestV1) => Promise<JsonValue | undefined>;
 
 export interface WorkspaceStagedPayload {
   readonly ref: StagedPayloadRefV1;
@@ -84,6 +88,7 @@ export interface ConnectRemoteWorkspaceClientOptions {
   capabilities?: string[];
   settings?: DaemonSettingsSnapshot;
   migrationProvider?: EngineStateMigrationProvider;
+  uiHandler?: WorkspaceUiRequestHandler;
   supervisor?: Omit<EnsureDaemonEngineOptions, "workspaceRoot" | "bundle" | "settings" | "migrationProvider">;
   /** Deterministic test/platform seam; production uses ensureDaemonEngine. */
   ensure?: EnsureEngine;
@@ -134,6 +139,7 @@ export class RemoteWorkspaceClient implements WorkspaceClient {
   private readonly ensureEngine: EnsureEngine;
   private readonly ensureOptions: EnsureDaemonEngineOptions;
   private readonly listeners = new Set<WorkspaceClientListener>();
+  private readonly uiHandler: WorkspaceUiRequestHandler | undefined;
   private control!: EngineControlClient;
   private currentIdentity!: EngineServiceIdentityV1;
   private currentSnapshot!: WorkspaceSnapshotEnvelopeV1;
@@ -158,6 +164,9 @@ export class RemoteWorkspaceClient implements WorkspaceClient {
       || new Set(capabilities).size !== capabilities.length) {
       throw new RemoteWorkspaceClientError("INVALID_SHELL", "shell capabilities must be unique bounded strings");
     }
+    if (capabilities.includes(ENGINE_UI_CAPABILITY) !== (options.uiHandler !== undefined)) {
+      throw new RemoteWorkspaceClientError("INVALID_SHELL", "tachyon.ui capability and UI handler must be supplied together");
+    }
     const settingsDigest = digestSettings(options.settings);
     const settings = options.settings === undefined ? undefined : cloneJson(options.settings);
     this.hello = {
@@ -171,6 +180,7 @@ export class RemoteWorkspaceClient implements WorkspaceClient {
       settingsDigest,
     };
     this.ensureEngine = options.ensure ?? ensureDaemonEngine;
+    this.uiHandler = options.uiHandler;
     this.ensureOptions = {
       ...options.supervisor,
       workspaceRoot: this.workspaceRoot,
@@ -279,6 +289,7 @@ export class RemoteWorkspaceClient implements WorkspaceClient {
 
   private async syncOnce(limit: number): Promise<WorkspaceClientSyncResult> {
     try {
+      await this.serviceUiRequest();
       const batch = await this.control.events(limit);
       if (batch.events.length === 0 && !batch.resyncRequired) {
         return this.result([], false, false);
@@ -291,6 +302,35 @@ export class RemoteWorkspaceClient implements WorkspaceClient {
       if (!isRecoverableConnectionLoss(error)) throw error;
       return this.reconnect();
     }
+  }
+
+  private async serviceUiRequest(): Promise<void> {
+    if (!this.uiHandler) return;
+    const request = await this.control.claimUiRequest();
+    if (!request) return;
+    let completion: Parameters<EngineControlClient["completeUiRequest"]>[0];
+    try {
+      const raw = await this.uiHandler(request);
+      const value = raw === undefined ? null : raw;
+      if (!isJsonValue(value)) throw new Error("editor UI handler returned a non-JSON value");
+      completion = {
+        schemaVersion: 1,
+        operationId: request.operationId,
+        status: "ok",
+        value,
+      };
+    } catch (error) {
+      const message = (error instanceof Error ? error.message : String(error)).replace(/\s+/gu, " ").trim().slice(0, 1_000)
+        || "editor UI operation failed";
+      completion = {
+        schemaVersion: 1,
+        operationId: request.operationId,
+        status: "error",
+        code: "UI_EXECUTION_FAILED",
+        message,
+      };
+    }
+    await this.control.completeUiRequest(completion);
   }
 
   private async reconnect(): Promise<WorkspaceClientSyncResult> {
