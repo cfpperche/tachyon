@@ -1,0 +1,34 @@
+# t-eddf90 dogfood fixture — mixed agent roster for Live / Needs you / Stopped chips.
+# Open via Dev Host (F5), not monorepo root.
+#
+# After F5: Agents tab should show filter chips under AGENTS.
+# Spawn/stop a few to exercise counts, or leave declared rows idle/stopped as they settle.
+agents:
+  live-a:
+    cmd: bash
+    kind: agent
+    autostart: true
+  live-b:
+    cmd: bash
+    kind: agent
+    autostart: true
+  needs-gate:
+    cmd: bash
+    kind: agent
+    autostart: false
+  stopped-a:
+    cmd: bash
+    kind: agent
+    autostart: false
+  stopped-b:
+    cmd: bash
+    kind: agent
+    autostart: false
+  cemetery:
+    cmd: bash
+    kind: agent
+    autostart: false
+
+commands:
+  hello:
+    cmd: "echo sidebar-agent-status-filter-dogfood-ok"
