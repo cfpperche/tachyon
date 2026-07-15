@@ -13,6 +13,9 @@ import {
   negotiateEngineShellProtocol,
   workspaceCommandSuccessV1,
   workspaceActivityContextSuccessV1,
+  workspaceHandoffDistillSuccessV1,
+  workspaceHandoffEnsureSuccessV1,
+  workspaceHandoffViewSuccessV1,
   workspaceMissionControlViewSuccessV1,
   workspacePinStudioApplySuccessV1,
   workspacePinStudioViewSuccessV1,
@@ -350,6 +353,63 @@ describe("persistent engine protocol", () => {
     });
     expect(isWorkspaceQueryResultV1(result)).toBe(true);
     if (result.status !== "ok" || result.method !== "pin.studio") throw new Error("expected Pin Studio result");
+    expect(isWorkspaceQueryResultV1({ ...result, view: { ...result.view, extra: true } })).toBe(false);
+  });
+
+  it("validates exact Project Handoff reads, materialization and distillation intent", () => {
+    const ensure = { schemaVersion: 1, method: "handoff.ensure", input: {} } as const;
+    const existing = {
+      schemaVersion: 1,
+      method: "handoff.distill",
+      input: { mode: "existing", agent: "codex", instructions: "Keep decisions" },
+    } as const;
+    const adhoc = {
+      schemaVersion: 1,
+      method: "handoff.distill",
+      input: { mode: "adhoc", profileId: "claude:default", args: "--model sonnet" },
+    } as const;
+    expect(isWorkspaceCommandV1(ensure)).toBe(true);
+    expect(isWorkspaceCommandV1(existing)).toBe(true);
+    expect(isWorkspaceCommandV1(adhoc)).toBe(true);
+    expect(isWorkspaceCommandV1({ ...ensure, input: { extra: true } })).toBe(false);
+    expect(isWorkspaceCommandV1({ ...existing, input: { ...existing.input, agent: "../escape" } })).toBe(false);
+    expect(isWorkspaceCommandV1({ ...adhoc, input: { ...adhoc.input, profileId: "bash:default" } })).toBe(false);
+    expect(isWorkspaceCommandV1({ ...adhoc, input: { ...adhoc.input, args: "--model sonnet\nrm nope" } })).toBe(false);
+
+    expect(workspaceHandoffEnsureSuccessV1(ensure, ".tachyon/HANDOFF.md")).toEqual({
+      schemaVersion: 1,
+      method: "handoff.ensure",
+      status: "ok",
+      canonicalRelativePath: ".tachyon/HANDOFF.md",
+    });
+    expect(() => workspaceHandoffEnsureSuccessV1(ensure, "../outside.md")).toThrow(/invalid/i);
+    expect(() => workspaceHandoffEnsureSuccessV1(ensure, "C:/outside.md")).toThrow(/invalid/i);
+    expect(workspaceHandoffDistillSuccessV1(existing, { mode: "existing", agent: "codex" }))
+      .toMatchObject({ method: "handoff.distill", status: "ok", mode: "existing", agent: "codex" });
+    expect(() => workspaceHandoffDistillSuccessV1(existing, { mode: "existing", agent: "reviewer" }))
+      .toThrow(/changed its requested agent/i);
+    expect(() => workspaceCommandSuccessV1(ensure)).toThrow(/exact outcome/i);
+
+    const query = { schemaVersion: 1, method: "handoff.view", input: {} } as const;
+    expect(isWorkspaceQueryV1(query)).toBe(true);
+    expect(isWorkspaceQueryV1({ ...query, input: { extra: true } })).toBe(false);
+    const result = workspaceHandoffViewSuccessV1({
+      schemaVersion: 1,
+      handoff: {
+        canonicalRelativePath: ".tachyon/HANDOFF.md",
+        exists: false,
+        body: "",
+        staleness: "fresh",
+        pendingCount: 0,
+        updatedAt: "",
+        updatedBy: "",
+        revision: "",
+        notes: [],
+        distillTargets: [],
+      },
+    });
+    expect(isWorkspaceQueryResultV1(result)).toBe(true);
+    if (result.status !== "ok" || result.method !== "handoff.view") throw new Error("expected Handoff result");
     expect(isWorkspaceQueryResultV1({ ...result, view: { ...result.view, extra: true } })).toBe(false);
   });
 

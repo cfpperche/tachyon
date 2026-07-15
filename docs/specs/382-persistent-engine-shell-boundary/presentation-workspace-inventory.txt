@@ -1,5 +1,4 @@
 # Direct concrete Workspace imports still owned by the VS Code shell/presentation cutover.
 # This list is executable debt: workspacePresentationBoundary.test.ts must match it exactly and it may only shrink.
 src/extension.ts
-src/webview/HandoffPanel.ts
 src/webview/SidebarPrototype.ts

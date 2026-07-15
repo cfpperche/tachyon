@@ -86,6 +86,11 @@ export type SetResult =
   | { ok: true; revision: string; path: string }
   | { ok: false; reason: "cas_mismatch"; current: string };
 
+export interface EnsureResult {
+  created: boolean;
+  path: string;
+}
+
 /** sha256(body) → short CAS token. PURE. */
 export function revisionOf(body: string): string {
   return crypto.createHash("sha256").update(body, "utf8").digest("hex").slice(0, 16);
@@ -308,6 +313,36 @@ export class ProjectHandoffStore {
     fs.writeFileSync(tmp, text, "utf8");
     fs.renameSync(tmp, this.canonicalPath);
     return { ok: true, revision: revisionOf(body.trim()), path: this.canonicalPath };
+  }
+
+  /**
+   * Materialize a first canonical without ever replacing an incumbent.  A completed temp file is hard-linked
+   * into place, so concurrent shell ensures converge and a Bridge/human write that wins the race is preserved.
+   */
+  ensureCanonical(body: string, updatedBy: "human" | "agent" | "tachyon" = "human"): EnsureResult {
+    if (fs.existsSync(this.canonicalPath)) return { created: false, path: this.canonicalPath };
+    const meta: HandoffMeta = {
+      version: 1,
+      updated_at: this.now().toISOString(),
+      updated_by: updatedBy,
+    };
+    const text = serializeCanonical(meta, body);
+    fs.mkdirSync(path.dirname(this.canonicalPath), { recursive: true });
+    const tmp = `${this.canonicalPath}.tmp-${process.pid}-${crypto.randomBytes(4).toString("hex")}`;
+    try {
+      fs.writeFileSync(tmp, text, { encoding: "utf8", flag: "wx" });
+      try {
+        fs.linkSync(tmp, this.canonicalPath);
+        return { created: true, path: this.canonicalPath };
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+          return { created: false, path: this.canonicalPath };
+        }
+        throw error;
+      }
+    } finally {
+      try { fs.unlinkSync(tmp); } catch { /* the temp may not have been created */ }
+    }
   }
 
   /** A read-only snapshot for the Bridge (`get`) + the sidebar panel: canonical + pending count + staleness. */

@@ -13,19 +13,19 @@ export const HANDOFF_DISTILL_PROFILES: HandoffDistillProfileVM[] = [
   { id: "claude:default", runtime: "claude", label: "Claude — runtime default", command: "claude", note: "Uses the local Claude CLI configuration. Add runtime arguments below to override." },
 ];
 
-const MAX_ADDITIONAL_INSTRUCTION = 2000;
-const MAX_ADHOC_ARGS = 500;
+export const MAX_HANDOFF_ADDITIONAL_INSTRUCTION = 2000;
+export const MAX_HANDOFF_ADHOC_ARGS = 500;
 
 export function normalizeAdditionalInstruction(raw: unknown): string {
   if (typeof raw !== "string") return "";
-  return raw.trim().replace(/\r\n?/g, "\n").slice(0, MAX_ADDITIONAL_INSTRUCTION);
+  return raw.trim().replace(/\r\n?/g, "\n").slice(0, MAX_HANDOFF_ADDITIONAL_INSTRUCTION);
 }
 
 export function normalizeHandoffDistillArgs(raw: unknown): string {
   if (typeof raw !== "string") return "";
   const trimmed = raw.trim();
   if (!trimmed || /[\0\r\n]/.test(trimmed)) return "";
-  return trimmed.slice(0, MAX_ADHOC_ARGS).trim();
+  return trimmed.slice(0, MAX_HANDOFF_ADHOC_ARGS).trim();
 }
 
 export function buildHandoffDistillCommand(profile: HandoffDistillProfileVM, args?: unknown): string {

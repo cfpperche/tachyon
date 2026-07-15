@@ -36,6 +36,7 @@ export const __createdTerminals: Array<{
   dispose(): void;
 }> = [];
 const __executedCommands: Array<{ command: string; args: unknown[] }> = [];
+const __shownDocuments: Array<{ uri: Uri; options: unknown }> = [];
 const __warningMessageCalls: Array<{ message: string; options: unknown; actions: string[] }> = [];
 
 export function __resetVscodeMock(): void {
@@ -43,6 +44,7 @@ export function __resetVscodeMock(): void {
   __registeredWebviewPanelSerializers.splice(0);
   __createdTerminals.splice(0);
   __executedCommands.splice(0);
+  __shownDocuments.splice(0);
   __warningMessageCalls.splice(0);
   __openDialogResult = undefined;
   __clipboardText = "";
@@ -63,6 +65,9 @@ export function __getClipboardText(): string {
 }
 export function __getExecutedCommands(): Array<{ command: string; args: unknown[] }> {
   return [...__executedCommands];
+}
+export function __getShownDocuments(): Array<{ uri: Uri; options: unknown }> {
+  return [...__shownDocuments];
 }
 export function __getWarningMessageCalls(): Array<{ message: string; options: unknown; actions: string[] }> {
   return [...__warningMessageCalls];
@@ -94,6 +99,10 @@ export const window = {
     return Promise.resolve(__warningMessageResult);
   },
   showErrorMessage: () => Promise.resolve(undefined),
+  showTextDocument: (uri: Uri, options?: unknown) => {
+    __shownDocuments.push({ uri, options });
+    return Promise.resolve({});
+  },
   showOpenDialog: () => Promise.resolve(__openDialogResult),
   createTerminal: (options?: unknown) => {
     const terminal = {

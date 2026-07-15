@@ -497,3 +497,31 @@ None.
 - No additional global full run was made: the first reviewable proof (343 files, 4,068 passed, 3 skipped)
   remains the intermediate gate reserved until final closure.  Production activation remains legacy; Handoff,
   SidebarPrototype and `extension.ts` are the three remaining concrete Workspace consumers.
+
+## Twenty-third implementation slice — 2026-07-14
+
+- Added a strict daemon-owned Project Handoff view plus exact, idempotency-keyed `handoff.ensure` and
+  `handoff.distill` operations.  The full canonical snapshot, bounded pending notes and authority-derived
+  distillation targets now cross one versioned contract; the shell receives only a safe workspace-relative
+  file identity and resolves it locally after daemon materialization.
+- Moved distillation selection, lifecycle transition and prompt delivery into one shared application service.
+  Existing targets are revalidated at the manager before resume/start and again immediately before pane input;
+  ad-hoc targets remain restricted to the declared Codex/Claude profiles.  Legacy and daemon targets share the
+  same behavior, while daemon-owned starts deliberately avoid editor reveal side effects.
+- Made cold Handoff creation no-replace and race-safe with a completed same-directory temporary file plus an
+  atomic hard-link claim.  A concurrent human/Bridge writer is never overwritten.  Path proof now checks the
+  lexical workspace root before any canonical read, checks existing ancestors against the physical root, and
+  re-proves the created regular file before the editor opens it; valid workspaces opened through symlinks remain
+  supported.
+- Migrated `HandoffPanel` off concrete Workspace, manager, ledger, tmux and filesystem ownership.  Async refresh
+  generations prevent stale results from overwriting a newer view, and open/distill failures surface through
+  the existing notification channel.  The concrete presentation inventory shrank from three files to two:
+  `SidebarPrototype.ts` and the final `extension.ts` registry/cutover.
+- The final related matrix passes 79/79; typecheck, extension/engine build, the 195-file editor-free daemon import
+  closure and diff-check are green.  Packaged `systemd --user` dogfood exercised cold/warm `handoff.view`,
+  `handoff.ensure`, local file hydration and every prior flow, converged concurrent starts, reused the exact
+  engine and left its disposable unit/process/tmux state clean.
+- No additional global full run was made: the first reviewable proof (343 files, 4,068 passed, 3 skipped)
+  remains the intermediate gate reserved until final closure.  Production activation is still intentionally
+  legacy; the next slice migrates `SidebarPrototype`, then the single registry cutover removes shell-owned
+  Workspace construction rather than enabling mixed lifecycle ownership.

@@ -141,6 +141,39 @@ describe("daemon engine service", () => {
         },
       });
 
+    const coldHandoff = await first.query({ schemaVersion: 1, method: "handoff.view", input: {} });
+    expect(coldHandoff).toMatchObject({
+      method: "handoff.view",
+      status: "ok",
+      view: {
+        handoff: {
+          canonicalRelativePath: ".tachyon/HANDOFF.md",
+          exists: false,
+          pendingCount: 0,
+          distillTargets: [{ name: "worker", state: "stopped", declared: true }],
+        },
+      },
+    });
+    const ensureHandoff = {
+      schemaVersion: 1 as const,
+      method: "handoff.ensure" as const,
+      input: {},
+    };
+    const ensuredHandoff = await first.invoke("operation-handoff-ensure-0001", ensureHandoff);
+    expect(ensuredHandoff).toEqual({
+      schemaVersion: 1,
+      method: "handoff.ensure",
+      status: "ok",
+      canonicalRelativePath: ".tachyon/HANDOFF.md",
+    });
+    expect(await first.invoke("operation-handoff-ensure-0001", ensureHandoff)).toEqual(ensuredHandoff);
+    await waitForEvent(first, (event) => event.kind === "views-changed" && event.payload.view === "handoff");
+    expect(fs.readFileSync(path.join(workspaceRoot, ".tachyon", "HANDOFF.md"), "utf8")).toContain("## Current State");
+    expect(await first.query({ schemaVersion: 1, method: "handoff.view", input: {} })).toMatchObject({
+      status: "ok",
+      view: { handoff: { exists: true, updatedBy: "human", revision: expect.stringMatching(/^[a-f0-9]{16}$/) } },
+    });
+
     const initialBoard = await first.query({ schemaVersion: 1, method: "task.board", input: { liveAdhocAgents: ["reviewer"] } });
     expect(initialBoard).toMatchObject({
       method: "task.board",

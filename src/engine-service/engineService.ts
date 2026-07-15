@@ -10,9 +10,16 @@ import {
 } from "../activity/ActivityLogManager.js";
 import { readLinuxProcessIdentity } from "../delivery/reloadReconciliation.js";
 import { DaemonEngineHost, type DaemonHostEvent, type DaemonSettingsSnapshot } from "../workspace/DaemonEngineHost.js";
+import type { ViewKind } from "../workspace/EngineHost.js";
 import { Workspace } from "../workspace/Workspace.js";
 import { sendManagedAgentInput } from "../agents/agentInputService.js";
+import {
+  startHandoffDistillation,
+  workspaceHandoffDistillOperations,
+} from "../handoff/handoffDistillService.js";
+import { ensureProjectHandoffFile } from "../handoff/handoffFileService.js";
 import { projectActivityContext } from "../runtime-api/activityProjection.js";
+import { projectHandoffView } from "../runtime-api/handoffProjection.js";
 import type { WorkspaceCoreProjectionsV1 } from "../runtime-api/workspaceProjection.js";
 import { buildBoardSnapshot } from "../tasks/boardSnapshot.js";
 import { projectMissionControlBoard } from "../runtime-api/missionControlProjection.js";
@@ -49,6 +56,9 @@ import {
   isSha256,
   workspaceActivityContextSuccessV1,
   workspaceCommandSuccessV1,
+  workspaceHandoffDistillSuccessV1,
+  workspaceHandoffEnsureSuccessV1,
+  workspaceHandoffViewSuccessV1,
   workspaceMissionControlViewSuccessV1,
   workspacePinStudioApplySuccessV1,
   workspacePinStudioViewSuccessV1,
@@ -202,6 +212,14 @@ async function executeWorkspaceQuery(
       context: await projectActivityContext(workspace, query.input.agent),
     });
   }
+  if (query.method === "handoff.view") {
+    return workspaceHandoffViewSuccessV1(await projectHandoffView({
+      workspaceRoot: workspace.workspaceRoot,
+      store: workspace.handoffStore,
+      lastActivityAt: workspace.lastActivityAt(),
+      distill: workspaceHandoffDistillOperations(workspace, { reveal: false }),
+    }));
+  }
   if (query.method === "task.board") {
     return workspaceMissionControlViewSuccessV1({
       schemaVersion: 1,
@@ -240,8 +258,20 @@ async function executeWorkspaceCommand(
   activityLog: ActivityLogManager,
   stagedPayloads: StagedPayloadStore,
   command: WorkspaceCommandV1,
-  onViewsChanged: (view: "tasks" | "pins") => void,
+  onViewsChanged: (view: ViewKind) => void,
 ): Promise<WorkspaceCommandResultV1> {
+  if (command.method === "handoff.ensure") {
+    const ensured = ensureProjectHandoffFile(workspace.workspaceRoot, workspace.handoffStore);
+    if (ensured.created) onViewsChanged("handoff");
+    return workspaceHandoffEnsureSuccessV1(command, ensured.relativePath);
+  }
+  if (command.method === "handoff.distill") {
+    const result = await startHandoffDistillation(
+      workspaceHandoffDistillOperations(workspace, { reveal: false }),
+      command.input,
+    );
+    return workspaceHandoffDistillSuccessV1(command, result);
+  }
   if (command.method === "studio.submit") {
     return workspaceCommandSuccessV1(command, workspace.studioSubmit(command.input));
   }

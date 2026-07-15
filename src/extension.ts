@@ -57,6 +57,7 @@ import { isAdhocItem } from "./presentation/contextValue.js";
 import { Workspace, type ViewKind } from "./workspace/Workspace.js";
 import type { WorkspacePresentationTarget } from "./shell/WorkspacePresentation.js";
 import { legacyActivityTarget } from "./shell/ActivityTarget.js";
+import { legacyHandoffTarget } from "./shell/HandoffTarget.js";
 import { legacyMissionControlTarget } from "./shell/MissionControlTarget.js";
 import { legacyPinStudioTarget } from "./shell/PinStudioTarget.js";
 import { legacyTaskDetailTarget } from "./shell/TaskDetailTarget.js";
@@ -650,7 +651,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   );
   context.subscriptions.push({ dispose: () => activityPanels.dispose() });
   // spec 245 — the editor-area Project Handoff panel (read-only doc + pending notes + staleness; one per root).
-  const handoffPanels = new HandoffPanelManager(context.extensionUri, workspaces);
+  const handoffPanels = new HandoffPanelManager(
+    context.extensionUri,
+    () => workspaces().map(legacyHandoffTarget),
+  );
   context.subscriptions.push({ dispose: () => handoffPanels.dispose() });
   // spec 349 — first-party host for untrusted plugin UI surfaces. It reads committed plugin lockfiles and
   // revokes open channels when an installed view target disappears.

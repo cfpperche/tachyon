@@ -101,6 +101,17 @@ describe("ProjectHandoffStore — fs (spec 245)", () => {
     expect(store.canonicalPath.endsWith(path.join(".tachyon", "HANDOFF.md"))).toBe(true);
   });
 
+  it("ensureCanonical creates once and never replaces an incumbent canonical", () => {
+    const store = new ProjectHandoffStore(freshWs());
+    expect(store.ensureCanonical(HANDOFF_TEMPLATE)).toMatchObject({ created: true });
+    const revision = store.readCanonical()!.revision;
+    store.setCanonical("human won the race", revision, "human");
+
+    expect(store.ensureCanonical(HANDOFF_TEMPLATE)).toMatchObject({ created: false });
+    expect(store.readCanonical()!.body).toBe("human won the race");
+    expect(fs.readdirSync(path.dirname(store.canonicalPath)).filter((name) => name.includes(".tmp-"))).toEqual([]);
+  });
+
   it("CAS: a rewrite with a stale revision is REJECTED (returns current body); with the right one, ACCEPTED", () => {
     const store = new ProjectHandoffStore(freshWs());
     store.setCanonical("v1 body", undefined);

@@ -9,7 +9,7 @@ import {
   normalizeHandoffDistillArgs,
   reconcileDistillSelection,
   resolveHandoffDistillProfile,
-} from "../../src/webview/handoff/distill.js";
+} from "../../src/handoff/distill.js";
 
 describe("handoff distill prompt (spec 328)", () => {
   it("requires read-first, human approval, CAS, and pending-note watermark", () => {

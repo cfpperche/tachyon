@@ -2,7 +2,7 @@ import { MarkdownView } from "../activity/markdown";
 import { Button } from "../shared/ui";
 import { useEffect, useState } from "preact/hooks";
 import { stalenessLabel, noteGlyph, relativeTime, type HandoffViewModel, type HandoffNoteVM } from "./handoffViewModel";
-import { buildHandoffDistillCommand, reconcileDistillSelection, type HandoffDistillMode } from "./distill";
+import { buildHandoffDistillCommand, reconcileDistillSelection, type HandoffDistillMode } from "../../handoff/distill";
 
 // spec 245 inc D — the Project Handoff panel (Preact, render-only). A calm, curated DOCUMENT view (not a
 // dashboard): a compact header + staleness badge, a metadata subline, the canonical handoff rendered as

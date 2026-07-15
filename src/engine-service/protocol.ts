@@ -9,6 +9,16 @@ import {
   type ActivityContextViewV1,
 } from "../runtime-api/activityProjection.js";
 import {
+  isHandoffDistillInputV1,
+  type HandoffDistillInputV1,
+} from "../runtime-api/handoffCommands.js";
+import {
+  isHandoffViewV1,
+  parseHandoffViewV1,
+  type HandoffViewV1,
+} from "../runtime-api/handoffProjection.js";
+import { isSafeHandoffRelativePath } from "../handoff/handoffPath.js";
+import {
   isMissionControlTaskReorderInputV1,
   isMissionControlTaskUpdateInputV1,
   isMissionControlValidationCloseInputV1,
@@ -166,11 +176,16 @@ export type WorkspaceCommandMethodV1 =
   | "task.prototype.review"
   | "task.studio.apply"
   | "task.studio.cancel"
-  | "pin.studio.apply";
+  | "pin.studio.apply"
+  | "handoff.ensure"
+  | "handoff.distill";
 
 export type WorkspaceAgentCommandMethodV1 = Extract<WorkspaceCommandMethodV1, `agent.${string}`>;
 export type WorkspaceAgentLifecycleCommandMethodV1 = Exclude<WorkspaceAgentCommandMethodV1, "agent.input">;
-export type WorkspaceSimpleCommandMethodV1 = Exclude<WorkspaceCommandMethodV1, "studio.submit" | "task.studio.apply" | "pin.studio.apply">;
+export type WorkspaceSimpleCommandMethodV1 = Exclude<
+  WorkspaceCommandMethodV1,
+  "studio.submit" | "task.studio.apply" | "pin.studio.apply" | "handoff.ensure" | "handoff.distill"
+>;
 
 /** Exact versioned wire shape of the five config-backed Studio forms. */
 export interface WorkspaceStudioFormV1 {
@@ -245,6 +260,14 @@ export type WorkspaceCommandV1 = {
   schemaVersion: 1;
   method: "pin.studio.apply";
   input: PinStudioApplyInputV1;
+} | {
+  schemaVersion: 1;
+  method: "handoff.ensure";
+  input: Record<string, never>;
+} | {
+  schemaVersion: 1;
+  method: "handoff.distill";
+  input: HandoffDistillInputV1;
 };
 
 export type WorkspaceCommandResultV1 =
@@ -282,13 +305,26 @@ export type WorkspaceCommandResultV1 =
     }
   | {
       schemaVersion: 1;
+      method: "handoff.ensure";
+      status: "ok";
+      canonicalRelativePath: string;
+    }
+  | {
+      schemaVersion: 1;
+      method: "handoff.distill";
+      status: "ok";
+      mode: HandoffDistillInputV1["mode"];
+      agent: string;
+    }
+  | {
+      schemaVersion: 1;
       method: WorkspaceCommandMethodV1;
       status: "error";
       code: string;
       message: string;
     };
 
-export type WorkspaceQueryMethodV1 = "activity.context" | "probe.view" | "task.board" | "task.detail" | "task.studio" | "pin.studio";
+export type WorkspaceQueryMethodV1 = "activity.context" | "probe.view" | "task.board" | "task.detail" | "task.studio" | "pin.studio" | "handoff.view";
 
 export interface WorkspaceProbeViewRowV1 {
   runId: string;
@@ -343,6 +379,11 @@ export type WorkspaceQueryV1 =
       schemaVersion: 1;
       method: "pin.studio";
       input: { id: string };
+    }
+  | {
+      schemaVersion: 1;
+      method: "handoff.view";
+      input: Record<string, never>;
     };
 
 export type WorkspaceQueryResultV1 =
@@ -384,6 +425,12 @@ export type WorkspaceQueryResultV1 =
     }
   | {
       schemaVersion: 1;
+      method: "handoff.view";
+      status: "ok";
+      view: HandoffViewV1;
+    }
+  | {
+      schemaVersion: 1;
       method: WorkspaceQueryMethodV1;
       status: "error";
       code: string;
@@ -418,6 +465,7 @@ export const MISSION_CONTROL_RESPONSE_MAX_BYTES = 32 * 1024 * 1024;
 export const TASK_DETAIL_RESPONSE_MAX_BYTES = 2 * 1024 * 1024;
 export const TASK_STUDIO_RESPONSE_MAX_BYTES = 32 * 1024 * 1024;
 export const PIN_STUDIO_RESPONSE_MAX_BYTES = 32 * 1024 * 1024;
+export const HANDOFF_VIEW_RESPONSE_MAX_BYTES = 16 * 1024 * 1024;
 const WORKSPACE_COMMAND_METHODS = new Set<WorkspaceCommandMethodV1>([
   "agent.start",
   "agent.stop",
@@ -433,6 +481,8 @@ const WORKSPACE_COMMAND_METHODS = new Set<WorkspaceCommandMethodV1>([
   "task.studio.apply",
   "task.studio.cancel",
   "pin.studio.apply",
+  "handoff.ensure",
+  "handoff.distill",
 ]);
 
 export function isSha256(value: unknown): value is string {
@@ -459,6 +509,8 @@ export function isWorkspaceCommandV1(value: unknown): value is WorkspaceCommandV
   if (value.method === "task.studio.apply") return isTaskStudioApplyInputV1(value.input);
   if (value.method === "task.studio.cancel") return isTaskStudioCancelInputV1(value.input);
   if (value.method === "pin.studio.apply") return isPinStudioApplyInputV1(value.input);
+  if (value.method === "handoff.ensure") return hasOnlyKeys(value.input, []);
+  if (value.method === "handoff.distill") return isHandoffDistillInputV1(value.input);
   return hasOnlyKeys(value.input, ["agent"])
     && typeof value.input.agent === "string"
     && AGENT_NAME_RE.test(value.input.agent);
@@ -521,11 +573,23 @@ export function isWorkspaceCommandResultV1(value: unknown): value is WorkspaceCo
         || (value.action === "put-sketch" && attachment.data.kind === "excalidraw"))
       && typeof value.overSoftLimit === "boolean";
   }
+  if (value.status === "ok" && value.method === "handoff.ensure") {
+    return hasOnlyKeys(value, ["schemaVersion", "method", "status", "canonicalRelativePath"])
+      && isSafeHandoffRelativePath(value.canonicalRelativePath);
+  }
+  if (value.status === "ok" && value.method === "handoff.distill") {
+    return hasOnlyKeys(value, ["schemaVersion", "method", "status", "mode", "agent"])
+      && (value.mode === "existing" || value.mode === "adhoc")
+      && typeof value.agent === "string"
+      && AGENT_NAME_RE.test(value.agent);
+  }
   if (value.status === "ok") {
     return hasOnlyKeys(value, ["schemaVersion", "method", "status"])
       && value.method !== "studio.submit"
       && value.method !== "task.studio.apply"
-      && value.method !== "pin.studio.apply";
+      && value.method !== "pin.studio.apply"
+      && value.method !== "handoff.ensure"
+      && value.method !== "handoff.distill";
   }
   return value.status === "error"
     && hasOnlyKeys(value, ["schemaVersion", "method", "status", "code", "message"])
@@ -563,6 +627,7 @@ export function isWorkspaceQueryV1(value: unknown): value is WorkspaceQueryV1 {
       && typeof value.input.id === "string"
       && /^p-[0-9a-f]{6}$/.test(value.input.id);
   }
+  if (value.method === "handoff.view") return hasOnlyKeys(value.input, []);
   if (value.method !== "probe.view") return false;
   const keys = Object.keys(value.input);
   return keys.every((key) => key === "caller")
@@ -572,7 +637,7 @@ export function isWorkspaceQueryV1(value: unknown): value is WorkspaceQueryV1 {
 
 export function isWorkspaceQueryResultV1(value: unknown): value is WorkspaceQueryResultV1 {
   if (!isRecord(value) || value.schemaVersion !== 1
-    || (value.method !== "activity.context" && value.method !== "probe.view" && value.method !== "task.board" && value.method !== "task.detail" && value.method !== "task.studio" && value.method !== "pin.studio")) return false;
+    || (value.method !== "activity.context" && value.method !== "probe.view" && value.method !== "task.board" && value.method !== "task.detail" && value.method !== "task.studio" && value.method !== "pin.studio" && value.method !== "handoff.view")) return false;
   if (value.status === "ok") {
     return hasOnlyKeys(value, ["schemaVersion", "method", "status", "view"])
       && (value.method === "activity.context"
@@ -585,7 +650,9 @@ export function isWorkspaceQueryResultV1(value: unknown): value is WorkspaceQuer
               ? isTaskDetailViewV1(value.view)
               : value.method === "task.studio"
                 ? isTaskStudioViewV1(value.view)
-                : isPinStudioViewV1(value.view));
+                : value.method === "pin.studio"
+                  ? isPinStudioViewV1(value.view)
+                  : isHandoffViewV1(value.view));
   }
   return value.status === "error"
     && hasOnlyKeys(value, ["schemaVersion", "method", "status", "code", "message"])
@@ -673,6 +740,20 @@ export function workspacePinStudioViewSuccessV1(view: PinStudioViewV1): Workspac
   return result;
 }
 
+export function workspaceHandoffViewSuccessV1(view: HandoffViewV1): WorkspaceQueryResultV1 {
+  const result = {
+    schemaVersion: 1,
+    method: "handoff.view",
+    status: "ok",
+    view: parseHandoffViewV1(view),
+  } as const;
+  const transportEnvelope = { ok: true as const, op: "query" as const, result };
+  if (Buffer.byteLength(`${JSON.stringify(transportEnvelope)}\n`, "utf8") > HANDOFF_VIEW_RESPONSE_MAX_BYTES) {
+    throw new Error("Project Handoff view exceeds its dedicated response size limit");
+  }
+  return result;
+}
+
 /** Builds and bounds the large board read without relaxing the 64 KiB limit of any other control response. */
 export function workspaceMissionControlViewSuccessV1(view: MissionControlViewV1): WorkspaceQueryResultV1 {
   const result = {
@@ -730,8 +811,9 @@ export function workspaceCommandSuccessV1(
   command: WorkspaceCommandV1,
   studioErrors: readonly string[] = [],
 ): WorkspaceCommandResultV1 {
-  if (command.method === "task.studio.apply" || command.method === "pin.studio.apply") {
-    throw new Error("staged Studio apply commands require an exact outcome");
+  if (command.method === "task.studio.apply" || command.method === "pin.studio.apply"
+    || command.method === "handoff.ensure" || command.method === "handoff.distill") {
+    throw new Error("command requires an exact outcome");
   }
   if (command.method !== "studio.submit") {
     return { schemaVersion: 1, method: command.method, status: "ok" };
@@ -744,6 +826,39 @@ export function workspaceCommandSuccessV1(
     errors: normalized.slice(0, 50).map((error) => error.slice(0, 1_000)),
     truncated: normalized.length > 50 || normalized.some((error) => error.length > 1_000),
   };
+}
+
+export function workspaceHandoffEnsureSuccessV1(
+  command: Extract<WorkspaceCommandV1, { method: "handoff.ensure" }>,
+  canonicalRelativePath: string,
+): WorkspaceCommandResultV1 {
+  const candidate: WorkspaceCommandResultV1 = {
+    schemaVersion: 1,
+    method: command.method,
+    status: "ok",
+    canonicalRelativePath,
+  };
+  if (!isWorkspaceCommandResultV1(candidate)) throw new Error("Project Handoff ensure result is invalid");
+  return candidate;
+}
+
+export function workspaceHandoffDistillSuccessV1(
+  command: Extract<WorkspaceCommandV1, { method: "handoff.distill" }>,
+  result: { mode: HandoffDistillInputV1["mode"]; agent: string },
+): WorkspaceCommandResultV1 {
+  if (result.mode !== command.input.mode) throw new Error("Project Handoff distill result changed its requested mode");
+  if (command.input.mode === "existing" && result.agent !== command.input.agent) {
+    throw new Error("Project Handoff distill result changed its requested agent");
+  }
+  const candidate: WorkspaceCommandResultV1 = {
+    schemaVersion: 1,
+    method: command.method,
+    status: "ok",
+    mode: result.mode,
+    agent: result.agent,
+  };
+  if (!isWorkspaceCommandResultV1(candidate)) throw new Error("Project Handoff distill result is invalid");
+  return candidate;
 }
 
 export function workspaceTaskStudioApplySuccessV1(

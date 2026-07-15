@@ -13,6 +13,7 @@ import {
 import type { EngineServiceIdentityV1 } from "../../src/engine-service/protocol.js";
 import { connectRemoteWorkspaceClient, type WorkspaceClient } from "../../src/shell/WorkspaceClient.js";
 import { workspaceActivityTarget } from "../../src/shell/ActivityTarget.js";
+import { workspaceHandoffTarget } from "../../src/shell/HandoffTarget.js";
 import { ClientWorkspaceStudioTarget } from "../../src/shell/ClientWorkspaceStudioTarget.js";
 import { workspacePluginPresentationTarget } from "../../src/shell/WorkspacePresentation.js";
 import { workspaceMissionControlTarget } from "../../src/shell/MissionControlTarget.js";
@@ -149,6 +150,19 @@ try {
   if (activityContext.agent !== "dogfood-worker" || activityContext.sharedCwd || activityContext.targets.total !== 0) {
     throw new Error(`remote Activity context failed: ${JSON.stringify(activityContext)}`);
   }
+  const handoff = workspaceHandoffTarget(first);
+  const coldHandoff = await handoff.loadHandoff();
+  if (coldHandoff.exists || coldHandoff.canonicalRelativePath !== ".tachyon/HANDOFF.md"
+    || coldHandoff.distillTargets[0]?.name !== "dogfood-worker"
+    || coldHandoff.distillTargets[0]?.state !== "stopped") {
+    throw new Error(`remote Project Handoff cold projection failed: ${JSON.stringify(coldHandoff)}`);
+  }
+  const handoffFile = await handoff.ensureHandoffFile();
+  if (handoffFile !== fs.realpathSync(path.join(workspaceRoot, ".tachyon", "HANDOFF.md"))
+    || !fs.readFileSync(handoffFile, "utf8").includes("## Current State")) {
+    throw new Error("remote Project Handoff ensure/hydration failed");
+  }
+  if (!(await handoff.loadHandoff()).exists) throw new Error("remote Project Handoff did not observe its ensured file");
   const missionControl = workspaceMissionControlTarget(first);
   const initialBoard = await missionControl.boardSnapshot(["dogfood-reviewer"]);
   if (initialBoard.views[0]?.task.id !== dogfoodTask.id
@@ -334,9 +348,9 @@ try {
     engine: { pid: identity.pid, instanceId: identity.instanceId, bundleId: identity.bundleId },
     bridge: identity.bridge,
     snapshotSeq: snapshot.seq,
-    queries: ["activity.context", probes.method, "task.board", "task.detail", "task.studio", "pin.studio"],
+    queries: ["activity.context", probes.method, "handoff.view", "task.board", "task.detail", "task.studio", "pin.studio"],
     pluginFleet: pluginFleet.agents.map((agent) => ({ name: agent.name, status: agent.status })),
-    commands: ["agent.input", "pin.studio.apply", "task.studio.apply", "task.prototype.review", "task.update", "task.reorder-lane", "validation.close", "studio.submit", started.method, restarted.method, killed.method],
+    commands: ["handoff.ensure", "agent.input", "pin.studio.apply", "task.studio.apply", "task.prototype.review", "task.update", "task.reorder-lane", "validation.close", "studio.submit", started.method, restarted.method, killed.method],
   }, null, 2)}\n`);
 } finally {
   try { execFileSync("systemctl", ["--user", "stop", unitName], { stdio: "ignore" }); } catch { /* absent/failed unit */ }

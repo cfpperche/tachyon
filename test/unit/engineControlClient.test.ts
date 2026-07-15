@@ -9,6 +9,7 @@ import { startEngineControlServer, type RunningEngineControlServer } from "../..
 import { EngineEventJournal } from "../../src/engine-service/eventJournal.js";
 import {
   workspaceCommandSuccessV1,
+  workspaceHandoffViewSuccessV1,
   workspaceMissionControlViewSuccessV1,
   workspacePinStudioViewSuccessV1,
   workspaceProbeViewSuccessV1,
@@ -344,6 +345,40 @@ describe("EngineControlClient", () => {
     await client.attach();
     expect(await client.query({ schemaVersion: 1, method: "pin.studio", input: { id: "p-abc123" } }))
       .toMatchObject({ method: "pin.studio", status: "ok", view: { studio: { pinId: "p-abc123" } } });
+  });
+
+  it("allows the dedicated Project Handoff envelope above the ordinary 64 KiB response limit", async () => {
+    const f = fixture();
+    const result = workspaceHandoffViewSuccessV1({
+      schemaVersion: 1,
+      handoff: {
+        canonicalRelativePath: ".tachyon/HANDOFF.md",
+        exists: true,
+        body: "x".repeat(80_000),
+        staleness: "fresh",
+        pendingCount: 0,
+        updatedAt: "2026-07-14T12:00:00.000Z",
+        updatedBy: "human",
+        revision: "0123456789abcdef",
+        notes: [],
+        distillTargets: [],
+      },
+    });
+    expect(Buffer.byteLength(JSON.stringify({ ok: true, op: "query", result }), "utf8")).toBeGreaterThan(64 * 1024);
+    const server = await startEngineControlServer({
+      socketPath: f.socketPath,
+      identity: f.identity,
+      getSnapshot: f.snapshot,
+      query: async (query) => {
+        if (query.method !== "handoff.view") throw new Error("unexpected query");
+        return result;
+      },
+    });
+    servers.push(server);
+    const client = new EngineControlClient({ socketPath: f.socketPath, hello: f.hello });
+    await client.attach();
+    expect(await client.query({ schemaVersion: 1, method: "handoff.view", input: {} }))
+      .toMatchObject({ method: "handoff.view", status: "ok", view: { handoff: { exists: true } } });
   });
 
   it("invokes an operation by exact id without transport-level retries", async () => {
