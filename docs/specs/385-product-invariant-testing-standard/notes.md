@@ -72,6 +72,22 @@ _Questions surfaced during the build with no answer yet. Owner or path to resolu
 
 None. Governance roles, independent PI-001 proof, generic authority hardening and closure verification are complete.
 
+## Installed-upgrade follow-up — 2026-07-15
+
+- Installed `0.56.8` dogfood against the real Tachyon workspace found 21 canonical Delivery rows created before
+  authority sealing shipped. Every row is structurally readable but unsigned; all 21 are linked to historical
+  GitDelivery projections. The new store correctly refuses each row, but reload incorrectly promoted those
+  independent row failures into one workspace-wide Delivery failure and emitted an unbounded list of IDs.
+- Ratified containment: invalid authority remains unusable and is never auto-signed, repaired, deleted or trusted.
+  Reload treats each failed row as an unavailable Delivery identity, denies any session that binds to it, and
+  continues with independently valid signed rows. Database-level failure still fails the entire reload. This keeps
+  the spec's authority promise while preventing one historical or malicious row from becoming a global availability
+  switch. Explicit import/retirement remains separate human-authorized recovery work.
+- Closure evidence: rollback-tamper and pre-hardening regressions pass in the focused 76-test reload/workspace set;
+  typecheck and `npm run verify:full:quiet` pass on `0.56.9`. An offline disposable copy of the installed workspace
+  database reproduced the exact upgrade shape as `0` trusted + `21` quarantined rows, with all 21 classified
+  unavailable and the overall snapshot ready. The live database was never opened for mutation.
+
 ## Verification evidence
 
 _The evidence below predates the 2026-07-15 governance and authority-hardening additions. It is retained as

@@ -29,6 +29,9 @@ _Generated from the ratified plan on 2026-07-14. Task: `t-2b8808`._
       after a fallible setup/launch step; use a Git lock as the per-attempt recovery receipt, refuse reuse
       while an incomplete receipt survives, and allow an already-finalized unlocked checkout to be reused.
 - [x] Update the product-boundary registry and focused configuration/spawn/verification tests.
+- [x] **Upgrade containment follow-up (`t-82f4e6`):** quarantine invalid or pre-hardening canonical Delivery
+      rows individually during reload, keep their bound sessions unavailable, preserve the rows byte-for-byte,
+      and allow independently valid signed Deliveries plus the rest of the workspace to start normally.
 
 ## Verification
 
@@ -48,6 +51,8 @@ _Generated from the ratified plan on 2026-07-14. Task: `t-2b8808`._
       failures, including ignored or committed writes, with no automatic remove/reset race.
 - [x] `PI-001` and the project-neutral global primer/init boundary pass through focused tests.
 - [x] Typecheck, diff-check, focused suites and full verification pass.
+- [x] Upgrade regressions prove an unsigned/tampered row is never trusted, never auto-signed or deleted, cannot
+      make its bound session generically runnable, and cannot deny an unrelated valid signed Delivery or workspace.
 
 **Headless check:** `npm run test:invariants && npm exec -- vitest run test/unit/config.test.ts test/unit/configSchema.test.ts test/unit/deliveryStore.test.ts test/unit/verifyTask.test.ts test/unit/workspaceHeadless.test.ts test/unit/snBoundaryLocksBehavior.gen.test.ts`
 

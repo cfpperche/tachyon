@@ -66,6 +66,12 @@ export type ObservedProcess =
 
 export interface ReloadReconcileInput {
   deliveries: readonly Delivery[];
+  /**
+   * Rows that the authority store could identify but could not authenticate.
+   * Only the durable id is admitted here: callers must never deserialize or
+   * infer holder authority from an untrusted payload.
+   */
+  untrustedDeliveries?: readonly { id: string }[];
   /** Exact linked GitDelivery records (duplicates preserved; no last-wins). */
   linkedProjections: readonly LinkedGitProjection[];
   /** agent name → session ledger row */
@@ -338,6 +344,23 @@ export function reconcileDeliveryReload(input: ReloadReconcileInput): ReloadReco
   const byId = new Map<string, ReloadDeliveryClassification>();
   const unavailableAgents = new Set<string>();
   const knownDeliveryIds = new Set(input.deliveries.map((d) => d.id));
+
+  for (const untrusted of input.untrustedDeliveries ?? []) {
+    if (knownDeliveryIds.has(untrusted.id)) {
+      throw new Error(`reload reconciliation received trusted and untrusted rows for Delivery '${untrusted.id}'`);
+    }
+    knownDeliveryIds.add(untrusted.id);
+    const result: ReloadDeliveryClassification = {
+      deliveryId: untrusted.id,
+      class: "unavailable",
+      reason: "canonical Delivery authority could not be validated",
+    };
+    classifications.push(result);
+    byId.set(untrusted.id, result);
+    for (const { agent } of bindingsForDelivery(untrusted.id, input.sessions)) {
+      unavailableAgents.add(agent);
+    }
+  }
 
   for (const delivery of input.deliveries) {
     let result: ReloadDeliveryClassification;

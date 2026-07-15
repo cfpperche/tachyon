@@ -237,6 +237,41 @@ describe("reload reconciliation (SDD 368 T14)", () => {
     expect(snap.byId.get("d-q")).toMatchObject({ class: "quarantined" });
   });
 
+  it("isolates untrusted authority rows without trusting their payload or denying unrelated agents", () => {
+    const valid = baseDelivery({
+      id: "d-valid",
+      lease: { state: "free", changedAt: "t" },
+      segments: [],
+      gitDeliveryId: undefined,
+    });
+    const bound = session({
+      cwd: "/tmp/untrusted-bound",
+      delivery: { deliveryId: "d-untrusted", segmentId: "seg-old", executionNonce: "nonce-old" },
+    });
+    const unrelated = session({ cwd: "/tmp/unrelated" });
+
+    const snap = reconcileDeliveryReload({
+      deliveries: [valid],
+      untrustedDeliveries: [{ id: "d-untrusted" }],
+      linkedProjections: [],
+      sessions: new Map([
+        ["bound-agent", bound],
+        ["unrelated-agent", unrelated],
+      ]),
+      processByAgent: new Map(),
+    });
+
+    expect(snap.byId.get("d-untrusted")).toEqual({
+      deliveryId: "d-untrusted",
+      class: "unavailable",
+      reason: "canonical Delivery authority could not be validated",
+    });
+    expect(snap.byId.get("d-valid")?.class).toBe("terminal");
+    expect(snap.unavailableAgents.has("bound-agent")).toBe(true);
+    expect(snap.unavailableAgents.has("unrelated-agent")).toBe(false);
+    expect(snap.classifications).toHaveLength(2);
+  });
+
   it("marks pending/draining/verifying unavailable after reload", () => {
     for (const state of ["pending", "draining", "verifying"] as const) {
       const delivery = baseDelivery({

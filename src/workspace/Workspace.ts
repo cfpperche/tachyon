@@ -416,6 +416,8 @@ export class Workspace {
     | { phase: "uninitialized" }
     | { phase: "ready"; snapshot: ReloadReconciliationSnapshot }
     | { phase: "failed"; reason: string } = { phase: "uninitialized" };
+  /** Suppresses the duplicate factory/start warning for one unchanged quarantine set. */
+  private deliveryAuthorityQuarantineNoticeKey?: string;
   readonly monitor: AttentionMonitor;
   private readonly adhocBackstop: AdhocBackstopMonitor;
   /** spec 216 — agents whose CLI just compacted; a re-anchor is consumed on their next idle. */
@@ -3036,9 +3038,27 @@ export class Workspace {
   private async refreshDeliveryReloadSnapshot(): Promise<ReloadReconciliationSnapshot> {
     const deliveryList = await this.deliveries.listWithCorrupt();
     if (deliveryList.corrupt.length > 0) {
-      throw new Error(
-        `canonical Delivery authority is corrupt or stale: ${deliveryList.corrupt.map((record) => record.id).join(", ")}`,
-      );
+      const noticeKey = deliveryList.corrupt.map((record) => `${record.id}\0${record.error}`).join("\0");
+      if (noticeKey !== this.deliveryAuthorityQuarantineNoticeKey) {
+        const preview = deliveryList.corrupt
+          .slice(0, 3)
+          .map((record) => `${record.id}: ${record.error.replace(/\s+/g, " ").slice(0, 160)}`)
+          .join("; ");
+        const omitted = deliveryList.corrupt.length - 3;
+        console.warn(
+          `[tachyon] quarantined ${deliveryList.corrupt.length} canonical Delivery record(s) with invalid authority: ${preview}${omitted > 0 ? `; +${omitted} more` : ""}`,
+        );
+        this.host.notify(
+          this.t(
+            "Tachyon quarantined {0} canonical Delivery record(s) with invalid authority; affected agents remain unavailable",
+            deliveryList.corrupt.length,
+          ),
+          "warn",
+        );
+        this.deliveryAuthorityQuarantineNoticeKey = noticeKey;
+      }
+    } else {
+      this.deliveryAuthorityQuarantineNoticeKey = undefined;
     }
     const deliveries = deliveryList.records;
     const gitList = await this.gitDeliveries.list();
@@ -3080,6 +3100,7 @@ export class Workspace {
     }
     const snapshot = reconcileDeliveryReload({
       deliveries,
+      untrustedDeliveries: deliveryList.corrupt.map((record) => ({ id: record.id })),
       linkedProjections,
       sessions,
       processByAgent,

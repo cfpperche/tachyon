@@ -655,7 +655,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     }
   });
 
-  it("rejects a signed canonical rollback from another host and fails the reload snapshot closed", async () => {
+  it("rejects a signed canonical rollback from another host and quarantines only that Delivery", async () => {
     const root = mkdir();
     fs.writeFileSync(path.join(root, "tachyon.yml"), "agents:\n  a:\n    cmd: sh\n    autostart: false\n", "utf8");
     const secrets = new Map<string, string>();
@@ -694,12 +694,90 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
 
       await expect(second.deliveries.get(created.id)).rejects.toThrow("authority head mismatch");
       await second.start();
-      expect(second.deliveryReloadPhase()).toBe("failed");
-      expect(second.deliveryReloadState()).toBeUndefined();
-      expect(secondHost.notices.some((notice) => /canonical Delivery authority is corrupt or stale/.test(notice.message))).toBe(true);
+      expect(second.deliveryReloadPhase()).toBe("ready");
+      expect(second.deliveryReloadState()?.byId.get(created.id)).toMatchObject({ class: "unavailable" });
+      const quarantineNotice = secondHost.notices.find((notice) => /quarantined 1 canonical Delivery record/.test(notice.message));
+      expect(quarantineNotice?.message).not.toContain(created.id);
+      expect(quarantineNotice?.message.length).toBeLessThan(180);
+      // The invalid authority is still unusable; only unrelated generic lifecycle remains available.
+      await expect(second.deliveries.get(created.id)).rejects.toThrow("authority head mismatch");
+      await expect(second.manager.spawn("a")).resolves.toBeUndefined();
+      expect(await second.manager.runningAgents()).toContain("a");
     } finally {
       first.dispose();
       second.dispose();
+    }
+  });
+
+  it("quarantines a pre-hardening unsigned Delivery without rewriting it or blocking signed rows", async () => {
+    const { DeliveryStore } = await import("../../src/delivery/store.js");
+    const root = mkdir();
+    fs.writeFileSync(
+      path.join(root, "tachyon.yml"),
+      "agents:\n  bound-old:\n    cmd: sh\n    autostart: false\n  ordinary:\n    cmd: sh\n    autostart: false\n",
+      "utf8",
+    );
+    const unsignedStore = new DeliveryStore(root);
+    const unsigned = await unsignedStore.create({
+      id: "d-pre-hardening",
+      workspaceId: workspaceHash(root),
+      createdBy: { kind: "system", name: "tachyon" },
+      contract: { baseSha: "base", behaviorTest: "gate", owns: ["src"], taskRef: "tachyon/old" },
+    });
+    const readStoredJson = (): string => {
+      const database = new DatabaseSync(unsignedStore.databasePath);
+      try {
+        return String((database.prepare("SELECT record_json FROM deliveries WHERE id = ?").get(unsigned.id) as { record_json: string }).record_json);
+      } finally {
+        database.close();
+      }
+    };
+    const before = readStoredJson();
+    expect(JSON.parse(before)).not.toHaveProperty("authorityIntegrity");
+    fs.writeFileSync(path.join(root, ".tachyon", "sessions.json"), JSON.stringify({
+      sessions: {
+        "bound-old": {
+          def: { cmd: "sh", kind: "agent" },
+          resume: { runtime: "claude", sessionId: "old-session" },
+          cwd: root,
+          declared: true,
+          delivery: { deliveryId: unsigned.id, segmentId: "old-segment", executionNonce: "old-nonce" },
+          updatedAt: "2026-07-15T12:00:00.000Z",
+        },
+      },
+    }), "utf8");
+
+    const host = new FakeHost(mkdir());
+    const fake = fakeTmux();
+    const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux: fake.tmux, startBridge: false });
+    try {
+      expect(ws.deliveryReloadPhase()).toBe("ready");
+      expect(ws.deliveryReloadState()?.byId.get(unsigned.id)).toMatchObject({ class: "unavailable" });
+      expect(ws.deliveryReloadState()?.unavailableAgents.has("bound-old")).toBe(true);
+      await expect(ws.manager.spawn("bound-old")).rejects.toThrow(/Delivery/);
+      await expect(ws.deliveries.get(unsigned.id)).rejects.toThrow("authority integrity check failed");
+      expect(readStoredJson()).toBe(before);
+
+      const signed = await ws.deliveries.create({
+        id: "d-post-hardening",
+        workspaceId: workspaceHash(root),
+        createdBy: { kind: "system", name: "tachyon" },
+        contract: { baseSha: "base", behaviorTest: "gate", owns: [], taskRef: "tachyon/new" },
+      });
+      await ws.start();
+      expect(ws.deliveryReloadPhase()).toBe("ready");
+      expect(ws.deliveryReloadState()?.byId.get(unsigned.id)?.class).toBe("unavailable");
+      expect(ws.deliveryReloadState()?.byId.get(signed.id)?.class).toBe("terminal");
+      await expect(ws.deliveries.get(signed.id)).resolves.toMatchObject({ id: signed.id });
+      expect(readStoredJson()).toBe(before);
+
+      const notices = host.notices.filter((notice) => /quarantined 1 canonical Delivery record/.test(notice.message));
+      expect(notices).toHaveLength(1);
+      expect(notices.every((notice) => !notice.message.includes(unsigned.id) && notice.message.length < 180)).toBe(true);
+      await expect(ws.manager.spawn("ordinary")).resolves.toBeUndefined();
+    } finally {
+      ws.dispose();
+      await fake.cleanup();
     }
   });
 
