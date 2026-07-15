@@ -193,7 +193,7 @@ describe("ResumeAdapter — capture runtimes", () => {
     expect(a.harness?.configHomeEnv).toBe("HERMES_HOME");
     expect(a.harness?.mcp).toMatchObject({ mode: "home-config", fileName: "config.yaml" });
     expect(a.transcriptPath!("/ws/.tachyon/bridge-mcp/h.hermes", "/ws", "sid")).toBe(
-      "/ws/.tachyon/bridge-mcp/h.hermes/state.db#sid",
+      "/ws/.tachyon/bridge-mcp/h.hermes/state.db",
     );
   });
 

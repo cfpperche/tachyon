@@ -17,7 +17,7 @@ Code wins over this prose when they diverge.
 | **Hermes CLI standalone** | Strong: sessions, resume/continue, MCP (HTTP + `${VAR}` headers), `HERMES_HOME`, worktree flag, oneshot brief (`-z` / `chat -q`), yolo, SQLite activity store |
 | **Tachyon product discovery** | Present: quick-add chip, logo, `KNOWN_AI_CLIS`, `runtimeUsage` label |
 | **Tachyon secondary runtime (2026-07-13)** | **Wired:** `ResumeRuntime: hermes`, resume adapter, `HERMES_TUI_QUERY` brief, Bridge via private `HERMES_HOME` + `config.yaml` `mcp_servers`, harness shape, `runtimeProfile.hermes` |
-| **Still open** | Activity normalizer (`state.db` file-tail is not JSONL), gracefulStop measurement, `--yolo` spawn inject **reader**, live Bridge dogfood |
+| **Still open** | gracefulStop measurement, `--yolo` spawn inject **reader**, live Bridge + Activity dogfood |
 
 **Rule of thumb for implementers:** prefer native flags/env (`HERMES_HOME`, `config.yaml` MCP, `--resume` / `-c`, `HERMES_TUI_QUERY`) over inventing bypasses.
 
@@ -37,7 +37,7 @@ Code wins over this prose when they diverge.
 | Instruction / brief | `INSTRUCTION_ARG` + `AgentManager.hermesBriefEnv` | **✓** env `HERMES_TUI_QUERY` |
 | Bridge inject | `withRuntimeBridge` + `materializeBridgeMcpHermes` | **✓** `HERMES_HOME` private home |
 | Harness | `HarnessManager` + adapter harness | **✓** seed auth + `config.yaml` |
-| Activity | `src/activity/*Normalizer.ts` | **✗** still no hermes normalizer |
+| Activity | `hermesNormalizer` + `HermesStorageReader` | **✓** SQLite `state.db` poll (unit 2026-07-14) |
 | Runtime profile | `runtimeProfile.ts` | **✓** `RUNTIME_PROFILES.hermes` |
 
 ---
@@ -62,7 +62,7 @@ Legend (same spirit as `parity.md`):
 | 5 | **Fork** | **✗** | **✗** | Wait for native CLI |
 | 6 | **Harness / private home** | **✓** `HERMES_HOME` | **✓** adapter harness + seed auth/config | Same materialize path as peers |
 | 7 | **Graceful stop** | **~** Ctrl+C ×2 | **~** declared profile, unverified | Measure in pane |
-| 8 | **Activity ingest** | **✓** `state.db` | **✗** no normalizer | Next slice |
+| 8 | **Activity ingest** | **✓** `state.db` | **✓** `HermesStorageReader` + `hermesNormalizer` | Unit: `hermesNormalizer.test.ts`, `hermesStorageReader.test.ts` |
 | 9 | **Permission inject** | **✓** `--yolo` | **~** profile records flag; **no spawn reader** | Follow-up |
 | 10 | **Label / profile** | N/A | **✓** `runtimeProfile.hermes` | Unit: `runtimeProfile.test.ts` |
 | 11 | **Restart** | **✓** | **✓** Bridge re-inject + brief env | Same as spawn path |
@@ -250,3 +250,4 @@ mcp_servers:
 | 2026-07-13 | Initial inventory from install + Codex OAuth smoke + code/docs seam read. Hermes **not** first-class; native CLI strong; Tachyon wiring absent. |
 | 2026-07-13 | Secondary promotion on branch `feat/hermes-runtime-parity`: Brief env, Resume, Bridge `HERMES_HOME`, harness, profile. Activity residual. |
 | 2026-07-13 | Agent Studio Isolated harness form: show for grok/hermes/opencode (was claude/codex-only); loadConfig accepts harness on grok/hermes. |
+| 2026-07-14 | Activity Cap 8: `HermesStorageReader` polls `$HERMES_HOME/state.db`; `hermesNormalizer` maps messages → NormalizedEvent; logWriter + transcriptPathOf sessionId. |

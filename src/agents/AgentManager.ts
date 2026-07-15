@@ -2333,7 +2333,10 @@ export class AgentManager {
    * raw-only/terminal escape hatch). Capture runtimes whose transcript path is not derivable from the id
    * use `resolveCaptureSession` when implemented (v1: codex).
    */
-  async transcriptPathOf(name: string, opts: { live?: boolean } = {}): Promise<{ path: string; runtime: ResumeRuntime } | undefined> {
+  async transcriptPathOf(
+    name: string,
+    opts: { live?: boolean } = {},
+  ): Promise<{ path: string; runtime: ResumeRuntime; sessionId?: string } | undefined> {
     const ledger = this.opts.ledger;
     const record = ledger?.get(name);
     if (!record?.resume) return undefined;
@@ -2354,7 +2357,9 @@ export class AgentManager {
     if (opts.live && this.opts.ownedSession) {
       const owned = this.opts.ownedSession(name, cwd);
       const exists = this.opts.fileExists ?? fs.existsSync;
-      if (owned && exists(owned.transcriptPath)) return { path: owned.transcriptPath, runtime };
+      if (owned && exists(owned.transcriptPath)) {
+        return { path: owned.transcriptPath, runtime, sessionId: owned.sessionId };
+      }
     }
     let id = record.resume.sessionId;
     if (runtime === "claude" && this.opts.resolveCurrentSession) {
@@ -2372,14 +2377,35 @@ export class AgentManager {
       const resolve = this.opts.resolveCaptureSession;
       if (id) {
         const loc = await resolve?.(runtime, cwd, configHome, id);
-        if (loc && exists(loc.path)) return { path: runtime === "opencode" ? path.join(loc.path, `${loc.id}.jsonl`) : loc.path, runtime };
+        if (loc && exists(loc.path)) {
+          return {
+            path: runtime === "opencode" ? path.join(loc.path, `${loc.id}.jsonl`) : loc.path,
+            runtime,
+            sessionId: loc.id,
+          };
+        }
       }
       if (opts.live && !shared) {
         const loc = await resolve?.(runtime, cwd, configHome);
-        if (loc && exists(loc.path)) return { path: runtime === "opencode" ? path.join(loc.path, `${loc.id}.jsonl`) : loc.path, runtime };
+        if (loc && exists(loc.path)) {
+          return {
+            path: runtime === "opencode" ? path.join(loc.path, `${loc.id}.jsonl`) : loc.path,
+            runtime,
+            sessionId: loc.id,
+          };
+        }
       }
       // Shared cwd with no authoritative row/path is an attribution gap, never a newest-by-cwd guess.
       return undefined;
+    }
+    // Hermes: resolve session id via state.db (capture), path is always `$HERMES_HOME/state.db`.
+    if (runtime === "hermes") {
+      if (!id && !shared) id = (await this.opts.resolveCaptureId?.(runtime, cwd, configHome)) ?? "";
+      if (!id) return undefined;
+      if (!adapter.transcriptPath) return undefined;
+      const p = adapter.transcriptPath(configHome, cwd, id);
+      const exists = this.opts.fileExists ?? fs.existsSync;
+      return exists(p) ? { path: p, runtime, sessionId: id } : undefined;
     }
     // The bare cwd-scan ("newest in this dir") is the ONLY ambiguous fallback — on a SHARED cwd it could
     // return another agent's session, so skip it there (return undefined → caller treats as a gap). A captured
@@ -2389,7 +2415,7 @@ export class AgentManager {
     if (!adapter.transcriptPath) return undefined;
     const p = adapter.transcriptPath(configHome, cwd, id);
     const exists = this.opts.fileExists ?? fs.existsSync;
-    return exists(p) ? { path: p, runtime } : undefined;
+    return exists(p) ? { path: p, runtime, sessionId: id } : undefined;
   }
 
   /**
