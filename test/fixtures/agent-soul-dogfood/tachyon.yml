@@ -1,0 +1,10 @@
+# Spec 377 isolated Dev Host fixture. Agents never autostart during the profile-action smoke.
+agents:
+  soul-alpha:
+    cmd: codex
+    kind: agent
+    autostart: false
+  soul-beta:
+    cmd: claude
+    kind: agent
+    autostart: false
