@@ -155,7 +155,7 @@
     color: var(--ds-ok);
     border-color: color-mix(in srgb, var(--ds-ok) 40%, transparent);
     background: color-mix(in srgb, var(--ds-ok) 16%, transparent);
-    font-family: var(--tachyon-font-mono, var(--vscode-editor-font-family, ui-monospace, monospace));
+    font-family: var(--ds-mono);
   }
   .badge.git-branch.shared {
     color: var(--ds-muted);

@@ -1711,7 +1711,9 @@ describe("AgentManager — session resume (spec 209)", () => {
     const rec = ledger.get("codex")!;
     ledger.record("codex", { ...rec, resume: { ...rec.resume!, sessionId: "codex-id" } });
 
-    await expect(manager.transcriptPathOf("codex")).resolves.toEqual({ path: `${ws}/rollout-codex-id.jsonl`, runtime: "codex" });
+    await expect(manager.transcriptPathOf("codex")).resolves.toEqual({
+      path: `${ws}/rollout-codex-id.jsonl`, runtime: "codex", sessionId: "codex-id",
+    });
   });
 
   it("t-0b2f30: transcriptPathOf resolves OpenCode storage as a session-shaped Activity path", async () => {
@@ -1725,7 +1727,9 @@ describe("AgentManager — session resume (spec 209)", () => {
     const rec = ledger.get("opencode")!;
     ledger.record("opencode", { ...rec, resume: { ...rec.resume!, sessionId: "ses_agent" } });
 
-    await expect(manager.transcriptPathOf("opencode")).resolves.toEqual({ path: `${ws}/data/opencode/storage/ses_agent.jsonl`, runtime: "opencode" });
+    await expect(manager.transcriptPathOf("opencode")).resolves.toEqual({
+      path: `${ws}/data/opencode/storage/ses_agent.jsonl`, runtime: "opencode", sessionId: "ses_agent",
+    });
   });
 
   it("t-0b2f30: runtimeConfigHome's opencode branch honors an ambient XDG_DATA_HOME override", async () => {
@@ -1745,7 +1749,9 @@ describe("AgentManager — session resume (spec 209)", () => {
       const rec = ledger.get("opencode")!;
       ledger.record("opencode", { ...rec, resume: { ...rec.resume!, sessionId: "ses_agent" } });
 
-      await expect(manager.transcriptPathOf("opencode")).resolves.toEqual({ path: `${ws}/data/opencode/storage/ses_agent.jsonl`, runtime: "opencode" });
+      await expect(manager.transcriptPathOf("opencode")).resolves.toEqual({
+        path: `${ws}/data/opencode/storage/ses_agent.jsonl`, runtime: "opencode", sessionId: "ses_agent",
+      });
       expect(seenConfigHome).toBe("/custom/xdg-data"); // NOT the hardcoded `${ws}/home/.local/share`
     } finally {
       if (prevXdg === undefined) delete process.env.XDG_DATA_HOME;
@@ -1782,7 +1788,9 @@ describe("AgentManager — session resume (spec 209)", () => {
     const rec = ledger.get("codex")!;
     ledger.record("codex", { ...rec, resume: { ...rec.resume!, sessionId: "" } });
 
-    await expect(manager.transcriptPathOf("codex", { live: true })).resolves.toEqual({ path: `${ws}/${OWNED}.jsonl`, runtime: "codex" });
+    await expect(manager.transcriptPathOf("codex", { live: true })).resolves.toEqual({
+      path: `${ws}/${OWNED}.jsonl`, runtime: "codex", sessionId: OWNED,
+    });
 
     const noOwned = resumeHarness("agents:\n  codex:\n    cmd: codex\n  codex2:\n    cmd: codex\n", {
       resolveCaptureSession: async () => ({ id: "sibling", path: `${ws}/sibling.jsonl` }),
@@ -1820,7 +1828,9 @@ describe("AgentManager — session resume (spec 209)", () => {
     manager.rehydrateFromLedger();
 
     expect(ledger.get("codex")?.resume?.configHome).toBe("/home/test/.codex");
-    await expect(manager.transcriptPathOf("codex", { live: true })).resolves.toEqual({ path: `${ws}/rollout-codex-id.jsonl`, runtime: "codex" });
+    await expect(manager.transcriptPathOf("codex", { live: true })).resolves.toEqual({
+      path: `${ws}/rollout-codex-id.jsonl`, runtime: "codex", sessionId: "codex-id",
+    });
   });
 
   it("spec 238: transcriptPathOf({live}) follows the CURRENT session on an unambiguous cwd, past a captured uuid", async () => {

@@ -414,7 +414,13 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     await Promise.all(agentNames.map(async (name) => {
       const rec = ledgerByName.get(name);
       const cwd = rec?.cwd || rec?.worktree?.path || ws.workspaceRoot;
-      const liveBranch = await ws.worktrees.currentBranch(cwd);
+      let liveBranch: string | undefined;
+      try {
+        // Branch decoration is additive. A missing/degraded Git port must not suppress the fleet or its actions.
+        liveBranch = await ws.worktrees?.currentBranch(cwd);
+      } catch {
+        // Best-effort by contract: render the agent without live branch metadata.
+      }
       if (!liveBranch) {
         liveGitOf.set(name, { worktreePath: cwd });
         return;
