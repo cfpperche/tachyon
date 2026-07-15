@@ -104,6 +104,18 @@ describe("preview route table", () => {
     expect(messages[0]!.type).toBe("load");
   });
 
+  it("declares Agent Studio with the UI Kit token bridge and Tailwind utilities before surface CSS", () => {
+    const r = ROUTES["agent-studio-shell"];
+    expect(r.cssLinks).toEqual([
+      "/dist/webview/codicon.css",
+      "/dist/webview/design-system.css",
+      "/dist/webview/vscode-theme.css",
+      "/dist/webview/agent-studio-shell.tailwind.css",
+      "/dist/webview/studio-frame.css",
+      "/dist/webview/agent-studio-shell.css",
+    ]);
+  });
+
   it("declares the mission-control route with its snapshot envelope + ordered CSS", () => {
     const r = ROUTES["mission-control"];
     expect(r.bundle).toBe("/dist/webview/mission-control.js");

@@ -92,6 +92,23 @@ describe("AgentStudioPanelManager — Phase 3 pilot full lifecycle", () => {
     });
   });
 
+  it("loads the UI Kit token bridge and Tailwind utilities before Agent Studio styles", async () => {
+    const { ws } = fakeWorkspace();
+    const manager = new AgentStudioPanelManager(Uri.file("/ext"));
+    manager.openNew(ws);
+    await flush();
+    const html = __createdPanels[0].webview.html;
+    const styles = [...html.matchAll(/<link rel="stylesheet" href="([^"]+)"/g)].map((match) => match[1]);
+    expect(styles.map((style) => style.split("/").pop())).toEqual([
+      "codicon.css",
+      "design-system.css",
+      "vscode-theme.css",
+      "agent-studio-shell.tailwind.css",
+      "studio-frame.css",
+      "agent-studio-shell.css",
+    ]);
+  });
+
   it("edit mode loads the persisted agent-kind entry via formLogic's fromDef", async () => {
     const { ws } = fakeWorkspace({ agents: { frontend: agentDef({ cmd: "claude --model sonnet", autostart: true }) } });
     const manager = new AgentStudioPanelManager(Uri.file("/ext"));

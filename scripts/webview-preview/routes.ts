@@ -204,7 +204,7 @@ export const ROUTES: Record<string, Route> = {
   // on the shell — same CSS order as pipeline-studio/task-studio's real renderWebviewShell call.
   "agent-studio-shell": {
     bundle: "/dist/webview/agent-studio-shell.js",
-    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/studio-frame.css", "/dist/webview/agent-studio-shell.css"],
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/vscode-theme.css", "/dist/webview/agent-studio-shell.tailwind.css", "/dist/webview/studio-frame.css", "/dist/webview/agent-studio-shell.css"],
     frame: { w: 900, h: 900 },
     fixtures: agentStudioShellFixtures as Record<string, Fixture>,
     makeMessage: (vm) => agentStudioShellMakeMessage(vm as never),

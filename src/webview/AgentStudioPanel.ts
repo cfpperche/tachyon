@@ -22,7 +22,9 @@ import { soulProfileErrorMessage, soulProfileStatusMessage } from "./agent-studi
 const surface: StudioSurfaceConfig = {
   viewType: "tachyonAgentStudioShell",
   bundleFile: "agent-studio-shell.js",
-  styleFiles: ["codicon.css", "design-system.css", "studio-frame.css", "agent-studio-shell.css"],
+  // t-2278bc — KitDropdown needs the shared token bridge + this surface's compiled Tailwind utilities.
+  // Keep the standard order: design system → token bridge → Tailwind → surface CSS.
+  styleFiles: ["codicon.css", "design-system.css", "vscode-theme.css", "agent-studio-shell.tailwind.css", "studio-frame.css", "agent-studio-shell.css"],
   iconName: "hubot",
 };
 
