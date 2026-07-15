@@ -43,8 +43,9 @@ describe("Agent Studio soul profile protocol (T15A)", () => {
     expect(source).toContain("profilePresent &&");
     expect(source).toContain("showEnable &&");
     expect(source).toContain("showDisable &&");
-    expect(source).toContain('<details class="ash-identity-more">');
-    expect(source.indexOf('<details class="ash-identity-more">')).toBeLessThan(source.indexOf("refreshSoulMessage(savedAgent)", source.indexOf('<details class="ash-identity-more">')));
+    expect(source).toContain("<KitDropdown>");
+    expect(source).toContain('<KitDropdownContent align="start">');
+    expect(source.indexOf("<KitDropdown>")).toBeLessThan(source.indexOf("refreshSoulMessage(savedAgent)", source.indexOf("<KitDropdown>")));
     expect(source).toContain("Adopt existing file");
     expect(source).toContain('aria-live="polite"');
     expect(source).toContain('aria-label="SOUL.md preview"');

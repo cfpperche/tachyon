@@ -4,6 +4,7 @@ import { StudioFrame } from "../shared/studio/StudioFrame";
 import { canSave as computeCanSave } from "../shared/studio/dirtyGating";
 import type { StudioError } from "../shared/studio/errorTaxonomy";
 import { Button, Chip, Input, Select, Textarea } from "../shared/ui";
+import { KitDropdown, KitDropdownContent, KitDropdownItem, KitDropdownTrigger } from "../shared/ui/kit";
 import { AGENT_STUDIO_HOST_MESSAGE_NAMES, agentStudioTitleFor, blankAgentFields, computeAgentDirty, validateAgentStudioHostDomainMessage } from "./domain";
 import {
   adoptSoulProfileMessage,
@@ -282,18 +283,20 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
                       <Button disabled={!canDisable} onClick={() => runSoulAction("Disabling soul", disableSoulMessage(savedAgent))}>Disable soul</Button>
                     )}
                     {soulStatus && (
-                      <details class="ash-identity-more">
-                        <summary aria-label="More SOUL.md actions"><span class="codicon codicon-ellipsis" aria-hidden="true" />More</summary>
-                        <div class="ash-identity-secondary-actions" role="group" aria-label="Secondary SOUL.md actions">
-                          <Button icon="refresh" disabled={readActionDisabled} onClick={() => runSoulAction("Refreshing profile", refreshSoulMessage(savedAgent))}>Refresh</Button>
+                      <KitDropdown>
+                        <KitDropdownTrigger asChild>
+                          <Button icon="ellipsis" aria-label="More SOUL.md actions">More</Button>
+                        </KitDropdownTrigger>
+                        <KitDropdownContent align="start">
+                          <KitDropdownItem disabled={readActionDisabled} onSelect={() => runSoulAction("Refreshing profile", refreshSoulMessage(savedAgent))}>Refresh</KitDropdownItem>
                           {profileReadable && (
-                            <Button icon="eye" disabled={readActionDisabled} onClick={() => runSoulAction("Loading preview", previewSoulMessage(savedAgent))}>Preview</Button>
+                            <KitDropdownItem disabled={readActionDisabled} onSelect={() => runSoulAction("Loading preview", previewSoulMessage(savedAgent))}>Preview</KitDropdownItem>
                           )}
                           {showAdopt && (
-                            <Button icon="verified" disabled={!canAdopt} onClick={() => runSoulAction("Adopting profile", adoptSoulProfileMessage(savedAgent, soulStatus.sha256!))}>Adopt existing file</Button>
+                            <KitDropdownItem disabled={!canAdopt} onSelect={() => runSoulAction("Adopting profile", adoptSoulProfileMessage(savedAgent, soulStatus.sha256!))}>Adopt existing file</KitDropdownItem>
                           )}
-                        </div>
-                      </details>
+                        </KitDropdownContent>
+                      </KitDropdown>
                     )}
                   </div>
 
