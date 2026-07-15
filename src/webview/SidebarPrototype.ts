@@ -389,6 +389,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     const ledger = [...ws.ledger.all()];
     const resumable = new Set(ledger.filter(([, r]) => isResumable(r)).map(([n]) => n));
     const worktrees = new Map(ledger.filter(([, r]) => r.worktree).map(([n, r]) => [n, r.worktree!.branch]));
+    const ledgerByName = new Map(ledger);
     const canFork = (name: string, running: boolean, kind: string): boolean => {
       if (!running || kind !== "agent") return false;
       const def = ws.manager.defOf(name);
@@ -403,6 +404,28 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       if (info) verifyOf.set(name, info.badge === "verified" ? "pass" : info.badge === "failing" ? "fail" : "stale");
       const badge = evidenceBadge(await ws.evidenceHandoff(name)); // spec 273 — non-binary evidence indicator
       if (badge) evidenceOf.set(name, badge);
+    }));
+    // spec 384 — live HEAD branch per agent session cwd (parallel; best-effort).
+    type LiveGit = { liveBranch?: string; worktreePath?: string; branchDrift?: boolean };
+    const liveGitOf = new Map<string, LiveGit>();
+    const agentNames = all.filter((a) => a.kind === "agent").map((a) => a.name);
+    // Also cover ledger-only names that might appear via degraded roster later is handled there;
+    // declared-but-listed agents use ledger cwd or workspace root.
+    await Promise.all(agentNames.map(async (name) => {
+      const rec = ledgerByName.get(name);
+      const cwd = rec?.cwd || rec?.worktree?.path || ws.workspaceRoot;
+      const liveBranch = await ws.worktrees.currentBranch(cwd);
+      if (!liveBranch) {
+        liveGitOf.set(name, { worktreePath: cwd });
+        return;
+      }
+      const configBranch = rec?.worktree?.branch ?? worktrees.get(name);
+      const branchDrift = !!configBranch && configBranch !== liveBranch;
+      liveGitOf.set(name, {
+        liveBranch,
+        worktreePath: cwd,
+        ...(branchDrift ? { branchDrift: true } : {}),
+      });
     }));
     // spec 221 — for each resumable, stopped agent, whether the transcript is still on disk (↻ restores
     // context) vs gone (↻ degrades to fresh). Small set, read-only — same probe the tree does.
@@ -431,12 +454,16 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       .map((a) => {
         const def = ws.manager.defOf(a.name);
         const live = a.running ? ws.attentionOf(a.name) : undefined;
+        const git = liveGitOf.get(a.name);
         return toAgentVM({ ...a, cmd: def?.cmd }, {
           attention: live?.state,
           // t-35d95a — request_human_attention's latch, surfaced as its own badge (independent of attention).
           awaitingHuman: live?.awaitingHuman ? { reason: live.awaitingHumanReason ?? "" } : undefined,
           model: this.observedModelFor?.(ws, a.name), // spec 378 — precedence/labeling stays in the pure mapper
           worktree: worktrees.get(a.name),
+          liveBranch: git?.liveBranch,
+          branchDrift: git?.branchDrift,
+          worktreePath: git?.worktreePath,
           verify: verifyOf.get(a.name),
           verifiable: verifyOf.has(a.name),
           evidence: evidenceOf.get(a.name),

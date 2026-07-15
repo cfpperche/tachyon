@@ -16,6 +16,7 @@ import { adapterFor, harnessable } from "../../src/resume/adapters.js";
 import { CallerIdentityRegistry } from "../../src/bridge/callerIdentity.js";
 import { delegationRecordFromSpawn, readDelegationRecord, writeDelegationRecord } from "../../src/bridge/delegationRecord.js";
 import { boundDeliveryPreReservationRefusals, exerciseBoundDeliveryPreReservationRefusal } from "../helpers/boundDeliveryExecutionHarness.js";
+import { briefFilePath } from "../../src/agents/briefFile.js";
 
 const WS = "/repo";
 const HASH = workspaceHash(WS);
@@ -483,14 +484,25 @@ describe("AgentManager", () => {
   });
 
   // spec 216 — captures the launched command for one spawn.
-  const captureSpawnCmd = async (yml: string, name: string, opts?: Parameters<AgentManager["spawn"]>[1]): Promise<string> => {
+  const captureSpawnCmd = async (
+    yml: string,
+    name: string,
+    opts?: Parameters<AgentManager["spawn"]>[1],
+    workspaceRoot = WS,
+  ): Promise<string> => {
     const calls: string[][] = [];
     const recording = new (await import("../../src/tmux/TmuxService.js")).TmuxService(async (args) => {
       calls.push(args);
       if (args[2] === "has-session" || args[2] === "list-panes") throw new Error("none");
       return { stdout: "", stderr: "" };
     });
-    const manager = new AgentManager({ tmux: recording, wsHash: HASH, workspaceRoot: WS, getConfig: () => configOf(yml), getMaxAgents: () => 8 });
+    const manager = new AgentManager({
+      tmux: recording,
+      wsHash: workspaceHash(workspaceRoot),
+      workspaceRoot,
+      getConfig: () => configOf(yml),
+      getMaxAgents: () => 8,
+    });
     await manager.spawn(name, opts);
     const spawnArgs = calls.find((c) => c.includes("new-session"))!;
     return spawnArgs[spawnArgs.length - 1];
@@ -531,9 +543,312 @@ describe("AgentManager", () => {
     expect(cmd.indexOf("review prs")).toBeLessThan(cmd.indexOf("── BEFORE FINISHING ──")); // before-finishing closes it (recency)
   });
 
-  it("spec 363 T3 — a bare declared top-level agent (no role/instructions/parent) is byte-identical: no primer", async () => {
+  it("spec 363 T3 — a bare declared top-level agent receives universal protocol only", async () => {
     const cmd = await captureSpawnCmd("agents:\n  codex:\n    cmd: codex\n", "codex");
-    expect(cmd).toBe("codex"); // ADDITIVE guard: nothing to onboard around, nothing is prepended
+    expect(cmd).toContain("── TACHYON PRIMER ──");
+    expect(cmd).not.toContain("── PROJECT GUIDANCE (PROJECT-OWNED) ──");
+    expect(cmd).not.toContain("npm test");
+    expect(cmd).not.toContain("<your spawner>");
+  });
+
+  it("delivers explicit workspace verification facts to a bare declared agent", async () => {
+    const cmd = await captureSpawnCmd(
+      "agents:\n  codex:\n    cmd: codex\nsettings:\n  verify:\n    full: ./verify-all\n    typecheck: ./check-types\n",
+      "codex",
+    );
+    expect(cmd).toContain("Configured verification (source: workspace config settings.verify):");
+    expect(cmd).toContain("  - full: ./verify-all");
+    expect(cmd).toContain("  - typecheck: ./check-types");
+  });
+
+  it("rejects oversized dynamic primer facts before creating a tmux session", async () => {
+    const full = "'".repeat(4_000);
+    const config = configOf(
+      `agents:\n  codex:\n    cmd: codex\nsettings:\n  verify:\n    full: ${JSON.stringify(full)}\n`,
+    );
+    const fake = fakeTmux();
+    const manager = new AgentManager({
+      tmux: fake.tmux,
+      wsHash: HASH,
+      workspaceRoot: WS,
+      getConfig: () => config,
+      getMaxAgents: () => 8,
+    });
+
+    await expect(manager.spawn("codex")).rejects.toThrow(/startup brief.*safe pane-delivery ceiling/);
+    expect(fake.newSessionArgs).toHaveLength(0);
+  });
+
+  it("delivers configured project guidance to a bare declared agent in the owned block", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-project-guidance-spawn-"));
+    try {
+      fs.mkdirSync(path.join(root, "docs"));
+      fs.writeFileSync(path.join(root, "docs", "agent.md"), "PROJECT_MARKER\n  keep spacing\n", "utf8");
+      const cmd = await captureSpawnCmd(
+        "agents:\n  codex:\n    cmd: codex\nsettings:\n  projectGuidance:\n    files: [docs/agent.md]\n",
+        "codex",
+        undefined,
+        root,
+      );
+
+      expect(cmd).toContain("── TACHYON PRIMER ──");
+      expect(cmd).toContain("── PROJECT GUIDANCE (PROJECT-OWNED) ──");
+      expect(cmd).toContain("Source: docs/agent.md");
+      expect(cmd).toContain("PROJECT_MARKER\n  keep spacing\n");
+      expect(cmd.indexOf("── END PRIMER ──")).toBeLessThan(cmd.indexOf("── PROJECT GUIDANCE (PROJECT-OWNED) ──"));
+      expect(cmd.indexOf("── END PROJECT GUIDANCE ──")).toBeLessThan(cmd.indexOf("── BEFORE FINISHING ──"));
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("diverts long project guidance before primer framing", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-project-guidance-long-"));
+    try {
+      fs.writeFileSync(path.join(root, "guidance.md"), `LONG_GUIDANCE_${"x".repeat(5_000)}`, "utf8");
+      const cmd = await captureSpawnCmd(
+        "agents:\n  codex:\n    cmd: codex\nsettings:\n  projectGuidance:\n    files: [guidance.md]\n",
+        "codex",
+        undefined,
+        root,
+      );
+      const file = briefFilePath(root, "codex");
+      expect(cmd).toContain("── TACHYON PRIMER ──");
+      expect(cmd).toContain(file);
+      expect(cmd).not.toContain("LONG_GUIDANCE_");
+      expect(fs.readFileSync(file, "utf8")).toContain("── PROJECT GUIDANCE (PROJECT-OWNED) ──");
+      expect(fs.readFileSync(file, "utf8")).toContain("LONG_GUIDANCE_");
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps the prior long brief unchanged when restart framing is oversized", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-project-guidance-restart-atomic-"));
+    const guidance = path.join(root, "guidance.md");
+    fs.writeFileSync(guidance, `OLD_GUIDANCE_${"o".repeat(5_000)}`, "utf8");
+    let config = configOf(
+      "agents:\n  codex:\n    cmd: codex\nsettings:\n  projectGuidance:\n    files: [guidance.md]\n",
+    );
+    const fake = fakeTmux();
+    const manager = new AgentManager({
+      tmux: fake.tmux,
+      wsHash: workspaceHash(root),
+      workspaceRoot: root,
+      getConfig: () => config,
+      getMaxAgents: () => 8,
+    });
+    try {
+      await manager.spawn("codex");
+      const destination = briefFilePath(root, "codex");
+      const oldBrief = fs.readFileSync(destination, "utf8");
+      fs.writeFileSync(guidance, `NEW_GUIDANCE_${"n".repeat(5_000)}`, "utf8");
+      config = configOf(
+        `agents:\n  codex:\n    cmd: codex\nsettings:\n  verify:\n    full: ${JSON.stringify("'".repeat(4_000))}\n  projectGuidance:\n    files: [guidance.md]\n`,
+      );
+
+      await expect(manager.restart("codex")).rejects.toThrow(/safe pane-delivery ceiling/);
+      expect(fs.readFileSync(destination, "utf8")).toBe(oldBrief);
+      expect(fake.respawnArgs).toHaveLength(0);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("fails invalid project guidance before creating or replacing a tmux session", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-project-guidance-fail-"));
+    const yaml = "agents:\n  codex:\n    cmd: codex\nsettings:\n  projectGuidance:\n    files: [guidance.md]\n";
+    const config = configOf(yaml);
+    const fake = fakeTmux();
+    const manager = new AgentManager({
+      tmux: fake.tmux,
+      wsHash: workspaceHash(root),
+      workspaceRoot: root,
+      getConfig: () => config,
+      getMaxAgents: () => 8,
+    });
+    try {
+      await expect(manager.spawn("codex")).rejects.toThrow(/guidance\.md/);
+      expect(fake.newSessionArgs).toHaveLength(0);
+
+      fs.writeFileSync(path.join(root, "guidance.md"), "valid", "utf8");
+      await manager.spawn("codex");
+      fs.rmSync(path.join(root, "guidance.md"));
+      await expect(manager.restart("codex")).rejects.toThrow(/guidance\.md/);
+      expect(fake.respawnArgs).toHaveLength(0);
+      expect(fake.sessions.has(sessionName(workspaceHash(root), "codex"))).toBe(true);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("does not read or deliver project guidance for terminal entries", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-project-guidance-terminal-"));
+    const config = configOf(
+      "terminals:\n  server:\n    cmd: sh\nsettings:\n  projectGuidance:\n    files: [missing.md]\n",
+    );
+    const fake = fakeTmux();
+    const manager = new AgentManager({
+      tmux: fake.tmux,
+      wsHash: workspaceHash(root),
+      workspaceRoot: root,
+      getConfig: () => config,
+      getMaxAgents: () => 8,
+    });
+    try {
+      await manager.spawn("server");
+      expect(fake.newSessionArgs).toHaveLength(1);
+      expect(fake.newSessionArgs[0]?.at(-1)).toBe("sh");
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("preserves an explicit self-managed resume command without reading startup guidance", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-project-guidance-self-managed-"));
+    const config = configOf(
+      "agents:\n  claude:\n    cmd: claude --resume existing-session\n    role: reviewer\n    instructions: must-not-be-pushed\nsettings:\n  projectGuidance:\n    files: [missing.md]\n",
+    );
+    const fake = fakeTmux();
+    const manager = new AgentManager({
+      tmux: fake.tmux,
+      wsHash: workspaceHash(root),
+      workspaceRoot: root,
+      getConfig: () => config,
+      getMaxAgents: () => 8,
+    });
+    try {
+      await manager.spawn("claude");
+      const cmd = fake.newSessionArgs[0]?.at(-1);
+      expect(cmd).toBe("claude --resume existing-session");
+      expect(cmd).not.toContain("TACHYON PRIMER");
+      expect(cmd).not.toContain("PROJECT GUIDANCE");
+      expect(cmd).not.toContain("must-not-be-pushed");
+      expect(cmd).not.toContain("review for quality");
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps self-managed Hermes byte-exact and omits HERMES_TUI_QUERY", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-project-guidance-hermes-resume-"));
+    const config = configOf(
+      "agents:\n  hermes:\n    cmd: hermes --resume saved-session\n    role: reviewer\n    instructions: must-not-be-pushed\nsettings:\n  projectGuidance:\n    files: [missing.md]\n",
+    );
+    const fake = fakeTmux();
+    const manager = new AgentManager({
+      tmux: fake.tmux,
+      wsHash: workspaceHash(root),
+      workspaceRoot: root,
+      getConfig: () => config,
+      getMaxAgents: () => 8,
+    });
+    const session = sessionName(workspaceHash(root), "hermes");
+    try {
+      await manager.spawn("hermes");
+      expect(fake.newSessionArgs[0]?.at(-1)).toBe("hermes --resume saved-session");
+      expect(fake.sessionEnv.get(session)?.HERMES_TUI_QUERY).toBeUndefined();
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps env-wrapped Codex resume byte-exact without reading or pushing onboarding", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-project-guidance-codex-resume-env-"));
+    const config = configOf(
+      "agents:\n  codex:\n    cmd: env -u TOKEN codex resume saved-session\n    role: reviewer\n    instructions: must-not-be-pushed\nsettings:\n  projectGuidance:\n    files: [missing.md]\n",
+    );
+    const fake = fakeTmux();
+    const manager = new AgentManager({
+      tmux: fake.tmux,
+      wsHash: workspaceHash(root),
+      workspaceRoot: root,
+      getConfig: () => config,
+      getMaxAgents: () => 8,
+    });
+    try {
+      await manager.spawn("codex");
+      expect(fake.newSessionArgs[0]?.at(-1)).toBe("env -u TOKEN codex resume saved-session");
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("delivers Hermes guidance through env wrappers whose options consume operands", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-project-guidance-hermes-env-"));
+    fs.writeFileSync(path.join(root, "guidance.md"), "WRAPPED_HERMES_GUIDANCE", "utf8");
+    const config = configOf(
+      "agents:\n  hermes:\n    cmd: env -u TOKEN hermes\nsettings:\n  projectGuidance:\n    files: [guidance.md]\n",
+    );
+    const fake = fakeTmux();
+    const manager = new AgentManager({
+      tmux: fake.tmux,
+      wsHash: workspaceHash(root),
+      workspaceRoot: root,
+      getConfig: () => config,
+      getMaxAgents: () => 8,
+    });
+    const session = sessionName(workspaceHash(root), "hermes");
+    try {
+      await manager.spawn("hermes");
+      expect(fake.newSessionArgs[0]?.at(-1)).toBe("env -u TOKEN hermes");
+      expect(fake.sessionEnv.get(session)?.HERMES_TUI_QUERY).toContain("WRAPPED_HERMES_GUIDANCE");
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("does not read or size-check startup guidance for an agent without a prompt adapter", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-project-guidance-unsupported-"));
+    const config = configOf(
+      `agents:\n  aider:\n    cmd: aider\n    instructions: undeliverable\nsettings:\n  verify:\n    full: ${JSON.stringify("'".repeat(4_000))}\n  projectGuidance:\n    files: [missing.md]\n`,
+    );
+    const fake = fakeTmux();
+    const manager = new AgentManager({
+      tmux: fake.tmux,
+      wsHash: workspaceHash(root),
+      workspaceRoot: root,
+      getConfig: () => config,
+      getMaxAgents: () => 8,
+    });
+    try {
+      await manager.spawn("aider");
+      expect(fake.newSessionArgs[0]?.at(-1)).toBe("aider");
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("delivers project guidance through Hermes startup env on spawn and restart, including long-brief pointers", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-project-guidance-hermes-"));
+    fs.writeFileSync(path.join(root, "guidance.md"), "HERMES_SHORT", "utf8");
+    const config = configOf(
+      "agents:\n  hermes:\n    cmd: hermes\nsettings:\n  projectGuidance:\n    files: [guidance.md]\n",
+    );
+    const fake = fakeTmux();
+    const manager = new AgentManager({
+      tmux: fake.tmux,
+      wsHash: workspaceHash(root),
+      workspaceRoot: root,
+      getConfig: () => config,
+      getMaxAgents: () => 8,
+    });
+    const session = sessionName(workspaceHash(root), "hermes");
+    try {
+      await manager.spawn("hermes");
+      expect(fake.newSessionArgs[0]?.at(-1)).toBe("hermes");
+      expect(fake.sessionEnv.get(session)?.HERMES_TUI_QUERY).toContain("HERMES_SHORT");
+      expect(fake.sessionEnv.get(session)?.HERMES_TUI_QUERY).toContain("── TACHYON PRIMER ──");
+
+      fs.writeFileSync(path.join(root, "guidance.md"), `HERMES_LONG_${"x".repeat(5_000)}`, "utf8");
+      await manager.restart("hermes");
+      const restartedBrief = fake.sessionEnv.get(session)?.HERMES_TUI_QUERY;
+      expect(restartedBrief).toContain(briefFilePath(root, "hermes"));
+      expect(restartedBrief).not.toContain("HERMES_LONG_");
+      expect(fs.readFileSync(briefFilePath(root, "hermes"), "utf8")).toContain("HERMES_LONG_");
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("computes the pending autostart set, skipping survivors", async () => {
@@ -1281,7 +1596,8 @@ describe("AgentManager — session resume (spec 209)", () => {
   it("capture runtime (codex): records intent with empty id, no injection", async () => {
     const { manager, ledger, cmds } = resumeHarness("agents:\n  codex:\n    cmd: codex\n");
     await manager.spawn("codex");
-    expect(cmds[0]).toBe("codex"); // unchanged
+    expect(cmds[0]).toContain("codex '");
+    expect(cmds[0]).toContain("── TACHYON PRIMER ──");
     expect(ledger.get("codex")).toMatchObject({ resume: { runtime: "codex", sessionId: "" }, declared: true });
   });
 
@@ -2704,8 +3020,10 @@ describe("AgentManager — session resume (spec 209)", () => {
       const calls: Array<{ name: string; cwd: string }> = [];
       const { manager, cmds, newSessionArgs } = resumeHarness("agents:\n  opencode:\n    cmd: opencode\n", OPENCODE_BRIDGE(calls));
       await manager.spawn("opencode");
-      // cmd is unchanged (opencode has no --mcp-config / -c flags here)
-      expect(cmds.at(-1)).toBe("opencode");
+      // Bridge MCP wiring still adds no config argv; the universal onboarding prompt uses opencode's
+      // existing --prompt adapter.
+      expect(cmds.at(-1)).toContain("opencode --prompt");
+      expect(cmds.at(-1)).toContain("── TACHYON PRIMER ──");
       // OPENCODE_CONFIG points at the materialized file
       expect(newSessionArgs.at(-1)!.some((a) => a === "-e")).toBe(true);
       const envPairs = newSessionArgs.at(-1)!.filter((a) => a.startsWith("OPENCODE_CONFIG="));
@@ -3112,10 +3430,12 @@ describe("AgentManager — session resume (spec 209)", () => {
       expect(cmds.at(-1)).not.toContain("--permission-mode auto");
     });
 
-    it("codex: no materializer wired leaves command unchanged", async () => {
+    it("codex: no materializer wired adds no ownership flags beyond universal onboarding", async () => {
       const { manager, cmds } = resumeHarness("agents:\n  codex:\n    cmd: codex\n", OWN());
       await manager.spawn("codex");
-      expect(cmds.at(-1)).toBe("codex");
+      expect(cmds.at(-1)).toContain("codex '");
+      expect(cmds.at(-1)).toContain("── TACHYON PRIMER ──");
+      expect(cmds.at(-1)).not.toContain("spawn-settings");
     });
 
     it("self-managed claude (--resume ...): left untouched, NO ownership injection", async () => {
@@ -3434,6 +3754,35 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     const reviewer = (await manager.list()).find((a) => a.name === "reviewer");
     expect(reviewer?.parent).toBeUndefined();
     expect(reviewer?.delegator).toBe("boss");
+  });
+
+  it("composes gated onboarding after worktree resolution adds the canonical stub path and ownership", async () => {
+    const REC = { path: "/wt/h/reviewer", branch: "tachyon/reviewer", tachyonCreatedBranch: true, baseRef: "base", createdAt: "t" };
+    const { manager, newSessionArgs } = harness("agents:\n  boss:\n    cmd: claude\n", {
+      resolveSpawnCwd: async (ctx) => {
+        expect(ctx.gate).toBeDefined();
+        ctx.gate!.stubPath = "tests/product/login-retry.invariant.ts";
+        ctx.gate!.owns = [...(ctx.gate!.owns ?? []), "tests/product/login-retry.invariant.ts"];
+        return { cwd: REC.path, worktree: REC, delegationBaseSha: "source-head" };
+      },
+    });
+
+    await manager.spawn("reviewer", {
+      cmd: "claude",
+      parent: "boss",
+      delegator: "boss",
+      contract: {
+        task: "implement login retry",
+        context: "retry behavior is missing",
+        constraints: "preserve auth semantics",
+        doneWhen: "login retry invariant passes",
+      },
+      gate: { behaviorTest: "login retry fails then passes", owns: ["src/auth.ts"] },
+    });
+
+    const cmd = newSessionArgs[0]?.at(-1) ?? "";
+    expect(cmd).toContain("at tests/product/login-retry.invariant.ts");
+    expect(cmd).toContain("Owns: src/auth.ts, tests/product/login-retry.invariant.ts.");
   });
 
   it("keeps ledger and worktree visible when rejected delegation kill cannot prove the session dead", async () => {

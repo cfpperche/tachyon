@@ -4,30 +4,16 @@ import { renderPrimer, type PrimerInput } from "../../src/bridge/primer.js";
 const sample: PrimerInput = {
   agentName: "primerShape",
   delegator: "claude",
-  gate: { behaviorTest: "primer teaches the classifier-approved commit command shape", owns: ["src/bridge/", "test/unit/"] },
-  freshWorktree: true,
-  verify: { full: "npm test", typecheck: "npm run typecheck" },
+  gate: { behaviorTest: "primer keeps project Git workflow outside the global protocol", owns: ["src/bridge/", "test/unit/"] },
 };
 
 describe("container-generated delegation behavior", () => {
-  it("primer teaches the classifier-approved commit command shape", () => {
+  it("primer keeps project Git workflow outside the global protocol", () => {
     const { primer, beforeFinishing } = renderPrimer(sample);
+    const combined = `${primer}\n${beforeFinishing}`;
 
-    // The approved shape: ONE plain `git commit -m …` command per change.
-    expect(primer).toMatch(/git commit -m/);
-    expect(primer).toMatch(/ONE plain|one plain|one plain/i);
-
-    // The rejected shape: a compound `cd <dir> && git commit …` (auto-mode classifiers block it).
-    expect(primer).toMatch(/cd .*&&.*git commit/);
-    expect(primer).toMatch(/never/i);
-    expect(primer).toMatch(/cd-then-commit/);
-
-    // The repo-discipline guidance still keeps add/commit as separate pathspec steps.
-    expect(primer).toMatch(/BY PATHSPEC/);
-
-    // The before-finishing block reinforces the same single-plain-command discipline.
-    expect(beforeFinishing).toMatch(/single plain/);
-    expect(beforeFinishing).toMatch(/cd .*&&.*git commit/);
-    expect(beforeFinishing).toMatch(/never/);
+    expect(combined).not.toMatch(/git add|git commit|pathspec|cd-then-commit/i);
+    expect(primer).toMatch(/Tachyon primer governs orchestration protocol/);
+    expect(primer).toMatch(/project-owned guidance governs repository conventions/);
   });
 });

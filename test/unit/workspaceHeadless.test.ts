@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { Workspace } from "../../src/workspace/Workspace.js";
+import { ResumeUnavailableError } from "../../src/agents/AgentManager.js";
 import type { EngineHost, NoticeAction, ViewKind, WatchEvents } from "../../src/workspace/EngineHost.js";
 import { TMUX_CONTROL_CONCURRENCY, TmuxService, sessionName, workspaceHash, type ExecResult } from "../../src/tmux/TmuxService.js";
 import { Bridge, derivePort } from "../../src/bridge/Bridge.js";
@@ -16,6 +17,7 @@ import { __createdTerminals, __resetVscodeMock } from "../mocks/vscode.js";
 import { readDelegationRecord } from "../../src/bridge/delegationRecord.js";
 import { canonicalBehaviorStubPath } from "../../src/bridge/behaviorStub.js";
 import { realConfigHome } from "../../src/harness/HarnessManager.js";
+import { briefFilePath } from "../../src/agents/briefFile.js";
 
 /**
  * spec 235 — the headless Workspace smoke test (the deferred spec-233 payoff): drive the orchestrator with
@@ -80,6 +82,7 @@ function fakeTmux(opts: { realPaneProcesses?: boolean } = {}) {
   const sessions = new Set<string>();
   const dead = new Map<string, number>();
   const sent = new Map<string, string>(); // session -> last literal send-keys text (spec 332 death-poke assertions)
+  const pasteBuffers = new Map<string, string>();
   const panes = new Map<string, string>();
   const calls: string[][] = [];
   const children = new Map<string, ChildProcess>();
@@ -119,6 +122,17 @@ function fakeTmux(opts: { realPaneProcesses?: boolean } = {}) {
       const name = args[args.indexOf("-t") + 1].replace(/^=/, "").replace(/:$/, "");
       sent.set(name, args[args.length - 1]);
     }
+    if (args[2] === "load-buffer") {
+      const buffer = args[args.indexOf("-b") + 1];
+      pasteBuffers.set(buffer, fs.readFileSync(args.at(-1)!, "utf8"));
+    }
+    if (args[2] === "paste-buffer") {
+      const name = args[args.indexOf("-t") + 1].replace(/^=/, "").replace(/:$/, "");
+      const buffer = args[args.indexOf("-b") + 1];
+      sent.set(name, pasteBuffers.get(buffer) ?? "");
+      if (args.includes("-d")) pasteBuffers.delete(buffer);
+    }
+    if (args[2] === "delete-buffer") pasteBuffers.delete(args[args.indexOf("-b") + 1]);
     if (args[2] === "capture-pane") {
       const name = args[args.indexOf("-t") + 1].replace(/^=/, "").replace(/:$/, "");
       return { stdout: panes.get(name) ?? "", stderr: "" };
@@ -252,6 +266,128 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
       ws.dispose();
       await fake.cleanup();
     }
+  });
+
+  it("re-anchor transports configured project guidance without overwriting the spawn contract", async () => {
+    const root = mkdir();
+    fs.writeFileSync(path.join(root, "guidance.md"), `REANCHOR_GUIDANCE_${"g".repeat(5_000)}`, "utf8");
+    fs.writeFileSync(
+      path.join(root, "tachyon.yml"),
+      "agents:\n  a:\n    cmd: claude\nsettings:\n  projectGuidance:\n    files: [guidance.md]\n",
+      "utf8",
+    );
+    const host = new FakeHost(mkdir());
+    const fake = fakeTmux();
+    const ws = await Workspace.createForTest(
+      root,
+      { host, onViewsChanged: () => {} },
+      { tmux: fake.tmux, startBridge: false },
+    );
+    try {
+      await ws.manager.spawn("a");
+      const spawnFile = briefFilePath(root, "a");
+      const originalSpawnBrief = fs.readFileSync(spawnFile, "utf8");
+
+      await ws.reanchor("a");
+
+      const session = ws.manager.session("a");
+      const injected = fake.sent.get(session) ?? "";
+      const reanchorFile = briefFilePath(root, "a", "reanchor");
+      const reanchorBrief = fs.readFileSync(reanchorFile, "utf8");
+      expect(injected).toContain("── TACHYON PRIMER ──");
+      expect(injected).toContain(reanchorFile);
+      expect(injected.indexOf("── END PRIMER ──")).toBeLessThan(injected.indexOf(reanchorFile));
+      expect(injected.indexOf(reanchorFile)).toBeLessThan(injected.indexOf("── BEFORE FINISHING ──"));
+      expect(reanchorBrief).toContain("── PROJECT GUIDANCE (PROJECT-OWNED) ──");
+      expect(reanchorBrief).toContain("REANCHOR_GUIDANCE_");
+      expect(reanchorBrief).toContain("cat .tachyon/roles/a.md");
+      expect(fs.readFileSync(spawnFile, "utf8")).toBe(originalSpawnBrief);
+    } finally {
+      ws.dispose();
+    }
+  });
+
+  it("re-anchor leaves a running pane untouched when configured guidance becomes invalid", async () => {
+    const root = mkdir();
+    fs.writeFileSync(path.join(root, "guidance.md"), "valid guidance", "utf8");
+    fs.writeFileSync(
+      path.join(root, "tachyon.yml"),
+      "agents:\n  a:\n    cmd: claude\nsettings:\n  projectGuidance:\n    files: [guidance.md]\n",
+      "utf8",
+    );
+    const host = new FakeHost(mkdir());
+    const fake = fakeTmux();
+    const ws = await Workspace.createForTest(
+      root,
+      { host, onViewsChanged: () => {} },
+      { tmux: fake.tmux, startBridge: false },
+    );
+    try {
+      await ws.manager.spawn("a");
+      const session = ws.manager.session("a");
+      fs.rmSync(path.join(root, "guidance.md"));
+
+      await expect(ws.reanchor("a")).rejects.toThrow(/guidance\.md/);
+      expect(fake.sessions.has(session)).toBe(true);
+      expect(fake.sent.has(session)).toBe(false);
+      expect(fs.existsSync(briefFilePath(root, "a", "reanchor"))).toBe(false);
+    } finally {
+      ws.dispose();
+    }
+  });
+
+  it("surfaces an automatic re-anchor guidance failure instead of swallowing it", async () => {
+    const root = mkdir();
+    fs.writeFileSync(path.join(root, "guidance.md"), "valid guidance", "utf8");
+    fs.writeFileSync(
+      path.join(root, "tachyon.yml"),
+      "agents:\n  a:\n    cmd: claude\nsettings:\n  projectGuidance:\n    files: [guidance.md]\n",
+      "utf8",
+    );
+    const host = new FakeHost(mkdir());
+    const fake = fakeTmux();
+    const ws = await Workspace.createForTest(
+      root,
+      { host, onViewsChanged: () => {} },
+      { tmux: fake.tmux, startBridge: false },
+    );
+    try {
+      await ws.manager.spawn("a");
+      fs.rmSync(path.join(root, "guidance.md"));
+      const recoverOnIdle = (ws as unknown as {
+        recoverOnIdle(agent: string, wantAnchor: boolean): Promise<void>;
+      }).recoverOnIdle.bind(ws);
+
+      await recoverOnIdle("a", true);
+
+      expect(host.notices.some((notice) =>
+        notice.level === "warn" &&
+        notice.message.includes("could not re-anchor agent 'a'") &&
+        notice.message.includes("guidance.md")
+      )).toBe(true);
+    } finally {
+      ws.dispose();
+    }
+  });
+
+  it("keeps a failed Resume-all offer and reports a failed fresh-spawn fallback", async () => {
+    const { ws, host } = await makeWorkspace();
+    const record = { declared: true, cwd: ws.workspaceRoot };
+    (ws as unknown as { resumable: Array<{ name: string; record: typeof record }> }).resumable = [
+      { name: "a", record },
+    ];
+    vi.spyOn(ws.manager, "resume").mockRejectedValueOnce(new ResumeUnavailableError("a", "transcript missing"));
+    vi.spyOn(ws.manager, "spawn").mockRejectedValueOnce(new Error("project guidance source missing.md"));
+
+    await ws.resumeAllOffered();
+
+    expect((ws as unknown as { resumable: Array<{ name: string }> }).resumable.map((item) => item.name)).toEqual(["a"]);
+    expect(host.notices.some((notice) =>
+      notice.level === "error" &&
+      notice.message.includes("could not resume agent 'a'") &&
+      notice.message.includes("project guidance source missing.md")
+    )).toBe(true);
+    ws.dispose();
   });
 
   it("mechanism-only canonical Delivery reuses one worktree through review completion", async () => {

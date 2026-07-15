@@ -65,6 +65,28 @@ describe("agentModel.toAgentVM (spec 237)", () => {
     expect(vm).toMatchObject({ name: "child", parent: "orch", worktree: "tachyon/x", harness: true, forked: true, forkable: true });
     expect(vm.resumable).toBeUndefined(); // false flags are omitted, not set
   });
+  it("spec 384: maps live branch, path, and drift (false flags omitted)", () => {
+    const aligned = toAgentVM(raw({ name: "wt", running: true }), {
+      worktree: "tachyon/wt",
+      liveBranch: "tachyon/wt",
+      worktreePath: "/cache/wt",
+    });
+    expect(aligned).toMatchObject({ worktree: "tachyon/wt", liveBranch: "tachyon/wt", worktreePath: "/cache/wt" });
+    expect(aligned.branchDrift).toBeUndefined();
+    const drifted = toAgentVM(raw({ name: "wt2", running: true }), {
+      worktree: "tachyon/wt2",
+      liveBranch: "feat/x",
+      branchDrift: true,
+      worktreePath: "/cache/wt2",
+    });
+    expect(drifted).toMatchObject({ liveBranch: "feat/x", branchDrift: true, worktree: "tachyon/wt2" });
+    const shared = toAgentVM(raw({ name: "shared", running: true }), {
+      liveBranch: "main",
+      worktreePath: "/ws",
+    });
+    expect(shared).toMatchObject({ liveBranch: "main", worktreePath: "/ws" });
+    expect(shared.worktree).toBeUndefined();
+  });
   it("spec 352 — passes through declaredOwner without replacing runtime parent", () => {
     const vm = toAgentVM(raw({ name: "reviewer", running: true, parent: "codex", declaredOwner: "claude" }));
     expect(vm).toMatchObject({ name: "reviewer", parent: "codex", declaredOwner: "claude" });

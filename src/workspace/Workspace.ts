@@ -57,7 +57,9 @@ import {
 } from "../bridge/clientRebind.js";
 import { delegationRecordFromSpawn, readLatestDelegationRecord, writeDelegationRecordAsync } from "../bridge/delegationRecord.js";
 import { writeAndCommitCanonicalBehaviorStub } from "../bridge/behaviorStub.js";
-import { renderPrimer } from "../bridge/primer.js";
+import { wrapWithPrimer } from "../bridge/primer.js";
+import { loadAndRenderProjectGuidance } from "../config/projectGuidance.js";
+import { assertSafeBriefTransport, deliverableBody, previewDeliverableBody } from "../agents/briefFile.js";
 import { loadOrCreateExternalToken, loadOrCreateToken, TOKEN_ENV_VAR, URL_ENV_VAR, AGENT_TOKEN_ENV_VAR } from "../bridge/token.js";
 import { CallerIdentityRegistry, loadOrCreateHmacKey, type CallerScope, type CallerSnapshot, type PersistableEntry } from "../bridge/callerIdentity.js";
 import { redactSecrets } from "../bridge/redact.js";
@@ -1992,6 +1994,12 @@ export class Workspace {
     if (!(await this.tmux.hasSession(session))) throw new Error(`agent '${agent}' is not running`);
     const def = this.manager.defOf(agent);
     const relPath = path.join(".tachyon", "roles", `${agent}.md`);
+    // Resolve the complete project-owned block before writing the role artifact or touching the
+    // pane. A configured-but-invalid source must leave the running agent exactly as it was.
+    const projectGuidance = loadAndRenderProjectGuidance(
+      this.workspaceRoot,
+      this.config?.settings.projectGuidance,
+    );
     try {
       const abs = path.join(this.workspaceRoot, relPath);
       fs.mkdirSync(path.dirname(abs), { recursive: true });
@@ -1999,19 +2007,29 @@ export class Workspace {
     } catch {
       // a missing role doc just weakens the reminder; the inline role name still re-anchors
     }
-    // spec 363 T3 — re-anchor is one of the four primer moments (spawn/restart/resume/re-anchor):
-    // always the FULL primer (spec.md — no delta dosing), typed in AFTER the short role reminder
-    // so recency still favors the role-doc pointer while the primer restores protocol/repo facts.
+    // Specs 363/383 — re-anchor uses the same ownership ordering as startup: Tachyon protocol,
+    // project-owned body, then the closing protocol reminder. Long bodies go to a purpose-specific
+    // file so the original spawn contract remains intact and tmux receives only a compact pointer.
     const delegationRecord = readLatestDelegationRecord(this.workspaceRoot, agent)?.record;
-    const { primer, beforeFinishing } = renderPrimer({
+    const body = [projectGuidance, roleReminder(def?.role, relPath)]
+      .filter((part): part is string => !!part?.trim())
+      .join("\n\n");
+    const frame = (deliverable: string): string => wrapWithPrimer(deliverable, {
       agentName: agent,
       delegator: this.manager.delegatorOf(agent),
       parent: this.manager.parentOf(agent),
       gate: delegationRecord ? { behaviorTest: delegationRecord.behaviorTest, owns: delegationRecord.owns, stubPath: delegationRecord.stubPath } : undefined,
-      freshWorktree: false,
       verify: this.config?.settings.verify,
     });
-    await this.tmux.sendKeys(session, `${roleReminder(def?.role, relPath)}\n\n${primer}\n\n${beforeFinishing}`, true);
+    // Preflight the exact pointer framing before replacing a prior re-anchor artifact.
+    assertSafeBriefTransport(
+      frame(previewDeliverableBody(this.workspaceRoot, agent, body, "reanchor")),
+      `agent '${agent}' re-anchor brief`,
+    );
+    const deliverable = deliverableBody(this.workspaceRoot, agent, body, "reanchor");
+    const injection = frame(deliverable);
+    assertSafeBriefTransport(injection, `agent '${agent}' re-anchor brief`);
+    await this.tmux.sendKeys(session, injection, true);
   }
 
   // ───────────────────────── spec 241 — per-agent continuity ─────────────────────────
@@ -2182,8 +2200,9 @@ export class Workspace {
         try {
           this.pendingAnchor.delete(agent);
           await this.reanchor(agent);
-        } catch {
-          /* best-effort */
+        } catch (error) {
+          const detail = error instanceof Error ? error.message : String(error);
+          this.host.notify(this.t("could not re-anchor agent '{0}': {1}", agent, detail), "warn");
         }
       }
       this.detectSessionDiscontinuity(agent);
@@ -3322,18 +3341,28 @@ export class Workspace {
     this.deps.onViewsChanged("agents");
   }
 
-  /** Resume every currently-offered agent (best-effort; a failure falls back to fresh). */
+  /** Resume every currently-offered agent; declared stale sessions fall back to fresh spawn. */
   async resumeAllOffered(): Promise<void> {
+    const failed: typeof this.resumable = [];
     for (const item of [...this.resumable]) {
       try {
         await this.manager.resume(item.name, item.record);
       } catch (err) {
-        if (err instanceof ResumeUnavailableError && item.record.declared) {
-          await this.manager.spawn(item.name).catch(() => undefined);
+        try {
+          if (err instanceof ResumeUnavailableError && item.record.declared) {
+            await this.manager.spawn(item.name);
+          } else {
+            throw err;
+          }
+        } catch (fallbackError) {
+          failed.push(item);
+          const detail = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+          this.host.notify(this.t("could not resume agent '{0}': {1}", item.name, detail), "error");
         }
       }
     }
-    this.resumable = [];
+    // Keep failed offers actionable instead of silently discarding their recovery path.
+    this.resumable = failed;
     this.deps.onViewsChanged("agents");
   }
 

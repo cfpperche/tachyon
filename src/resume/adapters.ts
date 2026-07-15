@@ -116,12 +116,15 @@ export function harnessable(adapter: ResumeAdapter | null | undefined): boolean 
 }
 
 const LAUNCHERS = new Set(["npx", "bunx", "pnpx", "env"]);
+/** GNU env options whose operand is a separate token, not the wrapped runtime binary. */
+const ENV_OPERAND_FLAGS = new Set(["-u", "--unset", "-C", "--chdir", "-S", "--split-string"]);
 
 /** Index of the actual binary token, seeing through `env X=1`, `npx`, leading flags. */
 export function binaryIndex(tokens: string[]): number {
   for (let i = 0; i < tokens.length; i++) {
     const base = tokens[i].split("/").pop() ?? tokens[i];
     if (LAUNCHERS.has(base)) continue; // launcher (npx/bunx/env) — keep scanning
+    if (ENV_OPERAND_FLAGS.has(base)) { i++; continue; } // env option + operand
     if (base.includes("=") || base.startsWith("-")) continue; // env assignment / flag
     return i; // first real binary token
   }
