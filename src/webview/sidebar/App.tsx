@@ -8,6 +8,14 @@ import { primaryActions, moreActions, ACTION_META, type ActionId } from "../../s
 import { sortRows, groupByParent, SORT_LABEL, asSortMode, type SortMode } from "../../sidebar/sortRows";
 import { agentAncestorNames, agentGroupParent, agentHierarchyRows } from "./grouping";
 import { placeMoreMenu } from "./menuPosition";
+import {
+  AGENT_STATUS_FILTERS,
+  AGENT_STATUS_FILTER_LABEL,
+  AGENT_STATUS_FILTER_TITLE,
+  countAgentStatusFilters,
+  filterAgentsByStatus,
+  type AgentStatusFilter,
+} from "./agentStatusFilter";
 
 const Icon = ({ name }: { name: string }) => <span class={`codicon codicon-${name}`} aria-hidden="true" />;
 
@@ -369,11 +377,13 @@ function HandoffBtn({ handoff, onOpen }: { handoff?: import("../../sidebar/types
   );
 }
 
-function Panel({ tab, fleet, scope, collapsed, toggle, flashName, agentSort, terminalSort, activePinTag, onPinTag, metricsOpen, onToggleMetrics }: {
+function Panel({ tab, fleet, scope, collapsed, toggle, flashName, agentSort, terminalSort, activePinTag, onPinTag, metricsOpen, onToggleMetrics, agentFilter = "all" }: {
   tab: TabId; fleet: FleetVM; scope: string; collapsed: Set<string>; toggle: (k: string) => void; flashName: string | null; agentSort: SortMode; terminalSort: SortMode; activePinTag: string | null; onPinTag: (tag: string | null) => void;
   /** spec 386 — scoped keys `${scope}:m:${agent}` that currently show resource detail lanes. */
   metricsOpen: Set<string>;
   onToggleMetrics: (agentName: string) => void;
+  /** t-eddf90 — session-local status bucket filter (Agents tab only). */
+  agentFilter?: AgentStatusFilter;
 }) {
   const d = useContext(DispatchCtx);
   // Collapse keys are scoped to the folder so multi-root groups with the same name don't collapse together.
@@ -387,7 +397,12 @@ function Panel({ tab, fleet, scope, collapsed, toggle, flashName, agentSort, ter
     if (!fleet.agents.length) {
       return <>{banner}{fleet.configError ? <div class="empty">No agents in ledger or last-known-good snapshot</div> : <div class="empty">(no agents)</div>}</>;
     }
-    const sorted = sortRows(fleet.agents, agentSort, (a) => a.name);
+    // t-eddf90 — filter BEFORE sort/group so hierarchy rebuilds on the visible subset only (v1: no dimmed parents).
+    const visible = filterAgentsByStatus(fleet.agents, agentFilter);
+    if (!visible.length) {
+      return <>{banner}<div class="empty">No agents in this filter</div></>;
+    }
+    const sorted = sortRows(visible, agentSort, (a) => a.name);
     // spec 304 — group a spawned agent's row next to its parent's; sortRows itself stays parent-unaware.
     // spec 352/t-4eb8bf — declared ownership also nests visually, but runtime parent wins when both exist.
     // spec 362/t-1b6ab0 — gated top-level delegations nest by delegator before declared owner.
@@ -695,6 +710,8 @@ export function App({ fleets = [SAMPLE], dispatch, prefs = {}, collapsedKeys = [
   const [metricsOpen, setMetricsOpen] = useState<Set<string>>(() => new Set());
   const [flashName, setFlashName] = useState<string | null>(null);
   const [activePinTag, setActivePinTag] = useState<string | null>(null);
+  /** t-eddf90 — session-local Agents status filter (like pin tags; not host-persisted). */
+  const [agentFilter, setAgentFilter] = useState<AgentStatusFilter>("all");
   // spec 242 — sort: the host's persisted pref seeds it; a user choice this session OVERRIDES (and persists),
   // so a stale fleet snapshot can never revert the user's pick (codex D9). Default name-asc.
   const [sortOverride, setSortOverride] = useState<{ agents?: SortMode; terminals?: SortMode }>({});
@@ -703,6 +720,10 @@ export function App({ fleets = [SAMPLE], dispatch, prefs = {}, collapsedKeys = [
   const changeSort = (section: "agents" | "terminals", mode: SortMode) => {
     setSortOverride((o) => ({ ...o, [section]: mode })); // optimistic + session-authoritative
     dispatch?.setSort?.(section, mode); // persist for next load
+  };
+  const pickAgentFilter = (next: AgentStatusFilter) => {
+    // Single-select toggle: re-clicking the active non-all chip returns to All.
+    setAgentFilter((cur) => (cur === next && next !== "all" ? "all" : next));
   };
   const isMac = (navigator.platform || "").toLowerCase().includes("mac");
   const collapsedKeySig = collapsedKeys.join("\0");
@@ -745,6 +766,12 @@ export function App({ fleets = [SAMPLE], dispatch, prefs = {}, collapsedKeys = [
     [fleets],
   );
   const metricsOpenCount = metricsOpen.size;
+  /** t-eddf90 — chip counts from the full multi-root fleet (stable anchors, not the filtered subset). */
+  const agentFilterCounts = useMemo(
+    () => countAgentStatusFilters(fleets.flatMap((f) => f.agents)),
+    [fleets],
+  );
+  const totalAgents = agentFilterCounts.all;
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); setOpen((o) => !o); } };
@@ -846,6 +873,7 @@ export function App({ fleets = [SAMPLE], dispatch, prefs = {}, collapsedKeys = [
           onPinTag={setActivePinTag}
           metricsOpen={metricsOpen}
           onToggleMetrics={(name) => toggleMetrics(f.folder?.hash ?? "", name)}
+          agentFilter={agentFilter}
         />
       </div>
     </DispatchCtx.Provider>
@@ -910,6 +938,31 @@ export function App({ fleets = [SAMPLE], dispatch, prefs = {}, collapsedKeys = [
           </span>
         )}
       </div>
+      {tab === "Agents" && totalAgents > 0 && (
+        <div class={`agent-filters${agentFilter !== "all" ? " has-active" : ""}`} role="toolbar" aria-label="Filter agents by status">
+          {AGENT_STATUS_FILTERS.map((f) => {
+            const n = agentFilterCounts[f];
+            const on = agentFilter === f;
+            const zero = f !== "all" && n === 0;
+            return (
+              <button
+                key={f}
+                type="button"
+                class={`agent-filter-chip f-${f}${on ? " on" : ""}${zero ? " zero" : ""}`}
+                title={AGENT_STATUS_FILTER_TITLE[f]}
+                aria-label={`${AGENT_STATUS_FILTER_LABEL[f]}, ${n} agents`}
+                aria-pressed={on}
+                disabled={zero}
+                onClick={() => pickAgentFilter(f)}
+              >
+                <span class="af-dot" aria-hidden="true" />
+                <span class="af-label">{AGENT_STATUS_FILTER_LABEL[f]}</span>
+                <span class="af-n">{n}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
       <div class="panel active" role="tabpanel" id="sidebar-panel" aria-labelledby={`tab-${tab}`} tabindex={0}>
         {fleets.map((f) => {
           // spec 331 (pin p-cf707f) — the folder header is the workspace identity line, ALWAYS present:
