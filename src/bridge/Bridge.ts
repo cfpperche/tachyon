@@ -54,15 +54,14 @@ export function derivePort(wsHash: string): number {
 }
 
 /**
- * The Bridge — Tachyon's embedded MCP server. Listens on a free loopback port for
- * the lifetime of the extension host. Stateless streamable-HTTP: each POST gets a
+ * The Bridge — Tachyon's engine-owned MCP server. Listens on a loopback port for
+ * the lifetime of the persistent workspace engine. Stateless streamable-HTTP: each POST gets a
  * fresh transport + McpServer pair, so no session bookkeeping; durable state lives
  * in tmux, not here.
  */
 export class Bridge {
   private server?: http.Server;
   private _port?: number;
-  private _advertisedPort?: number;
   private _usedFallback = false;
   private readonly sessions = new Map<string, BridgeMcpSession>();
   private readonly closingSessions = new Set<string>();
@@ -93,16 +92,12 @@ export class Bridge {
   ) {}
 
   get port(): number | undefined {
-    return this._advertisedPort ?? this._port;
-  }
-
-  /** Private Extension Host listener used as the persistent proxy's backend. */
-  get listenerPort(): number | undefined {
     return this._port;
   }
 
-  advertise(port: number | undefined): void {
-    this._advertisedPort = port;
+  /** Actual engine-owned listener port. */
+  get listenerPort(): number | undefined {
+    return this._port;
   }
 
   /** True when the preferred port was busy and an ephemeral one was used instead. */
@@ -296,7 +291,6 @@ export class Bridge {
     const server = this.server;
     this.server = undefined;
     this._port = undefined;
-    this._advertisedPort = undefined;
     const sessions = [...this.sessions.values()];
     this.sessions.clear();
     await Promise.all(sessions.map((session) => this.closeSession(session.transport.sessionId, session)));

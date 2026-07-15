@@ -2,7 +2,7 @@ import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { ensureSecureRuntimeDir } from "../bridge/persistentProxyProtocol.js";
+import { ensureSecureRuntimeDir } from "./runtimeSecurity.js";
 import { workspaceCommandFingerprint } from "./commandIdentity.js";
 import {
   isEngineShellHelloV1,

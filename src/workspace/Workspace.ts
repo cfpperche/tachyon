@@ -46,7 +46,6 @@ import { subtreeCpuTicks } from "../attention/cpu.js";
 import { Waiters } from "../bridge/Waiters.js";
 import { NoticeQueue, type NoticeQueueMetadata } from "../bridge/NoticeQueue.js";
 import { Bridge, derivePort } from "../bridge/Bridge.js";
-import { PersistentBridgeLaunchError, PersistentBridgeService } from "../bridge/PersistentBridgeService.js";
 import {
   BridgeClientRebindCoordinator,
   DEFAULT_BRIDGE_CLIENT_REBIND,
@@ -259,8 +258,6 @@ export interface WorkspaceSeams {
   engine?: WorkspaceEngine;
   /** skip `bridge.start()` (no port bound) — default true in production. */
   startBridge?: boolean;
-  /** production uses the detached stable proxy; headless tests opt in explicitly. */
-  persistentBridge?: boolean;
   /** test-only presentation override; production obtains the adapter from EngineHost. */
   terminals?: TerminalPresentation;
 }
@@ -419,7 +416,6 @@ export class Workspace {
   readonly scheduler: Scheduler;
   readonly proposals: ProposalStore;
   readonly bridge: Bridge;
-  private readonly persistentBridge?: PersistentBridgeService;
   readonly externalTools: ExternalToolRegistry;
   readonly token: string | undefined;
   readonly externalToken: string | undefined;
@@ -482,7 +478,6 @@ export class Workspace {
     seams: WorkspaceSeams = {},
   ) {
     this.wsHash = workspaceHash(workspaceRoot);
-    if (seams.persistentBridge) this.persistentBridge = new PersistentBridgeService(workspaceRoot, this.wsHash);
     this.gitExec = createGitExec(() => resolveGitBinaryForHost(deps.host));
     this.taskNotifications = new TaskNotificationService(workspaceRoot, deps.host, () => this.config);
     if (seams.tmux) {
@@ -2115,27 +2110,18 @@ export class Workspace {
     }
   }
 
-  /** Builds, boots the Bridge/engine/watchers, and (if configured) starts agents. */
-  /** Production entry: builds, boots the Bridge/engine/watchers, and (if configured) starts agents. */
-  static async create(workspaceRoot: string, deps: WorkspaceDeps): Promise<Workspace> {
-    return Workspace._create(workspaceRoot, deps, { persistentBridge: true });
-  }
-
-  /**
-   * Persistent-engine entry: the daemon owns the public Bridge listener directly.  Unlike the
-   * Extension Host compatibility path above, it never starts or registers the legacy Bridge proxy.
-   */
+  /** Persistent-engine entry: the daemon owns the public Bridge listener directly. */
   static async createDaemon(workspaceRoot: string, deps: WorkspaceDeps): Promise<Workspace> {
-    return Workspace._create(workspaceRoot, deps, { persistentBridge: false });
+    return Workspace._create(workspaceRoot, deps);
   }
 
   /** spec 235 — headless test entry: inject a fake-exec tmux + no-op engine + `startBridge:false` to drive
-   *  the Workspace with no Electron / real tmux / bound port. Delegates to the same impl as `create`. */
+   *  the Workspace with no Electron / real tmux / bound port. */
   static async createForTest(workspaceRoot: string, deps: WorkspaceDeps, seams: WorkspaceSeams): Promise<Workspace> {
     return Workspace._create(workspaceRoot, deps, seams);
   }
 
-  private static async _create(workspaceRoot: string, deps: WorkspaceDeps, seams: WorkspaceSeams): Promise<Workspace> {
+  private static async _create(workspaceRoot: string, deps: WorkspaceDeps, seams: WorkspaceSeams = {}): Promise<Workspace> {
     const ws = new Workspace(workspaceRoot, deps, seams);
     void ws.engine.start().catch(() => {
       /* degraded from birth — executor falls back, reconnect loop is running */
@@ -2172,7 +2158,8 @@ export class Workspace {
             "warn",
           );
         }
-        // spec 364 — after Bridge ready + 359 reload recovery, bump generation and auto-rebind suspects.
+        // A Workspace is created only by a new persistent-engine incarnation. Shell attach/reload never
+        // reaches this path, so survivor recovery is bound to an actual engine restart.
         void (async () => {
           await ws.recoverPendingHostActionReload();
           await ws.clientRebind?.onListenerReady();
@@ -2262,10 +2249,7 @@ export class Workspace {
 
   async restartBridge(): Promise<number> {
     const preferred = this.config?.settings.bridgePort ?? derivePort(this.wsHash);
-    const listener = this.bridge.listenerPort;
-    if (listener && this.persistentBridge) await this.persistentBridge.detach(listener);
     await this.bridge.dispose();
-    if (this.persistentBridge) await this.persistentBridge.stop().catch(() => undefined);
     const port = await this.startBridgeListener(preferred);
     if (port !== preferred) {
       this.host.notify(
@@ -2273,68 +2257,27 @@ export class Workspace {
         "warn",
       );
     }
-    await this.clientRebind?.onListenerReady();
     this.deps.onViewsChanged("agents");
     return port;
   }
 
   async stopBridge(): Promise<void> {
-    const listener = this.bridge.listenerPort;
-    if (listener && this.persistentBridge) await this.persistentBridge.detach(listener);
     await this.bridge.dispose();
-    if (this.persistentBridge) await this.persistentBridge.stop();
     this.deps.onViewsChanged("agents");
   }
 
   private async startBridgeListener(preferred: number): Promise<number> {
-    if (!this.persistentBridge) return this.bridge.start(preferred);
-    const backendPort = await this.bridge.start(0);
-    try {
-      const descriptor = await this.persistentBridge.ensureAndRegister(preferred, backendPort);
-      this.bridge.advertise(descriptor.port);
-      this.lastBridgeStartFailure = undefined;
-      return descriptor.port;
-    } catch (error) {
-      await this.bridge.dispose();
-      return this.degradeToInProcessBridge(preferred, error);
-    }
-  }
-
-  /** t-88ef8c — a persistent-proxy start failure (long-path AF_UNIX EINVAL, systemd unavailable, a dead
-   *  control socket, ...) must never leave the workspace without a Bridge: fall back to the same direct
-   *  listener used when the persistent proxy is disabled, with one warning instead of aborting activation. */
-  private async degradeToInProcessBridge(preferred: number, error: unknown): Promise<number> {
-    const failure = this.rememberBridgeStartFailure(error);
     const port = await this.bridge.start(preferred);
-    this.host.notify(
-      this.t("Bridge: the persistent proxy is unavailable ({0}) — continuing with the in-process Bridge only. Run Tachyon: Doctor for details.", failure.message),
-      "warn",
-      [
-        {
-          label: "Retry Bridge",
-          run: async () => {
-            try {
-              await this.restartBridge();
-              this.host.notify("Bridge restarted.");
-            } catch (retryError) {
-              this.notifyBridgeStartFailure(retryError);
-            }
-          },
-        },
-        { label: "Run Doctor", run: () => this.host.executeCommand("tachyon.doctor", this.wsHash).then(() => undefined) },
-      ],
-    );
+    this.lastBridgeStartFailure = undefined;
     return port;
   }
 
   private rememberBridgeStartFailure(error: unknown): BridgeStartFailureInfo {
-    const failure = error instanceof PersistentBridgeLaunchError
-      ? { code: error.code, message: error.message, technicalDetail: error.technicalDetail }
-      : {
-          code: "BRIDGE_START_FAILED",
-          message: "Bridge could not start. Run Tachyon: Doctor for details, then retry the Bridge.",
-          technicalDetail: boundedBridgeFailureDetail(error instanceof Error ? error.stack ?? error.message : String(error)),
-        };
+    const failure = {
+      code: "BRIDGE_START_FAILED",
+      message: "Bridge could not start. Run Tachyon: Doctor for details, then retry the Bridge.",
+      technicalDetail: boundedBridgeFailureDetail(error instanceof Error ? error.stack ?? error.message : String(error)),
+    };
     if (
       this.lastBridgeStartFailure?.code === failure.code
       && this.lastBridgeStartFailure.message === failure.message
@@ -4025,8 +3968,6 @@ export class Workspace {
     this.watches.dispose();
     this.terminals.dispose();
     this.waiters.dispose();
-    const listener = this.bridge.listenerPort;
-    if (listener && this.persistentBridge) await this.persistentBridge.detach(listener).catch(() => undefined);
     await Promise.allSettled([this.bridge.dispose(), this.engine.dispose()]);
   }
 }

@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { ensureSecureRuntimeDir } from "../bridge/persistentProxyProtocol.js";
+import { ensureSecureRuntimeDir } from "./runtimeSecurity.js";
 import { workspaceHash } from "../tmux/TmuxService.js";
 import { EngineControlClientError, requestEngineControl } from "./controlClient.js";
 import { startDaemonEngineService, type RunningDaemonEngineService } from "./engineService.js";

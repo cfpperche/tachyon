@@ -9,8 +9,7 @@ import { Workspace } from "../../src/workspace/Workspace.js";
 import { ResumeUnavailableError } from "../../src/agents/AgentManager.js";
 import type { EngineHost, NoticeAction, ViewKind, WatchEvents } from "../../src/workspace/EngineHost.js";
 import { TMUX_CONTROL_CONCURRENCY, TmuxService, sessionName, workspaceHash, type ExecResult } from "../../src/tmux/TmuxService.js";
-import { Bridge, derivePort } from "../../src/bridge/Bridge.js";
-import { PersistentBridgeLaunchError, PersistentBridgeService } from "../../src/bridge/PersistentBridgeService.js";
+import { Bridge } from "../../src/bridge/Bridge.js";
 import type { NotifyLevel } from "../../src/bridge/tools.js";
 import { agentLogId } from "../../src/activity/logStore.js";
 import { readSessionOwners, sessionOwnersFile, spawnSettingsPath } from "../../src/activity/sessionOwners.js";
@@ -1248,45 +1247,6 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     expect(auditLines[0].payload).toMatchObject({ kind: "outcome", actionId: "act-reload-recover", state: "reattached_verified" });
     expect(host.notices).toEqual([]);
     ws.dispose();
-  });
-
-  it("degrades to the in-process Bridge with a single warning when the persistent proxy fails to launch (t-88ef8c)", async () => {
-    const root = mkdir();
-    fs.writeFileSync(path.join(root, "tachyon.yml"), "agents:\n  idle:\n    cmd: sh\n", "utf8");
-    const host = new FakeHost(mkdir());
-    const { tmux } = fakeTmux();
-    const launchError = new PersistentBridgeLaunchError(
-      "SYSTEMD_USER_UNAVAILABLE",
-      "Bridge is off because WSL user services are not running. Set [boot] systemd=true in /etc/wsl.conf, run wsl --shutdown from Windows, reopen VS Code, then retry the Bridge.",
-      "systemd-run exited with code 1: Failed to connect to bus: No medium found",
-    );
-    const ensure = vi.spyOn(PersistentBridgeService.prototype, "ensureAndRegister").mockRejectedValue(launchError);
-    const start = vi.spyOn(Bridge.prototype, "start").mockResolvedValue(41_000);
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    let ws: Workspace | undefined;
-
-    try {
-      ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux, persistentBridge: true });
-      // Activation never aborts: the Bridge listener started twice — once for the persistent-proxy
-      // backend attempt (ephemeral port), once again bound directly to `preferred` for the degrade.
-      expect(start.mock.calls).toEqual([[0], [derivePort(workspaceHash(root))]]);
-      expect(host.notices.filter((n) => n.level === "error")).toEqual([]);
-      const notice = host.notices.find((n) => n.level === "warn" && n.message.includes("in-process Bridge"));
-      expect(notice?.message).toContain("wsl --shutdown");
-      expect(notice?.message).not.toContain("Failed to connect to bus");
-      expect(notice?.actions.map((a) => a.label)).toEqual(["Retry Bridge", "Run Doctor"]);
-      expect(ws.bridgeStartFailureInfo()).toEqual({
-        code: "SYSTEMD_USER_UNAVAILABLE",
-        message: launchError.message,
-        technicalDetail: launchError.technicalDetail,
-      });
-      expect(warn).toHaveBeenCalledWith(expect.stringContaining("Failed to connect to bus"));
-    } finally {
-      await ws?.dispose();
-      ensure.mockRestore();
-      start.mockRestore();
-      warn.mockRestore();
-    }
   });
 
   it("blocks reloadWindow while another agent is actively working", async () => {

@@ -849,7 +849,7 @@
           {
             "id": "bridge",
             "title": "The Bridge is automatic",
-            "description": "The **Bridge** is an embedded MCP server that lets your agents spawn sub-agents, read each other's output, run commands and notify you. Tachyon injects it into every Claude/Codex agent it spawns (incl. restart/resume/fork) \u2014 no setup needed.\nUse **Connect Agent Runtime** only for a CLI session you start manually outside Tachyon.\n[Connect a runtime](command:tachyon.connectRuntime)",
+            "description": "The **Bridge** is a persistent workspace MCP server that lets your agents spawn sub-agents, read each other's output, run commands and notify you. Tachyon injects it into every Claude/Codex agent it spawns (incl. restart/resume/fork) \u2014 no setup needed.\nUse **Connect Agent Runtime** only for a CLI session you start manually outside Tachyon.\n[Connect a runtime](command:tachyon.connectRuntime)",
             "media": {
               "image": "media/walkthrough/studio.png",
               "altText": "Agent Studio tabs"
@@ -890,7 +890,7 @@
     "verify:full:quiet": "node scripts/verify-full.mjs",
     "dogfood:persistent-engine": "node scripts/dogfood/persistent-engine.mjs",
     "dogfood:dev-host": "bash scripts/dev-host/cli.sh",
-    "dogfood:runtime-launch-preflight": "node scripts/dev-host/lane.mjs run --owner sdd-370-headless --target worktree -- npm exec vitest run test/unit/codexCatalogStream.test.ts test/unit/runtimeLaunchPreflight.test.ts test/unit/devHostLane.test.ts test/unit/devHostLauncher.test.ts test/unit/persistentBridgeProxy.test.ts test/unit/launchReadinessRecovery.test.ts test/unit/bridge.test.ts",
+    "dogfood:runtime-launch-preflight": "node scripts/dev-host/lane.mjs run --owner sdd-370-headless --target worktree -- npm exec vitest run test/unit/codexCatalogStream.test.ts test/unit/runtimeLaunchPreflight.test.ts test/unit/devHostLane.test.ts test/unit/devHostLauncher.test.ts test/unit/engineSupervisor.test.ts test/unit/launchReadinessRecovery.test.ts test/unit/bridge.test.ts",
     "dogfood:runtime-observability": "vite-node --script scripts/runtime-observability-dogfood.ts",
     "dogfood:ui-shortlist": "bash scripts/dev-host/run-shortlist.sh",
     "test:browser": "vitest run --config vitest.browser.config.ts",

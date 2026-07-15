@@ -625,3 +625,22 @@ None.
   persistent-engine dogfood again converged concurrent starters, reused one exact engine/Bridge and exercised
   the remote lifecycle successfully.  No second global full run was made; final closure remains reserved until
   the announced SOUL merge and the remaining upgrade/recovery tasks are reconciled.
+
+## Twenty-ninth implementation slice — 2026-07-15
+
+- Deleted the retired Extension Host Bridge proxy, its register/detach protocol, launcher, standalone bundle,
+  dogfood and proxy-specific tests.  `Workspace` no longer exposes an embedded production constructor or a
+  proxy test seam: the only production entry is `createDaemon`, which owns the public Bridge directly.
+- Moved the still-required private runtime-directory check into the engine service under a neutral name.  The
+  engine control server, supervisor, daemon entrypoint and staged-payload store retain the same fail-closed
+  symlink, ownership and permission checks without importing a retired proxy module.
+- Manual Bridge restart no longer bumps the survivor generation or restarts agents.  The one remaining
+  `onListenerReady` call is reached only while constructing a new persistent `Workspace`, which is equivalent
+  to a proven engine incarnation change; shell attach/reload cannot reach it.
+- Removed the proxy build target and made every build delete any stale `dist/persistent-bridge-daemon.cjs`, so
+  a reused output directory cannot accidentally ship it.  The walkthrough now describes the Bridge as a
+  persistent workspace service, and the runtime-launch dogfood points at the engine supervisor instead of the
+  deleted proxy suite.
+- Typecheck and the focused removal matrix pass (134/134 across the retirement guard, Bridge, Workspace,
+  engine supervisor/service, packaging and staged payloads).  Build, the 228-file editor-free daemon import
+  closure and packaged persistent-engine dogfood are green; the stale proxy bundle is absent after build.

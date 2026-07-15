@@ -128,20 +128,6 @@ const externalResolver = {
   logLevel: "info",
 };
 
-// spec 375 — stable public Bridge endpoint that survives Extension Host reloads. This tiny detached
-// process only proxies loopback HTTP and accepts owner-only Unix-socket lifecycle control.
-const persistentBridgeDaemon = {
-  entryPoints: ["src/bridge/persistentProxyDaemon.ts"],
-  bundle: true,
-  outfile: "dist/persistent-bridge-daemon.cjs",
-  platform: "node",
-  format: "cjs",
-  target: "node20",
-  define: nodeDefines,
-  sourcemap: false,
-  logLevel: "info",
-};
-
 // spec 382 — standalone workspace engine.  The Extension Host stages this immutable bundle outside the
 // extension-version directory, then the Linux user-service manager owns its lifetime across reloads.
 // The manifest plugin hashes the exact emitted daemon and its only runtime media dependency.
@@ -415,6 +401,8 @@ function buildTailwind() {
 }
 
 mkdirSync("dist/webview", { recursive: true });
+// spec 382 — never leave the retired Extension-Host proxy in a reused build directory or VSIX.
+rmSync("dist/persistent-bridge-daemon.cjs", { force: true });
 rmSync("dist/engine", { recursive: true, force: true });
 mkdirSync("dist/engine/media", { recursive: true });
 copyFileSync("media/clipboard-copy.sh", "dist/engine/media/clipboard-copy.sh");
@@ -474,7 +462,7 @@ if (existsSync(excalidrawAssets)) {
   cpSync(excalidrawAssets, "dist/webview/excalidraw-assets", { recursive: true });
 }
 
-const targets = [extension, toolLauncher, dataResolver, externalResolver, persistentBridgeDaemon, engineDaemon, sidebar, activity, handoff, approval, plugins, probes, inspector, pinPreview, pinStudio, missionControl, taskDetail, taskStudio, runtimeOps, pipelineStudio, agentStudioFixture, agentStudioShell, terminalStudioShell, commandStudioShell, runbookStudioShell, scheduleStudioShell, pluginHost, excalidraw, mermaid, katex, preview, uiGate];
+const targets = [extension, toolLauncher, dataResolver, externalResolver, engineDaemon, sidebar, activity, handoff, approval, plugins, probes, inspector, pinPreview, pinStudio, missionControl, taskDetail, taskStudio, runtimeOps, pipelineStudio, agentStudioFixture, agentStudioShell, terminalStudioShell, commandStudioShell, runbookStudioShell, scheduleStudioShell, pluginHost, excalidraw, mermaid, katex, preview, uiGate];
 if (watch) {
   const ctxs = await Promise.all(targets.map((c) => esbuild.context(c)));
   await Promise.all(ctxs.map((c) => c.watch()));

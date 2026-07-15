@@ -33,7 +33,7 @@ _Generated from `plan.md` on 2026-07-14. Work top-to-bottom. No automatic integr
 - [x] Change extension activation to ensure/stage/attach only; change deactivate/folder removal to detach
   only; remove all production `Workspace.create`, `Workspace.start`, `Workspace.dispose` and backend
   registration calls from the shell.
-- [ ] Remove embedded-engine fallback, proxy-to-ephemeral-backend mode and shell-generation Bridge-client
+- [x] Remove embedded-engine fallback, proxy-to-ephemeral-backend mode and shell-generation Bridge-client
   rebind.  Retain recovery only for a proven engine incarnation change.
 
 ## Upgrade, recovery and compatibility

@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { createHash, randomBytes } from "node:crypto";
-import { ensureSecureRuntimeDir } from "../bridge/persistentProxyProtocol.js";
+import { ensureSecureRuntimeDir } from "./runtimeSecurity.js";
 import {
   isStagedPayloadRefV1,
   type StagedPayloadRefV1,
