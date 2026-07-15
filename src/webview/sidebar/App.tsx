@@ -267,32 +267,20 @@ export function AgentRow({ a, flash, nested = false, hasChildren = false, collap
         )}
         <span class={`sdot ${a.status}`} role="img" title={STATUS_LABEL[a.status]} aria-label={STATUS_LABEL[a.status]} />
         <span class="name">{a.name}{a.model && <><span class="model-sep"> — </span><span class="model">{a.model}</span><ModelProvenance a={a} /></>}</span>
-        {/* spec 386 — metrics toggle (independent of hierarchy chevron) + collapsed peek */}
+        {/* spec 386 — metrics pill only (no extra ▤ control): click expands L3–L4, click again collapses */}
         {hasResources && (
-          <>
-            <button
-              type="button"
-              class={`metrics-toggle${metricsOpen ? " open" : ""}`}
-              title={metricsOpen ? `Collapse metrics — ${a.name}` : `Expand metrics — ${a.name}`}
-              aria-label={metricsOpen ? `Collapse metrics — ${a.name}` : `Expand metrics — ${a.name}`}
-              aria-expanded={metricsOpen}
-              onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggleMetrics?.(); }}
-            >
-              <span class="glyph" aria-hidden="true">▤</span>
-            </button>
-            {!metricsOpen && (
-              <button
-                type="button"
-                class={`peek${hot ? " hot" : ""}`}
-                title={`Expand metrics — ${a.name}`}
-                onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggleMetrics?.(); }}
-              >
-                <span class="c">{cpu === undefined ? "—" : fmtCpu(cpu)}</span>
-                {" · "}
-                <span class="m">{fmtMem(a.resources!.memMb)}</span>
-              </button>
-            )}
-          </>
+          <button
+            type="button"
+            class={`peek${hot ? " hot" : ""}${metricsOpen ? " open" : ""}`}
+            title={metricsOpen ? `Collapse metrics — ${a.name}` : `Expand metrics — ${a.name}`}
+            aria-label={metricsOpen ? `Collapse metrics — ${a.name}` : `Expand metrics — ${a.name}`}
+            aria-expanded={metricsOpen}
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggleMetrics?.(); }}
+          >
+            <span class="c">{cpu === undefined ? "—" : fmtCpu(cpu)}</span>
+            {" · "}
+            <span class="m">{fmtMem(a.resources!.memMb)}</span>
+          </button>
         )}
       </div>
       {hasMeta && (
@@ -880,31 +868,28 @@ export function App({ fleets = [SAMPLE], dispatch, prefs = {}, collapsedKeys = [
       </div>
       <div class="sec">
         <b>{tab}</b>
-        {tab === "Agents" && metricsCapable > 0 && (
-          <span class="sec-metrics">
-            <button
-              type="button"
-              class="sec-metrics-btn"
-              disabled={metricsOpenCount >= metricsCapable}
-              title="Expand resource metrics for all running agents"
-              onClick={() => setAllMetrics(true)}
-            >Expand metrics</button>
-            <button
-              type="button"
-              class="sec-metrics-btn"
-              disabled={metricsOpenCount === 0}
-              title="Collapse resource metrics for all agents"
-              onClick={() => setAllMetrics(false)}
-            >Collapse metrics</button>
-          </span>
-        )}
         {(tab === "Agents" || tab === "Terminals") && (() => {
           const section = tab === "Agents" ? "agents" : "terminals";
           const active = section === "agents" ? sortAgents : sortTerminals;
           // A–Z ⇄ Z–A toggle (one click flips direction); no menu — there are only two alphabetical modes.
           const flipSort = () => changeSort(section, active === "name-asc" ? "name-desc" : "name-asc");
+          // spec 386 — one icon toggle for all metrics (same act affordance as sort/add), not two text buttons.
+          const allMetricsOpen = metricsCapable > 0 && metricsOpenCount >= metricsCapable;
+          const flipAllMetrics = () => setAllMetrics(!allMetricsOpen);
           return <>
             <span class="sec-actions">
+              {tab === "Agents" && metricsCapable > 0 && (
+                <button
+                  class={`act${allMetricsOpen ? " on" : ""}`}
+                  type="button"
+                  title={allMetricsOpen ? "Collapse all resource metrics" : "Expand all resource metrics"}
+                  aria-label={allMetricsOpen ? "Collapse all resource metrics" : "Expand all resource metrics"}
+                  aria-pressed={allMetricsOpen}
+                  onClick={flipAllMetrics}
+                >
+                  <Icon name="graph" />
+                </button>
+              )}
               <button class="act" type="button" title={`Sort ${section} — ${SORT_LABEL[active]} (click to flip)`} aria-label={`Sort ${section} (${SORT_LABEL[active]}); click to flip`} onClick={flipSort}><SortIcon dir={active} /></button>
               {STUDIO_OF[tab] && <Act icon="add" title={STUDIO_OF[tab]!.label} on={() => dispatch?.global(STUDIO_OF[tab]!.op)} />}
             </span>

@@ -48,15 +48,8 @@
   .sec { display: flex; align-items: center; gap: 6px; padding: 9px 12px 2px; }
   .sec b { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--ds-muted); }
   .sec .sec-new { margin-left: auto; }
-  /* spec 386 — Expand/Collapse metrics (session-local; independent of hierarchy collapse) */
-  .sec .sec-metrics { display: inline-flex; align-items: center; gap: 4px; margin-left: 6px; }
-  .sec-metrics-btn {
-    font: inherit; font-size: 10px; font-weight: 500; color: var(--ds-muted);
-    border: 1px solid var(--ds-border); background: transparent; border-radius: 4px;
-    padding: 1px 6px; cursor: pointer; text-transform: none; letter-spacing: 0;
-  }
-  .sec-metrics-btn:hover:not(:disabled) { color: var(--vscode-foreground); border-color: var(--ds-focus); }
-  .sec-metrics-btn:disabled { opacity: .4; cursor: default; }
+  /* spec 386 — all-metrics is a single .act icon in sec-actions (with sort/add), not text buttons */
+  .sec .sec-actions .act.on { color: var(--ds-focus); }
   /* spec 242 — sort control in the section header */
   .sec .sec-actions { margin-left: auto; display: inline-flex; align-items: center; gap: 2px; }
   .sec .pin-filter { gap: 4px; }
@@ -98,30 +91,23 @@
   .row.flash, .pin.flash { animation: flash 1s ease-out; }
   @keyframes flash { 0%,28% { background: var(--sel); } 100% { background: transparent; } }
   .row-top { display: flex; align-items: center; gap: 6px; min-width: 0; padding-right: var(--action-gutter); }
-  /* spec 386 — metrics toggle (independent of hierarchy .agent-toggle) + collapsed peek */
-  .metrics-toggle {
-    width: 18px; height: 18px; flex: none; display: grid; place-items: center;
-    border: 1px solid var(--ds-border); background: transparent; color: var(--ds-muted);
-    cursor: pointer; border-radius: 4px; padding: 0; font: inherit; font-size: 11px; line-height: 1;
-  }
-  .metrics-toggle:hover { color: var(--vscode-foreground); border-color: var(--ds-focus); }
-  .metrics-toggle.open {
-    color: var(--ds-focus);
-    border-color: color-mix(in srgb, var(--ds-focus) 55%, var(--ds-border));
-    background: color-mix(in srgb, var(--ds-focus) 12%, transparent);
-  }
-  .metrics-toggle .glyph { opacity: .9; }
+  /* spec 386 — metrics pill only (no ▤ control before the name): click toggles L3–L4 detail lanes */
   .peek {
     flex: none; font-family: var(--ds-mono, var(--tachyon-font-mono, ui-monospace, monospace));
-    font-size: 10px; color: var(--ds-muted); border: 1px solid transparent; border-radius: 3px;
-    padding: 0 5px; cursor: pointer; background: transparent; margin-left: auto;
+    font-size: 10px; color: var(--ds-muted); border: 1px solid var(--ds-border); border-radius: 3px;
+    padding: 0 6px; cursor: pointer; background: transparent; margin-left: auto;
   }
-  .peek:hover { color: var(--vscode-foreground); border-color: var(--ds-border); background: var(--hover); }
+  .peek:hover { color: var(--vscode-foreground); border-color: var(--ds-focus); background: var(--hover); }
+  .peek.open {
+    color: var(--vscode-foreground);
+    border-color: color-mix(in srgb, var(--ds-focus) 50%, var(--ds-border));
+    background: color-mix(in srgb, var(--ds-focus) 10%, transparent);
+  }
   .peek .c { color: var(--vscode-charts-blue, var(--ds-info, #4fc1ff)); }
   .peek .m { color: var(--vscode-charts-purple, #c586c0); }
   .peek.hot .c { color: var(--ds-warn); }
-  .row:hover .peek { opacity: .55; }
-  .row:hover .peek:hover { opacity: 1; }
+  .row:hover .peek { opacity: .7; }
+  .row:hover .peek:hover, .row:hover .peek.open { opacity: 1; }
   .row-detail {
     display: flex; flex-direction: column; gap: 5px;
     padding: 4px 0 2px 28px;

@@ -20,21 +20,24 @@ describe("spec 386 — agent live resource metrics", () => {
     expect(vm.resources).toBeUndefined();
   });
 
-  it("keeps hierarchy toggle and metrics toggle as separate controls", () => {
+  it("keeps hierarchy chevron separate; metrics use peek pill only (no ▤ before name)", () => {
     expect(appTsx).toMatch(/class=\{`agent-toggle/);
-    expect(appTsx).toMatch(/metrics-toggle/);
     expect(appTsx).toMatch(/children of \$\{a\.name\}/);
-    expect(appTsx).toMatch(/Expand metrics/);
-    // metrics detail is independent of hierarchy collapsed prop
+    expect(appTsx).not.toMatch(/metrics-toggle/);
+    expect(appTsx).toMatch(/class=\{`peek/);
     expect(appTsx).toMatch(/metricsOpen/);
     expect(appTsx).toMatch(/onToggleMetrics/);
+    // all-metrics is one icon act (graph), not Expand/Collapse text pair
+    expect(appTsx).toMatch(/graph/);
+    expect(appTsx).not.toMatch(/Expand metrics/);
+    expect(appTsx).not.toMatch(/Collapse metrics/);
   });
 
   it("reserves action gutter and defines detail lanes", () => {
     expect(css).toMatch(/--action-gutter/);
     expect(css).toMatch(/\.row-detail\b/);
-    expect(css).toMatch(/\.metrics-toggle\b/);
     expect(css).toMatch(/\.peek\b/);
+    expect(css).not.toMatch(/\.metrics-toggle\b/);
   });
 
   it("branch badge still first in AgentBadges", () => {
