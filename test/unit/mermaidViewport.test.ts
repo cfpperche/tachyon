@@ -35,13 +35,24 @@ describe("mermaidViewport (spec 374)", () => {
     expect(fitWidthScale(200, 400)).toBe(0.5);
   });
 
-  it("initialTransform opens at fit-width and shrinks further if height overflows", () => {
+  it("initialTransform opens at fit-width only (readable; does not micro-fit height)", () => {
+    // t-6fb08d — default is for reading; full-box shrink is Fit (fitTransform), not open.
     const wide = initialTransform({ w: 200, h: 500 }, { w: 400, h: 100 });
     expect(wide.scale).toBe(0.5);
 
     const tall = initialTransform({ w: 400, h: 100 }, { w: 200, h: 400 });
-    // width would allow 1, but height overflows → full fit
-    expect(tall.scale).toBe(0.25);
+    // width allows 1; height overflow is pan, not shrink-to-min-height microscopic fit
+    expect(tall.scale).toBe(1);
+
+    // Large flowchart into a short first-layout viewport must not collapse to MIN_SCALE
+    const microRisk = initialTransform({ w: 600, h: 80 }, { w: 2000, h: 1200 });
+    expect(microRisk.scale).toBe(0.3); // fit-width only
+    expect(microRisk.scale).toBeGreaterThan(MIN_SCALE);
+  });
+
+  it("fitTransform still full-fits for the explicit Fit control", () => {
+    const t = fitTransform({ w: 400, h: 100 }, { w: 200, h: 400 });
+    expect(t.scale).toBe(0.25);
   });
 
   it("reset100 is natural size centered when smaller than viewport", () => {

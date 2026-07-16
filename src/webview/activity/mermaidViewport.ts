@@ -115,11 +115,16 @@ export function formatScalePercent(scale: number): string {
   return `${Math.round(clampScale(scale) * 100)}%`;
 }
 
+/**
+ * Default open framing for reading (t-6fb08d).
+ * Fit **width** only — never shrink further for height. Tall diagrams stay legible
+ * and pan vertically inside the viewport. Full-box shrink is the explicit Fit control
+ * (`fitTransform`), not the default (full-fit into a short first layout pass made
+ * large diagrams microscopic when viewport height was still min-height).
+ */
 export function initialTransform(viewport: Size, content: Size): ViewTransform {
   const scale = fitWidthScale(viewport.w, content.w);
-  // Prefer width fit; if height still overflows a max-height viewport, use full fit.
-  const fitted = content.h * scale > viewport.h ? fitScale(viewport, content) : scale;
-  return clampPan({ scale: fitted, tx: 0, ty: 0 }, viewport, content);
+  return clampPan({ scale, tx: 0, ty: 0 }, viewport, content);
 }
 
 export function reset100(viewport: Size, content: Size): ViewTransform {

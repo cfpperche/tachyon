@@ -62,15 +62,22 @@ function loadMermaid(): Promise<NonNullable<Window["mermaid"]>> {
 function measureSvgContent(stage: HTMLElement): Size | null {
   const svg = stage.querySelector("svg");
   if (!svg) return null;
+  // Prefer explicit non-% width/height (Mermaid often sets both + viewBox).
+  const wAttr = parseFloat(svg.getAttribute("width") || "");
+  const hAttr = parseFloat(svg.getAttribute("height") || "");
+  const widthIsPct = String(svg.getAttribute("width") || "").includes("%");
+  if (wAttr > 0 && hAttr > 0 && !widthIsPct) {
+    return { w: wAttr, h: hAttr };
+  }
+  // viewBox user units ≈ natural size when width is 100% / missing.
+  const vb = svg.getAttribute("viewBox")?.trim().split(/[\s,]+/).map(Number);
+  if (vb && vb.length === 4 && vb[2] > 0 && vb[3] > 0) {
+    return { w: vb[2], h: vb[3] };
+  }
   try {
     const bb = svg.getBBox();
     if (bb.width > 0 && bb.height > 0) return { w: bb.width, h: bb.height };
   } catch { /* getBBox can throw if not in DOM / empty */ }
-  const wAttr = parseFloat(svg.getAttribute("width") || "");
-  const hAttr = parseFloat(svg.getAttribute("height") || "");
-  if (wAttr > 0 && hAttr > 0 && !String(svg.getAttribute("width")).includes("%")) {
-    return { w: wAttr, h: hAttr };
-  }
   const r = svg.getBoundingClientRect();
   if (r.width > 0 && r.height > 0) return { w: r.width, h: r.height };
   return null;
@@ -88,6 +95,8 @@ function MermaidDiagramView({ svg }: { svg: string }) {
   const [t, setT] = useState<ViewTransform>({ scale: 1, tx: 0, ty: 0 });
   const [dragging, setDragging] = useState(false);
   const dragRef = useRef<{ x: number; y: number; t: ViewTransform } | null>(null);
+  /** User zoom/pan/fit/reset — stop auto re-frame on resize after intentional nav. */
+  const userTouchedRef = useRef(false);
   const tRef = useRef(t);
   tRef.current = t;
   const contentRef = useRef(content);
@@ -95,25 +104,44 @@ function MermaidDiagramView({ svg }: { svg: string }) {
   const viewportSizeRef = useRef(viewport);
   viewportSizeRef.current = viewport;
 
+  const frameFromDom = useCallback(() => {
+    const stage = stageRef.current;
+    const vpEl = viewportRef.current;
+    if (!stage || !vpEl) return;
+    const measured = measureSvgContent(stage);
+    setContent(measured);
+    if (!measured) {
+      setT({ scale: 1, tx: 0, ty: 0 });
+      return;
+    }
+    const vp = { w: vpEl.clientWidth, h: vpEl.clientHeight };
+    setViewport(vp);
+    if (vp.w > 0 && vp.h > 0) setT(initialTransform(vp, measured));
+    else setT({ scale: 1, tx: 0, ty: 0 });
+  }, []);
+
   // Inject SVG (host-owned node; Mermaid already ran securityLevel:strict).
+  // Defer measure one frame so clientWidth/Height reflect laid-out viewport height
+  // (same-tick measure after innerHTML often saw min-height only → microscopic scale).
   useEffect(() => {
     const stage = stageRef.current;
     if (!stage) return;
     stage.innerHTML = svg;
-    const measured = measureSvgContent(stage);
-    setContent(measured);
-    // Reset transform when the diagram bytes change.
-    const vpEl = viewportRef.current;
-    if (vpEl && measured) {
-      const vp = { w: vpEl.clientWidth, h: vpEl.clientHeight };
-      setViewport(vp);
-      setT(initialTransform(vp, measured));
-    } else {
-      setT({ scale: 1, tx: 0, ty: 0 });
-    }
-  }, [svg]);
+    userTouchedRef.current = false;
+    let cancelled = false;
+    const id = requestAnimationFrame(() => {
+      if (cancelled) return;
+      requestAnimationFrame(() => {
+        if (!cancelled) frameFromDom();
+      });
+    });
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(id);
+    };
+  }, [svg, frameFromDom]);
 
-  // Keep viewport size in sync (panel resize / feed width). First non-zero size re-frames.
+  // Keep viewport size in sync (panel resize / feed width). Auto re-frame until the user navigates.
   useEffect(() => {
     const el = viewportRef.current;
     if (!el || typeof ResizeObserver === "undefined") return;
@@ -123,8 +151,11 @@ function MermaidDiagramView({ svg }: { svg: string }) {
       setViewport(vp);
       const c = contentRef.current;
       if (!c || vp.w <= 0 || vp.h <= 0) return;
-      if (prev.w <= 0 || prev.h <= 0) setT(initialTransform(vp, c));
-      else setT((cur) => panBy(cur, 0, 0, vp, c)); // re-clamp only
+      if (!userTouchedRef.current || prev.w <= 0 || prev.h <= 0) {
+        setT(initialTransform(vp, c));
+      } else {
+        setT((cur) => panBy(cur, 0, 0, vp, c)); // re-clamp only after user zoom/pan
+      }
     });
     ro.observe(el);
     return () => ro.disconnect();
@@ -134,6 +165,7 @@ function MermaidDiagramView({ svg }: { svg: string }) {
     const c = contentRef.current;
     const vp = viewportSizeRef.current;
     if (!c || vp.w <= 0) return;
+    userTouchedRef.current = true;
     const cur = tRef.current;
     const originPt = origin ?? { x: vp.w / 2, y: vp.h / 2 };
     setT(zoomAtPoint(cur, cur.scale * factor, originPt, vp, c));
@@ -143,6 +175,7 @@ function MermaidDiagramView({ svg }: { svg: string }) {
     const c = contentRef.current;
     const vp = viewportSizeRef.current;
     if (!c || vp.w <= 0) return;
+    userTouchedRef.current = true;
     setT(fitTransform(vp, c));
   }, []);
 
@@ -150,6 +183,7 @@ function MermaidDiagramView({ svg }: { svg: string }) {
     const c = contentRef.current;
     const vp = viewportSizeRef.current;
     if (!c || vp.w <= 0) return;
+    userTouchedRef.current = true;
     setT(reset100(vp, c));
   }, []);
 
@@ -163,6 +197,7 @@ function MermaidDiagramView({ svg }: { svg: string }) {
       if (!c || vp.w <= 0) return;
       if (e.ctrlKey || e.metaKey) {
         e.preventDefault();
+        userTouchedRef.current = true;
         const rect = el.getBoundingClientRect();
         const origin = { x: e.clientX - rect.left, y: e.clientY - rect.top };
         // Trackpad pinch often sends small deltaY with ctrlKey; exponential step from delta.
@@ -179,6 +214,7 @@ function MermaidDiagramView({ svg }: { svg: string }) {
       const { next, consumed } = wheelPanConsume(tRef.current, e.deltaY, vp, c);
       if (consumed) {
         e.preventDefault();
+        userTouchedRef.current = true;
         setT(next);
       }
     };
@@ -191,6 +227,7 @@ function MermaidDiagramView({ svg }: { svg: string }) {
     const c = contentRef.current;
     const vp = viewportSizeRef.current;
     if (!c || !canPan(tRef.current, vp, c)) return;
+    userTouchedRef.current = true;
     dragRef.current = { x: e.clientX, y: e.clientY, t: tRef.current };
     setDragging(true);
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
@@ -202,6 +239,7 @@ function MermaidDiagramView({ svg }: { svg: string }) {
     if (!d || !c) return;
     const dx = e.clientX - d.x;
     const dy = e.clientY - d.y;
+    userTouchedRef.current = true;
     setT(panBy(d.t, dx, dy, vp, c));
   };
   const onPointerUp = (e: JSX.TargetedPointerEvent<HTMLDivElement>) => {
@@ -220,10 +258,10 @@ function MermaidDiagramView({ svg }: { svg: string }) {
     if (key === "0") { e.preventDefault(); doReset(); return; }
     if (key === "f" || key === "F") { e.preventDefault(); doFit(); return; }
     const step = e.shiftKey ? 40 : 20;
-    if (key === "ArrowLeft") { e.preventDefault(); setT(panBy(tRef.current, step, 0, vp, c)); return; }
-    if (key === "ArrowRight") { e.preventDefault(); setT(panBy(tRef.current, -step, 0, vp, c)); return; }
-    if (key === "ArrowUp") { e.preventDefault(); setT(panBy(tRef.current, 0, step, vp, c)); return; }
-    if (key === "ArrowDown") { e.preventDefault(); setT(panBy(tRef.current, 0, -step, vp, c)); return; }
+    if (key === "ArrowLeft") { e.preventDefault(); userTouchedRef.current = true; setT(panBy(tRef.current, step, 0, vp, c)); return; }
+    if (key === "ArrowRight") { e.preventDefault(); userTouchedRef.current = true; setT(panBy(tRef.current, -step, 0, vp, c)); return; }
+    if (key === "ArrowUp") { e.preventDefault(); userTouchedRef.current = true; setT(panBy(tRef.current, 0, step, vp, c)); return; }
+    if (key === "ArrowDown") { e.preventDefault(); userTouchedRef.current = true; setT(panBy(tRef.current, 0, -step, vp, c)); return; }
   };
 
   const pannable = content ? canPan(t, viewport, content) : false;
@@ -251,7 +289,7 @@ function MermaidDiagramView({ svg }: { svg: string }) {
         ref={viewportRef}
         tabIndex={0}
         role="group"
-        aria-label={`diagram viewport, scale ${scaleLabel}. Ctrl+scroll to zoom; drag to pan when zoomed. Keys: + − 0 fit F, arrows pan.`}
+        aria-label={`diagram viewport, scale ${scaleLabel}. Opens fit-to-width for reading; Fit shrinks fully. Ctrl+scroll zoom; drag pan when overflow. Keys: + − 0 F, arrows pan.`}
         onKeyDown={onKeyDown}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}

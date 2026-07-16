@@ -97,8 +97,11 @@
 }
 .mmd-viewport {
   position: relative;
-  max-height: min(420px, 55vh);
-  min-height: 80px;
+  /* Stable reading frame (t-6fb08d): fixed height so first measure is not min-height
+     collapse (~80px) which made initialTransform / layout pass treat diagrams as micro. */
+  height: min(360px, 50vh);
+  max-height: min(480px, 60vh);
+  min-height: 160px;
   overflow: hidden;
   touch-action: none;
   outline: none;
