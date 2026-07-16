@@ -43,7 +43,7 @@ function strings(): CockpitStrings {
     title: t("Cockpit"),
     subtitle: t("Project sysadmin — editor panel"),
     pocBanner: t(
-      "POC desktop Cockpit (t-fe52f0 frente 1). Does NOT replace the sidebar. Mobile/companion deferred. Engine/Bridge is the first module.",
+      "POC desktop Cockpit (t-fe52f0 frente 1). Editor sysadmin only — no in-webview left rail (avoids VS Code sidebar confusion). Does NOT replace the VS Code/Tachyon sidebar. Mobile deferred.",
     ),
     navOverview: t("Overview"),
     navEngine: t("Engine / Bridge"),
@@ -87,7 +87,7 @@ function strings(): CockpitStrings {
     hash: t("Hash"),
     running: t("running"),
     checkedAt: t("Checked"),
-    sidebarNote: t("Sidebar unchanged — agents, spawn, pins stay there."),
+    sidebarNote: t("VS Code / Tachyon sidebar unchanged — agents, spawn, pins stay there. Cockpit uses top tabs only."),
   };
 }
 

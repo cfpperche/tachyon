@@ -1,7 +1,8 @@
-/* Tachyon Cockpit — editor sysadmin shell (does not replace sidebar) */
+/* Tachyon Cockpit — editor sysadmin (NO left rail: avoids VS Code sidebar confusion) */
 
 .ck-root {
   display: flex;
+  flex-direction: column;
   height: 100vh;
   min-height: 480px;
   color: var(--vscode-foreground);
@@ -9,80 +10,113 @@
   background: var(--vscode-editor-background);
 }
 
-/* ---- left rail ---- */
-.ck-nav {
-  width: 200px;
+/* ---- top chrome + horizontal tabs ---- */
+.ck-top {
   flex-shrink: 0;
-  border-right: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
-  background: color-mix(in srgb, var(--vscode-sideBar-background) 90%, transparent);
-  display: flex;
-  flex-direction: column;
-  padding: 12px 0;
-}
-
-.ck-nav-brand {
-  padding: 0 14px 12px;
   border-bottom: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
-  margin-bottom: 8px;
+  background: color-mix(in srgb, var(--vscode-editorGroupHeader-tabsBackground, var(--vscode-sideBar-background)) 85%, transparent);
+  padding: 10px 16px 0;
 }
 
-.ck-nav-brand .title {
+.ck-top-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.ck-brand {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.ck-brand > .codicon {
+  font-size: 18px;
+  margin-top: 2px;
+  opacity: 0.9;
+}
+
+.ck-brand .title {
   font-weight: 600;
-  font-size: 13px;
+  font-size: 14px;
+}
+
+.ck-brand .sub {
+  font-size: 11px;
+  opacity: 0.65;
+  margin-top: 1px;
+}
+
+.ck-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.ck-auto {
   display: flex;
   align-items: center;
   gap: 6px;
-}
-
-.ck-nav-brand .sub {
-  font-size: 11px;
-  opacity: 0.65;
-  margin-top: 2px;
-  line-height: 1.3;
-}
-
-.ck-nav button {
-  all: unset;
-  box-sizing: border-box;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 14px;
-  cursor: pointer;
-  width: 100%;
   font-size: 12px;
   opacity: 0.85;
 }
 
-.ck-nav button:hover {
-  background: var(--vscode-list-hoverBackground);
-  opacity: 1;
+/* Segmented top tabs — VS Code editor-tab vibe, not a second activity bar */
+.ck-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  border-bottom: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
 }
 
-.ck-nav button.active {
-  background: var(--vscode-list-activeSelectionBackground);
-  color: var(--vscode-list-activeSelectionForeground);
+.ck-tabs button {
+  all: unset;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  opacity: 0.75;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+.ck-tabs button:hover {
+  opacity: 1;
+  background: var(--vscode-list-hoverBackground);
+}
+
+.ck-tabs button.active {
   opacity: 1;
   font-weight: 600;
+  border-bottom-color: var(--vscode-focusBorder, #007fd4);
+  color: var(--vscode-foreground);
 }
 
-.ck-nav button .tag {
-  margin-left: auto;
-  font-size: 10px;
-  opacity: 0.6;
+.ck-tabs button .tag {
+  font-size: 9px;
   text-transform: uppercase;
-}
-
-.ck-nav-foot {
-  margin-top: auto;
-  padding: 10px 14px;
-  font-size: 10px;
   opacity: 0.55;
-  line-height: 1.35;
-  border-top: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
+  letter-spacing: 0.04em;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--vscode-descriptionForeground) 18%, transparent);
 }
 
-/* ---- main ---- */
+.ck-note {
+  margin: 6px 0 8px;
+  font-size: 10px;
+  opacity: 0.5;
+  line-height: 1.3;
+}
+
+/* ---- content ---- */
 .ck-main {
   flex: 1;
   overflow: auto;
@@ -114,13 +148,6 @@
   opacity: 0.7;
 }
 
-.ck-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-}
-
 .ck-banner {
   border: 1px solid var(--vscode-inputValidation-infoBorder, #3794ff);
   background: color-mix(in srgb, var(--vscode-inputValidation-infoBackground, #063b66) 40%, transparent);
@@ -142,7 +169,7 @@
   border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
   border-radius: 8px;
   padding: 10px 12px;
-  background: color-mix(in srgb, var(--vscode-sideBar-background) 50%, transparent);
+  background: color-mix(in srgb, var(--vscode-sideBar-background) 35%, transparent);
 }
 
 .ck-chip .label {
@@ -210,7 +237,6 @@
   min-width: 100px;
 }
 
-/* engine cards — reuse control-inspector look */
 .ci-ws {
   border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
   border-radius: 10px;
@@ -225,7 +251,7 @@
   gap: 8px;
   padding: 10px 14px;
   border-bottom: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
-  background: color-mix(in srgb, var(--vscode-sideBar-background) 80%, transparent);
+  background: color-mix(in srgb, var(--vscode-sideBar-background) 50%, transparent);
 }
 
 .ci-ws-head .name {

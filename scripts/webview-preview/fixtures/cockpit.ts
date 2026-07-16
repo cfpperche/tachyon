@@ -11,7 +11,7 @@ export const strings: CockpitStrings = {
   title: "Cockpit",
   subtitle: "Project sysadmin — editor panel",
   pocBanner:
-    "POC desktop Cockpit (t-fe52f0 frente 1). Does NOT replace the sidebar. Mobile/companion deferred. Engine/Bridge is the first module.",
+    "POC desktop Cockpit (t-fe52f0 frente 1). Editor sysadmin — top tabs only (no in-webview left rail). VS Code sidebar unchanged. Mobile deferred.",
   navOverview: "Overview",
   navEngine: "Engine / Bridge",
   navFleet: "Fleet",
@@ -53,7 +53,7 @@ export const strings: CockpitStrings = {
   hash: "Hash",
   running: "running",
   checkedAt: "Checked",
-  sidebarNote: "Sidebar unchanged — agents, spawn, pins stay there.",
+  sidebarNote: "VS Code / Tachyon sidebar unchanged — agents, spawn, pins stay there. Cockpit uses top tabs only.",
 };
 
 const inputs = [

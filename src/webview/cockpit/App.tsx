@@ -155,7 +155,7 @@ function OverviewBody({ s, m, onEngine, onTmux, onMc }: {
       </div>
       <div class="ck-panel">
         <h2>Shortcuts</h2>
-        <p>Deep-links to existing surfaces — Cockpit does not replace them.</p>
+        <p>Deep-links to existing surfaces — Cockpit does not replace them or the VS Code sidebar.</p>
         <div class="ck-actions">
           <Button variant="default" onClick={onEngine}>
             <span class="codicon codicon-server-environment" /> {s.navEngine}
@@ -172,8 +172,7 @@ function OverviewBody({ s, m, onEngine, onTmux, onMc }: {
   );
 }
 
-function Placeholder({ s, title, body, actionLabel, onAction }: {
-  s: CockpitStrings;
+function Placeholder({ title, body, actionLabel, onAction }: {
   title: string;
   body: string;
   actionLabel?: string;
@@ -199,43 +198,19 @@ function Placeholder({ s, title, body, actionLabel, onAction }: {
   );
 }
 
+/** Horizontal top chrome only — no left rail (would confuse with VS Code sidebar). */
 export function App(p: CockpitAppProps) {
   const s = p.strings;
   if (!s) return <div class="ds-empty" />;
   const m = p.model;
   const section = m?.section ?? "overview";
 
-  const nav = (
-    <nav class="ck-nav" aria-label="Cockpit">
-      <div class="ck-nav-brand">
-        <div class="title">
-          <span class="codicon codicon-dashboard" />
-          {s.title}
-        </div>
-        <div class="sub">{s.subtitle}</div>
-      </div>
-      {(
-        [
-          ["overview", s.navOverview, "dashboard"],
-          ["engine", s.navEngine, "server-environment"],
-          ["fleet", s.navFleet, "organization"],
-          ["tmux", s.navTmux, "terminal-tmux"],
-        ] as const
-      ).map(([id, label, icon]) => (
-        <button
-          type="button"
-          key={id}
-          class={section === id ? "active" : ""}
-          onClick={() => p.onSetSection(id)}
-        >
-          <span class={`codicon codicon-${icon}`} />
-          {label}
-          {(id === "fleet" || id === "tmux") && <span class="tag">soon</span>}
-        </button>
-      ))}
-      <div class="ck-nav-foot">{s.sidebarNote}</div>
-    </nav>
-  );
+  const tabs: Array<{ id: CockpitSectionId; label: string; icon: string; soon?: boolean }> = [
+    { id: "overview", label: s.navOverview, icon: "dashboard" },
+    { id: "engine", label: s.navEngine, icon: "server-environment" },
+    { id: "fleet", label: s.navFleet, icon: "organization", soon: true },
+    { id: "tmux", label: s.navTmux, icon: "terminal-tmux", soon: true },
+  ];
 
   let body: ComponentChildren = null;
   if (!m) {
@@ -274,7 +249,6 @@ export function App(p: CockpitAppProps) {
   } else if (section === "fleet") {
     body = (
       <Placeholder
-        s={s}
         title={s.fleetTitle}
         body={s.fleetBody}
         actionLabel="Mission Control"
@@ -284,7 +258,6 @@ export function App(p: CockpitAppProps) {
   } else {
     body = (
       <Placeholder
-        s={s}
         title={s.tmuxTitle}
         body={s.tmuxBody}
         actionLabel={s.openServerInspector}
@@ -295,28 +268,57 @@ export function App(p: CockpitAppProps) {
 
   return (
     <div class="ck-root">
-      {nav}
-      <div class="ck-main">
-        <div class="ck-banner">{s.pocBanner}</div>
-        <div class="ck-actions" style={{ marginBottom: 12 }}>
-          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
-            <input type="checkbox" checked={p.auto} onChange={(e) => p.onToggleAuto((e.target as HTMLInputElement).checked)} />
-            {s.auto}
-          </label>
-          <Button variant="default" onClick={p.onRefresh}>
-            <span class="codicon codicon-refresh" /> {s.refresh}
-          </Button>
-          <Button variant="default" onClick={p.onCopyDiagnostics}>
-            <span class="codicon codicon-copy" /> {s.copyDiagnostics}
-          </Button>
+      <header class="ck-top">
+        <div class="ck-top-row">
+          <div class="ck-brand">
+            <span class="codicon codicon-dashboard" />
+            <div>
+              <div class="title">{s.title}</div>
+              <div class="sub">{s.subtitle}</div>
+            </div>
+          </div>
+          <div class="ck-actions">
+            <label class="ck-auto">
+              <input type="checkbox" checked={p.auto} onChange={(e) => p.onToggleAuto((e.target as HTMLInputElement).checked)} />
+              {s.auto}
+            </label>
+            <Button variant="default" onClick={p.onRefresh}>
+              <span class="codicon codicon-refresh" /> {s.refresh}
+            </Button>
+            <Button variant="default" onClick={p.onCopyDiagnostics}>
+              <span class="codicon codicon-copy" /> {s.copyDiagnostics}
+            </Button>
+          </div>
         </div>
+        <div class="ck-tabs" role="tablist" aria-label={s.title}>
+          {tabs.map((tab) => (
+            <button
+              type="button"
+              role="tab"
+              key={tab.id}
+              aria-selected={section === tab.id}
+              class={section === tab.id ? "active" : ""}
+              onClick={() => p.onSetSection(tab.id)}
+            >
+              <span class={`codicon codicon-${tab.icon}`} />
+              {tab.label}
+              {tab.soon ? <span class="tag">soon</span> : null}
+            </button>
+          ))}
+        </div>
+        <p class="ck-note">{s.sidebarNote}</p>
+      </header>
+
+      <main class="ck-main">
+        <div class="ck-banner">{s.pocBanner}</div>
         {body}
         {m ? (
           <div class="ck-checked">
             {s.checkedAt}: {m.checkedAt}
           </div>
         ) : null}
-      </div>
+      </main>
+
       {p.toast ? <div class="ck-toast">{p.toast}</div> : null}
     </div>
   );

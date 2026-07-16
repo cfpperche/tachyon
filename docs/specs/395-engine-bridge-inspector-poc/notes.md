@@ -9,6 +9,7 @@
 | | |
 |--|--|
 | **Cockpit** | Editor-area **project sysadmin** — health, engines, bridges, deep-links |
+| **Cockpit chrome** | **Top tabs only** — no left rail inside the webview (would confuse with VS Code sidebar) |
 | **Sidebar** | **Unchanged** — day-to-day agents, spawn, pins, fleet work |
 | **Mission Control** | Unchanged work board (deep-link only) |
 | **tmux Server Inspector** | Unchanged deep tool (deep-link / placeholder tab) |
