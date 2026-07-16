@@ -2,10 +2,12 @@
 
 _Created 2026-07-16._
 
-**Status:** in-progress
+**Status:** shipped
 
-**Branch:** `grok/dev-host-dogfood-ergonomics`  
+**Branch:** `grok/dev-host-dogfood-ergonomics` → main  
 **Worktree:** `/home/goat/tachyon-worktrees/dev-host-dogfood-ergonomics`
+
+**Closure:** 2026-07-16 — Dev Host dogfood ergonomics (P0–P3): mirror `.tachyon` copy locked by test, `point-status` doctor, `--fixture` / `fixture-new`, worktree tool resolve + stale pointer, fixture drift warn, runbook preferred F5 path. Commits `08443142` / `c87ac17a` on branch; landed via merge to main.
 
 ## Intent
 
