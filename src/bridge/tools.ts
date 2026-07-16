@@ -794,6 +794,47 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
   );
 
   mcp.registerTool(
+    "delivery_salvage",
+    {
+      description: "Governed recovery for a canonical Delivery held by a dead execution. Caller authority is Bridge-resolved. Enter quarantines a held lease; salvage creates a recovery reservation; abandon_without_worktree performs the approval-only terminal disposition.",
+      inputSchema: {
+        delivery_id: z.string().min(1),
+        action: z.enum(["enter", "salvage", "abandon", "abandon_without_worktree"]),
+        operation_id: z.string().min(1),
+        canonical_worktree: z.string().min(1).optional(),
+        approval_id: z.string().min(1).optional(),
+        expected_head_sha: z.string().min(1).optional(),
+        expected_inventory: z.object({ headSha: z.string(), dirtyPaths: z.array(z.object({ path: z.string(), status: z.string() })), uniqueCommits: z.array(z.string()) }).optional(),
+        execution_agent: z.string().min(1).optional(),
+        principal: z.string().min(1).optional(),
+        owns_subset: z.array(z.string()).optional(),
+      },
+    },
+    async ({ delivery_id, action, operation_id, canonical_worktree, approval_id, expected_head_sha, expected_inventory, execution_agent, principal, owns_subset }) => {
+      try {
+        if (!deps.deliveryLease) return fail(new Error("delivery_salvage is unavailable on this Bridge"));
+        const caller = deps.caller;
+        if (!caller || caller.kind !== "agent" || !caller.name) return fail(new Error("delivery_salvage requires an agent-authenticated Bridge caller"));
+        const actor = { kind: "agent" as const, name: caller.name };
+        if (action === "enter") {
+          if (!canonical_worktree) return fail(new Error("delivery_salvage enter requires canonical_worktree"));
+          return ok(JSON.stringify(await deps.deliveryLease.quarantineHeld({ deliveryId: delivery_id, canonicalWorktree: canonical_worktree, actor, operationId: operation_id, approvalId: approval_id }), null, 2));
+        }
+        if (action === "abandon_without_worktree") {
+          if (!approval_id) return fail(new Error("delivery_salvage abandon_without_worktree requires approval_id"));
+          return ok(JSON.stringify(await deps.deliveryLease.abandonWithoutWorktree({ deliveryId: delivery_id, actor, operationId: operation_id, approvalId: approval_id }), null, 2));
+        }
+        if (action === "abandon") {
+          if (!canonical_worktree || !expected_head_sha || !expected_inventory || !approval_id) return fail(new Error("delivery_salvage abandon requires canonical_worktree, expected_head_sha, expected_inventory, and approval_id"));
+          return ok(JSON.stringify(await deps.deliveryLease.abandonQuarantine({ deliveryId: delivery_id, canonicalWorktree: canonical_worktree, actor, operationId: operation_id, approvalId: approval_id, expectedHeadSha: expected_head_sha, expectedInventory: expected_inventory }), null, 2));
+        }
+        if (!canonical_worktree || !expected_head_sha || !expected_inventory || !execution_agent || !owns_subset) return fail(new Error("delivery_salvage salvage requires canonical_worktree, expected_head_sha, expected_inventory, execution_agent, and owns_subset"));
+        return ok(JSON.stringify(await deps.deliveryLease.salvageQuarantine({ deliveryId: delivery_id, canonicalWorktree: canonical_worktree, actor, operationId: operation_id, approvalId: approval_id, expectedHeadSha: expected_head_sha, expectedInventory: expected_inventory, executionAgent: execution_agent, principal, ownsSubset: owns_subset }), null, 2));
+      } catch (error) { return fail(error); }
+    },
+  );
+
+  mcp.registerTool(
     "git_delivery_prune",
     {
       description:

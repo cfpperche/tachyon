@@ -257,11 +257,20 @@ export interface DeliverySalvageQuarantineInput {
   deliveryId: string; canonicalWorktree: string; actor: DeliveryActor; operationId: string;
   expectedHeadSha: string; expectedInventory: DeliveryRecoveryInventory;
   executionAgent: string; principal?: string; ownsSubset: string[];
+  approvalId?: string;
 }
 
 export interface DeliveryAbandonQuarantineInput {
   deliveryId: string; canonicalWorktree: string; actor: DeliveryActor; operationId: string;
   expectedHeadSha: string; expectedInventory: DeliveryRecoveryInventory; approvalId: string;
+}
+
+export interface DeliveryQuarantineHeldInput {
+  deliveryId: string; canonicalWorktree: string; actor: DeliveryActor; operationId: string; approvalId?: string;
+}
+
+export interface DeliveryAbandonWithoutWorktreeInput {
+  deliveryId: string; actor: DeliveryActor; operationId: string; approvalId: string;
 }
 
 export type DeliveryReconcileHolderResult =
@@ -299,6 +308,28 @@ export class DeliveryLeaseService {
   private readonly deliveryLocks = new Map<string, Promise<void>>();
 
   constructor(private readonly deps: DeliveryLeaseServiceDeps) {}
+
+  /** Kill completion leaves matching held leases inert; it never claims descendant absence. */
+  async quarantineKilledExecution(executionAgent: string): Promise<Delivery[]> {
+    const changed: Delivery[] = [];
+    for (const snapshot of await this.deps.store.list()) {
+      if (snapshot.lease.state !== "held" || snapshot.lease.holder?.executionAgent !== executionAgent) continue;
+      const holder = structuredClone(snapshot.lease.holder); const tail = structuredClone(snapshot.segments.at(-1));
+      if (!tail || tail.releasedAt || tail.id !== holder.segmentId || !holder.executionNonce?.trim()) continue;
+      try {
+        changed.push(await this.deps.store.update(snapshot.id, snapshot.version, (record) => {
+          if (record.lease.state !== "held" || !isDeepStrictEqual(record.lease.holder, holder)
+            || !isDeepStrictEqual(record.segments.at(-1), tail)) throw new DeliveryVersionConflictError(record.id, snapshot.version, record.version);
+          record.lease = { ...record.lease, state: "quarantined", reason: JSON.stringify({ cause: "execution-killed", evidenceLevel: "termination-only" }), changedAt: this.now() };
+          record.events.push({ id: this.eventId(), at: this.now(), type: "held_killed_quarantined", by: { kind: "system" }, detail: { executionAgent, holder, tail, evidenceLevel: "termination-only" } });
+          return record;
+        }));
+      } catch (error) {
+        if (!(error instanceof DeliveryVersionConflictError)) throw error;
+      }
+    }
+    return changed;
+  }
 
   async reconcileHolder(input: DeliveryReconcileHolderInput): Promise<DeliveryReconcileHolderResult> {
     const canonicalWorktree = path.resolve(input.canonicalWorktree);
@@ -360,17 +391,11 @@ export class DeliveryLeaseService {
         new Error(`exact process identity is unknown: ${observation.reason}`));
     }
 
-    let proof: Awaited<ReturnType<ProcessFencePort["proveEmpty"]>>;
     try {
-      const capability = this.deps.processFence.capability();
-      if (!capability.supported) throw new Error(capability.reason);
-      proof = await this.deps.processFence.proveEmpty(snapshot.holder!.executionNonce!, canonicalWorktree);
+      const proof = await this.domainStableEmptyProof(snapshot.holder!.executionNonce!, canonicalWorktree);
+      if (proof.state !== "proven_empty") throw new Error(`process fence proof was ${proof.state}${proof.state === "unknown" ? `: ${proof.reason}` : ""}`);
     } catch (error) {
       return this.quarantineReconcileAndThrow(input, intent, snapshot, error);
-    }
-    if (proof.state !== "proven_empty") {
-      return this.quarantineReconcileAndThrow(input, intent, snapshot,
-        new Error(`process fence proof was ${proof.state}${proof.state === "unknown" ? `: ${proof.reason}` : ""}`));
     }
 
     let terminalFailure: unknown;
@@ -426,7 +451,9 @@ export class DeliveryLeaseService {
     const replay = await this.replayRecovery(input.operationId, input.deliveryId, intent, "quarantine_salvaged", "pending");
     if (replay) return { delivery: replay, reservationNonce: replay.lease.holder!.reservationNonce! };
     const snapshot = await this.recoverySnapshot(input.deliveryId, canonicalWorktree, input.actor);
-    await this.proveRecoveryEmpty(snapshot.holder, canonicalWorktree);
+    const evidence = await this.recoveryEvidence(snapshot.holder, canonicalWorktree, input.actor, input.approvalId,
+      recoveryActionDigest(input.deliveryId, input.expectedHeadSha, intent.expectedInventory as DeliveryRecoveryInventory,
+        { action: "salvage", operationId: input.operationId, actor: input.actor }));
     return this.withDeliveryLock(input.deliveryId, async () => this.deps.withWorktreeLock(canonicalWorktree, async () => {
       const current = await this.recoveryCurrent(input.deliveryId, canonicalWorktree, input.actor, snapshot);
       if (!isOwnsSubset(ownsSubset, current.contract.owns)) throw new DeliveryLeaseError("DELIVERY_OWNS_WIDENING", false, "recovery authority exceeds the immutable contract");
@@ -448,7 +475,8 @@ export class DeliveryLeaseService {
           ...(input.principal ? { principal: input.principal } : {}), reservationNonce }, expectedHeadSha: first.headSha, changedAt: this.now() };
         record.events.push({ id: this.eventId(), at: this.now(), type: "quarantine_salvaged", by: structuredClone(input.actor),
           detail: { operationId: input.operationId, intent, priorReason: snapshot.reason, holder: snapshot.holder, tail: snapshot.tail,
-            inventory: first, ownsSubset, reservationNonce, segmentId } });
+            inventory: first, ownsSubset, reservationNonce, segmentId, evidenceLevel: evidence.level,
+            ...(evidence.approval ? { approvalId: input.approvalId, payloadHash: evidence.approval.payloadHash } : {}) } });
         return record;
       }, { operationId: input.operationId, intent });
       return { delivery, reservationNonce };
@@ -471,8 +499,8 @@ export class DeliveryLeaseService {
     const replay = await this.replayRecovery(input.operationId, input.deliveryId, intent, "quarantine_abandoned", "abandoned");
     if (replay) return replay;
     const snapshot = await this.recoverySnapshot(input.deliveryId, canonicalWorktree, input.actor);
-    const approval = await this.recoveryApproval(input.approvalId, input.actor, digest);
-    await this.proveRecoveryEmpty(snapshot.holder, canonicalWorktree);
+    const evidence = await this.recoveryEvidence(snapshot.holder, canonicalWorktree, input.actor, input.approvalId, digest);
+    const approval = evidence.approval ?? await this.recoveryApproval(input.approvalId, input.actor, digest);
     return this.withDeliveryLock(input.deliveryId, async () => this.deps.withWorktreeLock(canonicalWorktree, async () => {
       const current = await this.recoveryCurrent(input.deliveryId, canonicalWorktree, input.actor, snapshot);
       const first = await this.recoveryInventory(current, canonicalWorktree);
@@ -488,10 +516,84 @@ export class DeliveryLeaseService {
         record.events.push({ id: this.eventId(), at: this.now(), type: "quarantine_abandoned", by: structuredClone(input.actor),
           detail: { operationId: input.operationId, intent, priorReason: snapshot.reason, holder: snapshot.holder, tail: snapshot.tail,
             inventory: first, approvalId: input.approvalId, actionDigest: approval.actionDigest, payloadHash: approval.payloadHash,
-            resolvedAt: approval.resolvedAt, resolvedBy: approval.resolvedBy } });
+            resolvedAt: approval.resolvedAt, resolvedBy: approval.resolvedBy, evidenceLevel: evidence.level } });
         return record;
       }, { operationId: input.operationId, intent });
     }));
+  }
+
+  /** Coordinator entry for a held lease whose exact root is gone. It never releases the lease. */
+  async quarantineHeld(input: DeliveryQuarantineHeldInput): Promise<Delivery> {
+    const canonicalWorktree = path.resolve(input.canonicalWorktree);
+    const intent = { ...structuredClone(input), canonicalWorktree };
+    const replay = await this.replayEvent(input.operationId, input.deliveryId, "held_salvage_quarantined", intent, "quarantined");
+    if (replay) return replay;
+    const current = await this.deps.store.get(input.deliveryId);
+    if (!current) throw new DeliveryNotFoundError(input.deliveryId);
+    this.assertRecoveryActor(current, input.actor);
+    await this.assertCanonical(current, canonicalWorktree);
+    if (current.lease.state !== "held") throw this.occupied(current, "Delivery is not held");
+    const holder = structuredClone(current.lease.holder); const tail = structuredClone(current.segments.at(-1));
+    if (!holder || !tail || tail.releasedAt || tail.id !== holder.segmentId || !holder.executionNonce?.trim()) {
+      throw new DeliveryLeaseError("DELIVERY_PROCESS_IDENTITY_MISSING", false, "held lease lacks a recoverable holder boundary");
+    }
+    this.assertDifferentRecoveryActor(current, input.actor);
+    if (!holder.process || !validProcessIdentity(holder.process)) {
+      throw new DeliveryLeaseError("DELIVERY_PROCESS_IDENTITY_MISSING", false, "held lease lacks exact process identity");
+    }
+    let observation: DeliveryProcessObservation = { state: "unknown", reason: "exact process observation is unavailable" };
+    try { if (this.deps.processObserver) observation = await this.deps.processObserver.observe(holder.process); }
+    catch (error) { observation = { state: "unknown", reason: error instanceof Error ? error.message : String(error) }; }
+    if (observation.state !== "gone") {
+      throw this.occupied(current, observation.state === "alive" ? "held Delivery root is still alive" : "held Delivery root death is ambiguous");
+    }
+    const digest = recoveryActionDigest(input.deliveryId, current.lease.expectedHeadSha ?? "", { headSha: current.lease.expectedHeadSha ?? "", dirtyPaths: [], uniqueCommits: [] },
+      { action: "quarantine-held", operationId: input.operationId, actor: input.actor });
+    const evidence = await this.recoveryEvidence(holder, canonicalWorktree, input.actor, input.approvalId, digest);
+    return this.withDeliveryLock(input.deliveryId, async () => this.deps.withWorktreeLock(canonicalWorktree, async () => {
+      const locked = await this.deps.store.get(input.deliveryId);
+      if (!locked) throw new DeliveryNotFoundError(input.deliveryId);
+      if (!isDeepStrictEqual(locked.lease, current.lease) || !isDeepStrictEqual(locked.segments.at(-1), tail)) throw this.occupied(locked, "held lease changed during salvage entry");
+      return this.deps.store.update(locked.id, locked.version, (record) => {
+        if (!isDeepStrictEqual(record.lease, current.lease) || !isDeepStrictEqual(record.segments.at(-1), tail)) throw new DeliveryVersionConflictError(record.id, current.version, record.version);
+        record.lease = { ...record.lease, state: "quarantined", reason: JSON.stringify({ cause: "dead-holder", evidenceLevel: evidence.level }), changedAt: this.now() };
+        record.events.push({ id: this.eventId(), at: this.now(), type: "held_salvage_quarantined", by: structuredClone(input.actor), detail: { operationId: input.operationId, intent, holder, tail, evidenceLevel: evidence.level } });
+        return record;
+      }, { operationId: input.operationId, intent });
+    }));
+  }
+
+  /** Approval-only terminal disposition when the canonical worktree no longer exists. */
+  async abandonWithoutWorktree(input: DeliveryAbandonWithoutWorktreeInput): Promise<Delivery> {
+    const intent = { ...structuredClone(input) };
+    const replay = await this.replayRecovery(input.operationId, input.deliveryId, intent, "quarantine_abandoned_without_worktree", "abandoned");
+    if (replay) return replay;
+    const snapshot = await this.deps.store.get(input.deliveryId);
+    if (!snapshot) throw new DeliveryNotFoundError(input.deliveryId);
+    this.assertRecoveryActor(snapshot, input.actor); this.assertDifferentRecoveryActor(snapshot, input.actor);
+    if (snapshot.lease.state !== "quarantined" && snapshot.lease.state !== "held") throw this.occupied(snapshot, "Delivery is not held or quarantined");
+    const tail = structuredClone(snapshot.segments.at(-1)); const holder = structuredClone(snapshot.lease.holder);
+    if (!holder || !tail || tail.releasedAt || tail.id !== holder.segmentId || !holder.executionNonce?.trim()) throw new DeliveryLeaseError("DELIVERY_QUARANTINED", false, "quarantine lacks an exact recoverable holder boundary");
+    if (snapshot.lease.state === "held") {
+      if (!holder.process || !validProcessIdentity(holder.process)) throw new DeliveryLeaseError("DELIVERY_PROCESS_IDENTITY_MISSING", false, "held lease lacks exact process identity");
+      let observation: DeliveryProcessObservation = { state: "unknown", reason: "exact process observation is unavailable" };
+      try { if (this.deps.processObserver) observation = await this.deps.processObserver.observe(structuredClone(holder.process)); }
+      catch (error) { observation = { state: "unknown", reason: error instanceof Error ? error.message : String(error) }; }
+      if (observation.state !== "gone") throw this.occupied(snapshot, observation.state === "alive" ? "held Delivery root is still alive" : "held Delivery root death is ambiguous");
+    }
+    const digest = recoveryActionDigest(input.deliveryId, snapshot.lease.expectedHeadSha ?? "", { headSha: snapshot.lease.expectedHeadSha ?? "", dirtyPaths: [], uniqueCommits: [] }, { action: "abandon-without-worktree", operationId: input.operationId, actor: input.actor });
+    const approval = await this.recoveryApproval(input.approvalId, input.actor, digest);
+    return this.withDeliveryLock(input.deliveryId, async () => {
+      const current = await this.deps.store.get(input.deliveryId); if (!current) throw new DeliveryNotFoundError(input.deliveryId);
+      if (!isDeepStrictEqual(current.lease, snapshot.lease) || !isDeepStrictEqual(current.segments.at(-1), tail)) throw this.occupied(current, "quarantine changed during worktree-free disposition");
+      return this.deps.store.update(current.id, current.version, (record) => {
+        if (!isDeepStrictEqual(record.lease, snapshot.lease) || !isDeepStrictEqual(record.segments.at(-1), tail)) throw new DeliveryVersionConflictError(record.id, snapshot.version, record.version);
+        const open = record.segments.at(-1)!; open.releasedAt = this.now(); open.releasedHeadSha = record.lease.expectedHeadSha ?? open.grantedHeadSha; open.outcome = "rejected";
+        record.lease = { state: "abandoned", reason: snapshot.lease.state === "held" ? JSON.stringify({ cause: "dead-holder-worktree-gone" }) : snapshot.lease.reason, changedAt: this.now() };
+        record.events.push({ id: this.eventId(), at: this.now(), type: "quarantine_abandoned_without_worktree", by: structuredClone(input.actor), detail: { operationId: input.operationId, intent, holder, tail, evidenceLevel: "approval-only", approvalId: input.approvalId, actionDigest: approval.actionDigest, payloadHash: approval.payloadHash } });
+        return record;
+      }, { operationId: input.operationId, intent });
+    });
   }
 
   async acquire(input: DeliveryLeaseAcquireInput): Promise<DeliveryLeaseReservation> {
@@ -732,7 +834,7 @@ export class DeliveryLeaseService {
     const replay = await this.replayHandoff(`${input.operationId}:reserve`, input.deliveryId, intent, true);
     if (replay) return replay;
     this.assertSafetyEnabled(handoffSafety);
-    if (handoffSafety === "process-fenced") this.assertFenceCapability();
+    const fenceDomain = handoffSafety === "process-fenced" ? this.assertFenceCapability() : undefined;
 
     let predecessorHolder: DeliveryLeaseHolder | undefined;
     const committedDrain = await this.replayDrain(`${input.operationId}:drain`, input.deliveryId, input.operationId, intent);
@@ -771,7 +873,7 @@ export class DeliveryLeaseService {
     }
     if (!predecessorHolder?.executionNonce) throw new DeliveryInvariantError("handoff predecessor holder was not durably established");
 
-    const absenceEvidence = await this.establishTransferAbsence(input.deliveryId, predecessorHolder!, canonicalWorktree, handoffSafety)
+    const absenceEvidence = await this.establishTransferAbsence(input.deliveryId, predecessorHolder!, canonicalWorktree, handoffSafety, fenceDomain)
       .catch((error) => this.quarantineAndThrow(input, intent, predecessorHolder!, this.transferFailureEvidence(handoffSafety, error)));
 
     try {
@@ -814,7 +916,7 @@ export class DeliveryLeaseService {
     const completedReplay = await this.replayReviewCompletion(`${input.operationId}:complete`, input.deliveryId, intent, true);
     if (completedReplay) return completedReplay;
     this.assertSafetyEnabled(handoffSafety);
-    if (handoffSafety === "process-fenced") this.assertFenceCapability();
+    const fenceDomain = handoffSafety === "process-fenced" ? this.assertFenceCapability() : undefined;
 
     let reviewerHolder = await this.replayReviewDrain(`${input.operationId}:drain`, input.deliveryId, intent);
     if (!reviewerHolder) {
@@ -843,7 +945,7 @@ export class DeliveryLeaseService {
     }
     if (!reviewerHolder?.executionNonce) throw new DeliveryInvariantError("reviewer drain lacks durable execution identity");
 
-    const absenceEvidence = await this.establishTransferAbsence(input.deliveryId, reviewerHolder, canonicalWorktree, handoffSafety)
+    const absenceEvidence = await this.establishTransferAbsence(input.deliveryId, reviewerHolder, canonicalWorktree, handoffSafety, fenceDomain)
       .catch((error) => this.quarantineReviewAndThrow(input, intent, this.transferFailureEvidence(handoffSafety, error), error));
 
     try {
@@ -903,11 +1005,21 @@ export class DeliveryLeaseService {
     if (!allowed) throw new DeliveryLeaseError("DELIVERY_QUARANTINED", false, "caller is not authorized to recover this Delivery");
   }
 
+  private assertDifferentRecoveryActor(delivery: Delivery, actor: DeliveryActor): void {
+    if (actor.kind !== "agent" || !actor.name) return;
+    const holder = delivery.lease.holder; const tail = delivery.segments.at(-1);
+    if (actor.name === holder?.executionAgent || actor.name === holder?.principal
+      || actor.name === tail?.executionAgent || actor.name === tail?.principal) {
+      throw new DeliveryLeaseError("DELIVERY_QUARANTINED", false, "the lease holder cannot authorize its own recovery");
+    }
+  }
+
   private async recoverySnapshot(deliveryId: string, canonicalWorktree: string, actor: DeliveryActor) {
     return this.withDeliveryLock(deliveryId, async () => {
       const current = await this.deps.store.get(deliveryId);
       if (!current) throw new DeliveryNotFoundError(deliveryId);
       this.assertRecoveryActor(current, actor);
+      this.assertDifferentRecoveryActor(current, actor);
       if (current.lease.state === "abandoned") throw this.abandoned(current);
       const actual = path.resolve(await this.deps.canonicalWorktreeFor(current));
       if (actual !== canonicalWorktree) throw new DeliveryLeaseError("DELIVERY_WORKTREE_MISMATCH", false, "Delivery worktree changed during recovery", { expected: actual, actual: canonicalWorktree });
@@ -915,6 +1027,7 @@ export class DeliveryLeaseService {
         const locked = await this.deps.store.get(deliveryId);
         if (!locked) throw new DeliveryNotFoundError(deliveryId);
         this.assertRecoveryActor(locked, actor);
+        this.assertDifferentRecoveryActor(locked, actor);
         if (locked.lease.state === "abandoned") throw this.abandoned(locked);
         if (locked.lease.state !== "quarantined") throw this.occupied(locked, "Delivery is not quarantined");
         const holder = structuredClone(locked.lease.holder); const tail = structuredClone(locked.segments.at(-1));
@@ -926,15 +1039,25 @@ export class DeliveryLeaseService {
     });
   }
 
-  private async proveRecoveryEmpty(holder: DeliveryLeaseHolder, canonicalWorktree: string): Promise<void> {
-    let capability: ReturnType<ProcessFencePort["capability"]>;
-    try { capability = this.deps.processFence.capability(); }
-    catch (error) { throw new DeliveryLeaseError("DELIVERY_QUARANTINED", false, "recovery fence capability failed", { error: error instanceof Error ? error.message : String(error) }); }
-    if (!capability.supported) throw new DeliveryLeaseError("DELIVERY_QUARANTINED", false, capability.reason);
-    let proof: Awaited<ReturnType<ProcessFencePort["proveEmpty"]>>;
-    try { proof = await this.deps.processFence.proveEmpty(holder.executionNonce!, canonicalWorktree); }
-    catch (error) { throw new DeliveryLeaseError("DELIVERY_QUARANTINED", false, "recovery fence proof failed", { error: error instanceof Error ? error.message : String(error) }); }
-    if (proof.state !== "proven_empty") throw new DeliveryLeaseError("DELIVERY_QUARANTINED", false, "recovery process absence is not proven", { proof });
+  private async recoveryEvidence(holder: DeliveryLeaseHolder, canonicalWorktree: string, actor: DeliveryActor,
+    approvalId: string | undefined, digest: string): Promise<{ level: "fence-proof" | "approval-only"; approval?: DeliveryRecoveryApproval }> {
+    try {
+      const proof = await this.domainStableEmptyProof(holder.executionNonce!, canonicalWorktree);
+      if (proof.state !== "proven_empty") throw new Error(`process fence proof was ${proof.state}${proof.state === "unknown" ? `: ${proof.reason}` : ""}`);
+      return { level: "fence-proof" };
+    } catch { /* proof is evidence only; approval may authorize the fail-closed fallback */ }
+    if (!approvalId) throw new DeliveryLeaseError("DELIVERY_QUARANTINED", false, "recovery process absence is unproven and no bound approval was supplied");
+    return { level: "approval-only", approval: await this.recoveryApproval(approvalId, actor, digest) };
+  }
+
+  private async domainStableEmptyProof(executionNonce: string, canonicalWorktree: string, expectedDomain?: string): Promise<ProcessFenceEmptyProof> {
+    const before = this.deps.processFence.capability();
+    if (!before.supported) throw new Error(before.reason);
+    if (expectedDomain !== undefined && before.domain !== expectedDomain) throw new Error("process fence domain changed before proof");
+    const proof = await this.deps.processFence.proveEmpty(executionNonce, canonicalWorktree);
+    const after = this.deps.processFence.capability();
+    if (!after.supported || after.domain !== before.domain) throw new Error("process fence domain changed during proof");
+    return proof;
   }
 
   private async recoveryCurrent(deliveryId: string, canonicalWorktree: string, actor: DeliveryActor, snapshot: { lease: Delivery["lease"]; tail: Delivery["segments"][number] }) {
@@ -1298,6 +1421,7 @@ export class DeliveryLeaseService {
       version: delivery.version,
       state: delivery.lease.state,
       occupant: delivery.lease.holder?.executionAgent,
+      ...(["held", "quarantined"].includes(delivery.lease.state) ? { next: { action: "delivery_salvage", deliveryId: delivery.id } } : {}),
     });
   }
 
@@ -1374,9 +1498,10 @@ export class DeliveryLeaseService {
     }
   }
 
-  private assertFenceCapability(): void {
+  private assertFenceCapability(): string {
     const capability = this.deps.processFence.capability();
     if (!capability.supported) throw new DeliveryLeaseError("DELIVERY_LEASE_UNAVAILABLE", false, capability.reason);
+    return capability.domain;
   }
 
   /** Runs outside all Delivery/worktree locks after the durable held-to-draining CAS. */
@@ -1385,13 +1510,16 @@ export class DeliveryLeaseService {
     holder: DeliveryLeaseHolder,
     canonicalWorktree: string,
     handoffSafety: DeliveryHandoffSafety,
+    expectedFenceDomain?: string,
   ): Promise<"proven_empty" | "root_gone_best_effort"> {
     if (handoffSafety === "process-fenced") {
       let fenceError: unknown;
       let proof: Awaited<ReturnType<ProcessFencePort["proveEmpty"]>> = { state: "unknown", reason: "fence did not complete" };
       try { await this.deps.processFence.freeze(holder.executionNonce!); } catch (error) { fenceError = error; }
       try { await this.deps.processFence.terminate(holder.executionNonce!); } catch (error) { fenceError ??= error; }
-      try { proof = await this.deps.processFence.proveEmpty(holder.executionNonce!, canonicalWorktree); } catch (error) { fenceError ??= error; }
+      try {
+        proof = await this.domainStableEmptyProof(holder.executionNonce!, canonicalWorktree, expectedFenceDomain);
+      } catch (error) { fenceError ??= error; }
       if (fenceError || proof.state !== "proven_empty") {
         throw new TransferAbsenceError(
           fenceError instanceof Error ? fenceError.message : `process fence proof was ${proof.state}${proof.state === "unknown" ? `: ${proof.reason}` : ""}`,

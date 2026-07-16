@@ -1,4 +1,4 @@
-import { describe, it, expect, afterAll } from "vitest";
+import { describe, it, expect, afterAll, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -98,7 +98,7 @@ describe("Bridge auth enforcement (live HTTP)", () => {
         }),
       );
       const { tools } = await client.listTools();
-      expect(tools.length).toBe(62); // T14.6B2 adds delivery_complete_review.
+      expect(tools.length).toBe(63); // spec 379 adds delivery_salvage.
       await client.close();
     } finally {
       await bridge.dispose();
@@ -111,7 +111,7 @@ describe("Bridge auth enforcement (live HTTP)", () => {
     try {
       const client = new Client({ name: "open", version: "0.0.1" });
       await client.connect(new StreamableHTTPClientTransport(new URL(bridge.url!)));
-      expect((await client.listTools()).tools.length).toBe(62); // T14.6B2 adds delivery_complete_review.
+      expect((await client.listTools()).tools.length).toBe(63); // spec 379 adds delivery_salvage.
       await client.close();
     } finally {
       await bridge.dispose();
@@ -152,6 +152,31 @@ describe("Bridge caller resolution (spec 351 T3)", () => {
     } finally {
       await bridge.dispose();
     }
+  });
+
+  it("delivery_salvage resolves the actor from the authenticated caller for every action", async () => {
+    const registry = new CallerIdentityRegistry(Buffer.from("k".repeat(64), "hex"));
+    const agentToken = registry.mint("claude", SCOPE);
+    const result = { id: "d-live", lease: { state: "quarantined" } };
+    type SalvageCall = { actor: { kind: string; name?: string }; caller?: unknown };
+    const quarantineHeld = vi.fn(async (_input: SalvageCall) => result);
+    const salvageQuarantine = vi.fn(async (_input: SalvageCall) => ({ delivery: result, reservationNonce: "n" }));
+    const abandonWithoutWorktree = vi.fn(async (_input: SalvageCall) => ({ ...result, lease: { state: "abandoned" } }));
+    const bridge = new Bridge({ ...minimalDeps(), deliveryLease: { quarantineHeld, salvageQuarantine, abandonWithoutWorktree } as never },
+      { token: MASTER, getRegistry: () => registry, scope: SCOPE });
+    await bridge.start();
+    try {
+      const client = new Client({ name: "salvage-agent", version: "0.0.1" });
+      await client.connect(new StreamableHTTPClientTransport(new URL(bridge.url!), { requestInit: { headers: { Authorization: `Bearer ${agentToken}` } } }));
+      await client.callTool({ name: "delivery_salvage", arguments: { delivery_id: "d-live", action: "enter", operation_id: "enter", canonical_worktree: "/wt", actor: { kind: "human" } } });
+      await client.callTool({ name: "delivery_salvage", arguments: { delivery_id: "d-live", action: "salvage", operation_id: "salvage", canonical_worktree: "/wt", expected_head_sha: "head", expected_inventory: { headSha: "head", dirtyPaths: [], uniqueCommits: [] }, execution_agent: "fixer", owns_subset: [], actor: { kind: "human" } } });
+      await client.callTool({ name: "delivery_salvage", arguments: { delivery_id: "d-live", action: "abandon_without_worktree", operation_id: "abandon", approval_id: "a-one", actor: { kind: "human" } } });
+      for (const call of [quarantineHeld.mock.calls[0]![0], salvageQuarantine.mock.calls[0]![0], abandonWithoutWorktree.mock.calls[0]![0]]) {
+        expect(call.actor).toEqual({ kind: "agent", name: "claude" });
+        expect(call).not.toHaveProperty("caller");
+      }
+      await client.close();
+    } finally { await bridge.dispose(); }
   });
 
   it("a revoked agent token is rejected with 401 + reason token_revoked (not a generic message)", async () => {

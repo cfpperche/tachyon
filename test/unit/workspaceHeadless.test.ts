@@ -524,9 +524,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     } finally { await fake.cleanup(); ws.dispose(); }
   });
 
-  it("mechanism-only successor join reuses the worktree after a cleanly ended predecessor without exact stop", async () => {
-    // Dogfood 0.55.94: R1 exits cleanly first; delivery_join must accept already-gone exact
-    // process identity without invoking the live-pane stopper (which needs pane/ledger liveness).
+  it("kill quarantines a cleanly ended predecessor before a successor can join", async () => {
     const root = mkdir(); const base = path.join(root, ".tachyon-worktrees");
     fs.writeFileSync(path.join(root, "tachyon.yml"), `settings:\n${namedBehaviorVerifyYaml()}  worktree:\n    base: ${JSON.stringify(base)}\n  delivery:\n    mode: canonical\n    handoffSafety: mechanism-only\nagents:\n  boss:\n    cmd: sh\n`, "utf8");
     git(root, ["init"]); git(root, ["config", "user.email", "test@example.com"]); git(root, ["config", "user.name", "Test User"]);
@@ -546,12 +544,11 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
       expect(fake.sessions.has(ws.manager.session("implementer"))).toBe(false);
       const child = fake.children.get(ws.manager.session("implementer"));
       expect(child === undefined || child.exitCode !== null).toBe(true);
-      await ws.manager.spawn("reviewer", { cmd: "claude", reveal: false, deliveryJoin: { deliveryId: initial.id, role: "reviewer", ownsSubset: [], expectedHead: head, operationId: "gone-predecessor-join" } });
-      expect(fs.realpathSync(ws.ledger.get("reviewer")!.cwd)).toBe(canonical);
+      await expect(ws.manager.spawn("reviewer", { cmd: "claude", reveal: false, deliveryJoin: { deliveryId: initial.id, role: "reviewer", ownsSubset: [], expectedHead: head, operationId: "gone-predecessor-join" } })).rejects.toThrow(/quarantined/i);
       const after = await ws.deliveries.get(initial.id);
-      expect(after?.lease.state).toBe("held");
-      expect(after?.lease.holder?.executionAgent).toBe("reviewer");
-      expect(after?.segments.map((s) => s.role)).toEqual(["implementer", "reviewer"]);
+      expect(after?.lease.state).toBe("quarantined");
+      expect(after?.lease.holder?.executionAgent).toBe("implementer");
+      expect(after?.segments.map((s) => s.role)).toEqual(["implementer"]);
       expect((await ws.gitDeliveries.list()).filter((g) => g.deliveryId === initial.id)).toHaveLength(1);
       expect(fs.readdirSync(base).filter((x) => fs.statSync(path.join(base, x)).isDirectory())).toHaveLength(1);
     } finally { await fake.cleanup(); ws.dispose(); }

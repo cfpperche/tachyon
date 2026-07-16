@@ -386,7 +386,9 @@ export class DeliveryVerificationLeaseService {
   private message(error: unknown): string { return error instanceof Error ? error.message : String(error); }
   private occupied(delivery: Delivery, message: string, detail: Record<string, unknown> = {}): DeliveryLeaseError {
     return new DeliveryLeaseError("WORKTREE_OCCUPIED", true, message, {
-      deliveryId: delivery.id, version: delivery.version, state: delivery.lease.state, ...detail,
+      deliveryId: delivery.id, version: delivery.version, state: delivery.lease.state,
+      ...(["held", "quarantined"].includes(delivery.lease.state) ? { next: { action: "delivery_salvage", deliveryId: delivery.id } } : {}),
+      ...detail,
     });
   }
 
