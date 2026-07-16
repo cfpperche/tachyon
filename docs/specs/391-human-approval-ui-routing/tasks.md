@@ -51,6 +51,5 @@ dogfood remains headless; do not approve stale `a-0499c7`.
 
 _Optional for UI/interface/rendered-output work. Keep prose-based: real surface inspected, evidence captured, verdict recorded. If not useful, declare `**Visual QA Opt-Out:** <reason>`._
 
-- [ ] Evidence: Native screenshot of the localized Palette entry and the routed Human approvals panel.
-- [ ] Verdict: Notification/action and Palette entry are legible, unambiguous and bound to the expected
-  workspace; the unchanged panel preserves its existing layout.
+**Visual QA Opt-Out:** The approval panel layout is unchanged. Agent dogfood is headless; optional native
+Palette/panel inspection remains maintainer-operated and is not a delivery gate for this routing fix.

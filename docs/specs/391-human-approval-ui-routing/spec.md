@@ -2,7 +2,12 @@
 
 _Created 2026-07-16._
 
-**Status:** in-progress
+**Status:** shipped
+**Closure:** Installed candidate `0.56.11` activated the persistent-engine wiring; focused tests pass
+18/18 and packaged headless dogfood proves agent-authenticated request creation with no shell, retained
+`Review`, exact-workspace `tachyon.openApprovals`, at-most-once execution and a still-pending durable
+request. Current repository-wide baseline failures reproduce unchanged on main and are isolated in
+`t-f5fb40` / `t-e1cf51`.
 **Affected Product Invariants:** none — approval routing does not change the registered PI-001
 project-guidance ownership promise or oracle.
 
