@@ -1,0 +1,480 @@
+/*
+ * Tachyon Control — match SIDEBAR typography (spec 252 design-system + sidebar density).
+ * Sidebar inherits body { font-family: var(--tachyon-font-mono) } from design-system.css.
+ * Control uses the same mono stack + dense sizes (11/12px labels, 16px title, tabular values).
+ */
+
+.ck-root {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  min-height: 480px;
+  /* same as design-system body / sidebar */
+  font-family: var(--tachyon-font-mono);
+  font-size: var(--ds-body, 13px);
+  font-weight: var(--tachyon-weight-regular, 400);
+  color: var(--ds-fg, var(--vscode-foreground));
+  background: var(--vscode-editor-background);
+}
+
+/* ---- top chrome ---- */
+.ck-top {
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--ds-border);
+  background: var(--vscode-editor-background);
+  padding: 8px 12px 0;
+}
+
+.ck-top-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.ck-brand {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.ck-brand > .codicon {
+  font-size: 16px;
+  line-height: 1.2;
+  margin-top: 1px;
+  opacity: 0.85;
+  flex: none;
+}
+
+.ck-brand .title {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--vscode-foreground);
+}
+
+.ck-brand .sub {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--ds-muted);
+  margin-top: 2px;
+  line-height: 1.35;
+}
+
+.ck-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.ck-auto {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--ds-muted);
+}
+
+/* Tabs — same visual language as sidebar .tabs / .tab */
+.ck-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1px;
+  border-bottom: 1px solid var(--ds-border);
+}
+
+.ck-tabs button {
+  all: unset;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px 7px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--ds-muted);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+.ck-tabs button .codicon {
+  font-size: 14px;
+  line-height: 1;
+  flex: none;
+}
+
+.ck-tabs button:hover {
+  color: var(--vscode-foreground);
+}
+
+.ck-tabs button.active {
+  color: var(--vscode-foreground);
+  font-weight: 600;
+  border-bottom-color: var(--ds-focus);
+}
+
+.ck-tabs button .tag {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.55;
+  padding: 0 4px;
+  border: 1px solid var(--ds-border);
+  border-radius: 3px;
+}
+
+.ck-note {
+  margin: 6px 0 8px;
+  font-size: 10px;
+  color: var(--ds-muted);
+  line-height: 1.35;
+  letter-spacing: 0.01em;
+}
+
+/* ---- content ---- */
+.ck-main {
+  flex: 1;
+  overflow: auto;
+  padding: 12px 12px 24px;
+  min-width: 0;
+  font-family: inherit;
+}
+
+.ck-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: flex-start;
+  margin-bottom: 10px;
+}
+
+.ck-head h1 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.25;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--vscode-foreground);
+}
+
+.ck-head h1 .codicon {
+  font-size: 14px;
+  line-height: 1;
+  flex: none;
+  opacity: 0.85;
+}
+
+.ck-head .hint {
+  margin: 3px 0 0;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--ds-muted);
+  line-height: 1.4;
+  max-width: 52rem;
+}
+
+.ck-banner {
+  border: 1px solid color-mix(in srgb, var(--ds-info, #3794ff) 55%, var(--ds-border));
+  background: color-mix(in srgb, var(--ds-info, #3794ff) 10%, transparent);
+  padding: 7px 10px;
+  border-radius: 4px;
+  margin-bottom: 12px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--ds-fg);
+}
+
+.ck-chips {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.ck-chip {
+  border: 1px solid var(--ds-border);
+  border-radius: 4px;
+  padding: 6px 8px;
+  background: color-mix(in srgb, var(--vscode-foreground) 4%, transparent);
+}
+
+.ck-chip .label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ds-muted);
+}
+
+.ck-chip .value {
+  font-size: 16px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  margin-top: 2px;
+  line-height: 1.2;
+  color: var(--vscode-foreground);
+}
+
+.ck-chip.warn .value {
+  color: var(--ds-err);
+}
+
+.ck-chip.ok .value {
+  color: var(--ds-ok);
+}
+
+.ck-panel {
+  border: 1px solid var(--ds-border);
+  border-radius: 4px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  background: color-mix(in srgb, var(--vscode-foreground) 3%, transparent);
+}
+
+.ck-panel h2 {
+  margin: 0 0 6px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ds-muted);
+}
+
+.ck-panel p {
+  margin: 0 0 6px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--ds-muted);
+}
+
+.ck-bridge-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ck-bridge-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  padding: 5px 0;
+  border-top: 1px solid var(--ds-border);
+  font-size: 11px;
+}
+
+.ck-bridge-list .name {
+  font-weight: 600;
+  min-width: 88px;
+  color: var(--vscode-foreground);
+}
+
+.ck-bridge-list li > span:not(.name):not(.ci-badge) {
+  font-size: 10px;
+  color: var(--ds-muted);
+}
+
+/* ---- engine cards ---- */
+.ci-ws {
+  border: 1px solid var(--ds-border);
+  border-radius: 4px;
+  margin-bottom: 10px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--vscode-foreground) 3%, transparent);
+}
+
+.ci-ws-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--ds-border);
+}
+
+.ci-ws-head .name {
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--vscode-foreground);
+}
+
+.ci-ws-head .meta {
+  font-size: 10px;
+  color: var(--ds-muted);
+  margin-top: 1px;
+}
+
+.ci-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
+.ci-card {
+  padding: 8px 10px;
+  border-right: 1px solid var(--ds-border);
+  border-bottom: 1px solid var(--ds-border);
+}
+
+.ci-card h3 {
+  margin: 0 0 6px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ds-muted);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.ci-card h3 .codicon {
+  font-size: 12px;
+  line-height: 1;
+  flex: none;
+}
+
+.ci-kv {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  gap: 3px 6px;
+  font-size: 11px;
+}
+
+.ci-kv .k {
+  color: var(--ds-muted);
+  font-size: 10px;
+}
+
+.ci-kv .v {
+  font-size: 10px;
+  word-break: break-all;
+  font-variant-numeric: tabular-nums;
+  color: var(--vscode-foreground);
+}
+
+.ci-badge {
+  display: inline-flex;
+  padding: 0 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+  border: 1px solid var(--ds-border);
+}
+
+.ci-badge.attached {
+  color: var(--ds-ok);
+  border-color: color-mix(in srgb, var(--ds-ok) 45%, var(--ds-border));
+  background: color-mix(in srgb, var(--ds-ok) 12%, transparent);
+}
+
+.ci-badge.error {
+  color: var(--ds-err);
+  border-color: color-mix(in srgb, var(--ds-err) 45%, var(--ds-border));
+  background: color-mix(in srgb, var(--ds-err) 12%, transparent);
+}
+
+.ci-badge.none {
+  color: var(--ds-muted);
+}
+
+.ci-notes {
+  margin: 0;
+  padding: 6px 10px 8px 24px;
+  font-size: 11px;
+  color: var(--ds-muted);
+}
+
+.ck-empty {
+  padding: 20px 10px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--ds-muted);
+}
+
+.ck-toast {
+  position: fixed;
+  bottom: 12px;
+  right: 12px;
+  background: var(--vscode-notifications-background);
+  color: var(--vscode-notifications-foreground);
+  border: 1px solid var(--vscode-notifications-border);
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: inherit;
+}
+
+.ck-checked {
+  margin-top: 10px;
+  font-size: 10px;
+  color: var(--ds-muted);
+}
+
+.ck-table-wrap {
+  overflow: auto;
+  border: 1px solid var(--ds-border);
+  border-radius: 4px;
+}
+
+.ck-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+  font-family: inherit;
+}
+
+.ck-table th,
+.ck-table td {
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--ds-border);
+  vertical-align: top;
+}
+
+.ck-table th {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ds-muted);
+  background: color-mix(in srgb, var(--vscode-foreground) 4%, transparent);
+}
+
+.ck-table td {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--vscode-foreground);
+  word-break: break-word;
+}
+
+.ck-table td.ck-mono {
+  font-size: 10px;
+  color: var(--ds-muted);
+  word-break: break-all;
+  font-variant-numeric: tabular-nums;
+}
+
+.ck-table tr:last-child td {
+  border-bottom: none;
+}
+
+/* Match sidebar row hover feel */
+.ck-table tbody tr:hover td {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.ck-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
