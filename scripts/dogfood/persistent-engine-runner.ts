@@ -43,11 +43,15 @@ const workspaceRoot = path.join(root, "workspace");
 const storageRoot = path.join(root, "state");
 const installRoot = path.join(root, "bundles");
 const runtimeRoot = path.join(root, "runtimes");
-for (const directory of [workspaceRoot, storageRoot]) fs.mkdirSync(directory, { mode: 0o700 });
+const fakeBin = path.join(root, "bin");
+for (const directory of [workspaceRoot, storageRoot, fakeBin]) fs.mkdirSync(directory, { mode: 0o700 });
+const fakeCodex = path.join(fakeBin, "codex");
+fs.writeFileSync(fakeCodex, "#!/bin/sh\nsleep 300\n", { mode: 0o700 });
+process.env.PATH = `${fakeBin}${path.delimiter}${process.env.PATH ?? ""}`;
 fs.writeFileSync(path.join(workspaceRoot, "tachyon.yml"), [
   "agents:",
   "  dogfood-worker:",
-  "    cmd: sleep 300",
+  "    cmd: codex",
   "    kind: agent",
   "    autostart: false",
   "    restart: on-crash",
@@ -608,6 +612,13 @@ try {
       bridgeToolCount: noShellToolCount,
       preservedAgentPid: agentPidBeforeDetach,
       monitorRestartedAgentPid: agentPidAfterMonitorRestart,
+    },
+    approvalRoute: {
+      requestId: approvalId,
+      requester: "dogfood-worker",
+      command: "tachyon.openApprovals",
+      workspaceHash: identity.workspaceHash,
+      statusAfterReview: "pending",
     },
     shellBoundary: {
       durableBridgeGeneration: bridgeGenerationBeforeShellDetach,

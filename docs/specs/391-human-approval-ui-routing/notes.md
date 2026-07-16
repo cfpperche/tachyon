@@ -59,6 +59,9 @@ None.
   real agent-authenticated Bridge while zero shells are attached, reattaches a UI-capable Node shell,
   selects `Review`, asserts one exact-workspace `tachyon.openApprovals` command, and confirms the durable
   request remains pending. Any native Palette/panel inspection is performed by the maintainer.
+- The persistent-engine fixture now exposes a fake `codex` executable instead of declaring `sleep` as
+  an AI agent. This satisfies the current fail-closed Bridge-materialization contract while keeping the
+  dogfood local, deterministic and free of an interactive/paid runtime process.
 
 ## Verification log
 
