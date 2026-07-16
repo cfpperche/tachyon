@@ -58,7 +58,7 @@ npm run dogfood:dev-host -- seed --fixture sample-workspace
 
 | Path | How |
 |------|-----|
-| **Sidebar header** | Icon **Control** (`$(dashboard)`) as the hub entry — Mission Control / tmux Inspector **removed** from `view/title` (open via Control tabs / palette) |
+| **Sidebar header** | Only **Control** (`$(dashboard)`) on `view/title` — Mission / Plugins / tmux / Settings / refresh open via Control tabs or command palette |
 | `tachyon.openControl` | Control shell (Overview) — palette + header |
 | `tachyon.openCockpit` | Legacy alias → same as openControl (hidden from palette) |
 | `tachyon.inspectEngine` | Control on Engine tab |

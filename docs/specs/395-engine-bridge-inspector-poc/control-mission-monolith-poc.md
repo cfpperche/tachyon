@@ -22,7 +22,7 @@ Control is the **visual monolith** in the editor. Mission Control (the task boar
 1. Import `mission-control/App` into Control when `section === "mission"`.
 2. Control host pushes the same `snapshot` / `taskError` envelope and handles the same board actions (`updateTask`, `reorderLane`, …).
 3. `tachyon.missionControl` and Control “Mission” tab both open Control with `section: "mission"`.
-4. Sidebar `view/title`: **only Control** as the ops hub entry — Mission Control + tmux Inspector icons removed (still in command palette / Control tabs).
+4. Sidebar `view/title`: **only Control** — Mission, Plugins, tmux, Settings, refresh no longer in the sidebar header (Control tabs / palette).
 5. Standalone `MissionControlPanelManager` remains in the codebase for deserialize / safety, but the **primary open path** is Control.
 
 ## Dogfood

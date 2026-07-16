@@ -517,21 +517,6 @@
           "command": "tachyon.openControl",
           "when": "view == tachyonSidebarPrototype",
           "group": "navigation@1"
-        },
-        {
-          "command": "tachyon.openPlugins",
-          "when": "view == tachyonSidebarPrototype",
-          "group": "navigation@2"
-        },
-        {
-          "command": "tachyon.refreshViews",
-          "when": "view == tachyonSidebarPrototype",
-          "group": "navigation@3"
-        },
-        {
-          "command": "tachyon.openSettings",
-          "when": "view == tachyonSidebarPrototype",
-          "group": "navigation@4"
         }
       ],
       "commandPalette": [
