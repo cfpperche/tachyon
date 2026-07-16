@@ -362,18 +362,6 @@
   .pin .box .codicon { font-size: 11px; }
   .pin.done .txt { text-decoration: line-through; color: var(--ds-muted); }
 
-  /* Bridge — quiet footer status bar */
-  .foot { flex: 0 0 auto; display: flex; flex-direction: column; background: var(--vscode-sideBar-background, var(--vscode-editor-background)); border-top: 1px solid var(--ds-border); font-size: 11px; }
-  /* Each bridge is a full-width button: click copies its URL (one per workspace root in multi-root). */
-  .bridge-line { display: flex; align-items: center; gap: 6px; width: 100%; padding: 4px 12px; background: none; border: 0; color: inherit; font: inherit; cursor: pointer; text-align: left; }
-  .bridge-line + .bridge-line { border-top: 1px solid var(--ds-border); }
-  .bridge-line:hover { background: var(--hover); }
-  .bridge-line .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ds-ok); box-shadow: 0 0 6px var(--ds-ok); flex: none; }
-  .bridge-line .dot.off { background: var(--ds-muted); box-shadow: none; }
-  .bridge-line b { font-weight: 600; }
-  .bridge-line .bfolder { color: var(--ds-muted); opacity: .8; }
-  .bridge-line .fmeta { color: var(--ds-muted); margin-left: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
   /* cmd+K palette */
   .cmdk { display: none; position: fixed; inset: 0; z-index: 30; background: rgba(0,0,0,.42); }
   .cmdk.open { display: block; }

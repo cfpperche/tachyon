@@ -860,7 +860,6 @@ export function App({ fleets = [SAMPLE], dispatch, prefs = {}, collapsedKeys = [
     pipeline: (op, name, nodeId) => dispatch?.pipeline(op, name, nodeId, hash),
     openMore: (items, x, y) => setMenu({ items, x, y }),
   });
-  const multi = fleets.length > 1;
   // No workspace booted → an honest empty state, never SAMPLE (which would show fake, unactionable rows).
   if (!fleets.length) return (
     <div class="init">
@@ -994,15 +993,6 @@ export function App({ fleets = [SAMPLE], dispatch, prefs = {}, collapsedKeys = [
             </>
           );
         })}
-      </div>
-      <div class="foot">
-        {fleets.map((f) => (
-          <button class="bridge-line" type="button" title="Copy Bridge URL" onClick={() => dispatch?.global("copyBridge", f.folder?.hash)}>
-            <span class={`dot${f.bridge.connected ? "" : " off"}`} /><b>Bridge</b>
-            {multi && <span class="bfolder">{f.folder?.name}</span>}
-            <span class="fmeta">:{f.bridge.port} · {f.bridge.connected ? "connected" : "down"}</span>
-          </button>
-        ))}
       </div>
       {open && <CmdK fleets={fleets} onClose={closeK} onPick={pick} />}
       <MoreMenu menu={menu} onClose={() => setMenu(null)} />
