@@ -514,7 +514,7 @@
           "group": "navigation@1"
         },
         {
-          "command": "tachyon.missionControl",
+          "command": "tachyon.openControl",
           "when": "view == tachyonSidebarPrototype",
           "group": "navigation@1"
         },
@@ -524,24 +524,14 @@
           "group": "navigation@2"
         },
         {
-          "command": "tachyon.openControl",
+          "command": "tachyon.refreshViews",
           "when": "view == tachyonSidebarPrototype",
           "group": "navigation@3"
         },
         {
-          "command": "tachyon.inspectServer",
-          "when": "view == tachyonSidebarPrototype",
-          "group": "navigation@4"
-        },
-        {
-          "command": "tachyon.refreshViews",
-          "when": "view == tachyonSidebarPrototype",
-          "group": "navigation@5"
-        },
-        {
           "command": "tachyon.openSettings",
           "when": "view == tachyonSidebarPrototype",
-          "group": "navigation@6"
+          "group": "navigation@4"
         }
       ],
       "commandPalette": [
