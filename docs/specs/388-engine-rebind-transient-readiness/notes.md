@@ -29,3 +29,20 @@ _In-flight design memory — decisions, deviations, tradeoffs, and open question
 
 ### 2026-07-16T14:28:33Z — pass (1/1) — source: tasks.md — commit: 6fd1d71371a2a863973b003dc4cd3fde20ee0a45
 - `node scripts/dogfood/persistent-engine.mjs` — pass
+
+### 2026-07-16T14:40:33Z — pass (1/1) — source: tasks.md — commit: 5e71469305d9bd8285f48c7805a0cb08a935cb5d
+- `node scripts/dogfood/persistent-engine.mjs` — pass
+
+## Verification log
+
+### 2026-07-16T14:40:00Z — pass (1/1) — source: tasks.md
+- `npx vitest run test/unit/bridgeClientRebind.test.ts test/unit/agentManager.test.ts test/unit/engineProcessBoundary.test.ts test/unit/engineSupervisor.test.ts && npm run typecheck` — pass
+
+## Closure evidence
+
+- Implementation commit: `5e71469305d9bd8285f48c7805a0cb08a935cb5d`.
+- Independent adversarial review: no findings after the final synchronous lifecycle-authority guard;
+  378 focused tests, `tsc --noEmit`, and `git diff --check` passed in the review checkout.
+- Repository gate: `npm run verify:full:quiet` passed with 409 files and 4,678 tests passing;
+  3 pre-existing skips remained explicit.
+- Declared SDD verify and persistent-engine dogfood both passed against the implementation commit.

@@ -4,24 +4,24 @@ _Generated from `plan.md` on 2026-07-16. Work top-to-bottom. Check boxes as task
 
 ## Implementation
 
-- [ ] Add RED AgentManager tests for an unchanged cached `false`, a fresh `ready`, and immediate
+- [x] Add RED AgentManager tests for an unchanged cached `false`, a fresh `ready`, and immediate
   Delivery/snapshot denial without transcript resolution.
-- [ ] Add RED coordinator tests for `retry -> ready`, bounded timeout, same-session resume, audit
+- [x] Add RED coordinator tests for `retry -> ready`, bounded timeout, same-session resume, audit
   transitions, and zero teardown before readiness.
-- [ ] Add the uncached typed AgentManager rebind probe while preserving the existing cached boolean API.
-- [ ] Implement bounded coordinator polling with fresh ledger/liveness/generation/authority checks.
-- [ ] Wire Workspace to the new probe and update stale host-reload terminology to engine incarnation.
-- [ ] Extend persistent-engine dogfood to compare Bridge generation and rebind audit across shell
+- [x] Add the uncached typed AgentManager rebind probe while preserving the existing cached boolean API.
+- [x] Implement bounded coordinator polling with fresh ledger/liveness/generation/authority checks.
+- [x] Wire Workspace to the new probe and update stale host-reload terminology to engine incarnation.
+- [x] Extend persistent-engine dogfood to compare Bridge generation and rebind audit across shell
   detach/reattach.
 
 ## Verification
 
-- [ ] Transient readiness test proves wait -> ready -> one stop/resume -> `resume_ok`, using the same
+- [x] Transient readiness test proves wait -> ready -> one stop/resume -> `resume_ok`, using the same
   session identifier and no cold spawn seam.
-- [ ] Timeout and permanent-denial tests prove the original process remains alive with no teardown.
-- [ ] Cache test proves the recovery probe is fresh without weakening ordinary cached reads.
-- [ ] Persistent-engine boundary tests and dogfood prove shell reattach leaves generation/audit unchanged.
-- [ ] Existing rebind, AgentManager, engine-boundary suites and typecheck remain green.
+- [x] Timeout and permanent-denial tests prove the original process remains alive with no teardown.
+- [x] Cache test proves the recovery probe is fresh without weakening ordinary cached reads.
+- [x] Persistent-engine boundary tests and dogfood prove shell reattach leaves generation/audit unchanged.
+- [x] Existing rebind, AgentManager, engine-boundary suites and typecheck remain green.
 
 **Headless check:** `npx vitest run test/unit/bridgeClientRebind.test.ts test/unit/agentManager.test.ts test/unit/engineProcessBoundary.test.ts test/unit/engineSupervisor.test.ts && npm run typecheck`
 <!-- A mechanical command an agent can run to validate this spec's implementation
