@@ -1787,6 +1787,12 @@ export class AgentManager {
     // declaredOwner metadata and must not inherit stale ad-hoc-era parents.
     const parent = adhoc && !opts?.gate && opts?.parent && opts.parent !== name ? opts.parent : undefined;
     const delegator = opts?.gate && opts.delegator && opts.delegator !== name ? opts.delegator : undefined;
+    // t-f660d8 — primer/doorbell identity for declared agents: honor spawn_agent `parent` or
+    // config `declaredOwner` without writing runtime lineage (sidebar stays top-level + declaredOwner).
+    const primerParent = !opts?.gate
+      ? ((opts?.parent && opts.parent !== name ? opts.parent : undefined)
+        ?? (!adhoc ? this.opts.getConfig()?.declaredOwner?.[name] : undefined))
+      : undefined;
     // `{}` is an intentional snapshot of "no verifier configured". Leaving it undefined would be
     // indistinguishable from a legacy record and verify_task could later adopt newly-added commands.
     const verifySettingsSnapshot: NonNullable<TachyonConfig["settings"]["verify"]> = structuredClone(
@@ -1847,6 +1853,30 @@ export class AgentManager {
     if (opts?.gate && !worktree) {
       throw new Error("gated delegation requires an isolated worktree; worktree creation was unavailable");
     }
+    // t-f660d8 — explicit spawn_agent cwd: honor or fail closed (never silently ignore).
+    // Parented ad-hoc children inherit the parent's cwd via resolveWorktreeCwd — refuse opts.cwd
+    // so callers never think a custom path was applied. Declared agents without a worktree may
+    // run in an explicit managed checkout (e.g. a Delivery worktree path).
+    if (!forced && opts?.cwd) {
+      const requested = resolveCwd(this.opts.workspaceRoot, opts.cwd);
+      if (!fs.existsSync(requested) || !fs.statSync(requested).isDirectory()) {
+        throw new Error(`spawn_agent cwd is not an existing directory: ${requested}`);
+      }
+      if (parent) {
+        throw new Error(
+          `spawn_agent cwd is not used for parented ad-hoc children (they inherit the parent's cwd); omit cwd or spawn without parent`,
+        );
+      }
+      if (worktree) {
+        if (path.resolve(worktree.path) !== path.resolve(requested)) {
+          throw new Error(
+            `spawn_agent cwd '${requested}' conflicts with worktree isolation at ${worktree.path}; omit cwd or match the worktree path`,
+          );
+        }
+      } else {
+        cwd = requested;
+      }
+    }
     const rollbackLaunchPreparation = async (): Promise<boolean> => {
       if (forced || !worktree || !this.opts.rollbackPreparedWorktree) return false;
       if (!createdWorktree && (!preparationHeadBefore || !preparationHeadAfter)) return false;
@@ -1864,7 +1894,16 @@ export class AgentManager {
     // only afterwards so the primer carries the authoritative result, before any tmux mutation.
     const effectivePrimerCtx = { ...primerCtx, freshWorktree: !!worktree };
     const preparedLaunch = await (async () => {
-    const effectiveInstructions = this.effectiveInstructions(name, def, parent, effectivePrimerCtx, taskBrief, resolvedSoul, projectGuidance);
+    // primerParent (declared owner/spawn parent) only for primer/guidance — not runtime lineage.
+    const effectiveInstructions = this.effectiveInstructions(
+      name,
+      def,
+      parent ?? primerParent,
+      effectivePrimerCtx,
+      taskBrief,
+      resolvedSoul,
+      projectGuidance,
+    );
     // Session-resume bookkeeping (spec 209): mint a session id for runtimes that
     // accept one (claude/gemini). The ORIGINAL cmd is kept for the ledger def +
     // adhoc map; the injected one is only what we spawn.

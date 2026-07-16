@@ -4531,6 +4531,60 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     expect(ledger.get("child")?.def?.parent).toBeUndefined();
   });
 
+  it("t-f660d8: declared spawn_agent parent reaches primer without runtime lineage", async () => {
+    // Sidebar keeps declared agents top-level (declaredOwner); primer must still name the spawner for doorbell.
+    const { manager, ledger, cmds } = harness(
+      "agents:\n  codex:\n    cmd: claude\n    subagents: [reviewer]\n  reviewer:\n    cmd: claude\n",
+    );
+    await manager.spawn("reviewer", { parent: "codex" });
+    const listed = (await manager.list()).find((a) => a.name === "reviewer");
+    expect(listed?.parent).toBeUndefined(); // no runtime lineage
+    expect(listed?.declaredOwner).toBe("codex");
+    expect(manager.parentOf("reviewer")).toBeUndefined();
+    expect(ledger.get("reviewer")?.def?.parent).toBeUndefined();
+    // Primer is embedded in the spawn command payload for claude.
+    expect(cmds.some((c) => c.includes("spawned by \"codex\""))).toBe(true);
+    expect(cmds.some((c) => c.includes("no delegator/parent on record"))).toBe(false);
+  });
+
+  it("t-f660d8: declaredOwner alone still frames primer when spawn omits parent", async () => {
+    const { manager, cmds } = harness(
+      "agents:\n  codex:\n    cmd: claude\n    subagents: [reviewer]\n  reviewer:\n    cmd: claude\n",
+    );
+    await manager.spawn("reviewer"); // no opts.parent — still declaredOwner=codex from subagents
+    expect(cmds.some((c) => c.includes("spawned by \"codex\""))).toBe(true);
+  });
+
+  it("t-f660d8: declared agent honors explicit cwd", async () => {
+    const { manager, ws, newSessionArgs } = harness("agents:\n  reviewer:\n    cmd: sh\n");
+    const custom = path.join(ws, "custom-cwd");
+    fs.mkdirSync(custom, { recursive: true });
+    await manager.spawn("reviewer", { cwd: custom });
+    // Declared non-adapter may not write a ledger row; tmux new-session -c is the launch contract.
+    const flat = newSessionArgs.flat().join("\0");
+    expect(flat).toContain(path.resolve(custom));
+    const cIdx = newSessionArgs[0]?.indexOf("-c") ?? -1;
+    expect(cIdx).toBeGreaterThanOrEqual(0);
+    expect(newSessionArgs[0]?.[cIdx + 1]).toBe(path.resolve(custom));
+  });
+
+  it("t-f660d8: parented ad-hoc with explicit cwd fails closed", async () => {
+    const { manager, ws } = harness("agents:\n  boss:\n    cmd: claude\n");
+    await manager.spawn("boss");
+    const other = path.join(ws, "other");
+    fs.mkdirSync(other, { recursive: true });
+    await expect(
+      manager.spawn("kid", { cmd: "sh", parent: "boss", cwd: other }),
+    ).rejects.toThrow(/cwd is not used for parented ad-hoc|inherit the parent's cwd/i);
+  });
+
+  it("t-f660d8: missing spawn cwd fails closed", async () => {
+    const { manager, ws } = harness("agents:\n  reviewer:\n    cmd: sh\n");
+    await expect(
+      manager.spawn("reviewer", { cwd: path.join(ws, "does-not-exist") }),
+    ).rejects.toThrow(/not an existing directory/i);
+  });
+
   it("rehydrate restores worktree:true so restart's resolver reuses the worktree (review fix)", async () => {
     const REC = { path: "/wt/h/w", branch: "tachyon/w", tachyonCreatedBranch: true, baseRef: "b", createdAt: "t" };
     let seenWorktree: boolean | undefined;
