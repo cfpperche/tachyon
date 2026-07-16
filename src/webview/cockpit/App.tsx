@@ -308,7 +308,6 @@ export function App(p: CockpitAppProps) {
           rows={m.fleet.map((a) => [a.name, a.kind ?? "—", a.running ? s.running : s.stopped])}
           empty={s.noneListed}
         />
-        {/* name/kind/status stay on reading font */}
       </ModuleChrome>
     );
   } else if (section === "approvals") {
