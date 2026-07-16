@@ -7,7 +7,6 @@ export const MODEL = "model" as const;
 export interface CockpitStrings {
   title: string;
   subtitle: string;
-  pocBanner: string;
   navOverview: string;
   navEngine: string;
   navFleet: string;
@@ -81,7 +80,6 @@ export interface CockpitStrings {
   running: string;
   stopped: string;
   checkedAt: string;
-  sidebarNote: string;
   open: string;
   noneListed: string;
   kind: string;

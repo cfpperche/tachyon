@@ -93,9 +93,9 @@ describe("preview route table", () => {
       "/dist/webview/cockpit.css",
     ]);
     expect(Object.keys(r.fixtures).sort()).toEqual(["default", "empty", "engine", "fleet"]);
-    const msgs = r.makeMessage(r.fixtures.default.vm) as Array<{ type: string; model?: { framing?: string } }>;
+    const msgs = r.makeMessage(r.fixtures.default.vm) as Array<{ type: string; model?: { section?: string } }>;
     expect(msgs.map((m) => m.type)).toEqual(["init", "model"]);
-    expect(msgs[1]?.model?.framing).toBe("editor-sysadmin");
+    expect(msgs[1]?.model?.section).toBe("overview");
   });
 
   it("declares the handoff route (spec 280) with its envelope + default/cold/stale fixtures", () => {

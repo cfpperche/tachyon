@@ -92,8 +92,6 @@ export interface CockpitWorkspaceBundle {
 }
 
 export interface CockpitModel {
-  poc: true;
-  framing: "editor-sysadmin";
   checkedAt: string;
   section: CockpitSectionId;
   control: ControlInspectorModel;
@@ -144,8 +142,6 @@ export function buildCockpitModel(
   const approvalsPending = approvals.filter((a) => !a.status || a.status === "pending").length;
 
   return {
-    poc: true,
-    framing: "editor-sysadmin",
     checkedAt: control.checkedAt,
     section: opts?.section && COCKPIT_SECTION_ORDER.includes(opts.section) ? opts.section : "overview",
     control,

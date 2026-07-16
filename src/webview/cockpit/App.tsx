@@ -357,7 +357,7 @@ export function App(p: CockpitAppProps) {
     body = (
       <ModuleChrome title={s.runtimeTitle} hint={s.runtimeHint} actionLabel={s.openRuntimeOps} onAction={p.onOpenRuntimeOps}>
         <div class="ck-panel">
-          <p>Open Runtime Ops for usage, rate limits, and cost signals. Cockpit does not re-implement that panel.</p>
+          <p>Open Runtime Ops for usage and rate-limit detail.</p>
         </div>
       </ModuleChrome>
     );
@@ -441,11 +441,9 @@ export function App(p: CockpitAppProps) {
             );
           })}
         </div>
-        <p class="ck-note">{s.sidebarNote}</p>
       </header>
 
       <main class="ck-main">
-        <div class="ck-banner">{s.pocBanner}</div>
         {body}
         {m ? (
           <div class="ck-checked">
