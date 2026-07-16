@@ -2,7 +2,8 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { codexConfigCmd, codexFlagCmd, composeCommand, codexBridgeCmd, shellQuote, inferKind, instructionsDeliverable, type AgentDef, type EntryKind, type TachyonConfig } from "../config/loadConfig.js";
+import { codexConfigCmd, composeCommand, codexBridgeCmd, shellQuote, inferKind, instructionsDeliverable, type AgentDef, type EntryKind, type TachyonConfig } from "../config/loadConfig.js";
+import { applyManagedHookTrust, managedHookRuntimeOf } from "./managedHookTrust.js";
 import { TmuxService, sessionName, agentFromSession, SESSION_PREFIX } from "../tmux/TmuxService.js";
 import { adapterFor, adapterForRuntime, binaryOf, forkable, managesOwnSession, type ResumeAdapter, type ResumeRuntime } from "../resume/adapters.js";
 import { URL_ENV_VAR } from "../bridge/token.js";
@@ -2417,17 +2418,16 @@ export class AgentManager {
       this.opts.onSessionHooksInjected?.(name, !!config);
       if (!config) return cmd;
       const withConfig = codexConfigCmd(cmd, config);
-      // t-554634 / maintainer 2026-07-14 option C: whenever Tachyon materializes session-scoped
-      // Codex hooks (-c hooks.SessionStart / hooks.Stop), bypass hook-trust for THIS invocation so
-      // Start/Resume/Reload never re-prompts "Hooks need review" for those managed hooks.
-      // Codex's flag is per-invocation only (does not persist blanket trust). Scoped by injection:
-      // the flag is added only when materializeCodexSessionStartHookConfig returned config — never on
-      // plain codex spawns without Tachyon hooks. Residual risk: other enabled hooks in the same
-      // invocation (user/project) also skip the trust prompt; accepted for Tachyon-managed fleets.
-      // Supersedes the t-84ff5c hybrid that left top-level declared agents un-bypassed (codex-soul repro).
-      return codexFlagCmd(withConfig, "--dangerously-bypass-hook-trust");
+      // t-554634 option C + t-bc8d21: scoped managed-hook trust (only when Tachyon injected hooks).
+      return applyManagedHookTrust(withConfig, {
+        injected: true,
+        kind: "session-config-flag",
+        runtime: managedHookRuntimeOf(binary),
+      });
     }
     if (binary !== "claude") {
+      // Grok/Hermes/OpenCode: no withSessionOwnership lifecycle injection today.
+      // Grok harness private-home hooks are trusted via seedGrokTrustedFolders at materialize time.
       this.opts.onSessionHooksInjected?.(name, false);
       return cmd;
     }
@@ -2447,6 +2447,11 @@ export class AgentManager {
     this.opts.onSessionHooksInjected?.(name, !!file);
     if (!file) return cmd;
     let out = `${cmd} --settings ${shellQuote(file)}`;
+    out = applyManagedHookTrust(out, {
+      injected: true,
+      kind: "session-settings",
+      runtime: managedHookRuntimeOf(binary),
+    });
     if (ownershipOnly
       && !opts.preservePermissionMode
       && !/(^|\s)--permission-mode(=|\s|$)/.test(out)
