@@ -23,9 +23,6 @@ export interface DeliveryContract {
 
 export type DeliveryLeaseState = "free" | "pending" | "held" | "draining" | "verifying" | "quarantined" | "abandoned";
 
-/** The evidence level used for sequential Delivery lease transitions. */
-export type DeliveryHandoffSafety = "disabled" | "mechanism-only" | "process-fenced";
-
 export interface DeliveryProcessIdentity {
   pid: number;
   processStart: string;
@@ -95,12 +92,6 @@ export interface DeliveryEvent {
   detail?: Record<string, unknown>;
 }
 
-export interface DeliveryLegacySource {
-  delegationId?: string;
-  sourcePath?: string;
-  importedAt?: string;
-}
-
 export interface Delivery {
   schemaVersion: 1;
   id: string;
@@ -112,11 +103,20 @@ export interface Delivery {
   segments: DelegationSegment[];
   events: DeliveryEvent[];
   gitDeliveryId?: string;
-  legacy?: DeliveryLegacySource;
   createdAt: string;
   updatedAt: string;
   /** Host-authenticated seal over the complete durable authority record. */
   authorityIntegrity?: AuthorityIntegrity;
+}
+
+/** Exact public receipt for creation of a new tracked canonical Delivery. */
+export interface CanonicalDeliverySpawnReceipt {
+  deliveryId: string;
+  projectionId: string;
+  segmentId: string;
+  worktree: string;
+  branch: string;
+  head: string;
 }
 
 export interface DeliveryCreateInput {
@@ -128,7 +128,6 @@ export interface DeliveryCreateInput {
   segments?: DelegationSegment[];
   events?: DeliveryEvent[];
   gitDeliveryId?: string;
-  legacy?: DeliveryLegacySource;
   /** Stable caller-supplied key used to replay a create after its response was lost. */
   operationId?: string;
 }

@@ -49,17 +49,8 @@ describe("container-generated delegation behavior", () => {
         throw new Error("stopper must not run for an already-gone predecessor");
       });
       const observe = vi.fn(() => ({ state: "gone" as const }));
-      const fence = {
-        capability: vi.fn(() => ({ supported: false as const, reason: "unused" })),
-        freeze: vi.fn(async () => { throw new Error("fence must not run"); }),
-        terminate: vi.fn(async () => { throw new Error("fence must not run"); }),
-        proveEmpty: vi.fn(async () => { throw new Error("fence must not run"); }),
-      };
-
       const lease = new DeliveryLeaseService({
         store,
-        processFence: fence,
-        handoffSafety: "mechanism-only",
         exactExecutionStopper: { stop },
         processObserver: { observe },
         canonicalWorktreeFor: () => worktree,
@@ -91,10 +82,6 @@ describe("container-generated delegation behavior", () => {
       expect(stop).not.toHaveBeenCalled();
       expect(observe).toHaveBeenCalledTimes(1);
       expect(observe).toHaveBeenCalledWith({ pid: 4242, processStart: "100", bootId: "boot" });
-      expect(fence.capability).not.toHaveBeenCalled();
-      expect(fence.freeze).not.toHaveBeenCalled();
-      expect(fence.terminate).not.toHaveBeenCalled();
-      expect(fence.proveEmpty).not.toHaveBeenCalled();
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

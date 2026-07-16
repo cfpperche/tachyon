@@ -13,7 +13,7 @@ import {
   DeliveryStore,
 } from "../../src/delivery/store.js";
 import type { Delivery, DeliveryCreateInput, DeliveryProjectionOwnerIdentity } from "../../src/delivery/types.js";
-import { canIntegrateLinkedGitDelivery, canPruneLinkedGitDelivery, canPruneGitDelivery } from "../../src/git-delivery/policy.js";
+import { canIntegrateLinkedGitDelivery, canPruneLinkedGitDelivery } from "../../src/git-delivery/policy.js";
 import { hygieneReport } from "../../src/git-delivery/classify.js";
 import {
   deterministicGitDeliveryId,
@@ -26,10 +26,6 @@ const actor = { kind: "system" as const, name: "tachyon" };
 const human = { kind: "human" as const, name: "maintainer" };
 const now = "2026-07-12T15:00:00.000Z";
 const settings: GitDeliverySettings = {
-  profile: "balanced",
-  autoOpen: false,
-  requireNonSelfAccept: false,
-  autoPrune: false,
   prunePrincipals: ["orch"],
   integratePrincipals: ["orch"],
 };
@@ -322,8 +318,6 @@ describe("DeliveryProjectionService (SDD 368 T15)", () => {
     expect(canIntegrateLinkedGitDelivery({ kind: "agent", name: "worker" }, settings.integratePrincipals)).toBe(false);
     expect(canPruneLinkedGitDelivery({ kind: "agent", name: "worker" }, settings.prunePrincipals)).toBe(false);
     expect(canIntegrateLinkedGitDelivery({ kind: "agent", name: "orch" }, settings.integratePrincipals, { kind: "agent", name: "orch" })).toBe(true);
-    // Legacy still allows agent equality.
-    expect(canPruneGitDelivery({ agent: "worker", createdBy: { kind: "agent", name: "x" } } as never, "worker", [])).toBe(true);
   });
 
   it("prunes under claim with crash-after-git-removal idempotent completion", async () => {

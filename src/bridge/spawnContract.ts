@@ -17,10 +17,22 @@ export interface SpawnContract {
   doneWhen?: string;
 }
 
+/** Verification requirements attached to a canonical gated spawn. The durable copy lives in
+ *  Delivery.contract; this shape only carries the request across the Bridge -> AgentManager edge. */
+export interface DelegationGate {
+  behaviorTest: string;
+  owns: string[];
+  stubPath?: string;
+  /** SHA-256 of the fixed, project-owned behavior oracle bytes bound at spawn. */
+  oracleHash?: string;
+  /** SHA-256 by tracked project path for the fixed verifier mechanics bound at spawn. */
+  executorHashes?: Record<string, string>;
+}
+
 /**
  * t-11a2d1 — composition used to silently CLIP each slot to a per-field cap and the whole brief to
  * a 1800-char total, so a real coordinator contract (2-6KB observed in the wild) lost content the
- * caller never knew was cut — the DelegationRecord persisted the full contract, but the CHILD never
+ * caller never knew was cut — the durable Delivery persisted the full contract, but the CHILD never
  * saw the missing part. Now that briefFile.ts's deliverableBody diverts an over-threshold (4000
  * char) composed body to the agent's brief file instead of inlining it into the tmux pane,
  * composition no longer needs to shrink anything to fit a pane budget: it's LOSSLESS, delivered in

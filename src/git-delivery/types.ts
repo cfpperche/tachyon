@@ -12,8 +12,6 @@ export type GitDeliveryPhase =
   | "abandoned"
   | "pruned";
 
-export type GitDeliveryProfile = "solo" | "balanced" | "strict" | "custom";
-
 export interface GitDeliveryActor {
   kind: CallerSnapshot["kind"] | "system";
   name?: string;
@@ -54,8 +52,8 @@ export interface GitDelivery {
   id: string;
   version: number;
   workspaceId: string;
-  /** Canonical lifecycle aggregate. Absent only on legacy projections. */
-  deliveryId?: string;
+  /** Immutable canonical lifecycle aggregate. */
+  deliveryId: string;
   createdBy: GitDeliveryActor;
   agent: string;
   branchRef: string;
@@ -80,10 +78,6 @@ export interface GitDelivery {
 }
 
 export interface GitDeliverySettings {
-  profile: GitDeliveryProfile;
-  autoOpen: boolean;
-  requireNonSelfAccept: boolean;
-  autoPrune: boolean;
   prunePrincipals: string[];
   integratePrincipals: string[];
 }
@@ -98,7 +92,7 @@ export type HygieneCategory =
   | "cherry_pick_unrecorded"
   | "delivery_unavailable";
 
-export type ProjectionSyncState = "in_sync" | "pending" | "diverged" | "unlinked" | "unknown";
+export type ProjectionSyncState = "in_sync" | "pending" | "diverged" | "unknown";
 
 export interface GitDeliveryLiveState {
   currentHeadSha?: string;
@@ -122,8 +116,8 @@ export interface GitDeliveryListRow extends GitDeliveryLiveState {
   phase: GitDeliveryPhase;
   taskLinks: GitDeliveryTaskLink[];
   review?: GitDeliveryReview;
-  /** Canonical Delivery id when linked (SDD 368 T15 list safety metadata). */
-  deliveryId?: string;
+  /** Canonical Delivery id (SDD 368 T15 list safety metadata). */
+  deliveryId: string;
   /** Canonical lease state when the Delivery is readable. */
   leaseState?: string;
   /** T14 reload safety class, or unknown when snapshot/Delivery is unavailable. */
@@ -149,7 +143,7 @@ export interface HygieneReport {
 export interface GitDeliveryOpenInput {
   workspaceId: string;
   createdBy: GitDeliveryActor;
-  deliveryId?: string;
+  deliveryId: string;
   /** Deterministic id for canonical gated open (SDD 368 T15). */
   id?: string;
   agent: string;

@@ -326,7 +326,7 @@ describe("DeliveryStore SQLite (spec 368)", () => {
     ]);
   });
 
-  it("refuses automatic legacy JSON migration when an external authority head is configured", async () => {
+  it("leaves legacy JSON inert instead of promoting it into canonical authority", async () => {
     const workspace = root();
     const legacyDir = path.join(workspace, ".tachyon", "deliveries");
     fs.mkdirSync(legacyDir, { recursive: true });
@@ -338,7 +338,9 @@ describe("DeliveryStore SQLite (spec 368)", () => {
       authorityHead: authority.port,
     });
 
-    await expect(store.list()).rejects.toThrow("automatic legacy Delivery migration is refused");
+    await expect(store.list()).resolves.toEqual([]);
+    await expect(store.get("d-legacy")).resolves.toBeUndefined();
+    expect(fs.existsSync(path.join(legacyDir, "d-legacy.json"))).toBe(true);
     expect(fs.existsSync(path.join(workspace, ".tachyon", "deliveries.migrated-v1"))).toBe(false);
   });
 

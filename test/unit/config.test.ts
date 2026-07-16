@@ -23,12 +23,10 @@ settings:
 `;
 
 describe("parseConfig", () => {
-  it("keeps canonical Delivery spawning opt-in", () => {
-    expect(parseConfig("agents:\n  a:\n    cmd: x\n").config?.settings.delivery).toBeUndefined();
-    expect(parseConfig("agents:\n  a:\n    cmd: x\nsettings:\n  delivery:\n    mode: canonical\n").config?.settings.delivery?.mode).toBe("canonical");
-    expect(parseConfig("agents:\n  a:\n    cmd: x\nsettings:\n  delivery:\n    mode: future\n").errors[0]).toContain("legacy or canonical");
-    expect(parseConfig("agents:\n  a:\n    cmd: x\nsettings:\n  delivery:\n    handoffSafety: mechanism-only\n").errors[0]).toContain("requires settings.delivery.mode: canonical");
-    expect(parseConfig("agents:\n  a:\n    cmd: x\nsettings:\n  delivery:\n    mode: canonical\n    handoffSafety: mechanism-only\n").config?.settings.delivery).toEqual({ mode: "canonical", handoffSafety: "mechanism-only" });
+  it("uses canonical mechanism-only Delivery with no selectable legacy mode", () => {
+    expect(parseConfig("agents:\n  a:\n    cmd: x\n").errors).toEqual([]);
+    expect(parseConfig("agents:\n  a:\n    cmd: x\nsettings:\n  delivery:\n    mode: canonical\n").errors[0]).toContain("settings.delivery: removed");
+    expect(parseConfig("agents:\n  a:\n    cmd: x\nsettings:\n  delivery:\n    handoffSafety: mechanism-only\n").errors[0]).toContain("settings.delivery: removed");
   });
   it("parses a full valid config with defaults applied", () => {
     const { config, errors } = parseConfig(VALID);

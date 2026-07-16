@@ -411,26 +411,9 @@
         },
         "gitDelivery": {
           "type": "object",
-          "description": "GitDelivery lifecycle and hygiene settings (spec 365). Profiles supply defaults; explicit keys override profile values.",
+          "description": "Authority allowlists for linked GitDelivery projection integration and pruning.",
           "additionalProperties": false,
           "properties": {
-            "profile": {
-              "type": "string",
-              "enum": ["solo", "balanced", "strict", "custom"],
-              "default": "balanced"
-            },
-            "autoOpen": {
-              "type": "boolean",
-              "description": "Open a local GitDelivery record automatically when an ad-hoc worktree agent successfully spawns."
-            },
-            "requireNonSelfAccept": {
-              "type": "boolean",
-              "description": "Strict-profile review gate knob reserved for Phase 2 integrate behavior."
-            },
-            "autoPrune": {
-              "type": "boolean",
-              "description": "Reserved for Phase 2; Phase 1 never auto-prunes."
-            },
             "prunePrincipals": {
               "type": "array",
               "items": { "type": "string", "minLength": 1 },
@@ -439,17 +422,8 @@
             "integratePrincipals": {
               "type": "array",
               "items": { "type": "string", "minLength": 1 },
-              "description": "Reserved for Phase 2 integrate tools."
+              "description": "Agent principals allowed to record canonical Delivery integration when live Git proves containment."
             }
-          }
-        },
-        "delivery": {
-          "type": "object",
-          "description": "Canonical Delivery rollout settings (spec 368). Legacy gated persistence remains the default.",
-          "additionalProperties": false,
-          "properties": {
-            "mode": { "type": "string", "enum": ["legacy", "canonical"], "default": "legacy" },
-            "handoffSafety": { "type": "string", "enum": ["disabled", "mechanism-only", "process-fenced"], "default": "disabled" }
           }
         }
       }

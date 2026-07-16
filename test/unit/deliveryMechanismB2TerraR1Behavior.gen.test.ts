@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { DeliveryLeaseService } from "../../src/delivery/leaseService.js";
 import { DeliveryStore } from "../../src/delivery/store.js";
 
@@ -22,7 +22,7 @@ describe("container-generated delegation behavior", () => {
     // sequential stop bookkeeping while remaining honest about the pre-observe algorithm.
     const liveThenGone = new Map<string, number>();
     const lease = new DeliveryLeaseService({
-      store, handoffSafety: "mechanism-only", processFence: { capability: () => ({ supported: false, reason: "unused" }), freeze: vi.fn(), terminate: vi.fn(), proveEmpty: vi.fn() },
+      store,
       exactExecutionStopper: { stop: async (input) => { stopped.push(input.executionAgent); } },
       processObserver: { observe: (identity) => {
         const key = `${identity.pid}:${identity.processStart}:${identity.bootId}`;

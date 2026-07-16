@@ -119,7 +119,6 @@ export const TACHYON_GITIGNORE_ENTRIES = [
   ".tachyon/agents/",
   ".tachyon/agent-profile-transactions/",
   ".tachyon/handoff-notes.jsonl",
-  ".tachyon/git-deliveries/",
   ".tachyon/pins/",
   ".tachyon/probes/", // spec 257 — captured probe artifacts (sensitive-by-default, machine-local)
 ];

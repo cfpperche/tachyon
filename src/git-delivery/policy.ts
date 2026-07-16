@@ -1,21 +1,7 @@
 import type { CallerSnapshot } from "../bridge/callerIdentity.js";
-import type { GitDelivery } from "./types.js";
 import type { GitDeliveryActor } from "./types.js";
 
 type LinkedMutationCaller = Pick<CallerSnapshot, "kind" | "name"> | { kind: "system"; name?: string };
-
-export function canOpenGitDelivery(agent: string, actor: GitDeliveryActor, prunePrincipals: readonly string[]): boolean {
-  if (actor.kind === "system" || actor.kind === "human" || actor.kind === "master") return true;
-  if (actor.kind !== "agent" || !actor.name) return false;
-  return actor.name === agent || prunePrincipals.includes(actor.name);
-}
-
-/**
- * Legacy Delivery-less prune policy: agent name, creator name, or configured prune principal.
- */
-export function canPruneGitDelivery(delivery: GitDelivery, callerName: string | undefined, prunePrincipals: readonly string[]): boolean {
-  return !!callerName && (callerName === delivery.agent || callerName === delivery.createdBy.name || prunePrincipals.includes(callerName));
-}
 
 /**
  * Linked projection mutation authority (SDD 368 T15).

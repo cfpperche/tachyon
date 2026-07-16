@@ -36,7 +36,7 @@ async function fixture(options: { segments?: DelegationSegment[]; lease?: Delive
   git(root, "worktree", "add", worktree, "task");
   const delivered = writeCommit(worktree, "src/feature.ts", "feature\n", "t-0b5723 feature");
   const store = new DeliveryStore(root);
-  const gitDeliveries = new GitDeliveryStore(root, { id: () => "gd-verify" });
+  const gitDeliveries = new GitDeliveryStore(root);
   const deliveryId = options.canonicalSpawnPrincipalOmission ? "d-spawn-known-writer" : "d-verify";
   const projection = await gitDeliveries.open({ workspaceId: "ws", createdBy: actor, deliveryId, agent: "tail",
     branchRef: "task", worktreePath: worktree, tachyonCreatedBranch: true, baseRef: base, currentHeadSha: delivered });

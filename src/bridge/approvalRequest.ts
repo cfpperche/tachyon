@@ -6,7 +6,7 @@ import path from "node:path";
  * spec t-7d8bdf Phase 1 — the human-approval protocol BACKBONE. A child agent that needs real human
  * authorization (the case the runtime's auto-mode classifier guards — removing a safety guard, etc.)
  * escalates via the `request_human_approval` Bridge tool; the Bridge WITNESSES the escalation here, in
- * the SOURCE tree (tamper-resistant like `doorbell.ts`/`delegationRecord.ts` — a gated agent cannot
+ * the SOURCE tree (tamper-resistant like `doorbell.ts` and canonical Delivery authority — a gated agent cannot
  * rewrite a file it never checks out), and surfaces it to the human through a PIN with the child's
  * VERBATIM payload + provenance. Resolution is HOST-SIDE ONLY (never a Bridge tool — that would let a
  * coordinator resolve its own escalation, which is exactly the laundering the adversarial dueto killed).

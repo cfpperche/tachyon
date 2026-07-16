@@ -72,8 +72,8 @@ describe("container-generated delegation behavior", () => {
       // Distinct store instances model distinct extension processes. SQLite, not an in-memory
       // mutex, must choose the winner and make the losing callback observe that same projection.
       const [left, right] = await Promise.all([
-        new GitDeliveryStore(root, { id: () => "gd-left" }).open(input),
-        new GitDeliveryStore(root, { id: () => "gd-right" }).open(input),
+        new GitDeliveryStore(root).open(input),
+        new GitDeliveryStore(root).open(input),
       ]);
       expect(left.id).toBe(right.id);
       expect(left.deliveryId).toBe("d-spawn-canonical");
@@ -83,7 +83,8 @@ describe("container-generated delegation behavior", () => {
       expect(active[0].deliveryId).toBe("d-spawn-canonical");
 
       await expect(new GitDeliveryStore(root).open({ ...input, deliveryId: "d-conflict" }))
-        .rejects.toThrow(/linked to Delivery|conflicting delivery/);
+        .rejects.toThrow(/expected deterministic id|linked to Delivery|conflicting delivery/);
+      expect(await new GitDeliveryStore(root).list()).toEqual(active);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

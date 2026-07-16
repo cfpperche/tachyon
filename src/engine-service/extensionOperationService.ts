@@ -86,6 +86,8 @@ export async function executeExtensionQuery(
       return json(workspace.proposals.list());
     case "doctor.report":
       return doctorReport(workspace);
+    case "legacy-delivery.retirement-preview":
+      return json(workspace.legacyDeliveryRetirement.preview());
     case "bridge.token":
       return json({ token: workspace.externalToken ?? null, authEnabled: workspace.authEnabled });
     case "agent.inspect":
@@ -335,6 +337,13 @@ export async function executeExtensionCommand(
     case "bridge.stop":
       await workspace.stopBridge();
       return json({ stopped: true });
+    case "legacy-delivery.retirement-apply": {
+      const preview = workspace.legacyDeliveryRetirement.preview();
+      if (preview.snapshotDigest !== command.snapshotDigest || preview.archiveId !== command.archiveId) {
+        throw new Error("legacy Delivery metadata changed after preview; review the new snapshot before retiring it");
+      }
+      return json(workspace.legacyDeliveryRetirement.apply(preview));
+    }
     case "tmux.kill": {
       assertTachyonSession(command.expected.session);
       const rows = (await workspace.tmux.serverSnapshot(SESSION_PREFIX))
@@ -562,8 +571,7 @@ async function doctorReport(workspace: Workspace): Promise<JsonValue> {
       failure: workspace.bridgeStartFailureInfo(),
     },
     transcriptPresence,
-    mechanismOnlyDelivery: workspace.config?.settings.delivery?.mode === "canonical"
-      && workspace.config?.settings.delivery?.handoffSafety === "mechanism-only",
+    mechanismOnlyDelivery: true,
   });
   return json({
     text: formatDoctorReport(report),

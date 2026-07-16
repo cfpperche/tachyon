@@ -401,9 +401,10 @@ Esta página é gerada a partir do <b>código atual</b>, não do README (que, po
   <code>test/unit</code>; identificadores nomeados sem adapter são recusados de forma explícita pelo gate.
   Um <b>primer</b> advisory (TACHYON PRIMER no início, BEFORE FINISHING no fim, orçamentos de linha rígidos)
   deriva das mesmas configurações que o gate aplica — o exibido e o cobrado não podem divergir. Worktree de
-  fixer é reutilizada por id de delegação, com recusa a alargar <code>owns</code> e a HEAD movida.</p>
-  <ul class="tools"><li>spawn_agent (gate)</li><li>wait_for_lease</li><li>delivery_complete_review</li></ul>
-  <div class="src">src/bridge/spawnContract.ts · behaviorStub.ts · primer.ts · src/agents/reuseWorktree.ts</div>
+  sucessor entra na mesma worktree somente por <code>delivery_join</code> com o id exato da Delivery, com recusa a
+  alargar <code>owns</code> e a HEAD movida.</p>
+  <ul class="tools"><li>spawn_agent (gate / delivery_join)</li><li>wait_for_lease</li><li>delivery_complete_review</li></ul>
+  <div class="src">src/bridge/spawnContract.ts · behaviorStub.ts · primer.ts · src/delivery/</div>
 </div>
 
 <div class="feat" id="tasks">
@@ -444,13 +445,15 @@ Esta página é gerada a partir do <b>código atual</b>, não do README (que, po
   (<code>free/pending/held/draining/verifying/quarantined/abandoned</code>), segmentos de delegação
   (implementer → reviewer → fixer → verifier), identidade cercada por processo (pid + start + bootId) — ocupante
   improvável é <b>recusa, nunca chute</b>; reconciliação pós-reload é somente-leitura e bloqueia spawn/resume
-  genérico nos agentes afetados. O <b>GitDelivery</b> é a projeção git: um registro por branch/worktree delegada
+  genérico nos agentes afetados. Esse é o único ciclo de trabalho tracked; não existe seletor de modo nem caminho
+  de compatibilidade. O <b>GitDelivery</b> é a projeção git, sempre ligada por um <code>deliveryId</code> imutável:
+  um registro por branch/worktree delegada
   com fases <code>open → in_review → accepted → integrated/abandoned/pruned</code>. <code>integrate</code> nunca
   roda comando git que mute o main — só registra <code>integrated</code> depois que o git <em>prova</em> containment
   do branch; <code>prune</code> recusa perder commits não contidos na base (a menos que explicitamente condenados);
-  mutações em registros linked exigem caller privilegiado ou allowlist explícita — igualdade de nome nunca dá
-  autoridade. Perfis de política: <code>solo/balanced/strict</code> (strict exige aceite não-próprio).</p>
-  <ul class="tools"><li>git_delivery_open</li><li>git_delivery_list</li><li>git_delivery_integrate</li><li>git_delivery_hygiene</li><li>git_delivery_prune</li><li>delivery_complete_review</li></ul>
+  mutações na projeção exigem caller privilegiado ou allowlist explícita — igualdade de nome nunca dá autoridade.
+  A criação da projeção é interna ao spawn gated; não há abertura avulsa.</p>
+  <ul class="tools"><li>git_delivery_list</li><li>git_delivery_integrate</li><li>git_delivery_hygiene</li><li>git_delivery_prune</li><li>delivery_complete_review</li></ul>
   <div class="src">src/git-delivery/ · src/delivery/</div>
 </div>
 

@@ -254,7 +254,7 @@ export interface EnsureOptions {
   /** prior persisted record for this agent, if any — drives validated reuse */
   prior?: WorktreeRecord;
   /** Acquire a durable Git quarantine lock for this launch attempt, including validated reuse.
-   * AgentManager releases it only after ownership/delegation records are durable. */
+   * AgentManager releases it only after ownership and canonical Delivery authority are durable. */
   quarantineForLaunch?: boolean;
   /**
    * Run worktreeSetup in the freshly-created checkout — invoked by ensure() UNDER the
@@ -404,7 +404,7 @@ export class WorktreeManager {
 
   /**
    * Mark a quarantined checkout reusable only after its caller has durably recorded launch
-   * ownership (and, for a gate, its delegation record). Until this point Git's worktree lock is a
+   * ownership (and, for a gate, its canonical Delivery). Until this point Git's worktree lock is a
    * crash-safe quarantine receipt, not an authorization for any destructive cleanup.
    */
   completePreparation(rec: WorktreeRecord): Promise<void> {

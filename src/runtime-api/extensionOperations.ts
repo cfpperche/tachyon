@@ -30,7 +30,7 @@ const schedule = z.union([
 export const EXTENSION_QUERY_ACTIONS = [
   "agents.list", "attention.list", "pins.list", "commands.list", "runbooks.list", "schedules.list", "proposals.list",
   "doctor.report", "bridge.token", "agent.inspect", "agent.fork-preview", "prompt.catalog", "worktree.review",
-  "worktrees.list", "pipeline.inspect", "agent.wait", "soul.profile.status",
+  "worktrees.list", "pipeline.inspect", "agent.wait", "soul.profile.status", "legacy-delivery.retirement-preview",
   "tmux.snapshot", "tmux.health", "tmux.capture",
 ] as const;
 
@@ -46,6 +46,7 @@ export const EXTENSION_COMMAND_ACTIONS = [
   "soul.profile.create", "soul.profile.import", "soul.profile.replace", "soul.profile.adopt",
   "soul.profile.enable", "soul.profile.disable", "soul.profile.delete",
   "tmux.kill", "tmux.recover", "terminal.open", "terminal.close",
+  "legacy-delivery.retirement-apply",
 ] as const;
 
 const extensionQueryActionSchema = z.enum(EXTENSION_QUERY_ACTIONS);
@@ -60,6 +61,7 @@ export const extensionQuerySchema = z.union([
   z.object({ action: z.literal("schedules.list") }).strict(),
   z.object({ action: z.literal("proposals.list") }).strict(),
   z.object({ action: z.literal("doctor.report") }).strict(),
+  z.object({ action: z.literal("legacy-delivery.retirement-preview") }).strict(),
   z.object({ action: z.literal("bridge.token") }).strict(),
   z.object({ action: z.literal("agent.inspect"), agent: name }).strict(),
   z.object({ action: z.literal("agent.fork-preview"), agent: name }).strict(),
@@ -131,6 +133,11 @@ export const extensionCommandSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("pipeline.delete"), name }).strict(),
   z.object({ action: z.literal("bridge.restart") }).strict(),
   z.object({ action: z.literal("bridge.stop") }).strict(),
+  z.object({
+    action: z.literal("legacy-delivery.retirement-apply"),
+    snapshotDigest: sha256,
+    archiveId: text(128, 1),
+  }).strict(),
   z.object({ action: z.literal("tmux.kill"), expected: tmuxPaneIdentitySchema }).strict(),
   z.object({ action: z.literal("tmux.recover") }).strict(),
   z.object({

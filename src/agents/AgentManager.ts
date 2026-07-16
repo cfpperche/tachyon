@@ -8,7 +8,7 @@ import { TmuxService, sessionName, agentFromSession, SESSION_PREFIX } from "../t
 import { adapterFor, adapterForRuntime, binaryOf, forkable, managesOwnSession, type ResumeAdapter, type ResumeRuntime } from "../resume/adapters.js";
 import { URL_ENV_VAR } from "../bridge/token.js";
 import { redactSecrets } from "../bridge/redact.js";
-import { resolveBase as resolveWorktreeBase, defaultGitExec, gitArgs, type WorktreeRecord, type GitExec } from "../worktree/WorktreeManager.js";
+import { resolveBase as resolveWorktreeBase, type WorktreeRecord } from "../worktree/WorktreeManager.js";
 import { defaultRealOpencodeDataHome, harnessHome, type MaterializedHarness } from "../harness/HarnessManager.js";
 import {
   hasDeliveryMarker,
@@ -20,15 +20,13 @@ import {
   type SessionResume,
 } from "../resume/SessionLedger.js";
 import { moveActivityLog } from "../activity/logStore.js";
-import type { SpawnContract } from "../bridge/spawnContract.js";
-import type { DelegationGate, DelegationRecord, FixerAttempt } from "../bridge/delegationRecord.js";
+import type { DelegationGate, SpawnContract } from "../bridge/spawnContract.js";
 import type { ResolvedCaptureSession } from "../resume/resolvers.js";
 import { assertVerifiedTranscriptIsolation, gracefulStopForCommand, isolationMechanismForCommand, opencodeIsolationFootgunWarning } from "../runtime/runtimeProfile.js";
 import { forgetAgent } from "./forgetAgent.js";
 import { wrapWithPrimer, renderPrimer } from "../bridge/primer.js";
 import { delegatedOpencodePermission, setOpencodePermission } from "../registration/adapters.js";
 import { assertSafeBriefTransport, deliverableBody, previewDeliverableBody } from "./briefFile.js";
-import { ReuseWorktreeError, isOwnsSubset, type ReuseTarget } from "./reuseWorktree.js";
 import { isExplicitCodexModelCommand, parseLaunchCommand, RuntimeLaunchPreflightError, type RuntimeLaunchPreflightPort } from "../runtime/launchPreflight.js";
 import { CodexLaunchPreflight } from "../runtime/adapters/codexLaunchPreflight.js";
 import {
@@ -42,6 +40,7 @@ import { openingPromptCapability } from "./openingPromptCapability.js";
 import { cleanupStaleSoulLaunchReservationsSync, ensureSoulLaunchReservationsDirSync, SOUL_LAUNCH_RESERVATION_BOOT_ID, SoulError, resolveSoul, resolveSoulWithRetry, withSoulProfileAdmission, type ResolvedSoul } from "./soul.js";
 import { principalBlockedByProfileTransaction } from "./soulProfileTransactions.js";
 import { composeAgentPrompt, type SoulSnapshot } from "./promptLayers.js";
+import type { CanonicalDeliverySpawnReceipt } from "../delivery/types.js";
 
 /** t-815796 MEDIUM fix — is `pid` still alive? `process.kill(pid, 0)` sends no signal, only probes.
  *  ESRCH is the one unambiguous "gone" answer; any other error (e.g. EPERM — exists, owned by someone
@@ -195,23 +194,6 @@ export interface PostmortemOutput {
   maxBytes: number;
 }
 
-/**
- * t-815796 — a fixer-on-own-branch request: spawn a follow-up agent INTO an EXISTING delegation's
- * worktree/branch instead of creating a new one. `ownsSubset` is the authority the new occupant gets
- * (design point 4 — reuse inherits the worktree, never the original owns wholesale); `expectedHead`
- * (design point 5) is an optional head pin from the caller's own review of the branch.
- */
-export interface ReuseWorktreeRequest {
-  /** design point 1 — the API key: a delegation id. Takes precedence over agentName when both are given. */
-  delegationId?: string;
-  /** design point 1 — sugar only; must resolve to EXACTLY ONE non-archived delegation for that agent. */
-  agentName?: string;
-  /** design point 4 — MUST be ⊆ the original delegation's `owns`, or the grant is refused REUSE_OWNS_WIDENING. */
-  ownsSubset: string[];
-  /** design point 5 — if given and the branch HEAD has moved since, the grant is refused BRANCH_HEAD_CHANGED. */
-  expectedHead?: string;
-}
-
 export interface DeliveryJoinRequest {
   deliveryId: string;
   role: "implementer" | "reviewer" | "fixer" | "recovery";
@@ -339,9 +321,6 @@ export interface SpawnOptions {
   contractSkipReason?: string;
   /** spec 362 — a gated delegation must be born in an isolated worktree and later verified by behavior test. */
   gate?: DelegationGate;
-  /** t-815796 — reuse an EXISTING delegation's worktree/branch (fixer-on-own-branch) instead of creating
-   *  a new one. Mutually exclusive with `gate` (which creates a fresh worktree) and `worktree` (ditto). */
-  reuseWorktree?: ReuseWorktreeRequest;
   /** SDD 368 T6 — join an existing canonical Delivery; never creates a fallback worktree. */
   deliveryJoin?: DeliveryJoinRequest;
 }
@@ -450,8 +429,8 @@ export interface AgentManagerOptions {
     preparationHeadBefore?: string;
     preparationHeadAfter?: string;
   } | null>;
-  /** spec 362 — persist the spawn-side delegation record after a gated agent successfully starts. */
-  recordDelegation?: (input: {
+  /** Persist canonical Delivery + linked Git projection after a gated agent successfully starts. */
+  recordCanonicalDelivery?: (input: {
     name: string;
     delegator?: string;
     gate: DelegationGate;
@@ -459,18 +438,7 @@ export interface AgentManagerOptions {
     worktree: WorktreeRecord;
     baseSha: string;
     verifySettings?: TachyonConfig["settings"]["verify"];
-  }) => void | Promise<void>;
-  /**
-   * Host-trusted legacy delegation mutation. AgentManager must never rewrite the JSON authority
-   * record directly: Workspace owns validation/sealing and persists the fixer grant atomically.
-   * Reuse fails closed before spawning when this boundary is not wired.
-   */
-  appendLegacyFixerAttempt?: (delegationPath: string, attempt: FixerAttempt) => void | Promise<void>;
-  /** Host-trusted, integrity-verifying read. Absence is restrictive: raw workspace JSON is never
-   *  allowed to grant restart/resume permissions or restore delegated authority. */
-  readAuthenticatedLegacyDelegation?: (agent: string) => Promise<{ path: string; record: DelegationRecord } | undefined>;
-  /** Host-trusted resolver for reuse_worktree. It must verify the chosen record before returning it. */
-  resolveAuthenticatedLegacyReuseTarget?: (target: ReuseTarget) => Promise<{ path: string; record: DelegationRecord }>;
+  }) => CanonicalDeliverySpawnReceipt | Promise<CanonicalDeliverySpawnReceipt>;
   /**
    * spec 225 — read-only "does the source worktree have uncommitted changes?" probe, for the fork's
    * dirty warning (those changes are NOT carried into the fork, which branches off committed HEAD).
@@ -500,7 +468,7 @@ export interface AgentManagerOptions {
     preparationHeadAfter?: string,
     created?: boolean,
   ) => Promise<void>;
-  /** Unlock a quarantined launch/fork worktree only after its ledger and, for a gate, delegation record are durable.
+  /** Unlock a quarantined launch/fork worktree only after its ledger and, for a gate, canonical Delivery are durable.
    * Failure is reported but leaves the live runtime, durable records and Git lock intact for recovery. */
   completePreparedWorktree?: (worktree: WorktreeRecord) => Promise<void>;
   /**
@@ -512,9 +480,6 @@ export interface AgentManagerOptions {
   materializeHarness?: (ctx: { name: string; def: AgentDef; cwd: string }) => MaterializedHarness | null;
   /** Remove a materialized per-agent runtime config home at the agent's end-of-life. */
   removeHarnessHome?: (name: string) => void;
-  /** t-815796 — git executor for reuse_worktree's branch-HEAD reads (occupancy has nothing to do with
-   *  git otherwise). Defaults to a real `git` subprocess; injectable for tests. */
-  gitExec?: GitExec;
   prepareDeliveryJoin?: (name: string, request: DeliveryJoinRequest) => Promise<PreparedDeliveryJoin>;
   confirmDeliveryJoin?: (name: string, request: DeliveryJoinRequest, prepared: PreparedDeliveryJoin, pid?: number) => Promise<void>;
   failDeliveryJoin?: (name: string, request: DeliveryJoinRequest, prepared: PreparedDeliveryJoin, error: unknown) => Promise<void>;
@@ -675,7 +640,7 @@ export class AgentManager {
   private stoppingSince = new Map<string, number>();
   private stopFailed = new Set<string>();
   private cleanExited = new Set<string>();
-  /** t-815796 design point 2/3 — reuse_worktree occupancy, keyed by the worktree's canonical realpath.
+  /** Runtime occupancy observations keyed by the worktree's canonical realpath.
    *  Process-local (no lock files); `pending` = grant reserved but the spawn hasn't landed yet, `live` =
    *  occupant confirmed running, `dirty` = the last live occupant died without a clean cleanup probe. No
    *  entry = free. A reuse launch also acquires Git's durable worktree lock before spawn; the process-local
@@ -685,9 +650,7 @@ export class AgentManager {
    *  when it's available; absent when the pid couldn't be resolved at capture time. */
   private worktreeOccupancy = new Map<string, { state: "pending" | "live" | "dirty"; agentId: string; cwd: string; pid?: number }>();
   /** t-815796 design point 2 — a process-local per-worktree mutex (chained promises), keyed the same as
-   *  worktreeOccupancy. Serializes resolve-record → refresh-liveness → occupied-check → pending-reservation
-   *  → spawn → occupant-recorded-or-cleared-on-failure so two concurrent reuse_worktree grants against the
-   *  SAME worktree can never both pass the occupied-check before either reserves. */
+   *  worktreeOccupancy. Serializes refresh-liveness and occupied-state transitions. */
   private worktreeLocks = new Map<string, Promise<unknown>>();
   /** Serialize the full launch transaction for one execution name, including worktree preparation,
    *  recovery handling and tmux creation. This closes the gap where two concurrent gated spawns could
@@ -894,10 +857,6 @@ export class AgentManager {
     const declared = new Set(Object.keys(this.opts.getConfig()?.agents ?? {}));
     for (const [name, rec] of this.opts.ledger.all()) {
       if (!rec.def || rec.declared || declared.has(name)) continue;
-      let authenticatedDelegator: string | undefined;
-      if (!this.delegators.has(name) && !rec.def.delegator && this.opts.readAuthenticatedLegacyDelegation) {
-        authenticatedDelegator = (await this.opts.readAuthenticatedLegacyDelegation(name))?.record.delegator;
-      }
       if (!this.adhoc.has(name)) {
         this.adhoc.set(name, {
           cmd: rec.def.cmd,
@@ -919,12 +878,8 @@ export class AgentManager {
       if (rec.def.parent && rec.def.parent !== name && !this.lineage.has(name)) {
         this.lineage.set(name, rec.def.parent);
       }
-      // t-bae303 — a gated agent's delegator (post-fix, persisted straight onto rec.def.delegator);
-      // fall back to the on-disk DelegationRecord for a pre-fix row that never wrote it, mirroring the
-      // resume/restart fallback pattern from t-fb19bd (782f1c6 MEDIUM #2). Without either, a gated
-      // agent's lineage dies with the in-memory `delegators` Map on reload and it reappears top-level.
       if (!this.delegators.has(name)) {
-        const delegator = rec.def.delegator ?? authenticatedDelegator;
+        const delegator = rec.def.delegator;
         if (delegator && delegator !== name) this.delegators.set(name, delegator);
       }
     }
@@ -1175,44 +1130,40 @@ export class AgentManager {
     return { ...resume, configHome: keep ? resume.configHome : this.runtimeConfigHome(resume.runtime, name, def) };
   }
 
-  /**
-   * Spawns a declared agent, or an ad-hoc one when `opts.cmd` is given. No-op error if already running.
-   * `opts.reuseWorktree` (t-815796) is dispatched to its own atomic grant path — it is mutually
-   * exclusive with `gate`/`worktree`, which both create a FRESH worktree instead of reusing one.
-   */
-  async spawn(name: string, opts?: SpawnOptions): Promise<void> {
+  /** Spawns a declared agent, or an ad-hoc one when `opts.cmd` is given. */
+  async spawn(name: string, opts?: SpawnOptions): Promise<CanonicalDeliverySpawnReceipt | void> {
     const prior = this.spawnLocks.get(name) ?? Promise.resolve();
     const run = prior.then(() => this.spawnUnlocked(name, opts), () => this.spawnUnlocked(name, opts));
-    const tail = run.catch(() => undefined);
+    const tail = run.then(() => undefined, () => undefined);
     this.spawnLocks.set(name, tail);
     try {
-      await run;
+      return await run;
     } finally {
       if (this.spawnLocks.get(name) === tail) this.spawnLocks.delete(name);
     }
   }
 
-  private async spawnUnlocked(name: string, opts?: SpawnOptions): Promise<void> {
+  private async spawnUnlocked(name: string, opts?: SpawnOptions): Promise<CanonicalDeliverySpawnReceipt | void> {
     try {
       // t-8354ae — config-failure / LKG-only refusal (before any delivery or occupancy mutation).
       // Ad-hoc spawns with an explicit cmd are allowed (caller supplies the def); declared LKG-only names are not.
       if (!opts?.cmd) this.opts.assertSpawnAllowed?.(name);
       if (opts?.deliveryJoin) {
-        if (opts.gate || opts.worktree || opts.reuseWorktree) {
-          throw new Error("spawn_agent delivery_join cannot combine with gate, worktree:true, or reuse_worktree");
+        if (opts.gate || opts.worktree) {
+          throw new Error("spawn_agent delivery_join cannot combine with gate or worktree:true");
         }
         // Explicit deliveryJoin is the only allowed route after canonical recovery/acquisition.
         return await this.spawnDeliveryJoin(name, opts, opts.deliveryJoin);
       }
-      // SDD 368 T14 — generic spawn (and reuse) refuse snapshot-denied agents before any mutation.
-      this.assertNotDeliveryLifecycleDenied(name, "spawn");
-      if (opts?.reuseWorktree) {
-        if (opts.gate) throw new Error("spawn_agent cannot combine reuse_worktree with gate — reuse targets an EXISTING delegation's worktree, gate creates a NEW one");
-        if (opts.worktree) throw new Error("spawn_agent cannot combine reuse_worktree with worktree:true — reuse already grants an isolated worktree");
-        const reuseDef = this.definitionOf(name);
-        const resolvedSoul = reuseDef?.soul ? await this.reserveSoulLaunch(name, this.soulPrincipal(name), reuseDef) : undefined;
-        return await this.spawnReuseWorktree(name, opts, opts.reuseWorktree, resolvedSoul);
+      if (opts?.gate) {
+        const behaviorTest = opts.gate.behaviorTest.replace(/\s+/g, " ").trim();
+        const owns = [...new Set(opts.gate.owns.map((ownedPath) => ownedPath.trim()).filter(Boolean))];
+        if (!behaviorTest) throw new Error("gated delegation requires a behavior-level verifier");
+        if (owns.length === 0) throw new Error("gated delegation requires at least one owned path");
+        opts = { ...opts, gate: { ...opts.gate, behaviorTest, owns } };
       }
+      // SDD 368 T14 — generic spawn refuses snapshot-denied agents before any mutation.
+      this.assertNotDeliveryLifecycleDenied(name, "spawn");
       return await this.spawnCore(name, opts);
     } finally {
       this.releaseSoulReservation(name);
@@ -1368,145 +1319,7 @@ export class AgentManager {
     return errors;
   }
 
-  /**
-   * t-815796 design point 2 — the atomic grant: resolve-record → refresh-liveness → occupied-check →
-   * branch/tip check → durable Git quarantine → locked revalidation → pending-reservation →
-   * authority grant → spawn → quarantine release, all under a process-local per-worktree mutex (key = the worktree's canonical
-   * realpath). The Git lock is the cross-reload recovery receipt: every failure after it is acquired
-   * leaves both that lock and dirty occupancy intact for explicit inspection.
-   */
-  private async spawnReuseWorktree(name: string, opts: SpawnOptions, req: ReuseWorktreeRequest, resolvedSoul?: ResolvedSoul): Promise<void> {
-    const persistFixerAttempt = this.opts.appendLegacyFixerAttempt;
-    const resolveTarget = this.opts.resolveAuthenticatedLegacyReuseTarget;
-    if (!persistFixerAttempt || !resolveTarget) {
-      throw new Error("REUSE_AUTHORITY_PERSISTENCE_UNAVAILABLE: reuse_worktree requires host-trusted authority resolution and fixer-attempt persistence");
-    }
-    const target: ReuseTarget = { delegationId: req.delegationId, agentName: req.agentName };
-    // Cheap pre-lock resolve just to find the worktree path (the mutex key itself). Re-resolved fresh
-    // INSIDE the lock below — the authoritative resolve-record step the mutex actually covers.
-    const initial = await resolveTarget(target);
-    const initialWorktree = this.worktreeFromDelegationRecord(initial.record);
-    const key = this.canonicalWorktreeKey(initialWorktree.path);
-
-    return this.withWorktreeLock(key, async () => {
-      const { record, path: delegationPath } = await resolveTarget(target);
-      const ownsSubset = req.ownsSubset ?? [];
-      if (!isOwnsSubset(ownsSubset, record.owns)) {
-        throw new ReuseWorktreeError("REUSE_OWNS_WIDENING", `requested owns_subset is not a subset of delegation '${record.agent}'s owns`, {
-          requestedOwnsSubset: ownsSubset,
-          originalOwns: record.owns,
-        });
-      }
-      const worktree = this.worktreeFromDelegationRecord(record);
-
-      await this.refreshWorktreeOccupancy(key, worktree.path);
-      const occ = this.worktreeOccupancy.get(key);
-      if (occ?.state === "live" || occ?.state === "pending") {
-        throw new ReuseWorktreeError("WORKTREE_OCCUPIED", `worktree '${worktree.path}' is occupied by '${occ.agentId}'`, {
-          worktreeId: key,
-          ownerAgentId: record.agent,
-          occupant: { agentId: occ.agentId, state: occ.state, cwd: occ.cwd },
-        });
-      }
-      if (occ?.state === "dirty") {
-        throw new ReuseWorktreeError(
-          "WORKTREE_DIRTY_OR_UNVERIFIED",
-          `worktree '${worktree.path}' is quarantined dirty: its last occupant '${occ.agentId}' died without a clean cleanup probe`,
-          { worktreeId: key, ownerAgentId: record.agent, lastOccupantAgentId: occ.agentId },
-        );
-      }
-
-      // Refuse an already-stale caller before acquiring recovery state. The persisted delegation
-      // names both the checkout's branch and its grant tip; a path that was switched to another
-      // branch must never inherit that authority merely because it still exists.
-      const branchHeadBeforeQuarantine = await this.assertReuseWorktreeState(worktree);
-      if (req.expectedHead && req.expectedHead !== branchHeadBeforeQuarantine) {
-        throw new ReuseWorktreeError("BRANCH_HEAD_CHANGED", `branch '${worktree.branch}' HEAD changed since expected_head was captured`, {
-          expectedHead: req.expectedHead,
-          actualHead: branchHeadBeforeQuarantine,
-        });
-      }
-
-      try {
-        await this.acquireReuseWorktreeQuarantine(worktree.path);
-      } catch (error) {
-        // A failed lock command may mean an earlier process already left the durable recovery receipt.
-        // Treat every such result as dirty rather than trying to distinguish or auto-recover it here.
-        this.worktreeOccupancy.set(key, { state: "dirty", agentId: name, cwd: worktree.path });
-        const primary = error instanceof Error ? error : new Error(String(error));
-        throw new AggregateError(
-          [primary, new Error(`reuse worktree recovery state is preserved at ${worktree.path}; inspect it and unlock it explicitly before retry`)],
-          `reuse_worktree could not acquire launch quarantine for '${name}'; recovery checkout: ${worktree.path}`,
-          { cause: primary },
-        );
-      }
-
-      try {
-        // Git's worktree lock is a durable recovery receipt, not a write barrier. Revalidate both
-        // branch identity and tip after it lands, then make the FixerAttempt itself the authority
-        // commit point BEFORE a runtime can execute. If persistence rejects (even after an uncertain
-        // side effect), no pane has been requested and the checkout remains quarantined for recovery.
-        const branchHeadAtGrant = await this.assertReuseWorktreeState(worktree, branchHeadBeforeQuarantine);
-
-        this.worktreeOccupancy.set(key, { state: "pending", agentId: name, cwd: worktree.path });
-        const attempt: FixerAttempt = { occupantAgent: name, requestedOwnsSubset: ownsSubset, grantedAt: new Date().toISOString(), branchHeadAtGrant };
-        await persistFixerAttempt(delegationPath, attempt);
-
-        await this.spawnCore(name, opts, { cwd: worktree.path, worktree, resolvedSoul });
-        this.worktreeOccupancy.set(key, { state: "live", agentId: name, cwd: worktree.path, pid: await this.tryPanePid(name) });
-
-        // The authority grant and runtime recovery handle are both durable. Only now may a successful
-        // launch release the Git quarantine; an unlock error remains a dirty recovery state.
-        await this.releaseReuseWorktreeQuarantine(worktree.path);
-      } catch (launchError) {
-        const primary = launchError instanceof Error ? launchError : new Error(String(launchError));
-        const failures: Error[] = [primary];
-        this.worktreeOccupancy.set(key, { state: "dirty", agentId: name, cwd: worktree.path });
-
-        failures.push(new Error(`reuse worktree recovery state is preserved at ${worktree.path}; inspect it and unlock it explicitly before retry`));
-        throw new AggregateError(
-          failures,
-          `reuse_worktree failed after launch quarantine for '${name}': ${primary.message}; recovery checkout: ${worktree.path}`,
-          { cause: primary },
-        );
-      }
-    });
-  }
-
-  private async acquireReuseWorktreeQuarantine(worktreePath: string): Promise<void> {
-    const exec = this.opts.gitExec ?? defaultGitExec;
-    const result = await exec(gitArgs.lock(worktreePath), this.opts.workspaceRoot);
-    if (result.code !== 0) {
-      throw new Error(`reuse worktree could not be Git-locked at ${worktreePath}: ${result.stderr.trim() || result.stdout.trim() || `git exited ${result.code}`}`);
-    }
-  }
-
-  private async releaseReuseWorktreeQuarantine(worktreePath: string): Promise<void> {
-    const exec = this.opts.gitExec ?? defaultGitExec;
-    const result = await exec(gitArgs.unlock(worktreePath), this.opts.workspaceRoot);
-    if (result.code !== 0) {
-      throw new Error(`authorized reuse worktree could not be Git-unlocked at ${worktreePath}: ${result.stderr.trim() || result.stdout.trim() || `git exited ${result.code}`}`);
-    }
-  }
-
-  private worktreeFromDelegationRecord(record: DelegationRecord): WorktreeRecord {
-    if (!record.worktreePath) {
-      throw new ReuseWorktreeError(
-        "REUSE_WORKTREE_NOT_FOUND",
-        `delegation '${record.id ?? record.agent}' is a legacy record with no persisted worktreePath; respawn the gated delegation before using reuse_worktree`,
-        { delegationId: record.id, agent: record.agent, taskRef: record.taskRef },
-      );
-    }
-    return {
-      path: record.worktreePath,
-      branch: record.taskRef,
-      tachyonCreatedBranch: true,
-      baseRef: record.baseSha,
-      createdAt: record.createdAt,
-    };
-  }
-
-  /** t-815796 — the mutex key: a worktree's canonical realpath, so two different-looking paths to the
+  /** The mutex key is a worktree's canonical realpath, so two different-looking paths to the
    *  same directory (a symlink, a relative vs absolute form) never fragment into two separate locks. */
   private canonicalWorktreeKey(worktreePath: string): string {
     try {
@@ -1516,7 +1329,7 @@ export class AgentManager {
     }
   }
 
-  /** t-815796 design point 2 — a process-local per-worktree mutex: chains onto whatever is already
+  /** Process-local per-worktree mutex: chains onto whatever is already
    *  queued for `key` (swallowing its outcome so one failed grant never wedges the next caller's turn),
    *  then runs `fn` and returns ITS outcome to the caller that queued it. No lock files. */
   private async withWorktreeLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
@@ -1662,54 +1475,8 @@ export class AgentManager {
     return { agent: only.agent, state: only.state, cwd: only.cwd };
   }
 
-  /** t-815796 — the worktree's current branch HEAD (for design point 5's head pinning + grant provenance). */
-  private async branchHeadOf(worktreePath: string): Promise<string> {
-    const exec = this.opts.gitExec ?? defaultGitExec;
-    const r = await exec(gitArgs.headRef(), worktreePath);
-    const head = r.stdout.trim();
-    if (r.code !== 0 || !head) {
-      throw new Error(`could not resolve reuse worktree HEAD at ${worktreePath}: ${r.stderr.trim() || r.stdout.trim() || `git exited ${r.code}`}`);
-    }
-    return head;
-  }
-
-  /** A legacy reuse grant is bound to one exact checked-out branch and tip. `git worktree lock`
-   * protects only Git's administrative entry, so callers must perform this validation on both sides
-   * of lock acquisition. A detached or switched checkout is stale authority, not a reusable branch. */
-  private async assertReuseWorktreeState(worktree: WorktreeRecord, expectedHead?: string): Promise<string> {
-    const exec = this.opts.gitExec ?? defaultGitExec;
-    const branchResult = await exec(gitArgs.currentBranch(), worktree.path);
-    const actualBranch = branchResult.stdout.trim();
-    if (branchResult.code !== 0 || actualBranch !== worktree.branch) {
-      throw new ReuseWorktreeError(
-        "BRANCH_HEAD_CHANGED",
-        `reuse worktree is not checked out on delegated branch '${worktree.branch}'`,
-        {
-          expectedBranch: worktree.branch,
-          actualBranch: actualBranch || undefined,
-          error: branchResult.code !== 0 ? branchResult.stderr.trim() || branchResult.stdout.trim() || `git exited ${branchResult.code}` : undefined,
-        },
-      );
-    }
-    const head = await this.branchHeadOf(worktree.path);
-    if (expectedHead !== undefined && head !== expectedHead) {
-      throw new ReuseWorktreeError(
-        "BRANCH_HEAD_CHANGED",
-        `branch '${worktree.branch}' HEAD changed while reuse quarantine was acquired`,
-        { expectedHead, actualHead: head },
-      );
-    }
-    return head;
-  }
-
-  /**
-   * Core spawn machinery shared by a normal spawn and a reuse_worktree grant. `forced` (t-815796) is
-   * reuse_worktree's OWN dedicated cwd/worktree channel — the measured precondition (t-815796 journal)
-   * is that an explicit `opts.cwd` does NOT survive a parented spawn (resolveWorktreeCwd below returns
-   * parentCwd and ignores it), so reuse cannot ride `opts.cwd`/`resolveSpawnCwd` and instead short-circuits
-   * both here.
-   */
-  private async spawnCore(name: string, opts?: SpawnOptions, forced?: { cwd: string; worktree: WorktreeRecord; commandOverride?: string; definition?: AgentDef; ephemeral?: boolean; preflight?: DeliveryPreflightProof; attempt?: DeliveryLaunchAttempt; resolvedSoul?: ResolvedSoul }): Promise<void> {
+  /** Core spawn machinery shared by ordinary spawn and canonical Delivery execution. */
+  private async spawnCore(name: string, opts?: SpawnOptions, forced?: { cwd: string; worktree: WorktreeRecord; commandOverride?: string; definition?: AgentDef; ephemeral?: boolean; preflight?: DeliveryPreflightProof; attempt?: DeliveryLaunchAttempt; resolvedSoul?: ResolvedSoul }): Promise<CanonicalDeliverySpawnReceipt | void> {
     const clearTransientState = () => {
       this.readyAgents.delete(name);
       this.readinessCache.delete(name);
@@ -1773,8 +1540,8 @@ export class AgentManager {
     // A gated launch cannot become valid later in the pipeline: reject incomplete caller wiring
     // before guidance reads, worktree quarantine, ledger writes or runtime creation.
     if (opts?.gate && !opts.contract) throw new Error("gated delegation requires a validated delegation contract");
-    if (opts?.gate && !this.opts.recordDelegation) {
-      throw new Error("gated delegation requires durable delegation-record storage");
+    if (opts?.gate && !this.opts.recordCanonicalDelivery) {
+      throw new Error("gated delegation requires canonical Delivery persistence");
     }
 
     // Resolve every declared project file before touching an incumbent tmux session or preparing a
@@ -1794,7 +1561,7 @@ export class AgentManager {
         ?? (!adhoc ? this.opts.getConfig()?.declaredOwner?.[name] : undefined))
       : undefined;
     // `{}` is an intentional snapshot of "no verifier configured". Leaving it undefined would be
-    // indistinguishable from a legacy record and verify_task could later adopt newly-added commands.
+    // indistinguishable from an omitted snapshot and verify_task could later adopt newly-added commands.
     const verifySettingsSnapshot: NonNullable<TachyonConfig["settings"]["verify"]> = structuredClone(
       this.opts.getConfig()?.settings.verify ?? {},
     );
@@ -1826,8 +1593,7 @@ export class AgentManager {
       if (forced?.attempt) forced.attempt.token = false;
     };
     if (forced) {
-      // t-815796 — reuse_worktree's dedicated cwd channel; bypasses opts.cwd/resolveSpawnCwd entirely
-      // (see the measured precondition on spawnCore's docstring).
+      // Canonical Delivery provides the exact, already-owned worktree and bypasses generic cwd resolution.
       cwd = forced.cwd;
     } else if (this.opts.resolveSpawnCwd) {
       const resolved = await this.opts.resolveSpawnCwd({
@@ -2149,7 +1915,7 @@ export class AgentManager {
     const shouldPersistLaunch = !!this.opts.ledger && !preservesDeclaredLedger && !!(adhoc || adapter || worktree || parent);
     // A gated launch is restart-denied from its very first durable row. The marker is removed only
     // after the host has authenticated and persisted the delegation authority. This two-phase row
-    // stays fail-closed even if recordDelegation and every subsequent cleanup write all fail.
+    // stays fail-closed even if canonical persistence and every subsequent cleanup write all fail.
     const delegationPending = !!opts?.gate && shouldPersistLaunch;
     const launchRecoveryRecord = {
       def: defBlock,
@@ -2225,14 +1991,15 @@ export class AgentManager {
         { cause: primary },
       );
     }
+    let canonicalReceipt: CanonicalDeliverySpawnReceipt | undefined;
     if (opts?.gate) {
       if (!opts.contract) throw new Error("gated delegation requires a validated delegation contract");
       if (!worktree) throw new Error("gated delegation requires an isolated worktree");
       try {
-        if (!this.opts.recordDelegation) {
-          throw new Error("gated delegation requires durable delegation-record storage");
+        if (!this.opts.recordCanonicalDelivery) {
+          throw new Error("gated delegation requires canonical Delivery persistence");
         }
-        await this.opts.recordDelegation({
+        canonicalReceipt = await this.opts.recordCanonicalDelivery({
           name,
           delegator,
           gate: opts.gate,
@@ -2281,7 +2048,7 @@ export class AgentManager {
           // The runtime existed long enough to pass readiness and may have written legitimate work.
           // Keep the Git-quarantined checkout as the recovery receipt; deleting its current branch
           // tip could turn fast agent commits into dangling objects.
-          cleanupErrors.push(new Error(`delegation record failed; checkout recovery state was preserved${worktree ? ` at ${worktree.path}` : ""}`));
+          cleanupErrors.push(new Error(`canonical Delivery persistence failed; checkout recovery state was preserved${worktree ? ` at ${worktree.path}` : ""}`));
         } else {
           cleanupErrors.push(new Error("rejected delegated runtime may still be live; durable recovery state was preserved"));
         }
@@ -2301,7 +2068,7 @@ export class AgentManager {
         try {
           await this.opts.completePreparedWorktree(worktree);
         } catch (error) {
-          // Ownership and (for a gate) delegation intent are durable by this point. Keep the running
+          // Ownership and (for a gate) canonical Delivery intent are durable by this point. Keep the running
           // session and the Git lock as recoverable state; a failed unlock must never trigger teardown.
           this.opts.notify?.(
             `agent '${name}' started, but its worktree remains locked for recovery: ${error instanceof Error ? error.message : String(error)}`,
@@ -2314,6 +2081,7 @@ export class AgentManager {
     if (parent) this.lineage.set(name, parent);
     if (delegator) this.delegators.set(name, delegator);
     this.opts.onSpawned?.(name, opts?.reveal ?? true, { worktree, adhoc });
+    return canonicalReceipt;
   }
 
   /**
@@ -3066,14 +2834,10 @@ export class AgentManager {
     let restartTokenMinted = false;
     let replacementAttempted = false;
     try {
-    const restartDelegationRecord = (await this.opts.readAuthenticatedLegacyDelegation?.(name))?.record;
     const restartPrimerCtx = {
       delegator: this.delegators.get(name),
-      gate: restartDelegationRecord
-        ? { behaviorTest: restartDelegationRecord.behaviorTest, owns: restartDelegationRecord.owns, stubPath: restartDelegationRecord.stubPath }
-        : undefined,
       freshWorktree: false as const,
-      verify: restartDelegationRecord?.verifySettings ?? this.opts.getConfig()?.settings.verify,
+      verify: this.opts.getConfig()?.settings.verify,
     };
     const restartParent = this.lineage.get(name);
     // `effectiveInstructions` includes long-brief persistence. It must succeed before cache changes,
@@ -3112,12 +2876,10 @@ export class AgentManager {
     // refresh/resume re-resolves to the NEWEST title match (the restarted session), not a stale uuid.
     const injected = this.injectResumeId(name, def);
     def = injected.def;
-    // spec 363 T3 — restart redelivers the composed instructions (same effectiveCmd path as spawn),
-    // so re-attach the gate reminder from the persisted delegation record (gate is display/verify
-    // metadata, never stored on the ledger def itself); the worktree is REUSED here, not fresh.
+    // spec 363 T3 — restart redelivers the composed instructions (same effectiveCmd path as spawn).
     // Security review (782f1c6, HIGH): mirror spawn's isolatedWorktree gate — a restarted delegation
     // reusing a shared (non-worktree) cwd must not get blanket bash:"allow" either.
-    const restartDelegatedOpencode = (this.lineage.get(name) || this.delegators.get(name) || restartDelegationRecord) && worktree
+    const restartDelegatedOpencode = (this.lineage.get(name) || this.delegators.get(name)) && worktree
       ? { workspaceRoot: this.opts.workspaceRoot, worktreesBase: this.worktreesBaseFor(cwd, worktree) }
       : undefined;
     const restartBuild = this.applyHarness(
@@ -3409,7 +3171,6 @@ export class AgentManager {
   async resume(name: string, record: SessionRecord, opts?: { injectPrimer?: boolean; deferBridgeStamp?: boolean }): Promise<void> {
     // SDD 368 T14 — refuse before mutating readiness cache (markers + snapshot deny set).
     this.assertNotDeliveryLifecycleDenied(name, "resume", record);
-    const resumeDelegationRecord = (await this.opts.readAuthenticatedLegacyDelegation?.(name))?.record;
     this.readinessCache.delete(name); // spec 221: resuming changes the session → drop the cached badge
     // Resume is intentional re-launch — never inherit a prior graceful-stop "stopping" badge
     // (restart graceful→resume left the row stuck; dogfood 2026-07-16).
@@ -3480,7 +3241,7 @@ export class AgentManager {
     // misses a GATED agent — gated spawns always force `parent: undefined` and record `delegator`
     // instead, which never lands in `record.def`), and gate on the resumed worktree so an uncontained,
     // shared-cwd delegation doesn't get blanket bash:"allow" either (HIGH).
-    const resumeDelegatedOpencode = (this.lineage.get(name) || this.delegators.get(name) || resumeDelegationRecord) && record.worktree
+    const resumeDelegatedOpencode = (this.lineage.get(name) || this.delegators.get(name)) && record.worktree
       ? { workspaceRoot: this.opts.workspaceRoot, worktreesBase: this.worktreesBaseFor(cwd, record.worktree) }
       : undefined;
     // spec 380 — transcript lookup already treats resume.configHome as authoritative (spec 240), so
@@ -3526,15 +3287,11 @@ export class AgentManager {
     // Opt-in injectPrimer:true remains for rare deliberate re-orientation after resume.
     // Advisory/best-effort: never blocks a resume.
     if (opts?.injectPrimer !== true) return;
-    // (resumeDelegationRecord computed above, alongside resumeDelegatedOpencode — reused here.)
     const { primer, beforeFinishing } = renderPrimer({
       agentName: name,
       delegator: this.delegators.get(name),
       parent: this.lineage.get(name),
-      gate: resumeDelegationRecord
-        ? { behaviorTest: resumeDelegationRecord.behaviorTest, owns: resumeDelegationRecord.owns, stubPath: resumeDelegationRecord.stubPath }
-        : undefined,
-      verify: resumeDelegationRecord?.verifySettings ?? this.opts.getConfig()?.settings.verify,
+      verify: this.opts.getConfig()?.settings.verify,
     });
     await this.opts.tmux.sendKeys(session, `${primer}\n\n${beforeFinishing}`, true);
   }

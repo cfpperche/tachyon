@@ -97,7 +97,6 @@ export async function classifyDelivery(delivery: GitDelivery, deps: ClassifyDeps
 }
 
 function projectionSyncFor(delivery: GitDelivery, deps: ClassifyDeps): ProjectionSyncState {
-  if (!delivery.deliveryId) return "unlinked";
   const pending = deps.pendingProjectionByGitId?.get(delivery.id);
   if (pending !== undefined && pending > (delivery.lastAppliedProjectionSequence ?? 0)) return "pending";
   const canonical = deps.deliveriesById?.get(delivery.deliveryId);
@@ -108,9 +107,6 @@ function projectionSyncFor(delivery: GitDelivery, deps: ClassifyDeps): Projectio
 }
 
 function safetyMeta(delivery: GitDelivery, deps: ClassifyDeps): Pick<GitDeliveryListRow, "deliveryId" | "leaseState" | "safetyClass" | "projectionSync"> {
-  if (!delivery.deliveryId) {
-    return { projectionSync: "unlinked" };
-  }
   const canonical = deps.deliveriesById?.get(delivery.deliveryId);
   const classif = deps.reloadSnapshot?.byId.get(delivery.deliveryId);
   return {
@@ -123,7 +119,6 @@ function safetyMeta(delivery: GitDelivery, deps: ClassifyDeps): Pick<GitDelivery
 
 /** Linked rows that are not safe for ready_to_prune (T14 non-terminal or unknown). */
 export function linkedRowUnsafeForPrune(row: Pick<GitDeliveryListRow, "deliveryId" | "safetyClass">): boolean {
-  if (!row.deliveryId) return false;
   if (!row.safetyClass || row.safetyClass === "unknown") return true;
   return row.safetyClass !== "terminal";
 }

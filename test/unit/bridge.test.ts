@@ -2,7 +2,6 @@ import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { Bridge, derivePort, DERIVED_PORT_BASE, DERIVED_PORT_SPAN, type BridgeRequestCompleteInfo } from "../../src/bridge/Bridge.js";
-import { CallerIdentityRegistry } from "../../src/bridge/callerIdentity.js";
 import { AgentManager } from "../../src/agents/AgentManager.js";
 import { TmuxQueueError, TmuxService, sessionName, workspaceHash, type ExecResult } from "../../src/tmux/TmuxService.js";
 import { parseConfig } from "../../src/config/loadConfig.js";
@@ -16,7 +15,7 @@ import { validateCompleteNode } from "../../src/pipeline/completeNode.js";
 import { SessionLedger } from "../../src/resume/SessionLedger.js";
 import { EVIDENCE_SCHEMA_VERSION, isSafeArtifactRef, viewEvidence, summarizeEvidence, type WorktreeEvidence } from "../../src/worktree/evidence.js";
 import { readDoorbellEvents } from "../../src/bridge/doorbell.js";
-import { GitDeliveryStore } from "../../src/git-delivery/store.js";
+import { deterministicGitDeliveryId, GitDeliveryStore } from "../../src/git-delivery/store.js";
 import { DeliveryStore } from "../../src/delivery/store.js";
 import { registerTools } from "../../src/bridge/tools.js";
 import type { WaitForDeliveryLeaseInput, WaitForDeliveryLeaseResult } from "../../src/delivery/leaseService.js";
@@ -234,7 +233,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     fs.rmSync(pinsRoot, { recursive: true, force: true });
   });
 
-  it("exposes exactly the 69 tools (including managed worktree registry tools, spec 392)", async () => {
+  it("exposes exactly the 68 canonical tools, including managed worktree registry tools", async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       "append_project_handoff_note",
@@ -265,7 +264,6 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       "git_delivery_hygiene",
       "git_delivery_integrate",
       "git_delivery_list",
-      "git_delivery_open",
       "git_delivery_prune",
       "kill_agent",
       "list_agents",
@@ -401,55 +399,10 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     ]);
   });
 
-  it("git_delivery_open refuses a peer forging another agent before createdBy can bootstrap prune", async () => {
-    const root = fs.mkdtempSync(nodePath.join(os.tmpdir(), "tachyon-bridge-gd-"));
-    const store = new GitDeliveryStore(root, { id: () => "gd-111111", now: () => "2026-07-09T00:00:00.000Z" });
-    const scope = { workspaceId: "ws", instanceId: "inst" };
-    const registry = new CallerIdentityRegistry(Buffer.alloc(32, 1));
-    const peerToken = registry.mint("peer", scope);
-    const bridgeWithGitDelivery = new Bridge(
-      {
-        workspaceRoot: root,
-        manager,
-        tmux,
-        pins,
-        tasks,
-        validations,
-        continuity,
-        handoff,
-        notify: (message, level) => notifications.push({ message, level }),
-        onTasksChanged: () => { taskChanges += 1; },
-        onValidationsChanged: () => { validationChanges += 1; },
-        gitDelivery: {
-          store,
-          workspaceId: "ws",
-          settings: () => ({ profile: "balanced", autoOpen: true, requireNonSelfAccept: false, autoPrune: false, prunePrincipals: ["orch"], integratePrincipals: [] }),
-          git: async (args) => (args[0] === "rev-parse" ? { code: 0, stdout: "tip\n", stderr: "" } : { code: 1, stdout: "", stderr: "unexpected" }),
-          liveness: async () => "not_live",
-        },
-      },
-      { token: "master", getRegistry: () => registry, scope },
-    );
-    const port = await bridgeWithGitDelivery.start();
-    const peerClient = new Client({ name: "peer-client", version: "0.0.1" }, {});
-    await peerClient.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp`), { requestInit: { headers: { authorization: `Bearer ${peerToken}` } } }));
-    try {
-      const forged = await peerClient.callTool({
-        name: "git_delivery_open",
-        arguments: { agent: "victim", branchRef: "tachyon/victim", worktreePath: "/wt/victim", tachyonCreatedBranch: true },
-      });
-      expect(JSON.stringify(forged.content)).toContain("git_delivery_open refused");
-      expect(await store.list()).toEqual([]);
-    } finally {
-      await peerClient.close();
-      await bridgeWithGitDelivery.dispose();
-      fs.rmSync(root, { recursive: true, force: true });
-    }
-  });
-
   it("linked delivery mutations refuse without a resolved Bridge caller and never invoke projection", async () => {
     const root = fs.mkdtempSync(nodePath.join(os.tmpdir(), "tachyon-bridge-missing-caller-"));
-    const store = new GitDeliveryStore(root, { id: () => "gd-222222", now: () => "2026-07-09T00:00:00.000Z" });
+    const store = new GitDeliveryStore(root, { now: () => "2026-07-09T00:00:00.000Z" });
+    const linkedId = deterministicGitDeliveryId("delivery-linked");
     await store.open({ workspaceId: "ws", deliveryId: "delivery-linked", createdBy: { kind: "human" }, agent: "worker", branchRef: "refs/heads/worker", worktreePath: "/wt/worker", tachyonCreatedBranch: true, baseRef: "main", reason: "test" });
     const integrate = vi.fn();
     const prune = vi.fn();
@@ -470,8 +423,8 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       },
     } as never);
     try {
-      const integrated = await mcp.handlers.get("git_delivery_integrate")!({ id: "gd-222222", expectedVersion: 1, expectedHeadSha: "tip123" });
-      const pruned = await mcp.handlers.get("git_delivery_prune")!({ id: "gd-222222", expectedVersion: 1 });
+      const integrated = await mcp.handlers.get("git_delivery_integrate")!({ id: linkedId, expectedVersion: 1, expectedHeadSha: "tip123" });
+      const pruned = await mcp.handlers.get("git_delivery_prune")!({ id: linkedId, expectedVersion: 1 });
       expect(integrated.isError).toBe(true);
       expect(pruned.isError).toBe(true);
       expect(JSON.stringify(integrated.content)).toContain("resolved Bridge caller");
@@ -485,9 +438,10 @@ describe("Bridge end-to-end over streamable HTTP", () => {
 
   it("delivery_complete_review authorizes only the exact creator and keeps refusal paths side-effect free", async () => {
     const root = fs.mkdtempSync(nodePath.join(os.tmpdir(), "tachyon-bridge-review-auth-"));
-    const projections = new GitDeliveryStore(root, { id: () => "gd-review", now: () => "2026-07-12T00:00:00.000Z" });
+    const projections = new GitDeliveryStore(root, { now: () => "2026-07-12T00:00:00.000Z" });
     const deliveries = new DeliveryStore(root, { now: () => "2026-07-12T00:00:00.000Z" });
-    const delivery = await deliveries.create({ id: "d-review", workspaceId: "ws", createdBy: { kind: "agent", name: "creator" }, gitDeliveryId: "gd-review", contract: { baseSha: "a", taskRef: "task", behaviorTest: "test", owns: [] }, segments: [] });
+    const gitDeliveryId = deterministicGitDeliveryId("d-review");
+    const delivery = await deliveries.create({ id: "d-review", workspaceId: "ws", createdBy: { kind: "agent", name: "creator" }, gitDeliveryId, contract: { baseSha: "a", taskRef: "task", behaviorTest: "test", owns: [] }, segments: [] });
     await projections.open({ workspaceId: "ws", deliveryId: "d-review", createdBy: { kind: "agent", name: "creator" }, agent: "worker", branchRef: "branch", worktreePath: root, tachyonCreatedBranch: true, baseRef: "main", reason: "test" });
     const completeReview = vi.fn(async () => delivery);
     class ToolCapture { handlers = new Map<string, (args: Record<string, unknown>) => Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }>>(); registerTool(name: string, _schema: unknown, handler: (args: Record<string, unknown>) => Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }>) { this.handlers.set(name, handler); } }
@@ -498,7 +452,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       const denied = await deniedMcp.handlers.get("delivery_complete_review")!(args);
       expect(denied.isError).toBe(true); expect(JSON.stringify(denied.content)).toContain("not the Delivery creator"); expect(completeReview).not.toHaveBeenCalled();
       const allowedMcp = new ToolCapture();
-      registerTools(allowedMcp as never, { workspaceRoot: root, manager: {} as never, caller: { kind: "agent", name: "creator" }, deliverySafety: () => "mechanism-only", deliveryLease: { completeReview } as never, gitDelivery: { store: projections, deliveries, workspaceId: "ws" } } as never);
+      registerTools(allowedMcp as never, { workspaceRoot: root, manager: {} as never, caller: { kind: "agent", name: "creator" }, deliveryLease: { completeReview } as never, gitDelivery: { store: projections, deliveries, workspaceId: "ws" } } as never);
       const allowed = await allowedMcp.handlers.get("delivery_complete_review")!(args);
       expect(allowed.isError).toBeFalsy(); expect(completeReview).toHaveBeenCalledOnce(); expect(JSON.stringify(allowed.content)).toContain("root death is best-effort");
     } finally { fs.rmSync(root, { recursive: true, force: true }); }

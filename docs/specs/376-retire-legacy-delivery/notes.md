@@ -31,9 +31,34 @@ _Created 2026-07-13._
 - The exact T16–T20 overlap and the regression obligations from `t-7acc58` and `t-aa9b77` are recorded in
   `plan.md`; no unchecked spec 368 task is implicitly claimed complete.
 
+## Implementation candidate — 2026-07-16
+
+- Isolated worktree: `/home/goat/tachyon-worktrees/t-85f251`.
+- Branch: `codex/t-85f251-retire-legacy-delivery-r2`, based on `274c8b22`; `main` was not modified or merged.
+- The candidate removes the old models and public entry points, makes gated spawn/join/verify canonical-only,
+  keeps GitDelivery as an immutable linked projection, and adds the explicit preview/archive/retire operation.
+- The retirement fixture contains canonical plus legacy metadata, linked and unlinked projections, clean and
+  dirty worktrees, and snapshots all refs, HEADs, statuses, and worktree registrations before and after apply.
+- A preview was run against a temporary copy of the current real workspace metadata. It found 101 delegation
+  files, 101 unlinked GitDelivery rows, 126 old mirror files, 25 canonical Deliveries, and 25 linked projections
+  (330 retirement entries total). The copy's complete file inventory and hashes were unchanged by preview.
+- Focused matrix: 21 files / 886 tests passed. Additional retirement, Workspace, auth, and store corrections
+  passed their focused reruns. `npm run typecheck`, `npm run build`, and `git diff --check` passed.
+- The first global candidate run exposed two obsolete test contracts (the old Bridge tool count and automatic
+  JSON-store promotion) plus missing generated engine bundle artifacts. The tests were corrected to assert the
+  canonical-only contract, the bundle was built, and the repeated global gate passed: 403 files, 4,626 tests,
+  3 skipped.
+- The final current-source audit found no old public lifecycle symbol outside the deliberate removed-setting
+  diagnostic and durable mechanism-only evidence vocabulary.
+- Still required before merge: independent immutable review, installed-extension retirement/happy-path dogfood,
+  any consolidated corrections those produce, push, and explicit maintainer acceptance.
+
 ## Deviations
 
-None yet.
+- At the maintainer's direction, implementation was performed directly in a separate worktree without using the
+  Delivery mechanism, without subagents, and without automatic integration.
+- The current session primer defines the global full gate as `npm test`; typecheck, build, and diff-check were run
+  separately. This replaces the older `npm run verify:full:quiet` wording in the generated task artifact.
 
 ## Tradeoffs
 

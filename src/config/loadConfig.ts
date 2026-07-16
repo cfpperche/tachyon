@@ -370,16 +370,11 @@ export interface TachyonConfig {
       circuitFailCount?: number;
     };
     /** spec 365 — local GitDelivery lifecycle/hygiene settings. Profiles supply defaults; explicit keys override. */
+    /** Linked GitDelivery projection authority. Lifecycle selection is not configurable. */
     gitDelivery?: {
-      profile?: "solo" | "balanced" | "strict" | "custom";
-      autoOpen?: boolean;
-      requireNonSelfAccept?: boolean;
-      autoPrune?: boolean;
       prunePrincipals?: string[];
       integratePrincipals?: string[];
     };
-    /** spec 368 — opt-in canonical gated-spawn persistence; legacy remains the rollout default. */
-    delivery?: { mode?: "legacy" | "canonical"; handoffSafety?: "disabled" | "mechanism-only" | "process-fenced" };
     /** Shared defaults for human-facing task mutation toasts; explicit VS Code settings override these. */
     taskNotifications?: TaskNotificationSettingsInput;
   };
@@ -1449,16 +1444,6 @@ export function parseConfig(yamlText: string): ParseResult {
         } else {
           const gd = raw.settings.gitDelivery;
           const out: NonNullable<TachyonConfig["settings"]["gitDelivery"]> = {};
-          if (gd.profile !== undefined) {
-            if (!["solo", "balanced", "strict", "custom"].includes(String(gd.profile))) errors.push("settings.gitDelivery.profile: must be solo, balanced, strict, or custom");
-            else out.profile = gd.profile as NonNullable<typeof out.profile>;
-          }
-          for (const key of ["autoOpen", "requireNonSelfAccept", "autoPrune"] as const) {
-            if (gd[key] !== undefined) {
-              if (typeof gd[key] !== "boolean") errors.push(`settings.gitDelivery.${key}: must be a boolean`);
-              else out[key] = gd[key] as boolean;
-            }
-          }
           for (const key of ["prunePrincipals", "integratePrincipals"] as const) {
             if (gd[key] !== undefined) {
               if (!Array.isArray(gd[key]) || gd[key].some((v: unknown) => typeof v !== "string" || v.trim().length === 0)) {
@@ -1469,28 +1454,13 @@ export function parseConfig(yamlText: string): ParseResult {
             }
           }
           for (const key of Object.keys(gd)) {
-            if (!["profile", "autoOpen", "requireNonSelfAccept", "autoPrune", "prunePrincipals", "integratePrincipals"].includes(key)) errors.push(`settings.gitDelivery: unknown key '${key}'`);
+            if (!["prunePrincipals", "integratePrincipals"].includes(key)) errors.push(`settings.gitDelivery: unknown key '${key}'`);
           }
           if (Object.keys(out).length > 0) settings.gitDelivery = out;
         }
       }
       if (raw.settings.delivery !== undefined) {
-        if (!isPlainObject(raw.settings.delivery)) errors.push("settings.delivery: must be a mapping");
-        else {
-          const delivery = raw.settings.delivery;
-          if (delivery.mode !== undefined && delivery.mode !== "legacy" && delivery.mode !== "canonical") {
-            errors.push("settings.delivery.mode: must be legacy or canonical");
-          } else {
-            if (delivery.handoffSafety !== undefined && !["disabled", "mechanism-only", "process-fenced"].includes(String(delivery.handoffSafety))) {
-              errors.push("settings.delivery.handoffSafety: must be disabled, mechanism-only, or process-fenced");
-            }
-            const mode = delivery.mode ?? "legacy";
-            const handoffSafety = delivery.handoffSafety ?? "disabled";
-            if (handoffSafety !== "disabled" && mode !== "canonical") errors.push("settings.delivery.handoffSafety requires settings.delivery.mode: canonical");
-            if (delivery.mode !== undefined || delivery.handoffSafety !== undefined) settings.delivery = { mode: mode as "legacy" | "canonical", handoffSafety: handoffSafety as "disabled" | "mechanism-only" | "process-fenced" };
-          }
-          for (const key of Object.keys(delivery)) if (key !== "mode" && key !== "handoffSafety") errors.push(`settings.delivery: unknown key '${key}'`);
-        }
+        errors.push("settings.delivery: removed; canonical Delivery with mechanism-only handoff is always active");
       }
       if (raw.settings.taskNotifications !== undefined) {
         if (!isPlainObject(raw.settings.taskNotifications)) {
@@ -1525,7 +1495,7 @@ export function parseConfig(yamlText: string): ParseResult {
         }
       }
       for (const key of Object.keys(raw.settings)) {
-        if (!["maxAgents", "bridgePort", "auth", "legacyBridgeAuth", "layout", "tmux", "worktree", "verify", "projectGuidance", "anchor", "bridgeGuidance", "clipboard", "handoff", "persistence", "bridgeClientRebind", "gitDelivery", "delivery", "taskNotifications"].includes(key)) errors.push(`settings: unknown key '${key}'`);
+        if (!["maxAgents", "bridgePort", "auth", "legacyBridgeAuth", "layout", "tmux", "worktree", "verify", "projectGuidance", "anchor", "bridgeGuidance", "clipboard", "handoff", "persistence", "bridgeClientRebind", "gitDelivery", "taskNotifications"].includes(key)) errors.push(`settings: unknown key '${key}'`);
       }
     }
   }

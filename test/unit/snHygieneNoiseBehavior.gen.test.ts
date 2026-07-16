@@ -9,6 +9,7 @@ function baseDelivery(overrides: Partial<GitDelivery> = {}): GitDelivery {
   return {
     schemaVersion: 1,
     id: "gd-a1",
+    deliveryId: "d-a1",
     version: 1,
     workspaceId: "ws",
     createdBy: actor,

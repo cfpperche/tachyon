@@ -14,7 +14,7 @@ import {
   type ObservedProcess,
 } from "../../src/delivery/reloadReconciliation.js";
 import { DeliveryStore } from "../../src/delivery/store.js";
-import { GitDeliveryStore } from "../../src/git-delivery/store.js";
+import { deterministicGitDeliveryId, GitDeliveryStore } from "../../src/git-delivery/store.js";
 import type { Delivery } from "../../src/delivery/types.js";
 import { AgentManager } from "../../src/agents/AgentManager.js";
 import { TmuxService, workspaceHash, type ExecResult } from "../../src/tmux/TmuxService.js";
@@ -74,6 +74,8 @@ describe("container-generated delegation behavior", () => {
 
     // --- Real DeliveryStore + GitDeliveryStore seams (not pure table-only) ---
     const now = "2026-07-12T12:00:00.000Z";
+    const exactProjectionId = deterministicGitDeliveryId("d-exact");
+    const crashProjectionId = deterministicGitDeliveryId("d-crash");
     const deliveries = new DeliveryStore(root, { now: () => now, id: () => "d-exact" });
     const held = await deliveries.create({
       id: "d-exact",
@@ -104,12 +106,13 @@ describe("container-generated delegation behavior", () => {
         grantedAt: now,
       }],
       events: [],
-      gitDeliveryId: "gd-exact",
+      gitDeliveryId: exactProjectionId,
     });
     expect(held.id).toBe("d-exact");
 
-    const git = new GitDeliveryStore(root, { id: () => "gd-exact", now: () => now });
+    const git = new GitDeliveryStore(root, { now: () => now });
     const projection = await git.open({
+      id: exactProjectionId,
       workspaceId: "ws",
       createdBy: { kind: "system", name: "tachyon" },
       deliveryId: "d-exact",
@@ -121,7 +124,7 @@ describe("container-generated delegation behavior", () => {
       currentHeadSha: "abc",
       reason: "t14-r2-behavior",
     });
-    expect(projection.id).toBe("gd-exact");
+    expect(projection.id).toBe(exactProjectionId);
     expect(projection.deliveryId).toBe("d-exact");
 
     // Also seed a quarantined delivery for classification coverage.
@@ -163,9 +166,10 @@ describe("container-generated delegation behavior", () => {
         grantedAt: now,
       }],
       events: [],
-      gitDeliveryId: "gd-crash",
+      gitDeliveryId: crashProjectionId,
     });
-    await new GitDeliveryStore(root, { id: () => "gd-crash", now: () => now }).open({
+    await new GitDeliveryStore(root, { now: () => now }).open({
+      id: crashProjectionId,
       workspaceId: "ws",
       createdBy: { kind: "system", name: "tachyon" },
       deliveryId: "d-crash",

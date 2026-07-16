@@ -14,7 +14,7 @@ import {
 
 export interface WorkspaceHandoffDistillSource extends ManagedAgentInputSource {
   manager: ManagedAgentInputSource["manager"] & {
-    spawn(agent: string, options?: SpawnOptions): Promise<void>;
+    spawn(agent: string, options?: SpawnOptions): Promise<unknown>;
   };
   ledger: {
     all(): Map<string, SessionRecord>;
@@ -59,13 +59,15 @@ export function workspaceHandoffDistillOperations(
       for (const [name, record] of source.ledger.all()) if (record.resume) names.add(name);
       return names;
     },
-    startDeclaredAgent: (agent) => source.manager.spawn(agent, { reveal: options.reveal }),
+    startDeclaredAgent: async (agent) => { await source.manager.spawn(agent, { reveal: options.reveal }); },
     resumeAgent: (agent) => source.resumeAgent(agent),
-    startAdhocAgent: (agent, command, prompt) => source.manager.spawn(agent, {
-      cmd: command,
-      instructions: prompt,
-      reveal: options.reveal,
-    }),
+    startAdhocAgent: async (agent, command, prompt) => {
+      await source.manager.spawn(agent, {
+        cmd: command,
+        instructions: prompt,
+        reveal: options.reveal,
+      });
+    },
     sendAgentInput: (agent, prompt) => sendManagedAgentInput(source, agent, prompt, true),
   };
 }

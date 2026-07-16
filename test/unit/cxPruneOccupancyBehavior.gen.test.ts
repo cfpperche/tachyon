@@ -18,6 +18,7 @@ function delivery(worktreePath: string): GitDelivery {
   return {
     schemaVersion: 1,
     id: "gd-occupancy",
+    deliveryId: "d-occupancy",
     version: 1,
     workspaceId: "ws",
     createdBy: actor,

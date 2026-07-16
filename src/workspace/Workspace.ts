@@ -73,18 +73,6 @@ import {
   type BridgeClientRebindSettings,
   type ClientRebindState,
 } from "../bridge/clientRebind.js";
-import {
-  appendFixerAttemptAsync,
-  delegationRecordFromSpawn,
-  findNonArchivedDelegationRecordsByAgent,
-  readLatestDelegationRecord,
-  verifyDelegationRecordAuthority,
-  verifyDelegationRecordFreshness,
-  verifyDelegationRecordLocation,
-  writeDelegationRecordAsync,
-  type DelegationRecord,
-} from "../bridge/delegationRecord.js";
-import { resolveReuseTarget, type ReuseTarget } from "../agents/reuseWorktree.js";
 import type { AuthorityHead, AuthorityHeadPort } from "../delivery/authorityIntegrity.js";
 import { resolveCanonicalBehaviorOracle } from "../bridge/behaviorStub.js";
 import { behaviorTestError } from "../config/behaviorVerification.js";
@@ -144,6 +132,8 @@ import { UnavailableProcessFence } from "../agents/processFence.js";
 import { readOwnApprovalRequest } from "../bridge/approvalRequest.js";
 import { DeliveryVerificationLeaseService } from "../delivery/verificationLease.js";
 import { DeliveryProjectionService } from "../delivery/projectionService.js";
+import { LegacyDeliveryRetirement } from "../delivery/retireLegacyState.js";
+import type { CanonicalDeliverySpawnReceipt } from "../delivery/types.js";
 import {
   readLinuxProcessIdentity,
   reconcileDeliveryReload,
@@ -154,7 +144,7 @@ import {
 import { resolveGitDeliverySettings } from "../git-delivery/settings.js";
 import { createGitExec, type GitExec } from "../worktree/WorktreeManager.js";
 import { resolveGitBinaryForHost } from "../worktree/gitBinary.js";
-import type { GitDelivery, GitDeliveryActor } from "../git-delivery/types.js";
+import type { GitDelivery } from "../git-delivery/types.js";
 import { hasDeliveryMarker, isInvalidDeliveryMarker, isValidDeliveryBinding, sameDeliveryBinding } from "../resume/SessionLedger.js";
 import { TaskNotificationService } from "./TaskNotificationService.js";
 import { BridgeSlowRequestToastPolicy } from "./bridgeSlowRequestPolicy.js";
@@ -413,6 +403,7 @@ export class Workspace {
   readonly deliveryProjection: DeliveryProjectionService;
   readonly deliveryLease: DeliveryLeaseService;
   readonly deliveryVerification: DeliveryVerificationLeaseService;
+  readonly legacyDeliveryRetirement: LegacyDeliveryRetirement;
   /** spec 257 — the captured headless A2A probe lane (probe_agent / read_probe_result). */
   readonly probeService: ProbeService;
   private readonly probeStore: ProbeStore;
@@ -607,6 +598,7 @@ export class Workspace {
 
     this.canonicalLedger = new CanonicalSessionLedger(workspaceRoot);
     this.ledger = this.canonicalLedger;
+    this.legacyDeliveryRetirement = new LegacyDeliveryRetirement(workspaceRoot);
     this.externalTools = new ExternalToolRegistry(workspaceRoot);
     this.gitDeliveries = new GitDeliveryStore(workspaceRoot);
     this.deliveries = new DeliveryStore(workspaceRoot, {
@@ -666,7 +658,6 @@ export class Workspace {
         return { decision: "approved", requester: request.requester, actionDigest, payloadHash: request.payloadHash,
           resolvedAt: request.resolution.resolvedAt, resolvedBy: request.resolution.resolvedBy };
       },
-      handoffSafety: () => this.effectiveDeliverySafety(),
       canonicalWorktreeFor: async (delivery) => fs.realpathSync((await this.exactCanonicalProjection(delivery)).worktreePath),
       readHead: async (cwd) => this.requiredGitOutput(["rev-parse", "HEAD"], cwd, "Git HEAD"),
       inspectWorktree: async (cwd) => ({ headSha: await this.requiredGitOutput(["rev-parse", "HEAD"], cwd, "Git HEAD"), clean: await this.requiredGitStatus(cwd) }),
@@ -731,7 +722,6 @@ export class Workspace {
       // SDD 369 T3 — ordinary Claude sessions inherit this account home. Capture and transcript
       // resolution must use the same value; an unknown external home then fails capture closed.
       defaultClaudeConfigHome,
-      gitExec: this.gitExec,
       ledger: this.ledger,
       // spec 364 — stamp bound_generation from the live coordinator (0 until first listener-ready bump).
       getBridgeGeneration: () => this.clientRebind?.getGeneration() ?? 0,
@@ -859,12 +849,11 @@ export class Workspace {
         this.callerRegistry?.revoke(name, this.callerScope());
         this.persistCallerRegistry();
       },
-      onSpawned: (name, reveal, context) => {
+      onSpawned: (name, reveal) => {
         // F3: a Bridge-spawned child passes reveal=false so it doesn't yank the human's
         // editor focus off the parent. It still appears in the tree (nested) — the human
         // opens it on demand. Human ▶ / autostart / resume / restart reveal as before.
         if (reveal) this.terminals.open(name, this.manager.session(name));
-        if (context?.adhoc && context.worktree) void this.autoOpenGitDelivery(name, context.worktree);
         // spec 216 (codex r1 M2): a fresh session (spawn/restart/resume) clears any stale
         // re-anchor flag — else a compaction detected before a kill could inject into a brand-new
         // same-name session that never compacted.
@@ -1076,43 +1065,8 @@ export class Workspace {
           throw primary;
         }
       },
-      recordDelegation: async ({ name, delegator, gate, contract, worktree, baseSha, verifySettings }) => {
-        if (this.config?.settings.delivery?.mode === "canonical") {
-          await this.recordCanonicalDelivery({
-            name,
-            delegator,
-            gate,
-            worktree,
-            baseSha,
-            verifySettings,
-          });
-          return;
-        }
-        if (!this.authorityIntegrityKey) throw new Error("legacy delegation authority key is unavailable");
-        await writeDelegationRecordAsync(
-          this.workspaceRoot,
-          delegationRecordFromSpawn({
-            agent: name,
-            delegator,
-            baseSha,
-            taskRef: worktree.branch,
-            gate,
-            stubPath: gate.stubPath,
-            oracleHash: gate.oracleHash,
-            executorHashes: gate.executorHashes,
-            verifySettings,
-            contract,
-          }),
-          this.authorityIntegrityKey,
-          this.legacyAuthorityHeadPort(),
-        );
-      },
-      readAuthenticatedLegacyDelegation: (agent) => this.readAuthenticatedLegacyDelegation(agent),
-      resolveAuthenticatedLegacyReuseTarget: (target) => this.resolveAuthenticatedLegacyReuseTarget(target),
-      appendLegacyFixerAttempt: async (delegationPath, attempt) => {
-        const authorityKey = this.requireAuthorityIntegrityKey("reuse_worktree");
-        await appendFixerAttemptAsync(this.workspaceRoot, delegationPath, attempt, authorityKey, this.legacyAuthorityHeadPort());
-      },
+      recordCanonicalDelivery: ({ name, delegator, gate, worktree, baseSha, verifySettings }) =>
+        this.recordCanonicalDelivery({ name, delegator, gate, worktree, baseSha, verifySettings }),
       // spec 225 — fork: probe the source worktree for the dirty warning, and create the fork's own
       // worktree branched off the source's committed HEAD (its branch).
       worktreeDirty: (rec) => isWorktreeDirty(rec.path, this.gitExec),
@@ -1494,11 +1448,8 @@ export class Workspace {
         },
         withWorktreeLock: (agent, fn) => this.worktrees.withAgentPathLock(agent, fn),
         deliveryVerification: this.deliveryVerification,
-        authorityIntegrityKey: () => this.authorityIntegrityKey,
-        canonicalAuthorityHead: this.canonicalAuthorityHeadPort(),
-        legacyAuthorityHead: (identity) => this.currentAuthorityHead("legacy", identity),
+        assertLegacyDeliveryRetired: () => this.legacyDeliveryRetirement.assertRetired(),
         deliveryLease: this.deliveryLease,
-        deliverySafety: () => this.effectiveDeliverySafety(),
         // spec 273 — the worktree evidence channel over MCP.
         attachEvidence: (input) => this.attachEvidence(input),
         listEvidence: (agent) => this.listEvidence(agent),
@@ -2004,29 +1955,28 @@ export class Workspace {
     return authorityHeadsSecretKey(this.wsHash);
   }
 
-  private authorityHeadMapKey(kind: "legacy" | "canonical", identity: string): string {
-    return `${kind}:${identity}`;
+  private authorityHeadMapKey(identity: string): string {
+    return `canonical:${identity}`;
   }
 
-  private async currentAuthorityHead(kind: "legacy" | "canonical", identity: string): Promise<AuthorityHead | undefined> {
+  private async currentAuthorityHead(identity: string): Promise<AuthorityHead | undefined> {
     // A process-local snapshot is not an anti-rollback anchor: another extension host may have
     // advanced custody since this Workspace was created. Do not interleave this read with this
     // host's own read/modify/write, then refresh durable custody on every authority decision.
     await this.authorityHeadPrepareTail;
     const persisted = parseAuthorityHeads(await this.host.getSecret(this.authorityHeadsSecretKey()));
     this.authorityHeads = persisted;
-    const head = persisted.get(this.authorityHeadMapKey(kind, identity));
+    const head = persisted.get(this.authorityHeadMapKey(identity));
     return head ? { ...head } : undefined;
   }
 
   private async prepareAuthorityHead(
-    kind: "legacy" | "canonical",
     identity: string,
     next: AuthorityHead,
     expectedMac?: string,
   ): Promise<void> {
     const prepared = this.authorityHeadPrepareTail.then(() =>
-      this.prepareAuthorityHeadSerialized(kind, identity, next, expectedMac)
+      this.prepareAuthorityHeadSerialized(identity, next, expectedMac)
     );
     // A refusal must not poison unrelated later preparations, while every caller still
     // receives its own exact failure.
@@ -2035,7 +1985,6 @@ export class Workspace {
   }
 
   private async prepareAuthorityHeadSerialized(
-    kind: "legacy" | "canonical",
     identity: string,
     next: AuthorityHead,
     expectedMac?: string,
@@ -2048,7 +1997,7 @@ export class Workspace {
     // committed head for another Delivery from being overwritten by a stale local snapshot.
     // If a host did race outside that lock, the readback below refuses rather than trusting it.
     this.authorityHeads = parseAuthorityHeads(await this.host.getSecret(this.authorityHeadsSecretKey()));
-    const mapKey = this.authorityHeadMapKey(kind, identity);
+    const mapKey = this.authorityHeadMapKey(identity);
     const current = this.authorityHeads.get(mapKey);
     if (expectedMac === undefined) {
       if (current) {
@@ -2075,17 +2024,10 @@ export class Workspace {
     this.authorityHeads = persisted;
   }
 
-  private legacyAuthorityHeadPort(): AuthorityHeadPort {
-    return {
-      current: (identity) => this.currentAuthorityHead("legacy", identity),
-      prepare: (identity, next, expectedMac) => this.prepareAuthorityHead("legacy", identity, next, expectedMac),
-    };
-  }
-
   private canonicalAuthorityHeadPort(): AuthorityHeadPort {
     return {
-      current: (identity) => this.currentAuthorityHead("canonical", identity),
-      prepare: (identity, next, expectedMac) => this.prepareAuthorityHead("canonical", identity, next, expectedMac),
+      current: (identity) => this.currentAuthorityHead(identity),
+      prepare: (identity, next, expectedMac) => this.prepareAuthorityHead(identity, next, expectedMac),
     };
   }
 
@@ -2432,41 +2374,6 @@ export class Workspace {
    * opt-in auto path (on idle-after-compaction) and the always-on manual command/Bridge tool.
    * Best-effort: no-op if the agent isn't running.
    */
-  private requireAuthorityIntegrityKey(operation: string): Buffer {
-    if (!this.authorityIntegrityKey) {
-      throw new Error(`${operation}: host authority integrity key is unavailable`);
-    }
-    return this.authorityIntegrityKey;
-  }
-
-  private async readAuthenticatedLegacyDelegation(agent: string): Promise<{ path: string; record: DelegationRecord } | undefined> {
-    const matches = findNonArchivedDelegationRecordsByAgent(this.workspaceRoot, agent);
-    if (matches.length === 0) return undefined;
-    if (matches.length !== 1) {
-      throw new Error(`AMBIGUOUS_LEGACY_DELEGATION: '${agent}' has ${matches.length} active delegation records`);
-    }
-    const found = matches[0]!;
-    const authorityKey = this.requireAuthorityIntegrityKey(`legacy delegation '${agent}'`);
-    if (found.record.agent !== agent
-      || !verifyDelegationRecordLocation(this.workspaceRoot, found.path, found.record)
-      || !verifyDelegationRecordAuthority(found.record, authorityKey, this.workspaceRoot)
-      || !await verifyDelegationRecordFreshness(found.record, this.legacyAuthorityHeadPort())) {
-      throw new Error(`LEGACY_DELEGATION_INTEGRITY_INVALID: delegation authority for '${agent}' is unsigned, stale, or tampered`);
-    }
-    return found;
-  }
-
-  private async resolveAuthenticatedLegacyReuseTarget(target: ReuseTarget): Promise<{ path: string; record: DelegationRecord }> {
-    const found = resolveReuseTarget(this.workspaceRoot, target);
-    const authorityKey = this.requireAuthorityIntegrityKey("reuse_worktree");
-    if (!verifyDelegationRecordLocation(this.workspaceRoot, found.path, found.record)
-      || !verifyDelegationRecordAuthority(found.record, authorityKey, this.workspaceRoot)
-      || !await verifyDelegationRecordFreshness(found.record, this.legacyAuthorityHeadPort())) {
-      throw new Error("REUSE_AUTHORITY_INTEGRITY_INVALID: selected delegation is unsigned, stale, tampered, or belongs to another workspace");
-    }
-    return found;
-  }
-
   async reanchor(agent: string): Promise<void> {
     // spec 216 (codex r1 M3): re-anchoring types a role reminder into the pane — agents only.
     // The UI menu gates on `-ai`, but the Bridge tool calls this directly, so guard here too:
@@ -2475,17 +2382,17 @@ export class Workspace {
     const session = this.manager.session(agent);
     if (!(await this.tmux.hasSession(session))) throw new Error(`agent '${agent}' is not running`);
     const def = this.manager.defOf(agent);
+    const canonicalGate = await this.canonicalPrimerGate(agent);
     if (def?.soul) {
       const previous = this.ledger.get(agent)?.identity;
       try {
         const soul = await this.manager.resolveSoulForLifecycle(agent);
         if (!soul) throw new Error(`agent '${agent}' has no enabled soul`);
-        const delegationRecord = readLatestDelegationRecord(this.workspaceRoot, agent)?.record;
         const { primer, beforeFinishing } = renderPrimer({
           agentName: agent,
           delegator: this.manager.delegatorOf(agent),
           parent: this.manager.parentOf(agent),
-          gate: delegationRecord ? { behaviorTest: delegationRecord.behaviorTest, owns: delegationRecord.owns, stubPath: delegationRecord.stubPath } : undefined,
+          gate: canonicalGate,
           verify: this.config?.settings.verify,
         });
         const body = composeAgentPrompt({
@@ -2518,7 +2425,6 @@ export class Workspace {
       this.workspaceRoot,
       this.config?.settings.projectGuidance,
     );
-    const delegationRecord = (await this.readAuthenticatedLegacyDelegation(agent))?.record;
     try {
       const abs = path.join(this.workspaceRoot, relPath);
       fs.mkdirSync(path.dirname(abs), { recursive: true });
@@ -2536,8 +2442,8 @@ export class Workspace {
       agentName: agent,
       delegator: this.manager.delegatorOf(agent),
       parent: this.manager.parentOf(agent),
-      gate: delegationRecord ? { behaviorTest: delegationRecord.behaviorTest, owns: delegationRecord.owns, stubPath: delegationRecord.stubPath } : undefined,
-      verify: delegationRecord?.verifySettings ?? this.config?.settings.verify,
+      gate: canonicalGate,
+      verify: this.config?.settings.verify,
     });
     // Preflight the exact pointer framing before replacing a prior re-anchor artifact.
     assertSafeBriefTransport(
@@ -2548,6 +2454,26 @@ export class Workspace {
     const injection = frame(deliverable);
     assertSafeBriefTransport(injection, `agent '${agent}' re-anchor brief`);
     await this.tmux.sendKeys(session, injection, true);
+  }
+
+  /** Primer metadata is advisory, but it must still come from the exact canonical binding. */
+  private async canonicalPrimerGate(agent: string): Promise<{ behaviorTest: string; owns: string[]; stubPath?: string } | undefined> {
+    const binding = this.ledger.get(agent)?.delivery;
+    if (!isValidDeliveryBinding(binding)) return undefined;
+    try {
+      const delivery = await this.deliveries.get(binding.deliveryId);
+      const holder = delivery?.lease.holder;
+      if (!delivery || !holder || holder.segmentId !== binding.segmentId || holder.executionAgent !== agent) return undefined;
+      const segment = delivery.segments.find((candidate) => candidate.id === binding.segmentId);
+      if (!segment || segment.executionAgent !== agent || segment.releasedAt) return undefined;
+      return {
+        behaviorTest: delivery.contract.behaviorTest,
+        owns: [...segment.ownsSubset],
+        ...(delivery.contract.stubPath ? { stubPath: delivery.contract.stubPath } : {}),
+      };
+    } catch {
+      return undefined;
+    }
   }
 
   // ───────────────────────── spec 241 — per-agent continuity ─────────────────────────
@@ -2942,28 +2868,6 @@ export class Workspace {
     this.host.notify(this.t("worktree setup complete for '{0}'", rec.branch), "info");
   }
 
-  private async autoOpenGitDelivery(agent: string, worktree: WorktreeRecord): Promise<void> {
-    const settings = resolveGitDeliverySettings(this.config?.settings);
-    if (!settings.autoOpen) return;
-    try {
-      const actor: GitDeliveryActor = { kind: "system", name: "tachyon" };
-      const { headRef } = await this.worktrees.headState(worktree.path);
-      await this.gitDeliveries.open({
-        workspaceId: this.wsHash,
-        createdBy: actor,
-        agent,
-        branchRef: worktree.branch,
-        worktreePath: worktree.path,
-        tachyonCreatedBranch: worktree.tachyonCreatedBranch,
-        baseRef: worktree.baseBranch ?? worktree.baseRef,
-        ...(headRef ? { currentHeadSha: headRef } : {}),
-        reason: "autoOpen on worktree spawn",
-      });
-    } catch (err) {
-      this.host.notify(`couldn't open GitDelivery for '${agent}': ${err instanceof Error ? err.message : String(err)}`, "warn");
-    }
-  }
-
   private async requiredGitOutput(args: string[], cwd: string, label: string): Promise<string> {
     const result = await this.gitExec(args, cwd);
     const output = result.stdout.trim();
@@ -2995,7 +2899,7 @@ export class Workspace {
   /**
    * Cross-store boundary is deliberately fail-closed: canonical Delivery is durable first, then its
    * Git projection, then the backlink. Replaying the stable operation repairs either crash boundary;
-   * no DelegationRecord is dual-written and an unlinked Delivery is never mistaken for a complete one.
+   * no compatibility record is dual-written and an unlinked Delivery is never mistaken for a complete one.
    */
   private async recordCanonicalDelivery(input: {
     name: string;
@@ -3004,7 +2908,8 @@ export class Workspace {
     worktree: WorktreeRecord;
     baseSha: string;
     verifySettings?: NonNullable<TachyonConfig["settings"]>["verify"];
-  }): Promise<void> {
+  }): Promise<CanonicalDeliverySpawnReceipt> {
+    this.legacyDeliveryRetirement.assertRetired();
     const owns = [...new Set(input.gate.owns ?? [])];
     const spawnKey = createHash("sha256").update(JSON.stringify({
       agent: input.name, delegator: input.delegator, baseSha: input.baseSha,
@@ -3019,13 +2924,9 @@ export class Workspace {
     if (!delivery) {
       // The gated pane already exists at this callback boundary. Capture its exact
       // Linux identity before publishing the initial held lease; unknown is fail-closed.
-      const safety = this.effectiveDeliverySafety();
-      // Disabled canonical mode is the pre-sequential compatibility path.  It
-      // must not touch /proc or manufacture a process boundary just by opening a
-      // canonical Delivery.  Sequential safety modes are deliberately strict.
-      const identity = safety === "disabled" ? undefined : readLinuxProcessIdentity(await this.tmux.panePid(this.manager.session(input.name)));
-      if (safety !== "disabled" && identity?.state !== "exact") throw new Error("DELIVERY_PROCESS_IDENTITY_MISSING: canonical gated spawn requires an exact pane identity");
-      const executionNonce = safety === "disabled" ? undefined : randomBytes(16).toString("hex");
+      const identity = readLinuxProcessIdentity(await this.tmux.panePid(this.manager.session(input.name)));
+      if (identity.state !== "exact") throw new Error("DELIVERY_PROCESS_IDENTITY_MISSING: canonical gated spawn requires an exact pane identity");
+      const executionNonce = randomBytes(16).toString("hex");
       const now = new Date().toISOString();
       try {
         delivery = await this.deliveries.create({
@@ -3043,7 +2944,7 @@ export class Workspace {
         ...(input.gate.executorHashes ? { executorHashes: structuredClone(input.gate.executorHashes) } : {}),
         ...(input.verifySettings ? { verifySettings: structuredClone(input.verifySettings) } : {}),
       },
-      lease: { state: "held", holder: { segmentId: `seg-${spawnKey.slice(0, 16)}`, executionAgent: input.name, principal: input.name, ...(executionNonce ? { executionNonce } : {}), ...(identity?.state === "exact" ? { process: { pid: identity.pid, processStart: identity.processStart, bootId: identity.bootId } } : {}) }, expectedHeadSha: input.baseSha, changedAt: now },
+      lease: { state: "held", holder: { segmentId: `seg-${spawnKey.slice(0, 16)}`, executionAgent: input.name, principal: input.name, executionNonce, process: { pid: identity.pid, processStart: identity.processStart, bootId: identity.bootId } }, expectedHeadSha: input.baseSha, changedAt: now },
       segments: [{
         id: `seg-${spawnKey.slice(0, 16)}`, index: 0, role: "implementer", executionAgent: input.name,
         principal: input.name, grantedBy: actor, ownsSubset: owns, grantedHeadSha: input.baseSha, grantedAt: now,
@@ -3070,8 +2971,7 @@ export class Workspace {
     delivery = opened.delivery;
     // SDD 368 T14 — reverse binding after Delivery + linked Git projection are durable.
     // Require one internally exact held holder/open-tail/executionAgent boundary; no
-    // same-name or tail-segment inference. Pre-sequential gated spawn omits executionNonce;
-    // reload classifies that path unavailable rather than inventing containment identity.
+    // same-name or tail-segment inference.
     const holder = delivery.lease.holder;
     const tail = delivery.segments.at(-1);
     if (
@@ -3087,26 +2987,37 @@ export class Workspace {
         `Delivery '${delivery.id}' has no exact holder/open-tail/executionAgent boundary for '${input.name}'`,
       );
     }
-    const safety = this.effectiveDeliverySafety();
-    if (safety !== "disabled" && (!holder.executionNonce || !holder.process)) {
+    if (!holder.executionNonce || !holder.process) {
       throw new Error("DELIVERY_PROCESS_IDENTITY_MISSING: sequential canonical holder lacks nonce or process identity");
+    }
+    const projectionWorktree = fs.realpathSync(opened.projection.worktreePath);
+    const expectedWorktree = fs.realpathSync(input.worktree.path);
+    if (
+      delivery.contract.baseSha !== input.baseSha
+      || opened.projection.deliveryId !== delivery.id
+      || opened.projection.branchRef !== input.worktree.branch
+      || opened.projection.currentHeadSha !== input.baseSha
+      || projectionWorktree !== expectedWorktree
+    ) {
+      throw new Error(`DELIVERY_WORKTREE_MISMATCH: canonical spawn receipt for '${delivery.id}' is inconsistent`);
     }
     this.canonicalLedger.stageCanonicalBinding(input.name, {
       deliveryId: delivery.id,
       segmentId: holder.segmentId,
       executionNonce: holder.executionNonce,
     });
-  }
-
-  /** Single live source for creation, lease, Bridge diagnostics, and reload. */
-  private effectiveDeliverySafety(): "disabled" | "mechanism-only" | "process-fenced" {
-    return this.config?.settings.delivery?.mode === "canonical"
-      ? this.config.settings.delivery?.handoffSafety ?? "disabled"
-      : "disabled";
+    return {
+      deliveryId: delivery.id,
+      projectionId: opened.projection.id,
+      segmentId: holder.segmentId,
+      worktree: projectionWorktree,
+      branch: opened.projection.branchRef,
+      head: input.baseSha,
+    };
   }
 
   private async prepareDeliveryJoin(name: string, request: DeliveryJoinRequest): Promise<PreparedDeliveryJoin> {
-    if (this.config?.settings.delivery?.mode !== "canonical") throw new Error("DELIVERY_LEASE_UNAVAILABLE: canonical Delivery mode is disabled");
+    this.legacyDeliveryRetirement.assertRetired();
     const delivery = await this.deliveries.get(request.deliveryId);
     if (!delivery) throw new Error(`DELIVERY_NOT_FOUND: ${request.deliveryId}`);
     const projection = await this.exactCanonicalProjection(delivery);

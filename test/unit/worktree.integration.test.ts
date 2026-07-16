@@ -327,7 +327,7 @@ describe("WorktreeManager — git side (real git, tmp repo)", () => {
     expect(git(["rev-parse", "--abbrev-ref", "HEAD"], r!.cwd).trim()).toBe("tachyon/rev"); // on its branch
     expect(fs.readFileSync(path.join(r!.cwd, "setup-marker.txt"), "utf8").trim()).toBe("hi"); // setup ran
     expect(fs.readFileSync(path.join(r!.cwd, "env-marker.txt"), "utf8").trim()).toBe(r!.cwd); // TACHYON_WORKTREE_ROOT injected
-    await complete(m, r!.worktree!); // AgentManager does this only after its durable ledger/delegation record.
+    await complete(m, r!.worktree!); // AgentManager does this only after its durable ledger/canonical Delivery.
     const st = await m.status(r!.cwd, r!.worktree!.baseRef);
     expect(st.untracked).toBeGreaterThan(0); // setup files are untracked → cleanup would warn
     const rm = await m.remove(r!.worktree!, true);

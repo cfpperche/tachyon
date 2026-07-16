@@ -9,9 +9,10 @@ import type { GitDelivery } from "../git-delivery/types.js";
 import { DeliveryLeaseError } from "./leaseService.js";
 import { DeliveryStore, DeliveryStoreBusyError, DeliveryVersionConflictError } from "./store.js";
 import type { Delivery, DeliveryActor, DeliveryLease, DeliveryVerificationIntent } from "./types.js";
-import { resolveOperationalSegment } from "./verifyAdapter.js";
+import { resolveOperationalSegment } from "./verificationSubject.js";
 
 const execFileP = promisify(execFile);
+const DISABLED_GIT_HOOKS_PATH = process.platform === "win32" ? "NUL" : "/dev/null";
 
 export interface DeliveryVerificationEvidence {
   refSha: string;
@@ -52,6 +53,7 @@ export class DeliveryVerificationLeaseService {
     caller: { kind: CallerSnapshot["kind"]; name?: string },
     execute: (context: DeliveryVerificationContext) => Promise<PreparedDeliveryVerification<T>>,
   ): Promise<T> {
+    this.deps.store.assertVerificationAuthorityReady();
     const initial = await this.requireDelivery(deliveryId);
     const projection = await this.requireProjection(initial);
     const lockPath = this.realpath(projection.worktreePath);
@@ -370,7 +372,11 @@ export class DeliveryVerificationLeaseService {
   private async revParse(cwd: string, ref: string): Promise<string> { return (await this.git(cwd, ["rev-parse", ref])).trim(); }
   private async git(cwd: string, args: string[], ok = [0]): Promise<string> {
     try {
-      const { stdout } = await execFileP("git", args, { cwd, encoding: "utf8", maxBuffer: 32 * 1024 * 1024 });
+      const { stdout } = await execFileP("git", ["-c", `core.hooksPath=${DISABLED_GIT_HOOKS_PATH}`, ...args], {
+        cwd,
+        encoding: "utf8",
+        maxBuffer: 32 * 1024 * 1024,
+      });
       return stdout;
     } catch (error) {
       const e = error as Error & { code?: number; stderr?: string; stdout?: string };

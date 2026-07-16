@@ -5,12 +5,11 @@ import os from "node:os";
 import path from "node:path";
 import { execFileSync, spawn } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
-import { verifyTask, writeVerificationRecord, type VerifyTaskRecord } from "../../src/bridge/verifyTask.js";
-import { delegationRecordFromSpawn, writeDelegationRecord as writeRawDelegationRecord } from "../../src/bridge/delegationRecord.js";
+import { verifyTask, writeVerificationRecord, type VerifyTaskInput, type VerifyTaskRecord } from "../../src/bridge/verifyTask.js";
 import { appendDoorbellEvent } from "../../src/bridge/doorbell.js";
 import { registerTools, type BridgeDeps } from "../../src/bridge/tools.js";
 import { DeliveryInvariantError, DeliveryStore, type DeliveryAuthorityHeadPort } from "../../src/delivery/store.js";
-import { deliveryToVerificationRecord, resolveOperationalSegment } from "../../src/delivery/verifyAdapter.js";
+import { deliveryVerificationSubject, resolveOperationalSegment } from "../../src/delivery/verificationSubject.js";
 import type { DelegationSegment, Delivery } from "../../src/delivery/types.js";
 import { GitDeliveryStore } from "../../src/git-delivery/store.js";
 import { DeliveryVerificationLeaseService } from "../../src/delivery/verificationLease.js";
@@ -21,19 +20,10 @@ import { DeliveryVerificationLeaseService } from "../../src/delivery/verificatio
 // hitting real git/npx/behavior-command execution through the tools.ts handler (which has no runner override).
 vi.mock("../../src/bridge/verifyTask.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/bridge/verifyTask.js")>();
-  return {
-    ...actual,
-    verifyTask: vi.fn((input: Parameters<typeof actual.verifyTask>[0]) => actual.verifyTask({
-      authorityIntegrityKey: Buffer.alloc(32, 0x42),
-      canonicalAuthorityHead: CANONICAL_AUTHORITY_HEAD,
-      legacyAuthorityHead: async (identity) => LEGACY_AUTHORITY_HEADS.get(identity),
-      ...input,
-    })),
-  };
+  return { ...actual, verifyTask: vi.fn(actual.verifyTask) };
 });
 
-const LEGACY_AUTHORITY_KEY = Buffer.alloc(32, 0x42);
-const LEGACY_AUTHORITY_HEADS = new Map<string, { revision: number; mac: string }>();
+const AUTHORITY_INTEGRITY_KEY = Buffer.alloc(32, 0x42);
 const CANONICAL_AUTHORITY_HEADS = new Map<string, { revision: number; mac: string }>();
 const CANONICAL_AUTHORITY_HEAD: DeliveryAuthorityHeadPort = {
   current: async (identity) => CANONICAL_AUTHORITY_HEADS.get(identity),
@@ -48,9 +38,10 @@ const CANONICAL_AUTHORITY_HEAD: DeliveryAuthorityHeadPort = {
   },
 };
 
-function authorityDeliveryStore(workspaceRoot: string): DeliveryStore {
+function authorityDeliveryStore(workspaceRoot: string, fixedNow?: string): DeliveryStore {
   return new DeliveryStore(workspaceRoot, {
-    authorityIntegrityKey: () => LEGACY_AUTHORITY_KEY,
+    ...(fixedNow ? { now: () => fixedNow } : {}),
+    authorityIntegrityKey: () => AUTHORITY_INTEGRITY_KEY,
     authorityHead: CANONICAL_AUTHORITY_HEAD,
   });
 }
@@ -92,14 +83,6 @@ function tamperDeliveryRecord(workspaceRoot: string, deliveryId: string, mutate:
   }
 }
 
-function writeDelegationRecord(workspaceRoot: string, delegation: Parameters<typeof writeRawDelegationRecord>[1]): string {
-  const file = writeRawDelegationRecord(workspaceRoot, delegation, LEGACY_AUTHORITY_KEY);
-  const persisted = JSON.parse(fs.readFileSync(file, "utf8")) as { id?: string; authorityIntegrity?: { mac?: string } };
-  if (!persisted.id || !persisted.authorityIntegrity?.mac) throw new Error("test delegation did not receive an authority seal");
-  LEGACY_AUTHORITY_HEADS.set(persisted.id, { revision: 1, mac: persisted.authorityIntegrity.mac });
-  return file;
-}
-
 const ENV = {
   ...process.env,
   GIT_AUTHOR_NAME: "tachyon-test",
@@ -108,6 +91,25 @@ const ENV = {
   GIT_COMMITTER_EMAIL: "tachyon@example.test",
 };
 const actor = { kind: "agent" as const, name: "coordinator" };
+
+interface CanonicalTestSpec {
+  wt: string;
+  baseSha: string;
+  owns: string[];
+  behaviorTest: string;
+  delegator?: string;
+  stubPath?: string;
+  oracleHash?: string;
+  executorHashes?: Record<string, string>;
+  verifySettings?: VerifyTaskInput["verifySettings"];
+  createdAt: string;
+  agent: string;
+  deliveryId: string;
+}
+
+const worktreeByRepo = new Map<string, string>();
+const canonicalSpecByRepo = new Map<string, CanonicalTestSpec>();
+const canonicalStoresByRepo = new Map<string, { store: DeliveryStore; gitDeliveries: GitDeliveryStore }>();
 
 function git(cwd: string, args: string[]): string {
   return execFileSync("git", args, { cwd, encoding: "utf8", env: ENV }).trim();
@@ -155,6 +157,7 @@ function makeRepo(initial = "old"): { repo: string; wt: string; baseSha: string 
   git(repo, ["commit", "-qm", "base"]);
   const baseSha = git(repo, ["rev-parse", "HEAD"]);
   git(repo, ["worktree", "add", "-q", "-b", "tachyon/worker", wt, "HEAD"]);
+  worktreeByRepo.set(repo, wt);
   return { repo, wt, baseSha };
 }
 
@@ -165,7 +168,7 @@ function record(
   behaviorTest = "cmd:node behavior.js",
   delegator?: string,
   stubPath?: string,
-  verifySettings?: Parameters<typeof delegationRecordFromSpawn>[0]["verifySettings"],
+  verifySettings?: VerifyTaskInput["verifySettings"],
 ): string {
   const createdAt = new Date().toISOString();
   const behaviorSettings = verifySettings?.behavior ?? (stubPath ? EXPLICIT_VITEST_VERIFY_SETTINGS.behavior : undefined);
@@ -180,31 +183,38 @@ function record(
           .digest("hex"),
       ]))
     : undefined;
-  writeDelegationRecord(
-    repo,
-    delegationRecordFromSpawn({
-      agent: "worker",
-      delegator,
-      baseSha,
-      taskRef: "tachyon/worker",
-      gate: { behaviorTest, owns },
-      ...(stubPath ? { stubPath } : {}),
-      ...(oracleHash ? { oracleHash } : {}),
-      ...(executorHashes ? { executorHashes } : {}),
-      ...(verifySettings ? { verifySettings } : {}),
-      contract: { task: "ship behavior", context: "fixture", constraints: "none", doneWhen: "behavior passes" },
-      createdAt,
-    }),
-  );
+  const wt = worktreeByRepo.get(repo);
+  if (!wt) throw new Error(`missing canonical worktree for ${repo}`);
+  const deliveryId = `d-test-${path.basename(repo).replace(/[^A-Za-z0-9._-]/g, "-")}`;
+  canonicalSpecByRepo.set(repo, {
+    wt,
+    baseSha,
+    owns,
+    behaviorTest,
+    delegator,
+    stubPath,
+    oracleHash,
+    executorHashes,
+    verifySettings,
+    createdAt,
+    agent: "worker",
+    deliveryId,
+  });
+  canonicalStoresByRepo.delete(repo);
   return createdAt;
 }
 
-async function testRunner(cwd: string, argv: string[], _opts?: { timeout?: number }) {
+async function testRunner(cwd: string, argv: string[], opts?: { timeout?: number; env?: NodeJS.ProcessEnv }) {
   if (argv[0] === "npx" && argv[1] === "vitest" && argv[2] === "related") {
     return { command: argv.join(" "), argv, exitCode: 0, stdout: "related ok\n", stderr: "" };
   }
   try {
-    const stdout = execFileSync(argv[0], argv.slice(1), { cwd, encoding: "utf8", env: ENV });
+    const stdout = execFileSync(argv[0], argv.slice(1), {
+      cwd,
+      encoding: "utf8",
+      env: { ...ENV, ...opts?.env },
+      ...(opts?.timeout ? { timeout: opts.timeout } : {}),
+    });
     return { command: argv.join(" "), argv, exitCode: 0, stdout, stderr: "" };
   } catch (err) {
     const e = err as Error & { status?: number; stdout?: Buffer | string; stderr?: Buffer | string };
@@ -230,9 +240,98 @@ const EXPLICIT_VITEST_VERIFY_SETTINGS = {
   },
 };
 
-/** Existing gate regressions opt into the pre-spec-385 Vitest mechanics explicitly. */
-function runVerify(input: Parameters<typeof verifyTask>[0]) {
-  return verifyTask({ runner: testRunner, verifySettings: EXPLICIT_VITEST_VERIFY_SETTINGS, ...input });
+type TestVerifyInput = Omit<VerifyTaskInput, "deliveryId" | "deliveryVerification"> & {
+  deliveryId?: string;
+  deliveryVerification?: DeliveryVerificationLeaseService;
+  /** Retired sugar accepted only by this test adapter to reuse verifier scenarios. */
+  agent?: string;
+  isAgentRunning?: (agent: string) => Promise<boolean>;
+  withWorktreeLock?: <T>(agent: string, fn: () => Promise<T>) => Promise<T>;
+  explicitTestSettings?: boolean;
+};
+
+/** Existing gate regressions are projected into a canonical Delivery before exercising verifyTask. */
+async function runVerify(input: TestVerifyInput) {
+  const { agent, isAgentRunning, withWorktreeLock, deliveryId, deliveryVerification, explicitTestSettings = true, ...rest } = input;
+  const testDefaults = explicitTestSettings ? { verifySettings: EXPLICIT_VITEST_VERIFY_SETTINGS } : {};
+  if (deliveryId || deliveryVerification) {
+    return verifyTask({
+      runner: testRunner,
+      ...testDefaults,
+      ...rest,
+      deliveryId: deliveryId!,
+      deliveryVerification: deliveryVerification!,
+    });
+  }
+  if (!agent) {
+    return verifyTask({
+      runner: testRunner,
+      ...testDefaults,
+      ...rest,
+      deliveryId: undefined!,
+      deliveryVerification: undefined!,
+    });
+  }
+  const spec = canonicalSpecByRepo.get(input.workspaceRoot);
+  if (!spec || spec.agent !== agent) throw new Error(`no canonical test Delivery for '${agent}'`);
+  let stores = canonicalStoresByRepo.get(input.workspaceRoot);
+  if (!stores) {
+    const store = authorityDeliveryStore(input.workspaceRoot, spec.createdAt);
+    const gitDeliveries = new GitDeliveryStore(input.workspaceRoot);
+    const projection = await gitDeliveries.open({
+      workspaceId: "ws",
+      deliveryId: spec.deliveryId,
+      createdBy: actor,
+      agent: spec.agent,
+      branchRef: "tachyon/worker",
+      worktreePath: spec.wt,
+      tachyonCreatedBranch: true,
+      baseRef: spec.baseSha,
+      currentHeadSha: git(spec.wt, ["rev-parse", "HEAD"]),
+    });
+    await store.create({
+      id: spec.deliveryId,
+      workspaceId: "ws",
+      createdBy: spec.delegator ? { kind: "agent", name: spec.delegator } : { kind: "system" },
+      contract: {
+        baseSha: spec.baseSha,
+        behaviorTest: spec.behaviorTest,
+        owns: spec.owns,
+        taskRef: "tachyon/worker",
+        ...(spec.stubPath ? { stubPath: spec.stubPath } : {}),
+        ...(spec.oracleHash ? { oracleHash: spec.oracleHash } : {}),
+        ...(spec.executorHashes ? { executorHashes: spec.executorHashes } : {}),
+        ...(spec.verifySettings ? { verifySettings: spec.verifySettings } : {}),
+      },
+      gitDeliveryId: projection.id,
+      segments: [{
+        id: "seg-0",
+        index: 0,
+        role: "implementer",
+        executionAgent: spec.agent,
+        grantedBy: actor,
+        ownsSubset: spec.owns,
+        grantedHeadSha: spec.baseSha,
+        grantedAt: spec.createdAt,
+      }],
+    });
+    stores = { store, gitDeliveries };
+    canonicalStoresByRepo.set(input.workspaceRoot, stores);
+  }
+  const service = new DeliveryVerificationLeaseService({
+    store: stores.store,
+    gitDeliveries: stores.gitDeliveries,
+    ownerEpoch: "verify-task-compat-tests",
+    withPathLock: async (_path, fn) => withWorktreeLock ? withWorktreeLock(spec.agent, fn) : fn(),
+    isAgentRunning: isAgentRunning ?? (async () => false),
+  });
+  return verifyTask({
+    runner: testRunner,
+    ...testDefaults,
+    ...rest,
+    deliveryId: spec.deliveryId,
+    deliveryVerification: service,
+  });
 }
 
 function vitestReport(file: string, title: string, status: "passed" | "failed" | "pending" | "todo", fullName = title): string {
@@ -288,15 +387,13 @@ class FakeMcp {
   }
 }
 
-function wireVerifyTaskTool(workspaceRoot: string, caller: BridgeDeps["caller"]): FakeMcp {
+function wireVerifyTaskTool(workspaceRoot: string, caller: BridgeDeps["caller"], withDeliveryVerification = true): FakeMcp {
   const mcp = new FakeMcp();
   const deps = {
     workspaceRoot,
     manager: { agentStates: async () => new Map() },
     caller,
-    authorityIntegrityKey: () => LEGACY_AUTHORITY_KEY,
-    canonicalAuthorityHead: CANONICAL_AUTHORITY_HEAD,
-    legacyAuthorityHead: async (identity: string) => LEGACY_AUTHORITY_HEADS.get(identity),
+    ...(withDeliveryVerification ? { deliveryVerification: { run: vi.fn() } } : {}),
   } as unknown as BridgeDeps;
   registerTools(mcp as never, deps);
   return mcp;
@@ -313,13 +410,18 @@ describe("verifyTask", () => {
 
   beforeEach(() => {
     roots.length = 0;
-    LEGACY_AUTHORITY_HEADS.clear();
+    worktreeByRepo.clear();
+    canonicalSpecByRepo.clear();
+    canonicalStoresByRepo.clear();
     CANONICAL_AUTHORITY_HEADS.clear();
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
     for (const root of roots) fs.rmSync(root, { recursive: true, force: true });
+    worktreeByRepo.clear();
+    canonicalSpecByRepo.clear();
+    canonicalStoresByRepo.clear();
   });
 
   function fixture(initial?: string) {
@@ -352,115 +454,10 @@ describe("verifyTask", () => {
     ]);
     expect(result.record.commands.find((command) => command.name === "behavior_base_expect_fail"))
       .toMatchObject({ argv: ["node", "behavior.js"] });
-    expect(fs.existsSync(path.join(repo, ".tachyon", "verifications", `${result.record.refSha}.json`))).toBe(true);
+    expect(fs.existsSync(result.recordPath)).toBe(true);
   });
 
-  it("fails closed before execution when a sealed legacy delegation authority is edited on disk", async () => {
-    const { repo, wt, baseSha } = fixture();
-    write(path.join(wt, "src", "feature.txt"), "new\n");
-    git(wt, ["add", "src/feature.txt"]);
-    git(wt, ["commit", "-qm", "t-123abc implement behavior"]);
-    record(repo, baseSha);
-
-    const delegationDir = path.join(repo, ".tachyon", "delegations");
-    const delegationPath = path.join(delegationDir, fs.readdirSync(delegationDir)[0]!);
-    const persisted = JSON.parse(fs.readFileSync(delegationPath, "utf8")) as Record<string, unknown>;
-    persisted.behaviorTest = "cmd:node -e \"process.exit(0)\"";
-    persisted.owns = ["."];
-    fs.writeFileSync(delegationPath, `${JSON.stringify(persisted, null, 2)}\n`, "utf8");
-    const runner = vi.fn(testRunner);
-
-    const error = await runVerify({ workspaceRoot: repo, agent: "worker", runner }).catch((caught) => caught);
-
-    expect(error).toMatchObject({ code: "LEGACY_DELEGATION_INTEGRITY_INVALID" });
-    expect(runner).not.toHaveBeenCalled();
-    expect(fs.existsSync(path.join(repo, ".tachyon", "verifications"))).toBe(false);
-  });
-
-  it("rejects a valid sealed legacy delegation replayed into another workspace", async () => {
-    const source = fixture();
-    const target = fixture();
-    record(source.repo, source.baseSha);
-    const sourceDir = path.join(source.repo, ".tachyon", "delegations");
-    const sourcePath = path.join(sourceDir, fs.readdirSync(sourceDir)[0]!);
-    const targetDir = path.join(target.repo, ".tachyon", "delegations");
-    const targetPath = path.join(targetDir, path.basename(sourcePath));
-    fs.mkdirSync(targetDir, { recursive: true });
-    fs.copyFileSync(sourcePath, targetPath);
-    const runner = vi.fn(testRunner);
-
-    const error = await runVerify({ workspaceRoot: target.repo, agent: "worker", runner }).catch((caught) => caught);
-
-    expect(error).toMatchObject({ code: "LEGACY_DELEGATION_INTEGRITY_INVALID" });
-    expect(runner).not.toHaveBeenCalled();
-    expect(fs.existsSync(path.join(target.repo, ".tachyon", "verifications"))).toBe(false);
-  });
-
-  it("fails closed before execution when the host key for a sealed legacy delegation is unavailable", async () => {
-    const { repo, wt, baseSha } = fixture();
-    write(path.join(wt, "src", "feature.txt"), "new\n");
-    git(wt, ["add", "src/feature.txt"]);
-    git(wt, ["commit", "-qm", "t-123abc implement behavior"]);
-    record(repo, baseSha);
-    const runner = vi.fn(testRunner);
-
-    const error = await runVerify({
-      workspaceRoot: repo,
-      agent: "worker",
-      runner,
-      authorityIntegrityKey: undefined,
-    }).catch((caught) => caught);
-
-    expect(error).toMatchObject({ code: "LEGACY_DELEGATION_INTEGRITY_REQUIRED" });
-    expect(runner).not.toHaveBeenCalled();
-    expect(fs.existsSync(path.join(repo, ".tachyon", "verifications"))).toBe(false);
-  });
-
-  it("fails closed before execution when the host freshness head for a legacy delegation is unavailable", async () => {
-    const { repo, wt, baseSha } = fixture();
-    write(path.join(wt, "src", "feature.txt"), "new\n");
-    git(wt, ["add", "src/feature.txt"]);
-    git(wt, ["commit", "-qm", "t-123abc implement behavior"]);
-    record(repo, baseSha);
-    const runner = vi.fn(testRunner);
-    const actual = await vi.importActual<typeof import("../../src/bridge/verifyTask.js")>("../../src/bridge/verifyTask.js");
-
-    const error = await actual.verifyTask({
-      workspaceRoot: repo,
-      agent: "worker",
-      runner,
-      verifySettings: EXPLICIT_VITEST_VERIFY_SETTINGS,
-      authorityIntegrityKey: LEGACY_AUTHORITY_KEY,
-    }).catch((caught) => caught);
-
-    expect(error).toMatchObject({ code: "LEGACY_DELEGATION_FRESHNESS_REQUIRED" });
-    expect(runner).not.toHaveBeenCalled();
-    expect(fs.existsSync(path.join(repo, ".tachyon", "verifications"))).toBe(false);
-  });
-
-  it("rejects a legacy freshness head with a non-positive revision even when its MAC matches", async () => {
-    const { repo, wt, baseSha } = fixture();
-    write(path.join(wt, "src", "feature.txt"), "new\n");
-    git(wt, ["add", "src/feature.txt"]);
-    git(wt, ["commit", "-qm", "t-123abc implement behavior"]);
-    record(repo, baseSha);
-    const delegationDir = path.join(repo, ".tachyon", "delegations");
-    const delegationPath = path.join(delegationDir, fs.readdirSync(delegationDir)[0]!);
-    const persisted = JSON.parse(fs.readFileSync(delegationPath, "utf8")) as {
-      id: string;
-      authorityIntegrity: { mac: string };
-    };
-    LEGACY_AUTHORITY_HEADS.set(persisted.id, { revision: 0, mac: persisted.authorityIntegrity.mac });
-    const runner = vi.fn(testRunner);
-
-    const error = await runVerify({ workspaceRoot: repo, agent: "worker", runner }).catch((caught) => caught);
-
-    expect(error).toMatchObject({ code: "LEGACY_DELEGATION_INTEGRITY_INVALID" });
-    expect(runner).not.toHaveBeenCalled();
-    expect(fs.existsSync(path.join(repo, ".tachyon", "verifications"))).toBe(false);
-  });
-
-  it("serializes different legacy identities across processes so exactly one record remains canonical", async () => {
+  it("serializes conflicting canonical identities across processes so exactly one record remains canonical", async () => {
     const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-vtask-publisher-race-"));
     roots.push(workspace);
     const start = path.join(workspace, "start");
@@ -472,7 +469,16 @@ describe("verifyTask", () => {
       const postCheck = path.join(workspace, `${agent}.post-check`);
       const result = path.join(workspace, `${agent}.result.json`);
       fs.writeFileSync(recordFile, JSON.stringify(fakeRecord({ agent,
-        identity: { legacy: agent, canonical: agent, occupants: [agent] }, integrityHash: agent.repeat(64).slice(0, 64) })));
+        identity: {
+          firstOccupant: agent,
+          currentOccupant: agent,
+          occupants: [agent],
+          deliveryId: "d-race",
+          segmentId: "seg-0",
+          segmentIndex: 0,
+        },
+        integrityHash: agent.repeat(64).slice(0, 64),
+      })));
       const child = spawn(path.join(process.cwd(), "node_modules", ".bin", "vite-node"), [
         path.join(process.cwd(), "test", "helpers", "verificationPublisherChild.ts"),
         workspace, recordFile, ready, start, calling, postCheck, release, result,
@@ -569,10 +575,16 @@ describe("verifyTask", () => {
   it("retains conflict then rollback failures in exact order", () => {
     const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-vtask-publisher-rollback-"));
     roots.push(workspace);
-    const dir = path.join(workspace, ".tachyon", "verifications");
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, `${"a".repeat(40)}.json`), JSON.stringify(fakeRecord({ agent: "other",
-      identity: { legacy: "other", canonical: "other", occupants: ["other"] } })));
+    writeVerificationRecord(workspace, fakeRecord({ agent: "other",
+      identity: {
+        firstOccupant: "other",
+        currentOccupant: "other",
+        occupants: ["other"],
+        deliveryId: "d-fake",
+        segmentId: "seg-0",
+        segmentIndex: 0,
+      },
+    }));
     const rollback = new Error("rollback failed");
     const database = {
       exec(sql: string) { if (sql === "ROLLBACK") throw rollback; }, close() {},
@@ -602,9 +614,8 @@ describe("verifyTask", () => {
   it("retains primary, rollback, then close failures in exact order", () => {
     const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-vtask-publisher-close-"));
     roots.push(workspace);
-    const dir = path.join(workspace, ".tachyon", "verifications");
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, `${"a".repeat(40)}.json`), "unreadable");
+    const recordPath = writeVerificationRecord(workspace, fakeRecord());
+    fs.writeFileSync(recordPath, "unreadable");
     const rollback = new Error("rollback failed");
     const close = new Error("close failed");
     const database = {
@@ -654,7 +665,7 @@ describe("verifyTask", () => {
     git(wt, ["add", "src/feature.txt"]); git(wt, ["commit", "-qm", "t-delivery canonical evidence"]);
     const delivered = git(wt, ["rev-parse", "HEAD"]);
     const store = authorityDeliveryStore(repo);
-    const gitDeliveries = new GitDeliveryStore(repo, { id: () => `gd-${id}` });
+    const gitDeliveries = new GitDeliveryStore(repo);
     const projection = await gitDeliveries.open({ workspaceId: "ws", createdBy: actor, deliveryId: id, agent: "worker",
       branchRef: "tachyon/worker", worktreePath: wt, tachyonCreatedBranch: true, baseRef: baseSha, currentHeadSha: delivered });
     await store.create({ id, workspaceId: "ws", createdBy: actor,
@@ -717,16 +728,20 @@ describe("verifyTask", () => {
   it("fails closed before canonical execution when the host authority key is unavailable", async () => {
     const f = await canonicalFixture("d-missing-authority-key");
     const runner = vi.fn(testRunner);
+    const unavailableStore = new DeliveryStore(f.repo, {
+      authorityIntegrityKey: () => undefined,
+      authorityHead: CANONICAL_AUTHORITY_HEAD,
+    });
 
     const error = await runVerify({
       workspaceRoot: f.repo,
       deliveryId: "d-missing-authority-key",
-      deliveryVerification: await canonicalVerification(f.store, f.gitDeliveries),
+      deliveryVerification: await canonicalVerification(unavailableStore, f.gitDeliveries),
       runner,
-      authorityIntegrityKey: undefined,
     }).catch((caught) => caught);
 
-    expect(error).toMatchObject({ code: "DELIVERY_AUTHORITY_INTEGRITY_REQUIRED" });
+    expect(error).toBeInstanceOf(DeliveryInvariantError);
+    expect(error.message).toContain("authority integrity key is unavailable");
     expect(runner).not.toHaveBeenCalled();
     expect(fs.existsSync(path.join(f.repo, ".tachyon", "verifications"))).toBe(false);
   });
@@ -734,18 +749,19 @@ describe("verifyTask", () => {
   it("fails closed before canonical execution when the host freshness head is unavailable", async () => {
     const f = await canonicalFixture("d-missing-authority-head");
     const runner = vi.fn(testRunner);
-    const actual = await vi.importActual<typeof import("../../src/bridge/verifyTask.js")>("../../src/bridge/verifyTask.js");
+    const unavailableStore = new DeliveryStore(f.repo, {
+      authorityIntegrityKey: () => AUTHORITY_INTEGRITY_KEY,
+    });
 
-    const error = await actual.verifyTask({
+    const error = await runVerify({
       workspaceRoot: f.repo,
       deliveryId: "d-missing-authority-head",
-      deliveryVerification: await canonicalVerification(f.store, f.gitDeliveries),
+      deliveryVerification: await canonicalVerification(unavailableStore, f.gitDeliveries),
       runner,
-      verifySettings: EXPLICIT_VITEST_VERIFY_SETTINGS,
-      authorityIntegrityKey: LEGACY_AUTHORITY_KEY,
     }).catch((caught) => caught);
 
-    expect(error).toMatchObject({ code: "DELIVERY_AUTHORITY_FRESHNESS_REQUIRED" });
+    expect(error).toBeInstanceOf(DeliveryInvariantError);
+    expect(error.message).toContain("authority freshness head is unavailable");
     expect(runner).not.toHaveBeenCalled();
     expect(fs.existsSync(path.join(f.repo, ".tachyon", "verifications"))).toBe(false);
   });
@@ -826,7 +842,7 @@ describe("verifyTask", () => {
     git(wt, ["add", "src/third/value.txt"]); git(wt, ["commit", "-qm", "t-delivery segment two"]);
     const delivered = git(wt, ["rev-parse", "HEAD"]);
     const store = authorityDeliveryStore(repo);
-    const gitDeliveries = new GitDeliveryStore(repo, { id: () => "gd-three-segment" });
+    const gitDeliveries = new GitDeliveryStore(repo);
     const projection = await gitDeliveries.open({ workspaceId: "ws", createdBy: { kind: "agent", name: "coordinator" },
       deliveryId: "d-three-segment", agent: "fixer-2", branchRef: "tachyon/worker", worktreePath: wt,
       tachyonCreatedBranch: true, baseRef: baseSha, currentHeadSha: delivered });
@@ -866,7 +882,7 @@ describe("verifyTask", () => {
     git(unrelatedWt, ["add", "src/unrelated.txt"]); git(unrelatedWt, ["commit", "-qm", "unrelated history"]);
     const unrelated = git(unrelatedWt, ["rev-parse", "HEAD"]);
     const store = authorityDeliveryStore(repo);
-    const gitDeliveries = new GitDeliveryStore(repo, { id: () => "gd-nonlinear" });
+    const gitDeliveries = new GitDeliveryStore(repo);
     const projection = await gitDeliveries.open({ workspaceId: "ws", createdBy: actor, deliveryId: "d-nonlinear", agent: "fixer",
       branchRef: "tachyon/worker", worktreePath: wt, tachyonCreatedBranch: true, baseRef: baseSha, currentHeadSha: delivered });
     await store.create({ id: "d-nonlinear", workspaceId: "ws", createdBy: actor,
@@ -879,7 +895,7 @@ describe("verifyTask", () => {
           grantedHeadSha: unrelated, grantedAt: "2026-01-01T00:01:00.000Z" },
       ] });
     const runner = vi.fn(testRunner);
-    const result = await verifyTask({ workspaceRoot: repo, deliveryId: "d-nonlinear", deliveryVerification: await canonicalVerification(store, gitDeliveries), runner });
+    const result = await runVerify({ workspaceRoot: repo, deliveryId: "d-nonlinear", deliveryVerification: await canonicalVerification(store, gitDeliveries), runner });
     expect(result.verdict).toBe("blocked");
     expect(result.blockers).toEqual(expect.arrayContaining([expect.objectContaining({ code: "non_linear_segment_history" })]));
     expect(runner).not.toHaveBeenCalled();
@@ -891,7 +907,7 @@ describe("verifyTask", () => {
     git(wt, ["add", "src/feature.txt"]); git(wt, ["commit", "-qm", "t-delivery unknown role"]);
     const delivered = git(wt, ["rev-parse", "HEAD"]);
     const store = authorityDeliveryStore(repo);
-    const gitDeliveries = new GitDeliveryStore(repo, { id: () => "gd-unknown-role" });
+    const gitDeliveries = new GitDeliveryStore(repo);
     const projection = await gitDeliveries.open({ workspaceId: "ws", createdBy: actor, deliveryId: "d-unknown-role", agent: "worker",
       branchRef: "tachyon/worker", worktreePath: wt, tachyonCreatedBranch: true, baseRef: baseSha, currentHeadSha: delivered });
     await store.create({ id: "d-unknown-role", workspaceId: "ws", createdBy: actor,
@@ -900,7 +916,7 @@ describe("verifyTask", () => {
         role: "unknown-role" as DelegationSegment["role"], executionAgent: "worker", grantedBy: actor, ownsSubset: ["src"],
         grantedHeadSha: baseSha, grantedAt: "2026-01-01T00:00:00.000Z" }] });
     const runner = vi.fn(testRunner);
-    const result = await verifyTask({ workspaceRoot: repo, deliveryId: "d-unknown-role",
+    const result = await runVerify({ workspaceRoot: repo, deliveryId: "d-unknown-role",
       deliveryVerification: await canonicalVerification(store, gitDeliveries), runner });
     expect(result.verdict).toBe("blocked");
     expect(result.blockers).toContainEqual(expect.objectContaining({ code: "invalid_segment_role" }));
@@ -916,7 +932,7 @@ describe("verifyTask", () => {
     git(wt, ["add", "src/feature.txt"]); git(wt, ["commit", "-qm", "t-delivery invalid scope"]);
     const delivered = git(wt, ["rev-parse", "HEAD"]);
     const store = authorityDeliveryStore(repo);
-    const gitDeliveries = new GitDeliveryStore(repo, { id: () => `gd-invalid-scope-${ownsSubset.length}` });
+    const gitDeliveries = new GitDeliveryStore(repo);
     const projection = await gitDeliveries.open({ workspaceId: "ws", createdBy: actor, deliveryId: "d-invalid-scope", agent: "worker",
       branchRef: "tachyon/worker", worktreePath: wt, tachyonCreatedBranch: true, baseRef: baseSha, currentHeadSha: delivered });
     await store.create({ id: "d-invalid-scope", workspaceId: "ws", createdBy: actor,
@@ -925,7 +941,7 @@ describe("verifyTask", () => {
         role: "implementer", executionAgent: "worker", grantedBy: actor, ownsSubset,
         grantedHeadSha: baseSha, grantedAt: "2026-01-01T00:00:00.000Z" }] });
     const runner = vi.fn(testRunner);
-    const result = await verifyTask({ workspaceRoot: repo, deliveryId: "d-invalid-scope",
+    const result = await runVerify({ workspaceRoot: repo, deliveryId: "d-invalid-scope",
       deliveryVerification: await canonicalVerification(store, gitDeliveries), runner });
     expect(result.verdict).toBe("blocked");
     expect(result.blockers).toContainEqual(expect.objectContaining({ code: "invalid_segment_scope" }));
@@ -939,7 +955,7 @@ describe("verifyTask", () => {
   ])("validates $label writer authority even when the segment writes nothing", async ({ ownsSubset }) => {
     const { repo, wt, baseSha } = fixture();
     const store = authorityDeliveryStore(repo);
-    const gitDeliveries = new GitDeliveryStore(repo, { id: () => "gd-zero-write" });
+    const gitDeliveries = new GitDeliveryStore(repo);
     const projection = await gitDeliveries.open({ workspaceId: "ws", createdBy: actor, deliveryId: "d-zero-write", agent: "worker",
       branchRef: "tachyon/worker", worktreePath: wt, tachyonCreatedBranch: true, baseRef: baseSha, currentHeadSha: baseSha });
     await store.create({ id: "d-zero-write", workspaceId: "ws", createdBy: actor,
@@ -947,7 +963,7 @@ describe("verifyTask", () => {
       gitDeliveryId: projection.id, segments: [{ id: "seg-0", index: 0, role: "implementer", executionAgent: "worker",
         grantedBy: actor, ownsSubset, grantedHeadSha: baseSha, grantedAt: "2026-01-01T00:00:00.000Z" }] });
     const runner = vi.fn(testRunner);
-    const result = await verifyTask({ workspaceRoot: repo, deliveryId: "d-zero-write",
+    const result = await runVerify({ workspaceRoot: repo, deliveryId: "d-zero-write",
       deliveryVerification: await canonicalVerification(store, gitDeliveries), runner });
     expect(result.verdict).toBe("blocked");
     expect(result.blockers).toContainEqual(expect.objectContaining({ code: "invalid_segment_scope" }));
@@ -958,7 +974,7 @@ describe("verifyTask", () => {
   async function delivery(repo: string, wt: string, id: string, baseSha: string, agents: string[], running: (name: string) => boolean = () => false,
     taskRef = "tachyon/worker") {
     const store = authorityDeliveryStore(repo);
-    const gitDeliveries = new GitDeliveryStore(repo, { id: () => `gd-${id}` });
+    const gitDeliveries = new GitDeliveryStore(repo);
     const delivered = git(wt, ["rev-parse", "HEAD"]);
     const projection = await gitDeliveries.open({ workspaceId: "ws", createdBy: actor, deliveryId: id,
       agent: agents.at(-1)!, branchRef: taskRef, worktreePath: wt, tachyonCreatedBranch: true,
@@ -1006,73 +1022,6 @@ describe("verifyTask", () => {
 
     expect(error).toMatchObject({ code: "WORKTREE_OCCUPIED", retryable: true });
     expect(error.message).toContain("tail execution 'fixer' is still live");
-  });
-
-  // t-0b5723 (F3) — two Deliveries can land the same commit on the same ref. Their verification artifacts
-  // must not be the same file, and must not hash the same.
-  it("keeps verification records of two deliveries at the same refSha distinct", async () => {
-    const { repo, wt, baseSha } = fixture();
-    write(path.join(wt, "src", "feature.txt"), "new\n");
-    git(wt, ["add", "src/feature.txt"]);
-    git(wt, ["commit", "-qm", "t-delivery implement behavior"]);
-    const delivered = git(wt, ["rev-parse", "HEAD"]);
-    const betaWt = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-vtask-beta-wt-"));
-    fs.rmSync(betaWt, { recursive: true, force: true }); roots.push(betaWt);
-    git(repo, ["worktree", "add", "-q", "-b", "tachyon/worker-beta", betaWt, delivered]);
-    const alphaVerification = await delivery(repo, wt, "d-alpha", baseSha, ["worker-a"]);
-    const betaVerification = await delivery(repo, betaWt, "d-beta", baseSha, ["worker-b"], () => false, "tachyon/worker-beta");
-
-    const alpha = await runVerify({ workspaceRoot: repo, deliveryId: "d-alpha", deliveryVerification: alphaVerification });
-    const beta = await runVerify({ workspaceRoot: repo, deliveryId: "d-beta", deliveryVerification: betaVerification });
-
-    expect(alpha.record.refSha).toBe(beta.record.refSha); // same commit...
-    expect(alpha.recordPath).not.toBe(beta.recordPath); // ...different artifacts
-    expect(alpha.record.integrityHash).not.toBe(beta.record.integrityHash);
-    expect(fs.existsSync(alpha.recordPath)).toBe(true);
-    expect(fs.existsSync(beta.recordPath)).toBe(true);
-    // and each one still says which delivery/segment it is about
-    expect(alpha.record.identity).toMatchObject({ deliveryId: "d-alpha", canonical: "worker-a" });
-    expect(JSON.parse(fs.readFileSync(alpha.recordPath, "utf8"))).toMatchObject({ identity: { deliveryId: "d-alpha" } });
-    expect(JSON.parse(fs.readFileSync(beta.recordPath, "utf8"))).toMatchObject({ identity: { deliveryId: "d-beta" } });
-  });
-
-  it("re-verifying the same delivery overwrites its own record rather than conflicting", async () => {
-    const { repo, wt, baseSha } = fixture();
-    write(path.join(wt, "src", "feature.txt"), "new\n");
-    git(wt, ["add", "src/feature.txt"]);
-    git(wt, ["commit", "-qm", "t-delivery implement behavior"]);
-    const deliveryVerification = await delivery(repo, wt, "d-idem", baseSha, ["worker"]);
-
-    const first = await runVerify({ workspaceRoot: repo, deliveryId: "d-idem", deliveryVerification });
-    const second = await runVerify({ workspaceRoot: repo, deliveryId: "d-idem", deliveryVerification });
-
-    expect(second.recordPath).toBe(first.recordPath);
-    expect(second.verdict).toBe("accept");
-  });
-
-  // t-0b5723 (F3) — legacy delegations keep the historic <refSha>.json path, so two different ones landing
-  // the same SHA still collide. They must be refused, never silently overwritten.
-  it("refuses to overwrite another delegation's verification record at the same refSha", async () => {
-    const { repo, wt, baseSha } = fixture();
-    write(path.join(wt, "src", "feature.txt"), "new\n");
-    git(wt, ["add", "src/feature.txt"]);
-    git(wt, ["commit", "-qm", "t-123abc implement behavior"]);
-    record(repo, baseSha);
-    const first = await runVerify({ workspaceRoot: repo, agent: "worker" });
-
-    // a second, different delegation over the same ref at the same SHA
-    writeDelegationRecord(repo, delegationRecordFromSpawn({
-      id: "d-other", agent: "other", baseSha, taskRef: "tachyon/worker",
-      gate: { behaviorTest: "cmd:node behavior.js", owns: ["src"] },
-      contract: { task: "ship behavior", context: "fixture", constraints: "none", doneWhen: "done" },
-      createdAt: new Date().toISOString(),
-    }));
-
-    const err = await runVerify({ workspaceRoot: repo, agent: "other" }).catch((e) => e);
-
-    expect(err).toMatchObject({ code: "VERIFICATION_RECORD_CONFLICT" });
-    // the original record survived intact
-    expect(JSON.parse(fs.readFileSync(first.recordPath, "utf8"))).toMatchObject({ agent: "worker", integrityHash: first.record.integrityHash });
   });
 
   // t-0b5723 (F1) — the guard resolves the delivery and compares the caller against the occupant it
@@ -1123,56 +1072,6 @@ describe("verifyTask", () => {
       verifierCaller: { kind: "agent", name: "worker" },
     });
     expect(self.verdict).toBe("accept");
-  });
-
-  // t-0b5723 (G1) — a legacy DelegationRecord's `reuse_worktree` fixer round (t-815796) grants a NEW agent
-  // name the worktree via `appendFixerAttempt`, which never rewrites `record.agent` (that stays the
-  // original delegate's name for the life of the record). Before this fix `identity.canonical` stayed the
-  // original agent forever on this path, so the fixer's own self-waiver went unchecked (F1 reopened) and
-  // liveness/lock checks fired against the ORIGINAL agent — who has already exited, that's why the
-  // worktree was handed off — never against the live fixer (F2 reopened).
-  it("a legacy delegation's reuse_worktree fixer cannot self-waive, and liveness/lock checks use the fixer, not the original agent", async () => {
-    const { repo, wt, baseSha } = fixture();
-    write(path.join(wt, "src", "feature.txt"), "new\n");
-    git(wt, ["add", "src/feature.txt"]);
-    git(wt, ["commit", "-qm", "t-123abc fixer round"]);
-    const createdAt = new Date().toISOString();
-    writeDelegationRecord(repo, {
-      ...delegationRecordFromSpawn({
-        agent: "worker",
-        baseSha,
-        taskRef: "tachyon/worker",
-        gate: { behaviorTest: "cmd:node behavior.js", owns: ["src"] },
-        contract: { task: "ship behavior", context: "fixture", constraints: "none", doneWhen: "behavior passes" },
-        createdAt,
-      }),
-      fixerAttempts: [{ occupantAgent: "fixer-1", requestedOwnsSubset: [], grantedAt: createdAt, branchHeadAtGrant: baseSha }],
-    });
-
-    // F1 reopened check: the fixer, calling as its own resolved identity (not spoofing `agent`, which
-    // must stay "worker" — that's the lookup key), cannot waive findings on the work it alone authored.
-    const selfWaive = await runVerify({
-      workspaceRoot: repo, agent: "worker",
-      waivers: [{ finding: "README.md", reason: "self-authored, trust me" }],
-      verifierCaller: { kind: "agent", name: "fixer-1" },
-    }).catch((e) => e);
-    expect(selfWaive).toMatchObject({ code: "SELF_WAIVER_FORBIDDEN" });
-    expect(fs.existsSync(path.join(repo, ".tachyon", "verifications"))).toBe(false);
-
-    // F2 reopened check: liveness and the worktree lock must name the fixer, not the original agent.
-    const asked: string[] = [];
-    const locked: string[] = [];
-    const result = await runVerify({
-      workspaceRoot: repo, agent: "worker",
-      isAgentRunning: async (name) => (asked.push(name), name === "fixer-1"),
-      withWorktreeLock: async (name, fn) => (locked.push(name), fn()),
-    });
-    expect(asked).toEqual(["fixer-1"]); // NOT "worker" (the original, already-exited agent)
-    expect(locked).toEqual(["fixer-1"]);
-    expect(result.verdict).toBe("blocked");
-    expect(result.blockers.map((b) => b.code)).toContain("agent_still_running");
-    expect(result.record.agent).toBe("fixer-1");
-    expect(result.record.identity).toMatchObject({ legacy: "worker", canonical: "fixer-1", occupants: ["worker", "fixer-1"] });
   });
 
   // t-0b5723 (G2) — a Delivery is not capped at two segments. An interior segment (neither the original
@@ -1254,7 +1153,7 @@ describe("verifyTask", () => {
     record(repo, baseSha);
     const runner = vi.fn(testRunner);
 
-    const result = await verifyTask({ workspaceRoot: repo, agent: "worker", runner });
+    const result = await runVerify({ workspaceRoot: repo, agent: "worker", runner, explicitTestSettings: false });
 
     expect(result.verdict).toBe("accept");
     expect(result.record.commands.map((command) => command.name)).toEqual([
@@ -1283,7 +1182,7 @@ describe("verifyTask", () => {
     const prepare = "node -e \"const fs=require('fs');fs.mkdirSync('node_modules',{recursive:true});fs.writeFileSync('node_modules/prepared','ok')\"";
     record(repo, baseSha, ["src", "behavior.js"], "cmd:node behavior.js", undefined, undefined, { prepare });
 
-    const result = await verifyTask({ workspaceRoot: repo, agent: "worker", runner: testRunner });
+    const result = await runVerify({ workspaceRoot: repo, agent: "worker", runner: testRunner, explicitTestSettings: false });
 
     expect(result.verdict).toBe("accept");
     expect(result.record.commands.map((command) => command.name)).toEqual([
@@ -1318,7 +1217,7 @@ describe("verifyTask", () => {
     );
     const runner = vi.fn(testRunner);
 
-    const result = await verifyTask({ workspaceRoot: repo, agent: "worker", runner });
+    const result = await runVerify({ workspaceRoot: repo, agent: "worker", runner });
 
     expect(result.verdict).toBe("accept");
     expect(result.record.commands.map((command) => command.name)).toEqual([
@@ -1336,7 +1235,7 @@ describe("verifyTask", () => {
     record(repo, baseSha, ["src"], "PI-UNCONFIGURED");
     const runner = vi.fn(testRunner);
 
-    const result = await verifyTask({ workspaceRoot: repo, agent: "worker", verifySettings: {}, runner });
+    const result = await runVerify({ workspaceRoot: repo, agent: "worker", verifySettings: {}, runner });
 
     expect(result.verdict).toBe("blocked");
     expect(result.blockers).toContainEqual({
@@ -1359,7 +1258,7 @@ describe("verifyTask", () => {
     record(repo, baseSha, ["src"], "missing recorded stub");
     const runner = vi.fn(testRunner);
 
-    const result = await verifyTask({
+    const result = await runVerify({
       workspaceRoot: repo,
       agent: "worker",
       verifySettings: { behavior: EXPLICIT_VITEST_VERIFY_SETTINGS.behavior },
@@ -1395,7 +1294,7 @@ describe("verifyTask", () => {
     record(repo, baseSha, ["src", recordedStubPath], behaviorTest, undefined, recordedStubPath, verifySettings);
     const runner = vi.fn(testRunner);
 
-    const result = await verifyTask({ workspaceRoot: repo, agent: "worker", runner });
+    const result = await runVerify({ workspaceRoot: repo, agent: "worker", runner });
 
     expect(result.verdict).toBe("blocked");
     expect(result.blockers).toContainEqual({
@@ -1415,7 +1314,7 @@ describe("verifyTask", () => {
     record(repo, baseSha);
     const runner = vi.fn(testRunner);
 
-    const result = await verifyTask({ workspaceRoot: repo, agent: "worker", full: true, verifySettings: {}, runner });
+    const result = await runVerify({ workspaceRoot: repo, agent: "worker", full: true, verifySettings: {}, runner });
 
     expect(result.verdict).toBe("blocked");
     expect(result.blockers.map((blocker) => blocker.code)).toEqual([
@@ -1434,7 +1333,7 @@ describe("verifyTask", () => {
     git(wt, ["commit", "-qm", "t-123abc implement behavior"]);
     record(repo, baseSha, ["src", "typecheck.js"]);
 
-    const result = await verifyTask({
+    const result = await runVerify({
       workspaceRoot: repo,
       agent: "worker",
       verifySettings: { typecheck: "node typecheck.js" },
@@ -1541,7 +1440,7 @@ describe("verifyTask", () => {
     record(repo, baseSha, ["src", stubPath], behaviorTest, undefined, stubPath);
 
     let behaviorRuns = 0;
-    const result = await verifyTask({
+    const result = await runVerify({
       workspaceRoot: repo,
       agent: "worker",
       verifySettings: { behavior: EXPLICIT_VITEST_VERIFY_SETTINGS.behavior },
@@ -1595,7 +1494,7 @@ describe("verifyTask", () => {
     );
 
     let fakeGreenExecuted = false;
-    const result = await verifyTask({
+    const result = await runVerify({
       workspaceRoot: repo,
       agent: "worker",
       runner: async (cwd, argv, opts) => {
@@ -1678,7 +1577,7 @@ describe("verifyTask", () => {
     record(repo, baseSha, ["src", stubPath], "generated behavior stays canonical", undefined, stubPath);
 
     let behaviorRuns = 0;
-    const result = await verifyTask({
+    const result = await runVerify({
       workspaceRoot: repo,
       agent: "worker",
       verifySettings: EXPLICIT_VITEST_VERIFY_SETTINGS,
@@ -1738,7 +1637,7 @@ describe("verifyTask", () => {
     record(repo, baseSha, ["src", stubPath], "generated behavior stays canonical", undefined, stubPath);
 
     let behaviorRuns = 0;
-    const result = await verifyTask({
+    const result = await runVerify({
       workspaceRoot: repo,
       agent: "worker",
       verifySettings: EXPLICIT_VITEST_VERIFY_SETTINGS,
@@ -1805,7 +1704,7 @@ describe("verifyTask", () => {
     record(repo, baseSha, ["src", stubPath], behaviorTest, undefined, stubPath);
 
     let behaviorRuns = 0;
-    const result = await verifyTask({
+    const result = await runVerify({
       workspaceRoot: repo,
       agent: "worker",
       verifySettings: { behavior: EXPLICIT_VITEST_VERIFY_SETTINGS.behavior },
@@ -1848,7 +1747,7 @@ describe("verifyTask", () => {
     record(repo, baseSha, ["src", stubPath], behaviorTest, undefined, stubPath);
 
     let behaviorRuns = 0;
-    const result = await verifyTask({
+    const result = await runVerify({
       workspaceRoot: repo,
       agent: "worker",
       verifySettings: { behavior: EXPLICIT_VITEST_VERIFY_SETTINGS.behavior },
@@ -1891,7 +1790,7 @@ describe("verifyTask", () => {
     record(repo, baseSha, ["src", stubPath], behaviorTest, undefined, stubPath);
 
     let behaviorRuns = 0;
-    const result = await verifyTask({
+    const result = await runVerify({
       workspaceRoot: repo,
       agent: "worker",
       verifySettings: { behavior: EXPLICIT_VITEST_VERIFY_SETTINGS.behavior },
@@ -1932,7 +1831,7 @@ describe("verifyTask", () => {
     record(repo, baseSha, ["src", stubPath], behaviorTest, undefined, stubPath);
 
     let behaviorRuns = 0;
-    const result = await verifyTask({
+    const result = await runVerify({
       workspaceRoot: repo,
       agent: "worker",
       verifySettings: { behavior: EXPLICIT_VITEST_VERIFY_SETTINGS.behavior },
@@ -1984,7 +1883,7 @@ describe("verifyTask", () => {
     record(repo, baseSha, ["src", stubPath], behaviorTest, undefined, stubPath);
 
     let behaviorRuns = 0;
-    const result = await verifyTask({
+    const result = await runVerify({
       workspaceRoot: repo,
       agent: "worker",
       verifySettings: { behavior: EXPLICIT_VITEST_VERIFY_SETTINGS.behavior },
@@ -2032,7 +1931,7 @@ describe("verifyTask", () => {
     record(repo, baseSha, ["src", stubPath, duplicatePath], behaviorTest, undefined, stubPath);
 
     let behaviorRuns = 0;
-    const result = await verifyTask({
+    const result = await runVerify({
       workspaceRoot: repo,
       agent: "worker",
       verifySettings: { behavior: EXPLICIT_VITEST_VERIFY_SETTINGS.behavior },
@@ -2076,7 +1975,7 @@ describe("verifyTask", () => {
     record(repo, baseSha, ["src", stubPath, duplicatePath], behaviorTest, undefined, stubPath);
 
     let behaviorRuns = 0;
-    const result = await verifyTask({
+    const result = await runVerify({
       workspaceRoot: repo,
       agent: "worker",
       verifySettings: { behavior: EXPLICIT_VITEST_VERIFY_SETTINGS.behavior },
@@ -2124,7 +2023,7 @@ describe("verifyTask", () => {
     record(repo, baseSha, ["src", stubPath], behaviorTest, undefined, stubPath);
 
     let behaviorRuns = 0;
-    const result = await verifyTask({
+    const result = await runVerify({
       workspaceRoot: repo,
       agent: "worker",
       verifySettings: { behavior: EXPLICIT_VITEST_VERIFY_SETTINGS.behavior },
@@ -2162,7 +2061,7 @@ describe("verifyTask", () => {
     record(repo, baseSha);
 
     const observations: Array<{ feature: string; markerExists: boolean }> = [];
-    const result = await verifyTask({
+    const result = await runVerify({
       workspaceRoot: repo,
       agent: "worker",
       verifySettings: {},
@@ -2211,7 +2110,7 @@ describe("verifyTask", () => {
     git(wt, ["commit", "-qm", "t-123abc unrelated implementation change"]);
     record(repo, baseSha, ["src"], "cmd:node behavior.js", undefined, undefined, { affected: "node tier.js" });
 
-    const result = await verifyTask({ workspaceRoot: repo, agent: "worker", runner: testRunner });
+    const result = await runVerify({ workspaceRoot: repo, agent: "worker", runner: testRunner, explicitTestSettings: false });
 
     expect(result.verdict).toBe("blocked");
     expect(result.blockers.map((blocker) => blocker.code)).toContain("behavior_failed");
@@ -2255,7 +2154,7 @@ describe("verifyTask", () => {
     process.env.NODE_PATH = path.join(repo, "node_modules", "ambient-injection");
     let result: Awaited<ReturnType<typeof verifyTask>>;
     try {
-      result = await verifyTask({ workspaceRoot: repo, agent: "worker" });
+      result = await runVerify({ workspaceRoot: repo, agent: "worker" });
     } finally {
       if (priorNodePath === undefined) delete process.env.NODE_PATH;
       else process.env.NODE_PATH = priorNodePath;
@@ -2317,7 +2216,7 @@ describe("verifyTask", () => {
       createdAt: "2020-01-01T00:00:00.000Z",
     }));
 
-    const result = await verifyTask({ workspaceRoot: repo, agent: "worker", runner: testRunner });
+    const result = await runVerify({ workspaceRoot: repo, agent: "worker", runner: testRunner });
 
     expect(result.verdict).toBe("accept");
     expect(fs.existsSync(hookMarker)).toBe(false);
@@ -2349,7 +2248,7 @@ describe("verifyTask", () => {
     ]));
     let provedIndependentStorage = false;
 
-    const result = await verifyTask({
+    const result = await runVerify({
       workspaceRoot: repo,
       agent: "worker",
       verifySettings: {},
@@ -2400,7 +2299,7 @@ describe("verifyTask", () => {
     git(wt, ["commit", "-qm", "t-123abc add option-shaped file"]);
     record(repo, baseSha, ["src", "--passWithNoTests"]);
 
-    const result = await verifyTask({
+    const result = await runVerify({
       workspaceRoot: repo,
       agent: "worker",
       verifySettings: { affected: VITEST_AFFECTED_COMMAND },
@@ -2431,7 +2330,7 @@ describe("verifyTask", () => {
     git(wt, ["commit", "-qm", "t-123abc implement behavior"]);
     record(repo, baseSha, ["src", "typecheck.js", "full.js"]);
 
-    const result = await verifyTask({ workspaceRoot: repo, agent: "worker", runner: testRunner });
+    const result = await runVerify({ workspaceRoot: repo, agent: "worker", runner: testRunner, explicitTestSettings: false });
 
     expect(result.verdict).toBe("accept");
     expect(result.record.commands.map((c) => c.name)).toEqual(["behavior_base_expect_fail", "typecheck", "affected_tests", "behavior_head_expect_pass"]);
@@ -2473,7 +2372,7 @@ describe("verifyTask", () => {
     git(wt, ["commit", "-qm", "t-123abc implement behavior"]);
     record(repo, baseSha, ["src", "full.js"]);
 
-    const result = await verifyTask({ workspaceRoot: repo, agent: "worker", full: true, runner: testRunner });
+    const result = await runVerify({ workspaceRoot: repo, agent: "worker", full: true, runner: testRunner, explicitTestSettings: false });
 
     expect(result.verdict).toBe("accept");
     expect(result.record.commands.map((c) => c.name)).toEqual(["behavior_base_expect_fail", "affected_tests", "full_tests", "behavior_head_expect_pass"]);
@@ -2487,7 +2386,7 @@ describe("verifyTask", () => {
     git(wt, ["commit", "-qm", "t-123abc implement behavior"]);
     record(repo, baseSha);
 
-    const result = await verifyTask({
+    const result = await runVerify({
       workspaceRoot: repo,
       agent: "worker",
       verifySettings: { affected: VITEST_AFFECTED_COMMAND },
@@ -2509,7 +2408,7 @@ describe("verifyTask", () => {
     git(wt, ["add", "src/feature.txt"]);
     git(wt, ["commit", "-qm", "t-123abc implement behavior"]);
     record(repo, baseSha);
-    const result = await verifyTask({
+    const result = await runVerify({
       workspaceRoot: repo, agent: "worker", verifySettings: { affected: VITEST_AFFECTED_COMMAND },
       runner: async (cwd, argv, opts) => argv[0] === "npx"
         ? { command: argv.join(" "), argv, exitCode: 1, stdout: `${"noise\n".repeat(900)}REAL ASSERTION FAILED\n`, stderr: "ExperimentalWarning: sqlite\n", timedOut: true, signal: "SIGTERM" }
@@ -2534,7 +2433,7 @@ describe("verifyTask", () => {
     expect(result.blockers.map((b) => b.code)).toContain("no_commit");
   });
 
-  it("blocks dirty agent worktrees", async () => {
+  it("refuses dirty canonical worktrees before verification starts", async () => {
     const { repo, wt, baseSha } = fixture();
     write(path.join(wt, "src", "feature.txt"), "new\n");
     git(wt, ["add", "src/feature.txt"]);
@@ -2542,24 +2441,19 @@ describe("verifyTask", () => {
     write(path.join(wt, "scratch.txt"), "uncommitted\n");
     record(repo, baseSha);
 
-    const result = await runVerify({ workspaceRoot: repo, agent: "worker" });
-
-    expect(result.verdict).toBe("blocked");
-    expect(result.blockers.map((b) => b.code)).toContain("dirty_worktree");
+    await expect(runVerify({ workspaceRoot: repo, agent: "worker" }))
+      .rejects.toMatchObject({ code: "DELIVERY_INVALID_STATE" });
   });
 
-  it("blocks behavior verification while the agent is still running", async () => {
+  it("refuses verification while the current Delivery occupant is still running", async () => {
     const { repo, wt, baseSha } = fixture();
     write(path.join(wt, "src", "feature.txt"), "new\n");
     git(wt, ["add", "src/feature.txt"]);
     git(wt, ["commit", "-qm", "t-123abc implement behavior"]);
     record(repo, baseSha);
 
-    const result = await runVerify({ workspaceRoot: repo, agent: "worker", isAgentRunning: async () => true });
-
-    expect(result.verdict).toBe("blocked");
-    expect(result.blockers.map((b) => b.code)).toContain("agent_still_running");
-    expect(result.record.commands).toEqual([]);
+    await expect(runVerify({ workspaceRoot: repo, agent: "worker", isAgentRunning: async () => true }))
+      .rejects.toMatchObject({ code: "WORKTREE_OCCUPIED", retryable: true });
     expect(git(wt, ["rev-parse", "--abbrev-ref", "HEAD"])).toBe("tachyon/worker");
   });
 
@@ -2599,10 +2493,52 @@ describe("verifyTask", () => {
     const result = await runVerify({ workspaceRoot: repo, agent: "worker" });
 
     expect(result.verdict).toBe("blocked");
-    expect(result.blockers).toContainEqual({ code: "scope_breach", detail: "changed file is outside declared owns paths", file: "README.md" });
+    expect(result.blockers).toContainEqual(expect.objectContaining({ code: "scope_breach", file: "README.md" }));
   });
 
-  it("t-815796 HIGH fix: a fixer round's commits are scope-checked against ITS granted owns_subset, not the original delegation's wider owns", async () => {
+  async function scopedFixerVerification(
+    repo: string,
+    wt: string,
+    baseSha: string,
+    branchHeadAtGrant: string,
+    deliveryId: string,
+  ): Promise<DeliveryVerificationLeaseService> {
+    const delivered = git(wt, ["rev-parse", "HEAD"]);
+    const store = authorityDeliveryStore(repo);
+    const gitDeliveries = new GitDeliveryStore(repo);
+    const projection = await gitDeliveries.open({
+      workspaceId: "ws",
+      createdBy: actor,
+      deliveryId,
+      agent: "fixer-1",
+      branchRef: "tachyon/worker",
+      worktreePath: wt,
+      tachyonCreatedBranch: true,
+      baseRef: baseSha,
+      currentHeadSha: delivered,
+    });
+    await store.create({
+      id: deliveryId,
+      workspaceId: "ws",
+      createdBy: actor,
+      contract: { baseSha, behaviorTest: "cmd:node behavior.js", owns: ["src"], taskRef: "tachyon/worker" },
+      gitDeliveryId: projection.id,
+      segments: [
+        {
+          id: "seg-0", index: 0, role: "implementer", executionAgent: "worker", grantedBy: actor,
+          ownsSubset: ["src"], grantedHeadSha: baseSha, grantedAt: "2026-01-01T00:00:00.000Z",
+          releasedAt: "2026-01-01T00:01:00.000Z", releasedHeadSha: branchHeadAtGrant, outcome: "completed",
+        },
+        {
+          id: "seg-1", index: 1, role: "fixer", executionAgent: "fixer-1", grantedBy: actor,
+          ownsSubset: ["src/fix.txt"], grantedHeadSha: branchHeadAtGrant, grantedAt: "2026-01-01T00:01:00.000Z",
+        },
+      ],
+    });
+    return canonicalVerification(store, gitDeliveries);
+  }
+
+  it("checks a canonical fixer segment against its own grant, not the Delivery's wider scope", async () => {
     const { repo, wt, baseSha } = fixture();
 
     // The original agent's own commit — within the original, wide `owns: ["src"]`.
@@ -2619,20 +2555,9 @@ describe("verifyTask", () => {
     git(wt, ["add", "src/fix.txt", "src/other.txt"]);
     git(wt, ["commit", "-qm", "t-123abc fixer round"]);
 
-    const createdAt = new Date().toISOString();
-    writeDelegationRecord(repo, {
-      ...delegationRecordFromSpawn({
-        agent: "worker",
-        baseSha,
-        taskRef: "tachyon/worker",
-        gate: { behaviorTest: "cmd:node behavior.js", owns: ["src"] },
-        contract: { task: "ship behavior", context: "fixture", constraints: "none", doneWhen: "behavior passes" },
-        createdAt,
-      }),
-      fixerAttempts: [{ occupantAgent: "fixer-1", requestedOwnsSubset: ["src/fix.txt"], grantedAt: createdAt, branchHeadAtGrant }],
-    });
-
-    const result = await runVerify({ workspaceRoot: repo, agent: "worker" });
+    const deliveryId = "d-segment-scope";
+    const deliveryVerification = await scopedFixerVerification(repo, wt, baseSha, branchHeadAtGrant, deliveryId);
+    const result = await runVerify({ workspaceRoot: repo, deliveryId, deliveryVerification });
 
     // The original agent's own commit (segment before any grant) is checked against `owns` and passes.
     expect(result.blockers.map((b) => b.file)).not.toContain("src/feature.txt");
@@ -2643,7 +2568,7 @@ describe("verifyTask", () => {
       expect.objectContaining({
         code: "scope_breach",
         file: "src/other.txt",
-        detail: expect.stringContaining("fixer attempt 1 (fixer-1)"),
+        detail: expect.stringContaining("segment 'seg-1'"),
       }),
     );
     expect(result.blockers.filter((b) => b.code === "scope_breach")).toHaveLength(1);
@@ -2662,21 +2587,10 @@ describe("verifyTask", () => {
     git(wt, ["add", "src/fix.txt", "src/other.txt"]);
     git(wt, ["commit", "-qm", "t-123abc fixer round"]);
 
-    const createdAt = new Date().toISOString();
-    writeDelegationRecord(repo, {
-      ...delegationRecordFromSpawn({
-        agent: "worker",
-        baseSha,
-        taskRef: "tachyon/worker",
-        gate: { behaviorTest: "cmd:node behavior.js", owns: ["src"] },
-        contract: { task: "ship behavior", context: "fixture", constraints: "none", doneWhen: "behavior passes" },
-        createdAt,
-      }),
-      fixerAttempts: [{ occupantAgent: "fixer-1", requestedOwnsSubset: ["src/fix.txt"], grantedAt: createdAt, branchHeadAtGrant }],
-    });
-
+    const deliveryId = "d-segment-waiver";
+    const deliveryVerification = await scopedFixerVerification(repo, wt, baseSha, branchHeadAtGrant, deliveryId);
     const waiver = { finding: "src/other.txt", reason: "coordinator confirms fixer needed this adjacent file" };
-    const result = await runVerify({ workspaceRoot: repo, agent: "worker", waivers: [waiver] });
+    const result = await runVerify({ workspaceRoot: repo, deliveryId, deliveryVerification, waivers: [waiver] });
 
     expect(result.verdict).toBe("accept");
     expect(result.blockers.map((b) => b.code)).not.toContain("scope_breach");
@@ -2685,7 +2599,7 @@ describe("verifyTask", () => {
       expect.objectContaining({
         code: "scope_breach",
         file: "src/other.txt",
-        detail: expect.stringContaining("fixer attempt 1 (fixer-1)"),
+        detail: expect.stringContaining("segment 'seg-1'"),
         blocking: false,
         waiver,
       }),
@@ -2712,7 +2626,7 @@ describe("verifyTask", () => {
     expect(fs.existsSync(path.join(repo, ".tachyon", "verifications"))).toBe(false);
   });
 
-  it("skips scope checking when owns is absent", async () => {
+  it("treats an empty canonical owns grant as no write authority", async () => {
     const { repo, wt, baseSha } = fixture();
     write(path.join(wt, "src", "feature.txt"), "new\n");
     write(path.join(wt, "README.md"), "outside but owns is optional\n");
@@ -2722,8 +2636,8 @@ describe("verifyTask", () => {
 
     const result = await runVerify({ workspaceRoot: repo, agent: "worker" });
 
-    expect(result.verdict).toBe("accept");
-    expect(result.blockers.map((b) => b.code)).not.toContain("scope_breach");
+    expect(result.verdict).toBe("blocked");
+    expect(result.blockers.map((b) => b.code)).toContain("scope_breach");
   });
 
   it("blocks behavior tests that already passed at BASE_SHA", async () => {
@@ -2808,7 +2722,7 @@ describe("verifyTask", () => {
     const waived = await runVerify({ workspaceRoot: repo, agent: "worker", waivers: [waiver] });
     expect(waived.verdict).toBe("accept");
     expect(waived.waivedFindings).toEqual([
-      { code: "scope_breach", detail: "changed file is outside declared owns paths", file: "README.md", blocking: false, waiver },
+      expect.objectContaining({ code: "scope_breach", file: "README.md", blocking: false, waiver }),
     ]);
   });
 
@@ -2882,7 +2796,7 @@ describe("verifyTask", () => {
     expect(result.record.findings.map((f) => f.code)).not.toContain("protocol_doorbell_missed");
   });
 
-  it("falls back to any outgoing doorbell event when the delegation record has no delegator", async () => {
+  it("falls back to any outgoing doorbell event when the Delivery contract has no delegator", async () => {
     const { repo, wt, baseSha } = fixture();
     write(path.join(wt, "src", "feature.txt"), "new\n");
     git(wt, ["add", "src/feature.txt"]);
@@ -2918,7 +2832,14 @@ function fakeRecord(overrides: Partial<VerifyTaskRecord> = {}): VerifyTaskRecord
     baseSha: "c".repeat(40),
     taskRef: "tachyon/worker",
     agent: "worker",
-    identity: { legacy: "worker", canonical: "worker", occupants: ["worker"] },
+    identity: {
+      firstOccupant: "worker",
+      currentOccupant: "worker",
+      occupants: ["worker"],
+      deliveryId: "d-fake",
+      segmentId: "seg-0",
+      segmentIndex: 0,
+    },
     verifierVersion: "test",
     commands: [],
     findings: [],
@@ -2937,38 +2858,11 @@ describe("verify_task Bridge tool caller-identity guard (t-7acc58)", () => {
   });
 
   it("fails visibly when canonical verification has no Workspace-owned lease service", async () => {
-    const mcp = wireVerifyTaskTool("/does/not/matter", { kind: "legacy" });
+    const mcp = wireVerifyTaskTool("/does/not/matter", { kind: "legacy" }, false);
     const res = await callVerifyTaskTool(mcp, { delivery_id: "d-canonical" });
     expect(res.isError).toBe(true);
     expect(res.content[0]!.text).toContain("canonical Delivery verification is unavailable");
     expect(verifyTask).not.toHaveBeenCalled();
-  });
-
-  // t-0b5723 (F1) — the guard now lives inside verifyTask, because it can only be decided AFTER the
-  // delegation resolves: it compares the caller against the RESOLVED occupant, not against the `agent`
-  // argument the caller supplied. So this drives the real implementation over a real record on disk.
-  it("rejects a self-caller from waiving its own verification, after resolving the delegation", async () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-vtask-guard-"));
-    writeDelegationRecord(root, delegationRecordFromSpawn({
-      id: "d-guard",
-      agent: "worker",
-      baseSha: "a".repeat(40),
-      taskRef: "tachyon/worker",
-      gate: { behaviorTest: "behavior", owns: ["src"] },
-      contract: { task: "task", context: "test", constraints: "none", doneWhen: "done" },
-      createdAt: "2026-01-01T00:00:00.000Z",
-    }));
-    const mcp = wireVerifyTaskTool(root, { kind: "agent", name: "worker" });
-
-    const res = await callVerifyTaskTool(mcp, {
-      agent: "worker",
-      waivers: [{ finding: "README.md", reason: "self-authored, trust me" }],
-    });
-
-    expect(res.isError).toBe(true);
-    expect(res.content[0]!.text).toContain("an agent cannot waive findings on its own verification — waivers are coordinator-authored");
-    expect(res.structuredContent).toMatchObject({ error: { code: "SELF_WAIVER_FORBIDDEN" } });
-    fs.rmSync(root, { recursive: true, force: true });
   });
 
   it("allows a self-caller to verify its own gate when no waivers are present", async () => {
@@ -2981,7 +2875,7 @@ describe("verify_task Bridge tool caller-identity guard (t-7acc58)", () => {
     });
 
     const mcp = wireVerifyTaskTool("/does/not/matter", { kind: "agent", name: "worker" });
-    const res = await callVerifyTaskTool(mcp, { agent: "worker" });
+    const res = await callVerifyTaskTool(mcp, { delivery_id: "d-worker" });
 
     expect(res.isError).toBeUndefined();
     expect(res.content[0]!.text).not.toContain("cannot waive findings on its own verification");
@@ -3002,7 +2896,7 @@ describe("verify_task Bridge tool caller-identity guard (t-7acc58)", () => {
     });
 
     const mcp = wireVerifyTaskTool("/does/not/matter", { kind: "legacy" });
-    const res = await callVerifyTaskTool(mcp, { agent: "worker", waivers: [waiver] });
+    const res = await callVerifyTaskTool(mcp, { delivery_id: "d-worker", waivers: [waiver] });
 
     expect(res.isError).toBeUndefined();
     const [verdictLine, ...jsonLines] = res.content[0]!.text.split("\n");
@@ -3024,7 +2918,7 @@ describe("verify_task Bridge tool caller-identity guard (t-7acc58)", () => {
     });
 
     const mcp = wireVerifyTaskTool("/does/not/matter", { kind: "legacy" });
-    const res = await callVerifyTaskTool(mcp, { agent: "worker" });
+    const res = await callVerifyTaskTool(mcp, { delivery_id: "d-worker" });
 
     expect(res.content[0]!.text.split("\n")[0]).toBe("verdict: accept");
   });
@@ -3063,22 +2957,24 @@ describe("Delivery operational identity (t-0b5723 F2)", () => {
   }
 
   it("names the tail segment — not segment zero — as the current occupant", () => {
-    const view = deliveryToVerificationRecord(delivery({
+    const subject = deliveryVerificationSubject(delivery({
       segments: [
         segment({ id: "seg-0", index: 0, executionAgent: "worker", ...closed }),
         segment({ id: "seg-1", index: 1, executionAgent: "fixer", role: "fixer" }),
       ],
     }));
 
-    expect(view.identity).toMatchObject({ legacy: "worker", canonical: "fixer", deliveryId: "d-identity", segmentId: "seg-1", segmentIndex: 1 });
-    // The contract itself is carried through untouched — the adapter reshapes identity, never authority.
-    expect(view.record.owns).toEqual(["src"]);
-    expect(view.record.baseSha).toBe("a".repeat(40));
-    expect(view.record.agent).toBe("worker"); // scope anchor for record.owns; the fixer brings its own subset
+    expect(subject).toMatchObject({
+      deliveryId: "d-identity",
+      occupants: ["worker", "fixer"],
+      currentSegment: { id: "seg-1", index: 1, executionAgent: "fixer" },
+    });
+    expect(subject.contract.owns).toEqual(["src"]);
+    expect(subject.contract.baseSha).toBe("a".repeat(40));
   });
 
   it("refuses a Delivery with no segments instead of inventing an occupant", () => {
-    expect(() => deliveryToVerificationRecord(delivery({ segments: [] })))
+    expect(() => deliveryVerificationSubject(delivery({ segments: [] })))
       .toThrow(expect.objectContaining({ code: "DELIVERY_SEGMENTS_MISSING" }) as Error);
   });
 

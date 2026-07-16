@@ -1,14 +1,11 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
-import { parseConfig, type TachyonConfig } from "../../src/config/loadConfig.js";
 import { containedInBase, hygieneReport } from "../../src/git-delivery/classify.js";
-import { canOpenGitDelivery, canPruneGitDelivery } from "../../src/git-delivery/policy.js";
 import { pruneDeliveryRecord } from "../../src/git-delivery/prune.js";
 import { resolveGitDeliverySettings } from "../../src/git-delivery/settings.js";
-import { GitDeliveryStore, GitDeliveryVersionConflictError, GitDeliveryUniquenessError } from "../../src/git-delivery/store.js";
+import { deterministicGitDeliveryId, GitDeliveryStore, GitDeliveryUniquenessError } from "../../src/git-delivery/store.js";
 import type { GitDelivery } from "../../src/git-delivery/types.js";
 import type { GitExec, GitResult } from "../../src/worktree/WorktreeManager.js";
 
@@ -22,6 +19,7 @@ function baseDelivery(overrides: Partial<GitDelivery> = {}): GitDelivery {
   return {
     schemaVersion: 1,
     id: "gd-a1",
+    deliveryId: "d-a1",
     version: 1,
     workspaceId: "ws",
     createdBy: actor,
@@ -52,87 +50,34 @@ function git(script: Record<string, GitResult | ((args: string[], cwd: string) =
 const ok = (stdout = ""): GitResult => ({ code: 0, stdout, stderr: "" });
 const fail = (stderr = ""): GitResult => ({ code: 1, stdout: "", stderr });
 
-describe("GitDelivery store (spec 365)", () => {
-  it("transactionally promotes legacy JSON for list/get/update/open without changing identity", async () => {
+describe("GitDelivery canonical projection store", () => {
+  it("derives one deterministic projection id and persists only the linked SQLite row", async () => {
     const root = tmpRoot();
-    const legacy = baseDelivery({ id: "gd-legacy", version: 7, worktreePath: path.join(root, "worker"), phase: "in_review" });
-    const dir = path.join(root, ".tachyon", "git-deliveries");
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, `${legacy.id}.json`), JSON.stringify(legacy));
-    const store = new GitDeliveryStore(root, { now: () => "2026-07-10T00:00:00.000Z" });
-
-    expect(await store.list()).toEqual([legacy]);
-    expect(await store.get(legacy.id)).toEqual(legacy);
-    const updated = await store.update(legacy.id, 7, (record) => ({ ...record, phase: "accepted" }));
-    expect(updated).toMatchObject({ id: legacy.id, version: 8, phase: "accepted" });
-    expect((await store.open({ workspaceId: "ws", createdBy: actor, agent: legacy.agent, branchRef: legacy.branchRef,
-      worktreePath: legacy.worktreePath, tachyonCreatedBranch: true, baseRef: "main" })).id).toBe(legacy.id);
-  });
-
-  it("fails closed and rolls back the whole legacy migration on corruption", async () => {
-    const corruptRoot = tmpRoot();
-    const corruptDir = path.join(corruptRoot, ".tachyon", "git-deliveries");
-    fs.mkdirSync(corruptDir, { recursive: true });
-    fs.writeFileSync(path.join(corruptDir, "gd-good.json"), JSON.stringify(baseDelivery({ id: "gd-good" })));
-    fs.writeFileSync(path.join(corruptDir, "gd-bad.json"), "{");
-    await expect(new GitDeliveryStore(corruptRoot).list()).rejects.toThrow(/corrupt legacy record/);
-    fs.rmSync(path.join(corruptDir, "gd-bad.json"));
-    expect(await new GitDeliveryStore(corruptRoot).list()).toHaveLength(1);
-
-  });
-
-  it("uses promoted SQLite as authority and repairs a stale or missing mirror after a committed update", async () => {
-    const root = tmpRoot();
-    const store = new GitDeliveryStore(root, { id: () => "gd-same" });
-    const current = await store.open({ workspaceId: "ws", createdBy: actor, agent: "worker", branchRef: "branch",
-      worktreePath: "/wt/same", tachyonCreatedBranch: true, baseRef: "main" });
-    const next = await store.update(current.id, 1, (record) => ({ ...record, phase: "accepted" }));
-    const mirror = path.join(root, ".tachyon", "git-deliveries", "gd-same.json");
-    fs.writeFileSync(mirror, JSON.stringify(current)); // model crash after SQLite commit, before mirror replacement
-    expect(await new GitDeliveryStore(root).get(current.id)).toEqual(next);
-    expect(JSON.parse(fs.readFileSync(mirror, "utf8"))).toEqual(next);
-    fs.rmSync(mirror);
-    expect(await new GitDeliveryStore(root).get(current.id)).toEqual(next);
-    expect(fs.existsSync(mirror)).toBe(true);
-  });
-
-  it("refuses unexplained legacy divergence before the authority marker is committed", async () => {
-    const root = tmpRoot();
-    const legacy = baseDelivery({ id: "gd-divergent", worktreePath: path.join(root, "wt") });
-    const dir = path.join(root, ".tachyon", "git-deliveries");
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, `${legacy.id}.json`), JSON.stringify(legacy));
-    const db = new DatabaseSync(path.join(root, ".tachyon", "git-deliveries-v2.sqlite3"));
-    db.exec("CREATE TABLE git_deliveries (id TEXT PRIMARY KEY, branch_ref TEXT NOT NULL, worktree_path TEXT NOT NULL, active INTEGER NOT NULL, record_json TEXT NOT NULL) STRICT");
-    db.prepare("INSERT INTO git_deliveries VALUES (?, ?, ?, 1, ?)")
-      .run(legacy.id, legacy.branchRef, legacy.worktreePath, JSON.stringify({ ...legacy, phase: "accepted" }));
-    db.close();
-    await expect(new GitDeliveryStore(root).list()).rejects.toThrow(/divergence/);
-  });
-
-  it("writes records atomically enough for reload and enforces version CAS", async () => {
-    const root = tmpRoot();
-    const store = new GitDeliveryStore(root, { id: () => "gd-111111", now: () => "2026-07-09T00:00:00.000Z" });
+    const store = new GitDeliveryStore(root, { now: () => "2026-07-09T00:00:00.000Z" });
     const rec = await store.open({
-      workspaceId: "ws",
-      createdBy: actor,
-      agent: "worker",
-      branchRef: "tachyon/worker",
-      worktreePath: "/wt/worker",
-      tachyonCreatedBranch: true,
-      baseRef: "main",
+      workspaceId: "ws", deliveryId: "d-canonical", createdBy: actor, agent: "worker",
+      branchRef: "tachyon/worker", worktreePath: "/wt/worker", tachyonCreatedBranch: true, baseRef: "main",
     });
-    expect(rec.version).toBe(1);
-    expect(fs.existsSync(path.join(root, ".tachyon", "git-deliveries", "gd-111111.json"))).toBe(true);
-    await expect(store.update(rec.id, 2, (r) => r)).rejects.toBeInstanceOf(GitDeliveryVersionConflictError);
-    const next = await store.update(rec.id, 1, (r) => ({ ...r, phase: "abandoned" }));
-    expect(next.version).toBe(2);
+    expect(rec).toMatchObject({ id: deterministicGitDeliveryId("d-canonical"), deliveryId: "d-canonical", version: 1 });
+    expect(await store.list()).toEqual([rec]);
+    expect(fs.existsSync(path.join(root, ".tachyon", "git-deliveries"))).toBe(false);
   });
 
-  it("keeps at most one non-pruned delivery per branch/worktree", async () => {
-    const store = new GitDeliveryStore(tmpRoot(), { id: () => "gd-111111" });
-    await store.open({ workspaceId: "ws", createdBy: actor, agent: "a", branchRef: "b", worktreePath: "/wt/a", tachyonCreatedBranch: true, baseRef: "main" });
-    await expect(store.open({ workspaceId: "ws", createdBy: actor, agent: "b", branchRef: "b", worktreePath: "/wt/b", tachyonCreatedBranch: true, baseRef: "main" })).rejects.toBeInstanceOf(GitDeliveryUniquenessError);
+  it("refuses an empty Delivery link or caller-selected projection id", async () => {
+    const store = new GitDeliveryStore(tmpRoot());
+    const input = {
+      workspaceId: "ws", deliveryId: "d-canonical", createdBy: actor, agent: "worker",
+      branchRef: "tachyon/worker", worktreePath: "/wt/worker", tachyonCreatedBranch: true, baseRef: "main",
+    };
+    await expect(store.open({ ...input, deliveryId: "" })).rejects.toThrow(/Delivery id is required/);
+    await expect(store.open({ ...input, id: "gd-cafecafe" })).rejects.toThrow(/expected deterministic id/);
+    expect(await store.list()).toEqual([]);
+  });
+
+  it("keeps at most one canonical projection per branch/worktree", async () => {
+    const store = new GitDeliveryStore(tmpRoot());
+    await store.open({ workspaceId: "ws", deliveryId: "d-a", createdBy: actor, agent: "a", branchRef: "b", worktreePath: "/wt/a", tachyonCreatedBranch: true, baseRef: "main" });
+    await expect(store.open({ workspaceId: "ws", deliveryId: "d-b", createdBy: actor, agent: "b", branchRef: "b", worktreePath: "/wt/b", tachyonCreatedBranch: true, baseRef: "main" })).rejects.toBeInstanceOf(GitDeliveryUniquenessError);
   });
 });
 
@@ -176,6 +121,11 @@ describe("GitDelivery containment and hygiene", () => {
       }),
       liveness: async () => "not_live",
       tasks: { get: () => ({ id: "t-abc123", status: "landed" }) } as never,
+      reloadSnapshot: {
+        classifications: [{ deliveryId: "d-a1", class: "terminal", reason: "test" }],
+        byId: new Map([["d-a1", { deliveryId: "d-a1", class: "terminal", reason: "test" }]]),
+        unavailableAgents: new Set(),
+      },
     });
     expect(report.findings.map((f) => f.category)).toContain("ready_to_prune");
     expect(report.findings.map((f) => f.category)).toContain("missing_ref");
@@ -288,30 +238,13 @@ describe("GitDelivery prune", () => {
 });
 
 describe("GitDelivery settings", () => {
-  it("parses profiles and explicit overrides", () => {
-    const { config, errors } = parseConfig("agents:\n  a:\n    cmd: claude\nsettings:\n  gitDelivery:\n    profile: solo\n    autoOpen: true\n    prunePrincipals: [orch]\n");
-    expect(errors).toEqual([]);
-    expect(resolveGitDeliverySettings(config?.settings as TachyonConfig["settings"])).toMatchObject({ profile: "solo", autoOpen: true, prunePrincipals: ["orch"] });
+  it("contains only linked-projection authority lists", () => {
+    expect(resolveGitDeliverySettings({ gitDelivery: { prunePrincipals: ["orch"], integratePrincipals: ["release"] } }))
+      .toEqual({ prunePrincipals: ["orch"], integratePrincipals: ["release"] });
   });
 });
 
 describe("GitDelivery actor policy", () => {
-  it("refuses peer open that would otherwise make the peer the prune-authorized creator", () => {
-    expect(canOpenGitDelivery("victim", { kind: "agent", name: "peer" }, [])).toBe(false);
-    expect(canOpenGitDelivery("victim", { kind: "agent", name: "orch" }, ["orch"])).toBe(true);
-    expect(canOpenGitDelivery("victim", { kind: "agent", name: "victim" }, [])).toBe(true);
-    expect(canOpenGitDelivery("victim", { kind: "human" }, [])).toBe(true);
-  });
-
-  it("allows owner/creator/allowlist prune, but refuses a random peer", () => {
-    const d = baseDelivery({ agent: "worker", createdBy: { kind: "agent", name: "orch" } });
-    expect(canPruneGitDelivery(d, "worker", [])).toBe(true);
-    expect(canPruneGitDelivery(d, "orch", [])).toBe(true);
-    expect(canPruneGitDelivery(d, "ops", ["ops"])).toBe(true);
-    expect(canPruneGitDelivery(d, "peer", [])).toBe(false);
-    expect(canPruneGitDelivery(d, undefined, ["peer"])).toBe(false);
-  });
-
   it("linked policy never grants integrate/prune by agent or createdBy equality", async () => {
     const { canIntegrateLinkedGitDelivery, canPruneLinkedGitDelivery } = await import("../../src/git-delivery/policy.js");
     expect(canIntegrateLinkedGitDelivery({ kind: "agent", name: "worker" }, [])).toBe(false);
@@ -326,10 +259,10 @@ describe("GitDelivery actor policy", () => {
 describe("GitDelivery canonical sequence apply (T15)", () => {
   it("applies the next sequence, replays identically, and refuses gaps/collisions/link retarget", async () => {
     const root = tmpRoot();
-    const store = new GitDeliveryStore(root, { id: () => "gd-cafecafe", now: () => "2026-07-12T00:00:00.000Z" });
+    const store = new GitDeliveryStore(root, { now: () => "2026-07-12T00:00:00.000Z" });
     const rec = await store.open({
       workspaceId: "ws", createdBy: actor, deliveryId: "d-1", agent: "worker",
-      branchRef: "b", worktreePath: "/wt/c", tachyonCreatedBranch: true, baseRef: "main", id: "gd-cafecafe",
+      branchRef: "b", worktreePath: "/wt/c", tachyonCreatedBranch: true, baseRef: "main",
     });
     const applied = await store.applyCanonicalIntent({
       id: rec.id, expectedVersion: rec.version, sequence: 1, operationId: "op-1", deliveryId: "d-1",

@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { AgentManager, MaxAgentsError, ResumeUnavailableError, ForkUnavailableError, WatchController, newlyDeclaredAutostart } from "../../src/agents/AgentManager.js";
+import { AgentManager, MaxAgentsError, ResumeUnavailableError, ForkUnavailableError, WatchController, newlyDeclaredAutostart, type AgentManagerOptions } from "../../src/agents/AgentManager.js";
 import { TmuxService, workspaceHash, sessionName, type ExecResult } from "../../src/tmux/TmuxService.js";
 import { parseConfig, type TachyonConfig } from "../../src/config/loadConfig.js";
 import { SessionLedger } from "../../src/resume/SessionLedger.js";
@@ -14,15 +14,23 @@ import { FORGET_AGENT_FOOTPRINTS, forgetAgent } from "../../src/agents/forgetAge
 import { HarnessManager, harnessHome, opencodeHarnessDirs } from "../../src/harness/HarnessManager.js";
 import { adapterFor, harnessable } from "../../src/resume/adapters.js";
 import { CallerIdentityRegistry } from "../../src/bridge/callerIdentity.js";
-import { appendFixerAttempt, delegationRecordFromSpawn, readDelegationRecord, writeDelegationRecord } from "../../src/bridge/delegationRecord.js";
-import { resolveReuseTarget } from "../../src/agents/reuseWorktree.js";
 import { boundDeliveryPreReservationRefusals, exerciseBoundDeliveryPreReservationRefusal } from "../helpers/boundDeliveryExecutionHarness.js";
 import { briefFilePath } from "../../src/agents/briefFile.js";
 import { SOUL_LAUNCH_RESERVATION_BOOT_ID, soulLaunchReservationsDir } from "../../src/agents/soul.js";
-import type { GitExec } from "../../src/worktree/WorktreeManager.js";
 
 const WS = "/repo";
 const HASH = workspaceHash(WS);
+
+function canonicalSpawnReceipt(worktree: { path: string; branch: string }, head = "head") {
+  return {
+    deliveryId: "d-test",
+    projectionId: "gd-test",
+    segmentId: "seg-0",
+    worktree: worktree.path,
+    branch: worktree.branch,
+    head,
+  };
+}
 const SOUL_LEGACY_LIFECYCLE = JSON.parse(fs.readFileSync(path.resolve("test/fixtures/agent-soul-legacy/lifecycle-bypass-cases.json"), "utf8")) as {
   cases: Array<{ name: string; bytes: string; sendKeys: string[] }>;
 };
@@ -236,58 +244,6 @@ function makeManager(yaml: string, maxAgentsSetting = 8, tmuxOpts: { failRespawn
   return { manager, sessions, dead, panes, sentKeys, respawnArgs, newSessionArgs, spawned, killed, restarted };
 }
 
-type LegacyReuseAuthorityCallbacks = Pick<
-  ConstructorParameters<typeof AgentManager>[0],
-  "appendLegacyFixerAttempt" | "resolveAuthenticatedLegacyReuseTarget"
->;
-
-function legacyReusePersistenceHarness(
-  callbacksFor?: (workspaceRoot: string) => LegacyReuseAuthorityCallbacks,
-  gitExecOverride?: GitExec,
-) {
-  const ws = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-reuse-authority-"));
-  const worktreePath = path.join(ws, "worktrees", "owner");
-  fs.mkdirSync(worktreePath, { recursive: true });
-  const record = delegationRecordFromSpawn({
-    agent: "owner",
-    baseSha: "base-sha",
-    taskRef: "tachyon/owner",
-    worktreePath,
-    gate: { behaviorTest: "npm test", owns: ["src"] },
-    contract: {
-      task: "fix the implementation",
-      context: "legacy delegation",
-      constraints: "remain in scope",
-      doneWhen: "tests pass",
-    },
-    createdAt: "2026-07-15T00:00:00.000Z",
-  });
-  const recordPath = writeDelegationRecord(ws, record);
-  const { sessions, tmux } = fakeTmux();
-  const ledger = new SessionLedger(ws);
-  const authorityCallbacks = callbacksFor?.(ws) ?? {};
-  const gitExec: GitExec = gitExecOverride ?? (async (args) => ({
-    stdout: args[0] === "rev-parse" && args[1] === "HEAD"
-      ? "branch-head\n"
-      : args[0] === "rev-parse" && args[1] === "--abbrev-ref"
-        ? "tachyon/owner\n"
-        : "",
-    stderr: "",
-    code: 0,
-  }));
-  const manager = new AgentManager({
-    tmux,
-    wsHash: workspaceHash(ws),
-    workspaceRoot: ws,
-    getConfig: () => configOf("agents:\n  boss:\n    cmd: claude\n"),
-    getMaxAgents: () => 8,
-    ledger,
-    ...authorityCallbacks,
-    gitExec,
-  });
-  return { gitExec, ledger, manager, record, recordPath, sessions, tmux, ws };
-}
-
 describe("AgentManager", () => {
   it("clears legacy, prior-boot, and dead-owner launch reservations while preserving a same-boot live owner", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "agent-manager-soul-reservations-"));
@@ -326,330 +282,6 @@ describe("AgentManager", () => {
     await expect(manager.spawn("ghost")).rejects.toThrow("unknown agent");
     await manager.spawn("ghost", { cmd: "echo hi" });
     expect(sessions.has(`tachyon-${HASH}-ghost`)).toBe(true);
-  });
-
-  it("fails reuse_worktree closed before spawn when trusted fixer-attempt persistence is unavailable", async () => {
-    const { ledger, manager, record, recordPath, sessions, ws } = legacyReusePersistenceHarness();
-    try {
-      await expect(manager.spawn("fixer", {
-        cmd: "claude",
-        reuseWorktree: { delegationId: record.id, ownsSubset: ["src"] },
-      })).rejects.toThrow("REUSE_AUTHORITY_PERSISTENCE_UNAVAILABLE");
-      expect(sessions.has(manager.session("fixer"))).toBe(false);
-      expect(ledger.get("fixer")).toBeUndefined();
-      expect(readDelegationRecord(recordPath).fixerAttempts).toBeUndefined();
-    } finally {
-      fs.rmSync(ws, { recursive: true, force: true });
-    }
-  });
-
-  it("routes a reuse_worktree fixer grant through the host-trusted persistence callback", async () => {
-    const order: string[] = [];
-    let gitLocked = false;
-    const appendLegacyFixerAttempt = vi.fn(async () => {
-      expect(gitLocked).toBe(true);
-      order.push("authority");
-    });
-    const gitExec: GitExec = async (args) => {
-      if (args[0] === "rev-parse" && args[1] === "HEAD") return { stdout: "branch-head\n", stderr: "", code: 0 };
-      if (args[0] === "rev-parse" && args[1] === "--abbrev-ref") return { stdout: "tachyon/owner\n", stderr: "", code: 0 };
-      if (args[0] === "worktree" && args[1] === "lock") {
-        expect(gitLocked).toBe(false);
-        gitLocked = true;
-        order.push("lock");
-      }
-      if (args[0] === "worktree" && args[1] === "unlock") {
-        expect(gitLocked).toBe(true);
-        gitLocked = false;
-        order.push("unlock");
-      }
-      return { stdout: "", stderr: "", code: 0 };
-    };
-    const { manager, record, recordPath, sessions, ws } = legacyReusePersistenceHarness((workspaceRoot) => ({
-      resolveAuthenticatedLegacyReuseTarget: async (target) => resolveReuseTarget(workspaceRoot, target),
-      appendLegacyFixerAttempt,
-    }), gitExec);
-    try {
-      await manager.spawn("fixer", {
-        cmd: "claude",
-        reuseWorktree: { delegationId: record.id, ownsSubset: ["src"] },
-      });
-      expect(sessions.has(manager.session("fixer"))).toBe(true);
-      expect(appendLegacyFixerAttempt).toHaveBeenCalledOnce();
-      expect(appendLegacyFixerAttempt).toHaveBeenCalledWith(recordPath, {
-        occupantAgent: "fixer",
-        requestedOwnsSubset: ["src"],
-        grantedAt: expect.any(String),
-        branchHeadAtGrant: "branch-head",
-      });
-      expect(order).toEqual(["lock", "authority", "unlock"]);
-      expect(gitLocked).toBe(false);
-      // AgentManager does not directly rewrite the authority JSON; the trusted host callback owns it.
-      expect(readDelegationRecord(recordPath).fixerAttempts).toBeUndefined();
-    } finally {
-      fs.rmSync(ws, { recursive: true, force: true });
-    }
-  });
-
-  it("persists no runtime when authority append has a durable side effect and then reports failure", async () => {
-    let gitLocked = false;
-    const gitCalls: string[][] = [];
-    const gitExec: GitExec = async (args) => {
-      gitCalls.push(args);
-      if (args[0] === "rev-parse" && args[1] === "HEAD") return { stdout: "branch-head\n", stderr: "", code: 0 };
-      if (args[0] === "rev-parse" && args[1] === "--abbrev-ref") return { stdout: "tachyon/owner\n", stderr: "", code: 0 };
-      if (args[0] === "worktree" && args[1] === "lock") {
-        if (gitLocked) return { stdout: "", stderr: "worktree already locked", code: 128 };
-        gitLocked = true;
-        return { stdout: "", stderr: "", code: 0 };
-      }
-      if (args[0] === "worktree" && args[1] === "unlock") {
-        gitLocked = false;
-        return { stdout: "", stderr: "", code: 0 };
-      }
-      return { stdout: "", stderr: "", code: 0 };
-    };
-    const appendLegacyFixerAttempt = vi.fn(async (delegationPath: string, attempt: Parameters<typeof appendFixerAttempt>[1]) => {
-      const authority = readDelegationRecord(delegationPath);
-      fs.writeFileSync(path.join(authority.worktreePath!, "authority-side-effect-before-error.txt"), "dirty\n", "utf8");
-      // Model the uncertain authority result: the durable append lands, then its callback reports
-      // failure. Because grants commit before spawn, this must still produce zero runtime effects.
-      appendFixerAttempt(delegationPath, attempt);
-      throw new Error("injected authority append failure after writes");
-    });
-    const authorityCallbacks = (workspaceRoot: string): LegacyReuseAuthorityCallbacks => ({
-      resolveAuthenticatedLegacyReuseTarget: async (target) => resolveReuseTarget(workspaceRoot, target),
-      appendLegacyFixerAttempt,
-    });
-    const { ledger, manager, record, recordPath, sessions, tmux, ws } = legacyReusePersistenceHarness(authorityCallbacks, gitExec);
-    const newSession = vi.spyOn(tmux, "newSession");
-    try {
-      const failure = await manager.spawn("fixer-failed", {
-        cmd: "claude",
-        reuseWorktree: { delegationId: record.id, ownsSubset: ["src"] },
-      }).catch((error: unknown) => error);
-
-      expect(failure).toBeInstanceOf(AggregateError);
-      expect((failure as AggregateError).errors[0]).toMatchObject({ message: "injected authority append failure after writes" });
-      expect((failure as AggregateError).errors).toContainEqual(expect.objectContaining({
-        message: expect.stringContaining("unlock it explicitly before retry"),
-      }));
-      expect(newSession).not.toHaveBeenCalled();
-      expect(sessions.has(manager.session("fixer-failed"))).toBe(false);
-      expect(ledger.get("fixer-failed")).toBeUndefined();
-      expect(gitLocked).toBe(true);
-      expect(fs.readFileSync(path.join(record.worktreePath!, "authority-side-effect-before-error.txt"), "utf8")).toBe("dirty\n");
-      expect(readDelegationRecord(recordPath).fixerAttempts).toEqual([
-        expect.objectContaining({ occupantAgent: "fixer-failed" }),
-      ]);
-      expect(gitCalls.some((args) => args[0] === "worktree" && args[1] === "unlock")).toBe(false);
-
-      // An uncertain append is not permission to retry. The in-process checkout stays dirty.
-      await expect(manager.spawn("fixer-retry", {
-        cmd: "claude",
-        reuseWorktree: { delegationId: record.id, ownsSubset: ["src"] },
-      })).rejects.toThrow(/WORKTREE_DIRTY_OR_UNVERIFIED/);
-      expect(sessions.has(manager.session("fixer-retry"))).toBe(false);
-
-      // A host reload loses the process-local occupancy map, but the Git lock is a durable recovery
-      // receipt. A new manager must fail closed before spawning or appending another grant.
-      const reloaded = new AgentManager({
-        tmux,
-        wsHash: workspaceHash(ws),
-        workspaceRoot: ws,
-        getConfig: () => configOf("agents:\n  boss:\n    cmd: claude\n"),
-        getMaxAgents: () => 8,
-        ledger,
-        gitExec,
-        ...authorityCallbacks(ws),
-      });
-      await expect(reloaded.spawn("fixer-after-reload", {
-        cmd: "claude",
-        reuseWorktree: { delegationId: record.id, ownsSubset: ["src"] },
-      })).rejects.toThrow(/could not acquire launch quarantine.*recovery checkout/);
-      expect(sessions.has(reloaded.session("fixer-after-reload"))).toBe(false);
-      expect(await reloaded.worktreeOccupant(record.worktreePath!)).toEqual({
-        state: "dirty",
-        agent: "fixer-after-reload",
-        cwd: record.worktreePath,
-      });
-      expect(appendLegacyFixerAttempt).toHaveBeenCalledOnce();
-      expect(gitLocked).toBe(true);
-    } finally {
-      fs.rmSync(ws, { recursive: true, force: true });
-    }
-  });
-
-  it("spawns nothing and keeps reuse quarantined when authority persistence fails", async () => {
-    const appendLegacyFixerAttempt = vi.fn(async () => {
-      throw new Error("injected authority append failure");
-    });
-    const { manager, record, sessions, tmux, ws } = legacyReusePersistenceHarness((workspaceRoot) => ({
-      resolveAuthenticatedLegacyReuseTarget: async (target) => resolveReuseTarget(workspaceRoot, target),
-      appendLegacyFixerAttempt,
-    }));
-    const newSession = vi.spyOn(tmux, "newSession");
-    try {
-      const failure = await manager.spawn("fixer-no-grant", {
-        cmd: "claude",
-        reuseWorktree: { delegationId: record.id, ownsSubset: ["src"] },
-      }).catch((error: unknown) => error);
-
-      expect(failure).toBeInstanceOf(AggregateError);
-      expect((failure as AggregateError).errors).toEqual(expect.arrayContaining([
-        expect.objectContaining({ message: "injected authority append failure" }),
-        expect.objectContaining({ message: expect.stringContaining("unlock it explicitly before retry") }),
-      ]));
-      expect(appendLegacyFixerAttempt).toHaveBeenCalledOnce();
-      expect(newSession).not.toHaveBeenCalled();
-      expect(sessions.has(manager.session("fixer-no-grant"))).toBe(false);
-      expect(await manager.worktreeOccupant(record.worktreePath!)).toEqual({
-        state: "dirty",
-        agent: "fixer-no-grant",
-        cwd: record.worktreePath,
-      });
-      await expect(manager.spawn("fixer-blocked", {
-        cmd: "claude",
-        reuseWorktree: { delegationId: record.id, ownsSubset: ["src"] },
-      })).rejects.toThrow(/WORKTREE_DIRTY_OR_UNVERIFIED/);
-      expect(sessions.has(manager.session("fixer-blocked"))).toBe(false);
-    } finally {
-      fs.rmSync(ws, { recursive: true, force: true });
-    }
-  });
-
-  it("has a durable fixer grant before a new-session side effect can report failure", async () => {
-    const callbacks = (workspaceRoot: string): LegacyReuseAuthorityCallbacks => ({
-      resolveAuthenticatedLegacyReuseTarget: async (target) => resolveReuseTarget(workspaceRoot, target),
-      appendLegacyFixerAttempt: async (delegationPath, attempt) => { appendFixerAttempt(delegationPath, attempt); },
-    });
-    const { ledger, manager, record, recordPath, sessions, tmux, ws } = legacyReusePersistenceHarness(callbacks);
-    const newSession = vi.spyOn(tmux, "newSession").mockImplementationOnce(async ({ name }) => {
-      expect(readDelegationRecord(recordPath).fixerAttempts).toEqual([
-        expect.objectContaining({ occupantAgent: "fixer-side-effect" }),
-      ]);
-      sessions.add(name);
-      throw new Error("new-session created pane then reported failure");
-    });
-    try {
-      const failure = await manager.spawn("fixer-side-effect", {
-        cmd: "claude",
-        reuseWorktree: { delegationId: record.id, ownsSubset: ["src"] },
-      }).catch((error: unknown) => error);
-
-      expect(failure).toBeInstanceOf(AggregateError);
-      expect((failure as AggregateError).errors).toEqual(expect.arrayContaining([
-        expect.objectContaining({ message: "new-session created pane then reported failure" }),
-        expect.objectContaining({ message: expect.stringContaining("unlock it explicitly before retry") }),
-      ]));
-      expect(newSession).toHaveBeenCalledOnce();
-      expect(sessions.has(manager.session("fixer-side-effect"))).toBe(true);
-      expect(ledger.get("fixer-side-effect")).toBeUndefined();
-      expect(readDelegationRecord(recordPath).fixerAttempts).toEqual([
-        expect.objectContaining({
-          occupantAgent: "fixer-side-effect",
-          requestedOwnsSubset: ["src"],
-          branchHeadAtGrant: "branch-head",
-        }),
-      ]);
-      expect(await manager.worktreeOccupant(record.worktreePath!)).toEqual({
-        state: "dirty",
-        agent: "fixer-side-effect",
-        cwd: record.worktreePath,
-      });
-      await expect(manager.spawn("fixer-blocked", {
-        cmd: "claude",
-        reuseWorktree: { delegationId: record.id, ownsSubset: ["src"] },
-      })).rejects.toThrow(/WORKTREE_DIRTY_OR_UNVERIFIED/);
-      expect(sessions.has(manager.session("fixer-blocked"))).toBe(false);
-    } finally {
-      fs.rmSync(ws, { recursive: true, force: true });
-    }
-  });
-
-  it("rejects a reuse checkout switched off record.taskRef before acquiring Git quarantine", async () => {
-    const gitCalls: string[][] = [];
-    const appendLegacyFixerAttempt = vi.fn(async () => undefined);
-    const gitExec: GitExec = async (args) => {
-      gitCalls.push(args);
-      if (args[0] === "rev-parse" && args[1] === "--abbrev-ref") {
-        return { stdout: "tachyon/other-branch\n", stderr: "", code: 0 };
-      }
-      if (args[0] === "rev-parse" && args[1] === "HEAD") return { stdout: "branch-head\n", stderr: "", code: 0 };
-      return { stdout: "", stderr: "", code: 0 };
-    };
-    const { manager, record, sessions, ws } = legacyReusePersistenceHarness((workspaceRoot) => ({
-      resolveAuthenticatedLegacyReuseTarget: async (target) => resolveReuseTarget(workspaceRoot, target),
-      appendLegacyFixerAttempt,
-    }), gitExec);
-    try {
-      await expect(manager.spawn("fixer-wrong-branch", {
-        cmd: "claude",
-        reuseWorktree: { delegationId: record.id, ownsSubset: ["src"] },
-      })).rejects.toThrow(/BRANCH_HEAD_CHANGED.*not checked out on delegated branch/);
-
-      expect(gitCalls.some((args) => args[0] === "worktree" && args[1] === "lock")).toBe(false);
-      expect(appendLegacyFixerAttempt).not.toHaveBeenCalled();
-      expect(sessions.has(manager.session("fixer-wrong-branch"))).toBe(false);
-    } finally {
-      fs.rmSync(ws, { recursive: true, force: true });
-    }
-  });
-
-  it.each(["branch", "tip"] as const)("keeps Git quarantine when the reuse %s drifts after lock", async (drift) => {
-    let locked = false;
-    let branchReads = 0;
-    let headReads = 0;
-    let unlockCalls = 0;
-    const appendLegacyFixerAttempt = vi.fn(async () => undefined);
-    const gitExec: GitExec = async (args) => {
-      if (args[0] === "rev-parse" && args[1] === "--abbrev-ref") {
-        branchReads += 1;
-        return {
-          stdout: drift === "branch" && branchReads > 1 ? "tachyon/other-branch\n" : "tachyon/owner\n",
-          stderr: "",
-          code: 0,
-        };
-      }
-      if (args[0] === "rev-parse" && args[1] === "HEAD") {
-        headReads += 1;
-        return { stdout: drift === "tip" && headReads > 1 ? "moved-head\n" : "branch-head\n", stderr: "", code: 0 };
-      }
-      if (args[0] === "worktree" && args[1] === "lock") {
-        locked = true;
-        return { stdout: "", stderr: "", code: 0 };
-      }
-      if (args[0] === "worktree" && args[1] === "unlock") {
-        unlockCalls += 1;
-        locked = false;
-        return { stdout: "", stderr: "", code: 0 };
-      }
-      return { stdout: "", stderr: "", code: 0 };
-    };
-    const { manager, record, sessions, ws } = legacyReusePersistenceHarness((workspaceRoot) => ({
-      resolveAuthenticatedLegacyReuseTarget: async (target) => resolveReuseTarget(workspaceRoot, target),
-      appendLegacyFixerAttempt,
-    }), gitExec);
-    try {
-      const failure = await manager.spawn(`fixer-post-lock-${drift}`, {
-        cmd: "claude",
-        reuseWorktree: { delegationId: record.id, ownsSubset: ["src"] },
-      }).catch((error: unknown) => error);
-
-      expect(failure).toBeInstanceOf(AggregateError);
-      expect((failure as AggregateError).errors[0]).toMatchObject({ message: expect.stringContaining("BRANCH_HEAD_CHANGED") });
-      expect(locked).toBe(true);
-      expect(unlockCalls).toBe(0);
-      expect(appendLegacyFixerAttempt).not.toHaveBeenCalled();
-      expect(sessions.has(manager.session(`fixer-post-lock-${drift}`))).toBe(false);
-      expect(await manager.worktreeOccupant(record.worktreePath!)).toEqual({
-        state: "dirty",
-        agent: `fixer-post-lock-${drift}`,
-        cwd: record.worktreePath,
-      });
-    } finally {
-      fs.rmSync(ws, { recursive: true, force: true });
-    }
   });
 
   it("rejects double-spawn of a running agent", async () => {
@@ -1489,8 +1121,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       seedTranscript?: (from: string, to: string) => boolean;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       completePreparedWorktree?: (worktree: any) => Promise<void>;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      recordDelegation?: (input: any) => void | Promise<void>;
+      recordCanonicalDelivery?: AgentManagerOptions["recordCanonicalDelivery"];
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       materializeHarness?: (ctx: { name: string; def: any }) => any;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1625,7 +1256,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       createForkWorktree: opts.createForkWorktree,
       seedTranscript: opts.seedTranscript,
       completePreparedWorktree: opts.completePreparedWorktree,
-      recordDelegation: opts.recordDelegation ?? (async () => undefined),
+      recordCanonicalDelivery: opts.recordCanonicalDelivery ?? (async (input) => canonicalSpawnReceipt(input.worktree, input.baseSha)),
       materializeHarness: opts.materializeHarness,
       getExtraEnv: opts.getExtraEnv,
       getBridgeGeneration: opts.getBridgeGeneration,
@@ -2718,30 +2349,6 @@ describe("AgentManager — session resume (spec 209)", () => {
 
     await expect(manager.spawn("reviewer")).rejects.toThrow("injected downstream newSession failure");
     expect(fs.readdirSync(path.join(ws, ".tachyon", "agent-profile-transactions", "launch-reservations"))).toEqual([]);
-  });
-
-  it("holds a soul reservation until a reuse-worktree launch settles", async () => {
-    const { manager, ws } = resumeHarness("agents:\n  reviewer:\n    cmd: codex\n    soul: true\n");
-    const profile = path.join(ws, ".tachyon", "agents", "reviewer");
-    fs.mkdirSync(profile, { recursive: true, mode: 0o700 });
-    fs.writeFileSync(path.join(profile, "SOUL.md"), "Exact identity", { mode: 0o600 });
-    fs.writeFileSync(path.join(profile, "profile.json"), JSON.stringify({ schemaVersion: 1, profileId: "123e4567-e89b-42d3-a456-426614174000", owner: "reviewer", state: "active" }), { mode: 0o600 });
-    let finish!: () => void;
-    const pending = new Promise<void>((resolve) => { finish = resolve; });
-    const internals = manager as unknown as {
-      spawnReuseWorktree(name: string, opts: unknown, request: unknown, resolvedSoul: unknown): Promise<void>;
-    };
-    vi.spyOn(internals, "spawnReuseWorktree").mockImplementation(async () => pending);
-
-    const launch = manager.spawn("reviewer", { reuseWorktree: { delegationId: "d-1", ownsSubset: [] } });
-    await vi.waitFor(() => expect(internals.spawnReuseWorktree).toHaveBeenCalled());
-    const reservations = path.join(ws, ".tachyon", "agent-profile-transactions", "launch-reservations");
-    expect(fs.readdirSync(reservations)).toHaveLength(1);
-    const persisted = JSON.parse(fs.readFileSync(path.join(reservations, fs.readdirSync(reservations)[0]!), "utf8")) as Record<string, unknown>;
-    expect(persisted).toMatchObject({ ownerPid: process.pid, ownerBootId: SOUL_LAUNCH_RESERVATION_BOOT_ID });
-    finish();
-    await launch;
-    expect(fs.readdirSync(reservations)).toEqual([]);
   });
 
   it("holds a declared soul reservation until Delivery preparation and launch settle", async () => {
@@ -4488,8 +4095,8 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
       getConfig: () => configOf(yaml),
       getMaxAgents: () => 8,
       ledger,
-      // Production always wires durable delegation storage; most unit cases do not inspect it.
-      recordDelegation: async () => undefined,
+      // Production always wires canonical Delivery storage; most unit cases do not inspect it.
+      recordCanonicalDelivery: async (input) => canonicalSpawnReceipt(input.worktree, input.baseSha),
       ...extra,
     });
     dirs.push(ws);
@@ -4830,49 +4437,36 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
         cmd: "claude",
         parent: "boss",
         contract: { task: "add login retry", context: "auth flow flakes", constraints: "no new deps", doneWhen: "retry behavior test passes" },
-        gate: { behaviorTest: "login retry fails then passes" },
+        gate: { behaviorTest: "login retry fails then passes", owns: ["src"] },
       }),
     ).rejects.toThrow(/gated delegation requires an isolated worktree/);
   });
 
-  it("gated spawn records the DelegationRecord with baseSha and task ref (spec 362 T1)", async () => {
+  it("gated spawn publishes the canonical Delivery input and returns its exact receipt", async () => {
     const REC = { path: "/wt/h/reviewer", branch: "tachyon/reviewer", tachyonCreatedBranch: true, baseRef: "old-delegation-base", createdAt: "t" };
-    const { manager, ws } = harness("agents:\n  boss:\n    cmd: claude\n", {
+    let recorded: Parameters<NonNullable<AgentManagerOptions["recordCanonicalDelivery"]>>[0] | undefined;
+    const receipt = canonicalSpawnReceipt(REC, "fresh-source-head");
+    const { manager } = harness("agents:\n  boss:\n    cmd: claude\n", {
       resolveSpawnCwd: async (ctx) => {
         expect(ctx.gate?.behaviorTest).toBe("login retry fails then passes");
         return { cwd: REC.path, worktree: REC, delegationBaseSha: "fresh-source-head" };
       },
-      recordDelegation: ({ name, delegator, gate, contract, worktree, baseSha }) => {
-        writeDelegationRecord(
-          ws,
-          delegationRecordFromSpawn({
-            agent: name,
-            delegator,
-            baseSha,
-            taskRef: worktree.branch,
-            worktreePath: worktree.path,
-            gate,
-            contract,
-            createdAt: "2026-07-07T12:00:00.000Z",
-          }),
-        );
-      },
+      recordCanonicalDelivery: (input) => { recorded = input; return receipt; },
     });
-    await manager.spawn("reviewer", {
+    const result = await manager.spawn("reviewer", {
       cmd: "claude",
       parent: "boss",
       delegator: "boss",
       contract: { task: "add login retry", context: "auth flow flakes", constraints: "no new deps", doneWhen: "retry behavior test passes" },
       gate: { behaviorTest: "login retry fails then passes", owns: ["src/auth.ts"] },
     });
-    const record = readDelegationRecord(path.join(ws, ".tachyon", "delegations", "reviewer-2026-07-07T12-00-00-000Z.json"));
-    expect(record).toMatchObject({
-      agent: "reviewer",
+    expect(result).toEqual(receipt);
+    expect(recorded).toMatchObject({
+      name: "reviewer",
       delegator: "boss",
       baseSha: "fresh-source-head",
-      taskRef: "tachyon/reviewer",
-      owns: ["src/auth.ts"],
-      behaviorTest: "login retry fails then passes",
+      worktree: REC,
+      gate: { owns: ["src/auth.ts"], behaviorTest: "login retry fails then passes" },
       contract: { task: "add login retry", doneWhen: "retry behavior test passes" },
     });
     const reviewer = (await manager.list()).find((a) => a.name === "reviewer");
@@ -4923,27 +4517,27 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     };
     const { manager, ledger } = harness("agents:\n  boss:\n    cmd: claude\n", {
       tmux: new TmuxService(exec), resolveSpawnCwd: async () => ({ cwd: REC.path, worktree: REC }),
-      recordDelegation: async () => { throw new Error("canonical reject"); },
+      recordCanonicalDelivery: async () => { throw new Error("canonical reject"); },
     });
     const failure = await manager.spawn("reviewer", { cmd: "claude", delegator: "boss",
-      contract: { task: "t", context: "c", constraints: "x", doneWhen: "d" }, gate: { behaviorTest: "b" } }).catch((error: unknown) => error);
+      contract: { task: "t", context: "c", constraints: "x", doneWhen: "d" }, gate: { behaviorTest: "b", owns: ["src"] } }).catch((error: unknown) => error);
     expect(failure).toBeInstanceOf(AggregateError);
     expect((failure as AggregateError).errors[0]).toMatchObject({ message: "canonical reject" });
     expect(ledger.get("reviewer")).toBeDefined();
   });
 
-  it("keeps the checkout quarantined but removes ungated restart authority after a dead runtime's delegation record is rejected", async () => {
+  it("keeps the checkout quarantined but removes ungated restart authority after a dead runtime's canonical Delivery is rejected", async () => {
     const REC = { path: "/wt/h/reviewer", branch: "tachyon/reviewer", tachyonCreatedBranch: true, baseRef: "b", createdAt: "t" };
     const removed: string[] = [];
     let completed = 0;
     const { manager, ledger, ws } = harness("agents:\n  boss:\n    cmd: claude\n", {
       resolveSpawnCwd: async () => ({ cwd: REC.path, worktree: REC, created: true, preparationLocked: true, rollbackHeadSha: "b" }),
       rollbackPreparedWorktree: async () => { removed.push(REC.path); },
-      recordDelegation: async () => { throw new Error("canonical reject"); },
+      recordCanonicalDelivery: async () => { throw new Error("canonical reject"); },
       completePreparedWorktree: async () => { completed += 1; },
     });
     const failure = await manager.spawn("reviewer", { cmd: "claude", delegator: "boss",
-      contract: { task: "t", context: "c", constraints: "x", doneWhen: "d" }, gate: { behaviorTest: "b" } }).catch((error: unknown) => error);
+      contract: { task: "t", context: "c", constraints: "x", doneWhen: "d" }, gate: { behaviorTest: "b", owns: ["src"] } }).catch((error: unknown) => error);
     expect(failure).toBeInstanceOf(AggregateError);
     expect((failure as AggregateError).errors[0]).toMatchObject({ message: "canonical reject" });
     expect(removed).toEqual([]);
@@ -4964,15 +4558,16 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     expect(reloadedTmux.newSessionArgs).toHaveLength(0);
   });
 
-  it("unlocks a fresh gated worktree only after ledger and delegation records are durable", async () => {
+  it("unlocks a fresh gated worktree only after ledger and canonical Delivery authority are durable", async () => {
     const REC = { path: "/wt/h/reviewer", branch: "tachyon/reviewer", tachyonCreatedBranch: true, baseRef: "b", createdAt: "t" };
     const order: string[] = [];
     let durableLedger: SessionLedger | undefined;
     const h = harness("agents:\n  boss:\n    cmd: claude\n", {
       resolveSpawnCwd: async () => ({ cwd: REC.path, worktree: REC, created: true, preparationLocked: true, rollbackHeadSha: "b" }),
-      recordDelegation: async () => {
+      recordCanonicalDelivery: async () => {
         expect(durableLedger?.get("reviewer")?.worktree).toEqual(REC);
         order.push("delegation");
+        return canonicalSpawnReceipt(REC, "b");
       },
       completePreparedWorktree: async (record) => {
         expect(durableLedger?.get("reviewer")?.worktree).toEqual(REC);
@@ -4986,7 +4581,7 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
       cmd: "claude",
       delegator: "boss",
       contract: { task: "t", context: "c", constraints: "x", doneWhen: "d" },
-      gate: { behaviorTest: "b" },
+      gate: { behaviorTest: "b", owns: ["src"] },
     });
 
     expect(order).toEqual(["delegation", "unlock"]);
@@ -4998,7 +4593,7 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     const notices: string[] = [];
     const h = harness("agents:\n  boss:\n    cmd: claude\n", {
       resolveSpawnCwd: async () => ({ cwd: REC.path, worktree: REC, created: true, preparationLocked: true, rollbackHeadSha: "b" }),
-      recordDelegation: async () => undefined,
+      recordCanonicalDelivery: async () => canonicalSpawnReceipt(REC, "b"),
       completePreparedWorktree: async () => { throw new Error("injected unlock failure"); },
       notify: (message) => { notices.push(message); },
     });
@@ -5007,7 +4602,7 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
       cmd: "claude",
       delegator: "boss",
       contract: { task: "t", context: "c", constraints: "x", doneWhen: "d" },
-      gate: { behaviorTest: "b" },
+      gate: { behaviorTest: "b", owns: ["src"] },
     });
 
     expect(h.sessions.has(h.manager.session("reviewer"))).toBe(true);
@@ -5016,13 +4611,13 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     expect(notices).toContainEqual(expect.stringContaining("injected unlock failure"));
   });
 
-  it("fails a gated launch closed when durable delegation storage is not wired", async () => {
+  it("fails a gated launch closed when canonical Delivery storage is not wired", async () => {
     const REC = { path: "/wt/h/reviewer", branch: "tachyon/reviewer", tachyonCreatedBranch: true, baseRef: "b", createdAt: "t" };
     let completed = 0;
     let resolved = 0;
     const h = harness("agents:\n  boss:\n    cmd: claude\n", {
       resolveSpawnCwd: async () => { resolved += 1; return { cwd: REC.path, worktree: REC, preparationLocked: true }; },
-      recordDelegation: undefined,
+      recordCanonicalDelivery: undefined,
       completePreparedWorktree: async () => { completed += 1; },
     });
 
@@ -5030,10 +4625,10 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
       cmd: "claude",
       delegator: "boss",
       contract: { task: "t", context: "c", constraints: "x", doneWhen: "d" },
-      gate: { behaviorTest: "b" },
+      gate: { behaviorTest: "b", owns: ["src"] },
     }).catch((error: unknown) => error);
 
-    expect(failure).toMatchObject({ message: "gated delegation requires durable delegation-record storage" });
+    expect(failure).toMatchObject({ message: "gated delegation requires canonical Delivery persistence" });
     expect(resolved).toBe(0);
     expect(completed).toBe(0);
     expect(h.ledger.get("reviewer")).toBeUndefined();
@@ -5070,7 +4665,7 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
       cmd: "sh",
       delegator: "boss",
       contract: { task: "t", context: "c", constraints: "x", doneWhen: "d" },
-      gate: { behaviorTest: "cmd:node check.mjs" },
+      gate: { behaviorTest: "cmd:node check.mjs", owns: ["src"] },
     }).catch((error: unknown) => error);
 
     expect(failure).toBeInstanceOf(AggregateError);
@@ -5135,7 +4730,7 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
       cmd: "sh",
       delegator: "boss",
       contract: { task: "t", context: "c", constraints: "x", doneWhen: "d" },
-      gate: { behaviorTest: "cmd:node check.mjs" },
+      gate: { behaviorTest: "cmd:node check.mjs", owns: ["src"] },
     }).catch((error: unknown) => error);
 
     expect(failure).toBeInstanceOf(AggregateError);

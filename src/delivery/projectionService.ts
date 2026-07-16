@@ -112,7 +112,7 @@ export interface CanonicalIntegrateInput {
   expectedGitVersion: number;
   expectedHeadSha: string;
   actor: DeliveryActor;
-  /** Caller identity is mandatory for linked mutations; legacy compatibility is only at the Bridge tool boundary. */
+  /** Bridge-resolved caller identity is mandatory for linked projection mutations. */
   caller: Pick<CallerSnapshot, "kind" | "name">;
   operationId?: string;
   integrationKind?: "ancestor" | "patch-id" | "manual";
@@ -123,7 +123,7 @@ export interface CanonicalPruneInput {
   gitDeliveryId: string;
   expectedGitVersion: number;
   actor: DeliveryActor;
-  /** Caller identity is mandatory for linked mutations; legacy compatibility is only at the Bridge tool boundary. */
+  /** Bridge-resolved caller identity is mandatory for linked projection mutations. */
   caller: Pick<CallerSnapshot, "kind" | "name">;
   abandon?: boolean;
   forceLoseCommits?: boolean;
@@ -880,7 +880,7 @@ export class DeliveryProjectionService {
     if (!p) {
       throw new DeliveryProjectionError(`GitDelivery '${gitDeliveryId}' not found`, "PROJECTION_NOT_FOUND");
     }
-    if (p.deliveryId && p.deliveryId !== deliveryId) {
+    if (p.deliveryId !== deliveryId) {
       throw new DeliveryProjectionError(
         `GitDelivery '${gitDeliveryId}' is linked to '${p.deliveryId}', not '${deliveryId}'`,
         "PROJECTION_DRIFT",

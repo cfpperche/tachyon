@@ -12,7 +12,6 @@ import type { DeliveryCreateInput } from "../../src/delivery/types.js";
 import {
   canIntegrateLinkedGitDelivery,
   canPruneLinkedGitDelivery,
-  canPruneGitDelivery,
 } from "../../src/git-delivery/policy.js";
 import { hygieneReport } from "../../src/git-delivery/classify.js";
 import {
@@ -42,10 +41,6 @@ describe("container-generated delegation behavior", () => {
     const actor = { kind: "system" as const, name: "tachyon" };
     const human = { kind: "human" as const, name: "maintainer" };
     const settings: GitDeliverySettings = {
-      profile: "balanced",
-      autoOpen: false,
-      requireNonSelfAccept: false,
-      autoPrune: false,
       prunePrincipals: ["orch"],
       integratePrincipals: ["orch"],
     };
@@ -262,12 +257,6 @@ describe("container-generated delegation behavior", () => {
     expect(canPruneLinkedGitDelivery({ kind: "agent", name: "worker" }, settings.prunePrincipals)).toBe(false);
     expect(canPruneLinkedGitDelivery({ kind: "agent", name: "orch" }, settings.prunePrincipals, { kind: "agent", name: "orch" })).toBe(true);
     expect(canPruneLinkedGitDelivery({ kind: "human" }, settings.prunePrincipals, { kind: "legacy" })).toBe(false);
-    // Legacy Delivery-less still uses agent equality
-    expect(canPruneGitDelivery({
-      agent: "worker",
-      createdBy: { kind: "agent", name: "x" },
-    } as never, "worker", [])).toBe(true);
-
     // Unsafe lease (held) refuses prune via T14 snapshot class
     const heldSnapSvc = new DeliveryProjectionService({
       deliveries,
@@ -423,31 +412,12 @@ describe("container-generated delegation behavior", () => {
       operationId: "op-prune", doomedShas: ["altered"],
     })).rejects.toThrow(/altered projection intent/);
 
-    // Legacy Delivery-less open still works byte-compatibly (no claim, agent policy)
-    const legacy = await gitDeliveries.open({
-      workspaceId: "ws",
-      createdBy: { kind: "agent", name: "legacy-worker" },
-      agent: "legacy-worker",
-      branchRef: "tachyon/legacy",
-      worktreePath: path.join(root, "legacy-wt"),
-      tachyonCreatedBranch: true,
-      baseRef: "main",
-    });
-    expect(legacy.deliveryId).toBeUndefined();
-    expect(legacy.phase).toBe("open");
-    const legacyHygiene = await hygieneReport([legacy], [], {
-      workspaceRoot: root,
-      git: async () => fail(),
-      liveness: async () => "not_live",
-    });
-    expect(legacyHygiene.rows[0]?.projectionSync === "unlinked" || legacyHygiene.rows[0]?.deliveryId === undefined).toBe(true);
   });
 
   it("canonical projection drift fixtures never reopen generic linked mutation", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "t15-canonical-gate-"));
     const store = new GitDeliveryStore(root, { now: () => "2026-07-12T18:00:00.000Z" });
     const record = await store.open({
-      id: "gd-c0ffee",
       workspaceId: "ws",
       deliveryId: "d-canonical",
       createdBy: { kind: "system", name: "tachyon" },
@@ -457,8 +427,6 @@ describe("container-generated delegation behavior", () => {
       tachyonCreatedBranch: true,
       baseRef: "main",
     });
-    await expect(store.update(record.id, record.version, (r) => ({ ...r, phase: "integrated" })))
-      .rejects.toThrow(/applyCanonicalIntent/);
     await expect(store.applyCanonicalIntent({
       id: record.id,
       expectedVersion: record.version,

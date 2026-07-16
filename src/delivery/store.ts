@@ -99,18 +99,6 @@ type SqlRow = Record<string, unknown>;
 type DatabaseSync = import("node:sqlite").DatabaseSync;
 type DatabaseSyncConstructor = new (location: string, options?: { timeout?: number }) => DatabaseSync;
 
-const legacyMigrationKey = "legacy_json_migration";
-const legacyMigrationComplete = "complete-v1";
-
-function sameLegacyImportIntent(existing: Delivery, planned: DeliveryCreateInput & { id: string }): boolean {
-  const comparable = (value: DeliveryCreateInput & { id: string }) => ({
-    id: value.id, workspaceId: value.workspaceId, createdBy: value.createdBy, contract: value.contract,
-    lease: value.lease, segments: value.segments, events: value.events, gitDeliveryId: value.gitDeliveryId,
-    legacy: value.legacy,
-  });
-  return isDeepStrictEqual(comparable(existing), comparable(planned));
-}
-
 const STORE_SCHEMA = `
   CREATE TABLE IF NOT EXISTS delivery_store_metadata (
     key TEXT PRIMARY KEY,
@@ -144,16 +132,22 @@ const STORE_SCHEMA = `
  */
 export class DeliveryStore {
   readonly databasePath: string;
-  /** Kept as a compatibility alias for callers that displayed the old backing location. */
-  readonly dir: string;
   private readonly capability: DeliveryStoreCapability;
   private readonly Database: DatabaseSyncConstructor;
 
   constructor(readonly workspaceRoot: string, private readonly opts: DeliveryStoreOptions = {}) {
     this.databasePath = path.join(workspaceRoot, ".tachyon", "deliveries-v2.sqlite3");
-    this.dir = path.dirname(this.databasePath);
     this.capability = this.validateCapability();
     this.Database = loadDatabaseSync();
+  }
+
+  /** Canonical verification requires integrity and freshness together when authority is wired. */
+  assertVerificationAuthorityReady(): void {
+    if (!this.opts.authorityIntegrityKey && !this.opts.authorityHead) return;
+    this.authorityKey();
+    if (!this.opts.authorityHead) {
+      throw new DeliveryInvariantError("Delivery authority freshness head is unavailable for verification");
+    }
   }
 
   async list(): Promise<Delivery[]> {
@@ -224,7 +218,6 @@ export class DeliveryStore {
       segments: structuredClone(input.segments ?? []),
       events: structuredClone(input.events ?? []),
       ...(input.gitDeliveryId ? { gitDeliveryId: input.gitDeliveryId } : {}),
-      ...(input.legacy ? { legacy: structuredClone(input.legacy) } : {}),
       createdAt: now,
       updatedAt: now,
     };
@@ -246,43 +239,6 @@ export class DeliveryStore {
         throw error;
       }
       if (input.operationId) this.writeReceipt(db, input.operationId, "create", fingerprint, record, now);
-      return structuredClone(record);
-    });
-  }
-
-  /** Atomic deterministic-id reconciliation reserved for the legacy importer. */
-  async createLegacyImport(input: DeliveryCreateInput & { id: string }): Promise<Delivery> {
-    assertDeliveryId(input.id);
-    assertOperationId(input.operationId);
-    const now = this.now();
-    const unsigned: Delivery = {
-      schemaVersion: DELIVERY_SCHEMA_VERSION,
-      id: input.id,
-      version: 1,
-      workspaceId: input.workspaceId,
-      createdBy: structuredClone(input.createdBy),
-      contract: structuredClone(input.contract),
-      lease: structuredClone(input.lease ?? { state: "free", changedAt: now }),
-      segments: structuredClone(input.segments ?? []),
-      events: structuredClone(input.events ?? []),
-      ...(input.gitDeliveryId ? { gitDeliveryId: input.gitDeliveryId } : {}),
-      ...(input.legacy ? { legacy: structuredClone(input.legacy) } : {}),
-      createdAt: now,
-      updatedAt: now,
-    };
-    validateRecord(unsigned);
-    const record = this.sealStoredRecord(unsigned);
-    return this.writeAuthorityTransaction(async (db) => {
-      const row = db.prepare("SELECT record_json FROM deliveries WHERE id = ?").get(input.id) as SqlRow | undefined;
-      if (row) {
-        const existing = await this.parseStoredRecord(String(row.record_json), input.id);
-        if (!sameLegacyImportIntent(existing, input)) {
-          throw new DeliveryInvariantError(`Delivery '${input.id}' conflicts with the canonical legacy intent`);
-        }
-        return structuredClone(existing);
-      }
-      await this.prepareAuthorityHead(record);
-      db.prepare("INSERT INTO deliveries(id, record_json) VALUES (?, ?)").run(input.id, JSON.stringify(record));
       return structuredClone(record);
     });
   }
@@ -524,7 +480,6 @@ export class DeliveryStore {
       if (settings.journal_mode !== "delete" || Number(settings.synchronous) !== 2) {
         throw new DeliveryStoreUnsupportedError("SQLite DELETE journal with FULL synchronous durability could not be established");
       }
-      this.migrateLegacyJson(db);
       return db;
     } catch (error) {
       db.close();
@@ -535,69 +490,6 @@ export class DeliveryStore {
   private rethrowDatabaseError(error: unknown): never {
     if (isBusyError(error)) throw new DeliveryStoreBusyError(this.databasePath);
     throw error;
-  }
-
-  private migrateLegacyJson(db: DatabaseSync): void {
-    const legacyDir = path.join(this.workspaceRoot, ".tachyon", "deliveries");
-    const archiveDir = path.join(this.workspaceRoot, ".tachyon", "deliveries.migrated-v1");
-    if (this.opts.authorityHead && fs.existsSync(legacyDir)) {
-      throw new DeliveryInvariantError(
-        "automatic legacy Delivery migration is refused while an external authority head is configured",
-      );
-    }
-    const marker = db.prepare("SELECT value FROM delivery_store_metadata WHERE key = ?").get(legacyMigrationKey) as SqlRow | undefined;
-    if (marker && marker.value !== legacyMigrationComplete) {
-      throw new DeliveryInvariantError("legacy Delivery migration has an unsupported or partial state");
-    }
-    if (!marker) {
-      const records = readLegacyRecords(legacyDir);
-      db.exec("BEGIN IMMEDIATE");
-      try {
-        const lockedMarker = db.prepare("SELECT value FROM delivery_store_metadata WHERE key = ?")
-          .get(legacyMigrationKey) as SqlRow | undefined;
-        if (lockedMarker && lockedMarker.value !== legacyMigrationComplete) {
-          throw new DeliveryInvariantError("legacy Delivery migration has an unsupported or partial state");
-        }
-        if (!lockedMarker) {
-          const insert = db.prepare("INSERT INTO deliveries(id, record_json) VALUES (?, ?)");
-          for (const record of records) {
-            const authorityKey = this.authorityKey();
-            if (authorityKey && !verifyAuthorityRecord(
-              record as Delivery & Record<string, unknown>,
-              authorityKey,
-              this.authorityDomain(),
-            )) {
-              throw new DeliveryInvariantError(
-                `legacy Delivery '${record.id}' is unsigned, tampered, or belongs to another workspace; explicit retirement/import is required`,
-              );
-            }
-            const sealed = this.sealStoredRecord(record);
-            insert.run(sealed.id, JSON.stringify(sealed));
-          }
-          db.prepare("INSERT INTO delivery_store_metadata(key, value) VALUES (?, ?)")
-            .run(legacyMigrationKey, legacyMigrationComplete);
-        }
-        db.exec("COMMIT");
-      } catch (error) {
-        if (db.isTransaction) db.exec("ROLLBACK");
-        throw new DeliveryInvariantError(`legacy Delivery migration refused: ${error instanceof Error ? error.message : String(error)}`);
-      }
-    }
-    if (fs.existsSync(legacyDir)) {
-      verifyLegacyMatchesDatabase(db, legacyDir);
-      if (fs.existsSync(archiveDir)) throw new DeliveryInvariantError("legacy Delivery migration archive already exists");
-      try {
-        fs.renameSync(legacyDir, archiveDir);
-      } catch (error) {
-        if (!isMissingPathError(error)) throw error;
-        const completedMarker = db.prepare("SELECT value FROM delivery_store_metadata WHERE key = ?")
-          .get(legacyMigrationKey) as SqlRow | undefined;
-        if (completedMarker?.value !== legacyMigrationComplete || fs.existsSync(legacyDir) || !fs.existsSync(archiveDir)) {
-          throw error;
-        }
-        verifyLegacyMatchesDatabase(db, archiveDir);
-      }
-    }
   }
 
   private writeTransaction<T>(fn: (db: DatabaseSync) => T): T {
@@ -784,10 +676,6 @@ function sameAuthorityHead(actual: DeliveryAuthorityHead | undefined, expected: 
   return actual?.revision === expected.revision && actual.mac === expected.mac;
 }
 
-function isMissingPathError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && "code" in error && error.code === "ENOENT";
-}
-
 function validateKnownLocalDomain(context: DeliveryStoreCapabilityContext): DeliveryStoreCapability {
   const major = Number.parseInt(context.runtimeNodeVersion.split(".")[0] ?? "", 10);
   if (!Number.isSafeInteger(major) || major < 22) {
@@ -816,44 +704,6 @@ function loadDatabaseSync(): DatabaseSyncConstructor {
   } catch (error) {
     throw new DeliveryStoreUnsupportedError(`node:sqlite is unavailable: ${error instanceof Error ? error.message : String(error)}`);
   }
-}
-
-function readLegacyRecords(legacyDir: string): Delivery[] {
-  if (!fs.existsSync(legacyDir)) return [];
-  const entries = fs.readdirSync(legacyDir, { withFileTypes: true });
-  const records: Delivery[] = [];
-  for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
-    if (entry.isDirectory() && entry.name === ".locks") continue;
-    if (!entry.isFile() || !entry.name.endsWith(".json")) {
-      throw new DeliveryInvariantError(`unexpected legacy Delivery entry '${entry.name}'`);
-    }
-    const file = path.join(legacyDir, entry.name);
-    let record: Delivery;
-    try {
-      record = parseRecord(fs.readFileSync(file, "utf8"));
-    } catch (error) {
-      throw new DeliveryInvariantError(`corrupt legacy Delivery '${file}': ${error instanceof Error ? error.message : String(error)}`);
-    }
-    if (`${record.id}.json` !== entry.name) {
-      throw new DeliveryInvariantError(`legacy Delivery filename '${entry.name}' does not match id '${record.id}'`);
-    }
-    records.push(record);
-  }
-  return records;
-}
-
-function verifyLegacyMatchesDatabase(db: DatabaseSync, legacyDir: string): void {
-  for (const legacy of readLegacyRecords(legacyDir)) {
-    const row = db.prepare("SELECT record_json FROM deliveries WHERE id = ?").get(legacy.id) as SqlRow | undefined;
-    if (!row || !same(withoutAuthorityIntegrity(parseRecord(String(row.record_json))), withoutAuthorityIntegrity(legacy))) {
-      throw new DeliveryInvariantError(`legacy Delivery '${legacy.id}' does not match the durable migrated record`);
-    }
-  }
-}
-
-function withoutAuthorityIntegrity(record: Delivery): Omit<Delivery, "authorityIntegrity"> {
-  const { authorityIntegrity: _integrity, ...unsigned } = record;
-  return unsigned;
 }
 
 function fingerprintIntent(value: unknown): string {

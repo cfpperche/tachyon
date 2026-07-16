@@ -5,7 +5,6 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it, vi } from "vitest";
 import type { ProcessFencePort } from "../../src/agents/processFence.js";
-import { UnavailableProcessFence } from "../../src/agents/processFence.js";
 import { DeliveryLeaseError, DeliveryLeaseService, waitForDeliveryLease } from "../../src/delivery/leaseService.js";
 import { DeliveryStore, DeliveryStoreBusyError } from "../../src/delivery/store.js";
 import type { Delivery, DeliveryCreateInput } from "../../src/delivery/types.js";
@@ -18,7 +17,6 @@ const certifiedFence: ProcessFencePort = {
   terminate: async () => undefined,
   proveEmpty: async () => ({ state: "proven_empty" }),
 };
-
 function fixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-lease-"));
   const worktree = path.join(root, "worktree");
@@ -50,11 +48,11 @@ function handoffInput(worktree: string, operationId = "handoff") {
     executionAgent: "fixer", ownsSubset: ["src"], grantedBy: actor, operationId };
 }
 
-function service(store: DeliveryStore, worktree: string, fence = certifiedFence) {
+function service(store: DeliveryStore, worktree: string) {
   let lockDepth = 0;
   let events = 0;
   return new DeliveryLeaseService({
-    store, processFence: fence, handoffSafety: "process-fenced",
+    store, processObserver: { observe: async () => ({ state: "gone" }) },
     canonicalWorktreeFor: () => worktree,
     readHead: () => "b",
     inspectWorktree: () => ({ headSha: "b", clean: true }),
@@ -76,12 +74,12 @@ function reviewFixture() {
 const cleanReviewInspection = { headSha: "b", taskRefSha: "b", indexTreeSha: "tree-b", commitTreeSha: "tree-b", trackedClean: true };
 
 function reviewService(store: DeliveryStore, worktree: string, options: {
-  fence?: ProcessFencePort;
+  observe?: () => { state: "alive" } | { state: "gone" } | { state: "unknown"; reason: string } | Promise<{ state: "alive" } | { state: "gone" } | { state: "unknown"; reason: string }>;
   inspect?: () => typeof cleanReviewInspection;
   withLock?: <T>(path: string, fn: () => Promise<T>) => Promise<T>;
 } = {}) {
   let events = 0;
-  return new DeliveryLeaseService({ store, processFence: options.fence ?? certifiedFence, handoffSafety: "process-fenced", canonicalWorktreeFor: () => worktree,
+  return new DeliveryLeaseService({ store, processObserver: { observe: options.observe ?? (() => ({ state: "gone" })) }, canonicalWorktreeFor: () => worktree,
     readHead: () => "b", inspectWorktree: () => ({ headSha: "b", clean: true }),
     inspectReviewWorktree: options.inspect ?? (() => cleanReviewInspection), isAncestor: () => true,
     withWorktreeLock: options.withLock ?? (async (_path, fn) => fn()), now: () => now,
@@ -93,29 +91,44 @@ function completeReviewInput(worktree: string, verdict: "ACCEPT" | "FINDINGS" = 
 }
 
 describe("DeliveryLeaseService (SDD 368 T5)", () => {
-  it("uses the live safety getter on every operation, including a reload disable", async () => {
+  it("acquires a free canonical Delivery with mechanism-only safety", async () => {
     const { store, worktree, input } = fixture(); await store.create(input);
-    let safety: "mechanism-only" | "disabled" = "mechanism-only";
-    const lease = new DeliveryLeaseService({ store, processFence: certifiedFence, handoffSafety: () => safety,
-      canonicalWorktreeFor: () => worktree, readHead: () => "b", inspectWorktree: () => ({ headSha: "b", clean: true }), isAncestor: () => true,
-      withWorktreeLock: async (_path, fn) => fn(), nonce: () => "live", segmentId: () => "live-seg" });
-    await lease.acquire({ deliveryId: "d-lease", expectedHeadSha: "b", canonicalWorktree: worktree, role: "fixer", executionAgent: "fixer", grantedBy: actor, ownsSubset: ["src"], operationId: "live-enabled" });
-    safety = "disabled";
-    await expect(lease.acquire({ deliveryId: "d-lease", expectedHeadSha: "b", canonicalWorktree: worktree, role: "fixer", executionAgent: "other", grantedBy: actor, ownsSubset: ["src"], operationId: "live-disabled" })).rejects.toMatchObject({ code: "DELIVERY_LEASE_UNAVAILABLE" });
+    const lease = new DeliveryLeaseService({ store, canonicalWorktreeFor: () => worktree, readHead: () => "b", inspectWorktree: () => ({ headSha: "b", clean: true }), isAncestor: () => true, withWorktreeLock: async (_path, fn) => fn(), nonce: () => "mechanism-nonce", segmentId: () => "seg-1" });
+    const reservation = await lease.acquire({ deliveryId: "d-lease", expectedHeadSha: "b", canonicalWorktree: worktree, role: "fixer", executionAgent: "fixer", grantedBy: actor, ownsSubset: ["src"], operationId: "mechanism-acquire" });
+    expect(reservation.reservationNonce).toBe("mechanism-nonce"); expect(reservation.delivery.lease.state).toBe("pending");
   });
 
-  it("allows mechanism-only free acquire without probing ProcessFence", async () => {
-    const { store, worktree, input } = fixture(); await store.create(input);
-    const capability = vi.fn(() => ({ supported: false as const, reason: "unused" }));
-    const lease = new DeliveryLeaseService({ store, processFence: { capability, freeze: async () => undefined, terminate: async () => undefined, proveEmpty: async () => ({ state: "proven_empty" }) }, handoffSafety: "mechanism-only", canonicalWorktreeFor: () => worktree, readHead: () => "b", inspectWorktree: () => ({ headSha: "b", clean: true }), isAncestor: () => true, withWorktreeLock: async (_path, fn) => fn(), nonce: () => "mechanism-nonce", segmentId: () => "seg-1" });
-    const reservation = await lease.acquire({ deliveryId: "d-lease", expectedHeadSha: "b", canonicalWorktree: worktree, role: "fixer", executionAgent: "fixer", grantedBy: actor, ownsSubset: ["src"], operationId: "mechanism-acquire" });
-    expect(reservation.reservationNonce).toBe("mechanism-nonce"); expect(reservation.delivery.lease.state).toBe("pending"); expect(capability).not.toHaveBeenCalled();
+  it("replays an immutable canonical receipt with a historical safety label without running a historical path", async () => {
+    const worktree = path.resolve("/tmp/canonical-replay");
+    const request = { deliveryId: "d-replay", expectedHeadSha: "b", canonicalWorktree: worktree,
+      role: "fixer" as const, executionAgent: "fixer", grantedBy: actor, ownsSubset: ["src"], operationId: "replay-op" };
+    const intent = { deliveryId: request.deliveryId, expectedHeadSha: request.expectedHeadSha, canonicalWorktree: worktree,
+      role: request.role, executionAgent: request.executionAgent, grantedBy: actor, ownsSubset: ["src"], handoffSafety: "process-fenced" };
+    const historical = {
+      id: "d-replay",
+      version: 1,
+      lease: { state: "pending", changedAt: now, holder: { segmentId: "seg-replay", executionAgent: "fixer", reservationNonce: "nonce-replay" } },
+      segments: [{ id: "seg-replay" }],
+      events: [{ id: "event-replay", at: now, type: "lease_reserved", by: actor,
+        detail: { operationId: "replay-op", segmentId: "seg-replay", intent } }],
+    } as unknown as Delivery;
+    const getOperationResult = vi.fn(async () => historical);
+    const get = vi.fn(async () => historical);
+    const canonicalWorktreeFor = vi.fn(() => { throw new Error("replay must not inspect the worktree"); });
+    const lease = new DeliveryLeaseService({ store: { getOperationResult, get } as unknown as DeliveryStore,
+      canonicalWorktreeFor, readHead: () => "unused", inspectWorktree: () => ({ headSha: "unused", clean: true }),
+      isAncestor: () => false, withWorktreeLock: async (_path, fn) => fn() });
+
+    await expect(lease.acquire(request)).resolves.toEqual({ delivery: historical, reservationNonce: "nonce-replay" });
+    expect(getOperationResult).toHaveBeenCalledTimes(1);
+    expect(get).toHaveBeenCalledTimes(1);
+    expect(canonicalWorktreeFor).not.toHaveBeenCalled();
   });
 
   it("completes mechanism-only review when predecessor is already gone without invoking stopper", async () => {
     const { store, worktree, input } = reviewFixture(); await store.create(input); const stop = vi.fn();
     const observe = vi.fn(() => ({ state: "gone" as const }));
-    const lease = new DeliveryLeaseService({ store, processFence: { capability: vi.fn(() => ({ supported: false as const, reason: "unused" })), freeze: vi.fn(), terminate: vi.fn(), proveEmpty: vi.fn() }, handoffSafety: "mechanism-only", exactExecutionStopper: { stop }, processObserver: { observe }, canonicalWorktreeFor: () => worktree, readHead: () => "b", inspectWorktree: () => ({ headSha: "b", clean: true }), inspectReviewWorktree: () => cleanReviewInspection, isAncestor: () => true, withWorktreeLock: async (_path, fn) => fn() });
+    const lease = new DeliveryLeaseService({ store, exactExecutionStopper: { stop }, processObserver: { observe }, canonicalWorktreeFor: () => worktree, readHead: () => "b", inspectWorktree: () => ({ headSha: "b", clean: true }), inspectReviewWorktree: () => cleanReviewInspection, isAncestor: () => true, withWorktreeLock: async (_path, fn) => fn() });
     const completed = await lease.completeReview(completeReviewInput(worktree, "ACCEPT", "mechanism-review"));
     expect(completed.lease.state).toBe("free"); expect(completed.events.at(-1)?.detail).toMatchObject({ handoffSafety: "mechanism-only", absenceEvidence: "root_gone_best_effort" });
     expect(stop).not.toHaveBeenCalled();
@@ -127,7 +140,7 @@ describe("DeliveryLeaseService (SDD 368 T5)", () => {
     const { store, worktree, input } = reviewFixture(); await store.create(input); const stop = vi.fn();
     let observations = 0;
     const observe = vi.fn(() => (++observations === 1 ? { state: "alive" as const } : { state: "gone" as const }));
-    const lease = new DeliveryLeaseService({ store, processFence: { capability: vi.fn(() => ({ supported: false as const, reason: "unused" })), freeze: vi.fn(), terminate: vi.fn(), proveEmpty: vi.fn() }, handoffSafety: "mechanism-only", exactExecutionStopper: { stop }, processObserver: { observe }, canonicalWorktreeFor: () => worktree, readHead: () => "b", inspectWorktree: () => ({ headSha: "b", clean: true }), inspectReviewWorktree: () => cleanReviewInspection, isAncestor: () => true, withWorktreeLock: async (_path, fn) => fn() });
+    const lease = new DeliveryLeaseService({ store, exactExecutionStopper: { stop }, processObserver: { observe }, canonicalWorktreeFor: () => worktree, readHead: () => "b", inspectWorktree: () => ({ headSha: "b", clean: true }), inspectReviewWorktree: () => cleanReviewInspection, isAncestor: () => true, withWorktreeLock: async (_path, fn) => fn() });
     const completed = await lease.completeReview(completeReviewInput(worktree, "ACCEPT", "mechanism-review-alive"));
     expect(completed.lease.state).toBe("free"); expect(completed.events.at(-1)?.detail).toMatchObject({ handoffSafety: "mechanism-only", absenceEvidence: "root_gone_best_effort" });
     expect(stop).toHaveBeenCalledTimes(1);
@@ -138,15 +151,13 @@ describe("DeliveryLeaseService (SDD 368 T5)", () => {
   it("completes mechanism-only handoff when predecessor is already gone without stopper dependency", async () => {
     const { store, worktree, input } = heldFixture(); await store.create(input);
     const observe = vi.fn(() => ({ state: "gone" as const }));
-    const fence = { capability: vi.fn(() => ({ supported: false as const, reason: "unused" })), freeze: vi.fn(), terminate: vi.fn(), proveEmpty: vi.fn() };
-    const lease = new DeliveryLeaseService({ store, processFence: fence, handoffSafety: "mechanism-only", processObserver: { observe },
+    const lease = new DeliveryLeaseService({ store, processObserver: { observe },
       canonicalWorktreeFor: () => worktree, readHead: () => "b", inspectWorktree: () => ({ headSha: "b", clean: true }),
       isAncestor: () => true, withWorktreeLock: async (_path, fn) => fn(), nonce: () => "next", segmentId: () => "seg-1" });
     const reserved = await lease.handoff(handoffInput(worktree, "pre-gone-handoff"));
     expect(reserved.reservationNonce).toBe("next");
     expect(reserved.delivery.lease.state).toBe("pending");
     expect(observe).toHaveBeenCalledTimes(1);
-    expect(fence.capability).not.toHaveBeenCalled(); expect(fence.freeze).not.toHaveBeenCalled(); expect(fence.terminate).not.toHaveBeenCalled(); expect(fence.proveEmpty).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -158,16 +169,15 @@ describe("DeliveryLeaseService (SDD 368 T5)", () => {
     ["post-stop alive", { sequence: [{ state: "alive" }, { state: "alive" }], hasStopper: true, expectStop: true, expectObserve: 2 }],
     ["post-stop unknown", { sequence: [{ state: "alive" }, { state: "unknown", reason: "cannot re-inspect" }], hasStopper: true, expectStop: true, expectObserve: 2 }],
     ["post-stop malformed", { sequence: [{ state: "alive" }, { state: "invalid" }], hasStopper: true, expectStop: true, expectObserve: 2 }],
-  ] as const)("quarantines mechanism-only review after %s without ProcessFence effects", async (label, config) => {
+  ] as const)("quarantines mechanism-only review after %s", async (label, config) => {
     const { store, worktree, input } = reviewFixture(); await store.create(input);
-    const fence = { capability: vi.fn(() => ({ supported: false as const, reason: "unused" })), freeze: vi.fn(), terminate: vi.fn(), proveEmpty: vi.fn() };
     const stop = vi.fn(async () => { if ("stopThrows" in config && config.stopThrows) throw new Error("stop failed"); });
     let observationIndex = 0;
     const observe = vi.fn(() => {
       const next = config.sequence[observationIndex++] ?? { state: "gone" };
       return next as never;
     });
-    const lease = new DeliveryLeaseService({ store, processFence: fence, handoffSafety: "mechanism-only", ...(config.hasStopper ? { exactExecutionStopper: { stop } } : {}),
+    const lease = new DeliveryLeaseService({ store, ...(config.hasStopper ? { exactExecutionStopper: { stop } } : {}),
       ...("omitObserver" in config && config.omitObserver ? {} : { processObserver: { observe } }), canonicalWorktreeFor: () => worktree,
       readHead: () => "b", inspectWorktree: () => ({ headSha: "b", clean: true }), inspectReviewWorktree: () => cleanReviewInspection,
       isAncestor: () => true, withWorktreeLock: async (_path, fn) => fn() });
@@ -192,7 +202,6 @@ describe("DeliveryLeaseService (SDD 368 T5)", () => {
       expect.objectContaining({ type: "review_invalid", detail: expect.objectContaining({ evidence: expect.objectContaining({ phase: "exact_root_stop", handoffSafety: "mechanism-only" }) }) }),
     ]));
     expect(persisted.events.some((event) => event.type === "review_completed")).toBe(false);
-    expect(fence.capability).not.toHaveBeenCalled(); expect(fence.freeze).not.toHaveBeenCalled(); expect(fence.terminate).not.toHaveBeenCalled(); expect(fence.proveEmpty).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -201,8 +210,7 @@ describe("DeliveryLeaseService (SDD 368 T5)", () => {
   ] as const)("quarantines a mechanism-only handoff when post-absence inspection finds %s", async (_label, drift, code) => {
     const { store, worktree, input } = heldFixture(); await store.create(input); let inspections = 0;
     const stop = vi.fn(); const observe = vi.fn(() => ({ state: "gone" as const }));
-    const fence = { capability: vi.fn(() => ({ supported: false as const, reason: "unused" })), freeze: vi.fn(), terminate: vi.fn(), proveEmpty: vi.fn() };
-    const lease = new DeliveryLeaseService({ store, processFence: fence, handoffSafety: "mechanism-only", exactExecutionStopper: { stop }, processObserver: { observe },
+    const lease = new DeliveryLeaseService({ store, exactExecutionStopper: { stop }, processObserver: { observe },
       canonicalWorktreeFor: () => worktree, readHead: () => "b", inspectWorktree: () => (++inspections === 1 ? { headSha: "b", clean: true } : drift),
       isAncestor: () => true, withWorktreeLock: async (_path, fn) => fn() });
 
@@ -218,12 +226,11 @@ describe("DeliveryLeaseService (SDD 368 T5)", () => {
     expect(persisted.segments.at(-1)?.releasedAt).toBeUndefined();
     expect(persisted.events.at(-1)).toMatchObject({ type: "handoff_quarantined", detail: { executionNonce: "exec-0", evidence: expect.objectContaining({ phase: "final" }) } });
     expect(persisted.events.some((event) => event.type === "handoff_reserved")).toBe(false);
-    expect(fence.capability).not.toHaveBeenCalled(); expect(fence.freeze).not.toHaveBeenCalled(); expect(fence.terminate).not.toHaveBeenCalled(); expect(fence.proveEmpty).not.toHaveBeenCalled();
   });
 
   it("forces mechanism-only stop and observation outside the worktree lock", async () => {
     const { store, worktree, input } = heldFixture(); await store.create(input); let locked = false; let observations = 0;
-    const lease = new DeliveryLeaseService({ store, processFence: certifiedFence, handoffSafety: "mechanism-only", exactExecutionStopper: { stop: async () => { expect(locked).toBe(false); } }, processObserver: { observe: () => { expect(locked).toBe(false); return ++observations === 1 ? { state: "alive" as const } : { state: "gone" as const }; } }, canonicalWorktreeFor: () => worktree, readHead: () => "b", inspectWorktree: () => ({ headSha: "b", clean: true }), isAncestor: () => true, withWorktreeLock: async (_path, fn) => { locked = true; try { return await fn(); } finally { locked = false; } }, nonce: () => "next", segmentId: () => "seg-1" });
+    const lease = new DeliveryLeaseService({ store, exactExecutionStopper: { stop: async () => { expect(locked).toBe(false); } }, processObserver: { observe: () => { expect(locked).toBe(false); return ++observations === 1 ? { state: "alive" as const } : { state: "gone" as const }; } }, canonicalWorktreeFor: () => worktree, readHead: () => "b", inspectWorktree: () => ({ headSha: "b", clean: true }), isAncestor: () => true, withWorktreeLock: async (_path, fn) => { locked = true; try { return await fn(); } finally { locked = false; } }, nonce: () => "next", segmentId: () => "seg-1" });
     await lease.handoff({ ...handoffInput(worktree, "outside-lock"), executionAgent: "fixer" });
     expect(observations).toBe(2);
   });
@@ -490,7 +497,6 @@ describe("DeliveryLeaseService (SDD 368 T5)", () => {
     const originalGet = store.get.bind(store);
     const replayChecks = vi.spyOn(store, "getOperationResult");
     vi.spyOn(store, "update").mockImplementationOnce(async (...args) => {
-      // The losing service has completed both replay checks and is crossing into its store CAS.
       expect(replayChecks).toHaveBeenCalledTimes(2);
       vi.spyOn(store, "get").mockImplementationOnce(async (deliveryId) => {
         const staleObserved = await originalGet(deliveryId);
@@ -501,9 +507,6 @@ describe("DeliveryLeaseService (SDD 368 T5)", () => {
           "winner compensation before loser CAS",
           "raced-acquire-compensation",
         );
-        // updateInternal now holds a version-one observation while SQLite contains the winning
-        // version-two receipt followed by version-three compensation. Its in-transaction replay
-        // must reject that historical receipt instead of returning authority to the caller.
         return staleObserved;
       });
       return originalUpdate(...args);
@@ -529,136 +532,63 @@ describe("DeliveryLeaseService (SDD 368 T5)", () => {
     const reserved = await first.handoff(request);
     await first.failPending("d-lease", reserved.reservationNonce, "successor spawn failed", "stale-handoff-compensation");
 
-    const fenceEffects: string[] = [];
-    const retryFence: ProcessFencePort = {
-      capability: () => ({ supported: true, domain: "test" }),
-      freeze: async () => { fenceEffects.push("freeze"); },
-      terminate: async () => { fenceEffects.push("terminate"); },
-      proveEmpty: async () => { fenceEffects.push("proveEmpty"); return { state: "proven_empty" }; },
-    };
+    const observe = vi.fn(async () => ({ state: "gone" as const }));
+    const stop = vi.fn(async () => undefined);
+    const retry = new DeliveryLeaseService({
+      store,
+      processObserver: { observe },
+      exactExecutionStopper: { stop },
+      canonicalWorktreeFor: () => worktree,
+      readHead: () => "b",
+      inspectWorktree: () => ({ headSha: "b", clean: true }),
+      isAncestor: () => true,
+      withWorktreeLock: async (_path, fn) => fn(),
+      nonce: () => "retry-nonce",
+      segmentId: () => "retry-segment",
+    });
     let spawnEffects = 0;
     const replayHandoffThenSpawn = async () => {
-      const reservation = await service(store, worktree, retryFence).handoff(request);
+      const reservation = await retry.handoff(request);
       spawnEffects += 1;
       return reservation;
     };
 
     await expect(replayHandoffThenSpawn()).rejects.toThrow("historical receipt");
     expect(spawnEffects).toBe(0);
-    expect(fenceEffects).toEqual([]);
+    expect(observe).not.toHaveBeenCalled();
+    expect(stop).not.toHaveBeenCalled();
     expect((await store.get("d-lease"))?.lease.state).toBe("quarantined");
   });
 
-  it("hands a held lease to one pending successor and fences outside both locks", async () => {
+  it("hands a held lease to one pending successor after observing the root outside both locks", async () => {
     const { store, worktree, input } = heldFixture();
     await store.create(input);
     let lockDepth = 0;
     const calls: string[] = [];
-    const fence: ProcessFencePort = {
-      capability: () => ({ supported: true, domain: "test" }),
-      freeze: async () => { expect(lockDepth).toBe(0); calls.push("freeze"); },
-      terminate: async () => { expect(lockDepth).toBe(0); calls.push("terminate"); },
-      proveEmpty: async () => { expect(lockDepth).toBe(0); calls.push("proveEmpty"); return { state: "proven_empty" }; },
-    };
+    const observe = async () => { expect(lockDepth).toBe(0); calls.push("observe"); return { state: "gone" as const }; };
     const lease = new DeliveryLeaseService({
-      store, processFence: fence, canonicalWorktreeFor: () => worktree,
+      store, processObserver: { observe }, canonicalWorktreeFor: () => worktree,
       readHead: () => "b", inspectWorktree: () => ({ headSha: "b", clean: true }), isAncestor: () => true,
       withWorktreeLock: async (_path, fn) => { lockDepth++; try { return await fn(); } finally { lockDepth--; } },
       now: () => now, nonce: () => "next-nonce", segmentId: () => "seg-1", eventId: () => `event-${calls.length}`,
     });
     const result = await lease.handoff({ deliveryId: "d-lease", canonicalWorktree: worktree, expectedFinalHeadSha: "b",
       role: "fixer", executionAgent: "fixer", ownsSubset: ["src/feature"], grantedBy: actor, operationId: "handoff" });
-    expect(calls).toEqual(["freeze", "terminate", "proveEmpty"]);
+    expect(calls).toEqual(["observe"]);
     expect(result.reservationNonce).toBe("next-nonce");
     expect(result.delivery.lease).toMatchObject({ state: "pending", holder: { segmentId: "seg-1", reservationNonce: "next-nonce" } });
     expect(result.delivery.segments).toHaveLength(2);
     expect(result.delivery.segments[0]).toMatchObject({ releasedHeadSha: "b", outcome: "completed" });
     expect(await lease.handoff({ deliveryId: "d-lease", canonicalWorktree: worktree, expectedFinalHeadSha: "b",
       role: "fixer", executionAgent: "fixer", ownsSubset: ["src/feature"], grantedBy: actor, operationId: "handoff" })).toEqual(result);
-    expect(calls).toHaveLength(3);
+    expect(calls).toHaveLength(1);
   });
 
-  it("quarantines survivors without appending a successor", async () => {
-    const { store, worktree, input } = heldFixture();
-    await store.create(input);
-    const fence: ProcessFencePort = { ...certifiedFence, proveEmpty: async () => ({ state: "survivors", pids: [7] }) };
-    const lease = new DeliveryLeaseService({ store, processFence: fence, canonicalWorktreeFor: () => worktree,
-      readHead: () => "b", inspectWorktree: () => ({ headSha: "b", clean: true }), isAncestor: () => true,
-      withWorktreeLock: async (_path, fn) => fn(), now: () => now });
-    await expect(lease.handoff({ deliveryId: "d-lease", canonicalWorktree: worktree, expectedFinalHeadSha: "b",
-      role: "fixer", executionAgent: "fixer", ownsSubset: ["src"], grantedBy: actor, operationId: "survivor" }))
-      .rejects.toMatchObject({ code: "DELIVERY_QUARANTINED", retryable: false });
-    const delivery = await store.get("d-lease");
-    expect(delivery?.lease.state).toBe("quarantined");
-    expect(delivery?.segments).toHaveLength(1);
-    expect(delivery?.events.at(-1)?.detail?.evidence).toMatchObject({ proof: { state: "survivors", pids: [7] } });
-  });
-
-  it("persists unknown proof and simultaneous fence error as structured quarantine evidence", async () => {
-    const { store, worktree, input } = heldFixture();
-    await store.create(input);
-    const fence: ProcessFencePort = { capability: () => ({ supported: true, domain: "test" }),
-      freeze: async () => { throw new Error("freeze failed"); }, terminate: async () => undefined,
-      proveEmpty: async () => ({ state: "unknown", reason: "audit unavailable" }) };
-    await expect(service(store, worktree, fence).handoff(handoffInput(worktree, "unknown-evidence")))
-      .rejects.toMatchObject({ code: "DELIVERY_QUARANTINED" });
-    expect((await store.get("d-lease"))?.events.at(-1)?.detail?.evidence)
-      .toMatchObject({ proof: { state: "unknown", reason: "audit unavailable" }, fenceError: "freeze failed" });
-  });
-
-  it("replays completed acquire, handoff, and review receipts before disabled or unavailable ambient safety checks", async () => {
-    const capability = vi.fn(() => ({ supported: false as const, reason: "now unavailable" }));
-    const disabled = (store: DeliveryStore, worktree: string) => new DeliveryLeaseService({ store, handoffSafety: "disabled",
-      processFence: { capability, freeze: async () => undefined, terminate: async () => undefined, proveEmpty: async () => ({ state: "proven_empty" }) },
-      canonicalWorktreeFor: () => worktree, readHead: () => "b", inspectWorktree: () => ({ headSha: "b", clean: true }),
-      inspectReviewWorktree: () => cleanReviewInspection, isAncestor: () => true, withWorktreeLock: async (_path, fn) => fn() });
-
-    const acquire = fixture(); await acquire.store.create(acquire.input);
-    const acquireInput = { deliveryId: "d-lease", expectedHeadSha: "b", canonicalWorktree: acquire.worktree, role: "fixer" as const,
-      executionAgent: "fixer", grantedBy: actor, ownsSubset: ["src"], operationId: "receipt-acquire" };
-    const acquired = await service(acquire.store, acquire.worktree).acquire(acquireInput);
-    await expect(disabled(acquire.store, acquire.worktree).acquire(acquireInput)).resolves.toEqual(acquired);
-
-    const handoff = heldFixture(); await handoff.store.create(handoff.input);
-    const handed = await service(handoff.store, handoff.worktree).handoff(handoffInput(handoff.worktree, "receipt-handoff"));
-    await expect(disabled(handoff.store, handoff.worktree).handoff(handoffInput(handoff.worktree, "receipt-handoff"))).resolves.toEqual(handed);
-
-    const review = reviewFixture(); await review.store.create(review.input);
-    const reviewed = await reviewService(review.store, review.worktree).completeReview(completeReviewInput(review.worktree, "ACCEPT", "receipt-review"));
-    await expect(disabled(review.store, review.worktree).completeReview(completeReviewInput(review.worktree, "ACCEPT", "receipt-review"))).resolves.toEqual(reviewed);
-    expect(capability).not.toHaveBeenCalled();
-  });
-
-  it("unavailable handoff mutates nothing and invokes no fence operation", async () => {
-    const { store, worktree, input } = heldFixture();
-    await store.create(input);
-    const calls: string[] = [];
-    const fence: ProcessFencePort = { capability: () => ({ supported: false, reason: "no proof" }),
-      freeze: async () => { calls.push("freeze"); }, terminate: async () => { calls.push("terminate"); },
-      proveEmpty: async () => { calls.push("proveEmpty"); return { state: "proven_empty" }; } };
-    await expect(service(store, worktree, fence).handoff(handoffInput(worktree, "unavailable")))
-      .rejects.toMatchObject({ code: "DELIVERY_LEASE_UNAVAILABLE" });
-    expect(calls).toEqual([]);
-    expect((await store.get("d-lease"))?.lease.state).toBe("held");
-  });
-
-  it.each(["unknown", "freeze", "terminate"] as const)("quarantines a %s fence outcome even when proof is empty", async (failure) => {
-    const { store, worktree, input } = heldFixture();
-    await store.create(input);
-    const fence: ProcessFencePort = { capability: () => ({ supported: true, domain: "test" }),
-      freeze: async () => { if (failure === "freeze") throw new Error("freeze failed"); },
-      terminate: async () => { if (failure === "terminate") throw new Error("terminate failed"); },
-      proveEmpty: async () => failure === "unknown" ? { state: "unknown", reason: "uncertain" } : { state: "proven_empty" } };
-    await expect(service(store, worktree, fence).handoff(handoffInput(worktree, `fence-${failure}`)))
-      .rejects.toMatchObject({ code: "DELIVERY_QUARANTINED" });
-    expect((await store.get("d-lease"))?.lease.state).toBe("quarantined");
-  });
-
-  it.each(["dirty", "head"] as const)("quarantines post-fence %s drift", async (failure) => {
+  it.each(["dirty", "head"] as const)("quarantines post-absence %s drift", async (failure) => {
     const { store, worktree, input } = heldFixture();
     await store.create(input);
     let inspections = 0;
-    const lease = new DeliveryLeaseService({ store, processFence: certifiedFence, canonicalWorktreeFor: () => worktree,
+    const lease = new DeliveryLeaseService({ store, processObserver: { observe: async () => ({ state: "gone" }) }, canonicalWorktreeFor: () => worktree,
       readHead: () => "b", inspectWorktree: () => (++inspections === 1 ? { headSha: "b", clean: true }
         : failure === "dirty" ? { headSha: "b", clean: false } : { headSha: "c", clean: true }), isAncestor: () => true,
       withWorktreeLock: async (_path, fn) => fn(), now: () => now });
@@ -686,10 +616,14 @@ describe("DeliveryLeaseService (SDD 368 T5)", () => {
     const draining = new Promise<void>((resolve) => { announceDrain = resolve; });
     let allowProof!: () => void;
     const proofAllowed = new Promise<void>((resolve) => { allowProof = resolve; });
-    const fence: ProcessFencePort = { ...certifiedFence, proveEmpty: async () => {
+    const observe = async () => {
       announceDrain(); await proofAllowed; return { state: "proven_empty" };
-    } };
-    const winner = service(store, worktree, fence).handoff(handoffInput(worktree, "durable-winner"));
+    };
+    const winner = new DeliveryLeaseService({ store, processObserver: { observe: async () => {
+      await observe(); return { state: "gone" };
+    } }, canonicalWorktreeFor: () => worktree, readHead: () => "b", inspectWorktree: () => ({ headSha: "b", clean: true }),
+      isAncestor: () => true, withWorktreeLock: async (_path, fn) => fn(), now: () => now, nonce: () => "nonce", segmentId: () => "seg-1" })
+      .handoff(handoffInput(worktree, "durable-winner"));
     await draining;
     expect((await store.get("d-lease"))?.lease.state).toBe("draining");
     await expect(service(new DeliveryStore(store.workspaceRoot, { now: () => now }), worktree)
@@ -699,64 +633,43 @@ describe("DeliveryLeaseService (SDD 368 T5)", () => {
     await expect(winner).resolves.toMatchObject({ delivery: { lease: { state: "pending" } } });
   });
 
-  it("never reserves a successor when the full predecessor holder changes during proveEmpty", async () => {
+  it("never reserves a successor when the full predecessor holder changes during root observation", async () => {
     const { store, worktree, input } = heldFixture();
     await store.create(input);
-    const fence: ProcessFencePort = { ...certifiedFence, proveEmpty: async () => {
+    const observe = async () => {
       const draining = await store.get("d-lease");
       await store.update("d-lease", draining!.version, (record) => {
         record.lease.holder = { ...record.lease.holder!, executionAgent: "mutated-worker",
           process: { pid: 99, processStart: "changed", bootId: "other" } };
         return record;
       });
-      return { state: "proven_empty" };
-    } };
-    const error = await service(store, worktree, fence).handoff(handoffInput(worktree, "holder-mutation")).catch((caught) => caught);
+      return { state: "gone" as const };
+    };
+    const lease = new DeliveryLeaseService({ store, processObserver: { observe }, canonicalWorktreeFor: () => worktree,
+      readHead: () => "b", inspectWorktree: () => ({ headSha: "b", clean: true }), isAncestor: () => true,
+      withWorktreeLock: async (_path, fn) => fn(), now: () => now });
+    const error = await lease.handoff(handoffInput(worktree, "holder-mutation")).catch((caught) => caught);
     expect(error instanceof AggregateError || error?.code === "DELIVERY_QUARANTINED").toBe(true);
     const delivery = await store.get("d-lease");
     expect(delivery?.segments).toHaveLength(1);
     expect(delivery?.lease.state).not.toBe("pending");
   });
 
-  it("refuses invalid scope, path, state, and process identity before fencing", async () => {
+  it("refuses invalid scope, path, state, and process identity before root observation", async () => {
     for (const kind of ["scope", "path", "state", "process"] as const) {
       const { store, worktree, input } = heldFixture();
       if (kind === "state") input.lease = { state: "free", changedAt: now };
       if (kind === "process") delete input.lease!.holder!.process;
       await store.create(input);
-      let fenceCalls = 0;
-      const fence: ProcessFencePort = { ...certifiedFence, freeze: async () => { fenceCalls++; }, terminate: async () => { fenceCalls++; },
-        proveEmpty: async () => { fenceCalls++; return { state: "proven_empty" }; } };
+      let observationCalls = 0;
+      const lease = new DeliveryLeaseService({ store, processObserver: { observe: async () => { observationCalls++; return { state: "gone" }; } },
+        canonicalWorktreeFor: () => worktree, readHead: () => "b", inspectWorktree: () => ({ headSha: "b", clean: true }),
+        isAncestor: () => true, withWorktreeLock: async (_path, fn) => fn(), now: () => now });
       const request = handoffInput(kind === "path" ? path.join(worktree, "other") : worktree, `invalid-${kind}`);
       if (kind === "scope") request.ownsSubset = ["test"];
-      await expect(service(store, worktree, fence).handoff(request)).rejects.toBeInstanceOf(DeliveryLeaseError);
-      expect(fenceCalls).toBe(0);
+      await expect(lease.handoff(request)).rejects.toBeInstanceOf(DeliveryLeaseError);
+      expect(observationCalls).toBe(0);
     }
-  });
-
-  it("surfaces uncertain quarantine as AggregateError and retries from the durable drain receipt", async () => {
-    const { store, worktree, input } = heldFixture();
-    await store.create(input);
-    let proveEmpty = false;
-    let fenceCalls = 0;
-    const fence: ProcessFencePort = { capability: () => ({ supported: true, domain: "test" }),
-      freeze: async () => { fenceCalls++; }, terminate: async () => { fenceCalls++; },
-      proveEmpty: async () => { fenceCalls++; return proveEmpty ? { state: "proven_empty" } : { state: "survivors", pids: [7] }; } };
-    const lease = service(store, worktree, fence);
-    const originalUpdate = store.update.bind(store);
-    store.update = async (id, expectedVersion, mutate, options = {}) => {
-      if (options.operationId === "resume:quarantine") throw new Error("quarantine storage unavailable");
-      return originalUpdate(id, expectedVersion, mutate, options);
-    };
-    await expect(lease.handoff(handoffInput(worktree, "resume"))).rejects.toBeInstanceOf(AggregateError);
-    expect((await store.get("d-lease"))?.lease.state).toBe("draining");
-
-    store.update = originalUpdate;
-    proveEmpty = true;
-    const resumed = await lease.handoff(handoffInput(worktree, "resume"));
-    expect(resumed.delivery.lease.state).toBe("pending");
-    expect(resumed.delivery.segments).toHaveLength(2);
-    expect(fenceCalls).toBe(6);
   });
 
   it("failPending requires the exact nonce and is receipt-idempotent", async () => {
@@ -815,7 +728,7 @@ describe("DeliveryLeaseService (SDD 368 T5)", () => {
     await store.create(input);
     let reads = 0;
     const lease = new DeliveryLeaseService({
-      store, processFence: certifiedFence, canonicalWorktreeFor: () => worktree,
+      store, canonicalWorktreeFor: () => worktree,
       readHead: () => (++reads === 1 ? "b" : "c"), inspectWorktree: () => ({ headSha: "b", clean: true }), isAncestor: () => true,
       withWorktreeLock: async (_path, fn) => fn(), now: () => now,
     });
@@ -823,19 +736,6 @@ describe("DeliveryLeaseService (SDD 368 T5)", () => {
       deliveryId: "d-lease", expectedHeadSha: "b", canonicalWorktree: worktree,
       role: "fixer", executionAgent: "fixer", grantedBy: actor, ownsSubset: ["src"], operationId: "drift",
     })).rejects.toMatchObject({ code: "DELIVERY_HEAD_CHANGED" });
-    expect((await store.get("d-lease"))?.lease.state).toBe("free");
-  });
-
-  it("fails closed before mutation when the production fence capability is unavailable", async () => {
-    const { store, worktree, input } = fixture();
-    await store.create(input);
-    const lease = service(store, worktree, new UnavailableProcessFence());
-    const error = await lease.acquire({
-      deliveryId: "d-lease", expectedHeadSha: "b", canonicalWorktree: worktree,
-      role: "fixer", executionAgent: "fixer", grantedBy: actor, ownsSubset: ["src"], operationId: "blocked",
-    }).catch((caught) => caught);
-    expect(error).toBeInstanceOf(DeliveryLeaseError);
-    expect(error).toMatchObject({ code: "DELIVERY_LEASE_UNAVAILABLE", retryable: false });
     expect((await store.get("d-lease"))?.lease.state).toBe("free");
   });
 
@@ -853,7 +753,7 @@ describe("DeliveryLeaseService (SDD 368 T5)", () => {
     await expect(service(store, worktree).acquire({ ...base, canonicalWorktree: path.join(worktree, "other") }))
       .rejects.toMatchObject({ code: "DELIVERY_WORKTREE_MISMATCH" });
     const nonLinear = new DeliveryLeaseService({
-      store, processFence: certifiedFence, canonicalWorktreeFor: () => worktree, readHead: () => "b",
+      store, canonicalWorktreeFor: () => worktree, readHead: () => "b",
       inspectWorktree: () => ({ headSha: "b", clean: true }), isAncestor: () => false, withWorktreeLock: async (_path, fn) => fn(), now: () => now,
     });
     await expect(nonLinear.acquire(base)).rejects.toMatchObject({ code: "DELIVERY_NON_LINEAR_HEAD" });
@@ -942,30 +842,30 @@ describe("DeliveryLeaseService (SDD 368 T5)", () => {
   it("quarantines when exact review inspection is unavailable", async () => {
     const { store, worktree, input } = reviewFixture();
     await store.create(input);
-    const lease = new DeliveryLeaseService({ store, processFence: certifiedFence, canonicalWorktreeFor: () => worktree,
+    const lease = new DeliveryLeaseService({ store, processObserver: { observe: async () => ({ state: "gone" }) }, canonicalWorktreeFor: () => worktree,
       readHead: () => "b", inspectWorktree: () => ({ headSha: "b", clean: true }), isAncestor: () => true,
       withWorktreeLock: async (_path, fn) => fn(), now: () => now });
     await expect(lease.completeReview(completeReviewInput(worktree))).rejects.toMatchObject({ code: "DELIVERY_QUARANTINED" });
     expect((await store.get("d-lease"))!.lease.state).toBe("quarantined");
   });
 
-  it("quarantines holder drift and fence uncertainty while preserving the open reviewer", async () => {
+  it("quarantines holder drift and root-observation uncertainty while preserving the open reviewer", async () => {
     const drift = reviewFixture();
     await drift.store.create(drift.input);
-    const driftingFence: ProcessFencePort = { ...certifiedFence, terminate: async () => {
+    const observeDrift = async () => {
       const current = await drift.store.get("d-lease");
       await drift.store.update("d-lease", current!.version, (record) => {
         record.lease.holder = { ...record.lease.holder!, principal: "drifted" }; return record;
       });
-    } };
-    await expect(reviewService(drift.store, drift.worktree, { fence: driftingFence }).completeReview(completeReviewInput(drift.worktree)))
+      return { state: "gone" as const };
+    };
+    await expect(reviewService(drift.store, drift.worktree, { observe: observeDrift }).completeReview(completeReviewInput(drift.worktree)))
       .rejects.toMatchObject({ code: "DELIVERY_QUARANTINED" });
     expect((await drift.store.get("d-lease"))!.lease).toMatchObject({ state: "quarantined", holder: { principal: "drifted" } });
 
     const uncertain = reviewFixture();
     await uncertain.store.create(uncertain.input);
-    const unknownFence: ProcessFencePort = { ...certifiedFence, proveEmpty: async () => ({ state: "unknown", reason: "uncertain" }) };
-    await expect(reviewService(uncertain.store, uncertain.worktree, { fence: unknownFence }).completeReview(completeReviewInput(uncertain.worktree)))
+    await expect(reviewService(uncertain.store, uncertain.worktree, { observe: () => ({ state: "unknown", reason: "uncertain" }) }).completeReview(completeReviewInput(uncertain.worktree)))
       .rejects.toMatchObject({ code: "DELIVERY_QUARANTINED" });
     expect((await uncertain.store.get("d-lease"))!.segments.at(-1)?.releasedAt).toBeUndefined();
   });
@@ -986,17 +886,14 @@ describe("DeliveryLeaseService (SDD 368 T5)", () => {
     expect(completed.events.filter((event) => event.type === "review_completed")).toHaveLength(1);
   });
 
-  it("runs process-fence work outside Delivery/worktree locks", async () => {
+  it("runs exact root observation outside Delivery/worktree locks", async () => {
     const { store, worktree, input } = reviewFixture();
     await store.create(input);
     let lockDepth = 0;
-    const outside = vi.fn(() => { expect(lockDepth).toBe(0); });
-    const fence: ProcessFencePort = { capability: () => ({ supported: true, domain: "test" }),
-      freeze: async () => { outside(); }, terminate: async () => { outside(); },
-      proveEmpty: async () => { outside(); return { state: "proven_empty" }; } };
+    const outside = vi.fn(() => { expect(lockDepth).toBe(0); return { state: "gone" as const }; });
     const withLock = async <T>(_path: string, fn: () => Promise<T>) => { lockDepth += 1; try { return await fn(); } finally { lockDepth -= 1; } };
-    await reviewService(store, worktree, { fence, withLock }).completeReview(completeReviewInput(worktree));
-    expect(outside).toHaveBeenCalledTimes(3);
+    await reviewService(store, worktree, { observe: outside, withLock }).completeReview(completeReviewInput(worktree));
+    expect(outside).toHaveBeenCalledTimes(1);
   });
 
   it("aggregates the postcondition cause with quarantine persistence failure", async () => {
@@ -1051,7 +948,8 @@ describe("DeliveryLeaseService dead-holder reconciliation (SDD 368 T11)", () => 
     canonical?: () => string;
     withLock?: <T>(path: string, fn: () => Promise<T>) => Promise<T>;
   } = {}) => new DeliveryLeaseService({
-    store, processFence: options.fence ?? certifiedFence, canonicalWorktreeFor: options.canonical ?? (() => worktree),
+    store, processFence: options.fence ?? certifiedFence,
+    canonicalWorktreeFor: options.canonical ?? (() => worktree),
     readHead: () => "b", inspectWorktree: () => ({ headSha: "b", clean: true }), isAncestor: () => true,
     inspectRecoveryWorktree: async () => ({ inventory: typeof options.inventory === "function" ? await options.inventory() : options.inventory ?? recoveryInventory }),
     recoveryPrincipals: options.recoveryPrincipals,
@@ -1062,20 +960,16 @@ describe("DeliveryLeaseService dead-holder reconciliation (SDD 368 T11)", () => 
     nonce: () => "recovery-nonce", segmentId: () => "recovery-segment", eventId: () => "recovery-event",
   });
 
-  it("leaves an exact live identity unchanged without invoking the fence", async () => {
+  it("leaves an exact live identity unchanged", async () => {
     const { store, worktree, input } = heldFixture();
     await store.create(input);
-    const fence: ProcessFencePort = { capability: vi.fn(() => ({ supported: true as const, domain: "test" })),
-      freeze: vi.fn(), terminate: vi.fn(), proveEmpty: vi.fn() };
     const observe = vi.fn(async (identity) => { expect(identity).toEqual(input.lease!.holder!.process); return { state: "alive" as const }; });
-    const result = await makeService(store, worktree, { observe, fence }).reconcileHolder(request(worktree));
+    const result = await makeService(store, worktree, { observe }).reconcileHolder(request(worktree));
     expect(result).toMatchObject({ outcome: "alive", delivery: { lease: { state: "held" } } });
-    expect(fence.capability).not.toHaveBeenCalled();
-    expect(fence.proveEmpty).not.toHaveBeenCalled();
     expect((await store.get("d-lease"))!.events).toHaveLength(0);
   });
 
-  it("interrupts only after gone, proven-empty, and two exact clean HEAD observations", async () => {
+  it("interrupts only after the exact root is gone and two exact clean HEAD observations", async () => {
     const { store, worktree, input } = heldFixture();
     await store.create(input);
     const inspect = vi.fn(() => ({ headSha: "b", clean: true }));
@@ -1135,7 +1029,6 @@ describe("DeliveryLeaseService dead-holder reconciliation (SDD 368 T11)", () => 
       .rejects.toMatchObject({ code: "DELIVERY_QUARANTINED" });
     expect((await store.get("d-lease"))!.lease.state).toBe("quarantined");
   });
-
   it.each([
     ["dirty", [{ headSha: "b", clean: false }]],
     ["untracked", [{ headSha: "b", clean: false }]],
@@ -1262,7 +1155,7 @@ describe("DeliveryLeaseService dead-holder reconciliation (SDD 368 T11)", () => 
     expect(delivery.events.filter((event) => event.type === "holder_reconcile_quarantined")).toHaveLength(1);
   });
 
-  it("rejects canonical mismatch before process observation and runs observation/proof outside the worktree lock", async () => {
+  it("rejects canonical mismatch before process observation and observes outside the worktree lock", async () => {
     const mismatch = heldFixture(); await mismatch.store.create(mismatch.input);
     const observe = vi.fn(async () => ({ state: "gone" as const }));
     await expect(makeService(mismatch.store, mismatch.worktree, { observe }).reconcileHolder(request(path.join(mismatch.worktree, "other"))))
@@ -1272,13 +1165,10 @@ describe("DeliveryLeaseService dead-holder reconciliation (SDD 368 T11)", () => 
     const outside = heldFixture(); await outside.store.create(outside.input);
     let lockDepth = 0;
     const assertOutside = vi.fn(() => expect(lockDepth).toBe(0));
-    const fence: ProcessFencePort = { capability: () => ({ supported: true, domain: "test" }), freeze: vi.fn(), terminate: vi.fn(),
-      proveEmpty: async () => { assertOutside(); return { state: "proven_empty" }; } };
     const withLock = async <T>(_path: string, fn: () => Promise<T>) => { lockDepth++; try { return await fn(); } finally { lockDepth--; } };
-    await makeService(outside.store, outside.worktree, { fence, withLock, observe: async () => { assertOutside(); return { state: "gone" }; } })
+    await makeService(outside.store, outside.worktree, { withLock, observe: async () => { assertOutside(); return { state: "gone" }; } })
       .reconcileHolder(request(outside.worktree, "outside"));
-    expect(assertOutside).toHaveBeenCalledTimes(2);
-    expect(fence.freeze).not.toHaveBeenCalled(); expect(fence.terminate).not.toHaveBeenCalled();
+    expect(assertOutside).toHaveBeenCalledTimes(1);
   });
 
   it.each(["missing-holder", "reservation-nonce", "grant-boundary"] as const)("quarantines invalid held boundary: %s", async (kind) => {
@@ -1299,12 +1189,12 @@ describe("DeliveryLeaseService dead-holder reconciliation (SDD 368 T11)", () => 
     ["missing observer", { omitObserver: true }],
     ["foreign observer state", { observe: async () => ({ state: "dead" }) }],
     ["blank unknown reason", { observe: async () => ({ state: "unknown", reason: "" }) }],
-  ] as const)("quarantines %s without invoking proveEmpty", async (_label, observerOptions) => {
+  ] as const)("quarantines %s before worktree inspection", async (_label, observerOptions) => {
     const { store, worktree, input } = heldFixture(); await store.create(input);
-    const fence: ProcessFencePort = { ...certifiedFence, proveEmpty: vi.fn() };
-    await expect(makeService(store, worktree, { ...observerOptions, fence }).reconcileHolder(request(worktree, `observer-${_label.replace(/ /g, "-")}`)))
+    const inspect = vi.fn(() => ({ headSha: "b", clean: true }));
+    await expect(makeService(store, worktree, { ...observerOptions, inspect }).reconcileHolder(request(worktree, `observer-${_label.replace(/ /g, "-")}`)))
       .rejects.toMatchObject({ code: "DELIVERY_QUARANTINED" });
-    expect(fence.proveEmpty).not.toHaveBeenCalled();
+    expect(inspect).not.toHaveBeenCalled();
   });
 
   it("detects a store-legal concurrent tail closure during live revalidation and replays it exactly", async () => {
@@ -1364,11 +1254,10 @@ describe("DeliveryLeaseService dead-holder reconciliation (SDD 368 T11)", () => 
         return record;
       });
     };
-    const lease = makeService(store, worktree, phase === "alive"
-      ? { observe: async () => { await quarantine(); return { state: "alive" as const }; } }
-      : { observe: async () => ({ state: "gone" as const }), fence: { ...certifiedFence, proveEmpty: async () => {
-        await quarantine(); return { state: "proven_empty" };
-      } } });
+    const lease = makeService(store, worktree, { observe: async () => {
+      await quarantine();
+      return { state: phase };
+    } });
     await expect(lease.reconcileHolder(request(worktree, `quarantined-${phase}`))).rejects.toMatchObject({
       code: "DELIVERY_QUARANTINED", retryable: false, detail: { evidence },
     });
@@ -1464,7 +1353,7 @@ describe("DeliveryLeaseService dead-holder reconciliation (SDD 368 T11)", () => 
 
   it("salvages an authorized recoverable quarantine as a dirty pending recovery segment", async () => {
     const { store, worktree, input } = heldFixture();
-    input.lease = { ...input.lease!, state: "quarantined", reason: JSON.stringify({ cause: "fence" }) };
+    input.lease = { ...input.lease!, state: "quarantined", reason: JSON.stringify({ cause: "root-observation" }) };
     await store.create(input);
     const result = await recoveryService(store, worktree).salvageQuarantine({ deliveryId: "d-lease", canonicalWorktree: worktree,
       actor, operationId: "salvage", expectedHeadSha: "b", expectedInventory: recoveryInventory, executionAgent: "fixer", ownsSubset: ["src"] });
@@ -1478,7 +1367,7 @@ describe("DeliveryLeaseService dead-holder reconciliation (SDD 368 T11)", () => 
 
   it("requires a bound approved receipt before abandoning and replays it without rerunning effects", async () => {
     const { store, worktree, input } = heldFixture();
-    input.lease = { ...input.lease!, state: "quarantined", reason: JSON.stringify({ cause: "fence" }) };
+    input.lease = { ...input.lease!, state: "quarantined", reason: JSON.stringify({ cause: "root-observation" }) };
     await store.create(input);
     let approvals = 0;
     const lease = recoveryService(store, worktree, { approval: (_id, digest) => {
@@ -1493,7 +1382,7 @@ describe("DeliveryLeaseService dead-holder reconciliation (SDD 368 T11)", () => 
 
   it("denies holder identity as recovery authority and leaves quarantine unchanged", async () => {
     const { store, worktree, input } = heldFixture();
-    input.lease = { ...input.lease!, state: "quarantined", reason: JSON.stringify({ cause: "fence" }) };
+    input.lease = { ...input.lease!, state: "quarantined", reason: JSON.stringify({ cause: "root-observation" }) };
     input.lease.holder!.executionAgent = "holder";
     await store.create(input);
     await expect(recoveryService(store, worktree).salvageQuarantine({ deliveryId: "d-lease", canonicalWorktree: worktree,
@@ -1536,8 +1425,8 @@ describe("DeliveryLeaseService dead-holder reconciliation (SDD 368 T11)", () => 
       input.segments![0] = { ...input.segments![0]!, principal: "tail-principal" };
       input.lease = { ...input.lease!, state: "quarantined", reason: "q", holder: { ...input.lease!.holder!, principal: "holder-principal" } };
       await store.create(input);
-      const calls = { canonical: 0, lock: 0, capability: 0, fence: 0, inventory: 0, approval: 0, nonce: 0, segment: 0, event: 0 };
-      const lease = new DeliveryLeaseService({ store, processFence: { ...certifiedFence, capability: () => { calls.capability++; return { supported: true, domain: "test" }; }, proveEmpty: async () => { calls.fence++; return { state: "proven_empty" }; } },
+      const calls = { canonical: 0, lock: 0, observe: 0, inventory: 0, approval: 0, nonce: 0, segment: 0, event: 0 };
+      const lease = new DeliveryLeaseService({ store, processObserver: { observe: async () => { calls.observe++; return { state: "gone" }; } },
         canonicalWorktreeFor: () => { calls.canonical++; return worktree; }, readHead: () => "b", inspectWorktree: () => ({ headSha: "b", clean: true }), isAncestor: () => true,
         inspectRecoveryWorktree: () => { calls.inventory++; return { inventory: recoveryInventory }; },
         resolveRecoveryApproval: () => { calls.approval++; return { decision: "approved", requester: "x", actionDigest: "x", payloadHash: "x", resolvedAt: now }; },
@@ -1546,7 +1435,7 @@ describe("DeliveryLeaseService dead-holder reconciliation (SDD 368 T11)", () => 
       await expect(lease.salvageQuarantine({ deliveryId: "d-lease", canonicalWorktree: worktree, actor: deniedActor as never,
         operationId: `zero-${deniedActor.kind}-${"name" in deniedActor ? deniedActor.name : "none"}`, expectedHeadSha: "b", expectedInventory: recoveryInventory,
         executionAgent: "requested-agent", principal: "requested-principal", ownsSubset: ["src"] })).rejects.toMatchObject({ code: "DELIVERY_QUARANTINED" });
-      expect(calls).toEqual({ canonical: 0, lock: 0, capability: 0, fence: 0, inventory: 0, approval: 0, nonce: 0, segment: 0, event: 0 });
+      expect(calls).toEqual({ canonical: 0, lock: 0, observe: 0, inventory: 0, approval: 0, nonce: 0, segment: 0, event: 0 });
     }
   });
 

@@ -10,8 +10,8 @@
 
 import { containsUnsafeFramingCharacter } from "../config/framingSafety.js";
 
-/** Mirrors delegationRecord.ts's DelegationGate — duplicated as a narrow read-only shape so this
- *  module stays a leaf (no bridge-internal coupling beyond the pure stub-path helper). */
+/** Narrow read-only gated Delivery shape so this module stays a leaf
+ *  (no bridge-internal coupling beyond the pure stub-path helper). */
 export interface PrimerGate {
   behaviorTest: string;
   owns?: string[];

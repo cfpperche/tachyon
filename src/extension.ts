@@ -308,6 +308,24 @@ async function extensionInvoke(ws: WorkspaceShellHandle, input: ExtensionCommand
   return ws.extension.invoke(input);
 }
 
+function legacyRetirementPreviewDocument(preview: Record<string, JsonValue>): string {
+  const entries = jsonArray(preview.entries, "legacy Delivery retirement preview entries").map((value) => {
+    const entry = jsonObject(value, "legacy Delivery retirement preview entry");
+    if (!entry.row || typeof entry.row !== "object" || Array.isArray(entry.row)) return entry;
+    const row = jsonObject(entry.row, "legacy Delivery retirement preview row");
+    return {
+      ...entry,
+      row: {
+        ...row,
+        ...(typeof row.recordJson === "string"
+          ? { recordJson: `[content omitted from UI; archive entry sha256 ${String(entry.sha256 ?? "unknown")}]` }
+          : {}),
+      },
+    };
+  });
+  return `${JSON.stringify({ ...preview, entries }, null, 2)}\n`;
+}
+
 async function presentTerminal(
   ws: WorkspaceShellHandle,
   agent: string,
@@ -1850,6 +1868,60 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           : vscode.l10n.t("Tachyon Doctor report ready — see the Output panel"),
         report.hasErrors ? "warn" : "info",
       );
+    }),
+    vscode.commands.registerCommand("tachyon.retireLegacyDeliveryState", async (hash?: string) => {
+      const ws = hash ? byHash(hash) : await pickWorkspace();
+      if (!ws) return;
+      try {
+        const preview = jsonObject(
+          await extensionQuery(ws, { action: "legacy-delivery.retirement-preview" }),
+          "legacy Delivery retirement preview",
+        );
+        const entries = jsonArray(preview.entries, "legacy Delivery retirement preview entries");
+        const counts = jsonObject(preview.counts, "legacy Delivery retirement preview counts");
+        const snapshotDigest = preview.snapshotDigest;
+        const archiveId = preview.archiveId;
+        if (typeof snapshotDigest !== "string" || !/^[a-f0-9]{64}$/.test(snapshotDigest)
+          || typeof archiveId !== "string" || archiveId.length === 0 || archiveId.length > 128) {
+          throw new Error("persistent engine returned an invalid legacy Delivery retirement preview");
+        }
+        if (entries.length === 0) {
+          notify("No legacy Delivery metadata needs retirement.", "info");
+          return;
+        }
+
+        const document = await vscode.workspace.openTextDocument({
+          language: "json",
+          content: legacyRetirementPreviewDocument(preview),
+        });
+        await vscode.window.showTextDocument(document, { preview: false });
+
+        const confirmLabel = "Archive and retire metadata";
+        const choice = await showNotification(
+          `Retire ${entries.length} legacy metadata item(s) from '${ws.folderName}'?`,
+          "warn",
+          [confirmLabel],
+          {
+            modal: true,
+            detail: "This archives and removes only legacy Tachyon metadata. It does not delete branches, commits, worktrees, indexes, or working files. Review the opened JSON preview before confirming."
+              + ` Canonical Deliveries preserved: ${String(counts.canonicalDeliveries ?? "unknown")}; linked GitDeliveries preserved: ${String(counts.linkedGitDeliveries ?? "unknown")}.`,
+          },
+        );
+        if (choice !== confirmLabel) return;
+
+        const receipt = jsonObject(await extensionInvoke(ws, {
+          action: "legacy-delivery.retirement-apply",
+          snapshotDigest,
+          archiveId,
+        }), "legacy Delivery retirement receipt");
+        if (typeof receipt.archivePath !== "string") {
+          throw new Error("persistent engine returned an invalid legacy Delivery retirement receipt");
+        }
+        notify(`Legacy Delivery metadata retired. Archive: ${receipt.archivePath}`, "info");
+        refreshAll();
+      } catch (error) {
+        notify(error instanceof Error ? error.message : String(error), "error");
+      }
     }),
     vscode.commands.registerCommand("tachyon.openConfig", async (hash?: string) => {
       const ws = hash ? byHash(hash) : workspaces()[0];
