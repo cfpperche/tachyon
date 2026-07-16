@@ -3,32 +3,40 @@
 **Status:** landed on `main` (2026-07-16)  
 **Product name:** **Control** (UI / `tachyon.openControl`)  
 **Product intent:** `t-fe52f0` frente **(1)** — desktop only; **sem** mobile/companion na v1.  
-**Merge:** `c3131f50` — `merge: land Control MVP (desktop project sysadmin)`  
-**Branch / worktree:** removed after land (`grok/engine-bridge-inspector-poc`).
+**Merges:**  
+- `c3131f50` — Control MVP (desktop project sysadmin shell)  
+- `f8230f78` — Control visual monolith (Mission board embedded; sidebar header Control-only)  
+**Branches removed:** `grok/engine-bridge-inspector-poc`, `grok/control-mission-monolith-poc`
 
-## Framing (locked for this POC)
+## Framing (current)
 
 | | |
 |--|--|
-| **Control** | Editor-area **project sysadmin** — health, engines, bridges, deep-links |
+| **Control** | Editor-area **visual hub / project sysadmin** — health, engines, bridges, **Mission board**, deep-links |
 | **Control chrome** | **Top tabs only** — no left rail (VS Code sidebar confusion) |
 | **Tab order** | Overview → Engine → Fleet → Approvals → Mission → Worktrees → Deliveries → Runtime → tmux → Plugins → Schedules → Settings |
-| **No "soon"** | Every tab is a real page (data table and/or deep-link to existing surface) |
-| **Sidebar** | **Unchanged** — day-to-day agents, spawn, pins, fleet work |
-| **Mission Control** | Unchanged work board (deep-link only) |
-| **tmux Server Inspector** | Unchanged deep tool (deep-link / placeholder tab) |
+| **Mission** | Full Mission Control board **embedded** in Control (same Preact App + engine path); `tachyon.missionControl` → Control tab Mission |
+| **Sidebar** | Day-to-day agents, spawn, pins; header **`view/title` = Control only** |
+| **tmux / Plugins / Settings** | Via Control tabs (or palette); not sidebar header icons |
 | **Mobile** | Deferred (t-fe52f0 frente 2) |
 
-Engine/Bridge is the **first module** inside the Control shell (not a forever-standalone product view).
+Engine was the first module; Mission board is the first **full product surface** hosted inside Control.
 
-## Land checklist (2026-07-16)
+## Land checklist
 
+### Shell MVP (2026-07-16)
 - [x] Merge `grok/engine-bridge-inspector-poc` → `main`
 - [x] Strip developer meta banners / POC copy from production UI
 - [x] Focused tests green (cockpit / controlInspector / webviewPreviewRoutes)
-- [x] Dev-host pointer cleared (`dogfood:dev-host` no fixture)
-- [x] Worktree + feature branch removed
+- [x] Dev-host pointer cleared; worktree + branch removed
 - [x] Journal on `t-fe52f0` (frente 1 shipped; mobile still open)
+
+### Visual monolith Mission (2026-07-16) — `t-cf6562`
+- [x] Embed `mission-control/App` in Control Mission tab
+- [x] Host snapshot + board actions; `onTasksChanged` refreshes embedded board
+- [x] Route `tachyon.missionControl` → Control `section: mission`
+- [x] Sidebar header Control-only (no MC / Plugins / tmux / Settings / refresh icons)
+- [x] Merge `grok/control-mission-monolith-poc` → `main`; point-clear; worktree + branch removed
 
 ## Dev-host preview (from monorepo root)
 
