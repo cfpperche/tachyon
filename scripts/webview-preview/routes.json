@@ -424,6 +424,26 @@
   },
   {
     "view": "cockpit",
+    "fixture": "fleet",
+    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=fleet",
+    "frame": {
+      "w": 1100,
+      "h": 720
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Cockpit",
+    "aliases": [
+      "cockpit",
+      "sysadmin",
+      "project cockpit",
+      "fleet cockpit",
+      "control plane"
+    ]
+  },
+  {
+    "view": "cockpit",
     "fixture": "empty",
     "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=empty",
     "frame": {

@@ -7,7 +7,7 @@ import {
   formatCockpitDiagnostics,
   type CockpitModel,
   type CockpitSectionId,
-  type ControlInspectorWorkspaceInput,
+  type CockpitWorkspaceBundle,
 } from "../cockpit/model.js";
 import {
   initMessage,
@@ -26,17 +26,20 @@ export interface CockpitPanelState {
 }
 
 /**
- * Tachyon Cockpit (desktop POC) — editor-area project sysadmin.
- * Does NOT replace the sidebar. Composes control-plane modules (Engine/Bridge first).
- * Related product intent: t-fe52f0 frente (1); mobile deferred.
+ * Tachyon Cockpit — editor-area project sysadmin.
+ * Top tabs only (no webview left rail). Does not replace VS Code/Tachyon sidebar.
+ * t-fe52f0 frente 1; mobile deferred.
  */
 export interface CockpitDeps {
   extensionUri: vscode.Uri;
-  collect: () => Promise<ControlInspectorWorkspaceInput[]>;
+  collect: () => Promise<CockpitWorkspaceBundle[]>;
   openServerInspector: () => void;
   openMissionControl: () => void;
   openPlugins: () => void;
   openSettings: () => void;
+  openApprovals: () => void;
+  openRuntimeOps: () => void;
+  openDoctor: () => void;
 }
 
 function strings(): CockpitStrings {
@@ -45,50 +48,63 @@ function strings(): CockpitStrings {
     title: t("Cockpit"),
     subtitle: t("Project sysadmin — editor panel"),
     pocBanner: t(
-      "POC desktop Cockpit (t-fe52f0 frente 1). Top tabs only (no webview left rail). VS Code sidebar unchanged. Mobile deferred. Grey tabs = soon + deep-link to existing surfaces.",
+      "Desktop Cockpit POC (t-fe52f0). Top tabs by ops frequency. No in-webview left rail. VS Code/Tachyon sidebar unchanged. Mobile deferred.",
     ),
     navOverview: t("Overview"),
-    navEngine: t("Engine / Bridge"),
+    navEngine: t("Engine"),
     navFleet: t("Fleet"),
+    navApprovals: t("Approvals"),
+    navMission: t("Mission"),
+    navWorktrees: t("Worktrees"),
+    navDeliveries: t("Deliveries"),
+    navRuntime: t("Runtime"),
     navTmux: t("tmux"),
-    navMission: t("Mission Control"),
     navPlugins: t("Plugins"),
+    navSchedules: t("Schedules"),
     navSettings: t("Settings"),
     refresh: t("Refresh"),
     auto: t("Auto-refresh"),
     empty: t("No Tachyon workspace attached in this window."),
     copyDiagnostics: t("Copy diagnostics"),
-    openServerInspector: t("Open tmux Server Inspector"),
+    openServerInspector: t("Open tmux Inspector"),
     openMissionControl: t("Open Mission Control"),
     openPlugins: t("Open Plugins"),
     openSettings: t("Open Settings"),
+    openApprovals: t("Open Approvals"),
+    openRuntimeOps: t("Open Runtime Ops"),
+    openDoctor: t("Run Doctor"),
     copied: t("Diagnostics copied"),
     overviewTitle: t("Overview"),
-    overviewHint: t("Health snapshot across attached workspace engines. Sidebar remains the day-to-day fleet UI."),
+    overviewHint: t("Ops snapshot. Jump to modules or existing panels. Sidebar stays the day-to-day fleet UI."),
     engineTitle: t("Engine / Bridge"),
-    fleetTitle: t("Fleet presence"),
-    fleetBody: t(
-      "Soon: presence summary in Cockpit. Day-to-day agent rows stay in the sidebar; Mission Control remains the work board.",
-    ),
-    tmuxTitle: t("tmux sessions"),
-    tmuxBody: t("Soon: session summary here. Full reaper stays in the dedicated tmux Server Inspector (open via button)."),
+    fleetTitle: t("Fleet"),
+    fleetHint: t("Agents from the live presentation. Spawn/stop still happens in the sidebar."),
+    approvalsTitle: t("Approvals"),
+    approvalsHint: t("Human gates that block the fleet. Open the full Approvals panel to resolve."),
     missionTitle: t("Mission Control"),
-    missionBody: t(
-      "Soon: board snapshot embedded in Cockpit. For now the full board is the existing Mission Control panel.",
-    ),
+    missionHint: t("Work board lives in Mission Control. Summary counts shown here."),
+    worktreesTitle: t("Managed worktrees"),
+    worktreesHint: t("From .tachyon/managed-worktrees.json when present (spec 392)."),
+    deliveriesTitle: t("Deliveries"),
+    deliveriesHint: t("GitDelivery records from .tachyon/git-deliveries when present."),
+    runtimeTitle: t("Runtime Ops"),
+    runtimeHint: t("Usage and rate-limit panel — open Runtime Ops for full charts."),
+    tmuxTitle: t("tmux"),
+    tmuxHint: t("Socket health per workspace. Full session reaper is the tmux Server Inspector."),
     pluginsTitle: t("Plugins"),
-    pluginsBody: t(
-      "Soon: installed plugins + integrity summary in Cockpit. Install/update remains the Plugins panel.",
-    ),
+    pluginsHint: t("Install and update in the Plugins panel."),
+    schedulesTitle: t("Schedules"),
+    schedulesHint: t("Declared schedules from the workspace presentation when available."),
     settingsTitle: t("Settings"),
-    settingsBody: t(
-      "Soon: key Tachyon project settings at a glance. Full editor settings open via the button (Tachyon extension settings).",
-    ),
+    settingsHint: t("Tachyon extension settings in VS Code."),
     workspaces: t("Workspaces"),
     engines: t("Engines"),
     agents: t("Agents"),
     errors: t("Errors"),
     bridges: t("Bridges"),
+    approvals: t("Approvals"),
+    worktrees: t("Worktrees"),
+    deliveries: t("Deliveries"),
     attached: t("attached"),
     error: t("error"),
     none: t("none"),
@@ -105,9 +121,17 @@ function strings(): CockpitStrings {
     root: t("Root"),
     hash: t("Hash"),
     running: t("running"),
+    stopped: t("stopped"),
     checkedAt: t("Checked"),
-    sidebarNote: t("VS Code / Tachyon sidebar unchanged — agents, spawn, pins stay there. Cockpit uses top tabs only."),
-    soon: t("soon"),
+    sidebarNote: t("VS Code / Tachyon sidebar unchanged. Cockpit = top tabs only (no webview left rail)."),
+    open: t("Open"),
+    noneListed: t("Nothing listed for this workspace yet."),
+    kind: t("Kind"),
+    branch: t("Branch"),
+    status: t("Status"),
+    phase: t("Phase"),
+    path: t("Path"),
+    name: t("Name"),
   };
 }
 
@@ -144,17 +168,24 @@ export async function openCockpit(
   const sendModel = async () => {
     let model: CockpitModel;
     try {
-      const rows = await deps.collect();
-      model = buildCockpitModel(rows, { section: currentSection });
+      const bundles = await deps.collect();
+      model = buildCockpitModel(bundles, { section: currentSection });
     } catch (err) {
       model = buildCockpitModel(
         [
           {
-            folderName: "(cockpit)",
-            workspaceRoot: "",
-            wsHash: "error",
-            bridgeUrl: "",
-            identityError: err instanceof Error ? err.message : String(err),
+            control: {
+              folderName: "(cockpit)",
+              workspaceRoot: "",
+              wsHash: "error",
+              bridgeUrl: "",
+              identityError: err instanceof Error ? err.message : String(err),
+            },
+            agents: [],
+            worktrees: [],
+            deliveries: [],
+            approvals: [],
+            schedules: [],
           },
         ],
         { section: currentSection },
@@ -182,8 +213,8 @@ export async function openCockpit(
         return;
       case "copyDiagnostics": {
         try {
-          const rows = await deps.collect();
-          const text = formatCockpitDiagnostics(buildCockpitModel(rows, { section: currentSection }));
+          const bundles = await deps.collect();
+          const text = formatCockpitDiagnostics(buildCockpitModel(bundles, { section: currentSection }));
           await vscode.env.clipboard.writeText(text);
           live.webview.postMessage(toastMessage(s.copied));
         } catch (err) {
@@ -202,6 +233,15 @@ export async function openCockpit(
         return;
       case "openSettings":
         deps.openSettings();
+        return;
+      case "openApprovals":
+        deps.openApprovals();
+        return;
+      case "openRuntimeOps":
+        deps.openRuntimeOps();
+        return;
+      case "openDoctor":
+        deps.openDoctor();
         return;
     }
   });

@@ -11,6 +11,9 @@ import {
   openMissionControlAction,
   openPluginsAction,
   openSettingsAction,
+  openApprovalsAction,
+  openRuntimeOpsAction,
+  openDoctorAction,
   setSectionAction,
   type CockpitHostMessage,
   type CockpitStrings,
@@ -80,8 +83,10 @@ function Root() {
       onOpenMissionControl={() => post(openMissionControlAction())}
       onOpenPlugins={() => post(openPluginsAction())}
       onOpenSettings={() => post(openSettingsAction())}
+      onOpenApprovals={() => post(openApprovalsAction())}
+      onOpenRuntimeOps={() => post(openRuntimeOpsAction())}
+      onOpenDoctor={() => post(openDoctorAction())}
       onSetSection={(section: CockpitSectionId) => {
-        // optimistic local nav; host will echo section on next model if needed
         setModel((prev) => (prev ? { ...prev, section } : prev));
         post(setSectionAction(section));
       }}

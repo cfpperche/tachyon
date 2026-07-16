@@ -16,7 +16,8 @@ import {
   type CockpitPanelState,
   type CockpitDeps,
 } from "./webview/Cockpit.js";
-import type { ControlInspectorWorkspaceInput } from "./control-inspector/model.js";
+import type { CockpitWorkspaceBundle } from "./cockpit/model.js";
+import { readGitDeliveriesFromDisk, readManagedWorktreesFromDisk } from "./cockpit/disk.js";
 import { SidebarPrototypeProvider, PIN_PREVIEW_VIEW_TYPE, type PinPreviewPanelState } from "./webview/SidebarPrototype.js";
 import { RuntimeOpsViewProvider } from "./webview/RuntimeOpsView.js";
 import { ActivityPanelManager, ACTIVITY_VIEW_TYPE, type ActivityPanelState } from "./webview/ActivityPanel.js";
@@ -1184,13 +1185,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     };
   };
 
-  /** POC — Cockpit desktop (editor sysadmin; t-fe52f0 frente 1). Sidebar unchanged. */
+  /** Cockpit desktop (editor sysadmin; t-fe52f0 frente 1). Sidebar unchanged. */
   const makeCockpitDeps = (): CockpitDeps => ({
     extensionUri: context.extensionUri,
-    collect: async (): Promise<ControlInspectorWorkspaceInput[]> => {
-      const rows: ControlInspectorWorkspaceInput[] = [];
+    collect: async (): Promise<CockpitWorkspaceBundle[]> => {
+      const bundles: CockpitWorkspaceBundle[] = [];
       for (const ws of workspaces()) {
-        let identity: ControlInspectorWorkspaceInput["identity"] = null;
+        let identity: CockpitWorkspaceBundle["control"]["identity"] = null;
         let identityError: string | undefined;
         try {
           const id = ws.client.identity;
@@ -1207,26 +1208,64 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         } catch (err) {
           identityError = err instanceof Error ? err.message : String(err);
         }
-        let agents: { total: number; running: number } | undefined;
+
+        let agentRows: CockpitWorkspaceBundle["agents"] = [];
+        let agentCounts: { total: number; running: number } | undefined;
         try {
           const items = ws.client.presentation.agents.items;
-          agents = { total: items.length, running: items.filter((a) => a.running).length };
+          agentRows = items.map((a) => ({
+            name: a.name,
+            kind: a.kind,
+            running: !!a.running,
+            declared: a.declared,
+          }));
+          agentCounts = { total: items.length, running: items.filter((a) => a.running).length };
         } catch {
           /* projection unavailable */
         }
-        rows.push({
-          folderName: ws.folderName,
-          workspaceRoot: ws.workspaceRoot,
-          wsHash: ws.wsHash,
-          bridgeUrl: ws.bridgeUrl,
-          identity,
-          identityError,
-          agents,
-          authConfigured: "unknown",
-          notes: [],
+
+        let schedules: CockpitWorkspaceBundle["schedules"] = [];
+        try {
+          const sched = (ws.client.presentation as { schedules?: { items?: Array<{ name: string; paused?: boolean }> } }).schedules;
+          if (sched?.items) {
+            schedules = sched.items.map((x) => ({ name: x.name, paused: x.paused }));
+          }
+        } catch {
+          /* optional */
+        }
+
+        let tmux: { state: string; version?: string } | undefined;
+        try {
+          const health = await extensionQuery(ws, { action: "tmux.health" });
+          if (health && typeof health === "object") {
+            const h = health as { state?: string; tmuxVersion?: string };
+            tmux = { state: String(h.state ?? "unknown"), version: h.tmuxVersion };
+          }
+        } catch {
+          tmux = { state: "unknown" };
+        }
+
+        bundles.push({
+          control: {
+            folderName: ws.folderName,
+            workspaceRoot: ws.workspaceRoot,
+            wsHash: ws.wsHash,
+            bridgeUrl: ws.bridgeUrl,
+            identity,
+            identityError,
+            agents: agentCounts,
+            authConfigured: "unknown",
+            notes: [],
+          },
+          agents: agentRows,
+          worktrees: readManagedWorktreesFromDisk(ws.workspaceRoot),
+          deliveries: readGitDeliveriesFromDisk(ws.workspaceRoot),
+          approvals: [], // pending list is owned by Approvals panel; deep-link for resolve
+          schedules,
+          tmux,
         });
       }
-      return rows;
+      return bundles;
     },
     openServerInspector: () => {
       void openServerInspector(makeServerInspectorDeps());
@@ -1239,6 +1278,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     },
     openSettings: () => {
       void vscode.commands.executeCommand("tachyon.openSettings");
+    },
+    openApprovals: () => {
+      void vscode.commands.executeCommand("tachyon.openApprovals");
+    },
+    openRuntimeOps: () => {
+      void openRuntimeOps();
+    },
+    openDoctor: () => {
+      void vscode.commands.executeCommand("tachyon.doctor");
     },
   });
 

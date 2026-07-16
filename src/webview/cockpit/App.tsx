@@ -1,5 +1,9 @@
 import type { ComponentChildren } from "preact";
-import type { CockpitModel, CockpitSectionId } from "../../cockpit/model";
+import {
+  COCKPIT_SECTION_ORDER,
+  type CockpitModel,
+  type CockpitSectionId,
+} from "../../cockpit/model";
 import type { ControlInspectorWorkspaceRow } from "../../control-inspector/model";
 import type { CockpitStrings } from "./messages";
 import { Button } from "../shared/ui";
@@ -16,8 +20,26 @@ export interface CockpitAppProps {
   onOpenMissionControl: () => void;
   onOpenPlugins: () => void;
   onOpenSettings: () => void;
+  onOpenApprovals: () => void;
+  onOpenRuntimeOps: () => void;
+  onOpenDoctor: () => void;
   onSetSection: (section: CockpitSectionId) => void;
 }
+
+const TAB_META: Record<CockpitSectionId, { icon: string; navKey: keyof CockpitStrings }> = {
+  overview: { icon: "dashboard", navKey: "navOverview" },
+  engine: { icon: "server-environment", navKey: "navEngine" },
+  fleet: { icon: "organization", navKey: "navFleet" },
+  approvals: { icon: "pass", navKey: "navApprovals" },
+  mission: { icon: "checklist", navKey: "navMission" },
+  worktrees: { icon: "folder-library", navKey: "navWorktrees" },
+  deliveries: { icon: "git-commit", navKey: "navDeliveries" },
+  runtime: { icon: "graph", navKey: "navRuntime" },
+  tmux: { icon: "terminal-tmux", navKey: "navTmux" },
+  plugins: { icon: "extensions", navKey: "navPlugins" },
+  schedules: { icon: "calendar", navKey: "navSchedules" },
+  settings: { icon: "settings-gear", navKey: "navSettings" },
+};
 
 function StateBadge({ s, state }: { s: CockpitStrings; state: "attached" | "error" | "none" }) {
   const label = state === "attached" ? s.attached : state === "error" ? s.error : s.none;
@@ -89,205 +111,283 @@ function WorkspaceCard({ s, row }: { s: CockpitStrings; row: ControlInspectorWor
           </div>
         </div>
       </div>
-      {row.notes.length > 0 && (
-        <ul class="ci-notes">
-          {row.notes.map((n) => (
-            <li key={n}>{n}</li>
-          ))}
-        </ul>
-      )}
     </section>
   );
 }
 
-function OverviewBody({
-  s,
-  m,
-  onEngine,
-  onTmux,
-  onMc,
-  onPlugins,
-  onSettings,
+function ModuleChrome({
+  title,
+  hint,
+  actionLabel,
+  onAction,
+  children,
 }: {
-  s: CockpitStrings;
-  m: CockpitModel;
-  onEngine: () => void;
-  onTmux: () => void;
-  onMc: () => void;
-  onPlugins: () => void;
-  onSettings: () => void;
-}) {
-  const o = m.overview;
-  return (
-    <>
-      <div class="ck-head">
-        <div>
-          <h1>
-            <span class="codicon codicon-dashboard" />
-            {s.overviewTitle}
-          </h1>
-          <p class="hint">{s.overviewHint}</p>
-        </div>
-      </div>
-      <div class="ck-chips">
-        <div class="ck-chip">
-          <div class="label">{s.workspaces}</div>
-          <div class="value">{o.workspaceCount}</div>
-        </div>
-        <div class={`ck-chip ${o.enginesAttached > 0 ? "ok" : ""}`}>
-          <div class="label">{s.engines}</div>
-          <div class="value">{o.enginesAttached}</div>
-        </div>
-        <div class={`ck-chip ${o.enginesError > 0 ? "warn" : ""}`}>
-          <div class="label">{s.errors}</div>
-          <div class="value">{o.enginesError}</div>
-        </div>
-        <div class="ck-chip">
-          <div class="label">{s.agents}</div>
-          <div class="value">
-            {o.agentsRunning}/{o.agentsTotal}
-          </div>
-        </div>
-      </div>
-      <div class="ck-panel">
-        <h2>{s.bridges}</h2>
-        {o.bridges.length === 0 ? (
-          <p class="ck-empty">{s.empty}</p>
-        ) : (
-          <ul class="ck-bridge-list">
-            {o.bridges.map((b) => (
-              <li key={b.folder + b.url}>
-                <span class="name">{b.folder}</span>
-                <span>{b.url}</span>
-                <StateBadge s={s} state={b.ok ? "attached" : "error"} />
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-      <div class="ck-panel">
-        <h2>Shortcuts</h2>
-        <p>Deep-links to existing surfaces — Cockpit does not replace them or the VS Code sidebar.</p>
-        <div class="ck-actions">
-          <Button variant="default" onClick={onEngine}>
-            <span class="codicon codicon-server-environment" /> {s.navEngine}
-          </Button>
-          <Button variant="default" onClick={onMc}>
-            <span class="codicon codicon-checklist" /> {s.navMission}
-          </Button>
-          <Button variant="default" onClick={onPlugins}>
-            <span class="codicon codicon-extensions" /> {s.navPlugins}
-          </Button>
-          <Button variant="default" onClick={onSettings}>
-            <span class="codicon codicon-settings-gear" /> {s.navSettings}
-          </Button>
-          <Button variant="default" onClick={onTmux}>
-            <span class="codicon codicon-terminal-tmux" /> {s.navTmux}
-          </Button>
-        </div>
-      </div>
-    </>
-  );
-}
-
-function Placeholder({ title, body, actionLabel, onAction }: {
   title: string;
-  body: string;
+  hint: string;
   actionLabel?: string;
   onAction?: () => void;
+  children?: ComponentChildren;
 }) {
   return (
     <>
       <div class="ck-head">
         <div>
           <h1>{title}</h1>
-          <p class="hint">{body}</p>
+          <p class="hint">{hint}</p>
         </div>
-      </div>
-      <div class="ck-panel">
-        <p>{body}</p>
         {actionLabel && onAction ? (
           <Button variant="primary" onClick={onAction}>
             {actionLabel}
           </Button>
         ) : null}
       </div>
+      {children}
     </>
   );
 }
 
-/** Horizontal top chrome only — no left rail (would confuse with VS Code sidebar). */
+function DataTable({
+  headers,
+  rows,
+  empty,
+}: {
+  headers: string[];
+  rows: string[][];
+  empty: string;
+}) {
+  if (rows.length === 0) return <p class="ck-empty">{empty}</p>;
+  return (
+    <div class="ck-table-wrap">
+      <table class="ck-table">
+        <thead>
+          <tr>
+            {headers.map((h) => (
+              <th key={h}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={i}>
+              {r.map((c, j) => (
+                <td key={j}>{c}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export function App(p: CockpitAppProps) {
   const s = p.strings;
   if (!s) return <div class="ds-empty" />;
   const m = p.model;
   const section = m?.section ?? "overview";
 
-  const tabs: Array<{ id: CockpitSectionId; label: string; icon: string; soon?: boolean }> = [
-    { id: "overview", label: s.navOverview, icon: "dashboard" },
-    { id: "engine", label: s.navEngine, icon: "server-environment" },
-    { id: "fleet", label: s.navFleet, icon: "organization", soon: true },
-    { id: "tmux", label: s.navTmux, icon: "terminal-tmux", soon: true },
-    { id: "mission", label: s.navMission, icon: "checklist", soon: true },
-    { id: "plugins", label: s.navPlugins, icon: "extensions", soon: true },
-    { id: "settings", label: s.navSettings, icon: "settings-gear", soon: true },
-  ];
-
   let body: ComponentChildren = null;
   if (!m) {
     body = <div class="ck-empty">{s.empty}</div>;
   } else if (section === "overview") {
-    body = (
-      <OverviewBody
-        s={s}
-        m={m}
-        onEngine={() => p.onSetSection("engine")}
-        onTmux={p.onOpenServerInspector}
-        onMc={p.onOpenMissionControl}
-        onPlugins={p.onOpenPlugins}
-        onSettings={p.onOpenSettings}
-      />
-    );
-  } else if (section === "engine") {
+    const o = m.overview;
     body = (
       <>
         <div class="ck-head">
           <div>
             <h1>
-              <span class="codicon codicon-server-environment" />
-              {s.engineTitle}
+              <span class="codicon codicon-dashboard" />
+              {s.overviewTitle}
             </h1>
-            <p class="hint">Control plane per attached workspace engine.</p>
+            <p class="hint">{s.overviewHint}</p>
           </div>
         </div>
+        <div class="ck-chips">
+          <div class="ck-chip">
+            <div class="label">{s.workspaces}</div>
+            <div class="value">{o.workspaceCount}</div>
+          </div>
+          <div class={`ck-chip ${o.enginesAttached > 0 ? "ok" : ""}`}>
+            <div class="label">{s.engines}</div>
+            <div class="value">{o.enginesAttached}</div>
+          </div>
+          <div class={`ck-chip ${o.enginesError > 0 ? "warn" : ""}`}>
+            <div class="label">{s.errors}</div>
+            <div class="value">{o.enginesError}</div>
+          </div>
+          <div class="ck-chip">
+            <div class="label">{s.agents}</div>
+            <div class="value">
+              {o.agentsRunning}/{o.agentsTotal}
+            </div>
+          </div>
+          <div class={`ck-chip ${o.approvalsPending > 0 ? "warn" : ""}`}>
+            <div class="label">{s.approvals}</div>
+            <div class="value">{o.approvalsPending}</div>
+          </div>
+          <div class="ck-chip">
+            <div class="label">{s.worktrees}</div>
+            <div class="value">{o.worktreesActive}</div>
+          </div>
+          <div class="ck-chip">
+            <div class="label">{s.deliveries}</div>
+            <div class="value">{o.deliveriesOpen}</div>
+          </div>
+        </div>
+        <div class="ck-panel">
+          <h2>{s.bridges}</h2>
+          {o.bridges.length === 0 ? (
+            <p class="ck-empty">{s.empty}</p>
+          ) : (
+            <ul class="ck-bridge-list">
+              {o.bridges.map((b) => (
+                <li key={b.folder + b.url}>
+                  <span class="name">{b.folder}</span>
+                  <span>{b.url}</span>
+                  <StateBadge s={s} state={b.ok ? "attached" : "error"} />
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <div class="ck-panel">
+          <h2>Jump</h2>
+          <div class="ck-actions">
+            <Button variant="default" onClick={() => p.onSetSection("engine")}>
+              {s.navEngine}
+            </Button>
+            <Button variant="default" onClick={() => p.onSetSection("fleet")}>
+              {s.navFleet}
+            </Button>
+            <Button variant="default" onClick={() => p.onSetSection("approvals")}>
+              {s.navApprovals}
+            </Button>
+            <Button variant="default" onClick={p.onOpenMissionControl}>
+              {s.navMission}
+            </Button>
+            <Button variant="default" onClick={p.onOpenRuntimeOps}>
+              {s.navRuntime}
+            </Button>
+            <Button variant="default" onClick={p.onOpenPlugins}>
+              {s.navPlugins}
+            </Button>
+            <Button variant="default" onClick={p.onOpenSettings}>
+              {s.navSettings}
+            </Button>
+            <Button variant="default" onClick={p.onOpenServerInspector}>
+              {s.navTmux}
+            </Button>
+            <Button variant="default" onClick={p.onOpenDoctor}>
+              Doctor
+            </Button>
+          </div>
+        </div>
+      </>
+    );
+  } else if (section === "engine") {
+    body = (
+      <ModuleChrome title={s.engineTitle} hint="Control plane per attached workspace." actionLabel={s.openDoctor} onAction={p.onOpenDoctor}>
         {m.control.workspaces.length === 0 ? (
           <div class="ck-empty">{s.empty}</div>
         ) : (
-          m.control.workspaces.map((row) => (
-            <WorkspaceCard key={row.wsHash + row.workspaceRoot} s={s} row={row} />
-          ))
+          m.control.workspaces.map((row) => <WorkspaceCard key={row.wsHash + row.workspaceRoot} s={s} row={row} />)
         )}
-      </>
+      </ModuleChrome>
     );
   } else if (section === "fleet") {
     body = (
-      <Placeholder title={s.fleetTitle} body={s.fleetBody} actionLabel={s.openMissionControl} onAction={p.onOpenMissionControl} />
+      <ModuleChrome title={s.fleetTitle} hint={s.fleetHint} actionLabel={s.openMissionControl} onAction={p.onOpenMissionControl}>
+        <DataTable
+          headers={[s.name, s.kind, s.status]}
+          rows={m.fleet.map((a) => [a.name, a.kind ?? "—", a.running ? s.running : s.stopped])}
+          empty={s.noneListed}
+        />
+      </ModuleChrome>
     );
-  } else if (section === "tmux") {
+  } else if (section === "approvals") {
     body = (
-      <Placeholder title={s.tmuxTitle} body={s.tmuxBody} actionLabel={s.openServerInspector} onAction={p.onOpenServerInspector} />
+      <ModuleChrome title={s.approvalsTitle} hint={s.approvalsHint} actionLabel={s.openApprovals} onAction={p.onOpenApprovals}>
+        <DataTable
+          headers={[s.name, s.status]}
+          rows={m.approvals.map((a) => [a.title ?? a.id, a.status ?? "pending"])}
+          empty={s.noneListed}
+        />
+      </ModuleChrome>
     );
   } else if (section === "mission") {
     body = (
-      <Placeholder title={s.missionTitle} body={s.missionBody} actionLabel={s.openMissionControl} onAction={p.onOpenMissionControl} />
+      <ModuleChrome title={s.missionTitle} hint={s.missionHint} actionLabel={s.openMissionControl} onAction={p.onOpenMissionControl}>
+        <div class="ck-panel">
+          <p>
+            Agents running: {m.overview.agentsRunning}/{m.overview.agentsTotal}. Approvals pending: {m.overview.approvalsPending}.
+          </p>
+          <p>Open Mission Control for the full work board (drag lanes, task detail).</p>
+        </div>
+      </ModuleChrome>
+    );
+  } else if (section === "worktrees") {
+    body = (
+      <ModuleChrome title={s.worktreesTitle} hint={s.worktreesHint}>
+        <DataTable
+          headers={[s.kind, s.status, s.branch, s.path]}
+          rows={m.worktrees.map((w) => [w.kind, w.status, w.branch || "—", w.path || w.id])}
+          empty={s.noneListed}
+        />
+      </ModuleChrome>
+    );
+  } else if (section === "deliveries") {
+    body = (
+      <ModuleChrome title={s.deliveriesTitle} hint={s.deliveriesHint}>
+        <DataTable
+          headers={[s.name, s.phase, s.branch, s.path]}
+          rows={m.deliveries.map((d) => [d.id, d.phase, d.branchRef || "—", d.worktreePath ?? "—"])}
+          empty={s.noneListed}
+        />
+      </ModuleChrome>
+    );
+  } else if (section === "runtime") {
+    body = (
+      <ModuleChrome title={s.runtimeTitle} hint={s.runtimeHint} actionLabel={s.openRuntimeOps} onAction={p.onOpenRuntimeOps}>
+        <div class="ck-panel">
+          <p>Open Runtime Ops for usage, rate limits, and cost signals. Cockpit does not re-implement that panel.</p>
+        </div>
+      </ModuleChrome>
+    );
+  } else if (section === "tmux") {
+    body = (
+      <ModuleChrome title={s.tmuxTitle} hint={s.tmuxHint} actionLabel={s.openServerInspector} onAction={p.onOpenServerInspector}>
+        <DataTable
+          headers={[s.name, s.state, s.version]}
+          rows={m.tmux.map((t) => [t.folder, t.state, t.version ?? "—"])}
+          empty={s.noneListed}
+        />
+      </ModuleChrome>
     );
   } else if (section === "plugins") {
     body = (
-      <Placeholder title={s.pluginsTitle} body={s.pluginsBody} actionLabel={s.openPlugins} onAction={p.onOpenPlugins} />
+      <ModuleChrome title={s.pluginsTitle} hint={s.pluginsHint} actionLabel={s.openPlugins} onAction={p.onOpenPlugins}>
+        <div class="ck-panel">
+          <p>Install, update, and integrity live in the Plugins panel.</p>
+        </div>
+      </ModuleChrome>
+    );
+  } else if (section === "schedules") {
+    body = (
+      <ModuleChrome title={s.schedulesTitle} hint={s.schedulesHint}>
+        <DataTable
+          headers={[s.name, s.status]}
+          rows={m.schedules.map((x) => [x.name, x.paused ? "paused" : "active"])}
+          empty={s.noneListed}
+        />
+      </ModuleChrome>
     );
   } else {
     body = (
-      <Placeholder title={s.settingsTitle} body={s.settingsBody} actionLabel={s.openSettings} onAction={p.onOpenSettings} />
+      <ModuleChrome title={s.settingsTitle} hint={s.settingsHint} actionLabel={s.openSettings} onAction={p.onOpenSettings}>
+        <div class="ck-panel">
+          <p>Opens Tachyon extension settings in the VS Code Settings UI.</p>
+        </div>
+      </ModuleChrome>
     );
   }
 
@@ -316,20 +416,22 @@ export function App(p: CockpitAppProps) {
           </div>
         </div>
         <div class="ck-tabs" role="tablist" aria-label={s.title}>
-          {tabs.map((tab) => (
-            <button
-              type="button"
-              role="tab"
-              key={tab.id}
-              aria-selected={section === tab.id}
-              class={section === tab.id ? "active" : ""}
-              onClick={() => p.onSetSection(tab.id)}
-            >
-              <span class={`codicon codicon-${tab.icon}`} />
-              {tab.label}
-              {tab.soon ? <span class="tag">{s.soon}</span> : null}
-            </button>
-          ))}
+          {COCKPIT_SECTION_ORDER.map((id) => {
+            const meta = TAB_META[id];
+            return (
+              <button
+                type="button"
+                role="tab"
+                key={id}
+                aria-selected={section === id}
+                class={section === id ? "active" : ""}
+                onClick={() => p.onSetSection(id)}
+              >
+                <span class={`codicon codicon-${meta.icon}`} />
+                {s[meta.navKey]}
+              </button>
+            );
+          })}
         </div>
         <p class="ck-note">{s.sidebarNote}</p>
       </header>

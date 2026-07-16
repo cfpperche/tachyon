@@ -9,7 +9,9 @@
 | | |
 |--|--|
 | **Cockpit** | Editor-area **project sysadmin** — health, engines, bridges, deep-links |
-| **Cockpit chrome** | **Top tabs only** — no left rail inside the webview (would confuse with VS Code sidebar) |
+| **Cockpit chrome** | **Top tabs only** — no left rail (VS Code sidebar confusion) |
+| **Tab order** | Overview → Engine → Fleet → Approvals → Mission → Worktrees → Deliveries → Runtime → tmux → Plugins → Schedules → Settings |
+| **No "soon"** | Every tab is a real page (data table and/or deep-link to existing surface) |
 | **Sidebar** | **Unchanged** — day-to-day agents, spawn, pins, fleet work |
 | **Mission Control** | Unchanged work board (deep-link only) |
 | **tmux Server Inspector** | Unchanged deep tool (deep-link / placeholder tab) |

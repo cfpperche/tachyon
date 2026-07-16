@@ -358,3 +358,40 @@
   font-size: 11px;
   opacity: 0.5;
 }
+
+.ck-table-wrap {
+  overflow: auto;
+  border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
+  border-radius: 8px;
+}
+
+.ck-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.ck-table th,
+.ck-table td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
+  vertical-align: top;
+}
+
+.ck-table th {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.7;
+  background: color-mix(in srgb, var(--vscode-sideBar-background) 40%, transparent);
+}
+
+.ck-table td {
+  font-family: var(--vscode-editor-font-family, monospace);
+  word-break: break-all;
+}
+
+.ck-table tr:last-child td {
+  border-bottom: none;
+}

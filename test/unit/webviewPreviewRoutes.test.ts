@@ -92,7 +92,7 @@ describe("preview route table", () => {
       "/dist/webview/design-system.css",
       "/dist/webview/cockpit.css",
     ]);
-    expect(Object.keys(r.fixtures).sort()).toEqual(["default", "empty", "engine"]);
+    expect(Object.keys(r.fixtures).sort()).toEqual(["default", "empty", "engine", "fleet"]);
     const msgs = r.makeMessage(r.fixtures.default.vm) as Array<{ type: string; model?: { framing?: string } }>;
     expect(msgs.map((m) => m.type)).toEqual(["init", "model"]);
     expect(msgs[1]?.model?.framing).toBe("editor-sysadmin");

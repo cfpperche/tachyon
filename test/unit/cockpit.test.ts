@@ -1,39 +1,67 @@
 import { describe, expect, it } from "vitest";
-import { buildCockpitModel, formatCockpitDiagnostics } from "../../src/cockpit/model.js";
+import { buildCockpitModel, COCKPIT_SECTION_ORDER, formatCockpitDiagnostics } from "../../src/cockpit/model.js";
 
-describe("cockpit model (desktop POC)", () => {
-  it("builds overview from control plane inputs", () => {
+describe("cockpit model", () => {
+  it("orders sections by ops frequency (no soon slots)", () => {
+    expect(COCKPIT_SECTION_ORDER[0]).toBe("overview");
+    expect(COCKPIT_SECTION_ORDER[1]).toBe("engine");
+    expect(COCKPIT_SECTION_ORDER[2]).toBe("fleet");
+    expect(COCKPIT_SECTION_ORDER).toContain("approvals");
+    expect(COCKPIT_SECTION_ORDER).toContain("worktrees");
+    expect(COCKPIT_SECTION_ORDER).toContain("deliveries");
+    expect(COCKPIT_SECTION_ORDER).toContain("runtime");
+    expect(COCKPIT_SECTION_ORDER).toContain("settings");
+  });
+
+  it("builds fleet/worktrees/deliveries overview counts", () => {
     const m = buildCockpitModel(
       [
         {
-          folderName: "tachyon",
-          workspaceRoot: "/w",
-          wsHash: "abc",
-          bridgeUrl: "http://127.0.0.1:7421/mcp",
-          identity: {
-            pid: 1,
-            instanceId: "i",
-            processStartIdentity: "p",
-            startedAt: "t",
-            bundleId: "b",
-            engineVersion: "0.1.0",
-            bridge: { instanceId: "br", port: 7421 },
+          control: {
+            folderName: "tachyon",
+            workspaceRoot: "/w",
+            wsHash: "abc",
+            bridgeUrl: "http://127.0.0.1:7421/mcp",
+            identity: {
+              pid: 1,
+              instanceId: "i",
+              processStartIdentity: "p",
+              startedAt: "t",
+              bundleId: "b",
+              engineVersion: "0.1.0",
+              bridge: { instanceId: "br", port: 7421 },
+            },
+            agents: { total: 2, running: 1 },
           },
-          agents: { total: 3, running: 2 },
+          agents: [
+            { name: "a", running: true },
+            { name: "b", running: false },
+          ],
+          worktrees: [
+            { id: "1", kind: "change", path: "/x", branch: "b", status: "active" },
+            { id: "2", kind: "change", path: "/y", branch: "c", status: "abandoned" },
+          ],
+          deliveries: [
+            { id: "d1", phase: "open", branchRef: "br" },
+            { id: "d2", phase: "pruned", branchRef: "br2" },
+          ],
+          approvals: [{ id: "a1", status: "pending" }],
+          schedules: [{ name: "nightly" }],
+          tmux: { state: "healthy", version: "3.4" },
         },
       ],
       { section: "overview", nowIso: "now" },
     );
-    expect(m.framing).toBe("editor-sysadmin");
-    expect(m.section).toBe("overview");
-    expect(m.overview.enginesAttached).toBe(1);
-    expect(m.overview.agentsRunning).toBe(2);
-    expect(m.control.workspaces).toHaveLength(1);
+    expect(m.overview.agentsRunning).toBe(1);
+    expect(m.overview.worktreesActive).toBe(1);
+    expect(m.overview.deliveriesOpen).toBe(1);
+    expect(m.overview.approvalsPending).toBe(1);
+    expect(m.fleet).toHaveLength(2);
+    expect(m.tmux[0]?.state).toBe("healthy");
   });
 
-  it("formatCockpitDiagnostics mentions cockpit framing", () => {
-    const m = buildCockpitModel([], { nowIso: "now" });
-    const text = formatCockpitDiagnostics(m);
+  it("formatCockpitDiagnostics mentions framing", () => {
+    const text = formatCockpitDiagnostics(buildCockpitModel([], { nowIso: "now" }));
     expect(text).toMatch(/Cockpit/i);
     expect(text).toMatch(/sidebar/i);
   });

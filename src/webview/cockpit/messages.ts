@@ -11,9 +11,14 @@ export interface CockpitStrings {
   navOverview: string;
   navEngine: string;
   navFleet: string;
-  navTmux: string;
+  navApprovals: string;
   navMission: string;
+  navWorktrees: string;
+  navDeliveries: string;
+  navRuntime: string;
+  navTmux: string;
   navPlugins: string;
+  navSchedules: string;
   navSettings: string;
   refresh: string;
   auto: string;
@@ -23,25 +28,41 @@ export interface CockpitStrings {
   openMissionControl: string;
   openPlugins: string;
   openSettings: string;
+  openApprovals: string;
+  openRuntimeOps: string;
+  openDoctor: string;
   copied: string;
   overviewTitle: string;
   overviewHint: string;
   engineTitle: string;
   fleetTitle: string;
-  fleetBody: string;
-  tmuxTitle: string;
-  tmuxBody: string;
+  fleetHint: string;
+  approvalsTitle: string;
+  approvalsHint: string;
   missionTitle: string;
-  missionBody: string;
+  missionHint: string;
+  worktreesTitle: string;
+  worktreesHint: string;
+  deliveriesTitle: string;
+  deliveriesHint: string;
+  runtimeTitle: string;
+  runtimeHint: string;
+  tmuxTitle: string;
+  tmuxHint: string;
   pluginsTitle: string;
-  pluginsBody: string;
+  pluginsHint: string;
+  schedulesTitle: string;
+  schedulesHint: string;
   settingsTitle: string;
-  settingsBody: string;
+  settingsHint: string;
   workspaces: string;
   engines: string;
   agents: string;
   errors: string;
   bridges: string;
+  approvals: string;
+  worktrees: string;
+  deliveries: string;
   attached: string;
   error: string;
   none: string;
@@ -58,9 +79,17 @@ export interface CockpitStrings {
   root: string;
   hash: string;
   running: string;
+  stopped: string;
   checkedAt: string;
   sidebarNote: string;
-  soon: string;
+  open: string;
+  noneListed: string;
+  kind: string;
+  branch: string;
+  status: string;
+  phase: string;
+  path: string;
+  name: string;
 }
 
 export type CockpitAction =
@@ -71,6 +100,9 @@ export type CockpitAction =
   | { type: "openMissionControl" }
   | { type: "openPlugins" }
   | { type: "openSettings" }
+  | { type: "openApprovals" }
+  | { type: "openRuntimeOps" }
+  | { type: "openDoctor" }
   | { type: "setSection"; section: CockpitSectionId };
 
 export type CockpitHostMessage =
@@ -85,6 +117,9 @@ export const openServerInspectorAction = (): CockpitAction => ({ type: "openServ
 export const openMissionControlAction = (): CockpitAction => ({ type: "openMissionControl" });
 export const openPluginsAction = (): CockpitAction => ({ type: "openPlugins" });
 export const openSettingsAction = (): CockpitAction => ({ type: "openSettings" });
+export const openApprovalsAction = (): CockpitAction => ({ type: "openApprovals" });
+export const openRuntimeOpsAction = (): CockpitAction => ({ type: "openRuntimeOps" });
+export const openDoctorAction = (): CockpitAction => ({ type: "openDoctor" });
 export const setSectionAction = (section: CockpitSectionId): CockpitAction => ({ type: "setSection", section });
 
 export const initMessage = (strings: CockpitStrings): CockpitHostMessage => ({ type: INIT, strings });
