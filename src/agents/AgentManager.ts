@@ -97,6 +97,44 @@ export class ResumeUnavailableError extends Error {
   }
 }
 
+/** spec 389 — how restart stops a live pane before (or while) replacing it. */
+export type RestartStopMode = "graceful" | "force";
+/** spec 389 — whether restart reopens the prior conversation or mints a new section. */
+export type RestartSessionMode = "resume" | "new";
+
+/**
+ * Product defaults for operator/Bridge restart when callers omit modes.
+ * Crash auto-restart, file-watch restart, and historical force-replace tests pass force+new explicitly.
+ */
+export const RESTART_DEFAULTS = {
+  stop: "graceful" as RestartStopMode,
+  session: "resume" as RestartSessionMode,
+};
+
+/** Explicit force + new section — crash recovery, watch rebuild, and pre-389 replace semantics. */
+export const RESTART_FORCE_NEW = {
+  stop: "force" as RestartStopMode,
+  session: "new" as RestartSessionMode,
+};
+
+export interface RestartOptions {
+  /** Default: graceful. Force replaces the process immediately (no stop handshake). */
+  stop?: RestartStopMode;
+  /** Default: resume. Falls back to a new section when resume is unavailable. */
+  session?: RestartSessionMode;
+  /** Graceful wait budget before session-only hard kill. Default STOPPING_FALLBACK_MS. */
+  gracefulTimeoutMs?: number;
+}
+
+export interface RestartResult {
+  stop: RestartStopMode;
+  session: RestartSessionMode;
+  /** True when the start phase actually resumed a prior session. */
+  resumed: boolean;
+  /** True when graceful stop timed out and a session-only hard kill ran. */
+  forcedAfterGracefulTimeout: boolean;
+}
+
 /** spec 225 — fork couldn't proceed (runtime not forkable, live id unresolved, or worktree create failed). Fail-closed: never guesses a running agent's session id. */
 export class ForkUnavailableError extends Error {
   constructor(
@@ -2818,7 +2856,128 @@ export class AgentManager {
     return "created";
   }
 
-  async restart(name: string): Promise<void> {
+  /**
+   * spec 389 — restart matrix: stop (graceful|force) × session (resume|new).
+   * Product default: graceful + resume (fallback to new). Crash/watch callers pass force+new.
+   *
+   * Graceful stop marks `stoppingSince` for the sidebar. That flag is for user Stop only —
+   * after we intentionally bring the process back (resume/fresh), it MUST be cleared or the
+   * row sticks on "stopping…" then flips to stop-failed while the pane is already live.
+   */
+  async restart(name: string, opts: RestartOptions = {}): Promise<RestartResult> {
+    // SDD 368 T14 — refuse before any stop/replace mutation.
+    this.assertNotDeliveryLifecycleDenied(name, "restart");
+    const stop: RestartStopMode = opts.stop ?? RESTART_DEFAULTS.stop;
+    const session: RestartSessionMode = opts.session ?? RESTART_DEFAULTS.session;
+    const gracefulTimeoutMs = opts.gracefulTimeoutMs ?? AgentManager.STOPPING_FALLBACK_MS;
+    let forcedAfterGracefulTimeout = false;
+
+    try {
+      const alive = await this.isProcessAlive(name);
+      if (alive) {
+        if (stop === "graceful") {
+          try {
+            await this.stopGracefully(name);
+          } catch {
+            // Half-dead / already exiting — still wait, then hard-kill if needed.
+          }
+          const died = await this.waitUntilProcessDead(name, gracefulTimeoutMs);
+          if (!died) {
+            forcedAfterGracefulTimeout = true;
+            await this.hardKillSessionOnly(name);
+          }
+        } else if (session === "new") {
+          // force + new: in-place replace (historical restart semantics).
+          await this.restartFresh(name);
+          return { stop, session, resumed: false, forcedAfterGracefulTimeout };
+        } else {
+          // force + resume: replace onto resume command; fall back to fresh if unavailable.
+          if (await this.opts.tmux.hasSession(this.session(name))) {
+            await this.refreshOwnership(name);
+          }
+          if (await this.tryResumeAfterStop(name)) {
+            return { stop, session, resumed: true, forcedAfterGracefulTimeout };
+          }
+          await this.restartFresh(name);
+          return { stop, session, resumed: false, forcedAfterGracefulTimeout };
+        }
+      }
+
+      // Stop phase over (or already stopped). Drop "stopping" before start so resume/fresh
+      // cannot leave a live pane stuck in the graceful-stop UI state.
+      this.clearStoppingState(name);
+
+      if (session === "resume" && (await this.tryResumeAfterStop(name))) {
+        return { stop, session, resumed: true, forcedAfterGracefulTimeout };
+      }
+      await this.restartFresh(name);
+      return { stop, session, resumed: false, forcedAfterGracefulTimeout };
+    } catch (error) {
+      // Start failed after a graceful stop attempt — don't leave a permanent "stopping" badge.
+      this.clearStoppingState(name);
+      throw error;
+    }
+  }
+
+  /** Clear graceful-stop UI flags (used when restart/resume owns the lifecycle again). */
+  private clearStoppingState(name: string): void {
+    this.stoppingSince.delete(name);
+    this.stopFailed.delete(name);
+  }
+
+  /** True when the named entry has a live (non-dead) pane process. */
+  private async isProcessAlive(name: string): Promise<boolean> {
+    const state = (await this.agentStates()).get(name);
+    return !!state && !state.dead;
+  }
+
+  /** Poll until the process is dead or the budget expires. Returns true if dead. */
+  private async waitUntilProcessDead(name: string, timeoutMs: number): Promise<boolean> {
+    if (!(await this.isProcessAlive(name))) return true;
+    if (timeoutMs <= 0) return !(await this.isProcessAlive(name));
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if (!(await this.isProcessAlive(name))) return true;
+      await sleep(Math.min(100, Math.max(1, deadline - Date.now())));
+    }
+    return !(await this.isProcessAlive(name));
+  }
+
+  /**
+   * Kill the tmux session only — never AgentManager.kill (that wipes ad-hoc ledger rows).
+   * Used when graceful stop times out during a restart.
+   */
+  private async hardKillSessionOnly(name: string): Promise<void> {
+    this.stoppingSince.delete(name);
+    this.stopFailed.delete(name);
+    const session = this.session(name);
+    if (!(await this.opts.tmux.hasSession(session))) return;
+    try {
+      await this.refreshOwnership(name);
+    } catch {
+      /* best-effort capture before teardown */
+    }
+    await this.opts.tmux.killSession(session);
+  }
+
+  /** Attempt resume after stop; false when no resumable record / ResumeUnavailableError. */
+  private async tryResumeAfterStop(name: string): Promise<boolean> {
+    const record = this.opts.ledger?.get(name);
+    if (!record?.resume) return false;
+    try {
+      await this.resume(name, record);
+      return true;
+    } catch (err) {
+      if (err instanceof ResumeUnavailableError) return false;
+      throw err;
+    }
+  }
+
+  /**
+   * Force-replace / new-section restart: kill-ish respawn with the same definition (pre-389 path).
+   * Mints a fresh session title for title-tracked runtimes.
+   */
+  private async restartFresh(name: string): Promise<void> {
     // SDD 368 T14 — refuse before mutating transient caches (readiness/postmortem/stopping).
     this.assertNotDeliveryLifecycleDenied(name, "restart");
     let def = this.definitionOf(name);
@@ -3150,6 +3309,9 @@ export class AgentManager {
     this.assertNotDeliveryLifecycleDenied(name, "resume", record);
     const resumeDelegationRecord = (await this.opts.readAuthenticatedLegacyDelegation?.(name))?.record;
     this.readinessCache.delete(name); // spec 221: resuming changes the session → drop the cached badge
+    // Resume is intentional re-launch — never inherit a prior graceful-stop "stopping" badge
+    // (restart graceful→resume left the row stuck; dogfood 2026-07-16).
+    this.clearStoppingState(name);
     if (!record.resume) throw new ResumeUnavailableError(name, "record is not resumable (no resume block)");
     const { runtime } = record.resume;
     const cmd = record.def?.cmd;

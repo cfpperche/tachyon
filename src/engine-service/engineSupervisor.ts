@@ -44,6 +44,10 @@ const ENGINE_ENV_KEYS = [
   "XDG_DATA_HOME",
   "XDG_STATE_HOME",
   "XDG_RUNTIME_DIR",
+  "XDG_CACHE_HOME",
+  // Dev Host F5 sets these on the Extension Host for isolation; the engine owns tmux/worktrees
+  // and must share them or attach/spawn land on the default fleet socket (/tmp).
+  "TMUX_TMPDIR",
   "WSL_DISTRO_NAME",
   "WSL_INTEROP",
 ] as const;

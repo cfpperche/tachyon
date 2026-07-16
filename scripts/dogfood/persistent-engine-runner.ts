@@ -385,7 +385,8 @@ try {
   const restarted = await first.invoke("dogfood-operation-restart-0001", {
     schemaVersion: 1,
     method: "agent.restart",
-    input: { agent: "dogfood-worker" },
+    // force+new — dogfood proves the wire path; graceful handshake would hang a non-CLI worker
+    input: { agent: "dogfood-worker", stop: "force", session: "new" },
   });
   if (restarted.status !== "ok") throw new Error(`remote agent restart failed: ${JSON.stringify(restarted)}`);
   await waitForAgentProjection(first, "dogfood-worker", true);

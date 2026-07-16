@@ -7,7 +7,9 @@ import type { AgentVM } from "./types";
  * rest. Unit-tested. Wiring these ids to real commands is the next increment.
  */
 export type ActionId =
-  | "activity" | "probes" | "inspect" | "stop" | "kill" | "restart" | "spawn" | "resume" | "fork" | "verify" | "reanchor" | "reinjectContinuity" | "injectPrompt"
+  | "activity" | "probes" | "inspect" | "stop" | "kill"
+  | "restart" | "restartNew" | "restartForceNew"
+  | "spawn" | "resume" | "fork" | "verify" | "reanchor" | "reinjectContinuity" | "injectPrompt"
   | "promote" | "reviewWorktree" | "createPr" | "removeWorktree" | "edit" | "editYaml" | "clone" | "rename" | "remove";
 
 export const ACTION_META: Record<ActionId, { icon: string; label: string }> = {
@@ -16,7 +18,10 @@ export const ACTION_META: Record<ActionId, { icon: string; label: string }> = {
   inspect: { icon: "eye", label: "Open terminal" },
   stop: { icon: "primitive-square", label: "Stop graceful" },
   kill: { icon: "debug-disconnect", label: "Kill forced" },
+  // spec 389 — one-click default (graceful+resume); variants live next to it in ⋯, no VS Code QuickPick.
   restart: { icon: "debug-restart", label: "Restart" },
+  restartNew: { icon: "debug-restart", label: "Restart new section" },
+  restartForceNew: { icon: "debug-disconnect", label: "Force restart (new section)" },
   spawn: { icon: "play", label: "Start" },
   resume: { icon: "debug-continue", label: "Resume (with context)" },
   fork: { icon: "git-branch", label: "Fork session" },
@@ -63,8 +68,8 @@ export function actionsFor(a: AgentVM): ActionId[] {
     if (!isCleanExitPostmortem(a)) out.push("inspect");
     if (isRunning(a)) out.push("stop", "kill");
     else out.push("kill");
-    if (canRestart(a)) out.push("restart");
-  } else if (isCleanExit(a) && canRestart(a)) out.push("restart");
+    if (canRestart(a)) out.push("restart", "restartNew", "restartForceNew");
+  } else if (isCleanExit(a) && canRestart(a)) out.push("restart", "restartNew", "restartForceNew");
   else out.push("spawn");
   if (canResume(a)) out.push("resume");
   if (a.forkable) out.push("fork");

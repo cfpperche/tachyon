@@ -1,5 +1,6 @@
+import fs from "node:fs";
 import * as vscode from "vscode";
-import { SOCKET_NAME, utf8LocaleEnv } from "../tmux/TmuxService.js";
+import { SOCKET_NAME, socketPath, utf8LocaleEnv } from "../tmux/TmuxService.js";
 import type {
   TerminalManifestStore,
   TerminalPresentation,
@@ -15,6 +16,36 @@ function sessionIcon(agent: string, kind: "agent" | "terminal"): vscode.ThemeIco
   if (agent.startsWith("cmd:")) return new vscode.ThemeIcon("play");
   if (agent.startsWith("rb:")) return new vscode.ThemeIcon("list-ordered");
   return new vscode.ThemeIcon(kind === "terminal" ? "terminal" : "hubot");
+}
+
+/**
+ * Absolute tmux socket for editor attach (`-S`), not `-L` + ambient `TMUX_TMPDIR`.
+ *
+ * Dev Host F5 sets a private `TMUX_TMPDIR` on the Extension Host (launch.json), while the
+ * persistent engine systemd unit historically did not receive that var and spawns on `/tmp`.
+ * Attach with the EH's private TMPDIR then misses live sessions. Prefer a socket that exists.
+ */
+export function attachSocketPath(
+  env: NodeJS.ProcessEnv = process.env,
+  exists: (p: string) => boolean = (p) => {
+    try {
+      return fs.existsSync(p);
+    } catch {
+      return false;
+    }
+  },
+): string {
+  const bases: string[] = [];
+  for (const candidate of [env.TACHYON_ENGINE_TMUX_TMPDIR, env.TMUX_TMPDIR, "/tmp"]) {
+    if (!candidate) continue;
+    const key = candidate.replace(/\/+$/, "");
+    if (!bases.includes(key)) bases.push(key);
+  }
+  for (const base of bases) {
+    const p = socketPath(SOCKET_NAME, { TMUX_TMPDIR: base });
+    if (exists(p)) return p;
+  }
+  return socketPath(SOCKET_NAME, env);
 }
 
 /**
@@ -59,6 +90,7 @@ export class Terminals implements TerminalPresentation {
       this.onReveal?.(agent, session);
       return existing;
     }
+    const socket = attachSocketPath();
     const terminal = vscode.window.createTerminal({
       name: title ?? agent,
       // A contextual tab ICON (replaces VSCode's default `>_`): robot for an AI agent, terminal for a
@@ -67,9 +99,9 @@ export class Terminals implements TerminalPresentation {
       iconPath: sessionIcon(agent, this.kindOf?.(agent) ?? "agent"),
       location: { viewColumn: viewColumn ?? vscode.ViewColumn.Active, preserveFocus: true },
       shellPath: "tmux",
-      // -u forces UTF-8 rendering even if locale detection fails; the env override
-      // backstops it so the attach client itself runs in a UTF-8 locale (mojibake fix).
-      shellArgs: ["-u", "-L", SOCKET_NAME, "attach-session", "-d", "-t", `=${session}`],
+      // -u forces UTF-8; -S pins the absolute socket so Dev Host's private TMUX_TMPDIR cannot
+      // redirect attach away from the engine's real server (spec 389 dogfood / persistent engine).
+      shellArgs: ["-u", "-S", socket, "attach-session", "-d", "-t", `=${session}`],
       env: utf8LocaleEnv(),
       // Don't let VSCode persist/revive this tab across window restarts — it would
       // come back as a plain bash ghost (the attach can't be restored by VSCode);

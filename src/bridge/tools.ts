@@ -1158,13 +1158,29 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
   mcp.registerTool(
     "restart_agent",
     {
-      description: "Compatibility name: restart a managed entry (kill + spawn with the same definition).",
-      inputSchema: { name: AGENT_NAME },
+      description:
+        "Restart a managed entry (spec 389). stop=graceful|force (default graceful) × session=resume|new (default resume; falls back to new when resume is unavailable). " +
+        "Graceful asks the CLI to exit, waits, then force-kills the tmux session only if still alive (never dismisses ad-hoc). " +
+        "Force replaces the process immediately. Crash/watch auto-restarts use force+new internally.",
+      inputSchema: {
+        name: AGENT_NAME,
+        stop: z.enum(["graceful", "force"]).optional().describe("how to stop a live pane; default graceful"),
+        session: z.enum(["resume", "new"]).optional().describe("resume prior conversation or open a new section; default resume"),
+      },
     },
-    async ({ name }) => {
+    async ({ name, stop, session }) => {
       try {
-        await deps.manager.restart(name);
-        return ok(`agent '${name}' restarted`);
+        // Product defaults: graceful + resume (AgentManager applies the same when omitted).
+        const result = await deps.manager.restart(name, {
+          stop: stop ?? "graceful",
+          session: session ?? "resume",
+        });
+        const mode = `${result.stop}+${result.session}`;
+        const detail = [
+          result.resumed ? "resumed prior session" : "new section",
+          result.forcedAfterGracefulTimeout ? "graceful timed out → session hard-kill" : undefined,
+        ].filter(Boolean).join("; ");
+        return ok(`agent '${name}' restarted (${mode}; ${detail})`);
       } catch (err) {
         return fail(err);
       }

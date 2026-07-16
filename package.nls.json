@@ -13,6 +13,8 @@
   "command.stopAgentItem": "Stop graceful",
   "command.killAgentItem": "Kill forced",
   "command.restartAgentItem": "Restart",
+  "command.restartAgentNewItem": "Restart new section",
+  "command.restartAgentForceNewItem": "Force restart (new section)",
   "command.openAgentTerminalItem": "Open Agent Terminal",
   "command.openAgentActivity": "Open Agent Activity",
   "command.openProjectHandoff": "Open Project Handoff",

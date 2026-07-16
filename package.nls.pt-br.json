@@ -13,6 +13,8 @@
   "command.stopAgentItem": "Parar graciosamente",
   "command.killAgentItem": "Parar",
   "command.restartAgentItem": "Reiniciar",
+  "command.restartAgentNewItem": "Reiniciar em seção nova",
+  "command.restartAgentForceNewItem": "Forçar reinício (seção nova)",
   "command.openAgentTerminalItem": "Abrir terminal do agente",
   "command.openAgentActivity": "Abrir atividade do agente",
   "command.openProjectHandoff": "Abrir handoff do projeto",

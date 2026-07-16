@@ -158,7 +158,7 @@ describe("container-generated delegation behavior", () => {
 
     // 7. rematerialize is idempotent + refresh-seed-safe: re-materialize replaces the seed (no stale link,
     //    no double-write race) and the seeded content still matches the real source.
-    await manager.restart("oc");
+    await manager.restart("oc", { stop: "force", session: "new" });
     expect(newSessionEnvs.length).toBe(2);
     const env2 = newSessionEnvs[1];
     expect(env2.XDG_CONFIG_HOME).toBe(xdgDirs.config);

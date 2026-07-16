@@ -100,6 +100,16 @@
         "icon": "$(debug-restart)"
       },
       {
+        "command": "tachyon.restartAgentNewItem",
+        "title": "%command.restartAgentNewItem%",
+        "icon": "$(debug-restart)"
+      },
+      {
+        "command": "tachyon.restartAgentForceNewItem",
+        "title": "%command.restartAgentForceNewItem%",
+        "icon": "$(debug-disconnect)"
+      },
+      {
         "command": "tachyon.openAgentTerminalItem",
         "title": "%command.openAgentTerminalItem%"
       },
@@ -576,6 +586,14 @@
           "when": "false"
         },
         {
+          "command": "tachyon.restartAgentNewItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.restartAgentForceNewItem",
+          "when": "false"
+        },
+        {
           "command": "tachyon.reanchorAgentItem",
           "when": "false"
         },
@@ -890,6 +908,7 @@
     "verify:full:quiet": "node scripts/verify-full.mjs",
     "verify:prepare": "npm ci --ignore-scripts --prefer-offline --no-audit --no-fund && npm run build",
     "dogfood:persistent-engine": "node scripts/dogfood/persistent-engine.mjs",
+    "dogfood:restart-modes": "vitest run test/integration/restartModesDogfood.test.ts",
     "dogfood:dev-host": "bash scripts/dev-host/cli.sh",
     "dogfood:runtime-launch-preflight": "node scripts/dev-host/lane.mjs run --owner sdd-370-headless --target worktree -- npm exec vitest run test/unit/codexCatalogStream.test.ts test/unit/runtimeLaunchPreflight.test.ts test/unit/devHostLane.test.ts test/unit/devHostLauncher.test.ts test/unit/engineSupervisor.test.ts test/unit/launchReadinessRecovery.test.ts test/unit/bridge.test.ts",
     "dogfood:runtime-observability": "vite-node --script scripts/runtime-observability-dogfood.ts",

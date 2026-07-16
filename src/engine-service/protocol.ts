@@ -276,10 +276,21 @@ export interface WorkspaceStudioFormV1 {
   catchUp: boolean;
 }
 
+/** spec 389 — optional restart matrix on agent.restart (omitted fields → product defaults). */
+export type WorkspaceAgentRestartInputV1 = {
+  agent: string;
+  stop?: "graceful" | "force";
+  session?: "resume" | "new";
+};
+
 export type WorkspaceCommandV1 = {
   schemaVersion: 1;
-  method: WorkspaceAgentLifecycleCommandMethodV1;
+  method: Exclude<WorkspaceAgentLifecycleCommandMethodV1, "agent.restart">;
   input: { agent: string };
+} | {
+  schemaVersion: 1;
+  method: "agent.restart";
+  input: WorkspaceAgentRestartInputV1;
 } | {
   schemaVersion: 1;
   method: "agent.input";
@@ -699,9 +710,21 @@ export function isWorkspaceCommandV1(value: unknown): value is WorkspaceCommandV
   if (value.method === "handoff.distill") return isHandoffDistillInputV1(value.input);
   if (value.method === "sidebar.mutate") return isSidebarMutationInputV1(value.input);
   if (value.method === "extension.invoke") return isExtensionCommandV1(value.input);
+  if (value.method === "agent.restart") return isWorkspaceAgentRestartInputV1(value.input);
   return hasOnlyKeys(value.input, ["agent"])
     && typeof value.input.agent === "string"
     && AGENT_NAME_RE.test(value.input.agent);
+}
+
+export function isWorkspaceAgentRestartInputV1(value: unknown): value is WorkspaceAgentRestartInputV1 {
+  if (!isRecord(value) || typeof value.agent !== "string" || !AGENT_NAME_RE.test(value.agent)) return false;
+  const keys = ["agent"];
+  if (value.stop !== undefined) keys.push("stop");
+  if (value.session !== undefined) keys.push("session");
+  if (!hasOnlyKeys(value, keys)) return false;
+  if (value.stop !== undefined && value.stop !== "graceful" && value.stop !== "force") return false;
+  if (value.session !== undefined && value.session !== "resume" && value.session !== "new") return false;
+  return true;
 }
 
 export function isWorkspaceCommandResultV1(value: unknown): value is WorkspaceCommandResultV1 {

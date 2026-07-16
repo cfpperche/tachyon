@@ -277,10 +277,10 @@ describe("container-generated delegation behavior", () => {
       isDeliveryLifecycleDenied: (name) => denySet.has(name),
     });
     await expect(manager.resume("holder", new SessionLedger(root).get("holder")!)).rejects.toThrow(/Delivery-bound/);
-    await expect(manager.restart("holder")).rejects.toThrow(/Delivery-bound/);
+    await expect(manager.restart("holder", { stop: "force", session: "new" })).rejects.toThrow(/Delivery-bound/);
     // Marker-less crash-window agent: denied by snapshot, not by marker.
     await expect(manager.resume("crash-holder", new SessionLedger(root).get("crash-holder")!)).rejects.toThrow(/Delivery/);
-    await expect(manager.restart("crash-holder")).rejects.toThrow(/Delivery/);
+    await expect(manager.restart("crash-holder", { stop: "force", session: "new" })).rejects.toThrow(/Delivery/);
     await expect(manager.spawn("crash-holder")).rejects.toThrow(/Delivery/);
     expect(await manager.resumeReadiness("holder", new SessionLedger(root).get("holder")!)).toBe(false);
     expect(await manager.resumeReadiness("crash-holder", new SessionLedger(root).get("crash-holder")!)).toBe(false);
