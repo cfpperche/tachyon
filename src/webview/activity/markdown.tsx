@@ -264,6 +264,23 @@ function MermaidDiagramView({ svg }: { svg: string }) {
     if (key === "ArrowDown") { e.preventDefault(); userTouchedRef.current = true; setT(panBy(tRef.current, 0, -step, vp, c)); return; }
   };
 
+  // Crisp zoom: resize SVG CSS pixels while keeping viewBox (vector redraw). CSS
+  // transform:scale() + will-change rasterizes at the pre-zoom size → blurry when zooming in.
+  useEffect(() => {
+    const stage = stageRef.current;
+    const c = content;
+    if (!stage || !c) return;
+    const el = stage.querySelector("svg");
+    if (!el) return;
+    const w = Math.max(1, c.w * t.scale);
+    const h = Math.max(1, c.h * t.scale);
+    el.setAttribute("width", String(w));
+    el.setAttribute("height", String(h));
+    el.style.width = `${w}px`;
+    el.style.height = `${h}px`;
+    el.style.maxWidth = "none";
+  }, [t.scale, content]);
+
   const pannable = content ? canPan(t, viewport, content) : false;
   const scaleLabel = formatScalePercent(t.scale);
 
@@ -299,7 +316,7 @@ function MermaidDiagramView({ svg }: { svg: string }) {
         <div
           class="mmd-stage"
           ref={stageRef}
-          style={{ transform: `translate(${t.tx}px, ${t.ty}px) scale(${t.scale})` }}
+          style={{ transform: `translate(${t.tx}px, ${t.ty}px)` }}
         />
       </div>
     </div>

@@ -112,17 +112,17 @@
 .mmd-viewport.pannable { cursor: grab; }
 .mmd-viewport.dragging { cursor: grabbing; }
 .mmd-stage {
+  /* Pan only via translate — zoom resizes SVG width/height (keeps viewBox → crisp vector).
+     Avoid transform:scale + will-change (compositor rasterizes at pre-zoom size → blurry zoom-in). */
   transform-origin: 0 0;
-  will-change: transform;
   user-select: none;
-  /* Natural SVG size — no max-width:100% (that fights zoom). */
   display: inline-block;
   line-height: 0;
 }
 .mmd-stage svg {
   display: block;
-  max-width: none;
-  height: auto;
+  max-width: none !important;
+  /* height/width set by JS from natural size × scale for crisp zoom */
 }
 
 @keyframes mmd-spin { to { transform: rotate(360deg); } }
