@@ -3,6 +3,7 @@
  * Pure helpers + durable JSON store. Git mutate ops live in ManagedWorktreeService / WorktreeManager.
  */
 
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { resolveBase } from "./WorktreeManager.js";
@@ -37,6 +38,13 @@ export const MANAGED_WORKTREE_STORE_REL = path.join(".tachyon", "managed-worktre
 
 const SLUG_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/;
 
+export class ManagedWorktreeStoreError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ManagedWorktreeStoreError";
+  }
+}
+
 export function managedWorktreeStorePath(workspaceRoot: string): string {
   return path.join(workspaceRoot, MANAGED_WORKTREE_STORE_REL);
 }
@@ -48,9 +56,7 @@ export function pathForChange(base: string, wsHash: string, slug: string): strin
 
 export function assertManagedSlug(slug: string): string {
   if (!SLUG_RE.test(slug)) {
-    throw new Error(
-      `invalid managed worktree slug '${slug}' (expected ${SLUG_RE.source})`,
-    );
+    throw new Error(`invalid managed worktree slug '${slug}' (expected ${SLUG_RE.source})`);
   }
   return slug;
 }
@@ -69,26 +75,69 @@ export function isUnderManagedBase(folderPath: string, base: string): boolean {
   return rel !== "" && rel !== ".." && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel);
 }
 
+/** Contained under `<base>/<wsHash>/…` (agent or change). */
+export function isUnderWorkspaceManagedRoot(folderPath: string, base: string, wsHash: string): boolean {
+  const root = path.resolve(base, wsHash);
+  const abs = path.resolve(folderPath);
+  if (abs === root) return false;
+  const rel = path.relative(root, abs);
+  return rel !== "" && rel !== ".." && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel);
+}
+
 export function defaultChangeBranch(slug: string): string {
   return `tachyon/change/${slug}`;
 }
 
+/** Injective id for the accepted key space (no silent collision on long slugs). */
 export function newManagedId(kind: ManagedWorktreeKind, key: string): string {
-  const safe = key.replace(/[^a-zA-Z0-9._-]+/g, "-").slice(0, 48);
-  return `mw-${kind}-${safe}`;
+  const digest = crypto.createHash("sha256").update(`${kind}\0${key}`).digest("hex").slice(0, 16);
+  const safe = key.replace(/[^a-zA-Z0-9._-]+/g, "-").slice(0, 32);
+  return `mw-${kind}-${safe}-${digest}`;
 }
 
+/**
+ * Load registry. Missing file → empty catalog.
+ * Corrupt/unreadable/unknown schema → throws (fail-closed; never silently wipe).
+ */
 export function loadManagedWorktreeStore(filePath: string): ManagedWorktreeStoreFile {
+  let raw: string;
   try {
-    const raw = fs.readFileSync(filePath, "utf8");
-    const parsed = JSON.parse(raw) as ManagedWorktreeStoreFile;
-    if (parsed?.schemaVersion !== 1 || !Array.isArray(parsed.entries)) {
-      return { schemaVersion: 1, entries: [] };
-    }
-    return { schemaVersion: 1, entries: parsed.entries.filter(isEntryShape) };
-  } catch {
-    return { schemaVersion: 1, entries: [] };
+    raw = fs.readFileSync(filePath, "utf8");
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") return { schemaVersion: 1, entries: [] };
+    throw new ManagedWorktreeStoreError(
+      `cannot read managed worktree registry ${filePath}: ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    throw new ManagedWorktreeStoreError(
+      `managed worktree registry is not valid JSON (${filePath}): ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new ManagedWorktreeStoreError(`managed worktree registry has invalid root shape (${filePath})`);
+  }
+  const root = parsed as Record<string, unknown>;
+  if (root.schemaVersion !== 1) {
+    throw new ManagedWorktreeStoreError(
+      `managed worktree registry schemaVersion unsupported (got ${String(root.schemaVersion)}; need 1) at ${filePath}`,
+    );
+  }
+  if (!Array.isArray(root.entries)) {
+    throw new ManagedWorktreeStoreError(`managed worktree registry entries must be an array (${filePath})`);
+  }
+  const entries: ManagedWorktreeEntry[] = [];
+  for (const item of root.entries) {
+    if (!isEntryShape(item)) {
+      throw new ManagedWorktreeStoreError(`managed worktree registry contains a malformed entry (${filePath})`);
+    }
+    entries.push(item);
+  }
+  return { schemaVersion: 1, entries };
 }
 
 function isEntryShape(e: unknown): e is ManagedWorktreeEntry {
@@ -133,12 +182,25 @@ export function findManagedEntry(store: ManagedWorktreeStoreFile, idOrPath: stri
   return store.entries.find((e) => e.id === idOrPath || path.resolve(e.path) === resolved);
 }
 
-/** Active entries for VS Code reveal (name = agent or change slug). */
-export function liveFoldersFromRegistry(store: ManagedWorktreeStoreFile): Array<{ path: string; agent: string }> {
+/** Active entries whose path still exists (stale rows dropped for reveal). */
+export function liveFoldersFromRegistry(
+  store: ManagedWorktreeStoreFile,
+  pathExists: (p: string) => boolean = fs.existsSync,
+): Array<{ path: string; agent: string }> {
   return store.entries
-    .filter((e) => e.status === "active")
+    .filter((e) => e.status === "active" && pathExists(e.path))
     .map((e) => ({
       path: e.path,
       agent: e.agent ?? e.slug ?? e.id,
     }));
+}
+
+/** Whether actor may mutate this entry (creator, agent owner, or privileged Bridge principal). */
+export function canMutateManagedWorktree(
+  entry: ManagedWorktreeEntry,
+  actor: { kind: string; name?: string },
+): boolean {
+  if (actor.kind === "legacy" || actor.kind === "external" || actor.kind === "human") return true;
+  if (actor.kind !== "agent" || !actor.name) return false;
+  return entry.createdBy === actor.name || entry.agent === actor.name;
 }

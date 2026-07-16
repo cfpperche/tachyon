@@ -664,14 +664,14 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         if (!deps.managedWorktrees) return fail(new Error("managed worktrees are not available on this Bridge"));
         if (kind !== "change") return fail(new Error("create_worktree v1 only supports kind=change"));
         const actor = resolveDeclaredActor(deps, undefined);
+        if (!actor.ok) return fail(new Error(actor.message));
         const entry = await deps.managedWorktrees.createChange({
           slug,
           branch,
           baseRef,
           taskId,
-          createdBy: actor.ok ? actor.name : undefined,
+          createdBy: actor.name,
         });
-        // actor.ok is always checked for optional attribution only
         return ok(JSON.stringify(entry, null, 2));
       } catch (err) {
         return fail(err);
@@ -720,31 +720,37 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     "register_worktree",
     {
       description:
-        "Register an existing checkout path under the managed base (or re-bind agent metadata). " +
-        "Does not run git worktree add. Path must already exist under settings.worktree.base.",
+        "Register an existing checkout that is already a git worktree of this repository under " +
+        "<worktree.base>/<wsHash>/… . Validates realpath, common-dir, and live branch. Does not run git worktree add.",
       inputSchema: {
         kind: z.enum(["agent", "change"]),
         path: z.string().min(1),
-        branch: z.string().min(1),
+        branch: z.string().min(1).optional().describe("optional; when set must match the live branch"),
         baseRef: z.string().min(1).optional(),
         tachyonCreatedBranch: z.boolean().optional(),
-        agent: z.string().optional(),
+        agent: z.string().optional().describe("required when kind=agent"),
         taskId: z.string().regex(/^t-[0-9a-f]{6}$/).optional(),
-        slug: z.string().min(1).max(64).optional(),
+        slug: z.string().min(1).max(64).optional().describe("required when kind=change"),
       },
     },
     async (a) => {
       try {
         if (!deps.managedWorktrees) return fail(new Error("managed worktrees are not available on this Bridge"));
-        const entry = deps.managedWorktrees.register({
+        const actor = resolveDeclaredActor(deps, undefined);
+        if (!actor.ok) return fail(new Error(actor.message));
+        if (a.kind === "agent" && !a.agent) return fail(new Error("register_worktree kind=agent requires agent"));
+        if (a.kind === "change" && !a.slug) return fail(new Error("register_worktree kind=change requires slug"));
+        const entry = await deps.managedWorktrees.register({
           kind: a.kind,
           path: a.path,
           branch: a.branch,
           baseRef: a.baseRef,
-          tachyonCreatedBranch: a.tachyonCreatedBranch,
+          // Never trust client-supplied ownership of branch creation; only Tachyon-internal sync may set true.
+          tachyonCreatedBranch: false,
           agent: a.agent,
           taskId: a.taskId,
           slug: a.slug,
+          createdBy: actor.name,
         });
         return ok(JSON.stringify(entry, null, 2));
       } catch (err) {
@@ -756,13 +762,21 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
   mcp.registerTool(
     "unregister_worktree",
     {
-      description: "Drop a registry entry without deleting the git worktree on disk.",
+      description:
+        "Drop a registry entry without deleting the git worktree on disk. " +
+        "Caller must be creator, agent owner, or a privileged Bridge principal (legacy/external/human).",
       inputSchema: { idOrPath: z.string().min(1) },
     },
     async ({ idOrPath }) => {
       try {
         if (!deps.managedWorktrees) return fail(new Error("managed worktrees are not available on this Bridge"));
-        const okRm = deps.managedWorktrees.unregister(idOrPath);
+        const actor = resolveDeclaredActor(deps, undefined);
+        if (!actor.ok) return fail(new Error(actor.message));
+        const principal = deps.caller ?? { kind: "legacy" as const };
+        const okRm = deps.managedWorktrees.unregister(idOrPath, {
+          kind: principal.kind,
+          name: actor.name,
+        });
         if (!okRm) return fail(new Error(`managed worktree not found: ${idOrPath}`));
         return ok(JSON.stringify({ unregistered: true, idOrPath }, null, 2));
       } catch (err) {
@@ -776,16 +790,25 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     {
       description:
         "Remove a managed git worktree via the WorktreeManager engine (occupancy fail-closed). " +
-        "Optional deleteBranch only when Tachyon created the branch. Does not auto-merge.",
+        "Caller must own the entry (creator/agent) or be privileged. " +
+        "Dirty trees require confirmDirty=true. Optional deleteBranch only when Tachyon created the branch.",
       inputSchema: {
         idOrPath: z.string().min(1),
         deleteBranch: z.boolean().optional().default(false),
+        confirmDirty: z.boolean().optional().default(false).describe("required when the worktree has uncommitted changes"),
       },
     },
-    async ({ idOrPath, deleteBranch }) => {
+    async ({ idOrPath, deleteBranch, confirmDirty }) => {
       try {
         if (!deps.managedWorktrees) return fail(new Error("managed worktrees are not available on this Bridge"));
-        const result = await deps.managedWorktrees.remove(idOrPath, { deleteBranch });
+        const actor = resolveDeclaredActor(deps, undefined);
+        if (!actor.ok) return fail(new Error(actor.message));
+        const principal = deps.caller ?? { kind: "legacy" as const };
+        const result = await deps.managedWorktrees.remove(idOrPath, {
+          deleteBranch,
+          confirmDirty,
+          actor: { kind: principal.kind, name: actor.name },
+        });
         if (!result.removed) return fail(new Error(result.error ?? "remove refused"));
         return ok(JSON.stringify(result, null, 2));
       } catch (err) {

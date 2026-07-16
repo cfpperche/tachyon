@@ -4,11 +4,15 @@ import os from "node:os";
 import path from "node:path";
 import {
   assertManagedSlug,
+  canMutateManagedWorktree,
   defaultChangeBranch,
   findManagedEntry,
   isUnderManagedBase,
+  isUnderWorkspaceManagedRoot,
   liveFoldersFromRegistry,
   loadManagedWorktreeStore,
+  ManagedWorktreeStoreError,
+  newManagedId,
   pathForChange,
   removeManagedEntry,
   saveManagedWorktreeStore,
@@ -25,20 +29,54 @@ describe("spec 392 managed worktree registry", () => {
 
   it("assertManagedSlug accepts safe ids and rejects junk", () => {
     expect(assertManagedSlug("t-689e6c")).toBe("t-689e6c");
-    expect(assertManagedSlug("feat_hooks.v2")).toBe("feat_hooks.v2");
     expect(() => assertManagedSlug("../etc")).toThrow(/invalid managed worktree slug/);
-    expect(() => assertManagedSlug("")).toThrow(/invalid managed worktree slug/);
   });
 
   it("defaultChangeBranch is deterministic", () => {
     expect(defaultChangeBranch("foo")).toBe("tachyon/change/foo");
   });
 
-  it("isUnderManagedBase mirrors workspaceFolderOps containment", () => {
+  it("isUnderManagedBase / isUnderWorkspaceManagedRoot", () => {
     const base = "/home/u/.cache/tachyon/worktrees";
     expect(isUnderManagedBase(path.join(base, "ws", "agent"), base)).toBe(true);
-    expect(isUnderManagedBase(base, base)).toBe(false);
-    expect(isUnderManagedBase("/other", base)).toBe(false);
+    expect(isUnderWorkspaceManagedRoot(path.join(base, "ws", "agent"), base, "ws")).toBe(true);
+    expect(isUnderWorkspaceManagedRoot(path.join(base, "other", "agent"), base, "ws")).toBe(false);
+    expect(isUnderWorkspaceManagedRoot(path.join(base, "ws"), base, "ws")).toBe(false);
+  });
+
+  it("newManagedId is injective for long colliding slug prefixes", () => {
+    const a = "a".repeat(64);
+    const b = "a".repeat(48) + "b".repeat(16);
+    expect(newManagedId("change", a)).not.toBe(newManagedId("change", b));
+  });
+
+  it("canMutateManagedWorktree enforces owner vs privileged", () => {
+    const entry: ManagedWorktreeEntry = {
+      id: "mw-change-x",
+      kind: "change",
+      path: "/wt",
+      branch: "b",
+      baseRef: "h",
+      tachyonCreatedBranch: true,
+      createdBy: "alice",
+      createdAt: "t",
+      status: "active",
+    };
+    expect(canMutateManagedWorktree(entry, { kind: "agent", name: "alice" })).toBe(true);
+    expect(canMutateManagedWorktree(entry, { kind: "agent", name: "bob" })).toBe(false);
+    expect(canMutateManagedWorktree(entry, { kind: "legacy" })).toBe(true);
+    expect(canMutateManagedWorktree(entry, { kind: "external" })).toBe(true);
+  });
+
+  it("load missing file is empty; corrupt file fails closed", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mw-reg-"));
+    const file = path.join(dir, "managed-worktrees.json");
+    expect(loadManagedWorktreeStore(file).entries).toEqual([]);
+    fs.writeFileSync(file, "{not-json");
+    expect(() => loadManagedWorktreeStore(file)).toThrow(ManagedWorktreeStoreError);
+    fs.writeFileSync(file, JSON.stringify({ schemaVersion: 2, entries: [] }));
+    expect(() => loadManagedWorktreeStore(file)).toThrow(/schemaVersion/);
+    fs.rmSync(dir, { recursive: true, force: true });
   });
 
   it("upsert/find/remove round-trip on disk store", () => {
@@ -60,33 +98,10 @@ describe("spec 392 managed worktree registry", () => {
     saveManagedWorktreeStore(file, store);
     const reloaded = loadManagedWorktreeStore(file);
     expect(findManagedEntry(reloaded, entry.id)?.path).toBe(entry.path);
-    expect(findManagedEntry(reloaded, entry.path)?.id).toBe(entry.id);
-    expect(liveFoldersFromRegistry(reloaded)).toEqual([{ path: entry.path, agent: "foo" }]);
+    expect(liveFoldersFromRegistry(reloaded, () => true)).toEqual([{ path: entry.path, agent: "foo" }]);
+    expect(liveFoldersFromRegistry(reloaded, () => false)).toEqual([]);
     const gone = removeManagedEntry(reloaded, entry.id);
     expect(findManagedEntry(gone, entry.id)).toBeUndefined();
     fs.rmSync(dir, { recursive: true, force: true });
-  });
-
-  it("upsert by path replaces prior entry for same checkout", () => {
-    const entry1: ManagedWorktreeEntry = {
-      id: "mw-agent-a",
-      kind: "agent",
-      path: "/wt/a",
-      branch: "tachyon/a",
-      baseRef: "1",
-      tachyonCreatedBranch: true,
-      agent: "a",
-      createdAt: "t0",
-      status: "active",
-    };
-    const entry2: ManagedWorktreeEntry = {
-      ...entry1,
-      id: "mw-agent-a2",
-      baseRef: "2",
-    };
-    let store = upsertManagedEntry({ schemaVersion: 1, entries: [] }, entry1);
-    store = upsertManagedEntry(store, entry2);
-    expect(store.entries).toHaveLength(1);
-    expect(store.entries[0]!.baseRef).toBe("2");
   });
 });

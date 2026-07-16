@@ -1,6 +1,6 @@
 # Tasks 392
 
-**Verify:** `npx vitest run test/unit/managedWorktree.test.ts --reporter=dot`  
+**Verify:** `npx vitest run test/unit/managedWorktree.test.ts --reporter=dot`
 **Dogfood-Opt-Out:** unit/CI only for v1; installed reveal dogfood deferred.
 
 - [x] Spec + plan

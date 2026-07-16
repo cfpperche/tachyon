@@ -1091,6 +1091,7 @@ export class Workspace {
         try {
           const forkBranch = branchFor(forkName, this.config?.settings ?? {}, {});
           const rec = await this.worktrees.createFork(forkName, forkBranch, source.branch);
+          this.managedWorktrees.syncAgentRecord(forkName, rec);
           return { cwd: rec.path, worktree: rec };
         } catch (err) {
           this.host.notify(`couldn't create fork worktree for '${forkName}': ${err instanceof Error ? err.message : String(err)}`, "warn");
@@ -1098,6 +1099,8 @@ export class Workspace {
         }
       },
       rollbackPreparedWorktree: async (rec, initialHead, beforeHead, afterHead, created) => {
+        // rollbackCreated/rollbackPreparation intentionally preserve the checkout (recovery state).
+        // Registry rows stay active so reveal still points at the recovery path; human cleanup uses remove.
         if (created) {
           if (!afterHead) throw new Error(`fresh worktree cleanup was withheld without a prepared HEAD observation: ${rec.path}`);
           await this.worktrees.rollbackCreated(rec, initialHead, afterHead);

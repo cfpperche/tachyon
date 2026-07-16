@@ -1,9 +1,9 @@
 # Spec 392 — Managed worktree registry
 
-**Status:** shipped-partial  
-**Date:** 2026-07-16  
-**Task:** t-689e6c  
-**Closure:** v1 registry + Bridge tools + prune migration + agent sync + worktrees.list merge for reveal; installed multi-root dogfood deferred. 
+**Status:** shipped-partial
+**Date:** 2026-07-16
+**Task:** t-689e6c
+**Closure:** v1 registry + Bridge tools + prune migration + agent sync + worktrees.list merge for reveal; installed multi-root dogfood deferred.
 
 ## Problem
 
@@ -49,7 +49,7 @@ Tachyon has a solid **agent** worktree engine (`WorktreeManager`) but no product
 - [ ] GitDelivery prune worktree removal goes through WorktreeManager/engine, not ad-hoc argv only
 - [ ] Unit tests cover registry pure ops + service create/list/remove
 
-**Verify:** `npx vitest run test/unit/managedWorktree.test.ts test/unit/workspaceFolderOps.test.ts --reporter=dot`  
+**Verify:** `npx vitest run test/unit/managedWorktree.test.ts test/unit/workspaceFolderOps.test.ts --reporter=dot`
 **Dogfood-Opt-Out:** Bridge tools require installed host dogfood; unit coverage proves registry/engine in CI.
 
 ## Closure
