@@ -2,7 +2,8 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { codexConfigCmd, codexFlagCmd, composeCommand, codexBridgeCmd, shellQuote, inferKind, instructionsDeliverable, type AgentDef, type EntryKind, type TachyonConfig } from "../config/loadConfig.js";
+import { codexConfigCmd, composeCommand, codexBridgeCmd, shellQuote, inferKind, instructionsDeliverable, type AgentDef, type EntryKind, type TachyonConfig } from "../config/loadConfig.js";
+import { applyManagedHookTrust, managedHookRuntimeOf } from "./managedHookTrust.js";
 import { TmuxService, sessionName, agentFromSession, SESSION_PREFIX } from "../tmux/TmuxService.js";
 import { adapterFor, adapterForRuntime, binaryOf, forkable, managesOwnSession, type ResumeAdapter, type ResumeRuntime } from "../resume/adapters.js";
 import { URL_ENV_VAR } from "../bridge/token.js";
@@ -700,10 +701,6 @@ export class AgentManager {
       TACHYON_AGENT_NAME: name,
     });
     if (result.state === "unsupported" || result.state === "failed") throw new RuntimeLaunchPreflightError(result);
-  }
-
-  private isDeclaredSubagent(name: string): boolean {
-    return this.opts.getConfig()?.declaredOwner[name] !== undefined;
   }
 
   /** Public read of an agent's definition (declared config wins, then ad-hoc) — spec 216 needs
@@ -2425,18 +2422,22 @@ export class AgentManager {
       this.opts.onSessionHooksInjected?.(name, false);
       return cmd;
     }
-    const declaredSubagent = opts.declared && this.isDeclaredSubagent(name);
     const ownershipOnly = !opts.declared;
     if (binary === "codex") {
       const config = this.opts.materializeCodexSessionStartHookConfig?.(name, { ownershipOnly });
       this.opts.onSessionHooksInjected?.(name, !!config);
       if (!config) return cmd;
       const withConfig = codexConfigCmd(cmd, config);
-      // t-84ff5c FINDINGS hybrid: bypass Codex hook trust only for ad-hoc agents and
-      // config-declared subagents, not top-level declared agents with user/project hooks.
-      return !opts.declared || declaredSubagent ? codexFlagCmd(withConfig, "--dangerously-bypass-hook-trust") : withConfig;
+      // t-554634 option C + t-bc8d21: scoped managed-hook trust (only when Tachyon injected hooks).
+      return applyManagedHookTrust(withConfig, {
+        injected: true,
+        kind: "session-config-flag",
+        runtime: managedHookRuntimeOf(binary),
+      });
     }
     if (binary !== "claude") {
+      // Grok/Hermes/OpenCode: no withSessionOwnership lifecycle injection today.
+      // Grok harness private-home hooks are trusted via seedGrokTrustedFolders at materialize time.
       this.opts.onSessionHooksInjected?.(name, false);
       return cmd;
     }
@@ -2456,6 +2457,11 @@ export class AgentManager {
     this.opts.onSessionHooksInjected?.(name, !!file);
     if (!file) return cmd;
     let out = `${cmd} --settings ${shellQuote(file)}`;
+    out = applyManagedHookTrust(out, {
+      injected: true,
+      kind: "session-settings",
+      runtime: managedHookRuntimeOf(binary),
+    });
     if (ownershipOnly
       && !opts.preservePermissionMode
       && !/(^|\s)--permission-mode(=|\s|$)/.test(out)
