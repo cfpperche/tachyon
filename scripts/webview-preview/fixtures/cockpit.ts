@@ -41,7 +41,7 @@ export const strings: CockpitStrings = {
   approvalsTitle: "Approvals",
   approvalsHint: "Human gates that block the fleet. Open Approvals to resolve.",
   missionTitle: "Mission Control",
-  missionHint: "Work board summary. Open Mission Control for the full board.",
+  missionHint: "Full work board embedded in Control (visual monolith POC).",
   worktreesTitle: "Managed worktrees",
   worktreesHint: "Tachyon-managed checkouts registered for this workspace.",
   deliveriesTitle: "Deliveries",
@@ -149,5 +149,6 @@ export const cockpitFixtures: Record<string, Fixture<CockpitModel>> = {
   default: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "overview", nowIso: now }) },
   engine: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "engine", nowIso: now }) },
   fleet: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "fleet", nowIso: now }) },
+  mission: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "mission", nowIso: now }) },
   empty: { provenance: "synthetic-edge", vm: buildCockpitModel([], { section: "overview", nowIso: now }) },
 };

@@ -393,12 +393,13 @@
     "tags": [
       "synthetic-edge"
     ],
-    "title": "Cockpit",
+    "title": "Control",
     "aliases": [
+      "control",
       "cockpit",
       "sysadmin",
-      "project cockpit",
-      "fleet cockpit",
+      "project control",
+      "fleet control",
       "control plane"
     ]
   },
@@ -413,12 +414,13 @@
     "tags": [
       "synthetic-edge"
     ],
-    "title": "Cockpit",
+    "title": "Control",
     "aliases": [
+      "control",
       "cockpit",
       "sysadmin",
-      "project cockpit",
-      "fleet cockpit",
+      "project control",
+      "fleet control",
       "control plane"
     ]
   },
@@ -433,12 +435,34 @@
     "tags": [
       "synthetic-edge"
     ],
-    "title": "Cockpit",
+    "title": "Control",
     "aliases": [
+      "control",
       "cockpit",
       "sysadmin",
-      "project cockpit",
-      "fleet cockpit",
+      "project control",
+      "fleet control",
+      "control plane"
+    ]
+  },
+  {
+    "view": "cockpit",
+    "fixture": "mission",
+    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=mission",
+    "frame": {
+      "w": 1100,
+      "h": 720
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Control",
+    "aliases": [
+      "control",
+      "cockpit",
+      "sysadmin",
+      "project control",
+      "fleet control",
       "control plane"
     ]
   },
@@ -453,12 +477,13 @@
     "tags": [
       "synthetic-edge"
     ],
-    "title": "Cockpit",
+    "title": "Control",
     "aliases": [
+      "control",
       "cockpit",
       "sysadmin",
-      "project cockpit",
-      "fleet cockpit",
+      "project control",
+      "fleet control",
       "control plane"
     ]
   },
