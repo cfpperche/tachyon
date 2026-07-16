@@ -6,8 +6,10 @@ import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { requestEngineControl } from "../../src/engine-service/controlClient.js";
+import { bridgeGenerationStateKey } from "../../src/bridge/clientRebind.js";
 import { bridgeTokenFileName } from "../../src/bridge/token.js";
+import { requestEngineControl } from "../../src/engine-service/controlClient.js";
+import { DaemonStateStore, engineDaemonStateRoot } from "../../src/engine-service/daemonStateStore.js";
 import { stageEngineBundle, stageEngineRuntime, stagePackagedEngineBundle } from "../../src/engine-service/engineBundleStore.js";
 import {
   engineRuntimeDir,
@@ -390,6 +392,18 @@ try {
   if (restarted.status !== "ok") throw new Error(`remote agent restart failed: ${JSON.stringify(restarted)}`);
   await waitForAgentProjection(first, "dogfood-worker", true);
   const agentPidBeforeDetach = await new TmuxService().panePid(dogfoodSession);
+  const daemonStateRoot = engineDaemonStateRoot(storageRoot);
+  const bridgeGenerationKey = bridgeGenerationStateKey(identity.workspaceHash, identity.bridge.instanceId);
+  const bridgeGenerationBeforeShellDetach = new DaemonStateStore(daemonStateRoot).getState<number>(bridgeGenerationKey);
+  if (typeof bridgeGenerationBeforeShellDetach !== "number"
+    || !Number.isSafeInteger(bridgeGenerationBeforeShellDetach)
+    || bridgeGenerationBeforeShellDetach < 1) {
+    throw new Error("persistent engine dogfood did not observe a durable Bridge generation before shell detach");
+  }
+  const bridgeRebindAuditPath = path.join(daemonStateRoot, "bridge-client-rebind", "audit.jsonl");
+  const bridgeRebindAuditBeforeShellDetach = fs.existsSync(bridgeRebindAuditPath)
+    ? fs.readFileSync(bridgeRebindAuditPath)
+    : undefined;
   await Promise.all([first.close(), second.close()]);
 
   const reused = await ensureDaemonEngine(ensureOptions);
@@ -452,6 +466,19 @@ try {
   if (reattached.identity.instanceId !== identity.instanceId
     || reattached.identity.bridge.instanceId !== identity.bridge.instanceId) {
     throw new Error("shell reattach changed the persistent engine or Bridge identity");
+  }
+  const bridgeGenerationAfterShellReattach = new DaemonStateStore(daemonStateRoot).getState<number>(bridgeGenerationKey);
+  const bridgeRebindAuditAfterShellReattach = fs.existsSync(bridgeRebindAuditPath)
+    ? fs.readFileSync(bridgeRebindAuditPath)
+    : undefined;
+  if (bridgeGenerationAfterShellReattach !== bridgeGenerationBeforeShellDetach) {
+    throw new Error("shell detach/reattach changed the durable Bridge generation");
+  }
+  if (bridgeRebindAuditBeforeShellDetach === undefined
+    ? bridgeRebindAuditAfterShellReattach !== undefined
+    : bridgeRebindAuditAfterShellReattach === undefined
+      || !bridgeRebindAuditBeforeShellDetach.equals(bridgeRebindAuditAfterShellReattach)) {
+    throw new Error("shell detach/reattach changed the Bridge-client rebind audit bytes or presence");
   }
   await waitForAgentProjection(reattached, "dogfood-worker", true);
   if (await new TmuxService().panePid(dogfoodSession) !== agentPidAfterMonitorRestart) {
@@ -531,6 +558,16 @@ try {
       bridgeToolCount: noShellToolCount,
       preservedAgentPid: agentPidBeforeDetach,
       monitorRestartedAgentPid: agentPidAfterMonitorRestart,
+    },
+    shellBoundary: {
+      durableBridgeGeneration: bridgeGenerationBeforeShellDetach,
+      bridgeClientRebindAudit: bridgeRebindAuditBeforeShellDetach === undefined
+        ? { present: false }
+        : {
+          present: true,
+          bytes: bridgeRebindAuditBeforeShellDetach.byteLength,
+          sha256: createHash("sha256").update(bridgeRebindAuditBeforeShellDetach).digest("hex"),
+        },
     },
     reused: reused.disposition,
     engine: { pid: identity.pid, instanceId: identity.instanceId, bundleId: identity.bundleId },

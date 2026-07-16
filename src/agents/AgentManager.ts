@@ -97,6 +97,16 @@ export class ResumeUnavailableError extends Error {
   }
 }
 
+/**
+ * Rebind-only view of generic resume readiness.  Unlike the cached sidebar boolean, this result
+ * distinguishes a target that may still appear from a structural/authority denial that must never
+ * cross the rebind teardown boundary.
+ */
+export type RebindResumeReadiness =
+  | { kind: "ready" }
+  | { kind: "retry"; reason: string }
+  | { kind: "denied"; reason: string };
+
 /** spec 225 — fork couldn't proceed (runtime not forkable, live id unresolved, or worktree create failed). Fail-closed: never guesses a running agent's session id. */
 export class ForkUnavailableError extends Error {
   constructor(
@@ -3007,18 +3017,49 @@ export class AgentManager {
     const sid = record.resume?.sessionId ?? "";
     const cached = this.readinessCache.get(name);
     if (cached && cached.sessionId === sid) return cached.ready;
-    const ready = await this.computeReadiness(name, record);
+    const ready = (await this.computeResumeReadiness(name, record)).kind === "ready";
     this.readinessCache.set(name, { sessionId: sid, ready });
     return ready;
   }
 
-  private async computeReadiness(name: string, record: SessionRecord): Promise<boolean> {
-    if (!record.resume) return false;
-    if (!record.def?.cmd) return false; // resume() rejects a record with no command — mirror it, or the badge lies
+  /**
+   * spec 388 / t-769666 — fresh generic-resume probe for Bridge-client rebind.
+   *
+   * This deliberately neither reads nor writes `readinessCache`: a capture runtime can keep the same
+   * empty ledger sessionId while its transcript appears, whereas ordinary sidebar reads must retain
+   * their bounded cache.  Delivery authority is checked on both sides of the asynchronous resolver so
+   * a denial that appears during the probe cannot admit destructive teardown.
+   */
+  async rebindResumeReadiness(name: string, record: SessionRecord): Promise<RebindResumeReadiness> {
+    if (this.isDeliveryLifecycleDenied(name, record)) {
+      return { kind: "denied", reason: "generic resume is denied by Delivery lifecycle authority" };
+    }
+    const result = await this.computeResumeReadiness(name, record);
+    if (this.isDeliveryLifecycleDenied(name, record)) {
+      return { kind: "denied", reason: "generic resume became denied by Delivery lifecycle authority" };
+    }
+    return result;
+  }
+
+  /**
+   * Synchronous final admission guard for rebind.  The coordinator calls this after every awaited
+   * readiness/liveness probe and once more immediately before teardown, so a Delivery marker or
+   * crash-window deny that appeared after an earlier positive result still wins.
+   */
+  rebindResumeDenied(name: string, record: SessionRecord): boolean {
+    return this.isDeliveryLifecycleDenied(name, record);
+  }
+
+  private async computeResumeReadiness(name: string, record: SessionRecord): Promise<RebindResumeReadiness> {
+    if (!record.resume) return { kind: "denied", reason: "record has no resume block" };
+    if (!record.def?.cmd) {
+      // resume() rejects a record with no command — mirror it, or the badge lies.
+      return { kind: "denied", reason: "record has no command to resume" };
+    }
     const { runtime } = record.resume;
     const adapter = adapterForRuntime(runtime);
-    if (!adapter) return false;
-    if (adapter.resumesWithoutId) return true; // qwen --continue resumes the cwd's last session
+    if (!adapter) return { kind: "denied", reason: `no resume adapter for '${runtime}'` };
+    if (adapter.resumesWithoutId) return { kind: "ready" }; // qwen --continue resumes the cwd's last session
     const cwd = path.resolve(record.cwd);
     const configHome = this.effectiveHome(name, record); // spec 226 (H2) / 240 — persisted home wins
     const exists = this.opts.fileExists ?? fs.existsSync;
@@ -3026,17 +3067,19 @@ export class AgentManager {
     // session, the badge must read READY (else a crash that left the stored id stale shows "fresh start" while
     // Resume would in fact reopen the owned session — codex). Owner-first, transcript-validated under this home.
     const owned = this.opts.ownedSession?.(name, cwd);
-    if (owned && exists(owned.transcriptPath)) return true;
+    if (owned && exists(owned.transcriptPath)) return { kind: "ready" };
     let id = record.resume.sessionId;
     if (runtime === "claude" && this.opts.resolveCurrentSession && id && !this.isUuid(id)) {
       id = (await this.opts.resolveCurrentSession(runtime, cwd, id, configHome)) ?? id;
     }
     if (!id) id = (await this.opts.resolveCaptureId?.(runtime, cwd, configHome)) ?? "";
-    if (!id) return false;
+    if (!id) return { kind: "retry", reason: "session id has not been captured yet" };
     if (adapter.transcriptPath) {
-      return exists(adapter.transcriptPath(configHome, cwd, id));
+      return exists(adapter.transcriptPath(configHome, cwd, id))
+        ? { kind: "ready" }
+        : { kind: "retry", reason: "session transcript is not on disk yet" };
     }
-    return true; // capture runtime with an id but no derivable path — resume attempts it
+    return { kind: "ready" }; // capture runtime with an id but no derivable path — resume attempts it
   }
 
   /**

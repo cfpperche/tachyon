@@ -16,6 +16,7 @@ import {
   parseBridgeClientRebindSettings,
   type BridgeClientRebindDeps,
   type BridgeClientRebindSettings,
+  type RebindResumeReadiness,
 } from "../../src/bridge/clientRebind.js";
 import { SessionLedger, durableBoundGeneration, type SessionRecord } from "../../src/resume/SessionLedger.js";
 import { parseConfig } from "../../src/config/loadConfig.js";
@@ -44,7 +45,8 @@ function makeDeps(opts: {
   auditPath: string;
   initiator?: string;
   resumeImpl?: (name: string, record: SessionRecord, opts?: { injectPrimer?: boolean; deferBridgeStamp?: boolean }) => Promise<void>;
-  canResumeImpl?: (name: string, record: SessionRecord) => Promise<boolean>;
+  canResumeImpl?: (name: string, record: SessionRecord) => Promise<RebindResumeReadiness>;
+  resumeDeniedImpl?: (name: string, record: SessionRecord) => boolean;
   stopImpl?: (name: string) => Promise<void>;
   onSleep?: (ms: number) => void;
 }): BridgeClientRebindDeps & {
@@ -98,7 +100,8 @@ function makeDeps(opts: {
     listRunning: async () => [...opts.running],
     kindOf: (name) => opts.kinds?.get(name) ?? "agent",
     isRunning: async (name) => opts.running.has(name),
-    canResume: (name, record) => opts.canResumeImpl?.(name, record) ?? Promise.resolve(true),
+    canResume: (name, record) => opts.canResumeImpl?.(name, record) ?? Promise.resolve({ kind: "ready" as const }),
+    resumeDenied: (name, record) => opts.resumeDeniedImpl?.(name, record) ?? record.delivery !== undefined,
     stopGracefully: async (name) => {
       stops.push(name);
       if (opts.stopImpl) await opts.stopImpl(name);
@@ -329,11 +332,20 @@ describe("BridgeClientRebindCoordinator", () => {
     dirs.push(auditDir);
     const ledger = new Map([["delivery-worker", baseRecord({ bridgeClient: { boundGeneration: 0, wired: true } })]]);
     const running = new Set(["delivery-worker"]);
+    const auditPath = path.join(auditDir, "delivery.jsonl");
+    let probes = 0;
+    let sleepsAfterProbe = 0;
     const deps = makeDeps({
       ledger,
       running,
-      auditPath: path.join(auditDir, "delivery.jsonl"),
-      canResumeImpl: async () => false,
+      auditPath,
+      canResumeImpl: async () => {
+        probes++;
+        return { kind: "denied", reason: "Delivery-owned execution" };
+      },
+      onSleep: () => {
+        if (probes > 0) sleepsAfterProbe++;
+      },
     });
 
     const coordinator = new BridgeClientRebindCoordinator(deps);
@@ -345,6 +357,155 @@ describe("BridgeClientRebindCoordinator", () => {
     expect(deps.hardKills).toEqual([]);
     expect(deps.resumes).toEqual([]);
     expect(ledger.get("delivery-worker")?.bridgeClient?.boundGeneration).toBe(0);
+    expect(probes).toBe(1);
+    expect(sleepsAfterProbe).toBe(0);
+    expect(fs.readFileSync(auditPath, "utf8")).toContain("Delivery-owned execution");
+  });
+
+  it("388: waits for transient readiness, then resumes the same session without early teardown", async () => {
+    const auditDir = tmpDir();
+    dirs.push(auditDir);
+    const auditPath = path.join(auditDir, "transient-ready.jsonl");
+    const sessionId = "codex-session-stable";
+    const record = baseRecord({
+      def: { cmd: "codex", kind: "agent" },
+      resume: { runtime: "codex", sessionId },
+      bridgeClient: { boundGeneration: 0, wired: true },
+    });
+    const ledger = new Map([["codex", record]]);
+    const running = new Set(["codex"]);
+    const probedRecords: SessionRecord[] = [];
+    const resumedSessionIds: string[] = [];
+    let readinessSleeps = 0;
+    let teardownObservedBeforeReady = false;
+    let deps!: ReturnType<typeof makeDeps>;
+    deps = makeDeps({
+      ledger,
+      running,
+      auditPath,
+      canResumeImpl: async (_name, current) => {
+        probedRecords.push(current);
+        if (probedRecords.length === 1) return { kind: "retry", reason: "transcript not ready" };
+        return { kind: "ready" };
+      },
+      onSleep: () => {
+        if (probedRecords.length !== 1) return;
+        readinessSleeps++;
+        teardownObservedBeforeReady ||= deps.expectedDeath.length > 0
+          || deps.stops.length > 0
+          || deps.hardKills.length > 0
+          || deps.resumes.length > 0;
+      },
+      resumeImpl: async (name, current) => {
+        resumedSessionIds.push(current.resume?.sessionId ?? "");
+        running.add(name);
+      },
+    });
+
+    const coordinator = new BridgeClientRebindCoordinator(deps);
+    await coordinator.onListenerReady();
+
+    expect(probedRecords).toHaveLength(2);
+    expect(probedRecords[0]).toBe(record);
+    expect(probedRecords[1]).toBe(record);
+    expect(readinessSleeps).toBeGreaterThan(0);
+    expect(teardownObservedBeforeReady).toBe(false);
+    expect(deps.expectedDeath).toEqual(["codex"]);
+    expect(deps.stops).toEqual(["codex"]);
+    expect(deps.hardKills).toEqual([]);
+    expect(deps.resumes).toEqual(["codex"]);
+    expect(resumedSessionIds).toEqual([sessionId]);
+    expect(running.has("codex")).toBe(true);
+    expect(ledger.get("codex")?.resume?.sessionId).toBe(sessionId);
+    expect(ledger.get("codex")?.bridgeClient?.boundGeneration).toBe(1);
+
+    const phases = fs.readFileSync(auditPath, "utf8").trim().split("\n")
+      .map((line) => (JSON.parse(line) as { phase: string }).phase);
+    expect(phases).toEqual(expect.arrayContaining(["preflight_wait", "preflight_ok", "resume_ok"]));
+    expect(phases.indexOf("preflight_wait")).toBeLessThan(phases.indexOf("preflight_ok"));
+    expect(phases.indexOf("preflight_ok")).toBeLessThan(phases.indexOf("resume_ok"));
+  });
+
+  it("388: a final authority denial after positive readiness prevents every teardown side effect", async () => {
+    const auditDir = tmpDir();
+    dirs.push(auditDir);
+    const auditPath = path.join(auditDir, "late-authority-denial.jsonl");
+    const ledger = new Map([["codex", baseRecord({
+      def: { cmd: "codex", kind: "agent" },
+      resume: { runtime: "codex", sessionId: "codex-session-authority-race" },
+      bridgeClient: { boundGeneration: 0, wired: true },
+    })]]);
+    const running = new Set(["codex"]);
+    let authorityChecks = 0;
+    let denied = false;
+    const deps = makeDeps({
+      ledger,
+      running,
+      auditPath,
+      canResumeImpl: async () => ({ kind: "ready" }),
+      resumeDeniedImpl: () => {
+        authorityChecks++;
+        if (authorityChecks === 2) {
+          // Simulate the crash-window authority snapshot changing immediately after the last
+          // awaited liveness/readiness preflight, before teardown admission.
+          denied = true;
+          return false;
+        }
+        return denied;
+      },
+    });
+
+    const coordinator = new BridgeClientRebindCoordinator(deps);
+    await coordinator.onListenerReady();
+
+    expect(authorityChecks).toBe(3);
+    expect(running.has("codex")).toBe(true);
+    expect(coordinator.getClientState("codex")).toBe("failed");
+    expect(deps.expectedDeath).toEqual([]);
+    expect(deps.stops).toEqual([]);
+    expect(deps.hardKills).toEqual([]);
+    expect(deps.resumes).toEqual([]);
+    expect(fs.readFileSync(auditPath, "utf8")).toContain("generic resume became denied before teardown");
+  });
+
+  it("388: bounded readiness timeout leaves the original process running with zero teardown", async () => {
+    const auditDir = tmpDir();
+    dirs.push(auditDir);
+    const auditPath = path.join(auditDir, "transient-timeout.jsonl");
+    const ledger = new Map([["codex", baseRecord({
+      def: { cmd: "codex", kind: "agent" },
+      resume: { runtime: "codex", sessionId: "codex-session-timeout" },
+      bridgeClient: { boundGeneration: 0, wired: true },
+    })]]);
+    const running = new Set(["codex"]);
+    let probes = 0;
+    const deps = makeDeps({
+      ledger,
+      running,
+      auditPath,
+      canResumeImpl: async () => {
+        probes++;
+        return { kind: "retry", reason: "transcript not ready" };
+      },
+    });
+
+    const coordinator = new BridgeClientRebindCoordinator(deps);
+    await coordinator.onListenerReady();
+
+    expect(probes).toBeGreaterThan(1);
+    expect(probes).toBeLessThanOrEqual(52);
+    expect(running.has("codex")).toBe(true);
+    expect(coordinator.getClientState("codex")).toBe("failed");
+    expect(deps.expectedDeath).toEqual([]);
+    expect(deps.stops).toEqual([]);
+    expect(deps.hardKills).toEqual([]);
+    expect(deps.resumes).toEqual([]);
+    expect(ledger.get("codex")?.bridgeClient?.boundGeneration).toBe(0);
+
+    const audit = fs.readFileSync(auditPath, "utf8");
+    expect(audit).toContain('"phase":"preflight_wait"');
+    expect(audit).toContain('"phase":"preflight_timeout"');
+    expect(audit).toContain("transcript not ready");
   });
 
   it("reload-safe: rescans a wired survivor that appears only after host inventory settles", async () => {
@@ -386,7 +547,7 @@ describe("BridgeClientRebindCoordinator", () => {
       ledger,
       running,
       auditPath,
-      canResumeImpl: async () => true,
+      canResumeImpl: async () => ({ kind: "ready" }),
       resumeImpl: async (name) => {
         replacementStarted = true;
         running.add(name);

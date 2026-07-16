@@ -1,8 +1,8 @@
 /**
  * spec 364 — Bridge-client rebind coordinator (Phase 1).
  *
- * After the extension host reloads, surviving tmux agents keep valid 351 tokens but their
- * in-process MCP clients are half-open. This module owns the durable bridge generation,
+ * After a real persistent-engine incarnation change, surviving tmux agents keep valid 351 tokens
+ * but their in-process MCP clients are half-open. This module owns the durable bridge generation,
  * reconstructs suspects from the session ledger, and under default `auto` runs a governed
  * stop → wait-dead → hard-kill-if-needed → resume rebind (reconnect only; resume default is
  * injectPrimer:false for all callers — t-762940 / 2026-07-14). No peer tool; no cold spawn.
@@ -39,12 +39,23 @@ export const DEFAULT_BRIDGE_CLIENT_REBIND: BridgeClientRebindSettings = {
  * classifier. */
 const POST_RESUME_STABILITY_MS = 1_500;
 
-/** The extension host can become Bridge-ready a fraction before tmux's restored-session
+/** A new engine incarnation can become Bridge-ready a fraction before tmux's restored-session
  * inventory is complete.  This is not a client self-heal grace period: it is one bounded
  * inventory settle before the authoritative second scan. */
 const HOST_INVENTORY_SETTLE_MS = 100;
 
+/** A young capture-runtime survivor may publish its resumable session shortly after the new engine
+ * starts.  Wait only at the non-destructive preflight boundary; never extend teardown timeouts. */
+const RESUME_READINESS_WAIT_MS = 5_000;
+const RESUME_READINESS_POLL_MS = 100;
+const RESUME_READINESS_MAX_ATTEMPTS = Math.ceil(RESUME_READINESS_WAIT_MS / RESUME_READINESS_POLL_MS) + 1;
+
 export type RebindReason = "host_generation_bump" | "peer_request";
+
+export type RebindResumeReadiness =
+  | { kind: "ready" }
+  | { kind: "retry"; reason: string }
+  | { kind: "denied"; reason: string };
 
 export interface RebindAuditEvent {
   at: string;
@@ -56,6 +67,8 @@ export interface RebindAuditEvent {
   finalState?: ClientRebindState;
   error?: string;
   hardKill?: boolean;
+  attempts?: number;
+  waitedMs?: number;
 }
 
 export interface BridgeClientRebindDeps {
@@ -71,9 +84,12 @@ export interface BridgeClientRebindDeps {
   kindOf: (name: string) => "agent" | "terminal";
   /** Still RUNNING? (preflight + wait loops). */
   isRunning: (name: string) => Promise<boolean>;
-  /** Read-only proof that the generic resume path is currently available.  This must run before
-   * any expected-death marker or stop so Delivery-owned executions are never torn down first. */
-  canResume: (name: string, record: SessionRecord) => Promise<boolean>;
+  /** Fresh, read-only proof that the generic resume path is available, retryable, or permanently
+   * denied. This must run before any expected-death marker or stop so Delivery-owned executions are
+   * never torn down first. */
+  canResume: (name: string, record: SessionRecord) => Promise<RebindResumeReadiness>;
+  /** Synchronous authority guard, called after awaited probes and immediately before teardown. */
+  resumeDenied: (name: string, record: SessionRecord) => boolean;
   stopGracefully: (name: string) => Promise<void>;
   /** Hard kill the tmux session WITHOUT wiping ledger/adhoc (unlike AgentManager.kill). */
   hardKillSession: (name: string) => Promise<void>;
@@ -451,7 +467,7 @@ export class BridgeClientRebindCoordinator {
     const now = this.deps.now ?? Date.now;
 
     // ── Preflight ──────────────────────────────────────────────────────────
-    const pre = await this.preflight(name, suspectG);
+    const pre = await this.preflight(name, suspectG, reason);
     if (!pre.ok) {
       this.audit({
         at: new Date(now()).toISOString(),
@@ -467,9 +483,9 @@ export class BridgeClientRebindCoordinator {
       }
       return;
     }
+    if (this.disposed) return;
 
     const rt = this.ensure(name);
-    rt.clientState = "rebinding";
     const ledgerSnapshot = this.deps.getLedger(name);
     if (!ledgerSnapshot) {
       rt.clientState = "failed";
@@ -486,6 +502,24 @@ export class BridgeClientRebindCoordinator {
       this.noteFailure(suspectG);
       return;
     }
+    // No asynchronous boundary is allowed between this final authority check and the intentional
+    // teardown admission below. Delivery/snapshot denial that appeared after a positive probe wins.
+    if (this.deps.resumeDenied(name, ledgerSnapshot)) {
+      rt.clientState = "failed";
+      const denial = "generic resume became denied before teardown";
+      this.audit({
+        at: new Date(now()).toISOString(),
+        agent: name,
+        reason,
+        fromGeneration: suspectG,
+        phase: "preflight_skip",
+        finalState: "failed",
+        error: denial,
+      });
+      this.deps.notify(`Bridge client rebind of '${name}' skipped before stop: ${denial} (agent left running)`, "error");
+      return;
+    }
+    rt.clientState = "rebinding";
 
     this.audit({
       at: new Date(now()).toISOString(),
@@ -640,7 +674,117 @@ export class BridgeClientRebindCoordinator {
   private async preflight(
     name: string,
     suspectG: number,
+    reason: RebindReason,
   ): Promise<{ ok: true } | { ok: false; reason: string; state: ClientRebindState }> {
+    const sleep = this.deps.sleep ?? sleepDefault;
+    const now = this.deps.now ?? Date.now;
+    let checked = await this.preflightState(name, suspectG);
+    if (!checked.ok) return checked;
+
+    let attempts = 0;
+    let waited = false;
+    let lastRetryReason = "generic resume target is not ready";
+    const startedAt = now();
+    const deadline = startedAt + RESUME_READINESS_WAIT_MS;
+
+    while (!this.disposed && attempts < RESUME_READINESS_MAX_ATTEMPTS) {
+      attempts++;
+      let readiness: RebindResumeReadiness;
+      try {
+        readiness = await this.deps.canResume(name, checked.record);
+      } catch (err) {
+        const rt = this.ensure(name);
+        rt.clientState = "failed";
+        return {
+          ok: false,
+          reason: `resume preflight failed: ${err instanceof Error ? err.message : String(err)}`,
+          state: "failed",
+        };
+      }
+
+      // Resolution can await filesystem/ownership probes.  Revalidate every destructive prerequisite
+      // after it returns; a user stop, manual heal, or generation change must win the race.
+      checked = await this.preflightState(name, suspectG);
+      if (!checked.ok) return checked;
+
+      if (readiness.kind === "ready") {
+        if (waited) {
+          this.audit({
+            at: new Date(now()).toISOString(),
+            agent: name,
+            reason,
+            fromGeneration: suspectG,
+            phase: "preflight_ready",
+            attempts,
+            waitedMs: Math.max(0, now() - startedAt),
+          });
+        }
+        return { ok: true };
+      }
+
+      if (readiness.kind === "denied") {
+        const rt = this.ensure(name);
+        rt.clientState = "failed";
+        return { ok: false, reason: `generic resume denied: ${readiness.reason}`, state: "failed" };
+      }
+
+      lastRetryReason = readiness.reason;
+      if (!waited) {
+        waited = true;
+        this.audit({
+          at: new Date(now()).toISOString(),
+          agent: name,
+          reason,
+          fromGeneration: suspectG,
+          phase: "preflight_wait",
+          error: readiness.reason,
+          attempts,
+          waitedMs: 0,
+        });
+      }
+
+      const remaining = deadline - now();
+      if (remaining <= 0) break;
+      await sleep(Math.min(RESUME_READINESS_POLL_MS, remaining));
+      checked = await this.preflightState(name, suspectG);
+      if (!checked.ok) return checked;
+    }
+
+    if (this.disposed) {
+      const rt = this.ensure(name);
+      rt.clientState = "cancelled";
+      return { ok: false, reason: "coordinator disposed during resume readiness wait", state: "cancelled" };
+    }
+
+    const rt = this.ensure(name);
+    rt.clientState = "failed";
+    const waitedMs = Math.max(0, now() - startedAt);
+    const timeoutReason = `generic resume target was not ready within ${RESUME_READINESS_WAIT_MS}ms: ${lastRetryReason}`;
+    this.audit({
+      at: new Date(now()).toISOString(),
+      agent: name,
+      reason,
+      fromGeneration: suspectG,
+      phase: "preflight_timeout",
+      finalState: "failed",
+      error: timeoutReason,
+      attempts,
+      waitedMs,
+    });
+    return { ok: false, reason: timeoutReason, state: "failed" };
+  }
+
+  /** Re-check every prerequisite that must hold before rebind may tear down the survivor. */
+  private async preflightState(
+    name: string,
+    suspectG: number,
+  ): Promise<
+    { ok: true; record: SessionRecord }
+    | { ok: false; reason: string; state: ClientRebindState }
+  > {
+    if (this.disposed) {
+      return { ok: false, reason: "coordinator disposed during resume readiness preflight", state: "cancelled" };
+    }
     const rt = this.agents.get(name);
     if (!rt) return { ok: false, reason: "not tracked", state: "cancelled" };
     if (rt.clientState === "cancelled") return { ok: false, reason: "cancelled", state: "cancelled" };
@@ -662,18 +806,9 @@ export class BridgeClientRebindCoordinator {
       rt.clientState = "failed";
       return { ok: false, reason: "no ledger record for resume", state: "failed" };
     }
-    try {
-      if (!(await this.deps.canResume(name, record))) {
-        rt.clientState = "failed";
-        return { ok: false, reason: "generic resume is unavailable or its transcript is not ready", state: "failed" };
-      }
-    } catch (err) {
+    if (this.deps.resumeDenied(name, record)) {
       rt.clientState = "failed";
-      return {
-        ok: false,
-        reason: `resume preflight failed: ${err instanceof Error ? err.message : String(err)}`,
-        state: "failed",
-      };
+      return { ok: false, reason: "generic resume is denied by lifecycle authority", state: "failed" };
     }
     // Still require bound < G (durable); suspectG is informational.
     if (rt.suspectGeneration !== undefined && rt.suspectGeneration > G) {
@@ -681,7 +816,7 @@ export class BridgeClientRebindCoordinator {
       return { ok: false, reason: "suspect generation ahead of current", state: rt.clientState };
     }
     void suspectG;
-    return { ok: true };
+    return { ok: true, record };
   }
 
   private noteFailure(generation: number): void {

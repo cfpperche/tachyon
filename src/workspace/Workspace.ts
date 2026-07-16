@@ -1492,10 +1492,11 @@ export class Workspace {
         const running = await this.manager.runningAgents();
         return running.includes(name);
       },
-      // Reuse AgentManager's canonical, read-only generic-resume boundary.  It rejects Delivery
-      // markers/snapshot-denied agents before consulting its cache and validates the transcript in
-      // the persisted config home.  Rebind must ask this before it stops anything.
-      canResume: (name, record) => this.manager.resumeReadiness(name, record),
+      // Use AgentManager's rebind-only, uncached generic-resume boundary. It distinguishes a young
+      // transcript that may appear from Delivery/snapshot/record denial and rechecks authority around
+      // asynchronous resolution. Rebind must receive `ready` before it stops anything.
+      canResume: (name, record) => this.manager.rebindResumeReadiness(name, record),
+      resumeDenied: (name, record) => this.manager.rebindResumeDenied(name, record),
       stopGracefully: (name) => this.manager.stopGracefully(name),
       hardKillSession: async (name) => {
         // Kill the tmux session only — do NOT call AgentManager.kill (that wipes ad-hoc ledger rows).

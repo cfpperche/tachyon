@@ -2807,6 +2807,78 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(probes).toBe(1); // a captured uuid needs NO resolveCurrentSession (cheap stat path), still no re-scan
   });
 
+  it("388: rebind readiness probes fresh without weakening the ordinary negative cache", async () => {
+    const sessionId = "33333333-3333-3333-3333-333333333333";
+    let transcriptPresent = false;
+    let transcriptProbes = 0;
+    const h = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
+      fileExists: () => {
+        transcriptProbes++;
+        return transcriptPresent;
+      },
+    });
+    const record = {
+      def: { cmd: "claude", kind: "agent" as const },
+      resume: { runtime: "claude" as const, sessionId },
+      cwd: h.ws,
+      declared: true,
+      updatedAt: "t",
+    };
+
+    expect(await h.manager.resumeReadiness("claude", record)).toBe(false);
+    expect(transcriptProbes).toBe(1);
+
+    transcriptPresent = true;
+    expect(await h.manager.resumeReadiness("claude", record)).toBe(false);
+    expect(transcriptProbes).toBe(1);
+
+    expect(await h.manager.rebindResumeReadiness("claude", record)).toEqual({ kind: "ready" });
+    expect(transcriptProbes).toBe(2);
+
+    expect(await h.manager.resumeReadiness("claude", record)).toBe(false);
+    expect(transcriptProbes).toBe(2);
+  });
+
+  it("388: rebind readiness permanently denies Delivery and snapshot-owned rows without resolving", async () => {
+    const snapshotDenied = new Set(["snapshot-owned"]);
+    let resolutionProbes = 0;
+    let transcriptProbes = 0;
+    const h = resumeHarness(
+      "agents:\n  delivery-owned:\n    cmd: claude\n  snapshot-owned:\n    cmd: claude\n",
+      {
+        isDeliveryLifecycleDenied: (name) => snapshotDenied.has(name),
+        resolveCurrentSession: async () => {
+          resolutionProbes++;
+          return "44444444-4444-4444-4444-444444444444";
+        },
+        fileExists: () => {
+          transcriptProbes++;
+          return true;
+        },
+      },
+    );
+    const deliveryRecord = {
+      def: { cmd: "claude", kind: "agent" as const },
+      resume: { runtime: "claude" as const, sessionId: "delivery-session" },
+      cwd: h.ws,
+      declared: true,
+      updatedAt: "t",
+      delivery: { deliveryId: "delivery-1", segmentId: "segment-1", executionNonce: "nonce-1" },
+    };
+    const snapshotRecord = {
+      def: { cmd: "claude", kind: "agent" as const },
+      resume: { runtime: "claude" as const, sessionId: "snapshot-session" },
+      cwd: h.ws,
+      declared: true,
+      updatedAt: "t",
+    };
+
+    expect(await h.manager.rebindResumeReadiness("delivery-owned", deliveryRecord)).toMatchObject({ kind: "denied" });
+    expect(await h.manager.rebindResumeReadiness("snapshot-owned", snapshotRecord)).toMatchObject({ kind: "denied" });
+    expect(resolutionProbes).toBe(0);
+    expect(transcriptProbes).toBe(0);
+  });
+
   it("resume() resolves a capture runtime's id from disk", async () => {
     const { manager, cmds } = resumeHarness("agents:\n  codex:\n    cmd: codex\n", {
       resolveCaptureId: async () => "captured-id",
