@@ -705,8 +705,19 @@ export class WorktreeManager {
   }
 
   /**
-   * Remove the worktree. Soft by default (no --force) so Git refuses a dirty tree.
-   * Pass `force: true` only after an explicit data-loss confirm (spec 392).
+   * Remove the worktree via `git worktree remove`.
+   *
+   * **Force default (legacy/internal):** when `opts` is omitted or `force` is not
+   * set to `false`, removal uses `--force` so dirty trees are deleted. This preserves
+   * pre-392 UI/pipeline callers that already confirmed cleanup at a higher layer.
+   *
+   * **Safety-sensitive callers** (managed Bridge façade, soft remove paths) MUST pass
+   * an explicit `force: false` (or `force: true` only after confirmDirty). Prefer also
+   * setting `refuseUnlessForceIfDirty` so dirtiness is probed under the same lock.
+   *
+   * Occupancy is always fail-closed before force is considered (spec 392): occupied or
+   * unknown occupancy never removes, even with `force: true`.
+   *
    * Branch deleted ONLY when Tachyon-created AND deleteBranch is set.
    */
   remove(
@@ -736,8 +747,7 @@ export class WorktreeManager {
       if (occ) {
         return { removed: false, branchDeleted: false, error: `worktree is ${occ.state === "dirty" ? "quarantined by" : "occupied by"} agent '${occ.agent}' (cwd ${occ.cwd})` };
       }
-      // Default force=true preserves pre-392 UI/pipeline/GitDelivery callers that already
-      // confirmed cleanup. Managed Bridge paths pass force explicitly (soft when clean).
+      // Legacy default force=true (opts omitted). Managed Bridge passes force explicitly.
       let force = opts?.force !== false;
       if (opts?.refuseUnlessForceIfDirty && this.exists(rec.path)) {
         const status = await this.git(["status", "--porcelain=v1", "--untracked-files=all"], rec.path);

@@ -50,20 +50,14 @@ export async function pruneDeliveryRecord(delivery: GitDelivery, input: PruneInp
     } catch (err) {
       occupancyUnknown = `worktree occupancy is unknown: ${err instanceof Error ? err.message : String(err)}`;
     }
-    const forceOccupancy = input.abandon || input.forceLoseCommits;
+    // Occupancy is always fail-closed (spec 392). abandon/forceLoseCommits may force
+    // *dirty* git remove after occupancy clears, but never override a live/unknown occupant.
     if (occupant) {
-      const reason = `worktree is ${occupant.state === "dirty" ? "quarantined by" : "occupied by live"} agent ${occupant.agent}`;
-      if (forceOccupancy) {
-        console.warn(`[tachyon] git_delivery_prune overriding ${reason} at ${delivery.worktreePath} (cwd ${occupant.cwd})`);
-      } else {
-        reasons.push(reason);
-      }
+      reasons.push(
+        `worktree is ${occupant.state === "dirty" ? "quarantined by" : "occupied by live"} agent ${occupant.agent}`,
+      );
     } else if (occupancyUnknown) {
-      if (forceOccupancy) {
-        console.warn(`[tachyon] git_delivery_prune overriding ${occupancyUnknown} at ${delivery.worktreePath}`);
-      } else {
-        reasons.push(occupancyUnknown);
-      }
+      reasons.push(occupancyUnknown);
     }
   }
 
@@ -108,7 +102,8 @@ export async function pruneDeliveryRecord(delivery: GitDelivery, input: PruneInp
 
   if (live.worktreeExists) {
     if (deps.removeManagedWorktree) {
-      // Engine path: occupancy already validated above; force only when prune overrode occupancy.
+      // Engine path: occupancy already validated above. force only means dirty/data-loss
+      // git remove — never occupancy override (manager refuses occupants even with force).
       const eng = await deps.removeManagedWorktree(delivery.worktreePath, {
         deleteBranch: false, // branch deletion stays below for forceLoseCommits -D vs -d
         branch: delivery.branchRef,

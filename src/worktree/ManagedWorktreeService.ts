@@ -16,6 +16,7 @@ import {
   resolveBase,
 } from "./WorktreeManager.js";
 import {
+  abandonMissingEntries,
   assertManagedSlug,
   canAdminManagedWorktree,
   canMutateManagedWorktree,
@@ -68,15 +69,26 @@ export class ManagedWorktreeService {
     this.opts.onRegistryChanged?.();
   }
 
+  /**
+   * Reconcile missing on-disk paths to `abandoned` (spec 392 P2-4).
+   * A path that reappears later stays abandoned until re-register validates identity.
+   */
+  private reconcileStore(): ReturnType<typeof loadManagedWorktreeStore> {
+    const loaded = this.load();
+    const { store, changed } = abandonMissingEntries(loaded);
+    if (changed) this.save(store);
+    return store;
+  }
+
   list(filter?: { kind?: ManagedWorktreeKind; status?: ManagedWorktreeEntry["status"] }): ManagedWorktreeEntry[] {
-    let entries = this.load().entries;
+    let entries = this.reconcileStore().entries;
     if (filter?.kind) entries = entries.filter((e) => e.kind === filter.kind);
     if (filter?.status) entries = entries.filter((e) => e.status === filter.status);
     return entries;
   }
 
   get(idOrPath: string): ManagedWorktreeEntry | undefined {
-    return findManagedEntry(this.load(), idOrPath);
+    return findManagedEntry(this.reconcileStore(), idOrPath);
   }
 
   /**
@@ -277,17 +289,6 @@ export class ManagedWorktreeService {
         );
       }
     });
-  }
-
-  /** clean | dirty | unknown — unknown fails closed without confirmDirty. */
-  async probeDirtiness(worktreePath: string): Promise<"clean" | "dirty" | "unknown"> {
-    try {
-      const status = await this.git(["status", "--porcelain=v1", "--untracked-files=all"], worktreePath);
-      if (status.code !== 0) return "unknown";
-      return status.stdout.trim().length > 0 ? "dirty" : "clean";
-    } catch {
-      return "unknown";
-    }
   }
 
   /**

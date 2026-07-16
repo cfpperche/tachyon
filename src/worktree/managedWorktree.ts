@@ -182,7 +182,29 @@ export function findManagedEntry(store: ManagedWorktreeStoreFile, idOrPath: stri
   return store.entries.find((e) => e.id === idOrPath || path.resolve(e.path) === resolved);
 }
 
-/** Active entries whose path still exists (stale rows dropped for reveal). */
+/**
+ * Mark active entries whose path is gone as abandoned.
+ * Does not delete rows — reappearance requires re-register (Git identity check).
+ */
+export function abandonMissingEntries(
+  store: ManagedWorktreeStoreFile,
+  pathExists: (p: string) => boolean = fs.existsSync,
+): { store: ManagedWorktreeStoreFile; changed: boolean } {
+  let changed = false;
+  const entries = store.entries.map((e) => {
+    if (e.status === "active" && !pathExists(e.path)) {
+      changed = true;
+      return { ...e, status: "abandoned" as const };
+    }
+    return e;
+  });
+  return { store: { schemaVersion: 1, entries }, changed };
+}
+
+/**
+ * Active entries whose path still exists (stale/abandoned rows never revealed).
+ * Callers should run abandonMissingEntries first so missing actives are not left durable.
+ */
 export function liveFoldersFromRegistry(
   store: ManagedWorktreeStoreFile,
   pathExists: (p: string) => boolean = fs.existsSync,
