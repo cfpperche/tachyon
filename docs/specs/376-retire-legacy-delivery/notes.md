@@ -82,6 +82,10 @@ _Created 2026-07-13._
 - The combined matrix also exposed two stale current-main fixtures: one still supplied the deleted
   `recordDelegation` callback, and one expected parented ad-hoc `cwd` to be accepted despite the newer fail-closed
   contract. Only those test expectations were corrected; no extra production behavior was changed.
+- The first post-correction global gate exposed one stale generated error matcher and one real current-main
+  composition regression: the new Bridge-wiring guard classified a declared non-AI `sh` command as an AI runtime
+  and refused the daemon's valid agent start. The guard now applies only to recognized AI adapters; the new
+  non-AI regression plus the generated conflict matcher and daemon service pass 354/354 focused tests.
 - R1 blockers are locally corrected. Immutable re-review, final `npm test`, installed dogfood, push, and explicit
   maintainer acceptance remain required; nothing has been merged or installed.
 

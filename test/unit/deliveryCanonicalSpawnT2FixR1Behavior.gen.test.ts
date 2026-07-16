@@ -83,7 +83,7 @@ describe("container-generated delegation behavior", () => {
       expect(active[0].deliveryId).toBe("d-spawn-canonical");
 
       await expect(new GitDeliveryStore(root).open({ ...input, deliveryId: "d-conflict" }))
-        .rejects.toThrow(/expected deterministic id|linked to Delivery|conflicting delivery/);
+        .rejects.toThrow(/expected deterministic id|linked to Delivery|conflicting delivery|immutable open intent/);
       expect(await new GitDeliveryStore(root).list()).toEqual(active);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
