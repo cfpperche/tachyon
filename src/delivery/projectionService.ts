@@ -21,7 +21,7 @@ import {
   canIntegrateLinkedGitDelivery,
   canPruneLinkedGitDelivery,
 } from "../git-delivery/policy.js";
-import { pruneDeliveryRecord, type PruneInput, type PruneResult } from "../git-delivery/prune.js";
+import { pruneDeliveryRecord, type PruneDeps, type PruneInput, type PruneResult } from "../git-delivery/prune.js";
 import {
   deterministicGitDeliveryId,
   type GitDeliveryStore,
@@ -80,6 +80,8 @@ export interface DeliveryProjectionServiceDeps {
   git: GitExec;
   liveness: DeliveryLiveness;
   worktreeOccupancy?: WorktreeOccupancyProbe;
+  /** Keep spec 392's managed registry authoritative when canonical prune removes a worktree. */
+  removeManagedWorktree?: PruneDeps["removeManagedWorktree"];
   /** Canonical worktree path lock (never reverse with the projection claim). */
   withWorktreeLock: <T>(canonicalWorktree: string, fn: () => Promise<T>) => Promise<T>;
   settings: () => GitDeliverySettings;
@@ -197,6 +199,17 @@ export class DeliveryProjectionService {
           baseRef: input.baseRef,
           ...(input.currentHeadSha ? { currentHeadSha: input.currentHeadSha } : {}),
           reason: input.reason ?? "canonical open",
+        });
+        this.assertCanonicalOpenProjection(projection, {
+          id: gitDeliveryId,
+          workspaceId: this.deps.workspaceId,
+          deliveryId: input.deliveryId,
+          createdBy: toGitActor(input.actor),
+          agent: input.agent,
+          branchRef: input.branchRef,
+          worktreePath,
+          tachyonCreatedBranch: input.tachyonCreatedBranch,
+          baseRef: input.baseRef,
         });
 
         // Apply open intent onto projection if not yet applied (idempotent).
@@ -460,6 +473,7 @@ export class DeliveryProjectionService {
           git: this.deps.git,
           liveness: this.deps.liveness,
           worktreeOccupancy: this.deps.worktreeOccupancy,
+          removeManagedWorktree: this.deps.removeManagedWorktree,
           now: () => this.now(),
         });
 
@@ -561,6 +575,17 @@ export class DeliveryProjectionService {
               baseRef: String(intent.expected.baseRef ?? "HEAD"),
               ...(intent.expected.headSha ? { currentHeadSha: String(intent.expected.headSha) } : {}),
               reason: String(intent.payload.reason ?? "reconcile open"),
+            });
+            this.assertCanonicalOpenProjection(currentProjection, {
+              id: intent.gitDeliveryId,
+              workspaceId: this.deps.workspaceId,
+              deliveryId,
+              createdBy: toGitActor(intent.actor),
+              agent,
+              branchRef,
+              worktreePath: wt,
+              tachyonCreatedBranch: Boolean(intent.payload.tachyonCreatedBranch ?? true),
+              baseRef: String(intent.expected.baseRef ?? "HEAD"),
             });
             currentProjection = await this.deps.gitDeliveries.applyCanonicalIntent({
               id: currentProjection.id,
@@ -664,6 +689,7 @@ export class DeliveryProjectionService {
               git: this.deps.git,
               liveness: this.deps.liveness,
               worktreeOccupancy: this.deps.worktreeOccupancy,
+              removeManagedWorktree: this.deps.removeManagedWorktree,
               now: () => this.now(),
             });
             if (!pruned.result.ok || !pruned.next) {
@@ -887,6 +913,41 @@ export class DeliveryProjectionService {
       );
     }
     return p;
+  }
+
+  /** Defense in depth at the cross-store boundary: a replay may never retarget authority. */
+  private assertCanonicalOpenProjection(
+    projection: GitDelivery,
+    expected: Pick<GitDelivery,
+      | "id"
+      | "workspaceId"
+      | "deliveryId"
+      | "createdBy"
+      | "agent"
+      | "branchRef"
+      | "worktreePath"
+      | "tachyonCreatedBranch"
+      | "baseRef"
+    >,
+  ): void {
+    const actual = {
+      id: projection.id,
+      workspaceId: projection.workspaceId,
+      deliveryId: projection.deliveryId,
+      createdBy: projection.createdBy,
+      agent: projection.agent,
+      branchRef: projection.branchRef,
+      worktreePath: path.resolve(projection.worktreePath),
+      tachyonCreatedBranch: projection.tachyonCreatedBranch,
+      baseRef: projection.baseRef,
+    };
+    const normalizedExpected = { ...expected, worktreePath: path.resolve(expected.worktreePath) };
+    if (!isDeepStrictEqual(actual, normalizedExpected)) {
+      throw new DeliveryProjectionError(
+        `canonical open returned a projection that does not match immutable intent for '${expected.deliveryId}'`,
+        "PROJECTION_DRIFT",
+      );
+    }
   }
 
   private now(): string {

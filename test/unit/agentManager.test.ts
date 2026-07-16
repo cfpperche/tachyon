@@ -5095,7 +5095,6 @@ describe("AgentManager — Bridge wiring fail-closed (t-d42565)", () => {
       getConfig: () => configOf(yaml),
       getMaxAgents: () => 8,
       ledger,
-      recordDelegation: async () => undefined,
       ...extra,
     });
     dirs.push(ws);

@@ -79,6 +79,36 @@ describe("GitDelivery canonical projection store", () => {
     await store.open({ workspaceId: "ws", deliveryId: "d-a", createdBy: actor, agent: "a", branchRef: "b", worktreePath: "/wt/a", tachyonCreatedBranch: true, baseRef: "main" });
     await expect(store.open({ workspaceId: "ws", deliveryId: "d-b", createdBy: actor, agent: "b", branchRef: "b", worktreePath: "/wt/b", tachyonCreatedBranch: true, baseRef: "main" })).rejects.toBeInstanceOf(GitDeliveryUniquenessError);
   });
+
+  it("replays canonical open only when every immutable creation fact matches", async () => {
+    const store = new GitDeliveryStore(tmpRoot());
+    const input = {
+      workspaceId: "ws",
+      deliveryId: "d-replay",
+      createdBy: actor,
+      agent: "worker",
+      branchRef: "tachyon/worker",
+      worktreePath: "/wt/replay",
+      tachyonCreatedBranch: true,
+      baseRef: "main",
+      currentHeadSha: "old-head",
+    };
+    const original = await store.open(input);
+
+    for (const altered of [
+      { workspaceId: "other-ws" },
+      { createdBy: { kind: "agent" as const, name: "other-owner" } },
+      { tachyonCreatedBranch: false },
+      { baseRef: "release" },
+    ]) {
+      await expect(store.open({ ...input, ...altered })).rejects.toBeInstanceOf(GitDeliveryUniquenessError);
+      expect(await store.get(original.id)).toEqual(original);
+    }
+
+    // The branch head is mutable state, not creation authority. Replaying open returns the
+    // durable row; the canonical intent application updates the head in its sequenced step.
+    await expect(store.open({ ...input, currentHeadSha: "new-head" })).resolves.toEqual(original);
+  });
 });
 
 describe("GitDelivery containment and hygiene", () => {

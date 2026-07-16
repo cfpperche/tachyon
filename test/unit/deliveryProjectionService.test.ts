@@ -103,6 +103,7 @@ function serviceFor(
   opts: {
     snapshot?: (deliveryId: string) => Promise<import("../../src/delivery/reloadReconciliation.js").ReloadReconciliationSnapshot>;
     liveness?: (agent: string) => Promise<"live" | "not_live" | "unknown">;
+    removeManagedWorktree?: import("../../src/git-delivery/prune.js").PruneDeps["removeManagedWorktree"];
   } = {},
 ): DeliveryProjectionService {
   return new DeliveryProjectionService({
@@ -113,6 +114,7 @@ function serviceFor(
     git,
     liveness: opts.liveness ?? (async () => "not_live"),
     worktreeOccupancy: async () => undefined,
+    ...(opts.removeManagedWorktree ? { removeManagedWorktree: opts.removeManagedWorktree } : {}),
     withWorktreeLock: locks(),
     settings: () => settings,
     loadReloadSnapshot: opts.snapshot ?? (async (deliveryId) => {
@@ -216,6 +218,45 @@ describe("DeliveryProjectionService (SDD 368 T15)", () => {
     await deliveries.releaseProjection(claim2);
     const repaired = await svc.reconcile(delivery.id);
     expect(repaired.delivery.gitDeliveryId).toBe(gitId);
+  });
+
+  it("fails closed on a pre-existing projection whose immutable open authority drifted", async () => {
+    const workspace = root();
+    const wt = path.join(workspace, "wt");
+    fs.mkdirSync(wt);
+    const deliveries = new DeliveryStore(workspace, { now: () => now });
+    const gitDeliveries = new GitDeliveryStore(workspace, { now: () => now });
+    const delivery = await freeDelivery(deliveries, "d-open-drift");
+    const gitId = deterministicGitDeliveryId(delivery.id);
+    await gitDeliveries.open({
+      id: gitId,
+      workspaceId: "stale-workspace",
+      createdBy: actor,
+      deliveryId: delivery.id,
+      agent: "worker",
+      branchRef: "tachyon/d",
+      worktreePath: wt,
+      tachyonCreatedBranch: true,
+      baseRef: "main",
+      currentHeadSha: "tip",
+    });
+    const svc = serviceFor(workspace, deliveries, gitDeliveries, gitScript({ "*": ok() }));
+    const open = {
+      deliveryId: delivery.id,
+      agent: "worker",
+      branchRef: "tachyon/d",
+      worktreePath: wt,
+      tachyonCreatedBranch: true,
+      baseRef: "main",
+      currentHeadSha: "tip",
+      actor,
+      operationId: "op-open-drift",
+    };
+
+    await expect(svc.openCanonical(open)).rejects.toThrow(/immutable open intent/);
+    await expect(svc.reconcile(delivery.id)).rejects.toThrow(/immutable open intent/);
+    expect((await deliveries.get(delivery.id))?.gitDeliveryId).toBeUndefined();
+    expect((await gitDeliveries.get(gitId))?.workspaceId).toBe("stale-workspace");
   });
 
   it("integrates only after live head+containment proof and leaves zero effects on failure", async () => {
@@ -374,6 +415,72 @@ describe("DeliveryProjectionService (SDD 368 T15)", () => {
     const reconciled = await svc.reconcile(delivery.id);
     expect(reconciled.projection?.phase).toBe("pruned");
     expect(reconciled.projection?.lastAppliedProjectionSequence).toBe(3);
+  });
+
+  it("routes canonical prune through the managed-worktree removal seam", async () => {
+    const workspace = root();
+    const wt = path.join(workspace, "managed-wt");
+    fs.mkdirSync(wt);
+    const deliveries = new DeliveryStore(workspace, { now: () => now });
+    const gitDeliveries = new GitDeliveryStore(workspace, { now: () => now });
+    const delivery = await freeDelivery(deliveries, "d-managed-prune");
+    const calls: string[] = [];
+    let removed = false;
+    const git: GitExec = async (args) => {
+      const command = args.join(" ");
+      calls.push(command);
+      if (command === "show-ref --verify --quiet refs/heads/tachyon/managed") return removed ? fail() : ok();
+      if (command === "rev-parse tachyon/managed") return ok("tip\n");
+      if (command === "status --porcelain=v1 --untracked-files=all") return ok();
+      if (command === "merge-base --is-ancestor tip main") return ok();
+      if (command === "worktree list --porcelain") {
+        return ok(removed ? "" : `worktree ${wt}\nbranch refs/heads/tachyon/managed\n`);
+      }
+      if (command === "branch -d tachyon/managed" || command === "worktree prune") return ok();
+      return fail(`unexpected git: ${command}`);
+    };
+    const managedRemovals: string[] = [];
+    const svc = serviceFor(workspace, deliveries, gitDeliveries, git, {
+      removeManagedWorktree: async (worktreePath, opts) => {
+        managedRemovals.push(worktreePath);
+        expect(opts).toMatchObject({ branch: "tachyon/managed", deleteBranch: false, tachyonCreatedBranch: true });
+        removed = true;
+        fs.rmSync(worktreePath, { recursive: true, force: true });
+        return { removed: true, branchDeleted: false };
+      },
+    });
+    const opened = await svc.openCanonical({
+      deliveryId: delivery.id,
+      agent: "worker",
+      branchRef: "tachyon/managed",
+      worktreePath: wt,
+      tachyonCreatedBranch: true,
+      baseRef: "main",
+      currentHeadSha: "tip",
+      actor,
+      operationId: "op-managed-open",
+    });
+    const integrated = await svc.integrate({
+      deliveryId: delivery.id,
+      gitDeliveryId: opened.projection.id,
+      expectedGitVersion: opened.projection.version,
+      expectedHeadSha: "tip",
+      actor: human,
+      caller: human,
+      operationId: "op-managed-integrate",
+    });
+    const pruned = await svc.prune({
+      deliveryId: delivery.id,
+      gitDeliveryId: integrated.projection.id,
+      expectedGitVersion: integrated.projection.version,
+      actor: human,
+      caller: human,
+      operationId: "op-managed-prune",
+    });
+
+    expect(pruned.projection.phase).toBe("pruned");
+    expect(managedRemovals).toEqual([wt]);
+    expect(calls).not.toContain(`worktree remove --force ${wt}`);
   });
 
   it("refuses sequence gaps, collisions, and generic linked mutations", async () => {

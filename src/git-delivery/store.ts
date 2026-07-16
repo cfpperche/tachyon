@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
+import { isDeepStrictEqual } from "node:util";
 import { GIT_DELIVERY_SCHEMA_VERSION, type GitDelivery, type GitDeliveryCorruptRecord, type GitDeliveryOpenInput } from "./types.js";
 
 export class GitDeliveryVersionConflictError extends Error {
@@ -84,16 +85,7 @@ export class GitDeliveryStore {
       return row ? JSON.parse(row.record_json) as GitDelivery : undefined;
     });
     if (existing) {
-      if (existing.agent === input.agent && existing.branchRef === input.branchRef && path.resolve(existing.worktreePath) === path.resolve(input.worktreePath)) {
-        if (existing.id !== requestedId) {
-          throw new GitDeliveryUniquenessError(`GitDelivery '${existing.id}' already owns branch/worktree; expected deterministic id '${requestedId}'`);
-        }
-        if (existing.deliveryId !== input.deliveryId) {
-          throw new GitDeliveryUniquenessError(`GitDelivery '${existing.id}' is linked to Delivery '${existing.deliveryId}', not '${input.deliveryId}'`);
-        }
-        return existing;
-      }
-      throw new GitDeliveryUniquenessError(`open GitDelivery '${existing.id}' already owns branch/worktree`);
+      return assertCanonicalOpenCompatible(existing, input, requestedId, normalizedPath);
     }
     const now = this.now();
     const rec: GitDelivery = {
@@ -118,21 +110,21 @@ export class GitDeliveryStore {
     return this.withTransaction((db) => {
       const byId = db.prepare("SELECT record_json FROM git_deliveries WHERE id = ?").get(requestedId) as { record_json: string } | undefined;
       if (byId) {
-        const winner = JSON.parse(byId.record_json) as GitDelivery;
-        if (winner.agent !== input.agent || winner.branchRef !== input.branchRef || path.resolve(winner.worktreePath) !== normalizedPath
-          || winner.deliveryId !== input.deliveryId) {
-          throw new GitDeliveryUniquenessError(`deterministic GitDelivery '${requestedId}' conflicts with an existing record`);
-        }
-        return winner;
+        return assertCanonicalOpenCompatible(
+          JSON.parse(byId.record_json) as Partial<GitDelivery>,
+          input,
+          requestedId,
+          normalizedPath,
+        );
       }
       const row = db.prepare("SELECT record_json FROM git_deliveries WHERE active = 1 AND (branch_ref = ? OR worktree_path = ?)").get(input.branchRef, normalizedPath) as { record_json: string } | undefined;
       if (row) {
-        const winner = JSON.parse(row.record_json) as Partial<GitDelivery>;
-        if (winner.agent !== input.agent || winner.branchRef !== input.branchRef || path.resolve(String(winner.worktreePath)) !== normalizedPath
-          || winner.deliveryId !== input.deliveryId || winner.id !== requestedId) {
-          throw new GitDeliveryUniquenessError("branch/worktree was claimed concurrently by a conflicting delivery");
-        }
-        return winner as GitDelivery;
+        return assertCanonicalOpenCompatible(
+          JSON.parse(row.record_json) as Partial<GitDelivery>,
+          input,
+          requestedId,
+          normalizedPath,
+        );
       }
       db.prepare("INSERT INTO git_deliveries(id, branch_ref, worktree_path, active, record_json) VALUES (?, ?, ?, 1, ?)").run(rec.id, rec.branchRef, normalizedPath, JSON.stringify(rec));
       return rec;
@@ -223,6 +215,39 @@ export class GitDeliveryStore {
     return this.opts.now?.() ?? new Date().toISOString();
   }
 
+}
+
+/**
+ * An existing deterministic row is an idempotent canonical open only when every immutable
+ * creation fact matches. The head is deliberately excluded: a lost-response replay may apply
+ * the already-recorded open intent after the branch has advanced, but it may never retarget the
+ * workspace, base, path or branch-ownership authority used by later integrate/prune decisions.
+ */
+function assertCanonicalOpenCompatible(
+  existing: Partial<GitDelivery>,
+  input: GitDeliveryOpenInput,
+  requestedId: string,
+  normalizedPath: string,
+): GitDelivery {
+  const mismatches: string[] = [];
+  if (existing.schemaVersion !== GIT_DELIVERY_SCHEMA_VERSION) mismatches.push("schemaVersion");
+  if (existing.id !== requestedId) mismatches.push("id");
+  if (existing.workspaceId !== input.workspaceId) mismatches.push("workspaceId");
+  if (existing.deliveryId !== input.deliveryId) mismatches.push("deliveryId");
+  if (!isDeepStrictEqual(existing.createdBy, input.createdBy)) mismatches.push("createdBy");
+  if (existing.agent !== input.agent) mismatches.push("agent");
+  if (existing.branchRef !== input.branchRef) mismatches.push("branchRef");
+  if (typeof existing.worktreePath !== "string" || path.resolve(existing.worktreePath) !== normalizedPath) {
+    mismatches.push("worktreePath");
+  }
+  if (existing.tachyonCreatedBranch !== input.tachyonCreatedBranch) mismatches.push("tachyonCreatedBranch");
+  if (existing.baseRef !== input.baseRef) mismatches.push("baseRef");
+  if (mismatches.length > 0) {
+    throw new GitDeliveryUniquenessError(
+      `canonical GitDelivery '${String(existing.id ?? requestedId)}' conflicts with immutable open intent: ${mismatches.join(", ")}`,
+    );
+  }
+  return existing as GitDelivery;
 }
 
 function assertImmutableLink(current: GitDelivery, next: GitDelivery): void {

@@ -633,6 +633,14 @@ export class Workspace {
       git: this.gitExec,
       liveness: (agent) => this.gitDeliveryLiveness(agent),
       worktreeOccupancy: (worktreePath) => this.manager.worktreeOccupant(worktreePath),
+      removeManagedWorktree: (worktreePath, o) =>
+        this.managedWorktrees.removePath(worktreePath, {
+          deleteBranch: o?.deleteBranch,
+          branch: o?.branch,
+          tachyonCreatedBranch: o?.tachyonCreatedBranch,
+          baseRef: o?.baseRef,
+          force: o?.force,
+        }),
       withWorktreeLock: (canonicalWorktree, fn) => this.worktrees.withPathLock(canonicalWorktree, fn),
       settings: () => resolveGitDeliverySettings(this.config?.settings),
       loadReloadSnapshot: async (deliveryId) => {
@@ -2992,10 +3000,14 @@ export class Workspace {
     }
     const projectionWorktree = fs.realpathSync(opened.projection.worktreePath);
     const expectedWorktree = fs.realpathSync(input.worktree.path);
+    const expectedBaseRef = input.worktree.baseBranch ?? input.worktree.baseRef;
     if (
       delivery.contract.baseSha !== input.baseSha
+      || opened.projection.workspaceId !== this.wsHash
       || opened.projection.deliveryId !== delivery.id
       || opened.projection.branchRef !== input.worktree.branch
+      || opened.projection.tachyonCreatedBranch !== input.worktree.tachyonCreatedBranch
+      || opened.projection.baseRef !== expectedBaseRef
       || opened.projection.currentHeadSha !== input.baseSha
       || projectionWorktree !== expectedWorktree
     ) {

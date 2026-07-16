@@ -35,7 +35,8 @@ _Created 2026-07-13._
 
 - Isolated worktree: `/home/goat/tachyon-worktrees/t-85f251`.
 - Branch: `codex/t-85f251-retire-legacy-delivery-r2`. The first candidate was cut from `274c8b22`; after its
-  local audit it was rebased onto current `main` at `af136a0a`. `main` was not modified or merged.
+  local audit it was rebased onto current `main` at `fe83adf9`. `main` was not modified or merged. The pre-rebase
+  candidate remains recoverable at `backup/t-85f251-pre-main-rebase-384fe70c`.
 - The candidate removes the old models and public entry points, makes gated spawn/join/verify canonical-only,
   keeps GitDelivery as an immutable linked projection, and adds the explicit preview/archive/retire operation.
 - The retirement fixture contains canonical plus legacy metadata, linked and unlinked projections, clean and
@@ -63,6 +64,26 @@ _Created 2026-07-13._
   406 files, 4,676 tests, 3 skipped; `git diff --check` and the legacy-symbol source audit were clean.
 - Still required before merge: independent immutable review, installed-extension retirement/happy-path dogfood,
   any consolidated corrections those produce, push, and explicit maintainer acceptance.
+
+## Immutable review R1 and consolidated correction — 2026-07-16
+
+- Review artifact: `.tachyon/reviews/376-retire-legacy-delivery-r1.md` against the immutable pre-correction
+  candidate. It found two blocking composition defects: canonical open replay accepted mismatched immutable
+  projection authority, and canonical prune did not carry spec 392's managed-worktree removal seam.
+- The correction centralizes exact immutable-open matching in `GitDeliveryStore` (workspace, creator, Delivery,
+  agent, branch, canonical path, Tachyon branch ownership, and base), repeats the receipt check at the projection
+  boundary, and deliberately leaves only the branch head mutable for sequenced replay.
+- Both normal and reconciled canonical prune now call the injected managed removal seam. Workspace wires that seam
+  to `ManagedWorktreeService.removePath`, so successful removal updates the registry while occupancy remains
+  fail-closed. The gated-spawn receipt now also verifies workspace, branch ownership, and base.
+- Regression evidence: the three directly affected suites pass 41/41; the combined GitDelivery, projection,
+  generated projection behavior, managed-worktree, auth, Bridge, AgentManager, and headless Workspace matrix passes
+  527/527. `npm run typecheck`, `npm run build`, and `git diff --check` pass.
+- The combined matrix also exposed two stale current-main fixtures: one still supplied the deleted
+  `recordDelegation` callback, and one expected parented ad-hoc `cwd` to be accepted despite the newer fail-closed
+  contract. Only those test expectations were corrected; no extra production behavior was changed.
+- R1 blockers are locally corrected. Immutable re-review, final `npm test`, installed dogfood, push, and explicit
+  maintainer acceptance remain required; nothing has been merged or installed.
 
 ## Deviations
 

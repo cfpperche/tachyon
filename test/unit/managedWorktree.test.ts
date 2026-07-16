@@ -264,6 +264,7 @@ describe("spec 392 ManagedWorktreeService (real git)", () => {
     const d: GitDelivery = {
       schemaVersion: 1,
       id: "gd-1",
+      deliveryId: "d-managed-worktree",
       version: 1,
       workspaceId: "ws",
       createdBy: { kind: "agent", name: "orch" },
