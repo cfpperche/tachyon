@@ -2,7 +2,7 @@
 
 _Created 2026-07-13._
 
-**Status:** implementation candidate ready in isolated worktree; installed dogfood, independent review, and merge pending
+**Status:** in-progress
 
 ## Intent
 
