@@ -62,6 +62,10 @@ None.
 - The persistent-engine fixture now exposes a fake `codex` executable instead of declaring `sleep` as
   an AI agent. This satisfies the current fail-closed Bridge-materialization contract while keeping the
   dogfood local, deterministic and free of an interactive/paid runtime process.
+- Final focused verification passes 3 files / 18 tests. Current `npm run typecheck` fails only on the
+  same `devHostPointer.test.ts` TS2578/TS1479 pair reproduced on main (`t-f5fb40`). The final full suite
+  and an exact six-file rerun on main reproduce the same eight failures; the remaining stale baseline
+  contracts are tracked in `t-e1cf51`. No unrelated waiver or fix is included here.
 
 ## Verification log
 
@@ -70,3 +74,8 @@ None.
 
 ### 2026-07-16T16:10:08Z — pass (1/1) — source: tasks.md
 - `npx vitest run test/unit/daemonEngineHost.test.ts test/unit/cxApproval2Behavior.gen.test.ts test/unit/i18n.test.ts && npm run typecheck` — pass
+
+## Dogfood log
+
+### 2026-07-16T21:15:39Z — pass (1/1) — source: tasks.md — commit: 307fa227589e9fdb5be6b1465a98b76d24494864
+- `npm run dogfood:persistent-engine` — pass

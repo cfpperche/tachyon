@@ -21,7 +21,8 @@ _Acceptance checks tied to `spec.md`. Each should map to a checklist item there.
   `tachyon.openApprovals` command with the originating workspace hash.
 - [x] Manifest and English/pt-BR catalogs expose `Tachyon: Open Human Approvals`; resolver remains
   absent from the contributed commands and Bridge tools.
-- [x] Focused tests, typecheck and repository verification are green.
+- [x] Focused tests and packaged headless dogfood are green; the current main typecheck/full-suite
+  baseline failures reproduce unchanged and are isolated in `t-f5fb40` and `t-e1cf51`.
 
 **Headless check:** `npx vitest run test/unit/daemonEngineHost.test.ts test/unit/cxApproval2Behavior.gen.test.ts test/unit/i18n.test.ts && npm run typecheck`
 **Verify:** `npx vitest run test/unit/daemonEngineHost.test.ts test/unit/cxApproval2Behavior.gen.test.ts test/unit/i18n.test.ts && npm run typecheck`
