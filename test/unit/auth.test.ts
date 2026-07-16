@@ -179,6 +179,45 @@ describe("Bridge caller resolution (spec 351 T3)", () => {
     } finally { await bridge.dispose(); }
   });
 
+  it("delivery_salvage refuses before mutation while legacy Delivery metadata is active", async () => {
+    const registry = new CallerIdentityRegistry(Buffer.from("k".repeat(64), "hex"));
+    const agentToken = registry.mint("claude", SCOPE);
+    const quarantineHeld = vi.fn();
+    const bridge = new Bridge({
+      ...minimalDeps(),
+      assertLegacyDeliveryRetired: () => {
+        throw new Error("LEGACY_DELIVERY_STATE_REQUIRES_RETIREMENT");
+      },
+      deliveryLease: { quarantineHeld } as never,
+    }, { token: MASTER, getRegistry: () => registry, scope: SCOPE });
+    await bridge.start();
+    try {
+      const client = new Client({ name: "salvage-retirement-gate", version: "0.0.1" });
+      await client.connect(
+        new StreamableHTTPClientTransport(new URL(bridge.url!), {
+          requestInit: { headers: { Authorization: `Bearer ${agentToken}` } },
+        }),
+      );
+      const result = await client.callTool({
+        name: "delivery_salvage",
+        arguments: {
+          delivery_id: "d-live",
+          action: "enter",
+          operation_id: "enter",
+          canonical_worktree: "/wt",
+        },
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content).toEqual(expect.arrayContaining([
+        expect.objectContaining({ text: expect.stringContaining("LEGACY_DELIVERY_STATE_REQUIRES_RETIREMENT") }),
+      ]));
+      expect(quarantineHeld).not.toHaveBeenCalled();
+      await client.close();
+    } finally {
+      await bridge.dispose();
+    }
+  });
+
   it("a revoked agent token is rejected with 401 + reason token_revoked (not a generic message)", async () => {
     const registry = new CallerIdentityRegistry(Buffer.from("k".repeat(64), "hex"));
     const agentToken = registry.mint("claude", SCOPE);

@@ -89,6 +89,25 @@ _Created 2026-07-13._
 - R1 blockers are locally corrected. Immutable re-review, final `npm test`, installed dogfood, push, and explicit
   maintainer acceptance remain required; nothing has been merged or installed.
 
+## Current-main rebase and coordinator audit R2 — 2026-07-16
+
+- The corrected candidate was rebased cleanly onto current `main` `21930935`; its old immutable head remains
+  recoverable at `backup/t-85f251-pre-main-21930935-5fda4b1f`. The candidate is five commits ahead with no
+  candidate-side merge or integration into `main`.
+- The complete current-main delta and the only two paths touched by both histories (`package.json` and
+  `src/extension.ts`) were re-audited. Parallel managed-worktree, approval, and Control UI changes remain present.
+- One direct retirement-contract gap was found and closed: `delivery_salvage` was the only canonical Delivery
+  mutation that did not invoke the legacy-state retirement gate. A live HTTP regression now proves refusal occurs
+  before any lease mutation while legacy metadata is active. A stale current documentation source pointer to the
+  deleted `reuseWorktree.ts` module was also corrected.
+- The focused canonical-retirement matrix passes 612/612; `npm run typecheck`, `npm run build`, and
+  `git diff --check` pass. The current-source absence audit finds no executable legacy lifecycle outside the
+  deliberate removed-setting diagnostic, raw retirement module/fixture, and durable historical evidence labels.
+- The final `npm test` reached an unrelated current-main failure: `ControlInspector` exists in the preview catalog
+  but is missing from `WEBVIEW_SURFACES` (2 failures in `webviewPreviewCatalog.test.ts`). The same focused failure
+  reproduces directly on unmodified `main`; it is tracked separately as `t-e2c978` and was not mixed into this
+  candidate. A globally green rerun therefore waits for that mainline bug to land and be rebased.
+
 ## Deviations
 
 - At the maintainer's direction, implementation was performed directly in a separate worktree without using the

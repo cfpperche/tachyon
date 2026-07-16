@@ -923,6 +923,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     },
     async ({ delivery_id, action, operation_id, canonical_worktree, approval_id, expected_head_sha, expected_inventory, execution_agent, principal, owns_subset }) => {
       try {
+        deps.assertLegacyDeliveryRetired?.();
         if (!deps.deliveryLease) return fail(new Error("delivery_salvage is unavailable on this Bridge"));
         const caller = deps.caller;
         if (!caller || caller.kind !== "agent" || !caller.name) return fail(new Error("delivery_salvage requires an agent-authenticated Bridge caller"));
