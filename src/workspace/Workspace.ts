@@ -725,11 +725,12 @@ export class Workspace {
         return this.harness.materializeBridgeMcpOpencode(name, entry, projectOpencodeJson);
       },
       // t-843576 — materialize a NON-harness grok agent's private GROK_HOME (Bridge MCP in config.toml +
-      // auth.json symlink) and return its path (injected into the spawn env as GROK_HOME). undefined
-      // when the Bridge isn't up (self-heals on next restart). Never mutates the user's real ~/.grok.
-      materializeBridgeMcpGrok: (name) => {
+      // auth.json symlink) and return its path (injected into the spawn env as GROK_HOME). cwd is the
+      // effective spawn cwd so folder-trust is seeded for the workspace/worktree before the TUI starts.
+      // undefined when the Bridge isn't up (self-heals on next restart). Never mutates the user's real ~/.grok.
+      materializeBridgeMcpGrok: (name, cwd) => {
         const entry = this.bridgeEntry();
-        return entry ? this.harness.materializeBridgeMcpGrok(name, entry) : undefined;
+        return entry ? this.harness.materializeBridgeMcpGrok(name, entry, cwd ?? this.workspaceRoot) : undefined;
       },
       // Private HERMES_HOME for non-harness hermes (Bridge MCP in config.yaml + auth.json symlink).
       materializeBridgeMcpHermes: (name) => {

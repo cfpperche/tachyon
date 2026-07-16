@@ -325,9 +325,10 @@ export interface AgentManagerOptions {
    *  its cwd-discovered `opencode.json`. Wired in Workspace where the Bridge URL/token live. */
   materializeBridgeMcpOpencode?: (name: string, cwd: string) => string | undefined;
   /** t-843576 — materialize a non-harness grok agent's private GROK_HOME (Bridge MCP in config.toml
-   *  + auth.json symlink), returning its path (undefined when the Bridge isn't up). Injected into
-   *  the spawn env as GROK_HOME. Wired in Workspace where the Bridge URL/token live. */
-  materializeBridgeMcpGrok?: (name: string) => string | undefined;
+   *  + auth.json symlink), returning its path (undefined when the Bridge isn't up). Optional `cwd` is
+   *  the effective spawn cwd so folder-trust can be seeded before the interactive TUI starts.
+   *  Injected into the spawn env as GROK_HOME. Wired in Workspace where the Bridge URL/token live. */
+  materializeBridgeMcpGrok?: (name: string, cwd?: string) => string | undefined;
   /** Materialize a non-harness hermes agent's private HERMES_HOME (Bridge MCP in config.yaml +
    *  auth.json symlink), returning its path (undefined when the Bridge isn't up). Injected as
    *  HERMES_HOME. Wired in Workspace where the Bridge URL/token live. */
@@ -2312,7 +2313,7 @@ export class AgentManager {
       return { cmd, env: { [OPENCODE_CONFIG_ENV_VAR]: file }, wired: true };
     }
     if (binary === "grok") {
-      const home = this.opts.materializeBridgeMcpGrok?.(name);
+      const home = this.opts.materializeBridgeMcpGrok?.(name, cwd ?? this.opts.workspaceRoot);
       if (!home) return { cmd, env: {}, wired: false };
       return { cmd, env: { GROK_HOME: home }, wired: true };
     }

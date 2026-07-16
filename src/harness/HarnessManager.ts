@@ -389,6 +389,74 @@ export function bridgeGrokHome(workspaceRoot: string, agent: string): string {
 }
 
 /**
+ * Seed Grok's native folder-trust store (`$GROK_HOME/trusted_folders.toml`) so the interactive
+ * "Do you trust the contents of this directory?" gate does not block a Tachyon-managed spawn.
+ *
+ * Mirrors Claude's `hasTrustDialogAccepted` seed in `materializeHome`. Each private GROK_HOME is
+ * isolated from `~/.grok`, so a grant in the real home never reaches bridge-mcp / harness agents —
+ * without this, every new Grok agent (and every wiped private home) forces a manual `y`.
+ *
+ * Only absolute, non-root, non-home paths are recorded (matches Grok's refuse-over-broad guard).
+ * Existing `trusted = true` entries are left intact; untrusted/missing entries are upgraded.
+ */
+export function seedGrokTrustedFolders(
+  home: string,
+  folders: readonly string[],
+  nowSec: number = Math.floor(Date.now() / 1000),
+  homeDir: string = os.homedir(),
+): void {
+  const absolute = uniqueAbsoluteFolders(folders, homeDir);
+  if (absolute.length === 0) return;
+  fs.mkdirSync(home, { recursive: true });
+  const file = path.join(home, "trusted_folders.toml");
+  let content = "";
+  try {
+    content = fs.readFileSync(file, "utf8");
+  } catch {
+    /* cold private home */
+  }
+
+  let changed = false;
+  for (const folder of absolute) {
+    const header = `[folders."${folder}"]`;
+    const re = new RegExp(`\\[folders\\."${escapeRegExp(folder)}"\\]([^\\[]*)`, "m");
+    const match = content.match(re);
+    if (match && /^\s*trusted\s*=\s*true\b/m.test(match[1] ?? "")) continue;
+    const body = `trusted = true\ndecided_at = ${nowSec}\n`;
+    if (match) {
+      content = content.replace(re, `${header}\n${body}`);
+    } else {
+      const sep = content.length === 0 || content.endsWith("\n") ? "" : "\n";
+      content = `${content}${sep}${header}\n${body}`;
+    }
+    changed = true;
+  }
+  if (!changed && content.length > 0) return;
+  if (content.length > 0 && !content.endsWith("\n")) content += "\n";
+  fs.writeFileSync(file, content, "utf8");
+}
+
+function uniqueAbsoluteFolders(folders: readonly string[], homeDir: string): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const homeResolved = path.resolve(homeDir);
+  for (const raw of folders) {
+    if (!raw || typeof raw !== "string") continue;
+    const folder = path.resolve(raw);
+    if (!path.isAbsolute(folder)) continue;
+    if (folder === path.parse(folder).root || folder === homeResolved) continue;
+    if (seen.has(folder)) continue;
+    seen.add(folder);
+    out.push(folder);
+  }
+  return out;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
  * Private `HERMES_HOME` for a NON-harness hermes agent. Hermes reads MCP from
  * `$HERMES_HOME/config.yaml` (`mcp_servers`) and OAuth from `$HERMES_HOME/auth.json`.
  * Distinct dirname so a shared agent name never collides with grok/claude bridge files.
@@ -925,6 +993,8 @@ export class HarnessManager {
       // t-303f2b — harness/isolate-transcript private homes must also prove credentials before spawn.
       if (adapter.runtime === "grok") {
         assertReadableGrokAuth(agent, authDestHome, path.join(authSourceHome, "auth.json"));
+        // Folder-trust is per GROK_HOME; private homes do not inherit ~/.grok grants.
+        seedGrokTrustedFolders(authDestHome, [this.workspaceRoot, ...(cwd ? [cwd] : [])]);
       }
       if (adapter.runtime === "hermes") {
         assertReadableHermesAuth(agent, authDestHome, path.join(authSourceHome, "auth.json"));
@@ -1322,7 +1392,7 @@ export class HarnessManager {
     return reconcileWorkspaceGrokAuth(this.workspaceRoot, this.realGrokHome);
   }
 
-  materializeBridgeMcpGrok(agent: string, bridgeEntry: Record<string, unknown>): string {
+  materializeBridgeMcpGrok(agent: string, bridgeEntry: Record<string, unknown>, cwd?: string): string {
     const home = bridgeGrokHome(this.workspaceRoot, agent);
     fs.mkdirSync(home, { recursive: true });
 
@@ -1354,6 +1424,8 @@ export class HarnessManager {
     }
     const configPath = path.join(home, "config.toml");
     fs.writeFileSync(configPath, toml.endsWith("\n") || toml.length === 0 ? toml : `${toml}\n`, "utf8");
+    // Pre-trust workspace + effective spawn cwd so the folder-trust dialog never blocks managed Grok.
+    seedGrokTrustedFolders(home, [this.workspaceRoot, ...(cwd ? [cwd] : [])]);
     return home;
   }
 

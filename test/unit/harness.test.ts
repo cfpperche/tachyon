@@ -378,11 +378,41 @@ describe("HarnessManager materialize (fs)", () => {
     expect(toml).toContain('Authorization');
     expect(toml).toContain("Bearer ${TACHYON_AGENT_BRIDGE_TOKEN}");
     expect(toml).not.toMatch(/Bearer\s+[a-f0-9]{16,}/i); // no literal secret on disk
+    // Folder-trust is seeded for the workspace so the interactive "Do you trust…" prompt is skipped.
+    const trust = fs.readFileSync(path.join(home, "trusted_folders.toml"), "utf8");
+    expect(trust).toContain(`[folders."${path.resolve(ws)}"]`);
+    expect(trust).toMatch(/trusted\s*=\s*true/);
     // Does not touch a workspace/user ~/.grok/config.toml
     expect(fs.existsSync(path.join(ws, ".grok", "config.toml"))).toBe(false);
     // GC removes the private home
     mgr.removeBridgeMcp("solo");
     expect(fs.existsSync(home)).toBe(false);
+  });
+
+  it("seeds Grok folder-trust for workspace + spawn cwd and preserves prior trusted entries", () => {
+    const realGrokHome = path.join(path.dirname(ws), "real-grok-trust");
+    fs.mkdirSync(realGrokHome, { recursive: true });
+    fs.writeFileSync(path.join(realGrokHome, "auth.json"), '{"token":"GROK"}');
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), undefined, undefined, undefined, realGrokHome);
+    const bridge = {
+      type: "http",
+      url: "http://127.0.0.1:9/mcp",
+      headers: { Authorization: "Bearer ${TACHYON_AGENT_BRIDGE_TOKEN}" },
+    };
+    const worktree = path.join(path.dirname(ws), "wt-agent");
+    fs.mkdirSync(worktree, { recursive: true });
+    const home = mgr.materializeBridgeMcpGrok("solo", bridge, worktree);
+    const trustPath = path.join(home, "trusted_folders.toml");
+    let trust = fs.readFileSync(trustPath, "utf8");
+    expect(trust).toContain(`[folders."${path.resolve(ws)}"]`);
+    expect(trust).toContain(`[folders."${path.resolve(worktree)}"]`);
+    expect(trust.match(/trusted\s*=\s*true/g)?.length).toBeGreaterThanOrEqual(2);
+
+    // Rematerialize must keep prior grants and not thrash decided_at for already-trusted folders.
+    const before = trust;
+    mgr.materializeBridgeMcpGrok("solo", bridge, worktree);
+    trust = fs.readFileSync(trustPath, "utf8");
+    expect(trust).toBe(before);
   });
 
   it("t-2b0a08: materializeBridgeMcpGrok promotes a newer private regular auth refresh before relinking", () => {
