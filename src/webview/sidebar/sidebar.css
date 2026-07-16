@@ -110,6 +110,8 @@
     border: 1px solid var(--idle);
     box-sizing: border-box;
   }
+  .agent-filter-control.f-ontask .af-dot { background: #4fc1ff; }
+  .agent-filter-control.f-hasfocus .af-dot { background: #dcdcaa; }
   .agent-filter-control .af-n {
     font-variant-numeric: tabular-nums;
     font-weight: 700;
@@ -123,6 +125,8 @@
   .agent-filter-control.f-live.on { border-color: color-mix(in srgb, var(--ds-ok) 55%, var(--ds-border)); }
   .agent-filter-control.f-attention.on { border-color: color-mix(in srgb, var(--ds-warn) 55%, var(--ds-border)); }
   .agent-filter-control.f-stopped.on { border-color: color-mix(in srgb, var(--idle) 70%, var(--ds-border)); }
+  .agent-filter-control.f-ontask.on { border-color: color-mix(in srgb, #4fc1ff 55%, var(--ds-border)); }
+  .agent-filter-control.f-hasfocus.on { border-color: color-mix(in srgb, #dcdcaa 55%, var(--ds-border)); }
   .agent-filter-control.zero,
   .agent-filter-control:disabled {
     opacity: .4;
@@ -246,7 +250,7 @@
     padding-top: 10px;
     border-top: 1px solid var(--ds-border);
   }
-  /* Meta sits under the name column (gutter 13 + gap 8 + sdot 7 ≈ 28), not under the status dot. */
+  /* Meta sits under the name column (gutter 13 + gap 6 + sdot 7 ≈ 26–28), not under the status dot. */
   .row-meta {
     display: flex;
     flex-wrap: wrap;
@@ -256,7 +260,37 @@
     row-gap: 5px;
   }
   .row-meta:empty { display: none; }
+  /* Nested rows skip the disclosure gutter (App.tsx `!nested`); name starts after sdot+gap only.
+     Use a matching pad so badges/focus align under the child name the same way parents do. */
+  .row.child .row-meta {
+    padding-left: 13px; /* sdot 7 + gap 6 */
+  }
   /* Relation line ("spawned by…") owns its own row so chips don't tangle with it. */
+  /* spec 390 — focus line under badges; same left pad as .row-meta (under name column).
+     Child indent is only via .row.child { padding-left: 30px } — do NOT stack another 28px. */
+  .row-focus {
+    display: flex; align-items: baseline; gap: 6px;
+    padding: 2px 72px 2px 28px; min-width: 0;
+    color: var(--ds-muted, #858585); font-size: 11px; line-height: 1.3;
+  }
+  .row.child .row-focus {
+    padding-left: 13px;
+  }
+  .row-focus .focus-arrow { flex: none; opacity: .65; }
+  .row-focus .focus-src {
+    flex: none; font: 700 9px/1 ui-monospace, Consolas, monospace;
+    letter-spacing: .03em; text-transform: uppercase;
+  }
+  .row-focus .focus-src.src-task { color: #4fc1ff; }
+  .row-focus .focus-src.src-brief { color: #c586c0; }
+  .row-focus .focus-src.src-continuity { color: #dcdcaa; }
+  .row-focus .focus-id {
+    flex: none; font: 600 10px/1 ui-monospace, Consolas, monospace; color: #4fc1ff;
+  }
+  .row-focus .focus-text {
+    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    color: #c8c8c8;
+  }
   .msub {
     flex: 1 0 100%;
     color: var(--ds-muted);

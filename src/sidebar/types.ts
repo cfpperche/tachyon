@@ -14,6 +14,15 @@ export type Verify = "pass" | "fail" | "stale";
 export type ModelSource = "observed" | "declared" | "profile";
 /** spec 241 — per-agent continuity brief freshness: missing (none yet) | stale (behind activity) | fresh. */
 export type ContinuityBadge = "fresh" | "stale" | "missing";
+/** spec 390 — source of the human-glance focus line on an agent row. */
+export type FocusSource = "task" | "brief" | "continuity";
+/** spec 390 — projected "what this agent is working on" for fleet glance. */
+export interface AgentFocus {
+  text: string;
+  source: FocusSource;
+  taskId?: string;
+  full: string;
+}
 export type PersistenceHookBadge = "active" | "skipped" | "failed" | "unknown";
 /** spec 273 — a compact, mechanical evidence indicator for a worktree agent (advisory; never a gate). */
 export interface EvidenceBadge {
@@ -69,6 +78,8 @@ export interface AgentVM {
   forked?: boolean;
   /** spec 241 — continuity brief freshness badge (undefined = don't show, e.g. terminals / non-ai). */
   continuity?: ContinuityBadge;
+  /** spec 390 — glance focus line (task / brief / continuity goal); omit when no source. */
+  focus?: AgentFocus;
   /** spec 316 — runtime-native persistence hook health for declared Claude/Codex agents. */
   persistenceHooks?: { state: PersistenceHookBadge; reason?: string; path?: string; updatedAt?: string };
   /** spec 273 — non-binary evidence indicator (undefined = none); advisory, never gates. */

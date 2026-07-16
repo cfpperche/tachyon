@@ -2520,6 +2520,26 @@ export class Workspace {
     return cur - seq > Workspace.CONTINUITY_STALE_LAG ? "stale" : "fresh";
   }
 
+  /** spec 390 — MC tasks for focus-line projection (assignee / open statuses resolved in agentFocus). */
+  focusTasks(): Array<{ id: string; title: string; status: string; assignee?: string; updatedAt: string }> {
+    return this.taskStore.listRaw().map((t) => ({
+      id: t.id,
+      title: t.title,
+      status: t.status,
+      ...(t.assignee ? { assignee: t.assignee } : {}),
+      updatedAt: t.updatedAt,
+    }));
+  }
+
+  /** spec 390 — continuity body for Current Goal parse; null when missing/unreadable. */
+  continuityBody(agent: string): string | null {
+    try {
+      return this.continuityStore.read(agent)?.body ?? null;
+    } catch {
+      return null;
+    }
+  }
+
   /** The activity writer's session-transition counter (bumps on a new session file: /clear, restart, external). */
   private writerTransitions(agent: string): number {
     try {

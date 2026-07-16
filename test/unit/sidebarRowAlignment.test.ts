@@ -65,4 +65,21 @@ describe("sidebar row alignment (t-b8ff2c)", () => {
 
     expect(childSdotX).toBeGreaterThan(level0SdotX);
   });
+
+  it("aligns child meta/focus under the child name (no parent toggle gutter)", () => {
+    // Parent rows reserve .agent-toggle / spacer; nested rows do not. Meta/focus pad must match
+    // the visible name column for each case — not reuse the parent 28px on children.
+    const meta = declarationsFor(css, ".row-meta");
+    const focus = declarationsFor(css, ".row-focus");
+    const childMeta = declarationsFor(css, ".row.child .row-meta");
+    const childFocus = declarationsFor(css, ".row.child .row-focus");
+
+    expect(parseInt(meta["padding-left"], 10)).toBeGreaterThan(20);
+    expect(parseInt(focus["padding-left"] ?? focus.padding.split(/\s+/).pop()!, 10)).toBeGreaterThan(20);
+
+    const childMetaPad = parseInt(childMeta["padding-left"], 10);
+    const childFocusPad = parseInt(childFocus["padding-left"], 10);
+    expect(childMetaPad).toBeLessThan(20);
+    expect(childFocusPad).toBe(childMetaPad);
+  });
 });

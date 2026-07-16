@@ -1,4 +1,13 @@
-import type { AgentVM, AgentStatus, Verify, ContinuityBadge, EvidenceBadge, PersistenceHookBadge, ModelSource } from "./types";
+import type {
+  AgentFocus,
+  AgentVM,
+  AgentStatus,
+  Verify,
+  ContinuityBadge,
+  EvidenceBadge,
+  PersistenceHookBadge,
+  ModelSource,
+} from "./types";
 import type { ExternalToolsSummaryVM } from "../externalTools/types.js";
 import { runtimeOf } from "../resume/adapters.js";
 import { modelLabelForRuntime } from "../runtime/runtimeProfile.js";
@@ -210,6 +219,8 @@ export interface AgentExtras {
   ai?: boolean;
   adhoc?: boolean;
   continuity?: ContinuityBadge;
+  /** spec 390 — glance focus line (task / brief / continuity). */
+  focus?: AgentFocus;
   persistenceHooks?: { state: PersistenceHookBadge; reason?: string; path?: string; updatedAt?: string };
   evidence?: EvidenceBadge;
   externalTools?: ExternalToolsSummaryVM;
@@ -240,7 +251,8 @@ export function toAgentVM(a: AgentRaw, x: AgentExtras = {}): AgentVM {
   const alive = a.running && !a.dead && !a.cleanExited;
   const visibleAttention = alive ? x.attention : undefined;
   const visibleAwaitingHuman = alive ? x.awaitingHuman : undefined;
-  const attention = visibleAttention === "needs-input" ? "needs input" : visibleAttention === "throttled" ? "throttled" : visibleAttention === "working" ? "working" : undefined;
+  // spec 390 — never surface "working" as a badge (live-dot already means alive/busy).
+  const attention = visibleAttention === "needs-input" ? "needs input" : visibleAttention === "throttled" ? "throttled" : undefined;
   const sub = a.dead ? (a.crashed ? `exited (${a.exitCode ?? 1})` : "exited (0)") : a.cleanExited ? "exited (0)" : undefined;
   const stopping = a.stopping && !a.dead ? "stopping..." : undefined;
   const stopFailed = a.stopFailed && !a.dead ? "stop failed" : undefined;
@@ -280,6 +292,7 @@ export function toAgentVM(a: AgentRaw, x: AgentExtras = {}): AgentVM {
     ...(x.verifiable ? { verifiable: true } : {}),
     ...(x.canDismiss ? { canDismiss: true } : {}),
     ...(x.continuity ? { continuity: x.continuity } : {}),
+    ...(x.focus ? { focus: x.focus } : {}),
     ...(x.persistenceHooks ? { persistenceHooks: x.persistenceHooks } : {}),
     ...(x.evidence ? { evidence: x.evidence } : {}),
     ...(x.externalTools ? { externalTools: x.externalTools } : {}),
