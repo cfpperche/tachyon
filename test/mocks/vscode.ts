@@ -28,8 +28,18 @@ export const __registeredWebviewPanelSerializers: Array<{
     deserializeWebviewPanel(panel: typeof __createdPanels[number], state: unknown): Promise<void>;
   };
 }> = [];
+export type CreatedTerminalOptions = {
+  name?: string;
+  shellPath?: string;
+  shellArgs?: string[];
+  env?: Record<string, string>;
+  location?: unknown;
+  iconPath?: unknown;
+  isTransient?: boolean;
+  [key: string]: unknown;
+};
 export const __createdTerminals: Array<{
-  options: unknown;
+  options: CreatedTerminalOptions;
   showCalls: boolean[];
   disposed: boolean;
   show(preserveFocus?: boolean): void;
@@ -106,9 +116,9 @@ export const window = {
     return Promise.resolve({});
   },
   showOpenDialog: () => Promise.resolve(__openDialogResult),
-  createTerminal: (options?: unknown) => {
+  createTerminal: (options?: CreatedTerminalOptions) => {
     const terminal = {
-      options,
+      options: options ?? {},
       showCalls: [] as boolean[],
       disposed: false,
       show: (preserveFocus = false) => { terminal.showCalls.push(preserveFocus); },
