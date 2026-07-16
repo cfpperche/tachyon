@@ -129,13 +129,29 @@ export const ROUTES: Record<string, Route> = {
       controlInspectorModelMessage(vm as never),
     ],
   },
-  // POC — Tachyon Cockpit desktop shell (editor sysadmin; t-fe52f0 frente 1; sidebar unchanged).
+  // POC — Tachyon Control shell; Mission tab embeds Mission Control board (visual monolith).
   cockpit: {
     bundle: "/dist/webview/cockpit.js",
-    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/cockpit.css"],
+    cssLinks: [
+      CODICON,
+      DESIGN_SYSTEM,
+      "/dist/webview/vscode-theme.css",
+      "/dist/webview/mission-control.tailwind.css",
+      "/dist/webview/mission-control.css",
+      "/dist/webview/cockpit.css",
+    ],
     frame: { w: 1100, h: 720 },
     fixtures: cockpitFixtures as Record<string, Fixture>,
-    makeMessage: (vm) => [cockpitInitMessage(cockpitStrings), cockpitModelMessage(vm as never)],
+    makeMessage: (vm) => {
+      const model = vm as { section?: string };
+      const msgs: unknown[] = [cockpitInitMessage(cockpitStrings), cockpitModelMessage(vm as never)];
+      // When previewing the Mission tab, also push a real board snapshot (same envelope as host).
+      if (model.section === "mission") {
+        const board = missionControlFixtures.default?.vm;
+        if (board) msgs.push({ type: "snapshot", vm: board });
+      }
+      return msgs;
+    },
   },
   "pin-preview": {
     bundle: "/dist/webview/pin-preview.js",

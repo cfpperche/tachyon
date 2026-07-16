@@ -7,6 +7,8 @@ import {
 import type { ControlInspectorWorkspaceRow } from "../../control-inspector/model";
 import type { CockpitStrings } from "./messages";
 import { Button } from "../shared/ui";
+import { App as MissionControlApp, type MissionControlDispatch, type TaskErrorEvent } from "../mission-control/App";
+import type { MissionControlVM } from "../mission-control/messages";
 
 export interface CockpitAppProps {
   model: CockpitModel | undefined;
@@ -24,6 +26,10 @@ export interface CockpitAppProps {
   onOpenRuntimeOps: () => void;
   onOpenDoctor: () => void;
   onSetSection: (section: CockpitSectionId) => void;
+  /** Embedded Mission Control board (same Preact App as the standalone panel). */
+  missionVm?: MissionControlVM;
+  missionError?: TaskErrorEvent;
+  missionDispatch: MissionControlDispatch;
 }
 
 const TAB_META: Record<CockpitSectionId, { icon: string; navKey: keyof CockpitStrings }> = {
@@ -268,7 +274,7 @@ export function App(p: CockpitAppProps) {
             <Button variant="default" onClick={() => p.onSetSection("approvals")}>
               {s.navApprovals}
             </Button>
-            <Button variant="default" onClick={p.onOpenMissionControl}>
+            <Button variant="default" onClick={() => p.onSetSection("mission")}>
               {s.navMission}
             </Button>
             <Button variant="default" onClick={p.onOpenRuntimeOps}>
@@ -302,7 +308,7 @@ export function App(p: CockpitAppProps) {
     );
   } else if (section === "fleet") {
     body = (
-      <ModuleChrome title={s.fleetTitle} hint={s.fleetHint} actionLabel={s.openMissionControl} onAction={p.onOpenMissionControl}>
+      <ModuleChrome title={s.fleetTitle} hint={s.fleetHint} actionLabel={s.openMissionControl} onAction={() => p.onSetSection("mission")}>
         <DataTable
           headers={[s.name, s.kind, s.status]}
           rows={m.fleet.map((a) => [a.name, a.kind ?? "—", a.running ? s.running : s.stopped])}
@@ -321,15 +327,11 @@ export function App(p: CockpitAppProps) {
       </ModuleChrome>
     );
   } else if (section === "mission") {
+    // Visual monolith POC: full Mission Control board in-tab (same App + host actions as standalone).
     body = (
-      <ModuleChrome title={s.missionTitle} hint={s.missionHint} actionLabel={s.openMissionControl} onAction={p.onOpenMissionControl}>
-        <div class="ck-panel">
-          <p>
-            Agents running: {m.overview.agentsRunning}/{m.overview.agentsTotal}. Approvals pending: {m.overview.approvalsPending}.
-          </p>
-          <p>Open Mission Control for the full work board (drag lanes, task detail).</p>
-        </div>
-      </ModuleChrome>
+      <div class="ck-mission-host" data-testid="control-mission-board">
+        <MissionControlApp vm={p.missionVm} lastError={p.missionError} dispatch={p.missionDispatch} />
+      </div>
     );
   } else if (section === "worktrees") {
     body = (
@@ -443,9 +445,9 @@ export function App(p: CockpitAppProps) {
         </div>
       </header>
 
-      <main class="ck-main">
+      <main class={`ck-main${section === "mission" ? " ck-main--mission" : ""}`}>
         {body}
-        {m ? (
+        {m && section !== "mission" ? (
           <div class="ck-checked">
             {s.checkedAt}: {m.checkedAt}
           </div>

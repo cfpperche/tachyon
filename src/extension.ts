@@ -12,6 +12,7 @@ import type { StudioSubmit } from "./webview/studioSubmit.js";
 import { openServerInspector, SERVER_INSPECTOR_VIEW_TYPE, type ServerInspectorPanelState, type InspectorDeps } from "./webview/ServerInspector.js";
 import {
   openCockpit,
+  refreshCockpitMissionBoard,
   COCKPIT_VIEW_TYPE,
   type CockpitPanelState,
   type CockpitDeps,
@@ -953,6 +954,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // so a board-side edit is never invisible to an open Detail tab (and vice versa).
   const onTasksChanged = () => {
     missionControlPanels.refreshAll();
+    refreshCockpitMissionBoard(); // Control monolith: Mission tab embeds the same board
     taskDetailPanels.refreshAll();
     taskStudioPanels.refreshAll();
     sidebarProto.refresh();
@@ -1267,11 +1269,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
       return bundles;
     },
+    missionBoard: {
+      getWorkspaces: () => workspaces().map((ws) => ws.missionControl),
+      openTaskDetail: (target, id) => {
+        const ws = wsOf({ ws: target });
+        if (ws) taskDetailPanels.open(ws.taskDetail, id);
+      },
+      openTaskStudio: (target, id) => {
+        const ws = wsOf({ ws: target });
+        if (!ws) return;
+        if (id) taskStudioPanels.openExisting(ws.taskStudio, id);
+        else taskStudioPanels.openNew(ws.taskStudio);
+      },
+      onTasksChanged,
+    },
     openServerInspector: () => {
       void openServerInspector(makeServerInspectorDeps());
-    },
-    openMissionControl: () => {
-      void vscode.commands.executeCommand("tachyon.missionControl");
     },
     openPlugins: () => {
       void vscode.commands.executeCommand("tachyon.openPlugins");
@@ -1744,6 +1757,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // legacy aliases (palette hidden for openCockpit)
     vscode.commands.registerCommand("tachyon.openCockpit", () => openCockpit(makeCockpitDeps())),
     vscode.commands.registerCommand("tachyon.inspectEngine", () => openCockpit(makeCockpitDeps(), { section: "engine" })),
+    // convenience: Control → Mission tab (same as tachyon.missionControl without pick when single-root)
+    vscode.commands.registerCommand("tachyon.openControlMission", () => openCockpit(makeCockpitDeps(), { section: "mission" })),
     vscode.commands.registerCommand("tachyon.getStarted", () =>
       vscode.commands.executeCommand("workbench.action.openWalkthrough", "cfpperche.tachyon#tachyon.welcome", false),
     ),
@@ -2047,11 +2062,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (ws) pluginsPanels.open(ws.wsHash);
     }),
     vscode.commands.registerCommand("tachyon.openPluginSurface", (arg?: { pluginId?: string; viewId?: string; wsHash?: string } | string) => pluginSurfaces.openSurface(arg)),
-    // spec 335 — open the Mission Control board (the Task queue) for a workspace root, from the sidebar
-    // header button or the command palette.
+    // spec 335 + Control monolith POC — open the Mission board *inside* Control (same board UX; new access path).
     vscode.commands.registerCommand("tachyon.missionControl", async (hash?: string) => {
       const ws = hash ? byHash(hash) : await pickWorkspace();
-      if (ws) missionControlPanels.open(ws.wsHash);
+      if (!ws) return;
+      await openCockpit(makeCockpitDeps(), { section: "mission", missionWsHash: ws.wsHash });
     }),
     // spec 339 — open Task Studio in new-task mode from the command palette (mirrors the board's own
     // "+ Task" button and the card context menu's "Edit in Studio", both of which route through the
