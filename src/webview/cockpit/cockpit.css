@@ -1,9 +1,7 @@
 /*
- * Tachyon Control — editor sysadmin panel.
- * Typography follows design-system.css (spec 252):
- *   - UI chrome / titles / labels → --tachyon-font-reading (VS Code UI font)
- *   - Technical values (paths, ids, hashes) → --ds-mono (Tachyon Mono / JetBrains)
- * Never use --vscode-editor-font-family for whole tables (looks like a code dump).
+ * Tachyon Control — match SIDEBAR typography (spec 252 design-system + sidebar density).
+ * Sidebar inherits body { font-family: var(--tachyon-font-mono) } from design-system.css.
+ * Control uses the same mono stack + dense sizes (11/12px labels, 16px title, tabular values).
  */
 
 .ck-root {
@@ -11,19 +9,20 @@
   flex-direction: column;
   height: 100vh;
   min-height: 480px;
-  color: var(--ds-fg);
-  font-family: var(--tachyon-font-reading);
-  font-size: var(--ds-body);
-  font-weight: var(--tachyon-weight-regular);
+  /* same as design-system body / sidebar */
+  font-family: var(--tachyon-font-mono);
+  font-size: var(--ds-body, 13px);
+  font-weight: var(--tachyon-weight-regular, 400);
+  color: var(--ds-fg, var(--vscode-foreground));
   background: var(--vscode-editor-background);
 }
 
-/* ---- top chrome + horizontal tabs ---- */
+/* ---- top chrome ---- */
 .ck-top {
   flex-shrink: 0;
   border-bottom: 1px solid var(--ds-border);
   background: var(--vscode-editor-background);
-  padding: var(--ds-3) var(--ds-4) 0;
+  padding: 8px 12px 0;
 }
 
 .ck-top-row {
@@ -31,61 +30,59 @@
   flex-wrap: wrap;
   justify-content: space-between;
   align-items: flex-start;
-  gap: var(--ds-3);
-  margin-bottom: var(--ds-3);
+  gap: 8px;
+  margin-bottom: 8px;
 }
 
 .ck-brand {
   display: flex;
   align-items: flex-start;
-  gap: var(--ds-icon-gap);
+  gap: 6px;
 }
 
 .ck-brand > .codicon {
-  font-size: var(--ds-title);
+  font-size: 16px;
   line-height: 1.2;
-  margin-top: 2px;
-  opacity: 0.9;
+  margin-top: 1px;
+  opacity: 0.85;
   flex: none;
 }
 
 .ck-brand .title {
-  font-family: var(--tachyon-font-reading);
-  font-weight: var(--tachyon-weight-semibold);
-  font-size: var(--ds-title);
+  font-size: 13px;
+  font-weight: 600;
   line-height: 1.25;
+  color: var(--vscode-foreground);
 }
 
 .ck-brand .sub {
-  font-family: var(--tachyon-font-reading);
-  font-size: var(--ds-small);
-  font-weight: var(--tachyon-weight-regular);
+  font-size: 11px;
+  font-weight: 400;
   color: var(--ds-muted);
-  margin-top: var(--ds-1);
+  margin-top: 2px;
   line-height: 1.35;
 }
 
 .ck-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--ds-2);
+  gap: 6px;
   align-items: center;
 }
 
 .ck-auto {
   display: flex;
   align-items: center;
-  gap: var(--ds-icon-gap);
-  font-family: var(--tachyon-font-reading);
-  font-size: var(--ds-small);
+  gap: 5px;
+  font-size: 11px;
   color: var(--ds-muted);
 }
 
-/* Segmented top tabs — editor-tab vibe, UI font */
+/* Tabs — same visual language as sidebar .tabs / .tab */
 .ck-tabs {
   display: flex;
   flex-wrap: wrap;
-  gap: 0;
+  gap: 1px;
   border-bottom: 1px solid var(--ds-border);
 }
 
@@ -94,140 +91,136 @@
   box-sizing: border-box;
   display: inline-flex;
   align-items: center;
-  gap: var(--ds-icon-gap);
-  padding: var(--ds-2) var(--ds-3);
+  gap: 4px;
+  padding: 6px 10px 7px;
   cursor: pointer;
-  font-family: var(--tachyon-font-reading);
-  font-size: var(--ds-small);
-  font-weight: var(--tachyon-weight-regular);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 400;
   color: var(--ds-muted);
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
 }
 
 .ck-tabs button .codicon {
-  font-size: var(--ds-small);
+  font-size: 14px;
   line-height: 1;
   flex: none;
 }
 
 .ck-tabs button:hover {
-  color: var(--ds-fg);
-  background: var(--ds-hover);
+  color: var(--vscode-foreground);
 }
 
 .ck-tabs button.active {
-  color: var(--ds-fg);
-  font-weight: var(--tachyon-weight-semibold);
+  color: var(--vscode-foreground);
+  font-weight: 600;
   border-bottom-color: var(--ds-focus);
 }
 
 .ck-tabs button .tag {
   font-size: 9px;
   text-transform: uppercase;
-  letter-spacing: var(--tachyon-tracking-label);
+  letter-spacing: 0.04em;
   opacity: 0.55;
-  padding: 1px 5px;
+  padding: 0 4px;
+  border: 1px solid var(--ds-border);
   border-radius: 3px;
-  background: color-mix(in srgb, var(--ds-fg) 12%, transparent);
 }
 
 .ck-note {
-  margin: var(--ds-2) 0 var(--ds-2);
-  font-family: var(--tachyon-font-reading);
-  font-size: var(--ds-micro);
+  margin: 6px 0 8px;
+  font-size: 10px;
   color: var(--ds-muted);
   line-height: 1.35;
+  letter-spacing: 0.01em;
 }
 
 /* ---- content ---- */
 .ck-main {
   flex: 1;
   overflow: auto;
-  padding: var(--ds-4) var(--ds-4) var(--ds-6);
+  padding: 12px 12px 24px;
   min-width: 0;
-  font-family: var(--tachyon-font-reading);
+  font-family: inherit;
 }
 
 .ck-head {
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
-  gap: var(--ds-3);
+  gap: 8px;
   align-items: flex-start;
-  margin-bottom: var(--ds-3);
+  margin-bottom: 10px;
 }
 
 .ck-head h1 {
   margin: 0;
-  font-family: var(--tachyon-font-reading);
-  font-size: var(--ds-title);
-  font-weight: var(--tachyon-weight-semibold);
+  font-size: 13px;
+  font-weight: 600;
   line-height: 1.25;
   display: flex;
   align-items: center;
-  gap: var(--ds-2);
+  gap: 6px;
+  color: var(--vscode-foreground);
 }
 
 .ck-head h1 .codicon {
-  font-size: var(--ds-title);
+  font-size: 14px;
   line-height: 1;
   flex: none;
+  opacity: 0.85;
 }
 
 .ck-head .hint {
-  margin: var(--ds-1) 0 0;
-  font-family: var(--tachyon-font-reading);
-  font-size: var(--ds-small);
-  font-weight: var(--tachyon-weight-regular);
+  margin: 3px 0 0;
+  font-size: 11px;
+  font-weight: 400;
   color: var(--ds-muted);
   line-height: 1.4;
   max-width: 52rem;
 }
 
 .ck-banner {
-  border: 1px solid var(--ds-info);
-  background: color-mix(in srgb, var(--ds-info) 12%, transparent);
-  padding: var(--ds-2) var(--ds-3);
-  border-radius: var(--ds-radius);
-  margin-bottom: var(--ds-4);
-  font-family: var(--tachyon-font-reading);
-  font-size: var(--ds-small);
+  border: 1px solid color-mix(in srgb, var(--ds-info, #3794ff) 55%, var(--ds-border));
+  background: color-mix(in srgb, var(--ds-info, #3794ff) 10%, transparent);
+  padding: 7px 10px;
+  border-radius: 4px;
+  margin-bottom: 12px;
+  font-size: 11px;
   line-height: 1.45;
   color: var(--ds-fg);
 }
 
 .ck-chips {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
-  gap: var(--ds-2);
-  margin-bottom: var(--ds-4);
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: 6px;
+  margin-bottom: 12px;
 }
 
 .ck-chip {
   border: 1px solid var(--ds-border);
-  border-radius: var(--ds-radius);
-  padding: var(--ds-2) var(--ds-3);
-  background: var(--ds-card);
+  border-radius: 4px;
+  padding: 6px 8px;
+  background: color-mix(in srgb, var(--vscode-foreground) 4%, transparent);
 }
 
 .ck-chip .label {
-  font-family: var(--tachyon-font-reading);
-  font-size: var(--ds-section);
-  font-weight: var(--tachyon-weight-semibold);
+  font-size: 10px;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: var(--tachyon-tracking-label);
+  letter-spacing: 0.05em;
   color: var(--ds-muted);
 }
 
 .ck-chip .value {
-  font-family: var(--ds-mono);
-  font-size: 20px;
-  font-weight: var(--tachyon-weight-semibold);
+  font-size: 16px;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
-  margin-top: var(--ds-1);
+  margin-top: 2px;
   line-height: 1.2;
-  color: var(--ds-fg);
+  color: var(--vscode-foreground);
 }
 
 .ck-chip.warn .value {
@@ -240,26 +233,24 @@
 
 .ck-panel {
   border: 1px solid var(--ds-border);
-  border-radius: var(--ds-radius);
-  padding: var(--ds-3) var(--ds-4);
-  margin-bottom: var(--ds-3);
-  background: var(--ds-card);
+  border-radius: 4px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  background: color-mix(in srgb, var(--vscode-foreground) 3%, transparent);
 }
 
 .ck-panel h2 {
-  margin: 0 0 var(--ds-2);
-  font-family: var(--tachyon-font-reading);
-  font-size: var(--ds-section);
-  font-weight: var(--tachyon-weight-semibold);
+  margin: 0 0 6px;
+  font-size: 10px;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: var(--tachyon-tracking-label);
+  letter-spacing: 0.06em;
   color: var(--ds-muted);
 }
 
 .ck-panel p {
-  margin: 0 0 var(--ds-2);
-  font-family: var(--tachyon-font-reading);
-  font-size: var(--ds-small);
+  margin: 0 0 6px;
+  font-size: 11px;
   line-height: 1.45;
   color: var(--ds-muted);
 }
@@ -274,210 +265,199 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--ds-2) var(--ds-4);
-  padding: var(--ds-2) 0;
+  gap: 6px 12px;
+  padding: 5px 0;
   border-top: 1px solid var(--ds-border);
-  font-size: var(--ds-small);
+  font-size: 11px;
 }
 
 .ck-bridge-list .name {
-  font-family: var(--tachyon-font-reading);
-  font-weight: var(--tachyon-weight-semibold);
-  min-width: 100px;
-  color: var(--ds-fg);
+  font-weight: 600;
+  min-width: 88px;
+  color: var(--vscode-foreground);
 }
 
 .ck-bridge-list li > span:not(.name):not(.ci-badge) {
-  font-family: var(--ds-mono);
-  font-size: var(--ds-micro);
+  font-size: 10px;
   color: var(--ds-muted);
 }
 
-/* ---- engine workspace cards ---- */
+/* ---- engine cards ---- */
 .ci-ws {
   border: 1px solid var(--ds-border);
-  border-radius: var(--ds-radius);
-  margin-bottom: var(--ds-3);
+  border-radius: 4px;
+  margin-bottom: 10px;
   overflow: hidden;
-  background: var(--ds-card);
+  background: color-mix(in srgb, var(--vscode-foreground) 3%, transparent);
 }
 
 .ci-ws-head {
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
-  gap: var(--ds-2);
-  padding: var(--ds-3) var(--ds-3);
+  gap: 6px;
+  padding: 8px 10px;
   border-bottom: 1px solid var(--ds-border);
-  background: color-mix(in srgb, var(--ds-fg) 4%, transparent);
 }
 
 .ci-ws-head .name {
-  font-family: var(--tachyon-font-reading);
-  font-weight: var(--tachyon-weight-semibold);
-  font-size: var(--ds-body);
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--vscode-foreground);
 }
 
 .ci-ws-head .meta {
-  font-family: var(--ds-mono);
-  font-size: var(--ds-micro);
+  font-size: 10px;
   color: var(--ds-muted);
-  margin-top: 2px;
+  margin-top: 1px;
 }
 
 .ci-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
 }
 
 .ci-card {
-  padding: var(--ds-3);
+  padding: 8px 10px;
   border-right: 1px solid var(--ds-border);
   border-bottom: 1px solid var(--ds-border);
 }
 
 .ci-card h3 {
-  margin: 0 0 var(--ds-2);
-  font-family: var(--tachyon-font-reading);
-  font-size: var(--ds-section);
-  font-weight: var(--tachyon-weight-semibold);
+  margin: 0 0 6px;
+  font-size: 10px;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: var(--tachyon-tracking-label);
+  letter-spacing: 0.06em;
   color: var(--ds-muted);
   display: flex;
   align-items: center;
-  gap: var(--ds-icon-gap);
+  gap: 5px;
 }
 
 .ci-card h3 .codicon {
-  font-size: var(--ds-small);
+  font-size: 12px;
   line-height: 1;
   flex: none;
 }
 
 .ci-kv {
   display: grid;
-  grid-template-columns: 88px 1fr;
-  gap: var(--ds-1) var(--ds-2);
-  font-size: var(--ds-small);
+  grid-template-columns: 72px 1fr;
+  gap: 3px 6px;
+  font-size: 11px;
 }
 
 .ci-kv .k {
-  font-family: var(--tachyon-font-reading);
   color: var(--ds-muted);
+  font-size: 10px;
 }
 
 .ci-kv .v {
-  font-family: var(--ds-mono);
-  font-size: var(--ds-micro);
+  font-size: 10px;
   word-break: break-all;
   font-variant-numeric: tabular-nums;
-  color: var(--ds-fg);
+  color: var(--vscode-foreground);
 }
 
 .ci-badge {
   display: inline-flex;
-  padding: 1px 8px;
-  border-radius: 999px;
-  font-family: var(--tachyon-font-reading);
-  font-size: var(--ds-micro);
-  font-weight: var(--tachyon-weight-semibold);
+  padding: 0 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+  border: 1px solid var(--ds-border);
 }
 
 .ci-badge.attached {
-  background: color-mix(in srgb, var(--ds-ok) 22%, transparent);
   color: var(--ds-ok);
+  border-color: color-mix(in srgb, var(--ds-ok) 45%, var(--ds-border));
+  background: color-mix(in srgb, var(--ds-ok) 12%, transparent);
 }
 
 .ci-badge.error {
-  background: color-mix(in srgb, var(--ds-err) 22%, transparent);
   color: var(--ds-err);
+  border-color: color-mix(in srgb, var(--ds-err) 45%, var(--ds-border));
+  background: color-mix(in srgb, var(--ds-err) 12%, transparent);
 }
 
 .ci-badge.none {
-  background: color-mix(in srgb, var(--ds-fg) 12%, transparent);
   color: var(--ds-muted);
 }
 
 .ci-notes {
   margin: 0;
-  padding: var(--ds-2) var(--ds-3) var(--ds-3) 28px;
-  font-family: var(--tachyon-font-reading);
-  font-size: var(--ds-small);
+  padding: 6px 10px 8px 24px;
+  font-size: 11px;
   color: var(--ds-muted);
 }
 
 .ck-empty {
-  padding: var(--ds-5) var(--ds-3);
+  padding: 20px 10px;
   text-align: center;
-  font-family: var(--tachyon-font-reading);
-  font-size: var(--ds-small);
+  font-size: 11px;
   color: var(--ds-muted);
 }
 
 .ck-toast {
   position: fixed;
-  bottom: var(--ds-4);
-  right: var(--ds-4);
+  bottom: 12px;
+  right: 12px;
   background: var(--vscode-notifications-background);
   color: var(--vscode-notifications-foreground);
   border: 1px solid var(--vscode-notifications-border);
-  padding: var(--ds-2) var(--ds-3);
-  border-radius: var(--ds-radius);
-  font-family: var(--tachyon-font-reading);
-  font-size: var(--ds-small);
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: inherit;
 }
 
 .ck-checked {
-  margin-top: var(--ds-3);
-  font-family: var(--ds-mono);
-  font-size: var(--ds-micro);
+  margin-top: 10px;
+  font-size: 10px;
   color: var(--ds-muted);
 }
 
 .ck-table-wrap {
   overflow: auto;
   border: 1px solid var(--ds-border);
-  border-radius: var(--ds-radius);
-  background: var(--ds-card);
+  border-radius: 4px;
 }
 
 .ck-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: var(--ds-small);
+  font-size: 11px;
+  font-family: inherit;
 }
 
 .ck-table th,
 .ck-table td {
   text-align: left;
-  padding: var(--ds-2) var(--ds-3);
+  padding: 6px 8px;
   border-bottom: 1px solid var(--ds-border);
   vertical-align: top;
 }
 
 .ck-table th {
-  font-family: var(--tachyon-font-reading);
-  font-size: var(--ds-section);
-  font-weight: var(--tachyon-weight-semibold);
+  font-size: 10px;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: var(--tachyon-tracking-label);
+  letter-spacing: 0.05em;
   color: var(--ds-muted);
-  background: color-mix(in srgb, var(--ds-fg) 4%, transparent);
+  background: color-mix(in srgb, var(--vscode-foreground) 4%, transparent);
 }
 
-/* Body cells: names/status in UI font; keep mono only for path-like columns via .ck-mono */
 .ck-table td {
-  font-family: var(--tachyon-font-reading);
-  font-size: var(--ds-small);
-  font-weight: var(--tachyon-weight-regular);
-  color: var(--ds-fg);
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--vscode-foreground);
   word-break: break-word;
 }
 
 .ck-table td.ck-mono {
-  font-family: var(--ds-mono);
-  font-size: var(--ds-micro);
+  font-size: 10px;
   color: var(--ds-muted);
   word-break: break-all;
   font-variant-numeric: tabular-nums;
@@ -485,4 +465,16 @@
 
 .ck-table tr:last-child td {
   border-bottom: none;
+}
+
+/* Match sidebar row hover feel */
+.ck-table tbody tr:hover td {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.ck-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
 }
