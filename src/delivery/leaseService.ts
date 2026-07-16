@@ -391,17 +391,11 @@ export class DeliveryLeaseService {
         new Error(`exact process identity is unknown: ${observation.reason}`));
     }
 
-    let proof: Awaited<ReturnType<ProcessFencePort["proveEmpty"]>>;
     try {
-      const capability = this.deps.processFence.capability();
-      if (!capability.supported) throw new Error(capability.reason);
-      proof = await this.deps.processFence.proveEmpty(snapshot.holder!.executionNonce!, canonicalWorktree);
+      const proof = await this.domainStableEmptyProof(snapshot.holder!.executionNonce!, canonicalWorktree);
+      if (proof.state !== "proven_empty") throw new Error(`process fence proof was ${proof.state}${proof.state === "unknown" ? `: ${proof.reason}` : ""}`);
     } catch (error) {
       return this.quarantineReconcileAndThrow(input, intent, snapshot, error);
-    }
-    if (proof.state !== "proven_empty") {
-      return this.quarantineReconcileAndThrow(input, intent, snapshot,
-        new Error(`process fence proof was ${proof.state}${proof.state === "unknown" ? `: ${proof.reason}` : ""}`));
     }
 
     let terminalFailure: unknown;
@@ -577,9 +571,16 @@ export class DeliveryLeaseService {
     const snapshot = await this.deps.store.get(input.deliveryId);
     if (!snapshot) throw new DeliveryNotFoundError(input.deliveryId);
     this.assertRecoveryActor(snapshot, input.actor); this.assertDifferentRecoveryActor(snapshot, input.actor);
-    if (snapshot.lease.state !== "quarantined") throw this.occupied(snapshot, "Delivery is not quarantined");
+    if (snapshot.lease.state !== "quarantined" && snapshot.lease.state !== "held") throw this.occupied(snapshot, "Delivery is not held or quarantined");
     const tail = structuredClone(snapshot.segments.at(-1)); const holder = structuredClone(snapshot.lease.holder);
     if (!holder || !tail || tail.releasedAt || tail.id !== holder.segmentId || !holder.executionNonce?.trim()) throw new DeliveryLeaseError("DELIVERY_QUARANTINED", false, "quarantine lacks an exact recoverable holder boundary");
+    if (snapshot.lease.state === "held") {
+      if (!holder.process || !validProcessIdentity(holder.process)) throw new DeliveryLeaseError("DELIVERY_PROCESS_IDENTITY_MISSING", false, "held lease lacks exact process identity");
+      let observation: DeliveryProcessObservation = { state: "unknown", reason: "exact process observation is unavailable" };
+      try { if (this.deps.processObserver) observation = await this.deps.processObserver.observe(structuredClone(holder.process)); }
+      catch (error) { observation = { state: "unknown", reason: error instanceof Error ? error.message : String(error) }; }
+      if (observation.state !== "gone") throw this.occupied(snapshot, observation.state === "alive" ? "held Delivery root is still alive" : "held Delivery root death is ambiguous");
+    }
     const digest = recoveryActionDigest(input.deliveryId, snapshot.lease.expectedHeadSha ?? "", { headSha: snapshot.lease.expectedHeadSha ?? "", dirtyPaths: [], uniqueCommits: [] }, { action: "abandon-without-worktree", operationId: input.operationId, actor: input.actor });
     const approval = await this.recoveryApproval(input.approvalId, input.actor, digest);
     return this.withDeliveryLock(input.deliveryId, async () => {
@@ -588,7 +589,7 @@ export class DeliveryLeaseService {
       return this.deps.store.update(current.id, current.version, (record) => {
         if (!isDeepStrictEqual(record.lease, snapshot.lease) || !isDeepStrictEqual(record.segments.at(-1), tail)) throw new DeliveryVersionConflictError(record.id, snapshot.version, record.version);
         const open = record.segments.at(-1)!; open.releasedAt = this.now(); open.releasedHeadSha = record.lease.expectedHeadSha ?? open.grantedHeadSha; open.outcome = "rejected";
-        record.lease = { state: "abandoned", reason: snapshot.lease.reason, changedAt: this.now() };
+        record.lease = { state: "abandoned", reason: snapshot.lease.state === "held" ? JSON.stringify({ cause: "dead-holder-worktree-gone" }) : snapshot.lease.reason, changedAt: this.now() };
         record.events.push({ id: this.eventId(), at: this.now(), type: "quarantine_abandoned_without_worktree", by: structuredClone(input.actor), detail: { operationId: input.operationId, intent, holder, tail, evidenceLevel: "approval-only", approvalId: input.approvalId, actionDigest: approval.actionDigest, payloadHash: approval.payloadHash } });
         return record;
       }, { operationId: input.operationId, intent });
@@ -833,7 +834,7 @@ export class DeliveryLeaseService {
     const replay = await this.replayHandoff(`${input.operationId}:reserve`, input.deliveryId, intent, true);
     if (replay) return replay;
     this.assertSafetyEnabled(handoffSafety);
-    if (handoffSafety === "process-fenced") this.assertFenceCapability();
+    const fenceDomain = handoffSafety === "process-fenced" ? this.assertFenceCapability() : undefined;
 
     let predecessorHolder: DeliveryLeaseHolder | undefined;
     const committedDrain = await this.replayDrain(`${input.operationId}:drain`, input.deliveryId, input.operationId, intent);
@@ -872,7 +873,7 @@ export class DeliveryLeaseService {
     }
     if (!predecessorHolder?.executionNonce) throw new DeliveryInvariantError("handoff predecessor holder was not durably established");
 
-    const absenceEvidence = await this.establishTransferAbsence(input.deliveryId, predecessorHolder!, canonicalWorktree, handoffSafety)
+    const absenceEvidence = await this.establishTransferAbsence(input.deliveryId, predecessorHolder!, canonicalWorktree, handoffSafety, fenceDomain)
       .catch((error) => this.quarantineAndThrow(input, intent, predecessorHolder!, this.transferFailureEvidence(handoffSafety, error)));
 
     try {
@@ -915,7 +916,7 @@ export class DeliveryLeaseService {
     const completedReplay = await this.replayReviewCompletion(`${input.operationId}:complete`, input.deliveryId, intent, true);
     if (completedReplay) return completedReplay;
     this.assertSafetyEnabled(handoffSafety);
-    if (handoffSafety === "process-fenced") this.assertFenceCapability();
+    const fenceDomain = handoffSafety === "process-fenced" ? this.assertFenceCapability() : undefined;
 
     let reviewerHolder = await this.replayReviewDrain(`${input.operationId}:drain`, input.deliveryId, intent);
     if (!reviewerHolder) {
@@ -944,7 +945,7 @@ export class DeliveryLeaseService {
     }
     if (!reviewerHolder?.executionNonce) throw new DeliveryInvariantError("reviewer drain lacks durable execution identity");
 
-    const absenceEvidence = await this.establishTransferAbsence(input.deliveryId, reviewerHolder, canonicalWorktree, handoffSafety)
+    const absenceEvidence = await this.establishTransferAbsence(input.deliveryId, reviewerHolder, canonicalWorktree, handoffSafety, fenceDomain)
       .catch((error) => this.quarantineReviewAndThrow(input, intent, this.transferFailureEvidence(handoffSafety, error), error));
 
     try {
@@ -1041,16 +1042,22 @@ export class DeliveryLeaseService {
   private async recoveryEvidence(holder: DeliveryLeaseHolder, canonicalWorktree: string, actor: DeliveryActor,
     approvalId: string | undefined, digest: string): Promise<{ level: "fence-proof" | "approval-only"; approval?: DeliveryRecoveryApproval }> {
     try {
-      const capability = this.deps.processFence.capability();
-      if (capability.supported) {
-        const before = capability.domain;
-        const proof = await this.deps.processFence.proveEmpty(holder.executionNonce!, canonicalWorktree);
-        const after = this.deps.processFence.capability();
-        if (after.supported && after.domain === before && proof.state === "proven_empty") return { level: "fence-proof" };
-      }
+      const proof = await this.domainStableEmptyProof(holder.executionNonce!, canonicalWorktree);
+      if (proof.state !== "proven_empty") throw new Error(`process fence proof was ${proof.state}${proof.state === "unknown" ? `: ${proof.reason}` : ""}`);
+      return { level: "fence-proof" };
     } catch { /* proof is evidence only; approval may authorize the fail-closed fallback */ }
     if (!approvalId) throw new DeliveryLeaseError("DELIVERY_QUARANTINED", false, "recovery process absence is unproven and no bound approval was supplied");
     return { level: "approval-only", approval: await this.recoveryApproval(approvalId, actor, digest) };
+  }
+
+  private async domainStableEmptyProof(executionNonce: string, canonicalWorktree: string, expectedDomain?: string): Promise<ProcessFenceEmptyProof> {
+    const before = this.deps.processFence.capability();
+    if (!before.supported) throw new Error(before.reason);
+    if (expectedDomain !== undefined && before.domain !== expectedDomain) throw new Error("process fence domain changed before proof");
+    const proof = await this.deps.processFence.proveEmpty(executionNonce, canonicalWorktree);
+    const after = this.deps.processFence.capability();
+    if (!after.supported || after.domain !== before.domain) throw new Error("process fence domain changed during proof");
+    return proof;
   }
 
   private async recoveryCurrent(deliveryId: string, canonicalWorktree: string, actor: DeliveryActor, snapshot: { lease: Delivery["lease"]; tail: Delivery["segments"][number] }) {
@@ -1491,9 +1498,10 @@ export class DeliveryLeaseService {
     }
   }
 
-  private assertFenceCapability(): void {
+  private assertFenceCapability(): string {
     const capability = this.deps.processFence.capability();
     if (!capability.supported) throw new DeliveryLeaseError("DELIVERY_LEASE_UNAVAILABLE", false, capability.reason);
+    return capability.domain;
   }
 
   /** Runs outside all Delivery/worktree locks after the durable held-to-draining CAS. */
@@ -1502,13 +1510,16 @@ export class DeliveryLeaseService {
     holder: DeliveryLeaseHolder,
     canonicalWorktree: string,
     handoffSafety: DeliveryHandoffSafety,
+    expectedFenceDomain?: string,
   ): Promise<"proven_empty" | "root_gone_best_effort"> {
     if (handoffSafety === "process-fenced") {
       let fenceError: unknown;
       let proof: Awaited<ReturnType<ProcessFencePort["proveEmpty"]>> = { state: "unknown", reason: "fence did not complete" };
       try { await this.deps.processFence.freeze(holder.executionNonce!); } catch (error) { fenceError = error; }
       try { await this.deps.processFence.terminate(holder.executionNonce!); } catch (error) { fenceError ??= error; }
-      try { proof = await this.deps.processFence.proveEmpty(holder.executionNonce!, canonicalWorktree); } catch (error) { fenceError ??= error; }
+      try {
+        proof = await this.domainStableEmptyProof(holder.executionNonce!, canonicalWorktree, expectedFenceDomain);
+      } catch (error) { fenceError ??= error; }
       if (fenceError || proof.state !== "proven_empty") {
         throw new TransferAbsenceError(
           fenceError instanceof Error ? fenceError.message : `process fence proof was ${proof.state}${proof.state === "unknown" ? `: ${proof.reason}` : ""}`,

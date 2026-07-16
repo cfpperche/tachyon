@@ -799,7 +799,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       description: "Governed recovery for a canonical Delivery held by a dead execution. Caller authority is Bridge-resolved. Enter quarantines a held lease; salvage creates a recovery reservation; abandon_without_worktree performs the approval-only terminal disposition.",
       inputSchema: {
         delivery_id: z.string().min(1),
-        action: z.enum(["enter", "salvage", "abandon_without_worktree"]),
+        action: z.enum(["enter", "salvage", "abandon", "abandon_without_worktree"]),
         operation_id: z.string().min(1),
         canonical_worktree: z.string().min(1).optional(),
         approval_id: z.string().min(1).optional(),
@@ -823,6 +823,10 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         if (action === "abandon_without_worktree") {
           if (!approval_id) return fail(new Error("delivery_salvage abandon_without_worktree requires approval_id"));
           return ok(JSON.stringify(await deps.deliveryLease.abandonWithoutWorktree({ deliveryId: delivery_id, actor, operationId: operation_id, approvalId: approval_id }), null, 2));
+        }
+        if (action === "abandon") {
+          if (!canonical_worktree || !expected_head_sha || !expected_inventory || !approval_id) return fail(new Error("delivery_salvage abandon requires canonical_worktree, expected_head_sha, expected_inventory, and approval_id"));
+          return ok(JSON.stringify(await deps.deliveryLease.abandonQuarantine({ deliveryId: delivery_id, canonicalWorktree: canonical_worktree, actor, operationId: operation_id, approvalId: approval_id, expectedHeadSha: expected_head_sha, expectedInventory: expected_inventory }), null, 2));
         }
         if (!canonical_worktree || !expected_head_sha || !expected_inventory || !execution_agent || !owns_subset) return fail(new Error("delivery_salvage salvage requires canonical_worktree, expected_head_sha, expected_inventory, execution_agent, and owns_subset"));
         return ok(JSON.stringify(await deps.deliveryLease.salvageQuarantine({ deliveryId: delivery_id, canonicalWorktree: canonical_worktree, actor, operationId: operation_id, approvalId: approval_id, expectedHeadSha: expected_head_sha, expectedInventory: expected_inventory, executionAgent: execution_agent, principal, ownsSubset: owns_subset }), null, 2));

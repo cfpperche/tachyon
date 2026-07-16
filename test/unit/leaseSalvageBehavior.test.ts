@@ -51,12 +51,32 @@ describe("delivery lease salvage flagship behavior", () => {
   });
 
   it("uses bound approval when the fence is unavailable and disposes Case B without worktree inspection", async () => {
-    const f = fixture(); f.input.lease = { ...f.input.lease!, state: "quarantined", reason: "dead holder" }; await f.store.create(f.input);
+    const f = fixture(); await f.store.create(f.input);
     fs.rmSync(f.worktree, { recursive: true });
     const fence: ProcessFencePort = { capability: () => ({ supported: false, reason: "unavailable" }), freeze: async () => {}, terminate: async () => {}, proveEmpty: async () => ({ state: "unknown", reason: "unavailable" }) };
     const abandoned = await service(f.store, f.worktree, fence).abandonWithoutWorktree({ deliveryId: "d-salvage", actor: coordinator, operationId: "case-b", approvalId: "a-approved" });
     expect(abandoned.lease.state).toBe("abandoned");
     expect(abandoned.events.at(-1)?.detail).toMatchObject({ evidenceLevel: "approval-only", approvalId: "a-approved" });
+  });
+
+  it("refuses a fence proof whose capability domain drifts", async () => {
+    const f = fixture(); f.input.lease = { ...f.input.lease!, state: "quarantined", reason: "dead holder" }; await f.store.create(f.input);
+    let calls = 0;
+    const fence: ProcessFencePort = { capability: () => ({ supported: true, domain: ++calls === 1 ? "boot-a" : "boot-b" }), freeze: async () => {}, terminate: async () => {}, proveEmpty: async () => ({ state: "proven_empty" }) };
+    await expect(service(f.store, f.worktree, fence).salvageQuarantine({ deliveryId: "d-salvage", canonicalWorktree: f.worktree, actor: coordinator,
+      operationId: "domain-drift", expectedHeadSha: "head", expectedInventory: inventory, executionAgent: "fixer", ownsSubset: ["src"] }))
+      .rejects.toMatchObject({ code: "DELIVERY_QUARANTINED" });
+  });
+
+  it.each(["execution", "holder-principal", "tail-principal"])("refuses self-recovery through %s identity", async (identity) => {
+    const f = fixture("holder-principal"); f.input.segments![0]!.principal = "tail-principal"; f.input.lease = { ...f.input.lease!, state: "quarantined", reason: "q" }; await f.store.create(f.input);
+    const actor = { kind: "agent" as const, name: identity === "execution" ? "worker" : identity };
+    const fence: ProcessFencePort = { capability: () => ({ supported: true, domain: "stable" }), freeze: async () => {}, terminate: async () => {}, proveEmpty: async () => ({ state: "proven_empty" }) };
+    const lease = new DeliveryLeaseService({ store: f.store, processFence: fence, recoveryPrincipals: [actor.name], canonicalWorktreeFor: () => f.worktree,
+      readHead: () => "head", inspectWorktree: () => ({ headSha: "head", clean: true }), inspectRecoveryWorktree: () => ({ inventory }), isAncestor: () => true,
+      withWorktreeLock: async (_cwd, fn) => fn() });
+    await expect(lease.salvageQuarantine({ deliveryId: "d-salvage", canonicalWorktree: f.worktree, actor, operationId: `self-${identity}`,
+      expectedHeadSha: "head", expectedInventory: inventory, executionAgent: "fixer", ownsSubset: ["src"] })).rejects.toThrow("cannot authorize its own recovery");
   });
 
   it("kill completion makes a held lease quarantined, never free", async () => {

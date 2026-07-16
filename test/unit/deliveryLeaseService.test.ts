@@ -1126,6 +1126,16 @@ describe("DeliveryLeaseService dead-holder reconciliation (SDD 368 T11)", () => 
     expect(fence.terminate).not.toHaveBeenCalled();
   });
 
+  it("quarantines reconciliation when the fence domain changes across an empty proof", async () => {
+    const { store, worktree, input } = heldFixture(); await store.create(input);
+    let capability = 0;
+    const fence: ProcessFencePort = { capability: () => ({ supported: true, domain: ++capability === 1 ? "domain-a" : "domain-b" }),
+      freeze: vi.fn(), terminate: vi.fn(), proveEmpty: async () => ({ state: "proven_empty" }) };
+    await expect(makeService(store, worktree, { fence }).reconcileHolder(request(worktree, "domain-drift")))
+      .rejects.toMatchObject({ code: "DELIVERY_QUARANTINED" });
+    expect((await store.get("d-lease"))!.lease.state).toBe("quarantined");
+  });
+
   it.each([
     ["dirty", [{ headSha: "b", clean: false }]],
     ["untracked", [{ headSha: "b", clean: false }]],

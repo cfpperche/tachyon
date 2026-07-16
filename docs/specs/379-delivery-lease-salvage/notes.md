@@ -28,6 +28,13 @@ Recovery evidence is classified as `fence-proof` only when the fence capability 
 
 The production fence remains `UnavailableProcessFence` until a complete host adapter (including its privileged audit helper and durable identity store) can be constructed safely. The recovery sites are now ready to consume a promoted adapter without treating a domain identifier as authority; shipping a partial Linux adapter here would weaken the fence contract.
 
+## Correction round 1 (2026-07-16)
+
+- **A:** Worktree-free abandonment now accepts the real `held` wedge shape directly. It validates the loose holder/tail boundary, observes the exact persisted process identity, refuses alive or ambiguous roots, consumes bound approval, and CASes `held → abandoned` with `approval-only` evidence. The flagship Case B begins held and deletes its worktree.
+- **B:** Reconciliation, quarantine recovery, handoff, and review share the same before/after fence-domain guard. A changed or unsupported domain cannot turn an empty observation into trusted evidence.
+- **C:** Live authenticated MCP coverage invokes `delivery_salvage` enter, salvage, and worktree-free abandon and proves all service actors come from the Bridge caller. The tool also exposes the existing worktree-present approved abandon path for prune disposition.
+- **D:** Tests prove the holder execution agent, holder principal, and tail principal cannot authorize recovery even when configured as recovery principals.
+
 ## Field finding (2026-07-14, pre-plan)
 
 `delivery_join` with `role: "recovery"` + fresh operation_id + expected_head SUCCESSFULLY took
