@@ -2,7 +2,9 @@
 
 **Verify:** `bash /home/goat/tachyon-plugins/sdd/skills/sdd/scripts/test-cookbook-close.sh && bash /home/goat/tachyon-plugins/sdd/skills/sdd/scripts/test-visual-close.sh`
 
-**Dogfood:** installed sdd@1.5.0 (`@v0.32.0`) + 392 cookbook close (no cookbook-missing)
+**Dogfood-Opt-Out:** requires human Plugins install of remote pin; install + 392 cookbook close logged under notes.md Dogfood log (2026-07-16)
+
+**Visual QA Opt-Out:** skill/docs only; no UI surface
 
 **Cookbook:** yes
 
