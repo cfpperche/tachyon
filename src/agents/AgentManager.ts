@@ -692,10 +692,6 @@ export class AgentManager {
     if (result.state === "unsupported" || result.state === "failed") throw new RuntimeLaunchPreflightError(result);
   }
 
-  private isDeclaredSubagent(name: string): boolean {
-    return this.opts.getConfig()?.declaredOwner[name] !== undefined;
-  }
-
   /** Public read of an agent's definition (declared config wins, then ad-hoc) — spec 216 needs
    *  cmd/role/instructions to detect compaction and rebuild the role reminder. */
   defOf(name: string): AgentDef | undefined {
@@ -2415,16 +2411,21 @@ export class AgentManager {
       this.opts.onSessionHooksInjected?.(name, false);
       return cmd;
     }
-    const declaredSubagent = opts.declared && this.isDeclaredSubagent(name);
     const ownershipOnly = !opts.declared;
     if (binary === "codex") {
       const config = this.opts.materializeCodexSessionStartHookConfig?.(name, { ownershipOnly });
       this.opts.onSessionHooksInjected?.(name, !!config);
       if (!config) return cmd;
       const withConfig = codexConfigCmd(cmd, config);
-      // t-84ff5c FINDINGS hybrid: bypass Codex hook trust only for ad-hoc agents and
-      // config-declared subagents, not top-level declared agents with user/project hooks.
-      return !opts.declared || declaredSubagent ? codexFlagCmd(withConfig, "--dangerously-bypass-hook-trust") : withConfig;
+      // t-554634 / maintainer 2026-07-14 option C: whenever Tachyon materializes session-scoped
+      // Codex hooks (-c hooks.SessionStart / hooks.Stop), bypass hook-trust for THIS invocation so
+      // Start/Resume/Reload never re-prompts "Hooks need review" for those managed hooks.
+      // Codex's flag is per-invocation only (does not persist blanket trust). Scoped by injection:
+      // the flag is added only when materializeCodexSessionStartHookConfig returned config — never on
+      // plain codex spawns without Tachyon hooks. Residual risk: other enabled hooks in the same
+      // invocation (user/project) also skip the trust prompt; accepted for Tachyon-managed fleets.
+      // Supersedes the t-84ff5c hybrid that left top-level declared agents un-bypassed (codex-soul repro).
+      return codexFlagCmd(withConfig, "--dangerously-bypass-hook-trust");
     }
     if (binary !== "claude") {
       this.opts.onSessionHooksInjected?.(name, false);

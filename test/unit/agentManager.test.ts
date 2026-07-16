@@ -3871,7 +3871,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       expect(cmds.at(-1)).not.toContain("--allowedTools");
     });
 
-    it("codex top-level declared: injects a session-scoped SessionStart hook without bypassing hook trust", async () => {
+    it("t-554634: codex top-level declared: injects SessionStart and bypasses hook trust (option C)", async () => {
       const calls: Array<{ name: string; ownershipOnly: boolean }> = [];
       const { manager, cmds } = resumeHarness("agents:\n  codex:\n    cmd: codex\n", {
         materializeCodexSessionStartHookConfig: (name, opts?: { ownershipOnly?: boolean }) => {
@@ -3881,12 +3881,12 @@ describe("AgentManager — session resume (spec 209)", () => {
       });
       await manager.spawn("codex");
       expect(cmds.at(-1)).toContain("-c 'hooks.SessionStart=[{hooks=[]}]'");
-      expect(cmds.at(-1)).not.toContain("--dangerously-bypass-hook-trust");
+      expect(cmds.at(-1)).toContain("--dangerously-bypass-hook-trust");
       expect(cmds.at(-1)).not.toContain("--settings");
       expect(calls).toEqual([{ name: "codex", ownershipOnly: false }]);
     });
 
-    it("codex top-level declared: restart and resume keep hook trust intact with the SessionStart hook", async () => {
+    it("t-554634: codex top-level declared: restart and resume keep bypass with Tachyon hooks", async () => {
       const calls: Array<{ name: string; ownershipOnly: boolean }> = [];
       const { manager, cmds } = resumeHarness("agents:\n  codex:\n    cmd: codex\n", {
         materializeCodexSessionStartHookConfig: (name, opts?: { ownershipOnly?: boolean }) => {
@@ -3900,13 +3900,22 @@ describe("AgentManager — session resume (spec 209)", () => {
       expect(cmds).toHaveLength(3);
       for (const cmd of cmds) {
         expect(cmd).toContain("-c 'hooks.SessionStart=[{hooks=[]}]'");
-        expect(cmd).not.toContain("--dangerously-bypass-hook-trust");
+        expect(cmd).toContain("--dangerously-bypass-hook-trust");
       }
       expect(calls).toEqual([
         { name: "codex", ownershipOnly: false },
         { name: "codex", ownershipOnly: false },
         { name: "codex", ownershipOnly: false },
       ]);
+    });
+
+    it("t-554634: codex without Tachyon hook materialization does not get bypass", async () => {
+      const { manager, cmds } = resumeHarness("agents:\n  codex:\n    cmd: codex\n", {
+        materializeCodexSessionStartHookConfig: () => undefined,
+      });
+      await manager.spawn("codex");
+      expect(cmds.at(-1)).not.toContain("--dangerously-bypass-hook-trust");
+      expect(cmds.at(-1)).not.toContain("hooks.SessionStart");
     });
 
     it("t-84ff5c: declared codex subagent spawn bypasses hook trust when Tachyon injects hooks", async () => {
