@@ -33,16 +33,25 @@ _In-flight design memory — decisions, deviations, tradeoffs, and open question
 ### 2026-07-16T14:40:33Z — pass (1/1) — source: tasks.md — commit: 5e71469305d9bd8285f48c7805a0cb08a935cb5d
 - `node scripts/dogfood/persistent-engine.mjs` — pass
 
+### 2026-07-16T14:43:54Z — pass (1/1) — source: tasks.md — commit: 3422ec91c8b9958d36a093e89a1bc861badc77a3
+- `node scripts/dogfood/persistent-engine.mjs` — pass
+
 ## Verification log
 
 ### 2026-07-16T14:40:00Z — pass (1/1) — source: tasks.md
 - `npx vitest run test/unit/bridgeClientRebind.test.ts test/unit/agentManager.test.ts test/unit/engineProcessBoundary.test.ts test/unit/engineSupervisor.test.ts && npm run typecheck` — pass
 
+### 2026-07-16T14:42:41Z — pass (1/1) — source: tasks.md
+- `npx vitest run test/unit/bridgeClientRebind.test.ts test/unit/agentManager.test.ts test/unit/engineProcessBoundary.test.ts test/unit/engineSupervisor.test.ts && npm run typecheck` — pass
+
 ## Closure evidence
 
 - Implementation commit: `5e71469305d9bd8285f48c7805a0cb08a935cb5d`.
+- Combined with the then-current `main` and reverified at merge head
+  `3422ec91c8b9958d36a093e89a1bc861badc77a3`.
 - Independent adversarial review: no findings after the final synchronous lifecycle-authority guard;
   378 focused tests, `tsc --noEmit`, and `git diff --check` passed in the review checkout.
-- Repository gate: `npm run verify:full:quiet` passed with 409 files and 4,678 tests passing;
+- Final repository gate: `npm run verify:full:quiet` passed with 410 files and 4,687 tests passing;
   3 pre-existing skips remained explicit.
-- Declared SDD verify and persistent-engine dogfood both passed against the implementation commit.
+- Declared SDD verify and persistent-engine dogfood passed against both the implementation commit and
+  the combined merge head.
