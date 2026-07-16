@@ -148,4 +148,33 @@ describe("container-generated delegation behavior", () => {
       { command: "tachyon.resolveApproval", args: [{ id: "a-def456", decision: "denied", wsHash: "panel-truth" }] },
     ]);
   });
+
+  it("contributes a localized open-approvals fallback without exposing the resolver", () => {
+    const pkg = JSON.parse(fs.readFileSync(path.join(process.cwd(), "package.json"), "utf8")) as {
+      contributes: {
+        commands: Array<{ command: string; title: string }>;
+        menus?: { commandPalette?: Array<{ command: string; when?: string }> };
+      };
+    };
+    const en = JSON.parse(fs.readFileSync(path.join(process.cwd(), "package.nls.json"), "utf8")) as Record<string, string>;
+    const ptBr = JSON.parse(fs.readFileSync(path.join(process.cwd(), "package.nls.pt-br.json"), "utf8")) as Record<string, string>;
+
+    expect(pkg.contributes.commands.find((entry) => entry.command === "tachyon.openApprovals")).toEqual({
+      command: "tachyon.openApprovals",
+      title: "%command.openApprovals%",
+    });
+    expect(pkg.contributes.commands.some((entry) => entry.command === "tachyon.resolveApproval")).toBe(false);
+    expect(pkg.contributes.menus?.commandPalette?.some(
+      (entry) => entry.command === "tachyon.openApprovals" && entry.when === "false",
+    ) ?? false).toBe(false);
+    expect(en["command.openApprovals"]).toBe("Tachyon: Open Human Approvals");
+    expect(ptBr["command.openApprovals"]).toBe("Tachyon: Abrir aprovações humanas");
+  });
+
+  it("wires the persistent Workspace composition to the tested approval route", () => {
+    const engineSource = fs.readFileSync(path.join(process.cwd(), "src/engine-service/engineService.ts"), "utf8");
+    expect(engineSource).toMatch(
+      /Workspace\.createDaemon\(canonicalRoot,\s*{[\s\S]*?onApprovalRequested:\s*\(approvalWorkspace, request\)\s*=>\s*{\s*routeHumanApprovalRequest\(host, approvalWorkspace\.wsHash, request\);/,
+    );
+  });
 });

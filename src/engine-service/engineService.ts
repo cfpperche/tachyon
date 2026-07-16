@@ -115,6 +115,24 @@ export interface RunningDaemonEngineService {
   close(): Promise<void>;
 }
 
+/** Routes a persisted approval request to the editor shell without carrying any decision authority. */
+export function routeHumanApprovalRequest(
+  host: Pick<DaemonEngineHost, "t" | "notify" | "executeCommand">,
+  workspaceHash: string,
+  request: { id: string; requester: string },
+): void {
+  host.notify(
+    host.t("Approval request {0} from '{1}'", request.id, request.requester),
+    "info",
+    [{
+      label: host.t("Review"),
+      run: async () => {
+        await host.executeCommand("tachyon.openApprovals", workspaceHash);
+      },
+    }],
+  );
+}
+
 /**
  * Starts one complete operational engine for one canonical workspace.  The returned service owns the
  * Workspace, its direct public Bridge, scheduler/watchers and the private shell-control socket.  Shell
@@ -183,6 +201,9 @@ export async function startDaemonEngineService(
     workspace = await Workspace.createDaemon(canonicalRoot, {
       host,
       onViewsChanged: (view) => host.onViewsChanged(view),
+      onApprovalRequested: (approvalWorkspace, request) => {
+        routeHumanApprovalRequest(host, approvalWorkspace.wsHash, request);
+      },
       claudeStatusLineCapture,
     });
     await workspace.start();

@@ -5,6 +5,7 @@ import path from "node:path";
 import { DaemonEngineHost, EngineUiUnavailableError, type DaemonHostEvent, type DaemonUiRequest } from "../../src/workspace/DaemonEngineHost.js";
 import { Workspace } from "../../src/workspace/Workspace.js";
 import { TmuxService } from "../../src/tmux/TmuxService.js";
+import { routeHumanApprovalRequest } from "../../src/engine-service/engineService.js";
 
 const roots: string[] = [];
 const hosts: DaemonEngineHost[] = [];
@@ -99,6 +100,43 @@ describe("DaemonEngineHost", () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(invoked).toBe(1);
     expect(requests.filter((request) => request.kind === "notice.present")).toHaveLength(2);
+  });
+
+  it("routes a retained human-approval Review action to the exact workspace once", async () => {
+    let shellAvailable = false;
+    const requests: DaemonUiRequest[] = [];
+    const f = fixture(async (request) => {
+      requests.push(request);
+      if (!shellAvailable) throw new Error("no shell");
+      if (request.kind === "notice.present") return request.actions[0]?.id ?? null;
+      return null;
+    });
+
+    routeHumanApprovalRequest(f.host, "workspace-b-hash", {
+      id: "a-abc123",
+      requester: "child-agent",
+    });
+    await waitFor(() => requests.length === 1);
+    expect(requests[0]).toMatchObject({
+      kind: "notice.present",
+      message: "Approval request a-abc123 from 'child-agent'",
+      level: "info",
+      actions: [{ label: "Review" }],
+    });
+    expect(requests.some((request) => request.kind === "execute-command")).toBe(false);
+
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    shellAvailable = true;
+    f.host.replayUiRequests();
+    await waitFor(() => requests.some((request) => request.kind === "execute-command"));
+    expect(requests.filter((request) => request.kind === "execute-command")).toMatchObject([{
+      command: "tachyon.openApprovals",
+      args: ["workspace-b-hash"],
+    }]);
+
+    f.host.replayUiRequests();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(requests.filter((request) => request.kind === "execute-command")).toHaveLength(1);
   });
 
   it("presents retained notices sequentially so a reconnect cannot overflow the UI broker", async () => {

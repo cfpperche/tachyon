@@ -67,6 +67,7 @@
   "command.checkRequirements": "Tachyon: Verificar requisitos",
   "command.doctor": "Tachyon: Diagnóstico",
   "command.openConfig": "Tachyon: Abrir configuração",
+  "command.openApprovals": "Tachyon: Abrir aprovações humanas",
   "command.restartTmuxServer": "Tachyon: Reiniciar servidor tmux (recuperar travado)",
   "command.restartBridge": "Tachyon: Reiniciar Bridge",
   "command.openSettings": "Tachyon: Configurações",

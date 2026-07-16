@@ -67,6 +67,7 @@
   "command.checkRequirements": "Tachyon: Check Requirements",
   "command.doctor": "Tachyon: Doctor",
   "command.openConfig": "Tachyon: Open Config",
+  "command.openApprovals": "Tachyon: Open Human Approvals",
   "command.restartTmuxServer": "Tachyon: Restart tmux Server (recover wedged)",
   "command.restartBridge": "Tachyon: Restart Bridge",
   "command.openSettings": "Tachyon: Settings",

@@ -340,6 +340,10 @@
         "icon": "$(file-code)"
       },
       {
+        "command": "tachyon.openApprovals",
+        "title": "%command.openApprovals%"
+      },
+      {
         "command": "tachyon.restartTmuxServer",
         "title": "%command.restartTmuxServer%"
       },
