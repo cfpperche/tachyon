@@ -150,12 +150,16 @@ function DataTable({
   headers,
   rows,
   empty,
+  monoCols = [],
 }: {
   headers: string[];
   rows: string[][];
   empty: string;
+  /** Column indexes that are technical (paths, ids) — Tachyon Mono. */
+  monoCols?: number[];
 }) {
   if (rows.length === 0) return <p class="ck-empty">{empty}</p>;
+  const mono = new Set(monoCols);
   return (
     <div class="ck-table-wrap">
       <table class="ck-table">
@@ -170,7 +174,9 @@ function DataTable({
           {rows.map((r, i) => (
             <tr key={i}>
               {r.map((c, j) => (
-                <td key={j}>{c}</td>
+                <td key={j} class={mono.has(j) ? "ck-mono" : undefined}>
+                  {c}
+                </td>
               ))}
             </tr>
           ))}
@@ -302,6 +308,7 @@ export function App(p: CockpitAppProps) {
           rows={m.fleet.map((a) => [a.name, a.kind ?? "—", a.running ? s.running : s.stopped])}
           empty={s.noneListed}
         />
+        {/* name/kind/status stay on reading font */}
       </ModuleChrome>
     );
   } else if (section === "approvals") {
@@ -332,6 +339,7 @@ export function App(p: CockpitAppProps) {
           headers={[s.kind, s.status, s.branch, s.path]}
           rows={m.worktrees.map((w) => [w.kind, w.status, w.branch || "—", w.path || w.id])}
           empty={s.noneListed}
+          monoCols={[2, 3]}
         />
       </ModuleChrome>
     );
@@ -342,6 +350,7 @@ export function App(p: CockpitAppProps) {
           headers={[s.name, s.phase, s.branch, s.path]}
           rows={m.deliveries.map((d) => [d.id, d.phase, d.branchRef || "—", d.worktreePath ?? "—"])}
           empty={s.noneListed}
+          monoCols={[0, 2, 3]}
         />
       </ModuleChrome>
     );
