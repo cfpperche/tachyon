@@ -277,6 +277,7 @@ describe("WorktreeManager — pure resolvers (spec 210)", () => {
     expect(gitArgs.lock("/wt")).toEqual(["worktree", "lock", "/wt"]);
     expect(gitArgs.unlock("/wt")).toEqual(["worktree", "unlock", "/wt"]);
     expect(gitArgs.remove("/wt")).toEqual(["worktree", "remove", "--force", "/wt"]);
+    expect(gitArgs.remove("/wt", false)).toEqual(["worktree", "remove", "/wt"]);
     expect(gitArgs.deleteBranch("tachyon/rev")).toEqual(["branch", "-D", "tachyon/rev"]);
     expect(gitArgs.checkRefFormat("a/b")).toEqual(["check-ref-format", "--branch", "a/b"]);
     expect(gitArgs.branchExists("b")).toEqual(["show-ref", "--verify", "--quiet", "refs/heads/b"]);

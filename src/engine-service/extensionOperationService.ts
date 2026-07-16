@@ -131,11 +131,26 @@ export async function executeExtensionQuery(
         targets: injectTargets(await workspace.manager.list()),
       });
     }
-    case "worktrees.list":
-      return json({
-        worktrees: [...workspace.ledger.all()].flatMap(([agent, record]) =>
-          record.worktree ? [{ agent, record: record.worktree }] : []),
-      });
+    case "worktrees.list": {
+      // Agent ledger worktrees + spec 392 registry (change + agent). Drop registry rows whose path is gone
+      // so VS Code orphan self-heal still works (P1-3).
+      const fromLedger = [...workspace.ledger.all()].flatMap(([agent, record]) =>
+        record.worktree ? [{ agent, record: record.worktree }] : []);
+      const seen = new Set(fromLedger.map((row) => row.record.path));
+      const fromRegistry = workspace.managedWorktrees.list({ status: "active" })
+        .filter((e) => !seen.has(e.path) && fs.existsSync(e.path))
+        .map((e) => ({
+          agent: e.agent ?? e.slug ?? e.id,
+          record: {
+            path: e.path,
+            branch: e.branch,
+            tachyonCreatedBranch: e.tachyonCreatedBranch,
+            baseRef: e.baseRef,
+            createdAt: e.createdAt,
+          },
+        }));
+      return json({ worktrees: [...fromLedger, ...fromRegistry] });
+    }
     case "worktree.review":
       return inspectWorktree(workspace, "agent" in query ? query.agent : query.runId, "agent" in query);
     case "pipeline.inspect":
@@ -702,6 +717,7 @@ async function removeAgentWorktree(workspace: Workspace, agent: string, deleteBr
   const result = await workspace.worktrees.remove(record, deleteBranch);
   if (!result.removed) throw new Error(result.error ?? `could not remove '${agent}' worktree`);
   workspace.ledger.clearWorktree(agent);
+  workspace.managedWorktrees.syncAgentRecord(agent, null);
   return json(result);
 }
 

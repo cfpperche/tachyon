@@ -69,6 +69,7 @@ import {
 import type { GitDeliveryStore } from "../git-delivery/store.js";
 import type { GitExec } from "../worktree/WorktreeManager.js";
 import type { WorktreeOccupancyProbe } from "../worktree/WorktreeManager.js";
+import type { ManagedWorktreeService } from "../worktree/ManagedWorktreeService.js";
 import type { GitDeliveryActor, GitDeliverySettings } from "../git-delivery/types.js";
 import type { TaskNotificationEvent } from "../tasks/taskNotificationPolicy.js";
 import { TaskPrototypeStore, type TaskPrototypeSnapshot } from "../tasks/TaskPrototypeStore.js";
@@ -210,7 +211,14 @@ export interface BridgeDeps {
     deliveries?: DeliveryStore;
     /** Optional T14 snapshot for list/hygiene linked safety labeling. */
     reloadSnapshot?: () => ReloadReconciliationSnapshot | undefined;
+    /** spec 392 — remove via WorktreeManager engine (occupancy fail-closed). */
+    removeManagedWorktree?: (
+      worktreePath: string,
+      opts?: { deleteBranch?: boolean; branch?: string; tachyonCreatedBranch?: boolean; baseRef?: string; force?: boolean },
+    ) => Promise<{ removed: boolean; branchDeleted: boolean; error?: string }>;
   };
+  /** spec 392 — managed worktree registry + change worktree create/remove. */
+  managedWorktrees?: ManagedWorktreeService;
 }
 
 /**
@@ -635,6 +643,182 @@ function deliveryLeaseWaitGateFor(manager: AgentManager): DeliveryLeaseWaitGate 
 
 /** The Bridge tools. Schema-validated MCP handlers over AgentManager and workspace services. */
 export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
+  // ── spec 392 — managed worktree registry ──────────────────────────────────
+  mcp.registerTool(
+    "create_worktree",
+    {
+      description:
+        "Create a Tachyon-managed git worktree under the canonical worktree base (spec 392). " +
+        "kind=change creates an implementation/task checkout at <base>/<wsHash>/change/<slug>. " +
+        "Registers the entry so VS Code multi-root reveal can include it. Does not spawn an agent.",
+      inputSchema: {
+        kind: z.enum(["change"]).describe("v1: only change worktrees via this tool (agent worktrees use spawn with worktree:true)"),
+        slug: z.string().min(1).max(64).describe("path/branch slug (alphanumeric, ._- )"),
+        branch: z.string().min(1).optional().describe("branch name; default tachyon/change/<slug>"),
+        baseRef: z.string().min(1).optional().describe("git ref to branch from; default HEAD"),
+        taskId: z.string().regex(/^t-[0-9a-f]{6}$/).optional(),
+      },
+    },
+    async ({ kind, slug, branch, baseRef, taskId }) => {
+      try {
+        if (!deps.managedWorktrees) return fail(new Error("managed worktrees are not available on this Bridge"));
+        if (kind !== "change") return fail(new Error("create_worktree v1 only supports kind=change"));
+        const actor = resolveDeclaredActor(deps, undefined);
+        if (!actor.ok) return fail(new Error(actor.message));
+        const entry = await deps.managedWorktrees.createChange({
+          slug,
+          branch,
+          baseRef,
+          taskId,
+          createdBy: actor.name,
+        });
+        return ok(JSON.stringify(entry, null, 2));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
+    "list_worktrees",
+    {
+      description: "List Tachyon-managed worktree registry entries (agent + change). Does not invent paths.",
+      inputSchema: {
+        kind: z.enum(["agent", "change"]).optional(),
+        status: z.enum(["active", "abandoned"]).optional(),
+      },
+    },
+    async ({ kind, status }) => {
+      try {
+        if (!deps.managedWorktrees) return fail(new Error("managed worktrees are not available on this Bridge"));
+        return ok(JSON.stringify(deps.managedWorktrees.list({ kind, status }), null, 2));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
+    "get_worktree",
+    {
+      description: "Get one managed worktree by id or absolute path.",
+      inputSchema: { idOrPath: z.string().min(1) },
+    },
+    async ({ idOrPath }) => {
+      try {
+        if (!deps.managedWorktrees) return fail(new Error("managed worktrees are not available on this Bridge"));
+        const entry = deps.managedWorktrees.get(idOrPath);
+        if (!entry) return fail(new Error(`managed worktree not found: ${idOrPath}`));
+        return ok(JSON.stringify(entry, null, 2));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
+    "register_worktree",
+    {
+      description:
+        "Register an existing checkout that is already a git worktree of this repository under " +
+        "<worktree.base>/<wsHash>/… . Validates realpath, common-dir, and live branch. Does not run git worktree add.",
+      inputSchema: {
+        kind: z.enum(["agent", "change"]),
+        path: z.string().min(1),
+        branch: z.string().min(1).optional().describe("optional; when set must match the live branch"),
+        baseRef: z.string().min(1).optional(),
+        tachyonCreatedBranch: z.boolean().optional(),
+        agent: z.string().optional().describe("required when kind=agent"),
+        taskId: z.string().regex(/^t-[0-9a-f]{6}$/).optional(),
+        slug: z.string().min(1).max(64).optional().describe("required when kind=change"),
+      },
+    },
+    async (a) => {
+      try {
+        if (!deps.managedWorktrees) return fail(new Error("managed worktrees are not available on this Bridge"));
+        const actor = resolveDeclaredActor(deps, undefined);
+        if (!actor.ok) return fail(new Error(actor.message));
+        if (a.kind === "agent" && !a.agent) return fail(new Error("register_worktree kind=agent requires agent"));
+        if (a.kind === "change" && !a.slug) return fail(new Error("register_worktree kind=change requires slug"));
+        const principal = deps.caller ?? { kind: "legacy" as const };
+        const entry = await deps.managedWorktrees.register({
+          kind: a.kind,
+          path: a.path,
+          branch: a.branch,
+          baseRef: a.baseRef,
+          // Never trust client-supplied ownership of branch creation; only Tachyon-internal sync may set true.
+          tachyonCreatedBranch: false,
+          agent: a.agent,
+          taskId: a.taskId,
+          slug: a.slug,
+          createdBy: actor.name,
+          actor: { kind: principal.kind, name: actor.name },
+        });
+        return ok(JSON.stringify(entry, null, 2));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
+    "unregister_worktree",
+    {
+      description:
+        "Drop a registry entry without deleting the git worktree on disk. " +
+        "Caller must be the entry creator/agent owner, or a human host principal (shared legacy/external tokens are not privileged).",
+      inputSchema: { idOrPath: z.string().min(1) },
+    },
+    async ({ idOrPath }) => {
+      try {
+        if (!deps.managedWorktrees) return fail(new Error("managed worktrees are not available on this Bridge"));
+        const actor = resolveDeclaredActor(deps, undefined);
+        if (!actor.ok) return fail(new Error(actor.message));
+        const principal = deps.caller ?? { kind: "legacy" as const };
+        const okRm = deps.managedWorktrees.unregister(idOrPath, {
+          kind: principal.kind,
+          name: actor.name,
+        });
+        if (!okRm) return fail(new Error(`managed worktree not found: ${idOrPath}`));
+        return ok(JSON.stringify({ unregistered: true, idOrPath }, null, 2));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
+    "remove_worktree",
+    {
+      description:
+        "Remove a managed git worktree via the WorktreeManager engine (occupancy fail-closed). " +
+        "Caller must own the entry (creator/agent) or be privileged. " +
+        "Dirty trees require confirmDirty=true. Optional deleteBranch only when Tachyon created the branch.",
+      inputSchema: {
+        idOrPath: z.string().min(1),
+        deleteBranch: z.boolean().optional().default(false),
+        confirmDirty: z.boolean().optional().default(false).describe("required when the worktree has uncommitted changes"),
+      },
+    },
+    async ({ idOrPath, deleteBranch, confirmDirty }) => {
+      try {
+        if (!deps.managedWorktrees) return fail(new Error("managed worktrees are not available on this Bridge"));
+        const actor = resolveDeclaredActor(deps, undefined);
+        if (!actor.ok) return fail(new Error(actor.message));
+        const principal = deps.caller ?? { kind: "legacy" as const };
+        const result = await deps.managedWorktrees.remove(idOrPath, {
+          deleteBranch,
+          confirmDirty,
+          actor: { kind: principal.kind, name: actor.name },
+        });
+        if (!result.removed) return fail(new Error(result.error ?? "remove refused"));
+        return ok(JSON.stringify(result, null, 2));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
   mcp.registerTool(
     "git_delivery_list",
     {
@@ -889,6 +1073,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
             git: deps.gitDelivery!.git,
             liveness: deps.gitDelivery!.liveness,
             worktreeOccupancy: deps.gitDelivery!.worktreeOccupancy,
+            removeManagedWorktree: deps.gitDelivery!.removeManagedWorktree,
           });
           if (!pruned.result.ok) return fail(new Error(`git_delivery_prune refused:\n- ${pruned.result.reasons.join("\n- ")}`));
           if (pruned.next) {

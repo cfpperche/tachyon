@@ -234,7 +234,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     fs.rmSync(pinsRoot, { recursive: true, force: true });
   });
 
-  it("exposes exactly the 63 tools (including canonical Delivery salvage and review completion)", async () => {
+  it("exposes exactly the 69 tools (including managed worktree registry tools, spec 392)", async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       "append_project_handoff_note",
@@ -249,6 +249,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       "create_pin",
       "create_task",
       "create_validation",
+      "create_worktree",
       "delivery_complete_review",
       "delivery_salvage",
       "discover_validation_candidates",
@@ -260,6 +261,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       "get_project_handoff",
       "get_task",
       "get_validation",
+      "get_worktree",
       "git_delivery_hygiene",
       "git_delivery_integrate",
       "git_delivery_list",
@@ -274,6 +276,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       "list_schedules",
       "list_tasks",
       "list_validations",
+      "list_worktrees",
       "next_task",
       "next_validation",
       "notify",
@@ -281,6 +284,8 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       "propose_schedule",
       "read_output",
       "reanchor_agent",
+      "register_worktree",
+      "remove_worktree",
       "request_human_approval",
       "request_human_attention",
       "restart_agent",
@@ -290,6 +295,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       "set_continuity",
       "set_project_handoff",
       "spawn_agent",
+      "unregister_worktree",
       "update_pin",
       "update_task",
       "update_validation",

@@ -17,6 +17,14 @@ export interface PruneDeps {
   liveness: DeliveryLiveness;
   worktreeOccupancy?: WorktreeOccupancyProbe;
   now?: () => string;
+  /**
+   * spec 392 — preferred removal path (WorktreeManager / ManagedWorktreeService).
+   * When absent, falls back to raw `git worktree remove` for unit tests that only inject git.
+   */
+  removeManagedWorktree?: (
+    worktreePath: string,
+    opts?: { deleteBranch?: boolean; branch?: string; tachyonCreatedBranch?: boolean; baseRef?: string; force?: boolean },
+  ) => Promise<{ removed: boolean; branchDeleted: boolean; error?: string }>;
 }
 
 export type PruneResult =
@@ -42,20 +50,14 @@ export async function pruneDeliveryRecord(delivery: GitDelivery, input: PruneInp
     } catch (err) {
       occupancyUnknown = `worktree occupancy is unknown: ${err instanceof Error ? err.message : String(err)}`;
     }
-    const forceOccupancy = input.abandon || input.forceLoseCommits;
+    // Occupancy is always fail-closed (spec 392). abandon/forceLoseCommits may force
+    // *dirty* git remove after occupancy clears, but never override a live/unknown occupant.
     if (occupant) {
-      const reason = `worktree is ${occupant.state === "dirty" ? "quarantined by" : "occupied by live"} agent ${occupant.agent}`;
-      if (forceOccupancy) {
-        console.warn(`[tachyon] git_delivery_prune overriding ${reason} at ${delivery.worktreePath} (cwd ${occupant.cwd})`);
-      } else {
-        reasons.push(reason);
-      }
+      reasons.push(
+        `worktree is ${occupant.state === "dirty" ? "quarantined by" : "occupied by live"} agent ${occupant.agent}`,
+      );
     } else if (occupancyUnknown) {
-      if (forceOccupancy) {
-        console.warn(`[tachyon] git_delivery_prune overriding ${occupancyUnknown} at ${delivery.worktreePath}`);
-      } else {
-        reasons.push(occupancyUnknown);
-      }
+      reasons.push(occupancyUnknown);
     }
   }
 
@@ -94,14 +96,32 @@ export async function pruneDeliveryRecord(delivery: GitDelivery, input: PruneInp
   if (reasons.length > 0) return { result: { ok: false, reasons } };
 
   let removedWorktree = false;
-  if (live.worktreeExists) {
-    const rm = await deps.git(["worktree", "remove", "--force", delivery.worktreePath], deps.workspaceRoot);
-    if (rm.code !== 0) return { result: { ok: false, reasons: [`git worktree remove failed: ${rm.stderr.trim() || rm.stdout.trim()}`] } };
-    removedWorktree = true;
-  }
-
   let deletedBranch = false;
   const deleteBranch = live.branchExists && (!abandoned || !!input.forceLoseCommits);
+  const forceRemove = !!(input.abandon || input.forceLoseCommits);
+
+  if (live.worktreeExists) {
+    if (deps.removeManagedWorktree) {
+      // Engine path: occupancy already validated above. force only means dirty/data-loss
+      // git remove — never occupancy override (manager refuses occupants even with force).
+      const eng = await deps.removeManagedWorktree(delivery.worktreePath, {
+        deleteBranch: false, // branch deletion stays below for forceLoseCommits -D vs -d
+        branch: delivery.branchRef,
+        tachyonCreatedBranch: delivery.tachyonCreatedBranch,
+        baseRef: delivery.baseRef,
+        force: forceRemove,
+      });
+      if (!eng.removed) {
+        return { result: { ok: false, reasons: [`managed worktree remove failed: ${eng.error ?? "refused"}`] } };
+      }
+      removedWorktree = true;
+    } else {
+      const rm = await deps.git(["worktree", "remove", "--force", delivery.worktreePath], deps.workspaceRoot);
+      if (rm.code !== 0) return { result: { ok: false, reasons: [`git worktree remove failed: ${rm.stderr.trim() || rm.stdout.trim()}`] } };
+      removedWorktree = true;
+    }
+  }
+
   if (deleteBranch) {
     const args = input.forceLoseCommits ? ["branch", "-D", delivery.branchRef] : ["branch", "-d", delivery.branchRef];
     const del = await deps.git(args, deps.workspaceRoot);
