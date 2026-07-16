@@ -3,7 +3,7 @@
 **Status:** shipped-partial
 **Date:** 2026-07-16
 **Task:** t-689e6c
-**Closure:** v1 registry + Bridge tools + prune migration + agent sync + worktrees.list merge for reveal; installed multi-root dogfood deferred.
+**Closure:** Merged to main 2026-07-16 (merge commit on `main` from `grok/managed-worktree-registry`). v1 registry + Bridge tools + prune migration + agent sync + worktrees.list merge + R4 P2s + cookbook.md. Installed multi-root dogfood still deferred.
 
 ## Problem
 
