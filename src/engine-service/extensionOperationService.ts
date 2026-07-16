@@ -534,8 +534,10 @@ async function doctorReport(workspace: Workspace): Promise<JsonValue> {
   const fileExists = !!configPath && fs.existsSync(configPath);
   let configValid = !workspace.configFailure && !!workspace.config;
   let configFailure = workspace.configFailure ?? null;
+  let configWarnings: string[] = [];
   if (configPath && fileExists) {
-    const { errors } = loadConfigFile(configPath);
+    const { errors, warnings } = loadConfigFile(configPath);
+    configWarnings = [...warnings];
     if (errors.length > 0) {
       configValid = false;
       configFailure = { path: configPath, file: path.basename(configPath), errors: [...errors], at: new Date().toISOString() };
@@ -559,6 +561,7 @@ async function doctorReport(workspace: Workspace): Promise<JsonValue> {
     configFailure,
     configFileExists: fileExists,
     configValid,
+    configWarnings,
     lkg: workspace.readConfigLkg(),
     ledger: [...workspace.ledger.all()],
     liveSessions,

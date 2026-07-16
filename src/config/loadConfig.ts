@@ -1460,7 +1460,9 @@ export function parseConfig(yamlText: string): ParseResult {
         }
       }
       if (raw.settings.delivery !== undefined) {
-        errors.push("settings.delivery: removed; canonical Delivery with mechanism-only handoff is always active");
+        warnings.push(
+          "settings.delivery was ignored because canonical Delivery with mechanism-only handoff is always active; remove settings.delivery from tachyon.yml",
+        );
       }
       if (raw.settings.taskNotifications !== undefined) {
         if (!isPlainObject(raw.settings.taskNotifications)) {
@@ -1495,7 +1497,7 @@ export function parseConfig(yamlText: string): ParseResult {
         }
       }
       for (const key of Object.keys(raw.settings)) {
-        if (!["maxAgents", "bridgePort", "auth", "legacyBridgeAuth", "layout", "tmux", "worktree", "verify", "projectGuidance", "anchor", "bridgeGuidance", "clipboard", "handoff", "persistence", "bridgeClientRebind", "gitDelivery", "taskNotifications"].includes(key)) errors.push(`settings: unknown key '${key}'`);
+        if (!["maxAgents", "bridgePort", "auth", "legacyBridgeAuth", "layout", "tmux", "worktree", "verify", "projectGuidance", "anchor", "bridgeGuidance", "clipboard", "handoff", "persistence", "bridgeClientRebind", "gitDelivery", "delivery", "taskNotifications"].includes(key)) errors.push(`settings: unknown key '${key}'`);
       }
     }
   }

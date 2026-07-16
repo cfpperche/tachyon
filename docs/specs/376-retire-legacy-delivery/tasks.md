@@ -34,8 +34,8 @@ _Generated from `plan.md` on 2026-07-13. This is a bounded retirement, not conti
 - [x] No current source/tool/config path can select or execute the legacy delivery lifecycle.
 - [x] Canonical creation, sequential join, verification, projection mutation, reload, and compensation tests pass.
 - [x] Retirement preview/apply proves byte-stable canonical state and Git state, plus idempotent recovery.
-- [x] Removed lifecycle symbols and schema fields are absent outside the raw retirement module/fixtures
-  (historical specs exempt).
+- [x] Removed lifecycle symbols are absent outside the raw retirement module/fixtures; the schema keeps only a
+  deprecated, effect-free `settings.delivery` compatibility key so an upgrade warning does not disable the workspace.
 - [ ] Installed happy-path dogfood uses one Delivery/worktree and emits no legacy artifact.
 - [x] `npm run typecheck`, `npm run build`, `git diff --check`, and `npm test` pass on the implementation candidate.
 

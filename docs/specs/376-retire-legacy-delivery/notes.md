@@ -147,3 +147,13 @@ None at planning time.
   `git diff --check` pass.
 - The declared headless dogfood and SDD verification both pass. No new source defect was found in this composition
   round. Installed-extension retirement and one real post-cut lifecycle remain the final acceptance proof.
+
+## Upgrade config compatibility correction — 2026-07-16
+
+- Installed `0.56.12` initially exposed a real upgrade UX defect: an otherwise valid pre-cut `tachyon.yml` with
+  `settings.delivery` disabled the whole workspace even though the setting can no longer affect runtime behavior.
+- The removed block is now accepted only as ignored compatibility input. It never enters `TachyonConfig`, emits a
+  warning on load, stays deprecated/effect-free in the YAML schema, and appears as an explicit Doctor warning.
+  Unrelated unknown keys and malformed/security-relevant settings remain hard errors.
+- Parser, Doctor, schema, and real daemon/Doctor coverage pass 106/106 plus the daemon integration rerun; typecheck
+  and diff-check pass. The VSIX must be rebuilt from this correction before installed dogfood resumes.

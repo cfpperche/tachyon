@@ -25,7 +25,8 @@ bounded, explicit, non-destructive upgrade step and is never read as live author
   - **Given** any valid Tachyon workspace configuration, including one with no delivery settings
   - **When** Tachyon starts
   - **Then** tracked gated work always uses canonical Delivery with mechanism-only handoff
-  - **And** `settings.delivery.mode` and `settings.delivery.handoffSafety` are no longer accepted or read
+  - **And** `settings.delivery.mode` and `settings.delivery.handoffSafety` never select behavior or enter the runtime config
+  - **And** an old `settings.delivery` block is ignored with a visible warning and Doctor finding instead of disabling the workspace
 
 - [x] **Scenario: a new tracked delegation has one canonical identity**
   - **Given** an agent starts change-producing work with a gate, immutable verifier, owned paths, and base SHA
@@ -82,7 +83,8 @@ bounded, explicit, non-destructive upgrade step and is never read as live author
   contain no executable delivery-lifecycle dependency on
   `DelegationRecord`, `reuse_worktree`, legacy verification resolution, `delivery_import_legacy`,
   Delivery-less GitDelivery mutation, or a selectable legacy/disabled delivery mode.
-- [x] Historical specs may describe the retired behavior, but current product documentation and tool schemas expose only the canonical lifecycle.
+- [x] Historical specs may describe the retired behavior; the config schema retains only a deprecated, effect-free
+  `settings.delivery` compatibility key so upgrades remain loadable, while current product documentation and tool schemas expose only the canonical lifecycle.
 
 ## Non-goals
 

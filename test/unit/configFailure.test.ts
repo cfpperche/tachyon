@@ -157,6 +157,32 @@ agents:
 });
 
 describe("doctor report", () => {
+  it("reports ignored obsolete settings without treating the config as invalid", () => {
+    const report = buildDoctorReport({
+      workspaceRoot: "/ws",
+      configPath: "/ws/tachyon.yml",
+      configFileExists: true,
+      configValid: true,
+      configFailure: null,
+      configWarnings: [
+        "settings.delivery was ignored because canonical Delivery with mechanism-only handoff is always active; remove settings.delivery from tachyon.yml",
+      ],
+      lkg: null,
+      ledger: [],
+      liveSessions: new Set(),
+      knownSessions: new Set(),
+      bridge: { port: 42897, url: "http://127.0.0.1:42897/mcp", reachable: true, authConfigured: true },
+    });
+
+    expect(report.findings).toContainEqual(expect.objectContaining({ id: "config.ok", severity: "ok" }));
+    expect(report.findings).toContainEqual(expect.objectContaining({
+      id: "config.ignored",
+      severity: "warn",
+      detail: expect.stringContaining("settings.delivery was ignored"),
+    }));
+    expect(formatDoctorReport(report)).toMatch(/ignored or deprecated config setting.*settings\.delivery was ignored/is);
+  });
+
   it("(d) invalid config + stale ledger entry produce corresponding findings", () => {
     const report = buildDoctorReport({
       workspaceRoot: "/ws",

@@ -212,7 +212,7 @@ process fencing remain explicitly outside this spec.
 
 | Boundary | Required proof |
 |---|---|
-| Config | omitted config is canonical; removed keys fail clearly; authority allowlists still parse |
+| Config | omitted config is canonical; the known removed Delivery block is ignored and diagnosed; unrelated invalid keys still fail; authority allowlists still parse |
 | New spawn | one Delivery/projection/worktree/segment; exact structured receipt; zero delegation files |
 | Spawn failure | no phantom Delivery holder, projection, session, token, or deleted caller-owned worktree |
 | Successor | exact `delivery_join`, same worktree/branch, no fallback; old reuse field absent from schema |

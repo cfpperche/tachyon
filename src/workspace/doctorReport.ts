@@ -26,6 +26,8 @@ export interface DoctorReportInput {
   configFileExists: boolean;
   /** true when the product loader accepted the config */
   configValid: boolean;
+  /** accepted-but-ignored compatibility settings and other non-blocking config diagnostics */
+  configWarnings?: readonly string[];
   lkg: ConfigLkgSnapshot | null;
   ledger: ReadonlyArray<readonly [string, SessionRecord]>;
   /** agent names with a live (non-dead) tmux session */
@@ -87,9 +89,19 @@ export function buildDoctorReport(input: DoctorReportInput): DoctorReport {
     findings.push({
       id: "config.ok",
       severity: "ok",
-      title: "Config loads cleanly",
+      title: "Config loads successfully",
       detail: input.configPath,
     });
+  }
+  if (input.configWarnings?.length) {
+    findings.push({
+      id: "config.ignored",
+      severity: "warn",
+      title: `${input.configWarnings.length} ignored or deprecated config setting(s)`,
+      detail: input.configWarnings.map((warning, index) => `${index + 1}. ${warning}`).join("\n"),
+      action: "Remove the ignored setting(s) from tachyon.yml; Tachyon is already running without them",
+    });
+    suggestions.push("Remove ignored or deprecated settings from tachyon.yml");
   }
 
   // --- LKG ---

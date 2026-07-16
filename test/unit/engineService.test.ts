@@ -39,7 +39,7 @@ describe("daemon engine service", () => {
       fs.mkdirSync(directory, { mode: 0o700 });
     }
     const configPath = path.join(workspaceRoot, "tachyon.yml");
-    fs.writeFileSync(configPath, config("worker"), "utf8");
+    fs.writeFileSync(configPath, `${config("worker")}settings:\n  delivery:\n    mode: legacy\n    handoffSafety: disabled\n`, "utf8");
     const promptBody = "printf 'prompt-once\\n' >> .tachyon-prompt-proof";
     const promptSha256 = createHash("sha256").update(promptBody, "utf8").digest("hex");
     const promptDir = path.join(workspaceRoot, ".tachyon", "prompts");
@@ -122,6 +122,15 @@ describe("daemon engine service", () => {
       bridge: { port: identity.bridge.port, instanceId: identity.bridge.instanceId, direct: true },
       agents: { total: 1, truncated: false, items: [{ name: "worker", declared: true, running: false }] },
     });
+    expect(await first.query({ schemaVersion: 1, method: "extension.query", input: { action: "doctor.report" } }))
+      .toMatchObject({
+        status: "ok",
+        action: "doctor.report",
+        value: {
+          hasErrors: false,
+          text: expect.stringMatching(/ignored or deprecated config setting.*settings\.delivery was ignored/is),
+        },
+      });
     expect(await first.query({ schemaVersion: 1, method: "probe.view", input: { caller: "worker" } }))
       .toEqual({
         schemaVersion: 1,

@@ -25,8 +25,11 @@ settings:
 describe("parseConfig", () => {
   it("uses canonical mechanism-only Delivery with no selectable legacy mode", () => {
     expect(parseConfig("agents:\n  a:\n    cmd: x\n").errors).toEqual([]);
-    expect(parseConfig("agents:\n  a:\n    cmd: x\nsettings:\n  delivery:\n    mode: canonical\n").errors[0]).toContain("settings.delivery: removed");
-    expect(parseConfig("agents:\n  a:\n    cmd: x\nsettings:\n  delivery:\n    handoffSafety: mechanism-only\n").errors[0]).toContain("settings.delivery: removed");
+    const obsolete = parseConfig("agents:\n  a:\n    cmd: x\nsettings:\n  delivery:\n    mode: legacy\n    handoffSafety: process-fenced\n");
+    expect(obsolete.errors).toEqual([]);
+    expect(obsolete.config).toBeDefined();
+    expect(obsolete.config?.settings).not.toHaveProperty("delivery");
+    expect(obsolete.warnings).toEqual([expect.stringMatching(/settings\.delivery was ignored.*remove settings\.delivery/i)]);
   });
   it("parses a full valid config with defaults applied", () => {
     const { config, errors } = parseConfig(VALID);

@@ -425,6 +425,10 @@
               "description": "Agent principals allowed to record canonical Delivery integration when live Git proves containment."
             }
           }
+        },
+        "delivery": {
+          "deprecated": true,
+          "description": "Ignored compatibility key. Canonical Delivery with mechanism-only handoff is always active; remove this block from tachyon.yml."
         }
       }
     },
