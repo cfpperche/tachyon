@@ -1,15 +1,17 @@
-# 395 — Cockpit desktop POC (reframe)
+# 395 — Control MVP (desktop project sysadmin)
 
-**Branch:** `grok/engine-bridge-inspector-poc`  
-**Worktree:** `/home/goat/tachyon-worktrees/engine-bridge-inspector`  
-**Product intent:** `t-fe52f0` frente **(1)** Cockpit geral — **sem** mobile/companion na v1.
+**Status:** landed on `main` (2026-07-16)  
+**Product name:** **Control** (UI / `tachyon.openControl`)  
+**Product intent:** `t-fe52f0` frente **(1)** — desktop only; **sem** mobile/companion na v1.  
+**Merge:** `c3131f50` — `merge: land Control MVP (desktop project sysadmin)`  
+**Branch / worktree:** removed after land (`grok/engine-bridge-inspector-poc`).
 
 ## Framing (locked for this POC)
 
 | | |
 |--|--|
-| **Cockpit** | Editor-area **project sysadmin** — health, engines, bridges, deep-links |
-| **Cockpit chrome** | **Top tabs only** — no left rail (VS Code sidebar confusion) |
+| **Control** | Editor-area **project sysadmin** — health, engines, bridges, deep-links |
+| **Control chrome** | **Top tabs only** — no left rail (VS Code sidebar confusion) |
 | **Tab order** | Overview → Engine → Fleet → Approvals → Mission → Worktrees → Deliveries → Runtime → tmux → Plugins → Schedules → Settings |
 | **No "soon"** | Every tab is a real page (data table and/or deep-link to existing surface) |
 | **Sidebar** | **Unchanged** — day-to-day agents, spawn, pins, fleet work |
@@ -17,12 +19,21 @@
 | **tmux Server Inspector** | Unchanged deep tool (deep-link / placeholder tab) |
 | **Mobile** | Deferred (t-fe52f0 frente 2) |
 
-Engine/Bridge is the **first module** inside the Cockpit shell (not a forever-standalone product view).
+Engine/Bridge is the **first module** inside the Control shell (not a forever-standalone product view).
 
-## Dev-host preview
+## Land checklist (2026-07-16)
+
+- [x] Merge `grok/engine-bridge-inspector-poc` → `main`
+- [x] Strip developer meta banners / POC copy from production UI
+- [x] Focused tests green (cockpit / controlInspector / webviewPreviewRoutes)
+- [x] Dev-host pointer cleared (`dogfood:dev-host` no fixture)
+- [x] Worktree + feature branch removed
+- [x] Journal on `t-fe52f0` (frente 1 shipped; mobile still open)
+
+## Dev-host preview (from monorepo root)
 
 ```bash
-cd /home/goat/tachyon-worktrees/engine-bridge-inspector
+cd /home/goat/tachyon
 node esbuild.mjs
 npm run preview:webview:catalog
 npm run preview:webview
@@ -34,15 +45,13 @@ npm run preview:webview
 | Engine tab | http://localhost:5174/scripts/webview-preview/index.html?view=cockpit&fixture=engine |
 | Empty | http://localhost:5174/scripts/webview-preview/index.html?view=cockpit&fixture=empty |
 
-## F5 from monorepo
+## F5 Dev Host (optional dogfood)
 
 ```bash
 cd /home/goat/tachyon
-npm run dogfood:dev-host -- point \
-  --worktree /home/goat/tachyon-worktrees/engine-bridge-inspector \
-  --fixture sample-workspace --spec 395 --slug cockpit
+npm run dogfood:dev-host -- seed --fixture sample-workspace
 # Run and Debug → "Tachyon: Dev Host" → F5
-# EDH: Tachyon: Open Cockpit
+# Palette / sidebar header: Tachyon: Open Control
 ```
 
 ## Commands / open paths
@@ -59,5 +68,8 @@ Product name for MVP: **Control** (not Cockpit in the UI).
 ## Files
 
 - `src/cockpit/model.ts` — shell model
+- `src/cockpit/disk.ts` — managed worktrees / git-deliveries disk reads (no `node:fs` in webview)
 - `src/webview/Cockpit.ts` + `src/webview/cockpit/*` — panel + UI
 - `src/control-inspector/*` — Engine/Bridge data module (reused)
+- `src/extension.ts` — `openControl` + aliases + collect + deep-links
+- `package.json` / nls — sidebar nav Control @3
