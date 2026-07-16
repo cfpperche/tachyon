@@ -53,8 +53,21 @@ describe("agentStatusFilter (t-eddf90)", () => {
     expect(agentNeedsYou({ status: "stopped" })).toBe(false);
   });
 
-  it("screenshot fleet counts: All 8 · Live 4 · Needs you 1 · Stopped 4", () => {
-    expect(countAgentStatusFilters(FLEET)).toEqual({ all: 8, live: 4, attention: 1, stopped: 4 });
+  it("screenshot fleet counts: All 8 · Live 4 · Needs you 1 · Stopped 4 (focus chips 0 without focus)", () => {
+    expect(countAgentStatusFilters(FLEET)).toEqual({
+      all: 8, live: 4, attention: 1, stopped: 4, ontask: 0, hasfocus: 0,
+    });
+  });
+
+  it("On task / Has focus filters use projected focus", () => {
+    const withFocus: AgentVM[] = [
+      a({ name: "a", status: "running", focus: { text: "t1", source: "task", taskId: "t-aaaaaa", full: "t-aaaaaa t1" } }),
+      a({ name: "b", status: "running", focus: { text: "goal", source: "continuity", full: "goal" } }),
+      a({ name: "c", status: "idle" }),
+    ];
+    expect(countAgentStatusFilters(withFocus)).toMatchObject({ ontask: 1, hasfocus: 2 });
+    expect(names(filterAgentsByStatus(withFocus, "ontask"))).toEqual(["a"]);
+    expect(names(filterAgentsByStatus(withFocus, "hasfocus"))).toEqual(["a", "b"]);
   });
 
   it("Live filter keeps process-alive rows only", () => {

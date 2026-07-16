@@ -1,0 +1,20 @@
+{
+  "sessions": {
+    "helper": {
+      "cwd": "/home/goat/tachyon/.tachyon/dev-host/workspace",
+      "declared": false,
+      "updatedAt": "2026-07-16T15:00:00.000Z",
+      "def": {
+        "cmd": "grok",
+        "kind": "agent",
+        "parent": "grok",
+        "contract": {
+          "task": "Implement focus-line brief fallback for ad-hoc children",
+          "context": "Parent delegated a child spawn for dogfood",
+          "constraints": "Stay in fixture workspace",
+          "deliverable": "Focus line shows brief source"
+        }
+      }
+    }
+  }
+}

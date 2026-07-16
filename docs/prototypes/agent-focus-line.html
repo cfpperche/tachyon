@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>POC — Focus line (o que cada agente está fazendo)</title>
+<style>
+  :root {
+    --bg: #0f0f0f;
+    --sidebar: #181818;
+    --fg: #cccccc;
+    --muted: #858585;
+    --border: #2b2b2b;
+    --hover: #2a2d2e;
+    --sel: #37373d;
+    --input: #313131;
+    --ok: #89d185;
+    --warn: #cca700;
+    --err: #f48771;
+    --focus: #0078d4;
+    --task: #4fc1ff;
+    --brief: #c586c0;
+    --continuity: #dcdcaa;
+    --idle: #8a8a8a;
+    --chip: #252526;
+    --font: "Segoe UI", system-ui, -apple-system, sans-serif;
+    --mono: ui-monospace, "Cascadia Code", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; background: var(--bg); color: var(--fg);
+    font: 13px/1.45 var(--font); padding: 24px 16px 56px;
+    display: grid; place-items: start center;
+  }
+  .page { width: min(1120px, 100%); display: grid; gap: 18px; }
+  h1 { margin: 0; font-size: 18px; font-weight: 600; }
+  .lede { color: var(--muted); max-width: 78ch; margin: 0; }
+  .lede strong { color: var(--fg); font-weight: 600; }
+  .grid {
+    display: grid; grid-template-columns: 300px 1fr; gap: 22px; align-items: start;
+  }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+
+  /* ── controls ── */
+  .panel {
+    background: #1e1e1e; border: 1px solid var(--border); border-radius: 8px;
+    padding: 14px 16px; display: grid; gap: 12px;
+  }
+  .panel h2 { margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+  .toggles { display: flex; flex-wrap: wrap; gap: 8px; }
+  label.toggle {
+    display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+    padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--chip); font-size: 12px; user-select: none;
+  }
+  label.toggle:hover { border-color: #555; }
+  label.toggle input { accent-color: var(--focus); }
+  .legend { display: grid; gap: 6px; font-size: 12px; color: var(--muted); }
+  .legend .row { display: flex; align-items: center; gap: 8px; }
+  .pill {
+    font: 600 10px/1 var(--mono); padding: 3px 6px; border-radius: 4px;
+    border: 1px solid var(--border); color: var(--fg);
+  }
+  .pill.task { border-color: color-mix(in srgb, var(--task) 50%, var(--border)); color: var(--task); }
+  .pill.brief { border-color: color-mix(in srgb, var(--brief) 50%, var(--border)); color: var(--brief); }
+  .pill.continuity { border-color: color-mix(in srgb, var(--continuity) 50%, var(--border)); color: var(--continuity); }
+  .pill.none { opacity: .55; }
+  .detail {
+    border-top: 1px solid var(--border); padding-top: 12px; min-height: 120px;
+  }
+  .detail h3 { margin: 0 0 6px; font-size: 13px; }
+  .detail .meta { color: var(--muted); font-size: 12px; margin-bottom: 8px; }
+  .detail .full {
+    font-family: var(--mono); font-size: 12px; background: #141414;
+    border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px;
+    white-space: pre-wrap; color: #ddd;
+  }
+  .detail .empty { color: var(--muted); font-style: italic; }
+
+  /* ── sidebar mock ── */
+  .frame {
+    width: 300px; min-height: 560px; background: var(--sidebar);
+    border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
+    display: flex; flex-direction: column; box-shadow: 0 12px 40px rgba(0,0,0,.45);
+  }
+  .titlebar {
+    display: flex; align-items: center; gap: 8px; padding: 8px 10px 6px;
+    font-size: 11px; font-weight: 600; letter-spacing: .04em; color: var(--muted);
+  }
+  .titlebar .grow { flex: 1; }
+  .kbar {
+    margin: 2px 8px 6px; display: flex; align-items: center; gap: 6px;
+    padding: 5px 8px; background: var(--input); color: var(--muted);
+    border: 1px solid #3c3c3c; border-radius: 3px; font-size: 12px;
+  }
+  .filters {
+    display: flex; flex-wrap: wrap; gap: 4px; padding: 2px 10px 8px;
+  }
+  .chip {
+    appearance: none; border: 1px solid var(--border); background: var(--chip);
+    color: var(--muted); border-radius: 999px; padding: 2px 8px 2px 6px;
+    font: 600 10px/1.5 var(--font); cursor: pointer;
+    display: inline-flex; align-items: center; gap: 5px;
+  }
+  .chip .dot { width: 7px; height: 7px; border-radius: 50%; }
+  .chip[data-f="all"] .dot { background: var(--muted); }
+  .chip[data-f="live"] .dot { background: var(--ok); }
+  .chip[data-f="attention"] .dot { background: var(--warn); }
+  .chip[data-f="ontask"] .dot { background: var(--task); }
+  .chip[data-f="hasfocus"] .dot { background: var(--continuity); }
+  .chip.on {
+    color: var(--fg); border-color: var(--focus);
+    background: color-mix(in srgb, var(--focus) 18%, var(--chip));
+  }
+  .sec {
+    display: flex; align-items: center; gap: 6px; padding: 8px 12px 4px;
+    font-size: 11px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: .05em; color: var(--muted);
+  }
+  .sec .tag {
+    margin-left: auto; font-size: 10px; font-weight: 600; text-transform: none;
+    letter-spacing: 0; color: var(--ok); border: 1px solid color-mix(in srgb, var(--ok) 40%, var(--border));
+    border-radius: 999px; padding: 1px 7px;
+  }
+  .list { flex: 1; overflow: auto; padding-bottom: 8px; }
+  .row {
+    padding: 6px 10px 7px 12px; border-left: 2px solid transparent;
+    cursor: pointer; position: relative;
+  }
+  .row:hover { background: var(--hover); }
+  .row.sel { background: var(--sel); border-left-color: var(--focus); }
+  .row.child { padding-left: 26px; }
+  .l1 {
+    display: flex; align-items: center; gap: 6px; min-height: 20px;
+  }
+  .dot-live {
+    width: 8px; height: 8px; border-radius: 50%; background: var(--ok); flex: none;
+  }
+  .dot-stopped {
+    width: 8px; height: 8px; border-radius: 50%; border: 1px solid var(--idle);
+    background: transparent; flex: none;
+  }
+  .name { font-weight: 600; color: #e0e0e0; white-space: nowrap; }
+  .model { color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .res { margin-left: auto; color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; flex: none; }
+  .l2 {
+    display: flex; flex-wrap: wrap; gap: 4px; align-items: center;
+    padding: 3px 0 0 14px; font-size: 10px; color: var(--muted);
+  }
+  .badge {
+    border: 1px solid var(--border); border-radius: 3px; padding: 0 5px;
+    line-height: 16px; background: #1f1f1f;
+  }
+  .badge.stale { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, var(--border)); }
+  .badge.branch { font-family: var(--mono); max-width: 14ch; overflow: hidden; text-overflow: ellipsis; }
+
+  /* ── THE POC: focus line ── */
+  .focus {
+    display: flex; align-items: baseline; gap: 6px;
+    /* same indent as L2 badges under the name (not deeper for children) */
+    padding: 3px 0 0 14px; min-height: 0;
+  }
+  .row.child .focus { padding-left: 14px; }
+  .focus.hidden { display: none; }
+  .focus .arrow {
+    color: var(--muted); font-size: 11px; flex: none; opacity: .7;
+  }
+  .focus .src {
+    font: 700 9px/1 var(--mono); letter-spacing: .03em; text-transform: uppercase;
+    flex: none; opacity: .95;
+  }
+  .focus .src.task { color: var(--task); }
+  .focus .src.brief { color: var(--brief); }
+  .focus .src.continuity { color: var(--continuity); }
+  .focus .text {
+    color: #c8c8c8; font-size: 11px; line-height: 1.3;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+  }
+  .focus .id {
+    font: 600 10px/1 var(--mono); color: var(--task); flex: none;
+  }
+  .row.no-focus .focus { display: none; }
+  .frame.no-source-pills .focus .src { display: none; }
+
+  .bridge {
+    border-top: 1px solid var(--border); padding: 6px 10px; font-size: 11px; color: var(--ok);
+  }
+  .note {
+    font-size: 12px; color: var(--muted); border-left: 3px solid var(--focus);
+    padding: 8px 12px; background: #1a1a1a; border-radius: 0 6px 6px 0;
+  }
+  .note code { font-family: var(--mono); font-size: 11px; color: #ddd; }
+</style>
+</head>
+<body>
+<div class="page">
+  <div>
+    <h1>POC — Focus line na sidebar</h1>
+    <p class="lede">
+      Com muitos agentes, badges (model, branch, CPU, continuity) <strong>não respondem</strong>
+      “em que tarefa cada um está”. Esta POC projeta <strong>uma linha de foco</strong> por agente,
+      com prioridade: <strong>task MC → spawn brief → continuity goal</strong>. Clica numa row para ver a fonte completa.
+    </p>
+  </div>
+
+  <div class="grid">
+    <!-- sidebar -->
+    <div class="frame" id="frame">
+      <div class="titlebar">
+        <span>TACHYON</span>
+        <span class="grow"></span>
+        <span class="ico">☰ ↻ ⚙</span>
+      </div>
+      <div class="kbar">🔍 Search agents… <span style="margin-left:auto;font-size:10px;opacity:.7">Ctrl K</span></div>
+      <div class="filters" id="filters">
+        <button type="button" class="chip on" data-f="all"><span class="dot"></span>All <span id="n-all">9</span></button>
+        <button type="button" class="chip" data-f="live"><span class="dot"></span>Live <span id="n-live">6</span></button>
+        <button type="button" class="chip" data-f="attention"><span class="dot"></span>Needs you <span id="n-att">0</span></button>
+        <button type="button" class="chip" data-f="ontask"><span class="dot"></span>On task <span id="n-task">0</span></button>
+        <button type="button" class="chip" data-f="hasfocus"><span class="dot"></span>Has focus <span id="n-focus">0</span></button>
+      </div>
+      <div class="sec">Agents <span class="tag" id="ws-tag">handoff · 5</span></div>
+      <div class="list" id="list"></div>
+      <div class="bridge">● Bridge · connected</div>
+    </div>
+
+    <!-- explain -->
+    <div class="panel">
+      <h2>Controles da POC</h2>
+      <div class="toggles">
+        <label class="toggle"><input type="checkbox" id="showFocus" checked /> Mostrar focus line</label>
+        <label class="toggle"><input type="checkbox" id="showSrc" checked /> Mostrar pill da fonte</label>
+        <label class="toggle"><input type="checkbox" id="dense" /> Dense (só texto, sem arrow)</label>
+      </div>
+
+      <h2>Prioridade da fonte</h2>
+      <div class="legend">
+        <div class="row"><span class="pill task">task</span> Mission Control: assignee = agente, status open</div>
+        <div class="row"><span class="pill brief">brief</span> Spawn contract / taskBrief (filho ad-hoc)</div>
+        <div class="row"><span class="pill continuity">goal</span> Continuity: linha “# Current Goal”</div>
+        <div class="row"><span class="pill none">—</span> Sem fonte → linha omitida (não inventa trabalho)</div>
+      </div>
+
+      <div class="detail" id="detail">
+        <div class="empty">Clica num agente à esquerda para inspecionar a focus line.</div>
+      </div>
+
+      <div class="note">
+        <strong>O que validar com o olho:</strong> (1) dá para achar “quem está em t-…” sem abrir terminal?
+        (2) filhos ad-hoc herdam o brief do spawn? (3) continuity stale ainda mostra goal útil?
+        (4) filtro <code>On task</code> / <code>Has focus</code> reduz o fleet sem esconder status?
+        Arquivo: <code>docs/prototypes/agent-focus-line.html</code> · worktree <code>grok/agent-focus-line-poc</code>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/** Fleet mock inspired by the 2026-07-16 screenshot + typical Tachyon shapes. */
+const AGENTS = [
+  {
+    id: "claude",
+    name: "claude",
+    model: "Claude Fable…",
+    live: true,
+    attention: null,
+    branch: "main",
+    res: "0% · 390M",
+    continuity: "stale",
+    task: null,
+    brief: null,
+    goal: "Coordinate fleet + land 389 cleanup follow-ups",
+    child: false,
+  },
+  {
+    id: "leasesalvage3",
+    name: "leasesalvage3",
+    model: "GPT…",
+    live: true,
+    attention: null,
+    branch: "tachyon/leasesalvage3",
+    res: "0% · 224M",
+    continuity: null,
+    task: { id: "t-19026b", title: "correct lease salvage recovery path" },
+    brief: "Implement T14 salvage recovery without widening owns",
+    goal: "Finish salvage recovery tests",
+    child: true,
+    parent: "claude",
+  },
+  {
+    id: "codex",
+    name: "codex",
+    model: "GPT-5.6 Sol…",
+    live: true,
+    attention: null,
+    branch: "main",
+    res: "0% · 388M",
+    continuity: "stale",
+    task: { id: "t-769666", title: "rebind resume readiness retries" },
+    brief: null,
+    goal: "Wire transient resume readiness for engine rebind",
+    child: false,
+  },
+  {
+    id: "codex-regression",
+    name: "codex-regression",
+    model: "…",
+    live: true,
+    attention: null,
+    branch: "main",
+    res: "5% · 493M",
+    continuity: "stale",
+    task: null,
+    brief: null,
+    goal: "Regression pass on Bridge notify + wait_for_agent",
+    child: false,
+  },
+  {
+    id: "grok",
+    name: "grok",
+    model: "Grok 4.5",
+    live: true,
+    attention: null,
+    branch: "main",
+    res: "0% · 146M",
+    continuity: "stale",
+    task: null,
+    brief: null,
+    goal: "Product design: agent focus line for multi-agent glance",
+    child: false,
+  },
+  {
+    id: "grok-hermes",
+    name: "grok-hermes",
+    model: "Grok 4…",
+    live: true,
+    attention: null,
+    branch: "main",
+    res: "0% · 115M",
+    continuity: null,
+    task: null,
+    brief: null,
+    goal: null, // no focus — intentional empty
+    child: false,
+  },
+  {
+    id: "codex-soul",
+    name: "codex-soul",
+    model: "GPT…",
+    live: false,
+    attention: null,
+    branch: "main",
+    res: "",
+    continuity: null,
+    task: null,
+    brief: null,
+    goal: "Paused — soul identity dogfood",
+    child: false,
+  },
+];
+
+/** Resolve focus by priority: task → brief → continuity goal. */
+function resolveFocus(a) {
+  if (a.task) {
+    return {
+      source: "task",
+      id: a.task.id,
+      text: a.task.title,
+      full: `${a.task.id}  ${a.task.title}`,
+      age: "task · open",
+    };
+  }
+  if (a.brief) {
+    return {
+      source: "brief",
+      id: null,
+      text: a.brief,
+      full: a.brief,
+      age: "spawn brief",
+    };
+  }
+  if (a.goal) {
+    return {
+      source: "continuity",
+      id: null,
+      text: a.goal,
+      full: `# Current Goal\n${a.goal}`,
+      age: a.continuity === "stale" ? "continuity · stale" : "continuity · fresh",
+    };
+  }
+  return null;
+}
+
+let filter = "all";
+let selected = null;
+
+function counts() {
+  const all = AGENTS.length;
+  const live = AGENTS.filter((a) => a.live).length;
+  const att = AGENTS.filter((a) => a.attention === "needs-input" || a.attention === "throttled").length;
+  const ontask = AGENTS.filter((a) => !!a.task).length;
+  const hasfocus = AGENTS.filter((a) => resolveFocus(a)).length;
+  return { all, live, att, ontask, hasfocus };
+}
+
+function matchesFilter(a) {
+  if (filter === "all") return true;
+  if (filter === "live") return a.live;
+  if (filter === "attention") return a.attention === "needs-input" || a.attention === "throttled";
+  if (filter === "ontask") return !!a.task;
+  if (filter === "hasfocus") return !!resolveFocus(a);
+  return true;
+}
+
+function render() {
+  const c = counts();
+  document.getElementById("n-all").textContent = c.all;
+  document.getElementById("n-live").textContent = c.live;
+  document.getElementById("n-att").textContent = c.att;
+  document.getElementById("n-task").textContent = c.ontask;
+  document.getElementById("n-focus").textContent = c.hasfocus;
+
+  const showFocus = document.getElementById("showFocus").checked;
+  const showSrc = document.getElementById("showSrc").checked;
+  const dense = document.getElementById("dense").checked;
+  const frame = document.getElementById("frame");
+  frame.classList.toggle("no-source-pills", !showSrc);
+
+  const list = document.getElementById("list");
+  list.innerHTML = "";
+  for (const a of AGENTS) {
+    if (!matchesFilter(a)) continue;
+    const focus = resolveFocus(a);
+    const row = document.createElement("div");
+    row.className = "row" + (a.child ? " child" : "") + (selected === a.id ? " sel" : "") + (!focus ? " no-focus" : "");
+    row.dataset.id = a.id;
+
+    const l1 = document.createElement("div");
+    l1.className = "l1";
+    l1.innerHTML = `
+      <span class="${a.live ? "dot-live" : "dot-stopped"}"></span>
+      <span class="name">${a.name}</span>
+      <span class="model">– ${escapeHtml(a.model)}</span>
+      ${a.res ? `<span class="res">${escapeHtml(a.res)}</span>` : ""}
+    `;
+    row.appendChild(l1);
+
+    const l2 = document.createElement("div");
+    l2.className = "l2";
+    // Hierarchy (indent / tree) already shows parent/child — no "delegated by" text badge.
+    const badges = [];
+    if (a.branch) badges.push(`<span class="badge branch">⎇ ${escapeHtml(a.branch)}</span>`);
+    if (a.continuity === "stale") badges.push(`<span class="badge stale">↻ continuity stale</span>`);
+    if (!a.live) badges.push(`<span class="badge">stopped</span>`);
+    l2.innerHTML = badges.join("") || `<span style="opacity:.4">—</span>`;
+    row.appendChild(l2);
+
+    if (showFocus && focus) {
+      const fl = document.createElement("div");
+      fl.className = "focus";
+      fl.title = `${focus.age}\n${focus.full}`;
+      const arrow = dense ? "" : `<span class="arrow">↳</span>`;
+      const src = showSrc ? `<span class="src ${focus.source}">${focus.source === "continuity" ? "goal" : focus.source}</span>` : "";
+      const id = focus.id ? `<span class="id">${escapeHtml(focus.id)}</span>` : "";
+      fl.innerHTML = `${arrow}${src}${id}<span class="text">${escapeHtml(focus.text)}</span>`;
+      row.appendChild(fl);
+    }
+
+    row.addEventListener("click", () => {
+      selected = a.id;
+      render();
+      showDetail(a);
+    });
+    list.appendChild(row);
+  }
+}
+
+function showDetail(a) {
+  const focus = resolveFocus(a);
+  const el = document.getElementById("detail");
+  if (!focus) {
+    el.innerHTML = `
+      <h3>${escapeHtml(a.name)}</h3>
+      <div class="meta">Sem focus line — nenhuma task open, brief ou Current Goal.</div>
+      <div class="empty">Row limpa de propósito (ex.: grok-hermes). Não inventar “idle work”.</div>
+    `;
+    return;
+  }
+  el.innerHTML = `
+    <h3>${escapeHtml(a.name)}</h3>
+    <div class="meta">
+      Fonte: <span class="pill ${focus.source}">${focus.source === "continuity" ? "goal" : focus.source}</span>
+      · ${escapeHtml(focus.age)}
+      · prioridade: task &gt; brief &gt; goal
+    </div>
+    <div class="full">${escapeHtml(focus.full)}</div>
+  `;
+}
+
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+document.getElementById("filters").addEventListener("click", (e) => {
+  const btn = e.target.closest(".chip");
+  if (!btn) return;
+  filter = btn.dataset.f;
+  for (const c of document.querySelectorAll(".chip")) c.classList.toggle("on", c === btn);
+  render();
+});
+for (const id of ["showFocus", "showSrc", "dense"]) {
+  document.getElementById(id).addEventListener("change", render);
+}
+
+render();
+// auto-select codex (task + continuity)
+selected = "codex";
+render();
+showDetail(AGENTS.find((a) => a.id === "codex"));
+</script>
+</body>
+</html>

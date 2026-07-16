@@ -18,6 +18,7 @@ import { isResumable, type SessionLedger } from "../resume/SessionLedger.js";
 import type { ProposalStore } from "../schedule/ProposalStore.js";
 import type { Scheduler } from "../schedule/Scheduler.js";
 import { toAgentVM, type ObservedModelInput } from "./agentModel.js";
+import { resolveAgentFocus, type FocusTaskInput } from "./agentFocus.js";
 import type { AgentStatus, AgentVM, EvidenceBadge, FleetVM, RunState, Verify } from "./types.js";
 import type { TmuxService } from "../tmux/TmuxService.js";
 import { evidenceBadge, type EvidenceSummary } from "../worktree/evidence.js";
@@ -47,6 +48,10 @@ export interface SidebarFleetSource {
   lastActivityAt(): string | null;
   attentionOf(agent: string): AgentAttention | undefined;
   continuityBadge(agent: string): "fresh" | "stale" | "missing" | undefined;
+  /** spec 390 — open/assigned MC tasks for focus projection (optional when TaskStore absent). */
+  focusTasks?: () => FocusTaskInput[];
+  /** spec 390 — continuity markdown body for Current Goal parse (optional). */
+  continuityBody?: (agent: string) => string | null;
   persistenceHookHealth(agent: string): {
     state: "active" | "skipped" | "failed" | "unknown";
     reason?: string;
@@ -140,6 +145,8 @@ export async function buildSidebarFleet(
   }));
 
   const configFailure = source.configFailure;
+  // spec 390 — load task list once per fleet build for focus resolution.
+  const focusTasks = source.focusTasks?.() ?? [];
   const agents: AgentVM[] = all
     .filter((agent) => agent.kind === "agent")
     .map((agent) => {
@@ -148,6 +155,23 @@ export async function buildSidebarFleet(
       const hookHealth = agent.declared ? source.persistenceHookHealth(agent.name) : undefined;
       const externalSummary = externalTools.summary(agent.name);
       const liveGit = liveGitOf.get(agent.name);
+      const ledgerDef = source.ledger.get(agent.name)?.def;
+      let continuityBody: string | null = null;
+      try {
+        continuityBody = source.continuityBody?.(agent.name) ?? null;
+      } catch {
+        continuityBody = null;
+      }
+      const focus = resolveAgentFocus({
+        agent: agent.name,
+        ai: true,
+        tasks: focusTasks,
+        ledger: {
+          contractTask: typeof ledgerDef?.contract?.task === "string" ? ledgerDef.contract.task : undefined,
+          taskBrief: typeof ledgerDef?.taskBrief === "string" ? ledgerDef.taskBrief : undefined,
+        },
+        continuityBody,
+      });
       return toAgentVM({ ...agent, cmd: definition?.cmd }, {
         attention: live?.state,
         awaitingHuman: live?.awaitingHuman ? { reason: live.awaitingHumanReason ?? "" } : undefined,
@@ -168,6 +192,7 @@ export async function buildSidebarFleet(
         ai: true,
         adhoc: !agent.declared,
         continuity: agent.running && agent.declared ? source.continuityBadge(agent.name) : undefined,
+        ...(focus ? { focus } : {}),
         persistenceHooks: hookHealth ? {
           state: hookHealth.state,
           ...(hookHealth.reason !== undefined ? { reason: hookHealth.reason } : {}),

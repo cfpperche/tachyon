@@ -196,14 +196,13 @@ function ResourceDetail({ a }: { a: AgentVM }) {
 
 function AgentBadges({ a }: { a: AgentVM }) {
   const externalToolLabel = externalToolBadgeLabel(a);
+  // spec 390 — no "delegated by / owned by" text (tree indent is hierarchy); no "working" chip (live-dot).
   return (
     <>
       {/* spec 384 — branch/worktree badge is FIXED first in the list */}
       <BranchBadge a={a} />
       {a.configInvalid && <span class="badge err" title="tachyon.yml is invalid — row shown from session ledger or last-known-good snapshot (read-only for spawn)">config invalid</span>}
-      {a.delegator && a.parent && <span class="badge" title="Gated delegation requester">delegated by {a.delegator}</span>}
-      {a.declaredOwner && (a.parent || a.delegator) && <span class="badge" title="Declared owner from tachyon.yml subagents">owned by {a.declaredOwner}</span>}
-      {a.attention && <span class="badge attn">{a.attention}</span>}
+      {a.attention && a.attention !== "working" && <span class="badge attn">{a.attention}</span>}
       {a.awaitingHuman && <span class="badge warn" title={a.awaitingHuman.reason || "needs a human — request_human_attention"}>◆ needs you</span>}
       {a.verify === "pass" && <span class="badge ok">✓ verified</span>}
       {a.verify === "fail" && <span class="badge err">✗ verify</span>}
@@ -252,9 +251,13 @@ export function AgentRow({ a, flash, nested = false, hasChildren = false, collap
   const d = useContext(DispatchCtx);
   const hasHidden = collapsed && hiddenCount > 0;
   const hasResources = !!a.resources && (a.status === "running" || a.status === "idle" || a.status === "needs" || a.status === "throttled" || a.status === "stop-failed");
-  const hasMeta = a.configInvalid || a.parent || a.delegator || a.declaredOwner || a.sub || a.attention || a.awaitingHuman || a.liveBranch || a.worktree || a.verify || a.externalTools?.active || a.harness || a.resumable || a.forked || (a.continuity && a.continuity !== "fresh") || a.persistenceHooks || hasHidden;
+  const attentionVisible = a.attention && a.attention !== "working";
+  const hasMeta = a.configInvalid || a.sub || attentionVisible || a.awaitingHuman || a.liveBranch || a.worktree || a.verify || a.externalTools?.active || a.harness || a.resumable || a.forked || (a.continuity && a.continuity !== "fresh") || a.persistenceHooks || hasHidden;
   const cpu = a.resources?.cpuPct;
   const hot = cpu !== undefined && cpu >= 80;
+  const focusTitle = a.focus
+    ? `${a.focus.source === "continuity" ? "goal" : a.focus.source}${a.focus.taskId ? ` · ${a.focus.taskId}` : ""}\n${a.focus.full}`
+    : undefined;
   return (
     <div class={`row${nested ? " child" : ""}${flash ? " flash" : ""}${metricsOpen && hasResources ? " metrics-open" : ""}`} data-name={a.name.toLowerCase()}>
       <div class="row-top">
@@ -294,9 +297,20 @@ export function AgentRow({ a, flash, nested = false, hasChildren = false, collap
       </div>
       {hasMeta && (
         <div class="row-meta">
-          {a.parent ? <span class="msub">spawned by {a.parent}</span> : a.delegator ? <span class="msub">delegated by {a.delegator}</span> : a.declaredOwner ? <span class="msub">owned by {a.declaredOwner}</span> : a.sub ? <span class="msub">{a.sub}</span> : null}
+          {a.sub ? <span class="msub">{a.sub}</span> : null}
           {hasHidden && <span class={`badge${hiddenNeedsAttention ? " warn" : ""}`} title={hiddenNeedsAttention ? "Collapsed children include attention" : "Collapsed children"}>{hiddenNeedsAttention ? "◆ " : ""}+{hiddenCount}</span>}
           <AgentBadges a={a} />
+        </div>
+      )}
+      {/* spec 390 — focus line: what the agent is working on (task → brief → continuity goal) */}
+      {a.focus && (
+        <div class="row-focus" title={focusTitle}>
+          <span class="focus-arrow" aria-hidden="true">↳</span>
+          <span class={`focus-src src-${a.focus.source}`}>
+            {a.focus.source === "continuity" ? "goal" : a.focus.source}
+          </span>
+          {a.focus.taskId && <span class="focus-id">{a.focus.taskId}</span>}
+          <span class="focus-text">{a.focus.text}</span>
         </div>
       )}
       {metricsOpen && hasResources && <ResourceDetail a={a} />}

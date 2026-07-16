@@ -1,0 +1,22 @@
+# Dogfood fixture for spec 390 — agent focus line.
+# Agents start STOPPED; focus still projects from tasks/continuity without a live process.
+settings:
+  maxAgents: 8
+
+agents:
+  grok:
+    cmd: grok
+    autostart: false
+    attention: true
+  solo:
+    cmd: grok
+    autostart: false
+    attention: true
+  idle:
+    cmd: grok
+    autostart: false
+    attention: false
+
+commands:
+  hello:
+    cmd: "echo agent-focus-line-dogfood-ok"

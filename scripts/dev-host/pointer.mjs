@@ -117,7 +117,18 @@ export function materializeWorkspaceMirror(mirrorDir, fixtureAbs) {
       continue;
     }
     if (name === ".dev-host-source") continue;
-    fs.symlinkSync(path.join(fixture, name), path.join(mirrorDir, name));
+    const src = path.join(fixture, name);
+    const dest = path.join(mirrorDir, name);
+    // `.tachyon` must be a REAL directory under the mirror, not a symlink to the fixture.
+    // Engine AgentManager fails closed if `.tachyon` resolves outside the workspace
+    // (SoulError: Soul launch reservation parent escapes workspace) — common when dogfood
+    // fixtures seed tasks/continuity/sessions under fixture/.tachyon and pointer only
+    // symlinks them. Other entries stay symlinks so Explorer still shows fixture files.
+    if (name === ".tachyon") {
+      fs.cpSync(src, dest, { recursive: true });
+      continue;
+    }
+    fs.symlinkSync(src, dest);
   }
   fs.writeFileSync(path.join(mirrorDir, ".dev-host-source"), `${fixture}\n`, "utf8");
   return mirrorDir;

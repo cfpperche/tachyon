@@ -95,6 +95,12 @@ const agent = z.object({
   pane: z.boolean().optional(),
   forked: z.boolean().optional(),
   continuity: z.enum(["fresh", "stale", "missing"]).optional(),
+  focus: z.object({
+    text: text(128, 1),
+    source: z.enum(["task", "brief", "continuity"]),
+    taskId: z.string().regex(/^t-[0-9a-f]{6}$/).optional(),
+    full: text(2_000, 1),
+  }).strict().optional(),
   persistenceHooks: persistenceHooks.optional(),
   evidence: evidence.optional(),
   externalTools: externalTools.optional(),

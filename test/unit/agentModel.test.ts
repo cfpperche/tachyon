@@ -22,7 +22,9 @@ describe("agentModel.toAgentVM (spec 237)", () => {
   it("maps attention label + drops idle/undefined", () => {
     expect(toAgentVM(raw({ name: "a", running: true }), { attention: "needs-input" })).toMatchObject({ status: "needs", attention: "needs input" });
     expect(toAgentVM(raw({ name: "a", running: true }), { attention: "throttled" })).toMatchObject({ status: "throttled", attention: "throttled" });
-    expect(toAgentVM(raw({ name: "a", running: true }), { attention: "working" })).toMatchObject({ status: "running", attention: "working" });
+    // spec 390 — live-dot covers "working"; do not surface it as an attention badge
+    expect(toAgentVM(raw({ name: "a", running: true }), { attention: "working" })).toMatchObject({ status: "running" });
+    expect(toAgentVM(raw({ name: "a", running: true }), { attention: "working" }).attention).toBeUndefined();
     expect(toAgentVM(raw({ name: "a", running: true }), { attention: "idle" }).attention).toBeUndefined();
   });
   it("exit sub: clean vs crashed (with exit code)", () => {
