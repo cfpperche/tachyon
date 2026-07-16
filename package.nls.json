@@ -71,6 +71,7 @@
   "command.restartBridge": "Tachyon: Restart Bridge",
   "command.openSettings": "Tachyon: Settings",
   "command.inspectServer": "Tachyon: Inspect tmux Server",
+  "command.inspectEngine": "Tachyon: Inspect Engine/Bridge",
   "command.openPlugins": "Tachyon: Plugins",
   "command.openPluginSurface": "Tachyon: Open Plugin Surface",
   "command.missionControl": "Tachyon: Mission Control",

@@ -216,6 +216,13 @@ const inspector = {
   outfile: "dist/webview/inspector.js",
 };
 
+// POC — Engine/Bridge Control Inspector (sibling of tmux Server Inspector).
+const controlInspector = {
+  ...sidebar,
+  entryPoints: ["src/webview/control-inspector/main.tsx"],
+  outfile: "dist/webview/control-inspector.js",
+};
+
 // spec 279 — the Preact Pin Preview view bundle (converted from inline HTML; read-only, never imports vscode).
 const pinPreview = {
   ...sidebar,
@@ -430,6 +437,7 @@ copyFileSync("src/webview/plugins/plugins.css", "dist/webview/plugins.css"); // 
 copyFileSync("src/webview/activity/activity.css", "dist/webview/activity.css"); // spec 278 — activity styles (shared by the webview + the dev preview harness)
 copyFileSync("src/webview/probes/probes.css", "dist/webview/probes.css"); // spec 279 — probes styles (shared by the webview + the dev preview harness)
 copyFileSync("src/webview/inspector/inspector.css", "dist/webview/inspector.css"); // spec 279 — inspector styles (shared by the webview + the dev preview harness)
+copyFileSync("src/webview/control-inspector/control-inspector.css", "dist/webview/control-inspector.css"); // POC Engine/Bridge Control Inspector
 copyFileSync("src/webview/pin-preview/pin-preview.css", "dist/webview/pin-preview.css"); // spec 279 — pin-preview styles (shared by the webview + the dev preview harness)
 copyFileSync("src/webview/shared/studio/studio-frame.css", "dist/webview/studio-frame.css"); // spec 350 — the studio shell's chrome (shared by any studio built on it + the dev preview harness)
 copyFileSync("src/webview/pipeline-studio/pipeline-studio.css", "dist/webview/pipeline-studio.css"); // spec 350 T4 — Pipeline Studio (Fake 1) domain-region styles
@@ -463,7 +471,7 @@ if (existsSync(excalidrawAssets)) {
   cpSync(excalidrawAssets, "dist/webview/excalidraw-assets", { recursive: true });
 }
 
-const targets = [extension, toolLauncher, dataResolver, externalResolver, engineDaemon, sidebar, activity, handoff, approval, plugins, probes, inspector, pinPreview, pinStudio, missionControl, taskDetail, taskStudio, runtimeOps, pipelineStudio, agentStudioFixture, agentStudioShell, terminalStudioShell, commandStudioShell, runbookStudioShell, scheduleStudioShell, pluginHost, excalidraw, mermaid, katex, preview, uiGate];
+const targets = [extension, toolLauncher, dataResolver, externalResolver, engineDaemon, sidebar, activity, handoff, approval, plugins, probes, inspector, controlInspector, pinPreview, pinStudio, missionControl, taskDetail, taskStudio, runtimeOps, pipelineStudio, agentStudioFixture, agentStudioShell, terminalStudioShell, commandStudioShell, runbookStudioShell, scheduleStudioShell, pluginHost, excalidraw, mermaid, katex, preview, uiGate];
 if (watch) {
   const ctxs = await Promise.all(targets.map((c) => esbuild.context(c)));
   await Promise.all(ctxs.map((c) => c.watch()));

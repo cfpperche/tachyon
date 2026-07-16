@@ -10,6 +10,13 @@ import { CONFIG_FILENAMES, inferKind, type ScheduleDef } from "./config/loadConf
 import { agentEntryLine, commandEntryLine, runbookEntryLine, scheduleEntryLine } from "./config/YamlConfigEditor.js";
 import type { StudioSubmit } from "./webview/studioSubmit.js";
 import { openServerInspector, SERVER_INSPECTOR_VIEW_TYPE, type ServerInspectorPanelState, type InspectorDeps } from "./webview/ServerInspector.js";
+import {
+  openControlInspector,
+  CONTROL_INSPECTOR_VIEW_TYPE,
+  type ControlInspectorPanelState,
+  type ControlInspectorDeps,
+} from "./webview/ControlInspector.js";
+import type { ControlInspectorWorkspaceInput } from "./control-inspector/model.js";
 import { SidebarPrototypeProvider, PIN_PREVIEW_VIEW_TYPE, type PinPreviewPanelState } from "./webview/SidebarPrototype.js";
 import { RuntimeOpsViewProvider } from "./webview/RuntimeOpsView.js";
 import { ActivityPanelManager, ACTIVITY_VIEW_TYPE, type ActivityPanelState } from "./webview/ActivityPanel.js";
@@ -1177,6 +1184,55 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     };
   };
 
+  /** POC — Engine/Bridge Control Inspector (sibling of tmux Server Inspector). */
+  const makeControlInspectorDeps = (): ControlInspectorDeps => ({
+    extensionUri: context.extensionUri,
+    collect: async (): Promise<ControlInspectorWorkspaceInput[]> => {
+      const rows: ControlInspectorWorkspaceInput[] = [];
+      for (const ws of workspaces()) {
+        let identity: ControlInspectorWorkspaceInput["identity"] = null;
+        let identityError: string | undefined;
+        try {
+          const id = ws.client.identity;
+          identity = {
+            pid: id.pid,
+            instanceId: id.instanceId,
+            processStartIdentity: id.processStartIdentity,
+            startedAt: id.startedAt,
+            bundleId: id.bundleId,
+            engineVersion: id.engineVersion,
+            protocol: id.protocol ? { min: id.protocol.min, max: id.protocol.max } : undefined,
+            bridge: id.bridge ? { instanceId: id.bridge.instanceId, port: id.bridge.port } : undefined,
+          };
+        } catch (err) {
+          identityError = err instanceof Error ? err.message : String(err);
+        }
+        let agents: { total: number; running: number } | undefined;
+        try {
+          const items = ws.client.presentation.agents.items;
+          agents = { total: items.length, running: items.filter((a) => a.running).length };
+        } catch {
+          /* projection unavailable */
+        }
+        rows.push({
+          folderName: ws.folderName,
+          workspaceRoot: ws.workspaceRoot,
+          wsHash: ws.wsHash,
+          bridgeUrl: ws.bridgeUrl,
+          identity,
+          identityError,
+          agents,
+          authConfigured: "unknown",
+          notes: ["POC · deep-link to tmux Server Inspector via toolbar"],
+        });
+      }
+      return rows;
+    },
+    openServerInspector: () => {
+      void openServerInspector(makeServerInspectorDeps());
+    },
+  });
+
   const launcherBundlePath = () => vscode.Uri.joinPath(context.extensionUri, "dist", "tool-launcher.cjs").fsPath;
   const syncWorkspaceToolLauncher = (folderPath: string): void => {
     const r = syncToolLauncher(folderPath, { launcherBundlePath: launcherBundlePath(), updateLockfile: false });
@@ -1345,6 +1401,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   registerTrustedPanelSerializer<ScheduleStudioPanelState>(context, SCHEDULE_STUDIO_SHELL_VIEW_TYPE, (panel, state) => scheduleStudioPanels.deserialize(panel, state));
   registerTrustedPanelSerializer<PipelineStudioPanelState>(context, PIPELINE_STUDIO_VIEW_TYPE, (panel, state) => pipelineStudioPanels.deserialize(panel, state));
   registerTrustedPanelSerializer<ServerInspectorPanelState>(context, SERVER_INSPECTOR_VIEW_TYPE, (panel) => openServerInspector(makeServerInspectorDeps(), panel));
+  registerTrustedPanelSerializer<ControlInspectorPanelState>(context, CONTROL_INSPECTOR_VIEW_TYPE, (panel) => openControlInspector(makeControlInspectorDeps(), panel));
   for (const viewType of ["tachyonPluginSurface", "tachyonPluginSurfaces", "tachyonAgentFixtureStudio", "tachyonSketch"]) {
     registerDisposePanelSerializer(context, viewType);
   }
@@ -1623,6 +1680,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // t-7bcba6 — tachyon.persistenceSettings (Visible legacy reminders / silentHooks kill switch) removed.
     // ---- server inspector (F27) — cross-workspace, standalone socket queries ----
     vscode.commands.registerCommand("tachyon.inspectServer", () => openServerInspector(makeServerInspectorDeps())),
+    // ---- engine/bridge inspector (POC option B) — control plane sibling ----
+    vscode.commands.registerCommand("tachyon.inspectEngine", () => openControlInspector(makeControlInspectorDeps())),
     vscode.commands.registerCommand("tachyon.getStarted", () =>
       vscode.commands.executeCommand("workbench.action.openWalkthrough", "cfpperche.tachyon#tachyon.welcome", false),
     ),

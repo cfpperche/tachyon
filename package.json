@@ -362,6 +362,11 @@
         "icon": "$(server-process)"
       },
       {
+        "command": "tachyon.inspectEngine",
+        "title": "%command.inspectEngine%",
+        "icon": "$(debug-console)"
+      },
+      {
         "command": "tachyon.openPlugins",
         "title": "%command.openPlugins%",
         "icon": "$(extensions)"
@@ -512,6 +517,11 @@
           "command": "tachyon.inspectServer",
           "when": "view == tachyonSidebarPrototype",
           "group": "navigation@3"
+        },
+        {
+          "command": "tachyon.inspectEngine",
+          "when": "view == tachyonSidebarPrototype",
+          "group": "navigation@3.5"
         },
         {
           "command": "tachyon.refreshViews",
@@ -715,6 +725,9 @@
         },
         {
           "command": "tachyon.inspectServer"
+        },
+        {
+          "command": "tachyon.inspectEngine"
         },
         {
           "command": "tachyon.resumeAgentItem",
