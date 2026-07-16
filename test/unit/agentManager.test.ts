@@ -5470,3 +5470,71 @@ describe("AgentManager — per-agent Bridge token mint/revoke (spec 351 T2)", ()
     expect(cmds.at(-1)).toContain('bearer_token_env_var="TACHYON_AGENT_BRIDGE_TOKEN"');
   });
 });
+
+describe("AgentManager — Bridge wiring fail-closed (t-d42565)", () => {
+  const dirs: string[] = [];
+  afterEach(() => {
+    for (const d of dirs.splice(0)) fs.rmSync(d, { recursive: true, force: true });
+  });
+
+  function harness211(yaml: string, extra: Partial<ConstructorParameters<typeof AgentManager>[0]> = {}) {
+    const ws = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-d42565-"));
+    const ledger = new SessionLedger(ws);
+    const sessions = new Set<string>();
+    const cmds: string[] = [];
+    const exec = async (args: string[]): Promise<ExecResult> => {
+      const target = () => args[args.indexOf("-t") + 1].replace(/^=/, "").replace(/:$/, "");
+      if (args.includes("new-session")) { sessions.add(args[args.indexOf("-s") + 1]); cmds.push(args[args.length - 1]); return { stdout: "", stderr: "" }; }
+      switch (args[2]) {
+        case "has-session": if (!sessions.has(target())) throw new Error("none"); return { stdout: "", stderr: "" };
+        case "kill-session": sessions.delete(target()); return { stdout: "", stderr: "" };
+        case "list-panes": return { stdout: [...sessions].map((s) => `${s}\t0\t`).join("\n") + "\n", stderr: "" };
+        case "list-sessions": if (!sessions.size) throw new Error("no server"); return { stdout: [...sessions].join("\n") + "\n", stderr: "" };
+        default: return { stdout: "", stderr: "" };
+      }
+    };
+    const manager = new AgentManager({
+      tmux: new TmuxService(exec),
+      wsHash: workspaceHash(ws),
+      workspaceRoot: ws,
+      getConfig: () => configOf(yaml),
+      getMaxAgents: () => 8,
+      ledger,
+      recordDelegation: async () => undefined,
+      ...extra,
+    });
+    dirs.push(ws);
+    return { manager, ledger, cmds, ws };
+  }
+
+  it("refuses AI ad-hoc spawn when Bridge URL is set but MCP materialization fails", async () => {
+    const { manager } = harness211("agents:\n  boss:\n    cmd: claude\n", {
+      getExtraEnv: () => ({ TACHYON_BRIDGE_URL: "http://127.0.0.1:9/mcp" }),
+      materializeBridgeMcp: () => undefined, // claude path cannot wire
+    });
+    await expect(
+      manager.spawn("child", { cmd: "claude", parent: "boss", instructions: "do work" }),
+    ).rejects.toThrow(/Bridge tools could not be materialized|notify_agent/i);
+  });
+
+  it("allows AI spawn without Bridge URL (no false fail when Bridge is down)", async () => {
+    const { manager, cmds } = harness211("agents:\n  boss:\n    cmd: claude\n", {
+      getExtraEnv: () => ({}),
+    });
+    await manager.spawn("child", { cmd: "claude", parent: "boss", instructions: "do work" });
+    expect(cmds.length).toBe(1);
+  });
+
+  it("allows AI spawn when materialization succeeds", async () => {
+    const { manager, cmds, ws } = harness211("agents:\n  boss:\n    cmd: claude\n", {
+      getExtraEnv: () => ({ TACHYON_BRIDGE_URL: "http://127.0.0.1:9/mcp" }),
+      materializeBridgeMcp: (name) => {
+        const f = path.join(ws, `${name}.mcp.json`);
+        fs.writeFileSync(f, "{}\n");
+        return f;
+      },
+    });
+    await manager.spawn("child", { cmd: "claude", parent: "boss", instructions: "do work" });
+    expect(cmds.some((c) => c.includes("--mcp-config"))).toBe(true);
+  });
+});

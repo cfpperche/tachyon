@@ -1970,6 +1970,17 @@ export class AgentManager {
     // spec 236 — fold the runtime-Bridge env delta (the OPENCODE_CONFIG path for opencode agents)
     // into spawnBuild.env so it reaches the spawn env alongside the Bridge URL/token.
     const spawnBridge = this.withRuntimeBridge(name, def, spawnBuild.cmd, cwd, delegatedOpencode);
+    // t-d42565 — AI agents must receive Bridge MCP tools (notify_agent / doorbell) when the
+    // workspace Bridge is up. Silent "healthy" sessions without the registry leave parents un-woken.
+    if (def.kind === "agent" && !spawnBridge.wired) {
+      const bridgeUrl = this.opts.getExtraEnv?.()?.[URL_ENV_VAR];
+      if (bridgeUrl) {
+        throw new Error(
+          `agent '${name}' spawn refused: Tachyon Bridge tools could not be materialized for this session ` +
+            `(notify_agent / Bridge MCP would be unavailable; fix runtime wiring or materializers before spawn)`,
+        );
+      }
+    }
     // Ownership materialization can write files. Complete it before replacing a dead incumbent so
     // every fallible launch-preparation step preserves the old postmortem pane on failure.
     const ownedSpawnCmd = this.withSessionOwnership(name, def, spawnBridge.cmd, {
