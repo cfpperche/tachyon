@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { startEngineControlServer, type RunningEngineControlServer } from "../../src/engine-service/controlServer.js";
 import { EngineEventJournal } from "../../src/engine-service/eventJournal.js";
@@ -15,6 +14,7 @@ import {
 import { connectRemoteWorkspaceClient } from "../../src/shell/WorkspaceClient.js";
 import { ENGINE_UI_CAPABILITY } from "../../src/engine-service/uiRequestBroker.js";
 import { workspaceHash } from "../../src/tmux/TmuxService.js";
+import { makeSocketTemp } from "../helpers/socketTemp.js";
 
 const roots: string[] = [];
 const servers: RunningEngineControlServer[] = [];
@@ -483,7 +483,7 @@ function dummyRuntime(root: string): StagedEngineRuntime {
 }
 
 function temp(prefix: string): string {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  const root = makeSocketTemp(prefix);
   roots.push(root);
   return root;
 }

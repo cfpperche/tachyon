@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import net from "node:net";
-import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { EngineControlClient } from "../../src/engine-service/controlClient.js";
 import { startEngineControlServer, type RunningEngineControlServer } from "../../src/engine-service/controlServer.js";
 import { EngineEventJournal } from "../../src/engine-service/eventJournal.js";
+import { makeSocketTemp } from "../helpers/socketTemp.js";
 import {
   workspaceCommandSuccessV1,
   workspaceExtensionCommandSuccessV1,
@@ -31,7 +31,7 @@ afterEach(async () => {
 });
 
 function fixture() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-engine-client-"));
+  const root = makeSocketTemp("tachyon-engine-client-");
   roots.push(root);
   const runtime = path.join(root, "runtime");
   fs.mkdirSync(runtime, { mode: 0o700 });

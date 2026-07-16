@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import net from "node:net";
-import os from "node:os";
 import path from "node:path";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -18,6 +17,7 @@ import { TaskAttachmentStore } from "../../src/tasks/TaskAttachmentStore.js";
 import { TaskDetailStore, hashBody } from "../../src/tasks/TaskDetailStore.js";
 import { TaskPrototypeStore } from "../../src/tasks/TaskPrototypeStore.js";
 import { ValidationStore } from "../../src/validations/ValidationStore.js";
+import { makeSocketTemp } from "../helpers/socketTemp.js";
 
 const roots: string[] = [];
 const children: ChildProcessWithoutNullStreams[] = [];
@@ -29,7 +29,7 @@ afterEach(async () => {
 
 describe("daemon engine service", () => {
   it("owns a real Workspace and direct Bridge across shell replacement and no-shell time", async () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-engine-service-"));
+    const root = makeSocketTemp("tachyon-engine-service-");
     roots.push(root);
     const workspaceRoot = path.join(root, "workspace");
     const storageRoot = path.join(root, "storage");

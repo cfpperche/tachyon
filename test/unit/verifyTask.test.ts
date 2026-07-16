@@ -1301,6 +1301,11 @@ describe("verifyTask", () => {
     expect(fs.existsSync(path.join(wt, "node_modules", "prepared"))).toBe(false);
   });
 
+  it("tracks a canonical preparation script that installs and builds missing dist artifacts", () => {
+    const manifest = JSON.parse(fs.readFileSync(path.join(process.cwd(), "package.json"), "utf8")) as { scripts?: Record<string, string> };
+    expect(manifest.scripts?.["verify:prepare"]).toBe("npm ci --ignore-scripts --prefer-offline --no-audit --no-fund && npm run build");
+  });
+
   it("keeps an explicit empty verifier snapshot instead of adopting commands added after spawn", async () => {
     const { repo, wt, baseSha } = fixture();
     write(path.join(wt, "src", "feature.txt"), "new\n");
@@ -2496,6 +2501,27 @@ describe("verifyTask", () => {
     expect(result.blockers.map((b) => b.code)).toContain("affected_tests_failed");
     expect(result.blockers.map((b) => b.code)).toContain("behavior_not_run");
     expect(result.record.commands.map((c) => c.name)).toEqual(["behavior_base_expect_fail", "affected_tests"]);
+  });
+
+  it("preserves bounded actionable diagnostics and termination metadata", async () => {
+    const { repo, wt, baseSha } = fixture();
+    write(path.join(wt, "src", "feature.txt"), "new\n");
+    git(wt, ["add", "src/feature.txt"]);
+    git(wt, ["commit", "-qm", "t-123abc implement behavior"]);
+    record(repo, baseSha);
+    const result = await verifyTask({
+      workspaceRoot: repo, agent: "worker", verifySettings: { affected: VITEST_AFFECTED_COMMAND },
+      runner: async (cwd, argv, opts) => argv[0] === "npx"
+        ? { command: argv.join(" "), argv, exitCode: 1, stdout: `${"noise\n".repeat(900)}REAL ASSERTION FAILED\n`, stderr: "ExperimentalWarning: sqlite\n", timedOut: true, signal: "SIGTERM" }
+        : testRunner(cwd, argv, opts),
+    });
+    const command = result.record.commands.find((entry) => entry.name === "affected_tests");
+    const blocker = result.blockers.find((entry) => entry.code === "affected_tests_failed");
+    expect(command).toMatchObject({ timedOut: true, signal: "SIGTERM" });
+    expect(command?.stdout).toContain("REAL ASSERTION FAILED");
+    expect(command?.stdout?.length).toBeLessThanOrEqual(4_140);
+    expect(blocker?.detail).toContain("timed out, signal SIGTERM");
+    expect(blocker?.detail).toContain("REAL ASSERTION FAILED");
   });
 
   it("blocks when the task ref has no new commit", async () => {

@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createHash } from "node:crypto";
 import { EngineControlClient } from "../../src/engine-service/controlClient.js";
 import type { EngineServiceIdentityV1, EngineShellHelloV1 } from "../../src/engine-service/protocol.js";
+import { makeSocketTemp } from "../helpers/socketTemp.js";
 
 const roots: string[] = [];
 const children: ChildProcessWithoutNullStreams[] = [];
@@ -17,7 +17,7 @@ afterEach(async () => {
 
 describe("persistent engine process boundary", () => {
   it("keeps one engine alive while shell generations disappear and reattach", async () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-engine-process-"));
+    const root = makeSocketTemp("tachyon-engine-process-");
     roots.push(root);
     const runtime = path.join(root, "runtime");
     fs.mkdirSync(runtime, { mode: 0o700 });
