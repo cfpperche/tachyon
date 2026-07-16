@@ -736,7 +736,9 @@ export class WorktreeManager {
       if (occ) {
         return { removed: false, branchDeleted: false, error: `worktree is ${occ.state === "dirty" ? "quarantined by" : "occupied by"} agent '${occ.agent}' (cwd ${occ.cwd})` };
       }
-      let force = opts?.force === true;
+      // Default force=true preserves pre-392 UI/pipeline/GitDelivery callers that already
+      // confirmed cleanup. Managed Bridge paths pass force explicitly (soft when clean).
+      let force = opts?.force !== false;
       if (opts?.refuseUnlessForceIfDirty && this.exists(rec.path)) {
         const status = await this.git(["status", "--porcelain=v1", "--untracked-files=all"], rec.path);
         if (status.code !== 0) {

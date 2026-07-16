@@ -766,7 +766,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     {
       description:
         "Drop a registry entry without deleting the git worktree on disk. " +
-        "Caller must be creator, agent owner, or a privileged Bridge principal (legacy/external/human).",
+        "Caller must be the entry creator/agent owner, or a human host principal (shared legacy/external tokens are not privileged).",
       inputSchema: { idOrPath: z.string().min(1) },
     },
     async ({ idOrPath }) => {

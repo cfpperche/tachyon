@@ -290,6 +290,11 @@ export class ManagedWorktreeService {
     }
   }
 
+  /**
+   * Public Bridge removal: ownership + dirty policy.
+   * - clean → soft git remove (no --force)
+   * - dirty/unknown → require confirmDirty, then force
+   */
   async remove(
     idOrPath: string,
     opts: { deleteBranch?: boolean; confirmDirty?: boolean; actor: { kind: string; name?: string } },
@@ -299,27 +304,17 @@ export class ManagedWorktreeService {
     if (!canMutateManagedWorktree(entry, opts.actor)) {
       return { removed: false, branchDeleted: false, error: `refused: caller cannot remove worktree '${entry.id}'` };
     }
-
-    const rec: WorktreeRecord = {
-      path: entry.path,
-      branch: entry.branch,
-      tachyonCreatedBranch: entry.tachyonCreatedBranch,
-      baseRef: entry.baseRef,
-      createdAt: entry.createdAt,
-    };
-    // Dirtiness probe runs inside manager.remove under the same path lock.
-    const result = await this.opts.manager.remove(
-      rec,
-      opts.deleteBranch === true && entry.tachyonCreatedBranch,
-      {
-        force: opts.confirmDirty === true,
-        refuseUnlessForceIfDirty: true,
-      },
-    );
-    if (result.removed) this.save(removeManagedEntry(this.load(), entry.id));
-    return result;
+    return this.removeEntryEngine(entry, {
+      deleteBranch: opts.deleteBranch === true && entry.tachyonCreatedBranch,
+      force: opts.confirmDirty === true,
+      refuseUnlessForceIfDirty: true,
+    });
   }
 
+  /**
+   * Trusted internal engine removal (GitDelivery prune, etc.) — no Bridge actor impersonation.
+   * Occupancy + optional dirty policy still enforced via WorktreeManager.
+   */
   async removePath(
     worktreePath: string,
     opts?: {
@@ -327,48 +322,51 @@ export class ManagedWorktreeService {
       branch?: string;
       tachyonCreatedBranch?: boolean;
       baseRef?: string;
+      /** When true: force remove (abandon/data-loss). When false: soft + dirty refuse. */
       force?: boolean;
     },
   ): Promise<{ removed: boolean; branchDeleted: boolean; error?: string }> {
     const abs = path.resolve(worktreePath);
     const entry = findManagedEntry(this.load(), abs);
-    const rec: WorktreeRecord = entry
-      ? {
-          path: entry.path,
-          branch: entry.branch,
-          tachyonCreatedBranch: entry.tachyonCreatedBranch,
-          baseRef: entry.baseRef,
-          createdAt: entry.createdAt,
-        }
-      : {
-          path: abs,
-          branch: opts?.branch ?? "HEAD",
-          tachyonCreatedBranch: opts?.tachyonCreatedBranch ?? false,
-          baseRef: opts?.baseRef ?? "HEAD",
-          createdAt: this.nowIso(),
-        };
-
-    if (opts?.force) {
-      const rm = await this.git(gitArgs.remove(rec.path), this.opts.workspaceRoot);
-      if (rm.code !== 0) return { removed: false, branchDeleted: false, error: rm.stderr.trim() || rm.stdout.trim() };
-      let branchDeleted = false;
-      if (opts.deleteBranch && rec.tachyonCreatedBranch && rec.branch !== "HEAD") {
-        const del = await this.git(gitArgs.deleteBranch(rec.branch), this.opts.workspaceRoot);
-        branchDeleted = del.code === 0;
-      }
-      await this.git(gitArgs.prune(), this.opts.workspaceRoot);
-      if (entry) this.save(removeManagedEntry(this.load(), entry.id));
-      return { removed: true, branchDeleted };
-    }
-
     if (entry) {
-      return this.remove(entry.id, {
-        deleteBranch: opts?.deleteBranch,
-        confirmDirty: true,
-        actor: { kind: "legacy" },
+      return this.removeEntryEngine(entry, {
+        deleteBranch: !!opts?.deleteBranch && entry.tachyonCreatedBranch,
+        force: opts?.force === true,
+        refuseUnlessForceIfDirty: opts?.force !== true,
       });
     }
-    return this.opts.manager.remove(rec, !!opts?.deleteBranch && !!opts?.tachyonCreatedBranch);
+
+    const rec: WorktreeRecord = {
+      path: abs,
+      branch: opts?.branch ?? "HEAD",
+      tachyonCreatedBranch: opts?.tachyonCreatedBranch ?? false,
+      baseRef: opts?.baseRef ?? "HEAD",
+      createdAt: this.nowIso(),
+    };
+    // Unregistered path: preserve historical force default for delivery prune of non-catalog trees.
+    return this.opts.manager.remove(rec, !!opts?.deleteBranch && !!opts?.tachyonCreatedBranch, {
+      force: opts?.force !== false,
+      refuseUnlessForceIfDirty: opts?.force === false,
+    });
+  }
+
+  private async removeEntryEngine(
+    entry: ManagedWorktreeEntry,
+    opts: { deleteBranch: boolean; force: boolean; refuseUnlessForceIfDirty: boolean },
+  ): Promise<{ removed: boolean; branchDeleted: boolean; error?: string }> {
+    const rec: WorktreeRecord = {
+      path: entry.path,
+      branch: entry.branch,
+      tachyonCreatedBranch: entry.tachyonCreatedBranch,
+      baseRef: entry.baseRef,
+      createdAt: entry.createdAt,
+    };
+    const result = await this.opts.manager.remove(rec, opts.deleteBranch, {
+      force: opts.force,
+      refuseUnlessForceIfDirty: opts.refuseUnlessForceIfDirty,
+    });
+    if (result.removed) this.save(removeManagedEntry(this.load(), entry.id));
+    return result;
   }
 }
 
