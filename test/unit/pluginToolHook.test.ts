@@ -25,8 +25,11 @@ describe("git-hook ${tool:} resolution at load (spec 265 task 10c)", () => {
     const { plugin, errors } = loadPlugin(dir);
     expect(errors).toEqual([]);
     expect(plugin!.gitHooks[0].argv).toEqual([".tachyon/bin/_tachyon-tool", "cg", "gitleaks", "protect", "--staged"]);
-    // the materialized leaf content execs the launcher
-    expect(plugin!.gitHooks[0].content.toString()).toMatch(/exec ['"]?\.tachyon\/bin\/_tachyon-tool/);
+    // The materialized leaf pins the canonical launcher, resolves the main-worktree
+    // fallback when needed, and executes only the resulting bounded path.
+    const content = plugin!.gitHooks[0].content.toString();
+    expect(content).toContain("CMD='.tachyon/bin/_tachyon-tool'");
+    expect(content).toContain('exec "$CMD"');
   });
 
   it("fails closed when ${tool:} names an undeclared tool", () => {
