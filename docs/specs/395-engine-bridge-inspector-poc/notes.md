@@ -45,12 +45,16 @@ npm run dogfood:dev-host -- point \
 # EDH: Tachyon: Open Cockpit
 ```
 
-## Commands
+## Commands / open paths
 
-| Command | Opens |
-|---------|--------|
-| `tachyon.openCockpit` | Cockpit shell (Overview) |
-| `tachyon.inspectEngine` | Cockpit on Engine / Bridge section |
+| Path | How |
+|------|-----|
+| **Sidebar header** | Icon **Control** (`$(dashboard)`) next to Mission Control / Plugins — `view/title` on `tachyonSidebarPrototype` |
+| `tachyon.openControl` | Control shell (Overview) — palette + header |
+| `tachyon.openCockpit` | Legacy alias → same as openControl (hidden from palette) |
+| `tachyon.inspectEngine` | Control on Engine tab |
+
+Product name for MVP: **Control** (not Cockpit in the UI).
 
 ## Files
 

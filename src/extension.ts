@@ -1739,7 +1739,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // t-7bcba6 — tachyon.persistenceSettings (Visible legacy reminders / silentHooks kill switch) removed.
     // ---- server inspector (F27) — cross-workspace, standalone socket queries ----
     vscode.commands.registerCommand("tachyon.inspectServer", () => openServerInspector(makeServerInspectorDeps())),
-    // ---- Cockpit (desktop POC, t-fe52f0 frente 1) — editor sysadmin; sidebar unchanged ----
+    // ---- Control (desktop MVP, t-fe52f0 frente 1) — editor sysadmin; sidebar header button + palette ----
+    vscode.commands.registerCommand("tachyon.openControl", () => openCockpit(makeCockpitDeps())),
+    // legacy aliases (palette hidden for openCockpit)
     vscode.commands.registerCommand("tachyon.openCockpit", () => openCockpit(makeCockpitDeps())),
     vscode.commands.registerCommand("tachyon.inspectEngine", () => openCockpit(makeCockpitDeps(), { section: "engine" })),
     vscode.commands.registerCommand("tachyon.getStarted", () =>

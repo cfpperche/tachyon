@@ -362,6 +362,11 @@
         "icon": "$(server-process)"
       },
       {
+        "command": "tachyon.openControl",
+        "title": "%command.openControl%",
+        "icon": "$(dashboard)"
+      },
+      {
         "command": "tachyon.openCockpit",
         "title": "%command.openCockpit%",
         "icon": "$(dashboard)"
@@ -519,29 +524,24 @@
           "group": "navigation@2"
         },
         {
-          "command": "tachyon.inspectServer",
+          "command": "tachyon.openControl",
           "when": "view == tachyonSidebarPrototype",
           "group": "navigation@3"
         },
         {
-          "command": "tachyon.openCockpit",
-          "when": "view == tachyonSidebarPrototype",
-          "group": "navigation@3.5"
-        },
-        {
-          "command": "tachyon.inspectEngine",
-          "when": "view == tachyonSidebarPrototype",
-          "group": "navigation@3.6"
-        },
-        {
-          "command": "tachyon.refreshViews",
+          "command": "tachyon.inspectServer",
           "when": "view == tachyonSidebarPrototype",
           "group": "navigation@4"
         },
         {
-          "command": "tachyon.openSettings",
+          "command": "tachyon.refreshViews",
           "when": "view == tachyonSidebarPrototype",
           "group": "navigation@5"
+        },
+        {
+          "command": "tachyon.openSettings",
+          "when": "view == tachyonSidebarPrototype",
+          "group": "navigation@6"
         }
       ],
       "commandPalette": [
@@ -737,7 +737,11 @@
           "command": "tachyon.inspectServer"
         },
         {
-          "command": "tachyon.openCockpit"
+          "command": "tachyon.openControl"
+        },
+        {
+          "command": "tachyon.openCockpit",
+          "when": "false"
         },
         {
           "command": "tachyon.inspectEngine"

@@ -286,8 +286,8 @@ export const VIEW_META: Record<string, { title: string; aliases: string[] }> = {
     aliases: ["control inspector", "engine inspector", "bridge inspector", "engine bridge"],
   },
   cockpit: {
-    title: "Cockpit",
-    aliases: ["cockpit", "sysadmin", "project cockpit", "fleet cockpit", "control plane"],
+    title: "Control",
+    aliases: ["control", "cockpit", "sysadmin", "project control", "fleet control", "control plane"],
   },
   "pin-preview": { title: "Pin Preview", aliases: ["pin preview", "pin readonly"] },
   handoff: { title: "Project Handoff", aliases: ["handoff", "project handoff"] },

@@ -45,10 +45,10 @@ export interface CockpitDeps {
 function strings(): CockpitStrings {
   const t = vscode.l10n.t;
   return {
-    title: t("Cockpit"),
+    title: t("Control"),
     subtitle: t("Project sysadmin — editor panel"),
     pocBanner: t(
-      "Desktop Cockpit POC (t-fe52f0). Top tabs by ops frequency. No in-webview left rail. VS Code/Tachyon sidebar unchanged. Mobile deferred.",
+      "Control MVP (t-fe52f0 desktop). Open from sidebar header (next to Mission Control / Plugins) or Command Palette. Top tabs only — no webview left rail. Sidebar unchanged. Mobile deferred.",
     ),
     navOverview: t("Overview"),
     navEngine: t("Engine"),

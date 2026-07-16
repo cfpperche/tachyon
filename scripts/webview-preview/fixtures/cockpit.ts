@@ -7,10 +7,10 @@ import type { CockpitStrings } from "../../../src/webview/cockpit/messages";
 import type { Fixture } from "../routes";
 
 export const strings: CockpitStrings = {
-  title: "Cockpit",
+  title: "Control",
   subtitle: "Project sysadmin — editor panel",
   pocBanner:
-    "Desktop Cockpit POC (t-fe52f0). Top tabs by frequency. No webview left rail. VS Code sidebar unchanged. Mobile deferred.",
+    "Control MVP (t-fe52f0 desktop). Sidebar header button + palette. Top tabs by frequency. No webview left rail. VS Code sidebar unchanged.",
   navOverview: "Overview",
   navEngine: "Engine",
   navFleet: "Fleet",

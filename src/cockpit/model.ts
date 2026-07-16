@@ -176,7 +176,7 @@ export function buildCockpitModel(
 
 export function formatCockpitDiagnostics(model: CockpitModel): string {
   return [
-    "Tachyon Cockpit (desktop — editor sysadmin; VS Code sidebar unchanged)",
+    "Tachyon Control (desktop — editor sysadmin; VS Code sidebar unchanged)",
     `section: ${model.section}`,
     `fleet agents: ${model.fleet.filter((a) => a.running).length}/${model.fleet.length} running`,
     `approvals pending: ${model.overview.approvalsPending}`,

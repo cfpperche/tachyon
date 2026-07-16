@@ -62,7 +62,7 @@ describe("cockpit model", () => {
 
   it("formatCockpitDiagnostics mentions framing", () => {
     const text = formatCockpitDiagnostics(buildCockpitModel([], { nowIso: "now" }));
-    expect(text).toMatch(/Cockpit/i);
+    expect(text).toMatch(/Control/i);
     expect(text).toMatch(/sidebar/i);
   });
 });
