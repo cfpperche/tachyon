@@ -20,6 +20,14 @@ export interface DevHostPointOptions {
   owner?: string | null;
 }
 
+export interface DevHostFixtureNewOptions {
+  repoRoot: string;
+  worktree?: string | null;
+  slug: string;
+  spec?: string | null;
+  intent?: "focus" | "metrics" | string | null;
+}
+
 export interface DevHostMeta {
   schemaVersion: number;
   kind: "dev-host";
@@ -49,8 +57,18 @@ export interface DevHostStatus {
   extensionResolves?: string | null;
   /** Fixture source path (from .dev-host-source) or the mirror path. */
   workspaceResolves?: string | null;
+  /** Absolute path of the real mirror directory under .tachyon/dev-host/workspace. */
+  workspaceMirrorPath?: string | null;
   /** True when workspace is a real mirror dir with .dev-host-source marker. */
   workspaceIsMirror?: boolean;
+  worktreePath?: string | null;
+  worktreeExists?: boolean;
+  distExists?: boolean;
+  /** true = real dir, false = symlink/missing when expected, null = fixture had no .tachyon */
+  tachyonMirrorIsRealDir?: boolean | null;
+  fixtureSourceExists?: boolean;
+  fixtureDrift?: boolean;
+  warnings?: string[];
   broken?: boolean;
 }
 
@@ -82,7 +100,23 @@ export function ensureNodeModules(
   worktreeAbs: string,
   repoRootAbs: string,
 ): { linked: boolean };
+export function ensureWorktreeToolBin(
+  worktreeAbs: string,
+  repoRootAbs: string,
+): { linked: boolean; count: number; reason?: string };
+export function resolveFixturePath(opts: {
+  worktree?: string | null;
+  repoRoot?: string | null;
+  fixture: string;
+}): string;
+export function fixtureNew(opts: DevHostFixtureNewOptions): {
+  root: string;
+  slug: string;
+  intent: string;
+  spec: string | null;
+};
 export function portableDevHostLaunchConfig(): LaunchConfig;
+export function printStatus(st: DevHostStatus): void;
 /** @deprecated Prefer ensurePortableLaunchConfig */
 export function writeAbsoluteLaunchConfig(
   repoRoot: string,

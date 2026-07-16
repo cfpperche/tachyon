@@ -4,7 +4,16 @@ import os from "node:os";
 import path from "node:path";
 // Owned ESM CLI; Vitest loads it directly while the repo typecheck target is CommonJS.
 // @ts-expect-error -- static ESM import is intentional for this executable module test (same as resolve-code.mjs).
-import { assertWorkspaceNotRepoRoot, clear, ensurePortableLaunchConfig, materializeWorkspaceMirror, point, status } from "../../scripts/dev-host/pointer.mjs";
+import {
+  assertWorkspaceNotRepoRoot,
+  clear,
+  ensurePortableLaunchConfig,
+  fixtureNew,
+  materializeWorkspaceMirror,
+  point,
+  resolveFixturePath,
+  status,
+} from "../../scripts/dev-host/pointer.mjs";
 
 function writePkg(dir: string, name = "tachyon") {
   fs.mkdirSync(dir, { recursive: true });
@@ -66,14 +75,48 @@ describe("dev-host pointer", () => {
     expect(fs.lstatSync(path.join(ws, "tachyon.yml")).isSymbolicLink()).toBe(true);
     expect(fs.readFileSync(path.join(ws, "tachyon.yml"), "utf8")).toContain("agents:");
     expect(fs.existsSync(path.join(ws, ".tachyon", "prompts", "hi.md"))).toBe(true);
+    // Spec 393 / 390: mirror `.tachyon` must be a REAL directory (not a symlink) for Soul launch.
+    expect(fs.lstatSync(path.join(ws, ".tachyon")).isSymbolicLink()).toBe(false);
+    expect(fs.statSync(path.join(ws, ".tachyon")).isDirectory()).toBe(true);
+    expect(fs.readFileSync(path.join(ws, ".tachyon", "prompts", "hi.md"), "utf8")).toContain("hello");
     expect(fs.existsSync(path.join(ws, ".edh-user-data"))).toBe(false);
     expect(fs.readFileSync(path.join(ws, ".dev-host-source"), "utf8").trim()).toBe(path.resolve(fixture));
 
     const st = status(repo);
     expect(st.armed).toBe(true);
+    expect(st.broken).toBe(false);
     expect(st.meta?.spec).toBe("381");
     expect(st.workspaceIsMirror).toBe(true);
     expect(st.workspaceResolves).toBe(path.resolve(fixture));
+    expect(st.tachyonMirrorIsRealDir).toBe(true);
+    expect(st.worktreeExists).toBe(true);
+  });
+
+  it("status is broken when worktree path is gone", () => {
+    point({ repoRoot: repo, worktree, workspace: fixture, spec: "393" });
+    fs.rmSync(worktree, { recursive: true, force: true });
+    const st = status(repo);
+    expect(st.armed).toBe(false);
+    expect(st.broken).toBe(true);
+    expect(st.worktreeExists).toBe(false);
+    expect(st.warnings?.some((w) => /worktree missing/i.test(w))).toBe(true);
+  });
+
+  it("resolveFixturePath finds slug and slug-dogfood under worktree", () => {
+    const found = resolveFixturePath({ worktree, repoRoot: repo, fixture: "feature" });
+    expect(found).toBe(path.resolve(fixture));
+    const found2 = resolveFixturePath({ worktree, repoRoot: repo, fixture: "feature-dogfood" });
+    expect(found2).toBe(path.resolve(fixture));
+  });
+
+  it("fixtureNew scaffolds focus intent with .tachyon seeds", () => {
+    const r = fixtureNew({ repoRoot: repo, worktree, slug: "demo", spec: "393", intent: "focus" });
+    expect(r.root).toContain("demo-dogfood");
+    expect(fs.existsSync(path.join(r.root, "tachyon.yml"))).toBe(true);
+    expect(fs.existsSync(path.join(r.root, "README.md"))).toBe(true);
+    expect(fs.existsSync(path.join(r.root, ".tachyon", "tasks", "t-fixture1.json"))).toBe(true);
+    expect(fs.readFileSync(path.join(r.root, "README.md"), "utf8")).toMatch(/intent: focus/);
+    expect(fs.readFileSync(path.join(r.root, "README.md"), "utf8")).toMatch(/metrics/);
   });
 
   it("clear removes only the pointer dir", () => {

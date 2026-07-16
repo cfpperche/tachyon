@@ -30,8 +30,18 @@ pins, journals, or commits should map the old vocabulary here:
 | `--extensionDevelopmentPath=${workspaceFolder}/.tachyon/dev-host/extension` | Open a *symlink* as the EDH folder (empty **NO FOLDER OPENED**) |
 | Private `TMUX_TMPDIR` / `XDG_CACHE_HOME` only | Private `--extensions-dir` / `--user-data-dir` (drops `ms-vscode-remote.remote-wsl` on the local side of the EDH window) |
 
-`point` materializes `workspace` as a **real directory** with child symlinks into the fixture (so Explorer
-shows `tachyon.yml`, `.tachyon/prompts`, README) and keeps `launch.json` portable — safe to commit.
+### Mirror layout (symlink vs copy)
+
+`point` materializes `workspace` as a **real directory** under `.tachyon/dev-host/workspace`:
+
+| Entry | How | Why |
+|-------|-----|-----|
+| `tachyon.yml`, README, other files | **symlink** into fixture | Live edits in fixture show in EDH Explorer |
+| `.tachyon/` (tasks, continuity, sessions, …) | **real copy** (`cpSync`) | Engine Soul launch fails closed if `.tachyon` resolves *outside* the open workspace (`SoulError: … parent escapes workspace`) |
+| `.edh-*` CLI dirs | skipped | Not needed for F5 |
+
+If you see **SoulError** on agent start after F5: re-run `point` (rematerializes the copy) and confirm `point-status` says `mirror .tachyon: real directory (ok)`.
+
 CLI `launch` / `headless` may still use private profile dirs under the fixture.
 
 **Deliberately not kept as runtime aliases:** `dogfood:edh` and `dogfood:edh-palliative` were removed
@@ -257,22 +267,30 @@ refused. Re-read the pane after each answer and assign work only after the norma
 
 ---
 
-## Dev Host (stable F5 from the monorepo)
+## Preferred human path: stable F5 from the monorepo
+
+This is the **default** dogfood path for product UI. CLI `seed` / `launch` remain available as
+secondary (scripted / non-F5); headless remains the automated Xvfb path.
 
 When the human stays on the **monorepo window** and the feature under test lives in a
 **git worktree**, agents arm a pointer instead of editing one-off `launch.json` paths.
 
 ```bash
-# From monorepo root — agent prepares:
+# Optional: scaffold a fixture (intent focus = stopped OK; metrics = autostart loops)
+npm run dogfood:dev-host -- fixture-new --slug my-feature --spec 393 --intent focus \
+  --worktree /path/to/worktree
+# Force-add .tachyon seeds (gitignored): git add -f test/fixtures/my-feature-dogfood/.tachyon
+
+# From monorepo root — agent prepares (short form with --fixture):
 npm run dogfood:dev-host -- point \
   --worktree /path/to/worktree \
-  --workspace /path/to/worktree/test/fixtures/<slug>-dogfood \
-  --spec 381 \
-  --slug prompt-templates \
+  --fixture my-feature \
+  --spec 393 \
+  --slug my-feature \
   --owner "$TACHYON_AGENT_NAME"
 
-npm run dogfood:dev-host -- point-status
-npm run dogfood:dev-host -- point-clear   # when done
+npm run dogfood:dev-host -- point-status   # doctor: worktree, mirror .tachyon, dist/, drift
+npm run dogfood:dev-host -- point-clear    # when done / after git worktree remove
 ```
 
 | Piece | Location |
@@ -284,11 +302,20 @@ npm run dogfood:dev-host -- point-clear   # when done
 
 **Human:** Run and Debug → **Tachyon: Dev Host** → **F5**. Drive only the EDH window.
 
-Hard rules (same isolation spirit as the rest of this lane):
+### Fixture intents (do not confuse)
 
-1. `--workspace` must not be the monorepo root (script refuses).
+| Intent | Expect | Metrics peek? |
+|--------|--------|----------------|
+| **focus** | Stopped agents OK; task / brief / goal lines | No (Live 0) — by design |
+| **metrics** | Autostart busy loops | Yes after Live > 0 |
+
+### Hard rules
+
+1. `--workspace` / resolved fixture must not be the monorepo root (script refuses).
 2. Do not reload / reinstall VSIX in the fleet window for this path.
 3. Specs document steps under `**Human dogfood:**` in `tasks.md` (not a free-floating `DOGFOOD.md`).
+4. After `git worktree remove` of a pointed worktree, run **`point-clear`** (or re-point). `point-status` reports **broken** if the worktree path is gone.
+5. Lease (`lane.mjs`) is required for **delegated** headless/GUI pilots; plain F5 pointer for a single human/agent does not auto-acquire a lease.
 
 Script: `scripts/dev-host/pointer.mjs`.
 

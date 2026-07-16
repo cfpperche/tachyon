@@ -5,13 +5,16 @@
  *
  * Usage (from monorepo root):
  *   node scripts/dev-host/pointer.mjs point --worktree PATH --workspace PATH [--spec NNN] [--slug SLUG] [--owner NAME]
+ *   node scripts/dev-host/pointer.mjs point --worktree PATH --fixture SLUG …
+ *   node scripts/dev-host/pointer.mjs fixture-new --slug SLUG [--spec NNN] [--intent focus|metrics] [--worktree PATH]
  *   node scripts/dev-host/pointer.mjs status
  *   node scripts/dev-host/pointer.mjs clear
- *   (CLI: npm run dogfood:dev-host -- point|point-status|point-clear)
+ *   (CLI: npm run dogfood:dev-host -- point|point-status|point-clear|fixture-new)
  *
  * Layout under <repo>/.tachyon/dev-host/ (gitignored via .tachyon/):
  *   extension  → worktree root (symlink) — --extensionDevelopmentPath
- *   workspace  → real directory opened in EDH (child symlinks into fixture)
+ *   workspace  → real directory opened in EDH (child symlinks into fixture;
+ *                `.tachyon` is a REAL copy — not a symlink — so Soul launch stays inside the workspace)
  *   meta.json  — pointer metadata for agents/humans
  *   tmux/, cache/ — private TMUX_TMPDIR / XDG_CACHE_HOME for the EDH process
  *   user-data/, extensions/ — reserved for CLI launch only (not F5; drops Remote-WSL)
@@ -147,6 +150,255 @@ export function ensureNodeModules(worktreeAbs, repoRootAbs) {
   return { linked: true };
 }
 
+/**
+ * Link monorepo `.tachyon/bin/*` into a worktree when missing so pre-commit leaves
+ * that exec `.tachyon/bin/_tachyon-tool` (cwd = worktree root) still resolve.
+ * Does not overwrite existing entries.
+ */
+export function ensureWorktreeToolBin(worktreeAbs, repoRootAbs) {
+  const srcBin = path.join(path.resolve(repoRootAbs), ".tachyon", "bin");
+  if (!fs.existsSync(srcBin) || !fs.statSync(srcBin).isDirectory()) {
+    return { linked: false, count: 0, reason: "monorepo .tachyon/bin missing" };
+  }
+  const destBin = path.join(path.resolve(worktreeAbs), ".tachyon", "bin");
+  fs.mkdirSync(destBin, { recursive: true, mode: 0o700 });
+  let count = 0;
+  for (const name of fs.readdirSync(srcBin)) {
+    const src = path.join(srcBin, name);
+    const dest = path.join(destBin, name);
+    if (fs.existsSync(dest)) continue;
+    try {
+      fs.symlinkSync(src, dest);
+      count += 1;
+    } catch {
+      /* best-effort — never fail point */
+    }
+  }
+  return { linked: count > 0, count };
+}
+
+/**
+ * Resolve `--fixture SLUG` to an absolute fixture directory.
+ * Order: worktree test/fixtures/<slug>, worktree test/fixtures/<slug>-dogfood,
+ * same under monorepo, then path.resolve(fixture) if it exists.
+ */
+export function resolveFixturePath({ worktree, repoRoot, fixture }) {
+  const raw = String(fixture || "").trim();
+  if (!raw) throw new Error(`${SELF}: --fixture requires a non-empty slug or path`);
+  if (path.isAbsolute(raw) && fs.existsSync(raw) && fs.statSync(raw).isDirectory()) {
+    return path.resolve(raw);
+  }
+  const names = [raw];
+  if (!raw.endsWith("-dogfood") && !raw.includes(path.sep) && !raw.includes("/")) {
+    names.push(`${raw}-dogfood`);
+  }
+  const bases = [];
+  if (worktree) bases.push(path.resolve(worktree));
+  if (repoRoot) bases.push(path.resolve(repoRoot));
+  const candidates = [];
+  for (const base of bases) {
+    for (const name of names) {
+      candidates.push(path.join(base, "test", "fixtures", name));
+    }
+  }
+  candidates.push(path.resolve(raw));
+  for (const c of candidates) {
+    try {
+      if (fs.existsSync(c) && fs.statSync(c).isDirectory()) return path.resolve(c);
+    } catch {
+      /* try next */
+    }
+  }
+  throw new Error(
+    `${SELF}: fixture not found for '${raw}'. Tried:\n  - ${candidates.slice(0, 8).join("\n  - ")}`,
+  );
+}
+
+/**
+ * Scaffold test/fixtures/<slug>-dogfood for dogfood intents (focus | metrics).
+ * @returns {{ root: string, slug: string, intent: string }}
+ */
+export function fixtureNew(opts) {
+  const repoRoot = path.resolve(opts.repoRoot);
+  const base = opts.worktree ? assertWorktreeLooksValid(opts.worktree) : repoRoot;
+  const intent = opts.intent === "metrics" ? "metrics" : "focus";
+  let slug = String(opts.slug || "").trim();
+  if (!slug) throw new Error(`${SELF}: fixture-new requires --slug`);
+  slug = slug.replace(/\/+$/, "");
+  const dirName = slug.endsWith("-dogfood") ? slug : `${slug}-dogfood`;
+  const root = path.join(base, "test", "fixtures", dirName);
+  if (fs.existsSync(root)) {
+    throw new Error(`${SELF}: fixture already exists: ${root}`);
+  }
+  const spec = opts.spec ? String(opts.spec) : null;
+
+  fs.mkdirSync(path.join(root, ".tachyon", "tasks"), { recursive: true });
+  fs.mkdirSync(path.join(root, ".tachyon", "continuity"), { recursive: true });
+
+  const yml =
+    intent === "metrics"
+      ? `# Dogfood fixture (${dirName}) — intent: metrics (running agents for CPU/MEM peek)
+# Spec: ${spec ?? "—"}. Agents autostart with busy loops so resource metrics can sample.
+settings:
+  maxAgents: 8
+
+agents:
+  pilot:
+    cmd: bash
+    args: ["-c", "while true; do :; done"]
+    autostart: true
+    attention: true
+  busy:
+    cmd: bash
+    args: ["-c", "while true; do :; done"]
+    autostart: true
+    attention: false
+`
+      : `# Dogfood fixture (${dirName}) — intent: focus (stopped OK; project task/brief/goal)
+# Spec: ${spec ?? "—"}. Agents start STOPPED; focus still projects without a live process.
+settings:
+  maxAgents: 8
+
+agents:
+  grok:
+    cmd: grok
+    autostart: false
+    attention: true
+  solo:
+    cmd: grok
+    autostart: false
+    attention: true
+  idle:
+    cmd: grok
+    autostart: false
+    attention: false
+`;
+
+  fs.writeFileSync(path.join(root, "tachyon.yml"), yml, "utf8");
+
+  if (intent === "focus") {
+    fs.writeFileSync(
+      path.join(root, ".tachyon", "tasks", "t-fixture1.json"),
+      `${JSON.stringify(
+        {
+          id: "t-fixture1",
+          title: `Dogfood focus for ${dirName}`,
+          status: "active",
+          priority: 1,
+          kind: "feature",
+          author: "human",
+          assignee: "grok",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
+    fs.writeFileSync(
+      path.join(root, ".tachyon", "continuity", "solo.md"),
+      `---
+version: 1
+agent: solo
+updated_at: "${new Date().toISOString()}"
+updated_by: agent
+status: active
+---
+
+# Current Goal
+
+Explore continuity-only focus projection for fixture ${dirName}
+
+# Next Steps
+
+- Confirm focus line shows source goal
+`,
+      "utf8",
+    );
+    fs.writeFileSync(
+      path.join(root, ".tachyon", "sessions.json"),
+      `${JSON.stringify({ sessions: {} }, null, 2)}\n`,
+      "utf8",
+    );
+  } else {
+    fs.writeFileSync(
+      path.join(root, ".tachyon", "sessions.json"),
+      `${JSON.stringify({ sessions: {} }, null, 2)}\n`,
+      "utf8",
+    );
+  }
+
+  const readme = `# ${dirName}
+
+Dogfood fixture for${spec ? ` spec ${spec}` : ""} — **intent: ${intent}**.
+
+## Intent presets
+
+| Intent | When to use | Agents |
+|--------|-------------|--------|
+| **focus** | Sidebar focus line / filters; Live 0 is OK | stopped agents + task/continuity seeds |
+| **metrics** | CPU/MEM peek (spec 386) | autostart busy loops — need **Live > 0** |
+
+This fixture was scaffolded as **${intent}**.
+
+## Git note
+
+Repo \`.gitignore\` ignores \`.tachyon/\`. Force-add seed content:
+
+\`\`\`bash
+git add -f test/fixtures/${dirName}/.tachyon
+git add test/fixtures/${dirName}/tachyon.yml test/fixtures/${dirName}/README.md
+\`\`\`
+
+## Arm Dev Host
+
+\`\`\`bash
+# from monorepo:
+npm run dogfood:dev-host -- point \\
+  --worktree <worktree-or-repo> \\
+  --fixture ${dirName.replace(/-dogfood$/, "")} \\
+  ${spec ? `--spec ${spec} ` : ""}--slug ${dirName.replace(/-dogfood$/, "")}
+\`\`\`
+
+Human: **Run and Debug → Tachyon: Dev Host → F5**. Then \`point-clear\` when done.
+If you remove the worktree, run \`point-clear\` so the pointer is not left stale.
+`;
+  fs.writeFileSync(path.join(root, "README.md"), readme, "utf8");
+
+  return { root, slug: dirName, intent, spec };
+}
+
+/** Newest mtime under dir (ms), or null if missing/empty. */
+function newestMtimeMs(dir) {
+  if (!fs.existsSync(dir)) return null;
+  let max = 0;
+  const stack = [dir];
+  while (stack.length) {
+    const cur = stack.pop();
+    let st;
+    try {
+      st = fs.lstatSync(cur);
+    } catch {
+      continue;
+    }
+    if (st.isSymbolicLink()) continue;
+    if (st.isFile()) {
+      if (st.mtimeMs > max) max = st.mtimeMs;
+      continue;
+    }
+    if (st.isDirectory()) {
+      if (st.mtimeMs > max) max = st.mtimeMs;
+      try {
+        for (const name of fs.readdirSync(cur)) stack.push(path.join(cur, name));
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+  return max || null;
+}
+
 function readShortSha(worktreeAbs) {
   try {
     return execFileSync("git", ["-C", worktreeAbs, "rev-parse", "--short", "HEAD"], {
@@ -249,9 +501,11 @@ export function point(opts) {
   ensureDir(p.cache);
 
   const nm = ensureNodeModules(worktree, repoRoot);
+  const tools = ensureWorktreeToolBin(worktree, repoRoot);
   // extension: symlink is fine for --extensionDevelopmentPath (remote loads package.json/dist).
   replaceSymlink(p.extension, worktree);
   // workspace: real dir + child symlinks so Explorer works under WSL Remote F5.
+  // (`.tachyon` is copied — see materializeWorkspaceMirror.)
   materializeWorkspaceMirror(p.workspace, workspace);
 
   let packageName = null;
@@ -275,6 +529,8 @@ export function point(opts) {
     packageName,
     sha: readShortSha(worktree),
     nodeModulesLinked: nm.linked,
+    toolBinLinked: tools.linked,
+    toolBinLinkCount: tools.count,
     preparedAt: new Date().toISOString(),
     launchConfig: "Tachyon: Dev Host",
     howTo: [
@@ -282,6 +538,7 @@ export function point(opts) {
       "Press F5 (builds the pointed worktree, opens Extension Development Host on the fixture)",
       "Drive only the EDH window; do not reload the monorepo fleet window",
       "When done: npm run dogfood:dev-host -- point-clear",
+      "If you remove the worktree, run point-clear so the pointer is not left stale",
     ],
   };
   fs.writeFileSync(p.meta, `${JSON.stringify(meta, null, 2)}\n`, "utf8");
@@ -299,16 +556,28 @@ export function point(opts) {
 export function status(repoRoot) {
   const p = pathsOf(path.resolve(repoRoot));
   if (!fs.existsSync(p.meta)) {
-    return { armed: false, reason: "no meta.json — run: npm run dogfood:dev-host -- point …" };
+    return {
+      armed: false,
+      broken: true,
+      reason: "no meta.json — run: npm run dogfood:dev-host -- point …",
+      warnings: [],
+    };
   }
   let meta;
   try {
     meta = JSON.parse(fs.readFileSync(p.meta, "utf8"));
   } catch (err) {
-    return { armed: false, reason: `meta.json unreadable: ${err instanceof Error ? err.message : String(err)}` };
+    return {
+      armed: false,
+      broken: true,
+      reason: `meta.json unreadable: ${err instanceof Error ? err.message : String(err)}`,
+      warnings: [],
+    };
   }
+  const warnings = [];
   const extOk = fs.existsSync(p.extension);
-  const wsOk = fs.existsSync(p.workspace) && fs.statSync(p.workspace).isDirectory();
+  const wsOk = fs.existsSync(p.workspace) && !fs.lstatSync(p.workspace).isSymbolicLink() && fs.statSync(p.workspace).isDirectory();
+
   let workspaceSource = null;
   if (wsOk) {
     const srcMarker = path.join(p.workspace, ".dev-host-source");
@@ -320,15 +589,115 @@ export function status(repoRoot) {
       }
     }
   }
+
+  const worktreePath = typeof meta.worktree === "string" ? meta.worktree : null;
+  const worktreeExists = Boolean(worktreePath && fs.existsSync(worktreePath));
+  if (worktreePath && !worktreeExists) {
+    warnings.push(`worktree missing: ${worktreePath} — run point-clear or re-point`);
+  }
+
+  let extensionResolves = null;
+  if (extOk) {
+    try {
+      extensionResolves = fs.realpathSync(p.extension);
+    } catch {
+      extensionResolves = null;
+      warnings.push("extension symlink is broken");
+    }
+  } else {
+    warnings.push("extension link missing");
+  }
+  if (!wsOk) warnings.push("workspace mirror missing or is a symlink (must be a real directory)");
+
+  // Mirror `.tachyon` must be a real directory (Soul launch refuses parent-outside-workspace).
+  const mirrorTachyon = path.join(p.workspace, ".tachyon");
+  let tachyonMirrorIsRealDir = null;
+  if (wsOk && fs.existsSync(mirrorTachyon)) {
+    try {
+      const st = fs.lstatSync(mirrorTachyon);
+      tachyonMirrorIsRealDir = st.isDirectory() && !st.isSymbolicLink();
+      if (!tachyonMirrorIsRealDir) {
+        warnings.push("mirror .tachyon is a symlink — re-point (must be a real copy; SoulError risk)");
+      }
+    } catch {
+      tachyonMirrorIsRealDir = false;
+      warnings.push("mirror .tachyon unreadable");
+    }
+  } else if (wsOk) {
+    tachyonMirrorIsRealDir = null; // fixture had no .tachyon — ok
+  }
+
+  const distPath = worktreePath ? path.join(worktreePath, "dist") : null;
+  const distExists = Boolean(distPath && fs.existsSync(distPath));
+  if (worktreeExists && !distExists) {
+    warnings.push("worktree dist/ missing — F5 preLaunchTask should build; or npm run build in worktree");
+  }
+
+  const fixtureSourceExists = Boolean(workspaceSource && fs.existsSync(workspaceSource));
+  if (workspaceSource && !fixtureSourceExists) {
+    warnings.push(`fixture source missing: ${workspaceSource}`);
+  }
+
+  // P3: fixture .tachyon newer than mirror copy → drift
+  let fixtureDrift = false;
+  if (workspaceSource && tachyonMirrorIsRealDir) {
+    const fixtureTachyon = path.join(workspaceSource, ".tachyon");
+    const fixMs = newestMtimeMs(fixtureTachyon);
+    const mirMs = newestMtimeMs(mirrorTachyon);
+    if (fixMs != null && mirMs != null && fixMs > mirMs + 1000) {
+      fixtureDrift = true;
+      warnings.push("fixture .tachyon is newer than mirror copy — re-run point to rematerialize");
+    }
+  }
+
+  const criticalBroken =
+    !extOk ||
+    !wsOk ||
+    !worktreeExists ||
+    tachyonMirrorIsRealDir === false ||
+    !fixtureSourceExists && Boolean(workspaceSource);
+
   return {
-    armed: extOk && wsOk,
+    armed: !criticalBroken && extOk && wsOk && worktreeExists,
+    broken: criticalBroken,
     meta,
-    extensionResolves: extOk ? fs.realpathSync(p.extension) : null,
-    // Mirror is a real directory; report fixture source (marker) or the mirror path.
+    extensionResolves,
     workspaceResolves: workspaceSource ?? (wsOk ? path.resolve(p.workspace) : null),
+    workspaceMirrorPath: wsOk ? path.resolve(p.workspace) : null,
     workspaceIsMirror: Boolean(workspaceSource),
-    broken: !extOk || !wsOk,
+    worktreePath,
+    worktreeExists,
+    distExists,
+    tachyonMirrorIsRealDir,
+    fixtureSourceExists,
+    fixtureDrift,
+    warnings,
   };
+}
+
+/** Pretty-print doctor lines for humans/agents (stdout). */
+export function printStatus(st) {
+  if (!st.armed && st.reason && !st.meta) {
+    console.log(`${SELF}: unarmed — ${st.reason}`);
+    return;
+  }
+  console.log(`${SELF}: ${st.armed ? "armed" : "BROKEN / not ready"}`);
+  if (st.meta?.spec) console.log(`  spec:           ${st.meta.spec}`);
+  if (st.meta?.slug) console.log(`  slug:           ${st.meta.slug}`);
+  if (st.worktreePath) console.log(`  worktree:       ${st.worktreePath}${st.worktreeExists ? "" : "  (MISSING)"}`);
+  if (st.extensionResolves) console.log(`  extension →     ${st.extensionResolves}`);
+  if (st.workspaceResolves) console.log(`  fixture source: ${st.workspaceResolves}`);
+  if (st.workspaceMirrorPath) console.log(`  workspace mir:  ${st.workspaceMirrorPath}`);
+  if (st.tachyonMirrorIsRealDir === true) console.log(`  mirror .tachyon: real directory (ok)`);
+  else if (st.tachyonMirrorIsRealDir === false) console.log(`  mirror .tachyon: NOT a real dir (re-point)`);
+  else if (st.workspaceIsMirror) console.log(`  mirror .tachyon: (none in fixture)`);
+  if (st.worktreeExists) console.log(`  dist/:          ${st.distExists ? "present" : "missing"}`);
+  if (st.fixtureDrift) console.log(`  fixture drift:  yes — re-point`);
+  for (const w of st.warnings ?? []) console.log(`  ! ${w}`);
+  if (st.meta?.howTo?.length) {
+    console.log("  next:");
+    for (const line of st.meta.howTo) console.log(`    • ${line}`);
+  }
 }
 
 export function clear(repoRoot) {
@@ -349,9 +718,11 @@ export function parseArgs(argv) {
     if (
       a === "--worktree" ||
       a === "--workspace" ||
+      a === "--fixture" ||
       a === "--spec" ||
       a === "--slug" ||
       a === "--owner" ||
+      a === "--intent" ||
       a === "--repo"
     ) {
       const v = argv[++i];
@@ -374,26 +745,41 @@ export function main(argv = process.argv.slice(2)) {
   if (sub === "help" || sub === "-h" || sub === "--help") {
     console.log(`Usage:
   npm run dogfood:dev-host -- point --worktree PATH --workspace PATH [--spec NNN] [--slug SLUG] [--owner NAME]
+  npm run dogfood:dev-host -- point --worktree PATH --fixture SLUG [--spec NNN] [--slug SLUG] [--owner NAME]
+  npm run dogfood:dev-host -- fixture-new --slug SLUG [--spec NNN] [--intent focus|metrics] [--worktree PATH]
   npm run dogfood:dev-host -- point-status
   npm run dogfood:dev-host -- point-clear
 
 Stable F5 config name: "Tachyon: Dev Host"
 Pointer dir: <repo>/.tachyon/dev-host/
-On point: mirrors fixture into .tachyon/dev-host/workspace (real dir) and keeps portable launch.json.
+On point: mirrors fixture into .tachyon/dev-host/workspace (real dir; .tachyon copied) and portable launch.json.
+--fixture resolves test/fixtures/<slug> or <slug>-dogfood under worktree, then monorepo.
 `);
     return 0;
   }
 
   if (sub === "point") {
-    if (!args.worktree || !args.workspace) {
-      throw new Error(`${SELF}: point requires --worktree and --workspace`);
+    if (!args.worktree) {
+      throw new Error(`${SELF}: point requires --worktree`);
     }
+    let workspace = args.workspace;
+    if (!workspace && args.fixture) {
+      workspace = resolveFixturePath({
+        worktree: args.worktree,
+        repoRoot,
+        fixture: args.fixture,
+      });
+    }
+    if (!workspace) {
+      throw new Error(`${SELF}: point requires --workspace PATH or --fixture SLUG`);
+    }
+    const slug = args.slug ?? (args.fixture ? String(args.fixture).replace(/-dogfood$/, "") : null);
     const meta = point({
       repoRoot,
       worktree: args.worktree,
-      workspace: args.workspace,
+      workspace,
       spec: args.spec,
-      slug: args.slug,
+      slug,
       owner: args.owner,
     });
     console.log(`${SELF}: armed`);
@@ -405,14 +791,32 @@ On point: mirrors fixture into .tachyon/dev-host/workspace (real dir) and keeps 
     console.log("");
     console.log("  launch.json: portable ${workspaceFolder} Dev Host paths (WSL-safe)");
     console.log("  workspace:   real mirror dir under .tachyon/dev-host/workspace");
+    console.log("  .tachyon:    real copy in mirror (not a symlink — Soul-safe)");
     console.log("");
     console.log("Human next step:");
     for (const line of meta.howTo) console.log(`  • ${line}`);
     return 0;
   }
 
+  if (sub === "fixture-new") {
+    const result = fixtureNew({
+      repoRoot,
+      worktree: args.worktree,
+      slug: args.slug,
+      spec: args.spec,
+      intent: args.intent,
+    });
+    console.log(`${SELF}: fixture-new ${result.root}`);
+    console.log(`  intent: ${result.intent}`);
+    console.log(`  git add -f ${path.join(result.root, ".tachyon")}`);
+    console.log(`  then: npm run dogfood:dev-host -- point --worktree … --fixture ${result.slug.replace(/-dogfood$/, "")}`);
+    return 0;
+  }
+
   if (sub === "status") {
     const st = status(repoRoot);
+    printStatus(st);
+    console.log("---");
     console.log(JSON.stringify(st, null, 2));
     return st.armed ? 0 : 1;
   }

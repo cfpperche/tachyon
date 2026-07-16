@@ -474,25 +474,30 @@ help() {
   cat <<'EOF'
 Usage: npm run dogfood:dev-host -- <command>
 
+Preferred human path (F5 from monorepo):
+  point / point-status / point-clear / fixture-new
+
 Commands:
-  seed         Create isolated fixture (valid config + LKG + ledger)
+  point        Arm stable F5 "Tachyon: Dev Host" (worktree + fixture)
+  point-status Doctor-style F5 pointer status (exit 1 if broken)
+  point-clear  Clear the F5 pointer
+  fixture-new  Scaffold test/fixtures/<slug>-dogfood (--intent focus|metrics)
+  seed         Create isolated CLI fixture (valid config + LKG + ledger) [secondary]
   break        Arm fail-visible scenario (dangling subagent)
   restore      Restore valid tachyon.yml in the fixture
-  launch       Open GUI Extension Development Host (interactive)
+  launch       Open GUI Extension Development Host via CLI [secondary]
   resolve-code Print the compatible VS Code executable for Dev Host
   headless     Xvfb Dev Host + in-host runner (S1 fail-visible asserts)
   shortlist    Headless Chromium screenshots: mermaid | grok-activity | handoff-distill
-  status       Show fixture path / broken-or-valid
-  clean        Delete the fixture directory
+  status       Show CLI fixture path / broken-or-valid
+  clean        Delete the CLI fixture directory
   lease ...    Atomic owner lease (acquire|release|status|run); see runbook
-  point        Arm stable F5 "Tachyon: Dev Host" (worktree + fixture)
-  point-status Show the F5 pointer status
-  point-clear  Clear the F5 pointer
   help         This text
 
 Examples:
   npm run dogfood:dev-host -- point --worktree ~/tachyon-worktrees/foo \
-       --workspace ~/tachyon-worktrees/foo/test/fixtures/foo-dogfood --spec 381 --slug foo
+       --fixture foo --spec 381 --slug foo
+  npm run dogfood:dev-host -- fixture-new --slug demo --spec 393 --intent focus
   npm run dogfood:dev-host -- headless
   npm run dogfood:dev-host -- shortlist mermaid
 
@@ -524,6 +529,7 @@ case "$CMD" in
   point) point_cmd point "$@" ;;
   point-status) point_cmd status "$@" ;;
   point-clear) point_cmd clear "$@" ;;
+  fixture-new) point_cmd fixture-new "$@" ;;
   help|-h|--help) help ;;
   *) die "unknown command '$CMD' (try help)" ;;
 esac

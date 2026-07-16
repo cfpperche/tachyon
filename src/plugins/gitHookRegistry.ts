@@ -77,10 +77,38 @@ function shQuote(s: string): string {
   return `'${s.replace(/'/g, "'\\''")}'`;
 }
 
-/** A generated leaf for an argv vector: `exec` the argv directly (no surrounding shell logic). Stored as a
- *  content-addressed leaf so the dispatcher runs every step uniformly. (`exec` does PATH lookup only when
- *  arg0 has no slash — an absolute path, e.g. a spec-265-provisioned tool, avoids it.) */
+/** A generated leaf for an argv vector. Stored as a content-addressed leaf so the dispatcher runs every
+ *  step uniformly. (`exec` does PATH lookup only when arg0 has no slash — an absolute path, e.g. a
+ *  spec-265-provisioned tool, avoids it.)
+ *
+ *  Spec 393: workspace-relative Tachyon launchers (`.tachyon/bin/_tachyon-tool` etc.) fall back to the
+ *  primary checkout via `git rev-parse --git-common-dir` when the isolated worktree has no local bin —
+ *  so pre-commit does not require a manual symlink on every worktree. */
 export function argvWrapperScript(argv: string[]): string {
+  if (argv.length === 0) {
+    return `#!/bin/sh\n# Tachyon git-hook argv wrapper (generated) — spec 264.\nexit 0\n`;
+  }
+  const [cmd, ...rest] = argv;
+  const restQuoted = rest.map(shQuote).join(" ");
+  if (
+    cmd === ".tachyon/bin/_tachyon-tool" ||
+    cmd === ".tachyon/bin/_tachyon-data" ||
+    cmd === ".tachyon/bin/_tachyon-external"
+  ) {
+    return `#!/bin/sh
+# Tachyon git-hook argv wrapper (generated) — spec 264.
+set -eu
+CMD=${shQuote(cmd)}
+if [ ! -x "$CMD" ]; then
+  COMMON=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || COMMON=
+  if [ -n "\${COMMON:-}" ]; then
+    ALT="$(dirname "$COMMON")/$CMD"
+    if [ -x "$ALT" ]; then CMD=$ALT; fi
+  fi
+fi
+exec "$CMD"${restQuoted ? ` ${restQuoted}` : ""} "$@"
+`;
+  }
   return `#!/bin/sh\n# Tachyon git-hook argv wrapper (generated) — spec 264.\nexec ${argv.map(shQuote).join(" ")} "$@"\n`;
 }
 

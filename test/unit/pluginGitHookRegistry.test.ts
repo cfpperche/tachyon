@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { GitHookStore, GitHookStoreError, snapshotIntegrity, type EventEntry } from "../../src/plugins/gitHookRegistry.js";
+import { GitHookStore, GitHookStoreError, argvWrapperScript, snapshotIntegrity, type EventEntry } from "../../src/plugins/gitHookRegistry.js";
 
 const dirs: string[] = [];
 afterEach(() => { for (const d of dirs.splice(0)) fs.rmSync(d, { recursive: true, force: true }); });
@@ -72,5 +72,22 @@ describe("GitHookStore (spec 264)", () => {
     release();
     const r2 = await s.acquireLock(150); // free again
     r2();
+  });
+});
+
+// spec 393 — worktree-local .tachyon/bin may be missing; wrapper falls back via git-common-dir
+describe("argvWrapperScript worktree tool resolve (393)", () => {
+  it("embeds monorepo fallback for relative tachyon launchers", () => {
+    const sh = argvWrapperScript([".tachyon/bin/_tachyon-tool", "secrets-guard", "gitleaks", "protect"]);
+    expect(sh).toContain("git-common-dir");
+    expect(sh).toContain(".tachyon/bin/_tachyon-tool");
+    expect(sh).toContain("secrets-guard");
+  });
+
+  it("keeps simple exec for absolute commands", () => {
+    const sh = argvWrapperScript(["/bin/true"]);
+    expect(sh).toMatch(/^#!\/bin\/sh\n# Tachyon git-hook argv wrapper/);
+    expect(sh).toContain("exec '/bin/true'");
+    expect(sh).not.toContain("git-common-dir");
   });
 });
