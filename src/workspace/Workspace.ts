@@ -140,6 +140,7 @@ import { GitDeliveryStore } from "../git-delivery/store.js";
 import { DeliveryStore } from "../delivery/store.js";
 import { DeliveryLeaseService, waitForDeliveryLease } from "../delivery/leaseService.js";
 import { UnavailableProcessFence } from "../agents/processFence.js";
+import { readOwnApprovalRequest } from "../bridge/approvalRequest.js";
 import { DeliveryVerificationLeaseService } from "../delivery/verificationLease.js";
 import { DeliveryProjectionService } from "../delivery/projectionService.js";
 import {
@@ -621,10 +622,27 @@ export class Workspace {
     this.deliveryLease = new DeliveryLeaseService({
       store: this.deliveries,
       processFence: new UnavailableProcessFence(),
+      recoveryPrincipals: resolveGitDeliverySettings(this.config?.settings).prunePrincipals,
+      resolveRecoveryApproval: (approvalId, actor, actionDigest) => {
+        if (actor.kind !== "agent" || !actor.name) throw new Error("recovery approval requires an agent caller");
+        const request = readOwnApprovalRequest(this.workspaceRoot, approvalId, actor.name);
+        if (request.status !== "resolved" || request.resolution?.decision !== "approved") throw new Error("approval is not resolved as approved");
+        if (!request.payload.proposedAction.includes(actionDigest)) throw new Error("approval is not bound to this recovery action digest");
+        return { decision: "approved", requester: request.requester, actionDigest, payloadHash: request.payloadHash,
+          resolvedAt: request.resolution.resolvedAt, resolvedBy: request.resolution.resolvedBy };
+      },
       handoffSafety: () => this.effectiveDeliverySafety(),
       canonicalWorktreeFor: async (delivery) => fs.realpathSync((await this.exactCanonicalProjection(delivery)).worktreePath),
       readHead: async (cwd) => this.requiredGitOutput(["rev-parse", "HEAD"], cwd, "Git HEAD"),
       inspectWorktree: async (cwd) => ({ headSha: await this.requiredGitOutput(["rev-parse", "HEAD"], cwd, "Git HEAD"), clean: await this.requiredGitStatus(cwd) }),
+      inspectRecoveryWorktree: async (cwd, baseSha) => {
+        const headSha = await this.requiredGitOutput(["rev-parse", "HEAD"], cwd, "Git HEAD");
+        const status = await this.requiredGitOutput(["status", "--porcelain=v1"], cwd, "Git status");
+        const commits = await this.requiredGitOutput(["rev-list", `${baseSha}..${headSha}`], cwd, "Git recovery history");
+        return { inventory: { headSha,
+          dirtyPaths: status.split("\n").filter(Boolean).map((line) => ({ status: line.slice(0, 2), path: line.slice(3) })),
+          uniqueCommits: commits.split("\n").filter(Boolean) } };
+      },
       inspectReviewWorktree: async (cwd, taskRef) => {
         const headSha = await this.requiredGitOutput(["rev-parse", "HEAD"], cwd, "Git HEAD");
         const taskRefSha = await this.requiredGitOutput(["rev-parse", taskRef], cwd, "Git task ref");
@@ -827,7 +845,8 @@ export class Workspace {
         this.reconcileGrokAuthIfGrokAgent(name);
         deps.onViewsChanged("agents");
       },
-      onKilled: (name) => {
+      onKilled: async (name) => {
+        await this.deliveryLease.quarantineKilledExecution(name);
         this.reconcileGrokAuthIfGrokAgent(name);
         this.terminals.close(name);
         this.pendingAnchor.delete(name); // spec 216: don't carry a re-anchor flag past the session

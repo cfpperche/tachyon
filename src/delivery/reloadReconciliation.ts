@@ -242,8 +242,8 @@ function classifyHeld(
   if (tail.executionAgent !== holder.executionAgent) {
     return { deliveryId: delivery.id, class: "unavailable", reason: "tail executionAgent mismatch" };
   }
-  // Principal equality only — never infer occupant authority from principal alone.
-  if (tail.principal !== holder.principal) {
+  // Legacy canonical holders may omit principal; the segment remains the durable authority boundary.
+  if (holder.principal !== undefined && tail.principal !== holder.principal) {
     return { deliveryId: delivery.id, class: "unavailable", reason: "holder/tail principal mismatch" };
   }
   if (!holder.executionNonce || holder.executionNonce.length === 0) {

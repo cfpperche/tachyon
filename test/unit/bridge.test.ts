@@ -234,7 +234,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     fs.rmSync(pinsRoot, { recursive: true, force: true });
   });
 
-  it("exposes exactly the 62 tools (including canonical Delivery review completion)", async () => {
+  it("exposes exactly the 63 tools (including canonical Delivery salvage and review completion)", async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       "append_project_handoff_note",
@@ -250,6 +250,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       "create_task",
       "create_validation",
       "delivery_complete_review",
+      "delivery_salvage",
       "discover_validation_candidates",
       "dismiss_agent",
       "flag_for_human",

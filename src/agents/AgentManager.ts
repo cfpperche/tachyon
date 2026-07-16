@@ -355,7 +355,7 @@ export interface AgentManagerOptions {
   onSessionHooksInjected?: (name: string, injected: boolean) => void;
   onSpawned?: (name: string, reveal: boolean, context?: { worktree?: WorktreeRecord; adhoc: boolean }) => void;
   onStopping?: (name: string) => void;
-  onKilled?: (name: string) => void;
+  onKilled?: (name: string) => unknown;
   /**
    * Fired only when restart falls back to kill-session + new-session (t-4d2630).
    * Happy path uses respawn-pane -k so attached clients stay; the UI close dance is
@@ -2551,7 +2551,7 @@ export class AgentManager {
       }
     }
     this.opts.revokeAgentToken?.(name); // spec 351 — the torn-down session's token is dead too
-    this.opts.onKilled?.(name);
+    await this.opts.onKilled?.(name);
   }
 
   async stopGracefully(name: string): Promise<void> {

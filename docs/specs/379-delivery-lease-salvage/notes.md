@@ -20,6 +20,14 @@ _Alternatives weighed mid-build. The chosen path + what was given up + why it wa
 
 _Questions surfaced during the build with no answer yet. Owner or path to resolution if known._
 
+## Build decisions (2026-07-16)
+
+The revised minimal cut reuses quarantine. Kill completion makes a held lease inert but does not claim descendant death. The held-entry boundary deliberately accepts canonical legacy holders that omitted `principal`; it still freezes the full lease and open tail for CAS and refuses any alive or ambiguous root before considering fence/approval evidence.
+
+Recovery evidence is classified as `fence-proof` only when the fence capability domain is supported and identical on both sides of `proveEmpty`. Otherwise a caller-scoped, digest-bound approved receipt is required and the event says `approval-only`. Worktree-free abandonment never calls canonical-worktree or Git inspection seams.
+
+The production fence remains `UnavailableProcessFence` until a complete host adapter (including its privileged audit helper and durable identity store) can be constructed safely. The recovery sites are now ready to consume a promoted adapter without treating a domain identifier as authority; shipping a partial Linux adapter here would weaken the fence contract.
+
 ## Field finding (2026-07-14, pre-plan)
 
 `delivery_join` with `role: "recovery"` + fresh operation_id + expected_head SUCCESSFULLY took
