@@ -124,3 +124,26 @@ without keeping the old system executable.
 ## Open questions
 
 None at planning time.
+
+## Dogfood log
+
+### 2026-07-16T22:39:03Z — pass (1/1) — source: tasks.md — commit: d1a550c601e0d86fc1f366991e8289eb158eede4
+- `node scripts/dogfood/delivery-lease.mjs --canonical-only` — pass
+
+## Verification log
+
+### 2026-07-16T22:39:13Z — pass (2/2) — source: tasks.md
+- `npm run typecheck` — pass
+- `npm test` — pass
+
+## Main `3e2209dc` composition audit — 2026-07-16
+
+- The candidate rebased cleanly onto `main` `3e2209dc`; the pre-rebase head remains recoverable at
+  `backup/t-85f251-pre-main-3e2209dc-8aa7101a`.
+- Range-diff confirmed that the newly landed Control manifest, baseline fixture, and non-AI Bridge guard fixes
+  were preserved without duplicate production changes. The canonical retirement delta remains six commits.
+- The current-source absence audit is clean outside the deliberate removed-setting diagnostic and raw retirement
+  fixture. The 13-suite canonical matrix passes 920/920; `npm run typecheck`, `npm run build`, and
+  `git diff --check` pass.
+- The declared headless dogfood and SDD verification both pass. No new source defect was found in this composition
+  round. Installed-extension retirement and one real post-cut lifecycle remain the final acceptance proof.
