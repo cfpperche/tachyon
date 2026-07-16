@@ -53,6 +53,8 @@ export interface VerifyTaskCommand {
   command: string;
   argv: string[];
   exitCode: number;
+  timedOut?: boolean;
+  signal?: string;
   stdout?: string;
   stderr?: string;
 }
@@ -319,6 +321,8 @@ export interface CommandResult {
   exitCode: number;
   stdout: string;
   stderr: string;
+  timedOut?: boolean;
+  signal?: string;
   observedTestNames?: string[];
   observedVitestAssertions?: VitestAssertionObservation[];
 }
@@ -354,8 +358,15 @@ async function runArgv(
     });
     return { command, argv, exitCode: 0, stdout, stderr };
   } catch (err) {
-    const e = err as Error & { code?: number; stdout?: string; stderr?: string };
-    return { command, argv, exitCode: typeof e.code === "number" ? e.code : 1, stdout: e.stdout ?? "", stderr: e.stderr ?? e.message };
+    const e = err as Error & { code?: number | string | null; stdout?: string; stderr?: string; killed?: boolean; signal?: string };
+    return {
+      command, argv, exitCode: typeof e.code === "number" ? e.code : 1,
+      stdout: e.stdout ?? "", stderr: e.stderr ?? e.message,
+      ...(e.code === "ETIMEDOUT" || (e.killed === true && (e.code === null || e.code === undefined))
+        ? { timedOut: true }
+        : {}),
+      ...(e.signal ? { signal: e.signal } : {}),
+    };
   }
 }
 
@@ -817,8 +828,21 @@ function normalizeVitestNameFilterResult(result: CommandResult, behaviorTest: st
   return { ...result, stdout, observedTestNames, observedVitestAssertions };
 }
 
-function firstLine(s: string | undefined): string | undefined {
-  return s?.split(/\r?\n/).find((line) => line.trim())?.trim();
+const DIAGNOSTIC_LIMIT = 4_096;
+
+/** Keep the failure end of command output: test runners put summaries and assertion failures there. */
+function boundedOutput(s: string | undefined, limit = DIAGNOSTIC_LIMIT): string | undefined {
+  const normalized = s?.replace(/\u0000/g, "").trim();
+  if (!normalized) return undefined;
+  return normalized.length <= limit ? normalized : `…[${normalized.length - limit} chars omitted]\n${normalized.slice(-limit)}`;
+}
+
+function commandFailure(result: CommandResult, fallback: string): string {
+  const termination = [result.timedOut ? "timed out" : undefined, result.signal ? `signal ${result.signal}` : undefined]
+    .filter(Boolean).join(", ");
+  const stderr = boundedOutput(result.stderr, 1_500);
+  const stdout = boundedOutput(result.stdout, termination || stderr ? 2_000 : 3_500);
+  return [termination, stderr && `stderr:\n${stderr}`, stdout && `stdout:\n${stdout}`].filter(Boolean).join("\n") || fallback;
 }
 
 function withinOwns(file: string, owns: string[]): boolean {
@@ -1372,8 +1396,10 @@ function commandRecord(name: string, cwd: string, result: CommandResult): Verify
     command: result.command,
     argv: result.argv,
     exitCode: result.exitCode,
-    ...(firstLine(result.stdout) ? { stdout: firstLine(result.stdout) } : {}),
-    ...(firstLine(result.stderr) ? { stderr: firstLine(result.stderr) } : {}),
+    ...(result.timedOut ? { timedOut: true } : {}),
+    ...(result.signal ? { signal: result.signal } : {}),
+    ...(boundedOutput(result.stdout) ? { stdout: boundedOutput(result.stdout) } : {}),
+    ...(boundedOutput(result.stderr) ? { stderr: boundedOutput(result.stderr) } : {}),
   };
 }
 
@@ -1404,7 +1430,7 @@ async function runTieredTestsInCurrentCheckout(input: {
     const typecheck = await input.runner(input.worktreePath, parseArgvCommand(input.settings.typecheck), { timeout: 300_000 });
     input.commands.push(commandRecord("typecheck", input.worktreePath, typecheck));
     if (typecheck.exitCode !== 0) {
-      input.blockers.push({ code: "typecheck_failed", detail: `typecheck failed: ${firstLine(typecheck.stderr) ?? firstLine(typecheck.stdout) ?? input.settings.typecheck}` });
+      input.blockers.push({ code: "typecheck_failed", detail: `typecheck failed: ${commandFailure(typecheck, input.settings.typecheck)}` });
     }
   }
 
@@ -1418,7 +1444,7 @@ async function runTieredTestsInCurrentCheckout(input: {
     const affected = await input.runner(input.worktreePath, affectedArgv, { timeout: 300_000 });
     input.commands.push(commandRecord("affected_tests", input.worktreePath, affected));
     if (affected.exitCode !== 0) {
-      input.blockers.push({ code: "affected_tests_failed", detail: `affected tests failed: ${firstLine(affected.stderr) ?? firstLine(affected.stdout) ?? affected.command}` });
+      input.blockers.push({ code: "affected_tests_failed", detail: `affected tests failed: ${commandFailure(affected, affected.command)}` });
     }
   }
 
@@ -1433,7 +1459,7 @@ async function runTieredTestsInCurrentCheckout(input: {
     const full = await input.runner(input.worktreePath, parseArgvCommand(input.fullCommand), { timeout: 600_000 });
     input.commands.push(commandRecord("full_tests", input.worktreePath, full));
     if (full.exitCode !== 0) {
-      input.blockers.push({ code: "full_tests_failed", detail: `full verify failed: ${firstLine(full.stderr) ?? firstLine(full.stdout) ?? input.fullCommand}` });
+      input.blockers.push({ code: "full_tests_failed", detail: `full verify failed: ${commandFailure(full, input.fullCommand)}` });
     }
   }
 }
@@ -1647,7 +1673,7 @@ async function verifyTaskResolved(input: VerifyTaskInput, target: VerificationTa
             basePrepareFailed = true;
             blockers.push({
               code: "verification_prepare_failed",
-              detail: `project verifier preparation failed at baseSha: ${firstLine(prepareRun.stderr) ?? firstLine(prepareRun.stdout) ?? prepareCommand}`,
+              detail: `project verifier preparation failed at baseSha: ${commandFailure(prepareRun, prepareCommand)}`,
             });
             return blockedCommand("project verifier preparation failed at baseSha");
           }
@@ -1711,7 +1737,7 @@ async function verifyTaskResolved(input: VerifyTaskInput, target: VerificationTa
             if (prepareRun.exitCode !== 0) {
               blockers.push({
                 code: "verification_prepare_failed",
-                detail: `project verifier preparation failed at refSha ${refSha}: ${firstLine(prepareRun.stderr) ?? firstLine(prepareRun.stdout) ?? prepareCommand}`,
+                detail: `project verifier preparation failed at refSha ${refSha}: ${commandFailure(prepareRun, prepareCommand)}`,
               });
               return;
             }
@@ -1753,7 +1779,7 @@ async function verifyTaskResolved(input: VerifyTaskInput, target: VerificationTa
             if (prepareRun.exitCode !== 0) {
               blockers.push({
                 code: "verification_prepare_failed",
-                detail: `project verifier preparation failed at refSha ${refSha}: ${firstLine(prepareRun.stderr) ?? firstLine(prepareRun.stdout) ?? prepareCommand}`,
+                detail: `project verifier preparation failed at refSha ${refSha}: ${commandFailure(prepareRun, prepareCommand)}`,
               });
               return;
             }
@@ -1804,7 +1830,7 @@ async function verifyTaskResolved(input: VerifyTaskInput, target: VerificationTa
           if (headRun.exitCode !== 0 && canonicalHeadPassed) {
             blockers.push({
               code: "behavior_failed",
-              detail: `behaviorTest failed at refSha ${refSha}: ${firstLine(headRun.stderr) ?? firstLine(headRun.stdout) ?? record.behaviorTest}`,
+              detail: `behaviorTest failed at refSha ${refSha}: ${commandFailure(headRun, record.behaviorTest)}`,
             });
           }
         });

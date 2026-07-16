@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
@@ -33,6 +32,7 @@ import type { EngineStateMigrationV1 } from "../../src/engine-service/stateMigra
 import { workspaceVersionStateKey } from "../../src/workspace/operationalStateKeys.js";
 import { ENGINE_SHELL_PROTOCOL, type EngineBundleManifestV1, type EngineServiceIdentityV1, type EngineShellHelloV1 } from "../../src/engine-service/protocol.js";
 import { TmuxService, workspaceHash } from "../../src/tmux/TmuxService.js";
+import { makeSocketTemp } from "../helpers/socketTemp.js";
 
 const roots: string[] = [];
 const children: ChildProcessWithoutNullStreams[] = [];
@@ -510,7 +510,7 @@ function stopChild(child: ChildProcessWithoutNullStreams): Promise<void> {
 }
 
 function temp(prefix: string): string {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  const root = makeSocketTemp(prefix);
   roots.push(root);
   return root;
 }

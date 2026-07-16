@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import net from "node:net";
-import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { startEngineControlServer, type RunningEngineControlServer } from "../../src/engine-service/controlServer.js";
@@ -16,6 +15,7 @@ import {
   type EngineShellHelloV1,
 } from "../../src/engine-service/protocol.js";
 import { blankCommandFields } from "../../src/webview/command-studio-shell/domain.js";
+import { makeSocketTemp } from "../helpers/socketTemp.js";
 
 const roots: string[] = [];
 const servers: RunningEngineControlServer[] = [];
@@ -26,7 +26,7 @@ afterEach(async () => {
 });
 
 function fixture() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-engine-control-"));
+  const root = makeSocketTemp("tachyon-engine-control-");
   roots.push(root);
   const runtime = path.join(root, "runtime");
   fs.mkdirSync(runtime, { mode: 0o700 });
