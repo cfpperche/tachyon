@@ -2,8 +2,8 @@
 
 _Created 2026-07-16._
 
-**Status:** in-progress
-<!-- When plugin 1.5.0 ships and is installed: Status shipped + Closure. -->
+**Status:** shipped
+**Closure:** 2026-07-16 — SDD plugin **1.5.0** published as `github:cfpperche/tachyon-plugins@v0.32.0#path=sdd` (commit `9f7b76e`). Opt-in `cookbook.md` + `sdd-cookbook.sh` + warning-only `close` hygiene. Installed in this workspace; dogfood on 392 showed no `cookbook-missing` with cookbook present; counterfactual surface without cookbook still warns. Tests: `test-cookbook-close.sh` + `test-visual-close.sh` green.
 
 ## Intent
 
