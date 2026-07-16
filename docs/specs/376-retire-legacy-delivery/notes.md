@@ -34,7 +34,8 @@ _Created 2026-07-13._
 ## Implementation candidate — 2026-07-16
 
 - Isolated worktree: `/home/goat/tachyon-worktrees/t-85f251`.
-- Branch: `codex/t-85f251-retire-legacy-delivery-r2`, based on `274c8b22`; `main` was not modified or merged.
+- Branch: `codex/t-85f251-retire-legacy-delivery-r2`. The first candidate was cut from `274c8b22`; after its
+  local audit it was rebased onto current `main` at `af136a0a`. `main` was not modified or merged.
 - The candidate removes the old models and public entry points, makes gated spawn/join/verify canonical-only,
   keeps GitDelivery as an immutable linked projection, and adds the explicit preview/archive/retire operation.
 - The retirement fixture contains canonical plus legacy metadata, linked and unlinked projections, clean and
@@ -50,6 +51,16 @@ _Created 2026-07-13._
   3 skipped.
 - The final current-source audit found no old public lifecycle symbol outside the deliberate removed-setting
   diagnostic and durable mechanism-only evidence vocabulary.
+- The current-main audit preserved the parallel lease-salvage path, restart/rebind work, gated-preparation error
+  diagnostics, and Mermaid viewport changes. Normal handoff remains unconditionally `mechanism-only`; the process
+  fence is an optional, recovery-only proof source, and salvage still fails closed to a bound human approval when
+  that proof is unavailable. The combined Bridge surface is 62 tools: canonical-only removes standalone open while
+  salvage remains available.
+- Rebase forcing passed on 7 files / 638 tests, followed by `npm run typecheck`. The first combined `npm test`
+  exposed two stale assertions already present in the incoming main: a multiline ESM import detached its
+  `@ts-expect-error`, and the git-hook wrapper test still expected a direct launcher `exec` after main added a
+  worktree fallback. Both were corrected without production behavior changes. The final combined gate passed:
+  406 files, 4,676 tests, 3 skipped; `git diff --check` and the legacy-symbol source audit were clean.
 - Still required before merge: independent immutable review, installed-extension retirement/happy-path dogfood,
   any consolidated corrections those produce, push, and explicit maintainer acceptance.
 
