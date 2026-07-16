@@ -36,6 +36,6 @@
 
 ## Close
 
-- [ ] Verify command green (on branch)
-- [ ] Dogfood log or Human dogfood note in `notes.md`
-- [ ] Status → shipped or shipped-partial; **Closure:** line
+- [x] Verify command green (on branch)
+- [x] Dogfood log or Human dogfood note in `notes.md`
+- [ ] Status → shipped; **Closure:** line (after land to main)

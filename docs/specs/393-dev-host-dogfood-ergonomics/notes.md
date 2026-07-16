@@ -29,6 +29,23 @@ Worktree `test/fixtures/<slug>` wins over monorepo when both exist (worktree lis
 
 New leaves get resolve-on-exec. Already-installed content-addressed leaves keep old scripts until plugin reinstall; `point` still symlinks monorepo `.tachyon/bin` into the worktree for those.
 
+## Dogfood log
+
+### 2026-07-16 CLI smoke (headless)
+
+```text
+fixture-new --slug ergonomics-smoke --intent focus → ok
+point --fixture ergonomics-smoke → armed; mirror .tachyon real directory
+point-status → doctor lines + dist/ missing warn (expected pre-build)
+point-clear → cleared
+```
+
+Unit: `devHostPointer` 10 + `pluginGitHookRegistry` 9 + dispatcher 6 = green.
+
+Commit on branch: `08443142`.
+
 ## Open
 
 - Reinstall/regenerate hooks on main fleet if we want all leaves updated without relying on bin symlink.
+- Human F5 glance optional before land.
+- Land: merge branch → main (not done yet).
