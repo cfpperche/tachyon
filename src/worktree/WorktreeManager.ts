@@ -161,7 +161,9 @@ export const gitArgs = {
   // Keep this compatible with Git versions that support `worktree lock` but predate `--reason`.
   lock: (wtPath: string): string[] => ["worktree", "lock", wtPath],
   unlock: (wtPath: string): string[] => ["worktree", "unlock", wtPath],
-  remove: (wtPath: string): string[] => ["worktree", "remove", "--force", wtPath],
+  /** Default force for occupancy-checked product cleanup. Soft (no --force) lets Git refuse a dirty tree. */
+  remove: (wtPath: string, force = true): string[] =>
+    force ? ["worktree", "remove", "--force", wtPath] : ["worktree", "remove", wtPath],
   /** SAFE delete — git refuses if the branch isn't fully merged into HEAD/upstream (no work lost). */
   deleteBranchSafe: (branch: string): string[] => ["branch", "-d", branch],
   /** FORCE delete — only after an explicit human confirm (loses unmerged commits). */
@@ -703,10 +705,23 @@ export class WorktreeManager {
   }
 
   /**
-   * Remove the worktree (always `git worktree remove --force`), and the branch ONLY when it
-   * was Tachyon-created AND the caller confirmed deletion. A human branch is never force-deleted.
+   * Remove the worktree. Soft by default (no --force) so Git refuses a dirty tree.
+   * Pass `force: true` only after an explicit data-loss confirm (spec 392).
+   * Branch deleted ONLY when Tachyon-created AND deleteBranch is set.
    */
-  remove(rec: WorktreeRecord, deleteBranch: boolean): Promise<{ removed: boolean; branchDeleted: boolean; error?: string }> {
+  remove(
+    rec: WorktreeRecord,
+    deleteBranch: boolean,
+    opts?: {
+      force?: boolean;
+      /**
+       * When set, probe dirtiness under this same lock before remove.
+       * - clean → soft remove (no --force) unless force is true
+       * - dirty/unknown → require force (caller must have confirmDirty)
+       */
+      refuseUnlessForceIfDirty?: boolean;
+    },
+  ): Promise<{ removed: boolean; branchDeleted: boolean; error?: string }> {
     return this.withLock(rec.path, async () => {
       if (!this.opts.occupancy) {
         return { removed: false, branchDeleted: false, error: `worktree occupancy unknown for ${rec.path}: no occupancy probe configured` };
@@ -721,7 +736,27 @@ export class WorktreeManager {
       if (occ) {
         return { removed: false, branchDeleted: false, error: `worktree is ${occ.state === "dirty" ? "quarantined by" : "occupied by"} agent '${occ.agent}' (cwd ${occ.cwd})` };
       }
-      const rm = await this.git(gitArgs.remove(rec.path), this.opts.workspaceRoot);
+      let force = opts?.force === true;
+      if (opts?.refuseUnlessForceIfDirty && this.exists(rec.path)) {
+        const status = await this.git(["status", "--porcelain=v1", "--untracked-files=all"], rec.path);
+        if (status.code !== 0) {
+          if (!force) {
+            return {
+              removed: false,
+              branchDeleted: false,
+              error: `worktree dirtiness unknown at ${rec.path}; pass confirmDirty=true to force-remove`,
+            };
+          }
+        } else if (status.stdout.trim().length > 0 && !force) {
+          return {
+            removed: false,
+            branchDeleted: false,
+            error: `worktree is dirty at ${rec.path}; pass confirmDirty=true to force-remove uncommitted work`,
+          };
+        }
+      }
+      // Soft remove when clean (Git re-checks); --force only when explicitly authorized.
+      const rm = await this.git(gitArgs.remove(rec.path, force), this.opts.workspaceRoot);
       if (rm.code !== 0) return { removed: false, branchDeleted: false, error: rm.stderr.trim() || rm.stdout.trim() };
       let branchDeleted = false;
       if (deleteBranch && rec.tachyonCreatedBranch) {

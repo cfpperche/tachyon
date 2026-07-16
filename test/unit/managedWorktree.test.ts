@@ -50,7 +50,7 @@ describe("spec 392 managed worktree registry", () => {
     expect(newManagedId("change", a)).not.toBe(newManagedId("change", b));
   });
 
-  it("canMutateManagedWorktree enforces owner vs privileged", () => {
+  it("canMutateManagedWorktree enforces owner; shared tokens are not privileged", () => {
     const entry: ManagedWorktreeEntry = {
       id: "mw-change-x",
       kind: "change",
@@ -64,8 +64,9 @@ describe("spec 392 managed worktree registry", () => {
     };
     expect(canMutateManagedWorktree(entry, { kind: "agent", name: "alice" })).toBe(true);
     expect(canMutateManagedWorktree(entry, { kind: "agent", name: "bob" })).toBe(false);
-    expect(canMutateManagedWorktree(entry, { kind: "legacy" })).toBe(true);
-    expect(canMutateManagedWorktree(entry, { kind: "external" })).toBe(true);
+    expect(canMutateManagedWorktree(entry, { kind: "legacy" })).toBe(false);
+    expect(canMutateManagedWorktree(entry, { kind: "external" })).toBe(false);
+    expect(canMutateManagedWorktree(entry, { kind: "human" })).toBe(true);
   });
 
   it("load missing file is empty; corrupt file fails closed", () => {

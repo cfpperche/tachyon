@@ -195,12 +195,22 @@ export function liveFoldersFromRegistry(
     }));
 }
 
-/** Whether actor may mutate this entry (creator, agent owner, or privileged Bridge principal). */
+/**
+ * Whether actor may mutate this entry.
+ * - agent: only creator or agent owner (no path-takeover privilege)
+ * - human: host/admin UI principal
+ * - legacy/external: NOT globally privileged for destructive registry ops (shared tokens)
+ */
 export function canMutateManagedWorktree(
   entry: ManagedWorktreeEntry,
   actor: { kind: string; name?: string },
 ): boolean {
-  if (actor.kind === "legacy" || actor.kind === "external" || actor.kind === "human") return true;
+  if (actor.kind === "human") return true;
   if (actor.kind !== "agent" || !actor.name) return false;
   return entry.createdBy === actor.name || entry.agent === actor.name;
+}
+
+/** Whether actor may administer/register arbitrary paths (host human only). */
+export function canAdminManagedWorktree(actor: { kind: string; name?: string }): boolean {
+  return actor.kind === "human";
 }

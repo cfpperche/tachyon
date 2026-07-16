@@ -17,6 +17,7 @@ import {
 } from "./WorktreeManager.js";
 import {
   assertManagedSlug,
+  canAdminManagedWorktree,
   canMutateManagedWorktree,
   defaultChangeBranch,
   findManagedEntry,
@@ -92,6 +93,8 @@ export class ManagedWorktreeService {
     taskId?: string;
     slug?: string;
     createdBy?: string;
+    /** Caller for public Bridge registration (authority checks). */
+    actor?: { kind: string; name?: string };
     /** When true, skip git probes (only for internal agent ensure that already validated). */
     trustedInternal?: boolean;
   }): Promise<ManagedWorktreeEntry> {
@@ -105,13 +108,41 @@ export class ManagedWorktreeService {
     const base = resolveBase(this.opts.getSettings());
     let abs: string;
     if (input.trustedInternal) {
-      abs = path.resolve(input.path);
+      abs = path.resolve(this.opts.workspaceRoot, input.path);
     } else {
       if (!fs.existsSync(input.path)) throw new Error(`path does not exist: ${input.path}`);
       abs = fs.realpathSync(input.path);
       if (!isUnderWorkspaceManagedRoot(abs, base, this.opts.wsHash)) {
         throw new Error(`path is not under managed root '${path.join(base, this.opts.wsHash)}': ${abs}`);
       }
+
+      // Authorization: agents may only register their own deterministic path; no peer adoption.
+      const actor = input.actor ?? { kind: "legacy" };
+      if (!canAdminManagedWorktree(actor)) {
+        if (actor.kind !== "agent" || !actor.name) {
+          throw new Error("register_worktree requires an agent or human caller");
+        }
+        if (input.kind === "agent") {
+          if (input.agent !== actor.name) {
+            throw new Error("register kind=agent may only claim the caller's own agent name");
+          }
+          const expected = path.resolve(pathFor(base, this.opts.wsHash, actor.name));
+          if (abs !== expected) {
+            throw new Error(`register kind=agent path must be the canonical path for '${actor.name}'`);
+          }
+        } else {
+          const slug = assertManagedSlug(input.slug!);
+          const expected = path.resolve(pathForChange(base, this.opts.wsHash, slug));
+          if (abs !== expected) {
+            throw new Error(`register kind=change path must be the canonical path for slug '${slug}'`);
+          }
+          const prior = findManagedEntry(this.load(), abs);
+          if (prior && !canMutateManagedWorktree(prior, actor)) {
+            throw new Error(`refused: path already registered to another owner (${prior.id})`);
+          }
+        }
+      }
+
       const repoCommon = (await this.git(["rev-parse", "--git-common-dir"], this.opts.workspaceRoot)).stdout.trim();
       if (!repoCommon) throw new Error("cannot resolve repository common dir");
       const wtCommonProbe = await this.git(["rev-parse", "--git-common-dir"], abs);
@@ -137,6 +168,8 @@ export class ManagedWorktreeService {
     const idKey = input.kind === "agent" ? input.agent! : (slug ?? path.basename(abs));
     const id = newManagedId(input.kind, idKey);
     const headProbe = await this.git(gitArgs.headRef(), abs).catch(() => ({ code: 1, stdout: "", stderr: "" }));
+    // Preserve prior createdAt/createdBy when re-registering the same path by the same owner.
+    const prior = findManagedEntry(this.load(), abs);
     const entry: ManagedWorktreeEntry = {
       id,
       kind: input.kind,
@@ -147,8 +180,10 @@ export class ManagedWorktreeService {
       ...(input.agent ? { agent: input.agent } : {}),
       ...(input.taskId ? { taskId: input.taskId } : {}),
       ...(slug ? { slug } : {}),
-      createdAt: this.nowIso(),
-      ...(input.createdBy ? { createdBy: input.createdBy } : {}),
+      createdAt: prior?.createdAt ?? this.nowIso(),
+      ...(input.createdBy || prior?.createdBy
+        ? { createdBy: input.createdBy ?? prior?.createdBy }
+        : {}),
       status: "active",
     };
     this.save(upsertManagedEntry(this.load(), entry));
@@ -244,9 +279,15 @@ export class ManagedWorktreeService {
     });
   }
 
-  async isDirty(worktreePath: string): Promise<boolean> {
-    const status = await this.git(["status", "--porcelain=v1", "--untracked-files=all"], worktreePath);
-    return status.code === 0 && status.stdout.trim().length > 0;
+  /** clean | dirty | unknown — unknown fails closed without confirmDirty. */
+  async probeDirtiness(worktreePath: string): Promise<"clean" | "dirty" | "unknown"> {
+    try {
+      const status = await this.git(["status", "--porcelain=v1", "--untracked-files=all"], worktreePath);
+      if (status.code !== 0) return "unknown";
+      return status.stdout.trim().length > 0 ? "dirty" : "clean";
+    } catch {
+      return "unknown";
+    }
   }
 
   async remove(
@@ -258,16 +299,6 @@ export class ManagedWorktreeService {
     if (!canMutateManagedWorktree(entry, opts.actor)) {
       return { removed: false, branchDeleted: false, error: `refused: caller cannot remove worktree '${entry.id}'` };
     }
-    if (fs.existsSync(entry.path)) {
-      const dirty = await this.isDirty(entry.path);
-      if (dirty && !opts.confirmDirty) {
-        return {
-          removed: false,
-          branchDeleted: false,
-          error: `worktree is dirty at ${entry.path}; pass confirmDirty=true to force-remove uncommitted work`,
-        };
-      }
-    }
 
     const rec: WorktreeRecord = {
       path: entry.path,
@@ -276,7 +307,15 @@ export class ManagedWorktreeService {
       baseRef: entry.baseRef,
       createdAt: entry.createdAt,
     };
-    const result = await this.opts.manager.remove(rec, opts.deleteBranch === true && entry.tachyonCreatedBranch);
+    // Dirtiness probe runs inside manager.remove under the same path lock.
+    const result = await this.opts.manager.remove(
+      rec,
+      opts.deleteBranch === true && entry.tachyonCreatedBranch,
+      {
+        force: opts.confirmDirty === true,
+        refuseUnlessForceIfDirty: true,
+      },
+    );
     if (result.removed) this.save(removeManagedEntry(this.load(), entry.id));
     return result;
   }

@@ -740,6 +740,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         if (!actor.ok) return fail(new Error(actor.message));
         if (a.kind === "agent" && !a.agent) return fail(new Error("register_worktree kind=agent requires agent"));
         if (a.kind === "change" && !a.slug) return fail(new Error("register_worktree kind=change requires slug"));
+        const principal = deps.caller ?? { kind: "legacy" as const };
         const entry = await deps.managedWorktrees.register({
           kind: a.kind,
           path: a.path,
@@ -751,6 +752,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           taskId: a.taskId,
           slug: a.slug,
           createdBy: actor.name,
+          actor: { kind: principal.kind, name: actor.name },
         });
         return ok(JSON.stringify(entry, null, 2));
       } catch (err) {
