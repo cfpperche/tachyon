@@ -1,0 +1,332 @@
+/* Tachyon Cockpit — editor sysadmin shell (does not replace sidebar) */
+
+.ck-root {
+  display: flex;
+  height: 100vh;
+  min-height: 480px;
+  color: var(--vscode-foreground);
+  font-size: 13px;
+  background: var(--vscode-editor-background);
+}
+
+/* ---- left rail ---- */
+.ck-nav {
+  width: 200px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
+  background: color-mix(in srgb, var(--vscode-sideBar-background) 90%, transparent);
+  display: flex;
+  flex-direction: column;
+  padding: 12px 0;
+}
+
+.ck-nav-brand {
+  padding: 0 14px 12px;
+  border-bottom: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
+  margin-bottom: 8px;
+}
+
+.ck-nav-brand .title {
+  font-weight: 600;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ck-nav-brand .sub {
+  font-size: 11px;
+  opacity: 0.65;
+  margin-top: 2px;
+  line-height: 1.3;
+}
+
+.ck-nav button {
+  all: unset;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  cursor: pointer;
+  width: 100%;
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+.ck-nav button:hover {
+  background: var(--vscode-list-hoverBackground);
+  opacity: 1;
+}
+
+.ck-nav button.active {
+  background: var(--vscode-list-activeSelectionBackground);
+  color: var(--vscode-list-activeSelectionForeground);
+  opacity: 1;
+  font-weight: 600;
+}
+
+.ck-nav button .tag {
+  margin-left: auto;
+  font-size: 10px;
+  opacity: 0.6;
+  text-transform: uppercase;
+}
+
+.ck-nav-foot {
+  margin-top: auto;
+  padding: 10px 14px;
+  font-size: 10px;
+  opacity: 0.55;
+  line-height: 1.35;
+  border-top: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
+}
+
+/* ---- main ---- */
+.ck-main {
+  flex: 1;
+  overflow: auto;
+  padding: 14px 18px 28px;
+  min-width: 0;
+}
+
+.ck-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
+.ck-head h1 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ck-head .hint {
+  margin: 4px 0 0;
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.ck-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.ck-banner {
+  border: 1px solid var(--vscode-inputValidation-infoBorder, #3794ff);
+  background: color-mix(in srgb, var(--vscode-inputValidation-infoBackground, #063b66) 40%, transparent);
+  padding: 8px 12px;
+  border-radius: 6px;
+  margin-bottom: 14px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.ck-chips {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.ck-chip {
+  border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: color-mix(in srgb, var(--vscode-sideBar-background) 50%, transparent);
+}
+
+.ck-chip .label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.65;
+}
+
+.ck-chip .value {
+  font-size: 20px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  margin-top: 2px;
+}
+
+.ck-chip.warn .value {
+  color: var(--vscode-testing-iconFailed, #f85149);
+}
+
+.ck-chip.ok .value {
+  color: var(--vscode-testing-iconPassed, #3fb950);
+}
+
+.ck-panel {
+  border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-bottom: 12px;
+  background: color-mix(in srgb, var(--vscode-editor-background) 80%, var(--vscode-sideBar-background));
+}
+
+.ck-panel h2 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ck-panel p {
+  margin: 0 0 8px;
+  opacity: 0.8;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.ck-bridge-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ck-bridge-list li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 6px 0;
+  border-top: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 11px;
+}
+
+.ck-bridge-list .name {
+  font-weight: 600;
+  font-family: inherit;
+  min-width: 100px;
+}
+
+/* engine cards — reuse control-inspector look */
+.ci-ws {
+  border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
+  border-radius: 10px;
+  margin-bottom: 14px;
+  overflow: hidden;
+}
+
+.ci-ws-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
+  background: color-mix(in srgb, var(--vscode-sideBar-background) 80%, transparent);
+}
+
+.ci-ws-head .name {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.ci-ws-head .meta {
+  opacity: 0.7;
+  font-size: 11px;
+  font-family: var(--vscode-editor-font-family, monospace);
+}
+
+.ci-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.ci-card {
+  padding: 12px 14px;
+  border-right: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
+  border-bottom: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
+}
+
+.ci-card h3 {
+  margin: 0 0 8px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.75;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ci-kv {
+  display: grid;
+  grid-template-columns: 88px 1fr;
+  gap: 4px 8px;
+  font-size: 12px;
+}
+
+.ci-kv .k {
+  opacity: 0.65;
+}
+
+.ci-kv .v {
+  font-family: var(--vscode-editor-font-family, monospace);
+  word-break: break-all;
+  font-variant-numeric: tabular-nums;
+}
+
+.ci-badge {
+  display: inline-flex;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.ci-badge.attached {
+  background: color-mix(in srgb, var(--vscode-testing-iconPassed, #3fb950) 25%, transparent);
+  color: var(--vscode-testing-iconPassed, #3fb950);
+}
+
+.ci-badge.error {
+  background: color-mix(in srgb, var(--vscode-testing-iconFailed, #f85149) 25%, transparent);
+  color: var(--vscode-testing-iconFailed, #f85149);
+}
+
+.ci-badge.none {
+  background: color-mix(in srgb, var(--vscode-descriptionForeground) 20%, transparent);
+}
+
+.ci-notes {
+  margin: 0;
+  padding: 8px 14px 12px 28px;
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+.ck-empty {
+  padding: 28px 12px;
+  text-align: center;
+  opacity: 0.7;
+}
+
+.ck-toast {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  background: var(--vscode-notifications-background);
+  color: var(--vscode-notifications-foreground);
+  border: 1px solid var(--vscode-notifications-border);
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.ck-checked {
+  margin-top: 10px;
+  font-size: 11px;
+  opacity: 0.5;
+}

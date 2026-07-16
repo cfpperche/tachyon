@@ -19,6 +19,10 @@ import {
   initMessage as controlInspectorInitMessage,
   modelMessage as controlInspectorModelMessage,
 } from "../../src/webview/control-inspector/messages";
+import {
+  initMessage as cockpitInitMessage,
+  modelMessage as cockpitModelMessage,
+} from "../../src/webview/cockpit/messages";
 import { pinPreviewMessage } from "../../src/webview/pin-preview/messages";
 import { handoffMessage } from "../../src/webview/handoff/messages";
 import { approvalsMessage } from "../../src/webview/approval/messages";
@@ -35,6 +39,7 @@ import { activityFixtures } from "./fixtures/activity";
 import { probesFixtures } from "./fixtures/probes";
 import { inspectorFixtures, strings as inspectorStrings } from "./fixtures/inspector";
 import { controlInspectorFixtures, strings as controlInspectorStrings } from "./fixtures/control-inspector";
+import { cockpitFixtures, strings as cockpitStrings } from "./fixtures/cockpit";
 import { pinPreviewFixtures } from "./fixtures/pin-preview";
 import { taskStudioFixtures, taskStudioMakeMessage } from "./fixtures/task-studio";
 import { taskDetailFixtures } from "./fixtures/task-detail";
@@ -113,7 +118,7 @@ export const ROUTES: Record<string, Route> = {
     // the inspector needs init (strings) THEN model — two messages.
     makeMessage: (vm) => [initMessage(inspectorStrings), modelMessage(vm as never)],
   },
-  // POC — Engine/Bridge Control Inspector (option B sibling of tmux inspector).
+  // POC — Engine/Bridge Control Inspector (module; superseded as primary UI by Cockpit).
   "control-inspector": {
     bundle: "/dist/webview/control-inspector.js",
     cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/control-inspector.css"],
@@ -123,6 +128,14 @@ export const ROUTES: Record<string, Route> = {
       controlInspectorInitMessage(controlInspectorStrings),
       controlInspectorModelMessage(vm as never),
     ],
+  },
+  // POC — Tachyon Cockpit desktop shell (editor sysadmin; t-fe52f0 frente 1; sidebar unchanged).
+  cockpit: {
+    bundle: "/dist/webview/cockpit.js",
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/cockpit.css"],
+    frame: { w: 1100, h: 720 },
+    fixtures: cockpitFixtures as Record<string, Fixture>,
+    makeMessage: (vm) => [cockpitInitMessage(cockpitStrings), cockpitModelMessage(vm as never)],
   },
   "pin-preview": {
     bundle: "/dist/webview/pin-preview.js",
@@ -271,6 +284,10 @@ export const VIEW_META: Record<string, { title: string; aliases: string[] }> = {
   "control-inspector": {
     title: "Engine/Bridge Inspector",
     aliases: ["control inspector", "engine inspector", "bridge inspector", "engine bridge"],
+  },
+  cockpit: {
+    title: "Cockpit",
+    aliases: ["cockpit", "sysadmin", "project cockpit", "fleet cockpit", "control plane"],
   },
   "pin-preview": { title: "Pin Preview", aliases: ["pin preview", "pin readonly"] },
   handoff: { title: "Project Handoff", aliases: ["handoff", "project handoff"] },

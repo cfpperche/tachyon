@@ -1,0 +1,323 @@
+import type { ComponentChildren } from "preact";
+import type { CockpitModel, CockpitSectionId } from "../../cockpit/model";
+import type { ControlInspectorWorkspaceRow } from "../../control-inspector/model";
+import type { CockpitStrings } from "./messages";
+import { Button } from "../shared/ui";
+
+export interface CockpitAppProps {
+  model: CockpitModel | undefined;
+  strings: CockpitStrings | undefined;
+  toast?: string;
+  auto: boolean;
+  onToggleAuto: (on: boolean) => void;
+  onRefresh: () => void;
+  onCopyDiagnostics: () => void;
+  onOpenServerInspector: () => void;
+  onOpenMissionControl: () => void;
+  onSetSection: (section: CockpitSectionId) => void;
+}
+
+function StateBadge({ s, state }: { s: CockpitStrings; state: "attached" | "error" | "none" }) {
+  const label = state === "attached" ? s.attached : state === "error" ? s.error : s.none;
+  return <span class={`ci-badge ${state}`}>{label}</span>;
+}
+
+function Kv({ k, v }: { k: string; v?: string | number | null }) {
+  if (v === undefined || v === null || v === "") return null;
+  return (
+    <>
+      <span class="k">{k}</span>
+      <span class="v">{String(v)}</span>
+    </>
+  );
+}
+
+function WorkspaceCard({ s, row }: { s: CockpitStrings; row: ControlInspectorWorkspaceRow }) {
+  return (
+    <section class="ci-ws">
+      <div class="ci-ws-head">
+        <div>
+          <div class="name">{row.folderName}</div>
+          <div class="meta">{row.wsHash}</div>
+        </div>
+        <StateBadge s={s} state={row.engine.state} />
+      </div>
+      <div class="ci-grid">
+        <div class="ci-card">
+          <h3>
+            <span class="codicon codicon-server-environment" /> Engine
+          </h3>
+          <div class="ci-kv">
+            <Kv k={s.state} v={row.engine.state} />
+            <Kv k={s.pid} v={row.engine.pid} />
+            <Kv k={s.version} v={row.engine.engineVersion} />
+            <Kv k={s.instance} v={row.engine.instanceId} />
+            <Kv k={s.started} v={row.engine.startedAt} />
+            <Kv k={s.bundle} v={row.engine.bundleId} />
+            <Kv
+              k={s.protocol}
+              v={
+                row.engine.protocolMin !== undefined && row.engine.protocolMax !== undefined
+                  ? `${row.engine.protocolMin}…${row.engine.protocolMax}`
+                  : undefined
+              }
+            />
+            <Kv k={s.error} v={row.engine.error} />
+          </div>
+        </div>
+        <div class="ci-card">
+          <h3>
+            <span class="codicon codicon-plug" /> Bridge
+          </h3>
+          <div class="ci-kv">
+            <Kv k={s.url} v={row.bridge.url} />
+            <Kv k={s.port} v={row.bridge.port} />
+            <Kv k={s.instance} v={row.bridge.instanceId} />
+            <Kv k={s.auth} v={row.bridge.authConfigured === undefined ? undefined : String(row.bridge.authConfigured)} />
+          </div>
+        </div>
+        <div class="ci-card">
+          <h3>
+            <span class="codicon codicon-folder" /> Workspace
+          </h3>
+          <div class="ci-kv">
+            <Kv k={s.root} v={row.workspaceRoot} />
+            <Kv k={s.hash} v={row.wsHash} />
+            <Kv k={s.agents} v={row.agents ? `${row.agents.running}/${row.agents.total} ${s.running}` : undefined} />
+          </div>
+        </div>
+      </div>
+      {row.notes.length > 0 && (
+        <ul class="ci-notes">
+          {row.notes.map((n) => (
+            <li key={n}>{n}</li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function OverviewBody({ s, m, onEngine, onTmux, onMc }: {
+  s: CockpitStrings;
+  m: CockpitModel;
+  onEngine: () => void;
+  onTmux: () => void;
+  onMc: () => void;
+}) {
+  const o = m.overview;
+  return (
+    <>
+      <div class="ck-head">
+        <div>
+          <h1>
+            <span class="codicon codicon-dashboard" />
+            {s.overviewTitle}
+          </h1>
+          <p class="hint">{s.overviewHint}</p>
+        </div>
+      </div>
+      <div class="ck-chips">
+        <div class="ck-chip">
+          <div class="label">{s.workspaces}</div>
+          <div class="value">{o.workspaceCount}</div>
+        </div>
+        <div class={`ck-chip ${o.enginesAttached > 0 ? "ok" : ""}`}>
+          <div class="label">{s.engines}</div>
+          <div class="value">{o.enginesAttached}</div>
+        </div>
+        <div class={`ck-chip ${o.enginesError > 0 ? "warn" : ""}`}>
+          <div class="label">{s.errors}</div>
+          <div class="value">{o.enginesError}</div>
+        </div>
+        <div class="ck-chip">
+          <div class="label">{s.agents}</div>
+          <div class="value">
+            {o.agentsRunning}/{o.agentsTotal}
+          </div>
+        </div>
+      </div>
+      <div class="ck-panel">
+        <h2>{s.bridges}</h2>
+        {o.bridges.length === 0 ? (
+          <p class="ck-empty">{s.empty}</p>
+        ) : (
+          <ul class="ck-bridge-list">
+            {o.bridges.map((b) => (
+              <li key={b.folder + b.url}>
+                <span class="name">{b.folder}</span>
+                <span>{b.url}</span>
+                <StateBadge s={s} state={b.ok ? "attached" : "error"} />
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      <div class="ck-panel">
+        <h2>Shortcuts</h2>
+        <p>Deep-links to existing surfaces — Cockpit does not replace them.</p>
+        <div class="ck-actions">
+          <Button variant="default" onClick={onEngine}>
+            <span class="codicon codicon-server-environment" /> {s.navEngine}
+          </Button>
+          <Button variant="default" onClick={onTmux}>
+            <span class="codicon codicon-terminal-tmux" /> {s.navTmux}
+          </Button>
+          <Button variant="default" onClick={onMc}>
+            <span class="codicon codicon-checklist" /> Mission Control
+          </Button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function Placeholder({ s, title, body, actionLabel, onAction }: {
+  s: CockpitStrings;
+  title: string;
+  body: string;
+  actionLabel?: string;
+  onAction?: () => void;
+}) {
+  return (
+    <>
+      <div class="ck-head">
+        <div>
+          <h1>{title}</h1>
+          <p class="hint">{body}</p>
+        </div>
+      </div>
+      <div class="ck-panel">
+        <p>{body}</p>
+        {actionLabel && onAction ? (
+          <Button variant="primary" onClick={onAction}>
+            {actionLabel}
+          </Button>
+        ) : null}
+      </div>
+    </>
+  );
+}
+
+export function App(p: CockpitAppProps) {
+  const s = p.strings;
+  if (!s) return <div class="ds-empty" />;
+  const m = p.model;
+  const section = m?.section ?? "overview";
+
+  const nav = (
+    <nav class="ck-nav" aria-label="Cockpit">
+      <div class="ck-nav-brand">
+        <div class="title">
+          <span class="codicon codicon-dashboard" />
+          {s.title}
+        </div>
+        <div class="sub">{s.subtitle}</div>
+      </div>
+      {(
+        [
+          ["overview", s.navOverview, "dashboard"],
+          ["engine", s.navEngine, "server-environment"],
+          ["fleet", s.navFleet, "organization"],
+          ["tmux", s.navTmux, "terminal-tmux"],
+        ] as const
+      ).map(([id, label, icon]) => (
+        <button
+          type="button"
+          key={id}
+          class={section === id ? "active" : ""}
+          onClick={() => p.onSetSection(id)}
+        >
+          <span class={`codicon codicon-${icon}`} />
+          {label}
+          {(id === "fleet" || id === "tmux") && <span class="tag">soon</span>}
+        </button>
+      ))}
+      <div class="ck-nav-foot">{s.sidebarNote}</div>
+    </nav>
+  );
+
+  let body: ComponentChildren = null;
+  if (!m) {
+    body = <div class="ck-empty">{s.empty}</div>;
+  } else if (section === "overview") {
+    body = (
+      <OverviewBody
+        s={s}
+        m={m}
+        onEngine={() => p.onSetSection("engine")}
+        onTmux={p.onOpenServerInspector}
+        onMc={p.onOpenMissionControl}
+      />
+    );
+  } else if (section === "engine") {
+    body = (
+      <>
+        <div class="ck-head">
+          <div>
+            <h1>
+              <span class="codicon codicon-server-environment" />
+              {s.engineTitle}
+            </h1>
+            <p class="hint">Control plane per attached workspace engine.</p>
+          </div>
+        </div>
+        {m.control.workspaces.length === 0 ? (
+          <div class="ck-empty">{s.empty}</div>
+        ) : (
+          m.control.workspaces.map((row) => (
+            <WorkspaceCard key={row.wsHash + row.workspaceRoot} s={s} row={row} />
+          ))
+        )}
+      </>
+    );
+  } else if (section === "fleet") {
+    body = (
+      <Placeholder
+        s={s}
+        title={s.fleetTitle}
+        body={s.fleetBody}
+        actionLabel="Mission Control"
+        onAction={p.onOpenMissionControl}
+      />
+    );
+  } else {
+    body = (
+      <Placeholder
+        s={s}
+        title={s.tmuxTitle}
+        body={s.tmuxBody}
+        actionLabel={s.openServerInspector}
+        onAction={p.onOpenServerInspector}
+      />
+    );
+  }
+
+  return (
+    <div class="ck-root">
+      {nav}
+      <div class="ck-main">
+        <div class="ck-banner">{s.pocBanner}</div>
+        <div class="ck-actions" style={{ marginBottom: 12 }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
+            <input type="checkbox" checked={p.auto} onChange={(e) => p.onToggleAuto((e.target as HTMLInputElement).checked)} />
+            {s.auto}
+          </label>
+          <Button variant="default" onClick={p.onRefresh}>
+            <span class="codicon codicon-refresh" /> {s.refresh}
+          </Button>
+          <Button variant="default" onClick={p.onCopyDiagnostics}>
+            <span class="codicon codicon-copy" /> {s.copyDiagnostics}
+          </Button>
+        </div>
+        {body}
+        {m ? (
+          <div class="ck-checked">
+            {s.checkedAt}: {m.checkedAt}
+          </div>
+        ) : null}
+      </div>
+      {p.toast ? <div class="ck-toast">{p.toast}</div> : null}
+    </div>
+  );
+}

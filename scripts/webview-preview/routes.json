@@ -383,6 +383,66 @@
     ]
   },
   {
+    "view": "cockpit",
+    "fixture": "default",
+    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=default",
+    "frame": {
+      "w": 1100,
+      "h": 720
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Cockpit",
+    "aliases": [
+      "cockpit",
+      "sysadmin",
+      "project cockpit",
+      "fleet cockpit",
+      "control plane"
+    ]
+  },
+  {
+    "view": "cockpit",
+    "fixture": "engine",
+    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=engine",
+    "frame": {
+      "w": 1100,
+      "h": 720
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Cockpit",
+    "aliases": [
+      "cockpit",
+      "sysadmin",
+      "project cockpit",
+      "fleet cockpit",
+      "control plane"
+    ]
+  },
+  {
+    "view": "cockpit",
+    "fixture": "empty",
+    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=empty",
+    "frame": {
+      "w": 1100,
+      "h": 720
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Cockpit",
+    "aliases": [
+      "cockpit",
+      "sysadmin",
+      "project cockpit",
+      "fleet cockpit",
+      "control plane"
+    ]
+  },
+  {
     "view": "pin-preview",
     "fixture": "default",
     "url": "/scripts/webview-preview/index.html?view=pin-preview&fixture=default",

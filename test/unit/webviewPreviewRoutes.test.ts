@@ -84,6 +84,20 @@ describe("preview route table", () => {
     expect(msgs.map((m) => m.type)).toEqual(["init", "model"]);
   });
 
+  it("declares the cockpit route (desktop sysadmin POC) with init + model", () => {
+    const r = ROUTES.cockpit;
+    expect(r.bundle).toBe("/dist/webview/cockpit.js");
+    expect(r.cssLinks).toEqual([
+      "/dist/webview/codicon.css",
+      "/dist/webview/design-system.css",
+      "/dist/webview/cockpit.css",
+    ]);
+    expect(Object.keys(r.fixtures).sort()).toEqual(["default", "empty", "engine"]);
+    const msgs = r.makeMessage(r.fixtures.default.vm) as Array<{ type: string; model?: { framing?: string } }>;
+    expect(msgs.map((m) => m.type)).toEqual(["init", "model"]);
+    expect(msgs[1]?.model?.framing).toBe("editor-sysadmin");
+  });
+
   it("declares the handoff route (spec 280) with its envelope + default/cold/stale fixtures", () => {
     const r = ROUTES.handoff;
     expect(r.bundle).toBe("/dist/webview/handoff.js");

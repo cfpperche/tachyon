@@ -11,11 +11,11 @@ import { agentEntryLine, commandEntryLine, runbookEntryLine, scheduleEntryLine }
 import type { StudioSubmit } from "./webview/studioSubmit.js";
 import { openServerInspector, SERVER_INSPECTOR_VIEW_TYPE, type ServerInspectorPanelState, type InspectorDeps } from "./webview/ServerInspector.js";
 import {
-  openControlInspector,
-  CONTROL_INSPECTOR_VIEW_TYPE,
-  type ControlInspectorPanelState,
-  type ControlInspectorDeps,
-} from "./webview/ControlInspector.js";
+  openCockpit,
+  COCKPIT_VIEW_TYPE,
+  type CockpitPanelState,
+  type CockpitDeps,
+} from "./webview/Cockpit.js";
 import type { ControlInspectorWorkspaceInput } from "./control-inspector/model.js";
 import { SidebarPrototypeProvider, PIN_PREVIEW_VIEW_TYPE, type PinPreviewPanelState } from "./webview/SidebarPrototype.js";
 import { RuntimeOpsViewProvider } from "./webview/RuntimeOpsView.js";
@@ -1184,8 +1184,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     };
   };
 
-  /** POC — Engine/Bridge Control Inspector (sibling of tmux Server Inspector). */
-  const makeControlInspectorDeps = (): ControlInspectorDeps => ({
+  /** POC — Cockpit desktop (editor sysadmin; t-fe52f0 frente 1). Sidebar unchanged. */
+  const makeCockpitDeps = (): CockpitDeps => ({
     extensionUri: context.extensionUri,
     collect: async (): Promise<ControlInspectorWorkspaceInput[]> => {
       const rows: ControlInspectorWorkspaceInput[] = [];
@@ -1223,13 +1223,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           identityError,
           agents,
           authConfigured: "unknown",
-          notes: ["POC · deep-link to tmux Server Inspector via toolbar"],
+          notes: [],
         });
       }
       return rows;
     },
     openServerInspector: () => {
       void openServerInspector(makeServerInspectorDeps());
+    },
+    openMissionControl: () => {
+      void vscode.commands.executeCommand("tachyon.missionControl");
     },
   });
 
@@ -1401,7 +1404,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   registerTrustedPanelSerializer<ScheduleStudioPanelState>(context, SCHEDULE_STUDIO_SHELL_VIEW_TYPE, (panel, state) => scheduleStudioPanels.deserialize(panel, state));
   registerTrustedPanelSerializer<PipelineStudioPanelState>(context, PIPELINE_STUDIO_VIEW_TYPE, (panel, state) => pipelineStudioPanels.deserialize(panel, state));
   registerTrustedPanelSerializer<ServerInspectorPanelState>(context, SERVER_INSPECTOR_VIEW_TYPE, (panel) => openServerInspector(makeServerInspectorDeps(), panel));
-  registerTrustedPanelSerializer<ControlInspectorPanelState>(context, CONTROL_INSPECTOR_VIEW_TYPE, (panel) => openControlInspector(makeControlInspectorDeps(), panel));
+  registerTrustedPanelSerializer<CockpitPanelState>(context, COCKPIT_VIEW_TYPE, (panel, state) =>
+    openCockpit(makeCockpitDeps(), { revivedPanel: panel, section: state?.section }),
+  );
   for (const viewType of ["tachyonPluginSurface", "tachyonPluginSurfaces", "tachyonAgentFixtureStudio", "tachyonSketch"]) {
     registerDisposePanelSerializer(context, viewType);
   }
@@ -1680,8 +1685,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // t-7bcba6 — tachyon.persistenceSettings (Visible legacy reminders / silentHooks kill switch) removed.
     // ---- server inspector (F27) — cross-workspace, standalone socket queries ----
     vscode.commands.registerCommand("tachyon.inspectServer", () => openServerInspector(makeServerInspectorDeps())),
-    // ---- engine/bridge inspector (POC option B) — control plane sibling ----
-    vscode.commands.registerCommand("tachyon.inspectEngine", () => openControlInspector(makeControlInspectorDeps())),
+    // ---- Cockpit (desktop POC, t-fe52f0 frente 1) — editor sysadmin; sidebar unchanged ----
+    vscode.commands.registerCommand("tachyon.openCockpit", () => openCockpit(makeCockpitDeps())),
+    vscode.commands.registerCommand("tachyon.inspectEngine", () => openCockpit(makeCockpitDeps(), { section: "engine" })),
     vscode.commands.registerCommand("tachyon.getStarted", () =>
       vscode.commands.executeCommand("workbench.action.openWalkthrough", "cfpperche.tachyon#tachyon.welcome", false),
     ),
