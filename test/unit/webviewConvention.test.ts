@@ -78,6 +78,7 @@ describe("webview convention (spec 279)", () => {
       tachyonPinStudio: "PIN_STUDIO_VIEW_TYPE",
       tachyonProbes: "PROBES_VIEW_TYPE",
       tachyonServerInspector: "SERVER_INSPECTOR_VIEW_TYPE",
+      tachyonCockpit: "COCKPIT_VIEW_TYPE",
       tachyonPinPreview: "PIN_PREVIEW_VIEW_TYPE",
       tachyonMissionControl: "MISSION_CONTROL_VIEW_TYPE",
       tachyonTaskDetail: "TASK_DETAIL_VIEW_TYPE",
@@ -90,7 +91,7 @@ describe("webview convention (spec 279)", () => {
       tachyonRunbookStudioShell: "RUNBOOK_STUDIO_SHELL_VIEW_TYPE",
       tachyonScheduleStudioShell: "SCHEDULE_STUDIO_SHELL_VIEW_TYPE",
     };
-    const disposeOnly = new Set(["tachyonAgentFixtureStudio", "tachyonPluginSurface", "tachyonPluginSurfaces"]);
+    const disposeOnly = new Set(["tachyonAgentFixtureStudio", "tachyonControlInspector", "tachyonPluginSurface", "tachyonPluginSurfaces"]);
     const violations: string[] = [];
     for (const s of WEBVIEW_SURFACES) {
       // Statically contributed WebviewViews are recreated by VS Code through their provider; serializers apply
