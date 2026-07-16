@@ -7,7 +7,7 @@ import { execFileSync } from "node:child_process";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { bridgeGenerationStateKey } from "../../src/bridge/clientRebind.js";
-import { bridgeTokenFileName } from "../../src/bridge/token.js";
+import { AGENT_TOKEN_ENV_VAR, bridgeTokenFileName } from "../../src/bridge/token.js";
 import { requestEngineControl } from "../../src/engine-service/controlClient.js";
 import { DaemonStateStore, engineDaemonStateRoot } from "../../src/engine-service/daemonStateStore.js";
 import { stageEngineBundle, stageEngineRuntime, stagePackagedEngineBundle } from "../../src/engine-service/engineBundleStore.js";
@@ -16,7 +16,8 @@ import {
   engineSystemdUnitName,
   ensureDaemonEngine,
 } from "../../src/engine-service/engineSupervisor.js";
-import type { EngineBundleManifestV1, EngineServiceIdentityV1 } from "../../src/engine-service/protocol.js";
+import type { EngineBundleManifestV1, EngineServiceIdentityV1, EngineUiRequestV1 } from "../../src/engine-service/protocol.js";
+import { ENGINE_UI_CAPABILITY } from "../../src/engine-service/uiRequestBroker.js";
 import { connectRemoteWorkspaceClient, type WorkspaceClient } from "../../src/shell/WorkspaceClient.js";
 import { workspaceActivityTarget } from "../../src/shell/ActivityTarget.js";
 import { workspaceHandoffTarget } from "../../src/shell/HandoffTarget.js";
@@ -441,6 +442,29 @@ try {
   } finally {
     await noShellBridge.close().catch(() => undefined);
   }
+  const approvalBridge = new Client({ name: "human-approval-routing-dogfood", version: "1.0.0" });
+  let approvalId: string;
+  try {
+    await approvalBridge.connect(new StreamableHTTPClientTransport(
+      new URL(`http://127.0.0.1:${identity.bridge.port}/mcp`),
+      { requestInit: { headers: { Authorization: `Bearer ${processEnvValue(agentPidBeforeDetach, AGENT_TOKEN_ENV_VAR)}` } } },
+    ));
+    const requested = toolJson<{ id: string; status: string }>(await approvalBridge.callTool({
+      name: "request_human_approval",
+      arguments: {
+        reason: "Headless installed-route dogfood",
+        proposed_action: "Open the existing trusted Human approvals panel",
+        risk: "No approval is resolved; the disposable workspace is removed after the run",
+        exact_prompt: "Review this disposable approval request",
+      },
+    }), "request_human_approval");
+    if (!/^a-[0-9a-f]{6}$/u.test(requested.id) || requested.status !== "pending") {
+      throw new Error(`headless approval request returned an invalid receipt: ${JSON.stringify(requested)}`);
+    }
+    approvalId = requested.id;
+  } finally {
+    await approvalBridge.close().catch(() => undefined);
+  }
   if (await new TmuxService().panePid(dogfoodSession) !== agentPidBeforeDetach) {
     throw new Error("the live agent process changed during the no-shell Bridge call");
   }
@@ -457,11 +481,19 @@ try {
     || healthAfterMonitorRestart.engine.bridge.instanceId !== identity.bridge.instanceId) {
     throw new Error("no-shell lifecycle recovery changed the persistent engine or Bridge identity");
   }
+  const approvalUiRequests: EngineUiRequestV1[] = [];
   const reattached = await connectRemoteWorkspaceClient({
     workspaceRoot,
     bundle,
     runtime,
     shell: { id: "dogfood-shell-three", version: "dogfood", locale: "en" },
+    capabilities: [ENGINE_UI_CAPABILITY],
+    uiHandler: async (request) => {
+      approvalUiRequests.push(request);
+      if (request.kind !== "notice.present") return null;
+      const review = request.actions.find((action) => action.label === "Review");
+      return review?.id ?? null;
+    },
     supervisor: ensureOptions,
   });
   if (reattached.identity.instanceId !== identity.instanceId
@@ -480,6 +512,23 @@ try {
     : bridgeRebindAuditAfterShellReattach === undefined
       || !bridgeRebindAuditBeforeShellDetach.equals(bridgeRebindAuditAfterShellReattach)) {
     throw new Error("shell detach/reattach changed the Bridge-client rebind audit bytes or presence");
+  }
+  await waitForApprovalUiRoute(reattached, approvalUiRequests, approvalId, identity.workspaceHash);
+  const statusBridge = new Client({ name: "human-approval-status-dogfood", version: "1.0.0" });
+  try {
+    await statusBridge.connect(new StreamableHTTPClientTransport(
+      new URL(`http://127.0.0.1:${identity.bridge.port}/mcp`),
+      { requestInit: { headers: { Authorization: `Bearer ${processEnvValue(agentPidAfterMonitorRestart, AGENT_TOKEN_ENV_VAR)}` } } },
+    ));
+    const status = toolJson<{ id: string; requester: string; status: string }>(await statusBridge.callTool({
+      name: "get_approval_status",
+      arguments: { id: approvalId },
+    }), "get_approval_status");
+    if (status.id !== approvalId || status.requester !== "dogfood-worker" || status.status !== "pending") {
+      throw new Error(`Review route changed the durable approval decision: ${JSON.stringify(status)}`);
+    }
+  } finally {
+    await statusBridge.close().catch(() => undefined);
   }
   await waitForAgentProjection(reattached, "dogfood-worker", true);
   if (await new TmuxService().panePid(dogfoodSession) !== agentPidAfterMonitorRestart) {
@@ -698,6 +747,52 @@ async function waitForAgentProjection(
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
   throw new Error(`remote agent projection did not converge to running=${running}: ${JSON.stringify(observed)}`);
+}
+
+async function waitForApprovalUiRoute(
+  client: WorkspaceClient,
+  requests: EngineUiRequestV1[],
+  approvalId: string,
+  expectedWorkspaceHash: string,
+  timeoutMs = 3_000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    await client.sync();
+    const notice = requests.find((request) => request.kind === "notice.present"
+      && request.message === `Approval request ${approvalId} from 'dogfood-worker'`);
+    const commands = requests.filter((request) => request.kind === "execute-command"
+      && request.command === "tachyon.openApprovals");
+    if (notice?.kind === "notice.present"
+      && notice.actions.some((action) => action.label === "Review")
+      && commands.length === 1
+      && commands[0]?.kind === "execute-command"
+      && JSON.stringify(commands[0].args) === JSON.stringify([expectedWorkspaceHash])) {
+      await client.sync();
+      const repeatedCommands = requests.filter((request) => request.kind === "execute-command"
+        && request.command === "tachyon.openApprovals");
+      if (repeatedCommands.length !== 1) throw new Error("approval Review action executed more than once");
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`headless approval UI route did not converge: ${JSON.stringify(requests)}`);
+}
+
+function processEnvValue(pid: number, name: string): string {
+  const entry = fs.readFileSync(`/proc/${pid}/environ`).toString("utf8")
+    .split("\0")
+    .find((value) => value.startsWith(`${name}=`));
+  const value = entry?.slice(name.length + 1);
+  if (!value) throw new Error(`agent process ${pid} does not expose ${name}`);
+  return value;
+}
+
+function toolJson<T>(result: unknown, name: string): T {
+  const response = result as { isError?: boolean; content?: Array<{ type?: string; text?: string }> };
+  const text = response.content?.find((entry) => entry.type === "text")?.text;
+  if (response.isError === true || !text) throw new Error(`${name} failed: ${text ?? "missing text response"}`);
+  return JSON.parse(text) as T;
 }
 
 async function expectAgentStopped(client: WorkspaceClient, stage: string): Promise<void> {

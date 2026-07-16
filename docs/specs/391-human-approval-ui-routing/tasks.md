@@ -34,19 +34,15 @@ _Acceptance checks tied to `spec.md`. Each should map to a checklist item there.
 
 ## Dogfood
 
-**Dogfood-Opt-Out:** The behavior crosses an installed VS Code shell notification and native Command
-Palette; focused tests mechanically exercise the engine route, while the representative installed
-surface is covered by the human walkthrough below.
+**Dogfood:** `npm run dogfood:persistent-engine`
 <!-- A representative command that exercises the shipped behavior end-to-end.
      `/sdd dogfood` previews by default and runs only with --run, then logs under
      notes.md `## Dogfood log`. If no meaningful headless dogfood exists, replace
      the Dogfood line with: **Dogfood-Opt-Out:** <non-empty reason>. -->
 
-**Human dogfood:** In the installed candidate, open `Tachyon: Open Human Approvals` from the Command
-Palette and confirm the trusted panel opens. Create one disposable request while a shell is attached,
-choose `Review`, and confirm the exact workspace panel shows it without resolving it. Repeat with the
-shell absent, reattach/reload, and confirm the retained route appears. Do not approve stale
-`a-0499c7`.
+**Human dogfood (optional, maintainer-operated):** In the installed candidate, open
+`Tachyon: Open Human Approvals` from the Command Palette and confirm the trusted panel opens. Agent
+dogfood remains headless; do not approve stale `a-0499c7`.
 <!-- Opt-in: a short walkthrough a human follows to approve the spec (demo steps,
      UI routes, things to eyeball). Name the steps here when human sign-off matters. -->
 

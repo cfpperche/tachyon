@@ -53,6 +53,12 @@ None.
   reattached, but the supervisor intentionally classified the running same-version engine as compatible
   and preserved its PID, so the new daemon routing was not active. Bumped package/lock to `0.56.11` for
   the real installed upgrade; this is required by the existing monotonic engine-upgrade contract.
+- The maintainer reloaded `0.56.11`; headless inspection confirmed the main workspace moved to a new
+  `tachyon-engine` process backed by bundle commit `ab70d683` and the Bridge reconnected successfully.
+- Agent dogfood is headless. The persistent-engine runner now creates a disposable approval over the
+  real agent-authenticated Bridge while zero shells are attached, reattaches a UI-capable Node shell,
+  selects `Review`, asserts one exact-workspace `tachyon.openApprovals` command, and confirms the durable
+  request remains pending. Any native Palette/panel inspection is performed by the maintainer.
 
 ## Verification log
 

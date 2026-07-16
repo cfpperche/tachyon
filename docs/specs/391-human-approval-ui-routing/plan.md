@@ -39,6 +39,8 @@ _Each decision + why this option over the alternatives considered. Record reject
 - `package.nls.pt-br.json` — pt-BR command title.
 - `test/unit/daemonEngineHost.test.ts` — behavioral replay and exact-workspace routing coverage.
 - `test/unit/cxApproval2Behavior.gen.test.ts` — manifest/localization and resolver-boundary coverage.
+- `scripts/dogfood/persistent-engine-runner.ts` — exercise the packaged no-shell approval route through
+  a real agent-authenticated Bridge client and a headless UI-capable shell.
 - `docs/specs/391-human-approval-ui-routing/*` — delivery contract and evidence.
 
 ## Risks & unknowns
@@ -60,9 +62,8 @@ _Each decision + why this option over the alternatives considered. Record reject
 ## Visual impact
 
 Two native VS Code affordances change: a new actionable information notification and a new localized
-Command Palette entry. The existing Human approvals panel is unchanged. Installed-extension dogfood
-will inspect the Palette entry and the `Review` route into the correct panel; native screenshots record
-the visible result.
+Command Palette entry. The existing Human approvals panel is unchanged. Agent dogfood proves the
+packaged `Review` route headlessly; optional native inspection remains maintainer-operated.
 
 ## Sources consulted
 
