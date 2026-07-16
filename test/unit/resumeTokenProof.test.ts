@@ -158,7 +158,7 @@ describe("resume env integration proof (spec 351 T6)", () => {
       const firstToken = envValue(startCalls.at(-1)!, "TACHYON_AGENT_BRIDGE_TOKEN");
       expect(firstToken).toBeTruthy();
 
-      await ws.manager.restart("claude");
+      await ws.manager.restart("claude", { stop: "force", session: "new" });
       // t-4d2630: restart respawns in place; env arrives via set-environment, not a second new-session
       expect(startCalls.at(-1)).toContain("respawn-pane");
       const secondToken = envValue(startCalls.at(-1)!, "TACHYON_AGENT_BRIDGE_TOKEN");

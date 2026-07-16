@@ -1,6 +1,25 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { Terminals, type TerminalRestoreEntry } from "../../src/presentation/Terminals.js";
+import { attachSocketPath, Terminals, type TerminalRestoreEntry } from "../../src/presentation/Terminals.js";
 import { __createdTerminals, __resetVscodeMock, ViewColumn } from "../mocks/vscode.js";
+
+describe("attachSocketPath", () => {
+  it("prefers an existing engine socket over an empty Dev Host private TMUX_TMPDIR", () => {
+    const path = attachSocketPath(
+      { TMUX_TMPDIR: "/private/dev-host/tmux" },
+      // Only the default /tmp socket exists (engine); private Dev Host socket does not.
+      (p) => /^\/tmp\/tmux-\d+\/tachyon$/.test(p),
+    );
+    expect(path).toMatch(/^\/tmp\/tmux-\d+\/tachyon$/);
+  });
+
+  it("uses TACHYON_ENGINE_TMUX_TMPDIR when that socket exists", () => {
+    const path = attachSocketPath(
+      { TMUX_TMPDIR: "/private/dev-host/tmux", TACHYON_ENGINE_TMUX_TMPDIR: "/engine/tmp" },
+      (p) => p.includes("/engine/tmp/"),
+    );
+    expect(path).toMatch(/\/engine\/tmp\/tmux-\d+\/tachyon$/);
+  });
+});
 
 describe("Terminals restore manifest", () => {
   beforeEach(() => {
@@ -56,9 +75,13 @@ describe("Terminals restore manifest", () => {
       name: "Claude",
       location: { viewColumn: ViewColumn.Two, preserveFocus: true },
       shellPath: "tmux",
-      shellArgs: ["-u", "-L", "tachyon", "attach-session", "-d", "-t", "=tachyon-ws-claude"],
       isTransient: true,
     });
+    // Absolute -S socket (not -L) so Dev Host private TMUX_TMPDIR cannot miss the engine server.
+    expect(__createdTerminals[0].options.shellArgs?.[0]).toBe("-u");
+    expect(__createdTerminals[0].options.shellArgs?.[1]).toBe("-S");
+    expect(__createdTerminals[0].options.shellArgs?.[2]).toMatch(/\/tmux-\d+\/tachyon$/);
+    expect(__createdTerminals[0].options.shellArgs?.slice(3)).toEqual(["attach-session", "-d", "-t", "=tachyon-ws-claude"]);
     expect(__createdTerminals[0].showCalls).toEqual([true]);
     expect(manifest).toEqual([
       { schemaVersion: 1, agent: "claude", session: "tachyon-ws-claude", viewColumn: ViewColumn.Two, title: "Claude" },

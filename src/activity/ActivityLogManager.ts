@@ -189,7 +189,7 @@ export interface ActivityLifecycleWorkspace {
   wsHash: string;
   manager: {
     spawn(agent: string): Promise<unknown>;
-    restart(agent: string): Promise<unknown>;
+    restart(agent: string, opts?: { stop?: "graceful" | "force"; session?: "resume" | "new"; gracefulTimeoutMs?: number }): Promise<unknown>;
   };
   lifecycle: { resetBackoff(agent: string): void };
   checkpointBeforeTeardown(agent: string): Promise<void>;
@@ -215,10 +215,11 @@ export async function restartAgentWithActivity(
   workspace: ActivityLifecycleWorkspace,
   activityLog: ActivityLifecycleRecorder,
   agent: string,
-): Promise<void> {
+  opts?: { stop?: "graceful" | "force"; session?: "resume" | "new"; gracefulTimeoutMs?: number },
+): Promise<unknown> {
   workspace.lifecycle.resetBackoff(agent);
   await workspace.checkpointBeforeTeardown(agent);
-  await loggedLifecycleAction(activityLog, workspace.wsHash, agent, "restarted", () => workspace.manager.restart(agent));
+  return loggedLifecycleAction(activityLog, workspace.wsHash, agent, "restarted", () => workspace.manager.restart(agent, opts));
 }
 
 /** Preserve the manual-resume backoff reset and durable Activity boundary on both execution paths. */
@@ -237,11 +238,12 @@ async function loggedLifecycleAction(
   agent: string,
   action: string,
   run: () => Promise<unknown>,
-): Promise<void> {
+): Promise<unknown> {
   activityLog.noteLifecycle(workspaceHash, agent, action);
   try {
-    await run();
+    const result = await run();
     activityLog.armLifecycle(workspaceHash, agent);
+    return result;
   } catch (error) {
     activityLog.clearLifecycle(workspaceHash, agent);
     throw error;

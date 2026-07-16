@@ -441,5 +441,7 @@
   "Could not refresh Sidebar: {0}": "Não foi possível atualizar a barra lateral: {0}",
   "Could not copy pin: {0}": "Não foi possível copiar o pin: {0}",
   "Could not load proposal: {0}": "Não foi possível carregar a proposta: {0}",
-  "Could not update sidebar state: {0}": "Não foi possível atualizar o estado da barra lateral: {0}"
+  "Could not update sidebar state: {0}": "Não foi possível atualizar o estado da barra lateral: {0}",
+  "Cannot open terminal — workspace is not active": "Não é possível abrir o terminal — workspace não está ativo",
+  "Cannot open terminal for '{0}' — agent is not in the live roster": "Não é possível abrir o terminal de '{0}' — agente não está no roster ao vivo"
 }

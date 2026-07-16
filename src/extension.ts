@@ -316,15 +316,36 @@ async function invokeAgentLifecycle(
   ws: WorkspaceShellHandle,
   method: "agent.start" | "agent.stop" | "agent.kill" | "agent.restart" | "agent.resume",
   agent: string,
+  restartOpts?: { stop?: "graceful" | "force"; session?: "resume" | "new" },
 ): Promise<void> {
+  const input = method === "agent.restart"
+    ? {
+      agent,
+      ...(restartOpts?.stop !== undefined ? { stop: restartOpts.stop } : {}),
+      ...(restartOpts?.session !== undefined ? { session: restartOpts.session } : {}),
+    }
+    : { agent };
   const result = await ws.client.invoke(`vscode-agent:${crypto.randomUUID()}`, {
     schemaVersion: 1,
     method,
-    input: { agent },
+    input,
   });
   if (result.status === "error") throw new Error(result.message);
   if (result.method !== method) throw new Error("persistent engine returned a mismatched agent result");
 }
+
+/**
+ * spec 389 — sidebar one-click Restart.
+ * force+resume: replace the process with the resume command (keeps conversation).
+ * Avoids stopGracefully → "stopping…" badge (resume path never cleared that flag on the
+ * old engine; graceful stop is also wrong UX when the editor pane is already open).
+ * "Restart new section" stays force+new-ish via graceful|force options below.
+ */
+const RESTART_DEFAULT = { stop: "force" as const, session: "resume" as const };
+/** Graceful stop then new section — clean exit when possible, then fresh session. */
+const RESTART_NEW = { stop: "graceful" as const, session: "new" as const };
+/** Immediate hard replace, new section. */
+const RESTART_FORCE_NEW = { stop: "force" as const, session: "new" as const };
 
 function agentProjection(ws: WorkspaceShellHandle, agent: string) {
   return ws.client.presentation.agents.items.find((row) => row.name === agent);
@@ -1844,11 +1865,30 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         notify(`${err instanceof Error ? err.message : String(err)}`, "error");
       }
     }),
+    // spec 389 — one-click Restart = graceful+resume; variants are separate more-menu commands (no QuickPick).
     vscode.commands.registerCommand("tachyon.restartAgentItem", async (item: AgentItem) => {
       const ws = wsOf(item);
       if (!ws) return;
       try {
-        await invokeAgentLifecycle(ws, "agent.restart", item.agentName);
+        await invokeAgentLifecycle(ws, "agent.restart", item.agentName, RESTART_DEFAULT);
+      } catch (err) {
+        notify(`${err instanceof Error ? err.message : String(err)}`, "error");
+      }
+    }),
+    vscode.commands.registerCommand("tachyon.restartAgentNewItem", async (item: AgentItem) => {
+      const ws = wsOf(item);
+      if (!ws) return;
+      try {
+        await invokeAgentLifecycle(ws, "agent.restart", item.agentName, RESTART_NEW);
+      } catch (err) {
+        notify(`${err instanceof Error ? err.message : String(err)}`, "error");
+      }
+    }),
+    vscode.commands.registerCommand("tachyon.restartAgentForceNewItem", async (item: AgentItem) => {
+      const ws = wsOf(item);
+      if (!ws) return;
+      try {
+        await invokeAgentLifecycle(ws, "agent.restart", item.agentName, RESTART_FORCE_NEW);
       } catch (err) {
         notify(`${err instanceof Error ? err.message : String(err)}`, "error");
       }
@@ -1856,7 +1896,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon.openAgentTerminalItem", async (agent: string, hash?: string) => {
       const ws = targetOf(hash);
       const projected = ws ? agentProjection(ws, agent) : undefined;
-      if (!ws || !projected) return;
+      if (!ws) {
+        notify(vscode.l10n.t("Cannot open terminal — workspace is not active"), "error");
+        return;
+      }
+      if (!projected) {
+        notify(vscode.l10n.t("Cannot open terminal for '{0}' — agent is not in the live roster", agent), "error");
+        return;
+      }
       try {
         await presentTerminal(ws, agent, projected.session);
       } catch (error) {
@@ -2376,7 +2423,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const agent = await pickAgent(ws, vscode.l10n.t("Restart which agent?"), false);
       if (!agent) return;
       try {
-        await invokeAgentLifecycle(ws, "agent.restart", agent);
+        // Palette: same one-click product default (graceful+resume); no mode QuickPick.
+        await invokeAgentLifecycle(ws, "agent.restart", agent, RESTART_DEFAULT);
         notify(vscode.l10n.t("'{0}' restarted", agent));
       } catch (err) {
         notify(`${err instanceof Error ? err.message : String(err)}`, "error");

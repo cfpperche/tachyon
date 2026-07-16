@@ -1,0 +1,15 @@
+# Dogfood fixture for spec 389 — restart matrix.
+# Real LLM agent (grok), stopped — start/restart from the sidebar yourself.
+settings:
+  maxAgents: 8
+
+agents:
+  grok:
+    cmd: grok
+    # inferred kind: agent (KNOWN_AI_CLIS) — do not force kind on bash shells
+    autostart: false
+    attention: true
+
+commands:
+  hello:
+    cmd: "echo agent-restart-modes-dogfood-ok"

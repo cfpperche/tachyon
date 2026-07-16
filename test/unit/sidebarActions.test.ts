@@ -70,6 +70,19 @@ describe("sidebar action matrix (spec 237)", () => {
     expect(primaryActions(adhoc)).not.toContain("restart");
     expect(moreActions(adhoc)).toContain("restart");
   });
+  it("spec 389 — restart variants live in the overflow (no QuickPick): default + new + force-new", () => {
+    const a = A({ status: "running" });
+    expect(actionsFor(a)).toEqual(expect.arrayContaining(["restart", "restartNew", "restartForceNew"]));
+    expect(primaryActions(a)).not.toContain("restart");
+    expect(primaryActions(a)).not.toContain("restartNew");
+    expect(primaryActions(a)).not.toContain("restartForceNew");
+    const more = moreActions(a);
+    expect(more).toEqual(expect.arrayContaining(["restart", "restartNew", "restartForceNew"]));
+    // Default Restart sits with stop/kill lifecycle cluster; variants follow.
+    const i = more.indexOf("restart");
+    expect(more.indexOf("restartNew")).toBeGreaterThan(i);
+    expect(more.indexOf("restartForceNew")).toBeGreaterThan(more.indexOf("restartNew"));
+  });
   it("clean-exit ad-hoc postmortem keeps activity inline and restart in overflow", () => {
     const a = A({ status: "stopped", exited: true, pane: false, resumable: true, adhoc: true, canDismiss: true });
     expect(actionsFor(a)).toEqual(expect.arrayContaining(["activity", "restart", "resume", "remove"]));

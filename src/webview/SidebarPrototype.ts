@@ -49,6 +49,8 @@ const ACTION_CMD: Record<Exclude<ActionId, "inspect" | "activity" | "probes">, s
   stop: "tachyon.stopAgentItem",
   kill: "tachyon.killAgentItem",
   restart: "tachyon.restartAgentItem",
+  restartNew: "tachyon.restartAgentNewItem",
+  restartForceNew: "tachyon.restartAgentForceNewItem",
   spawn: "tachyon.spawnAgentItem",
   resume: "tachyon.resumeAgentItem",
   fork: "tachyon.forkAgentItem",

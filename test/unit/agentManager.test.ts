@@ -674,7 +674,7 @@ describe("AgentManager", () => {
     const { manager, sessions, killed, respawnArgs, restarted } = makeManager("agents:\n  a:\n    cmd: x\n");
     await expect(manager.kill("a")).rejects.toThrow("not running");
     await manager.spawn("a");
-    await manager.restart("a");
+    await manager.restart("a", { stop: "force", session: "new" });
     expect(sessions.has(`tachyon-${HASH}-a`)).toBe(true);
     // t-4d2630: live session → respawn-pane -k (no kill+new, no onRestart close dance)
     expect(respawnArgs).toHaveLength(1);
@@ -694,7 +694,7 @@ describe("AgentManager", () => {
     );
     await manager.spawn("a");
     const beforeNew = newSessionArgs.length;
-    await manager.restart("a");
+    await manager.restart("a", { stop: "force", session: "new" });
     expect(sessions.has(`tachyon-${HASH}-a`)).toBe(true);
     expect(respawnArgs).toHaveLength(0); // failed before record — fake throws first
     expect(newSessionArgs.length).toBe(beforeNew + 1);
@@ -711,7 +711,7 @@ describe("AgentManager", () => {
     );
     await manager.spawn("a"); // new-session path — does not need show-environment
     const beforeNew = newSessionArgs.length;
-    await manager.restart("a");
+    await manager.restart("a", { stop: "force", session: "new" });
     expect(sessions.has(`tachyon-${HASH}-a`)).toBe(true);
     expect(respawnArgs).toHaveLength(0); // never reached respawn-pane
     expect(newSessionArgs.length).toBe(beforeNew + 1);
@@ -725,11 +725,136 @@ describe("AgentManager", () => {
     await manager.kill("a");
     respawnArgs.length = 0;
     const beforeNew = newSessionArgs.length;
-    await manager.restart("a");
+    await manager.restart("a", { stop: "force", session: "new" });
     expect(sessions.has(`tachyon-${HASH}-a`)).toBe(true);
     expect(respawnArgs).toHaveLength(0);
     expect(newSessionArgs.length).toBe(beforeNew + 1);
     expect(restarted).toEqual([]); // no kill of an existing attach client
+  });
+
+  describe("spec 389 restart matrix", () => {
+    it("force+new returns resumed:false and respawns immediately (no graceful keys)", async () => {
+      const { manager, sentKeys, respawnArgs } = makeManager("agents:\n  a:\n    cmd: x\n");
+      await manager.spawn("a");
+      sentKeys.length = 0;
+      const result = await manager.restart("a", { stop: "force", session: "new" });
+      expect(result).toEqual({ stop: "force", session: "new", resumed: false, forcedAfterGracefulTimeout: false });
+      expect(sentKeys).toEqual([]); // no graceful stop handshake
+      expect(respawnArgs.length).toBe(1);
+    });
+
+    it("graceful+new stops, times out, session-only hard-kills, then new-section (no ad-hoc wipe)", async () => {
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-restart-graceful-"));
+      try {
+        const { sessions, dead, panes, sentKeys, respawnArgs, newSessionArgs, tmux } = fakeTmux();
+        const ledger = new SessionLedger(root);
+        const config = configOf("agents:\n  worker:\n    cmd: codex\n");
+        const manager = new AgentManager({
+          tmux,
+          wsHash: HASH,
+          workspaceRoot: root,
+          getConfig: () => config,
+          getMaxAgents: () => 8,
+          ledger,
+        });
+        await manager.spawn("worker");
+        const session = `tachyon-${HASH}-worker`;
+        expect(sessions.has(session)).toBe(true);
+        sentKeys.length = 0;
+        const beforeNew = newSessionArgs.length;
+        const result = await manager.restart("worker", {
+          stop: "graceful",
+          session: "new",
+          gracefulTimeoutMs: 0, // process ignores EOF in the fake → immediate force-fallback
+        });
+        expect(result.stop).toBe("graceful");
+        expect(result.session).toBe("new");
+        expect(result.resumed).toBe(false);
+        expect(result.forcedAfterGracefulTimeout).toBe(true);
+        expect(sentKeys.some((k) => k.key === "C-d" || k.key === "C-c")).toBe(true);
+        // After session-only kill + fresh start the entry is still defined (not dismissed).
+        const listed = await manager.list();
+        expect(listed.some((e) => e.name === "worker")).toBe(true);
+        expect(sessions.has(session)).toBe(true);
+        // kill-session then new-session (or respawn if session left as dead) — either way process is back.
+        expect(respawnArgs.length + (newSessionArgs.length - beforeNew)).toBeGreaterThanOrEqual(1);
+        void dead; void panes;
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it("default restart is graceful+resume and falls back to new when not resumable", async () => {
+      const { manager, sentKeys } = makeManager("agents:\n  a:\n    cmd: x\n");
+      await manager.spawn("a");
+      sentKeys.length = 0;
+      const result = await manager.restart("a", { gracefulTimeoutMs: 0 });
+      expect(result.stop).toBe("graceful");
+      expect(result.session).toBe("resume");
+      expect(result.resumed).toBe(false); // no resume block / transcript
+      expect(result.forcedAfterGracefulTimeout).toBe(true);
+      expect(sentKeys.length).toBeGreaterThan(0);
+    });
+
+    it("graceful restart clears stopping badge so a live pane is not stuck stopping/stop-failed", async () => {
+      // dogfood 2026-07-16: Restart default used stopGracefully then resume/fresh; sidebar stayed
+      // on "stopping…" while the editor pane was already live with primer.
+      const { manager } = makeManager("agents:\n  a:\n    cmd: x\n");
+      await manager.spawn("a");
+      await manager.stopGracefully("a");
+      expect((await manager.list()).find((r) => r.name === "a")).toMatchObject({ running: true, stopping: true });
+      await manager.restart("a", { stop: "graceful", session: "new", gracefulTimeoutMs: 0 });
+      const row = (await manager.list()).find((r) => r.name === "a");
+      expect(row).toMatchObject({ running: true });
+      expect(row?.stopping).toBeUndefined();
+      expect(row?.stopFailed).toBeUndefined();
+    });
+
+    it("graceful+resume resumes when ledger has a valid transcript", async () => {
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-restart-resume-"));
+      const projects = path.join(root, "projects", "-ws");
+      fs.mkdirSync(projects, { recursive: true });
+      const sid = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+      fs.writeFileSync(path.join(projects, `${sid}.jsonl`), "{}\n");
+      try {
+        const { sessions, dead, tmux } = fakeTmux();
+        const ledger = new SessionLedger(root);
+        ledger.record("claude", {
+          declared: true,
+          cwd: "/ws",
+          def: { cmd: "claude", kind: "agent" },
+          resume: { runtime: "claude", sessionId: sid, configHome: root },
+        });
+        const config = configOf("agents:\n  claude:\n    cmd: claude\n");
+        const manager = new AgentManager({
+          tmux,
+          wsHash: HASH,
+          workspaceRoot: root,
+          getConfig: () => config,
+          getMaxAgents: () => 8,
+          ledger,
+          fileExists: (p) => fs.existsSync(p),
+        });
+        // Stopped row — skip stop phase, go straight to resume.
+        const result = await manager.restart("claude", { stop: "graceful", session: "resume" });
+        expect(result.resumed).toBe(true);
+        expect(result.session).toBe("resume");
+        expect(sessions.has(`tachyon-${HASH}-claude`)).toBe(true);
+        void dead;
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it("force+resume falls back to new when resume is unavailable", async () => {
+      const { manager, respawnArgs } = makeManager("agents:\n  a:\n    cmd: x\n");
+      await manager.spawn("a");
+      const result = await manager.restart("a", { stop: "force", session: "resume" });
+      expect(result.stop).toBe("force");
+      expect(result.session).toBe("resume");
+      expect(result.resumed).toBe(false);
+      expect(respawnArgs.length).toBe(1);
+    });
   });
 
   it("stopGracefully sends EOF without killing the tmux session", async () => {
@@ -818,7 +943,7 @@ describe("AgentManager", () => {
       getConfig: () => configOf("agents:\n  a:\n    cmd: x\n"),
       getMaxAgents: () => 8,
     });
-    await expect(manager.restart("orphan")).rejects.toThrow("no stored definition");
+    await expect(manager.restart("orphan", { stop: "force", session: "new" })).rejects.toThrow("no stored definition");
   });
 
   it("lists declared + running + ad-hoc agents merged", async () => {
@@ -1063,7 +1188,7 @@ describe("AgentManager", () => {
         `agents:\n  codex:\n    cmd: codex\nsettings:\n  verify:\n    full: ${JSON.stringify(`node ${JSON.stringify("'".repeat(4_000))}`)}\n  projectGuidance:\n    files: [guidance.md]\n`,
       );
 
-      await expect(manager.restart("codex")).rejects.toThrow(/safe pane-delivery ceiling/);
+      await expect(manager.restart("codex", { stop: "force", session: "new" })).rejects.toThrow(/safe pane-delivery ceiling/);
       expect(fs.readFileSync(destination, "utf8")).toBe(oldBrief);
       expect(fake.respawnArgs).toHaveLength(0);
     } finally {
@@ -1090,7 +1215,7 @@ describe("AgentManager", () => {
       fs.writeFileSync(path.join(root, "guidance.md"), "valid", "utf8");
       await manager.spawn("codex");
       fs.rmSync(path.join(root, "guidance.md"));
-      await expect(manager.restart("codex")).rejects.toThrow(/guidance\.md/);
+      await expect(manager.restart("codex", { stop: "force", session: "new" })).rejects.toThrow(/guidance\.md/);
       expect(fake.respawnArgs).toHaveLength(0);
       expect(fake.sessions.has(sessionName(workspaceHash(root), "codex"))).toBe(true);
     } finally {
@@ -1257,7 +1382,7 @@ describe("AgentManager", () => {
       expect(fake.sessionEnv.get(session)?.HERMES_TUI_QUERY).toContain("── TACHYON PRIMER ──");
 
       fs.writeFileSync(path.join(root, "guidance.md"), `HERMES_LONG_${"x".repeat(5_000)}`, "utf8");
-      await manager.restart("hermes");
+      await manager.restart("hermes", { stop: "force", session: "new" });
       const restartedBrief = fake.sessionEnv.get(session)?.HERMES_TUI_QUERY;
       expect(restartedBrief).toContain(briefFilePath(root, "hermes"));
       expect(restartedBrief).not.toContain("HERMES_LONG_");
@@ -1659,7 +1784,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       delivery: { deliveryId: "d-1", segmentId: "seg-1", executionNonce: "n" },
     });
     await expect(manager.resume("claude", ledger.get("claude")!)).rejects.toThrow(/Delivery-bound/);
-    await expect(manager.restart("claude")).rejects.toThrow(/Delivery-bound/);
+    await expect(manager.restart("claude", { stop: "force", session: "new" })).rejects.toThrow(/Delivery-bound/);
     // Invalid marker also refuses
     ledger.record("invalid", {
       def: { cmd: "claude", kind: "agent" },
@@ -1701,7 +1826,7 @@ describe("AgentManager — session resume (spec 209)", () => {
 
     await expect(manager.spawn("crash-holder")).rejects.toThrow(/Delivery lifecycle is unavailable/);
     await expect(manager.resume("crash-holder", ledger.get("crash-holder")!)).rejects.toThrow(/Delivery/);
-    await expect(manager.restart("crash-holder")).rejects.toThrow(/Delivery/);
+    await expect(manager.restart("crash-holder", { stop: "force", session: "new" })).rejects.toThrow(/Delivery/);
     // Caches untouched after refused restart.
     expect(internals.readinessCache.get("crash-holder")).toEqual({ sessionId: "s-crash", ready: true });
     expect(internals.stoppingSince.has("crash-holder")).toBe(true);
@@ -2045,7 +2170,7 @@ describe("AgentManager — session resume (spec 209)", () => {
     const { manager, respawnArgs } = resumeHarness("agents:\n  codex:\n    cmd: codex\n    env:\n      TACHYON_AGENT_NAME: wrong\n");
     await manager.spawn("codex");
     respawnArgs.length = 0;
-    await manager.restart("codex");
+    await manager.restart("codex", { stop: "force", session: "new" });
     // t-4d2630: live session → set-environment name/value tokens (not new-session -e KEY=value)
     const args = respawnArgs.at(-1)!;
     expect(args).toContain("respawn-pane");
@@ -2068,7 +2193,7 @@ describe("AgentManager — session resume (spec 209)", () => {
 
     extra = { KEEP_ME: "yes" }; // ANTHROPIC_BASE_URL intentionally omitted on restart
     respawnArgs.length = 0;
-    await manager.restart("codex");
+    await manager.restart("codex", { stop: "force", session: "new" });
     const args = respawnArgs.at(-1)!;
     expect(args).toContain("respawn-pane");
     expect(unsetEnvKeysFromTmuxArgs(args)).toContain("ANTHROPIC_BASE_URL");
@@ -2463,7 +2588,7 @@ describe("AgentManager — session resume (spec 209)", () => {
     });
     // a PRE-toggle row: the session was recorded under the SHARED home before `isolate` was declared.
     ledger.record("claude", { def: { cmd: "claude", kind: "agent" }, resume: { runtime: "claude", sessionId: "old-uuid", configHome: "/home/whoever/.claude" }, cwd: "/repo", declared: true });
-    await manager.restart("claude");
+    await manager.restart("claude", { stop: "force", session: "new" });
     // restart mints a FRESH session under the CURRENT derived home → re-homed to the private home (not preserved).
     expect(ledger.get("claude")!.resume!.configHome).toContain("harness");
     expect(ledger.get("claude")!.resume!.configHome).not.toBe("/home/whoever/.claude");
@@ -2577,7 +2702,7 @@ describe("AgentManager — session resume (spec 209)", () => {
     const before = structuredClone(ledger.get("reviewer")?.identity);
     fs.renameSync(path.join(profile, "SOUL.md"), path.join(profile, "SOUL.removed.md"));
 
-    await expect(manager.restart("reviewer")).rejects.toMatchObject({ code: "soul/missing" });
+    await expect(manager.restart("reviewer", { stop: "force", session: "new" })).rejects.toMatchObject({ code: "soul/missing" });
     expect(sessions.has(`tachyon-${hash}-reviewer`)).toBe(true);
     expect(respawnArgs).toEqual([]);
     expect(ledger.get("reviewer")?.identity).toEqual(before);
@@ -2711,7 +2836,7 @@ describe("AgentManager — session resume (spec 209)", () => {
     const name = `tachyon-${path.basename(ws)}-claude`;
     await manager.kill("claude"); // capture upgrades the ledger id to the (old) session uuid
     expect(ledger.get("claude")!.resume!.sessionId).toBe("old-uuid");
-    await manager.restart("claude");
+    await manager.restart("claude", { stop: "force", session: "new" });
     expect(cmds.at(-1)).toContain(`-n ${name}`); // restarted session carries the customTitle
     expect(ledger.get("claude")!.resume!.sessionId).toBe(name); // reset → next refresh/resume finds the NEW session
   });
@@ -3703,11 +3828,11 @@ describe("AgentManager — session resume (spec 209)", () => {
       expect(ledger.get("claude")?.bridgeClient).toEqual({ boundGeneration: 7, wired: false });
 
       bridgeUp = true;
-      await manager.restart("claude");
+      await manager.restart("claude", { stop: "force", session: "new" });
       expect(ledger.get("claude")?.bridgeClient).toEqual({ boundGeneration: 7, wired: true });
 
       bridgeUp = false;
-      await manager.restart("claude");
+      await manager.restart("claude", { stop: "force", session: "new" });
       expect(ledger.get("claude")?.bridgeClient).toEqual({ boundGeneration: 7, wired: false });
 
       const record = ledger.get("claude")!;
@@ -3814,7 +3939,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       await manager.spawn("opencode");
       const spawnEnv = envFromTmuxArgs(startArgs.at(-1)!).OPENCODE_CONFIG;
       calls.length = 0;
-      await manager.restart("opencode");
+      await manager.restart("opencode", { stop: "force", session: "new" });
       expect(envFromTmuxArgs(startArgs.at(-1)!).OPENCODE_CONFIG).toBe(spawnEnv);
       expect(calls).toEqual([{ name: "opencode", cwd: expect.any(String) }]);
     });
@@ -3872,7 +3997,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       await manager.spawn("grok");
       const spawnEnv = envFromTmuxArgs(startArgs.at(-1)!).GROK_HOME;
       calls.length = 0;
-      await manager.restart("grok");
+      await manager.restart("grok", { stop: "force", session: "new" });
       expect(envFromTmuxArgs(startArgs.at(-1)!).GROK_HOME).toBe(spawnEnv);
       expect(calls).toEqual(["grok"]);
     });
@@ -3967,7 +4092,7 @@ describe("AgentManager — session resume (spec 209)", () => {
         },
       });
       await manager.spawn("codex");
-      await manager.restart("codex");
+      await manager.restart("codex", { stop: "force", session: "new" });
       await manager.resume("codex", { def: { cmd: "codex", kind: "agent" }, resume: { runtime: "codex", sessionId: "captured-id" }, cwd: "/ws", declared: true, updatedAt: "t" });
       expect(cmds).toHaveLength(3);
       for (const cmd of cmds) {
@@ -4034,7 +4159,7 @@ describe("AgentManager — session resume (spec 209)", () => {
         },
       });
       await manager.spawn("gxReview");
-      await manager.restart("gxReview");
+      await manager.restart("gxReview", { stop: "force", session: "new" });
       expect(cmds.at(-1)).toContain("-c 'hooks.SessionStart=[{hooks=[]}]'");
       expect(cmds.at(-1)).toContain("--dangerously-bypass-hook-trust");
       expect(calls).toEqual([
@@ -4246,7 +4371,7 @@ describe("AgentManager — restart terminal lifecycle (t-4d2630 respawn keeps cl
     await manager.spawn("a");
     expect(events).toEqual(["open"]); // initial spawn opens
     events.length = 0;
-    await manager.restart("a");
+    await manager.restart("a", { stop: "force", session: "new" });
     // t-4d2630: respawn-pane keeps attached clients; UI close dance is only for kill+new fallback
     expect(events).toEqual(["open"]);
   });
@@ -4265,7 +4390,7 @@ describe("AgentManager — restart terminal lifecycle (t-4d2630 respawn keeps cl
     });
     await manager.spawn("a");
     events.length = 0;
-    await manager.restart("a");
+    await manager.restart("a", { stop: "force", session: "new" });
     expect(events).toEqual(["close", "open"]);
   });
 });
@@ -4301,7 +4426,7 @@ describe("live rename (agent/terminal, running or not)", () => {
     const { manager, sessions } = makeManager("agents:\n  decoy:\n    cmd: x\n");
     await manager.spawn("ghost", { cmd: "echo hi" });
     await manager.rename("ghost", "spirit");
-    await manager.restart("spirit"); // needs the moved ad-hoc definition
+    await manager.restart("spirit", { stop: "force", session: "new" }); // needs the moved ad-hoc definition
     expect(sessions.has(`tachyon-${HASH}-spirit`)).toBe(true);
   });
 
@@ -4418,7 +4543,7 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     ledger.record("w", { def: { cmd: "claude", kind: "agent" }, worktree: REC, cwd: REC.path, declared: false });
     await manager.rehydrateFromLedger();
     void ws;
-    await manager.restart("w");
+    await manager.restart("w", { stop: "force", session: "new" });
     expect(seenWorktree).toBe(true);
   });
 
@@ -4449,7 +4574,7 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     durableLedger = h.ledger;
 
     await h.manager.spawn("dev");
-    await h.manager.restart("dev");
+    await h.manager.restart("dev", { stop: "force", session: "new" });
 
     expect(completed).toEqual([REC.path]);
   });
@@ -4467,7 +4592,7 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     });
     await h.manager.spawn("dev");
 
-    const failure = await h.manager.restart("dev").catch((error: unknown) => error);
+    const failure = await h.manager.restart("dev", { stop: "force", session: "new" }).catch((error: unknown) => error);
     expect(failure).toBeInstanceOf(AggregateError);
     expect(failure).toMatchObject({ message: expect.stringMatching(/injected restart preparation failure.*locked recovery checkout: \/wt\/h\/dev/) });
   });
@@ -4490,7 +4615,7 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
       revokeAgentToken: (name) => { revoked.push(name); },
     });
 
-    const failure = await h.manager.restart("dev").catch((error: unknown) => error);
+    const failure = await h.manager.restart("dev", { stop: "force", session: "new" }).catch((error: unknown) => error);
 
     expect(failure).toMatchObject({ message: "injected restart new-session failure" });
     expect(newSessionCalls).toBe(1);
@@ -4781,7 +4906,7 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
       ledger,
     });
     await reloaded.rehydrateFromLedger();
-    await expect(reloaded.restart("reviewer")).rejects.toThrow(/no stored definition/);
+    await expect(reloaded.restart("reviewer", { stop: "force", session: "new" })).rejects.toThrow(/no stored definition/);
     expect(reloadedTmux.newSessionArgs).toHaveLength(0);
   });
 
@@ -4972,7 +5097,7 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     await manager.rehydrateFromLedger();
     const worker = (await manager.list()).find((a) => a.name === "worker");
     expect(worker?.parent).toBe("claude"); // lineage restored
-    await manager.restart("worker"); // would throw "no stored definition" without rehydrate
+    await manager.restart("worker", { stop: "force", session: "new" }); // would throw "no stored definition" without rehydrate
     expect(cmds.at(-1)).toBe("sh");
   });
 
@@ -5236,7 +5361,7 @@ describe("AgentManager — per-agent Bridge token mint/revoke (spec 351 T2)", ()
     });
     await manager.spawn("a");
     const preRestartToken = lastMinted;
-    await manager.restart("a");
+    await manager.restart("a", { stop: "force", session: "new" });
     expect(registry.resolve(preRestartToken, SCOPE)).toEqual({ ok: false, reason: "token_revoked" });
     expect(registry.resolve(lastMinted, SCOPE)).toEqual({ ok: true, snapshot: { kind: "agent", name: "a" } });
   });

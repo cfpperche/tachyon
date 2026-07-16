@@ -476,9 +476,15 @@ async function executeWorkspaceCommand(
     case "agent.kill":
       await workspace.manager.kill(agent);
       break;
-    case "agent.restart":
-      await restartAgentWithActivity(workspace, activityLog, agent);
+    case "agent.restart": {
+      const stop = "stop" in command.input ? command.input.stop : undefined;
+      const session = "session" in command.input ? command.input.session : undefined;
+      await restartAgentWithActivity(workspace, activityLog, agent, {
+        ...(stop !== undefined ? { stop } : {}),
+        ...(session !== undefined ? { session } : {}),
+      });
       break;
+    }
     case "agent.resume":
       await resumeAgentWithActivity(workspace, activityLog, agent);
       break;

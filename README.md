@@ -129,7 +129,7 @@ is already correct is a no-op.
 |---|---|
 | `spawn_agent` | start a declared agent, or an ad-hoc sub-agent with `cmd` + optional `instructions` (role prompt) and `parent` (lineage — the sidebar nests children under who spawned them) |
 | `kill_agent` | stop an agent (kills its tmux session) |
-| `restart_agent` | kill + respawn with the same definition |
+| `restart_agent` | restart matrix: `stop=graceful\|force` × `session=resume\|new` (default graceful+resume; falls back to new) |
 | `list_agents` | declared + running agents for this workspace, with attention/crash state |
 | `read_output` | another agent's terminal: visible pane by default, `lines` reaches scrollback¹ |
 | `write_input` | type into another agent's terminal (`submit: true` presses Enter) |

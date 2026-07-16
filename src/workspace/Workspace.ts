@@ -1215,7 +1215,8 @@ export class Workspace {
         policyOf: (agent) => this.config?.agents[agent]?.restart ?? "never",
         scheduleRestart: (agent, delayMs) => {
           setTimeout(() => {
-            this.manager.restart(agent).catch((err) => {
+            // spec 389 — crash recovery is force + new (not operator graceful+resume).
+            this.manager.restart(agent, { stop: "force", session: "new" }).catch((err) => {
               this.host.notify(`auto-restart of '${agent}' failed: ${err instanceof Error ? err.message : String(err)}`, "error");
             });
           }, delayMs);
@@ -1241,7 +1242,8 @@ export class Workspace {
           } else {
             this.host.notify(this.t("'{0}' crashed{1} — dead pane kept for postmortem", agent, code), "error", [
               { label: this.t("Inspect"), run: () => void this.terminals.open(agent, this.manager.session(agent)) },
-              { label: this.t("Restart"), run: () => void this.manager.restart(agent).catch((err) => this.host.notify(String(err instanceof Error ? err.message : err), "error")) },
+              // spec 389 — one-click crash recovery stays force + new section.
+              { label: this.t("Restart"), run: () => void this.manager.restart(agent, { stop: "force", session: "new" }).catch((err) => this.host.notify(String(err instanceof Error ? err.message : err), "error")) },
             ]);
           }
         },
@@ -3637,7 +3639,8 @@ export class Workspace {
     this.watches.dispose();
     this.watches = new WatchController(async (agent) => {
       try {
-        await this.manager.restart(agent);
+        // spec 389 — file-watch rebuild is force + new (immediate replace, not resume).
+        await this.manager.restart(agent, { stop: "force", session: "new" });
         this.host.notify(this.t("'{0}' restarted (watched file changed)", agent));
       } catch (err) {
         this.host.notify(this.t("watch-restart of '{0}' failed: {1}", agent, err instanceof Error ? err.message : String(err)), "error");

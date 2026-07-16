@@ -171,6 +171,33 @@ describe("persistent engine protocol", () => {
     expect(isWorkspaceCommandV1({ ...command, input: { agent: "../escape" } })).toBe(false);
     expect(isWorkspaceCommandV1({ ...command, input: { agent: "worker", extra: true } })).toBe(false);
     expect(isWorkspaceCommandV1({ ...command, extra: true })).toBe(false);
+    // spec 389 — agent.restart accepts optional stop/session; rejects unknown values/keys
+    expect(isWorkspaceCommandV1({ schemaVersion: 1, method: "agent.restart", input: { agent: "worker" } })).toBe(true);
+    expect(isWorkspaceCommandV1({
+      schemaVersion: 1,
+      method: "agent.restart",
+      input: { agent: "worker", stop: "graceful", session: "resume" },
+    })).toBe(true);
+    expect(isWorkspaceCommandV1({
+      schemaVersion: 1,
+      method: "agent.restart",
+      input: { agent: "worker", stop: "force", session: "new" },
+    })).toBe(true);
+    expect(isWorkspaceCommandV1({
+      schemaVersion: 1,
+      method: "agent.restart",
+      input: { agent: "worker", stop: "soft" },
+    })).toBe(false);
+    expect(isWorkspaceCommandV1({
+      schemaVersion: 1,
+      method: "agent.restart",
+      input: { agent: "worker", session: "fresh" },
+    })).toBe(false);
+    expect(isWorkspaceCommandV1({
+      schemaVersion: 1,
+      method: "agent.restart",
+      input: { agent: "worker", extra: true },
+    })).toBe(false);
     expect(isEngineOperationId("op-12345678")).toBe(true);
     expect(isEngineOperationId("short")).toBe(false);
     expect(isWorkspaceCommandResultV1({
