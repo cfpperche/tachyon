@@ -131,11 +131,25 @@ export async function executeExtensionQuery(
         targets: injectTargets(await workspace.manager.list()),
       });
     }
-    case "worktrees.list":
-      return json({
-        worktrees: [...workspace.ledger.all()].flatMap(([agent, record]) =>
-          record.worktree ? [{ agent, record: record.worktree }] : []),
-      });
+    case "worktrees.list": {
+      // Agent ledger worktrees + spec 392 registry (change + agent entries).
+      const fromLedger = [...workspace.ledger.all()].flatMap(([agent, record]) =>
+        record.worktree ? [{ agent, record: record.worktree }] : []);
+      const seen = new Set(fromLedger.map((row) => row.record.path));
+      const fromRegistry = workspace.managedWorktrees.list({ status: "active" })
+        .filter((e) => !seen.has(e.path))
+        .map((e) => ({
+          agent: e.agent ?? e.slug ?? e.id,
+          record: {
+            path: e.path,
+            branch: e.branch,
+            tachyonCreatedBranch: e.tachyonCreatedBranch,
+            baseRef: e.baseRef,
+            createdAt: e.createdAt,
+          },
+        }));
+      return json({ worktrees: [...fromLedger, ...fromRegistry] });
+    }
     case "worktree.review":
       return inspectWorktree(workspace, "agent" in query ? query.agent : query.runId, "agent" in query);
     case "pipeline.inspect":

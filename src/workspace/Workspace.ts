@@ -34,6 +34,7 @@ import { AgentManager, ResumeUnavailableError, WatchController, newlyDeclaredAut
 import { agentLaunchPath } from "../agents/spawnPath.js";
 import { SessionLedger, durableBoundGeneration, type SessionDeliveryBinding, type SessionRecord } from "../resume/SessionLedger.js";
 import { WorktreeManager, resolveWorktreeCwd, branchFor, type WorktreeRecord } from "../worktree/WorktreeManager.js";
+import { ManagedWorktreeService } from "../worktree/ManagedWorktreeService.js";
 import { PipelineManager, type PipelineDeps } from "../pipeline/PipelineManager.js";
 import { RunLedger } from "../pipeline/RunLedger.js";
 import { loadPipeline, nodeSpawnName } from "../pipeline/loadPipeline.js";
@@ -385,6 +386,8 @@ export class Workspace {
   readonly ledger: SessionLedger;
   private readonly canonicalLedger: CanonicalSessionLedger;
   readonly worktrees: WorktreeManager;
+  /** spec 392 — product registry + change worktrees over WorktreeManager. */
+  readonly managedWorktrees: ManagedWorktreeService;
   readonly gitDeliveries: GitDeliveryStore;
   readonly deliveries: DeliveryStore;
   readonly deliveryProjection: DeliveryProjectionService;
@@ -596,6 +599,18 @@ export class Workspace {
       getSettings: () => this.config?.settings ?? {},
       git: this.gitExec,
       occupancy: (worktreePath) => this.manager.worktreeOccupant(worktreePath),
+    });
+    this.managedWorktrees = new ManagedWorktreeService({
+      workspaceRoot,
+      wsHash: this.wsHash,
+      getSettings: () => this.config?.settings ?? {},
+      manager: this.worktrees,
+      git: this.gitExec,
+      occupancy: (worktreePath) => this.manager.worktreeOccupant(worktreePath),
+      onRegistryChanged: () => {
+        // Best-effort refresh signal (agents view re-syncs worktree reveal on host).
+        try { this.host.onViewsChanged("agents"); } catch { /* host optional during early boot */ }
+      },
     });
     // SDD 368 T15 — constructed after worktrees so the path lock seam is available.
     this.deliveryProjection = new DeliveryProjectionService({
@@ -927,6 +942,7 @@ export class Workspace {
           },
         );
         if (!resolved?.worktree) return resolved;
+        this.managedWorktrees.syncAgentRecord(ctx.name, resolved.worktree);
         if (!ctx.gate) {
           let exactPreparedHead: string | undefined;
           try {
@@ -1472,7 +1488,17 @@ export class Workspace {
           projection: this.deliveryProjection,
           deliveries: this.deliveries,
           reloadSnapshot: () => (this.deliveryReload.phase === "ready" ? this.deliveryReload.snapshot : undefined),
+          // spec 392 — prune through managed engine (occupancy-checked) instead of raw git argv.
+          removeManagedWorktree: (worktreePath, o) =>
+            this.managedWorktrees.removePath(worktreePath, {
+              deleteBranch: o?.deleteBranch,
+              branch: o?.branch,
+              tachyonCreatedBranch: o?.tachyonCreatedBranch,
+              baseRef: o?.baseRef,
+              force: o?.force,
+            }),
         },
+        managedWorktrees: this.managedWorktrees,
         // spec 351 (dueto F8) — plaintext Bridge tokens Tachyon still holds, for exact-match redaction of
         // live-captured pane text (read_output). Per-agent tokens aren't retained in plaintext.
         knownSecrets: () => [this.token, this.externalToken].filter((s): s is string => !!s),
@@ -1692,6 +1718,7 @@ export class Workspace {
         const { record, preparationLocked } = await this.worktrees.ensure({ agent, branch, quarantineForLaunch: true });
         if (!preparationLocked) throw new Error(`pipeline worktree '${record.path}' was not quarantined during allocation`);
         this.pipelineRunWt.set(agent, record);
+        this.managedWorktrees.syncAgentRecord(agent, record);
         // PipelineManager invokes this only after its initial RunLedger record is crash-durable and
         // before the first node can spawn. Failure leaves both the durable run and Git receipt intact.
         return {
@@ -1708,6 +1735,7 @@ export class Workspace {
           if (!removed.removed) {
             throw new Error(`pipeline worktree remains preserved at ${rec.path}: ${removed.error ?? "removal was refused"}`);
           }
+          this.managedWorktrees.syncAgentRecord(key, null);
         }
         this.pipelineRunWt.delete(key);
       },
