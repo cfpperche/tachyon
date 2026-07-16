@@ -6,11 +6,29 @@
 
 ## How to dogfood
 
-1. From this worktree: `npm run build` (or full package/install ritual you use for VSIX).
-2. In VS Code with Tachyon loaded from this build:
-   - Command Palette → **Tachyon: Inspect Engine/Bridge**
-   - or sidebar title-bar menu (next to Inspect tmux Server)
-3. Compare with **Tachyon: Inspect tmux Server** — different domain, deep-link button between them.
+### Dev-host preview (fastest)
+
+```bash
+cd /home/goat/tachyon-worktrees/engine-bridge-inspector
+node esbuild.mjs
+npm run preview:webview:catalog   # regenerates routes.json
+npm run preview:webview
+```
+
+Open:
+
+- **default** (attached + error + none):  
+  http://localhost:5174/scripts/webview-preview/index.html?view=control-inspector&fixture=default
+- **healthy** only:  
+  http://localhost:5174/scripts/webview-preview/index.html?view=control-inspector&fixture=healthy
+- **empty**:  
+  http://localhost:5174/scripts/webview-preview/index.html?view=control-inspector&fixture=empty
+
+### Installed / F5
+
+1. From this worktree: `npm run build` (or VSIX ritual).
+2. Command Palette → **Tachyon: Inspect Engine/Bridge**
+3. Compare with **Tachyon: Inspect tmux Server**
 
 ## What the POC shows
 

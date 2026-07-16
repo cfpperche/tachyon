@@ -15,6 +15,10 @@ import { pluginsMessage } from "../../src/webview/plugins/messages";
 import { activityMessage } from "../../src/webview/activity/messages";
 import { probesMessage } from "../../src/webview/probes/messages";
 import { initMessage, modelMessage } from "../../src/webview/inspector/messages";
+import {
+  initMessage as controlInspectorInitMessage,
+  modelMessage as controlInspectorModelMessage,
+} from "../../src/webview/control-inspector/messages";
 import { pinPreviewMessage } from "../../src/webview/pin-preview/messages";
 import { handoffMessage } from "../../src/webview/handoff/messages";
 import { approvalsMessage } from "../../src/webview/approval/messages";
@@ -30,6 +34,7 @@ import { pluginsFixtures } from "./fixtures/plugins";
 import { activityFixtures } from "./fixtures/activity";
 import { probesFixtures } from "./fixtures/probes";
 import { inspectorFixtures, strings as inspectorStrings } from "./fixtures/inspector";
+import { controlInspectorFixtures, strings as controlInspectorStrings } from "./fixtures/control-inspector";
 import { pinPreviewFixtures } from "./fixtures/pin-preview";
 import { taskStudioFixtures, taskStudioMakeMessage } from "./fixtures/task-studio";
 import { taskDetailFixtures } from "./fixtures/task-detail";
@@ -107,6 +112,17 @@ export const ROUTES: Record<string, Route> = {
     fixtures: inspectorFixtures as Record<string, Fixture>,
     // the inspector needs init (strings) THEN model — two messages.
     makeMessage: (vm) => [initMessage(inspectorStrings), modelMessage(vm as never)],
+  },
+  // POC — Engine/Bridge Control Inspector (option B sibling of tmux inspector).
+  "control-inspector": {
+    bundle: "/dist/webview/control-inspector.js",
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/control-inspector.css"],
+    frame: { w: 920, h: 820 },
+    fixtures: controlInspectorFixtures as Record<string, Fixture>,
+    makeMessage: (vm) => [
+      controlInspectorInitMessage(controlInspectorStrings),
+      controlInspectorModelMessage(vm as never),
+    ],
   },
   "pin-preview": {
     bundle: "/dist/webview/pin-preview.js",
@@ -252,6 +268,10 @@ export const VIEW_META: Record<string, { title: string; aliases: string[] }> = {
   activity: { title: "Activity", aliases: ["activity", "agent activity", "chat", "transcript", "studio chat"] },
   probes: { title: "Probes", aliases: ["probes", "probe inspector"] },
   inspector: { title: "tmux Inspector", aliases: ["inspector", "server inspector", "tmux"] },
+  "control-inspector": {
+    title: "Engine/Bridge Inspector",
+    aliases: ["control inspector", "engine inspector", "bridge inspector", "engine bridge"],
+  },
   "pin-preview": { title: "Pin Preview", aliases: ["pin preview", "pin readonly"] },
   handoff: { title: "Project Handoff", aliases: ["handoff", "project handoff"] },
   approval: { title: "Human Approvals", aliases: ["approvals", "human approvals", "approval view"] },

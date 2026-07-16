@@ -326,6 +326,63 @@
     ]
   },
   {
+    "view": "control-inspector",
+    "fixture": "default",
+    "url": "/scripts/webview-preview/index.html?view=control-inspector&fixture=default",
+    "frame": {
+      "w": 920,
+      "h": 820
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Engine/Bridge Inspector",
+    "aliases": [
+      "control inspector",
+      "engine inspector",
+      "bridge inspector",
+      "engine bridge"
+    ]
+  },
+  {
+    "view": "control-inspector",
+    "fixture": "healthy",
+    "url": "/scripts/webview-preview/index.html?view=control-inspector&fixture=healthy",
+    "frame": {
+      "w": 920,
+      "h": 820
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Engine/Bridge Inspector",
+    "aliases": [
+      "control inspector",
+      "engine inspector",
+      "bridge inspector",
+      "engine bridge"
+    ]
+  },
+  {
+    "view": "control-inspector",
+    "fixture": "empty",
+    "url": "/scripts/webview-preview/index.html?view=control-inspector&fixture=empty",
+    "frame": {
+      "w": 920,
+      "h": 820
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Engine/Bridge Inspector",
+    "aliases": [
+      "control inspector",
+      "engine inspector",
+      "bridge inspector",
+      "engine bridge"
+    ]
+  },
+  {
     "view": "pin-preview",
     "fixture": "default",
     "url": "/scripts/webview-preview/index.html?view=pin-preview&fixture=default",
