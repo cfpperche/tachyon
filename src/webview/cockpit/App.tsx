@@ -14,6 +14,8 @@ export interface CockpitAppProps {
   onCopyDiagnostics: () => void;
   onOpenServerInspector: () => void;
   onOpenMissionControl: () => void;
+  onOpenPlugins: () => void;
+  onOpenSettings: () => void;
   onSetSection: (section: CockpitSectionId) => void;
 }
 
@@ -98,12 +100,22 @@ function WorkspaceCard({ s, row }: { s: CockpitStrings; row: ControlInspectorWor
   );
 }
 
-function OverviewBody({ s, m, onEngine, onTmux, onMc }: {
+function OverviewBody({
+  s,
+  m,
+  onEngine,
+  onTmux,
+  onMc,
+  onPlugins,
+  onSettings,
+}: {
   s: CockpitStrings;
   m: CockpitModel;
   onEngine: () => void;
   onTmux: () => void;
   onMc: () => void;
+  onPlugins: () => void;
+  onSettings: () => void;
 }) {
   const o = m.overview;
   return (
@@ -160,11 +172,17 @@ function OverviewBody({ s, m, onEngine, onTmux, onMc }: {
           <Button variant="default" onClick={onEngine}>
             <span class="codicon codicon-server-environment" /> {s.navEngine}
           </Button>
+          <Button variant="default" onClick={onMc}>
+            <span class="codicon codicon-checklist" /> {s.navMission}
+          </Button>
+          <Button variant="default" onClick={onPlugins}>
+            <span class="codicon codicon-extensions" /> {s.navPlugins}
+          </Button>
+          <Button variant="default" onClick={onSettings}>
+            <span class="codicon codicon-settings-gear" /> {s.navSettings}
+          </Button>
           <Button variant="default" onClick={onTmux}>
             <span class="codicon codicon-terminal-tmux" /> {s.navTmux}
-          </Button>
-          <Button variant="default" onClick={onMc}>
-            <span class="codicon codicon-checklist" /> Mission Control
           </Button>
         </div>
       </div>
@@ -210,6 +228,9 @@ export function App(p: CockpitAppProps) {
     { id: "engine", label: s.navEngine, icon: "server-environment" },
     { id: "fleet", label: s.navFleet, icon: "organization", soon: true },
     { id: "tmux", label: s.navTmux, icon: "terminal-tmux", soon: true },
+    { id: "mission", label: s.navMission, icon: "checklist", soon: true },
+    { id: "plugins", label: s.navPlugins, icon: "extensions", soon: true },
+    { id: "settings", label: s.navSettings, icon: "settings-gear", soon: true },
   ];
 
   let body: ComponentChildren = null;
@@ -223,6 +244,8 @@ export function App(p: CockpitAppProps) {
         onEngine={() => p.onSetSection("engine")}
         onTmux={p.onOpenServerInspector}
         onMc={p.onOpenMissionControl}
+        onPlugins={p.onOpenPlugins}
+        onSettings={p.onOpenSettings}
       />
     );
   } else if (section === "engine") {
@@ -248,21 +271,23 @@ export function App(p: CockpitAppProps) {
     );
   } else if (section === "fleet") {
     body = (
-      <Placeholder
-        title={s.fleetTitle}
-        body={s.fleetBody}
-        actionLabel="Mission Control"
-        onAction={p.onOpenMissionControl}
-      />
+      <Placeholder title={s.fleetTitle} body={s.fleetBody} actionLabel={s.openMissionControl} onAction={p.onOpenMissionControl} />
+    );
+  } else if (section === "tmux") {
+    body = (
+      <Placeholder title={s.tmuxTitle} body={s.tmuxBody} actionLabel={s.openServerInspector} onAction={p.onOpenServerInspector} />
+    );
+  } else if (section === "mission") {
+    body = (
+      <Placeholder title={s.missionTitle} body={s.missionBody} actionLabel={s.openMissionControl} onAction={p.onOpenMissionControl} />
+    );
+  } else if (section === "plugins") {
+    body = (
+      <Placeholder title={s.pluginsTitle} body={s.pluginsBody} actionLabel={s.openPlugins} onAction={p.onOpenPlugins} />
     );
   } else {
     body = (
-      <Placeholder
-        title={s.tmuxTitle}
-        body={s.tmuxBody}
-        actionLabel={s.openServerInspector}
-        onAction={p.onOpenServerInspector}
-      />
+      <Placeholder title={s.settingsTitle} body={s.settingsBody} actionLabel={s.openSettings} onAction={p.onOpenSettings} />
     );
   }
 
@@ -302,7 +327,7 @@ export function App(p: CockpitAppProps) {
             >
               <span class={`codicon codicon-${tab.icon}`} />
               {tab.label}
-              {tab.soon ? <span class="tag">soon</span> : null}
+              {tab.soon ? <span class="tag">{s.soon}</span> : null}
             </button>
           ))}
         </div>

@@ -35,6 +35,8 @@ export interface CockpitDeps {
   collect: () => Promise<ControlInspectorWorkspaceInput[]>;
   openServerInspector: () => void;
   openMissionControl: () => void;
+  openPlugins: () => void;
+  openSettings: () => void;
 }
 
 function strings(): CockpitStrings {
@@ -43,28 +45,45 @@ function strings(): CockpitStrings {
     title: t("Cockpit"),
     subtitle: t("Project sysadmin — editor panel"),
     pocBanner: t(
-      "POC desktop Cockpit (t-fe52f0 frente 1). Editor sysadmin only — no in-webview left rail (avoids VS Code sidebar confusion). Does NOT replace the VS Code/Tachyon sidebar. Mobile deferred.",
+      "POC desktop Cockpit (t-fe52f0 frente 1). Top tabs only (no webview left rail). VS Code sidebar unchanged. Mobile deferred. Grey tabs = soon + deep-link to existing surfaces.",
     ),
     navOverview: t("Overview"),
     navEngine: t("Engine / Bridge"),
     navFleet: t("Fleet"),
     navTmux: t("tmux"),
+    navMission: t("Mission Control"),
+    navPlugins: t("Plugins"),
+    navSettings: t("Settings"),
     refresh: t("Refresh"),
     auto: t("Auto-refresh"),
     empty: t("No Tachyon workspace attached in this window."),
     copyDiagnostics: t("Copy diagnostics"),
     openServerInspector: t("Open tmux Server Inspector"),
     openMissionControl: t("Open Mission Control"),
+    openPlugins: t("Open Plugins"),
+    openSettings: t("Open Settings"),
     copied: t("Diagnostics copied"),
     overviewTitle: t("Overview"),
     overviewHint: t("Health snapshot across attached workspace engines. Sidebar remains the day-to-day fleet UI."),
     engineTitle: t("Engine / Bridge"),
     fleetTitle: t("Fleet presence"),
     fleetBody: t(
-      "Placeholder. Day-to-day agent rows stay in the sidebar; Mission Control remains the work board. This slot may later show presence summaries only.",
+      "Soon: presence summary in Cockpit. Day-to-day agent rows stay in the sidebar; Mission Control remains the work board.",
     ),
     tmuxTitle: t("tmux sessions"),
-    tmuxBody: t("Full session reaper stays in the dedicated tmux Server Inspector. Open it for kill/reap/capture."),
+    tmuxBody: t("Soon: session summary here. Full reaper stays in the dedicated tmux Server Inspector (open via button)."),
+    missionTitle: t("Mission Control"),
+    missionBody: t(
+      "Soon: board snapshot embedded in Cockpit. For now the full board is the existing Mission Control panel.",
+    ),
+    pluginsTitle: t("Plugins"),
+    pluginsBody: t(
+      "Soon: installed plugins + integrity summary in Cockpit. Install/update remains the Plugins panel.",
+    ),
+    settingsTitle: t("Settings"),
+    settingsBody: t(
+      "Soon: key Tachyon project settings at a glance. Full editor settings open via the button (Tachyon extension settings).",
+    ),
     workspaces: t("Workspaces"),
     engines: t("Engines"),
     agents: t("Agents"),
@@ -88,6 +107,7 @@ function strings(): CockpitStrings {
     running: t("running"),
     checkedAt: t("Checked"),
     sidebarNote: t("VS Code / Tachyon sidebar unchanged — agents, spawn, pins stay there. Cockpit uses top tabs only."),
+    soon: t("soon"),
   };
 }
 
@@ -176,6 +196,12 @@ export async function openCockpit(
         return;
       case "openMissionControl":
         deps.openMissionControl();
+        return;
+      case "openPlugins":
+        deps.openPlugins();
+        return;
+      case "openSettings":
+        deps.openSettings();
         return;
     }
   });

@@ -12,12 +12,17 @@ export interface CockpitStrings {
   navEngine: string;
   navFleet: string;
   navTmux: string;
+  navMission: string;
+  navPlugins: string;
+  navSettings: string;
   refresh: string;
   auto: string;
   empty: string;
   copyDiagnostics: string;
   openServerInspector: string;
   openMissionControl: string;
+  openPlugins: string;
+  openSettings: string;
   copied: string;
   overviewTitle: string;
   overviewHint: string;
@@ -26,6 +31,12 @@ export interface CockpitStrings {
   fleetBody: string;
   tmuxTitle: string;
   tmuxBody: string;
+  missionTitle: string;
+  missionBody: string;
+  pluginsTitle: string;
+  pluginsBody: string;
+  settingsTitle: string;
+  settingsBody: string;
   workspaces: string;
   engines: string;
   agents: string;
@@ -49,6 +60,7 @@ export interface CockpitStrings {
   running: string;
   checkedAt: string;
   sidebarNote: string;
+  soon: string;
 }
 
 export type CockpitAction =
@@ -57,6 +69,8 @@ export type CockpitAction =
   | { type: "copyDiagnostics" }
   | { type: "openServerInspector" }
   | { type: "openMissionControl" }
+  | { type: "openPlugins" }
+  | { type: "openSettings" }
   | { type: "setSection"; section: CockpitSectionId };
 
 export type CockpitHostMessage =
@@ -69,6 +83,8 @@ export const refreshAction = (): CockpitAction => ({ type: "refresh" });
 export const copyDiagnosticsAction = (): CockpitAction => ({ type: "copyDiagnostics" });
 export const openServerInspectorAction = (): CockpitAction => ({ type: "openServerInspector" });
 export const openMissionControlAction = (): CockpitAction => ({ type: "openMissionControl" });
+export const openPluginsAction = (): CockpitAction => ({ type: "openPlugins" });
+export const openSettingsAction = (): CockpitAction => ({ type: "openSettings" });
 export const setSectionAction = (section: CockpitSectionId): CockpitAction => ({ type: "setSection", section });
 
 export const initMessage = (strings: CockpitStrings): CockpitHostMessage => ({ type: INIT, strings });

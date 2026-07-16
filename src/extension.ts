@@ -1234,6 +1234,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     openMissionControl: () => {
       void vscode.commands.executeCommand("tachyon.missionControl");
     },
+    openPlugins: () => {
+      void vscode.commands.executeCommand("tachyon.openPlugins");
+    },
+    openSettings: () => {
+      void vscode.commands.executeCommand("tachyon.openSettings");
+    },
   });
 
   const launcherBundlePath = () => vscode.Uri.joinPath(context.extensionUri, "dist", "tool-launcher.cjs").fsPath;

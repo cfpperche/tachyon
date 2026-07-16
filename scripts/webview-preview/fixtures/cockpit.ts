@@ -1,6 +1,6 @@
 /**
  * Cockpit desktop POC fixtures for dev-host preview.
- * Framing: editor sysadmin shell; sidebar unchanged; mobile deferred (t-fe52f0 frente 1).
+ * Framing: editor sysadmin shell; top tabs only; sidebar unchanged; mobile deferred.
  */
 
 import { buildCockpitModel, type CockpitModel } from "../../../src/cockpit/model";
@@ -11,26 +11,38 @@ export const strings: CockpitStrings = {
   title: "Cockpit",
   subtitle: "Project sysadmin — editor panel",
   pocBanner:
-    "POC desktop Cockpit (t-fe52f0 frente 1). Editor sysadmin — top tabs only (no in-webview left rail). VS Code sidebar unchanged. Mobile deferred.",
+    "POC desktop Cockpit (t-fe52f0 frente 1). Top tabs only (no webview left rail). VS Code sidebar unchanged. Mobile deferred. Grey tabs = soon + deep-link.",
   navOverview: "Overview",
   navEngine: "Engine / Bridge",
   navFleet: "Fleet",
   navTmux: "tmux",
+  navMission: "Mission Control",
+  navPlugins: "Plugins",
+  navSettings: "Settings",
   refresh: "Refresh",
   auto: "Auto-refresh",
   empty: "No Tachyon workspace attached in this window.",
   copyDiagnostics: "Copy diagnostics",
   openServerInspector: "Open tmux Server Inspector",
   openMissionControl: "Open Mission Control",
+  openPlugins: "Open Plugins",
+  openSettings: "Open Settings",
   copied: "Diagnostics copied",
   overviewTitle: "Overview",
   overviewHint: "Health snapshot across attached workspace engines. Sidebar remains the day-to-day fleet UI.",
   engineTitle: "Engine / Bridge",
   fleetTitle: "Fleet presence",
   fleetBody:
-    "Placeholder. Day-to-day agent rows stay in the sidebar; Mission Control remains the work board. This slot may later show presence summaries only.",
+    "Soon: presence summary in Cockpit. Day-to-day agent rows stay in the sidebar; Mission Control remains the work board.",
   tmuxTitle: "tmux sessions",
-  tmuxBody: "Full session reaper stays in the dedicated tmux Server Inspector. Open it for kill/reap/capture.",
+  tmuxBody: "Soon: session summary here. Full reaper stays in the dedicated tmux Server Inspector (open via button).",
+  missionTitle: "Mission Control",
+  missionBody: "Soon: board snapshot embedded in Cockpit. For now the full board is the existing Mission Control panel.",
+  pluginsTitle: "Plugins",
+  pluginsBody: "Soon: installed plugins + integrity summary in Cockpit. Install/update remains the Plugins panel.",
+  settingsTitle: "Settings",
+  settingsBody:
+    "Soon: key Tachyon project settings at a glance. Full editor settings open via the button (Tachyon extension settings).",
   workspaces: "Workspaces",
   engines: "Engines",
   agents: "Agents",
@@ -54,6 +66,7 @@ export const strings: CockpitStrings = {
   running: "running",
   checkedAt: "Checked",
   sidebarNote: "VS Code / Tachyon sidebar unchanged — agents, spawn, pins stay there. Cockpit uses top tabs only.",
+  soon: "soon",
 };
 
 const inputs = [

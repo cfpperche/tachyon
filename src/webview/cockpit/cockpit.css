@@ -71,6 +71,8 @@
   flex-wrap: wrap;
   gap: 2px;
   border-bottom: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
+  /* many soon-tabs: allow wrap without feeling like a left rail */
+  row-gap: 0;
 }
 
 .ck-tabs button {

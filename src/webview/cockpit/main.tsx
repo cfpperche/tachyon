@@ -9,6 +9,8 @@ import {
   copyDiagnosticsAction,
   openServerInspectorAction,
   openMissionControlAction,
+  openPluginsAction,
+  openSettingsAction,
   setSectionAction,
   type CockpitHostMessage,
   type CockpitStrings,
@@ -76,6 +78,8 @@ function Root() {
       onCopyDiagnostics={() => post(copyDiagnosticsAction())}
       onOpenServerInspector={() => post(openServerInspectorAction())}
       onOpenMissionControl={() => post(openMissionControlAction())}
+      onOpenPlugins={() => post(openPluginsAction())}
+      onOpenSettings={() => post(openSettingsAction())}
       onSetSection={(section: CockpitSectionId) => {
         // optimistic local nav; host will echo section on next model if needed
         setModel((prev) => (prev ? { ...prev, section } : prev));

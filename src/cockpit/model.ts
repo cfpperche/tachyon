@@ -11,7 +11,14 @@ import {
   type ControlInspectorWorkspaceInput,
 } from "../control-inspector/model.js";
 
-export type CockpitSectionId = "overview" | "engine" | "fleet" | "tmux";
+export type CockpitSectionId =
+  | "overview"
+  | "engine"
+  | "fleet"
+  | "tmux"
+  | "mission"
+  | "plugins"
+  | "settings";
 
 export interface CockpitSectionMeta {
   id: CockpitSectionId;
@@ -24,6 +31,9 @@ export const COCKPIT_SECTIONS: CockpitSectionMeta[] = [
   { id: "engine" },
   { id: "fleet", placeholder: true },
   { id: "tmux", placeholder: true },
+  { id: "mission", placeholder: true },
+  { id: "plugins", placeholder: true },
+  { id: "settings", placeholder: true },
 ];
 
 export interface CockpitModel {
