@@ -24,7 +24,25 @@ Open:
 - **empty**:  
   http://localhost:5174/scripts/webview-preview/index.html?view=control-inspector&fixture=empty
 
-### Installed / F5
+### F5 Extension Development Host (Dev Host)
+
+Default F5 config **Tachyon: Dev Host** requires the pointer armed (otherwise preLaunchTask fails with *“Dev Host is not armed”*):
+
+```bash
+cd /home/goat/tachyon-worktrees/engine-bridge-inspector
+# open THIS folder in VS Code (not the monorepo root) — ${workspaceFolder} must be this worktree
+npm run dogfood:dev-host -- point \
+  --worktree /home/goat/tachyon-worktrees/engine-bridge-inspector \
+  --fixture sample-workspace \
+  --spec 395 --slug control-inspector
+# Run and Debug → "Tachyon: Dev Host" → F5
+# EDH window → Command Palette → Tachyon: Inspect Engine/Bridge
+# cleanup: npm run dogfood:dev-host -- point-clear
+```
+
+Alternate (no pointer): launch config **Run Tachyon (test fixture)** (builds `workspaceFolder` dist directly).
+
+### Installed / VSIX
 
 1. From this worktree: `npm run build` (or VSIX ritual).
 2. Command Palette → **Tachyon: Inspect Engine/Bridge**
