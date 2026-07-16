@@ -313,6 +313,26 @@ function safeRead(p: string): string | undefined {
   }
 }
 
+/**
+ * t-7faea9 — gated preparation often wraps the real cause in AggregateError after intentional
+ * recovery preservation (`rollbackCreated` always throws). Bridge clients only see `.message`,
+ * so the primary error text must be in the AggregateError message, not only in `.errors[0]`.
+ */
+function gatedPreparationAggregateError(
+  name: string,
+  primary: unknown,
+  recoveryTail: string,
+  extras: unknown[] = [],
+): AggregateError {
+  const primaryError = primary instanceof Error ? primary : new Error(String(primary));
+  const extraErrors = extras.map((item) => (item instanceof Error ? item : new Error(String(item))));
+  return new AggregateError(
+    [primaryError, ...extraErrors],
+    `gated delegation '${name}' preparation failed: ${primaryError.message}; ${recoveryTail}`,
+    { cause: primaryError },
+  );
+}
+
 function boundedBridgeFailureDetail(detail: string): string {
   if (detail.length <= MAX_BRIDGE_FAILURE_DETAIL_LENGTH) return detail;
   return `${detail.slice(0, MAX_BRIDGE_FAILURE_DETAIL_LENGTH - 1)}…`;
@@ -1000,32 +1020,41 @@ export class Workspace {
         } catch (primary) {
           if (resolved.created) {
             if (!preparationHeadAfter) {
-              throw new AggregateError(
-                [primary, new Error("fresh gated worktree recovery state was preserved because its exact prepared HEAD is unknown")],
-                `gated delegation '${ctx.name}' preparation failed without a recovery HEAD observation`,
+              throw gatedPreparationAggregateError(
+                ctx.name,
+                primary,
+                "fresh worktree recovery state was preserved because its exact prepared HEAD is unknown",
+                [new Error("fresh gated worktree recovery state was preserved because its exact prepared HEAD is unknown")],
               );
             }
             try {
               await this.worktrees.rollbackCreated(resolved.worktree, resolved.rollbackHeadSha, preparationHeadAfter);
             } catch (preservation) {
-              throw new AggregateError(
-                [primary, preservation],
-                `gated delegation '${ctx.name}' preparation failed; its fresh worktree recovery state was preserved`,
+              // rollbackCreated intentionally preserves the checkout and always throws (recovery-first).
+              throw gatedPreparationAggregateError(
+                ctx.name,
+                primary,
+                "its fresh worktree recovery state was preserved",
+                [preservation],
               );
             }
           } else if (preparationHeadBefore && preparationHeadAfter) {
             try {
               await this.worktrees.rollbackPreparation(resolved.worktree, preparationHeadBefore, preparationHeadAfter);
             } catch (preservation) {
-              throw new AggregateError(
-                [primary, preservation],
-                `gated delegation '${ctx.name}' preparation failed; its reused worktree recovery state was preserved`,
+              throw gatedPreparationAggregateError(
+                ctx.name,
+                primary,
+                "its reused worktree recovery state was preserved",
+                [preservation],
               );
             }
           } else {
-            throw new AggregateError(
-              [primary, new Error(`reused gated worktree recovery state was preserved at ${resolved.worktree.path}; complete HEAD observations are unavailable`)],
-              `gated delegation '${ctx.name}' preparation failed; recovery checkout: ${resolved.worktree.path}`,
+            throw gatedPreparationAggregateError(
+              ctx.name,
+              primary,
+              `recovery checkout: ${resolved.worktree.path}`,
+              [new Error(`reused gated worktree recovery state was preserved at ${resolved.worktree.path}; complete HEAD observations are unavailable`)],
             );
           }
           throw primary;

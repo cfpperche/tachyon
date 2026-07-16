@@ -1948,10 +1948,13 @@ export class AgentManager {
         try {
           await rollbackLaunchPreparation();
         } catch (preservation) {
+          // t-7faea9 — rollback preservation always surfaces as AggregateError; Bridge clients only
+          // see .message, so inline the primary preparation failure (e.g. missing oracle / primer).
+          const primaryError = error instanceof Error ? error : new Error(String(error));
           throw new AggregateError(
-            [error, preservation],
-            `agent '${name}' launch preparation failed; its worktree recovery state was preserved`,
-            { cause: error },
+            [primaryError, preservation instanceof Error ? preservation : new Error(String(preservation))],
+            `agent '${name}' launch preparation failed: ${primaryError.message}; its worktree recovery state was preserved`,
+            { cause: primaryError },
           );
         }
       }

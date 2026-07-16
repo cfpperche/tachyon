@@ -1098,6 +1098,10 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
       expect(failure).toBeInstanceOf(AggregateError);
       expect((failure as AggregateError).errors[0]).toMatchObject({ message: "forced primer preparation failure" });
       expect((failure as AggregateError).errors[1]).toMatchObject({ message: expect.stringContaining("recovery state was preserved") });
+      // t-7faea9 — same class as gated prep: recovery wrapper AggregateError must inline primary
+      // (this path is AgentManager launch preparation after oracle, not Workspace gated catch).
+      expect((failure as AggregateError).message).toContain("forced primer preparation failure");
+      expect((failure as AggregateError).message).toMatch(/agent 'attached' launch preparation failed:/);
 
       expect(git(root, ["rev-parse", "human/attached"])).toBe(humanHead);
       expect(git(root, ["worktree", "list", "--porcelain"]).split("\n").filter((line) => line.startsWith("worktree "))).toHaveLength(2);
@@ -1281,6 +1285,54 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     expect(second.baseSha).toBe(taskBranchHead);
     expect(second.baseSha).not.toBe(sourceHead);
     ws.dispose();
+  });
+
+  it("t-7faea9: missing named behavior oracle surfaces in gated preparation AggregateError.message", async () => {
+    // Named gate without a committed oracle must not leave coordinators debugging only
+    // "recovery state was preserved" — the missing-oracle text is Bridge-visible.
+    const root = mkdir();
+    const wtBase = path.join(root, ".tachyon-test-worktrees");
+    const behaviorSettings = namedBehaviorSettings("test/generated-gates/{agent}.behavior.test.ts");
+    fs.writeFileSync(
+      path.join(root, "tachyon.yml"),
+      `settings:\n${namedBehaviorVerifyYaml(behaviorSettings.stubPath)}  worktree:\n    base: ${JSON.stringify(wtBase)}\nagents:\n  boss:\n    cmd: sh\n`,
+      "utf8",
+    );
+    git(root, ["init"]);
+    git(root, ["config", "user.email", "test@example.com"]);
+    git(root, ["config", "user.name", "Test User"]);
+    fs.writeFileSync(path.join(root, "README.md"), "base\n", "utf8");
+    git(root, ["add", "README.md"]);
+    git(root, ["commit", "-m", "base without oracle"]);
+
+    const host = new FakeHost(mkdir());
+    const { tmux } = fakeTmux();
+    const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux, startBridge: false });
+    try {
+      const failure = await ws.manager.spawn("missingoracle", {
+        cmd: "sh",
+        delegator: "boss",
+        contract: {
+          task: "should fail at oracle bind",
+          context: "no stub committed",
+          constraints: "surface real cause",
+          doneWhen: "error names missing oracle",
+        },
+        gate: { behaviorTest: "generated behavior stays canonical", owns: ["src"] },
+        reveal: false,
+      }).catch((error: unknown) => error);
+
+      expect(failure).toBeInstanceOf(AggregateError);
+      const msg = (failure as AggregateError).message;
+      expect(msg).toMatch(/gated delegation 'missingoracle' preparation failed:/);
+      expect(msg).toMatch(/behavior oracle|does not exist|commit a real failing project-owned test/i);
+      expect(msg).toMatch(/fresh worktree recovery state was preserved/);
+      expect((failure as AggregateError).errors[0]).toBeInstanceOf(Error);
+      expect(((failure as AggregateError).errors[0] as Error).message).toMatch(/does not exist|commit a real failing/i);
+      expect(ws.ledger.get("missingoracle")).toBeUndefined();
+    } finally {
+      ws.dispose();
+    }
   });
 
   it("configured named gate binds a pre-existing project-owned oracle without authorizing edits", async () => {
