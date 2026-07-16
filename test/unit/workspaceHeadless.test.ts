@@ -1043,7 +1043,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
         },
         gate: { behaviorTest: "cmd:node scripts/check-behavior.mjs", owns: ["src"] },
         reveal: false,
-      })).rejects.toThrow(/failed without a recovery HEAD observation/);
+      })).rejects.toThrow(/could not resolve its prepared worktree HEAD.*recovery state was preserved/);
 
       expect(rollback).not.toHaveBeenCalled();
       expect(git(root, ["worktree", "list", "--porcelain"]).split("\n").filter((line) => line.startsWith("worktree "))).toHaveLength(2);

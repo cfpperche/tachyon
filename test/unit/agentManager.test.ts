@@ -4808,17 +4808,17 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     expect(ledger.get("rev")?.worktree).toBeUndefined();
   });
 
-  it("t-e2ebe3: parented opencode spawn accepts a worktree-path cwd without liveness proof (gated-only restriction REMOVED — opencode is private-home)", async () => {
-    const REC = { path: "/wt/h/rev", branch: "tachyon/rev", tachyonCreatedBranch: true, baseRef: "b", createdAt: "t" };
-    const { manager, ledger, newSessionArgs } = harness("agents:\n  boss:\n    cmd: claude\n", {
+  it("t-f660d8: parented opencode spawn refuses an explicit cwd instead of pretending to apply it", async () => {
+    const { manager, ledger, newSessionArgs, ws } = harness("agents:\n  boss:\n    cmd: claude\n", {
       resolveSpawnCwd: async () => null,
     });
-    // Pre-t-e2ebe3: the project-scoped guard refused this (a ledger match ≠ liveness/occupancy proof — t-ce50a2).
-    // Post-t-e2ebe3: opencode rates private-home (per-agent XDG), so a parented spawn delegates UNGATED and
-    // resolves the cwd from `opts.cwd` (no resolveSpawnCwd worktree, no isolated-worktree requirement).
+    const worktreePath = path.join(ws, "worktrees", "rev");
+    fs.mkdirSync(worktreePath, { recursive: true });
+    const REC = { path: worktreePath, branch: "tachyon/rev", tachyonCreatedBranch: true, baseRef: "b", createdAt: "t" };
     ledger.record("rev", { def: { cmd: "opencode", kind: "agent" }, worktree: REC, cwd: REC.path, declared: false });
-    await manager.spawn("helper", { cmd: "opencode", parent: "boss", cwd: REC.path });
-    expect(newSessionArgs[0][newSessionArgs[0].indexOf("-c") + 1]).toBe(REC.path);
+    await expect(manager.spawn("helper", { cmd: "opencode", parent: "boss", cwd: REC.path }))
+      .rejects.toThrow(/cwd is not used for parented ad-hoc children/);
+    expect(newSessionArgs).toHaveLength(0);
   });
 
   it("gated spawn fails closed when no worktree is available (spec 362 T1)", async () => {
@@ -5523,6 +5523,14 @@ describe("AgentManager — Bridge wiring fail-closed (t-d42565)", () => {
     });
     await manager.spawn("child", { cmd: "claude", parent: "boss", instructions: "do work" });
     expect(cmds.length).toBe(1);
+  });
+
+  it("allows a non-AI agent command when Bridge MCP materialization does not apply", async () => {
+    const { manager, cmds } = harness211("agents:\n  worker:\n    cmd: sh\n", {
+      getExtraEnv: () => ({ TACHYON_BRIDGE_URL: "http://127.0.0.1:9/mcp" }),
+    });
+    await manager.spawn("worker");
+    expect(cmds.at(-1)).toBe("sh");
   });
 
   it("allows AI spawn when materialization succeeds", async () => {

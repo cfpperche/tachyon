@@ -1970,9 +1970,9 @@ export class AgentManager {
     // spec 236 — fold the runtime-Bridge env delta (the OPENCODE_CONFIG path for opencode agents)
     // into spawnBuild.env so it reaches the spawn env alongside the Bridge URL/token.
     const spawnBridge = this.withRuntimeBridge(name, def, spawnBuild.cmd, cwd, delegatedOpencode);
-    // t-d42565 — AI agents must receive Bridge MCP tools (notify_agent / doorbell) when the
-    // workspace Bridge is up. Silent "healthy" sessions without the registry leave parents un-woken.
-    if (def.kind === "agent" && !spawnBridge.wired) {
+    // t-d42565 — recognized AI runtimes must receive Bridge MCP tools (notify_agent / doorbell) when
+    // the workspace Bridge is up. Non-AI commands may still use kind:agent for lifecycle grouping.
+    if (def.kind === "agent" && adapter && !spawnBridge.wired) {
       const bridgeUrl = this.opts.getExtraEnv?.()?.[URL_ENV_VAR];
       if (bridgeUrl) {
         throw new Error(
