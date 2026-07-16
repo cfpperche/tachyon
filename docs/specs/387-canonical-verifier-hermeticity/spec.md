@@ -2,6 +2,8 @@
 
 _Created 2026-07-15 for task `t-5c7061`._
 
+**Status:** shipped
+
 ## Problem
 
 Canonical verification runs project commands in independent tracked-only clones, but Tachyon's own
@@ -11,12 +13,12 @@ the first output line, allowing an incidental warning to hide the real failure.
 
 ## Acceptance criteria
 
-- A tracked project preparation command installs locked dependencies and builds required artifacts.
-- BASE and HEAD retain separate private clone, cache and temporary roots, with existing ownership,
+- [x] A tracked project preparation command installs locked dependencies and builds required artifacts.
+- [x] BASE and HEAD retain separate private clone, cache and temporary roots, with existing ownership,
   symlink, permission, abandoned-owner and cleanup checks.
-- Verifier temp paths leave ample room for test-created Unix sockets without changing production socket guards.
-- Failed commands retain bounded output tails and explicit timeout/signal facts in command evidence and blockers.
-- Regression tests cover preparation, long-parent socket compatibility and actionable diagnostics.
+- [x] Socket fixtures remain valid under long verifier temp paths without changing production socket guards.
+- [x] Failed commands retain bounded output tails and explicit timeout/signal facts in command evidence and blockers.
+- [x] Regression tests cover preparation, long-parent socket compatibility and actionable diagnostics.
 
 ## Product invariant assessment
 
@@ -25,5 +27,7 @@ diagnostics, not PI-001's project-guidance ownership promise or fixed oracle.
 
 ## Non-goals
 
-- Changing `tachyon.yml`, production socket path validation, verification authority, or oracle semantics.
+- Changing production socket path validation, verification authority, or oracle semantics.
 - Treating the verifier as a filesystem sandbox or hiding arbitrary project output as secret data.
+
+**Closure:** Shipped tracked install/build preparation, long-TMPDIR-safe socket fixtures and bounded actionable verifier diagnostics; canonical BASE RED / HEAD GREEN dogfood accepted without waiver.

@@ -24,3 +24,12 @@
 - Typecheck, PI-001 (2 tests) and full verification (4,672 passed, 3 skipped) passed.
 - A fresh tracked-only clone at candidate `0cc40bd9` ran `verify:prepare`, materialized
   `dist/engine/engine-daemon.cjs`, remained Git-clean and passed the same 119 files / 1,504 tests.
+
+## Canonical dogfood
+
+- Delivery `d-spawn-e36b29e75c4e12d09a30eab2fbef6c28` was verified from BASE
+  `9a67afad` to disposable HEAD `e228a9a1` with no waiver.
+- `verify_task` returned `accept`: preparation passed in every clean clone, the direct behavior oracle
+  was RED at BASE and GREEN at HEAD, typecheck passed, and affected tests passed.
+- Evidence: `.tachyon/verifications/e228a9a17bcc8d3e865ed920296166280537bc7f.2d9ef1df0983f8f9.json`.
+- The disposable comment, branch and worktree were removed; no probe code was integrated.

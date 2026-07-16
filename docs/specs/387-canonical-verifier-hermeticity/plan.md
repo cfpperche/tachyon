@@ -19,6 +19,7 @@ termination metadata remains structured even when the child emits no useful outp
 ## Files
 
 - `package.json`
+- `tachyon.yml`
 - `src/bridge/verifyTask.ts`
 - `test/helpers/socketTemp.ts`
 - `test/unit/{engineControlClient,engineControlServer,engineProcessBoundary,engineService,engineSupervisor,workspaceClient}.test.ts`
