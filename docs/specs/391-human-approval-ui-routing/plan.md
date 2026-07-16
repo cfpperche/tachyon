@@ -34,6 +34,7 @@ _Each decision + why this option over the alternatives considered. Record reject
 
 - `src/engine-service/engineService.ts` — wire the approval callback and its retained Review action.
 - `package.json` — contribute the existing open-approvals command to the Command Palette.
+- `package-lock.json` — keep the packaged engine version aligned for the installed upgrade candidate.
 - `package.nls.json` — English command title.
 - `package.nls.pt-br.json` — pt-BR command title.
 - `test/unit/daemonEngineHost.test.ts` — behavioral replay and exact-workspace routing coverage.
@@ -53,6 +54,8 @@ _Each decision + why this option over the alternatives considered. Record reject
   same-UID process isolation on the private daemon socket is a separate security boundary, not widened
   or claimed by this change.
 - The installed extension must be reloaded before native dogfood can see a newly contributed command.
+- A content-different engine bundle with the same semantic version is deliberately reused as compatible;
+  installed dogfood therefore needs a monotonic package/engine version.
 
 ## Visual impact
 

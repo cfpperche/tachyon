@@ -9,6 +9,8 @@ _Generated from `plan.md` on 2026-07-16. Work top-to-bottom. Check boxes as task
 - [x] Wire `Workspace.onApprovalRequested` in the persistent-engine composition through the existing
   daemon notice/action transport.
 - [x] Contribute and localize `tachyon.openApprovals` without exposing `tachyon.resolveApproval`.
+- [x] Bump the installed candidate to `0.56.11` so the persistent-engine supervisor activates the new
+  content instead of correctly reusing compatible `0.56.10`.
 
 ## Verification
 

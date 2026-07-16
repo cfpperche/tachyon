@@ -49,6 +49,10 @@ None.
 - `t-a0b115` was fixed independently in one file and integrated to main as `bd48b86e`; its worktree and
   branch were removed. After rebasing this delivery, `npm run verify:full:quiet` passed: 412 files,
   4,717 tests passed and 3 explicit skips.
+- First installed reload used a content-different candidate that still declared `0.56.10`. The shell
+  reattached, but the supervisor intentionally classified the running same-version engine as compatible
+  and preserved its PID, so the new daemon routing was not active. Bumped package/lock to `0.56.11` for
+  the real installed upgrade; this is required by the existing monotonic engine-upgrade contract.
 
 ## Verification log
 
