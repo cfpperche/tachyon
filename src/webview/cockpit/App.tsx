@@ -404,44 +404,38 @@ export function App(p: CockpitAppProps) {
   return (
     <div class="ck-root">
       <header class="ck-top">
-        <div class="ck-top-row">
-          <div class="ck-brand">
-            <span class="codicon codicon-dashboard" />
-            <div>
-              <div class="title">{s.title}</div>
-              <div class="sub">{s.subtitle}</div>
-            </div>
+        {/* Single chrome row: tabs + actions (no brand/title bar — saves vertical space). */}
+        <div class="ck-chrome">
+          <div class="ck-tabs" role="tablist" aria-label={s.title}>
+            {COCKPIT_SECTION_ORDER.map((id) => {
+              const meta = TAB_META[id];
+              return (
+                <button
+                  type="button"
+                  role="tab"
+                  key={id}
+                  aria-selected={section === id}
+                  class={section === id ? "active" : ""}
+                  onClick={() => p.onSetSection(id)}
+                >
+                  <span class={`codicon codicon-${meta.icon}`} />
+                  {s[meta.navKey]}
+                </button>
+              );
+            })}
           </div>
           <div class="ck-actions">
-            <label class="ck-auto">
+            <label class="ck-auto" title={s.auto}>
               <input type="checkbox" checked={p.auto} onChange={(e) => p.onToggleAuto((e.target as HTMLInputElement).checked)} />
               {s.auto}
             </label>
-            <Button variant="default" onClick={p.onRefresh}>
+            <Button variant="default" onClick={p.onRefresh} title={s.refresh}>
               <span class="codicon codicon-refresh" /> {s.refresh}
             </Button>
-            <Button variant="default" onClick={p.onCopyDiagnostics}>
+            <Button variant="default" onClick={p.onCopyDiagnostics} title={s.copyDiagnostics}>
               <span class="codicon codicon-copy" /> {s.copyDiagnostics}
             </Button>
           </div>
-        </div>
-        <div class="ck-tabs" role="tablist" aria-label={s.title}>
-          {COCKPIT_SECTION_ORDER.map((id) => {
-            const meta = TAB_META[id];
-            return (
-              <button
-                type="button"
-                role="tab"
-                key={id}
-                aria-selected={section === id}
-                class={section === id ? "active" : ""}
-                onClick={() => p.onSetSection(id)}
-              >
-                <span class={`codicon codicon-${meta.icon}`} />
-                {s[meta.navKey]}
-              </button>
-            );
-          })}
         </div>
       </header>
 

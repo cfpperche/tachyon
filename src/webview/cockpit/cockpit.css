@@ -17,65 +17,53 @@
   background: var(--vscode-editor-background);
 }
 
-/* ---- top chrome ---- */
+/* ---- top chrome: one row — tabs + actions (no title bar) ---- */
 .ck-top {
   flex-shrink: 0;
   border-bottom: 1px solid var(--ds-border);
   background: var(--vscode-editor-background);
-  padding: 8px 12px 0;
+  padding: 0 8px;
 }
 
-.ck-top-row {
+.ck-chrome {
   display: flex;
   flex-wrap: wrap;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.ck-brand {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-}
-
-.ck-brand > .codicon {
-  font-size: 16px;
-  line-height: 1.2;
-  margin-top: 1px;
-  opacity: 0.85;
-  flex: none;
-}
-
-.ck-brand .title {
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 1.25;
-  color: var(--vscode-foreground);
-}
-
-.ck-brand .sub {
-  font-size: 11px;
-  font-weight: 400;
-  color: var(--ds-muted);
-  margin-top: 2px;
-  line-height: 1.35;
+  align-items: center;
+  gap: 4px 8px;
+  min-width: 0;
 }
 
 .ck-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 4px;
   align-items: center;
+  flex: none;
+  margin-left: auto;
+  padding: 2px 0;
 }
 
 .ck-auto {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   font-size: 11px;
   color: var(--ds-muted);
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
+
+/* Dense action buttons on the chrome row */
+.ck-actions button {
+  font-size: 11px;
+  padding: 2px 8px;
+  min-height: 22px;
+  gap: 4px;
+}
+
+.ck-actions button .codicon {
+  font-size: 13px;
 }
 
 /* Tabs — same visual language as sidebar .tabs / .tab */
@@ -83,7 +71,8 @@
   display: flex;
   flex-wrap: wrap;
   gap: 1px;
-  border-bottom: 1px solid var(--ds-border);
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .ck-tabs button {
@@ -92,7 +81,7 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 6px 10px 7px;
+  padding: 6px 8px 7px;
   cursor: pointer;
   font-family: inherit;
   font-size: 11px;
