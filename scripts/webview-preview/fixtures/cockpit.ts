@@ -1,5 +1,5 @@
 /**
- * Cockpit desktop fixtures — tabs ordered by ops frequency; no "soon" labels.
+ * Control panel fixtures for dev-host preview (production-facing copy only).
  */
 
 import { buildCockpitModel, type CockpitModel, type CockpitWorkspaceBundle } from "../../../src/cockpit/model";
@@ -8,9 +8,7 @@ import type { Fixture } from "../routes";
 
 export const strings: CockpitStrings = {
   title: "Control",
-  subtitle: "Project sysadmin — editor panel",
-  pocBanner:
-    "Control MVP (t-fe52f0 desktop). Sidebar header button + palette. Top tabs by frequency. No webview left rail. VS Code sidebar unchanged.",
+  subtitle: "Project sysadmin",
   navOverview: "Overview",
   navEngine: "Engine",
   navFleet: "Fleet",
@@ -36,28 +34,28 @@ export const strings: CockpitStrings = {
   openDoctor: "Run Doctor",
   copied: "Diagnostics copied",
   overviewTitle: "Overview",
-  overviewHint: "Ops snapshot. Jump to modules or existing panels.",
+  overviewHint: "Health snapshot and shortcuts across this workspace.",
   engineTitle: "Engine / Bridge",
   fleetTitle: "Fleet",
-  fleetHint: "Agents from live presentation.",
+  fleetHint: "Agents from the live presentation.",
   approvalsTitle: "Approvals",
-  approvalsHint: "Human gates.",
+  approvalsHint: "Human gates that block the fleet. Open Approvals to resolve.",
   missionTitle: "Mission Control",
-  missionHint: "Work board summary.",
+  missionHint: "Work board summary. Open Mission Control for the full board.",
   worktreesTitle: "Managed worktrees",
-  worktreesHint: "Registry rows.",
+  worktreesHint: "Tachyon-managed checkouts registered for this workspace.",
   deliveriesTitle: "Deliveries",
-  deliveriesHint: "GitDelivery records.",
+  deliveriesHint: "Local GitDelivery records.",
   runtimeTitle: "Runtime Ops",
-  runtimeHint: "Usage panel deep-link.",
+  runtimeHint: "Usage and rate limits. Open Runtime Ops for full detail.",
   tmuxTitle: "tmux",
-  tmuxHint: "Socket health.",
+  tmuxHint: "Socket health. Open the tmux Inspector for sessions and reap.",
   pluginsTitle: "Plugins",
-  pluginsHint: "Plugins panel.",
+  pluginsHint: "Open Plugins to install or update.",
   schedulesTitle: "Schedules",
-  schedulesHint: "Declared schedules.",
+  schedulesHint: "Declared schedules for this workspace.",
   settingsTitle: "Settings",
-  settingsHint: "Extension settings.",
+  settingsHint: "Open Tachyon settings.",
   workspaces: "Workspaces",
   engines: "Engines",
   agents: "Agents",
@@ -84,9 +82,8 @@ export const strings: CockpitStrings = {
   running: "running",
   stopped: "stopped",
   checkedAt: "Checked",
-  sidebarNote: "VS Code / Tachyon sidebar unchanged. Cockpit = top tabs only.",
   open: "Open",
-  noneListed: "Nothing listed yet.",
+  noneListed: "Nothing listed for this workspace yet.",
   kind: "Kind",
   branch: "Branch",
   status: "Status",
@@ -130,14 +127,6 @@ const bundles: CockpitWorkspaceBundle[] = [
         status: "active",
         slug: "t-689e6c",
       },
-      {
-        id: "mw-agent-claude",
-        kind: "agent",
-        path: "/cache/wt/b349073a/claude",
-        branch: "tachyon/claude",
-        status: "active",
-        agent: "claude",
-      },
     ],
     deliveries: [
       {
@@ -151,22 +140,6 @@ const bundles: CockpitWorkspaceBundle[] = [
     approvals: [{ id: "a-0499c7", status: "pending", title: "Approve prune abandon" }],
     schedules: [{ name: "nightly-hygiene", paused: false }],
     tmux: { state: "healthy", version: "3.4" },
-  },
-  {
-    control: {
-      folderName: "mei-saas",
-      workspaceRoot: "/home/goat/mei-saas",
-      wsHash: "c0ffee42",
-      bridgeUrl: "http://127.0.0.1:7433/mcp",
-      identityError: "control socket refused",
-      agents: { total: 1, running: 0 },
-    },
-    agents: [{ name: "claude", kind: "agent", running: false, declared: true }],
-    worktrees: [],
-    deliveries: [],
-    approvals: [],
-    schedules: [],
-    tmux: { state: "no-server" },
   },
 ];
 

@@ -60,9 +60,8 @@ describe("cockpit model", () => {
     expect(m.tmux[0]?.state).toBe("healthy");
   });
 
-  it("formatCockpitDiagnostics mentions framing", () => {
+  it("formatCockpitDiagnostics is product-oriented", () => {
     const text = formatCockpitDiagnostics(buildCockpitModel([], { nowIso: "now" }));
     expect(text).toMatch(/Control/i);
-    expect(text).toMatch(/sidebar/i);
   });
 });
