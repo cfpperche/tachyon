@@ -1407,9 +1407,10 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         "is rejected (it would blanket-waive every scope breach). A self-caller (any Delivery occupant " +
         "verifying itself) is rejected whenever waivers are present — waivers are coordinator-authored, " +
         "never self-authored; self-verification with no waivers stays allowed. The resolved caller is " +
-        "recorded on the verification record for after-the-fact attribution. Canonical verification temporarily " +
-        "checks out immutable SHAs, so its current tail agent must be stopped first; a live tail is refused with " +
-        "kill_agent-then-retry guidance. This gate records verification evidence but does not complete a canonical " +
+        "recorded on the verification record for after-the-fact attribution. Canonical verification first owns the " +
+        "verification lease, then exact-stops and releases a held live tail before checking out immutable SHAs; do " +
+        "not call kill_agent first, because an explicit cancellation is quarantined. This gate records verification " +
+        "evidence but does not complete a canonical " +
         "review: review closure requires delivery_join(role=reviewer, owns_subset=[]) followed by " +
         "delivery_complete_review. When any waiver was applied, " +
         "the output text leads with an unmissable 'WAIVED' verdict line. Advisory: returns accept or " +

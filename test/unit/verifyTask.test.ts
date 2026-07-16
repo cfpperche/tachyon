@@ -2478,7 +2478,10 @@ describe("verifyTask", () => {
     });
 
     expect(result.verdict).toBe("accept");
-    expect(calls).toEqual(["lock:worker", "unlock:worker"]);
+    // Verification reserves its durable lease under the first lock, then runs immutable
+    // checkouts under a fresh lock.  A controlled live-tail stop, when present, happens
+    // between those phases and therefore outside either worktree lock.
+    expect(calls).toEqual(["lock:worker", "unlock:worker", "lock:worker", "unlock:worker"]);
     expect(git(wt, ["rev-parse", "--abbrev-ref", "HEAD"])).toBe("tachyon/worker");
   });
 

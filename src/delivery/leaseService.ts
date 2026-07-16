@@ -325,6 +325,33 @@ export class DeliveryLeaseService {
     return changed;
   }
 
+  /**
+   * Verification owns the lease before it calls this method.  Reuse the same exact-root
+   * observation/stop boundary as a segment handoff, but leave segment closure to the
+   * verification lease service so its crash-recovery receipt stays atomic.
+   */
+  async establishVerificationTailAbsence(input: {
+    deliveryId: string;
+    canonicalWorktree: string;
+    holder: DeliveryLeaseHolder;
+  }): Promise<"proven_empty" | "root_gone_best_effort"> {
+    const canonicalWorktree = path.resolve(input.canonicalWorktree);
+    const current = await this.deps.store.get(input.deliveryId);
+    if (!current) throw new DeliveryNotFoundError(input.deliveryId);
+    const actualCanonical = path.resolve(await this.deps.canonicalWorktreeFor(current));
+    if (actualCanonical !== canonicalWorktree) {
+      throw new DeliveryLeaseError("DELIVERY_WORKTREE_MISMATCH", false, "verification worktree is not canonical", {
+        expected: actualCanonical,
+        actual: canonicalWorktree,
+      });
+    }
+    if (current.lease.state !== "verifying" || !isDeepStrictEqual(current.lease.holder, input.holder)
+      || current.lease.verification?.subjectSegmentId !== input.holder.segmentId) {
+      throw this.occupied(current, "verification holder changed before exact tail stop");
+    }
+    return this.establishTransferAbsence(input.deliveryId, structuredClone(input.holder), canonicalWorktree);
+  }
+
   async reconcileHolder(input: DeliveryReconcileHolderInput): Promise<DeliveryReconcileHolderResult> {
     const canonicalWorktree = path.resolve(input.canonicalWorktree);
     const intent = { ...structuredClone(input), canonicalWorktree };

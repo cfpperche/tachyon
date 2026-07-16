@@ -511,6 +511,39 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     } finally { await fake.cleanup(); ws.dispose(); }
   });
 
+  it("verify_task stops and releases the exact live tail without kill quarantine", async () => {
+    const root = mkdir(); const base = path.join(root, ".tachyon-worktrees");
+    fs.writeFileSync(path.join(root, "tachyon.yml"), `settings:\n${namedBehaviorVerifyYaml()}  worktree:\n    base: ${JSON.stringify(base)}\nagents:\n  boss:\n    cmd: sh\n`, "utf8");
+    git(root, ["init"]); git(root, ["config", "user.email", "test@example.com"]); git(root, ["config", "user.name", "Test User"]);
+    fs.writeFileSync(path.join(root, "README.md"), "base\n"); git(root, ["add", "README.md"]); git(root, ["commit", "-m", "base"]);
+    const host = new FakeHost(mkdir()); const fake = fakeTmux({ realPaneProcesses: true });
+    const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux: fake.tmux, startBridge: false });
+    try {
+      await ws.manager.spawn("implementer", { cmd: "claude", delegator: "boss", contract: {
+        task: "implement", context: "verification owns the stop", constraints: "scoped", doneWhen: "complete",
+      }, gate: { behaviorTest: "cmd:node scripts/check-behavior.mjs", owns: ["src"] }, reveal: false });
+      const initial = (await ws.deliveries.list())[0]!;
+      const canonical = fs.realpathSync(ws.ledger.get("implementer")!.worktree!.path);
+      const head = git(canonical, ["rev-parse", "HEAD"]);
+      const tree = git(canonical, ["rev-parse", "HEAD^{tree}"]);
+      const result = await ws.deliveryVerification.run(initial.id, { kind: "agent", name: "boss" }, async () => ({
+        publish: async () => ({ result: "accepted", evidence: {
+          refSha: head, treeSha: tree, verdict: "accept", integrityHash: "integration-proof", recordPath: "record.json",
+        } }),
+      }));
+      expect(result).toBe("accepted");
+      expect(fake.sessions.has(ws.manager.session("implementer"))).toBe(false);
+      const completed = await ws.deliveries.get(initial.id);
+      expect(completed?.lease.state).toBe("free");
+      expect(completed?.segments[0]).toMatchObject({ releasedHeadSha: head, outcome: "completed" });
+      expect(completed?.events.map((event) => event.type)).toContain("verification_tail_released");
+      expect(completed?.events.at(-1)?.type).toBe("verification_completed");
+      await expect(ws.manager.spawn("reviewer", { cmd: "claude", reveal: false, deliveryJoin: {
+        deliveryId: initial.id, role: "reviewer", ownsSubset: [], expectedHead: head, operationId: "post-verification-review",
+      } })).resolves.toBeUndefined();
+    } finally { await fake.cleanup(); ws.dispose(); }
+  });
+
   it("kill quarantines a cleanly ended predecessor before a successor can join", async () => {
     const root = mkdir(); const base = path.join(root, ".tachyon-worktrees");
     fs.writeFileSync(path.join(root, "tachyon.yml"), `settings:\n${namedBehaviorVerifyYaml()}  worktree:\n    base: ${JSON.stringify(base)}\nagents:\n  boss:\n    cmd: sh\n`, "utf8");

@@ -1115,6 +1115,7 @@ export class Workspace {
         const state = (await this.manager.agentStates()).get(name);
         return !!state && !state.dead;
       },
+      establishTailAbsence: (input) => this.deliveryLease.establishVerificationTailAbsence(input),
     });
 
     // spec 230 — the pipeline executor. Constructed before the Bridge so its `completeNode` dep can

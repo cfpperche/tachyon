@@ -66,10 +66,16 @@ async function fixture(options: { segments?: DelegationSegment[]; lease?: Delive
   return { root, worktree, base, delivered, store, gitDeliveries, projection, deliveryId };
 }
 
-function service(f: Awaited<ReturnType<typeof fixture>>, options: { epoch?: string; running?: (name: string) => boolean } = {}) {
+function service(f: Awaited<ReturnType<typeof fixture>>, options: {
+  epoch?: string;
+  running?: (name: string) => boolean;
+  establishTailAbsence?: (input: { deliveryId: string; canonicalWorktree: string; holder: NonNullable<DeliveryLease["holder"]> }) => Promise<"proven_empty" | "root_gone_best_effort">;
+  withPathLock?: <T>(worktreePath: string, fn: () => Promise<T>) => Promise<T>;
+} = {}) {
   return new DeliveryVerificationLeaseService({ store: f.store, gitDeliveries: f.gitDeliveries,
-    ownerEpoch: options.epoch ?? "epoch-current", withPathLock: async (_path, fn) => fn(),
+    ownerEpoch: options.epoch ?? "epoch-current", withPathLock: options.withPathLock ?? (async (_path, fn) => fn()),
     isAgentRunning: async (name) => options.running?.(name) ?? false,
+    ...(options.establishTailAbsence ? { establishTailAbsence: options.establishTailAbsence } : {}),
     nonce: () => "verify-nonce", operationId: () => "verify-operation", now: () => "2026-07-11T01:00:00.000Z",
     eventId: (() => { let n = 0; return () => `verify-event-${++n}`; })() });
 }
@@ -130,6 +136,53 @@ describe("DeliveryVerificationLeaseService (SDD 368 T9)", () => {
     expect(repaired.events.map((event) => event.type)).toEqual([
       "projection.intent", "canonical_spawn_principal_repaired", "verification_started", "verification_completed",
     ]);
+  });
+
+  it("owns the exact live-tail stop outside the path lock and releases the segment before execution", async () => {
+    const f = await fixture({ canonicalSpawnPrincipalOmission: true });
+    let lockDepth = 0;
+    const observed: Array<{ deliveryId: string; canonicalWorktree: string; executionAgent: string }> = [];
+    const result = await service(f, {
+      running: () => true,
+      withPathLock: async (_path, fn) => { lockDepth += 1; try { return await fn(); } finally { lockDepth -= 1; } },
+      establishTailAbsence: async (input) => {
+        expect(lockDepth).toBe(0);
+        observed.push({ deliveryId: input.deliveryId, canonicalWorktree: input.canonicalWorktree,
+          executionAgent: input.holder.executionAgent });
+        return "root_gone_best_effort";
+      },
+    }).run(f.deliveryId, actor, async (context) => {
+      expect(context.delivery.lease).toMatchObject({ state: "verifying", verification: { priorLease: { state: "free" } } });
+      expect(context.delivery.lease.holder).toBeUndefined();
+      expect(context.delivery.segments.at(-1)).toMatchObject({ releasedHeadSha: f.delivered, outcome: "completed" });
+      return { publish: async () => ({ result: "accepted", evidence: { refSha: f.delivered, treeSha: "tree",
+        verdict: "accept", integrityHash: "hash", recordPath: "record" } }) };
+    });
+    expect(result).toBe("accepted");
+    expect(observed).toEqual([{ deliveryId: f.deliveryId, canonicalWorktree: fs.realpathSync(f.worktree), executionAgent: "tail" }]);
+    const completed = (await f.store.get(f.deliveryId))!;
+    expect(completed.lease.state).toBe("free");
+    expect(completed.events.map((event) => event.type)).toEqual([
+      "projection.intent", "canonical_spawn_principal_repaired", "verification_started", "verification_tail_released", "verification_completed",
+    ]);
+  });
+
+  it("quarantines the intact held boundary when the exact verification stop fails", async () => {
+    const f = await fixture({ canonicalSpawnPrincipalOmission: true });
+    let executed = false;
+    await expect(service(f, {
+      running: () => true,
+      establishTailAbsence: async () => { throw new Error("exact stop refused"); },
+    }).run(f.deliveryId, actor, async () => {
+      executed = true;
+      throw new Error("must not execute");
+    })).rejects.toMatchObject({ code: "DELIVERY_QUARANTINED", retryable: false });
+    expect(executed).toBe(false);
+    const quarantined = (await f.store.get(f.deliveryId))!;
+    expect(quarantined.lease).toMatchObject({ state: "quarantined", holder: { executionAgent: "tail", executionNonce: "execution" } });
+    expect(quarantined.segments.at(-1)?.releasedAt).toBeUndefined();
+    expect(quarantined.events.at(-1)).toMatchObject({ type: "verification_quarantined",
+      detail: { reason: expect.stringContaining("exact stop refused"), priorLeaseState: "held" } });
   });
 
   it("does not infer a missing holder principal without the canonical-spawn attestation", async () => {

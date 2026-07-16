@@ -8,7 +8,7 @@ import type { GitDeliveryStore } from "../git-delivery/store.js";
 import type { GitDelivery } from "../git-delivery/types.js";
 import { DeliveryLeaseError } from "./leaseService.js";
 import { DeliveryStore, DeliveryStoreBusyError, DeliveryVersionConflictError } from "./store.js";
-import type { Delivery, DeliveryActor, DeliveryLease, DeliveryVerificationIntent } from "./types.js";
+import type { Delivery, DeliveryActor, DeliveryLease, DeliveryLeaseHolder, DeliveryVerificationIntent } from "./types.js";
 import { resolveOperationalSegment } from "./verificationSubject.js";
 
 const execFileP = promisify(execFile);
@@ -39,6 +39,11 @@ export interface DeliveryVerificationLeaseServiceDeps {
   ownerEpoch: string;
   withPathLock<T>(worktreePath: string, fn: () => Promise<T>): Promise<T>;
   isAgentRunning(agent: string): Promise<boolean>;
+  establishTailAbsence?(input: {
+    deliveryId: string;
+    canonicalWorktree: string;
+    holder: DeliveryLeaseHolder;
+  }): Promise<"proven_empty" | "root_gone_best_effort">;
   now?: () => string;
   nonce?: () => string;
   operationId?: () => string;
@@ -57,7 +62,7 @@ export class DeliveryVerificationLeaseService {
     const initial = await this.requireDelivery(deliveryId);
     const projection = await this.requireProjection(initial);
     const lockPath = this.realpath(projection.worktreePath);
-    return this.deps.withPathLock(lockPath, async () => {
+    const setup = await this.deps.withPathLock(lockPath, async () => {
       let current = await this.requireDelivery(deliveryId);
       let linked = await this.requireProjection(current);
       try {
@@ -102,7 +107,12 @@ export class DeliveryVerificationLeaseService {
         || current.lease.holder.principal !== tail.principal)) {
         throw this.occupied(current, "current lease holder does not exactly match the tail segment");
       }
-      if (await this.deps.isAgentRunning(tail.executionAgent)) {
+      if (current.lease.state === "held" && (!current.lease.holder?.process || !current.lease.holder.executionNonce)) {
+        throw new DeliveryLeaseError("DELIVERY_PROCESS_IDENTITY_MISSING", false,
+          "held verification tail lacks exact process identity or execution nonce", { deliveryId: current.id });
+      }
+      const controlledHeldStop = current.lease.state === "held" && !!this.deps.establishTailAbsence;
+      if (!controlledHeldStop && await this.deps.isAgentRunning(tail.executionAgent)) {
         throw this.occupied(current, `tail execution '${tail.executionAgent}' is still live`, {
           next: { action: "kill_agent", name: tail.executionAgent, then: "retry verify_task with the same delivery_id" },
         });
@@ -146,6 +156,137 @@ export class DeliveryVerificationLeaseService {
         if (error instanceof DeliveryVersionConflictError) throw this.occupied(current, "another contender won the verification CAS");
         if (error instanceof DeliveryStoreBusyError) throw this.busy(error);
         throw error;
+      }
+
+      return {
+        current,
+        linked,
+        tail: structuredClone(tail),
+        intent,
+        deliveredHeadSha,
+        holderToRelease: controlledHeldStop ? structuredClone(priorLease.holder!) : undefined,
+      };
+    });
+
+    let { current, linked, intent } = setup;
+    const { tail, deliveredHeadSha, holderToRelease } = setup;
+
+    if (holderToRelease) {
+      try {
+        await this.deps.establishTailAbsence!({
+          deliveryId,
+          canonicalWorktree: lockPath,
+          holder: structuredClone(holderToRelease),
+        });
+      } catch (error) {
+        const refusal = new DeliveryLeaseError("DELIVERY_QUARANTINED", false, "verification could not stop the exact tail safely", {
+          deliveryId,
+          error: this.message(error),
+        });
+        try {
+          await this.deps.withPathLock(lockPath, async () => {
+            await this.persistQuarantine(current, intent, `verification could not stop the exact tail: ${this.message(error)}`, lockPath);
+          });
+        } catch (quarantineError) {
+          throw new AggregateError([error, quarantineError], "verification tail stop failed and quarantine persistence is uncertain");
+        }
+        throw refusal;
+      }
+
+      try {
+        await this.deps.withPathLock(lockPath, async () => {
+          current = await this.requireDelivery(deliveryId);
+          linked = await this.requireProjection(current);
+          this.assertProjection(current, linked, lockPath);
+          this.assertIntent(current, intent);
+          if (!isDeepStrictEqual(current.lease.holder, holderToRelease)) {
+            throw this.occupied(current, "verification holder changed after exact tail stop");
+          }
+          const first = await this.inspect(lockPath);
+          const second = await this.inspect(lockPath);
+          if (!first.clean || !second.clean || first.branch !== current.contract.taskRef || second.branch !== current.contract.taskRef
+            || first.head !== deliveredHeadSha || second.head !== deliveredHeadSha) {
+            throw new DeliveryLeaseError("DELIVERY_INVALID_STATE", false, "canonical worktree changed while the verification tail stopped", {
+              deliveryId,
+              first,
+              second,
+              deliveredHeadSha,
+            });
+          }
+          const releasedAt = this.now();
+          const releasedPriorLease: DeliveryVerificationIntent["priorLease"] = { state: "free", changedAt: releasedAt };
+          const releasedIntent: DeliveryVerificationIntent = { ...structuredClone(intent), priorLease: releasedPriorLease };
+          current = await this.deps.store.update(current.id, current.version, (record) => {
+            this.assertIntent(record, intent);
+            if (!isDeepStrictEqual(record.lease.holder, holderToRelease)) {
+              throw this.occupied(record, "verification holder changed before tail release");
+            }
+            const openTail = record.segments.at(-1);
+            if (!openTail || openTail.id !== tail.id || openTail.releasedAt) {
+              throw this.occupied(record, "verification tail changed before release");
+            }
+            openTail.releasedAt = releasedAt;
+            openTail.releasedHeadSha = deliveredHeadSha;
+            openTail.outcome = "completed";
+            record.lease = {
+              state: "verifying",
+              changedAt: releasedAt,
+              verification: structuredClone(releasedIntent),
+            };
+            record.events.push({
+              id: this.eventId(),
+              at: releasedAt,
+              type: "verification_tail_released",
+              by: { kind: "system" },
+              detail: {
+                operationId: intent.operationId,
+                subjectSegmentId: tail.id,
+                deliveredHeadSha,
+                evidence: "exact_root_gone",
+              },
+            });
+            return record;
+          });
+          intent = releasedIntent;
+        });
+      } catch (error) {
+        const refusal = new DeliveryLeaseError("DELIVERY_QUARANTINED", false, "verification tail release could not be persisted safely", {
+          deliveryId,
+          error: this.message(error),
+        });
+        try {
+          await this.deps.withPathLock(lockPath, async () => {
+            const latest = await this.requireDelivery(deliveryId);
+            const persistedIntent = latest.lease.state === "verifying" && latest.lease.verification?.nonce === intent.nonce
+              ? latest.lease.verification
+              : intent;
+            await this.persistQuarantine(latest, persistedIntent, `verification tail release could not be persisted: ${this.message(error)}`, lockPath);
+          });
+        } catch (quarantineError) {
+          throw new AggregateError([error, quarantineError], "verification tail release failed and quarantine persistence is uncertain");
+        }
+        throw refusal;
+      }
+    }
+
+    return this.deps.withPathLock(lockPath, async () => {
+      current = await this.requireDelivery(deliveryId);
+      linked = await this.requireProjection(current);
+      this.assertProjection(current, linked, lockPath);
+      this.assertIntent(current, intent);
+      const ready = await this.inspect(lockPath);
+      if (!ready.clean || ready.branch !== current.contract.taskRef || ready.head !== deliveredHeadSha) {
+        const refusal = new DeliveryLeaseError("DELIVERY_QUARANTINED", false, "canonical worktree changed before verification execution", {
+          deliveryId,
+          ready,
+          deliveredHeadSha,
+        });
+        try {
+          await this.persistQuarantine(current, intent, "canonical worktree changed before verification execution", lockPath);
+        } catch (quarantineError) {
+          throw new AggregateError([refusal, quarantineError], "verification precondition failed and quarantine persistence is uncertain");
+        }
+        throw refusal;
       }
 
       const runAtSha = async <R>(sha: string, fn: () => Promise<R>): Promise<R> => {
