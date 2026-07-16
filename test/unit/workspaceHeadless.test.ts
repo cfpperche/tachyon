@@ -1510,9 +1510,12 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     expect(__createdTerminals).toHaveLength(1);
     expect(__createdTerminals[0].options).toMatchObject({
       name: "Agent A",
-      shellArgs: ["-u", "-L", "tachyon", "attach-session", "-d", "-t", `=${session}`],
       isTransient: true,
     });
+    expect(__createdTerminals[0].options.shellArgs?.[0]).toBe("-u");
+    expect(__createdTerminals[0].options.shellArgs?.[1]).toBe("-S");
+    expect(__createdTerminals[0].options.shellArgs?.[2]).toMatch(/\/tmux-\d+\/tachyon$/);
+    expect(__createdTerminals[0].options.shellArgs?.slice(3)).toEqual(["attach-session", "-d", "-t", `=${session}`]);
     ws.dispose();
   });
 
