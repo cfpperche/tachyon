@@ -474,11 +474,12 @@ help() {
   cat <<'EOF'
 Usage: npm run dogfood:dev-host -- <command>
 
-Preferred human path (F5 from monorepo):
+Preferred human path (F5 from monorepo window):
   point / point-status / point-clear / fixture-new
+  (from a linked worktree, point/status/clear auto-redirect to primary monorepo)
 
 Commands:
-  point        Arm stable F5 "Tachyon: Dev Host" (worktree + fixture)
+  point        Arm stable F5 "Tachyon: Dev Host" (pointer under monorepo .tachyon/dev-host)
   point-status Doctor-style F5 pointer status (exit 1 if broken)
   point-clear  Clear the F5 pointer
   fixture-new  Scaffold test/fixtures/<slug>-dogfood (--intent focus|metrics)

@@ -46,7 +46,6 @@ describe("cockpit model", () => {
             { id: "d2", phase: "pruned", branchRef: "br2" },
           ],
           approvals: [{ id: "a1", status: "pending" }],
-          schedules: [{ name: "nightly" }],
           tmux: { state: "healthy", version: "3.4" },
         },
       ],

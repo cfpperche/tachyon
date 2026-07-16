@@ -13,6 +13,7 @@ import { openServerInspector, SERVER_INSPECTOR_VIEW_TYPE, type ServerInspectorPa
 import {
   openCockpit,
   refreshCockpitMissionBoard,
+  refreshCockpitApprovals,
   COCKPIT_VIEW_TYPE,
   type CockpitPanelState,
   type CockpitDeps,
@@ -1220,20 +1221,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             kind: a.kind,
             running: !!a.running,
             declared: a.declared,
+            folder: ws.folderName,
+            wsHash: ws.wsHash,
           }));
           agentCounts = { total: items.length, running: items.filter((a) => a.running).length };
         } catch {
           /* projection unavailable */
-        }
-
-        let schedules: CockpitWorkspaceBundle["schedules"] = [];
-        try {
-          const sched = (ws.client.presentation as { schedules?: { items?: Array<{ name: string; paused?: boolean }> } }).schedules;
-          if (sched?.items) {
-            schedules = sched.items.map((x) => ({ name: x.name, paused: x.paused }));
-          }
-        } catch {
-          /* optional */
         }
 
         let tmux: { state: string; version?: string } | undefined;
@@ -1260,10 +1253,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             notes: [],
           },
           agents: agentRows,
-          worktrees: readManagedWorktreesFromDisk(ws.workspaceRoot),
-          deliveries: readGitDeliveriesFromDisk(ws.workspaceRoot),
+          worktrees: readManagedWorktreesFromDisk(ws.workspaceRoot, { folder: ws.folderName, wsHash: ws.wsHash }),
+          deliveries: readGitDeliveriesFromDisk(ws.workspaceRoot, { folder: ws.folderName, wsHash: ws.wsHash }),
           approvals: [], // pending list is owned by Approvals panel; deep-link for resolve
-          schedules,
           tmux,
         });
       }
@@ -1283,23 +1275,80 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       },
       onTasksChanged,
     },
-    openServerInspector: () => {
-      void openServerInspector(makeServerInspectorDeps());
+    approvals: {
+      getWorkspaces: () =>
+        workspaces().map((ws) => ({
+          workspaceRoot: ws.workspaceRoot,
+          wsHash: ws.wsHash,
+          folderName: ws.folderName,
+        })),
+      resolve: async (wsHash, id, decision) => {
+        const ws = byHash(wsHash);
+        if (!ws) throw new Error(`workspace ${wsHash} is not attached`);
+        await extensionInvoke(ws, { action: "approval.resolve", id, decision });
+        notify(`approval request ${id} ${decision}`);
+        refreshAll();
+        refreshCockpitApprovals();
+      },
     },
-    openPlugins: () => {
-      void vscode.commands.executeCommand("tachyon.openPlugins");
+    runtimeOps: {
+      buildSnapshot: () => runtimeOpsFleetView(workspaces().map((ws) => ws.runtimeOps)),
+      configureProviderObservation: async (provider, enabled) => {
+        await Promise.all(
+          workspaces().map((ws) =>
+            extensionInvoke(ws, {
+              action: "runtime-ops.provider.configure",
+              provider,
+              enabled,
+            }),
+          ),
+        );
+        runtimeOps.refresh();
+      },
     },
+    inspector: (() => {
+      const insp = makeServerInspectorDeps();
+      return {
+        snapshot: insp.snapshot,
+        folderByHash: insp.folderByHash,
+        cpuBusy: insp.cpuBusy,
+        serverHealth: insp.serverHealth,
+        capture: insp.capture,
+        open: insp.open,
+        kill: insp.kill,
+        reapDead: insp.reapDead,
+        reapOrphans: insp.reapOrphans,
+      };
+    })(),
+    plugins: pluginsPanels,
     openSettings: () => {
       void vscode.commands.executeCommand("tachyon.openSettings");
     },
-    openApprovals: () => {
-      void vscode.commands.executeCommand("tachyon.openApprovals");
-    },
-    openRuntimeOps: () => {
-      void openRuntimeOps();
-    },
     openDoctor: () => {
       void vscode.commands.executeCommand("tachyon.doctor");
+    },
+    fleetStart: async (name, wsHash) => {
+      await vscode.commands.executeCommand("tachyon.spawnAgentItem", { agentName: name, workspaceHash: wsHash });
+    },
+    fleetStop: async (name, wsHash) => {
+      await vscode.commands.executeCommand("tachyon.stopAgentItem", { agentName: name, workspaceHash: wsHash });
+    },
+    fleetTerminal: async (name, wsHash) => {
+      await vscode.commands.executeCommand("tachyon.openAgentTerminalItem", name, wsHash);
+    },
+    fleetActivity: (name, wsHash) => {
+      void vscode.commands.executeCommand("tachyon.openAgentActivity", name, wsHash);
+    },
+    revealPath: (fsPath) => {
+      void vscode.commands.executeCommand("revealFileInOS", vscode.Uri.file(fsPath));
+    },
+    openConfigFile: async (wsHash) => {
+      const ws = wsHash ? byHash(wsHash) : workspaces()[0];
+      if (!ws) throw new Error("no Tachyon workspace attached");
+      const cfg = CONFIG_FILENAMES.map((name) => path.join(ws.workspaceRoot, name)).find((file) => fs.existsSync(file));
+      if (!cfg) throw new Error(`no tachyon config found under ${ws.workspaceRoot}`);
+      const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(cfg));
+      await vscode.window.showTextDocument(doc, { preview: false });
     },
   });
 
@@ -1740,9 +1789,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         await extensionInvoke(ws, { action: "approval.resolve", id: arg.id, decision: arg.decision });
         notify(`approval request ${arg.id} ${arg.decision}`);
         refreshAll();
+        refreshCockpitApprovals();
       } catch (err) {
         notify(err instanceof Error ? err.message : String(err), "error");
         approvalPanels.refreshAll();
+        refreshCockpitApprovals();
       }
     }),
     // ---- onboarding (F24) ----

@@ -32,6 +32,72 @@ export function defaultRepoRoot(fromFile = fileURLToPath(import.meta.url)) {
   return path.resolve(path.dirname(fromFile), "../..");
 }
 
+/**
+ * F5 "Tachyon: Dev Host" always reads `${workspaceFolder}/.tachyon/dev-host` from the
+ * **VS Code monorepo window** (primary checkout). When `point`/`point-status`/`point-clear`
+ * are invoked from a linked git worktree checkout (`.git` is a file), the pointer must land
+ * under the primary worktree — not under the feature worktree's own `.tachyon/dev-host`.
+ *
+ * Pure for tests: pass `readGitCommonDir(checkout) => absolute .git path`.
+ *
+ * @returns {{ hostRepo: string, scriptRepo: string, redirected: boolean, warning?: string }}
+ */
+export function resolveF5HostRepoRoot(fromCheckout, { readGitCommonDir } = {}) {
+  const scriptRepo = path.resolve(fromCheckout);
+  const gitPath = path.join(scriptRepo, ".git");
+  let isLinkedWorktree = false;
+  try {
+    isLinkedWorktree = fs.existsSync(gitPath) && fs.statSync(gitPath).isFile();
+  } catch {
+    return { hostRepo: scriptRepo, scriptRepo, redirected: false };
+  }
+  if (!isLinkedWorktree) {
+    return { hostRepo: scriptRepo, scriptRepo, redirected: false };
+  }
+
+  const readCommon =
+    readGitCommonDir ??
+    ((checkout) =>
+      execFileSync("git", ["-C", checkout, "rev-parse", "--path-format=absolute", "--git-common-dir"], {
+        encoding: "utf8",
+      }).trim());
+
+  let common;
+  try {
+    common = String(readCommon(scriptRepo) || "").trim();
+  } catch (err) {
+    return {
+      hostRepo: scriptRepo,
+      scriptRepo,
+      redirected: false,
+      warning: `linked worktree but git-common-dir failed (${err instanceof Error ? err.message : String(err)}); pointer stays under this checkout`,
+    };
+  }
+  if (!common) {
+    return {
+      hostRepo: scriptRepo,
+      scriptRepo,
+      redirected: false,
+      warning: "linked worktree but empty git-common-dir; pointer stays under this checkout",
+    };
+  }
+
+  // git-common-dir is <primary>/.git — primary checkout is its parent.
+  const hostRepo = path.resolve(path.dirname(common));
+  if (hostRepo === scriptRepo) {
+    return { hostRepo: scriptRepo, scriptRepo, redirected: false };
+  }
+  if (!fs.existsSync(path.join(hostRepo, "package.json"))) {
+    return {
+      hostRepo: scriptRepo,
+      scriptRepo,
+      redirected: false,
+      warning: `linked worktree primary ${hostRepo} has no package.json; pointer stays under this checkout`,
+    };
+  }
+  return { hostRepo, scriptRepo, redirected: true };
+}
+
 export function devHostDir(repoRoot) {
   return path.join(repoRoot, ".tachyon", DIR_NAME);
 }
@@ -740,7 +806,14 @@ export function parseArgs(argv) {
 export function main(argv = process.argv.slice(2)) {
   const args = parseArgs(argv);
   const sub = args._[0] ?? "help";
-  const repoRoot = args.repo ? path.resolve(args.repo) : defaultRepoRoot();
+  // Explicit --repo wins (tests / overrides). Otherwise, if this checkout is a linked
+  // git worktree, redirect the F5 pointer host to the primary monorepo checkout.
+  const scriptRoot = args.repo ? path.resolve(args.repo) : defaultRepoRoot();
+  const host =
+    args.repo != null
+      ? { hostRepo: scriptRoot, scriptRepo: scriptRoot, redirected: false }
+      : resolveF5HostRepoRoot(scriptRoot);
+  const repoRoot = host.hostRepo;
 
   if (sub === "help" || sub === "-h" || sub === "--help") {
     console.log(`Usage:
@@ -751,11 +824,21 @@ export function main(argv = process.argv.slice(2)) {
   npm run dogfood:dev-host -- point-clear
 
 Stable F5 config name: "Tachyon: Dev Host"
-Pointer dir: <repo>/.tachyon/dev-host/
+Pointer dir: <monorepo>/.tachyon/dev-host/  (F5 host = primary checkout, not a linked worktree)
+Linked worktree: point/status/clear auto-redirect to the primary monorepo so F5 finds the pointer.
 On point: mirrors fixture into .tachyon/dev-host/workspace (real dir; .tachyon copied) and portable launch.json.
 --fixture resolves test/fixtures/<slug> or <slug>-dogfood under worktree, then monorepo.
 `);
     return 0;
+  }
+
+  if (host.warning) {
+    console.error(`${SELF}: warning: ${host.warning}`);
+  }
+  if (host.redirected && (sub === "point" || sub === "status" || sub === "clear")) {
+    console.log(`${SELF}: F5 host is primary monorepo ${repoRoot}`);
+    console.log(`  (command ran from linked worktree ${host.scriptRepo})`);
+    console.log(`  pointer path: ${path.join(repoRoot, ".tachyon", DIR_NAME)}`);
   }
 
   if (sub === "point") {
@@ -783,6 +866,7 @@ On point: mirrors fixture into .tachyon/dev-host/workspace (real dir; .tachyon c
       owner: args.owner,
     });
     console.log(`${SELF}: armed`);
+    console.log(`  f5-host:   ${repoRoot}`);
     console.log(`  worktree:  ${meta.worktree}`);
     console.log(`  workspace: ${meta.workspace}`);
     console.log(`  sha:       ${meta.sha}`);
@@ -790,10 +874,10 @@ On point: mirrors fixture into .tachyon/dev-host/workspace (real dir; .tachyon c
     if (meta.slug) console.log(`  slug:      ${meta.slug}`);
     console.log("");
     console.log("  launch.json: portable ${workspaceFolder} Dev Host paths (WSL-safe)");
-    console.log("  workspace:   real mirror dir under .tachyon/dev-host/workspace");
+    console.log("  workspace:   real mirror dir under monorepo .tachyon/dev-host/workspace");
     console.log("  .tachyon:    real copy in mirror (not a symlink — Soul-safe)");
     console.log("");
-    console.log("Human next step:");
+    console.log("Human next step (from monorepo VS Code window):");
     for (const line of meta.howTo) console.log(`  • ${line}`);
     return 0;
   }
@@ -817,13 +901,14 @@ On point: mirrors fixture into .tachyon/dev-host/workspace (real dir; .tachyon c
     const st = status(repoRoot);
     printStatus(st);
     console.log("---");
-    console.log(JSON.stringify(st, null, 2));
+    console.log(JSON.stringify({ ...st, f5HostRepo: repoRoot, scriptRepo: host.scriptRepo, redirected: host.redirected }, null, 2));
     return st.armed ? 0 : 1;
   }
 
   if (sub === "clear") {
     const r = clear(repoRoot);
     console.log(`${SELF}: ${r.cleared ? "cleared" : r.reason}`);
+    if (host.redirected) console.log(`  (cleared monorepo pointer at ${repoRoot})`);
     return 0;
   }
 

@@ -12,6 +12,10 @@ policy and must not be imposed on projects that consume Tachyon.
   reused or prepared worktrees may already have dependencies.
 - Do not assume built `dist/` artifacts exist. Use the verification commands declared by this
   repository; the full verification path builds the artifacts it needs.
+- Dev Host F5 (`Tachyon: Dev Host`) always reads the **monorepo window** pointer at
+  `${workspaceFolder}/.tachyon/dev-host`. `npm run dogfood:dev-host -- point|point-status|point-clear`
+  auto-redirects to the primary checkout when invoked from a linked git worktree; still pass
+  `--worktree` for the feature checkout and verify with `point-status` before asking the human to F5.
 
 ## Git scope
 

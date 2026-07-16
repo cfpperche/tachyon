@@ -1,0 +1,18 @@
+# Dogfood fixture (control-embed-dogfood) — intent: focus (stopped OK; project task/brief/goal)
+# Spec: control-monolith-embed. Agents start STOPPED; focus still projects without a live process.
+settings:
+  maxAgents: 8
+
+agents:
+  grok:
+    cmd: grok
+    autostart: false
+    attention: true
+  solo:
+    cmd: grok
+    autostart: false
+    attention: true
+  idle:
+    cmd: grok
+    autostart: false
+    attention: false

@@ -26,7 +26,6 @@ export type CockpitSectionId =
   | "runtime"
   | "tmux"
   | "plugins"
-  | "schedules"
   | "settings";
 
 export const COCKPIT_SECTION_ORDER: CockpitSectionId[] = [
@@ -40,7 +39,6 @@ export const COCKPIT_SECTION_ORDER: CockpitSectionId[] = [
   "runtime",
   "tmux",
   "plugins",
-  "schedules",
   "settings",
 ];
 
@@ -50,6 +48,9 @@ export interface CockpitAgentRow {
   running: boolean;
   declared?: boolean;
   attention?: string;
+  /** Present when collected from a live workspace shell (for Control actions). */
+  folder?: string;
+  wsHash?: string;
 }
 
 export interface CockpitWorktreeRow {
@@ -60,6 +61,8 @@ export interface CockpitWorktreeRow {
   status: string;
   slug?: string;
   agent?: string;
+  folder?: string;
+  wsHash?: string;
 }
 
 export interface CockpitDeliveryRow {
@@ -68,6 +71,8 @@ export interface CockpitDeliveryRow {
   branchRef: string;
   agent?: string;
   worktreePath?: string;
+  folder?: string;
+  wsHash?: string;
 }
 
 export interface CockpitApprovalRow {
@@ -76,18 +81,12 @@ export interface CockpitApprovalRow {
   title?: string;
 }
 
-export interface CockpitScheduleRow {
-  name: string;
-  paused?: boolean;
-}
-
 export interface CockpitWorkspaceBundle {
   control: ControlInspectorWorkspaceInput;
   agents: CockpitAgentRow[];
   worktrees: CockpitWorktreeRow[];
   deliveries: CockpitDeliveryRow[];
   approvals: CockpitApprovalRow[];
-  schedules: CockpitScheduleRow[];
   tmux?: { state: string; version?: string };
 }
 
@@ -110,7 +109,6 @@ export interface CockpitModel {
   worktrees: CockpitWorktreeRow[];
   deliveries: CockpitDeliveryRow[];
   approvals: CockpitApprovalRow[];
-  schedules: CockpitScheduleRow[];
   tmux: Array<{ folder: string; state: string; version?: string }>;
 }
 
@@ -130,7 +128,6 @@ export function buildCockpitModel(
   const worktrees = bundles.flatMap((b) => b.worktrees);
   const deliveries = bundles.flatMap((b) => b.deliveries);
   const approvals = bundles.flatMap((b) => b.approvals);
-  const schedules = bundles.flatMap((b) => b.schedules);
   const tmux = bundles.map((b) => ({
     folder: b.control.folderName,
     state: b.tmux?.state ?? "unknown",
@@ -165,7 +162,6 @@ export function buildCockpitModel(
     worktrees,
     deliveries,
     approvals,
-    schedules,
     tmux,
   };
 }

@@ -84,7 +84,7 @@ describe("preview route table", () => {
     expect(msgs.map((m) => m.type)).toEqual(["init", "model"]);
   });
 
-  it("declares the cockpit route (Control shell + embedded Mission CSS) with init + model", () => {
+  it("declares the cockpit route (Control monolith embeds + CSS) with init + model", () => {
     const r = ROUTES.cockpit;
     expect(r.bundle).toBe("/dist/webview/cockpit.js");
     expect(r.cssLinks).toEqual([
@@ -93,14 +93,40 @@ describe("preview route table", () => {
       "/dist/webview/vscode-theme.css",
       "/dist/webview/mission-control.tailwind.css",
       "/dist/webview/mission-control.css",
+      "/dist/webview/plugins.tailwind.css",
+      "/dist/webview/plugins.css",
+      "/dist/webview/approval.css",
+      "/dist/webview/runtime-ops.css",
+      "/dist/webview/inspector.css",
       "/dist/webview/cockpit.css",
     ]);
-    expect(Object.keys(r.fixtures).sort()).toEqual(["default", "empty", "engine", "fleet", "mission"]);
+    expect(Object.keys(r.fixtures).sort()).toEqual([
+      "approvals",
+      "default",
+      "deliveries",
+      "empty",
+      "engine",
+      "fleet",
+      "mission",
+      "plugins",
+      "runtime",
+      "settings",
+      "tmux",
+      "worktrees",
+    ]);
     const msgs = r.makeMessage(r.fixtures.default.vm) as Array<{ type: string; model?: { section?: string } }>;
     expect(msgs.map((m) => m.type)).toEqual(["init", "model"]);
     expect(msgs[1]?.model?.section).toBe("overview");
     const missionMsgs = r.makeMessage(r.fixtures.mission.vm) as Array<{ type: string }>;
     expect(missionMsgs.map((m) => m.type)).toEqual(["init", "model", "snapshot"]);
+    const approvalMsgs = r.makeMessage(r.fixtures.approvals.vm) as Array<{ type: string }>;
+    expect(approvalMsgs.map((m) => m.type)).toEqual(["init", "model", "approvals"]);
+    const runtimeMsgs = r.makeMessage(r.fixtures.runtime.vm) as Array<{ type: string }>;
+    expect(runtimeMsgs.map((m) => m.type)).toEqual(["init", "model", "runtimeOpsSnapshot"]);
+    const tmuxMsgs = r.makeMessage(r.fixtures.tmux.vm) as Array<{ type: string }>;
+    expect(tmuxMsgs.map((m) => m.type)).toEqual(["init", "model", "inspectorInit", "inspectorModel"]);
+    const pluginsMsgs = r.makeMessage(r.fixtures.plugins.vm) as Array<{ type: string }>;
+    expect(pluginsMsgs.map((m) => m.type)).toEqual(["init", "model", "plugins"]);
   });
 
   it("declares the handoff route (spec 280) with its envelope + default/cold/stale fixtures", () => {

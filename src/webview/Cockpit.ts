@@ -17,12 +17,34 @@ import {
   type CockpitStrings,
 } from "./cockpit/messages.js";
 import type { WorkspaceMissionControlTarget } from "../shell/MissionControlTarget.js";
+import type { WorkspacePresentationTarget } from "../shell/WorkspacePresentation.js";
 import {
   snapshotMessage,
   taskErrorMessage,
   type MissionControlAction,
   type MissionControlVM,
 } from "./mission-control/messages.js";
+import {
+  approvalsMessage,
+  approvalErrorMessage,
+  type ApprovalAction,
+} from "./approval/messages.js";
+import { buildApprovalViewModel } from "./approval/viewModel.js";
+import type { ApprovalDecision } from "../bridge/approvalRequest.js";
+import {
+  runtimeOpsSnapshotMessage,
+  runtimeOpsSnapshotUnavailableMessage,
+  isRuntimeOpsSetProviderObservationAction,
+} from "./runtime-ops/messages.js";
+import type { RuntimeOpsSnapshot, RuntimeOpsProviderV2 } from "../runtimeOps/types.js";
+import {
+  type InspectorStrings,
+  type InspectorAction,
+} from "./inspector/messages.js";
+import { buildInspectorModel, type InspectorModel, type TmuxServerSnapshot } from "../inspector/model.js";
+import type { PaneSnapshot } from "../tmux/TmuxService.js";
+import { showNotification } from "../workspace/NotificationService.js";
+import type { PluginsPanelManager } from "./PluginsPanel.js";
 
 export const COCKPIT_VIEW_TYPE = "tachyonCockpit";
 
@@ -37,25 +59,55 @@ export interface CockpitMissionBoard {
   getWorkspaces: () => WorkspaceMissionControlTarget[];
   openTaskDetail: (ws: WorkspaceMissionControlTarget, id: string) => void;
   openTaskStudio: (ws: WorkspaceMissionControlTarget, id?: string) => void;
-  /** Fan-out after board mutations (sidebar + detail + studio + any legacy MC panels). */
   onTasksChanged: () => void;
 }
 
+export interface CockpitApprovals {
+  getWorkspaces: () => WorkspacePresentationTarget[];
+  resolve: (wsHash: string, id: string, decision: ApprovalDecision) => Promise<void>;
+}
+
+export interface CockpitRuntimeOps {
+  buildSnapshot: () => RuntimeOpsSnapshot | Promise<RuntimeOpsSnapshot>;
+  configureProviderObservation?: (provider: RuntimeOpsProviderV2, enabled: boolean) => void | Promise<void>;
+}
+
+export interface CockpitInspector {
+  snapshot: () => Promise<PaneSnapshot[]>;
+  folderByHash: () => Map<string, string>;
+  cpuBusy: (rows: PaneSnapshot[]) => Map<string, boolean>;
+  serverHealth: () => Promise<TmuxServerSnapshot>;
+  capture: (session: string) => Promise<string>;
+  open: (session: string) => void;
+  kill: (session: string) => Promise<void>;
+  reapDead: () => Promise<number>;
+  reapOrphans: () => Promise<number>;
+}
+
 /**
- * Tachyon Control — editor-area visual hub (project sysadmin + embedded modules).
- * Top tabs only (no webview left rail). Does not replace VS Code/Tachyon sidebar.
- * POC: Mission tab hosts the full Mission Control board (same Preact App + engine path).
+ * Control — editor visual hub.
+ * Embedded product surfaces: Mission, Approvals, Plugins, Runtime Ops, tmux Inspector,
+ * plus rich native Fleet / Worktrees / Deliveries / Settings modules.
+ * NOT embedded: Task Detail/Studio, Pins, form studios (Agent/Terminal/Command/Runbook/Schedule).
+ * Schedules stay in the sidebar (not a Control tab).
  */
 export interface CockpitDeps {
   extensionUri: vscode.Uri;
   collect: () => Promise<CockpitWorkspaceBundle[]>;
   missionBoard: CockpitMissionBoard;
-  openServerInspector: () => void;
-  openPlugins: () => void;
+  approvals: CockpitApprovals;
+  runtimeOps: CockpitRuntimeOps;
+  inspector: CockpitInspector;
+  plugins: PluginsPanelManager;
   openSettings: () => void;
-  openApprovals: () => void;
-  openRuntimeOps: () => void;
   openDoctor: () => void;
+  /** Fleet lifecycle + surface openers (wsHash optional for single-root). */
+  fleetStart: (name: string, wsHash?: string) => Promise<void>;
+  fleetStop: (name: string, wsHash?: string) => Promise<void>;
+  fleetTerminal: (name: string, wsHash?: string) => Promise<void>;
+  fleetActivity: (name: string, wsHash?: string) => void;
+  revealPath: (fsPath: string) => void;
+  openConfigFile: (wsHash?: string) => Promise<void>;
 }
 
 function strings(): CockpitStrings {
@@ -73,7 +125,6 @@ function strings(): CockpitStrings {
     navRuntime: t("Runtime"),
     navTmux: t("tmux"),
     navPlugins: t("Plugins"),
-    navSchedules: t("Schedules"),
     navSettings: t("Settings"),
     refresh: t("Refresh"),
     auto: t("Auto-refresh"),
@@ -91,25 +142,23 @@ function strings(): CockpitStrings {
     overviewHint: t("Health snapshot and shortcuts across this workspace."),
     engineTitle: t("Engine / Bridge"),
     fleetTitle: t("Fleet"),
-    fleetHint: t("Agents from the live presentation."),
+    fleetHint: t("Managed agents — start, stop, terminal, activity."),
     approvalsTitle: t("Approvals"),
-    approvalsHint: t("Human gates that block the fleet. Open Approvals to resolve."),
+    approvalsHint: t("Human gates that block the fleet (embedded)."),
     missionTitle: t("Mission Control"),
-    missionHint: t("Full work board (embedded). Same board as before — opened via Control."),
+    missionHint: t("Full work board (embedded)."),
     worktreesTitle: t("Managed worktrees"),
-    worktreesHint: t("Tachyon-managed checkouts registered for this workspace."),
+    worktreesHint: t("Tachyon-managed checkouts — reveal and copy paths."),
     deliveriesTitle: t("Deliveries"),
-    deliveriesHint: t("Local GitDelivery records."),
+    deliveriesHint: t("Local GitDelivery records — phase, branch, worktree."),
     runtimeTitle: t("Runtime Ops"),
-    runtimeHint: t("Usage and rate limits. Open Runtime Ops for full detail."),
+    runtimeHint: t("Usage and rate limits (embedded)."),
     tmuxTitle: t("tmux"),
-    tmuxHint: t("Socket health. Open the tmux Inspector for sessions and reap."),
+    tmuxHint: t("Server inspector (embedded)."),
     pluginsTitle: t("Plugins"),
-    pluginsHint: t("Open Plugins to install or update."),
-    schedulesTitle: t("Schedules"),
-    schedulesHint: t("Declared schedules for this workspace."),
+    pluginsHint: t("Install, update, and integrity (embedded)."),
     settingsTitle: t("Settings"),
-    settingsHint: t("Open Tachyon settings."),
+    settingsHint: t("Tachyon settings and workspace config."),
     workspaces: t("Workspaces"),
     engines: t("Engines"),
     agents: t("Agents"),
@@ -144,20 +193,92 @@ function strings(): CockpitStrings {
     phase: t("Phase"),
     path: t("Path"),
     name: t("Name"),
+    start: t("Start"),
+    stop: t("Stop"),
+    openTerminal: t("Terminal"),
+    openActivity: t("Activity"),
+    reveal: t("Reveal"),
+    copyPath: t("Copy path"),
+    copyId: t("Copy id"),
+    openConfig: t("Open tachyon.yml"),
+    settingsBody: t(
+      "Tachyon product settings live in the VS Code Settings UI. Workspace agents and schedules are declared in tachyon.yml at the workspace root.",
+    ),
+    settingsOpenTachyon: t("Open Tachyon settings"),
+    settingsOpenConfig: t("Open tachyon.yml"),
+    settingsDoctor: t("Run Doctor"),
+    declared: t("declared"),
+    adhoc: t("ad-hoc"),
+    agent: t("agent"),
+    change: t("change"),
+  };
+}
+
+function inspectorStrings(): InspectorStrings {
+  const t = vscode.l10n.t;
+  return {
+    title: t("tmux Server Inspector"),
+    subtitle: t("Live view of the dedicated tachyon socket — every session Tachyon owns."),
+    refresh: t("Refresh"),
+    auto: t("Auto-refresh"),
+    empty: t("No Tachyon sessions on the socket. Start an agent, command, or runbook to populate the server."),
+    summary: t("{0} sessions · {1} live", "{0}", "{1}"),
+    foreignNote: t("not an open workspace — orphaned or owned by another window"),
+    pid: t("pid"),
+    live: t("live"),
+    dead: t("exited"),
+    exit: t("exit {0}", "{0}"),
+    busy: t("busy"),
+    idle: t("idle"),
+    open: t("Open"),
+    capture: t("Capture"),
+    kill: t("Kill"),
+    reapDead: t("Kill {0} dead", "{0}"),
+    reapOrphans: t("Reap {0} orphaned", "{0}"),
+    killConfirm: t("Kill session {0}? This stops the process and removes the pane.", "{0}"),
+    kindSession: t("Agents & terminals"),
+    kindCommand: t("Commands"),
+    kindRunbook: t("Runbook steps"),
+    kindAnchor: t("Engine internals"),
+    kindUnknown: t("Other"),
+    captureEmpty: t("(no output)"),
+    ageSeconds: t("{0}s", "{0}"),
+    ageMinutes: t("{0}m", "{0}"),
+    ageHours: t("{0}h", "{0}"),
+    ageDays: t("{0}d", "{0}"),
+    overview: t("Overview"), server: t("Server"), all: t("All"), search: t("Search sessions, commands, or labels"),
+    workspace: t("Workspace"), status: t("Status"), kind: t("Kind"), cpu: t("CPU"), details: t("Details"),
+    fullName: t("Full session name"), hash: t("Workspace hash"), command: t("Current command"), startCommand: t("Start command"), uptime: t("Uptime"),
+    total: t("Total"), orphaned: t("Orphaned"), socket: t("Socket"), path: t("Path"), health: t("Health"), version: t("tmux version"),
+    serverPids: t("Server PIDs"), diagnostics: t("Process diagnostics"), noDiagnostics: t("No process diagnostics available."),
+    refreshCapture: t("Refresh capture"), close: t("Close"), bulkActions: t("Bulk actions"),
   };
 }
 
 let panel: vscode.WebviewPanel | undefined;
 let currentSection: CockpitSectionId = "overview";
 let missionWsHash: string | undefined;
-/** Active mission board push — called from onTasksChanged fan-out. */
+let approvalWsHash: string | undefined;
 let pushMissionBoard: (() => void) | undefined;
+let pushApprovals: (() => void) | undefined;
 let wiredPanel: vscode.WebviewPanel | undefined;
 
-/** Refresh embedded Mission board after task mutations (safe no-op if Control closed / not on Mission). */
+/** Refresh embedded Mission board after task mutations. */
 export function refreshCockpitMissionBoard(): void {
   pushMissionBoard?.();
 }
+
+/** Refresh embedded Approvals after resolve/fan-out. */
+export function refreshCockpitApprovals(): void {
+  pushApprovals?.();
+}
+
+const PLUGIN_ACTION_TYPES = new Set([
+  "checkUpdates", "checkPluginUpdate", "install", "update", "reinstall", "remove",
+  "reselect", "repair", "rehydrate", "confirm", "cancel", "openConfig", "openDocs", "installExternal",
+]);
+
+const INSPECTOR_ACTION_TYPES = new Set(["open", "kill", "capture", "reapDead", "reapOrphans"]);
 
 async function buildMissionVm(
   ws: WorkspaceMissionControlTarget,
@@ -198,13 +319,41 @@ function resolveMissionWs(board: CockpitMissionBoard, prefer?: string): Workspac
   return all[0];
 }
 
+function resolveApprovalWs(appr: CockpitApprovals, prefer?: string): WorkspacePresentationTarget | undefined {
+  const all = appr.getWorkspaces();
+  if (all.length === 0) return undefined;
+  if (prefer) {
+    const hit = all.find((w) => w.wsHash === prefer);
+    if (hit) return hit;
+  }
+  if (approvalWsHash) {
+    const hit = all.find((w) => w.wsHash === approvalWsHash);
+    if (hit) return hit;
+  }
+  return all[0];
+}
+
+function sectionTitle(s: CockpitStrings, section: CockpitSectionId): string {
+  const map: Partial<Record<CockpitSectionId, string>> = {
+    mission: s.navMission,
+    approvals: s.navApprovals,
+    plugins: s.navPlugins,
+    runtime: s.navRuntime,
+    tmux: s.navTmux,
+    engine: s.navEngine,
+  };
+  return map[section] ? `${s.title} — ${map[section]}` : s.title;
+}
+
 export async function openCockpit(
   deps: CockpitDeps,
-  opts?: { section?: CockpitSectionId; revivedPanel?: vscode.WebviewPanel; missionWsHash?: string },
+  opts?: { section?: CockpitSectionId; revivedPanel?: vscode.WebviewPanel; missionWsHash?: string; approvalWsHash?: string },
 ): Promise<void> {
   const s = strings();
+  const inspS = inspectorStrings();
   if (opts?.section) currentSection = opts.section;
   if (opts?.missionWsHash) missionWsHash = opts.missionWsHash;
+  if (opts?.approvalWsHash) approvalWsHash = opts.approvalWsHash;
 
   const creating = !panel || !!opts?.revivedPanel;
   if (panel && !opts?.revivedPanel) {
@@ -226,7 +375,9 @@ export async function openCockpit(
       if (panel) {
         panel = undefined;
         pushMissionBoard = undefined;
+        pushApprovals = undefined;
         wiredPanel = undefined;
+        deps.plugins.unbindControlEmbed();
       }
     });
   }
@@ -252,7 +403,6 @@ export async function openCockpit(
             worktrees: [],
             deliveries: [],
             approvals: [],
-            schedules: [],
           },
         ],
         { section: currentSection },
@@ -260,13 +410,12 @@ export async function openCockpit(
     }
     if (panel === live) {
       live.webview.postMessage(modelMessage(model));
-      live.title = currentSection === "mission" ? `${s.title} — ${s.navMission}` : s.title;
+      live.title = sectionTitle(s, currentSection);
     }
   };
 
   const sendMission = async () => {
-    if (panel !== live) return;
-    if (currentSection !== "mission") return;
+    if (panel !== live || currentSection !== "mission") return;
     const all = deps.missionBoard.getWorkspaces();
     const ws = resolveMissionWs(deps.missionBoard);
     if (!ws) {
@@ -284,9 +433,71 @@ export async function openCockpit(
     }
   };
 
-  pushMissionBoard = () => {
-    void sendMission();
+  const sendApprovals = async () => {
+    if (panel !== live || currentSection !== "approvals") return;
+    const ws = resolveApprovalWs(deps.approvals);
+    if (!ws) {
+      live.webview.postMessage(approvalErrorMessage("No Tachyon workspace for Approvals."));
+      return;
+    }
+    approvalWsHash = ws.wsHash;
+    try {
+      const vm = buildApprovalViewModel({ workspaceRoot: ws.workspaceRoot, folder: ws.folderName, wsHash: ws.wsHash });
+      if (panel !== live || currentSection !== "approvals") return;
+      live.webview.postMessage(approvalsMessage(vm));
+    } catch (err) {
+      if (panel !== live) return;
+      live.webview.postMessage(approvalErrorMessage(err instanceof Error ? err.message : String(err)));
+    }
   };
+
+  const sendRuntime = async () => {
+    if (panel !== live || currentSection !== "runtime") return;
+    try {
+      const snap = await deps.runtimeOps.buildSnapshot();
+      if (panel !== live || currentSection !== "runtime") return;
+      live.webview.postMessage(runtimeOpsSnapshotMessage(snap));
+    } catch {
+      if (panel !== live) return;
+      live.webview.postMessage(runtimeOpsSnapshotUnavailableMessage());
+    }
+  };
+
+  const sendInspector = async () => {
+    if (panel !== live || currentSection !== "tmux") return;
+    let model: InspectorModel;
+    try {
+      const [snap, server] = await Promise.all([deps.inspector.snapshot(), deps.inspector.serverHealth()]);
+      const busy = deps.inspector.cpuBusy(snap);
+      model = buildInspectorModel(snap, deps.inspector.folderByHash(), busy, server);
+    } catch {
+      model = { groups: [], totalSessions: 0, liveSessions: 0, deadSessions: 0, orphanSessions: 0, busySessions: 0 };
+    }
+    if (panel !== live || currentSection !== "tmux") return;
+    // Namespaced to avoid colliding with Control's own `init`/`model` messages.
+    live.webview.postMessage({ type: "inspectorInit", strings: inspS });
+    live.webview.postMessage({ type: "inspectorModel", model });
+  };
+
+  const bindPluginsIfNeeded = () => {
+    if (currentSection === "plugins") {
+      deps.plugins.bindControlEmbed(live.webview, approvalWsHash ?? missionWsHash);
+    } else {
+      deps.plugins.unbindControlEmbed();
+    }
+  };
+
+  const sendSectionModule = async () => {
+    bindPluginsIfNeeded();
+    if (currentSection === "mission") await sendMission();
+    else if (currentSection === "approvals") await sendApprovals();
+    else if (currentSection === "runtime") await sendRuntime();
+    else if (currentSection === "tmux") await sendInspector();
+    else if (currentSection === "plugins") deps.plugins.refreshControlEmbed();
+  };
+
+  pushMissionBoard = () => { void sendMission(); };
+  pushApprovals = () => { void sendApprovals(); };
 
   const handleMissionAction = async (m: Partial<MissionControlAction>): Promise<boolean> => {
     if (!m?.type) return false;
@@ -349,29 +560,112 @@ export async function openCockpit(
     return false;
   };
 
-  // Wire message handler once per panel instance (avoid stacking on re-open).
+  const handleApprovalAction = async (m: Partial<ApprovalAction>): Promise<boolean> => {
+    if (!m?.type) return false;
+    if (m.type === "resolve" && typeof m.id === "string" && (m.decision === "approved" || m.decision === "denied")) {
+      const ws = resolveApprovalWs(deps.approvals);
+      if (!ws) return true;
+      try {
+        await deps.approvals.resolve(ws.wsHash, m.id, m.decision);
+        await sendApprovals();
+      } catch (err) {
+        live.webview.postMessage(approvalErrorMessage(err instanceof Error ? err.message : String(err), m.id));
+      }
+      return true;
+    }
+    return false;
+  };
+
+  const handleInspectorAction = async (m: Partial<InspectorAction>): Promise<boolean> => {
+    if (!m?.type || !INSPECTOR_ACTION_TYPES.has(m.type)) return false;
+    if (currentSection !== "tmux") return false;
+    switch (m.type) {
+      case "open":
+        if (m.session) deps.inspector.open(m.session);
+        return true;
+      case "reapDead":
+        await deps.inspector.reapDead();
+        await sendInspector();
+        return true;
+      case "reapOrphans":
+        await deps.inspector.reapOrphans();
+        await sendInspector();
+        return true;
+      case "capture": {
+        if (!m.session) return true;
+        let text = "";
+        try {
+          text = await deps.inspector.capture(m.session);
+        } catch {
+          text = "";
+        }
+        live.webview.postMessage({ type: "inspectorCapture", session: m.session, text });
+        return true;
+      }
+      case "kill": {
+        if (!m.session) return true;
+        const ok = await showNotification(
+          vscode.l10n.t("Kill session {0}? This stops the process and removes the pane.", m.session),
+          "warn",
+          [vscode.l10n.t("Kill")],
+          { modal: true },
+        );
+        if (ok) {
+          try {
+            await deps.inspector.kill(m.session);
+          } catch {
+            /* gone */
+          }
+          await sendInspector();
+        }
+        return true;
+      }
+      default:
+        return false;
+    }
+  };
+
   if (wiredPanel !== live) {
     wiredPanel = live;
-    live.webview.onDidReceiveMessage(async (msg: CockpitAction | Partial<MissionControlAction>) => {
-      if (panel !== live || !msg || typeof msg !== "object" || !("type" in msg)) return;
+    live.webview.onDidReceiveMessage(async (msg: Record<string, unknown>) => {
+      if (panel !== live || !msg || typeof msg !== "object" || typeof msg.type !== "string") return;
+      const type = msg.type;
 
       if (await handleMissionAction(msg as Partial<MissionControlAction>)) return;
+      if (await handleApprovalAction(msg as Partial<ApprovalAction>)) return;
+      if (await handleInspectorAction(msg as Partial<InspectorAction>)) return;
 
-      const c = msg as CockpitAction;
+      if (isRuntimeOpsSetProviderObservationAction(msg)) {
+        try {
+          await deps.runtimeOps.configureProviderObservation?.(msg.provider, msg.enabled);
+        } catch {
+          /* next snapshot wins */
+        }
+        await sendRuntime();
+        return;
+      }
+
+      // Plugin product actions only (install/update/…). Never steal cockpit `ready`/`refresh` —
+      // those must always run the Control shell init/model + sendSectionModule path (which binds the embed).
+      if (PLUGIN_ACTION_TYPES.has(type) && currentSection === "plugins") {
+        if (deps.plugins.handleControlEmbedMessage(msg as never)) return;
+      }
+
+      const c = msg as unknown as CockpitAction;
       switch (c.type) {
         case READY:
           live.webview.postMessage(initMessage(s));
           await sendModel();
-          if (currentSection === "mission") await sendMission();
+          await sendSectionModule();
           return;
         case "refresh":
           await sendModel();
-          if (currentSection === "mission") await sendMission();
+          await sendSectionModule();
           return;
         case "setSection":
           currentSection = c.section;
           await sendModel();
-          if (currentSection === "mission") await sendMission();
+          await sendSectionModule();
           return;
         case "copyDiagnostics": {
           try {
@@ -385,28 +679,85 @@ export async function openCockpit(
           return;
         }
         case "openServerInspector":
-          deps.openServerInspector();
+          currentSection = "tmux";
+          await sendModel();
+          await sendSectionModule();
           return;
         case "openMissionControl":
-          // Monolith: Mission is a Control tab, not a separate panel.
           currentSection = "mission";
           await sendModel();
-          await sendMission();
+          await sendSectionModule();
           return;
         case "openPlugins":
-          deps.openPlugins();
+          currentSection = "plugins";
+          await sendModel();
+          await sendSectionModule();
           return;
         case "openSettings":
           deps.openSettings();
           return;
         case "openApprovals":
-          deps.openApprovals();
+          currentSection = "approvals";
+          await sendModel();
+          await sendSectionModule();
           return;
         case "openRuntimeOps":
-          deps.openRuntimeOps();
+          currentSection = "runtime";
+          await sendModel();
+          await sendSectionModule();
           return;
         case "openDoctor":
           deps.openDoctor();
+          return;
+        case "fleetStart":
+          if (typeof c.name === "string") {
+            try {
+              await deps.fleetStart(c.name, typeof c.wsHash === "string" ? c.wsHash : undefined);
+              await sendModel();
+            } catch (err) {
+              live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err)));
+            }
+          }
+          return;
+        case "fleetStop":
+          if (typeof c.name === "string") {
+            try {
+              await deps.fleetStop(c.name, typeof c.wsHash === "string" ? c.wsHash : undefined);
+              await sendModel();
+            } catch (err) {
+              live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err)));
+            }
+          }
+          return;
+        case "fleetTerminal":
+          if (typeof c.name === "string") {
+            try {
+              await deps.fleetTerminal(c.name, typeof c.wsHash === "string" ? c.wsHash : undefined);
+            } catch (err) {
+              live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err)));
+            }
+          }
+          return;
+        case "fleetActivity":
+          if (typeof c.name === "string") {
+            deps.fleetActivity(c.name, typeof c.wsHash === "string" ? c.wsHash : undefined);
+          }
+          return;
+        case "revealPath":
+          if (typeof c.path === "string" && c.path) deps.revealPath(c.path);
+          return;
+        case "copyText":
+          if (typeof c.text === "string") {
+            await vscode.env.clipboard.writeText(c.text);
+            live.webview.postMessage(toastMessage(s.copied));
+          }
+          return;
+        case "openConfigFile":
+          try {
+            await deps.openConfigFile(typeof c.wsHash === "string" ? c.wsHash : undefined);
+          } catch (err) {
+            live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err)));
+          }
           return;
       }
     });
@@ -417,13 +768,17 @@ export async function openCockpit(
     live.webview.html = renderWebviewShell({
       cspSource: live.webview.cspSource,
       title: s.title,
-      // Board CSS + kit tailwind so embedded Mission Control looks/behaves as the standalone panel.
       styles: [
         uri("codicon.css"),
         uri("design-system.css"),
         uri("vscode-theme.css"),
         uri("mission-control.tailwind.css"),
         uri("mission-control.css"),
+        uri("plugins.tailwind.css"),
+        uri("plugins.css"),
+        uri("approval.css"),
+        uri("runtime-ops.css"),
+        uri("inspector.css"),
         uri("cockpit.css"),
       ],
       bundle: uri("cockpit.js"),
@@ -436,6 +791,6 @@ export async function openCockpit(
     });
   } else {
     await sendModel();
-    if (currentSection === "mission") await sendMission();
+    await sendSectionModule();
   }
 }

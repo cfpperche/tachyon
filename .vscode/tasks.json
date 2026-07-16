@@ -12,7 +12,7 @@
     {
       "label": "tachyon: build-dev-host",
       "type": "shell",
-      "command": "set -euo pipefail; PTR=\"${workspaceFolder}/.tachyon/dev-host\"; test -e \"$PTR/extension\" || { echo \"Tachyon Dev Host is not armed. Run: npm run dogfood:dev-host -- point --worktree <path> --workspace <fixture>\" >&2; exit 1; }; EXT=\"$(cd \"$PTR/extension\" && pwd -P)\"; test -d \"$EXT/node_modules\" || ln -sfn \"${workspaceFolder}/node_modules\" \"$EXT/node_modules\"; npm run build --prefix \"$EXT\"",
+      "command": "set -euo pipefail; PTR=\"${workspaceFolder}/.tachyon/dev-host\"; if [ ! -e \"$PTR/extension\" ]; then echo \"Tachyon Dev Host is not armed under this window:\" >&2; echo \"  missing: ${workspaceFolder}/.tachyon/dev-host/extension\" >&2; echo \"F5 always uses the monorepo window's .tachyon/dev-host (not a feature worktree).\" >&2; echo \"Arm from monorepo or any linked worktree (point auto-redirects to primary):\" >&2; echo \"  npm run dogfood:dev-host -- point --worktree <feature-wt> --fixture <slug>\" >&2; echo \"  npm run dogfood:dev-host -- point-status\" >&2; exit 1; fi; EXT=\"$(cd \"$PTR/extension\" && pwd -P)\"; test -d \"$EXT/node_modules\" || ln -sfn \"${workspaceFolder}/node_modules\" \"$EXT/node_modules\"; npm run build --prefix \"$EXT\"",
       "options": {
         "cwd": "${workspaceFolder}"
       },

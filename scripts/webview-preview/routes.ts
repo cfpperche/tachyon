@@ -129,7 +129,7 @@ export const ROUTES: Record<string, Route> = {
       controlInspectorModelMessage(vm as never),
     ],
   },
-  // POC — Tachyon Control shell; Mission tab embeds Mission Control board (visual monolith).
+  // Control visual monolith — Mission + Approvals + Plugins + Runtime Ops + tmux Inspector embeds.
   cockpit: {
     bundle: "/dist/webview/cockpit.js",
     cssLinks: [
@@ -138,6 +138,11 @@ export const ROUTES: Record<string, Route> = {
       "/dist/webview/vscode-theme.css",
       "/dist/webview/mission-control.tailwind.css",
       "/dist/webview/mission-control.css",
+      "/dist/webview/plugins.tailwind.css",
+      "/dist/webview/plugins.css",
+      "/dist/webview/approval.css",
+      "/dist/webview/runtime-ops.css",
+      "/dist/webview/inspector.css",
       "/dist/webview/cockpit.css",
     ],
     frame: { w: 1100, h: 720 },
@@ -145,10 +150,31 @@ export const ROUTES: Record<string, Route> = {
     makeMessage: (vm) => {
       const model = vm as { section?: string };
       const msgs: unknown[] = [cockpitInitMessage(cockpitStrings), cockpitModelMessage(vm as never)];
-      // When previewing the Mission tab, also push a real board snapshot (same envelope as host).
+      // Push the same host envelopes the live Control panel uses for embedded tabs.
       if (model.section === "mission") {
         const board = missionControlFixtures.default?.vm;
         if (board) msgs.push({ type: "snapshot", vm: board });
+      } else if (model.section === "approvals") {
+        const approval = approvalFixtures.pending?.vm;
+        if (approval) msgs.push(approvalsMessage(approval));
+      } else if (model.section === "runtime") {
+        const runtime = runtimeOpsFixtures.default?.vm as RuntimeOpsPreviewState | undefined;
+        if (runtime) {
+          msgs.push(
+            runtime.state === "loading"
+              ? runtimeOpsLoadingMessage()
+              : runtimeOpsSnapshotMessage(runtime.snapshot),
+          );
+        }
+      } else if (model.section === "tmux") {
+        const insp = inspectorFixtures.default?.vm;
+        if (insp) {
+          msgs.push({ type: "inspectorInit", strings: inspectorStrings });
+          msgs.push({ type: "inspectorModel", model: insp });
+        }
+      } else if (model.section === "plugins") {
+        const plugins = pluginsFixtures.default?.vm;
+        if (plugins) msgs.push(pluginsMessage(plugins));
       }
       return msgs;
     },

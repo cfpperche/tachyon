@@ -2,19 +2,53 @@
  * Tachyon Control — match SIDEBAR typography (spec 252 design-system + sidebar density).
  * Sidebar inherits body { font-family: var(--tachyon-font-mono) } from design-system.css.
  * Control uses the same mono stack + dense sizes (11/12px labels, 16px title, tabular values).
+ *
+ * IMPORTANT: this webview also loads product CSS for embedded surfaces (mission-control,
+ * approval, inspector, plugins, runtime-ops). Those files intentionally style html/body/#root/main
+ * for *standalone* panels. Without a hard shell reset here, those globals break Control
+ * (centered max-width column, flex body, collapsed height) on every tab.
+ * cockpit.css is linked LAST — these rules must win.
  */
+
+html,
+body {
+  height: 100% !important;
+  width: 100% !important;
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  display: block !important;
+}
+
+#root {
+  height: 100% !important;
+  min-height: 0 !important;
+  width: 100% !important;
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+}
 
 .ck-root {
   display: flex;
   flex-direction: column;
-  height: 100vh;
-  min-height: 480px;
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  width: 100%;
+  max-width: none;
   /* same as design-system body / sidebar */
   font-family: var(--tachyon-font-mono);
   font-size: var(--ds-body, 13px);
   font-weight: var(--tachyon-weight-regular, 400);
   color: var(--ds-fg, var(--vscode-foreground));
   background: var(--vscode-editor-background);
+  box-sizing: border-box;
 }
 
 /* ---- top chrome: one row — tabs + actions (no title bar) ---- */
@@ -27,20 +61,9 @@
 
 .ck-chrome {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 4px 8px;
   min-width: 0;
-}
-
-.ck-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  align-items: center;
-  flex: none;
-  margin-left: auto;
-  padding: 2px 0;
+  width: 100%;
 }
 
 .ck-auto {
@@ -54,25 +77,35 @@
   user-select: none;
 }
 
-/* Dense action buttons on the chrome row */
-.ck-actions button {
+/* Overview-only shell actions (not on the tab strip). */
+.ck-overview-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+.ck-overview-actions button {
   font-size: 11px;
   padding: 2px 8px;
   min-height: 22px;
   gap: 4px;
 }
 
-.ck-actions button .codicon {
+.ck-overview-actions button .codicon {
   font-size: 13px;
 }
 
-/* Tabs — same visual language as sidebar .tabs / .tab */
+/* Tabs — full-width nav strip (no competing action cluster). */
 .ck-tabs {
   display: flex;
   flex-wrap: wrap;
-  gap: 1px;
+  gap: 0 1px;
   min-width: 0;
   flex: 1 1 auto;
+  row-gap: 0;
 }
 
 .ck-tabs button {
@@ -81,7 +114,7 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 6px 8px 7px;
+  padding: 6px 7px 7px;
   cursor: pointer;
   font-family: inherit;
   font-size: 11px;
@@ -89,6 +122,7 @@
   color: var(--ds-muted);
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
+  white-space: nowrap;
 }
 
 .ck-tabs button .codicon {
@@ -126,35 +160,89 @@
 }
 
 /* ---- content ---- */
+/* Element is <main class="ck-main"> — must beat standalone approval/inspector `main` rules. */
+main.ck-main,
 .ck-main {
-  flex: 1;
+  flex: 1 1 auto;
   overflow: auto;
-  padding: 12px 12px 24px;
+  padding: 12px 16px 20px;
   min-width: 0;
+  min-height: 0;
+  width: 100% !important;
+  max-width: none !important;
+  margin: 0 !important;
+  box-sizing: border-box !important;
   font-family: inherit;
+  align-self: stretch;
 }
 
-/* Mission tab — full-bleed board (same visual as standalone Mission Control). */
+/* Embedded product surfaces (Mission / Approvals / Runtime / tmux / Plugins) — full-bleed hosts. */
+main.ck-main.ck-main--embed,
+main.ck-main.ck-main--mission,
+.ck-main.ck-main--embed,
 .ck-main.ck-main--mission {
-  padding: 0;
+  padding: 0 !important;
   overflow: hidden;
   display: flex;
   flex-direction: column;
   min-height: 0;
 }
 
+.ck-embed-host,
 .ck-mission-host {
-  flex: 1;
+  flex: 1 1 auto;
   min-height: 0;
+  min-width: 0;
+  width: 100%;
   display: flex;
   flex-direction: column;
-  height: 100%;
+  overflow: auto;
+  box-sizing: border-box;
 }
 
 .ck-mission-host .mc-root {
-  flex: 1;
+  flex: 1 1 auto;
   min-height: 0;
   height: 100%;
+  width: 100%;
+}
+
+/*
+ * Nested standalone product roots: fill the embed host edge-to-edge.
+ * Their standalone sheets center/constrain `main` / `.ds-wrap` for a lone panel —
+ * inside Control that produces a skinny centered column in a sea of empty chrome.
+ */
+.ck-embed-host > main,
+.ck-embed-host > .runtime-ops,
+.ck-embed-host > .mc-root,
+.ck-embed-host > .ck-plugins-root {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  width: 100% !important;
+  max-width: none !important;
+  margin: 0 !important;
+  box-sizing: border-box !important;
+}
+
+.ck-embed-host > main {
+  /* Approvals standalone used 20px + max-width 980; keep padding, drop the column. */
+  padding: 12px 16px 16px !important;
+  overflow: auto;
+}
+
+.ck-embed-host .ds-wrap {
+  max-width: none !important;
+  margin: 0 !important;
+  padding-left: 12px;
+  padding-right: 12px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Inspector standalone pads `body`; under embed, pad the host content instead. */
+.ck-embed-host[data-testid="control-tmux-inspector"] {
+  padding: 12px 16px 16px;
 }
 
 .ck-head {
@@ -406,8 +494,9 @@
 }
 
 .ck-empty {
-  padding: 20px 10px;
-  text-align: center;
+  /* Top-left empty state — not a hero centered in the viewport. */
+  padding: 12px 0;
+  text-align: left;
   font-size: 11px;
   color: var(--ds-muted);
 }
@@ -426,7 +515,9 @@
 }
 
 .ck-checked {
-  margin-top: 10px;
+  margin-top: 14px;
+  padding-top: 8px;
+  border-top: 1px solid var(--ds-border);
   font-size: 10px;
   color: var(--ds-muted);
 }
@@ -484,9 +575,99 @@
   background: var(--vscode-list-hoverBackground);
 }
 
-.ck-actions {
+/* Overview Jump / panel action rows (not the top chrome). */
+.ck-jump,
+.ck-panel .ck-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
   align-items: center;
+  margin-left: 0;
+}
+
+/* Fleet / Worktrees / Deliveries entity cards */
+.ck-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ck-entity-card {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  align-items: flex-start;
+  justify-content: space-between;
+  border: 1px solid var(--ds-border);
+  border-radius: 4px;
+  padding: 10px 12px;
+  background: color-mix(in srgb, var(--vscode-foreground) 3%, transparent);
+}
+
+.ck-entity-main {
+  min-width: 0;
+  flex: 1 1 220px;
+}
+
+.ck-entity-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin-bottom: 4px;
+}
+
+.ck-entity-title .name {
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--vscode-foreground);
+}
+
+.ck-entity-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: 11px;
+  color: var(--ds-muted);
+}
+
+.ck-entity-path {
+  margin-top: 4px;
+  font-size: 10px;
+  color: var(--ds-muted);
+  word-break: break-all;
+}
+
+.ck-entity-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.ck-entity-actions button {
+  font-size: 11px;
+  padding: 2px 8px;
+  min-height: 22px;
+}
+
+.ck-pill {
+  display: inline-flex;
+  padding: 0 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  line-height: 16px;
+  border: 1px solid var(--ds-border);
+  color: var(--vscode-foreground);
+}
+
+.ck-pill.muted {
+  color: var(--ds-muted);
+}
+
+.ck-mono {
+  font-variant-numeric: tabular-nums;
+  font-size: 10px;
+  word-break: break-all;
 }

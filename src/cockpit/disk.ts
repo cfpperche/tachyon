@@ -7,7 +7,10 @@ import path from "node:path";
 import type { CockpitDeliveryRow, CockpitWorktreeRow } from "./model.js";
 
 /** Best-effort read of managed worktree registry from a workspace root. */
-export function readManagedWorktreesFromDisk(workspaceRoot: string): CockpitWorktreeRow[] {
+export function readManagedWorktreesFromDisk(
+  workspaceRoot: string,
+  meta?: { folder?: string; wsHash?: string },
+): CockpitWorktreeRow[] {
   const file = path.join(workspaceRoot, ".tachyon", "managed-worktrees.json");
   try {
     if (!fs.existsSync(file)) return [];
@@ -21,6 +24,8 @@ export function readManagedWorktreesFromDisk(workspaceRoot: string): CockpitWork
       status: String(e.status ?? "active"),
       slug: e.slug != null ? String(e.slug) : undefined,
       agent: e.agent != null ? String(e.agent) : undefined,
+      ...(meta?.folder ? { folder: meta.folder } : {}),
+      ...(meta?.wsHash ? { wsHash: meta.wsHash } : {}),
     }));
   } catch {
     return [];
@@ -28,7 +33,10 @@ export function readManagedWorktreesFromDisk(workspaceRoot: string): CockpitWork
 }
 
 /** Best-effort list of git-delivery JSON files under .tachyon/git-deliveries if present. */
-export function readGitDeliveriesFromDisk(workspaceRoot: string): CockpitDeliveryRow[] {
+export function readGitDeliveriesFromDisk(
+  workspaceRoot: string,
+  meta?: { folder?: string; wsHash?: string },
+): CockpitDeliveryRow[] {
   const dir = path.join(workspaceRoot, ".tachyon", "git-deliveries");
   try {
     if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) return [];
@@ -48,6 +56,8 @@ export function readGitDeliveriesFromDisk(workspaceRoot: string): CockpitDeliver
               : rec.worktree_path != null
                 ? String(rec.worktree_path)
                 : undefined,
+          ...(meta?.folder ? { folder: meta.folder } : {}),
+          ...(meta?.wsHash ? { wsHash: meta.wsHash } : {}),
         });
       } catch {
         /* skip */

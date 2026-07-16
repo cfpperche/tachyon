@@ -17,7 +17,6 @@ export interface CockpitStrings {
   navRuntime: string;
   navTmux: string;
   navPlugins: string;
-  navSchedules: string;
   navSettings: string;
   refresh: string;
   auto: string;
@@ -50,8 +49,6 @@ export interface CockpitStrings {
   tmuxHint: string;
   pluginsTitle: string;
   pluginsHint: string;
-  schedulesTitle: string;
-  schedulesHint: string;
   settingsTitle: string;
   settingsHint: string;
   workspaces: string;
@@ -88,6 +85,22 @@ export interface CockpitStrings {
   phase: string;
   path: string;
   name: string;
+  start: string;
+  stop: string;
+  openTerminal: string;
+  openActivity: string;
+  reveal: string;
+  copyPath: string;
+  copyId: string;
+  openConfig: string;
+  settingsBody: string;
+  settingsOpenTachyon: string;
+  settingsOpenConfig: string;
+  settingsDoctor: string;
+  declared: string;
+  adhoc: string;
+  agent: string;
+  change: string;
 }
 
 export type CockpitAction =
@@ -101,7 +114,14 @@ export type CockpitAction =
   | { type: "openApprovals" }
   | { type: "openRuntimeOps" }
   | { type: "openDoctor" }
-  | { type: "setSection"; section: CockpitSectionId };
+  | { type: "setSection"; section: CockpitSectionId }
+  | { type: "fleetStart"; name: string; wsHash?: string }
+  | { type: "fleetStop"; name: string; wsHash?: string }
+  | { type: "fleetTerminal"; name: string; wsHash?: string }
+  | { type: "fleetActivity"; name: string; wsHash?: string }
+  | { type: "revealPath"; path: string }
+  | { type: "copyText"; text: string }
+  | { type: "openConfigFile"; wsHash?: string };
 
 export type CockpitHostMessage =
   | { type: typeof INIT; strings: CockpitStrings }
@@ -119,6 +139,32 @@ export const openApprovalsAction = (): CockpitAction => ({ type: "openApprovals"
 export const openRuntimeOpsAction = (): CockpitAction => ({ type: "openRuntimeOps" });
 export const openDoctorAction = (): CockpitAction => ({ type: "openDoctor" });
 export const setSectionAction = (section: CockpitSectionId): CockpitAction => ({ type: "setSection", section });
+export const fleetStartAction = (name: string, wsHash?: string): CockpitAction => ({
+  type: "fleetStart",
+  name,
+  ...(wsHash ? { wsHash } : {}),
+});
+export const fleetStopAction = (name: string, wsHash?: string): CockpitAction => ({
+  type: "fleetStop",
+  name,
+  ...(wsHash ? { wsHash } : {}),
+});
+export const fleetTerminalAction = (name: string, wsHash?: string): CockpitAction => ({
+  type: "fleetTerminal",
+  name,
+  ...(wsHash ? { wsHash } : {}),
+});
+export const fleetActivityAction = (name: string, wsHash?: string): CockpitAction => ({
+  type: "fleetActivity",
+  name,
+  ...(wsHash ? { wsHash } : {}),
+});
+export const revealPathAction = (path: string): CockpitAction => ({ type: "revealPath", path });
+export const copyTextAction = (text: string): CockpitAction => ({ type: "copyText", text });
+export const openConfigFileAction = (wsHash?: string): CockpitAction => ({
+  type: "openConfigFile",
+  ...(wsHash ? { wsHash } : {}),
+});
 
 export const initMessage = (strings: CockpitStrings): CockpitHostMessage => ({ type: INIT, strings });
 export const modelMessage = (model: CockpitModel): CockpitHostMessage => ({ type: MODEL, model });

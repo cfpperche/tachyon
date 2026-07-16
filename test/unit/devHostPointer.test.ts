@@ -4,7 +4,19 @@ import os from "node:os";
 import path from "node:path";
 // Owned ESM CLI; Vitest loads it directly while the repo typecheck target is CommonJS.
 // @ts-expect-error -- static ESM import is intentional for this executable module test (same as resolve-code.mjs).
-import { assertWorkspaceNotRepoRoot, clear, ensurePortableLaunchConfig, fixtureNew, materializeWorkspaceMirror, point, resolveFixturePath, status } from "../../scripts/dev-host/pointer.mjs";
+import * as pointerMod from "../../scripts/dev-host/pointer.mjs";
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- ESM CLI has no CJS .d.ts in the typecheck graph
+const {
+  assertWorkspaceNotRepoRoot,
+  clear,
+  ensurePortableLaunchConfig,
+  fixtureNew,
+  materializeWorkspaceMirror,
+  point,
+  resolveF5HostRepoRoot,
+  resolveFixturePath,
+  status,
+} = pointerMod as any;
 
 function writePkg(dir: string, name = "tachyon") {
   fs.mkdirSync(dir, { recursive: true });
@@ -38,6 +50,45 @@ describe("dev-host pointer", () => {
 
   it("refuses monorepo root as workspace", () => {
     expect(() => assertWorkspaceNotRepoRoot(repo, repo)).toThrow(/refusing workspace=repo root/);
+  });
+
+  it("resolveF5HostRepoRoot keeps a normal checkout as the F5 host", () => {
+    // Real dir .git (or absent) ⇒ not a linked worktree
+    fs.mkdirSync(path.join(repo, ".git"), { recursive: true });
+    const r = resolveF5HostRepoRoot(repo);
+    expect(r.hostRepo).toBe(path.resolve(repo));
+    expect(r.scriptRepo).toBe(path.resolve(repo));
+    expect(r.redirected).toBe(false);
+  });
+
+  it("resolveF5HostRepoRoot redirects linked worktree to primary monorepo", () => {
+    const primary = repo;
+    const linked = worktree;
+    // Linked worktree marker: .git is a file, not a directory
+    fs.writeFileSync(path.join(linked, ".git"), `gitdir: ${path.join(primary, ".git", "worktrees", "feature")}\n`);
+    fs.mkdirSync(path.join(primary, ".git"), { recursive: true });
+    const r = resolveF5HostRepoRoot(linked, {
+      readGitCommonDir: () => path.join(primary, ".git"),
+    });
+    expect(r.redirected).toBe(true);
+    expect(r.hostRepo).toBe(path.resolve(primary));
+    expect(r.scriptRepo).toBe(path.resolve(linked));
+  });
+
+  it("point from linked-worktree script root still arms monorepo when host is redirected", () => {
+    // Simulate agent cwd=worktree: F5 host must be monorepo (repo), extension → worktree
+    const meta = point({
+      repoRoot: repo, // after resolveF5HostRepoRoot
+      worktree,
+      workspace: fixture,
+      spec: "control-monolith-embed",
+      slug: "control-embed",
+    });
+    expect(fs.existsSync(path.join(repo, ".tachyon", "dev-host", "extension"))).toBe(true);
+    expect(fs.realpathSync(path.join(repo, ".tachyon", "dev-host", "extension"))).toBe(path.resolve(worktree));
+    expect(meta.worktree).toBe(path.resolve(worktree));
+    // Feature worktree must NOT be required to hold the F5 pointer
+    expect(fs.existsSync(path.join(worktree, ".tachyon", "dev-host", "meta.json"))).toBe(false);
   });
 
   it("points extension symlink + workspace mirror and writes meta", () => {
@@ -90,7 +141,7 @@ describe("dev-host pointer", () => {
     expect(st.armed).toBe(false);
     expect(st.broken).toBe(true);
     expect(st.worktreeExists).toBe(false);
-    expect(st.warnings?.some((w) => /worktree missing/i.test(w))).toBe(true);
+    expect(st.warnings?.some((w: string) => /worktree missing/i.test(w))).toBe(true);
   });
 
   it("resolveFixturePath finds slug and slug-dogfood under worktree", () => {

@@ -1,0 +1,11 @@
+{
+  "id": "t-fixture1",
+  "title": "Dogfood focus for control-embed-dogfood",
+  "status": "active",
+  "priority": 1,
+  "kind": "feature",
+  "author": "human",
+  "assignee": "grok",
+  "createdAt": "2026-07-16T23:03:29.784Z",
+  "updatedAt": "2026-07-16T23:03:29.784Z"
+}

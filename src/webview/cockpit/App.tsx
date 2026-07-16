@@ -9,6 +9,15 @@ import type { CockpitStrings } from "./messages";
 import { Button } from "../shared/ui";
 import { App as MissionControlApp, type MissionControlDispatch, type TaskErrorEvent } from "../mission-control/App";
 import type { MissionControlVM } from "../mission-control/messages";
+import { App as ApprovalsApp, type ApprovalDispatch } from "../approval/App";
+import type { ApprovalViewModel } from "../approval/viewModel";
+import { App as RuntimeOpsApp } from "../runtime-ops/App";
+import type { RuntimeOpsProviderV2, RuntimeOpsSnapshot } from "../../runtimeOps/types";
+import { App as InspectorApp, type InspectorAppProps } from "../inspector/App";
+import { App as PluginsApp, type PluginsDispatch } from "../plugins/App";
+import type { PluginsViewModel } from "../../plugins/viewModel";
+import type { ConsentVM } from "../../plugins/consentViewModel";
+import type { Toast as PluginsToast } from "../plugins/main";
 
 export interface CockpitAppProps {
   model: CockpitModel | undefined;
@@ -26,11 +35,36 @@ export interface CockpitAppProps {
   onOpenRuntimeOps: () => void;
   onOpenDoctor: () => void;
   onSetSection: (section: CockpitSectionId) => void;
+  onFleetStart: (name: string, wsHash?: string) => void;
+  onFleetStop: (name: string, wsHash?: string) => void;
+  onFleetTerminal: (name: string, wsHash?: string) => void;
+  onFleetActivity: (name: string, wsHash?: string) => void;
+  onRevealPath: (path: string) => void;
+  onCopyText: (text: string) => void;
+  onOpenConfigFile: (wsHash?: string) => void;
   /** Embedded Mission Control board (same Preact App as the standalone panel). */
   missionVm?: MissionControlVM;
   missionError?: TaskErrorEvent;
   missionDispatch: MissionControlDispatch;
+  /** Embedded product surfaces (not Task/Pin/form studios). */
+  approvalVm?: ApprovalViewModel;
+  approvalError?: string;
+  approvalDispatch: ApprovalDispatch;
+  runtimeSnapshot?: RuntimeOpsSnapshot;
+  onRuntimeSetProviderObservation: (provider: RuntimeOpsProviderV2, enabled: boolean) => void;
+  inspector: Pick<
+    InspectorAppProps,
+    "model" | "strings" | "captures" | "open" | "auto" | "onToggleAuto" | "onToggleCapture" | "onCloseCapture" | "onAction"
+  >;
+  pluginsVm?: PluginsViewModel;
+  pluginsConsent?: ConsentVM;
+  pluginsBusy?: string;
+  pluginsToast?: PluginsToast;
+  pluginsDispatch: PluginsDispatch;
 }
+
+/** Tabs that host a full product surface (no ModuleChrome table / deep-link stub). */
+const EMBED_SECTIONS = new Set<CockpitSectionId>(["mission", "approvals", "runtime", "tmux", "plugins"]);
 
 const TAB_META: Record<CockpitSectionId, { icon: string; navKey: keyof CockpitStrings }> = {
   overview: { icon: "dashboard", navKey: "navOverview" },
@@ -43,7 +77,6 @@ const TAB_META: Record<CockpitSectionId, { icon: string; navKey: keyof CockpitSt
   runtime: { icon: "graph", navKey: "navRuntime" },
   tmux: { icon: "terminal-tmux", navKey: "navTmux" },
   plugins: { icon: "extensions", navKey: "navPlugins" },
-  schedules: { icon: "calendar", navKey: "navSchedules" },
   settings: { icon: "settings-gear", navKey: "navSettings" },
 };
 
@@ -213,6 +246,19 @@ export function App(p: CockpitAppProps) {
             </h1>
             <p class="hint">{s.overviewHint}</p>
           </div>
+          {/* Shell actions live on Overview only — tabs stay a clean navigation strip. */}
+          <div class="ck-overview-actions">
+            <label class="ck-auto" title={s.auto}>
+              <input type="checkbox" checked={p.auto} onChange={(e) => p.onToggleAuto((e.target as HTMLInputElement).checked)} />
+              {s.auto}
+            </label>
+            <Button variant="default" onClick={p.onRefresh} title={s.refresh}>
+              <span class="codicon codicon-refresh" /> {s.refresh}
+            </Button>
+            <Button variant="default" onClick={p.onCopyDiagnostics} title={s.copyDiagnostics}>
+              <span class="codicon codicon-copy" /> {s.copyDiagnostics}
+            </Button>
+          </div>
         </div>
         <div class="ck-chips">
           <div class="ck-chip">
@@ -264,7 +310,7 @@ export function App(p: CockpitAppProps) {
         </div>
         <div class="ck-panel">
           <h2>Jump</h2>
-          <div class="ck-actions">
+          <div class="ck-jump">
             <Button variant="default" onClick={() => p.onSetSection("engine")}>
               {s.navEngine}
             </Button>
@@ -277,16 +323,16 @@ export function App(p: CockpitAppProps) {
             <Button variant="default" onClick={() => p.onSetSection("mission")}>
               {s.navMission}
             </Button>
-            <Button variant="default" onClick={p.onOpenRuntimeOps}>
+            <Button variant="default" onClick={() => p.onSetSection("runtime")}>
               {s.navRuntime}
             </Button>
-            <Button variant="default" onClick={p.onOpenPlugins}>
+            <Button variant="default" onClick={() => p.onSetSection("plugins")}>
               {s.navPlugins}
             </Button>
             <Button variant="default" onClick={p.onOpenSettings}>
               {s.navSettings}
             </Button>
-            <Button variant="default" onClick={p.onOpenServerInspector}>
+            <Button variant="default" onClick={() => p.onSetSection("tmux")}>
               {s.navTmux}
             </Button>
             <Button variant="default" onClick={p.onOpenDoctor}>
@@ -309,93 +355,185 @@ export function App(p: CockpitAppProps) {
   } else if (section === "fleet") {
     body = (
       <ModuleChrome title={s.fleetTitle} hint={s.fleetHint} actionLabel={s.openMissionControl} onAction={() => p.onSetSection("mission")}>
-        <DataTable
-          headers={[s.name, s.kind, s.status]}
-          rows={m.fleet.map((a) => [a.name, a.kind ?? "—", a.running ? s.running : s.stopped])}
-          empty={s.noneListed}
-        />
+        {m.fleet.length === 0 ? (
+          <p class="ck-empty">{s.noneListed}</p>
+        ) : (
+          <div class="ck-card-list" data-testid="control-fleet">
+            {m.fleet.map((a) => (
+              <article key={`${a.wsHash ?? ""}:${a.name}`} class="ck-entity-card">
+                <div class="ck-entity-main">
+                  <div class="ck-entity-title">
+                    <span class="name">{a.name}</span>
+                    <span class={`ci-badge ${a.running ? "attached" : "none"}`}>{a.running ? s.running : s.stopped}</span>
+                    {a.declared === false ? <span class="ck-pill">{s.adhoc}</span> : <span class="ck-pill muted">{s.declared}</span>}
+                    {a.kind ? <span class="ck-pill muted">{a.kind}</span> : null}
+                  </div>
+                  <div class="ck-entity-meta">
+                    {a.folder ? <span>{a.folder}</span> : null}
+                    {a.wsHash ? <span class="ck-mono">{a.wsHash.slice(0, 8)}</span> : null}
+                  </div>
+                </div>
+                <div class="ck-entity-actions">
+                  {a.running ? (
+                    <Button variant="default" onClick={() => p.onFleetStop(a.name, a.wsHash)}>
+                      {s.stop}
+                    </Button>
+                  ) : (
+                    <Button variant="default" onClick={() => p.onFleetStart(a.name, a.wsHash)}>
+                      {s.start}
+                    </Button>
+                  )}
+                  <Button variant="default" onClick={() => p.onFleetTerminal(a.name, a.wsHash)}>
+                    {s.openTerminal}
+                  </Button>
+                  <Button variant="default" onClick={() => p.onFleetActivity(a.name, a.wsHash)}>
+                    {s.openActivity}
+                  </Button>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
       </ModuleChrome>
     );
   } else if (section === "approvals") {
     body = (
-      <ModuleChrome title={s.approvalsTitle} hint={s.approvalsHint} actionLabel={s.openApprovals} onAction={p.onOpenApprovals}>
-        <DataTable
-          headers={[s.name, s.status]}
-          rows={m.approvals.map((a) => [a.title ?? a.id, a.status ?? "pending"])}
-          empty={s.noneListed}
-        />
-      </ModuleChrome>
+      <div class="ck-embed-host" data-testid="control-approvals">
+        <ApprovalsApp vm={p.approvalVm} error={p.approvalError} dispatch={p.approvalDispatch} />
+      </div>
     );
   } else if (section === "mission") {
     // Visual monolith POC: full Mission Control board in-tab (same App + host actions as standalone).
     body = (
-      <div class="ck-mission-host" data-testid="control-mission-board">
+      <div class="ck-embed-host ck-mission-host" data-testid="control-mission-board">
         <MissionControlApp vm={p.missionVm} lastError={p.missionError} dispatch={p.missionDispatch} />
       </div>
     );
   } else if (section === "worktrees") {
     body = (
       <ModuleChrome title={s.worktreesTitle} hint={s.worktreesHint}>
-        <DataTable
-          headers={[s.kind, s.status, s.branch, s.path]}
-          rows={m.worktrees.map((w) => [w.kind, w.status, w.branch || "—", w.path || w.id])}
-          empty={s.noneListed}
-          monoCols={[2, 3]}
-        />
+        {m.worktrees.length === 0 ? (
+          <p class="ck-empty">{s.noneListed}</p>
+        ) : (
+          <div class="ck-card-list" data-testid="control-worktrees">
+            {m.worktrees.map((w) => (
+              <article key={w.id} class="ck-entity-card">
+                <div class="ck-entity-main">
+                  <div class="ck-entity-title">
+                    <span class="name">{w.slug || w.id}</span>
+                    <span class={`ci-badge ${w.status === "active" ? "attached" : "none"}`}>{w.status}</span>
+                    <span class="ck-pill muted">{w.kind === "agent" ? s.agent : w.kind === "change" ? s.change : w.kind}</span>
+                  </div>
+                  <div class="ck-entity-meta">
+                    {w.branch ? <span>{s.branch}: <span class="ck-mono">{w.branch}</span></span> : null}
+                    {w.agent ? <span>{s.agent}: {w.agent}</span> : null}
+                    {w.folder ? <span>{w.folder}</span> : null}
+                  </div>
+                  {w.path ? <div class="ck-entity-path ck-mono">{w.path}</div> : null}
+                </div>
+                <div class="ck-entity-actions">
+                  {w.path ? (
+                    <>
+                      <Button variant="default" onClick={() => p.onRevealPath(w.path)}>
+                        {s.reveal}
+                      </Button>
+                      <Button variant="default" onClick={() => p.onCopyText(w.path)}>
+                        {s.copyPath}
+                      </Button>
+                    </>
+                  ) : null}
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
       </ModuleChrome>
     );
   } else if (section === "deliveries") {
     body = (
       <ModuleChrome title={s.deliveriesTitle} hint={s.deliveriesHint}>
-        <DataTable
-          headers={[s.name, s.phase, s.branch, s.path]}
-          rows={m.deliveries.map((d) => [d.id, d.phase, d.branchRef || "—", d.worktreePath ?? "—"])}
-          empty={s.noneListed}
-          monoCols={[0, 2, 3]}
-        />
+        {m.deliveries.length === 0 ? (
+          <p class="ck-empty">{s.noneListed}</p>
+        ) : (
+          <div class="ck-card-list" data-testid="control-deliveries">
+            {m.deliveries.map((d) => (
+              <article key={d.id} class="ck-entity-card">
+                <div class="ck-entity-main">
+                  <div class="ck-entity-title">
+                    <span class="name ck-mono">{d.id}</span>
+                    <span class={`ci-badge ${["pruned", "abandoned"].includes(d.phase) ? "none" : "attached"}`}>{d.phase}</span>
+                  </div>
+                  <div class="ck-entity-meta">
+                    {d.branchRef ? <span>{s.branch}: <span class="ck-mono">{d.branchRef}</span></span> : null}
+                    {d.agent ? <span>{s.agent}: {d.agent}</span> : null}
+                    {d.folder ? <span>{d.folder}</span> : null}
+                  </div>
+                  {d.worktreePath ? <div class="ck-entity-path ck-mono">{d.worktreePath}</div> : null}
+                </div>
+                <div class="ck-entity-actions">
+                  <Button variant="default" onClick={() => p.onCopyText(d.id)}>
+                    {s.copyId}
+                  </Button>
+                  {d.worktreePath ? (
+                    <>
+                      <Button variant="default" onClick={() => p.onRevealPath(d.worktreePath!)}>
+                        {s.reveal}
+                      </Button>
+                      <Button variant="default" onClick={() => p.onCopyText(d.worktreePath!)}>
+                        {s.copyPath}
+                      </Button>
+                    </>
+                  ) : null}
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
       </ModuleChrome>
     );
   } else if (section === "runtime") {
     body = (
-      <ModuleChrome title={s.runtimeTitle} hint={s.runtimeHint} actionLabel={s.openRuntimeOps} onAction={p.onOpenRuntimeOps}>
-        <div class="ck-panel">
-          <p>Open Runtime Ops for usage and rate-limit detail.</p>
-        </div>
-      </ModuleChrome>
+      <div class="ck-embed-host" data-testid="control-runtime-ops">
+        <RuntimeOpsApp snapshot={p.runtimeSnapshot} onSetProviderObservation={p.onRuntimeSetProviderObservation} />
+      </div>
     );
   } else if (section === "tmux") {
     body = (
-      <ModuleChrome title={s.tmuxTitle} hint={s.tmuxHint} actionLabel={s.openServerInspector} onAction={p.onOpenServerInspector}>
-        <DataTable
-          headers={[s.name, s.state, s.version]}
-          rows={m.tmux.map((t) => [t.folder, t.state, t.version ?? "—"])}
-          empty={s.noneListed}
-        />
-      </ModuleChrome>
+      <div class="ck-embed-host" data-testid="control-tmux-inspector">
+        <InspectorApp {...p.inspector} />
+      </div>
     );
   } else if (section === "plugins") {
     body = (
-      <ModuleChrome title={s.pluginsTitle} hint={s.pluginsHint} actionLabel={s.openPlugins} onAction={p.onOpenPlugins}>
-        <div class="ck-panel">
-          <p>Install, update, and integrity live in the Plugins panel.</p>
+      <div class="ck-embed-host" data-testid="control-plugins">
+        <div class="ck-plugins-root">
+          <PluginsApp
+            vm={p.pluginsVm}
+            consent={p.pluginsConsent}
+            busy={p.pluginsBusy}
+            toast={p.pluginsToast}
+            dispatch={p.pluginsDispatch}
+          />
         </div>
-      </ModuleChrome>
-    );
-  } else if (section === "schedules") {
-    body = (
-      <ModuleChrome title={s.schedulesTitle} hint={s.schedulesHint}>
-        <DataTable
-          headers={[s.name, s.status]}
-          rows={m.schedules.map((x) => [x.name, x.paused ? "paused" : "active"])}
-          empty={s.noneListed}
-        />
-      </ModuleChrome>
+      </div>
     );
   } else {
+    // settings (and any unknown section fallback)
     body = (
-      <ModuleChrome title={s.settingsTitle} hint={s.settingsHint} actionLabel={s.openSettings} onAction={p.onOpenSettings}>
-        <div class="ck-panel">
-          <p>Opens Tachyon extension settings in the VS Code Settings UI.</p>
+      <ModuleChrome title={s.settingsTitle} hint={s.settingsHint}>
+        <div class="ck-panel" data-testid="control-settings">
+          <p>{s.settingsBody}</p>
+          <div class="ck-jump">
+            <Button variant="default" onClick={p.onOpenSettings}>
+              {s.settingsOpenTachyon}
+            </Button>
+            <Button variant="default" onClick={() => p.onOpenConfigFile(m.control.workspaces[0]?.wsHash)}>
+              {s.settingsOpenConfig}
+            </Button>
+            <Button variant="default" onClick={p.onOpenDoctor}>
+              {s.settingsDoctor}
+            </Button>
+          </div>
         </div>
       </ModuleChrome>
     );
@@ -404,7 +542,7 @@ export function App(p: CockpitAppProps) {
   return (
     <div class="ck-root">
       <header class="ck-top">
-        {/* Single chrome row: tabs + actions (no brand/title bar — saves vertical space). */}
+        {/* Tabs only — Refresh / Auto / Diagnostics live on Overview. */}
         <div class="ck-chrome">
           <div class="ck-tabs" role="tablist" aria-label={s.title}>
             {COCKPIT_SECTION_ORDER.map((id) => {
@@ -424,24 +562,12 @@ export function App(p: CockpitAppProps) {
               );
             })}
           </div>
-          <div class="ck-actions">
-            <label class="ck-auto" title={s.auto}>
-              <input type="checkbox" checked={p.auto} onChange={(e) => p.onToggleAuto((e.target as HTMLInputElement).checked)} />
-              {s.auto}
-            </label>
-            <Button variant="default" onClick={p.onRefresh} title={s.refresh}>
-              <span class="codicon codicon-refresh" /> {s.refresh}
-            </Button>
-            <Button variant="default" onClick={p.onCopyDiagnostics} title={s.copyDiagnostics}>
-              <span class="codicon codicon-copy" /> {s.copyDiagnostics}
-            </Button>
-          </div>
         </div>
       </header>
 
-      <main class={`ck-main${section === "mission" ? " ck-main--mission" : ""}`}>
+      <main class={`ck-main${EMBED_SECTIONS.has(section) ? " ck-main--embed" : ""}${section === "mission" ? " ck-main--mission" : ""}`}>
         {body}
-        {m && section !== "mission" ? (
+        {m && !EMBED_SECTIONS.has(section) ? (
           <div class="ck-checked">
             {s.checkedAt}: {m.checkedAt}
           </div>

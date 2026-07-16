@@ -281,7 +281,9 @@ npm run dogfood:dev-host -- fixture-new --slug my-feature --spec 393 --intent fo
   --worktree /path/to/worktree
 # Force-add .tachyon seeds (gitignored): git add -f test/fixtures/my-feature-dogfood/.tachyon
 
-# From monorepo root — agent prepares (short form with --fixture):
+# From monorepo root *or* a linked feature worktree (short form with --fixture).
+# Linked worktrees auto-redirect the pointer to the primary monorepo — F5 always reads
+# monorepo/.tachyon/dev-host, never the feature worktree's own pointer dir.
 npm run dogfood:dev-host -- point \
   --worktree /path/to/worktree \
   --fixture my-feature \
@@ -295,8 +297,8 @@ npm run dogfood:dev-host -- point-clear    # when done / after git worktree remo
 
 | Piece | Location |
 |-------|----------|
-| Stable F5 config | `.vscode/launch.json` → **Tachyon: Dev Host** (portable `${workspaceFolder}` paths) |
-| Pointer (local) | `.tachyon/dev-host/` (`extension` symlink → worktree; `workspace` real mirror → fixture; `meta.json`) |
+| Stable F5 config | monorepo `.vscode/launch.json` → **Tachyon: Dev Host** (portable `${workspaceFolder}` paths) |
+| Pointer (local) | **monorepo** `.tachyon/dev-host/` (`extension` symlink → worktree; `workspace` real mirror → fixture; `meta.json`) |
 | Extension bits | worktree via `--extensionDevelopmentPath=…/extension` |
 | Opened folder | mirror of isolated **fixture** (never monorepo root) |
 
@@ -316,6 +318,9 @@ npm run dogfood:dev-host -- point-clear    # when done / after git worktree remo
 3. Specs document steps under `**Human dogfood:**` in `tasks.md` (not a free-floating `DOGFOOD.md`).
 4. After `git worktree remove` of a pointed worktree, run **`point-clear`** (or re-point). `point-status` reports **broken** if the worktree path is gone.
 5. Lease (`lane.mjs`) is required for **delegated** headless/GUI pilots; plain F5 pointer for a single human/agent does not auto-acquire a lease.
+6. F5 host is always the **primary monorepo checkout**. When `point` runs from a linked worktree,
+   the CLI redirects the pointer there automatically; a pointer only under the feature worktree's
+   `.tachyon/dev-host` is invisible to monorepo F5 (preLaunchTask fails with a guided error).
 
 Script: `scripts/dev-host/pointer.mjs`.
 

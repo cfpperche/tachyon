@@ -116,8 +116,18 @@ interface PanelIO {
  * previewUpdate/previewRemove → the pure consentViewModel), the apply actions (applyInstall/Update/Remove,
  * each re-checking TOCTOU at the engine), and lazy update-checks. Async ops are serialized by a busy flag.
  */
+/** Control-monolith embed: same message surface as a standalone Plugins panel, without a second WebviewPanel. */
+interface ControlPluginsEmbed {
+  webview: vscode.Webview;
+  ws: WorkspaceGitPresentationTarget;
+  io: PanelIO;
+  post: () => void;
+}
+
 export class PluginsPanelManager {
   private readonly panels = new Map<string, { panel: vscode.WebviewPanel; post: () => void }>();
+  /** Optional embed into Control (plugins tab). One at a time. */
+  private embed: ControlPluginsEmbed | undefined;
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -656,10 +666,57 @@ export class PluginsPanelManager {
   /** Re-post to every open panel (cheap). */
   refreshAll(): void {
     for (const { post } of this.panels.values()) post();
+    this.embed?.post();
+  }
+
+  /**
+   * Control monolith: drive Plugins UI into an existing webview (no separate panel).
+   * Posts the same plugins/consent/busy/result envelope the standalone panel uses.
+   */
+  bindControlEmbed(webview: vscode.Webview, wsHash?: string): void {
+    const ws = wsHash === undefined ? this.getWorkspaces()[0] : this.getWorkspaces().find((w) => w.wsHash === wsHash);
+    if (!ws) return;
+    let checks: Record<string, UpdateCheck> = {};
+    let pending: PendingOp | undefined;
+    let busy = false;
+    const post = (): void => {
+      void webview.postMessage(pluginsMessage(this.gather(ws, checks)));
+    };
+    const io: PanelIO = {
+      post,
+      postConsent: (vm) => void webview.postMessage(consentMessage(vm)),
+      postBusy: (label) => void webview.postMessage(busyMessage(label)),
+      postResult: (ok, message) => void webview.postMessage(resultMessage(ok, message)),
+      getPending: () => pending,
+      setPending: (p) => { pending = p; },
+      getChecks: () => checks,
+      setChecks: (c) => { checks = c; },
+      isBusy: () => busy,
+      setBusy: (b) => { busy = b; },
+    };
+    this.embed = { webview, ws, io, post };
+    post();
+  }
+
+  unbindControlEmbed(): void {
+    this.embed = undefined;
+  }
+
+  /** Forward one inbound message to the Control embed session (if bound). */
+  handleControlEmbedMessage(m: InboundMsg): boolean {
+    const emb = this.embed;
+    if (!emb) return false;
+    void this.onMessage(emb.ws, m, emb.io);
+    return true;
+  }
+
+  refreshControlEmbed(): void {
+    this.embed?.post();
   }
 
   dispose(): void {
     for (const { panel } of this.panels.values()) panel.dispose();
     this.panels.clear();
+    this.embed = undefined;
   }
 }
