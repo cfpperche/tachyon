@@ -157,3 +157,26 @@ None at planning time.
   Unrelated unknown keys and malformed/security-relevant settings remain hard errors.
 - Parser, Doctor, schema, and real daemon/Doctor coverage pass 106/106 plus the daemon integration rerun; typecheck
   and diff-check pass. The VSIX must be rebuilt from this correction before installed dogfood resumes.
+
+## Installed canonical lifecycle dogfood — 2026-07-17
+
+- Tachyon `0.56.17` ran one canonical Delivery, one branch, and one worktree through recovery, verification,
+  reviewer `FINDINGS`, fixer, re-verification, and final reviewer `ACCEPT`. Delivery:
+  `d-spawn-ad0abeeaf7e8e2be0cb759ef18ddce8c`; final reviewed HEAD: `907499fb`.
+- The recovery and fixer both left the checkout clean. The real-worktree full gate passed 416 files / 4,763 tests
+  with 3 skipped; typecheck passed. Both canonical verification records accepted without a waiver, and `0.56.17`
+  produced exact-root-gone evidence instead of the prior false quarantine.
+- The immutable first reviewer found the fixture still marked `reviewState: "pending"`. The fixer changed only that
+  field to `"accepted"`; the final reviewer confirmed the exact parent delta and returned `ACCEPT`.
+- Post-dogfood state has 26 GitDelivery projections and zero unlinked rows. Active legacy delegation/Delivery JSON
+  paths are absent, while the previously approved archive remains under `.tachyon/legacy-delivery-archives`.
+- Two unrelated infrastructure defects were kept out of this candidate: linked-worktree Git hooks cannot resolve
+  their launcher (`t-75bbe8`), and `verify_task(full:true)` regressed under a deep temporary clone despite the same
+  full suite passing in the canonical worktree (`t-b3ca7e`). Neither required a waiver or weakened this dogfood.
+
+## Final main composition — 2026-07-17
+
+- The complete 18-commit candidate rebased cleanly from `main` `3e2209dc` onto local `main` `26dd51fe`.
+  `git range-diff` matched all 18 commits exactly; no candidate patch changed during the rebase.
+- The pre-rebase candidate remains temporarily recoverable at
+  `codex/t-85f251-pre-final-rebase-a7b02fe6` until final gates and integration complete.

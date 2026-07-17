@@ -20,10 +20,12 @@ _Generated from `plan.md` on 2026-07-13. This is a bounded retirement, not conti
 - [x] **T5 — Ship the explicit retirement action.** Implement preview + confirmed archive/apply with digest,
   idempotent replay, partial-state refusal, zero Git mutation, and a single actionable pre-retirement diagnostic.
   Run it against a copy of the current workspace state before asking the maintainer to apply it to the real state.
-- [ ] **T6 — Update current surfaces and dogfood.** Remove obsolete config from `tachyon.yml`, update current docs,
+- [x] **T6 — Update current surfaces and dogfood.** Remove obsolete config from `tachyon.yml`, update current docs,
   schemas/tool counts/descriptions, build/install the candidate, and run one real optimal implement -> verify ->
   review FINDINGS -> fix -> verify -> ACCEPT lifecycle on a single Delivery/worktree.
-  - Source surfaces and the candidate build are complete; installed-extension dogfood remains pending.
+  - Installed `0.56.17` completed the lifecycle on Delivery `d-spawn-ad0abeeaf7e8e2be0cb759ef18ddce8c`
+    in one worktree. The final reviewed HEAD is `907499fb`; both canonical verification rounds accepted without
+    waiver or quarantine, and the real-worktree full gate passed 416 files / 4,763 tests with 3 skipped.
 - [ ] **T7 — Close this spec only.** Run the source-absence audit, focused matrix, typecheck, diff-check, first/full
   candidate gate, one independent review, one consolidated correction round if needed, final full gate, commit,
   push, and close spec/task 376 without changing spec 368 status or unchecked tasks.
@@ -36,7 +38,7 @@ _Generated from `plan.md` on 2026-07-13. This is a bounded retirement, not conti
 - [x] Retirement preview/apply proves byte-stable canonical state and Git state, plus idempotent recovery.
 - [x] Removed lifecycle symbols are absent outside the raw retirement module/fixtures; the schema keeps only a
   deprecated, effect-free `settings.delivery` compatibility key so an upgrade warning does not disable the workspace.
-- [ ] Installed happy-path dogfood uses one Delivery/worktree and emits no legacy artifact.
+- [x] Installed happy-path dogfood uses one Delivery/worktree and emits no legacy artifact.
 - [x] `npm run typecheck`, `npm run build`, `git diff --check`, and `npm test` pass on the implementation candidate.
 
 **Headless check:** `npm test`

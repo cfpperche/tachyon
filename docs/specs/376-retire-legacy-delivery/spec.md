@@ -73,7 +73,7 @@ bounded, explicit, non-destructive upgrade step and is never read as live author
   - **Then** normal session behavior remains available
   - **And** it receives no Delivery identity, GitDelivery projection, verification eligibility, or implicit isolated-change lifecycle
 
-- [ ] **Scenario: the canonical happy path dogfoods end to end**
+- [x] **Scenario: the canonical happy path dogfoods end to end**
   - **Given** a clean temporary repository and the installed extension
   - **When** one real implementer is gated, verified, reviewed with FINDINGS, fixed through `delivery_join`, reverified, and accepted
   - **Then** every role uses the same Delivery, branch, and worktree
