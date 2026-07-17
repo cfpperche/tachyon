@@ -103,6 +103,14 @@ function projectionSyncFor(delivery: GitDelivery, deps: ClassifyDeps): Projectio
   if (!canonical) return "unknown";
   if (canonical.gitDeliveryId && canonical.gitDeliveryId !== delivery.id) return "diverged";
   if (delivery.deliveryId !== canonical.id) return "diverged";
+  // t-b3242a: intent-level desync — canonical log ahead of applied projection sequence.
+  let maxIntent = 0;
+  for (const event of canonical.events ?? []) {
+    if (event.type !== "projection.intent" || !event.detail || typeof event.detail !== "object") continue;
+    const seq = (event.detail as { projectionSequence?: unknown }).projectionSequence;
+    if (typeof seq === "number" && Number.isFinite(seq)) maxIntent = Math.max(maxIntent, seq);
+  }
+  if (maxIntent > (delivery.lastAppliedProjectionSequence ?? 0)) return "pending";
   return "in_sync";
 }
 

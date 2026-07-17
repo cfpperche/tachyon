@@ -21,7 +21,7 @@ import {
   canIntegrateLinkedGitDelivery,
   canPruneLinkedGitDelivery,
 } from "../git-delivery/policy.js";
-import { pruneDeliveryRecord, type PruneDeps, type PruneInput, type PruneResult } from "../git-delivery/prune.js";
+import { assessPruneDelivery, pruneDeliveryRecord, type PruneDeps, type PruneInput, type PruneResult } from "../git-delivery/prune.js";
 import {
   deterministicGitDeliveryId,
   type GitDeliveryStore,
@@ -317,6 +317,7 @@ export class DeliveryProjectionService {
         if (existing) {
           sequence = existing.projectionSequence;
         } else {
+          this.assertNoUnappliedProjectionLag(delivery, projection);
           sequence = nextProjectionSequence(delivery);
           const detail: DeliveryProjectionIntentDetail = {
             projectionSequence: sequence,
@@ -434,6 +435,33 @@ export class DeliveryProjectionService {
           );
         }
 
+        const pruneInput: PruneInput = {
+          id: projection.id,
+          expectedVersion: projection.version,
+          abandon: input.abandon,
+          forceLoseCommits: input.forceLoseCommits,
+          doomedShas: input.doomedShas,
+        };
+        const pruneDeps = {
+          workspaceRoot: this.deps.workspaceRoot,
+          git: this.deps.git,
+          liveness: this.deps.liveness,
+          worktreeOccupancy: this.deps.worktreeOccupancy,
+          removeManagedWorktree: this.deps.removeManagedWorktree,
+          now: () => this.now(),
+        };
+        // t-b3242a: fail closed on prune guards BEFORE appending a canonical intent.
+        if (!existing) {
+          const assessment = await assessPruneDelivery(projection, pruneInput, pruneDeps);
+          if (!assessment.ok) {
+            throw new DeliveryProjectionError(
+              `prune refused:\n- ${assessment.reasons.join("\n- ")}`,
+              "PROJECTION_REFUSED",
+            );
+          }
+          this.assertNoUnappliedProjectionLag(delivery, projection);
+        }
+
         let sequence: number;
         let afterIntent = delivery;
         if (existing) {
@@ -459,23 +487,8 @@ export class DeliveryProjectionService {
           afterIntent = await this.appendIntent(claim, delivery, detail);
         }
 
-        // Re-observe live Git under both locks.
-        const pruneInput: PruneInput = {
-          id: projection.id,
-          expectedVersion: projection.version,
-          abandon: input.abandon,
-          forceLoseCommits: input.forceLoseCommits,
-          doomedShas: input.doomedShas,
-        };
-        // Missing worktree/branch may close only when the canonical intent and live absence agree.
-        const pruned = await pruneDeliveryRecord(projection, pruneInput, actor, {
-          workspaceRoot: this.deps.workspaceRoot,
-          git: this.deps.git,
-          liveness: this.deps.liveness,
-          worktreeOccupancy: this.deps.worktreeOccupancy,
-          removeManagedWorktree: this.deps.removeManagedWorktree,
-          now: () => this.now(),
-        });
+        // Re-observe live Git under both locks (mutate only after intent).
+        const pruned = await pruneDeliveryRecord(projection, pruneInput, actor, pruneDeps);
 
         if (!pruned.result.ok) {
           // If intent was for missing-ref and live still shows absence of both, allow only when
@@ -693,11 +706,18 @@ export class DeliveryProjectionService {
               now: () => this.now(),
             });
             if (!pruned.result.ok || !pruned.next) {
-              // Missing worktree/branch may close only when intent and live absence agree — prune helper encodes that.
-              throw new DeliveryProjectionError(
-                `reconcile prune refused:\n- ${pruned.result.ok ? "no next" : pruned.result.reasons.join("\n- ")}`,
-                "PROJECTION_REFUSED",
-              );
+              // t-b3242a: unapplied prune intent that still fails guards would wedge forever.
+              // Advance the projection sequence without side effects so later intents can apply.
+              currentProjection = await this.deps.gitDeliveries.applyCanonicalIntent({
+                id: currentProjection.id,
+                expectedVersion: currentProjection.version,
+                sequence: intent.projectionSequence,
+                operationId: intent.operationId,
+                deliveryId,
+                mutate: (record) => record,
+              });
+              applied += 1;
+              continue;
             }
             currentProjection = await this.deps.gitDeliveries.applyCanonicalIntent({
               id: currentProjection.id,
@@ -774,6 +794,18 @@ export class DeliveryProjectionService {
         intent: detail,
       },
     );
+  }
+
+  /** t-b3242a: refuse minting a new intent while the projection lags unapplied canonical intents. */
+  private assertNoUnappliedProjectionLag(delivery: Delivery, projection: GitDelivery): void {
+    const maxIntent = maxProjectionIntentSequence(delivery);
+    const applied = projection.lastAppliedProjectionSequence ?? 0;
+    if (maxIntent > applied) {
+      throw new DeliveryProjectionError(
+        `projection has unapplied intent(s) (lastApplied=${applied}, latestIntent=${maxIntent}); call reconcile first`,
+        "PROJECTION_SEQUENCE",
+      );
+    }
   }
 
   /** Refuse reuse of an operation id unless every caller-controlled persisted field matches. */
@@ -977,6 +1009,12 @@ export class DeliveryProjectionService {
   private newEventId(seq: number): string {
     return this.deps.eventId?.() ?? `proj-evt-${seq}-${randomBytes(4).toString("hex")}`;
   }
+}
+
+export function maxProjectionIntentSequence(delivery: Delivery): number {
+  const intents = listProjectionIntents(delivery);
+  if (intents.length === 0) return 0;
+  return intents[intents.length - 1]!.projectionSequence;
 }
 
 export function listProjectionIntents(delivery: Delivery): DeliveryProjectionIntentDetail[] {
