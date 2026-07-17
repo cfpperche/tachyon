@@ -625,12 +625,30 @@ export class DeliveryLeaseService {
     if (!snapshot) throw new DeliveryNotFoundError(input.deliveryId);
     this.assertRecoveryActor(snapshot, input.actor); this.assertDifferentRecoveryActor(snapshot, input.actor);
     if (snapshot.lease.state !== "quarantined" && snapshot.lease.state !== "held") throw this.occupied(snapshot, "Delivery is not held or quarantined");
-    const tail = structuredClone(snapshot.segments.at(-1)); const holder = structuredClone(snapshot.lease.holder);
-    if (!holder || !tail || tail.releasedAt || tail.id !== holder.segmentId || !holder.executionNonce?.trim()) throw new DeliveryLeaseError("DELIVERY_QUARANTINED", false, "quarantine lacks an exact recoverable holder boundary");
-    if (snapshot.lease.state === "held") {
-      if (!holder.process || !validProcessIdentity(holder.process)) throw new DeliveryLeaseError("DELIVERY_PROCESS_IDENTITY_MISSING", false, "held lease lacks exact process identity");
+    const tail = structuredClone(snapshot.segments.at(-1));
+    const holder = structuredClone(snapshot.lease.holder);
+    const boundaryOk = !!(
+      holder
+      && tail
+      && !tail.releasedAt
+      && tail.id === holder.segmentId
+      && holder.executionNonce?.trim()
+    );
+    // t-832946: a quarantine whose holder boundary is itself corrupt (missing nonce / mismatch)
+    // has nothing recoverable to protect — allow approval-only force abandon. Held leases still
+    // require an intact boundary so we never skip process death proof on a live holder record.
+    if (!boundaryOk) {
+      if (snapshot.lease.state !== "quarantined") {
+        throw new DeliveryLeaseError(
+          "DELIVERY_QUARANTINED",
+          false,
+          "quarantine lacks an exact recoverable holder boundary",
+        );
+      }
+    } else if (snapshot.lease.state === "held") {
+      if (!holder!.process || !validProcessIdentity(holder!.process)) throw new DeliveryLeaseError("DELIVERY_PROCESS_IDENTITY_MISSING", false, "held lease lacks exact process identity");
       let observation: DeliveryProcessObservation = { state: "unknown", reason: "exact process observation is unavailable" };
-      try { if (this.deps.processObserver) observation = await this.deps.processObserver.observe(structuredClone(holder.process)); }
+      try { if (this.deps.processObserver) observation = await this.deps.processObserver.observe(structuredClone(holder!.process)); }
       catch (error) { observation = { state: "unknown", reason: error instanceof Error ? error.message : String(error) }; }
       if (observation.state !== "gone") throw this.occupied(snapshot, observation.state === "alive" ? "held Delivery root is still alive" : "held Delivery root death is ambiguous");
     }
@@ -638,12 +656,42 @@ export class DeliveryLeaseService {
     const approval = await this.recoveryApproval(input.approvalId, input.actor, digest);
     return this.withDeliveryLock(input.deliveryId, async () => {
       const current = await this.deps.store.get(input.deliveryId); if (!current) throw new DeliveryNotFoundError(input.deliveryId);
-      if (!isDeepStrictEqual(current.lease, snapshot.lease) || !isDeepStrictEqual(current.segments.at(-1), tail)) throw this.occupied(current, "quarantine changed during worktree-free disposition");
+      if (!isDeepStrictEqual(current.lease, snapshot.lease)) throw this.occupied(current, "quarantine changed during worktree-free disposition");
+      if (boundaryOk && !isDeepStrictEqual(current.segments.at(-1), tail)) throw this.occupied(current, "quarantine changed during worktree-free disposition");
       return this.deps.store.update(current.id, current.version, (record) => {
-        if (!isDeepStrictEqual(record.lease, snapshot.lease) || !isDeepStrictEqual(record.segments.at(-1), tail)) throw new DeliveryVersionConflictError(record.id, snapshot.version, record.version);
-        const open = record.segments.at(-1)!; open.releasedAt = this.now(); open.releasedHeadSha = record.lease.expectedHeadSha ?? open.grantedHeadSha; open.outcome = "rejected";
-        record.lease = { state: "abandoned", reason: snapshot.lease.state === "held" ? JSON.stringify({ cause: "dead-holder-worktree-gone" }) : snapshot.lease.reason, changedAt: this.now() };
-        record.events.push({ id: this.eventId(), at: this.now(), type: "quarantine_abandoned_without_worktree", by: structuredClone(input.actor), detail: { operationId: input.operationId, intent, holder, tail, evidenceLevel: "approval-only", approvalId: input.approvalId, actionDigest: approval.actionDigest, payloadHash: approval.payloadHash } });
+        if (!isDeepStrictEqual(record.lease, snapshot.lease)) throw new DeliveryVersionConflictError(record.id, snapshot.version, record.version);
+        if (boundaryOk && !isDeepStrictEqual(record.segments.at(-1), tail)) throw new DeliveryVersionConflictError(record.id, snapshot.version, record.version);
+        const open = record.segments.at(-1);
+        if (open && !open.releasedAt) {
+          open.releasedAt = this.now();
+          open.releasedHeadSha = record.lease.expectedHeadSha ?? open.grantedHeadSha;
+          open.outcome = "rejected";
+        }
+        const corruptBoundary = !boundaryOk;
+        record.lease = {
+          state: "abandoned",
+          reason: corruptBoundary
+            ? JSON.stringify({ cause: "corrupt-holder-boundary", evidenceLevel: "approval-only" })
+            : (snapshot.lease.state === "held" ? JSON.stringify({ cause: "dead-holder-worktree-gone" }) : snapshot.lease.reason),
+          changedAt: this.now(),
+        };
+        record.events.push({
+          id: this.eventId(),
+          at: this.now(),
+          type: "quarantine_abandoned_without_worktree",
+          by: structuredClone(input.actor),
+          detail: {
+            operationId: input.operationId,
+            intent,
+            holder: holder ?? null,
+            tail: tail ?? null,
+            evidenceLevel: "approval-only",
+            approvalId: input.approvalId,
+            actionDigest: approval.actionDigest,
+            payloadHash: approval.payloadHash,
+            ...(corruptBoundary ? { corruptHolderBoundary: true } : {}),
+          },
+        });
         return record;
       }, { operationId: input.operationId, intent });
     });
