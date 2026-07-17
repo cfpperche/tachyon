@@ -218,3 +218,18 @@ Required implementation slices before closure:
 ### 2026-07-17 — pass — review candidate
 
 - `npm run verify:full:quiet` — pass (413 files; 4,766 passed; 3 skipped)
+
+## Maintainer Dev Host dogfood — 2026-07-17
+
+- First F5 attempt exposed a separate Dev Host lifecycle bug: a stale persistent engine for workspace hash `eb13c881`
+  belonged to an older storage environment, while the new private data root lacked its verified rollback bundle. The
+  supervisor correctly failed closed with `ROLLBACK_BUNDLE_UNAVAILABLE`; the stale fixture-owned engine and Bridge
+  units were stopped without weakening rollback verification. Follow-up bug: `t-e357dc`.
+- The clean retry attached the fixture and exercised `codex-invalid`, `codex-valid`, `claude-observer`, and
+  `grok-observer`. The maintainer confirmed the invalid Codex model was rejected as expected and the valid provider
+  launches behaved as described, with no runtime stuck in startup and no residual ghost agent.
+- Evidence: `/mnt/c/Users/cfpp/Pictures/Screenshots/Screenshot 2026-07-17 170657.png` shows Runtime Ops with four
+  managed agents, three active agents, zero throttled runtimes, zero Bridge issues, live Codex/Claude quota data, and
+  managed Codex, Claude, and Grok rows.
+- Verdict: **PASS** for the SDD 370 maintainer-owned F5 gate. The Dev Host identity collision is tracked separately and
+  does not invalidate the launch-preflight behavior proven after scoped cleanup.

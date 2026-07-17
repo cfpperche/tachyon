@@ -2,7 +2,10 @@
 
 _Created 2026-07-10 after the failed `rtObsVendorSpike` launch._
 
-**Status:** review-ready — implementation and full gate green; maintainer Dev Host/F5 visual review pending
+**Status:** in-progress
+
+**Closure:** Implementation, headless dogfood, full verification, and maintainer-owned Dev Host/F5 dogfood are green
+on commit `4509f294`; the branch remains unmerged pending final code review.
 
 ## Intent
 

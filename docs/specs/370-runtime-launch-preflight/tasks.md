@@ -33,7 +33,7 @@ _Implementation authorized after maintainer ratification on 2026-07-10._
 - [x] Prove all lifecycle entry points revalidate after catalog drift.
 - [x] Dogfood invalid then valid Codex model launches with no task assignment between rejection and readiness.
 - [x] Run full verification.
-- [ ] Inspect the Dev Host sidebar/terminal behavior through the maintainer-owned F5 dogfood.
+- [x] Inspect the Dev Host sidebar/terminal behavior through the maintainer-owned F5 dogfood.
 
 ## T4 — live dogfood recovery hardening
 
@@ -61,6 +61,9 @@ then launch the same contract with `gpt-5.6-sol` and assign the task only after 
 
 ## Visual QA
 
-- [ ] Evidence: invalid launch produces no live agent row; valid launch shows the normal row; optional starting state is
-  visually distinct and cannot receive a Task if that policy ships.
-- [ ] Verdict: no ghost agent, false running state, error loop, or silent model substitution.
+- [x] Evidence: maintainer-owned Dev Host screenshot from 2026-07-17 at
+  `/mnt/c/Users/cfpp/Pictures/Screenshots/Screenshot 2026-07-17 170657.png`; Runtime Ops reports four managed agents,
+  three active agents, zero throttled runtimes, and zero Bridge issues after the invalid/valid launch sequence.
+- [x] Verdict: maintainer confirmed every expected step occurred: the invalid Codex model failed closed, valid Codex,
+  Claude, and Grok reached their expected states, and no ghost agent, stuck startup, error loop, or silent model
+  substitution remained.
