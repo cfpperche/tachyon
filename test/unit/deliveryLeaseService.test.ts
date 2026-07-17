@@ -1365,6 +1365,30 @@ describe("DeliveryLeaseService dead-holder reconciliation (SDD 368 T11)", () => 
     expect(JSON.stringify(persisted)).not.toMatch(/verified|accepted|clean|completed/i);
   });
 
+  it("materializes only the exact pending recovery reservation created by salvage", async () => {
+    const { store, worktree, input } = heldFixture();
+    input.lease = { ...input.lease!, state: "quarantined", reason: JSON.stringify({ cause: "root-observation" }) };
+    await store.create(input);
+    const lease = recoveryService(store, worktree);
+    const salvaged = await lease.salvageQuarantine({ deliveryId: "d-lease", canonicalWorktree: worktree,
+      actor, operationId: "salvage-prepare", expectedHeadSha: "b", expectedInventory: recoveryInventory,
+      executionAgent: "fixer", principal: "coordinator", ownsSubset: ["src"] });
+    const exact = { deliveryId: "d-lease", canonicalWorktree: worktree,
+      expectedHeadSha: "b", executionAgent: "fixer", principal: "coordinator", ownsSubset: ["src"] };
+    await expect(lease.preparePendingRecovery(exact)).resolves.toEqual(salvaged);
+
+    const before = await store.get("d-lease");
+    for (const altered of [
+      { ...exact, executionAgent: "other" },
+      { ...exact, principal: "other" },
+      { ...exact, expectedHeadSha: "other" },
+      { ...exact, ownsSubset: ["other"] },
+    ]) {
+      await expect(lease.preparePendingRecovery(altered)).rejects.toThrow(/pending recovery reservation does not match/);
+    }
+    expect(await store.get("d-lease")).toEqual(before);
+  });
+
   it("requires a bound approved receipt before abandoning and replays it without rerunning effects", async () => {
     const { store, worktree, input } = heldFixture();
     input.lease = { ...input.lease!, state: "quarantined", reason: JSON.stringify({ cause: "root-observation" }) };

@@ -3055,6 +3055,8 @@ export class Workspace {
       ? await this.deliveryLease.acquire({ deliveryId: delivery.id, expectedVersion: delivery.version, expectedHeadSha: request.expectedHead, canonicalWorktree: worktreePath, role: request.role, executionAgent: name, principal: request.principal, grantedBy: actor, ownsSubset: request.ownsSubset, operationId: request.operationId })
       : delivery.lease.state === "held"
         ? await this.deliveryLease.handoff({ deliveryId: delivery.id, canonicalWorktree: worktreePath, expectedFinalHeadSha: request.expectedHead, role: request.role, executionAgent: name, principal: request.principal, grantedBy: actor, ownsSubset: request.ownsSubset, operationId: request.operationId })
+        : delivery.lease.state === "pending" && request.role === "recovery"
+          ? await this.deliveryLease.preparePendingRecovery({ deliveryId: delivery.id, canonicalWorktree: worktreePath, expectedHeadSha: request.expectedHead, executionAgent: name, principal: request.principal, ownsSubset: request.ownsSubset })
         : (() => { throw new Error(`DELIVERY_INVALID_STATE: Delivery is ${delivery.lease.state}`); })();
     const segmentId = reservation.delivery.lease.holder?.segmentId;
     if (!segmentId) throw new Error("DELIVERY_INVALID_STATE: reservation has no segment");

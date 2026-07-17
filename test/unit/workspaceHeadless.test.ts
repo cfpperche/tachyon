@@ -501,6 +501,54 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     }
   });
 
+  it("routes an exact pending recovery join through its existing reservation", async () => {
+    const { ws } = await makeWorkspace();
+    const recoveryWorktree = mkdir();
+    const pending = {
+      id: "d-recovery",
+      lease: { state: "pending", holder: { segmentId: "seg-recovery", executionAgent: "recovery", reservationNonce: "nonce" } },
+    };
+    const internal = ws as unknown as {
+      exactCanonicalProjection(delivery: unknown): Promise<{
+        worktreePath: string; branchRef: string; tachyonCreatedBranch: boolean; baseRef: string; createdAt: string;
+      }>;
+      prepareDeliveryJoin(name: string, request: {
+        deliveryId: string; role: "recovery"; ownsSubset: string[]; expectedHead: string; operationId: string;
+      }): Promise<{ cwd: string; reservationNonce: string; segmentId: string }>;
+    };
+    vi.spyOn(ws.deliveries, "get").mockResolvedValue(pending as never);
+    internal.exactCanonicalProjection = vi.fn(async () => ({
+      worktreePath: recoveryWorktree,
+      branchRef: "tachyon/recovery",
+      tachyonCreatedBranch: true,
+      baseRef: "main",
+      createdAt: "2026-07-17T00:00:00.000Z",
+    }));
+    const prepare = vi.spyOn(ws.deliveryLease, "preparePendingRecovery").mockResolvedValue({
+      delivery: pending,
+      reservationNonce: "nonce",
+    } as never);
+    try {
+      await expect(internal.prepareDeliveryJoin("recovery", {
+        deliveryId: "d-recovery",
+        role: "recovery",
+        ownsSubset: ["test/fixtures/spec376-canonical-dogfood.json"],
+        expectedHead: "head",
+        operationId: "join-recovery",
+      })).resolves.toMatchObject({ cwd: recoveryWorktree, reservationNonce: "nonce", segmentId: "seg-recovery" });
+      expect(prepare).toHaveBeenCalledWith({
+        deliveryId: "d-recovery",
+        canonicalWorktree: recoveryWorktree,
+        expectedHeadSha: "head",
+        executionAgent: "recovery",
+        principal: undefined,
+        ownsSubset: ["test/fixtures/spec376-canonical-dogfood.json"],
+      });
+    } finally {
+      ws.dispose();
+    }
+  });
+
   it("mechanism-only canonical Delivery reuses one worktree through review completion", async () => {
     const root = mkdir(); const base = path.join(root, ".tachyon-worktrees");
     fs.writeFileSync(path.join(root, "tachyon.yml"), `settings:\n${namedBehaviorVerifyYaml()}  worktree:\n    base: ${JSON.stringify(base)}\nagents:\n  boss:\n    cmd: sh\n`, "utf8");

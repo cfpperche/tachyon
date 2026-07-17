@@ -255,6 +255,11 @@ export interface DeliverySalvageQuarantineInput {
   approvalId?: string;
 }
 
+export interface DeliveryPreparePendingRecoveryInput {
+  deliveryId: string; canonicalWorktree: string; expectedHeadSha: string;
+  executionAgent: string; principal?: string; ownsSubset: string[];
+}
+
 export interface DeliveryAbandonQuarantineInput {
   deliveryId: string; canonicalWorktree: string; actor: DeliveryActor; operationId: string;
   expectedHeadSha: string; expectedInventory: DeliveryRecoveryInventory; approvalId: string;
@@ -462,6 +467,32 @@ export class DeliveryLeaseService {
   async salvageQuarantine(input: DeliverySalvageQuarantineInput): Promise<DeliveryLeaseReservation> {
     try { return await this.salvageQuarantineInternal(input); }
     catch (error) { return this.recoveryFailure<DeliveryLeaseReservation>(error, input.operationId, input.deliveryId, { ...structuredClone(input), canonicalWorktree: path.resolve(input.canonicalWorktree), ownsSubset: normalizeOwns(input.ownsSubset), expectedInventory: normalizeRecoveryInventory(input.expectedInventory) }, "quarantine_salvaged", "pending"); }
+  }
+
+  /**
+   * A successful salvage already owns a pending recovery reservation. Materialization must reuse
+   * that exact nonce rather than attempting a second acquire, while every caller-supplied boundary
+   * still matches the durable holder and open recovery segment.
+   */
+  async preparePendingRecovery(input: DeliveryPreparePendingRecoveryInput): Promise<DeliveryLeaseReservation> {
+    const canonicalWorktree = path.resolve(input.canonicalWorktree);
+    const ownsSubset = normalizeOwns(input.ownsSubset);
+    return this.withDeliveryLock(input.deliveryId, async () => this.deps.withWorktreeLock(canonicalWorktree, async () => {
+      const current = await this.deps.store.get(input.deliveryId);
+      if (!current) throw new DeliveryNotFoundError(input.deliveryId);
+      await this.assertCanonical(current, canonicalWorktree);
+      const holder = current.lease.holder;
+      const tail = current.segments.at(-1);
+      if (current.lease.state !== "pending" || !holder?.reservationNonce || !tail || tail.releasedAt
+        || tail.role !== "recovery" || holder.segmentId !== tail.id
+        || holder.executionAgent !== input.executionAgent || tail.executionAgent !== input.executionAgent
+        || holder.principal !== input.principal || tail.principal !== input.principal
+        || current.lease.expectedHeadSha !== input.expectedHeadSha || tail.grantedHeadSha !== input.expectedHeadSha
+        || !isDeepStrictEqual(tail.ownsSubset, ownsSubset)) {
+        throw new DeliveryLeaseError("DELIVERY_INVALID_STATE", false, "pending recovery reservation does not match the requested execution boundary");
+      }
+      return { delivery: current, reservationNonce: holder.reservationNonce };
+    }));
   }
 
   private async salvageQuarantineInternal(input: DeliverySalvageQuarantineInput): Promise<DeliveryLeaseReservation> {
