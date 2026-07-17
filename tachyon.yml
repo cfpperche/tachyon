@@ -8,8 +8,6 @@
 # claude builders driving SDD specs, a codex agent as the adversarial second model.
 
 agents:
-  claude:
-    cmd: claude
   hermes:
     cmd: hermes
 
@@ -23,8 +21,8 @@ settings:
   maxAgents: 12
   # Coordinators allowed to record integration or prune linked GitDelivery projections.
   gitDelivery:
-    prunePrincipals: [ grok, claude, codex ]
-    integratePrincipals: [ claude ]
+    prunePrincipals: [ hermes, grok, claude, codex ]
+    integratePrincipals: [ hermes, claude ]
   # specs 362/385 — this repository's explicit verify_task commands/adapter (no product-global runner defaults):
   # full builds dist/ first (the plugin-ui full-stack topology needs bundles; a fresh worktree has none).
   verify:
