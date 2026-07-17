@@ -27,3 +27,6 @@ _Questions surfaced during the build with no answer yet. Owner or path to resolu
 ## Dogfood log
 
 - 2026-07-17 — `npm run dogfood:dev-host -- headless` passed all eight real Extension Development Host checks with a `dev` manifest and fixture-private cache/state/data.  `npm run dogfood:dev-host -- clean` then stopped the exact fixture engine, tolerated a proven-stale fixture tmux socket, removed the fixture, and left its systemd unit inactive/collected.  The installed stable engine was not addressed.
+
+### 2026-07-17T15:03:19Z — pass (1/1) — source: tasks.md — commit: c0df667ddc7b7576c09f6771b1a263aff4d7430c
+- `npm run dogfood:dev-host -- headless` — pass

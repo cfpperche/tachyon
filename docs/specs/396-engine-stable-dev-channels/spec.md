@@ -2,7 +2,8 @@
 
 _Created 2026-07-17._
 
-**Status:** in-progress
+**Status:** shipped
+**Closure:** Shipped in `3aec3223` + `c0df667d`: production is stable-only from exact clean `main`, worktree builds are isolated dev-only, same-version stable byte drift refuses, and Dev Host upgrade/rollback plus cleanup passed dogfood; final `npm test` passed 4,742 tests with 3 skipped.
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
