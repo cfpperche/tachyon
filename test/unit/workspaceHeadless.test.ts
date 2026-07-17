@@ -809,7 +809,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     }
   });
 
-  it("quarantines a pre-hardening unsigned Delivery without rewriting it or blocking signed rows", async () => {
+  it("one-time reseals a pre-hardening unsigned Delivery without blocking signed rows", async () => {
     const { DeliveryStore } = await import("../../src/delivery/store.js");
     const root = mkdir();
     fs.writeFileSync(
@@ -855,8 +855,8 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
       expect(ws.deliveryReloadState()?.byId.get(unsigned.id)).toMatchObject({ class: "unavailable" });
       expect(ws.deliveryReloadState()?.unavailableAgents.has("bound-old")).toBe(true);
       await expect(ws.manager.spawn("bound-old")).rejects.toThrow(/Delivery/);
-      await expect(ws.deliveries.get(unsigned.id)).rejects.toThrow("authority integrity check failed");
-      expect(readStoredJson()).toBe(before);
+      await expect(ws.deliveries.get(unsigned.id)).resolves.toMatchObject({ id: unsigned.id });
+      expect(JSON.parse(readStoredJson())).toHaveProperty("authorityIntegrity");
 
       const signed = await ws.deliveries.create({
         id: "d-post-hardening",
@@ -869,11 +869,9 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
       expect(ws.deliveryReloadState()?.byId.get(unsigned.id)?.class).toBe("unavailable");
       expect(ws.deliveryReloadState()?.byId.get(signed.id)?.class).toBe("terminal");
       await expect(ws.deliveries.get(signed.id)).resolves.toMatchObject({ id: signed.id });
-      expect(readStoredJson()).toBe(before);
+      expect(JSON.parse(readStoredJson())).toHaveProperty("authorityIntegrity");
 
-      const notices = host.notices.filter((notice) => /quarantined 1 canonical Delivery record/.test(notice.message));
-      expect(notices).toHaveLength(1);
-      expect(notices.every((notice) => !notice.message.includes(unsigned.id) && notice.message.length < 180)).toBe(true);
+      expect(host.notices.filter((notice) => /quarantined 1 canonical Delivery record/.test(notice.message))).toHaveLength(0);
       await expect(ws.manager.spawn("ordinary")).resolves.toBeUndefined();
     } finally {
       ws.dispose();
