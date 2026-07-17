@@ -824,15 +824,31 @@ export class DeliveryProjectionService {
       throw new DeliveryProjectionError("missing or non-reciprocal GitDelivery link", "PROJECTION_DRIFT");
     }
 
-    if (classif.class === "held" || classif.class === "quarantined" || classif.class === "unavailable") {
+    // A reload snapshot predating salvage can still describe the former held lease. Re-establish
+    // terminal safety from live occupancy at the mutation boundary; unknown/live observations fail closed.
+    let safetyClass = classif.class;
+    let safetyReason = classif.reason;
+    if ((delivery.lease.state === "free" || delivery.lease.state === "abandoned") && safetyClass !== "terminal"
+      && this.deps.worktreeOccupancy) {
+      const [liveState, occupant] = await Promise.all([
+        this.deps.liveness(projection.agent).catch((): "unknown" => "unknown"),
+        this.deps.worktreeOccupancy(projection.worktreePath).catch(() => ({ state: "live" as const, agent: "unknown", cwd: projection.worktreePath })),
+      ]);
+      if (liveState === "not_live" && !occupant) {
+        safetyClass = "terminal";
+        safetyReason = `current ${delivery.lease.state} lease has no live agent or worktree occupant`;
+      }
+    }
+
+    if (safetyClass === "held" || safetyClass === "quarantined" || safetyClass === "unavailable") {
       throw new DeliveryProjectionError(
-        `linked Delivery safety class '${classif.class}' refuses ${action}: ${classif.reason}`,
+        `linked Delivery safety class '${safetyClass}' refuses ${action}: ${safetyReason}`,
         "PROJECTION_UNSAFE",
       );
     }
-    if (classif.class !== "terminal") {
+    if (safetyClass !== "terminal") {
       throw new DeliveryProjectionError(
-        `unknown T14 classification '${classif.class}' refuses ${action}`,
+        `unknown T14 classification '${safetyClass}' refuses ${action}`,
         "PROJECTION_UNSAFE",
       );
     }
