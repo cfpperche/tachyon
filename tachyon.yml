@@ -14,17 +14,11 @@ agents:
     cmd: codex
   codex-budget:
     cmd: codex
-  codex-soul:
-    cmd: codex
   grok:
     cmd: grok
   grok-claudex:
     cmd: grok
     cwd: /home/goat/claudex
-  grok-hermes:
-    cmd: grok
-  codex-regression:
-    cmd: codex
   hermes:
     cmd: hermes
 
