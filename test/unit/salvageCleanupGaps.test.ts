@@ -4,6 +4,7 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 import type { ProcessFencePort } from "../../src/agents/processFence.js";
+import { sealAuthorityRecord, workspaceAuthorityDomain } from "../../src/delivery/authorityIntegrity.js";
 import { DeliveryLeaseService } from "../../src/delivery/leaseService.js";
 import { DeliveryProjectionService } from "../../src/delivery/projectionService.js";
 import { type DeliveryAuthorityHead, DeliveryStore } from "../../src/delivery/store.js";
@@ -130,6 +131,7 @@ describe("salvage cleanup gaps", () => {
     const tamperedRoot = root();
     const unsignedStore = new DeliveryStore(tamperedRoot, { now: () => now });
     await unsignedStore.create(input("d-invalid"));
+    await unsignedStore.create(input("d-healthy"));
     const tamperDb = new DatabaseSync(unsignedStore.databasePath);
     try {
       const row = tamperDb.prepare("SELECT record_json FROM deliveries WHERE id = 'd-invalid'").get() as { record_json: string };
@@ -139,10 +141,29 @@ describe("salvage cleanup gaps", () => {
     } finally { tamperDb.close(); }
     const guarded = new DeliveryStore(tamperedRoot, { now: () => now, authorityIntegrityKey: () => key });
     await expect(guarded.get("d-invalid")).rejects.toThrow("authority integrity check failed");
+    await expect(guarded.get("d-healthy")).resolves.toMatchObject({ id: "d-healthy" });
+    await expect(guarded.listWithCorrupt()).resolves.toMatchObject({
+      records: [expect.objectContaining({ id: "d-healthy" })],
+      corrupt: [expect.objectContaining({ id: "d-invalid", error: expect.stringContaining("authority integrity check failed") })],
+    });
     const verifyDb = new DatabaseSync(guarded.databasePath);
     try {
       expect(verifyDb.prepare("SELECT value FROM delivery_store_metadata WHERE key = 'authority_legacy_reseal_v1_complete'").get())
-        .toBeUndefined();
+        .toEqual({ value: "1" });
     } finally { verifyDb.close(); }
+
+    const tornRoot = root();
+    const tornLegacy = new DeliveryStore(tornRoot, { now: () => now });
+    const torn = await tornLegacy.create(input("d-torn-head"));
+    const sealed = sealAuthorityRecord(torn as typeof torn & Record<string, unknown>, key,
+      workspaceAuthorityDomain("canonical-delivery", tornRoot));
+    const tornHeads = new Map<string, DeliveryAuthorityHead>([[torn.id, {
+      revision: torn.version, mac: sealed.authorityIntegrity!.mac,
+    }]]);
+    const resumed = new DeliveryStore(tornRoot, { now: () => now, authorityIntegrityKey: () => key, authorityHead: {
+      current: async (id) => tornHeads.get(id),
+      prepare: async () => { throw new Error("already-prepared head must not be prepared twice"); },
+    } });
+    await expect(resumed.get(torn.id)).resolves.toEqual(sealed);
   });
 });

@@ -157,7 +157,8 @@ export class DeliveryStore {
   }
 
   async listWithCorrupt(): Promise<{ records: Delivery[]; corrupt: DeliveryCorruptRecord[] }> {
-    await this.ensureLegacyResealed();
+    // This is the graceful-degradation API: migration trouble must remain per-record below.
+    await this.ensureLegacyResealed().catch(() => undefined);
     return this.withDatabaseAsync(async (db) => {
       const records: Delivery[] = [];
       const corrupt: DeliveryCorruptRecord[] = [];
@@ -633,7 +634,12 @@ export class DeliveryStore {
   private async ensureLegacyResealed(): Promise<void> {
     if (!this.opts.authorityIntegrityKey) return;
     this.legacyReseal ??= this.migrateLegacyUnsignedRecords();
-    await this.legacyReseal;
+    try {
+      await this.legacyReseal;
+    } catch (error) {
+      this.legacyReseal = undefined;
+      throw error;
+    }
   }
 
   private async migrateLegacyUnsignedRecords(): Promise<void> {
@@ -646,27 +652,34 @@ export class DeliveryStore {
 
       const rows = db.prepare("SELECT id, record_json FROM deliveries ORDER BY id").all() as SqlRow[];
       const unsigned: Array<{ id: string; sealed: Delivery }> = [];
-      // Authenticate every already-sealed row before mutating anything. A present invalid MAC is
-      // tamper evidence, never legacy input.
       for (const row of rows) {
         const id = String(row.id);
-        const record = parseRecord(String(row.record_json));
-        if (record.id !== id) {
-          throw new DeliveryInvariantError(`Delivery row identity '${id}' does not match payload identity '${record.id}'`);
+        let raw: unknown;
+        try { raw = JSON.parse(String(row.record_json)); } catch { continue; }
+        if (!raw || typeof raw !== "object" || (raw as Record<string, unknown>).authorityIntegrity !== undefined) continue;
+        try {
+          const record = parseRecord(String(row.record_json));
+          if (record.id !== id) continue;
+          unsigned.push({ id, sealed: sealAuthorityRecord(record as Delivery & Record<string, unknown>, key, this.authorityDomain()) });
+        } catch {
+          // Invalid legacy payloads remain isolated by parseStoredRecord/listWithCorrupt.
         }
-        if (record.authorityIntegrity !== undefined) {
-          if (!verifyAuthorityRecord(record as Delivery & Record<string, unknown>, key, this.authorityDomain())) {
-            throw new DeliveryInvariantError(`Delivery '${id}' authority integrity check failed`);
-          }
-          if (this.opts.authorityHead) await this.assertAuthorityHead(record);
-          continue;
-        }
-        await this.assertAuthorityHeadAbsent(id);
-        unsigned.push({ id, sealed: sealAuthorityRecord(record as Delivery & Record<string, unknown>, key, this.authorityDomain()) });
       }
 
-      for (const entry of unsigned) await this.prepareAuthorityHead(entry.sealed);
       for (const entry of unsigned) {
+        if (this.opts.authorityHead) {
+          const next = this.headFor(entry.sealed);
+          const current = await this.opts.authorityHead.current(entry.id);
+          if (current === undefined) {
+            await this.opts.authorityHead.prepare(entry.id, next);
+            if (!sameAuthorityHead(await this.opts.authorityHead.current(entry.id), next)) {
+              throw new DeliveryInvariantError(`Delivery '${entry.id}' authority head prepare was not durable or exact`);
+            }
+          } else if (!sameAuthorityHead(current, next)) {
+            // A foreign/mismatched head is corruption for this row, not a store-wide outage.
+            continue;
+          }
+        }
         db.prepare("UPDATE deliveries SET record_json = ? WHERE id = ?")
           .run(JSON.stringify(entry.sealed), entry.id);
       }
