@@ -466,6 +466,41 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     ws.dispose();
   });
 
+  it("accepts a clean recovery inventory with more than one unique commit", async () => {
+    const { ws } = await makeWorkspace();
+    const repo = mkdir();
+    git(repo, ["init"]);
+    git(repo, ["config", "user.email", "test@example.com"]);
+    git(repo, ["config", "user.name", "Test User"]);
+    fs.writeFileSync(path.join(repo, "recovery.txt"), "base\n");
+    git(repo, ["add", "recovery.txt"]);
+    git(repo, ["commit", "-m", "base"]);
+    const baseSha = git(repo, ["rev-parse", "HEAD"]);
+    fs.appendFileSync(path.join(repo, "recovery.txt"), "one\n");
+    git(repo, ["commit", "-am", "one"]);
+    const firstUniqueSha = git(repo, ["rev-parse", "HEAD"]);
+    fs.appendFileSync(path.join(repo, "recovery.txt"), "two\n");
+    git(repo, ["commit", "-am", "two"]);
+    const headSha = git(repo, ["rev-parse", "HEAD"]);
+    const inspect = (ws as unknown as {
+      requiredRecoveryInventory(cwd: string, base: string): Promise<{
+        inventory: { headSha: string; dirtyPaths: Array<{ status: string; path: string }>; uniqueCommits: string[] };
+      }>;
+    }).requiredRecoveryInventory.bind(ws);
+    try {
+      await expect(inspect(repo, baseSha)).resolves.toEqual({
+        inventory: { headSha, dirtyPaths: [], uniqueCommits: [headSha, firstUniqueSha] },
+      });
+
+      fs.writeFileSync(path.join(repo, "dirty.txt"), "untracked\n");
+      await expect(inspect(repo, baseSha)).resolves.toEqual({
+        inventory: { headSha, dirtyPaths: [{ status: "??", path: "dirty.txt" }], uniqueCommits: [headSha, firstUniqueSha] },
+      });
+    } finally {
+      ws.dispose();
+    }
+  });
+
   it("mechanism-only canonical Delivery reuses one worktree through review completion", async () => {
     const root = mkdir(); const base = path.join(root, ".tachyon-worktrees");
     fs.writeFileSync(path.join(root, "tachyon.yml"), `settings:\n${namedBehaviorVerifyYaml()}  worktree:\n    base: ${JSON.stringify(base)}\nagents:\n  boss:\n    cmd: sh\n`, "utf8");

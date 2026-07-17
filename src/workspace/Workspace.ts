@@ -127,7 +127,7 @@ import type { NoticeDeliveryResult, NotifyLevel } from "../bridge/tools.js";
 import { resolveOpencodeStorageSession } from "./opencodeStorage.js";
 import { GitDeliveryStore } from "../git-delivery/store.js";
 import { DeliveryStore } from "../delivery/store.js";
-import { DeliveryLeaseService, waitForDeliveryLease } from "../delivery/leaseService.js";
+import { DeliveryLeaseService, waitForDeliveryLease, type DeliveryRecoveryInspection } from "../delivery/leaseService.js";
 import { UnavailableProcessFence } from "../agents/processFence.js";
 import { readOwnApprovalRequest } from "../bridge/approvalRequest.js";
 import { DeliveryVerificationLeaseService } from "../delivery/verificationLease.js";
@@ -669,14 +669,7 @@ export class Workspace {
       canonicalWorktreeFor: async (delivery) => fs.realpathSync((await this.exactCanonicalProjection(delivery)).worktreePath),
       readHead: async (cwd) => this.requiredGitOutput(["rev-parse", "HEAD"], cwd, "Git HEAD"),
       inspectWorktree: async (cwd) => ({ headSha: await this.requiredGitOutput(["rev-parse", "HEAD"], cwd, "Git HEAD"), clean: await this.requiredGitStatus(cwd) }),
-      inspectRecoveryWorktree: async (cwd, baseSha) => {
-        const headSha = await this.requiredGitOutput(["rev-parse", "HEAD"], cwd, "Git HEAD");
-        const status = await this.requiredGitOutput(["status", "--porcelain=v1"], cwd, "Git status");
-        const commits = await this.requiredGitOutput(["rev-list", `${baseSha}..${headSha}`], cwd, "Git recovery history");
-        return { inventory: { headSha,
-          dirtyPaths: status.split("\n").filter(Boolean).map((line) => ({ status: line.slice(0, 2), path: line.slice(3) })),
-          uniqueCommits: commits.split("\n").filter(Boolean) } };
-      },
+      inspectRecoveryWorktree: (cwd, baseSha) => this.requiredRecoveryInventory(cwd, baseSha),
       inspectReviewWorktree: async (cwd, taskRef) => {
         const headSha = await this.requiredGitOutput(["rev-parse", "HEAD"], cwd, "Git HEAD");
         const taskRefSha = await this.requiredGitOutput(["rev-parse", taskRef], cwd, "Git task ref");
@@ -2894,6 +2887,27 @@ export class Workspace {
       throw new Error(`Git status inspection failed (${result.code}): ${result.stderr.trim() || "no diagnostic"}`);
     }
     return result.stdout.trim() === "";
+  }
+
+  private async requiredRecoveryInventory(cwd: string, baseSha: string): Promise<DeliveryRecoveryInspection> {
+    const headSha = await this.requiredGitOutput(["rev-parse", "HEAD"], cwd, "Git HEAD");
+    const status = await this.gitExec(["status", "--porcelain=v1"], cwd);
+    if (status.code !== 0) {
+      throw new Error(`Git status failed (${status.code}): ${status.stderr.trim() || "no diagnostic"}`);
+    }
+    const history = await this.gitExec(["rev-list", `${baseSha}..${headSha}`], cwd);
+    if (history.code !== 0) {
+      throw new Error(`Git recovery history failed (${history.code}): ${history.stderr.trim() || "no diagnostic"}`);
+    }
+    const uniqueCommits = history.stdout.split(/\r?\n/).filter(Boolean);
+    if (uniqueCommits.some((sha) => !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(sha))) {
+      throw new Error("Git recovery history returned a malformed object id");
+    }
+    return { inventory: {
+      headSha,
+      dirtyPaths: status.stdout.split(/\r?\n/).filter(Boolean).map((line) => ({ status: line.slice(0, 2), path: line.slice(3) })),
+      uniqueCommits,
+    } };
   }
 
   /** The Delivery backlink, linked row, and real worktree must agree at every canonical entry point. */
