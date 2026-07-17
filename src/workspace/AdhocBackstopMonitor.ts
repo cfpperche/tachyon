@@ -9,6 +9,8 @@ export interface AdhocBackstopDeps {
   now(): number;
   deliverNotice(parent: string, line: string, metadata?: { sourceChild?: string; sourceIncarnation?: number }): Promise<unknown>;
   sourceNoticeMetadata?(agent: string): { sourceChild?: string; sourceIncarnation?: number };
+  /** t-9552f3 — true when the child already rang notify_agent this session (completion hint). */
+  completionHinted?(agent: string): boolean;
 }
 
 type BackstopReason = "idle" | "working";
@@ -44,12 +46,25 @@ export class AdhocBackstopMonitor {
       if (!attention || attention.state === "needs-input" || attention.state === "throttled") continue;
       if (attention.state !== "idle" && attention.state !== "working") continue;
 
+      // t-9552f3 — child already notified parent (completion doorbell). Do not treat a
+      // stuck "working" classification as an active-work stall; idle-style nudge is enough
+      // if silence is long, and "still listed as working" after notify is a false alarm.
+      const completionHinted = this.deps.completionHinted?.(entry.name) === true;
+      let effectiveState = attention.state;
+      if (completionHinted && attention.state === "working" && !attention.composerOccupied) {
+        effectiveState = "idle";
+      }
+
       const stableSince = attention.outputStableSince ?? attention.contentSince ?? attention.since;
       const stableMs = now - stableSince;
       if (stableMs < this.thresholdMs) continue;
-      if (attention.state === "working" && stableMs < Math.max(this.thresholdMs, MAX_WORKING_STALL_MS)) continue;
+      if (effectiveState === "working" && stableMs < Math.max(this.thresholdMs, MAX_WORKING_STALL_MS)) continue;
+      // After notify, skip the long working-stall path entirely — session may stay open for postmortem.
+      if (completionHinted && attention.state === "working") {
+        // only the idle message path (or silence) — already remapped to idle above
+      }
 
-      const reason: BackstopReason = attention.state;
+      const reason: BackstopReason = effectiveState;
       const key = `${reason}:${attention.episodeKey ?? String(stableSince)}`;
       if (this.nudgedEpisode.get(entry.name) === key) continue;
       this.nudgedEpisode.set(entry.name, key);

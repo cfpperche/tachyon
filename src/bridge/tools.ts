@@ -123,6 +123,8 @@ export interface BridgeDeps {
   composerOccupiedOf?: (agent: string) => boolean | undefined;
   /** spec 341 — semantic agent notice delivery; queues unsafe recipients instead of raw pane submit. */
   deliverNotice?: (target: string, line: string) => Promise<NoticeDeliveryResult>;
+  /** t-9552f3 — mark sender as having completed a doorbell this session (attention/backstop reconciliation). */
+  markCompletionHint?: (agent: string) => void;
   /** Fired after any pin mutation — wired to the sidebar refresh. */
   onPinsChanged?: () => void;
   /** Fired after a human approval request is recorded, so the host can show the approval view. */
@@ -1799,6 +1801,9 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         if (!prepareAgentSummary(summary)) {
           return fail(new Error("summary must not be empty after sanitizing"));
         }
+        // t-9552f3 — after a witnessed, non-empty completion doorbell: latch sender so attention/backstop
+        // stop treating a finished turn with an open pane as active "working" work.
+        deps.markCompletionHint?.(agent);
         const line = composeAgentNotice(agent, to, summary);
         const result = deps.deliverNotice ? await deps.deliverNotice(to, line) : await deliverNoticeFallback(deps, session, line);
         const suffix = result.dropped ? ` (${result.dropped} older notice${result.dropped === 1 ? "" : "s"} dropped)` : "";

@@ -56,7 +56,9 @@ import { resolveCaptureId, resolveCaptureSession, resolveCurrentSession } from "
 import { planResume, autoResumes, offers, type ResumePlanItem } from "../resume/planResume.js";
 import { LifecycleMonitor } from "../agents/LifecycleMonitor.js";
 import { AttentionMonitor, type AgentAttention } from "../attention/AttentionMonitor.js";
+import { applyCompletionHint, CompletionHintStore } from "../attention/completionHint.js";
 import { AdhocBackstopMonitor } from "./AdhocBackstopMonitor.js";
+import { applyCompletionHint, CompletionHintStore } from "../attention/completionHint.js";
 import { roleReminder, buildRoleDoc } from "../roles/templates.js";
 import { resolveClipboardHelperAsync } from "../tmux/clipboard.js";
 import { compileExtraPatterns } from "../attention/patterns.js";
@@ -435,6 +437,8 @@ export class Workspace {
   private deliveryAuthorityQuarantineNoticeKey?: string;
   readonly monitor: AttentionMonitor;
   private readonly adhocBackstop: AdhocBackstopMonitor;
+  /** t-9552f3 — session-local completion doorbell latch (in-memory). */
+  private readonly completionHints = new CompletionHintStore();
   /** spec 216 — agents whose CLI just compacted; a re-anchor is consumed on their next idle. */
   private pendingAnchor = new Set<string>();
   /** t-71ec3b — per-agent delayed retry for real runtime rate-limit reset screens. */
@@ -868,6 +872,7 @@ export class Workspace {
         this.clientRebind?.onNewIncarnation(name);
         this.noticeQueue.clear(name);
         this.adhocBackstop.reset(name);
+        this.completionHints.clear(name);
         deps.onViewsChanged("agents");
       },
       onStopping: (name) => {
@@ -883,6 +888,7 @@ export class Workspace {
         this.agentIncarnations.delete(name);
         this.noticeQueue.clear(name);
         this.adhocBackstop.reset(name);
+        this.completionHints.clear(name);
         this.expectedDeath.add(name); // spec 332 (dueto F3): kill_agent/dismiss_agent/killAll — a deliberate
         // termination, never a completion signal; consumed by the next observed death edge.
         // spec 364 — user stop while suspect/queued cancels rebind (never resume).
@@ -899,6 +905,7 @@ export class Workspace {
       onRestart: (name) => {
         this.terminals.close(name);
         this.adhocBackstop.reset(name);
+        this.completionHints.clear(name);
       },
       // spec 210 — worktree isolation: resolve the cwd a session is born in.
       // spec 230 — a pipeline node spawns into its RUN's worktree (registered just before spawnNode);
@@ -1165,7 +1172,10 @@ export class Workspace {
         now: () => Date.now(),
       },
       (agent, attention, shouldToast) => {
-        this.waiters.notifyAttention(agent, attention.state);
+        // t-9552f3 — clear completion latch only when pane content moves after the doorbell
+        // (a real new turn). Do not clear while monitor still says "working" on frozen content.
+        this.completionHints.clearIfNewOutput(agent, attention.contentSince);
+        this.waiters.notifyAttention(agent, this.attentionOf(agent)?.state ?? attention.state);
         deps.onViewsChanged("agents");
         // spec 216 (Part C) — re-anchor the role on the first idle AFTER a detected compaction (never
         // working/needs-input), once per episode, only when opted in. spec 241 — continuity recovery rides
@@ -1231,10 +1241,11 @@ export class Workspace {
 
     this.adhocBackstop = new AdhocBackstopMonitor({
       listEntries: () => this.manager.list(),
-      attentionOf: (agent) => this.monitor.stateOf(agent),
+      attentionOf: (agent) => this.attentionOf(agent),
       now: () => Date.now(),
       deliverNotice: (parent, line, metadata) => this.deliverNotice(parent, line, metadata),
       sourceNoticeMetadata: (agent) => this.sourceNoticeMetadata(agent),
+      completionHinted: (agent) => this.completionHints.has(agent),
     });
 
     this.lifecycle = new LifecycleMonitor(
@@ -1419,9 +1430,10 @@ export class Workspace {
         // spec 257 — the captured headless A2A probe lane.
         probe: this.probeService,
         probeCwd: () => this.workspaceRoot,
-        attentionOf: (agent) => this.monitor.stateOf(agent)?.state,
-        composerOccupiedOf: (agent) => this.monitor.stateOf(agent)?.composerOccupied,
+        attentionOf: (agent) => this.attentionOf(agent)?.state,
+        composerOccupiedOf: (agent) => this.attentionOf(agent)?.composerOccupied,
         deliverNotice: (target, line) => this.deliverNotice(target, line),
+        markCompletionHint: (agent) => this.completionHints.mark(agent),
         onPinsChanged: () => deps.onViewsChanged("pins"),
         onApprovalRequested: (request) => deps.onApprovalRequested?.(this, request),
         onTasksChanged: () => deps.onViewsChanged("tasks"),
@@ -1590,7 +1602,7 @@ export class Workspace {
     const busy: Array<{ name: string; state: string }> = [];
     for (const name of running) {
       if (name === callerName || this.manager.kindOf(name) !== "agent") continue;
-      const attention = this.monitor.stateOf(name);
+      const attention = this.attentionOf(name);
       if (attention?.composerOccupied) {
         busy.push({ name, state: attention.state === "idle" ? "composer" : `${attention.state}+composer` });
       } else if (attention && attention.state !== "idle") {
@@ -2372,7 +2384,8 @@ export class Workspace {
     ]);
   }
   attentionOf(agent: string): AgentAttention | undefined {
-    return this.monitor.stateOf(agent);
+    // t-9552f3 — after notify_agent, present finished turns as idle for sidebar/backstop.
+    return applyCompletionHint(this.monitor.stateOf(agent), this.completionHints.has(agent));
   }
 
   /**

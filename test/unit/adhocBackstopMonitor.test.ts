@@ -26,7 +26,7 @@ const att = (state: AgentAttention["state"], stableSince: number, episodeKey = "
   stale: false,
 });
 
-function fixture() {
+function fixture(opts: { completionHinted?: (name: string) => boolean } = {}) {
   let now = 1_000_000;
   const entries = new Map<string, ManagedEntryInfo>([
     ["parent", agent("parent")],
@@ -42,6 +42,7 @@ function fixture() {
       deliverNotice: async (parent, line) => {
         delivered.push({ parent, line });
       },
+      completionHinted: opts.completionHinted,
     },
     10 * 60_000,
   );
@@ -117,5 +118,24 @@ describe("AdhocBackstopMonitor", () => {
     await f.monitor.tick();
 
     expect(f.delivered).toHaveLength(2);
+  });
+
+  it("t-9552f3: after completion hint, does not emit working-stall backstop", async () => {
+    const f = fixture({ completionHinted: (name) => name === "child" });
+    f.attention.set("child", att("working", 1_000_000, "post-notify"));
+    f.setNow(1_000_000 + MAX_WORKING_STALL_MS + 1);
+    await f.monitor.tick();
+    // Remapped to idle path — may still idle-nudge after 10m, never "still listed as working"
+    expect(f.delivered.every((d) => !d.line.includes("still listed as working"))).toBe(true);
+  });
+
+  it("t-9552f3: completion-hinted working still allows idle-style nudge after threshold", async () => {
+    const f = fixture({ completionHinted: (name) => name === "child" });
+    f.attention.set("child", att("working", 1_000_000, "post-notify"));
+    f.setNow(1_000_000 + 10 * 60_000 + 1);
+    await f.monitor.tick();
+    expect(f.delivered).toHaveLength(1);
+    expect(f.delivered[0].line).toContain("has been idle for");
+    expect(f.delivered[0].line).not.toContain("still listed as working");
   });
 });
