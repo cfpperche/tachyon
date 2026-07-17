@@ -59,6 +59,45 @@ describe("delivery lease salvage flagship behavior", () => {
     expect(abandoned.events.at(-1)?.detail).toMatchObject({ evidenceLevel: "approval-only", approvalId: "a-approved" });
   });
 
+  it("t-832946: approval-only abandon works for a quarantine with a corrupt holder boundary (missing executionNonce)", async () => {
+    const f = fixture();
+    f.input.lease = {
+      state: "quarantined",
+      reason: JSON.stringify({ cause: "execution-killed", evidenceLevel: "termination-only" }),
+      changedAt: now,
+      // Corrupt: holder present but executionNonce missing — the legacy stuck case.
+      holder: { segmentId: "seg-worker", executionAgent: "worker", process: { pid: 1, processStart: "1", bootId: "boot" } },
+    };
+    await f.store.create(f.input);
+    fs.rmSync(f.worktree, { recursive: true });
+    const fence: ProcessFencePort = { capability: () => ({ supported: false, reason: "unavailable" }), freeze: async () => {}, terminate: async () => {}, proveEmpty: async () => ({ state: "unknown", reason: "unavailable" }) };
+    const abandoned = await service(f.store, f.worktree, fence).abandonWithoutWorktree({
+      deliveryId: "d-salvage", actor: coordinator, operationId: "corrupt-boundary", approvalId: "a-approved",
+    });
+    expect(abandoned.lease.state).toBe("abandoned");
+    expect(abandoned.events.at(-1)?.detail).toMatchObject({
+      evidenceLevel: "approval-only",
+      corruptHolderBoundary: true,
+      approvalId: "a-approved",
+    });
+    expect(JSON.parse(String(abandoned.lease.reason))).toMatchObject({ cause: "corrupt-holder-boundary" });
+  });
+
+  it("t-832946: held leases still refuse a corrupt holder boundary (no skip of process proof)", async () => {
+    const f = fixture();
+    f.input.lease = {
+      state: "held",
+      expectedHeadSha: "head",
+      changedAt: now,
+      holder: { segmentId: "seg-worker", executionAgent: "worker" }, // missing nonce + process
+    };
+    await f.store.create(f.input);
+    const fence: ProcessFencePort = { capability: () => ({ supported: false, reason: "unused" }), freeze: async () => {}, terminate: async () => {}, proveEmpty: async () => ({ state: "unknown", reason: "unused" }) };
+    await expect(service(f.store, f.worktree, fence).abandonWithoutWorktree({
+      deliveryId: "d-salvage", actor: coordinator, operationId: "held-corrupt", approvalId: "a-approved",
+    })).rejects.toMatchObject({ code: "DELIVERY_QUARANTINED" });
+  });
+
   it("refuses a fence proof whose capability domain drifts", async () => {
     const f = fixture(); f.input.lease = { ...f.input.lease!, state: "quarantined", reason: "dead holder" }; await f.store.create(f.input);
     let calls = 0;
