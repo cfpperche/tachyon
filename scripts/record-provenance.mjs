@@ -78,6 +78,65 @@ function engineChannel() {
   }
 }
 
+/**
+ * Packaged identity for the audit trail: version/channel/git/dist of the shipped artifact.
+ * Prefer the VSIX's embedded provenance.json (written at embed time, packed by vsce) so a later
+ * verify:full rebuild of workspace dist as `dev` cannot rewrite the human deploy record.
+ */
+function parsePackagedIdentity(raw) {
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return null;
+    if (typeof parsed.version !== "string") return null;
+    if (!(parsed.dist && typeof parsed.dist === "object" && !Array.isArray(parsed.dist))) return null;
+    const channel = parsed.engineChannel;
+    if (!(channel === undefined || channel === null || channel === "stable" || channel === "dev")) return null;
+    return {
+      version: parsed.version,
+      engineChannel: channel === undefined ? null : channel,
+      commit: typeof parsed.commit === "string" || parsed.commit === null ? parsed.commit : null,
+      treeSha: typeof parsed.treeSha === "string" || parsed.treeSha === null ? parsed.treeSha : null,
+      workingTreeClean: typeof parsed.workingTreeClean === "boolean" ? parsed.workingTreeClean : false,
+      dist: Object.fromEntries(
+        Object.entries(parsed.dist).filter((entry) => typeof entry[0] === "string" && typeof entry[1] === "string"),
+      ),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function readVsixPackagedIdentity(vsixPath) {
+  try {
+    const raw = execFileSync("unzip", ["-p", vsixPath, "extension/provenance.json"], {
+      encoding: "utf8",
+      maxBuffer: 32 * 1024 * 1024,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    return parsePackagedIdentity(raw);
+  } catch {
+    return null;
+  }
+}
+
+/** Snapshot workspace dist/channel/git before verify:full mutates the tree (default rebuild is dev). */
+function snapshotWorkspacePackageIdentity() {
+  return {
+    version,
+    engineChannel: engineChannel(),
+    ...gitMeta(),
+    dist: distHashes(),
+  };
+}
+
+function resolvePackagedIdentity(vsixPath) {
+  if (vsixPath) {
+    const fromVsix = readVsixPackagedIdentity(vsixPath);
+    if (fromVsix) return { source: "vsix", identity: fromVsix };
+  }
+  return { source: "workspace-pre-verify", identity: snapshotWorkspacePackageIdentity() };
+}
+
 if (!version || typeof version !== "string") throw new Error("package.json version is required");
 
 // EMBEDDED path: the extension root (NOT dist/, so this file never has to hash itself), packed
@@ -96,22 +155,29 @@ function writeEmbedded() {
 }
 
 function writeAudit() {
-  const verify = runVerify();
+  // Capture packaged facts BEFORE runVerify: verify:full runs `node esbuild.mjs` which rebuilds
+  // dist on the default `dev` channel and would otherwise poison engineChannel + dist hashes.
   const vsixPath = findVsix();
+  const { source, identity } = resolvePackagedIdentity(vsixPath);
+  const verify = runVerify();
   const record = {
-    version,
-    engineChannel: engineChannel(),
-    ...gitMeta(),
+    version: identity.version,
+    engineChannel: identity.engineChannel,
+    commit: identity.commit,
+    treeSha: identity.treeSha,
+    workingTreeClean: identity.workingTreeClean,
     packagedBy: process.env.TACHYON_AGENT_NAME || process.env.USER || os.userInfo().username,
     vsix: { path: vsixPath ? rel(vsixPath) : "", sha256: vsixPath ? sha256(vsixPath) : null },
-    dist: distHashes(),
+    dist: identity.dist,
     verify,
+    // engineChannel/dist are frozen from the VSIX (or a pre-verify workspace snapshot). verify:full
+    // rebuilds workspace dist as `dev` and must not rewrite the packaged identity in this record.
     note: "Dogfood build provenance only: detects accidental or lazy out-of-band installs. This is not a security boundary; local agents can forge the record.",
   };
   fs.mkdirSync(AUDIT_DIR, { recursive: true });
-  const out = path.join(AUDIT_DIR, `${version}.json`);
+  const out = path.join(AUDIT_DIR, `${identity.version}.json`);
   fs.writeFileSync(out, `${JSON.stringify(record, null, 2)}\n`, "utf8");
-  console.log(`wrote ${rel(out)}`);
+  console.log(`wrote ${rel(out)} (package identity from ${source})`);
   if (verify.result !== "passed" && !verify.result.startsWith("skipped ")) process.exitCode = 1;
 }
 
@@ -127,6 +193,9 @@ function writeAudit() {
  * no mode (or an unrecognized one), both phases run back-to-back for local convenience — but then
  * the audit record's vsix sha256 reflects whatever .vsix (if any) is already on disk, not the one
  * this run is about to produce; the real ritual invokes the two phases separately around `vsce package`.
+ *
+ * Audit deliberately freezes package identity before verify:full (or reads it from the VSIX) so the
+ * post-verify workspace dist rebuild cannot re-label a stable package as dev in .tachyon/deploys/.
  */
 const mode = process.argv[2];
 if (mode === "embed") writeEmbedded();
