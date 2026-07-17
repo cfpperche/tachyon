@@ -287,7 +287,7 @@ export interface DeliveryLeaseServiceDeps {
   readHead(canonicalWorktree: string): string | Promise<string>;
   inspectWorktree(canonicalWorktree: string): DeliveryWorktreeInspection | Promise<DeliveryWorktreeInspection>;
   inspectRecoveryWorktree?(canonicalWorktree: string, baseSha: string): DeliveryRecoveryInspection | Promise<DeliveryRecoveryInspection>;
-  recoveryPrincipals?: string[];
+  recoveryPrincipals?: readonly string[] | (() => readonly string[]);
   resolveRecoveryApproval?(approvalId: string, actor: DeliveryActor, actionDigest: string): DeliveryRecoveryApproval | Promise<DeliveryRecoveryApproval>;
   inspectReviewWorktree?(canonicalWorktree: string, taskRef: string): DeliveryReviewInspection | Promise<DeliveryReviewInspection>;
   isAncestor(older: string, newer: string, canonicalWorktree: string): boolean | Promise<boolean>;
@@ -1045,8 +1045,11 @@ export class DeliveryLeaseService {
 
   private assertRecoveryActor(delivery: Delivery, actor: DeliveryActor): void {
     const creator = delivery.createdBy.kind === "agent" ? delivery.createdBy.name : undefined;
+    const recoveryPrincipals = typeof this.deps.recoveryPrincipals === "function"
+      ? this.deps.recoveryPrincipals()
+      : this.deps.recoveryPrincipals;
     const allowed = actor.kind === "human" || actor.kind === "master" || actor.kind === "system"
-      || (actor.kind === "agent" && !!actor.name && (actor.name === creator || this.deps.recoveryPrincipals?.includes(actor.name)));
+      || (actor.kind === "agent" && !!actor.name && (actor.name === creator || recoveryPrincipals?.includes(actor.name)));
     if (!allowed) throw new DeliveryLeaseError("DELIVERY_QUARANTINED", false, "caller is not authorized to recover this Delivery");
   }
 
