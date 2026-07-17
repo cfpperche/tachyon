@@ -6,19 +6,20 @@ Marketplace release notes.
 
 ## Unreleased
 
-### Changed
-- **Dogfood lane renamed from “EDH palliative” to Dev Host.** Same isolation contract (fixture + private
-  tmux/cache + worktree extension bits); entry is now `npm run dogfood:dev-host` and `scripts/dev-host/`, with a
-  stable F5 config **Tachyon: Dev Host** and pointer commands `point` / `point-status` / `point-clear`. The old
-  name and npm scripts are not runtime aliases — evolution is recorded in `docs/runbooks/dev-host.md` and the
-  stub `docs/runbooks/edh-palliative-dogfood.md` (task `t-2d1810`).
+## 0.56.22 — Projection intent atomicity + corrupt-quarantine abandon
 
 ### Fixed
-- **Sidebar domain mutations now share one workspace action path.** Pin toggle/delete, schedule pause/delete, and
-  proposal approve/reject now go through a shared `domainActions` layer instead of mixing direct sidebar store edits
-  with VS Code command fanout. Sidebar destructive actions still keep their modal confirmations, command-palette
-  handlers use the same mutation contract after their own confirmations, and stale multi-root messages no-op instead
-  of mutating the first workspace.
+- **GitDelivery projection ops no longer orphan `projection.intent` events on guard failure** (`t-b3242a`).
+  Prune eligibility is assessed before appending a canonical intent; unapplied prune intents that still fail
+  guards can be voided by reconcile; `projectionSync` reports `pending` when the canonical intent log is ahead
+  of `lastAppliedProjectionSequence`.
+- **Approval-only `abandon_without_worktree` works for quarantines with a corrupt holder boundary** (`t-832946`).
+  Missing `executionNonce` / mismatched holder no longer leaves a permanent no-exit quarantine; held leases
+  still fail closed without process death proof.
+
+### Changed
+- **Solo hermes development fleet** may list `hermes` under `gitDelivery.integratePrincipals` /
+  `prunePrincipals` so the local coordinator can close linked GitDelivery records without other agents.
 
 ## 0.45.1 — Catch a mistyped plugin-root placeholder
 
