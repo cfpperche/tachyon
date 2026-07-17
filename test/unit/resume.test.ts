@@ -649,6 +649,36 @@ describe("capture-id resolvers (spec 209 task 6)", () => {
     expect(resolveHermesId("/ws/proj", { home: tmpHome() })).toBeNull();
   });
 
+  it("resolveHermesId prefers the active session with the most recent persisted message", () => {
+    const home = tmpHome();
+    const hermesHome = path.join(home, ".hermes");
+    fs.mkdirSync(hermesHome, { recursive: true });
+    const dbPath = path.join(hermesHome, "state.db");
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { DatabaseSync } = require("node:sqlite") as typeof import("node:sqlite");
+    const db = new DatabaseSync(dbPath);
+    db.exec(`
+      CREATE TABLE sessions (id TEXT PRIMARY KEY, cwd TEXT, started_at REAL, ended_at REAL);
+      CREATE TABLE messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT,
+        content TEXT,
+        active INTEGER DEFAULT 1
+      );
+    `);
+    const addSession = db.prepare("INSERT INTO sessions (id, cwd, started_at, ended_at) VALUES (?, ?, ?, ?)");
+    addSession.run("resumed-old", "/ws/proj", 1000, null);
+    addSession.run("newer-active", "/ws/proj", 2000, null);
+    addSession.run("newest-closed", "/ws/proj", 3000, 4000);
+    const addMessage = db.prepare("INSERT INTO messages (session_id, content) VALUES (?, ?)");
+    addMessage.run("newer-active", "earlier activity");
+    addMessage.run("resumed-old", "latest activity after /resume");
+    addMessage.run("newest-closed", "closed session activity");
+    db.close();
+
+    expect(resolveHermesId("/ws/proj", { home })).toBe("resumed-old");
+  });
+
   it("resolveOpencodeId maps worktree->hash then picks the newest ses_*", () => {
     const home = tmpHome();
     const storage = path.join(home, ".local", "share", "opencode", "storage");

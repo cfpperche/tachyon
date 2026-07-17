@@ -24,6 +24,7 @@ export interface HermesMessageRow {
   reasoning?: string | null;
   reasoning_content?: string | null;
   finish_reason?: string | null;
+  timestamp?: string | null;
   model?: string | null;
 }
 
@@ -42,7 +43,7 @@ interface PendingTool {
 export function createHermesNormalizer(sourcePath?: string): ActivityNormalizer & { pushRows(rows: HermesMessageRow[]): NormalizedEvent[] } {
   const pending = new Map<string, PendingTool>();
   let seq = 0;
-  let runtimeVersion: string | undefined;
+  let model: string | undefined;
 
   const emit = <T extends ActivityEventType>(
     out: NormalizedEvent[],
@@ -52,11 +53,13 @@ export function createHermesNormalizer(sourcePath?: string): ActivityNormalizer 
     raw: unknown,
     recordId?: string,
   ): void => {
+    const effectiveModel = row.model ?? model;
     out.push({
       type,
       runtime: "hermes",
       sequence: seq++,
-      runtimeVersion: row.model ?? runtimeVersion,
+      ...(row.timestamp ? { timestamp: row.timestamp } : {}),
+      ...(effectiveModel ? { model: effectiveModel } : {}),
       recordId,
       sourcePath,
       payload,
@@ -67,7 +70,7 @@ export function createHermesNormalizer(sourcePath?: string): ActivityNormalizer 
   function pushRows(rows: HermesMessageRow[]): NormalizedEvent[] {
     const out: NormalizedEvent[] = [];
     for (const row of rows) {
-      if (typeof row.model === "string" && row.model) runtimeVersion = row.model;
+      if (typeof row.model === "string" && row.model) model = row.model;
       const rid = `msg:${row.id}`;
       const role = (row.role || "").toLowerCase();
 

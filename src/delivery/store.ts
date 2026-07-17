@@ -124,6 +124,7 @@ const STORE_SCHEMA = `
     claimed_at TEXT NOT NULL
   ) STRICT;
 `;
+const LEGACY_RESEAL_MARKER = "authority_legacy_reseal_v1_complete";
 
 /**
  * SQLite is the physical exclusion and crash-recovery mechanism for workspace rows.
@@ -134,6 +135,7 @@ export class DeliveryStore {
   readonly databasePath: string;
   private readonly capability: DeliveryStoreCapability;
   private readonly Database: DatabaseSyncConstructor;
+  private legacyReseal: Promise<void> | undefined;
 
   constructor(readonly workspaceRoot: string, private readonly opts: DeliveryStoreOptions = {}) {
     this.databasePath = path.join(workspaceRoot, ".tachyon", "deliveries-v2.sqlite3");
@@ -155,6 +157,8 @@ export class DeliveryStore {
   }
 
   async listWithCorrupt(): Promise<{ records: Delivery[]; corrupt: DeliveryCorruptRecord[] }> {
+    // This is the graceful-degradation API: migration trouble must remain per-record below.
+    await this.ensureLegacyResealed().catch(() => undefined);
     return this.withDatabaseAsync(async (db) => {
       const records: Delivery[] = [];
       const corrupt: DeliveryCorruptRecord[] = [];
@@ -173,6 +177,7 @@ export class DeliveryStore {
 
   async get(id: string): Promise<Delivery | undefined> {
     assertDeliveryId(id);
+    await this.ensureLegacyResealed();
     return this.withDatabaseAsync(async (db) => {
       const row = db.prepare("SELECT record_json FROM deliveries WHERE id = ?").get(id) as SqlRow | undefined;
       if (row) return structuredClone(await this.parseStoredRecord(String(row.record_json), id));
@@ -186,6 +191,7 @@ export class DeliveryStore {
   async getOperationResult(operationId: string, kind: "create" | "update", deliveryId: string): Promise<Delivery | undefined> {
     assertOperationId(operationId);
     assertDeliveryId(deliveryId);
+    await this.ensureLegacyResealed();
     return this.withDatabaseAsync(async (db) => {
       const row = db.prepare(`
         SELECT receipt.operation_kind, receipt.delivery_id, receipt.result_json,
@@ -203,6 +209,7 @@ export class DeliveryStore {
   }
 
   async create(input: DeliveryCreateInput): Promise<Delivery> {
+    await this.ensureLegacyResealed();
     const id = input.id ?? this.newId();
     assertDeliveryId(id);
     assertOperationId(input.operationId);
@@ -276,6 +283,7 @@ export class DeliveryStore {
    */
   async claimProjection(deliveryId: string): Promise<DeliveryProjectionClaimCapability> {
     assertDeliveryId(deliveryId);
+    await this.ensureLegacyResealed();
     const owner = this.currentProjectionOwner();
     const nonce = randomBytes(16).toString("hex");
     const claimedAt = this.now();
@@ -320,6 +328,7 @@ export class DeliveryStore {
    */
   async releaseProjection(claim: DeliveryProjectionClaimCapability): Promise<void> {
     assertDeliveryId(claim.deliveryId);
+    await this.ensureLegacyResealed();
     if (!claim.nonce) throw new DeliveryInvariantError("projection claim nonce is required");
     this.writeTransaction((db) => {
       db.prepare("DELETE FROM delivery_projection_claims WHERE delivery_id = ? AND nonce = ?")
@@ -329,6 +338,7 @@ export class DeliveryStore {
 
   async getProjectionClaim(deliveryId: string): Promise<{ deliveryId: string; nonce: string; owner: DeliveryProjectionOwnerIdentity; claimedAt: string } | undefined> {
     assertDeliveryId(deliveryId);
+    await this.ensureLegacyResealed();
     return this.withDatabase((db) => {
       const row = db.prepare("SELECT delivery_id, nonce, owner_json, claimed_at FROM delivery_projection_claims WHERE delivery_id = ?")
         .get(deliveryId) as SqlRow | undefined;
@@ -350,6 +360,7 @@ export class DeliveryStore {
     claim: DeliveryProjectionClaimCapability | undefined,
   ): Promise<Delivery> {
     assertDeliveryId(id);
+    await this.ensureLegacyResealed();
     assertOperationId(options.operationId);
     if (options.operationId !== undefined && options.intent === undefined) {
       throw new DeliveryInvariantError("an explicit serializable intent is required with an update operation id");
@@ -617,6 +628,64 @@ export class DeliveryStore {
     }
     if (!historicalReceipt && this.opts.authorityHead) await this.assertAuthorityHead(record);
     return record;
+  }
+
+  /** One-time upgrade boundary for rows created before authority MACs existed. */
+  private async ensureLegacyResealed(): Promise<void> {
+    if (!this.opts.authorityIntegrityKey) return;
+    this.legacyReseal ??= this.migrateLegacyUnsignedRecords();
+    try {
+      await this.legacyReseal;
+    } catch (error) {
+      this.legacyReseal = undefined;
+      throw error;
+    }
+  }
+
+  private async migrateLegacyUnsignedRecords(): Promise<void> {
+    const key = this.authorityKey();
+    if (!key) return;
+    await this.writeAuthorityTransaction(async (db) => {
+      const complete = db.prepare("SELECT value FROM delivery_store_metadata WHERE key = ?")
+        .get(LEGACY_RESEAL_MARKER) as SqlRow | undefined;
+      if (complete?.value === "1") return;
+
+      const rows = db.prepare("SELECT id, record_json FROM deliveries ORDER BY id").all() as SqlRow[];
+      const unsigned: Array<{ id: string; sealed: Delivery }> = [];
+      for (const row of rows) {
+        const id = String(row.id);
+        let raw: unknown;
+        try { raw = JSON.parse(String(row.record_json)); } catch { continue; }
+        if (!raw || typeof raw !== "object" || (raw as Record<string, unknown>).authorityIntegrity !== undefined) continue;
+        try {
+          const record = parseRecord(String(row.record_json));
+          if (record.id !== id) continue;
+          unsigned.push({ id, sealed: sealAuthorityRecord(record as Delivery & Record<string, unknown>, key, this.authorityDomain()) });
+        } catch {
+          // Invalid legacy payloads remain isolated by parseStoredRecord/listWithCorrupt.
+        }
+      }
+
+      for (const entry of unsigned) {
+        if (this.opts.authorityHead) {
+          const next = this.headFor(entry.sealed);
+          const current = await this.opts.authorityHead.current(entry.id);
+          if (current === undefined) {
+            await this.opts.authorityHead.prepare(entry.id, next);
+            if (!sameAuthorityHead(await this.opts.authorityHead.current(entry.id), next)) {
+              throw new DeliveryInvariantError(`Delivery '${entry.id}' authority head prepare was not durable or exact`);
+            }
+          } else if (!sameAuthorityHead(current, next)) {
+            // A foreign/mismatched head is corruption for this row, not a store-wide outage.
+            continue;
+          }
+        }
+        db.prepare("UPDATE deliveries SET record_json = ? WHERE id = ?")
+          .run(JSON.stringify(entry.sealed), entry.id);
+      }
+      db.prepare("INSERT INTO delivery_store_metadata(key, value) VALUES (?, '1')")
+        .run(LEGACY_RESEAL_MARKER);
+    });
   }
 
   private async prepareAuthorityHead(nextRecord: Delivery, expectedRecord?: Delivery): Promise<void> {

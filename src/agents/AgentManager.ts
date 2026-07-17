@@ -245,6 +245,28 @@ export interface PreparedDeliveryJoin {
   segmentId: string;
 }
 
+/**
+ * Hermes surfaces that cannot consume HERMES_TUI_QUERY as a managed startup brief.
+ * argv is the parseLaunchCommand argv (binary path as argv[0]).
+ */
+function hermesBriefIncompatibleArg(argv: string[]): string | undefined {
+  // Known Hermes CLI subcommands / non-TUI modes. Bare `hermes` (possibly with TUI-safe flags)
+  // is the supported managed brief launch shape.
+  // parseLaunchCommand.argv is post-binary (e.g. ["--cli"] or ["chat","-q","hi"]).
+  const SUBCOMMANDS = new Set([
+    "chat", "gateway", "model", "auth", "config", "doctor", "setup", "tools", "skills",
+    "cron", "sessions", "completion", "update", "uninstall", "status", "insights",
+    "acp", "desktop", "dashboard", "proxy", "portal", "kanban", "pairing", "plugins",
+    "secrets", "memory", "send", "webhook", "profile", "claw", "mcp", "gui",
+  ]);
+  for (const token of argv) {
+    if (token === "--cli" || token === "-q" || token === "--query") return token;
+    if (token.startsWith("-")) continue;
+    if (SUBCOMMANDS.has(token.toLowerCase())) return token;
+  }
+  return undefined;
+}
+
 function reviewerSafeCommand(cmd: string): { cmd: string; advisory?: string } {
   const parsed = parseLaunchCommand(cmd);
   if (!parsed || !parsed.allWordsLiteral) throw new Error("reviewer command is structurally ambiguous or uses shell expansion");
@@ -1066,8 +1088,10 @@ export class AgentManager {
   }
 
   /**
-   * Hermes has no interactive positional prompt — the TUI reads HERMES_TUI_QUERY as STARTUP_QUERY.
-   * Inject the same composed brief used by effectiveCmd so contracts are not silently dropped.
+   * Hermes has no interactive positional prompt — the modern TUI reads HERMES_TUI_QUERY as
+   * STARTUP_QUERY. The classic CLI is Hermes' default, so every pushed brief must also select the
+   * TUI explicitly. Explicit non-TUI surfaces (--cli, chat, -q/--query, other CLI subcommands) fail
+   * closed before tmux creation so the brief is never silently dropped.
    */
   private hermesBriefEnv(
     def: AgentDef,
@@ -1075,7 +1099,13 @@ export class AgentManager {
   ): Record<string, string> {
     if (binaryOf(def.cmd) !== "hermes") return {};
     if (!brief) return {};
-    return { HERMES_TUI_QUERY: brief };
+    const incompatible = hermesBriefIncompatibleArg(parseLaunchCommand(def.cmd)?.argv ?? []);
+    if (incompatible) {
+      throw new Error(
+        `Hermes startup brief requires the TUI; remove '${incompatible}' (or use bare 'hermes') or remove the startup brief`,
+      );
+    }
+    return { HERMES_TUI_QUERY: brief, HERMES_TUI: "1" };
   }
 
   /**
@@ -3201,7 +3231,14 @@ export class AgentManager {
     }
     // Hermes: resolve session id via state.db (capture), path is always `$HERMES_HOME/state.db`.
     if (runtime === "hermes") {
-      if (!id && !shared) id = (await this.opts.resolveCaptureId?.(runtime, cwd, configHome)) ?? "";
+      if (opts.live && !shared) {
+        // `/resume` can reactivate an older row in the same private state.db. The stored id is only
+        // a launch-time capture; live Activity must follow the current resolver. Same cwd remains safe
+        // when configHome differs because the ambiguity check above includes both namespaces.
+        id = (await this.opts.resolveCaptureId?.(runtime, cwd, configHome)) ?? id;
+      } else if (!id && !shared) {
+        id = (await this.opts.resolveCaptureId?.(runtime, cwd, configHome)) ?? "";
+      }
       if (!id) return undefined;
       if (!adapter.transcriptPath) return undefined;
       const p = adapter.transcriptPath(configHome, cwd, id);

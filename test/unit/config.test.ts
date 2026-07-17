@@ -608,7 +608,7 @@ describe("parseConfig", () => {
       ).toBe(true);
     });
 
-    it("accepts harness on grok and hermes (private home + mcp/skills/hooks)", () => {
+    it("accepts harness on grok and hermes (private home + mcp/skills)", () => {
       for (const bin of ["grok", "hermes"]) {
         const empty = parseConfig(`agents:\n  a:\n    cmd: ${bin}\n    harness: {}\n`);
         expect(empty.errors).toEqual([]);
@@ -628,6 +628,15 @@ describe("parseConfig", () => {
           `agents:\n  a:\n    cmd: ${bin}\n    env:\n      ${bin === "grok" ? "GROK_HOME" : "HERMES_HOME"}: /tmp/x\n    harness:\n      mcp:\n        s:\n          command: x\n`,
         );
         expect(owned.errors.some((e) => e.includes("Tachyon owns the config home"))).toBe(true);
+      }
+    });
+
+    it("rejects hooks on private-home runtimes without a native user-hook materializer", () => {
+      for (const bin of ["opencode", "grok", "hermes"]) {
+        const parsed = parseConfig(
+          `agents:\n  a:\n    cmd: ${bin}\n    harness:\n      hooks:\n        SessionStart: []\n`,
+        );
+        expect(parsed.errors.some((e) => e.includes(`${bin} does not support 'hooks'`))).toBe(true);
       }
     });
 

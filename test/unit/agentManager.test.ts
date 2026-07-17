@@ -921,6 +921,7 @@ describe("AgentManager", () => {
       await manager.spawn("hermes");
       expect(fake.newSessionArgs[0]?.at(-1)).toBe("hermes --resume saved-session");
       expect(fake.sessionEnv.get(session)?.HERMES_TUI_QUERY).toBeUndefined();
+      expect(fake.sessionEnv.get(session)?.HERMES_TUI).toBeUndefined();
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
@@ -966,6 +967,7 @@ describe("AgentManager", () => {
       await manager.spawn("hermes");
       expect(fake.newSessionArgs[0]?.at(-1)).toBe("env -u TOKEN hermes");
       expect(fake.sessionEnv.get(session)?.HERMES_TUI_QUERY).toContain("WRAPPED_HERMES_GUIDANCE");
+      expect(fake.sessionEnv.get(session)?.HERMES_TUI).toBe("1");
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
@@ -1012,6 +1014,7 @@ describe("AgentManager", () => {
       expect(fake.newSessionArgs[0]?.at(-1)).toBe("hermes");
       expect(fake.sessionEnv.get(session)?.HERMES_TUI_QUERY).toContain("HERMES_SHORT");
       expect(fake.sessionEnv.get(session)?.HERMES_TUI_QUERY).toContain("── TACHYON PRIMER ──");
+      expect(fake.sessionEnv.get(session)?.HERMES_TUI).toBe("1");
 
       fs.writeFileSync(path.join(root, "guidance.md"), `HERMES_LONG_${"x".repeat(5_000)}`, "utf8");
       await manager.restart("hermes", { stop: "force", session: "new" });
@@ -1021,6 +1024,50 @@ describe("AgentManager", () => {
       expect(fs.readFileSync(briefFilePath(root, "hermes"), "utf8")).toContain("HERMES_LONG_");
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects an explicit Hermes classic CLI when a startup brief must be delivered", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-project-guidance-hermes-cli-"));
+    const config = configOf(
+      "agents:\n  hermes:\n    cmd: hermes --cli\n    role: reviewer\n    instructions: review for quality\n",
+    );
+    const fake = fakeTmux();
+    const manager = new AgentManager({
+      tmux: fake.tmux,
+      wsHash: workspaceHash(root),
+      workspaceRoot: root,
+      getConfig: () => config,
+      getMaxAgents: () => 8,
+    });
+    try {
+      await expect(manager.spawn("hermes")).rejects.toThrow(/Hermes startup brief requires the TUI/i);
+      expect(fake.newSessionArgs).toEqual([]);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects explicit Hermes chat / query surfaces when a startup brief must be delivered", async () => {
+    for (const cmd of ["hermes chat", "hermes chat -q hello", "hermes -q hello", "hermes --query hello"]) {
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-project-guidance-hermes-chat-"));
+      const config = configOf(
+        "agents:\n  hermes:\n    cmd: " + cmd + "\n    role: reviewer\n    instructions: review for quality\n",
+      );
+      const fake = fakeTmux();
+      const manager = new AgentManager({
+        tmux: fake.tmux,
+        wsHash: workspaceHash(root),
+        workspaceRoot: root,
+        getConfig: () => config,
+        getMaxAgents: () => 8,
+      });
+      try {
+        await expect(manager.spawn("hermes"), `cmd=${cmd}`).rejects.toThrow(/Hermes startup brief requires the TUI/i);
+        expect(fake.newSessionArgs, `cmd=${cmd}`).toEqual([]);
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
     }
   });
 
@@ -1107,7 +1154,7 @@ describe("AgentManager — session resume (spec 209)", () => {
     opts: {
       newSessionId?: () => string;
       fileExists?: (p: string) => boolean;
-      resolveCaptureId?: (rt: string, cwd: string) => Promise<string | null>;
+      resolveCaptureId?: (rt: string, cwd: string, configHome?: string) => Promise<string | null>;
       resolveCaptureSession?: (rt: string, cwd: string, configHome?: string, id?: string) => Promise<{ id: string; path: string } | null>;
       resolveCurrentSession?: (rt: string, cwd: string) => Promise<string | null>;
       homeDir?: () => string;
@@ -2016,6 +2063,33 @@ describe("AgentManager — session resume (spec 209)", () => {
     await expect(manager.transcriptPathOf("codex", { live: true })).resolves.toEqual({
       path: `${ws}/rollout-codex-id.jsonl`, runtime: "codex", sessionId: "codex-id",
     });
+  });
+
+  it("Hermes live Activity follows an in-TUI /resume past the captured session id", async () => {
+    const homes: Array<string | undefined> = [];
+    const { manager, ledger, ws } = resumeHarness("agents:\n  hermes:\n    cmd: hermes\n", {
+      resolveCaptureId: async (_runtime, _cwd, configHome) => {
+        homes.push(configHome);
+        return "resumed-current";
+      },
+      fileExists: () => true,
+    });
+    const configHome = path.join(ws, ".tachyon", "bridge-mcp", "hermes.hermes");
+    ledger.record("hermes", {
+      def: { cmd: "hermes", kind: "agent" },
+      resume: { runtime: "hermes", sessionId: "captured-old", configHome },
+      cwd: ws,
+      declared: true,
+      updatedAt: "t",
+    });
+
+    await expect(manager.transcriptPathOf("hermes")).resolves.toEqual({
+      path: path.join(configHome, "state.db"), runtime: "hermes", sessionId: "captured-old",
+    });
+    await expect(manager.transcriptPathOf("hermes", { live: true })).resolves.toEqual({
+      path: path.join(configHome, "state.db"), runtime: "hermes", sessionId: "resumed-current",
+    });
+    expect(homes).toEqual([configHome]);
   });
 
   it("spec 238: transcriptPathOf({live}) follows the CURRENT session on an unambiguous cwd, past a captured uuid", async () => {
@@ -4592,6 +4666,15 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     await expect(manager.spawn("helper", { cmd: "opencode", parent: "boss", cwd: REC.path }))
       .rejects.toThrow(/cwd is not used for parented ad-hoc children/);
     expect(newSessionArgs).toHaveLength(0);
+  });
+
+  it("t-e2ebe3: parented opencode spawn delegates without requiring isolated worktree", async () => {
+    const { manager, newSessionArgs } = harness("agents:\n  boss:\n    cmd: claude\n", {
+      resolveSpawnCwd: async () => null,
+    });
+    // Parented ad-hoc children inherit the parent cwd — omit opts.cwd (product fails closed on explicit cwd).
+    await manager.spawn("helper", { cmd: "opencode", parent: "boss" });
+    expect(newSessionArgs).toHaveLength(1);
   });
 
   it("gated spawn fails closed when no worktree is available (spec 362 T1)", async () => {

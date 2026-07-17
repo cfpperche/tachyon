@@ -2,9 +2,9 @@
 
 # ⚡ Tachyon
 
-### Several agents. One editor. Native terminals.
+### Local multi-agent development, powered by a persistent engine.
 
-**Any AI coding agent, side by side — inside VSCode.**
+**A multi-runtime Agentic Development Environment with a VS Code shell.**
 
 [![Marketplace](https://img.shields.io/visual-studio-marketplace/v/cfpperche.tachyon?label=marketplace&color=f5c518)](https://marketplace.visualstudio.com/items?itemName=cfpperche.tachyon)
 [![Installs](https://img.shields.io/visual-studio-marketplace/i/cfpperche.tachyon?color=f5c518)](https://marketplace.visualstudio.com/items?itemName=cfpperche.tachyon)
@@ -15,11 +15,14 @@
 
 </div>
 
-Stop alt-tabbing to babysit agents. Every agent is a **tmux session** shown as a **native
-editor terminal**, and one can orchestrate the rest through an embedded **MCP Bridge** —
-spawn sub-agents, read each other's output, run your curated commands, notify you when they
-need you. Sessions **survive VSCode restarts** (tmux owns the processes), and a machine
-reboot brings each agent back **with its conversation** via the CLI's own `--resume`.
+Tachyon is a **local multi-agent development platform**: a persistent orchestration and
+governance engine owns agents, sessions, worktrees, tasks and the MCP control plane. The VS Code
+extension is the current **human-facing shell and bootstrap mechanism**, not the product boundary.
+Managed entries run as **tmux sessions** and appear as **native editor terminals**; agents can
+orchestrate the fleet through the embedded **MCP Bridge** — spawn sub-agents, read each other's
+output, run curated commands and notify you when they need you. The engine and tmux sessions
+**survive VS Code restarts**, and after a machine reboot Tachyon can restore each agent **with its
+conversation** through the runtime's native resume mechanism.
 **100% local**: no cloud component, no telemetry, no token proxying — on the subscriptions
 you already pay for.
 
@@ -31,7 +34,7 @@ you already pay for.
 
 ## Works with the CLIs you already use
 
-`Claude Code` · `Codex` · `Gemini` · `OpenCode` · `Copilot CLI` · `Aider` · **any CLI** —
+`Claude Code` · `Codex` · `OpenCode` · `Grok` · `Hermes Agent` · `Gemini` · `Copilot CLI` · `Aider` · **any CLI** —
 plus any dev server, watcher or build command. No lock-in, no reselling your tokens.
 
 ## Three steps, no magic
@@ -99,12 +102,13 @@ range 41000–42999 — same workspace, same port, forever). Pin a specific port
 back to an ephemeral one and warns you. The current port shows in the `$(zap) Tachyon :PORT`
 status-bar item.
 
-**You don't register anything.** Tachyon injects the Bridge into every agent it spawns —
-Claude gets an additive `--mcp-config`, Codex an additive `-c mcp_servers.tachyon_bridge=…`,
-and an isolated-harness Claude gets it folded into its scoped MCP file. Injection re-runs on
-spawn, restart, resume, and fork (so a momentarily-down Bridge self-heals on the next start),
-and the token never lands on the command line. Zero workspace config, nothing committed to
-the repo.
+**You don't register anything.** Tachyon uses each supported runtime's native MCP surface:
+Claude gets additive `--mcp-config`, Codex an additive `-c mcp_servers.tachyon_bridge=…`,
+OpenCode a scoped config, and Grok/Hermes a private runtime home with the Bridge folded into
+their config. Harness agents receive the same wiring inside their materialized private config.
+Injection is rebuilt on the lifecycle operations each runtime supports, so a momentarily-down
+Bridge self-heals on the next start; bearer tokens stay in the process environment, never in a
+committed file or command-line literal.
 
 ### External / manual sessions
 
@@ -919,8 +923,10 @@ owns `tachyon.yml` (never from an agent's delegated worktree or process cwd), pr
 verbatim, labels its source, and places it in a separate `PROJECT GUIDANCE (PROJECT-OWNED)` block.
 There is no process-global content cache, so the next supported startup push (spawn or restart) or
 re-anchor sees the current files. Omit `projectGuidance` to deliver no project-owned block. Startup
-delivery uses Tachyon's existing prompt-capable adapters (including Hermes through
-`HERMES_TUI_QUERY`); commands that explicitly manage/resume their own transcript and runtimes with
+Startup delivery uses Tachyon's existing prompt-capable adapters. Hermes receives
+`HERMES_TUI_QUERY` together with `HERMES_TUI=1`; an explicit `hermes --cli` is rejected when a
+startup brief must be delivered rather than silently dropping it. Commands that explicitly
+manage/resume their own transcript and runtimes with
 no startup-prompt adapter are launched without primer or project guidance so Tachyon does not alter
 their command semantics. Manual re-anchor remains an explicit live-pane push for running agents.
 
