@@ -667,21 +667,31 @@ export class DeliveryStore {
       }
 
       for (const entry of unsigned) {
-        if (this.opts.authorityHead) {
-          const next = this.headFor(entry.sealed);
-          const current = await this.opts.authorityHead.current(entry.id);
-          if (current === undefined) {
-            await this.opts.authorityHead.prepare(entry.id, next);
-            if (!sameAuthorityHead(await this.opts.authorityHead.current(entry.id), next)) {
-              throw new DeliveryInvariantError(`Delivery '${entry.id}' authority head prepare was not durable or exact`);
+        try {
+          const port = this.opts.authorityHead;
+          if (port) {
+            const next = this.headFor(entry.sealed);
+            const current = await port.current(entry.id);
+            if (current === undefined) {
+              // A migrating record is already at its true version N (possibly > 1); establish the
+              // first head there rather than through the ordinary create-only revision-1 path.
+              if (port.establishInitial) await port.establishInitial(entry.id, next);
+              else await port.prepare(entry.id, next);
+              if (!sameAuthorityHead(await port.current(entry.id), next)) {
+                throw new DeliveryInvariantError(`Delivery '${entry.id}' authority head prepare was not durable or exact`);
+              }
+            } else if (!sameAuthorityHead(current, next)) {
+              // A foreign/mismatched head is corruption for this row, not a store-wide outage.
+              continue;
             }
-          } else if (!sameAuthorityHead(current, next)) {
-            // A foreign/mismatched head is corruption for this row, not a store-wide outage.
-            continue;
           }
+          db.prepare("UPDATE deliveries SET record_json = ? WHERE id = ?")
+            .run(JSON.stringify(entry.sealed), entry.id);
+        } catch {
+          // One record's reseal/head-establish failure must never brick the rest of the store: leave
+          // it unsigned (it still hard-fails on read via parseStoredRecord/listWithCorrupt, tamper-safe)
+          // and continue so every other row and the completion marker below still land.
         }
-        db.prepare("UPDATE deliveries SET record_json = ? WHERE id = ?")
-          .run(JSON.stringify(entry.sealed), entry.id);
       }
       db.prepare("INSERT INTO delivery_store_metadata(key, value) VALUES (?, '1')")
         .run(LEGACY_RESEAL_MARKER);
