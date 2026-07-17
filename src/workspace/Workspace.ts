@@ -664,7 +664,7 @@ export class Workspace {
     this.deliveryLease = new DeliveryLeaseService({
       store: this.deliveries,
       processFence: new UnavailableProcessFence(),
-      recoveryPrincipals: resolveGitDeliverySettings(this.config?.settings).prunePrincipals,
+      recoveryPrincipals: () => resolveGitDeliverySettings(this.config?.settings).prunePrincipals,
       resolveRecoveryApproval: (approvalId, actor, actionDigest) => {
         if (actor.kind !== "agent" || !actor.name) throw new Error("recovery approval requires an agent caller");
         const request = readOwnApprovalRequest(this.workspaceRoot, approvalId, actor.name);
