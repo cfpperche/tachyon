@@ -59,6 +59,9 @@ the delegated GUI launch below remains coordinator-owned after product integrati
 **Human dogfood:** Attempt a delegated launch with `gpt-5.6`, confirm a pre-tmux structured rejection and suggestions,
 then launch the same contract with `gpt-5.6-sol` and assign the task only after readiness.
 
+**Cookbook-Opt-Out:** This is internal lifecycle enforcement with structured errors on existing Bridge operations; it
+does not introduce a standalone operator command or API that needs a separate how-to.
+
 ## Visual QA
 
 - [x] Evidence: maintainer-owned Dev Host screenshot from 2026-07-17 at

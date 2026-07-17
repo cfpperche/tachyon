@@ -2,10 +2,11 @@
 
 _Created 2026-07-10 after the failed `rtObsVendorSpike` launch._
 
-**Status:** in-progress
+**Status:** shipped
 
 **Closure:** Implementation, headless dogfood, full verification, and maintainer-owned Dev Host/F5 dogfood are green
-on commit `4509f294`; the branch remains unmerged pending final code review.
+on implementation commit `4509f294`; final review approved the main-reanchored branch and merge commit `44deb715`
+landed the runtime launch preflight closure.
 
 ## Intent
 
