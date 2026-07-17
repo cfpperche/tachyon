@@ -22,19 +22,26 @@ import {
 import { moveActivityLog } from "../activity/logStore.js";
 import type { DelegationGate, SpawnContract } from "../bridge/spawnContract.js";
 import type { ResolvedCaptureSession } from "../resume/resolvers.js";
-import { assertVerifiedTranscriptIsolation, gracefulStopForCommand, isolationMechanismForCommand, opencodeIsolationFootgunWarning } from "../runtime/runtimeProfile.js";
+import { assertVerifiedTranscriptIsolation, gracefulStopForCommand, isolationMechanismForCommand, opencodeIsolationFootgunWarning, runtimeProfile } from "../runtime/runtimeProfile.js";
 import { forgetAgent } from "./forgetAgent.js";
 import { wrapWithPrimer, renderPrimer } from "../bridge/primer.js";
 import { delegatedOpencodePermission, setOpencodePermission } from "../registration/adapters.js";
 import { assertSafeBriefTransport, deliverableBody, previewDeliverableBody } from "./briefFile.js";
-import { isExplicitCodexModelCommand, parseLaunchCommand, RuntimeLaunchPreflightError, type RuntimeLaunchPreflightPort } from "../runtime/launchPreflight.js";
+import {
+  hasExplicitModelSelection,
+  isExplicitCodexModelCommand,
+  parseLaunchCommand,
+  RuntimeLaunchPreflightError,
+  RuntimeLaunchPreflightRegistry,
+  type RuntimeLaunchPreflightPort,
+} from "../runtime/launchPreflight.js";
 import { CodexLaunchPreflight } from "../runtime/adapters/codexLaunchPreflight.js";
 import {
   CodexLaunchReadiness,
   matchCodexBootstrapInput,
   type CodexBootstrapInputMatch,
 } from "../runtime/adapters/codexLaunchReadiness.js";
-import { LaunchReadiness, type LaunchReadinessPort } from "../runtime/launchReadiness.js";
+import { GenericLaunchReadiness, LaunchReadiness, RuntimeLaunchReadinessError, type LaunchReadinessPort, type RuntimeLaunchReadinessAdapter } from "../runtime/launchReadiness.js";
 import { loadAndRenderProjectGuidance } from "../config/projectGuidance.js";
 import { openingPromptCapability } from "./openingPromptCapability.js";
 import { cleanupStaleSoulLaunchReservationsSync, ensureSoulLaunchReservationsDirSync, SOUL_LAUNCH_RESERVATION_BOOT_ID, SoulError, resolveSoul, resolveSoulWithRetry, withSoulProfileAdmission, type ResolvedSoul } from "./soul.js";
@@ -76,6 +83,7 @@ export class AgentNotRunningError extends Error {
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+const LAUNCH_READINESS_RUNTIMES = new Set<ResumeRuntime>(["codex", "claude", "grok"]);
 
 /** spec 236 — opencode honors this env var pointing at a config file (verified on 1.17.15). Tachyon
  *  sets it to the per-agent Bridge-only opencode config file it materializes, so a Tachyon-spawned
@@ -204,9 +212,6 @@ export interface DeliveryJoinRequest {
   declaredAgent?: string;
   operationId: string;
 }
-
-const deliveryPreflightProof = Symbol("deliveryPreflightProof");
-type DeliveryPreflightProof = { readonly [deliveryPreflightProof]: true };
 
 /** A receipt is deliberately local to one Delivery launch.  A name is not cleanup authority. */
 interface DeliveryLaunchAttempt {
@@ -692,7 +697,7 @@ export class AgentManager {
 
   constructor(private readonly opts: AgentManagerOptions) {
     cleanupStaleSoulLaunchReservationsSync(opts.workspaceRoot);
-    this.launchPreflight = opts.launchPreflight ?? new CodexLaunchPreflight();
+    this.launchPreflight = opts.launchPreflight ?? new RuntimeLaunchPreflightRegistry({ codex: new CodexLaunchPreflight() });
     this.launchReadiness = opts.launchReadiness ?? new LaunchReadiness();
   }
 
@@ -708,22 +713,28 @@ export class AgentManager {
     return this.opts.getConfig()?.agents[name] ?? this.adhoc.get(name);
   }
 
-  private async assertLaunchPreflight(name: string, cmd: string, env?: Record<string, string>): Promise<void> {
+  private async assertLaunchPreflight(
+    name: string,
+    cmd: string,
+    env?: Record<string, string>,
+    failClosedUnverifiable = false,
+    cwd?: string,
+  ): Promise<void> {
     const parsed = parseLaunchCommand(cmd);
     if (!parsed) {
-      if (isExplicitCodexModelCommand(cmd)) {
+      if (isExplicitCodexModelCommand(cmd) || (failClosedUnverifiable && hasExplicitModelSelection(cmd))) {
         throw new RuntimeLaunchPreflightError({ state: "failed", code: "runtime_preflight_failed", runtime: "codex", reason: "explicit model command could not be verified" });
       }
       return;
     }
-    if (path.basename(parsed.binary) !== "codex") return;
     const result = await this.launchPreflight.check(parsed, {
       ...process.env,
       ...this.opts.getExtraEnv?.(),
       ...env,
       TACHYON_AGENT_NAME: name,
-    });
+    }, cwd);
     if (result.state === "unsupported" || result.state === "failed") throw new RuntimeLaunchPreflightError(result);
+    if (result.state === "unverifiable" && parsed.model && failClosedUnverifiable) throw new RuntimeLaunchPreflightError(result);
   }
 
   /** Public read of an agent's definition (declared config wins, then ad-hoc) — spec 216 needs
@@ -753,15 +764,16 @@ export class AgentManager {
     // ready.  Other/unknown agents retain the historic permissive behavior: we have no stable
     // terminal affordance with which to gate them.
     const def = this.definitionOf(name);
-    const codexAgent = def?.kind === "agent" && binaryOf(def.cmd) === "codex";
+    const candidate = def?.kind === "agent" ? adapterFor(def.cmd) : undefined;
+    const managedAgent = candidate && LAUNCH_READINESS_RUNTIMES.has(candidate.runtime) ? candidate : undefined;
     if (!this.provisionalAgents.has(name)) {
-      if (!codexAgent || !(await this.opts.tmux.hasSession(this.session(name)).catch(() => false))) return true;
+      if (!managedAgent || !(await this.opts.tmux.hasSession(this.session(name)).catch(() => false))) return true;
       this.provisionalAgents.add(name);
     }
     // A timeout is deliberately not terminal. Assignment is a later, cheap re-observation
     // point: it can promote a runtime that finished booting after the bounded launch window.
-    if (!codexAgent) return false;
-    const observed = new CodexLaunchReadiness().classify(
+    if (!managedAgent) return false;
+    const observed = this.readinessAdapter(def!.cmd).classify(
       await this.opts.tmux.capturePane(this.session(name), { lines: 80, joinWrapped: true }).catch(() => ""),
     );
     if (observed?.state === "ready") {
@@ -770,6 +782,13 @@ export class AgentManager {
     }
     if (observed?.state === "rejected") await this.opts.tmux.killSession(this.session(name)).catch(() => undefined);
     return false;
+  }
+
+  private readinessAdapter(cmd: string): RuntimeLaunchReadinessAdapter {
+    const adapter = adapterFor(cmd);
+    if (adapter?.runtime === "codex") return new CodexLaunchReadiness();
+    const composer = adapter ? runtimeProfile(adapter.runtime)?.composer : undefined;
+    return new GenericLaunchReadiness(composer);
   }
 
   /**
@@ -789,18 +808,22 @@ export class AgentManager {
   }
 
   private async observeLaunchReadiness(name: string, cmd: string, session: string, cleanup?: () => Promise<void>): Promise<void> {
-    // Codex is the sole runtime with a stable, non-inference terminal classifier.
-    // Do not turn other managed agents into permanently unassignable "pending"
-    // runtimes merely because we cannot positively observe their proprietary UI.
-    if (binaryOf(cmd) !== "codex") return;
+    const adapter = adapterFor(cmd);
+    if (!adapter || !LAUNCH_READINESS_RUNTIMES.has(adapter.runtime)) return;
     this.readyAgents.delete(name);
     this.provisionalAgents.add(name);
     const readiness = await this.launchReadiness.wait({
       capture: () => this.opts.tmux.capturePane(session, { lines: 80, joinWrapped: true }),
-      adapter: new CodexLaunchReadiness(),
+      adapter: this.readinessAdapter(cmd),
+      isAlive: async () => {
+        const states = await this.opts.tmux.sessionStates(session);
+        const state = states?.get(session);
+        return state ? !state.dead : await this.opts.tmux.hasSession(session).catch(() => false);
+      },
+      aliveAtDeadline: "pending",
     });
     if (readiness.state === "rejected") {
-      const primary = new Error(readiness.code);
+      const primary = new RuntimeLaunchReadinessError(readiness.code);
       const failures: Error[] = [primary];
       try { await this.opts.tmux.killSession(session); }
       catch (error) { failures.push(new Error("failed to kill rejected launch", { cause: error })); }
@@ -1091,12 +1114,23 @@ export class AgentManager {
    * spawn, so spawn/restart/resume/fork are all isolated identically. No-op for an agent without a
    * harness, or when no materializer is wired. Pass the ORIGINAL declared def (it carries `harness`).
    */
-  private applyHarness(name: string, def: AgentDef | undefined, cwd: string, cmd: string, env: Record<string, string>): { cmd: string; env: Record<string, string> } {
+  private materializeRuntimeHarness(name: string, def: AgentDef | undefined, cwd: string): MaterializedHarness | null {
     const isolation = def ? isolationMechanismForCommand(def.cmd) : undefined;
     // spec 357/profile 358 - private-home runtimes need a per-agent config home by default.
     const needsPrivateHome = !!def?.harness || def?.isolate === "transcript" || isolation?.mechanism === "private-home";
-    if (!def || !needsPrivateHome || !this.opts.materializeHarness) return { cmd, env }; // spec 240: also for isolate
-    const mat = this.opts.materializeHarness({ name, def, cwd });
+    if (!def || !needsPrivateHome || !this.opts.materializeHarness) return null;
+    return this.opts.materializeHarness({ name, def, cwd });
+  }
+
+  private applyHarness(
+    name: string,
+    def: AgentDef | undefined,
+    cwd: string,
+    cmd: string,
+    env: Record<string, string>,
+    prepared?: MaterializedHarness | null,
+  ): { cmd: string; env: Record<string, string> } {
+    const mat = prepared === undefined ? this.materializeRuntimeHarness(name, def, cwd) : prepared;
     if (!mat) return { cmd, env };
     const cmdWithArgs = mat.args.length > 0 ? `${cmd} ${mat.args.join(" ")}` : cmd;
     return { cmd: cmdWithArgs, env: { ...env, ...mat.env } };
@@ -1256,9 +1290,11 @@ export class AgentManager {
     }
     const effective = commandOverride ?? definition?.cmd ?? opts.cmd ?? this.definitionOf(name)?.cmd;
     if (!effective) throw new UnknownAgentError(name);
-    await this.assertLaunchPreflight(name, effective, { ...(definition?.env ?? this.definitionOf(name)?.env), ...(opts.env ?? {}) });
+    const preliminaryPreflight = this.launchPreflight.requiresPreparedEnvironment !== true;
+    if (preliminaryPreflight) {
+      await this.assertLaunchPreflight(name, effective, { ...(definition?.env ?? this.definitionOf(name)?.env), ...(opts.env ?? {}) });
+    }
     const resolvedSoul = definition?.soul ? await this.reserveSoulLaunch(name, bound!, definition) : undefined;
-    const preflight: DeliveryPreflightProof = { [deliveryPreflightProof]: true };
     // Preparation is not an acquisition boundary: a same-named session can appear while
     // the Delivery reservation is being prepared.  The inner spawn boundary records
     // acquisition only after it rechecks every identity source.
@@ -1270,7 +1306,7 @@ export class AgentManager {
     const attempt: DeliveryLaunchAttempt = { mode, acquired: false, token: false, materialized: "not-started", session: "not-started", ledger: false };
     const prepared = await this.opts.prepareDeliveryJoin(name, request);
     try {
-      await this.spawnCore(name, opts, { cwd: prepared.cwd, worktree: prepared.worktree, commandOverride, definition, ephemeral: mode !== "declared", preflight, attempt, resolvedSoul });
+      await this.spawnCore(name, opts, { cwd: prepared.cwd, worktree: prepared.worktree, commandOverride, definition, ephemeral: mode !== "declared", preliminaryPreflight, attempt, resolvedSoul });
       await this.opts.confirmDeliveryJoin(name, request, prepared, await this.tryPanePid(name));
       // SDD 368 T14 — reverse binding after confirm; failure is a failed join (never unbound successful holder).
       this.persistDeliveryBinding(name, {
@@ -1506,7 +1542,7 @@ export class AgentManager {
   }
 
   /** Core spawn machinery shared by ordinary spawn and canonical Delivery execution. */
-  private async spawnCore(name: string, opts?: SpawnOptions, forced?: { cwd: string; worktree: WorktreeRecord; commandOverride?: string; definition?: AgentDef; ephemeral?: boolean; preflight?: DeliveryPreflightProof; attempt?: DeliveryLaunchAttempt; resolvedSoul?: ResolvedSoul }): Promise<CanonicalDeliverySpawnReceipt | void> {
+  private async spawnCore(name: string, opts?: SpawnOptions, forced?: { cwd: string; worktree: WorktreeRecord; commandOverride?: string; definition?: AgentDef; ephemeral?: boolean; preliminaryPreflight?: boolean; attempt?: DeliveryLaunchAttempt; resolvedSoul?: ResolvedSoul }): Promise<CanonicalDeliverySpawnReceipt | void> {
     const clearTransientState = () => {
       this.readyAgents.delete(name);
       this.readinessCache.delete(name);
@@ -1536,14 +1572,9 @@ export class AgentManager {
 
     const taskBrief = opts?.taskBrief;
 
-    // Runtime and identity preflight precede dead-pane replacement and every transient/resource
-    // mutation. A broken soul must leave the crashed pane, postmortem, and ledger recoverable.
-    if (!forced?.preflight || forced.preflight[deliveryPreflightProof] !== true) await this.assertLaunchPreflight(name, def.cmd, { ...def.env, ...(opts?.env ?? {}) });
+    // Identity preflight remains before dead-pane replacement. Runtime preflight moves below cwd/private-home
+    // preparation so its probe sees the exact prospective environment and owns explicit compensation.
     const resolvedSoul = forced?.resolvedSoul ?? (def.soul ? await this.reserveSoulLaunch(name, this.soulPrincipal(name), def) : undefined);
-
-    // Delivery does this only after it has created its own session. A collision rejection must not
-    // erase the incumbent's readiness/postmortem state.
-    if (!forced?.attempt) clearTransientState();
 
     const session = this.session(name);
     let replaceDeadSession = false;
@@ -1689,6 +1720,8 @@ export class AgentManager {
     // enrich the gate with their fixed hashes. Runner-neutral `cmd:` gates deliberately do neither. Compose
     // only afterwards so the primer carries the authoritative result, before any tmux mutation.
     const effectivePrimerCtx = { ...primerCtx, freshWorktree: !!worktree };
+    let preparedRuntimeHarness: MaterializedHarness | null | undefined;
+    let createdRuntimeHome = false;
     const preparedLaunch = await (async () => {
     // primerParent (declared owner/spawn parent) only for primer/guidance — not runtime lineage.
     const effectiveInstructions = this.effectiveInstructions(
@@ -1748,6 +1781,22 @@ export class AgentManager {
     // Evaluate the extra environment before minting.  A bridge/env failure must not
     // revoke a durable declared token that this attempt never minted.
     const extraEnv = this.opts.getExtraEnv?.();
+    const runtimeHome = harnessHome(this.opts.workspaceRoot, name);
+    const runtimeHomeExisted = fs.existsSync(runtimeHome);
+    try {
+      preparedRuntimeHarness = this.materializeRuntimeHarness(name, def, cwd);
+    } finally {
+      createdRuntimeHome = !runtimeHomeExisted && fs.existsSync(runtimeHome);
+    }
+    if (!forced?.preliminaryPreflight) {
+      await this.assertLaunchPreflight(
+        name,
+        def.cmd,
+        { ...extraEnv, ...def.env, ...(opts?.env ?? {}), ...(preparedRuntimeHarness?.env ?? {}) },
+        adhoc && def.kind === "agent",
+        cwd,
+      );
+    }
     const effectiveCmd = this.effectiveCmd(def, effectiveInstructions);
     if (forced?.attempt) forced.attempt.acquired = true;
     const tokenEnv = this.opts.mintAgentToken?.(name);
@@ -1760,6 +1809,7 @@ export class AgentManager {
       cwd,
       effectiveCmd,
       { ...extraEnv, ...tokenEnv, ...def.env, ...(opts?.env ?? {}), TACHYON_AGENT_NAME: name, ...this.hermesBriefEnv(def, effectiveInstructions) },
+      preparedRuntimeHarness,
     );
     if (forced?.attempt) forced.attempt.materialized = "completed";
     this.applyDelegatedOpencodeHarnessPermission(def, spawnBuild.env, delegatedOpencode);
@@ -1790,6 +1840,10 @@ export class AgentManager {
         try { revokeLaunchToken(); }
         catch { /* preserve the primary preparation failure; no runtime exists yet */ }
       }
+      if (createdRuntimeHome) {
+        try { this.opts.removeHarnessHome?.(name); }
+        catch { /* preserve the primary preflight/preparation failure */ }
+      }
       if (!forced && worktree && this.opts.rollbackPreparedWorktree) {
         try {
           await rollbackLaunchPreparation();
@@ -1807,6 +1861,9 @@ export class AgentManager {
       throw error;
     });
     const { originalCmd, adapter, resumeId, selfManaged, spawnBridge, spawnBuild, ownedSpawnCmd } = preparedLaunch;
+    // Preparation and runtime preflight are now proven. Only now may an ordinary replacement
+    // discard prior readiness/postmortem state; a rejected launch preserves its recovery handle.
+    if (!forced?.attempt) clearTransientState();
     // All fallible guidance, cwd, harness, env and Bridge composition is complete. Only now may a
     // crashed incumbent be replaced; earlier failures leave its postmortem pane intact.
     if (replaceDeadSession) {
@@ -2856,7 +2913,6 @@ export class AgentManager {
     // Project guidance is part of the replacement command. Load it before even transient restart
     // state changes so an invalid configured source leaves the live pane and its status untouched.
     const projectGuidance = this.projectGuidanceFor(def);
-    await this.assertLaunchPreflight(name, def.cmd, def.env);
     const resolvedSoul = def.soul ? await this.reserveSoulLaunch(name, this.soulPrincipal(name), def) : undefined;
     const session = this.session(name);
     let worktree: WorktreeRecord | undefined;
@@ -2870,6 +2926,24 @@ export class AgentManager {
       verify: this.opts.getConfig()?.settings.verify,
     };
     const restartParent = this.lineage.get(name);
+    // Resolve the exact reused cwd/private home before any live-pane or transient-state mutation.
+    let cwd = resolveCwd(this.opts.workspaceRoot, def.cwd);
+    if (this.opts.resolveSpawnCwd) {
+      const resolved = await this.opts.resolveSpawnCwd({ name, def, parent: restartParent, adhoc: this.adhoc.has(name), isRestart: true });
+      if (resolved) {
+        cwd = resolved.cwd;
+        worktree = resolved.worktree;
+        preparationLocked = resolved.preparationLocked === true;
+      }
+    }
+    const restartHarness = this.materializeRuntimeHarness(name, def, cwd);
+    await this.assertLaunchPreflight(
+      name,
+      def.cmd,
+      { ...this.opts.getExtraEnv?.(), ...def.env, ...(restartHarness?.env ?? {}) },
+      this.adhoc.has(name),
+      cwd,
+    );
     // `effectiveInstructions` includes long-brief persistence. It must succeed before cache changes,
     // ownership refresh, respawn, or kill+new fallback can mutate the running session.
     const restartInstructions = this.effectiveInstructions(
@@ -2889,16 +2963,6 @@ export class AgentManager {
     // A3: capture an in-TUI /resume before the process is replaced (respawn or kill).
     if (await this.opts.tmux.hasSession(session)) {
       await this.refreshOwnership(name);
-    }
-    // spec 210 — reuse the existing worktree on restart (isRestart:true → no re-setup).
-    let cwd = resolveCwd(this.opts.workspaceRoot, def.cwd);
-    if (this.opts.resolveSpawnCwd) {
-      const resolved = await this.opts.resolveSpawnCwd({ name, def, parent: this.lineage.get(name), adhoc: this.adhoc.has(name), isRestart: true });
-      if (resolved) {
-        cwd = resolved.cwd;
-        worktree = resolved.worktree;
-        preparationLocked = resolved.preparationLocked === true;
-      }
     }
     // spec 220: re-inject the resume id (claude `-n <name>`) so the RESTARTED session carries the
     // customTitle — else refreshOwnership/resume would match the pre-restart session by title and
@@ -2923,6 +2987,7 @@ export class AgentManager {
         TACHYON_AGENT_NAME: name,
         ...this.hermesBriefEnv(def, restartInstructions),
       },
+      restartHarness,
     );
     this.applyDelegatedOpencodeHarnessPermission(def, restartBuild.env, restartDelegatedOpencode);
     const restartBridge = this.withRuntimeBridge(name, def, restartBuild.cmd, cwd, restartDelegatedOpencode);
@@ -3208,15 +3273,10 @@ export class AgentManager {
   async resume(name: string, record: SessionRecord, opts?: { injectPrimer?: boolean; deferBridgeStamp?: boolean }): Promise<void> {
     // SDD 368 T14 — refuse before mutating readiness cache (markers + snapshot deny set).
     this.assertNotDeliveryLifecycleDenied(name, "resume", record);
-    this.readinessCache.delete(name); // spec 221: resuming changes the session → drop the cached badge
-    // Resume is intentional re-launch — never inherit a prior graceful-stop "stopping" badge
-    // (restart graceful→resume left the row stuck; dogfood 2026-07-16).
-    this.clearStoppingState(name);
     if (!record.resume) throw new ResumeUnavailableError(name, "record is not resumable (no resume block)");
     const { runtime } = record.resume;
     const cmd = record.def?.cmd;
     if (!cmd) throw new ResumeUnavailableError(name, "record has no command to resume");
-    await this.assertLaunchPreflight(name, cmd, this.definitionOf(name)?.env ?? record.def?.env);
     const adapter = adapterForRuntime(runtime);
     if (!adapter) throw new ResumeUnavailableError(name, `no resume adapter for '${runtime}'`);
 
@@ -3293,13 +3353,31 @@ export class AgentManager {
       && path.resolve(configHome) !== path.resolve(defaultClaudeHome)
       ? { [adapter.harness.configHomeEnv]: configHome }
       : {};
-    const resumeBuild = this.applyHarness(name, resumeDef, cwd, adapter.resumeCommand(cmd, id), { ...this.opts.getExtraEnv?.(), ...this.opts.mintAgentToken?.(name), ...resumeDef?.env, TACHYON_AGENT_NAME: name });
+    const resumeHarness = this.materializeRuntimeHarness(name, resumeDef, cwd);
+    await this.assertLaunchPreflight(
+      name,
+      cmd,
+      { ...this.opts.getExtraEnv?.(), ...resumeDef?.env, ...(resumeHarness?.env ?? {}), ...persistedResumeHomeEnv },
+      !record.declared,
+      cwd,
+    );
+    const resumeBuild = this.applyHarness(
+      name,
+      resumeDef,
+      cwd,
+      adapter.resumeCommand(cmd, id),
+      { ...this.opts.getExtraEnv?.(), ...this.opts.mintAgentToken?.(name), ...resumeDef?.env, TACHYON_AGENT_NAME: name },
+      resumeHarness,
+    );
     this.applyDelegatedOpencodeHarnessPermission(resumeDef, resumeBuild.env, resumeDelegatedOpencode);
     // spec 236 (BLOCKER fix) — resume rebuilds the command, so it must re-inject the Bridge or a resumed
     // agent silently loses it. Classify the binary from the ACTUALLY-resumed `cmd` (record.def.cmd) so an
     // ad-hoc agent that's no longer in the config still gets it; harness routing comes from the config
     // overlay (resumeDef) so a harness agent folds the Bridge into its --strict file instead.
     const resumeBridge = this.withRuntimeBridge(name, { cmd, harness: resumeDef?.harness }, resumeBuild.cmd, cwd, resumeDelegatedOpencode);
+    this.readinessCache.delete(name); // spec 221: resuming changes the session → drop the cached badge
+    // Resume is intentional re-launch — never inherit a prior graceful-stop "stopping" badge.
+    this.clearStoppingState(name);
     // t-4d2630: respawn when a session/dead pane already exists; kill+new only as fallback.
     await this.startSessionCommand({
       session,
@@ -3464,6 +3542,9 @@ export class AgentManager {
     const src = await this.resolveForkSource(source);
     const { adapter } = src;
     if (!adapter.forkCommand) throw new ForkUnavailableError(source, `'${src.runtime}' has no native session fork`);
+    // Catch account/catalog drift before creating a fork checkout. A second probe below runs only
+    // when the prospective cwd differs, covering project-scoped runtime configuration as well.
+    await this.assertLaunchPreflight(plan.forkName, src.baseCmd, src.env, true, src.sourceCwd);
 
     const liveCount = (await this.runningAgents()).length;
     const max = this.opts.getConfig()?.settings.maxAgents ?? this.opts.getMaxAgents();
@@ -3510,6 +3591,12 @@ export class AgentManager {
     let sessionAttempted = false;
     let tokenMinted = false;
     try {
+      // A worktree fork can load project-scoped runtime configuration. Probe only after resolving
+      // that exact cwd, but before transcript seeding, token minting, tmux, or durable identity.
+      // If this fails, the catch preserves the newly locked checkout as an explicit recovery receipt.
+      if (path.resolve(cwd) !== path.resolve(src.sourceCwd)) {
+        await this.assertLaunchPreflight(forkName, src.baseCmd, src.env, true, cwd);
+      }
       // Worktree fork → seed the source transcript into the new cwd's project dir (claude --resume is
       // cwd-scoped). FAIL CLOSED: if the seed can't land, abort rather than spawn a context-less fork.
       if (worktree && adapter.transcriptPath && path.resolve(cwd) !== path.resolve(src.sourceCwd)) {

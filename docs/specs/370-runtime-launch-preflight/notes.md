@@ -128,3 +128,108 @@ _Alternatives weighed mid-build. The chosen path + what was given up + why it wa
 
 ### 2026-07-14T00:40:25Z — pass (1/1) — source: tasks.md
 - `npm run verify:full` — pass
+
+## Closure audit — 2026-07-17
+
+Verdict: **SDD 370 remains in progress.** The current implementation fixes the original ad-hoc Codex incident and its
+catalog-growth regression, but it does not yet satisfy the ratified cross-runtime/effective-environment contract.
+
+What is already sound on current `main` (`2443aa6e`):
+
+- token-aware command parsing rejects ambiguous shell composition and preserves exact requested-model semantics;
+- the Codex adapter probes the prospective wrapper/binary path, incrementally validates a bounded catalog, retains
+  only bounded selectable slugs, and returns redacted allowlisted failures;
+- ordinary declared/ad-hoc spawn and autostart share `spawnCore`; restart and resume call preflight before tmux
+  replacement; Codex launches use a bounded five-second readiness observation;
+- Codex readiness blocks `write_input`, `notify_agent`, and Task assignment until a measured composer appears, and
+  recognized bootstrap answers remain closed and explicit;
+- known-invalid static preflight runs before worktree creation, tmux creation, ledger/lineage/delegator persistence,
+  Bridge binding, and `onSpawned`;
+- focused current-HEAD verification passed: 505 tests across runtime preflight, streaming catalog, readiness recovery,
+  AgentManager, and Bridge.
+
+Blocking gaps found by source audit:
+
+1. **The probe does not use the effective private Codex environment.** `assertLaunchPreflight` runs before
+   `applyHarness`; default Codex launches subsequently materialize a private `CODEX_HOME`, copy the real
+   `config.toml`, symlink `auth.json`, and overwrite any earlier `CODEX_HOME` in the launch environment. The probe
+   therefore observes the pre-materialization environment while the runtime uses the private home. Spawn, restart,
+   and resume all have this ordering. Resume additionally ignores the persisted `resume.configHome` during preflight.
+2. **There is no runtime adapter registry or honest `unverifiable` policy at the lifecycle boundary.**
+   `AgentManager.assertLaunchPreflight` is hard-coded to basename `codex`; explicit-model Claude/Grok/other commands
+   bypass it as if supported. That conflicts with the ratified delegated-spawn fail-closed policy and leaves no
+   product-visible distinction between verified and unverifiable.
+3. **Readiness is Codex-only and does not observe process exit.** `observeLaunchReadiness` returns immediately for
+   every non-Codex runtime, while `LaunchReadiness.wait` only captures pane text and never checks tmux liveness or an
+   exit code. A runtime with no stable classifier is therefore treated as ready, and an unclassified immediate exit
+   can time out as `pending` instead of `rejected`.
+4. **Lifecycle coverage is present but unproven and incomplete.** Declared start/autostart reach `spawnCore`, and
+   restart/resume call the Codex preflight; however there is no catalog-drift regression matrix for those paths.
+   Native fork is currently Claude-only, performs no launch preflight, and its readiness call is a non-Codex no-op.
+   Resume also clears readiness/stopping state before its model preflight, so a rejection is not strictly
+   side-effect-free.
+5. **Bridge outcomes are not structured.** `RuntimeLaunchPreflightError` contains a code/model/suggestions internally,
+   but the generic Bridge `fail` projection emits only text for it. `AgentManager.observeLaunchReadiness` returns
+   `void`, so `spawn_agent` reports ordinary success for both `ready` and `pending`; callers cannot consume a typed
+   `ready | starting | rejected` result.
+6. **Post-tmux compensation is intentionally conservative but not closed against the SDD contract.** Readiness
+   rejection kills and verifies the session and revokes its token, but preserves a prepared worktree lock and leaves
+   the materialized private home. This may be the correct recovery policy once a runtime could have written data, but
+   the artifact invariant is not explicitly specified or covered by the required no-residue/recovery tests.
+
+Required implementation slices before closure:
+
+- introduce a shared prospective-launch preparation object that resolves the exact command, effective safe env, and
+  private-home/config identity once; use it for both probe and launch, with explicit rollback/recovery ownership;
+- replace the Codex basename branch with an adapter registry and explicit policy application for the `supported`,
+  `unsupported`, `unverifiable`, and `failed` results at every lifecycle entry point;
+- make readiness return a typed state, include tmux death/exit observation, and preserve `pending` without promoting
+  unverifiable runtimes to ready;
+- project preflight/readiness errors through Bridge structured content and add the lifecycle drift/no-side-effect
+  matrix for declared spawn, autostart, restart, resume, and the currently supported fork path;
+- ratify and test the post-tmux artifact policy (automatic rollback only before runtime ownership can write; otherwise
+  durable quarantine/recovery with bounded cleanup of credentials and private homes when safe).
+
+## Closure implementation — 2026-07-17
+
+- The lifecycle now materializes the prospective runtime home once and passes its exact environment plus resolved cwd
+  to both the runtime-native probe and the eventual launch. A rejected first-time private home is removed; a home that
+  predated the attempt is never treated as cleanup authority.
+- `RuntimeLaunchPreflightRegistry` makes missing capabilities explicit. Delegated/ad-hoc explicit-model launches fail
+  closed on `unverifiable`; declared launches may remain honest and proceed into bounded provisional startup rather
+  than being mislabeled as catalog-verified.
+- Ordinary spawn/autostart, restart, resume, and fork all revalidate. Fork performs an early source-environment probe
+  before worktree creation and repeats it in a distinct prospective worktree cwd before transcript seeding or tmux.
+- Pre-tmux failures persist no agent identity. Fresh ordinary preparation is handed to the existing receipt-aware
+  rollback/quarantine path; known model drift is caught before fork checkout creation. Once tmux may have executed
+  runtime code, cleanup kills and proves the session absent and revokes its token, while any checkout stays locked as
+  recovery state because ignored/runtime writes cannot be excluded safely.
+- Readiness now observes fatal auth/model/config output and process death for the ratified first provider set: Codex,
+  Claude, and Grok. Codex retains its measured classifier; Claude/Grok require a profile-backed composer affordance for
+  `ready`. A live target runtime with no positive affordance remains `starting`, and Task/notification/input gates
+  continue to reject it. Other runtime families retain their prior lifecycle until separately measured.
+- Bridge failures expose closed structured codes for preflight and readiness, including nested recovery aggregates;
+  ordinary spawn success exposes `{ agent, session, state: ready | starting }`. Raw catalogs, environment values, auth
+  files, config paths, and provider bodies never enter those results.
+- Focused closure gate: typecheck plus 515 tests across preflight, streaming catalog, readiness, AgentManager, and
+  Bridge passed. `npm run verify:full:quiet` then passed 413 files / 4,766 tests with 3 skipped. Maintainer Dev Host/F5
+  visual review remains the final gate before closure/merge.
+
+### 2026-07-17 — pass — review candidate
+
+- `npm run verify:full:quiet` — pass (413 files; 4,766 passed; 3 skipped)
+
+## Maintainer Dev Host dogfood — 2026-07-17
+
+- First F5 attempt exposed a separate Dev Host lifecycle bug: a stale persistent engine for workspace hash `eb13c881`
+  belonged to an older storage environment, while the new private data root lacked its verified rollback bundle. The
+  supervisor correctly failed closed with `ROLLBACK_BUNDLE_UNAVAILABLE`; the stale fixture-owned engine and Bridge
+  units were stopped without weakening rollback verification. Follow-up bug: `t-e357dc`.
+- The clean retry attached the fixture and exercised `codex-invalid`, `codex-valid`, `claude-observer`, and
+  `grok-observer`. The maintainer confirmed the invalid Codex model was rejected as expected and the valid provider
+  launches behaved as described, with no runtime stuck in startup and no residual ghost agent.
+- Evidence: `/mnt/c/Users/cfpp/Pictures/Screenshots/Screenshot 2026-07-17 170657.png` shows Runtime Ops with four
+  managed agents, three active agents, zero throttled runtimes, zero Bridge issues, live Codex/Claude quota data, and
+  managed Codex, Claude, and Grok rows.
+- Verdict: **PASS** for the SDD 370 maintainer-owned F5 gate. The Dev Host identity collision is tracked separately and
+  does not invalidate the launch-preflight behavior proven after scoped cleanup.

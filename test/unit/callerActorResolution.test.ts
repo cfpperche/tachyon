@@ -48,7 +48,9 @@ function fakeTmuxExec() {
         if (sessions.size === 0) throw new Error("no server");
         return { stdout: [...sessions.keys()].map((s) => `${s}\t0\t`).join("\n"), stderr: "" };
       case "capture-pane":
-        return { stdout: "› Ask anything", stderr: "" };
+        // Positive readiness affordances for both declared fixtures: Claude's bare composer and
+        // Codex's composer plus structurally valid narrow footer.
+        return { stdout: "> \n› Ask anything\ngpt-5.6-sol default · /repo-actor", stderr: "" };
       case "send-keys":
         if (args.includes("-l")) sessions.set(target(), args[args.length - 1]);
         return { stdout: "", stderr: "" };

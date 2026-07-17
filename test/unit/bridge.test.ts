@@ -60,7 +60,10 @@ function fakeTmuxExec() {
         if (!sessions.has(target())) throw new Error("can't find session");
         {
           if (panes.get(target()) === "__THROW__") throw new Error("capture failed");
-          const raw = panes.get(target()) ?? `$ fake output for ${target()}\n`;
+          // Managed non-Codex runtimes now require a positive composer affordance before the
+          // Bridge reports ready. A bare Claude-shaped prompt is realistic for these shared
+          // fixtures and remains insufficient for Codex, whose classifier also requires a footer.
+          const raw = panes.get(target()) ?? `$ fake output for ${target()}\n> \n`;
           const start = args.indexOf("-S");
           if (start >= 0) {
             const n = Math.abs(Number(args[start + 1]));
@@ -91,6 +94,11 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     workspaceRoot: WS,
     getConfig: () => config,
     getMaxAgents: () => 8,
+    launchPreflight: {
+      check: async (command) => command.model === "missing-model"
+        ? { state: "unsupported", code: "runtime_model_unavailable", runtime: "codex", model: command.model, suggestions: ["gpt-5.6-sol"] }
+        : { state: "supported", runtime: "fixture", source: "fixture" },
+    },
   });
   const pinsRoot = fs.mkdtempSync(nodePath.join(os.tmpdir(), "tachyon-bridge-pins-"));
   const pins = new PinStore(pinsRoot);
@@ -781,7 +789,25 @@ describe("Bridge end-to-end over streamable HTTP", () => {
   it("spawn_agent (declared) creates the tmux session", async () => {
     const result = await client.callTool({ name: "spawn_agent", arguments: { name: "claude" } });
     expect(result.isError).toBeFalsy();
+    expect(JSON.parse((result.content as Array<{ text: string }>)[0]!.text)).toMatchObject({ agent: "claude", state: "ready" });
     expect(sessions.has(`tachyon-${HASH}-claude`)).toBe(true);
+  });
+
+  it("spawn_agent projects model preflight failures as structured content", async () => {
+    const result = await client.callTool({
+      name: "spawn_agent",
+      arguments: { name: "bad-model", cmd: "codex --model missing-model", parent: "claude", skip_contract_reason: "structured preflight fixture" },
+    });
+    expect(result.isError).toBe(true);
+    expect(result.structuredContent).toEqual({
+      error: {
+        code: "runtime_model_unavailable",
+        message: "runtime_model_unavailable: model 'missing-model' is unavailable; available close matches: gpt-5.6-sol",
+        model: "missing-model",
+        suggestions: ["gpt-5.6-sol"],
+      },
+    });
+    expect(sessions.has(`tachyon-${HASH}-bad-model`)).toBe(false);
   });
 
   it("spawn_agent gates an ad-hoc AI child on a delegation contract (spec 246)", async () => {

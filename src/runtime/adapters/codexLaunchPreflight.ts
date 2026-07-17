@@ -17,9 +17,10 @@ export interface CodexProbeResult {
 
 export interface CodexProbeOptions {
   timeoutMs?: number;
+  cwd?: string;
 }
 
-export type CodexCatalogProbe = (binary: string, args: readonly string[], env: Readonly<Record<string, string | undefined>>) => Promise<CodexProbeResult>;
+export type CodexCatalogProbe = (binary: string, args: readonly string[], env: Readonly<Record<string, string | undefined>>, options?: CodexProbeOptions) => Promise<CodexProbeResult>;
 
 export function probeCodexCatalog(
   binary: string,
@@ -28,7 +29,7 @@ export function probeCodexCatalog(
   options: CodexProbeOptions = {},
 ): Promise<CodexProbeResult> {
   return new Promise((resolve) => {
-    const child = spawn(binary, [...args, "debug", "models"], { env: env as NodeJS.ProcessEnv, stdio: ["ignore", "pipe", "ignore"], detached: process.platform !== "win32" });
+    const child = spawn(binary, [...args, "debug", "models"], { cwd: options.cwd, env: env as NodeJS.ProcessEnv, stdio: ["ignore", "pipe", "ignore"], detached: process.platform !== "win32" });
     const parser = new CodexCatalogStreamParser();
     let settled = false;
     let forced: CodexProbeResult["failure"];
@@ -65,10 +66,10 @@ export function probeCodexCatalog(
 export class CodexLaunchPreflight implements RuntimeLaunchPreflightPort {
   constructor(private readonly probe: CodexCatalogProbe = probeCodexCatalog) {}
 
-  async check(command: ParsedLaunchCommand, env: Readonly<Record<string, string | undefined>>): Promise<RuntimeLaunchPreflight> {
-    if (path.basename(command.binary) !== "codex") return { state: "unverifiable", reason: "runtime adapter mismatch" };
+  async check(command: ParsedLaunchCommand, env: Readonly<Record<string, string | undefined>>, cwd?: string): Promise<RuntimeLaunchPreflight> {
+    if (path.basename(command.binary) !== "codex") return { state: "unverifiable", code: "runtime_preflight_unverifiable", reason: "runtime adapter mismatch" };
     if (!command.model) return { state: "supported", runtime: "codex", source: "default-model" };
-    const result = await this.probe(command.probeBinary, command.probeArgv, env);
+    const result = await this.probe(command.probeBinary, command.probeArgv, env, { cwd });
     if (result.failure === "timeout") return { state: "failed", code: "runtime_preflight_failed", runtime: "codex", reason: "model catalog probe timed out" };
     if (result.failure === "oversized") return { state: "failed", code: "runtime_preflight_failed", runtime: "codex", reason: "model catalog exceeded output limit" };
     if (result.failure === "malformed") return { state: "failed", code: "runtime_preflight_failed", runtime: "codex", reason: "model catalog was malformed" };

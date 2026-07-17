@@ -4,6 +4,9 @@ _Created 2026-07-10 after the failed `rtObsVendorSpike` launch._
 
 **Status:** in-progress
 
+**Closure:** Implementation, headless dogfood, full verification, and maintainer-owned Dev Host/F5 dogfood are green
+on commit `4509f294`; the branch remains unmerged pending final code review.
+
 ## Intent
 
 `spawn_agent` currently validates delegation shape, isolation, worktree authority, and process-count limits, but it
@@ -32,7 +35,7 @@ check rather than being declared valid.
   - **Given** the same effective Codex environment advertises `gpt-5.6-sol`
   - **When** an agent requests that exact slug
   - **Then** preflight succeeds and normal launch proceeds without Tachyon persisting that slug in a static catalog
-- [ ] **Scenario: Respect the effective isolated runtime environment**
+- [x] **Scenario: Respect the effective isolated runtime environment**
   - **Given** a runtime launch materializes a private config/auth home or profile
   - **When** model capability is checked
   - **Then** the probe uses the same binary, relevant config/profile, authentication context, and safe environment as
@@ -42,12 +45,12 @@ check rather than being declared valid.
     exceeds output bounds, or returns malformed data
   - **When** launch preflight runs
   - **Then** launch is rejected as `runtime_preflight_failed`; Tachyon does not reinterpret probe failure as model support
-- [ ] **Scenario: Remain honest for runtimes without model discovery**
+- [x] **Scenario: Remain honest for runtimes without model discovery**
   - **Given** a runtime supports `--model` but exposes no safe account-aware catalog
   - **When** an explicit model is requested
   - **Then** the adapter returns `unverifiable`, never `supported`; the product applies a ratified policy and surfaces
     that limitation rather than inventing a catalog
-- [ ] **Scenario: Detect immediate runtime startup rejection**
+- [x] **Scenario: Detect immediate runtime startup rejection**
   - **Given** static/dynamic preflight cannot establish an entitlement and the runtime immediately emits a classified
     auth/model/config error or exits non-zero
   - **When** the bounded provisional-startup window observes it
@@ -76,16 +79,16 @@ check rather than being declared valid.
   - **When** preflight rejects it
   - **Then** Tachyon may suggest exact catalog slugs but never rewrites, aliases, downgrades, upgrades, or retries with a
     different model automatically
-- [ ] **Scenario: Revalidate lifecycle launches after runtime drift**
+- [x] **Scenario: Revalidate lifecycle launches after runtime drift**
   - **Given** a previously valid declared, stopped, resumable, or forkable agent carries an explicit model that later
     disappears from the effective catalog
   - **When** start, autostart, restart, resume, or fork is requested
   - **Then** the same preflight blocks the lifecycle operation before replacing the healthy/stopped state with a false
     running state
-- [ ] Model discovery is runtime-adapter-owned and dynamic; `RuntimeProfile.model.aliases` remains presentation-only
-- [ ] Preflight output is allowlisted and bounded: model slugs/status/reason only; no base instructions, raw catalog,
+- [x] Model discovery is runtime-adapter-owned and dynamic; `RuntimeProfile.model.aliases` remains presentation-only
+- [x] Preflight output is allowlisted and bounded: model slugs/status/reason only; no base instructions, raw catalog,
   tokens, auth files, environment, absolute config paths, or provider response bodies enter logs/UI/Bridge errors
-- [ ] Worktree creation and other reversible preparation either occur after authoritative preflight or participate in
+- [x] Worktree creation and other reversible preparation either occur after authoritative preflight or participate in
   an explicit compensation transaction proven by tests
 
 ## Non-goals
