@@ -24,6 +24,7 @@ settings:
   # Coordinators allowed to record integration or prune linked GitDelivery projections.
   gitDelivery:
     prunePrincipals: [ grok, claude, codex ]
+    integratePrincipals: [ claude ]
   # specs 362/385 — this repository's explicit verify_task commands/adapter (no product-global runner defaults):
   # full builds dist/ first (the plugin-ui full-stack topology needs bundles; a fresh worktree has none).
   verify:
