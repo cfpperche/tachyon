@@ -26,10 +26,11 @@ _Generated from `plan.md` on 2026-07-13. This is a bounded retirement, not conti
   - Installed `0.56.17` completed the lifecycle on Delivery `d-spawn-ad0abeeaf7e8e2be0cb759ef18ddce8c`
     in one worktree. The final reviewed HEAD is `907499fb`; both canonical verification rounds accepted without
     waiver or quarantine, and the real-worktree full gate passed 416 files / 4,763 tests with 3 skipped.
-- [ ] **T7 — Close this spec only.** Run the source-absence audit, focused matrix, typecheck, diff-check, first/full
+- [x] **T7 — Close this spec only.** Run the source-absence audit, focused matrix, typecheck, diff-check, first/full
   candidate gate, one independent review, one consolidated correction round if needed, final full gate, commit,
   push, and close spec/task 376 without changing spec 368 status or unchecked tasks.
-  - Local source audit and gates are complete; independent review, installed dogfood, push, and closure remain pending.
+  - The final main composition preserves all 18 rebased commits exactly. The canonical matrix passes 910/910;
+    typecheck, build, diff-check, source-absence audit, and `npm test` pass; the reviewed branch is published.
 
 ## Verification
 
@@ -57,3 +58,6 @@ only, apply it after explicit approval, reload, then inspect the one-worktree De
 ## Visual QA
 
 **Visual QA Opt-Out:** only command/notification text changes; installed functional dogfood covers the useful UX.
+
+**Cookbook-Opt-Out:** the one-time retirement is guided by its preview/Doctor confirmation, while canonical
+Delivery usage remains described by the existing Bridge tool schemas; this ship adds no second operator workflow.

@@ -2,7 +2,10 @@
 
 _Created 2026-07-13._
 
-**Status:** in-progress
+**Status:** shipped
+
+**Closure:** Shipped the hard cut to canonical mechanism-only Delivery, projection-only GitDelivery, explicit
+legacy-metadata retirement, and the installed one-worktree lifecycle proof; spec 368 remains open and unchanged.
 
 ## Intent
 

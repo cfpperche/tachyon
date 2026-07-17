@@ -180,3 +180,7 @@ None at planning time.
   `git range-diff` matched all 18 commits exactly; no candidate patch changed during the rebase.
 - The pre-rebase candidate remains temporarily recoverable at
   `codex/t-85f251-pre-final-rebase-a7b02fe6` until final gates and integration complete.
+- The post-rebase canonical matrix passes 910/910. `npm run typecheck`, `npm run build`, `git diff --check`, and
+  the removed-source audit pass. The final pre-closure global gate passes 409 files / 4,726 tests with 3 skipped.
+- The reviewed branch was published as `origin/codex/t-85f251-retire-legacy-delivery-r2`. Spec 368 and its
+  unchecked tasks were not modified or claimed complete.
