@@ -10,12 +10,8 @@
 agents:
   claude:
     cmd: claude
-  codex:
-    cmd: codex
   codex-budget:
     cmd: codex
-  grok:
-    cmd: grok
   grok-claudex:
     cmd: grok
     cwd: /home/goat/claudex
