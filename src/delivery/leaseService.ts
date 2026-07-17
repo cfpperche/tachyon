@@ -296,6 +296,8 @@ export interface DeliveryLeaseServiceDeps {
   nonce?: () => string;
   segmentId?: () => string;
   eventId?: () => string;
+  /** Optional bounded grace window between an exact stop and the required gone observation. */
+  postStopObservation?: { attempts: number; delayMs: number; sleep(ms: number): Promise<void> };
 }
 
 /**
@@ -1562,12 +1564,20 @@ export class DeliveryLeaseService {
       deliveryId, segmentId: holder.segmentId, executionNonce: holder.executionNonce,
       executionAgent: holder.executionAgent, process: structuredClone(holder.process), canonicalWorktree,
     });
-    const postObservation = await this.deps.processObserver.observe(structuredClone(holder.process));
-    if (!validProcessObservation(postObservation)) {
-      throw new Error("exact process observation returned a malformed result");
+    const timing = this.deps.postStopObservation ?? { attempts: 1, delayMs: 0, sleep: async () => undefined };
+    if (!Number.isSafeInteger(timing.attempts) || timing.attempts < 1 || !Number.isSafeInteger(timing.delayMs) || timing.delayMs < 0) {
+      throw new Error("post-stop observation timing is invalid");
     }
-    if (postObservation.state !== "gone") {
-      throw new Error(`exact Delivery root is ${postObservation.state}${postObservation.state === "unknown" ? `: ${postObservation.reason}` : ""}`);
+    for (let attempt = 1; ; attempt++) {
+      const postObservation = await this.deps.processObserver.observe(structuredClone(holder.process));
+      if (!validProcessObservation(postObservation)) {
+        throw new Error("exact process observation returned a malformed result");
+      }
+      if (postObservation.state === "gone") break;
+      if (postObservation.state === "unknown" || attempt >= timing.attempts) {
+        throw new Error(`exact Delivery root is ${postObservation.state}${postObservation.state === "unknown" ? `: ${postObservation.reason}` : ""}`);
+      }
+      await timing.sleep(timing.delayMs);
     }
     return "root_gone_best_effort";
   }

@@ -703,6 +703,11 @@ export class Workspace {
         }
         await this.manager.kill(input.executionAgent);
       } },
+      postStopObservation: {
+        attempts: 81,
+        delayMs: 25,
+        sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+      },
     });
     const defaultClaudeConfigHome = realConfigHome();
     this.harness = new HarnessManager(workspaceRoot, defaultClaudeConfigHome, undefined, undefined, undefined, (message) => this.host.notify(message, "warn"));

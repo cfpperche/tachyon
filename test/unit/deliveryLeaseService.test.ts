@@ -234,6 +234,23 @@ describe("DeliveryLeaseService (SDD 368 T5)", () => {
     await lease.handoff({ ...handoffInput(worktree, "outside-lock"), executionAgent: "fixer" });
     expect(observations).toBe(2);
   });
+
+  it("allows a bounded exit grace window after an exact stop", async () => {
+    const { store, worktree, input } = heldFixture(); await store.create(input);
+    let observations = 0; const sleeps: number[] = [];
+    const lease = new DeliveryLeaseService({ store,
+      exactExecutionStopper: { stop: async () => undefined },
+      processObserver: { observe: () => (++observations < 3 ? { state: "alive" as const } : { state: "gone" as const }) },
+      canonicalWorktreeFor: () => worktree, readHead: () => "b", inspectWorktree: () => ({ headSha: "b", clean: true }),
+      isAncestor: () => true, withWorktreeLock: async (_path, fn) => fn(), nonce: () => "next", segmentId: () => "seg-1",
+      postStopObservation: { attempts: 3, delayMs: 25, sleep: async (ms) => { sleeps.push(ms); } },
+    });
+
+    await lease.handoff({ ...handoffInput(worktree, "bounded-exit-grace"), executionAgent: "fixer" });
+
+    expect(observations).toBe(3);
+    expect(sleeps).toEqual([25]);
+  });
   it("treats a durable system verification lease as retryable occupancy", async () => {
     const { store, worktree, input } = fixture();
     input.lease = { state: "verifying", changedAt: now, verification: {
