@@ -4,8 +4,35 @@ import {
   CodexLaunchReadiness,
   matchCodexBootstrapInput,
 } from "../../src/runtime/adapters/codexLaunchReadiness.js";
+import { GenericLaunchReadiness, LaunchReadiness } from "../../src/runtime/launchReadiness.js";
 
 describe("CodexLaunchReadiness", () => {
+  it("rejects an unclassified runtime that exits during the bounded window", async () => {
+    let now = 0;
+    const readiness = new LaunchReadiness({ windowMs: 100, pollMs: 10, now: () => now, sleep: async (ms) => { now += ms; } });
+    await expect(readiness.wait({
+      capture: async () => "starting",
+      adapter: new GenericLaunchReadiness(),
+      isAlive: async () => false,
+      aliveAtDeadline: "pending",
+    })).resolves.toEqual({ state: "rejected", code: "runtime_process_exited" });
+  });
+
+  it("promotes only a recognized runtime composer and otherwise remains pending", async () => {
+    const adapter = new GenericLaunchReadiness({ tailLines: 2, promptLine: /^>\s?.*$/ });
+    expect(adapter.classify("startup\n> ")).toEqual({ state: "ready" });
+    expect(adapter.classify("startup\nstill loading")).toBeUndefined();
+
+    let now = 0;
+    const readiness = new LaunchReadiness({ windowMs: 20, pollMs: 10, now: () => now, sleep: async (ms) => { now += ms; } });
+    await expect(readiness.wait({
+      capture: async () => "still loading",
+      adapter,
+      isAlive: async () => true,
+      aliveAtDeadline: "pending",
+    })).resolves.toEqual({ state: "pending" });
+  });
+
   it("t-40a28c: recognizes the rotating composer plus stable footer used by Codex 0.144.1", () => {
     const adapter = new CodexLaunchReadiness();
     const pane = [

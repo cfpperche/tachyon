@@ -1151,6 +1151,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       failDeliveryJoin?: (name: string, request: any, prepared: any, error: unknown) => Promise<void>;
       /** SDD 368 T14 — snapshot deny set for marker-less crash-window agents. */
       isDeliveryLifecycleDenied?: (name: string) => boolean;
+      launchPreflight?: AgentManagerOptions["launchPreflight"];
       failNewSession?: boolean;
       failKillSession?: boolean;
     } = {},
@@ -1274,6 +1275,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       confirmDeliveryJoin: opts.confirmDeliveryJoin,
       failDeliveryJoin: opts.failDeliveryJoin,
       isDeliveryLifecycleDenied: opts.isDeliveryLifecycleDenied,
+      launchPreflight: opts.launchPreflight,
     });
     return { manager, ledger, sessions, dead, cmds, newSessionArgs, respawnArgs, startArgs, paneInjections, failRespawn, ws, hash };
   }
@@ -2717,6 +2719,68 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(plan.dirty).toBe(true);
   });
 
+  it("SDD 370 rejects catalog drift before creating a fork worktree", async () => {
+    const sourceWorktree = { path: "/wt/claude", branch: "tachyon/claude", tachyonCreatedBranch: true, baseRef: "sha", baseBranch: "main", createdAt: "t" };
+    let supported = true;
+    let createCalls = 0;
+    const preflightCwds: Array<string | undefined> = [];
+    const { manager, ledger, sessions } = resumeHarness("agents:\n  claude:\n    cmd: claude --model sonnet-current\n", {
+      resolveCurrentSession: async () => UUID,
+      worktreeDirty: async () => false,
+      createForkWorktree: async () => {
+        createCalls += 1;
+        return { cwd: "/wt/fork", worktree: { ...sourceWorktree, path: "/wt/fork", branch: "tachyon/claude-fork-1" } };
+      },
+      launchPreflight: {
+        check: async (_command, _env, cwd) => {
+          preflightCwds.push(cwd);
+          return supported
+            ? { state: "supported", runtime: "claude", model: "sonnet-current", source: "fixture" }
+            : { state: "unsupported", code: "runtime_model_unavailable", runtime: "claude", model: "sonnet-current", suggestions: [] };
+        },
+      },
+    });
+    await manager.spawn("claude");
+    const source = ledger.get("claude")!;
+    ledger.record("claude", { ...source, worktree: sourceWorktree });
+    const plan = await manager.planFork("claude");
+    supported = false;
+
+    await expect(manager.commitFork(plan)).rejects.toMatchObject({ code: "runtime_model_unavailable" });
+    expect(createCalls).toBe(0);
+    expect(preflightCwds).toEqual([expect.any(String), expect.any(String)]);
+    expect(sessions.has(manager.session(plan.forkName))).toBe(false);
+    expect(ledger.get(plan.forkName)).toBeUndefined();
+  });
+
+  it("SDD 370 repeats a supported fork preflight in the prospective worktree cwd", async () => {
+    const sourceWorktree = { path: "/wt/source", branch: "tachyon/claude", tachyonCreatedBranch: true, baseRef: "sha", baseBranch: "main", createdAt: "t" };
+    const preflightCwds: Array<string | undefined> = [];
+    const { manager, ledger } = resumeHarness("agents:\n  claude:\n    cmd: claude --model sonnet-current\n", {
+      resolveCurrentSession: async () => UUID,
+      worktreeDirty: async () => false,
+      createForkWorktree: async () => ({
+        cwd: "/wt/fork",
+        worktree: { ...sourceWorktree, path: "/wt/fork", branch: "tachyon/claude-fork-1" },
+      }),
+      seedTranscript: () => true,
+      launchPreflight: {
+        check: async (_command, _env, cwd) => {
+          preflightCwds.push(cwd);
+          return { state: "supported", runtime: "claude", model: "sonnet-current", source: "fixture" };
+        },
+      },
+    });
+    await manager.spawn("claude");
+    ledger.record("claude", { ...ledger.get("claude")!, worktree: sourceWorktree });
+
+    const forkName = await manager.commitFork(await manager.planFork("claude"));
+
+    expect(preflightCwds).toEqual([expect.any(String), expect.any(String), "/wt/fork"]);
+    expect(ledger.get(forkName)?.cwd).toBe("/wt/fork");
+    await manager.kill(forkName);
+  });
+
   it("commitFork (no worktree): spawns the fork-session combo and records a persistent sibling row", async () => {
     const settings: Array<{ name: string; ownershipOnly: boolean; cwd?: string; configHome?: string }> = [];
     const { manager, ledger, cmds, ws } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
@@ -3305,6 +3369,7 @@ describe("AgentManager — session resume (spec 209)", () => {
     const sessionId = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
     const { manager, cmds, startArgs } = resumeHarness("agents:\n  boss:\n    cmd: claude\n", {
       fileExists: () => true,
+      launchPreflight: { check: async () => ({ state: "supported", runtime: "claude", source: "fixture" }) },
     });
     await manager.resume("reviewer", {
       def: { cmd: "claude --model sonnet", kind: "agent", parent: "boss" },
@@ -3629,6 +3694,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       const WT = { path: "/wt/h/deliveryMechanismLeaseGrokR1", branch: "tachyon/deliveryMechanismLeaseGrokR1", tachyonCreatedBranch: true, baseRef: "base", createdAt: "t" };
       const { manager, newSessionArgs } = resumeHarness("agents: {}\n", {
         ...GROK_BRIDGE(calls),
+        launchPreflight: { check: async () => ({ state: "supported", runtime: "grok", source: "fixture" }) },
         resolveSpawnCwd: async () => ({ cwd: WT.path, worktree: WT, delegationBaseSha: "base" }),
         materializeHarness: ({ name, def }) => {
           matCalls.push({ name, isolate: def.isolate });
@@ -4102,6 +4168,106 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     dirs.push(ws);
     return { manager, ledger, sessions, cmds, newSessionArgs, tmux, ws };
   }
+
+  it("SDD 370 fails delegated explicit models closed when the runtime has no catalog adapter", async () => {
+    const h = harness("agents:\n  boss:\n    cmd: claude\n");
+
+    await expect(h.manager.spawn("grok-child", { cmd: "grok --model grok-4.5" })).rejects.toMatchObject({
+      code: "runtime_preflight_unverifiable",
+    });
+    expect(h.sessions.size).toBe(0);
+    expect(h.ledger.get("grok-child")).toBeUndefined();
+  });
+
+  it("SDD 370 probes the materialized private CODEX_HOME and exact cwd, then compensates a new home on rejection", async () => {
+    let expectedHome = "";
+    let observed: { home?: string; cwd?: string } = {};
+    const removed: string[] = [];
+    const h = harness("agents:\n  codex:\n    cmd: codex --model missing\n", {
+      materializeHarness: () => {
+        fs.mkdirSync(expectedHome, { recursive: true });
+        return { home: expectedHome, env: { CODEX_HOME: expectedHome }, args: [] };
+      },
+      removeHarnessHome: (name) => {
+        removed.push(name);
+        fs.rmSync(expectedHome, { recursive: true, force: true });
+      },
+      launchPreflight: {
+        requiresPreparedEnvironment: true,
+        check: async (_command, env, cwd) => {
+          observed = { home: env.CODEX_HOME, cwd };
+          return { state: "unsupported", code: "runtime_model_unavailable", runtime: "codex", model: "missing", suggestions: [] };
+        },
+      },
+    });
+    expectedHome = harnessHome(h.ws, "codex");
+
+    await expect(h.manager.spawn("codex")).rejects.toMatchObject({ code: "runtime_model_unavailable" });
+    expect(observed).toEqual({ home: expectedHome, cwd: h.ws });
+    expect(removed).toEqual(["codex"]);
+    expect(fs.existsSync(expectedHome)).toBe(false);
+    expect(h.sessions.size).toBe(0);
+    expect(h.ledger.get("codex")).toBeUndefined();
+  });
+
+  it("SDD 370 rolls back a newly prepared worktree when exact-environment preflight rejects", async () => {
+    const worktree = { path: "/wt/codex", branch: "tachyon/codex", tachyonCreatedBranch: true, baseRef: "base", createdAt: "t" };
+    const rollbacks: unknown[][] = [];
+    const h = harness("agents:\n  codex:\n    cmd: codex --model missing\n    worktree: true\n", {
+      resolveSpawnCwd: async () => ({
+        cwd: worktree.path,
+        worktree,
+        created: true,
+        rollbackHeadSha: "base",
+        preparationHeadBefore: "base",
+        preparationHeadAfter: "prepared",
+      }),
+      rollbackPreparedWorktree: async (...args) => { rollbacks.push(args); },
+      launchPreflight: {
+        requiresPreparedEnvironment: true,
+        check: async () => ({ state: "unsupported", code: "runtime_model_unavailable", runtime: "codex", model: "missing", suggestions: [] }),
+      },
+    });
+
+    await expect(h.manager.spawn("codex")).rejects.toMatchObject({ code: "runtime_model_unavailable" });
+    expect(rollbacks).toHaveLength(1);
+    expect(rollbacks[0]?.slice(0, 5)).toEqual([worktree, "base", "base", "prepared", true]);
+    expect(h.sessions.size).toBe(0);
+    expect(h.ledger.get("codex")).toBeUndefined();
+  });
+
+  it("SDD 370 revalidates Codex catalog drift before restart replacement and stopped resume", async () => {
+    let supported = true;
+    let wsRoot = "";
+    const calls: Array<{ cwd?: string; home?: string }> = [];
+    const h = harness("agents:\n  codex:\n    cmd: codex --model gpt-current\n", {
+      materializeHarness: ({ name }) => ({ home: harnessHome(wsRoot, name), env: { CODEX_HOME: harnessHome(wsRoot, name) }, args: [] }),
+      launchPreflight: {
+        requiresPreparedEnvironment: true,
+        check: async (_command, env, cwd) => {
+          calls.push({ cwd, home: env.CODEX_HOME });
+          return supported
+            ? { state: "supported", runtime: "codex", model: "gpt-current", source: "fixture" }
+            : { state: "unsupported", code: "runtime_model_unavailable", runtime: "codex", model: "gpt-current", suggestions: [] };
+        },
+      },
+      fileExists: () => true,
+      resolveCaptureId: async () => "captured-session",
+    });
+    wsRoot = h.ws;
+
+    await h.manager.spawn("codex");
+    const session = h.manager.session("codex");
+    supported = false;
+    await expect(h.manager.restart("codex", { stop: "force", session: "new" })).rejects.toMatchObject({ code: "runtime_model_unavailable" });
+    expect(h.sessions.has(session)).toBe(true);
+
+    await h.manager.kill("codex");
+    await expect(h.manager.resume("codex", h.ledger.get("codex")!)).rejects.toMatchObject({ code: "runtime_model_unavailable" });
+    expect(h.sessions.has(session)).toBe(false);
+    expect(calls).toHaveLength(3);
+    expect(calls.every((call) => call.cwd === h.ws && call.home === harnessHome(h.ws, "codex"))).toBe(true);
+  });
 
   it("stale declared ledger parents are ignored so declared agents stay top-level", async () => {
     const { manager, ledger, ws } = harness("agents:\n  boss:\n    cmd: claude\n  child:\n    cmd: claude\n");

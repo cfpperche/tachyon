@@ -2,15 +2,29 @@
  * never sends a prompt or makes an inference request. */
 export type RuntimeLaunchReadiness =
   | { state: "ready" }
-  | { state: "rejected"; code: "runtime_auth_rejected" | "runtime_model_rejected" | "runtime_config_rejected" }
+  | { state: "rejected"; code: "runtime_auth_rejected" | "runtime_model_rejected" | "runtime_config_rejected" | "runtime_process_exited" }
   | { state: "pending" };
+
+export type RuntimeLaunchRejectionCode = Extract<RuntimeLaunchReadiness, { state: "rejected" }>["code"];
+
+export class RuntimeLaunchReadinessError extends Error {
+  constructor(readonly code: RuntimeLaunchRejectionCode) {
+    super(code);
+    this.name = "RuntimeLaunchReadinessError";
+  }
+}
 
 export interface RuntimeLaunchReadinessAdapter {
   classify(output: string): Exclude<RuntimeLaunchReadiness, { state: "pending" }> | undefined;
 }
 
 export interface LaunchReadinessPort {
-  wait(input: { capture: () => Promise<string>; adapter: RuntimeLaunchReadinessAdapter }): Promise<RuntimeLaunchReadiness>;
+  wait(input: {
+    capture: () => Promise<string>;
+    adapter: RuntimeLaunchReadinessAdapter;
+    isAlive?: () => Promise<boolean>;
+    aliveAtDeadline?: "pending" | "ready";
+  }): Promise<RuntimeLaunchReadiness>;
 }
 
 export interface LaunchReadinessOptions {
@@ -43,14 +57,44 @@ export class LaunchReadiness implements LaunchReadinessPort {
     this.sleep = opts.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
   }
 
-  async wait(input: { capture: () => Promise<string>; adapter: RuntimeLaunchReadinessAdapter }): Promise<RuntimeLaunchReadiness> {
+  async wait(input: {
+    capture: () => Promise<string>;
+    adapter: RuntimeLaunchReadinessAdapter;
+    isAlive?: () => Promise<boolean>;
+    aliveAtDeadline?: "pending" | "ready";
+  }): Promise<RuntimeLaunchReadiness> {
     const deadline = this.now() + this.windowMs;
     for (;;) {
       const result = input.adapter.classify(await input.capture());
       if (result) return result;
       const remaining = deadline - this.now();
-      if (remaining <= 0) return { state: "pending" };
+      // Production windows must prove the process is still alive even on the final poll. The
+      // zero-window Vitest default intentionally skips this external probe for legacy fixtures.
+      if (this.windowMs > 0 && input.isAlive && !(await input.isAlive())) return { state: "rejected", code: "runtime_process_exited" };
+      if (remaining <= 0) return { state: input.aliveAtDeadline ?? "pending" };
       await this.sleep(Math.min(this.pollMs, remaining));
     }
+  }
+}
+
+/** Runtime-neutral fatal startup classifier; liveness at the deadline is the positive signal. */
+export class GenericLaunchReadiness implements RuntimeLaunchReadinessAdapter {
+  constructor(private readonly composer?: { tailLines: number; promptLine: RegExp }) {}
+
+  classify(output: string): Exclude<RuntimeLaunchReadiness, { state: "pending" }> | undefined {
+    if (/\b(?:unauthorized|authentication (?:failed|required)|not logged in|api key (?:is )?(?:invalid|missing)|access denied)\b/i.test(output)) {
+      return { state: "rejected", code: "runtime_auth_rejected" };
+    }
+    if (/\b(?:model .{0,80}(?:not found|unavailable|not available|unsupported)|unknown model|invalid model)\b/i.test(output)) {
+      return { state: "rejected", code: "runtime_model_rejected" };
+    }
+    if (/\b(?:invalid (?:configuration|config)|configuration (?:error|failed)|failed to (?:load|parse) (?:configuration|config))\b/i.test(output)) {
+      return { state: "rejected", code: "runtime_config_rejected" };
+    }
+    if (this.composer) {
+      const lines = output.split(/\r?\n/).slice(-this.composer.tailLines);
+      if (lines.some((line) => this.composer!.promptLine.test(line))) return { state: "ready" };
+    }
+    return undefined;
   }
 }

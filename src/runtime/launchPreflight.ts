@@ -4,7 +4,7 @@ export const PREFLIGHT_MAX_SUGGESTIONS = 3;
 export type RuntimeLaunchPreflight =
   | { state: "supported"; runtime: string; model?: string; source: string }
   | { state: "unsupported"; code: "runtime_model_unavailable"; runtime: string; model: string; suggestions: string[] }
-  | { state: "unverifiable"; runtime?: string; reason: string }
+  | { state: "unverifiable"; code: "runtime_preflight_unverifiable"; runtime?: string; reason: string }
   | { state: "failed"; code: "runtime_preflight_failed"; runtime?: string; reason: string };
 
 export interface ParsedLaunchCommand {
@@ -25,7 +25,29 @@ export interface ParsedLaunchCommand {
 }
 
 export interface RuntimeLaunchPreflightPort {
-  check(command: ParsedLaunchCommand, env: Readonly<Record<string, string | undefined>>): Promise<RuntimeLaunchPreflight>;
+  /** True when the adapter must observe a materialized private home/profile before checking. */
+  readonly requiresPreparedEnvironment?: boolean;
+  check(command: ParsedLaunchCommand, env: Readonly<Record<string, string | undefined>>, cwd?: string): Promise<RuntimeLaunchPreflight>;
+}
+
+/** Runtime-neutral adapter selection. Absence is an explicit capability result, never support. */
+export class RuntimeLaunchPreflightRegistry implements RuntimeLaunchPreflightPort {
+  readonly requiresPreparedEnvironment = true;
+  constructor(private readonly adapters: Readonly<Record<string, RuntimeLaunchPreflightPort>>) {}
+
+  check(command: ParsedLaunchCommand, env: Readonly<Record<string, string | undefined>>, cwd?: string): Promise<RuntimeLaunchPreflight> {
+    const runtime = command.binary.split(/[\\/]/).pop() ?? command.binary;
+    const adapter = this.adapters[runtime];
+    if (!adapter) {
+      return Promise.resolve({
+        state: "unverifiable",
+        code: "runtime_preflight_unverifiable",
+        runtime,
+        reason: "runtime exposes no authoritative model catalog adapter",
+      });
+    }
+    return adapter.check(command, env, cwd);
+  }
 }
 
 const LAUNCHERS = new Set(["npx", "bunx", "pnpx"]);
@@ -105,11 +127,11 @@ function bunxCommandIndex(tokens: string[], start: number): number | undefined {
 }
 
 export class RuntimeLaunchPreflightError extends Error {
-  readonly code: "runtime_model_unavailable" | "runtime_preflight_failed";
+  readonly code: "runtime_model_unavailable" | "runtime_preflight_failed" | "runtime_preflight_unverifiable";
   readonly model?: string;
   readonly suggestions: string[];
 
-  constructor(result: Extract<RuntimeLaunchPreflight, { state: "unsupported" | "failed" }>) {
+  constructor(result: Extract<RuntimeLaunchPreflight, { state: "unsupported" | "failed" | "unverifiable" }>) {
     const detail = result.state === "unsupported"
       ? `model '${result.model}' is unavailable${result.suggestions.length ? `; available close matches: ${result.suggestions.join(", ")}` : ""}`
       : result.reason;
@@ -218,6 +240,14 @@ export function isExplicitCodexModelCommand(input: string): boolean {
     if ((tokens[i]!.split("/").pop() ?? "") === "codex") { codex = i; break; }
   }
   return codex >= 0 && tokens.slice(codex + 1).some((arg) => arg === "-m" || arg === "--model" || arg.startsWith("--model="));
+}
+
+/** Conservative ambiguity fallback for any CLI that uses the common -m/--model grammar. */
+export function hasExplicitModelSelection(input: string): boolean {
+  const parsed = parseLaunchCommand(input);
+  if (parsed?.model) return true;
+  const tokens = input.replace(/(?:&&|\|\||[;&|<>`]|\$\()/g, " ").trim().split(/\s+/);
+  return tokens.some((arg) => arg === "-m" || arg === "--model" || arg.startsWith("--model="));
 }
 
 export function boundedCloseMatches(model: string, slugs: readonly string[]): string[] {

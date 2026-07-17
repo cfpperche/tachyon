@@ -74,9 +74,9 @@ export async function exerciseBoundDeliveryExecution(): Promise<void> {
     sessions.delete(manager.session("racing-dead"));
 
     await manager.kill("reviewer");
-    // A normal declared Delivery join mints a new token before harness composition.
-    // That failure must revoke only that token: the principal's prior transient,
-    // lineage, durable row/home, and callback history are not this receipt's work.
+    // Prospective-home materialization now precedes token minting so preflight sees the exact
+    // environment. A materializer failure therefore has no new token to revoke and must preserve
+    // the principal's prior transient, lineage, durable row/home, and callback history.
     const internals = manager as unknown as { readyAgents: Set<string>; lineage: Map<string, string>; adhoc: Map<string, unknown> };
     internals.readyAgents.add("reviewer");
     internals.lineage.set("reviewer", "incumbent");
@@ -85,7 +85,7 @@ export async function exerciseBoundDeliveryExecution(): Promise<void> {
     await expect(manager.spawn("reviewer", { deliveryJoin: { deliveryId: "d", role: "reviewer", ownsSubset: [], expectedHead: "head", operationId: "materializer" } })).rejects.toThrow("materializer failed");
     rejectMaterialization = false;
     expect(callbacks).toEqual(beforeMaterializerFailure.callbacks);
-    expect(revoked).toEqual([...beforeMaterializerFailure.revoked, "reviewer"]);
+    expect(revoked).toEqual(beforeMaterializerFailure.revoked);
     expect(internals.readyAgents.has("reviewer")).toBe(true);
     expect(internals.lineage.get("reviewer")).toBe("incumbent");
     expect(ledger.get("reviewer")).toEqual(beforeMaterializerFailure.principal);
@@ -94,7 +94,7 @@ export async function exerciseBoundDeliveryExecution(): Promise<void> {
     await expect(manager.spawn("reviewer", { deliveryJoin: { deliveryId: "d", role: "reviewer", ownsSubset: [], expectedHead: "head", operationId: "declared" } })).rejects.toThrow("confirmation failed");
     rejectConfirmation = false;
     expect(sessions.size).toBe(1);
-    expect(revoked).toEqual(["reviewer", "reviewer", "reviewer"]);
+    expect(revoked).toEqual(["reviewer", "reviewer"]);
     expect(ledger.get("reviewer")).toEqual(principal);
     expect(fs.readFileSync(path.join(home("reviewer"), "marker"))).toEqual(principalHome);
     expect(callbacks).toEqual(["reviewer", "reviewer"]);
@@ -111,7 +111,7 @@ export async function exerciseBoundDeliveryExecution(): Promise<void> {
     await manager.spawn("review-execution", { taskBrief: "Bridge contract", deliveryJoin: { deliveryId: "d", role: "reviewer", ownsSubset: [], expectedHead: "head", operationId: "op", declaredAgent: "reviewer" } });
     expect(Buffer.from(JSON.stringify(ledger.get("reviewer")))).toEqual(principalBytes);
     expect(ledger.get("review-execution")?.declared).toBe(false);
-    expect(minted).toEqual(["reviewer", "reviewer", "reviewer", "review-execution"]);
+    expect(minted).toEqual(["reviewer", "reviewer", "review-execution"]);
     expect(sessions.size).toBe(2);
     expect(fs.readFileSync(path.join(home("review-execution"), "marker"))).toEqual(Buffer.from("review-execution"));
     await manager.kill("review-execution");
@@ -123,8 +123,8 @@ export async function exerciseBoundDeliveryExecution(): Promise<void> {
     rejectReadiness = true;
     await expect(manager.spawn("failed-execution", { taskBrief: "Bridge contract", deliveryJoin: { deliveryId: "d", role: "reviewer", ownsSubset: [], expectedHead: "head", operationId: "op2", declaredAgent: "reviewer" } })).rejects.toThrow("runtime_auth_rejected");
     expect(sessions.size).toBe(1);
-    expect(revoked).toEqual(["reviewer", "reviewer", "reviewer", "review-execution", "failed-execution"]);
-    expect(failed).toEqual(["racing-live", "racing-dead", "reviewer", "reviewer", "failed-execution"]);
+    expect(revoked).toEqual(["reviewer", "reviewer", "review-execution", "failed-execution"]);
+    expect(failed).toEqual(["racing-live", "racing-dead", "reviewer", "reviewer", "reviewer", "failed-execution"]);
     expect(callbacks).toEqual(["reviewer", "reviewer", "review-execution", "failed-execution"]);
     expect(ledger.get("failed-execution")).toBeUndefined();
     expect(fs.existsSync(home("failed-execution"))).toBe(false);

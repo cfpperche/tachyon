@@ -189,3 +189,32 @@ Required implementation slices before closure:
   matrix for declared spawn, autostart, restart, resume, and the currently supported fork path;
 - ratify and test the post-tmux artifact policy (automatic rollback only before runtime ownership can write; otherwise
   durable quarantine/recovery with bounded cleanup of credentials and private homes when safe).
+
+## Closure implementation — 2026-07-17
+
+- The lifecycle now materializes the prospective runtime home once and passes its exact environment plus resolved cwd
+  to both the runtime-native probe and the eventual launch. A rejected first-time private home is removed; a home that
+  predated the attempt is never treated as cleanup authority.
+- `RuntimeLaunchPreflightRegistry` makes missing capabilities explicit. Delegated/ad-hoc explicit-model launches fail
+  closed on `unverifiable`; declared launches may remain honest and proceed into bounded provisional startup rather
+  than being mislabeled as catalog-verified.
+- Ordinary spawn/autostart, restart, resume, and fork all revalidate. Fork performs an early source-environment probe
+  before worktree creation and repeats it in a distinct prospective worktree cwd before transcript seeding or tmux.
+- Pre-tmux failures persist no agent identity. Fresh ordinary preparation is handed to the existing receipt-aware
+  rollback/quarantine path; known model drift is caught before fork checkout creation. Once tmux may have executed
+  runtime code, cleanup kills and proves the session absent and revokes its token, while any checkout stays locked as
+  recovery state because ignored/runtime writes cannot be excluded safely.
+- Readiness now observes fatal auth/model/config output and process death for the ratified first provider set: Codex,
+  Claude, and Grok. Codex retains its measured classifier; Claude/Grok require a profile-backed composer affordance for
+  `ready`. A live target runtime with no positive affordance remains `starting`, and Task/notification/input gates
+  continue to reject it. Other runtime families retain their prior lifecycle until separately measured.
+- Bridge failures expose closed structured codes for preflight and readiness, including nested recovery aggregates;
+  ordinary spawn success exposes `{ agent, session, state: ready | starting }`. Raw catalogs, environment values, auth
+  files, config paths, and provider bodies never enter those results.
+- Focused closure gate: typecheck plus 515 tests across preflight, streaming catalog, readiness, AgentManager, and
+  Bridge passed. `npm run verify:full:quiet` then passed 413 files / 4,766 tests with 3 skipped. Maintainer Dev Host/F5
+  visual review remains the final gate before closure/merge.
+
+### 2026-07-17 — pass — review candidate
+
+- `npm run verify:full:quiet` — pass (413 files; 4,766 passed; 3 skipped)

@@ -74,6 +74,8 @@ import type { DeliveryProjectionService } from "../delivery/projectionService.js
 import type { DeliveryStore } from "../delivery/store.js";
 import type { Delivery } from "../delivery/types.js";
 import type { ReloadReconciliationSnapshot } from "../delivery/reloadReconciliation.js";
+import { RuntimeLaunchPreflightError } from "../runtime/launchPreflight.js";
+import { RuntimeLaunchReadinessError } from "../runtime/launchReadiness.js";
 
 export type NotifyLevel = "info" | "warn" | "error";
 export type NoticeDeliveryResult = { status: "notified" | "queued"; dropped?: number; queued?: number };
@@ -393,12 +395,37 @@ async function gitDeliveryClassifyExtras(deps: BridgeDeps): Promise<{
   return out;
 }
 
+function runtimeLaunchFailure(err: unknown): RuntimeLaunchPreflightError | RuntimeLaunchReadinessError | undefined {
+  if (err instanceof RuntimeLaunchPreflightError || err instanceof RuntimeLaunchReadinessError) return err;
+  if (err instanceof AggregateError) {
+    const cause = runtimeLaunchFailure(err.cause);
+    if (cause) return cause;
+    for (const nested of err.errors) {
+      const failure = runtimeLaunchFailure(nested);
+      if (failure) return failure;
+    }
+  }
+  return undefined;
+}
+
 function fail(err: unknown): ToolResult {
   const message = err instanceof Error ? err.message : String(err);
+  const launchFailure = runtimeLaunchFailure(err);
   return {
     content: [{ type: "text", text: `error: ${message}` }],
     isError: true,
-    ...(err instanceof VerifyTaskStructuredError
+    ...(launchFailure
+      ? {
+          structuredContent: {
+            error: {
+              code: launchFailure.code,
+              message,
+              ...(launchFailure instanceof RuntimeLaunchPreflightError && launchFailure.model ? { model: launchFailure.model } : {}),
+              ...(launchFailure instanceof RuntimeLaunchPreflightError && launchFailure.suggestions.length ? { suggestions: launchFailure.suggestions } : {}),
+            },
+          },
+        }
+      : err instanceof VerifyTaskStructuredError
       ? {
           structuredContent: {
             error: { code: err.code, message: err.message, candidates: err.candidates },
@@ -1214,9 +1241,10 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
             }
             : undefined,
         });
-        return receipt
-          ? ok(JSON.stringify(receipt, null, 2))
-          : ok(`agent '${name}' spawned (session ${deps.manager.session(name)})`);
+        if (receipt) return ok(JSON.stringify(receipt, null, 2));
+        const session = deps.manager.session(name);
+        const state = deps.manager.kindOf(name) !== "agent" || await deps.manager.isReady(name) ? "ready" : "starting";
+        return ok(JSON.stringify({ agent: name, session, state }, null, 2));
       } catch (err) {
         return fail(err);
       }

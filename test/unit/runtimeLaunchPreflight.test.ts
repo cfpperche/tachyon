@@ -8,12 +8,29 @@ import {
   type CodexProbeResult,
 } from "../../src/runtime/adapters/codexLaunchPreflight.js";
 import { CODEX_CATALOG_MAX_BYTES } from "../../src/runtime/adapters/codexCatalogStream.js";
-import { boundedCloseMatches, isExplicitCodexModelCommand, parseLaunchCommand } from "../../src/runtime/launchPreflight.js";
+import {
+  boundedCloseMatches,
+  hasExplicitModelSelection,
+  isExplicitCodexModelCommand,
+  parseLaunchCommand,
+  RuntimeLaunchPreflightRegistry,
+} from "../../src/runtime/launchPreflight.js";
 
 const catalogSlugs = ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"];
 const output = (slugs: readonly string[] = catalogSlugs, extra: Partial<CodexProbeResult> = {}): CodexProbeResult => ({ code: 0, slugs, ...extra });
 
 describe("runtime launch preflight", () => {
+  it("reports an explicit unverifiable result when no runtime adapter exists", async () => {
+    const registry = new RuntimeLaunchPreflightRegistry({});
+    await expect(registry.check(parseLaunchCommand("grok --model grok-4.5")!, {})).resolves.toEqual({
+      state: "unverifiable",
+      code: "runtime_preflight_unverifiable",
+      runtime: "grok",
+      reason: "runtime exposes no authoritative model catalog adapter",
+    });
+    expect(hasExplicitModelSelection("grok --model grok-4.5 && echo unsafe")).toBe(true);
+  });
+
   it("accepts the exact advertised Sol slug and rejects the absent generic slug", async () => {
     const adapter = new CodexLaunchPreflight(async () => output());
     await expect(adapter.check(parseLaunchCommand("codex --model gpt-5.6-sol")!, {})).resolves.toMatchObject({ state: "supported", model: "gpt-5.6-sol" });
@@ -117,12 +134,18 @@ describe("runtime launch preflight", () => {
   });
 
   it("probes through the launcher that will execute Codex", async () => {
-    const adapter = new CodexLaunchPreflight(async (binary, args) => {
+    const adapter = new CodexLaunchPreflight(async (binary, args, env, options) => {
       expect(binary).toBe("npx");
       expect(args).toEqual(["codex"]);
+      expect(env.CODEX_HOME).toBe("/private/codex");
+      expect(options?.cwd).toBe("/worktree");
       return output();
     });
-    await expect(adapter.check(parseLaunchCommand("npx codex --model gpt-5.6-sol")!, {})).resolves.toMatchObject({ state: "supported" });
+    await expect(adapter.check(
+      parseLaunchCommand("npx codex --model gpt-5.6-sol")!,
+      { CODEX_HOME: "/private/codex" },
+      "/worktree",
+    )).resolves.toMatchObject({ state: "supported" });
   });
 
   it("streams a subprocess catalog larger than the retired 256 KiB buffer", async () => {
