@@ -1,21 +1,20 @@
 # Tachyon — System Design: decoupling the engine from the UI
 
-_Co-authored 2026-06-18 by a Claude Code ↔ Codex deliberation (pin `p-3ccfd1`). Status: DESIGN (no code
-yet). This is the target architecture + migration path; it is not a spec — a spec is cut from it when a
-concrete second host (or the testability win alone) justifies the first PR._
+_Originated in a 2026-06-18 Claude Code ↔ Codex deliberation (pin `p-3ccfd1`). Status: **IMPLEMENTED
+AND LIVING** — specs 233/234 established the host boundary and spec 382 shipped the persistent engine /
+shell split. This document records the current architecture plus remaining product-boundary work._
 
 ## 1. Goal
 
 **The engine owns orchestration; shells own presentation and host APIs.** Concretely: *the engine code
-must not be able to know VS Code exists.* A second shell — another IDE plugin, a CLI/daemon, a web UI —
-"just connects to the engine" because the engine depends only on a small set of **host ports**, never on
-`vscode`. Decoupling is enforced mechanically (a CI import guard), not by convention.
+must not be able to know VS Code exists.* The shipped VS Code extension is the current human shell and
+bootstrap/distribution mechanism; it connects to a persistent engine through explicit host and control
+protocol boundaries. A future CLI, other-IDE plugin or web shell should connect through those boundaries,
+not fork orchestration logic. Decoupling is enforced mechanically, not by convention.
 
-This is worth doing for two reasons, in order: (a) **testability today** — `Workspace`, the orchestrator,
-can't enter the unit suite because it imports `vscode`, so tests re-compose pieces around it (e.g.
-`test/unit/verifyGate.integration.test.ts:80` duplicates the `Workspace.runVerify` composition "minus the
-vscode toast/ledger I/O"); a `FakeHost` makes `Workspace` directly unit-testable. (b) **portability** — a
-new shell becomes a thin adapter, not a fork.
+The boundary delivers two benefits: (a) **runtime continuity and testability** — the engine can run and be
+tested headlessly; (b) **portability** — a second shell becomes an adapter/client instead of a fork. These
+are current properties, not a deferred refactor goal.
 
 **AI runtime parity** (Claude / Codex / OpenCode / Grok / …) is **not** this design’s engine/shell split —
 it is living product documentation: [docs/runtimes/parity.md](./runtimes/parity.md). Capability parity
@@ -23,31 +22,23 @@ via each CLI’s **native** mechanisms (MCP, resume, harness, hooks), not byte-i
 
 ## 2. Current state (verified, not assumed)
 
-The engine is now fully decoupled (specs 233/234 shipped). **Only the shell imports `vscode`:**
-`extension.ts`; `presentation/{Sidebar,Terminals}.ts`; `webview/{AgentForm,ServerInspector}.ts`; and
-`workspace/{VsCodeHost,notify}.ts`. `Workspace.ts` + all managers import zero `vscode`, enforced by the
-`check:engine-boundary` CI guard.
+The split is shipped:
 
-Everything substantive is **already `vscode`-free**: `TmuxService` + `ControlModeClient` (the tmux
-substrate), `AgentManager`, `Bridge` (+ `bridge/tools.ts`, the MCP surface), `PipelineManager` /
-`RunLedger` / `runState` / `loadPipeline` / `doneContract` / `preflight`, `WorktreeManager`,
-`SessionLedger`, `AttentionMonitor`, `LifecycleMonitor`, `CommandRunner`, `RunbookRunner`, `Scheduler`,
-`PinStore`, `ProposalStore`, `HarnessManager`, `config/loadConfig`. `Workspace` constructs all of these as
-plain objects (`Workspace.ts:179`+).
+- `src/engine-service/daemonMain.ts` boots the persistent engine process; `engineService.ts`,
+  `controlServer.ts` and the event journal expose its lifecycle and state.
+- `src/workspace/Workspace.ts` is the engine composition root and imports no `vscode`.
+- `src/workspace/EngineHost.ts` is the host contract. `DaemonEngineHost.ts` supplies headless behavior;
+  `VsCodeHost.ts` adapts editor facilities without moving their ownership into the engine.
+- `src/shell/WorkspaceClient.ts` and `WorkspaceShellHandle.ts` are client-side shell boundaries. The handle
+  is intentionally ephemeral and does not own managers, stores, the Bridge or agent lifecycle.
+- `src/engine-service/protocol.ts` plus `controlClient.ts`/`controlServer.ts` form the typed engine-shell
+  transport; editor-only requests are brokered explicitly.
+- tmux, agents, tasks, Delivery/worktrees, validation, schedules, Activity and the Bridge remain engine
+  state. Closing or reloading the editor does not transfer ownership back to the shell.
 
-The remaining seam is **`Workspace.ts` itself**. Its DI surface is already tiny — `WorkspaceDeps` is just
-`{ context, onViewsChanged }` (`Workspace.ts:69`). The coupling is in the *body*, not the deps:
-
-| vscode usage in `Workspace.ts` | count | nature |
-|---|---|---|
-| `vscode.l10n.t(...)` | ~92 | i18n of user-facing strings (shallow) |
-| `vscode.window.*` (showInputBox / showWarningMessage / tabGroups) | ~8 | prompts + editor layout |
-| `createFileSystemWatcher` + `RelativePattern` | ~6 | watch `tachyon.yml` / `.tachyon/*` |
-| `commands.executeCommand` | 2 | invoke a command |
-| `getConfiguration`, `Uri`, `ExtensionContext`, `Disposable` | ~5 | settings, paths, types |
-
-So the move is a **bounded extraction**, not a rewrite: lift the ~21 non-i18n touchpoints behind ports,
-route the 92 strings through a port, and make `Workspace` import-free of `vscode`.
+The current packaging still ships engine and shell together in the VSIX, and VS Code remains the only
+distributed human shell. Engine-first describes the ownership boundary, not a claim that a standalone
+Tachyon CLI or web product already ships.
 
 ## 3. The boundary — engine / host-port / shell
 
@@ -56,9 +47,9 @@ Three buckets, not two:
 - **Engine** (no `vscode`, ever): `Workspace`, `AgentManager`, `Bridge`, tmux/control-mode, pipelines,
   `Scheduler`, `AttentionMonitor`/`LifecycleMonitor`, ledgers, `WorktreeManager`, `HarnessManager`, config
   load + mutation. Token **policy** (auth on/off) is engine.
-- **Host-port** (an interface the engine calls; each shell implements it): notification + prompting, file
-  watching, **terminal control** (reveal/close/active/inspect), global-storage **path**, host settings,
-  workspace-change events.
+- **Host-port** (an interface the engine calls; each host implements it): one-way notices/focus, file
+  watching, optional terminal presentation, settings, storage/secrets and workspace-change events.
+  Two-way editor interactions are explicit shell/UI requests, not hidden window calls in engine code.
 - **Shell** (owns `vscode`, never imported by the engine): activation + command registry, the sidebar tree
   + webviews (Studio/Inspector), editor terminals, `vscode.diff` / settings UI / walkthroughs / clipboard /
   open-document.
@@ -68,34 +59,28 @@ The `Bridge` stays **engine**: it is pure HTTP/MCP, its `BridgeDeps` (`bridge/to
 
 ## 4. Host ports — small and composed, not one fat object
 
-Migrate *behind a single `EngineHost` adapter first* (speed), then split into focused ports so no consumer
-depends on more than it uses. The end-state ports:
+`EngineHost` is implemented as one composed interface with focused groups rather than a grab-bag of VS Code
+objects:
 
-- **`UiPort`** — `notify(level, msg)`, `confirm(msg, actions)`, `promptInput(opts)`. (Replaces
-  `notify.ts` + `vscode.window` message/input calls.)
-- **`TerminalPort`** — `reveal(session)`, `close(session)`, `isActive(session)`, `inspect(session)`. This
-  is **not** a file move of `presentation/Terminals.ts`: `Workspace` drives terminals for reveal, active-
-  suppression, command/crash inspection (`Workspace.ts:240,351,392,436`); those become port calls, the VS
-  Code editor-terminal impl stays in the shell.
-- **`FileWatchPort`** — `watch(root, glob, events, cb): Disposable`, plus capability metadata
-  (`reliableRecursive`, `supportsGlob`, `source: "vscode" | "node" | "polling"`). The engine consumes watch
-  events and must NOT assume `fs.watch` parity. This mirrors the existing injected-watcher pattern in
-  `WatchController` (`AgentManager.ts:1117`), already documented as testable outside VS Code.
-- **`SettingsPort`** — `get(key)` for host settings (`getConfiguration`, max-agents).
-- **`StoragePort`** — `globalStoragePath` (today `context.globalStorageUri`, `Workspace.ts:198`) for the
-  Bridge token + version state. Token *path* is host; token *policy* is engine.
-- **`WorkspaceEvents`** — `onViewsChanged(view)` (already exists) + the typed change events of § 6.
+- **UI notices/focus** — one-way facts and optional actions; interactive editor workflows remain shell requests.
+- **File watch** — root/glob/events/callback; `DaemonEngineHost` supplies headless polling where necessary.
+- **Settings** — effective values plus optional scope inspection.
+- **Storage + secrets** — host-owned durable paths/state and machine-local secret custody. Token *path/custody*
+  is host policy; Bridge authentication semantics remain engine policy.
+- **Terminal presentation** — optional. A daemon can run with no editor tabs; `VsCodeHost` supplies the native
+  terminal adapter.
+- **Workspace events** — typed invalidation signals consumed by shell projections.
 
-`EngineHost = UiPort & TerminalPort & FileWatchPort & SettingsPort & StoragePort & WorkspaceEvents`. The VS
-Code shell provides one object implementing all; a CLI implements `UiPort` as stdio + no-op terminals; a
-daemon implements them headlessly.
+`VsCodeHost` implements the editor adapter and `DaemonEngineHost` the headless one. Consumers still depend on
+the smallest methods they use even though TypeScript exposes the composed contract as one interface.
 
 ## 5. The Bridge contract — the loose seam that already ships
 
-There are **two** integration depths, and the loose one exists today:
+There are **two** integration depths, and both seams exist today:
 
-1. **Deep** — a real shell: import the engine + `Workspace`, implement `EngineHost`, build the UI.
-2. **Loose** — anything that speaks MCP: the `Bridge` already exposes orchestration as MCP tools over HTTP
+1. **Shell client** — attach through the engine control protocol (`WorkspaceClient` / `controlClient`) and
+   render state/events. Host-only editor operations travel as explicit brokered requests.
+2. **Loose MCP client** — anything that speaks MCP: the `Bridge` exposes orchestration as tools over HTTP
    (`spawn_agent`, `list_agents`, `write_input`, `complete_node`, …). Any MCP client drives a running
    Tachyon with **no VS Code at all** — this is exactly how a codex pipeline node calls `complete_node`.
 
@@ -118,15 +103,15 @@ never owns a pane; it owns the session (through `TmuxService`).
 
 ### 7.1 Spawn-time injection is ADDITIVE, never override (invariant)
 
-At spawn/restart/resume the engine composes the agent's command and layers in Tachyon wiring on top of the
-user's declared command — and that layering must **never replace** the user's own config. Two injectors exist,
-both applied at the SAME three call sites (`AgentManager.spawn/restart/resume`) and both additive by construction:
+At spawn/restart/resume the engine composes the agent's command and layers Tachyon wiring on top of the
+user's declaration. The native mechanism differs by runtime: Claude uses additive MCP/settings files, Codex
+uses config overrides/private home, OpenCode uses scoped XDG/config, and Grok/Hermes use private runtime homes
+with generated Bridge entries. Generated private configs preserve user model/provider settings while keeping
+Tachyon-owned isolation semantics explicit; bearer tokens remain environment references.
 
-- **Bridge MCP** (spec 236, `withRuntimeBridge`) — claude: append `--mcp-config <bridge file>` (no `--strict`, so
-  the project `.mcp.json` + global still load); codex: an idempotent `-c mcp_servers.tachyon_bridge=…` override.
-- **Session-ownership hook** (spec 243, `withSessionOwnership`) — claude only: append `--settings <per-spawn file>`
-  carrying a `SessionStart` hook that records `{agent → current session}` to `.tachyon/activity/session-owners.jsonl`
-  (the signal the activity resolver and the resume target read — specs 243/244).
+Session-ownership hooks are a separate capability. Where a runtime has a verified hook adapter they record
+`{agent → current session}` for Activity/resume attribution. Runtimes without a user-hook materializer reject
+`harness.hooks` rather than silently claiming delivery.
 
 **Guarantee:** `--settings` is a merge layer — claude unions the hook command lists across all active sources
 (user `~/.claude/settings.json`, project `.claude/settings.json`, local, each `--settings`), so for one event ALL
@@ -140,18 +125,15 @@ sets the same flag (with an advisory). The only behavior change is if the user's
 
 ## 8. File watching
 
-The engine watches `tachyon.yml` and `.tachyon/*` for config/pipeline reload. `fs.watch` is flaky cross-
-platform; VS Code's watcher is robust. The `FileWatchPort` lets each host pick its mechanism (VS Code
-keeps `createFileSystemWatcher` at `Workspace.ts:869`; headless hosts use chokidar or polling) and declare
-its capabilities, so the engine degrades gracefully instead of promising parity it can't keep.
+The engine watches `tachyon.yml` and `.tachyon/*` for config and state reload. The `EngineHost.watch` seam lets
+the VS Code adapter use editor facilities while `DaemonEngineHost` uses the headless polling watcher. The
+engine consumes events, not a `vscode.FileSystemWatcher`, so shell restarts do not redefine state ownership.
 
 ## 9. Localization
 
-PR-1: route the 92 strings through `host.t(key, ...args)` to remove `vscode` from `Workspace` (the visible
-case: helpers like `issueMessage` calling `vscode.l10n` directly, `Workspace.ts:101`). **End-state:** the
-engine emits **typed events + payloads** for high-value flows (crash, attention, pipeline failure) and the
-shell renders the text; migrate hot paths to events incrementally — doing all 92 as typed events at once is
-unjustified churn.
+Engine-facing localization goes through `host.t(...)`; high-value UI interactions use typed protocol payloads
+and brokered requests. The shell decides how to render notices, prompts and webviews. New engine code must not
+reintroduce `vscode.l10n` or window APIs.
 
 ## 10. Testing strategy
 
@@ -162,24 +144,17 @@ integration tests only for genuine shell behavior** (tree rendering, terminal fo
 
 ## 11. Packaging boundary
 
-Lowest ceremony that still *proves* decoupling:
-1. Introduce ports (§ 4) and a `VsCodeHost` adapter.
-2. Move the engine under `src/engine/**`.
-3. Add a CI script `check:engine-boundary` that **fails on any `vscode` import under `src/engine/**`**
-   (the build already has `typecheck` / `test` / `test:integration`, `package.json`; add this guard).
+The Marketplace VSIX currently packages the VS Code shell, engine bundle and engine bootstrap together. At
+runtime the engine is a separate persistent process, but there is **no published `@tachyon/engine` package and
+no standalone human CLI shell**. A package split should be earned by a second real consumer rather than used
+as evidence of decoupling by itself; the import guard and process/protocol boundary provide that evidence now.
 
-**No published `@tachyon/engine` package yet** — a split only earns its ceremony once a second real host
-exists. The lint/CI guard delivers the guarantee without it.
+## 12. Remaining product-boundary work
 
-## 12. Migration plan — incremental, behavior-preserving PRs
-
-1. **Ports + `VsCodeHost` (no behavior change, no file moves).** Define `EngineHost`; route `notify`, `t`,
-   `getSetting(maxAgents)`, `globalStoragePath`, file watchers, and terminal control through it. The
-   adapter is 1:1 with today's calls; the suite stays green. *Safest first PR.*
-2. **Make `Workspace.ts` `vscode`-import-free** + add `check:engine-boundary` to CI.
-3. **`FakeHost` + Workspace unit tests** (collapse the integration-test duplication).
-4. **Move presentation fully to the shell** behind `TerminalPort` (not a bare file move).
-5. **(Deferred)** typed-event localization for hot paths; **(deferred)** package split when a 2nd host lands.
+1. Keep protocol compatibility and engine-bundle migration safe across extension upgrades.
+2. Continue replacing editor-shaped payloads with typed shell-neutral events/requests.
+3. Prove a second human shell (CLI, another IDE or web) before adding public packaging ceremony.
+4. Preserve headless test coverage and the `vscode` import boundary as engine capabilities grow.
 
 ## 13. Risks
 

@@ -494,11 +494,11 @@ function parseHarness(name: string, raw: unknown, cmd: string, env: Record<strin
       errors.push(`agents.${name}.harness: codex does not support 'rules'; use 'instructions' for AGENTS.md guidance`);
     }
   } else if (binary === "opencode" || binary === "grok" || binary === "hermes") {
-    // opencode/grok/hermes v1 harness: mcp/skills/hooks only (no CLAUDE.md `rules` or codex AGENTS.md `instructions`).
+    // opencode/grok/hermes v1 harness: mcp/skills only (no CLAUDE.md `rules` or codex AGENTS.md `instructions`).
     const unsupported = ["rules", "instructions"].filter((key) => raw[key] !== undefined);
     if (unsupported.length > 0) {
       errors.push(
-        `agents.${name}.harness: ${binary} does not support 'rules'/'instructions' in v1 (use 'mcp'/'skills'/'hooks')`,
+        `agents.${name}.harness: ${binary} does not support 'rules'/'instructions' in v1 (use 'mcp'/'skills')`,
       );
     }
   } else if (raw.instructions !== undefined) {
@@ -579,7 +579,9 @@ function parseHarness(name: string, raw: unknown, cmd: string, env: Record<strin
 
   // spec 228 — hooks (a claude settings.json `hooks` object; shape pass-through, claude validates contents)
   if (raw.hooks !== undefined) {
-    if (!isPlainObject(raw.hooks) || Object.keys(raw.hooks).length === 0) {
+    if (binary === "opencode" || binary === "grok" || binary === "hermes") {
+      errors.push(`agents.${name}.harness: ${binary} does not support 'hooks' until a native user-hook materializer exists`);
+    } else if (!isPlainObject(raw.hooks) || Object.keys(raw.hooks).length === 0) {
       errors.push(`agents.${name}.harness.hooks: must be a non-empty mapping (the claude settings.json 'hooks' shape)`);
     } else {
       harness.hooks = raw.hooks;

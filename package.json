@@ -1,7 +1,7 @@
 {
   "name": "tachyon",
   "displayName": "Tachyon",
-  "description": "Multi-agent terminal orchestration \u2014 signals from the future. Run AI coding agents as tmux sessions in native editor terminals, coordinated through the Bridge MCP server.",
+  "description": "A local, multi-runtime Agentic Development Environment powered by a persistent orchestration engine, with a VS Code shell, native terminals and an MCP control plane.",
   "version": "0.56.18",
   "publisher": "cfpperche",
   "license": "GPL-3.0-or-later",
@@ -881,7 +881,7 @@
           {
             "id": "bridge",
             "title": "The Bridge is automatic",
-            "description": "The **Bridge** is a persistent workspace MCP server that lets your agents spawn sub-agents, read each other's output, run commands and notify you. Tachyon injects it into every Claude/Codex agent it spawns (incl. restart/resume/fork) \u2014 no setup needed.\nUse **Connect Agent Runtime** only for a CLI session you start manually outside Tachyon.\n[Connect a runtime](command:tachyon.connectRuntime)",
+            "description": "The **Bridge** is a persistent workspace MCP server that lets your agents spawn sub-agents, read each other's output, run commands and notify you. Tachyon injects it through each supported runtime's native MCP mechanism and rebuilds the wiring across lifecycle operations — no setup needed.\nUse **Connect Agent Runtime** only for a CLI session you start manually outside Tachyon.\n[Connect a runtime](command:tachyon.connectRuntime)",
             "media": {
               "image": "media/walkthrough/studio.png",
               "altText": "Agent Studio tabs"

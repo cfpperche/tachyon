@@ -51,8 +51,10 @@ function hermesStateHome(env: ResolverEnv): string {
 }
 
 /**
- * Hermes: sessions live in `$HERMES_HOME/state.db` (SQLite). Pick the newest row whose `cwd`
- * matches (or empty id filter). Uses node:sqlite when available; returns null on any failure.
+ * Hermes: sessions live in `$HERMES_HOME/state.db` (SQLite). Pick the ACTIVE row with the newest
+ * persisted message for the cwd. `started_at` alone is not authoritative: `/resume` can reactivate
+ * an older session without changing its start time. Uses node:sqlite when available; returns null
+ * on any failure.
  */
 export function resolveHermesId(cwd: string, env: ResolverEnv = defaultEnv(), id?: string): string | null {
   const dbPath = path.join(hermesStateHome(env), "state.db");
@@ -66,17 +68,25 @@ export function resolveHermesId(cwd: string, env: ResolverEnv = defaultEnv(), id
         const row = db.prepare("SELECT id FROM sessions WHERE id = ? LIMIT 1").get(id) as { id?: string } | undefined;
         return typeof row?.id === "string" && row.id ? row.id : null;
       }
+      const messageColumns = new Set(
+        (db.prepare("PRAGMA table_info(messages)").all() as Array<{ name?: unknown }>)
+          .map((column) => String(column.name ?? "")),
+      );
+      const activeMessage = messageColumns.has("active") ? " AND COALESCE(m.active, 1) = 1" : "";
+      const messageActivity = messageColumns.has("id") && messageColumns.has("session_id")
+        ? `(SELECT MAX(m.id) FROM messages m WHERE m.session_id = s.id${activeMessage})`
+        : "NULL";
+      const ordering = `CASE WHEN s.ended_at IS NULL THEN 1 ELSE 0 END DESC,
+                        COALESCE(${messageActivity}, -1) DESC,
+                        COALESCE(s.ended_at, s.started_at) DESC,
+                        s.started_at DESC`;
       const row = db
-        .prepare(
-          "SELECT id FROM sessions WHERE cwd = ? ORDER BY COALESCE(ended_at, started_at) DESC, started_at DESC LIMIT 1",
-        )
+        .prepare(`SELECT s.id FROM sessions s WHERE s.cwd = ? ORDER BY ${ordering} LIMIT 1`)
         .get(cwd) as { id?: string } | undefined;
       if (typeof row?.id === "string" && row.id) return row.id;
       // Older rows may have NULL cwd — only then fall back to the newest overall session.
       const nullCwd = db
-        .prepare(
-          "SELECT id FROM sessions WHERE cwd IS NULL OR cwd = '' ORDER BY COALESCE(ended_at, started_at) DESC, started_at DESC LIMIT 1",
-        )
+        .prepare(`SELECT s.id FROM sessions s WHERE s.cwd IS NULL OR s.cwd = '' ORDER BY ${ordering} LIMIT 1`)
         .get() as { id?: string } | undefined;
       return typeof nullCwd?.id === "string" && nullCwd.id ? nullCwd.id : null;
     } finally {
