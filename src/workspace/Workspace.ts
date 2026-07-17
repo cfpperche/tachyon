@@ -58,7 +58,8 @@ import { LifecycleMonitor } from "../agents/LifecycleMonitor.js";
 import { AttentionMonitor, type AgentAttention } from "../attention/AttentionMonitor.js";
 import { applyCompletionHint, CompletionHintStore } from "../attention/completionHint.js";
 import { AdhocBackstopMonitor } from "./AdhocBackstopMonitor.js";
-import { applyCompletionHint, CompletionHintStore } from "../attention/completionHint.js";
+import { GatedCompletionMonitor, type GatedCandidateRecord } from "./GatedCompletionMonitor.js";
+import { hasDoorbellRung } from "../bridge/doorbell.js";
 import { roleReminder, buildRoleDoc } from "../roles/templates.js";
 import { resolveClipboardHelperAsync } from "../tmux/clipboard.js";
 import { compileExtraPatterns } from "../attention/patterns.js";
@@ -437,6 +438,8 @@ export class Workspace {
   private deliveryAuthorityQuarantineNoticeKey?: string;
   readonly monitor: AttentionMonitor;
   private readonly adhocBackstop: AdhocBackstopMonitor;
+  /** t-875700 — host-fallback for gated omit-doorbell. */
+  private readonly gatedCompletion: GatedCompletionMonitor;
   /** t-9552f3 — session-local completion doorbell latch (in-memory). */
   private readonly completionHints = new CompletionHintStore();
   /** spec 216 — agents whose CLI just compacted; a re-anchor is consumed on their next idle. */
@@ -1246,6 +1249,26 @@ export class Workspace {
       deliverNotice: (parent, line, metadata) => this.deliverNotice(parent, line, metadata),
       sourceNoticeMetadata: (agent) => this.sourceNoticeMetadata(agent),
       completionHinted: (agent) => this.completionHints.has(agent),
+    });
+
+    this.gatedCompletion = new GatedCompletionMonitor({
+      listGatedFacts: () => this.listGatedCompletionFacts(),
+      listEntries: () => this.manager.list(),
+      attentionOf: (agent) => this.attentionOf(agent),
+      headState: async (worktreePath) => {
+        try {
+          return await this.worktrees.headState(worktreePath);
+        } catch {
+          return null;
+        }
+      },
+      hasDoorbellRung: (agent, delegator, sinceIso) =>
+        hasDoorbellRung(this.workspaceRoot, agent, delegator, sinceIso),
+      deliverNotice: (delegator, line, metadata) => this.deliverNotice(delegator, line, metadata),
+      sourceNoticeMetadata: (agent) => this.sourceNoticeMetadata(agent),
+      now: () => Date.now(),
+      loadCandidates: () => this.loadGatedCompletionCandidates(),
+      saveCandidates: (c) => this.saveGatedCompletionCandidates(c),
     });
 
     this.lifecycle = new LifecycleMonitor(
@@ -3631,8 +3654,99 @@ export class Workspace {
     this.scheduler.tick(); // fires anything due (workspace-open scope)
     await this.monitor.tick();
     await this.adhocBackstop.tick();
+    await this.gatedCompletion.tick().catch(() => undefined);
     // States with durations ("idle 2m") need periodic re-render even without transitions.
     this.deps.onViewsChanged("agents");
+  }
+
+  /** t-875700 — gated agents with delegator + worktree + delivery binding (or synthetic id). */
+  private async listGatedCompletionFacts(): Promise<
+    Array<{
+      agent: string;
+      delegator: string;
+      deliveryId: string;
+      worktreePath: string;
+      baseSha: string;
+      sinceIso: string;
+    }>
+  > {
+    const entries = await this.manager.list();
+    const out: Array<{
+      agent: string;
+      delegator: string;
+      deliveryId: string;
+      worktreePath: string;
+      baseSha: string;
+      sinceIso: string;
+    }> = [];
+    for (const entry of entries) {
+      if (entry.kind !== "agent" || !entry.delegator) continue;
+      const rec = this.ledger.get(entry.name);
+      const wtPath = rec?.worktree?.path ?? rec?.cwd;
+      if (!wtPath) continue;
+      const baseSha = rec?.worktree?.baseRef;
+      if (!baseSha) continue;
+      let deliveryId = `gated:${entry.name}`;
+      let sinceIso = rec?.updatedAt ?? new Date(0).toISOString();
+      const binding = rec?.delivery;
+      if (isValidDeliveryBinding(binding)) {
+        deliveryId = binding.deliveryId;
+        try {
+          const delivery = await this.deliveries.get(binding.deliveryId);
+          if (delivery) {
+            sinceIso = delivery.createdAt;
+            // Prefer contract base when present
+            if (delivery.contract.baseSha) {
+              out.push({
+                agent: entry.name,
+                delegator: entry.delegator,
+                deliveryId,
+                worktreePath: wtPath,
+                baseSha: delivery.contract.baseSha,
+                sinceIso,
+              });
+              continue;
+            }
+          }
+        } catch {
+          /* fall through to ledger base */
+        }
+      }
+      out.push({
+        agent: entry.name,
+        delegator: entry.delegator,
+        deliveryId,
+        worktreePath: wtPath,
+        baseSha,
+        sinceIso,
+      });
+    }
+    return out;
+  }
+
+  private gatedCompletionStatePath(): string {
+    return path.join(this.workspaceRoot, ".tachyon", "completion-candidates.json");
+  }
+
+  private loadGatedCompletionCandidates(): Record<string, GatedCandidateRecord> {
+    const file = this.gatedCompletionStatePath();
+    try {
+      if (!fs.existsSync(file)) return {};
+      const raw = JSON.parse(fs.readFileSync(file, "utf8")) as { candidates?: Record<string, GatedCandidateRecord> };
+      return raw.candidates && typeof raw.candidates === "object" ? raw.candidates : {};
+    } catch {
+      return {};
+    }
+  }
+
+  private saveGatedCompletionCandidates(candidates: Record<string, GatedCandidateRecord>): void {
+    const file = this.gatedCompletionStatePath();
+    try {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, `${JSON.stringify({ schemaVersion: 1, candidates }, null, 2)}\n`, "utf8");
+    } catch {
+      /* best-effort durable state */
+    }
   }
 
   /** Routes a fired schedule to the right executor. */
