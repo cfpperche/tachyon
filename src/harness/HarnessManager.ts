@@ -971,20 +971,23 @@ export class HarnessManager {
     for (const authFile of h.authFiles) {
       const authLink = path.join(authDestHome, authFile);
       const authTarget = path.join(authSourceHome, authFile);
+      // Hermes may authenticate exclusively through provider API keys in `.env`/process env. Preserve
+      // OAuth refreshes first, but do not require auth.json when no OAuth credential exists.
+      if (adapter.runtime === "hermes") {
+        promoteNewerPrivateAuth(authLink, authTarget);
+      }
       if (!fs.existsSync(authTarget)) {
+        if (adapter.runtime === "hermes") {
+          fs.rmSync(authLink, { force: true });
+          continue;
+        }
         const login =
           adapter.runtime === "codex"
             ? "codex login"
             : adapter.runtime === "grok"
               ? "grok login"
-              : adapter.runtime === "hermes"
-                ? "hermes auth / hermes model"
-                : "claude /login";
+              : "claude /login";
         throw new HarnessUnavailableError(agent, `no credentials at ${authTarget} — run ${login} first (a redirected config home starts logged out)`);
-      }
-      // Hermes can also replace the auth symlink with a regular file after OAuth refresh — promote first.
-      if (adapter.runtime === "hermes") {
-        promoteNewerPrivateAuth(authLink, authTarget);
       }
       ensureAuthSymlink(authLink, authTarget);
     }
@@ -997,7 +1000,8 @@ export class HarnessManager {
         seedGrokTrustedFolders(authDestHome, [this.workspaceRoot, ...(cwd ? [cwd] : [])]);
       }
       if (adapter.runtime === "hermes") {
-        assertReadableHermesAuth(agent, authDestHome, path.join(authSourceHome, "auth.json"));
+        const authTarget = path.join(authSourceHome, "auth.json");
+        if (fs.existsSync(authTarget)) assertReadableHermesAuth(agent, authDestHome, authTarget);
         // Seed model/provider settings from the real home so a private HERMES_HOME is not blank.
         this.seedHermesConfigFromReal(authDestHome);
       }
@@ -1243,10 +1247,22 @@ export class HarnessManager {
         return "";
       }
     };
+    const withoutMcpServers = (text: string): string => {
+      try {
+        const parsed = text.trim() ? parseYaml(text) : {};
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return "";
+        const doc = { ...(parsed as Record<string, unknown>) };
+        delete doc.mcp_servers;
+        return stringifyYaml(doc);
+      } catch {
+        return "";
+      }
+    };
+    const realBase = withoutMcpServers(tryRead(path.join(this.realHermesHome, "config.yaml")));
     if (def.inherit === "workspace") {
-      base = tryRead(path.join(this.workspaceRoot, ".hermes", "config.yaml")) || tryRead(path.join(this.realHermesHome, "config.yaml"));
+      base = tryRead(path.join(this.workspaceRoot, ".hermes", "config.yaml")) || realBase;
     } else {
-      base = tryRead(path.join(this.realHermesHome, "config.yaml"));
+      base = realBase;
     }
     let yaml = base;
     for (const [name, server] of Object.entries(def.mcp ?? {})) {
@@ -1432,7 +1448,8 @@ export class HarnessManager {
   /**
    * Materialize a private `HERMES_HOME` for a NON-harness hermes agent and return its path
    * (injected as `HERMES_HOME`). Writes `$home/config.yaml` with Bridge `mcp_servers.tachyon_bridge`
-   * (`Authorization: Bearer ${TACHYON_AGENT_BRIDGE_TOKEN}`) and symlinks `auth.json` → real home.
+   * (`Authorization: Bearer ${TACH...N}`), symlinks `auth.json` when OAuth credentials exist, and
+   * symlinks `.env` when API-key credentials exist.
    * Never mutates the user's real `~/.hermes/config.yaml`. Rewritten on every (re)spawn.
    */
   materializeBridgeMcpHermes(agent: string, bridgeEntry: Record<string, unknown>): string {
@@ -1441,20 +1458,15 @@ export class HarnessManager {
 
     const authLink = path.join(home, "auth.json");
     const authTarget = path.join(this.realHermesHome, "auth.json");
-    if (!fs.existsSync(authTarget)) {
-      throw new HarnessUnavailableError(
-        agent,
-        `no credentials at ${authTarget} — run hermes auth / hermes model first (a redirected HERMES_HOME starts logged out)`,
-      );
-    }
     promoteNewerPrivateAuth(authLink, authTarget);
-    try {
-      fs.unlinkSync(authLink);
-    } catch (e) {
-      if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
+    if (fs.existsSync(authTarget)) {
+      ensureAuthSymlink(authLink, authTarget);
+      assertReadableHermesAuth(agent, home, authTarget);
+    } else {
+      // No OAuth credential is valid for API-key providers. Remove a broken/invalid private auth file
+      // so Hermes can fall through to `.env` or process environment authentication.
+      fs.rmSync(authLink, { force: true });
     }
-    fs.symlinkSync(authTarget, authLink);
-    assertReadableHermesAuth(agent, home, authTarget);
 
     this.seedHermesConfigFromReal(home);
 

@@ -638,9 +638,70 @@ describe("HarnessManager materialize (fs)", () => {
     expect(fs.existsSync(home)).toBe(false);
   });
 
-  it("materializeBridgeMcpHermes fails closed when real hermes auth is missing", () => {
+  it("Hermes inherit:none preserves provider settings but excludes ambient global MCP servers", () => {
+    const realHermesHome = path.join(path.dirname(ws), "isolated-hermes");
+    fs.mkdirSync(realHermesHome, { recursive: true });
+    fs.writeFileSync(path.join(realHermesHome, "auth.json"), '{"tokens":{"access_token":"x"}}');
+    fs.writeFileSync(
+      path.join(realHermesHome, "config.yaml"),
+      "model:\n  default: gpt-5.6-sol\nmcp_servers:\n  ambient_global:\n    command: leak\n",
+    );
+    const mgr = new HarnessManager(
+      ws,
+      realHome,
+      PROC,
+      path.join(realHome, ".claude.json"),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      realHermesHome,
+    );
+    const result = mgr.materialize(
+      "isolated",
+      { inherit: "none", mcp: { declared: { command: "declared-command" } } },
+      adapterForRuntime("hermes")!,
+      undefined,
+      {
+        url: "http://127.0.0.1:9/mcp",
+        headers: { Authorization: "Bearer ${TACHYON_AGENT_BRIDGE_TOKEN}" },
+      },
+    );
+    const yaml = fs.readFileSync(path.join(result.home, "config.yaml"), "utf8");
+    expect(yaml).toContain("gpt-5.6-sol");
+    expect(yaml).toContain("declared-command");
+    expect(yaml).toContain("tachyon_bridge");
+    expect(yaml).not.toContain("ambient_global");
+    expect(yaml).not.toContain("command: leak");
+  });
+
+  it("Hermes harness supports API-key auth without auth.json", () => {
+    const realHermesHome = path.join(path.dirname(ws), "api-key-hermes-harness");
+    fs.mkdirSync(realHermesHome, { recursive: true });
+    fs.writeFileSync(path.join(realHermesHome, "config.yaml"), "model:\n  provider: openai\n");
+    fs.writeFileSync(path.join(realHermesHome, ".env"), "OPENAI_API_KEY=test-only\n");
+    const mgr = new HarnessManager(
+      ws,
+      realHome,
+      PROC,
+      path.join(realHome, ".claude.json"),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      realHermesHome,
+    );
+    const result = mgr.materialize("api-key", { inherit: "none" }, adapterForRuntime("hermes")!);
+    expect(fs.existsSync(path.join(result.home, "auth.json"))).toBe(false);
+    expect(fs.lstatSync(path.join(result.home, ".env")).isSymbolicLink()).toBe(true);
+    expect(fs.readlinkSync(path.join(result.home, ".env"))).toBe(path.join(realHermesHome, ".env"));
+  });
+
+  it("materializeBridgeMcpHermes supports API-key auth when auth.json is missing", () => {
     const emptyHermes = path.join(path.dirname(ws), "empty-hermes");
     fs.mkdirSync(emptyHermes, { recursive: true });
+    fs.writeFileSync(path.join(emptyHermes, "config.yaml"), "model:\n  provider: openai\n");
+    fs.writeFileSync(path.join(emptyHermes, ".env"), "OPENAI_API_KEY=test-only\n");
     const mgr = new HarnessManager(
       ws,
       realHome,
@@ -652,12 +713,13 @@ describe("HarnessManager materialize (fs)", () => {
       undefined,
       emptyHermes,
     );
-    expect(() =>
-      mgr.materializeBridgeMcpHermes("solo", {
-        url: "http://127.0.0.1:9/mcp",
-        headers: { Authorization: "Bearer ${TACHYON_AGENT_BRIDGE_TOKEN}" },
-      }),
-    ).toThrow(HarnessUnavailableError);
+    const home = mgr.materializeBridgeMcpHermes("solo", {
+      url: "http://127.0.0.1:9/mcp",
+      headers: { Authorization: "Bearer ${TACHYON_AGENT_BRIDGE_TOKEN}" },
+    });
+    expect(fs.existsSync(path.join(home, "auth.json"))).toBe(false);
+    expect(fs.lstatSync(path.join(home, ".env")).isSymbolicLink()).toBe(true);
+    expect(fs.readFileSync(path.join(home, "config.yaml"), "utf8")).toContain("tachyon_bridge");
   });
 
   it("spec 243: materializeOwnershipSettings writes the recorder + per-spawn --settings hook (atomic, no temp left)", () => {

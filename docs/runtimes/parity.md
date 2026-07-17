@@ -1,6 +1,6 @@
 # Runtime capability parity (living document)
 
-**Status:** living · **Owner:** Tachyon maintainers · **Last verified:** 2026-07-14 (Hermes Activity state.db; prior 2026-07-13 secondary + form)  
+**Status:** living · **Owner:** Tachyon maintainers · **Last verified:** 2026-07-16 (Hermes contract hardening + engine-first audit)
 **Seams (code of record):** `src/resume/adapters.ts`, `src/runtime/runtimeProfile.ts`, `src/agents/AgentManager.ts` (`withRuntimeBridge`, `effectiveCmd`), `src/harness/HarnessManager.ts`, `src/activity/*Normalizer.ts`, `src/attention/patterns.ts`, `src/config/loadConfig.ts` (`INSTRUCTION_ARG`)
 
 This document is the **source of truth** for how Tachyon treats AI CLIs as first-class runtimes.  
@@ -47,7 +47,7 @@ What “first-class” means in Tachyon (ordered for reading, not strict priorit
 | 10 | **Label / profile** | `runtimeProfile` entry with enough for UI/governance: at least isolation + stop; `label` when present. “Full” means the sections peers use (composer, permission, model aliases) — not a marketing adjective. |
 | 11 | **Restart** | Kill + respawn with same definition; Bridge re-injected. |
 
-Also real, uneven seams (not full matrix rows yet — see open gaps): **session-id strategy** (mint vs capture), **deterministic `transcriptPath`** (Claude-only), **session-ownership hooks** (Claude `--settings`), **model-label normalization** (Claude/Codex), **live/observed model provenance** (spec 378 — claude/codex/grok transcript-latched `{model, effort?}` with declared-vs-observed divergence; opencode/gemini/qwen/etc. stay declared-only).
+Also real, uneven seams (not full matrix rows yet — see open gaps): **session-id strategy** (mint vs capture), **deterministic `transcriptPath`**, **session-ownership hooks** (Claude `--settings`), **model-label normalization** (Claude/Codex), and **live/observed model provenance** (spec 378 plus the Hermes SQLite reader — claude/codex/grok/hermes can latch an observed model; opencode/gemini/qwen/etc. stay declared-only).
 
 **Host-only policies** (e.g. `run_host_action` allowlists) are **product governance**, not runtime capability — [§5](#5-host-governance-not-runtime-parity).
 
@@ -163,7 +163,7 @@ Detail dump: [`docs/runtimes/opencode.md`](./opencode.md) (narrative may still s
 | Antigravity | ✓ (`--prompt-interactive`) | ✓ (`--conversation` / `--continue`) | — | — | — | Thin overall |
 | Qwen | — | ✓ (`--continue` style) | — | — | — | Thin |
 | Continue | — | ✓ (`--resume <id>`) | — | — | — | Thin (not “no resume”) |
-| Hermes | ✓ (`HERMES_TUI_QUERY`) | ✓ adapter (`--resume`/`-c`) | ✓ (`HERMES_HOME` + `config.yaml` mcp) | ✓ (`HERMES_HOME` harness) | ✓ (`state.db` reader) | Secondary 2026-07-13 + Activity Cap 8 (unit: hermesNormalizer/hermesStorageReader). Brief via env. No fork. Detail: [`hermes.md`](./hermes.md). |
+| Hermes | ✓ (`HERMES_TUI_QUERY` + forced TUI) | ✓ adapter + live session follow (`--resume`/`-c`) | ✓ (`HERMES_HOME` + `config.yaml` MCP) | ✓ (isolated MCP set; optional auth; hooks rejected) | ✓ (`state.db`, timestamp/model, bounded backfill) | Hardened 2026-07-16 (`agentManager`, `harness`, `resume`, `hermesStorageReader` units). No fork or permission reader. Detail: [`hermes.md`](./hermes.md). |
 
 Promoting a secondary runtime means walking §2 with **native** measurements, then filling the summary table.
 
@@ -177,6 +177,7 @@ These diverge; the summary table alone cannot show them:
 | Fork (UI) | shown when `forkCommand` exists | **hidden** (`!def?.harness && forkable(...)`) |
 | Isolation assert | parented agents need verified isolation / worktree | assert **skipped** when harness |
 | OpenCode permission | delegated non-harness path can write permission block | harness generation site currently **dead code** |
+| User-defined hooks | supported only where a native materializer runs | OpenCode/Grok/Hermes reject `harness.hooks` rather than silently dropping them |
 
 ---
 
@@ -188,7 +189,7 @@ These diverge; the summary table alone cannot show them:
 4. **Gaps:** open a **normal** board task when prioritized — never a permanent matrix owner task.  
 5. **Disputes:** code wins; fix the doc in the same change set when possible.
 
-### Open gaps (as of 2026-07-13)
+### Open gaps (as of 2026-07-16)
 
 | Gap | Focus |
 |-----|--------|
@@ -200,8 +201,9 @@ These diverge; the summary table alone cannot show them:
 | Codex fork | only if Codex CLI gains stable native fork |
 | ~~Grok auth rematerialize~~ | **Closed t-2b0a08** — promote private regular `auth.json` before re-symlink; see Grok auth note above |
 | Release hygiene | versioned VSIX that includes Bridge Grok path (no hand-patch of installed `dist`) |
-| ~~Hermes Brief/Resume/Bridge/Harness~~ | **Closed 2026-07-13** — see [`hermes.md`](./hermes.md). |
-| ~~Hermes Activity~~ | **Closed 2026-07-14** (`feat/hermes-activity`) — `HermesStorageReader` + `hermesNormalizer` over `$HERMES_HOME/state.db`. Residual: gracefulStop measurement, `--yolo` spawn inject reader, live Bridge/Activity dogfood. |
+| ~~Hermes Brief/Resume/Bridge/Harness contracts~~ | **Closed/hardened 2026-07-16** — forced TUI, isolated MCP inheritance, optional auth, fail-closed hooks and activity-based session selection. See [`hermes.md`](./hermes.md). |
+| ~~Hermes Activity reader~~ | **Closed/hardened 2026-07-16** — `state.db` reader now preserves source timestamp/model, follows live session switches and bounds cold backfill. Residual: visual dogfood, token/cost projection. |
+| Hermes active-runtime promotion | Measure composer/attention and graceful stop; implement or explicitly reject permission posture; native fork remains absent |
 | RuntimeOps panel model column | still declared/profile-only (spec 378 exposes the observed model + declared-vs-observed `modelDivergence` fact in the snapshot payload for agent consumers; the panel's own Model cell doesn't render it yet — a small follow-up once the sidebar usage is dogfooded) |
 
 ---
@@ -235,6 +237,7 @@ Document those in host-action / security docs; mention here only to avoid mis-sc
 
 | Date | Change |
 |------|--------|
+| 2026-07-16 | **Hermes contract hardening:** startup brief forces modern TUI and rejects explicit classic CLI; harness `inherit:none` strips ambient MCPs; OAuth file is optional; unsupported hooks fail closed; resume/live Activity follows actual message activity; SQLite ingest preserves timestamps/model and bounds backfill. |
 | 2026-07-13 | **spec 378 live-model-sidebar:** claude/codex/grok now latch a transcript-observed `{model, effort?}` (claude `message.model` filtering sidechain/synthetic; codex `turn_context.payload`; grok `assistant.model_id`, un-overloaded off `runtimeVersion` alongside opencode). `RuntimeOpsSnapshotService` projects a boundary-aware observed-vs-declared model fact + divergence; the sidebar row shows it with textual provenance (`· declared`/`· stale`/`≠ declared`). RuntimeOps panel's own Model column stays declared-only (follow-up, see open gaps). Interim honesty: pre-existing durable logs show `declared`/`profile` until the next model-bearing record is appended (no backfill — additive-only log format, no `schemaVersion` bump). Codex per-turn latency: a mid-turn `/model` switch shows the prior model until the next `turn_context` record lands (`observedAt` makes this honest, not hidden). |
 | 2026-07-14 | **Hermes Activity Cap 8:** `HermesStorageReader` + `hermesNormalizer` over `$HERMES_HOME/state.db` (unit hermesNormalizer/hermesStorageReader). Secondary Activity mark → ✓. |
 | 2026-07-13 | **Hermes secondary promotion:** Brief (`HERMES_TUI_QUERY`), Resume adapter, Bridge `HERMES_HOME`+`config.yaml`, harness shape, `runtimeProfile.hermes`. Activity still `—`. Units in config/resume/harness/runtimeProfile. |
