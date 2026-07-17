@@ -635,4 +635,130 @@ describe("DeliveryStore projection claims (T15)", () => {
     // Ensure liveOwner type is referenced (documentation of fields under test).
     expect(liveOwner.pidNamespace).toContain("pid:");
   });
+
+  it("t-b3242a: refused prune does not append a canonical projection.intent", async () => {
+    const workspace = root();
+    const wt = path.join(workspace, "wt");
+    fs.mkdirSync(wt);
+    const deliveries = new DeliveryStore(workspace, { now: () => now });
+    const gitDeliveries = new GitDeliveryStore(workspace, { now: () => now });
+    const delivery = await freeDelivery(deliveries, "d-no-orphan");
+    const svc = serviceFor(workspace, deliveries, gitDeliveries, gitScript({
+      "show-ref --verify --quiet refs/heads/tachyon/d": ok(),
+      "rev-parse tachyon/d": ok("tip\n"),
+      "status --porcelain=v1 --untracked-files=all": ok(),
+      "merge-base --is-ancestor tip main": ok(),
+      "worktree list --porcelain": ok(`worktree ${wt}\nbranch refs/heads/tachyon/d\n`),
+      "*": ok(),
+    }));
+    const opened = await svc.openCanonical({
+      deliveryId: delivery.id, agent: "worker", branchRef: "tachyon/d", worktreePath: wt,
+      tachyonCreatedBranch: true, baseRef: "main", currentHeadSha: "tip", actor, operationId: "op-open-no-orphan",
+    });
+    // Phase is still open — non-abandon prune must refuse without minting intent seq 2.
+    await expect(svc.prune({
+      deliveryId: delivery.id,
+      gitDeliveryId: opened.projection.id,
+      expectedGitVersion: opened.projection.version,
+      actor: human,
+      caller: human,
+      operationId: "op-prune-bad-phase",
+    })).rejects.toThrow(/not phase integrated|prune refused/);
+
+    const after = await deliveries.get(delivery.id);
+    expect(listProjectionIntents(after!).map((i) => i.action)).toEqual(["open"]);
+    const proj = await gitDeliveries.get(opened.projection.id);
+    expect(proj?.lastAppliedProjectionSequence).toBe(1);
+  });
+
+  it("t-b3242a: reconcile voids unapplied prune intents that still fail guards and unblocks integrate", async () => {
+    const workspace = root();
+    const wt = path.join(workspace, "wt");
+    fs.mkdirSync(wt);
+    const deliveries = new DeliveryStore(workspace, { now: () => now });
+    const gitDeliveries = new GitDeliveryStore(workspace, { now: () => now });
+    const delivery = await freeDelivery(deliveries, "d-void-orphan");
+    const svc = serviceFor(workspace, deliveries, gitDeliveries, gitScript({
+      "show-ref --verify --quiet refs/heads/tachyon/d": ok(),
+      "rev-parse tachyon/d": ok("tip\n"),
+      "status --porcelain=v1 --untracked-files=all": ok(),
+      "merge-base --is-ancestor tip main": ok(),
+      "worktree list --porcelain": ok(`worktree ${wt}\nbranch refs/heads/tachyon/d\n`),
+      "*": ok(),
+    }));
+    const opened = await svc.openCanonical({
+      deliveryId: delivery.id, agent: "worker", branchRef: "tachyon/d", worktreePath: wt,
+      tachyonCreatedBranch: true, baseRef: "main", currentHeadSha: "tip", actor, operationId: "op-open-void",
+    });
+    // Plant an orphan prune intent (legacy bug shape) without applying it.
+    const claim = await deliveries.claimProjection(delivery.id);
+    const d = await deliveries.get(delivery.id);
+    await deliveries.updateUnderProjectionClaim(claim, d!.version, (record) => ({
+      ...record,
+      events: [...record.events, {
+        id: "proj-evt-orphan-prune", at: now, type: "projection.intent", by: human,
+        detail: {
+          projectionSequence: 2, operationId: "op-orphan-prune", gitDeliveryId: opened.projection.id,
+          action: "prune",
+          expected: { gitDeliveryVersion: opened.projection.version, phase: "open" },
+          actor: human, payload: {},
+        },
+      }],
+    }), { operationId: "proj-intent:op-orphan-prune", intent: { prune: true } });
+    await deliveries.releaseProjection(claim);
+
+    const recon = await svc.reconcile(delivery.id);
+    expect(recon.projection?.lastAppliedProjectionSequence).toBe(2);
+    expect(recon.projection?.phase).toBe("open");
+
+    const integrated = await svc.integrate({
+      deliveryId: delivery.id,
+      gitDeliveryId: opened.projection.id,
+      expectedGitVersion: recon.projection!.version,
+      expectedHeadSha: "tip",
+      actor: human,
+      caller: human,
+      operationId: "op-integrate-after-void",
+    });
+    expect(integrated.projection.phase).toBe("integrated");
+    expect(integrated.projection.lastAppliedProjectionSequence).toBe(3);
+  });
+
+  it("t-b3242a: projectionSync is pending when canonical intents lag lastApplied", async () => {
+    const workspace = root();
+    const wt = path.join(workspace, "wt");
+    fs.mkdirSync(wt);
+    const deliveries = new DeliveryStore(workspace, { now: () => now });
+    const gitDeliveries = new GitDeliveryStore(workspace, { now: () => now });
+    const delivery = await freeDelivery(deliveries, "d-sync-pending");
+    const svc = serviceFor(workspace, deliveries, gitDeliveries, gitScript({ "*": ok() }));
+    const opened = await svc.openCanonical({
+      deliveryId: delivery.id, agent: "worker", branchRef: "tachyon/d", worktreePath: wt,
+      tachyonCreatedBranch: true, baseRef: "main", actor, operationId: "op-open-sync",
+    });
+    const claim = await deliveries.claimProjection(delivery.id);
+    const d = await deliveries.get(delivery.id);
+    await deliveries.updateUnderProjectionClaim(claim, d!.version, (record) => ({
+      ...record,
+      events: [...record.events, {
+        id: "proj-evt-lag", at: now, type: "projection.intent", by: human,
+        detail: {
+          projectionSequence: 2, operationId: "op-lag", gitDeliveryId: opened.projection.id,
+          action: "integrate", expected: { headSha: "tip" }, actor: human, payload: {},
+        },
+      }],
+    }), { operationId: "proj-intent:op-lag", intent: { integrate: true } });
+    await deliveries.releaseProjection(claim);
+
+    const canonical = await deliveries.get(delivery.id);
+    const projection = await gitDeliveries.get(opened.projection.id);
+    const report = await hygieneReport([projection!], [], {
+      workspaceRoot: workspace,
+      git: gitScript({ "*": ok() }),
+      liveness: async () => "not_live",
+      deliveriesById: new Map([[canonical!.id, canonical!]]),
+    });
+    const row = report.rows.find((r) => r.id === projection!.id);
+    expect(row?.projectionSync).toBe("pending");
+  });
 });

@@ -31,7 +31,21 @@ export type PruneResult =
   | { ok: true; removedWorktree: boolean; deletedBranch: boolean; lostShas?: string[]; message: string }
   | { ok: false; reasons: string[] };
 
-export async function pruneDeliveryRecord(delivery: GitDelivery, input: PruneInput, actor: GitDeliveryActor, deps: PruneDeps): Promise<{ result: PruneResult; next?: GitDelivery }> {
+type LiveClassification = Awaited<ReturnType<typeof classifyDelivery>>;
+
+/**
+ * Read-only prune guards (t-b3242a). Call before appending a canonical projection.intent so a
+ * refused prune never orphans a sequence number.
+ */
+export async function assessPruneDelivery(
+  delivery: GitDelivery,
+  input: PruneInput,
+  deps: PruneDeps,
+): Promise<
+  | { ok: false; reasons: string[] }
+  | { ok: true; mode: "missing_ref" }
+  | { ok: true; mode: "mutate"; live: LiveClassification; contained: boolean; lostShas: string[] }
+> {
   const live = await classifyDelivery(delivery, deps);
   const reasons: string[] = [];
   const targetPhase = input.abandon ? "abandoned" : delivery.phase;
@@ -72,8 +86,7 @@ export async function pruneDeliveryRecord(delivery: GitDelivery, input: PruneInp
   }
 
   if (!live.branchExists && !live.worktreeExists) {
-    const next = transition(delivery, "pruned", actor, deps.now?.() ?? new Date().toISOString(), "missing_ref close");
-    return { result: { ok: true, removedWorktree: false, deletedBranch: false, message: "closed missing_ref delivery as pruned" }, next };
+    return { ok: true, mode: "missing_ref" };
   }
 
   const contained = await containedInBase(delivery, live.currentHeadSha, deps).catch(() => false);
@@ -93,10 +106,23 @@ export async function pruneDeliveryRecord(delivery: GitDelivery, input: PruneInp
       if (missing.length > 0) reasons.push(`forceLoseCommits requires doomedShas to list live unintegrated commits: ${missing.join(",")}`);
     }
   }
-  if (reasons.length > 0) return { result: { ok: false, reasons } };
+  if (reasons.length > 0) return { ok: false, reasons };
+  return { ok: true, mode: "mutate", live, contained, lostShas };
+}
 
+export async function pruneDeliveryRecord(delivery: GitDelivery, input: PruneInput, actor: GitDeliveryActor, deps: PruneDeps): Promise<{ result: PruneResult; next?: GitDelivery }> {
+  const assessment = await assessPruneDelivery(delivery, input, deps);
+  if (!assessment.ok) return { result: { ok: false, reasons: assessment.reasons } };
+
+  if (assessment.mode === "missing_ref") {
+    const next = transition(delivery, "pruned", actor, deps.now?.() ?? new Date().toISOString(), "missing_ref close");
+    return { result: { ok: true, removedWorktree: false, deletedBranch: false, message: "closed missing_ref delivery as pruned" }, next };
+  }
+
+  const { live, lostShas } = assessment;
   let removedWorktree = false;
   let deletedBranch = false;
+  const abandoned = !!(input.abandon || delivery.phase === "abandoned");
   const deleteBranch = live.branchExists && (!abandoned || !!input.forceLoseCommits);
   const forceRemove = !!(input.abandon || input.forceLoseCommits);
 
