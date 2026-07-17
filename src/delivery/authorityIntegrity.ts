@@ -18,6 +18,12 @@ export interface AuthorityHead {
 export interface AuthorityHeadPort {
   current(identity: string): Promise<AuthorityHead | undefined>;
   prepare(identity: string, next: AuthorityHead, expectedMac?: string): Promise<void>;
+  /** Migration-only: establish the very first head for `identity` at its already-existing revision N
+   * (N >= 1) rather than the ordinary create's fixed revision 1. Must only succeed when there is no
+   * current head; must be idempotent when the exact same head is supplied again; must never overwrite
+   * or lower an existing, different head. Ordinary create/update never call this — they always go
+   * through `prepare`, whose initial-head branch is still pinned to revision 1. */
+  establishInitial?(identity: string, head: AuthorityHead): Promise<void>;
 }
 
 export type AuthorityRecord = { authorityIntegrity?: AuthorityIntegrity } & Record<string, unknown>;

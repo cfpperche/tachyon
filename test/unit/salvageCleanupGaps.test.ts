@@ -7,7 +7,7 @@ import type { ProcessFencePort } from "../../src/agents/processFence.js";
 import { sealAuthorityRecord, workspaceAuthorityDomain } from "../../src/delivery/authorityIntegrity.js";
 import { DeliveryLeaseService } from "../../src/delivery/leaseService.js";
 import { DeliveryProjectionService } from "../../src/delivery/projectionService.js";
-import { type DeliveryAuthorityHead, DeliveryStore } from "../../src/delivery/store.js";
+import { type DeliveryAuthorityHead, type DeliveryAuthorityHeadPort, DeliveryStore } from "../../src/delivery/store.js";
 import type { DeliveryActor, DeliveryCreateInput } from "../../src/delivery/types.js";
 import { deterministicGitDeliveryId, GitDeliveryStore } from "../../src/git-delivery/store.js";
 import type { GitExec, GitResult } from "../../src/worktree/WorktreeManager.js";
@@ -52,6 +52,47 @@ function gitFor(worktree: string): GitExec {
     if (command === `worktree remove --force ${worktree}`) { fs.rmSync(worktree, { recursive: true, force: true }); return ok(); }
     return ok();
   };
+}
+
+/** Mirrors the real Workspace canonical authority-head port's CAS semantics (spec-397 t-headfix):
+ *  `prepare` still pins a from-scratch head to revision 1, `establishInitial` is the migration-only
+ *  path that may anchor a from-scratch head at any N >= 1. `failFor` simulates a per-id durable-write
+ *  failure (e.g. a poisoned/foreign head) so per-row migration resilience can be proven precisely. */
+function authorityHeadHarness(failFor: ReadonlySet<string> = new Set()): {
+  port: DeliveryAuthorityHeadPort;
+  heads: Map<string, DeliveryAuthorityHead>;
+} {
+  const heads = new Map<string, DeliveryAuthorityHead>();
+  const port: DeliveryAuthorityHeadPort = {
+    async current(id) {
+      const head = heads.get(id);
+      return head ? { ...head } : undefined;
+    },
+    async prepare(id, next, expectedMac) {
+      if (failFor.has(id)) throw new Error(`simulated head failure for '${id}'`);
+      const current = heads.get(id);
+      if (expectedMac === undefined) {
+        if (current) {
+          if (current.revision === next.revision && current.mac === next.mac) return;
+          throw new Error(`authority head '${id}' already exists with different state`);
+        }
+        if (next.revision !== 1) throw new Error(`initial authority head '${id}' must start at revision 1`);
+      } else if (!current || current.mac !== expectedMac || next.revision !== current.revision + 1) {
+        throw new Error(`authority head '${id}' changed or attempted a non-monotonic update`);
+      }
+      heads.set(id, { ...next });
+    },
+    async establishInitial(id, head) {
+      if (failFor.has(id)) throw new Error(`simulated head failure for '${id}'`);
+      const current = heads.get(id);
+      if (current) {
+        if (current.revision === head.revision && current.mac === head.mac) return;
+        throw new Error(`authority head '${id}' already exists with different state`);
+      }
+      heads.set(id, { ...head });
+    },
+  };
+  return { port, heads };
 }
 
 afterEach(() => { for (const value of roots.splice(0)) fs.rmSync(value, { recursive: true, force: true }); });
@@ -165,5 +206,66 @@ describe("salvage cleanup gaps", () => {
       prepare: async () => { throw new Error("already-prepared head must not be prepared twice"); },
     } });
     await expect(resumed.get(torn.id)).resolves.toEqual(sealed);
+  });
+
+  it("reseals legacy records already at version > 1, anchoring the authority head at the record's own version", async () => {
+    const workspace = root();
+    const legacy = new DeliveryStore(workspace, { now: () => now });
+
+    let recordV3 = await legacy.create(input("d-legacy-v3"));
+    for (let i = 0; i < 2; i++) {
+      recordV3 = await legacy.update(recordV3.id, recordV3.version, (record) => {
+        record.events.push({ id: `bump-v3-${i}`, at: now, type: "advanced", by: system });
+        return record;
+      });
+    }
+    expect(recordV3.version).toBe(3);
+
+    let recordV25 = await legacy.create(input("d-legacy-v25"));
+    for (let i = 0; i < 24; i++) {
+      recordV25 = await legacy.update(recordV25.id, recordV25.version, (record) => {
+        record.events.push({ id: `bump-v25-${i}`, at: now, type: "advanced", by: system });
+        return record;
+      });
+    }
+    expect(recordV25.version).toBe(25);
+
+    const { port, heads } = authorityHeadHarness();
+    const store = new DeliveryStore(workspace, { now: () => now, authorityIntegrityKey: () => key, authorityHead: port });
+
+    const migratedV3 = await store.get("d-legacy-v3");
+    const migratedV25 = await store.get("d-legacy-v25");
+    expect(migratedV3?.authorityIntegrity?.mac).toMatch(/^[0-9a-f]{64}$/);
+    expect(migratedV25?.authorityIntegrity?.mac).toMatch(/^[0-9a-f]{64}$/);
+    // The initial head lands at the record's own version, not a fixed revision 1.
+    expect(heads.get("d-legacy-v3")).toEqual({ revision: 3, mac: migratedV3!.authorityIntegrity!.mac });
+    expect(heads.get("d-legacy-v25")).toEqual({ revision: 25, mac: migratedV25!.authorityIntegrity!.mac });
+  });
+
+  it("skips a legacy record whose head cannot be established without blocking the rest of the migration or its completion marker", async () => {
+    const workspace = root();
+    const legacy = new DeliveryStore(workspace, { now: () => now });
+    await legacy.create(input("d-bad"));
+    await legacy.create(input("d-good"));
+
+    const { port, heads } = authorityHeadHarness(new Set(["d-bad"]));
+    const store = new DeliveryStore(workspace, { now: () => now, authorityIntegrityKey: () => key, authorityHead: port });
+
+    // "d-bad" sorts before "d-good", so this also proves an earlier row's failure does not
+    // abort the rows that would have been processed after it in the same migration pass.
+    await expect(store.get("d-bad")).rejects.toThrow("authority integrity check failed");
+    const migratedGood = await store.get("d-good");
+    expect(migratedGood?.authorityIntegrity?.mac).toMatch(/^[0-9a-f]{64}$/);
+    expect(heads.get("d-good")).toEqual({ revision: 1, mac: migratedGood!.authorityIntegrity!.mac });
+    expect(heads.has("d-bad")).toBe(false);
+
+    const db = new DatabaseSync(store.databasePath);
+    try {
+      // The migration still completed and marked itself done despite the one un-resealable row.
+      expect(db.prepare("SELECT value FROM delivery_store_metadata WHERE key = 'authority_legacy_reseal_v1_complete'").get())
+        .toEqual({ value: "1" });
+      const badRow = db.prepare("SELECT record_json FROM deliveries WHERE id = 'd-bad'").get() as { record_json: string };
+      expect(JSON.parse(badRow.record_json)).not.toHaveProperty("authorityIntegrity");
+    } finally { db.close(); }
   });
 });

@@ -2052,8 +2052,39 @@ export class Workspace {
         throw new Error(`authority head '${mapKey}' changed or attempted a non-monotonic update`);
       }
     }
+    await this.commitAuthorityHead(mapKey, next);
+  }
+
+  /** Migration-only counterpart to `prepareAuthorityHeadSerialized`'s initial branch: establishes the
+   * first head for `identity` at its already-existing revision N (any N >= 1) instead of the fixed
+   * revision 1 that ordinary create requires. Guarded to only ever fire when there is no current head
+   * (or the exact same head is being re-applied), so it can only plant a first anchor at a record's true
+   * current version — there is no older signed state for that identity to roll back to. */
+  private async establishInitialAuthorityHead(identity: string, head: AuthorityHead): Promise<void> {
+    const established = this.authorityHeadPrepareTail.then(() =>
+      this.establishInitialAuthorityHeadSerialized(identity, head)
+    );
+    this.authorityHeadPrepareTail = established.catch(() => undefined);
+    return established;
+  }
+
+  private async establishInitialAuthorityHeadSerialized(identity: string, head: AuthorityHead): Promise<void> {
+    if (!identity || !Number.isSafeInteger(head.revision) || head.revision < 1 || !/^[0-9a-f]{64}$/.test(head.mac)) {
+      throw new Error("invalid authority freshness head");
+    }
+    this.authorityHeads = parseAuthorityHeads(await this.host.getSecret(this.authorityHeadsSecretKey()));
+    const mapKey = this.authorityHeadMapKey(identity);
+    const current = this.authorityHeads.get(mapKey);
+    if (current) {
+      if (current.revision === head.revision && current.mac === head.mac) return;
+      throw new Error(`authority head '${mapKey}' already exists with different state`);
+    }
+    await this.commitAuthorityHead(mapKey, head);
+  }
+
+  private async commitAuthorityHead(mapKey: string, head: AuthorityHead): Promise<void> {
     const updated = new Map(this.authorityHeads);
-    updated.set(mapKey, { ...next });
+    updated.set(mapKey, { ...head });
     const serialized = serializeAuthorityHeads(updated);
     // SecretStorage is prepared before the workspace/SQLite commit. A crash after this await leaves
     // the head ahead of workspace state, which is an explicit fail-closed recovery condition.
@@ -2070,6 +2101,7 @@ export class Workspace {
     return {
       current: (identity) => this.currentAuthorityHead(identity),
       prepare: (identity, next, expectedMac) => this.prepareAuthorityHead(identity, next, expectedMac),
+      establishInitial: (identity, head) => this.establishInitialAuthorityHead(identity, head),
     };
   }
 

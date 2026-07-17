@@ -879,6 +879,117 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     }
   });
 
+  it("one-time reseals a pre-hardening unsigned Delivery already at version > 1, anchoring its head at that version", async () => {
+    // Real legacy data is never version 1 by the time the reseal migration ships (spec-397 t-headfix):
+    // this drives the exact end-to-end path (real Workspace + real DeliveryStore + real host authority
+    // port) that shipped broken, rather than a hand-simulated port.
+    const { DeliveryStore } = await import("../../src/delivery/store.js");
+    const root = mkdir();
+    fs.writeFileSync(
+      path.join(root, "tachyon.yml"),
+      "agents:\n  ordinary:\n    cmd: sh\n    autostart: false\n",
+      "utf8",
+    );
+    const unsignedStore = new DeliveryStore(root);
+    let record = await unsignedStore.create({
+      id: "d-pre-hardening-v3",
+      workspaceId: workspaceHash(root),
+      createdBy: { kind: "system", name: "tachyon" },
+      contract: { baseSha: "base", behaviorTest: "gate", owns: ["src"], taskRef: "tachyon/old-v3" },
+    });
+    for (let i = 0; i < 2; i++) {
+      record = await unsignedStore.update(record.id, record.version, (r) => {
+        r.events.push({ id: `bump-${i}`, at: "2026-07-15T12:00:00.000Z", type: "advanced", by: { kind: "system", name: "tachyon" } });
+        return r;
+      });
+    }
+    expect(record.version).toBe(3);
+    const database = new DatabaseSync(unsignedStore.databasePath);
+    try {
+      const row = database.prepare("SELECT record_json FROM deliveries WHERE id = ?").get(record.id) as { record_json: string };
+      expect(JSON.parse(row.record_json)).not.toHaveProperty("authorityIntegrity");
+    } finally {
+      database.close();
+    }
+
+    const host = new FakeHost(mkdir());
+    const fake = fakeTmux();
+    const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux: fake.tmux, startBridge: false });
+    try {
+      const migrated = await ws.deliveries.get(record.id);
+      expect(migrated?.version).toBe(3);
+      expect(migrated?.authorityIntegrity?.mac).toMatch(/^[0-9a-f]{64}$/);
+      const secretKey = `tachyon.authorityHeads.v1.${workspaceHash(root)}`;
+      const heads = JSON.parse(await host.getSecret(secretKey) ?? "{}") as Record<string, { revision: number; mac: string }>;
+      expect(heads[`canonical:${record.id}`]).toEqual({ revision: 3, mac: migrated!.authorityIntegrity!.mac });
+      // The migration marker is set, so ordinary operations on this now-signed Delivery work.
+      const advanced = await ws.deliveries.update(record.id, record.version, (r) => {
+        r.events.push({ id: "post-migration", at: "2026-07-15T12:05:00.000Z", type: "advanced", by: { kind: "system", name: "tachyon" } });
+        return r;
+      });
+      expect(advanced.version).toBe(4);
+    } finally {
+      ws.dispose();
+      await fake.cleanup();
+    }
+  });
+
+  it("keeps anti-rollback CAS intact for ordinary heads while the migration-only initial path stays guarded", async () => {
+    const root = mkdir();
+    fs.writeFileSync(path.join(root, "tachyon.yml"), "agents:\n  a:\n    cmd: sh\n    autostart: false\n", "utf8");
+    const host = new FakeHost(mkdir());
+    const fake = fakeTmux();
+    const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux: fake.tmux, startBridge: false });
+    const prepare = (ws as unknown as {
+      prepareAuthorityHead(identity: string, next: { revision: number; mac: string }, expectedMac?: string): Promise<void>;
+    }).prepareAuthorityHead.bind(ws);
+    const establishInitial = (ws as unknown as {
+      establishInitialAuthorityHead(identity: string, head: { revision: number; mac: string }): Promise<void>;
+    }).establishInitialAuthorityHead.bind(ws);
+    const secretKey = `tachyon.authorityHeads.v1.${workspaceHash(root)}`;
+    try {
+      // Ordinary create still establishes the first head at a fixed revision 1.
+      await prepare("delivery-anti-rollback", { revision: 1, mac: "a".repeat(64) });
+      expect(JSON.parse(await host.getSecret(secretKey) ?? "{}")).toEqual({
+        "canonical:delivery-anti-rollback": { revision: 1, mac: "a".repeat(64) },
+      });
+
+      // A same-revision "update" under the correct expectedMac (non-monotonic) is refused.
+      await expect(prepare("delivery-anti-rollback", { revision: 1, mac: "b".repeat(64) }, "a".repeat(64)))
+        .rejects.toThrow(/non-monotonic update/);
+      // A stale/incorrect expectedMac (an attacker replaying an older CAS token) is refused too.
+      await expect(prepare("delivery-anti-rollback", { revision: 2, mac: "c".repeat(64) }, "9".repeat(64)))
+        .rejects.toThrow(/non-monotonic update/);
+      // Both refused attempts left the durable head untouched.
+      expect(JSON.parse(await host.getSecret(secretKey) ?? "{}")).toEqual({
+        "canonical:delivery-anti-rollback": { revision: 1, mac: "a".repeat(64) },
+      });
+
+      // The migration-only initial path can never overwrite or lower an existing head.
+      await expect(establishInitial("delivery-anti-rollback", { revision: 5, mac: "d".repeat(64) }))
+        .rejects.toThrow(/already exists with different state/);
+      // It is idempotent on the exact same head.
+      await expect(establishInitial("delivery-anti-rollback", { revision: 1, mac: "a".repeat(64) })).resolves.toBeUndefined();
+      expect(JSON.parse(await host.getSecret(secretKey) ?? "{}")).toEqual({
+        "canonical:delivery-anti-rollback": { revision: 1, mac: "a".repeat(64) },
+      });
+
+      // A fresh identity may be established at N > 1 only by the migration-only path...
+      await expect(establishInitial("delivery-legacy-v7", { revision: 7, mac: "e".repeat(64) })).resolves.toBeUndefined();
+      // ...but once established, ordinary CAS rules govern it: a non-monotonic follow-up is refused...
+      await expect(prepare("delivery-legacy-v7", { revision: 7, mac: "f".repeat(64) }, "e".repeat(64)))
+        .rejects.toThrow(/non-monotonic update/);
+      // ...and only a genuine revision+1 advance under the correct expectedMac succeeds.
+      await expect(prepare("delivery-legacy-v7", { revision: 8, mac: "f".repeat(64) }, "e".repeat(64))).resolves.toBeUndefined();
+      expect(JSON.parse(await host.getSecret(secretKey) ?? "{}")).toMatchObject({
+        "canonical:delivery-legacy-v7": { revision: 8, mac: "f".repeat(64) },
+      });
+    } finally {
+      ws.dispose();
+      await fake.cleanup();
+    }
+  });
+
   it("refreshes a previously absent canonical head after another host creates the Delivery", async () => {
     const root = mkdir();
     fs.writeFileSync(path.join(root, "tachyon.yml"), "agents:\n  a:\n    cmd: sh\n    autostart: false\n", "utf8");
