@@ -9,7 +9,7 @@ import { spawn, spawnSync } from "node:child_process";
 // @ts-expect-error -- static ESM import is intentional for this executable module test.
 import { isWslRemoteCli, resolveEdhCode } from "../../scripts/dev-host/resolve-code.mjs";
 // @ts-expect-error -- static ESM import is intentional for this executable module test.
-import { stopFixtureBridge } from "../../scripts/dev-host/stop-bridge.mjs";
+import { fixtureEngineUnitName, stopFixtureBridge, stopFixtureEngine } from "../../scripts/dev-host/stop-bridge.mjs";
 
 const launcher = path.resolve("scripts/dev-host/cli.sh");
 const temporaryRoots: string[] = [];
@@ -144,14 +144,61 @@ describe("Dev Host child launch isolation", () => {
     }
     expect(childEnv.get("TMUX_TMPDIR")).toBe(path.join(base, "isolation/.tmux"));
     expect(childEnv.get("XDG_CACHE_HOME")).toBe(path.join(base, "isolation/.cache"));
+    expect(childEnv.get("XDG_STATE_HOME")).toBe(path.join(base, "isolation/.state"));
+    expect(childEnv.get("XDG_DATA_HOME")).toBe(path.join(base, "isolation/.data"));
+    expect(childEnv.get("TACHYON_DEV_HOST")).toBe("1");
+    expect(fs.realpathSync(childEnv.get("TACHYON_DEV_HOST_ENGINE_RUNTIME")!)).toBe(fs.realpathSync(process.execPath));
     expect(args).toContain("--use-inmemory-secretstorage");
     expect(args).toContain(`--extensionDevelopmentPath=${path.resolve(".")}`);
     expect(args.at(-1)).toBe(path.join(base, "isolation/workspace"));
+    expect(JSON.parse(fs.readFileSync(path.join(base, "isolation/workspace/.tachyon-dev-host.json"), "utf8")))
+      .toEqual({ schemaVersion: 1, kind: "tachyon-dev-host" });
     expect(fs.statSync(path.join(base, "isolation")).mode & 0o077).toBe(0);
   });
 });
 
 describe("EDH fixture cleanup", () => {
+  it("stops only the exact persistent engine unit derived from the fixture workspace", async () => {
+    const fixture = temporaryRoot("edh-clean-engine");
+    fs.mkdirSync(path.join(fixture, "workspace"), { recursive: true });
+    const unitName = fixtureEngineUnitName(fixture);
+    const calls: string[][] = [];
+    let active = true;
+
+    await expect(stopFixtureEngine(fixture, {
+      runSystemctl: (args) => {
+        calls.push(args);
+        if (args[0] === "stop") {
+          active = false;
+          return { status: 0, stdout: "", stderr: "" };
+        }
+        return active
+          ? { status: 0, stdout: "active\n", stderr: "" }
+          : { status: 3, stdout: "inactive\n", stderr: "" };
+      },
+    })).resolves.toEqual({ state: "stopped", unitName });
+    expect(calls).toEqual([
+      ["is-active", unitName],
+      ["stop", unitName],
+      ["is-active", unitName],
+    ]);
+    expect(unitName).toMatch(/^tachyon-engine-[a-f0-9]{32}\.service$/);
+  });
+
+  it("treats an unloaded fixture engine unit as already absent", async () => {
+    const fixture = temporaryRoot("edh-clean-engine-absent");
+    fs.mkdirSync(path.join(fixture, "workspace"), { recursive: true });
+    const calls: string[][] = [];
+
+    await expect(stopFixtureEngine(fixture, {
+      runSystemctl: (args) => {
+        calls.push(args);
+        return { status: 4, stdout: "unknown\n", stderr: "" };
+      },
+    })).resolves.toMatchObject({ state: "absent" });
+    expect(calls).toHaveLength(1);
+  });
+
   it("stops the matching persistent Bridge through its control socket before removal", async () => {
     const fixture = temporaryRoot("edh-clean");
     const workspace = path.join(fixture, "workspace");
@@ -272,5 +319,29 @@ describe("EDH fixture cleanup", () => {
       env: { ...env, TMUX_TMPDIR: tmuxDir },
     });
     expect(probe.status).not.toBe(0);
+  });
+
+  it("the shell cleanup removes a stale fixture-private tmux socket after proving no server responds", () => {
+    const root = temporaryRoot("edh-clean-stale-tmux");
+    const base = path.join(root, "fixtures");
+    const id = "stale-tmux-cleanup";
+    const env = {
+      ...process.env,
+      TACHYON_DEV_HOST_BASE: base,
+      TACHYON_DEV_HOST_ID: id,
+    };
+    const seeded = spawnSync("bash", [launcher, "seed"], { cwd: path.resolve("."), encoding: "utf8", env });
+    expect(seeded.status, seeded.stderr || seeded.stdout).toBe(0);
+    const socketDir = path.join(base, id, ".tmux", `tmux-${process.getuid?.() ?? 0}`);
+    const socketPath = path.join(socketDir, "tachyon");
+    fs.mkdirSync(socketDir, { recursive: true });
+    const stale = spawnSync("python3", ["-c", "import socket,sys; s=socket.socket(socket.AF_UNIX); s.bind(sys.argv[1]); s.close()", socketPath], {
+      encoding: "utf8",
+    });
+    expect(stale.status, stale.stderr || stale.stdout).toBe(0);
+
+    const cleaned = spawnSync("bash", [launcher, "clean"], { cwd: path.resolve("."), encoding: "utf8", env });
+    expect(cleaned.status, cleaned.stderr || cleaned.stdout).toBe(0);
+    expect(fs.existsSync(path.join(base, id))).toBe(false);
   });
 });

@@ -20,6 +20,9 @@ USER_DATA="${FIXTURE}/.dev-host-user-data"
 EXT_DIR="${FIXTURE}/.dev-host-extensions"
 TMUX_DIR="${FIXTURE}/.tmux"
 CACHE_HOME="${FIXTURE}/.cache"
+STATE_HOME="${FIXTURE}/.state"
+DATA_HOME="${FIXTURE}/.data"
+ENGINE_RUNTIME="${TACHYON_DEV_HOST_ENGINE_RUNTIME:-$(command -v node)}"
 PID_FILE="${FIXTURE}/.dev-host.pid"
 RESOLVE_CODE="$REPO/scripts/dev-host/resolve-code.mjs"
 STOP_BRIDGE="$REPO/scripts/dev-host/stop-bridge.mjs"
@@ -43,6 +46,10 @@ EDH_ENV=(
   -u CODEX_CI
   "TMUX_TMPDIR=$TMUX_DIR"
   "XDG_CACHE_HOME=$CACHE_HOME"
+  "XDG_STATE_HOME=$STATE_HOME"
+  "XDG_DATA_HOME=$DATA_HOME"
+  "TACHYON_DEV_HOST=1"
+  "TACHYON_DEV_HOST_ENGINE_RUNTIME=$ENGINE_RUNTIME"
 )
 
 die() { echo "dev-host: $*" >&2; exit 1; }
@@ -63,8 +70,14 @@ stop_private_tmux() {
   fi
   [ -S "$socket" ] || return 0
   command -v tmux >/dev/null 2>&1 || die "fixture tmux is running but tmux is unavailable for cleanup"
-  env -u TMUX -u TMUX_PANE TMUX_TMPDIR="$TMUX_DIR" tmux -L tachyon kill-server \
-    || die "failed to stop fixture-private tmux server"
+  if ! env -u TMUX -u TMUX_PANE TMUX_TMPDIR="$TMUX_DIR" tmux -L tachyon kill-server >/dev/null 2>&1; then
+    if env -u TMUX -u TMUX_PANE TMUX_TMPDIR="$TMUX_DIR" tmux -L tachyon list-sessions >/dev/null 2>&1; then
+      die "failed to stop fixture-private tmux server"
+    fi
+    rm -f -- "$socket"
+    [ ! -e "$socket" ] || die "failed to remove stale fixture-private tmux socket"
+    return 0
+  fi
   local attempt
   for attempt in 1 2 3 4 5; do
     [ ! -e "$socket" ] && return 0
@@ -169,10 +182,22 @@ PY
 }
 
 seed() {
-  mkdir -p "$WS" "$USER_DATA" "$EXT_DIR" "$TMUX_DIR" "$CACHE_HOME"
-  chmod 700 "$FIXTURE" "$WS" "$USER_DATA" "$EXT_DIR" "$TMUX_DIR" "$CACHE_HOME"
+  mkdir -p "$WS" "$USER_DATA" "$EXT_DIR" "$TMUX_DIR" "$CACHE_HOME" "$STATE_HOME" "$DATA_HOME"
+  chmod 700 "$FIXTURE" "$WS" "$USER_DATA" "$EXT_DIR" "$TMUX_DIR" "$CACHE_HOME" "$STATE_HOME" "$DATA_HOME"
   write_valid_config
   write_lkg_and_ledger
+  local marker="$WS/.tachyon-dev-host.json"
+  if [ -e "$marker" ] || [ -L "$marker" ]; then
+    [ ! -d "$marker" ] || die "refusing directory at Dev Host marker path"
+    rm -f -- "$marker"
+  fi
+  (umask 077; cat >"$marker" <<'JSON'
+{
+  "schemaVersion": 1,
+  "kind": "tachyon-dev-host"
+}
+JSON
+  )
   cat >"$WS/README.md" <<EOF
 # EDH palliative fixture
 
@@ -214,7 +239,9 @@ env -u ELECTRON_RUN_AS_NODE -u TACHYON_AGENT_BRIDGE_TOKEN -u TACHYON_AGENT_NAME 
   -u TACHYON_NODE_ID -u TACHYON_NODE_NONCE -u TACHYON_RUN_ID \\
   -u TACHYON_WORKSPACE_ROOT -u TACHYON_WORKTREE_ROOT \\
   -u CODEX_HOME -u CODEX_THREAD_ID -u CODEX_CI \\
+  TACHYON_DEV_HOST=1 TACHYON_DEV_HOST_ENGINE_RUNTIME='$ENGINE_RUNTIME' \\
   TMUX_TMPDIR='$TMUX_DIR' XDG_CACHE_HOME='$CACHE_HOME' \\
+  XDG_STATE_HOME='$STATE_HOME' XDG_DATA_HOME='$DATA_HOME' \\
   "\$TACHYON_EDH_CODE" \\
   --extensionDevelopmentPath='$REPO' \\
   --user-data-dir='$USER_DATA' \\
@@ -236,17 +263,15 @@ find_code() {
 
 launch() {
   [ -d "$WS" ] || seed
-  # Ensure extension is built (dist/extension.js is the usual entry).
-  if [ ! -f "$REPO/dist/extension.js" ]; then
-    info "dist/ missing — running npm run build"
-    (cd "$REPO" && npm run build)
-  fi
+  # Always rebuild through the dev channel; stale stable dist must never enter an Extension Development Host.
+  info "building dev-channel extension"
+  (cd "$REPO" && npm run build)
   local code_bin
   if ! code_bin="$(find_code)"; then
     die "refusing EDH launch without a compatible VS Code executable"
   fi
   info "launching EDH with $code_bin"
-  info "isolation: TMUX_TMPDIR=$TMUX_DIR XDG_CACHE_HOME=$CACHE_HOME"
+  info "isolation: TMUX_TMPDIR=$TMUX_DIR XDG_CACHE_HOME=$CACHE_HOME XDG_STATE_HOME=$STATE_HOME XDG_DATA_HOME=$DATA_HOME"
   # Background: return control to the caller (Codex/368 stays untouched).
   if [ "${TACHYON_DEV_HOST_FOREGROUND:-${TACHYON_EDH_FOREGROUND:-}}" = "1" ]; then
     record_edh_pid "$$"
@@ -305,10 +330,8 @@ headless() {
   if ! code_bin="$(find_code)"; then
     die "no compatible VS Code executable — run npm run test:integration once, or set TACHYON_EDH_CODE"
   fi
-  if [ ! -f "$REPO/dist/extension.js" ]; then
-    info "dist/ missing — running npm run build"
-    (cd "$REPO" && npm run build) || die "build failed"
-  fi
+  info "building dev-channel extension"
+  (cd "$REPO" && npm run build) || die "build failed"
 
   seed
   write_broken_config

@@ -3,11 +3,11 @@
 > **Status:** versioned final lane · **Contract owner:** `t-1d53e8` · **Rename:** `t-2d1810`
 
 This is the single-owner lane for isolated Extension Development Host dogfood — private fixture,
-private tmux/cache, extension bits from a known checkout/worktree, without reloading the monorepo
+private tmux/cache/state/data, extension bits from a known checkout/worktree, without reloading the monorepo
 fleet window.
 
 **Primary CLI:** `npm run dogfood:dev-host`  
-**Stable F5 config:** `Tachyon: Dev Host` (pointer under `.tachyon/dev-host/`)  
+**Canonical F5 config:** `Tachyon: Dev Host` (pointer under `.tachyon/dev-host/`)
 **Scripts:** `scripts/dev-host/`
 
 ## Evolution (keep this on purpose)
@@ -28,7 +28,7 @@ pins, journals, or commits should map the old vocabulary here:
 |----|--------|
 | Open `${workspaceFolder}/.tachyon/dev-host/workspace` (real dir under the monorepo) | Pass machine-local absolute paths in `launch.json` (forces a fresh WSL re-entry → **Disconnected from WSL** / **Extension 'WSL' is required**) |
 | `--extensionDevelopmentPath=${workspaceFolder}/.tachyon/dev-host/extension` | Open a *symlink* as the EDH folder (empty **NO FOLDER OPENED**) |
-| Private `TMUX_TMPDIR` / `XDG_CACHE_HOME` only | Private `--extensions-dir` / `--user-data-dir` (drops `ms-vscode-remote.remote-wsl` on the local side of the EDH window) |
+| Private `TMUX_TMPDIR` / `XDG_CACHE_HOME` / `XDG_STATE_HOME` / `XDG_DATA_HOME` | Private `--extensions-dir` / `--user-data-dir` (drops `ms-vscode-remote.remote-wsl` on the local side of the EDH window) |
 
 ### Mirror layout (symlink vs copy)
 
@@ -63,6 +63,18 @@ new material.
 
 Never describe one target as proof of another. Record target, owner, SHA, command exit, and evidence path.
 
+## Stable versus dev engine channel
+
+`npm run build` and `npm run watch` always emit a `dev` engine. The Dev Host writes a closed
+`.tachyon-dev-host.json` marker into its fixture and accepts that channel only there; its XDG cache, state and
+data roots are fixture-private. A worktree build therefore cannot replace the engine used by the installed
+extension.
+
+The installed VSIX accepts `stable` only. Stable packaging runs `npm run build:stable` and refuses unless it is
+executed from the clean primary `main` checkout with `HEAD`, local `main`, and cached `origin/main` at the exact
+same commit. `npm run package` invokes that gate through `vscode:prepublish`; ordinary users still only install
+the VSIX and open a workspace.
+
 ## Single-owner lease
 
 All headless and desktop pilots have one named owner. The atomic lane lease refuses a second owner and is not
@@ -88,9 +100,10 @@ Evidence is bounded to owner, target, timestamps, exit code, and signal at
 isolated tests. Otherwise the lane uses a private `XDG_RUNTIME_DIR` when valid, falling back to
 `~/.tachyon/runtime/edh-lane-v1`; `status` prints the resolved base.
 It never captures stdout, environment, catalogs, credentials, or prompts. Fixture cleanup refuses a still-running
-recorded EDH, then stops the matching persistent Bridge and fixture-private tmux server before removing only the printed
-fixture directory; suspicious, oversized, or symlinked ownership metadata refuses cleanup. Lease release only removes
-the lane's `owner.lease` directory.
+recorded EDH, then stops the exact persistent engine unit derived from the fixture workspace, the matching legacy
+persistent Bridge, and the fixture-private tmux server before removing only the printed fixture directory. A proven
+stale private tmux socket is removed; suspicious, oversized, or symlinked ownership metadata refuses cleanup. Lease
+release only removes the lane's `owner.lease` directory.
 
 ## Delegation contract
 
@@ -123,15 +136,17 @@ These exist so palliative EDH **cannot** strangle Codex/368 or the human’s liv
 
 2. **Never reload / reinstall VSIX in the normal (non-EDH) window** while 368 (or any live fleet) is running.
 
-3. **Private tmux + cache namespaces** (the seed script sets these for the EDH process only):
+3. **Private tmux + XDG namespaces** (the seed script sets these for the EDH process only):
    - `TMUX_TMPDIR` → fixture-local (not the default shared socket)
    - `XDG_CACHE_HOME` → fixture-local (worktrees never land in `~/.cache/tachyon/worktrees` used by 368)
+   - `XDG_STATE_HOME` and `XDG_DATA_HOME` → fixture-local (the dev engine and Bridge cannot reuse production state)
    - inherited live Tachyon Bridge/agent identity, Codex session identity, `TMUX`, and `TMUX_PANE` are removed from the
      EDH child; both GUI and headless launches use `--use-inmemory-secretstorage`
 
 4. **Use a compatible executable.** `npm run dogfood:dev-host -- resolve-code` prefers the current worktree test cache,
    then the primary checkout cache derived from Git's common directory. It rejects WSL `remote-cli/code`, which cannot
-   honor the isolated Extension Development Host flags.
+   honor the isolated Extension Development Host flags. The detached dev engine itself uses a fixture-local link to
+   the standalone Node executable; do not point it at the VS Code Electron binary.
 
 5. **One human/agent drives the EDH window under the lane lease.** No second agent sends keys into it.
 
@@ -180,28 +195,17 @@ Requirements: `Xvfb`, and a compatible VS Code test/native binary. The resolver 
 From the repo root (any clean-enough tree; prefer the SHA under test):
 
 ```bash
-# 1) Build the extension under test
-npm run build
-
-# 2) Seed an isolated fixture (prints paths + the exact launch command)
+# 1) Seed an isolated fixture (prints paths + the exact launch command)
 npm run dogfood:dev-host -- seed
 
-# 3) Launch EDH (script can also exec when a code binary is available)
+# 2) Launch EDH (always rebuilds the dev channel before opening)
 npm run dogfood:dev-host -- launch
 ```
 
 
-Manual equivalent (after seed):
+The exact manual equivalent, including its private environment, is printed by `seed`; use that output instead of
+a raw `code --extensionDevelopmentPath` command.
 
-```bash
-export FIXTURE=…   # printed by seed
-export REPO=…      # monorepo path (extensionDevelopmentPath)
-code \
-  --extensionDevelopmentPath="$REPO" \
-  --user-data-dir="$FIXTURE/.edh-user-data" \
-  --extensions-dir="$FIXTURE/.edh-extensions" \
-  "$FIXTURE/workspace"
-```
 
 Record in the task note / PR:
 
@@ -217,8 +221,9 @@ Cleanup:
 npm run dogfood:dev-host -- clean
 ```
 
-Do not substitute a raw `rm -rf`: a closed desktop EDH intentionally leaves its persistent Bridge alive until the lane
-cleanup sends the identity-matched stop request, and fixture agents may leave a private tmux server to terminate.
+Do not substitute a raw `rm -rf`: a closed desktop EDH intentionally leaves its persistent engine and legacy Bridge
+alive until the lane cleanup sends exact, fixture-scoped stops, and fixture agents may leave a private tmux server to
+terminate.
 
 ---
 

@@ -6,6 +6,7 @@ export interface BuildStamp {
 
 export interface DeployRecord {
   version: string;
+  engineChannel?: "stable" | "dev" | null;
   commit: string | null;
   treeSha: string | null;
   workingTreeClean: boolean;
@@ -22,7 +23,7 @@ export interface DeployRecord {
  * carries the vsix's own sha256, packagedBy, and the verify:full result — see scripts/record-provenance.mjs).
  * It's a strict subset of DeployRecord's fields.
  */
-export type EmbeddedProvenanceRecord = Pick<DeployRecord, "version" | "commit" | "treeSha" | "workingTreeClean" | "dist">;
+export type EmbeddedProvenanceRecord = Pick<DeployRecord, "version" | "engineChannel" | "commit" | "treeSha" | "workingTreeClean" | "dist">;
 
 export type HashReader = (relPath: string) => Promise<string | null>;
 
@@ -59,4 +60,3 @@ export async function assessBuildProvenance(input: {
   }
   return warnings;
 }
-

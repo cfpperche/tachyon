@@ -8,7 +8,7 @@ const cleanStamp: BuildStamp = { commit: "abc123", treeSha: "tree123", dirty: fa
 
 const EXTENSION_ROOT = "/opt/installed/tachyon-ext";
 const embeddedRecordJson = (dist: Record<string, string>) =>
-  JSON.stringify({ version: "0.55.91", commit: "abc123", treeSha: "tree123", workingTreeClean: true, dist });
+  JSON.stringify({ version: "0.55.91", engineChannel: "stable", commit: "abc123", treeSha: "tree123", workingTreeClean: true, dist });
 
 /** A fake fs keyed by exact absolute path — only ever serves the extension-root file, never anything workspace-shaped. */
 function fakeFsServing(exactPath: string, content: string): ReadFile {
@@ -43,6 +43,11 @@ describe("container-generated delegation behavior", () => {
     expect(askedAsWorkspace).toBeNull();
     const askedAsExtensionRoot = await readEmbeddedProvenanceRecord(EXTENSION_ROOT, goodReader);
     expect(askedAsExtensionRoot?.dist).toEqual(dist);
+    expect(askedAsExtensionRoot?.engineChannel).toBe("stable");
+    expect(await readEmbeddedProvenanceRecord(
+      EXTENSION_ROOT,
+      fakeFsServing(recordPath, JSON.stringify({ version: "0.55.91", engineChannel: "candidate", dist })),
+    )).toBeNull();
 
     // (b) one dist file's hash differs → a dist-mismatch warning naming that file.
     const tamperedReader = fakeFsServing(recordPath, embeddedRecordJson({ "dist/extension.js": "expected-hash" }));

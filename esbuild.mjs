@@ -3,8 +3,11 @@ import { createHash } from "node:crypto";
 import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { assertStableBuildSource, resolveEngineReleaseChannel } from "./scripts/engine-release-channel.mjs";
 
 const watch = process.argv.includes("--watch");
+const engineReleaseChannel = resolveEngineReleaseChannel();
+if (engineReleaseChannel === "stable") assertStableBuildSource();
 
 function git(args) {
   return execFileSync("git", args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
@@ -31,6 +34,7 @@ function sha256File(file) {
 function writeEngineManifest() {
   const manifest = {
     schemaVersion: 1,
+    channel: engineReleaseChannel,
     engineVersion: packageVersion,
     protocol: { min: 3, max: 3 },
     entrypoint: "engine-daemon.cjs",

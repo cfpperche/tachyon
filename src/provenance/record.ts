@@ -16,7 +16,11 @@ export function embeddedProvenancePath(extensionRoot: string): string {
 export function parseEmbeddedProvenanceRecord(raw: string): EmbeddedProvenanceRecord | null {
   try {
     const parsed = JSON.parse(raw) as Partial<EmbeddedProvenanceRecord>;
-    if (parsed && typeof parsed === "object" && typeof parsed.version === "string" && parsed.dist && typeof parsed.dist === "object") {
+    if (parsed && typeof parsed === "object"
+      && typeof parsed.version === "string"
+      && (parsed.engineChannel === undefined || parsed.engineChannel === null
+        || parsed.engineChannel === "stable" || parsed.engineChannel === "dev")
+      && parsed.dist && typeof parsed.dist === "object") {
       return parsed as EmbeddedProvenanceRecord;
     }
   } catch {

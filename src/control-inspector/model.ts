@@ -12,6 +12,7 @@ export interface ControlInspectorEngineSlice {
   processStartIdentity?: string;
   startedAt?: string;
   bundleId?: string;
+  channel?: "stable" | "dev" | "legacy";
   engineVersion?: string;
   protocolMin?: number;
   protocolMax?: number;
@@ -62,6 +63,7 @@ export interface ControlInspectorWorkspaceInput {
     processStartIdentity: string;
     startedAt: string;
     bundleId: string;
+    channel?: "stable" | "dev";
     engineVersion: string;
     protocol?: { min: number; max: number };
     bridge?: { instanceId: string; port: number };
@@ -117,6 +119,7 @@ function rowFromInput(input: ControlInspectorWorkspaceInput): ControlInspectorWo
       processStartIdentity: id.processStartIdentity,
       startedAt: id.startedAt,
       bundleId: id.bundleId,
+      channel: id.channel ?? "legacy",
       engineVersion: id.engineVersion,
       protocolMin: id.protocol?.min,
       protocolMax: id.protocol?.max,
@@ -172,6 +175,7 @@ export function formatControlInspectorDiagnostics(model: ControlInspectorModel):
     lines.push(`root: ${w.workspaceRoot}`);
     lines.push(`engine: ${w.engine.state}` + (w.engine.pid !== undefined ? ` pid=${w.engine.pid}` : ""));
     if (w.engine.engineVersion) lines.push(`  version: ${w.engine.engineVersion}`);
+    if (w.engine.channel) lines.push(`  channel: ${w.engine.channel}`);
     if (w.engine.instanceId) lines.push(`  instanceId: ${w.engine.instanceId}`);
     if (w.engine.processStartIdentity) lines.push(`  processStartIdentity: ${w.engine.processStartIdentity}`);
     if (w.engine.startedAt) lines.push(`  startedAt: ${w.engine.startedAt}`);

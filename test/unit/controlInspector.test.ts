@@ -25,6 +25,7 @@ describe("control inspector model (POC)", () => {
             processStartIdentity: "start-1",
             startedAt: "2026-07-16T12:00:00.000Z",
             bundleId: "bundle-1",
+            channel: "stable",
             engineVersion: "0.56.10",
             protocol: { min: 3, max: 3 },
             bridge: { instanceId: "br-1", port: 7421 },
@@ -59,6 +60,7 @@ describe("control inspector model (POC)", () => {
       runningAgents: 3,
     });
     expect(model.workspaces[0]?.engine.state).toBe("attached");
+    expect(model.workspaces[0]?.engine.channel).toBe("stable");
     expect(model.workspaces[0]?.bridge.port).toBe(7421);
     expect(model.workspaces[1]?.engine.state).toBe("error");
     expect(model.workspaces[2]?.engine.state).toBe("none");
@@ -88,6 +90,7 @@ describe("control inspector model (POC)", () => {
     const text = formatControlInspectorDiagnostics(model);
     expect(text).toContain("Engine/Bridge Inspector");
     expect(text).toContain("pid=1");
+    expect(text).toContain("channel: legacy");
     expect(text).not.toMatch(/Bearer|token|secret/i);
   });
 });

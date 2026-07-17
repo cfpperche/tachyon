@@ -76,6 +76,7 @@ import { Terminals } from "./presentation/Terminals.js";
 import { connectPackagedWorkspaceClient } from "./shell/WorkspaceClient.js";
 import { collectLegacyEngineStateMigration } from "./engine-service/stateMigration.js";
 import { ENGINE_UI_CAPABILITY } from "./engine-service/uiRequestBroker.js";
+import { assertMarkedDevHostWorkspace, engineShellReleasePolicy } from "./engine-service/devHostBoundary.js";
 import { WorkspaceClientRegistry } from "./shell/WorkspaceClientRegistry.js";
 import { WorkspaceShellHandle } from "./shell/WorkspaceShellHandle.js";
 import { DAEMON_SETTING_KEYS, type DaemonSettingsSnapshot } from "./workspace/DaemonEngineHost.js";
@@ -1222,6 +1223,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             processStartIdentity: id.processStartIdentity,
             startedAt: id.startedAt,
             bundleId: id.bundleId,
+            channel: id.channel,
             engineVersion: id.engineVersion,
             protocol: id.protocol ? { min: id.protocol.min, max: id.protocol.max } : undefined,
             bridge: id.bridge ? { instanceId: id.bridge.instanceId, port: id.bridge.port } : undefined,
@@ -1394,46 +1396,65 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   const versionValue = (context.extension.packageJSON as { version?: unknown }).version;
   const shellVersion = typeof versionValue === "string" && versionValue.trim() ? versionValue : "development";
+  const shellReleasePolicy = engineShellReleasePolicy(
+    context.extensionMode === vscode.ExtensionMode.Production
+      ? "production"
+      : context.extensionMode === vscode.ExtensionMode.Development
+        ? "development"
+        : "test",
+  );
+  const shellBuildStamp = tachyonBuildStamp();
+  const requiredPackagedBuild = shellReleasePolicy.requiredChannel === "stable"
+    ? { commit: shellBuildStamp.commit ?? "", treeSha: shellBuildStamp.treeSha ?? "" }
+    : undefined;
   const clientRegistry = new WorkspaceClientRegistry({
-    connect: (workspaceRoot) => connectPackagedWorkspaceClient({
-      workspaceRoot,
-      extensionRoot: context.extensionUri.fsPath,
-      requireCleanBuild: context.extensionMode === vscode.ExtensionMode.Production,
-      shell: { version: shellVersion, locale: vscode.env.language },
-      capabilities: [ENGINE_UI_CAPABILITY, "vscode.diff", "vscode.editor", "vscode.notifications", "vscode.terminal"],
-      settings: daemonSettingsSnapshot(workspaceRoot),
-      migrationProvider: () => collectLegacyEngineStateMigration(workspaceHash(workspaceRoot), {
-        globalStorageRoot: context.globalStorageUri.fsPath,
-        getState: <T>(key: string) => context.globalState.get<T>(key),
-        getSecret: (key: string) => Promise.resolve(context.secrets.get(key)),
-      }),
-      uiHandler: async (request) => {
-        if (request.kind === "focus-primary") {
-          await vscode.commands.executeCommand("tachyonSidebarPrototype.focus");
-          return null;
-        }
-        if (request.kind === "terminal.present") {
-          terminals.open(request.agent, request.session, request.viewColumn, request.title);
-          return null;
-        }
-        if (request.kind === "terminal.close") {
-          terminals.close(request.agent, request.session);
-          return null;
-        }
-        if (request.kind === "notice.present") {
-          const choice = await showNotification(
-            request.message,
-            request.level,
-            request.actions.map((action) => action.label),
-          );
-          return request.actions.find((action) => action.label === choice)?.id ?? null;
-        }
-        const value = await vscode.commands.executeCommand(request.command, ...request.args);
-        if (value === undefined) return null;
-        if (!isJsonValue(value)) throw new Error(`editor command '${request.command}' returned a non-JSON result`);
-        return value;
-      },
-    }),
+    connect: (workspaceRoot) => {
+      if (shellReleasePolicy.requireMarkedDevHost) assertMarkedDevHostWorkspace(workspaceRoot);
+      return connectPackagedWorkspaceClient({
+        workspaceRoot,
+        extensionRoot: context.extensionUri.fsPath,
+        requireCleanBuild: shellReleasePolicy.requireCleanBuild,
+        requiredChannel: shellReleasePolicy.requiredChannel,
+        requiredBuild: requiredPackagedBuild,
+        runtimeSourceExecutable: shellReleasePolicy.requiredChannel === "dev"
+          ? process.env.TACHYON_DEV_HOST_ENGINE_RUNTIME
+          : undefined,
+        shell: { version: shellVersion, locale: vscode.env.language },
+        capabilities: [ENGINE_UI_CAPABILITY, "vscode.diff", "vscode.editor", "vscode.notifications", "vscode.terminal"],
+        settings: daemonSettingsSnapshot(workspaceRoot),
+        migrationProvider: () => collectLegacyEngineStateMigration(workspaceHash(workspaceRoot), {
+          globalStorageRoot: context.globalStorageUri.fsPath,
+          getState: <T>(key: string) => context.globalState.get<T>(key),
+          getSecret: (key: string) => Promise.resolve(context.secrets.get(key)),
+        }),
+        uiHandler: async (request) => {
+          if (request.kind === "focus-primary") {
+            await vscode.commands.executeCommand("tachyonSidebarPrototype.focus");
+            return null;
+          }
+          if (request.kind === "terminal.present") {
+            terminals.open(request.agent, request.session, request.viewColumn, request.title);
+            return null;
+          }
+          if (request.kind === "terminal.close") {
+            terminals.close(request.agent, request.session);
+            return null;
+          }
+          if (request.kind === "notice.present") {
+            const choice = await showNotification(
+              request.message,
+              request.level,
+              request.actions.map((action) => action.label),
+            );
+            return request.actions.find((action) => action.label === choice)?.id ?? null;
+          }
+          const value = await vscode.commands.executeCommand(request.command, ...request.args);
+          if (value === undefined) return null;
+          if (!isJsonValue(value)) throw new Error(`editor command '${request.command}' returned a non-JSON result`);
+          return value;
+        },
+      });
+    },
   });
   activeClientRegistry = clientRegistry;
   const syncStops = new Map<string, () => void>();

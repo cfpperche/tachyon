@@ -93,6 +93,7 @@ export { isStagedPayloadRefV1, type StagedPayloadRefV1 } from "../runtime-api/st
 
 export const ENGINE_BUNDLE_SCHEMA_VERSION = 1 as const;
 export const ENGINE_SHELL_PROTOCOL = 3 as const;
+export type EngineReleaseChannel = "stable" | "dev";
 
 export interface EngineProtocolRangeV1 {
   min: number;
@@ -108,6 +109,8 @@ export interface EngineBundleFileV1 {
 
 export interface EngineBundleManifestV1 {
   schemaVersion: typeof ENGINE_BUNDLE_SCHEMA_VERSION;
+  /** Optional only so pre-channel bundles remain valid rollback material. New builds always stamp it. */
+  channel?: EngineReleaseChannel;
   engineVersion: string;
   protocol: EngineProtocolRangeV1;
   entrypoint: string;
@@ -128,6 +131,8 @@ export interface EngineServiceIdentityV1 {
   processStartIdentity: string;
   startedAt: string;
   bundleId: string;
+  /** Absent only for an engine launched from a pre-channel bundle. */
+  channel?: EngineReleaseChannel;
   engineVersion: string;
   protocol: EngineProtocolRangeV1;
   bridge: {
@@ -1294,8 +1299,13 @@ export function isEngineProtocolRangeV1(value: unknown): value is EngineProtocol
     && (value.max as number) >= (value.min as number);
 }
 
+export function isEngineReleaseChannel(value: unknown): value is EngineReleaseChannel {
+  return value === "stable" || value === "dev";
+}
+
 export function isEngineBundleManifestV1(value: unknown): value is EngineBundleManifestV1 {
   if (!isRecord(value) || value.schemaVersion !== ENGINE_BUNDLE_SCHEMA_VERSION) return false;
+  if (value.channel !== undefined && !isEngineReleaseChannel(value.channel)) return false;
   if (typeof value.engineVersion !== "string" || value.engineVersion.trim().length === 0) return false;
   if (!isEngineProtocolRangeV1(value.protocol) || !isSafeBundlePath(value.entrypoint)) return false;
   if (!Array.isArray(value.files) || value.files.length === 0) return false;
@@ -1341,6 +1351,7 @@ export function isEngineServiceIdentityV1(value: unknown): value is EngineServic
   if (typeof value.processStartIdentity !== "string" || value.processStartIdentity.length === 0 || value.processStartIdentity.length > 256) return false;
   if (typeof value.startedAt !== "string" || !Number.isFinite(Date.parse(value.startedAt))) return false;
   if (!isSha256(value.bundleId)) return false;
+  if (value.channel !== undefined && !isEngineReleaseChannel(value.channel)) return false;
   if (typeof value.engineVersion !== "string" || value.engineVersion.length === 0 || value.engineVersion.length > 128) return false;
   if (!isEngineProtocolRangeV1(value.protocol) || !isRecord(value.bridge)) return false;
   return typeof value.bridge.instanceId === "string"
@@ -1459,6 +1470,7 @@ export function negotiateEngineShellProtocol(
 export function engineBundleId(manifest: EngineBundleManifestV1): string {
   const normalized = {
     schemaVersion: manifest.schemaVersion,
+    ...(manifest.channel === undefined ? {} : { channel: manifest.channel }),
     engineVersion: manifest.engineVersion,
     protocol: { min: manifest.protocol.min, max: manifest.protocol.max },
     entrypoint: manifest.entrypoint,

@@ -8,6 +8,7 @@ import {
   type StagedEngineBundle,
   type StagedEngineRuntime,
 } from "../engine-service/engineBundleStore.js";
+import type { EngineReleaseChannel } from "../engine-service/protocol.js";
 import {
   ensureDaemonEngine,
   type EnsureDaemonEngineOptions,
@@ -101,8 +102,11 @@ export interface ConnectPackagedWorkspaceClientOptions extends Omit<ConnectRemot
   extensionRoot: string;
   bundleInstallRoot?: string;
   runtimeInstallRoot?: string;
+  runtimeSourceExecutable?: string;
   /** Test/local-build override. Installed production bundles remain clean-only. */
   requireCleanBuild?: boolean;
+  requiredChannel: EngineReleaseChannel;
+  requiredBuild?: { commit: string; treeSha: string };
 }
 
 export class RemoteWorkspaceClientError extends Error {
@@ -116,13 +120,27 @@ export class RemoteWorkspaceClientError extends Error {
 export async function connectPackagedWorkspaceClient(
   options: ConnectPackagedWorkspaceClientOptions,
 ): Promise<RemoteWorkspaceClient> {
-  const { extensionRoot, bundleInstallRoot, runtimeInstallRoot, requireCleanBuild, ...clientOptions } = options;
+  const {
+    extensionRoot,
+    bundleInstallRoot,
+    runtimeInstallRoot,
+    runtimeSourceExecutable,
+    requireCleanBuild,
+    requiredChannel,
+    requiredBuild,
+    ...clientOptions
+  } = options;
   const bundle = stagePackagedEngineBundle({
     extensionRoot,
     installRoot: bundleInstallRoot,
     requireCleanBuild,
+    requiredChannel,
+    requiredBuild,
   });
-  const runtime = stageEngineRuntime({ sourceExecutable: process.execPath, installRoot: runtimeInstallRoot });
+  const runtime = stageEngineRuntime({
+    sourceExecutable: runtimeSourceExecutable ?? process.execPath,
+    installRoot: runtimeInstallRoot,
+  });
   return connectRemoteWorkspaceClient({ ...clientOptions, bundle, runtime });
 }
 

@@ -4,27 +4,27 @@ _Generated from `plan.md` on 2026-07-17. Work top-to-bottom. Check boxes as task
 
 ## Implementation
 
-- [ ] Add backward-compatible `stable|dev` manifest and live-identity contracts; include the channel in new bundle ids.
-- [ ] Stamp ordinary builds as dev and stable prepublish builds from the canonical-main source gate.
-- [ ] Recheck stable manifest/source provenance during package preparation and record it in embedded/audit provenance.
-- [ ] Require production shells to stage stable and development shells to stage dev.
-- [ ] Mark Dev Host fixtures, refuse unmarked development workspaces and isolate XDG cache/data/state in F5 and CLI lanes.
-- [ ] Make stable same-version drift fail and dev same-version drift use controlled upgrade/rollback; preserve legacy migration.
-- [ ] Update the Dev Host runbook and task `t-415444` relationship/closure evidence.
+- [x] Add backward-compatible `stable|dev` manifest and live-identity contracts; include the channel in new bundle ids.
+- [x] Stamp ordinary builds as dev and stable prepublish builds from the canonical-main source gate.
+- [x] Recheck stable manifest/source provenance during package preparation and record it in embedded/audit provenance.
+- [x] Require production shells to stage stable and development shells to stage dev.
+- [x] Mark Dev Host fixtures, refuse unmarked development workspaces and isolate XDG cache/data/state in F5 and CLI lanes.
+- [x] Make stable same-version drift fail and dev same-version drift use controlled upgrade/rollback; preserve legacy migration.
+- [x] Update the Dev Host runbook and task `t-415444` relationship/closure evidence.
 
 ## Verification
 
 _Acceptance checks tied to `spec.md`. Each should map to a checklist item there._
 
-- [ ] Temporary Git repositories force every stable source refusal and the exact-main success path.
-- [ ] Bundle store tests force expected-channel refusal and legacy rollback readability.
-- [ ] Supervisor tests force stable conflict, dev refresh, cross-channel refusal and legacy-to-stable upgrade.
-- [ ] Dev Host tests force marker and XDG isolation across portable F5 and CLI configuration.
-- [ ] Production/development client tests force their expected packaged channel.
-- [ ] Typecheck, engine boundary, build, diff-check and the complete test suite pass.
+- [x] Temporary Git repositories force every stable source refusal and the exact-main success path.
+- [x] Bundle store tests force expected-channel refusal and legacy rollback readability.
+- [x] Supervisor tests force stable conflict, dev refresh, cross-channel refusal and legacy-to-stable upgrade.
+- [x] Dev Host tests force marker and XDG isolation across portable F5 and CLI configuration.
+- [x] Production/development client tests force their expected packaged channel.
+- [x] Typecheck, engine boundary, build, diff-check and the complete test suite pass.
 
-**Headless check:** `npm exec vitest run test/unit/packageCleanGate.test.ts test/unit/engineBundleStore.test.ts test/unit/engineSupervisor.test.ts test/unit/workspaceClient.test.ts test/unit/devHostPointer.test.ts`
-**Verify:** `npm exec vitest run test/unit/packageCleanGate.test.ts test/unit/engineBundleStore.test.ts test/unit/engineSupervisor.test.ts test/unit/workspaceClient.test.ts test/unit/devHostPointer.test.ts`
+**Headless check:** `npm exec vitest run test/unit/packageCleanGate.test.ts test/unit/engineServiceProtocol.test.ts test/unit/engineBundleStore.test.ts test/unit/engineSupervisor.test.ts test/unit/devHostBoundary.test.ts test/unit/devHostPointer.test.ts test/unit/devHostLauncher.test.ts test/unit/controlInspector.test.ts`
+**Verify:** `npm exec vitest run test/unit/packageCleanGate.test.ts test/unit/engineServiceProtocol.test.ts test/unit/engineBundleStore.test.ts test/unit/engineSupervisor.test.ts test/unit/devHostBoundary.test.ts test/unit/devHostPointer.test.ts test/unit/devHostLauncher.test.ts test/unit/controlInspector.test.ts`
 **Verify:** `npm run typecheck`
 **Verify:** `npm run check:engine-boundary`
 **Verify:** `npm test`

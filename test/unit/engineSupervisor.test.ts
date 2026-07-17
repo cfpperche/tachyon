@@ -256,6 +256,7 @@ describe("persistent engine supervisor", () => {
       "engine-v2",
       { min: ENGINE_SHELL_PROTOCOL, max: ENGINE_SHELL_PROTOCOL },
       "0.58.0",
+      "stable",
     );
 
     const [first, second] = await Promise.all([
@@ -266,6 +267,7 @@ describe("persistent engine supervisor", () => {
     expect([first.disposition, second.disposition].sort()).toEqual(["reused-exact", "upgraded"]);
     expect(first.identity).toEqual(second.identity);
     expect(first.identity.bundleId).toBe(newer.bundleId);
+    expect(first.identity.channel).toBe("stable");
     expect(first.identity.instanceId).not.toBe(original.identity.instanceId);
     expect(starts).toBe(2);
     expect(stops).toBe(1);
@@ -285,6 +287,137 @@ describe("persistent engine supervisor", () => {
       to: { instanceId: first.identity.instanceId, bundleId: newer.bundleId },
     });
   }, 25_000);
+
+  it("refuses stable same-version content drift and explicit stable/dev crossing", async () => {
+    const fixture = workspaceFixture();
+    let active: ChildProcessWithoutNullStreams | undefined;
+    let starts = 0;
+    let stops = 0;
+    const launcher: EngineDaemonLauncher = async (input) => {
+      starts += 1;
+      active = spawnWorker(input.encodedOptions);
+      return "started";
+    };
+    const stopper: EngineDaemonStopper = async () => {
+      stops += 1;
+      if (!active) return;
+      const child = active;
+      active = undefined;
+      await stopChild(child);
+    };
+    const stableA = stageTestBundle(
+      fixture.root, "stable-a", { min: ENGINE_SHELL_PROTOCOL, max: ENGINE_SHELL_PROTOCOL }, "0.58.0", "stable",
+    );
+    const stableB = stageTestBundle(
+      fixture.root, "stable-b", { min: ENGINE_SHELL_PROTOCOL, max: ENGINE_SHELL_PROTOCOL }, "0.58.0", "stable",
+    );
+    const dev = stageTestBundle(
+      fixture.root, "dev-a", { min: ENGINE_SHELL_PROTOCOL, max: ENGINE_SHELL_PROTOCOL }, "0.59.0", "dev",
+    );
+    const options = {
+      workspaceRoot: fixture.workspace,
+      bundle: stableA,
+      runtime: fixture.runtime,
+      storageRoot: fixture.storage,
+      controlSocketPath: fixture.socket,
+      launcher,
+      stopper,
+      startTimeoutMs: 10_000,
+      pollMs: 20,
+    } as const;
+    const original = await ensureDaemonEngine(options);
+    expect(original.identity.channel).toBe("stable");
+    await expect(ensureDaemonEngine({ ...options, bundle: stableB }))
+      .rejects.toMatchObject({ code: "ENGINE_VERSION_CONTENT_CONFLICT" });
+    await expect(ensureDaemonEngine({ ...options, bundle: dev }))
+      .rejects.toMatchObject({ code: "ENGINE_CHANNEL_CONFLICT" });
+    expect(starts).toBe(1);
+    expect(stops).toBe(0);
+  }, 20_000);
+
+  it("adopts a same-version dev rebuild through the controlled transition", async () => {
+    const fixture = workspaceFixture();
+    let active: ChildProcessWithoutNullStreams | undefined;
+    let starts = 0;
+    let stops = 0;
+    const launcher: EngineDaemonLauncher = async (input) => {
+      starts += 1;
+      active = spawnWorker(input.encodedOptions);
+      return "started";
+    };
+    const stopper: EngineDaemonStopper = async () => {
+      stops += 1;
+      if (!active) return;
+      const child = active;
+      active = undefined;
+      await stopChild(child);
+    };
+    const devA = stageTestBundle(
+      fixture.root, "dev-a", { min: ENGINE_SHELL_PROTOCOL, max: ENGINE_SHELL_PROTOCOL }, "0.58.0", "dev",
+    );
+    const devB = stageTestBundle(
+      fixture.root, "dev-b", { min: ENGINE_SHELL_PROTOCOL, max: ENGINE_SHELL_PROTOCOL }, "0.58.0", "dev",
+    );
+    const options = {
+      workspaceRoot: fixture.workspace,
+      bundle: devA,
+      runtime: fixture.runtime,
+      storageRoot: fixture.storage,
+      controlSocketPath: fixture.socket,
+      launcher,
+      stopper,
+      startTimeoutMs: 10_000,
+      pollMs: 20,
+    } as const;
+    const original = await ensureDaemonEngine(options);
+    const refreshed = await ensureDaemonEngine({ ...options, bundle: devB });
+    expect(refreshed.disposition).toBe("upgraded");
+    expect(refreshed.identity).toMatchObject({ bundleId: devB.bundleId, channel: "dev" });
+    expect(refreshed.identity.instanceId).not.toBe(original.identity.instanceId);
+    expect(starts).toBe(2);
+    expect(stops).toBe(1);
+  }, 20_000);
+
+  it("rolls a failed same-version dev rebuild back to the prior dev bundle", async () => {
+    const fixture = workspaceFixture();
+    let active: ChildProcessWithoutNullStreams | undefined;
+    let refusedBundleId: string | undefined;
+    const launcher: EngineDaemonLauncher = async (input) => {
+      if (input.options.bundleId === refusedBundleId) throw new Error("injected dev rebuild failure");
+      active = spawnWorker(input.encodedOptions);
+      return "started";
+    };
+    const stopper: EngineDaemonStopper = async () => {
+      if (!active) return;
+      const child = active;
+      active = undefined;
+      await stopChild(child);
+    };
+    const devA = stageTestBundle(
+      fixture.root, "dev-rollback-a", { min: ENGINE_SHELL_PROTOCOL, max: ENGINE_SHELL_PROTOCOL }, "0.58.0", "dev",
+    );
+    const devB = stageTestBundle(
+      fixture.root, "dev-rollback-b", { min: ENGINE_SHELL_PROTOCOL, max: ENGINE_SHELL_PROTOCOL }, "0.58.0", "dev",
+    );
+    const options = {
+      workspaceRoot: fixture.workspace,
+      bundle: devA,
+      runtime: fixture.runtime,
+      storageRoot: fixture.storage,
+      controlSocketPath: fixture.socket,
+      launcher,
+      stopper,
+      startTimeoutMs: 10_000,
+      pollMs: 20,
+    } as const;
+    const original = await ensureDaemonEngine(options);
+    refusedBundleId = devB.bundleId;
+    await expect(ensureDaemonEngine({ ...options, bundle: devB }))
+      .rejects.toMatchObject({ code: "ENGINE_UPGRADE_ROLLED_BACK" });
+    const restored = await ensureDaemonEngine(options);
+    expect(restored.identity).toMatchObject({ bundleId: devA.bundleId, channel: "dev" });
+    expect(restored.identity.instanceId).not.toBe(original.identity.instanceId);
+  }, 20_000);
 
   it("restores the verified prior bundle when the newer engine cannot launch", async () => {
     const fixture = workspaceFixture();
@@ -321,6 +454,7 @@ describe("persistent engine supervisor", () => {
       "engine-broken-v2",
       { min: ENGINE_SHELL_PROTOCOL, max: ENGINE_SHELL_PROTOCOL },
       "0.58.0",
+      "stable",
     );
     refusedBundleId = broken.bundleId;
 
@@ -430,6 +564,7 @@ function stageTestBundle(
   name: string,
   protocol: EngineBundleManifestV1["protocol"],
   engineVersion = `0.57.0-${name}`,
+  channel?: EngineBundleManifestV1["channel"],
 ): StagedEngineBundle {
   const source = path.join(root, `source-${name}`);
   const installRoot = path.join(root, "installed-bundles");
@@ -438,6 +573,7 @@ function stageTestBundle(
   fs.writeFileSync(path.join(source, "engine-daemon.cjs"), content, "utf8");
   const manifest: EngineBundleManifestV1 = {
     schemaVersion: 1,
+    ...(channel === undefined ? {} : { channel }),
     engineVersion,
     protocol,
     entrypoint: "engine-daemon.cjs",

@@ -44,7 +44,10 @@ function WorkspaceCard({ s, row }: { s: ControlInspectorStrings; row: ControlIns
           <div class="ci-kv">
             <Kv k={s.state} v={row.engine.state} />
             <Kv k={s.pid} v={row.engine.pid} />
-            <Kv k={s.version} v={row.engine.engineVersion} />
+            <Kv
+              k={s.version}
+              v={[row.engine.engineVersion, row.engine.channel].filter(Boolean).join(" · ") || undefined}
+            />
             <Kv k={s.instance} v={row.engine.instanceId} />
             <Kv k={s.started} v={row.engine.startedAt} />
             <Kv k={s.bundle} v={row.engine.bundleId} />

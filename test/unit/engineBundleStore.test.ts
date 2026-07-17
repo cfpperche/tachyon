@@ -87,6 +87,21 @@ describe("engine bundle store", () => {
     expect(fs.readdirSync(installRoot)).toEqual([]);
   });
 
+  it("requires the caller-selected release channel while retaining legacy bundles for rollback", () => {
+    const { source, manifest } = fixture();
+    const installRoot = path.join(temp("tachyon-engine-channel-parent-"), "bundles");
+    const stable = { ...manifest, channel: "stable" as const };
+    expect(() => stageEngineBundle({ sourceRoot: source, manifest, installRoot, requiredChannel: "stable" }))
+      .toThrowError(expect.objectContaining({ code: "ENGINE_CHANNEL_MISMATCH" }));
+    expect(() => stageEngineBundle({ sourceRoot: source, manifest: stable, installRoot, requiredChannel: "dev" }))
+      .toThrowError(expect.objectContaining({ code: "ENGINE_CHANNEL_MISMATCH" }));
+    expect(stageEngineBundle({ sourceRoot: source, manifest: stable, installRoot, requiredChannel: "stable" }).bundleId)
+      .toMatch(/^[a-f0-9]{64}$/);
+
+    const legacy = stageEngineBundle({ sourceRoot: source, manifest, installRoot });
+    expect(loadStagedEngineBundle(installRoot, legacy.bundleId)).toMatchObject({ bundleId: legacy.bundleId });
+  });
+
   it("never overwrites a corrupt existing immutable bundle id", () => {
     const { source, manifest } = fixture();
     const installRoot = path.join(temp("tachyon-engine-corrupt-parent-"), "private", "bundles");
@@ -145,6 +160,7 @@ describe("engine bundle store", () => {
     fs.writeFileSync(path.join(sourceRoot, "engine-daemon.cjs"), content);
     const manifest: EngineBundleManifestV1 = {
       schemaVersion: 1,
+      channel: "stable",
       engineVersion: "0.57.0",
       protocol: { min: 1, max: 1 },
       entrypoint: "engine-daemon.cjs",
@@ -153,14 +169,23 @@ describe("engine bundle store", () => {
     };
     fs.writeFileSync(path.join(sourceRoot, "engine-manifest.json"), `${JSON.stringify(manifest)}\n`);
 
-    const staged = stagePackagedEngineBundle({ extensionRoot, installRoot });
+    const requiredBuild = { commit: manifest.build.commit, treeSha: manifest.build.treeSha };
+    const staged = stagePackagedEngineBundle({ extensionRoot, installRoot, requiredChannel: "stable", requiredBuild });
     expect(staged.entrypoint.startsWith(path.resolve(extensionRoot) + path.sep)).toBe(false);
     expect(fs.readFileSync(staged.entrypoint, "utf8")).toBe(content);
-    expect(stagePackagedEngineBundle({ extensionRoot, installRoot })).toMatchObject({
+    expect(stagePackagedEngineBundle({ extensionRoot, installRoot, requiredChannel: "stable", requiredBuild })).toMatchObject({
       bundleId: staged.bundleId,
       root: staged.root,
       reused: true,
     });
+    expect(() => stagePackagedEngineBundle({ extensionRoot, installRoot, requiredChannel: "dev" }))
+      .toThrowError(expect.objectContaining({ code: "ENGINE_CHANNEL_MISMATCH" }));
+    expect(() => stagePackagedEngineBundle({
+      extensionRoot,
+      installRoot,
+      requiredChannel: "stable",
+      requiredBuild: { ...requiredBuild, treeSha: "c".repeat(40) },
+    })).toThrowError(expect.objectContaining({ code: "PACKAGED_BUILD_MISMATCH" }));
 
     fs.writeFileSync(path.join(sourceRoot, "engine-manifest.json"), "not-json");
     expect(() => stagePackagedEngineBundle({ extensionRoot, installRoot }))

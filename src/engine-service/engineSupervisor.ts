@@ -20,6 +20,7 @@ import { ensureEngineStateMigration, type EngineStateMigrationProvider } from ".
 import {
   engineBundleId,
   isEngineBundleManifestV1,
+  isEngineReleaseChannel,
   type EngineBundleManifestV1,
   type EngineServiceIdentityV1,
 } from "./protocol.js";
@@ -289,6 +290,7 @@ export function decodeEngineDaemonOptions(encoded: string): EngineDaemonOptionsV
     "controlSocketPath",
     "appVersion",
     "bundleId",
+    "channel",
     "settings",
   ]);
   if (candidate.schemaVersion !== 1
@@ -299,6 +301,7 @@ export function decodeEngineDaemonOptions(encoded: string): EngineDaemonOptionsV
     || typeof candidate.controlSocketPath !== "string"
     || typeof candidate.appVersion !== "string"
     || typeof candidate.bundleId !== "string"
+    || (candidate.channel !== undefined && !isEngineReleaseChannel(candidate.channel))
     || (candidate.settings !== undefined && !isDaemonSettingsSnapshot(candidate.settings))) {
     throw new EngineSupervisorError("INVALID_DAEMON_OPTIONS", "persistent engine startup options are invalid");
   }
@@ -613,6 +616,7 @@ function buildLaunchInput(input: {
     controlSocketPath: input.controlSocketPath,
     appVersion: input.manifest.engineVersion,
     bundleId: input.bundle.bundleId,
+    ...(input.manifest.channel === undefined ? {} : { channel: input.manifest.channel }),
     settings: input.settings,
   };
   return {
@@ -630,14 +634,30 @@ function classifyRunningBundle(
   desiredManifest: EngineBundleManifestV1,
 ): "exact" | "compatible" | "upgrade" {
   const compatible = protocolRangesOverlap(running.protocol, desiredManifest.protocol);
+  const desiredChannel = desiredManifest.channel;
+  const runningChannel = running.channel;
+  if (desiredChannel !== undefined && runningChannel !== undefined && desiredChannel !== runningChannel) {
+    throw new EngineSupervisorError(
+      "ENGINE_CHANNEL_CONFLICT",
+      `a ${runningChannel} Tachyon engine cannot be replaced or reused by the ${desiredChannel} channel`,
+    );
+  }
   if (running.bundleId === desiredBundle.bundleId) {
     if (running.engineVersion !== desiredManifest.engineVersion
-      || !sameProtocolRange(running.protocol, desiredManifest.protocol)) {
+      || !sameProtocolRange(running.protocol, desiredManifest.protocol)
+      || (desiredChannel !== undefined && runningChannel !== desiredChannel)) {
       throw new EngineSupervisorError("BUNDLE_IDENTITY_MISMATCH", "the live engine identity does not match its staged bundle");
     }
     return "exact";
   }
   const comparison = compareEngineVersions(desiredManifest.engineVersion, running.engineVersion);
+  if (comparison === 0 && desiredChannel === "stable") {
+    throw new EngineSupervisorError(
+      "ENGINE_VERSION_CONTENT_CONFLICT",
+      `stable Tachyon ${desiredManifest.engineVersion} has different bundle bytes; bump the version before installing it`,
+    );
+  }
+  if (comparison === 0 && desiredChannel === "dev") return "upgrade";
   if (comparison !== undefined && comparison > 0) return "upgrade";
   if (compatible) return "compatible";
   throw new EngineSupervisorError(
@@ -677,6 +697,12 @@ async function waitForCompatibleEngine(input: {
   while (Date.now() < deadline) {
     const identity = await probeHealthyEngine(input.controlSocketPath, input.canonicalRoot, input.workspaceHash);
     if (identity) {
+      if (input.manifest.channel !== undefined && identity.channel !== input.manifest.channel) {
+        throw new EngineSupervisorError(
+          "ENGINE_CHANNEL_CONFLICT",
+          `the elected ${identity.channel ?? "legacy"} Tachyon engine does not match the ${input.manifest.channel} channel`,
+        );
+      }
       if (!protocolRangesOverlap(identity.protocol, input.manifest.protocol)) {
         throw new EngineSupervisorError("INCOMPATIBLE_ENGINE", "the elected Tachyon engine is not protocol-compatible");
       }
@@ -701,6 +727,7 @@ async function waitForExactEngine(input: UpgradeDaemonEngineInput & {
     if (identity) {
       if (identity.bundleId !== input.bundle.bundleId
         || identity.engineVersion !== input.manifest.engineVersion
+        || (input.manifest.channel !== undefined && identity.channel !== input.manifest.channel)
         || !sameProtocolRange(identity.protocol, input.manifest.protocol)) {
         throw new EngineSupervisorError(
           "ENGINE_UPGRADE_OCCUPIED",
@@ -908,6 +935,7 @@ function auditIdentity(identity: EngineServiceIdentityV1): Record<string, unknow
     pid: identity.pid,
     processStartIdentity: identity.processStartIdentity,
     bundleId: identity.bundleId,
+    channel: identity.channel ?? "legacy",
     engineVersion: identity.engineVersion,
     protocol: identity.protocol,
     bridge: identity.bridge,

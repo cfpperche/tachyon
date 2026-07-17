@@ -907,8 +907,9 @@
     ]
   },
   "scripts": {
-    "build": "node esbuild.mjs",
-    "watch": "node esbuild.mjs --watch",
+    "build": "node scripts/build-engine-channel.mjs dev",
+    "build:stable": "node scripts/build-engine-channel.mjs stable",
+    "watch": "node scripts/build-engine-channel.mjs dev --watch",
     "preview:webview": "node scripts/webview-preview/serve.mjs",
     "preview:webview:catalog": "vite-node --script scripts/webview-preview/generate-routes.ts",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.webview.json && tsc -p tsconfig.browser-test.json",
@@ -929,7 +930,7 @@
     "dogfood:ui-shortlist": "bash scripts/dev-host/run-shortlist.sh",
     "test:browser": "vitest run --config vitest.browser.config.ts",
     "test:integration": "vscode-test",
-    "vscode:prepublish": "npm run build && npm run package:prepare",
+    "vscode:prepublish": "npm run build:stable && npm run package:prepare",
     "package:prepare": "node scripts/prepare-package.mjs",
     "package": "vsce package"
   },

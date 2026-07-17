@@ -24,37 +24,37 @@ installs one VSIX; the embedded stable engine remains zero-step and upgrades wit
 
 ## Acceptance criteria
 
-- [ ] **Scenario: stable packaging comes only from canonical main**
+- [x] **Scenario: stable packaging comes only from canonical main**
   - **Given** a dirty checkout, linked worktree, non-`main` branch, or a `HEAD` different from local/cached remote `main`
   - **When** stable engine packaging is requested
   - **Then** the build fails before emitting or packaging a stable bundle and explains the violated source invariant
-- [ ] **Scenario: installed production accepts only stable**
+- [x] **Scenario: installed production accepts only stable**
   - **Given** a production extension containing a `dev`, legacy-unmarked, malformed, or provenance-mismatched engine manifest
   - **When** the extension stages its packaged engine
   - **Then** staging is refused before the running production engine is changed
-- [ ] **Scenario: worktree development stays in Dev Host**
+- [x] **Scenario: worktree development stays in Dev Host**
   - **Given** a normal worktree build
   - **When** it runs through the marked Dev Host lane
   - **Then** its manifest is `dev`, its state/data/cache roots are private to that lane, and it can start or refresh a dev engine without touching the stable engine
-- [ ] **Scenario: development cannot attach to an ordinary workspace**
+- [x] **Scenario: development cannot attach to an ordinary workspace**
   - **Given** an Extension Development Host pointed at an unmarked production workspace
   - **When** Tachyon attempts to connect its packaged dev engine
   - **Then** it fails with an actionable Dev Host isolation error before engine supervision
-- [ ] **Scenario: same version cannot hide different production bytes**
+- [x] **Scenario: same version cannot hide different production bytes**
   - **Given** a stable engine is running and a different stable bundle declares the same version
   - **When** the supervisor classifies the desired bundle
   - **Then** it refuses with a version/content conflict instead of silently reusing either bundle
-- [ ] **Scenario: iterative dev rebuilds remain usable**
+- [x] **Scenario: iterative dev rebuilds remain usable**
   - **Given** a dev engine and a different dev bundle with the same version
   - **When** the marked Dev Host reconnects
   - **Then** the existing controlled transition adopts the new dev bundle and retains rollback behavior
-- [ ] **Scenario: migration preserves the installed zero-step flow**
+- [x] **Scenario: migration preserves the installed zero-step flow**
   - **Given** the current legacy-unmarked stable engine is running
   - **When** a strictly newer stable VSIX built from `main` is installed
   - **Then** the extension upgrades it automatically and can still reopen the legacy bundle for rollback
-- [ ] The engine manifest and live identity expose `stable` or `dev`; absence remains readable only for legacy migration/rollback.
-- [ ] Stable packaging embeds commit/tree/channel provenance matching the exact source checkout.
-- [ ] The standard user flow remains install extension → open workspace; no CLI or second installer is introduced.
+- [x] The engine manifest and live identity expose `stable` or `dev`; absence remains readable only for legacy migration/rollback.
+- [x] Stable packaging embeds commit/tree/channel provenance matching the exact source checkout.
+- [x] The standard user flow remains install extension → open workspace; no CLI or second installer is introduced.
 
 ## Non-goals
 

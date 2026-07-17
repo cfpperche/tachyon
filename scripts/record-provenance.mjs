@@ -68,6 +68,16 @@ function distHashes() {
   return Object.fromEntries(walkFiles(distDir).map((file) => [rel(file), sha256(file)]));
 }
 
+function engineChannel() {
+  const manifestPath = path.join(root, "dist", "engine", "engine-manifest.json");
+  try {
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+    return manifest.channel === "stable" || manifest.channel === "dev" ? manifest.channel : null;
+  } catch {
+    return null;
+  }
+}
+
 if (!version || typeof version !== "string") throw new Error("package.json version is required");
 
 // EMBEDDED path: the extension root (NOT dist/, so this file never has to hash itself), packed
@@ -80,7 +90,7 @@ const EMBEDDED_PATH = path.join(root, "provenance.json");
 const AUDIT_DIR = path.join(root, ".tachyon", "deploys");
 
 function writeEmbedded() {
-  const record = { version, ...gitMeta(), dist: distHashes() };
+  const record = { version, engineChannel: engineChannel(), ...gitMeta(), dist: distHashes() };
   fs.writeFileSync(EMBEDDED_PATH, `${JSON.stringify(record, null, 2)}\n`, "utf8");
   console.log(`wrote ${rel(EMBEDDED_PATH)}`);
 }
@@ -90,6 +100,7 @@ function writeAudit() {
   const vsixPath = findVsix();
   const record = {
     version,
+    engineChannel: engineChannel(),
     ...gitMeta(),
     packagedBy: process.env.TACHYON_AGENT_NAME || process.env.USER || os.userInfo().username,
     vsix: { path: vsixPath ? rel(vsixPath) : "", sha256: vsixPath ? sha256(vsixPath) : null },

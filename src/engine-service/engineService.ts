@@ -65,6 +65,7 @@ import { GlobalTmuxWatchdog } from "./tmuxAuthority.js";
 import {
   ENGINE_SHELL_PROTOCOL,
   isEngineServiceIdentityV1,
+  isEngineReleaseChannel,
   isSha256,
   workspaceActivityContextSuccessV1,
   workspaceCommandSuccessV1,
@@ -84,6 +85,7 @@ import {
   workspaceTaskStudioApplySuccessV1,
   workspaceTaskStudioViewSuccessV1,
   type EngineServiceIdentityV1,
+  type EngineReleaseChannel,
   type WorkspaceCommandResultV1,
   type WorkspaceCommandV1,
   type WorkspaceQueryResultV1,
@@ -104,6 +106,7 @@ export interface StartDaemonEngineServiceOptions {
   controlSocketPath: string;
   appVersion: string;
   bundleId: string;
+  channel?: EngineReleaseChannel;
   settings?: DaemonSettingsSnapshot;
 }
 
@@ -241,6 +244,7 @@ export async function startDaemonEngineService(
       processStartIdentity: currentProcessStartIdentity(),
       startedAt,
       bundleId: options.bundleId,
+      ...(options.channel === undefined ? {} : { channel: options.channel }),
       engineVersion: options.appVersion,
       protocol: { min: ENGINE_SHELL_PROTOCOL, max: ENGINE_SHELL_PROTOCOL },
       bridge: { instanceId: runningWorkspace.bridgeInstanceId, port: bridgePort },
@@ -700,6 +704,7 @@ function canonicalWorkspaceRoot(workspaceRoot: string): string {
 function validateOptions(options: StartDaemonEngineServiceOptions): void {
   if (!options.appVersion.trim() || options.appVersion.length > 128) throw new Error("engine appVersion is invalid");
   if (!isSha256(options.bundleId)) throw new Error("engine bundleId must be a sha256 digest");
+  if (options.channel !== undefined && !isEngineReleaseChannel(options.channel)) throw new Error("engine channel is invalid");
   if (!path.isAbsolute(options.storageRoot) || !path.isAbsolute(options.mediaRoot) || !path.isAbsolute(options.controlSocketPath)) {
     throw new Error("engine paths must be absolute");
   }

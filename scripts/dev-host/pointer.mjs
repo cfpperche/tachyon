@@ -16,6 +16,7 @@
  *   workspace  → real directory opened in EDH (child symlinks into fixture;
  *                `.tachyon` is a REAL copy — not a symlink — so Soul launch stays inside the workspace)
  *   meta.json  — pointer metadata for agents/humans
+ *   runtime → the Node executable that may safely outlive the Extension Host
  *   tmux/, cache/ — private TMUX_TMPDIR / XDG_CACHE_HOME for the EDH process
  *   user-data/, extensions/ — reserved for CLI launch only (not F5; drops Remote-WSL)
  */
@@ -108,6 +109,7 @@ export function pathsOf(repoRoot) {
     root,
     extension: path.join(root, "extension"),
     workspace: path.join(root, "workspace"),
+    runtime: path.join(root, "runtime"),
     meta: path.join(root, "meta.json"),
     userData: path.join(root, "user-data"),
     extensions: path.join(root, "extensions"),
@@ -185,7 +187,7 @@ export function materializeWorkspaceMirror(mirrorDir, fixtureAbs) {
     if (name === ".edh-cache" || name === ".edh-extensions" || name === ".edh-tmux" || name === ".edh-user-data") {
       continue;
     }
-    if (name === ".dev-host-source") continue;
+    if (name === ".dev-host-source" || name === ".tachyon-dev-host.json") continue;
     const src = path.join(fixture, name);
     const dest = path.join(mirrorDir, name);
     // `.tachyon` must be a REAL directory under the mirror, not a symlink to the fixture.
@@ -200,6 +202,11 @@ export function materializeWorkspaceMirror(mirrorDir, fixtureAbs) {
     fs.symlinkSync(src, dest);
   }
   fs.writeFileSync(path.join(mirrorDir, ".dev-host-source"), `${fixture}\n`, "utf8");
+  fs.writeFileSync(
+    path.join(mirrorDir, ".tachyon-dev-host.json"),
+    `${JSON.stringify({ schemaVersion: 1, kind: "tachyon-dev-host" }, null, 2)}\n`,
+    { encoding: "utf8", mode: 0o600 },
+  );
   return mirrorDir;
 }
 
@@ -495,8 +502,12 @@ export function portableDevHostLaunchConfig() {
       "--disable-workspace-trust",
     ],
     env: {
+      TACHYON_DEV_HOST: "1",
+      TACHYON_DEV_HOST_ENGINE_RUNTIME: "${workspaceFolder}/.tachyon/dev-host/runtime",
       TMUX_TMPDIR: "${workspaceFolder}/.tachyon/dev-host/tmux",
       XDG_CACHE_HOME: "${workspaceFolder}/.tachyon/dev-host/cache",
+      XDG_STATE_HOME: "${workspaceFolder}/.tachyon/dev-host/state",
+      XDG_DATA_HOME: "${workspaceFolder}/.tachyon/dev-host/data",
     },
     outFiles: ["${workspaceFolder}/.tachyon/dev-host/extension/dist/**/*.js"],
     preLaunchTask: "tachyon: build-dev-host",
@@ -570,6 +581,9 @@ export function point(opts) {
   const tools = ensureWorktreeToolBin(worktree, repoRoot);
   // extension: symlink is fine for --extensionDevelopmentPath (remote loads package.json/dist).
   replaceSymlink(p.extension, worktree);
+  // A local Electron test host may need adjacent shared libraries after process.execPath is copied.
+  // Point at the Node executable running this CLI; the engine store will copy and hash that instead.
+  replaceSymlink(p.runtime, fs.realpathSync(process.execPath));
   // workspace: real dir + child symlinks so Explorer works under WSL Remote F5.
   // (`.tachyon` is copied — see materializeWorkspaceMirror.)
   materializeWorkspaceMirror(p.workspace, workspace);
@@ -642,6 +656,7 @@ export function status(repoRoot) {
   }
   const warnings = [];
   const extOk = fs.existsSync(p.extension);
+  const runtimeOk = fs.existsSync(p.runtime);
   const wsOk = fs.existsSync(p.workspace) && !fs.lstatSync(p.workspace).isSymbolicLink() && fs.statSync(p.workspace).isDirectory();
 
   let workspaceSource = null;
@@ -673,6 +688,7 @@ export function status(repoRoot) {
   } else {
     warnings.push("extension link missing");
   }
+  if (!runtimeOk) warnings.push("Dev Host engine runtime missing — re-point");
   if (!wsOk) warnings.push("workspace mirror missing or is a symlink (must be a real directory)");
 
   // Mirror `.tachyon` must be a real directory (Soul launch refuses parent-outside-workspace).
@@ -718,6 +734,7 @@ export function status(repoRoot) {
 
   const criticalBroken =
     !extOk ||
+    !runtimeOk ||
     !wsOk ||
     !worktreeExists ||
     tachyonMirrorIsRealDir === false ||
@@ -728,6 +745,7 @@ export function status(repoRoot) {
     broken: criticalBroken,
     meta,
     extensionResolves,
+    runtimePath: runtimeOk ? fs.realpathSync(p.runtime) : null,
     workspaceResolves: workspaceSource ?? (wsOk ? path.resolve(p.workspace) : null),
     workspaceMirrorPath: wsOk ? path.resolve(p.workspace) : null,
     workspaceIsMirror: Boolean(workspaceSource),
@@ -752,6 +770,7 @@ export function printStatus(st) {
   if (st.meta?.slug) console.log(`  slug:           ${st.meta.slug}`);
   if (st.worktreePath) console.log(`  worktree:       ${st.worktreePath}${st.worktreeExists ? "" : "  (MISSING)"}`);
   if (st.extensionResolves) console.log(`  extension →     ${st.extensionResolves}`);
+  if (st.runtimePath) console.log(`  engine runtime: ${st.runtimePath}`);
   if (st.workspaceResolves) console.log(`  fixture source: ${st.workspaceResolves}`);
   if (st.workspaceMirrorPath) console.log(`  workspace mir:  ${st.workspaceMirrorPath}`);
   if (st.tachyonMirrorIsRealDir === true) console.log(`  mirror .tachyon: real directory (ok)`);

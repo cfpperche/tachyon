@@ -38,6 +38,7 @@ describe("dev-host pointer", () => {
     fs.mkdirSync(fixture, { recursive: true });
     fs.writeFileSync(path.join(fixture, "tachyon.yml"), "agents:\n  a:\n    cmd: x\n");
     fs.writeFileSync(path.join(fixture, "README.md"), "# fixture\n");
+    fs.writeFileSync(path.join(fixture, ".tachyon-dev-host.json"), JSON.stringify({ spoofed: true }));
     fs.mkdirSync(path.join(fixture, ".tachyon", "prompts"), { recursive: true });
     fs.writeFileSync(path.join(fixture, ".tachyon", "prompts", "hi.md"), "hello\n");
     // CLI-only dirs should not be mirrored into the F5 workspace
@@ -106,8 +107,11 @@ describe("dev-host pointer", () => {
     expect(meta.workspaceMirror).toBe(true);
 
     const ext = path.join(repo, ".tachyon", "dev-host", "extension");
+    const runtime = path.join(repo, ".tachyon", "dev-host", "runtime");
     const ws = path.join(repo, ".tachyon", "dev-host", "workspace");
     expect(fs.lstatSync(ext).isSymbolicLink()).toBe(true);
+    expect(fs.lstatSync(runtime).isSymbolicLink()).toBe(true);
+    expect(fs.realpathSync(runtime)).toBe(fs.realpathSync(process.execPath));
     // workspace must be a real directory (not a symlink) for WSL F5 Explorer
     expect(fs.lstatSync(ws).isSymbolicLink()).toBe(false);
     expect(fs.statSync(ws).isDirectory()).toBe(true);
@@ -123,6 +127,12 @@ describe("dev-host pointer", () => {
     expect(fs.readFileSync(path.join(ws, ".tachyon", "prompts", "hi.md"), "utf8")).toContain("hello");
     expect(fs.existsSync(path.join(ws, ".edh-user-data"))).toBe(false);
     expect(fs.readFileSync(path.join(ws, ".dev-host-source"), "utf8").trim()).toBe(path.resolve(fixture));
+    expect(fs.lstatSync(path.join(ws, ".tachyon-dev-host.json")).isFile()).toBe(true);
+    expect(fs.lstatSync(path.join(ws, ".tachyon-dev-host.json")).isSymbolicLink()).toBe(false);
+    expect(JSON.parse(fs.readFileSync(path.join(ws, ".tachyon-dev-host.json"), "utf8"))).toEqual({
+      schemaVersion: 1,
+      kind: "tachyon-dev-host",
+    });
 
     const st = status(repo);
     expect(st.armed).toBe(true);
@@ -202,6 +212,11 @@ describe("dev-host pointer", () => {
     expect(cfg.args.some((a: string) => a.includes("--extensions-dir"))).toBe(false);
     expect(cfg.args.some((a: string) => a.includes("--user-data-dir"))).toBe(false);
     expect(cfg.env.TMUX_TMPDIR).toContain("${workspaceFolder}");
+    expect(cfg.env.TACHYON_DEV_HOST).toBe("1");
+    expect(cfg.env.TACHYON_DEV_HOST_ENGINE_RUNTIME).toContain("${workspaceFolder}");
+    expect(cfg.env.XDG_CACHE_HOME).toContain("${workspaceFolder}");
+    expect(cfg.env.XDG_STATE_HOME).toContain("${workspaceFolder}");
+    expect(cfg.env.XDG_DATA_HOME).toContain("${workspaceFolder}");
     expect(cfg.outFiles[0]).toContain("${workspaceFolder}");
     // No absolute machine paths leaked into the committed template
     expect(JSON.stringify(cfg)).not.toContain(path.resolve(fixture));

@@ -2,6 +2,8 @@
 import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
+import { createHash } from "node:crypto";
+import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const MAX_CONTROL_FILE_BYTES = 32 * 1024;
@@ -60,18 +62,84 @@ function processCommandLine(pid) {
 }
 
 function assertFixtureEdhStopped(fixture) {
-  const pid = readOptionalPid(path.join(fixture, ".edh.pid"));
+  const currentPidFile = path.join(fixture, ".dev-host.pid");
+  const legacyPidFile = path.join(fixture, ".edh.pid");
+  const pid = readOptionalPid(currentPidFile) ?? readOptionalPid(legacyPidFile);
   if (!pid) return;
   try { process.kill(pid, 0); }
   catch (error) {
     if (error?.code === "ESRCH") return;
     throw new Error("cannot prove the fixture EDH process has stopped");
   }
-  const expectedUserData = `--user-data-dir=${path.join(fixture, ".edh-user-data")}`;
+  const expectedUserData = [
+    `--user-data-dir=${path.join(fixture, ".dev-host-user-data")}`,
+    `--user-data-dir=${path.join(fixture, ".edh-user-data")}`,
+  ];
   const argv = processCommandLine(pid);
   if (!argv) throw new Error("fixture EDH process is still alive or cannot be identified; close it before cleanup");
-  if (argv.includes(expectedUserData)) throw new Error("fixture EDH is still running; close it before cleanup");
+  if (expectedUserData.some((argument) => argv.includes(argument))) throw new Error("fixture EDH is still running; close it before cleanup");
   // A stale pid file whose pid has been reused by an unrelated process is not ownership proof.
+}
+
+function defaultRunSystemctl(args) {
+  const result = spawnSync("systemctl", ["--user", ...args], {
+    encoding: "utf8",
+    timeout: 2_000,
+  });
+  if (result.error) throw result.error;
+  return {
+    status: result.status,
+    stdout: result.stdout ?? "",
+    stderr: result.stderr ?? "",
+  };
+}
+
+export function fixtureEngineUnitName(fixtureRoot) {
+  const fixture = path.resolve(fixtureRoot);
+  const workspace = path.join(fixture, "workspace");
+  requireOwnedDirectory(fixture, "fixture");
+  requireOwnedDirectory(workspace, "fixture workspace");
+  const canonicalWorkspace = fs.realpathSync(workspace);
+  const key = createHash("sha256").update(canonicalWorkspace).digest("hex").slice(0, 32);
+  return `tachyon-engine-${key}.service`;
+}
+
+export async function stopFixtureEngine(
+  fixtureRoot,
+  { timeoutMs = 2_000, pollMs = 25, runSystemctl = defaultRunSystemctl } = {},
+) {
+  const fixture = path.resolve(fixtureRoot);
+  let unitName;
+  try {
+    unitName = fixtureEngineUnitName(fixture);
+    assertFixtureEdhStopped(fixture);
+  } catch (error) {
+    if (error?.code === "ENOENT") return { state: "absent" };
+    throw error;
+  }
+
+  const initial = await runSystemctl(["is-active", unitName]);
+  const initialState = initial.stdout.trim();
+  if (initial.status !== 0 && initial.status !== 3 && initial.status !== 4) {
+    throw new Error(`cannot inspect fixture engine unit ${unitName}: ${initial.stderr.trim() || initialState || `exit ${initial.status}`}`);
+  }
+  if (initial.status !== 0) return { state: "absent", unitName };
+
+  const stopped = await runSystemctl(["stop", unitName]);
+  if (stopped.status !== 0) {
+    throw new Error(`failed to stop fixture engine unit ${unitName}: ${stopped.stderr.trim() || stopped.stdout.trim() || `exit ${stopped.status}`}`);
+  }
+
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const probe = await runSystemctl(["is-active", unitName]);
+    if (probe.status === 3 || probe.status === 4) return { state: "stopped", unitName };
+    if (probe.status !== 0) {
+      throw new Error(`cannot confirm fixture engine stop for ${unitName}: ${probe.stderr.trim() || probe.stdout.trim() || `exit ${probe.status}`}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, pollMs));
+  }
+  throw new Error(`fixture engine unit ${unitName} remained active after stop`);
 }
 
 function isAbsent(error) {
@@ -165,8 +233,9 @@ export async function stopFixtureBridge(fixtureRoot, { timeoutMs = 2_000 } = {})
 async function main() {
   const fixture = process.argv[2];
   if (!fixture) throw new Error("usage: stop-bridge.mjs <fixture-root>");
-  const result = await stopFixtureBridge(fixture);
-  process.stdout.write(`dev-host: persistent Bridge ${result.state}\n`);
+  const engine = await stopFixtureEngine(fixture);
+  const bridge = await stopFixtureBridge(fixture);
+  process.stdout.write(`dev-host: persistent engine ${engine.state}; persistent Bridge ${bridge.state}\n`);
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

@@ -57,6 +57,9 @@ function manifest(
 describe("persistent engine protocol", () => {
   it("validates a closed, traversal-free bundle manifest", () => {
     expect(isEngineBundleManifestV1(manifest())).toBe(true);
+    expect(isEngineBundleManifestV1({ ...manifest(), channel: "stable" })).toBe(true);
+    expect(isEngineBundleManifestV1({ ...manifest(), channel: "dev" })).toBe(true);
+    expect(isEngineBundleManifestV1({ ...manifest(), channel: "candidate" })).toBe(false);
     for (const unsafe of ["", "/abs", "../escape", "a/../escape", "./engine.cjs", "a\\engine.cjs", "a//b", "C:/escape", "a:b"]) {
       expect(isSafeBundlePath(unsafe), unsafe).toBe(false);
     }
@@ -162,6 +165,8 @@ describe("persistent engine protocol", () => {
     const b = { path: "assets/helper.js", sha256: hash("helper") };
     expect(engineBundleId(manifest([a, b]))).toBe(engineBundleId(manifest([b, a])));
     expect(engineBundleId(manifest([a]))).not.toBe(engineBundleId(manifest([a, b])));
+    expect(engineBundleId({ ...manifest([a]), channel: "stable" }))
+      .not.toBe(engineBundleId({ ...manifest([a]), channel: "dev" }));
   });
 
   it("accepts only closed idempotency-keyed workspace commands and typed results", () => {

@@ -7,6 +7,7 @@ import {
   isEngineBundleManifestV1,
   isSha256,
   type EngineBundleManifestV1,
+  type EngineReleaseChannel,
 } from "./protocol.js";
 
 export interface StageEngineBundleInput {
@@ -15,6 +16,7 @@ export interface StageEngineBundleInput {
   /** Test/embedding override. Production resolves a machine-private per-user data directory. */
   installRoot?: string;
   requireCleanBuild?: boolean;
+  requiredChannel?: EngineReleaseChannel;
 }
 
 export interface StagePackagedEngineBundleInput {
@@ -22,6 +24,9 @@ export interface StagePackagedEngineBundleInput {
   installRoot?: string;
   /** Test/local-build override. Installed production bundles remain clean-only. */
   requireCleanBuild?: boolean;
+  requiredChannel?: EngineReleaseChannel;
+  /** Production shell build identity; dev leaves this unset because dirty worktree builds are expected. */
+  requiredBuild?: { commit: string; treeSha: string };
 }
 
 export interface StagedEngineBundle {
@@ -77,11 +82,20 @@ export function stagePackagedEngineBundle(input: StagePackagedEngineBundleInput)
   if (!isEngineBundleManifestV1(manifest)) {
     throw new EngineBundleError("INVALID_PACKAGED_MANIFEST", "packaged engine manifest is invalid");
   }
+  assertRequiredChannel(manifest, input.requiredChannel);
+  if (input.requiredBuild
+    && (manifest.build.commit !== input.requiredBuild.commit || manifest.build.treeSha !== input.requiredBuild.treeSha)) {
+    throw new EngineBundleError(
+      "PACKAGED_BUILD_MISMATCH",
+      "refusing a packaged engine whose source identity differs from the extension shell",
+    );
+  }
   return stageEngineBundle({
     sourceRoot,
     manifest,
     installRoot: input.installRoot,
     requireCleanBuild: input.requireCleanBuild,
+    requiredChannel: input.requiredChannel,
   });
 }
 
@@ -195,6 +209,7 @@ export function stageEngineBundle(input: StageEngineBundleInput): StagedEngineBu
   if (!isEngineBundleManifestV1(input.manifest)) {
     throw new EngineBundleError("INVALID_MANIFEST", "engine bundle manifest is invalid");
   }
+  assertRequiredChannel(input.manifest, input.requiredChannel);
   if ((input.requireCleanBuild ?? true) && !input.manifest.build.workingTreeClean) {
     throw new EngineBundleError("DIRTY_BUILD", "refusing to stage an engine bundle from a dirty build");
   }
@@ -241,6 +256,14 @@ export function stageEngineBundle(input: StageEngineBundleInput): StagedEngineBu
   } finally {
     fs.rmSync(temp, { recursive: true, force: true });
   }
+}
+
+function assertRequiredChannel(manifest: EngineBundleManifestV1, required: EngineReleaseChannel | undefined): void {
+  if (required === undefined || manifest.channel === required) return;
+  throw new EngineBundleError(
+    "ENGINE_CHANNEL_MISMATCH",
+    `refusing engine channel '${manifest.channel ?? "legacy"}'; this host requires '${required}'`,
+  );
 }
 
 /**
