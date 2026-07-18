@@ -332,6 +332,42 @@ describe("AttentionMonitor", () => {
     expect(f.events.filter((e) => e.state === "working")).toHaveLength(0);
   });
 
+  it("SDD 402: Pi framed editor tracks empty, single-line and multi-line drafts as composer-only changes", async () => {
+    const frame = "─".repeat(80);
+    const pane = (editor: string) => `done\n${frame}\n${editor}\n${frame}\n~/repo (main)\n0.0%/4.1k (auto) measure`;
+    const f = makeMonitor({ pi: { content: pane(" "), cpu: 10, settings: SETTINGS, cmd: "pi" } });
+    await f.advance(0);
+    await f.advance(9000);
+    expect(f.monitor.stateOf("pi")).toMatchObject({ state: "idle", composerOccupied: false });
+
+    f.agents.pi.content = pane("draft");
+    await f.advance(1000);
+    expect(f.monitor.stateOf("pi")).toMatchObject({ state: "idle", outputStableSince: 1_000_000, composerOccupied: true });
+
+    f.agents.pi.content = pane("draft\nsecond line");
+    await f.advance(1000);
+    expect(f.monitor.stateOf("pi")).toMatchObject({ state: "idle", composerOccupied: true });
+    expect(f.events.filter((event) => event.state === "working")).toHaveLength(0);
+  });
+
+  it("SDD 402: Pi output above the frame remains runtime activity and incomplete/oversized frames never guess", async () => {
+    const frame = "─".repeat(80);
+    const footer = `${frame}\n~/repo (main)\n0.0%/4.1k (auto) measure`;
+    const f = makeMonitor({ pi: { content: `done\n${frame}\n \n${footer}`, cpu: 10, settings: SETTINGS, cmd: "pi" } });
+    await f.advance(0);
+    await f.advance(9000);
+    expect(f.monitor.stateOf("pi")?.state).toBe("idle");
+
+    f.agents.pi.content = `done\nnew assistant output\n${frame}\ndraft\n${footer}`;
+    await f.advance(1000);
+    expect(f.monitor.stateOf("pi")).toMatchObject({ state: "working", composerOccupied: true });
+
+    await f.advance(9000);
+    f.agents.pi.content = `done\n${frame}\n${Array.from({ length: 17 }, (_, i) => `line-${i}`).join("\n")}\n${footer}`;
+    await f.advance(1000);
+    expect(f.monitor.stateOf("pi")).toMatchObject({ state: "working", composerOccupied: false });
+  });
+
   it("clears composerOccupied when a runtime composer draft is erased (t-f45313)", async () => {
     const f = makeMonitor({ claude: { content: "done\n\n> ", cpu: 10, settings: SETTINGS, cmd: "claude" } });
     await f.advance(0);

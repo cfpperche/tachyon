@@ -3,7 +3,7 @@ import { evaluateAttentionManifest } from "../../src/attention/manifestEngine.js
 import { ATTENTION_MANIFEST_RUNTIMES, attentionManifestForRuntime } from "../../src/attention/manifests.js";
 
 describe("container-generated delegation behavior", () => {
-  it("attention detection is driven by per-runtime manifests and preserves current verdicts for claude codex grok opencode", () => {
+  it("attention detection is driven by per-runtime manifests and preserves current verdicts for claude codex grok opencode pi", () => {
     const cases: Array<{ name: string; pane: string; kind: "prompt" | "error" | "stall" | null; state: "needs-input" | "throttled" | null; line?: string }> = [
       {
         name: "real Claude trust prompt",

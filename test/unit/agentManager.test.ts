@@ -260,6 +260,10 @@ function makeManager(yaml: string, maxAgentsSetting = 8, tmuxOpts: { failRespawn
     onSpawned: (n) => spawned.push(n),
     onKilled: (n) => killed.push(n),
     onRestart: (n) => restarted.push(n),
+    materializeHarness: ({ name, def }) => adapterFor(def.cmd)?.runtime === "pi"
+      ? { home: `/private/pi/${name}`, env: { PI_CODING_AGENT_DIR: `/private/pi/${name}`, PI_CODING_AGENT_SESSION_DIR: `/private/pi/${name}/sessions` }, args: [] }
+      : null,
+    materializePiSessionDir: (name) => `/private/pi/${name}/sessions`,
   });
   return { manager, sessions, dead, panes, sentKeys, respawnArgs, newSessionArgs, spawned, killed, restarted };
 }
@@ -521,6 +525,18 @@ describe("AgentManager", () => {
     ]);
     expect(sessions.has(`tachyon-${HASH}-a`)).toBe(true);
     expect(killed).toEqual([]);
+  });
+
+  it("SDD 402: stopGracefully executes Pi's measured abort, clear and conditional EOF sequence", async () => {
+    const { manager, sentKeys } = makeManager("agents:\n  pi:\n    cmd: pi\n");
+    await manager.spawn("pi");
+    await manager.stopGracefully("pi");
+    expect(sentKeys).toEqual([
+      { session: `tachyon-${HASH}-pi`, key: "Escape" },
+      { session: `tachyon-${HASH}-pi`, key: "C-c" },
+      { session: `tachyon-${HASH}-pi`, key: "C-d" },
+      { session: `tachyon-${HASH}-pi`, key: "C-d" },
+    ]);
   });
 
   it("stopGracefully interrupts an active Codex turn before EOF", async () => {

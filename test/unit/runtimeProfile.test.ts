@@ -8,20 +8,31 @@ describe("runtime profiles (spec 358 phase 1)", () => {
     expect(modelLabelForRuntime("claude", "claude-opus-4-8")).toBe("Opus 4.8");
     expect(profile?.isolation).toMatchObject({ mechanism: "mint", source: "measured", verified: true });
     expect(profile?.composer).toMatchObject({ tailLines: 8, source: "declared" });
-    expect(profile?.composer?.promptLine.test("> hello")).toBe(true);
+    expect(profile?.composer?.promptLine?.test("> hello")).toBe(true);
     expect(profile?.composer?.occupiedLine.test("> hello")).toBe(true);
     expect(profile?.composer?.occupiedLine.test("> ")).toBe(false);
     expect(hasVerifiedTranscriptIsolation(profile!.isolation)).toBe(true);
   });
 
-  it("SDD 400: declares Pi isolation as measured private-home", () => {
+  it("SDD 400/402: declares Pi private-home plus measured composer and graceful stop", () => {
     const profile = runtimeProfile("pi");
+    expect(profile?.profileVersion).toBe(2);
     expect(profile?.isolation).toMatchObject({
       mechanism: "private-home",
       source: "measured",
       verified: true,
       verifiedAt: "2026-07-18",
     });
+    expect(profile?.composer).toMatchObject({ tailLines: 16, source: "measured", verified: true });
+    expect(profile?.composer?.frameLine?.test("────────────────────")).toBe(true);
+    expect(profile?.composer?.readyLine?.test("0.0%/4.1k (auto)   measure")).toBe(true);
+    expect(profile?.gracefulStop).toMatchObject({ source: "measured", verified: true });
+    expect(profile?.gracefulStop?.steps).toEqual([
+      { type: "sendKey", key: "Escape" },
+      { type: "sendKeyIfAliveAfterDelay", key: "C-c", delayMs: 300 },
+      { type: "sendKeyIfAliveAfterDelay", key: "C-d", delayMs: 150 },
+      { type: "sendKeyIfAliveAfterDelay", key: "C-d", delayMs: 150 },
+    ]);
     expect(hasVerifiedTranscriptIsolation(profile!.isolation)).toBe(true);
     expect(() => assertVerifiedTranscriptIsolation("pi", { name: "pi-child", parented: true })).not.toThrow();
   });
@@ -35,7 +46,7 @@ describe("runtime profiles (spec 358 phase 1)", () => {
     expect(modelLabelForRuntime("codex", "gpt-5.6-luna")).toBe("GPT-5.6 Luna");
     expect(profile?.isolation).toMatchObject({ mechanism: "private-home", source: "measured", verified: true });
     expect(profile?.composer).toMatchObject({ tailLines: 8, source: "declared" });
-    expect(profile?.composer?.promptLine.test("❯ hello")).toBe(true);
+    expect(profile?.composer?.promptLine?.test("❯ hello")).toBe(true);
     expect(profile?.composer?.occupiedLine.test("❯ hello")).toBe(true);
     expect(profile?.composer?.occupiedLine.test("❯ ")).toBe(false);
     expect(hasVerifiedTranscriptIsolation(profile!.isolation)).toBe(true);

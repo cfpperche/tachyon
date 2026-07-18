@@ -79,7 +79,7 @@ export class LaunchReadiness implements LaunchReadinessPort {
 
 /** Runtime-neutral fatal startup classifier; liveness at the deadline is the positive signal. */
 export class GenericLaunchReadiness implements RuntimeLaunchReadinessAdapter {
-  constructor(private readonly composer?: { tailLines: number; promptLine: RegExp }) {}
+  constructor(private readonly composer?: { tailLines: number; promptLine?: RegExp; frameLine?: RegExp; readyLine?: RegExp }) {}
 
   classify(output: string): Exclude<RuntimeLaunchReadiness, { state: "pending" }> | undefined {
     if (/\b(?:unauthorized|authentication (?:failed|required)|not logged in|api key (?:is )?(?:invalid|missing)|access denied)\b/i.test(output)) {
@@ -93,7 +93,15 @@ export class GenericLaunchReadiness implements RuntimeLaunchReadinessAdapter {
     }
     if (this.composer) {
       const lines = output.split(/\r?\n/).slice(-this.composer.tailLines);
-      if (lines.some((line) => this.composer!.promptLine.test(line))) return { state: "ready" };
+      if (this.composer.frameLine) {
+        const frameIndexes = lines.flatMap((line, index) => this.composer!.frameLine!.test(line) ? [index] : []);
+        const bottom = frameIndexes.at(-1);
+        const hasPair = frameIndexes.length >= 2;
+        const footerReady = !this.composer.readyLine || (bottom !== undefined && lines.slice(bottom + 1).some((line) => this.composer!.readyLine!.test(line)));
+        if (hasPair && footerReady) return { state: "ready" };
+      } else if (this.composer.promptLine && lines.some((line) => this.composer!.promptLine!.test(line))) {
+        return { state: "ready" };
+      }
     }
     return undefined;
   }

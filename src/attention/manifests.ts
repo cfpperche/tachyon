@@ -21,7 +21,7 @@ export const BASE_MANIFEST = baseManifestData as BaseAttentionManifest;
 // Add `<runtime>.json` here (with the measured CLI version + evidence) as overlays land.
 const OVERLAYS: Partial<Record<ResumeRuntime, ManifestOverlay>> = {};
 
-export const ATTENTION_MANIFEST_RUNTIMES = ["claude", "codex", "grok", "opencode"] as const;
+export const ATTENTION_MANIFEST_RUNTIMES = ["claude", "codex", "grok", "opencode", "pi"] as const;
 export type AttentionManifestRuntime = (typeof ATTENTION_MANIFEST_RUNTIMES)[number];
 
 /**

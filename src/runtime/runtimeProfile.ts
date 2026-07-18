@@ -24,9 +24,13 @@ export interface TranscriptIsolationContext {
 export interface ComposerRegionProfile extends RuntimeProfileSection {
   /** How far from the pane bottom Tachyon should look for the runtime input composer. */
   tailLines: number;
-  /** Runtime-specific line that marks the start of the human-editable composer. */
-  promptLine: RegExp;
-  /** Runtime-specific prompt line shape that means the human-editable composer currently has a draft. */
+  /** Prompt-glyph runtimes: line that begins the editable region. Exactly one of promptLine/frameLine is expected. */
+  promptLine?: RegExp;
+  /** Framed runtimes: the final two matching lines bound the editable region (exclusive). */
+  frameLine?: RegExp;
+  /** Optional footer/status proof used by launch readiness in addition to a framed editor. */
+  readyLine?: RegExp;
+  /** Runtime-specific line shape inside the editable region that means the human has a draft. */
   occupiedLine: RegExp;
   /** Runtime-specific ANSI style rule that can make otherwise non-empty prompt content count as empty. */
   ansiEmptyContentStyle?: "all-dim";
@@ -89,7 +93,7 @@ const GROK_GRACEFUL_STOP: GracefulStopProfile = {
 export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = {
   pi: {
     runtime: "pi",
-    profileVersion: 1,
+    profileVersion: 2,
     label: "Pi",
     isolation: {
       mechanism: "private-home",
@@ -97,6 +101,28 @@ export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = 
       verified: true,
       verifiedAt: "2026-07-18",
       notes: "SDD 400: Tachyon redirects PI_CODING_AGENT_DIR and PI_CODING_AGENT_SESSION_DIR to a per-agent private home.",
+    },
+    composer: {
+      tailLines: 16,
+      frameLine: /^─{10,}\s*$/,
+      readyLine: /^\s*\d+(?:\.\d+)?%\/\S+.*\S+\s*$/,
+      occupiedLine: /\S/,
+      source: "measured",
+      verified: true,
+      verifiedAt: "2026-07-18",
+      notes: "SDD 402: Pi v0.80.10 renders its editor between the final two horizontal rules; non-whitespace inside is a human draft.",
+    },
+    gracefulStop: {
+      steps: [
+        { type: "sendKey", key: "Escape" },
+        { type: "sendKeyIfAliveAfterDelay", key: "C-c", delayMs: 300 },
+        { type: "sendKeyIfAliveAfterDelay", key: "C-d", delayMs: 150 },
+        { type: "sendKeyIfAliveAfterDelay", key: "C-d", delayMs: 150 },
+      ],
+      source: "measured",
+      verified: true,
+      verifiedAt: "2026-07-18",
+      notes: "SDD 402 / Pi defaults: Escape aborts, Ctrl+C clears residual editor state, Ctrl+D exits when empty; verified idle and drafted in isolated tmux.",
     },
   },
   claude: {

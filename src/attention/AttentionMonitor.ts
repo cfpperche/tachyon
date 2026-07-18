@@ -622,27 +622,38 @@ const ANSI_RE = /\x1b\[[0-?]*[ -/]*[@-~]/g;
 function isChangeConfinedToComposer(previous: string, next: string, composer: ComposerRegionProfile): boolean {
   const previousLines = previous.split("\n");
   const nextLines = next.split("\n");
-  const previousStart = findComposerStart(previousLines, composer);
-  const nextStart = findComposerStart(nextLines, composer);
-  if (previousStart === null || nextStart === null) return false;
+  const previousRegion = findComposerRegion(previousLines, composer);
+  const nextRegion = findComposerRegion(nextLines, composer);
+  if (!previousRegion || !nextRegion) return false;
 
-  return linesEqual(previousLines.slice(0, previousStart), nextLines.slice(0, nextStart));
+  return linesEqual(previousLines.slice(0, previousRegion.start), nextLines.slice(0, nextRegion.start))
+    && linesEqual(previousLines.slice(previousRegion.end), nextLines.slice(nextRegion.end));
 }
 
-function findComposerStart(lines: string[], composer: ComposerRegionProfile): number | null {
+function findComposerRegion(lines: string[], composer: ComposerRegionProfile): { start: number; end: number } | null {
   const first = Math.max(0, lines.length - composer.tailLines);
-  for (let i = lines.length - 1; i >= first; i--) {
-    if (composer.promptLine.test(stripAnsi(lines[i]))) return i;
+  if (composer.frameLine) {
+    const frames: number[] = [];
+    for (let i = first; i < lines.length; i++) if (composer.frameLine.test(stripAnsi(lines[i]))) frames.push(i);
+    if (frames.length < 2) return null;
+    const bottom = frames.at(-1)!;
+    const top = frames.at(-2)!;
+    return top < bottom ? { start: top + 1, end: bottom } : null;
+  }
+  if (composer.promptLine) {
+    for (let i = lines.length - 1; i >= first; i--) {
+      if (composer.promptLine.test(stripAnsi(lines[i]))) return { start: i, end: lines.length };
+    }
   }
   return null;
 }
 
 function isComposerOccupied(content: string, composer: ComposerRegionProfile): boolean {
   const lines = content.split("\n");
-  const start = findComposerStart(lines, composer);
+  const region = findComposerRegion(lines, composer);
   return (
-    start !== null &&
-    lines.slice(start).some((line) => {
+    region !== null &&
+    lines.slice(region.start, region.end).some((line) => {
       const plainLine = stripAnsi(line);
       if (!composer.occupiedLine.test(plainLine)) return false;
       return composer.ansiEmptyContentStyle === "all-dim" ? !hasOnlyDimComposerContent(line, plainLine) : true;

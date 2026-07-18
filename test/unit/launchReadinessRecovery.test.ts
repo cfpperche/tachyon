@@ -33,6 +33,19 @@ describe("CodexLaunchReadiness", () => {
     })).resolves.toEqual({ state: "pending" });
   });
 
+  it("SDD 402: recognizes Pi's complete framed editor but not trust/modal or arbitrary frames", () => {
+    const frame = "─".repeat(80);
+    const adapter = new GenericLaunchReadiness({
+      tailLines: 16,
+      frameLine: /^─{10,}\s*$/,
+      readyLine: /^\s*\d+(?:\.\d+)?%\/\S+.*\S+\s*$/,
+    });
+    expect(adapter.classify([frame, " ", frame, "~/repo (main)", "0.0%/4.1k (auto) measure"].join("\n"))).toEqual({ state: "ready" });
+    expect(adapter.classify([frame, "Trust project folder?", "→ Trust", frame].join("\n"))).toBeUndefined();
+    expect(adapter.classify([frame, "arbitrary output", frame, "not a footer"].join("\n"))).toBeUndefined();
+    expect(adapter.classify([frame, "draft", "0.0%/4.1k (auto) measure"].join("\n"))).toBeUndefined();
+  });
+
   it("t-40a28c: recognizes the rotating composer plus stable footer used by Codex 0.144.1", () => {
     const adapter = new CodexLaunchReadiness();
     const pane = [

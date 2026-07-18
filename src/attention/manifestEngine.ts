@@ -1,4 +1,4 @@
-import { runtimeProfile, type ComposerRegionProfile } from "../runtime/runtimeProfile.js";
+import { runtimeProfile } from "../runtime/runtimeProfile.js";
 import type { ResumeRuntime } from "../resume/adapters.js";
 import { parseRateLimitInfo, type RateLimitInfo } from "./patterns.js";
 
@@ -163,16 +163,19 @@ function withDistance(lines: string[]): RegionLine[] {
 function promptBoxBody(runtime: ResumeRuntime, lines: string[]): string[] {
   const composer = runtimeProfile(runtime)?.composer;
   if (!composer) return [];
-  const start = findComposerStart(lines, composer);
-  return start === null ? [] : lines.slice(start);
-}
-
-function findComposerStart(lines: string[], composer: ComposerRegionProfile): number | null {
   const first = Math.max(0, lines.length - composer.tailLines);
-  for (let i = lines.length - 1; i >= first; i--) {
-    if (composer.promptLine.test(lines[i].replace(ANSI_RE, ""))) return i;
+  if (composer.frameLine) {
+    const frames: number[] = [];
+    for (let i = first; i < lines.length; i++) if (composer.frameLine.test(lines[i].replace(ANSI_RE, ""))) frames.push(i);
+    if (frames.length < 2) return [];
+    return lines.slice(frames.at(-2)! + 1, frames.at(-1)!);
   }
-  return null;
+  if (composer.promptLine) {
+    for (let i = lines.length - 1; i >= first; i--) {
+      if (composer.promptLine.test(lines[i].replace(ANSI_RE, ""))) return lines.slice(i);
+    }
+  }
+  return [];
 }
 
 function kindForState(state: ManifestAttentionState): ManifestMatchKind {
