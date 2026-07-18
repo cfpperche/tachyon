@@ -1,6 +1,6 @@
 # Runtime capability parity (living document)
 
-**Status:** living · **Owner:** Tachyon maintainers · **Last verified:** 2026-07-16 (Hermes contract hardening + engine-first audit)
+**Status:** living · **Owner:** Tachyon maintainers · **Last verified:** 2026-07-18 (Pi Bridge, continuity and private-home isolation)
 **Seams (code of record):** `src/resume/adapters.ts`, `src/runtime/runtimeProfile.ts`, `src/agents/AgentManager.ts` (`withRuntimeBridge`, `effectiveCmd`), `src/harness/HarnessManager.ts`, `src/activity/*Normalizer.ts`, `src/attention/patterns.ts`, `src/config/loadConfig.ts` (`INSTRUCTION_ARG`)
 
 This document is the **source of truth** for how Tachyon treats AI CLIs as first-class runtimes.  
@@ -68,21 +68,25 @@ Avoid the word `ongoing` as a verification token — use a date, CLI version, te
 
 ### 3.1 Summary table
 
-| Capability | Claude | Codex | OpenCode | Grok |
-|------------|:------:|:-----:|:--------:|:----:|
-| 1 Brief | ✓ | ✓ | ✓ | ✓ |
-| 2 Bridge MCP | ✓ | ✓ | ✓ | ✓ |
-| 3 Attention | ✓ | ✓ | ~ | ~ |
-| 4 Resume | ✓ | ✓ | ✓ | ✓ |
-| 5 Fork | ✓ | ✗ | ✓ | ✓ |
-| 6 Harness | ✓ | ✓ | ✓ | ✓* |
-| 7 Graceful stop | ~ | ~ | ✓ | ✓ |
-| 8 Activity | ✓ | ✓ | ✓ | ✗ |
-| 9 Permission inject | ~ | ~ | ~ | **✗** |
-| 10 Label / profile | ✓ | ✓ | ~ | ✓ |
-| 11 Restart | ✓ | ✓ | ✓ | ✓ |
+| Capability | Claude | Codex | OpenCode | Grok | Pi |
+|------------|:------:|:-----:|:--------:|:----:|:--:|
+| 1 Brief | ✓ | ✓ | ✓ | ✓ | ✓ |
+| 2 Bridge MCP | ✓ | ✓ | ✓ | ✓ | ✓* |
+| 3 Attention | ✓ | ✓ | ~ | ~ | ~ |
+| 4 Resume | ✓ | ✓ | ✓ | ✓ | ✓ |
+| 5 Fork | ✓ | ✗ | ✓ | ✓ | ✗ |
+| 6 Harness | ✓ | ✓ | ✓ | ✓† | ~‡ |
+| 7 Graceful stop | ~ | ~ | ✓ | ✓ | ~ |
+| 8 Activity | ✓ | ✓ | ✓ | ✗ | ✗ |
+| 9 Permission inject | ~ | ~ | ~ | **✗** | ✗ |
+| 10 Label / profile | ✓ | ✓ | ~ | ✓ | ~ |
+| 11 Restart | ✓ | ✓ | ✓ | ✓ | ✓ |
 
-\* **Grok harness materialization exists** (`GROK_HOME`, hooks, Bridge fold), but `runtimeProfile.grok.isolation` is still **`project-scoped`** for governance. Non-harness **parented** Grok spawns still require an isolated worktree (`assertVerifiedTranscriptIsolation`). See Grok section + §3.4.
+\* **Pi Bridge** is projected through a Tachyon-owned native extension because Pi has no MCP client.
+
+† **Grok harness materialization exists** (`GROK_HOME`, hooks, Bridge fold), but `runtimeProfile.grok.isolation` is still **`project-scoped`** for governance. Non-harness **parented** Grok spawns still require an isolated worktree (`assertVerifiedTranscriptIsolation`). See Grok section + §3.4.
+
+‡ **Pi default private home exists** (`PI_CODING_AGENT_DIR` + private session directory), but opt-in agent-scoped Pi harness resources are not implemented; mark partial rather than overloading private-home with harness parity.
 
 *Secondary adapters: [§3.3](#33-secondary-runtimes).*
 
@@ -154,6 +158,23 @@ Detail dump: [`docs/runtimes/opencode.md`](./opencode.md) (narrative may still s
 **Grok isolation note:** Bridge/harness materialization ≠ `runtimeProfile.isolation: private-home`. Governance still treats Grok as project-scoped unless `isolatedWorktree` / `def.harness`.  
 **Grok auth / rematerialize (t-2b0a08, 2026-07-09):** private home must keep `auth.json` as a **symlink** to the real `~/.grok/auth.json`. Interactive login under redirected `GROK_HOME` can replace that symlink with a **regular file** (fresh tokens only in the private home). On every reload/rebind, `materializeBridgeMcpGrok` used to `unlink` then re-symlink to the **stale** real auth → re-login wall. Fix: **`promoteNewerPrivateAuth`** — if private `auth.json` is a regular file newer than the real target, copy it to real (mode 600) **before** unlink/relink. Canonical truth remains `~/.grok/auth.json`. **✓** unit `test/unit/harness.test.ts` (t-2b0a08).  
 **Parity lesson:** measuring only “symlink exists on first materialize” / “Bridge MCP tools list” is **not** enough for harness auth. A first-class private home also requires **auth survives rematerialize after in-home login** (or an explicit `~` with a task).
+
+#### Pi
+
+| Cap | Native mechanism | Tachyon seam | Verified |
+|-----|------------------|--------------|----------|
+| Brief | positional startup message | `INSTRUCTION_ARG.pi` / opening-primer adapter | SDD 398 units + Dev Host |
+| Bridge | no native MCP; native extension `registerTool()` | immutable `pi-bridge-extension` loaded with `--extension` | SDD 398 real loader + human dogfood |
+| Attention | generic pane patterns | no measured composer/rate-limit profile | `~` |
+| Resume | `--session-id` + exact `--session` | adapter + bounded JSONL header resolver | SDD 399 real process A → B + human Stop/Resume |
+| Fork | native tree/fork exists inside Pi | no Tachyon `forkCommand` contract | `✗` |
+| Harness/private home | `PI_CODING_AGENT_DIR`; sessions override | default `.tachyon/harness/<agent>`, regular mode-0600 auth copy, no executable global-tree inheritance | SDD 400 units/dogfood; opt-in resource harness remains `~` |
+| Stop | generic fallback | no measured Pi stop profile | `~` |
+| Activity | session JSONL | exact file resolves, no Pi normalizer/reader | `✗` |
+| Permission inject | tool filtering/approval surfaces | no permission adapter; Bridge refuses tool filters that would hide required tools | `✗` |
+| Profile | label + verified private-home isolation | `runtimeProfile.pi` | SDD 400; composer/model/stop still partial |
+
+**Pi auth note:** each home receives a regular private `auth.json` snapshot. Pi writes auth in place and locks by pathname, so sibling symlinks to one real file would race under distinct lock paths. Private copies avoid shared mutation but OAuth refresh can diverge; Tachyon does not currently synchronize or promote refreshed credentials back to `~/.pi/agent`.
 
 ### 3.3 Secondary runtimes
 

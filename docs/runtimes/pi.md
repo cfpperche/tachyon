@@ -1,6 +1,6 @@
 # Pi — runtime integration status (Tachyon)
 
-**Integration slice:** SDD 398, measured against the installed `@earendil-works/pi-coding-agent` on 2026-07-18.
+**Integration slices:** SDD 398 (Bridge), SDD 399 (continuity), SDD 400 (private home), measured against the installed `@earendil-works/pi-coding-agent` on 2026-07-18.
 
 Pi is a recognized Tachyon AI runtime. Tachyon starts it in tmux, injects `TACHYON_AGENT_NAME`, the Bridge URL and a per-agent bearer, delivers the universal onboarding primer as Pi's positional startup message, and additively loads an immutable bundled Pi extension with `--extension`.
 
@@ -15,18 +15,23 @@ Pi deliberately has no built-in MCP client. Tachyon's extension opens the local 
 | Authenticated Bridge tools | ✓ | Bundled additive Pi extension |
 | Per-agent Bridge identity | ✓ | `TACHYON_AGENT_BRIDGE_TOKEN` in process env |
 | Spawn / restart reinjection | ✓ | Shared `withRuntimeBridge` lifecycle seam |
-| User Pi config preservation | ✓ | No `.pi` or `~/.pi` mutation |
-| Transcript capture / resume | ✓ | Tachyon-minted `--session-id`, exact `--session <id>`, private per-agent session directory |
+| User Pi config preservation | ✓ | No project `.pi` or real `~/.pi/agent` mutation; safe JSON snapshots seed each private home |
+| Transcript capture / resume | ✓ | Tachyon-minted `--session-id`, exact `--session <id>`, sessions inside the private home |
+| Default private home | ✓ | `PI_CODING_AGENT_DIR=.tachyon/harness/<agent>` plus private `sessions/` |
+| Credential isolation | ✓/~ | Initial regular mode-0600 copy; later refresh is agent-local and intentionally not synchronized |
 | Fork | ✗ | Deferred with transcript/session semantics |
-| Normalized Activity | ✗ | Phase 3; exact JSONL path is now available but not normalized |
+| Normalized Activity | ✗ | Next phase; exact private JSONL path is available but not normalized |
 | Runtime model/usage observation | ~ | Generic process/usage surfaces only |
-| Harness/private Pi home | ✗ | Not part of SDD 398 |
+| Opt-in Pi harness capabilities | ✗ | Agent-scoped Pi skills/extensions/packages remain deferred |
 
 ## Fail-closed boundaries
 
 - A live Bridge plus a missing staged extension refuses the Pi spawn rather than recording a false wired state.
-- Managed Pi sessions are stored under `.tachyon/pi-sessions/<agent>` via `PI_CODING_AGENT_SESSION_DIR`; transcript acceptance requires exactly one regular JSONL with matching header id and cwd.
-- Explicit Pi session flags remain user-owned and produce no Tachyon-managed resume record.
+- Every managed Pi process receives `PI_CODING_AGENT_DIR=.tachyon/harness/<agent>` and `PI_CODING_AGENT_SESSION_DIR=<home>/sessions`; transcript acceptance requires exactly one regular JSONL with matching header id and cwd.
+- Tachyon snapshots only regular JSON-object files (`auth.json`, settings, models/model cache, trust and keybindings). The settings snapshot strips `packages`, `extensions`, `skills`, `prompts` and `themes` so executable/instruction resources do not cross the private-home boundary implicitly. Symlinked, malformed or non-regular sources/targets refuse launch before tmux mutation.
+- `auth.json` is a private mode-0600 copy, not a symlink: Pi locks by pathname and writes in place, so sibling symlink paths would race one shared target. OAuth refreshes can therefore diverge and are not promoted back to the real home.
+- Ambient executable resource trees (`extensions`, `skills`, `prompts`, `themes`, `npm`, `git`, `tools`, `bin`) are not inherited. Trusted project `.pi` resources remain governed by Pi's native project trust.
+- Explicit Pi session flags remain user-owned and produce no Tachyon-managed resume record, but they do not opt out of the private runtime home.
 - Pi commands using `--no-tools`, `--tools` or `--exclude-tools` are refused while Bridge wiring is required, because Tachyon cannot guarantee the complete Bridge catalog.
 - A temporary connection/authentication failure is visible through `/tachyon-bridge-status` and the Pi status line, but Pi remains usable for ordinary local coding.
 - `--no-extensions` does not defeat the integration: Pi documents that explicit `--extension` paths still load when automatic extension discovery is disabled.
@@ -39,6 +44,6 @@ Restart a Tachyon-managed Pi agent, then run:
 /tachyon-bridge-status
 ```
 
-A healthy session reports `Tachyon Bridge: connected (N tools)`. Asking Pi to call `list_agents` should return the fleet with this process identified by `TACHYON_AGENT_NAME`.
+A healthy session reports `Tachyon Bridge: connected (N tools)`. Asking Pi to call `list_agents` should return the fleet with this process identified by `TACHYON_AGENT_NAME`. Inside a Tachyon Pi process, both `PI_CODING_AGENT_DIR` and `PI_CODING_AGENT_SESSION_DIR` must point under the workspace `.tachyon/harness/<agent>` tree, never `~/.pi/agent`.
 
 For continuity dogfood, talk to Pi, stop the managed entry, and use Tachyon's **Resume** action. The reopened Pi process must show the prior conversation. An in-TUI switch to a different session is not followed by Phase 2; Tachyon resumes the exact session id it minted.

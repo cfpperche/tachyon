@@ -3103,8 +3103,8 @@ describe("AgentManager — session resume (spec 209)", () => {
       "session ledger row",
       "activity log and writer state",
       "session-owner ledger rows",
-      "private harness/config home",
-      "private Pi session directory",
+      "private harness/config home (including Pi sessions)",
+      "legacy/idempotent Pi session subtree",
       "per-spawn settings file",
       "generated spawn brief and soul anchor",
       "durable pane transcript",
@@ -3613,6 +3613,17 @@ describe("AgentManager — session resume (spec 209)", () => {
       getExtraEnv: () => ({ TACHYON_BRIDGE_URL: "http://127.0.0.1:9/mcp", TACHYON_BRIDGE_TOKEN: "tok" }),
       materializeBridgeMcp: (name: string) => `/ws/.tachyon/bridge-mcp/${name}.json`,
     });
+    const PI_PRIVATE_HOME = () => ({
+      materializeHarness: ({ name }: { name: string }) => ({
+        home: `/private/pi-homes/${name}`,
+        env: {
+          PI_CODING_AGENT_DIR: `/private/pi-homes/${name}`,
+          PI_CODING_AGENT_SESSION_DIR: `/private/pi-homes/${name}/sessions`,
+        },
+        args: [],
+      }),
+      materializePiSessionDir: (name: string) => `/private/pi-homes/${name}/sessions`,
+    });
 
     it("codex (non-pipeline): spawn injects the -c Bridge override", async () => {
       const { manager, cmds } = resumeHarness("agents:\n  codex:\n    cmd: codex\n", BRIDGE());
@@ -3632,7 +3643,7 @@ describe("AgentManager — session resume (spec 209)", () => {
         getExtraEnv: () => ({ TACHYON_BRIDGE_URL: "http://127.0.0.1:9/mcp", TACHYON_BRIDGE_TOKEN: "shared-secret" }),
         mintAgentToken: () => ({ TACHYON_AGENT_BRIDGE_TOKEN: "agent-secret" }),
         piBridgeExtensionPath: () => extension,
-        materializePiSessionDir: (name: string) => `/private/pi-sessions/${name}`,
+        ...PI_PRIVATE_HOME(),
       };
       const { manager, ledger, cmds, startArgs } = resumeHarness("agents:\n  pi:\n    cmd: pi\n", bridge);
 
@@ -3645,29 +3656,34 @@ describe("AgentManager — session resume (spec 209)", () => {
       expect(envFromTmuxArgs(startArgs.at(-1)!)).toMatchObject({
         TACHYON_BRIDGE_URL: "http://127.0.0.1:9/mcp",
         TACHYON_AGENT_BRIDGE_TOKEN: "agent-secret",
-        PI_CODING_AGENT_SESSION_DIR: "/private/pi-sessions/pi",
+        PI_CODING_AGENT_DIR: "/private/pi-homes/pi",
+        PI_CODING_AGENT_SESSION_DIR: "/private/pi-homes/pi/sessions",
       });
       expect(ledger.get("pi")?.resume).toMatchObject({
         runtime: "pi",
         sessionId,
-        configHome: "/private/pi-sessions/pi",
+        configHome: "/private/pi-homes/pi/sessions",
       });
 
       await manager.restart("pi", { stop: "force", session: "new" });
       expect(cmds.at(-1)).toContain(`--extension '${extension}'`);
       expect(cmds.at(-1)).toContain(`--session-id ${restartedSessionId}`);
+      expect(envFromTmuxArgs(startArgs.at(-1)!)).toMatchObject({
+        PI_CODING_AGENT_DIR: "/private/pi-homes/pi",
+        PI_CODING_AGENT_SESSION_DIR: "/private/pi-homes/pi/sessions",
+      });
       expect(ledger.get("pi")?.resume?.sessionId).toBe(restartedSessionId);
     });
 
     it("Pi: resume requires the exact transcript, reopens its id, re-injects Bridge, and omits primer", async () => {
       const sessionId = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
-      const transcript = `/private/pi-sessions/pi/2026_${sessionId}.jsonl`;
+      const transcript = `/private/pi-homes/pi/sessions/2026_${sessionId}.jsonl`;
       const resolved: Array<{ runtime: string; cwd: string; home?: string; id?: string }> = [];
       const { manager, ledger, cmds, startArgs, paneInjections } = resumeHarness("agents:\n  pi:\n    cmd: pi\n", {
         newSessionId: () => sessionId,
         getExtraEnv: () => ({ TACHYON_BRIDGE_URL: "http://127.0.0.1:9/mcp" }),
         piBridgeExtensionPath: () => "/immutable/engine/pi-bridge-extension.mjs",
-        materializePiSessionDir: (name) => `/private/pi-sessions/${name}`,
+        ...PI_PRIVATE_HOME(),
         resolveCaptureSession: async (runtime, cwd, home, id) => {
           resolved.push({ runtime, cwd, home, id });
           return runtime === "pi" && id === sessionId ? { id, path: transcript } : null;
@@ -3685,9 +3701,10 @@ describe("AgentManager — session resume (spec 209)", () => {
       expect(cmds.at(-1)).not.toContain("TACHYON PRIMER");
       expect(paneInjections).toEqual([]);
       expect(envFromTmuxArgs(startArgs.at(-1)!)).toMatchObject({
-        PI_CODING_AGENT_SESSION_DIR: "/private/pi-sessions/pi",
+        PI_CODING_AGENT_DIR: "/private/pi-homes/pi",
+        PI_CODING_AGENT_SESSION_DIR: "/private/pi-homes/pi/sessions",
       });
-      expect(resolved.at(-1)).toMatchObject({ runtime: "pi", home: "/private/pi-sessions/pi", id: sessionId });
+      expect(resolved.at(-1)).toMatchObject({ runtime: "pi", home: "/private/pi-homes/pi/sessions", id: sessionId });
     });
 
     it("Pi: resume fails closed when its exact transcript cannot be resolved", async () => {
@@ -3696,7 +3713,7 @@ describe("AgentManager — session resume (spec 209)", () => {
         newSessionId: () => sessionId,
         getExtraEnv: () => ({ TACHYON_BRIDGE_URL: "http://127.0.0.1:9/mcp" }),
         piBridgeExtensionPath: () => "/immutable/engine/pi-bridge-extension.mjs",
-        materializePiSessionDir: (name) => `/private/pi-sessions/${name}`,
+        ...PI_PRIVATE_HOME(),
         resolveCaptureSession: async () => null,
       });
       await manager.spawn("pi");
@@ -3707,15 +3724,18 @@ describe("AgentManager — session resume (spec 209)", () => {
       expect(cmds).toHaveLength(before);
     });
 
-    it("Pi: explicit user session flags remain self-managed with no private-home override or resume block", async () => {
+    it("Pi: explicit user session flags remain self-managed but still receive a private runtime home", async () => {
       const { manager, ledger, cmds, startArgs } = resumeHarness("agents:\n  pi:\n    cmd: pi --session user-owned\n", {
         getExtraEnv: () => ({ TACHYON_BRIDGE_URL: "http://127.0.0.1:9/mcp" }),
         piBridgeExtensionPath: () => "/immutable/engine/pi-bridge-extension.mjs",
-        materializePiSessionDir: () => { throw new Error("must not materialize"); },
+        ...PI_PRIVATE_HOME(),
       });
       await manager.spawn("pi");
       expect(cmds.at(-1)).toBe("pi --extension '/immutable/engine/pi-bridge-extension.mjs' --session user-owned");
-      expect(envFromTmuxArgs(startArgs.at(-1)!).PI_CODING_AGENT_SESSION_DIR).toBeUndefined();
+      expect(envFromTmuxArgs(startArgs.at(-1)!)).toMatchObject({
+        PI_CODING_AGENT_DIR: "/private/pi-homes/pi",
+        PI_CODING_AGENT_SESSION_DIR: "/private/pi-homes/pi/sessions",
+      });
       expect(ledger.get("pi")?.resume).toBeUndefined();
     });
 

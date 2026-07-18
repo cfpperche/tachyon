@@ -40,6 +40,7 @@ import {
 } from "../activity/sessionOwners.js";
 import { renderCodexMcpBlock } from "../plugins/adapters/codex.js";
 import { setCodexMcpServer, setOpencodeMcpServer, expectedAgentOpencodeEntry } from "../registration/adapters.js";
+import { materializePiAgentHome, materializePiSessionDir, PI_AGENT_DIR_ENV, PI_SESSION_DIR_ENV } from "../agents/piSession.js";
 
 /** What a materialized harness contributes to the spawn: the config home, the env that redirects to
  *  it, and the MCP args. Threaded into the spawn/restart/resume/fork command (H3). */
@@ -636,6 +637,23 @@ export function defaultRealCodexHome(env: NodeJS.ProcessEnv = process.env, homeD
   return override && override.length > 0 ? override : path.join(homeDir, ".codex");
 }
 
+/** Pi's ambient user home is only a seed source. Never seed a sibling from a Tachyon private home. */
+export function defaultRealPiHome(env: NodeJS.ProcessEnv = process.env, homeDir: string = os.homedir()): string {
+  const override = env[PI_AGENT_DIR_ENV]?.trim();
+  if (override && !path.resolve(override).replace(/\\/g, "/").includes("/.tachyon/harness/")) return override;
+  return path.join(homeDir, ".pi", "agent");
+}
+
+const PI_PRIVATE_JSON_FILES = [
+  "auth.json",
+  "settings.json",
+  "models.json",
+  "models-store.json",
+  "trust.json",
+  "keybindings.json",
+] as const;
+const PI_EXECUTABLE_RESOURCE_SETTINGS = ["packages", "extensions", "skills", "prompts", "themes"] as const;
+
 /**
  * t-303f2b — true when `p` looks like a Tachyon-managed private Grok home (bridge-mcp or harness),
  * not the user's real login home. A process that inherits `GROK_HOME` from a redirected agent pane
@@ -727,10 +745,87 @@ export class HarnessManager {
     private readonly realGrokHome: string = defaultRealGrokHome(procEnv),
     /** Source Hermes home for auth/config seeding. */
     private readonly realHermesHome: string = defaultRealHermesHome(procEnv),
+    /** Source Pi home for private regular-file config/auth snapshots. */
+    private readonly realPiHome: string = defaultRealPiHome(procEnv),
   ) {}
 
   home(agent: string): string {
     return harnessHome(this.workspaceRoot, agent);
+  }
+
+  /**
+   * Materialize Pi's complete default private home. Snapshot only inert top-level JSON state; executable
+   * global resource trees deliberately do not cross this boundary. Existing private files belong to Pi
+   * and are validated/preserved so OAuth refresh and `/settings` writes survive restart/resume.
+   */
+  materializePiHomeOnly(agent: string): MaterializedHarness {
+    const home = materializePiAgentHome(this.workspaceRoot, agent);
+
+    for (const fileName of PI_PRIVATE_JSON_FILES) {
+      const source = path.join(this.realPiHome, fileName);
+      const target = path.join(home, fileName);
+      let sourceExists = false;
+      try {
+        const stat = fs.lstatSync(source);
+        sourceExists = true;
+        if (stat.isSymbolicLink() || !stat.isFile()) {
+          throw new HarnessUnavailableError(agent, `Pi seed source must be a regular no-follow file: ${source}`);
+        }
+        if (!isReadableJsonObjectFile(source)) {
+          throw new HarnessUnavailableError(agent, `Pi seed source is not a readable JSON object: ${source}`);
+        }
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+
+      let targetExists = false;
+      try {
+        const stat = fs.lstatSync(target);
+        targetExists = true;
+        if (stat.isSymbolicLink() || !stat.isFile()) {
+          throw new HarnessUnavailableError(agent, `Pi private-home target must be a regular no-follow file: ${target}`);
+        }
+        if (!isReadableJsonObjectFile(target)) {
+          throw new HarnessUnavailableError(agent, `Pi private-home target is not a readable JSON object: ${target}`);
+        }
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+
+      if (!targetExists && sourceExists) {
+        try {
+          if (fileName === "settings.json") {
+            const snapshot = JSON.parse(fs.readFileSync(source, "utf8")) as Record<string, unknown>;
+            for (const key of PI_EXECUTABLE_RESOURCE_SETTINGS) delete snapshot[key];
+            fs.writeFileSync(target, `${JSON.stringify(snapshot, null, 2)}\n`, { flag: "wx", mode: 0o600 });
+          } else {
+            fs.copyFileSync(source, target, fs.constants.COPYFILE_EXCL);
+          }
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+          const stat = fs.lstatSync(target);
+          if (stat.isSymbolicLink() || !stat.isFile() || !isReadableJsonObjectFile(target)) {
+            throw new HarnessUnavailableError(agent, `concurrent Pi private-home seed produced an unsafe target: ${target}`);
+          }
+        }
+      }
+      try {
+        const finalStat = fs.lstatSync(target);
+        if (finalStat.isSymbolicLink() || !finalStat.isFile() || !isReadableJsonObjectFile(target)) {
+          throw new HarnessUnavailableError(agent, `Pi private-home target failed final validation: ${target}`);
+        }
+        fs.chmodSync(target, 0o600);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+    }
+
+    const sessions = materializePiSessionDir(this.workspaceRoot, agent);
+    return {
+      home,
+      env: { [PI_AGENT_DIR_ENV]: home, [PI_SESSION_DIR_ENV]: sessions },
+      args: [],
+    };
   }
 
   /** spec 227 — the project `.env` (gitignored), parsed; `{}` if absent/unreadable. A secondary

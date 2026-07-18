@@ -529,6 +529,11 @@ describe("parseConfig", () => {
       const { errors } = parseConfig("agents:\n  r:\n    cmd: codex\n    isolate: transcript\n    env:\n      CODEX_HOME: /tmp/x\n");
       expect(errors.some((e) => /isolate: remove 'env.CODEX_HOME'/.test(e))).toBe(true);
     });
+
+    it.each(["PI_CODING_AGENT_DIR", "PI_CODING_AGENT_SESSION_DIR"])("SDD 400: rejects Pi-owned env %s", (owned) => {
+      const { errors } = parseConfig(`agents:\n  pi:\n    cmd: pi\n    env:\n      ${owned}: /tmp/user-owned\n`);
+      expect(errors.some((e) => e.includes(`remove '${owned}'`) && e.includes("Tachyon owns Pi"))).toBe(true);
+    });
   });
 
   // spec 226 — isolated harness validation (H4/H7/H9)

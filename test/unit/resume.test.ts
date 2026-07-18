@@ -132,7 +132,7 @@ describe("ResumeAdapter — mint runtimes (claude, gemini, grok, pi)", () => {
     expect(managesOwnSession("opencode --session u")).toBe(true);
     for (const command of [
       "pi --session u", "pi --session-id u", "pi --continue", "pi -c", "pi --resume", "pi -r",
-      "pi --fork u", "pi --no-session", "pi --session=u",
+      "pi --fork u", "pi --no-session", "pi --session=u", "pi --session-dir /tmp/s", "pi --session-dir=/tmp/s",
     ]) expect(managesOwnSession(command)).toBe(true);
     expect(managesOwnSession("pi --model sonnet")).toBe(false);
     expect(managesOwnSession("claude --permission-mode plan")).toBe(false);

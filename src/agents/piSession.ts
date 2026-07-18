@@ -1,37 +1,60 @@
 import fs from "node:fs";
 import path from "node:path";
 
+export const PI_AGENT_DIR_ENV = "PI_CODING_AGENT_DIR";
 export const PI_SESSION_DIR_ENV = "PI_CODING_AGENT_SESSION_DIR";
 
-export function piSessionDir(workspaceRoot: string, agent: string): string {
+function validateAgent(agent: string): void {
   if (!/^[A-Za-z][A-Za-z0-9_-]*$/.test(agent)) throw new Error(`invalid Pi agent name '${agent}'`);
-  return path.join(workspaceRoot, ".tachyon", "pi-sessions", agent);
 }
 
-function ensureRealDirectory(dir: string): void {
+export function piAgentHome(workspaceRoot: string, agent: string): string {
+  validateAgent(agent);
+  return path.join(workspaceRoot, ".tachyon", "harness", agent);
+}
+
+export function piSessionDir(workspaceRoot: string, agent: string): string {
+  return path.join(piAgentHome(workspaceRoot, agent), "sessions");
+}
+
+function ensureRealDirectory(dir: string, privateMode = false): void {
   try {
     const stat = fs.lstatSync(dir);
     if (stat.isSymbolicLink() || !stat.isDirectory()) {
-      throw new Error(`Pi session path is not a real directory: ${dir}`);
+      throw new Error(`Pi private-home path is not a real directory: ${dir}`);
     }
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-    fs.mkdirSync(dir, { mode: 0o700 });
+    fs.mkdirSync(dir, { mode: privateMode ? 0o700 : 0o755 });
   }
+  if (privateMode) fs.chmodSync(dir, 0o700);
 }
 
+/**
+ * Ensure the complete no-follow directory chain used by Pi's private home. The generic harness
+ * materializer predates this stronger boundary; Pi uses this helper before copying credentials.
+ */
+export function materializePiAgentHome(workspaceRoot: string, agent: string): string {
+  const workspace = fs.realpathSync(workspaceRoot);
+  const tachyon = path.join(workspace, ".tachyon");
+  const root = path.join(tachyon, "harness");
+  const target = piAgentHome(workspace, agent);
+
+  ensureRealDirectory(tachyon);
+  ensureRealDirectory(root, true);
+  ensureRealDirectory(target, true);
+
+  const resolved = fs.realpathSync(target);
+  if (!resolved.startsWith(`${workspace}${path.sep}`)) {
+    throw new Error(`Pi private home escapes workspace: ${target}`);
+  }
+  return target;
+}
+
+/** Remove only Pi's session subtree. Canonical forget also removes the complete harness home. */
 export function removePiSessionDir(workspaceRoot: string, agent: string): void {
-  const root = path.join(fs.realpathSync(workspaceRoot), ".tachyon", "pi-sessions");
-  let rootStat: fs.Stats;
-  try { rootStat = fs.lstatSync(root); }
-  catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
-    throw error;
-  }
-  if (rootStat.isSymbolicLink() || !rootStat.isDirectory()) {
-    throw new Error(`Pi session root is not a real directory: ${root}`);
-  }
-  const target = piSessionDir(fs.realpathSync(workspaceRoot), agent);
+  const workspace = fs.realpathSync(workspaceRoot);
+  const target = piSessionDir(workspace, agent);
   let targetStat: fs.Stats;
   try { targetStat = fs.lstatSync(target); }
   catch (error) {
@@ -46,22 +69,16 @@ export function removePiSessionDir(workspaceRoot: string, agent: string): void {
   fs.rmSync(target, { recursive: true, force: false });
 }
 
-/** Materialize a private, workspace-contained session namespace for one managed Pi agent. */
+/** Materialize the transcript subtree inside one agent's private Pi home. */
 export function materializePiSessionDir(workspaceRoot: string, agent: string): string {
   const workspace = fs.realpathSync(workspaceRoot);
-  const tachyon = path.join(workspace, ".tachyon");
-  const root = path.join(tachyon, "pi-sessions");
-  const target = piSessionDir(workspace, agent);
-
-  ensureRealDirectory(tachyon);
-  ensureRealDirectory(root);
-  ensureRealDirectory(target);
+  const home = materializePiAgentHome(workspace, agent);
+  const target = path.join(home, "sessions");
+  ensureRealDirectory(target, true);
 
   const resolved = fs.realpathSync(target);
-  if (!resolved.startsWith(`${workspace}${path.sep}`)) {
-    throw new Error(`Pi session path escapes workspace: ${target}`);
+  if (!resolved.startsWith(`${home}${path.sep}`)) {
+    throw new Error(`Pi session path escapes private home: ${target}`);
   }
-  fs.chmodSync(root, 0o700);
-  fs.chmodSync(target, 0o700);
   return target;
 }

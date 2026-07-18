@@ -755,6 +755,10 @@ export class Workspace {
       // env + MCP wiring; null when the agent has no harness / runtime can't.
       materializeHarness: ({ name, def, cwd }) => {
         const adapter = adapterFor(def.cmd);
+        // SDD 400 — Pi is private-home by default, independent of opt-in harness capabilities.
+        if (adapter?.runtime === "pi" && !def.harness && def.isolate === undefined) {
+          return this.harness.materializePiHomeOnly(name);
+        }
         if (!harnessable(adapter) || !adapter) return null;
         // spec 236 — a harness agent runs with --strict-mcp-config (ignores project/global MCP), so the
         // Bridge MUST be folded into the materialized file or it can't reach complete_node/write_input.

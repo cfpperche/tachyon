@@ -87,6 +87,18 @@ const GROK_GRACEFUL_STOP: GracefulStopProfile = {
 };
 
 export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = {
+  pi: {
+    runtime: "pi",
+    profileVersion: 1,
+    label: "Pi",
+    isolation: {
+      mechanism: "private-home",
+      source: "measured",
+      verified: true,
+      verifiedAt: "2026-07-18",
+      notes: "SDD 400: Tachyon redirects PI_CODING_AGENT_DIR and PI_CODING_AGENT_SESSION_DIR to a per-agent private home.",
+    },
+  },
   claude: {
     runtime: "claude",
     profileVersion: 1,

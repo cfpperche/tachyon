@@ -33,7 +33,7 @@
             "type": "string"
           },
           "env": {
-            "description": "Extra environment variables for the agent's session.",
+            "description": "Extra environment variables for the agent's session. For Pi runtime commands, PI_CODING_AGENT_DIR and PI_CODING_AGENT_SESSION_DIR are Tachyon-owned private-home boundaries and must not be set here.",
             "type": "object",
             "additionalProperties": {
               "type": "string"

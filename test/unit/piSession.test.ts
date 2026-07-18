@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { materializePiSessionDir, piSessionDir, removePiSessionDir } from "../../src/agents/piSession.js";
+import { materializePiAgentHome, materializePiSessionDir, piAgentHome, piSessionDir, removePiSessionDir } from "../../src/agents/piSession.js";
 import { resolvePiSession } from "../../src/resume/resolvers.js";
 
 const roots: string[] = [];
@@ -31,6 +31,8 @@ describe("managed Pi session namespace", () => {
     expect(fs.lstatSync(dir).isSymbolicLink()).toBe(false);
     expect(fs.statSync(dir).mode & 0o777).toBe(0o700);
     expect(fs.statSync(path.dirname(dir)).mode & 0o777).toBe(0o700);
+    expect(path.dirname(dir)).toBe(piAgentHome(workspace, "pi_worker"));
+    expect(materializePiAgentHome(workspace, "pi_worker")).toBe(path.dirname(dir));
   });
 
   it("removes only the named private session namespace at ephemeral end-of-life", () => {
@@ -48,7 +50,7 @@ describe("managed Pi session namespace", () => {
     const workspace = temp("tachyon-pi-session-ws-");
     const outside = temp("tachyon-pi-session-outside-");
     fs.mkdirSync(path.join(workspace, ".tachyon"));
-    fs.symlinkSync(outside, path.join(workspace, ".tachyon", "pi-sessions"));
+    fs.symlinkSync(outside, path.join(workspace, ".tachyon", "harness"));
     expect(() => materializePiSessionDir(workspace, "pi")).toThrow("not a real directory");
   });
 

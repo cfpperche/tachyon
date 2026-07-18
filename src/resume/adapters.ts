@@ -174,7 +174,7 @@ export function managesOwnSession(cmd: string): boolean {
   const binary = (tokens[binaryIndex(tokens)] ?? "").split("/").pop() ?? "";
   if (binary === "pi") {
     const piSessionFlags = new Set([
-      "--session", "--session-id", "--continue", "-c", "--resume", "-r", "--fork", "--no-session",
+      "--session", "--session-id", "--session-dir", "--continue", "-c", "--resume", "-r", "--fork", "--no-session",
     ]);
     return tokens.some((token) => piSessionFlags.has(token) || [...piSessionFlags].some((flag) => token.startsWith(`${flag}=`)));
   }

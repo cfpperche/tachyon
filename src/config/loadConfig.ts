@@ -697,6 +697,13 @@ function parseAgentEntry(section: "agents" | "terminals", name: string, def: Rec
       errors.push(`${section}.${name}.env: must be a mapping of string -> string`);
     } else {
       agent.env = def.env as Record<string, string>;
+      if (binaryOf(agent.cmd) === "pi") {
+        for (const owned of ["PI_CODING_AGENT_DIR", "PI_CODING_AGENT_SESSION_DIR"]) {
+          if (owned in agent.env) {
+            errors.push(`${section}.${name}.env: remove '${owned}' — Tachyon owns Pi's private runtime and session homes`);
+          }
+        }
+      }
     }
   }
   if (def.autostart !== undefined) {

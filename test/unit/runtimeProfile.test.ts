@@ -14,6 +14,18 @@ describe("runtime profiles (spec 358 phase 1)", () => {
     expect(hasVerifiedTranscriptIsolation(profile!.isolation)).toBe(true);
   });
 
+  it("SDD 400: declares Pi isolation as measured private-home", () => {
+    const profile = runtimeProfile("pi");
+    expect(profile?.isolation).toMatchObject({
+      mechanism: "private-home",
+      source: "measured",
+      verified: true,
+      verifiedAt: "2026-07-18",
+    });
+    expect(hasVerifiedTranscriptIsolation(profile!.isolation)).toBe(true);
+    expect(() => assertVerifiedTranscriptIsolation("pi", { name: "pi-child", parented: true })).not.toThrow();
+  });
+
   it("declares Codex isolation as measured private-home", () => {
     const profile = runtimeProfile("codex");
     expect(profile?.model).toMatchObject({ defaultModel: "Codex default", source: "declared", verified: false });

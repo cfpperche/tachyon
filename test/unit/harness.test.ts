@@ -21,6 +21,7 @@ import {
   readWorkspaceMcpServers,
   realConfigHome,
   defaultRealCodexHome,
+  defaultRealPiHome,
   defaultRealGrokHome,
   defaultRealHermesHome,
   isTachyonManagedGrokHome,
@@ -96,6 +97,12 @@ describe("harness pure helpers", () => {
   it("defaultRealCodexHome honors CODEX_HOME override, else ~/.codex", () => {
     expect(defaultRealCodexHome({ CODEX_HOME: "/custom" }, "/home/u")).toBe("/custom");
     expect(defaultRealCodexHome({}, "/home/u")).toBe("/home/u/.codex");
+  });
+
+  it("SDD 400: defaultRealPiHome ignores Tachyon private overrides", () => {
+    expect(defaultRealPiHome({ PI_CODING_AGENT_DIR: "/custom/pi" }, "/home/u")).toBe("/custom/pi");
+    expect(defaultRealPiHome({ PI_CODING_AGENT_DIR: "/ws/.tachyon/harness/pi" }, "/home/u")).toBe("/home/u/.pi/agent");
+    expect(defaultRealPiHome({}, "/home/u")).toBe("/home/u/.pi/agent");
   });
 
   it("parseEnvFile handles plain/quoted/export/comments/blank/malformed (spec 227)", () => {
@@ -175,6 +182,57 @@ describe("HarnessManager materialize (fs)", () => {
     expect(written.mcpServers["fal-ai"]).toBeDefined(); // declared server still there
     // the token stays a ${VAR} ref — never a literal on disk
     expect(JSON.stringify(written)).not.toMatch(/Bearer [0-9a-f]{8}/);
+  });
+
+  it("SDD 400: Pi gets regular private JSON snapshots, strict permissions, and no executable-tree inheritance", () => {
+    const piHome = path.join(path.dirname(realHome), "realpi");
+    fs.mkdirSync(path.join(piHome, "extensions"), { recursive: true });
+    fs.writeFileSync(path.join(piHome, "auth.json"), '{"openai":{"type":"oauth"}}');
+    fs.writeFileSync(path.join(piHome, "settings.json"), '{"theme":"dark","packages":["unsafe-global-package"],"extensions":["/global/extension.js"],"skills":["/global/skills"]}');
+    fs.writeFileSync(path.join(piHome, "trust.json"), '{}');
+    fs.writeFileSync(path.join(piHome, "extensions", "global.js"), "throw new Error('must not inherit')");
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), undefined, undefined, undefined, undefined, undefined, piHome);
+
+    const a = mgr.materializePiHomeOnly("pi-a");
+    const b = mgr.materializePiHomeOnly("pi-b");
+    expect(a.env).toEqual({
+      PI_CODING_AGENT_DIR: harnessHome(ws, "pi-a"),
+      PI_CODING_AGENT_SESSION_DIR: path.join(harnessHome(ws, "pi-a"), "sessions"),
+    });
+    expect(b.env.PI_CODING_AGENT_DIR).not.toBe(a.env.PI_CODING_AGENT_DIR);
+    expect(fs.statSync(a.home).mode & 0o777).toBe(0o700);
+    expect(fs.statSync(a.env.PI_CODING_AGENT_SESSION_DIR).mode & 0o777).toBe(0o700);
+    const auth = path.join(a.home, "auth.json");
+    expect(fs.lstatSync(auth).isFile()).toBe(true);
+    expect(fs.lstatSync(auth).isSymbolicLink()).toBe(false);
+    expect(fs.statSync(auth).mode & 0o777).toBe(0o600);
+    expect(JSON.parse(fs.readFileSync(path.join(a.home, "settings.json"), "utf8"))).toEqual({ theme: "dark" });
+    expect(fs.existsSync(path.join(a.home, "extensions"))).toBe(false);
+
+    // Pi owns later private mutations; rematerialization validates but does not overwrite them.
+    fs.writeFileSync(path.join(a.home, "settings.json"), '{"theme":"light"}');
+    mgr.materializePiHomeOnly("pi-a");
+    expect(JSON.parse(fs.readFileSync(path.join(a.home, "settings.json"), "utf8"))).toEqual({ theme: "light" });
+  });
+
+  it("SDD 400: Pi environment-only auth works, while unsafe JSON sources and targets fail closed", () => {
+    const piHome = path.join(path.dirname(realHome), "realpi-empty");
+    fs.mkdirSync(piHome, { recursive: true });
+    fs.writeFileSync(path.join(piHome, "settings.json"), "{}");
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), undefined, undefined, undefined, undefined, undefined, piHome);
+    expect(() => mgr.materializePiHomeOnly("env-auth")).not.toThrow();
+    expect(fs.existsSync(path.join(harnessHome(ws, "env-auth"), "auth.json"))).toBe(false);
+
+    fs.writeFileSync(path.join(piHome, "auth.json"), "not-json");
+    expect(() => mgr.materializePiHomeOnly("bad-source")).toThrow(/not a readable JSON object/);
+    fs.rmSync(path.join(piHome, "auth.json"));
+    fs.symlinkSync(path.join(piHome, "settings.json"), path.join(piHome, "auth.json"));
+    expect(() => mgr.materializePiHomeOnly("linked-source")).toThrow(/regular no-follow file/);
+    fs.rmSync(path.join(piHome, "auth.json"));
+    const unsafe = harnessHome(ws, "unsafe-target");
+    fs.mkdirSync(unsafe, { recursive: true });
+    fs.symlinkSync(path.join(piHome, "settings.json"), path.join(unsafe, "settings.json"));
+    expect(() => mgr.materializePiHomeOnly("unsafe-target")).toThrow(/regular no-follow file/);
   });
 
   it("spec 298: codex harness writes private config.toml, symlinks auth, and returns CODEX_HOME only", () => {
