@@ -180,7 +180,7 @@ describe("MissionControlPanelManager", () => {
     await flush();
 
     expect(__createdPanels).toHaveLength(1);
-    expect(__createdPanels[0].title).toBe("Mission Control — Beta");
+    expect(__createdPanels[0].title).toBe("Board — Beta");
     const snapshots = __createdPanels[0].webview.posted.filter((m) => (m as { type?: string }).type === "snapshot") as Array<{ vm: { folder: string; wsHash: string; snapshot: { views: Array<{ task: { title: string } }> } } }>;
     const latest = snapshots[snapshots.length - 1];
     expect(latest?.vm).toMatchObject({ folder: "Beta", wsHash: "ws-b" });
@@ -234,10 +234,10 @@ describe("MissionControlPanelManager", () => {
 
     expect(__createdPanels).toHaveLength(2);
     expect(__createdPanels[1].revealCount).toBe(1);
-    expect(__createdPanels[0].title).toBe("Mission Control — Alpha");
+    expect(__createdPanels[0].title).toBe("Board — Alpha");
   });
 
-  it("posts validation counts in the Mission Control snapshot", async () => {
+  it("posts validation counts in the Board snapshot", async () => {
     const ws = fakeWorkspace();
     await ws.validationStore.create({ title: "Manual dogfood", author: "human", executor: "human" });
     const manager = new MissionControlPanelManager(Uri.file("/ext"), () => [target(ws)], () => {}, () => {}, () => {});
@@ -249,7 +249,7 @@ describe("MissionControlPanelManager", () => {
     expect(msg.vm.snapshot.validations).toMatchObject({ pendingCount: 1, humanPendingCount: 1 });
   });
 
-  it("closes a validation from Mission Control only with an auditable note", async () => {
+  it("closes a validation from Board only with an auditable note", async () => {
     const ws = fakeWorkspace();
     const validation = await ws.validationStore.create({ title: "Manual dogfood", author: "human", executor: "human" });
     let fanOuts = 0;
