@@ -17,12 +17,22 @@ export interface StopFixtureEngineResult {
   unitName?: string;
 }
 
+export interface ProbeFixtureEngineResult {
+  state: "absent" | "active" | "inactive";
+  unitName?: string;
+}
+
 export function fixtureEngineUnitName(fixtureRoot: string): string;
 
 export function stopFixtureEngine(
   fixtureRoot: string,
   options?: StopFixtureEngineOptions,
 ): Promise<StopFixtureEngineResult>;
+
+export function probeFixtureEngine(
+  fixtureRoot: string,
+  options?: StopFixtureEngineOptions,
+): Promise<ProbeFixtureEngineResult>;
 
 export function stopFixtureBridge(
   fixtureRoot: string,
