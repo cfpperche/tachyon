@@ -716,48 +716,44 @@ function MoreMenu({ menu, onClose }: { menu: MenuState | null; onClose: () => vo
   );
 }
 
-/** t-7f94f2 — catch-up strip for engine human notices (toast remains attention channel). */
+/** t-7f94f2 — catch-up strip for engine human notices (toast remains attention channel).
+ *  Only surfaces items still in the engine inbox; mark-read / mark-all clears them. */
 function NoticeStrip({ fleets, dispatch }: { fleets: FleetVM[]; dispatch?: Dispatch }) {
   const rows = useMemo(
-    () => fleets.flatMap((f) => (f.notices ?? []).map((n) => ({ n, hash: f.folder?.hash }))),
+    () => fleets.flatMap((f) => (f.notices ?? []).filter((n) => !n.read).map((n) => ({ n, hash: f.folder?.hash }))),
     [fleets],
   );
   if (rows.length === 0) return null;
-  const unread = rows.filter((r) => !r.n.read).length;
   return (
     <div class="notice-strip" role="region" aria-label="Notices">
       <div class="notice-strip-head">
         <span class="notice-strip-title">
           <Icon name="bell" /> Notices
-          {unread > 0 && <span class="notice-unread" title={`${unread} unread`}>{unread}</span>}
+          <span class="notice-unread" title={`${rows.length} open`}>{rows.length}</span>
         </span>
-        {unread > 0 && (
-          <button
-            type="button"
-            class="notice-mark-all"
-            title="Mark all notices read"
-            onClick={() => {
-              for (const f of fleets) {
-                if ((f.notices ?? []).some((n) => !n.read)) {
-                  dispatch?.section("notice:markAllRead", "all", undefined, f.folder?.hash);
-                }
+        <button
+          type="button"
+          class="notice-mark-all"
+          title="Dismiss all notices"
+          onClick={() => {
+            for (const f of fleets) {
+              if ((f.notices ?? []).some((n) => !n.read)) {
+                dispatch?.section("notice:markAllRead", "all", undefined, f.folder?.hash);
               }
-            }}
-          >
-            Mark all read
-          </button>
-        )}
+            }
+          }}
+        >
+          Clear
+        </button>
       </div>
       <div class="notice-strip-list">
         {rows.slice(0, 12).map(({ n, hash }) => (
-          <div class={`notice-row level-${n.level}${n.read ? " read" : " unread"}`} key={`${hash ?? ""}:${n.id}`}>
+          <div class={`notice-row level-${n.level} unread`} key={`${hash ?? ""}:${n.id}`}>
             <button
               type="button"
               class="notice-msg"
-              title={n.message}
-              onClick={() => {
-                if (!n.read) dispatch?.section("notice:markRead", n.id, undefined, hash);
-              }}
+              title={`${n.message} — click to dismiss`}
+              onClick={() => dispatch?.section("notice:markRead", n.id, undefined, hash)}
             >
               <span class={`notice-level l-${n.level}`}>{n.level}</span>
               <span class="notice-text">{n.message}</span>
@@ -774,6 +770,15 @@ function NoticeStrip({ fleets, dispatch }: { fleets: FleetVM[]; dispatch?: Dispa
                 {a.label}
               </button>
             ))}
+            <button
+              type="button"
+              class="notice-dismiss"
+              title="Dismiss"
+              aria-label="Dismiss notice"
+              onClick={() => dispatch?.section("notice:markRead", n.id, undefined, hash)}
+            >
+              <Icon name="close" />
+            </button>
           </div>
         ))}
       </div>
