@@ -840,6 +840,10 @@ export class Workspace {
       // t-8354ae — refuse spawn of names that exist only in the LKG snapshot while config is invalid.
       assertSpawnAllowed: (name) => this.assertNotLkgOnlySpawn(name),
       getMaxAgents: () => this.host.getSetting("tachyon", "maxAgents", 8),
+      getAgentMemoryMax: () => {
+        const host = this.host.getSetting<string>("tachyon", "agentMemoryMax", "");
+        return host.trim() || undefined;
+      },
       getExtraEnv: () => {
         // Every Tachyon-spawned session can reach (and authenticate to) ITS folder's Bridge.
         // PATH is pinned too: rebind/resume after reload can land panes on a tmux global PATH

@@ -29,6 +29,12 @@ import { wrapWithPrimer, renderPrimer } from "../bridge/primer.js";
 import { delegatedOpencodePermission, setOpencodePermission } from "../registration/adapters.js";
 import { assertSafeBriefTransport, deliverableBody, previewDeliverableBody } from "./briefFile.js";
 import {
+  agentMemoryScopeSupport,
+  agentMemoryScopeUnitName,
+  parseAgentMemoryMax,
+  wrapAgentMemoryScopeCommand,
+} from "./agentMemoryScope.js";
+import {
   hasExplicitModelSelection,
   isExplicitCodexModelCommand,
   parseLaunchCommand,
@@ -361,6 +367,11 @@ export interface AgentManagerOptions {
   /** t-8354ae — optional pre-spawn gate (e.g. refuse LKG-only names while config is invalid). */
   assertSpawnAllowed?: (name: string) => void;
   getMaxAgents: () => number;
+  /**
+   * t-0d0152 — opt-in MemoryMax for agent spawn trees (e.g. "2G").
+   * Empty/undefined = no systemd scope wrap.
+   */
+  getAgentMemoryMax?: () => string | undefined;
   /** Env injected into every spawned session (e.g. TACHYON_BRIDGE_URL/TOKEN); agent-declared env wins on conflict. */
   getExtraEnv?: () => Record<string, string>;
   /** spec 351 — mint a fresh per-agent Bridge token for `name` (TACHYON_AGENT_BRIDGE_TOKEN), returning the
@@ -1906,8 +1917,8 @@ export class AgentManager {
       await this.opts.tmux.newSession({
         name: session,
         // spec 236 Bridge + 243 ownership hook — apply ownership hook to the runtime-bridge cmd; the
-        // env delta is folded into env below.
-        cmd: ownedSpawnCmd,
+        // env delta is folded into env below. t-0d0152 MemoryMax scope wraps outermost when configured.
+        cmd: this.applyAgentMemoryScope(name, ownedSpawnCmd),
         cwd,
         env: { ...spawnBuild.env, ...spawnBridge.env },
       });
@@ -2358,6 +2369,39 @@ export class AgentManager {
    * + docs/system-design.md §7.1). Harness agents: orthogonal to `--strict-mcp-config` (MCP-only) and the
    * redirected `CLAUDE_CONFIG_DIR`. The only exception is a command that opts into `--setting-sources` (never ours).
    */
+  /**
+   * t-0d0152 — wrap pane command in systemd --user scope with MemoryMax when configured.
+   * Fail-open (returns cmd unchanged) when off, non-Linux, or wrap fails.
+   */
+  private applyAgentMemoryScope(agentName: string, cmd: string): string {
+    const fromYml = parseAgentMemoryMax(this.opts.getConfig()?.settings.agentMemoryMax);
+    const fromHost = parseAgentMemoryMax(this.opts.getAgentMemoryMax?.());
+    const memoryMax = fromYml ?? fromHost;
+    if (!memoryMax) return cmd;
+    const support = agentMemoryScopeSupport();
+    if (!support.ok) {
+      this.opts.notify?.(
+        `settings.agentMemoryMax=${memoryMax} ignored: ${support.reason}`,
+        "warn",
+      );
+      return cmd;
+    }
+    const unit = agentMemoryScopeUnitName(
+      this.opts.wsHash,
+      agentName,
+      crypto.randomBytes(4).toString("hex"),
+    );
+    try {
+      return wrapAgentMemoryScopeCommand(unit, memoryMax, cmd);
+    } catch (error) {
+      this.opts.notify?.(
+        `settings.agentMemoryMax wrap failed for '${agentName}': ${error instanceof Error ? error.message : String(error)}`,
+        "warn",
+      );
+      return cmd;
+    }
+  }
+
   private withSessionOwnership(
     name: string,
     def: Pick<AgentDef, "cmd">,
@@ -2778,7 +2822,9 @@ export class AgentManager {
     onBeforeKillNew?: () => void;
     onReplacementAttempt?: () => void;
   }): Promise<"respawned" | "created"> {
-    const { session, cmd, cwd, env } = opts;
+    const agentName = agentFromSession(this.opts.wsHash, opts.session) ?? opts.session;
+    const cmd = this.applyAgentMemoryScope(agentName, opts.cmd);
+    const { session, cwd, env } = opts;
     if (await this.opts.tmux.hasSession(session)) {
       try {
         opts.onReplacementAttempt?.();
@@ -3662,15 +3708,18 @@ export class AgentManager {
       sessionAttempted = true;
       await this.opts.tmux.newSession({
         name: session,
-        cmd: this.withSessionOwnership(forkName, { cmd: src.baseCmd }, forkBridge.cmd, {
-          declared: false,
-          cwd,
-          // Harness-backed sources cannot fork. Preserve an explicit source override; otherwise use the
-          // same host-default account home used by transcript resolution and HarnessManager seeding.
-          configHome: src.env?.CLAUDE_CONFIG_DIR ?? this.defaultClaudeConfigHome(),
-          // A user-created fork inherits the source command's permission posture; capture must not widen it.
-          preservePermissionMode: true,
-        }),
+        cmd: this.applyAgentMemoryScope(
+          forkName,
+          this.withSessionOwnership(forkName, { cmd: src.baseCmd }, forkBridge.cmd, {
+            declared: false,
+            cwd,
+            // Harness-backed sources cannot fork. Preserve an explicit source override; otherwise use the
+            // same host-default account home used by transcript resolution and HarnessManager seeding.
+            configHome: src.env?.CLAUDE_CONFIG_DIR ?? this.defaultClaudeConfigHome(),
+            // A user-created fork inherits the source command's permission posture; capture must not widen it.
+            preservePermissionMode: true,
+          }),
+        ),
         cwd,
         env: { ...this.opts.getExtraEnv?.(), ...tokenEnv, ...src.env, ...forkBridge.env, TACHYON_AGENT_NAME: forkName },
       });

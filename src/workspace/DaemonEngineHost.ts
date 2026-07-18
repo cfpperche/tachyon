@@ -23,6 +23,7 @@ export const DAEMON_SETTING_KEYS = [
   "git.path",
   "tachyon.gitPath",
   "tachyon.maxAgents",
+  "tachyon.agentMemoryMax",
   "tachyon.taskNotifications.enabled",
   "tachyon.taskNotifications.events",
   "tachyon.taskNotifications.suppressOwnChanges",
