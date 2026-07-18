@@ -241,7 +241,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     fs.rmSync(pinsRoot, { recursive: true, force: true });
   });
 
-  it("exposes exactly the 68 canonical tools, including managed worktree registry tools", async () => {
+  it("exposes exactly the 69 canonical tools, including managed worktree registry tools", async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       "append_project_handoff_note",
@@ -273,6 +273,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       "git_delivery_integrate",
       "git_delivery_list",
       "git_delivery_prune",
+      "git_delivery_reconcile",
       "kill_agent",
       "list_agents",
       "list_commands",
@@ -439,6 +440,60 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       expect(JSON.stringify(pruned.content)).toContain("resolved Bridge caller");
       expect(integrate).not.toHaveBeenCalled();
       expect(prune).not.toHaveBeenCalled();
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("git_delivery_reconcile delegates the linked canonical Delivery for a caller authorized to integrate and prune", async () => {
+    const root = fs.mkdtempSync(nodePath.join(os.tmpdir(), "tachyon-bridge-reconcile-"));
+    const store = new GitDeliveryStore(root, { now: () => "2026-07-17T00:00:00.000Z" });
+    const linkedId = deterministicGitDeliveryId("delivery-reconcile");
+    await store.open({
+      workspaceId: "ws",
+      deliveryId: "delivery-reconcile",
+      createdBy: { kind: "agent", name: "hermes" },
+      agent: "worker",
+      branchRef: "refs/heads/worker",
+      worktreePath: "/wt/worker",
+      tachyonCreatedBranch: true,
+      baseRef: "main",
+      reason: "test",
+    });
+    const reconcile = vi.fn(async () => ({ applied: 1 }));
+    class ToolCapture {
+      handlers = new Map<string, (args: Record<string, unknown>) => Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }>>();
+      registerTool(name: string, _schema: unknown, handler: (args: Record<string, unknown>) => Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }>) { this.handlers.set(name, handler); }
+    }
+    const mcp = new ToolCapture();
+    registerTools(mcp as never, {
+      workspaceRoot: root,
+      caller: { kind: "agent", name: "hermes" },
+      gitDelivery: {
+        store,
+        workspaceId: "ws",
+        settings: () => ({
+          profile: "balanced",
+          autoOpen: true,
+          requireNonSelfAccept: false,
+          autoPrune: false,
+          prunePrincipals: ["hermes"],
+          integratePrincipals: ["hermes"],
+        }),
+        git: async () => ({ code: 0, stdout: "", stderr: "" }),
+        liveness: async () => "not_live",
+        projection: { reconcile },
+      },
+    } as never);
+    try {
+      const result = await mcp.handlers.get("git_delivery_reconcile")!({ id: linkedId });
+      expect(result.isError).toBeFalsy();
+      expect(reconcile).toHaveBeenCalledWith("delivery-reconcile");
+      expect(JSON.parse(result.content[0]!.text)).toMatchObject({
+        ok: true,
+        deliveryId: "delivery-reconcile",
+        result: { applied: 1 },
+      });
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

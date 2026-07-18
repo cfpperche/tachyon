@@ -934,6 +934,49 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
   );
 
   mcp.registerTool(
+    "git_delivery_reconcile",
+    {
+      description:
+        "Reconcile pending canonical Delivery projection intents for one linked GitDelivery. " +
+        "Requires a resolved caller authorized for both linked integrate and prune mutations.",
+      inputSchema: { id: z.string().regex(/^gd-[0-9a-f]+$/) },
+    },
+    async ({ id }) => {
+      try {
+        deps.assertLegacyDeliveryRetired?.();
+        if (!deps.gitDelivery) return fail(new Error("GitDelivery is not available on this Bridge"));
+        if (!deps.caller || deps.caller.kind === "legacy" || deps.caller.kind === "external") {
+          return fail(new Error("git_delivery_reconcile refused: linked mutation requires a resolved Bridge caller"));
+        }
+        const projection = await deps.gitDelivery.store.get(id);
+        if (!projection) return fail(new Error(`GitDelivery '${id}' not found`));
+        if (!projection.deliveryId) {
+          return fail(new Error(
+            "LEGACY_DELIVERY_STATE_REQUIRES_RETIREMENT: GitDelivery is not linked to a canonical Delivery; " +
+              "run the legacy delivery retirement action before tracked Delivery operations",
+          ));
+        }
+        if (!deps.gitDelivery.projection) {
+          return fail(new Error("canonical DeliveryProjectionService is not available for linked reconcile"));
+        }
+        const actor = gitDeliveryActor(deps);
+        const settings = deps.gitDelivery.settings?.() ?? resolveGitDeliverySettings(undefined);
+        const canIntegrate = canIntegrateLinkedGitDelivery(actor, settings.integratePrincipals, deps.caller);
+        const canPrune = canPruneLinkedGitDelivery(actor, settings.prunePrincipals, deps.caller);
+        if (!canIntegrate || !canPrune) {
+          return fail(new Error(
+            "git_delivery_reconcile refused: linked caller must be privileged or configured as both an integratePrincipal and prunePrincipal",
+          ));
+        }
+        const result = await deps.gitDelivery.projection.reconcile(projection.deliveryId);
+        return ok(JSON.stringify({ ok: true, deliveryId: projection.deliveryId, result }, null, 2));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
     "delivery_salvage",
     {
       description: "Governed recovery for a canonical Delivery held by a dead execution. Caller authority is Bridge-resolved. Enter quarantines a held lease; salvage creates a recovery reservation; abandon_without_worktree performs the approval-only terminal disposition.",
