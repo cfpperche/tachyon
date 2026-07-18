@@ -19,7 +19,7 @@ Pi deliberately has no built-in MCP client. Tachyon's extension opens the local 
 | Transcript capture / resume | ✓ | Tachyon-minted `--session-id`, exact `--session <id>`, sessions inside the private home |
 | Default private home | ✓ | `PI_CODING_AGENT_DIR=.tachyon/harness/<agent>` plus private `sessions/` |
 | Credential isolation | ✓/~ | Initial regular mode-0600 copy; later refresh is agent-local and intentionally not synchronized |
-| Fork | ~ | Native `--session-id B --fork <exact-A-path>`; unit + real Pi A→B→Resume proof passed, human Dev Host pending |
+| Fork | ✓ | Native `--session-id B --fork <exact-A-path>`; unit, real Pi and human Dev Host A→B→independent Resume passed |
 | Normalized Activity | ✓ | Exact private JSONL → `piNormalizer` → bounded durable `ActivityLogWriter`; automated and Dev Host visual dogfood passed |
 | Attention / composer | ✓ | Measured framed editor profile; automated tmux and Dev Host idle/draft proof passed |
 | Graceful Stop | ✓ | Measured Escape → Ctrl+C → Ctrl+D sequence; idle/draft/active tmux and Dev Host proof passed |

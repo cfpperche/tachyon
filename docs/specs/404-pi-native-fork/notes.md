@@ -26,6 +26,15 @@
   - Bundled extension recorded positive ownership for A and B.
   - Separate `--session A` and `--session B` processes both recovered the inherited context from distinct private directories.
 
+## Human Dev Host evidence
+
+- Target: isolated SDD 404 fixture, worktree build `397cea17`, 2026-07-18.
+- `pi-a` UUID `5ad5f124-e7ca-4e43-bf00-fa06bb0cc9a8` established codeword `COBALT-404-FORK`.
+- Tachyon's existing Fork action created persistent sibling `pi-a-fork-1`, UUID `6db24a47-7db7-4011-a891-24c8ca98f9c3`, with wired Bridge generation 28 and its own private session directory.
+- B's header points `parentSession` at A's exact private JSONL; both transcripts contain the inherited codeword.
+- Positive ownership rows identify A and B by exact UUID/path/cwd. Later startup rows for the same UUIDs prove separate Stop→Resume launches; the human confirmed both retained context.
+- Human verdict: all expected Fork and independent Resume behavior passed.
+
 ## Scope reminders
 
 - Tachyon Fork clones the current active branch into a sibling session, matching the existing product action. It does not expose Pi's interactive earlier-user-message `/fork` selector.

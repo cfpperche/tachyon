@@ -24,7 +24,7 @@
 
 **Dogfood:** `node scripts/dogfood/pi-native-fork.mjs`
 
-**Human dogfood:** In an isolated Dev Host, create context in Pi A, invoke Tachyon Fork, confirm B opens with inherited context and distinct home/UUID, then Stop→Resume both independently.
+**Human dogfood:** ✓ Isolated Dev Host at `397cea17`: Pi A stored `COBALT-404-FORK`; Tachyon Fork created B with inherited context and distinct home/UUID; Stop→Resume of both independently retained the codeword.
 
 ## Visual QA
 
