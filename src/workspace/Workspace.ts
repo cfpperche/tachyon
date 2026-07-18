@@ -115,6 +115,7 @@ import { ContinuityStore } from "../continuity/ContinuityStore.js";
 import { ProjectHandoffStore } from "../handoff/ProjectHandoffStore.js";
 import { ContinuityState } from "../continuity/ContinuityState.js";
 import { classifyInjection, injectionText, type Transition } from "../continuity/classifier.js";
+import { gcOrphanAgentFootprints } from "../continuity/orphanGc.js";
 import { agentLogId } from "../activity/logStore.js";
 import { compactSessionOwnerRows, compactSpawnSettings, latestOwnerFor, persistenceHookFailureFile, readPersistenceHookFailures, readSessionOwners, sessionOwnersFile } from "../activity/sessionOwners.js";
 import { forgetAgent as forgetAgentFootprint } from "../agents/forgetAgent.js";
@@ -2623,6 +2624,31 @@ export class Workspace {
     this.continuityState.remove(agent);
   }
 
+  /**
+   * t-8310ca — drop continuity brief/state (+ matching activity logs) for agent names that are not
+   * declared, not live in tmux, and not in the session ledger. Complements forgetAgent when dismiss
+   * never ran. Best-effort; never blocks activation.
+   */
+  private gcOrphanAgentFootprints(live: Set<string>): void {
+    try {
+      const known = new Set<string>([...live, ...this.ledger.all().keys(), ...Object.keys(this.config?.agents ?? {})]);
+      const result = gcOrphanAgentFootprints({
+        workspaceRoot: this.workspaceRoot,
+        knownAgents: known,
+        dryRun: false,
+        activity: true,
+      });
+      if (result.orphans.length > 0) {
+        console.info(
+          `[tachyon t-8310ca] orphan footprint GC: removed ${result.orphans.length} continuity name(s)` +
+            (result.removedActivity.length ? ` (+ activity)` : ""),
+        );
+      }
+    } catch {
+      /* never block start */
+    }
+  }
+
   /** Canonical declared-agent removal tail. Caller owns deleting the tachyon.yml entry first. */
   forgetAgent(name: string): void {
     forgetAgentFootprint(name, {
@@ -3967,6 +3993,7 @@ export class Workspace {
     const declaredInConfig = new Set(Object.keys(this.config?.agents ?? {}));
     this.gcLedger(declaredInConfig, liveSessions); // spec 239: prune stale declared rows
     this.compactSessionOwners(declaredInConfig, liveSessions); // t-123143: prune stale session-owner rows
+    this.gcOrphanAgentFootprints(liveSessions); // t-8310ca: continuity (+ activity) for names no longer known
     await this.rehydratePipelines(); // spec 230: restore pipeline runs so a reloaded run's surviving nodes can still complete
     // SDD 368 T14/R4 — recompute after ledger rehydration/GC (same attempt helper as _create).
     // Reflects post-rehydrate truth and allows a prior failed create/start to become ready.
