@@ -1070,9 +1070,11 @@ function reapAbandonedVerificationClones(parent: string, workspaceHash: string):
 }
 
 function isolatedVerificationEnvironment(root: string, ownedPath: string, checkoutPath: string): NodeJS.ProcessEnv {
-  const temporary = path.join(ownedPath, "tmp");
-  const cache = path.join(ownedPath, "cache");
-  for (const directory of [temporary, cache]) {
+  // Keep temp names short: nested dogfood (tmux AF_UNIX sockets) must stay under ~108 bytes total.
+  const temporary = path.join(ownedPath, "x");
+  const cache = path.join(ownedPath, "c");
+  const tmuxTmp = path.join(ownedPath, "t");
+  for (const directory of [temporary, cache, tmuxTmp]) {
     fs.mkdirSync(directory, { mode: 0o700 });
   }
 
@@ -1092,6 +1094,8 @@ function isolatedVerificationEnvironment(root: string, ownedPath: string, checko
     TMPDIR: temporary,
     TMP: temporary,
     TEMP: temporary,
+    // Prefer a shallow socket root even when TMPDIR is nested under the verification clone.
+    TMUX_TMPDIR: tmuxTmp,
     XDG_CACHE_HOME: cache,
     npm_config_cache: path.join(cache, "npm"),
     NPM_CONFIG_CACHE: path.join(cache, "npm"),
@@ -1134,7 +1138,10 @@ async function runAtIsolatedSha<T>(
 ): Promise<T> {
   const root = fs.realpathSync(workspaceRoot);
   const workspaceHash = crypto.createHash("sha256").update(root).digest("hex").slice(0, 24);
-  const parent = path.join(os.tmpdir(), `tachyon-verification-${workspaceHash}`);
+  // t-b3ca7e: AF_UNIX path limit (~108). Old `tachyon-verification-<24hex>` + nested dogfood
+  // TMUX sockets overflowed ("File name too long") and poisoned full verify under hermetic clones.
+  // Keep owner.json workspaceHash at 24 hex; path segment is a short, collision-resistant prefix.
+  const parent = path.join(os.tmpdir(), `tv-${workspaceHash.slice(0, 12)}`);
   fs.mkdirSync(parent, { recursive: true, mode: 0o700 });
   const parentStat = fs.lstatSync(parent);
   if (parentStat.isSymbolicLink() || !parentStat.isDirectory()) {
