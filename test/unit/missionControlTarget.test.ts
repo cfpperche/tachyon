@@ -55,16 +55,18 @@ describe("Workspace Mission Control target", () => {
       expect: { "t-abc123": "2026-07-14T12:00:00.000Z" },
     });
     await target.closeValidation("v-abc123", { outcome: "passed", result_note: "dogfood passed" });
+    await target.assignValidation("v-abc123", "codex", { assignee: null, updatedAt: "2026-07-14T12:00:00.000Z" });
 
     expect(fake.invocations.map((entry) => entry.command.method)).toEqual([
-      "task.update", "task.reorder-lane", "validation.close",
+      "task.update", "task.reorder-lane", "validation.close", "validation.assign",
     ]);
     expect(fake.invocations.map((entry) => entry.operationId)).toEqual([
       expect.stringMatching(/^mission-control:[0-9a-f-]{36}$/),
       expect.stringMatching(/^mission-control:[0-9a-f-]{36}$/),
       expect.stringMatching(/^mission-control:[0-9a-f-]{36}$/),
+      expect.stringMatching(/^mission-control:[0-9a-f-]{36}$/),
     ]);
-    expect(new Set(fake.invocations.map((entry) => entry.operationId)).size).toBe(3);
+    expect(new Set(fake.invocations.map((entry) => entry.operationId)).size).toBe(4);
   });
 
   it("does not turn a typed engine refusal into apparent success", async () => {

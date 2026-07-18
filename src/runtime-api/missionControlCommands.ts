@@ -34,6 +34,12 @@ export interface MissionControlValidationCloseInputV1 {
   result_note: string;
 }
 
+export interface MissionControlValidationAssignInputV1 {
+  id: string;
+  assignee: string;
+  expect?: { assignee?: string | null; updatedAt?: string };
+}
+
 const TASK_PATCH_KEYS = [
   "status", "priority", "rank", "assignee", "expect",
 ] as const;
@@ -74,6 +80,19 @@ export function isMissionControlValidationCloseInputV1(value: unknown): value is
     && VALIDATION_ID_RE.test(value.id)
     && isValidationOutcome(value.outcome)
     && boundedText(value.result_note, 1, 4_000);
+}
+
+export function isMissionControlValidationAssignInputV1(value: unknown): value is MissionControlValidationAssignInputV1 {
+  if (!isRecord(value)) return false;
+  const expected = ["id", "assignee"];
+  if (value.expect !== undefined) expected.push("expect");
+  if (!hasOnlyKeys(value, expected)
+    || typeof value.id !== "string" || !VALIDATION_ID_RE.test(value.id)
+    || !boundedText(value.assignee, 1, 64)) return false;
+  if (value.expect === undefined) return true;
+  if (!isRecord(value.expect) || !hasOnlyKeys(value.expect, ["assignee", "updatedAt"])) return false;
+  return nullableBoundedText(value.expect.assignee, 64)
+    && (value.expect.updatedAt === undefined || isTimestamp(value.expect.updatedAt));
 }
 
 function isTaskUpdateExpect(value: unknown): value is TaskUpdateExpect {

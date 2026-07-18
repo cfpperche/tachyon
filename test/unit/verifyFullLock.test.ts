@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+// The production runner is intentionally plain ESM and has no separate declaration surface.
+// @ts-expect-error -- importing the owned .mjs runner directly is the behavior under test.
 import { acquireVerifyFullLock, VITEST_MAX_WORKERS } from "../../scripts/verify-full.mjs";
 
 describe("verify-full control-plane protection (t-6a9bc4 slice-1)", () => {

@@ -9,9 +9,8 @@ import type { CockpitStrings } from "./messages";
 import { Button } from "../shared/ui";
 import { App as MissionControlApp, type MissionControlDispatch, type TaskErrorEvent } from "../mission-control/App";
 import type { MissionControlVM } from "../mission-control/messages";
-import { ValidationQueue, type ValidationCloseState } from "../shared/ValidationQueue";
-import { buildBoardModel } from "../../tasks/boardModel";
-import { useMemo, useState } from "preact/hooks";
+import { App as ValidationsApp, type ValidationsDispatch } from "../validations/App";
+import type { ValidationsViewModel } from "../validations/viewModel";
 import { App as ApprovalsApp, type ApprovalDispatch } from "../approval/App";
 import type { ApprovalViewModel } from "../approval/viewModel";
 import { App as RuntimeOpsApp } from "../runtime-ops/App";
@@ -53,6 +52,9 @@ export interface CockpitAppProps {
   approvalVm?: ApprovalViewModel;
   approvalError?: string;
   approvalDispatch: ApprovalDispatch;
+  validationsVm?: ValidationsViewModel;
+  validationsError?: string;
+  validationsDispatch: ValidationsDispatch;
   runtimeSnapshot?: RuntimeOpsSnapshot;
   onRuntimeSetProviderObservation: (provider: RuntimeOpsProviderV2, enabled: boolean) => void;
   inspector: Pick<
@@ -237,11 +239,6 @@ export function App(p: CockpitAppProps) {
   if (!s) return <div class="ds-empty" />;
   const m = p.model;
   const section = m?.section ?? "overview";
-  const [validationClose, setValidationClose] = useState<ValidationCloseState | null>(null);
-  const boardModel = useMemo(
-    () => (p.missionVm?.snapshot ? buildBoardModel({ snapshot: p.missionVm.snapshot }) : undefined),
-    [p.missionVm?.snapshot],
-  );
 
   let body: ComponentChildren = null;
   if (!m) {
@@ -428,19 +425,7 @@ export function App(p: CockpitAppProps) {
   } else if (section === "validations") {
     body = (
       <div class="ck-embed-host" data-testid="control-validations-host">
-        <ValidationQueue
-          layout="page"
-          validations={boardModel?.validations}
-          closeState={validationClose}
-          onSelect={(id) => setValidationClose({ id, outcome: "passed", note: "" })}
-          onChange={(patch) => setValidationClose((cur) => (cur ? { ...cur, ...patch } : cur))}
-          onCancel={() => setValidationClose(null)}
-          onSubmit={() => {
-            if (!validationClose || !validationClose.note.trim()) return;
-            p.missionDispatch.closeValidation(validationClose.id, validationClose.outcome, validationClose.note.trim());
-            setValidationClose(null);
-          }}
-        />
+        <ValidationsApp vm={p.validationsVm} error={p.validationsError} dispatch={p.validationsDispatch} />
       </div>
     );
   } else if (section === "worktrees") {

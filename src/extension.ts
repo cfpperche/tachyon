@@ -14,6 +14,7 @@ import {
   openCockpit,
   refreshCockpitMissionBoard,
   refreshCockpitApprovals,
+  refreshCockpitValidations,
   COCKPIT_VIEW_TYPE,
   type CockpitPanelState,
   type CockpitDeps,
@@ -1309,6 +1310,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         notify(`approval request ${id} ${decision}`);
         refreshAll();
         refreshCockpitApprovals();
+      },
+    },
+    validations: {
+      getWorkspaces: () => workspaces().map((ws) => ws.missionControl),
+      onValidationsChanged: () => {
+        refreshCockpitValidations();
+        refreshCockpitMissionBoard();
       },
     },
     runtimeOps: {

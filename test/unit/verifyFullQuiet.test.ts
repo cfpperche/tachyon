@@ -45,7 +45,8 @@ function workspace(buildSource = "", vitestSource?: string) {
 
 function execute(root: string, env: Record<string, string> = {}) {
   return new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve, reject) => {
-    const child = spawn(process.execPath, [runner], { cwd: root, env: { ...process.env, FAKE_REPORT: JSON.stringify(passingReport), ...env } });
+    const lockPath = path.join(root, "verify-full.lock");
+    const child = spawn(process.execPath, [runner], { cwd: root, env: { ...process.env, TACHYON_VERIFY_FULL_LOCK_PATH: lockPath, FAKE_REPORT: JSON.stringify(passingReport), ...env } });
     let stdout = ""; let stderr = "";
     child.stdout.on("data", (chunk) => { stdout += chunk; });
     child.stderr.on("data", (chunk) => { stderr += chunk; });
@@ -135,7 +136,7 @@ describe("quiet full verification", () => {
       process.on("SIGTERM", () => process.exit(0));
       setInterval(() => {}, 1000);
     `);
-    const child = spawn(process.execPath, [runner], { cwd: root });
+    const child = spawn(process.execPath, [runner], { cwd: root, env: { ...process.env, TACHYON_VERIFY_FULL_LOCK_PATH: path.join(root, "verify-full.lock") } });
     let stderr = "";
     child.stderr.on("data", (chunk) => { stderr += chunk; });
     for (let index = 0; index < 100 && !fs.existsSync(path.join(root, "ready")); index++) await new Promise((resolve) => setTimeout(resolve, 10));

@@ -421,6 +421,13 @@ async function executeWorkspaceCommand(
     });
     return workspaceCommandSuccessV1(command);
   }
+  if (command.method === "validation.assign") {
+    await workspace.validationStore.update(command.input.id, {
+      assignee: command.input.assignee,
+      ...(command.input.expect ? { expect: command.input.expect } : {}),
+    });
+    return workspaceCommandSuccessV1(command);
+  }
   if (command.method === "task.prototype.review") {
     await reviewTaskPrototype(workspace.workspaceRoot, workspace.taskStore, command.input);
     // Unlike task.update, a note/rejection may mutate only attachments/<task>/prototypes.json, outside the

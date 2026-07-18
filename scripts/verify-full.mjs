@@ -10,7 +10,7 @@ export const FAILURE_LIMITS = Object.freeze({ assertions: 10, assertionBytes: 2 
 export const VITEST_MAX_WORKERS = Math.max(1, Math.min(4, cpus().length || 1));
 
 /** t-6a9bc4: at most one full-suite gate host-wide (verify_task + agent contracts share this entrypoint). */
-export const VERIFY_FULL_LOCK_PATH = path.join(tmpdir(), "tachyon-verify-full.lock");
+export const VERIFY_FULL_LOCK_PATH = process.env.TACHYON_VERIFY_FULL_LOCK_PATH || path.join(tmpdir(), "tachyon-verify-full.lock");
 
 export function acquireVerifyFullLock(lockPath = VERIFY_FULL_LOCK_PATH) {
   try {

@@ -4,8 +4,8 @@ import type { ReorderLaneInput, TaskStore } from "../tasks/TaskStore.js";
 import type { TaskPriority, TaskStatus } from "../tasks/types.js";
 import { missionControlBoardSnapshot } from "../runtime-api/missionControlProjection.js";
 import type { MissionControlTaskPatchV1 } from "../runtime-api/missionControlCommands.js";
-import type { ValidationCloseInput } from "../validations/types.js";
-import type { ValidationStore } from "../validations/ValidationStore.js";
+import type { Validation, ValidationCloseInput, ValidationUpdateExpect } from "../validations/types.js";
+import { ValidationStore } from "../validations/ValidationStore.js";
 import type { WorkspaceClient } from "./WorkspaceClient.js";
 import { workspacePresentationTarget, type WorkspacePresentationTarget } from "./WorkspacePresentation.js";
 
@@ -23,6 +23,8 @@ export interface WorkspaceMissionControlTarget extends WorkspacePresentationTarg
   updateTask(id: string, patch: MissionControlTaskPatchV1): Promise<void>;
   reorderLane(status: TaskStatus, priority: TaskPriority | undefined, input: Pick<ReorderLaneInput, "orderedIds" | "expect">): Promise<void>;
   closeValidation(id: string, input: Pick<ValidationCloseInput, "outcome"> & { result_note: string }): Promise<void>;
+  listValidations(): Validation[];
+  assignValidation(id: string, assignee: string, expect?: ValidationUpdateExpect): Promise<void>;
 }
 
 export interface LegacyMissionControlSource extends WorkspacePresentationTarget {
@@ -50,6 +52,8 @@ export function legacyMissionControlTarget(source: LegacyMissionControlSource): 
     updateTask: async (id, patch) => { await source.taskStore.update(id, patch); },
     reorderLane: async (status, priority, input) => { await source.taskStore.reorderLane(status, priority, input); },
     closeValidation: async (id, input) => { await source.validationStore.closeRound(id, input); },
+    listValidations: () => source.validationStore.list(),
+    assignValidation: async (id, assignee, expect) => { await source.validationStore.update(id, { assignee, ...(expect ? { expect } : {}) }); },
   };
 }
 
@@ -88,6 +92,12 @@ export function workspaceMissionControlTarget(client: WorkspaceClient): Workspac
       schemaVersion: 1,
       method: "validation.close",
       input: { id, outcome: input.outcome, result_note: input.result_note },
+    }),
+    listValidations: () => new ValidationStore(client.workspaceRoot).list(),
+    assignValidation: (id, assignee, expect) => invoke({
+      schemaVersion: 1,
+      method: "validation.assign",
+      input: { id, assignee, ...(expect ? { expect } : {}) },
     }),
   };
 }

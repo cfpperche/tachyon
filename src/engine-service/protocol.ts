@@ -47,9 +47,11 @@ import {
   isMissionControlTaskReorderInputV1,
   isMissionControlTaskUpdateInputV1,
   isMissionControlValidationCloseInputV1,
+  isMissionControlValidationAssignInputV1,
   type MissionControlTaskReorderInputV1,
   type MissionControlTaskUpdateInputV1,
   type MissionControlValidationCloseInputV1,
+  type MissionControlValidationAssignInputV1,
 } from "../runtime-api/missionControlCommands.js";
 import {
   isMissionControlViewV1,
@@ -231,6 +233,7 @@ export type WorkspaceCommandMethodV1 =
   | "task.update"
   | "task.reorder-lane"
   | "validation.close"
+  | "validation.assign"
   | "task.prototype.review"
   | "task.studio.apply"
   | "task.studio.cancel"
@@ -312,6 +315,10 @@ export type WorkspaceCommandV1 = {
   schemaVersion: 1;
   method: "task.reorder-lane";
   input: MissionControlTaskReorderInputV1;
+} | {
+  schemaVersion: 1;
+  method: "validation.assign";
+  input: MissionControlValidationAssignInputV1;
 } | {
   schemaVersion: 1;
   method: "validation.close";
@@ -612,6 +619,7 @@ const WORKSPACE_COMMAND_METHODS = new Set<WorkspaceCommandMethodV1>([
   "studio.submit",
   "task.update",
   "task.reorder-lane",
+  "validation.assign",
   "validation.close",
   "task.prototype.review",
   "task.studio.apply",
@@ -707,6 +715,7 @@ export function isWorkspaceCommandV1(value: unknown): value is WorkspaceCommandV
   if (value.method === "task.update") return isMissionControlTaskUpdateInputV1(value.input);
   if (value.method === "task.reorder-lane") return isMissionControlTaskReorderInputV1(value.input);
   if (value.method === "validation.close") return isMissionControlValidationCloseInputV1(value.input);
+  if (value.method === "validation.assign") return isMissionControlValidationAssignInputV1(value.input);
   if (value.method === "task.prototype.review") return isTaskPrototypeReviewInputV1(value.input);
   if (value.method === "task.studio.apply") return isTaskStudioApplyInputV1(value.input);
   if (value.method === "task.studio.cancel") return isTaskStudioCancelInputV1(value.input);
