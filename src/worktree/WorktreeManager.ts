@@ -11,6 +11,7 @@
  */
 
 import { execFile } from "node:child_process";
+import { AsyncLocalStorage } from "node:async_hooks";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -272,6 +273,8 @@ export interface EnsureOptions {
  */
 export class WorktreeManager {
   private locks = new Map<string, Promise<unknown>>();
+  /** t-3fb6eb: path keys held by the current async context — reentrant for nested same-path ops (prune→remove). */
+  private readonly heldPathLocks = new AsyncLocalStorage<ReadonlySet<string>>();
 
   constructor(
     private readonly opts: {
@@ -298,8 +301,24 @@ export class WorktreeManager {
   /** Serialize all worktree ops for one agent (spawn/restart/setup/remove). */
   private withLock<T>(worktreePath: string, fn: () => Promise<T>): Promise<T> {
     const key = this.canonicalLockKey(worktreePath);
+    const held = this.heldPathLocks.getStore();
+    if (held?.has(key)) {
+      // Already owning this path in the current async context — reenter without queueing.
+      return fn();
+    }
     const prev = this.locks.get(key) ?? Promise.resolve();
-    const next = prev.then(fn, fn);
+    const next = prev.then(
+      () => {
+        const nextHeld = new Set(held ?? []);
+        nextHeld.add(key);
+        return this.heldPathLocks.run(nextHeld, fn);
+      },
+      () => {
+        const nextHeld = new Set(held ?? []);
+        nextHeld.add(key);
+        return this.heldPathLocks.run(nextHeld, fn);
+      },
+    );
     this.locks.set(
       key,
       next.then(

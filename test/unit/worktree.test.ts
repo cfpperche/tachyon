@@ -32,6 +32,19 @@ describe("WorktreeManager — pure resolvers (spec 210)", () => {
     expect(entered).toBe(true);
   });
 
+  it("allows nested same-path lock acquisition (prune holds path lock then remove re-enters)", async () => {
+    // t-3fb6eb: DeliveryProjectionService.prune -> withWorktreeLock -> removeManagedWorktree -> remove
+    // must not deadlock on the non-reentrant promise-chain mutex.
+    const manager = new WorktreeManager({ workspaceRoot: "/repo", wsHash: "abc123",
+      getSettings: () => settings({ worktree: { base: "/base" } }) });
+    const path = "/base/abc123/recovprincfix";
+    let nested = false;
+    await manager.withPathLock(path, async () => {
+      await manager.withPathLock(path, async () => { nested = true; });
+    });
+    expect(nested).toBe(true);
+  });
+
   describe("resolveBase", () => {
     it("uses the configured base, expanding a leading ~", () => {
       expect(resolveBase(settings({ worktree: { base: "~/wt" } }), {}, "/home/me")).toBe("/home/me/wt");
