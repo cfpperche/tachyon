@@ -6,6 +6,13 @@ Marketplace release notes.
 
 ## Unreleased
 
+## 0.56.28 — Persistent control peer auth (t-faa36e)
+
+### Security
+- **Engine control socket** requires a per-daemon 0600 nonce sidecar with
+  timing-safe verification before request dispatch (dir perms no longer sole
+  auth boundary).
+
 ## 0.56.27 — Drop stale queued notify after sender death (t-99ccc9)
 
 ### Fixed
