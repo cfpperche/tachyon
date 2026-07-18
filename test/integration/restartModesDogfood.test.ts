@@ -4,7 +4,6 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { AgentManager } from "../../src/agents/AgentManager.js";
 import { parseConfig } from "../../src/config/loadConfig.js";
@@ -16,6 +15,7 @@ import {
   sessionName,
   workspaceHash,
 } from "../../src/tmux/TmuxService.js";
+import { makeSocketTemp } from "../helpers/socketTemp.js";
 
 const EVIDENCE_DIR = path.resolve(".tachyon/evidence/restart-modes-dogfood");
 
@@ -33,9 +33,10 @@ describe("spec 389 headless dogfood — restart matrix (real tmux)", () => {
   const evidence: Record<string, unknown>[] = [];
 
   beforeAll(() => {
-    base = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-restart-modes-dogfood-"));
-    workspace = path.join(base, "workspace");
-    tmuxTmp = path.join(base, "tmux");
+    // Short /tmp root independent of a deep verifier TMPDIR (AF_UNIX ~108; t-b3ca7e).
+    base = makeSocketTemp("trmd-");
+    workspace = path.join(base, "ws");
+    tmuxTmp = path.join(base, "t");
     prevTmuxTmpdir = process.env.TMUX_TMPDIR;
     prevTmux = process.env.TMUX;
     prevPane = process.env.TMUX_PANE;

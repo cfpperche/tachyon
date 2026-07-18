@@ -50,6 +50,9 @@ describe("DaemonStateStore", () => {
   it("refuses state roots that are accessible by other users", () => {
     const storage = path.join(root(), "unsafe");
     fs.mkdirSync(storage, { mode: 0o755 });
+    // mkdir mode is umask-masked; force group/world bits so the refusal is hermetic under umask 077
+    // (verify_task isolated clones often run with a restrictive umask — t-b3ca7e).
+    fs.chmodSync(storage, 0o755);
     expect(() => new DaemonStateStore(storage)).toThrow(/unsafe/);
   });
 });

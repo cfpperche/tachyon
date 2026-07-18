@@ -123,7 +123,7 @@ function write(file: string, body: string): void {
 function verificationCloneParent(repo: string): string {
   const root = fs.realpathSync(repo);
   const workspaceHash = crypto.createHash("sha256").update(root).digest("hex").slice(0, 24);
-  return path.join(os.tmpdir(), `tachyon-verification-${workspaceHash}`);
+  return path.join(os.tmpdir(), `tv-${workspaceHash.slice(0, 12)}`);
 }
 
 function makeRepo(initial = "old"): { repo: string; wt: string; baseSha: string } {
