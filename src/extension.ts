@@ -926,6 +926,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.extensionUri,
     () => workspaces().map((ws) => ws.sidebar),
     context.globalState,
+    (context.extension.packageJSON as { version?: string }).version,
   );
   const runtimeOps = new RuntimeOpsViewProvider(
     context.extensionUri,

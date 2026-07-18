@@ -30,8 +30,30 @@
   .handoff-btn:hover { background: var(--hover); color: var(--vscode-foreground); }
 
   /* cmd+K trigger — styled as an Agent-Studio input */
+  .brand-bar {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 2px 12px 0;
+    font-size: 11px;
+    user-select: none;
+  }
+  .brand-name {
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--vscode-foreground);
+    opacity: 0.85;
+  }
+  .brand-ver {
+    font-family: var(--ds-mono, ui-monospace, monospace);
+    font-size: 10px;
+    color: var(--ds-muted);
+    opacity: 0.95;
+  }
   .kbar { margin: 4px 8px 6px; display: flex; align-items: center; gap: 6px; padding: 5px 8px; background: var(--vscode-input-background); color: var(--ds-muted); border: 1px solid var(--vscode-input-border, var(--ds-border)); border-radius: 3px; cursor: text; }
-  .kbar, .tabs, .sec { flex: 0 0 auto; }
+  .kbar, .tabs, .sec, .brand-bar { flex: 0 0 auto; }
   .kbar:hover { border-color: var(--ds-focus); }
   .kbar .codicon { font-size: 13px; }
   .kbar .kgrow { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }

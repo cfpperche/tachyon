@@ -86,6 +86,8 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     private readonly extensionUri: vscode.Uri,
     private readonly getWorkspaces: () => WorkspaceSidebarTarget[],
     private readonly memento?: vscode.Memento, // spec 242 — persists the sort prefs (context.globalState)
+    /** t-38c2a1 — extension package version shown in the sidebar header. */
+    private readonly appVersion?: string,
   ) {}
 
   private sortCache?: SortPrefs; // synchronous mirror so overlapping setSort writes don't lose a section (codex)
@@ -101,6 +103,11 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     this.view = view;
     const root = vscode.Uri.joinPath(this.extensionUri, "dist", "webview");
     view.webview.options = { enableScripts: true, localResourceRoots: [root] };
+    // t-38c2a1 — surface running VSIX version in the VS Code view chrome (next to "Tachyon").
+    if (this.appVersion) {
+      view.title = "Tachyon";
+      view.description = `v${this.appVersion}`;
+    }
     const uri = (f: string): string => view.webview.asWebviewUri(vscode.Uri.joinPath(root, f)).toString();
     view.webview.onDidReceiveMessage((m: SidebarMsg) => void this.handleMessage(m));
     // spec 280 — the sidebar VIEW keeps its bespoke CSP via the shell: img `blob:` + script-src nonce-only (no cspSource).
@@ -152,7 +159,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     this.lastFleets = fleets;
     // spec 242 — prefs travel WITH the fleet so the first render is already in the saved order (D8 no flicker).
     // spec 278 — built via the shared envelope so a `fleet`-shape drift breaks the build, not the preview harness.
-    void view.webview.postMessage(fleetMessage(this.lastFleets, this.sortPrefs(), this.collapsedKeys()));
+    void view.webview.postMessage(fleetMessage(this.lastFleets, this.sortPrefs(), this.collapsedKeys(), this.appVersion));
   }
 
   private async handleMessage(m: SidebarMsg): Promise<void> {

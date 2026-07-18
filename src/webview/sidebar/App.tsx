@@ -786,7 +786,7 @@ function NoticeStrip({ fleets, dispatch }: { fleets: FleetVM[]; dispatch?: Dispa
   );
 }
 
-export function App({ fleets = [SAMPLE], dispatch, prefs = {}, collapsedKeys = [] }: { fleets?: FleetVM[]; dispatch?: Dispatch; prefs?: { agents?: string; terminals?: string }; collapsedKeys?: string[] }) {
+export function App({ fleets = [SAMPLE], dispatch, prefs = {}, collapsedKeys = [], appVersion }: { fleets?: FleetVM[]; dispatch?: Dispatch; prefs?: { agents?: string; terminals?: string }; collapsedKeys?: string[]; appVersion?: string }) {
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [tab, setTab] = useState<TabId>("Agents");
   const [open, setOpen] = useState(false);
@@ -965,6 +965,12 @@ export function App({ fleets = [SAMPLE], dispatch, prefs = {}, collapsedKeys = [
 
   return (
     <>
+      {appVersion && (
+        <div class="brand-bar" title={`Tachyon extension v${appVersion}`}>
+          <span class="brand-name">Tachyon</span>
+          <span class="brand-ver">v{appVersion}</span>
+        </div>
+      )}
       <div class="kbar" id="kbar-trigger" role="button" tabindex={0} aria-label={`Search agents, commands, pins (${isMac ? "Cmd K" : "Ctrl K"})`}
         onClick={() => setOpen(true)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpen(true); } }}>
         <Icon name="search" /><span class="kgrow">Search agents, commands, pins…</span><span class="kbd">{isMac ? "⌘K" : "Ctrl K"}</span>

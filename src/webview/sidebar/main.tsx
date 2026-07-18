@@ -25,6 +25,7 @@ function Root() {
   // render is already in the saved order (no name-asc→saved flicker).
   const [prefs, setPrefs] = useState<{ agents?: string; terminals?: string }>({});
   const [collapsedKeys, setCollapsedKeys] = useState<string[]>([]);
+  const [appVersion, setAppVersion] = useState<string | undefined>(undefined);
   useEffect(() => {
     let gotFleet = false;
     let retry: number | undefined;
@@ -44,6 +45,7 @@ function Root() {
         setFleets(d.fleets); // [] = no workspace → App shows an empty state
         if (d.prefs) setPrefs(d.prefs);
         setCollapsedKeys(Array.isArray(d.collapsedKeys) ? d.collapsedKeys : []);
+        if (typeof d.appVersion === "string" && d.appVersion.trim()) setAppVersion(d.appVersion.trim());
       }
     };
     const onFocus = () => requestFleet();
@@ -74,7 +76,7 @@ function Root() {
     setSort: (section: "agents" | "terminals", mode: string) => vscode?.postMessage({ type: "setSort", section, mode }),
     setCollapsedKeys: (keys: string[]) => vscode?.postMessage({ type: "setCollapsed", keys }),
   };
-  return <App fleets={fleets} dispatch={dispatch} prefs={prefs} collapsedKeys={collapsedKeys} />;
+  return <App fleets={fleets} dispatch={dispatch} prefs={prefs} collapsedKeys={collapsedKeys} appVersion={appVersion} />;
 }
 
 const root = document.getElementById("root");
