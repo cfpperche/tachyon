@@ -103,9 +103,8 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     this.view = view;
     const root = vscode.Uri.joinPath(this.extensionUri, "dist", "webview");
     view.webview.options = { enableScripts: true, localResourceRoots: [root] };
-    // t-38c2a1 option B — branding, version, and Control live in the webview brand-bar.
-    // Native view title stays package.json "Tachyon"; workbench does not allow hiding that strip.
-    view.description = undefined;
+    // t-38c2a1 — version + Control live only in native view chrome (title + view/title menu).
+    this.applyNativeTitle(view);
     const uri = (f: string): string => view.webview.asWebviewUri(vscode.Uri.joinPath(root, f)).toString();
     view.webview.onDidReceiveMessage((m: SidebarMsg) => void this.handleMessage(m));
     // spec 280 — the sidebar VIEW keeps its bespoke CSP via the shell: img `blob:` + script-src nonce-only (no cspSource).
@@ -125,6 +124,12 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
         this.view = undefined;
       }
     });
+  }
+
+  /** Native header: "Tachyon - vX.Y.Z" (Control is the view/title menu action). */
+  private applyNativeTitle(view: vscode.WebviewView): void {
+    view.title = this.appVersion ? `Tachyon - v${this.appVersion}` : "Tachyon";
+    view.description = undefined;
   }
 
   /** Resolve the workspace an action targets — its folder hash (multi-root), or the first when unspecified. */
@@ -155,6 +160,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     }
     if (this.view !== view || generation !== this.pushGeneration) return;
     this.lastFleets = fleets;
+    this.applyNativeTitle(view);
     // spec 242 — prefs travel WITH the fleet so the first render is already in the saved order (D8 no flicker).
     // spec 278 — built via the shared envelope so a `fleet`-shape drift breaks the build, not the preview harness.
     void view.webview.postMessage(fleetMessage(this.lastFleets, this.sortPrefs(), this.collapsedKeys(), this.appVersion));
