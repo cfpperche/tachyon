@@ -3875,7 +3875,7 @@ export class AgentManager {
       const baseForkEnv = { ...this.opts.getExtraEnv?.(), ...tokenEnv, ...src.env, TACHYON_AGENT_NAME: forkName };
       // Preserve every existing non-Pi Fork byte/env path. Pi alone needs the newly added mandatory
       // private-home materialization before its cross-home native --fork launch.
-      const forkBuild = src.runtime === "pi"
+      const forkBuild: { cmd: string; env: Record<string, string> } = src.runtime === "pi"
         ? this.applyHarness(forkName, forkDefinition, cwd, forkCmd, baseForkEnv, preparedHarness)
         : { cmd: forkCmd, env: baseForkEnv };
       // spec 236 / SDD 405 — a fork is a normal Tachyon-spawned process: private home first, then
