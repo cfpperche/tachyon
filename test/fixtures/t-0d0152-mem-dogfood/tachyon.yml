@@ -1,0 +1,16 @@
+# Dogfood fixture t-0d0152 — agent MemoryMax scope wrap
+# Keep cmd simple: no nested bash -lc, no $$ (tmux/shell eat it).
+settings:
+  maxAgents: 4
+  agentMemoryMax: 256M
+
+agents:
+  memtest:
+    # outer systemd-run wrap adds another sh -c; keep this one layer of shell only
+    cmd: sh -c "echo memtest-started; exec sleep 3600"
+    autostart: false
+    attention: false
+  grok:
+    cmd: grok
+    autostart: false
+    attention: true
