@@ -90,7 +90,7 @@ export class MissionControlPanelManager {
 
     const panel = vscode.window.createWebviewPanel(
       MISSION_CONTROL_VIEW_TYPE,
-      `Mission Control — ${ws.folderName}`,
+      `Board — ${ws.folderName}`,
       { viewColumn: vscode.ViewColumn.Active, preserveFocus: false },
       // t-b5e6e5 — the native VS Code find widget (Ctrl+F); see notes.md for the validated caveats.
       { enableScripts: true, localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, "dist", "webview")], retainContextWhenHidden: true, enableFindWidget: true },
@@ -109,12 +109,12 @@ export class MissionControlPanelManager {
     const existing = this.panels.get(key);
     if (existing && existing.panel !== panel) existing.panel.dispose();
     const root = vscode.Uri.joinPath(this.extensionUri, "dist", "webview");
-    panel.title = `Mission Control — ${ws.folderName}`;
+    panel.title = `Board — ${ws.folderName}`;
     panel.iconPath = panelIcon(this.extensionUri, "tasklist");
     const uri = (f: string): string => panel.webview.asWebviewUri(vscode.Uri.joinPath(root, f)).toString();
     panel.webview.html = renderWebviewShell({
       cspSource: panel.webview.cspSource,
-      title: `Mission Control — ${ws.folderName}`,
+      title: `Board — ${ws.folderName}`,
       styles: [uri("codicon.css"), uri("design-system.css"), uri("vscode-theme.css"), uri("mission-control.tailwind.css"), uri("mission-control.css")],
       bundle: uri("mission-control.js"),
       mode: "live",
@@ -239,7 +239,7 @@ export class MissionControlPanelManager {
       if (value.panel === entry.panel) this.panels.delete(k);
     }
     entry.ws = target;
-    entry.panel.title = `Mission Control — ${target.folderName}`;
+    entry.panel.title = `Board — ${target.folderName}`;
     this.panels.set(target.wsHash, entry);
     entry.post();
   }

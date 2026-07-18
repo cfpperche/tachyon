@@ -26,7 +26,7 @@ export const AGENT_STATUS_FILTER_TITLE: Record<AgentStatusFilter, string> = {
   live: "Live session — process still present (running, needs, throttled, idle, stopping, stop-failed)",
   attention: "Needs you — needs input, throttled, stop-failed, awaiting human, or non-progress attention",
   stopped: "Stopped — no live session (stopped, crashed)",
-  ontask: "On task — open Mission Control task assigned to this agent",
+  ontask: "On task — open Board task assigned to this agent",
   hasfocus: "Has focus — task, spawn brief, or continuity goal projected",
 };
 
