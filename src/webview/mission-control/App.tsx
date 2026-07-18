@@ -70,7 +70,6 @@ export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastEr
   const pendingSubmit = useRef<string | null>(null);
   const lastErrorSeq = useRef<number>(-1);
   const [cardMenu, setCardMenu] = useState<CardMenuState | null>(null);
-  const [validationClose, setValidationClose] = useState<{ id: string; outcome: ValidationOutcome; note: string } | null>(null);
   const boardRef = useRef<HTMLDivElement>(null);
   const flipFirstRects = useRef<Map<string, DOMRect> | null>(null);
   const flipAnimations = useRef<WeakMap<HTMLElement, Animation>>(new WeakMap());
@@ -382,19 +381,6 @@ export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastEr
         </div>
       )}
 
-      <ValidationStrip
-        validations={model.validations}
-        closeState={validationClose}
-        onSelect={(id) => setValidationClose({ id, outcome: "passed", note: "" })}
-        onChange={(patch) => setValidationClose((s) => (s ? { ...s, ...patch } : s))}
-        onCancel={() => setValidationClose(null)}
-        onSubmit={() => {
-          if (!validationClose || !validationClose.note.trim()) { pushToast("Validation closure needs a note or evidence"); return; }
-          dispatch.closeValidation(validationClose.id, validationClose.outcome, validationClose.note.trim());
-          setValidationClose(null);
-        }}
-      />
-
       <div ref={boardRef} class="board">
         {boardScope.columns.map((col) => (
           <Column
@@ -447,72 +433,6 @@ export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastEr
 
       <CardMenu menu={cardMenu} onRun={runCardAction} onClose={() => setCardMenu(null)} />
     </div>
-  );
-}
-
-function ValidationStrip({
-  validations,
-  closeState,
-  onSelect,
-  onChange,
-  onCancel,
-  onSubmit,
-}: {
-  validations: ReturnType<typeof buildBoardModel>["validations"];
-  closeState: { id: string; outcome: ValidationOutcome; note: string } | null;
-  onSelect(id: string): void;
-  onChange(patch: Partial<{ outcome: ValidationOutcome; note: string }>): void;
-  onCancel(): void;
-  onSubmit(): void;
-}) {
-  if (!validations || (validations.pendingCount === 0 && validations.candidateCount === 0)) return null;
-  const selected = closeState ? validations.cards.find((v) => v.id === closeState.id) : undefined;
-  return (
-    <section class="validation-strip" aria-label="Validation queue">
-      <div class="validation-summary">
-        <span class="validation-icon"><Icon name="checklist" /></span>
-        <strong>Validations</strong>
-        <Badge tone={validations.pendingCount > 0 ? "warn" : "info"}>{validations.pendingCount} pending</Badge>
-        {validations.humanPendingCount > 0 && <span class="validation-count">{validations.humanPendingCount} human</span>}
-        {validations.agentPendingCount > 0 && <span class="validation-count">{validations.agentPendingCount} agent</span>}
-        {validations.candidateCount > 0 && <span class="validation-count">{validations.candidateCount} candidates</span>}
-      </div>
-      {validations.cards.length > 0 && (
-        <div class="validation-list">
-          {validations.cards.map((v) => (
-            <button key={v.id} type="button" class={`validation-pill${closeState?.id === v.id ? " selected" : ""}`} title={`${v.status} · ${v.executor}${v.assignee ? ` · ${v.assignee}` : ""}`} onClick={() => onSelect(v.id)}>
-              <span class="ref">{v.id}</span>
-              {v.type && <span class="validation-type">{v.type}</span>}
-              <span class="validation-title">{v.title}</span>
-              {v.priority !== undefined && <span class={`prio p${v.priority}`}>P{v.priority}</span>}
-            </button>
-          ))}
-        </div>
-      )}
-      {validations.cards.length === 0 && validations.candidateTitles.length > 0 && (
-        <div class="validation-list">
-          {validations.candidateTitles.map((title) => <span key={title} class="validation-pill candidate"><span class="validation-title">{title}</span></span>)}
-        </div>
-      )}
-      {selected && closeState && (
-        <div class="validation-close">
-          <span class="validation-close-title">Close {selected.id}</span>
-          <select aria-label="Validation outcome" value={closeState.outcome} onChange={(e) => onChange({ outcome: (e.currentTarget as HTMLSelectElement).value as ValidationOutcome })}>
-            <option value="passed">passed</option>
-            <option value="failed">failed</option>
-            <option value="skipped">skipped</option>
-          </select>
-          <Input
-            value={closeState.note}
-            placeholder="note or evidence ref"
-            onInput={(e) => onChange({ note: (e.currentTarget as HTMLInputElement).value })}
-            onKeyDown={(e) => { if (e.key === "Enter") onSubmit(); if (e.key === "Escape") onCancel(); }}
-          />
-          <Button icon="check" onClick={onSubmit}>Close</Button>
-          <Button icon="close" onClick={onCancel} />
-        </div>
-      )}
-    </section>
   );
 }
 

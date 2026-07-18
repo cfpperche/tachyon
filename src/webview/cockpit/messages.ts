@@ -12,6 +12,7 @@ export interface CockpitStrings {
   navFleet: string;
   navApprovals: string;
   navMission: string;
+  navValidations: string;
   navWorktrees: string;
   navDeliveries: string;
   navRuntime: string;
@@ -39,6 +40,8 @@ export interface CockpitStrings {
   approvalsHint: string;
   missionTitle: string;
   missionHint: string;
+  validationsTitle: string;
+  validationsHint: string;
   worktreesTitle: string;
   worktreesHint: string;
   deliveriesTitle: string;

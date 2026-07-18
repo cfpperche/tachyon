@@ -120,6 +120,7 @@ function strings(): CockpitStrings {
     navFleet: t("Fleet"),
     navApprovals: t("Approvals"),
     navMission: t("Mission"),
+    navValidations: t("Validations"),
     navWorktrees: t("Worktrees"),
     navDeliveries: t("Deliveries"),
     navRuntime: t("Runtime"),
@@ -147,6 +148,8 @@ function strings(): CockpitStrings {
     approvalsHint: t("Human gates that block the fleet (embedded)."),
     missionTitle: t("Mission Control"),
     missionHint: t("Full work board (embedded)."),
+    validationsTitle: t("Validations"),
+    validationsHint: t("Validation queue — close dogfoods and checks (not on the Mission board)."),
     worktreesTitle: t("Managed worktrees"),
     worktreesHint: t("Tachyon-managed checkouts — reveal and copy paths."),
     deliveriesTitle: t("Deliveries"),
@@ -336,6 +339,7 @@ function resolveApprovalWs(appr: CockpitApprovals, prefer?: string): WorkspacePr
 function sectionTitle(s: CockpitStrings, section: CockpitSectionId): string {
   const map: Partial<Record<CockpitSectionId, string>> = {
     mission: s.navMission,
+    validations: s.navValidations,
     approvals: s.navApprovals,
     plugins: s.navPlugins,
     runtime: s.navRuntime,

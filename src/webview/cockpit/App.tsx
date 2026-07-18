@@ -9,6 +9,9 @@ import type { CockpitStrings } from "./messages";
 import { Button } from "../shared/ui";
 import { App as MissionControlApp, type MissionControlDispatch, type TaskErrorEvent } from "../mission-control/App";
 import type { MissionControlVM } from "../mission-control/messages";
+import { ValidationQueue, type ValidationCloseState } from "../shared/ValidationQueue";
+import { buildBoardModel } from "../../tasks/boardModel";
+import { useMemo, useState } from "preact/hooks";
 import { App as ApprovalsApp, type ApprovalDispatch } from "../approval/App";
 import type { ApprovalViewModel } from "../approval/viewModel";
 import { App as RuntimeOpsApp } from "../runtime-ops/App";
@@ -64,7 +67,7 @@ export interface CockpitAppProps {
 }
 
 /** Tabs that host a full product surface (no ModuleChrome table / deep-link stub). */
-const EMBED_SECTIONS = new Set<CockpitSectionId>(["mission", "approvals", "runtime", "tmux", "plugins"]);
+const EMBED_SECTIONS = new Set<CockpitSectionId>(["mission", "validations", "approvals", "runtime", "tmux", "plugins"]);
 
 const TAB_META: Record<CockpitSectionId, { icon: string; navKey: keyof CockpitStrings }> = {
   overview: { icon: "dashboard", navKey: "navOverview" },
@@ -72,6 +75,7 @@ const TAB_META: Record<CockpitSectionId, { icon: string; navKey: keyof CockpitSt
   fleet: { icon: "organization", navKey: "navFleet" },
   approvals: { icon: "pass", navKey: "navApprovals" },
   mission: { icon: "checklist", navKey: "navMission" },
+  validations: { icon: "checklist", navKey: "navValidations" },
   worktrees: { icon: "folder-library", navKey: "navWorktrees" },
   deliveries: { icon: "git-commit", navKey: "navDeliveries" },
   runtime: { icon: "graph", navKey: "navRuntime" },
@@ -233,6 +237,11 @@ export function App(p: CockpitAppProps) {
   if (!s) return <div class="ds-empty" />;
   const m = p.model;
   const section = m?.section ?? "overview";
+  const [validationClose, setValidationClose] = useState<ValidationCloseState | null>(null);
+  const boardModel = useMemo(
+    () => (p.missionVm?.snapshot ? buildBoardModel(p.missionVm.snapshot) : undefined),
+    [p.missionVm?.snapshot],
+  );
 
   let body: ComponentChildren = null;
   if (!m) {
@@ -326,6 +335,9 @@ export function App(p: CockpitAppProps) {
             <Button variant="default" onClick={() => p.onSetSection("mission")}>
               {s.navMission}
             </Button>
+            <Button variant="default" onClick={() => p.onSetSection("validations")}>
+              {s.navValidations}
+            </Button>
             <Button variant="default" onClick={() => p.onSetSection("runtime")}>
               {s.navRuntime}
             </Button>
@@ -407,9 +419,28 @@ export function App(p: CockpitAppProps) {
     );
   } else if (section === "mission") {
     // Visual monolith POC: full Mission Control board in-tab (same App + host actions as standalone).
+    // t-b87bfe: Validations live on the dedicated Control → Validations tab (not on the task board).
     body = (
       <div class="ck-embed-host ck-mission-host" data-testid="control-mission-board">
         <MissionControlApp vm={p.missionVm} lastError={p.missionError} dispatch={p.missionDispatch} />
+      </div>
+    );
+  } else if (section === "validations") {
+    body = (
+      <div class="ck-embed-host" data-testid="control-validations-host">
+        <ValidationQueue
+          layout="page"
+          validations={boardModel?.validations}
+          closeState={validationClose}
+          onSelect={(id) => setValidationClose({ id, outcome: "passed", note: "" })}
+          onChange={(patch) => setValidationClose((cur) => (cur ? { ...cur, ...patch } : cur))}
+          onCancel={() => setValidationClose(null)}
+          onSubmit={() => {
+            if (!validationClose || !validationClose.note.trim()) return;
+            p.missionDispatch.closeValidation(validationClose.id, validationClose.outcome, validationClose.note.trim());
+            setValidationClose(null);
+          }}
+        />
       </div>
     );
   } else if (section === "worktrees") {
