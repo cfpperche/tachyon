@@ -101,6 +101,10 @@ export class FakeWorkspaceClient implements WorkspaceClient {
     return `http://127.0.0.1:${this.currentIdentity.bridge.port}/mcp`;
   }
 
+  async engineLogTail(): Promise<string[]> {
+    return [];
+  }
+
   get isClosed(): boolean {
     return this.closed;
   }

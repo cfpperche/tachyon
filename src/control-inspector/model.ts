@@ -17,6 +17,8 @@ export interface ControlInspectorEngineSlice {
   protocolMin?: number;
   protocolMax?: number;
   error?: string;
+  /** t-cd3626 V1 — recent daemon console lines (newest last). */
+  logTail?: string[];
 }
 
 export interface ControlInspectorBridgeSlice {
@@ -68,6 +70,8 @@ export interface ControlInspectorWorkspaceInput {
     protocol?: { min: number; max: number };
     bridge?: { instanceId: string; port: number };
   } | null;
+  /** t-cd3626 — optional daemon log tail from health. */
+  logTail?: string[];
   identityError?: string;
   agents?: { total: number; running: number };
   authConfigured?: boolean | "unknown";
@@ -123,6 +127,7 @@ function rowFromInput(input: ControlInspectorWorkspaceInput): ControlInspectorWo
       engineVersion: id.engineVersion,
       protocolMin: id.protocol?.min,
       protocolMax: id.protocol?.max,
+      ...(input.logTail && input.logTail.length > 0 ? { logTail: input.logTail } : {}),
     };
   } else {
     engine = { state: "none" };

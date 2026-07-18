@@ -85,12 +85,16 @@ export class EngineControlClient {
     return this.currentSession !== undefined;
   }
 
-  async health(): Promise<{ engine: EngineServiceIdentityV1; shellCount: number }> {
+  async health(): Promise<{ engine: EngineServiceIdentityV1; shellCount: number; logTail?: string[] }> {
     const response = await this.request({ schemaVersion: 1, op: "health", workspaceHash: this.options.hello.workspaceHash });
     const success = this.unwrap(response);
     if (success.op !== "health") throw invalidResponse("health request returned the wrong operation");
     this.assertEngineWorkspace(success.engine);
-    return { engine: success.engine, shellCount: success.shellCount };
+    return {
+      engine: success.engine,
+      shellCount: success.shellCount,
+      ...(success.logTail ? { logTail: success.logTail } : {}),
+    };
   }
 
   async attach(): Promise<EngineShellSessionV1> {

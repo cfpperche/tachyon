@@ -69,6 +69,8 @@ export interface WorkspaceClient {
   readonly snapshot: WorkspaceSnapshotEnvelopeV1;
   readonly presentation: WorkspacePresentationSnapshotV1;
   readonly bridgeUrl: string;
+  /** t-cd3626 — recent daemon console lines (best-effort). */
+  engineLogTail(): Promise<string[]>;
   sync(limit?: number): Promise<WorkspaceClientSyncResult>;
   query(query: WorkspaceQueryV1): Promise<WorkspaceQueryResultV1>;
   invoke(operationId: string, command: WorkspaceCommandV1): Promise<WorkspaceCommandResultV1>;
@@ -222,6 +224,17 @@ export class RemoteWorkspaceClient implements WorkspaceClient {
 
   get identity(): EngineServiceIdentityV1 {
     return cloneJson(this.currentIdentity);
+  }
+
+  /** t-cd3626 — recent daemon console lines from the engine process ring (best-effort). */
+  async engineLogTail(): Promise<string[]> {
+    if (this.closeRequested) return [];
+    try {
+      const health = await this.control.health();
+      return health.logTail ?? [];
+    } catch {
+      return [];
+    }
   }
 
   get snapshot(): WorkspaceSnapshotEnvelopeV1 {
