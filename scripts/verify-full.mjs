@@ -1,10 +1,52 @@
-import { chmodSync, closeSync, createReadStream, mkdtempSync, openSync, readFileSync, rmSync, statSync } from "node:fs";
+import { chmodSync, closeSync, createReadStream, mkdtempSync, openSync, readFileSync, rmSync, statSync, writeFileSync, unlinkSync, constants as fsConstants } from "node:fs";
 import { spawn } from "node:child_process";
-import { tmpdir } from "node:os";
+import { cpus, tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 export const FAILURE_LIMITS = Object.freeze({ assertions: 10, assertionBytes: 2 * 1024, totalBytes: 24 * 1024 });
+
+/** t-6a9bc4 slice-1: match vitest.config.ts maxWorkers (cap, never nproc). */
+export const VITEST_MAX_WORKERS = Math.max(1, Math.min(4, cpus().length || 1));
+
+/** t-6a9bc4: at most one full-suite gate host-wide (verify_task + agent contracts share this entrypoint). */
+export const VERIFY_FULL_LOCK_PATH = path.join(tmpdir(), "tachyon-verify-full.lock");
+
+export function acquireVerifyFullLock(lockPath = VERIFY_FULL_LOCK_PATH) {
+  try {
+    const fd = openSync(lockPath, fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_WRONLY, 0o600);
+    writeFileSync(fd, `${process.pid}\n${new Date().toISOString()}\n`);
+    closeSync(fd);
+    return {
+      path: lockPath,
+      release() {
+        try { unlinkSync(lockPath); } catch { /* best-effort */ }
+      },
+    };
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "EEXIST") {
+      let holder = "(unknown)";
+      try { holder = readFileSync(lockPath, "utf8").trim().split("\n")[0] || holder; } catch { /* ignore */ }
+      // Stale lock: holder PID gone → steal.
+      const pid = Number(holder);
+      if (Number.isFinite(pid) && pid > 0) {
+        try {
+          process.kill(pid, 0);
+        } catch {
+          try { unlinkSync(lockPath); } catch { /* ignore */ }
+          return acquireVerifyFullLock(lockPath);
+        }
+      }
+      const err = new Error(
+        `verify:full refused: another full-suite gate is already running (holder pid ${holder}). ` +
+          `t-6a9bc4 control-plane protection — wait for it to finish or remove stale ${lockPath}.`,
+      );
+      err.code = "VERIFY_FULL_BUSY";
+      throw err;
+    }
+    throw error;
+  }
+}
 
 function truncateBytes(value, limit) {
   const bytes = Buffer.from(String(value));
@@ -111,6 +153,16 @@ function readTail(file, maxBytes = 16 * 1024) {
 }
 
 export async function main() {
+  let lock;
+  try {
+    lock = acquireVerifyFullLock();
+  } catch (error) {
+    if (error && typeof error === "object" && error.code === "VERIFY_FULL_BUSY") {
+      process.stderr.write(`${error.message}\n`);
+      return 75; // EX_TEMPFAIL
+    }
+    throw error;
+  }
   const root = mkdtempSync(path.join(tmpdir(), "tachyon-verify-full-"));
   chmodSync(root, 0o700);
   const buildLog = path.join(root, "build.log");
@@ -129,7 +181,7 @@ export async function main() {
     }
     const vitestEntry = path.resolve("node_modules/vitest/vitest.mjs");
     const tests = await runChild(process.execPath,
-      [vitestEntry, "run", "--reporter=json", `--outputFile=${reportFile}`, "--silent=passed-only"], testLog, active);
+      [vitestEntry, "run", `--maxWorkers=${VITEST_MAX_WORKERS}`, "--reporter=json", `--outputFile=${reportFile}`, "--silent=passed-only"], testLog, active);
     let report;
     try { report = JSON.parse(readFileSync(reportFile, "utf8")); } catch { report = undefined; }
     if (tests.code !== 0 || tests.signal || receivedSignal || !report) {
@@ -142,6 +194,7 @@ export async function main() {
   } finally {
     process.off("SIGINT", forward);
     process.off("SIGTERM", forward);
+    lock?.release();
   }
 }
 
