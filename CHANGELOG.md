@@ -6,6 +6,13 @@ Marketplace release notes.
 
 ## Unreleased
 
+## 0.56.36 — Memory-aware heavy gates (t-019dac)
+
+### Added
+- Auto-size vitest `maxWorkers` from host free RAM (scales up if you add memory).
+- Fail-closed refuse for `verify:full` / `verify_task(full)` under memory pressure.
+- Runtime Ops summary: `hostMemAvailableMb`, `hostMemTotalMb`, `recommendedVitestWorkers`.
+
 ## 0.56.35 — Validations Control view v1 (t-da934e)
 
 ### Added
