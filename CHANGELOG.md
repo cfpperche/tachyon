@@ -6,6 +6,14 @@ Marketplace release notes.
 
 ## Unreleased
 
+## 0.56.26 — Hermetic verify path budget (t-b3ca7e)
+
+### Fixed
+- **`verify_task` full suite under deep temp clones.** Shorten clone parent to
+  `tv-<12hex>`, set `TMUX_TMPDIR`, and keep restart dogfood sockets short so
+  AF_UNIX paths stay under ~108 bytes. DaemonStateStore permission test now
+  chmod-forces group bits under restrictive umask.
+
 ## 0.56.25 — Requester cancel for pending human approvals
 
 ### Added
