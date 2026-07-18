@@ -46,6 +46,10 @@ export interface DaemonEngineHostOptions {
   requestUi?: (request: DaemonUiRequest) => Promise<unknown>;
   watchIntervalMs?: number;
   watchMaxEntries?: number;
+  /** t-ec5cd2: passive info auto-complete; default 4000. Tests may lower. */
+  noticePassiveAutoDismissMs?: number;
+  /** t-ec5cd2: exact-duplicate collapse window; default 10000. */
+  noticeDedupeWindowMs?: number;
 }
 
 export class EngineUiUnavailableError extends Error {
@@ -62,6 +66,11 @@ export class DaemonEngineHost implements EngineHost {
   private readonly watchers = new Set<HostDisposable>();
   private readonly noticeActions = new Map<string, Map<string, () => void | Promise<void>>>();
   private readonly pendingNotices = new Map<string, Extract<DaemonHostEvent, { kind: "notice" }>>();
+  /** t-ec5cd2 / spec 397: narrow exact-duplicate window (ms). */
+  private readonly noticeDedupeWindowMs: number;
+  /** t-ec5cd2 / spec 397: auto-complete passive info toasts (ms). */
+  private readonly noticePassiveAutoDismissMs: number;
+  private readonly recentNoticeKeys = new Map<string, { at: number; count: number }>();
   private noticePresentationActive = false;
   private terminalPresentation: DaemonTerminalPresentation | undefined;
   private disposed = false;
@@ -70,6 +79,8 @@ export class DaemonEngineHost implements EngineHost {
     if (!options.appVersion.trim()) throw new Error("daemon appVersion is required");
     this.store = new DaemonStateStore(options.storageRoot);
     this.settings = cloneSettings(options.settings ?? {});
+    this.noticeDedupeWindowMs = options.noticeDedupeWindowMs ?? 10_000;
+    this.noticePassiveAutoDismissMs = options.noticePassiveAutoDismissMs ?? 4_000;
   }
 
   t(message: string, ...args: (string | number | boolean)[]): string {
@@ -78,6 +89,18 @@ export class DaemonEngineHost implements EngineHost {
 
   notify(message: string, level: NotifyLevel = "info", actions: NoticeAction[] = []): void {
     this.assertActive();
+    const normalized = normalizeNoticeMessage(message);
+    const dedupeKey = `${level}\0${normalized}`;
+    this.pruneRecentNoticeKeys();
+    const recent = this.recentNoticeKeys.get(dedupeKey);
+    if (recent) {
+      recent.count += 1;
+      recent.at = Date.now();
+      // Exact duplicate inside the window: keep one toast / pending row; bump collapse count only.
+      return;
+    }
+    this.recentNoticeKeys.set(dedupeKey, { at: Date.now(), count: 1 });
+
     const id = randomUUID();
     const registered = new Map<string, () => void | Promise<void>>();
     const publicActions = actions.map((action) => {
@@ -97,7 +120,7 @@ export class DaemonEngineHost implements EngineHost {
       this.noticeActions.delete(oldest);
     }
     this.emit(event);
-    this.presentNextNotice();
+    this.schedulePresentNextNotice();
   }
 
   async invokeNoticeAction(noticeId: string, actionId: string): Promise<void> {
@@ -214,7 +237,7 @@ export class DaemonEngineHost implements EngineHost {
   replayUiRequests(): void {
     this.assertActive();
     this.terminalPresentation?.replay();
-    this.presentNextNotice();
+    this.schedulePresentNextNotice();
   }
 
   onViewsChanged(view: ViewKind): void {
@@ -247,21 +270,37 @@ export class DaemonEngineHost implements EngineHost {
     return this.options.requestUi?.(request) ?? Promise.reject(new EngineUiUnavailableError());
   }
 
+  private schedulePresentNextNotice(): void {
+    queueMicrotask(() => this.presentNextNotice());
+  }
+
   private presentNextNotice(): void {
     if (this.disposed || this.noticePresentationActive) return;
     const notice = this.pendingNotices.values().next().value as Extract<DaemonHostEvent, { kind: "notice" }> | undefined;
     if (!notice) return;
     const noticeId = notice.id;
     this.noticePresentationActive = true;
-    void this.requestUi({
+    const remaining = Math.max(0, this.pendingNotices.size - 1);
+    const displayMessage = remaining > 0
+      ? `${notice.message} (+${remaining} more)`
+      : notice.message;
+    const passive = notice.level === "info" && notice.actions.length === 0;
+    const presentPromise = this.requestUi({
       schemaVersion: 1,
       operationId: randomUUID(),
       kind: "notice.present",
       noticeId,
-      message: notice.message,
+      message: displayMessage,
       level: notice.level,
       actions: notice.actions.map((action) => ({ ...action })),
-    }).then(async (choice) => {
+    });
+    const raced = passive
+      ? Promise.race([
+          presentPromise,
+          delay(this.noticePassiveAutoDismissMs).then(() => null as unknown),
+        ])
+      : presentPromise;
+    void raced.then(async (choice) => {
       if (choice === null || choice === undefined) {
         this.pendingNotices.delete(noticeId);
         this.noticeActions.delete(noticeId);
@@ -273,10 +312,25 @@ export class DaemonEngineHost implements EngineHost {
       await this.invokeNoticeAction(noticeId, choice);
     }).catch(() => {
       // No shell, disconnect and timeout keep the notice pending for the next attach.
+      // Passive auto-dismiss must not leave a stuck active bit: still clear below in finally.
     }).finally(() => {
       this.noticePresentationActive = false;
-      if (!this.pendingNotices.has(noticeId)) this.presentNextNotice();
+      // If passive timed out while VS Code toast still open, drop pending so the queue advances.
+      if (passive && this.pendingNotices.has(noticeId)) {
+        this.pendingNotices.delete(noticeId);
+        this.noticeActions.delete(noticeId);
+      }
+      if (!this.pendingNotices.has(noticeId)) this.schedulePresentNextNotice();
+      else if (!passive) {
+        // Actionable notice failed present — leave pending for replayUiRequests.
+      }
     });
+  }
+
+  private pruneRecentNoticeKeys(now = Date.now()): void {
+    for (const [key, entry] of this.recentNoticeKeys) {
+      if (now - entry.at > this.noticeDedupeWindowMs) this.recentNoticeKeys.delete(key);
+    }
   }
 
   private assertActive(): void {
@@ -308,4 +362,12 @@ function cloneJson(value: unknown): unknown {
 
 function assertSettingAllowed(setting: string): void {
   if (!DAEMON_SETTING_KEY_SET.has(setting)) throw new Error(`setting is not allowlisted for the daemon: ${setting}`);
+}
+
+function normalizeNoticeMessage(message: string): string {
+  return message.replace(/\s+/g, " ").trim();
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
