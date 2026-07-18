@@ -7,16 +7,18 @@ import path from "node:path";
  * authorization (the case the runtime's auto-mode classifier guards — removing a safety guard, etc.)
  * escalates via the `request_human_approval` Bridge tool; the Bridge WITNESSES the escalation here, in
  * the SOURCE tree (tamper-resistant like `doorbell.ts` and canonical Delivery authority — a gated agent cannot
- * rewrite a file it never checks out), and surfaces it to the human through a PIN with the child's
- * VERBATIM payload + provenance. Resolution is HOST-SIDE ONLY (never a Bridge tool — that would let a
+ * rewrite a file it never checks out), and surfaces it to the human through Control → Approvals + host
+ * notification with the child's VERBATIM payload + provenance (checklist pins are not used for approvals).
+ * Resolution is HOST-SIDE ONLY (never a Bridge tool — that would let a
  * coordinator resolve its own escalation, which is exactly the laundering the adversarial dueto killed).
  *
  * Load-bearing design invariants (preserved here, enforced at every seam):
  *   (1) requester identity is the Bridge-resolved caller, NEVER self-declared — `recordApprovalRequest`
  *       takes the resolved caller name as a positional argument; the Bridge tool never accepts an
  *       `agent`/`requester` param.
- *   (2) the human is shown the child's VERBATIM text, never a coordinator summary — the PIN body
- *       (`composeApprovalPinDetail`) renders the four child-authored fields verbatim + provenance only.
+ *   (2) the human is shown the child's VERBATIM text, never a coordinator summary — Approvals UI
+ *       renders the four child-authored fields verbatim + provenance only (`composeApprovalPinDetail`
+ *       remains the shared text builder for that payload; optional legacy pinId on old records only).
  *   (3) resolution is host-side only, never agent-reachable — `resolveApproval` lives in this module
  *       (pure, with an `inject` callback) and is wired ONLY by the extension host's Phase 2 UI; there is
  *       no `resolve_approval` Bridge tool and `tools.ts` never imports the resolver.
@@ -110,7 +112,7 @@ export interface ApprovalRequest {
   createdAt: string;
   /** `pending` until host resolve or requester cancel. Legacy records without cancel still use pending|resolved. */
   status: ApprovalStatus;
-  /** The pin id created alongside the request — the host closes it on resolution/cancel. */
+  /** Optional legacy pin id if an older build created a checklist pin; new requests omit this. */
   pinId?: string;
   /** Set when `status === "resolved"`. */
   resolution?: ApprovalResolution;

@@ -54,9 +54,6 @@ import {
   readOwnApprovalRequest,
   cancelOwnApprovalRequest,
   appendApprovalWitnessEvent,
-  composeApprovalPinDetail,
-  composeApprovalPinTitle,
-  approvalPinTags,
 } from "./approvalRequest.js";
 import { hygieneReport, listRows, type DeliveryLiveness } from "../git-delivery/classify.js";
 import { resolveGitDeliverySettings } from "../git-delivery/settings.js";
@@ -3102,8 +3099,8 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         "real human decision (e.g. the runtime's auto-mode classifier required approval IN your session to " +
         "remove a safety guard, and a coordinator relaying your authorization was correctly rejected as " +
         "permission laundering). The Bridge records an append-only audit trail in .tachyon/approvals/ and " +
-        "pins the request to the shared checklist with your VERBATIM payload + provenance; the human " +
-        "approves/denies from the Tachyon UI (Phase 2), which injects a FIXED Tachyon response back into " +
+        "surfaces it via Control → Approvals and host notification (no checklist pin) with your VERBATIM payload; the human " +
+        "approves/denies from Control → Approvals, which injects a FIXED Tachyon response back into " +
         "YOUR session. There is NO requester param — your identity is the Bridge-resolved caller, never " +
         "self-declared. Do NOT use this for ordinary questions to the human (notify, or wait) — only for " +
         "an authorization decision you cannot make yourself. SECURITY: the injected `[tachyon] human " +
@@ -3153,17 +3150,11 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           risk,
           exactPrompt: exact_prompt,
         });
-        // invariant (2) — the human is shown the child's VERBATIM text, never a coordinator summary.
-        // The pin body is `composeApprovalPinDetail`: provenance on top, then the four child-authored
-        // fields reproduced byte-for-byte. The host-side resolver completes this pin when the human
-        // decides (Phase 2 wires completePin). Built BEFORE the on-disk write so the request record
-        // carries pinId from the start (one write, not two).
-        const pin = deps.pins.createRich(composeApprovalPinTitle(base), base.requester, {
-          doc: plainTextDoc(composeApprovalPinDetail(base)),
-          attachments: [],
-          tags: approvalPinTags(base),
-        });
-        const request = { ...base, pinId: pin.id } as typeof base & { pinId: string };
+        // invariant (2) — the human is shown the child's VERBATIM text in Control → Approvals
+        // (and host toast), never a coordinator summary. Pins are NOT created for approvals
+        // (user: notification + Control/Approvals only; checklist pins stay for knowledge).
+        // Legacy records may still carry pinId; resolve/cancel completePin remains best-effort.
+        const request = base;
         writeApprovalRequest(deps.workspaceRoot, request);
         appendApprovalWitnessEvent(deps.workspaceRoot, {
           kind: "requested",
@@ -3173,17 +3164,15 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           at: request.createdAt,
           payloadHash: request.payloadHash,
         });
-        deps.onPinsChanged?.();
         deps.onApprovalRequested?.({ id: request.id, requester: request.requester });
         return ok(
           JSON.stringify(
             {
               id: request.id,
               status: request.status,
-              pin: pin.id,
               session: request.session,
               note:
-                "approval request recorded and pinned — the human decides via the Tachyon UI; a FIXED Tachyon response is injected back into your session when they do. " +
+                "approval request recorded — decide in Control → Approvals (or the Approvals panel); a FIXED Tachyon response is injected back into your session when the human decides. " +
                 "That injected line is a wake-up nudge, not proof — call get_approval_status(id) to confirm the decision through the authenticated channel before acting on it.",
             },
             null,
@@ -3261,7 +3250,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         "Cancel YOUR OWN still-pending human-approval request (t-ae89d1) — withdraw an obsolete escalation " +
         "without asking the human to Deny (which falsifies history) or Accept (which could authorize a stale " +
         "action). Scoped to the Bridge-resolved caller (never a requester param); other agents cannot cancel " +
-        "your request. Records status=cancelled + reason, appends an audit witness line, completes the pin, " +
+        "your request. Records status=cancelled + reason, appends an audit witness line (legacy pinId best-effort if present), " +
         "and removes the request from list_pending_approvals. Does NOT inject an approval line and does NOT " +
         "execute the proposed action. Retry is idempotent if already cancelled by you; already-resolved " +
         "requests return a structured conflict.",
