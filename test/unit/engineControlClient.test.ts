@@ -5,6 +5,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { EngineControlClient } from "../../src/engine-service/controlClient.js";
 import { startEngineControlServer, type RunningEngineControlServer } from "../../src/engine-service/controlServer.js";
+import { createControlNonce } from "../../src/engine-service/controlPeerAuth.js";
 import { EngineEventJournal } from "../../src/engine-service/eventJournal.js";
 import { makeSocketTemp } from "../helpers/socketTemp.js";
 import {
@@ -119,6 +120,7 @@ describe("EngineControlClient", () => {
 
   it("rejects a local service response that does not match the versioned protocol", async () => {
     const f = fixture();
+    createControlNonce(f.socketPath);
     const connections = new Set<net.Socket>();
     const malformed = net.createServer((socket) => {
       connections.add(socket);

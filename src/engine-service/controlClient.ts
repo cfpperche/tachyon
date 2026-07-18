@@ -28,6 +28,7 @@ import {
   type WorkspaceQueryV1,
   type WorkspaceSnapshotEnvelopeV1,
 } from "./protocol.js";
+import { readControlNonce } from "./controlPeerAuth.js";
 
 const DEFAULT_CONTROL_TIMEOUT_MS = 2_000;
 const DEFAULT_COMMAND_TIMEOUT_MS = 60_000;
@@ -335,6 +336,18 @@ export function requestEngineControl(
   timeoutMs = DEFAULT_CONTROL_TIMEOUT_MS,
 ): Promise<EngineControlResponseV1> {
   return new Promise((resolve, reject) => {
+    let controlNonce: string;
+    try {
+      controlNonce = readControlNonce(socketPath);
+    } catch (error) {
+      reject(new EngineControlClientError(
+        "UNAVAILABLE",
+        error instanceof Error ? error.message : String(error),
+        undefined,
+        (error as NodeJS.ErrnoException).code,
+      ));
+      return;
+    }
     const maxResponseBytes = request.op === "query"
       ? request.query.method === "task.board"
         ? MISSION_CONTROL_RESPONSE_MAX_BYTES
@@ -370,7 +383,7 @@ export function requestEngineControl(
     const timer = setTimeout(() => finish({ error: new EngineControlClientError("TIMEOUT", "engine control request timed out") }), timeoutMs);
     timer.unref?.();
     socket.setEncoding("utf8");
-    socket.once("connect", () => socket.write(`${JSON.stringify(request)}\n`));
+    socket.once("connect", () => socket.write(`${JSON.stringify({ ...request, controlNonce })}\n`));
     socket.on("data", (chunk: string) => {
       output += chunk;
       if (Buffer.byteLength(output, "utf8") > maxResponseBytes) {

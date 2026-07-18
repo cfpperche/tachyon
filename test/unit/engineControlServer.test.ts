@@ -16,6 +16,7 @@ import {
 } from "../../src/engine-service/protocol.js";
 import { blankCommandFields } from "../../src/webview/command-studio-shell/domain.js";
 import { makeSocketTemp } from "../helpers/socketTemp.js";
+import { controlNoncePath, readControlNonce } from "../../src/engine-service/controlPeerAuth.js";
 
 const roots: string[] = [];
 const servers: RunningEngineControlServer[] = [];
@@ -68,6 +69,28 @@ function hello(root: string, shellId: string, overrides: Partial<EngineShellHell
 }
 
 describe("persistent engine shell control", () => {
+  it("requires the owner-readable control nonce before parsing or dispatching requests", async () => {
+    const f = fixture();
+    const server = await startEngineControlServer({ socketPath: f.socketPath, identity: f.identity, getSnapshot: f.snapshot });
+    servers.push(server);
+
+    const nonceStat = fs.lstatSync(controlNoncePath(f.socketPath));
+    expect(nonceStat.mode & 0o777).toBe(0o600);
+    expect(nonceStat.uid).toBe(process.getuid?.() ?? 0);
+    expect(await rawControl(f.socketPath, { schemaVersion: 1, op: "health", workspaceHash: "abc12345" }))
+      .toMatchObject({ ok: false, code: "PEER_AUTH_FAILED" });
+    expect(await rawControl(f.socketPath, {
+      schemaVersion: 1,
+      op: "health",
+      workspaceHash: "abc12345",
+      controlNonce: "A".repeat(43),
+    })).toMatchObject({ ok: false, code: "PEER_AUTH_FAILED" });
+    expect(await control(f.socketPath, { schemaVersion: 1, op: "health", workspaceHash: "abc12345" }))
+      .toMatchObject({ ok: true, op: "health" });
+    await server.close();
+    expect(fs.existsSync(controlNoncePath(f.socketPath))).toBe(false);
+  });
+
   it("converges duplicate attach and keeps multiple shells independent", async () => {
     const f = fixture();
     const attachedShells: string[] = [];
@@ -292,6 +315,7 @@ describe("persistent engine shell control", () => {
       op: "attach",
       workspaceHash: "abc12345",
       hello: hello(f.root, "shell-abandoned"),
+      controlNonce: readControlNonce(f.socketPath),
     })}\n`);
     await snapshotStarted;
     const disconnected = new Promise<void>((resolve) => abandoned.once("close", () => resolve()));
@@ -552,6 +576,10 @@ function attachedToken(response: EngineControlResponseV1): string {
 }
 
 function control(socketPath: string, request: EngineControlRequestV1): Promise<EngineControlResponseV1> {
+  return rawControl(socketPath, { ...request, controlNonce: readControlNonce(socketPath) });
+}
+
+function rawControl(socketPath: string, request: object): Promise<EngineControlResponseV1> {
   return new Promise((resolve, reject) => {
     const socket = net.createConnection(socketPath);
     let output = "";

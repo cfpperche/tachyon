@@ -135,3 +135,15 @@ user-systemd dogfood passes.
 
 ### 2026-07-13T15:45:36Z — pass (1/1) — source: tasks.md — commit: e7aad9da3f89ddb3e9342757336b661e6f13e269
 - `node scripts/dogfood/persistent-bridge.mjs` — pass
+
+## 2026-07-17 — t-faa36e: control peer authentication
+
+Node does not expose `SO_PEERCRED` for accepted Unix sockets, so the persistent engine uses the approved
+equivalent boundary: every daemon incarnation creates a 256-bit nonce in a sibling owner-only (`0600`) file.
+The control client validates that the nonce path is a real file owned by the current uid with no group/other
+permissions, then includes the nonce in its transport envelope. The server checks it with a timing-safe comparison
+before parsing or dispatching the versioned control request, and refuses missing or incorrect credentials.
+
+The nonce is created exclusively before the socket starts listening and removed with the socket during clean or
+stale shutdown. Focused tests cover file ownership/mode, missing and incorrect credentials, successful authenticated
+requests, cleanup, client behavior and supervisor lifecycle.
