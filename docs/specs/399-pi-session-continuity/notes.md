@@ -27,6 +27,16 @@ _In-flight design memory — decisions, deviations, tradeoffs, and open question
 - Human Dev Host Stop → Resume dogfood is pending maintainer interaction.
 - The stacked base still carries the unrelated main verification defects recorded by SDD 398: missing `verify-full.mjs` declaration and stale `verifyFullQuiet.test.ts` expectation. Full suite result was 4,858 pass / 3 skipped / those same 2 failures; Phase 2 focused verification, build, engine boundary, PI-001 and real-Pi dogfood are green.
 
+## Human dogfood
+
+### 2026-07-18 — pass — Dev Host worktree target
+
+- Commit `ff71e6c3`, isolated fixture `/tmp/tachyon-pi-session-continuity-dogfood`.
+- Maintainer conversed with managed Pi, stopped it, used Tachyon Resume, and confirmed the previous conversation returned.
+- Bridge connectivity also survived the exact-session relaunch.
+- This proves the integrated mint → persist → Stop → Resume path for Phase 2.
+- Dev Host pointer was cleared immediately after confirmation; its private engine was stopped.
+
 ## Dogfood log
 
 ### 2026-07-18T15:09:48Z — pass (1/1) — source: tasks.md — commit: 494413a8669e2d2e2bd862a09a36e13ddc527b05
