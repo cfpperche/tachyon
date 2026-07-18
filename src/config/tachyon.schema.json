@@ -149,12 +149,12 @@
             "minLength": 1
           },
           "harness": {
-            "description": "Isolated harness (spec 226/228/298/311 + grok/hermes): agent-scoped MCP, skills, runtime-native instructions/rules, and hooks materialized into a private config home so they never leak to sibling agents. Supported: claude, codex, opencode, grok, hermes (a harness on another runtime/terminal entry is a config error). Claude supports rules/skills/hooks/MCP; Codex supports instructions/skills/hooks/MCP; OpenCode/Grok/Hermes support mcp/skills/hooks (and empty harness:{} for private home + Bridge). Tachyon owns the config home + MCP plumbing — do not set CLAUDE_CONFIG_DIR, CODEX_HOME, GROK_HOME, HERMES_HOME, or XDG_*_HOME in env. NOTE: cross-field rules are enforced by the loadConfig validator (not expressible in pure JSON Schema).",
+            "description": "Isolated harness (spec 226/228/298/311/406): agent-scoped resources materialized into a private config home so they never leak to sibling agents. Supported: claude, codex, opencode, grok, hermes, pi (a harness on another runtime/terminal entry is a config error). Claude supports rules/skills/hooks/MCP; Codex supports instructions/skills/hooks/MCP; OpenCode/Grok/Hermes support mcp/skills/hooks (and empty harness:{} for private home + Bridge). Pi supports only workspace-local extensions/skills/prompts/themes/package directories, requires a non-empty resource list, and rejects inherit:none; its exact resource mode disables ambient Pi discovery and never fetches or installs packages. Tachyon owns runtime config-home and resource plumbing. NOTE: cross-field rules are enforced by the loadConfig validator (not expressible in pure JSON Schema).",
             "type": "object",
             "additionalProperties": false,
             "properties": {
               "inherit": {
-                "description": "Whether to seed the workspace base before overlaying. 'none' = clean slate (sees ONLY the declared config); 'workspace' = the workspace .mcp.json snapshot plus the declared servers. 'global' is a follow pass (not yet supported). Default: workspace.",
+                "description": "Whether to seed the workspace base before overlaying. 'none' = clean slate (sees ONLY the declared config); 'workspace' = the workspace base plus declared resources. 'global' is not supported. Default: workspace. Pi resource harnesses accept only workspace (or omission), not none.",
                 "enum": ["none", "workspace"]
               },
               "mcp": {
@@ -196,7 +196,35 @@
                 ]
               },
               "skills": {
-                "description": "spec 228/311 — skill dir path(s) (each holding a SKILL.md), copied into the agent's private skills/ directory. Workspace-relative; a single string or a non-empty list.",
+                "description": "spec 228/311/406 — skill dir path(s) (each holding a SKILL.md), copied into the agent's private home. Workspace-relative; a single string or a non-empty list.",
+                "oneOf": [
+                  { "type": "string", "minLength": 1 },
+                  { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 }
+                ]
+              },
+              "extensions": {
+                "description": "spec 406 — Pi-only extension file or directory paths. Workspace-relative local paths only; a single string or non-empty list. Remote npm/git/URL sources are rejected.",
+                "oneOf": [
+                  { "type": "string", "minLength": 1 },
+                  { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 }
+                ]
+              },
+              "prompts": {
+                "description": "spec 406 — Pi-only prompt-template .md file paths. Workspace-relative local paths only; a single string or non-empty list.",
+                "oneOf": [
+                  { "type": "string", "minLength": 1 },
+                  { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 }
+                ]
+              },
+              "themes": {
+                "description": "spec 406 — Pi-only theme .json file paths. Workspace-relative local paths only; a single string or non-empty list.",
+                "oneOf": [
+                  { "type": "string", "minLength": 1 },
+                  { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 }
+                ]
+              },
+              "packages": {
+                "description": "spec 406 — Pi-only workspace-local package directory paths. Tachyon snapshots these directories and does not fetch, install, or update npm/git packages. A single string or non-empty list.",
                 "oneOf": [
                   { "type": "string", "minLength": 1 },
                   { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 }

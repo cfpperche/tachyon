@@ -605,10 +605,88 @@ describe("parseConfig", () => {
       expect(errors.some((e) => e.includes("codex requires the env key to match its reference"))).toBe(true);
     });
 
+    it("spec 406: parses Pi's workspace-local resource allowlists", () => {
+      const { config, errors } = parseConfig(`agents:
+  p:
+    cmd: env FOO=1 pi --model sonnet
+    harness:
+      extensions: tools/review.ts
+      skills: [skills/review, skills/testing]
+      prompts: prompts/review.md
+      themes: [themes/dark.json]
+      packages: [packages/local-tools]
+`);
+      expect(errors).toEqual([]);
+      expect(config?.agents.p.harness).toEqual({
+        inherit: "workspace",
+        extensions: ["tools/review.ts"],
+        skills: ["skills/review", "skills/testing"],
+        prompts: ["prompts/review.md"],
+        themes: ["themes/dark.json"],
+        packages: ["packages/local-tools"],
+      });
+    });
+
+    it("spec 406: rejects empty Pi harnesses and inherit:none", () => {
+      const empty = parseConfig(`agents:\n  p:\n    cmd: pi\n    harness: {}\n`);
+      expect(empty.errors.some((e) => e.includes("declare at least one of extensions"))).toBe(true);
+      const noInherit = parseConfig(`agents:\n  p:\n    cmd: pi\n    harness:\n      inherit: none\n      skills: skills/review\n`);
+      expect(noInherit.errors.some((e) => e.includes("pi resource harnesses do not support 'none'"))).toBe(true);
+    });
+
+    it.each(["mcp", "hooks", "rules", "instructions"])("spec 406: rejects Pi harness capability %s", (key) => {
+      const value = key === "mcp"
+        ? "      mcp:\n        server:\n          command: x\n"
+        : key === "hooks"
+          ? "      hooks:\n        SessionStart: []\n"
+          : `      ${key}: guidance.md\n`;
+      const { errors } = parseConfig(`agents:\n  p:\n    cmd: pi\n    harness:\n${value}      skills: skills/review\n`);
+      expect(errors.some((e) => e.includes("pi does not support") && e.includes(key))).toBe(true);
+    });
+
+    it.each([
+      ["extensions", "/tmp/plugin.ts"],
+      ["skills", "skills/../secret"],
+      ["prompts", "https://example.test/prompt.md"],
+      ["themes", "C:\\\\themes\\\\dark.json"],
+      ["packages", "git+https://example.test/package.git"],
+    ])("spec 406: rejects unsafe or remote Pi %s path", (key, resourcePath) => {
+      const { errors } = parseConfig(`agents:\n  p:\n    cmd: pi\n    harness:\n      ${key}: [\"${resourcePath}\"]\n`);
+      expect(errors.some((e) => e.includes(`harness.${key}`) && e.includes("workspace-relative local paths"))).toBe(true);
+    });
+
+    it.each([
+      "--extension custom.ts", "--extension=custom.ts", "-e custom.ts",
+      "--no-extensions", "-ne", "--skill skills/a", "--no-skills", "-ns",
+      "--prompt-template prompts/a.md", "--no-prompt-templates", "-np",
+      "--theme themes/a.json", "--no-themes",
+    ])("spec 406: rejects Pi native resource flag in cmd: %s", (flag) => {
+      const { errors } = parseConfig(`agents:\n  p:\n    cmd: pi ${flag}\n    harness:\n      skills: skills/review\n`);
+      expect(errors.some((e) => e.includes("Tachyon manages Pi resource flags"))).toBe(true);
+    });
+
+    it.each([
+      "pi '--extension' evil.ts",
+      'pi "--extension" evil.ts',
+      "pi $EXTRA",
+      "pi $(printf evil)",
+      "pi | tee /tmp/pi",
+    ])("spec 406: quoted flags or non-literal shell structure cannot bypass Pi resource ownership: %s", (cmd) => {
+      const { errors } = parseConfig(`agents:\n  p:\n    cmd: ${JSON.stringify(cmd)}\n    harness:\n      skills: skills/review\n`);
+      expect(errors.some((e) => e.includes("Tachyon manages Pi resource flags") || e.includes("structurally literal argv"))).toBe(true);
+    });
+
+    it("spec 406: rejects Pi-only resource keys on other runtimes", () => {
+      for (const runtime of ["claude", "codex", "opencode", "grok", "hermes"]) {
+        const { errors } = parseConfig(`agents:\n  a:\n    cmd: ${runtime}\n    harness:\n      extensions: tools/review.ts\n      skills: skills/review\n`);
+        expect(errors.some((e) => e.includes("extensions is a Pi-only resource key"))).toBe(true);
+      }
+    });
+
     it("rejects harness on a non-harnessable agent (v1)", () => {
       expect(
         parseConfig(`agents:\n  c:\n    cmd: gemini\n    harness:\n      mcp:\n        s:\n          command: x\n`).errors.some((e) =>
-          e.includes("only supported for claude/codex/opencode/grok/hermes"),
+          e.includes("only supported for claude/codex/opencode/grok/hermes/pi"),
         ),
       ).toBe(true);
     });

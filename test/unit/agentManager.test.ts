@@ -3818,6 +3818,48 @@ describe("AgentManager — session resume (spec 209)", () => {
       expect(ledger.get("pi")?.resume?.sessionId).toBe(restartedSessionId);
     });
 
+    it("SDD 406: Pi resource harness args survive spawn and restart alongside private home, session identity, and Bridge", async () => {
+      const extension = "/immutable/engine/pi-bridge-extension.mjs";
+      const materialized: string[] = [];
+      const bridge = {
+        newSessionId: () => "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+        getExtraEnv: () => ({ TACHYON_BRIDGE_URL: "http://127.0.0.1:9/mcp" }),
+        piBridgeExtensionPath: () => extension,
+        materializeHarness: ({ name }: { name: string }) => {
+          materialized.push(name);
+          return {
+            home: `/private/pi-homes/${name}`,
+            env: {
+              PI_CODING_AGENT_DIR: `/private/pi-homes/${name}`,
+              PI_CODING_AGENT_SESSION_DIR: `/private/pi-homes/${name}/sessions`,
+            },
+            args: ["--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes", "--skill", "'/private/pi-homes/pi/.tachyon-resources/generation-a/skills/review'"],
+          };
+        },
+        materializePiSessionDir: (name: string) => `/private/pi-homes/${name}/sessions`,
+        resolveCaptureSession: async (_runtime: string, _cwd: string, _home: string | undefined, id: string | undefined) => id
+          ? { id, path: `/private/pi-homes/pi/sessions/2026_${id}.jsonl` }
+          : null,
+        fileExists: (file: string) => file.startsWith("/private/pi-homes/pi/sessions/2026_"),
+      };
+      const { manager, ledger, cmds } = resumeHarness("agents:\n  pi:\n    cmd: pi\n    harness:\n      skills: skills/review\n", bridge);
+
+      await manager.spawn("pi");
+      expect(cmds.at(-1)).toContain(`--extension '${extension}'`);
+      expect(cmds.at(-1)).toContain("--no-extensions --no-skills --no-prompt-templates --no-themes");
+      expect(cmds.at(-1)).toContain("--skill '/private/pi-homes/pi/.tachyon-resources/generation-a/skills/review'");
+
+      await manager.restart("pi", { stop: "force", session: "new" });
+      expect(cmds.at(-1)).toContain(`--extension '${extension}'`);
+      expect(cmds.at(-1)).toContain("--no-extensions --no-skills --no-prompt-templates --no-themes");
+
+      await manager.resume("pi", ledger.get("pi")!);
+      expect(cmds.at(-1)).toContain("--session aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee");
+      expect(cmds.at(-1)).toContain(`--extension '${extension}'`);
+      expect(cmds.at(-1)).toContain("--no-extensions --no-skills --no-prompt-templates --no-themes");
+      expect(materialized).toEqual(["pi", "pi", "pi"]);
+    });
+
     it("Pi: resume requires the exact transcript, reopens its id, re-injects Bridge, and omits primer", async () => {
       const sessionId = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
       const transcript = `/private/pi-homes/pi/sessions/2026_${sessionId}.jsonl`;

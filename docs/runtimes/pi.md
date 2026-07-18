@@ -1,6 +1,6 @@
 # Pi — runtime integration status (Tachyon)
 
-**Integration slices:** SDD 399 (Bridge), SDD 400 (continuity), SDD 401 (private home), SDD 402 (Activity), SDD 403 (interaction profile), SDD 404 (reviewer safety), SDD 405 (native Fork), measured against the installed `@earendil-works/pi-coding-agent` on 2026-07-18.
+**Integration slices:** SDD 399 (Bridge), SDD 400 (continuity), SDD 401 (private home), SDD 402 (Activity), SDD 403 (interaction profile), SDD 404 (reviewer safety), SDD 405 (native Fork), SDD 406 (exact harness resources), measured against the installed `@earendil-works/pi-coding-agent` on 2026-07-18.
 
 Pi is a recognized Tachyon AI runtime. Tachyon starts it in tmux, injects `TACHYON_AGENT_NAME`, the Bridge URL and a per-agent bearer, delivers the universal onboarding primer as Pi's positional startup message, and additively loads an immutable bundled Pi extension with `--extension`.
 
@@ -25,7 +25,7 @@ Pi deliberately has no built-in MCP client. Tachyon's extension opens the local 
 | Graceful Stop | ✓ | Measured Escape → Ctrl+C → Ctrl+D sequence; idle/draft/active tmux and Dev Host proof passed |
 | Delivery reviewer safety | ✓ | `--exclude-tools bash,edit,write`; unit injection, real catalog and human Dev Host posture proof passed |
 | Runtime model/usage observation | ~ | Generic process/usage surfaces only |
-| Opt-in Pi harness capabilities | ✗ | Agent-scoped Pi skills/extensions/packages remain deferred |
+| Opt-in Pi harness capabilities | ✓ | Exact agent-scoped local extensions/skills/prompts/themes/packages via private snapshots + explicit CLI loading |
 
 ## Fail-closed boundaries
 
@@ -33,11 +33,31 @@ Pi deliberately has no built-in MCP client. Tachyon's extension opens the local 
 - Every managed Pi process receives `PI_CODING_AGENT_DIR=.tachyon/harness/<agent>` and `PI_CODING_AGENT_SESSION_DIR=<home>/sessions`; transcript acceptance requires exactly one regular JSONL with matching header id and cwd.
 - Tachyon snapshots only regular JSON-object files (`auth.json`, settings, models/model cache, trust and keybindings). The settings snapshot strips `packages`, `extensions`, `skills`, `prompts` and `themes` so executable/instruction resources do not cross the private-home boundary implicitly. Symlinked, malformed or non-regular sources/targets refuse launch before tmux mutation.
 - `auth.json` is a private mode-0600 copy, not a symlink: Pi locks by pathname and writes in place, so sibling symlink paths would race one shared target. OAuth refreshes can therefore diverge and are not promoted back to the real home.
-- Ambient executable resource trees (`extensions`, `skills`, `prompts`, `themes`, `npm`, `git`, `tools`, `bin`) are not inherited. Trusted project `.pi` resources remain governed by Pi's native project trust.
+- Ambient Pi-home executable resource trees (`extensions`, `skills`, `prompts`, `themes`, `npm`, `git`, `tools`, `bin`) are not inherited. Ordinary no-harness Pi keeps native trusted project discovery. An SDD 406 resource harness is stricter: it adds all four Pi `--no-*` discovery flags, so ambient `$HOME/.agents/skills` and automatic project extension/skill/prompt/theme discovery are disabled, then loads only copied private paths explicitly.
 - Explicit Pi session flags remain user-owned and produce no Tachyon-managed resume record, but they do not opt out of the private runtime home.
 - Pi commands using `--no-tools`, `--tools` or non-canonical `--exclude-tools` are refused while Bridge wiring is required, because Tachyon cannot guarantee the complete Bridge catalog. The exact reviewer denylist remains accepted.
 - A temporary connection/authentication failure is visible through `/tachyon-bridge-status` and the Pi status line, but Pi remains usable for ordinary local coding.
 - `--no-extensions` does not defeat the integration: Pi documents that explicit `--extension` paths still load when automatic extension discovery is disabled.
+
+## Exact resource harness
+
+A declared Pi agent can receive a reviewed, workspace-local resource catalog:
+
+```yaml
+agents:
+  pi-reviewer:
+    cmd: pi
+    harness:
+      extensions: [pi/extensions/review.ts]
+      skills: [skills/code-review]
+      prompts: [pi/prompts/review.md]
+      themes: [pi/themes/tachyon.json]
+      packages: [pi/packages/team-tools]
+```
+
+All paths are workspace-relative. Tachyon rejects native resource flags in `cmd`, unsafe/symlinked/special/escaping trees, duplicate basenames, remote npm/git/URL package specs, unsupported Pi harness capabilities and `inherit: none`. Each start snapshots a complete generation under the agent's private home and supplies explicit `--extension`, `--skill`, `--prompt-template` and `--theme` paths. Local package directories are passed through Pi's local `--extension` package resolver; Tachyon never fetches, installs or updates them, so dependencies must already exist as regular files in the declared tree.
+
+This allowlist grants the resources the same local-user authority Pi normally gives extensions and skills. It is provenance/isolation, not a sandbox or a content-approval system. A resource extension may register mutating tools or interfere with other extension tools; Delivery reviewer safety still guarantees only the measured built-in `bash`/`edit`/`write` exclusion described below. Spawn, restart and exact Resume rematerialize the catalog; Fork remains unavailable for any `harness:` source under the existing fail-closed harness inheritance policy.
 
 ## Operator check
 

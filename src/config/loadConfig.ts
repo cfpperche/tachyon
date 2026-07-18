@@ -12,6 +12,7 @@ import {
 import { openingPromptCapability, resolveBinary } from "../agents/openingPromptCapability.js";
 import { AGENT_NAME_PATTERN, asciiFoldAgentName } from "./nameValidation.js";
 import { runtimePromptAdapter } from "../agents/runtimePromptAdapters.js";
+import { parseLaunchCommand } from "../runtime/launchPreflight.js";
 export { openingPromptCapability, resolveBinary } from "../agents/openingPromptCapability.js";
 import {
   behaviorStubPathError,
@@ -67,10 +68,11 @@ export interface HarnessMcpServer {
   env?: Record<string, string>;
 }
 
-/** spec 226/228/298/311 — an agent's isolated harness: its OWN MCP servers, skills, instructions/rules, and hooks,
+/** spec 226/228/298/311/406 — an agent's isolated harness: its OWN runtime resources,
  *  materialized into a private config home so they never leak to sibling agents.
  *  `inherit` decides whether the workspace base config is seeded first (`global` is a follow pass —
- *  rejected). At least one accepted capability must be present. */
+ *  rejected). At least one accepted capability must be present. Pi accepts only its explicit local
+ *  resource lists (skills plus extensions/prompts/themes/packages). */
 export interface HarnessDef {
   inherit: "none" | "workspace";
   mcp?: Record<string, HarnessMcpServer>;
@@ -80,8 +82,16 @@ export interface HarnessDef {
   rules?: string[];
   /** spec 311 — codex instruction files (paths), concatenated into `<CODEX_HOME>/AGENTS.md`. */
   instructions?: string[];
-  /** spec 228/311 — skill dirs (paths, each with a SKILL.md), copied into `<home>/skills/`. */
+  /** spec 228/311/406 — skill dirs (paths, each with a SKILL.md), copied into the private home. */
   skills?: string[];
+  /** spec 406 — Pi-only extension file or directory paths. */
+  extensions?: string[];
+  /** spec 406 — Pi-only prompt-template `.md` file paths. */
+  prompts?: string[];
+  /** spec 406 — Pi-only theme `.json` file paths. */
+  themes?: string[];
+  /** spec 406 — Pi-only workspace-local package directory paths; never npm/git specs. */
+  packages?: string[];
 }
 
 /** Exactly a `${VAR}` reference — no literal value, no `${VAR:-default}` (a default could smuggle a
@@ -445,8 +455,8 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
  *  explicitly with a clearer message instead. */
 const AGENT_KEYS = ["cmd", "cwd", "env", "autostart", "watch", "attention", "restart", "kind", "instructions", "role", "soul", "worktree", "branch", "worktreeSetup", "verify", "harness", "isolate", "subagents"];
 
-/** Recognized harness keys (spec 226 mcp + spec 228 hooks/rules/skills). */
-const HARNESS_KEYS = ["inherit", "mcp", "hooks", "rules", "instructions", "skills"];
+/** Recognized harness keys (spec 226/228 plus spec 406 Pi resources). */
+const HARNESS_KEYS = ["inherit", "mcp", "hooks", "rules", "instructions", "skills", "extensions", "prompts", "themes", "packages"];
 
 /**
  * spec 226/228 — parse + validate an `agents.<name>.harness` block (H4/H7/H9). Fail-closed: only on a
@@ -462,12 +472,13 @@ function parseHarness(name: string, raw: unknown, cmd: string, env: Record<strin
     return undefined;
   }
   const binary = binaryOf(cmd);
-  // Harnessable CLIs with a ResumeAdapter.harness shape: claude, codex, opencode (XDG), grok, hermes.
+  // Harnessable CLIs with a private-home materializer. Pi uses its dedicated resource materializer
+  // rather than the generic MCP-oriented ResumeAdapter harness shape (spec 406).
   // Others fail closed (gemini/agy/… have no private-home materializer yet).
-  const HARNESS_BINS = new Set(["claude", "codex", "opencode", "grok", "hermes"]);
+  const HARNESS_BINS = new Set(["claude", "codex", "opencode", "grok", "hermes", "pi"]);
   if (!HARNESS_BINS.has(binary)) {
     errors.push(
-      `agents.${name}.harness: only supported for claude/codex/opencode/grok/hermes agents (got '${binary || cmd}')`,
+      `agents.${name}.harness: only supported for claude/codex/opencode/grok/hermes/pi agents (got '${binary || cmd}')`,
     );
     return undefined;
   }
@@ -481,6 +492,27 @@ function parseHarness(name: string, raw: unknown, cmd: string, env: Record<strin
         errors.push(`agents.${name}.harness: remove '${flag}' from cmd — Tachyon manages MCP config for a harness agent`);
         return undefined;
       }
+    }
+  }
+  // spec 406 — the harness declaration is the sole authority for Pi resources. User-supplied native
+  // include or discovery-disable flags could add, remove, or replace part of that exact catalog.
+  if (binary === "pi") {
+    const parsed = parseLaunchCommand(cmd);
+    if (!parsed || !parsed.allWordsLiteral) {
+      errors.push(`agents.${name}.harness: Pi resource harness commands must have a structurally literal argv (no shell composition, substitution, expansion, or globbing)`);
+      return undefined;
+    }
+    const tokens = parsed.argv;
+    const resourceFlags = [
+      "--extension", "-e", "--no-extensions", "-ne",
+      "--skill", "--no-skills", "-ns",
+      "--prompt-template", "--no-prompt-templates", "-np",
+      "--theme", "--no-themes",
+    ];
+    const conflict = resourceFlags.find((flag) => tokens.some((token) => token === flag || token.startsWith(`${flag}=`)));
+    if (conflict) {
+      errors.push(`agents.${name}.harness: remove '${conflict}' from cmd — Tachyon manages Pi resource flags for a harness agent`);
+      return undefined;
     }
   }
   const ownedEnv =
@@ -516,6 +548,10 @@ function parseHarness(name: string, raw: unknown, cmd: string, env: Record<strin
   for (const key of Object.keys(raw)) {
     if (!HARNESS_KEYS.includes(key)) errors.push(`agents.${name}.harness: unknown key '${key}'`);
   }
+  const piOnly = ["extensions", "prompts", "themes", "packages"].filter((key) => raw[key] !== undefined);
+  if (binary !== "pi" && piOnly.length > 0) {
+    errors.push(`agents.${name}.harness: ${piOnly.join(", ")} ${piOnly.length === 1 ? "is a Pi-only resource key" : "are Pi-only resource keys"}`);
+  }
   if (binary === "codex") {
     const unsupported = ["rules"].filter((key) => raw[key] !== undefined);
     if (unsupported.length > 0) {
@@ -529,6 +565,11 @@ function parseHarness(name: string, raw: unknown, cmd: string, env: Record<strin
         `agents.${name}.harness: ${binary} does not support 'rules'/'instructions' in v1 (use 'mcp'/'skills')`,
       );
     }
+  } else if (binary === "pi") {
+    const unsupported = ["mcp", "hooks", "rules", "instructions"].filter((key) => raw[key] !== undefined);
+    if (unsupported.length > 0) {
+      errors.push(`agents.${name}.harness: pi does not support ${unsupported.join(", ")} (use extensions/skills/prompts/themes/packages)`);
+    }
   } else if (raw.instructions !== undefined) {
     errors.push(`agents.${name}.harness.instructions: only supported for codex agents; use 'rules' for claude`);
   }
@@ -536,6 +577,9 @@ function parseHarness(name: string, raw: unknown, cmd: string, env: Record<strin
   if (raw.inherit !== undefined) {
     if (raw.inherit === "none" || raw.inherit === "workspace") {
       inherit = raw.inherit;
+      if (binary === "pi" && raw.inherit === "none") {
+        errors.push(`agents.${name}.harness.inherit: pi resource harnesses do not support 'none' (omit inherit or use 'workspace')`);
+      }
     } else if (raw.inherit === "global") {
       errors.push(`agents.${name}.harness.inherit: 'global' is not supported yet (use 'none' or 'workspace')`);
     } else {
@@ -616,12 +660,14 @@ function parseHarness(name: string, raw: unknown, cmd: string, env: Record<strin
     }
   }
 
-  // spec 228/311 — rules/instructions (file paths concatenated into runtime guidance files) and skills (skill dirs copied
-  // into <home>/skills/); both a non-empty string or list of non-empty strings. Paths must be
-  // workspace-relative (codex M4: reject absolute / `..`-traversal early — materialize also re-checks
-  // the resolved real path against the workspace as the fail-closed backstop).
+  // spec 228/311/406 — resource paths are a non-empty string or list of non-empty strings. Paths must
+  // be workspace-relative (reject absolute / `..` traversal early; materialization also re-checks the
+  // resolved real path against the workspace as the fail-closed backstop). Pi additionally rejects URI
+  // and SCP-like remote sources: its harness is a local snapshot allowlist, never a package acquisition API.
+  type HarnessPathKey = "rules" | "instructions" | "skills" | "extensions" | "prompts" | "themes" | "packages";
   const isContained = (p: string): boolean => !p.startsWith("/") && !p.startsWith("~") && !/(^|[\\/])\.\.([\\/]|$)/.test(p) && !/^[A-Za-z]:[\\/]/.test(p);
-  const parsePathList = (key: "rules" | "instructions" | "skills"): string[] | undefined => {
+  const isRemoteSource = (p: string): boolean => /^[A-Za-z][A-Za-z0-9+.-]*:/.test(p) || /^[^/\\\s]+@[^/\\\s]+:/.test(p);
+  const parsePathList = (key: HarnessPathKey): string[] | undefined => {
     const rawVal = raw[key];
     if (rawVal === undefined) return undefined;
     const list = typeof rawVal === "string" ? [rawVal] : rawVal;
@@ -629,8 +675,8 @@ function parseHarness(name: string, raw: unknown, cmd: string, env: Record<strin
       errors.push(`agents.${name}.harness.${key}: must be a non-empty path or list of non-empty paths`);
       return undefined;
     }
-    if ((list as string[]).some((p) => !isContained(p.trim()))) {
-      errors.push(`agents.${name}.harness.${key}: paths must be workspace-relative (no absolute paths or '..')`);
+    if ((list as string[]).some((p) => !isContained(p.trim()) || (binary === "pi" && isRemoteSource(p.trim())))) {
+      errors.push(`agents.${name}.harness.${key}: paths must be workspace-relative local paths (no absolute paths, '..', URLs, or package specs)`);
       return undefined;
     }
     return list as string[];
@@ -641,18 +687,32 @@ function parseHarness(name: string, raw: unknown, cmd: string, env: Record<strin
   if (instructions) harness.instructions = instructions;
   const skills = parsePathList("skills");
   if (skills) harness.skills = skills;
+  if (binary === "pi") {
+    const extensions = parsePathList("extensions");
+    if (extensions) harness.extensions = extensions;
+    const prompts = parsePathList("prompts");
+    if (prompts) harness.prompts = prompts;
+    const themes = parsePathList("themes");
+    if (themes) harness.themes = themes;
+    const packages = parsePathList("packages");
+    if (packages) harness.packages = packages;
+  }
 
   // At least one capability must actually be ACCEPTED, except for explicit `harness: {}` private-home
   // opt-in (claude isolate-transcript replacement; opencode/grok/hermes private home + Bridge only).
-  // Codex still requires at least one capability (it is already private-home by default).
-  if (!harness.mcp && !harness.hooks && !harness.rules && !harness.instructions && !harness.skills) {
+  // Codex and Pi require at least one capability (Codex is already private-home by default; a Pi harness
+  // means an exact non-empty resource catalog).
+  if (!harness.mcp && !harness.hooks && !harness.rules && !harness.instructions && !harness.skills &&
+      !harness.extensions && !harness.prompts && !harness.themes && !harness.packages) {
     if (
       (binary === "claude" || binary === "opencode" || binary === "grok" || binary === "hermes") &&
       Object.keys(raw).length === 0
     ) {
       return harness;
     }
-    errors.push(`agents.${name}.harness: declare at least one of mcp, skills, rules, instructions, hooks`);
+    errors.push(binary === "pi"
+      ? `agents.${name}.harness: declare at least one of extensions, skills, prompts, themes, packages`
+      : `agents.${name}.harness: declare at least one of mcp, skills, rules, instructions, hooks`);
     return undefined;
   }
   return harness;

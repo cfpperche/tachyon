@@ -756,9 +756,12 @@ export class Workspace {
       // env + MCP wiring; null when the agent has no harness / runtime can't.
       materializeHarness: ({ name, def, cwd }) => {
         const adapter = adapterFor(def.cmd);
-        // SDD 401 — Pi is private-home by default, independent of opt-in harness capabilities.
-        if (adapter?.runtime === "pi" && !def.harness && def.isolate === undefined) {
-          return this.harness.materializePiHomeOnly(name);
+        // SDD 401/406 — Pi is private-home by default; an opt-in resource harness uses its
+        // dedicated exact-resource materializer rather than pretending Pi has generic MCP wiring.
+        if (adapter?.runtime === "pi" && def.isolate === undefined) {
+          return def.harness
+            ? this.harness.materializePiHome(name, def.harness)
+            : this.harness.materializePiHomeOnly(name);
         }
         if (!harnessable(adapter) || !adapter) return null;
         // spec 236 — a harness agent runs with --strict-mcp-config (ignores project/global MCP), so the

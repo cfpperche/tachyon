@@ -2277,7 +2277,8 @@ export class AgentManager {
    * spec 236 — the SINGLE place the Tachyon bridge MCP is injected so EVERY Tachyon-spawned agent reaches
    * `complete_node`/`write_input` with zero workspace-file config. Operates on the FINAL composed command
    * (after effectiveCmd + applyHarness) and is applied identically at spawn + restart + resume + fork:
-   *   - harness agent → no-op: the Bridge is folded into its materialized --strict mcp file (mergeServers).
+   *   - MCP harness agent → no-op: the Bridge is folded into its materialized private config. Pi's
+   *     resource-only harness remains additive because Pi has no native MCP config surface.
    *   - codex        → idempotent `-c mcp_servers.tachyon_bridge={…}` (token via bearer_token_env_var).
    *   - claude (non-harness) → append `--mcp-config <bridge file>` at the END (additive, no --strict; the
    *     trailing flag avoids claude's variadic --mcp-config swallowing the prompt positional). Token stays
@@ -2321,8 +2322,9 @@ export class AgentManager {
       };
     }
     const url = this.opts.getExtraEnv?.()?.[URL_ENV_VAR];
-    if (def.harness) {
+    if (def.harness && binary !== "pi") {
       // Bridge is folded into the materialized harness MCP file (Workspace passes bridgeEntry when up).
+      // SDD 406: Pi's harness contains resources only; its immutable Bridge extension stays additive.
       return { cmd, env: {}, wired: !!url };
     }
     if (!url) return { cmd, env: sessionEnv, wired: false };

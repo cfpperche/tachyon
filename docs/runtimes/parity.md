@@ -1,6 +1,6 @@
 # Runtime capability parity (living document)
 
-**Status:** living · **Owner:** Tachyon maintainers · **Last verified:** 2026-07-18 (Pi Bridge, continuity and private-home isolation)
+**Status:** living · **Owner:** Tachyon maintainers · **Last verified:** 2026-07-18 (Pi Bridge, continuity, private-home isolation and exact harness resources)
 **Seams (code of record):** `src/resume/adapters.ts`, `src/runtime/runtimeProfile.ts`, `src/agents/AgentManager.ts` (`withRuntimeBridge`, `effectiveCmd`), `src/harness/HarnessManager.ts`, `src/activity/*Normalizer.ts`, `src/attention/patterns.ts`, `src/config/loadConfig.ts` (`INSTRUCTION_ARG`)
 
 This document is the **source of truth** for how Tachyon treats AI CLIs as first-class runtimes.  
@@ -36,7 +36,7 @@ What “first-class” means in Tachyon (ordered for reading, not strict priorit
 | # | Capability | What “✓” means |
 |---|------------|----------------|
 | 1 | **Brief / instructions** | On **fresh spawn/restart**, the role/task brief is delivered via the runtime’s native channel listed in `INSTRUCTION_ARG` (or an equally automatic pane path). Metadata-only storage does **not** count. |
-| 2 | **Bridge MCP** | Every Tachyon-spawned agent reaches the workspace Bridge without committing secrets; injection on spawn/restart/resume/fork (harness: folded into private config; non-harness: `withRuntimeBridge`). |
+| 2 | **Bridge MCP** | Every Tachyon-spawned agent reaches the workspace Bridge without committing secrets; injection on spawn/restart/resume/fork (native MCP harnesses fold it into private config; Pi always uses its immutable additive extension through `withRuntimeBridge`). |
 | 3 | **Attention** | Monitor classifies idle/working/needs-input/throttle from the pane. Shared global patterns apply to all runtimes; **extra** credit when the runtime has composer-region and/or rate-limit **identity** in `runtimeProfile` / `RateLimitRuntime`. |
 | 4 | **Resume** | Adapter can rebuild the CLI command to continue a prior conversation (`resumeCommand` / mint id). |
 | 5 | **Fork** | Adapter can branch a new session from an existing one without destroying the source (`forkCommand`). **UI may hide fork for harness agents** (see §3.4). |
@@ -75,7 +75,7 @@ Avoid the word `ongoing` as a verification token — use a date, CLI version, te
 | 3 Attention | ✓ | ✓ | ~ | ~ | ✓ |
 | 4 Resume | ✓ | ✓ | ✓ | ✓ | ✓ |
 | 5 Fork | ✓ | ✗ | ✓ | ✓ | ✓ |
-| 6 Harness | ✓ | ✓ | ✓ | ✓† | ~‡ |
+| 6 Harness | ✓ | ✓ | ✓ | ✓† | ✓‡ |
 | 7 Graceful stop | ~ | ~ | ✓ | ✓ | ✓ |
 | 8 Activity | ✓ | ✓ | ✓ | ✓ | ✓ |
 | 9 Permission inject | ~ | ~ | ~ | **✗** | ✓ |
@@ -86,7 +86,7 @@ Avoid the word `ongoing` as a verification token — use a date, CLI version, te
 
 † **Grok harness materialization exists** (`GROK_HOME`, hooks, Bridge fold), but `runtimeProfile.grok.isolation` is still **`project-scoped`** for governance. Non-harness **parented** Grok spawns still require an isolated worktree (`assertVerifiedTranscriptIsolation`). See Grok section + §3.4.
 
-‡ **Pi default private home exists** (`PI_CODING_AGENT_DIR` + private session directory), but opt-in agent-scoped Pi harness resources are not implemented; mark partial rather than overloading private-home with harness parity.
+‡ **Pi default private home + exact resource harness exist.** SDD 406 snapshots declared workspace-local extensions/skills/prompts/themes/packages into the per-agent home, disables automatic discovery and passes only explicit private CLI paths. Remote package acquisition/global inheritance remain intentionally unsupported.
 
 *Secondary adapters: [§3.3](#33-secondary-runtimes).*
 
@@ -168,13 +168,15 @@ Detail dump: [`docs/runtimes/opencode.md`](./opencode.md) (narrative may still s
 | Attention | framed Pi editor + shared pane patterns | `runtimeProfile.pi.composer` + framed-region Attention support | **✓** SDD 403 measured/unit/real-tmux + Dev Host idle/draft pass |
 | Resume | `--session-id` + exact `--session` | adapter + bounded JSONL header resolver | SDD 400 real process A → B + human Stop/Resume |
 | Fork | `--session-id <new> --fork <exact-source-path>` | positive extension ownership + no-follow source validation + native `forkCommand` | **✓** SDD 405 unit + real + human Dev Host A→B→independent Resume pass |
-| Harness/private home | `PI_CODING_AGENT_DIR`; sessions override | default `.tachyon/harness/<agent>`, regular mode-0600 auth copy, no executable global-tree inheritance | SDD 401 units/dogfood; opt-in resource harness remains `~` |
+| Harness/private home | `PI_CODING_AGENT_DIR`; sessions override; `--no-*` + explicit resource paths | default `.tachyon/harness/<agent>`, regular mode-0600 auth copy; SDD 406 exact local extension/skill/prompt/theme/package snapshots | **✓** SDD 401 + 406 units and real Pi RPC dogfood |
 | Stop | Escape interrupt, Ctrl+C clear, Ctrl+D empty-editor exit | measured profile with delayed conditional keys | **✓** idle/draft/active real-tmux + Dev Host pass |
 | Activity | private v3 session JSONL | exact resolver → `piNormalizer` → bounded `ActivityLogWriter` | **✓** SDD 402 unit/integration, real-transcript dogfood and Dev Host visual pass |
 | Permission inject | `--exclude-tools bash,edit,write` | authoritative Delivery reviewer adapter; canonical built-in denylist remains Bridge-compatible | **✓** SDD 404 unit injection + real catalog + human Dev Host posture pass |
 | Profile | label + private-home + framed composer + stop + reviewer permission | `runtimeProfile.pi` v3 | SDD 401/403/404; model/general permission remain partial |
 
-**Pi reviewer note:** the read-only posture disables Pi's only default shell/mutation tools and leaves native `read` plus extension/Bridge tools. It is not an OS sandbox or universal Bridge mutation ban.
+**Pi harness note:** resource harness mode is stricter than ordinary project trust: automatic extension/skill/prompt/theme discovery (including `$HOME/.agents/skills` and project `.pi`) is disabled, then only declared private snapshots load. Local packages use Pi's local resolver without installs; npm/git acquisition remains out of scope.
+
+**Pi reviewer note:** the read-only posture disables Pi's only default shell/mutation tools and leaves native `read` plus extension/Bridge tools. It is not an OS sandbox or universal Bridge/resource-extension mutation ban.
 
 **Pi interaction note:** composer/stop measurements target Pi v0.80.10 default keybindings. Tachyon does not rewrite `keybindings.json`; remapped `app.interrupt`, `app.clear` or `app.exit` can invalidate graceful Stop.
 
@@ -225,6 +227,7 @@ These diverge; the summary table alone cannot show them:
 | Claude/Codex stop measurement | promote gracefulStop from declared → measured |
 | Codex fork | only if Codex CLI gains stable native fork |
 | ~~Grok auth rematerialize~~ | **Closed t-2b0a08** — promote private regular `auth.json` before re-symlink; see Grok auth note above |
+| ~~Pi opt-in harness resources~~ | **Closed SDD 406** — exact private local extension/skill/prompt/theme/package snapshots with automatic discovery disabled and no install side effects |
 | Release hygiene | versioned VSIX that includes Bridge Grok path (no hand-patch of installed `dist`) |
 | ~~Hermes Brief/Resume/Bridge/Harness contracts~~ | **Closed/hardened 2026-07-16** — forced TUI, isolated MCP inheritance, optional auth, fail-closed hooks and activity-based session selection. See [`hermes.md`](./hermes.md). |
 | ~~Hermes Activity reader~~ | **Closed/hardened 2026-07-16** — `state.db` reader now preserves source timestamp/model, follows live session switches and bounds cold backfill. Residual: visual dogfood, token/cost projection. |
@@ -262,6 +265,7 @@ Document those in host-action / security docs; mention here only to avoid mis-sc
 
 | Date | Change |
 |------|--------|
+| 2026-07-18 | **Pi exact harness resources (SDD 406):** workspace-local extensions/skills/prompts/themes/package directories are no-follow snapshotted per agent and loaded through Pi's `--no-*` + explicit CLI paths; remote installs and automatic ambient/project resource discovery are excluded in harness mode. |
 | 2026-07-16 | **Hermes contract hardening:** startup brief forces modern TUI and rejects explicit classic CLI; harness `inherit:none` strips ambient MCPs; OAuth file is optional; unsupported hooks fail closed; resume/live Activity follows actual message activity; SQLite ingest preserves timestamps/model and bounds backfill. |
 | 2026-07-13 | **spec 378 live-model-sidebar:** claude/codex/grok now latch a transcript-observed `{model, effort?}` (claude `message.model` filtering sidechain/synthetic; codex `turn_context.payload`; grok `assistant.model_id`, un-overloaded off `runtimeVersion` alongside opencode). `RuntimeOpsSnapshotService` projects a boundary-aware observed-vs-declared model fact + divergence; the sidebar row shows it with textual provenance (`· declared`/`· stale`/`≠ declared`). RuntimeOps panel's own Model column stays declared-only (follow-up, see open gaps). Interim honesty: pre-existing durable logs show `declared`/`profile` until the next model-bearing record is appended (no backfill — additive-only log format, no `schemaVersion` bump). Codex per-turn latency: a mid-turn `/model` switch shows the prior model until the next `turn_context` record lands (`observedAt` makes this honest, not hidden). |
 | 2026-07-14 | **Hermes Activity Cap 8:** `HermesStorageReader` + `hermesNormalizer` over `$HERMES_HOME/state.db` (unit hermesNormalizer/hermesStorageReader). Secondary Activity mark → ✓. |

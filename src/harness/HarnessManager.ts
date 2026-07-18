@@ -16,6 +16,7 @@
  * on top with real fs (covered by an integration test in a tmp dir).
  */
 
+import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -152,10 +153,28 @@ function appendCodexHooksConfig(existing: string, hooks: Record<string, unknown>
   return `${toml}${toml.length > 0 ? "\n\n" : ""}${block}\n`;
 }
 
+function isReadableRegularFile(file: string): boolean {
+  try {
+    const stat = fs.lstatSync(file);
+    return stat.isFile() && !stat.isSymbolicLink() && fs.readFileSync(file).length >= 0;
+  } catch {
+    return false;
+  }
+}
+
 function isReadableJsonObjectFile(file: string): boolean {
   try {
     const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
     return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed);
+  } catch {
+    return false;
+  }
+}
+
+function isReadableNoFollowJsonObjectFile(file: string): boolean {
+  try {
+    const stat = fs.lstatSync(file);
+    return stat.isFile() && !stat.isSymbolicLink() && isReadableJsonObjectFile(file);
   } catch {
     return false;
   }
@@ -653,6 +672,14 @@ const PI_PRIVATE_JSON_FILES = [
   "keybindings.json",
 ] as const;
 const PI_EXECUTABLE_RESOURCE_SETTINGS = ["packages", "extensions", "skills", "prompts", "themes"] as const;
+const PI_RESOURCE_ROOT = ".tachyon-resources";
+const PI_RESOURCE_DISABLE_ARGS = ["--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes"] as const;
+
+type PiResourceKind = "extensions" | "skills" | "prompts" | "themes" | "packages";
+
+function shellResourcePath(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
 
 /**
  * t-303f2b — true when `p` looks like a Tachyon-managed private Grok home (bridge-mcp or harness),
@@ -759,6 +786,82 @@ export class HarnessManager {
    * and are validated/preserved so OAuth refresh and `/settings` writes survive restart/resume.
    */
   materializePiHomeOnly(agent: string): MaterializedHarness {
+    // Prior content-addressed harness generations remain inert: without explicit CLI paths Pi cannot
+    // discover this hidden subtree. Keeping them avoids mutating a still-live process during fallible
+    // restart preparation; canonical forget removes the complete private home.
+    return this.materializePiBaseHome(agent);
+  }
+
+  /** SDD 406 — materialize an exact, agent-local Pi resource catalog without mutating private settings. */
+  materializePiHome(agent: string, def: HarnessDef): MaterializedHarness {
+    const base = this.materializePiBaseHome(agent);
+    const root = path.join(base.home, PI_RESOURCE_ROOT);
+    this.ensurePiResourceDir(agent, root);
+    this.cleanPiStagingDirs(agent, root);
+
+    const stageName = `.staging-${randomUUID()}`;
+    const stage = path.join(root, stageName);
+    fs.mkdirSync(stage, { mode: 0o700 });
+
+    const args: string[] = [...PI_RESOURCE_DISABLE_ARGS];
+    try {
+      const fields: Array<[PiResourceKind, string[] | undefined]> = [
+        ["extensions", def.extensions],
+        ["skills", def.skills],
+        ["prompts", def.prompts],
+        ["themes", def.themes],
+        ["packages", def.packages],
+      ];
+      for (const [kind, declared] of fields) {
+        if (!declared || declared.length === 0) continue;
+        const targetRoot = path.join(stage, kind);
+        fs.mkdirSync(targetRoot, { mode: 0o700 });
+        const seen = new Set<string>();
+        for (const rel of declared) {
+          const source = this.resolveInWorkspace(agent, rel, `Pi ${kind} resource`);
+          const baseName = path.basename(source);
+          if (seen.has(baseName)) {
+            throw new HarnessUnavailableError(agent, `duplicate Pi ${kind} resource basename '${baseName}' (${rel})`);
+          }
+          seen.add(baseName);
+          const target = path.join(targetRoot, baseName);
+          const explicitPath = this.copyPiResource(agent, kind, rel, source, target);
+          const flag = kind === "skills"
+            ? "--skill"
+            : kind === "prompts"
+              ? "--prompt-template"
+              : kind === "themes"
+                ? "--theme"
+                : "--extension";
+          args.push(flag, shellResourcePath(explicitPath));
+        }
+      }
+
+      const generationDigest = this.hashPiResourceTree(agent, stage);
+      const generationName = `generation-${generationDigest}`;
+      const generation = path.join(root, generationName);
+      try {
+        const existing = fs.lstatSync(generation);
+        if (existing.isSymbolicLink() || !existing.isDirectory()) {
+          throw new HarnessUnavailableError(agent, `Pi resource generation must be a real directory: ${generation}`);
+        }
+        if (this.hashPiResourceTree(agent, generation) !== generationDigest) {
+          throw new HarnessUnavailableError(agent, `Pi resource generation content does not match its digest: ${generation}`);
+        }
+        removeDirByRenameThenRm(stage);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        fs.renameSync(stage, generation);
+      }
+      const rewritten = args.map((arg) => arg.includes(stage) ? arg.replace(stage, generation) : arg);
+      return { ...base, args: rewritten };
+    } catch (error) {
+      removeRecursiveWithRetry(stage);
+      throw error;
+    }
+  }
+
+  private materializePiBaseHome(agent: string): MaterializedHarness {
     const home = materializePiAgentHome(this.workspaceRoot, agent);
 
     for (const fileName of PI_PRIVATE_JSON_FILES) {
@@ -826,6 +929,155 @@ export class HarnessManager {
       env: { [PI_AGENT_DIR_ENV]: home, [PI_SESSION_DIR_ENV]: sessions },
       args: [],
     };
+  }
+
+  private ensurePiResourceDir(agent: string, root: string): void {
+    try {
+      const stat = fs.lstatSync(root);
+      if (stat.isSymbolicLink() || !stat.isDirectory()) {
+        throw new HarnessUnavailableError(agent, `Pi resource root must be a real directory: ${root}`);
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      fs.mkdirSync(root, { mode: 0o700 });
+    }
+    fs.chmodSync(root, 0o700);
+  }
+
+  private cleanPiStagingDirs(agent: string, root: string): void {
+    for (const name of fs.readdirSync(root)) {
+      if (!name.startsWith(".staging-")) continue;
+      const item = path.join(root, name);
+      const stat = fs.lstatSync(item);
+      if (stat.isSymbolicLink() || !stat.isDirectory()) {
+        throw new HarnessUnavailableError(agent, `Pi resource staging entry must be a real directory: ${item}`);
+      }
+      removeDirByRenameThenRm(item);
+    }
+  }
+
+  private copyPiResource(agent: string, kind: PiResourceKind, declared: string, source: string, target: string): string {
+    let stat: fs.Stats;
+    try {
+      stat = fs.lstatSync(source);
+    } catch {
+      throw new HarnessUnavailableError(agent, `Pi ${kind} resource not found: ${declared}`);
+    }
+    if (stat.isSymbolicLink() || (!stat.isFile() && !stat.isDirectory())) {
+      throw new HarnessUnavailableError(agent, `Pi ${kind} resource must be a regular no-follow file or directory: ${declared}`);
+    }
+
+    let explicitSource = source;
+    if (kind === "extensions") {
+      if (stat.isFile()) {
+        if (![".ts", ".js"].includes(path.extname(source))) {
+          throw new HarnessUnavailableError(agent, `Pi extension file must end in .ts or .js: ${declared}`);
+        }
+      } else {
+        const entry = ["index.ts", "index.js"].map((name) => path.join(source, name)).find((file) => {
+          try {
+            const entryStat = fs.lstatSync(file);
+            return entryStat.isFile() && !entryStat.isSymbolicLink();
+          } catch {
+            return false;
+          }
+        });
+        if (!entry) throw new HarnessUnavailableError(agent, `Pi extension directory must contain index.ts or index.js: ${declared}`);
+        explicitSource = entry;
+      }
+    } else if (kind === "skills") {
+      if (!stat.isDirectory() || !isReadableRegularFile(path.join(source, "SKILL.md"))) {
+        throw new HarnessUnavailableError(agent, `Pi skill directory must contain a regular SKILL.md: ${declared}`);
+      }
+    } else if (kind === "prompts") {
+      if (!stat.isFile() || path.extname(source) !== ".md") {
+        throw new HarnessUnavailableError(agent, `Pi prompt template must be a .md file: ${declared}`);
+      }
+    } else if (kind === "themes") {
+      if (!stat.isFile() || path.extname(source) !== ".json" || !isReadableNoFollowJsonObjectFile(source)) {
+        throw new HarnessUnavailableError(agent, `Pi theme must be a readable JSON-object file: ${declared}`);
+      }
+    } else if (!stat.isDirectory() || !this.isPiPackageRoot(source)) {
+      throw new HarnessUnavailableError(agent, `Pi package must be a local directory with a pi manifest or conventional resource directory: ${declared}`);
+    }
+
+    this.copyNoFollowTree(agent, source, target, declared);
+    return explicitSource === source ? target : path.join(target, path.relative(source, explicitSource));
+  }
+
+  private isPiPackageRoot(source: string): boolean {
+    const manifest = path.join(source, "package.json");
+    if (isReadableNoFollowJsonObjectFile(manifest)) {
+      try {
+        const parsed = JSON.parse(fs.readFileSync(manifest, "utf8")) as Record<string, unknown>;
+        if (parsed.pi && typeof parsed.pi === "object" && !Array.isArray(parsed.pi)) {
+          const pi = parsed.pi as Record<string, unknown>;
+          for (const key of ["extensions", "skills", "prompts", "themes"]) {
+            const entries = pi[key];
+            if (entries === undefined) continue;
+            if (!Array.isArray(entries) || entries.some((entry) => typeof entry !== "string" || !this.isSafePiPackageEntry(entry))) {
+              return false;
+            }
+          }
+          return true;
+        }
+      } catch {
+        return false;
+      }
+    }
+    return ["extensions", "skills", "prompts", "themes"].some((name) => {
+      try {
+        const stat = fs.lstatSync(path.join(source, name));
+        return stat.isDirectory() && !stat.isSymbolicLink();
+      } catch {
+        return false;
+      }
+    });
+  }
+
+  private isSafePiPackageEntry(entry: string): boolean {
+    const candidate = entry.replace(/^[!+-]/, "").trim();
+    return candidate.length > 0
+      && !candidate.includes("\0")
+      && !candidate.includes("..")
+      && !path.isAbsolute(candidate)
+      && !candidate.startsWith("~")
+      && !/^[A-Za-z][A-Za-z0-9+.-]*:/.test(candidate)
+      && !/^[A-Za-z]:[\\/]/.test(candidate);
+  }
+
+  private copyNoFollowTree(agent: string, source: string, target: string, declared: string): void {
+    const stat = fs.lstatSync(source);
+    if (stat.isSymbolicLink() || (!stat.isFile() && !stat.isDirectory())) {
+      throw new HarnessUnavailableError(agent, `Pi resource tree contains a symlink or special file: ${declared}`);
+    }
+    if (stat.isFile()) {
+      fs.copyFileSync(source, target, fs.constants.COPYFILE_EXCL);
+      fs.chmodSync(target, stat.mode & 0o777);
+      return;
+    }
+    fs.mkdirSync(target, { mode: 0o700 });
+    for (const entry of fs.readdirSync(source)) {
+      this.copyNoFollowTree(agent, path.join(source, entry), path.join(target, entry), `${declared}/${entry}`);
+    }
+  }
+
+  private hashPiResourceTree(agent: string, root: string): string {
+    const hash = createHash("sha256");
+    const visit = (current: string, relative: string): void => {
+      const stat = fs.lstatSync(current);
+      if (stat.isSymbolicLink() || (!stat.isDirectory() && !stat.isFile())) {
+        throw new HarnessUnavailableError(agent, `Pi resource generation contains a symlink or special file: ${current}`);
+      }
+      hash.update(`${stat.isDirectory() ? "d" : "f"}:${relative}:${stat.mode & 0o777}\0`);
+      if (stat.isDirectory()) {
+        for (const entry of fs.readdirSync(current).sort()) visit(path.join(current, entry), path.join(relative, entry));
+      } else {
+        hash.update(fs.readFileSync(current));
+      }
+    };
+    visit(root, ".");
+    return hash.digest("hex").slice(0, 24);
   }
 
   /** spec 227 — the project `.env` (gitignored), parsed; `{}` if absent/unreadable. A secondary

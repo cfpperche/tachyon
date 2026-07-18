@@ -235,6 +235,121 @@ describe("HarnessManager materialize (fs)", () => {
     expect(() => mgr.materializePiHomeOnly("unsafe-target")).toThrow(/regular no-follow file/);
   });
 
+  it("SDD 406: Pi snapshots an exact resource generation and returns only explicit CLI resource paths", () => {
+    const piHome = path.join(path.dirname(realHome), "realpi-resources");
+    fs.mkdirSync(piHome, { recursive: true });
+    fs.writeFileSync(path.join(piHome, "settings.json"), '{"theme":"dark","quietStartup":true}');
+
+    fs.mkdirSync(path.join(ws, "pi-resources", "extension"), { recursive: true });
+    fs.writeFileSync(path.join(ws, "pi-resources", "extension", "index.ts"), "export default function () {}\n");
+    fs.writeFileSync(path.join(ws, "pi-resources", "extension", "helper.ts"), "export const value = 1;\n");
+    fs.mkdirSync(path.join(ws, "pi-resources", "skill"), { recursive: true });
+    fs.writeFileSync(path.join(ws, "pi-resources", "skill", "SKILL.md"), "---\nname: harness-skill\ndescription: exact\n---\n");
+    fs.writeFileSync(path.join(ws, "pi-resources", "review.md"), "---\ndescription: review\n---\nReview.\n");
+    fs.writeFileSync(path.join(ws, "pi-resources", "theme.json"), '{"name":"harness-theme","colors":{}}');
+    fs.mkdirSync(path.join(ws, "pi-resources", "package", "prompts"), { recursive: true });
+    fs.writeFileSync(path.join(ws, "pi-resources", "package", "package.json"), '{"name":"local-pi-package","pi":{"prompts":["prompts"]}}');
+    fs.writeFileSync(path.join(ws, "pi-resources", "package", "prompts", "package-command.md"), "Package prompt.\n");
+
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), undefined, undefined, undefined, undefined, undefined, piHome);
+    const seeded = mgr.materializePiHomeOnly("pi-exact");
+    const settingsBefore = fs.readFileSync(path.join(seeded.home, "settings.json"), "utf8");
+    const result = mgr.materializePiHome("pi-exact", {
+      inherit: "workspace",
+      extensions: ["pi-resources/extension"],
+      skills: ["pi-resources/skill"],
+      prompts: ["pi-resources/review.md"],
+      themes: ["pi-resources/theme.json"],
+      packages: ["pi-resources/package"],
+    });
+
+    expect(result.args.slice(0, 4)).toEqual(["--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes"]);
+    expect(result.args.filter((arg) => arg === "--extension")).toHaveLength(2);
+    expect(result.args).toContain("--skill");
+    expect(result.args).toContain("--prompt-template");
+    expect(result.args).toContain("--theme");
+    expect(result.args.join(" ")).toContain("/.tachyon-resources/generation-");
+    expect(result.args.join(" ")).not.toContain(".staging-");
+    expect(fs.readFileSync(path.join(result.home, "settings.json"), "utf8")).toBe(settingsBefore);
+    expect(fs.existsSync(path.join(result.home, ".tachyon-resources"))).toBe(true);
+    expect(fs.existsSync(path.join(result.home, "extensions"))).toBe(false);
+  });
+
+  it("SDD 406: Pi resource rematerialization isolates siblings, reuses content generations, and no-harness mode preserves settings", () => {
+    const piHome = path.join(path.dirname(realHome), "realpi-rematerialize");
+    fs.mkdirSync(piHome, { recursive: true });
+    fs.writeFileSync(path.join(piHome, "settings.json"), '{"theme":"light"}');
+    for (const name of ["one", "two"]) {
+      fs.mkdirSync(path.join(ws, "skills", name), { recursive: true });
+      fs.writeFileSync(path.join(ws, "skills", name, "SKILL.md"), `---\nname: ${name}\ndescription: ${name}\n---\n`);
+    }
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), undefined, undefined, undefined, undefined, undefined, piHome);
+    const first = mgr.materializePiHome("pi-a", { inherit: "workspace", skills: ["skills/one"] });
+    const sibling = mgr.materializePiHome("pi-b", { inherit: "workspace", skills: ["skills/two"] });
+    const repeated = mgr.materializePiHome("pi-a", { inherit: "workspace", skills: ["skills/one"] });
+    const second = mgr.materializePiHome("pi-a", { inherit: "workspace", skills: ["skills/two"] });
+
+    expect(first.args.join(" ")).toContain("/skills/one");
+    const firstSkillPath = first.args[first.args.indexOf("--skill") + 1]!.slice(1, -1);
+    expect(fs.existsSync(firstSkillPath)).toBe(true);
+    expect(repeated.args).toEqual(first.args);
+    expect(second.args.join(" ")).toContain("/skills/two");
+    expect(second.args.join(" ")).not.toContain("/skills/one");
+    expect(sibling.home).not.toBe(first.home);
+    expect(sibling.args.join(" ")).not.toContain(first.home);
+    const generations = fs.readdirSync(path.join(first.home, ".tachyon-resources")).filter((name) => name.startsWith("generation-"));
+    expect(generations).toHaveLength(2);
+    expect(fs.existsSync(firstSkillPath)).toBe(true);
+
+    fs.writeFileSync(path.join(first.home, "settings.json"), '{"theme":"agent-owned"}');
+    const ordinary = mgr.materializePiHomeOnly("pi-a");
+    expect(ordinary.args).toEqual([]);
+    expect(fs.existsSync(path.join(first.home, ".tachyon-resources"))).toBe(true);
+    expect(fs.existsSync(firstSkillPath)).toBe(true);
+    expect(fs.readFileSync(path.join(first.home, "settings.json"), "utf8")).toBe('{"theme":"agent-owned"}');
+  });
+
+  it("SDD 406: Pi rejects symlinked resource trees and never publishes staging argv", () => {
+    const piHome = path.join(path.dirname(realHome), "realpi-unsafe-resources");
+    fs.mkdirSync(piHome, { recursive: true });
+    fs.mkdirSync(path.join(ws, "skills", "unsafe"), { recursive: true });
+    fs.writeFileSync(path.join(ws, "skills", "unsafe", "SKILL.md"), "---\nname: unsafe\ndescription: unsafe\n---\n");
+    fs.symlinkSync(path.join(piHome, "secret.json"), path.join(ws, "skills", "unsafe", "secret-link"));
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), undefined, undefined, undefined, undefined, undefined, piHome);
+
+    expect(() => mgr.materializePiHome("pi-unsafe", { inherit: "workspace", skills: ["skills/unsafe"] })).toThrow(/symlink or special file/);
+    const root = path.join(harnessHome(ws, "pi-unsafe"), ".tachyon-resources");
+    expect(fs.existsSync(root)).toBe(true);
+    expect(fs.readdirSync(root).some((name) => name.startsWith("generation-") || name.startsWith(".staging-"))).toBe(false);
+  });
+
+  it("SDD 406: Pi rejects duplicate, escaping, special-file, unsafe-package, and unsafe owned-root inputs", () => {
+    const piHome = path.join(path.dirname(realHome), "realpi-invalid-resources");
+    fs.mkdirSync(piHome, { recursive: true });
+    fs.mkdirSync(path.join(ws, "one"), { recursive: true });
+    fs.mkdirSync(path.join(ws, "two"), { recursive: true });
+    fs.writeFileSync(path.join(ws, "one", "same.md"), "one");
+    fs.writeFileSync(path.join(ws, "two", "same.md"), "two");
+    const outside = path.join(path.dirname(ws), "outside-skill");
+    fs.mkdirSync(outside, { recursive: true });
+    fs.writeFileSync(path.join(outside, "SKILL.md"), "---\nname: outside\ndescription: outside\n---\n");
+    fs.symlinkSync(outside, path.join(ws, "escaping-skill"));
+    execFileSync("mkfifo", [path.join(ws, "special.md")]);
+    fs.mkdirSync(path.join(ws, "unsafe-package"), { recursive: true });
+    fs.writeFileSync(path.join(ws, "unsafe-package", "package.json"), '{"pi":{"extensions":["../../auth.json"]}}');
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), undefined, undefined, undefined, undefined, undefined, piHome);
+
+    expect(() => mgr.materializePiHome("pi-duplicate", { inherit: "workspace", prompts: ["one/same.md", "two/same.md"] })).toThrow(/duplicate Pi prompts resource basename/);
+    expect(() => mgr.materializePiHome("pi-escape", { inherit: "workspace", skills: ["escaping-skill"] })).toThrow(/escapes the workspace/);
+    expect(() => mgr.materializePiHome("pi-special", { inherit: "workspace", prompts: ["special.md"] })).toThrow(/regular no-follow file or directory/);
+    expect(() => mgr.materializePiHome("pi-package", { inherit: "workspace", packages: ["unsafe-package"] })).toThrow(/pi manifest or conventional resource directory/);
+
+    const ownedRoot = path.join(harnessHome(ws, "pi-root"), ".tachyon-resources");
+    fs.mkdirSync(path.dirname(ownedRoot), { recursive: true });
+    fs.symlinkSync(outside, ownedRoot);
+    expect(() => mgr.materializePiHome("pi-root", { inherit: "workspace", skills: ["escaping-skill"] })).toThrow(/resource root must be a real directory/);
+  });
+
   it("spec 298: codex harness writes private config.toml, symlinks auth, and returns CODEX_HOME only", () => {
     const codexHome = path.join(path.dirname(realHome), "realcodex");
     fs.mkdirSync(codexHome, { recursive: true });
