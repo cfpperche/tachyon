@@ -6,6 +6,14 @@ Marketplace release notes.
 
 ## Unreleased
 
+## 0.56.24 — Reentrant worktree path lock (prune deadlock)
+
+### Fixed
+- **Worktree path mutex is reentrant for nested same-path ops** (`t-3fb6eb`).
+  `DeliveryProjectionService.prune` holds the path lock then calls `remove`, which
+  re-enters the same mutex; the previous non-reentrant chain deadlocked, hung
+  Bridge prune/reconcile for 300s, and leaked projection claims.
+
 ## 0.56.23 — Governed projection reconcile Bridge tool
 
 ### Added
