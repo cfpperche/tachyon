@@ -25,6 +25,16 @@
 - File effects are conservative: read references appear at call time; write/edit effects appear only after a successful correlated `toolResult`.
 - Model/cost raw data is not copied into the durable log. Existing normalized token fields are mapped; cost schema remains a separate observability decision.
 
+## Human dogfood
+
+### 2026-07-18 — pass — Dev Host Activity view
+
+- Commit `1b51e39a`, isolated fixture `/tmp/tachyon-pi-activity-dogfood`.
+- Maintainer approved the real Pi Activity flow after reading/editing `activity-fixture.txt` with native tools.
+- Existing Activity components rendered Pi activity and kept the feed stitched across Stop → Resume; no layout regression was reported.
+- With unit/integration, real-transcript and visual evidence green, Pi Activity was promoted from `~` to `✓` in the parity matrix.
+- Dev Host pointer was cleared immediately after approval; its private engine was stopped.
+
 ## Verification log
 
 ### 2026-07-18T16:19:43Z — pass (1/1) — source: tasks.md

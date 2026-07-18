@@ -20,7 +20,7 @@ Pi deliberately has no built-in MCP client. Tachyon's extension opens the local 
 | Default private home | ✓ | `PI_CODING_AGENT_DIR=.tachyon/harness/<agent>` plus private `sessions/` |
 | Credential isolation | ✓/~ | Initial regular mode-0600 copy; later refresh is agent-local and intentionally not synchronized |
 | Fork | ✗ | Deferred with transcript/session semantics |
-| Normalized Activity | ~ | Exact private JSONL → `piNormalizer` → bounded durable `ActivityLogWriter`; automated proof passed, Dev Host view pending |
+| Normalized Activity | ✓ | Exact private JSONL → `piNormalizer` → bounded durable `ActivityLogWriter`; automated and Dev Host visual dogfood passed |
 | Runtime model/usage observation | ~ | Generic process/usage surfaces only |
 | Opt-in Pi harness capabilities | ✗ | Agent-scoped Pi skills/extensions/packages remain deferred |
 

@@ -41,7 +41,7 @@ Add a pure, stateful Pi transcript normalizer and wire it into the existing boun
   - **When** they are tailed
   - **Then** no exception or raw-log bloat occurs and the line-aligned cursor remains retry-safe
 - [x] Pi is part of the normalized runtime type and `ActivityLogWriter` selects the Pi normalizer on first poll, restart rehydration and session rotation.
-- [ ] Runtime parity documentation marks Pi Activity `✓` only after normalizer, writer integration, real-transcript dogfood and human Activity-view confirmation pass.
+- [x] Runtime parity documentation marks Pi Activity `✓` only after normalizer, writer integration, real-transcript dogfood and human Activity-view confirmation pass.
 
 ## Non-goals
 

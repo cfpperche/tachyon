@@ -29,8 +29,8 @@ _Generated from `plan.md` on 2026-07-18._
 
 ## Visual QA
 
-- [ ] Evidence: human inspection of the real Dev Host Activity panel.
-- [ ] Verdict: existing Activity components render Pi events without layout regressions.
+- [x] Evidence: human inspection of the real Dev Host Activity panel at commit `1b51e39a`.
+- [x] Verdict: approved — Pi conversation/tool/file Activity rendered correctly and remained stitched across Stop → Resume.
 
 ## Cookbook
 
