@@ -336,17 +336,25 @@ export function requestEngineControl(
   timeoutMs = DEFAULT_CONTROL_TIMEOUT_MS,
 ): Promise<EngineControlResponseV1> {
   return new Promise((resolve, reject) => {
-    let controlNonce: string;
+    let wireRequest: EngineControlRequestV1 | (EngineControlRequestV1 & { controlNonce: string });
     try {
-      controlNonce = readControlNonce(socketPath);
+      wireRequest = { ...request, controlNonce: readControlNonce(socketPath) };
     } catch (error) {
-      reject(new EngineControlClientError(
-        "UNAVAILABLE",
-        error instanceof Error ? error.message : String(error),
-        undefined,
-        (error as NodeJS.ErrnoException).code,
-      ));
-      return;
+      const systemCode = (error as NodeJS.ErrnoException).code;
+      // Upgrade bootstrap: engines predating control-peer authentication have a live socket but no
+      // nonce sidecar.  Permit only their read-only health probe so the supervisor can verify the
+      // workspace/PID identity and replace them through the controlled upgrade path.  Every other
+      // operation remains fail-closed, and a current engine whose nonce was removed rejects this probe.
+      if (request.op === "health" && systemCode === "ENOENT") wireRequest = request;
+      else {
+        reject(new EngineControlClientError(
+          "UNAVAILABLE",
+          error instanceof Error ? error.message : String(error),
+          undefined,
+          systemCode,
+        ));
+        return;
+      }
     }
     const maxResponseBytes = request.op === "query"
       ? request.query.method === "task.board"
@@ -383,7 +391,7 @@ export function requestEngineControl(
     const timer = setTimeout(() => finish({ error: new EngineControlClientError("TIMEOUT", "engine control request timed out") }), timeoutMs);
     timer.unref?.();
     socket.setEncoding("utf8");
-    socket.once("connect", () => socket.write(`${JSON.stringify({ ...request, controlNonce })}\n`));
+    socket.once("connect", () => socket.write(`${JSON.stringify(wireRequest)}\n`));
     socket.on("data", (chunk: string) => {
       output += chunk;
       if (Buffer.byteLength(output, "utf8") > maxResponseBytes) {

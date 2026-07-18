@@ -3,7 +3,7 @@ import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
 import { createHash } from "node:crypto";
-import { EngineControlClient } from "../../src/engine-service/controlClient.js";
+import { EngineControlClient, requestEngineControl } from "../../src/engine-service/controlClient.js";
 import { startEngineControlServer, type RunningEngineControlServer } from "../../src/engine-service/controlServer.js";
 import { createControlNonce } from "../../src/engine-service/controlPeerAuth.js";
 import { EngineEventJournal } from "../../src/engine-service/eventJournal.js";
@@ -71,6 +71,49 @@ function fixture() {
 }
 
 describe("EngineControlClient", () => {
+  it("health-probes a pre-auth engine without weakening non-health control calls", async () => {
+    const f = fixture();
+    const connections = new Set<net.Socket>();
+    const legacy = net.createServer((socket) => {
+      connections.add(socket);
+      socket.once("close", () => connections.delete(socket));
+      let input = "";
+      socket.on("data", (chunk: Buffer) => {
+        input += chunk.toString("utf8");
+        const newline = input.indexOf("\n");
+        if (newline < 0) return;
+        const request = JSON.parse(input.slice(0, newline)) as Record<string, unknown>;
+        expect(request).toMatchObject({ schemaVersion: 1, op: "health", workspaceHash: f.identity.workspaceHash });
+        expect(request).not.toHaveProperty("controlNonce");
+        socket.end(`${JSON.stringify({ ok: true, op: "health", engine: f.identity, shellCount: 0 })}\n`);
+      });
+    });
+    await new Promise<void>((resolve, reject) => {
+      legacy.once("error", reject);
+      legacy.listen(f.socketPath, resolve);
+    });
+    try {
+      await expect(requestEngineControl(f.socketPath, {
+        schemaVersion: 1,
+        op: "health",
+        workspaceHash: f.identity.workspaceHash,
+      })).resolves.toMatchObject({ ok: true, op: "health", engine: f.identity });
+      await expect(requestEngineControl(f.socketPath, {
+        schemaVersion: 1,
+        op: "attach",
+        workspaceHash: f.identity.workspaceHash,
+        hello: f.hello,
+      })).rejects.toMatchObject({
+        code: "UNAVAILABLE",
+        systemCode: "ENOENT",
+      });
+    } finally {
+      for (const connection of connections) connection.destroy();
+      await new Promise<void>((resolve) => legacy.close(() => resolve()));
+      try { fs.unlinkSync(f.socketPath); } catch { /* already removed by Node */ }
+    }
+  });
+
   it("attaches, resnapshots and detaches without owning engine lifecycle", async () => {
     const f = fixture();
     const server = await startEngineControlServer({ socketPath: f.socketPath, identity: f.identity, getSnapshot: f.snapshot });
