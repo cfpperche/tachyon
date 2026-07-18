@@ -1,7 +1,6 @@
 import type { ApprovalDecision } from "../../bridge/approvalRequest";
 import type { ApprovalViewModel, ApprovalViewItem } from "./viewModel";
-
-const Icon = ({ name }: { name: string }) => <span class={`codicon codicon-${name}`} aria-hidden="true" />;
+import { Button, EmptyState, IconButton, PageChrome } from "../shared/ui";
 
 export interface ApprovalDispatch {
   refresh(): void;
@@ -30,15 +29,33 @@ function ApprovalCard({ item, dispatch }: { item: ApprovalViewItem; dispatch: Ap
           </div>
         </div>
         <div class="approval-actions">
-          <button type="button" title="Approve" aria-label={`Approve ${item.id}`} disabled={item.tampered} onClick={() => dispatch.resolve(item.id, "approved")}>
-            <Icon name="check" />
-          </button>
-          <button type="button" title="Deny" aria-label={`Deny ${item.id}`} disabled={item.tampered} onClick={() => dispatch.resolve(item.id, "denied")}>
-            <Icon name="close" />
-          </button>
+          <Button
+            variant="primary"
+            icon="check"
+            title="Approve"
+            aria-label={`Approve ${item.id}`}
+            disabled={item.tampered}
+            onClick={() => dispatch.resolve(item.id, "approved")}
+          >
+            Approve
+          </Button>
+          <Button
+            variant="danger"
+            icon="close"
+            title="Deny"
+            aria-label={`Deny ${item.id}`}
+            disabled={item.tampered}
+            onClick={() => dispatch.resolve(item.id, "denied")}
+          >
+            Deny
+          </Button>
         </div>
       </header>
-      {item.tampered && <div class="approval-warning"><Icon name="warning" /> {item.warning ?? "payloadHash mismatch; approval is blocked"}</div>}
+      {item.tampered && (
+        <div class="approval-warning">
+          payloadHash mismatch; approval is blocked{item.warning ? ` — ${item.warning}` : ""}
+        </div>
+      )}
       <section class="approval-payload" aria-label={`Verbatim payload for ${item.id}`}>
         <Field label="reason" value={item.payload.reason} />
         <Field label="proposed_action" value={item.payload.proposedAction} />
@@ -53,25 +70,26 @@ export function App({ vm, error, dispatch }: { vm?: ApprovalViewModel; error?: s
   if (!vm) {
     return (
       <div class="approval-root">
-        <div class="approval-empty"><Icon name="loading" /> Loading approvals...</div>
+        <EmptyState kind="loading" message="Loading approvals…" />
       </div>
     );
   }
   return (
     <div class="approval-root">
-      <header class="approval-title">
-        <div>
-          <h1>Human approvals</h1>
-          <p>{vm.folder}</p>
-        </div>
-        <button type="button" title="Refresh" aria-label="Refresh approvals" onClick={() => dispatch.refresh()}><Icon name="refresh" /></button>
-      </header>
-      {error && <div class="approval-warning"><Icon name="error" /> {error}</div>}
+      <PageChrome
+        title="Approvals"
+        icon="pass"
+        hint={vm.folder}
+        actions={<IconButton name="refresh" title="Refresh approvals" onClick={() => dispatch.refresh()} />}
+      />
+      {error ? <div class="approval-warning">{error}</div> : null}
       {vm.approvals.length === 0 ? (
-        <div class="approval-empty">No pending approvals</div>
+        <EmptyState kind="empty" message="No pending approvals" />
       ) : (
         <div class="approval-list">
-          {vm.approvals.map((item) => <ApprovalCard key={item.id} item={item} dispatch={dispatch} />)}
+          {vm.approvals.map((item) => (
+            <ApprovalCard key={item.id} item={item} dispatch={dispatch} />
+          ))}
         </div>
       )}
     </div>

@@ -7,7 +7,7 @@ import {
 import type { ControlInspectorWorkspaceRow } from "../../control-inspector/model";
 import type { CockpitAction, CockpitStrings } from "./messages";
 import { EngineLogPanel } from "./EngineLogPanel";
-import { Button } from "../shared/ui";
+import { Button, PageChrome } from "../shared/ui";
 import { App as MissionControlApp, type MissionControlDispatch, type TaskErrorEvent } from "../mission-control/App";
 import type { MissionControlVM } from "../mission-control/messages";
 import { App as ValidationsApp, type ValidationsDispatch } from "../validations/App";
@@ -190,17 +190,17 @@ function ModuleChrome({
 }) {
   return (
     <>
-      <div class="ck-head">
-        <div>
-          <h1>{title}</h1>
-          <p class="hint">{hint}</p>
-        </div>
-        {actionLabel && onAction ? (
-          <Button variant="primary" onClick={onAction}>
-            {actionLabel}
-          </Button>
-        ) : null}
-      </div>
+      <PageChrome
+        title={title}
+        hint={hint}
+        actions={
+          actionLabel && onAction ? (
+            <Button variant="primary" onClick={onAction}>
+              {actionLabel}
+            </Button>
+          ) : undefined
+        }
+      />
       {children}
     </>
   );
