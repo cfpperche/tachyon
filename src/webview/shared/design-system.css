@@ -54,6 +54,20 @@
   --ds-btn-fg:    var(--vscode-button-foreground);
   --ds-btn-hover: var(--vscode-button-hoverBackground, var(--vscode-button-background));
   --ds-hover:     var(--vscode-toolbar-hoverBackground, color-mix(in srgb, var(--vscode-foreground) 12%, transparent));
+  /* t-df7df5: used widely in panel CSS but was never defined — maps to primary accent / button bg */
+  --ds-accent:    var(--vscode-button-background, var(--vscode-focusBorder, var(--vscode-textLink-foreground)));
+  --ds-disabled-opacity: 0.5;
+  /* elevation / motion / stacking — minimal kit roles (Orca DS 03 additive) */
+  --ds-shadow-1:  0 1px 2px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.18));
+  --ds-shadow-2:  0 10px 24px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.18));
+  --ds-duration-1: 120ms;
+  --ds-duration-2: 200ms;
+  --ds-ease: cubic-bezier(0.2, 0, 0, 1);
+  --ds-z-popover: 20;
+  --ds-z-dialog:  40;
+  --ds-z-toast:   50;
+  --ds-z-overlay: 60;
+  --ds-scrim: color-mix(in srgb, var(--vscode-editor-background) 55%, #000 45%);
   --tachyon-font-mono: "Tachyon Mono", ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   --tachyon-font-reading: var(--vscode-font-family, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
   --tachyon-weight-regular: 400;
@@ -100,7 +114,7 @@ a { color: var(--ds-link); }
 
 /* ── layout ── */
 .ds-wrap { max-width: 920px; margin: 0 auto; padding: 0 var(--ds-5); }
-.ds-head { position: sticky; top: 0; z-index: 5; background: var(--vscode-editor-background); border-bottom: 1px solid var(--ds-border); }
+.ds-head { position: sticky; top: 0; z-index: var(--ds-z-popover); background: var(--vscode-editor-background); border-bottom: 1px solid var(--ds-border); }
 .ds-head-row { display: flex; align-items: center; gap: var(--ds-3); padding: var(--ds-4) 0 var(--ds-3); }
 .ds-title { font-size: var(--ds-title); font-weight: var(--tachyon-weight-semibold); display: flex; align-items: center; gap: var(--ds-2); margin: 0; }
 /* title ↔ subtitle: a tight intra-group gap (internal ≤ external, Gestalt proximity) — NOT a negative overlap */
@@ -114,7 +128,7 @@ a { color: var(--ds-link); }
 /* spec 282 — primary composes with .ds-btn (structure); the colored bg makes its border invisible (transparent). */
 .ds-btn-primary { display: inline-flex; align-items: center; gap: var(--ds-icon-gap); background: var(--ds-btn-bg); color: var(--ds-btn-fg); border-color: transparent; border-radius: 4px; padding: var(--ds-1) var(--ds-3); font-weight: var(--tachyon-weight-semibold); }
 .ds-btn-primary:hover { background: var(--ds-btn-hover); }
-.ds-btn-primary:disabled { opacity: .5; cursor: default; }
+.ds-btn-primary:disabled { opacity: var(--ds-disabled-opacity); cursor: default; }
 .ds-btn-primary.ds-danger, .ds-btn-danger { background: var(--ds-err); color: #fff; border-color: transparent; }
 /* spec 282 — canonical icon metrics: a codicon inside any button/tab/chip is fixed-size, baseline-centred, no shrink */
 .ds-btn .codicon, .ds-tab .codicon, .ds-chip .codicon { font-size: var(--ds-small); line-height: 1; flex: none; }
@@ -135,7 +149,7 @@ a { color: var(--ds-link); }
 .ds-tab { display: inline-flex; align-items: center; gap: var(--ds-icon-gap); padding: var(--ds-2) var(--ds-4); color: var(--ds-muted); border-bottom: 2px solid transparent; margin-bottom: -1px; cursor: pointer; user-select: none; }
 .ds-tab:hover { color: var(--ds-fg); }
 .ds-tab.active { color: var(--ds-fg); border-bottom-color: var(--ds-focus); }
-.ds-tab.locked { opacity: .35; cursor: not-allowed; }
+.ds-tab.locked { opacity: calc(var(--ds-disabled-opacity) * 0.7); cursor: not-allowed; }
 .ds-tab .count { font-size: var(--ds-micro); opacity: .7; } /* optional trailing count badge */
 
 /* ── chips (spec 282 — canonical; was duplicated/renamed per panel: chip/schip/tag-chip) ── */
@@ -143,7 +157,7 @@ a { color: var(--ds-link); }
 .ds-chip:hover { background: var(--ds-hover); }
 .ds-chip.active { border-color: var(--ds-focus); background: var(--ds-btn-bg); color: var(--ds-btn-fg); }
 .ds-chip.active:hover { background: var(--ds-btn-hover); }
-.ds-chip.disabled { opacity: 0.45; cursor: not-allowed; }
+.ds-chip.disabled { opacity: calc(var(--ds-disabled-opacity) * 0.9); cursor: not-allowed; }
 .ds-chip.disabled:hover { background: color-mix(in srgb, var(--ds-fg) 8%, transparent); }
 
 /* ── inputs ── */
@@ -168,7 +182,7 @@ a { color: var(--ds-link); }
 /* a plain <select> otherwise keeps the platform's native chrome — unthemed (white) in a dark VS Code theme
    (dogfood round 1 (#4)). Every webview links this stylesheet, so this covers every quick-control select. */
 select { background: var(--ds-dropdown-bg); color: var(--ds-dropdown-fg); border: 1px solid var(--ds-border); border-radius: 5px; padding: var(--ds-1) var(--ds-2); font: inherit; color-scheme: light dark; }
-select:disabled { opacity: .6; cursor: default; }
+select:disabled { opacity: var(--ds-disabled-opacity); cursor: default; }
 /* spec 339 round-1 (#2) — the shared row rhythm for a horizontal group of form fields (gap/padding/border),
    so per-panel field rows built independently (e.g. Task Studio's fields row vs. its deps/artifacts row)
    share one spacing rule instead of drifting apart. */
@@ -180,7 +194,7 @@ select:disabled { opacity: .6; cursor: default; }
 .kit-file-picker-description { margin-top: var(--ds-1); color: var(--ds-muted); font-size: var(--ds-small); }
 .kit-file-picker-dropzone { display: grid; justify-items: center; gap: var(--ds-1); width: 100%; min-height: 112px; padding: var(--ds-3); border: 1px dashed var(--ds-border); border-radius: var(--ds-radius); background: color-mix(in srgb, var(--ds-input-bg) 72%, transparent); color: var(--ds-fg); }
 .kit-file-picker-dropzone:hover, .kit-file-picker-dropzone:focus-visible, .kit-file-picker-dropzone.is-dragging { border-color: var(--ds-focus); background: var(--ds-hover); outline: none; }
-.kit-file-picker-dropzone:disabled { opacity: .65; cursor: wait; }
+.kit-file-picker-dropzone:disabled { opacity: var(--ds-disabled-opacity); cursor: wait; }
 .kit-file-picker-dropzone > .codicon { font-size: 24px; color: var(--ds-focus); }
 .kit-file-picker-browse-label { color: var(--ds-muted); font-size: var(--ds-small); }
 .kit-file-picker-input { display: none; }
@@ -192,3 +206,11 @@ select:disabled { opacity: .6; cursor: default; }
 .ds-empty { text-align: center; color: var(--ds-muted); padding: 56px var(--ds-5); }
 .ds-empty .ds-big { font-size: var(--ds-body); color: var(--ds-fg); margin-bottom: var(--ds-1); }
 .ds-degrade { padding: 56px var(--ds-5); text-align: center; color: var(--ds-muted); }
+
+/* t-df7df5 — respect reduced motion for token-driven transitions */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --ds-duration-1: 0ms;
+    --ds-duration-2: 0ms;
+  }
+}
