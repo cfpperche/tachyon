@@ -6,6 +6,16 @@ Marketplace release notes.
 
 ## Unreleased
 
+## 0.56.35 — Validations Control view v1 (t-da934e)
+
+### Added
+- **Control → Validations**: Approvals-parity card list with expand detail,
+  close (outcome+note), claim/assign, filters, store-backed VM (not Mission strip).
+- Engine `validation.assign` workspace command for human claim path.
+
+### Fixed
+- Preserve `verify:full` → `scripts/verify-full.mjs` (t-6a9bc4 lock + maxWorkers).
+
 ## 0.56.34 — Hotfix Mission Loading on Control (t-b87bfe)
 
 ### Fixed
