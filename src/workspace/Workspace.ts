@@ -43,6 +43,7 @@ import { initRun, type PipelineRun } from "../pipeline/runState.js";
 import { createHash, randomBytes } from "node:crypto";
 import { isWorktreeDirty } from "../worktree/pr.js";
 import { HarnessManager, defaultRealOpencodeDataHome, realConfigHome } from "../harness/HarnessManager.js";
+import { materializePiSessionDir, removePiSessionDir } from "../agents/piSession.js";
 import { expectedAgentClaudeEntry, expectedAgentOpencodeEntry } from "../registration/adapters.js";
 import { adapterFor, binaryOf, harnessable, managesOwnSession } from "../resume/adapters.js";
 import { nodeCanSignal, nodeRuntimeOf } from "../pipeline/preflight.js";
@@ -725,9 +726,10 @@ export class Workspace {
     const resolverEnv = (runtime: string, configHome?: string) =>
       configHome ? {
         home: os.homedir(),
+        ...(runtime === "claude" ? { claudeHome: configHome } : {}),
         ...(runtime === "codex" ? { codexHome: configHome } : {}),
         ...(runtime === "hermes" ? { hermesHome: configHome } : {}),
-        ...(runtime !== "codex" && runtime !== "hermes" ? { claudeHome: configHome } : {}),
+        ...(runtime === "pi" ? { piSessionDir: configHome } : {}),
       } : undefined;
     const resolveOpencode = (cwd: string, dataHome?: string, id?: string) => resolveOpencodeStorageSession(cwd, dataHome ?? defaultRealOpencodeDataHome(), id);
     this.manager = new AgentManager({
@@ -801,6 +803,7 @@ export class Workspace {
         try { return fs.statSync(file).isFile() ? file : undefined; }
         catch { return undefined; }
       },
+      materializePiSessionDir: (name) => materializePiSessionDir(this.workspaceRoot, name),
       // spec 243 — per-spawn --settings SessionStart ownership hook (claude); the resolver reads the ledger
       // it writes so Activity follows a /clear/resume rotation even on a shared cwd.
       materializeOwnershipSettings: (name, opts) => this.harness.materializeOwnershipSettings(
@@ -1124,6 +1127,7 @@ export class Workspace {
       },
       completePreparedWorktree: (rec) => this.worktrees.completePreparation(rec),
       removeHarnessHome: (name) => this.harness.remove(name),
+      removePiSessionDir: (name) => removePiSessionDir(this.workspaceRoot, name),
     });
 
     this.deliveryVerification = new DeliveryVerificationLeaseService({
@@ -2621,6 +2625,7 @@ export class Workspace {
       workspaceRoot: this.workspaceRoot,
       ledger: this.ledger,
       removeHarnessHome: (agent) => this.harness.remove(agent),
+      removePiSessionDir: (agent) => removePiSessionDir(this.workspaceRoot, agent),
     });
     this.removeContinuity(name);
   }
@@ -3477,6 +3482,7 @@ export class Workspace {
             workspaceRoot: this.workspaceRoot,
             ledger: this.ledger,
             removeHarnessHome: (agent) => this.harness.remove(agent),
+            removePiSessionDir: (agent) => removePiSessionDir(this.workspaceRoot, agent),
           });
         }
       }

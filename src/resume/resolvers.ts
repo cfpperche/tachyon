@@ -26,6 +26,8 @@ export interface ResolverEnv {
   antigravityHome?: string;
   /** Hermes private/real home (dir that contains `state.db`). Defaults to `<home>/.hermes`. */
   hermesHome?: string;
+  /** Pi session directory. Managed Pi agents pass their private `.tachyon/pi-sessions/<agent>` path. */
+  piSessionDir?: string;
 }
 
 const defaultEnv = (): ResolverEnv => ({ home: os.homedir() });
@@ -143,6 +145,53 @@ function readFirstLine(file: string, maxBytes = 1 << 18 /* 256 KiB */): string {
     return "";
   } finally {
     if (fd !== undefined) fs.closeSync(fd);
+  }
+}
+
+function readPiSessionHeader(file: string): { type?: string; id?: string; cwd?: string } | null {
+  let fd: number | undefined;
+  try {
+    fd = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+    if (!fs.fstatSync(fd).isFile()) return null;
+    const buffer = Buffer.allocUnsafe(1 << 18);
+    const count = fs.readSync(fd, buffer, 0, buffer.length, 0);
+    const text = buffer.toString("utf8", 0, count);
+    const newline = text.indexOf("\n");
+    return JSON.parse(newline < 0 ? text : text.slice(0, newline)) as { type?: string; id?: string; cwd?: string };
+  } catch {
+    return null;
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+  }
+}
+
+/** Pi: resolve one exact session from a private flat session directory by header id + canonical cwd. */
+export function resolvePiSession(
+  cwd: string,
+  env: ResolverEnv = defaultEnv(),
+  id?: string,
+): ResolvedCaptureSession | null {
+  if (!id) return null; // exact managed authority only; never newest-by-cwd guessing
+  const root = env.piSessionDir;
+  if (!root) return null;
+  try {
+    const rootStat = fs.lstatSync(root);
+    if (rootStat.isSymbolicLink() || !rootStat.isDirectory()) return null;
+    const matches: ResolvedCaptureSession[] = [];
+    for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+      if (!entry.name.endsWith(".jsonl") || !entry.isFile() || entry.isSymbolicLink()) continue;
+      const file = path.join(root, entry.name);
+      const header = readPiSessionHeader(file);
+      if (header?.type === "session"
+        && header.id === id
+        && typeof header.cwd === "string"
+        && path.resolve(header.cwd) === path.resolve(cwd)) {
+        matches.push({ id, path: file });
+      }
+    }
+    return matches.length === 1 ? matches[0] : null;
+  } catch {
+    return null;
   }
 }
 
@@ -331,6 +380,8 @@ export async function resolveCaptureSession(
   switch (runtime) {
     case "codex":
       return resolveCodexSession(cwd, env, id);
+    case "pi":
+      return resolvePiSession(cwd, env, id);
     default:
       return null;
   }

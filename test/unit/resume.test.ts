@@ -37,6 +37,7 @@ describe("runtimeOf / binaryOf", () => {
     expect(runtimeOf("cn")).toBe("continue");
     expect(runtimeOf("grok")).toBe("grok");
     expect(runtimeOf("hermes")).toBe("hermes");
+    expect(runtimeOf("pi")).toBe("pi");
   });
 
   it("sees through launchers and env assignments", () => {
@@ -54,7 +55,7 @@ describe("runtimeOf / binaryOf", () => {
   });
 });
 
-describe("ResumeAdapter — mint runtimes (claude, gemini, grok)", () => {
+describe("ResumeAdapter — mint runtimes (claude, gemini, grok, pi)", () => {
   it("claude: spawns a NAMED session (-n) and resumes by id/name, preserving flags (spec 220)", () => {
     const a = adapterFor("claude --permission-mode plan")!;
     expect(a.mintsId).toBe(true);
@@ -73,6 +74,14 @@ describe("ResumeAdapter — mint runtimes (claude, gemini, grok)", () => {
     expect(a.mintsId).toBe(true);
     expect(a.injectId("gemini", "g1")).toBe("gemini --session-id g1");
     expect(a.resumeCommand("gemini", "g1")).toBe("gemini --resume g1");
+  });
+
+  it("pi: mints an exact id and resumes that id without deriving a timestamped path", () => {
+    const a = adapterForRuntime("pi")!;
+    expect(a.mintsId).toBe(true);
+    expect(a.injectId("pi --model sonnet", "p1")).toBe("pi --model sonnet --session-id p1");
+    expect(a.resumeCommand("pi --model sonnet", "p1")).toBe("pi --model sonnet --session p1");
+    expect(a.transcriptPath).toBeUndefined();
   });
 
   it("grok: mints with -s, resumes with -r, and preserves self-managed commands", () => {
@@ -108,7 +117,7 @@ describe("ResumeAdapter — mint runtimes (claude, gemini, grok)", () => {
     const opencode = adapterForRuntime("opencode")!;
     expect(forkable(opencode)).toBe(true);
     expect(opencode.forkCommand!("opencode", "source-id")).toBe("opencode -s source-id --fork");
-    for (const rt of ["codex", "gemini", "antigravity", "qwen", "continue"] as const) {
+    for (const rt of ["codex", "gemini", "antigravity", "qwen", "continue", "pi"] as const) {
       expect(forkable(adapterForRuntime(rt))).toBe(false);
     }
     expect(forkable(null)).toBe(false);
@@ -121,6 +130,11 @@ describe("ResumeAdapter — mint runtimes (claude, gemini, grok)", () => {
     expect(managesOwnSession("claude --session-id u")).toBe(true);
     expect(managesOwnSession("grok -s u")).toBe(true);
     expect(managesOwnSession("opencode --session u")).toBe(true);
+    for (const command of [
+      "pi --session u", "pi --session-id u", "pi --continue", "pi -c", "pi --resume", "pi -r",
+      "pi --fork u", "pi --no-session", "pi --session=u",
+    ]) expect(managesOwnSession(command)).toBe(true);
+    expect(managesOwnSession("pi --model sonnet")).toBe(false);
     expect(managesOwnSession("claude --permission-mode plan")).toBe(false);
     expect(managesOwnSession("claude --resumexyz")).toBe(false); // not a real flag
   });
@@ -201,7 +215,7 @@ describe("ResumeAdapter — capture runtimes", () => {
   });
 
   it("capture runtimes have no deterministic transcript path (except hermes state.db locator)", () => {
-    for (const rt of ["codex", "gemini", "antigravity", "opencode", "qwen", "continue"] as ResumeRuntime[]) {
+    for (const rt of ["codex", "gemini", "antigravity", "opencode", "qwen", "continue", "pi"] as ResumeRuntime[]) {
       // gemini mints but its path is not derivable either
       if (rt === "claude" || rt === "grok" || rt === "hermes") continue;
       expect(adapterForRuntime(rt)!.transcriptPath).toBeUndefined();

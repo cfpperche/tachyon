@@ -1199,6 +1199,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       materializeBridgeMcpOpencode?: (name: string, cwd: string) => string | undefined;
       materializeBridgeMcpGrok?: (name: string) => string | undefined;
       piBridgeExtensionPath?: () => string | undefined;
+      materializePiSessionDir?: (name: string) => string;
       materializeOwnershipSettings?: (name: string, opts?: {
         ownershipOnly?: boolean;
         cwd?: string;
@@ -1211,6 +1212,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       mintAgentToken?: (name: string) => Record<string, string>;
       revokeAgentToken?: (name: string) => void;
       removeHarnessHome?: (name: string) => void;
+      removePiSessionDir?: (name: string) => void;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       prepareDeliveryJoin?: (name: string, request: any) => Promise<any>;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1333,6 +1335,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       materializeBridgeMcpOpencode: opts.materializeBridgeMcpOpencode,
       materializeBridgeMcpGrok: opts.materializeBridgeMcpGrok,
       piBridgeExtensionPath: opts.piBridgeExtensionPath,
+      materializePiSessionDir: opts.materializePiSessionDir,
       materializeOwnershipSettings: opts.materializeOwnershipSettings,
       materializeCodexSessionStartHookConfig: opts.materializeCodexSessionStartHookConfig,
       ownedSession: opts.ownedSession,
@@ -1340,6 +1343,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       mintAgentToken: opts.mintAgentToken,
       revokeAgentToken: opts.revokeAgentToken,
       removeHarnessHome: opts.removeHarnessHome,
+      removePiSessionDir: opts.removePiSessionDir,
       prepareDeliveryJoin: opts.prepareDeliveryJoin,
       confirmDeliveryJoin: opts.confirmDeliveryJoin,
       failDeliveryJoin: opts.failDeliveryJoin,
@@ -3100,6 +3104,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       "activity log and writer state",
       "session-owner ledger rows",
       "private harness/config home",
+      "private Pi session directory",
       "per-spawn settings file",
       "generated spawn brief and soul anchor",
       "durable pane transcript",
@@ -3593,6 +3598,15 @@ describe("AgentManager — session resume (spec 209)", () => {
     await expect(manager.rename("researcher", "researcher2")).rejects.toThrow("isolated-harness agent isn't supported yet");
   });
 
+  it("phase 2: renaming a managed Pi agent is refused while its private session home is name-keyed", async () => {
+    const { manager } = resumeHarness("agents:\n  pi:\n    cmd: pi\n", {
+      getExtraEnv: () => ({}),
+      materializePiSessionDir: (name) => `/private/pi-sessions/${name}`,
+    });
+    await manager.spawn("pi");
+    await expect(manager.rename("pi", "pi2")).rejects.toThrow("managed Pi session isn't supported yet");
+  });
+
   // spec 236 — the Bridge reaches EVERY Tachyon-spawned agent via withRuntimeBridge (one shared step).
   describe("spec 236 — deterministic Bridge injection", () => {
     const BRIDGE = () => ({
@@ -3608,27 +3622,101 @@ describe("AgentManager — session resume (spec 209)", () => {
       expect(cmds.at(-1)).not.toMatch(/Bearer\s/); // no literal token on argv
     });
 
-    it("Pi: spawn and restart load the staged extension before the primer, with credentials only in env", async () => {
+    it("Pi: spawn and restart mint private sessions and load the staged extension before the primer", async () => {
       const extension = "/immutable/engine/pi-bridge-extension.mjs";
+      const sessionId = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+      const restartedSessionId = "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff";
+      const sessionIds = [sessionId, restartedSessionId];
       const bridge = {
+        newSessionId: () => sessionIds.shift()!,
         getExtraEnv: () => ({ TACHYON_BRIDGE_URL: "http://127.0.0.1:9/mcp", TACHYON_BRIDGE_TOKEN: "shared-secret" }),
         mintAgentToken: () => ({ TACHYON_AGENT_BRIDGE_TOKEN: "agent-secret" }),
         piBridgeExtensionPath: () => extension,
+        materializePiSessionDir: (name: string) => `/private/pi-sessions/${name}`,
       };
-      const { manager, cmds, startArgs } = resumeHarness("agents:\n  pi:\n    cmd: pi\n", bridge);
+      const { manager, ledger, cmds, startArgs } = resumeHarness("agents:\n  pi:\n    cmd: pi\n", bridge);
 
       await manager.spawn("pi");
       expect(cmds.at(-1)).toMatch(/^pi --extension '\/immutable\/engine\/pi-bridge-extension\.mjs' /);
+      expect(cmds.at(-1)).toContain(`--session-id ${sessionId}`);
       expect(cmds.at(-1)).toContain("── TACHYON PRIMER ──");
       expect(cmds.at(-1)).not.toContain("shared-secret");
       expect(cmds.at(-1)).not.toContain("agent-secret");
       expect(envFromTmuxArgs(startArgs.at(-1)!)).toMatchObject({
         TACHYON_BRIDGE_URL: "http://127.0.0.1:9/mcp",
         TACHYON_AGENT_BRIDGE_TOKEN: "agent-secret",
+        PI_CODING_AGENT_SESSION_DIR: "/private/pi-sessions/pi",
+      });
+      expect(ledger.get("pi")?.resume).toMatchObject({
+        runtime: "pi",
+        sessionId,
+        configHome: "/private/pi-sessions/pi",
       });
 
       await manager.restart("pi", { stop: "force", session: "new" });
       expect(cmds.at(-1)).toContain(`--extension '${extension}'`);
+      expect(cmds.at(-1)).toContain(`--session-id ${restartedSessionId}`);
+      expect(ledger.get("pi")?.resume?.sessionId).toBe(restartedSessionId);
+    });
+
+    it("Pi: resume requires the exact transcript, reopens its id, re-injects Bridge, and omits primer", async () => {
+      const sessionId = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+      const transcript = `/private/pi-sessions/pi/2026_${sessionId}.jsonl`;
+      const resolved: Array<{ runtime: string; cwd: string; home?: string; id?: string }> = [];
+      const { manager, ledger, cmds, startArgs, paneInjections } = resumeHarness("agents:\n  pi:\n    cmd: pi\n", {
+        newSessionId: () => sessionId,
+        getExtraEnv: () => ({ TACHYON_BRIDGE_URL: "http://127.0.0.1:9/mcp" }),
+        piBridgeExtensionPath: () => "/immutable/engine/pi-bridge-extension.mjs",
+        materializePiSessionDir: (name) => `/private/pi-sessions/${name}`,
+        resolveCaptureSession: async (runtime, cwd, home, id) => {
+          resolved.push({ runtime, cwd, home, id });
+          return runtime === "pi" && id === sessionId ? { id, path: transcript } : null;
+        },
+        fileExists: (file) => file === transcript,
+      });
+      await manager.spawn("pi");
+      const record = ledger.get("pi")!;
+      expect(await manager.resumeReadiness("pi", record)).toBe(true);
+      paneInjections.length = 0;
+      await manager.resume("pi", record);
+
+      expect(cmds.at(-1)).toContain(`--session ${sessionId}`);
+      expect(cmds.at(-1)).toContain("--extension '/immutable/engine/pi-bridge-extension.mjs'");
+      expect(cmds.at(-1)).not.toContain("TACHYON PRIMER");
+      expect(paneInjections).toEqual([]);
+      expect(envFromTmuxArgs(startArgs.at(-1)!)).toMatchObject({
+        PI_CODING_AGENT_SESSION_DIR: "/private/pi-sessions/pi",
+      });
+      expect(resolved.at(-1)).toMatchObject({ runtime: "pi", home: "/private/pi-sessions/pi", id: sessionId });
+    });
+
+    it("Pi: resume fails closed when its exact transcript cannot be resolved", async () => {
+      const sessionId = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+      const { manager, ledger, cmds } = resumeHarness("agents:\n  pi:\n    cmd: pi\n", {
+        newSessionId: () => sessionId,
+        getExtraEnv: () => ({ TACHYON_BRIDGE_URL: "http://127.0.0.1:9/mcp" }),
+        piBridgeExtensionPath: () => "/immutable/engine/pi-bridge-extension.mjs",
+        materializePiSessionDir: (name) => `/private/pi-sessions/${name}`,
+        resolveCaptureSession: async () => null,
+      });
+      await manager.spawn("pi");
+      const record = ledger.get("pi")!;
+      expect(await manager.resumeReadiness("pi", record)).toBe(false);
+      const before = cmds.length;
+      await expect(manager.resume("pi", record)).rejects.toThrow("transcript no longer on disk");
+      expect(cmds).toHaveLength(before);
+    });
+
+    it("Pi: explicit user session flags remain self-managed with no private-home override or resume block", async () => {
+      const { manager, ledger, cmds, startArgs } = resumeHarness("agents:\n  pi:\n    cmd: pi --session user-owned\n", {
+        getExtraEnv: () => ({ TACHYON_BRIDGE_URL: "http://127.0.0.1:9/mcp" }),
+        piBridgeExtensionPath: () => "/immutable/engine/pi-bridge-extension.mjs",
+        materializePiSessionDir: () => { throw new Error("must not materialize"); },
+      });
+      await manager.spawn("pi");
+      expect(cmds.at(-1)).toBe("pi --extension '/immutable/engine/pi-bridge-extension.mjs' --session user-owned");
+      expect(envFromTmuxArgs(startArgs.at(-1)!).PI_CODING_AGENT_SESSION_DIR).toBeUndefined();
+      expect(ledger.get("pi")?.resume).toBeUndefined();
     });
 
     it("Pi: a missing staged extension warns and refuses a false wired spawn", async () => {
@@ -3636,6 +3724,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       const { manager } = resumeHarness("agents:\n  pi:\n    cmd: pi\n", {
         getExtraEnv: () => ({ TACHYON_BRIDGE_URL: "http://127.0.0.1:9/mcp" }),
         piBridgeExtensionPath: () => undefined,
+        materializePiSessionDir: (name) => `/private/pi-sessions/${name}`,
         notify: (message) => warnings.push(message),
       });
       await expect(manager.spawn("pi")).rejects.toThrow("Bridge tools could not be materialized");
@@ -3647,6 +3736,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       const { manager } = resumeHarness("agents:\n  pi:\n    cmd: pi --no-tools\n", {
         getExtraEnv: () => ({ TACHYON_BRIDGE_URL: "http://127.0.0.1:9/mcp" }),
         piBridgeExtensionPath: () => "/immutable/engine/pi-bridge-extension.mjs",
+        materializePiSessionDir: (name) => `/private/pi-sessions/${name}`,
         notify: (message) => warnings.push(message),
       });
       await expect(manager.spawn("pi")).rejects.toThrow("Bridge tools could not be materialized");

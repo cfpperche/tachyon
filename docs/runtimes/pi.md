@@ -16,15 +16,17 @@ Pi deliberately has no built-in MCP client. Tachyon's extension opens the local 
 | Per-agent Bridge identity | ✓ | `TACHYON_AGENT_BRIDGE_TOKEN` in process env |
 | Spawn / restart reinjection | ✓ | Shared `withRuntimeBridge` lifecycle seam |
 | User Pi config preservation | ✓ | No `.pi` or `~/.pi` mutation |
-| Transcript capture / resume | ✗ | Deferred; no measured Tachyon adapter yet |
+| Transcript capture / resume | ✓ | Tachyon-minted `--session-id`, exact `--session <id>`, private per-agent session directory |
 | Fork | ✗ | Deferred with transcript/session semantics |
-| Normalized Activity | ✗ | Deferred until Pi JSONL ownership is measured |
+| Normalized Activity | ✗ | Phase 3; exact JSONL path is now available but not normalized |
 | Runtime model/usage observation | ~ | Generic process/usage surfaces only |
 | Harness/private Pi home | ✗ | Not part of SDD 398 |
 
 ## Fail-closed boundaries
 
 - A live Bridge plus a missing staged extension refuses the Pi spawn rather than recording a false wired state.
+- Managed Pi sessions are stored under `.tachyon/pi-sessions/<agent>` via `PI_CODING_AGENT_SESSION_DIR`; transcript acceptance requires exactly one regular JSONL with matching header id and cwd.
+- Explicit Pi session flags remain user-owned and produce no Tachyon-managed resume record.
 - Pi commands using `--no-tools`, `--tools` or `--exclude-tools` are refused while Bridge wiring is required, because Tachyon cannot guarantee the complete Bridge catalog.
 - A temporary connection/authentication failure is visible through `/tachyon-bridge-status` and the Pi status line, but Pi remains usable for ordinary local coding.
 - `--no-extensions` does not defeat the integration: Pi documents that explicit `--extension` paths still load when automatic extension discovery is disabled.
@@ -38,3 +40,5 @@ Restart a Tachyon-managed Pi agent, then run:
 ```
 
 A healthy session reports `Tachyon Bridge: connected (N tools)`. Asking Pi to call `list_agents` should return the fleet with this process identified by `TACHYON_AGENT_NAME`.
+
+For continuity dogfood, talk to Pi, stop the managed entry, and use Tachyon's **Resume** action. The reopened Pi process must show the prior conversation. An in-TUI switch to a different session is not followed by Phase 2; Tachyon resumes the exact session id it minted.

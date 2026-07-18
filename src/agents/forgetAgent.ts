@@ -10,6 +10,7 @@ export const FORGET_AGENT_FOOTPRINTS = [
   "activity log and writer state",
   "session-owner ledger rows",
   "private harness/config home",
+  "private Pi session directory",
   "per-spawn settings file",
   "generated spawn brief and soul anchor",
   "durable pane transcript",
@@ -19,6 +20,7 @@ export interface ForgetAgentDeps {
   workspaceRoot: string;
   ledger?: SessionLedger;
   removeHarnessHome?: (name: string) => void;
+  removePiSessionDir?: (name: string) => void;
 }
 
 /**
@@ -37,6 +39,7 @@ export function forgetAgent(name: string, deps: ForgetAgentDeps): void {
   attempt(() => deleteActivityLog(path.join(deps.workspaceRoot, ".tachyon", "activity"), name));
   attempt(() => removeSessionOwnerRows(sessionOwnersFile(deps.workspaceRoot), name));
   attempt(() => deps.removeHarnessHome?.(name));
+  attempt(() => deps.removePiSessionDir?.(name));
   attempt(() => removeSpawnSettings(deps.workspaceRoot, name));
   attempt(() => removeDerivedAgentFiles(deps.workspaceRoot, name));
   attempt(() => removePaneTranscript(deps.workspaceRoot, name));

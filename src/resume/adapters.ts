@@ -14,7 +14,7 @@
  * (the conversation already holds them) but DO re-pass the original flags.
  */
 
-export type ResumeRuntime = "claude" | "codex" | "gemini" | "antigravity" | "opencode" | "qwen" | "continue" | "grok" | "hermes";
+export type ResumeRuntime = "claude" | "codex" | "gemini" | "antigravity" | "opencode" | "qwen" | "continue" | "grok" | "hermes" | "pi";
 
 export interface ResumeAdapter {
   runtime: ResumeRuntime;
@@ -148,6 +148,7 @@ const RUNTIME_BY_BIN: Record<string, ResumeRuntime> = {
   continue: "continue",
   grok: "grok",
   hermes: "hermes",
+  pi: "pi",
 };
 
 export function runtimeOf(cmd: string): ResumeRuntime | null {
@@ -171,6 +172,12 @@ const SELF_SESSION_FLAGS = new Set(["--resume", "-r", "--continue", "-c", "--ses
 export function managesOwnSession(cmd: string): boolean {
   const tokens = cmd.trim().split(/\s+/);
   const binary = (tokens[binaryIndex(tokens)] ?? "").split("/").pop() ?? "";
+  if (binary === "pi") {
+    const piSessionFlags = new Set([
+      "--session", "--session-id", "--continue", "-c", "--resume", "-r", "--fork", "--no-session",
+    ]);
+    return tokens.some((token) => piSessionFlags.has(token) || [...piSessionFlags].some((flag) => token.startsWith(`${flag}=`)));
+  }
   if (binary === "codex") {
     // Codex resumes through the `resume` subcommand (`codex resume …` or
     // `codex exec resume …`). Its short flags are unrelated: `-c` supplies a
@@ -242,6 +249,14 @@ const ADAPTERS: ResumeAdapter[] = [
         args: (p) => ["--mcp-config", p, "--strict-mcp-config"],
       },
     },
+  },
+  {
+    runtime: "pi",
+    mintsId: true,
+    injectId: (cmd, id) => (managesOwnSession(cmd) ? cmd : append(cmd, "--session-id", id)),
+    resumeCommand: (cmd, id) => (managesOwnSession(cmd) ? cmd : append(cmd, "--session", id)),
+    // Pi's filename is `<timestamp>_<id>.jsonl`, so the exact path requires a bounded directory/header
+    // scan in resolvers.ts rather than a dishonest direct transcriptPath formula.
   },
   {
     runtime: "gemini",

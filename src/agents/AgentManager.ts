@@ -25,6 +25,7 @@ import type { ResolvedCaptureSession } from "../resume/resolvers.js";
 import { assertVerifiedTranscriptIsolation, gracefulStopForCommand, isolationMechanismForCommand, opencodeIsolationFootgunWarning, runtimeProfile } from "../runtime/runtimeProfile.js";
 import { forgetAgent } from "./forgetAgent.js";
 import { ensurePaneTranscriptFile, rotatePaneTranscriptIfNeeded } from "./paneTranscript.js";
+import { PI_SESSION_DIR_ENV, piSessionDir } from "./piSession.js";
 import { wrapWithPrimer, renderPrimer } from "../bridge/primer.js";
 import { delegatedOpencodePermission, setOpencodePermission } from "../registration/adapters.js";
 import { assertSafeBriefTransport, deliverableBody, previewDeliverableBody } from "./briefFile.js";
@@ -402,6 +403,8 @@ export interface AgentManagerOptions {
   materializeBridgeMcpHermes?: (name: string) => string | undefined;
   /** spec 398 — immutable staged Pi extension that projects the Bridge MCP catalog into Pi tools. */
   piBridgeExtensionPath?: () => string | undefined;
+  /** spec 399 — materialize the private transcript namespace for one managed Pi agent. */
+  materializePiSessionDir?: (name: string) => string;
   /** spec 243 — write a claude agent's per-spawn `--settings` file (the SessionStart ownership hook),
    *  returning its path; injected so activity follows a `/clear` on a shared cwd. Wired in Workspace. */
   materializeOwnershipSettings?: (name: string, opts?: {
@@ -521,6 +524,8 @@ export interface AgentManagerOptions {
   materializeHarness?: (ctx: { name: string; def: AgentDef; cwd: string }) => MaterializedHarness | null;
   /** Remove a materialized per-agent runtime config home at the agent's end-of-life. */
   removeHarnessHome?: (name: string) => void;
+  /** Remove a managed Pi agent's private transcript namespace at ephemeral end-of-life. */
+  removePiSessionDir?: (name: string) => void;
   prepareDeliveryJoin?: (name: string, request: DeliveryJoinRequest) => Promise<PreparedDeliveryJoin>;
   confirmDeliveryJoin?: (name: string, request: DeliveryJoinRequest, prepared: PreparedDeliveryJoin, pid?: number) => Promise<void>;
   failDeliveryJoin?: (name: string, request: DeliveryJoinRequest, prepared: PreparedDeliveryJoin, error: unknown) => Promise<void>;
@@ -1177,6 +1182,7 @@ export class AgentManager {
     if (runtime === "opencode") return defaultRealOpencodeDataHome(process.env, home);
     if (runtime === "grok") return path.join(home, ".grok");
     if (runtime === "hermes") return path.join(home, ".hermes");
+    if (runtime === "pi") return this.opts.materializePiSessionDir?.(name) ?? piSessionDir(this.opts.workspaceRoot, name);
     return this.defaultClaudeConfigHome();
   }
 
@@ -1829,7 +1835,14 @@ export class AgentManager {
     this.applyDelegatedOpencodeHarnessPermission(def, spawnBuild.env, delegatedOpencode);
     // spec 236 — fold the runtime-Bridge env delta (the OPENCODE_CONFIG path for opencode agents)
     // into spawnBuild.env so it reaches the spawn env alongside the Bridge URL/token.
-    const spawnBridge = this.withRuntimeBridge(name, def, spawnBuild.cmd, cwd, delegatedOpencode);
+    const spawnBridge = this.withRuntimeBridge(
+      name,
+      def,
+      spawnBuild.cmd,
+      cwd,
+      delegatedOpencode,
+      adapter?.runtime === "pi" && !selfManaged,
+    );
     // t-d42565 — recognized AI runtimes must receive Bridge MCP tools (notify_agent / doorbell) when
     // the workspace Bridge is up. Non-AI commands may still use kind:agent for lifecycle grouping.
     if (def.kind === "agent" && (adapter || binaryOf(def.cmd) === "pi") && !spawnBridge.wired) {
@@ -2252,14 +2265,21 @@ export class AgentManager {
     cmd: string,
     cwd?: string,
     delegated?: { workspaceRoot: string; worktreesBase: string },
+    managedPiSession = false,
   ): { cmd: string; env: Record<string, string>; wired: boolean } {
+    const binary = binaryOf(def.cmd);
+    let sessionEnv: Record<string, string> = {};
+    if (managedPiSession) {
+      const sessionDir = this.opts.materializePiSessionDir?.(name);
+      if (!sessionDir) throw new Error(`agent '${name}': Pi session materializer is unavailable`);
+      sessionEnv = { [PI_SESSION_DIR_ENV]: sessionDir };
+    }
     const url = this.opts.getExtraEnv?.()?.[URL_ENV_VAR];
     if (def.harness) {
       // Bridge is folded into the materialized harness MCP file (Workspace passes bridgeEntry when up).
       return { cmd, env: {}, wired: !!url };
     }
-    if (!url) return { cmd, env: {}, wired: false };
-    const binary = binaryOf(def.cmd);
+    if (!url) return { cmd, env: sessionEnv, wired: false };
     if (binary === "codex") return { cmd: codexBridgeCmd(cmd, url), env: {}, wired: true };
     if (binary === "claude") {
       const file = this.opts.materializeBridgeMcp?.(name);
@@ -2297,16 +2317,16 @@ export class AgentManager {
           `agent '${name}': its Pi command restricts tools, so Tachyon cannot guarantee the complete Bridge catalog`,
           "warn",
         );
-        return { cmd, env: {}, wired: false };
+        return { cmd, env: sessionEnv, wired: false };
       }
       const extension = this.opts.piBridgeExtensionPath?.();
       if (!extension) {
         this.opts.notify?.(`agent '${name}': staged Pi Bridge extension is unavailable`, "warn");
-        return { cmd, env: {}, wired: false };
+        return { cmd, env: sessionEnv, wired: false };
       }
-      return { cmd: piBridgeCmd(cmd, extension), env: {}, wired: true };
+      return { cmd: piBridgeCmd(cmd, extension), env: sessionEnv, wired: true };
     }
-    return { cmd, env: {}, wired: false };
+    return { cmd, env: sessionEnv, wired: false };
   }
 
   /**
@@ -2717,6 +2737,9 @@ export class AgentManager {
     // home, and GC could delete the old one). Block it, fail-closed, until the home is persisted +
     // moved on rename (follow pass) — same posture as the fork block.
     if (this.definitionOf(oldName)?.harness) throw new Error(`cannot rename '${oldName}': renaming an isolated-harness agent isn't supported yet (v1)`);
+    if (this.opts.ledger?.get(oldName)?.resume?.runtime === "pi") {
+      throw new Error(`cannot rename '${oldName}': renaming a managed Pi session isn't supported yet (phase 2)`);
+    }
     if (this.definitionOf(newName)) throw new Error(`agent '${newName}' already exists`);
     const states = await this.agentStates();
     if (states.has(newName)) throw new Error(`a session named '${newName}' already exists`);
@@ -2786,7 +2809,7 @@ export class AgentManager {
 
   /**
    * Remove an EPHEMERAL agent's durable footprint through the canonical forgetAgent()
-   * cleanup: ledger row, activity log/state, session-owner rows, private harness home,
+   * cleanup: ledger row, activity log/state, session-owner rows, private harness/session homes,
    * and per-spawn settings. This is the on-disk counterpart of forgetAdhoc()'s in-memory
    * def+lineage drop — call both for a full forget.
    *
@@ -2800,6 +2823,7 @@ export class AgentManager {
       workspaceRoot: this.opts.workspaceRoot,
       ledger: this.opts.ledger,
       removeHarnessHome: this.opts.removeHarnessHome,
+      removePiSessionDir: this.opts.removePiSessionDir,
     });
   }
 
@@ -3094,7 +3118,14 @@ export class AgentManager {
       restartHarness,
     );
     this.applyDelegatedOpencodeHarnessPermission(def, restartBuild.env, restartDelegatedOpencode);
-    const restartBridge = this.withRuntimeBridge(name, def, restartBuild.cmd, cwd, restartDelegatedOpencode);
+    const restartBridge = this.withRuntimeBridge(
+      name,
+      def,
+      restartBuild.cmd,
+      cwd,
+      restartDelegatedOpencode,
+      injected.adapter?.runtime === "pi" && !injected.selfManaged,
+    );
     const restartOwnedCmd = this.withSessionOwnership(name, def, restartBridge.cmd, {
       declared: !this.adhoc.has(name),
       cwd,
@@ -3258,6 +3289,12 @@ export class AgentManager {
         ? { kind: "ready" }
         : { kind: "retry", reason: "session transcript is not on disk yet" };
     }
+    if (runtime === "pi") {
+      const resolved = await this.opts.resolveCaptureSession?.(runtime, cwd, configHome, id);
+      return resolved && exists(resolved.path)
+        ? { kind: "ready" }
+        : { kind: "retry", reason: "session transcript is not on disk yet" };
+    }
     return { kind: "ready" }; // capture runtime with an id but no derivable path — resume attempts it
   }
 
@@ -3307,7 +3344,7 @@ export class AgentManager {
         id = (await this.opts.resolveCurrentSession(runtime, cwd, undefined, configHome)) ?? id;
       }
     }
-    if (runtime === "codex" || runtime === "opencode") {
+    if (runtime === "codex" || runtime === "opencode" || runtime === "pi") {
       const exists = this.opts.fileExists ?? fs.existsSync;
       const resolve = this.opts.resolveCaptureSession;
       if (id) {
@@ -3423,6 +3460,13 @@ export class AgentManager {
         throw new ResumeUnavailableError(name, "transcript no longer on disk (retention/deleted)");
       }
     }
+    if (runtime === "pi" && id) {
+      const resolved = await this.opts.resolveCaptureSession?.(runtime, cwd, configHome, id);
+      const exists = this.opts.fileExists ?? fs.existsSync;
+      if (!resolved || !exists(resolved.path)) {
+        throw new ResumeUnavailableError(name, "transcript no longer on disk (retention/deleted)");
+      }
+    }
 
     const session = this.session(name);
     // Cap against OTHER live agents — a remain-on-exit dead pane does not occupy a slot, and
@@ -3478,7 +3522,14 @@ export class AgentManager {
     // agent silently loses it. Classify the binary from the ACTUALLY-resumed `cmd` (record.def.cmd) so an
     // ad-hoc agent that's no longer in the config still gets it; harness routing comes from the config
     // overlay (resumeDef) so a harness agent folds the Bridge into its --strict file instead.
-    const resumeBridge = this.withRuntimeBridge(name, { cmd, harness: resumeDef?.harness }, resumeBuild.cmd, cwd, resumeDelegatedOpencode);
+    const resumeBridge = this.withRuntimeBridge(
+      name,
+      { cmd, harness: resumeDef?.harness },
+      resumeBuild.cmd,
+      cwd,
+      resumeDelegatedOpencode,
+      runtime === "pi",
+    );
     this.readinessCache.delete(name); // spec 221: resuming changes the session → drop the cached badge
     // Resume is intentional re-launch — never inherit a prior graceful-stop "stopping" badge.
     this.clearStoppingState(name);
