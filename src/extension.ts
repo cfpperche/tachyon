@@ -1015,8 +1015,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     onTasksChanged,
   );
   context.subscriptions.push({ dispose: () => missionControlPanels.dispose() });
-  const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 50);
-  const runtimeUsageStatusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 49);
   let lastBridgeLagNoticeAt = 0;
   let bridgeLagExpectedAt = Date.now() + 5_000;
   const bridgeLagTimer = setInterval(() => {
@@ -1029,24 +1027,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }
   }, 5_000);
   context.subscriptions.push({ dispose: () => clearInterval(bridgeLagTimer) });
-
-  const updateStatusBar = () => {
-    const all = workspaces();
-    if (all.length === 0) {
-      statusBar.hide();
-      runtimeUsageStatusBar.hide();
-      return;
-    }
-    const ports = all.map((ws) => ws.bridgeUrl.split(":")[2]?.replace("/mcp", "")).filter(Boolean);
-    statusBar.text = all.length === 1 ? `$(zap) Tachyon :${ports[0] ?? "—"}` : `$(zap) Tachyon ×${all.length}`;
-    statusBar.tooltip = all.map((ws) => `${ws.folderName} — ${ws.bridgeUrl}`).join("\n");
-    statusBar.command = "tachyon.copyBridgeUrl";
-    statusBar.show();
-    runtimeUsageStatusBar.text = "$(pulse) Runtime";
-    runtimeUsageStatusBar.tooltip = "Open Runtime Ops";
-    runtimeUsageStatusBar.command = "tachyon.showRuntimeUsage";
-    runtimeUsageStatusBar.show();
-  };
 
   // Any engine/Bridge-driven state change re-pushes the whole fleet to the webview.
   const onViewsChanged = (view: ViewKind) => {
@@ -1068,7 +1048,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     runbookStudioPanels.refreshReferenceData();
     scheduleStudioPanels.refreshReferenceData();
     approvalPanels.refreshAll();
-    updateStatusBar();
   };
   const pinStudioPanels = new PinStudioPanelManager(
     context.extensionUri,
@@ -1672,8 +1651,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   );
 
   context.subscriptions.push(
-    statusBar,
-    runtimeUsageStatusBar,
     folderWatcher,
     {
       dispose: () => {
@@ -2918,7 +2895,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
   );
 
-  updateStatusBar();
 }
 
 export function deactivate(): void {

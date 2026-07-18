@@ -103,11 +103,9 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     this.view = view;
     const root = vscode.Uri.joinPath(this.extensionUri, "dist", "webview");
     view.webview.options = { enableScripts: true, localResourceRoots: [root] };
-    // t-38c2a1 — surface running VSIX version in the VS Code view chrome (next to "Tachyon").
-    if (this.appVersion) {
-      view.title = "Tachyon";
-      view.description = `v${this.appVersion}`;
-    }
+    // t-38c2a1 option B — version lives in the webview brand-bar only; native chrome stays plain "Tachyon".
+    view.title = "Tachyon";
+    view.description = undefined;
     const uri = (f: string): string => view.webview.asWebviewUri(vscode.Uri.joinPath(root, f)).toString();
     view.webview.onDidReceiveMessage((m: SidebarMsg) => void this.handleMessage(m));
     // spec 280 — the sidebar VIEW keeps its bespoke CSP via the shell: img `blob:` + script-src nonce-only (no cspSource).
