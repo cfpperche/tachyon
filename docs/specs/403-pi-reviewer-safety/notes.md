@@ -19,6 +19,14 @@
   - `verifyFullQuiet.test.ts` expects the pre-`t-6a9bc4` `verify:full` package script.
 - Direct typecheck reports only the inherited `verifyFullLock.test.ts` declaration defect.
 
+## Human Dev Host evidence
+
+- Target: worktree build `d8d8c18e`, isolated SDD 403 fixture, 2026-07-18.
+- Control `pi-full-demo` (`cmd: pi`) exposed bash/edit/write and created the requested probe, proving ordinary Pi remains unrestricted; the probe was then removed.
+- `pi-reviewer-demo` ledger recorded `cmd: pi --exclude-tools bash,edit,write`, exact Pi session `08d2fc36-5052-4126-bcac-fe4d2aa835d0`, private home and wired Bridge generation 28.
+- Durable Activity recorded one successful native `read` of README and no bash/edit/write tool calls. The agent reported all three mutators unavailable, `FILE_CREATED: NO`, `VERDICT: PASS`; independent filesystem inspection confirmed the probe absent.
+- This combines human runtime-posture proof with unit coverage of automatic authoritative Delivery reviewer injection; the fixture itself used the exact resulting command rather than manufacturing a canonical Delivery lifecycle.
+
 ## Review notes
 
 - The Bridge guard now permits only `none` or the exact canonical reviewer posture. Every other Pi tool filter remains fail-closed.

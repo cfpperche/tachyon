@@ -25,7 +25,7 @@ _Generated from `plan.md` on 2026-07-18._
 
 **Dogfood:** `node scripts/dogfood/pi-reviewer-safety.mjs`
 
-**Human dogfood:** Run a real Pi Delivery reviewer, confirm read/search and Bridge completion work, ask it to modify a known fixture and confirm only native `read` plus Bridge tools are available and the worktree stays clean.
+**Human dogfood:** ✓ In the isolated Dev Host, `pi-reviewer-demo` ran the exact adapted command, read README through native `read`, reported `bash`/`edit`/`write` unavailable, kept the probe absent, and retained wired Bridge state. An ordinary `pi-full-demo` control retained all mutators.
 
 ## Visual QA
 

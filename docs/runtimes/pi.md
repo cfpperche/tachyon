@@ -23,7 +23,7 @@ Pi deliberately has no built-in MCP client. Tachyon's extension opens the local 
 | Normalized Activity | ✓ | Exact private JSONL → `piNormalizer` → bounded durable `ActivityLogWriter`; automated and Dev Host visual dogfood passed |
 | Attention / composer | ✓ | Measured framed editor profile; automated tmux and Dev Host idle/draft proof passed |
 | Graceful Stop | ✓ | Measured Escape → Ctrl+C → Ctrl+D sequence; idle/draft/active tmux and Dev Host proof passed |
-| Delivery reviewer safety | ~ | `--exclude-tools bash,edit,write`; real active-tool proof passed, human Delivery dogfood pending |
+| Delivery reviewer safety | ✓ | `--exclude-tools bash,edit,write`; unit injection, real catalog and human Dev Host posture proof passed |
 | Runtime model/usage observation | ~ | Generic process/usage surfaces only |
 | Opt-in Pi harness capabilities | ✗ | Agent-scoped Pi skills/extensions/packages remain deferred |
 
