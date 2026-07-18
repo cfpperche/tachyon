@@ -173,7 +173,7 @@ export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastEr
   }, [model]);
 
   if (!vm || !model || !liveSnapshot) {
-    return <div class="ds-degrade"><span class="codicon codicon-loading" /><div>Loading Mission Control…</div></div>;
+    return <div class="ds-degrade"><span class="codicon codicon-loading" /><div>Loading Board…</div></div>;
   }
 
   const findTask = (id: string): Task | undefined => liveSnapshot.views.find((v) => v.task.id === id)?.task;
@@ -311,9 +311,9 @@ export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastEr
     <div class="mc-root">
       <div class="mc-head">
         <div class="mc-scope">
-          <h1 class="ds-title"><span aria-hidden="true">◆</span> Mission Control</h1>
+          <h1 class="ds-title"><span aria-hidden="true">◆</span> Board</h1>
           <KitSelect
-            aria-label="Mission Control workspace"
+            aria-label="Board workspace"
             data-testid="board-workspace-select"
             class="workspace-select"
             value={vm.wsHash}
