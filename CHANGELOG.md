@@ -6,6 +6,13 @@ Marketplace release notes.
 
 ## Unreleased
 
+## 0.56.23 — Governed projection reconcile Bridge tool
+
+### Added
+- **`git_delivery_reconcile` Bridge tool** (`t-608f2e`). Linked GitDeliveries with
+  `projectionSync=pending` can now drain pending canonical projection intents through a
+  caller-authorized path (requires integrate + prune principal rights) before integrate/prune.
+
 ## 0.56.22 — Projection intent atomicity + corrupt-quarantine abandon
 
 ### Fixed
