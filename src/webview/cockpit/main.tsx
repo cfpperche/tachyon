@@ -53,6 +53,15 @@ import {
   resolveApprovalAction,
 } from "../approval/messages";
 import type { ApprovalDecision } from "../../bridge/approvalRequest";
+import type { ValidationsDispatch } from "../validations/App";
+import type { ValidationsViewModel } from "../validations/viewModel";
+import {
+  VALIDATIONS,
+  VALIDATION_ERROR,
+  refreshValidationsAction,
+  closeValidationItemAction,
+  assignValidationAction,
+} from "../validations/messages";
 import type { RuntimeOpsSnapshot, RuntimeOpsProviderV2 } from "../../runtimeOps/types";
 import {
   RUNTIME_OPS_SNAPSHOT,
@@ -99,6 +108,8 @@ function Root() {
   const [missionError, setMissionError] = useState<TaskErrorEvent | undefined>(undefined);
   const [approvalVm, setApprovalVm] = useState<ApprovalViewModel | undefined>(undefined);
   const [approvalError, setApprovalError] = useState<string | undefined>(undefined);
+  const [validationsVm, setValidationsVm] = useState<ValidationsViewModel | undefined>(undefined);
+  const [validationsError, setValidationsError] = useState<string | undefined>(undefined);
   const [runtimeSnapshot, setRuntimeSnapshot] = useState<RuntimeOpsSnapshot | undefined>(undefined);
   const [inspectorStrings, setInspectorStrings] = useState<InspectorStrings | undefined>(undefined);
   const [inspectorModel, setInspectorModel] = useState<InspectorModel | undefined>(undefined);
@@ -132,6 +143,11 @@ function Root() {
         setApprovalError(undefined);
       } else if (type === APPROVAL_ERROR && typeof raw.message === "string") {
         setApprovalError(raw.message);
+      } else if (type === VALIDATIONS && raw.vm) {
+        setValidationsVm(raw.vm as ValidationsViewModel);
+        setValidationsError(undefined);
+      } else if (type === VALIDATION_ERROR && typeof raw.message === "string") {
+        setValidationsError(raw.message);
       } else if (type === RUNTIME_OPS_SNAPSHOT && raw.snapshot) {
         setRuntimeSnapshot(raw.snapshot as RuntimeOpsSnapshot);
       } else if (type === "inspectorInit" && raw.strings) {
@@ -197,6 +213,15 @@ function Root() {
     () => ({
       refresh: () => post(refreshApprovalsAction()),
       resolve: (id: string, decision: ApprovalDecision) => post(resolveApprovalAction(id, decision)),
+    }),
+    [],
+  );
+
+  const validationsDispatch: ValidationsDispatch = useMemo(
+    () => ({
+      refresh: () => post(refreshValidationsAction()),
+      close: (id, outcome, note) => post(closeValidationItemAction(id, outcome, note)),
+      assign: (id, assignee, expect) => post(assignValidationAction(id, assignee, expect)),
     }),
     [],
   );
@@ -290,6 +315,9 @@ function Root() {
       approvalVm={approvalVm}
       approvalError={approvalError}
       approvalDispatch={approvalDispatch}
+      validationsVm={validationsVm}
+      validationsError={validationsError}
+      validationsDispatch={validationsDispatch}
       runtimeSnapshot={runtimeSnapshot}
       onRuntimeSetProviderObservation={(provider: RuntimeOpsProviderV2, enabled: boolean) =>
         post(runtimeOpsSetProviderObservationAction(provider, enabled))
@@ -305,6 +333,7 @@ function Root() {
         post(setSectionAction(section));
         if (section === "mission") post(requestSnapshotAction());
         if (section === "approvals") post(refreshApprovalsAction());
+        if (section === "validations") post(refreshValidationsAction());
       }}
     />
   );

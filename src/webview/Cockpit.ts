@@ -30,6 +30,12 @@ import {
   type ApprovalAction,
 } from "./approval/messages.js";
 import { buildApprovalViewModel } from "./approval/viewModel.js";
+import { buildValidationsViewModel } from "./validations/viewModel.js";
+import {
+  validationsMessage,
+  validationErrorMessage,
+  type ValidationsAction,
+} from "./validations/messages.js";
 import type { ApprovalDecision } from "../bridge/approvalRequest.js";
 import {
   runtimeOpsSnapshotMessage,
@@ -67,6 +73,11 @@ export interface CockpitApprovals {
   resolve: (wsHash: string, id: string, decision: ApprovalDecision) => Promise<void>;
 }
 
+export interface CockpitValidations {
+  getWorkspaces: () => WorkspaceMissionControlTarget[];
+  onValidationsChanged: () => void;
+}
+
 export interface CockpitRuntimeOps {
   buildSnapshot: () => RuntimeOpsSnapshot | Promise<RuntimeOpsSnapshot>;
   configureProviderObservation?: (provider: RuntimeOpsProviderV2, enabled: boolean) => void | Promise<void>;
@@ -96,6 +107,7 @@ export interface CockpitDeps {
   collect: () => Promise<CockpitWorkspaceBundle[]>;
   missionBoard: CockpitMissionBoard;
   approvals: CockpitApprovals;
+  validations: CockpitValidations;
   runtimeOps: CockpitRuntimeOps;
   inspector: CockpitInspector;
   plugins: PluginsPanelManager;
@@ -264,6 +276,7 @@ let missionWsHash: string | undefined;
 let approvalWsHash: string | undefined;
 let pushMissionBoard: (() => void) | undefined;
 let pushApprovals: (() => void) | undefined;
+let pushValidations: (() => void) | undefined;
 let wiredPanel: vscode.WebviewPanel | undefined;
 
 /** Refresh embedded Mission board after task mutations. */
@@ -274,6 +287,10 @@ export function refreshCockpitMissionBoard(): void {
 /** Refresh embedded Approvals after resolve/fan-out. */
 export function refreshCockpitApprovals(): void {
   pushApprovals?.();
+}
+
+export function refreshCockpitValidations(): void {
+  pushValidations?.();
 }
 
 const PLUGIN_ACTION_TYPES = new Set([
@@ -380,6 +397,7 @@ export async function openCockpit(
         panel = undefined;
         pushMissionBoard = undefined;
         pushApprovals = undefined;
+        pushValidations = undefined;
         wiredPanel = undefined;
         deps.plugins.unbindControlEmbed();
       }
@@ -455,6 +473,24 @@ export async function openCockpit(
     }
   };
 
+  const sendValidations = async () => {
+    if (panel !== live || currentSection !== "validations") return;
+    const ws = resolveMissionWs({ ...deps.missionBoard, getWorkspaces: deps.validations.getWorkspaces });
+    if (!ws) {
+      live.webview.postMessage(validationErrorMessage("No Tachyon workspace for Validations."));
+      return;
+    }
+    missionWsHash = ws.wsHash;
+    try {
+      const vm = buildValidationsViewModel({ folder: ws.folderName, wsHash: ws.wsHash, validations: ws.listValidations() });
+      if (panel !== live || currentSection !== "validations") return;
+      live.webview.postMessage(validationsMessage(vm));
+    } catch (err) {
+      if (panel !== live) return;
+      live.webview.postMessage(validationErrorMessage(err instanceof Error ? err.message : String(err)));
+    }
+  };
+
   const sendRuntime = async () => {
     if (panel !== live || currentSection !== "runtime") return;
     try {
@@ -494,6 +530,7 @@ export async function openCockpit(
   const sendSectionModule = async () => {
     bindPluginsIfNeeded();
     if (currentSection === "mission") await sendMission();
+    else if (currentSection === "validations") await sendValidations();
     else if (currentSection === "approvals") await sendApprovals();
     else if (currentSection === "runtime") await sendRuntime();
     else if (currentSection === "tmux") await sendInspector();
@@ -502,6 +539,7 @@ export async function openCockpit(
 
   pushMissionBoard = () => { void sendMission(); };
   pushApprovals = () => { void sendApprovals(); };
+  pushValidations = () => { void sendValidations(); };
 
   const handleMissionAction = async (m: Partial<MissionControlAction>): Promise<boolean> => {
     if (!m?.type) return false;
@@ -580,6 +618,31 @@ export async function openCockpit(
     return false;
   };
 
+  const handleValidationsAction = async (m: Partial<ValidationsAction>): Promise<boolean> => {
+    if (!m?.type) return false;
+    if (m.type === "refreshValidations") {
+      await sendValidations();
+      return true;
+    }
+    const ws = resolveMissionWs({ ...deps.missionBoard, getWorkspaces: deps.validations.getWorkspaces });
+    if (!ws) return true;
+    try {
+      if (m.type === "closeValidationItem" && typeof m.id === "string" && typeof m.note === "string" && m.outcome) {
+        await ws.closeValidation(m.id, { outcome: m.outcome, result_note: m.note });
+      } else if (m.type === "assignValidation" && typeof m.id === "string" && typeof m.assignee === "string" && m.expect) {
+        await ws.assignValidation(m.id, m.assignee, m.expect);
+      } else {
+        return false;
+      }
+      deps.validations.onValidationsChanged();
+      await sendValidations();
+    } catch (err) {
+      const actionId = "id" in m && typeof m.id === "string" ? m.id : undefined;
+      live.webview.postMessage(validationErrorMessage(err instanceof Error ? err.message : String(err), actionId));
+    }
+    return true;
+  };
+
   const handleInspectorAction = async (m: Partial<InspectorAction>): Promise<boolean> => {
     if (!m?.type || !INSPECTOR_ACTION_TYPES.has(m.type)) return false;
     if (currentSection !== "tmux") return false;
@@ -637,6 +700,7 @@ export async function openCockpit(
 
       if (await handleMissionAction(msg as Partial<MissionControlAction>)) return;
       if (await handleApprovalAction(msg as Partial<ApprovalAction>)) return;
+      if (await handleValidationsAction(msg as Partial<ValidationsAction>)) return;
       if (await handleInspectorAction(msg as Partial<InspectorAction>)) return;
 
       if (isRuntimeOpsSetProviderObservationAction(msg)) {
@@ -781,6 +845,7 @@ export async function openCockpit(
         uri("plugins.tailwind.css"),
         uri("plugins.css"),
         uri("approval.css"),
+        uri("validations.css"),
         uri("runtime-ops.css"),
         uri("inspector.css"),
         uri("cockpit.css"),
