@@ -126,9 +126,9 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     });
   }
 
-  /** Native header: "Tachyon - vX.Y.Z" (Control is the view/title menu action). */
+  /** Native header: container already says Tachyon — view title is only the version (avoids "TACHYON: TACHYON …"). */
   private applyNativeTitle(view: vscode.WebviewView): void {
-    view.title = this.appVersion ? `Tachyon - v${this.appVersion}` : "Tachyon";
+    view.title = this.appVersion ? `v${this.appVersion}` : "";
     view.description = undefined;
   }
 
