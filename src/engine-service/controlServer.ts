@@ -31,6 +31,7 @@ import {
 } from "./protocol.js";
 import { EngineUiRequestBroker, EngineUiRequestError } from "./uiRequestBroker.js";
 import type { JsonValue } from "../runtime-api/extensionOperations.js";
+import { controlNonceMatches, controlNoncePath, createControlNonce } from "./controlPeerAuth.js";
 
 const MAX_CONTROL_REQUEST_BYTES = 64 * 1024;
 const DEFAULT_SHELL_LEASE_MS = 30_000;
@@ -85,6 +86,7 @@ export async function startEngineControlServer(options: EngineControlServerOptio
   const leaseMs = options.leaseMs ?? DEFAULT_SHELL_LEASE_MS;
   if (!Number.isSafeInteger(leaseMs) || leaseMs <= 0) throw new Error("engine shell leaseMs must be a positive integer");
   ensureSecureRuntimeDir(path.dirname(options.socketPath));
+  const controlNonce = createControlNonce(options.socketPath);
 
   const sessions = new Map<string, LiveShellSession>();
   const operations = new Map<string, OperationRecord>();
@@ -124,7 +126,12 @@ export async function startEngineControlServer(options: EngineControlServerOptio
       const newline = input.indexOf("\n");
       if (newline < 0) return;
       handled = true;
-      const parsed = parseRequest(input.slice(0, newline));
+      const authenticated = authenticateRequest(input.slice(0, newline), controlNonce);
+      if (!authenticated.ok) {
+        respond(socket, fail("PEER_AUTH_FAILED", "engine control peer authentication failed"));
+        return;
+      }
+      const parsed = parseRequest(authenticated.request);
       if (!("ok" in parsed) && (parsed.op === "invoke" || parsed.op === "query")) {
         socket.setTimeout(CONTROL_COMMAND_TIMEOUT_MS);
       }
@@ -293,7 +300,12 @@ export async function startEngineControlServer(options: EngineControlServerOptio
     return record.promise;
   };
 
-  await listen(server, options.socketPath);
+  try {
+    await listen(server, options.socketPath);
+  } catch (error) {
+    fs.rmSync(controlNoncePath(options.socketPath), { force: true });
+    throw error;
+  }
   fs.chmodSync(options.socketPath, 0o600);
   const socketIdentity = fs.lstatSync(options.socketPath);
   const timer = setInterval(purgeExpired, Math.min(leaseMs, 5_000));
@@ -321,8 +333,19 @@ export async function startEngineControlServer(options: EngineControlServerOptio
       } catch {
         // Missing or replaced socket: never unlink a path whose identity is no longer ours.
       }
+      fs.rmSync(controlNoncePath(options.socketPath), { force: true });
     },
   };
+}
+
+function authenticateRequest(raw: string, expectedNonce: string): { ok: true; request: string } | { ok: false } {
+  let value: unknown;
+  try { value = JSON.parse(raw); } catch { return { ok: false }; }
+  if (!value || typeof value !== "object" || Array.isArray(value)) return { ok: false };
+  const record = value as Record<string, unknown>;
+  if (!controlNonceMatches(expectedNonce, record.controlNonce)) return { ok: false };
+  delete record.controlNonce;
+  return { ok: true, request: JSON.stringify(record) };
 }
 
 function parseRequest(raw: string): EngineControlRequestV1 | EngineControlResponseV1 {

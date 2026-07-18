@@ -5,6 +5,7 @@ import { workspaceHash } from "../tmux/TmuxService.js";
 import { EngineControlClientError, requestEngineControl } from "./controlClient.js";
 import { startDaemonEngineService, type RunningDaemonEngineService } from "./engineService.js";
 import { decodeEngineDaemonOptions } from "./engineSupervisor.js";
+import { controlNoncePath } from "./controlPeerAuth.js";
 
 export async function runEngineDaemon(encodedOptions: string): Promise<RunningDaemonEngineService> {
   const options = decodeEngineDaemonOptions(encodedOptions);
@@ -57,6 +58,7 @@ async function removeStaleSocket(socketPath: string, expectedWorkspaceHash: stri
     throw new Error("persistent engine control socket identity changed during stale cleanup");
   }
   fs.unlinkSync(socketPath);
+  fs.rmSync(controlNoncePath(socketPath), { force: true });
 }
 
 if (require.main === module) {
