@@ -530,7 +530,7 @@ describe("parseConfig", () => {
       expect(errors.some((e) => /isolate: remove 'env.CODEX_HOME'/.test(e))).toBe(true);
     });
 
-    it.each(["PI_CODING_AGENT_DIR", "PI_CODING_AGENT_SESSION_DIR"])("SDD 400: rejects Pi-owned env %s", (owned) => {
+    it.each(["PI_CODING_AGENT_DIR", "PI_CODING_AGENT_SESSION_DIR"])("SDD 401: rejects Pi-owned env %s", (owned) => {
       const { errors } = parseConfig(`agents:\n  pi:\n    cmd: pi\n    env:\n      ${owned}: /tmp/user-owned\n`);
       expect(errors.some((e) => e.includes(`remove '${owned}'`) && e.includes("Tachyon owns Pi"))).toBe(true);
     });

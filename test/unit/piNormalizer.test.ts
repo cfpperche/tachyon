@@ -5,7 +5,7 @@ const line = (value: unknown) => JSON.stringify(value);
 const header = line({ type: "session", version: 3, id: "sess-pi", timestamp: "2026-07-18T00:00:00.000Z", cwd: "/repo" });
 const entry = (id: string, message: unknown) => line({ type: "message", id, parentId: null, timestamp: `2026-07-18T00:00:${id.length.toString().padStart(2, "0")}.000Z`, message });
 
-describe("Pi activity normalizer (SDD 401)", () => {
+describe("Pi activity normalizer (SDD 402)", () => {
   it("classifies conversation, primer, nudges, thinking, model, effort and usage", () => {
     const events = normalizePi([
       header,

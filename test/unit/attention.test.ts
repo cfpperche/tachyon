@@ -332,7 +332,7 @@ describe("AttentionMonitor", () => {
     expect(f.events.filter((e) => e.state === "working")).toHaveLength(0);
   });
 
-  it("SDD 402: Pi framed editor tracks empty, single-line and multi-line drafts as composer-only changes", async () => {
+  it("SDD 403: Pi framed editor tracks empty, single-line and multi-line drafts as composer-only changes", async () => {
     const frame = "─".repeat(80);
     const pane = (editor: string) => `done\n${frame}\n${editor}\n${frame}\n~/repo (main)\n0.0%/4.1k (auto) measure`;
     const f = makeMonitor({ pi: { content: pane(" "), cpu: 10, settings: SETTINGS, cmd: "pi" } });
@@ -350,7 +350,7 @@ describe("AttentionMonitor", () => {
     expect(f.events.filter((event) => event.state === "working")).toHaveLength(0);
   });
 
-  it("SDD 402: Pi output above the frame remains runtime activity and incomplete/oversized frames never guess", async () => {
+  it("SDD 403: Pi output above the frame remains runtime activity and incomplete/oversized frames never guess", async () => {
     const frame = "─".repeat(80);
     const footer = `${frame}\n~/repo (main)\n0.0%/4.1k (auto) measure`;
     const f = makeMonitor({ pi: { content: `done\n${frame}\n \n${footer}`, cpu: 10, settings: SETTINGS, cmd: "pi" } });

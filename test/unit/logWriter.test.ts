@@ -236,7 +236,7 @@ describe("ActivityLogWriter (spec 239 inc 3b)", () => {
     expect(new ActivityLog(adir, "claude").readTail(10)).toEqual([]);
   });
 
-  it("SDD 401: tails Pi JSONL, persists image blobs, rehydrates after restart and stitches rotation", () => {
+  it("SDD 402: tails Pi JSONL, persists image blobs, rehydrates after restart and stitches rotation", () => {
     const root = freshRoot();
     const adir = path.join(root, "activity");
     const sessA = path.join(root, "2026_sess-pi-a.jsonl");

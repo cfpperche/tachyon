@@ -82,7 +82,7 @@ describe("Pi Bridge extension projection", () => {
     }
   });
 
-  it("SDD 404 records exact Pi ownership on every session_start without requiring Bridge connectivity", async () => {
+  it("SDD 405 records exact Pi ownership on every session_start without requiring Bridge connectivity", async () => {
     const temp = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-pi-owner-"));
     const owners = path.join(temp, "activity", "session-owners.jsonl");
     const prior = {

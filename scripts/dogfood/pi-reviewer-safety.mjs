@@ -16,7 +16,7 @@ export default function (pi) {
     models: [{ id: "probe", name: "Probe", reasoning: false, input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 4096, maxTokens: 64 }]
   });
   pi.registerTool({
-    name: "bridge_probe", label: "Bridge Probe", description: "SDD 403 extension-tool sentinel",
+    name: "bridge_probe", label: "Bridge Probe", description: "SDD 404 extension-tool sentinel",
     parameters: { type: "object", properties: {}, additionalProperties: false },
     async execute() { return { content: [{ type: "text", text: "ok" }], details: {} }; }
   });

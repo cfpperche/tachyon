@@ -14,7 +14,7 @@ describe("runtime profiles (spec 358 phase 1)", () => {
     expect(hasVerifiedTranscriptIsolation(profile!.isolation)).toBe(true);
   });
 
-  it("SDD 400/402: declares Pi private-home plus measured composer and graceful stop", () => {
+  it("SDD 401/403: declares Pi private-home plus measured composer and graceful stop", () => {
     const profile = runtimeProfile("pi");
     expect(profile?.profileVersion).toBe(3);
     expect(profile?.isolation).toMatchObject({

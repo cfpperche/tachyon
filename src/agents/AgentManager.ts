@@ -444,9 +444,9 @@ export interface AgentManagerOptions {
    *  auth.json symlink), returning its path (undefined when the Bridge isn't up). Injected as
    *  HERMES_HOME. Wired in Workspace where the Bridge URL/token live. */
   materializeBridgeMcpHermes?: (name: string) => string | undefined;
-  /** spec 398 — immutable staged Pi extension that projects the Bridge MCP catalog into Pi tools. */
+  /** spec 399 — immutable staged Pi extension that projects the Bridge MCP catalog into Pi tools. */
   piBridgeExtensionPath?: () => string | undefined;
-  /** spec 399 — materialize the private transcript namespace for one managed Pi agent. */
+  /** spec 400 — materialize the private transcript namespace for one managed Pi agent. */
   materializePiSessionDir?: (name: string) => string;
   /** spec 243 — write a claude agent's per-spawn `--settings` file (the SessionStart ownership hook),
    *  returning its path; injected so activity follows a `/clear` on a shared cwd. Wired in Workspace. */
@@ -3878,7 +3878,7 @@ export class AgentManager {
       const forkBuild = src.runtime === "pi"
         ? this.applyHarness(forkName, forkDefinition, cwd, forkCmd, baseForkEnv, preparedHarness)
         : { cmd: forkCmd, env: baseForkEnv };
-      // spec 236 / SDD 404 — a fork is a normal Tachyon-spawned process: private home first, then
+      // spec 236 / SDD 405 — a fork is a normal Tachyon-spawned process: private home first, then
       // immutable Pi extension + Bridge. managedPiSession also supplies the ownership ledger path.
       const forkBridge = this.withRuntimeBridge(
         forkName,

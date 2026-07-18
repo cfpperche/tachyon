@@ -99,7 +99,7 @@ describe("harness pure helpers", () => {
     expect(defaultRealCodexHome({}, "/home/u")).toBe("/home/u/.codex");
   });
 
-  it("SDD 400: defaultRealPiHome ignores Tachyon private overrides", () => {
+  it("SDD 401: defaultRealPiHome ignores Tachyon private overrides", () => {
     expect(defaultRealPiHome({ PI_CODING_AGENT_DIR: "/custom/pi" }, "/home/u")).toBe("/custom/pi");
     expect(defaultRealPiHome({ PI_CODING_AGENT_DIR: "/ws/.tachyon/harness/pi" }, "/home/u")).toBe("/home/u/.pi/agent");
     expect(defaultRealPiHome({}, "/home/u")).toBe("/home/u/.pi/agent");
@@ -184,7 +184,7 @@ describe("HarnessManager materialize (fs)", () => {
     expect(JSON.stringify(written)).not.toMatch(/Bearer [0-9a-f]{8}/);
   });
 
-  it("SDD 400: Pi gets regular private JSON snapshots, strict permissions, and no executable-tree inheritance", () => {
+  it("SDD 401: Pi gets regular private JSON snapshots, strict permissions, and no executable-tree inheritance", () => {
     const piHome = path.join(path.dirname(realHome), "realpi");
     fs.mkdirSync(path.join(piHome, "extensions"), { recursive: true });
     fs.writeFileSync(path.join(piHome, "auth.json"), '{"openai":{"type":"oauth"}}');
@@ -215,7 +215,7 @@ describe("HarnessManager materialize (fs)", () => {
     expect(JSON.parse(fs.readFileSync(path.join(a.home, "settings.json"), "utf8"))).toEqual({ theme: "light" });
   });
 
-  it("SDD 400: Pi environment-only auth works, while unsafe JSON sources and targets fail closed", () => {
+  it("SDD 401: Pi environment-only auth works, while unsafe JSON sources and targets fail closed", () => {
     const piHome = path.join(path.dirname(realHome), "realpi-empty");
     fs.mkdirSync(piHome, { recursive: true });
     fs.writeFileSync(path.join(piHome, "settings.json"), "{}");

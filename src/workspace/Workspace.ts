@@ -264,7 +264,7 @@ export interface WorkspaceDeps {
   onApprovalRequested?: (ws: Workspace, request: { id: string; requester: string }) => void;
   /** Optional extension-global Claude quota transport. It remains inert unless machine-local consent enables it. */
   claudeStatusLineCapture?: Pick<ClaudeStatusLineCaptureTransport, "materialize">;
-  /** spec 398 — immutable staged Pi Bridge extension shipped beside the persistent engine daemon. */
+  /** spec 399 — immutable staged Pi Bridge extension shipped beside the persistent engine daemon. */
   piBridgeExtensionPath?: string;
 }
 
@@ -755,7 +755,7 @@ export class Workspace {
       // env + MCP wiring; null when the agent has no harness / runtime can't.
       materializeHarness: ({ name, def, cwd }) => {
         const adapter = adapterFor(def.cmd);
-        // SDD 400 — Pi is private-home by default, independent of opt-in harness capabilities.
+        // SDD 401 — Pi is private-home by default, independent of opt-in harness capabilities.
         if (adapter?.runtime === "pi" && !def.harness && def.isolate === undefined) {
           return this.harness.materializePiHomeOnly(name);
         }

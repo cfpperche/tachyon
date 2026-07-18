@@ -100,7 +100,7 @@ export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = 
       source: "measured",
       verified: true,
       verifiedAt: "2026-07-18",
-      notes: "SDD 400: Tachyon redirects PI_CODING_AGENT_DIR and PI_CODING_AGENT_SESSION_DIR to a per-agent private home.",
+      notes: "SDD 401: Tachyon redirects PI_CODING_AGENT_DIR and PI_CODING_AGENT_SESSION_DIR to a per-agent private home.",
     },
     composer: {
       tailLines: 16,
@@ -110,7 +110,7 @@ export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = 
       source: "measured",
       verified: true,
       verifiedAt: "2026-07-18",
-      notes: "SDD 402: Pi v0.80.10 renders its editor between the final two horizontal rules; non-whitespace inside is a human draft.",
+      notes: "SDD 403: Pi v0.80.10 renders its editor between the final two horizontal rules; non-whitespace inside is a human draft.",
     },
     gracefulStop: {
       steps: [
@@ -122,14 +122,14 @@ export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = 
       source: "measured",
       verified: true,
       verifiedAt: "2026-07-18",
-      notes: "SDD 402 / Pi defaults: Escape aborts, Ctrl+C clears residual editor state, Ctrl+D exits when empty; verified idle and drafted in isolated tmux.",
+      notes: "SDD 403 / Pi defaults: Escape aborts, Ctrl+C clears residual editor state, Ctrl+D exits when empty; verified idle and drafted in isolated tmux.",
     },
     permission: {
       modes: ["full", "reviewer-read-only"],
       source: "measured",
       verified: true,
       verifiedAt: "2026-07-18",
-      notes: "SDD 403: Delivery reviewers inject --exclude-tools bash,edit,write. This is shell-level tool safety, not an OS sandbox or universal Bridge read-only guarantee.",
+      notes: "SDD 404: Delivery reviewers inject --exclude-tools bash,edit,write. This is shell-level tool safety, not an OS sandbox or universal Bridge read-only guarantee.",
     },
   },
   claude: {

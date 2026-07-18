@@ -134,7 +134,7 @@ describe("activity log end-to-end (writer → log → render, spec 239 inc 3b+4)
     expect(vm.items.find((it) => it.kind === "image")).toMatchObject({ role: "user", detail: "image/png", title: "image" });
   });
 
-  it("SDD 401: writes and renders structured Pi Activity from its exact native JSONL", () => {
+  it("SDD 402: writes and renders structured Pi Activity from its exact native JSONL", () => {
     const root = freshRoot();
     const adir = path.join(root, "activity");
     const sess = path.join(root, "2026_pi-session.jsonl");

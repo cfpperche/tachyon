@@ -33,7 +33,7 @@ describe("CodexLaunchReadiness", () => {
     })).resolves.toEqual({ state: "pending" });
   });
 
-  it("SDD 402: recognizes Pi's complete framed editor but not trust/modal or arbitrary frames", () => {
+  it("SDD 403: recognizes Pi's complete framed editor but not trust/modal or arbitrary frames", () => {
     const frame = "─".repeat(80);
     const adapter = new GenericLaunchReadiness({
       tailLines: 16,

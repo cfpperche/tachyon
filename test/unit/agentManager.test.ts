@@ -527,7 +527,7 @@ describe("AgentManager", () => {
     expect(killed).toEqual([]);
   });
 
-  it("SDD 402: stopGracefully executes Pi's measured abort, clear and conditional EOF sequence", async () => {
+  it("SDD 403: stopGracefully executes Pi's measured abort, clear and conditional EOF sequence", async () => {
     const { manager, sentKeys } = makeManager("agents:\n  pi:\n    cmd: pi\n");
     await manager.spawn("pi");
     await manager.stopGracefully("pi");
@@ -1663,7 +1663,7 @@ describe("AgentManager — session resume (spec 209)", () => {
     ["pi", "pi --exclude-tools bash,edit,write"],
     ["env MODE=review pi -- positional", "env MODE=review pi --exclude-tools bash,edit,write -- positional"],
     ["npx --yes pi -- positional", "npx --yes pi --exclude-tools bash,edit,write -- positional"],
-  ])("SDD 403: injects and persists Pi Delivery reviewer safety structurally: %s", async (cmd, effective) => {
+  ])("SDD 404: injects and persists Pi Delivery reviewer safety structurally: %s", async (cmd, effective) => {
     const { manager, ledger, ws } = resumeHarness("agents: {}\n", {
       prepareDeliveryJoin: async (_name, request) => ({ cwd: ws,
         worktree: { path: ws, branch: "tachyon/delivery", tachyonCreatedBranch: true, baseRef: request.expectedHead, createdAt: "now" }, reservationNonce: "pi-safe", segmentId: "seg-pi" }),
@@ -1678,7 +1678,7 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(ledger.get("pi-reviewer")?.def?.cmd).toBe(effective);
   });
 
-  it("SDD 403: preserves an explicit canonical Pi reviewer denylist byte-for-byte", async () => {
+  it("SDD 404: preserves an explicit canonical Pi reviewer denylist byte-for-byte", async () => {
     const cmd = "pi --exclude-tools write,bash,edit --thinking high";
     const { manager, ledger, ws } = resumeHarness("agents: {}\n", {
       prepareDeliveryJoin: async (_name, request) => ({ cwd: ws,
@@ -2857,7 +2857,7 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(plan).toMatchObject({ source: "claude", forkName: "claude-fork-2", sourceId: UUID, runtime: "claude" });
   });
 
-  it("SDD 404: forks exact positively-owned Pi transcript into a distinct private session", async () => {
+  it("SDD 405: forks exact positively-owned Pi transcript into a distinct private session", async () => {
     const sourceId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
     const forkId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
     const sourcePath = "/private/pi/pi-a/sessions/source transcript.jsonl";
@@ -2925,7 +2925,7 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(cmds.at(-1)).not.toContain("--fork");
   });
 
-  it("SDD 404: Pi Fork refuses absent or mismatched positive ownership before new side effects", async () => {
+  it("SDD 405: Pi Fork refuses absent or mismatched positive ownership before new side effects", async () => {
     const sourceId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
     let ownership: { sessionId: string; transcriptPath: string } | undefined;
     let resolvePath = "/private/pi-a/sessions/source.jsonl";
@@ -3894,7 +3894,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       expect(warnings).toContain("agent 'pi': staged Pi Bridge extension is unavailable");
     });
 
-    it("SDD 403: Pi canonical reviewer denylist preserves staged Bridge wiring", async () => {
+    it("SDD 404: Pi canonical reviewer denylist preserves staged Bridge wiring", async () => {
       const { manager, cmds } = resumeHarness("agents:\n  pi:\n    cmd: pi --exclude-tools bash,edit,write\n", {
         getExtraEnv: () => ({ TACHYON_BRIDGE_URL: "http://127.0.0.1:9/mcp" }),
         piBridgeExtensionPath: () => "/immutable/engine/pi-bridge-extension.mjs",

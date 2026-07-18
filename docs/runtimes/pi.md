@@ -1,6 +1,6 @@
 # Pi — runtime integration status (Tachyon)
 
-**Integration slices:** SDD 398 (Bridge), SDD 399 (continuity), SDD 400 (private home), SDD 401 (Activity), SDD 402 (interaction profile), SDD 403 (reviewer safety), SDD 404 (native Fork), measured against the installed `@earendil-works/pi-coding-agent` on 2026-07-18.
+**Integration slices:** SDD 399 (Bridge), SDD 400 (continuity), SDD 401 (private home), SDD 402 (Activity), SDD 403 (interaction profile), SDD 404 (reviewer safety), SDD 405 (native Fork), measured against the installed `@earendil-works/pi-coding-agent` on 2026-07-18.
 
 Pi is a recognized Tachyon AI runtime. Tachyon starts it in tmux, injects `TACHYON_AGENT_NAME`, the Bridge URL and a per-agent bearer, delivers the universal onboarding primer as Pi's positional startup message, and additively loads an immutable bundled Pi extension with `--extension`.
 
@@ -53,18 +53,18 @@ For continuity dogfood, talk to Pi, stop the managed entry, and use Tachyon's **
 
 ## Native Fork
 
-SDD 404 maps the existing Tachyon sibling Fork action to Pi's native `--fork`. The live source must have a positive extension ownership row; Tachyon revalidates one no-follow JSONL by UUID, canonical cwd and exact path at both plan and commit. The destination receives a fresh UUID, a distinct private home, the immutable extension and Bridge credentials, and launches as `--session-id B --fork '<A-jsonl>'`. Pi writes B with `parentSession` provenance while A stays byte-stable. A and B then Resume independently from their own private directories. Interactive `/fork` selection from an earlier user message and `/tree` navigation remain Pi-native surfaces outside this product action.
+SDD 405 maps the existing Tachyon sibling Fork action to Pi's native `--fork`. The live source must have a positive extension ownership row; Tachyon revalidates one no-follow JSONL by UUID, canonical cwd and exact path at both plan and commit. The destination receives a fresh UUID, a distinct private home, the immutable extension and Bridge credentials, and launches as `--session-id B --fork '<A-jsonl>'`. Pi writes B with `parentSession` provenance while A stays byte-stable. A and B then Resume independently from their own private directories. Interactive `/fork` selection from an earlier user message and `/tree` navigation remain Pi-native surfaces outside this product action.
 
 ## Activity
 
-SDD 401 tails only the exact transcript resolved from the agent's private session directory. `piNormalizer` maps Pi v3 entries into the shared Activity vocabulary: user/assistant messages, thinking, images, tool lifecycle, successful file effects, direct bash commands, model/thinking-level provenance, token usage, interruption, errors and compaction/branch summaries. The durable writer retains bounded offsets and source IDs, strips raw records, and copies rendered image bytes into the existing blob side channel. Unknown/custom-state entries are dropped rather than parsed as another runtime.
+SDD 402 tails only the exact transcript resolved from the agent's private session directory. `piNormalizer` maps Pi v3 entries into the shared Activity vocabulary: user/assistant messages, thinking, images, tool lifecycle, successful file effects, direct bash commands, model/thinking-level provenance, token usage, interruption, errors and compaction/branch summaries. The durable writer retains bounded offsets and source IDs, strips raw records, and copies rendered image bytes into the existing blob side channel. Unknown/custom-state entries are dropped rather than parsed as another runtime.
 
 ## Interaction profile
 
-Pi v0.80.10 renders a glyph-free editor between its final two horizontal rules, followed by cwd and token/model footer lines. SDD 402 adds framed composer-region support so only non-whitespace inside those rules counts as a human draft; changes above/below remain runtime output. Launch readiness requires both borders and the Pi footer, avoiding false readiness on the project-trust selector.
+Pi v0.80.10 renders a glyph-free editor between its final two horizontal rules, followed by cwd and token/model footer lines. SDD 403 adds framed composer-region support so only non-whitespace inside those rules counts as a human draft; changes above/below remain runtime output. Launch readiness requires both borders and the Pi footer, avoiding false readiness on the project-trust selector.
 
 With default Pi keybindings, graceful Stop sends Escape (abort active turn), waits, sends Ctrl+C (clear residual draft), then Ctrl+D with one conditional retry. Isolated tmux dogfood proved clean exit from idle, drafted and active-turn panes. Custom user keybindings can invalidate this measured contract; Tachyon never rewrites `keybindings.json`.
 
 ## Delivery reviewer safety
 
-SDD 403 adapts only authoritative Delivery reviewer segments. It injects `--exclude-tools bash,edit,write`, preserving Pi's native `read` and dynamically registered extension/Bridge tools. Real Pi v0.80.10 reported the resulting active catalog as exactly `read` plus the probe extension tool. Conflicting/partial/duplicate tool filters fail before Delivery reservation or spawn. This is a shell-level tool posture, not an OS/network sandbox and not a guarantee that every separately authorized Bridge tool is read-only.
+SDD 404 adapts only authoritative Delivery reviewer segments. It injects `--exclude-tools bash,edit,write`, preserving Pi's native `read` and dynamically registered extension/Bridge tools. Real Pi v0.80.10 reported the resulting active catalog as exactly `read` plus the probe extension tool. Conflicting/partial/duplicate tool filters fail before Delivery reservation or spawn. This is a shell-level tool posture, not an OS/network sandbox and not a guarantee that every separately authorized Bridge tool is read-only.

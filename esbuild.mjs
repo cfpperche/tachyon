@@ -151,7 +151,7 @@ const engineDaemon = {
   plugins: [engineManifestPlugin],
 };
 
-// spec 398 — self-contained Pi extension loaded additively by every Tachyon-spawned Pi agent.
+// spec 399 — self-contained Pi extension loaded additively by every Tachyon-spawned Pi agent.
 // It runs inside Pi, not the engine, but ships in the authenticated immutable engine bundle so its
 // path survives extension upgrades and never depends on project/global Pi configuration.
 const piBridgeExtension = {
