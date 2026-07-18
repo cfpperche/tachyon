@@ -1568,6 +1568,29 @@ describe("DeliveryLeaseService dead-holder reconciliation (SDD 368 T11)", () => 
     expect(delivery.lease).toEqual(input.lease); expect(delivery.events).toHaveLength(0); expect(delivery.segments).toHaveLength(change === "append" ? 2 : 1);
   });
 
+  it.each(["close", "append"] as const)("refuses tail-only %s during the recovery fence proof before recoveryCurrent", async (change) => {
+    const { store, worktree, input } = heldFixture(); input.lease = { ...input.lease!, state: "quarantined", reason: "q" }; await store.create(input);
+    const quarantinedLease = structuredClone(input.lease);
+    const fence: ProcessFencePort = { ...certifiedFence, proveEmpty: async () => {
+      const current = (await store.get("d-lease"))!;
+      await store.update(current.id, current.version, (record) => {
+        record.segments[0] = { ...record.segments[0]!, releasedAt: now, releasedHeadSha: "b", outcome: "interrupted" };
+        if (change === "append") record.segments.push({ id: "fence-tail", index: 1, role: "fixer", executionAgent: "other", grantedBy: actor,
+          ownsSubset: ["src"], grantedHeadSha: "b", grantedAt: now });
+        return record;
+      });
+      return { state: "proven_empty" };
+    } };
+    await expect(recoveryService(store, worktree, { fence }).salvageQuarantine({ deliveryId: "d-lease", canonicalWorktree: worktree, actor,
+      operationId: `fence-tail-${change}`, expectedHeadSha: "b", expectedInventory: recoveryInventory, executionAgent: "fixer", ownsSubset: ["src"] }))
+      .rejects.toMatchObject({ code: "DELIVERY_QUARANTINED" });
+    const delivery = (await store.get("d-lease"))!;
+    expect(delivery.lease).toEqual(quarantinedLease);
+    expect(delivery.events).toHaveLength(0);
+    expect(delivery.segments.filter((segment) => segment.role === "recovery")).toHaveLength(0);
+    expect(delivery.segments).toHaveLength(change === "append" ? 2 : 1);
+  });
+
   it("fails closed for a throwing capability, a holder-less quarantine, and a missing approval resolver", async () => {
     const capability = heldFixture(); capability.input.lease = { ...capability.input.lease!, state: "quarantined", reason: "q" }; await capability.store.create(capability.input);
     const throwingFence: ProcessFencePort = { ...certifiedFence, capability: () => { throw new Error("capability boom"); } };
