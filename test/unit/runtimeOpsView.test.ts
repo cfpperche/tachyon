@@ -7,7 +7,7 @@ import {
   runtimeOpsSetProviderObservationAction,
 } from "../../src/webview/runtime-ops/messages.js";
 import type { RuntimeOpsSnapshotV1 } from "../../src/runtimeOps/types.js";
-import { RUNTIME_OPS_CONTAINER_COMMAND, RUNTIME_OPS_VIEW_FOCUS_COMMAND, openRuntimeOps } from "../../src/runtimeOps/openRuntimeOps.js";
+import { RUNTIME_OPS_CONTROL_COMMAND, openRuntimeOps } from "../../src/runtimeOps/openRuntimeOps.js";
 import { registerWorkspaceMembershipRefresh } from "../../src/extension.js";
 
 afterEach(() => {
@@ -293,23 +293,23 @@ describe("RuntimeOpsViewProvider (spec 367 Phase 1)", () => {
 });
 
 describe("Runtime Ops contribution and focus", () => {
-  it("contributes one bottom-panel webview and its refresh action", () => {
+  it("does not contribute a bottom-panel Runtime Ops container (Control-only)", () => {
     const pkg = JSON.parse(readFileSync("package.json", "utf8")) as {
       contributes: {
-        viewsContainers: { panel: Array<{ id: string }> };
+        viewsContainers: { panel?: Array<{ id: string }>; activitybar: Array<{ id: string }> };
         views: Record<string, Array<{ id: string; type: string }>>;
         menus: { "view/title": Array<{ command: string; when: string }> };
       };
     };
-    expect(pkg.contributes.viewsContainers.panel).toContainEqual(expect.objectContaining({ id: "tachyonRuntimeOps" }));
-    expect(pkg.contributes.views.tachyonRuntimeOps).toEqual([
-      expect.objectContaining({ id: "tachyonRuntimeOpsView", type: "webview" }),
-    ]);
-    expect(pkg.contributes.menus["view/title"]).toContainEqual(expect.objectContaining({
-      command: "tachyon.refreshRuntimeOps",
-      when: "view == tachyonRuntimeOpsView",
-    }));
+    expect(pkg.contributes.viewsContainers.panel ?? []).not.toContainEqual(
+      expect.objectContaining({ id: "tachyonRuntimeOps" }),
+    );
+    expect(pkg.contributes.views.tachyonRuntimeOps).toBeUndefined();
+    expect(pkg.contributes.menus["view/title"]).not.toContainEqual(
+      expect.objectContaining({ when: "view == tachyonRuntimeOpsView" }),
+    );
     expect(readFileSync("src/extension.ts", "utf8")).not.toContain("_showRuntimeUsageQuickPick");
+    expect(readFileSync("src/extension.ts", "utf8")).toContain("openControlRuntime");
   });
 
   it("keeps the Runtime Ops UI Tachyon-owned with no CodexBar UI, Swift, or asset imports", () => {
@@ -515,19 +515,10 @@ describe("Runtime Ops contribution and focus", () => {
     expect(refreshAll).toHaveBeenCalledOnce();
   });
 
-  it("opens the generated container command and falls back to the view focus command", async () => {
+  it("opens Control Runtime section (no bottom-panel focus commands)", async () => {
     const primary = vi.fn(async () => undefined);
     await openRuntimeOps(primary);
-    expect(primary).toHaveBeenCalledWith(RUNTIME_OPS_CONTAINER_COMMAND);
-
-    const fallback = vi.fn(async (command: string) => {
-      if (command === RUNTIME_OPS_CONTAINER_COMMAND) throw new Error("command not found");
-    });
-    await openRuntimeOps(fallback);
-    expect(fallback.mock.calls.map(([command]) => command)).toEqual([
-      RUNTIME_OPS_CONTAINER_COMMAND,
-      RUNTIME_OPS_VIEW_FOCUS_COMMAND,
-    ]);
+    expect(primary).toHaveBeenCalledWith(RUNTIME_OPS_CONTROL_COMMAND);
   });
 });
 

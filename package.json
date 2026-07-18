@@ -483,13 +483,6 @@
           "title": "Tachyon",
           "icon": "media/tachyon.svg"
         }
-      ],
-      "panel": [
-        {
-          "id": "tachyonRuntimeOps",
-          "title": "%view.runtimeOps%",
-          "icon": "media/tachyon.svg"
-        }
       ]
     },
     "views": {
@@ -506,22 +499,10 @@
           "type": "webview",
           "icon": "media/tachyon.svg"
         }
-      ],
-      "tachyonRuntimeOps": [
-        {
-          "id": "tachyonRuntimeOpsView",
-          "name": "%view.runtimeOpsOverview%",
-          "type": "webview"
-        }
       ]
     },
     "menus": {
       "view/title": [
-        {
-          "command": "tachyon.refreshRuntimeOps",
-          "when": "view == tachyonRuntimeOpsView",
-          "group": "navigation@1"
-        },
         {
           "command": "tachyon.openControl",
           "when": "view == tachyonSidebarPrototype",

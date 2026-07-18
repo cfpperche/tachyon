@@ -22,7 +22,6 @@ import {
 import type { CockpitWorkspaceBundle } from "./cockpit/model.js";
 import { readGitDeliveriesFromDisk, readManagedWorktreesFromDisk } from "./cockpit/disk.js";
 import { SidebarPrototypeProvider, PIN_PREVIEW_VIEW_TYPE, type PinPreviewPanelState } from "./webview/SidebarPrototype.js";
-import { RuntimeOpsViewProvider } from "./webview/RuntimeOpsView.js";
 import { ActivityPanelManager, ACTIVITY_VIEW_TYPE, type ActivityPanelState } from "./webview/ActivityPanel.js";
 import { PluginsPanelManager, PLUGINS_VIEW_TYPE, type PluginsPanelState } from "./webview/PluginsPanel.js";
 import { HandoffPanelManager, HANDOFF_VIEW_TYPE, type HandoffPanelState } from "./webview/HandoffPanel.js";
@@ -928,19 +927,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.globalState,
     (context.extension.packageJSON as { version?: string }).version,
   );
-  const runtimeOps = new RuntimeOpsViewProvider(
-    context.extensionUri,
-    () => runtimeOpsFleetView(workspaces().map((ws) => ws.runtimeOps)),
-    75,
-    async (provider, enabled) => {
-      await Promise.all(workspaces().map((ws) => extensionInvoke(ws, {
-        action: "runtime-ops.provider.configure",
-        provider,
-        enabled,
-      })));
-      runtimeOps.refresh();
-    },
-  );
+  // Runtime Ops lives in Control → Runtime only (bottom-panel webview contribution removed).
   // spec 238 — the editor-area Runtime Activity View (normalized cockpit; reads the durable per-agent log).
   const activityPanels = new ActivityPanelManager(
     context.extensionUri,
@@ -1030,7 +1017,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   // Any engine/Bridge-driven state change re-pushes the whole fleet to the webview.
   const onViewsChanged = (view: ViewKind) => {
-    if (view === "agents") runtimeOps.refresh();
     if (view === "handoff") handoffPanels.refreshAll(); // spec 245 — re-post to any open Project Handoff panel
     if (view === "probes") probePanels.refreshAll(); // spec 257 — re-render any open Probes inspector
     if (view === "tasks") onTasksChanged(); // spec 335 — same fan-out path engine-side mutations use directly
@@ -1043,7 +1029,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const refreshAll = () => {
     void applyWorktreeFolderReveal(); // spec 210/263 — the worktree-remove commands only re-render through here
     sidebarProto.refresh();
-    runtimeOps.refresh();
     pluginSurfaces.refreshAll();
     runbookStudioPanels.refreshReferenceData();
     scheduleStudioPanels.refreshReferenceData();
@@ -1326,7 +1311,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }),
           ),
         );
-        runtimeOps.refresh();
       },
     },
     inspector: (() => {
@@ -1487,7 +1471,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           const view = viewKind(event.payload.view);
           if (view) onViewsChanged(view);
         } else if (event.kind === "activity-appended") {
-          runtimeOps.refresh();
           sidebarProto.refresh();
         }
       }
@@ -1651,9 +1634,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.window.registerWebviewViewProvider(SidebarPrototypeProvider.viewType, sidebarProto, {
       webviewOptions: { retainContextWhenHidden: true },
     }),
-  );
-  context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider(RuntimeOpsViewProvider.viewType, runtimeOps),
   );
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(PluginSurfaceHost.viewType, pluginSurfaces, {
@@ -1864,6 +1844,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon.inspectEngine", () => openCockpit(makeCockpitDeps(), { section: "engine" })),
     // convenience: Control → Mission tab (same as tachyon.missionControl without pick when single-root)
     vscode.commands.registerCommand("tachyon.openControlMission", () => openCockpit(makeCockpitDeps(), { section: "mission" })),
+    vscode.commands.registerCommand("tachyon.openControlRuntime", () => openCockpit(makeCockpitDeps(), { section: "runtime" })),
     vscode.commands.registerCommand("tachyon.getStarted", () =>
       vscode.commands.executeCommand("workbench.action.openWalkthrough", "cfpperche.tachyon#tachyon.welcome", false),
     ),
@@ -2764,7 +2745,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
     vscode.commands.registerCommand("tachyon.refreshRuntimeOps", async () => {
       await runtimeOpsFleetView(workspaces().map((ws) => ws.runtimeOps), true);
-      runtimeOps.refresh();
+      // Panel webview removed — Control Runtime tab rebuilds snapshot on section open / poll.
     }),
     vscode.commands.registerCommand("tachyon.connectRuntime", async () => {
       const ws = await pickWorkspace();
