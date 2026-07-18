@@ -3104,6 +3104,66 @@ describe("AgentManager — session resume (spec 209)", () => {
     ]);
   });
 
+  // t-13c2b6 B4 — "Directly exercise forgetAgent with throwing ledger/removeHarness dependencies and
+  // real later artifacts to prove all later removals still run exactly once and the aggregate preserves
+  // ordered causes." Ledger (1st footprint) and harness home (4th, the "middle" one) are forced to throw;
+  // every other real, on-disk footprint must still be removed exactly once.
+  it("canonical forgetAgent preserves ordered causes and still removes every other artifact when its ledger and harness-home removals both throw", () => {
+    const ws = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-forget-order-"));
+    dirs.push(ws);
+    const name = "chaos-agent";
+    const ledgerError = new Error("injected ledger remove failure");
+    const harnessError = new Error("injected harness home removal failure");
+    let ledgerRemoveCalls = 0, harnessCalls = 0;
+    const throwingLedger = {
+      remove: (n: string) => { ledgerRemoveCalls += 1; if (n === name) throw ledgerError; },
+    } as unknown as SessionLedger;
+
+    const actDir = path.join(ws, ".tachyon", "activity");
+    fs.mkdirSync(actDir, { recursive: true });
+    const logFile = path.join(actDir, `${agentLogId(name)}.jsonl`);
+    const stateFile = path.join(actDir, `${agentLogId(name)}.state.json`);
+    fs.writeFileSync(logFile, '{"schemaVersion":1}\n', "utf8");
+    fs.writeFileSync(stateFile, "{}", "utf8");
+    fs.writeFileSync(sessionOwnersFile(ws), `${JSON.stringify({ agent: name, sessionId: "s1", transcriptPath: "/p", cwd: ws, source: "startup", ts: "t1" })}\n`, "utf8");
+    fs.mkdirSync(path.dirname(spawnSettingsPath(ws, name)), { recursive: true });
+    fs.writeFileSync(spawnSettingsPath(ws, name), "{}\n", "utf8");
+    const briefFile = briefFilePath(ws, name, "spawn");
+    fs.mkdirSync(path.dirname(briefFile), { recursive: true });
+    fs.writeFileSync(briefFile, "brief\n", "utf8");
+    const anchorFile = path.join(ws, ".tachyon", "anchors", `${name}.md`);
+    fs.mkdirSync(path.dirname(anchorFile), { recursive: true });
+    fs.writeFileSync(anchorFile, "anchor\n", "utf8");
+    const transcriptFile = paneTranscriptPath(ws, name);
+    fs.mkdirSync(path.dirname(transcriptFile), { recursive: true });
+    fs.writeFileSync(transcriptFile, "pane output\n", "utf8");
+
+    let failure: unknown;
+    try {
+      forgetAgent(name, {
+        workspaceRoot: ws,
+        ledger: throwingLedger,
+        removeHarnessHome: (agent) => { harnessCalls += 1; if (agent === name) throw harnessError; },
+      });
+    } catch (error) { failure = error; }
+
+    expect(failure).toBeInstanceOf(AggregateError);
+    // Exactly the two injected failures, in the exact source order forgetAgent attempts them
+    // (ledger first, harness home fourth) — every other footprint attempt succeeded silently.
+    expect((failure as AggregateError).errors).toEqual([ledgerError, harnessError]);
+    expect(ledgerRemoveCalls).toBe(1);
+    expect(harnessCalls).toBe(1);
+    // Every later-owned real artifact this attempt did NOT inject a failure for is still removed
+    // exactly once: an early ledger failure and a later harness failure never short-circuit the rest.
+    expect(fs.existsSync(logFile)).toBe(false);
+    expect(fs.existsSync(stateFile)).toBe(false);
+    expect(readSessionOwners(sessionOwnersFile(ws)).map((r) => r.agent)).toEqual([]);
+    expect(fs.existsSync(spawnSettingsPath(ws, name))).toBe(false);
+    expect(fs.existsSync(briefFile)).toBe(false);
+    expect(fs.existsSync(anchorFile)).toBe(false);
+    expect(fs.existsSync(transcriptFile)).toBe(false);
+  });
+
   it("kill of a DECLARED agent KEEPS its durable log (spec 247: footprint removal is ephemeral-only)", async () => {
     const { manager, ws } = resumeHarness("agents:\n  worker:\n    cmd: claude\n", {});
     await manager.spawn("worker"); // declared → NOT in the adhoc map → kill's wasAdhoc is false
