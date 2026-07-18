@@ -103,8 +103,8 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     this.view = view;
     const root = vscode.Uri.joinPath(this.extensionUri, "dist", "webview");
     view.webview.options = { enableScripts: true, localResourceRoots: [root] };
-    // t-38c2a1 option B — version lives in the webview brand-bar only; native chrome stays plain "Tachyon".
-    view.title = "Tachyon";
+    // t-38c2a1 option B — branding, version, and Control live in the webview brand-bar.
+    // Native view title stays package.json "Tachyon"; workbench does not allow hiding that strip.
     view.description = undefined;
     const uri = (f: string): string => view.webview.asWebviewUri(vscode.Uri.joinPath(root, f)).toString();
     view.webview.onDidReceiveMessage((m: SidebarMsg) => void this.handleMessage(m));
@@ -185,6 +185,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       if (m.op && STUDIO[m.op]) return void vscode.commands.executeCommand(STUDIO[m.op]);
       if (m.op === "copyBridge") return void vscode.commands.executeCommand("tachyon.copyBridgeUrl", m.hash);
       if (m.op === "init") return void vscode.commands.executeCommand("tachyon.init");
+      if (m.op === "openControl") return void vscode.commands.executeCommand("tachyon.openControl");
       if (m.op === "openHandoff") return void vscode.commands.executeCommand("tachyon.openProjectHandoff", m.hash); // spec 245
       if (m.op === "openConfig") return void vscode.commands.executeCommand("tachyon.openConfig", m.hash); // t-8354ae
       if (m.op === "doctor") return void vscode.commands.executeCommand("tachyon.doctor", m.hash); // t-8354ae

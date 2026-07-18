@@ -50,7 +50,7 @@ export interface Dispatch {
   setCollapsedKeys?: (keys: string[]) => void;
 }
 /** Global (section-level, not per-row) ops: pins + the per-section "new …" studios. */
-export type GlobalOp = "addPin" | "copyBridge" | "init" | "openHandoff" | "openConfig" | "doctor" | "studio:agents" | "studio:terminals" | "studio:commands" | "studio:runbooks" | "studio:schedules";
+export type GlobalOp = "addPin" | "copyBridge" | "init" | "openHandoff" | "openConfig" | "openControl" | "doctor" | "studio:agents" | "studio:terminals" | "studio:commands" | "studio:runbooks" | "studio:schedules";
 
 /** One entry in the in-webview "..." overflow menu (edit/remove etc. live here across ALL tabs, not inline). */
 export interface MenuItem { label: string; icon: string; run: () => void }
@@ -965,12 +965,23 @@ export function App({ fleets = [SAMPLE], dispatch, prefs = {}, collapsedKeys = [
 
   return (
     <>
-      {appVersion && (
-        <div class="brand-bar" title={`Tachyon extension v${appVersion}`}>
-          <span class="brand-name">Tachyon</span>
-          <span class="brand-ver">v{appVersion}</span>
-        </div>
-      )}
+      <div class="brand-bar" title={appVersion ? `Tachyon extension v${appVersion}` : "Tachyon"}>
+        <span class="brand-name">Tachyon</span>
+        <span class="brand-right">
+          {appVersion && <span class="brand-ver">v{appVersion}</span>}
+          {dispatch && (
+            <button
+              type="button"
+              class="brand-ctrl"
+              title="Open Control"
+              aria-label="Open Control"
+              onClick={() => dispatch.global("openControl")}
+            >
+              <Icon name="dashboard" />
+            </button>
+          )}
+        </span>
+      </div>
       <div class="kbar" id="kbar-trigger" role="button" tabindex={0} aria-label={`Search agents, commands, pins (${isMac ? "Cmd K" : "Ctrl K"})`}
         onClick={() => setOpen(true)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpen(true); } }}>
         <Icon name="search" /><span class="kgrow">Search agents, commands, pins…</span><span class="kbd">{isMac ? "⌘K" : "Ctrl K"}</span>
