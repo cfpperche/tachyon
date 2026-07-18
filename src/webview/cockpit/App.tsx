@@ -239,7 +239,7 @@ export function App(p: CockpitAppProps) {
   const section = m?.section ?? "overview";
   const [validationClose, setValidationClose] = useState<ValidationCloseState | null>(null);
   const boardModel = useMemo(
-    () => (p.missionVm?.snapshot ? buildBoardModel(p.missionVm.snapshot) : undefined),
+    () => (p.missionVm?.snapshot ? buildBoardModel({ snapshot: p.missionVm.snapshot }) : undefined),
     [p.missionVm?.snapshot],
   );
 
