@@ -29,36 +29,36 @@
   .handoff-btn { display: inline-flex; align-items: center; gap: 5px; padding: 2px 6px; border-radius: 4px; color: var(--ds-muted); font-weight: 400; }
   .handoff-btn:hover { background: var(--hover); color: var(--vscode-foreground); }
 
-  /* cmd+K trigger — styled as an Agent-Studio input */
-  .brand-bar {
+  /* t-38c2a1 — single chrome row: search + version + Control (no second TACHYON brand row).
+   * Native workbench title strip cannot be hidden; we only control webview chrome height. */
+  .chrome-row {
     flex: 0 0 auto;
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    padding: 8px 10px 4px 12px;
-    font-size: 11px;
-    user-select: none;
+    gap: 4px;
+    padding: 4px 6px 2px 8px;
+    min-width: 0;
   }
-  .brand-name {
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: var(--vscode-foreground);
-    opacity: 0.9;
+  .chrome-row .kbar {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin: 0;
   }
-  .brand-right {
+  .chrome-meta {
+    flex: 0 0 auto;
     display: inline-flex;
     align-items: center;
-    gap: 8px;
+    gap: 2px;
   }
-  .brand-ver {
+  .chrome-ver {
     font-family: var(--ds-mono, ui-monospace, monospace);
-    font-size: 11px;
+    font-size: 10px;
     color: var(--ds-muted);
-    opacity: 0.95;
+    padding: 0 4px;
+    user-select: none;
+    white-space: nowrap;
   }
-  .brand-ctrl {
+  .chrome-ctrl {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -71,13 +71,13 @@
     cursor: pointer;
     padding: 0;
   }
-  .brand-ctrl:hover {
+  .chrome-ctrl:hover {
     color: var(--vscode-foreground);
     background: var(--hover);
   }
-  .brand-ctrl .codicon { font-size: 14px; }
-  .kbar { margin: 4px 8px 6px; display: flex; align-items: center; gap: 6px; padding: 5px 8px; background: var(--vscode-input-background); color: var(--ds-muted); border: 1px solid var(--vscode-input-border, var(--ds-border)); border-radius: 3px; cursor: text; }
-  .kbar, .tabs, .sec, .brand-bar { flex: 0 0 auto; }
+  .chrome-ctrl .codicon { font-size: 14px; }
+  .kbar { display: flex; align-items: center; gap: 6px; padding: 5px 8px; background: var(--vscode-input-background); color: var(--ds-muted); border: 1px solid var(--vscode-input-border, var(--ds-border)); border-radius: 3px; cursor: text; }
+  .kbar, .tabs, .sec, .chrome-row { flex: 0 0 auto; }
   .kbar:hover { border-color: var(--ds-focus); }
   .kbar .codicon { font-size: 13px; }
   .kbar .kgrow { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
