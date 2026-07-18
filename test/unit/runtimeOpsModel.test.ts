@@ -315,4 +315,20 @@ describe("Runtime Ops workspace labels", () => {
     expect(JSON.stringify(snapshot)).not.toContain(secretRoot);
     expect(snapshot.runtimes[0].agents[0].key).toBe("opaque:worker");
   });
+
+  it("t-e3bae0: projects per-agent pane-tree resources when sampled", () => {
+    const snapshot = buildRuntimeOpsSnapshot({
+      generatedAt: "2026-07-09T21:00:00.000Z",
+      detectedRuntimes: ["codex"],
+      agents: [{
+        workspaceKey: "ws",
+        workspaceLabel: "app",
+        agentName: "heavy",
+        runtime: "codex",
+        status: "running",
+        resources: { cpuPct: 42.6, memMb: 920 },
+      }],
+    });
+    expect(snapshot.runtimes[0].agents[0].resources).toEqual({ cpuPct: 42.6, memMb: 920 });
+  });
 });

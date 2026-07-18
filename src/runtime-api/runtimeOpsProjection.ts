@@ -84,6 +84,10 @@ const agent = z.object({
     boundGeneration: count.refine((value) => value > 0).optional(),
   }).strict(),
   contextPressure,
+  resources: z.object({
+    memMb: count,
+    cpuPct: z.number().min(0).max(999).optional(),
+  }).strict().optional(),
 }).strict();
 
 const usageValue = z.object({
