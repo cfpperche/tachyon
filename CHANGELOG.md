@@ -641,3 +641,6 @@ Marketplace release notes.
 
 ## 0.56.37
 - t-ec5cd2: passive info toasts auto-advance (~4s); exact-duplicate collapse (~10s); burst "+N more" suffix.
+
+## 0.56.38
+- t-e1bd89: scope approval.css under .approval-root; Mission who/prio chips no longer blue under Control.
