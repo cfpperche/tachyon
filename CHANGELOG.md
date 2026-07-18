@@ -6,6 +6,12 @@ Marketplace release notes.
 
 ## Unreleased
 
+## 0.56.33 — Ship t-b87bfe Validations Control tab
+
+### Fixed
+- **0.56.32 package note** landed before the feature merge; **0.56.33** is the
+  first build that includes Mission strip removal + Control → Validations tab.
+
 ## 0.56.32 — Validations leave Mission for Control tab (t-b87bfe)
 
 ### Changed
