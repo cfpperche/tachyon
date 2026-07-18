@@ -236,6 +236,36 @@ describe("ActivityLogWriter (spec 239 inc 3b)", () => {
     expect(new ActivityLog(adir, "claude").readTail(10)).toEqual([]);
   });
 
+  it("SDD 401: tails Pi JSONL, persists image blobs, rehydrates after restart and stitches rotation", () => {
+    const root = freshRoot();
+    const adir = path.join(root, "activity");
+    const sessA = path.join(root, "2026_sess-pi-a.jsonl");
+    const sessB = path.join(root, "2026_sess-pi-b.jsonl");
+    const piHeader = (id: string) => JSON.stringify({ type: "session", version: 3, id, timestamp: clock(), cwd: root });
+    const piMessage = (id: string, message: unknown) => JSON.stringify({ type: "message", id, parentId: null, timestamp: clock(), message });
+    const image = Buffer.from("pi-blob").toString("base64");
+    fs.writeFileSync(sessA, [
+      piHeader("sess-pi-a"),
+      piMessage("u1", { role: "user", content: "hello" }),
+      piMessage("a1", { role: "assistant", model: "pi-model", content: [{ type: "image", data: image, mimeType: "image/png" }, { type: "text", text: "answer" }], usage: { input: 2, output: 1 }, stopReason: "stop" }),
+    ].join("\n") + "\n");
+    const piLoc = (p: string, id: string) => ({ path: p, sessionId: id, runtime: "pi" });
+    const writer = new ActivityLogWriter(adir, "pi", clock);
+    expect(writer.poll(piLoc(sessA, "sess-pi-a"))).toBe(5);
+    const first = new ActivityLog(adir, "pi").readTail(20);
+    const imageEvent = first.find((event) => event.type === "image.attached");
+    expect(imageEvent?.blobRef).toMatch(/^[a-f0-9]{64}$/);
+    expect(fs.readFileSync(path.join(adir, "blobs", imageEvent!.blobRef!)).toString()).toBe("pi-blob");
+    expect(JSON.stringify(first)).not.toContain(image);
+
+    fs.appendFileSync(sessA, `${piMessage("a2", { role: "assistant", model: "pi-model", content: [{ type: "text", text: "after restart" }], stopReason: "stop" })}\n`);
+    expect(new ActivityLogWriter(adir, "pi", clock).poll(piLoc(sessA, "sess-pi-a"))).toBe(1);
+
+    fs.writeFileSync(sessB, `${piHeader("sess-pi-b")}\n${piMessage("u2", { role: "user", content: "new session" })}\n`);
+    expect(new ActivityLogWriter(adir, "pi", clock).poll(piLoc(sessB, "sess-pi-b"))).toBe(3); // boundary + header + user
+    expect(new ActivityLog(adir, "pi").readTail(30).filter((event) => event.type === "session.boundary")).toHaveLength(1);
+  });
+
   it("tails a Grok chat_history.jsonl and emits a session.boundary on uuid rotation (t-9874be)", () => {
     const root = freshRoot();
     const adir = path.join(root, "activity");

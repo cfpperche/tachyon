@@ -1,6 +1,6 @@
 # Pi — runtime integration status (Tachyon)
 
-**Integration slices:** SDD 398 (Bridge), SDD 399 (continuity), SDD 400 (private home), measured against the installed `@earendil-works/pi-coding-agent` on 2026-07-18.
+**Integration slices:** SDD 398 (Bridge), SDD 399 (continuity), SDD 400 (private home), SDD 401 (Activity), measured against the installed `@earendil-works/pi-coding-agent` on 2026-07-18.
 
 Pi is a recognized Tachyon AI runtime. Tachyon starts it in tmux, injects `TACHYON_AGENT_NAME`, the Bridge URL and a per-agent bearer, delivers the universal onboarding primer as Pi's positional startup message, and additively loads an immutable bundled Pi extension with `--extension`.
 
@@ -20,7 +20,7 @@ Pi deliberately has no built-in MCP client. Tachyon's extension opens the local 
 | Default private home | ✓ | `PI_CODING_AGENT_DIR=.tachyon/harness/<agent>` plus private `sessions/` |
 | Credential isolation | ✓/~ | Initial regular mode-0600 copy; later refresh is agent-local and intentionally not synchronized |
 | Fork | ✗ | Deferred with transcript/session semantics |
-| Normalized Activity | ✗ | Next phase; exact private JSONL path is available but not normalized |
+| Normalized Activity | ~ | Exact private JSONL → `piNormalizer` → bounded durable `ActivityLogWriter`; automated proof passed, Dev Host view pending |
 | Runtime model/usage observation | ~ | Generic process/usage surfaces only |
 | Opt-in Pi harness capabilities | ✗ | Agent-scoped Pi skills/extensions/packages remain deferred |
 
@@ -47,3 +47,7 @@ Restart a Tachyon-managed Pi agent, then run:
 A healthy session reports `Tachyon Bridge: connected (N tools)`. Asking Pi to call `list_agents` should return the fleet with this process identified by `TACHYON_AGENT_NAME`. Inside a Tachyon Pi process, both `PI_CODING_AGENT_DIR` and `PI_CODING_AGENT_SESSION_DIR` must point under the workspace `.tachyon/harness/<agent>` tree, never `~/.pi/agent`.
 
 For continuity dogfood, talk to Pi, stop the managed entry, and use Tachyon's **Resume** action. The reopened Pi process must show the prior conversation. An in-TUI switch to a different session is not followed by Phase 2; Tachyon resumes the exact session id it minted.
+
+## Activity
+
+SDD 401 tails only the exact transcript resolved from the agent's private session directory. `piNormalizer` maps Pi v3 entries into the shared Activity vocabulary: user/assistant messages, thinking, images, tool lifecycle, successful file effects, direct bash commands, model/thinking-level provenance, token usage, interruption, errors and compaction/branch summaries. The durable writer retains bounded offsets and source IDs, strips raw records, and copies rendered image bytes into the existing blob side channel. Unknown/custom-state entries are dropped rather than parsed as another runtime.

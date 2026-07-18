@@ -77,7 +77,7 @@ Avoid the word `ongoing` as a verification token — use a date, CLI version, te
 | 5 Fork | ✓ | ✗ | ✓ | ✓ | ✗ |
 | 6 Harness | ✓ | ✓ | ✓ | ✓† | ~‡ |
 | 7 Graceful stop | ~ | ~ | ✓ | ✓ | ~ |
-| 8 Activity | ✓ | ✓ | ✓ | ✓ | ✗ |
+| 8 Activity | ✓ | ✓ | ✓ | ✓ | ~ |
 | 9 Permission inject | ~ | ~ | ~ | **✗** | ✗ |
 | 10 Label / profile | ✓ | ✓ | ~ | ✓ | ~ |
 | 11 Restart | ✓ | ✓ | ✓ | ✓ | ✓ |
@@ -170,7 +170,7 @@ Detail dump: [`docs/runtimes/opencode.md`](./opencode.md) (narrative may still s
 | Fork | native tree/fork exists inside Pi | no Tachyon `forkCommand` contract | `✗` |
 | Harness/private home | `PI_CODING_AGENT_DIR`; sessions override | default `.tachyon/harness/<agent>`, regular mode-0600 auth copy, no executable global-tree inheritance | SDD 400 units/dogfood; opt-in resource harness remains `~` |
 | Stop | generic fallback | no measured Pi stop profile | `~` |
-| Activity | session JSONL | exact file resolves, no Pi normalizer/reader | `✗` |
+| Activity | private v3 session JSONL | exact resolver → `piNormalizer` → bounded `ActivityLogWriter` | **~** SDD 401 unit/integration + real-transcript dogfood passed; Dev Host view pending |
 | Permission inject | tool filtering/approval surfaces | no permission adapter; Bridge refuses tool filters that would hide required tools | `✗` |
 | Profile | label + verified private-home isolation | `runtimeProfile.pi` | SDD 400; composer/model/stop still partial |
 

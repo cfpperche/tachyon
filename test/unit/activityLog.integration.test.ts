@@ -134,6 +134,30 @@ describe("activity log end-to-end (writer → log → render, spec 239 inc 3b+4)
     expect(vm.items.find((it) => it.kind === "image")).toMatchObject({ role: "user", detail: "image/png", title: "image" });
   });
 
+  it("SDD 401: writes and renders structured Pi Activity from its exact native JSONL", () => {
+    const root = freshRoot();
+    const adir = path.join(root, "activity");
+    const sess = path.join(root, "2026_pi-session.jsonl");
+    const piLine = (id: string, message: unknown) => JSON.stringify({ type: "message", id, parentId: null, timestamp: clock(), message });
+    fs.writeFileSync(sess, [
+      JSON.stringify({ type: "session", version: 3, id: "pi-session", timestamp: clock(), cwd: root }),
+      piLine("u1", { role: "user", content: "inspect this" }),
+      piLine("a1", { role: "assistant", model: "pi-model", content: [{ type: "text", text: "inspecting" }, { type: "toolCall", id: "tc1", name: "read", arguments: { path: "/repo/file.ts" } }], stopReason: "toolUse" }),
+      piLine("r1", { role: "toolResult", toolCallId: "tc1", toolName: "read", content: [{ type: "text", text: "contents" }], isError: false }),
+    ].join("\n") + "\n");
+
+    expect(new ActivityLogWriter(adir, "pi", clock).poll({ path: sess, sessionId: "pi-session", runtime: "pi" })).toBeGreaterThan(0);
+    const events = new ActivityLog(adir, "pi").readTail(100);
+    expect(events.every((event) => event.source.runtime === "pi")).toBe(true);
+    const vm = buildActivityView(events.map((event, index) => ({
+      type: event.type, runtime: "pi", sequence: index, sessionId: event.sessionId, timestamp: event.timestamp,
+      payload: event.payload, raw: undefined, model: event.model, effort: event.effort,
+    })) as never);
+    expect(vm.runtime).toBe("pi");
+    expect(vm.items.filter((item) => item.kind === "message").map((item) => item.title)).toEqual(["inspect this", "inspecting"]);
+    expect(vm.items.find((item) => item.kind === "tool")).toMatchObject({ title: "read", result: "contents" });
+  });
+
   it("spec 305: unknown runtimes do not silently fall back to the Claude normalizer", () => {
     const root = freshRoot();
     const adir = path.join(root, "activity");

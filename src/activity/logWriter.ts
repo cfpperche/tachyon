@@ -16,6 +16,7 @@ import { ActivityLog, agentLogId } from "./logStore.js";
 import { createClaudeNormalizer } from "./claudeNormalizer.js";
 import { createCodexNormalizer, type ActivityNormalizer } from "./codexNormalizer.js";
 import { createGrokNormalizer } from "./grokNormalizer.js";
+import { createPiNormalizer } from "./piNormalizer.js";
 import { HermesStorageReader, type HermesReaderState } from "./hermesStorageReader.js";
 import { OpencodeStorageReader, type OpencodeReaderState } from "./opencodeStorageReader.js";
 import { readForward, readTailWindow } from "./tailReader.js";
@@ -265,6 +266,7 @@ function createNormalizer(runtime = "claude", sourcePath?: string): ActivityNorm
   if (runtime === "claude") return createClaudeNormalizer(sourcePath);
   if (runtime === "codex") return createCodexNormalizer(sourcePath);
   if (runtime === "grok") return createGrokNormalizer(sourcePath);
+  if (runtime === "pi") return createPiNormalizer(sourcePath);
   // Hermes uses HermesStorageReader (SQLite), not line-tail normalizers.
   return { push: () => [] };
 }
@@ -291,8 +293,9 @@ function collectBlobs(events: NormalizedEvent[]): Map<string, Buffer> | undefine
 
 function imageDataFromRaw(raw: unknown): string | undefined {
   if (!raw || typeof raw !== "object") return undefined;
-  const rec = raw as { source?: { data?: string }; image_url?: string };
+  const rec = raw as { source?: { data?: string }; image_url?: string; data?: string };
   if (typeof rec.source?.data === "string") return rec.source.data;
+  if (typeof rec.data === "string") return rec.data; // Pi image content block
   const m = /^data:[^;,]+;base64,(.+)$/s.exec(rec.image_url ?? "");
   return m?.[1];
 }
