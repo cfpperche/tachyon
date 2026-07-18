@@ -2857,6 +2857,93 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(plan).toMatchObject({ source: "claude", forkName: "claude-fork-2", sourceId: UUID, runtime: "claude" });
   });
 
+  it("SDD 404: forks exact positively-owned Pi transcript into a distinct private session", async () => {
+    const sourceId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const forkId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    const sourcePath = "/private/pi/pi-a/sessions/source transcript.jsonl";
+    const ids = [sourceId, forkId];
+    const piPrivate = {
+      materializeHarness: ({ name }: { name: string }) => ({
+        home: `/private/pi/${name}`,
+        env: {
+          PI_CODING_AGENT_DIR: `/private/pi/${name}`,
+          PI_CODING_AGENT_SESSION_DIR: `/private/pi/${name}/sessions`,
+        },
+        args: [],
+      }),
+      materializePiSessionDir: (name: string) => `/private/pi/${name}/sessions`,
+    };
+    const { manager, ledger, cmds, startArgs, ws } = resumeHarness("agents:\n  pi-a:\n    cmd: pi\n", {
+      newSessionId: () => ids.shift()!,
+      resolveCaptureSession: async (_rt, cwd, home, id) => {
+        if (id === sourceId && cwd === ws && home === "/private/pi/pi-a/sessions") return { id: sourceId, path: sourcePath };
+        if (id === forkId && cwd === ws && home === "/private/pi/pi-a-fork-1/sessions") {
+          return { id: forkId, path: "/private/pi/pi-a-fork-1/sessions/fork.jsonl" };
+        }
+        return null;
+      },
+      ownedSession: (name, cwd) => name === "pi-a" && cwd === ws
+        ? { sessionId: sourceId, transcriptPath: sourcePath }
+        : undefined,
+      getExtraEnv: () => ({ TACHYON_BRIDGE_URL: "http://127.0.0.1:9/mcp" }),
+      piBridgeExtensionPath: () => "/immutable/pi-bridge-extension.mjs",
+      ...piPrivate,
+    });
+    await manager.spawn("pi-a");
+    const plan = await manager.planFork("pi-a");
+    expect(plan).toMatchObject({ source: "pi-a", forkName: "pi-a-fork-1", sourceId, runtime: "pi" });
+
+    const forkName = await manager.commitFork(plan);
+
+    expect(forkName).toBe("pi-a-fork-1");
+    expect(cmds.at(-1)).toContain("pi --extension '/immutable/pi-bridge-extension.mjs'");
+    expect(cmds.at(-1)).toContain(`--session-id ${forkId} --fork '${sourcePath}'`);
+    expect(envFromTmuxArgs(startArgs.at(-1)!)).toMatchObject({
+      PI_CODING_AGENT_DIR: "/private/pi/pi-a-fork-1",
+      PI_CODING_AGENT_SESSION_DIR: "/private/pi/pi-a-fork-1/sessions",
+      TACHYON_PI_SESSION_OWNER_FILE: path.join(ws, ".tachyon", "activity", "session-owners.jsonl"),
+      TACHYON_AGENT_NAME: "pi-a-fork-1",
+    });
+    expect(ledger.get(forkName)).toMatchObject({
+      def: { cmd: "pi", kind: "agent", fork: true },
+      resume: { runtime: "pi", sessionId: forkId, configHome: "/private/pi/pi-a-fork-1/sessions" },
+      cwd: ws,
+      declared: false,
+      bridgeClient: { wired: true },
+    });
+    expect(ledger.get("pi-a")?.resume?.sessionId).toBe(sourceId);
+
+    const forkRecord = ledger.get(forkName)!;
+    await manager.kill(forkName);
+    await manager.resume(forkName, forkRecord);
+    expect(cmds.at(-1)).toContain(`--session ${forkId}`);
+    expect(cmds.at(-1)).not.toContain("--fork");
+    const sourceRecord = ledger.get("pi-a")!;
+    await manager.kill("pi-a");
+    await manager.resume("pi-a", sourceRecord);
+    expect(cmds.at(-1)).toContain(`--session ${sourceId}`);
+    expect(cmds.at(-1)).not.toContain("--fork");
+  });
+
+  it("SDD 404: Pi Fork refuses absent or mismatched positive ownership before new side effects", async () => {
+    const sourceId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    let ownership: { sessionId: string; transcriptPath: string } | undefined;
+    let resolvePath = "/private/pi-a/sessions/source.jsonl";
+    const { manager, cmds } = resumeHarness("agents:\n  pi-a:\n    cmd: pi\n", {
+      newSessionId: () => sourceId,
+      resolveCaptureSession: async () => ({ id: sourceId, path: resolvePath }),
+      ownedSession: () => ownership,
+      materializeHarness: ({ name }) => ({ home: `/private/${name}`, env: {}, args: [] }),
+      materializePiSessionDir: (name) => `/private/${name}/sessions`,
+    });
+    await manager.spawn("pi-a");
+    const starts = cmds.length;
+    await expect(manager.planFork("pi-a")).rejects.toThrow("ownership has not been observed");
+    ownership = { sessionId: sourceId, transcriptPath: "/different/source.jsonl" };
+    await expect(manager.planFork("pi-a")).rejects.toThrow("does not resolve to one exact transcript");
+    expect(cmds).toHaveLength(starts);
+  });
+
   it("planFork: treats a rejected worktree dirty probe as dirty", async () => {
     const sourceWorktree = { path: "/wt/claude", branch: "tachyon/claude", tachyonCreatedBranch: true, baseRef: "sha", baseBranch: "main", createdAt: "t" };
     const { manager, ledger } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {

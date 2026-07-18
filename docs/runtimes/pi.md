@@ -1,6 +1,6 @@
 # Pi — runtime integration status (Tachyon)
 
-**Integration slices:** SDD 398 (Bridge), SDD 399 (continuity), SDD 400 (private home), SDD 401 (Activity), SDD 402 (interaction profile), SDD 403 (reviewer safety), measured against the installed `@earendil-works/pi-coding-agent` on 2026-07-18.
+**Integration slices:** SDD 398 (Bridge), SDD 399 (continuity), SDD 400 (private home), SDD 401 (Activity), SDD 402 (interaction profile), SDD 403 (reviewer safety), SDD 404 (native Fork), measured against the installed `@earendil-works/pi-coding-agent` on 2026-07-18.
 
 Pi is a recognized Tachyon AI runtime. Tachyon starts it in tmux, injects `TACHYON_AGENT_NAME`, the Bridge URL and a per-agent bearer, delivers the universal onboarding primer as Pi's positional startup message, and additively loads an immutable bundled Pi extension with `--extension`.
 
@@ -19,7 +19,7 @@ Pi deliberately has no built-in MCP client. Tachyon's extension opens the local 
 | Transcript capture / resume | ✓ | Tachyon-minted `--session-id`, exact `--session <id>`, sessions inside the private home |
 | Default private home | ✓ | `PI_CODING_AGENT_DIR=.tachyon/harness/<agent>` plus private `sessions/` |
 | Credential isolation | ✓/~ | Initial regular mode-0600 copy; later refresh is agent-local and intentionally not synchronized |
-| Fork | ✗ | Deferred with transcript/session semantics |
+| Fork | ~ | Native `--session-id B --fork <exact-A-path>`; unit + real Pi A→B→Resume proof passed, human Dev Host pending |
 | Normalized Activity | ✓ | Exact private JSONL → `piNormalizer` → bounded durable `ActivityLogWriter`; automated and Dev Host visual dogfood passed |
 | Attention / composer | ✓ | Measured framed editor profile; automated tmux and Dev Host idle/draft proof passed |
 | Graceful Stop | ✓ | Measured Escape → Ctrl+C → Ctrl+D sequence; idle/draft/active tmux and Dev Host proof passed |
@@ -35,7 +35,7 @@ Pi deliberately has no built-in MCP client. Tachyon's extension opens the local 
 - `auth.json` is a private mode-0600 copy, not a symlink: Pi locks by pathname and writes in place, so sibling symlink paths would race one shared target. OAuth refreshes can therefore diverge and are not promoted back to the real home.
 - Ambient executable resource trees (`extensions`, `skills`, `prompts`, `themes`, `npm`, `git`, `tools`, `bin`) are not inherited. Trusted project `.pi` resources remain governed by Pi's native project trust.
 - Explicit Pi session flags remain user-owned and produce no Tachyon-managed resume record, but they do not opt out of the private runtime home.
-- Pi commands using `--no-tools`, `--tools` or `--exclude-tools` are refused while Bridge wiring is required, because Tachyon cannot guarantee the complete Bridge catalog.
+- Pi commands using `--no-tools`, `--tools` or non-canonical `--exclude-tools` are refused while Bridge wiring is required, because Tachyon cannot guarantee the complete Bridge catalog. The exact reviewer denylist remains accepted.
 - A temporary connection/authentication failure is visible through `/tachyon-bridge-status` and the Pi status line, but Pi remains usable for ordinary local coding.
 - `--no-extensions` does not defeat the integration: Pi documents that explicit `--extension` paths still load when automatic extension discovery is disabled.
 
@@ -49,7 +49,11 @@ Restart a Tachyon-managed Pi agent, then run:
 
 A healthy session reports `Tachyon Bridge: connected (N tools)`. Asking Pi to call `list_agents` should return the fleet with this process identified by `TACHYON_AGENT_NAME`. Inside a Tachyon Pi process, both `PI_CODING_AGENT_DIR` and `PI_CODING_AGENT_SESSION_DIR` must point under the workspace `.tachyon/harness/<agent>` tree, never `~/.pi/agent`.
 
-For continuity dogfood, talk to Pi, stop the managed entry, and use Tachyon's **Resume** action. The reopened Pi process must show the prior conversation. An in-TUI switch to a different session is not followed by Phase 2; Tachyon resumes the exact session id it minted.
+For continuity dogfood, talk to Pi, stop the managed entry, and use Tachyon's **Resume** action. The reopened Pi process must show the prior conversation. The bundled extension now records every `session_start`, so an in-TUI new/resume/fork rotation updates exact per-agent ownership rather than falling back to a newest-file guess.
+
+## Native Fork
+
+SDD 404 maps the existing Tachyon sibling Fork action to Pi's native `--fork`. The live source must have a positive extension ownership row; Tachyon revalidates one no-follow JSONL by UUID, canonical cwd and exact path at both plan and commit. The destination receives a fresh UUID, a distinct private home, the immutable extension and Bridge credentials, and launches as `--session-id B --fork '<A-jsonl>'`. Pi writes B with `parentSession` provenance while A stays byte-stable. A and B then Resume independently from their own private directories. Interactive `/fork` selection from an earlier user message and `/tree` navigation remain Pi-native surfaces outside this product action.
 
 ## Activity
 

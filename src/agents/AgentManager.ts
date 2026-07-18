@@ -20,6 +20,7 @@ import {
   type SessionResume,
 } from "../resume/SessionLedger.js";
 import { moveActivityLog } from "../activity/logStore.js";
+import { sessionOwnersFile } from "../activity/sessionOwners.js";
 import type { DelegationGate, SpawnContract } from "../bridge/spawnContract.js";
 import type { ResolvedCaptureSession } from "../resume/resolvers.js";
 import { assertVerifiedTranscriptIsolation, gracefulStopForCommand, isolationMechanismForCommand, opencodeIsolationFootgunWarning, runtimeProfile } from "../runtime/runtimeProfile.js";
@@ -593,7 +594,7 @@ export interface ForkPlan {
   source: string;
   /** the unique sibling name `<source>-fork-N` */
   forkName: string;
-  /** the source session's RESOLVED live id (a real uuid) — the `--fork-session` resume target */
+  /** the source session's RESOLVED live id (a real uuid); native transport may use this id or its exact JSONL path */
   sourceId: string;
   /** the source's recorded cwd (the fork shares it when the source has no worktree) */
   sourceCwd: string;
@@ -2314,7 +2315,10 @@ export class AgentManager {
     if (managedPiSession) {
       const sessionDir = this.opts.materializePiSessionDir?.(name);
       if (!sessionDir) throw new Error(`agent '${name}': Pi session materializer is unavailable`);
-      sessionEnv = { [PI_SESSION_DIR_ENV]: sessionDir };
+      sessionEnv = {
+        [PI_SESSION_DIR_ENV]: sessionDir,
+        TACHYON_PI_SESSION_OWNER_FILE: sessionOwnersFile(this.opts.workspaceRoot),
+      };
     }
     const url = this.opts.getExtraEnv?.()?.[URL_ENV_VAR];
     if (def.harness) {
@@ -3641,6 +3645,8 @@ export class AgentManager {
     sourceCwd: string;
     sourceId: string;
     sourceWorktree?: WorktreeRecord;
+    /** Exact validated source JSONL for runtimes whose fork namespace differs from the destination (Pi). */
+    sourceTranscriptPath?: string;
     instructions?: string;
     env?: Record<string, string>;
   }> {
@@ -3650,7 +3656,7 @@ export class AgentManager {
     if (!rec?.resume) throw new ForkUnavailableError(name, "it has no tracked session to fork");
     const { runtime } = rec.resume;
     const adapter = adapterForRuntime(runtime);
-    if (!adapter || !forkable(adapter)) throw new ForkUnavailableError(name, `'${runtime}' has no native session fork — fork is claude-only today`);
+    if (!adapter || !forkable(adapter)) throw new ForkUnavailableError(name, `'${runtime}' has no native session fork`);
     const baseCmd = rec.def?.cmd;
     if (!baseCmd) throw new ForkUnavailableError(name, "no base command recorded to fork");
     // spec 226 (v1) — forking an isolated-harness agent isn't supported yet: the fork would need its
@@ -3670,10 +3676,25 @@ export class AgentManager {
     // spec 226 — a harness source is already blocked above; derive the runtime home for resolver parity.
     const configHome = this.runtimeConfigHome(runtime, name, this.definitionOf(name));
     let id = rec.resume.sessionId;
-    if (runtime === "claude" && this.opts.resolveCurrentSession && id && !this.isUuid(id)) {
-      id = (await this.opts.resolveCurrentSession(runtime, cwd, id, configHome)) ?? "";
+    let sourceTranscriptPath: string | undefined;
+    if (runtime === "pi") {
+      // Pi can rotate sessions in-TUI. Its bundled extension records every session_start positively;
+      // require that current row rather than forking the launch-time UUID after a /new or /resume.
+      const owned = this.opts.ownedSession?.(name, cwd);
+      if (!owned) throw new ForkUnavailableError(name, "its current Pi session ownership has not been observed yet");
+      id = owned.sessionId;
+      const resolved = await this.opts.resolveCaptureSession?.(runtime, cwd, configHome, id);
+      const exists = this.opts.fileExists ?? fs.existsSync;
+      if (!resolved || !exists(resolved.path) || path.resolve(resolved.path) !== path.resolve(owned.transcriptPath)) {
+        throw new ForkUnavailableError(name, "its current Pi ownership row does not resolve to one exact transcript");
+      }
+      sourceTranscriptPath = path.resolve(resolved.path);
+    } else {
+      if (runtime === "claude" && this.opts.resolveCurrentSession && id && !this.isUuid(id)) {
+        id = (await this.opts.resolveCurrentSession(runtime, cwd, id, configHome)) ?? "";
+      }
+      if (!id) id = (await this.opts.resolveCaptureId?.(runtime, cwd, configHome)) ?? "";
     }
-    if (!id) id = (await this.opts.resolveCaptureId?.(runtime, cwd, configHome)) ?? "";
     if (!this.isUuid(id)) {
       throw new ForkUnavailableError(name, "not forkable yet — send it a message first (a fork needs at least one conversation turn to carry context)");
     }
@@ -3690,6 +3711,7 @@ export class AgentManager {
       baseCmd,
       sourceCwd: cwd,
       sourceId: id,
+      ...(sourceTranscriptPath ? { sourceTranscriptPath } : {}),
       ...(rec.worktree ? { sourceWorktree: rec.worktree } : {}),
       ...(rec.def?.instructions ? { instructions: rec.def.instructions } : {}),
       ...(this.definitionOf(name)?.env ? { env: this.definitionOf(name)!.env } : {}),
@@ -3726,8 +3748,9 @@ export class AgentManager {
   /**
    * spec 225 — execute a ForkPlan: (worktree source → its own new worktree off committed HEAD + seed
    * the transcript into that cwd's project dir; non-worktree → share the source cwd) then spawn the
-   * sibling `claude -n <fork-name> --resume <sourceId> --fork-session`. Records a PERSISTENT sibling
-   * ledger row (base cmd + the fork's own name + fork:true, NO parent lineage). Returns the fork name.
+   * sibling through the runtime's native fork command. Pi uses a fresh UUID + exact cross-home JSONL;
+   * other runtimes preserve their existing id-based transport. Records a PERSISTENT sibling ledger row
+   * (base cmd + the fork's own identity + fork:true, NO parent lineage). Returns the fork name.
    */
   async commitFork(plan: ForkPlan): Promise<string> {
     const source = plan.source;
@@ -3750,6 +3773,15 @@ export class AgentManager {
     // Re-derive a fresh unique name so two concurrent/stale confirmations can't both claim the same one.
     const forkName = this.uniqueForkName(source, await this.allKnownNames());
     this.readinessCache.delete(forkName);
+    // Pi's destination identity is known before any checkout/home/token side effect. A broken injected
+    // generator therefore cannot strand a worktree merely because it repeated the source UUID.
+    let forkSessionId = src.runtime === "pi"
+      ? (this.opts.newSessionId ?? (() => crypto.randomUUID()))()
+      : this.claudeSessionName(forkName);
+    if (src.runtime === "pi" && forkSessionId === src.sourceId) {
+      forkSessionId = (this.opts.newSessionId ?? (() => crypto.randomUUID()))();
+      if (forkSessionId === src.sourceId) throw new ForkUnavailableError(source, "could not mint a distinct Pi fork session id");
+    }
 
     // cwd: a worktree source gets its OWN new worktree (decoupled); a non-worktree source shares the
     // source's cwd (same project dir → claude --resume carries context with no copy).
@@ -3767,7 +3799,19 @@ export class AgentManager {
 
     // From here a fresh Git-locked worktree may exist + a session may be spawned. Failures terminate
     // only a provably-created session; the checkout remains locked recovery state and is never removed.
-    const forkClaudeName = this.claudeSessionName(forkName);
+    const forkDefinition: AgentDef = {
+      cmd: src.baseCmd,
+      kind: "agent",
+      autostart: false,
+      watch: [],
+      attention: { enabled: true, silenceSec: 8, patterns: [] },
+      restart: "never",
+      ...(src.instructions ? { instructions: src.instructions } : {}),
+      ...(sourceDefinition?.role ? { role: sourceDefinition.role } : sourceRecord?.def?.role ? { role: sourceRecord.def.role } : {}),
+      ...(sourceDefinition?.soul || sourceRecord?.def?.soul ? { soul: true } : {}),
+      ...(sourceRecord?.def?.taskBrief ? { taskBrief: sourceRecord.def.taskBrief } : {}),
+      ...(src.env ? { env: src.env } : {}),
+    };
     const forkRecord = () => ({
       def: {
         cmd: src.baseCmd,
@@ -3779,7 +3823,7 @@ export class AgentManager {
         ...(src.env ? { env: src.env } : {}),
         fork: true,
       },
-      resume: this.withConfigHome(forkName, undefined, { runtime: src.runtime, sessionId: forkClaudeName }),
+      resume: this.withConfigHome(forkName, forkDefinition, { runtime: src.runtime, sessionId: forkSessionId }),
       ...(sourceRecord?.identity ? { identity: structuredClone(sourceRecord.identity) } : {}),
       ...(worktree ? { worktree } : {}),
       cwd,
@@ -3788,6 +3832,7 @@ export class AgentManager {
     let spawnedSession: string | undefined;
     let sessionAttempted = false;
     let tokenMinted = false;
+    let piHomeCreated = false;
     try {
       // A worktree fork can load project-scoped runtime configuration. Probe only after resolving
       // that exact cwd, but before transcript seeding, token minting, tmux, or durable identity.
@@ -3808,32 +3853,59 @@ export class AgentManager {
         if (!seeded) throw new ForkUnavailableError(source, "couldn't seed the session transcript into the fork's worktree (claude --resume would find nothing)");
       }
 
-      // -n <fork's OWN name> so its NEW session carries a distinct customTitle (spec-220 capture),
-      // then --resume <sourceId> --fork-session. Verified live: `claude -n B --resume A --fork-session`.
-      const forkCmd = adapter.forkCommand(adapter.injectId(src.baseCmd, forkClaudeName), src.sourceId);
+      // Claude/Grok/OpenCode fork by exact source id. Pi sources and destinations use distinct private
+      // homes, so its native --fork receives the exact validated source JSONL path instead.
+      const sourceRef = src.runtime === "pi" ? src.sourceTranscriptPath : src.sourceId;
+      if (!sourceRef) throw new ForkUnavailableError(source, "its exact Pi source transcript is unavailable");
+      const forkCmd = adapter.forkCommand(adapter.injectId(src.baseCmd, forkSessionId), sourceRef);
       const session = this.session(forkName);
-      // spec 236 — a fork is a Tachyon-spawned agent too; inject the Bridge (claude-only + non-harness:
-      // a harness source is blocked from fork, so this is always the non-harness --mcp-config / OPENCODE_CONFIG path).
-      const forkBridge = this.withRuntimeBridge(forkName, { cmd: src.baseCmd }, forkCmd, cwd);
+      const piHome = src.runtime === "pi" ? harnessHome(this.opts.workspaceRoot, forkName) : undefined;
+      const piHomeExisted = piHome ? fs.existsSync(piHome) : true;
+      let preparedHarness: MaterializedHarness | null = null;
+      try {
+        preparedHarness = src.runtime === "pi"
+          ? this.materializeRuntimeHarness(forkName, forkDefinition, cwd)
+          : null;
+      } finally {
+        // Materializers may fail after creating part of the home; retain cleanup authority in that case.
+        piHomeCreated = !!piHome && !piHomeExisted && fs.existsSync(piHome);
+      }
       const tokenEnv = this.opts.mintAgentToken?.(forkName);
       tokenMinted = tokenEnv !== undefined && Object.keys(tokenEnv).length > 0;
+      const baseForkEnv = { ...this.opts.getExtraEnv?.(), ...tokenEnv, ...src.env, TACHYON_AGENT_NAME: forkName };
+      // Preserve every existing non-Pi Fork byte/env path. Pi alone needs the newly added mandatory
+      // private-home materialization before its cross-home native --fork launch.
+      const forkBuild = src.runtime === "pi"
+        ? this.applyHarness(forkName, forkDefinition, cwd, forkCmd, baseForkEnv, preparedHarness)
+        : { cmd: forkCmd, env: baseForkEnv };
+      // spec 236 / SDD 404 — a fork is a normal Tachyon-spawned process: private home first, then
+      // immutable Pi extension + Bridge. managedPiSession also supplies the ownership ledger path.
+      const forkBridge = this.withRuntimeBridge(
+        forkName,
+        forkDefinition,
+        forkBuild.cmd,
+        cwd,
+        undefined,
+        src.runtime === "pi",
+      );
+      if (src.runtime === "pi" && this.opts.getExtraEnv?.()?.[URL_ENV_VAR] && !forkBridge.wired) {
+        throw new ForkUnavailableError(source, "Pi Bridge tools could not be materialized for the fork");
+      }
       sessionAttempted = true;
       await this.opts.tmux.newSession({
         name: session,
         cmd: this.applyAgentMemoryScope(
           forkName,
-          this.withSessionOwnership(forkName, { cmd: src.baseCmd }, forkBridge.cmd, {
+          this.withSessionOwnership(forkName, forkDefinition, forkBridge.cmd, {
             declared: false,
             cwd,
-            // Harness-backed sources cannot fork. Preserve an explicit source override; otherwise use the
-            // same host-default account home used by transcript resolution and HarnessManager seeding.
-            configHome: src.env?.CLAUDE_CONFIG_DIR ?? this.defaultClaudeConfigHome(),
+            configHome: forkBuild.env.CLAUDE_CONFIG_DIR ?? this.defaultClaudeConfigHome(),
             // A user-created fork inherits the source command's permission posture; capture must not widen it.
             preservePermissionMode: true,
           }),
         ),
         cwd,
-        env: { ...this.opts.getExtraEnv?.(), ...tokenEnv, ...src.env, ...forkBridge.env, TACHYON_AGENT_NAME: forkName },
+        env: { ...forkBuild.env, ...forkBridge.env },
       });
       spawnedSession = session;
       // The catch below owns session teardown. Readiness rejection deliberately leaves the Git-locked
@@ -3903,6 +3975,10 @@ export class AgentManager {
       if (tokenMinted) {
         try { this.opts.revokeAgentToken?.(forkName); }
         catch (error) { failures.push(new Error(`failed to revoke fork token for '${forkName}'`, { cause: error })); }
+      }
+      if (piHomeCreated && !runtimeMayBeLive && !worktree) {
+        try { this.opts.removeHarnessHome?.(forkName); }
+        catch (error) { failures.push(new Error(`failed to remove Pi fork private home for '${forkName}'`, { cause: error })); }
       }
       // The checkout may contain transcript/setup/runtime writes, including ignored files, so its
       // Git quarantine lock is the recovery receipt; never delete it automatically.

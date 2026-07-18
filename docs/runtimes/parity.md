@@ -74,7 +74,7 @@ Avoid the word `ongoing` as a verification token — use a date, CLI version, te
 | 2 Bridge MCP | ✓ | ✓ | ✓ | ✓ | ✓* |
 | 3 Attention | ✓ | ✓ | ~ | ~ | ✓ |
 | 4 Resume | ✓ | ✓ | ✓ | ✓ | ✓ |
-| 5 Fork | ✓ | ✗ | ✓ | ✓ | ✗ |
+| 5 Fork | ✓ | ✗ | ✓ | ✓ | ~ |
 | 6 Harness | ✓ | ✓ | ✓ | ✓† | ~‡ |
 | 7 Graceful stop | ~ | ~ | ✓ | ✓ | ✓ |
 | 8 Activity | ✓ | ✓ | ✓ | ✓ | ✓ |
@@ -167,7 +167,7 @@ Detail dump: [`docs/runtimes/opencode.md`](./opencode.md) (narrative may still s
 | Bridge | no native MCP; native extension `registerTool()` | immutable `pi-bridge-extension` loaded with `--extension` | SDD 398 real loader + human dogfood |
 | Attention | framed Pi editor + shared pane patterns | `runtimeProfile.pi.composer` + framed-region Attention support | **✓** SDD 402 measured/unit/real-tmux + Dev Host idle/draft pass |
 | Resume | `--session-id` + exact `--session` | adapter + bounded JSONL header resolver | SDD 399 real process A → B + human Stop/Resume |
-| Fork | native tree/fork exists inside Pi | no Tachyon `forkCommand` contract | `✗` |
+| Fork | `--session-id <new> --fork <exact-source-path>` | positive extension ownership + no-follow source validation + native `forkCommand` | **~** SDD 404 unit + real A→B→independent Resume pass; human Dev Host pending |
 | Harness/private home | `PI_CODING_AGENT_DIR`; sessions override | default `.tachyon/harness/<agent>`, regular mode-0600 auth copy, no executable global-tree inheritance | SDD 400 units/dogfood; opt-in resource harness remains `~` |
 | Stop | Escape interrupt, Ctrl+C clear, Ctrl+D empty-editor exit | measured profile with delayed conditional keys | **✓** idle/draft/active real-tmux + Dev Host pass |
 | Activity | private v3 session JSONL | exact resolver → `piNormalizer` → bounded `ActivityLogWriter` | **✓** SDD 401 unit/integration, real-transcript dogfood and Dev Host visual pass |

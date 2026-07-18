@@ -117,7 +117,11 @@ describe("ResumeAdapter — mint runtimes (claude, gemini, grok, pi)", () => {
     const opencode = adapterForRuntime("opencode")!;
     expect(forkable(opencode)).toBe(true);
     expect(opencode.forkCommand!("opencode", "source-id")).toBe("opencode -s source-id --fork");
-    for (const rt of ["codex", "gemini", "antigravity", "qwen", "continue", "pi"] as const) {
+    const pi = adapterForRuntime("pi")!;
+    expect(forkable(pi)).toBe(true);
+    expect(pi.forkCommand!(pi.injectId("pi --thinking high", "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"), "/private/a session/source's.jsonl"))
+      .toBe("pi --thinking high --session-id bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb --fork '/private/a session/source'\\''s.jsonl'");
+    for (const rt of ["codex", "gemini", "antigravity", "qwen", "continue"] as const) {
       expect(forkable(adapterForRuntime(rt))).toBe(false);
     }
     expect(forkable(null)).toBe(false);

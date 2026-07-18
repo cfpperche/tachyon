@@ -49,12 +49,12 @@ export interface ResumeAdapter {
   transcriptPath?(configHome: string, cwd: string, id: string): string;
   /**
    * spec 225 — build the SPAWN command that FORKS a session: resume `sourceId`'s context into a NEW
-   * session without mutating the original. Present ONLY for runtimes with a native fork primitive
-   * (claude `--fork-session`); absent = NOT forkable (no lossy transcript-summary seed in v1). The
-   * caller has already injected the fork's own `-n <fork-name>` via injectId, so this only appends the
-   * resume+fork flags.
+   * session without mutating the original. Present ONLY for runtimes with a native fork primitive.
+   * `sourceRef` is runtime-specific: an exact id for Claude/Grok/OpenCode, or an exact validated JSONL
+   * path for Pi (its source and destination use distinct private session directories). The caller has
+   * already injected the fork's own destination identity via injectId.
    */
-  forkCommand?(cmd: string, sourceId: string): string;
+  forkCommand?(cmd: string, sourceRef: string): string;
   /**
    * spec 226 — isolated-harness support: how this runtime wires a per-agent config home + scoped MCP.
    * Present ONLY for runtimes that support it (v1: claude/codex; spec t-e2ebe3: opencode). Pure SHAPE —
@@ -160,6 +160,11 @@ function append(cmd: string, ...args: string[]): string {
   return `${cmd.trim()} ${args.join(" ")}`.trim();
 }
 
+/** POSIX-shell token quoting for native session references passed through tmux's shell command. */
+function shellToken(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
 /**
  * True when the user's command already manages its own session — it carries a
  * resume/continue/session-id flag. For a MINT runtime (claude/gemini) we must NOT
@@ -255,6 +260,9 @@ const ADAPTERS: ResumeAdapter[] = [
     mintsId: true,
     injectId: (cmd, id) => (managesOwnSession(cmd) ? cmd : append(cmd, "--session-id", id)),
     resumeCommand: (cmd, id) => (managesOwnSession(cmd) ? cmd : append(cmd, "--session", id)),
+    // Pi accepts --session-id <new UUID> together with --fork <path|id>. Tachyon supplies the exact
+    // no-follow source path because source and destination live in distinct private session dirs.
+    forkCommand: (cmd, sourcePath) => append(cmd, "--fork", shellToken(sourcePath)),
     // Pi's filename is `<timestamp>_<id>.jsonl`, so the exact path requires a bounded directory/header
     // scan in resolvers.ts rather than a dishonest direct transcriptPath formula.
   },

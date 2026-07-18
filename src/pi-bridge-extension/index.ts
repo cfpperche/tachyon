@@ -1,9 +1,13 @@
+import fs from "node:fs";
+import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { ToolListChangedNotificationSchema } from "@modelcontextprotocol/sdk/types.js";
 import { projectMcpTool, type McpToolCallResult, type McpToolDescriptor } from "./toolProjection.js";
 
 const STATUS_KEY = "tachyon-bridge";
+const PI_OWNER_FILE_ENV = "TACHYON_PI_SESSION_OWNER_FILE";
+const AGENT_NAME_ENV = "TACHYON_AGENT_NAME";
 
 function environment(): { url?: string; token?: string } {
   return {
@@ -18,14 +22,47 @@ function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+interface PiSessionContext {
+  ui: { setStatus(key: string, value: string): void };
+  sessionManager: {
+    getSessionId(): string;
+    getSessionFile(): string | undefined;
+    getCwd(): string;
+  };
+}
+
 interface PiExtensionApi {
   registerCommand(name: string, command: {
     description: string;
     handler(args: string, ctx: { ui: { notify(message: string, level: "info" | "warning"): void } }): Promise<void>;
   }): void;
   registerTool(tool: unknown): void;
-  on(event: "session_start", handler: (event: unknown, ctx: { ui: { setStatus(key: string, value: string): void } }) => void): void;
+  on(event: "session_start", handler: (event: { reason?: string }, ctx: PiSessionContext) => void): void;
   on(event: "session_shutdown", handler: () => Promise<void>): void;
+}
+
+/** Append exact positive ownership for startup and in-TUI new/resume/fork rotations. */
+function recordSessionOwner(event: { reason?: string }, ctx: PiSessionContext): void {
+  const file = process.env[PI_OWNER_FILE_ENV]?.trim();
+  const agent = process.env[AGENT_NAME_ENV]?.trim();
+  if (!file || !agent) return;
+  const sessionId = ctx.sessionManager.getSessionId();
+  const transcriptPath = ctx.sessionManager.getSessionFile();
+  const cwd = ctx.sessionManager.getCwd();
+  if (!sessionId || !transcriptPath || !cwd) return;
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.appendFileSync(file, `${JSON.stringify({
+      agent,
+      sessionId,
+      transcriptPath,
+      cwd,
+      source: `pi:${event.reason ?? "unknown"}`,
+      ts: new Date().toISOString(),
+    })}\n`, { encoding: "utf8", mode: 0o600 });
+  } catch {
+    // Ownership is fail-closed at Fork resolution. Never prevent Pi startup if local evidence storage fails.
+  }
 }
 
 export default async function tachyonPiBridge(pi: PiExtensionApi): Promise<void> {
@@ -41,7 +78,8 @@ export default async function tachyonPiBridge(pi: PiExtensionApi): Promise<void>
     },
   });
 
-  pi.on("session_start", (_event, ctx) => {
+  pi.on("session_start", (event, ctx) => {
+    recordSessionOwner(event, ctx);
     ctx.ui.setStatus(STATUS_KEY, state.startsWith("connected") ? `Tachyon ${toolCount} tools` : "Tachyon disconnected");
   });
   pi.on("session_shutdown", async () => {

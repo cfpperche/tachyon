@@ -1,3 +1,6 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import tachyonPiBridge from "../../src/pi-bridge-extension/index.js";
 import { projectMcpContent, projectMcpTool } from "../../src/pi-bridge-extension/toolProjection.js";
@@ -76,6 +79,47 @@ describe("Pi Bridge extension projection", () => {
       if (priorUrl === undefined) delete process.env.TACHYON_BRIDGE_URL; else process.env.TACHYON_BRIDGE_URL = priorUrl;
       if (priorAgentToken === undefined) delete process.env.TACHYON_AGENT_BRIDGE_TOKEN; else process.env.TACHYON_AGENT_BRIDGE_TOKEN = priorAgentToken;
       if (priorToken === undefined) delete process.env.TACHYON_BRIDGE_TOKEN; else process.env.TACHYON_BRIDGE_TOKEN = priorToken;
+    }
+  });
+
+  it("SDD 404 records exact Pi ownership on every session_start without requiring Bridge connectivity", async () => {
+    const temp = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-pi-owner-"));
+    const owners = path.join(temp, "activity", "session-owners.jsonl");
+    const prior = {
+      url: process.env.TACHYON_BRIDGE_URL,
+      owner: process.env.TACHYON_PI_SESSION_OWNER_FILE,
+      agent: process.env.TACHYON_AGENT_NAME,
+    };
+    delete process.env.TACHYON_BRIDGE_URL;
+    process.env.TACHYON_PI_SESSION_OWNER_FILE = owners;
+    process.env.TACHYON_AGENT_NAME = "pi-a";
+    const handlers = new Map<string, (...args: any[]) => unknown>();
+    try {
+      await tachyonPiBridge({
+        registerCommand: vi.fn(), registerTool: vi.fn(),
+        on: (event, handler) => handlers.set(event, handler as never),
+      });
+      handlers.get("session_start")!({ reason: "fork" }, {
+        ui: { setStatus: vi.fn() },
+        sessionManager: {
+          getSessionId: () => "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          getSessionFile: () => "/private/pi-a/sessions/fork.jsonl",
+          getCwd: () => "/workspace",
+        },
+      });
+      expect(JSON.parse(fs.readFileSync(owners, "utf8").trim())).toMatchObject({
+        agent: "pi-a",
+        sessionId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        transcriptPath: "/private/pi-a/sessions/fork.jsonl",
+        cwd: "/workspace",
+        source: "pi:fork",
+        ts: expect.any(String),
+      });
+    } finally {
+      if (prior.url === undefined) delete process.env.TACHYON_BRIDGE_URL; else process.env.TACHYON_BRIDGE_URL = prior.url;
+      if (prior.owner === undefined) delete process.env.TACHYON_PI_SESSION_OWNER_FILE; else process.env.TACHYON_PI_SESSION_OWNER_FILE = prior.owner;
+      if (prior.agent === undefined) delete process.env.TACHYON_AGENT_NAME; else process.env.TACHYON_AGENT_NAME = prior.agent;
+      fs.rmSync(temp, { recursive: true, force: true });
     }
   });
 
