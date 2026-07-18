@@ -768,6 +768,11 @@
           "minimum": 1,
           "description": "%config.maxAgents%"
         },
+        "tachyon.agentMemoryMax": {
+            "type": "string",
+            "default": "",
+            "description": "Opt-in systemd --user MemoryMax for each agent process tree (e.g. 2G, 512M). Empty = off. Linux only."
+        },
         "tachyon.taskNotifications.enabled": {
           "type": "boolean",
           "default": true,

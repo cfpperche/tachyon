@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import { parse as parseYaml } from "yaml";
+import { parseAgentMemoryMax } from "../agents/agentMemoryScope.js";
 import { type Role, isRole, ROLES } from "../roles/templates.js";
 import { binaryOf, binaryIndex } from "../resume/adapters.js";
 import { TASK_NOTIFICATION_EVENT_IDS, type TaskNotificationSettingsInput } from "../tasks/taskNotificationPolicy.js";
@@ -325,6 +326,11 @@ export interface TachyonConfig {
   declaredOwner: Record<string, string>;
   settings: {
     maxAgents?: number;
+    /**
+     * t-0d0152 — opt-in systemd --user scope MemoryMax for each agent spawn tree
+     * (e.g. "2G", "512M"). Omitted/off = no wrap. Linux only; fail-open elsewhere.
+     */
+    agentMemoryMax?: string;
     bridgePort?: number;
     auth?: boolean;
     /** spec 351 — accept the shared/legacy Bridge token as a caller identity (kind "legacy", bypass-
@@ -1117,6 +1123,19 @@ export function parseConfig(yamlText: string): ParseResult {
           settings.maxAgents = n;
         }
       }
+      if (raw.settings.agentMemoryMax !== undefined) {
+        const rawMax = raw.settings.agentMemoryMax;
+        if (rawMax === false || rawMax === null || rawMax === "off" || rawMax === "none") {
+          // explicit off — leave unset
+        } else {
+          const parsed = parseAgentMemoryMax(rawMax);
+          if (!parsed && rawMax !== "" && rawMax !== 0 && rawMax !== "0") {
+            errors.push('settings.agentMemoryMax: must be systemd MemoryMax like "2G", "512M", "50%", or "off"');
+          } else if (parsed) {
+            settings.agentMemoryMax = parsed;
+          }
+        }
+      }
       if (raw.settings.bridgePort !== undefined) {
         const n = raw.settings.bridgePort;
         if (typeof n !== "number" || !Number.isInteger(n) || n < 1024 || n > 65535) {
@@ -1499,7 +1518,7 @@ export function parseConfig(yamlText: string): ParseResult {
         }
       }
       for (const key of Object.keys(raw.settings)) {
-        if (!["maxAgents", "bridgePort", "auth", "legacyBridgeAuth", "layout", "tmux", "worktree", "verify", "projectGuidance", "anchor", "bridgeGuidance", "clipboard", "handoff", "persistence", "bridgeClientRebind", "gitDelivery", "delivery", "taskNotifications"].includes(key)) errors.push(`settings: unknown key '${key}'`);
+        if (!["maxAgents", "agentMemoryMax", "bridgePort", "auth", "legacyBridgeAuth", "layout", "tmux", "worktree", "verify", "projectGuidance", "anchor", "bridgeGuidance", "clipboard", "handoff", "persistence", "bridgeClientRebind", "gitDelivery", "delivery", "taskNotifications"].includes(key)) errors.push(`settings: unknown key '${key}'`);
       }
     }
   }
