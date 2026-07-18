@@ -638,3 +638,6 @@ Marketplace release notes.
 - Input-driven pipelines: one definition becomes a reusable workflow run per issue, with agent
   personas and a handoff bus that carries context down the chain.
 - Codex pipeline nodes reach the Bridge automatically via an injected `-c` override.
+
+## 0.56.37
+- t-ec5cd2: passive info toasts auto-advance (~4s); exact-duplicate collapse (~10s); burst "+N more" suffix.
