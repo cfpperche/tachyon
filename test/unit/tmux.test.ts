@@ -578,6 +578,31 @@ describe("renameSession", () => {
   });
 });
 
+describe("pipePane / unpipePane (t-6a6a00 — durable per-agent transcripts)", () => {
+  it("pipePane attaches WITHOUT -o (bare form is the actually-idempotent one — see TmuxService.pipePane doc comment), targeting the exact pane, piping through cat >>", async () => {
+    const { calls, exec } = recordingExecutor();
+    const tmux = new TmuxService(exec);
+    await tmux.pipePane({ target: "tachyon-x-a", file: "/ws/.tachyon/pane-transcripts/a.log" });
+    expect(calls[0]).toEqual([
+      "-L", "tachyon", "pipe-pane", "-t", "=tachyon-x-a:", "cat >> '/ws/.tachyon/pane-transcripts/a.log'",
+    ]);
+  });
+
+  it("pipePane single-quotes the file path, escaping an embedded single quote", async () => {
+    const { calls, exec } = recordingExecutor();
+    const tmux = new TmuxService(exec);
+    await tmux.pipePane({ target: "tachyon-x-a", file: "/ws/it's/a.log" });
+    expect(calls[0].at(-1)).toBe("cat >> '/ws/it'\\''s/a.log'");
+  });
+
+  it("unpipePane closes any current pipe with NO shell-command and NO -o (a command-less call always closes)", async () => {
+    const { calls, exec } = recordingExecutor();
+    const tmux = new TmuxService(exec);
+    await tmux.unpipePane("tachyon-x-a");
+    expect(calls[0]).toEqual(["-L", "tachyon", "pipe-pane", "-t", "=tachyon-x-a:"]);
+  });
+});
+
 describe("server options (settings.tmux overlay over Tachyon defaults)", () => {
   it("new-session asserts Tachyon defaults + reserved remain-on-exit, then creates", async () => {
     const { calls, exec } = recordingExecutor();

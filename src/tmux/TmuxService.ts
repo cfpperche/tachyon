@@ -920,6 +920,31 @@ export class TmuxService {
     return stdout.replace(/\n+$/, "");
   }
 
+  /**
+   * Streams the pane's raw output to `file` via `cat >> file`, run through the pane's own shell
+   * (t-6a6a00 — durable per-agent transcripts, survives kill-session/reload; capture-pane does not).
+   *
+   * Deliberately WITHOUT `-o`: verified empirically against real tmux (3.6) that `-o` is a raw
+   * key-binding TOGGLE — a second `-o` call turns an already-active pipe OFF regardless of whether
+   * the command matches, which would silently kill the transcript on the very next spawn/restart/
+   * resume/fork attach (the tmux(1) wording reads as "only start if not already piping", but that is
+   * not what it does; do not "fix" this back to `-o` without re-verifying against a real server).
+   * The BARE form (a command, no `-o`) is what's actually idempotent here: called on an already-piping
+   * pane it closes the old pipe and reopens the new one with no gap and no data loss (append mode),
+   * so calling this unconditionally after every spawn/restart/resume/fork is safe either way.
+   */
+  async pipePane(opts: { target: string; file: string }): Promise<void> {
+    // Single-quote the path for the mini shell command tmux hands to `/bin/sh -c` (mirrors the
+    // clipboard-helper quoting above); a literal ' is escaped as '\''.
+    const quoted = `'${opts.file.replace(/'/g, "'\\''")}'`;
+    await this.run(["pipe-pane", "-t", `=${opts.target}:`, `cat >> ${quoted}`]);
+  }
+
+  /** Closes any pipe-pane currently attached to the session. Safe/idempotent when none is attached. */
+  async unpipePane(target: string): Promise<void> {
+    await this.run(["pipe-pane", "-t", `=${target}:`]);
+  }
+
   /** Redraws every client attached to a session (fixes blank panes after hidden attaches). */
   async refreshClients(name: string): Promise<void> {
     try {

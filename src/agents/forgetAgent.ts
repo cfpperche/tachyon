@@ -3,6 +3,7 @@ import { deleteActivityLog } from "../activity/logStore.js";
 import { removeSessionOwnerRows, removeSpawnSettings, sessionOwnersFile } from "../activity/sessionOwners.js";
 import type { SessionLedger } from "../resume/SessionLedger.js";
 import { removeDerivedAgentFiles } from "./derivedFile.js";
+import { removePaneTranscript } from "./paneTranscript.js";
 
 export const FORGET_AGENT_FOOTPRINTS = [
   "session ledger row",
@@ -11,6 +12,7 @@ export const FORGET_AGENT_FOOTPRINTS = [
   "private harness/config home",
   "per-spawn settings file",
   "generated spawn brief and soul anchor",
+  "durable pane transcript",
 ] as const;
 
 export interface ForgetAgentDeps {
@@ -37,5 +39,6 @@ export function forgetAgent(name: string, deps: ForgetAgentDeps): void {
   attempt(() => deps.removeHarnessHome?.(name));
   attempt(() => removeSpawnSettings(deps.workspaceRoot, name));
   attempt(() => removeDerivedAgentFiles(deps.workspaceRoot, name));
+  attempt(() => removePaneTranscript(deps.workspaceRoot, name));
   if (failures.length) throw new AggregateError(failures, `failed to remove agent '${name}' footprints`);
 }
