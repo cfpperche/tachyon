@@ -25,8 +25,7 @@ export interface SidebarViewV1 {
 const text = (max: number, min = 0) => z.string().min(min).max(max);
 const name = text(128, 1).regex(/^[A-Za-z][A-Za-z0-9_-]{0,127}$/);
 const count = z.number().int().nonnegative().max(1_000_000);
-const agentStatus = z.enum(["running", "needs", "throttled", "idle", "stopping", "stop-failed", "stopped", "crashed"]);
-
+const agentStatus = z.enum(["running", "needs", "throttled", "done", "idle", "stopping", "stop-failed", "stopped", "crashed"]);
 const evidence = z.object({
   total: count,
   stale: count,
