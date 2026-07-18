@@ -136,14 +136,6 @@ function WorkspaceCard({ s, row }: { s: CockpitStrings; row: ControlInspectorWor
             />
             <Kv k={s.error} v={row.engine.error} />
           </div>
-          <div class="ci-log">
-            <div class="ci-log-label">Recent log</div>
-            {row.engine.logTail && row.engine.logTail.length > 0 ? (
-              <pre class="ci-log-pre" aria-label="Recent engine log">{row.engine.logTail.join("\n")}</pre>
-            ) : (
-              <div class="ci-log-empty">No recent engine log.</div>
-            )}
-          </div>
         </div>
         <div class="ci-card">
           <h3>
@@ -166,6 +158,19 @@ function WorkspaceCard({ s, row }: { s: CockpitStrings; row: ControlInspectorWor
             <Kv k={s.agents} v={row.agents ? `${row.agents.running}/${row.agents.total} ${s.running}` : undefined} />
           </div>
         </div>
+      </div>
+      {/* Full-width log — was cramped inside the Engine column; V1.1–V2 add Copy/Clear/filter/source
+          toggles into ci-log-actions, kept as an empty slot here. */}
+      <div class="ci-log">
+        <div class="ci-log-toolbar">
+          <div class="ci-log-label">Recent log</div>
+          <div class="ci-log-actions" />
+        </div>
+        {row.engine.logTail && row.engine.logTail.length > 0 ? (
+          <pre class="ci-log-pre" aria-label="Recent engine log">{row.engine.logTail.join("\n")}</pre>
+        ) : (
+          <div class="ci-log-empty">No recent engine log.</div>
+        )}
       </div>
     </section>
   );
