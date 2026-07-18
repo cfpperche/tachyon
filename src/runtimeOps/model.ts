@@ -13,7 +13,6 @@ import type {
   RuntimeOpsUsageV1,
 } from "./types.js";
 import { projectRuntimeOpsProviderCapacity } from "./providerProjection.js";
-import { decideHeavyGate } from "../host/hostResources.js";
 
 export interface RuntimeOpsAttentionInput {
   state: RuntimeOpsAgentRefV1["attention"]["state"];
@@ -87,6 +86,12 @@ export interface RuntimeOpsProjectionInput {
   agents: RuntimeOpsAgentInput[];
   /** Cached host observation state only. Projection must never invoke a provider collector. */
   providerObservations?: unknown;
+  /** t-019dac — optional host memory facts (filled by host-only snapshotService). */
+  hostMemory?: {
+    hostMemAvailableMb?: number;
+    hostMemTotalMb?: number;
+    recommendedVitestWorkers?: number;
+  };
 }
 
 export function buildRuntimeOpsSnapshot(input: RuntimeOpsProjectionInput): RuntimeOpsSnapshotV2 {
@@ -95,15 +100,6 @@ export function buildRuntimeOpsSnapshot(input: RuntimeOpsProjectionInput): Runti
   const runtimes = [...runtimeIds]
     .sort((a, b) => runtimeLabel(a).localeCompare(runtimeLabel(b)) || a.localeCompare(b))
     .map((runtime) => projectRuntime(runtime, input.detectedRuntimes.includes(runtime), input.agents.filter((agent) => agent.runtime === runtime)));
-  const hostGate = decideHeavyGate();
-  const hostMem =
-    hostGate.memory.source === "proc-meminfo"
-      ? {
-          hostMemAvailableMb: hostGate.memory.memAvailableMb,
-          hostMemTotalMb: hostGate.memory.memTotalMb,
-          recommendedVitestWorkers: hostGate.ok ? hostGate.workers : 0,
-        }
-      : {};
   return {
     schemaVersion: 2,
     generatedAt: input.generatedAt,
@@ -116,7 +112,7 @@ export function buildRuntimeOpsSnapshot(input: RuntimeOpsProjectionInput): Runti
         const state = projectBridgeHealth(agent.bridge).state;
         return state !== "ok" && state !== "not-wired";
       }).length,
-      ...hostMem,
+      ...(input.hostMemory ?? {}),
     },
     runtimes,
     providerCapacity: projectRuntimeOpsProviderCapacity(input.providerObservations, input.generatedAt),

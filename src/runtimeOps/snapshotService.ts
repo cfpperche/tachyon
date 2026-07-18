@@ -11,6 +11,7 @@ import { buildRuntimeOpsSnapshot, type RuntimeOpsAgentInput } from "./model.js";
 import type { RuntimeOpsProviderObservationSnapshotInput } from "./providerProjection.js";
 import type { RuntimeOpsSnapshotV2 } from "./types.js";
 import { buildWorkspaceLabels, type RuntimeOpsWorkspaceInput } from "./workspaceLabels.js";
+import { decideHeavyGate } from "../host/hostResources.js";
 
 export interface RuntimeOpsWorkspaceSource {
   workspaceRoot: string;
@@ -172,6 +173,15 @@ export class RuntimeOpsSnapshotService {
       detectedRuntimes,
       agents,
       providerObservations,
+      hostMemory: (() => {
+        const gate = decideHeavyGate();
+        if (gate.memory.source !== "proc-meminfo") return undefined;
+        return {
+          hostMemAvailableMb: gate.memory.memAvailableMb,
+          hostMemTotalMb: gate.memory.memTotalMb,
+          recommendedVitestWorkers: gate.ok ? gate.workers : 0,
+        };
+      })(),
     });
   }
 
