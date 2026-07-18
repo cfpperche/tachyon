@@ -151,7 +151,7 @@ describe("DaemonEngineHost", () => {
     f.host.notify("first");
     f.host.notify("second");
     await waitFor(() => requests.length === 1);
-    expect(requests[0]).toMatchObject({ kind: "notice.present", message: "first" });
+    expect(requests[0]).toMatchObject({ kind: "notice.present", message: "first (+1 more)" });
     releaseFirst(null);
     await waitFor(() => requests.length === 2);
     expect(requests[1]).toMatchObject({ kind: "notice.present", message: "second" });
@@ -300,6 +300,92 @@ describe("DaemonEngineHost", () => {
     } finally {
       await ws.dispose();
     }
+  });
+
+  it("t-ec5cd2: collapses exact-duplicate passive notices inside the dedupe window", async () => {
+    const requests: DaemonUiRequest[] = [];
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-daemon-host-"));
+    roots.push(root);
+    const mediaRoot = path.join(root, "bundle");
+    fs.mkdirSync(mediaRoot);
+    const host = new DaemonEngineHost({
+      storageRoot: path.join(root, "state"),
+      mediaRoot,
+      appVersion: "0.57.0",
+      noticeDedupeWindowMs: 5_000,
+      noticePassiveAutoDismissMs: 50,
+      requestUi: async (request) => {
+        requests.push(request);
+        if (request.kind !== "notice.present") return null;
+        await new Promise((r) => setTimeout(r, 200));
+        return null;
+      },
+    });
+    hosts.push(host);
+    host.notify("hello world", "info");
+    host.notify("hello world", "info");
+    host.notify("hello   world", "info"); // whitespace-normalized same key
+    await waitFor(() => requests.length >= 1);
+    await new Promise((r) => setTimeout(r, 80));
+    expect(requests.filter((r) => r.kind === "notice.present")).toHaveLength(1);
+  });
+
+  it("t-ec5cd2: auto-advances passive info queue without waiting for toast dismiss", async () => {
+    const presented: string[] = [];
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-daemon-host-"));
+    roots.push(root);
+    const mediaRoot = path.join(root, "bundle");
+    fs.mkdirSync(mediaRoot);
+    const host = new DaemonEngineHost({
+      storageRoot: path.join(root, "state"),
+      mediaRoot,
+      appVersion: "0.57.0",
+      noticePassiveAutoDismissMs: 40,
+      requestUi: async (request) => {
+        if (request.kind !== "notice.present") return null;
+        presented.push(request.message);
+        // Simulate VS Code toast that never resolves until long after auto-dismiss.
+        await new Promise((r) => setTimeout(r, 5_000));
+        return null;
+      },
+    });
+    hosts.push(host);
+    host.notify("a", "info");
+    host.notify("b", "info");
+    await waitFor(() => presented.length >= 2);
+    expect(presented[0]).toMatch(/a \(\+1 more\)/);
+    expect(presented[1]).toBe("b");
+  });
+
+  it("t-ec5cd2: never auto-dismisses notices that carry actions", async () => {
+    let resolvePresent: ((v: unknown) => void) | undefined;
+    const requests: DaemonUiRequest[] = [];
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-daemon-host-"));
+    roots.push(root);
+    const mediaRoot = path.join(root, "bundle");
+    fs.mkdirSync(mediaRoot);
+    let invoked = 0;
+    const host = new DaemonEngineHost({
+      storageRoot: path.join(root, "state"),
+      mediaRoot,
+      appVersion: "0.57.0",
+      noticePassiveAutoDismissMs: 30,
+      requestUi: async (request) => {
+        requests.push(request);
+        if (request.kind !== "notice.present") return null;
+        return await new Promise((resolve) => { resolvePresent = resolve; });
+      },
+    });
+    hosts.push(host);
+    host.notify("need action", "info", [{ label: "Open", run: () => { invoked++; } }]);
+    await waitFor(() => requests.length === 1);
+    await new Promise((r) => setTimeout(r, 80));
+    expect(requests).toHaveLength(1);
+    expect(invoked).toBe(0);
+    const present = requests[0];
+    if (present.kind !== "notice.present") throw new Error("expected present");
+    resolvePresent?.(present.actions[0]?.id);
+    await waitFor(() => invoked === 1);
   });
 });
 
