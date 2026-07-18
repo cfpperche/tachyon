@@ -965,27 +965,9 @@ export function App({ fleets = [SAMPLE], dispatch, prefs = {}, collapsedKeys = [
 
   return (
     <>
-      <div class="chrome-row">
-        <div class="kbar" id="kbar-trigger" role="button" tabindex={0} aria-label={`Search agents, commands, pins (${isMac ? "Cmd K" : "Ctrl K"})`}
-          onClick={() => setOpen(true)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpen(true); } }}>
-          <Icon name="search" /><span class="kgrow">Search agents, commands, pins…</span><span class="kbd">{isMac ? "⌘K" : "Ctrl K"}</span>
-        </div>
-        {(appVersion || dispatch) && (
-          <div class="chrome-meta" title={appVersion ? `Tachyon extension v${appVersion}` : "Tachyon"}>
-            {appVersion && <span class="chrome-ver">v{appVersion}</span>}
-            {dispatch && (
-              <button
-                type="button"
-                class="chrome-ctrl"
-                title="Open Control"
-                aria-label="Open Control"
-                onClick={(e) => { e.stopPropagation(); dispatch.global("openControl"); }}
-              >
-                <Icon name="dashboard" />
-              </button>
-            )}
-          </div>
-        )}
+      <div class="kbar" id="kbar-trigger" role="button" tabindex={0} aria-label={`Search agents, commands, pins (${isMac ? "Cmd K" : "Ctrl K"})`}
+        onClick={() => setOpen(true)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpen(true); } }}>
+        <Icon name="search" /><span class="kgrow">Search agents, commands, pins…</span><span class="kbd">{isMac ? "⌘K" : "Ctrl K"}</span>
       </div>
       <NoticeStrip fleets={fleets} dispatch={dispatch} />
       <div class="tabs" role="tablist" aria-label="Sidebar sections">

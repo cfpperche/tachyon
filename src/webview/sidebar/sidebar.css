@@ -29,55 +29,9 @@
   .handoff-btn { display: inline-flex; align-items: center; gap: 5px; padding: 2px 6px; border-radius: 4px; color: var(--ds-muted); font-weight: 400; }
   .handoff-btn:hover { background: var(--hover); color: var(--vscode-foreground); }
 
-  /* t-38c2a1 — single chrome row: search + version + Control (no second TACHYON brand row).
-   * Native workbench title strip cannot be hidden; we only control webview chrome height. */
-  .chrome-row {
-    flex: 0 0 auto;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    padding: 4px 6px 2px 8px;
-    min-width: 0;
-  }
-  .chrome-row .kbar {
-    flex: 1 1 auto;
-    min-width: 0;
-    margin: 0;
-  }
-  .chrome-meta {
-    flex: 0 0 auto;
-    display: inline-flex;
-    align-items: center;
-    gap: 2px;
-  }
-  .chrome-ver {
-    font-family: var(--ds-mono, ui-monospace, monospace);
-    font-size: 10px;
-    color: var(--ds-muted);
-    padding: 0 4px;
-    user-select: none;
-    white-space: nowrap;
-  }
-  .chrome-ctrl {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 22px;
-    height: 22px;
-    border-radius: 4px;
-    color: var(--ds-muted);
-    background: transparent;
-    border: none;
-    cursor: pointer;
-    padding: 0;
-  }
-  .chrome-ctrl:hover {
-    color: var(--vscode-foreground);
-    background: var(--hover);
-  }
-  .chrome-ctrl .codicon { font-size: 14px; }
-  .kbar { display: flex; align-items: center; gap: 6px; padding: 5px 8px; background: var(--vscode-input-background); color: var(--ds-muted); border: 1px solid var(--vscode-input-border, var(--ds-border)); border-radius: 3px; cursor: text; }
-  .kbar, .tabs, .sec, .chrome-row { flex: 0 0 auto; }
+  /* cmd+K trigger — styled as an Agent-Studio input */
+  .kbar { margin: 4px 8px 6px; display: flex; align-items: center; gap: 6px; padding: 5px 8px; background: var(--vscode-input-background); color: var(--ds-muted); border: 1px solid var(--vscode-input-border, var(--ds-border)); border-radius: 3px; cursor: text; }
+  .kbar, .tabs, .sec { flex: 0 0 auto; }
   .kbar:hover { border-color: var(--ds-focus); }
   .kbar .codicon { font-size: 13px; }
   .kbar .kgrow { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
