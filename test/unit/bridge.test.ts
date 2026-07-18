@@ -109,6 +109,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
   const verifyRuns: string[] = [];
   let taskChanges = 0;
   let noticeMode: "immediate" | "queued" = "immediate";
+  let deliveredNoticeMetadata: { sourceChild?: string; sourceIncarnation?: number } | undefined;
   // t-8605be — "claude"'s attention is mutable so tests can flip it between needs-input (the default,
   // relied on by other suites below: list_agents attention + wait_for_agent) and a genuinely-busy state
   // to exercise write_input's refusal path without disturbing those other tests.
@@ -142,11 +143,13 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     onValidationsChanged: () => { validationChanges += 1; },
     attentionOf: (agent) => (agent === "claude" ? claudeAttention : undefined),
     composerOccupiedOf: (agent) => (agent === "claude" ? claudeComposerOccupied : undefined),
-    deliverNotice: async (target, line) => {
+    deliverNotice: async (target, line, metadata) => {
+      deliveredNoticeMetadata = metadata;
       if (noticeMode === "queued") return { status: "queued", queued: 1 };
       await tmux.sendSubmittedLine(manager.session(target), line, { delayMs: 0 });
       return { status: "notified" };
     },
+    sourceNoticeMetadata: (agent) => ({ sourceChild: agent, sourceIncarnation: 7 }),
     // spec 214 — claude is a worktree agent with a verified-but-now-stale gate; others have none.
     // spec 273 — fold the evidence summary into the handoff (additive).
     verifyInfo: async (agent) =>
@@ -1376,6 +1379,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       const result = await client.callTool({ name: "notify_agent", arguments: { to: "queued-sibling", summary: "done", agent: "claude" } });
       expect(result.isError).toBeFalsy();
       expect(JSON.stringify(result.content)).toContain("queued 'queued-sibling' for idle delivery");
+      expect(deliveredNoticeMetadata).toEqual({ sourceChild: "claude", sourceIncarnation: 7 });
       expect(sessions.get(`tachyon-${HASH}-queued-sibling`)).toBe("");
     } finally {
       noticeMode = "immediate";

@@ -80,6 +80,7 @@ import { RuntimeLaunchReadinessError } from "../runtime/launchReadiness.js";
 
 export type NotifyLevel = "info" | "warn" | "error";
 export type NoticeDeliveryResult = { status: "notified" | "queued"; dropped?: number; queued?: number };
+export type NoticeSourceMetadata = { sourceChild?: string; sourceIncarnation?: number };
 
 export interface BridgeDeps {
   /** Workspace root used by best-effort local discovery tools. */
@@ -125,7 +126,9 @@ export interface BridgeDeps {
   /** True when the target has a profile-backed non-empty composer draft. */
   composerOccupiedOf?: (agent: string) => boolean | undefined;
   /** spec 341 — semantic agent notice delivery; queues unsafe recipients instead of raw pane submit. */
-  deliverNotice?: (target: string, line: string) => Promise<NoticeDeliveryResult>;
+  deliverNotice?: (target: string, line: string, metadata?: NoticeSourceMetadata) => Promise<NoticeDeliveryResult>;
+  /** Metadata that binds a queued notice to the sender's current live incarnation. */
+  sourceNoticeMetadata?: (agent: string) => NoticeSourceMetadata;
   /** t-9552f3 — mark sender as having completed a doorbell this session (attention/backstop reconciliation). */
   markCompletionHint?: (agent: string) => void;
   /** Fired after any pin mutation — wired to the sidebar refresh. */
@@ -1877,7 +1880,9 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         // stop treating a finished turn with an open pane as active "working" work.
         deps.markCompletionHint?.(agent);
         const line = composeAgentNotice(agent, to, summary);
-        const result = deps.deliverNotice ? await deps.deliverNotice(to, line) : await deliverNoticeFallback(deps, session, line);
+        const result = deps.deliverNotice
+          ? await deps.deliverNotice(to, line, deps.sourceNoticeMetadata?.(agent))
+          : await deliverNoticeFallback(deps, session, line);
         const suffix = result.dropped ? ` (${result.dropped} older notice${result.dropped === 1 ? "" : "s"} dropped)` : "";
         return ok(result.status === "queued" ? `queued '${to}' for idle delivery${suffix}` : `notified '${to}'${suffix}`);
       } catch (err) {
