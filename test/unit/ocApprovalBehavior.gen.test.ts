@@ -6,6 +6,7 @@ import {
   appendApprovalWitnessEvent,
   buildApprovalRequest,
   approvalRequestPath,
+  cancelOwnApprovalRequest,
   composeApprovalPinDetail,
   composeApprovalPinTitle,
   composeFixedApprovalResponse,
@@ -290,5 +291,92 @@ describe("container-generated delegation behavior", () => {
     const confirmed = readOwnApprovalRequest(ws, request.id, "child-agent");
     expect(confirmed.status).toBe("resolved");
     expect(confirmed.resolution?.decision).toBe("approved");
+  });
+
+  // t-ae89d1 — requester withdraw; not Accept/Deny; not injectable approve text.
+  it("cancelOwnApprovalRequest lets the requester withdraw a pending request without Accept/Deny", async () => {
+    const ws = root();
+    const request = { ...sampleRequest(), pinId: "p-cancel1" };
+    writeApprovalRequest(ws, request);
+    appendApprovalWitnessEvent(ws, {
+      kind: "requested",
+      id: request.id,
+      requester: request.requester,
+      session: request.session,
+      at: request.createdAt,
+      payloadHash: request.payloadHash,
+    });
+
+    let pinDone: string | undefined;
+    const result = cancelOwnApprovalRequest({
+      workspaceRoot: ws,
+      id: request.id,
+      requester: "child-agent",
+      reason: "T15A already delivered — request obsolete",
+      now: "2026-07-18T01:00:00.000Z",
+      completePin: (pinId) => {
+        pinDone = pinId;
+      },
+    });
+    expect(result.alreadyCancelled).toBe(false);
+    expect(result.request.status).toBe("cancelled");
+    expect(result.request.cancellation).toEqual({
+      cancelledAt: "2026-07-18T01:00:00.000Z",
+      cancelledBy: "child-agent",
+      reason: "T15A already delivered — request obsolete",
+    });
+    expect(result.request.resolution).toBeUndefined();
+    expect(pinDone).toBe("p-cancel1");
+    expect(listPendingApprovalRequests(ws)).toHaveLength(0);
+
+    // idempotent retry
+    const again = cancelOwnApprovalRequest({
+      workspaceRoot: ws,
+      id: request.id,
+      requester: "child-agent",
+      reason: "retry",
+    });
+    expect(again.alreadyCancelled).toBe(true);
+    expect(again.request.status).toBe("cancelled");
+
+    // other agent cannot cancel
+    const other = sampleRequest({ id: "a-other1" });
+    writeApprovalRequest(ws, other);
+    expect(() =>
+      cancelOwnApprovalRequest({
+        workspaceRoot: ws,
+        id: other.id,
+        requester: "not-the-owner",
+        reason: "steal",
+      }),
+    ).toThrow(/does not belong to/);
+
+    // host resolve refused after cancel
+    await expect(
+      resolveApproval({
+        workspaceRoot: ws,
+        id: request.id,
+        decision: "approved",
+        inject: async () => ({ receipt: "should-not-run" }),
+      }),
+    ).rejects.toThrow(/cancelled by the requester/);
+
+    // already-resolved cannot cancel
+    const r2 = sampleRequest({ id: "a-res01" });
+    writeApprovalRequest(ws, r2);
+    await resolveApproval({
+      workspaceRoot: ws,
+      id: r2.id,
+      decision: "denied",
+      inject: async () => ({ receipt: "ok" }),
+    });
+    expect(() =>
+      cancelOwnApprovalRequest({
+        workspaceRoot: ws,
+        id: r2.id,
+        requester: "child-agent",
+        reason: "too late",
+      }),
+    ).toThrow(/already resolved/);
   });
 });

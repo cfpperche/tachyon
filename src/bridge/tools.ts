@@ -51,6 +51,7 @@ import {
   writeApprovalRequest,
   listPendingApprovalRequests,
   readOwnApprovalRequest,
+  cancelOwnApprovalRequest,
   appendApprovalWitnessEvent,
   composeApprovalPinDetail,
   composeApprovalPinTitle,
@@ -3208,6 +3209,67 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         }
         const request = readOwnApprovalRequest(deps.workspaceRoot, id, caller.name);
         return ok(JSON.stringify(request, null, 2));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  // t-ae89d1 — requester withdraw of a still-pending approval. Never Accept/Deny; never injects approve text.
+  mcp.registerTool(
+    "cancel_human_approval",
+    {
+      description:
+        "Cancel YOUR OWN still-pending human-approval request (t-ae89d1) — withdraw an obsolete escalation " +
+        "without asking the human to Deny (which falsifies history) or Accept (which could authorize a stale " +
+        "action). Scoped to the Bridge-resolved caller (never a requester param); other agents cannot cancel " +
+        "your request. Records status=cancelled + reason, appends an audit witness line, completes the pin, " +
+        "and removes the request from list_pending_approvals. Does NOT inject an approval line and does NOT " +
+        "execute the proposed action. Retry is idempotent if already cancelled by you; already-resolved " +
+        "requests return a structured conflict.",
+      inputSchema: {
+        id: z.string().min(1).describe("the approval request id (a-<6hex>) you created"),
+        reason: z
+          .string()
+          .min(1)
+          .max(2000)
+          .describe("short audit reason why this request is obsolete / withdrawn"),
+      },
+    },
+    async ({ id, reason }) => {
+      try {
+        const caller = deps.caller ?? { kind: "legacy" as const };
+        if (caller.kind !== "agent" || !caller.name) {
+          return fail(
+            new Error("cancel_human_approval requires an agent-authenticated caller (spec 351); legacy/external/human callers cannot cancel"),
+          );
+        }
+        const result = cancelOwnApprovalRequest({
+          workspaceRoot: deps.workspaceRoot,
+          id,
+          requester: caller.name,
+          reason,
+          completePin: (pinId) => {
+            try {
+              deps.pins.setDone(pinId, true);
+            } catch {
+              // best-effort
+            }
+          },
+        });
+        deps.onPinsChanged?.();
+        return ok(
+          JSON.stringify(
+            {
+              id: result.request.id,
+              status: result.request.status,
+              alreadyCancelled: result.alreadyCancelled,
+              cancellation: result.request.cancellation,
+            },
+            null,
+            2,
+          ),
+        );
       } catch (err) {
         return fail(err);
       }
