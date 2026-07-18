@@ -136,6 +136,14 @@ function WorkspaceCard({ s, row }: { s: CockpitStrings; row: ControlInspectorWor
             />
             <Kv k={s.error} v={row.engine.error} />
           </div>
+          <div class="ci-log">
+            <div class="ci-log-label">Recent log</div>
+            {row.engine.logTail && row.engine.logTail.length > 0 ? (
+              <pre class="ci-log-pre" aria-label="Recent engine log">{row.engine.logTail.join("\n")}</pre>
+            ) : (
+              <div class="ci-log-empty">No recent engine log.</div>
+            )}
+          </div>
         </div>
         <div class="ci-card">
           <h3>

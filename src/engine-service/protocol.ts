@@ -586,7 +586,7 @@ export type EngineControlRequestV1 =
   | { schemaVersion: 1; op: "detach"; workspaceHash: string; shellId: string; sessionToken: string };
 
 export type EngineControlResponseV1 =
-  | { ok: true; op: "health"; engine: EngineServiceIdentityV1; shellCount: number }
+  | { ok: true; op: "health"; engine: EngineServiceIdentityV1; shellCount: number; logTail?: string[] }
   | { ok: true; op: "attach" | "touch"; session: EngineShellSessionV1 }
   | { ok: true; op: "snapshot"; snapshot: WorkspaceSnapshotEnvelopeV1 }
   | { ok: true; op: "events"; batch: WorkspaceEventBatchV1 }
@@ -1441,9 +1441,16 @@ export function isEngineControlResponseV1(value: unknown): value is EngineContro
       && value.message.length <= 4_096;
   }
   if (value.op === "health") {
-    return isEngineServiceIdentityV1(value.engine)
-      && Number.isSafeInteger(value.shellCount)
-      && (value.shellCount as number) >= 0;
+    if (!isEngineServiceIdentityV1(value.engine)
+      || !Number.isSafeInteger(value.shellCount)
+      || (value.shellCount as number) < 0) return false;
+    if (value.logTail !== undefined) {
+      if (!Array.isArray(value.logTail) || value.logTail.length > 200) return false;
+      for (const line of value.logTail) {
+        if (typeof line !== "string" || line.length > 2_500) return false;
+      }
+    }
+    return true;
   }
   if (value.op === "attach" || value.op === "touch") return isEngineShellSessionV1(value.session);
   if (value.op === "snapshot") return isWorkspaceSnapshotEnvelopeV1(value.snapshot);

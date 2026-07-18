@@ -29,6 +29,7 @@ import {
   type WorkspaceQueryV1,
   type WorkspaceSnapshotEnvelopeV1,
 } from "./protocol.js";
+import { getEngineLogRing } from "./engineLogRing.js";
 import { EngineUiRequestBroker, EngineUiRequestError } from "./uiRequestBroker.js";
 import type { JsonValue } from "../runtime-api/extensionOperations.js";
 import { controlNonceMatches, controlNoncePath, createControlNonce } from "./controlPeerAuth.js";
@@ -148,7 +149,14 @@ export async function startEngineControlServer(options: EngineControlServerOptio
     if (parsed.schemaVersion !== 1) return fail("PROTOCOL_MISMATCH", "unsupported engine control schema");
     if (parsed.workspaceHash !== options.identity.workspaceHash) return fail("WRONG_WORKSPACE", "workspace identity mismatch");
     if (parsed.op === "health") {
-      return { ok: true, op: "health", engine: options.identity, shellCount: sessions.size };
+      const logTail = getEngineLogRing()?.tail();
+      return {
+        ok: true,
+        op: "health",
+        engine: options.identity,
+        shellCount: sessions.size,
+        ...(logTail && logTail.length > 0 ? { logTail } : {}),
+      };
     }
     if (parsed.op === "attach") {
       if (!isEngineShellHelloV1(parsed.hello)) return fail("BAD_HELLO", "invalid engine shell hello");

@@ -460,6 +460,40 @@ main.ck-main.ck-main--mission,
   color: var(--vscode-foreground);
 }
 
+/* t-cd3626 V1 — engine daemon log tail */
+.ci-log {
+  margin-top: 10px;
+  min-width: 0;
+}
+.ci-log-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ds-muted);
+  margin-bottom: 4px;
+}
+.ci-log-pre {
+  margin: 0;
+  max-height: 12rem;
+  overflow: auto;
+  padding: 6px 8px;
+  font-size: 10px;
+  line-height: 1.35;
+  font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--vscode-foreground);
+  background: var(--vscode-textCodeBlock-background, color-mix(in srgb, var(--vscode-editor-background) 92%, #000));
+  border: 1px solid var(--ds-border);
+  border-radius: 4px;
+}
+.ci-log-empty {
+  font-size: 10px;
+  color: var(--ds-muted);
+  font-style: italic;
+}
+
 .ci-badge {
   display: inline-flex;
   padding: 0 6px;

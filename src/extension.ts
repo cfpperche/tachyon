@@ -1213,6 +1213,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           identityError = err instanceof Error ? err.message : String(err);
         }
 
+        let logTail: string[] | undefined;
+        try {
+          const tail = await ws.client.engineLogTail();
+          if (tail.length > 0) logTail = tail;
+        } catch {
+          /* best-effort */
+        }
+
         let agentRows: CockpitWorkspaceBundle["agents"] = [];
         let agentCounts: { total: number; running: number } | undefined;
         try {
@@ -1249,6 +1257,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             bridgeUrl: ws.bridgeUrl,
             identity,
             identityError,
+            logTail,
             agents: agentCounts,
             authConfigured: "unknown",
             notes: [],

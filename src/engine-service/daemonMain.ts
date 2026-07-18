@@ -6,8 +6,10 @@ import { EngineControlClientError, requestEngineControl } from "./controlClient.
 import { startDaemonEngineService, type RunningDaemonEngineService } from "./engineService.js";
 import { decodeEngineDaemonOptions } from "./engineSupervisor.js";
 import { controlNoncePath } from "./controlPeerAuth.js";
+import { installEngineLogRing } from "./engineLogRing.js";
 
 export async function runEngineDaemon(encodedOptions: string): Promise<RunningDaemonEngineService> {
+  installEngineLogRing();
   const options = decodeEngineDaemonOptions(encodedOptions);
   ensureSecureRuntimeDir(path.dirname(options.controlSocketPath));
   await removeStaleSocket(options.controlSocketPath, workspaceHash(fs.realpathSync(options.workspaceRoot)));
