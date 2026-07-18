@@ -12,6 +12,10 @@ Preserve private Pi homes while moving only credential authority onto one litera
 
 ## Acceptance criteria
 
+- [x] **Scenario: interim Tachyon safety before upstream support**
+  - **Given** one Pi process is live in a workspace on a version without shared auth-file support
+  - **When** Spawn, Resume, Restart, or Fork attempts to start a differently named Pi process
+  - **Then** Tachyon serializes admission and refuses the second process with the live agent name; after the first is stopped, the slot becomes available
 - [ ] **Scenario: Pi separates credential authority from the config home**
   - **Given** `PI_CODING_AGENT_DIR` names a private agent home and `PI_CODING_AGENT_AUTH_FILE` names a different absolute or tilde-expanded file
   - **When** Pi starts, resolves request auth, refreshes OAuth, logs in/out, refreshes model catalogs, or reports the credential location
@@ -48,7 +52,7 @@ Preserve private Pi homes while moving only credential authority onto one litera
 
 - Reconcile or rank independently refreshed token branches using `expires`, mtime, token hashes, or lexical order.
 - Symlink/hard-link private `auth.json` files or depend on undocumented `proper-lockfile` realpath behavior.
-- Limit a workspace to one live OAuth-backed Pi process.
+- Permanently limit a workspace to one live Pi process after upstream shared credential authority is available.
 - Broker provider tokens through the Tachyon Bridge or change provider OAuth protocols.
 - Share Pi settings, sessions, extensions, skills, prompts, themes, packages, or other private-home state.
 - Push, merge, publish, or release the upstream Pi change without separate human authorization.

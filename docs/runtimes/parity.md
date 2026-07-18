@@ -167,8 +167,9 @@ Detail dump: [`docs/runtimes/opencode.md`](./opencode.md) (narrative may still s
 | Bridge | no native MCP; native extension `registerTool()` | immutable `pi-bridge-extension` loaded with `--extension` | SDD 399 real loader + human dogfood |
 | Attention | framed Pi editor + shared pane patterns | `runtimeProfile.pi.composer` + framed-region Attention support | **✓** SDD 403 measured/unit/real-tmux + Dev Host idle/draft pass |
 | Resume | `--session-id` + exact `--session` | adapter + bounded JSONL header resolver | SDD 400 real process A → B + human Stop/Resume |
-| Fork | `--session-id <new> --fork <exact-source-path>` | positive extension ownership + no-follow source validation + native `forkCommand` | **✓** SDD 405 unit + real + human Dev Host A→B→independent Resume pass |
+| Fork | `--session-id <new> --fork <exact-source-path>` | positive ownership + native `forkCommand`; interim SDD 408 admission refuses a live Pi sibling | **~** mechanism proven by SDD 405, temporarily unavailable while source Pi remains live |
 | Harness/private home | `PI_CODING_AGENT_DIR`; sessions override; `--no-*` + explicit resource paths | default `.tachyon/harness/<agent>`, regular mode-0600 auth copy; SDD 406 exact local extension/skill/prompt/theme/package snapshots | **✓** SDD 401 + 406 units and real Pi RPC dogfood |
+| OAuth concurrency | native auth lock is scoped to each private pathname | workspace-wide serialized admission; at most one live Pi until upstream shared auth-file support | **~** SDD 408 unit; safety mitigation, not true concurrent OAuth |
 | Stop | Escape interrupt, Ctrl+C clear, Ctrl+D empty-editor exit | measured profile with delayed conditional keys | **✓** idle/draft/active real-tmux + Dev Host pass |
 | Activity | private v3 session JSONL | exact resolver → `piNormalizer` → bounded `ActivityLogWriter` | **✓** SDD 402 unit/integration, real-transcript dogfood and Dev Host visual pass |
 | Permission inject | `--exclude-tools bash,edit,write` | authoritative Delivery reviewer adapter; canonical built-in denylist remains Bridge-compatible | **✓** SDD 404 unit injection + real catalog + human Dev Host posture pass |
@@ -180,7 +181,7 @@ Detail dump: [`docs/runtimes/opencode.md`](./opencode.md) (narrative may still s
 
 **Pi interaction note:** composer/stop measurements target Pi v0.80.10 default keybindings. Tachyon does not rewrite `keybindings.json`; remapped `app.interrupt`, `app.clear` or `app.exit` can invalidate graceful Stop.
 
-**Pi auth note:** each home receives a regular private `auth.json` snapshot. Pi writes auth in place and locks by pathname, so sibling symlinks to one real file would race under distinct lock paths. Private copies avoid shared mutation but OAuth refresh can diverge; Tachyon does not currently synchronize or promote refreshed credentials back to `~/.pi/agent`.
+**Pi auth note:** each home receives a regular private `auth.json` snapshot. Pi writes auth in place and locks by pathname, so private copies have distinct refresh lock domains and OAuth branches cannot be reconciled safely after concurrent rotation. SDD 408 therefore permits at most one live Pi process per workspace across Spawn/Resume/Restart/Fork, regardless of auth type. This is intentionally conservative and remains until upstream Pi publishes an independent shared auth-file/credential-store hook; Tachyon still does not promote private credentials back to `~/.pi/agent`.
 
 ### 3.3 Secondary runtimes
 

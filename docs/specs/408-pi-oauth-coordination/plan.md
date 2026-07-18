@@ -6,6 +6,12 @@ None. This changes runtime credential plumbing while preserving PI-001's default
 
 ## Design
 
+### 0. Interim fail-closed admission
+
+Until a published Pi runtime exposes the shared credential authority below, AgentManager serializes Pi process admission workspace-wide. The final tmux creation boundary checks the live session inventory under a process-local admission chain, permits replacement/restart of the same agent name, and refuses a different live Pi name. A positive in-memory hint closes the first process's post-tmux/pre-ledger window; reload safety also derives runtime from the durable resume/definition record. An ambiguous tmux inventory refuses launch.
+
+This applies conservatively to every Pi process, even API-key/environment-only agents, because Tachyon cannot prove the exact provider a live interactive session may select later. Native live sibling Fork is temporarily refused. Non-Pi runtimes and multiple stopped Pi records are unaffected. Once upstream shared-auth support is installed and dogfooded, remove this temporary admission guard.
+
 ### 1. Upstream Pi contract
 
 Add `ENV_AUTH_FILE` / `getAuthPath()` support for `${APP_NAME}_CODING_AGENT_AUTH_FILE` (normally `PI_CODING_AGENT_AUTH_FILE`). The value is expanded with Pi's normal path normalization. With no override, `getAuthPath()` remains `<getAgentDir()>/auth.json`.

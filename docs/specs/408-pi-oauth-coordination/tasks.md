@@ -1,5 +1,13 @@
 # Tasks — 408 Pi OAuth coordination
 
+## Interim Tachyon safety
+
+- [x] Serialize Pi admission across different agent names at the final tmux creation boundary.
+- [x] Refuse a second live Pi process and release the slot after confirmed session removal/death.
+- [x] Apply the guard to Spawn, Resume, Restart, and Fork while preserving same-name restart.
+- [x] Add concurrent admission, release, same-name lifecycle, and live-Fork refusal coverage.
+- [x] Document the temporary one-live-Pi limitation and OAuth gap.
+
 ## Upstream Pi
 
 - [x] Add the official `PI_CODING_AGENT_AUTH_FILE` path contract and documentation.

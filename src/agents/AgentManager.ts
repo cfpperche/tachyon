@@ -745,6 +745,11 @@ export class AgentManager {
    *  recovery handling and tmux creation. This closes the gap where two concurrent gated spawns could
    *  both pass the initial session probe and misattribute one checkout to the other launch. */
   private spawnLocks = new Map<string, Promise<void>>();
+  /** SDD 408 interim safety: until Pi exposes a shared auth-file lock domain, serialize admission of
+   *  Pi processes workspace-wide so concurrent different-name spawns cannot both observe a free slot. */
+  private piAdmissionTail: Promise<unknown> = Promise.resolve();
+  /** Same-process positive hint closes the post-tmux/pre-ledger window between concurrent Pi launches. */
+  private livePiHint: string | undefined;
   private postmortemOutput = new Map<string, PostmortemOutput>();
   /** Last known-good agentStates() result — served back when tmux.sessionStates() returns
    * null (an ambiguous list-panes error), so a transient tmux hiccup can't read as "every
@@ -1972,7 +1977,7 @@ export class AgentManager {
     }
     if (forced?.attempt) forced.attempt.session = "attempted";
     try {
-      await this.opts.tmux.newSession({
+      const createSession = () => this.opts.tmux.newSession({
         name: session,
         // spec 236 Bridge + 243 ownership hook — apply ownership hook to the runtime-bridge cmd; the
         // env delta is folded into env below. t-0d0152 MemoryMax scope wraps outermost when configured.
@@ -1980,6 +1985,8 @@ export class AgentManager {
         cwd,
         env: { ...spawnBuild.env, ...spawnBridge.env },
       });
+      if (adapter?.runtime === "pi") await this.withPiAdmission(name, createSession);
+      else await createSession();
     } catch (error) {
       // Delivery owns its prepared worktree and has a separate receipt-aware recovery path. For an
       // ordinary launch, a same-named pane observed after newSession fails is ambiguous: it may belong
@@ -2910,6 +2917,73 @@ export class AgentManager {
     cmd: string;
     cwd?: string;
     env?: Record<string, string>;
+    runtime?: ResumeRuntime;
+    onBeforeKillNew?: () => void;
+    onReplacementAttempt?: () => void;
+  }): Promise<"respawned" | "created"> {
+    const parsed = parseLaunchCommand(opts.cmd);
+    const runtime = opts.runtime ?? (parsed ? adapterFor(parsed.binary)?.runtime : undefined);
+    const target = agentFromSession(this.opts.wsHash, opts.session) ?? opts.session;
+    return runtime === "pi"
+      ? this.withPiAdmission(target, () => this.startSessionCommandUnlocked(opts))
+      : this.startSessionCommandUnlocked(opts);
+  }
+
+  private async withPiAdmission<T>(target: string, operation: () => Promise<T>): Promise<T> {
+    const prior = this.piAdmissionTail;
+    const run = prior.then(
+      () => this.withPiAdmissionUnlocked(target, operation),
+      () => this.withPiAdmissionUnlocked(target, operation),
+    );
+    this.piAdmissionTail = run.then(() => undefined, () => undefined);
+    return run;
+  }
+
+  private async withPiAdmissionUnlocked<T>(target: string, operation: () => Promise<T>): Promise<T> {
+    const sessions = await this.opts.tmux.sessionStates(this.prefix);
+    if (sessions === null) {
+      throw new Error(`cannot start Pi agent '${target}': could not prove the workspace Pi slot is free`);
+    }
+    if (this.livePiHint && this.livePiHint !== target) {
+      const hintedState = sessions.get(this.session(this.livePiHint));
+      if (hintedState && !hintedState.dead) {
+        throw new Error(
+          `cannot start Pi agent '${target}': Pi OAuth safety currently permits one live Pi agent per workspace; stop '${this.livePiHint}' first`,
+        );
+      }
+      this.livePiHint = undefined;
+    }
+    for (const [session, state] of sessions) {
+      if (state.dead) continue;
+      const other = agentFromSession(this.opts.wsHash, session);
+      if (other === null || other === target) continue;
+      const record = this.opts.ledger?.get(other);
+      const command = record?.def?.cmd ?? this.definitionOf(other)?.cmd;
+      const runtime = record?.resume?.runtime ?? (() => {
+        const parsed = command ? parseLaunchCommand(command) : null;
+        return parsed ? adapterFor(parsed.binary)?.runtime : undefined;
+      })();
+      if (!record?.resume?.runtime && !command) {
+        throw new Error(
+          `cannot start Pi agent '${target}': could not classify live workspace entry '${other}' for Pi OAuth safety`,
+        );
+      }
+      if (runtime === "pi") {
+        throw new Error(
+          `cannot start Pi agent '${target}': Pi OAuth safety currently permits one live Pi agent per workspace; stop '${other}' first`,
+        );
+      }
+    }
+    const result = await operation();
+    this.livePiHint = target;
+    return result;
+  }
+
+  private async startSessionCommandUnlocked(opts: {
+    session: string;
+    cmd: string;
+    cwd?: string;
+    env?: Record<string, string>;
     onBeforeKillNew?: () => void;
     onReplacementAttempt?: () => void;
   }): Promise<"respawned" | "created"> {
@@ -3191,6 +3265,7 @@ export class AgentManager {
       cmd: restartOwnedCmd, // spec 236 Bridge + 243 ownership hook
       cwd,
       env: { ...restartBuild.env, ...restartBridge.env, ...restartTokenEnv }, // host token wins over project env
+      runtime: injected.adapter?.runtime,
       onBeforeKillNew: () => this.opts.onRestart?.(name),
       onReplacementAttempt: () => { replacementAttempted = true; },
     });
@@ -3592,6 +3667,7 @@ export class AgentManager {
       }),
       cwd,
       env: { ...resumeBuild.env, ...persistedResumeHomeEnv, ...resumeBridge.env }, // spec 236 + 380 persisted home
+      runtime,
     });
     // Resume re-attaches to existing state; only its newly launched session is disposable.
     await this.observeLaunchReadiness(name, cmd, session);
@@ -3894,7 +3970,7 @@ export class AgentManager {
         throw new ForkUnavailableError(source, "Pi Bridge tools could not be materialized for the fork");
       }
       sessionAttempted = true;
-      await this.opts.tmux.newSession({
+      const createForkSession = () => this.opts.tmux.newSession({
         name: session,
         cmd: this.applyAgentMemoryScope(
           forkName,
@@ -3909,6 +3985,8 @@ export class AgentManager {
         cwd,
         env: { ...forkBuild.env, ...forkBridge.env },
       });
+      if (src.runtime === "pi") await this.withPiAdmission(forkName, createForkSession);
+      else await createForkSession();
       spawnedSession = session;
       // The catch below owns session teardown. Readiness rejection deliberately leaves the Git-locked
       // checkout as recovery state because the runtime may already have written ignored or tracked work.

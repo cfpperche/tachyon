@@ -30,6 +30,16 @@ Direct push to `earendil-works/pi` failed HTTP 403 for the active GitHub identit
 
 PR `https://github.com/earendil-works/pi/pull/6813` was then auto-closed by the repository's Contribution Gate. `CONTRIBUTING.md` requires new contributors to open a concise templated issue in their own voice—explicitly not LLM-generated—and wait for a maintainer reply of `lgtm` before submitting a PR. A second automated attempt risks account blocking, so execution is deliberately stopped. The human must perform the issue/approval step; only after `lgtm` may this branch be resubmitted or the PR reopened.
 
+## 2026-07-18 — interim product decision
+
+The human declined a local patched-Pi installation and chose to wait for an upstream release. Until then Tachyon enforces at most one live Pi process per workspace. The guard is intentionally runtime-wide rather than OAuth-provider-aware: an interactive Pi process can change provider later, so API-key state at launch is not durable proof that OAuth cannot be selected. Spawn/Resume/Restart/Fork admission is serialized; same-name restart remains valid, a second name gets an actionable refusal, and stopping the incumbent releases the slot. This temporarily supersedes SDD 405's simultaneous live sibling-Fork behavior without removing its native fork machinery.
+
+Interim guard verification:
+
+- `test/unit/agentManager.test.ts`: 394/394 passed, including concurrent different-name admission, slot release, same-name restart/resume coverage, unknown-live-entry fail-closed behavior, and live Pi Fork refusal.
+- `npm run typecheck`: passed.
+- `npm run verify:full:quiet`: affected build/tests passed, then the known workspace baseline failed on missing worktree `tachyon.yml` for PI-001, two stale Mission Control → Board title assertions, and two quiet-verifier expectations. Retained log: `/tmp/tachyon-verify-full-544p06`.
+
 ## Verification baseline
 
 Research-only run before implementation:

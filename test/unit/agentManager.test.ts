@@ -2857,7 +2857,7 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(plan).toMatchObject({ source: "claude", forkName: "claude-fork-2", sourceId: UUID, runtime: "claude" });
   });
 
-  it("SDD 405: forks exact positively-owned Pi transcript into a distinct private session", async () => {
+  it("SDD 405/408: refuses a Pi Fork while its Pi source is live", async () => {
     const sourceId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
     const forkId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
     const sourcePath = "/private/pi/pi-a/sessions/source transcript.jsonl";
@@ -2873,7 +2873,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       }),
       materializePiSessionDir: (name: string) => `/private/pi/${name}/sessions`,
     };
-    const { manager, ledger, cmds, startArgs, ws } = resumeHarness("agents:\n  pi-a:\n    cmd: pi\n", {
+    const { manager, ledger, cmds, ws } = resumeHarness("agents:\n  pi-a:\n    cmd: pi\n", {
       newSessionId: () => ids.shift()!,
       resolveCaptureSession: async (_rt, cwd, home, id) => {
         if (id === sourceId && cwd === ws && home === "/private/pi/pi-a/sessions") return { id: sourceId, path: sourcePath };
@@ -2892,37 +2892,14 @@ describe("AgentManager — session resume (spec 209)", () => {
     await manager.spawn("pi-a");
     const plan = await manager.planFork("pi-a");
     expect(plan).toMatchObject({ source: "pi-a", forkName: "pi-a-fork-1", sourceId, runtime: "pi" });
+    const starts = cmds.length;
 
-    const forkName = await manager.commitFork(plan);
-
-    expect(forkName).toBe("pi-a-fork-1");
-    expect(cmds.at(-1)).toContain("pi --extension '/immutable/pi-bridge-extension.mjs'");
-    expect(cmds.at(-1)).toContain(`--session-id ${forkId} --fork '${sourcePath}'`);
-    expect(envFromTmuxArgs(startArgs.at(-1)!)).toMatchObject({
-      PI_CODING_AGENT_DIR: "/private/pi/pi-a-fork-1",
-      PI_CODING_AGENT_SESSION_DIR: "/private/pi/pi-a-fork-1/sessions",
-      TACHYON_PI_SESSION_OWNER_FILE: path.join(ws, ".tachyon", "activity", "session-owners.jsonl"),
-      TACHYON_AGENT_NAME: "pi-a-fork-1",
-    });
-    expect(ledger.get(forkName)).toMatchObject({
-      def: { cmd: "pi", kind: "agent", fork: true },
-      resume: { runtime: "pi", sessionId: forkId, configHome: "/private/pi/pi-a-fork-1/sessions" },
-      cwd: ws,
-      declared: false,
-      bridgeClient: { wired: true },
-    });
+    await expect(manager.commitFork(plan)).rejects.toThrow(
+      "Pi OAuth safety currently permits one live Pi agent per workspace; stop 'pi-a' first",
+    );
+    expect(cmds).toHaveLength(starts);
+    expect(ledger.get("pi-a-fork-1")).toBeUndefined();
     expect(ledger.get("pi-a")?.resume?.sessionId).toBe(sourceId);
-
-    const forkRecord = ledger.get(forkName)!;
-    await manager.kill(forkName);
-    await manager.resume(forkName, forkRecord);
-    expect(cmds.at(-1)).toContain(`--session ${forkId}`);
-    expect(cmds.at(-1)).not.toContain("--fork");
-    const sourceRecord = ledger.get("pi-a")!;
-    await manager.kill("pi-a");
-    await manager.resume("pi-a", sourceRecord);
-    expect(cmds.at(-1)).toContain(`--session ${sourceId}`);
-    expect(cmds.at(-1)).not.toContain("--fork");
   });
 
   it("SDD 405: Pi Fork refuses absent or mismatched positive ownership before new side effects", async () => {
@@ -3816,6 +3793,59 @@ describe("AgentManager — session resume (spec 209)", () => {
         PI_CODING_AGENT_SESSION_DIR: "/private/pi-homes/pi/sessions",
       });
       expect(ledger.get("pi")?.resume?.sessionId).toBe(restartedSessionId);
+    });
+
+    it("SDD 408: permits only one live Pi process per workspace and releases the slot after stop", async () => {
+      const sessionIds = [
+        "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+        "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff",
+        "cccccccc-dddd-4eee-8fff-aaaaaaaaaaaa",
+      ];
+      const { manager, sessions, hash } = resumeHarness(
+        "agents:\n  pi-a:\n    cmd: pi\n  pi-b:\n    cmd: pi\n",
+        {
+          newSessionId: () => sessionIds.shift()!,
+          getExtraEnv: () => ({ TACHYON_BRIDGE_URL: "http://127.0.0.1:9/mcp" }),
+          piBridgeExtensionPath: () => "/immutable/engine/pi-bridge-extension.mjs",
+          ...PI_PRIVATE_HOME(),
+        },
+      );
+
+      const attempts = await Promise.allSettled([manager.spawn("pi-a"), manager.spawn("pi-b")]);
+      const winnerIndex = attempts.findIndex((result) => result.status === "fulfilled");
+      const loserIndex = attempts.findIndex((result) => result.status === "rejected");
+      expect(winnerIndex).toBeGreaterThanOrEqual(0);
+      expect(loserIndex).toBeGreaterThanOrEqual(0);
+      const winner = winnerIndex === 0 ? "pi-a" : "pi-b";
+      const loser = loserIndex === 0 ? "pi-a" : "pi-b";
+      expect(attempts[loserIndex]).toMatchObject({
+        status: "rejected",
+        reason: expect.objectContaining({
+          message: `cannot start Pi agent '${loser}': Pi OAuth safety currently permits one live Pi agent per workspace; stop '${winner}' first`,
+        }),
+      });
+      expect([...sessions].filter((session) => session.endsWith("-pi-a") || session.endsWith("-pi-b"))).toEqual([
+        `tachyon-${hash}-${winner}`,
+      ]);
+
+      await manager.kill(winner);
+      await manager.spawn(loser);
+      expect(sessions.has(`tachyon-${hash}-${loser}`)).toBe(true);
+    });
+
+    it("SDD 408: refuses Pi admission when another live managed entry cannot be classified", async () => {
+      const { manager, sessions, hash } = resumeHarness("agents:\n  pi:\n    cmd: pi\n", {
+        newSessionId: () => "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+        getExtraEnv: () => ({ TACHYON_BRIDGE_URL: "http://127.0.0.1:9/mcp" }),
+        piBridgeExtensionPath: () => "/immutable/engine/pi-bridge-extension.mjs",
+        ...PI_PRIVATE_HOME(),
+      });
+      sessions.add(`tachyon-${hash}-unknown-live-entry`);
+
+      await expect(manager.spawn("pi")).rejects.toThrow(
+        "could not classify live workspace entry 'unknown-live-entry' for Pi OAuth safety",
+      );
+      expect(sessions.has(`tachyon-${hash}-pi`)).toBe(false);
     });
 
     it("SDD 406: Pi resource harness args survive spawn and restart alongside private home, session identity, and Bridge", async () => {

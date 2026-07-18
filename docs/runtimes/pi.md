@@ -1,6 +1,6 @@
 # Pi — runtime integration status (Tachyon)
 
-**Integration slices:** SDD 399 (Bridge), SDD 400 (continuity), SDD 401 (private home), SDD 402 (Activity), SDD 403 (interaction profile), SDD 404 (reviewer safety), SDD 405 (native Fork), SDD 406 (exact harness resources), measured against the installed `@earendil-works/pi-coding-agent` on 2026-07-18.
+**Integration slices:** SDD 399 (Bridge), SDD 400 (continuity), SDD 401 (private home), SDD 402 (Activity), SDD 403 (interaction profile), SDD 404 (reviewer safety), SDD 405 (native Fork), SDD 406 (exact harness resources), SDD 408 (interim single-live-Pi OAuth safety), measured against the installed `@earendil-works/pi-coding-agent` on 2026-07-18.
 
 Pi is a recognized Tachyon AI runtime. Tachyon starts it in tmux, injects `TACHYON_AGENT_NAME`, the Bridge URL and a per-agent bearer, delivers the universal onboarding primer as Pi's positional startup message, and additively loads an immutable bundled Pi extension with `--extension`.
 
@@ -10,7 +10,7 @@ Pi deliberately has no built-in MCP client. Tachyon's extension opens the local 
 
 | Capability | State | Mechanism |
 |---|---:|---|
-| Managed tmux lifecycle | ✓ | Generic Tachyon agent lifecycle |
+| Managed tmux lifecycle | ✓/~ | Generic lifecycle; temporarily limited to one live Pi process per workspace for OAuth safety |
 | Opening primer / project guidance | ✓ | Pi positional startup message |
 | Authenticated Bridge tools | ✓ | Bundled additive Pi extension |
 | Per-agent Bridge identity | ✓ | `TACHYON_AGENT_BRIDGE_TOKEN` in process env |
@@ -18,7 +18,7 @@ Pi deliberately has no built-in MCP client. Tachyon's extension opens the local 
 | User Pi config preservation | ✓ | No project `.pi` or real `~/.pi/agent` mutation; safe JSON snapshots seed each private home |
 | Transcript capture / resume | ✓ | Tachyon-minted `--session-id`, exact `--session <id>`, sessions inside the private home |
 | Default private home | ✓ | `PI_CODING_AGENT_DIR=.tachyon/harness/<agent>` plus private `sessions/` |
-| Credential isolation | ✓/~ | Initial regular mode-0600 copy; later refresh is agent-local and intentionally not synchronized |
+| Credential isolation | ✓/~ | Initial regular mode-0600 copy; refresh remains agent-local, so SDD 408 blocks a second live Pi process per workspace |
 | Fork | ✓ | Native `--session-id B --fork <exact-A-path>`; unit, real Pi and human Dev Host A→B→independent Resume passed |
 | Normalized Activity | ✓ | Exact private JSONL → `piNormalizer` → bounded durable `ActivityLogWriter`; automated and Dev Host visual dogfood passed |
 | Attention / composer | ✓ | Measured framed editor profile; automated tmux and Dev Host idle/draft proof passed |
@@ -32,7 +32,8 @@ Pi deliberately has no built-in MCP client. Tachyon's extension opens the local 
 - A live Bridge plus a missing staged extension refuses the Pi spawn rather than recording a false wired state.
 - Every managed Pi process receives `PI_CODING_AGENT_DIR=.tachyon/harness/<agent>` and `PI_CODING_AGENT_SESSION_DIR=<home>/sessions`; transcript acceptance requires exactly one regular JSONL with matching header id and cwd.
 - Tachyon snapshots only regular JSON-object files (`auth.json`, settings, models/model cache, trust and keybindings). The settings snapshot strips `packages`, `extensions`, `skills`, `prompts` and `themes` so executable/instruction resources do not cross the private-home boundary implicitly. Symlinked, malformed or non-regular sources/targets refuse launch before tmux mutation.
-- `auth.json` is a private mode-0600 copy, not a symlink: Pi locks by pathname and writes in place, so sibling symlink paths would race one shared target. OAuth refreshes can therefore diverge and are not promoted back to the real home.
+- `auth.json` is a private mode-0600 copy, not a symlink: Pi locks by pathname and writes in place, so sibling paths have distinct refresh lock domains. OAuth refreshes are not promoted back to the real home.
+- **Interim OAuth guard (SDD 408):** Tachyon permits only one live Pi process per workspace, regardless of provider or credential type. Spawn, Resume, Restart and Fork admission are serialized workspace-wide; a second Pi launch is refused with the existing live agent name, and an ambiguous tmux inventory refuses launch. Stop the current Pi agent before starting another. This deliberately disables live Pi sibling Fork until upstream Pi publishes an auth-file/credential-store override; non-Pi runtimes remain concurrent.
 - Ambient Pi-home executable resource trees (`extensions`, `skills`, `prompts`, `themes`, `npm`, `git`, `tools`, `bin`) are not inherited. Ordinary no-harness Pi keeps native trusted project discovery. An SDD 406 resource harness is stricter: it adds all four Pi `--no-*` discovery flags, so ambient `$HOME/.agents/skills` and automatic project extension/skill/prompt/theme discovery are disabled, then loads only copied private paths explicitly.
 - Explicit Pi session flags remain user-owned and produce no Tachyon-managed resume record, but they do not opt out of the private runtime home.
 - Pi commands using `--no-tools`, `--tools` or non-canonical `--exclude-tools` are refused while Bridge wiring is required, because Tachyon cannot guarantee the complete Bridge catalog. The exact reviewer denylist remains accepted.
