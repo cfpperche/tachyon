@@ -5,7 +5,8 @@ import {
   type CockpitSectionId,
 } from "../../cockpit/model";
 import type { ControlInspectorWorkspaceRow } from "../../control-inspector/model";
-import type { CockpitStrings } from "./messages";
+import type { CockpitAction, CockpitStrings } from "./messages";
+import { EngineLogPanel } from "./EngineLogPanel";
 import { Button } from "../shared/ui";
 import { App as MissionControlApp, type MissionControlDispatch, type TaskErrorEvent } from "../mission-control/App";
 import type { MissionControlVM } from "../mission-control/messages";
@@ -44,6 +45,8 @@ export interface CockpitAppProps {
   onRevealPath: (path: string) => void;
   onCopyText: (text: string) => void;
   onOpenConfigFile: (wsHash?: string) => void;
+  /** Low-level post for Engine log actions (clear/journal/copy). */
+  onPost: (action: CockpitAction) => void;
   /** Embedded Mission Control board (same Preact App as the standalone panel). */
   missionVm?: MissionControlVM;
   missionError?: TaskErrorEvent;
@@ -101,7 +104,15 @@ function Kv({ k, v }: { k: string; v?: string | number | null }) {
   );
 }
 
-function WorkspaceCard({ s, row }: { s: CockpitStrings; row: ControlInspectorWorkspaceRow }) {
+function WorkspaceCard({
+  s,
+  row,
+  onPost,
+}: {
+  s: CockpitStrings;
+  row: ControlInspectorWorkspaceRow;
+  onPost: (a: CockpitAction) => void;
+}) {
   return (
     <section class="ci-ws">
       <div class="ci-ws-head">
@@ -159,19 +170,7 @@ function WorkspaceCard({ s, row }: { s: CockpitStrings; row: ControlInspectorWor
           </div>
         </div>
       </div>
-      {/* Full-width log — was cramped inside the Engine column; V1.1–V2 add Copy/Clear/filter/source
-          toggles into ci-log-actions, kept as an empty slot here. */}
-      <div class="ci-log">
-        <div class="ci-log-toolbar">
-          <div class="ci-log-label">Recent log</div>
-          <div class="ci-log-actions" />
-        </div>
-        {row.engine.logTail && row.engine.logTail.length > 0 ? (
-          <pre class="ci-log-pre" aria-label="Recent engine log">{row.engine.logTail.join("\n")}</pre>
-        ) : (
-          <div class="ci-log-empty">No recent engine log.</div>
-        )}
-      </div>
+      <EngineLogPanel row={row} post={onPost} />
     </section>
   );
 }
@@ -373,7 +372,9 @@ export function App(p: CockpitAppProps) {
         {m.control.workspaces.length === 0 ? (
           <div class="ck-empty">{s.empty}</div>
         ) : (
-          m.control.workspaces.map((row) => <WorkspaceCard key={row.wsHash + row.workspaceRoot} s={s} row={row} />)
+          m.control.workspaces.map((row) => (
+            <WorkspaceCard key={row.wsHash + row.workspaceRoot} s={s} row={row} onPost={p.onPost} />
+          ))
         )}
       </ModuleChrome>
     );
@@ -579,17 +580,20 @@ export function App(p: CockpitAppProps) {
           <div class="ck-tabs" role="tablist" aria-label={s.title}>
             {COCKPIT_SECTION_ORDER.map((id) => {
               const meta = TAB_META[id];
+              const engineErr =
+                id === "engine" && m?.control.workspaces.some((w) => w.engine.logHasError);
               return (
                 <button
                   type="button"
                   role="tab"
                   key={id}
                   aria-selected={section === id}
-                  class={section === id ? "active" : ""}
+                  class={`${section === id ? "active" : ""}${engineErr ? " has-err" : ""}`}
                   onClick={() => p.onSetSection(id)}
                 >
                   <span class={`codicon codicon-${meta.icon}`} />
                   {s[meta.navKey]}
+                  {engineErr ? <span class="ck-tab-dot" aria-label="errors in engine log" /> : null}
                 </button>
               );
             })}

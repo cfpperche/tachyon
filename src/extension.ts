@@ -1214,9 +1214,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
 
         let logTail: string[] | undefined;
+        let logBySource: { daemon: string[]; events?: string[]; bridge?: string[] } | undefined;
+        let logHasError: boolean | undefined;
         try {
-          const tail = await ws.client.engineLogTail();
-          if (tail.length > 0) logTail = tail;
+          const lh = await ws.client.engineLogHealth();
+          if (lh.logTail.length > 0) logTail = lh.logTail;
+          logBySource = lh.logBySource;
+          if (lh.logHasError) logHasError = true;
         } catch {
           /* best-effort */
         }
@@ -1258,6 +1262,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             identity,
             identityError,
             logTail,
+            logBySource,
+            logHasError,
             agents: agentCounts,
             authConfigured: "unknown",
             notes: [],
@@ -1366,6 +1372,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (!cfg) throw new Error(`no tachyon config found under ${ws.workspaceRoot}`);
       const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(cfg));
       await vscode.window.showTextDocument(doc, { preview: false });
+    },
+    clearEngineLog: async (wsHash) => {
+      const ws = byHash(wsHash);
+      if (!ws) throw new Error("no Tachyon workspace for that hash");
+      await ws.client.clearEngineLog();
+    },
+    openEngineJournal: (wsHash) => {
+      const ws = byHash(wsHash);
+      if (!ws) throw new Error("no Tachyon workspace for that hash");
+      const unit = `tachyon-engine-${ws.wsHash}.service`;
+      const term = vscode.window.createTerminal({ name: `Engine log · ${ws.folderName}` });
+      term.show();
+      // follow journal for this workspace engine unit
+      term.sendText(`journalctl --user -u ${JSON.stringify(unit)} -n 200 -f`, true);
     },
   });
 

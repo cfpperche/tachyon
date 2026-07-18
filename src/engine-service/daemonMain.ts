@@ -9,9 +9,13 @@ import { controlNoncePath } from "./controlPeerAuth.js";
 import { installEngineLogRing } from "./engineLogRing.js";
 
 export async function runEngineDaemon(encodedOptions: string): Promise<RunningDaemonEngineService> {
-  installEngineLogRing();
   const options = decodeEngineDaemonOptions(encodedOptions);
   ensureSecureRuntimeDir(path.dirname(options.controlSocketPath));
+  // V2.5: file next to control.sock so restart rehydrates recent lines
+  installEngineLogRing({
+    cap: 200,
+    filePath: path.join(path.dirname(options.controlSocketPath), "engine.log"),
+  });
   await removeStaleSocket(options.controlSocketPath, workspaceHash(fs.realpathSync(options.workspaceRoot)));
   const service = await startDaemonEngineService(options);
   process.title = `tachyon-engine:${service.identity.workspaceHash}`;

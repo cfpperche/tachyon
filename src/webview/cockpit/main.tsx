@@ -309,6 +309,7 @@ function Root() {
       onRevealPath={(path) => post(revealPathAction(path))}
       onCopyText={(text) => post(copyTextAction(text))}
       onOpenConfigFile={(wsHash) => post(openConfigFileAction(wsHash))}
+      onPost={(action) => post(action)}
       missionVm={missionVm}
       missionError={missionError}
       missionDispatch={missionDispatch}

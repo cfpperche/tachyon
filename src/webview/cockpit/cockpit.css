@@ -460,9 +460,7 @@ main.ck-main.ck-main--mission,
   color: var(--vscode-foreground);
 }
 
-/* t-cd3626 V1 / t-8ecbfa: full-width engine daemon log tail, sibling of ci-grid (not stuffed into
-   the Engine column). ci-log-actions is an empty toolbar slot reserved for V1.1–V2 Copy/Clear/
-   filter/source-toggle controls. */
+/* t-cd3626 V1–V2.5: full-width engine log + toolbar (tint/filter/sources). */
 .ci-log {
   min-width: 0;
   padding: 10px;
@@ -470,9 +468,10 @@ main.ck-main.ck-main--mission,
 }
 .ci-log-toolbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 6px 10px;
   margin-bottom: 4px;
 }
 .ci-log-label {
@@ -481,15 +480,90 @@ main.ck-main.ck-main--mission,
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--ds-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.ci-log-err-badge {
+  text-transform: lowercase;
+  font-size: 9px;
+  padding: 0 5px;
+  border-radius: 3px;
+  color: var(--ds-err);
+  border: 1px solid color-mix(in srgb, var(--ds-err) 45%, var(--ds-border));
+  background: color-mix(in srgb, var(--ds-err) 12%, transparent);
+}
+.ci-log-paused {
+  font-size: 9px;
+  color: var(--ds-muted);
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
 }
 .ci-log-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 4px;
-  flex: 0 0 auto;
+  min-width: 0;
 }
-.ci-log-actions:empty {
-  display: none;
+.ci-log-sources {
+  display: inline-flex;
+  border: 1px solid var(--ds-border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.ci-log-src {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--ds-muted);
+  font-size: 10px;
+  padding: 2px 7px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.ci-log-src.on {
+  background: color-mix(in srgb, var(--vscode-focusBorder, #3794ff) 22%, transparent);
+  color: var(--vscode-foreground);
+}
+.ci-log-filter {
+  width: 7.5rem;
+  max-width: 30vw;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  border: 1px solid var(--ds-border);
+  background: var(--vscode-input-background, transparent);
+  color: var(--vscode-input-foreground, inherit);
+  font-family: inherit;
+}
+.ci-log-since {
+  font-size: 10px;
+  padding: 2px 4px;
+  border-radius: 3px;
+  border: 1px solid var(--ds-border);
+  background: var(--vscode-dropdown-background, transparent);
+  color: inherit;
+  font-family: inherit;
+}
+.ci-log-btn {
+  appearance: none;
+  border: 1px solid var(--ds-border);
+  background: transparent;
+  color: var(--vscode-foreground);
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.ci-log-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.ci-log-btn:not(:disabled):hover {
+  border-color: var(--vscode-focusBorder, #3794ff);
 }
 .ci-log-pre {
   margin: 0;
@@ -507,6 +581,21 @@ main.ck-main.ck-main--mission,
   border: 1px solid var(--ds-border);
   border-radius: 4px;
 }
+.ci-log-line {
+  display: block;
+}
+.ci-log-line.lvl-e {
+  color: var(--ds-err, #f14c4c);
+}
+.ci-log-line.lvl-w {
+  color: var(--vscode-editorWarning-foreground, #cca700);
+}
+.ci-log-line.lvl-d {
+  color: var(--ds-muted);
+}
+.ci-log-line.hi {
+  background: color-mix(in srgb, var(--vscode-editor-findMatchHighlightBackground, #ea5c0055) 55%, transparent);
+}
 .ci-log-empty {
   display: flex;
   align-items: center;
@@ -519,6 +608,18 @@ main.ck-main.ck-main--mission,
   border: 1px solid var(--ds-border);
   border-radius: 4px;
   background: var(--vscode-textCodeBlock-background, color-mix(in srgb, var(--vscode-editor-background) 92%, #000));
+}
+.ck-tabs button.has-err {
+  position: relative;
+}
+.ck-tab-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 4px;
+  border-radius: 50%;
+  background: var(--ds-err, #f14c4c);
+  vertical-align: super;
 }
 
 .ci-badge {

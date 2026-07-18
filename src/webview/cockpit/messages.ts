@@ -124,7 +124,9 @@ export type CockpitAction =
   | { type: "fleetActivity"; name: string; wsHash?: string }
   | { type: "revealPath"; path: string }
   | { type: "copyText"; text: string }
-  | { type: "openConfigFile"; wsHash?: string };
+  | { type: "openConfigFile"; wsHash?: string }
+  | { type: "engineLogClear"; wsHash: string }
+  | { type: "engineLogJournal"; wsHash: string };
 
 export type CockpitHostMessage =
   | { type: typeof INIT; strings: CockpitStrings }
@@ -168,6 +170,8 @@ export const openConfigFileAction = (wsHash?: string): CockpitAction => ({
   type: "openConfigFile",
   ...(wsHash ? { wsHash } : {}),
 });
+export const engineLogClearAction = (wsHash: string): CockpitAction => ({ type: "engineLogClear", wsHash });
+export const engineLogJournalAction = (wsHash: string): CockpitAction => ({ type: "engineLogJournal", wsHash });
 
 export const initMessage = (strings: CockpitStrings): CockpitHostMessage => ({ type: INIT, strings });
 export const modelMessage = (model: CockpitModel): CockpitHostMessage => ({ type: MODEL, model });

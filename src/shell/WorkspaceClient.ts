@@ -71,6 +71,13 @@ export interface WorkspaceClient {
   readonly bridgeUrl: string;
   /** t-cd3626 — recent daemon console lines (best-effort). */
   engineLogTail(): Promise<string[]>;
+  /** V2 multi-source log tails + clear. */
+  engineLogHealth(): Promise<{
+    logTail: string[];
+    logBySource: { daemon: string[]; events?: string[]; bridge?: string[] };
+    logHasError: boolean;
+  }>;
+  clearEngineLog(): Promise<void>;
   sync(limit?: number): Promise<WorkspaceClientSyncResult>;
   query(query: WorkspaceQueryV1): Promise<WorkspaceQueryResultV1>;
   invoke(operationId: string, command: WorkspaceCommandV1): Promise<WorkspaceCommandResultV1>;
@@ -231,10 +238,40 @@ export class RemoteWorkspaceClient implements WorkspaceClient {
     if (this.closeRequested) return [];
     try {
       const health = await this.control.health();
-      return health.logTail ?? [];
+      return health.logTail ?? health.logBySource?.daemon ?? [];
     } catch {
       return [];
     }
+  }
+
+  async engineLogHealth(): Promise<{
+    logTail: string[];
+    logBySource: { daemon: string[]; events?: string[]; bridge?: string[] };
+    logHasError: boolean;
+  }> {
+    if (this.closeRequested) {
+      return { logTail: [], logBySource: { daemon: [] }, logHasError: false };
+    }
+    try {
+      const health = await this.control.health();
+      const daemon = health.logBySource?.daemon ?? health.logTail ?? [];
+      return {
+        logTail: daemon,
+        logBySource: {
+          daemon,
+          ...(health.logBySource?.events ? { events: health.logBySource.events } : {}),
+          bridge: health.logBySource?.bridge ?? [],
+        },
+        logHasError: health.logHasError ?? false,
+      };
+    } catch {
+      return { logTail: [], logBySource: { daemon: [] }, logHasError: false };
+    }
+  }
+
+  async clearEngineLog(): Promise<void> {
+    if (this.closeRequested) return;
+    await this.control.clearEngineLog();
   }
 
   get snapshot(): WorkspaceSnapshotEnvelopeV1 {
