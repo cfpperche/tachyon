@@ -275,6 +275,41 @@ function hermesBriefIncompatibleArg(argv: string[]): string | undefined {
   return undefined;
 }
 
+const PI_REVIEWER_EXCLUDED_TOOLS = ["bash", "edit", "write"] as const;
+type PiToolFilterPosture = "none" | "reviewer-read-only" | "other";
+
+function piToolFilterPosture(cmd: string): PiToolFilterPosture {
+  const parsed = parseLaunchCommand(cmd);
+  if (!parsed || adapterFor(parsed.binary)?.runtime !== "pi" || !parsed.allWordsLiteral) {
+    return /(^|\s)(?:--no-tools|-nt|--no-builtin-tools|-nbt|--tools|-t|--exclude-tools|-xt)(?:=|\s|$)/.test(cmd) ? "other" : "none";
+  }
+  const boundary = parsed.argv.indexOf("--");
+  const options = boundary < 0 ? parsed.argv : parsed.argv.slice(0, boundary);
+  const exclusions: string[] = [];
+  let other = false;
+  for (let index = 0; index < options.length; index++) {
+    const token = options[index]!;
+    if (token === "--exclude-tools" || token === "-xt") {
+      const value = options[++index];
+      if (!value || value.startsWith("-")) return "other";
+      exclusions.push(value);
+    } else if (token.startsWith("--exclude-tools=") || token.startsWith("-xt=")) {
+      return "other"; // Pi v0.80.10 accepts only the separate-operand form
+    } else if (["--no-tools", "-nt", "--no-builtin-tools", "-nbt", "--tools", "-t"].includes(token)
+      || token.startsWith("--tools=") || token.startsWith("-t=")) {
+      other = true;
+      if ((token === "--tools" || token === "-t") && options[index + 1] && !options[index + 1]!.startsWith("-")) index++;
+    }
+  }
+  if (other || exclusions.length > 1) return "other";
+  if (exclusions.length === 0) return "none";
+  const normalized = [...new Set(exclusions[0]!.split(",").map((tool) => tool.trim()).filter(Boolean))].sort();
+  return normalized.length === PI_REVIEWER_EXCLUDED_TOOLS.length
+    && normalized.every((tool, index) => tool === [...PI_REVIEWER_EXCLUDED_TOOLS].sort()[index])
+    ? "reviewer-read-only"
+    : "other";
+}
+
 function reviewerSafeCommand(cmd: string): { cmd: string; advisory?: string } {
   const parsed = parseLaunchCommand(cmd);
   if (!parsed || !parsed.allWordsLiteral) throw new Error("reviewer command is structurally ambiguous or uses shell expansion");
@@ -324,6 +359,13 @@ function reviewerSafeCommand(cmd: string): { cmd: string; advisory?: string } {
     if (permissions.length > 1) throw new Error("reviewer command has duplicate permission-mode declarations");
     if (permissions.some((permission) => permission !== "plan")) throw new Error(`reviewer command conflicts with permission mode ${permissions.join(",")}`);
     return { cmd: permissions.length ? cmd : insert("--permission-mode plan") };
+  }
+  if (runtime === "pi") {
+    const posture = piToolFilterPosture(cmd);
+    if (posture === "other") {
+      throw new Error("reviewer command has conflicting Pi tool filters; use exactly --exclude-tools bash,edit,write");
+    }
+    return { cmd: posture === "reviewer-read-only" ? cmd : insert("--exclude-tools bash,edit,write") };
   }
   return { cmd, advisory: `reviewer runtime '${path.basename(parsed.binary) || "unknown"}' has no measured shell-level read-only mode; command left unchanged` };
 }
@@ -2312,9 +2354,10 @@ export class AgentManager {
       return { cmd, env: { HERMES_HOME: home }, wired: true };
     }
     if (binary === "pi") {
-      if (/(^|\s)(?:--no-tools|-nt|--tools|-t|--exclude-tools|-xt)(?:=|\s|$)/.test(def.cmd)) {
+      const toolPosture = piToolFilterPosture(def.cmd);
+      if (toolPosture === "other") {
         this.opts.notify?.(
-          `agent '${name}': its Pi command restricts tools, so Tachyon cannot guarantee the complete Bridge catalog`,
+          `agent '${name}': its Pi command restricts tools beyond the proven reviewer denylist, so Tachyon cannot guarantee the complete Bridge catalog`,
           "warn",
         );
         return { cmd, env: sessionEnv, wired: false };

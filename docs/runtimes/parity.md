@@ -78,7 +78,7 @@ Avoid the word `ongoing` as a verification token — use a date, CLI version, te
 | 6 Harness | ✓ | ✓ | ✓ | ✓† | ~‡ |
 | 7 Graceful stop | ~ | ~ | ✓ | ✓ | ✓ |
 | 8 Activity | ✓ | ✓ | ✓ | ✓ | ✓ |
-| 9 Permission inject | ~ | ~ | ~ | **✗** | ✗ |
+| 9 Permission inject | ~ | ~ | ~ | **✗** | ~ |
 | 10 Label / profile | ✓ | ✓ | ~ | ✓ | ~ |
 | 11 Restart | ✓ | ✓ | ✓ | ✓ | ✓ |
 
@@ -171,8 +171,10 @@ Detail dump: [`docs/runtimes/opencode.md`](./opencode.md) (narrative may still s
 | Harness/private home | `PI_CODING_AGENT_DIR`; sessions override | default `.tachyon/harness/<agent>`, regular mode-0600 auth copy, no executable global-tree inheritance | SDD 400 units/dogfood; opt-in resource harness remains `~` |
 | Stop | Escape interrupt, Ctrl+C clear, Ctrl+D empty-editor exit | measured profile with delayed conditional keys | **✓** idle/draft/active real-tmux + Dev Host pass |
 | Activity | private v3 session JSONL | exact resolver → `piNormalizer` → bounded `ActivityLogWriter` | **✓** SDD 401 unit/integration, real-transcript dogfood and Dev Host visual pass |
-| Permission inject | tool filtering/approval surfaces | no permission adapter; Bridge refuses tool filters that would hide required tools | `✗` |
-| Profile | label + private-home + framed composer + stop | `runtimeProfile.pi` v2 | SDD 400/402; model/permission remain partial |
+| Permission inject | `--exclude-tools bash,edit,write` | authoritative Delivery reviewer adapter; canonical built-in denylist remains Bridge-compatible | **~** SDD 403 unit + real active-tool catalog pass; human Delivery dogfood pending |
+| Profile | label + private-home + framed composer + stop + reviewer permission | `runtimeProfile.pi` v3 | SDD 400/402/403; model/general permission remain partial |
+
+**Pi reviewer note:** the read-only posture disables Pi's only default shell/mutation tools and leaves native `read` plus extension/Bridge tools. It is not an OS sandbox or universal Bridge mutation ban.
 
 **Pi interaction note:** composer/stop measurements target Pi v0.80.10 default keybindings. Tachyon does not rewrite `keybindings.json`; remapped `app.interrupt`, `app.clear` or `app.exit` can invalidate graceful Stop.
 

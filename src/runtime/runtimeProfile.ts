@@ -93,7 +93,7 @@ const GROK_GRACEFUL_STOP: GracefulStopProfile = {
 export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = {
   pi: {
     runtime: "pi",
-    profileVersion: 2,
+    profileVersion: 3,
     label: "Pi",
     isolation: {
       mechanism: "private-home",
@@ -123,6 +123,13 @@ export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = 
       verified: true,
       verifiedAt: "2026-07-18",
       notes: "SDD 402 / Pi defaults: Escape aborts, Ctrl+C clears residual editor state, Ctrl+D exits when empty; verified idle and drafted in isolated tmux.",
+    },
+    permission: {
+      modes: ["full", "reviewer-read-only"],
+      source: "measured",
+      verified: true,
+      verifiedAt: "2026-07-18",
+      notes: "SDD 403: Delivery reviewers inject --exclude-tools bash,edit,write. This is shell-level tool safety, not an OS sandbox or universal Bridge read-only guarantee.",
     },
   },
   claude: {

@@ -1,6 +1,6 @@
 # Pi — runtime integration status (Tachyon)
 
-**Integration slices:** SDD 398 (Bridge), SDD 399 (continuity), SDD 400 (private home), SDD 401 (Activity), SDD 402 (interaction profile), measured against the installed `@earendil-works/pi-coding-agent` on 2026-07-18.
+**Integration slices:** SDD 398 (Bridge), SDD 399 (continuity), SDD 400 (private home), SDD 401 (Activity), SDD 402 (interaction profile), SDD 403 (reviewer safety), measured against the installed `@earendil-works/pi-coding-agent` on 2026-07-18.
 
 Pi is a recognized Tachyon AI runtime. Tachyon starts it in tmux, injects `TACHYON_AGENT_NAME`, the Bridge URL and a per-agent bearer, delivers the universal onboarding primer as Pi's positional startup message, and additively loads an immutable bundled Pi extension with `--extension`.
 
@@ -23,6 +23,7 @@ Pi deliberately has no built-in MCP client. Tachyon's extension opens the local 
 | Normalized Activity | ✓ | Exact private JSONL → `piNormalizer` → bounded durable `ActivityLogWriter`; automated and Dev Host visual dogfood passed |
 | Attention / composer | ✓ | Measured framed editor profile; automated tmux and Dev Host idle/draft proof passed |
 | Graceful Stop | ✓ | Measured Escape → Ctrl+C → Ctrl+D sequence; idle/draft/active tmux and Dev Host proof passed |
+| Delivery reviewer safety | ~ | `--exclude-tools bash,edit,write`; real active-tool proof passed, human Delivery dogfood pending |
 | Runtime model/usage observation | ~ | Generic process/usage surfaces only |
 | Opt-in Pi harness capabilities | ✗ | Agent-scoped Pi skills/extensions/packages remain deferred |
 
@@ -59,3 +60,7 @@ SDD 401 tails only the exact transcript resolved from the agent's private sessio
 Pi v0.80.10 renders a glyph-free editor between its final two horizontal rules, followed by cwd and token/model footer lines. SDD 402 adds framed composer-region support so only non-whitespace inside those rules counts as a human draft; changes above/below remain runtime output. Launch readiness requires both borders and the Pi footer, avoiding false readiness on the project-trust selector.
 
 With default Pi keybindings, graceful Stop sends Escape (abort active turn), waits, sends Ctrl+C (clear residual draft), then Ctrl+D with one conditional retry. Isolated tmux dogfood proved clean exit from idle, drafted and active-turn panes. Custom user keybindings can invalidate this measured contract; Tachyon never rewrites `keybindings.json`.
+
+## Delivery reviewer safety
+
+SDD 403 adapts only authoritative Delivery reviewer segments. It injects `--exclude-tools bash,edit,write`, preserving Pi's native `read` and dynamically registered extension/Bridge tools. Real Pi v0.80.10 reported the resulting active catalog as exactly `read` plus the probe extension tool. Conflicting/partial/duplicate tool filters fail before Delivery reservation or spawn. This is a shell-level tool posture, not an OS/network sandbox and not a guarantee that every separately authorized Bridge tool is read-only.

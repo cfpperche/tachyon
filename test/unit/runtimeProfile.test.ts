@@ -16,7 +16,7 @@ describe("runtime profiles (spec 358 phase 1)", () => {
 
   it("SDD 400/402: declares Pi private-home plus measured composer and graceful stop", () => {
     const profile = runtimeProfile("pi");
-    expect(profile?.profileVersion).toBe(2);
+    expect(profile?.profileVersion).toBe(3);
     expect(profile?.isolation).toMatchObject({
       mechanism: "private-home",
       source: "measured",
@@ -27,6 +27,8 @@ describe("runtime profiles (spec 358 phase 1)", () => {
     expect(profile?.composer?.frameLine?.test("────────────────────")).toBe(true);
     expect(profile?.composer?.readyLine?.test("0.0%/4.1k (auto)   measure")).toBe(true);
     expect(profile?.gracefulStop).toMatchObject({ source: "measured", verified: true });
+    expect(profile?.permission).toMatchObject({ modes: ["full", "reviewer-read-only"], source: "measured", verified: true });
+    expect(profile?.permission?.notes).toContain("--exclude-tools bash,edit,write");
     expect(profile?.gracefulStop?.steps).toEqual([
       { type: "sendKey", key: "Escape" },
       { type: "sendKeyIfAliveAfterDelay", key: "C-c", delayMs: 300 },

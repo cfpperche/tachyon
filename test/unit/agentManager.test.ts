@@ -1660,6 +1660,39 @@ describe("AgentManager — session resume (spec 209)", () => {
   });
 
   it.each([
+    ["pi", "pi --exclude-tools bash,edit,write"],
+    ["env MODE=review pi -- positional", "env MODE=review pi --exclude-tools bash,edit,write -- positional"],
+    ["npx --yes pi -- positional", "npx --yes pi --exclude-tools bash,edit,write -- positional"],
+  ])("SDD 403: injects and persists Pi Delivery reviewer safety structurally: %s", async (cmd, effective) => {
+    const { manager, ledger, ws } = resumeHarness("agents: {}\n", {
+      prepareDeliveryJoin: async (_name, request) => ({ cwd: ws,
+        worktree: { path: ws, branch: "tachyon/delivery", tachyonCreatedBranch: true, baseRef: request.expectedHead, createdAt: "now" }, reservationNonce: "pi-safe", segmentId: "seg-pi" }),
+      confirmDeliveryJoin: async () => undefined,
+      materializeHarness: ({ name, def }) => adapterFor(def.cmd)?.runtime === "pi"
+        ? { home: `/private/pi/${name}`, env: { PI_CODING_AGENT_DIR: `/private/pi/${name}`, PI_CODING_AGENT_SESSION_DIR: `/private/pi/${name}/sessions` }, args: [] }
+        : null,
+      materializePiSessionDir: (name) => `/private/pi/${name}/sessions`,
+    });
+    await manager.spawn("pi-reviewer", { cmd,
+      deliveryJoin: { deliveryId: "d", role: "reviewer", ownsSubset: [], expectedHead: "abc", operationId: "pi-review" } });
+    expect(ledger.get("pi-reviewer")?.def?.cmd).toBe(effective);
+  });
+
+  it("SDD 403: preserves an explicit canonical Pi reviewer denylist byte-for-byte", async () => {
+    const cmd = "pi --exclude-tools write,bash,edit --thinking high";
+    const { manager, ledger, ws } = resumeHarness("agents: {}\n", {
+      prepareDeliveryJoin: async (_name, request) => ({ cwd: ws,
+        worktree: { path: ws, branch: "tachyon/delivery", tachyonCreatedBranch: true, baseRef: request.expectedHead, createdAt: "now" }, reservationNonce: "pi-safe", segmentId: "seg-pi" }),
+      confirmDeliveryJoin: async () => undefined,
+      materializeHarness: ({ name }) => ({ home: `/private/pi/${name}`, env: { PI_CODING_AGENT_DIR: `/private/pi/${name}`, PI_CODING_AGENT_SESSION_DIR: `/private/pi/${name}/sessions` }, args: [] }),
+      materializePiSessionDir: (name) => `/private/pi/${name}/sessions`,
+    });
+    await manager.spawn("pi-reviewer", { cmd,
+      deliveryJoin: { deliveryId: "d", role: "reviewer", ownsSubset: [], expectedHead: "abc", operationId: "pi-review" } });
+    expect(ledger.get("pi-reviewer")?.def?.cmd).toBe(cmd);
+  });
+
+  it.each([
     ["codex --sandbox \"read-only\"", "codex --sandbox \"read-only\""],
     ["codex -s=read-only", "codex -s=read-only"],
     ["codex -sread-only", "codex -sread-only"],
@@ -1711,7 +1744,14 @@ describe("AgentManager — session resume (spec 209)", () => {
     "grok --always-approve",
     "claude --permission-mode plan --permission-mode=plan",
     "grok --permission-mode=plan --permission-mode plan",
-  ])("SDD 368 T10 refuses conflicting reviewer command before reservation or spawn: %s", async (cmd) => {
+    "pi --tools read,grep,find,ls",
+    "pi --no-tools",
+    "pi --no-builtin-tools",
+    "pi --exclude-tools bash,edit",
+    "pi --exclude-tools bash,edit,write --exclude-tools read",
+    "pi --exclude-tools=bash,edit,write",
+    "pi -xt bash,edit",
+  ])("SDD 368/403 refuses conflicting reviewer command before reservation or spawn: %s", async (cmd) => {
     let prepared = false;
     const { manager, cmds } = resumeHarness("agents: {}\n", {
       prepareDeliveryJoin: async () => { prepared = true; throw new Error("must not prepare"); },
@@ -3767,6 +3807,17 @@ describe("AgentManager — session resume (spec 209)", () => {
       expect(warnings).toContain("agent 'pi': staged Pi Bridge extension is unavailable");
     });
 
+    it("SDD 403: Pi canonical reviewer denylist preserves staged Bridge wiring", async () => {
+      const { manager, cmds } = resumeHarness("agents:\n  pi:\n    cmd: pi --exclude-tools bash,edit,write\n", {
+        getExtraEnv: () => ({ TACHYON_BRIDGE_URL: "http://127.0.0.1:9/mcp" }),
+        piBridgeExtensionPath: () => "/immutable/engine/pi-bridge-extension.mjs",
+        ...PI_PRIVATE_HOME(),
+      });
+      await manager.spawn("pi");
+      expect(cmds.at(-1)).toContain("--extension '/immutable/engine/pi-bridge-extension.mjs'");
+      expect(cmds.at(-1)).toContain("--exclude-tools bash,edit,write");
+    });
+
     it("Pi: refuses tool-filtering flags that would make a wired stamp lie", async () => {
       const warnings: string[] = [];
       const { manager } = resumeHarness("agents:\n  pi:\n    cmd: pi --no-tools\n", {
@@ -3776,7 +3827,7 @@ describe("AgentManager — session resume (spec 209)", () => {
         notify: (message) => warnings.push(message),
       });
       await expect(manager.spawn("pi")).rejects.toThrow("Bridge tools could not be materialized");
-      expect(warnings.some((warning) => warning.includes("restricts tools"))).toBe(true);
+      expect(warnings.some((warning) => warning.includes("restricts tools beyond"))).toBe(true);
     });
 
     it("claude (non-harness): spawn appends --mcp-config at the END (additive, after the prompt positional)", async () => {
