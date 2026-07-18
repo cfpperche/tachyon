@@ -6,6 +6,12 @@ Marketplace release notes.
 
 ## Unreleased
 
+## 0.56.32 — Validations leave Mission for Control tab (t-b87bfe)
+
+### Changed
+- **Mission Control** no longer embeds the Validations strip (task board only).
+- **Control** gains a **Validations** tab with full queue + close UI.
+
 ## 0.56.31 — Design-system --ds-accent + kit tokens (t-df7df5)
 
 ### Fixed
