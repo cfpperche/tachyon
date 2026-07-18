@@ -47,6 +47,9 @@ export const APPROVAL_ID_PREFIX = "a-";
 
 export type ApprovalDecision = "approved" | "denied";
 
+/** Lifecycle: pending → resolved (host Accept/Deny) | cancelled (requester withdraw). Never both. */
+export type ApprovalStatus = "pending" | "resolved" | "cancelled";
+
 /** The four child-authored fields, captured VERBATIM (after trim) — the human is shown these as-is. */
 export interface ApprovalPayload {
   /** why the child is escalating — the human-readable reason for needing approval. */
@@ -74,6 +77,16 @@ export interface ApprovalResolution {
   note?: string;
 }
 
+/** t-ae89d1 — requester-authored withdrawal; never an Accept/Deny and never injects approve text. */
+export interface ApprovalCancellation {
+  /** ISO timestamp the Bridge witnessed the cancel. */
+  cancelledAt: string;
+  /** Always the Bridge-resolved requester (same as record.requester). */
+  cancelledBy: string;
+  /** Short audit reason the requester supplied. */
+  reason: string;
+}
+
 export interface ApprovalRequest {
   /** `a-<6hex>` — see APPROVAL_ID_PREFIX. */
   id: string;
@@ -95,18 +108,21 @@ export interface ApprovalRequest {
   payloadHash: string;
   /** ISO timestamp the Bridge witnessed the request. */
   createdAt: string;
-  /** `pending` until the host-side resolver flips it to `resolved`. */
-  status: "pending" | "resolved";
-  /** The pin id created alongside the request — the host closes it on resolution. */
+  /** `pending` until host resolve or requester cancel. Legacy records without cancel still use pending|resolved. */
+  status: ApprovalStatus;
+  /** The pin id created alongside the request — the host closes it on resolution/cancel. */
   pinId?: string;
   /** Set when `status === "resolved"`. */
   resolution?: ApprovalResolution;
+  /** Set when `status === "cancelled"` (t-ae89d1). Absent on pre-cancel records. */
+  cancellation?: ApprovalCancellation;
 }
 
 /** Witness-log event — one JSON line per append. */
 export type ApprovalWitnessEvent =
   | { kind: "requested"; id: string; requester: string; session: string; at: string; payloadHash: string }
-  | { kind: "resolved"; id: string; decision: ApprovalDecision; at: string; by?: string };
+  | { kind: "resolved"; id: string; decision: ApprovalDecision; at: string; by?: string }
+  | { kind: "cancelled"; id: string; by: string; at: string; reason: string };
 
 export function approvalRequestPath(workspaceRoot: string, id: string): string {
   return path.join(workspaceRoot, APPROVALS_REL_DIR, `${id}.json`);
@@ -337,6 +353,9 @@ export async function resolveApproval(input: {
   if (request.status === "resolved") {
     throw new Error(`approval request '${input.id}' is already resolved (${request.resolution?.decision})`);
   }
+  if (request.status === "cancelled") {
+    throw new Error(`approval request '${input.id}' was cancelled by the requester and cannot be resolved`);
+  }
   const originalOwner = request.sessionOwnerAtRequest ?? request.requester;
   const currentOwner = await input.currentSessionOwner?.(request.session);
   if (currentOwner !== undefined && currentOwner !== originalOwner) {
@@ -380,4 +399,56 @@ export async function resolveApproval(input: {
     }
   }
   return { request: updated, injectedText, ...(receipt ? { receipt } : {}), ...(injectError ? { injectError } : {}) };
+}
+
+/**
+ * t-ae89d1 — requester withdraws a still-pending approval. Only the Bridge-resolved requester may cancel;
+ * never injects Approve text; never records Accept/Deny. Retry on an already-cancelled own request is
+ * idempotent. Race with host resolve: the loser gets a structured conflict (already resolved/cancelled).
+ */
+export function cancelOwnApprovalRequest(input: {
+  workspaceRoot: string;
+  id: string;
+  requester: string;
+  reason: string;
+  now?: string;
+  /** Best-effort pin completion when the request carried pinId. */
+  completePin?: (pinId: string) => void;
+}): { request: ApprovalRequest; alreadyCancelled: boolean } {
+  const reason = (input.reason ?? "").trim();
+  if (reason.length === 0) throw new Error("cancel_human_approval requires a non-empty reason");
+  if (reason.length > 2000) throw new Error("cancel_human_approval reason must be ≤ 2000 chars");
+
+  const request = readOwnApprovalRequest(input.workspaceRoot, input.id, input.requester);
+  if (request.status === "cancelled") {
+    return { request, alreadyCancelled: true };
+  }
+  if (request.status === "resolved") {
+    throw new Error(
+      `approval request '${input.id}' is already resolved (${request.resolution?.decision}) — cannot cancel`,
+    );
+  }
+  const cancelledAt = input.now ?? new Date().toISOString();
+  const cancellation: ApprovalCancellation = {
+    cancelledAt,
+    cancelledBy: input.requester,
+    reason,
+  };
+  const updated: ApprovalRequest = { ...request, status: "cancelled", cancellation };
+  writeApprovalRequest(input.workspaceRoot, updated);
+  appendApprovalWitnessEvent(input.workspaceRoot, {
+    kind: "cancelled",
+    id: updated.id,
+    by: input.requester,
+    at: cancelledAt,
+    reason,
+  });
+  if (updated.pinId && input.completePin) {
+    try {
+      input.completePin(updated.pinId);
+    } catch {
+      // best-effort — cancel already stands
+    }
+  }
+  return { request: updated, alreadyCancelled: false };
 }
