@@ -82,10 +82,25 @@ body { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
 .quick-controls { display: flex; align-items: center; gap: var(--ds-icon-gap); flex: none; margin-left: auto; white-space: nowrap; }
 .quick-controls > * { flex: none; }
 .ref { flex: none; font-size: 10px; color: var(--ds-muted); opacity: .8; font-family: var(--ds-mono); }
-.ref-copy { cursor: pointer; padding: 0; border: 0; background: transparent; text-align: left; }
+.ref-copy { cursor: pointer; padding: 0; border: 0; background: transparent; text-align: left; color: inherit; height: auto; min-width: 0; }
 .ref-copy:hover, .ref-copy:focus-visible { color: var(--ds-info); opacity: 1; text-decoration: underline; }
-.who-btn, .prio-btn { display: inline-flex; align-items: center; gap: 5px; color: inherit; cursor: pointer; white-space: nowrap; }
-.who-btn:hover, .prio-btn:hover { text-decoration: underline; }
+/* t-e1bd89 — force transparent chips so Cockpit-co-loaded surface CSS (e.g. unscoped approval buttons)
+   cannot paint these as primary VS Code blue pills. */
+.who-btn, .prio-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  background: transparent;
+  border: none;
+  padding: 0;
+  height: auto;
+  min-width: 0;
+  border-radius: 0;
+}
+.who-btn:hover, .prio-btn:hover { text-decoration: underline; background: transparent; }
 .who-btn:disabled { cursor: default; }
 .who-btn:disabled:hover { text-decoration: none; }
 .who-btn.historical { color: var(--ds-muted); font-style: italic; }
