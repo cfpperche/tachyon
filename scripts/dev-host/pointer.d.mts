@@ -1,5 +1,7 @@
 /** Ambient types for scripts/dev-host/pointer.mjs (imported by unit tests). */
 
+import type { ProbeFixtureEngineResult, StopFixtureBridgeResult, StopFixtureEngineResult } from "./stop-bridge.d.mts";
+
 export interface DevHostPaths {
   root: string;
   extension: string;
@@ -68,14 +70,31 @@ export interface DevHostStatus {
   tachyonMirrorIsRealDir?: boolean | null;
   fixtureSourceExists?: boolean;
   fixtureDrift?: boolean;
+  /** Read-only point-status/Doctor diagnostic (t-e357dc) — never stops anything. */
+  engineOccupant?: ProbeFixtureEngineResult | { state: "unknown"; error: string } | null;
   warnings?: string[];
   broken?: boolean;
+}
+
+export interface DevHostReconcileResult {
+  engine: StopFixtureEngineResult;
+  bridge: StopFixtureBridgeResult;
+}
+
+export interface DevHostReconcileOptions {
+  stopEngine?: (fixtureRoot: string) => Promise<StopFixtureEngineResult>;
+  stopBridge?: (fixtureRoot: string) => Promise<StopFixtureBridgeResult>;
+}
+
+export interface DevHostStatusOptions {
+  probeEngine?: (fixtureRoot: string) => Promise<ProbeFixtureEngineResult>;
 }
 
 export interface DevHostClearResult {
   cleared: boolean;
   reason?: string;
   launch?: { restored: boolean; reason?: string; path?: string };
+  reconciled?: DevHostReconcileResult;
 }
 
 export interface LaunchConfig {
@@ -128,7 +147,11 @@ export function restoreTemplateLaunchConfig(
   repoRoot: string,
 ): { restored: boolean; reason?: string; path?: string };
 export function point(opts: DevHostPointOptions): DevHostMeta;
-export function status(repoRoot: string): DevHostStatus;
-export function clear(repoRoot: string): DevHostClearResult;
+export function status(repoRoot: string, opts?: DevHostStatusOptions): Promise<DevHostStatus>;
+export function clear(repoRoot: string, opts?: DevHostReconcileOptions): Promise<DevHostClearResult>;
+export function reconcileDevHostOccupant(
+  repoRoot: string,
+  opts?: DevHostReconcileOptions,
+): Promise<DevHostReconcileResult>;
 export function parseArgs(argv: string[]): Record<string, string | string[] | undefined> & { _: string[] };
-export function main(argv?: string[]): number;
+export function main(argv?: string[]): Promise<number>;

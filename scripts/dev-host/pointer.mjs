@@ -25,6 +25,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { probeFixtureEngine, stopFixtureBridge, stopFixtureEngine } from "./stop-bridge.mjs";
 
 const SELF = "dev-host";
 const DIR_NAME = "dev-host";
@@ -633,7 +634,8 @@ export function point(opts) {
   return meta;
 }
 
-export function status(repoRoot) {
+export async function status(repoRoot, opts = {}) {
+  const probeEngine = opts.probeEngine ?? probeFixtureEngine;
   const p = pathsOf(path.resolve(repoRoot));
   if (!fs.existsSync(p.meta)) {
     return {
@@ -740,6 +742,23 @@ export function status(repoRoot) {
     tachyonMirrorIsRealDir === false ||
     !fixtureSourceExists && Boolean(workspaceSource);
 
+  // Precise, actionable collision diagnostic (t-e357dc): a persistent engine still active for this
+  // pointer's fixed mirror workspace hash will make the next F5 reuse/upgrade it instead of starting
+  // clean. Read-only — never stops anything; point-clear is what reconciles it.
+  let engineOccupant = null;
+  try {
+    engineOccupant = await probeEngine(p.root);
+  } catch (error) {
+    engineOccupant = { state: "unknown", error: error instanceof Error ? error.message : String(error) };
+  }
+  if (engineOccupant?.state === "active") {
+    warnings.push(
+      `persistent engine ${engineOccupant.unitName} is still active for this pointer — run point-clear before re-pointing to a different build/storage root, or it may reuse a stale engine (ROLLBACK_BUNDLE_UNAVAILABLE)`,
+    );
+  } else if (engineOccupant?.state === "unknown") {
+    warnings.push(`could not determine persistent engine status: ${engineOccupant.error}`);
+  }
+
   return {
     armed: !criticalBroken && extOk && wsOk && worktreeExists,
     broken: criticalBroken,
@@ -755,6 +774,7 @@ export function status(repoRoot) {
     tachyonMirrorIsRealDir,
     fixtureSourceExists,
     fixtureDrift,
+    engineOccupant,
     warnings,
   };
 }
@@ -785,15 +805,37 @@ export function printStatus(st) {
   }
 }
 
-export function clear(repoRoot) {
+/**
+ * Stop any persistent engine/Bridge owned by this Dev Host pointer before its storage is touched.
+ * `.tachyon/dev-host/{state,data}` (the engine's storage root / bundle install root, materialized by
+ * the engine itself at runtime — see portableDevHostLaunchConfig's XDG_STATE_HOME/XDG_DATA_HOME) live
+ * under the same fixed mirror path across every F5 session, so a persistent engine started under an
+ * earlier point() outlives point-clear unless it is stopped first. Stopping it here — before its
+ * storage is wiped — is what prevents a later session's supervisor from finding that engine still
+ * alive with no verified rollback bundle left to fall back to (ROLLBACK_BUNDLE_UNAVAILABLE, t-e357dc).
+ * `stopFixtureEngine`/`stopFixtureBridge` key strictly off this pointer's own mirror workspace path,
+ * so this can never reach a normal Tachyon window or a different Dev Host pointer's engine.
+ */
+export async function reconcileDevHostOccupant(repoRoot, opts = {}) {
+  const stopEngine = opts.stopEngine ?? stopFixtureEngine;
+  const stopBridge = opts.stopBridge ?? stopFixtureBridge;
+  const root = devHostDir(path.resolve(repoRoot));
+  const engine = await stopEngine(root);
+  const bridge = await stopBridge(root);
+  return { engine, bridge };
+}
+
+export async function clear(repoRoot, opts = {}) {
   const p = pathsOf(path.resolve(repoRoot));
   if (!fs.existsSync(p.root)) {
     return { cleared: false, reason: "already clear" };
   }
+  // Reconcile before touching storage: never wipe state/data out from under a live engine.
+  const reconciled = await reconcileDevHostOccupant(repoRoot, opts);
   // Only remove pointer + isolation dirs under .tachyon/dev-host — never the worktree/fixture targets
   fs.rmSync(p.root, { recursive: true, force: true });
   const launch = restoreTemplateLaunchConfig(repoRoot);
-  return { cleared: true, launch };
+  return { cleared: true, launch, reconciled };
 }
 
 export function parseArgs(argv) {
@@ -822,7 +864,7 @@ export function parseArgs(argv) {
   return out;
 }
 
-export function main(argv = process.argv.slice(2)) {
+export async function main(argv = process.argv.slice(2)) {
   const args = parseArgs(argv);
   const sub = args._[0] ?? "help";
   // Explicit --repo wins (tests / overrides). Otherwise, if this checkout is a linked
@@ -917,7 +959,7 @@ On point: mirrors fixture into .tachyon/dev-host/workspace (real dir; .tachyon c
   }
 
   if (sub === "status") {
-    const st = status(repoRoot);
+    const st = await status(repoRoot);
     printStatus(st);
     console.log("---");
     console.log(JSON.stringify({ ...st, f5HostRepo: repoRoot, scriptRepo: host.scriptRepo, redirected: host.redirected }, null, 2));
@@ -925,8 +967,12 @@ On point: mirrors fixture into .tachyon/dev-host/workspace (real dir; .tachyon c
   }
 
   if (sub === "clear") {
-    const r = clear(repoRoot);
+    const r = await clear(repoRoot);
     console.log(`${SELF}: ${r.cleared ? "cleared" : r.reason}`);
+    if (r.reconciled) {
+      console.log(`  engine: ${r.reconciled.engine.state}`);
+      console.log(`  bridge: ${r.reconciled.bridge.state}`);
+    }
     if (host.redirected) console.log(`  (cleared monorepo pointer at ${repoRoot})`);
     return 0;
   }
@@ -938,10 +984,10 @@ const isMain =
   process.argv[1] && path.resolve(fileURLToPath(import.meta.url)) === path.resolve(process.argv[1]);
 
 if (isMain) {
-  try {
-    process.exitCode = main();
-  } catch (err) {
+  main().then((code) => {
+    process.exitCode = code;
+  }).catch((err) => {
     console.error(err instanceof Error ? err.message : String(err));
     process.exitCode = 1;
-  }
+  });
 }

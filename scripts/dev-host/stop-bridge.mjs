@@ -142,6 +142,26 @@ export async function stopFixtureEngine(
   throw new Error(`fixture engine unit ${unitName} remained active after stop`);
 }
 
+/**
+ * Read-only liveness probe for point-status/Doctor: reports whether a persistent engine unit is
+ * currently active for this fixture's workspace, without stopping anything. Lets preparation warn
+ * about a collision precisely instead of surfacing it as a cryptic ROLLBACK_BUNDLE_UNAVAILABLE later.
+ */
+export async function probeFixtureEngine(fixtureRoot, { runSystemctl = defaultRunSystemctl } = {}) {
+  const fixture = path.resolve(fixtureRoot);
+  let unitName;
+  try {
+    unitName = fixtureEngineUnitName(fixture);
+  } catch (error) {
+    if (error?.code === "ENOENT") return { state: "absent" };
+    throw error;
+  }
+  const probe = await runSystemctl(["is-active", unitName]);
+  if (probe.status === 0) return { state: "active", unitName };
+  if (probe.status === 3 || probe.status === 4) return { state: "inactive", unitName };
+  throw new Error(`cannot inspect fixture engine unit ${unitName}: ${probe.stderr.trim() || probe.stdout.trim() || `exit ${probe.status}`}`);
+}
+
 function isAbsent(error) {
   return error?.code === "ENOENT" || error?.code === "ECONNREFUSED";
 }

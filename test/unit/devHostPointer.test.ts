@@ -5,6 +5,8 @@ import path from "node:path";
 // Owned ESM CLI; Vitest loads it directly while the repo typecheck target is CommonJS.
 // @ts-expect-error -- static ESM import is intentional for this executable module test (same as resolve-code.mjs).
 import * as pointerMod from "../../scripts/dev-host/pointer.mjs";
+// @ts-expect-error -- static ESM import is intentional for this executable module test.
+import { fixtureEngineUnitName } from "../../scripts/dev-host/stop-bridge.mjs";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ESM CLI has no CJS .d.ts in the typecheck graph
 const {
   assertWorkspaceNotRepoRoot,
@@ -17,6 +19,14 @@ const {
   resolveFixturePath,
   status,
 } = pointerMod as any;
+
+/** clear()/status() default to the real systemctl/Bridge socket; tests that don't exercise
+ * reconciliation itself must not depend on a live systemd --user session being available. */
+const noopReconcile = {
+  stopEngine: async () => ({ state: "absent" as const }),
+  stopBridge: async () => ({ state: "absent" as const }),
+};
+const noopProbe = { probeEngine: async () => ({ state: "absent" as const }) };
 
 function writePkg(dir: string, name = "tachyon") {
   fs.mkdirSync(dir, { recursive: true });
@@ -92,7 +102,7 @@ describe("dev-host pointer", () => {
     expect(fs.existsSync(path.join(worktree, ".tachyon", "dev-host", "meta.json"))).toBe(false);
   });
 
-  it("points extension symlink + workspace mirror and writes meta", () => {
+  it("points extension symlink + workspace mirror and writes meta", async () => {
     const meta = point({
       repoRoot: repo,
       worktree,
@@ -134,7 +144,7 @@ describe("dev-host pointer", () => {
       kind: "tachyon-dev-host",
     });
 
-    const st = status(repo);
+    const st = await status(repo, noopProbe);
     expect(st.armed).toBe(true);
     expect(st.broken).toBe(false);
     expect(st.meta?.spec).toBe("381");
@@ -142,12 +152,13 @@ describe("dev-host pointer", () => {
     expect(st.workspaceResolves).toBe(path.resolve(fixture));
     expect(st.tachyonMirrorIsRealDir).toBe(true);
     expect(st.worktreeExists).toBe(true);
+    expect(st.engineOccupant).toEqual({ state: "absent" });
   });
 
-  it("status is broken when worktree path is gone", () => {
+  it("status is broken when worktree path is gone", async () => {
     point({ repoRoot: repo, worktree, workspace: fixture, spec: "393" });
     fs.rmSync(worktree, { recursive: true, force: true });
-    const st = status(repo);
+    const st = await status(repo, noopProbe);
     expect(st.armed).toBe(false);
     expect(st.broken).toBe(true);
     expect(st.worktreeExists).toBe(false);
@@ -171,13 +182,15 @@ describe("dev-host pointer", () => {
     expect(fs.readFileSync(path.join(r.root, "README.md"), "utf8")).toMatch(/metrics/);
   });
 
-  it("clear removes only the pointer dir", () => {
+  it("clear removes only the pointer dir", async () => {
     point({ repoRoot: repo, worktree, workspace: fixture });
-    expect(clear(repo).cleared).toBe(true);
+    const result = await clear(repo, noopReconcile);
+    expect(result.cleared).toBe(true);
+    expect(result.reconciled).toEqual({ engine: { state: "absent" }, bridge: { state: "absent" } });
     expect(fs.existsSync(path.join(repo, ".tachyon", "dev-host"))).toBe(false);
     expect(fs.existsSync(worktree)).toBe(true);
     expect(fs.existsSync(fixture)).toBe(true);
-    expect(status(repo).armed).toBe(false);
+    expect((await status(repo, noopProbe)).armed).toBe(false);
   });
 
   it("links node_modules from primary when worktree lacks them", () => {
@@ -188,7 +201,7 @@ describe("dev-host pointer", () => {
     expect(fs.realpathSync(wtNm)).toBe(path.resolve(repo, "node_modules"));
   });
 
-  it("keeps portable ${workspaceFolder} paths in launch.json (never machine absolutes)", () => {
+  it("keeps portable ${workspaceFolder} paths in launch.json (never machine absolutes)", async () => {
     const vscode = path.join(repo, ".vscode");
     fs.mkdirSync(vscode, { recursive: true });
     fs.writeFileSync(
@@ -222,7 +235,7 @@ describe("dev-host pointer", () => {
     expect(JSON.stringify(cfg)).not.toContain(path.resolve(fixture));
     expect(JSON.stringify(cfg)).not.toContain(path.resolve(worktree));
 
-    const cleared = clear(repo);
+    const cleared = await clear(repo, noopReconcile);
     expect(cleared.cleared).toBe(true);
     const restored = JSON.parse(fs.readFileSync(path.join(vscode, "launch.json"), "utf8"));
     const cfg2 = restored.configurations.find((c: { name: string }) => c.name === "Tachyon: Dev Host");
@@ -241,5 +254,100 @@ describe("dev-host pointer", () => {
 
   it("ensurePortableLaunchConfig is a no-op without launch.json", () => {
     expect(ensurePortableLaunchConfig(repo)).toBeNull();
+  });
+
+  describe("t-e357dc: stale persistent-engine reconciliation", () => {
+    // The Dev Host mirror workspace (<repo>/.tachyon/dev-host/workspace) is a fixed path across every
+    // F5 session, so a persistent engine started under an earlier point() outlives point-clear unless
+    // it is stopped first. These tests cover the acceptance criteria for t-e357dc directly.
+
+    it("stops a stale foreign occupant before wiping storage", async () => {
+      point({ repoRoot: repo, worktree, workspace: fixture });
+      const devHostRoot = path.join(repo, ".tachyon", "dev-host");
+      const expectedUnitName = fixtureEngineUnitName(devHostRoot);
+      const calls: Array<{ fn: string; root: string; storagePresent: boolean }> = [];
+      const stopEngine = async (root: string) => {
+        calls.push({ fn: "engine", root, storagePresent: fs.existsSync(devHostRoot) });
+        return { state: "stopped" as const, unitName: fixtureEngineUnitName(root) };
+      };
+      const stopBridge = async (root: string) => {
+        calls.push({ fn: "bridge", root, storagePresent: fs.existsSync(devHostRoot) });
+        return { state: "stopped" as const };
+      };
+
+      const result = await clear(repo, { stopEngine, stopBridge });
+
+      expect(result.cleared).toBe(true);
+      expect(result.reconciled).toEqual({
+        engine: { state: "stopped", unitName: expectedUnitName },
+        bridge: { state: "stopped" },
+      });
+      // Reconciliation must run against this pointer's own dev-host dir, and before storage is removed.
+      expect(calls).toEqual([
+        { fn: "engine", root: devHostRoot, storagePresent: true },
+        { fn: "bridge", root: devHostRoot, storagePresent: true },
+      ]);
+      expect(fs.existsSync(devHostRoot)).toBe(false);
+    });
+
+    it("is a no-op when clear() has nothing to reconcile (already clear)", async () => {
+      const calls: string[] = [];
+      const stopEngine = async () => { calls.push("engine"); return { state: "absent" as const }; };
+      const stopBridge = async () => { calls.push("bridge"); return { state: "absent" as const }; };
+
+      const first = await clear(repo, { stopEngine, stopBridge });
+      expect(first).toEqual({ cleared: false, reason: "already clear" });
+      expect(calls).toEqual([]);
+
+      point({ repoRoot: repo, worktree, workspace: fixture });
+      const second = await clear(repo, { stopEngine, stopBridge });
+      expect(second.cleared).toBe(true);
+      expect(calls).toEqual(["engine", "bridge"]);
+
+      // Re-pointing the same fixture afterward (a fresh session) does not itself invoke reconciliation —
+      // only clear() does, since point() never touches the engine's storage roots.
+      calls.length = 0;
+      point({ repoRoot: repo, worktree, workspace: fixture });
+      expect(calls).toEqual([]);
+    });
+
+    it("refuses to wipe storage when the stale occupant cannot be safely stopped (bounded cleanup failure)", async () => {
+      point({ repoRoot: repo, worktree, workspace: fixture });
+      const devHostRoot = path.join(repo, ".tachyon", "dev-host");
+      const stopEngine = async () => {
+        throw new Error("fixture EDH is still running; close it before cleanup");
+      };
+      const stopBridge = async () => { throw new Error("should not be reached"); };
+
+      await expect(clear(repo, { stopEngine, stopBridge })).rejects.toThrow(/still running/);
+      // Fail closed: storage must survive an unsafe/unproven stop attempt.
+      expect(fs.existsSync(devHostRoot)).toBe(true);
+      expect(fs.existsSync(path.join(devHostRoot, "workspace"))).toBe(true);
+    });
+
+    it("never targets a normal (non-Dev-Host) workspace's engine identity", () => {
+      point({ repoRoot: repo, worktree, workspace: fixture });
+      const devHostRoot = path.join(repo, ".tachyon", "dev-host");
+      const normalWorkspace = fs.mkdtempSync(path.join(os.tmpdir(), "normal-workspace-"));
+      fs.mkdirSync(path.join(normalWorkspace, "workspace"), { recursive: true });
+
+      try {
+        // The unit name is a pure function of <fixtureRoot>/workspace's canonical path, so a Dev Host
+        // reconciliation targeting devHostRoot structurally cannot compute a normal workspace's unit.
+        expect(fixtureEngineUnitName(devHostRoot)).not.toBe(fixtureEngineUnitName(normalWorkspace));
+      } finally {
+        fs.rmSync(normalWorkspace, { recursive: true, force: true });
+      }
+    });
+
+    it("point-status surfaces a precise, actionable warning when a stale engine is still active", async () => {
+      point({ repoRoot: repo, worktree, workspace: fixture });
+      const st = await status(repo, {
+        probeEngine: async (root: string) => ({ state: "active" as const, unitName: fixtureEngineUnitName(root) }),
+      });
+      expect(st.engineOccupant?.state).toBe("active");
+      expect(st.warnings?.some((w: string) => /persistent engine .* still active/i.test(w))).toBe(true);
+      expect(st.warnings?.some((w: string) => /point-clear/.test(w))).toBe(true);
+    });
   });
 });
