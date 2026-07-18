@@ -1,51 +1,54 @@
-body {
+/* Approvals surface styles. ALL selectors must stay under .approval-root so Cockpit
+   can co-load this sheet with Mission/etc. without painting every <button> primary-blue
+   (t-e1bd89). */
+
+.approval-root {
   color: var(--vscode-foreground);
   background: var(--vscode-editor-background);
-}
-
-main {
   box-sizing: border-box;
   max-width: 980px;
   margin: 0 auto;
   padding: 20px;
+  min-height: 100%;
 }
 
-.approval-title,
-.approval-head,
-.approval-actions,
-.approval-provenance {
+.approval-root .approval-title,
+.approval-root .approval-head,
+.approval-root .approval-actions,
+.approval-root .approval-provenance {
   display: flex;
   align-items: center;
 }
 
-.approval-title {
+.approval-root .approval-title {
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 16px;
 }
 
-h1,
-h2,
-p {
+.approval-root h1,
+.approval-root h2,
+.approval-root p {
   margin: 0;
 }
 
-h1 {
+.approval-root h1 {
   font-size: 22px;
   font-weight: 650;
 }
 
-h2 {
+.approval-root h2 {
   font-size: 15px;
   font-weight: 650;
 }
 
-p,
-.approval-provenance {
+.approval-root p,
+.approval-root .approval-provenance {
   color: var(--vscode-descriptionForeground);
 }
 
-button {
+/* Intentionally scoped — bare `button` here leaked into Control → Mission (t-e1bd89). */
+.approval-root button {
   border: 1px solid var(--vscode-button-border, transparent);
   border-radius: 4px;
   color: var(--vscode-button-foreground);
@@ -54,48 +57,48 @@ button {
   height: 28px;
 }
 
-button:hover:not(:disabled) {
+.approval-root button:hover:not(:disabled) {
   background: var(--vscode-button-hoverBackground);
 }
 
-button:disabled {
+.approval-root button:disabled {
   opacity: 0.45;
 }
 
-.approval-list {
+.approval-root .approval-list {
   display: grid;
   gap: 12px;
 }
 
-.approval-card {
+.approval-root .approval-card {
   border: 1px solid var(--vscode-panel-border);
   border-radius: 6px;
   padding: 14px;
   background: var(--vscode-sideBar-background);
 }
 
-.approval-card.blocked {
+.approval-root .approval-card.blocked {
   border-color: var(--vscode-inputValidation-warningBorder);
 }
 
-.approval-head {
+.approval-root .approval-head {
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 12px;
 }
 
-.approval-provenance {
+.approval-root .approval-provenance {
   flex-wrap: wrap;
   gap: 6px 10px;
   margin-top: 4px;
   font-size: 12px;
 }
 
-.approval-actions {
+.approval-root .approval-actions {
   gap: 6px;
 }
 
-.approval-warning {
+.approval-root .approval-warning {
   display: flex;
   gap: 8px;
   align-items: flex-start;
@@ -107,19 +110,19 @@ button:disabled {
   background: var(--vscode-inputValidation-warningBackground);
 }
 
-.approval-payload {
+.approval-root .approval-payload {
   display: grid;
   gap: 10px;
 }
 
-.approval-label {
+.approval-root .approval-label {
   margin-bottom: 4px;
   color: var(--vscode-descriptionForeground);
   font-size: 12px;
   font-weight: 650;
 }
 
-pre {
+.approval-root pre {
   box-sizing: border-box;
   margin: 0;
   padding: 9px 10px;
@@ -133,7 +136,7 @@ pre {
   font-size: 12px;
 }
 
-.approval-empty {
+.approval-root .approval-empty {
   padding: 28px 0;
   color: var(--vscode-descriptionForeground);
 }

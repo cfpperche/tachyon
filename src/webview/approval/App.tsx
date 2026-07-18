@@ -50,9 +50,15 @@ function ApprovalCard({ item, dispatch }: { item: ApprovalViewItem; dispatch: Ap
 }
 
 export function App({ vm, error, dispatch }: { vm?: ApprovalViewModel; error?: string; dispatch: ApprovalDispatch }) {
-  if (!vm) return <div class="approval-empty"><Icon name="loading" /> Loading approvals...</div>;
+  if (!vm) {
+    return (
+      <div class="approval-root">
+        <div class="approval-empty"><Icon name="loading" /> Loading approvals...</div>
+      </div>
+    );
+  }
   return (
-    <main>
+    <div class="approval-root">
       <header class="approval-title">
         <div>
           <h1>Human approvals</h1>
@@ -68,6 +74,6 @@ export function App({ vm, error, dispatch }: { vm?: ApprovalViewModel; error?: s
           {vm.approvals.map((item) => <ApprovalCard key={item.id} item={item} dispatch={dispatch} />)}
         </div>
       )}
-    </main>
+    </div>
   );
 }
