@@ -120,6 +120,8 @@ export interface CockpitDeps {
   fleetActivity: (name: string, wsHash?: string) => void;
   revealPath: (fsPath: string) => void;
   openConfigFile: (wsHash?: string) => Promise<void>;
+  clearEngineLog: (wsHash: string) => Promise<void>;
+  openEngineJournal: (wsHash: string) => void;
 }
 
 function strings(): CockpitStrings {
@@ -825,6 +827,26 @@ export async function openCockpit(
             await deps.openConfigFile(typeof c.wsHash === "string" ? c.wsHash : undefined);
           } catch (err) {
             live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err)));
+          }
+          return;
+        case "engineLogClear":
+          if (typeof c.wsHash === "string" && c.wsHash) {
+            try {
+              await deps.clearEngineLog(c.wsHash);
+              await sendModel();
+              live.webview.postMessage(toastMessage("Log cleared"));
+            } catch (err) {
+              live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err)));
+            }
+          }
+          return;
+        case "engineLogJournal":
+          if (typeof c.wsHash === "string" && c.wsHash) {
+            try {
+              deps.openEngineJournal(c.wsHash);
+            } catch (err) {
+              live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err)));
+            }
           }
           return;
       }

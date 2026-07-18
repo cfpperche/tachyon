@@ -105,6 +105,16 @@ export class FakeWorkspaceClient implements WorkspaceClient {
     return [];
   }
 
+  async engineLogHealth(): Promise<{
+    logTail: string[];
+    logBySource: { daemon: string[]; events?: string[]; bridge?: string[] };
+    logHasError: boolean;
+  }> {
+    return { logTail: [], logBySource: { daemon: [] }, logHasError: false };
+  }
+
+  async clearEngineLog(): Promise<void> {}
+
   get isClosed(): boolean {
     return this.closed;
   }

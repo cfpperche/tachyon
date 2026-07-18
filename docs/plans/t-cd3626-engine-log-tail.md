@@ -5,23 +5,17 @@ Show **recent engine daemon log inside Control → Engine**, so boot/GC/errors a
 
 ## Phases
 
-| Phase | Deliverable | Depends |
-|-------|-------------|---------|
-| **V1** | In-process ring (~150 lines) hooks `console.*`; `health` returns `logTail`; Control Engine card `<pre>` + empty state | — |
-| **V1.1** | Level tint, pause-on-scroll, Copy, Clear (memory only), optional Open journalctl terminal | V1 |
-| **V1.5** | Client substring filter, since chips, closed-set highlights, nav error badge | V1.1 |
-| **V2** | Toggle Daemon \| Bridge \| Control events (`readEvents`) in same card | V1 |
-| **V2.5** | Rotating file under engine data dir (1–2 MB) so tail survives daemon restart | V1 |
+| Phase | Deliverable | Status |
+|-------|-------------|--------|
+| **V1** | In-process ring; `health.logTail`; Engine card | shipped 0.56.51 |
+| **V1 layout** | Full-width log below meta grid | shipped 0.56.52 |
+| **V1.1** | Level tint, pause-on-scroll, Copy, Clear, Journal terminal | this ship |
+| **V1.5** | Filter, since chips, highlight set, nav error badge | this ship |
+| **V2** | Source tabs Daemon \| Events \| Bridge | this ship (bridge empty until ring exists) |
+| **V2.5** | File `engine.log` next to control.sock (~1.5MB rotate), hydrate on boot | this ship |
 
 ## Non-goals
 ELK, agent pane logs, multi-workspace fleet log (V3 later), websocket stream.
 
-## V1 design
-- `EngineLogRing` singleton installed at daemon boot (before Workspace.start).
-- Do **not** put `logTail` on identity schema (keeps attach validators stable).
-- Extend **health** response: `{ logTail?: string[] }`.
-- Cockpit `collect` calls `health()` when available and passes `logTail` into control model.
-- UI: monospaced block under Engine KVs; max-height ~12rem; poll via existing sendModel refresh.
-
-## V1 accept
-Reload → Control → Engine shows recent lines including e.g. `[tachyon t-8310ca] orphan footprint GC…` when GC runs. Empty: “No recent engine log.”
+## Accept
+Reload → Control → Engine: toolbar works; Clear empties ring+file; Journal opens `journalctl -f`; Events tab shows control-plane lines when present; restart keeps recent file lines.

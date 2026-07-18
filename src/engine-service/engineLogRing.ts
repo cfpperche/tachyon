@@ -1,24 +1,41 @@
 /**
- * t-cd3626 V1 — bounded in-process engine log ring for Control → Engine.
- * Captures console.* (and optional stderr notes). Not a substitute for journald.
+ * t-cd3626 V1–V2.5 — bounded engine log ring for Control → Engine.
+ * Captures console.*; optional file tail survives daemon restart (V2.5).
  */
+import fs from "node:fs";
+import path from "node:path";
 import util from "node:util";
 
-const DEFAULT_CAP = 150;
+const DEFAULT_CAP = 200;
+const DEFAULT_MAX_FILE_BYTES = 1_500_000;
+
+export type LogLevel = "I" | "W" | "E" | "D";
 
 export class EngineLogRing {
   private readonly lines: string[] = [];
-  constructor(private readonly cap = DEFAULT_CAP) {}
+  private readonly filePath?: string;
+  private readonly maxFileBytes: number;
 
-  push(line: string, level: "I" | "W" | "E" | "D" = "I"): void {
+  constructor(
+    private readonly cap = DEFAULT_CAP,
+    opts?: { filePath?: string; maxFileBytes?: number },
+  ) {
+    this.filePath = opts?.filePath;
+    this.maxFileBytes = opts?.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES;
+    if (this.filePath) this.hydrateFromFile();
+  }
+
+  push(line: string, level: LogLevel = "I"): void {
     const text = String(line).replace(/\r?\n$/, "");
     if (!text) return;
     const stamped = `${new Date().toISOString()} ${level} ${text}`;
-    this.lines.push(stamped.length > 2000 ? `${stamped.slice(0, 2000)}…` : stamped);
+    const out = stamped.length > 2000 ? `${stamped.slice(0, 2000)}…` : stamped;
+    this.lines.push(out);
     if (this.lines.length > this.cap) this.lines.splice(0, this.lines.length - this.cap);
+    this.appendFile(out);
   }
 
-  pushArgs(level: "I" | "W" | "E" | "D", args: unknown[]): void {
+  pushArgs(level: LogLevel, args: unknown[]): void {
     try {
       const msg = args
         .map((a) => (typeof a === "string" ? a : util.inspect(a, { depth: 2, breakLength: 120 })))
@@ -33,17 +50,75 @@ export class EngineLogRing {
     return this.lines.slice();
   }
 
+  /** True if any in-memory line is level E. */
+  hasError(): boolean {
+    return this.lines.some((l) => {
+      const m = l.match(/^\S+\s+([IWED])\s/);
+      return m?.[1] === "E";
+    });
+  }
+
   clear(): void {
     this.lines.length = 0;
+    if (!this.filePath) return;
+    try {
+      fs.mkdirSync(path.dirname(this.filePath), { recursive: true, mode: 0o700 });
+      fs.writeFileSync(this.filePath, "", { mode: 0o600 });
+    } catch {
+      /* best-effort */
+    }
+  }
+
+  private hydrateFromFile(): void {
+    if (!this.filePath) return;
+    try {
+      if (!fs.existsSync(this.filePath)) return;
+      const raw = fs.readFileSync(this.filePath, "utf8");
+      const parts = raw.split(/\r?\n/).filter((l) => l.length > 0);
+      const take = parts.slice(-this.cap);
+      this.lines.push(...take);
+    } catch {
+      /* best-effort */
+    }
+  }
+
+  private appendFile(line: string): void {
+    if (!this.filePath) return;
+    try {
+      fs.mkdirSync(path.dirname(this.filePath), { recursive: true, mode: 0o700 });
+      fs.appendFileSync(this.filePath, `${line}\n`, { mode: 0o600 });
+      this.rotateIfNeeded();
+    } catch {
+      /* best-effort */
+    }
+  }
+
+  private rotateIfNeeded(): void {
+    if (!this.filePath) return;
+    try {
+      const st = fs.statSync(this.filePath);
+      if (st.size <= this.maxFileBytes) return;
+      const raw = fs.readFileSync(this.filePath, "utf8");
+      const keep = raw.slice(Math.floor(raw.length / 2));
+      const nl = keep.indexOf("\n");
+      fs.writeFileSync(this.filePath, nl >= 0 ? keep.slice(nl + 1) : keep, { mode: 0o600 });
+    } catch {
+      /* best-effort */
+    }
   }
 }
 
 let installed: EngineLogRing | undefined;
 
-/** Idempotent process-wide install. Returns the live ring. */
-export function installEngineLogRing(cap = DEFAULT_CAP): EngineLogRing {
+export function installEngineLogRing(
+  capOrOpts: number | { cap?: number; filePath?: string; maxFileBytes?: number } = DEFAULT_CAP,
+): EngineLogRing {
   if (installed) return installed;
-  const ring = new EngineLogRing(cap);
+  const opts = typeof capOrOpts === "number" ? { cap: capOrOpts } : capOrOpts;
+  const ring = new EngineLogRing(opts.cap ?? DEFAULT_CAP, {
+    filePath: opts.filePath,
+    maxFileBytes: opts.maxFileBytes,
+  });
   installed = ring;
   const orig = {
     log: console.log.bind(console),
@@ -72,7 +147,10 @@ export function installEngineLogRing(cap = DEFAULT_CAP): EngineLogRing {
     ring.pushArgs("D", args);
     orig.debug(...args);
   };
-  ring.push("engine log ring installed", "I");
+  ring.push(
+    opts.filePath ? `engine log ring installed (file ${opts.filePath})` : "engine log ring installed",
+    "I",
+  );
   return ring;
 }
 
@@ -80,7 +158,27 @@ export function getEngineLogRing(): EngineLogRing | undefined {
   return installed;
 }
 
-/** Test-only: drop singleton so a suite can reinstall. */
 export function _resetEngineLogRingForTests(): void {
   installed = undefined;
+}
+
+/** Format control-plane events as log-like lines (V2 source "events"). */
+export function formatEventsAsLogLines(
+  events: Array<{ at?: string; kind?: string; seq?: number; payload?: Record<string, unknown> }>,
+  cap = 80,
+): string[] {
+  const slice = events.slice(-cap);
+  return slice.map((e) => {
+    const at = typeof e.at === "string" ? e.at : new Date().toISOString();
+    const kind = typeof e.kind === "string" ? e.kind : "event";
+    const seq = typeof e.seq === "number" ? e.seq : "?";
+    let detail = "";
+    try {
+      detail = e.payload ? util.inspect(e.payload, { depth: 1, breakLength: 100, compact: true }) : "";
+    } catch {
+      detail = "";
+    }
+    if (detail.length > 180) detail = `${detail.slice(0, 180)}…`;
+    return `${at} I [event#${seq}] ${kind}${detail ? ` ${detail}` : ""}`;
+  });
 }

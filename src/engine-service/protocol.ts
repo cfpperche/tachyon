@@ -583,10 +583,20 @@ export type EngineControlRequestV1 =
   | { schemaVersion: 1; op: "invoke"; workspaceHash: string; shellId: string; sessionToken: string; operationId: string; command: WorkspaceCommandV1 }
   | { schemaVersion: 1; op: "ui.claim"; workspaceHash: string; shellId: string; sessionToken: string }
   | { schemaVersion: 1; op: "ui.complete"; workspaceHash: string; shellId: string; sessionToken: string; completion: EngineUiCompletionV1 }
-  | { schemaVersion: 1; op: "detach"; workspaceHash: string; shellId: string; sessionToken: string };
+  | { schemaVersion: 1; op: "detach"; workspaceHash: string; shellId: string; sessionToken: string }
+  | { schemaVersion: 1; op: "log.clear"; workspaceHash: string };
 
 export type EngineControlResponseV1 =
-  | { ok: true; op: "health"; engine: EngineServiceIdentityV1; shellCount: number; logTail?: string[] }
+  | {
+      ok: true;
+      op: "health";
+      engine: EngineServiceIdentityV1;
+      shellCount: number;
+      logTail?: string[];
+      /** V2 multi-source tails (daemon always; events when journal available; bridge optional). */
+      logBySource?: { daemon: string[]; events?: string[]; bridge?: string[] };
+      logHasError?: boolean;
+    }
   | { ok: true; op: "attach" | "touch"; session: EngineShellSessionV1 }
   | { ok: true; op: "snapshot"; snapshot: WorkspaceSnapshotEnvelopeV1 }
   | { ok: true; op: "events"; batch: WorkspaceEventBatchV1 }
@@ -595,6 +605,7 @@ export type EngineControlResponseV1 =
   | { ok: true; op: "ui.claim"; request: EngineUiRequestV1 | null }
   | { ok: true; op: "ui.complete"; operationId: string; completed: true }
   | { ok: true; op: "detach"; detached: true }
+  | { ok: true; op: "log.clear"; cleared: true }
   | { ok: false; code: string; message: string };
 
 const SHA256_RE = /^[a-f0-9]{64}$/;
@@ -1450,6 +1461,18 @@ export function isEngineControlResponseV1(value: unknown): value is EngineContro
         if (typeof line !== "string" || line.length > 2_500) return false;
       }
     }
+    if (value.logHasError !== undefined && typeof value.logHasError !== "boolean") return false;
+    if (value.logBySource !== undefined) {
+      if (!isRecord(value.logBySource) || !Array.isArray(value.logBySource.daemon)) return false;
+      for (const key of ["daemon", "events", "bridge"] as const) {
+        const arr = value.logBySource[key];
+        if (arr === undefined) continue;
+        if (!Array.isArray(arr) || arr.length > 200) return false;
+        for (const line of arr) {
+          if (typeof line !== "string" || line.length > 2_500) return false;
+        }
+      }
+    }
     return true;
   }
   if (value.op === "attach" || value.op === "touch") return isEngineShellSessionV1(value.session);
@@ -1468,6 +1491,9 @@ export function isEngineControlResponseV1(value: unknown): value is EngineContro
     return hasOnlyKeys(value, ["ok", "op", "operationId", "completed"])
       && isEngineOperationId(value.operationId)
       && value.completed === true;
+  }
+  if (value.op === "log.clear") {
+    return hasOnlyKeys(value, ["ok", "op", "cleared"]) && value.cleared === true;
   }
   return value.op === "detach" && value.detached === true;
 }

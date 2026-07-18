@@ -29,7 +29,7 @@ import {
   type WorkspaceQueryV1,
   type WorkspaceSnapshotEnvelopeV1,
 } from "./protocol.js";
-import { getEngineLogRing } from "./engineLogRing.js";
+import { getEngineLogRing, formatEventsAsLogLines } from "./engineLogRing.js";
 import { EngineUiRequestBroker, EngineUiRequestError } from "./uiRequestBroker.js";
 import type { JsonValue } from "../runtime-api/extensionOperations.js";
 import { controlNonceMatches, controlNoncePath, createControlNonce } from "./controlPeerAuth.js";
@@ -149,14 +149,38 @@ export async function startEngineControlServer(options: EngineControlServerOptio
     if (parsed.schemaVersion !== 1) return fail("PROTOCOL_MISMATCH", "unsupported engine control schema");
     if (parsed.workspaceHash !== options.identity.workspaceHash) return fail("WRONG_WORKSPACE", "workspace identity mismatch");
     if (parsed.op === "health") {
-      const logTail = getEngineLogRing()?.tail();
+      const ring = getEngineLogRing();
+      const daemon = ring?.tail() ?? [];
+      let events: string[] | undefined;
+      if (options.readEvents) {
+        try {
+          const batch = await options.readEvents(0, 80);
+          if (batch && typeof batch === "object" && Array.isArray((batch as { events?: unknown }).events)) {
+            events = formatEventsAsLogLines((batch as { events: Array<{ at?: string; kind?: string; seq?: number; payload?: Record<string, unknown> }> }).events, 80);
+          }
+        } catch {
+          events = undefined;
+        }
+      }
+      const bridge: string[] = []; // no bridge ring yet — empty source
+      const logBySource = {
+        daemon,
+        ...(events ? { events } : {}),
+        bridge,
+      };
       return {
         ok: true,
         op: "health",
         engine: options.identity,
         shellCount: sessions.size,
-        ...(logTail && logTail.length > 0 ? { logTail } : {}),
+        ...(daemon.length > 0 ? { logTail: daemon } : {}),
+        logBySource,
+        logHasError: ring?.hasError() ?? false,
       };
+    }
+    if (parsed.op === "log.clear") {
+      getEngineLogRing()?.clear();
+      return { ok: true, op: "log.clear", cleared: true };
     }
     if (parsed.op === "attach") {
       if (!isEngineShellHelloV1(parsed.hello)) return fail("BAD_HELLO", "invalid engine shell hello");
@@ -191,6 +215,10 @@ export async function startEngineControlServer(options: EngineControlServerOptio
       return { ok: true, op: "attach", session: publicSession(parsed.hello.shell.id, session, snapshot.seq, options.identity) };
     }
 
+    if (!("shellId" in parsed) || !("sessionToken" in parsed)
+      || typeof parsed.shellId !== "string" || typeof parsed.sessionToken !== "string") {
+      return fail("BAD_REQUEST", "unknown or incomplete engine control request");
+    }
     const session = authenticateSession(sessions, parsed.shellId, parsed.sessionToken);
     if (!session) return fail("SHELL_SESSION_INVALID", "shell session is missing, expired or invalid");
     if (parsed.op === "query") {
@@ -369,6 +397,7 @@ function parseRequest(raw: string): EngineControlRequestV1 | EngineControlRespon
     return fail("BAD_REQUEST", "engine control request is invalid");
   }
   if (request.op === "health") return request as EngineControlRequestV1;
+  if (request.op === "log.clear") return request as EngineControlRequestV1;
   if (request.op === "attach" && "hello" in request) return request as EngineControlRequestV1;
   if ((request.op === "touch" || request.op === "snapshot" || request.op === "detach" || request.op === "events" || request.op === "query" || request.op === "invoke" || request.op === "ui.claim" || request.op === "ui.complete")
     && "shellId" in request && typeof request.shellId === "string"

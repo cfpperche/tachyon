@@ -85,7 +85,13 @@ export class EngineControlClient {
     return this.currentSession !== undefined;
   }
 
-  async health(): Promise<{ engine: EngineServiceIdentityV1; shellCount: number; logTail?: string[] }> {
+  async health(): Promise<{
+    engine: EngineServiceIdentityV1;
+    shellCount: number;
+    logTail?: string[];
+    logBySource?: { daemon: string[]; events?: string[]; bridge?: string[] };
+    logHasError?: boolean;
+  }> {
     const response = await this.request({ schemaVersion: 1, op: "health", workspaceHash: this.options.hello.workspaceHash });
     const success = this.unwrap(response);
     if (success.op !== "health") throw invalidResponse("health request returned the wrong operation");
@@ -94,7 +100,19 @@ export class EngineControlClient {
       engine: success.engine,
       shellCount: success.shellCount,
       ...(success.logTail ? { logTail: success.logTail } : {}),
+      ...(success.logBySource ? { logBySource: success.logBySource } : {}),
+      ...(success.logHasError !== undefined ? { logHasError: success.logHasError } : {}),
     };
+  }
+
+  async clearEngineLog(): Promise<void> {
+    const response = await this.request({
+      schemaVersion: 1,
+      op: "log.clear",
+      workspaceHash: this.options.hello.workspaceHash,
+    });
+    const success = this.unwrap(response);
+    if (success.op !== "log.clear") throw invalidResponse("log.clear returned the wrong operation");
   }
 
   async attach(): Promise<EngineShellSessionV1> {
