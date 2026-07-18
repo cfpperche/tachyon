@@ -14,7 +14,7 @@ Upstream source was cloned read-only-first from `https://github.com/earendil-wor
 
 Local upstream branch `feat/shared-auth-file` now contains commit `28e128018283a944333e31ba1000e51322b57a81` (`feat(coding-agent): support shared auth file`). It adds the branded auth-file environment contract, routes all CLI credential surfaces through it, adds explicit SDK/service `authPath`, suppresses cross-home legacy migration, documents the security boundary, exposes the variable in `--help`, and proves rotating refresh serialization with two synchronized Node child processes sharing one literal path.
 
-Review artifact: `/tmp/pi-shared-auth-file.patch` (SHA-256 `9f865793380fad182581030f195507c32af7aa32719b12d943dceb2aac3f13b4`), recoverable from the local upstream commit. The upstream branch has not been pushed.
+Review artifact: `/tmp/pi-shared-auth-file.patch` (SHA-256 `9f865793380fad182581030f195507c32af7aa32719b12d943dceb2aac3f13b4`), recoverable from the local upstream commit.
 
 Independent review initially found two coverage/public-surface issues; both were fixed. Final verdict: **ACCEPT**, report `/tmp/piauthreview.md`.
 
@@ -23,6 +23,12 @@ Upstream verification:
 - `npm run check`: passed (Biome, pinned deps, import checks, shrinkwrap/install-lock checks, `tsgo --noEmit`, browser smoke).
 - Focused Vitest: 19/19 passed across path/migration/help, same-process storage, and two-process refresh tests.
 - Full coding-agent suite was attempted but the source checkout lacks generated `packages/ai/src/providers/data/*.json` artifacts, causing broad import failures plus environment-specific clipboard assertions; this is a checkout-generation limitation, not a patch regression. The focused affected tests and full static check are green.
+
+## 2026-07-18 — upstream publication gate
+
+Direct push to `earendil-works/pi` failed HTTP 403 for the active GitHub identity `cfpperche`. After separate authenticated approval, fork `cfpperche/pi` was created and branch `feat/shared-auth-file` was pushed at `28e128018283a944333e31ba1000e51322b57a81`.
+
+PR `https://github.com/earendil-works/pi/pull/6813` was then auto-closed by the repository's Contribution Gate. `CONTRIBUTING.md` requires new contributors to open a concise templated issue in their own voice—explicitly not LLM-generated—and wait for a maintainer reply of `lgtm` before submitting a PR. A second automated attempt risks account blocking, so execution is deliberately stopped. The human must perform the issue/approval step; only after `lgtm` may this branch be resubmitted or the PR reopened.
 
 ## Verification baseline
 

@@ -6,7 +6,9 @@
 - [x] Thread explicit `authPath` through CLI runtime, SDK, service, package-command, migration, and default storage paths.
 - [x] Add compatibility, precedence, multi-home shared-path, and one-refresh concurrency tests.
 - [x] Run upstream focused tests, lint/typecheck, and export a reviewable commit/patch.
-- [ ] Obtain explicit human authorization before pushing the upstream branch.
+- [x] Obtain explicit human authorization before pushing the upstream branch.
+- [ ] Human opens the required upstream issue in their own voice and obtains maintainer `lgtm` contribution approval.
+- [ ] Reopen/resubmit the upstream PR only after `lgtm`.
 - [ ] Obtain/identify a published Pi version containing the hook.
 
 ## Tachyon
