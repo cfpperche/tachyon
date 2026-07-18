@@ -2201,6 +2201,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
       try {
         await presentTerminal(ws, agent, projected.session);
+        // t-a39c7d — human eyes on pane: done(unseen) → idle.
+        await ws.markAgentPaneSeen(agent);
       } catch (error) {
         notify(error instanceof Error ? error.message : String(error), "error");
       }

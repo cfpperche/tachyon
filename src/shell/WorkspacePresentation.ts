@@ -109,7 +109,7 @@ export function workspacePluginPresentationTarget(client: WorkspaceClient): Work
 export function pluginFleetPresentation(
   workspace: WorkspacePresentationTarget,
   bridge: { port?: number | string; connected: boolean },
-  agents: readonly Pick<WorkspaceAgentProjectionV1, "name" | "kind" | "running" | "declared" | "attention">[],
+  agents: readonly Pick<WorkspaceAgentProjectionV1, "name" | "kind" | "running" | "declared" | "attention" | "unseen">[],
 ): FleetVM {
   return {
     folder: { hash: workspace.wsHash, name: workspace.folderName },
@@ -118,7 +118,7 @@ export function pluginFleetPresentation(
       .filter((agent) => agent.kind === "agent")
       .map((agent) => ({
         name: agent.name,
-        status: pluginAgentStatus(agent.running, agent.attention),
+        status: pluginAgentStatus(agent.running, agent.attention, agent.unseen),
         ...(agent.attention ? { attention: agent.attention } : {}),
         ai: true,
         adhoc: !agent.declared,
@@ -135,9 +135,12 @@ export function pluginFleetPresentation(
 function pluginAgentStatus(
   running: boolean,
   attention: WorkspaceAgentProjectionV1["attention"],
+  unseen?: boolean,
 ): AgentStatus {
   if (!running) return "stopped";
   if (attention === "needs-input") return "needs";
   if (attention === "throttled") return "throttled";
+  if (attention === "idle" && unseen) return "done";
+  if (attention === "idle") return "idle";
   return "running";
 }

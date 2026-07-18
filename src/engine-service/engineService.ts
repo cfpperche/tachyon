@@ -618,7 +618,8 @@ async function buildProjections(
       direct: workspace.bridge.listenerPort === identity.bridge.port,
     },
     agents: boundedList(agents, AGENT_SNAPSHOT_LIMIT, (agent) => {
-      const attention = workspace.attentionOf(agent.name)?.state;
+      const live = workspace.attentionOf(agent.name);
+      const attention = live?.state;
       return {
         name: boundedText(agent.name, 128),
         session: boundedText(agent.session, 256),
@@ -630,6 +631,7 @@ async function buildProjections(
         dead: agent.dead,
         crashed: agent.crashed,
         ...(attention ? { attention } : {}),
+        ...(live?.unseen ? { unseen: true } : {}),
         ...(agent.exitCode !== undefined ? { exitCode: agent.exitCode } : {}),
         ...(agent.parent ? { parent: boundedText(agent.parent, 128) } : {}),
         ...(agent.delegator ? { delegator: boundedText(agent.delegator, 128) } : {}),

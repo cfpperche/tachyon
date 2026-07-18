@@ -186,6 +186,7 @@ export async function buildSidebarFleet(
       return toAgentVM({ ...agent, cmd: definition?.cmd }, {
         attention: live?.state,
         awaitingHuman: live?.awaitingHuman ? { reason: live.awaitingHumanReason ?? "" } : undefined,
+        unseen: live?.unseen === true,
         model: options.observedModelFor?.(agent.name),
         worktree: worktrees.get(agent.name),
         liveBranch: liveGit?.liveBranch,

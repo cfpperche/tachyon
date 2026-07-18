@@ -16,6 +16,8 @@ export interface DomainActionSource {
   markNoticeRead?(id: string): boolean;
   markAllNoticesRead?(): boolean;
   invokeNoticeInboxAction?(noticeId: string, actionId: string): Promise<boolean>;
+  /** t-a39c7d — human focused agent pane; clear done(unseen). */
+  markAgentPaneSeen?(agent: string): void;
 }
 
 export interface DomainActionDeps {

@@ -32,6 +32,7 @@ const att = (state: AgentAttention["state"]): AgentAttention => ({
   episodeKey: "e",
   stalled: false,
   awaitingHuman: false,
+  unseen: false,
   composerOccupied: false,
   stale: false,
 });

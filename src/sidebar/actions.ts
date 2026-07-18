@@ -40,7 +40,8 @@ export const ACTION_META: Record<ActionId, { icon: string; label: string }> = {
   remove: { icon: "trash", label: "Remove" },
 };
 
-const isRunning = (a: AgentVM) => a.status === "running" || a.status === "needs" || a.status === "throttled" || a.status === "idle" || a.status === "stop-failed";
+const isRunning = (a: AgentVM) =>
+  a.status === "running" || a.status === "needs" || a.status === "throttled" || a.status === "done" || a.status === "idle" || a.status === "stop-failed";
 /** Activity is a durable, per-agent history. It does not require a live tmux pane; a stopped AI row may still
  *  have useful log/context to inspect before the user decides between Resume and a fresh start. */
 const canViewActivity = (a: AgentVM) => !!a.ai;

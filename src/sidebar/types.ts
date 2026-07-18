@@ -7,7 +7,7 @@
 import type { TiptapJSON } from "../richDoc/types.js";
 import type { ExternalToolsSummaryVM } from "../externalTools/types.js";
 
-export type AgentStatus = "running" | "needs" | "throttled" | "idle" | "stopping" | "stop-failed" | "stopped" | "crashed";
+export type AgentStatus = "running" | "needs" | "throttled" | "done" | "idle" | "stopping" | "stop-failed" | "stopped" | "crashed";
 export type Verify = "pass" | "fail" | "stale";
 /** spec 378 — where `AgentVM.model` came from: a live transcript observation, an explicit `--model` flag,
  *  or the runtime's profile default (no explicit flag, no observation yet). */
