@@ -160,6 +160,36 @@ describe.skipIf(!tmuxAvailable())("TmuxService against real tmux", () => {
     await tmux.killSession("tachyon-itest-snap-live");
     await tmux.killSession("tachyon-itest-snap-dead");
   });
+
+  it("t-6a6a00: pipe-pane streams pane output to a durable file, survives idempotent re-attach, and stops on unpipePane", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-pipepane-"));
+    const file = path.join(dir, "transcript.log");
+    try {
+      await tmux.newSession({ name: "tachyon-itest-pipepane", cmd: "sh" });
+      await tmux.pipePane({ target: "tachyon-itest-pipepane", file });
+      await tmux.sendKeys("tachyon-itest-pipepane", "echo PIPE-PANE-MARKER-1", true);
+      await sleep(400);
+      expect(fs.readFileSync(file, "utf8")).toContain("PIPE-PANE-MARKER-1");
+
+      // re-attach must stay idempotent (bare pipe-pane replaces without a gap, not -o's
+      // toggle-off) — a second command still lands in the SAME file with no data lost.
+      await tmux.pipePane({ target: "tachyon-itest-pipepane", file });
+      await tmux.sendKeys("tachyon-itest-pipepane", "echo PIPE-PANE-MARKER-2", true);
+      await sleep(400);
+      expect(fs.readFileSync(file, "utf8")).toContain("PIPE-PANE-MARKER-2");
+
+      await tmux.unpipePane("tachyon-itest-pipepane");
+      const sizeAfterDetach = fs.statSync(file).size;
+      await tmux.sendKeys("tachyon-itest-pipepane", "echo PIPE-PANE-MARKER-3-SHOULD-NOT-APPEAR", true);
+      await sleep(400);
+      expect(fs.statSync(file).size).toBe(sizeAfterDetach); // detached — no further growth
+      expect(fs.readFileSync(file, "utf8")).not.toContain("MARKER-3");
+
+      await tmux.killSession("tachyon-itest-pipepane");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe.skipIf(!tmuxAvailable())("tmux server isolation (-f /dev/null)", () => {

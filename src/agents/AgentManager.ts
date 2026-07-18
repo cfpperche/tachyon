@@ -24,6 +24,7 @@ import type { DelegationGate, SpawnContract } from "../bridge/spawnContract.js";
 import type { ResolvedCaptureSession } from "../resume/resolvers.js";
 import { assertVerifiedTranscriptIsolation, gracefulStopForCommand, isolationMechanismForCommand, opencodeIsolationFootgunWarning, runtimeProfile } from "../runtime/runtimeProfile.js";
 import { forgetAgent } from "./forgetAgent.js";
+import { ensurePaneTranscriptFile, rotatePaneTranscriptIfNeeded } from "./paneTranscript.js";
 import { wrapWithPrimer, renderPrimer } from "../bridge/primer.js";
 import { delegatedOpencodePermission, setOpencodePermission } from "../registration/adapters.js";
 import { assertSafeBriefTransport, deliverableBody, previewDeliverableBody } from "./briefFile.js";
@@ -2168,6 +2169,7 @@ export class AgentManager {
     if (parent) this.lineage.set(name, parent);
     if (delegator) this.delegators.set(name, delegator);
     this.opts.onSpawned?.(name, opts?.reveal ?? true, { worktree, adhoc });
+    await this.attachPaneTranscript(session);
     return canonicalReceipt;
   }
 
@@ -2487,6 +2489,7 @@ export class AgentManager {
     const session = this.session(name);
     if (!(await this.opts.tmux.hasSession(session))) throw new AgentNotRunningError(name);
     await this.refreshOwnership(name); // A3: capture an in-TUI /resume before the session ends
+    await this.detachPaneTranscript(session);
     await this.opts.tmux.killSession(session);
     const wasAdhoc = this.adhoc.has(name);
     // spec 225 — a forked sibling is PERSISTENT: keep its in-memory def AND ledger row across a Stop
@@ -2562,9 +2565,42 @@ export class AgentManager {
     this.stopFailed.delete(name);
     if (!state?.dead || state.exitCode !== 0) return false;
     await this.capturePostmortemOutput(name, session);
+    await this.detachPaneTranscript(session);
     await this.opts.tmux.killSession(session);
     this.cleanExited.add(name);
     return true;
+  }
+
+  /**
+   * t-6a6a00 — attach the durable pane-transcript pipe after spawn/restart/resume/fork.
+   * TmuxService.pipePane is idempotent (safe to call on an already-piping pane — see its doc
+   * comment for why it deliberately avoids `-o`), so this can be called unconditionally on every
+   * lifecycle transition without needing to know whether the pane is fresh (kill+new fallback, a
+   * fork) or preserved (a happy-path respawn-pane restart/resume).
+   * Best-effort and silent: a durability side-channel must never fail or warn-spam a spawn/restart/
+   * fork whose actual runtime succeeded (e.g. an unwritable workspace root, or pre-3.2 tmux missing
+   * pipe-pane semantics some distro forks ship).
+   */
+  private async attachPaneTranscript(session: string): Promise<void> {
+    const name = agentFromSession(this.opts.wsHash, session);
+    if (!name) return;
+    try {
+      const file = ensurePaneTranscriptFile(this.opts.workspaceRoot, name);
+      rotatePaneTranscriptIfNeeded(file);
+      await this.opts.tmux.pipePane({ target: session, file });
+    } catch {
+      /* best-effort durability feature — never blocks the caller's actual lifecycle transition */
+    }
+  }
+
+  /** t-6a6a00 — detach the durable pane-transcript pipe before an explicit kill. Best-effort: the
+   *  session may already be gone, and a failure here must never block the kill itself. */
+  private async detachPaneTranscript(session: string): Promise<void> {
+    try {
+      await this.opts.tmux.unpipePane(session);
+    } catch {
+      /* best-effort */
+    }
   }
 
   private async capturePostmortemOutput(name: string, session: string): Promise<void> {
@@ -2747,6 +2783,7 @@ export class AgentManager {
       try {
         opts.onReplacementAttempt?.();
         await this.opts.tmux.respawnPane({ target: session, cmd, cwd, env });
+        await this.attachPaneTranscript(session);
         return "respawned";
       } catch (respawnError) {
         opts.onBeforeKillNew?.();
@@ -2772,11 +2809,13 @@ export class AgentManager {
         if (!absent) throw new Error(`could not replace session '${session}': old session remains live after teardown`);
         opts.onReplacementAttempt?.();
         await this.opts.tmux.newSession({ name: session, cmd, cwd, env });
+        await this.attachPaneTranscript(session);
         return "created";
       }
     }
     opts.onReplacementAttempt?.();
     await this.opts.tmux.newSession({ name: session, cmd, cwd, env });
+    await this.attachPaneTranscript(session);
     return "created";
   }
 
@@ -2881,6 +2920,7 @@ export class AgentManager {
     } catch {
       /* best-effort capture before teardown */
     }
+    await this.detachPaneTranscript(session);
     await this.opts.tmux.killSession(session);
   }
 
@@ -3732,6 +3772,7 @@ export class AgentManager {
       worktree: !!worktree,
     });
     this.opts.onSpawned?.(forkName, true);
+    await this.attachPaneTranscript(this.session(forkName));
     return forkName;
   }
 
@@ -3739,6 +3780,7 @@ export class AgentManager {
   async killAll(): Promise<string[]> {
     const all = [...(await this.agentStates()).keys()];
     for (const name of all) {
+      await this.detachPaneTranscript(this.session(name));
       await this.opts.tmux.killSession(this.session(name));
       this.lineage.delete(name);
       this.adhoc.delete(name);

@@ -17,6 +17,7 @@ import { CallerIdentityRegistry } from "../../src/bridge/callerIdentity.js";
 import { boundDeliveryPreReservationRefusals, exerciseBoundDeliveryPreReservationRefusal } from "../helpers/boundDeliveryExecutionHarness.js";
 import { briefFilePath } from "../../src/agents/briefFile.js";
 import { SOUL_LAUNCH_RESERVATION_BOOT_ID, soulLaunchReservationsDir } from "../../src/agents/soul.js";
+import { paneTranscriptPath, paneTranscriptExists, ensurePaneTranscriptFile } from "../../src/agents/paneTranscript.js";
 
 const WS = "/repo";
 const HASH = workspaceHash(WS);
@@ -142,6 +143,9 @@ function fakeTmux(opts: { failRespawn?: boolean; failShowEnvironment?: boolean }
   const sentKeys: Array<{ session: string; key: string }> = [];
   const respawnArgs: string[][] = [];
   const newSessionArgs: string[][] = [];
+  const pipedSessions = new Map<string, string>(); // t-6a6a00 — session -> its current pipe-pane shell-command (absent = not piping)
+  const pipePaneArgs: string[][] = [];
+  const opLog: string[] = []; // t-6a6a00 — chronological op tags, for asserting detach-before-kill ordering
   const exec = async (args: string[]): Promise<ExecResult> => {
     const target = () => {
       const i = args.indexOf("-t");
@@ -196,7 +200,23 @@ function fakeTmux(opts: { failRespawn?: boolean; failShowEnvironment?: boolean }
         if (!sessions.delete(target())) throw new Error("can't find session");
         dead.delete(target());
         sessionEnv.delete(target());
+        pipedSessions.delete(target());
+        opLog.push(`kill-session:${target()}`);
         return { stdout: "", stderr: "" };
+      case "pipe-pane": {
+        const t = target();
+        if (!sessions.has(t)) throw new Error("can't find session");
+        pipePaneArgs.push(args);
+        const cmd = args[args.length - 1];
+        if (cmd.startsWith("cat >>")) {
+          pipedSessions.set(t, cmd);
+          opLog.push(`pipe-pane:attach:${t}`);
+        } else {
+          pipedSessions.delete(t);
+          opLog.push(`pipe-pane:detach:${t}`);
+        }
+        return { stdout: "", stderr: "" };
+      }
       case "send-keys":
         sentKeys.push({ session: target(), key: args[args.length - 1] });
         return { stdout: "", stderr: "" };
@@ -216,7 +236,7 @@ function fakeTmux(opts: { failRespawn?: boolean; failShowEnvironment?: boolean }
         return { stdout: "", stderr: "" };
     }
   };
-  return { sessions, dead, panes, sessionEnv, sentKeys, respawnArgs, newSessionArgs, tmux: new TmuxService(exec) };
+  return { sessions, dead, panes, sessionEnv, sentKeys, respawnArgs, newSessionArgs, pipedSessions, pipePaneArgs, opLog, tmux: new TmuxService(exec) };
 }
 
 function configOf(yaml: string): TachyonConfig {
@@ -3080,6 +3100,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       "private harness/config home",
       "per-spawn settings file",
       "generated spawn brief and soul anchor",
+      "durable pane transcript",
     ]);
   });
 
@@ -5387,5 +5408,106 @@ describe("AgentManager — Bridge wiring fail-closed (t-d42565)", () => {
     });
     await manager.spawn("child", { cmd: "claude", parent: "boss", instructions: "do work" });
     expect(cmds.some((c) => c.includes("--mcp-config"))).toBe(true);
+  });
+});
+
+describe("AgentManager — durable pane transcripts (t-6a6a00)", () => {
+  const dirs: string[] = [];
+  afterEach(() => {
+    for (const d of dirs.splice(0)) fs.rmSync(d, { recursive: true, force: true });
+  });
+
+  // Real temp workspaceRoot (unlike the module-level WS="/repo" fixture used elsewhere in this file) —
+  // ensurePaneTranscriptFile does real fs writes, and "/repo" is deliberately unwritable in this sandbox.
+  function pipeTranscriptHarness(yaml: string, tmuxOpts: { failRespawn?: boolean } = {}) {
+    const ws = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-pipepane-am-"));
+    dirs.push(ws);
+    const hash = workspaceHash(ws);
+    const { sessions, pipedSessions, pipePaneArgs, opLog, tmux } = fakeTmux(tmuxOpts);
+    const config = configOf(yaml);
+    const ledger = new SessionLedger(ws);
+    const manager = new AgentManager({
+      tmux,
+      wsHash: hash,
+      workspaceRoot: ws,
+      getConfig: () => config,
+      getMaxAgents: () => 8,
+      ledger,
+      resolveCurrentSession: async () => "11111111-1111-4111-8111-111111111111",
+      fileExists: () => true,
+      recordCanonicalDelivery: async (input) => canonicalSpawnReceipt(input.worktree, input.baseSha),
+    });
+    return { manager, ws, hash, ledger, sessions, pipedSessions, pipePaneArgs, opLog };
+  }
+
+  it("spawn attaches the durable pipe to .tachyon/pane-transcripts/<agent>.log", async () => {
+    const { manager, ws, hash, pipedSessions } = pipeTranscriptHarness("agents:\n  worker:\n    cmd: sh\n");
+    await manager.spawn("worker");
+    const session = sessionName(hash, "worker");
+    const file = paneTranscriptPath(ws, "worker");
+    expect(pipedSessions.get(session)).toBe(`cat >> '${file}'`);
+    expect(fs.existsSync(file)).toBe(true); // pre-created (0600) — not left to the shell's `>>` to create
+    expect(fs.statSync(file).mode & 0o777).toBe(0o600);
+  });
+
+  it("kill detaches the pipe BEFORE killSession (not after — tmux would tear the pipe down anyway on kill, but the design point is explicit detach-first)", async () => {
+    const { manager, ws, hash, pipedSessions, opLog } = pipeTranscriptHarness("agents:\n  worker:\n    cmd: sh\n");
+    await manager.spawn("worker");
+    const session = sessionName(hash, "worker");
+    await manager.kill("worker");
+    expect(pipedSessions.has(session)).toBe(false);
+    const detachIdx = opLog.indexOf(`pipe-pane:detach:${session}`);
+    const killIdx = opLog.indexOf(`kill-session:${session}`);
+    expect(detachIdx).toBeGreaterThanOrEqual(0);
+    expect(killIdx).toBeGreaterThan(detachIdx); // detach happened while the session still existed
+    // kill is a stop, not a forget — the durable transcript file itself survives.
+    expect(fs.existsSync(paneTranscriptPath(ws, "worker"))).toBe(true);
+  });
+
+  it("restart (respawn-pane path) re-attaches the pipe idempotently on the SAME session", async () => {
+    const { manager, hash, pipedSessions, pipePaneArgs } = pipeTranscriptHarness("agents:\n  worker:\n    cmd: sh\n");
+    await manager.spawn("worker");
+    const session = sessionName(hash, "worker");
+    const attachesAfterSpawn = pipePaneArgs.length;
+    await manager.restart("worker", { stop: "force", session: "new" });
+    expect(pipedSessions.has(session)).toBe(true); // still piping after restart
+    expect(pipePaneArgs.length).toBeGreaterThan(attachesAfterSpawn); // re-attached, not skipped
+  });
+
+  it("commitFork attaches the pipe on the fork's own new session", async () => {
+    const { manager, ws, hash, pipedSessions } = pipeTranscriptHarness("agents:\n  claude:\n    cmd: claude\n");
+    await manager.spawn("claude");
+    await manager.commitFork(await manager.planFork("claude"));
+    const forkSession = sessionName(hash, "claude-fork-1");
+    expect(pipedSessions.has(forkSession)).toBe(true);
+    expect(fs.existsSync(paneTranscriptPath(ws, "claude-fork-1"))).toBe(true);
+  });
+
+  it("kill of an AD-HOC one-shot removes its durable transcript too (kill IS the forget for ad-hoc — spec 247 parity, not a new gap)", async () => {
+    const { manager, ws } = pipeTranscriptHarness("agents:\n  decoy:\n    cmd: x\n");
+    await manager.spawn("oneshot", { cmd: "sh" });
+    expect(paneTranscriptExists(ws, "oneshot")).toBe(true);
+    await manager.kill("oneshot");
+    expect(paneTranscriptExists(ws, "oneshot")).toBe(false);
+  });
+
+  it("forgetAgent (the canonical ephemeral-footprint cleanup) removes the durable pane transcript file", () => {
+    const ws = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-pipepane-forget-"));
+    dirs.push(ws);
+    const file = ensurePaneTranscriptFile(ws, "oneshot");
+    fs.writeFileSync(file, "leftover output\n", "utf8");
+    expect(fs.existsSync(file)).toBe(true);
+    expect(() => forgetAgent("oneshot", { workspaceRoot: ws })).not.toThrow();
+    expect(fs.existsSync(file)).toBe(false);
+    // idempotent — forgetting an agent with no transcript at all must not throw.
+    expect(() => forgetAgent("never-existed", { workspaceRoot: ws })).not.toThrow();
+  });
+
+  it("attach is best-effort: an unwritable workspace root never blocks or throws during spawn", async () => {
+    // WS ("/repo") is a symbolic, deliberately unwritable fixture used across this file — mirrors
+    // the constructor-optional-side-effect convention the rest of AgentManager already follows.
+    const { manager, sessions } = makeManager("agents:\n  worker:\n    cmd: sh\n");
+    await expect(manager.spawn("worker")).resolves.not.toThrow();
+    expect(sessions.has(sessionName(HASH, "worker"))).toBe(true);
   });
 });

@@ -3,6 +3,7 @@ import fs from "node:fs";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { AgentManager } from "../agents/AgentManager.js";
 import { TmuxQueueError, type TmuxService } from "../tmux/TmuxService.js";
+import { paneTranscriptExists, readPaneTranscript } from "../agents/paneTranscript.js";
 import type { PinStore, TiptapJSON } from "../pins/PinStore.js";
 import { taskSummary, type TaskStore } from "../tasks/TaskStore.js";
 import { orderTaskViewsForListing } from "../tasks/listOrder.js";
@@ -516,10 +517,16 @@ async function managedEntry(deps: Pick<BridgeDeps, "manager">, name: string) {
   return (await deps.manager.list()).find((a) => a.name === name);
 }
 
-function outputCapabilities(info: Awaited<ReturnType<BridgeDeps["manager"]["list"]>>[number], deps: Pick<BridgeDeps, "manager">) {
+function outputCapabilities(
+  info: Awaited<ReturnType<BridgeDeps["manager"]["list"]>>[number],
+  deps: Pick<BridgeDeps, "manager" | "workspaceRoot">,
+) {
   const retained = deps.manager.postmortemTail(info.name);
-  const canReadOutput = info.running || info.dead || !!retained;
-  const readOutputState = info.running ? "live" : info.dead || retained ? "postmortem" : "unavailable";
+  // t-6a6a00 — after an extension reload the in-memory `retained` cache is gone and a clean-exit
+  // dead pane may already have been reaped, but the durable pipe-pane transcript survives both.
+  const durable = !info.running && !retained && paneTranscriptExists(deps.workspaceRoot, info.name);
+  const canReadOutput = info.running || info.dead || !!retained || durable;
+  const readOutputState = info.running ? "live" : info.dead || retained || durable ? "postmortem" : "unavailable";
   const canDismiss = !info.declared && !info.running;
   return {
     canReadOutput,
@@ -542,7 +549,11 @@ function limitText(text: string, maxLines: number, maxBytes: number, alreadyTrun
   return { output, truncated, maxLines, maxBytes };
 }
 
-async function postmortemTailFor(deps: Pick<BridgeDeps, "manager" | "tmux" | "knownSecrets">, name: string, lines: number) {
+async function postmortemTailFor(
+  deps: Pick<BridgeDeps, "manager" | "tmux" | "knownSecrets" | "workspaceRoot">,
+  name: string,
+  lines: number,
+) {
   const retained = deps.manager.postmortemTail(name, lines); // already redacted at capture time (AgentManager)
   if (retained) return { ...retained, source: "retained" };
   const session = deps.manager.session(name);
@@ -555,6 +566,10 @@ async function postmortemTailFor(deps: Pick<BridgeDeps, "manager" | "tmux" | "kn
       return undefined;
     }
   }
+  // t-6a6a00 — no live session and nothing retained in memory (e.g. an extension reload dropped the
+  // cache, or the row was never a clean-exit dead pane): fall back to the durable pipe-pane transcript.
+  const durable = readPaneTranscript(deps.workspaceRoot, name, { knownSecrets: deps.knownSecrets?.(), maxLines: lines, maxBytes: AgentManager.POSTMORTEM_MAX_BYTES });
+  if (durable) return { ...durable, source: "durable" };
   return undefined;
 }
 
@@ -1674,7 +1689,9 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       description:
         "Read another managed entry's terminal output. Live rows return the visible pane by default " +
         "(what a human looking at that entry's terminal sees); pass lines to reach into scrollback. " +
-        "Stopped rows return bounded postmortem output when Tachyon retained it; otherwise the error distinguishes stopped-without-output from unknown.",
+        "Stopped rows return bounded postmortem output when Tachyon retained it in memory, falling back to " +
+        "the durable pipe-pane transcript (t-6a6a00, survives kill-session and an extension reload) when " +
+        "nothing is retained; otherwise the error distinguishes stopped-without-output from unknown.",
       inputSchema: {
         name: AGENT_NAME,
         lines: z.number().int().min(1).max(10000).optional().describe("how many lines of scrollback to include"),
@@ -1703,6 +1720,22 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           return ok(
             JSON.stringify(
               { output: retained.text, postmortem: true, truncated: retained.truncated, source: "retained", maxLines: retained.maxLines, maxBytes: retained.maxBytes },
+              null,
+              2,
+            ),
+          );
+        }
+        // t-6a6a00 — no live session and nothing retained in memory: the durable pipe-pane transcript
+        // survives both kill-session and an extension reload, unlike the in-memory postmortem cache.
+        const durable = readPaneTranscript(deps.workspaceRoot, name, {
+          knownSecrets: deps.knownSecrets?.(),
+          maxLines: lines ?? AgentManager.POSTMORTEM_MAX_LINES,
+          maxBytes: AgentManager.POSTMORTEM_MAX_BYTES,
+        });
+        if (durable) {
+          return ok(
+            JSON.stringify(
+              { output: durable.text, postmortem: true, truncated: durable.truncated, source: "durable", maxLines: durable.maxLines, maxBytes: durable.maxBytes },
               null,
               2,
             ),
