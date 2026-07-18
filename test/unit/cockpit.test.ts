@@ -7,6 +7,9 @@ describe("cockpit model", () => {
     expect(COCKPIT_SECTION_ORDER[1]).toBe("engine");
     expect(COCKPIT_SECTION_ORDER[2]).toBe("fleet");
     expect(COCKPIT_SECTION_ORDER).toContain("approvals");
+    expect(COCKPIT_SECTION_ORDER).toContain("mission");
+    expect(COCKPIT_SECTION_ORDER).toContain("validations");
+    expect(COCKPIT_SECTION_ORDER.indexOf("validations")).toBeGreaterThan(COCKPIT_SECTION_ORDER.indexOf("mission"));
     expect(COCKPIT_SECTION_ORDER).toContain("worktrees");
     expect(COCKPIT_SECTION_ORDER).toContain("deliveries");
     expect(COCKPIT_SECTION_ORDER).toContain("runtime");
