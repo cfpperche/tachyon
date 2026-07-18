@@ -19,13 +19,25 @@ export interface SidebarMutationResult {
   changed: boolean;
 }
 
-export function applySidebarMutation(
+export async function applySidebarMutation(
   source: DomainActionSource,
   rawInput: unknown,
   onChanged: DomainChanged,
-): SidebarMutationResult {
+): Promise<SidebarMutationResult> {
   const input = parseSidebarMutationInputV1(rawInput);
   const deps = { onChanged };
+  if (input.action === "notice.markRead") {
+    const changed = source.markNoticeRead?.(input.id) ?? false;
+    return { action: input.action, id: input.id, changed };
+  }
+  if (input.action === "notice.markAllRead") {
+    const changed = source.markAllNoticesRead?.() ?? false;
+    return { action: input.action, id: "all", changed };
+  }
+  if (input.action === "notice.invoke") {
+    const changed = (await source.invokeNoticeInboxAction?.(input.id, input.actionId)) ?? false;
+    return { action: input.action, id: input.id, changed };
+  }
   const changed = input.action === "pin.toggle" ? togglePinDone(source, input.id, input.done, deps)
     : input.action === "pin.delete" ? deletePin(source, input.id, deps)
       : input.action === "schedule.toggle-pause" ? toggleSchedulePause(source, input.id, deps)

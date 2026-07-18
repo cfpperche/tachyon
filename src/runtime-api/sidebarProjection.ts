@@ -13,6 +13,8 @@ export type SidebarFleetV1 = FleetVM & {
   handoff: HandoffVM;
   proposals: ProposalVM[];
   pins: Array<PinVM & { id: string }>;
+  /** Present after projectSidebarView; optional on hand-built test fixtures. */
+  notices?: NonNullable<FleetVM["notices"]>;
 };
 
 export interface SidebarViewV1 {
@@ -172,6 +174,19 @@ const fleet = z.object({
     detail: z.boolean().optional(),
     attachmentCount: count.optional(),
   }).strict()).max(SIDEBAR_ROW_LIMIT),
+  notices: z.array(z.object({
+    id: z.string().uuid(),
+    message: text(512, 1),
+    level: z.enum(["info", "warn", "error"]),
+    at: text(64, 1),
+    collapsedCount: z.number().int().positive().max(10_000),
+    actions: z.array(z.object({
+      id: z.string().uuid(),
+      label: text(128, 1),
+    }).strict()).max(12),
+    read: z.boolean(),
+    actionsLive: z.boolean(),
+  }).strict()).max(100).default([]),
   proposals: z.array(z.object({
     id: z.string().regex(/^[a-f0-9]{12}$/),
     name,

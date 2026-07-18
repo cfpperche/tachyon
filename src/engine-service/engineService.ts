@@ -397,7 +397,7 @@ async function executeWorkspaceCommand(
     return workspaceHandoffDistillSuccessV1(command, result);
   }
   if (command.method === "sidebar.mutate") {
-    const result = applySidebarMutation(workspace, command.input, onViewsChanged);
+    const result = await applySidebarMutation(workspace, command.input, onViewsChanged);
     return workspaceSidebarMutationSuccessV1(command, result);
   }
   if (command.method === "studio.submit") {

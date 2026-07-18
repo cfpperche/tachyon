@@ -46,6 +46,17 @@ export interface SidebarFleetSource {
   externalTools?: ExternalToolRegistry;
   listPipelines(): string[];
   lastActivityAt(): string | null;
+  /** t-7f94f2 — optional notice inbox (daemon host). */
+  listNoticeInbox?(): Array<{
+    id: string;
+    message: string;
+    level: "info" | "warn" | "error";
+    at: string;
+    collapsedCount: number;
+    actions: Array<{ id: string; label: string }>;
+    read: boolean;
+    actionsLive: boolean;
+  }>;
   attentionOf(agent: string): AgentAttention | undefined;
   continuityBadge(agent: string): "fresh" | "stale" | "missing" | undefined;
   /** spec 390 — open/assigned MC tasks for focus projection (optional when TaskStore absent). */
@@ -290,6 +301,16 @@ export async function buildSidebarFleet(
     detail: pin.detail,
     attachmentCount: pin.attachmentCount,
   }));
+  const notices = (source.listNoticeInbox?.() ?? []).slice(0, 50).map((n) => ({
+    id: n.id,
+    message: n.message.length > 240 ? `${n.message.slice(0, 239)}…` : n.message,
+    level: n.level,
+    at: n.at,
+    collapsedCount: n.collapsedCount,
+    actions: n.actionsLive ? n.actions.map((a) => ({ id: a.id, label: a.label })) : [],
+    read: n.read,
+    actionsLive: n.actionsLive,
+  }));
   const proposals = source.proposals.list().map((proposal) => ({
     id: proposal.id,
     name: proposal.name,
@@ -325,6 +346,7 @@ export async function buildSidebarFleet(
     commands,
     runbooks,
     pins,
+    notices,
     schedules,
     pipelines,
     proposals,

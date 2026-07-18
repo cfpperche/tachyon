@@ -68,7 +68,7 @@ function Root() {
   // wsHash routes each action to the right folder (multi-root); omitted → the host uses the first workspace.
   const dispatch = {
     action: (id: string, agent: string, hash?: string) => vscode?.postMessage({ type: "action", id, agent, hash }),
-    section: (op: string, id: string, extra?: { done?: boolean; label?: string }, hash?: string) => vscode?.postMessage({ type: "section", op, id, ...extra, hash }),
+    section: (op: string, id: string, extra?: { done?: boolean; label?: string; actionId?: string }, hash?: string) => vscode?.postMessage({ type: "section", op, id, ...extra, hash }),
     global: (op: GlobalOp, hash?: string) => vscode?.postMessage({ type: "global", op, hash }),
     pipeline: (op: string, name: string, nodeId?: string, hash?: string) => vscode?.postMessage({ type: "pipeline", op, name, nodeId, hash }),
     setSort: (section: "agents" | "terminals", mode: string) => vscode?.postMessage({ type: "setSort", section, mode }),

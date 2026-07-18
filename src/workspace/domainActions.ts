@@ -12,6 +12,10 @@ export interface DomainActionSource {
   deleteScheduleEntry(name: string): unknown;
   approveProposal(id: string): boolean;
   rejectProposal(id: string): unknown;
+  listNoticeInbox?(): Array<{ id: string }>;
+  markNoticeRead?(id: string): boolean;
+  markAllNoticesRead?(): boolean;
+  invokeNoticeInboxAction?(noticeId: string, actionId: string): Promise<boolean>;
 }
 
 export interface DomainActionDeps {

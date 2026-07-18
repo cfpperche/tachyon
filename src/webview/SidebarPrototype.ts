@@ -29,6 +29,7 @@ type SidebarMsg = {
   op?: string;
   done?: boolean;
   label?: string;
+  actionId?: string;
   name?: string;
   nodeId?: string;
   hash?: string;
@@ -189,14 +190,22 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       );
       return;
     }
-    if (m?.type === "section" && m.op && m.id) return this.runSection(m.op, m.id, m.done, m.hash);
+    if (m?.type === "section" && m.op && m.id) {
+      return this.runSection(m.op, m.id, { done: m.done, actionId: m.actionId }, m.hash);
+    }
     if (m?.type === "pipeline" && m.op && m.name) return this.runPipeline(m.op, m.name, m.nodeId, m.hash);
   }
 
   /** Route a section-row action to its existing VS Code command (duck-typed item) or store mutation. */
-  private async runSection(op: string, id: string, done?: boolean, wsHash?: string): Promise<void> {
+  private async runSection(
+    op: string,
+    id: string,
+    extra?: { done?: boolean; actionId?: string },
+    wsHash?: string,
+  ): Promise<void> {
     const ws = this.wsFor(wsHash);
     if (!ws) return;
+    const done = extra?.done;
     const exec = (cmd: string, context: SidebarShellCommandContext) => {
       void vscode.commands.executeCommand(cmd, ...ws.shellCommandArgs(context));
     };
@@ -212,6 +221,12 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       case "runbook:delete": return exec("tachyon.deleteRunbookItem", { kind: "runbook", runbookName: id });
       case "runbook:step": { const hash = id.indexOf("#"); return void vscode.commands.executeCommand("tachyon.openRunbookStepItem", id.slice(0, hash), Number(id.slice(hash + 1)), ws.wsHash); }
       case "pin:toggle": return this.mutateSidebar(ws, { action: "pin.toggle", id, done: !!done });
+      case "notice:markRead": return this.mutateSidebar(ws, { action: "notice.markRead", id });
+      case "notice:markAllRead": return this.mutateSidebar(ws, { action: "notice.markAllRead", id: "all" });
+      case "notice:invoke": {
+        if (!extra?.actionId) return;
+        return this.mutateSidebar(ws, { action: "notice.invoke", id, actionId: extra.actionId });
+      }
       case "pin:preview": return void this.previewPin(ws, id);
       case "pin:copy": {
         // Never trust the label echoed by the webview. The first projection may still be in flight after

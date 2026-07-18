@@ -11,6 +11,7 @@ import {
   type TerminalPresentation,
   type TerminalPresentationOptions,
 } from "./TerminalPresentation.js";
+import { NOTICE_INBOX_CAP, noticeDedupeKey, type NoticeInboxEntry } from "./noticeInbox.js";
 
 export interface DaemonSettingsSnapshot {
   global?: Record<string, unknown>;
@@ -70,7 +71,9 @@ export class DaemonEngineHost implements EngineHost {
   private readonly noticeDedupeWindowMs: number;
   /** t-ec5cd2 / spec 397: auto-complete passive info toasts (ms). */
   private readonly noticePassiveAutoDismissMs: number;
-  private readonly recentNoticeKeys = new Map<string, { at: number; count: number }>();
+  private readonly recentNoticeKeys = new Map<string, { at: number; count: number; inboxId?: string }>();
+  /** t-7f94f2 / spec 397 item 1 — newest-first ring of human notices (history + catch-up). */
+  private noticeInbox: NoticeInboxEntry[] = [];
   private noticePresentationActive = false;
   private terminalPresentation: DaemonTerminalPresentation | undefined;
   private disposed = false;
@@ -89,17 +92,24 @@ export class DaemonEngineHost implements EngineHost {
 
   notify(message: string, level: NotifyLevel = "info", actions: NoticeAction[] = []): void {
     this.assertActive();
-    const normalized = normalizeNoticeMessage(message);
-    const dedupeKey = `${level}\0${normalized}`;
+    const dedupeKey = noticeDedupeKey(level, message);
     this.pruneRecentNoticeKeys();
     const recent = this.recentNoticeKeys.get(dedupeKey);
     if (recent) {
       recent.count += 1;
       recent.at = Date.now();
+      if (recent.inboxId) {
+        const entry = this.noticeInbox.find((row) => row.id === recent.inboxId);
+        if (entry) {
+          entry.collapsedCount = recent.count;
+          entry.at = new Date().toISOString();
+          entry.read = false;
+        }
+      }
       // Exact duplicate inside the window: keep one toast / pending row; bump collapse count only.
+      this.emit({ kind: "views-changed", view: "agents", at: new Date().toISOString() });
       return;
     }
-    this.recentNoticeKeys.set(dedupeKey, { at: Date.now(), count: 1 });
 
     const id = randomUUID();
     const registered = new Map<string, () => void | Promise<void>>();
@@ -118,9 +128,52 @@ export class DaemonEngineHost implements EngineHost {
       if (!oldest) break;
       this.pendingNotices.delete(oldest);
       this.noticeActions.delete(oldest);
+      this.clearInboxActionsLive(oldest);
     }
+    this.recentNoticeKeys.set(dedupeKey, { at: Date.now(), count: 1, inboxId: id });
+    this.pushInbox({
+      id,
+      message,
+      level,
+      at: event.at,
+      collapsedCount: 1,
+      actions: publicActions.map((a) => ({ ...a })),
+      read: false,
+      actionsLive: publicActions.length > 0,
+    });
     this.emit(event);
+    this.emit({ kind: "views-changed", view: "agents", at: new Date().toISOString() });
     this.schedulePresentNextNotice();
+  }
+
+  /** Newest-first inbox snapshot for sidebar strip (t-7f94f2). */
+  listNoticeInbox(): NoticeInboxEntry[] {
+    return this.noticeInbox.map((entry) => ({
+      ...entry,
+      actions: entry.actions.map((a) => ({ ...a })),
+    }));
+  }
+
+  markNoticeRead(id: string): boolean {
+    this.assertActive();
+    const entry = this.noticeInbox.find((row) => row.id === id);
+    if (!entry || entry.read) return false;
+    entry.read = true;
+    this.emit({ kind: "views-changed", view: "agents", at: new Date().toISOString() });
+    return true;
+  }
+
+  markAllNoticesRead(): boolean {
+    this.assertActive();
+    let changed = false;
+    for (const entry of this.noticeInbox) {
+      if (!entry.read) {
+        entry.read = true;
+        changed = true;
+      }
+    }
+    if (changed) this.emit({ kind: "views-changed", view: "agents", at: new Date().toISOString() });
+    return changed;
   }
 
   async invokeNoticeAction(noticeId: string, actionId: string): Promise<void> {
@@ -130,6 +183,10 @@ export class DaemonEngineHost implements EngineHost {
     if (!action) throw new Error("notice action is missing or already consumed");
     this.noticeActions.delete(noticeId);
     this.pendingNotices.delete(noticeId);
+    this.clearInboxActionsLive(noticeId);
+    const entry = this.noticeInbox.find((row) => row.id === noticeId);
+    if (entry) entry.read = true;
+    this.emit({ kind: "views-changed", view: "agents", at: new Date().toISOString() });
     await action();
   }
 
@@ -304,6 +361,7 @@ export class DaemonEngineHost implements EngineHost {
       if (choice === null || choice === undefined) {
         this.pendingNotices.delete(noticeId);
         this.noticeActions.delete(noticeId);
+        this.clearInboxActionsLive(noticeId);
         return;
       }
       if (typeof choice !== "string" || !notice.actions.some((action) => action.id === choice)) {
@@ -319,12 +377,25 @@ export class DaemonEngineHost implements EngineHost {
       if (passive && this.pendingNotices.has(noticeId)) {
         this.pendingNotices.delete(noticeId);
         this.noticeActions.delete(noticeId);
+        this.clearInboxActionsLive(noticeId);
       }
       if (!this.pendingNotices.has(noticeId)) this.schedulePresentNextNotice();
       else if (!passive) {
         // Actionable notice failed present — leave pending for replayUiRequests.
       }
     });
+  }
+
+  private pushInbox(entry: NoticeInboxEntry): void {
+    this.noticeInbox.unshift(entry);
+    while (this.noticeInbox.length > NOTICE_INBOX_CAP) {
+      this.noticeInbox.pop();
+    }
+  }
+
+  private clearInboxActionsLive(noticeId: string): void {
+    const entry = this.noticeInbox.find((row) => row.id === noticeId);
+    if (entry) entry.actionsLive = false;
   }
 
   private pruneRecentNoticeKeys(now = Date.now()): void {
@@ -362,10 +433,6 @@ function cloneJson(value: unknown): unknown {
 
 function assertSettingAllowed(setting: string): void {
   if (!DAEMON_SETTING_KEY_SET.has(setting)) throw new Error(`setting is not allowlisted for the daemon: ${setting}`);
-}
-
-function normalizeNoticeMessage(message: string): string {
-  return message.replace(/\s+/g, " ").trim();
 }
 
 function delay(ms: number): Promise<void> {
