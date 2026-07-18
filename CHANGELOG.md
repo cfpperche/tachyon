@@ -6,6 +6,13 @@ Marketplace release notes.
 
 ## Unreleased
 
+## 0.56.34 — Hotfix Mission Loading on Control (t-b87bfe)
+
+### Fixed
+- Control → Mission stuck on **Loading Mission Control…**: `buildBoardModel`
+  was called with a bare snapshot instead of `{ snapshot }`, throwing once the
+  board VM arrived and breaking the whole Cockpit App.
+
 ## 0.56.33 — Ship t-b87bfe Validations Control tab
 
 ### Fixed
