@@ -186,16 +186,22 @@ const providerCapacity = z.object({
   }
 });
 
+const summaryFacts = z.object({
+  runtimes: count,
+  managedAgents: count,
+  activeAgents: count.optional(),
+  throttled: count.optional(),
+  bridgeIssues: count.optional(),
+  /** t-019dac — host mem facts (optional; present when /proc/meminfo is readable). */
+  hostMemAvailableMb: count.optional(),
+  hostMemTotalMb: count.optional(),
+  recommendedVitestWorkers: count.optional(),
+}).strict();
+
 const snapshotV1 = z.object({
   schemaVersion: z.literal(1),
   generatedAt: timestamp,
-  summary: z.object({
-    runtimes: count,
-    managedAgents: count,
-    activeAgents: count.optional(),
-    throttled: count.optional(),
-    bridgeIssues: count.optional(),
-  }).strict(),
+  summary: summaryFacts,
   runtimes: z.array(runtime).max(MAX_RUNTIMES),
   error: z.object({ code: z.literal("snapshot-unavailable") }).strict().optional(),
 }).strict().superRefine(validateSnapshotFacts);
@@ -203,13 +209,7 @@ const snapshotV1 = z.object({
 const snapshotV2 = z.object({
   schemaVersion: z.literal(2),
   generatedAt: timestamp,
-  summary: z.object({
-    runtimes: count,
-    managedAgents: count,
-    activeAgents: count.optional(),
-    throttled: count.optional(),
-    bridgeIssues: count.optional(),
-  }).strict(),
+  summary: summaryFacts,
   runtimes: z.array(runtime).max(MAX_RUNTIMES),
   providerCapacity: z.array(providerCapacity).length(2),
   error: z.object({ code: z.literal("snapshot-unavailable") }).strict().optional(),
@@ -280,6 +280,10 @@ export function mergeRuntimeOpsSnapshotsV1(values: readonly RuntimeOpsSnapshot[]
     .map(([runtimeId, rows]) => mergeRuntime(runtimeId, rows))
     .sort((left, right) => left.label.localeCompare(right.label) || left.runtime.localeCompare(right.runtime));
   const agents = merged.flatMap((row) => row.agents);
+  const hostMem = [...parsed]
+    .reverse()
+    .map((value) => value.summary)
+    .find((summary) => summary.hostMemAvailableMb !== undefined || summary.hostMemTotalMb !== undefined || summary.recommendedVitestWorkers !== undefined);
   const base = {
     generatedAt: latestTimestamp(parsed.map((value) => value.generatedAt)) ?? new Date(0).toISOString(),
     summary: {
@@ -288,6 +292,9 @@ export function mergeRuntimeOpsSnapshotsV1(values: readonly RuntimeOpsSnapshot[]
       activeAgents: agents.filter((entry) => entry.status === "running" || entry.status === "stopping" || entry.status === "stop-failed").length,
       throttled: agents.filter((entry) => entry.attention.state === "throttled").length,
       bridgeIssues: agents.filter((entry) => entry.bridge.state !== "ok" && entry.bridge.state !== "not-wired").length,
+      ...(hostMem?.hostMemAvailableMb !== undefined ? { hostMemAvailableMb: hostMem.hostMemAvailableMb } : {}),
+      ...(hostMem?.hostMemTotalMb !== undefined ? { hostMemTotalMb: hostMem.hostMemTotalMb } : {}),
+      ...(hostMem?.recommendedVitestWorkers !== undefined ? { recommendedVitestWorkers: hostMem.recommendedVitestWorkers } : {}),
     },
     runtimes: merged,
     ...(parsed.some((value) => value.error) ? { error: { code: "snapshot-unavailable" as const } } : {}),

@@ -209,3 +209,31 @@ function snapshotV2(
     ],
   };
 }
+
+describe("t-019dac/t-e3bae0 Runtime Ops summary host mem + agent resources", () => {
+  it("accepts hostMem fields and per-agent resources on V2 snapshots", async () => {
+    const { parseRuntimeOpsSnapshot } = await import("../../src/runtime-api/runtimeOpsProjection.js");
+    const { buildRuntimeOpsSnapshot } = await import("../../src/runtimeOps/model.js");
+    const snap = buildRuntimeOpsSnapshot({
+      generatedAt: "2026-07-18T15:00:00.000Z",
+      detectedRuntimes: ["codex"],
+      agents: [{
+        workspaceKey: "ws",
+        workspaceLabel: "app",
+        agentName: "hermes",
+        runtime: "codex",
+        status: "running",
+        resources: { cpuPct: 12.5, memMb: 153 },
+      }],
+      hostMemory: {
+        hostMemAvailableMb: 2048,
+        hostMemTotalMb: 16384,
+        recommendedVitestWorkers: 4,
+      },
+    });
+    expect(() => parseRuntimeOpsSnapshot(snap)).not.toThrow();
+    const parsed = parseRuntimeOpsSnapshot(snap);
+    expect(parsed.summary.hostMemAvailableMb).toBe(2048);
+    expect(parsed.runtimes[0].agents[0].resources).toEqual({ cpuPct: 12.5, memMb: 153 });
+  });
+});
