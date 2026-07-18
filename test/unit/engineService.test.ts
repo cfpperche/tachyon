@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createHash } from "node:crypto";
 import { EngineControlClient } from "../../src/engine-service/controlClient.js";
 import { StagedPayloadStore } from "../../src/engine-service/stagedPayloadStore.js";
@@ -10,7 +10,14 @@ import { ENGINE_SHELL_PROTOCOL, type EngineServiceIdentityV1, type EngineShellHe
 import { encodePinStudioStagedPayloadV1 } from "../../src/runtime-api/pinStudioCommands.js";
 import { encodeTaskStudioStagedPayloadV1 } from "../../src/runtime-api/taskStudioCommands.js";
 import { PinStore } from "../../src/pins/PinStore.js";
-import { TmuxService, workspaceHash, type PaneSnapshot } from "../../src/tmux/TmuxService.js";
+import {
+  TmuxService,
+  isolatedArgs,
+  utf8LocaleEnv,
+  workspaceHash,
+  type ExecResult,
+  type PaneSnapshot,
+} from "../../src/tmux/TmuxService.js";
 import { blankCommandFields } from "../../src/webview/command-studio-shell/domain.js";
 import { TaskStore } from "../../src/tasks/TaskStore.js";
 import { TaskAttachmentStore } from "../../src/tasks/TaskAttachmentStore.js";
@@ -18,9 +25,26 @@ import { TaskDetailStore, hashBody } from "../../src/tasks/TaskDetailStore.js";
 import { TaskPrototypeStore } from "../../src/tasks/TaskPrototypeStore.js";
 import { ValidationStore } from "../../src/validations/ValidationStore.js";
 import { makeSocketTemp } from "../helpers/socketTemp.js";
+import { tmuxChildEnv } from "../helpers/tmuxEnv.js";
 
 const roots: string[] = [];
 const children: ChildProcessWithoutNullStreams[] = [];
+
+/** t-c289cf — real tmux ops against the daemon's private TMUX_TMPDIR (never production -L tachyon). */
+function tmuxExecutorForEnv(env: NodeJS.ProcessEnv): (args: string[]) => Promise<ExecResult> {
+  return (args) =>
+    new Promise((resolve, reject) => {
+      execFile(
+        "tmux",
+        isolatedArgs(args),
+        { encoding: "utf8", env: { ...env, ...utf8LocaleEnv(env) } },
+        (err, stdout, stderr) => {
+          if (err) reject(new Error(stderr.trim() || err.message));
+          else resolve({ stdout, stderr });
+        },
+      );
+    });
+}
 
 afterEach(async () => {
   await Promise.all(children.splice(0).map(stopChild));
@@ -35,9 +59,19 @@ describe("daemon engine service", () => {
     const storageRoot = path.join(root, "storage");
     const mediaRoot = path.join(root, "bundle");
     const runtimeRoot = path.join(root, "runtime");
-    for (const directory of [workspaceRoot, storageRoot, mediaRoot, runtimeRoot]) {
+    const tmuxTmp = path.join(root, "tmux-tmp");
+    const xdgRuntime = path.join(root, "xdg-runtime");
+    for (const directory of [workspaceRoot, storageRoot, mediaRoot, runtimeRoot, tmuxTmp, xdgRuntime]) {
       fs.mkdirSync(directory, { mode: 0o700 });
     }
+    // t-c289cf: private tmux + XDG so parallel verify:full never hits production -L tachyon or shared runtime.
+    const childEnv: NodeJS.ProcessEnv = {
+      ...tmuxChildEnv(),
+      TMUX_TMPDIR: tmuxTmp,
+      TACHYON_ENGINE_TMUX_TMPDIR: tmuxTmp,
+      XDG_RUNTIME_DIR: xdgRuntime,
+    };
+    const isolatedTmux = new TmuxService(tmuxExecutorForEnv(childEnv));
     const configPath = path.join(workspaceRoot, "tachyon.yml");
     fs.writeFileSync(configPath, `${config("worker")}settings:\n  delivery:\n    mode: legacy\n    handoffSafety: disabled\n`, "utf8");
     const promptBody = "printf 'prompt-once\\n' >> .tachyon-prompt-proof";
@@ -102,6 +136,7 @@ describe("daemon engine service", () => {
     const worker = path.join(process.cwd(), "test/fixtures/daemonEngineServiceWorker.ts");
     const child = spawn(process.execPath, [viteNode, worker, workspaceRoot, storageRoot, mediaRoot, socketPath], {
       stdio: ["pipe", "pipe", "pipe"],
+      env: childEnv,
     });
     children.push(child);
     const identity = await readReady(child);
@@ -757,7 +792,7 @@ describe("daemon engine service", () => {
       method: "extension.invoke",
       input: { action: "tmux.kill", expected: { ...expectedPane, pid: expectedPane.pid + 1 } },
     })).toMatchObject({ status: "error", code: "COMMAND_FAILED", message: expect.stringMatching(/changed after confirmation/) });
-    const directTmux = new TmuxService();
+    const directTmux = isolatedTmux;
     expect(await directTmux.hasSession(workerPane.session)).toBe(true);
     expect(await first.invoke("operation-tmux-exact-kill-0001", {
       schemaVersion: 1,
@@ -809,7 +844,7 @@ describe("daemon engine service", () => {
     await stopChild(child);
     expect(child.exitCode).toBe(0);
     expect(fs.existsSync(socketPath)).toBe(false);
-    expect(await new TmuxService().hasSession(`tachyon-ctl-${identity.workspaceHash}`)).toBe(false);
+    expect(await isolatedTmux.hasSession(`tachyon-ctl-${identity.workspaceHash}`)).toBe(false);
   }, 20_000);
 });
 
