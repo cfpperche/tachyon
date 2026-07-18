@@ -12,6 +12,7 @@ const PROMPT_ADAPTERS: Readonly<Record<string, PromptAdapter>> = Object.freeze({
   opencode: { runtime: "opencode", channel: "tui-prefill", compose: (prompt) => `--prompt ${prompt}` },
   grok: { runtime: "grok", channel: "startup-argument", compose: (prompt) => prompt },
   hermes: { runtime: "hermes", channel: "native-external" },
+  pi: { runtime: "pi", channel: "startup-argument", compose: (prompt) => prompt },
 });
 
 /** Shared syntactic classification, including env flags whose following token is an operand. */

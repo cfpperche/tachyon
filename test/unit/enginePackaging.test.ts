@@ -41,6 +41,7 @@ describe("persistent engine packaging", () => {
     expect(parsed.entrypoint).toBe("engine-daemon.cjs");
     expect(parsed.files.map((file) => file.path)).toEqual([
       "engine-daemon.cjs",
+      "pi-bridge-extension.mjs",
       "media/clipboard-copy.sh",
     ]);
     expect(engineBundleId(parsed)).toMatch(/^[a-f0-9]{64}$/);
@@ -48,6 +49,9 @@ describe("persistent engine packaging", () => {
     expect(fs.readFileSync(path.join(root, "media", "clipboard-copy.sh"))).toEqual(
       fs.readFileSync("media/clipboard-copy.sh"),
     );
+    const piExtension = fs.readFileSync(path.join(root, "pi-bridge-extension.mjs"), "utf8");
+    expect(piExtension).toContain("TACHYON_AGENT_BRIDGE_TOKEN");
+    expect(piExtension).not.toContain(process.env.TACHYON_AGENT_BRIDGE_TOKEN ?? "never-a-real-token");
   });
 
   it("executes independently and has no VS Code runtime dependency", () => {

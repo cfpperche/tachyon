@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { codexConfigCmd, composeCommand, codexBridgeCmd, shellQuote, inferKind, instructionsDeliverable, type AgentDef, type EntryKind, type TachyonConfig } from "../config/loadConfig.js";
+import { codexConfigCmd, composeCommand, codexBridgeCmd, piBridgeCmd, shellQuote, inferKind, instructionsDeliverable, type AgentDef, type EntryKind, type TachyonConfig } from "../config/loadConfig.js";
 import { applyManagedHookTrust, managedHookRuntimeOf } from "./managedHookTrust.js";
 import { TmuxService, sessionName, agentFromSession, SESSION_PREFIX } from "../tmux/TmuxService.js";
 import { adapterFor, adapterForRuntime, binaryOf, forkable, managesOwnSession, type ResumeAdapter, type ResumeRuntime } from "../resume/adapters.js";
@@ -400,6 +400,8 @@ export interface AgentManagerOptions {
    *  auth.json symlink), returning its path (undefined when the Bridge isn't up). Injected as
    *  HERMES_HOME. Wired in Workspace where the Bridge URL/token live. */
   materializeBridgeMcpHermes?: (name: string) => string | undefined;
+  /** spec 398 — immutable staged Pi extension that projects the Bridge MCP catalog into Pi tools. */
+  piBridgeExtensionPath?: () => string | undefined;
   /** spec 243 — write a claude agent's per-spawn `--settings` file (the SessionStart ownership hook),
    *  returning its path; injected so activity follows a `/clear` on a shared cwd. Wired in Workspace. */
   materializeOwnershipSettings?: (name: string, opts?: {
@@ -1830,7 +1832,7 @@ export class AgentManager {
     const spawnBridge = this.withRuntimeBridge(name, def, spawnBuild.cmd, cwd, delegatedOpencode);
     // t-d42565 — recognized AI runtimes must receive Bridge MCP tools (notify_agent / doorbell) when
     // the workspace Bridge is up. Non-AI commands may still use kind:agent for lifecycle grouping.
-    if (def.kind === "agent" && adapter && !spawnBridge.wired) {
+    if (def.kind === "agent" && (adapter || binaryOf(def.cmd) === "pi") && !spawnBridge.wired) {
       const bridgeUrl = this.opts.getExtraEnv?.()?.[URL_ENV_VAR];
       if (bridgeUrl) {
         throw new Error(
@@ -2235,6 +2237,7 @@ export class AgentManager {
    *     + `auth.json` symlink, and inject `GROK_HOME=<home>`. Never mutates the user's real `~/.grok`.
    *   - hermes (non-harness) → no argv change; materialize a private HERMES_HOME with
    *     `config.yaml` carrying `mcp_servers.tachyon_bridge` + `auth.json` symlink, inject `HERMES_HOME`.
+   *   - pi → additively load the immutable staged `pi-bridge-extension.mjs`; URL and bearer remain env-only.
    * No-op when the Bridge URL is absent (self-heals on the next (re)start). Generalizes spec 232 (the
    * pipeline-node gate is dropped — all codex/opencode-bridge spawns get it via this one call).
    */
@@ -2287,6 +2290,21 @@ export class AgentManager {
       const home = this.opts.materializeBridgeMcpHermes?.(name);
       if (!home) return { cmd, env: {}, wired: false };
       return { cmd, env: { HERMES_HOME: home }, wired: true };
+    }
+    if (binary === "pi") {
+      if (/(^|\s)(?:--no-tools|-nt|--tools|-t|--exclude-tools|-xt)(?:=|\s|$)/.test(def.cmd)) {
+        this.opts.notify?.(
+          `agent '${name}': its Pi command restricts tools, so Tachyon cannot guarantee the complete Bridge catalog`,
+          "warn",
+        );
+        return { cmd, env: {}, wired: false };
+      }
+      const extension = this.opts.piBridgeExtensionPath?.();
+      if (!extension) {
+        this.opts.notify?.(`agent '${name}': staged Pi Bridge extension is unavailable`, "warn");
+        return { cmd, env: {}, wired: false };
+      }
+      return { cmd: piBridgeCmd(cmd, extension), env: {}, wired: true };
     }
     return { cmd, env: {}, wired: false };
   }

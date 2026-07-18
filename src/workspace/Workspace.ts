@@ -263,6 +263,8 @@ export interface WorkspaceDeps {
   onApprovalRequested?: (ws: Workspace, request: { id: string; requester: string }) => void;
   /** Optional extension-global Claude quota transport. It remains inert unless machine-local consent enables it. */
   claudeStatusLineCapture?: Pick<ClaudeStatusLineCaptureTransport, "materialize">;
+  /** spec 398 — immutable staged Pi Bridge extension shipped beside the persistent engine daemon. */
+  piBridgeExtensionPath?: string;
 }
 
 /** spec 235 — the slice of the control-mode engine the Workspace lifecycle needs; a test passes a no-op. */
@@ -792,6 +794,12 @@ export class Workspace {
       materializeBridgeMcpHermes: (name) => {
         const entry = this.bridgeEntry();
         return entry ? this.harness.materializeBridgeMcpHermes(name, entry) : undefined;
+      },
+      piBridgeExtensionPath: () => {
+        const file = this.deps.piBridgeExtensionPath;
+        if (!file) return undefined;
+        try { return fs.statSync(file).isFile() ? file : undefined; }
+        catch { return undefined; }
       },
       // spec 243 — per-spawn --settings SessionStart ownership hook (claude); the resolver reads the ledger
       // it writes so Activity follows a /clear/resume rotation even on a shared cwd.

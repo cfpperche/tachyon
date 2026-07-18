@@ -1198,6 +1198,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       materializeBridgeMcp?: (name: string) => string | undefined;
       materializeBridgeMcpOpencode?: (name: string, cwd: string) => string | undefined;
       materializeBridgeMcpGrok?: (name: string) => string | undefined;
+      piBridgeExtensionPath?: () => string | undefined;
       materializeOwnershipSettings?: (name: string, opts?: {
         ownershipOnly?: boolean;
         cwd?: string;
@@ -1331,6 +1332,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       materializeBridgeMcp: opts.materializeBridgeMcp,
       materializeBridgeMcpOpencode: opts.materializeBridgeMcpOpencode,
       materializeBridgeMcpGrok: opts.materializeBridgeMcpGrok,
+      piBridgeExtensionPath: opts.piBridgeExtensionPath,
       materializeOwnershipSettings: opts.materializeOwnershipSettings,
       materializeCodexSessionStartHookConfig: opts.materializeCodexSessionStartHookConfig,
       ownedSession: opts.ownedSession,
@@ -3604,6 +3606,51 @@ describe("AgentManager — session resume (spec 209)", () => {
       expect(cmds.at(-1)).toContain('mcp_servers.tachyon_bridge={url="http://127.0.0.1:9/mcp"');
       expect(cmds.at(-1)).toContain('bearer_token_env_var="TACHYON_AGENT_BRIDGE_TOKEN"');
       expect(cmds.at(-1)).not.toMatch(/Bearer\s/); // no literal token on argv
+    });
+
+    it("Pi: spawn and restart load the staged extension before the primer, with credentials only in env", async () => {
+      const extension = "/immutable/engine/pi-bridge-extension.mjs";
+      const bridge = {
+        getExtraEnv: () => ({ TACHYON_BRIDGE_URL: "http://127.0.0.1:9/mcp", TACHYON_BRIDGE_TOKEN: "shared-secret" }),
+        mintAgentToken: () => ({ TACHYON_AGENT_BRIDGE_TOKEN: "agent-secret" }),
+        piBridgeExtensionPath: () => extension,
+      };
+      const { manager, cmds, startArgs } = resumeHarness("agents:\n  pi:\n    cmd: pi\n", bridge);
+
+      await manager.spawn("pi");
+      expect(cmds.at(-1)).toMatch(/^pi --extension '\/immutable\/engine\/pi-bridge-extension\.mjs' /);
+      expect(cmds.at(-1)).toContain("── TACHYON PRIMER ──");
+      expect(cmds.at(-1)).not.toContain("shared-secret");
+      expect(cmds.at(-1)).not.toContain("agent-secret");
+      expect(envFromTmuxArgs(startArgs.at(-1)!)).toMatchObject({
+        TACHYON_BRIDGE_URL: "http://127.0.0.1:9/mcp",
+        TACHYON_AGENT_BRIDGE_TOKEN: "agent-secret",
+      });
+
+      await manager.restart("pi", { stop: "force", session: "new" });
+      expect(cmds.at(-1)).toContain(`--extension '${extension}'`);
+    });
+
+    it("Pi: a missing staged extension warns and refuses a false wired spawn", async () => {
+      const warnings: string[] = [];
+      const { manager } = resumeHarness("agents:\n  pi:\n    cmd: pi\n", {
+        getExtraEnv: () => ({ TACHYON_BRIDGE_URL: "http://127.0.0.1:9/mcp" }),
+        piBridgeExtensionPath: () => undefined,
+        notify: (message) => warnings.push(message),
+      });
+      await expect(manager.spawn("pi")).rejects.toThrow("Bridge tools could not be materialized");
+      expect(warnings).toContain("agent 'pi': staged Pi Bridge extension is unavailable");
+    });
+
+    it("Pi: refuses tool-filtering flags that would make a wired stamp lie", async () => {
+      const warnings: string[] = [];
+      const { manager } = resumeHarness("agents:\n  pi:\n    cmd: pi --no-tools\n", {
+        getExtraEnv: () => ({ TACHYON_BRIDGE_URL: "http://127.0.0.1:9/mcp" }),
+        piBridgeExtensionPath: () => "/immutable/engine/pi-bridge-extension.mjs",
+        notify: (message) => warnings.push(message),
+      });
+      await expect(manager.spawn("pi")).rejects.toThrow("Bridge tools could not be materialized");
+      expect(warnings.some((warning) => warning.includes("restricts tools"))).toBe(true);
     });
 
     it("claude (non-harness): spawn appends --mcp-config at the END (additive, after the prompt positional)", async () => {

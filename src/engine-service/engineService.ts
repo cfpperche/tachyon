@@ -208,6 +208,7 @@ export async function startDaemonEngineService(
         routeHumanApprovalRequest(host, approvalWorkspace.wsHash, request);
       },
       claudeStatusLineCapture,
+      piBridgeExtensionPath: path.join(__dirname, "pi-bridge-extension.mjs"),
     });
     await workspace.start();
     const runningWorkspace = workspace;

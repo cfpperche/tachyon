@@ -34,7 +34,7 @@ you already pay for.
 
 ## Works with the CLIs you already use
 
-`Claude Code` · `Codex` · `OpenCode` · `Grok` · `Hermes Agent` · `Gemini` · `Copilot CLI` · `Aider` · **any CLI** —
+`Claude Code` · `Codex` · `OpenCode` · `Grok` · `Hermes Agent` · `Pi` · `Gemini` · `Copilot CLI` · `Aider` · **any CLI** —
 plus any dev server, watcher or build command. No lock-in, no reselling your tokens.
 
 ## Three steps, no magic
@@ -102,10 +102,11 @@ range 41000–42999 — same workspace, same port, forever). Pin a specific port
 back to an ephemeral one and warns you. The current port shows in the `$(zap) Tachyon :PORT`
 status-bar item.
 
-**You don't register anything.** Tachyon uses each supported runtime's native MCP surface:
+**You don't register anything.** Tachyon uses each supported runtime's native integration surface:
 Claude gets additive `--mcp-config`, Codex an additive `-c mcp_servers.tachyon_bridge=…`,
-OpenCode a scoped config, and Grok/Hermes a private runtime home with the Bridge folded into
-their config. Harness agents receive the same wiring inside their materialized private config.
+OpenCode a scoped config, Grok/Hermes a private runtime home with the Bridge folded into their
+config, and Pi an additive Tachyon-owned extension that projects the MCP catalog into native Pi tools.
+Harness agents receive the same wiring inside their materialized private config.
 Injection is rebuilt on the lifecycle operations each runtime supports, so a momentarily-down
 Bridge self-heals on the next start; bearer tokens stay in the process environment, never in a
 committed file or command-line literal.

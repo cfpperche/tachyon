@@ -196,6 +196,28 @@ export function codexBridgeCmd(cmd: string, url: string): string {
   return `${cmd.slice(0, endOfBinary)} -c ${shellQuote(table)}${cmd.slice(endOfBinary)}`;
 }
 
+/** Additively load Tachyon's immutable Bridge adapter into Pi without touching `.pi` or argv secrets. */
+export function piBridgeCmd(cmd: string, extensionPath: string): string {
+  const tokens = cmd.trim().split(/\s+/);
+  const i = binaryIndex(tokens);
+  const base = (tokens[i] ?? "").split("/").pop() ?? "";
+  if (base !== "pi") return cmd;
+  const re = /\S+/g;
+  let count = 0;
+  let endOfBinary = cmd.length;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(cmd)) !== null) {
+    if (count === i) {
+      endOfBinary = match.index + match[0].length;
+      break;
+    }
+    count++;
+  }
+  const injection = ` --extension ${shellQuote(extensionPath)}`;
+  if (cmd.slice(endOfBinary).startsWith(injection)) return cmd;
+  return `${cmd.slice(0, endOfBinary)}${injection}${cmd.slice(endOfBinary)}`;
+}
+
 export function codexConfigCmd(cmd: string, configOverride: string | string[]): string {
   const tokens = cmd.trim().split(/\s+/);
   const i = binaryIndex(tokens);

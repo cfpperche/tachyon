@@ -40,6 +40,7 @@ function writeEngineManifest() {
     entrypoint: "engine-daemon.cjs",
     files: [
       { path: "engine-daemon.cjs", sha256: sha256File("dist/engine/engine-daemon.cjs") },
+      { path: "pi-bridge-extension.mjs", sha256: sha256File("dist/engine/pi-bridge-extension.mjs") },
       { path: "media/clipboard-copy.sh", sha256: sha256File("dist/engine/media/clipboard-copy.sh"), executable: true },
     ],
     build: {
@@ -57,7 +58,9 @@ const engineManifestPlugin = {
   name: "tachyon-engine-manifest",
   setup(build) {
     build.onEnd((result) => {
-      if (result.errors.length === 0) writeEngineManifest();
+      if (result.errors.length === 0
+        && existsSync("dist/engine/engine-daemon.cjs")
+        && existsSync("dist/engine/pi-bridge-extension.mjs")) writeEngineManifest();
     });
   },
 };
@@ -143,6 +146,21 @@ const engineDaemon = {
   format: "cjs",
   target: "node20",
   define: nodeDefines,
+  sourcemap: false,
+  logLevel: "info",
+  plugins: [engineManifestPlugin],
+};
+
+// spec 398 — self-contained Pi extension loaded additively by every Tachyon-spawned Pi agent.
+// It runs inside Pi, not the engine, but ships in the authenticated immutable engine bundle so its
+// path survives extension upgrades and never depends on project/global Pi configuration.
+const piBridgeExtension = {
+  entryPoints: ["src/pi-bridge-extension/index.ts"],
+  bundle: true,
+  outfile: "dist/engine/pi-bridge-extension.mjs",
+  platform: "node",
+  format: "esm",
+  target: "node20",
   sourcemap: false,
   logLevel: "info",
   plugins: [engineManifestPlugin],
@@ -484,7 +502,7 @@ if (existsSync(excalidrawAssets)) {
   cpSync(excalidrawAssets, "dist/webview/excalidraw-assets", { recursive: true });
 }
 
-const targets = [extension, toolLauncher, dataResolver, externalResolver, engineDaemon, sidebar, activity, handoff, approval, plugins, probes, inspector, controlInspector, cockpit, pinPreview, pinStudio, missionControl, taskDetail, taskStudio, runtimeOps, pipelineStudio, agentStudioFixture, agentStudioShell, terminalStudioShell, commandStudioShell, runbookStudioShell, scheduleStudioShell, pluginHost, excalidraw, mermaid, katex, preview, uiGate];
+const targets = [extension, toolLauncher, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, activity, handoff, approval, plugins, probes, inspector, controlInspector, cockpit, pinPreview, pinStudio, missionControl, taskDetail, taskStudio, runtimeOps, pipelineStudio, agentStudioFixture, agentStudioShell, terminalStudioShell, commandStudioShell, runbookStudioShell, scheduleStudioShell, pluginHost, excalidraw, mermaid, katex, preview, uiGate];
 if (watch) {
   const ctxs = await Promise.all(targets.map((c) => esbuild.context(c)));
   await Promise.all(ctxs.map((c) => c.watch()));
