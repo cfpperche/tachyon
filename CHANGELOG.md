@@ -6,6 +6,13 @@ Marketplace release notes.
 
 ## Unreleased
 
+## 0.56.27 — Drop stale queued notify after sender death (t-99ccc9)
+
+### Fixed
+- **`notify_agent` queue no longer injects obsolete completion lines** after the
+  sender is killed. Sender incarnation metadata is bound into the existing
+  NoticeQueue stale-source guard (minimal fix, not a full notification redesign).
+
 ## 0.56.26 — Hermetic verify path budget (t-b3ca7e)
 
 ### Fixed
