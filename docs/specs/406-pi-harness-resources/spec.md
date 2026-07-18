@@ -2,7 +2,9 @@
 
 _Created 2026-07-18._
 
-**Status:** in-progress
+**Status:** shipped
+
+**Closure:** Integrated on `main` as `256901cc`; focused 672 tests, typecheck, build, engine boundary, Product Invariants and real Pi RPC dogfood passed. Full-suite baseline failures unrelated to SDD 406 are recorded in `notes.md`.
 
 ## Intent
 

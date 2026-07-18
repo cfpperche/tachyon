@@ -30,6 +30,12 @@
 - Mandatory `npm run verify:full:quiet` ran and failed on two known pre-existing `verifyFullQuiet.test.ts` expectations plus an unrelated parallel `engineService.test.ts` response-order failure. The engineService test passed immediately in isolation with one worker; follow-up bug `t-c289cf` records the flake. No SDD 406 focused failure occurred.
 - Mandatory `npm run typecheck` passed.
 
+## 2026-07-18 — integration
+
+- Human explicitly authorized integration and push. Feature commit `e0dbbbcf` was cherry-picked onto current `main` as `256901cc` after confirming `main == origin/main` and both trees were clean.
+- On integrated `main` 0.56.54: typecheck passed; 672 focused tests passed; real Pi RPC dogfood passed.
+- Integrated full verification ran and retained unrelated baseline failures: two stale Mission Control → Board title expectations and the two known `verifyFullQuiet.test.ts` expectations. Full log: `/tmp/tachyon-verify-full-WbVafn` (host-local).
+
 ## Verification log
 
 ### 2026-07-18T20:47:58Z — fail (0/1) — source: tasks.md
