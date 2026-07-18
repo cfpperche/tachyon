@@ -1,9 +1,15 @@
 import { defineConfig } from "vitest/config";
 import os from "node:os";
 import path from "node:path";
+import { decideHeavyGate } from "./src/host/hostResources";
 
-/** t-6a9bc4 slice-1: never default to nproc (24 on a 15GB box thrash-kills the control plane). */
-export const VITEST_MAX_WORKERS = Math.max(1, Math.min(4, os.cpus().length || 1));
+/**
+ * t-019dac: auto-size workers from free RAM (grows if you add memory).
+ * Still never nproc-blind; hard-capped inside decideHeavyGate/recommendVitestMaxWorkers.
+ * Forced override: TACHYON_VITEST_MAX_WORKERS.
+ */
+const gate = decideHeavyGate({ cpuCount: os.cpus().length || 1 });
+export const VITEST_MAX_WORKERS = gate.ok ? gate.workers : 1;
 
 export default defineConfig({
   resolve: {
@@ -17,6 +23,5 @@ export default defineConfig({
     testTimeout: 30_000,
     hookTimeout: 30_000,
     maxWorkers: VITEST_MAX_WORKERS,
-    // fileParallelism stays default; pool size is the memory bomb, not file count alone.
   },
 });

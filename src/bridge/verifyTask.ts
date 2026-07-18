@@ -13,6 +13,7 @@ import {
 import { hasDoorbellRung } from "./doorbell.js";
 import { CONFIG_FILENAMES, loadConfigFile, type TachyonConfig } from "../config/loadConfig.js";
 import type { CallerSnapshot } from "./callerIdentity.js";
+import { decideHeavyGate } from "../host/hostResources.js";
 import type { Delivery, DeliveryContract } from "../delivery/types.js";
 import type { DeliveryVerificationContext, DeliveryVerificationLeaseService, PreparedDeliveryVerification } from "../delivery/verificationLease.js";
 import { parseArgvCommand } from "../config/argvCommand.js";
@@ -1369,6 +1370,17 @@ async function verifyTaskResolved(input: VerifyTaskInput, target: VerificationTa
       code: "verification_config_missing",
       detail: "verify_task full=true requires the project to configure settings.verify.full",
     });
+  }
+
+  // t-019dac: refuse heavy full tier under host memory pressure (fail-closed, before expensive work).
+  if (input.full === true && !missingRequestedFull) {
+    const gate = decideHeavyGate();
+    if (!gate.ok) {
+      blockers.push({
+        code: "memory_pressure",
+        detail: gate.reason,
+      });
+    }
   }
 
   const refSha = canonical.deliveredHeadSha;

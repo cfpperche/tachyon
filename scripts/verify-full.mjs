@@ -3,11 +3,17 @@ import { spawn } from "node:child_process";
 import { cpus, tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { decideHeavyGate } from "./host-resources.mjs";
 
 export const FAILURE_LIMITS = Object.freeze({ assertions: 10, assertionBytes: 2 * 1024, totalBytes: 24 * 1024 });
 
-/** t-6a9bc4 slice-1: match vitest.config.ts maxWorkers (cap, never nproc). */
-export const VITEST_MAX_WORKERS = Math.max(1, Math.min(4, cpus().length || 1));
+/** Dynamic: prefer decideHeavyGate().workers; kept as function for tests that pin env. */
+export function resolveVitestMaxWorkers() {
+  return decideHeavyGate({ cpuCount: cpus().length || 1 }).workers;
+}
+
+/** @deprecated use resolveVitestMaxWorkers — export for lock tests backward compat */
+export const VITEST_MAX_WORKERS = resolveVitestMaxWorkers();
 
 /** t-6a9bc4: at most one full-suite gate host-wide (verify_task + agent contracts share this entrypoint). */
 export const VERIFY_FULL_LOCK_PATH = process.env.TACHYON_VERIFY_FULL_LOCK_PATH || path.join(tmpdir(), "tachyon-verify-full.lock");
@@ -163,6 +169,16 @@ export async function main() {
     }
     throw error;
   }
+  // t-019dac: refuse under memory pressure before spending the suite; auto-size workers from free RAM.
+  const gate = decideHeavyGate({ cpuCount: cpus().length || 1 });
+  if (!gate.ok) {
+    process.stderr.write(`${gate.reason}\n`);
+    lock?.release();
+    return 75;
+  }
+  const workers = gate.workers;
+  process.stderr.write(`[verify:full] ${gate.reason}\n`);
+
   const root = mkdtempSync(path.join(tmpdir(), "tachyon-verify-full-"));
   chmodSync(root, 0o700);
   const buildLog = path.join(root, "build.log");
@@ -181,7 +197,7 @@ export async function main() {
     }
     const vitestEntry = path.resolve("node_modules/vitest/vitest.mjs");
     const tests = await runChild(process.execPath,
-      [vitestEntry, "run", `--maxWorkers=${VITEST_MAX_WORKERS}`, "--reporter=json", `--outputFile=${reportFile}`, "--silent=passed-only"], testLog, active);
+      [vitestEntry, "run", `--maxWorkers=${workers}`, "--reporter=json", `--outputFile=${reportFile}`, "--silent=passed-only"], testLog, active);
     let report;
     try { report = JSON.parse(readFileSync(reportFile, "utf8")); } catch { report = undefined; }
     if (tests.code !== 0 || tests.signal || receivedSignal || !report) {

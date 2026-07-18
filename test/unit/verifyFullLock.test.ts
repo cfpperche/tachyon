@@ -15,9 +15,9 @@ describe("verify-full control-plane protection (t-6a9bc4 slice-1)", () => {
     locks.length = 0;
   });
 
-  it("caps vitest workers well below nproc", () => {
+  it("auto-sizes vitest workers (never nproc-blind; hard-capped)", () => {
     expect(VITEST_MAX_WORKERS).toBeGreaterThanOrEqual(1);
-    expect(VITEST_MAX_WORKERS).toBeLessThanOrEqual(4);
+    expect(VITEST_MAX_WORKERS).toBeLessThanOrEqual(16);
     expect(VITEST_MAX_WORKERS).toBeLessThanOrEqual(os.cpus().length || 1);
   });
 
