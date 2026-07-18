@@ -14,7 +14,7 @@ Make Pi a first-class Tachyon runtime for onboarding: Tachyon delivers the same 
 
 ## Acceptance criteria
 
-- [ ] **Scenario: Tachyon starts an onboarded Pi agent**
+- [x] **Scenario: Tachyon starts an onboarded Pi agent**
   - **Given** a declared or ad-hoc agent whose resolved runtime is `pi` and a live authenticated Bridge
   - **When** Tachyon composes and starts the process
   - **Then** the command additively loads the immutable Tachyon Pi Bridge extension and receives the generated opening brief without mutating user or project Pi configuration

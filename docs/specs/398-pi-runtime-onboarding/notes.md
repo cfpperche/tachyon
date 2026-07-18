@@ -25,6 +25,15 @@ _In-flight design memory — decisions, deviations, tradeoffs, and open question
 - Human Dev Host dogfood is pending maintainer reload/approval.
 - The branch inherited two unrelated baseline verification defects from `7946c02f`: `npm run typecheck` fails because `scripts/verify-full.mjs` has no declaration consumed by `test/unit/verifyFullLock.test.ts`; the full suite also has `verifyFullQuiet.test.ts` expecting the pre-`t-6a9bc4` `verify:full` script. The onboarding-focused tests, engine packaging, build, PI-001 and dogfood are green; these baseline defects were not folded into the onboarding diff.
 
+## Human dogfood
+
+### 2026-07-18 — pass — Dev Host worktree target
+
+- Commit `625c3c1d`, isolated fixture `/tmp/tachyon-pi-onboarding-dogfood`.
+- Maintainer confirmed the managed Pi started successfully in the Dev Host and the onboarding worked.
+- This closes the remaining integrated spawn/primer/Bridge acceptance scenario for Phase 1.
+- Dev Host pointer was cleared immediately after confirmation; its private engine was stopped.
+
 ## Dogfood log
 
 ### 2026-07-18T14:30:30Z — pass (1/1) — source: tasks.md — commit: 7946c02f8ce29bf5aaa38159329ba33917c629dd
