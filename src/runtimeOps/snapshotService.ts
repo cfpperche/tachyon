@@ -22,6 +22,11 @@ export interface RuntimeOpsWorkspaceSource {
     list(): Promise<ManagedEntryInfo[]>;
     defOf(name: string): { cmd: string } | undefined;
     resumeReadiness(name: string, record: SessionRecord): Promise<boolean>;
+    /** Required for t-e3bae0 resource sampling; optional so lean test doubles stay valid. */
+    session?(name: string): string;
+  };
+  tmux?: {
+    panePid(session: string): Promise<number>;
   };
   attentionOf?(name: string): AgentAttention | undefined;
   runtimeOpsBridgeHealth?(name: string): {
@@ -39,6 +44,8 @@ export interface RuntimeOpsSnapshotServiceOptions {
   activityLog?: (workspaceRoot: string, agent: string) => RuntimeOpsActivityLog;
   /** Synchronous cached read port. It must not collect or wait on a provider from the snapshot/render path. */
   providerObservations?: () => RuntimeOpsProviderObservationSnapshotInput;
+  /** t-e3bae0 — shared with sidebar fleet so CPU% has continuous samples across views. */
+  resourceSampler?: Pick<import("../attention/resourceSample.js").ResourceSampler, "sample" | "clear" | "keys">;
 }
 
 export interface RuntimeOpsActivityLog {
@@ -82,6 +89,7 @@ export class RuntimeOpsSnapshotService {
   private readonly detectionTtlMs: number;
   private readonly activityLog: NonNullable<RuntimeOpsSnapshotServiceOptions["activityLog"]>;
   private readonly providerObservations?: NonNullable<RuntimeOpsSnapshotServiceOptions["providerObservations"]>;
+  private readonly resourceSampler?: NonNullable<RuntimeOpsSnapshotServiceOptions["resourceSampler"]>;
   private readonly activity = new Map<string, ActivityProjection>();
 
   constructor(
@@ -94,6 +102,7 @@ export class RuntimeOpsSnapshotService {
     this.activityLog = options.activityLog ?? ((workspaceRoot, agent) =>
       new ActivityLog(path.join(workspaceRoot, ".tachyon", "activity"), agent));
     this.providerObservations = options.providerObservations;
+    this.resourceSampler = options.resourceSampler;
   }
 
   invalidateDetection(): void {
@@ -112,6 +121,7 @@ export class RuntimeOpsSnapshotService {
     const labels = buildWorkspaceLabels(workspaceInputs);
     const agents: RuntimeOpsAgentInput[] = [];
     const activeActivityKeys = new Set<string>();
+    const liveResourceKeys = new Set<string>();
     for (const workspace of workspaces) {
       const records = workspace.ledger.all();
       const entries = workspace.manager ? await workspace.manager.list() : [];
@@ -132,6 +142,8 @@ export class RuntimeOpsSnapshotService {
           ? { id: activity.model, effort: activity.modelEffort, observedAt: activity.modelObservedAt, stale: activity.modelStale }
           : undefined;
         const modelFact = resolveModelFact(definition?.cmd, observed);
+        const resources = await this.sampleAgentResources(workspace, agentName, entry);
+        if (resources) liveResourceKeys.add(agentName);
         agents.push({
           workspaceKey: workspace.wsHash,
           workspaceLabel: labels.get(workspace.wsHash) ?? workspace.folderName,
@@ -158,10 +170,16 @@ export class RuntimeOpsSnapshotService {
           modelDivergence: modelFact?.divergence === true,
           resume: await projectResume(agentName, record, entryByName.get(agentName), workspace.manager),
           bridge: workspace.runtimeOpsBridgeHealth?.(agentName),
+          ...(resources ? { resources } : {}),
         });
       }
     }
     for (const key of this.activity.keys()) if (!activeActivityKeys.has(key)) this.activity.delete(key);
+    if (this.resourceSampler) {
+      for (const key of this.resourceSampler.keys()) {
+        if (!liveResourceKeys.has(key)) this.resourceSampler.clear(key);
+      }
+    }
     let providerObservations: unknown;
     try {
       providerObservations = this.providerObservations?.();
@@ -298,6 +316,22 @@ export class RuntimeOpsSnapshotService {
     });
     this.inFlight = { generation, promise };
     return promise;
+  }
+
+  /** t-e3bae0 — pane-subtree RSS/CPU via shared ResourceSampler (Linux /proc). */
+  private async sampleAgentResources(
+    workspace: RuntimeOpsWorkspaceSource,
+    agentName: string,
+    entry: ManagedEntryInfo | undefined,
+  ): Promise<{ cpuPct?: number; memMb: number } | undefined> {
+    if (!this.resourceSampler || !workspace.manager?.session || !workspace.tmux) return undefined;
+    if (!entry?.running || entry.dead) return undefined;
+    try {
+      const panePid = await workspace.tmux.panePid(workspace.manager.session(agentName));
+      return this.resourceSampler.sample(agentName, panePid);
+    } catch {
+      return undefined;
+    }
   }
 }
 

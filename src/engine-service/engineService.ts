@@ -222,13 +222,14 @@ export async function startDaemonEngineService(
     const runningProviderObservations = providerObservations;
     providerObservationSubscription = runningProviderObservations.onDidChange(() => host.onViewsChanged("agents"));
     runningProviderObservations.start();
+    const sidebarResources = new ResourceSampler();
     const runtimeOpsSnapshots = new RuntimeOpsSnapshotService(() => [runningWorkspace], {
       providerObservations: () => ({
         preferences: providerPreferences.all(),
         observations: runningProviderObservations.snapshot(),
       }),
+      resourceSampler: sidebarResources,
     });
-    const sidebarResources = new ResourceSampler();
 
     const bridgePort = runningWorkspace.bridge.listenerPort;
     if (bridgePort === undefined || runningWorkspace.bridge.port !== bridgePort) {

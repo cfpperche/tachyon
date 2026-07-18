@@ -208,7 +208,7 @@ function RuntimeRow({ runtime }: { runtime: RuntimeOpsRuntimeV1 }) {
         <details class="runtime-ops-agents" aria-label={`Agent details for ${runtime.label}`}>
           <summary>{runtime.agents.length === 1 ? "1 agent detail" : `${runtime.agents.length} agent details`}</summary>
           <div class="runtime-ops-agent-header" role="row" aria-hidden="true">
-            <span role="columnheader">Agent</span><span role="columnheader">Attention</span><span role="columnheader">Model</span><span role="columnheader">Context pressure</span><span role="columnheader">Resume</span><span role="columnheader">Bridge</span>
+            <span role="columnheader">Agent</span><span role="columnheader">Attention</span><span role="columnheader">Model</span><span role="columnheader">Resources</span><span role="columnheader">Context pressure</span><span role="columnheader">Resume</span><span role="columnheader">Bridge</span>
           </div>
           {runtime.agents.map((agent) => <AgentRow agent={agent} workspaces={runtime.workspaces} key={agent.key} />)}
         </details>
@@ -226,11 +226,21 @@ function AgentRow({ agent, workspaces }: { agent: RuntimeOpsAgentRefV1; workspac
       <div class="runtime-ops-cell" data-label="Agent" role="cell"><strong>{agent.name}</strong><span>{workspace} · {agent.status}</span></div>
       <div class="runtime-ops-cell" data-label="Attention" role="cell"><strong>{attention.primary}</strong><span>{attention.detail}</span></div>
       <div class="runtime-ops-cell" data-label="Model" role="cell"><Model value={agent.model} /></div>
+      <div class="runtime-ops-cell" data-label="Resources" role="cell"><AgentResources value={agent.resources} /></div>
       <div class="runtime-ops-cell" data-label="Context pressure" role="cell"><ContextPressure value={agent.contextPressure} /></div>
       <div class="runtime-ops-cell" data-label="Resume" role="cell"><strong>{resumeLabel(agent.resume.state)}</strong><span>{resumeDetail(agent.resume.state)}</span></div>
       <div class="runtime-ops-cell" data-label="Bridge" role="cell"><strong class={`runtime-ops-bridge ${agent.bridge.state}`}>{bridge.label}</strong><span>{bridge.detail}</span></div>
     </div>
   );
+}
+
+function AgentResources({ value }: { value: RuntimeOpsAgentRefV1["resources"] }) {
+  if (!value) return <><strong>—</strong><span>No sample yet</span></>;
+  const cpu = value.cpuPct === undefined ? "…" : `${Math.round(value.cpuPct)}%`;
+  const mem = value.memMb >= 1024
+    ? `${(value.memMb / 1024).toFixed(value.memMb >= 10240 ? 0 : 1).replace(/\.0$/, "")}G`
+    : `${Math.round(value.memMb)}M`;
+  return <><strong>{cpu} · {mem}</strong><span>CPU · RSS (pane tree)</span></>;
 }
 
 function ContextPressure({ value }: { value: RuntimeOpsAgentRefV1["contextPressure"] }) {

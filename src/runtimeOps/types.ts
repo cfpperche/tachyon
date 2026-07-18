@@ -99,6 +99,8 @@ export interface RuntimeOpsAgentRefV1 {
     boundGeneration?: number;
   };
   contextPressure: RuntimeOpsContextPressureV1;
+  /** t-e3bae0 — optional pane-tree sample (Linux). */
+  resources?: { cpuPct?: number; memMb: number };
 }
 
 export interface RuntimeOpsRuntimeV1 {

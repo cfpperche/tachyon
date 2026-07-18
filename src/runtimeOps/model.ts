@@ -71,6 +71,8 @@ export interface RuntimeOpsAgentInput {
   resume?: RuntimeOpsResumeInput;
   bridge?: RuntimeOpsBridgeHealthInput;
   contextPressure?: RuntimeOpsContextPressureInput;
+  /** t-e3bae0 — pane process-tree RSS/CPU when sampling is available. */
+  resources?: { cpuPct?: number; memMb: number };
 }
 
 export interface RuntimeOpsBridgeHealthInput {
@@ -173,6 +175,7 @@ function projectRuntime(runtime: string, pathDetected: boolean, agents: RuntimeO
       resume: normalizeResume(agent.resume),
       bridge: projectBridgeHealth(agent.bridge),
       contextPressure: normalizeContextPressure(agent.contextPressure),
+      ...(agent.resources ? { resources: normalizeResources(agent.resources) } : {}),
     })),
   };
 }
@@ -327,6 +330,15 @@ function normalizeContextPressure(input: RuntimeOpsContextPressureInput | undefi
   const used = normalizeTokenCount(input.value?.used);
   const limit = normalizeTokenCount(input.value?.limit);
   return limit > 0 ? { state: "available", value: { used, limit } } : { state: "unavailable" };
+}
+
+function normalizeResources(input: { cpuPct?: number; memMb: number }): { cpuPct?: number; memMb: number } {
+  const memMb = Number.isFinite(input.memMb) ? Math.max(0, Math.round(input.memMb)) : 0;
+  const out: { cpuPct?: number; memMb: number } = { memMb };
+  if (input.cpuPct !== undefined && Number.isFinite(input.cpuPct)) {
+    out.cpuPct = Math.max(0, Math.min(999, input.cpuPct));
+  }
+  return out;
 }
 
 function normalizeStatus(value: unknown): RuntimeOpsAgentRefV1["status"] {
