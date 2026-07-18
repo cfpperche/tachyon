@@ -77,7 +77,7 @@ Avoid the word `ongoing` as a verification token — use a date, CLI version, te
 | 5 Fork | ✓ | ✗ | ✓ | ✓ | ✗ |
 | 6 Harness | ✓ | ✓ | ✓ | ✓† | ~‡ |
 | 7 Graceful stop | ~ | ~ | ✓ | ✓ | ~ |
-| 8 Activity | ✓ | ✓ | ✓ | ✗ | ✗ |
+| 8 Activity | ✓ | ✓ | ✓ | ✓ | ✗ |
 | 9 Permission inject | ~ | ~ | ~ | **✗** | ✗ |
 | 10 Label / profile | ✓ | ✓ | ~ | ✓ | ~ |
 | 11 Restart | ✓ | ✓ | ✓ | ✓ | ✓ |
