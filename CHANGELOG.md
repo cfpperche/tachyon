@@ -6,6 +6,13 @@ Marketplace release notes.
 
 ## Unreleased
 
+## 0.56.30 — Control health probe without nonce (t-faa36e upgrade)
+
+### Fixed
+- **Engine upgrade bootstrap**: when the control `.nonce` sidecar is missing
+  (pre-auth engines), only the read-only `health` op is allowed so the
+  supervisor can identity-check and replace; other ops stay fail-closed.
+
 ## 0.56.29 — Durable pane transcripts (t-6a6a00)
 
 ### Added
