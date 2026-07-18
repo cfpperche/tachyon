@@ -23,3 +23,9 @@ dist/
 .agents/
 .codex/
 .mcp.json
+
+# Local dogfood fleet / settings — machine-specific; not shared via git.
+# Backup: ~/.local/share/tachyon-backups/tachyon.yml.latest (and stamped copies).
+# Template for new checkouts: tachyon.yml.example
+tachyon.yml
+tachyon.yaml
