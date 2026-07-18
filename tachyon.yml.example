@@ -1,11 +1,10 @@
-# tachyon.yml — Tachyon's own development environment (self-hosting).
+# tachyon.yml.example — shared template for THIS monorepo dogfood fleet.
 #
-# Tachyon is developed FROM this repo, USING Tachyon. The agents below continue
-# the build. Each agent/terminal becomes a tmux session shown as a native editor
-# terminal. Format reference: https://github.com/cfpperche/tachyon
+# Live config is gitignored. Create/edit locally:
+#   cp tachyon.yml.example tachyon.yml
 #
-# Starting point — edit freely. The roles mirror how Tachyon was actually built:
-# claude builders driving SDD specs, a codex agent as the adversarial second model.
+# Backup (this machine): ~/.local/share/tachyon-backups/tachyon.yml.latest
+# Format: https://github.com/cfpperche/tachyon
 
 agents:
   hermes:
