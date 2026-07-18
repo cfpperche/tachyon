@@ -4,7 +4,7 @@ import path from "node:path";
 import { expect } from "vitest";
 import { AgentManager, type DeliveryJoinRequest } from "../../src/agents/AgentManager.js";
 import { parseConfig, type ManagedEntryDef } from "../../src/config/loadConfig.js";
-import { TmuxService, workspaceHash } from "../../src/tmux/TmuxService.js";
+import { TmuxService, TmuxError, workspaceHash } from "../../src/tmux/TmuxService.js";
 import { SessionLedger } from "../../src/resume/SessionLedger.js";
 import { agentLogId } from "../../src/activity/logStore.js";
 import { sessionOwnersFile, spawnSettingsPath } from "../../src/activity/sessionOwners.js";
@@ -446,4 +446,307 @@ export async function exerciseDeclaredDeliveryJoinBridgeStampRefresh(): Promise<
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
+}
+
+/**
+ * B3 (t-13c2b6): a Delivery-bound `newSession` failure is always treated as uncertain — a same-named
+ * pane may have landed on the tmux server despite the reported error, so `cleanupFailedDeliveryExecution`
+ * never probes or kills it, whether or not the fake tmux server actually created a phantom session
+ * behind the failure. Only the receipt-owned token is revoked; footprint/ledger/callback state is
+ * retained exactly like the session itself, and reservation compensation runs exactly once.
+ */
+export const boundDeliveryNewSessionFailureCases = [
+  "newSession fails before any pane is created",
+  "newSession throws after an ambiguous same-named pane race",
+] as const;
+export type BoundDeliveryNewSessionFailureCase = typeof boundDeliveryNewSessionFailureCases[number];
+
+export async function exerciseBoundDeliveryNewSessionFailure(kind: BoundDeliveryNewSessionFailureCase): Promise<void> {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-bound-newsession-fail-"));
+  const sessions = new Set<string>();
+  const revoked: string[] = [], failed: string[] = [], killed: string[] = [], callbacks: string[] = [];
+  const hasSessionTargets: string[] = [];
+  const execName = "review-execution";
+  // eslint-disable-next-line prefer-const -- assigned after `tmux`, read only once the manager spawns (closure, not TDZ)
+  let manager: AgentManager;
+  const tmux = new TmuxService(async (args) => {
+    const target = () => args[args.indexOf("-t") + 1]!.replace(/^=/, "").replace(/:$/, "");
+    if (args.includes("new-session")) {
+      const name = args[args.indexOf("-s") + 1]!;
+      if (name === manager.session(execName)) {
+        if (kind === "newSession throws after an ambiguous same-named pane race") sessions.add(name);
+        throw new Error("injected newSession failure");
+      }
+      sessions.add(name);
+      return { stdout: "", stderr: "" };
+    }
+    if (args.includes("kill-session")) { killed.push(target()); sessions.delete(target()); return { stdout: "", stderr: "" }; }
+    if (args[2] === "has-session") { hasSessionTargets.push(target()); if (sessions.has(target())) return { stdout: "", stderr: "" }; throw new Error("no session"); }
+    if (args[2] === "capture-pane" || args[2] === "list-sessions" || args[2] === "list-panes") return { stdout: "", stderr: "" };
+    return { stdout: "", stderr: "" };
+  });
+  try {
+    const config = parseConfig("agents:\n  reviewer:\n    cmd: codex\n    role: reviewer\n    instructions: durable reviewer\n    isolate: transcript\n").config!;
+    const ledger = new SessionLedger(root);
+    const home = (name: string) => path.join(root, ".tachyon", "harness", name);
+    manager = new AgentManager({
+      tmux, wsHash: workspaceHash(root), workspaceRoot: root, getConfig: () => config, getMaxAgents: () => 8, ledger,
+      mintAgentToken: name => ({ TACHYON_AGENT_BRIDGE_TOKEN: `token-${name}` }),
+      revokeAgentToken: name => { revoked.push(name); },
+      onKilled: name => { callbacks.push(name); },
+      materializeHarness: ({ name }) => { const dir = home(name); fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(path.join(dir, "marker"), name); return { home: dir, env: { CODEX_HOME: dir }, args: [] }; },
+      removeHarnessHome: name => fs.rmSync(home(name), { recursive: true, force: true }),
+      prepareDeliveryJoin: async (_name, request) => ({ cwd: root, worktree: { path: root, branch: "delivery", tachyonCreatedBranch: true, baseRef: request.expectedHead, createdAt: "now" }, reservationNonce: "n", segmentId: "seg-t14" }),
+      confirmDeliveryJoin: async () => undefined,
+      failDeliveryJoin: async name => { failed.push(name); },
+      launchReadiness: { wait: async () => ({ state: "ready" as const }) },
+    });
+    await manager.spawn("reviewer");
+    const principal = structuredClone(ledger.get("reviewer"));
+    const principalHome = fs.readFileSync(path.join(home("reviewer"), "marker"));
+
+    const failure = await manager.spawn(execName, {
+      taskBrief: "Bridge contract",
+      deliveryJoin: { deliveryId: "d", role: "reviewer", ownsSubset: [], expectedHead: "head", operationId: kind, declaredAgent: "reviewer" },
+    }).catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(AggregateError);
+    const agg = failure as AggregateError;
+    expect(agg.errors.map((error: Error) => error.message)).toEqual([
+      "injected newSession failure",
+      "Delivery execution session creation is uncertain; recovery state preserved",
+    ]);
+    expect(agg.message).toContain("compensation was incomplete");
+
+    // The ambiguous pane is never probed or killed by cleanup — session creation uncertainty
+    // preserves whatever the tmux server actually did, whether or not this fake landed a phantom
+    // session. The two recorded probes are both pre-acquisition "already in use" collision checks
+    // (spawnDeliveryJoin's declared_agent name check, then spawnCore's own forced-attempt check) —
+    // cleanupFailedDeliveryExecution's "attempted" branch adds no probe of its own.
+    expect(hasSessionTargets.filter((n) => n === manager.session(execName))).toEqual([manager.session(execName), manager.session(execName)]);
+    expect(killed).toEqual([]);
+    expect(callbacks).toEqual([]);
+    // Receipt-owned token policy: only this attempt's own freshly-minted token is revoked, exactly once.
+    expect(revoked).toEqual([execName]);
+    // Reservation compensation runs exactly once.
+    expect(failed).toEqual([execName]);
+    // No durable ledger row was ever persisted for a join whose session never completed.
+    expect(ledger.get(execName)).toBeUndefined();
+    // Materialized harness state is retained rather than cleaned up: uncertainty covers this
+    // attempt's whole footprint, not just the session, since a live process may still depend on it.
+    expect(fs.existsSync(home(execName))).toBe(true);
+    // The declared principal's identity is completely untouched by the failed execution attempt.
+    expect(ledger.get("reviewer")).toEqual(principal);
+    expect(fs.readFileSync(path.join(home("reviewer"), "marker"))).toEqual(principalHome);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+}
+
+/**
+ * B4 (t-13c2b6): once a Delivery-bound execution's session is proven "completed", every subsequent
+ * cleanup phase in `cleanupFailedDeliveryExecution` (session probe, kill, post-kill probe, token
+ * revoke, in-memory/footprint removal, killed callback) is independently fault-injected, alone and in
+ * combination, to prove: exact stable `AggregateError` order/labels/causes; every later safe cleanup
+ * attempt still runs even after an earlier one throws; and liveness that is never proven dead (an
+ * initial-probe error, a surviving pane after a failed kill) retains ALL state — footprint, ledger row,
+ * and callback — rather than guessing.
+ */
+export const boundDeliveryCleanupOrderingCases = [
+  "initial session probe error",
+  "kill error with a surviving pane",
+  "post-kill session probe error",
+  "token revoke error after a clean kill",
+  "killed callback error after a clean kill",
+  "combined kill, token-revoke and callback failures",
+  "reservation compensation error alongside a surviving pane",
+] as const;
+export type BoundDeliveryCleanupOrderingCase = typeof boundDeliveryCleanupOrderingCases[number];
+
+export async function exerciseBoundDeliveryCleanupOrdering(kind: BoundDeliveryCleanupOrderingCase): Promise<void> {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-bound-cleanup-order-"));
+  const sessions = new Set<string>();
+  const killed: string[] = [], revoked: string[] = [], callbacks: string[] = [], failed: string[] = [];
+  const execName = "review-execution";
+  const alwaysSurvivesKinds: BoundDeliveryCleanupOrderingCase[] = [
+    "kill error with a surviving pane",
+    "reservation compensation error alongside a surviving pane",
+  ];
+  const killThrowsKinds: BoundDeliveryCleanupOrderingCase[] = [
+    "kill error with a surviving pane",
+    "combined kill, token-revoke and callback failures",
+    "reservation compensation error alongside a surviving pane",
+  ];
+  let cleanupPhase = false;
+  let probeCount = 0;
+  // eslint-disable-next-line prefer-const -- assigned after `tmux`, read only once the manager spawns (closure, not TDZ)
+  let manager: AgentManager;
+  const tmux = new TmuxService(async (args) => {
+    const target = () => args[args.indexOf("-t") + 1]!.replace(/^=/, "").replace(/:$/, "");
+    if (args.includes("new-session")) { sessions.add(args[args.indexOf("-s") + 1]!); return { stdout: "", stderr: "" }; }
+    if (args.includes("kill-session")) {
+      if (cleanupPhase && target() === manager.session(execName)) {
+        killed.push(execName);
+        if (killThrowsKinds.includes(kind)) throw new Error("injected kill failure");
+        sessions.delete(target());
+        return { stdout: "", stderr: "" };
+      }
+      sessions.delete(target());
+      return { stdout: "", stderr: "" };
+    }
+    if (args[2] === "has-session") {
+      if (cleanupPhase && target() === manager.session(execName)) {
+        probeCount += 1;
+        if (kind === "initial session probe error" && probeCount === 1) {
+          throw new TmuxError("timed out waiting for tmux has-session", args);
+        }
+        if (kind === "post-kill session probe error" && probeCount === 2) {
+          throw new TmuxError("timed out waiting for tmux has-session", args);
+        }
+        if (alwaysSurvivesKinds.includes(kind)) return { stdout: "", stderr: "" }; // never proven dead
+        if (probeCount === 1) return { stdout: "", stderr: "" }; // alive on the first probe
+        throw new Error("no session"); // gone once a kill has been attempted
+      }
+      if (sessions.has(target())) return { stdout: "", stderr: "" };
+      throw new Error("no session");
+    }
+    if (args[2] === "capture-pane" || args[2] === "list-sessions" || args[2] === "list-panes") return { stdout: "", stderr: "" };
+    return { stdout: "", stderr: "" };
+  });
+  try {
+    const config = parseConfig("agents:\n  reviewer:\n    cmd: codex\n    role: reviewer\n    instructions: durable reviewer\n    isolate: transcript\n").config!;
+    const ledger = new SessionLedger(root);
+    const home = (name: string) => path.join(root, ".tachyon", "harness", name);
+    manager = new AgentManager({
+      tmux, wsHash: workspaceHash(root), workspaceRoot: root, getConfig: () => config, getMaxAgents: () => 8, ledger,
+      mintAgentToken: name => ({ TACHYON_AGENT_BRIDGE_TOKEN: `token-${name}` }),
+      revokeAgentToken: name => {
+        revoked.push(name);
+        if (name === execName && (kind === "token revoke error after a clean kill" || kind === "combined kill, token-revoke and callback failures")) {
+          throw new Error("injected token revoke failure");
+        }
+      },
+      onKilled: name => {
+        callbacks.push(name);
+        if (name === execName && (kind === "killed callback error after a clean kill" || kind === "combined kill, token-revoke and callback failures")) {
+          throw new Error("injected killed-callback failure");
+        }
+      },
+      materializeHarness: ({ name }) => { const dir = home(name); fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(path.join(dir, "marker"), name); return { home: dir, env: { CODEX_HOME: dir }, args: [] }; },
+      removeHarnessHome: name => fs.rmSync(home(name), { recursive: true, force: true }),
+      prepareDeliveryJoin: async (_name, request) => ({ cwd: root, worktree: { path: root, branch: "delivery", tachyonCreatedBranch: true, baseRef: request.expectedHead, createdAt: "now" }, reservationNonce: "n", segmentId: "seg-t14" }),
+      confirmDeliveryJoin: async () => { cleanupPhase = true; throw new Error("confirmation failed"); },
+      failDeliveryJoin: async (name) => {
+        failed.push(name);
+        if (kind === "reservation compensation error alongside a surviving pane") throw new Error("injected reservation compensation failure");
+      },
+      launchReadiness: { wait: async () => ({ state: "ready" as const }) },
+    });
+    await manager.spawn("reviewer");
+    const principal = structuredClone(ledger.get("reviewer"));
+    const principalHome = fs.readFileSync(path.join(home("reviewer"), "marker"));
+
+    const failure = await manager.spawn(execName, {
+      taskBrief: "Bridge contract",
+      deliveryJoin: { deliveryId: "d", role: "reviewer", ownsSubset: [], expectedHead: "head", operationId: kind, declaredAgent: "reviewer" },
+    }).catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(AggregateError);
+    const agg = failure as AggregateError;
+    const messages = agg.errors.map((error: Error) => error.message);
+    const byMessage = (message: string) => agg.errors.find((error: Error) => error.message === message);
+
+    switch (kind) {
+      case "initial session probe error":
+        expect(messages).toEqual([
+          "confirmation failed",
+          "initial session probe failed",
+          "failed Delivery execution may still be live; recovery state preserved",
+        ]);
+        expect(byMessage("initial session probe failed")?.cause).toMatchObject({ message: "timed out waiting for tmux has-session" });
+        expect(probeCount).toBe(1);
+        expect(killed).toEqual([]); // never attempted: liveness was never disproven
+        expect(revoked).toEqual([execName]); // token revoke is unconditional
+        expect(callbacks).toEqual([]); // unreached: state retained under unknown liveness
+        expect(fs.existsSync(home(execName))).toBe(true);
+        expect(ledger.get(execName)).toBeDefined();
+        break;
+      case "kill error with a surviving pane":
+        expect(messages).toEqual([
+          "confirmation failed",
+          "session kill failed",
+          "failed Delivery execution may still be live; recovery state preserved",
+        ]);
+        expect(byMessage("session kill failed")?.cause).toMatchObject({ message: "injected kill failure" });
+        expect(probeCount).toBe(2);
+        expect(killed).toEqual([execName]);
+        expect(revoked).toEqual([execName]);
+        expect(callbacks).toEqual([]); // unreached: the survivor is never proven dead
+        expect(fs.existsSync(home(execName))).toBe(true);
+        expect(ledger.get(execName)).toBeDefined();
+        break;
+      case "post-kill session probe error":
+        expect(messages).toEqual([
+          "confirmation failed",
+          "post-kill session probe failed",
+          "failed Delivery execution may still be live; recovery state preserved",
+        ]);
+        expect(byMessage("post-kill session probe failed")?.cause).toMatchObject({ message: "timed out waiting for tmux has-session" });
+        expect(probeCount).toBe(2);
+        expect(killed).toEqual([execName]); // the kill itself succeeded
+        expect(callbacks).toEqual([]);
+        expect(fs.existsSync(home(execName))).toBe(true);
+        expect(ledger.get(execName)).toBeDefined();
+        break;
+      case "token revoke error after a clean kill":
+        expect(messages).toEqual(["confirmation failed", "token revoke failed"]);
+        expect(byMessage("token revoke failed")?.cause).toMatchObject({ message: "injected token revoke failure" });
+        expect(probeCount).toBe(2);
+        expect(killed).toEqual([execName]);
+        expect(callbacks).toEqual([execName]); // every later safe attempt still runs
+        expect(fs.existsSync(home(execName))).toBe(false); // footprint removal still ran
+        expect(ledger.get(execName)).toBeUndefined();
+        break;
+      case "killed callback error after a clean kill":
+        expect(messages).toEqual(["confirmation failed", "killed callback failed"]);
+        expect(byMessage("killed callback failed")?.cause).toMatchObject({ message: "injected killed-callback failure" });
+        expect(probeCount).toBe(2);
+        expect(killed).toEqual([execName]);
+        expect(revoked).toEqual([execName]);
+        expect(fs.existsSync(home(execName))).toBe(false); // footprint was removed BEFORE the callback ran
+        expect(ledger.get(execName)).toBeUndefined();
+        break;
+      case "combined kill, token-revoke and callback failures":
+        expect(messages).toEqual([
+          "confirmation failed",
+          "session kill failed",
+          "token revoke failed",
+          "killed callback failed",
+        ]);
+        expect(byMessage("session kill failed")?.cause).toMatchObject({ message: "injected kill failure" });
+        expect(byMessage("token revoke failed")?.cause).toMatchObject({ message: "injected token revoke failure" });
+        expect(byMessage("killed callback failed")?.cause).toMatchObject({ message: "injected killed-callback failure" });
+        expect(probeCount).toBe(2);
+        expect(killed).toEqual([execName]);
+        // Every later removal still ran exactly once despite three earlier-order failures.
+        expect(fs.existsSync(home(execName))).toBe(false);
+        expect(ledger.get(execName)).toBeUndefined();
+        break;
+      case "reservation compensation error alongside a surviving pane":
+        expect(messages).toEqual([
+          "confirmation failed",
+          "session kill failed",
+          "failed Delivery execution may still be live; recovery state preserved",
+          "reservation compensation failed",
+        ]);
+        expect(byMessage("reservation compensation failed")?.cause).toMatchObject({ message: "injected reservation compensation failure" });
+        expect(probeCount).toBe(2);
+        expect(failed).toEqual([execName]); // compensation was attempted exactly once, even though it failed
+        expect(callbacks).toEqual([]);
+        expect(fs.existsSync(home(execName))).toBe(true); // nothing was proven dead; state is retained
+        expect(ledger.get(execName)).toBeDefined();
+        break;
+    }
+    // The declared principal is never touched by any executor-side cleanup chaos.
+    expect(ledger.get("reviewer")).toEqual(principal);
+    expect(fs.readFileSync(path.join(home("reviewer"), "marker"))).toEqual(principalHome);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
 }
