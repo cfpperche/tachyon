@@ -6,6 +6,15 @@ Marketplace release notes.
 
 ## Unreleased
 
+## 0.56.31 — Design-system --ds-accent + kit tokens (t-df7df5)
+
+### Fixed
+- **`--ds-accent`** is now defined (was used across panels but never set).
+
+### Added
+- Disabled opacity, shadow, motion, z-index, and scrim tokens in the shared
+  design system; reduced-motion zeroes duration tokens.
+
 ## 0.56.30 — Control health probe without nonce (t-faa36e upgrade)
 
 ### Fixed
