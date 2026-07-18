@@ -4,6 +4,11 @@ export interface RuntimeOpsSummaryV1 {
   activeAgents?: number;
   throttled?: number;
   bridgeIssues?: number;
+  /** t-019dac — host MemAvailable/total (MiB) when /proc/meminfo is readable. */
+  hostMemAvailableMb?: number;
+  hostMemTotalMb?: number;
+  /** Suggested vitest maxWorkers from current free RAM (auto-scales with upgrades). */
+  recommendedVitestWorkers?: number;
 }
 
 export type RuntimeOpsSource = "path" | "session-ledger" | "activity-log" | "command" | "runtime-profile";
