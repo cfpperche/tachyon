@@ -28,6 +28,17 @@
 - The private `.tachyon/harness` root and each Pi home/session directory are mode `0700`; copied JSON state is mode `0600`. The existing workspace `.tachyon` directory is validated as real but its mode is not changed.
 - Managed Pi rename remains refused because tmux name, ledger authority and private home would need an atomic migration contract.
 
+## Human dogfood
+
+### 2026-07-18 — pass — Dev Host worktree target
+
+- Commit `df2c9701`, isolated fixture `/tmp/tachyon-pi-private-home-dogfood`.
+- `pi-a` reported `PI_CODING_AGENT_DIR` under `.tachyon/harness/pi-a`; home and sessions were real mode-0700 directories and `auth.json` was a regular non-symlink mode-0600 file.
+- `pi-b` reported its distinct `.tachyon/harness/pi-b` home, proving sibling runtime-home separation.
+- Maintainer confirmed `pi-a` Stop → Resume preserved the conversation and `/tachyon-bridge-status` remained connected after relaunch.
+- This proves the integrated default private-home + exact continuity + Bridge lifecycle path for SDD 400.
+- Dev Host pointer was cleared immediately after confirmation; its private engine was stopped.
+
 ## Verification log
 
 ### 2026-07-18T15:52:32Z — pass (1/1) — source: tasks.md
