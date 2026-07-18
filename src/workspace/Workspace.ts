@@ -2377,6 +2377,33 @@ export class Workspace {
     return this.bridge.url;
   }
 
+  /** t-7f94f2 — human notice inbox (daemon host only; empty on VsCodeHost-only shells). */
+  listNoticeInbox(): import("./noticeInbox.js").NoticeInboxEntry[] {
+    const host = this.host as EngineHost & { listNoticeInbox?: () => import("./noticeInbox.js").NoticeInboxEntry[] };
+    return host.listNoticeInbox?.() ?? [];
+  }
+
+  markNoticeRead(id: string): boolean {
+    const host = this.host as EngineHost & { markNoticeRead?: (id: string) => boolean };
+    return host.markNoticeRead?.(id) ?? false;
+  }
+
+  markAllNoticesRead(): boolean {
+    const host = this.host as EngineHost & { markAllNoticesRead?: () => boolean };
+    return host.markAllNoticesRead?.() ?? false;
+  }
+
+  async invokeNoticeInboxAction(noticeId: string, actionId: string): Promise<boolean> {
+    const host = this.host as EngineHost & { invokeNoticeAction?: (noticeId: string, actionId: string) => Promise<void> };
+    if (!host.invokeNoticeAction) return false;
+    try {
+      await host.invokeNoticeAction(noticeId, actionId);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   bridgeStartFailureInfo(): BridgeStartFailureInfo | undefined {
     return this.lastBridgeStartFailure ? { ...this.lastBridgeStartFailure } : undefined;
   }

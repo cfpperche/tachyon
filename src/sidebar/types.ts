@@ -139,6 +139,17 @@ export interface PinPreviewVM {
   attachments: PinPreviewAttachmentVM[];
 }
 export interface ProposalVM { id: string; name: string; by?: string; reason?: string; when?: string }
+/** t-7f94f2 — engine human notice row for the sidebar strip. */
+export interface NoticeVM {
+  id: string;
+  message: string;
+  level: "info" | "warn" | "error";
+  at: string;
+  collapsedCount: number;
+  actions: Array<{ id: string; label: string }>;
+  read: boolean;
+  actionsLive: boolean;
+}
 export interface BridgeVM { port: string; connected: boolean }
 export interface WorkspaceRef { hash: string; name: string }
 /** spec 245 — per-folder Project Handoff badge state (drives the sidebar open-button + its dot). */
@@ -166,6 +177,8 @@ export interface FleetVM {
   commands: CommandVM[];
   runbooks: RunbookVM[];
   pins: PinVM[];
+  /** t-7f94f2 — human engine notices (toast history / catch-up). */
+  notices?: NoticeVM[];
   /** spec 245 — the per-folder Project Handoff state (drives the header open-button + badge). */
   handoff?: HandoffVM;
   /**
@@ -271,4 +284,5 @@ export const SAMPLE: FleetVM = {
     { text: "Investigate slow refresh on 100+ agents", done: false, by: "claude", tags: ["perf"] },
     { text: "Sidebar webview prototype — review in EDH", done: false, by: "human", tags: ["ui", "dogfood"], detail: true, attachmentCount: 2 },
   ],
+  notices: [],
 };

@@ -41,7 +41,7 @@ const SortIcon = ({ dir }: { dir: SortMode }) => {
  *  actions route to the right workspace (omitted → the first). */
 export interface Dispatch {
   action: (id: ActionId, agent: string, wsHash?: string) => void;
-  section: (op: string, id: string, extra?: { done?: boolean; label?: string }, wsHash?: string) => void;
+  section: (op: string, id: string, extra?: { done?: boolean; label?: string; actionId?: string }, wsHash?: string) => void;
   global: (op: GlobalOp, wsHash?: string) => void;
   pipeline: (op: string, name: string, nodeId?: string, wsHash?: string) => void;
   /** spec 242 — persist the chosen sort for a status list (global per-user, per-section). */
@@ -716,6 +716,71 @@ function MoreMenu({ menu, onClose }: { menu: MenuState | null; onClose: () => vo
   );
 }
 
+/** t-7f94f2 — catch-up strip for engine human notices (toast remains attention channel). */
+function NoticeStrip({ fleets, dispatch }: { fleets: FleetVM[]; dispatch?: Dispatch }) {
+  const rows = useMemo(
+    () => fleets.flatMap((f) => (f.notices ?? []).map((n) => ({ n, hash: f.folder?.hash }))),
+    [fleets],
+  );
+  if (rows.length === 0) return null;
+  const unread = rows.filter((r) => !r.n.read).length;
+  return (
+    <div class="notice-strip" role="region" aria-label="Notices">
+      <div class="notice-strip-head">
+        <span class="notice-strip-title">
+          <Icon name="bell" /> Notices
+          {unread > 0 && <span class="notice-unread" title={`${unread} unread`}>{unread}</span>}
+        </span>
+        {unread > 0 && (
+          <button
+            type="button"
+            class="notice-mark-all"
+            title="Mark all notices read"
+            onClick={() => {
+              for (const f of fleets) {
+                if ((f.notices ?? []).some((n) => !n.read)) {
+                  dispatch?.section("notice:markAllRead", "all", undefined, f.folder?.hash);
+                }
+              }
+            }}
+          >
+            Mark all read
+          </button>
+        )}
+      </div>
+      <div class="notice-strip-list">
+        {rows.slice(0, 12).map(({ n, hash }) => (
+          <div class={`notice-row level-${n.level}${n.read ? " read" : " unread"}`} key={`${hash ?? ""}:${n.id}`}>
+            <button
+              type="button"
+              class="notice-msg"
+              title={n.message}
+              onClick={() => {
+                if (!n.read) dispatch?.section("notice:markRead", n.id, undefined, hash);
+              }}
+            >
+              <span class={`notice-level l-${n.level}`}>{n.level}</span>
+              <span class="notice-text">{n.message}</span>
+              {n.collapsedCount > 1 && <span class="notice-x">×{n.collapsedCount}</span>}
+            </button>
+            {n.actionsLive && n.actions.map((a) => (
+              <button
+                key={a.id}
+                type="button"
+                class="notice-act"
+                title={a.label}
+                onClick={() => dispatch?.section("notice:invoke", n.id, { actionId: a.id }, hash)}
+              >
+                {a.label}
+              </button>
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function App({ fleets = [SAMPLE], dispatch, prefs = {}, collapsedKeys = [] }: { fleets?: FleetVM[]; dispatch?: Dispatch; prefs?: { agents?: string; terminals?: string }; collapsedKeys?: string[] }) {
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [tab, setTab] = useState<TabId>("Agents");
@@ -899,6 +964,7 @@ export function App({ fleets = [SAMPLE], dispatch, prefs = {}, collapsedKeys = [
         onClick={() => setOpen(true)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpen(true); } }}>
         <Icon name="search" /><span class="kgrow">Search agents, commands, pins…</span><span class="kbd">{isMac ? "⌘K" : "Ctrl K"}</span>
       </div>
+      <NoticeStrip fleets={fleets} dispatch={dispatch} />
       <div class="tabs" role="tablist" aria-label="Sidebar sections">
         {TABS.map(({ id, icon }, i) => (
           <button class={`tab${tab === id ? " active" : ""}`} type="button" role="tab" id={`tab-${id}`}

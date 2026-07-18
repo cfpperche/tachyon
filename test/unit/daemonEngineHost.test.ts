@@ -387,6 +387,37 @@ describe("DaemonEngineHost", () => {
     resolvePresent?.(present.actions[0]?.id);
     await waitFor(() => invoked === 1);
   });
+
+  it("t-7f94f2: keeps notice inbox history, unread across auto-dismiss, mark-read API", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-daemon-host-"));
+    roots.push(root);
+    const mediaRoot = path.join(root, "bundle");
+    fs.mkdirSync(mediaRoot);
+    const host = new DaemonEngineHost({
+      storageRoot: path.join(root, "state"),
+      mediaRoot,
+      appVersion: "0.57.0",
+      noticePassiveAutoDismissMs: 30,
+      noticeDedupeWindowMs: 5_000,
+      requestUi: async () => null,
+    });
+    hosts.push(host);
+    host.notify("alpha", "info");
+    host.notify("alpha", "info");
+    host.notify("beta", "warn", [{ label: "Open", run: async () => undefined }]);
+    await waitFor(() => host.listNoticeInbox().length >= 2);
+    const inbox = host.listNoticeInbox();
+    expect(inbox[0]?.message).toBe("beta");
+    expect(inbox[1]?.message).toBe("alpha");
+    expect(inbox[1]?.collapsedCount).toBe(2);
+    expect(inbox.every((e) => !e.read)).toBe(true);
+    await new Promise((r) => setTimeout(r, 60));
+    expect(host.listNoticeInbox().find((e) => e.message === "alpha")?.read).toBe(false);
+    expect(host.markNoticeRead(inbox[1]!.id)).toBe(true);
+    expect(host.listNoticeInbox().find((e) => e.id === inbox[1]!.id)?.read).toBe(true);
+    expect(host.markAllNoticesRead()).toBe(true);
+    expect(host.listNoticeInbox().every((e) => e.read)).toBe(true);
+  });
 });
 
 async function waitFor(predicate: () => boolean): Promise<void> {
