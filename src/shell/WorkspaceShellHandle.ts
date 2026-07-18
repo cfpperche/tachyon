@@ -87,4 +87,9 @@ export class WorkspaceShellHandle implements WorkspaceAgentStudioTarget {
   deleteSoulProfile(agent: string) { return this.studio.deleteSoulProfile(agent); }
   refreshSoulProfile(agent: string) { return this.studio.refreshSoulProfile(agent); }
   canonicalSoulPathForOpen(agent: string) { return this.studio.canonicalSoulPathForOpen(agent); }
+
+  /** t-a39c7d — clear done(unseen) via engine sidebar mutation. */
+  async markAgentPaneSeen(agent: string): Promise<void> {
+    await this.sidebar.mutateSidebar({ action: "agent.markSeen", id: agent });
+  }
 }

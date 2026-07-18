@@ -12,6 +12,7 @@ describe("agentModel.statusOf (spec 237)", () => {
   it("running + needs-input → needs", () => expect(statusOf(raw({ name: "a", running: true }), "needs-input")).toBe("needs"));
   it("running + throttled → throttled (spec 306)", () => expect(statusOf(raw({ name: "a", running: true }), "throttled")).toBe("throttled"));
   it("running + idle → idle", () => expect(statusOf(raw({ name: "a", running: true }), "idle")).toBe("idle"));
+  it("running + idle + unseen → done (t-a39c7d)", () => expect(statusOf(raw({ name: "a", running: true }), "idle", true)).toBe("done"));
   it("running + working/unknown → running", () => {
     expect(statusOf(raw({ name: "a", running: true }), "working")).toBe("running");
     expect(statusOf(raw({ name: "a", running: true }))).toBe("running");
@@ -26,6 +27,12 @@ describe("agentModel.toAgentVM (spec 237)", () => {
     expect(toAgentVM(raw({ name: "a", running: true }), { attention: "working" })).toMatchObject({ status: "running" });
     expect(toAgentVM(raw({ name: "a", running: true }), { attention: "working" }).attention).toBeUndefined();
     expect(toAgentVM(raw({ name: "a", running: true }), { attention: "idle" }).attention).toBeUndefined();
+  });
+  it("idle + unseen → status done + attention badge (t-a39c7d)", () => {
+    expect(toAgentVM(raw({ name: "a", running: true }), { attention: "idle", unseen: true })).toMatchObject({
+      status: "done",
+      attention: "done",
+    });
   });
   it("exit sub: clean vs crashed (with exit code)", () => {
     expect(toAgentVM(raw({ name: "a", dead: true })).sub).toBe("exited (0)");

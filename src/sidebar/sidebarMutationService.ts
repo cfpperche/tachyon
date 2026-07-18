@@ -38,6 +38,11 @@ export async function applySidebarMutation(
     const changed = (await source.invokeNoticeInboxAction?.(input.id, input.actionId)) ?? false;
     return { action: input.action, id: input.id, changed };
   }
+  if (input.action === "agent.markSeen") {
+    source.markAgentPaneSeen?.(input.id);
+    onChanged("agents");
+    return { action: input.action, id: input.id, changed: true };
+  }
   const changed = input.action === "pin.toggle" ? togglePinDone(source, input.id, input.done, deps)
     : input.action === "pin.delete" ? deletePin(source, input.id, deps)
       : input.action === "schedule.toggle-pause" ? toggleSchedulePause(source, input.id, deps)

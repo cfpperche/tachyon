@@ -13,7 +13,8 @@ export type SidebarMutationInputV1 =
   | { action: "proposal.reject"; id: string }
   | { action: "notice.markRead"; id: string }
   | { action: "notice.markAllRead"; id: "all" }
-  | { action: "notice.invoke"; id: string; actionId: string };
+  | { action: "notice.invoke"; id: string; actionId: string }
+  | { action: "agent.markSeen"; id: string };
 
 export function isSidebarMutationInputV1(value: unknown): value is SidebarMutationInputV1 {
   if (!isRecord(value) || typeof value.action !== "string") return false;
@@ -45,6 +46,9 @@ export function isSidebarMutationInputV1(value: unknown): value is SidebarMutati
       && typeof value.actionId === "string"
       && NOTICE_ID_RE.test(value.actionId);
   }
+  if (value.action === "agent.markSeen") {
+    return exactKeys(value, ["action", "id"]) && typeof value.id === "string" && NAME_RE.test(value.id);
+  }
   return false;
 }
 
@@ -59,6 +63,7 @@ export function isSidebarMutationResultIdentityV1(action: unknown, id: unknown):
   if (typeof action !== "string" || typeof id !== "string") return false;
   if (action === "pin.toggle" || action === "pin.delete") return PIN_ID_RE.test(id);
   if (action === "schedule.toggle-pause" || action === "schedule.delete") return NAME_RE.test(id);
+  if (action === "agent.markSeen") return NAME_RE.test(id);
   if (action === "notice.markRead" || action === "notice.invoke") return NOTICE_ID_RE.test(id);
   if (action === "notice.markAllRead") return id === "all";
   return (action === "proposal.approve" || action === "proposal.reject") && PROPOSAL_ID_RE.test(id);

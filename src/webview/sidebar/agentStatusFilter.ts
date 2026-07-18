@@ -23,8 +23,8 @@ export const AGENT_STATUS_FILTER_LABEL: Record<AgentStatusFilter, string> = {
 
 export const AGENT_STATUS_FILTER_TITLE: Record<AgentStatusFilter, string> = {
   all: "All agents",
-  live: "Live session — process still present (running, needs, throttled, idle, stopping, stop-failed)",
-  attention: "Needs you — needs input, throttled, stop-failed, awaiting human, or non-progress attention",
+  live: "Live session — process still present (running, needs, throttled, done, idle, stopping, stop-failed)",
+  attention: "Needs you — needs input, throttled, stop-failed, done(unseen), awaiting human, or non-progress attention",
   stopped: "Stopped — no live session (stopped, crashed)",
   ontask: "On task — open Board task assigned to this agent",
   hasfocus: "Has focus — task, spawn brief, or continuity goal projected",
@@ -34,6 +34,7 @@ const LIVE: ReadonlySet<AgentStatus> = new Set([
   "running",
   "needs",
   "throttled",
+  "done",
   "idle",
   "stopping",
   "stop-failed",
@@ -58,7 +59,7 @@ export function agentIsStopped(a: Pick<AgentVM, "status">): boolean {
  * Includes stop-failed (not in grouping.agentNeedsAttention).
  */
 export function agentNeedsYou(a: Pick<AgentVM, "status" | "attention" | "awaitingHuman">): boolean {
-  if (a.status === "needs" || a.status === "throttled" || a.status === "stop-failed") return true;
+  if (a.status === "needs" || a.status === "throttled" || a.status === "stop-failed" || a.status === "done") return true;
   if (a.awaitingHuman) return true;
   if (a.attention) {
     const key = a.attention.trim().toLowerCase();

@@ -59,6 +59,13 @@ export interface AgentAttention {
   awaitingHuman: boolean;
   /** the one-line reason passed to flagAwaitingHuman; present only while awaitingHuman is true. */
   awaitingHumanReason?: string;
+  /**
+   * t-a39c7d — herdr-style done(unseen): agent finished a turn (idle, or completion-hinted idle)
+   * and the human has not focused the pane yet. Orthogonal to AttentionState (state stays idle).
+   * Cleared by markSeen (sidebar/terminal open) or a new working turn — not by mere output churn
+   * in the same idle episode.
+   */
+  unseen: boolean;
   /** true when the runtime-profiled composer has a non-empty human draft. */
   composerOccupied: boolean;
   /** The last monitor tick missed its deadline or was skipped behind a still-running tick. */
@@ -135,6 +142,8 @@ interface Snapshot {
   awaitingHumanReason: string | undefined;
   /** t-35d95a — one-shot guard so the toast fires exactly once per awaiting-human episode */
   awaitingHumanNotified: boolean;
+  /** t-a39c7d — finished turn not yet viewed by human (done = idle + unseen). */
+  unseen: boolean;
   /** t-64f501 — epoch ms since the CURRENT matched pattern has been continuously recognized (near
    *  the bottom of) the tail, independent of contentSince: unrelated pane churn (e.g. a parallel
    *  tool still streaming output) must not reset this, or a genuine modal prompt would never
@@ -199,6 +208,7 @@ export class AttentionMonitor {
       stalled: snap.stalled,
       awaitingHuman: snap.awaitingHuman,
       awaitingHumanReason: snap.awaitingHumanReason,
+      unseen: snap.unseen,
       composerOccupied: snap.composerOccupied,
       stale: this.stale,
     };
@@ -249,6 +259,32 @@ export class AttentionMonitor {
     const notify = !snap.awaitingHumanNotified;
     snap.awaitingHumanNotified = true;
     this.onChange?.(agent, this.toAttention(agent, snap), notify);
+  }
+
+  /**
+   * t-a39c7d — mark the finished turn as awaiting human eyes (done = idle + unseen).
+   * Used on working→idle and when notify_agent rings the completion doorbell.
+   */
+  flagUnseen(agent: string): void {
+    const snap = this.snaps.get(agent);
+    if (!snap) return;
+    if (snap.unseen) return;
+    snap.unseen = true;
+    this.onChange?.(agent, this.toAttention(agent, snap), false);
+  }
+
+  /**
+   * t-a39c7d — human looked at the pane (sidebar click / open terminal). Decays done→idle.
+   */
+  markSeen(agent: string): void {
+    const snap = this.snaps.get(agent);
+    if (!snap || !snap.unseen) return;
+    snap.unseen = false;
+    this.onChange?.(agent, this.toAttention(agent, snap), false);
+  }
+
+  isUnseen(agent: string): boolean {
+    return this.snaps.get(agent)?.unseen ?? false;
   }
 
   needsInputCount(): number {
@@ -343,6 +379,7 @@ export class AttentionMonitor {
           awaitingHuman: false,
           awaitingHumanReason: undefined,
           awaitingHumanNotified: false,
+          unseen: false,
           matchSince: initialMatch ? now : null,
           matchKey: initialMatch ? initialMatch.pattern : null,
           lastWindowActivity: activityAt,
@@ -529,7 +566,11 @@ export class AttentionMonitor {
 
   private transition(agent: string, snap: Snapshot, state: AttentionState, now: number): void {
     if (snap.state === state) return;
-    const isNewTurnEdge = snap.state !== "working" && state === "working";
+    const prev = snap.state;
+    const isNewTurnEdge = prev !== "working" && state === "working";
+    // t-a39c7d — working→idle means a finished turn awaiting eyes; new working clears it.
+    if (prev === "working" && state === "idle") snap.unseen = true;
+    if (state === "working") snap.unseen = false;
     snap.state = state;
     snap.stateSince = now;
     if (isNewTurnEdge && snap.awaitingHuman) {

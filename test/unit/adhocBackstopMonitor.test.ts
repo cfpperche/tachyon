@@ -22,6 +22,7 @@ const att = (state: AgentAttention["state"], stableSince: number, episodeKey = "
   episodeKey,
   stalled: false,
   awaitingHuman: false,
+  unseen: false,
   composerOccupied: false,
   stale: false,
 });

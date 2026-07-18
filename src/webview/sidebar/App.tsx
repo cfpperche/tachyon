@@ -76,7 +76,7 @@ const STUDIO_OF: Partial<Record<TabId, { op: GlobalOp; label: string }>> = {
   Schedules: { op: "studio:schedules", label: "New schedule" },
 };
 
-const STATUS_LABEL: Record<AgentStatus, string> = { running: "Running", needs: "Needs input", throttled: "Throttled", idle: "Idle", stopping: "Stopping", "stop-failed": "Stop failed", stopped: "Stopped", crashed: "Crashed" };
+const STATUS_LABEL: Record<AgentStatus, string> = { running: "Running", needs: "Needs input", throttled: "Throttled", done: "Done", idle: "Idle", stopping: "Stopping", "stop-failed": "Stop failed", stopped: "Stopped", crashed: "Crashed" };
 
 function externalToolBadgeLabel(a: AgentVM): string | undefined {
   const tools = a.externalTools;
@@ -250,7 +250,7 @@ export function AgentRow({ a, flash, nested = false, hasChildren = false, collap
 }) {
   const d = useContext(DispatchCtx);
   const hasHidden = collapsed && hiddenCount > 0;
-  const hasResources = !!a.resources && (a.status === "running" || a.status === "idle" || a.status === "needs" || a.status === "throttled" || a.status === "stop-failed");
+  const hasResources = !!a.resources && (a.status === "running" || a.status === "idle" || a.status === "done" || a.status === "needs" || a.status === "throttled" || a.status === "stop-failed");
   const attentionVisible = a.attention && a.attention !== "working";
   const hasMeta = a.configInvalid || a.sub || attentionVisible || a.awaitingHuman || a.liveBranch || a.worktree || a.verify || a.externalTools?.active || a.harness || a.resumable || a.forked || (a.continuity && a.continuity !== "fresh") || a.persistenceHooks || hasHidden;
   const cpu = a.resources?.cpuPct;

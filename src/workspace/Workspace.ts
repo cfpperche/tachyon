@@ -1481,7 +1481,10 @@ export class Workspace {
         composerOccupiedOf: (agent) => this.attentionOf(agent)?.composerOccupied,
         deliverNotice: (target, line, metadata) => this.deliverNotice(target, line, metadata),
         sourceNoticeMetadata: (agent) => this.sourceNoticeMetadata(agent),
-        markCompletionHint: (agent) => this.completionHints.mark(agent),
+        markCompletionHint: (agent) => {
+          this.completionHints.mark(agent);
+          this.monitor.flagUnseen(agent);
+        },
         onPinsChanged: () => deps.onViewsChanged("pins"),
         onApprovalRequested: (request) => deps.onApprovalRequested?.(this, request),
         onTasksChanged: () => deps.onViewsChanged("tasks"),
@@ -2492,7 +2495,18 @@ export class Workspace {
   }
   attentionOf(agent: string): AgentAttention | undefined {
     // t-9552f3 — after notify_agent, present finished turns as idle for sidebar/backstop.
-    return applyCompletionHint(this.monitor.stateOf(agent), this.completionHints.has(agent));
+    // t-a39c7d — seenAfterHint keeps idle after human look without re-raising done.
+    return applyCompletionHint(
+      this.monitor.stateOf(agent),
+      this.completionHints.has(agent),
+      this.completionHints.isSeen(agent),
+    );
+  }
+
+  /** t-a39c7d — human opened/focused the agent pane; decay done(unseen) → idle. */
+  markAgentPaneSeen(agent: string): void {
+    this.monitor.markSeen(agent);
+    this.completionHints.markSeen(agent);
   }
 
   /**

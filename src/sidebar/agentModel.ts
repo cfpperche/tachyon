@@ -227,6 +227,8 @@ export interface AgentExtras {
   canDismiss?: boolean;
   /** t-35d95a — AttentionMonitor.awaitingHuman latch (request_human_attention); undefined = not latched. */
   awaitingHuman?: { reason: string };
+  /** t-a39c7d — idle turn finished and not yet focused by human (sidebar status "done"). */
+  unseen?: boolean;
   /** t-8354ae — row rendered under invalid config (ledger/LKG degraded mode). */
   configInvalid?: boolean;
   /** spec 378 — the transcript-latched observed model fact (undefined = no observation yet; the row falls
@@ -236,13 +238,15 @@ export interface AgentExtras {
 
 /** The sidebar grouping bucket. NOTE: mixes lifecycle (running/stopped/crashed) with running-attention
  *  (needs/idle) — matches the approved prototype; the lifecycle-vs-attention split is a tracked follow-up. */
-export function statusOf(a: AgentRaw, attention?: string): AgentStatus {
+export function statusOf(a: AgentRaw, attention?: string, unseen?: boolean): AgentStatus {
   if (a.dead) return a.crashed ? "crashed" : "stopped";
   if (a.stopping) return "stopping";
   if (a.stopFailed) return "stop-failed";
   if (!a.running) return "stopped";
   if (attention === "needs-input") return "needs";
   if (attention === "throttled") return "throttled";
+  // t-a39c7d — done = idle + unseen (herdr); decays to idle after markSeen.
+  if (attention === "idle" && unseen) return "done";
   if (attention === "idle") return "idle";
   return "running";
 }
@@ -251,8 +255,16 @@ export function toAgentVM(a: AgentRaw, x: AgentExtras = {}): AgentVM {
   const alive = a.running && !a.dead && !a.cleanExited;
   const visibleAttention = alive ? x.attention : undefined;
   const visibleAwaitingHuman = alive ? x.awaitingHuman : undefined;
+  const visibleUnseen = alive ? x.unseen === true : false;
   // spec 390 — never surface "working" as a badge (live-dot already means alive/busy).
-  const attention = visibleAttention === "needs-input" ? "needs input" : visibleAttention === "throttled" ? "throttled" : undefined;
+  const attention =
+    visibleAttention === "needs-input"
+      ? "needs input"
+      : visibleAttention === "throttled"
+        ? "throttled"
+        : visibleAttention === "idle" && visibleUnseen
+          ? "done"
+          : undefined;
   const sub = a.dead ? (a.crashed ? `exited (${a.exitCode ?? 1})` : "exited (0)") : a.cleanExited ? "exited (0)" : undefined;
   const stopping = a.stopping && !a.dead ? "stopping..." : undefined;
   const stopFailed = a.stopFailed && !a.dead ? "stop failed" : undefined;
@@ -268,7 +280,7 @@ export function toAgentVM(a: AgentRaw, x: AgentExtras = {}): AgentVM {
           ...(modelFact.divergence ? { modelDivergence: true } : {}),
         }
       : {}),
-    status: statusOf(a, visibleAttention),
+    status: statusOf(a, visibleAttention, visibleUnseen),
     ...(attention ? { attention } : {}),
     ...(a.parent ? { parent: a.parent } : {}),
     ...(a.delegator ? { delegator: a.delegator } : {}),

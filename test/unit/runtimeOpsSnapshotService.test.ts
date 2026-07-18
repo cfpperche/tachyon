@@ -72,7 +72,7 @@ describe("RuntimeOpsSnapshotService", () => {
       state: "throttled", since: 1, contentSince: 1, outputStableSince: 1, episodeKey: "e",
       matchedLine: "RAW_MATCHED_LINE_MUST_NOT_RENDER",
       rateLimit: { runtime: "codex", scope: "5h", resetAt: 12345 },
-      stalled: false, awaitingHuman: false, composerOccupied: false, stale: true,
+      stalled: false, awaitingHuman: false, unseen: false, composerOccupied: false, stale: true,
     });
     source.runtimeOpsBridgeHealth = () => ({ currentGeneration: 4, boundGeneration: 4, wired: true, clientState: "ok" });
     const service = new RuntimeOpsSnapshotService(() => [source as never], { detect: async () => ["codex"], activityLog: () => staticActivityLog([]) });
