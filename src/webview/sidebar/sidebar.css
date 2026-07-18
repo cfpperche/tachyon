@@ -33,10 +33,10 @@
   .brand-bar {
     flex: 0 0 auto;
     display: flex;
-    align-items: baseline;
+    align-items: center;
     justify-content: space-between;
     gap: 8px;
-    padding: 8px 12px 4px;
+    padding: 8px 10px 4px 12px;
     font-size: 11px;
     user-select: none;
   }
@@ -47,12 +47,35 @@
     color: var(--vscode-foreground);
     opacity: 0.9;
   }
+  .brand-right {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
   .brand-ver {
     font-family: var(--ds-mono, ui-monospace, monospace);
     font-size: 11px;
     color: var(--ds-muted);
     opacity: 0.95;
   }
+  .brand-ctrl {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 4px;
+    color: var(--ds-muted);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+  }
+  .brand-ctrl:hover {
+    color: var(--vscode-foreground);
+    background: var(--hover);
+  }
+  .brand-ctrl .codicon { font-size: 14px; }
   .kbar { margin: 4px 8px 6px; display: flex; align-items: center; gap: 6px; padding: 5px 8px; background: var(--vscode-input-background); color: var(--ds-muted); border: 1px solid var(--vscode-input-border, var(--ds-border)); border-radius: 3px; cursor: text; }
   .kbar, .tabs, .sec, .brand-bar { flex: 0 0 auto; }
   .kbar:hover { border-color: var(--ds-focus); }

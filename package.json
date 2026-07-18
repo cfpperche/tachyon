@@ -521,11 +521,6 @@
           "command": "tachyon.refreshRuntimeOps",
           "when": "view == tachyonRuntimeOpsView",
           "group": "navigation@1"
-        },
-        {
-          "command": "tachyon.openControl",
-          "when": "view == tachyonSidebarPrototype",
-          "group": "navigation@1"
         }
       ],
       "commandPalette": [
