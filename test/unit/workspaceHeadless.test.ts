@@ -2156,4 +2156,29 @@ describe("Workspace — notify_agent idle delivery (spec 341)", () => {
     expect(sent.has(session)).toBe(false);
     ws.dispose();
   });
+
+  it("drops a queued notify when its sender is killed before the recipient becomes idle (t-99ccc9)", async () => {
+    const { ws, sent } = await makeWorkspace();
+    await ws.manager.spawn("a");
+    await ws.manager.spawn("b");
+    const targetSession = ws.manager.session("b");
+    const originalStateOf = ws.monitor.stateOf.bind(ws.monitor);
+    (ws.monitor as unknown as { stateOf(agent: string): { state: string } | undefined }).stateOf = (agent: string) =>
+      agent === "b" ? { state: "working" } : originalStateOf(agent);
+    const internals = ws as unknown as {
+      deliverNotice(agent: string, line: string, metadata: { sourceChild?: string; sourceIncarnation?: number }): Promise<{ status: string }>;
+      sourceNoticeMetadata(agent: string): { sourceChild?: string; sourceIncarnation?: number };
+      recoverOnIdle(agent: string, wantAnchor: boolean): Promise<void>;
+    };
+
+    const queued = await internals.deliverNotice("b", "[tachyon] a → b: stale", internals.sourceNoticeMetadata("a"));
+    expect(queued.status).toBe("queued");
+    await ws.manager.kill("a");
+
+    (ws.monitor as unknown as { stateOf(agent: string): { state: string } | undefined }).stateOf = (agent: string) =>
+      agent === "b" ? { state: "idle" } : originalStateOf(agent);
+    await internals.recoverOnIdle("b", false);
+    expect(sent.has(targetSession)).toBe(false);
+    ws.dispose();
+  });
 });
