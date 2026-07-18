@@ -6,6 +6,14 @@ Marketplace release notes.
 
 ## Unreleased
 
+## 0.56.25 — Requester cancel for pending human approvals
+
+### Added
+- **`cancel_human_approval` Bridge tool** (`t-ae89d1`).
+  Authenticated requesters can withdraw their own still-pending approval as
+  `status=cancelled` with an audit reason — no false Deny, no stale Accept,
+  no approve-text injection. Host resolve refuses cancelled records.
+
 ## 0.56.24 — Reentrant worktree path lock (prune deadlock)
 
 ### Fixed
