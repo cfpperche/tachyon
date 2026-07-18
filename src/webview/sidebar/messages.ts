@@ -26,9 +26,16 @@ export interface FleetMessage {
   fleets: FleetVM[];
   prefs: SortPrefs;
   collapsedKeys: string[];
+  /** t-38c2a1 — running extension version (e.g. "0.56.41"). */
+  appVersion?: string;
 }
-export function fleetMessage(fleets: FleetVM[], prefs: SortPrefs, collapsedKeys: string[] = []): FleetMessage {
-  return { type: FLEET, fleets, prefs, collapsedKeys };
+export function fleetMessage(
+  fleets: FleetVM[],
+  prefs: SortPrefs,
+  collapsedKeys: string[] = [],
+  appVersion?: string,
+): FleetMessage {
+  return { type: FLEET, fleets, prefs, collapsedKeys, ...(appVersion ? { appVersion } : {}) };
 }
 
 /** the union the sidebar webview listens for (host → webview). */
