@@ -33,7 +33,7 @@ Measure the real Pi TUI in an isolated tmux server and encode its framed compose
   - **When** Tachyon executes the Pi graceful-stop profile
   - **Then** Escape aborts an active turn, Ctrl+C clears residual editor state, Ctrl+D exits, and the process reaches clean exit without forced kill
 - [x] Pi profile composer and graceful-stop sections are marked measured/verified with dated evidence and automated tmux dogfood.
-- [ ] Runtime parity documentation promotes Pi Attention and Graceful Stop only after Dev Host confirmation.
+- [x] Runtime parity documentation promotes Pi Attention and Graceful Stop only after Dev Host confirmation.
 
 ## Non-goals
 

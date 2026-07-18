@@ -29,8 +29,8 @@ _Generated from `plan.md` on 2026-07-18._
 
 ## Visual QA
 
-- [ ] Evidence: Dev Host sidebar/terminal inspection for idle, draft and Stop states.
-- [ ] Verdict: Pi interaction profile matches the real TUI without false attention.
+- [x] Evidence: Dev Host sidebar/terminal inspection at commit `27c1f433` for idle, draft and active-turn Stop states.
+- [x] Verdict: approved — Pi stayed correctly idle with a human draft, exited cleanly without `stop-failed`, and resumed after both drafted and active-turn stops.
 
 ## Cookbook
 

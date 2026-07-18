@@ -25,6 +25,16 @@
 - A frame taller than the bounded 16-line tail degrades safely: no composer ownership is claimed and ordinary output-change behavior wins.
 - Custom Pi keybindings are an explicit compatibility limit. Tachyon does not mutate user keymaps, so remapping interrupt/clear/exit can make the measured graceful sequence ineffective and trigger the existing fallback lifecycle handling.
 
+## Human dogfood
+
+### 2026-07-18 — pass — Dev Host interaction profile
+
+- Commit `27c1f433`, isolated fixture `/tmp/tachyon-pi-interaction-profile-dogfood`.
+- Maintainer confirmed the Pi pane settled idle without false Attention, retained idle state while `human-owned-draft` occupied the framed editor, and Stop exited cleanly without `stop-failed`.
+- After Resume, Stop during an active `sleep 10` operation also exited cleanly, and a second Resume proved continuity remained available.
+- Attention/composer and Graceful Stop were promoted from `~` to `✓` in the parity matrix.
+- Dev Host pointer was cleared immediately after approval; its private engine was stopped.
+
 ## Verification log
 
 ### 2026-07-18T16:49:29Z — pass (1/1) — source: tasks.md
