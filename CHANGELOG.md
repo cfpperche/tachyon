@@ -6,6 +6,13 @@ Marketplace release notes.
 
 ## Unreleased
 
+## 0.56.29 — Durable pane transcripts (t-6a6a00)
+
+### Added
+- **Per-agent `pipe-pane` transcripts** under `.tachyon/pane-transcripts/`
+  (0700/0600). Survives kill-session/reload; read path always strips ANSI and
+  runs `redactSecrets`.
+
 ## 0.56.28 — Persistent control peer auth (t-faa36e)
 
 ### Security
