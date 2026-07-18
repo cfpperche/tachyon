@@ -2,7 +2,9 @@
 
 _Created 2026-07-18._
 
-**Status:** in-progress
+**Status:** shipped-partial
+
+**Closure:** Interim one-live-Pi-per-workspace mitigation shipped in `97c2c215`; 394 focused tests and typecheck passed, and human dogfood validation `v-591729` passed. True concurrent OAuth remains explicitly deferred to follow-up `t-a1da29` after upstream Pi publishes a shared auth-file/credential-store contract.
 
 ## Intent
 

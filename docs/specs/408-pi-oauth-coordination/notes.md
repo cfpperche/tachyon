@@ -36,6 +36,7 @@ The human declined a local patched-Pi installation and chose to wait for an upst
 
 Interim guard verification:
 
+- Human installed-surface dogfood passed as validation `v-591729`: second Pi refused while the first was live, then admitted after the first stopped.
 - `test/unit/agentManager.test.ts`: 394/394 passed, including concurrent different-name admission, slot release, same-name restart/resume coverage, unknown-live-entry fail-closed behavior, and live Pi Fork refusal.
 - `npm run typecheck`: passed.
 - `npm run verify:full:quiet`: affected build/tests passed, then the known workspace baseline failed on missing worktree `tachyon.yml` for PI-001, two stale Mission Control → Board title assertions, and two quiet-verifier expectations. Retained log: `/tmp/tachyon-verify-full-544p06`.

@@ -30,8 +30,8 @@
 
 ## Closure
 
-- [ ] Run focused suites and `npm run typecheck` in both repositories.
-- [ ] Run Tachyon `npm run verify:full:quiet`; classify unrelated baseline failures.
-- [ ] Review security, crash, compatibility, and no-secret behavior.
-- [ ] Obtain explicit authorization before integration, push, or release actions.
-- [ ] Mark SDD/task shipped with exact commit and dogfood evidence.
+- [x] Run focused suites and `npm run typecheck` in both repositories.
+- [x] Run Tachyon `npm run verify:full:quiet`; classify unrelated baseline failures.
+- [x] Review security, crash, compatibility, and no-secret behavior.
+- [x] Obtain explicit authorization before integration, push, or release actions.
+- [x] Mark SDD `shipped-partial` with exact commit and dogfood evidence; defer upstream-dependent remainder to `t-a1da29`.
