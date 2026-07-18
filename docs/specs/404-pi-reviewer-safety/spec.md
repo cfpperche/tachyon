@@ -2,7 +2,9 @@
 
 _Created 2026-07-18._
 
-**Status:** in-progress
+**Status:** shipped
+
+**Closure:** Canonical read-only Pi Delivery reviewer posture shipped in `f9e4b5d0`; dogfood closure landed in `bf5077c0` after real tool-catalog and human reviewer/control validation.
 
 ## Intent
 

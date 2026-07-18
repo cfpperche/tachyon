@@ -2,7 +2,9 @@
 
 _Created 2026-07-18._
 
-**Status:** in-progress
+**Status:** shipped
+
+**Closure:** Default private Pi homes and no-follow JSON snapshot isolation shipped in `a94c48ab`; dogfood closure landed in `43994591` with installed isolation/continuity evidence at `df2c9701`. OAuth concurrency is separately mitigated/deferred by SDD 408.
 
 ## Intent
 

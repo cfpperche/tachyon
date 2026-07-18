@@ -2,7 +2,9 @@
 
 _Created 2026-07-18._
 
-**Status:** in-progress
+**Status:** shipped
+
+**Closure:** Stateful Pi transcript normalization and bounded Activity integration shipped in `647b60b9`; dogfood closure landed in `f67a5400` with human Activity-panel approval at `1b51e39a`.
 
 ## Intent
 

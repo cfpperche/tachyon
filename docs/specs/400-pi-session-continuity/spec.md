@@ -2,7 +2,9 @@
 
 _Created 2026-07-18._
 
-**Status:** in-progress
+**Status:** shipped
+
+**Closure:** Exact minted Pi session identity, private session directory and fail-closed Resume shipped in `dc3e8a60`; dogfood closure landed in `6dc5d197` with human Stop → Resume evidence at `ff71e6c3`.
 
 ## Intent
 

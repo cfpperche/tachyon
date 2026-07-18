@@ -1,5 +1,11 @@
 # 405 — pi-native-fork — specification
 
+_Created 2026-07-18._
+
+**Status:** shipped-partial
+
+**Closure:** Exact positively-owned native Pi Fork shipped in `ee97ff02`; automated/human dogfood closure landed in `1e7f42e9` with Dev Host proof at `397cea17`. SDD 408 commit `97c2c215` temporarily refuses a simultaneous live Pi sibling for OAuth safety; follow-up `t-a1da29` restores live Fork after upstream shared-auth support.
+
 ## Intent
 
 Make Tachyon's existing **Fork session** action first-class for managed Pi agents. A fork must start a distinct Pi session containing the source's current active branch while preserving the source session unchanged, private-home isolation, Bridge projection, cwd/worktree policy, and exact Resume authority.

@@ -2,7 +2,9 @@
 
 _Created 2026-07-18._
 
-**Status:** in-progress
+**Status:** shipped
+
+**Closure:** Measured framed-composer Attention and graceful Stop shipped in `e18f2e77`; dogfood closure landed in `c6cf5f96` with human idle/draft/active-turn approval at `27c1f433`.
 
 ## Intent
 
