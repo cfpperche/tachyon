@@ -786,7 +786,7 @@ function NoticeStrip({ fleets, dispatch }: { fleets: FleetVM[]; dispatch?: Dispa
   );
 }
 
-export function App({ fleets = [SAMPLE], dispatch, prefs = {}, collapsedKeys = [], appVersion }: { fleets?: FleetVM[]; dispatch?: Dispatch; prefs?: { agents?: string; terminals?: string }; collapsedKeys?: string[]; appVersion?: string }) {
+export function App({ fleets = [SAMPLE], dispatch, prefs = {}, collapsedKeys = [] }: { fleets?: FleetVM[]; dispatch?: Dispatch; prefs?: { agents?: string; terminals?: string }; collapsedKeys?: string[]; appVersion?: string }) {
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [tab, setTab] = useState<TabId>("Agents");
   const [open, setOpen] = useState(false);
