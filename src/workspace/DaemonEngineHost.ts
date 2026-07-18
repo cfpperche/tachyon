@@ -156,24 +156,20 @@ export class DaemonEngineHost implements EngineHost {
 
   markNoticeRead(id: string): boolean {
     this.assertActive();
-    const entry = this.noticeInbox.find((row) => row.id === id);
-    if (!entry || entry.read) return false;
-    entry.read = true;
+    const idx = this.noticeInbox.findIndex((row) => row.id === id);
+    if (idx < 0) return false;
+    // Mark-read dismisses from the catch-up strip (history not kept once acked).
+    this.noticeInbox.splice(idx, 1);
     this.emit({ kind: "views-changed", view: "agents", at: new Date().toISOString() });
     return true;
   }
 
   markAllNoticesRead(): boolean {
     this.assertActive();
-    let changed = false;
-    for (const entry of this.noticeInbox) {
-      if (!entry.read) {
-        entry.read = true;
-        changed = true;
-      }
-    }
-    if (changed) this.emit({ kind: "views-changed", view: "agents", at: new Date().toISOString() });
-    return changed;
+    if (this.noticeInbox.length === 0) return false;
+    this.noticeInbox = [];
+    this.emit({ kind: "views-changed", view: "agents", at: new Date().toISOString() });
+    return true;
   }
 
   async invokeNoticeAction(noticeId: string, actionId: string): Promise<void> {
@@ -183,9 +179,9 @@ export class DaemonEngineHost implements EngineHost {
     if (!action) throw new Error("notice action is missing or already consumed");
     this.noticeActions.delete(noticeId);
     this.pendingNotices.delete(noticeId);
-    this.clearInboxActionsLive(noticeId);
-    const entry = this.noticeInbox.find((row) => row.id === noticeId);
-    if (entry) entry.read = true;
+    // Invoking dismisses the inbox row.
+    const idx = this.noticeInbox.findIndex((row) => row.id === noticeId);
+    if (idx >= 0) this.noticeInbox.splice(idx, 1);
     this.emit({ kind: "views-changed", view: "agents", at: new Date().toISOString() });
     await action();
   }

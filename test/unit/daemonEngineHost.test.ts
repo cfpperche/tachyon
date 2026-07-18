@@ -414,9 +414,9 @@ describe("DaemonEngineHost", () => {
     await new Promise((r) => setTimeout(r, 60));
     expect(host.listNoticeInbox().find((e) => e.message === "alpha")?.read).toBe(false);
     expect(host.markNoticeRead(inbox[1]!.id)).toBe(true);
-    expect(host.listNoticeInbox().find((e) => e.id === inbox[1]!.id)?.read).toBe(true);
+    expect(host.listNoticeInbox().find((e) => e.id === inbox[1]!.id)).toBeUndefined();
     expect(host.markAllNoticesRead()).toBe(true);
-    expect(host.listNoticeInbox().every((e) => e.read)).toBe(true);
+    expect(host.listNoticeInbox()).toHaveLength(0);
   });
 });
 

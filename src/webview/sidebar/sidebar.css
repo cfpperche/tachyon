@@ -455,5 +455,8 @@
   .notice-x { flex: none; font-size: 10px; color: var(--ds-muted); }
   .notice-act { flex: none; font: inherit; font-size: 10px; padding: 1px 6px; border-radius: 3px; border: 1px solid var(--ds-border); background: var(--vscode-button-secondaryBackground, transparent); color: var(--vscode-button-secondaryForeground, var(--vscode-foreground)); cursor: pointer; }
   .notice-act:hover { filter: brightness(1.08); }
+  .notice-dismiss { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--ds-muted); cursor: pointer; }
+  .notice-dismiss:hover { color: var(--vscode-foreground); background: var(--hover); }
+  .notice-dismiss .codicon { font-size: 12px; }
 
   @media (prefers-reduced-motion: reduce) { *, ::before, ::after { animation: none !important; transition: none !important; } }
