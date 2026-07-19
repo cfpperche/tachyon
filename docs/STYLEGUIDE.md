@@ -98,6 +98,8 @@ Reference: **Fleet** tab.
 
 Surface CSS must not invent alternate header padding (`20px`, `8px 12px`, …) for the page chrome.
 
+**Fleet spacing parity:** editor pages share one outer pad (`--ds-page-pad-*`). Do not add a second horizontal pad on `.ds-wrap` or embed hosts. Board header is **not** a separate widget bar (no `editorWidget` background strip / full-width hairline under tools) — only `PageChrome` + body.
+
 ### Visual gate (before package / done on UI)
 
 Does **not** block improvements — blocks ship without looking.

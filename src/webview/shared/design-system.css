@@ -105,7 +105,7 @@
 /* ── reset ── */
 * { box-sizing: border-box; }
 body {
-  margin: 0; padding: 0 0 var(--ds-6);
+  margin: 0; padding: 0;
   font-family: var(--tachyon-font-mono);
   font-size: var(--ds-body);
   font-weight: var(--tachyon-weight-regular);
@@ -122,7 +122,8 @@ a { color: var(--ds-link); }
 .ds-reading { font-family: var(--tachyon-font-reading); line-height: 1.55; }
 
 /* ── layout ── */
-.ds-wrap { max-width: 920px; margin: 0 auto; padding: 0 var(--ds-5); }
+/* Horizontal page pad lives on .ds-page / Control .ck-main / panel roots — not on .ds-wrap (avoids 12/16/24 drift). */
+.ds-wrap { max-width: 920px; margin: 0 auto; padding: 0; width: 100%; box-sizing: border-box; }
 .ds-head { position: sticky; top: 0; z-index: var(--ds-z-popover); background: var(--vscode-editor-background); border-bottom: 1px solid var(--ds-border); }
 .ds-head-row { display: flex; align-items: center; gap: var(--ds-3); padding: var(--ds-4) 0 var(--ds-3); }
 .ds-title { font-size: var(--ds-title); font-weight: var(--tachyon-weight-semibold); display: flex; align-items: center; gap: var(--ds-2); margin: 0; }
@@ -241,12 +242,13 @@ select:disabled { opacity: var(--ds-disabled-opacity); cursor: default; }
   margin: 0 0 var(--ds-page-chrome-margin-bottom);
   padding: 0;
   border: 0;
-  border-bottom: var(--ds-border-width) solid transparent; /* reserve slot; surfaces opt into .ds-page-chrome--ruled */
   box-sizing: border-box;
 }
+/* Optional hairline under chrome (sticky panels). Default Fleet has none. */
 .ds-page-chrome--ruled {
-  border-bottom-color: var(--ds-border);
+  border-bottom: var(--ds-border-width) solid var(--ds-border);
   padding-bottom: var(--ds-3);
+  margin-bottom: var(--ds-page-chrome-margin-bottom);
 }
 .ds-page-chrome-text {
   min-width: 0;

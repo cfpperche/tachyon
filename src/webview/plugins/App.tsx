@@ -513,7 +513,7 @@ export function App({ vm, consent, busy, toast, dispatch }: { vm?: PluginsViewMo
   const [sortMode, setSortMode] = useState<InstalledSortMode>("name-asc");
 
   if (!vm) {
-    return <EmptyState kind="loading" message="Loading plugins…" />;
+    return <div class="ck-plugins-root"><EmptyState kind="loading" message="Loading plugins…" /></div>;
   }
 
   const wsRuntimes = vm.present.length > 0
@@ -525,7 +525,7 @@ export function App({ vm, consent, busy, toast, dispatch }: { vm?: PluginsViewMo
   const showInstalledToolbar = tab === "installed" && !vm.parseError && !vm.empty;
 
   return (
-    <div>
+    <div class="ck-plugins-root">
       <div class="ds-head">
         <div class="ds-wrap">
           <PageChrome

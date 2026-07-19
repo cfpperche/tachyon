@@ -11,7 +11,7 @@
   align-items: center;
   gap: var(--ds-5);
   min-height: 48px;
-  border-bottom: 1px solid var(--ds-border);
+  border-bottom: var(--ds-border-width) solid var(--ds-border);
 }
 
 .runtime-ops-summary-item {
@@ -38,7 +38,7 @@
 
 .runtime-ops-capacity {
   min-width: 0;
-  border-bottom: 1px solid var(--ds-border);
+  border-bottom: var(--ds-border-width) solid var(--ds-border);
 }
 
 .runtime-ops-capacity-header {
@@ -173,7 +173,7 @@
   grid-template-columns: minmax(140px, 1.2fr) minmax(160px, 1.4fr) minmax(100px, .8fr) minmax(120px, 1fr) minmax(120px, 1fr);
   gap: var(--ds-4);
   padding: var(--ds-3) var(--ds-2);
-  border-bottom: 1px solid var(--ds-border);
+  border-bottom: var(--ds-border-width) solid var(--ds-border);
   color: var(--ds-muted);
   font-size: var(--ds-section);
   font-weight: var(--tachyon-weight-semibold);
@@ -187,10 +187,10 @@
   gap: var(--ds-4);
   min-width: 0;
   padding: var(--ds-3) var(--ds-2);
-  border-bottom: 1px solid var(--ds-border);
+  border-bottom: var(--ds-border-width) solid var(--ds-border);
 }
 
-.runtime-ops-runtime-group { border-bottom: 1px solid var(--ds-border); }
+.runtime-ops-runtime-group { border-bottom: var(--ds-border-width) solid var(--ds-border); }
 .runtime-ops-runtime-group .runtime-ops-row { border-bottom: 0; }
 
 .runtime-ops-agents {
@@ -289,7 +289,6 @@
 }
 
 @container (max-width: 720px) {
-  .runtime-ops { padding-inline: var(--ds-3); }
   .runtime-ops-summary { align-items: flex-start; flex-wrap: wrap; gap: var(--ds-2) var(--ds-4); padding-block: var(--ds-2); }
   .runtime-ops-summary-item { white-space: normal; }
   .runtime-ops-updated { width: 100%; margin-left: 0; white-space: normal; }

@@ -8,7 +8,7 @@
   .ds-page-chrome.handoff-chrome {
     position: sticky; top: 0; z-index: 2;
     margin: 0 0 var(--ds-page-chrome-margin-bottom);
-    padding: var(--ds-page-pad-y) var(--ds-page-pad-x);
+    padding: var(--ds-page-pad-y) var(--ds-page-pad-x) var(--ds-3);
     background: var(--vscode-editor-background);
     border-bottom: var(--ds-border-width) solid var(--ds-border);
     align-items: flex-start;
@@ -32,7 +32,7 @@
   .distill-actions .ds-dim { margin-right: auto; font-size: var(--ds-small); }
 
   /* Body */
-  .body, .notes { max-width: 880px; margin: 0 auto; padding: 0 var(--ds-page-pad-x) var(--ds-page-pad-bottom); }
+  .body, .notes { max-width: 880px; margin: 0 auto; padding: 0 var(--ds-page-pad-x) var(--ds-page-pad-bottom); box-sizing: border-box; }
   .meta { color: var(--ds-muted); font-size: var(--ds-small); display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: var(--ds-3); }
 
   /* Cold-start empty state — the Open button reads as primary in this context */

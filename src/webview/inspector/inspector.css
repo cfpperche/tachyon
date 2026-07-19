@@ -55,7 +55,7 @@ input[type="checkbox"] {
   font-size: 12px;
   font-weight: 600;
   padding: 4px 0;
-  border-bottom: 1px solid var(--ds-border);
+  border-bottom: var(--ds-border-width) solid var(--ds-border);
 }
 .ws .hash {
   font-weight: 400;
@@ -73,7 +73,7 @@ input[type="checkbox"] {
   align-items: center;
   gap: 8px;
   padding: 5px 2px;
-  border-bottom: 1px solid var(--ds-border);
+  border-bottom: var(--ds-border-width) solid var(--ds-border);
 }
 .sess .identity {
   min-width: 120px;
@@ -108,7 +108,7 @@ input[type="checkbox"] {
   font-size: 10px;
   padding: 0 5px;
   border-radius: 6px;
-  border: 1px solid var(--ds-border);
+  border: var(--ds-border-width) solid var(--ds-border);
   color: var(--ds-muted);
 }
 .cpu.busy {
@@ -127,7 +127,7 @@ input[type="checkbox"] {
   margin: 0;
   padding: var(--ds-2) var(--ds-3);
   background: var(--ds-card);
-  border-bottom: 1px solid var(--ds-border);
+  border-bottom: var(--ds-border-width) solid var(--ds-border);
   font-size: 11px;
 }
 .session-details dt,
@@ -156,7 +156,7 @@ pre.cap {
   white-space: pre-wrap;
   word-break: break-word;
   background: var(--vscode-textCodeBlock-background, var(--ds-card));
-  border: 1px solid var(--ds-border);
+  border: var(--ds-border-width) solid var(--ds-border);
   border-radius: var(--ds-radius);
   font-size: 11px;
   color: var(--ds-fg);
@@ -168,7 +168,7 @@ pre.cap {
   margin-bottom: var(--ds-3);
 }
 .metric {
-  border: 1px solid var(--ds-border);
+  border: var(--ds-border-width) solid var(--ds-border);
   background: var(--ds-card);
   padding: var(--ds-2) var(--ds-3);
   display: flex;
@@ -185,7 +185,7 @@ pre.cap {
 .health {
   padding: 2px 7px;
   border-radius: 9px;
-  border: 1px solid var(--ds-border);
+  border: var(--ds-border-width) solid var(--ds-border);
   font-size: 11px;
 }
 .health.healthy {
@@ -204,7 +204,7 @@ pre.diagnostics {
   overflow: auto;
   padding: var(--ds-2);
   background: var(--vscode-textCodeBlock-background, var(--ds-card));
-  border: 1px solid var(--ds-border);
+  border: var(--ds-border-width) solid var(--ds-border);
   border-radius: var(--ds-radius);
   white-space: pre-wrap;
   font-size: 11px;
@@ -215,7 +215,7 @@ pre.diagnostics {
   gap: var(--ds-2);
   margin-top: var(--ds-3);
   padding-top: var(--ds-2);
-  border-top: 1px solid var(--ds-border);
+  border-top: var(--ds-border-width) solid var(--ds-border);
   flex-wrap: wrap;
 }
 .bulk strong {

@@ -40,7 +40,7 @@
 }
 
 .ci-banner {
-  border: 1px solid var(--vscode-inputValidation-warningBorder, #cca700);
+  border: var(--ds-border-width) solid var(--vscode-inputValidation-warningBorder, #cca700);
   background: color-mix(in srgb, var(--vscode-inputValidation-warningBackground, #5a4a00) 35%, transparent);
   color: var(--vscode-foreground);
   padding: 8px 12px;
@@ -58,7 +58,7 @@
 }
 
 .ci-stat {
-  border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
+  border: var(--ds-border-width) solid var(--vscode-widget-border, var(--vscode-panel-border));
   border-radius: 8px;
   padding: 10px 12px;
   background: var(--vscode-editor-background);
@@ -79,7 +79,7 @@
 }
 
 .ci-ws {
-  border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
+  border: var(--ds-border-width) solid var(--vscode-widget-border, var(--vscode-panel-border));
   border-radius: 10px;
   margin-bottom: 14px;
   overflow: hidden;
@@ -92,7 +92,7 @@
   justify-content: space-between;
   gap: 8px;
   padding: 10px 14px;
-  border-bottom: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
+  border-bottom: var(--ds-border-width) solid var(--vscode-widget-border, var(--vscode-panel-border));
   background: color-mix(in srgb, var(--vscode-sideBar-background) 80%, transparent);
 }
 
@@ -116,7 +116,7 @@
 .ci-card {
   padding: 12px 14px;
   border-right: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
-  border-bottom: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
+  border-bottom: var(--ds-border-width) solid var(--vscode-widget-border, var(--vscode-panel-border));
 }
 
 .ci-card:last-child {
@@ -195,7 +195,7 @@
   right: 16px;
   background: var(--vscode-notifications-background);
   color: var(--vscode-notifications-foreground);
-  border: 1px solid var(--vscode-notifications-border);
+  border: var(--ds-border-width) solid var(--vscode-notifications-border);
   padding: 8px 12px;
   border-radius: 6px;
   font-size: 12px;

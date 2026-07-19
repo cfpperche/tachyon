@@ -234,8 +234,7 @@ main.ck-main.ck-main--mission,
 .ck-embed-host .ds-wrap {
   max-width: none !important;
   margin: 0 !important;
-  padding-left: 12px;
-  padding-right: 12px;
+  padding: 0 !important;
   width: 100%;
   box-sizing: border-box;
 }
@@ -245,13 +244,24 @@ main.ck-main.ck-main--mission,
   padding: var(--ds-page-pad-y) var(--ds-page-pad-x) var(--ds-page-pad-bottom);
 }
 
+/* Plugins root (embed + standalone): same outer pad as Fleet .ck-main */
+.ck-embed-host > .ck-plugins-root,
+.ck-plugins-root {
+  box-sizing: border-box;
+  padding: var(--ds-page-pad-y) var(--ds-page-pad-x) var(--ds-page-pad-bottom) !important;
+  width: 100%;
+  min-height: 0;
+  max-width: none;
+  margin: 0;
+}
+
 .ck-head {
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--ds-page-chrome-gap);
   align-items: flex-start;
-  margin-bottom: 10px;
+  margin-bottom: var(--ds-page-chrome-margin-bottom);
 }
 
 .ck-head h1 {

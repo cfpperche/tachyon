@@ -4,7 +4,7 @@
   body { padding: 0 0 var(--ds-page-pad-bottom); }
 
   /* Header: scan summary + the terminal escape hatch */
-  .activity-chrome.ds-page-chrome { position: sticky; top: 0; z-index: 2; margin: 0 0 var(--ds-page-chrome-margin-bottom); padding: var(--ds-page-pad-y) var(--ds-page-pad-x); background: var(--vscode-editor-background); border-bottom: var(--ds-border-width) solid var(--ds-border); align-items: center; box-sizing: border-box; }
+  .activity-chrome.ds-page-chrome { position: sticky; top: 0; z-index: 2; margin: 0 0 var(--ds-page-chrome-margin-bottom); padding: var(--ds-page-pad-y) var(--ds-page-pad-x) var(--ds-3); background: var(--vscode-editor-background); border-bottom: var(--ds-border-width) solid var(--ds-border); align-items: flex-start; box-sizing: border-box; }
 .activity-head-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .head { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: var(--ds-3); flex-wrap: wrap; padding: var(--ds-3) var(--ds-4); background: var(--vscode-editor-background); border-bottom: 1px solid var(--ds-border); }
   .head .ds-title { gap: 7px; }
@@ -34,7 +34,7 @@
   .type-menu-foot button:hover { text-decoration: underline; }
 
   /* Chat transcript: human bubbles right, agent bubbles left, activity chips threaded on the agent side */
-  .feed { padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; max-width: 980px; margin: 0 auto; }
+  .feed { padding: 0 var(--ds-page-pad-x) var(--ds-page-pad-bottom); display: flex; flex-direction: column; gap: var(--ds-2); max-width: none; margin: 0; box-sizing: border-box; }
   /* Perf: older (offscreen) items skip layout/paint; the browser remembers their measured size (auto keyword).
      The live tail is NOT given this class (App.tsx) so bottom-stick height stays exact. */
   .feed > .cv { content-visibility: auto; contain-intrinsic-size: auto 60px; }
