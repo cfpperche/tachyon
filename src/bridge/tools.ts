@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z, type ZodErrorMap } from "zod";
 import fs from "node:fs";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { AgentManager } from "../agents/AgentManager.js";
@@ -6,6 +6,12 @@ import { TmuxQueueError, type TmuxService } from "../tmux/TmuxService.js";
 import { paneTranscriptExists, readPaneTranscript } from "../agents/paneTranscript.js";
 import type { PinStore, TiptapJSON } from "../pins/PinStore.js";
 import { taskSummary, type TaskStore } from "../tasks/TaskStore.js";
+import {
+  codePointLength,
+  TASK_AUTHORING_LIMITS,
+  taskAuthoringLimitMessage,
+  type TaskAuthoringLimitField,
+} from "../tasks/taskAuthoring.js";
 import { orderTaskViewsForListing } from "../tasks/listOrder.js";
 import type { ContinuityStore } from "../continuity/ContinuityStore.js";
 import type { ProjectHandoffStore } from "../handoff/ProjectHandoffStore.js";
@@ -347,6 +353,18 @@ const TASK_PRIORITY = z.union([z.literal(0), z.literal(1), z.literal(2), z.liter
 const TASK_ARTIFACT_REF = z.object({
   type: z.string().min(1).max(64),
   ref: z.string().min(1).max(500),
+  role: z.enum(["deliverable", "relation"]).optional(),
+});
+const createTaskLimitErrorMap = (field: TaskAuthoringLimitField): ZodErrorMap => (issue, ctx) => {
+  if (issue.code !== "too_big") return { message: ctx.defaultError };
+  const received = Array.isArray(ctx.data) ? ctx.data.length : codePointLength(String(ctx.data));
+  return { message: taskAuthoringLimitMessage(field, received, Number(issue.maximum)) };
+};
+const createTaskString = (field: TaskAuthoringLimitField, maximum: number) =>
+  z.string({ errorMap: createTaskLimitErrorMap(field) }).max(maximum);
+const CREATE_TASK_ARTIFACT_REF = z.object({
+  type: createTaskString("artifact_refs.type", TASK_AUTHORING_LIMITS.artifactRefType).min(1),
+  ref: createTaskString("artifact_refs.ref", TASK_AUTHORING_LIMITS.artifactRefValue).min(1),
   role: z.enum(["deliverable", "relation"]).optional(),
 });
 const TASK_EXPECT = z.object({
@@ -2036,15 +2054,21 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     "create_task",
     {
       description:
-        "Create a project Task in the shared Mission Control queue. Tasks are work items, not reminders: " +
+        "Create one bounded, schedulable project Task in the shared Mission Control queue. Tasks are work items, not reminders: " +
         "new tasks land in inbox with no priority/assignee so a human or agent can triage them deliberately. " +
         "Bugs and defects discovered mid-work belong here (kind: 'bug', evidence in the body) — never in pins. " +
-        "artifact_refs is optional and open-ended; type:'sdd' enables best-effort local spec enrichment only.",
+        "If a request has four independently shippable slices, create one umbrella Task and explicit follow-up Tasks; " +
+        "this tool does not create follow-ups or infer dependencies automatically. Use append_task_note for chronological " +
+        "execution context. Keep long material in a durable artifact and point to it with artifact_refs; " +
+        "type:'sdd' enables best-effort local spec enrichment only. Never truncate authoring input to fit a limit.",
       inputSchema: {
-        title: z.string().min(1).max(300),
-        body: z.string().max(4000).optional(),
-        kind: z.string().min(1).max(64).optional(),
-        artifact_refs: z.array(TASK_ARTIFACT_REF).max(10).optional(),
+        title: createTaskString("title", TASK_AUTHORING_LIMITS.title).min(1),
+        body: createTaskString("body", TASK_AUTHORING_LIMITS.body).optional(),
+        kind: createTaskString("kind", TASK_AUTHORING_LIMITS.kind).min(1).optional(),
+        artifact_refs: z
+          .array(CREATE_TASK_ARTIFACT_REF, { errorMap: createTaskLimitErrorMap("artifact_refs") })
+          .max(TASK_AUTHORING_LIMITS.artifactRefs)
+          .optional(),
         deps: z.array(TASK_ID).optional(),
         agent: AGENT_NAME.optional().describe(
           "your agent name; omitted means human-created. It's the value of your $TACHYON_AGENT_NAME env var; never guess it.",

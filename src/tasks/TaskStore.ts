@@ -6,6 +6,12 @@ import { compareTasksForListing } from "./listOrder.js";
 import { nextTask } from "./nextTask.js";
 import { rebalancedRanks } from "./rank.js";
 import {
+  codePointLength,
+  TASK_AUTHORING_LIMITS,
+  taskAuthoringLimitMessage,
+  type TaskAuthoringLimitField,
+} from "./taskAuthoring.js";
+import {
   isTaskAwaitingHumanKind,
   isTaskPriority,
   isTaskStatus,
@@ -45,6 +51,7 @@ export interface TaskListOptions {
 
 const SDD_STATUSES = new Set<SddStatus>(["draft", "in-progress", "shipped", "shipped-partial", "superseded", "abandoned", "deferred"]);
 const RETRIAGE_SDD = new Set<SddStatus>(["superseded", "abandoned", "deferred"]);
+const TASK_AUTHORING_LIMIT_FIELDS = new Set<string>(["title", "body", "kind", "artifact_refs", "artifact_refs.type", "artifact_refs.ref"]);
 
 // spec 335 — hoisted so the Mission Control board snapshot can compute per-task drag affordances from the SAME
 // literal `assertTransition` enforces (one authority; the webview never re-encodes status-transition rules).
@@ -81,15 +88,15 @@ export class TaskStore {
     return this.withMutation(async () => {
       const now = input.now ?? new Date().toISOString();
       const task: Omit<Task, "id"> = {
-        title: boundedString(input.title, "title", 300),
+        title: boundedString(input.title, "title", TASK_AUTHORING_LIMITS.title),
         status: "inbox",
         author: boundedString(input.author || "human", "author", 64),
         createdAt: now,
         updatedAt: now,
-        ...optionalStringField("body", input.body, 4000),
+        ...optionalStringField("body", input.body, TASK_AUTHORING_LIMITS.body),
         ...optionalPriority(input.priority),
         ...optionalStringField("rank", input.rank, 64),
-        ...optionalStringField("kind", input.kind, 64),
+        ...optionalStringField("kind", input.kind, TASK_AUTHORING_LIMITS.kind),
         ...optionalStringField("assignee", input.assignee, 64),
         ...optionalArtifactRefs(input.artifact_refs),
         ...optionalDeps(input.deps),
@@ -367,12 +374,12 @@ function normalizeTask(input: unknown, expectedId: string): Task | null {
   if (row.priority !== undefined && !isTaskPriority(row.priority)) return null;
   return {
     id: row.id,
-    title: boundedString(row.title, "title", 300),
-    ...(typeof row.body === "string" ? optionalStringField("body", row.body, 4000) : {}),
+    title: boundedString(row.title, "title", TASK_AUTHORING_LIMITS.title),
+    ...(typeof row.body === "string" ? optionalStringField("body", row.body, TASK_AUTHORING_LIMITS.body) : {}),
     status: row.status,
     ...(row.priority !== undefined ? { priority: row.priority } : {}),
     ...(typeof row.rank === "string" ? optionalStringField("rank", row.rank, 64) : {}),
-    ...(typeof row.kind === "string" ? optionalStringField("kind", row.kind, 64) : {}),
+    ...(typeof row.kind === "string" ? optionalStringField("kind", row.kind, TASK_AUTHORING_LIMITS.kind) : {}),
     author: boundedString(row.author, "author", 64),
     ...(typeof row.assignee === "string" ? optionalStringField("assignee", row.assignee, 64) : {}),
     ...optionalArtifactRefs(row.artifact_refs),
@@ -387,10 +394,10 @@ function normalizeTask(input: unknown, expectedId: string): Task | null {
 function applyUpdate(current: Task, input: TaskUpdateInput): Task {
   const now = input.now ?? new Date().toISOString();
   const next: Task = { ...current, updatedAt: now };
-  if (input.title !== undefined) next.title = boundedString(input.title, "title", 300);
+  if (input.title !== undefined) next.title = boundedString(input.title, "title", TASK_AUTHORING_LIMITS.title);
   if (input.body !== undefined) {
     if (input.body === null) delete next.body;
-    else Object.assign(next, optionalStringField("body", input.body, 4000));
+    else Object.assign(next, optionalStringField("body", input.body, TASK_AUTHORING_LIMITS.body));
   }
   if (input.status !== undefined) {
     if (!isTaskStatus(input.status)) throw new Error(`invalid task status '${String(input.status)}'`);
@@ -404,7 +411,7 @@ function applyUpdate(current: Task, input: TaskUpdateInput): Task {
     }
   }
   applyOptionalStringPatch(next, "rank", input.rank, 64);
-  applyOptionalStringPatch(next, "kind", input.kind, 64);
+  applyOptionalStringPatch(next, "kind", input.kind, TASK_AUTHORING_LIMITS.kind);
   applyOptionalStringPatch(next, "assignee", input.assignee, 64);
   if (input.artifact_refs !== undefined) {
     if (input.artifact_refs === null) delete next.artifact_refs;
@@ -477,8 +484,16 @@ function readSddStatus(specPath: string): SddStatus | undefined {
 function boundedString(value: string, name: string, max: number): string {
   const out = value.trim();
   if (!out) throw new Error(`${name} must be non-empty`);
-  if ([...out].length > max) throw new Error(`${name} must be at most ${max} code points`);
+  const received = codePointLength(out);
+  if (received > max) {
+    if (isTaskAuthoringLimitField(name)) throw new Error(taskAuthoringLimitMessage(name, received, max));
+    throw new Error(`${name} received ${received} code points; maximum ${max}`);
+  }
   return out;
+}
+
+function isTaskAuthoringLimitField(name: string): name is TaskAuthoringLimitField {
+  return TASK_AUTHORING_LIMIT_FIELDS.has(name);
 }
 
 function optionalStringField<K extends "body" | "rank" | "kind" | "assignee" | "author" | "title">(key: K, value: string | undefined, max: number): Pick<Task, K> | {} {
@@ -495,13 +510,15 @@ function optionalPriority(priority: TaskCreateInput["priority"]): Pick<Task, "pr
 function optionalArtifactRefs(refs: ArtifactRef[] | undefined): Pick<Task, "artifact_refs"> | {} {
   if (refs === undefined) return {};
   if (!Array.isArray(refs)) throw new Error("artifact_refs must be an array");
-  if (refs.length > 10) throw new Error("artifact_refs may contain at most 10 entries");
+  if (refs.length > TASK_AUTHORING_LIMITS.artifactRefs) {
+    throw new Error(taskAuthoringLimitMessage("artifact_refs", refs.length, TASK_AUTHORING_LIMITS.artifactRefs));
+  }
   const out: ArtifactRef[] = [];
   const seen = new Set<string>();
   for (const ref of refs) {
     if (!ref || typeof ref !== "object") throw new Error("artifact_refs entries must be objects");
-    const type = boundedString(String((ref as ArtifactRef).type ?? ""), "artifact_refs.type", 64);
-    const value = boundedString(String((ref as ArtifactRef).ref ?? ""), "artifact_refs.ref", 500);
+    const type = boundedString(String((ref as ArtifactRef).type ?? ""), "artifact_refs.type", TASK_AUTHORING_LIMITS.artifactRefType);
+    const value = boundedString(String((ref as ArtifactRef).ref ?? ""), "artifact_refs.ref", TASK_AUTHORING_LIMITS.artifactRefValue);
     const role = optionalArtifactRefRole((ref as ArtifactRef).role);
     const key = `${type}\0${value}`;
     if (seen.has(key)) throw new Error(`duplicate artifact_ref '${type}:${value}'`);

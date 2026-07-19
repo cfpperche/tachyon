@@ -32,6 +32,30 @@ describe("TaskStore", () => {
     expect(new TaskStore(root).get(task.id)).toMatchObject({ id: task.id, title: "Investigate queue" });
   });
 
+  it("rejects oversized create fields atomically with bounded domain errors", async () => {
+    const secretBody = `SECRET-${"🔒".repeat(3_994)}`;
+    await expect(store.create({ title: "Four-slice delivery", author: "codex", body: secretBody }))
+      .rejects.toThrow("create_task body received 4001 code points; maximum 4000");
+    await expect(store.create({ title: "t".repeat(301), author: "codex" }))
+      .rejects.toThrow("create_task title received 301 code points; maximum 300");
+    await expect(store.create({
+      title: "Too many refs",
+      author: "codex",
+      artifact_refs: Array.from({ length: 11 }, (_, index) => ({ type: "file", ref: `docs/${index}` })),
+    })).rejects.toThrow("create_task artifact_refs received 11 entries; maximum 10");
+    await expect(store.create({ title: "Long ref", author: "codex", artifact_refs: [{ type: "file", ref: "r".repeat(501) }] }))
+      .rejects.toThrow("create_task artifact_refs.ref received 501 code points; maximum 500");
+
+    expect(store.listRaw()).toEqual([]);
+    expect(fs.existsSync(store.dir)).toBe(false);
+    try {
+      await store.create({ title: "Four-slice delivery", author: "codex", body: secretBody });
+    } catch (error) {
+      expect(String(error)).not.toContain("SECRET");
+      expect(String(error).length).toBeLessThan(1_000);
+    }
+  });
+
   it("skips tmp and corrupt files during list", async () => {
     const task = await store.create({ title: "valid", author: "human" });
     fs.writeFileSync(path.join(root, ".tachyon", "tasks", "t-ffffff.json"), "{ nope", "utf8");

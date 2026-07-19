@@ -712,6 +712,65 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     expect(taskChanges).toBeGreaterThanOrEqual(3);
   });
 
+  it("create_task rejects oversized authoring input atomically with decomposition guidance", async () => {
+    const beforeIds = tasks.listRaw().map((task) => task.id);
+    const beforeChanges = taskChanges;
+    const beforeNotifications = notifications.length;
+    const errorText = async (arguments_: Record<string, unknown>): Promise<string> => {
+      const result = await client.callTool({ name: "create_task", arguments: { ...arguments_, agent: "claude" } });
+      expect(result.isError).toBe(true);
+      const text = (result.content as Array<{ text?: string }>).map((entry) => entry.text ?? "").join("\n");
+      expect(text.length).toBeLessThan(1_500);
+      return text;
+    };
+
+    const secretBody = `SECRET-${"x".repeat(3_994)}`;
+    const bodyError = await errorText({ title: "Four-slice delivery", body: secretBody });
+    expect(bodyError).toContain("create_task body received 4001 code points; maximum 4000");
+    expect(bodyError).toContain("Do not truncate");
+    expect(bodyError).toContain("four independently shippable slices");
+    expect(bodyError).toContain("one umbrella Task plus explicit follow-up Tasks");
+    expect(bodyError).toContain("append_task_note");
+    expect(bodyError).toContain("artifact_refs");
+    expect(bodyError).toContain("does not create follow-ups or infer dependencies automatically");
+    expect(bodyError).not.toContain("SECRET");
+
+    expect(await errorText({ title: "t".repeat(301) })).toContain("title received 301 code points; maximum 300");
+    expect(await errorText({ title: "Bounded", kind: "k".repeat(65) })).toContain("kind received 65 code points; maximum 64");
+    expect(await errorText({
+      title: "Bounded",
+      artifact_refs: Array.from({ length: 11 }, (_, index) => ({ type: "file", ref: `docs/${index}` })),
+    })).toContain("artifact_refs received 11 entries; maximum 10");
+    expect(await errorText({ title: "Bounded", artifact_refs: [{ type: "t".repeat(65), ref: "docs/spec.md" }] }))
+      .toContain("artifact_refs.type received 65 code points; maximum 64");
+    expect(await errorText({ title: "Bounded", artifact_refs: [{ type: "file", ref: "r".repeat(501) }] }))
+      .toContain("artifact_refs.ref received 501 code points; maximum 500");
+
+    expect(tasks.listRaw().map((task) => task.id)).toEqual(beforeIds);
+    expect(taskChanges).toBe(beforeChanges);
+    expect(notifications).toHaveLength(beforeNotifications);
+  });
+
+  it("create_task advertises its canonical authoring limits and decomposition policy", async () => {
+    const { tools } = await client.listTools();
+    const tool = tools.find((candidate) => candidate.name === "create_task");
+    expect(tool?.description).toContain("four independently shippable slices");
+    expect(tool?.description).toContain("one umbrella Task and explicit follow-up Tasks");
+    expect(tool?.description).toContain("append_task_note");
+    expect(tool?.description).toContain("durable artifact");
+    expect(tool?.description).toContain("does not create follow-ups or infer dependencies automatically");
+
+    const properties = (tool?.inputSchema as {
+      properties?: Record<string, { maxLength?: number; maxItems?: number; items?: { properties?: Record<string, { maxLength?: number }> } }>;
+    }).properties;
+    expect(properties?.title?.maxLength).toBe(300);
+    expect(properties?.body?.maxLength).toBe(4_000);
+    expect(properties?.kind?.maxLength).toBe(64);
+    expect(properties?.artifact_refs?.maxItems).toBe(10);
+    expect(properties?.artifact_refs?.items?.properties?.type?.maxLength).toBe(64);
+    expect(properties?.artifact_refs?.items?.properties?.ref?.maxLength).toBe(500);
+  });
+
   it("task tools accept artifact ref roles", async () => {
     const created = await client.callTool({
       name: "create_task",
