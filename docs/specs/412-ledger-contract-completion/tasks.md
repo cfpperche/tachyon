@@ -14,7 +14,7 @@ _Generated from `plan.md` on 2026-07-19._
 
 - [x] Focused tests prove all four shapes and pre-mutation refusal.
 - [x] Typecheck and configured full verification pass.
-- [ ] Duplicate-ID and shipped-spec closure audits pass.
+- [x] Duplicate-ID and shipped-spec closure audits pass.
 
 **Headless check:** `npx vitest run test/unit/spawnContract.test.ts test/unit/resume.test.ts test/unit/agentManager.test.ts --maxWorkers=1`
 

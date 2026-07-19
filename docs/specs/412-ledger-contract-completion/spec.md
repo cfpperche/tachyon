@@ -2,7 +2,9 @@
 
 _Created 2026-07-19._
 
-**Status:** in-progress
+**Status:** shipped
+**Closure:** Shipped in `5703133d`; persisted contracts now use a closed completion discriminator,
+malformed records retain a content-free sentinel, and restart refuses them before session mutation.
 
 ## Intent
 
