@@ -84,4 +84,19 @@ describe("shared UI product patterns (STYLEGUIDE)", () => {
     expect(sidebar).toContain("const ListRow = DenseRow");
     expect(sidebar).not.toMatch(/function ListRow\(/);
   });
+
+  it("Handoff + Activity + Board body adopt kit (Phase C.3)", () => {
+    const handoff = readFileSync("src/webview/handoff/App.tsx", "utf8");
+    expect(handoff).toContain("PageChrome");
+    expect(handoff).toContain("EmptyState");
+    expect(handoff).not.toMatch(/class=\{`ds-badge/);
+    const activity = readFileSync("src/webview/activity/App.tsx", "utf8");
+    expect(activity).toContain("from \"../shared/ui\"");
+    expect(activity).toMatch(/Button[\s\S]*Show all/);
+    const board = readFileSync("src/webview/mission-control/App.tsx", "utf8");
+    expect(board).toContain("Select");
+    expect(board).toMatch(/stale-editor[\s\S]*Button/);
+    const radius = readFileSync("src/webview/shared/vscode-theme.css", "utf8");
+    expect(radius).toMatch(/--radius:\s*var\(--ds-radius/);
+  });
 });

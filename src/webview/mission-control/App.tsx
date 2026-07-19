@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import { Badge, Button, Icon, Input, IconButton, PageChrome } from "../shared/ui";
+import { Badge, Button, Icon, Input, IconButton, PageChrome, Select } from "../shared/ui";
 import { KitSelect } from "../shared/ui/kit";
 import { agentFilterOptions, buildBoardModel, type BoardCardVM, type BoardColumnVM } from "../../tasks/boardModel";
 import type { BoardSnapshot } from "../../tasks/boardSnapshot";
@@ -598,7 +598,7 @@ function focusOnMount(el: HTMLElement | null): void {
 
 function AssigneeEditor({ session, onChange, onSubmit, onCancel, onRefresh }: { session: EditSession; onChange(v: string): void; onSubmit(): void; onCancel(): void; onRefresh(): void }) {
   if (session.stale) {
-    return <span class="stale-editor">board changed <button type="button" onClick={onRefresh}>refresh</button></span>;
+    return <span class="stale-editor">board changed <Button onClick={onRefresh}>refresh</Button></span>;
   }
   return (
     <Input
@@ -617,10 +617,10 @@ function AssigneeEditor({ session, onChange, onSubmit, onCancel, onRefresh }: { 
 
 function PriorityEditor({ session, onChange, onSubmit, onCancel, onRefresh }: { session: EditSession; onChange(v: string): void; onSubmit(value?: string): void; onCancel(): void; onRefresh(): void }) {
   if (session.stale) {
-    return <span class="stale-editor">board changed <button type="button" onClick={onRefresh}>refresh</button></span>;
+    return <span class="stale-editor">board changed <Button onClick={onRefresh}>refresh</Button></span>;
   }
   return (
-    <select
+    <Select
       ref={focusOnMount}
       autoFocus
       value={session.value}
@@ -634,7 +634,7 @@ function PriorityEditor({ session, onChange, onSubmit, onCancel, onRefresh }: { 
     >
       <option value="">none</option>
       {PRIORITIES.map((p) => <option key={p} value={p}>P{p}</option>)}
-    </select>
+    </Select>
   );
 }
 

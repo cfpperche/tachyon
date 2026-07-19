@@ -40,10 +40,18 @@ Rule: when a feature already touches the surface, finish kit adoption in the sam
 - [x] Config error actions → `Button`
 - [x] Empty slots → `EmptyState`
 
-#### C.2 DenseRow (this PR)
+#### C.2 DenseRow (0.56.65)
 - [x] Extract sidebar `ListRow` → shared `DenseRow` (`.row` DOM preserved)
 - [x] Sidebar aliases `const ListRow = DenseRow`
 - [ ] AgentRow itself still custom (tree/metrics) — out of scope
+
+#### C.3 Board body + Activity + Handoff (this batch — package at trail end)
+- [x] Board: stale refresh → Button; priority editor → Select
+- [x] Activity: filter “Show all” → Button
+- [x] Handoff: PageChrome + Badge + EmptyState
+- [x] Phase E lean: `--radius: var(--ds-radius)` bridge
+- [ ] Card who/prio/ref still bespoke density controls (intentional)
+- [ ] Mermaid zoom buttons in Activity (specialized toolbar)
 
 ### Phase D — Forcing functions
 - Extend `test/unit/webviewComponentKit.test.ts` (ban new hand-rolled product buttons in target dirs)

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "preact/hooks";
 import type { ActivityItem, ActivityViewModel } from "../../activity/activityView";
 import { MarkdownView, linkify } from "./markdown";
 import { highlight } from "./markdownEngine";
+import { Button } from "../shared/ui";
 import {
   ACTIVITY_FILTER_CATEGORIES,
   ACTIVITY_FILTER_LABELS,
@@ -82,7 +83,7 @@ function TypeFilters({
           ))}
           <div class="type-menu-foot">
             <span>{active}/{ACTIVITY_FILTER_CATEGORIES.length} visible</span>
-            <button type="button" onClick={onReset}>Show all</button>
+            <Button variant="default" onClick={onReset}>Show all</Button>
           </div>
         </div>
       )}

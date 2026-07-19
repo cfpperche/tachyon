@@ -1,5 +1,5 @@
 import { MarkdownView } from "../activity/markdown";
-import { Button } from "../shared/ui";
+import { Button, Badge, EmptyState, PageChrome } from "../shared/ui";
 import { useEffect, useState } from "preact/hooks";
 import { stalenessLabel, noteGlyph, relativeTime, type HandoffViewModel, type HandoffNoteVM } from "./handoffViewModel";
 import { buildHandoffDistillCommand, reconcileDistillSelection, type HandoffDistillMode } from "../../handoff/distill";
@@ -128,16 +128,11 @@ export function App({ vm, dispatch }: { vm?: HandoffViewModel; dispatch: Handoff
   const now = new Date();
   const [distillOpen, setDistillOpen] = useState(false);
   if (!vm) {
-    return <div class="ds-degrade"><span class="codicon codicon-loading" /><div>Loading the project handoff…</div></div>;
+    return <EmptyState kind="loading" message="Loading the project handoff…" />;
   }
 
   const badge = stalenessLabel(vm.staleness);
-  const open = (
-    <Button icon="go-to-file" title="Open the handoff file" onClick={() => dispatch.openFile()}>
-      Open
-    </Button>
-  );
-
+  const badgeTone = badge.tone === "warn" || badge.tone === "err" || badge.tone === "info" ? badge.tone : "default";
   const toggleDistill = () => {
     setDistillOpen((openNow) => {
       // Also request refresh at the toggle edge so the host starts list() before DistillBox mounts.
@@ -148,22 +143,28 @@ export function App({ vm, dispatch }: { vm?: HandoffViewModel; dispatch: Handoff
 
   return (
     <div>
-      <div class="head">
-        <h1 class="ds-title"><span aria-hidden="true">◆</span> Project Handoff — {vm.folder}</h1>
-        <span class={`ds-badge ${badge.tone}`} title={`Staleness: ${badge.label}`}>
-          <span aria-hidden="true">{badge.glyph}</span> {badge.label}
-          {vm.staleness === "needs_distill" && vm.pendingCount > 0 ? ` · ${vm.pendingCount}` : ""}
-        </span>
-        <span class="actions">
-          <Button icon="wand" title="Distill pending notes with an agent" onClick={toggleDistill}>
-            Distill
-          </Button>
-          {open}
-          <Button icon="refresh" title="Refresh" onClick={() => dispatch.refresh()}>
-            Refresh
-          </Button>
-        </span>
-      </div>
+      <PageChrome
+        class="handoff-chrome"
+        title={`Project Handoff — ${vm.folder}`}
+        icon="book"
+        actions={
+          <span class="actions">
+            <Badge tone={badgeTone} title={`Staleness: ${badge.label}`}>
+              <span aria-hidden="true">{badge.glyph}</span> {badge.label}
+              {vm.staleness === "needs_distill" && vm.pendingCount > 0 ? ` · ${vm.pendingCount}` : ""}
+            </Badge>
+            <Button icon="wand" title="Distill pending notes with an agent" onClick={toggleDistill}>
+              Distill
+            </Button>
+            <Button icon="go-to-file" title="Open the handoff file" onClick={() => dispatch.openFile()}>
+              Open
+            </Button>
+            <Button icon="refresh" title="Refresh" onClick={() => dispatch.refresh()}>
+              Refresh
+            </Button>
+          </span>
+        }
+      />
       {distillOpen && <DistillBox vm={vm} dispatch={dispatch} onClose={() => setDistillOpen(false)} />}
 
       {vm.exists ? (
@@ -179,12 +180,16 @@ export function App({ vm, dispatch }: { vm?: HandoffViewModel; dispatch: Handoff
           <MarkdownView text={vm.body} />
         </div>
       ) : (
-        <div class="cold">
-          <span class="codicon codicon-book" />
-          <div>No project handoff yet.</div>
-          <div class="ds-dim">Open it to create the file from the 4-section template, then curate the state of the work.</div>
-          {open}
-        </div>
+        <EmptyState
+          kind="empty"
+          icon="book"
+          message="No project handoff yet. Open it to create the file from the 4-section template, then curate the state of the work."
+          action={
+            <Button icon="go-to-file" title="Open the handoff file" onClick={() => dispatch.openFile()}>
+              Open
+            </Button>
+          }
+        />
       )}
 
       <div class="notes">

@@ -44,7 +44,6 @@
   --input:                    var(--vscode-input-border, var(--border));
   --ring:                     var(--vscode-focusBorder, #007fd4);
 
-  /* not a color — a length, so no --vscode-* fallback chain applies; matches design-system.css's --ds-radius
-     (6px) for visual parity between legacy .ds-* controls and vendored/kit controls on a mixed surface. */
-  --radius: 0.375rem;
+  /* not a color — a length; MUST equal design-system --ds-radius (6px) so kit/shadcn and legacy share one radius. */
+  --radius: var(--ds-radius, 6px);
 }
