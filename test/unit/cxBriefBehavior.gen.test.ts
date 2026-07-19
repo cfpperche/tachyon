@@ -17,7 +17,7 @@ describe("container-generated delegation behavior", () => {
     });
 
     expect(() => deliverableBody(workspaceRoot, "oversized", body)).toThrow(
-      new RegExp(`${body.length} UTF-8 bytes.*shell-escaped transport bytes.*safe inline ceiling.*EACCES: permission denied, open spawn brief`),
+      new RegExp(`startup brief.*${body.length} UTF-8 bytes.*shell-escaped transport bytes.*safe inline ceiling.*EACCES: permission denied, open spawn brief`),
     );
   });
 

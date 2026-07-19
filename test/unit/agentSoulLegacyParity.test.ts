@@ -29,7 +29,7 @@ describe("immutable BASE_SHA agent-soul legacy parity provenance", () => {
     }
   });
 
-  it("byte-compares real legacy prompt, task, Bridge, re-anchor, short and long artifacts", () => {
+  it("byte-compares unchanged legacy seams while retaining the superseded long-pointer oracle", () => {
     const fixture = JSON.parse(readFileSync(path.join(fixtureRoot, "prompt-command-cases.json"), "utf8")) as {
       cases: Array<{ baseSha: string; name: string; bytes: string; sha256: string; sendKeys: string[] }>;
     };
@@ -62,8 +62,16 @@ describe("immutable BASE_SHA agent-soul legacy parity provenance", () => {
       expect(readFileSync(briefFilePath(root, "capture-long"), "utf8")).toBe(longBody);
       for (const item of fixture.cases) {
         expect(item.baseSha, item.name).toBe(BASE_SHA);
-        expect(actual.get(item.name), item.name).toBe(item.bytes);
         expect(createHash("sha256").update(item.bytes).digest("hex"), item.name).toBe(item.sha256);
+        if (item.name === "long-body-pointer") {
+          // SDD 411 intentionally supersedes only this aggregate label. Keep validating the
+          // immutable BASE fixture/hash above; the current startup-pointer oracle lives in the
+          // focused startup-brief tests and must not rewrite historical provenance.
+          expect(actual.get(item.name), item.name).not.toBe(item.bytes);
+          expect(actual.get(item.name), item.name).toContain("Your full startup brief is long");
+          continue;
+        }
+        expect(actual.get(item.name), item.name).toBe(item.bytes);
       }
     } finally {
       rmSync(root, { recursive: true, force: true });

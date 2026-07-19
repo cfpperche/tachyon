@@ -1,5 +1,5 @@
 /**
- * t-11a2d1 — a long composed spawn contract embedded inline risks two failure modes at delivery:
+ * t-11a2d1 — a long composed startup brief embedded inline risks two failure modes at delivery:
  * upstream composers may silently ellipsis-clip it (the ~5KB brief cut mid-`done_when` that this
  * task investigated), and independently, tmux itself hard-REJECTS ("command too long") a single
  * `new-session <cmd>` argument or `send-keys -l` literal once it crosses ~16.3KB (measured live,
@@ -10,11 +10,16 @@
  * Mirrors the manual "file = deliverable, notify = doorbell" pattern already used by hand for
  * review briefs (spec 363 notes) and reanchor's `.tachyon/roles/<agent>.md` (Workspace.reanchor):
  * the long artifact goes to a purpose-specific file under the gitignored `.tachyon/` dir, the pane
- * gets a pointer. Separate spawn/reanchor paths keep a refresh from destroying the task contract.
+ * gets a pointer. Separate spawn/reanchor paths keep a refresh from destroying startup context.
  */
 import fs from "node:fs";
 import crypto from "node:crypto";
 import path from "node:path";
+import {
+  renderStartupBriefInventory,
+  renderStartupBriefSummary,
+  type StartupBriefManifest,
+} from "./startupBrief.js";
 
 /** Comfortably under the measured ~16.3KB tmux hard-fail ceiling, with headroom for primer +
  *  before-finishing framing and shell-quoting overhead added after this check runs. */
@@ -63,12 +68,22 @@ export function previewDeliverableBody(
   agent: string,
   body: string,
   purpose: BriefPurpose = "spawn",
+  startupManifest?: StartupBriefManifest,
 ): string {
   if (shellEscapedBodyBytes(body) <= BRIEF_FILE_THRESHOLD) return body;
   const file = briefFilePath(workspaceRoot, agent, purpose);
-  const label = purpose === "spawn" ? "spawn contract" : "re-anchor context";
+  const label = purpose === "spawn" ? "startup brief" : "re-anchor context";
   const timing = purpose === "spawn" ? "before starting" : "before continuing";
-  return `Your full ${label} is long (${Buffer.byteLength(body, "utf8")} UTF-8 bytes) — written in full to ${file}. Read it ${timing}; this pane only carries the primer + this pointer.`;
+  const storedBody = purpose === "spawn" && startupManifest
+    ? `${renderStartupBriefInventory(startupManifest)}\n\n${body}`
+    : body;
+  const summary = purpose === "spawn" && startupManifest
+    ? `\n${renderStartupBriefSummary(startupManifest)}`
+    : "";
+  const paneContents = purpose === "spawn" && startupManifest
+    ? "the primer, this summary, the pointer, and the before-finishing reminder"
+    : "the primer, this pointer, and the before-finishing reminder";
+  return `Your full ${label} is long (${Buffer.byteLength(storedBody, "utf8")} UTF-8 bytes) — written in full to ${file}.${summary}\nRead it ${timing}; this pane carries only ${paneContents}.`;
 }
 
 /**
@@ -84,11 +99,16 @@ export function deliverableBody(
   agent: string,
   body: string,
   purpose: BriefPurpose = "spawn",
+  startupManifest?: StartupBriefManifest,
 ): string {
   const bodyBytes = Buffer.byteLength(body, "utf8");
   const transportBytes = shellEscapedBodyBytes(body);
   if (transportBytes <= BRIEF_FILE_THRESHOLD) return body;
   const file = briefFilePath(workspaceRoot, agent, purpose);
+  const briefLabel = purpose === "spawn" ? "startup brief" : "re-anchor context";
+  const storedBody = purpose === "spawn" && startupManifest
+    ? `${renderStartupBriefInventory(startupManifest)}\n\n${body}`
+    : body;
   let temporaryFile: string | undefined;
   try {
     fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
@@ -96,7 +116,7 @@ export function deliverableBody(
     // beside the destination so rename is atomic on the same filesystem; `wx` also prevents an
     // improbable pid/random collision from overwriting another writer's file.
     temporaryFile = `${file}.${process.pid}.${crypto.randomBytes(8).toString("hex")}.tmp`;
-    fs.writeFileSync(temporaryFile, body, { encoding: "utf8", flag: "wx", mode: 0o600 });
+    fs.writeFileSync(temporaryFile, storedBody, { encoding: "utf8", flag: "wx", mode: 0o600 });
     fs.renameSync(temporaryFile, file);
     temporaryFile = undefined;
   } catch (err) {
@@ -110,12 +130,12 @@ export function deliverableBody(
     if (transportBytes > SAFE_INLINE_CEILING) {
       const message = err instanceof Error ? err.message : String(err);
       throw new Error(
-        `${purpose} brief is ${bodyBytes} UTF-8 bytes (${transportBytes} shell-escaped transport bytes), ` +
+        `${briefLabel} is ${bodyBytes} UTF-8 bytes (${transportBytes} shell-escaped transport bytes), ` +
           `above the safe inline ceiling (${SAFE_INLINE_CEILING} bytes), ` +
           `and writing it to ${file} failed: ${message}`,
       );
     }
     return body;
   }
-  return previewDeliverableBody(workspaceRoot, agent, body, purpose);
+  return previewDeliverableBody(workspaceRoot, agent, body, purpose, startupManifest);
 }

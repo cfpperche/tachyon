@@ -26,11 +26,19 @@ describe("agent soul lifecycle composition closure", () => {
       instructions: "Persistent specialization.",
       bridgeGuidance: true,
       taskBrief: "Current execution task.",
+      taskContractCompletion: "done_when",
     });
     const body = composed.body!;
     expect(body.indexOf(identityBody)).toBeLessThan(body.indexOf("Your task: review for quality."));
     expect(body.indexOf("Persistent specialization.")).toBeLessThan(body.indexOf("[Tachyon] You are part of a Tachyon team."));
     expect(body.indexOf("[Tachyon] You are part of a Tachyon team.")).toBeLessThan(body.indexOf("Current execution task."));
+    expect(composed.manifest).toEqual({
+      soul: true,
+      role: true,
+      persistentInstructions: true,
+      bridgeGuidance: true,
+      task: { kind: "contract", completion: "done_when" },
+    });
 
     const { SessionLedger } = await import("../../src/resume/SessionLedger.js");
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "soul-ledger-"));
@@ -58,5 +66,27 @@ describe("agent soul lifecycle composition closure", () => {
 
     const legacy = layers.composeAgentPrompt({ instructions: "  persistent  ", bridgeGuidance: false, taskBrief: "  one run  " }).body;
     expect(legacy).toBe("persistent  \n\n  one run");
+
+    expect(layers.composeAgentPrompt({ bridgeGuidance: false }).manifest).toEqual({
+      soul: false,
+      role: false,
+      persistentInstructions: false,
+      bridgeGuidance: false,
+      task: { kind: "absent" },
+    });
+    expect(layers.composeAgentPrompt({ role: "custom", instructions: "   ", bridgeGuidance: true, taskBrief: "pipeline objective" }).manifest).toEqual({
+      soul: false,
+      role: false,
+      persistentInstructions: false,
+      bridgeGuidance: true,
+      task: { kind: "brief" },
+    });
+    expect(layers.composeAgentPrompt({ role: "coder", bridgeGuidance: false, taskBrief: "delegated", taskContractCompletion: "deliverable" }).manifest).toEqual({
+      soul: false,
+      role: true,
+      persistentInstructions: false,
+      bridgeGuidance: false,
+      task: { kind: "contract", completion: "deliverable" },
+    });
   });
 });

@@ -15,6 +15,11 @@ export interface LoadedProjectGuidanceFile {
   content: string;
 }
 
+export interface RenderedProjectGuidanceBundle {
+  body: string;
+  sourceCount: number;
+}
+
 export const PROJECT_GUIDANCE_MAX_FILES = 8;
 export const PROJECT_GUIDANCE_MAX_PATH_BYTES = 256;
 export const PROJECT_GUIDANCE_MAX_FILE_BYTES = 64 * 1024;
@@ -259,7 +264,16 @@ export function renderProjectGuidance(files: readonly LoadedProjectGuidanceFile[
 }
 
 /** Load and render when a project explicitly opts in; absent settings emit no block. */
-export function loadAndRenderProjectGuidance(workspaceRoot: string, settings?: ProjectGuidanceSettings): string | undefined {
+export function loadAndRenderProjectGuidanceBundle(
+  workspaceRoot: string,
+  settings?: ProjectGuidanceSettings,
+): RenderedProjectGuidanceBundle | undefined {
   if (!settings) return undefined;
-  return renderProjectGuidance(loadProjectGuidance(workspaceRoot, settings));
+  const files = loadProjectGuidance(workspaceRoot, settings);
+  return { body: renderProjectGuidance(files), sourceCount: files.length };
+}
+
+/** Compatibility renderer for callers that need only the project-owned body. */
+export function loadAndRenderProjectGuidance(workspaceRoot: string, settings?: ProjectGuidanceSettings): string | undefined {
+  return loadAndRenderProjectGuidanceBundle(workspaceRoot, settings)?.body;
 }

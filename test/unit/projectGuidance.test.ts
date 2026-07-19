@@ -9,6 +9,7 @@ import {
   PROJECT_GUIDANCE_MAX_TOTAL_BYTES,
   PROJECT_GUIDANCE_START,
   loadAndRenderProjectGuidance,
+  loadAndRenderProjectGuidanceBundle,
   loadProjectGuidance,
   projectGuidancePathError,
   renderProjectGuidance,
@@ -102,6 +103,21 @@ describe("loadProjectGuidance", () => {
     expect(loadProjectGuidance(first, settings)[0].content).toBe("first-v2");
     expect(loadProjectGuidance(second, settings)[0].content).toBe("second");
     expect(loadAndRenderProjectGuidance(first, undefined)).toBeUndefined();
+    expect(loadAndRenderProjectGuidanceBundle(first, undefined)).toBeUndefined();
+  });
+
+  it("returns rendered bytes and source count from the same validated load", () => {
+    const root = workspace();
+    write(root, "one.md", "ONE\n");
+    write(root, "two.md", "TWO");
+    const settings = { files: ["one.md", "two.md"] };
+
+    const bundle = loadAndRenderProjectGuidanceBundle(root, settings);
+
+    expect(bundle).toEqual({
+      body: loadAndRenderProjectGuidance(root, settings),
+      sourceCount: 2,
+    });
   });
 
   it("rejects malformed direct settings before touching sources", () => {

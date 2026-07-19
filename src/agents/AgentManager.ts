@@ -51,7 +51,7 @@ import {
   type CodexBootstrapInputMatch,
 } from "../runtime/adapters/codexLaunchReadiness.js";
 import { GenericLaunchReadiness, LaunchReadiness, RuntimeLaunchReadinessError, type LaunchReadinessPort, type RuntimeLaunchReadinessAdapter } from "../runtime/launchReadiness.js";
-import { loadAndRenderProjectGuidance } from "../config/projectGuidance.js";
+import { loadAndRenderProjectGuidanceBundle, type RenderedProjectGuidanceBundle } from "../config/projectGuidance.js";
 import { openingPromptCapability } from "./openingPromptCapability.js";
 import { cleanupStaleSoulLaunchReservationsSync, ensureSoulLaunchReservationsDirSync, SOUL_LAUNCH_RESERVATION_BOOT_ID, SoulError, resolveSoul, resolveSoulWithRetry, withSoulProfileAdmission, type ResolvedSoul } from "./soul.js";
 import { principalBlockedByProfileTransaction } from "./soulProfileTransactions.js";
@@ -1106,19 +1106,33 @@ export class AgentManager {
     parent: string | undefined,
     primerCtx?: { delegator?: string; gate?: DelegationGate; freshWorktree?: boolean; verify?: TachyonConfig["settings"]["verify"] },
     taskBrief?: string,
+    taskContract?: SpawnContract,
     soul?: ResolvedSoul,
-    projectGuidance?: string,
+    projectGuidance?: RenderedProjectGuidanceBundle,
   ): string | undefined {
     // An explicit --resume/--continue/--session-id command owns its transcript and argv. Do not add
     // even declared role/instructions as a positional startup prompt; several runtimes reject or
     // reinterpret extra arguments on their resume form.
     if (managesOwnSession(def.cmd) || (def.kind === "agent" && !instructionsDeliverable(def.cmd))) return undefined;
     const guidance = !!parent && (this.opts.getConfig()?.settings.bridgeGuidance ?? true);
-    const composed = composeAgentPrompt({ soul, role: def.role, instructions: def.instructions, bridgeGuidance: guidance, taskBrief }).body;
+    const composed = composeAgentPrompt({
+      soul,
+      role: def.role,
+      instructions: def.instructions,
+      bridgeGuidance: guidance,
+      taskBrief,
+      taskContractCompletion: taskContract
+        ? (taskContract.deliverable ? "deliverable" : "done_when")
+        : undefined,
+    });
     // Project-owned policy is body content, not product protocol. Put it before the task/role body
     // (task-specific instructions stay more recent) and before the long-brief diversion so an
     // arbitrarily long configured document can never bypass tmux's measured payload ceiling.
-    const body = [projectGuidance, composed].filter((part): part is string => !!part?.trim()).join("\n\n");
+    const body = [projectGuidance?.body, composed.body].filter((part): part is string => !!part?.trim()).join("\n\n");
+    const startupManifest = {
+      projectGuidanceSources: projectGuidance?.sourceCount ?? 0,
+      prompt: composed.manifest,
+    };
     const frame = (deliverable: string | undefined): string | undefined => def.kind === "agent"
       ? wrapWithPrimer(deliverable ?? "", {
           agentName: name,
@@ -1131,23 +1145,23 @@ export class AgentManager {
     // Size-check the exact successful-write pointer before deliverableBody atomically replaces any
     // prior brief. Thus an oversized verify/gate fact cannot change what the still-running pane's
     // old pointer reads when restart is rejected.
-    const preview = body ? previewDeliverableBody(this.opts.workspaceRoot, name, body) : undefined;
+    const preview = body ? previewDeliverableBody(this.opts.workspaceRoot, name, body, "spawn", startupManifest) : undefined;
     const previewInstructions = frame(preview);
     if (previewInstructions) assertSafeBriefTransport(previewInstructions, `agent '${name}' startup brief`);
 
-    const deliverable = body ? deliverableBody(this.opts.workspaceRoot, name, body) : undefined;
+    const deliverable = body ? deliverableBody(this.opts.workspaceRoot, name, body, "spawn", startupManifest) : undefined;
     const instructions = frame(deliverable);
     if (instructions) assertSafeBriefTransport(instructions, `agent '${name}' startup brief`);
     return instructions?.trim() ? instructions : undefined;
   }
 
-  private projectGuidanceFor(def: AgentDef): string | undefined {
+  private projectGuidanceFor(def: AgentDef): RenderedProjectGuidanceBundle | undefined {
     // A command that explicitly resumes/manages its own transcript is the same no-push exception as
     // Workspace.resume(): adding a positional onboarding prompt can change or break its semantics.
     // Unsupported startup adapters cannot carry a prompt either; do not read configured files for a
     // launch that has no delivery channel. Manual re-anchor remains available once such an agent runs.
     if (def.kind !== "agent" || managesOwnSession(def.cmd) || !instructionsDeliverable(def.cmd)) return undefined;
-    return loadAndRenderProjectGuidance(this.opts.workspaceRoot, this.opts.getConfig()?.settings.projectGuidance);
+    return loadAndRenderProjectGuidanceBundle(this.opts.workspaceRoot, this.opts.getConfig()?.settings.projectGuidance);
   }
 
   private effectiveCmd(def: AgentDef, instructions: string | undefined): string {
@@ -1798,6 +1812,7 @@ export class AgentManager {
       parent ?? primerParent,
       effectivePrimerCtx,
       taskBrief,
+      opts?.contract,
       resolvedSoul,
       projectGuidance,
     );
@@ -3203,6 +3218,7 @@ export class AgentManager {
       restartParent,
       restartPrimerCtx,
       this.opts.ledger?.get(name)?.def?.taskBrief,
+      this.opts.ledger?.get(name)?.def?.contract,
       resolvedSoul,
       projectGuidance,
     );

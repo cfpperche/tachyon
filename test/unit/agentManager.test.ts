@@ -824,9 +824,16 @@ describe("AgentManager", () => {
       const file = briefFilePath(root, "codex");
       expect(cmd).toContain("── TACHYON PRIMER ──");
       expect(cmd).toContain(file);
+      expect(cmd).toContain("Your full startup brief is long");
+      expect(cmd).toContain("project guidance (1 source)");
+      expect(cmd).toContain("task contract (absent)");
+      expect(cmd).toContain("Task objective: absent");
       expect(cmd).not.toContain("LONG_GUIDANCE_");
-      expect(fs.readFileSync(file, "utf8")).toContain("── PROJECT GUIDANCE (PROJECT-OWNED) ──");
-      expect(fs.readFileSync(file, "utf8")).toContain("LONG_GUIDANCE_");
+      const onDisk = fs.readFileSync(file, "utf8");
+      expect(onDisk).toContain("── STARTUP BRIEF CONTENTS ──");
+      expect(onDisk).toContain("Task: absent");
+      expect(onDisk).toContain("── PROJECT GUIDANCE (PROJECT-OWNED) ──");
+      expect(onDisk).toContain("LONG_GUIDANCE_");
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
@@ -859,6 +866,37 @@ describe("AgentManager", () => {
       await expect(manager.restart("codex", { stop: "force", session: "new" })).rejects.toThrow(/safe pane-delivery ceiling/);
       expect(fs.readFileSync(destination, "utf8")).toBe(oldBrief);
       expect(fake.respawnArgs).toHaveLength(0);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("reuses the persisted structured completion kind when restarting a long startup brief", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-startup-brief-restart-contract-"));
+    const fake = fakeTmux();
+    const ledger = new SessionLedger(root);
+    const manager = new AgentManager({
+      tmux: fake.tmux,
+      wsHash: workspaceHash(root),
+      workspaceRoot: root,
+      getConfig: () => configOf("agents:\n  anchor:\n    cmd: sh\n"),
+      getMaxAgents: () => 8,
+      ledger,
+    });
+    const taskBrief = `TASK: preserve restart metadata\nDONE_WHEN: ${"r".repeat(5_000)}`;
+    const contract = {
+      task: "Preserve restart metadata",
+      context: "The startup brief is long",
+      constraints: "Do not parse rendered text",
+      doneWhen: "The restarted pointer still reports DONE_WHEN",
+    };
+    try {
+      await manager.spawn("worker", { cmd: "codex", taskBrief, contract });
+      expect(fake.newSessionArgs[0]?.at(-1)).toContain("task contract (DONE_WHEN)");
+
+      await manager.restart("worker", { stop: "force", session: "new" });
+
+      expect(fake.respawnArgs.at(-1)?.at(-1)).toContain("task contract (DONE_WHEN)");
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

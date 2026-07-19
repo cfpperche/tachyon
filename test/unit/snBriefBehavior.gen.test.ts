@@ -18,7 +18,7 @@ function configOf(yaml: string): TachyonConfig {
  *  `new-session` cmd argument tmux would receive, mirroring agentManager.test.ts's captureSpawnCmd. */
 async function spawnAndCapture(
   name: string,
-  opts: { instructions: string; parent?: string },
+  opts: { instructions?: string; taskBrief?: string; contract?: SpawnContract; parent?: string },
 ): Promise<{ cmd: string; workspaceRoot: string }> {
   const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), "sn-brief-"));
   const calls: string[][] = [];
@@ -34,7 +34,13 @@ async function spawnAndCapture(
     getConfig: () => configOf("agents:\n  a:\n    cmd: x\n"),
     getMaxAgents: () => 8,
   });
-  await manager.spawn(name, { cmd: "claude", instructions: opts.instructions, parent: opts.parent });
+  await manager.spawn(name, {
+    cmd: "claude",
+    instructions: opts.instructions,
+    taskBrief: opts.taskBrief,
+    contract: opts.contract,
+    parent: opts.parent,
+  });
   const spawnArgs = calls.find((c) => c.includes("new-session"))!;
   return { cmd: spawnArgs[spawnArgs.length - 1], workspaceRoot };
 }
@@ -46,7 +52,13 @@ describe("container-generated delegation behavior", () => {
 
     // No `parent` — keeps the composed body exactly equal to `contract` (no Bridge-guidance tail
     // appended on top), so the file-on-disk equality check below is exact.
-    const { cmd, workspaceRoot } = await spawnAndCapture("longbrief", { instructions: contract });
+    const structured: SpawnContract = {
+      task: "Preserve the literal contract",
+      context: "The transport is under test",
+      constraints: "Do not truncate any bytes",
+      doneWhen: "The bytes match exactly",
+    };
+    const { cmd, workspaceRoot } = await spawnAndCapture("longbrief", { taskBrief: contract, contract: structured });
 
     // The pane payload never carries the full contract text.
     expect(cmd).not.toContain(contract);
@@ -55,18 +67,31 @@ describe("container-generated delegation behavior", () => {
     expect(cmd).toContain(file);
     expect(cmd).toContain("── TACHYON PRIMER ──");
     expect(cmd).toContain("── BEFORE FINISHING ──");
+    expect(cmd).toContain("startup brief");
+    expect(cmd).toContain("task contract (DONE_WHEN)");
     // The pane payload as a whole stays small relative to the contract it's standing in for.
     expect(cmd.length).toBeLessThan(contract.length);
 
-    // The file on disk carries the contract in full, byte for byte.
-    expect(fs.readFileSync(file, "utf8")).toBe(contract);
+    // The file inventory is followed by the contract in full, byte for byte.
+    const onDisk = fs.readFileSync(file, "utf8");
+    expect(onDisk).toContain("── STARTUP BRIEF CONTENTS ──");
+    expect(onDisk.endsWith(contract)).toBe(true);
   });
 
   it("a short spawn contract stays inline, byte-identical, with no brief file written", async () => {
     const contract = "TASK: review the PR. DONE_WHEN: comments posted.";
     expect(contract.length).toBeLessThanOrEqual(BRIEF_FILE_THRESHOLD);
 
-    const { cmd, workspaceRoot } = await spawnAndCapture("shortbrief", { instructions: contract, parent: "coordinator" });
+    const { cmd, workspaceRoot } = await spawnAndCapture("shortbrief", {
+      taskBrief: contract,
+      contract: {
+        task: "Review the pull request",
+        context: "The review is delegated",
+        constraints: "Post findings only",
+        doneWhen: "Comments are posted",
+      },
+      parent: "coordinator",
+    });
 
     expect(cmd).toContain(contract);
     expect(fs.existsSync(briefFilePath(workspaceRoot, "shortbrief"))).toBe(false);
@@ -79,7 +104,7 @@ describe("container-generated delegation behavior", () => {
       task: "Investigate and fix the flaky upload-retry integration test on CI".repeat(3),
       context: "src/upload/client.ts times out under load; the last 20 CI runs show intermittent failures ".repeat(20),
       constraints: "no new deps; keep the public signature; do not touch unrelated modules ".repeat(15),
-      doneWhen: "the target test passes 20/20 consecutive CI runs and the fix is committed",
+      deliverable: "a committed fix plus evidence that the target test passes 20/20 consecutive CI runs",
     };
     const brief = composeSpawnContractBrief("coordinator-child", contract, undefined, "coordinator");
     expect(brief.length).toBeGreaterThan(BRIEF_FILE_THRESHOLD);
@@ -87,13 +112,14 @@ describe("container-generated delegation behavior", () => {
     expect(brief).toContain(contract.context.trim().replace(/\s+/g, " "));
     expect(brief).toContain(contract.constraints.trim().replace(/\s+/g, " "));
 
-    const { cmd, workspaceRoot } = await spawnAndCapture("coordinator-child", { instructions: brief, parent: "coordinator" });
+    const { cmd, workspaceRoot } = await spawnAndCapture("coordinator-child", { taskBrief: brief, contract, parent: "coordinator" });
 
     // The pane payload never carries the full contract text...
     expect(cmd).not.toContain(contract.context.trim().replace(/\s+/g, " "));
     // ...but the file it points at does, byte for byte, still uncut.
     const file = briefFilePath(workspaceRoot, "coordinator-child");
     expect(cmd).toContain(file);
+    expect(cmd).toContain("task contract (DELIVERABLE)");
     // AgentManager layers its own Bridge-coordination guidance on top of the composed contract
     // (spec 216, orthogonal to this test), so assert containment rather than exact equality —
     // the point is that the CONTRACT itself, embedded within, survives whole and uncut.

@@ -8,6 +8,23 @@ export interface AgentPromptLayers {
   instructions?: string;
   bridgeGuidance: boolean;
   taskBrief?: string;
+  /** Present only when taskBrief was rendered from the validated structured SpawnContract. */
+  taskContractCompletion?: "deliverable" | "done_when";
+}
+
+export type PromptTaskLayer =
+  | { kind: "absent" }
+  | { kind: "brief" }
+  | { kind: "contract"; completion: "deliverable" | "done_when" };
+
+/** Content-free composition facts. This describes what the compositor actually emitted; it never
+ * stores prompt bytes and is safe to project into a bounded startup-brief inventory. */
+export interface AgentPromptManifest {
+  soul: boolean;
+  role: boolean;
+  persistentInstructions: boolean;
+  bridgeGuidance: boolean;
+  task: PromptTaskLayer;
 }
 
 export interface SoulSnapshot {
@@ -24,15 +41,28 @@ export interface SoulSnapshot {
 export interface ComposedAgentBody {
   body?: string;
   soul?: Omit<SoulSnapshot, "channel" | "state" | "offeredAt">;
+  manifest: AgentPromptManifest;
 }
 
 const present = (value: string | undefined): string | undefined => value?.trim() ? value : undefined;
 
 export function composeAgentPrompt(layers: AgentPromptLayers): ComposedAgentBody {
+  const hasTaskBrief = !!present(layers.taskBrief);
+  const manifest: AgentPromptManifest = {
+    soul: !!layers.soul,
+    role: !!layers.role && layers.role !== "custom",
+    persistentInstructions: !!present(layers.instructions),
+    bridgeGuidance: layers.bridgeGuidance,
+    task: !hasTaskBrief
+      ? { kind: "absent" }
+      : layers.taskContractCompletion
+        ? { kind: "contract", completion: layers.taskContractCompletion }
+        : { kind: "brief" },
+  };
   if (!layers.soul) {
     const legacyInstructions = [layers.instructions, layers.taskBrief].filter(Boolean).join("\n\n") || undefined;
     const body = withBridgeGuidance(composeInstructions(layers.role, legacyInstructions), layers.bridgeGuidance);
-    return { body };
+    return { body, manifest };
   }
 
   const soul = layers.soul;
@@ -48,5 +78,6 @@ export function composeAgentPrompt(layers: AgentPromptLayers): ComposedAgentBody
   return {
     body,
     soul: { profileId: soul.profileId, source: soul.source, sha256: soul.sha256, chars: soul.chars, bytes: soul.bytes },
+    manifest,
   };
 }
