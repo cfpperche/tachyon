@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "preact/hooks";
 import type { ActivityItem, ActivityViewModel } from "../../activity/activityView";
 import { MarkdownView, linkify } from "./markdown";
 import { highlight } from "./markdownEngine";
-import { Button } from "../shared/ui";
+import { Badge, Button, EmptyState, IconButton, Input, PageChrome } from "../shared/ui";
 import {
   ACTIVITY_FILTER_CATEGORIES,
   ACTIVITY_FILTER_LABELS,
@@ -60,19 +60,18 @@ function TypeFilters({
   const active = ACTIVITY_FILTER_CATEGORIES.filter((category) => filters[category]).length;
   return (
     <div class="type-filter">
-      <button
+      <Button
         class={`type-filter-btn${hidden ? " active" : ""}`}
-        type="button"
+        icon="filter"
         title="Filter visible activity types"
         aria-label="Filter visible activity types"
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen(!open)}
       >
-        <span class="codicon codicon-filter" />
-        <span>Types</span>
-        {hidden > 0 && <span class="filter-count">{hidden}</span>}
-      </button>
+        Types
+        {hidden > 0 ? <Badge class="filter-count">{hidden}</Badge> : null}
+      </Button>
       {open && (
         <div class="type-menu" role="menu">
           {ACTIVITY_FILTER_CATEGORIES.map((category) => (
@@ -107,38 +106,37 @@ function ShareActions({
   const click = (fn: () => void) => (e: MouseEvent) => { e.preventDefault(); e.stopPropagation(); setOpen(false); fn(); };
   return (
     <span class="share-actions" aria-label="Activity item actions">
-      <button
+      <IconButton
         class="share-trigger"
+        name="kebab-vertical"
         title="Activity item actions"
         aria-label="Activity item actions"
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpen(!open); }}
-      >
-        <span class="codicon codicon-kebab-vertical" />
-      </button>
+      />
       {open && (
         <span class="share-menu" role="menu">
           {onToggleRaw && (
-            <button role="menuitem" onClick={click(onToggleRaw)}>
+            <Button role="menuitem" onClick={click(onToggleRaw)}>
               <span class={`codicon codicon-${raw ? "eye" : "code"}`} />
               <span>{raw ? "Show preview" : "Show raw markdown"}</span>
-            </button>
+            </Button>
           )}
           {it.shareKey && (
             <>
-              <button role="menuitem" onClick={click(() => dispatch.copyShareText(it.sequence, it.shareKey!))}>
+              <Button role="menuitem" onClick={click(() => dispatch.copyShareText(it.sequence, it.shareKey!))}>
                 <span class="codicon codicon-copy" />
                 <span>Copy share text</span>
-              </button>
-              <button role="menuitem" onClick={click(() => dispatch.shareExternal(it.sequence, it.shareKey!))}>
+              </Button>
+              <Button role="menuitem" onClick={click(() => dispatch.shareExternal(it.sequence, it.shareKey!))}>
                 <span class="codicon codicon-share" />
                 <span>Share externally</span>
-              </button>
-              <button role="menuitem" onClick={click(() => dispatch.shareToAgent(it.sequence, it.shareKey!))}>
+              </Button>
+              <Button role="menuitem" onClick={click(() => dispatch.shareToAgent(it.sequence, it.shareKey!))}>
                 <span class="codicon codicon-send" />
                 <span>Send to Tachyon agent</span>
-              </button>
+              </Button>
             </>
           )}
         </span>
@@ -158,7 +156,7 @@ function Boundary({ it, dispatch, cv }: { it: ActivityItem; dispatch: ActivityDi
         <span class={`codicon codicon-${interrupted ? "debug-stop" : "fold"}`} />
         <span class="blabel">{it.title}</span>
         {it.detail && <span class="bmeta">{it.detail}</span>}
-        {it.resultFull && <button class="bsum" onClick={() => setOpen(!open)}>{open ? "hide summary" : "view summary"}</button>}
+        {it.resultFull && <Button class="bsum" onClick={() => setOpen(!open)}>{open ? "hide summary" : "view summary"}</Button>}
         <ShareActions it={it} dispatch={dispatch} />
       </div>
       {open && it.resultFull && <div class="boundary-summary"><MarkdownView text={it.resultFull} /></div>}
@@ -181,7 +179,7 @@ function Bubble({ it, dispatch, cv }: { it: ActivityItem; dispatch: ActivityDisp
         {agent && raw
           ? <pre class="rawmd">{it.title}</pre>
           : <div class={`btext${long && !open ? " clamp" : ""}`}>{agent ? <MarkdownView text={it.title} /> : linkify(it.title)}</div>}
-        {long && !raw && <button class="more" onClick={() => setOpen(!open)}>{open ? "Show less" : "Show more"}</button>}
+        {long && !raw && <Button class="more" onClick={() => setOpen(!open)}>{open ? "Show less" : "Show more"}</Button>}
         {it.timestamp && <div class="btime">{hhmm(it.timestamp)}</div>}
       </div>
     </div>
@@ -195,11 +193,11 @@ function Thinking({ it, dispatch, cv }: { it: ActivityItem; dispatch: ActivityDi
   return (
     <div class={`think${cv ? " cv" : ""}`}>
       <div class="think-head">
-        <button class="think-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <Button class="think-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
           <span class={`codicon codicon-chevron-${open ? "down" : "right"}`} />
           <span class="codicon codicon-lightbulb" />
           <span class="think-prev">{open ? "Thinking" : `Thinking · ${preview}…`}</span>
-        </button>
+        </Button>
         <ShareActions it={it} dispatch={dispatch} />
       </div>
       {open && <div class="think-body"><MarkdownView text={it.title} /></div>}
@@ -213,13 +211,13 @@ function InjectedContext({ it, dispatch, cv }: { it: ActivityItem; dispatch: Act
   const preview = body.replace(/\s+/g, " ").trim().slice(0, 96);
   return (
     <div class={`contextline share-host${cv ? " cv" : ""}`} title="Injected context">
-      <button class="context-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
+      <Button class="context-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
         <span class={`codicon codicon-chevron-${open ? "down" : "right"}`} />
         <span class="codicon codicon-info" />
         <span class="context-label">{it.title}</span>
         {it.detail && <span class="context-meta">{it.detail}</span>}
         {!open && preview && <span class="context-preview">{preview}</span>}
-      </button>
+      </Button>
       <ShareActions it={it} dispatch={dispatch} />
       {open && <pre class="context-body">{body}</pre>}
     </div>
@@ -308,10 +306,10 @@ function ActivityLine({ it, dispatch, cv }: { it: ActivityItem; dispatch: Activi
         <span class={`codicon codicon-${it.failed ? "error" : it.kind === "tool" && it.result === undefined ? "loading" : ICON[it.kind]}`} />
         <span class="cname">{it.title}</span>
         {it.path
-          ? <button class="flink" title={it.path} onClick={() => dispatch.openFile(it.path!)}>{it.detail ?? it.path}</button>
+          ? <Button class="flink" title={it.path} onClick={() => dispatch.openFile(it.path!)}>{it.detail ?? it.path}</Button>
           : it.detail && <span class="ct">{it.detail}</span>}
         {it.result && <span class="cres">↳ {it.result}</span>}
-        {it.resultFull && <button class="cexp" title="Show output" onClick={() => setOpen(!open)}><span class={`codicon codicon-chevron-${open ? "up" : "down"}`} /></button>}
+        {it.resultFull && <IconButton class="cexp" name={open ? "chevron-up" : "chevron-down"} title="Show output" onClick={() => setOpen(!open)} />}
         <ShareActions it={it} dispatch={dispatch} />
       </div>
       {open && it.resultFull && (isUnifiedDiff(it.resultFull) ? <DiffView text={it.resultFull} path={it.path} /> : <pre class="cfull">{it.resultFull}</pre>)}
@@ -347,17 +345,17 @@ export function App({ vm, dispatch, images, query, setQuery }: {
   }, [zoom]);
 
   const term = (
-    <button class="term" onClick={() => dispatch.terminal()}><span class="codicon codicon-terminal" /> Open terminal</button>
+    <Button class="term" icon="terminal" onClick={() => dispatch.terminal()}>Open terminal</Button>
   );
 
   if (vm.tier !== "structured") {
     return (
-      <div class="degrade">
-        <span class="codicon codicon-circle-slash" />
-        <div>Structured activity is unavailable for this runtime.</div>
-        <div>Open the terminal to see the live session.</div>
-        {term}
-      </div>
+      <EmptyState
+        kind="error"
+        icon="circle-slash"
+        message="Structured activity is unavailable for this runtime. Open the terminal to see the live session."
+        action={term}
+      />
     );
   }
 
@@ -373,29 +371,35 @@ export function App({ vm, dispatch, images, query, setQuery }: {
 
   return (
     <div>
-      <div class="head">
-        <h1 class="ds-title"><span class="codicon codicon-pulse" /> Activity</h1>
-        <span class="stat" title="agent messages"><span class="codicon codicon-comment" /> {s.messages}</span>
-        <span class="stat" title="tools running"><span class="codicon codicon-loading" /> {s.toolsRunning}</span>
-        {s.toolsFailed > 0 && <span class="stat err" title="tools failed"><span class="codicon codicon-error" /> {s.toolsFailed}</span>}
-        <span class="stat" title="files changed"><span class="codicon codicon-edit" /> {s.filesChanged.length}</span>
-        <span class="stat" title="tokens in/out"><span class="codicon codicon-symbol-numeric" /> {s.tokens.input}/{s.tokens.output}</span>
-        <div class="search">
-          <span class="codicon codicon-search" />
-          <input type="text" placeholder="Search recent activity" value={query} aria-label="Search recent activity"
-            onInput={(e) => setQuery((e.target as HTMLInputElement).value)} />
-          {query && <button class="sclear" aria-label="Clear search" onClick={() => setQuery("")}><span class="codicon codicon-close" /></button>}
-        </div>
-        <TypeFilters
-          filters={filters}
-          hidden={hiddenByType}
-          onToggle={(category) => setFilters((cur) => toggleActivityFilter(cur, category))}
-          onReset={() => setFilters({ ...DEFAULT_ACTIVITY_FILTERS })}
-        />
-        {vm.runtimeVersion && <span class="ver">{vm.runtime} {vm.runtimeVersion}</span>}
-        {vm.degradedFreshness && <span class="stale" title="transcript lags the terminal">recent activity</span>}
-        {term}
-      </div>
+      <PageChrome
+        class="activity-chrome"
+        title="Activity"
+        icon="pulse"
+        actions={
+          <div class="activity-head-tools">
+            <span class="stat" title="agent messages"><span class="codicon codicon-comment" /> {s.messages}</span>
+            <span class="stat" title="tools running"><span class="codicon codicon-loading" /> {s.toolsRunning}</span>
+            {s.toolsFailed > 0 && <span class="stat err" title="tools failed"><span class="codicon codicon-error" /> {s.toolsFailed}</span>}
+            <span class="stat" title="files changed"><span class="codicon codicon-edit" /> {s.filesChanged.length}</span>
+            <span class="stat" title="tokens in/out"><span class="codicon codicon-symbol-numeric" /> {s.tokens.input}/{s.tokens.output}</span>
+            <div class="search">
+              <span class="codicon codicon-search" />
+              <Input type="text" placeholder="Search recent activity" value={query} aria-label="Search recent activity"
+                onInput={(e) => setQuery((e.target as HTMLInputElement).value)} />
+              {query ? <IconButton class="sclear" name="close" title="Clear search" onClick={() => setQuery("")} /> : null}
+            </div>
+            <TypeFilters
+              filters={filters}
+              hidden={hiddenByType}
+              onToggle={(category) => setFilters((cur) => toggleActivityFilter(cur, category))}
+              onReset={() => setFilters({ ...DEFAULT_ACTIVITY_FILTERS })}
+            />
+            {vm.runtimeVersion && <span class="ver">{vm.runtime} {vm.runtimeVersion}</span>}
+            {vm.degradedFreshness && <Badge tone="warn" title="transcript lags the terminal">recent activity</Badge>}
+            {term}
+          </div>
+        }
+      />
       <div class="feed">
         {vm.sharedCwd && (
           <div class="capnote" title="This agent shares its folder with others and has no distinct session yet — its history can't be safely attributed here">
@@ -403,9 +407,9 @@ export function App({ vm, dispatch, images, query, setQuery }: {
           </div>
         )}
         {canLoadOlder && (
-          <button class="capnote" title="Load earlier activity from the durable log" onClick={() => dispatch.loadOlder()}>
-            <span class="codicon codicon-chevron-up" /> Load earlier activity
-          </button>
+          <Button class="capnote" icon="chevron-up" title="Load earlier activity from the durable log" onClick={() => dispatch.loadOlder()}>
+            Load earlier activity
+          </Button>
         )}
         {hiddenByType > 0 && (
           <div class="capnote" title="Some loaded activity items are hidden by the type filter">
@@ -413,7 +417,7 @@ export function App({ vm, dispatch, images, query, setQuery }: {
           </div>
         )}
         {nodes.length === 0
-          ? <div class="degrade"><span class="codicon codicon-watch" /><div>{searchedItems.length ? "All matching activity is hidden by type filters" : q ? "No matches in recent activity" : "Waiting for activity…"}</div></div>
+          ? <EmptyState kind="empty" icon="watch" message={searchedItems.length ? "All matching activity is hidden by type filters" : q ? "No matches in recent activity" : "Waiting for activity…"} />
           : nodes.map((node, idx) => {
             if (typeof node === "string") return <div class="daysep" key={`d${idx}`}><span>{node}</span></div>;
             const cv = node.sequence < tailFromSeq;
@@ -441,7 +445,7 @@ export function App({ vm, dispatch, images, query, setQuery }: {
       {zoom && (
         <div class="lightbox" role="dialog" aria-label="image preview" onClick={() => setZoom(null)}>
           <img src={zoom} alt="attached image, full size" onClick={(e) => e.stopPropagation()} />
-          <button class="lb-close" aria-label="Close preview" onClick={() => setZoom(null)}><span class="codicon codicon-close" /></button>
+          <IconButton class="lb-close" name="close" title="Close preview" onClick={() => setZoom(null)} />
         </div>
       )}
     </div>

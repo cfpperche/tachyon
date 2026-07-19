@@ -531,8 +531,7 @@ function Card({ card, session, onDragStart, onDragEnd, onCardDragOver, onCardDro
       <p class="title">{card.title}</p>
       <div class="meta">
         <span class="meta-left">
-          <button
-            type="button"
+          <Button
             class="ref ref-copy"
             title={`Copy ${card.id}`}
             aria-label={`Copy task ID ${card.id}`}
@@ -540,7 +539,7 @@ function Card({ card, session, onDragStart, onDragEnd, onCardDragOver, onCardDro
             onContextMenu={(e) => e.stopPropagation()}
           >
             {card.id}
-          </button>
+          </Button>
           {card.sddStatus && <Badge tone="info">sdd · {card.sddStatus}</Badge>}
           {card.sddMissing && <Badge tone="err">sdd missing</Badge>}
           {card.attention.map((a) => (
@@ -564,24 +563,23 @@ function Card({ card, session, onDragStart, onDragEnd, onCardDragOver, onCardDro
             {session?.field === "assignee" ? (
               <AssigneeEditor session={session} onChange={onChangeEdit} onSubmit={onSubmitEdit} onCancel={onCancelEdit} onRefresh={onRefreshStale} />
             ) : (
-              <button
-                type="button"
+              <Button
                 class={`who-btn${card.assigneeHistorical ? " historical" : ""}`}
                 disabled={!card.canEditAssignee}
                 onClick={() => { if (card.canEditAssignee) onBeginEdit("assignee"); }}
                 title={card.canEditAssignee ? "Edit assignee" : card.assigneeLabel}
               >
                 {card.assignee ? <><span class="dot" style={{ background: `var(${card.assigneeColorVar})` }} />{card.assigneeLabel}</> : <span class="ds-dim">{card.assigneeLabel}</span>}
-              </button>
+              </Button>
             )}
           </span>
           <span class="mc-editable prio-edit">
             {session?.field === "priority" ? (
               <PriorityEditor session={session} onChange={onChangeEdit} onSubmit={onSubmitEdit} onCancel={onCancelEdit} onRefresh={onRefreshStale} />
             ) : (
-              <button type="button" class="prio-btn" onClick={() => onBeginEdit("priority")} title="Edit priority">
+              <Button class="prio-btn" onClick={() => onBeginEdit("priority")} title="Edit priority">
                 {card.priority !== undefined ? <span class={`prio p${card.priority}`}>P{card.priority}</span> : <span class="ds-dim">no priority</span>}
-              </button>
+              </Button>
             )}
           </span>
         </span>
@@ -679,9 +677,9 @@ function CardMenu({ menu, onRun, onClose }: { menu: CardMenuState | null; onRun(
     <div class="menu-backdrop" onClick={onClose} onContextMenu={(e) => { e.preventDefault(); onClose(); }}>
       <div ref={ref} class="more-menu" role="menu" aria-label="Card actions" style={`left:${left}px;top:${Math.max(6, top)}px`} onClick={(e) => e.stopPropagation()}>
         {menu.actions.map((a) => (
-          <button key={a.id} class="more-item" type="button" role="menuitem" onClick={() => onRun(a.id, menu.taskId)}>
+          <Button key={a.id} class="more-item" role="menuitem" onClick={() => onRun(a.id, menu.taskId)}>
             <Icon name={a.icon} /><span>{a.label}</span>
-          </button>
+          </Button>
         ))}
       </div>
     </div>

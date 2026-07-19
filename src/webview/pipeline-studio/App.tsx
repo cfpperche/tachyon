@@ -1,4 +1,5 @@
 import { useEffect, useState } from "preact/hooks";
+import { Button, IconButton } from "../shared/ui";
 import { StudioFrame } from "../shared/studio/StudioFrame";
 import { canSave as computeCanSave } from "../shared/studio/dirtyGating";
 import type { StudioError } from "../shared/studio/errorTaxonomy";
@@ -109,10 +110,10 @@ export function App({ dispatch }: { dispatch: PipelineStudioDispatch }) {
               {fields.stages.map((s) => (
                 <div class="ps-stage-row" key={s.id}>
                   <input class="ps-input" value={s.name} placeholder="stage name" onInput={(e) => renameStage(s.id, (e.currentTarget as HTMLInputElement).value)} />
-                  <button type="button" class="ps-icon-btn" onClick={() => removeStage(s.id)} aria-label={`Remove stage ${s.name || s.id}`}>×</button>
+                  <IconButton name="close" class="ps-icon-btn" title={`Remove stage ${s.name || s.id}`} onClick={() => removeStage(s.id)} />
                 </div>
               ))}
-              <button type="button" onClick={addStage}>+ Add stage</button>
+              <Button onClick={addStage}>+ Add stage</Button>
             </div>
           </div>
         ),
@@ -120,9 +121,9 @@ export function App({ dispatch }: { dispatch: PipelineStudioDispatch }) {
           <div class="ps-import">
             <label class="ps-label" for="ps-import-text">Paste stage names (one per line)</label>
             <textarea id="ps-import-text" class="ps-input" value={importText} onInput={(e) => setImportText((e.currentTarget as HTMLTextAreaElement).value)} />
-            <button type="button" disabled={!importText.trim()} onClick={() => dispatch.post(importStagesMessage(importText))}>
+            <Button disabled={!importText.trim()} onClick={() => dispatch.post(importStagesMessage(importText))}>
               Import stages
-            </button>
+            </Button>
           </div>
         ),
       }}

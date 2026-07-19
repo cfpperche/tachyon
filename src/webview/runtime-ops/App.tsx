@@ -10,7 +10,7 @@ import type {
   RuntimeOpsUsageV1,
   RuntimeOpsValue,
 } from "../../runtimeOps/types";
-import { EmptyState, PageChrome } from "../shared/ui";
+import { Button, EmptyState, PageChrome } from "../shared/ui";
 
 const SUMMARY: Array<{ key: keyof RuntimeOpsSnapshot["summary"]; label: string }> = [
   { key: "runtimes", label: "Runtimes" },
@@ -149,14 +149,13 @@ function ProviderCapacityRow({
       </div>
       <div class="runtime-ops-provider-control">
         <span>{enabled ? `${enabledSources(provider)} enabled` : "Disabled by default"}</span>
-        <button
-          type="button"
+        <Button
           aria-label={`${enabled ? "Disable" : "Enable"} ${label} CLI quota observation`}
           aria-pressed={enabled}
           onClick={() => onSetProviderObservation(provider.provider, !enabled)}
         >
           {enabled ? "Disable source" : "Enable CLI"}
-        </button>
+        </Button>
       </div>
     </div>
   );

@@ -85,6 +85,20 @@ describe("shared UI product patterns (STYLEGUIDE)", () => {
     expect(sidebar).not.toMatch(/function ListRow\(/);
   });
 
+  it("Full standardize surfaces use PageChrome/Badge/Button", () => {
+    for (const [file, needles] of [
+      ["src/webview/activity/App.tsx", ["PageChrome", "EmptyState"]],
+      ["src/webview/plugins/App.tsx", ["PageChrome", "Badge"]],
+      ["src/webview/task-detail/App.tsx", ["PageChrome", "Chip"]],
+      ["src/webview/control-inspector/App.tsx", ["PageChrome", "Badge"]],
+      ["src/webview/pipeline-studio/App.tsx", ["IconButton"]],
+      ["src/webview/runtime-ops/App.tsx", ["Button"]],
+    ] as const) {
+      const src = readFileSync(file, "utf8");
+      for (const n of needles) expect(src, file).toContain(n);
+    }
+  });
+
   it("Handoff + Activity + Board body adopt kit (Phase C.3)", () => {
     const handoff = readFileSync("src/webview/handoff/App.tsx", "utf8");
     expect(handoff).toContain("PageChrome");

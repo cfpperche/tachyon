@@ -1,6 +1,6 @@
 import { createContext } from "preact";
 import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import { Button, Badge, EmptyState, DenseRow } from "../shared/ui";
+import { Button, Badge, EmptyState, DenseRow, IconButton } from "../shared/ui";
 import {
   SAMPLE, TABS, searchIndex,
   type FleetVM, type TabId, type AgentVM, type AgentStatus, type SearchItem,
@@ -359,10 +359,12 @@ function Group({ title, count, collapsed, onToggle, actions, children }: { title
 const ListRow = DenseRow;
 
 const Act = ({ icon, title, on }: { icon: string; title: string; on: () => void }) => (
-  <button class="act" type="button" title={title} aria-label={title}
-    onClick={(e) => { e.preventDefault(); e.stopPropagation(); on(); }}>
-    <Icon name={icon} />
-  </button>
+  <IconButton
+    class="act"
+    name={icon}
+    title={title}
+    onClick={(e) => { e.preventDefault(); e.stopPropagation(); on(); }}
+  />
 );
 
 /** The "..." overflow trigger — edit/remove (and any secondary action) live here, never inline, on every tab. */
@@ -370,10 +372,12 @@ function MoreBtn({ items }: { items: MenuItem[] }) {
   const d = useContext(DispatchCtx);
   if (!items.length) return null;
   return (
-    <button class="act" type="button" title="More actions" aria-label="More actions"
-      onClick={(e) => { e.stopPropagation(); d.openMore(items, e.clientX, e.clientY); }}>
-      <Icon name="ellipsis" />
-    </button>
+    <IconButton
+      class="act"
+      name="ellipsis"
+      title="More actions"
+      onClick={(e) => { e.stopPropagation(); d.openMore(items, e.clientX, e.clientY); }}
+    />
   );
 }
 
@@ -394,10 +398,9 @@ function HandoffBtn({ handoff, onOpen }: { handoff?: import("../../sidebar/types
           : { glyph: "◆", label: "fresh", tone: "" };
   const quiet = !!handoff?.exists && !meta.tone && !handoff.pendingCount;
   return (
-    <button class="handoff-btn" type="button" title="Open Project Handoff" aria-label={`Project Handoff — ${meta.label}`}
-      onClick={(e) => { e.stopPropagation(); onOpen(); }}>
+    <Button class="handoff-btn" title="Open Project Handoff" aria-label={`Project Handoff — ${meta.label}`} onClick={(e) => { e.stopPropagation(); onOpen(); }}>
       <Badge tone={meta.tone === "warn" ? "warn" : meta.tone === "err" ? "err" : "default"}>{quiet ? meta.glyph : `${meta.glyph} ${meta.label}`}</Badge>
-    </button>
+    </Button>
   );
 }
 
@@ -575,15 +578,15 @@ function Panel({ tab, fleet, scope, collapsed, toggle, flashName, agentSort, ter
             </span>
           )}
           {p.tags.map((tag) => (
-            <button class={`pin-tag${tag === activePinTag ? " active" : ""}`} type="button" title={`Filter by #${tag}`} onClick={() => onPinTag(tag)}>
+            <Button class={`pin-tag${tag === activePinTag ? " active" : ""}`} title={`Filter by #${tag}`} onClick={() => onPinTag(tag)}>
               #{tag}
-            </button>
+            </Button>
           ))}
           {p.by && <span class="pin-by">— {p.by}</span>}
           {p.id && (
-            <button class="pin-id" type="button" title={`Copy pin ID ${p.id}`} onClick={() => d.section("pin:copyId", p.id!)}>
+            <Button class="pin-id" title={`Copy pin ID ${p.id}`} onClick={() => d.section("pin:copyId", p.id!)}>
               {p.id}
-            </button>
+            </Button>
           )}
         </div>
         {p.id && <div class="actions">
@@ -716,9 +719,9 @@ function MoreMenu({ menu, onClose }: { menu: MenuState | null; onClose: () => vo
     <div class="menu-backdrop" onClick={onClose}>
       <div ref={ref} class="more-menu" role="menu" aria-label="Actions" style={`left:${pos.left}px;top:${pos.top}px`} onClick={(e) => e.stopPropagation()}>
         {menu.items.map((it) => (
-          <button class="more-item" type="button" role="menuitem" onClick={() => { it.run(); onClose(); }}>
+          <Button class="more-item" role="menuitem" onClick={() => { it.run(); onClose(); }}>
             <Icon name={it.icon} /><span>{it.label}</span>
-          </button>
+          </Button>
         ))}
       </div>
     </div>
@@ -740,9 +743,7 @@ function NoticeStrip({ fleets, dispatch }: { fleets: FleetVM[]; dispatch?: Dispa
           <Icon name="bell" /> Notices
           <span class="notice-unread" title={`${rows.length} open`}>{rows.length}</span>
         </span>
-        <button
-          type="button"
-          class="notice-mark-all"
+        <Button class="notice-mark-all"
           title="Dismiss all notices"
           onClick={() => {
             for (const f of fleets) {
@@ -753,41 +754,36 @@ function NoticeStrip({ fleets, dispatch }: { fleets: FleetVM[]; dispatch?: Dispa
           }}
         >
           Clear
-        </button>
+        </Button>
       </div>
       <div class="notice-strip-list">
         {rows.slice(0, 12).map(({ n, hash }) => (
           <div class={`notice-row level-${n.level} unread`} key={`${hash ?? ""}:${n.id}`}>
-            <button
-              type="button"
-              class="notice-msg"
+            <Button class="notice-msg"
               title={`${n.message} — click to dismiss`}
               onClick={() => dispatch?.section("notice:markRead", n.id, undefined, hash)}
             >
               <span class={`notice-level l-${n.level}`}>{n.level}</span>
               <span class="notice-text">{n.message}</span>
               {n.collapsedCount > 1 && <span class="notice-x">×{n.collapsedCount}</span>}
-            </button>
+            </Button>
             {n.actionsLive && n.actions.map((a) => (
-              <button
+              <Button
                 key={a.id}
-                type="button"
                 class="notice-act"
                 title={a.label}
                 onClick={() => dispatch?.section("notice:invoke", n.id, { actionId: a.id }, hash)}
               >
                 {a.label}
-              </button>
+              </Button>
             ))}
-            <button
-              type="button"
-              class="notice-dismiss"
+            <Button class="notice-dismiss"
               title="Dismiss"
               aria-label="Dismiss notice"
               onClick={() => dispatch?.section("notice:markRead", n.id, undefined, hash)}
             >
               <Icon name="close" />
-            </button>
+            </Button>
           </div>
         ))}
       </div>
@@ -945,9 +941,9 @@ export function App({ fleets = [SAMPLE], dispatch, prefs = {}, collapsedKeys = [
       <Icon name="rocket" />
       <p>No Tachyon workspace.</p>
       <p class="dim">Open a folder, then generate a <code>tachyon.yml</code> to manage its fleet here.</p>
-      <button class="init-btn" type="button" onClick={() => dispatch?.global("init")}>
+      <Button class="init-btn" onClick={() => dispatch?.global("init")}>
         <Icon name="add" /><span>Initialize Tachyon</span>
-      </button>
+      </Button>
     </div>
   );
   const renderFolder = (f: FleetVM) => (
@@ -1001,18 +997,16 @@ export function App({ fleets = [SAMPLE], dispatch, prefs = {}, collapsedKeys = [
           return <>
             <span class="sec-actions">
               {tab === "Agents" && metricsCapable > 0 && (
-                <button
-                  class={`act${allMetricsOpen ? " on" : ""}`}
-                  type="button"
+                <Button class={`act${allMetricsOpen ? " on" : ""}`}
                   title={allMetricsOpen ? "Collapse all resource metrics" : "Expand all resource metrics"}
                   aria-label={allMetricsOpen ? "Collapse all resource metrics" : "Expand all resource metrics"}
                   aria-pressed={allMetricsOpen}
                   onClick={flipAllMetrics}
                 >
                   <Icon name="graph" />
-                </button>
+                </Button>
               )}
-              <button class="act" type="button" title={`Sort ${section} — ${SORT_LABEL[active]} (click to flip)`} aria-label={`Sort ${section} (${SORT_LABEL[active]}); click to flip`} onClick={flipSort}><SortIcon dir={active} /></button>
+              <button type="button" class="act" title={`Sort ${section} — ${SORT_LABEL[active]} (click to flip)`} aria-label={`Sort ${section} (${SORT_LABEL[active]}); click to flip`} onClick={flipSort}><SortIcon dir={active} /></button>
               {STUDIO_OF[tab] && <Act icon="add" title={STUDIO_OF[tab]!.label} on={() => dispatch?.global(STUDIO_OF[tab]!.op)} />}
             </span>
           </>;
@@ -1027,7 +1021,7 @@ export function App({ fleets = [SAMPLE], dispatch, prefs = {}, collapsedKeys = [
                 {pinTags.map((tag) => <option value={tag}>#{tag}</option>)}
               </select>
             )}
-            {activePinTag && <button class="tag-clear" type="button" title={`Clear #${activePinTag} filter`} onClick={() => setActivePinTag(null)}>#{activePinTag}<Icon name="close" /></button>}
+            {activePinTag && <Button class="tag-clear" title={`Clear #${activePinTag} filter`} onClick={() => setActivePinTag(null)}>#{activePinTag}<Icon name="close" /></Button>}
             <Act icon="add" title="Add pin" on={() => dispatch?.global("addPin")} />
           </span>
         )}

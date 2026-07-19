@@ -1,6 +1,6 @@
 import type { ControlInspectorModel, ControlInspectorWorkspaceRow } from "../../control-inspector/model";
 import type { ControlInspectorStrings } from "./messages";
-import { Button } from "../shared/ui";
+import { Badge, Button, EmptyState, PageChrome } from "../shared/ui";
 
 export interface ControlInspectorAppProps {
   model: ControlInspectorModel | undefined;
@@ -15,7 +15,8 @@ export interface ControlInspectorAppProps {
 
 function StateBadge({ s, state }: { s: ControlInspectorStrings; state: "attached" | "error" | "none" }) {
   const label = state === "attached" ? s.attached : state === "error" ? s.error : s.none;
-  return <span class={`ci-badge ${state}`}>{label}</span>;
+  const tone = state === "attached" ? "ok" : state === "error" ? "err" : "default";
+  return <Badge tone={tone}>{label}</Badge>;
 }
 
 function Kv({ k, v }: { k: string; v?: string | number | null }) {
@@ -96,41 +97,34 @@ function WorkspaceCard({ s, row }: { s: ControlInspectorStrings; row: ControlIns
 
 export function App(p: ControlInspectorAppProps) {
   const s = p.strings;
-  if (!s) return <div class="ds-empty" />;
+  if (!s) return <EmptyState kind="empty" message="" />;
 
   const m = p.model;
 
   return (
     <div class="ci-root">
-      <div class="ci-head">
-        <div>
-          <h2 class="ds-title">
-            <span class="codicon codicon-debug-console" />
-            {s.title}
-          </h2>
-          <p class="ci-sub">{s.subtitle}</p>
-        </div>
-        <div class="ci-actions">
-          <label class="ds-check" style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
-            <input type="checkbox" checked={p.auto} onChange={(e) => p.onToggleAuto((e.target as HTMLInputElement).checked)} />
-            {s.auto}
-          </label>
-          <Button variant="default" onClick={p.onRefresh}>
-            <span class="codicon codicon-refresh" /> {s.refresh}
-          </Button>
-          <Button variant="default" onClick={p.onCopyDiagnostics}>
-            <span class="codicon codicon-copy" /> {s.copyDiagnostics}
-          </Button>
-          <Button variant="default" onClick={p.onOpenServerInspector}>
-            <span class="codicon codicon-terminal-tmux" /> {s.openServerInspector}
-          </Button>
-        </div>
-      </div>
+      <PageChrome
+        class="ci-chrome"
+        title={s.title}
+        icon="debug-console"
+        hint={s.subtitle}
+        actions={
+          <div class="ci-actions">
+            <label class="ds-check" style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
+              <input type="checkbox" checked={p.auto} onChange={(e) => p.onToggleAuto((e.target as HTMLInputElement).checked)} />
+              {s.auto}
+            </label>
+            <Button variant="default" icon="refresh" onClick={p.onRefresh}>{s.refresh}</Button>
+            <Button variant="default" icon="copy" onClick={p.onCopyDiagnostics}>{s.copyDiagnostics}</Button>
+            <Button variant="default" icon="terminal-tmux" onClick={p.onOpenServerInspector}>{s.openServerInspector}</Button>
+          </div>
+        }
+      />
 
       <div class="ci-banner">{s.pocBanner}</div>
 
       {!m ? (
-        <div class="ci-empty">{s.empty}</div>
+        <EmptyState kind="empty" message={s.empty} />
       ) : (
         <>
           <div class="ci-summary" aria-label={s.summary}>

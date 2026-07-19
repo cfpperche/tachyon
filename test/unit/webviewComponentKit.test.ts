@@ -18,11 +18,14 @@ const MIGRATED_VIEWS = [
   "probes",
   "pin-preview",
   "sidebar",
-  // Control family (Phase B) — hand-rolled ds-btn/ds-tab/ds-chip banned; use kit components.
   "cockpit",
   "approval",
   "validations",
   "runtime-ops",
+  "mission-control",
+  "task-detail",
+  "control-inspector",
+  "pipeline-studio",
 ];
 
 /** a class TOKEN the kit owns — banned in a migrated view's authoring code (`chips`/`ds-tabs` containers are fine). */

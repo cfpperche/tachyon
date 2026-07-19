@@ -1,5 +1,5 @@
 import { useEffect, useReducer, useRef, useState } from "preact/hooks";
-import { Badge, Button, Input } from "../shared/ui";
+import { Badge, Button, Chip, Input, PageChrome, Select } from "../shared/ui";
 import { MarkdownView } from "../activity/markdown";
 import { assigneePatch, priorityPatch } from "../mission-control/interactions";
 import { reduceDetailStale, INITIAL_STALE_STATE, selectedReviewablePrototype, type DetailField } from "./interactions";
@@ -107,26 +107,29 @@ export function App({ vm, errorSeq, errorMessage, dispatch }: { vm?: TaskDetailV
           <span class="codicon codicon-warning" /> This task's file is missing or unreadable. Showing the last known state — quick controls are disabled.
         </div>
       )}
-      <div class="td-head">
-        <h1 class="ds-title">{t.title}</h1>
-        <span class="ref">{t.id}</span>
-        <Badge>{t.status}</Badge>
-        <div class="ds-actions td-head-actions">
-          <Button icon="edit" onClick={() => dispatch.openStudio()}>Open in Studio</Button>
-          <Button icon="refresh" onClick={() => dispatch.refresh()}>Refresh</Button>
-        </div>
-      </div>
+      <PageChrome
+        class="td-chrome"
+        title={t.title}
+        actions={
+          <div class="ds-actions td-head-actions">
+            <span class="ref">{t.id}</span>
+            <Badge>{t.status}</Badge>
+            <Button icon="edit" onClick={() => dispatch.openStudio()}>Open in Studio</Button>
+            <Button icon="refresh" onClick={() => dispatch.refresh()}>Refresh</Button>
+          </div>
+        }
+      />
 
       <div class="td-fields">
         <div class="td-field">
           <span class="ds-section">Priority</span>
           {stale.priorityStale ? (
-            <span class="stale-editor">board changed <button type="button" onClick={() => requestRefresh("priority")}>refresh</button></span>
+            <span class="stale-editor">board changed <Button onClick={() => requestRefresh("priority")}>refresh</Button></span>
           ) : (
-            <select value={t.priority !== undefined ? String(t.priority) : ""} disabled={controlsDisabled} onChange={(e) => submitPriority((e.currentTarget as HTMLSelectElement).value)}>
+            <Select value={t.priority !== undefined ? String(t.priority) : ""} disabled={controlsDisabled} onChange={(e) => submitPriority((e.currentTarget as HTMLSelectElement).value)}>
               <option value="">none</option>
               {PRIORITIES.map((p) => <option key={p} value={p}>P{p}</option>)}
-            </select>
+            </Select>
           )}
         </div>
         <div class="td-field">
@@ -140,16 +143,16 @@ export function App({ vm, errorSeq, errorMessage, dispatch }: { vm?: TaskDetailV
         <div class="td-field">
           <span class="ds-section">Assignee</span>
           {stale.assigneeStale ? (
-            <span class="stale-editor">board changed <button type="button" onClick={() => requestRefresh("assignee")}>refresh</button></span>
+            <span class="stale-editor">board changed <Button onClick={() => requestRefresh("assignee")}>refresh</Button></span>
           ) : editingAssignee ? (
             <Input autoFocus value={assigneeValue} disabled={controlsDisabled}
               onInput={(e) => setAssigneeValue((e.currentTarget as HTMLInputElement).value)}
               onKeyDown={(e) => { if (e.key === "Enter") submitAssignee(); if (e.key === "Escape") cancelAssignee(); }}
               onBlur={submitAssignee} />
           ) : (
-            <button type="button" class={`who-btn${assigneeHistorical ? " historical" : ""}`} disabled={!canEditAssignee} onClick={beginAssignee}>
+            <Button class={`who-btn${assigneeHistorical ? " historical" : ""}`} disabled={!canEditAssignee} onClick={beginAssignee}>
               {t.assignee ? assigneeLabel : <span class="ds-dim">{assigneeLabel}</span>}
-            </button>
+            </Button>
           )}
         </div>
         {vm.derived?.sdd && (
@@ -162,7 +165,7 @@ export function App({ vm, errorSeq, errorMessage, dispatch }: { vm?: TaskDetailV
 
       {vm.attention && vm.attention.length > 0 && (
         <div class="td-attention">
-          {vm.attention.map((a) => <div key={a.code} class="ds-badge warn" title={a.ref}>{a.message}</div>)}
+          {vm.attention.map((a) => <Badge key={a.code} tone="warn" title={a.ref}>{a.message}</Badge>)}
         </div>
       )}
 
@@ -171,8 +174,8 @@ export function App({ vm, errorSeq, errorMessage, dispatch }: { vm?: TaskDetailV
           <span class="ds-section">Dependencies</span>
           <div class="td-deps-list">
             {vm.deps.map((d) => d.missing
-              ? <span key={d.id} class="ds-badge err">{d.id} · missing</span>
-              : <button key={d.id} type="button" class="ds-chip" onClick={() => dispatch.openTask(d.id)}>{d.title ?? d.id} <span class="ds-dim">· {d.status}</span></button>)}
+              ? <Badge key={d.id} tone="err">{d.id} · missing</Badge>
+              : <Chip key={d.id} onClick={() => dispatch.openTask(d.id)} style={{ cursor: "pointer" }}>{d.title ?? d.id} <span class="ds-dim">· {d.status}</span></Chip>)}
           </div>
         </div>
       )}
@@ -181,7 +184,7 @@ export function App({ vm, errorSeq, errorMessage, dispatch }: { vm?: TaskDetailV
         <div class="td-refs">
           <span class="ds-section">Artifact refs</span>
           <div class="td-deps-list">
-            {t.artifact_refs.map((r) => <span key={`${r.type}:${r.ref}`} class="ds-badge">{r.type} · {r.ref}</span>)}
+            {t.artifact_refs.map((r) => <Badge key={`${r.type}:${r.ref}`}>{r.type} · {r.ref}</Badge>)}
           </div>
         </div>
       )}

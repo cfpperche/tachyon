@@ -5,7 +5,7 @@ import type { ConsentVM } from "../../plugins/consentViewModel";
 import type { Toast } from "./main";
 import type { ConfirmPayload } from "./messages";
 import { isConsentBlocked, viewAckRequirements, viewConsentRows } from "./consentViewAcks";
-import { Button, IconButton, Tabs } from "../shared/ui";
+import { Button, IconButton, Tabs, Badge, PageChrome, EmptyState, Input } from "../shared/ui";
 import { KitSelect, KitDropdown, KitDropdownTrigger, KitDropdownContent, KitDropdownItem } from "../shared/ui/kit";
 import { filterAndSortInstalledPlugins, type InstalledSortMode } from "./listControls";
 
@@ -83,7 +83,7 @@ function Card({ p, dispatch }: { p: InstalledPluginVM; dispatch: PluginsDispatch
       <div class="card-top">
         <span class="pname">{p.name}</span>
         <span class="pver">v{p.version}</span>
-        {badge && <span class={`ds-badge ${badge.tone}`}>{badge.label}</span>}
+        {badge && <Badge tone={badge.tone === "ok" || badge.tone === "warn" || badge.tone === "err" || badge.tone === "info" ? badge.tone : "default"}>{badge.label}</Badge>}
         <div class="card-actions">
           {p.actions.map((a) => (
             <Button key={a} variant={a === "remove" ? "default" : "primary"} onClick={() => run(a)}>{actionLabel[a]}</Button>
@@ -117,8 +117,8 @@ function Card({ p, dispatch }: { p: InstalledPluginVM; dispatch: PluginsDispatch
             <div key={e.name} class="ext-row">
               <span class="ev">{e.name}</span>{" "}
               {e.present
-                ? <span class="ds-badge ok"><Icon name="check" /> installed</span>
-                : <span class="ds-badge warn"><Icon name="warning" /> missing</span>}
+                ? <Badge tone="ok"><Icon name="check" /> installed</Badge>
+                : <Badge tone="warn"><Icon name="warning" /> missing</Badge>}
               {/* spec 289 — disclose which host binaries satisfy this requirement + which one resolved */}
               {e.names && e.names.length > 1 && <span class="ds-dim" style="font-size:11px;margin-left:6px">any of: {e.names.join(" / ")}</span>}
               {e.present && e.resolvedPath && <span class="ds-dim ds-mono" style="font-size:11px;margin-left:6px">{e.resolvedPath}</span>}
@@ -246,7 +246,7 @@ function ConsentDrawer({ vm, dispatch }: { vm: ConsentVM; dispatch: PluginsDispa
       <div class="drawer" role="dialog" aria-modal="true">
         <div class="dhead">
           <span class="ttl">{vm.title}</span>
-          <button class="x" onClick={() => dispatch.cancel()} aria-label="cancel">✕</button>
+          <IconButton name="close" title="cancel" onClick={() => dispatch.cancel()} />
         </div>
         <div class="dbody">
           {vm.errors && vm.errors.map((e) => <div key={e} class="ds-banner"><Icon name="error" /> {e}</div>)}
@@ -349,8 +349,8 @@ function ConsentDrawer({ vm, dispatch }: { vm: ConsentVM; dispatch: PluginsDispa
                 <div key={c.destRel} class="collrow">
                   <span class="ds-mono">{c.destRel}</span>
                   <div class="seg">
-                    <button class={decisions[c.destRel] === "keep" ? "seg-on" : ""} onClick={() => setDecision(c.destRel, "keep")}>Keep mine</button>
-                    <button class={decisions[c.destRel] === "replace" ? "seg-on seg-danger" : ""} onClick={() => setDecision(c.destRel, "replace")}>Replace</button>
+                    <Button class={decisions[c.destRel] === "keep" ? "seg-on" : ""} onClick={() => setDecision(c.destRel, "keep")}>Keep mine</Button>
+                    <Button class={decisions[c.destRel] === "replace" ? "seg-on seg-danger" : ""} onClick={() => setDecision(c.destRel, "replace")}>Replace</Button>
                   </div>
                 </div>
               ))}
@@ -382,8 +382,8 @@ function ConsentDrawer({ vm, dispatch }: { vm: ConsentVM; dispatch: PluginsDispa
                 <div key={c.key} class="collrow">
                   <span class="ds-mono">{c.server} <span class="ds-dim">({c.runtime})</span></span>
                   <div class="seg">
-                    <button class={mcpDecisions[c.key] === "keep" ? "seg-on" : ""} onClick={() => setMcpDecision(c.key, "keep")}>Keep mine</button>
-                    <button class={mcpDecisions[c.key] === "replace" ? "seg-on seg-danger" : ""} onClick={() => setMcpDecision(c.key, "replace")}>Replace</button>
+                    <Button class={mcpDecisions[c.key] === "keep" ? "seg-on" : ""} onClick={() => setMcpDecision(c.key, "keep")}>Keep mine</Button>
+                    <Button class={mcpDecisions[c.key] === "replace" ? "seg-on seg-danger" : ""} onClick={() => setMcpDecision(c.key, "replace")}>Replace</Button>
                   </div>
                 </div>
               ))}
@@ -513,7 +513,7 @@ export function App({ vm, consent, busy, toast, dispatch }: { vm?: PluginsViewMo
   const [sortMode, setSortMode] = useState<InstalledSortMode>("name-asc");
 
   if (!vm) {
-    return <div class="ds-degrade"><span class="codicon codicon-loading" /><div>Loading plugins…</div></div>;
+    return <EmptyState kind="loading" message="Loading plugins…" />;
   }
 
   const wsRuntimes = vm.present.length > 0
@@ -528,20 +528,21 @@ export function App({ vm, consent, busy, toast, dispatch }: { vm?: PluginsViewMo
     <div>
       <div class="ds-head">
         <div class="ds-wrap">
-          <div class="ds-head-row">
-            <div>
-              <div class="ds-title">🧩 Plugins</div>
-              <p class="ds-sub">Browse, install &amp; manage plugins · <span class="ws-rt">this workspace runs {wsRuntimes}</span></p>
-            </div>
-            <div class="ds-actions">
-              <Button icon="cloud-download" title="Check installed plugins for updates" onClick={() => dispatch.checkUpdates()}>Check updates</Button>
-              <Button icon="wrench" title="Re-activate git-hooks after a clone (re-claim core.hooksPath)" onClick={() => dispatch.repair()}>Repair hooks</Button>
-              <Button icon="refresh" title="Refresh" onClick={() => dispatch.refresh()}>Refresh</Button>
-            </div>
-          </div>
+          <PageChrome
+            class="plugins-chrome"
+            title="Plugins"
+            icon="extensions"
+            hint={<span>Browse, install &amp; manage plugins · <span class="ws-rt">this workspace runs {wsRuntimes}</span></span>}
+            actions={
+              <div class="ds-actions">
+                <Button icon="cloud-download" title="Check installed plugins for updates" onClick={() => dispatch.checkUpdates()}>Check updates</Button>
+                <Button icon="wrench" title="Re-activate git-hooks after a clone (re-claim core.hooksPath)" onClick={() => dispatch.repair()}>Repair hooks</Button>
+                <Button icon="refresh" title="Refresh" onClick={() => dispatch.refresh()}>Refresh</Button>
+              </div>
+            }
+          />
           <div class="addbar">
-            <input
-              class="ds-input"
+            <Input
               value={spec}
               placeholder="github:owner/repo@ref   ·   install a plugin by its git source"
               onInput={(e) => setSpec((e.target as HTMLInputElement).value)}
@@ -563,8 +564,8 @@ export function App({ vm, consent, busy, toast, dispatch }: { vm?: PluginsViewMo
       <div class="ds-wrap">
         {showInstalledToolbar && (
           <div class="installed-toolbar" role="region" aria-label="Installed plugins controls">
-            <input
-              class="ds-input plugin-filter"
+            <Input
+              class="plugin-filter"
               value={filter}
               placeholder="Filter installed plugins..."
               aria-label="Filter installed plugins"

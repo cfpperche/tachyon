@@ -2,7 +2,7 @@ import { useMemo, useState } from "preact/hooks";
 import type { ValidationOutcome } from "../../validations/types";
 import type { ValidationExecutorFilter } from "./messages";
 import type { ValidationsViewModel, ValidationViewItem } from "./viewModel";
-import { Button, EmptyState, Icon, IconButton, PageChrome, Select, Textarea } from "../shared/ui";
+import { Badge, Button, EmptyState, Icon, IconButton, PageChrome, Select, Textarea } from "../shared/ui";
 
 export interface ValidationsDispatch {
   refresh(): void;
@@ -32,7 +32,7 @@ function ValidationCard({ item, dispatch }: { item: ValidationViewItem; dispatch
   const open = item.status !== "closed";
   return (
     <article class={`validation-card ${open ? "open" : "closed"}`}>
-      <button class="validation-summary" type="button" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>
+      <Button class="validation-summary" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>
         <span class="validation-chevron">
           <Icon name={expanded ? "chevron-down" : "chevron-right"} />
         </span>
@@ -41,13 +41,13 @@ function ValidationCard({ item, dispatch }: { item: ValidationViewItem; dispatch
           <span class="validation-id">{item.id}</span>
         </span>
         <span class="validation-chips">
-          {item.type && <span>{item.type}</span>}
-          <span>{item.status}</span>
-          <span>{item.executor}</span>
-          {item.priority !== undefined && <span>P{item.priority}</span>}
-          <span>{item.assignee ?? "unassigned"}</span>
+          {item.type && <Badge>{item.type}</Badge>}
+          <Badge tone={item.status === "closed" ? "ok" : "info"}>{item.status}</Badge>
+          <Badge>{item.executor}</Badge>
+          {item.priority !== undefined && <Badge>P{item.priority}</Badge>}
+          <Badge tone={item.assignee ? "default" : "warn"}>{item.assignee ?? "unassigned"}</Badge>
         </span>
-      </button>
+      </Button>
       {expanded && (
         <div class="validation-detail">
           {item.instructions && (

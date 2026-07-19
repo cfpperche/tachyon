@@ -1,3 +1,4 @@
+.td-chrome.ds-page-chrome { margin-bottom: var(--ds-3); }
 /* spec 335 — Task Detail panel styles. Shares tokens with mission-control.css (.dot/.who-btn/.stale-editor/.ref
    conventions) but is its own small sheet since the two surfaces bundle separately. */
 

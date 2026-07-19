@@ -64,6 +64,7 @@
   flex-wrap: wrap;
   justify-content: flex-end;
 }
+.validation-chips .ds-badge,
 .validation-chips span,
 .validation-refs span {
   padding: 2px 7px;
@@ -135,3 +136,5 @@
   color: var(--ds-err, var(--vscode-errorForeground));
   background: color-mix(in srgb, var(--ds-err) 10%, transparent);
 }
+
+.validation-chips .ds-badge { font-size: 11px; padding: 2px 7px; border-radius: 10px; }

@@ -1,3 +1,4 @@
+import { Button } from "../shared/ui";
 import { render } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { App } from "./App";
@@ -81,7 +82,7 @@ function Root() {
     <>
       <App vm={vm} dispatch={dispatch} images={images} query={query} setQuery={setQuery} />
       {!atBottom && vm.items.length > 0 && (
-        <button class="jump" title="Jump to latest" onClick={jump}><span class="codicon codicon-arrow-down" /> Latest</button>
+        <Button class="jump" icon="arrow-down" title="Jump to latest" onClick={jump}>Latest</Button>
       )}
     </>
   );

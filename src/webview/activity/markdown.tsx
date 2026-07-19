@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks"
 import DOMPurify from "dompurify";
 import { highlight, renderMarkdownHtml, segments } from "./markdownEngine";
 import { SANITIZE_OPTIONS } from "./markdownSanitizeConfig";
+import { Button, IconButton } from "../shared/ui";
 import {
   ZOOM_STEP,
   type Size,
@@ -287,18 +288,10 @@ function MermaidDiagramView({ svg }: { svg: string }) {
   return (
     <div class="mmd-view">
       <div class="mmd-nav" role="toolbar" aria-label="diagram navigation">
-        <button type="button" class="mmd-nav-btn" title="Zoom out (−)" aria-label="Zoom out" onClick={() => applyZoom(1 / ZOOM_STEP)}>
-          <span class="codicon codicon-zoom-out" />
-        </button>
-        <button type="button" class="mmd-nav-btn" title="Zoom in (+)" aria-label="Zoom in" onClick={() => applyZoom(ZOOM_STEP)}>
-          <span class="codicon codicon-zoom-in" />
-        </button>
-        <button type="button" class="mmd-nav-btn" title="Fit to view (F)" aria-label="Fit to view" onClick={doFit}>
-          <span class="codicon codicon-screen-full" />
-        </button>
-        <button type="button" class="mmd-nav-btn" title="Reset to 100% (0)" aria-label="Reset to 100 percent" onClick={doReset}>
-          100%
-        </button>
+        <IconButton class="mmd-nav-btn" name="zoom-out" title="Zoom out (−)" onClick={() => applyZoom(1 / ZOOM_STEP)} />
+        <IconButton class="mmd-nav-btn" name="zoom-in" title="Zoom in (+)" onClick={() => applyZoom(ZOOM_STEP)} />
+        <IconButton class="mmd-nav-btn" name="screen-full" title="Fit to view (F)" onClick={doFit} />
+        <Button class="mmd-nav-btn" title="Reset to 100% (0)" onClick={doReset}>100%</Button>
         <span class="mmd-scale" aria-live="polite">{scaleLabel}</span>
       </div>
       <div
@@ -352,9 +345,9 @@ function MermaidBlock({ code }: { code: string }) {
       <div class="mmd-bar">
         <span class="mmd-label"><span class="codicon codicon-graph" /> {failed ? "diagram (couldn't render)" : "diagram"}</span>
         {!failed && (
-          <button type="button" class="mmd-toggle" onClick={() => setRaw(!raw)}>
-            <span class={`codicon codicon-${showSource ? "graph" : "code"}`} /> {showSource ? "Diagram" : "Source"}
-          </button>
+          <Button class="mmd-toggle" icon={showSource ? "graph" : "code"} onClick={() => setRaw(!raw)}>
+            {showSource ? "Diagram" : "Source"}
+          </Button>
         )}
       </div>
       {showSource

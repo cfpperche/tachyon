@@ -53,6 +53,20 @@ Rule: when a feature already touches the surface, finish kit adoption in the sam
 - [ ] Card who/prio/ref still bespoke density controls (intentional)
 - [ ] Mermaid zoom buttons in Activity (specialized toolbar)
 
+
+#### C.4 Full standardize batch (trail end package)
+- [x] Activity PageChrome + kit buttons (filter/share/feed/mermaid)
+- [x] Plugins PageChrome + Badge + Input + segment Buttons
+- [x] Validations chips → Badge
+- [x] Task-detail PageChrome + Badge + Select + Chip
+- [x] control-inspector PageChrome + Badge
+- [x] pipeline-studio Button/IconButton
+- [x] Runtime Ops enable → Button
+- [x] Board card meta/menu → Button
+- [x] Sidebar Act/More/notices → IconButton/Button
+- [x] MIGRATED_VIEWS expanded (mission-control, task-detail, control-inspector, pipeline-studio)
+- [ ] Sidebar AgentRow tree toggles / tabs / pin checkbox remain native controls (a11y roles)
+
 ### Phase D — Forcing functions
 - Extend `test/unit/webviewComponentKit.test.ts` (ban new hand-rolled product buttons in target dirs)
 - Optional scoreboard of legacy-only surfaces
