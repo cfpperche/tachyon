@@ -89,7 +89,8 @@ describe("quiet full verification", () => {
     const before = new Set(fs.readdirSync(os.tmpdir()).filter((name) => name.startsWith("tachyon-verify-full-")));
     const result = await execute(root);
     expect(result.code).toBe(0);
-    expect(result.stderr).toBe("");
+    expect(result.stderr).toMatch(/^\[verify:full\] ok: MemAvailable \d+MB \/ total \d+MB → workers=\d+ \(auto-sized; grows with free RAM\)\n$/);
+    expect(Buffer.byteLength(result.stderr)).toBeLessThan(256);
     expect(Buffer.byteLength(result.stdout)).toBeLessThan(1024);
     expect(result.stdout).toContain("Files: 2 passed (2)");
     expect(result.stdout).not.toContain("PASSED BUILD NOISE");
@@ -147,11 +148,11 @@ describe("quiet full verification", () => {
     expect(code).toBe(143);
   });
 
-  it("declares quiet orchestration while preserving the verbose package script byte-for-byte", () => {
+  it("declares the governed quiet runner as the canonical full verification entry point", () => {
     const packageJson = JSON.parse(fs.readFileSync(path.join(repoRoot, "package.json"), "utf8"));
-    expect(packageJson.scripts["verify:full"]).toBe("node esbuild.mjs && vitest run");
+    expect(packageJson.scripts["verify:full"]).toBe("node scripts/verify-full.mjs");
     expect(packageJson.scripts["verify:full:quiet"]).toBe("node scripts/verify-full.mjs");
-    const config = fs.readFileSync(path.join(repoRoot, "tachyon.yml"), "utf8");
+    const config = fs.readFileSync(path.join(repoRoot, "tachyon.yml.example"), "utf8");
     expect(config).toMatch(/verify:\n\s+full: npm run verify:full:quiet/);
     expect(config.match(/^\s+full:\s+npm run verify:full:quiet\s*$/gm)).toHaveLength(1);
   });

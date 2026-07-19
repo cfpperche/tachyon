@@ -9,6 +9,8 @@ import path from "node:path";
 describe("approval.css surface scoping (t-e1bd89)", () => {
   const cssPath = path.resolve(__dirname, "../../src/webview/approval/approval.css");
   const css = fs.readFileSync(cssPath, "utf8");
+  const appPath = path.resolve(__dirname, "../../src/webview/approval/App.tsx");
+  const app = fs.readFileSync(appPath, "utf8");
 
   it("does not declare a bare global button rule", () => {
     // Match `button {` at start of a line (allow leading whitespace), not `.approval-root button`.
@@ -18,8 +20,9 @@ describe("approval.css surface scoping (t-e1bd89)", () => {
     expect(bareHover).toBe(false);
   });
 
-  it("scopes primary button chrome under .approval-root", () => {
-    expect(css).toMatch(/\.approval-root\s+button\s*\{/);
-    expect(css).toMatch(/\.approval-root\s+button:hover/);
+  it("uses the shared Button component without adding approval-local button chrome", () => {
+    expect(app).toMatch(/import\s*{[^}]*\bButton\b[^}]*}\s*from\s*["']\.\.\/shared\/ui["']/);
+    expect(app).toMatch(/<Button\b/);
+    expect(css).not.toMatch(/(?:^|[,{])\s*(?:\.approval-root\s+)?button(?=[:.\s,{])/m);
   });
 });

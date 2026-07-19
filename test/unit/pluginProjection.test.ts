@@ -29,7 +29,7 @@ describe("plugin fleet projection", () => {
           badges: ["verify-fail", "continuity-stale", "persistence-failed", "evidence-error", "resumable", "fresh-start"],
         },
       ],
-      counts: { agents: 2, running: 1, needs: 1, throttled: 0, idle: 0, stopped: 0, crashed: 0 },
+      counts: { agents: 2, running: 1, needs: 1, throttled: 0, idle: 0, done: 0, stopped: 0, crashed: 0 },
     });
   });
 

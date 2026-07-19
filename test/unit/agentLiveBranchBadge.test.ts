@@ -24,8 +24,8 @@ describe("spec 384 — agent live branch badge", () => {
   });
 
   it("styles isolated / shared / drift branch badges", () => {
-    expect(css).toMatch(/\.badge\.git-branch\b/);
-    expect(css).toMatch(/\.badge\.git-branch\.shared\b/);
+    expect(css).toMatch(/\.ds-badge\.git-branch\b/);
+    expect(css).toMatch(/\.ds-badge\.git-branch\.shared\b/);
   });
 
   it("gathers live HEAD inside the persistent engine fleet projection", () => {

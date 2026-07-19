@@ -120,7 +120,7 @@ describe("container-generated delegation behavior", () => {
     expect(renderPrimer({ agentName: "child", parent: "parent" }).primer).toContain("confirm via get_approval_status(id) before acting");
   });
 
-  it("the approval panel resolves against its bound workspace hash, ignoring webview-supplied wsHash", () => {
+  it("redirects legacy approval panel opens and revives into cockpit Approvals", () => {
     const wsRoot = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-cx-approval-panel-"));
     const ws = {
       wsHash: "panel-truth",
@@ -130,22 +130,20 @@ describe("container-generated delegation behavior", () => {
     const manager = new ApprovalPanelManager(Uri.file("/extension") as unknown as vscode.Uri, () => [ws]);
     manager.open(ws);
 
-    expect(__createdPanels).toHaveLength(1);
-    __createdPanels[0].webview.__receive({
-      type: "resolve",
-      id: "a-abc123",
-      decision: "approved",
-      wsHash: "spoofed-webview-hash",
-    });
-    __createdPanels[0].webview.__receive({
-      type: "resolve",
-      id: "a-def456",
-      decision: "denied",
+    expect(__createdPanels).toHaveLength(0);
+    let disposed = false;
+    manager.deserialize({
+      dispose: () => { disposed = true; },
+    } as unknown as vscode.WebviewPanel, {
+      schemaVersion: 1,
+      view: "tachyonApprovals",
+      wsHash: "serialized-truth",
     });
 
+    expect(disposed).toBe(true);
     expect(__getExecutedCommands()).toEqual([
-      { command: "tachyon.resolveApproval", args: [{ id: "a-abc123", decision: "approved", wsHash: "panel-truth" }] },
-      { command: "tachyon.resolveApproval", args: [{ id: "a-def456", decision: "denied", wsHash: "panel-truth" }] },
+      { command: "tachyon.openApprovals", args: ["panel-truth"] },
+      { command: "tachyon.openApprovals", args: ["serialized-truth"] },
     ]);
   });
 
