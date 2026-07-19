@@ -23,7 +23,7 @@ _Generated from `plan.md` on 2026-07-19. Work top-to-bottom. Check boxes as task
 ## Verification
 
 - [x] Focused prompt/brief/AgentManager tests pass with no truncation or threshold relaxation.
-- [ ] PI-001 passes and an independent reviewer records mechanical equivalence of any evidence edit.
+- [x] PI-001 passes and an independent reviewer records mechanical equivalence of any evidence edit.
 - [x] Typecheck passes.
 - [ ] Configured full verification passes; candidate failure is recorded explicitly in `notes.md` and is not described as green.
 - [ ] The SDD duplicate-ID check and closure audit report no blocking findings when status becomes shipped.

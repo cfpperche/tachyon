@@ -141,3 +141,19 @@ inventory exposes the synthetic long guidance text.
   baseline `/tmp/tachyon-verify-full-dXC0NV` shows the same six pre-existing failures plus only the
   known worktree-local PI-001 fixture failure. No startup-brief-focused test failed and this result
   is not presented as green.
+
+## Post-main verification
+
+- Main advanced to `df1be7d6`, which tracks the PI-001 repository fixture as
+  `tachyon.yml.example`. Merging main into the clean candidate produced `b6d00d11` without conflicts
+  or overlapping paths.
+- `npm run test:invariants` — PASS, 1 registered invariant / 2 tests. This closes the prior
+  worktree-fixture blocker without changing PI-001's promise or oracle.
+- `npm run typecheck` — PASS on the combined candidate.
+- `npm run verify:full:quiet` on main `df1be7d6` — FAIL, the six known unrelated tests; retained log
+  `/tmp/tachyon-verify-full-qKxaO4`.
+- `npm run verify:full:quiet` on combined candidate `b6d00d11` — FAIL, the exact same six test
+  identities and no additional failure; retained log `/tmp/tachyon-verify-full-paTD3A`. This is
+  differential evidence of no SDD 411 regression, not a claim that the configured full gate is
+  green. The spec remains `in-progress` until the repository baseline is repaired or its closure
+  policy is explicitly ratified.
