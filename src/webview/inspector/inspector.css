@@ -1,56 +1,244 @@
-/* spec 279 — Inspector view styles, moved from ServerInspector.ts's inline <style> into one shared source
-   linked by both the host shell and the dev preview harness. Shared tokens live in design-system.css (.ds-*). */
-  body { max-width: 1180px; margin: 0 auto; padding: var(--ds-4) var(--ds-4) var(--ds-5); }
-  .head { display: flex; align-items: center; gap: var(--ds-2); margin: 2px 0; }
-  .head .ds-title { flex: 1; }
-  .ds-sub { margin: 0 0 var(--ds-3); }
-  .toolbar { display: flex; align-items: center; gap: 14px; margin: 0 0 14px; }
-  .summary { font-size: var(--ds-small); color: var(--ds-muted); flex: 1; }
-  .ds-btn.danger:hover { background: color-mix(in srgb, var(--ds-err) 16%, transparent); color: var(--ds-err); border-color: color-mix(in srgb, var(--ds-err) 55%, transparent); }
-  label.auto { display: inline-flex; align-items: center; gap: 6px; font-size: var(--ds-small); color: var(--ds-muted); cursor: pointer; }
-  input[type=checkbox] { accent-color: var(--ds-btn-bg); }
-  .tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--ds-border); margin-bottom: var(--ds-3); }
-  .tabs button { border: 0; border-bottom: 2px solid transparent; padding: 8px 14px; color: var(--ds-muted); background: transparent; cursor: pointer; }
-  .tabs button.active { color: var(--ds-fg); border-bottom-color: var(--vscode-focusBorder); }
-  .filters { display: grid; grid-template-columns: minmax(220px, 2fr) repeat(4, minmax(120px, 1fr)); gap: var(--ds-2); margin-bottom: var(--ds-4); }
-  .filters .ds-input, .filters .ds-select { width: 100%; min-width: 0; }
-  .group { margin: 0 0 18px; }
-  .ws { display: flex; align-items: baseline; gap: var(--ds-2); font-size: 13px; font-weight: 600; padding: 4px 0; border-bottom: 1px solid var(--ds-border); }
-  .ws .hash { font-family: var(--ds-mono); font-weight: 400; font-size: var(--ds-micro); color: var(--ds-muted); }
-  .ws .foreign { font-size: var(--ds-micro); font-weight: 400; color: var(--ds-muted); font-style: italic; }
-  .sess { display: flex; align-items: center; gap: 10px; padding: 6px 4px; border-bottom: 1px solid var(--ds-border); }
-  .sess .identity { min-width: 130px; display: flex; flex-direction: column; font-size: 13px; }
-  .sess .identity small { color: var(--ds-muted); font-size: var(--ds-micro); font-weight: 400; }
-  .sess .meta { font-family: var(--ds-mono); font-size: var(--ds-micro); color: var(--ds-muted); flex: 1; }
-  .sess .acts { display: flex; gap: 6px; }
-  .sess .ds-btn { padding: 3px 9px; font-size: var(--ds-micro); }
-  /* filled status pill — a high-visibility live/dead/crashed indicator (a deliberate panel delta, not .ds-badge) */
-  .badge { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; padding: 1px 7px; border-radius: 9px; font-weight: 600; }
-  .badge.live { background: var(--ds-ok); color: var(--vscode-editor-background); }
-  .badge.dead { background: var(--ds-muted); color: var(--vscode-editor-background); }
-  .badge.crashed { background: var(--ds-err); color: var(--vscode-editor-background); }
-  .cpu { font-size: 10px; padding: 0 5px; border-radius: 6px; border: 1px solid var(--ds-border); color: var(--ds-muted); }
-  .cpu.busy { color: var(--ds-warn); border-color: var(--ds-warn); }
-  .age { font-family: var(--ds-mono); font-size: var(--ds-micro); color: var(--ds-muted); }
-  .session-details, .server-facts { display: grid; grid-template-columns: minmax(110px, max-content) 1fr; gap: 5px 14px; margin: 0; padding: var(--ds-3); background: var(--ds-card); border-bottom: 1px solid var(--ds-border); }
-  .session-details dt, .server-facts dt { color: var(--ds-muted); }
-  .session-details dd, .server-facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
-  .capture-wrap { position: relative; padding-top: 4px; }
-  .capture-wrap > .ds-btn { float: right; margin: 4px; }
-  pre.cap {
-    margin: 0 4px 10px 14px; padding: var(--ds-2) 10px; max-height: 260px; overflow: auto; white-space: pre-wrap; word-break: break-word;
-    background: var(--vscode-textCodeBlock-background, var(--ds-card)); border: 1px solid var(--ds-border);
-    border-radius: 3px; font-family: var(--ds-mono); font-size: var(--vscode-editor-font-size); color: var(--ds-fg);
+/* spec 279 — Inspector view styles. Density aligned for Control embed (no max-width column). */
+.insp-root {
+  padding: 12px 16px 16px;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  box-sizing: border-box;
+  font-family: var(--tachyon-font-mono, inherit);
+  font-size: var(--ds-body, 13px);
+  color: var(--ds-fg);
+}
+.insp-root .ds-page-chrome {
+  margin-bottom: var(--ds-2);
+}
+.insp-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.insp-toolbar .summary {
+  font-size: 11px;
+  color: var(--ds-muted);
+}
+.insp-root .ds-tabs {
+  margin-bottom: var(--ds-3);
+}
+label.auto {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--ds-muted);
+  cursor: pointer;
+}
+input[type="checkbox"] {
+  accent-color: var(--ds-btn-bg, var(--ds-focus));
+}
+.filters {
+  display: grid;
+  grid-template-columns: minmax(180px, 2fr) repeat(4, minmax(100px, 1fr));
+  gap: var(--ds-2);
+  margin-bottom: var(--ds-3);
+}
+.filters .ds-input,
+.filters select {
+  width: 100%;
+  min-width: 0;
+}
+.group {
+  margin: 0 0 14px;
+}
+.ws {
+  display: flex;
+  align-items: baseline;
+  gap: var(--ds-2);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--ds-border);
+}
+.ws .hash {
+  font-weight: 400;
+  font-size: 10px;
+  color: var(--ds-muted);
+}
+.ws .foreign {
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--ds-muted);
+  font-style: italic;
+}
+.sess {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 2px;
+  border-bottom: 1px solid var(--ds-border);
+}
+.sess .identity {
+  min-width: 120px;
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+}
+.sess .identity small {
+  color: var(--ds-muted);
+  font-size: 10px;
+  font-weight: 400;
+}
+.sess .meta {
+  font-size: 10px;
+  color: var(--ds-muted);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sess .acts {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.sess .ds-btn {
+  padding: 2px 8px;
+  font-size: 10px;
+}
+.cpu {
+  font-size: 10px;
+  padding: 0 5px;
+  border-radius: 6px;
+  border: 1px solid var(--ds-border);
+  color: var(--ds-muted);
+}
+.cpu.busy {
+  color: var(--ds-warn);
+  border-color: var(--ds-warn);
+}
+.age {
+  font-size: 10px;
+  color: var(--ds-muted);
+}
+.session-details,
+.server-facts {
+  display: grid;
+  grid-template-columns: minmax(100px, max-content) 1fr;
+  gap: 4px 12px;
+  margin: 0;
+  padding: var(--ds-2) var(--ds-3);
+  background: var(--ds-card);
+  border-bottom: 1px solid var(--ds-border);
+  font-size: 11px;
+}
+.session-details dt,
+.server-facts dt {
+  color: var(--ds-muted);
+}
+.session-details dd,
+.server-facts dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.capture-wrap {
+  position: relative;
+  padding-top: 4px;
+}
+.capture-wrap > .ds-btn {
+  float: right;
+  margin: 4px;
+}
+pre.cap {
+  margin: 0 4px 10px 14px;
+  padding: var(--ds-2) 10px;
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--vscode-textCodeBlock-background, var(--ds-card));
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius);
+  font-size: 11px;
+  color: var(--ds-fg);
+}
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: var(--ds-2);
+  margin-bottom: var(--ds-3);
+}
+.metric {
+  border: 1px solid var(--ds-border);
+  background: var(--ds-card);
+  padding: var(--ds-2) var(--ds-3);
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--ds-radius);
+}
+.metric strong {
+  font-size: 18px;
+}
+.metric span {
+  color: var(--ds-muted);
+  font-size: 11px;
+}
+.health {
+  padding: 2px 7px;
+  border-radius: 9px;
+  border: 1px solid var(--ds-border);
+  font-size: 11px;
+}
+.health.healthy {
+  color: var(--ds-ok);
+  border-color: var(--ds-ok);
+}
+.health.wedged {
+  color: var(--ds-err);
+  border-color: var(--ds-err);
+}
+.health.no-server {
+  color: var(--ds-muted);
+}
+pre.diagnostics {
+  max-height: 220px;
+  overflow: auto;
+  padding: var(--ds-2);
+  background: var(--vscode-textCodeBlock-background, var(--ds-card));
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius);
+  white-space: pre-wrap;
+  font-size: 11px;
+}
+.bulk {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-2);
+  margin-top: var(--ds-3);
+  padding-top: var(--ds-2);
+  border-top: 1px solid var(--ds-border);
+  flex-wrap: wrap;
+}
+.bulk strong {
+  margin-right: auto;
+  font-size: 12px;
+}
+@media (max-width: 850px) {
+  .filters {
+    grid-template-columns: 1fr 1fr;
   }
-  .summary-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: var(--ds-3); margin-bottom: var(--ds-4); }
-  .metric { border: 1px solid var(--ds-border); background: var(--ds-card); padding: var(--ds-3); display: flex; flex-direction: column; }
-  .metric strong { font-size: 24px; }
-  .metric span { color: var(--ds-muted); }
-  .health { padding: 2px 7px; border-radius: 9px; border: 1px solid var(--ds-border); }
-  .health.healthy { color: var(--ds-ok); border-color: var(--ds-ok); }
-  .health.wedged { color: var(--ds-err); border-color: var(--ds-err); }
-  .health.no-server { color: var(--ds-muted); }
-  pre.diagnostics { max-height: 260px; overflow: auto; padding: var(--ds-3); background: var(--vscode-textCodeBlock-background, var(--ds-card)); border: 1px solid var(--ds-border); white-space: pre-wrap; }
-  .bulk { display: flex; align-items: center; gap: var(--ds-2); margin-top: var(--ds-4); padding-top: var(--ds-3); border-top: 1px solid var(--ds-border); }
-  .bulk strong { margin-right: auto; }
-  @media (max-width: 850px) { .filters { grid-template-columns: 1fr 1fr; } .filters .ds-input { grid-column: 1 / -1; } .summary-grid { grid-template-columns: repeat(2, 1fr); } .sess { align-items: flex-start; flex-wrap: wrap; } .sess .meta { min-width: 50%; } }
+  .filters .ds-input {
+    grid-column: 1 / -1;
+  }
+  .summary-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .sess {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .sess .meta {
+    min-width: 50%;
+  }
+}

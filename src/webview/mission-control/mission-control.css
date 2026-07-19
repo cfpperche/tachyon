@@ -14,11 +14,12 @@ body { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
 
 /* header */
 .mc-head { flex: 0 0 auto; display: flex; align-items: center; gap: var(--ds-3); padding: var(--ds-2) var(--ds-4); border-bottom: 1px solid var(--ds-border); background: var(--vscode-editorWidget-background); flex-wrap: wrap; }
-.mc-head h1.ds-title { font-size: var(--ds-title); }
-.mc-scope { display: flex; align-items: center; gap: var(--ds-2); min-width: 0; }
-.mc-scope h1.ds-title { margin: 0; white-space: nowrap; }
-.mc-scope .workspace-select[data-slot="select-trigger"], .mc-scope select.workspace-select { max-width: 180px; min-width: 92px; color: var(--ds-muted); font-weight: 400; }
-.spacer { flex: 1; }
+.mc-head > .mc-page-chrome,
+.mc-head > .ds-page-chrome { flex: 1 1 auto; width: 100%; margin-bottom: 0; align-items: center; gap: var(--ds-3); }
+.mc-head .ds-page-chrome-title { font-size: var(--ds-title, 16px); white-space: nowrap; }
+.mc-head-tools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ds-3); }
+.mc-head-tools .workspace-select[data-slot="select-trigger"],
+.mc-head-tools select.workspace-select { max-width: 180px; min-width: 92px; color: var(--ds-muted); font-weight: 400; }
 
 /* t-6da5f0 — the round-2 dropdown (round-2 #5) is now a KitSelect (t-b0a229's first board adoption); this
    just bounds its width in the header, same as the legacy-fallback `<select>` it can build to. */

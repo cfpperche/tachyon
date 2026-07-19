@@ -111,13 +111,14 @@ Control is a **tab shell**, not six independent apps.
 
 | Surface | Chrome / buttons | Notes |
 |---------|------------------|--------|
-| Approvals | done (PageChrome + Button + EmptyState) | foundation |
-| Validations | in progress → done in Phase B | was zero shared/ui |
-| Control module lists (Fleet / Worktrees / Deliveries) | ListRow + Badge | Phase B |
-| Overview | PageChrome | Phase B |
-| Runtime Ops | PageChrome minimal | Phase B |
-| Board | head align later | kanban body out of scope for chrome pass |
-| tmux / Inspector | density later | |
+| Approvals | done | foundation |
+| Validations | done | Phase B |
+| Control module lists (Fleet / Worktrees / Deliveries) | done | ListRow + Badge |
+| Overview | done | PageChrome |
+| Runtime Ops | done | PageChrome |
+| Board | head done (PageChrome + primary Task) | kanban body out of scope |
+| tmux / Inspector | done | PageChrome + Tabs + density |
+| `MIGRATED_VIEWS` guard | includes Control family | cockpit/approval/validations/runtime-ops |
 
 ---
 
@@ -127,7 +128,7 @@ Control is a **tab shell**, not six independent apps.
 2. **Touch a surface** → migrate the controls you touch (no drive-by whole-app rewrites).
 3. **Control family** is the highest inconsistency pain — migrate chrome/buttons/rows when working here; do not claim “pilot done” without adoption.
 4. **Board** → align head/actions first; kanban layout can stay; tokens must match.
-5. **Guards:** `test/unit/webviewComponentKit.test.ts` enforces `MIGRATED_VIEWS` only (handoff, inspector, activity, pin-studio, plugins, probes, pin-preview, sidebar). **Control / Approvals / Validations / Runtime Ops / mission-control are not yet in that allowlist** — until they are, this guide is not a build-time gate for the surfaces it prioritizes. Expand the allowlist when a surface is fully on shared buttons.
+5. **Guards:** `test/unit/webviewComponentKit.test.ts` enforces `MIGRATED_VIEWS` including Control family (`cockpit`, `approval`, `validations`, `runtime-ops`) plus earlier surfaces. Hand-rolled `ds-btn` / `ds-tab` / bare `chip` class tokens are banned in those dirs — use kit components. KPI tiles use `ck-metric` (not `chip`).
 
 ---
 

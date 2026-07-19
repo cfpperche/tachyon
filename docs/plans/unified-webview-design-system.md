@@ -21,15 +21,15 @@
 - [x] Barrel export + unit tests
 - [x] First adopters: Control ModuleChrome, Approvals
 
-### Phase B — Control convergence — **in progress (this PR)**
-1. [x] STYLEGUIDE Top-5 from fable review (guards gap, PageChrome criterion, pilot split, Table interim, Button variants)
+### Phase B — Control convergence — **shipped (remainder)**
+1. [x] STYLEGUIDE Top-5 from fable review
 2. [x] Validations → PageChrome + Button + EmptyState + `--ds-*`
 3. [x] Runtime Ops → PageChrome + EmptyState
 4. [x] Fleet / Worktrees / Deliveries → ListRow + Badge
 5. [x] Overview → PageChrome
-6. [ ] Board head align only (not full kanban rewrite)
-7. [ ] tmux/Inspector density align under Control tabs
-8. [ ] Expand `MIGRATED_VIEWS` when Control family is green
+6. [x] Board head → PageChrome + primary Task + IconButton clear
+7. [x] tmux/Inspector → PageChrome + Tabs + denser embed CSS
+8. [x] Expand `MIGRATED_VIEWS` for Control family
 
 ### Phase C — Surface migration (ongoing)
 Order: Sidebar → Board body → Activity/Handoff → remaining studios → probes/misc.  

@@ -54,5 +54,15 @@ describe("shared UI product patterns (STYLEGUIDE)", () => {
     expect(guide).toContain("title / hint / actions");
     expect(guide).toMatch(/primary.*single primary/i);
     expect(guide).toContain("DataTable");
+    expect(guide).toContain("cockpit");
+  });
+
+  it("Board head and Inspector use PageChrome", () => {
+    const board = readFileSync("src/webview/mission-control/App.tsx", "utf8");
+    expect(board).toContain("PageChrome");
+    expect(board).not.toContain("◆");
+    const insp = readFileSync("src/webview/inspector/App.tsx", "utf8");
+    expect(insp).toContain("PageChrome");
+    expect(insp).toContain("Tabs");
   });
 });

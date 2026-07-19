@@ -292,21 +292,21 @@ main.ck-main.ck-main--mission,
   color: var(--ds-fg);
 }
 
-.ck-chips {
+.ck-metrics {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
   gap: 6px;
   margin-bottom: 12px;
 }
 
-.ck-chip {
+.ck-metric {
   border: 1px solid var(--ds-border);
   border-radius: 4px;
   padding: 6px 8px;
   background: color-mix(in srgb, var(--vscode-foreground) 4%, transparent);
 }
 
-.ck-chip .label {
+.ck-metric .label {
   font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
@@ -314,7 +314,7 @@ main.ck-main.ck-main--mission,
   color: var(--ds-muted);
 }
 
-.ck-chip .value {
+.ck-metric .value {
   font-size: 16px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
@@ -323,11 +323,11 @@ main.ck-main.ck-main--mission,
   color: var(--vscode-foreground);
 }
 
-.ck-chip.warn .value {
+.ck-metric.warn .value {
   color: var(--ds-err);
 }
 
-.ck-chip.ok .value {
+.ck-metric.ok .value {
   color: var(--ds-ok);
 }
 

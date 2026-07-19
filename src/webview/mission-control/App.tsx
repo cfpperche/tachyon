@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import { Badge, Button, Icon, Input } from "../shared/ui";
+import { Badge, Button, Icon, Input, IconButton, PageChrome } from "../shared/ui";
 import { KitSelect } from "../shared/ui/kit";
 import { agentFilterOptions, buildBoardModel, type BoardCardVM, type BoardColumnVM } from "../../tasks/boardModel";
 import type { BoardSnapshot } from "../../tasks/boardSnapshot";
@@ -310,63 +310,68 @@ export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastEr
   return (
     <div class="mc-root">
       <div class="mc-head">
-        <div class="mc-scope">
-          <h1 class="ds-title"><span aria-hidden="true">◆</span> Board</h1>
-          <KitSelect
-            aria-label="Board workspace"
-            data-testid="board-workspace-select"
-            class="workspace-select"
-            value={vm.wsHash}
-            onValueChange={(value) => dispatch.switchWorkspace(value)}
-            options={vm.workspaces.map((w) => ({ value: w.hash, label: w.folder }))}
-          />
-        </div>
-        {/* t-5ea4c7 — toolbar search: HIDES non-matching cards (title/id/kind/assignee/body), unlike Ctrl+F
-            find (t-b5e6e5), which never hides anything — the two gestures stay distinct on purpose. */}
-        <div class="board-search">
-          <Icon name="search" />
-          <Input
-            aria-label="Search tasks"
-            placeholder="Search…"
-            value={searchInput}
-            onInput={(e) => setSearchInput((e.currentTarget as HTMLInputElement).value)}
-          />
-          {searchInput && (
-            <button type="button" class="board-search-clear" title="Clear search" onClick={() => setSearchInput("")}>
-              <Icon name="close" />
-            </button>
-          )}
-        </div>
-        <div class="agent-filter">
-          <KitSelect
-            aria-label="Filter by agent"
-            data-testid="board-agent-filter"
-            value={selectedChip ?? ALL_AGENTS}
-            onValueChange={(value) => setSelectedChip(value === ALL_AGENTS ? undefined : value)}
-            options={[
-              { value: ALL_AGENTS, label: "All agents" },
-              ...filterOptions.map((chip) => ({
-                value: chip.agent,
-                label: `● ${chip.agent}${!chip.hasWork ? " · idle" : ""}`,
-              })),
-            ]}
-          />
-        </div>
-        <div class="spacer" />
-        <Button icon="add" onClick={() => dispatch.openTaskStudio()}>Task</Button>
-        {shouldShowAwaitingFilterButton(model.awaitingHuman?.count) && (
-          <Button
-            class={awaitingOnly ? "active" : undefined}
-            aria-pressed={awaitingOnly}
-            title={awaitingHumanTitle}
-            onClick={() => setAwaitingOnly((v) => !v)}
-          >
-            ⏳ Awaiting you · {model.awaitingHuman?.count}
-          </Button>
-        )}
-        <Button icon={showDropped ? "eye-closed" : "eye"} onClick={() => setShowDropped((v) => !v)}>
-          Dropped · {boardScope.dropped.count}
-        </Button>
+        <PageChrome
+          class="mc-page-chrome"
+          title="Board"
+          icon="checklist"
+          actions={
+            <div class="mc-head-tools">
+              <KitSelect
+                aria-label="Board workspace"
+                data-testid="board-workspace-select"
+                class="workspace-select"
+                value={vm.wsHash}
+                onValueChange={(value) => dispatch.switchWorkspace(value)}
+                options={vm.workspaces.map((w) => ({ value: w.hash, label: w.folder }))}
+              />
+              {/* t-5ea4c7 — toolbar search: HIDES non-matching cards (title/id/kind/assignee/body), unlike Ctrl+F
+                  find (t-b5e6e5), which never hides anything — the two gestures stay distinct on purpose. */}
+              <div class="board-search">
+                <Icon name="search" />
+                <Input
+                  aria-label="Search tasks"
+                  placeholder="Search…"
+                  value={searchInput}
+                  onInput={(e) => setSearchInput((e.currentTarget as HTMLInputElement).value)}
+                />
+                {searchInput ? (
+                  <IconButton name="close" title="Clear search" class="board-search-clear" onClick={() => setSearchInput("")} />
+                ) : null}
+              </div>
+              <div class="agent-filter">
+                <KitSelect
+                  aria-label="Filter by agent"
+                  data-testid="board-agent-filter"
+                  value={selectedChip ?? ALL_AGENTS}
+                  onValueChange={(value) => setSelectedChip(value === ALL_AGENTS ? undefined : value)}
+                  options={[
+                    { value: ALL_AGENTS, label: "All agents" },
+                    ...filterOptions.map((chip) => ({
+                      value: chip.agent,
+                      label: `● ${chip.agent}${!chip.hasWork ? " · idle" : ""}`,
+                    })),
+                  ]}
+                />
+              </div>
+              <Button variant="primary" icon="add" onClick={() => dispatch.openTaskStudio()}>
+                Task
+              </Button>
+              {shouldShowAwaitingFilterButton(model.awaitingHuman?.count) && (
+                <Button
+                  class={awaitingOnly ? "active" : undefined}
+                  aria-pressed={awaitingOnly}
+                  title={awaitingHumanTitle}
+                  onClick={() => setAwaitingOnly((v) => !v)}
+                >
+                  ⏳ Awaiting you · {model.awaitingHuman?.count}
+                </Button>
+              )}
+              <Button icon={showDropped ? "eye-closed" : "eye"} onClick={() => setShowDropped((v) => !v)}>
+                Dropped · {boardScope.dropped.count}
+              </Button>
+            </div>
+          }
+        />
       </div>
 
       {model.spotlight?.emptyReason && (

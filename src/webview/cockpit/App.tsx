@@ -279,34 +279,34 @@ export function App(p: CockpitAppProps) {
             </div>
           }
         />
-        <div class="ck-chips">
-          <div class="ck-chip">
+        <div class="ck-metrics">
+          <div class="ck-metric">
             <div class="label">{s.workspaces}</div>
             <div class="value">{o.workspaceCount}</div>
           </div>
-          <div class={`ck-chip ${o.enginesAttached > 0 ? "ok" : ""}`}>
+          <div class={`ck-metric ${o.enginesAttached > 0 ? "ok" : ""}`}>
             <div class="label">{s.engines}</div>
             <div class="value">{o.enginesAttached}</div>
           </div>
-          <div class={`ck-chip ${o.enginesError > 0 ? "warn" : ""}`}>
+          <div class={`ck-metric ${o.enginesError > 0 ? "warn" : ""}`}>
             <div class="label">{s.errors}</div>
             <div class="value">{o.enginesError}</div>
           </div>
-          <div class="ck-chip">
+          <div class="ck-metric">
             <div class="label">{s.agents}</div>
             <div class="value">
               {o.agentsRunning}/{o.agentsTotal}
             </div>
           </div>
-          <div class={`ck-chip ${o.approvalsPending > 0 ? "warn" : ""}`}>
+          <div class={`ck-metric ${o.approvalsPending > 0 ? "warn" : ""}`}>
             <div class="label">{s.approvals}</div>
             <div class="value">{o.approvalsPending}</div>
           </div>
-          <div class="ck-chip">
+          <div class="ck-metric">
             <div class="label">{s.worktrees}</div>
             <div class="value">{o.worktreesActive}</div>
           </div>
-          <div class="ck-chip">
+          <div class="ck-metric">
             <div class="label">{s.deliveries}</div>
             <div class="value">{o.deliveriesOpen}</div>
           </div>

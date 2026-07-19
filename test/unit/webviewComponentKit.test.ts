@@ -9,7 +9,21 @@ import { cx } from "../../src/webview/shared/ui/cx.js";
 
 /** views migrated to the kit in spec 282 (grows per lane). Handoff/inspector/activity/pin-studio/plugins use the kit Button/Tabs; probes/pin-preview/sidebar are kit-compliant
  *  (bespoke tree/read-only controls, zero banned tokens) and locked here against future ds-btn/ds-tab/chip drift. */
-const MIGRATED_VIEWS = ["handoff", "inspector", "activity", "pin-studio", "plugins", "probes", "pin-preview", "sidebar"];
+const MIGRATED_VIEWS = [
+  "handoff",
+  "inspector",
+  "activity",
+  "pin-studio",
+  "plugins",
+  "probes",
+  "pin-preview",
+  "sidebar",
+  // Control family (Phase B) — hand-rolled ds-btn/ds-tab/ds-chip banned; use kit components.
+  "cockpit",
+  "approval",
+  "validations",
+  "runtime-ops",
+];
 
 /** a class TOKEN the kit owns — banned in a migrated view's authoring code (`chips`/`ds-tabs` containers are fine). */
 const BANNED = /\b(ds-btn|ds-tab|ds-chip|chip)\b/;

@@ -3,7 +3,7 @@ import { cx } from "./cx";
 
 /** spec 282 — thin token wrappers for the remaining `.ds-*` primitives (preserve all native attributes/focus). */
 
-export function Input({ class: cls, ...rest }: { class?: string } & Omit<JSX.HTMLAttributes<HTMLInputElement>, "class">) {
+export function Input({ class: cls, ...rest }: { class?: string } & Omit<JSX.InputHTMLAttributes<HTMLInputElement>, "class">) {
   return <input class={cx("ds-input", cls)} {...rest} />;
 }
 
