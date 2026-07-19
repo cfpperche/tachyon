@@ -25,8 +25,8 @@ _Generated from `plan.md` on 2026-07-19. Work top-to-bottom. Check boxes as task
 - [x] Focused prompt/brief/AgentManager tests pass with no truncation or threshold relaxation.
 - [x] PI-001 passes and an independent reviewer records mechanical equivalence of any evidence edit.
 - [x] Typecheck passes.
-- [ ] Configured full verification passes; candidate failure is recorded explicitly in `notes.md` and is not described as green.
-- [ ] The SDD duplicate-ID check and closure audit report no blocking findings when status becomes shipped.
+- [x] Configured full verification passes; candidate failure and the later baseline repair are recorded explicitly in `notes.md`.
+- [x] The SDD duplicate-ID check and closure audit report no blocking findings when status becomes shipped.
 
 **Headless check:** `npx vitest run test/unit/startupBrief.test.ts test/unit/projectGuidance.test.ts test/unit/soul-lifecycle-a2Behavior.gen.test.ts test/unit/briefFile.test.ts test/unit/snBriefBehavior.gen.test.ts test/unit/cxBriefBehavior.gen.test.ts test/unit/agentManager.test.ts test/unit/agentSoulLegacyParity.test.ts test/unit/workspaceHeadless.test.ts test/unit/t12DerivedFiles.test.ts --maxWorkers=1`
 

@@ -157,3 +157,15 @@ inventory exposes the synthetic long guidance text.
   differential evidence of no SDD 411 regression, not a claim that the configured full gate is
   green. The spec remains `in-progress` until the repository baseline is repaired or its closure
   policy is explicitly ratified.
+
+## Baseline restoration and closure
+
+- Task `t-56b02a` reconciled five stale unit guards with contracts already integrated by their
+  owning changes. Affected Product Invariants: none — this patch updates mechanical unit-test
+  expectations only and does not edit PI-001's promise, registry or executable evidence.
+- Focused reconciliation suite — PASS, 5 files / 23 tests.
+- `npm run test:invariants` — PASS, 1 registered invariant / 2 tests.
+- `npm run typecheck` — PASS.
+- `npm run verify:full:quiet` — PASS on `971d15de`, 436 files / 5,016 passed tests / 3 skipped
+  (5,019 total). The earlier six baseline failures are therefore resolved without production-code
+  changes or an architectural exception.

@@ -2,7 +2,9 @@
 
 _Created 2026-07-19._
 
-**Status:** in-progress
+**Status:** shipped
+**Closure:** Shipped locally through `971d15de`; focused startup coverage, PI-001, typecheck,
+configured full verification, independent equivalence review and sanitized cross-runtime dogfood are green.
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
@@ -79,7 +81,7 @@ requires independent equivalence review; the fixed oracle and its strength do no
 - [x] The path, 4,000-byte diversion threshold, safe inline ceiling and public `SpawnContract` field schema remain compatible unless a separately ratified decision changes them.
 - [x] Product documentation answers who generates the artifact, why it exists, what it may contain, when it is used, and why its presence alone does not prove an active task.
 - [x] Sanitized dogfood proves guidance-only, `DELIVERABLE`, `DONE_WHEN`, re-anchor and explicit-resume behavior through at least two supported runtime delivery channels.
-- [ ] Focused tests, PI-001, typecheck and configured full verification pass, and an independent reviewer records PI-001 equivalence.
+- [x] Focused tests, PI-001, typecheck and configured full verification pass, and an independent reviewer records PI-001 equivalence.
 
 ## Non-goals
 
