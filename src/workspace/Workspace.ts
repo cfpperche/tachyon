@@ -132,13 +132,13 @@ import type { NoticeDeliveryResult, NotifyLevel } from "../bridge/tools.js";
 import { resolveOpencodeStorageSession } from "./opencodeStorage.js";
 import { GitDeliveryStore } from "../git-delivery/store.js";
 import { DeliveryStore } from "../delivery/store.js";
-import { DeliveryLeaseService, waitForDeliveryLease, type DeliveryRecoveryInspection } from "../delivery/leaseService.js";
+import { DeliveryLeaseService, waitForDeliveryLease, type DeliveryRecoveryApproval, type DeliveryRecoveryInspection } from "../delivery/leaseService.js";
 import { UnavailableProcessFence } from "../agents/processFence.js";
 import { readOwnApprovalRequest } from "../bridge/approvalRequest.js";
 import { DeliveryVerificationLeaseService } from "../delivery/verificationLease.js";
 import { DeliveryProjectionService } from "../delivery/projectionService.js";
 import { LegacyDeliveryRetirement } from "../delivery/retireLegacyState.js";
-import type { CanonicalDeliverySpawnReceipt } from "../delivery/types.js";
+import type { CanonicalDeliverySpawnReceipt, DeliveryActor } from "../delivery/types.js";
 import {
   readLinuxProcessIdentity,
   reconcileDeliveryReload,
@@ -644,6 +644,10 @@ export class Workspace {
       git: this.gitExec,
       liveness: (agent) => this.gitDeliveryLiveness(agent),
       worktreeOccupancy: (worktreePath) => this.manager.worktreeOccupant(worktreePath),
+      // t-2dd637 §4 — the base repair may only widen a pinned SHA to the workspace's own checked-out
+      // branch: the exact ref WorktreeManager forks deliveries from, so nothing else can be proposed.
+      targetBranch: () => this.workspaceTargetBranch(),
+      resolveBaseRepairApproval: (approvalId, actor, actionDigest) => this.resolveTrustedRecoveryApproval(approvalId, actor, actionDigest),
       removeManagedWorktree: (worktreePath, o) =>
         this.managedWorktrees.removePath(worktreePath, {
           deleteBranch: o?.deleteBranch,
@@ -669,14 +673,11 @@ export class Workspace {
       store: this.deliveries,
       processFence: new UnavailableProcessFence(),
       recoveryPrincipals: () => resolveGitDeliverySettings(this.config?.settings).prunePrincipals,
-      resolveRecoveryApproval: (approvalId, actor, actionDigest) => {
-        if (actor.kind !== "agent" || !actor.name) throw new Error("recovery approval requires an agent caller");
-        const request = readOwnApprovalRequest(this.workspaceRoot, approvalId, actor.name);
-        if (request.status !== "resolved" || request.resolution?.decision !== "approved") throw new Error("approval is not resolved as approved");
-        if (!request.payload.proposedAction.includes(actionDigest)) throw new Error("approval is not bound to this recovery action digest");
-        return { decision: "approved", requester: request.requester, actionDigest, payloadHash: request.payloadHash,
-          resolvedAt: request.resolution.resolvedAt, resolvedBy: request.resolution.resolvedBy };
-      },
+      resolveRecoveryApproval: (approvalId, actor, actionDigest) => this.resolveTrustedRecoveryApproval(approvalId, actor, actionDigest),
+      // t-9e57e8 — the free→abandoned disposition substitutes liveness + occupancy evidence for the
+      // process fence. Both reuse the existing oracles (no second liveness/occupancy source).
+      agentLiveness: (agent) => this.gitDeliveryLiveness(agent),
+      worktreeOccupancy: (canonicalWorktree) => this.manager.worktreeOccupant(canonicalWorktree),
       canonicalWorktreeFor: async (delivery) => fs.realpathSync((await this.exactCanonicalProjection(delivery)).worktreePath),
       readHead: async (cwd) => this.requiredGitOutput(["rev-parse", "HEAD"], cwd, "Git HEAD"),
       inspectWorktree: async (cwd) => ({ headSha: await this.requiredGitOutput(["rev-parse", "HEAD"], cwd, "Git HEAD"), clean: await this.requiredGitStatus(cwd) }),
@@ -3347,6 +3348,35 @@ export class Workspace {
    */
   deliveryReloadPhase(): "uninitialized" | "ready" | "failed" {
     return this.deliveryReload.phase;
+  }
+
+  /**
+   * The workspace's own checked-out branch — the ref `WorktreeManager.add` forks new delivery
+   * branches from, and therefore the only base a governed base repair may widen a pin to.
+   * A detached or unresolvable HEAD throws so the repair stays unavailable rather than guessing.
+   */
+  private async workspaceTargetBranch(): Promise<string> {
+    const result = await this.gitExec(["rev-parse", "--abbrev-ref", "HEAD"], this.workspaceRoot);
+    const branch = result.stdout.trim();
+    if (result.code !== 0 || !branch || branch === "HEAD") {
+      throw new Error(`workspace target branch is not resolvable (${result.stderr.trim() || "detached HEAD"})`);
+    }
+    return branch;
+  }
+
+  /**
+   * The one durable approval store both governed recovery dispositions redeem against: the caller
+   * may only redeem an approval it requested itself, and the resolved payload must name this exact
+   * action digest. Shared by the lease service's recovery approvals and the projection service's
+   * base repair so neither can drift onto a weaker binding check.
+   */
+  private resolveTrustedRecoveryApproval(approvalId: string, actor: DeliveryActor, actionDigest: string): DeliveryRecoveryApproval {
+    if (actor.kind !== "agent" || !actor.name) throw new Error("recovery approval requires an agent caller");
+    const request = readOwnApprovalRequest(this.workspaceRoot, approvalId, actor.name);
+    if (request.status !== "resolved" || request.resolution?.decision !== "approved") throw new Error("approval is not resolved as approved");
+    if (!request.payload.proposedAction.includes(actionDigest)) throw new Error("approval is not bound to this recovery action digest");
+    return { decision: "approved", requester: request.requester, actionDigest, payloadHash: request.payloadHash,
+      resolvedAt: request.resolution.resolvedAt, resolvedBy: request.resolution.resolvedBy };
   }
 
   private async gitDeliveryLiveness(agent: string): Promise<"live" | "not_live" | "unknown"> {

@@ -31,6 +31,9 @@ import type { DeliveryActor, DeliveryCreateInput } from "../../src/delivery/type
 import { GitDeliveryStore } from "../../src/git-delivery/store.js";
 import type { GitDeliverySettings } from "../../src/git-delivery/types.js";
 import type { GitExec, GitResult } from "../../src/worktree/WorktreeManager.js";
+import { Workspace } from "../../src/workspace/Workspace.js";
+import type { EngineHost } from "../../src/workspace/EngineHost.js";
+import { TmuxService, type ExecResult } from "../../src/tmux/TmuxService.js";
 
 const now = "2026-07-19T12:00:00.000Z";
 const human = { kind: "human" as const, name: "maintainer" };
@@ -718,5 +721,123 @@ describe("governed reconcile_base projection repair (t-2dd637 §4)", () => {
     expect(before).toMatch(/^[0-9a-f]{40}$/);
     expect(after).not.toMatch(/^[0-9a-f]{40}$/);
     expect(after).toBe(TARGET_BRANCH);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Construction-site wiring (the fixtures above inject fakes and are therefore
+// structurally blind to a dependency that the real product never provides)
+// ---------------------------------------------------------------------------
+
+/**
+ * Both mechanisms above are optional-dependency shaped: absent dep → fail closed. Every test in
+ * this file supplies those deps itself, so all of them stay green even when `Workspace.ts` never
+ * wires them and the shipped Bridge surface can never succeed. These tests close that hole by
+ * asserting against the services the REAL `Workspace` constructor builds — delete any one of the
+ * four wiring lines at the `new DeliveryProjectionService` / `new DeliveryLeaseService` sites and
+ * the matching assertion below fails.
+ */
+class WiringHost implements EngineHost {
+  t = (m: string, ...a: (string | number | boolean)[]): string => m.replace(/\{(\d+)\}/g, (_x, i) => String(a[Number(i)] ?? ""));
+  notify(): void {}
+  focusPrimaryView(): void {}
+  executeCommand(command: string): Promise<unknown> {
+    return Promise.reject(new Error(`unexpected host command in wiring test: ${command}`));
+  }
+  watch(): { dispose(): void } {
+    return { dispose() {} };
+  }
+  getSetting<T>(_s: string, _k: string, d: T): T {
+    return d;
+  }
+  globalStoragePath(): string {
+    return this.storageDir;
+  }
+  getState<T>(_k: string): T | undefined {
+    return undefined;
+  }
+  setState(): void {}
+  getSecret(): Promise<string | undefined> {
+    return Promise.resolve(undefined);
+  }
+  setSecret(): Promise<void> {
+    return Promise.resolve();
+  }
+  appVersion(): string {
+    return "0.0.0-test";
+  }
+  mediaPath(...s: string[]): string {
+    return path.join(this.storageDir, ...s);
+  }
+  webviewRoot(): unknown {
+    return undefined;
+  }
+  onViewsChanged(): void {}
+  constructor(private readonly storageDir: string) {}
+}
+
+/** Only the two dependency bags matter here; the services keep them private, so read them structurally. */
+type WiredDeps = {
+  agentLiveness?: (agent: string) => unknown;
+  worktreeOccupancy?: (canonicalWorktree: string) => unknown;
+  targetBranch?: () => unknown;
+  resolveBaseRepairApproval?: (approvalId: string, actor: DeliveryActor, actionDigest: string) => unknown;
+};
+const wiredDeps = (service: unknown): WiredDeps => (service as { deps: WiredDeps }).deps;
+
+async function realWorkspace(): Promise<Workspace> {
+  const dir = root("tachyon-wiring-");
+  execFileSync("git", ["init", "-q", "-b", TARGET_BRANCH, dir], { stdio: "ignore" });
+  execFileSync("git", ["-C", dir, "commit", "-q", "--allow-empty", "-m", "root"], {
+    stdio: "ignore",
+    env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" },
+  });
+  fs.writeFileSync(path.join(dir, "tachyon.yml"), "agents:\n  worker:\n    cmd: sh\n", "utf8");
+  const tmux = new TmuxService(async (): Promise<ExecResult> => ({ stdout: "", stderr: "" }));
+  return Workspace.createForTest(dir, { host: new WiringHost(root("tachyon-wiring-storage-")), onViewsChanged: () => {} }, { tmux, startBridge: false });
+}
+
+describe("Workspace construction sites supply the governed-recovery evidence dependencies", () => {
+  it("wires agentLiveness and worktreeOccupancy onto the real DeliveryLeaseService (t-9e57e8)", async () => {
+    const ws = await realWorkspace();
+    const deps = wiredDeps(ws.deliveryLease);
+
+    // Present — absent is exactly the defect: abandonFreeDelivery then refuses every real call with
+    // "agent liveness evidence is unavailable" / "worktree occupancy evidence is unavailable".
+    expect(typeof deps.agentLiveness).toBe("function");
+    expect(typeof deps.worktreeOccupancy).toBe("function");
+
+    // ...and bound to the real oracles, not a stub: an unknown agent resolves through the manager's
+    // own live-state classification, and an unoccupied path reports no occupant.
+    expect(["live", "not_live", "unknown"]).toContain(await deps.agentLiveness!("no-such-agent"));
+    await expect(Promise.resolve(deps.worktreeOccupancy!(path.join(ws.workspaceRoot, "absent-worktree")))).resolves.toBeUndefined();
+  });
+
+  it("wires targetBranch and resolveBaseRepairApproval onto the real DeliveryProjectionService (t-2dd637 §4)", async () => {
+    const ws = await realWorkspace();
+    const deps = wiredDeps(ws.deliveryProjection);
+
+    expect(typeof deps.targetBranch).toBe("function");
+    expect(typeof deps.resolveBaseRepairApproval).toBe("function");
+
+    // The target branch is the workspace's own checked-out branch — the ref deliveries fork from.
+    await expect(Promise.resolve(deps.targetBranch!())).resolves.toBe(TARGET_BRANCH);
+
+    // The approval resolver is bound to the durable approval store: an unknown id cannot resolve.
+    await expect(Promise.resolve().then(() => deps.resolveBaseRepairApproval!("ap-does-not-exist", approver, "digest"))).rejects.toThrow();
+
+    // ...and it enforces the same store/binding contract the lease service's recovery approvals do —
+    // both refuse a caller with no agent identity, so the base repair cannot redeem on a weaker path.
+    const leaseResolver = (wiredDeps(ws.deliveryLease) as unknown as {
+      resolveRecoveryApproval: (id: string, actor: DeliveryActor, digest: string) => unknown;
+    }).resolveRecoveryApproval;
+    const refusal = async (fn: (id: string, actor: DeliveryActor, digest: string) => unknown): Promise<string> => {
+      try {
+        await fn("ap-does-not-exist", human, "digest");
+        return "resolved";
+      } catch (error) { return error instanceof Error ? error.message : String(error); }
+    };
+    expect(await refusal(deps.resolveBaseRepairApproval!)).toBe("recovery approval requires an agent caller");
+    expect(await refusal(leaseResolver)).toBe("recovery approval requires an agent caller");
   });
 });

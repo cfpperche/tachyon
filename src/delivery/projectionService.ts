@@ -509,6 +509,10 @@ export class DeliveryProjectionService {
           proposedBaseRef: input.proposedBaseRef,
           currentHeadSha: live.currentHeadSha,
         });
+        // Resolved unconditionally, BEFORE the replay branch: a replay may never dodge the approval
+        // check. A replaying second caller must therefore present its own approval bound to this same
+        // digest, but the durable intent keeps the ORIGINAL payload — the receipt names the approval
+        // that first authorized the repair, not the one just re-verified (rev nit N3).
         const approval = await this.resolveBaseRepairApproval(input, actionDigest);
 
         let sequence: number;
