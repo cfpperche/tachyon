@@ -113,4 +113,12 @@ describe("shared UI product patterns (STYLEGUIDE)", () => {
     const radius = readFileSync("src/webview/shared/vscode-theme.css", "utf8");
     expect(radius).toMatch(/--radius:\s*var\(--ds-radius/);
   });
+
+  it("sidebar Act/more-item stay native (no .ds-btn on density chrome)", () => {
+    const sidebar = readFileSync("src/webview/sidebar/App.tsx", "utf8");
+    expect(sidebar).toMatch(/const Act =[\s\S]*?<button class="act"/);
+    expect(sidebar).not.toMatch(/const Act =[\s\S]*?IconButton/);
+    expect(sidebar).toMatch(/class="more-item" type="button"/);
+    expect(sidebar).not.toMatch(/Button class="more-item"/);
+  });
 });

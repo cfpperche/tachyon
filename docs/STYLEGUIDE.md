@@ -72,6 +72,11 @@ Page title size: **16px** via `.ds-page-chrome-title` — do not invent 20px pan
 | Tabular data | **`DataTable` interim** = promote/copy the Control `ck-table` pattern with `--ds-*` tokens until a shared `Table` lands in `patterns.tsx`. Do not invent a third table skin. |
 | Labeled field / select menu | `kit/KitLabeledInput`, `KitSelect`, `KitDropdown`, … |
 
+
+### Density chrome exception (sidebar / menus)
+Icon-only **hit targets** (`.act`, `.more-item` menu rows) use **native `<button>` + `Icon`**, not `IconButton`/`Button`.  
+Those kit components always add `.ds-btn` (padding, border, flex gap) and **break** 22×22 hits and menu layout (0.56.67 regression). Product primary/secondary actions still use `Button`.
+
 ### Product patterns (not one-off CSS)
 
 - **PageChrome** — every full page or Control tab body that has a **title + optional hint + optional actions** row. Pure canvas (no title row) is the only exception.

@@ -1,6 +1,6 @@
 import { createContext } from "preact";
 import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import { Button, Badge, EmptyState, DenseRow, IconButton } from "../shared/ui";
+import { Button, Badge, EmptyState, DenseRow } from "../shared/ui";
 import {
   SAMPLE, TABS, searchIndex,
   type FleetVM, type TabId, type AgentVM, type AgentStatus, type SearchItem,
@@ -358,13 +358,12 @@ function Group({ title, count, collapsed, onToggle, actions, children }: { title
 /** Dense section rows — shared DenseRow (keeps `.row` DOM for sidebar CSS). */
 const ListRow = DenseRow;
 
+/** Icon hit-target — native button + Icon. Do NOT use IconButton here: .ds-btn padding/border fights .act (22×22). */
 const Act = ({ icon, title, on }: { icon: string; title: string; on: () => void }) => (
-  <IconButton
-    class="act"
-    name={icon}
-    title={title}
-    onClick={(e) => { e.preventDefault(); e.stopPropagation(); on(); }}
-  />
+  <button class="act" type="button" title={title} aria-label={title}
+    onClick={(e) => { e.preventDefault(); e.stopPropagation(); on(); }}>
+    <Icon name={icon} />
+  </button>
 );
 
 /** The "..." overflow trigger — edit/remove (and any secondary action) live here, never inline, on every tab. */
@@ -372,12 +371,10 @@ function MoreBtn({ items }: { items: MenuItem[] }) {
   const d = useContext(DispatchCtx);
   if (!items.length) return null;
   return (
-    <IconButton
-      class="act"
-      name="ellipsis"
-      title="More actions"
-      onClick={(e) => { e.stopPropagation(); d.openMore(items, e.clientX, e.clientY); }}
-    />
+    <button class="act" type="button" title="More actions" aria-label="More actions"
+      onClick={(e) => { e.stopPropagation(); d.openMore(items, e.clientX, e.clientY); }}>
+      <Icon name="ellipsis" />
+    </button>
   );
 }
 
@@ -719,9 +716,9 @@ function MoreMenu({ menu, onClose }: { menu: MenuState | null; onClose: () => vo
     <div class="menu-backdrop" onClick={onClose}>
       <div ref={ref} class="more-menu" role="menu" aria-label="Actions" style={`left:${pos.left}px;top:${pos.top}px`} onClick={(e) => e.stopPropagation()}>
         {menu.items.map((it) => (
-          <Button class="more-item" role="menuitem" onClick={() => { it.run(); onClose(); }}>
-            <Icon name={it.icon} /><span>{it.label}</span>
-          </Button>
+          <button class="more-item" type="button" role="menuitem" onClick={() => { it.run(); onClose(); }}>
+            {it.icon ? <Icon name={it.icon} /> : null}<span>{it.label}</span>
+          </button>
         ))}
       </div>
     </div>
@@ -997,14 +994,16 @@ export function App({ fleets = [SAMPLE], dispatch, prefs = {}, collapsedKeys = [
           return <>
             <span class="sec-actions">
               {tab === "Agents" && metricsCapable > 0 && (
-                <Button class={`act${allMetricsOpen ? " on" : ""}`}
+                <button
+                  type="button"
+                  class={`act${allMetricsOpen ? " on" : ""}`}
                   title={allMetricsOpen ? "Collapse all resource metrics" : "Expand all resource metrics"}
                   aria-label={allMetricsOpen ? "Collapse all resource metrics" : "Expand all resource metrics"}
                   aria-pressed={allMetricsOpen}
                   onClick={flipAllMetrics}
                 >
                   <Icon name="graph" />
-                </Button>
+                </button>
               )}
               <button type="button" class="act" title={`Sort ${section} — ${SORT_LABEL[active]} (click to flip)`} aria-label={`Sort ${section} (${SORT_LABEL[active]}); click to flip`} onClick={flipSort}><SortIcon dir={active} /></button>
               {STUDIO_OF[tab] && <Act icon="add" title={STUDIO_OF[tab]!.label} on={() => dispatch?.global(STUDIO_OF[tab]!.op)} />}
