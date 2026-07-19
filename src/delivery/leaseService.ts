@@ -1337,7 +1337,18 @@ export class DeliveryLeaseService {
   }
 
   private async recoveryApproval(approvalId: string, actor: DeliveryActor, digest: string): Promise<DeliveryRecoveryApproval> {
-    if (!this.deps.resolveRecoveryApproval || actor.kind !== "agent" || !actor.name) {
+    // Same refusal set as before, split only so the message names the precondition that actually
+    // failed (rev nit N4). A human/master/system caller passes `assertRecoveryActor` and then lands
+    // here; "approval is unavailable or unbound" reads to them as a broken configuration, when the
+    // real reason is that a recovery approval is bound to a named agent identity they do not have.
+    if (actor.kind !== "agent" || !actor.name) {
+      throw new DeliveryLeaseError(
+        "DELIVERY_QUARANTINED",
+        false,
+        `recovery approval requires a named agent actor; a '${actor.kind}' caller cannot be bound to one`,
+      );
+    }
+    if (!this.deps.resolveRecoveryApproval) {
       throw new DeliveryLeaseError("DELIVERY_QUARANTINED", false, "trusted recovery approval is unavailable or unbound");
     }
     let approval: DeliveryRecoveryApproval;

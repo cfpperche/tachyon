@@ -554,10 +554,14 @@ export class DeliveryProjectionService {
           sequence,
           operationId,
           deliveryId: input.deliveryId,
+          // §4 scopes the repair to `baseRef` alone, so the direct path mutates exactly the field
+          // the reconcile-loop replay does (rev nit N1). The stored `currentHeadSha` is derived
+          // state that `classifyDelivery` re-reads from live Git on every use and only falls back
+          // to when no live tip was resolvable — refreshing it here would make the two paths write
+          // different field sets for the same approved repair.
           mutate: (record) => ({
             ...record,
             baseRef: input.proposedBaseRef,
-            currentHeadSha: live.currentHeadSha,
             transitions: [
               ...record.transitions,
               {
@@ -977,13 +981,19 @@ export class DeliveryProjectionService {
             // live Git; if they no longer hold, advance the sequence without touching baseRef so a
             // stale repair intent cannot wedge every later intent behind it.
             const proposedBaseRef = String(intent.payload.proposedBaseRef ?? "");
+            const at = this.now();
+            const gitActor = toGitActor(intent.actor);
             let repair: ((record: GitDelivery) => GitDelivery) | undefined;
-            if (currentProjection.baseRef !== proposedBaseRef && proposedBaseRef) {
+            let noOpReason: string;
+            if (!proposedBaseRef) {
+              noOpReason = "the intent carries no proposed base ref";
+            } else if (currentProjection.baseRef === proposedBaseRef) {
+              noOpReason = `the base is already the symbolic ref '${proposedBaseRef}'`;
+            } else {
               const stillDefective = await this.assertBaseRepairIsDefectClass(currentProjection.baseRef, proposedBaseRef)
                 .then(() => true).catch(() => false);
               if (stillDefective) {
-                const at = this.now();
-                const gitActor = toGitActor(intent.actor);
+                noOpReason = "";
                 repair = (record) => ({
                   ...record,
                   baseRef: proposedBaseRef,
@@ -992,15 +1002,33 @@ export class DeliveryProjectionService {
                     { at, from: record.phase, to: record.phase, by: gitActor, reason: "reconcile governed base repair" },
                   ],
                 });
+              } else {
+                noOpReason = `stored base '${currentProjection.baseRef}' is no longer the repairable defect class`;
               }
             }
+            // An APPROVED repair that turns out to be a stale no-op must still leave a durable trace
+            // (rev nit N2): without one, the only record is the original intent, which reads as
+            // applied. The sequence advances either way, so this audits the no-op without
+            // reintroducing the wedge the comment above guards against.
             currentProjection = await this.deps.gitDeliveries.applyCanonicalIntent({
               id: currentProjection.id,
               expectedVersion: currentProjection.version,
               sequence: intent.projectionSequence,
               operationId: intent.operationId,
               deliveryId,
-              mutate: repair ?? ((record) => record),
+              mutate: repair ?? ((record) => ({
+                ...record,
+                transitions: [
+                  ...record.transitions,
+                  {
+                    at,
+                    from: record.phase,
+                    to: record.phase,
+                    by: gitActor,
+                    reason: `reconcile governed base repair no-op (operation '${intent.operationId}'): ${noOpReason}`,
+                  },
+                ],
+              })),
             });
             applied += 1;
             continue;
