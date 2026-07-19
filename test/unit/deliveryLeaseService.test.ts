@@ -1676,3 +1676,90 @@ describe("DeliveryLeaseService dead-holder reconciliation (SDD 368 T11)", () => 
     expect(await store.get("d-lease")).toEqual(before);
   });
 });
+
+/**
+ * t-9e57e8 — additive coverage for the governed free→abandoned edge. Held and quarantined
+ * dispositions above are unchanged; this only pins the new entry state and its fail-closed
+ * evidence. The full refusal matrix lives in test/unit/deliveryFreeAbandon.test.ts.
+ */
+describe("DeliveryLeaseService free→abandoned disposition (t-9e57e8)", () => {
+  const freeService = (store: DeliveryStore, worktree: string, options: {
+    liveState?: "live" | "not_live" | "unknown";
+    occupant?: { state: string; agent: string };
+    clean?: boolean;
+  } = {}) => {
+    let events = 0;
+    return new DeliveryLeaseService({
+      store,
+      canonicalWorktreeFor: () => worktree,
+      readHead: () => "b",
+      inspectWorktree: () => ({ headSha: "b", clean: options.clean ?? true }),
+      isAncestor: () => true,
+      withWorktreeLock: async (_path, fn) => fn(),
+      recoveryPrincipals: ["coordinator", "worker"],
+      agentLiveness: async () => options.liveState ?? "not_live",
+      worktreeOccupancy: async () => options.occupant,
+      resolveRecoveryApproval: async (_id, resolved, digest) => ({
+        decision: "approved", requester: resolved.name!, actionDigest: digest,
+        payloadHash: "payload", resolvedAt: now, resolvedBy: "human",
+      }),
+      now: () => now,
+      eventId: () => `free-event-${++events}`,
+    });
+  };
+  const freeAbandon = (worktree: string, operationId = "free-abandon") => ({
+    deliveryId: "d-lease", canonicalWorktree: worktree, actor, operationId,
+    expectedHeadSha: "b", approvalId: "a-free",
+  });
+
+  it("records a free_abandoned event with liveness-and-cleanliness evidence", async () => {
+    const { store, worktree, input } = fixture(); await store.create(input);
+    const abandoned = await freeService(store, worktree).abandonFreeDelivery(freeAbandon(worktree));
+    expect(abandoned.lease.state).toBe("abandoned");
+    expect(abandoned.events.at(-1)).toMatchObject({
+      type: "free_abandoned",
+      detail: { evidenceLevel: "liveness-and-cleanliness", approvalId: "a-free", payloadHash: "payload" },
+    });
+  });
+
+  it.each([
+    ["live agent", { liveState: "live" as const }, "WORKTREE_OCCUPIED"],
+    ["unknown liveness", { liveState: "unknown" as const }, "WORKTREE_OCCUPIED"],
+    ["worktree occupant", { occupant: { state: "live", agent: "other" } }, "WORKTREE_OCCUPIED"],
+    ["dirty worktree", { clean: false }, "DELIVERY_WORKTREE_DIRTY"],
+  ])("refuses free→abandoned on %s without mutation", async (_label, options, code) => {
+    const { store, worktree, input } = fixture(); await store.create(input);
+    const before = await store.get("d-lease");
+    await expect(freeService(store, worktree, options).abandonFreeDelivery(freeAbandon(worktree)))
+      .rejects.toMatchObject({ code });
+    expect(await store.get("d-lease")).toEqual(before);
+  });
+
+  it("refuses free→abandoned when the former holder authorizes its own disposition", async () => {
+    const { store, worktree, input } = fixture(); await store.create(input);
+    const before = await store.get("d-lease");
+    await expect(freeService(store, worktree).abandonFreeDelivery({
+      ...freeAbandon(worktree), actor: { kind: "agent" as const, name: "worker" },
+    })).rejects.toMatchObject({ code: "DELIVERY_QUARANTINED" });
+    expect(await store.get("d-lease")).toEqual(before);
+  });
+
+  it("refuses free→abandoned when liveness or occupancy evidence is unavailable", async () => {
+    const { store, worktree, input } = fixture(); await store.create(input);
+    const lease = new DeliveryLeaseService({
+      store, canonicalWorktreeFor: () => worktree, readHead: () => "b",
+      inspectWorktree: () => ({ headSha: "b", clean: true }), isAncestor: () => true,
+      withWorktreeLock: async (_path, fn) => fn(), recoveryPrincipals: ["coordinator"], now: () => now,
+    });
+    await expect(lease.abandonFreeDelivery(freeAbandon(worktree)))
+      .rejects.toMatchObject({ code: "DELIVERY_INVALID_STATE" });
+    expect((await store.get("d-lease"))!.lease.state).toBe("free");
+  });
+
+  it("still refuses a held lease, leaving held salvage semantics intact", async () => {
+    const { store, worktree, input } = heldFixture(); await store.create(input);
+    await expect(freeService(store, worktree).abandonFreeDelivery(freeAbandon(worktree)))
+      .rejects.toMatchObject({ code: "WORKTREE_OCCUPIED" });
+    expect((await store.get("d-lease"))!.lease.state).toBe("held");
+  });
+});

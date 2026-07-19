@@ -22,6 +22,14 @@ import type {
 
 const HANDOFF_SAFETY = "mechanism-only" as const;
 
+/**
+ * t-9e57e8: evidence label for the governed free→abandoned disposition. A `free` lease has no
+ * holder and no process to prove dead, so liveness + unoccupancy + cleanliness carry the weight
+ * that a process-fence proof carries on the held path. Deliberately NOT `approval-only`: evidence
+ * levels are read as contract and this guarantee is materially different.
+ */
+export const FREE_ABANDON_EVIDENCE_LEVEL = "liveness-and-cleanliness" as const;
+
 export interface WaitForDeliveryLeaseInput {
   deliveryId: string;
   afterVersion?: number;
@@ -273,6 +281,16 @@ export interface DeliveryAbandonWithoutWorktreeInput {
   deliveryId: string; actor: DeliveryActor; operationId: string; approvalId: string;
 }
 
+/** t-9e57e8: governed terminal disposition for a `free` lease whose projection cannot integrate. */
+export interface DeliveryAbandonFreeInput {
+  deliveryId: string; canonicalWorktree: string; actor: DeliveryActor; operationId: string;
+  expectedHeadSha: string; approvalId: string;
+}
+
+export type DeliveryAgentLiveState = "live" | "not_live" | "unknown";
+
+export interface DeliveryWorktreeOccupant { state: string; agent: string }
+
 export type DeliveryReconcileHolderResult =
   | { outcome: "alive"; delivery: Delivery }
   | { outcome: "interrupted"; delivery: Delivery };
@@ -290,6 +308,13 @@ export interface DeliveryLeaseServiceDeps {
   recoveryPrincipals?: readonly string[] | (() => readonly string[]);
   resolveRecoveryApproval?(approvalId: string, actor: DeliveryActor, actionDigest: string): DeliveryRecoveryApproval | Promise<DeliveryRecoveryApproval>;
   inspectReviewWorktree?(canonicalWorktree: string, taskRef: string): DeliveryReviewInspection | Promise<DeliveryReviewInspection>;
+  /**
+   * t-9e57e8: former-execution-agent liveness. Only the free→abandoned disposition consumes this;
+   * absent means that disposition is unavailable, never that the agent is assumed dead.
+   */
+  agentLiveness?(agent: string): DeliveryAgentLiveState | Promise<DeliveryAgentLiveState>;
+  /** t-9e57e8: canonical worktree occupancy. A truthy occupant or a failed probe refuses. */
+  worktreeOccupancy?(canonicalWorktree: string): DeliveryWorktreeOccupant | undefined | Promise<DeliveryWorktreeOccupant | undefined>;
   isAncestor(older: string, newer: string, canonicalWorktree: string): boolean | Promise<boolean>;
   withWorktreeLock<T>(canonicalWorktree: string, fn: () => Promise<T>): Promise<T>;
   now?: () => string;
@@ -695,6 +720,140 @@ export class DeliveryLeaseService {
         return record;
       }, { operationId: input.operationId, intent });
     });
+  }
+
+  /**
+   * t-9e57e8: governed free→abandoned terminal disposition.
+   *
+   * `free` was a terminal-adjacent dead end: every edge into `abandoned` originated at
+   * `quarantined`/`held`, and quarantine edges all require a live holder boundary that a released
+   * lease no longer has. A delivery whose projection cannot satisfy integrate therefore had no
+   * governed disposition at all. This is the missing edge, and it is fail-closed on every factor:
+   * not-live former agent, unoccupied canonical worktree, clean worktree at the expected head, and
+   * an approval bound to an action digest over the disposition — approved by someone other than the
+   * former holder. Held/quarantined paths are untouched; this method refuses any non-`free` lease.
+   */
+  async abandonFreeDelivery(input: DeliveryAbandonFreeInput): Promise<Delivery> {
+    const canonicalWorktree = path.resolve(input.canonicalWorktree);
+    const digest = recoveryActionDigest(
+      input.deliveryId,
+      input.expectedHeadSha,
+      { headSha: input.expectedHeadSha, dirtyPaths: [], uniqueCommits: [] },
+      { action: "abandon-free", operationId: input.operationId, actor: input.actor },
+    );
+    const intent = { ...structuredClone(input), canonicalWorktree, actionDigest: digest };
+    const replay = await this.replayRecovery(input.operationId, input.deliveryId, intent, "free_abandoned", "abandoned");
+    if (replay) return replay;
+
+    const snapshot = await this.deps.store.get(input.deliveryId);
+    if (!snapshot) throw new DeliveryNotFoundError(input.deliveryId);
+    this.assertRecoveryActor(snapshot, input.actor);
+    this.assertDifferentRecoveryActor(snapshot, input.actor);
+    await this.assertCanonical(snapshot, canonicalWorktree);
+    if (snapshot.lease.state === "abandoned") throw this.abandoned(snapshot);
+    if (snapshot.lease.state !== "free") {
+      throw this.occupied(snapshot, "terminal free disposition requires a free lease");
+    }
+    const lease = structuredClone(snapshot.lease);
+    const tail = structuredClone(snapshot.segments.at(-1));
+    const formerAgent = tail?.executionAgent;
+
+    await this.assertFreeAgentNotLive(snapshot, formerAgent);
+    await this.assertWorktreeUnoccupied(canonicalWorktree);
+    this.assertFreeDispositionInspection(await this.inspect(canonicalWorktree), input.expectedHeadSha);
+    const approval = await this.recoveryApproval(input.approvalId, input.actor, digest);
+
+    return this.withDeliveryLock(input.deliveryId, async () => this.deps.withWorktreeLock(canonicalWorktree, async () => {
+      const current = await this.deps.store.get(input.deliveryId);
+      if (!current) throw new DeliveryNotFoundError(input.deliveryId);
+      await this.assertCanonical(current, canonicalWorktree);
+      if (!isDeepStrictEqual(current.lease, lease) || !isDeepStrictEqual(current.segments.at(-1), tail)) {
+        throw this.occupied(current, "free lease changed during terminal disposition");
+      }
+      // Re-observe under both locks: nothing may have re-entered the worktree since the
+      // unlocked evidence pass above.
+      await this.assertWorktreeUnoccupied(canonicalWorktree);
+      const observed = await this.inspect(canonicalWorktree);
+      this.assertFreeDispositionInspection(observed, input.expectedHeadSha);
+      return this.deps.store.update(current.id, current.version, (record) => {
+        if (!isDeepStrictEqual(record.lease, lease) || !isDeepStrictEqual(record.segments.at(-1), tail)) {
+          throw new DeliveryVersionConflictError(record.id, current.version, record.version);
+        }
+        const open = record.segments.at(-1);
+        if (open && !open.releasedAt) {
+          open.releasedAt = this.now();
+          open.releasedHeadSha = observed.headSha;
+          open.outcome = "rejected";
+        }
+        record.lease = {
+          state: "abandoned",
+          reason: JSON.stringify({ cause: "free-terminal-disposition", evidenceLevel: FREE_ABANDON_EVIDENCE_LEVEL }),
+          changedAt: this.now(),
+        };
+        record.events.push({
+          id: this.eventId(),
+          at: this.now(),
+          type: "free_abandoned",
+          by: structuredClone(input.actor),
+          detail: {
+            operationId: input.operationId,
+            intent,
+            tail: tail ?? null,
+            formerAgent: formerAgent ?? null,
+            headSha: observed.headSha,
+            evidenceLevel: FREE_ABANDON_EVIDENCE_LEVEL,
+            approvalId: input.approvalId,
+            actionDigest: approval.actionDigest,
+            payloadHash: approval.payloadHash,
+            resolvedAt: approval.resolvedAt,
+            ...(approval.resolvedBy ? { resolvedBy: approval.resolvedBy } : {}),
+          },
+        });
+        return record;
+      }, { operationId: input.operationId, intent });
+    }));
+  }
+
+  private async assertFreeAgentNotLive(delivery: Delivery, agent: string | undefined): Promise<void> {
+    if (!this.deps.agentLiveness) {
+      throw new DeliveryLeaseError("DELIVERY_INVALID_STATE", false,
+        "agent liveness evidence is unavailable for the free terminal disposition");
+    }
+    if (!agent) {
+      throw new DeliveryLeaseError("DELIVERY_INVALID_STATE", false,
+        "free lease has no former execution agent to prove not-live");
+    }
+    let observed: DeliveryAgentLiveState;
+    try { observed = await this.deps.agentLiveness(agent); }
+    catch (error) {
+      throw this.occupied(delivery, `free Delivery agent liveness is unknown: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    if (observed !== "not_live") throw this.occupied(delivery, `free Delivery agent liveness is ${observed}`);
+  }
+
+  private async assertWorktreeUnoccupied(canonicalWorktree: string): Promise<void> {
+    if (!this.deps.worktreeOccupancy) {
+      throw new DeliveryLeaseError("DELIVERY_INVALID_STATE", false,
+        "worktree occupancy evidence is unavailable for the free terminal disposition");
+    }
+    let occupant: DeliveryWorktreeOccupant | undefined;
+    try { occupant = await this.deps.worktreeOccupancy(canonicalWorktree); }
+    catch (error) {
+      throw new DeliveryLeaseError("WORKTREE_OCCUPIED", true, "canonical worktree occupancy is unknown",
+        { error: error instanceof Error ? error.message : String(error) });
+    }
+    if (occupant) {
+      throw new DeliveryLeaseError("WORKTREE_OCCUPIED", true, "canonical worktree is occupied",
+        { agent: occupant.agent, state: occupant.state });
+    }
+  }
+
+  private assertFreeDispositionInspection(inspection: DeliveryWorktreeInspection, expectedHeadSha: string): void {
+    if (!inspection.clean) throw new DeliveryLeaseError("DELIVERY_WORKTREE_DIRTY", false, "canonical worktree is dirty");
+    if (inspection.headSha !== expectedHeadSha) {
+      throw new DeliveryLeaseError("DELIVERY_HEAD_CHANGED", false, "canonical worktree HEAD differs from the expected disposition head",
+        { expected: expectedHeadSha, actual: inspection.headSha });
+    }
   }
 
   async acquire(input: DeliveryLeaseAcquireInput): Promise<DeliveryLeaseReservation> {

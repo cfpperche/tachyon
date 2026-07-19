@@ -971,11 +971,22 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     "git_delivery_reconcile",
     {
       description:
-        "Reconcile pending canonical Delivery projection intents for one linked GitDelivery. " +
-        "Requires a resolved caller authorized for both linked integrate and prune mutations.",
-      inputSchema: { id: z.string().regex(/^gd-[0-9a-f]+$/) },
+        "Reconcile canonical Delivery projection state for one linked GitDelivery. " +
+        "action 'pending_intents' (default) applies pending canonical projection intents and requires a resolved caller " +
+        "authorized for both linked integrate and prune mutations. action 'base_repair' performs the narrow governed " +
+        "repair of a projection whose baseRef degraded to a pinned commit SHA: it requires expected_version, " +
+        "proposed_base_ref equal to the workspace target branch, and an approval_id bound to a digest over " +
+        "(gitDeliveryId, currentBaseRef, proposedBaseRef, currentHeadSha). It refuses any record whose stored base is " +
+        "already a branch ref or is not an ancestor of the proposed base, so it can only ever repair the defect class.",
+      inputSchema: {
+        id: z.string().regex(/^gd-[0-9a-f]+$/),
+        action: z.enum(["pending_intents", "base_repair"]).optional(),
+        expected_version: z.number().int().min(1).optional(),
+        proposed_base_ref: z.string().min(1).optional(),
+        approval_id: z.string().min(1).optional(),
+      },
     },
-    async ({ id }) => {
+    async ({ id, action, expected_version, proposed_base_ref, approval_id }) => {
       try {
         deps.assertLegacyDeliveryRetired?.();
         if (!deps.gitDelivery) return fail(new Error("GitDelivery is not available on this Bridge"));
@@ -995,6 +1006,28 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         }
         const actor = gitDeliveryActor(deps);
         const settings = deps.gitDelivery.settings?.() ?? resolveGitDeliverySettings(undefined);
+        if ((action ?? "pending_intents") === "base_repair") {
+          if (!expected_version || !proposed_base_ref || !approval_id) {
+            return fail(new Error(
+              "git_delivery_reconcile base_repair requires expected_version, proposed_base_ref, and approval_id",
+            ));
+          }
+          if (!canIntegrateLinkedGitDelivery(actor, settings.integratePrincipals, deps.caller)) {
+            return fail(new Error(
+              "git_delivery_reconcile base_repair refused: linked caller is not privileged or a configured integratePrincipal",
+            ));
+          }
+          const repaired = await deps.gitDelivery.projection.reconcileBase({
+            deliveryId: projection.deliveryId,
+            gitDeliveryId: id,
+            expectedGitVersion: expected_version,
+            proposedBaseRef: proposed_base_ref,
+            approvalId: approval_id,
+            actor,
+            caller: deps.caller,
+          });
+          return ok(JSON.stringify({ ok: true, projection: repaired.projection }, null, 2));
+        }
         const canIntegrate = canIntegrateLinkedGitDelivery(actor, settings.integratePrincipals, deps.caller);
         const canPrune = canPruneLinkedGitDelivery(actor, settings.prunePrincipals, deps.caller);
         if (!canIntegrate || !canPrune) {
@@ -1013,10 +1046,10 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
   mcp.registerTool(
     "delivery_salvage",
     {
-      description: "Governed recovery for a canonical Delivery held by a dead execution. Caller authority is Bridge-resolved. Enter quarantines a held lease; salvage creates a recovery reservation; abandon_without_worktree performs the approval-only terminal disposition.",
+      description: "Governed recovery for a canonical Delivery held by a dead execution. Caller authority is Bridge-resolved. Enter quarantines a held lease; salvage creates a recovery reservation; abandon_without_worktree performs the approval-only terminal disposition; abandon_free is the terminal disposition for a superseded delivery whose lease is already free, and requires a not-live agent, an unoccupied and clean canonical worktree at expected_head_sha, and an approval_id approved by someone other than the former holder.",
       inputSchema: {
         delivery_id: z.string().min(1),
-        action: z.enum(["enter", "salvage", "abandon", "abandon_without_worktree"]),
+        action: z.enum(["enter", "salvage", "abandon", "abandon_without_worktree", "abandon_free"]),
         operation_id: z.string().min(1),
         canonical_worktree: z.string().min(1).optional(),
         approval_id: z.string().min(1).optional(),
@@ -1041,6 +1074,10 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         if (action === "abandon_without_worktree") {
           if (!approval_id) return fail(new Error("delivery_salvage abandon_without_worktree requires approval_id"));
           return ok(JSON.stringify(await deps.deliveryLease.abandonWithoutWorktree({ deliveryId: delivery_id, actor, operationId: operation_id, approvalId: approval_id }), null, 2));
+        }
+        if (action === "abandon_free") {
+          if (!canonical_worktree || !expected_head_sha || !approval_id) return fail(new Error("delivery_salvage abandon_free requires canonical_worktree, expected_head_sha, and approval_id"));
+          return ok(JSON.stringify(await deps.deliveryLease.abandonFreeDelivery({ deliveryId: delivery_id, canonicalWorktree: canonical_worktree, actor, operationId: operation_id, expectedHeadSha: expected_head_sha, approvalId: approval_id }), null, 2));
         }
         if (action === "abandon") {
           if (!canonical_worktree || !expected_head_sha || !expected_inventory || !approval_id) return fail(new Error("delivery_salvage abandon requires canonical_worktree, expected_head_sha, expected_inventory, and approval_id"));
