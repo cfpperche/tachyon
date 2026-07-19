@@ -6,9 +6,19 @@ import { AgentManager } from "../src/agents/AgentManager.js";
 import { parseConfig, type TachyonConfig } from "../src/config/loadConfig.js";
 import { loadAndRenderProjectGuidance } from "../src/config/projectGuidance.js";
 import { renderPrimer, wrapWithPrimer } from "../src/bridge/primer.js";
+import { composeSpawnContractBrief, type SpawnContract } from "../src/bridge/spawnContract.js";
+import { briefFilePath, deliverableBody } from "../src/agents/briefFile.js";
+import type { SpawnOptions } from "../src/agents/AgentManager.js";
 import { TmuxService, workspaceHash, type ExecResult } from "../src/tmux/TmuxService.js";
 
 const roots: string[] = [];
+
+function configOf(yaml: string): TachyonConfig {
+  const parsed = parseConfig(yaml);
+  assert.deepEqual(parsed.errors, []);
+  assert.ok(parsed.config);
+  return parsed.config;
+}
 
 function workspace(marker: string, configured = true): { root: string; config: TachyonConfig } {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-guidance-dogfood-"));
@@ -26,10 +36,7 @@ function workspace(marker: string, configured = true): { root: string; config: T
       : []),
     "",
   ].join("\n");
-  const parsed = parseConfig(yaml);
-  assert.deepEqual(parsed.errors, []);
-  assert.ok(parsed.config);
-  return { root, config: parsed.config };
+  return { root, config: configOf(yaml) };
 }
 
 function envFromArgs(args: string[]): Record<string, string> {
@@ -43,10 +50,15 @@ function envFromArgs(args: string[]): Record<string, string> {
   return env;
 }
 
+function sanitizedEvidence(value: string): string {
+  return roots.reduce((current, root) => current.replaceAll(root, "<workspace>"), value);
+}
+
 async function captureStartup(
   root: string,
   config: TachyonConfig,
-  agent: "worker" | "hermes",
+  agent: string,
+  options?: SpawnOptions,
 ): Promise<{ cmd: string; env: Record<string, string> }> {
   const sessions = new Set<string>();
   let launch: string[] | undefined;
@@ -75,7 +87,7 @@ async function captureStartup(
     getConfig: () => config,
     getMaxAgents: () => 8,
   });
-  await manager.spawn(agent);
+  await manager.spawn(agent, options);
   assert.ok(launch, `AgentManager did not create a session for ${agent}`);
   const args = launch as string[];
   return { cmd: args.at(-1) ?? "", env: envFromArgs(args) };
@@ -113,6 +125,69 @@ try {
   assert.ok(hermesStartup.env.HERMES_TUI_QUERY?.includes("GUIDANCE_A"));
   assert.ok(hermesStartup.env.HERMES_TUI_QUERY?.includes("── TACHYON PRIMER ──"));
 
+  // SDD 411 — a guidance-only body that crosses the threshold is context, not a delegation.
+  const longGuidance = workspace(`LONG_GUIDANCE_${"g".repeat(5_000)}`);
+  const longCodex = await captureStartup(longGuidance.root, longGuidance.config, "worker");
+  const longCodexFile = briefFilePath(longGuidance.root, "worker");
+  assert.ok(longCodex.cmd.includes("Your full startup brief is long"));
+  assert.ok(longCodex.cmd.includes("project guidance (1 source)"));
+  assert.ok(longCodex.cmd.includes("task contract (absent)"));
+  assert.ok(longCodex.cmd.includes("Task objective: absent"));
+  assert.ok(!longCodex.cmd.includes("LONG_GUIDANCE_"));
+  assert.ok(fs.readFileSync(longCodexFile, "utf8").includes("Task: absent"));
+  assert.ok(fs.readFileSync(longCodexFile, "utf8").includes("LONG_GUIDANCE_"));
+
+  const longHermes = await captureStartup(longGuidance.root, longGuidance.config, "hermes");
+  assert.equal(longHermes.cmd, "hermes");
+  assert.ok(longHermes.env.HERMES_TUI_QUERY?.includes("Your full startup brief is long"));
+  assert.ok(longHermes.env.HERMES_TUI_QUERY?.includes("task contract (absent)"));
+
+  const startupBeforeReanchor = fs.readFileSync(longCodexFile, "utf8");
+  const reanchorBody = `REANCHOR_GUIDANCE_${"r".repeat(5_000)}`;
+  const reanchorPointer = deliverableBody(longGuidance.root, "worker", reanchorBody, "reanchor");
+  const reanchorFile = briefFilePath(longGuidance.root, "worker", "reanchor");
+  assert.ok(reanchorPointer.includes("Your full re-anchor context is long"));
+  assert.ok(reanchorPointer.includes(reanchorFile));
+  assert.equal(fs.readFileSync(reanchorFile, "utf8"), reanchorBody);
+  assert.equal(fs.readFileSync(longCodexFile, "utf8"), startupBeforeReanchor);
+
+  const captureContract = async (
+    name: string,
+    contract: SpawnContract,
+    completion: "DELIVERABLE" | "DONE_WHEN",
+  ): Promise<string> => {
+    const brief = composeSpawnContractBrief(name, contract, undefined, "coordinator");
+    const paddedBrief = `${brief}\n\nEVIDENCE_PADDING:${"p".repeat(5_000)}`;
+    const startup = await captureStartup(unconfigured.root, unconfigured.config, name, {
+      cmd: "codex",
+      taskBrief: paddedBrief,
+      contract,
+      parent: "coordinator",
+    });
+    const stored = fs.readFileSync(briefFilePath(unconfigured.root, name), "utf8");
+    assert.ok(startup.cmd.includes(`task contract (${completion})`));
+    assert.ok(stored.includes(`Task: contract (${completion})`));
+    assert.ok(stored.includes(brief));
+    return startup.cmd;
+  };
+  const deliverablePointer = await captureContract("deliverable-child", {
+    task: "Produce a startup-brief artifact",
+    context: "The dogfood exercises typed completion metadata",
+    constraints: "Preserve the rendered task bytes",
+    deliverable: "A captured long startup file",
+  }, "DELIVERABLE");
+  const donePointer = await captureContract("done-child", {
+    task: "Verify the startup-brief artifact",
+    context: "The dogfood exercises typed completion metadata",
+    constraints: "Preserve the rendered task bytes",
+    doneWhen: "The long startup pointer reports DONE_WHEN",
+  }, "DONE_WHEN");
+
+  const resumeConfig = configOf("agents:\n  resumed:\n    cmd: codex resume existing-session\n");
+  const resumed = await captureStartup(unconfigured.root, resumeConfig, "resumed");
+  assert.equal(resumed.cmd, "codex resume existing-session");
+  assert.deepEqual(resumed.env, { TACHYON_AGENT_NAME: "resumed" });
+
   const wrapped = wrapWithPrimer(aBlock, { agentName: "worker", parent: "coordinator" });
   assert.ok(wrapped.indexOf("── END PRIMER ──") < wrapped.indexOf("GUIDANCE_A"));
   assert.ok(wrapped.indexOf("GUIDANCE_A") < wrapped.indexOf("── BEFORE FINISHING ──"));
@@ -132,7 +207,20 @@ try {
     /docs\/agent\.md/,
   );
 
-  console.log("project-guidance dogfood: isolated, current, provenance-labelled, and protocol-only by default");
+  const storedLongCodex = fs.readFileSync(longCodexFile, "utf8");
+  const inventoryEnd = storedLongCodex.indexOf("── END STARTUP BRIEF CONTENTS ──");
+  assert.ok(inventoryEnd > 0);
+  const inventory = storedLongCodex.slice(
+    0,
+    inventoryEnd + "── END STARTUP BRIEF CONTENTS ──".length,
+  );
+  console.log("[codex positional startup]\n" + sanitizedEvidence(longCodex.cmd));
+  console.log("[hermes TUI startup]\n" + sanitizedEvidence(longHermes.env.HERMES_TUI_QUERY ?? ""));
+  console.log("[DELIVERABLE pointer]\n" + sanitizedEvidence(deliverablePointer));
+  console.log("[DONE_WHEN pointer]\n" + sanitizedEvidence(donePointer));
+  console.log("[re-anchor pointer]\n" + sanitizedEvidence(reanchorPointer));
+  console.log("[startup file inventory]\n" + inventory);
+  console.log("startup-brief dogfood: guidance-only and structured contracts are typed, bounded, lossless, and runtime-native");
 } finally {
   for (const root of roots) fs.rmSync(root, { recursive: true, force: true });
 }

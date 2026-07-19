@@ -2575,7 +2575,7 @@ export class Workspace {
     }
     // Specs 363/383 — re-anchor uses the same ownership ordering as startup: Tachyon protocol,
     // project-owned body, then the closing protocol reminder. Long bodies go to a purpose-specific
-    // file so the original spawn contract remains intact and tmux receives only a compact pointer.
+    // file so the original startup brief remains intact and tmux receives only a compact pointer.
     const body = [projectGuidance, roleReminder(def?.role, relPath)]
       .filter((part): part is string => !!part?.trim())
       .join("\n\n");

@@ -38,7 +38,7 @@ Reduce `src/bridge/primer.ts` to protocol plus explicitly configured verificatio
 - **Descriptor-based, all-or-nothing reads** — canonical containment, no-follow leaf opens, regular-file checks, bounded reads, strict UTF-8 and NUL rejection happen for every file before rendering. Rejected best-effort omission because a configured policy silently disappearing is more dangerous than a visible launch error.
 - **No shared cache** — read at each spawn/restart/re-anchor so changes are current and workspace ownership is structural.
 - **Separate renderer and delimiters** — project content never enters the global primer renderer; provenance markers surround but do not rewrite the file content.
-- **Project content before brief diversion** — the combined project body passes through `deliverableBody()` before primer framing, preventing the 4 KB body from bypassing the measured tmux safety mechanism. Re-anchor uses its own brief purpose/path so a long re-anchor never overwrites the durable spawn contract.
+- **Project content before brief diversion** — the combined project body passes through `deliverableBody()` before primer framing, preventing the 4 KB body from bypassing the measured tmux safety mechanism. Re-anchor uses its own brief purpose/path so a long re-anchor never overwrites the durable startup brief (called “spawn contract” when this historical plan shipped; terminology superseded by SDD 411).
 - **Protocol precedence is explicit** — system/user authority and the active task contract remain authoritative for their scopes; Tachyon's primer owns orchestration protocol; project guidance owns repository conventions and cannot override protocol.
 - **Configured verification is an explicit project fact** — exact configured commands are shown with workspace-config provenance and may be repeated as an action reminder, but the primer adds no invented fallback, `always/full` cadence, or tree-clean policy.
 - **No-spawner means no doorbell target** — rejected the literal `<your spawner>` placeholder because it produces an invalid tool call.
@@ -50,7 +50,7 @@ Reduce `src/bridge/primer.ts` to protocol plus explicitly configured verificatio
 - `src/config/tachyon.schema.json` — published closed-object schema.
 - `src/bridge/primer.ts` — protocol-only renderer and configured-verify provenance.
 - `src/agents/AgentManager.ts` — source-workspace load, body composition and pre-tmux failure ordering for spawn/restart.
-- `src/agents/briefFile.ts` — purpose-specific long-brief paths so re-anchor cannot overwrite a spawn contract.
+- `src/agents/briefFile.ts` — purpose-specific long-brief paths so re-anchor cannot overwrite a startup brief.
 - `src/resume/adapters.ts` — align `env` option-operand runtime detection so wrapped self-managed commands remain transcript-only.
 - `src/workspace/Workspace.ts` — shared project-guidance composition for re-anchor before pane mutation.
 - `src/bridge/approvalRequest.ts` — remove the stale comment that treated a primer policy as l10n authority.

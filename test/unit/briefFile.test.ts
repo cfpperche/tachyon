@@ -24,7 +24,7 @@ describe("purpose-specific brief files", () => {
     for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
   });
 
-  it("keeps a long re-anchor from overwriting the spawn contract", () => {
+  it("keeps a long re-anchor from overwriting the startup brief", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-brief-purpose-"));
     roots.push(root);
     const spawnBody = `spawn:${"s".repeat(BRIEF_FILE_THRESHOLD)}`;

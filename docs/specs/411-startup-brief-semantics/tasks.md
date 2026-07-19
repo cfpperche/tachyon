@@ -14,17 +14,17 @@ _Generated from `plan.md` on 2026-07-19. Work top-to-bottom. Check boxes as task
 - [x] Extend `briefFile.ts` with optional startup semantics while preserving generic/re-anchor callers, byte thresholds, inline fallback and atomic replacement.
 - [x] Add stale-residue tests proving a later inline launch does not point to or replace an old file and that failed replacement preserves the prior file/session.
 - [x] Confirm spawn/re-anchor namespaces and explicit resume/unsupported-adapter non-injection remain unchanged.
-- [ ] Audit and update aggregate-facing comments, errors and fixtures without renaming the public structured `SpawnContract` API.
-- [ ] Add `docs/architecture/startup-briefs.md` and update runtime parity with ownership, composition, transport and freshness rules.
-- [ ] Extend project-guidance dogfood across long guidance-only Codex argv, Hermes env, structured completion kinds, re-anchor namespace and resume behavior supported by the capture harness.
-- [ ] Record per-slice decisions/deviations and sanitized terminal/file evidence in `notes.md`.
+- [x] Audit and update aggregate-facing comments, errors and fixtures without renaming the public structured `SpawnContract` API.
+- [x] Add `docs/architecture/startup-briefs.md` and update runtime parity with ownership, composition, transport and freshness rules.
+- [x] Extend project-guidance dogfood across long guidance-only Codex argv, Hermes env, structured completion kinds, re-anchor namespace and resume behavior supported by the capture harness.
+- [x] Record per-slice decisions/deviations and sanitized terminal/file evidence in `notes.md`.
 - [ ] Commit each reviewable slice with its Mission Control task ID using explicit path scopes.
 
 ## Verification
 
-- [ ] Focused prompt/brief/AgentManager tests pass with no truncation or threshold relaxation.
+- [x] Focused prompt/brief/AgentManager tests pass with no truncation or threshold relaxation.
 - [ ] PI-001 passes and an independent reviewer records mechanical equivalence of any evidence edit.
-- [ ] Typecheck passes.
+- [x] Typecheck passes.
 - [ ] Configured full verification passes; any pre-existing failure remains explicitly unverified rather than described as green.
 - [ ] The SDD duplicate-ID check and closure audit report no blocking findings when status becomes shipped.
 
@@ -58,8 +58,8 @@ _Generated from `plan.md` on 2026-07-19. Work top-to-bottom. Check boxes as task
 
 ## Visual QA
 
-- [ ] Evidence: sanitized pane/env and startup-file captures recorded under the spec notes or linked review artifact.
-- [ ] Verdict: primer → summary/pointer → before-finishing is readable in the real terminal/TUI delivery channels after any fixes prompted by inspection.
+- [x] Evidence: sanitized pane/env and startup-file captures recorded under the spec notes or linked review artifact.
+- [x] Verdict: primer → summary/pointer → before-finishing is readable in the real terminal/TUI delivery channels after any fixes prompted by inspection.
 
 ## Cookbook
 

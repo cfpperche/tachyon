@@ -1,6 +1,6 @@
 # Runtime capability parity (living document)
 
-**Status:** living · **Owner:** Tachyon maintainers · **Last verified:** 2026-07-18 (Pi Bridge, continuity, private-home isolation and exact harness resources)
+**Status:** living · **Owner:** Tachyon maintainers · **Last verified:** 2026-07-19 (startup-brief semantic envelope across positional and Hermes TUI channels)
 **Seams (code of record):** `src/resume/adapters.ts`, `src/runtime/runtimeProfile.ts`, `src/agents/AgentManager.ts` (`withRuntimeBridge`, `effectiveCmd`), `src/harness/HarnessManager.ts`, `src/activity/*Normalizer.ts`, `src/attention/patterns.ts`, `src/config/loadConfig.ts` (`INSTRUCTION_ARG`)
 
 This document is the **source of truth** for how Tachyon treats AI CLIs as first-class runtimes.  
@@ -35,7 +35,7 @@ What “first-class” means in Tachyon (ordered for reading, not strict priorit
 
 | # | Capability | What “✓” means |
 |---|------------|----------------|
-| 1 | **Brief / instructions** | On **fresh spawn/restart**, the role/task brief is delivered via the runtime’s native channel listed in `INSTRUCTION_ARG` (or an equally automatic pane path). Metadata-only storage does **not** count. |
+| 1 | **Brief / instructions** | On **fresh spawn/restart**, the [startup brief](../architecture/startup-briefs.md) is delivered via the runtime’s native channel listed in `INSTRUCTION_ARG` (or an equally automatic pane path). A task contract is an optional layer; metadata-only storage does **not** count. |
 | 2 | **Bridge MCP** | Every Tachyon-spawned agent reaches the workspace Bridge without committing secrets; injection on spawn/restart/resume/fork (native MCP harnesses fold it into private config; Pi always uses its immutable additive extension through `withRuntimeBridge`). |
 | 3 | **Attention** | Monitor classifies idle/working/needs-input/throttle from the pane. Shared global patterns apply to all runtimes; **extra** credit when the runtime has composer-region and/or rate-limit **identity** in `runtimeProfile` / `RateLimitRuntime`. |
 | 4 | **Resume** | Adapter can rebuild the CLI command to continue a prior conversation (`resumeCommand` / mint id). |
@@ -268,6 +268,7 @@ Document those in host-action / security docs; mention here only to avoid mis-sc
 |------|--------|
 | 2026-07-18 | **Pi OAuth interim safety (SDD 408):** at most one live Pi process per workspace across Spawn/Resume/Restart/Fork until upstream shared-auth support ships; 394 unit tests + human dogfood `v-591729`. |
 | 2026-07-18 | **Pi exact harness resources (SDD 406):** workspace-local extensions/skills/prompts/themes/package directories are no-follow snapshotted per agent and loaded through Pi's `--no-*` + explicit CLI paths; remote installs and automatic ambient/project resource discovery are excluded in harness mode. |
+| 2026-07-19 | **Startup-brief semantics (SDD 411):** long aggregate onboarding is labelled `startup brief`, carries a bounded typed layer inventory, distinguishes missing/unstructured/`DELIVERABLE`/`DONE_WHEN` task state, and retains pointer-only freshness semantics across positional and Hermes TUI delivery. |
 | 2026-07-16 | **Hermes contract hardening:** startup brief forces modern TUI and rejects explicit classic CLI; harness `inherit:none` strips ambient MCPs; OAuth file is optional; unsupported hooks fail closed; resume/live Activity follows actual message activity; SQLite ingest preserves timestamps/model and bounds backfill. |
 | 2026-07-13 | **spec 378 live-model-sidebar:** claude/codex/grok now latch a transcript-observed `{model, effort?}` (claude `message.model` filtering sidechain/synthetic; codex `turn_context.payload`; grok `assistant.model_id`, un-overloaded off `runtimeVersion` alongside opencode). `RuntimeOpsSnapshotService` projects a boundary-aware observed-vs-declared model fact + divergence; the sidebar row shows it with textual provenance (`· declared`/`· stale`/`≠ declared`). RuntimeOps panel's own Model column stays declared-only (follow-up, see open gaps). Interim honesty: pre-existing durable logs show `declared`/`profile` until the next model-bearing record is appended (no backfill — additive-only log format, no `schemaVersion` bump). Codex per-turn latency: a mid-turn `/model` switch shows the prior model until the next `turn_context` record lands (`observedAt` makes this honest, not hidden). |
 | 2026-07-14 | **Hermes Activity Cap 8:** `HermesStorageReader` + `hermesNormalizer` over `$HERMES_HOME/state.db` (unit hermesNormalizer/hermesStorageReader). Secondary Activity mark → ✓. |

@@ -89,7 +89,7 @@ export function previewDeliverableBody(
 /**
  * Returns `body` unchanged when its UTF-8 encoding is at or under BRIEF_FILE_THRESHOLD (byte-identical short-brief
  * delivery). Past the threshold, writes the full body to the agent's brief file and returns a
- * short pointer to embed in the pane instead — the file carries the contract in full, the pane
+ * short pointer to embed in the pane instead — the file carries the startup/re-anchor body in full, the pane
  * payload stays small. Best-effort: a write failure falls back to inlining the full body while it
  * remains below SAFE_INLINE_CEILING; above that, fail at the file-write boundary with the original
  * fs error instead of sending an oversized body onward to tmux's less actionable hard reject.
@@ -112,7 +112,7 @@ export function deliverableBody(
   let temporaryFile: string | undefined;
   try {
     fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
-    // Preserve an already-delivered contract if this replacement write fails. The temporary lives
+    // Preserve an already-delivered brief artifact if this replacement write fails. The temporary lives
     // beside the destination so rename is atomic on the same filesystem; `wx` also prevents an
     // improbable pid/random collision from overwriting another writer's file.
     temporaryFile = `${file}.${process.pid}.${crypto.randomBytes(8).toString("hex")}.tmp`;

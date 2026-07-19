@@ -48,3 +48,68 @@ None.
   PI-001 fixture issue: this repository's ignored local `tachyon.yml` is absent from a fresh linked
   worktree, so the invariant test cannot open it. Spec 408 records the same condition; no manual
   symlink/copy is used as verification evidence.
+
+## Implementation slices
+
+- `0a1017b6 feat: make startup briefs self-describing (t-f5cb0d, t-fd63f7)` — typed composition,
+  bounded manifest/inventory, AgentManager delivery, freshness/failure behavior and focused tests.
+- Documentation/dogfood slice — aggregate-facing terminology audit, operator architecture,
+  runtime-parity link, representative Codex/Hermes captures, completion discriminators,
+  re-anchor isolation and explicit-resume non-injection.
+
+## Dogfood log
+
+- 2026-07-19 — `npm exec -- vite-node scripts/dogfood-project-guidance.mts` — PASS. The script
+  exercises the real `AgentManager -> runtime adapter -> TmuxService argv/env` boundary for long
+  guidance-only Codex positional and Hermes TUI delivery, structured `DELIVERABLE` and `DONE_WHEN`
+  contracts, the separate re-anchor path, and a transcript-owning Codex resume command. It prints
+  only synthetic, root-redacted bounded evidence and never the long body.
+
+## Sanitized terminal/TUI evidence
+
+The dogfood's generated root is replaced with `<workspace>`. The Codex positional command and Hermes
+`HERMES_TUI_QUERY` both rendered this order:
+
+```text
+── TACHYON PRIMER ──
+...
+── END PRIMER ──
+
+Your full startup brief is long (...) — written in full to <workspace>/.tachyon/briefs/spawn/worker.md.
+Contains: project guidance (1 source); soul (absent); role (absent); persistent instructions (absent); Bridge guidance (absent); task contract (absent).
+Task objective: absent — this launch supplied no task brief.
+Read it before starting; this pane carries only the primer, this summary, the pointer, and the before-finishing reminder.
+
+── BEFORE FINISHING ──
+── END BEFORE FINISHING ──
+```
+
+The structured child captures differed only in bounded facts: `task contract (DELIVERABLE)` versus
+`task contract (DONE_WHEN)`. The long re-anchor capture pointed to
+`<workspace>/.tachyon/briefs/reanchor/worker.md` and left the startup file byte-identical. The
+explicit `codex resume existing-session` capture received no startup body or Hermes query; only its
+existing `TACHYON_AGENT_NAME` environment fact remained.
+
+The referenced startup file began with this exact inventory before the unchanged long body:
+
+```text
+── STARTUP BRIEF CONTENTS ──
+Project guidance: 1 source
+Soul: absent
+Role: absent
+Persistent instructions: absent
+Bridge guidance: absent
+Task: absent
+── END STARTUP BRIEF CONTENTS ──
+```
+
+Visual verdict: the primer, compact semantic summary, pointer and before-finishing reminder are
+legible and correctly ordered in both supported TUI delivery channels; neither the bounded pane nor
+inventory exposes the synthetic long guidance text.
+
+## Candidate verification
+
+- Focused startup/prompt/guidance/Workspace suite — PASS, 10 files / 516 tests.
+- `npm run typecheck` — PASS after the dogfood/documentation slice.
+- Product Invariant and configured full results remain pending the final candidate run. The
+  independent PI-001 equivalence review also remains intentionally open.

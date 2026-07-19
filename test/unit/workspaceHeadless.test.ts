@@ -344,7 +344,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     }
   });
 
-  it("re-anchor transports configured project guidance without overwriting the spawn contract", async () => {
+  it("re-anchor transports configured project guidance without overwriting the startup brief", async () => {
     const root = mkdir();
     fs.writeFileSync(path.join(root, "guidance.md"), `REANCHOR_GUIDANCE_${"g".repeat(5_000)}`, "utf8");
     fs.writeFileSync(
