@@ -43,7 +43,8 @@ VS Code theme (--vscode-*)
 | Status | `--ds-ok`, `--ds-warn`, `--ds-err`, `--ds-info` | Badges |
 | Radius | **`--ds-radius` only** (6px) | One radius; shadcn `--radius` must bridge to this |
 | Type | `--ds-body`, `--tachyon-font-mono` | Default UI is mono-dense (sidebar/Control density) |
-| Space | `--ds-1` … `--ds-4` | Gaps/padding scale |
+| Space | `--ds-1` … `--ds-6`, **page shell** `--ds-page-pad-x/y/bottom`, `--ds-page-chrome-*`, `--ds-border-width` | Gaps; **editor pages must use page shell tokens** — not ad-hoc `12px 16px` |
+| Border thickness | **`--ds-border-width` (1px)** | Cards, chrome rules, hairlines — no `2px` chrome borders unless focus ring |
 
 Disabled opacity: prefer `--ds-disabled-opacity` when present. Derived states may `calc()` off that base token; bare new numeric opacities (0.35/0.45/0.5) must not appear in surface CSS.
 
@@ -65,7 +66,7 @@ Page title size: **16px** via `.ds-page-chrome-title` — do not invent 20px pan
 | Text / textarea / native select | `Input`, `Textarea`, `Select`, `FieldRow` |
 | Tabs | `Tabs` |
 | Chip | `Chip` (non-status labels only) |
-| Page title + hint + actions | **`PageChrome`** |
+| Page title + hint + actions | **`PageChrome`** — **no title icon** (Fleet). Icons only on action buttons. |
 | Dense list (Control cards) | **`ListRow`** |
 | Sidebar-density row (name + status dot + hover actions) | **`DenseRow`** (`.row` DOM; surface CSS) |
 | Empty / loading | **`EmptyState`** |
@@ -79,9 +80,33 @@ Those kit components always add `.ds-btn` (padding, border, flex gap) and **brea
 
 ### Product patterns (not one-off CSS)
 
-- **PageChrome** — every full page or Control tab body that has a **title + optional hint + optional actions** row. Pure canvas (no title row) is the only exception.
+- **PageChrome** — every full page or Control tab body that has a **title + optional hint + optional actions** row. Pure canvas (no title row) is the only exception. **Title has no codicon** — matches Fleet. The `icon` prop is deprecated/ignored.
 - **ListRow** — idle / hover / selected / current; no hard-coded row hover colors in surface CSS.
 - **EmptyState** — icon + message (+ optional action).
+
+### Editor page shell (Control + panels — not sidebar)
+
+Reference: **Fleet** tab.
+
+| Element | Contract |
+|---------|----------|
+| Outer pad | `var(--ds-page-pad-y) var(--ds-page-pad-x) var(--ds-page-pad-bottom)` (or class `.ds-page`) |
+| Header | `PageChrome`: title 16px + hint 11px muted + actions |
+| Header gap/margin | `--ds-page-chrome-gap`, `--ds-page-chrome-margin-bottom` |
+| Border width | `--ds-border-width` only |
+| Title icon | **Forbidden** |
+
+Surface CSS must not invent alternate header padding (`20px`, `8px 12px`, …) for the page chrome.
+
+### Visual gate (before package / done on UI)
+
+Does **not** block improvements — blocks ship without looking.
+
+1. Sidebar: `.act` + `⋯` menu codicons OK (native button+Icon).
+2. Touched editor page: Fleet-like header (no title icon), pad/border match neighbors.
+3. FAIL → fix same trail; do not pack.
+
+Agents may **extend** this checklist when adding surfaces; they must not **delete** the proof step.
 
 ---
 

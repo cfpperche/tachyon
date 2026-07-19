@@ -262,7 +262,6 @@ export function App(p: CockpitAppProps) {
       <>
         <PageChrome
           title={s.overviewTitle}
-          icon="dashboard"
           hint={s.overviewHint}
           actions={
             <div class="ck-overview-actions">

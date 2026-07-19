@@ -3,7 +3,7 @@
    region, so it gets its own small, `sf-`-prefixed vocabulary over the same --ds-* tokens). */
 body { padding: 0; background: var(--vscode-editor-background); }
 .sf-shell { min-height: 100vh; display: flex; flex-direction: column; }
-.sf-header { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; justify-content: space-between; gap: var(--ds-3); padding: var(--ds-3) var(--ds-4); border-bottom: 1px solid var(--ds-border); background: var(--vscode-editor-background); }
+.sf-header { position: sticky; top: 0; z-index: 3; display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ds-page-chrome-gap); padding: var(--ds-page-pad-y) var(--ds-page-pad-x); border-bottom: var(--ds-border-width) solid var(--ds-border); background: var(--vscode-editor-background); }
 .sf-title-group { display: flex; align-items: center; gap: var(--ds-2); min-width: 0; }
 .sf-title { font: var(--tachyon-weight-semibold) var(--ds-title) / 1.3 var(--tachyon-font-mono); color: var(--vscode-editor-foreground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sf-dirty-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ds-warn); flex: none; }
@@ -14,7 +14,7 @@ body { padding: 0; background: var(--vscode-editor-background); }
 .sf-errors { padding: var(--ds-2) var(--ds-4); display: grid; gap: var(--ds-1); }
 .sf-error-blocking { color: var(--ds-err); font-size: var(--ds-small); }
 .sf-error-nonblocking { color: var(--ds-warn); font-size: var(--ds-small); }
-.sf-body { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: var(--ds-4); max-width: 1180px; width: 100%; margin: 0 auto; padding: var(--ds-4); box-sizing: border-box; }
+.sf-body { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: var(--ds-4); max-width: 1180px; width: 100%; margin: 0 auto; padding: var(--ds-page-pad-y) var(--ds-page-pad-x) var(--ds-page-pad-bottom); box-sizing: border-box; }
 /* spec 350 Amendment 4 — region-aware: fields spans the full width as a top band so richDoc + preview split
    into the two columns below when a studio uses all three regions together (Task Studio). A no-op for a
    single-region studio (Pipeline/Agent fixture's `fields`-only layout: spanning 1/-1 with nothing else in the

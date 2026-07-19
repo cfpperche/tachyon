@@ -155,7 +155,6 @@ export function App({ vm, error, dispatch }: { vm?: ValidationsViewModel; error?
     <main class="validations-main">
       <PageChrome
         title="Validations"
-        icon="checklist"
         hint={vm.folder}
         actions={<IconButton name="refresh" title="Refresh validations" onClick={() => dispatch.refresh()} />}
       />

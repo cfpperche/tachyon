@@ -531,7 +531,6 @@ export function App({ vm, consent, busy, toast, dispatch }: { vm?: PluginsViewMo
           <PageChrome
             class="plugins-chrome"
             title="Plugins"
-            icon="extensions"
             hint={<span>Browse, install &amp; manage plugins · <span class="ws-rt">this workspace runs {wsRuntimes}</span></span>}
             actions={
               <div class="ds-actions">

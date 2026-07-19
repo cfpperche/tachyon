@@ -1,6 +1,6 @@
 /* spec 279 — Inspector view styles. Density aligned for Control embed (no max-width column). */
 .insp-root {
-  padding: 12px 16px 16px;
+  padding: var(--ds-page-pad-y) var(--ds-page-pad-x) var(--ds-page-pad-bottom);
   width: 100%;
   max-width: none;
   margin: 0;
@@ -9,9 +9,7 @@
   font-size: var(--ds-body, 13px);
   color: var(--ds-fg);
 }
-.insp-root .ds-page-chrome {
-  margin-bottom: var(--ds-2);
-}
+.insp-root .ds-page-chrome { /* use canonical PageChrome metrics */ }
 .insp-toolbar {
   display: flex;
   flex-wrap: wrap;

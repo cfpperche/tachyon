@@ -1,7 +1,7 @@
 /* Engine/Bridge Control Inspector — sibling of tmux Server Inspector */
 
 .ci-root {
-  padding: 12px 16px 24px;
+  padding: var(--ds-page-pad-y) var(--ds-page-pad-x) var(--ds-page-pad-bottom);
   max-width: 920px;
   margin: 0 auto;
   font-size: 13px;

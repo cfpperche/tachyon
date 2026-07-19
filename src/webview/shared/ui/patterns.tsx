@@ -4,6 +4,7 @@ import { Icon } from "./Icon";
 
 export interface PageChromeProps {
   title: ComponentChildren;
+  /** @deprecated Editor pages must not use title icons (Fleet chrome). Ignored. */
   icon?: string;
   hint?: ComponentChildren;
   actions?: ComponentChildren;
@@ -11,14 +12,11 @@ export interface PageChromeProps {
 }
 
 /** Shared page header for webviews and Control tabs. */
-export function PageChrome({ title, icon, hint, actions, class: cls }: PageChromeProps) {
+export function PageChrome({ title, icon: _icon, hint, actions, class: cls }: PageChromeProps) {
   return (
     <div class={cx("ds-page-chrome", cls)}>
       <div class="ds-page-chrome-text">
-        <h1 class="ds-page-chrome-title">
-          {icon ? <Icon name={icon} /> : null}
-          {title}
-        </h1>
+        <h1 class="ds-page-chrome-title">{title}</h1>
         {hint != null && hint !== false ? <p class="ds-page-chrome-hint">{hint}</p> : null}
       </div>
       {actions ? <div class="ds-page-chrome-actions">{actions}</div> : null}

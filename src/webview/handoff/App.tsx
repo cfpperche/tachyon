@@ -146,7 +146,6 @@ export function App({ vm, dispatch }: { vm?: HandoffViewModel; dispatch: Handoff
       <PageChrome
         class="handoff-chrome"
         title={`Project Handoff — ${vm.folder}`}
-        icon="book"
         actions={
           <span class="actions">
             <Badge tone={badgeTone} title={`Staleness: ${badge.label}`}>

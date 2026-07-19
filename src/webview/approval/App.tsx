@@ -78,7 +78,6 @@ export function App({ vm, error, dispatch }: { vm?: ApprovalViewModel; error?: s
     <div class="approval-root">
       <PageChrome
         title="Approvals"
-        icon="pass"
         hint={vm.folder}
         actions={<IconButton name="refresh" title="Refresh approvals" onClick={() => dispatch.refresh()} />}
       />

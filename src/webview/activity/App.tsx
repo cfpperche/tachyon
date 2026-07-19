@@ -374,7 +374,6 @@ export function App({ vm, dispatch, images, query, setQuery }: {
       <PageChrome
         class="activity-chrome"
         title="Activity"
-        icon="pulse"
         actions={
           <div class="activity-head-tools">
             <span class="stat" title="agent messages"><span class="codicon codicon-comment" /> {s.messages}</span>

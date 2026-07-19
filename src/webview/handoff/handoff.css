@@ -6,9 +6,13 @@
   /* Header via PageChrome — sticky strip + actions row */
   .handoff-chrome.ds-page-chrome,
   .ds-page-chrome.handoff-chrome {
-    position: sticky; top: 0; z-index: 2; margin: 0; padding: var(--ds-3) var(--ds-4);
-    background: var(--vscode-editor-background); border-bottom: 1px solid var(--ds-border);
-    align-items: center;
+    position: sticky; top: 0; z-index: 2;
+    margin: 0 0 var(--ds-page-chrome-margin-bottom);
+    padding: var(--ds-page-pad-y) var(--ds-page-pad-x);
+    background: var(--vscode-editor-background);
+    border-bottom: var(--ds-border-width) solid var(--ds-border);
+    align-items: flex-start;
+    box-sizing: border-box;
   }
   .handoff-chrome .actions { display: inline-flex; align-items: center; gap: var(--ds-2); flex-wrap: wrap; }
   .handoff-chrome .ds-btn .codicon { font-size: 13px; }
@@ -28,7 +32,7 @@
   .distill-actions .ds-dim { margin-right: auto; font-size: var(--ds-small); }
 
   /* Body */
-  .body, .notes { max-width: 880px; margin: 0 auto; padding: var(--ds-4) var(--ds-4) 0; }
+  .body, .notes { max-width: 880px; margin: 0 auto; padding: 0 var(--ds-page-pad-x) var(--ds-page-pad-bottom); }
   .meta { color: var(--ds-muted); font-size: var(--ds-small); display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: var(--ds-3); }
 
   /* Cold-start empty state — the Open button reads as primary in this context */

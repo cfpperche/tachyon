@@ -3,7 +3,7 @@
   container-type: inline-size;
   min-width: 0;
   max-width: 100%;
-  padding: var(--ds-3) var(--ds-4) var(--ds-5);
+  padding: var(--ds-page-pad-y) var(--ds-page-pad-x) var(--ds-page-pad-bottom);
 }
 
 .runtime-ops-summary {

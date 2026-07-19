@@ -89,6 +89,15 @@
      stack on a predictable baseline. Apply "internal ≤ external" (Gestalt proximity): the gap WITHIN a group
      (label→input, title→subtitle) stays smaller than the gap BETWEEN groups (field→field, section→section). */
   --ds-1: 4px; --ds-2: 8px; --ds-3: 12px; --ds-4: 16px; --ds-5: 24px; --ds-6: 32px;
+  /* Editor page shell (Control tabs + full panels) — one pad/border contract (Fleet reference). */
+  /* Fleet/Control body reference: 12 top, 16 x, 16–20 bottom */
+  --ds-page-pad-x: var(--ds-4);
+  --ds-page-pad-y: var(--ds-3);
+  --ds-page-pad-bottom: var(--ds-5);
+  --ds-page-chrome-gap: var(--ds-3);
+  --ds-page-chrome-margin-bottom: var(--ds-4);
+  --ds-page-chrome-actions-gap: var(--ds-2);
+  --ds-border-width: 1px;
   --ds-radius: 6px;
   --ds-icon-gap: 6px; /* spec 282 — the ONE canonical icon↔text gap for buttons/tabs/chips */
 }
@@ -141,7 +150,7 @@ a { color: var(--ds-link); }
 .ds-badge.info { color: var(--ds-info); border-color: color-mix(in srgb, var(--ds-info) 55%, transparent); }
 
 /* ── cards ── */
-.ds-card { background: var(--ds-card); border: 1px solid var(--ds-border); border-radius: 8px; padding: var(--ds-4); }
+.ds-card { background: var(--ds-card); border: var(--ds-border-width) solid var(--ds-border); border-radius: var(--ds-radius); padding: var(--ds-4); }
 
 /* ── tabs ── */
 .ds-tabs { display: flex; gap: var(--ds-1); border-bottom: 1px solid var(--ds-border); }
@@ -216,35 +225,47 @@ select:disabled { opacity: var(--ds-disabled-opacity); cursor: default; }
 }
 
 /* ── product patterns (STYLEGUIDE — PageChrome / ListRow / EmptyState) ── */
+/* Page shell: wrap editor bodies so pad is identical (Fleet reference). Sidebar must NOT use .ds-page. */
+.ds-page {
+  box-sizing: border-box;
+  padding: var(--ds-page-pad-y) var(--ds-page-pad-x) var(--ds-page-pad-bottom);
+  min-height: 100%;
+}
+/* Header: title + hint + actions — NO title icon. Border thickness = --ds-border-width everywhere. */
 .ds-page-chrome {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
-  gap: var(--ds-3);
-  margin-bottom: var(--ds-3);
+  gap: var(--ds-page-chrome-gap);
+  margin: 0 0 var(--ds-page-chrome-margin-bottom);
+  padding: 0;
+  border: 0;
+  border-bottom: var(--ds-border-width) solid transparent; /* reserve slot; surfaces opt into .ds-page-chrome--ruled */
+  box-sizing: border-box;
+}
+.ds-page-chrome--ruled {
+  border-bottom-color: var(--ds-border);
+  padding-bottom: var(--ds-3);
 }
 .ds-page-chrome-text {
   min-width: 0;
   flex: 1 1 auto;
 }
 .ds-page-chrome-title {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--ds-2);
+  display: block;
   margin: 0;
   font-size: 16px;
   font-weight: var(--tachyon-weight-semibold, 600);
   line-height: 1.25;
   color: var(--ds-fg);
 }
-.ds-page-chrome-title .codicon {
-  font-size: 16px;
-  line-height: 1;
-  color: var(--ds-muted);
+/* Title icons are forbidden on editor pages — hide if a legacy call still injects a codicon. */
+.ds-page-chrome-title > .codicon {
+  display: none !important;
 }
 .ds-page-chrome-hint {
-  margin: 4px 0 0;
+  margin: var(--ds-1) 0 0;
   font-size: 11px;
   line-height: 1.35;
   color: var(--ds-muted);
@@ -254,7 +275,7 @@ select:disabled { opacity: var(--ds-disabled-opacity); cursor: default; }
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: var(--ds-page-chrome-actions-gap);
   flex: 0 0 auto;
 }
 

@@ -106,7 +106,6 @@ export function App(p: ControlInspectorAppProps) {
       <PageChrome
         class="ci-chrome"
         title={s.title}
-        icon="debug-console"
         hint={s.subtitle}
         actions={
           <div class="ci-actions">

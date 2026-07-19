@@ -113,3 +113,9 @@ npx vitest run test/unit/webviewComponentKit.test.ts test/unit/uiPatterns.test.t
 - Control module pages use PageChrome
 - Approvals Approve/Deny use `Button`
 - Tests green
+
+
+## Editor page shell + spacing (t-0d3493)
+- PageChrome: no title icon; Fleet reference
+- Tokens: `--ds-page-pad-*`, `--ds-page-chrome-*`, `--ds-border-width`
+- Visual gate in STYLEGUIDE before package

@@ -313,7 +313,6 @@ export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastEr
         <PageChrome
           class="mc-page-chrome"
           title="Board"
-          icon="checklist"
           actions={
             <div class="mc-head-tools">
               <KitSelect

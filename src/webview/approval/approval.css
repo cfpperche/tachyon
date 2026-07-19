@@ -8,7 +8,7 @@
   box-sizing: border-box;
   max-width: 980px;
   margin: 0 auto;
-  padding: 20px;
+  padding: var(--ds-page-pad-y) var(--ds-page-pad-x) var(--ds-page-pad-bottom);
   min-height: 100%;
 }
 

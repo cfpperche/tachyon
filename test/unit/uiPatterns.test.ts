@@ -114,6 +114,19 @@ describe("shared UI product patterns (STYLEGUIDE)", () => {
     expect(radius).toMatch(/--radius:\s*var\(--ds-radius/);
   });
 
+  it("editor PageChrome has no title icon and page shell tokens exist", () => {
+    const patterns = readFileSync("src/webview/shared/ui/patterns.tsx", "utf8");
+    const chromeFn = patterns.slice(patterns.indexOf("export function PageChrome"), patterns.indexOf("export type ListRowState"));
+    expect(chromeFn).toContain("ds-page-chrome-title");
+    expect(chromeFn).not.toContain("<Icon");
+    const ds = readFileSync("src/webview/shared/design-system.css", "utf8");
+    expect(ds).toContain("--ds-page-pad-x");
+    expect(ds).toContain("--ds-border-width");
+    expect(ds).toContain(".ds-page-chrome-title > .codicon");
+    const rt = readFileSync("src/webview/runtime-ops/App.tsx", "utf8");
+    expect(rt).not.toMatch(/PageChrome[^>]*icon=/);
+  });
+
   it("sidebar Act/more-item stay native (no .ds-btn on density chrome)", () => {
     const sidebar = readFileSync("src/webview/sidebar/App.tsx", "utf8");
     expect(sidebar).toMatch(/const Act =[\s\S]*?<button class="act"/);

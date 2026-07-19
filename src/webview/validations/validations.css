@@ -1,6 +1,6 @@
 /* Validations — tokens from design-system (--ds-*), no standalone max-width column. */
 .validations-main {
-  padding: 12px 16px 16px;
+  padding: var(--ds-page-pad-y) var(--ds-page-pad-x) var(--ds-page-pad-bottom);
   width: 100%;
   max-width: none;
   margin: 0;

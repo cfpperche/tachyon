@@ -94,7 +94,6 @@ export function App(p: InspectorAppProps) {
     <div class="insp-root">
       <PageChrome
         title={s.title}
-        icon="server-process"
         hint={s.subtitle}
         actions={
           <div class="insp-toolbar">
