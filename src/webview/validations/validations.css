@@ -1,4 +1,13 @@
-/* Validations — tokens from design-system (--ds-*), no standalone max-width column. */
+/* Validations — tokens from design-system (--ds-*), no standalone max-width column.
+ *
+ * t-dc9f64: every rule below the root is scoped under `.validations-main`, the way approval.css
+ * scopes under `.approval-root`. Control co-loads mission-control.css, which declares UNSCOPED
+ * `.validation-list { display: flex }` and `.validation-summary { white-space: nowrap }` for its own
+ * board strip. Those class names collide with this surface: at equal specificity the winner is decided
+ * by stylesheet order alone, and losing that coin flip laid the pending cards out in horizontal
+ * columns that clipped at the embed frame's right edge. Root-scoping makes this surface win on
+ * specificity instead of load order.
+ */
 .validations-main {
   padding: var(--ds-page-pad-y) var(--ds-page-pad-x) var(--ds-page-pad-bottom);
   width: 100%;
@@ -9,34 +18,51 @@
   font-size: var(--ds-body, 13px);
   color: var(--ds-fg, var(--vscode-foreground));
 }
-.validation-summary,
-.validation-filters,
-.validation-controls,
-.validation-close {
+
+/*
+ * Embedded in Control. cockpit.css zeroes `.ck-embed-host > main` so a host never double-pads the
+ * div-rooted surfaces (.approval-root / .insp-root) that already own the Fleet page pad. This root IS
+ * the <main>, so that guard stripped the pad it was meant to preserve and the page ran flush to x=0.
+ * Re-assert the pad this root owns; the host still contributes none.
+ */
+.ck-embed-host > main.validations-main {
+  padding: var(--ds-page-pad-y) var(--ds-page-pad-x) var(--ds-page-pad-bottom) !important;
+}
+
+.validations-main .validation-summary,
+.validations-main .validation-filters,
+.validations-main .validation-controls,
+.validations-main .validation-close {
   display: flex;
   align-items: center;
   gap: 10px;
 }
-.validation-filters {
+.validations-main .validation-filters {
   margin: 0 0 14px;
   flex-wrap: wrap;
 }
-.validation-list {
+/* One card per row, full width (Approvals-style). `grid-auto-flow: row` is stated rather than left
+   implicit so the vertical contract is legible and mechanically assertable. */
+.validations-main .validation-list {
   display: grid;
+  grid-auto-flow: row;
+  grid-template-columns: minmax(0, 1fr);
   gap: 9px;
 }
-.validation-card {
+.validations-main .validation-card {
+  min-width: 0;
   border: var(--ds-border-width) solid var(--ds-border, var(--vscode-panel-border));
   border-left: 3px solid var(--ds-info, var(--vscode-testing-iconQueued));
   border-radius: var(--ds-radius, 6px);
   background: var(--ds-card, var(--vscode-editor-background));
 }
-.validation-card.closed {
+.validations-main .validation-card.closed {
   border-left-color: var(--ds-ok, var(--vscode-testing-iconPassed));
   opacity: var(--ds-disabled-opacity, 0.86);
 }
-.validation-summary {
+.validations-main .validation-summary {
   width: 100%;
+  min-width: 0;
   border: 0;
   background: transparent;
   color: inherit;
@@ -44,71 +70,76 @@
   padding: 12px;
   cursor: pointer;
   font: inherit;
+  /* mission-control.css's board strip sets `nowrap` on this class name — long titles must wrap here. */
+  white-space: normal;
 }
-.validation-primary {
+/* Title above id, never on one line: `gap` is the only thing separating "…non-empty queue" from
+   "v-8f1a02", so the grid must survive a competing `display` declaration (see header note). */
+.validations-main .validation-primary {
   display: grid;
   gap: 3px;
-  min-width: 180px;
+  min-width: 0;
 }
-.validation-id,
-.muted {
+.validations-main .validation-id,
+.validations-main .muted {
   color: var(--ds-muted, var(--vscode-descriptionForeground));
 }
-.validation-id {
+.validations-main .validation-id {
   font-size: 11px;
+  overflow-wrap: anywhere;
 }
-.validation-chips {
+.validations-main .validation-chips {
   margin-left: auto;
   display: flex;
   gap: 5px;
   flex-wrap: wrap;
   justify-content: flex-end;
 }
-.validation-chips .ds-badge,
-.validation-chips span,
-.validation-refs span {
+.validations-main .validation-chips .ds-badge,
+.validations-main .validation-chips span,
+.validations-main .validation-refs span {
   padding: 2px 7px;
   border-radius: 10px;
   background: var(--ds-input-bg, var(--vscode-badge-background));
   color: var(--ds-fg, var(--vscode-badge-foreground));
   font-size: 11px;
 }
-.validation-detail {
+.validations-main .validation-detail {
   border-top: var(--ds-border-width) solid var(--ds-border, var(--vscode-panel-border));
   padding: 4px 14px 14px 42px;
 }
-.validation-detail h3 {
+.validations-main .validation-detail h3 {
   font-size: 12px;
   text-transform: uppercase;
   margin: 14px 0 6px;
   color: var(--ds-muted);
 }
-.validation-detail p {
+.validations-main .validation-detail p {
   white-space: pre-wrap;
 }
-.validation-detail ol {
+.validations-main .validation-detail ol {
   margin: 0;
   padding-left: 20px;
 }
-.validation-detail li + li {
+.validations-main .validation-detail li + li {
   margin-top: 8px;
 }
-.validation-refs {
+.validations-main .validation-refs {
   display: flex;
   flex-wrap: wrap;
   gap: 5px;
 }
-.validation-controls {
+.validations-main .validation-controls {
   align-items: flex-end;
   flex-wrap: wrap;
 }
-.validation-controls label {
+.validations-main .validation-controls label {
   display: grid;
   gap: 4px;
   font-size: 11px;
   color: var(--ds-muted);
 }
-.validation-controls input {
+.validations-main .validation-controls input {
   font: inherit;
   padding: 4px 8px;
   border: var(--ds-border-width) solid var(--ds-border);
@@ -116,17 +147,17 @@
   background: var(--ds-input-bg, var(--vscode-input-background));
   color: var(--ds-fg);
 }
-.validation-close {
+.validations-main .validation-close {
   flex: 1 1 100%;
   align-items: stretch;
   flex-wrap: wrap;
 }
-.validation-close textarea {
+.validations-main .validation-close textarea {
   min-width: 260px;
   flex: 1;
   min-height: 54px;
 }
-.validation-warning {
+.validations-main .validation-warning {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -137,4 +168,4 @@
   background: color-mix(in srgb, var(--ds-err) 10%, transparent);
 }
 
-.validation-chips .ds-badge { font-size: 11px; padding: 2px 7px; border-radius: 10px; }
+.validations-main .validation-chips .ds-badge { font-size: 11px; padding: 2px 7px; border-radius: 10px; }
