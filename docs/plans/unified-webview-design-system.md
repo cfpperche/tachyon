@@ -33,7 +33,13 @@
 
 ### Phase C — Surface migration (ongoing)
 Order: Sidebar → Board body → Activity/Handoff → remaining studios → probes/misc.  
-Rule: migrate on touch + dedicated slices for top traffic.
+Rule: when a feature already touches the surface, finish kit adoption in the same PR.
+
+#### C.1 Sidebar (this PR)
+- [x] Agent / section badges → shared `Badge`
+- [x] Config error actions → `Button`
+- [x] Empty slots → `EmptyState`
+- [ ] Local `ListRow`/`Group` (dense tree) — keep until API converges with shared `ListRow` (different props: name/dot/child)
 
 ### Phase D — Forcing functions
 - Extend `test/unit/webviewComponentKit.test.ts` (ban new hand-rolled product buttons in target dirs)

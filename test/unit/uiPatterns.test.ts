@@ -65,4 +65,13 @@ describe("shared UI product patterns (STYLEGUIDE)", () => {
     expect(insp).toContain("PageChrome");
     expect(insp).toContain("Tabs");
   });
+
+  it("Sidebar agent badges use shared Badge (Phase C.1)", () => {
+    const sidebar = readFileSync("src/webview/sidebar/App.tsx", "utf8");
+    expect(sidebar).toMatch(/import \{[^}]*Badge/);
+    expect(sidebar).toContain("BranchBadge");
+    expect(sidebar).not.toMatch(/class=\"badge/);
+    expect(sidebar).not.toMatch(/class=\{`badge/);
+    expect(sidebar).toContain("EmptyState");
+  });
 });

@@ -1,6 +1,6 @@
 import { createContext } from "preact";
 import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import { Button } from "../shared/ui";
+import { Button, Badge, EmptyState } from "../shared/ui";
 import {
   SAMPLE, TABS, searchIndex,
   type FleetVM, type TabId, type AgentVM, type AgentStatus, type SearchItem,
@@ -106,8 +106,8 @@ function ConfigErrorBanner({ err }: { err: NonNullable<FleetVM["configError"]> }
       </div>
       <div class="config-error-summary" title={err.errors.join("\n")}>{err.summary}</div>
       <div class="config-error-actions">
-        <button type="button" class="config-error-btn" onClick={() => d.global("openConfig")}>Open {err.file}</button>
-        <button type="button" class="config-error-btn secondary" onClick={() => d.global("doctor")}>Doctor</button>
+        <Button variant="primary" onClick={() => d.global("openConfig")}>Open {err.file}</Button>
+        <Button variant="default" onClick={() => d.global("doctor")}>Doctor</Button>
       </div>
     </div>
   );
@@ -142,17 +142,12 @@ function BranchBadge({ a }: { a: AgentVM }) {
     drift && a.worktree ? `config/isolation branch was ${a.worktree}` : undefined,
   ].filter(Boolean);
   // Isolated stays on the green --ds-ok chip (prototype). Drift is signalled by ⚠ + tooltip only —
-  // do NOT apply .badge.warn (that paints the whole chip yellow and hid the green in dogfood).
-  const cls = [
-    "badge",
-    "git-branch",
-    !isolated ? "shared" : "",
-    drift ? "drift" : "",
-  ].filter(Boolean).join(" ");
+  // do NOT apply warn tone on the whole chip (that paints yellow and hid the green in dogfood).
+  const cls = ["git-branch", !isolated ? "shared" : "", drift ? "drift" : ""].filter(Boolean).join(" ");
   return (
-    <span class={cls} title={titleParts.join("\n")}>
+    <Badge tone={isolated ? "ok" : "default"} class={cls} title={titleParts.join("\n")}>
       ⎇ {a.liveBranch}{drift ? <span class="git-drift-mark" aria-label="diverged from config branch"> ⚠</span> : null}
-    </span>
+    </Badge>
   );
 }
 
@@ -201,42 +196,59 @@ function AgentBadges({ a }: { a: AgentVM }) {
     <>
       {/* spec 384 — branch/worktree badge is FIXED first in the list */}
       <BranchBadge a={a} />
-      {a.configInvalid && <span class="badge err" title="tachyon.yml is invalid — row shown from session ledger or last-known-good snapshot (read-only for spawn)">config invalid</span>}
-      {a.attention && a.attention !== "working" && <span class="badge attn">{a.attention}</span>}
-      {a.awaitingHuman && <span class="badge warn" title={a.awaitingHuman.reason || "needs a human — request_human_attention"}>◆ needs you</span>}
-      {a.verify === "pass" && <span class="badge ok">✓ verified</span>}
-      {a.verify === "fail" && <span class="badge err">✗ verify</span>}
-      {a.verify === "stale" && <span class="badge">⊘ stale</span>}
+      {a.configInvalid && (
+        <Badge tone="err" title="tachyon.yml is invalid — row shown from session ledger or last-known-good snapshot (read-only for spawn)">
+          config invalid
+        </Badge>
+      )}
+      {a.attention && a.attention !== "working" && <Badge tone="warn">{a.attention}</Badge>}
+      {a.awaitingHuman && (
+        <Badge tone="warn" title={a.awaitingHuman.reason || "needs a human — request_human_attention"}>
+          ◆ needs you
+        </Badge>
+      )}
+      {a.verify === "pass" && <Badge tone="ok">✓ verified</Badge>}
+      {a.verify === "fail" && <Badge tone="err">✗ verify</Badge>}
+      {a.verify === "stale" && <Badge>⊘ stale</Badge>}
       {a.evidence && (
-        <span
-          class={`badge ${a.evidence.error > 0 ? "err" : a.evidence.warn > 0 ? "warn" : ""}`}
+        <Badge
+          tone={a.evidence.error > 0 ? "err" : a.evidence.warn > 0 ? "warn" : "default"}
           title={`${a.evidence.total} evidence record(s)${a.evidence.error ? `, ${a.evidence.error} error` : ""}${a.evidence.warn ? `, ${a.evidence.warn} warn` : ""}${a.evidence.stale ? `, ${a.evidence.stale} stale` : ""} — advisory, never gates (list_evidence to read)`}
         >
           ⊙ {a.evidence.total}{a.evidence.stale > 0 ? ` (${a.evidence.stale}⊘)` : ""}
-        </span>
+        </Badge>
       )}
       {externalToolLabel && (
-        <span
-          class={`badge ${a.externalTools?.strongestConfidence === "weak" ? "warn" : ""}`}
-          title={externalToolBadgeTitle(a)}
-        >
+        <Badge tone={a.externalTools?.strongestConfidence === "weak" ? "warn" : "default"} title={externalToolBadgeTitle(a)}>
           {externalToolLabel}
-        </span>
+        </Badge>
       )}
-      {a.harness && <span class="badge">⚙ harness</span>}
-      {a.resumable && (a.freshStart
-        ? <span class="badge warn" title="Saved transcript is gone — Resume starts fresh">↻ fresh start</span>
-        : <span class="badge">↻ resumable</span>)}
-      {a.forked && <span class="badge">⑂ fork</span>}
-      {a.continuity === "stale" && <span class="badge warn" title="Continuity brief is behind recent activity — the agent should checkpoint (set_continuity)">◐ continuity stale</span>}
-      {a.continuity === "missing" && <span class="badge" title="No continuity brief yet — the agent hasn't checkpointed its working state">○ no continuity</span>}
+      {a.harness && <Badge>⚙ harness</Badge>}
+      {a.resumable &&
+        (a.freshStart ? (
+          <Badge tone="warn" title="Saved transcript is gone — Resume starts fresh">
+            ↻ fresh start
+          </Badge>
+        ) : (
+          <Badge>↻ resumable</Badge>
+        ))}
+      {a.forked && <Badge>⑂ fork</Badge>}
+      {a.continuity === "stale" && (
+        <Badge tone="warn" title="Continuity brief is behind recent activity — the agent should checkpoint (set_continuity)">
+          ◐ continuity stale
+        </Badge>
+      )}
+      {a.continuity === "missing" && (
+        <Badge title="No continuity brief yet — the agent hasn't checkpointed its working state">○ no continuity</Badge>
+      )}
       {a.persistenceHooks && a.persistenceHooks.state !== "active" && (
-        <span
-          class={`badge hook-badge ${a.persistenceHooks.state === "failed" ? "err" : a.persistenceHooks.state === "unknown" ? "" : "warn"}`}
+        <Badge
+          class="hook-badge"
+          tone={a.persistenceHooks.state === "failed" ? "err" : a.persistenceHooks.state === "unknown" ? "default" : "warn"}
           title={a.persistenceHooks.reason ?? `Persistence hooks ${a.persistenceHooks.state}`}
         >
           ⛓ hooks {a.persistenceHooks.state}
-        </span>
+        </Badge>
       )}
     </>
   );
@@ -298,7 +310,11 @@ export function AgentRow({ a, flash, nested = false, hasChildren = false, collap
       {hasMeta && (
         <div class="row-meta">
           {a.sub ? <span class="msub">{a.sub}</span> : null}
-          {hasHidden && <span class={`badge${hiddenNeedsAttention ? " warn" : ""}`} title={hiddenNeedsAttention ? "Collapsed children include attention" : "Collapsed children"}>{hiddenNeedsAttention ? "◆ " : ""}+{hiddenCount}</span>}
+          {hasHidden && (
+            <Badge tone={hiddenNeedsAttention ? "warn" : "default"} title={hiddenNeedsAttention ? "Collapsed children include attention" : "Collapsed children"}>
+              {hiddenNeedsAttention ? "◆ " : ""}+{hiddenCount}
+            </Badge>
+          )}
           <AgentBadges a={a} />
         </div>
       )}
@@ -368,7 +384,7 @@ function MoreBtn({ items }: { items: MenuItem[] }) {
   );
 }
 
-const Empty = () => <div class="empty">(none)</div>;
+const Empty = () => <EmptyState kind="empty" message="(none)" />;
 
 /** spec 245/331 — a tiny folder-scoped Project Handoff affordance: a staleness badge → opens the panel.
  *  Lives in the folder header, which is now ALWAYS present (single-root is multi-root with N=1, pin
@@ -387,7 +403,7 @@ function HandoffBtn({ handoff, onOpen }: { handoff?: import("../../sidebar/types
   return (
     <button class="handoff-btn" type="button" title="Open Project Handoff" aria-label={`Project Handoff — ${meta.label}`}
       onClick={(e) => { e.stopPropagation(); onOpen(); }}>
-      <span class={`badge${meta.tone ? ` ${meta.tone}` : ""}`}>{quiet ? meta.glyph : `${meta.glyph} ${meta.label}`}</span>
+      <Badge tone={meta.tone === "warn" ? "warn" : meta.tone === "err" ? "err" : "default"}>{quiet ? meta.glyph : `${meta.glyph} ${meta.label}`}</Badge>
     </button>
   );
 }
@@ -493,7 +509,7 @@ function Panel({ tab, fleet, scope, collapsed, toggle, flashName, agentSort, ter
         </Group>
       )}
       {fleet.schedules.map((s) => (
-        <ListRow dot={s.paused ? "stopped" : "running"} name={s.name} sub={s.when} meta={<span class={`badge${s.paused ? "" : " ok"}`}>{s.next}</span>}
+        <ListRow dot={s.paused ? "stopped" : "running"} name={s.name} sub={s.when} meta={<Badge tone={s.paused ? "default" : "ok"}>{s.next}</Badge>}
           actions={<>
             <Act icon={s.paused ? "debug-continue" : "debug-pause"} title={s.paused ? "Resume" : "Pause"} on={() => d.section("schedule:pause", s.name)} />
             <MoreBtn items={[
@@ -506,10 +522,10 @@ function Panel({ tab, fleet, scope, collapsed, toggle, flashName, agentSort, ter
     </>;
   }
   if (tab === "Commands") return fleet.commands.length ? <>{fleet.commands.map((c) => {
-    const badge = c.state === "running" ? <span class="badge warn">▶ {c.detail}</span>
-      : c.state === "passed" ? <span class="badge ok">✓ {c.detail}</span>
-        : c.state === "failed" ? <span class="badge err">✗ {c.detail}</span>
-          : <span class="badge">— {c.detail}</span>;
+    const badge = c.state === "running" ? <Badge tone="warn">▶ {c.detail}</Badge>
+      : c.state === "passed" ? <Badge tone="ok">✓ {c.detail}</Badge>
+        : c.state === "failed" ? <Badge tone="err">✗ {c.detail}</Badge>
+          : <Badge>— {c.detail}</Badge>;
     return <ListRow dot={c.state === "running" ? "running" : null} name={c.name} sub={c.cmd} meta={badge}
       actions={<>
         {c.state !== "running" && <Act icon="play" title="Run" on={() => d.section("command:run", c.name)} />}
@@ -523,10 +539,10 @@ function Panel({ tab, fleet, scope, collapsed, toggle, flashName, agentSort, ter
   })}</> : <Empty />;
   if (tab === "Runbooks") return fleet.runbooks.length ? <>{fleet.runbooks.map((r) => {
     const stepBadge = (s: typeof r.steps[number]) =>
-      s.state === "passed" ? <span class="badge ok">✓ {s.detail ?? "passed"}</span>
-        : s.state === "failed" ? <span class="badge err">✗ {s.detail}</span>
-          : s.state === "running" ? <span class="badge warn">▶ running</span>
-            : <span class="badge">skipped</span>;
+      s.state === "passed" ? <Badge tone="ok">✓ {s.detail ?? "passed"}</Badge>
+        : s.state === "failed" ? <Badge tone="err">✗ {s.detail}</Badge>
+          : s.state === "running" ? <Badge tone="warn">▶ running</Badge>
+            : <Badge>skipped</Badge>;
     return (
       <Group title={r.name} count={r.steps.length} collapsed={collapsed.has(k(`r:${r.name}`))} onToggle={() => toggle(k(`r:${r.name}`))}
         actions={<>
@@ -538,10 +554,10 @@ function Panel({ tab, fleet, scope, collapsed, toggle, flashName, agentSort, ter
           ]} />
         </>}>
         <div class="row-meta" style="padding:2px 12px 4px">
-          {r.running ? <span class="badge warn">▶ running</span>
-            : r.failed ? <span class="badge err">✗ {r.detail}</span>
-              : r.detail === "never run" ? <span class="badge">— never run</span>
-                : <span class="badge ok">✓ {r.detail}</span>}
+          {r.running ? <Badge tone="warn">▶ running</Badge>
+            : r.failed ? <Badge tone="err">✗ {r.detail}</Badge>
+              : r.detail === "never run" ? <Badge>— never run</Badge>
+                : <Badge tone="ok">✓ {r.detail}</Badge>}
         </div>
         {r.steps.map((s) => (
           <ListRow child name={`${s.n}. ${s.label}`} meta={stepBadge(s)}
