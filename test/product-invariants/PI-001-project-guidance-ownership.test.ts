@@ -145,9 +145,12 @@ describe(`${PI_001.id}: project-guidance ownership boundary`, () => {
     }
   });
 
-  it("PI-001: Tachyon's real repository opts into both owned documents with exact source provenance", () => {
+  it("PI-001: Tachyon's tracked shared template opts into both owned documents with exact source provenance", () => {
+    // Evidence source is tachyon.yml.example (tracked shared template), not tachyon.yml (untracked
+    // local dogfood fleet config since 9186c73b). Ratified 2026-07-19 (t-8bb9cd): same promise and
+    // oracle strength, same files/order/bytes, evidence source moved to what every clone actually has.
     const repoRoot = process.cwd();
-    const parsed = parseYaml(fs.readFileSync(path.join(repoRoot, "tachyon.yml"), "utf8")) as {
+    const parsed = parseYaml(fs.readFileSync(path.join(repoRoot, "tachyon.yml.example"), "utf8")) as {
       settings?: { projectGuidance?: { files?: unknown } };
     };
     const configuredFiles = parsed.settings?.projectGuidance?.files;

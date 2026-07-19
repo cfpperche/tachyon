@@ -112,6 +112,7 @@ describe("preview route table", () => {
       "runtime",
       "settings",
       "tmux",
+      "validations",
       "worktrees",
     ]);
     const msgs = r.makeMessage(r.fixtures.default.vm) as Array<{ type: string; model?: { section?: string } }>;
@@ -119,6 +120,8 @@ describe("preview route table", () => {
     expect(msgs[1]?.model?.section).toBe("overview");
     const missionMsgs = r.makeMessage(r.fixtures.mission.vm) as Array<{ type: string }>;
     expect(missionMsgs.map((m) => m.type)).toEqual(["init", "model", "snapshot"]);
+    const validationsMsgs = r.makeMessage(r.fixtures.validations.vm) as Array<{ type: string }>;
+    expect(validationsMsgs.map((m) => m.type)).toEqual(["init", "model", "validations"]);
     const approvalMsgs = r.makeMessage(r.fixtures.approvals.vm) as Array<{ type: string }>;
     expect(approvalMsgs.map((m) => m.type)).toEqual(["init", "model", "approvals"]);
     const runtimeMsgs = r.makeMessage(r.fixtures.runtime.vm) as Array<{ type: string }>;
