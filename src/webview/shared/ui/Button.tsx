@@ -25,9 +25,18 @@ export interface ButtonProps extends Omit<JSX.ButtonHTMLAttributes<HTMLButtonEle
 // breaking the Popper anchor measurement. Button isn't `asChild`-composed anywhere today, but it's this
 // project's ONE general button component (per its own header comment) — leaving it un-forwarded would just
 // reproduce the exact same silent breakage the next time someone reaches for it under a Kit trigger.
+function hasLabel(children: ComponentChildren): boolean {
+  if (children == null || children === false || children === "") return false;
+  if (Array.isArray(children)) return children.some(hasLabel);
+  return true;
+}
+
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(({ variant = "default", icon, children, class: cls, ...rest }, ref) => (
   <button ref={ref} type="button" class={cx(VARIANT_CLASS[variant], cls)} {...rest}>
     {icon && <Icon name={icon} />}
-    {children}
+    {/* the icon-only CSS rule (`:has(> :not(.codicon))`) only sees ELEMENT children — a bare text-node label
+        is invisible to it, so a real label must be wrapped in an element or the button wrongly collapses
+        to the icon-only 28px box (see design-system.css's icon-only rule). */}
+    {hasLabel(children) ? <span class="ds-btn-label">{children}</span> : children}
   </button>
 ));

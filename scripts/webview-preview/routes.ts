@@ -73,6 +73,9 @@ export interface Route<VM = unknown> {
   /** build the host→webview message(s) that inject a fixture VM — via the view's SHARED envelope constructor(s).
    *  Returns an ARRAY when a view needs more than one message to render (e.g. inspector: init strings + model). */
   makeMessage: (vm: VM) => unknown | unknown[];
+  /** set when the built bundle is an ESM module (esbuild code-splitting) rather than a classic script — the
+   *  harness must inject it via `<script type="module">` or the browser rejects its `import` statements. */
+  module?: boolean;
 }
 
 const CODICON = "/dist/webview/codicon.css";
@@ -147,6 +150,9 @@ export const ROUTES: Record<string, Route> = {
     ],
     frame: { w: 1100, h: 720 },
     fixtures: cockpitFixtures as Record<string, Fixture>,
+    // SDD 410 Phase A — cockpit.js is now ESM with esbuild code-split chunks; the harness must load it as
+    // a module (classic <script> injection dies with "Cannot use import statement outside a module").
+    module: true,
     makeMessage: (vm) => {
       const model = vm as { section?: string };
       const msgs: unknown[] = [cockpitInitMessage(cockpitStrings), cockpitModelMessage(vm as never)];

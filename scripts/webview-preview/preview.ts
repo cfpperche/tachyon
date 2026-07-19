@@ -96,6 +96,7 @@ function run(): void {
 
   // load the REAL webview bundle last (it mounts, then posts `ready` → onReady fires).
   const s = document.createElement("script");
+  if (route.module) s.type = "module";
   s.src = route.bundle;
   document.body.appendChild(s);
 }
