@@ -226,8 +226,8 @@ main.ck-main.ck-main--mission,
 }
 
 .ck-embed-host > main {
-  /* Approvals standalone used 20px + max-width 980; keep padding, drop the column. */
-  padding: var(--ds-page-pad-y) var(--ds-page-pad-x) var(--ds-page-pad-bottom) !important;
+  /* Surface roots (.approval-root / .insp-root / …) own Fleet page pad — host must not double it. */
+  padding: 0 !important;
   overflow: auto;
 }
 
@@ -239,20 +239,27 @@ main.ck-main.ck-main--mission,
   box-sizing: border-box;
 }
 
-/* Inspector standalone pads `body`; under embed, pad the host content instead. */
+/* Embed hosts stay pad-free; each product root applies --ds-page-pad-*. */
 .ck-embed-host[data-testid="control-tmux-inspector"] {
-  padding: var(--ds-page-pad-y) var(--ds-page-pad-x) var(--ds-page-pad-bottom);
+  padding: 0;
 }
 
-/* Plugins root (embed + standalone): same outer pad as Fleet .ck-main */
 .ck-embed-host > .ck-plugins-root,
 .ck-plugins-root {
   box-sizing: border-box;
-  padding: var(--ds-page-pad-y) var(--ds-page-pad-x) var(--ds-page-pad-bottom) !important;
+  padding: var(--ds-page-pad-y) var(--ds-page-pad-x) var(--ds-page-pad-bottom);
   width: 100%;
   min-height: 0;
   max-width: none;
   margin: 0;
+}
+
+/* Approvals / any main root: full-bleed width (no 980px column inside Control). */
+.ck-embed-host > main.approval-root,
+.ck-embed-host .approval-root {
+  max-width: none !important;
+  margin: 0 !important;
+  width: 100% !important;
 }
 
 .ck-head {

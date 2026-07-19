@@ -124,7 +124,8 @@ a { color: var(--ds-link); }
 /* ── layout ── */
 /* Horizontal page pad lives on .ds-page / Control .ck-main / panel roots — not on .ds-wrap (avoids 12/16/24 drift). */
 .ds-wrap { max-width: 920px; margin: 0 auto; padding: 0; width: 100%; box-sizing: border-box; }
-.ds-head { position: sticky; top: 0; z-index: var(--ds-z-popover); background: var(--vscode-editor-background); border-bottom: 1px solid var(--ds-border); }
+/* Legacy sticky strip — do NOT wrap PageChrome pages in .ds-head (Plugins used to; looked unlike Fleet). */
+.ds-head { position: sticky; top: 0; z-index: var(--ds-z-popover); background: var(--vscode-editor-background); border-bottom: var(--ds-border-width) solid var(--ds-border); }
 .ds-head-row { display: flex; align-items: center; gap: var(--ds-3); padding: var(--ds-4) 0 var(--ds-3); }
 .ds-title { font-size: var(--ds-title); font-weight: var(--tachyon-weight-semibold); display: flex; align-items: center; gap: var(--ds-2); margin: 0; }
 /* title ↔ subtitle: a tight intra-group gap (internal ≤ external, Gestalt proximity) — NOT a negative overlap */
@@ -132,15 +133,49 @@ a { color: var(--ds-link); }
 .ds-actions { margin-left: auto; display: flex; gap: var(--ds-2); }
 .ds-section { font-size: var(--ds-section); font-weight: var(--tachyon-weight-semibold); text-transform: uppercase; letter-spacing: var(--tachyon-tracking-label); color: var(--ds-muted); margin: 0 0 var(--ds-2); }
 
-/* ── buttons ── */
-.ds-btn { display: inline-flex; align-items: center; gap: var(--ds-icon-gap); padding: var(--ds-1) var(--ds-3); border: 1px solid var(--ds-border); border-radius: var(--ds-radius); color: var(--ds-fg); }
+/* ── buttons (ONE size everywhere — Fleet Open Board is the reference) ── */
+.ds-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ds-icon-gap);
+  box-sizing: border-box;
+  margin: 0;
+  min-height: 28px;
+  padding: var(--ds-2) var(--ds-3);
+  border: var(--ds-border-width) solid var(--ds-border);
+  border-radius: var(--ds-radius);
+  background: transparent;
+  color: var(--ds-fg);
+  font-family: var(--ds-mono);
+  font-size: var(--ds-small);
+  font-weight: var(--tachyon-weight-regular);
+  line-height: 1.2;
+  cursor: pointer;
+}
 .ds-btn:hover { background: var(--ds-hover); }
-/* spec 282 — primary composes with .ds-btn (structure); the colored bg makes its border invisible (transparent). */
-.ds-btn-primary { display: inline-flex; align-items: center; gap: var(--ds-icon-gap); background: var(--ds-btn-bg); color: var(--ds-btn-fg); border-color: transparent; border-radius: var(--ds-radius); padding: var(--ds-1) var(--ds-3); font-weight: var(--tachyon-weight-semibold); }
+.ds-btn:disabled { opacity: var(--ds-disabled-opacity); cursor: default; }
+/* primary/danger share the same box as .ds-btn — only colors change */
+.ds-btn-primary {
+  background: var(--ds-btn-bg);
+  color: var(--ds-btn-fg);
+  border-color: transparent;
+  font-weight: var(--tachyon-weight-semibold);
+}
 .ds-btn-primary:hover { background: var(--ds-btn-hover); }
 .ds-btn-primary:disabled { opacity: var(--ds-disabled-opacity); cursor: default; }
-.ds-btn-primary.ds-danger, .ds-btn-danger { background: var(--ds-err); color: #fff; border-color: transparent; }
-/* spec 282 — canonical icon metrics: a codicon inside any button/tab/chip is fixed-size, baseline-centred, no shrink */
+.ds-btn-primary.ds-danger, .ds-btn-danger {
+  background: var(--ds-err);
+  color: #fff;
+  border-color: transparent;
+}
+.ds-btn-danger:hover { filter: brightness(1.05); }
+/* icon-only: same 28×28 hit as text buttons' height */
+.ds-btn:not(:has(> :not(.codicon))):has(> .codicon) {
+  width: 28px;
+  min-width: 28px;
+  padding: 0;
+}
 .ds-btn .codicon, .ds-tab .codicon, .ds-chip .codicon { font-size: var(--ds-small); line-height: 1; flex: none; }
 
 /* ── badges ── */
@@ -257,10 +292,12 @@ select:disabled { opacity: var(--ds-disabled-opacity); cursor: default; }
 .ds-page-chrome-title {
   display: block;
   margin: 0;
-  font-size: 16px;
+  font-family: var(--tachyon-font-mono, inherit);
+  font-size: var(--ds-title); /* 16px — every editor page */
   font-weight: var(--tachyon-weight-semibold, 600);
   line-height: 1.25;
   color: var(--ds-fg);
+  letter-spacing: normal;
 }
 /* Title icons are forbidden on editor pages — hide if a legacy call still injects a codicon. */
 .ds-page-chrome-title > .codicon {
@@ -268,10 +305,12 @@ select:disabled { opacity: var(--ds-disabled-opacity); cursor: default; }
 }
 .ds-page-chrome-hint {
   margin: var(--ds-1) 0 0;
-  font-size: 11px;
+  font-family: var(--tachyon-font-mono, inherit);
+  font-size: var(--ds-small); /* 12px muted — every editor page */
   line-height: 1.35;
+  font-weight: var(--tachyon-weight-regular);
   color: var(--ds-muted);
-  max-width: 62ch;
+  max-width: 72ch;
 }
 .ds-page-chrome-actions {
   display: flex;

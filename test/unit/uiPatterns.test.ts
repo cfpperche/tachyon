@@ -114,6 +114,15 @@ describe("shared UI product patterns (STYLEGUIDE)", () => {
     expect(radius).toMatch(/--radius:\s*var\(--ds-radius/);
   });
 
+  it("Approvals does not restyle bare buttons; page chrome type is tokenized", () => {
+    const ap = readFileSync("src/webview/approval/approval.css", "utf8");
+    expect(ap).not.toMatch(/\.approval-root\s+button\s*\{/);
+    expect(ap).not.toMatch(/font-size:\s*22px/);
+    const ds = readFileSync("src/webview/shared/design-system.css", "utf8");
+    expect(ds).toMatch(/\.ds-btn\s*\{[\s\S]*min-height:\s*28px/);
+    expect(ds).toMatch(/\.ds-page-chrome-title\s*\{[\s\S]*font-size:\s*var\(--ds-title\)/);
+  });
+
   it("editor PageChrome has no title icon and page shell tokens exist", () => {
     const patterns = readFileSync("src/webview/shared/ui/patterns.tsx", "utf8");
     const chromeFn = patterns.slice(patterns.indexOf("export function PageChrome"), patterns.indexOf("export type ListRowState"));

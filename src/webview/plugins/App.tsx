@@ -526,41 +526,36 @@ export function App({ vm, consent, busy, toast, dispatch }: { vm?: PluginsViewMo
 
   return (
     <div class="ck-plugins-root">
-      <div class="ds-head">
-        <div class="ds-wrap">
-          <PageChrome
-            class="plugins-chrome"
-            title="Plugins"
-            hint={<span>Browse, install &amp; manage plugins · <span class="ws-rt">this workspace runs {wsRuntimes}</span></span>}
-            actions={
-              <div class="ds-actions">
-                <Button icon="cloud-download" title="Check installed plugins for updates" onClick={() => dispatch.checkUpdates()}>Check updates</Button>
-                <Button icon="wrench" title="Re-activate git-hooks after a clone (re-claim core.hooksPath)" onClick={() => dispatch.repair()}>Repair hooks</Button>
-                <Button icon="refresh" title="Refresh" onClick={() => dispatch.refresh()}>Refresh</Button>
-              </div>
-            }
-          />
-          <div class="addbar">
-            <Input
-              value={spec}
-              placeholder="github:owner/repo@ref   ·   install a plugin by its git source"
-              onInput={(e) => setSpec((e.target as HTMLInputElement).value)}
-              onKeyDown={(e) => { if (e.key === "Enter") submitSpec(); }}
-            />
-            <Button variant="primary" disabled={!spec.trim()} onClick={submitSpec}>Add</Button>
-          </div>
-          <Tabs
-            items={[
-              { id: "installed", label: "Installed", count: vm.installed.length },
-              { id: "market", label: "Marketplace" },
-            ]}
-            active={tab}
-            onSelect={(id) => setTab(id as "installed" | "market")}
-          />
-        </div>
+      <PageChrome
+        class="plugins-chrome"
+        title="Plugins"
+        hint={<span>Browse, install &amp; manage plugins · <span class="ws-rt">this workspace runs {wsRuntimes}</span></span>}
+        actions={
+          <>
+            <Button icon="cloud-download" title="Check installed plugins for updates" onClick={() => dispatch.checkUpdates()}>Check updates</Button>
+            <Button icon="wrench" title="Re-activate git-hooks after a clone (re-claim core.hooksPath)" onClick={() => dispatch.repair()}>Repair hooks</Button>
+            <Button icon="refresh" title="Refresh" onClick={() => dispatch.refresh()}>Refresh</Button>
+          </>
+        }
+      />
+      <div class="addbar">
+        <Input
+          value={spec}
+          placeholder="github:owner/repo@ref   ·   install a plugin by its git source"
+          onInput={(e) => setSpec((e.target as HTMLInputElement).value)}
+          onKeyDown={(e) => { if (e.key === "Enter") submitSpec(); }}
+        />
+        <Button variant="primary" disabled={!spec.trim()} onClick={submitSpec}>Add</Button>
       </div>
-
-      <div class="ds-wrap">
+      <Tabs
+        items={[
+          { id: "installed", label: "Installed", count: vm.installed.length },
+          { id: "market", label: "Marketplace" },
+        ]}
+        active={tab}
+        onSelect={(id) => setTab(id as "installed" | "market")}
+      />
+      <div class="plugins-body">
         {showInstalledToolbar && (
           <div class="installed-toolbar" role="region" aria-label="Installed plugins controls">
             <Input

@@ -1,6 +1,6 @@
 import type { ApprovalDecision } from "../../bridge/approvalRequest";
 import type { ApprovalViewModel, ApprovalViewItem } from "./viewModel";
-import { Button, EmptyState, IconButton, PageChrome } from "../shared/ui";
+import { Button, EmptyState, PageChrome } from "../shared/ui";
 
 export interface ApprovalDispatch {
   refresh(): void;
@@ -79,7 +79,7 @@ export function App({ vm, error, dispatch }: { vm?: ApprovalViewModel; error?: s
       <PageChrome
         title="Approvals"
         hint={vm.folder}
-        actions={<IconButton name="refresh" title="Refresh approvals" onClick={() => dispatch.refresh()} />}
+        actions={<Button icon="refresh" title="Refresh approvals" onClick={() => dispatch.refresh()}>Refresh</Button>}
       />
       {error ? <div class="approval-warning">{error}</div> : null}
       {vm.approvals.length === 0 ? (

@@ -1,142 +1,106 @@
-/* Approvals surface styles. ALL selectors must stay under .approval-root so Cockpit
-   can co-load this sheet with Mission/etc. without painting every <button> primary-blue
-   (t-e1bd89). */
+/* Approvals — Fleet page shell + kit buttons only. NO bare button{} (t-e1bd89). */
 
 .approval-root {
-  color: var(--vscode-foreground);
-  background: var(--vscode-editor-background);
   box-sizing: border-box;
-  max-width: 980px;
-  margin: 0 auto;
+  width: 100%;
+  max-width: none;
+  margin: 0;
   padding: var(--ds-page-pad-y) var(--ds-page-pad-x) var(--ds-page-pad-bottom);
   min-height: 100%;
-}
-
-.approval-root .approval-title,
-.approval-root .approval-head,
-.approval-root .approval-actions,
-.approval-root .approval-provenance {
-  display: flex;
-  align-items: center;
-}
-
-.approval-root .approval-title {
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 16px;
-}
-
-.approval-root h1,
-.approval-root h2,
-.approval-root p {
-  margin: 0;
-}
-
-.approval-root h1 {
-  font-size: 22px;
-  font-weight: 650;
-}
-
-.approval-root h2 {
-  font-size: 15px;
-  font-weight: 650;
-}
-
-.approval-root p,
-.approval-root .approval-provenance {
-  color: var(--vscode-descriptionForeground);
-}
-
-/* Intentionally scoped — bare `button` here leaked into Control → Mission (t-e1bd89). */
-.approval-root button {
-  border: var(--ds-border-width) solid var(--vscode-button-border, transparent);
-  border-radius: 4px;
-  color: var(--vscode-button-foreground);
-  background: var(--vscode-button-background);
-  min-width: 30px;
-  height: 28px;
-}
-
-.approval-root button:hover:not(:disabled) {
-  background: var(--vscode-button-hoverBackground);
-}
-
-.approval-root button:disabled {
-  opacity: 0.45;
+  color: var(--ds-fg);
+  background: var(--vscode-editor-background);
+  font-family: var(--tachyon-font-mono, inherit);
+  font-size: var(--ds-body);
 }
 
 .approval-root .approval-list {
   display: grid;
-  gap: 12px;
+  gap: var(--ds-3);
 }
 
 .approval-root .approval-card {
-  border: var(--ds-border-width) solid var(--vscode-panel-border);
-  border-radius: 6px;
-  padding: 14px;
-  background: var(--vscode-sideBar-background);
+  border: var(--ds-border-width) solid var(--ds-border);
+  border-radius: var(--ds-radius);
+  padding: var(--ds-3) var(--ds-4);
+  background: var(--ds-card);
 }
 
 .approval-root .approval-card.blocked {
-  border-color: var(--vscode-inputValidation-warningBorder);
+  border-color: var(--ds-warn);
 }
 
 .approval-root .approval-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 12px;
+  gap: var(--ds-page-chrome-gap);
+  margin-bottom: var(--ds-3);
+}
+
+.approval-root .approval-head h2 {
+  margin: 0;
+  font-size: var(--ds-body);
+  font-weight: var(--tachyon-weight-semibold);
+  font-family: var(--ds-mono);
+  color: var(--ds-fg);
 }
 
 .approval-root .approval-provenance {
+  display: flex;
   flex-wrap: wrap;
-  gap: 6px 10px;
-  margin-top: 4px;
-  font-size: 12px;
+  gap: var(--ds-2) var(--ds-3);
+  margin-top: var(--ds-1);
+  font-size: var(--ds-small);
+  color: var(--ds-muted);
 }
 
 .approval-root .approval-actions {
-  gap: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ds-page-chrome-actions-gap);
+  flex: 0 0 auto;
 }
 
 .approval-root .approval-warning {
   display: flex;
-  gap: 8px;
+  gap: var(--ds-2);
   align-items: flex-start;
-  margin: 0 0 12px;
-  padding: 8px 10px;
-  border: var(--ds-border-width) solid var(--vscode-inputValidation-warningBorder);
-  border-radius: 4px;
-  color: var(--vscode-inputValidation-warningForeground);
-  background: var(--vscode-inputValidation-warningBackground);
+  margin: 0 0 var(--ds-3);
+  padding: var(--ds-2) var(--ds-3);
+  border: var(--ds-border-width) solid color-mix(in srgb, var(--ds-warn) 55%, transparent);
+  border-radius: var(--ds-radius);
+  color: var(--ds-warn);
+  background: color-mix(in srgb, var(--ds-warn) 10%, transparent);
+  font-size: var(--ds-small);
 }
 
 .approval-root .approval-payload {
   display: grid;
-  gap: 10px;
+  gap: var(--ds-3);
 }
 
 .approval-root .approval-label {
-  margin-bottom: 4px;
-  color: var(--vscode-descriptionForeground);
-  font-size: 12px;
-  font-weight: 650;
+  margin: 0 0 var(--ds-1);
+  color: var(--ds-muted);
+  font-size: var(--ds-small);
+  font-weight: var(--tachyon-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: var(--tachyon-tracking-label);
 }
 
-.approval-root pre {
+.approval-root .approval-field pre {
   box-sizing: border-box;
   margin: 0;
-  padding: 9px 10px;
+  padding: var(--ds-2) var(--ds-3);
   min-height: 34px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  border: var(--ds-border-width) solid var(--vscode-panel-border);
-  border-radius: 4px;
+  border: var(--ds-border-width) solid var(--ds-border);
+  border-radius: var(--ds-radius);
   background: var(--vscode-editor-background);
-  font-family: var(--vscode-editor-font-family, monospace);
-  font-size: 12px;
-}
-
-.approval-root .approval-empty {
-  padding: 28px 0;
-  color: var(--vscode-descriptionForeground);
+  font-family: var(--ds-mono);
+  font-size: var(--ds-small);
+  color: var(--ds-fg);
 }

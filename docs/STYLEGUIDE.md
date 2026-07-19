@@ -60,13 +60,13 @@ Page title size: **16px** via `.ds-page-chrome-title` — do not invent 20px pan
 
 | Need | Import |
 |------|--------|
-| Button | `Button` from `shared/ui` — variants: **`primary`** = the page’s single primary action; **`default`** otherwise; **`danger`** = destructive. At most one `primary` per tab/page body. |
+| Button | `Button` from `shared/ui` — variants: **`primary`** = the page’s single primary action; **`default`** otherwise; **`danger`** = destructive. At most one `primary` per tab/page body. **One box**: min-height 28px, pad `--ds-2/--ds-3`, mono `--ds-small`. Never restyle bare `button` / `.ds-btn` in surface CSS. |
 | Icon button | `IconButton` |
 | Badge / status | `Badge` (`tone`: default \| ok \| warn \| err \| info). **All status chips use `Badge`.** Do not introduce `ci-badge` / status-colored `ck-chip` modifiers for new UI; migrate existing when touching the surface. KPI count tiles (Overview numbers) are **not** status badges — they may stay metric chips until a MetricChip pattern exists. |
 | Text / textarea / native select | `Input`, `Textarea`, `Select`, `FieldRow` |
 | Tabs | `Tabs` |
 | Chip | `Chip` (non-status labels only) |
-| Page title + hint + actions | **`PageChrome`** — **no title icon** (Fleet). Icons only on action buttons. |
+| Page title + hint + actions | **`PageChrome`** — title=`--ds-title` (16) mono semibold; hint=`--ds-small` muted; **no title icon**. |
 | Dense list (Control cards) | **`ListRow`** |
 | Sidebar-density row (name + status dot + hover actions) | **`DenseRow`** (`.row` DOM; surface CSS) |
 | Empty / loading | **`EmptyState`** |
