@@ -273,12 +273,14 @@ decision changes the promise.
   unconfigured primer may not.
 - **Fixed oracle:** no configured files produce no project guidance; explicitly configured files appear exactly
   once, in declared order, with their bytes unchanged and their declared source path before each body; Tachyon's
-  real `tachyon.yml` explicitly lists `docs/project-guidance.md` followed by
+  tracked shared template `tachyon.yml.example` explicitly lists `docs/project-guidance.md` followed by
   `docs/architecture/product-invariant-testing.md`, and the rendered block preserves both labels and bodies;
   an unconfigured consumer's spawned brief contains the generic primer but neither that guidance nor
   Tachyon-repository policy markers; representative Node and Rust `Tachyon: Init` output contains none of
   those repository-policy markers.
 - **Gates:** focused Product Invariants command, full verification and the distinct CI Product Invariants step.
+- **Ratification note:** promise evidence-source updated 2026-07-19 per maintainer-ratified decision (t-8bb9cd)
+  after 9186c73b untracked the live workspace config; the fixed oracle and its strength are unchanged.
 
 Adding a product-global fallback, silently reading repository guidance, dropping provenance, reordering files,
 rewriting their content, or removing an active manifest/evidence link violates this invariant. A repository
