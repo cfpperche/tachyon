@@ -1,150 +1,149 @@
 # 410 — cockpit-single-app — plan
 
-_Drafted 2026-07-18 from agreed intent. Grounded in repo inventory + current Control embed path._
+_Drafted 2026-07-18. **Revised 2026-07-19** after fable review (ACCEPT-WITH-CHANGES)._
 
 ## Approach
 
-Treat **visual consistency as an architecture property**: one editor Preact runtime owns the
-page shell; surfaces become **sections** (or lazy children), not peer apps.
+Treat **one editor runtime** as the consistency mechanism. Surfaces become sections (or documented
+exceptions), not peer apps.
 
 ```
 Today                         Target
 -----                         ------
 sidebar App  ─────────────►  sidebar App  (unchanged)
 cockpit App  ─┬─ embeds ──►  cockpit App
-activity App ─┤                 ├─ shell (PageChrome, pad, nav)
+activity App ─┤                 ├─ shell + lazy section loader
 approval App ─┤                 ├─ sections/* (in-tree)
-plugins App  ─┤                 └─ lazy studios/*
-… 20+ mains  ─┘
-host: N WebviewPanel managers   host: cockpit panel (+ temporary thin hosts)
+… N Panel managers ────────►  WEBVIEW_SURFACES.retiredInFavorOf / thin hosts
 ```
 
-### Phase A — Foundation (this spec’s first shippable increment)
+### Phase A — Foundation
 
-1. **Contract in code + docs**
-   - STYLEGUIDE: “two apps only” + editor shell (already partial) + “no new webview main”.
-   - `CockpitSectionId` remains the nav spine; extend as sections migrate (do not fork a
-     second router).
-   - Document section module interface:
-     ```ts
-     // conceptual
-     type CockpitSectionModule = {
-       id: CockpitSectionId | StudioSectionId;
-       title: string;
-       hint?: ComponentChildren;
-       actions?: (ctx) => ComponentChildren;
-       Body: ComponentType<SectionBodyProps>;
-     };
-     ```
-   - Shell always wraps `Body` with `PageChrome` + `.ds-page` pad unless section opts into
-     `chrome: "none"` (pure canvas — rare; kanban may use chrome for title row only).
+1. **Extend spec 279, do not fork a fourth list**
+   - Add fields on `WebviewSurface` (names exact at impl time), e.g.:
+     - `editorHome?: "standalone" | "cockpit-section" | "cockpit-thin-host" | "sidebar" | "dev-only"`
+     - `cockpitSectionId?: CockpitSectionId | string`
+     - `retiredInFavorOf?: "cockpit" | viewId`
+   - Update `webviewConvention.test.ts` expectations in the **same** PRs that retire hosts.
+   - When directories vanish, update spec 282 `MIGRATED_VIEWS` in the same PR.
+   - **Do not** add `cockpitAppInventory.test.ts` as a parallel snapshot.
 
-2. **Guard**
-   - Unit test or build-time list of allowed `src/webview/*/main.tsx` entries (snapshot).
-   - New directory + main without allowlist update → fail.
-   - Ban surface CSS patterns already painful: `.approval-root button`, per-header `.ds-btn`
-     metric overrides (fixture scan expandable).
+2. **Section module + shell wrapper**
+   - `Body` wrapped by shell (`PageChrome` + page pad) unless `chrome: "none"`.
+   - **Lazy loader in Phase A** (not deferred to Phase D): dynamic `import()` per section id so
+     Phase B/C cannot merge a 600KB surface into the eager chunk by accident.
 
-3. **Host routing**
-   - Map existing commands (`openApprovals`, open Board, open Plugins, …) to
-     `openCockpit({ section })` when the section is native; keep legacy panel open only for
-     not-yet-migrated IDs.
-   - Serializer: persist `{ viewType: cockpit, section }` (Cockpit already has section state —
-     harden and document).
+3. **Bundle budget (numeric)**
+   - Baseline: `cockpit.js` ~**244 KB** (measured at review).
+   - **Gate through Phase B:** eager/initial `dist/webview/cockpit.js` **≤ 350 KB** uncompressed
+     (js file size on disk after production build). Over budget without split → failed PR.
+   - Each migration PR: note before/after sizes in the PR or `notes.md`.
+   - Lazy chunks: no single lazy chunk policy beyond “must not be forced into eager entry”; optional
+     follow-up CI on total download if needed.
 
-4. **First native in-tree pilot (proves foundation)**
-   - Prefer a **small** already-embedded Control section (e.g. Approvals or Runtime Ops body
-     already co-loaded) rendered as a real Preact child import instead of a second conceptual
-     app — exact pilot chosen at implementation start from lowest-risk embed.
-   - Success = pilot uses shell only; no second pad; Fleet-comparable header; visual QA note.
+4. **Host routing**
+   - `openCockpit({ section })` for native sections; legacy panel only while
+     `editorHome === "standalone"`.
+   - Serializer: restore `section`; unknown → `"overview"` + unit test.
 
-### Phase B — Migrate Control embeds (order)
+5. **Pilot surface (named)**
+   - **Approvals**
+   - Why: smallest clear product panel; already shares `messages`/`viewModel` imports with cockpit;
+     standalone `tachyon.openApprovals` **and** cockpit `"approvals"` section are a real dual path
+     today — fixing it proves host unification, not just chrome polish; historically worst shell CSS.
 
-Migrate what Control already co-loads / deep-links first (shared human path):
+6. **CSS co-load**
+   - Pilot PR removes unconditional injection of the pilot’s sheet from the always-on cockpit shell
+     list (load with section module instead).
+   - Each Phase B PR repeats for that surface.
+
+### Phase B — Control-family (one PR each)
 
 | Order | Surface | Notes |
 |------:|---------|--------|
-| 1 | Approvals | Was worst shell offender; good proof |
-| 2 | Runtime Ops | Already Control-oriented |
-| 3 | Validations | Native-ish in cockpit already |
-| 4 | Plugins | Drop sticky head path permanently |
-| 5 | tmux inspector | Embed host pad discipline |
-| 6 | Board (mission) | Heaviest; keep kanban body CSS |
-| 7 | Overview/Engine/Fleet/Worktrees/Deliveries/Settings | Already cockpit-native ModuleChrome — ensure shell-only |
+| 1 | Approvals | Pilot if not fully done in A; kill `ApprovalPanel` dual open |
+| 2 | Runtime Ops | |
+| 3 | Validations | |
+| 4 | Plugins | |
+| 5 | tmux inspector | |
+| 6 | Board (mission) | Already partially wired (`missionWsHash`); shell-only kanban body |
+| 7 | Overview/Engine/Fleet/Worktrees/Deliveries/Settings | Shell-only audit |
 
-Each row = own task/PR under this spec; update allowlist; visual QA vs Fleet.
+Each PR DoD: lazy section; `WEBVIEW_SURFACES` update; convention + kit tests green; CSS co-load
+shrink; visual QA shell vs Fleet; size note vs 350 KB eager budget.
 
-### Phase C — Standalone panels → cockpit sections
+### Phase C — Multi-instance class (blocked until decision)
 
-| Order | Surface | Host today |
-|------:|---------|------------|
-| 1 | Task detail | TaskDetailPanel |
-| 2 | Handoff | HandoffPanel |
-| 3 | Activity | ActivityPanel |
-| 4 | Probes | ProbeResultPanel |
-| 5 | Pin preview | pin-preview |
-| 6 | control-inspector / server-inspector | separate panels — fold or deep-link |
+**Key decision (architecture — pick before any Phase C code):**
 
-Pattern: command opens cockpit+section; delete or gut old panel manager when unused.
+| Option | Meaning |
+|--------|---------|
+| **B (default recommendation)** | Task detail, Handoff, Probes remain **thin standalone hosts** (multi-instance `Map` managers stay). They may share kit/shell components via imports but are **not** cockpit singleton sections. Mark `editorHome: "standalone"` + exception note. |
+| A | Cockpit grows multi-instance / multi-tab section support (large design). |
+| C | Singleton-only (regress N concurrent panels) — only if product explicitly accepts. |
+
+**Default for this plan: Option B** unless the human overrides before Phase C starts.
+
+Phase C then becomes: extract shared bodies, align shell chrome, optionally deep-link “open in
+cockpit” without killing multi-instance panels — **or** implement A if chosen.
 
 ### Phase D — Studios
 
-- Keep `StudioFrame` as **layout primitive** inside cockpit routes (`studio/task`, `studio/pin`, …).
-- Lazy `import()` per studio to protect cockpit TTI.
-- Shared studio shells (command/runbook/schedule/terminal/agent) become section modules
-  sharing one frame.
+- Lazy routes under cockpit; `StudioFrame` preserved.
+- Same `WEBVIEW_SURFACES` retirement discipline.
 
 ### Phase E — Cleanup
 
-- Remove dead bundles from build graph.
-- CI guard: no resurrected mains.
-- Optional cookbook for operators (“how to add a section”).
+- Delete dead bundles; shrink manifests; optional cookbook.
 
 ## Key decisions
 
 | Decision | Choice | Rejected |
 |----------|--------|----------|
-| App count | **2** (sidebar + cockpit) | 1 mega-app; keep 23 |
-| Sidebar | **Frozen** separate bundle | Merge into cockpit |
-| Migration | **Foundation → screen-by-screen** | Big-bang |
-| Shell | **PageChrome + page-pad tokens + kit Button** | Per-surface headers |
-| Kit | Keep Preact `shared/ui` (+ vendored kit) | npm shadcn rewrite |
-| Bundle | **Lazy sections** after pilot | Single unsplit chunk forever |
-| Dual path | Temporary thin host OK | Permanent dual UI |
+| App count | **2** (sidebar + cockpit) | 1 mega-app; keep N peers |
+| Sidebar | Frozen separate | Merge |
+| Guard | **Extend `WEBVIEW_SURFACES` (279)** | New inventory snapshot |
+| Kit guard | Keep `MIGRATED_VIEWS` (282); update on delete | Ignore |
+| Pilot | **Approvals** | TBD at kickoff |
+| Lazy import | **Phase A mechanism** | Lazy only for studios |
+| Eager budget | **≤ 350 KB cockpit.js through Phase B** | Measure-only |
+| Multi-instance (task/handoff/probes) | **Standing thin-host exception (B)** until human picks A | Silent singleton |
+| Migration | Foundation → PR-per-surface | Big-bang |
+| Dual Approvals path | Close in pilot/B1 | Leave forever |
 
 ## Files / areas (foundation)
 
 | Area | Paths |
 |------|--------|
+| Manifest | `src/webview/surfaces.ts`, `test/unit/webviewConvention.test.ts` |
+| Kit list | `test/unit/webviewComponentKit.test.ts` (`MIGRATED_VIEWS`) |
 | Model / nav | `src/cockpit/model.ts`, `src/webview/cockpit/*` |
-| Host open | `src/webview/Cockpit.ts`, command registrations in `extension.ts` / open* helpers |
-| Shell / DS | `src/webview/shared/ui/patterns.tsx`, `design-system.css`, `docs/STYLEGUIDE.md` |
-| Guard | `test/unit/webviewComponentKit.test.ts` or new `cockpitAppInventory.test.ts` |
-| Pilot surface | TBD among approvals / runtime-ops / validations |
+| Host | `src/webview/Cockpit.ts`, `ApprovalPanel.ts`, open commands |
+| Shell / DS | `shared/ui`, `design-system.css`, `STYLEGUIDE.md` |
+| Pilot | `src/webview/approval/*` |
 
 ## Risks
 
 | Risk | Mitigation |
 |------|------------|
-| Cockpit bundle bloat | Dynamic import per section; measure dist size on pilot |
-| Embed CSS co-load bleed | Stop co-loading foreign sheets as sections go in-tree; one CSS graph |
-| Serializer / reload loses section | Explicit state in panel serializer + test |
-| Mid-migration dual open paths | Feature flag or section registry `host: "legacy" \| "cockpit"` |
-| Studios break isolation assumptions | Keep StudioFrame; only change mount parent |
-| Parallel plugin-runtime work conflicts | This spec does not touch plugin engine; UI Plugins section only |
+| Second inventory list | P0-1: only extend 279 |
+| Bundle bloat | P0-3: lazy A + 350 KB gate |
+| Multi-instance footgun | P0-2: default exception B |
+| CSS co-load bleed | Per-migration unload from global shell |
+| Serializer | overview fallback + test |
+| Dual open Approvals | Pilot DoD |
+| Parallel plugin-runtime work | Non-goal; no engine touch |
 
 ## Sources consulted
 
-- Conversation 2026-07-18: two-app decision; sidebar unchanged; gradual migration.
-- Inventory: 23× `src/webview/**/App.tsx`, 24× `main.tsx`.
-- `src/cockpit/model.ts` — `CockpitSectionId` + order.
-- `src/webview/Cockpit.ts` — panel host / section titles.
-- Panel managers: Activity, Approval, Handoff, MissionControl, TaskDetail, studios base.
-- STYLEGUIDE + specs 252/282/342 lineage (tokens/kit); DS free-run 0.56.61–71 shell work.
-- SDD skill: `.tachyon/plugins/sdd/skills/sdd/SKILL.md`.
+- Fable review: `docs/reviews/cockpit-single-app-410-fable.md`
+- `src/webview/surfaces.ts` (spec 279), `webviewConvention.test.ts`
+- `Cockpit.ts` singleton panel; TaskDetail/Handoff/Probe Map managers
+- Dist sizes at review time (cockpit ~244KB; activity/task-detail/handoff ~640KB+)
+- STYLEGUIDE pilot status; DS free-run 0.56.61–71
+- SDD skill / conversation 2026-07-18–19
 
 ## Visual risk
 
-High for every migrated surface. Foundation pilot + each Phase B/C slice requires visual QA
-against **Fleet** page shell (pad, title, hint, button height). Sidebar not in visual gate for
-this spec except “unchanged”.
+High per migrated surface. Gate = shell vs Fleet. Multi-instance exceptions still use kit buttons /
+PageChrome when they show a page header.

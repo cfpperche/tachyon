@@ -1,78 +1,69 @@
 # 410 — cockpit-single-app — tasks
 
-_Generated from `plan.md` on 2026-07-18. Work top-to-bottom within a phase. Each migration
-surface is its own PR. If a task reveals the plan is wrong, update `plan.md` first._
+_From plan.md. Revised 2026-07-19 (fable P0s). Work phase-by-phase; one migration surface per PR._
 
 ## Phase A — Foundation
 
-- [ ] Land STYLEGUIDE “two apps” rule + cross-link this spec; no new editor `main.tsx` without allowlist.
-- [ ] Add inventory/allowlist test of `src/webview/*/main.tsx` (snapshot of known apps at baseline).
-- [ ] Define section module interface + shell wrapper (`PageChrome` + page pad) used by native sections.
-- [ ] Harden cockpit section restore (serializer / reopen) and document command → `openCockpit({ section })` map.
-- [ ] Choose and implement **one** pilot native in-tree section (Approvals or Runtime Ops or Validations).
-- [ ] Visual QA pilot vs Fleet; record Evidence/Verdict in `notes.md`.
-- [ ] Remove pilot’s competing shell CSS (bare `button`, double pad, sticky foreign head) if still present.
+- [ ] STYLEGUIDE: two-app rule + link spec 410; no new editor `main.tsx` without `WEBVIEW_SURFACES` entry.
+- [ ] Extend `WebviewSurface` in `src/webview/surfaces.ts` (editorHome / cockpitSectionId / retiredInFavorOf as needed) + update `webviewConvention.test.ts` — **no parallel inventory test file**.
+- [ ] Section module interface + shell wrapper (`PageChrome` + page pad).
+- [ ] **Implement lazy section `import()` loader in Phase A** (required before Phase B).
+- [ ] Document/enforce eager `cockpit.js` **≤ 350 KB** through Phase B (assert or PR size note + fail policy).
+- [ ] Harden section restore: exact S; unknown → `overview` + unit test.
+- [ ] Map commands → `openCockpit({ section })` for native; leave standalone while `editorHome=standalone`.
+- [ ] **Pilot = Approvals:** in-tree section body; single open path; drop dual `ApprovalPanel` route when ready; stop always-on approval.css co-load when section inactive.
+- [ ] Pilot updates `WEBVIEW_SURFACES` (+ serializers) in the same PR.
+- [ ] Visual QA pilot vs Fleet; Evidence/Verdict in `notes.md`.
 
-## Phase B — Control-family migrations (one checkbox group per PR)
+## Phase B — Control-family (one PR each; each PR updates WEBVIEW_SURFACES + MIGRATED_VIEWS if paths move)
 
-- [ ] Migrate Approvals → cockpit section; retire dual path; visual QA.
-- [ ] Migrate Runtime Ops → cockpit section; visual QA.
-- [ ] Migrate Validations (if not pilot); visual QA.
-- [ ] Migrate Plugins; visual QA.
-- [ ] Migrate tmux inspector; visual QA.
-- [ ] Migrate Board (mission); visual QA (shell only; kanban body may stay).
-- [ ] Audit Overview/Engine/Fleet/Worktrees/Deliveries/Settings for shell-only compliance.
+- [ ] Approvals complete (if not finished in A).
+- [ ] Runtime Ops.
+- [ ] Validations.
+- [ ] Plugins.
+- [ ] tmux inspector.
+- [ ] Board (mission) shell.
+- [ ] Overview/Engine/Fleet/Worktrees/Deliveries/Settings shell audit.
 
-## Phase C — Standalone panels
+## Phase C — Multi-instance class
 
-- [ ] Task detail → cockpit section (+ command routing).
-- [ ] Handoff → cockpit section.
-- [ ] Activity → cockpit section (lazy; heavy).
-- [ ] Probes / pin-preview → cockpit section or justified thin host.
-- [ ] control-inspector / server-inspector: fold or deep-link decision + implement.
+- [ ] Confirm hosting decision in plan (default **B: thin-host exception** for task detail / handoff / probes) with human if overriding.
+- [ ] If B: document exceptions on `WEBVIEW_SURFACES`; share kit/shell; no fake “singleton section” migration.
+- [ ] If A: design multi-instance cockpit sections before code.
+- [ ] If C: product sign-off on losing N panels; then migrate.
 
 ## Phase D — Studios
 
-- [ ] Register studio routes under cockpit; lazy import; StudioFrame preserved.
-- [ ] Migrate task-studio, pin-studio, pipeline-studio.
-- [ ] Migrate agent/command/runbook/schedule/terminal studio shells.
+- [ ] Lazy studio routes under cockpit; StudioFrame preserved.
+- [ ] Migrate studios one PR at a time; WEBVIEW_SURFACES each time.
 
 ## Phase E — Cleanup
 
-- [ ] Delete dead bundles/entries from build; shrink allowlist.
-- [ ] CI guard stays red on new rogue mains.
-- [ ] Optional: `cookbook.md` via sdd-cookbook for “add a section”.
-- [ ] Closure line on `spec.md` when foundation+agreed migration tranche is done (or split follow-up specs).
+- [ ] Delete dead bundles; convention tests green.
+- [ ] Optional cookbook via `sdd-cookbook.sh`.
+- [ ] Closure line on spec when agreed tranche ships.
 
 ## Verification
 
-_Foundation-focused until Phase A ships; expand Verify as migrations land._
-
-- [ ] Allowlist/inventory test green on main.
-- [ ] Pilot section: typecheck + focused unit tests green.
+- [ ] `webviewConvention.test.ts` green (primary guard).
+- [ ] Kit / patterns tests green.
+- [ ] Lazy loader present before first heavy Phase B merge.
 - [ ] Pilot visual QA recorded.
+- [ ] Eager cockpit.js size noted vs 350 KB budget.
 
-**Verify:** `npm run typecheck && npx vitest run test/unit/webviewComponentKit.test.ts test/unit/uiPatterns.test.ts`
-
-<!-- Add cockpit inventory test path once created, e.g.:
-**Verify:** `npx vitest run test/unit/cockpitAppInventory.test.ts`
--->
+**Verify:** `npm run typecheck && npx vitest run test/unit/webviewConvention.test.ts test/unit/webviewComponentKit.test.ts test/unit/uiPatterns.test.ts`
 
 ## Dogfood
 
-**Dogfood-Opt-Out:** Foundation is structural (routing + shell). Headless dogfood of full multi-panel
-migration is not meaningful until Phase B pilots land; each migration PR should add a targeted
-dogfood or human visual path. Revisit when Approvals or Board is in-tree.
+**Dogfood-Opt-Out:** Foundation is structural until Approvals pilot lands end-to-end. Each migration PR should add headless or human path as it becomes meaningful.
 
-**Human dogfood (foundation):** Reload → open Control → Fleet (baseline) → pilot section → confirm
-same page pad, title metrics, button height; sidebar still independent.
+**Human dogfood (foundation):** Control → Fleet baseline → Approvals pilot → same pad/title/button height; `Tachyon: Open Human Approvals` hits the same UI as the Control tab; sidebar still separate.
 
 ## Visual QA
 
-_Required for foundation pilot and every migrated surface._
+Required for pilot and every migrated surface (shell vs Fleet).
 
-- Surface: Control cockpit + pilot section; compare to Fleet.
-- Risk: double pad, wrong header type, button metric drift, embed CSS bleed.
-- After implementation: `Evidence:` path or maintainer note; `Verdict:` pass/fail + fixes.
+- Risk: double pad, dual open paths, button overrides, co-load bleed, multi-instance regressions.
+- Record `Evidence:` + `Verdict:` in notes or PR.
 
-**Visual QA:** pending foundation pilot (do not opt out of UI shell work).
+**Visual QA:** pending foundation pilot.

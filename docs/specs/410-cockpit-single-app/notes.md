@@ -17,7 +17,15 @@ _In-flight memory. Empty of implementation log until build starts._
 
 ## Review
 
-- Pending: Claude agent **fable** adversarial review of this spec (requested 2026-07-18).
+- Done: Claude agent **fable** adversarial review of this spec (2026-07-18).
+  Verdict: **ACCEPT-WITH-CHANGES**. See `docs/reviews/cockpit-single-app-410-fable.md`.
+  P0s: (1) Phase A's proposed main.tsx guard collides with the existing, fully-enforcing
+  spec-279 `WEBVIEW_SURFACES` manifest (`src/webview/surfaces.ts` +
+  `test/unit/webviewConvention.test.ts`) — must extend it, not fork a third source of truth.
+  (2) Phase C targets (Task detail, Handoff, Probes) are multi-instance panels today; cockpit
+  is a singleton — needs an explicit hosting design before Phase C starts. (3) spec.md asked
+  the plan for a bundle-size budget; plan.md never gave a number — cockpit.js is 244KB today
+  vs. activity.js 648KB / task-detail.js 644KB / handoff.js 640KB as Phase C targets.
 
 ## Open threads
 
@@ -28,3 +36,18 @@ _In-flight memory. Empty of implementation log until build starts._
 
 - 2026-07-18: spawned agent `fable` (claude) parent=hermes for adversarial review → `docs/reviews/cockpit-single-app-410-fable.md`.
 - Board: t-7315ad
+
+## Fable review (2026-07-19)
+
+- Deliverable: `docs/reviews/cockpit-single-app-410-fable.md`
+- Verdict: **ACCEPT-WITH-CHANGES**
+- P0 folded into spec/plan/tasks:
+  1. Guard = extend `WEBVIEW_SURFACES` (279) + `webviewConvention.test.ts` — not a new inventory test
+  2. Multi-instance (task/handoff/probes): default **thin-host exception (B)** before Phase C
+  3. Bundle: lazy loader in Phase A; eager cockpit.js **≤ 350 KB** through Phase B
+- P1 folded: pilot = **Approvals**; dual open path baseline; CSS co-load gate; Verify includes convention test; MIGRATED_VIEWS on delete
+- Intent reframed: architecture/runtime unification, not re-doing STYLEGUIDE chrome checklist
+
+## Pilot
+
+Approvals — dual `tachyon.openApprovals` vs cockpit section is the proof target.
