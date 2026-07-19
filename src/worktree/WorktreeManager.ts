@@ -591,12 +591,24 @@ export class WorktreeManager {
         );
       }
       const currentHead = currentHeadProbe.stdout.trim();
+      // t-2dd637 — a prior-less reuse (respawn onto a worktree whose failed first launch never
+      // persisted a ledger row) must carry base identity the way a clean spawn does. Dropping
+      // baseBranch here degrades the projection base from a symbolic ref to a pinned SHA, which
+      // makes `containedInBase` monotonically unsatisfiable. Re-derive it from the workspace root
+      // with the same probe the create path uses (:624). Fail-closed: a failed probe or a detached
+      // HEAD leaves it absent so the gated open refuses rather than pinning a SHA.
+      let baseBranch = o.prior?.baseBranch;
+      if (!baseBranch) {
+        const srcProbe = await this.git(gitArgs.currentBranch(), this.opts.workspaceRoot);
+        const srcBranch = srcProbe.code === 0 ? srcProbe.stdout.trim() : "";
+        baseBranch = srcBranch && srcBranch !== "HEAD" ? srcBranch : undefined;
+      }
       const record: WorktreeRecord = {
         path: wtPath,
         branch: o.branch,
         tachyonCreatedBranch: o.prior?.tachyonCreatedBranch ?? false, // unknown without a prior → assume human-owned (safe: never force-deleted)
         baseRef: o.prior?.baseRef ?? currentHead,
-        ...(o.prior?.baseBranch ? { baseBranch: o.prior.baseBranch } : {}), // carry forward (spec 223)
+        ...(baseBranch ? { baseBranch } : {}), // carry forward (spec 223), else re-derived above (t-2dd637)
         createdAt: o.prior?.createdAt ?? this.nowIso(),
         // spec 214 — carry the persisted verify result across reuse/restart (review fix: a restart
         // wrote a fresh record and dropped the badge; staleness re-checks HEAD/dirty anyway).

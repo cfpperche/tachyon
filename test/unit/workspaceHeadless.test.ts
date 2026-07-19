@@ -549,6 +549,48 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     }
   });
 
+  it("refuses a canonical gated open whose worktree carries only a pinned base SHA", async () => {
+    expect.hasAssertions();
+    // t-2dd637 — `WorktreeRecord.baseRef` is a fork-point SHA on every producer path. Coalescing the
+    // projection base to it pins containment to a commit, which `containedInBase` then reads as a
+    // ceiling and refuses forever. The open boundary must fail closed instead.
+    const { ws } = await makeWorkspace();
+    const pinned = "8787658ae1bc2ed11c3ee002f0bf2cb7bd3b4c08";
+    // `open` is the projection's durable write (DeliveryProjectionService.openCanonical).
+    const gitCreate = vi.spyOn(ws.gitDeliveries, "open");
+    const deliveryCreate = vi.spyOn(ws.deliveries, "create");
+    const record = (ws as unknown as {
+      recordCanonicalDelivery(input: {
+        name: string;
+        gate: { behaviorTest: string; owns?: string[] };
+        worktree: { path: string; branch: string; tachyonCreatedBranch: boolean; baseRef: string; baseBranch?: string; createdAt: string };
+        baseSha: string;
+      }): Promise<unknown>;
+    }).recordCanonicalDelivery.bind(ws);
+    try {
+      await expect(record({
+        name: "implementer",
+        gate: { behaviorTest: "cmd:node scripts/check-behavior.mjs", owns: ["src"] },
+        worktree: {
+          path: mkdir(),
+          branch: "tachyon/implementer",
+          tachyonCreatedBranch: false,
+          baseRef: pinned,
+          baseBranch: undefined,
+          createdAt: "2026-07-19T00:00:00.000Z",
+        },
+        baseSha: pinned,
+      })).rejects.toThrow(/DELIVERY_BASE_REF_UNRESOLVED/);
+
+      // Load-bearing half: a throw AFTER a durable write would still leave the broken record
+      // behind. Nothing may be persisted — not the projection, not the Delivery itself.
+      expect(gitCreate).not.toHaveBeenCalled();
+      expect(deliveryCreate).not.toHaveBeenCalled();
+    } finally {
+      ws.dispose();
+    }
+  });
+
   it("mechanism-only canonical Delivery reuses one worktree through review completion", async () => {
     const root = mkdir(); const base = path.join(root, ".tachyon-worktrees");
     fs.writeFileSync(path.join(root, "tachyon.yml"), `settings:\n${namedBehaviorVerifyYaml()}  worktree:\n    base: ${JSON.stringify(base)}\nagents:\n  boss:\n    cmd: sh\n`, "utf8");
