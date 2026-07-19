@@ -110,6 +110,21 @@ Visual verdict: the primer, compact semantic summary, pointer and before-finishi
 legible and correctly ordered in both supported TUI delivery channels; neither the bounded pane nor
 inventory exposes the synthetic long guidance text.
 
+## Independent review
+
+- 2026-07-19 — Independent read-only review of candidate `1627756e` returned **PI-001 GREEN** with
+  no HIGH or MEDIUM findings. The reviewer confirmed that configured guidance still comes from one
+  validated list, preserves labels/order/bytes, and remains absent without opt-in. The later main
+  commit `df1be7d6` only moves the repository-owned fixture to tracked `tachyon.yml.example`; it does
+  not change the promise or fixed oracle. A virtual merge reported no conflict.
+- One non-blocking LOW found a defensive ledger boundary: a malformed legacy `SpawnContract` with
+  neither completion field could be described as `DONE_WHEN` during restart. Supported Bridge
+  producers validate the xor invariant, so this does not affect SDD 411's supported behavior or
+  PI-001. The hardening was deliberately decomposed into follow-up `t-c8949c`.
+- Reviewer evidence: focused PI-001 behavior 1/1 and selected focused suite 438/438 passed. Runtime
+  TUI inspection and full verification were explicitly outside that review; the parent candidate
+  owns those gates.
+
 ## Candidate verification
 
 - Focused startup/prompt/guidance/Workspace suite — PASS, 10 files / 516 tests.
