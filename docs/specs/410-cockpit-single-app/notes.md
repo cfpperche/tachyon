@@ -23,3 +23,8 @@ _In-flight memory. Empty of implementation log until build starts._
 
 - Pilot surface pick at implementation kickoff.
 - Thin-host vs single-panel-only intermediate strategy.
+
+## Review dispatch
+
+- 2026-07-18: spawned agent `fable` (claude) parent=hermes for adversarial review → `docs/reviews/cockpit-single-app-410-fable.md`.
+- Board: t-7315ad
