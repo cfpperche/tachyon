@@ -34,9 +34,25 @@ describe("shared UI product patterns (STYLEGUIDE)", () => {
   it("Control ModuleChrome and Approvals adopt the patterns", () => {
     const cockpit = readFileSync("src/webview/cockpit/App.tsx", "utf8");
     expect(cockpit).toContain("PageChrome");
+    expect(cockpit).toContain("ListRow");
+    expect(cockpit).toContain("EmptyState");
+    expect(cockpit).not.toMatch(/ci-badge/);
     const approvals = readFileSync("src/webview/approval/App.tsx", "utf8");
     expect(approvals).toContain("PageChrome");
     expect(approvals).toContain("EmptyState");
     expect(approvals).toMatch(/Button[\s\S]*Approve/);
+    const validations = readFileSync("src/webview/validations/App.tsx", "utf8");
+    expect(validations).toContain("PageChrome");
+    expect(validations).toContain("from \"../shared/ui\"");
+    const runtime = readFileSync("src/webview/runtime-ops/App.tsx", "utf8");
+    expect(runtime).toContain("PageChrome");
+  });
+
+  it("STYLEGUIDE documents guard gap and PageChrome criterion", () => {
+    const guide = readFileSync("docs/STYLEGUIDE.md", "utf8");
+    expect(guide).toContain("MIGRATED_VIEWS");
+    expect(guide).toContain("title / hint / actions");
+    expect(guide).toMatch(/primary.*single primary/i);
+    expect(guide).toContain("DataTable");
   });
 });

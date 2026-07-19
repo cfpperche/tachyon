@@ -1,13 +1,137 @@
-.validations-main { padding: 20px; max-width: 1050px; margin: 0 auto; }
-.validation-title, .validation-summary, .validation-filters, .validation-controls, .validation-close { display: flex; align-items: center; gap: 10px; }
-.validation-title { justify-content: space-between; margin-bottom: 14px; }
-.validation-title h1 { margin: 0; font-size: 20px; }.validation-title p { margin: 3px 0 0; color: var(--vscode-descriptionForeground); }
-.validation-filters { margin-bottom: 14px; flex-wrap: wrap; }.validation-list { display: grid; gap: 9px; }
-.validation-card { border: 1px solid var(--vscode-panel-border); border-left: 3px solid var(--vscode-testing-iconQueued); border-radius: 4px; background: var(--vscode-editor-background); }
-.validation-card.closed { border-left-color: var(--vscode-testing-iconPassed); opacity: .86; }
-.validation-summary { width: 100%; border: 0; background: transparent; color: inherit; text-align: left; padding: 12px; cursor: pointer; }
-.validation-primary { display: grid; gap: 3px; min-width: 180px; }.validation-id, .muted { color: var(--vscode-descriptionForeground); }.validation-id { font-family: var(--vscode-editor-font-family); font-size: 11px; }
-.validation-chips { margin-left: auto; display: flex; gap: 5px; flex-wrap: wrap; justify-content: flex-end; }.validation-chips span, .validation-refs span { padding: 2px 7px; border-radius: 10px; background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); font-size: 11px; }
-.validation-detail { border-top: 1px solid var(--vscode-panel-border); padding: 4px 14px 14px 42px; }.validation-detail h3 { font-size: 12px; text-transform: uppercase; margin: 14px 0 6px; }.validation-detail p { white-space: pre-wrap; }.validation-detail ol { margin: 0; padding-left: 20px; }.validation-detail li + li { margin-top: 8px; }
-.validation-refs { display: flex; flex-wrap: wrap; gap: 5px; }.validation-controls { align-items: flex-end; flex-wrap: wrap; }.validation-controls label { display: grid; gap: 4px; }.validation-close { flex: 1 1 100%; align-items: stretch; flex-wrap: wrap; }.validation-close textarea { min-width: 260px; flex: 1; min-height: 54px; }
-.validation-warning { padding: 8px; margin-bottom: 10px; color: var(--vscode-errorForeground); background: var(--vscode-inputValidation-errorBackground); }.validation-empty { padding: 28px; text-align: center; color: var(--vscode-descriptionForeground); }
+/* Validations — tokens from design-system (--ds-*), no standalone max-width column. */
+.validations-main {
+  padding: 12px 16px 16px;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  box-sizing: border-box;
+  font-family: var(--tachyon-font-mono, inherit);
+  font-size: var(--ds-body, 13px);
+  color: var(--ds-fg, var(--vscode-foreground));
+}
+.validation-summary,
+.validation-filters,
+.validation-controls,
+.validation-close {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.validation-filters {
+  margin: 0 0 14px;
+  flex-wrap: wrap;
+}
+.validation-list {
+  display: grid;
+  gap: 9px;
+}
+.validation-card {
+  border: 1px solid var(--ds-border, var(--vscode-panel-border));
+  border-left: 3px solid var(--ds-info, var(--vscode-testing-iconQueued));
+  border-radius: var(--ds-radius, 6px);
+  background: var(--ds-card, var(--vscode-editor-background));
+}
+.validation-card.closed {
+  border-left-color: var(--ds-ok, var(--vscode-testing-iconPassed));
+  opacity: var(--ds-disabled-opacity, 0.86);
+}
+.validation-summary {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  padding: 12px;
+  cursor: pointer;
+  font: inherit;
+}
+.validation-primary {
+  display: grid;
+  gap: 3px;
+  min-width: 180px;
+}
+.validation-id,
+.muted {
+  color: var(--ds-muted, var(--vscode-descriptionForeground));
+}
+.validation-id {
+  font-size: 11px;
+}
+.validation-chips {
+  margin-left: auto;
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.validation-chips span,
+.validation-refs span {
+  padding: 2px 7px;
+  border-radius: 10px;
+  background: var(--ds-input-bg, var(--vscode-badge-background));
+  color: var(--ds-fg, var(--vscode-badge-foreground));
+  font-size: 11px;
+}
+.validation-detail {
+  border-top: 1px solid var(--ds-border, var(--vscode-panel-border));
+  padding: 4px 14px 14px 42px;
+}
+.validation-detail h3 {
+  font-size: 12px;
+  text-transform: uppercase;
+  margin: 14px 0 6px;
+  color: var(--ds-muted);
+}
+.validation-detail p {
+  white-space: pre-wrap;
+}
+.validation-detail ol {
+  margin: 0;
+  padding-left: 20px;
+}
+.validation-detail li + li {
+  margin-top: 8px;
+}
+.validation-refs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.validation-controls {
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+.validation-controls label {
+  display: grid;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--ds-muted);
+}
+.validation-controls input {
+  font: inherit;
+  padding: 4px 8px;
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius);
+  background: var(--ds-input-bg, var(--vscode-input-background));
+  color: var(--ds-fg);
+}
+.validation-close {
+  flex: 1 1 100%;
+  align-items: stretch;
+  flex-wrap: wrap;
+}
+.validation-close textarea {
+  min-width: 260px;
+  flex: 1;
+  min-height: 54px;
+}
+.validation-warning {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px;
+  margin-bottom: 10px;
+  border-radius: var(--ds-radius);
+  color: var(--ds-err, var(--vscode-errorForeground));
+  background: color-mix(in srgb, var(--ds-err) 10%, transparent);
+}

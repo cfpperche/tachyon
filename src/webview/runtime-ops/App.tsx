@@ -10,6 +10,7 @@ import type {
   RuntimeOpsUsageV1,
   RuntimeOpsValue,
 } from "../../runtimeOps/types";
+import { EmptyState, PageChrome } from "../shared/ui";
 
 const SUMMARY: Array<{ key: keyof RuntimeOpsSnapshot["summary"]; label: string }> = [
   { key: "runtimes", label: "Runtimes" },
@@ -27,22 +28,28 @@ export function App({
   onSetProviderObservation: (provider: RuntimeOpsProviderV2, enabled: boolean) => void;
 }) {
   if (!snapshot) {
-    return <main class="runtime-ops" aria-busy="true"><div class="runtime-ops-state">Loading runtime inventory...</div></main>;
+    return (
+      <main class="runtime-ops" aria-busy="true">
+        <PageChrome title="Runtime Ops" icon="graph" hint="Local runtime inventory and provider capacity." />
+        <EmptyState kind="loading" message="Loading runtime inventory…" />
+      </main>
+    );
   }
   if (snapshot.error) {
     return (
       <main class="runtime-ops">
-        <section class="runtime-ops-state runtime-ops-error" role="alert">
-          <strong>Runtime inventory unavailable.</strong>
-          <span>Runtime Ops could not refresh the inventory.</span>
-          <a class="runtime-ops-refresh" href="command:tachyon.refreshRuntimeOps">Refresh</a>
-        </section>
+        <PageChrome title="Runtime Ops" icon="graph" hint="Local runtime inventory and provider capacity." />
+        <EmptyState
+          kind="error"
+          message="Runtime inventory unavailable. Runtime Ops could not refresh the inventory."
+        />
       </main>
     );
   }
   const providerCapacity = snapshot.schemaVersion === 2 ? snapshot.providerCapacity : [];
   return (
     <main class="runtime-ops">
+      <PageChrome title="Runtime Ops" icon="graph" hint="Local runtime inventory and provider capacity." />
       <section class="runtime-ops-summary" aria-label="Runtime summary">
         {SUMMARY.map(({ key, label }) => (
           <div class="runtime-ops-summary-item" key={key}>

@@ -7,7 +7,7 @@ import {
 import type { ControlInspectorWorkspaceRow } from "../../control-inspector/model";
 import type { CockpitAction, CockpitStrings } from "./messages";
 import { EngineLogPanel } from "./EngineLogPanel";
-import { Button, PageChrome } from "../shared/ui";
+import { Button, Badge, ListRow, PageChrome, EmptyState } from "../shared/ui";
 import { App as MissionControlApp, type MissionControlDispatch, type TaskErrorEvent } from "../mission-control/App";
 import type { MissionControlVM } from "../mission-control/messages";
 import { App as ValidationsApp, type ValidationsDispatch } from "../validations/App";
@@ -91,7 +91,8 @@ const TAB_META: Record<CockpitSectionId, { icon: string; navKey: keyof CockpitSt
 
 function StateBadge({ s, state }: { s: CockpitStrings; state: "attached" | "error" | "none" }) {
   const label = state === "attached" ? s.attached : state === "error" ? s.error : s.none;
-  return <span class={`ci-badge ${state}`}>{label}</span>;
+  const tone = state === "attached" ? "ok" : state === "error" ? "err" : "default";
+  return <Badge tone={tone}>{label}</Badge>;
 }
 
 function Kv({ k, v }: { k: string; v?: string | number | null }) {
@@ -259,28 +260,25 @@ export function App(p: CockpitAppProps) {
     const o = m.overview;
     body = (
       <>
-        <div class="ck-head">
-          <div>
-            <h1>
-              <span class="codicon codicon-dashboard" />
-              {s.overviewTitle}
-            </h1>
-            <p class="hint">{s.overviewHint}</p>
-          </div>
-          {/* Shell actions live on Overview only — tabs stay a clean navigation strip. */}
-          <div class="ck-overview-actions">
-            <label class="ck-auto" title={s.auto}>
-              <input type="checkbox" checked={p.auto} onChange={(e) => p.onToggleAuto((e.target as HTMLInputElement).checked)} />
-              {s.auto}
-            </label>
-            <Button variant="default" onClick={p.onRefresh} title={s.refresh}>
-              <span class="codicon codicon-refresh" /> {s.refresh}
-            </Button>
-            <Button variant="default" onClick={p.onCopyDiagnostics} title={s.copyDiagnostics}>
-              <span class="codicon codicon-copy" /> {s.copyDiagnostics}
-            </Button>
-          </div>
-        </div>
+        <PageChrome
+          title={s.overviewTitle}
+          icon="dashboard"
+          hint={s.overviewHint}
+          actions={
+            <div class="ck-overview-actions">
+              <label class="ck-auto" title={s.auto}>
+                <input type="checkbox" checked={p.auto} onChange={(e) => p.onToggleAuto((e.target as HTMLInputElement).checked)} />
+                {s.auto}
+              </label>
+              <Button variant="default" icon="refresh" onClick={p.onRefresh} title={s.refresh}>
+                {s.refresh}
+              </Button>
+              <Button variant="default" icon="copy" onClick={p.onCopyDiagnostics} title={s.copyDiagnostics}>
+                {s.copyDiagnostics}
+              </Button>
+            </div>
+          }
+        />
         <div class="ck-chips">
           <div class="ck-chip">
             <div class="label">{s.workspaces}</div>
@@ -382,41 +380,46 @@ export function App(p: CockpitAppProps) {
     body = (
       <ModuleChrome title={s.fleetTitle} hint={s.fleetHint} actionLabel={s.openMissionControl} onAction={() => p.onSetSection("mission")}>
         {m.fleet.length === 0 ? (
-          <p class="ck-empty">{s.noneListed}</p>
+          <EmptyState kind="empty" message={s.noneListed} />
         ) : (
           <div class="ck-card-list" data-testid="control-fleet">
             {m.fleet.map((a) => (
-              <article key={`${a.wsHash ?? ""}:${a.name}`} class="ck-entity-card">
-                <div class="ck-entity-main">
-                  <div class="ck-entity-title">
+              <ListRow
+                key={`${a.wsHash ?? ""}:${a.name}`}
+                title={
+                  <>
                     <span class="name">{a.name}</span>
-                    <span class={`ci-badge ${a.running ? "attached" : "none"}`}>{a.running ? s.running : s.stopped}</span>
+                    <Badge tone={a.running ? "ok" : "default"}>{a.running ? s.running : s.stopped}</Badge>
                     {a.declared === false ? <span class="ck-pill">{s.adhoc}</span> : <span class="ck-pill muted">{s.declared}</span>}
                     {a.kind ? <span class="ck-pill muted">{a.kind}</span> : null}
-                  </div>
-                  <div class="ck-entity-meta">
+                  </>
+                }
+                meta={
+                  <>
                     {a.folder ? <span>{a.folder}</span> : null}
                     {a.wsHash ? <span class="ck-mono">{a.wsHash.slice(0, 8)}</span> : null}
-                  </div>
-                </div>
-                <div class="ck-entity-actions">
-                  {a.running ? (
-                    <Button variant="default" onClick={() => p.onFleetStop(a.name, a.wsHash)}>
-                      {s.stop}
+                  </>
+                }
+                actions={
+                  <>
+                    {a.running ? (
+                      <Button variant="default" onClick={() => p.onFleetStop(a.name, a.wsHash)}>
+                        {s.stop}
+                      </Button>
+                    ) : (
+                      <Button variant="default" onClick={() => p.onFleetStart(a.name, a.wsHash)}>
+                        {s.start}
+                      </Button>
+                    )}
+                    <Button variant="default" onClick={() => p.onFleetTerminal(a.name, a.wsHash)}>
+                      {s.openTerminal}
                     </Button>
-                  ) : (
-                    <Button variant="default" onClick={() => p.onFleetStart(a.name, a.wsHash)}>
-                      {s.start}
+                    <Button variant="default" onClick={() => p.onFleetActivity(a.name, a.wsHash)}>
+                      {s.openActivity}
                     </Button>
-                  )}
-                  <Button variant="default" onClick={() => p.onFleetTerminal(a.name, a.wsHash)}>
-                    {s.openTerminal}
-                  </Button>
-                  <Button variant="default" onClick={() => p.onFleetActivity(a.name, a.wsHash)}>
-                    {s.openActivity}
-                  </Button>
-                </div>
-              </article>
+                  </>
+                }
+              />
             ))}
           </div>
         )}
@@ -446,26 +449,37 @@ export function App(p: CockpitAppProps) {
     body = (
       <ModuleChrome title={s.worktreesTitle} hint={s.worktreesHint}>
         {m.worktrees.length === 0 ? (
-          <p class="ck-empty">{s.noneListed}</p>
+          <EmptyState kind="empty" message={s.noneListed} />
         ) : (
           <div class="ck-card-list" data-testid="control-worktrees">
             {m.worktrees.map((w) => (
-              <article key={w.id} class="ck-entity-card">
-                <div class="ck-entity-main">
-                  <div class="ck-entity-title">
+              <ListRow
+                key={w.id}
+                title={
+                  <>
                     <span class="name">{w.slug || w.id}</span>
-                    <span class={`ci-badge ${w.status === "active" ? "attached" : "none"}`}>{w.status}</span>
+                    <Badge tone={w.status === "active" ? "ok" : "default"}>{w.status}</Badge>
                     <span class="ck-pill muted">{w.kind === "agent" ? s.agent : w.kind === "change" ? s.change : w.kind}</span>
-                  </div>
-                  <div class="ck-entity-meta">
-                    {w.branch ? <span>{s.branch}: <span class="ck-mono">{w.branch}</span></span> : null}
-                    {w.agent ? <span>{s.agent}: {w.agent}</span> : null}
+                  </>
+                }
+                meta={
+                  <>
+                    {w.branch ? (
+                      <span>
+                        {s.branch}: <span class="ck-mono">{w.branch}</span>
+                      </span>
+                    ) : null}
+                    {w.agent ? (
+                      <span>
+                        {s.agent}: {w.agent}
+                      </span>
+                    ) : null}
                     {w.folder ? <span>{w.folder}</span> : null}
-                  </div>
-                  {w.path ? <div class="ck-entity-path ck-mono">{w.path}</div> : null}
-                </div>
-                <div class="ck-entity-actions">
-                  {w.path ? (
+                  </>
+                }
+                detail={w.path ? <span class="ck-mono">{w.path}</span> : undefined}
+                actions={
+                  w.path ? (
                     <>
                       <Button variant="default" onClick={() => p.onRevealPath(w.path)}>
                         {s.reveal}
@@ -474,9 +488,9 @@ export function App(p: CockpitAppProps) {
                         {s.copyPath}
                       </Button>
                     </>
-                  ) : null}
-                </div>
-              </article>
+                  ) : undefined
+                }
+              />
             ))}
           </div>
         )}
@@ -486,39 +500,52 @@ export function App(p: CockpitAppProps) {
     body = (
       <ModuleChrome title={s.deliveriesTitle} hint={s.deliveriesHint}>
         {m.deliveries.length === 0 ? (
-          <p class="ck-empty">{s.noneListed}</p>
+          <EmptyState kind="empty" message={s.noneListed} />
         ) : (
           <div class="ck-card-list" data-testid="control-deliveries">
             {m.deliveries.map((d) => (
-              <article key={d.id} class="ck-entity-card">
-                <div class="ck-entity-main">
-                  <div class="ck-entity-title">
+              <ListRow
+                key={d.id}
+                title={
+                  <>
                     <span class="name ck-mono">{d.id}</span>
-                    <span class={`ci-badge ${["pruned", "abandoned"].includes(d.phase) ? "none" : "attached"}`}>{d.phase}</span>
-                  </div>
-                  <div class="ck-entity-meta">
-                    {d.branchRef ? <span>{s.branch}: <span class="ck-mono">{d.branchRef}</span></span> : null}
-                    {d.agent ? <span>{s.agent}: {d.agent}</span> : null}
+                    <Badge tone={["pruned", "abandoned"].includes(d.phase) ? "default" : "ok"}>{d.phase}</Badge>
+                  </>
+                }
+                meta={
+                  <>
+                    {d.branchRef ? (
+                      <span>
+                        {s.branch}: <span class="ck-mono">{d.branchRef}</span>
+                      </span>
+                    ) : null}
+                    {d.agent ? (
+                      <span>
+                        {s.agent}: {d.agent}
+                      </span>
+                    ) : null}
                     {d.folder ? <span>{d.folder}</span> : null}
-                  </div>
-                  {d.worktreePath ? <div class="ck-entity-path ck-mono">{d.worktreePath}</div> : null}
-                </div>
-                <div class="ck-entity-actions">
-                  <Button variant="default" onClick={() => p.onCopyText(d.id)}>
-                    {s.copyId}
-                  </Button>
-                  {d.worktreePath ? (
-                    <>
-                      <Button variant="default" onClick={() => p.onRevealPath(d.worktreePath!)}>
-                        {s.reveal}
-                      </Button>
-                      <Button variant="default" onClick={() => p.onCopyText(d.worktreePath!)}>
-                        {s.copyPath}
-                      </Button>
-                    </>
-                  ) : null}
-                </div>
-              </article>
+                  </>
+                }
+                detail={d.worktreePath ? <span class="ck-mono">{d.worktreePath}</span> : undefined}
+                actions={
+                  <>
+                    <Button variant="default" onClick={() => p.onCopyText(d.id)}>
+                      {s.copyId}
+                    </Button>
+                    {d.worktreePath ? (
+                      <>
+                        <Button variant="default" onClick={() => p.onRevealPath(d.worktreePath!)}>
+                          {s.reveal}
+                        </Button>
+                        <Button variant="default" onClick={() => p.onCopyText(d.worktreePath!)}>
+                          {s.copyPath}
+                        </Button>
+                      </>
+                    ) : null}
+                  </>
+                }
+              />
             ))}
           </div>
         )}
