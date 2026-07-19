@@ -7,10 +7,15 @@ describe("runtime profiles (spec 358 phase 1)", () => {
     expect(profile?.model).toMatchObject({ defaultModel: "Claude default", source: "declared", verified: false });
     expect(modelLabelForRuntime("claude", "claude-opus-4-8")).toBe("Opus 4.8");
     expect(profile?.isolation).toMatchObject({ mechanism: "mint", source: "measured", verified: true });
-    expect(profile?.composer).toMatchObject({ tailLines: 8, source: "declared" });
+    expect(profile?.composer).toMatchObject({ tailLines: 8, source: "measured", verified: true, verifiedAt: "2026-07-19" });
     expect(profile?.composer?.promptLine?.test("> hello")).toBe(true);
     expect(profile?.composer?.occupiedLine.test("> hello")).toBe(true);
     expect(profile?.composer?.occupiedLine.test("> ")).toBe(false);
+    // t-3fe20f: measured against a live tachyon-b349073a-claude pane capture (raw bytes e2 9d af) — the
+    // composer prompt glyph is '❯', not ASCII '>'; see codex's sibling assertion just below.
+    expect(profile?.composer?.promptLine?.test("❯ hello")).toBe(true);
+    expect(profile?.composer?.occupiedLine.test("❯ hello")).toBe(true);
+    expect(profile?.composer?.occupiedLine.test("❯ ")).toBe(false);
     expect(hasVerifiedTranscriptIsolation(profile!.isolation)).toBe(true);
   });
 

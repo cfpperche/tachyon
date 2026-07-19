@@ -159,11 +159,15 @@ export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = 
     },
     composer: {
       tailLines: 8,
-      promptLine: /^\s*(?:[│┃]\s*)?>\s?.*$/,
-      occupiedLine: /^\s*(?:[│┃]\s*)?>\s?\S.*$/,
-      source: "declared",
-      verified: false,
-      notes: "t-f30324: Claude's human input composer is a bottom-of-pane prompt line beginning with '>'.",
+      promptLine: /^\s*(?:[│┃]\s*)?(?:❯|>|›)\s?.*$/,
+      occupiedLine: /^\s*(?:[│┃]\s*)?(?:❯|>|›)\s?\S.*$/,
+      source: "measured",
+      verified: true,
+      verifiedAt: "2026-07-19",
+      notes:
+        "t-3fe20f: live Claude Code CLI renders its composer prompt as U+276F '❯' (measured on tachyon-b349073a-claude, " +
+        "raw bytes e2 9d af), not ASCII '>'; the unmeasured t-f30324 regex never matched, permanently wedging isReady() " +
+        "for every claude-runtime agent once LAUNCH_READINESS_RUNTIMES started gating claude (t-9d2299).",
     },
     gracefulStop: {
       steps: [
