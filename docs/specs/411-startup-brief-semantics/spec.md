@@ -31,54 +31,54 @@ requires independent equivalence review; the fixed oracle and its strength do no
 
 ## Acceptance criteria
 
-- [ ] **Scenario: guidance-only long startup brief is not presented as a delegation**
+- [x] **Scenario: guidance-only long startup brief is not presented as a delegation**
   - **Given** a prompt-capable declared agent with configured project guidance whose composed body exceeds the file threshold, and no soul, role, persistent instructions or task brief
   - **When** Tachyon launches or restarts the agent
   - **Then** the pane calls the aggregate a `startup brief`, reports the actual layer presence, and states that no task objective was supplied
   - **And** the file contains the configured guidance losslessly with its existing source labels and project-owned delimiters
   - **And** neither the pane nor the file claims that a task/spawn contract exists
-- [ ] **Scenario: a delegated long contract remains identifiable and lossless**
+- [x] **Scenario: a delegated long contract remains identifiable and lossless**
   - **Given** an ad-hoc or gated child whose composed startup brief exceeds the file threshold
   - **When** the child is launched with `TASK`, `CONTEXT`, `CONSTRAINTS` and exactly one completion field
   - **Then** the bounded pane summary reports a present task contract and distinguishes `DELIVERABLE` from `DONE_WHEN`
   - **And** every contract byte reaches the startup-brief file in canonical precedence without truncation or heuristic reconstruction
-- [ ] **Scenario: all prompt layers have a typed source of truth**
+- [x] **Scenario: all prompt layers have a typed source of truth**
   - **Given** any combination of project guidance, soul, role, persistent instructions, Bridge guidance and task brief
   - **When** Tachyon composes onboarding
   - **Then** typed composition metadata describes only the non-empty layers actually eligible for delivery through that runtime path
   - **And** a bounded, content-free projection of that metadata produces the pane summary
   - **And** readable file boundaries do not create a second renderer or change layer precedence
-- [ ] **Scenario: short delivery retains the safe inline path**
+- [x] **Scenario: short delivery retains the safe inline path**
   - **Given** a composed startup brief at or below the transport threshold
   - **When** Tachyon delivers it
   - **Then** the body stays inline and no long-brief file is created or replaced for that launch
   - **And** shell-escaped bytes, Unicode and apostrophes continue to be measured by the established transport rules
-- [ ] **Scenario: derived-file freshness is explicit**
+- [x] **Scenario: derived-file freshness is explicit**
   - **Given** a pre-existing `.tachyon/briefs/spawn/<agent>.md` followed by an inline, failed or semantically different launch
   - **When** an agent or operator inspects current launch evidence
   - **Then** the old file's existence alone is not presented as proof of a current task, gate or startup delivery
   - **And** the documented correlation/lifecycle rule distinguishes the file referenced by the current launch from retained postmortem residue
-- [ ] **Scenario: failed replacement preserves the prior launch**
+- [x] **Scenario: failed replacement preserves the prior launch**
   - **Given** a valid existing long startup brief and a replacement whose preview, transport validation or atomic write fails
   - **When** launch or restart is attempted
   - **Then** Tachyon fails before mutating the live pane/session and preserves the previous complete file
   - **And** the error identifies purpose, stage and relevant byte counts without printing brief content
-- [ ] **Scenario: startup and re-anchor artifacts remain isolated**
+- [x] **Scenario: startup and re-anchor artifacts remain isolated**
   - **Given** the same agent receives both long startup and long re-anchor content
   - **When** either artifact is refreshed
   - **Then** each purpose retains its own path, terminology and lifecycle without overwriting the other
-- [ ] **Scenario: transcript-owning and unsupported runtimes keep their launch semantics**
+- [x] **Scenario: transcript-owning and unsupported runtimes keep their launch semantics**
   - **Given** explicit resume/continue/session-id syntax, or an agent adapter without a startup-prompt channel
   - **When** the runtime starts
   - **Then** Tachyon does not add a new positional startup brief or infer layer presence that was not delivered
-- [ ] **Scenario: project guidance ownership remains unchanged**
+- [x] **Scenario: project guidance ownership remains unchanged**
   - **Given** configured and unconfigured consumer workspaces
   - **When** startup briefs are composed across supported adapters
   - **Then** PI-001's fixed oracle remains true: configured sources are labelled and ordered, while unconfigured consumers receive none
-- [ ] The pane manifest has a tested maximum size and contains no task text, arbitrary source paths, soul content, instructions, credentials or other free-form payload.
-- [ ] The path, 4,000-byte diversion threshold, safe inline ceiling and public `SpawnContract` field schema remain compatible unless a separately ratified decision changes them.
-- [ ] Product documentation answers who generates the artifact, why it exists, what it may contain, when it is used, and why its presence alone does not prove an active task.
-- [ ] Sanitized dogfood proves guidance-only, `DELIVERABLE`, `DONE_WHEN`, re-anchor and explicit-resume behavior through at least two supported runtime delivery channels.
+- [x] The pane manifest has a tested maximum size and contains no task text, arbitrary source paths, soul content, instructions, credentials or other free-form payload.
+- [x] The path, 4,000-byte diversion threshold, safe inline ceiling and public `SpawnContract` field schema remain compatible unless a separately ratified decision changes them.
+- [x] Product documentation answers who generates the artifact, why it exists, what it may contain, when it is used, and why its presence alone does not prove an active task.
+- [x] Sanitized dogfood proves guidance-only, `DELIVERABLE`, `DONE_WHEN`, re-anchor and explicit-resume behavior through at least two supported runtime delivery channels.
 - [ ] Focused tests, PI-001, typecheck and configured full verification pass, and an independent reviewer records PI-001 equivalence.
 
 ## Non-goals

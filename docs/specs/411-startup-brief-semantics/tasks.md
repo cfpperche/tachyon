@@ -18,14 +18,14 @@ _Generated from `plan.md` on 2026-07-19. Work top-to-bottom. Check boxes as task
 - [x] Add `docs/architecture/startup-briefs.md` and update runtime parity with ownership, composition, transport and freshness rules.
 - [x] Extend project-guidance dogfood across long guidance-only Codex argv, Hermes env, structured completion kinds, re-anchor namespace and resume behavior supported by the capture harness.
 - [x] Record per-slice decisions/deviations and sanitized terminal/file evidence in `notes.md`.
-- [ ] Commit each reviewable slice with its Mission Control task ID using explicit path scopes.
+- [x] Commit each reviewable slice with its Mission Control task ID using explicit path scopes.
 
 ## Verification
 
 - [x] Focused prompt/brief/AgentManager tests pass with no truncation or threshold relaxation.
 - [ ] PI-001 passes and an independent reviewer records mechanical equivalence of any evidence edit.
 - [x] Typecheck passes.
-- [ ] Configured full verification passes; any pre-existing failure remains explicitly unverified rather than described as green.
+- [ ] Configured full verification passes; candidate failure is recorded explicitly in `notes.md` and is not described as green.
 - [ ] The SDD duplicate-ID check and closure audit report no blocking findings when status becomes shipped.
 
 **Headless check:** `npx vitest run test/unit/startupBrief.test.ts test/unit/projectGuidance.test.ts test/unit/soul-lifecycle-a2Behavior.gen.test.ts test/unit/briefFile.test.ts test/unit/snBriefBehavior.gen.test.ts test/unit/cxBriefBehavior.gen.test.ts test/unit/agentManager.test.ts test/unit/agentSoulLegacyParity.test.ts test/unit/workspaceHeadless.test.ts test/unit/t12DerivedFiles.test.ts --maxWorkers=1`

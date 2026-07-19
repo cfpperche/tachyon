@@ -65,6 +65,9 @@ None.
   contracts, the separate re-anchor path, and a transcript-owning Codex resume command. It prints
   only synthetic, root-redacted bounded evidence and never the long body.
 
+### 2026-07-19T15:36:01Z — pass (1/1) — source: tasks.md — commit: f432f3a570fb90c6c571cd2e642f8921e7da4e51
+- `npm exec -- vite-node scripts/dogfood-project-guidance.mts` — pass
+
 ## Sanitized terminal/TUI evidence
 
 The dogfood's generated root is replaced with `<workspace>`. The Codex positional command and Hermes
@@ -110,6 +113,16 @@ inventory exposes the synthetic long guidance text.
 ## Candidate verification
 
 - Focused startup/prompt/guidance/Workspace suite — PASS, 10 files / 516 tests.
-- `npm run typecheck` — PASS after the dogfood/documentation slice.
-- Product Invariant and configured full results remain pending the final candidate run. The
-  independent PI-001 equivalence review also remains intentionally open.
+- `npm exec -- vite-node scripts/dogfood-project-guidance.mts` — PASS with the sanitized evidence
+  above.
+- `npm run typecheck` — PASS on final candidate `f432f3a5`.
+- Focused PI-001 behavioral promise — PASS, 1 test; the repository-fixture assertion was skipped by
+  exact test-name selection because the ignored worktree config is not present.
+- `npm run test:invariants` — FAIL only because the invariant runner also requires the ignored
+  worktree-local `tachyon.yml`; the behavioral ownership oracle above remains green. The independent
+  PI-001 equivalence review remains intentionally open.
+- `npm run verify:full:quiet` — FAIL, 7 tests; retained log
+  `/tmp/tachyon-verify-full-szjMOr`. Comparing failed-suite identities with the clean primary
+  baseline `/tmp/tachyon-verify-full-dXC0NV` shows the same six pre-existing failures plus only the
+  known worktree-local PI-001 fixture failure. No startup-brief-focused test failed and this result
+  is not presented as green.
