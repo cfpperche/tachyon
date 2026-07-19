@@ -4,6 +4,9 @@ _From plan.md. Revised 2026-07-19 (fable P0s). Work phase-by-phase; one migratio
 
 ## Phase A — Foundation
 
+_Status 2026-07-19: foundation + Approvals single-path + lazy ESM shipped in code; human Visual QA still pending._
+
+
 - [ ] STYLEGUIDE: two-app rule + link spec 410; no new editor `main.tsx` without `WEBVIEW_SURFACES` entry.
 - [ ] Extend `WebviewSurface` in `src/webview/surfaces.ts` (editorHome / cockpitSectionId / retiredInFavorOf as needed) + update `webviewConvention.test.ts` — **no parallel inventory test file**.
 - [ ] Section module interface + shell wrapper (`PageChrome` + page pad).

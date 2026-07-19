@@ -1,4 +1,5 @@
 import type { ComponentChildren } from "preact";
+import { lazy, Suspense } from "preact/compat";
 import {
   COCKPIT_SECTION_ORDER,
   type CockpitModel,
@@ -8,19 +9,30 @@ import type { ControlInspectorWorkspaceRow } from "../../control-inspector/model
 import type { CockpitAction, CockpitStrings } from "./messages";
 import { EngineLogPanel } from "./EngineLogPanel";
 import { Button, Badge, ListRow, PageChrome, EmptyState } from "../shared/ui";
-import { App as MissionControlApp, type MissionControlDispatch, type TaskErrorEvent } from "../mission-control/App";
+import type { MissionControlDispatch, TaskErrorEvent } from "../mission-control/App";
 import type { MissionControlVM } from "../mission-control/messages";
-import { App as ValidationsApp, type ValidationsDispatch } from "../validations/App";
+import type { ValidationsDispatch } from "../validations/App";
 import type { ValidationsViewModel } from "../validations/viewModel";
-import { App as ApprovalsApp, type ApprovalDispatch } from "../approval/App";
+import type { ApprovalDispatch } from "../approval/App";
 import type { ApprovalViewModel } from "../approval/viewModel";
-import { App as RuntimeOpsApp } from "../runtime-ops/App";
 import type { RuntimeOpsProviderV2, RuntimeOpsSnapshot } from "../../runtimeOps/types";
-import { App as InspectorApp, type InspectorAppProps } from "../inspector/App";
-import { App as PluginsApp, type PluginsDispatch } from "../plugins/App";
+import type { InspectorAppProps } from "../inspector/App";
+import type { PluginsDispatch } from "../plugins/App";
 import type { PluginsViewModel } from "../../plugins/viewModel";
 import type { ConsentVM } from "../../plugins/consentViewModel";
 import type { Toast as PluginsToast } from "../plugins/main";
+
+// spec 410 — lazy section bodies (ESM chunks). Keeps eager cockpit.js under budget.
+const MissionControlApp = lazy(() => import("../mission-control/App").then((m) => ({ default: m.App })));
+const ValidationsApp = lazy(() => import("../validations/App").then((m) => ({ default: m.App })));
+const ApprovalsApp = lazy(() => import("../approval/App").then((m) => ({ default: m.App })));
+const RuntimeOpsApp = lazy(() => import("../runtime-ops/App").then((m) => ({ default: m.App })));
+const InspectorApp = lazy(() => import("../inspector/App").then((m) => ({ default: m.App })));
+const PluginsApp = lazy(() => import("../plugins/App").then((m) => ({ default: m.App })));
+
+function SectionFallback() {
+  return <EmptyState kind="loading" message="Loading…" />;
+}
 
 export interface CockpitAppProps {
   model: CockpitModel | undefined;
@@ -427,7 +439,9 @@ export function App(p: CockpitAppProps) {
   } else if (section === "approvals") {
     body = (
       <div class="ck-embed-host" data-testid="control-approvals">
-        <ApprovalsApp vm={p.approvalVm} error={p.approvalError} dispatch={p.approvalDispatch} />
+        <Suspense fallback={<SectionFallback />}>
+          <ApprovalsApp vm={p.approvalVm} error={p.approvalError} dispatch={p.approvalDispatch} />
+        </Suspense>
       </div>
     );
   } else if (section === "mission") {
@@ -435,13 +449,17 @@ export function App(p: CockpitAppProps) {
     // t-b87bfe: Validations live on the dedicated Control → Validations tab (not on the task board).
     body = (
       <div class="ck-embed-host ck-mission-host" data-testid="control-mission-board">
-        <MissionControlApp vm={p.missionVm} lastError={p.missionError} dispatch={p.missionDispatch} />
+        <Suspense fallback={<SectionFallback />}>
+          <MissionControlApp vm={p.missionVm} lastError={p.missionError} dispatch={p.missionDispatch} />
+        </Suspense>
       </div>
     );
   } else if (section === "validations") {
     body = (
       <div class="ck-embed-host" data-testid="control-validations-host">
-        <ValidationsApp vm={p.validationsVm} error={p.validationsError} dispatch={p.validationsDispatch} />
+        <Suspense fallback={<SectionFallback />}>
+          <ValidationsApp vm={p.validationsVm} error={p.validationsError} dispatch={p.validationsDispatch} />
+        </Suspense>
       </div>
     );
   } else if (section === "worktrees") {
@@ -553,19 +571,24 @@ export function App(p: CockpitAppProps) {
   } else if (section === "runtime") {
     body = (
       <div class="ck-embed-host" data-testid="control-runtime-ops">
-        <RuntimeOpsApp snapshot={p.runtimeSnapshot} onSetProviderObservation={p.onRuntimeSetProviderObservation} />
+        <Suspense fallback={<SectionFallback />}>
+          <RuntimeOpsApp snapshot={p.runtimeSnapshot} onSetProviderObservation={p.onRuntimeSetProviderObservation} />
+        </Suspense>
       </div>
     );
   } else if (section === "tmux") {
     body = (
       <div class="ck-embed-host" data-testid="control-tmux-inspector">
-        <InspectorApp {...p.inspector} />
+        <Suspense fallback={<SectionFallback />}>
+          <InspectorApp {...p.inspector} />
+        </Suspense>
       </div>
     );
   } else if (section === "plugins") {
     body = (
       <div class="ck-embed-host" data-testid="control-plugins">
         <div class="ck-plugins-root">
+          <Suspense fallback={<SectionFallback />}>
           <PluginsApp
             vm={p.pluginsVm}
             consent={p.pluginsConsent}
@@ -573,6 +596,7 @@ export function App(p: CockpitAppProps) {
             toast={p.pluginsToast}
             dispatch={p.pluginsDispatch}
           />
+        </Suspense>
         </div>
       </div>
     );

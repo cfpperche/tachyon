@@ -52,6 +52,8 @@ export interface WebviewShellOptions {
   bootstrapGlobals?: Record<string, unknown>;
   /** Minimal VS Code reload state. The bundle entrypoint persists this through `vscode.setState()`. */
   persistedState?: unknown;
+  /** spec 410 — load bundle as ES module (cockpit code-split chunks). */
+  module?: boolean;
 }
 
 /** Assemble the standard webview page for a converted surface. The only sanctioned `<!DOCTYPE>` site. */
@@ -94,7 +96,7 @@ ${links}
 </head>
 <body${bodyClass}>
 <div id="root"></div>
-${bootstrap}<script nonce="${nonce}" src="${o.bundle}"></script>
+${bootstrap}<script nonce="${nonce}"${o.module ? ' type="module"' : ""} src="${o.bundle}"></script>
 </body>
 </html>`;
 }

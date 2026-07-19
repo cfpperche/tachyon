@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { panelIcon } from "./shared/panelIcon.js";
 import { renderWebviewShell } from "./shared/shell.js";
+import { resolveCockpitSection } from "../cockpit/resolveSection.js";
 import { READY } from "./shared/ready.js";
 import {
   buildCockpitModel,
@@ -374,7 +375,7 @@ export async function openCockpit(
 ): Promise<void> {
   const s = strings();
   const inspS = inspectorStrings();
-  if (opts?.section) currentSection = opts.section;
+  if (opts?.section) currentSection = resolveCockpitSection(opts.section);
   if (opts?.missionWsHash) missionWsHash = opts.missionWsHash;
   if (opts?.approvalWsHash) approvalWsHash = opts.approvalWsHash;
 
@@ -733,7 +734,7 @@ export async function openCockpit(
           await sendSectionModule();
           return;
         case "setSection":
-          currentSection = c.section;
+          currentSection = resolveCockpitSection(c.section);
           await sendModel();
           await sendSectionModule();
           return;
@@ -873,6 +874,7 @@ export async function openCockpit(
         uri("cockpit.css"),
       ],
       bundle: uri("cockpit.js"),
+      module: true,
       mode: "live",
       persistedState: {
         schemaVersion: 1,

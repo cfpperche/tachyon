@@ -1562,7 +1562,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   registerTrustedPanelSerializer<CockpitPanelState>(context, COCKPIT_VIEW_TYPE, (panel, state) =>
     openCockpit(makeCockpitDeps(), { revivedPanel: panel, section: state?.section }),
   );
-  for (const viewType of ["tachyonPluginSurface", "tachyonPluginSurfaces", "tachyonAgentFixtureStudio", "tachyonControlInspector", "tachyonSketch"]) {
+  for (const viewType of ["tachyonPluginSurface", "tachyonPluginSurfaces", "tachyonAgentFixtureStudio", "tachyonControlInspector", "tachyonSketch", "tachyonRuntimeOpsView"]) {
     registerDisposePanelSerializer(context, viewType);
   }
 
@@ -1813,8 +1813,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // ---- views ----
     vscode.commands.registerCommand("tachyon.refreshViews", refreshAll),
     vscode.commands.registerCommand("tachyon.openApprovals", async (hash?: string) => {
+      // spec 410 — Approvals live in Control (cockpit section); do not open a second peer panel.
       const ws = hash ? byHash(hash) : await pickWorkspace();
-      if (ws) approvalPanels.open(ws);
+      await openCockpit(makeCockpitDeps(), {
+        section: "approvals",
+        ...(ws ? { approvalWsHash: ws.wsHash } : {}),
+      });
     }),
     vscode.commands.registerCommand("tachyon.resolveApproval", async (arg: { id?: string; decision?: "approved" | "denied"; wsHash?: string }) => {
       const ws = targetOf(arg?.wsHash);

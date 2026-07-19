@@ -2,6 +2,8 @@
 
 **Single design system for every Tachyon webview** (sidebar, Control, Board, studios, embeds).
 
+**Two editor apps (spec 410):** long-term only **`sidebar`** + **`cockpit`**. New full-page editor UI is a cockpit **section** (extend `WEBVIEW_SURFACES` / `CockpitSectionId`), not a new `src/webview/*/main.tsx` peer app. Multi-instance panels (task detail, handoff, probes) may stay thin hosts (`editorHome: "standalone-multi"`). See `docs/specs/410-cockpit-single-app/`.
+
 This document is the **contract**. Values live in `src/webview/shared/design-system.css` (`--ds-*` over `--vscode-*`). Components live in `src/webview/shared/ui/` (legacy primitives + `kit/` + product patterns). Do not invent a second token set or a second button.
 
 Related: specs **252** (tokens), **282** (component kit), **342** (vendored shadcn/kit wrappers). Plan: `docs/plans/unified-webview-design-system.md`. Review: `docs/reviews/styleguide-fable.md`.

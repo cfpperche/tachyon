@@ -246,11 +246,18 @@ const controlInspector = {
 };
 
 // POC — Tachyon Cockpit desktop shell (editor sysadmin; t-fe52f0 frente 1; no mobile).
+// spec 410 — ESM + code-splitting so section bodies can lazy-import without bloating eager cockpit.js.
+// emits dist/webview/cockpit.js + dist/webview/chunks/cockpit-*.js
 const cockpit = {
   ...sidebar,
   entryPoints: ["src/webview/cockpit/main.tsx"],
-  outfile: "dist/webview/cockpit.js",
+  entryNames: "cockpit",
+  chunkNames: "chunks/cockpit-[name]-[hash]",
+  outdir: "dist/webview",
+  splitting: true,
+  format: "esm",
 };
+delete cockpit.outfile;
 
 // spec 279 — the Preact Pin Preview view bundle (converted from inline HTML; read-only, never imports vscode).
 const pinPreview = {

@@ -51,3 +51,17 @@ _In-flight memory. Empty of implementation log until build starts._
 ## Pilot
 
 Approvals — dual `tachyon.openApprovals` vs cockpit section is the proof target.
+
+## Phase A implementation (2026-07-19)
+
+- `WEBVIEW_SURFACES.editorHome` + `cockpitSectionId` (Approvals = legacy-redirect → approvals).
+- Multi-instance tagged `standalone-multi` (activity/handoff/probes/task-detail).
+- `resolveCockpitSection` + unit tests; unknown → overview.
+- Cockpit build: ESM + splitting (`dist/webview/cockpit.js` ~22KB eager; section chunks under `dist/webview/chunks/`).
+- Lazy section bodies via `preact/compat` lazy+Suspense for mission/approvals/validations/runtime/tmux/plugins.
+- `tachyon.openApprovals` → `openCockpit({ section: "approvals" })`; ApprovalPanelManager redirects only.
+- RuntimeOpsView dispose-only serializer (no bottom bar).
+- Bundle budget test: eager cockpit.js ≤ 350KB when dist present.
+- STYLEGUIDE: two-app rule.
+
+**Eager size after Phase A build:** ~22015 bytes cockpit.js.
