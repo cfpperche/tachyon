@@ -4,20 +4,20 @@ _Generated from `plan.md` on 2026-07-19. Work top-to-bottom. Check boxes as task
 
 ## Implementation
 
-- [ ] Add canonical Task authoring limits and bounded, non-echoing domain messages.
-- [ ] Apply the shared limits at the TaskStore defensive boundary.
-- [ ] Preserve native Zod maxima while adding received/max guidance to every bounded `create_task` field.
-- [ ] Document umbrella/follow-up, task-note, and durable-artifact authoring choices in the tool contract.
-- [ ] Add MCP and TaskStore regression coverage for atomic rejection and field-specific errors.
+- [x] Add canonical Task authoring limits and bounded, non-echoing domain messages.
+- [x] Apply the shared limits at the TaskStore defensive boundary.
+- [x] Preserve native Zod maxima while adding received/max guidance to every bounded `create_task` field.
+- [x] Document umbrella/follow-up, task-note, and durable-artifact authoring choices in the tool contract.
+- [x] Add MCP and TaskStore regression coverage for atomic rejection and field-specific errors.
 
 ## Verification
 
 _Acceptance checks tied to `spec.md`. Each should map to a checklist item there._
 
-- [ ] Focused unit tests cover body/title/kind/ref/count boundaries, four-slice guidance, secret non-echo, and no Task creation.
-- [ ] `listTools` proves canonical `maxLength`/`maxItems` remain advertised.
-- [ ] Existing PI-001 behavior tests remain green.
-- [ ] Repository typecheck and full verification pass.
+- [x] Focused unit tests cover body/title/kind/ref/count boundaries, four-slice guidance, secret non-echo, and no Task creation.
+- [x] `listTools` proves canonical `maxLength`/`maxItems` remain advertised.
+- [x] Existing PI-001 behavior tests remain green.
+- [x] Repository typecheck and full verification pass.
 
 **Headless check:** `npx vitest run test/unit/bridge.test.ts test/unit/taskStore.test.ts`
 **Verify:** `npx vitest run test/unit/bridge.test.ts test/unit/taskStore.test.ts`

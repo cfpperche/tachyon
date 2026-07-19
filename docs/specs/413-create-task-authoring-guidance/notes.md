@@ -6,19 +6,28 @@ _In-flight design memory — decisions, deviations, tradeoffs, and open question
 
 ## Design decisions
 
-_Choices made where the spec/plan was ambiguous. The decision + why this option over the others considered in the moment._
+- Zod's field-local `errorMap` receives the rejected input, so it can calculate a code-point or entry count while native `.max(...)` retains `maxLength` and `maxItems` in the MCP JSON schema.
+- Error construction interpolates only the field and numeric sizes. Rejected content is never echoed.
 
 ## Deviations
 
-_Where implementation intentionally departed from `plan.md`, and why it was necessary or better._
+None.
 
 ## Tradeoffs
 
-_Alternatives weighed mid-build. The chosen path + what was given up + why it was worth it._
+- The body error carries more guidance than other field errors but remains under the asserted 1,500-character response cap. This keeps the preservation/decomposition path at the exact failure point without inflating every validation message.
 
 ## Open questions
 
-_Questions surfaced during the build with no answer yet. Owner or path to resolution if known._
+None.
+
+## Final verification
+
+- Focused MCP and TaskStore suite: 95 passed.
+- Product Invariant gate: PI-001, 2 passed.
+- `npm run typecheck`: passed.
+- `npm run verify:full:quiet`: 437 files passed; 5,036 tests passed and 3 skipped.
+- SDD ID uniqueness: passed.
 
 ## Verification log
 

@@ -2,7 +2,8 @@
 
 _Created 2026-07-19._
 
-**Status:** in-progress
+**Status:** shipped
+**Closure:** Shipped 2026-07-19 in `18ae6dfb`: `create_task` retains canonical MCP schema bounds while returning bounded, content-free received/max errors with deliberate umbrella/follow-up, task-note, and durable-artifact guidance; TaskStore shares the limits and rejects atomically. Evidence: focused MCP/TaskStore tests 95/95, PI-001 2/2, typecheck pass, full verification 437 files and 5,036 passed / 3 skipped, and headless dogfood pass.
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
@@ -18,22 +19,22 @@ Make every `create_task` size failure specific, bounded, and actionable while pr
 
 _Observable outcomes. Given/When/Then scenarios for behavior; plain checkbox bullets for static facts. If every box can be ticked, the spec is delivered. Each criterion should be verifiable without re-reading the plan._
 
-- [ ] **Scenario: oversized body is rejected with a preservation path**
+- [x] **Scenario: oversized body is rejected with a preservation path**
   - **Given** a `create_task` body longer than 4,000 code points
   - **When** the caller invokes the tool
   - **Then** the bounded error names `body`, reports received and maximum sizes, says not to truncate, and distinguishes an umbrella Task plus explicit follow-up Tasks, `append_task_note`, and `artifact_refs`
   - **And** no Task, notification, dependency, or partial file is created
-- [ ] **Scenario: real four-slice work is decomposed deliberately**
+- [x] **Scenario: real four-slice work is decomposed deliberately**
   - **Given** one request describes four independently shippable slices
   - **When** the caller reads `create_task` guidance or an oversized-body error
   - **Then** it is told to create one bounded umbrella Task and separate follow-up Tasks, without automatic follow-up creation or dependency inference
-- [ ] **Scenario: other authoring limits identify the failing field**
+- [x] **Scenario: other authoring limits identify the failing field**
   - **Given** an oversized title, kind, artifact-ref collection, artifact-ref type, or artifact-ref value
   - **When** the caller invokes `create_task`
   - **Then** the error names that field and reports its received and maximum sizes with field-specific remediation
-- [ ] The advertised MCP JSON schema retains the canonical maxima: title 300, body 4,000, kind 64, artifact refs 10, ref type 64, and ref value 500.
-- [ ] TaskStore uses the same canonical limits and emits the same concise limit vocabulary for non-MCP callers.
-- [ ] Product Invariants are unchanged; PI-001 remains enforced by its existing verification.
+- [x] The advertised MCP JSON schema retains the canonical maxima: title 300, body 4,000, kind 64, artifact refs 10, ref type 64, and ref value 500.
+- [x] TaskStore uses the same canonical limits and emits the same concise limit vocabulary for non-MCP callers.
+- [x] Product Invariants are unchanged; PI-001 remains enforced by its existing verification.
 
 ## Non-goals
 
