@@ -6,6 +6,16 @@
   padding: var(--ds-page-pad-y) var(--ds-page-pad-x) var(--ds-page-pad-bottom);
 }
 
+/*
+ * Embedded in Control (t-0739f7). cockpit.css zeroes `.ck-embed-host > main` so a host never
+ * double-pads the div-rooted surfaces (.approval-root / .insp-root) that already own the Fleet page
+ * pad. This root IS the <main>, so that guard stripped the pad it was meant to preserve and the page
+ * ran flush to x=0 and to the right frame edge. Re-assert the pad this root owns; the host adds none.
+ */
+.ck-embed-host > main.runtime-ops {
+  padding: var(--ds-page-pad-y) var(--ds-page-pad-x) var(--ds-page-pad-bottom) !important;
+}
+
 .runtime-ops-summary {
   display: flex;
   align-items: center;
