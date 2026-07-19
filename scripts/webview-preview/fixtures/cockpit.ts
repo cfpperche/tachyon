@@ -4,6 +4,8 @@
 
 import { buildCockpitModel, type CockpitModel, type CockpitWorkspaceBundle } from "../../../src/cockpit/model";
 import type { CockpitStrings } from "../../../src/webview/cockpit/messages";
+import { buildValidationsViewModel, type ValidationsViewModel } from "../../../src/webview/validations/viewModel";
+import type { Validation } from "../../../src/validations/types";
 import type { Fixture } from "../routes";
 
 export const strings: CockpitStrings = {
@@ -165,11 +167,76 @@ const bundles: CockpitWorkspaceBundle[] = [
 
 const now = "2026-07-16T18:40:00.000Z";
 
+// Representative queue for the embedded Validations tab (t-e61439): a pending agent item, a pending human
+// item and a closed one — mixed priorities so the harness exercises the badge + filter UI non-empty.
+const validationsSample: Validation[] = [
+  {
+    id: "v-8f1a02",
+    title: "Confirm cockpit Validations tab renders a non-empty queue",
+    type: "dogfood",
+    status: "pending",
+    executor: "agent",
+    priority: 0,
+    assignee: "impl-e61439",
+    instructions: "Open Control → Validations and confirm the queue lists real items, not the empty state.",
+    source_refs: [{ type: "task", ref: "t-e61439" }],
+    rounds: [],
+    author: "claude",
+    createdAt: "2026-07-15T09:00:00.000Z",
+    updatedAt: "2026-07-16T10:00:00.000Z",
+  },
+  {
+    id: "v-3c7d19",
+    title: "Human sign-off on onboarding doc rewrite",
+    type: "doc-review",
+    status: "pending",
+    executor: "human",
+    priority: 2,
+    instructions: "Read through docs/onboarding.md and confirm the new setup steps are accurate.",
+    source_refs: [{ type: "file", ref: "docs/onboarding.md" }],
+    rounds: [],
+    author: "claude",
+    createdAt: "2026-07-16T08:00:00.000Z",
+    updatedAt: "2026-07-16T08:00:00.000Z",
+  },
+  {
+    id: "v-5b2e44",
+    title: "Regression sweep for plugin install flow",
+    type: "regression",
+    status: "closed",
+    executor: "either",
+    priority: 3,
+    assignee: "cfpperche",
+    instructions: "Install/update/remove a sample plugin end to end.",
+    source_refs: [{ type: "task", ref: "t-6f21a9" }],
+    rounds: [
+      {
+        n: 1,
+        startedAt: "2026-07-14T12:00:00.000Z",
+        closedAt: "2026-07-14T13:30:00.000Z",
+        assignee: "cfpperche",
+        outcome: "passed",
+        result_note: "Install, update, and remove all worked as expected.",
+      },
+    ],
+    author: "claude",
+    createdAt: "2026-07-14T11:00:00.000Z",
+    updatedAt: "2026-07-14T13:30:00.000Z",
+  },
+];
+
+export const validationsFixtureVm: ValidationsViewModel = buildValidationsViewModel({
+  folder: "tachyon",
+  wsHash: "b349073a",
+  validations: validationsSample,
+});
+
 export const cockpitFixtures: Record<string, Fixture<CockpitModel>> = {
   default: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "overview", nowIso: now }) },
   engine: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "engine", nowIso: now }) },
   fleet: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "fleet", nowIso: now }) },
   mission: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "mission", nowIso: now }) },
+  validations: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "validations", nowIso: now }) },
   approvals: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "approvals", nowIso: now }) },
   runtime: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "runtime", nowIso: now }) },
   tmux: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "tmux", nowIso: now }) },

@@ -26,6 +26,7 @@ import {
 import { pinPreviewMessage } from "../../src/webview/pin-preview/messages";
 import { handoffMessage } from "../../src/webview/handoff/messages";
 import { approvalsMessage } from "../../src/webview/approval/messages";
+import { validationsMessage } from "../../src/webview/validations/messages";
 import { pinStudioMessage } from "../../src/webview/pin-studio/messages";
 import { taskMessage } from "../../src/webview/task-detail/messages";
 import { snapshotMessage } from "../../src/webview/mission-control/messages";
@@ -39,7 +40,7 @@ import { activityFixtures } from "./fixtures/activity";
 import { probesFixtures } from "./fixtures/probes";
 import { inspectorFixtures, strings as inspectorStrings } from "./fixtures/inspector";
 import { controlInspectorFixtures, strings as controlInspectorStrings } from "./fixtures/control-inspector";
-import { cockpitFixtures, strings as cockpitStrings } from "./fixtures/cockpit";
+import { cockpitFixtures, strings as cockpitStrings, validationsFixtureVm } from "./fixtures/cockpit";
 import { pinPreviewFixtures } from "./fixtures/pin-preview";
 import { taskStudioFixtures, taskStudioMakeMessage } from "./fixtures/task-studio";
 import { taskDetailFixtures } from "./fixtures/task-detail";
@@ -160,6 +161,8 @@ export const ROUTES: Record<string, Route> = {
       if (model.section === "mission") {
         const board = missionControlFixtures.default?.vm;
         if (board) msgs.push({ type: "snapshot", vm: board });
+      } else if (model.section === "validations") {
+        msgs.push(validationsMessage(validationsFixtureVm));
       } else if (model.section === "approvals") {
         const approval = approvalFixtures.pending?.vm;
         if (approval) msgs.push(approvalsMessage(approval));
