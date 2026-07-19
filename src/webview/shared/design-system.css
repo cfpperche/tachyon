@@ -123,10 +123,10 @@ a { color: var(--ds-link); }
 .ds-section { font-size: var(--ds-section); font-weight: var(--tachyon-weight-semibold); text-transform: uppercase; letter-spacing: var(--tachyon-tracking-label); color: var(--ds-muted); margin: 0 0 var(--ds-2); }
 
 /* ── buttons ── */
-.ds-btn { display: inline-flex; align-items: center; gap: var(--ds-icon-gap); padding: var(--ds-1) var(--ds-3); border: 1px solid var(--ds-border); border-radius: 4px; color: var(--ds-fg); }
+.ds-btn { display: inline-flex; align-items: center; gap: var(--ds-icon-gap); padding: var(--ds-1) var(--ds-3); border: 1px solid var(--ds-border); border-radius: var(--ds-radius); color: var(--ds-fg); }
 .ds-btn:hover { background: var(--ds-hover); }
 /* spec 282 — primary composes with .ds-btn (structure); the colored bg makes its border invisible (transparent). */
-.ds-btn-primary { display: inline-flex; align-items: center; gap: var(--ds-icon-gap); background: var(--ds-btn-bg); color: var(--ds-btn-fg); border-color: transparent; border-radius: 4px; padding: var(--ds-1) var(--ds-3); font-weight: var(--tachyon-weight-semibold); }
+.ds-btn-primary { display: inline-flex; align-items: center; gap: var(--ds-icon-gap); background: var(--ds-btn-bg); color: var(--ds-btn-fg); border-color: transparent; border-radius: var(--ds-radius); padding: var(--ds-1) var(--ds-3); font-weight: var(--tachyon-weight-semibold); }
 .ds-btn-primary:hover { background: var(--ds-btn-hover); }
 .ds-btn-primary:disabled { opacity: var(--ds-disabled-opacity); cursor: default; }
 .ds-btn-primary.ds-danger, .ds-btn-danger { background: var(--ds-err); color: #fff; border-color: transparent; }

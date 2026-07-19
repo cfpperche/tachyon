@@ -59,8 +59,10 @@ Rule: when a feature already touches the surface, finish kit adoption in the sam
 - Dogfood: Control all 12 tabs after chrome PRs
 
 ### Phase E — Token unify (t-7ff4c2)
-- Single radius (`--ds-radius` ← shadcn `--radius`)
-- Single status vocabulary
+- [x] `--radius: var(--ds-radius)` in vscode-theme (kit bridge)
+- [x] `.ds-btn` / primary use `border-radius: var(--ds-radius)`
+- [ ] Remaining hard-coded radii in surface CSS (migrate on touch)
+- [x] Status via Badge tones (Control/sidebar/handoff); residual surface chips on touch
 - Finish kit pilots without dual paradigms
 
 ---
