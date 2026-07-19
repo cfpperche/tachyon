@@ -22,6 +22,7 @@ import {
   canPruneLinkedGitDelivery,
 } from "../git-delivery/policy.js";
 import { assessPruneDelivery, pruneDeliveryRecord, type PruneDeps, type PruneInput, type PruneResult } from "../git-delivery/prune.js";
+import type { DeliveryRecoveryApproval } from "./leaseService.js";
 import {
   deterministicGitDeliveryId,
   type GitDeliveryStore,
@@ -49,10 +50,47 @@ import type {
   Delivery,
   DeliveryActor,
   DeliveryEvent,
+  DeliveryProjectionAction,
   DeliveryProjectionClaimCapability,
   DeliveryProjectionIntentDetail,
 } from "./types.js";
 import { PROJECTION_INTENT_EVENT_TYPE } from "./types.js";
+
+/**
+ * t-2dd637 §4: the narrow governed base-repair action. It lives beside the canonical actions
+ * rather than in `DeliveryProjectionAction` because the shared type is owned elsewhere; the
+ * intent log, sequence allocation and reconcile loop below all treat it as a first-class action.
+ */
+export const RECONCILE_BASE_ACTION = "reconcile_base" as const;
+
+type ProjectionAction = DeliveryProjectionAction | typeof RECONCILE_BASE_ACTION;
+
+/** Widened locally so a reconcile_base intent is a real, sequence-consuming projection intent. */
+type ProjectionIntentDetail = Omit<DeliveryProjectionIntentDetail, "action"> & { action: ProjectionAction };
+
+/** Full 40-hex object name — the shape a pinned-SHA base always has (t-2dd637 §1.2). */
+const FULL_SHA = /^[0-9a-f]{40}$/;
+
+/**
+ * Digest bound by the base-repair approval. Covers exactly the four fields the report names,
+ * plus an action label for domain separation so this receipt can never authorize another action.
+ */
+export function baseRepairActionDigest(input: {
+  gitDeliveryId: string;
+  currentBaseRef: string;
+  proposedBaseRef: string;
+  currentHeadSha: string;
+}): string {
+  return createHash("sha256")
+    .update(JSON.stringify({
+      action: RECONCILE_BASE_ACTION,
+      gitDeliveryId: input.gitDeliveryId,
+      currentBaseRef: input.currentBaseRef,
+      proposedBaseRef: input.proposedBaseRef,
+      currentHeadSha: input.currentHeadSha,
+    }))
+    .digest("hex");
+}
 
 export class DeliveryProjectionError extends Error {
   constructor(
@@ -90,6 +128,18 @@ export interface DeliveryProjectionServiceDeps {
    * Must not mutate stores.
    */
   loadReloadSnapshot: (deliveryId: string) => Promise<ReloadReconciliationSnapshot>;
+  /**
+   * t-2dd637 §4: the workspace's configured target branch. The base repair may only ever widen a
+   * pinned SHA to this exact branch, so an absent probe makes the repair unavailable rather than
+   * letting the caller name its own base.
+   */
+  targetBranch?: () => string | Promise<string>;
+  /** t-2dd637 §4: resolves the approval bound to `baseRepairActionDigest`. Absent → unavailable. */
+  resolveBaseRepairApproval?: (
+    approvalId: string,
+    actor: DeliveryActor,
+    actionDigest: string,
+  ) => DeliveryRecoveryApproval | Promise<DeliveryRecoveryApproval>;
   now?: () => string;
   operationId?: () => string;
   eventId?: () => string;
@@ -130,6 +180,20 @@ export interface CanonicalPruneInput {
   abandon?: boolean;
   forceLoseCommits?: boolean;
   doomedShas?: string[];
+  operationId?: string;
+}
+
+/** t-2dd637 §4: narrow, governed, defect-class-only repair of a pinned-SHA projection base. */
+export interface CanonicalReconcileBaseInput {
+  deliveryId: string;
+  gitDeliveryId: string;
+  expectedGitVersion: number;
+  /** Must equal the workspace target branch; the caller cannot choose an arbitrary base. */
+  proposedBaseRef: string;
+  approvalId: string;
+  actor: DeliveryActor;
+  /** Bridge-resolved caller identity is mandatory for linked projection mutations. */
+  caller: Pick<CallerSnapshot, "kind" | "name">;
   operationId?: string;
 }
 
@@ -368,6 +432,236 @@ export class DeliveryProjectionService {
         return { delivery: afterIntent, projection: applied };
       });
     });
+  }
+
+  /**
+   * t-2dd637 §4 — narrow governed base repair.
+   *
+   * A recovery-reuse spawn with no prior ledger row degraded the projection base from a symbolic
+   * branch ref to a pinned commit SHA, which makes `containedInBase` monotonically unsatisfiable:
+   * the branch tip is a descendant of the pin, never an ancestor, and every new commit moves it
+   * further away. Resolving a SHA base "up" to the target branch at integrate time was rejected as
+   * the shipped rule — it would let ambient workspace state decide a containment proof for every
+   * record. This repairs the durable field instead, visibly and under approval, with refusals that
+   * provably restrict it to the defect class: the stored base must NOT be an existing branch and
+   * must be a real commit SHA, the proposal must be the workspace target branch, and the stored SHA
+   * must already be an ancestor of it — so the repair only ever widens to the true fork lineage.
+   * Afterwards the ordinary integrate closes the record with its own oracle fully intact.
+   */
+  async reconcileBase(input: CanonicalReconcileBaseInput): Promise<{ delivery: Delivery; projection: GitDelivery }> {
+    const settings = this.deps.settings();
+    const actor = toGitActor(input.actor);
+    if (!canIntegrateLinkedGitDelivery(actor, settings.integratePrincipals, input.caller)) {
+      throw new DeliveryProjectionError(
+        "reconcile_base refused: caller is not a privileged human/system/master or configured integratePrincipal",
+        "PROJECTION_UNAUTHORIZED",
+      );
+    }
+    const operationId = input.operationId ?? this.newOperationId("reconcile-base");
+
+    return this.withClaim(input.deliveryId, async (claim) => {
+      const projection0 = await this.requireProjection(input.gitDeliveryId, input.deliveryId);
+      const worktreePath = path.resolve(projection0.worktreePath);
+
+      return this.deps.withWorktreeLock(worktreePath, async () => {
+        await this.assertSafeForMutation(input.deliveryId, RECONCILE_BASE_ACTION);
+
+        const delivery = await this.requireDelivery(input.deliveryId);
+        const projection = await this.requireProjection(input.gitDeliveryId, input.deliveryId);
+        const currentBaseRef = projection.baseRef;
+        const replayIntent = listProjectionIntents(delivery)
+          .find((i) => i.operationId === operationId && i.action === RECONCILE_BASE_ACTION);
+        if (replayIntent) {
+          this.assertReplayIntent(replayIntent, {
+            gitDeliveryId: projection.id, action: RECONCILE_BASE_ACTION, actor: input.actor,
+            expected: { gitDeliveryVersion: input.expectedGitVersion },
+            payload: { proposedBaseRef: input.proposedBaseRef },
+          });
+        }
+        if (projection.version !== input.expectedGitVersion) {
+          if (replayIntent && (projection.lastAppliedProjectionSequence ?? 0) >= replayIntent.projectionSequence) {
+            return { delivery, projection };
+          }
+          throw new DeliveryProjectionError(
+            `GitDelivery version conflict: expected ${input.expectedGitVersion}, found ${projection.version}`,
+            "PROJECTION_DRIFT",
+          );
+        }
+
+        // Every refusal below runs before any intent is minted, so a refused repair never
+        // orphans a projection sequence.
+        await this.assertBaseRepairIsDefectClass(currentBaseRef, input.proposedBaseRef);
+
+        const live = await classifyDelivery(projection, {
+          workspaceRoot: this.deps.workspaceRoot,
+          git: this.deps.git,
+          liveness: this.deps.liveness,
+        });
+        if (!live.currentHeadSha) {
+          throw new DeliveryProjectionError(
+            "reconcile_base refused: the live branch tip could not be resolved",
+            "PROJECTION_REFUSED",
+          );
+        }
+        const actionDigest = baseRepairActionDigest({
+          gitDeliveryId: projection.id,
+          currentBaseRef,
+          proposedBaseRef: input.proposedBaseRef,
+          currentHeadSha: live.currentHeadSha,
+        });
+        const approval = await this.resolveBaseRepairApproval(input, actionDigest);
+
+        let sequence: number;
+        let afterIntent = delivery;
+        if (replayIntent) {
+          sequence = replayIntent.projectionSequence;
+        } else {
+          this.assertNoUnappliedProjectionLag(delivery, projection);
+          sequence = nextProjectionSequence(delivery);
+          const detail: ProjectionIntentDetail = {
+            projectionSequence: sequence,
+            operationId,
+            gitDeliveryId: projection.id,
+            action: RECONCILE_BASE_ACTION,
+            expected: {
+              deliveryVersion: delivery.version,
+              gitDeliveryVersion: projection.version,
+              headSha: live.currentHeadSha,
+              baseRef: currentBaseRef,
+              phase: projection.phase,
+            },
+            actor: input.actor,
+            payload: {
+              proposedBaseRef: input.proposedBaseRef,
+              approvalId: input.approvalId,
+              actionDigest,
+              payloadHash: approval.payloadHash,
+              resolvedAt: approval.resolvedAt,
+              ...(approval.resolvedBy ? { resolvedBy: approval.resolvedBy } : {}),
+            },
+          };
+          afterIntent = await this.appendIntent(claim, delivery, detail);
+        }
+
+        const at = this.now();
+        const applied = await this.deps.gitDeliveries.applyCanonicalIntent({
+          id: projection.id,
+          expectedVersion: projection.version,
+          sequence,
+          operationId,
+          deliveryId: input.deliveryId,
+          mutate: (record) => ({
+            ...record,
+            baseRef: input.proposedBaseRef,
+            currentHeadSha: live.currentHeadSha,
+            transitions: [
+              ...record.transitions,
+              {
+                at,
+                from: record.phase,
+                to: record.phase,
+                by: actor,
+                reason: `governed base repair: pinned SHA '${currentBaseRef}' restored to target branch '${input.proposedBaseRef}'`,
+              },
+            ],
+          }),
+        });
+        return { delivery: afterIntent, projection: applied };
+      });
+    });
+  }
+
+  /**
+   * Fail-closed proof that this record is the pinned-SHA defect class and that the proposal only
+   * widens to the true fork lineage. Note that `git check-ref-format --branch` is NOT sufficient
+   * on its own: a 40-hex object name is a syntactically valid branch name and passes it. The
+   * load-bearing discriminator is that the stored base does not exist as a branch but does resolve
+   * as a commit.
+   */
+  private async assertBaseRepairIsDefectClass(currentBaseRef: string, proposedBaseRef: string): Promise<void> {
+    if (!this.deps.targetBranch) {
+      throw new DeliveryProjectionError(
+        "reconcile_base refused: the workspace target branch is not resolvable on this projection service",
+        "PROJECTION_REFUSED",
+      );
+    }
+    let targetBranch: string;
+    try { targetBranch = await this.deps.targetBranch(); }
+    catch (error) {
+      throw new DeliveryProjectionError(
+        `reconcile_base refused: target branch resolution failed: ${error instanceof Error ? error.message : String(error)}`,
+        "PROJECTION_REFUSED",
+      );
+    }
+    if (!targetBranch || proposedBaseRef !== targetBranch) {
+      throw new DeliveryProjectionError(
+        `reconcile_base refused: proposed base '${proposedBaseRef}' is not the workspace target branch '${targetBranch}'`,
+        "PROJECTION_REFUSED",
+      );
+    }
+    if (await this.gitOk(["show-ref", "--verify", "--quiet", `refs/heads/${currentBaseRef}`])) {
+      throw new DeliveryProjectionError(
+        `reconcile_base refused: stored base '${currentBaseRef}' is already a symbolic branch ref, not the pinned-SHA defect class`,
+        "PROJECTION_REFUSED",
+      );
+    }
+    if (!FULL_SHA.test(currentBaseRef) || !await this.gitOk(["rev-parse", "--verify", "--quiet", `${currentBaseRef}^{commit}`])) {
+      throw new DeliveryProjectionError(
+        `reconcile_base refused: stored base '${currentBaseRef}' is neither a branch nor a resolvable commit; this is not the repairable defect class`,
+        "PROJECTION_REFUSED",
+      );
+    }
+    if (!await this.gitOk(["show-ref", "--verify", "--quiet", `refs/heads/${proposedBaseRef}`])) {
+      throw new DeliveryProjectionError(
+        `reconcile_base refused: proposed base branch '${proposedBaseRef}' does not exist`,
+        "PROJECTION_REFUSED",
+      );
+    }
+    if (!await this.gitOk(["merge-base", "--is-ancestor", currentBaseRef, proposedBaseRef])) {
+      throw new DeliveryProjectionError(
+        `reconcile_base refused: stored base '${currentBaseRef}' is not an ancestor of '${proposedBaseRef}'; the repair would retarget an unrelated base`,
+        "PROJECTION_REFUSED",
+      );
+    }
+  }
+
+  private async gitOk(args: string[]): Promise<boolean> {
+    const out = await this.deps.git(args, this.deps.workspaceRoot).catch(() => ({ code: 1, stdout: "", stderr: "" }));
+    return out.code === 0;
+  }
+
+  private async resolveBaseRepairApproval(
+    input: CanonicalReconcileBaseInput,
+    actionDigest: string,
+  ): Promise<DeliveryRecoveryApproval> {
+    if (!this.deps.resolveBaseRepairApproval || !input.approvalId) {
+      throw new DeliveryProjectionError(
+        "reconcile_base refused: a bound human approval is required and no approval resolver is available",
+        "PROJECTION_UNAUTHORIZED",
+      );
+    }
+    let approval: DeliveryRecoveryApproval;
+    try { approval = await this.deps.resolveBaseRepairApproval(input.approvalId, input.actor, actionDigest); }
+    catch (error) {
+      throw new DeliveryProjectionError(
+        `reconcile_base refused: approval resolution failed: ${error instanceof Error ? error.message : String(error)}`,
+        "PROJECTION_UNAUTHORIZED",
+      );
+    }
+    if (approval?.decision !== "approved" || approval.actionDigest !== actionDigest
+      || !approval.payloadHash || !approval.resolvedAt) {
+      throw new DeliveryProjectionError(
+        "reconcile_base refused: approval is not an exact approved receipt bound to this action digest",
+        "PROJECTION_UNAUTHORIZED",
+      );
+    }
+    if (input.actor.kind === "agent" && approval.requester !== input.actor.name) {
+      throw new DeliveryProjectionError(
+        "reconcile_base refused: approval was requested by a different principal",
+        "PROJECTION_UNAUTHORIZED",
+      );
+    }
+    return approval;
   }
 
   /**
@@ -673,6 +967,41 @@ export class DeliveryProjectionService {
             continue;
           }
 
+          if (intent.action === RECONCILE_BASE_ACTION) {
+            // The intent is the durable authority for the repair (as it is for integrate), so the
+            // approval is not re-resolved here. The defect-class predicates ARE re-checked against
+            // live Git; if they no longer hold, advance the sequence without touching baseRef so a
+            // stale repair intent cannot wedge every later intent behind it.
+            const proposedBaseRef = String(intent.payload.proposedBaseRef ?? "");
+            let repair: ((record: GitDelivery) => GitDelivery) | undefined;
+            if (currentProjection.baseRef !== proposedBaseRef && proposedBaseRef) {
+              const stillDefective = await this.assertBaseRepairIsDefectClass(currentProjection.baseRef, proposedBaseRef)
+                .then(() => true).catch(() => false);
+              if (stillDefective) {
+                const at = this.now();
+                const gitActor = toGitActor(intent.actor);
+                repair = (record) => ({
+                  ...record,
+                  baseRef: proposedBaseRef,
+                  transitions: [
+                    ...record.transitions,
+                    { at, from: record.phase, to: record.phase, by: gitActor, reason: "reconcile governed base repair" },
+                  ],
+                });
+              }
+            }
+            currentProjection = await this.deps.gitDeliveries.applyCanonicalIntent({
+              id: currentProjection.id,
+              expectedVersion: currentProjection.version,
+              sequence: intent.projectionSequence,
+              operationId: intent.operationId,
+              deliveryId,
+              mutate: repair ?? ((record) => record),
+            });
+            applied += 1;
+            continue;
+          }
+
           if (intent.action === "prune") {
             // Re-observe live; complete idempotently.
             if (currentProjection.phase === "pruned") {
@@ -756,7 +1085,7 @@ export class DeliveryProjectionService {
   private async appendIntent(
     claim: DeliveryProjectionClaimCapability,
     delivery: Delivery,
-    detail: DeliveryProjectionIntentDetail,
+    detail: ProjectionIntentDetail,
   ): Promise<Delivery> {
     const event: DeliveryEvent = {
       id: this.newEventId(detail.projectionSequence),
@@ -810,8 +1139,8 @@ export class DeliveryProjectionService {
 
   /** Refuse reuse of an operation id unless every caller-controlled persisted field matches. */
   private assertReplayIntent(
-    existing: DeliveryProjectionIntentDetail,
-    replay: Pick<DeliveryProjectionIntentDetail, "gitDeliveryId" | "action" | "actor"> & {
+    existing: ProjectionIntentDetail,
+    replay: Pick<ProjectionIntentDetail, "gitDeliveryId" | "action" | "actor"> & {
       expected: Record<string, unknown>;
       payload: Record<string, unknown>;
     },
@@ -830,7 +1159,10 @@ export class DeliveryProjectionService {
     }
   }
 
-  private async assertSafeForMutation(deliveryId: string, action: "integrate" | "prune" | "prune_abandon"): Promise<void> {
+  private async assertSafeForMutation(
+    deliveryId: string,
+    action: "integrate" | "prune" | "prune_abandon" | typeof RECONCILE_BASE_ACTION,
+  ): Promise<void> {
     let snapshot: ReloadReconciliationSnapshot;
     try {
       snapshot = await this.deps.loadReloadSnapshot(deliveryId);
@@ -885,10 +1217,12 @@ export class DeliveryProjectionService {
       );
     }
 
-    if (action === "integrate") {
+    // reconcile_base is a precondition for a normal integrate and carries the same lease
+    // requirement: it may only touch a released, terminal record.
+    if (action === "integrate" || action === RECONCILE_BASE_ACTION) {
       if (delivery.lease.state !== "free") {
         throw new DeliveryProjectionError(
-          `integrate requires free lease (found ${delivery.lease.state})`,
+          `${action} requires free lease (found ${delivery.lease.state})`,
           "PROJECTION_UNSAFE",
         );
       }
@@ -1017,16 +1351,17 @@ export function maxProjectionIntentSequence(delivery: Delivery): number {
   return intents[intents.length - 1]!.projectionSequence;
 }
 
-export function listProjectionIntents(delivery: Delivery): DeliveryProjectionIntentDetail[] {
-  const out: DeliveryProjectionIntentDetail[] = [];
+export function listProjectionIntents(delivery: Delivery): ProjectionIntentDetail[] {
+  const out: ProjectionIntentDetail[] = [];
   for (const event of delivery.events) {
     if (event.type !== PROJECTION_INTENT_EVENT_TYPE || !event.detail) continue;
-    const detail = event.detail as unknown as DeliveryProjectionIntentDetail;
+    const detail = event.detail as unknown as ProjectionIntentDetail;
     if (
       typeof detail.projectionSequence === "number"
       && typeof detail.operationId === "string"
       && typeof detail.gitDeliveryId === "string"
-      && (detail.action === "open" || detail.action === "integrate" || detail.action === "prune")
+      && (detail.action === "open" || detail.action === "integrate" || detail.action === "prune"
+        || detail.action === RECONCILE_BASE_ACTION)
     ) {
       out.push(detail);
     }
@@ -1040,7 +1375,7 @@ export function nextProjectionSequence(delivery: Delivery): number {
   return intents[intents.length - 1]!.projectionSequence + 1;
 }
 
-function sameIntent(a: DeliveryProjectionIntentDetail, b: DeliveryProjectionIntentDetail): boolean {
+function sameIntent(a: ProjectionIntentDetail, b: ProjectionIntentDetail): boolean {
   return isDeepStrictEqual(
     {
       projectionSequence: a.projectionSequence,
