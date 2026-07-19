@@ -70,10 +70,12 @@ function classesOf(vnode: HostVNode): string[] {
 describe("Button icon+label DOM shape (t-240a3b)", () => {
   let Button: (props: unknown) => unknown;
   let IconButton: (props: unknown) => unknown;
+  let Icon: (props: unknown) => unknown;
 
   beforeAll(async () => {
     Button = await loadComponent("src/webview/shared/ui/Button.tsx", "Button");
     IconButton = await loadComponent("src/webview/shared/ui/IconButton.tsx", "IconButton");
+    Icon = await loadComponent("src/webview/shared/ui/Icon.tsx", "Icon");
   }, 30_000);
 
   it("an icon+label Button exposes at least one non-.codicon element child", () => {
@@ -116,6 +118,36 @@ describe("Button icon+label DOM shape (t-240a3b)", () => {
     const children = elementChildren(vnode.props.children);
     expect(children.length).toBeGreaterThan(0);
     for (const c of children) expect(classesOf(c)).toContain("codicon");
+  });
+
+  it("a trailing literal <Icon/> (sidebar/App.tsx tag-clear pattern) stays a direct sibling, not nested in the label span", () => {
+    // mirrors src/webview/sidebar/App.tsx:1023 — <Button class="tag-clear">#{activePinTag}<Icon name="close" /></Button>
+    const vnode = Button({ class: "tag-clear", children: ["#", "sometag", { type: Icon, props: { name: "close" } }] }) as HostVNode;
+    const children = elementChildren(vnode.props.children);
+    // exactly one label span (the two text nodes glued into ONE run — no gap between "#" and the tag) and
+    // the resolved codicon as a direct sibling, so the .ds-btn 6px icon<->text gap still applies between them.
+    expect(children.length).toBe(2);
+    const codicon = children.find((c) => classesOf(c).includes("codicon"));
+    const label = children.find((c) => !classesOf(c).includes("codicon"));
+    expect(codicon).toBeTruthy();
+    expect(label).toBeTruthy();
+    expect(classesOf(label!)).toContain("ds-btn-label");
+    expect((label!.props.children as unknown[]).join("")).toBe("#sometag");
+  });
+
+  it("a leading literal <Icon/> followed by its own <span> label (mission-control/App.tsx more-item pattern) leaves both as direct siblings", () => {
+    // mirrors src/webview/mission-control/App.tsx:680 — <Button><Icon name={a.icon} /><span>{a.label}</span></Button>
+    const vnode = Button({
+      class: "more-item",
+      children: [{ type: Icon, props: { name: "check" } }, { type: "span", props: { children: "Do the thing" } }],
+    }) as HostVNode;
+    const children = elementChildren(vnode.props.children);
+    // no ds-btn-label wrap here: the caller's own <span> is a direct element child, not a contiguous
+    // text/number run, so it isn't glued into a new label span — it stays a sibling of the codicon.
+    expect(children.length).toBe(2);
+    expect(classesOf(children[0])).toContain("codicon");
+    expect(classesOf(children[1])).not.toContain("ds-btn-label");
+    expect(children[1].props.children).toBe("Do the thing");
   });
 
   it("the design-system.css icon-only rule still exists (guards against deleting instead of fixing)", () => {

@@ -25,18 +25,52 @@ export interface ButtonProps extends Omit<JSX.ButtonHTMLAttributes<HTMLButtonEle
 // breaking the Popper anchor measurement. Button isn't `asChild`-composed anywhere today, but it's this
 // project's ONE general button component (per its own header comment) — leaving it un-forwarded would just
 // reproduce the exact same silent breakage the next time someone reaches for it under a Kit trigger.
-function hasLabel(children: ComponentChildren): boolean {
-  if (children == null || children === false || children === "") return false;
-  if (Array.isArray(children)) return children.some(hasLabel);
-  return true;
+function flattenChildren(children: ComponentChildren, out: unknown[]): void {
+  if (children == null || children === false || children === true || children === "") return;
+  if (Array.isArray(children)) {
+    for (const child of children) flattenChildren(child, out);
+    return;
+  }
+  out.push(children);
+}
+
+function isTextRun(node: unknown): node is string | number {
+  return typeof node === "string" || typeof node === "number";
+}
+
+// t-240a3b — the icon-only CSS rule (`:has(> :not(.codicon))`) only sees ELEMENT children, so a bare
+// text-node label must be wrapped in an element or the button wrongly collapses to the icon-only 28px box
+// (see design-system.css's icon-only rule). Wrapping *all* children together, though, nests any literal
+// element child (e.g. a raw `<Icon/>` passed alongside text instead of via the `icon` prop) one level
+// inside `.ds-btn-label`, which has no gap rule — losing the `.ds-btn` 6px icon<->text gap. So flatten
+// children and glue only each CONTIGUOUS run of text/number nodes into one label span; element/component
+// vnodes stay direct siblings of `.ds-btn`, exactly like a flex layout's own anonymous-box grouping.
+function wrapLabelRuns(children: ComponentChildren): ComponentChildren[] {
+  const flat: unknown[] = [];
+  flattenChildren(children, flat);
+  const result: ComponentChildren[] = [];
+  let run: (string | number)[] = [];
+  const flushRun = () => {
+    if (run.length > 0) {
+      result.push(<span class="ds-btn-label">{run}</span>);
+      run = [];
+    }
+  };
+  for (const node of flat) {
+    if (isTextRun(node)) {
+      run.push(node);
+    } else {
+      flushRun();
+      result.push(node as ComponentChildren);
+    }
+  }
+  flushRun();
+  return result;
 }
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(({ variant = "default", icon, children, class: cls, ...rest }, ref) => (
   <button ref={ref} type="button" class={cx(VARIANT_CLASS[variant], cls)} {...rest}>
     {icon && <Icon name={icon} />}
-    {/* the icon-only CSS rule (`:has(> :not(.codicon))`) only sees ELEMENT children — a bare text-node label
-        is invisible to it, so a real label must be wrapped in an element or the button wrongly collapses
-        to the icon-only 28px box (see design-system.css's icon-only rule). */}
-    {hasLabel(children) ? <span class="ds-btn-label">{children}</span> : children}
+    {wrapLabelRuns(children)}
   </button>
 ));
