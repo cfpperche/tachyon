@@ -13,10 +13,12 @@ export { Input, Textarea, Select, FieldRow, Badge, type BadgeTone } from "./Fiel
 export {
   PageChrome,
   ListRow,
+  DenseRow,
   EmptyState,
   type PageChromeProps,
   type ListRowProps,
   type ListRowState,
+  type DenseRowProps,
   type EmptyStateProps,
   type EmptyStateKind,
 } from "./patterns";

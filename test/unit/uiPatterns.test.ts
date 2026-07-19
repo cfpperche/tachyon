@@ -74,4 +74,14 @@ describe("shared UI product patterns (STYLEGUIDE)", () => {
     expect(sidebar).not.toMatch(/class=\{`badge/);
     expect(sidebar).toContain("EmptyState");
   });
+
+  it("Sidebar uses shared DenseRow (Phase C.2)", () => {
+    const patterns = readFileSync("src/webview/shared/ui/patterns.tsx", "utf8");
+    expect(patterns).toContain("export function DenseRow");
+    expect(patterns).toContain("ds-dense-row");
+    const sidebar = readFileSync("src/webview/sidebar/App.tsx", "utf8");
+    expect(sidebar).toMatch(/DenseRow/);
+    expect(sidebar).toContain("const ListRow = DenseRow");
+    expect(sidebar).not.toMatch(/function ListRow\(/);
+  });
 });

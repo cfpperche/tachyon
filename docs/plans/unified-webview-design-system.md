@@ -35,11 +35,15 @@
 Order: Sidebar → Board body → Activity/Handoff → remaining studios → probes/misc.  
 Rule: when a feature already touches the surface, finish kit adoption in the same PR.
 
-#### C.1 Sidebar (this PR)
+#### C.1 Sidebar (0.56.64)
 - [x] Agent / section badges → shared `Badge`
 - [x] Config error actions → `Button`
 - [x] Empty slots → `EmptyState`
-- [ ] Local `ListRow`/`Group` (dense tree) — keep until API converges with shared `ListRow` (different props: name/dot/child)
+
+#### C.2 DenseRow (this PR)
+- [x] Extract sidebar `ListRow` → shared `DenseRow` (`.row` DOM preserved)
+- [x] Sidebar aliases `const ListRow = DenseRow`
+- [ ] AgentRow itself still custom (tree/metrics) — out of scope
 
 ### Phase D — Forcing functions
 - Extend `test/unit/webviewComponentKit.test.ts` (ban new hand-rolled product buttons in target dirs)

@@ -1,6 +1,6 @@
 import { createContext } from "preact";
 import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import { Button, Badge, EmptyState } from "../shared/ui";
+import { Button, Badge, EmptyState, DenseRow } from "../shared/ui";
 import {
   SAMPLE, TABS, searchIndex,
   type FleetVM, type TabId, type AgentVM, type AgentStatus, type SearchItem,
@@ -355,15 +355,8 @@ function Group({ title, count, collapsed, onToggle, actions, children }: { title
   );
 }
 
-function ListRow({ dot, name, sub, meta, child, actions }: { dot?: AgentStatus | null; name: string; sub?: string; meta?: preact.ComponentChildren; child?: boolean; actions?: preact.ComponentChildren }) {
-  return (
-    <div class={`row${child ? " child" : ""}`} data-name={name.toLowerCase()}>
-      <div class="row-top">{dot ? <span class={`sdot ${dot}`} /> : null}<span class="name">{name}</span>{sub && <span class="msub">· {sub}</span>}</div>
-      {meta && <div class="row-meta">{meta}</div>}
-      {actions && <div class="actions">{actions}</div>}
-    </div>
-  );
-}
+/** Dense section rows — shared DenseRow (keeps `.row` DOM for sidebar CSS). */
+const ListRow = DenseRow;
 
 const Act = ({ icon, title, on }: { icon: string; title: string; on: () => void }) => (
   <button class="act" type="button" title={title} aria-label={title}

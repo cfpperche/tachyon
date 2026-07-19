@@ -1,14 +1,14 @@
 # `shared/ui/` — the webview component kit
 
 _Contract: `docs/STYLEGUIDE.md`. Plan: `docs/plans/unified-webview-design-system.md`._  
-_spec 342 T8 + product patterns (PageChrome / ListRow / EmptyState)._
+_spec 342 T8 + product patterns (PageChrome / ListRow / DenseRow / EmptyState)._
 
 Three layers live side by side here on purpose (spec 342 F11). **They are namespaced so they can never be import-confused:**
 
 | Layer | Path | What it is | Import from |
 | --- | --- | --- | --- |
 | **Legacy `.ds-*` primitives** | `shared/ui/*.tsx` (`Button`, `Icon`, `IconButton`, `Tabs`, `Chip`, Field controls, `Badge`) | Hand-rolled Preact over `design-system.css` `.ds-*`. | `../shared/ui` |
-| **Product patterns** | `shared/ui/patterns.tsx` (`PageChrome`, `ListRow`, `EmptyState`) | Repeated chrome/rows/empty — **reuse when UI appears more than once**. | `../shared/ui` |
+| **Product patterns** | `shared/ui/patterns.tsx` (`PageChrome`, `ListRow`, `DenseRow`, `EmptyState`) | Repeated chrome/rows/empty — **reuse when UI appears more than once**. ListRow = Control cards; DenseRow = sidebar `.row` density. | `../shared/ui` |
 | **Vendor source** | `shared/ui/vendor/*.tsx` | Vendored shadcn/Radix (internal). | never from surfaces |
 | **Kit wrappers** | `shared/ui/kit/*.tsx` | `KitSelect`, `KitFieldRow`, `KitDropdown*`, … | `../shared/ui/kit` |
 
@@ -19,7 +19,8 @@ Three layers live side by side here on purpose (spec 342 F11). **They are namesp
 | Plugins | KitSelect, KitDropdown; Button | Pilot A |
 | Task Studio | KitFieldRow, KitLabeledInput, KitSelect | Pilot B |
 | Control module tabs | PageChrome via ModuleChrome | foundation |
-| Approvals | PageChrome, Button, EmptyState, IconButton | foundation pilot |
+| Approvals / Validations / Runtime | PageChrome, Button, EmptyState | Phase B |
+| Sidebar | Badge, Button, EmptyState, DenseRow | Phase C.1–C.2 |
 | Other panels | legacy / surface CSS | migrate on touch |
 
 ## Adoption rule

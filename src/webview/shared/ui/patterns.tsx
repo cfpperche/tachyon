@@ -114,3 +114,33 @@ export function EmptyState({ kind = "empty", icon, message, action, class: cls }
     </div>
   );
 }
+
+/**
+ * Sidebar-density row (pipelines / schedules / commands / runbooks).
+ * DOM keeps `.row` / `.row-top` / `.row-meta` / `.actions` so surface CSS (hover actions, child indent) stays valid.
+ */
+export interface DenseRowProps {
+  /** Status dot class suffix (e.g. running | stopped | idle); omit for no dot. */
+  dot?: string | null;
+  name: string;
+  sub?: string;
+  meta?: ComponentChildren;
+  /** Nested under a Group (indent + ↳). */
+  child?: boolean;
+  actions?: ComponentChildren;
+  class?: string;
+}
+
+export function DenseRow({ dot, name, sub, meta, child, actions, class: cls }: DenseRowProps) {
+  return (
+    <div class={cx("row", "ds-dense-row", child && "child", cls)} data-name={name.toLowerCase()}>
+      <div class="row-top">
+        {dot ? <span class={cx("sdot", dot)} aria-hidden="true" /> : null}
+        <span class="name">{name}</span>
+        {sub ? <span class="msub">· {sub}</span> : null}
+      </div>
+      {meta != null ? <div class="row-meta">{meta}</div> : null}
+      {actions ? <div class="actions">{actions}</div> : null}
+    </div>
+  );
+}

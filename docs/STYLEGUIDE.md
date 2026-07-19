@@ -66,7 +66,8 @@ Page title size: **16px** via `.ds-page-chrome-title` — do not invent 20px pan
 | Tabs | `Tabs` |
 | Chip | `Chip` (non-status labels only) |
 | Page title + hint + actions | **`PageChrome`** |
-| Dense list row (fleet, worktrees, deliveries, …) | **`ListRow`** — Control entity lists must use this, not hand-rolled `ck-entity-card`. |
+| Dense list (Control cards) | **`ListRow`** |
+| Sidebar-density row (name + status dot + hover actions) | **`DenseRow`** (`.row` DOM; surface CSS) |
 | Empty / loading | **`EmptyState`** |
 | Tabular data | **`DataTable` interim** = promote/copy the Control `ck-table` pattern with `--ds-*` tokens until a shared `Table` lands in `patterns.tsx`. Do not invent a third table skin. |
 | Labeled field / select menu | `kit/KitLabeledInput`, `KitSelect`, `KitDropdown`, … |
