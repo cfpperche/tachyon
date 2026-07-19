@@ -5,7 +5,7 @@ import { inferKind, type EntryKind } from "../config/loadConfig.js";
 import type { WorktreeRecord } from "../worktree/WorktreeManager.js";
 import { appendCapped, replaceVerifySet, EVIDENCE_SCHEMA_VERSION, type WorktreeEvidence, type Severity } from "../worktree/evidence.js";
 import type { VerifyState } from "../worktree/verify.js";
-import type { SpawnContract } from "../bridge/spawnContract.js";
+import { spawnContractCompletion, type SpawnContract } from "../bridge/spawnContract.js";
 import type { Role } from "../roles/templates.js";
 import type { SoulSnapshot } from "../agents/promptLayers.js";
 
@@ -57,6 +57,9 @@ export interface SessionDef {
    *  Persisted as TYPED metadata (D8) so it survives a reload and is queryable for audit / the future verify
    *  increment — not just flattened into the delivered instructions. */
   contract?: SpawnContract;
+  /** t-c8949c — a persisted contract field existed but failed structural validation. Content-free
+   *  sentinel: restart must refuse it rather than silently treating it as no structured contract. */
+  contractInvalid?: "invalid-shape";
   /** spec 246 (D6) — the reason given when the contract gate was bypassed (`skip_contract_reason`); persisted
    *  so the bypass is auditable after a reload, not just a transient notify. */
   contractSkipReason?: string;
@@ -380,6 +383,7 @@ function parseDef(d: unknown): SessionDef | undefined {
   const o = d as Record<string, unknown>;
   if (typeof o.cmd !== "string") return undefined;
   const kind: EntryKind = o.kind === "agent" || o.kind === "terminal" ? o.kind : inferKind(o.cmd);
+  const contract = parseSpawnContract(o.contract);
   return {
     cmd: o.cmd,
     kind,
@@ -392,7 +396,10 @@ function parseDef(d: unknown): SessionDef | undefined {
     ...(isStringMap(o.env) ? { env: o.env as Record<string, string> } : {}),
     ...(o.fork === true ? { fork: true } : {}), // spec 225 — persistent forked sibling
     ...(isPipelineRef(o.pipeline) ? { pipeline: o.pipeline as { runId: string; nodeId: string } } : {}), // spec 230
-    ...(isSpawnContract(o.contract) ? { contract: o.contract as SpawnContract } : {}), // spec 246
+    ...(contract ? { contract } : {}), // spec 246 + t-c8949c
+    ...((o.contract !== undefined && !contract) || o.contractInvalid === "invalid-shape"
+      ? { contractInvalid: "invalid-shape" as const }
+      : {}),
     ...(typeof o.contractSkipReason === "string" ? { contractSkipReason: o.contractSkipReason } : {}), // spec 246 D6
   };
 }
@@ -419,11 +426,21 @@ function parseIdentity(value: unknown): SessionIdentity | undefined {
   };
 }
 
-/** A persisted spawn-contract (spec 246) — the three required string slots + the deliverable/done_when pair. */
-function isSpawnContract(v: unknown): boolean {
-  if (typeof v !== "object" || v === null) return false;
+/** A persisted spawn-contract (spec 246) — required strings plus exactly one populated completion. */
+function parseSpawnContract(v: unknown): SpawnContract | undefined {
+  if (typeof v !== "object" || v === null) return undefined;
   const o = v as Record<string, unknown>;
-  return typeof o.task === "string" && typeof o.context === "string" && typeof o.constraints === "string";
+  if (typeof o.task !== "string" || typeof o.context !== "string" || typeof o.constraints !== "string") return undefined;
+  if (o.deliverable !== undefined && typeof o.deliverable !== "string") return undefined;
+  if (o.doneWhen !== undefined && typeof o.doneWhen !== "string") return undefined;
+  const candidate: SpawnContract = {
+    task: o.task,
+    context: o.context,
+    constraints: o.constraints,
+    ...(typeof o.deliverable === "string" ? { deliverable: o.deliverable } : {}),
+    ...(typeof o.doneWhen === "string" ? { doneWhen: o.doneWhen } : {}),
+  };
+  return spawnContractCompletion(candidate) ? candidate : undefined;
 }
 
 /** A persisted pipeline-node owner ref `{runId, nodeId}` (spec 230). */

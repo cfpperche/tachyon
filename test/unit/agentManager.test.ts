@@ -871,7 +871,10 @@ describe("AgentManager", () => {
     }
   });
 
-  it("reuses the persisted structured completion kind when restarting a long startup brief", async () => {
+  it.each([
+    ["deliverable", { deliverable: "The restarted pointer still reports DELIVERABLE" }, "DELIVERABLE"],
+    ["done_when", { doneWhen: "The restarted pointer still reports DONE_WHEN" }, "DONE_WHEN"],
+  ] as const)("reuses the persisted %s completion kind when restarting a long startup brief", async (_kind, completion, display) => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-startup-brief-restart-contract-"));
     const fake = fakeTmux();
     const ledger = new SessionLedger(root);
@@ -888,15 +891,63 @@ describe("AgentManager", () => {
       task: "Preserve restart metadata",
       context: "The startup brief is long",
       constraints: "Do not parse rendered text",
-      doneWhen: "The restarted pointer still reports DONE_WHEN",
+      ...completion,
     };
     try {
       await manager.spawn("worker", { cmd: "codex", taskBrief, contract });
-      expect(fake.newSessionArgs[0]?.at(-1)).toContain("task contract (DONE_WHEN)");
+      expect(fake.newSessionArgs[0]?.at(-1)).toContain(`task contract (${display})`);
 
       await manager.restart("worker", { stop: "force", session: "new" });
 
-      expect(fake.respawnArgs.at(-1)?.at(-1)).toContain("task contract (DONE_WHEN)");
+      expect(fake.respawnArgs.at(-1)?.at(-1)).toContain(`task contract (${display})`);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    ["missing", {}],
+    ["ambiguous", { deliverable: "SENSITIVE_DELIVERABLE", doneWhen: "SENSITIVE_DONE_WHEN" }],
+  ])("refuses restart before mutation when the persisted contract completion is %s", async (_case, completion) => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-startup-brief-invalid-contract-"));
+    const fake = fakeTmux();
+    const ledger = new SessionLedger(root);
+    const manager = new AgentManager({
+      tmux: fake.tmux,
+      wsHash: workspaceHash(root),
+      workspaceRoot: root,
+      getConfig: () => configOf("agents:\n  anchor:\n    cmd: sh\n"),
+      getMaxAgents: () => 8,
+      ledger,
+    });
+    const taskBrief = `TASK: preserve restart metadata\nDONE_WHEN: ${"r".repeat(5_000)}`;
+    const validContract = {
+      task: "Preserve restart metadata",
+      context: "The startup brief is long",
+      constraints: "Do not parse rendered text",
+      doneWhen: "The initial spawn succeeds",
+    };
+    try {
+      await manager.spawn("worker", { cmd: "codex", taskBrief, contract: validContract });
+      const destination = briefFilePath(root, "worker");
+      const previousBrief = fs.readFileSync(destination, "utf8");
+      const persisted = JSON.parse(fs.readFileSync(ledger.path, "utf8")) as {
+        sessions: Record<string, { def: { contract: Record<string, unknown> } }>;
+      };
+      persisted.sessions.worker.def.contract = {
+        task: "SENSITIVE_TASK_BODY",
+        context: "SENSITIVE_CONTEXT_BODY",
+        constraints: "SENSITIVE_CONSTRAINTS_BODY",
+        ...completion,
+      };
+      fs.writeFileSync(ledger.path, `${JSON.stringify(persisted, null, 2)}\n`, "utf8");
+
+      const error = await manager.restart("worker", { stop: "force", session: "new" }).catch((value: unknown) => value);
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).toMatch(/persisted spawn contract is invalid.*exactly one/);
+      expect((error as Error).message).not.toMatch(/SENSITIVE_/);
+      expect(fake.respawnArgs).toHaveLength(0);
+      expect(fs.readFileSync(destination, "utf8")).toBe(previousBrief);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

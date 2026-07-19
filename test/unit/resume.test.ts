@@ -296,6 +296,74 @@ describe("SessionLedger", () => {
     expect(new SessionLedger(ws).all().size).toBe(0);
   });
 
+  it.each([
+    [{ deliverable: "a committed patch" }, "deliverable"],
+    [{ doneWhen: "the focused tests pass" }, "doneWhen"],
+  ] as const)("restores a persisted contract with exactly one %s completion", (completion, expectedKey) => {
+    const ws = tmpWs();
+    const dir = path.join(ws, ".tachyon");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "sessions.json"), JSON.stringify({
+      sessions: {
+        worker: {
+          def: {
+            cmd: "codex",
+            kind: "agent",
+            contract: { task: "implement fix", context: "persisted context", constraints: "stay scoped", ...completion },
+          },
+          cwd: ws,
+          declared: false,
+          updatedAt: "2026-07-19T00:00:00.000Z",
+        },
+      },
+    }), "utf8");
+
+    const def = new SessionLedger(ws).get("worker")?.def;
+    expect(def?.contract).toMatchObject(completion);
+    expect(def?.contractInvalid).toBeUndefined();
+    expect(Object.hasOwn(def?.contract ?? {}, expectedKey)).toBe(true);
+  });
+
+  it.each([
+    {},
+    { deliverable: "a committed patch", doneWhen: "the focused tests pass" },
+  ])("retains a content-free invalid marker for malformed persisted completion %#", (completion) => {
+    const ws = tmpWs();
+    const dir = path.join(ws, ".tachyon");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "sessions.json"), JSON.stringify({
+      sessions: {
+        worker: {
+          def: {
+            cmd: "codex",
+            kind: "agent",
+            contract: {
+              task: "SENSITIVE_TASK_BODY",
+              context: "SENSITIVE_CONTEXT_BODY",
+              constraints: "SENSITIVE_CONSTRAINTS_BODY",
+              ...completion,
+            },
+          },
+          cwd: ws,
+          declared: false,
+          updatedAt: "2026-07-19T00:00:00.000Z",
+        },
+      },
+    }), "utf8");
+
+    const def = new SessionLedger(ws).get("worker")?.def;
+    expect(def?.contract).toBeUndefined();
+    expect(def?.contractInvalid).toBe("invalid-shape");
+
+    // Any later ledger write sanitizes away the malformed body but must preserve the fail-closed marker.
+    const ledger = new SessionLedger(ws);
+    ledger.record("other", { def: { cmd: "sh", kind: "terminal" }, cwd: ws, declared: false });
+    const reparsed = new SessionLedger(ws).get("worker")?.def;
+    expect(reparsed?.contract).toBeUndefined();
+    expect(reparsed?.contractInvalid).toBe("invalid-shape");
+    expect(fs.readFileSync(ledger.path, "utf8")).not.toContain("SENSITIVE_");
+  });
+
   // spec 214 — verify-gate state persisted on the worktree block
   it("recordVerify updates the worktree's verify block and round-trips", () => {
     const ws = tmpWs();

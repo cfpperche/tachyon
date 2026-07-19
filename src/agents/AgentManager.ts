@@ -21,7 +21,7 @@ import {
 } from "../resume/SessionLedger.js";
 import { moveActivityLog } from "../activity/logStore.js";
 import { sessionOwnersFile } from "../activity/sessionOwners.js";
-import type { DelegationGate, SpawnContract } from "../bridge/spawnContract.js";
+import { spawnContractCompletion, type DelegationGate, type SpawnContract } from "../bridge/spawnContract.js";
 import type { ResolvedCaptureSession } from "../resume/resolvers.js";
 import { assertVerifiedTranscriptIsolation, gracefulStopForCommand, isolationMechanismForCommand, opencodeIsolationFootgunWarning, runtimeProfile } from "../runtime/runtimeProfile.js";
 import { forgetAgent } from "./forgetAgent.js";
@@ -1114,6 +1114,12 @@ export class AgentManager {
     // even declared role/instructions as a positional startup prompt; several runtimes reject or
     // reinterpret extra arguments on their resume form.
     if (managesOwnSession(def.cmd) || (def.kind === "agent" && !instructionsDeliverable(def.cmd))) return undefined;
+    const taskContractCompletion = taskContract ? spawnContractCompletion(taskContract) : undefined;
+    if (taskContract && !taskContractCompletion) {
+      throw new Error(
+        `agent '${name}' spawn contract is invalid: expected exactly one non-empty deliverable or done_when`,
+      );
+    }
     const guidance = !!parent && (this.opts.getConfig()?.settings.bridgeGuidance ?? true);
     const composed = composeAgentPrompt({
       soul,
@@ -1121,9 +1127,7 @@ export class AgentManager {
       instructions: def.instructions,
       bridgeGuidance: guidance,
       taskBrief,
-      taskContractCompletion: taskContract
-        ? (taskContract.deliverable ? "deliverable" : "done_when")
-        : undefined,
+      taskContractCompletion,
     });
     // Project-owned policy is body content, not product protocol. Put it before the task/role body
     // (task-specific instructions stay more recent) and before the long-brief diversion so an
@@ -3212,13 +3216,20 @@ export class AgentManager {
     );
     // `effectiveInstructions` includes long-brief persistence. It must succeed before cache changes,
     // ownership refresh, respawn, or kill+new fallback can mutate the running session.
+    const persistedDef = this.opts.ledger?.get(name)?.def;
+    if (persistedDef?.contractInvalid) {
+      throw new Error(
+        `refusing restart for agent '${name}': persisted spawn contract is invalid; ` +
+        "expected task/context/constraints strings and exactly one non-empty deliverable or done_when",
+      );
+    }
     const restartInstructions = this.effectiveInstructions(
       name,
       def,
       restartParent,
       restartPrimerCtx,
-      this.opts.ledger?.get(name)?.def?.taskBrief,
-      this.opts.ledger?.get(name)?.def?.contract,
+      persistedDef?.taskBrief,
+      persistedDef?.contract,
       resolvedSoul,
       projectGuidance,
     );

@@ -17,6 +17,8 @@ export interface SpawnContract {
   doneWhen?: string;
 }
 
+export type SpawnContractCompletion = "deliverable" | "done_when";
+
 /** Verification requirements attached to a canonical gated spawn. The durable copy lives in
  *  Delivery.contract; this shape only carries the request across the Bridge -> AgentManager edge. */
 export interface DelegationGate {
@@ -59,6 +61,17 @@ const MIN_LEN = 8;
 /** Collapse whitespace + trim (D5 normalize). */
 export function normalizeField(s: string | undefined): string {
   return (s ?? "").replace(/\s+/g, " ").trim();
+}
+
+/** Structural completion discriminator shared by fresh composition and persisted-ledger parsing.
+ * Empty strings are absent; zero or two populated fields are invalid and never fall back to DONE_WHEN. */
+export function spawnContractCompletion(
+  contract: Pick<SpawnContract, "deliverable" | "doneWhen">,
+): SpawnContractCompletion | undefined {
+  const hasDeliverable = normalizeField(contract.deliverable).length > 0;
+  const hasDoneWhen = normalizeField(contract.doneWhen).length > 0;
+  if (hasDeliverable === hasDoneWhen) return undefined;
+  return hasDeliverable ? "deliverable" : "done_when";
 }
 
 /** Non-whitespace codepoint count — punctuation (em-dash, arrows, curly quotes) counts same as ASCII;

@@ -7,6 +7,7 @@ import {
   identityLine,
   taskJournalGuidance,
   normalizeField,
+  spawnContractCompletion,
   type SpawnContract,
 } from "../../src/bridge/spawnContract.js";
 
@@ -18,6 +19,16 @@ const good: SpawnContract = {
 };
 
 describe("validateSpawnContract (spec 246 D5)", () => {
+  it.each([
+    [{ deliverable: "artifact", doneWhen: undefined }, "deliverable"],
+    [{ deliverable: undefined, doneWhen: "tests pass" }, "done_when"],
+    [{ deliverable: undefined, doneWhen: undefined }, undefined],
+    [{ deliverable: "artifact", doneWhen: "tests pass" }, undefined],
+    [{ deliverable: "   ", doneWhen: undefined }, undefined],
+  ] as const)("classifies the closed completion shape %#", (contract, expected) => {
+    expect(spawnContractCompletion(contract)).toBe(expected);
+  });
+
   it("accepts a substantive contract", () => {
     expect(validateSpawnContract(good)).toEqual({ ok: true, errors: [] });
   });
