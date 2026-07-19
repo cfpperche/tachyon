@@ -3098,6 +3098,19 @@ export class Workspace {
     verifySettings?: NonNullable<TachyonConfig["settings"]>["verify"];
   }): Promise<CanonicalDeliverySpawnReceipt> {
     this.legacyDeliveryRetirement.assertRetired();
+    // t-2dd637 — the projection base must be a SYMBOLIC branch ref. `WorktreeRecord.baseRef` is a
+    // fork-point SHA on every producer path, so coalescing to it silently substitutes one meaning
+    // for the other and pins the base to a commit; `containedInBase` then reads that pin as a
+    // containment ceiling and refuses forever, since each new commit moves the tip further from it.
+    // Refuse before ANY durable write (Delivery record included): a refused spawn is loud and
+    // retryable, a SHA-pinned projection is permanently unintegrable.
+    const projectionBaseRef = input.worktree.baseBranch;
+    if (!projectionBaseRef) {
+      throw new Error(
+        "DELIVERY_BASE_REF_UNRESOLVED: canonical gated spawn requires a symbolic base branch; "
+        + `worktree '${input.worktree.path}' carries only a pinned base SHA`,
+      );
+    }
     const owns = [...new Set(input.gate.owns ?? [])];
     const spawnKey = createHash("sha256").update(JSON.stringify({
       agent: input.name, delegator: input.delegator, baseSha: input.baseSha,
@@ -3150,7 +3163,7 @@ export class Workspace {
       branchRef: input.worktree.branch,
       worktreePath: input.worktree.path,
       tachyonCreatedBranch: input.worktree.tachyonCreatedBranch,
-      baseRef: input.worktree.baseBranch ?? input.worktree.baseRef,
+      baseRef: projectionBaseRef,
       currentHeadSha: input.baseSha,
       actor,
       operationId: `gated-spawn-open:${spawnKey}`,
@@ -3180,7 +3193,7 @@ export class Workspace {
     }
     const projectionWorktree = fs.realpathSync(opened.projection.worktreePath);
     const expectedWorktree = fs.realpathSync(input.worktree.path);
-    const expectedBaseRef = input.worktree.baseBranch ?? input.worktree.baseRef;
+    const expectedBaseRef = projectionBaseRef;
     if (
       delivery.contract.baseSha !== input.baseSha
       || opened.projection.workspaceId !== this.wsHash
