@@ -111,6 +111,26 @@ describe("CompanionPairingService (SDD 414 slice 2)", () => {
     expect(svc.unpair(paired.sessionToken)).toEqual({ ok: true });
     expect(svc.status(paired.sessionToken).status).toBe("disconnected");
   });
+
+  it("reports hasPairedDevice only while a session is live", () => {
+    const svc = new CompanionPairingService({
+      engineLabel: "demo",
+      engineId: "abc123",
+      getBaseUrl: () => "http://127.0.0.1:1",
+    });
+    expect(svc.hasPairedDevice()).toBe(false);
+    const issued = svc.issuePairCode();
+    if ("ok" in issued) throw new Error("expected code");
+    const paired = svc.pair({
+      pairCode: issued.code,
+      protocolVersion: COMPANION_PROTOCOL_VERSION,
+      client: { kind: "browser", name: "Tachyon Companion", version: "0.3.4" },
+    });
+    if (!paired.ok) throw new Error("pair failed");
+    expect(svc.hasPairedDevice()).toBe(true);
+    expect(svc.unpair(paired.sessionToken)).toEqual({ ok: true });
+    expect(svc.hasPairedDevice()).toBe(false);
+  });
 });
 
 describe("Companion HTTP loopback (SDD 414)", () => {

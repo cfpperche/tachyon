@@ -141,6 +141,12 @@ export interface BridgeDeps {
     submit?: boolean;
     timeoutMs?: number;
   }) => Promise<unknown>;
+  /**
+   * SDD 414 — when true, register user_browser_* tools on this Bridge request.
+   * Prefer: true only while a Companion browser (or future mobile) device is paired.
+   * Absent/false → tools are omitted from the agent tool list (no context pollution).
+   */
+  companionBrowserPaired?: () => boolean;
   /** True when the target has a profile-backed non-empty composer draft. */
   composerOccupiedOf?: (agent: string) => boolean | undefined;
   /** spec 341 — semantic agent notice delivery; queues unsafe recipients instead of raw pane submit. */
@@ -1488,142 +1494,158 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     },
   );
 
-  // SDD 414 / t-2a7010 — governed read of the human's browser tab via Tachyon Companion.
-  mcp.registerTool(
-    "user_browser_snapshot",
-    {
-      description:
-        "Request a read-only DOM outline of the HUMAN user's active browser tab via Tachyon Companion " +
-        "(paired extension). Never returns cookies or password field values. Blocks until the extension " +
-        "fulfills the request or times out (~30s). Requires: Companion paired + live sync + agent tab reads enabled. " +
-        "Not agent-browser/CDP — this is the user's real browser session. Use for 'what is on my screen' context.",
-      inputSchema: {
-        timeoutSec: z
-          .number()
-          .int()
-          .min(5)
-          .max(120)
-          .optional()
-          .describe("How long to wait for Companion (default 30s)"),
+  // SDD 414 — Companion browser tools only while a device is paired (no list pollution otherwise).
+  // registerTools runs per Bridge request, so pair/unpair flips visibility on the next agent turn.
+  if (deps.companionBrowserPaired?.()) {
+    // t-2a7010 — governed read of the human's browser tab via Tachyon Companion.
+    mcp.registerTool(
+      "user_browser_snapshot",
+      {
+        description:
+          "Request a read-only DOM outline of the HUMAN user's active browser tab via Tachyon Companion " +
+          "(paired extension). Never returns cookies or password field values. Blocks until the extension " +
+          "fulfills the request or times out (~30s). Requires live sync + agent tab access in Companion Settings. " +
+          "Not agent-browser/CDP — the user's real browser session.",
+        inputSchema: {
+          timeoutSec: z
+            .number()
+            .int()
+            .min(5)
+            .max(120)
+            .optional()
+            .describe("How long to wait for Companion (default 30s)"),
+        },
       },
-    },
-    async ({ timeoutSec }) => {
-      try {
-        if (!deps.companionTabSnapshot) {
-          return fail(
-            new Error(
-              "user_browser_snapshot is not available (Companion tab channel not wired on this engine).",
-            ),
-          );
+      async ({ timeoutSec }) => {
+        try {
+          if (!deps.companionTabSnapshot) {
+            return fail(
+              new Error(
+                "user_browser_snapshot is not available (Companion tab channel not wired on this engine).",
+              ),
+            );
+          }
+          if (!deps.companionBrowserPaired?.()) {
+            return fail(new Error("No Companion browser paired — tab tools are unavailable."));
+          }
+          const result = await deps.companionTabSnapshot({
+            timeoutMs: timeoutSec !== undefined ? timeoutSec * 1000 : undefined,
+          });
+          return ok(JSON.stringify(result, null, 2));
+        } catch (err) {
+          return fail(err);
         }
-        const result = await deps.companionTabSnapshot({
-          timeoutMs: timeoutSec !== undefined ? timeoutSec * 1000 : undefined,
-        });
-        return ok(JSON.stringify(result, null, 2));
-      } catch (err) {
-        return fail(err);
-      }
-    },
-  );
-
-  // SDD 414 / t-fbe280 — content-script actions on the human's active tab.
-  const tabTimeoutSchema = z
-    .number()
-    .int()
-    .min(5)
-    .max(120)
-    .optional()
-    .describe("How long to wait for Companion (default 30s)");
-
-  mcp.registerTool(
-    "user_browser_click",
-    {
-      description:
-        "Click an element on the HUMAN user's active browser tab via Tachyon Companion (CSS selector). " +
-        "Requires agent tab access enabled. Prefer selectors from a recent user_browser_snapshot outline.",
-      inputSchema: {
-        selector: z.string().min(1).max(500).describe("CSS selector for the element to click"),
-        timeoutSec: tabTimeoutSchema,
       },
-    },
-    async ({ selector, timeoutSec }) => {
-      try {
-        if (!deps.companionTabAct) {
-          return fail(new Error("user_browser_click is not available (Companion tab channel not wired)."));
-        }
-        const result = await deps.companionTabAct({
-          kind: "click",
-          selector,
-          timeoutMs: timeoutSec !== undefined ? timeoutSec * 1000 : undefined,
-        });
-        return ok(JSON.stringify(result, null, 2));
-      } catch (err) {
-        return fail(err);
-      }
-    },
-  );
+    );
 
-  mcp.registerTool(
-    "user_browser_type",
-    {
-      description:
-        "Type text into an element on the HUMAN user's active tab (focus + insert, optional Enter). " +
-        "Does not clear existing value (use user_browser_fill to replace). Requires agent tab access.",
-      inputSchema: {
-        selector: z.string().min(1).max(500).describe("CSS selector for the input/editable target"),
-        text: z.string().max(4000).describe("Text to type"),
-        submit: z.boolean().optional().describe("If true, press Enter after typing"),
-        timeoutSec: tabTimeoutSchema,
-      },
-    },
-    async ({ selector, text, submit, timeoutSec }) => {
-      try {
-        if (!deps.companionTabAct) {
-          return fail(new Error("user_browser_type is not available (Companion tab channel not wired)."));
-        }
-        const result = await deps.companionTabAct({
-          kind: "type",
-          selector,
-          text,
-          submit,
-          timeoutMs: timeoutSec !== undefined ? timeoutSec * 1000 : undefined,
-        });
-        return ok(JSON.stringify(result, null, 2));
-      } catch (err) {
-        return fail(err);
-      }
-    },
-  );
+    // t-fbe280 — content-script actions on the human's active tab.
+    const tabTimeoutSchema = z
+      .number()
+      .int()
+      .min(5)
+      .max(120)
+      .optional()
+      .describe("How long to wait for Companion (default 30s)");
 
-  mcp.registerTool(
-    "user_browser_fill",
-    {
-      description:
-        "Set the value of an input/textarea/select on the HUMAN user's active tab (replaces existing value). " +
-        "Password fields are refused. Requires agent tab access enabled.",
-      inputSchema: {
-        selector: z.string().min(1).max(500).describe("CSS selector for the field"),
-        value: z.string().max(4000).describe("New value"),
-        timeoutSec: tabTimeoutSchema,
+    mcp.registerTool(
+      "user_browser_click",
+      {
+        description:
+          "Click an element on the HUMAN user's active browser tab via Tachyon Companion (CSS selector). " +
+          "Requires agent tab access enabled. Prefer selectors from a recent user_browser_snapshot outline.",
+        inputSchema: {
+          selector: z.string().min(1).max(500).describe("CSS selector for the element to click"),
+          timeoutSec: tabTimeoutSchema,
+        },
       },
-    },
-    async ({ selector, value, timeoutSec }) => {
-      try {
-        if (!deps.companionTabAct) {
-          return fail(new Error("user_browser_fill is not available (Companion tab channel not wired)."));
+      async ({ selector, timeoutSec }) => {
+        try {
+          if (!deps.companionTabAct) {
+            return fail(new Error("user_browser_click is not available (Companion tab channel not wired)."));
+          }
+          if (!deps.companionBrowserPaired?.()) {
+            return fail(new Error("No Companion browser paired — tab tools are unavailable."));
+          }
+          const result = await deps.companionTabAct({
+            kind: "click",
+            selector,
+            timeoutMs: timeoutSec !== undefined ? timeoutSec * 1000 : undefined,
+          });
+          return ok(JSON.stringify(result, null, 2));
+        } catch (err) {
+          return fail(err);
         }
-        const result = await deps.companionTabAct({
-          kind: "fill",
-          selector,
-          value,
-          timeoutMs: timeoutSec !== undefined ? timeoutSec * 1000 : undefined,
-        });
-        return ok(JSON.stringify(result, null, 2));
-      } catch (err) {
-        return fail(err);
-      }
-    },
-  );
+      },
+    );
+
+    mcp.registerTool(
+      "user_browser_type",
+      {
+        description:
+          "Type text into an element on the HUMAN user's active tab (focus + insert, optional Enter). " +
+          "Does not clear existing value (use user_browser_fill to replace). Requires agent tab access.",
+        inputSchema: {
+          selector: z.string().min(1).max(500).describe("CSS selector for the input/editable target"),
+          text: z.string().max(4000).describe("Text to type"),
+          submit: z.boolean().optional().describe("If true, press Enter after typing"),
+          timeoutSec: tabTimeoutSchema,
+        },
+      },
+      async ({ selector, text, submit, timeoutSec }) => {
+        try {
+          if (!deps.companionTabAct) {
+            return fail(new Error("user_browser_type is not available (Companion tab channel not wired)."));
+          }
+          if (!deps.companionBrowserPaired?.()) {
+            return fail(new Error("No Companion browser paired — tab tools are unavailable."));
+          }
+          const result = await deps.companionTabAct({
+            kind: "type",
+            selector,
+            text,
+            submit,
+            timeoutMs: timeoutSec !== undefined ? timeoutSec * 1000 : undefined,
+          });
+          return ok(JSON.stringify(result, null, 2));
+        } catch (err) {
+          return fail(err);
+        }
+      },
+    );
+
+    mcp.registerTool(
+      "user_browser_fill",
+      {
+        description:
+          "Set the value of an input/textarea/select on the HUMAN user's active tab (replaces existing value). " +
+          "Password fields are refused. Requires agent tab access enabled.",
+        inputSchema: {
+          selector: z.string().min(1).max(500).describe("CSS selector for the field"),
+          value: z.string().max(4000).describe("New value"),
+          timeoutSec: tabTimeoutSchema,
+        },
+      },
+      async ({ selector, value, timeoutSec }) => {
+        try {
+          if (!deps.companionTabAct) {
+            return fail(new Error("user_browser_fill is not available (Companion tab channel not wired)."));
+          }
+          if (!deps.companionBrowserPaired?.()) {
+            return fail(new Error("No Companion browser paired — tab tools are unavailable."));
+          }
+          const result = await deps.companionTabAct({
+            kind: "fill",
+            selector,
+            value,
+            timeoutMs: timeoutSec !== undefined ? timeoutSec * 1000 : undefined,
+          });
+          return ok(JSON.stringify(result, null, 2));
+        } catch (err) {
+          return fail(err);
+        }
+      },
+    );
+  }
 
   // t-099be8 — mechanical gate for agent self-edits of tachyon.yml (do NOT use raw Write for this file).
   mcp.registerTool(

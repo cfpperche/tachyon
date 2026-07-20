@@ -1515,6 +1515,8 @@ export class Workspace {
         attentionOf: (agent) => this.attentionOf(agent)?.state,
         composerOccupiedOf: (agent) => this.attentionOf(agent)?.composerOccupied,
         // SDD 414 / t-2a7010 + t-fbe280 — agent tab tools via Companion extension.
+        // Tools are registered only while a browser device is paired (companionBrowserPaired).
+        companionBrowserPaired: () => this.companion.hasPairedDevice(),
         companionTabSnapshot: (opts) => this.companionTab.requestSnapshot(opts?.timeoutMs),
         companionTabAct: (input) => {
           if (input.kind === "click") {

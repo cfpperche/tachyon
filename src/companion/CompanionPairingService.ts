@@ -217,6 +217,15 @@ export class CompanionPairingService {
     return safeEqualStr(sessionToken, this.session.token);
   }
 
+  /**
+   * True when a Companion device is currently paired (session not expired).
+   * Used to gate agent-facing browser tools so they only appear when a device exists.
+   */
+  hasPairedDevice(): boolean {
+    this.sweep();
+    return this.session !== undefined;
+  }
+
   activeClient(): CompanionClientInfo | undefined {
     this.sweep();
     return this.session?.client;
