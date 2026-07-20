@@ -84,7 +84,7 @@ body { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
 .ref-copy { cursor: pointer; padding: 0; border: 0; background: transparent; text-align: left; color: inherit; height: auto; min-width: 0; }
 .ref-copy:hover, .ref-copy:focus-visible { color: var(--ds-info); opacity: 1; text-decoration: underline; }
 /* t-8aeaac — task author chip: same quiet meta voice as .ref, clipped before it can crowd the row. */
-.card-author { flex: 0 1 auto; min-width: 28px; display: inline-flex; align-items: center; gap: 4px; font-size: 10px; color: var(--ds-muted); opacity: .8; overflow: hidden; white-space: nowrap; }
+.card-author { flex: 0 1 auto; min-width: 46px; display: inline-flex; align-items: center; gap: 4px; font-size: 10px; color: var(--ds-muted); opacity: .8; overflow: hidden; white-space: nowrap; }
 .card-author .author-name { overflow: hidden; text-overflow: ellipsis; }
 /* t-e1bd89 — force transparent chips so Cockpit-co-loaded surface CSS (e.g. unscoped approval buttons)
    cannot paint these as primary VS Code blue pills. */
@@ -106,6 +106,15 @@ body { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
 .who-btn:disabled { cursor: default; }
 .who-btn:disabled:hover { text-decoration: none; }
 .who-btn.historical { color: var(--ds-muted); font-style: italic; }
+/* t-8aeaac follow-up — a long assignee label ("delivered by <agent>") is flex:none and ate the whole
+   meta row, clipping the author chip to nothing on landed/done cards (maintainer report: "some cards
+   show the author, others don't"). Cap the who-btn and ellipsize its text; the full label already
+   lives in the button's title tooltip. */
+.who-btn { max-width: 118px; overflow: hidden; justify-content: flex-start; }
+/* historical rows are the tightest (id + author + "delivered by …" + P chip in one 260px row);
+   the delivery label gives way first — its full text stays in the tooltip. */
+.who-btn.historical { max-width: 88px; }
+.who-btn > :last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .attn { color: var(--ds-warn); cursor: help; display: inline-flex; }
 .attn .codicon { font-size: 12px; }
 /* dogfood round 1 (#5, spec 339) — a small, non-alarming hint a card has Studio attachments, same visual
