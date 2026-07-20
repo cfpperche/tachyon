@@ -69,7 +69,13 @@ import { Waiters } from "../bridge/Waiters.js";
 import { NoticeQueue, type NoticeQueueMetadata } from "../bridge/NoticeQueue.js";
 import { Bridge, derivePort } from "../bridge/Bridge.js";
 import { CompanionPairingService } from "../companion/CompanionPairingService.js";
-import { COMPANION_HTTP_PREFIX, type IssuedPairCode } from "../companion/protocol.js";
+import {
+  COMPANION_HTTP_PREFIX,
+  type CompanionAgentRow,
+  type IssuedPairCode,
+  type SendPromptResponse,
+} from "../companion/protocol.js";
+import { composeAgentNotice, prepareAgentSummary } from "../bridge/notifyAgent.js";
 import {
   BridgeClientRebindCoordinator,
   DEFAULT_BRIDGE_CLIENT_REBIND,
@@ -1576,7 +1582,13 @@ export class Workspace {
       {
         token: this.token,
         externalToken: this.externalToken,
-        companion: this.companion,
+        companion: {
+          pairing: this.companion,
+          ops: {
+            listActiveAgents: () => this.companionListActiveAgents(),
+            sendPrompt: (agent, text) => this.companionSendPrompt(agent, text),
+          },
+        },
         getRegistry: () => this.callerRegistry,
         scope: this.callerScope(),
         legacyCompatEnabled: this.legacyBridgeAuthEnabled,
@@ -2432,6 +2444,79 @@ export class Workspace {
   /** SDD 414 — companion HTTP prefix on the Bridge listener. */
   companionHttpPrefix(): string {
     return COMPANION_HTTP_PREFIX;
+  }
+
+  /**
+   * SDD 414 item 3 (MVP, evolving) — running agents only, with attention snapshot for the Companion UI.
+   */
+  async companionListActiveAgents(): Promise<CompanionAgentRow[]> {
+    const running = await this.manager.runningAgents();
+    const rows: CompanionAgentRow[] = [];
+    for (const name of running) {
+      if (this.manager.kindOf(name) !== "agent") continue;
+      const att = this.attentionOf(name);
+      rows.push({
+        name,
+        attention: att?.state ?? "unknown",
+        composerOccupied: !!att?.composerOccupied,
+      });
+    }
+    rows.sort((a, b) => a.name.localeCompare(b.name));
+    return rows;
+  }
+
+  /**
+   * SDD 414 item 3 (MVP, evolving) — send a one-line prompt to a running agent.
+   * Uses deliverNotice: idle → submit now; working/throttled/needs-input/composer → queue until idle.
+   */
+  async companionSendPrompt(agent: string, text: string): Promise<SendPromptResponse> {
+    const name = agent.trim();
+    if (!name) {
+      return { ok: false, code: "not_agent", message: "Agent name is required." };
+    }
+    if (this.manager.kindOf(name) !== "agent") {
+      return { ok: false, code: "not_agent", message: `'${name}' is not an agent (terminals cannot receive companion prompts).` };
+    }
+    const running = await this.manager.runningAgents();
+    if (!running.includes(name)) {
+      return { ok: false, code: "not_running", message: `Agent '${name}' is not running. v1 only targets active agents.` };
+    }
+    try {
+      if (!(await this.manager.isReady(name))) {
+        return {
+          ok: false,
+          code: "not_ready",
+          message: `Agent '${name}' is still bootstrapping (runtime not ready). Wait for the prompt, then retry.`,
+        };
+      }
+    } catch (err) {
+      return {
+        ok: false,
+        code: "unknown",
+        message: err instanceof Error ? err.message : String(err),
+      };
+    }
+    const summary = prepareAgentSummary(text);
+    if (!summary) {
+      return { ok: false, code: "empty", message: "Message is empty after sanitizing." };
+    }
+    const line = composeAgentNotice("companion", name, summary);
+    try {
+      const result = await this.deliverNotice(name, line);
+      return {
+        ok: true,
+        status: result.status,
+        agent: name,
+        ...(result.dropped !== undefined ? { dropped: result.dropped } : {}),
+        ...(result.queued !== undefined ? { queued: result.queued } : {}),
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        code: "unknown",
+        message: err instanceof Error ? err.message : String(err),
+      };
+    }
   }
 
   /** t-7f94f2 — human notice inbox (daemon host only; empty on VsCodeHost-only shells). */

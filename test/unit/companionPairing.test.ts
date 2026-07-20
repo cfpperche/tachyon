@@ -113,16 +113,31 @@ describe("CompanionPairingService (SDD 414 slice 2)", () => {
   });
 });
 
-describe("Companion HTTP loopback (SDD 414 slice 2)", () => {
-  it("serves health, pair, status, and unpair on /companion/v1", async () => {
+describe("Companion HTTP loopback (SDD 414)", () => {
+  it("serves health, pair, status, unpair, agents, and prompt on /companion/v1", async () => {
     const pairing = new CompanionPairingService({
       engineLabel: "ws",
       engineId: "hash",
       getBaseUrl: () => `http://127.0.0.1:${port}`,
     });
+    const sent: Array<{ agent: string; text: string }> = [];
     let port = 0;
     const server = http.createServer((req, res) => {
-      void handleCompanionHttp(req, res, pairing);
+      void handleCompanionHttp(req, res, {
+        pairing,
+        ops: {
+          listActiveAgents: async () => [
+            { name: "grok", attention: "idle", composerOccupied: false },
+            { name: "codex", attention: "working", composerOccupied: false },
+          ],
+          sendPrompt: async (agent, text) => {
+            sent.push({ agent, text });
+            return agent === "codex"
+              ? { ok: true, status: "queued", agent, queued: 1 }
+              : { ok: true, status: "notified", agent };
+          },
+        },
+      });
     });
     await new Promise<void>((resolve) => {
       server.listen(0, "127.0.0.1", () => resolve());
@@ -149,16 +164,53 @@ describe("Companion HTTP loopback (SDD 414 slice 2)", () => {
     expect(pairRes.status).toBe(200);
     const paired = (await pairRes.json()) as { ok: true; sessionToken: string };
     expect(paired.ok).toBe(true);
+    const token = paired.sessionToken;
 
     const statusRes = await fetch(`${base}/companion/v1/status`, {
-      headers: { authorization: `Bearer ${paired.sessionToken}` },
+      headers: { authorization: `Bearer ${token}` },
     });
     expect(statusRes.status).toBe(200);
     expect(await statusRes.json()).toMatchObject({ status: "connected" });
 
+    const agentsRes = await fetch(`${base}/companion/v1/agents`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(agentsRes.status).toBe(200);
+    const agentsBody = (await agentsRes.json()) as {
+      ok: true;
+      agents: Array<{ name: string; attention: string }>;
+    };
+    expect(agentsBody.ok).toBe(true);
+    expect(agentsBody.agents.map((a) => a.name).sort()).toEqual(["codex", "grok"]);
+    expect(agentsBody.agents.find((a) => a.name === "codex")).toMatchObject({ attention: "working" });
+    expect(agentsBody.agents.find((a) => a.name === "grok")).toMatchObject({ attention: "idle" });
+
+    const promptIdle = await fetch(`${base}/companion/v1/prompt`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ agent: "grok", text: "hello from companion" }),
+    });
+    expect(promptIdle.status).toBe(200);
+    expect(await promptIdle.json()).toMatchObject({ ok: true, status: "notified", agent: "grok" });
+
+    const promptBusy = await fetch(`${base}/companion/v1/prompt`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ agent: "codex", text: "queue me" }),
+    });
+    expect(promptBusy.status).toBe(200);
+    expect(await promptBusy.json()).toMatchObject({ ok: true, status: "queued", agent: "codex" });
+    expect(sent).toEqual([
+      { agent: "grok", text: "hello from companion" },
+      { agent: "codex", text: "queue me" },
+    ]);
+
+    const unauth = await fetch(`${base}/companion/v1/agents`);
+    expect(unauth.status).toBe(401);
+
     const unpairRes = await fetch(`${base}/companion/v1/unpair`, {
       method: "POST",
-      headers: { authorization: `Bearer ${paired.sessionToken}` },
+      headers: { authorization: `Bearer ${token}` },
     });
     expect(unpairRes.status).toBe(200);
 

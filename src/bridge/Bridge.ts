@@ -2,8 +2,7 @@ import http from "node:http";
 import { randomUUID } from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { handleCompanionHttp, isCompanionPath } from "../companion/CompanionHttp.js";
-import type { CompanionPairingService } from "../companion/CompanionPairingService.js";
+import { handleCompanionHttp, isCompanionPath, type CompanionHttpSurface } from "../companion/CompanionHttp.js";
 import { registerTools, type BridgeDeps } from "./tools.js";
 import { resolveCaller, type CallerIdentityRegistry, type CallerScope } from "./callerIdentity.js";
 
@@ -75,8 +74,8 @@ export class Bridge {
       token?: string;
       /** Dedicated external-client bearer, distinct from the shared/legacy master token. */
       externalToken?: string;
-      /** SDD 414 — companion pairing HTTP on the same loopback listener (/companion/v1/*). */
-      companion?: CompanionPairingService;
+      /** SDD 414 — companion HTTP on the same loopback listener (/companion/v1/*). */
+      companion?: CompanionHttpSurface;
       /** spec 351 — lazily reads the digest-only per-agent registry (Workspace loads its HMAC key async,
        *  AFTER constructing the Bridge — a getter, not a value, so the Bridge sees it once it's ready
        *  instead of freezing `undefined` forever). Undefined = agent-token resolution unavailable (falls

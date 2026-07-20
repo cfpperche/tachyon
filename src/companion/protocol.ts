@@ -67,3 +67,48 @@ export interface IssuedPairCode {
   baseUrl: string;
   protocolVersion: number;
 }
+
+/** Running agent row for Companion send-prompt UI (MVP item 3 — evolving). */
+export interface CompanionAgentRow {
+  name: string;
+  /** Attention snapshot when known: idle | working | needs-input | throttled | … */
+  attention: string;
+  composerOccupied: boolean;
+}
+
+export type ListAgentsResponse =
+  | { ok: true; agents: CompanionAgentRow[] }
+  | { ok: false; code: "unpaired" | "expired" | "unknown"; message: string };
+
+export interface SendPromptRequest {
+  agent: string;
+  text: string;
+}
+
+export type SendPromptResponse =
+  | {
+      ok: true;
+      /** Immediate submit vs queued until idle (deliverNotice). */
+      status: "notified" | "queued";
+      agent: string;
+      dropped?: number;
+      queued?: number;
+    }
+  | {
+      ok: false;
+      code:
+        | "unpaired"
+        | "expired"
+        | "not_agent"
+        | "not_running"
+        | "not_ready"
+        | "empty"
+        | "unknown";
+      message: string;
+    };
+
+/** Optional workspace ops for Companion HTTP (list agents + send prompt). */
+export interface CompanionWorkspaceOps {
+  listActiveAgents(): Promise<CompanionAgentRow[]>;
+  sendPrompt(agent: string, text: string): Promise<SendPromptResponse>;
+}
