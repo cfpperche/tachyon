@@ -2,7 +2,7 @@
   "name": "tachyon",
   "displayName": "Tachyon",
   "description": "A local, multi-runtime Agentic Development Environment powered by a persistent orchestration engine, with a VS Code shell, native terminals and an MCP control plane.",
-  "version": "0.56.78",
+  "version": "0.56.79",
   "publisher": "cfpperche",
   "license": "GPL-3.0-or-later",
   "sponsor": {
@@ -843,7 +843,7 @@
           {
             "id": "init",
             "title": "Initialize your project",
-            "description": "Generate a starter **tachyon.yml** \u2014 it detects your stack (Node, PHP, Rust, Go, Python, Ruby) and writes a commented config.\n[Initialize Tachyon](command:tachyon.init)",
+            "description": "Generate a starter **tachyon.yml** — it detects your stack (Node, PHP, Rust, Go, Python, Ruby) and writes a commented config.\n[Initialize Tachyon](command:tachyon.init)",
             "media": {
               "image": "media/walkthrough/hero.png",
               "altText": "Tachyon running agents as native editor terminals"
@@ -855,7 +855,7 @@
           {
             "id": "fleet",
             "title": "Meet your fleet",
-            "description": "Open the **\u26a1 Tachyon** view: your agents and terminals, grouped, with start/stop/restart and live attention state.\n\n\ud83d\udca1 Tip: to copy text from an agent terminal with correct accents/UTF-8, hold **Shift** while selecting (a plain mouse-drag uses tmux copy-mode, which some hosts mangle).\n[Open the Tachyon view](command:workbench.view.extension.tachyon)",
+            "description": "Open the **⚡ Tachyon** view: your agents and terminals, grouped, with start/stop/restart and live attention state.\n\n💡 Tip: to copy text from an agent terminal with correct accents/UTF-8, hold **Shift** while selecting (a plain mouse-drag uses tmux copy-mode, which some hosts mangle).\n[Open the Tachyon view](command:workbench.view.extension.tachyon)",
             "media": {
               "image": "media/walkthrough/subagents.png",
               "altText": "Sidebar showing agents and nested sub-agents"
@@ -867,7 +867,7 @@
           {
             "id": "bridge",
             "title": "The Bridge is automatic",
-            "description": "The **Bridge** is a persistent workspace MCP server that lets your agents spawn sub-agents, read each other's output, run commands and notify you. Tachyon injects it through each supported runtime's native MCP mechanism and rebuilds the wiring across lifecycle operations \u2014 no setup needed.\nUse **Connect Agent Runtime** only for a CLI session you start manually outside Tachyon.\n[Connect a runtime](command:tachyon.connectRuntime)",
+            "description": "The **Bridge** is a persistent workspace MCP server that lets your agents spawn sub-agents, read each other's output, run commands and notify you. Tachyon injects it through each supported runtime's native MCP mechanism and rebuilds the wiring across lifecycle operations — no setup needed.\nUse **Connect Agent Runtime** only for a CLI session you start manually outside Tachyon.\n[Connect a runtime](command:tachyon.connectRuntime)",
             "media": {
               "image": "media/walkthrough/studio.png",
               "altText": "Agent Studio tabs"
