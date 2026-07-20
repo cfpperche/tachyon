@@ -1,7 +1,9 @@
 /* spec 278 — Activity view panel-specific styles, extracted from ActivityPanel.ts's inline <style>
    (spec 252) into one shared source linked by BOTH the real webview panel AND the dev preview harness
    (no drift). Shared tokens + components live in design-system.css (.ds-*); these are panel deltas. */
-  body { padding: 0 0 var(--ds-page-pad-bottom); }
+  /* The feed owns bottom page spacing. Body padding makes the initial stick-to-latest scroll move the
+     preview's 100vh frame itself, clipping the shared sticky chrome; it is redundant in the real panel too. */
+  body { padding: 0; }
 
   /* Header: scan summary + the terminal escape hatch */
   .activity-chrome.ds-page-chrome { position: sticky; top: 0; z-index: 2; margin: 0 0 var(--ds-page-chrome-margin-bottom); padding: var(--ds-page-pad-y) var(--ds-page-pad-x) var(--ds-3); background: var(--vscode-editor-background); border-bottom: var(--ds-border-width) solid var(--ds-border); align-items: flex-start; box-sizing: border-box; }
