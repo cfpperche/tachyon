@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import net from "node:net";
 import { EngineControlClient } from "../../src/engine-service/controlClient.js";
 import { bridgeTokenFileName } from "../../src/bridge/token.js";
 import {
@@ -520,6 +521,71 @@ describe("persistent engine supervisor", () => {
         throw new Error("launch observed");
       },
     })).rejects.toThrow("launch observed");
+  });
+
+  // t-13cc6e — the loser shell probes the winner's endpoint between socket bind and first health
+  // reply; under load that window outlives the 750ms control request, which used to hard-fail the
+  // whole convergence on the first probe. The wait loops now treat CONTROL_UNAVAILABLE as transient
+  // until the deadline, and only then re-raise it (never launching a duplicate meanwhile).
+  it("keeps polling while a bound endpoint is not yet verifiable, then converges once it clears", async () => {
+    const fixture = workspaceFixture();
+    const held = new Set<net.Socket>();
+    const hang = net.createServer((connection) => {
+      held.add(connection);
+      connection.on("error", () => {});
+      connection.on("close", () => held.delete(connection));
+    });
+    await new Promise<void>((resolve, reject) => hang.listen(fixture.socket, resolve).once("error", reject));
+    setTimeout(() => {
+      for (const connection of held) connection.destroy();
+      hang.close();
+      fs.rmSync(fixture.socket, { force: true });
+    }, 1_200).unref();
+    let launches = 0;
+    const result = await ensureDaemonEngine({
+      workspaceRoot: fixture.workspace,
+      bundle: fixture.bundle,
+      runtime: fixture.runtime,
+      storageRoot: fixture.storage,
+      controlSocketPath: fixture.socket,
+      launcher: async (input) => {
+        launches += 1;
+        spawnWorker(input.encodedOptions);
+        return "started";
+      },
+      startTimeoutMs: 10_000,
+      pollMs: 20,
+    });
+    expect(result.disposition).toBe("started");
+    expect(launches).toBe(1);
+  });
+
+  it("still refuses a duplicate when the endpoint never becomes verifiable within the deadline", async () => {
+    const fixture = workspaceFixture();
+    const held = new Set<net.Socket>();
+    const hang = net.createServer((connection) => {
+      held.add(connection);
+      connection.on("error", () => {});
+      connection.on("close", () => held.delete(connection));
+    });
+    await new Promise<void>((resolve, reject) => hang.listen(fixture.socket, resolve).once("error", reject));
+    let launches = 0;
+    try {
+      await expect(ensureDaemonEngine({
+        workspaceRoot: fixture.workspace,
+        bundle: fixture.bundle,
+        runtime: fixture.runtime,
+        storageRoot: fixture.storage,
+        controlSocketPath: fixture.socket,
+        launcher: async () => { launches += 1; return "started"; },
+        startTimeoutMs: 1_600,
+        pollMs: 20,
+      })).rejects.toMatchObject({ code: "CONTROL_UNAVAILABLE" });
+      expect(launches).toBe(0);
+    } finally {
+      for (const connection of held) connection.destroy();
+      await new Promise<void>((resolve) => hang.close(() => resolve()));
+    }
   });
 });
 

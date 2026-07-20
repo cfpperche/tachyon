@@ -140,7 +140,23 @@ export async function ensureDaemonEngine(options: EnsureDaemonEngineOptions): Pr
   const stopper = options.stopper ?? stopEngineDaemonWithSystemd;
   if (options.controlSocketPath) ensureSecureRuntimeDir(path.dirname(controlSocketPath));
   else ensureSecureEngineRuntimeDir(canonicalRoot);
-  const existing = await probeHealthyEngine(controlSocketPath, canonicalRoot, hash);
+  // t-13cc6e — the entry probe shares the transient window of the wait loops: another shell's
+  // just-launched daemon may have bound the socket without answering health yet (750ms request
+  // budget, easily outlived under load). Poll a bound-but-unverifiable endpoint until the deadline
+  // instead of hard-failing the first probe; a still-unverifiable endpoint at the deadline re-raises
+  // CONTROL_UNAVAILABLE, and the launch path below stays reachable only through a proven-absent probe.
+  const entryDeadline = Date.now() + timeoutMs;
+  let existing: EngineServiceIdentityV1 | undefined;
+  for (;;) {
+    try {
+      existing = await probeHealthyEngine(controlSocketPath, canonicalRoot, hash);
+      break;
+    } catch (error) {
+      if (!(error instanceof EngineSupervisorError && error.code === "CONTROL_UNAVAILABLE")) throw error;
+      if (Date.now() >= entryDeadline) throw error;
+      await delay(pollMs);
+    }
+  }
   if (existing) {
     const action = classifyRunningBundle(existing, options.bundle, manifest);
     if (action === "upgrade") {
@@ -694,8 +710,21 @@ async function waitForCompatibleEngine(input: {
   unitName: string;
 }): Promise<EngineServiceIdentityV1> {
   const deadline = Date.now() + input.timeoutMs;
+  let lastUnverifiable: EngineSupervisorError | undefined;
   while (Date.now() < deadline) {
-    const identity = await probeHealthyEngine(input.controlSocketPath, input.canonicalRoot, input.workspaceHash);
+    let identity: EngineServiceIdentityV1 | undefined;
+    try {
+      identity = await probeHealthyEngine(input.controlSocketPath, input.canonicalRoot, input.workspaceHash);
+      lastUnverifiable = undefined;
+    } catch (error) {
+      // t-13cc6e — a bound-but-not-yet-answering endpoint is TRANSIENT while the elected daemon is
+      // still starting (its 750ms health window can lapse under load between bind and first reply).
+      // Keep polling until the deadline instead of hard-failing the loser shell on the first probe;
+      // every other supervisor error stays terminal, and a still-unverifiable endpoint at the
+      // deadline re-raises CONTROL_UNAVAILABLE — never a duplicate launch.
+      if (!(error instanceof EngineSupervisorError && error.code === "CONTROL_UNAVAILABLE")) throw error;
+      lastUnverifiable = error;
+    }
     if (identity) {
       if (input.manifest.channel !== undefined && identity.channel !== input.manifest.channel) {
         throw new EngineSupervisorError(
@@ -710,6 +739,7 @@ async function waitForCompatibleEngine(input: {
     }
     await delay(input.pollMs);
   }
+  if (lastUnverifiable) throw lastUnverifiable;
   throw new EngineSupervisorError(
     "ENGINE_START_TIMEOUT",
     "Tachyon's persistent engine did not become ready in time. Run Tachyon: Doctor and retry.",
@@ -722,8 +752,19 @@ async function waitForExactEngine(input: UpgradeDaemonEngineInput & {
   bundle: StagedEngineBundle;
 }): Promise<EngineServiceIdentityV1> {
   const deadline = Date.now() + input.timeoutMs;
+  let lastUnverifiable: EngineSupervisorError | undefined;
   while (Date.now() < deadline) {
-    const identity = await probeHealthyEngine(input.controlSocketPath, input.canonicalRoot, input.workspaceHash);
+    let identity: EngineServiceIdentityV1 | undefined;
+    try {
+      identity = await probeHealthyEngine(input.controlSocketPath, input.canonicalRoot, input.workspaceHash);
+      lastUnverifiable = undefined;
+    } catch (error) {
+      // t-13cc6e — same transient window as waitForCompatibleEngine: the replacement daemon binds
+      // its socket before it can answer health, so an unverifiable endpoint keeps polling until the
+      // deadline rather than aborting the controlled transition on the first slow probe.
+      if (!(error instanceof EngineSupervisorError && error.code === "CONTROL_UNAVAILABLE")) throw error;
+      lastUnverifiable = error;
+    }
     if (identity) {
       if (identity.bundleId !== input.bundle.bundleId
         || identity.engineVersion !== input.manifest.engineVersion
@@ -739,6 +780,7 @@ async function waitForExactEngine(input: UpgradeDaemonEngineInput & {
     }
     await delay(input.pollMs);
   }
+  if (lastUnverifiable) throw lastUnverifiable;
   throw new EngineSupervisorError(
     "ENGINE_START_TIMEOUT",
     "Tachyon's persistent engine did not become ready in time. Run Tachyon: Doctor and retry.",
