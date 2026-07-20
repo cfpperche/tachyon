@@ -7,6 +7,7 @@ import {
   probeCodexCatalog,
   type CodexProbeResult,
 } from "../../src/runtime/adapters/codexLaunchPreflight.js";
+import { ClaudeLaunchPreflight } from "../../src/runtime/adapters/claudeLaunchPreflight.js";
 import { CODEX_CATALOG_MAX_BYTES } from "../../src/runtime/adapters/codexCatalogStream.js";
 import {
   boundedCloseMatches,
@@ -29,6 +30,29 @@ describe("runtime launch preflight", () => {
       reason: "runtime exposes no authoritative model catalog adapter",
     });
     expect(hasExplicitModelSelection("grok --model grok-4.5 && echo unsafe")).toBe(true);
+  });
+
+  it.each(["sonnet", "claude-sonnet-5"])("routes Claude model %s to honest startup validation", async (model) => {
+    const registry = new RuntimeLaunchPreflightRegistry({ claude: new ClaudeLaunchPreflight() });
+    await expect(registry.check(parseLaunchCommand(`claude --model ${model}`)!, {})).resolves.toEqual({
+      state: "provisional",
+      runtime: "claude",
+      model,
+      source: "runtime-startup-readiness",
+    });
+  });
+
+  it("keeps bare Claude supported by its default and rejects adapter mismatch honestly", async () => {
+    const adapter = new ClaudeLaunchPreflight();
+    await expect(adapter.check(parseLaunchCommand("claude")!, {})).resolves.toEqual({
+      state: "supported",
+      runtime: "claude",
+      source: "default-model",
+    });
+    await expect(adapter.check(parseLaunchCommand("grok --model x")!, {})).resolves.toMatchObject({
+      state: "unverifiable",
+      code: "runtime_preflight_unverifiable",
+    });
   });
 
   it("accepts the exact advertised Sol slug and rejects the absent generic slug", async () => {

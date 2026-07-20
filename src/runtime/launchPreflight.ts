@@ -3,6 +3,7 @@ export const PREFLIGHT_MAX_SUGGESTIONS = 3;
 
 export type RuntimeLaunchPreflight =
   | { state: "supported"; runtime: string; model?: string; source: string }
+  | { state: "provisional"; runtime: string; model: string; source: "runtime-startup-readiness" }
   | { state: "unsupported"; code: "runtime_model_unavailable"; runtime: string; model: string; suggestions: string[] }
   | { state: "unverifiable"; code: "runtime_preflight_unverifiable"; runtime?: string; reason: string }
   | { state: "failed"; code: "runtime_preflight_failed"; runtime?: string; reason: string };

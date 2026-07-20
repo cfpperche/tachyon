@@ -45,6 +45,7 @@ import {
   type RuntimeLaunchPreflightPort,
 } from "../runtime/launchPreflight.js";
 import { CodexLaunchPreflight } from "../runtime/adapters/codexLaunchPreflight.js";
+import { ClaudeLaunchPreflight } from "../runtime/adapters/claudeLaunchPreflight.js";
 import {
   CodexLaunchReadiness,
   matchCodexBootstrapInput,
@@ -766,7 +767,10 @@ export class AgentManager {
 
   constructor(private readonly opts: AgentManagerOptions) {
     cleanupStaleSoulLaunchReservationsSync(opts.workspaceRoot);
-    this.launchPreflight = opts.launchPreflight ?? new RuntimeLaunchPreflightRegistry({ codex: new CodexLaunchPreflight() });
+    this.launchPreflight = opts.launchPreflight ?? new RuntimeLaunchPreflightRegistry({
+      codex: new CodexLaunchPreflight(),
+      claude: new ClaudeLaunchPreflight(),
+    });
     this.launchReadiness = opts.launchReadiness ?? new LaunchReadiness();
   }
 

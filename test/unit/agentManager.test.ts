@@ -4806,6 +4806,33 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     expect(h.ledger.get("grok-child")).toBeUndefined();
   });
 
+  it.each(["sonnet", "claude-sonnet-5"])("delegated Claude explicit model %s enters bounded startup validation", async (model) => {
+    const h = harness("agents:\n  boss:\n    cmd: claude\n");
+
+    await expect(h.manager.spawn("claude-child", { cmd: `claude --model ${model}` })).resolves.toBeUndefined();
+    expect(h.sessions.has(h.manager.session("claude-child"))).toBe(true);
+    expect(h.ledger.get("claude-child")).toMatchObject({
+      declared: false,
+      def: { cmd: `claude --model ${model}` },
+      resume: { runtime: "claude" },
+    });
+    expect(await h.manager.isReady("claude-child")).toBe(false);
+  });
+
+  it("provisional Claude model rejection fails spawn and removes the rejected session", async () => {
+    const h = harness("agents:\n  boss:\n    cmd: claude\n", {
+      launchReadiness: {
+        wait: async () => ({ state: "rejected", code: "runtime_model_rejected" }),
+      },
+    });
+
+    await expect(h.manager.spawn("claude-child", { cmd: "claude --model invalid-model" })).rejects.toMatchObject({
+      code: "runtime_model_rejected",
+    });
+    expect(h.sessions.size).toBe(0);
+    expect(h.ledger.get("claude-child")).toBeUndefined();
+  });
+
   it("SDD 370 probes the materialized private CODEX_HOME and exact cwd, then compensates a new home on rejection", async () => {
     let expectedHome = "";
     let observed: { home?: string; cwd?: string } = {};
