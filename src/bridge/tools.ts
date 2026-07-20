@@ -81,6 +81,7 @@ import type { Delivery } from "../delivery/types.js";
 import type { ReloadReconciliationSnapshot } from "../delivery/reloadReconciliation.js";
 import { RuntimeLaunchPreflightError } from "../runtime/launchPreflight.js";
 import { RuntimeLaunchReadinessError } from "../runtime/launchReadiness.js";
+import { modelFacingScreenshotResult } from "../companion/screenshotPersist.js";
 
 export type NotifyLevel = "info" | "warn" | "error";
 export type NoticeDeliveryResult = { status: "notified" | "queued"; dropped?: number; queued?: number };
@@ -141,7 +142,11 @@ export interface BridgeDeps {
     submit?: boolean;
     timeoutMs?: number;
   }) => Promise<unknown>;
-  /** First-person screenshot of the human's active tab (data URL). */
+  /**
+   * First-person screenshot of the human's active tab via Companion.
+   * Transport may include a data URL; the tool handler persists bytes to the
+   * workspace and returns a path (never the data URL) to the model.
+   */
   companionTabScreenshot?: (opts?: {
     format?: "jpeg" | "png";
     quality?: number;
@@ -1662,7 +1667,9 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       {
         description:
           "Capture a first-person screenshot of the HUMAN user's active browser tab via Tachyon Companion " +
-          "(what they are looking at right now). Returns a data URL (jpeg by default). " +
+          "(what they are looking at right now). Saves the image under the workspace " +
+          "(.tachyon/companion/screenshots/) and returns a workspace-relative path plus tab metadata " +
+          "(url, title, mimeType, byteLength). Use read_file on that path for vision. " +
           "Requires Companion paired + agent tab access. Prefer this when DOM outline is not enough " +
           "to understand visual layout, charts, or UI state. Not agent-browser/CDP session.",
         inputSchema: {
@@ -1689,7 +1696,12 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
             quality,
             timeoutMs: timeoutSec !== undefined ? timeoutSec * 1000 : undefined,
           });
-          return ok(JSON.stringify(result, null, 2));
+          // Persist bytes; strip dataUrl so the multimodal path never sees a giant base64 blob.
+          const facing = modelFacingScreenshotResult(result, deps.workspaceRoot);
+          if (facing.kind === "persist_failed") {
+            return fail(new Error(`Screenshot captured but failed to save: ${facing.reason}`));
+          }
+          return ok(JSON.stringify(facing.payload, null, 2));
         } catch (err) {
           return fail(err);
         }
