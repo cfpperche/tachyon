@@ -2,6 +2,23 @@
 
 _Drafted from `spec.md` on 2026-07-10. The approach, not the steps (those go in `tasks.md`)._
 
+## Closure reconciliation — 2026-07-20
+
+This file preserves the historical implementation approach. Three later decisions changed its final boundary:
+
+1. spec 376 retired the selectable legacy lifecycle and made canonical mechanism-only Delivery the sole product
+   path; the planned disabled/legacy opt-in phase therefore did not ship as drafted;
+2. legacy `DelegationRecord`/Delivery-less GitDelivery data is previewed and archived rather than promoted into new
+   lifecycle authority;
+3. the Linux ProcessFence core remains reviewed but unreachable from product Delivery launch. Its production
+   capability, wiring, recovery, and rollout moved to umbrella `t-f25434` with follow-ups `t-a26f3c`, `t-816d7f`,
+   `t-f55bf7`, and `t-9cf3ae`.
+
+The shipped-partial boundary is therefore canonical mechanism-only: one Delivery, one linked Git projection and
+worktree, exclusive sequential implement/verify/review/fix segments, explicit weak-evidence disclosure, governed
+recovery, and fail-closed hygiene. No text below should be read as evidence that `process-fenced` or the original
+opt-in sequence shipped.
+
 ## Approach
 
 Build this as a compatibility-preserving evolution of the existing gated-delegation path, in four phases.
@@ -239,8 +256,9 @@ quarantined Deliveries. Delivery-less legacy projections use their own compatibi
   persistent agent's Bridge identity.
 - **Explicit preview/apply legacy import** — chosen for deterministic rollback and visible conflicts; rejected
   eager startup migration and silent guessing.
-- **Opt-in before default** — chosen because spawn semantics and cleanup safety are load-bearing; rejected a
-  flag-day switch.
+- **Opt-in before default (superseded by spec 376)** — this was the original risk-control choice. The maintainer
+  later chose a canonical-only hard cut after installed mechanism-only dogfood; closure records that decision rather
+  than rewriting it as though the opt-in phase occurred.
 
 ## Files touched
 
