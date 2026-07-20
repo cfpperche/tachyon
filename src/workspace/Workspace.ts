@@ -69,6 +69,7 @@ import { Waiters } from "../bridge/Waiters.js";
 import { NoticeQueue, type NoticeQueueMetadata } from "../bridge/NoticeQueue.js";
 import { Bridge, derivePort } from "../bridge/Bridge.js";
 import { CompanionPairingService } from "../companion/CompanionPairingService.js";
+import { CompanionLiveSync } from "../companion/CompanionLiveSync.js";
 import {
   COMPANION_HTTP_PREFIX,
   type CompanionAgentRow,
@@ -484,6 +485,8 @@ export class Workspace {
   readonly bridge: Bridge;
   /** SDD 414 — Tachyon Companion pairing (loopback /companion/v1 on the Bridge listener). */
   readonly companion: CompanionPairingService;
+  /** SDD 414 — companion SSE live state fan-out. */
+  readonly companionLive: CompanionLiveSync;
   readonly externalTools: ExternalToolRegistry;
   readonly token: string | undefined;
   readonly externalToken: string | undefined;
@@ -1215,6 +1218,9 @@ export class Workspace {
         this.completionHints.clearIfNewOutput(agent, attention.contentSince);
         this.waiters.notifyAttention(agent, this.attentionOf(agent)?.state ?? attention.state);
         deps.onViewsChanged("agents");
+        // Companion side panel: push agent/attention snapshot over SSE (no UI poll).
+        // companionLive is constructed later in this constructor; optional until then.
+        (this as { companionLive?: CompanionLiveSync }).companionLive?.notifyChanged();
         // spec 216 (Part C) — re-anchor the role on the first idle AFTER a detected compaction (never
         // working/needs-input), once per episode, only when opted in. spec 241 — continuity recovery rides
         // the same idle. codex fix #4: run them SERIALLY (role reminder, then continuity pointer) so two
@@ -1469,6 +1475,10 @@ export class Workspace {
         return port === undefined ? undefined : `http://127.0.0.1:${port}`;
       },
     });
+    this.companionLive = new CompanionLiveSync({
+      statusOf: (token) => this.companion.status(token),
+      listAgents: () => this.companionListActiveAgents(),
+    });
     this.bridge = new Bridge(
       {
         workspaceRoot: this.workspaceRoot,
@@ -1584,6 +1594,7 @@ export class Workspace {
         externalToken: this.externalToken,
         companion: {
           pairing: this.companion,
+          live: this.companionLive,
           ops: {
             listActiveAgents: () => this.companionListActiveAgents(),
             sendPrompt: (agent, text) => this.companionSendPrompt(agent, text),

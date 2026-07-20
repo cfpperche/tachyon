@@ -5,6 +5,7 @@
 
 import type http from "node:http";
 import type { CompanionPairingService } from "./CompanionPairingService.js";
+import type { CompanionLiveSync } from "./CompanionLiveSync.js";
 import {
   COMPANION_HTTP_PREFIX,
   COMPANION_PROTOCOL_VERSION,
@@ -23,6 +24,8 @@ const CORS = {
 export interface CompanionHttpSurface {
   pairing: CompanionPairingService;
   ops?: CompanionWorkspaceOps;
+  /** Live SSE fan-out (GET /events). Optional until workspace wires CompanionLiveSync. */
+  live?: CompanionLiveSync;
 }
 
 function json(res: http.ServerResponse, status: number, body: unknown): void {
@@ -101,6 +104,7 @@ export async function handleCompanionHttp(
   // Back-compat: older call sites passed pairing only.
   const pairing = "pairing" in surface ? surface.pairing : surface;
   const ops = "pairing" in surface ? surface.ops : undefined;
+  const live = "pairing" in surface ? surface.live : undefined;
 
   const urlPath = (req.url ?? "").split("?")[0] ?? "";
   if (!isCompanionPath(urlPath)) return false;
@@ -154,13 +158,39 @@ export async function handleCompanionHttp(
         return true;
       }
       const result = pairing.pair(body);
+      if (result.ok && live) {
+        // New pair invalidates previous session tokens — close all live streams.
+        live.closeAll();
+      }
       json(res, result.ok ? 200 : 400, result);
       return true;
     }
 
     if (req.method === "POST" && (sub === "/unpair" || sub === "unpair")) {
-      const result = pairing.unpair(bearer(req));
+      const token = bearer(req);
+      const result = pairing.unpair(token);
+      if (result.ok && live && token) live.dropSession(token);
       json(res, result.ok ? 200 : 401, result);
+      return true;
+    }
+
+    // --- Live state stream (SSE) — SW owns the connection; UI never polls ---
+    if (req.method === "GET" && (sub === "/events" || sub === "events")) {
+      const token = bearer(req);
+      const auth = requireSession(pairing, token);
+      if (!auth.ok) {
+        json(res, auth.status, auth.body);
+        return true;
+      }
+      if (!live) {
+        json(res, 501, {
+          ok: false,
+          code: "unknown",
+          message: "Live sync not wired on this engine.",
+        });
+        return true;
+      }
+      await live.attach(req, res, token!);
       return true;
     }
 
@@ -206,6 +236,8 @@ export async function handleCompanionHttp(
         return true;
       }
       const result = await ops.sendPrompt(body.agent.trim(), body.text);
+      // Prompt can change queue/attention; push a fresh snapshot if anyone is listening.
+      live?.notifyChanged();
       json(res, result.ok ? 200 : 400, result);
       return true;
     }
@@ -226,7 +258,7 @@ export async function handleCompanionHttp(
 
     json(res, 404, {
       error: "not found",
-      hint: `${COMPANION_HTTP_PREFIX}/health|pair|status|unpair|agents|prompt`,
+      hint: `${COMPANION_HTTP_PREFIX}/health|pair|status|unpair|agents|prompt|events`,
       protocolVersion: COMPANION_PROTOCOL_VERSION,
     });
     return true;

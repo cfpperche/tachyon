@@ -216,4 +216,92 @@ describe("Companion HTTP loopback (SDD 414)", () => {
 
     server.close();
   });
+
+  it("streams live snapshots on GET /companion/v1/events (SSE)", async () => {
+    const { CompanionLiveSync } = await import("../../src/companion/CompanionLiveSync.js");
+    const pairing = new CompanionPairingService({
+      engineLabel: "ws",
+      engineId: "hash",
+      getBaseUrl: () => `http://127.0.0.1:${port}`,
+    });
+    let agents = [
+      { name: "grok", attention: "idle", composerOccupied: false },
+    ];
+    const live = new CompanionLiveSync({
+      statusOf: (token) => pairing.status(token),
+      listAgents: async () => agents,
+      heartbeatMs: 60_000,
+      debounceMs: 10,
+    });
+    let port = 0;
+    const server = http.createServer((req, res) => {
+      void handleCompanionHttp(req, res, {
+        pairing,
+        live,
+        ops: {
+          listActiveAgents: async () => agents,
+          sendPrompt: async (agent) => ({ ok: true, status: "notified", agent }),
+        },
+      });
+    });
+    await new Promise<void>((resolve) => {
+      server.listen(0, "127.0.0.1", () => resolve());
+    });
+    port = (server.address() as AddressInfo).port;
+    const base = `http://127.0.0.1:${port}`;
+
+    const issued = pairing.issuePairCode();
+    if ("ok" in issued) throw new Error("expected code");
+    const paired = pairing.pair({
+      pairCode: issued.code,
+      protocolVersion: COMPANION_PROTOCOL_VERSION,
+      client: { kind: "browser", name: "t", version: "0" },
+    });
+    if (!paired.ok) throw new Error("pair failed");
+    const token = paired.sessionToken;
+
+    const ac = new AbortController();
+    const res = await fetch(`${base}/companion/v1/events`, {
+      headers: { authorization: `Bearer ${token}`, accept: "text/event-stream" },
+      signal: ac.signal,
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type") ?? "").toContain("text/event-stream");
+    const reader = res.body!.getReader();
+    const dec = new TextDecoder();
+    let buf = "";
+    const first = await (async () => {
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) throw new Error("stream ended before snapshot");
+        buf += dec.decode(value, { stream: true });
+        const m = buf.match(/event: snapshot\ndata: ({[^\n]+})\n/);
+        if (m) return JSON.parse(m[1]!) as { seq: number; agents: Array<{ name: string; attention: string }> };
+      }
+    })();
+    expect(first.agents).toEqual([{ name: "grok", attention: "idle", composerOccupied: false }]);
+
+    agents = [{ name: "grok", attention: "working", composerOccupied: true }];
+    live.notifyChanged();
+    const second = await (async () => {
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) throw new Error("stream ended before second snapshot");
+        buf += dec.decode(value, { stream: true });
+        const matches = [...buf.matchAll(/event: snapshot\ndata: ({[^\n]+})\n/g)];
+        if (matches.length >= 2) {
+          return JSON.parse(matches[matches.length - 1]![1]!) as {
+            seq: number;
+            agents: Array<{ name: string; attention: string; composerOccupied: boolean }>;
+          };
+        }
+      }
+    })();
+    expect(second.seq).toBeGreaterThan(first.seq);
+    expect(second.agents[0]).toMatchObject({ attention: "working", composerOccupied: true });
+
+    ac.abort();
+    server.close();
+    live.closeAll();
+  });
 });

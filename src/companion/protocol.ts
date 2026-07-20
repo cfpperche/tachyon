@@ -112,3 +112,14 @@ export interface CompanionWorkspaceOps {
   listActiveAgents(): Promise<CompanionAgentRow[]>;
   sendPrompt(agent: string, text: string): Promise<SendPromptResponse>;
 }
+
+/**
+ * Live state pushed on GET /companion/v1/events (SSE).
+ * Full snapshots (not deltas) — small payload on loopback; zero drift.
+ */
+export interface CompanionLiveState {
+  seq: number;
+  at: string;
+  connection: ConnectionStatus;
+  agents: CompanionAgentRow[];
+}
