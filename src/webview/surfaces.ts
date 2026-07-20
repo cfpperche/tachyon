@@ -60,8 +60,12 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   { viewId: "tachyonMissionControl", view: "mission-control", hostFile: "src/webview/MissionControlPanel.ts", mode: "live", converted: true, editorHome: "standalone" },
   { viewId: "tachyonTaskDetail", view: "task-detail", hostFile: "src/webview/TaskDetailPanel.ts", mode: "live", converted: true, editorHome: "standalone-multi" },
   { viewId: "tachyonTaskStudio", view: "task-studio", hostFile: "src/webview/TaskStudioPanel.ts", mode: "live", converted: true, editorHome: "standalone" },
-  // spec 367 Phase 1 — statically contributed bottom-panel WebviewView; host republishes on ready/reveal.
-  { viewId: "tachyonRuntimeOpsView", view: "runtime-ops", hostFile: "src/webview/RuntimeOpsView.ts", mode: "live", converted: true, editorHome: "legacy-redirect", cockpitSectionId: "runtime" },
+  // spec 367 Phase 1's WebviewView (RuntimeOpsView.ts) was retired (t-ed3067, 2026-07-20) — it was never
+  // registered (no registerWebviewViewProvider call), unreachable in production. Runtime Ops lives ONLY as
+  // a cockpit section now (view: "runtime-ops" the directory still exists — src/webview/runtime-ops/App.tsx
+  // is lazy-imported by cockpit/App.tsx). The dispose-only serializer for the legacy "tachyonRuntimeOpsView"
+  // viewType stays registered in extension.ts regardless of this manifest entry — real defensive code for
+  // any still-persisted pre-migration window state, independent of whether the class exists.
   // spec 350 T4 — Pipeline Studio (Fake 1), the studio-shell's Phase 1 proof surface. Dev-flag-hidden: this
   // manifest entry is a dev-tooling/catalog-completeness concern (preview harness + convention guard), NOT a
   // user-facing activation — extension.ts never instantiates PipelineStudioPanelManager or registers a command.

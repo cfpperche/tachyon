@@ -226,16 +226,9 @@ export const ROUTES: Record<string, Route> = {
     fixtures: missionControlFixtures as Record<string, Fixture>,
     makeMessage: (vm) => snapshotMessage(vm as never),
   },
-  "runtime-ops": {
-    bundle: "/dist/webview/runtime-ops.js",
-    cssLinks: [DESIGN_SYSTEM, "/dist/webview/runtime-ops.css"],
-    frame: { w: 1100, h: 360 },
-    fixtures: runtimeOpsFixtures as Record<string, Fixture>,
-    makeMessage: (vm) => {
-      const state = vm as RuntimeOpsPreviewState;
-      return state.state === "loading" ? runtimeOpsLoadingMessage() : runtimeOpsSnapshotMessage(state.snapshot);
-    },
-  },
+  // t-ed3067 — the standalone "runtime-ops" route previewed RuntimeOpsView.ts, retired as dead code
+  // (never registered in production). Runtime Ops is a cockpit-only section now; use
+  // ?view=cockpit&fixture=runtime for its visual QA — same App.tsx component either way.
   // spec 342 dogfood round 2 (#4) — onboards Task Studio (the surface that motivated this spec's Pilot B)
   // into the harness; spec 350 T3 migrated it onto the studio shell (StudioFrame chrome, studio-frame.css
   // added to the CSS order — matches TaskStudioPanel.ts's real renderWebviewShell call exactly).
@@ -346,7 +339,6 @@ export const VIEW_META: Record<string, { title: string; aliases: string[] }> = {
   approval: { title: "Human Approvals", aliases: ["approvals", "human approvals", "approval view"] },
   "pin-studio": { title: "Pin Studio", aliases: ["pin studio", "pin editor", "sketch"] },
   "mission-control": { title: "Mission Control", aliases: ["mission control", "board", "task board"] },
-  "runtime-ops": { title: "Runtime Ops", aliases: ["runtime ops", "runtime usage", "usage"] },
   "task-studio": { title: "Task Studio", aliases: ["task studio", "task editor"] },
   "task-detail": { title: "Task Detail", aliases: ["task detail", "task tab"] },
   "pipeline-studio": { title: "Pipeline Studio (shell fake)", aliases: ["pipeline studio", "studio shell fake", "spec 350"] },
