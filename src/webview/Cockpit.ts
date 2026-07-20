@@ -864,6 +864,7 @@ export async function openCockpit(
     const approvalsIsActive = currentSection === "approvals";
     const runtimeIsActive = currentSection === "runtime";
     const validationsIsActive = currentSection === "validations";
+    const pluginsIsActive = currentSection === "plugins";
     live.webview.html = renderWebviewShell({
       cspSource: live.webview.cspSource,
       title: s.title,
@@ -877,8 +878,8 @@ export async function openCockpit(
         uri("vscode-theme.css"),
         uri("mission-control.tailwind.css"),
         uri("mission-control.css"),
-        uri("plugins.tailwind.css"),
-        uri("plugins.css"),
+        pluginsIsActive ? uri("plugins.tailwind.css") : undefined,
+        pluginsIsActive ? uri("plugins.css") : undefined,
         approvalsIsActive ? uri("approval.css") : undefined,
         validationsIsActive ? uri("validations.css") : undefined,
         runtimeIsActive ? uri("runtime-ops.css") : undefined,
@@ -898,6 +899,8 @@ export async function openCockpit(
           approvals: uri("approval.css"),
           runtime: uri("runtime-ops.css"),
           validations: uri("validations.css"),
+          "plugins-tailwind": uri("plugins.tailwind.css"),
+          plugins: uri("plugins.css"),
         },
       },
     });

@@ -48,7 +48,15 @@ const RuntimeOpsApp = lazy(() =>
   }),
 );
 const InspectorApp = lazy(() => import("../inspector/App").then((m) => ({ default: m.App })));
-const PluginsApp = lazy(() => import("../plugins/App").then((m) => ({ default: m.App })));
+// t-610705 — CSS co-load, fourth surface; two sheets (base + its Tailwind utility layer) share the
+// section id's chunk, so both load via distinct bootstrap-global keys off one lazy-import resolve.
+const PluginsApp = lazy(() =>
+  import("../plugins/App").then((m) => {
+    loadSectionStylesheet("plugins-tailwind");
+    loadSectionStylesheet("plugins");
+    return { default: m.App };
+  }),
+);
 
 function SectionFallback() {
   return <EmptyState kind="loading" message="Loading…" />;
