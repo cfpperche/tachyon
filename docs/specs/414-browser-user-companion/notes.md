@@ -34,6 +34,14 @@ _In-flight design memory — decisions, deviations, tradeoffs, and open question
 
 _None yet (design/plan only)._
 
+## Implementation log
+
+- 2026-07-20 — **Slice 1 complete (`t-32c627`)**: public monorepo
+  https://github.com/cfpperche/tachyon-companion (`main` @ 59e1119). Layout:
+  `apps/browser` MV3 unpacked shell, `apps/mobile` reserved, `packages/protocol`,
+  `packages/api-client`, CI, PRIVACY.md. Local path `/home/goat/tachyon-companion`.
+  `npm run typecheck` + `pack:browser` green. Pairing deferred to slice 2.
+
 ## Tradeoffs
 
 - **Human-push vs agent-pull** — v1 human-push for consent clarity; agents still get context via Tasks.
