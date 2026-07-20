@@ -539,6 +539,10 @@ function Card({ card, session, onDragStart, onDragEnd, onCardDragOver, onCardDro
           >
             {card.id}
           </Button>
+          {/* t-8aeaac — who created the task, always shown (agent, human, external, …). */}
+          <span class="card-author" title={`created by ${card.author}`}>
+            <span class="dot" style={{ background: `var(${card.authorColorVar})` }} /><span class="author-name">{card.author}</span>
+          </span>
           {card.sddStatus && <Badge tone="info">sdd · {card.sddStatus}</Badge>}
           {card.sddMissing && <Badge tone="err">sdd missing</Badge>}
           {card.attention.map((a) => (

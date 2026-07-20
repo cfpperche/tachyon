@@ -41,7 +41,10 @@ body { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
 
 /* board */
 .board { flex: 1 1 auto; min-height: 0; display: flex; gap: var(--ds-3); padding: 0 var(--ds-page-pad-x) var(--ds-page-pad-bottom); overflow-x: auto; }
-.col { flex: 0 0 260px; display: flex; flex-direction: column; min-height: 0; }
+/* t-8aeaac polish — equal fixed-width columns (the Linear/Jira norm). `flex-basis` alone lets flexbox's
+   default `min-width: auto` stretch a column to its widest card's min-content (long unbroken tokens in
+   titles), so every column ended up a different width. Pin all three bounds; content wraps instead. */
+.col { flex: 0 0 260px; width: 260px; min-width: 260px; max-width: 260px; display: flex; flex-direction: column; min-height: 0; }
 .col-head { display: flex; align-items: baseline; gap: var(--ds-2); padding: 0 var(--ds-1) var(--ds-2); }
 .col-head .ds-section { margin: 0; }
 .col-head .cnt { color: var(--ds-muted); font-size: var(--ds-micro); opacity: .7; }
@@ -64,7 +67,9 @@ body { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
 .card.awaiting-human:hover { background: color-mix(in srgb, var(--ds-err) 6%, var(--ds-hover)); }
 .card .next-tag { position: absolute; top: -9px; right: var(--ds-2); font-size: 9px; letter-spacing: .05em; color: var(--ds-btn-fg); background: var(--ds-btn-bg); padding: 0 var(--ds-2); border-radius: 8px; }
 .card .top { display: flex; align-items: center; gap: var(--ds-icon-gap); margin-bottom: var(--ds-1); }
-.card .title { font-size: var(--ds-small); line-height: 1.35; margin: 0 0 var(--ds-2); }
+/* overflow-wrap so a long unbroken token (ids, code names, URLs) wraps inside the fixed column
+   instead of forcing horizontal overflow now that .col no longer stretches. */
+.card .title { font-size: var(--ds-small); line-height: 1.35; margin: 0 0 var(--ds-2); overflow-wrap: anywhere; }
 /* dogfood round 3 (#4) — ONE stable meta row: [id · sdd chip · … · assignee · P chip], never a second line.
    `.meta-left` shrinks/clips instead of wrapping; `.quick-controls` is a fixed-width group pinned to the row's
    end so swapping a display button for its editor never moves it or triggers a reflow. */
@@ -78,6 +83,9 @@ body { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
 .ref { flex: none; font-size: 10px; color: var(--ds-muted); opacity: .8; font-family: var(--ds-mono); }
 .ref-copy { cursor: pointer; padding: 0; border: 0; background: transparent; text-align: left; color: inherit; height: auto; min-width: 0; }
 .ref-copy:hover, .ref-copy:focus-visible { color: var(--ds-info); opacity: 1; text-decoration: underline; }
+/* t-8aeaac — task author chip: same quiet meta voice as .ref, clipped before it can crowd the row. */
+.card-author { flex: 0 1 auto; min-width: 28px; display: inline-flex; align-items: center; gap: 4px; font-size: 10px; color: var(--ds-muted); opacity: .8; overflow: hidden; white-space: nowrap; }
+.card-author .author-name { overflow: hidden; text-overflow: ellipsis; }
 /* t-e1bd89 — force transparent chips so Cockpit-co-loaded surface CSS (e.g. unscoped approval buttons)
    cannot paint these as primary VS Code blue pills. */
 .who-btn, .prio-btn {

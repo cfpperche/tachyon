@@ -56,6 +56,9 @@ export interface BoardCardVM {
   priorityAccent?: "err" | "warn" | "info" | "neutral";
   kind?: string;
   kindColorVar?: string;
+  /** t-8aeaac — who created the task (agent name or "human"); the card always shows it. */
+  author: string;
+  authorColorVar: string;
   assignee?: string;
   assigneeLabel: string;
   assigneeColorVar?: string;
@@ -201,6 +204,8 @@ export function buildBoardModel(input: BoardModelInput): BoardModel {
       status: task.status,
       ...(task.priority !== undefined ? { priority: task.priority, priorityAccent: PRIORITY_ACCENT[task.priority] } : {}),
       ...(task.kind ? { kind: task.kind, kindColorVar: colorTokenFor(task.kind) } : {}),
+      author: task.author,
+      authorColorVar: colorTokenFor(task.author),
       ...(task.assignee ? { assignee: task.assignee, assigneeColorVar: colorTokenFor(task.assignee) } : {}),
       assigneeLabel: assigneeLabel(task),
       assigneeHistorical: HISTORICAL_ASSIGNEE_STATUSES.has(task.status) && !!task.assignee,
