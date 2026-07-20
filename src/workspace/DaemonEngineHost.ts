@@ -11,7 +11,13 @@ import {
   type TerminalPresentation,
   type TerminalPresentationOptions,
 } from "./TerminalPresentation.js";
-import { NOTICE_INBOX_CAP, noticeDedupeKey, type NoticeInboxEntry } from "./noticeInbox.js";
+import {
+  NOTICE_INBOX_CAP,
+  NOTICE_INBOX_STATE_KEY,
+  noticeDedupeKey,
+  restoreNoticeInbox,
+  type NoticeInboxEntry,
+} from "./noticeInbox.js";
 
 export interface DaemonSettingsSnapshot {
   global?: Record<string, unknown>;
@@ -48,8 +54,6 @@ export interface DaemonEngineHostOptions {
   requestUi?: (request: DaemonUiRequest) => Promise<unknown>;
   watchIntervalMs?: number;
   watchMaxEntries?: number;
-  /** t-ec5cd2: passive info auto-complete; default 4000. Tests may lower. */
-  noticePassiveAutoDismissMs?: number;
   /** t-ec5cd2: exact-duplicate collapse window; default 10000. */
   noticeDedupeWindowMs?: number;
 }
@@ -67,15 +71,11 @@ export class DaemonEngineHost implements EngineHost {
   private settings: DaemonSettingsSnapshot;
   private readonly watchers = new Set<HostDisposable>();
   private readonly noticeActions = new Map<string, Map<string, () => void | Promise<void>>>();
-  private readonly pendingNotices = new Map<string, Extract<DaemonHostEvent, { kind: "notice" }>>();
   /** t-ec5cd2 / spec 397: narrow exact-duplicate window (ms). */
   private readonly noticeDedupeWindowMs: number;
-  /** t-ec5cd2 / spec 397: auto-complete passive info toasts (ms). */
-  private readonly noticePassiveAutoDismissMs: number;
   private readonly recentNoticeKeys = new Map<string, { at: number; count: number; inboxId?: string }>();
-  /** t-7f94f2 / spec 397 item 1 — newest-first ring of human notices (history + catch-up). */
+  /** spec 415 — oldest-first durable human attention queue. */
   private noticeInbox: NoticeInboxEntry[] = [];
-  private noticePresentationActive = false;
   private terminalPresentation: DaemonTerminalPresentation | undefined;
   private disposed = false;
 
@@ -84,7 +84,8 @@ export class DaemonEngineHost implements EngineHost {
     this.store = new DaemonStateStore(options.storageRoot);
     this.settings = cloneSettings(options.settings ?? {});
     this.noticeDedupeWindowMs = options.noticeDedupeWindowMs ?? 10_000;
-    this.noticePassiveAutoDismissMs = options.noticePassiveAutoDismissMs ?? 4_000;
+    this.noticeInbox = restoreNoticeInbox(this.store.getState<unknown>(NOTICE_INBOX_STATE_KEY));
+    this.rebuildRecentNoticeKeys();
   }
 
   t(message: string, ...args: (string | number | boolean)[]): string {
@@ -103,8 +104,9 @@ export class DaemonEngineHost implements EngineHost {
         const entry = this.noticeInbox.find((row) => row.id === recent.inboxId);
         if (entry) {
           entry.collapsedCount = recent.count;
-          entry.at = new Date().toISOString();
+          entry.lastOccurredAt = new Date().toISOString();
           entry.read = false;
+          this.persistNoticeInbox();
         }
       }
       // Exact duplicate inside the window: keep one toast / pending row; bump collapse count only.
@@ -123,20 +125,13 @@ export class DaemonEngineHost implements EngineHost {
     const event: Extract<DaemonHostEvent, { kind: "notice" }> = {
       kind: "notice", id, message, level, actions: publicActions, at: new Date().toISOString(),
     };
-    this.pendingNotices.set(id, event);
-    while (this.pendingNotices.size > 256) {
-      const oldest = this.pendingNotices.keys().next().value as string | undefined;
-      if (!oldest) break;
-      this.pendingNotices.delete(oldest);
-      this.noticeActions.delete(oldest);
-      this.clearInboxActionsLive(oldest);
-    }
     this.recentNoticeKeys.set(dedupeKey, { at: Date.now(), count: 1, inboxId: id });
     this.pushInbox({
       id,
       message,
       level,
       at: event.at,
+      lastOccurredAt: event.at,
       collapsedCount: 1,
       actions: publicActions.map((a) => ({ ...a })),
       read: false,
@@ -144,10 +139,9 @@ export class DaemonEngineHost implements EngineHost {
     });
     this.emit(event);
     this.emit({ kind: "views-changed", view: "agents", at: new Date().toISOString() });
-    this.schedulePresentNextNotice();
   }
 
-  /** Newest-first inbox snapshot for sidebar strip (t-7f94f2). */
+  /** Oldest-first canonical attention snapshot (spec 415). */
   listNoticeInbox(): NoticeInboxEntry[] {
     return this.noticeInbox.map((entry) => ({
       ...entry,
@@ -161,6 +155,8 @@ export class DaemonEngineHost implements EngineHost {
     if (idx < 0) return false;
     // Mark-read dismisses from the catch-up strip (history not kept once acked).
     this.noticeInbox.splice(idx, 1);
+    this.noticeActions.delete(id);
+    this.persistNoticeInbox();
     this.emit({ kind: "views-changed", view: "agents", at: new Date().toISOString() });
     return true;
   }
@@ -169,6 +165,8 @@ export class DaemonEngineHost implements EngineHost {
     this.assertActive();
     if (this.noticeInbox.length === 0) return false;
     this.noticeInbox = [];
+    this.noticeActions.clear();
+    this.persistNoticeInbox();
     this.emit({ kind: "views-changed", view: "agents", at: new Date().toISOString() });
     return true;
   }
@@ -179,10 +177,10 @@ export class DaemonEngineHost implements EngineHost {
     const action = actions?.get(actionId);
     if (!action) throw new Error("notice action is missing or already consumed");
     this.noticeActions.delete(noticeId);
-    this.pendingNotices.delete(noticeId);
     // Invoking dismisses the inbox row.
     const idx = this.noticeInbox.findIndex((row) => row.id === noticeId);
     if (idx >= 0) this.noticeInbox.splice(idx, 1);
+    this.persistNoticeInbox();
     this.emit({ kind: "views-changed", view: "agents", at: new Date().toISOString() });
     await action();
   }
@@ -291,7 +289,6 @@ export class DaemonEngineHost implements EngineHost {
   replayUiRequests(): void {
     this.assertActive();
     this.terminalPresentation?.replay();
-    this.schedulePresentNextNotice();
   }
 
   onViewsChanged(view: ViewKind): void {
@@ -312,8 +309,6 @@ export class DaemonEngineHost implements EngineHost {
     this.terminalPresentation?.dispose();
     this.terminalPresentation = undefined;
     this.noticeActions.clear();
-    this.pendingNotices.clear();
-    this.noticePresentationActive = false;
   }
 
   private emit(event: DaemonHostEvent): void {
@@ -324,75 +319,29 @@ export class DaemonEngineHost implements EngineHost {
     return this.options.requestUi?.(request) ?? Promise.reject(new EngineUiUnavailableError());
   }
 
-  private schedulePresentNextNotice(): void {
-    queueMicrotask(() => this.presentNextNotice());
-  }
-
-  private presentNextNotice(): void {
-    if (this.disposed || this.noticePresentationActive) return;
-    const notice = this.pendingNotices.values().next().value as Extract<DaemonHostEvent, { kind: "notice" }> | undefined;
-    if (!notice) return;
-    const noticeId = notice.id;
-    this.noticePresentationActive = true;
-    const remaining = Math.max(0, this.pendingNotices.size - 1);
-    const displayMessage = remaining > 0
-      ? `${notice.message} (+${remaining} more)`
-      : notice.message;
-    const passive = notice.level === "info" && notice.actions.length === 0;
-    const presentPromise = this.requestUi({
-      schemaVersion: 1,
-      operationId: randomUUID(),
-      kind: "notice.present",
-      noticeId,
-      message: displayMessage,
-      level: notice.level,
-      actions: notice.actions.map((action) => ({ ...action })),
-    });
-    const raced = passive
-      ? Promise.race([
-          presentPromise,
-          delay(this.noticePassiveAutoDismissMs).then(() => null as unknown),
-        ])
-      : presentPromise;
-    void raced.then(async (choice) => {
-      if (choice === null || choice === undefined) {
-        this.pendingNotices.delete(noticeId);
-        this.noticeActions.delete(noticeId);
-        this.clearInboxActionsLive(noticeId);
-        return;
-      }
-      if (typeof choice !== "string" || !notice.actions.some((action) => action.id === choice)) {
-        throw new Error("editor shell returned an invalid notice action");
-      }
-      await this.invokeNoticeAction(noticeId, choice);
-    }).catch(() => {
-      // No shell, disconnect and timeout keep the notice pending for the next attach.
-      // Passive auto-dismiss must not leave a stuck active bit: still clear below in finally.
-    }).finally(() => {
-      this.noticePresentationActive = false;
-      // If passive timed out while VS Code toast still open, drop pending so the queue advances.
-      if (passive && this.pendingNotices.has(noticeId)) {
-        this.pendingNotices.delete(noticeId);
-        this.noticeActions.delete(noticeId);
-        this.clearInboxActionsLive(noticeId);
-      }
-      if (!this.pendingNotices.has(noticeId)) this.schedulePresentNextNotice();
-      else if (!passive) {
-        // Actionable notice failed present — leave pending for replayUiRequests.
-      }
-    });
-  }
-
   private pushInbox(entry: NoticeInboxEntry): void {
-    this.noticeInbox.unshift(entry);
+    this.noticeInbox.push(entry);
     while (this.noticeInbox.length > NOTICE_INBOX_CAP) {
-      this.noticeInbox.pop();
+      const dropped = this.noticeInbox.shift();
+      if (dropped) this.noticeActions.delete(dropped.id);
     }
+    this.persistNoticeInbox();
   }
 
-  private clearInboxActionsLive(noticeId: string): void {
-    const entry = this.noticeInbox.find((row) => row.id === noticeId);
-    if (entry) entry.actionsLive = false;
+  private persistNoticeInbox(): void {
+    this.store.setState(NOTICE_INBOX_STATE_KEY, this.noticeInbox);
+  }
+
+  private rebuildRecentNoticeKeys(now = Date.now()): void {
+    for (const entry of this.noticeInbox) {
+      const at = Date.parse(entry.lastOccurredAt ?? entry.at);
+      if (!Number.isFinite(at) || now - at > this.noticeDedupeWindowMs) continue;
+      this.recentNoticeKeys.set(noticeDedupeKey(entry.level, entry.message), {
+        at,
+        count: entry.collapsedCount,
+        inboxId: entry.id,
+      });
+    }
   }
 
   private pruneRecentNoticeKeys(now = Date.now()): void {
@@ -430,8 +379,4 @@ function cloneJson(value: unknown): unknown {
 
 function assertSettingAllowed(setting: string): void {
   if (!DAEMON_SETTING_KEY_SET.has(setting)) throw new Error(`setting is not allowlisted for the daemon: ${setting}`);
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }

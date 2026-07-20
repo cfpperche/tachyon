@@ -139,7 +139,7 @@ export interface PinPreviewVM {
   attachments: PinPreviewAttachmentVM[];
 }
 export interface ProposalVM { id: string; name: string; by?: string; reason?: string; when?: string }
-/** t-7f94f2 — engine human notice row for the sidebar strip. */
+/** spec 415 — engine-owned human attention row. */
 export interface NoticeVM {
   id: string;
   message: string;
@@ -177,7 +177,7 @@ export interface FleetVM {
   commands: CommandVM[];
   runbooks: RunbookVM[];
   pins: PinVM[];
-  /** t-7f94f2 — human engine notices (toast history / catch-up). */
+  /** spec 415 — oldest-first open human attention. */
   notices?: NoticeVM[];
   /** spec 245 — the per-folder Project Handoff state (drives the header open-button + badge). */
   handoff?: HandoffVM;

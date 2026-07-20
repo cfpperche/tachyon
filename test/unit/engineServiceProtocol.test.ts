@@ -73,7 +73,7 @@ describe("persistent engine protocol", () => {
     expect(negotiateEngineShellProtocol({ min: 1, max: 1 }, { min: 2, max: 2 })).toBeUndefined();
   });
 
-  it("accepts only exact bounded terminal and notification UI requests", () => {
+  it("accepts only exact bounded terminal UI requests", () => {
     const operationId = "ui-operation-0001";
     expect(isEngineUiRequestV1({
       schemaVersion: 1,
@@ -94,15 +94,6 @@ describe("persistent engine protocol", () => {
     expect(isEngineUiRequestV1({
       schemaVersion: 1,
       operationId,
-      kind: "notice.present",
-      noticeId: "notice-id-0001",
-      message: "Engine ready",
-      level: "info",
-      actions: [{ id: "notice-action-0001", label: "Open" }],
-    })).toBe(true);
-    expect(isEngineUiRequestV1({
-      schemaVersion: 1,
-      operationId,
       kind: "terminal.present",
       agent: "codex",
       session: "tachyon-one-codex",
@@ -116,7 +107,7 @@ describe("persistent engine protocol", () => {
       message: "x".repeat(4_097),
       level: "info",
       actions: [],
-    })).toBe(false);
+    } as unknown)).toBe(false);
   });
 
   it("validates engine-owned tmux reads and identity-bound mutations", () => {

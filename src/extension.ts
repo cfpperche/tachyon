@@ -64,7 +64,7 @@ import type { ViewKind } from "./workspace/EngineHost.js";
 
 /** spec 213 — URI scheme for the base side of a worktree diff (git show <ref>:<file>). */
 const WT_DIFF_SCHEME = "tachyon-worktree";
-import { initializeNativeNotifications, notify } from "./workspace/notify.js";
+import { initializeVsCodeNotifications, notify } from "./workspace/notify.js";
 import { showNotification } from "./workspace/NotificationService.js";
 import { detectInstalledClis } from "./webview/cliDetect.js";
 import { buildStarterYaml, ensureTachyonGitignore, type DetectedProject } from "./init/initLogic.js";
@@ -903,7 +903,7 @@ function proposalSchedule(schedule: ScheduleDef): Extract<ExtensionCommandV1, { 
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
-  initializeNativeNotifications();
+  initializeVsCodeNotifications();
   const folders = vscode.workspace.workspaceFolders ?? [];
   if (folders.length === 0) {
     // A fact about the installed extension, not any project — the check still runs with no
@@ -1421,7 +1421,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           ? process.env.TACHYON_DEV_HOST_ENGINE_RUNTIME
           : undefined,
         shell: { version: shellVersion, locale: vscode.env.language },
-        capabilities: [ENGINE_UI_CAPABILITY, "vscode.diff", "vscode.editor", "vscode.notifications", "vscode.terminal"],
+        capabilities: [ENGINE_UI_CAPABILITY, "vscode.diff", "vscode.editor", "vscode.terminal"],
         settings: daemonSettingsSnapshot(workspaceRoot),
         migrationProvider: () => collectLegacyEngineStateMigration(workspaceHash(workspaceRoot), {
           globalStorageRoot: context.globalStorageUri.fsPath,
@@ -1440,14 +1440,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           if (request.kind === "terminal.close") {
             terminals.close(request.agent, request.session);
             return null;
-          }
-          if (request.kind === "notice.present") {
-            const choice = await showNotification(
-              request.message,
-              request.level,
-              request.actions.map((action) => action.label),
-            );
-            return request.actions.find((action) => action.label === choice)?.id ?? null;
           }
           const value = await vscode.commands.executeCommand(request.command, ...request.args);
           if (value === undefined) return null;

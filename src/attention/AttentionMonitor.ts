@@ -247,10 +247,10 @@ export class AttentionMonitor {
    *  Called from the request_human_attention Bridge tool via the Workspace wiring. Cleared
    *  automatically on the next idle -> working edge after the latch was set: same-turn pane output is
    *  still the agent talking, not the human having responded. Fires onChange once (notify=true),
-   *  reusing the same callback the needs-input toast/badge already rides, so Workspace can toast +
+   *  reusing the same callback the needs-input Attention/badge already rides, so Workspace can publish +
    *  the sidebar VM can read the latch without a second callback param. No-op if the
    *  agent isn't currently tracked (has never ticked). OS/mobile push is OUT OF SCOPE here — deferred
-   *  to the companion (t-fe52f0/t-619157); this wiring is in-app badge+toast only. */
+   *  to the companion (t-fe52f0/t-619157); this wiring is Attention Stack + badge only. */
   flagAwaitingHuman(agent: string, reason: string): void {
     const snap = this.snaps.get(agent);
     if (!snap) return;

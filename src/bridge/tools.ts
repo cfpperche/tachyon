@@ -190,7 +190,7 @@ export interface BridgeDeps {
   /** spec 359 — governed host-action runner. Enables run_host_action; caller identity is deps.caller, never a tool param. */
   runHostAction?: (input: { action: string; args?: unknown; timeoutMs?: number; caller: CallerSnapshot }) => Promise<HostActionBrokerResult>;
   /** t-35d95a — latch the CALLER's own agent as awaiting-human (AttentionMonitor.flagAwaitingHuman),
-   *  firing the in-app toast/badge wiring. Enables request_human_attention; absent = no-op tool. */
+   *  publishing to the owned Attention Stack/badge wiring. Enables request_human_attention; absent = no-op tool. */
   flagAwaitingHuman?: (agent: string, reason: string) => void;
   /** spec 368 — bounded read-only Delivery lease watcher. */
   waitForDeliveryLease?: (input: WaitForDeliveryLeaseInput, signal?: AbortSignal) => Promise<WaitForDeliveryLeaseResult>;
@@ -2303,19 +2303,19 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
   // counterpart to flag_for_human (t-1339a8), which flags a TASK on the board. A coordinator that
   // ends a turn with a genuine question for the human (not derivable from AttentionState: the CLI
   // just returns to its prompt, indistinguishable from "done, nothing pending") calls this so the
-  // human gets an in-app toast + sidebar badge instead of silently sitting idle. AGENT-ONLY, mirroring
+  // human gets an Attention item + sidebar badge instead of silently sitting idle. AGENT-ONLY, mirroring
   // request_human_approval/flag_for_human (spec 351): only the agent itself can author this about
   // itself — there is no `agent` param, the target is always the Bridge-resolved caller. Cleared
   // automatically the moment the agent's pane next shows real output (the human having responded).
   // OS/mobile push is OUT OF SCOPE (deferred to the companion t-fe52f0/t-619157) — this is in-app
-  // badge+toast only.
+  // Attention Stack + badge only.
   mcp.registerTool(
     "request_human_attention",
     {
       description:
         "Latch an awaiting-human signal on YOUR OWN live session — call this when you end a turn genuinely " +
         "needing the human (e.g. a design question), not when you're merely idle waiting on other agents in " +
-        "flight. Fires an in-app toast + sidebar badge with your one-line reason; clears automatically the " +
+        "flight. Adds an item to the Tachyon Attention Stack + sidebar badge with your one-line reason; clears automatically the " +
         "moment you next produce real output (the human responding IS the clear condition — no explicit " +
         "clear call needed). There is no `agent` param — the target is always the Bridge-resolved caller, " +
         "agent-authenticated only (mirrors request_human_approval/flag_for_human, spec 351); legacy/external/" +

@@ -48,6 +48,8 @@ export const __createdTerminals: Array<{
 const __executedCommands: Array<{ command: string; args: unknown[] }> = [];
 const __shownDocuments: Array<{ uri: Uri; options: unknown }> = [];
 const __warningMessageCalls: Array<{ message: string; options: unknown; actions: string[] }> = [];
+const __statusBarMessages: Array<{ text: string; timeout: number | undefined }> = [];
+const __quickPickCalls: Array<{ items: readonly string[]; options: unknown }> = [];
 const __terminalCloseListeners = new Set<(terminal: typeof __createdTerminals[number]) => void>();
 
 export function __resetVscodeMock(): void {
@@ -57,20 +59,27 @@ export function __resetVscodeMock(): void {
   __executedCommands.splice(0);
   __shownDocuments.splice(0);
   __warningMessageCalls.splice(0);
+  __statusBarMessages.splice(0);
+  __quickPickCalls.splice(0);
   __terminalCloseListeners.clear();
   __openDialogResult = undefined;
   __clipboardText = "";
   __warningMessageResult = undefined;
+  __quickPickResult = undefined;
 }
 
 let __openDialogResult: Uri[] | undefined;
 let __clipboardText = "";
 let __warningMessageResult: string | undefined;
+let __quickPickResult: string | undefined;
 export function __setOpenDialogResult(result: Uri[] | undefined): void {
   __openDialogResult = result;
 }
 export function __setWarningMessageResult(result: string | undefined): void {
   __warningMessageResult = result;
+}
+export function __setQuickPickResult(result: string | undefined): void {
+  __quickPickResult = result;
 }
 export function __getClipboardText(): string {
   return __clipboardText;
@@ -83,6 +92,12 @@ export function __getShownDocuments(): Array<{ uri: Uri; options: unknown }> {
 }
 export function __getWarningMessageCalls(): Array<{ message: string; options: unknown; actions: string[] }> {
   return [...__warningMessageCalls];
+}
+export function __getStatusBarMessages(): Array<{ text: string; timeout: number | undefined }> {
+  return [...__statusBarMessages];
+}
+export function __getQuickPickCalls(): Array<{ items: readonly string[]; options: unknown }> {
+  return [...__quickPickCalls];
 }
 
 export class Uri {
@@ -136,7 +151,14 @@ export const window = {
     return { dispose: () => __terminalCloseListeners.delete(listener) };
   },
   createStatusBarItem: () => ({ show: () => {}, dispose: () => {} }),
-  showQuickPick: () => Promise.resolve(undefined),
+  setStatusBarMessage: (text: string, timeout?: number) => {
+    __statusBarMessages.push({ text, timeout });
+    return { dispose() {} };
+  },
+  showQuickPick: (items: readonly string[], options?: unknown) => {
+    __quickPickCalls.push({ items, options });
+    return Promise.resolve(__quickPickResult);
+  },
   registerWebviewPanelSerializer: (viewType: string, serializer: { deserializeWebviewPanel(panel: typeof __createdPanels[number], state: unknown): Promise<void> }) => {
     __registeredWebviewPanelSerializers.push({ viewType, serializer });
     return { dispose() {} };

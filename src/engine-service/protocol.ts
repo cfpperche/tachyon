@@ -207,16 +207,7 @@ export type EngineUiRequestV1 =
       viewColumn?: number;
       title?: string;
     }
-  | { schemaVersion: 1; operationId: string; kind: "terminal.close"; agent: string; session: string }
-  | {
-      schemaVersion: 1;
-      operationId: string;
-      kind: "notice.present";
-      noticeId: string;
-      message: string;
-      level: "info" | "warn" | "error";
-      actions: Array<{ id: string; label: string }>;
-    };
+  | { schemaVersion: 1; operationId: string; kind: "terminal.close"; agent: string; session: string };
 
 export type EngineUiCompletionV1 =
   | { schemaVersion: 1; operationId: string; status: "ok"; value: JsonValue }
@@ -678,18 +669,6 @@ export function isEngineUiRequestV1(value: unknown): value is EngineUiRequestV1 
     return hasOnlyKeys(value, ["schemaVersion", "operationId", "kind", "agent", "session"])
       && isBoundedUiText(value.agent, 128)
       && isBoundedUiText(value.session, 256);
-  }
-  if (value.kind === "notice.present") {
-    return hasOnlyKeys(value, ["schemaVersion", "operationId", "kind", "noticeId", "message", "level", "actions"])
-      && isEngineOperationId(value.noticeId)
-      && isBoundedUiText(value.message, 4_096)
-      && (value.level === "info" || value.level === "warn" || value.level === "error")
-      && Array.isArray(value.actions)
-      && value.actions.length <= 8
-      && value.actions.every((action) => isRecord(action)
-        && hasOnlyKeys(action, ["id", "label"])
-        && isEngineOperationId(action.id)
-        && isBoundedUiText(action.label, 128));
   }
   return false;
 }
