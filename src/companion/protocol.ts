@@ -107,10 +107,39 @@ export type SendPromptResponse =
       message: string;
     };
 
-/** Optional workspace ops for Companion HTTP (list agents + send prompt). */
+/** Pending human-approval summary for Companion UI (host-authoritative). */
+export interface CompanionApprovalSummary {
+  id: string;
+  requester: string;
+  reason: string;
+  proposedAction: string;
+  risk: string;
+  exactPrompt: string;
+  createdAt: string;
+  status: "pending";
+}
+
+export type CompanionListApprovalsResponse =
+  | { ok: true; approvals: CompanionApprovalSummary[] }
+  | { ok: false; code: "unpaired" | "expired" | "unknown"; message: string };
+
+export type CompanionResolveApprovalResponse =
+  | { ok: true; id: string; status: "approved" | "denied"; injectError?: string }
+  | {
+      ok: false;
+      code: "unpaired" | "expired" | "not_found" | "not_pending" | "unknown";
+      message: string;
+    };
+
+/** Optional workspace ops for Companion HTTP (list agents + send prompt + approvals). */
 export interface CompanionWorkspaceOps {
   listActiveAgents(): Promise<CompanionAgentRow[]>;
   sendPrompt(agent: string, text: string): Promise<SendPromptResponse>;
+  listApprovals?(): Promise<CompanionApprovalSummary[]>;
+  resolveApproval?(
+    id: string,
+    decision: "approved" | "denied",
+  ): Promise<CompanionResolveApprovalResponse>;
 }
 
 /**

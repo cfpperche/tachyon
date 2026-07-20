@@ -288,23 +288,65 @@ export async function handleCompanionHttp(
       return true;
     }
 
-    // Approvals — later increment.
-    if (
-      (req.method === "POST" && (sub === "/capture" || sub === "capture")) ||
-      (req.method === "GET" && (sub === "/approvals" || sub === "approvals")) ||
-      (req.method === "POST" && (sub === "/approvals/resolve" || sub === "approvals/resolve"))
-    ) {
+    // --- Approvals (host-authoritative Accept/Deny — t-a45c6b) ---
+    if (req.method === "GET" && (sub === "/approvals" || sub === "approvals")) {
+      const auth = requireSession(pairing, bearer(req));
+      if (!auth.ok) {
+        json(res, auth.status, auth.body);
+        return true;
+      }
+      if (!ops?.listApprovals) {
+        json(res, 501, { ok: false, code: "unknown", message: "Approvals not wired on this engine." });
+        return true;
+      }
+      const approvals = await ops.listApprovals();
+      json(res, 200, { ok: true, approvals });
+      return true;
+    }
+
+    if (req.method === "POST" && (sub === "/approvals/resolve" || sub === "approvals/resolve")) {
+      const auth = requireSession(pairing, bearer(req));
+      if (!auth.ok) {
+        json(res, auth.status, auth.body);
+        return true;
+      }
+      if (!ops?.resolveApproval) {
+        json(res, 501, { ok: false, code: "unknown", message: "Approvals resolve not wired on this engine." });
+        return true;
+      }
+      let body: { id?: string; decision?: string };
+      try {
+        body = JSON.parse((await readBody(req)) || "{}") as { id?: string; decision?: string };
+      } catch {
+        json(res, 400, { ok: false, code: "unknown", message: "Invalid JSON body." });
+        return true;
+      }
+      if (typeof body.id !== "string" || (body.decision !== "approved" && body.decision !== "denied")) {
+        json(res, 400, {
+          ok: false,
+          code: "unknown",
+          message: "Required fields: id (string), decision ('approved' | 'denied').",
+        });
+        return true;
+      }
+      const result = await ops.resolveApproval(body.id.trim(), body.decision);
+      live?.pushEvent("approvals.changed", { id: body.id, decision: body.decision });
+      json(res, result.ok ? 200 : 400, result);
+      return true;
+    }
+
+    if (req.method === "POST" && (sub === "/capture" || sub === "capture")) {
       json(res, 501, {
         ok: false,
         code: "unknown",
-        message: "Not in this increment — approvals come after tab snapshot dogfood.",
+        message: "Tab-to-task capture not in this increment.",
       });
       return true;
     }
 
     json(res, 404, {
       error: "not found",
-      hint: `${COMPANION_HTTP_PREFIX}/health|pair|status|unpair|agents|prompt|events|tab/pending|tab/result`,
+      hint: `${COMPANION_HTTP_PREFIX}/health|pair|status|unpair|agents|prompt|events|tab/pending|tab/result|approvals`,
       protocolVersion: COMPANION_PROTOCOL_VERSION,
     });
     return true;

@@ -156,6 +156,19 @@ describe("Companion HTTP loopback (SDD 414)", () => {
               ? { ok: true, status: "queued", agent, queued: 1 }
               : { ok: true, status: "notified", agent };
           },
+          listApprovals: async () => [
+            {
+              id: "a-abc123",
+              requester: "codex",
+              reason: "needs human",
+              proposedAction: "delete safety",
+              risk: "high",
+              exactPrompt: "rm -rf /",
+              createdAt: "2026-07-20T00:00:00.000Z",
+              status: "pending" as const,
+            },
+          ],
+          resolveApproval: async (id, decision) => ({ ok: true as const, id, status: decision }),
         },
       });
     });
@@ -227,6 +240,25 @@ describe("Companion HTTP loopback (SDD 414)", () => {
 
     const unauth = await fetch(`${base}/companion/v1/agents`);
     expect(unauth.status).toBe(401);
+
+    const approvalsRes = await fetch(`${base}/companion/v1/approvals`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(approvalsRes.status).toBe(200);
+    const approvalsBody = (await approvalsRes.json()) as {
+      ok: true;
+      approvals: Array<{ id: string; requester: string }>;
+    };
+    expect(approvalsBody.ok).toBe(true);
+    expect(approvalsBody.approvals[0]?.id).toBe("a-abc123");
+
+    const resolveRes = await fetch(`${base}/companion/v1/approvals/resolve`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ id: "a-abc123", decision: "denied" }),
+    });
+    expect(resolveRes.status).toBe(200);
+    expect(await resolveRes.json()).toMatchObject({ ok: true, id: "a-abc123", status: "denied" });
 
     const unpairRes = await fetch(`${base}/companion/v1/unpair`, {
       method: "POST",

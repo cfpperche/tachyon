@@ -72,8 +72,15 @@ import { CompanionPairingService } from "../companion/CompanionPairingService.js
 import { CompanionLiveSync } from "../companion/CompanionLiveSync.js";
 import { CompanionTabChannel } from "../companion/CompanionTabChannel.js";
 import {
+  listPendingApprovalRequests,
+  resolveApproval,
+  type ApprovalDecision,
+} from "../bridge/approvalRequest.js";
+import {
   COMPANION_HTTP_PREFIX,
   type CompanionAgentRow,
+  type CompanionApprovalSummary,
+  type CompanionResolveApprovalResponse,
   type IssuedPairCode,
   type SendPromptResponse,
 } from "../companion/protocol.js";
@@ -1537,7 +1544,18 @@ export class Workspace {
           this.monitor.flagUnseen(agent);
         },
         onPinsChanged: () => deps.onViewsChanged("pins"),
-        onApprovalRequested: (request) => deps.onApprovalRequested?.(this, request),
+        onApprovalRequested: (request) => {
+          deps.onApprovalRequested?.(this, request);
+          // Companion side panel: push so Approvals tab can refresh without polling.
+          try {
+            this.companionLive.pushEvent("approvals.changed", {
+              id: request.id,
+              requester: request.requester,
+            });
+          } catch {
+            /* best-effort */
+          }
+        },
         onTasksChanged: () => deps.onViewsChanged("tasks"),
         onTaskNotificationEvent: (event) => this.taskNotifications.notify(event),
         onValidationsChanged: () => deps.onViewsChanged("tasks"),
@@ -1621,6 +1639,8 @@ export class Workspace {
           ops: {
             listActiveAgents: () => this.companionListActiveAgents(),
             sendPrompt: (agent, text) => this.companionSendPrompt(agent, text),
+            listApprovals: () => this.companionListApprovals(),
+            resolveApproval: (id, decision) => this.companionResolveApproval(id, decision),
           },
         },
         getRegistry: () => this.callerRegistry,
@@ -2497,6 +2517,72 @@ export class Workspace {
     }
     rows.sort((a, b) => a.name.localeCompare(b.name));
     return rows;
+  }
+
+  /** SDD 414 / t-a45c6b — pending human-approval requests for Companion UI. */
+  async companionListApprovals(): Promise<CompanionApprovalSummary[]> {
+    return listPendingApprovalRequests(this.workspaceRoot).map((r) => ({
+      id: r.id,
+      requester: r.requester,
+      reason: r.payload.reason,
+      proposedAction: r.payload.proposedAction,
+      risk: r.payload.risk,
+      exactPrompt: r.payload.exactPrompt,
+      createdAt: r.createdAt,
+      status: "pending" as const,
+    }));
+  }
+
+  /**
+   * SDD 414 / t-a45c6b — host-authoritative Accept/Deny (same resolveApproval path as Control UI).
+   * Never a Bridge agent tool — only Companion HTTP with session token.
+   */
+  async companionResolveApproval(
+    id: string,
+    decision: ApprovalDecision,
+  ): Promise<CompanionResolveApprovalResponse> {
+    try {
+      const result = await resolveApproval({
+        workspaceRoot: this.workspaceRoot,
+        id,
+        decision,
+        resolvedBy: "companion",
+        currentSessionOwner: async (session) =>
+          (await this.manager.list()).find((entry) => entry.session === session && entry.running)?.name,
+        inject: async (session, text) => {
+          await this.tmux.sendSubmittedLine(session, text);
+          return { receipt: `tmux:${session}` };
+        },
+        completePin: (pinId) => {
+          try {
+            this.pinStore.setDone(pinId, true);
+          } catch {
+            /* best-effort */
+          }
+        },
+      });
+      try {
+        this.deps.onViewsChanged("pins");
+      } catch {
+        /* host optional */
+      }
+      this.companionLive.pushEvent("approvals.changed", { id, decision });
+      return {
+        ok: true,
+        id: result.request.id,
+        status: decision,
+        ...(result.injectError ? { injectError: result.injectError } : {}),
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.includes("already resolved") || message.includes("cancelled")) {
+        return { ok: false, code: "not_pending", message };
+      }
+      if (message.includes("not found") || message.includes("No such file") || message.includes("ENOENT")) {
+        return { ok: false, code: "not_found", message };
+      }
+      return { ok: false, code: "unknown", message };
+    }
   }
 
   /**
