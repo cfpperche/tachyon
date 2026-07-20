@@ -22,7 +22,7 @@ import type { InspectorAppProps } from "../inspector/App";
 import type { PluginsDispatch } from "../plugins/App";
 import type { PluginsViewModel } from "../../plugins/viewModel";
 import type { ConsentVM } from "../../plugins/consentViewModel";
-import type { Toast as PluginsToast } from "../plugins/main";
+import type { Toast as PluginsToast } from "../plugins/messages";
 
 // spec 410 — lazy section bodies (ESM chunks). Keeps eager cockpit.js under budget.
 const MissionControlApp = lazy(() => import("../mission-control/App").then((m) => ({ default: m.App })));

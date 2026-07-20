@@ -44,7 +44,11 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   { viewId: "tachyonActivity", view: "activity", hostFile: "src/webview/ActivityPanel.ts", mode: "live", converted: true, editorHome: "standalone-multi" },
   { viewId: "tachyonHandoff", view: "handoff", hostFile: "src/webview/HandoffPanel.ts", mode: "live", converted: true, editorHome: "standalone-multi" },
   { viewId: "tachyonApprovals", view: "approval", hostFile: "src/webview/ApprovalPanel.ts", mode: "live", converted: true, editorHome: "legacy-redirect", cockpitSectionId: "approvals" },
-  { viewId: "tachyonPlugins", view: "plugins", hostFile: "src/webview/PluginsPanel.ts", mode: "live", converted: true, editorHome: "standalone" },
+  // The standalone Plugins panel was retired (t-d23f93, 2026-07-20) — Plugins is a cockpit section
+  // only (src/webview/plugins/App.tsx stays, lazy-imported by cockpit/App.tsx; the per-workspace
+  // need is served by Control's shell workspace selector, t-d16a39). The trusted serializer for
+  // the legacy "tachyonPlugins" viewType stays registered in extension.ts: a revived pre-410 panel
+  // disposes itself and redirects into Control → Plugins.
   { viewId: "tachyonPinStudio", view: "pin-studio", hostFile: "src/webview/PinStudioPanel.ts", mode: "live", converted: true, editorHome: "standalone" },
   // spec 279 conversions (flip `converted` as each lane lands)
   // probes re-pushes its model on refresh, so it's a `live` read-only surface (a listener, no inbound actions).

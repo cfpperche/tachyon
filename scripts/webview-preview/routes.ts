@@ -91,15 +91,8 @@ export const ROUTES: Record<string, Route> = {
     // the sidebar host message wraps a single FleetVM in a one-fleet push (matches the real provider).
     makeMessage: (vm) => fleetMessage([vm as never], {}),
   },
-  plugins: {
-    bundle: "/dist/webview/plugins.js",
-    // spec 342 Pilot A — vscode-theme.css + plugins.tailwind.css for this panel's Kit components (order:
-    // design-system → vscode-theme → Tailwind → surface CSS, matching PluginsPanel.ts's real shell call).
-    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/vscode-theme.css", "/dist/webview/plugins.tailwind.css", "/dist/webview/plugins.css"],
-    frame: { w: 900, h: 760 },
-    fixtures: pluginsFixtures as Record<string, Fixture>,
-    makeMessage: (vm) => pluginsMessage(vm as never),
-  },
+  // t-d23f93 — the standalone "plugins" route previewed the retired standalone panel; Plugins is a
+  // cockpit-only section now — use ?view=cockpit&fixture=plugins (same App.tsx, same fixture VM).
   activity: {
     bundle: "/dist/webview/activity.js",
     cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/mermaid-block.css", "/dist/webview/activity.css"],
@@ -322,7 +315,6 @@ export const PREVIEW_ROUTE_OPTOUTS: Record<string, string> = {
  *  matches a named surface deterministically against `view`/`title`/`aliases` before any semantic guess). */
 export const VIEW_META: Record<string, { title: string; aliases: string[] }> = {
   sidebar: { title: "Tachyon Sidebar", aliases: ["sidebar", "fleet"] },
-  plugins: { title: "Plugins", aliases: ["plugins", "plugin drawer", "marketplace"] },
   activity: { title: "Activity", aliases: ["activity", "agent activity", "chat", "transcript", "studio chat"] },
   probes: { title: "Probes", aliases: ["probes", "probe inspector"] },
   inspector: { title: "tmux Inspector", aliases: ["inspector", "server inspector", "tmux"] },

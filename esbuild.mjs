@@ -218,11 +218,6 @@ const approval = {
 };
 
 // spec 250 — the Preact Plugins View webview bundle (editor-area panel; never imports vscode).
-const plugins = {
-  ...sidebar,
-  entryPoints: ["src/webview/plugins/main.tsx"],
-  outfile: "dist/webview/plugins.js",
-};
 
 // spec 279 — the Preact Probes view bundle (converted from inline HTML; editor-area panel, never imports vscode).
 const probes = {
@@ -502,7 +497,7 @@ if (existsSync(excalidrawAssets)) {
   cpSync(excalidrawAssets, "dist/webview/excalidraw-assets", { recursive: true });
 }
 
-const targets = [extension, toolLauncher, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, activity, handoff, approval, plugins, probes, inspector, controlInspector, cockpit, pinPreview, pinStudio, missionControl, taskDetail, taskStudio, pipelineStudio, agentStudioFixture, agentStudioShell, terminalStudioShell, commandStudioShell, runbookStudioShell, scheduleStudioShell, pluginHost, excalidraw, mermaid, katex, preview, uiGate];
+const targets = [extension, toolLauncher, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, activity, handoff, approval, probes, inspector, controlInspector, cockpit, pinPreview, pinStudio, missionControl, taskDetail, taskStudio, pipelineStudio, agentStudioFixture, agentStudioShell, terminalStudioShell, commandStudioShell, runbookStudioShell, scheduleStudioShell, pluginHost, excalidraw, mermaid, katex, preview, uiGate];
 if (watch) {
   const ctxs = await Promise.all(targets.map((c) => esbuild.context(c)));
   await Promise.all(ctxs.map((c) => c.watch()));

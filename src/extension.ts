@@ -2196,8 +2196,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (ws) handoffPanels.open(ws.wsHash);
     }),
     vscode.commands.registerCommand("tachyon.openPlugins", async (hash?: string) => {
+      // spec 410 (t-d23f93) — Plugins live in Control (cockpit section); no second peer panel.
       const ws = hash ? byHash(hash) : await pickWorkspace();
-      if (ws) pluginsPanels.open(ws.wsHash);
+      await openCockpit(makeCockpitDeps(), {
+        section: "plugins",
+        ...(ws ? { wsHash: ws.wsHash } : {}),
+      });
     }),
     vscode.commands.registerCommand("tachyon.openPluginSurface", (arg?: { pluginId?: string; viewId?: string; wsHash?: string } | string) => pluginSurfaces.openSurface(arg)),
     // spec 335 + Control monolith POC — open the Mission board *inside* Control (same board UX; new access path).

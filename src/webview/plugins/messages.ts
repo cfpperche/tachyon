@@ -82,3 +82,6 @@ export function confirmMessage(payload: ConfirmPayload): ConfirmActionMessage {
 export type PluginsActionType =
   | "ready" | "refresh" | "checkUpdates" | "checkPluginUpdate" | "install" | "update" | "reinstall" | "remove"
   | "reselect" | "repair" | "rehydrate" | "confirm" | "cancel" | "openConfig" | "openDocs" | "installExternal";
+
+/** t-d23f93 — the result-toast shape (moved from the retired standalone bootstrap main.tsx). */
+export interface Toast { ok: boolean; message: string; }

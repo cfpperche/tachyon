@@ -102,60 +102,6 @@
     ]
   },
   {
-    "view": "plugins",
-    "fixture": "default",
-    "url": "/scripts/webview-preview/index.html?view=plugins&fixture=default",
-    "frame": {
-      "w": 900,
-      "h": 760
-    },
-    "tags": [
-      "captured-host-vm"
-    ],
-    "title": "Plugins",
-    "aliases": [
-      "plugins",
-      "plugin drawer",
-      "marketplace"
-    ]
-  },
-  {
-    "view": "plugins",
-    "fixture": "update-available",
-    "url": "/scripts/webview-preview/index.html?view=plugins&fixture=update-available",
-    "frame": {
-      "w": 900,
-      "h": 760
-    },
-    "tags": [
-      "captured-host-vm"
-    ],
-    "title": "Plugins",
-    "aliases": [
-      "plugins",
-      "plugin drawer",
-      "marketplace"
-    ]
-  },
-  {
-    "view": "plugins",
-    "fixture": "empty",
-    "url": "/scripts/webview-preview/index.html?view=plugins&fixture=empty",
-    "frame": {
-      "w": 900,
-      "h": 760
-    },
-    "tags": [
-      "captured-host-vm"
-    ],
-    "title": "Plugins",
-    "aliases": [
-      "plugins",
-      "plugin drawer",
-      "marketplace"
-    ]
-  },
-  {
     "view": "activity",
     "fixture": "default",
     "url": "/scripts/webview-preview/index.html?view=activity&fixture=default",

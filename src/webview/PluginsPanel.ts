@@ -1,5 +1,4 @@
 import * as vscode from "vscode";
-import { panelIcon } from "./shared/panelIcon.js";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { WorkspaceGitPresentationTarget } from "../shell/WorkspacePresentation.js";
@@ -20,7 +19,6 @@ import {
 } from "../plugins/engine.js";
 import { type Runtime, type PackageManager, type ExternalToolInstall } from "../plugins/manifest.js";
 import { pluginsMessage, consentMessage, busyMessage, resultMessage, type PluginsActionType } from "./plugins/messages.js";
-import { renderWebviewShell } from "./shared/shell.js";
 import { gatherGitHookState } from "../plugins/gitHookState.js";
 import type { GitRun } from "../plugins/fetcher.js";
 import { gatherToolPlan } from "../plugins/toolPlan.js";
@@ -106,17 +104,18 @@ interface PanelIO {
 }
 
 /**
- * spec 250 — the editor-area Plugins View panel (one per workspace root), opened by the sidebar title
- * button `tachyon.openPlugins` (sibling of inspect-tmux). Mirrors the HandoffPanelManager (spec 245):
- * createWebviewPanel + asWebviewUri(dist/webview/plugins.js) + a single VM postMessage, re-posted on
- * an explicit refresh. The HOST gathers the model (detectRuntimes + read the committed lockfile +
- * buildPluginsViewModel — all I/O lives here); the Preact webview renders it (never imports vscode/engine).
- *
- * Step C adds the interactive surface: install-by-source, the BLOCKING consent drawer (previewInstall/
- * previewUpdate/previewRemove → the pure consentViewModel), the apply actions (applyInstall/Update/Remove,
- * each re-checking TOCTOU at the engine), and lazy update-checks. Async ops are serialized by a busy flag.
+ * spec 250 → spec 410 (t-d23f93) — Plugins host service. Originally the editor-area Plugins View
+ * panel manager (one WebviewPanel per workspace root); since SDD 410 Phase B, Plugins opens as
+ * Control → Plugins (cockpit section) and this manager no longer creates peer panels — `open`/
+ * `deserialize` only redirect legacy opens/revives (ApprovalPanelManager pattern), with the
+ * per-workspace need served by Control's shell-level workspace selector (t-d16a39). What remains
+ * REAL here is the host side of the Plugins product surface, driven through the Control embed:
+ * the HOST gathers the model (detectRuntimes + committed lockfile + buildPluginsViewModel — all
+ * I/O lives here) and routes the interactive surface (install-by-source, the BLOCKING consent
+ * drawer, apply actions with TOCTOU re-checks, lazy update-checks; async ops serialized by a busy
+ * flag). The Preact webview renders it (never imports vscode/engine).
  */
-/** Control-monolith embed: same message surface as a standalone Plugins panel, without a second WebviewPanel. */
+/** Control-monolith embed: the Plugins message surface bound into Control's webview. */
 interface ControlPluginsEmbed {
   webview: vscode.Webview;
   ws: WorkspaceGitPresentationTarget;
@@ -125,8 +124,7 @@ interface ControlPluginsEmbed {
 }
 
 export class PluginsPanelManager {
-  private readonly panels = new Map<string, { panel: vscode.WebviewPanel; post: () => void }>();
-  /** Optional embed into Control (plugins tab). One at a time. */
+  /** The Control embed (plugins section). One at a time. */
   private embed: ControlPluginsEmbed | undefined;
 
   constructor(
@@ -135,78 +133,15 @@ export class PluginsPanelManager {
     private readonly onPluginsChanged: () => void = () => undefined,
   ) {}
 
-  open(wsHash?: string, revivedPanel?: vscode.WebviewPanel): void {
-    const ws = wsHash === undefined ? this.getWorkspaces()[0] : this.getWorkspaces().find((w) => w.wsHash === wsHash);
-    if (!ws) { revivedPanel?.dispose(); return; }
-    const key = ws.wsHash;
-    const existing = this.panels.get(key);
-    if (existing) {
-      revivedPanel?.dispose();
-      existing.panel.reveal(vscode.ViewColumn.Active);
-      return;
-    }
-
-    const root = vscode.Uri.joinPath(this.extensionUri, "dist", "webview");
-    const panel = revivedPanel ?? vscode.window.createWebviewPanel(
-      PLUGINS_VIEW_TYPE,
-      `Plugins — ${ws.folderName}`,
-      { viewColumn: vscode.ViewColumn.Active, preserveFocus: false },
-      { enableScripts: true, localResourceRoots: [root], retainContextWhenHidden: true },
-    );
-    panel.title = `Plugins — ${ws.folderName}`;
-    panel.webview.options = { enableScripts: true, localResourceRoots: [root] };
-    panel.iconPath = panelIcon(this.extensionUri, "extensions"); // spec 282 — contextual editor-tab icon
-    const uri = (f: string): string => panel.webview.asWebviewUri(vscode.Uri.joinPath(root, f)).toString();
-    panel.webview.html = renderWebviewShell({
-      cspSource: panel.webview.cspSource,
-      title: `Plugins — ${ws.folderName}`,
-      // spec 342 Pilot A — vscode-theme.css + plugins.tailwind.css added for the Kit components this panel
-      // now adopts (KitSelect/KitDropdown); order matters (design-system → vscode-theme → Tailwind → surface
-      // CSS, see test/unit/cssOrderSnapshot.test.ts).
-      styles: [uri("codicon.css"), uri("design-system.css"), uri("vscode-theme.css"), uri("plugins.tailwind.css"), uri("plugins.css")],
-      bundle: uri("plugins.js"),
-      mode: "live",
-      persistedState: { schemaVersion: 1, view: PLUGINS_VIEW_TYPE, wsHash: ws.wsHash } satisfies PluginsPanelState,
-    });
-
-    // per-panel state: the last update-checks (cleared on a refresh) + the op awaiting confirmation.
-    let checks: Record<string, UpdateCheck> = {};
-    let pending: PendingOp | undefined;
-    let busy = false;
-
-    // spec 278 — POST via the shared envelope so a `plugins`/`consent`/`busy`/`result` shape drift breaks the
-    // build (and the dev preview harness uses the same constructors), not a silent wrong screenshot.
-    const post = (): void => {
-      void panel.webview.postMessage(pluginsMessage(this.gather(ws, checks)));
-    };
-    const postConsent = (vm: ConsentVM): void => void panel.webview.postMessage(consentMessage(vm));
-    const postBusy = (label: string): void => void panel.webview.postMessage(busyMessage(label));
-    const postResult = (ok: boolean, message: string): void => void panel.webview.postMessage(resultMessage(ok, message));
-
-    panel.webview.onDidReceiveMessage((m: InboundMsg) => {
-      void this.onMessage(ws, m, {
-        post,
-        postConsent,
-        postBusy,
-        postResult,
-        getPending: () => pending,
-        setPending: (p) => { pending = p; },
-        getChecks: () => checks,
-        setChecks: (c) => { checks = c; },
-        isBusy: () => busy,
-        setBusy: (b) => { busy = b; },
-      });
-    });
-
-    panel.onDidDispose(() => {
-      this.panels.delete(key);
-    });
-    this.panels.set(key, { panel, post });
-    post();
+  /** spec 410 (t-d23f93) — legacy open path: redirect into Control's Plugins section. */
+  open(wsHash?: string): void {
+    void vscode.commands.executeCommand("tachyon.openPlugins", wsHash);
   }
 
+  /** A revived pre-410 standalone panel is disposed and re-opened as Control → Plugins. */
   deserialize(panel: vscode.WebviewPanel, state: PluginsPanelState): void {
-    this.open(state.wsHash, panel);
+    panel.dispose();
+    void vscode.commands.executeCommand("tachyon.openPlugins", state.wsHash);
   }
 
   /** Route one inbound webview message. Network/apply ops are serialized by a `busy` flag (one at a time). */
@@ -631,7 +566,7 @@ export class PluginsPanelManager {
     // lives in `buildExternalStatuses` (unit-tested); this thin glue supplies the spawn-free presence oracle (D7).
     const presenceCache = new Map<string, ExternalPresenceResult>();
     const resolve = (req: ExternalToolReqLock): ExternalPresenceResult => {
-      const key = `${req.name} ${(req.names ?? []).join(" ")}`;
+      const key = `${req.name}\0${(req.names ?? []).join("\0")}`;
       const hit = presenceCache.get(key);
       if (hit !== undefined) return hit;
       const det = detectExternalToolPresence(req.name, req.names ? { names: req.names } : {});
@@ -658,14 +593,8 @@ export class PluginsPanelManager {
     return out;
   }
 
-  /** Re-post to an open panel for this workspace. */
-  refresh(wsHash: string): void {
-    this.panels.get(wsHash)?.post();
-  }
-
-  /** Re-post to every open panel (cheap). */
+  /** Re-post to the Control embed (cheap; no-op when Plugins isn't the active section). */
   refreshAll(): void {
-    for (const { post } of this.panels.values()) post();
     this.embed?.post();
   }
 
@@ -715,8 +644,6 @@ export class PluginsPanelManager {
   }
 
   dispose(): void {
-    for (const { panel } of this.panels.values()) panel.dispose();
-    this.panels.clear();
     this.embed = undefined;
   }
 }
