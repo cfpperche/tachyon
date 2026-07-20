@@ -14,7 +14,7 @@ This file preserves the historical implementation approach. Three later decision
    capability, wiring, recovery, and rollout moved to umbrella `t-f25434` with follow-ups `t-a26f3c`, `t-816d7f`,
    `t-f55bf7`, and `t-9cf3ae`.
 
-The shipped-partial boundary is therefore canonical mechanism-only: one Delivery, one linked Git projection and
+The shipped boundary is therefore canonical mechanism-only: one Delivery, one linked Git projection and
 worktree, exclusive sequential implement/verify/review/fix segments, explicit weak-evidence disclosure, governed
 recovery, and fail-closed hygiene. No text below should be read as evidence that `process-fenced` or the original
 opt-in sequence shipped.

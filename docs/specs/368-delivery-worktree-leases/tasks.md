@@ -113,7 +113,7 @@ _Generated from `plan.md` on 2026-07-10. Work top-to-bottom. Check boxes as task
   `t-f25434`.
 - [x] T19 supersession. Spec 376 removed the legacy selector and made new gated orchestration canonical
   mechanism-only after installed dogfood; current schemas/tool descriptions expose no selectable legacy lifecycle.
-- [x] T20. Reconcile the SDD as shipped-partial, attach current verification/dogfood evidence, extract T14.6C into
+- [x] T20. Reconcile the SDD as shipped, attach current verification/dogfood evidence, extract T14.6C into
   explicit follow-ups, and close the original design task `t-0b5723` through `landed` to `done` under closure task
   `t-2c3c94`.
 

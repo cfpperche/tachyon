@@ -2220,7 +2220,7 @@ Strong T14.6C work was extracted before closure into umbrella `t-f25434`:
 4. `t-9cf3ae` — installed adversarial dogfood and explicit rollout decision.
 
 The sequential dependency chain is recorded on the board, and umbrella completion depends on all four slices.
-No process-fenced behavior, configuration, or evidence is claimed by this shipped-partial closure.
+No process-fenced behavior, configuration, or evidence is claimed by this shipped closure.
 
 ### Closure verification plan
 

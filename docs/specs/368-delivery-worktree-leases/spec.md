@@ -2,7 +2,7 @@
 
 _Created 2026-07-10._
 
-**Status:** shipped-partial
+**Status:** shipped
 
 **Closure:** Shipped canonical mechanism-only Delivery as the sole product lifecycle: one immutable contract, one
 Git projection/worktree, exclusive sequential segments, verification/review, governed recovery, and fail-closed
@@ -242,4 +242,4 @@ No maintainer fork remains from the initial design. The plan resolves the three 
 
 Adversarial review may reopen any choice that it can tie to a concrete failure scenario. Strong process fencing is
 now a separate schedulable trail under umbrella `t-f25434`; it is not an open acceptance item hidden inside this
-shipped-partial record.
+shipped record.
