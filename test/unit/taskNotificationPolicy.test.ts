@@ -49,16 +49,30 @@ describe("task notification policy (t-bae005)", () => {
     const settings: TaskNotificationSettings = { ...DEFAULT_TASK_NOTIFICATION_SETTINGS, events: ["assigned"], suppressOwnChanges: true };
     expect(taskToastFor({ type: "assigned", task, actor: "agent-a", to: "agent-b" }, settings, "/ws")).toMatchObject({
       eventId: "assigned",
-      message: "Task assigned to agent-b: A task",
+      message: "Task assigned to agent-b by agent-a: A task",
     });
   });
 
   it("renders the event copy, warning level, and bounded title", () => {
     const longTask = { ...task, title: "x".repeat(140) };
     const toast = taskToastFor({ type: "awaitingHuman", task: longTask, actor: "a", reason: "why", kind: "decision" }, DEFAULT_TASK_NOTIFICATION_SETTINGS, "/ws");
-    expect(toast?.message).toMatch(/^Task needs you: x+…$/);
-    expect(toast?.message.length).toBeLessThanOrEqual("Task needs you: ".length + 120);
+    expect(toast?.message).toMatch(/^Task needs you — flagged by a: x+…$/);
     expect(toast?.level).toBe("warn");
+  });
+
+  // t-18a658 — an agent-caused toast names its agent; non-agent principals stay anonymous.
+  it("attributes agent actors in every event copy and keeps non-agent actors anonymous", () => {
+    const s = DEFAULT_TASK_NOTIFICATION_SETTINGS;
+    expect(taskToastFor({ type: "created", task, actor: "claude" }, s, "/ws")?.message).toBe("Task created by claude: A task");
+    expect(taskToastFor({ type: "created", task, actor: "human" }, s, "/ws")?.message).toBe("Task created: A task");
+    expect(taskToastFor({ type: "created", task, actor: "master" }, s, "/ws")?.message).toBe("Task created: A task");
+    expect(taskToastFor({ type: "statusChanged", task, actor: "claude", from: "active", to: "landed" }, s, "/ws")?.message)
+      .toBe("Task t-abc123 moved to landed by claude: A task");
+    expect(taskToastFor({ type: "journalAppended", task, actor: "claude" }, s, "/ws")?.message).toBe("Task note added by claude: A task");
+    expect(taskToastFor({ type: "journalAppended", task, actor: "external" }, s, "/ws")?.message).toBe("Task note added: A task");
+    // self-claim visible only when suppression is off — and then the redundant by-clause is dropped.
+    expect(taskToastFor({ type: "assigned", task, actor: "claude", to: "claude" }, { ...s, suppressOwnChanges: false }, "/ws")?.message)
+      .toBe("Task assigned to claude: A task");
   });
 
   it("dedupes within the TTL, expires at the boundary, and allows window zero", () => {
