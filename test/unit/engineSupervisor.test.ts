@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
@@ -37,6 +37,47 @@ import { makeSocketTemp } from "../helpers/socketTemp.js";
 
 const roots: string[] = [];
 const children: ChildProcessWithoutNullStreams[] = [];
+
+/**
+ * Host isolation (t-13cc6e).  Every daemon this suite launches runs the real `startDaemonEngineService`,
+ * whose first startup step is `GlobalTmuxWatchdog.start()`.  That watchdog is deliberately global rather
+ * than per-workspace: it roots its lease at `$XDG_RUNTIME_DIR/tachyon/tmux-authority` and probes the
+ * shared `-L tachyon` server under `$TMUX_TMPDIR`.  Inheriting the ambient values makes the suite contend
+ * with the developer's own live engine — the probe of a busy real tmux server delays the daemon past the
+ * supervisor's 750ms health budget, so `probeHealthyEngine` reports CONTROL_UNAVAILABLE instead of the
+ * absent-engine ENOENT — and makes a unit test act as the host's tmux recovery authority (holding the
+ * real watchdog leader lease, and SIGKILLing the host server if it ever probes as genuinely wedged).
+ * Redirecting both variables for the whole file gives the suite, and every child it spawns, a private
+ * runtime namespace; the engine socket paths were already private, this closes the remaining two.
+ */
+let hostIsolationRoot: string | undefined;
+const ambientRuntimeEnv = new Map<string, string | undefined>();
+
+beforeAll(() => {
+  const root = makeSocketTemp("tes-isolation-");
+  const runtime = path.join(root, "run");
+  const tmuxTmp = path.join(root, "tmux");
+  fs.mkdirSync(runtime, { mode: 0o700 });
+  fs.mkdirSync(tmuxTmp, { mode: 0o700 });
+  for (const key of ["XDG_RUNTIME_DIR", "TMUX_TMPDIR", "TMUX"]) {
+    ambientRuntimeEnv.set(key, process.env[key]);
+  }
+  process.env.XDG_RUNTIME_DIR = runtime;
+  process.env.TMUX_TMPDIR = tmuxTmp;
+  // A nested $TMUX would make the daemon's tmux calls resolve the ambient server regardless of TMUX_TMPDIR.
+  delete process.env.TMUX;
+  hostIsolationRoot = root;
+});
+
+afterAll(() => {
+  for (const [key, value] of ambientRuntimeEnv) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+  ambientRuntimeEnv.clear();
+  if (hostIsolationRoot) fs.rmSync(hostIsolationRoot, { recursive: true, force: true });
+  hostIsolationRoot = undefined;
+});
 
 afterEach(async () => {
   await Promise.all(children.splice(0).map(stopChild));
