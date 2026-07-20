@@ -8,6 +8,9 @@ _Created and ratified from maintainer screenshots on 2026-07-20._
 
 **Task:** `t-57e60b`
 
+Affected Product Invariants: none — this presentation-only Board refinement does not change the
+registered PI-001 project-guidance ownership boundary.
+
 ## Intent
 
 The Board currently forces task id, author, SDD/attention indicators, assignee and priority into one
