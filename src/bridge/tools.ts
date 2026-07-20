@@ -141,6 +141,16 @@ export interface BridgeDeps {
     submit?: boolean;
     timeoutMs?: number;
   }) => Promise<unknown>;
+  /** First-person screenshot of the human's active tab (data URL). */
+  companionTabScreenshot?: (opts?: {
+    format?: "jpeg" | "png";
+    quality?: number;
+    timeoutMs?: number;
+  }) => Promise<unknown>;
+  /** MAIN-world JS eval (bounded) on the human's active tab. */
+  companionTabEval?: (expression: string, timeoutMs?: number) => Promise<unknown>;
+  /** Recent page console lines captured by Companion. */
+  companionTabConsole?: (limit?: number, timeoutMs?: number) => Promise<unknown>;
   /**
    * SDD 414 — when true, register user_browser_* tools on this Bridge request.
    * Prefer: true only while a Companion browser (or future mobile) device is paired.
@@ -1639,6 +1649,111 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
             value,
             timeoutMs: timeoutSec !== undefined ? timeoutSec * 1000 : undefined,
           });
+          return ok(JSON.stringify(result, null, 2));
+        } catch (err) {
+          return fail(err);
+        }
+      },
+    );
+
+    // First-person visual — the killer demo for "what the human is looking at".
+    mcp.registerTool(
+      "user_browser_screenshot",
+      {
+        description:
+          "Capture a first-person screenshot of the HUMAN user's active browser tab via Tachyon Companion " +
+          "(what they are looking at right now). Returns a data URL (jpeg by default). " +
+          "Requires Companion paired + agent tab access. Prefer this when DOM outline is not enough " +
+          "to understand visual layout, charts, or UI state. Not agent-browser/CDP session.",
+        inputSchema: {
+          format: z.enum(["jpeg", "png"]).optional().describe("Image format (default jpeg)"),
+          quality: z
+            .number()
+            .min(10)
+            .max(100)
+            .optional()
+            .describe("JPEG quality 10–100 (default 70). Ignored for png."),
+          timeoutSec: tabTimeoutSchema,
+        },
+      },
+      async ({ format, quality, timeoutSec }) => {
+        try {
+          if (!deps.companionTabScreenshot) {
+            return fail(new Error("user_browser_screenshot is not available."));
+          }
+          if (!deps.companionBrowserPaired?.()) {
+            return fail(new Error("No Companion browser paired — tab tools are unavailable."));
+          }
+          const result = await deps.companionTabScreenshot({
+            format,
+            quality,
+            timeoutMs: timeoutSec !== undefined ? timeoutSec * 1000 : undefined,
+          });
+          return ok(JSON.stringify(result, null, 2));
+        } catch (err) {
+          return fail(err);
+        }
+      },
+    );
+
+    mcp.registerTool(
+      "user_browser_eval",
+      {
+        description:
+          "Run a short JavaScript expression in the MAIN world of the HUMAN user's active tab " +
+          "(page context, not the content-script isolated world). Result is JSON-stringified and capped. " +
+          "Use sparingly when DOM snapshot is insufficient. Requires agent tab access.",
+        inputSchema: {
+          expression: z
+            .string()
+            .min(1)
+            .max(4000)
+            .describe("JS expression to evaluate (e.g. document.title, window.location.href)"),
+          timeoutSec: tabTimeoutSchema,
+        },
+      },
+      async ({ expression, timeoutSec }) => {
+        try {
+          if (!deps.companionTabEval) {
+            return fail(new Error("user_browser_eval is not available."));
+          }
+          if (!deps.companionBrowserPaired?.()) {
+            return fail(new Error("No Companion browser paired — tab tools are unavailable."));
+          }
+          const result = await deps.companionTabEval(
+            expression,
+            timeoutSec !== undefined ? timeoutSec * 1000 : undefined,
+          );
+          return ok(JSON.stringify(result, null, 2));
+        } catch (err) {
+          return fail(err);
+        }
+      },
+    );
+
+    mcp.registerTool(
+      "user_browser_console",
+      {
+        description:
+          "Read recent console.* lines from the HUMAN user's active tab (captured by Companion). " +
+          "Useful for JS errors the human is hitting. Requires agent tab access.",
+        inputSchema: {
+          limit: z.number().int().min(1).max(100).optional().describe("Max lines (default 30)"),
+          timeoutSec: tabTimeoutSchema,
+        },
+      },
+      async ({ limit, timeoutSec }) => {
+        try {
+          if (!deps.companionTabConsole) {
+            return fail(new Error("user_browser_console is not available."));
+          }
+          if (!deps.companionBrowserPaired?.()) {
+            return fail(new Error("No Companion browser paired — tab tools are unavailable."));
+          }
+          const result = await deps.companionTabConsole(
+            limit,
+            timeoutSec !== undefined ? timeoutSec * 1000 : undefined,
+          );
           return ok(JSON.stringify(result, null, 2));
         } catch (err) {
           return fail(err);

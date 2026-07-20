@@ -153,12 +153,15 @@ export interface CompanionLiveState {
   agents: CompanionAgentRow[];
 }
 
-/** Engine → extension: read or act on the user's active tab. */
+/** Engine → extension: read, act, or first-person capture on the user's active tab. */
 export type CompanionTabCommand =
   | { id: string; kind: "snapshot"; at: string }
+  | { id: string; kind: "screenshot"; at: string; format?: "jpeg" | "png"; quality?: number }
   | { id: string; kind: "click"; at: string; selector: string }
   | { id: string; kind: "type"; at: string; selector: string; text: string; submit?: boolean }
-  | { id: string; kind: "fill"; at: string; selector: string; value: string };
+  | { id: string; kind: "fill"; at: string; selector: string; value: string }
+  | { id: string; kind: "eval"; at: string; expression: string }
+  | { id: string; kind: "console"; at: string; limit?: number };
 
 export type CompanionTabErrorCode =
   | "timeout"
@@ -186,10 +189,37 @@ export type CompanionTabResult =
   | {
       ok: true;
       id: string;
+      kind: "screenshot";
+      url: string;
+      title: string;
+      capturedAt: string;
+      /** data URL (image/jpeg or image/png) — first-person view of the human's tab */
+      dataUrl: string;
+      byteLength: number;
+      mimeType: string;
+    }
+  | {
+      ok: true;
+      id: string;
       kind: "click" | "type" | "fill";
       selector: string;
       url?: string;
       detail?: string;
+    }
+  | {
+      ok: true;
+      id: string;
+      kind: "eval";
+      expression: string;
+      result: string;
+      url?: string;
+    }
+  | {
+      ok: true;
+      id: string;
+      kind: "console";
+      url?: string;
+      entries: Array<{ level: string; text: string; at?: string }>;
     }
   | {
       ok: false;

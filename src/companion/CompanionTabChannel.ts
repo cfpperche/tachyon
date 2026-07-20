@@ -19,9 +19,12 @@ export interface CompanionTabChannelOptions {
 
 type CommandBody =
   | { kind: "snapshot" }
+  | { kind: "screenshot"; format?: "jpeg" | "png"; quality?: number }
   | { kind: "click"; selector: string }
   | { kind: "type"; selector: string; text: string; submit?: boolean }
-  | { kind: "fill"; selector: string; value: string };
+  | { kind: "fill"; selector: string; value: string }
+  | { kind: "eval"; expression: string }
+  | { kind: "console"; limit?: number };
 
 interface Pending {
   command: CompanionTabCommand;
@@ -51,7 +54,7 @@ export class CompanionTabChannel {
     return [...this.pending.values()].map((p) => p.command);
   }
 
-  /** Generic enqueue (snapshot | click | type | fill). */
+  /** Generic enqueue (snapshot | screenshot | act | eval | console). */
   request(body: CommandBody, timeoutMs?: number): Promise<CompanionTabResult> {
     const id = newId();
     const command = {
@@ -93,6 +96,23 @@ export class CompanionTabChannel {
 
   requestSnapshot(timeoutMs?: number): Promise<CompanionTabResult> {
     return this.request({ kind: "snapshot" }, timeoutMs);
+  }
+
+  requestScreenshot(
+    opts?: { format?: "jpeg" | "png"; quality?: number; timeoutMs?: number },
+  ): Promise<CompanionTabResult> {
+    return this.request(
+      { kind: "screenshot", format: opts?.format, quality: opts?.quality },
+      opts?.timeoutMs,
+    );
+  }
+
+  requestEval(expression: string, timeoutMs?: number): Promise<CompanionTabResult> {
+    return this.request({ kind: "eval", expression }, timeoutMs);
+  }
+
+  requestConsole(limit?: number, timeoutMs?: number): Promise<CompanionTabResult> {
+    return this.request({ kind: "console", limit }, timeoutMs);
   }
 
   requestClick(selector: string, timeoutMs?: number): Promise<CompanionTabResult> {

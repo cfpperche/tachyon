@@ -274,7 +274,8 @@ export async function handleCompanionHttp(
       }
       let body: CompanionTabResult;
       try {
-        body = JSON.parse((await readBody(req, 512 * 1024)) || "{}") as CompanionTabResult;
+        // Screenshots (jpeg data URLs) need a larger cap than text outlines.
+        body = JSON.parse((await readBody(req, 8 * 1024 * 1024)) || "{}") as CompanionTabResult;
       } catch {
         json(res, 400, { ok: false, code: "unknown", message: "Invalid JSON body." });
         return true;

@@ -1525,6 +1525,9 @@ export class Workspace {
         // Tools are registered only while a browser device is paired (companionBrowserPaired).
         companionBrowserPaired: () => this.companion.hasPairedDevice(),
         companionTabSnapshot: (opts) => this.companionTab.requestSnapshot(opts?.timeoutMs),
+        companionTabScreenshot: (opts) => this.companionTab.requestScreenshot(opts),
+        companionTabEval: (expression, timeoutMs) => this.companionTab.requestEval(expression, timeoutMs),
+        companionTabConsole: (limit, timeoutMs) => this.companionTab.requestConsole(limit, timeoutMs),
         companionTabAct: (input) => {
           if (input.kind === "click") {
             return this.companionTab.requestClick(input.selector, input.timeoutMs);
