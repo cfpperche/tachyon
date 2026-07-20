@@ -856,12 +856,13 @@ export async function openCockpit(
 
   if (creating) {
     const uri = (f: string): string => live.webview.asWebviewUri(vscode.Uri.joinPath(deps.extensionUri, "dist", "webview", f)).toString();
-    // t-610705 (SDD 410 Phase B, Approvals pilot) — CSS co-load: approval.css only loads eagerly
-    // in the shell when Approvals is the opening section (flash-free first paint); otherwise its
-    // URI ships via a bootstrap global and the client injects it when the lazy section body loads
-    // (src/webview/shared/lazySectionStyles.ts). Every other embedded section's sheet is still
-    // eager here — this pilot is intentionally scoped to one surface; each Phase B PR repeats it.
+    // t-610705 (SDD 410 Phase B) — CSS co-load: a section's sheet only loads eagerly in the shell
+    // when it's the opening section (flash-free first paint); otherwise its URI ships via a
+    // bootstrap global and the client injects it when the lazy section body loads
+    // (src/webview/shared/lazySectionStyles.ts). Each Phase B PR moves one more surface's sheet
+    // from always-eager to this scheme; sheets not yet migrated stay eager unconditionally.
     const approvalsIsActive = currentSection === "approvals";
+    const runtimeIsActive = currentSection === "runtime";
     live.webview.html = renderWebviewShell({
       cspSource: live.webview.cspSource,
       title: s.title,
@@ -879,7 +880,7 @@ export async function openCockpit(
         uri("plugins.css"),
         approvalsIsActive ? uri("approval.css") : undefined,
         uri("validations.css"),
-        uri("runtime-ops.css"),
+        runtimeIsActive ? uri("runtime-ops.css") : undefined,
         uri("inspector.css"),
         uri("cockpit.css"),
       ].filter((href): href is string => href !== undefined),
@@ -892,7 +893,7 @@ export async function openCockpit(
         section: currentSection,
       } satisfies CockpitPanelState,
       bootstrapGlobals: {
-        __tachyonSectionStyles: { approvals: uri("approval.css") },
+        __tachyonSectionStyles: { approvals: uri("approval.css"), runtime: uri("runtime-ops.css") },
       },
     });
   } else {

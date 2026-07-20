@@ -55,4 +55,16 @@ describe("loadSectionStylesheet (t-610705)", () => {
     loadSectionStylesheet("approvals");
     expect(appended).toHaveLength(0);
   });
+
+  // t-610705 — Runtime Ops is the second surface to adopt this mechanism; the bootstrap global now
+  // carries multiple section→URI entries. Each section's injection is independent of the others.
+  it("resolves the right URI when multiple sections are registered on the same bootstrap map", () => {
+    const runtimeHref = "vscode-webview://x/runtime-ops.css";
+    (globalThis as { window: { __tachyonSectionStyles: Record<string, string> } }).window.__tachyonSectionStyles = {
+      approvals: href,
+      runtime: runtimeHref,
+    };
+    loadSectionStylesheet("runtime");
+    expect(appended).toEqual([{ rel: "stylesheet", href: runtimeHref }]);
+  });
 });

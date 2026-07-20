@@ -34,7 +34,13 @@ const ApprovalsApp = lazy(() =>
     return { default: m.App };
   }),
 );
-const RuntimeOpsApp = lazy(() => import("../runtime-ops/App").then((m) => ({ default: m.App })));
+// t-610705 — CSS co-load, second surface (see the Approvals comment above for the mechanism).
+const RuntimeOpsApp = lazy(() =>
+  import("../runtime-ops/App").then((m) => {
+    loadSectionStylesheet("runtime");
+    return { default: m.App };
+  }),
+);
 const InspectorApp = lazy(() => import("../inspector/App").then((m) => ({ default: m.App })));
 const PluginsApp = lazy(() => import("../plugins/App").then((m) => ({ default: m.App })));
 
