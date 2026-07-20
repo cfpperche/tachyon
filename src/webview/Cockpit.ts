@@ -863,6 +863,7 @@ export async function openCockpit(
     // from always-eager to this scheme; sheets not yet migrated stay eager unconditionally.
     const approvalsIsActive = currentSection === "approvals";
     const runtimeIsActive = currentSection === "runtime";
+    const validationsIsActive = currentSection === "validations";
     live.webview.html = renderWebviewShell({
       cspSource: live.webview.cspSource,
       title: s.title,
@@ -879,7 +880,7 @@ export async function openCockpit(
         uri("plugins.tailwind.css"),
         uri("plugins.css"),
         approvalsIsActive ? uri("approval.css") : undefined,
-        uri("validations.css"),
+        validationsIsActive ? uri("validations.css") : undefined,
         runtimeIsActive ? uri("runtime-ops.css") : undefined,
         uri("inspector.css"),
         uri("cockpit.css"),
@@ -893,7 +894,11 @@ export async function openCockpit(
         section: currentSection,
       } satisfies CockpitPanelState,
       bootstrapGlobals: {
-        __tachyonSectionStyles: { approvals: uri("approval.css"), runtime: uri("runtime-ops.css") },
+        __tachyonSectionStyles: {
+          approvals: uri("approval.css"),
+          runtime: uri("runtime-ops.css"),
+          validations: uri("validations.css"),
+        },
       },
     });
   } else {

@@ -25,7 +25,13 @@ import type { Toast as PluginsToast } from "../plugins/main";
 
 // spec 410 — lazy section bodies (ESM chunks). Keeps eager cockpit.js under budget.
 const MissionControlApp = lazy(() => import("../mission-control/App").then((m) => ({ default: m.App })));
-const ValidationsApp = lazy(() => import("../validations/App").then((m) => ({ default: m.App })));
+// t-610705 — CSS co-load, third surface (see the Approvals comment below for the mechanism).
+const ValidationsApp = lazy(() =>
+  import("../validations/App").then((m) => {
+    loadSectionStylesheet("validations");
+    return { default: m.App };
+  }),
+);
 // t-610705 — pilot for CSS co-load: approval.css loads with this chunk, not unconditionally in
 // the cockpit shell (the shell still loads it eagerly ONLY when Approvals is the opening section).
 const ApprovalsApp = lazy(() =>
