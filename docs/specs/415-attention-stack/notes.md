@@ -38,6 +38,8 @@ _Where implementation intentionally departed from `plan.md`, and why it was nece
 - The official `Tachyon: Dev Host` F5 pointer is armed at spec 415 / slug `attention-stack`, resolving this worktree and an isolated fixture.
 - Its private daemon state is preloaded with seven sanitized attention rows. Human validation steps: press F5, verify six cards plus `+1 queued`, confirm no native toast, dismiss one card and observe the seventh promote.
 - No desktop visual judgment was performed. The earlier GUI launch exited without a live window; after the human clarified the rule, only headless visual evidence is agent-authored.
+- 2026-07-19 — First human EDH attempt exposed malformed seeded notice ids causing the Sidebar projection to fail UUID validation. Production hardening in `5530df77` now rejects malformed persisted notice/action ids before projection; the fixture was reseeded with UUIDs.
+- 2026-07-19 — Human reran the real EDH and confirmed all four checks: six cards plus `+1 queued`, passive badge after closing/reopening the Sidebar, no native toast, and immediate FIFO promotion after dismiss. Human verdict: “tudo funcionou”.
 
 ## Producer inventory
 
@@ -58,6 +60,13 @@ Guardrail for new producers: use `EngineHost.notify` only for durable human atte
 None at implementation start.
 
 ## Verification log
+
+### 2026-07-20 — final candidate gates after EDH fix
+
+- `npm run test:invariants` — pass: 1 invariant, 2 tests.
+- `npm run typecheck` — pass.
+- `npm run verify:full:quiet` — pass: 442 files, 5094 passed, 3 skipped.
+- The preceding full-suite attempt hit one transient failure in `restartModesDogfood.test.ts`; all 6 tests in that file passed immediately in isolation, and the required full suite then passed cleanly.
 
 ### 2026-07-20T00:05Z — direct required gates
 

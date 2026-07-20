@@ -21,7 +21,7 @@ _Acceptance checks tied to `spec.md`. Each should map to a checklist item there.
 - [x] Restart test proves queue persistence and unavailable restored callbacks.
 - [x] Duplicate/action tests prove stable order and exactly-once invocation.
 - [x] Structural test proves production has no non-modal native notification path and no `notice.present` broker.
-- [ ] Real VS Code dogfood captures no native toast, passive badge, six-card layout, and queued promotion.
+- [x] Real VS Code dogfood confirms no native toast, passive badge, six-card layout, and queued promotion.
 - [x] `npm run typecheck`, focused tests, `npm run test:invariants`, and `npm run verify:full:quiet` pass.
 
 **Headless check:** `npx vitest run test/unit/attentionStack.dogfood.test.ts test/unit/daemonEngineHost.test.ts test/unit/notificationService.test.ts test/unit/sidebarPrototype.test.ts test/unit/workspaceClient.test.ts test/unit/engineServiceProtocol.test.ts --maxWorkers=1`
@@ -51,7 +51,7 @@ _Acceptance checks tied to `spec.md`. Each should map to a checklist item there.
 _Optional for UI/interface/rendered-output work. Keep prose-based: real surface inspected, evidence captured, verdict recorded. If not useful, declare `**Visual QA Opt-Out:** <reason>`._
 
 - [x] Evidence: tracked headless PNG under `docs/specs/415-attention-stack/evidence/`, with observations recorded in `notes.md`.
-- [x] Verdict: headless preview card density, hierarchy, contrast, action reachability, and overflow pass; native EDH pointer is armed for human confirmation.
+- [x] Verdict: headless preview passed and the human confirmed the native EDH layout, badge, absence of toast, and FIFO promotion.
 
 **Cookbook-Opt-Out:** no new operator command or Bridge API; this replaces an internal presentation surface.
 
