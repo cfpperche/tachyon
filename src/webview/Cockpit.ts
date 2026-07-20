@@ -148,12 +148,8 @@ function strings(): CockpitStrings {
     auto: t("Auto-refresh"),
     empty: t("No Tachyon workspace attached in this window."),
     copyDiagnostics: t("Copy diagnostics"),
-    openServerInspector: t("Open tmux Inspector"),
     openMissionControl: t("Open Board"),
-    openPlugins: t("Open Plugins"),
     openSettings: t("Open Settings"),
-    openApprovals: t("Open Approvals"),
-    openRuntimeOps: t("Open Runtime Ops"),
     openDoctor: t("Run Doctor"),
     copied: t("Diagnostics copied"),
     overviewTitle: t("Overview"),
@@ -759,33 +755,8 @@ export async function openCockpit(
           }
           return;
         }
-        case "openServerInspector":
-          currentSection = "tmux";
-          await sendModel();
-          await sendSectionModule();
-          return;
-        case "openMissionControl":
-          currentSection = "mission";
-          await sendModel();
-          await sendSectionModule();
-          return;
-        case "openPlugins":
-          currentSection = "plugins";
-          await sendModel();
-          await sendSectionModule();
-          return;
         case "openSettings":
           deps.openSettings();
-          return;
-        case "openApprovals":
-          currentSection = "approvals";
-          await sendModel();
-          await sendSectionModule();
-          return;
-        case "openRuntimeOps":
-          currentSection = "runtime";
-          await sendModel();
-          await sendSectionModule();
           return;
         case "openDoctor":
           deps.openDoctor();
@@ -875,6 +846,7 @@ export async function openCockpit(
     const runtimeIsActive = currentSection === "runtime";
     const validationsIsActive = currentSection === "validations";
     const pluginsIsActive = currentSection === "plugins";
+    const tmuxIsActive = currentSection === "tmux";
     live.webview.html = renderWebviewShell({
       cspSource: live.webview.cspSource,
       title: s.title,
@@ -893,7 +865,7 @@ export async function openCockpit(
         approvalsIsActive ? uri("approval.css") : undefined,
         validationsIsActive ? uri("validations.css") : undefined,
         runtimeIsActive ? uri("runtime-ops.css") : undefined,
-        uri("inspector.css"),
+        tmuxIsActive ? uri("inspector.css") : undefined,
         uri("cockpit.css"),
       ].filter((href): href is string => href !== undefined),
       bundle: uri("cockpit.js"),
@@ -912,6 +884,7 @@ export async function openCockpit(
           validations: uri("validations.css"),
           "plugins-tailwind": uri("plugins.tailwind.css"),
           plugins: uri("plugins.css"),
+          tmux: uri("inspector.css"),
         },
       },
     });

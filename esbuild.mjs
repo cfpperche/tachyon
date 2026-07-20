@@ -226,12 +226,9 @@ const probes = {
   outfile: "dist/webview/probes.js",
 };
 
-// spec 279 — the Preact Inspector view bundle (converted from inline HTML; editor-area panel, never imports vscode).
-const inspector = {
-  ...sidebar,
-  entryPoints: ["src/webview/inspector/main.tsx"],
-  outfile: "dist/webview/inspector.js",
-};
+// t-610705 (SDD 410 Phase B #5) — the standalone Inspector bundle was retired: the tmux Server
+// Inspector is a cockpit-only section now (src/webview/inspector/App.tsx stays, lazy-imported by
+// cockpit/App.tsx via CSS co-load). inspector.css is still copied below — Cockpit.ts co-loads it.
 
 // POC — Engine/Bridge Control Inspector (module model; UI superseded by Cockpit shell).
 const controlInspector = {
@@ -497,7 +494,7 @@ if (existsSync(excalidrawAssets)) {
   cpSync(excalidrawAssets, "dist/webview/excalidraw-assets", { recursive: true });
 }
 
-const targets = [extension, toolLauncher, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, activity, handoff, approval, probes, inspector, controlInspector, cockpit, pinPreview, pinStudio, missionControl, taskDetail, taskStudio, pipelineStudio, agentStudioFixture, agentStudioShell, terminalStudioShell, commandStudioShell, runbookStudioShell, scheduleStudioShell, pluginHost, excalidraw, mermaid, katex, preview, uiGate];
+const targets = [extension, toolLauncher, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, activity, handoff, approval, probes, controlInspector, cockpit, pinPreview, pinStudio, missionControl, taskDetail, taskStudio, pipelineStudio, agentStudioFixture, agentStudioShell, terminalStudioShell, commandStudioShell, runbookStudioShell, scheduleStudioShell, pluginHost, excalidraw, mermaid, katex, preview, uiGate];
 if (watch) {
   const ctxs = await Promise.all(targets.map((c) => esbuild.context(c)));
   await Promise.all(ctxs.map((c) => c.watch()));

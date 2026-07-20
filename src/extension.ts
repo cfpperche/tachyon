@@ -9,7 +9,7 @@ import type { TmuxServerSnapshot } from "./inspector/model.js";
 import { CONFIG_FILENAMES, inferKind, type ScheduleDef } from "./config/loadConfig.js";
 import { agentEntryLine, commandEntryLine, runbookEntryLine, scheduleEntryLine } from "./config/YamlConfigEditor.js";
 import type { StudioSubmit } from "./webview/studioSubmit.js";
-import { openServerInspector, SERVER_INSPECTOR_VIEW_TYPE, type ServerInspectorPanelState, type InspectorDeps } from "./webview/ServerInspector.js";
+import { SERVER_INSPECTOR_VIEW_TYPE, type ServerInspectorPanelState, type InspectorDeps } from "./webview/ServerInspector.js";
 import {
   openCockpit,
   refreshCockpitMissionBoard,
@@ -1136,7 +1136,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       return killed;
     };
     return {
-      extensionUri: context.extensionUri,
       snapshot,
       serverHealth: async () => tmuxHealthSnapshot(await extensionQuery(tmuxWorkspace(), { action: "tmux.health" })),
       folderByHash,
@@ -1550,7 +1549,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   registerTrustedPanelSerializer<RunbookStudioPanelState>(context, RUNBOOK_STUDIO_SHELL_VIEW_TYPE, (panel, state) => runbookStudioPanels.deserialize(panel, state));
   registerTrustedPanelSerializer<ScheduleStudioPanelState>(context, SCHEDULE_STUDIO_SHELL_VIEW_TYPE, (panel, state) => scheduleStudioPanels.deserialize(panel, state));
   registerTrustedPanelSerializer<PipelineStudioPanelState>(context, PIPELINE_STUDIO_VIEW_TYPE, (panel, state) => pipelineStudioPanels.deserialize(panel, state));
-  registerTrustedPanelSerializer<ServerInspectorPanelState>(context, SERVER_INSPECTOR_VIEW_TYPE, (panel) => openServerInspector(makeServerInspectorDeps(), panel));
+  // t-610705 (SDD 410 Phase B #5) — a revived pre-410 standalone panel disposes itself and
+  // redirects into Control → tmux via tachyon.inspectServer, same as the live open path below.
+  registerTrustedPanelSerializer<ServerInspectorPanelState>(context, SERVER_INSPECTOR_VIEW_TYPE, (panel) => {
+    panel.dispose();
+    void vscode.commands.executeCommand("tachyon.inspectServer");
+  });
   registerTrustedPanelSerializer<CockpitPanelState>(context, COCKPIT_VIEW_TYPE, (panel, state) =>
     openCockpit(makeCockpitDeps(), { revivedPanel: panel, section: state?.section, wsHash: state?.wsHash }),
   );
@@ -1831,8 +1835,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       vscode.commands.executeCommand("workbench.action.openSettings", "@ext:cfpperche.tachyon"),
     ),
     // t-7bcba6 — tachyon.persistenceSettings (Visible legacy reminders / silentHooks kill switch) removed.
-    // ---- server inspector (F27) — cross-workspace, standalone socket queries ----
-    vscode.commands.registerCommand("tachyon.inspectServer", () => openServerInspector(makeServerInspectorDeps())),
+    // ---- server inspector (F27) — cross-workspace socket queries; Control → tmux (t-610705 Phase B #5) ----
+    vscode.commands.registerCommand("tachyon.inspectServer", () => openCockpit(makeCockpitDeps(), { section: "tmux" })),
     // ---- Control (desktop MVP, t-fe52f0 frente 1) — editor sysadmin; sidebar header button + palette ----
     vscode.commands.registerCommand("tachyon.openControl", () => openCockpit(makeCockpitDeps())),
     // legacy aliases (palette hidden for openCockpit)

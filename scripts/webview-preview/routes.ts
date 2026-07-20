@@ -14,7 +14,6 @@ import { fleetMessage } from "../../src/webview/sidebar/messages";
 import { pluginsMessage } from "../../src/webview/plugins/messages";
 import { activityMessage } from "../../src/webview/activity/messages";
 import { probesMessage } from "../../src/webview/probes/messages";
-import { initMessage, modelMessage } from "../../src/webview/inspector/messages";
 import {
   initMessage as controlInspectorInitMessage,
   modelMessage as controlInspectorModelMessage,
@@ -107,14 +106,9 @@ export const ROUTES: Record<string, Route> = {
     fixtures: probesFixtures as Record<string, Fixture>,
     makeMessage: (vm) => probesMessage(vm as never),
   },
-  inspector: {
-    bundle: "/dist/webview/inspector.js",
-    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/inspector.css"],
-    frame: { w: 800, h: 760 },
-    fixtures: inspectorFixtures as Record<string, Fixture>,
-    // the inspector needs init (strings) THEN model — two messages.
-    makeMessage: (vm) => [initMessage(inspectorStrings), modelMessage(vm as never)],
-  },
+  // t-610705 (SDD 410 Phase B #5) — the standalone "inspector" route previewed the retired tmux
+  // Server Inspector panel; tmux is a cockpit-only section now — use ?view=cockpit&fixture=tmux
+  // (same App.tsx, same fixture VM).
   // POC — Engine/Bridge Control Inspector (module; superseded as primary UI by Cockpit).
   "control-inspector": {
     bundle: "/dist/webview/control-inspector.js",
@@ -317,7 +311,6 @@ export const VIEW_META: Record<string, { title: string; aliases: string[] }> = {
   sidebar: { title: "Tachyon Sidebar", aliases: ["sidebar", "fleet"] },
   activity: { title: "Activity", aliases: ["activity", "agent activity", "chat", "transcript", "studio chat"] },
   probes: { title: "Probes", aliases: ["probes", "probe inspector"] },
-  inspector: { title: "tmux Inspector", aliases: ["inspector", "server inspector", "tmux"] },
   "control-inspector": {
     title: "Engine/Bridge Inspector",
     aliases: ["control inspector", "engine inspector", "bridge inspector", "engine bridge"],

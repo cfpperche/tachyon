@@ -7,12 +7,7 @@ import {
   readyMessage,
   refreshAction,
   copyDiagnosticsAction,
-  openServerInspectorAction,
-  openMissionControlAction,
-  openPluginsAction,
   openSettingsAction,
-  openApprovalsAction,
-  openRuntimeOpsAction,
   openDoctorAction,
   setSectionAction,
   switchControlWorkspaceAction,
@@ -296,12 +291,7 @@ function Root() {
       onToggleAuto={setAuto}
       onRefresh={() => post(refreshAction())}
       onCopyDiagnostics={() => post(copyDiagnosticsAction())}
-      onOpenServerInspector={() => post(openServerInspectorAction())}
-      onOpenMissionControl={() => post(openMissionControlAction())}
-      onOpenPlugins={() => post(openPluginsAction())}
       onOpenSettings={() => post(openSettingsAction())}
-      onOpenApprovals={() => post(openApprovalsAction())}
-      onOpenRuntimeOps={() => post(openRuntimeOpsAction())}
       onOpenDoctor={() => post(openDoctorAction())}
       onFleetStart={(name, wsHash) => post(fleetStartAction(name, wsHash))}
       onFleetStop={(name, wsHash) => post(fleetStopAction(name, wsHash))}

@@ -53,7 +53,11 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   // spec 279 conversions (flip `converted` as each lane lands)
   // probes re-pushes its model on refresh, so it's a `live` read-only surface (a listener, no inbound actions).
   { viewId: "tachyonProbes", view: "probes", hostFile: "src/webview/ProbeResultPanel.ts", mode: "live", converted: true, editorHome: "standalone-multi" },
-  { viewId: "tachyonServerInspector", view: "inspector", hostFile: "src/webview/ServerInspector.ts", mode: "live", converted: true, editorHome: "standalone" },
+  // The standalone tmux Server Inspector panel was retired (t-610705, SDD 410 Phase B #5, 2026-07-20) —
+  // tmux is a cockpit section only (src/webview/inspector/App.tsx stays, lazy-imported by cockpit/App.tsx;
+  // no per-workspace scoping needed — the tmux socket is cross-workspace by design). The trusted serializer
+  // for the legacy "tachyonServerInspector" viewType stays registered in extension.ts: a revived pre-410
+  // panel disposes itself and redirects into Control → tmux (same command the live open path uses).
   { viewId: "tachyonCockpit", view: "cockpit", hostFile: "src/webview/Cockpit.ts", mode: "live", converted: true, editorHome: "cockpit" },
   // Superseded by Control in production; retained as a preview surface and disposed if VS Code restores an old panel.
   { viewId: "tachyonControlInspector", view: "control-inspector", hostFile: "src/webview/ControlInspector.ts", mode: "live", converted: true, editorHome: "dev-only" },

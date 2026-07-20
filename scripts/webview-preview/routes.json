@@ -253,42 +253,6 @@
     ]
   },
   {
-    "view": "inspector",
-    "fixture": "default",
-    "url": "/scripts/webview-preview/index.html?view=inspector&fixture=default",
-    "frame": {
-      "w": 800,
-      "h": 760
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "tmux Inspector",
-    "aliases": [
-      "inspector",
-      "server inspector",
-      "tmux"
-    ]
-  },
-  {
-    "view": "inspector",
-    "fixture": "empty",
-    "url": "/scripts/webview-preview/index.html?view=inspector&fixture=empty",
-    "frame": {
-      "w": 800,
-      "h": 760
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "tmux Inspector",
-    "aliases": [
-      "inspector",
-      "server inspector",
-      "tmux"
-    ]
-  },
-  {
     "view": "control-inspector",
     "fixture": "default",
     "url": "/scripts/webview-preview/index.html?view=control-inspector&fixture=default",

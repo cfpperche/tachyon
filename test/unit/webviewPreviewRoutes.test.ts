@@ -53,14 +53,6 @@ describe("preview route table", () => {
     expect((r.makeMessage(r.fixtures.default.vm) as { type: string }).type).toBe("probes");
   });
 
-  it("declares the inspector route (spec 279) injecting BOTH init + model messages", () => {
-    const r = ROUTES.inspector;
-    expect(r.bundle).toBe("/dist/webview/inspector.js");
-    const msgs = r.makeMessage(r.fixtures.default.vm) as Array<{ type: string }>;
-    expect(Array.isArray(msgs)).toBe(true);
-    expect(msgs.map((m) => m.type)).toEqual(["init", "model"]);
-  });
-
   it("declares the control-inspector route (Engine/Bridge POC) with init + model", () => {
     const r = ROUTES["control-inspector"];
     expect(r.bundle).toBe("/dist/webview/control-inspector.js");
