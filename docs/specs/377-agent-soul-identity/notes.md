@@ -445,10 +445,11 @@ pass is recorded below.
 - The status is deliberately `shipped-partial`. Rename and Repair transactions/UI, exhaustive
   phase-by-phase crash/browser coverage, the stronger external-writer publication proof, and
   deterministic headless Soul dogfood were not delivered and are not checked as complete.
-- Mission Control inventory found no open Soul implementation follow-up. `t-1bad56` and `t-2278bc`
-  are landed records for code already contained by `7761e46d`; this closure normalizes them to done.
-  The superseded umbrella `t-c10dfe` remains dropped. Native Hermes Soul support is an explicit
-  candidate for a future independent task, not an accepted or silently open commitment.
+- Mission Control inventory found no open Soul implementation follow-up. `t-1bad56`, `t-2278bc`,
+  and this closure remain `landed`: the board correctly refuses `done` while their shared SDD is
+  `shipped-partial`. They are evidence records for code/docs already on `main`, not executable queue
+  items. The superseded umbrella `t-c10dfe` remains dropped. Native Hermes Soul support is an
+  explicit candidate for a future independent task, not an accepted or silently open commitment.
 
 Evidence: `t-eb926c`, `t-dac8d0`, `t-2f380c`, `t-6c328e`, `t-1bad56`, `t-2278bc`, and
 `7761e46d99f383fa0923c929645ecad5d12f30a3`.
