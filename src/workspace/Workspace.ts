@@ -923,12 +923,12 @@ export class Workspace {
         this.noticeQueue.clear(name);
         this.adhocBackstop.reset(name);
         this.completionHints.clear(name);
-        deps.onViewsChanged("agents");
+        this.refreshAgentsViews();
       },
       onStopping: (name) => {
         // Grok replaces auth.json symlink with a regular file on token refresh — harvest before teardown.
         this.reconcileGrokAuthIfGrokAgent(name);
-        deps.onViewsChanged("agents");
+        this.refreshAgentsViews();
       },
       onKilled: async (name) => {
         await this.deliveryLease.quarantineKilledExecution(name);
@@ -947,7 +947,7 @@ export class Workspace {
         // without complete_node fails closed; the per-node timeout is the backstop for a silent hang).
         const node = this.pipelineNodeOf.get(name);
         if (node) this.pipelines.onSessionEnd(node.runId, node.nodeId);
-        deps.onViewsChanged("agents");
+        this.refreshAgentsViews();
       },
       // Restart kill+new fallback only (t-4d2630): close the old terminal now (sync) so
       // post-spawn onSpawned re-opens a fresh attach. Happy-path respawn-pane keeps clients
@@ -1227,10 +1227,7 @@ export class Workspace {
         // (a real new turn). Do not clear while monitor still says "working" on frozen content.
         this.completionHints.clearIfNewOutput(agent, attention.contentSince);
         this.waiters.notifyAttention(agent, this.attentionOf(agent)?.state ?? attention.state);
-        deps.onViewsChanged("agents");
-        // Companion side panel: push agent/attention snapshot over SSE (no UI poll).
-        // companionLive is constructed later in this constructor; optional until then.
-        (this as { companionLive?: CompanionLiveSync }).companionLive?.notifyChanged();
+        this.refreshAgentsViews();
         // spec 216 (Part C) — re-anchor the role on the first idle AFTER a detected compaction (never
         // working/needs-input), once per episode, only when opted in. spec 241 — continuity recovery rides
         // the same idle. codex fix #4: run them SERIALLY (role reminder, then continuity pointer) so two
@@ -1348,7 +1345,7 @@ export class Workspace {
             this.pipelines.onProcessExit(plNode.runId, plNode.nodeId, exitCode ?? 1);
             return;
           }
-          deps.onViewsChanged("agents");
+          this.refreshAgentsViews();
           const code = exitCode !== undefined ? this.t(" (exit {0})", exitCode) : "";
           if (willRestart) {
             this.host.notify(this.t("'{0}' crashed{1} — restarting in {2}s", agent, code, Math.round((delayMs ?? 0) / 1000)), "warn");
@@ -1374,7 +1371,7 @@ export class Workspace {
             .catch((err) => {
               this.host.notify(this.t("'{0}' exited cleanly, but Tachyon could not clear its terminal: {1}", agent, String(err instanceof Error ? err.message : err)), "warn");
             })
-            .finally(() => deps.onViewsChanged("agents"));
+            .finally(() => this.refreshAgentsViews());
           this.host.notify(this.t("'{0}' exited cleanly", agent));
         },
         onGone: (agent) => {
@@ -1383,7 +1380,7 @@ export class Workspace {
           this.pokeParentOnDeath(agent, "killed", true);
         },
         onGiveUp: (agent, attempts) => {
-          deps.onViewsChanged("agents");
+          this.refreshAgentsViews();
           this.host.notify(this.t("'{0}' crash-looped ({1} restarts in 1 min) — giving up. Fix it and restart manually.", agent, attempts), "error", [
             { label: this.t("Inspect"), run: () => void this.terminals.open(agent, this.manager.session(agent)) },
           ]);
@@ -1509,7 +1506,7 @@ export class Workspace {
         onContinuityChanged: (agent) => {
           this.continuityState.markRestored(agent, this.currentActivitySeq(agent));
           this.continuityState.setLastSeenTransitions(agent, this.writerTransitions(agent)); // codex fix #1 — baseline at checkpoint
-          deps.onViewsChanged("agents");
+          this.refreshAgentsViews();
         },
         // spec 245 — shared per-project handoff (distinct from per-agent continuity above).
         handoff: this.handoffStore,
@@ -1952,12 +1949,12 @@ export class Workspace {
             // to a persistent stopped agent and KEEPS its log (it has a real, reusable sidebar row) — row-only.
             if (!def?.agent) this.manager.removeEphemeralFootprint(name);
             else this.ledger.remove(name);
-            this.deps.onViewsChanged("agents");
+            this.refreshAgentsViews();
           });
       },
       persist: (run) => this.runLedger.save(run),
       persistInitial: (run) => this.runLedger.saveRequired(run),
-      onChange: () => this.deps.onViewsChanged("agents"),
+      onChange: () => this.refreshAgentsViews(),
       setTimer: (ms, fn) => {
         const t = setTimeout(fn, ms);
         return () => clearTimeout(t);
@@ -2054,7 +2051,7 @@ export class Workspace {
     } catch {
       /* ignore */
     }
-    this.deps.onViewsChanged("agents");
+    this.refreshAgentsViews();
   }
 
   /** spec 231 — does this agent carry a persona (so a pipeline node referencing it may omit `task` under
@@ -2314,7 +2311,7 @@ export class Workspace {
       }
     }
     this.host.notify(this.t("▶ pipeline '{0}' started (run {1})", name, runId));
-    this.deps.onViewsChanged("agents");
+    this.refreshAgentsViews();
     return runId;
   }
 
@@ -2338,7 +2335,7 @@ export class Workspace {
       }
     });
     this.pipelines.seedRun(run);
-    this.deps.onViewsChanged("agents");
+    this.refreshAgentsViews();
     return run.id;
   }
 
@@ -2348,7 +2345,7 @@ export class Workspace {
     try {
       const text = fs.readFileSync(this.runInputFilePath(runId), "utf8").trim();
       this.pipelines.setInput(runId, text);
-      this.deps.onViewsChanged("agents");
+      this.refreshAgentsViews();
     } catch {
       /* nothing to apply */
     }
@@ -2407,7 +2404,7 @@ export class Workspace {
         void (async () => {
           await ws.recoverPendingHostActionReload();
           await ws.clientRebind?.onListenerReady();
-          deps.onViewsChanged("agents");
+          this.refreshAgentsViews();
         })();
       }
     } catch (err) {
@@ -2420,7 +2417,7 @@ export class Workspace {
       const agentsBefore = new Set(Object.keys(ws.config?.agents ?? {}));
       ws.reloadConfig();
       ws.rebuildWatches();
-      deps.onViewsChanged("agents");
+      this.refreshAgentsViews();
       // dogfood p-5a2a83 follow-up: an autostart agent ADDED by a live tachyon.yml edit starts
       // now (parity with the Studio create path), without re-spawning a pre-existing/stopped one.
       void ws.autostartNewlyDeclared(agentsBefore);
@@ -2522,6 +2519,21 @@ export class Workspace {
     return rows;
   }
 
+
+  /** Sidebar agents view + Companion live agent list (SSE). Safe before companionLive is constructed. */
+  private refreshAgentsViews(): void {
+    try {
+      this.deps.onViewsChanged("agents");
+    } catch {
+      /* host optional */
+    }
+    try {
+      (this as { companionLive?: CompanionLiveSync }).companionLive?.notifyChanged();
+    } catch {
+      /* best-effort */
+    }
+  }
+
   /** SDD 414 / t-a45c6b — pending human-approval requests for Companion UI. */
   async companionListApprovals(): Promise<CompanionApprovalSummary[]> {
     return listPendingApprovalRequests(this.workspaceRoot).map((r) => ({
@@ -2591,7 +2603,7 @@ export class Workspace {
     this.dismissApprovalAttentionNotices(approvalId);
     try {
       this.deps.onViewsChanged("pins");
-      this.deps.onViewsChanged("agents");
+      this.refreshAgentsViews();
     } catch {
       /* host optional */
     }
@@ -2720,13 +2732,13 @@ export class Workspace {
         "warn",
       );
     }
-    this.deps.onViewsChanged("agents");
+    this.refreshAgentsViews();
     return port;
   }
 
   async stopBridge(): Promise<void> {
     await this.bridge.dispose();
-    this.deps.onViewsChanged("agents");
+    this.refreshAgentsViews();
   }
 
   private async startBridgeListener(preferred: number): Promise<number> {
@@ -3718,7 +3730,7 @@ export class Workspace {
       data: { index: st.index, step: st.step, cmd: st.cmd, exitCode: st.exitCode, durationMs: st.durationMs, state: st.state },
     }));
     this.ledger.replaceVerifyEvidence(agent, stepEvidence);
-    this.deps.onViewsChanged("agents");
+    this.refreshAgentsViews();
     if (passed) {
       this.host.notify(this.t("✓ '{0}' verified — {1} passed", agent, verify));
     } else {
@@ -3822,7 +3834,7 @@ export class Workspace {
       ...(storedArtifacts && storedArtifacts.length ? { artifacts: storedArtifacts } : {}),
     };
     this.ledger.appendEvidence(input.targetAgent, record);
-    this.deps.onViewsChanged("agents");
+    this.refreshAgentsViews();
     return { ok: true, id };
   }
 
@@ -3957,7 +3969,7 @@ export class Workspace {
     this.lifecycleTrigger = setTimeout(() => {
       void this.lifecycle.tick();
       void this.commandRunner.tick();
-      this.deps.onViewsChanged("agents");
+      this.refreshAgentsViews();
       this.deps.onViewsChanged("commands");
     }, 250);
   }
@@ -4098,7 +4110,7 @@ export class Workspace {
     await this.adhocBackstop.tick();
     await this.gatedCompletion.tick().catch(() => undefined);
     // States with durations ("idle 2m") need periodic re-render even without transitions.
-    this.deps.onViewsChanged("agents");
+    this.refreshAgentsViews();
   }
 
   /** t-875700 — gated agents with delegator + worktree + delivery binding (or synthetic id). */
@@ -4207,7 +4219,7 @@ export class Workspace {
         // already up — deliver the prompt to its terminal
         await this.tmux.sendKeys(this.manager.session(def.spawn), def.instructions, true);
       }
-      this.deps.onViewsChanged("agents");
+      this.refreshAgentsViews();
     }
   }
 
@@ -4312,7 +4324,7 @@ export class Workspace {
         deliveryReloadSnapshotReady: false,
       });
       this.resumable = offers(plan);
-      this.deps.onViewsChanged("agents");
+      this.refreshAgentsViews();
       if (this.resumable.length > 0) this.offerResume();
       if (surviving.length > 0) this.host.notify(this.t("{0} re-discovered", surviving.length));
       return;
@@ -4391,7 +4403,7 @@ export class Workspace {
     for (const name of newlyDeclaredAutostart(before, this.config?.agents ?? {}, running)) {
       try {
         await this.manager.spawn(name);
-        this.deps.onViewsChanged("agents");
+        this.refreshAgentsViews();
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         if (!msg.includes("already running")) {
@@ -4430,7 +4442,7 @@ export class Workspace {
       }
     }
     this.resumable = this.resumable.filter((p) => p.name !== name);
-    this.deps.onViewsChanged("agents");
+    this.refreshAgentsViews();
   }
 
   /** Resume every currently-offered agent; declared stale sessions fall back to fresh spawn. */
@@ -4455,7 +4467,7 @@ export class Workspace {
     }
     // Keep failed offers actionable instead of silently discarding their recovery path.
     this.resumable = failed;
-    this.deps.onViewsChanged("agents");
+    this.refreshAgentsViews();
   }
 
   /**
@@ -4504,7 +4516,7 @@ export class Workspace {
     }
     this.reloadConfig();
     this.rebuildWatches();
-    this.deps.onViewsChanged("agents");
+    this.refreshAgentsViews();
     this.deps.onViewsChanged("commands");
     for (const warning of check.warnings) this.host.notify(warning, "warn");
     return { ok: true, warnings: check.warnings };
@@ -4644,7 +4656,7 @@ export class Workspace {
     const isAgentKind = !isScheduleOrCommandOrRunbook;
     const autostarted = isAgentKind && submit.editingName === undefined && !!this.config?.agents[submit.state.name]?.autostart;
     if (autostarted) {
-      void this.manager.spawn(submit.state.name).then(() => this.deps.onViewsChanged("agents")).catch((err) => {
+      void this.manager.spawn(submit.state.name).then(() => this.refreshAgentsViews()).catch((err) => {
         this.host.notify(`${err instanceof Error ? err.message : String(err)}`, "error");
       });
     }
@@ -4723,7 +4735,7 @@ export class Workspace {
       this.agentIncarnationCounters.set(newName, Math.max(this.agentIncarnationCounters.get(newName) ?? 0, incarnation));
     }
     if (wasOpen) this.terminals.open(newName, this.manager.session(newName));
-    this.deps.onViewsChanged("agents");
+    this.refreshAgentsViews();
   }
 
   openCommandPane(name: string): void {
