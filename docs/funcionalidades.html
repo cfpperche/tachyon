@@ -209,6 +209,7 @@ Esta página é gerada a partir do <b>código atual</b>, não do README (que, po
   <a href="#humano">Humano no loop</a><br>
   <a href="#continuidade">Continuidade e handoff</a><br>
   <a href="#anchor">Roles e re-âncora</a><br>
+  <a href="#soul">Soul — identidade por agente</a><br>
   <a href="#config">Config como código</a><br>
   <a href="#plugins">Plugins</a><br>
   <a href="#sidebar">Sidebar e painéis</a><br>
@@ -528,6 +529,21 @@ Esta página é gerada a partir do <b>código atual</b>, não do README (que, po
   done), desligável com <code>settings.bridgeGuidance: false</code>.</p>
   <ul class="tools"><li>reanchor_agent</li></ul>
   <div class="src">src/roles/ · src/anchor/</div>
+</div>
+
+<div class="feat" id="soul">
+  <h3>Soul — identidade persistente por agente</h3>
+  <p><code>soul: true</code> ativa uma identidade opcional e explícita para um agente declarado,
+  armazenada na cópia canônica local <code>.tachyon/agents/&lt;agente&gt;/SOUL.md</code> com manifesto
+  <code>profile.json</code>. Soul descreve <b>quem</b> o agente é; <code>role</code> continua sendo o
+  contrato reutilizável de trabalho, <code>instructions</code> a especialização persistente e a task o
+  objetivo da execução. O Agent Studio cria, importa como cópia, abre, habilita/desabilita, substitui
+  com confirmação por digest e exclui permanentemente com confirmação; nunca persiste o caminho de
+  origem. Fresh spawn/restart/re-anchor recarregam a identidade; resume/rebind/fork não a duplicam.
+  Runtimes com adapter de prompt recebem a composição tipada; OpenCode recebe prefill. Hermes,
+  wrappers arbitrários e runtimes sem adapter falham fechados em vez de descartar identidade. Soul é
+  contexto confiável local, não segredo, autorização, policy ou memória de longo prazo.</p>
+  <div class="src">src/agents/soul.ts · src/agents/promptLayers.ts · src/agents/soulProfileTransactions.ts · webview/AgentStudioPanel.ts</div>
 </div>
 
 <div class="feat" id="config">

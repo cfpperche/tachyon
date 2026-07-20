@@ -2,12 +2,19 @@
 
 _Created 2026-07-13._
 
-**Status:** draft
+**Status:** shipped-partial
+
+**Closure:** The bounded Soul MVP shipped on `main` at `7761e46d99f383fa0923c929645ecad5d12f30a3`.
+It includes canonical per-agent profiles, typed prompt composition and lifecycle handling, the
+functional Agent Studio common path, confirmed replacement/deletion, and four-runtime human
+dogfood. The broader rename/repair transaction design, exhaustive crash matrix, deterministic
+headless dogfood, and native Hermes profile integration remain explicitly deferred.
 
 **Planning task:** `t-60979d`
 
 **Ratification:** locked on 2026-07-14. The maintainer accepted the complete revised R1–R6 bundle
-without amendments. Implementation has not started.
+without amendments. A bounded MVP was subsequently implemented; the disposition of the wider
+ratified design is recorded below.
 
 **Legacy compatibility baseline:** `6885becd72dbd1a4eed270a3233f5d8e0a3e310e`. This single
 feature `BASE_SHA` is immutable for every no-soul parity fixture. It was refreshed to the current
@@ -296,7 +303,7 @@ Hermes SOUL as externally managed.
 
 ## Acceptance criteria
 
-- [ ] **Scenario: explicit per-agent soul round-trips**
+- [x] **MVP scenario: explicit per-agent soul round-trips**
   - **Given** declared agents with `soul: true`, `soul: false`, or no `soul` field
   - **When** config is parsed, edited in Agent Studio, and written back
   - **Then** enabled state is preserved as `true`, disabled state is accepted as `false` or absence
@@ -305,9 +312,10 @@ Hermes SOUL as externally managed.
     `kind: terminal` entries reject `soul`, false/absence are disabled, and non-booleans trigger the
     existing whole-config rejection/LKG behavior
   - **And** two soul-enabled agent names that differ only by ASCII case are rejected before either
-    profile is read; profile mutations likewise reject any distinct active/retained manifest with a
-    folded-name collision while allowing a case-only move of the same `profileId`
-- [ ] **Scenario: import creates one canonical managed copy**
+    profile is read; common-path profile mutations reject distinct active/retained folded-name
+    collisions
+  - **Deferred:** the case-only rename/move path for the same `profileId`
+- [x] **MVP scenario: import creates one canonical managed copy**
   - **Given** a user-selected local Markdown source and an agent profile with no canonical soul
   - **When** Agent Studio imports it
   - **Then** Tachyon validates and atomically copies the exact bytes to
@@ -316,18 +324,13 @@ Hermes SOUL as externally managed.
     edits to either file do not affect the other
   - **And** an existing destination requires explicit replace confirmation; cancel or an ordinary
     internal failure leaves the existing canonical file and config byte-for-byte unchanged
-  - **And** Replace atomically quarantines and verifies the confirmed old digest, preserves separate
-    fsynced rollback bytes, and publishes with no-replace semantics; a concurrently recreated path is
-    never overwritten and instead aborts or enters explicit repair
+  - **Deferred:** the stronger external-writer no-replace/quarantine proof and operator Repair path
   - **And** selecting the canonical destination itself adopts/enables it without copying or changing
     its bytes
-  - **And** crash injection after staging, destination swap, or config enable proves journal recovery
-    converges to the complete prior or complete new state; ambiguity blocks launch with
-    `profile-transaction-degraded`
-  - **And** before config/manifest commit, POSIX staging/file-directory flushes (or the strongest
-    documented Windows primitive) complete and the canonical file is reopened through the strict
-    resolver with the expected digest
-- [ ] **Scenario: profile mutations serialize with lifecycle admission**
+  - **And** the shipped journal/compensation path restores prior bytes after later config failure and
+    blocks a known degraded transaction from launching
+  - **Deferred:** exhaustive crash injection at every phase and the full platform durability proof
+- **Deferred full-design scenario: profile mutations serialize with lifecycle admission**
   - **Given** concurrent import/replace/adopt/enable/disable/rename/delete and spawn/restart/re-anchor
     requests for the same profile
   - **When** the operations race
@@ -335,7 +338,7 @@ Hermes SOUL as externally managed.
     Replace aborts when the confirmed destination digest changed, delete cannot pass while a launch
     reservation or live session exists, resumable metadata must be permanently dismissed/purged by a
     separately confirmed action before deletion, and no operation writes through a stale name
-- [ ] **Scenario: existing agents are unchanged**
+- [x] **MVP scenario: existing agents are unchanged**
   - **Given** any valid pre-feature agent with no `soul`, the immutable baseline
     `6885becd72dbd1a4eed270a3233f5d8e0a3e310e`, and a parity-fixture manifest pinned to that exact SHA
   - **When** fresh spawn, restart, no-soul re-anchor, bound Delivery/pipeline task composition, and
@@ -347,16 +350,16 @@ Hermes SOUL as externally managed.
   - **And** BASE_SHA command/send-key fixtures prove human resume, host rebind, and native fork keep
     their exact legacy outputs; call spies additionally prove none invokes the legacy/soul prompt
     serializers, soul resolver, or long-brief compositor
-- [ ] **Scenario: same role, different identities**
+- [x] **MVP scenario: same role, different identities**
   - **Given** two agents with the same `role` and `instructions` but different soul files
   - **When** both start
   - **Then** both receive the same operational contract and their own distinct labeled identity body
-- [ ] **Scenario: deterministic composition**
+- [x] **MVP scenario: deterministic composition**
   - **Given** `soul` and all supported layers are present
   - **When** the opening prompt is rendered
   - **Then** section order is primer → soul → role → instructions → Bridge guidance → current task →
     before-finishing; current task remains typed and never mutates declared `instructions`
-- [ ] **Scenario: source validation fails closed**
+- [x] **MVP scenario: source validation fails closed**
   - **Given** `soul: true` with a canonical file that is missing, a symlink/special file, invalid
     UTF-8, empty, or over a limit
   - **When** a fresh spawn, restart, or re-anchor resolves it
@@ -364,62 +367,62 @@ Hermes SOUL as externally managed.
     no new agent-specific worktree/lease/pane side effect is left behind
   - **And** a stable file above 64 KiB is classified `too-many-bytes` before change detection and
     schedules zero retries
-- [ ] **Scenario: resume preserves transcript semantics**
+- [x] **MVP scenario: resume preserves transcript semantics**
   - **Given** a session launched with soul digest A and a file later edited to digest B
   - **When** the session resumes or is host-rebound
   - **Then** Tachyon does not inject B, metadata still reports A as previously offered, and the
     transcript is resumed normally
-- [ ] **Scenario: restart and re-anchor refresh identity**
+- [x] **MVP scenario: restart and re-anchor refresh identity**
   - **Given** that same edited file
   - **When** the agent restarts or is explicitly re-anchored
   - **Then** B is resolved, offered through the correct boundary, and recorded with its channel/state;
     a worktree agent receives a readable shell-safe pointer to the coordinator anchor and an A→B
     transition is visible
-- [ ] **Scenario: failed compaction re-anchor is visible**
+- [x] **MVP scenario: failed compaction re-anchor is visible**
   - **Given** a compacted session and a soul source that cannot be resolved
   - **When** auto/manual re-anchor fails
   - **Then** no partial anchor is injected, the session is marked `identity-degraded`, human attention
     is latched, and automatic retries pause until a human retries after source repair
-- [ ] **Scenario: fork does not duplicate identity**
+- [x] **MVP scenario: fork does not duplicate identity**
   - **Given** a live fork-capable session with a soul
   - **When** Tachyon creates a native transcript fork
   - **Then** the fork inherits transcript context and soul metadata without a second opening soul block
-- [ ] **Scenario: declared principal identity survives delegation**
+- [x] **MVP scenario: declared principal identity survives delegation**
   - **Given** a bound Delivery/pipeline/schedule execution selected from a soul-enabled declared agent
   - **When** its task is composed
   - **Then** the declared soul is inherited and the current objective remains a separate, last operational layer
-- [ ] **Scenario: unsupported runtime is honest**
+- [x] **MVP scenario: unsupported runtime is honest**
   - **Given** an agent whose runtime has no verified soul delivery adapter
   - **When** `soul` is configured and a fresh start is attempted
   - **Then** Agent Studio/config diagnostics name the unsupported runtime and start fails instead of silently omitting identity
-- [ ] **Scenario: wrapped commands have deterministic support**
+- [x] **MVP scenario: wrapped commands have deterministic support**
   - **Given** direct, `env`/package-launcher, shell-wrapper, and renamed-binary commands
   - **When** soul capability is classified
   - **Then** direct/recognized launchers select the expected adapter and arbitrary wrappers fail with
     an actionable direct-command diagnostic
-- [ ] **Scenario: unattended identity failure does not loop or degrade**
+- [x] **MVP scenario: unattended identity failure does not loop or degrade**
   - **Given** an invalid soul during crash restart, autostart, schedule, pipeline, or Delivery start
   - **When** preflight runs
   - **Then** no identity-less fallback starts; enumerated and unknown deterministic errors latch
     immediately, only enumerated transient errors retry after 2s/4s/8s before latching/failing, and
     the execution records a specific failure before agent-specific resources are acquired
-- [ ] **Scenario: transient human restart preserves the live process**
+- [x] **MVP scenario: transient human restart preserves the live process**
   - **Given** a running agent and a soul read that repeatedly returns an enumerated transient error
   - **When** a human requests restart
   - **Then** retries occur after 2s/4s/8s without replacing the pane/process; exhaustion is surfaced
     and latched, while a successful retry replaces the process only after preflight completes
-- [ ] **Scenario: ledger and generated-artifact privacy**
+- [x] **MVP scenario: ledger and generated-artifact privacy**
   - **Given** a successful soul offer
   - **When** session state and generated files are inspected
   - **Then** ledger metadata contains canonical profile identity/digest/size/time/channel/`offered`
     state but neither body nor original import path, derived files are private where supported and
     gitignored, and documentation states transcript/argv/provider exposure
-- [ ] **Scenario: derived identity retention is bounded**
+- [x] **MVP scenario: derived identity retention is bounded**
   - **Given** brief/anchor files for a resumable or running agent
   - **When** it stops, resumes, restarts, is dismissed, or its declared entry is deleted
   - **Then** files are retained while transcript pointers may still need them, overwritten on refresh,
     and removed on permanent identity cleanup without orphaned body copies
-- [ ] **Scenario: canonical profile is durable and rename-safe**
+- **Deferred full-design scenario: canonical profile rename and Repair are transaction-safe**
   - **Given** an agent with `.tachyon/agents/<old>/SOUL.md`
   - **When** soul is cleared, the agent is deleted, or the agent is renamed
   - **Then** clear/delete retain the profile by default; rename requires confirmation and atomically
@@ -438,25 +441,26 @@ Hermes SOUL as externally managed.
     the same folded-name/profile ID from destination collision, and has the same recovery proof
   - **And** the Repair Agent Profile Transaction action shows the journal/profile ID/digests and, after
     confirmation, can Complete or Roll Back a provably reconcilable degraded transaction
-- [ ] **Scenario: retained profile cannot be inherited by name reuse**
+- [x] **MVP scenario: retained profile cannot be inherited by name reuse**
   - **Given** a cleared/deleted agent left a manifest with stable `profileId` and `state: retained`
   - **When** the same agent name later sets `soul: true`
   - **Then** launch remains blocked with `profile-adoption-required` until Agent Studio shows the
     profile ID/digest and the user explicitly adopts it; adoption changes the manifest to active in a
     journaled transaction
-- [ ] **Scenario: Agent Studio explains the model**
+- [x] **MVP scenario: Agent Studio explains the common-path model**
   - **Given** an agent opened in Agent Studio
-  - **When** the user imports, creates, previews, opens, clears, replaces, or renames around a soul
+  - **When** the user imports, creates, previews, opens, disables, replaces, or deletes a soul
   - **Then** identity is visually separate from Role and Persistent instructions, the canonical
-    profile path and copy semantics are explicit, lifecycle/runtime status is visible, file actions
-    are keyboard accessible, and no import overwrite/profile move/delete happens silently
-- [ ] **Scenario: long composed prompt remains lossless**
+    profile path and copy semantics are explicit, lifecycle/runtime status is visible, common file
+    actions are keyboard accessible, and no import overwrite or profile deletion happens silently
+  - **Deferred:** profile rename and operator Repair UI
+- [x] **MVP scenario: long composed prompt remains lossless**
   - **Given** a valid soul that pushes the full body beyond the inline threshold
   - **When** the agent starts
   - **Then** the existing brief-file transport carries every layer in order without truncation and the pane receives the bounded pointer envelope
-- [ ] Unit, integration, browser-surface, lifecycle, and compatibility tests cover the scenarios above.
-- [ ] Headless dogfood launches two same-role agents through capture runtimes with different souls and proves distinct prompts without paid inference.
-- [ ] Runtime parity and user documentation distinguish Tachyon prompt composition, runtime-native files, and unsupported delivery.
+- [x] Unit, integration, browser-surface, lifecycle, and compatibility tests cover the checked MVP scenarios above.
+- **Deferred:** deterministic headless dogfood with capture runtimes and no paid inference.
+- [x] Runtime parity and user documentation distinguish Tachyon prompt composition, runtime-native files, and unsupported delivery.
 
 ## Non-goals
 
