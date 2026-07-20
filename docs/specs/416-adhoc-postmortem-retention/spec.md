@@ -2,7 +2,9 @@
 
 _Created 2026-07-19. Task: t-1e636f._
 
-**Status:** in-progress
+**Status:** shipped
+
+**Closure:** Shipped 2026-07-19 in `b734ca97`. Clean-exited ad-hoc rows now persist a terminal lifecycle marker across manager reconstruction, are excluded from generic resume planning, remain explicitly dismissible, and retain authenticated coordinator authority for managed child-worktree cleanup. Dogfood, focused verification, typecheck, and the 5,102-test full suite passed headlessly.
 
 ## Intent
 
@@ -14,28 +16,28 @@ Affected Product Invariants: none — this repairs lifecycle retention and clean
 
 ## Acceptance criteria
 
-- [ ] **Scenario: clean exit survives engine reconstruction**
+- [x] **Scenario: clean exit survives engine reconstruction**
   - **Given** an ad-hoc agent with a persisted session row and durable transcript
   - **When** it exits with code 0, its pane is cleared, and a new `AgentManager` rehydrates the ledger
   - **Then** `list_agents` still exposes one stopped `cleanExited` row with postmortem output and dismiss capability
-- [ ] **Scenario: terminal row never auto-resumes**
+- [x] **Scenario: terminal row never auto-resumes**
   - **Given** a clean-exited lifecycle marker on a resumable ad-hoc record
   - **When** activation computes its resume plan
   - **Then** it produces no reattach, auto-resume or offer action for that record
-- [ ] **Scenario: explicit dismiss is final**
+- [x] **Scenario: explicit dismiss is final**
   - **Given** a rehydrated clean-exited ad-hoc row
   - **When** `dismiss_agent` succeeds
   - **Then** the row, lifecycle marker, durable transcript/activity footprint and worktree ownership handle are removed through the existing explicit cleanup paths
-- [ ] **Scenario: a new incarnation clears terminal state**
+- [x] **Scenario: a new incarnation clears terminal state**
   - **Given** a previously clean-exited ad-hoc record
   - **When** the human explicitly restarts or respawns it
   - **Then** the new live record no longer carries `clean-exited` lifecycle state
-- [ ] **Scenario: authenticated coordinator can clean child worktree**
+- [x] **Scenario: authenticated coordinator can clean child worktree**
   - **Given** an agent worktree created for a Bridge-authenticated delegated spawn
   - **When** the child has stopped and its coordinator calls `remove_worktree`
   - **Then** ownership permits that coordinator while still refusing unrelated agents and preserving dirty/occupancy guards
-- [ ] Malformed persisted lifecycle values are ignored safely and never create a postmortem row.
-- [ ] Existing pre-marker session rows retain their prior resume/restart behavior.
+- [x] Malformed persisted lifecycle values are ignored safely and never create a postmortem row.
+- [x] Existing pre-marker session rows retain their prior resume/restart behavior.
 
 ## Non-goals
 
