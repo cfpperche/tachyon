@@ -2404,7 +2404,7 @@ export class Workspace {
         void (async () => {
           await ws.recoverPendingHostActionReload();
           await ws.clientRebind?.onListenerReady();
-          this.refreshAgentsViews();
+          ws.refreshAgentsViews();
         })();
       }
     } catch (err) {
@@ -2417,7 +2417,7 @@ export class Workspace {
       const agentsBefore = new Set(Object.keys(ws.config?.agents ?? {}));
       ws.reloadConfig();
       ws.rebuildWatches();
-      this.refreshAgentsViews();
+      ws.refreshAgentsViews();
       // dogfood p-5a2a83 follow-up: an autostart agent ADDED by a live tachyon.yml edit starts
       // now (parity with the Studio create path), without re-spawning a pre-existing/stopped one.
       void ws.autostartNewlyDeclared(agentsBefore);
@@ -2521,7 +2521,7 @@ export class Workspace {
 
 
   /** Sidebar agents view + Companion live agent list (SSE). Safe before companionLive is constructed. */
-  private refreshAgentsViews(): void {
+  refreshAgentsViews(): void {
     try {
       this.deps.onViewsChanged("agents");
     } catch {
