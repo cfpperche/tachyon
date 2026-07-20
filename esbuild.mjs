@@ -230,12 +230,10 @@ const probes = {
 // Inspector is a cockpit-only section now (src/webview/inspector/App.tsx stays, lazy-imported by
 // cockpit/App.tsx via CSS co-load). inspector.css is still copied below — Cockpit.ts co-loads it.
 
-// POC — Engine/Bridge Control Inspector (module model; UI superseded by Cockpit shell).
-const controlInspector = {
-  ...sidebar,
-  entryPoints: ["src/webview/control-inspector/main.tsx"],
-  outfile: "dist/webview/control-inspector.js",
-};
+// t-b5dcae — the Engine/Bridge Control Inspector POC bundle was removed as dead code: its host
+// (ControlInspector.ts) had zero importers and its webview app (src/webview/control-inspector/*)
+// was only reachable from that host and the dev-preview harness. The real domain logic
+// (src/control-inspector/model.ts) survives — Cockpit's own Engine tab uses it directly.
 
 // POC — Tachyon Cockpit desktop shell (editor sysadmin; t-fe52f0 frente 1; no mobile).
 // spec 410 — ESM + code-splitting so section bodies can lazy-import without bloating eager cockpit.js.
@@ -459,7 +457,6 @@ copyFileSync("src/webview/plugins/plugins.css", "dist/webview/plugins.css"); // 
 copyFileSync("src/webview/activity/activity.css", "dist/webview/activity.css"); // spec 278 — activity styles (shared by the webview + the dev preview harness)
 copyFileSync("src/webview/probes/probes.css", "dist/webview/probes.css"); // spec 279 — probes styles (shared by the webview + the dev preview harness)
 copyFileSync("src/webview/inspector/inspector.css", "dist/webview/inspector.css"); // spec 279 — inspector styles (shared by the webview + the dev preview harness)
-copyFileSync("src/webview/control-inspector/control-inspector.css", "dist/webview/control-inspector.css"); // legacy module CSS
 copyFileSync("src/webview/cockpit/cockpit.css", "dist/webview/cockpit.css"); // Cockpit desktop POC
 copyFileSync("src/webview/pin-preview/pin-preview.css", "dist/webview/pin-preview.css"); // spec 279 — pin-preview styles (shared by the webview + the dev preview harness)
 copyFileSync("src/webview/shared/studio/studio-frame.css", "dist/webview/studio-frame.css"); // spec 350 — the studio shell's chrome (shared by any studio built on it + the dev preview harness)
@@ -494,7 +491,7 @@ if (existsSync(excalidrawAssets)) {
   cpSync(excalidrawAssets, "dist/webview/excalidraw-assets", { recursive: true });
 }
 
-const targets = [extension, toolLauncher, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, activity, handoff, approval, probes, controlInspector, cockpit, pinPreview, pinStudio, missionControl, taskDetail, taskStudio, pipelineStudio, agentStudioFixture, agentStudioShell, terminalStudioShell, commandStudioShell, runbookStudioShell, scheduleStudioShell, pluginHost, excalidraw, mermaid, katex, preview, uiGate];
+const targets = [extension, toolLauncher, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, activity, handoff, approval, probes, cockpit, pinPreview, pinStudio, missionControl, taskDetail, taskStudio, pipelineStudio, agentStudioFixture, agentStudioShell, terminalStudioShell, commandStudioShell, runbookStudioShell, scheduleStudioShell, pluginHost, excalidraw, mermaid, katex, preview, uiGate];
 if (watch) {
   const ctxs = await Promise.all(targets.map((c) => esbuild.context(c)));
   await Promise.all(ctxs.map((c) => c.watch()));

@@ -53,19 +53,6 @@ describe("preview route table", () => {
     expect((r.makeMessage(r.fixtures.default.vm) as { type: string }).type).toBe("probes");
   });
 
-  it("declares the control-inspector route (Engine/Bridge POC) with init + model", () => {
-    const r = ROUTES["control-inspector"];
-    expect(r.bundle).toBe("/dist/webview/control-inspector.js");
-    expect(r.cssLinks).toEqual([
-      "/dist/webview/codicon.css",
-      "/dist/webview/design-system.css",
-      "/dist/webview/control-inspector.css",
-    ]);
-    expect(Object.keys(r.fixtures).sort()).toEqual(["default", "empty", "healthy"]);
-    const msgs = r.makeMessage(r.fixtures.default.vm) as Array<{ type: string }>;
-    expect(msgs.map((m) => m.type)).toEqual(["init", "model"]);
-  });
-
   it("declares the cockpit route (Control monolith embeds + CSS) with init + model", () => {
     const r = ROUTES.cockpit;
     expect(r.bundle).toBe("/dist/webview/cockpit.js");

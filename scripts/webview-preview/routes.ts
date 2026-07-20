@@ -15,10 +15,6 @@ import { pluginsMessage } from "../../src/webview/plugins/messages";
 import { activityMessage } from "../../src/webview/activity/messages";
 import { probesMessage } from "../../src/webview/probes/messages";
 import {
-  initMessage as controlInspectorInitMessage,
-  modelMessage as controlInspectorModelMessage,
-} from "../../src/webview/control-inspector/messages";
-import {
   initMessage as cockpitInitMessage,
   modelMessage as cockpitModelMessage,
 } from "../../src/webview/cockpit/messages";
@@ -38,7 +34,6 @@ import { pluginsFixtures } from "./fixtures/plugins";
 import { activityFixtures } from "./fixtures/activity";
 import { probesFixtures } from "./fixtures/probes";
 import { inspectorFixtures, strings as inspectorStrings } from "./fixtures/inspector";
-import { controlInspectorFixtures, strings as controlInspectorStrings } from "./fixtures/control-inspector";
 import { cockpitFixtures, strings as cockpitStrings, validationsFixtureVm } from "./fixtures/cockpit";
 import { pinPreviewFixtures } from "./fixtures/pin-preview";
 import { taskStudioFixtures, taskStudioMakeMessage } from "./fixtures/task-studio";
@@ -109,17 +104,10 @@ export const ROUTES: Record<string, Route> = {
   // t-610705 (SDD 410 Phase B #5) — the standalone "inspector" route previewed the retired tmux
   // Server Inspector panel; tmux is a cockpit-only section now — use ?view=cockpit&fixture=tmux
   // (same App.tsx, same fixture VM).
-  // POC — Engine/Bridge Control Inspector (module; superseded as primary UI by Cockpit).
-  "control-inspector": {
-    bundle: "/dist/webview/control-inspector.js",
-    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/control-inspector.css"],
-    frame: { w: 920, h: 820 },
-    fixtures: controlInspectorFixtures as Record<string, Fixture>,
-    makeMessage: (vm) => [
-      controlInspectorInitMessage(controlInspectorStrings),
-      controlInspectorModelMessage(vm as never),
-    ],
-  },
+  // t-b5dcae — the standalone "control-inspector" route previewed the Engine/Bridge Control
+  // Inspector POC, which was dead code (ControlInspector.ts had zero importers). The real domain
+  // logic (src/control-inspector/model.ts) survives — Cockpit's own Engine tab uses it directly,
+  // covered by the cockpit route's own fixtures below.
   // Control visual monolith — Mission + Approvals + Plugins + Runtime Ops + tmux Inspector embeds.
   cockpit: {
     bundle: "/dist/webview/cockpit.js",
@@ -311,10 +299,6 @@ export const VIEW_META: Record<string, { title: string; aliases: string[] }> = {
   sidebar: { title: "Tachyon Sidebar", aliases: ["sidebar", "fleet"] },
   activity: { title: "Activity", aliases: ["activity", "agent activity", "chat", "transcript", "studio chat"] },
   probes: { title: "Probes", aliases: ["probes", "probe inspector"] },
-  "control-inspector": {
-    title: "Engine/Bridge Inspector",
-    aliases: ["control inspector", "engine inspector", "bridge inspector", "engine bridge"],
-  },
   cockpit: {
     title: "Control",
     aliases: ["control", "cockpit", "sysadmin", "project control", "fleet control", "control plane"],

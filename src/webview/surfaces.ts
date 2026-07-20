@@ -59,8 +59,12 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   // for the legacy "tachyonServerInspector" viewType stays registered in extension.ts: a revived pre-410
   // panel disposes itself and redirects into Control → tmux (same command the live open path uses).
   { viewId: "tachyonCockpit", view: "cockpit", hostFile: "src/webview/Cockpit.ts", mode: "live", converted: true, editorHome: "cockpit" },
-  // Superseded by Control in production; retained as a preview surface and disposed if VS Code restores an old panel.
-  { viewId: "tachyonControlInspector", view: "control-inspector", hostFile: "src/webview/ControlInspector.ts", mode: "live", converted: true, editorHome: "dev-only" },
+  // The Engine/Bridge Control Inspector POC was removed as dead code (t-b5dcae, 2026-07-20):
+  // ControlInspector.ts and src/webview/control-inspector/* had zero real importers — Cockpit's
+  // Engine tab was already built on its own JSX + EngineLogPanel.tsx, using src/control-inspector/
+  // model.ts's types directly (that pure model survives). The dispose-only serializer for the
+  // legacy "tachyonControlInspector" viewType stays registered in extension.ts, same defensive
+  // reasoning as the other retired panels: any still-persisted pre-migration window state.
   // pin-preview is hosted in SidebarPrototype.previewPin but renders via its own preact bundle (spec 279 Lane E).
   { viewId: "tachyonPinPreview", view: "pin-preview", hostFile: "src/webview/SidebarPrototype.ts", mode: "static", converted: true, editorHome: "sidebar" },
   // spec 335/339 panels — always preact, just predated this manifest; added on spec 342 dogfood round 2 (#4)

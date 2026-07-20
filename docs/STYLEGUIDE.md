@@ -156,7 +156,6 @@ Control is a **tab shell**, not six independent apps.
 | Activity | done | PageChrome + kit buttons |
 | Plugins | done | PageChrome + Badge |
 | Task detail | done | PageChrome + Badge |
-| control-inspector | done | PageChrome + Badge |
 | pipeline-studio | done | Button/IconButton |
 | `MIGRATED_VIEWS` guard | includes Control family | cockpit/approval/validations/runtime-ops |
 
