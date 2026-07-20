@@ -856,6 +856,12 @@ export async function openCockpit(
 
   if (creating) {
     const uri = (f: string): string => live.webview.asWebviewUri(vscode.Uri.joinPath(deps.extensionUri, "dist", "webview", f)).toString();
+    // t-610705 (SDD 410 Phase B, Approvals pilot) — CSS co-load: approval.css only loads eagerly
+    // in the shell when Approvals is the opening section (flash-free first paint); otherwise its
+    // URI ships via a bootstrap global and the client injects it when the lazy section body loads
+    // (src/webview/shared/lazySectionStyles.ts). Every other embedded section's sheet is still
+    // eager here — this pilot is intentionally scoped to one surface; each Phase B PR repeats it.
+    const approvalsIsActive = currentSection === "approvals";
     live.webview.html = renderWebviewShell({
       cspSource: live.webview.cspSource,
       title: s.title,
@@ -867,7 +873,7 @@ export async function openCockpit(
         uri("mission-control.css"),
         uri("plugins.tailwind.css"),
         uri("plugins.css"),
-        uri("approval.css"),
+        ...(approvalsIsActive ? [uri("approval.css")] : []),
         uri("validations.css"),
         uri("runtime-ops.css"),
         uri("inspector.css"),
@@ -881,6 +887,9 @@ export async function openCockpit(
         view: COCKPIT_VIEW_TYPE,
         section: currentSection,
       } satisfies CockpitPanelState,
+      bootstrapGlobals: {
+        __tachyonSectionStyles: { approvals: uri("approval.css") },
+      },
     });
   } else {
     await sendModel();

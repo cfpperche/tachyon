@@ -9,6 +9,7 @@ import type { ControlInspectorWorkspaceRow } from "../../control-inspector/model
 import type { CockpitAction, CockpitStrings } from "./messages";
 import { EngineLogPanel } from "./EngineLogPanel";
 import { Button, Badge, ListRow, PageChrome, EmptyState } from "../shared/ui";
+import { loadSectionStylesheet } from "../shared/lazySectionStyles";
 import type { MissionControlDispatch, TaskErrorEvent } from "../mission-control/App";
 import type { MissionControlVM } from "../mission-control/messages";
 import type { ValidationsDispatch } from "../validations/App";
@@ -25,7 +26,14 @@ import type { Toast as PluginsToast } from "../plugins/main";
 // spec 410 — lazy section bodies (ESM chunks). Keeps eager cockpit.js under budget.
 const MissionControlApp = lazy(() => import("../mission-control/App").then((m) => ({ default: m.App })));
 const ValidationsApp = lazy(() => import("../validations/App").then((m) => ({ default: m.App })));
-const ApprovalsApp = lazy(() => import("../approval/App").then((m) => ({ default: m.App })));
+// t-610705 — pilot for CSS co-load: approval.css loads with this chunk, not unconditionally in
+// the cockpit shell (the shell still loads it eagerly ONLY when Approvals is the opening section).
+const ApprovalsApp = lazy(() =>
+  import("../approval/App").then((m) => {
+    loadSectionStylesheet("approvals");
+    return { default: m.App };
+  }),
+);
 const RuntimeOpsApp = lazy(() => import("../runtime-ops/App").then((m) => ({ default: m.App })));
 const InspectorApp = lazy(() => import("../inspector/App").then((m) => ({ default: m.App })));
 const PluginsApp = lazy(() => import("../plugins/App").then((m) => ({ default: m.App })));
