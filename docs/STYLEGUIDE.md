@@ -182,3 +182,44 @@ Control is a **tab shell**, not six independent apps.
 - [ ] Control tab with a title row → uses `PageChrome` (not hand-rolled `<h1>`)
 - [ ] Copy does not overclaim
 - [ ] Visual check: Control tab + one other surface if chrome changed
+
+---
+
+## Component library
+
+`src/webview/shared/ui/` **is the component library** — catalog, APIs, known gaps, and the
+promotion queue live in `src/webview/shared/ui/README.md`. The library is a living artifact:
+components get added, replaced, and retired over its life, but there is always exactly ONE library.
+Evolution rule: change the library, migrate the call sites, retire the old entry — never ship a
+parallel per-surface implementation "for now". A pattern that appears in two surfaces gets promoted
+into the library (with its call sites migrated in the same trail), not copy-pasted a third time.
+
+---
+
+## Screen review rubric (visual pass)
+
+The per-screen judgment an agent visual pass applies BEFORE the maintainer sees a UI change
+(complements the per-PR checklist above, which is about the diff; this is about the rendered
+screen). Judge each dimension pass/fail with a screenshot as evidence; any fail blocks the land.
+
+1. **Identity** — the screen reads as Tachyon: `--ds-*` chrome, mono-dense type, 6px radius,
+   1px hairlines. Nothing looks pasted in from another product.
+2. **Hierarchy** — one 16px `PageChrome` title; primary action visually distinct (one `primary`
+   button per view); secondary/dangerous actions correctly ranked. No competing focal points.
+3. **Density & alignment** — rows align on shared columns; equal-width siblings stay equal
+   (columns don't stretch to their widest child); gaps come from `--ds-*` spacing, not ad-hoc px.
+4. **States** — empty, loading, and error each render deliberately (`EmptyState`), not as a blank
+   body; disabled/hover/focus visible; focus ring on every interactive element.
+5. **Resilience** — long/unbroken text wraps or ellipsizes with the full value in a tooltip/`title`;
+   nothing overlaps or overflows at narrow widths; meta rows clip gracefully (author/assignee rule:
+   ellipsize, never vanish).
+6. **Honesty** — copy matches real state (UX rules above): pending uses process language, result
+   verbs only with confirmed results; counts and statuses come from live data, not placeholders.
+7. **Consistency with siblings** — same action, same control, same position as the sibling tabs/
+   surfaces; no one-off variants of a shared component.
+8. **Theme** — check in dark AND light VS Code themes; tokens must resolve in both (no
+   dark-only hex smuggled in).
+
+Evidence: harness screenshot(s) (`scripts/webview-preview/`) per affected route, attached to the
+task/review. Subjective calls (spacing/density/placement) additionally need maintainer sign-off
+before landing.
