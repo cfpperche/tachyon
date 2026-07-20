@@ -82,10 +82,18 @@ shrink; visual QA shell vs Fleet; size note vs 350 KB eager budget.
 | A | Cockpit grows multi-instance / multi-tab section support (large design). |
 | C | Singleton-only (regress N concurrent panels) — only if product explicitly accepts. |
 
-**Default for this plan: Option B** unless the human overrides before Phase C starts.
+**Override (maintainer, 2026-07-20, t-610705): Option B is a SEQUENCING choice, not a permanent
+exception.** Task Detail / Handoff / Probes stay thin standalone hosts through Phase B/C so the
+Control-family migration isn't blocked on the harder multi-instance design, but they are NOT
+exempt from the two-app rule long-term — Option A (cockpit grows multi-instance/multi-tab section
+support) is the eventual target. Mark `editorHome: "standalone"` with an explicit
+`retiredInFavorOf`-style forward note (not a bare "exception"), and open the Option A design once
+Phase B's single-instance surfaces are done.
 
-Phase C then becomes: extract shared bodies, align shell chrome, optionally deep-link “open in
-cockpit” without killing multi-instance panels — **or** implement A if chosen.
+Phase C (as originally scoped, now the INTERIM step): extract shared bodies, align shell chrome,
+optionally deep-link "open in cockpit" without killing multi-instance panels.
+Phase C.5 (new, added by the override): design + implement Option A — cockpit multi-instance
+section support — then migrate Task Detail / Handoff / Probes onto it, closing the exception.
 
 ### Phase D — Studios
 

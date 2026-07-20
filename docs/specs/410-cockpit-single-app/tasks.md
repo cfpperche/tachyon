@@ -28,12 +28,16 @@ _Status 2026-07-19: foundation + Approvals single-path + lazy ESM shipped in cod
 - [ ] Board (mission) shell.
 - [ ] Overview/Engine/Fleet/Worktrees/Deliveries/Settings shell audit.
 
-## Phase C — Multi-instance class
+## Phase C — Multi-instance class (interim step, not the final state — see override below)
 
-- [ ] Confirm hosting decision in plan (default **B: thin-host exception** for task detail / handoff / probes) with human if overriding.
-- [ ] If B: document exceptions on `WEBVIEW_SURFACES`; share kit/shell; no fake “singleton section” migration.
-- [ ] If A: design multi-instance cockpit sections before code.
-- [ ] If C: product sign-off on losing N panels; then migrate.
+- [x] Hosting decision confirmed: **B as sequencing**, not a permanent exception (maintainer, 2026-07-20, t-610705).
+- [ ] Document task detail / handoff / probes as `editorHome: "standalone"` with a forward note (Option A is the target, not a bare exception); share kit/shell components.
+
+## Phase C.5 — Close the multi-instance exception (added by the 2026-07-20 override)
+
+- [ ] Design Option A: cockpit grows multi-instance / multi-tab section support.
+- [ ] Migrate Task Detail, Handoff, Probes onto it; retire their standalone hosts.
+- [ ] Update `WEBVIEW_SURFACES` (`editorHome: "cockpit"`, drop the standalone exception note).
 
 ## Phase D — Studios
 
