@@ -1,6 +1,6 @@
 # sidebar-agent-status-filter dogfood (t-eddf90)
 
-Isolated workspace for **Tachyon: Dev Host** F5 validation of Agents status filter chips.
+Isolated workspace for **Tachyon: Dev Host** F5 validation of the Agents status-filter dropdown.
 
 ## Setup (agent)
 
@@ -19,13 +19,13 @@ npm run dogfood:dev-host -- point \
 
 1. Monorepo window: Run and Debug → **Tachyon: Dev Host** → **F5**.
 2. In the EDH window only: open the Tachyon sidebar → **Agents** tab.
-3. Expect chips under `AGENTS`: **All · Live · Needs you · Stopped** with counts.
+3. Expect a compact dropdown in the `AGENTS` title toolbar with **All · Live · Needs you · Stopped · On task · Has focus**, each with its count.
 4. Start/stop agents from the sidebar (↻ / stop) and confirm:
    - **Live** shows only process-alive rows
    - **Stopped** shows hollow-dot / resumable cemetery
    - **Needs you** surfaces `needs` / `throttled` / `stop-failed` / awaiting-human
-   - Click **All** (or re-click the active non-All chip) returns to unfiltered
-   - Chip counts stay anchored to the full fleet (not the filtered subset)
+   - Select **All** to return to the unfiltered fleet
+   - Dropdown counts stay anchored to the full fleet (not the filtered subset)
 5. Confirm sort A–Z still works under a filter (no status regroup).
 
 When done: `npm run dogfood:dev-host -- point-clear`

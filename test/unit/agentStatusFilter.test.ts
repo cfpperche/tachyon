@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  AGENT_STATUS_FILTERS,
   agentIsLive,
   agentIsStopped,
   agentNeedsYou,
@@ -114,7 +115,7 @@ describe("agentStatusFilter (t-eddf90)", () => {
   });
 
   it("every filter mode is a valid AgentStatusFilter key", () => {
-    const modes: AgentStatusFilter[] = ["all", "live", "attention", "stopped"];
+    const modes: readonly AgentStatusFilter[] = AGENT_STATUS_FILTERS;
     for (const m of modes) {
       expect(typeof agentMatchesStatusFilter(FLEET[0]!, m)).toBe("boolean");
     }

@@ -52,86 +52,31 @@
   .sec .sec-actions .act.on { color: var(--ds-focus); }
   /* spec 242 — sort control in the section header */
   .sec .sec-actions { margin-left: auto; display: inline-flex; align-items: center; gap: 2px; }
+  .sec .agent-filter-select {
+    flex: 1 1 92px;
+    min-width: 0;
+    width: clamp(58px, 31vw, 108px);
+    max-width: 108px;
+    height: 22px;
+    margin-right: 2px;
+    padding: 0 3px;
+    border: 1px solid var(--ds-border);
+    border-radius: 4px;
+    background: var(--vscode-dropdown-background, var(--vscode-sideBar-background));
+    color: var(--vscode-dropdown-foreground, var(--vscode-foreground));
+    font: inherit;
+    font-size: 10px;
+    font-weight: 600;
+    text-overflow: ellipsis;
+  }
+  .sec .agent-filter-select:hover { border-color: color-mix(in srgb, var(--vscode-foreground) 35%, transparent); }
+  .sec .agent-filter-select.on { border-color: var(--ds-focus); }
+  .sec .agent-filter-select:focus-visible { outline: 1px solid var(--ds-focus); outline-offset: 1px; }
   .sec .pin-filter { gap: 4px; }
 	  .pin-filter select { max-width: 98px; min-width: 0; height: 22px; border: 1px solid var(--ds-border); border-radius: 4px; background: var(--vscode-dropdown-background, var(--vscode-sideBar-background)); color: var(--vscode-dropdown-foreground, var(--vscode-foreground)); font: inherit; font-size: 10px; }
 	  .tag-clear { height: 22px; display: inline-flex; align-items: center; gap: 3px; max-width: 104px; padding: 0 5px; border: 1px solid var(--ds-border); border-radius: 4px; color: var(--ds-muted); font-size: 10px; }
 	  .tag-clear:hover { background: var(--hover); color: var(--vscode-foreground); }
 	  .tag-clear .codicon { font-size: 10px; }
-
-  /* t-eddf90 — Agents status filter chips (Live / Needs you / Stopped). Dense, wrap-friendly, session-local. */
-  .agent-filters {
-    flex: 0 0 auto;
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 4px;
-    padding: 2px 10px 8px;
-    border-bottom: 1px solid transparent;
-  }
-  .agent-filters.has-active {
-    border-bottom-color: color-mix(in srgb, var(--ds-focus) 35%, transparent);
-    background: color-mix(in srgb, var(--ds-focus) 4%, transparent);
-  }
-  .agent-filter-control {
-    appearance: none;
-    border: 1px solid var(--ds-border);
-    background: color-mix(in srgb, var(--vscode-foreground) 4%, transparent);
-    color: var(--ds-muted);
-    border-radius: 999px;
-    padding: 1px 7px 1px 5px;
-    font: inherit;
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: .02em;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    line-height: 16px;
-    max-width: 100%;
-  }
-  .agent-filter-control:hover:not(:disabled) {
-    color: var(--vscode-foreground);
-    border-color: color-mix(in srgb, var(--vscode-foreground) 35%, transparent);
-    background: var(--hover);
-  }
-  .agent-filter-control:focus-visible { outline: 1px solid var(--ds-focus); outline-offset: 1px; }
-  .agent-filter-control .af-dot {
-    width: 7px; height: 7px; border-radius: 50%; flex: none;
-    background: var(--idle);
-  }
-  .agent-filter-control.f-live .af-dot { background: var(--ds-ok); }
-  .agent-filter-control.f-attention .af-dot {
-    background: var(--ds-warn);
-    box-shadow: 0 0 4px var(--ds-warn);
-  }
-  .agent-filter-control.f-stopped .af-dot {
-    background: transparent;
-    border: 1px solid var(--idle);
-    box-sizing: border-box;
-  }
-  .agent-filter-control.f-ontask .af-dot { background: #4fc1ff; }
-  .agent-filter-control.f-hasfocus .af-dot { background: #dcdcaa; }
-  .agent-filter-control .af-n {
-    font-variant-numeric: tabular-nums;
-    font-weight: 700;
-    opacity: .9;
-  }
-  .agent-filter-control.on {
-    color: var(--vscode-foreground);
-    border-color: var(--ds-focus);
-    background: color-mix(in srgb, var(--ds-focus) 16%, transparent);
-  }
-  .agent-filter-control.f-live.on { border-color: color-mix(in srgb, var(--ds-ok) 55%, var(--ds-border)); }
-  .agent-filter-control.f-attention.on { border-color: color-mix(in srgb, var(--ds-warn) 55%, var(--ds-border)); }
-  .agent-filter-control.f-stopped.on { border-color: color-mix(in srgb, var(--idle) 70%, var(--ds-border)); }
-  .agent-filter-control.f-ontask.on { border-color: color-mix(in srgb, #4fc1ff 55%, var(--ds-border)); }
-  .agent-filter-control.f-hasfocus.on { border-color: color-mix(in srgb, #dcdcaa 55%, var(--ds-border)); }
-  .agent-filter-control.zero,
-  .agent-filter-control:disabled {
-    opacity: .4;
-    cursor: default;
-  }
 
   .panel { display: none; }
   .panel.active { display: block; flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; }

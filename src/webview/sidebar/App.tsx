@@ -13,7 +13,7 @@ import { placeMoreMenu } from "./menuPosition";
 import {
   AGENT_STATUS_FILTERS,
   AGENT_STATUS_FILTER_LABEL,
-  AGENT_STATUS_FILTER_TITLE,
+  asAgentStatusFilter,
   countAgentStatusFilters,
   filterAgentsByStatus,
   type AgentStatusFilter,
@@ -798,7 +798,7 @@ export function App({ fleets = [SAMPLE], dispatch, prefs = {}, collapsedKeys = [
   const [metricsOpen, setMetricsOpen] = useState<Set<string>>(() => new Set());
   const [flashName, setFlashName] = useState<string | null>(null);
   const [activePinTag, setActivePinTag] = useState<string | null>(null);
-  /** t-eddf90 — session-local Agents status filter (like pin tags; not host-persisted). */
+  /** t-eddf90/t-a9d1f2 — session-local Agents status filter (like pin tags; not host-persisted). */
   const [agentFilter, setAgentFilter] = useState<AgentStatusFilter>("all");
   // spec 242 — sort: the host's persisted pref seeds it; a user choice this session OVERRIDES (and persists),
   // so a stale fleet snapshot can never revert the user's pick (codex D9). Default name-asc.
@@ -808,10 +808,6 @@ export function App({ fleets = [SAMPLE], dispatch, prefs = {}, collapsedKeys = [
   const changeSort = (section: "agents" | "terminals", mode: SortMode) => {
     setSortOverride((o) => ({ ...o, [section]: mode })); // optimistic + session-authoritative
     dispatch?.setSort?.(section, mode); // persist for next load
-  };
-  const pickAgentFilter = (next: AgentStatusFilter) => {
-    // Single-select toggle: re-clicking the active non-all chip returns to All.
-    setAgentFilter((cur) => (cur === next && next !== "all" ? "all" : next));
   };
   const isMac = (navigator.platform || "").toLowerCase().includes("mac");
   const collapsedKeySig = collapsedKeys.join("\0");
@@ -994,6 +990,24 @@ export function App({ fleets = [SAMPLE], dispatch, prefs = {}, collapsedKeys = [
           const flipAllMetrics = () => setAllMetrics(!allMetricsOpen);
           return <>
             <span class="sec-actions">
+              {tab === "Agents" && totalAgents > 0 && (
+                <select
+                  class={`agent-filter-select${agentFilter !== "all" ? " on" : ""}`}
+                  value={agentFilter}
+                  title={`Filter agents — ${AGENT_STATUS_FILTER_LABEL[agentFilter]} (${agentFilterCounts[agentFilter]})`}
+                  aria-label={`Filter agents by status; selected ${AGENT_STATUS_FILTER_LABEL[agentFilter]}, ${agentFilterCounts[agentFilter]} agents`}
+                  onChange={(e) => setAgentFilter(asAgentStatusFilter((e.currentTarget as HTMLSelectElement).value))}
+                >
+                  {AGENT_STATUS_FILTERS.map((filter) => {
+                    const count = agentFilterCounts[filter];
+                    return (
+                      <option key={filter} value={filter} disabled={filter !== "all" && count === 0}>
+                        {AGENT_STATUS_FILTER_LABEL[filter]} · {count}
+                      </option>
+                    );
+                  })}
+                </select>
+              )}
               {tab === "Agents" && metricsCapable > 0 && (
                 <button
                   type="button"
@@ -1026,30 +1040,6 @@ export function App({ fleets = [SAMPLE], dispatch, prefs = {}, collapsedKeys = [
           </span>
         )}
       </div>
-      {tab === "Agents" && totalAgents > 0 && (
-        <div class={`agent-filters${agentFilter !== "all" ? " has-active" : ""}`} role="toolbar" aria-label="Filter agents by status">
-          {AGENT_STATUS_FILTERS.map((f) => {
-            const n = agentFilterCounts[f];
-            const on = agentFilter === f;
-            const zero = f !== "all" && n === 0;
-            return (
-              <Button
-                key={f}
-                class={`agent-filter-control f-${f}${on ? " on" : ""}${zero ? " zero" : ""}`}
-                title={AGENT_STATUS_FILTER_TITLE[f]}
-                aria-label={`${AGENT_STATUS_FILTER_LABEL[f]}, ${n} agents`}
-                aria-pressed={on}
-                disabled={zero}
-                onClick={() => pickAgentFilter(f)}
-              >
-                <span class="af-dot" aria-hidden="true" />
-                <span class="af-label">{AGENT_STATUS_FILTER_LABEL[f]}</span>
-                <span class="af-n">{n}</span>
-              </Button>
-            );
-          })}
-        </div>
-      )}
       <div class="panel active" role="tabpanel" id="sidebar-panel" aria-labelledby={`tab-${tab}`} tabindex={0}>
         {fleets.map((f) => {
           // spec 331 (pin p-cf707f) — the folder header is the workspace identity line, ALWAYS present:

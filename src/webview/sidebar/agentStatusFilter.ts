@@ -21,15 +21,6 @@ export const AGENT_STATUS_FILTER_LABEL: Record<AgentStatusFilter, string> = {
   hasfocus: "Has focus",
 };
 
-export const AGENT_STATUS_FILTER_TITLE: Record<AgentStatusFilter, string> = {
-  all: "All agents",
-  live: "Live session — process still present (running, needs, throttled, done, idle, stopping, stop-failed)",
-  attention: "Needs you — needs input, throttled, stop-failed, done(unseen), awaiting human, or non-progress attention",
-  stopped: "Stopped — no live session (stopped, crashed)",
-  ontask: "On task — open Board task assigned to this agent",
-  hasfocus: "Has focus — task, spawn brief, or continuity goal projected",
-};
-
 const LIVE: ReadonlySet<AgentStatus> = new Set([
   "running",
   "needs",
@@ -90,7 +81,7 @@ export interface AgentStatusFilterCounts {
   hasfocus: number;
 }
 
-/** Counts over the full fleet (not the filtered subset) — chip anchors stay stable. */
+/** Counts over the full fleet (not the filtered subset) — dropdown anchors stay stable. */
 export function countAgentStatusFilters(
   agents: readonly Pick<AgentVM, "status" | "attention" | "awaitingHuman" | "focus">[],
 ): AgentStatusFilterCounts {
