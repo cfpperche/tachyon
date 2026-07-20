@@ -29,7 +29,7 @@ const schedule = z.union([
 
 export const EXTENSION_QUERY_ACTIONS = [
   "agents.list", "attention.list", "pins.list", "commands.list", "runbooks.list", "schedules.list", "proposals.list",
-  "doctor.report", "bridge.token", "agent.inspect", "agent.fork-preview", "prompt.catalog", "worktree.review",
+  "doctor.report", "bridge.token", "companion.pair-code", "agent.inspect", "agent.fork-preview", "prompt.catalog", "worktree.review",
   "worktrees.list", "pipeline.inspect", "agent.wait", "soul.profile.status", "legacy-delivery.retirement-preview",
   "tmux.snapshot", "tmux.health", "tmux.capture",
 ] as const;
@@ -63,6 +63,7 @@ export const extensionQuerySchema = z.union([
   z.object({ action: z.literal("doctor.report") }).strict(),
   z.object({ action: z.literal("legacy-delivery.retirement-preview") }).strict(),
   z.object({ action: z.literal("bridge.token") }).strict(),
+  z.object({ action: z.literal("companion.pair-code") }).strict(),
   z.object({ action: z.literal("agent.inspect"), agent: name }).strict(),
   z.object({ action: z.literal("agent.fork-preview"), agent: name }).strict(),
   z.object({ action: z.literal("soul.profile.status"), agent: name }).strict(),

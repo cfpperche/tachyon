@@ -71,6 +71,10 @@
         "title": "%command.copyBridgeToken%"
       },
       {
+        "command": "tachyon.pairCompanion",
+        "title": "%command.pairCompanion%"
+      },
+      {
         "command": "tachyon.connectRuntime",
         "title": "%command.connectRuntime%"
       },

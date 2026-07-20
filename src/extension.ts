@@ -2736,6 +2736,35 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       await vscode.env.clipboard.writeText(ws.bridgeUrl);
       notify(vscode.l10n.t("Bridge URL copied: {0}", ws.bridgeUrl));
     }),
+    // SDD 414 — short-lived pair code for Tachyon Companion (browser/mobile shells).
+    vscode.commands.registerCommand("tachyon.pairCompanion", async (hash?: string) => {
+      const ws = byHash(hash) ?? (await pickWorkspace());
+      if (!ws) return;
+      const result = jsonObject(await extensionQuery(ws, { action: "companion.pair-code" }), "companion.pair-code");
+      if (result.ok === false) {
+        notify(
+          vscode.l10n.t(
+            "Companion pairing unavailable — start Tachyon / ensure the Bridge is listening (reason: {0})",
+            String(result.reason ?? "unknown"),
+          ),
+          "warn",
+        );
+        return;
+      }
+      const code = String(result.code ?? "");
+      const baseUrl = String(result.baseUrl ?? "");
+      const expiresAt = String(result.expiresAt ?? "");
+      const line = `code=${code} baseUrl=${baseUrl} expires=${expiresAt}`;
+      await vscode.env.clipboard.writeText(line);
+      notify(
+        vscode.l10n.t(
+          "Companion pair code {0} (expires {1}). Base URL {2} — copied to clipboard. Load the Companion extension and paste the code when pairing ships in the UI.",
+          code,
+          expiresAt,
+          baseUrl,
+        ),
+      );
+    }),
     vscode.commands.registerCommand("tachyon.showRuntimeUsage", async () => {
       await openRuntimeOps();
     }),

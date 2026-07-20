@@ -41,6 +41,13 @@ _None yet (design/plan only)._
   `apps/browser` MV3 unpacked shell, `apps/mobile` reserved, `packages/protocol`,
   `packages/api-client`, CI, PRIVACY.md. Local path `/home/goat/tachyon-companion`.
   `npm run typecheck` + `pack:browser` green. Pairing deferred to slice 2.
+- 2026-07-20 — **Slice 2 complete (`t-77ce07`)** on ADE branch `tachyon/change/companion-track`:
+  - `CompanionPairingService` + HTTP at `http://127.0.0.1:<bridgePort>/companion/v1/*`
+  - Endpoints: health, pair, status, unpair (capture/approvals → 501 until slices 3–4)
+  - protocolVersion=1 fail-closed; short-lived pair codes; one active session; companion token ≠ Bridge token
+  - Command `tachyon.pairCompanion` / query `companion.pair-code` (Control-equivalent affordance)
+  - Focused tests: `test/unit/companionPairing.test.ts` (5/5)
+  - Client: companion monorepo pair UI pushed (`902b9e1`)
 
 ## Tradeoffs
 

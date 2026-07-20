@@ -7,6 +7,7 @@
   "command.showRuntimeUsage": "Tachyon: Open Runtime Ops",
   "command.refreshRuntimeOps": "Refresh Runtime Ops",
   "command.copyBridgeToken": "Tachyon: Copy Bridge Token",
+  "command.pairCompanion": "Tachyon: Pair Companion (show code)",
   "command.connectRuntime": "Tachyon: Connect Agent Runtime",
   "command.refreshViews": "Tachyon: Refresh Views",
   "command.spawnAgentItem": "Start",

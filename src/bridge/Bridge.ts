@@ -2,6 +2,8 @@ import http from "node:http";
 import { randomUUID } from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { handleCompanionHttp, isCompanionPath } from "../companion/CompanionHttp.js";
+import type { CompanionPairingService } from "../companion/CompanionPairingService.js";
 import { registerTools, type BridgeDeps } from "./tools.js";
 import { resolveCaller, type CallerIdentityRegistry, type CallerScope } from "./callerIdentity.js";
 
@@ -73,6 +75,8 @@ export class Bridge {
       token?: string;
       /** Dedicated external-client bearer, distinct from the shared/legacy master token. */
       externalToken?: string;
+      /** SDD 414 — companion pairing HTTP on the same loopback listener (/companion/v1/*). */
+      companion?: CompanionPairingService;
       /** spec 351 — lazily reads the digest-only per-agent registry (Workspace loads its HMAC key async,
        *  AFTER constructing the Bridge — a getter, not a value, so the Bridge sees it once it's ready
        *  instead of freezing `undefined` forever). Undefined = agent-token resolution unavailable (falls
@@ -184,10 +188,19 @@ export class Bridge {
     res.once("close", () => {
       if (!res.writableEnded) done();
     });
-    const url = (req.url ?? "").split("?")[0];
+    const url = (req.url ?? "").split("?")[0] ?? "";
+    // SDD 414 — companion shell uses companion-scoped tokens, not Bridge agent auth.
+    if (this.options.companion && isCompanionPath(url)) {
+      await handleCompanionHttp(req, res, this.options.companion);
+      return;
+    }
     if (url !== BRIDGE_PATH) {
       res.writeHead(404, { "content-type": "application/json" });
-      res.end(JSON.stringify({ error: `not found — the Bridge endpoint is ${BRIDGE_PATH}` }));
+      res.end(
+        JSON.stringify({
+          error: `not found — Bridge MCP is ${BRIDGE_PATH}; companion is /companion/v1/*`,
+        }),
+      );
       return;
     }
     // spec 351 — the caller is resolved EXACTLY ONCE here, at auth time; the resulting immutable snapshot

@@ -443,5 +443,7 @@
   "Could not load proposal: {0}": "Não foi possível carregar a proposta: {0}",
   "Could not update sidebar state: {0}": "Não foi possível atualizar o estado da barra lateral: {0}",
   "Cannot open terminal — workspace is not active": "Não é possível abrir o terminal — workspace não está ativo",
-  "Cannot open terminal for '{0}' — agent is not in the live roster": "Não é possível abrir o terminal de '{0}' — agente não está no roster ao vivo"
+  "Cannot open terminal for '{0}' — agent is not in the live roster": "Não é possível abrir o terminal de '{0}' — agente não está no roster ao vivo",
+  "Companion pair code {0} (expires {1}). Base URL {2} — copied to clipboard. Load the Companion extension and paste the code when pairing ships in the UI.": "Código de pareamento do Companion {0} (expira {1}). URL base {2} — copiado para a área de transferência. Carregue a extensão Companion e cole o código no popup de pareamento.",
+  "Companion pairing unavailable — start Tachyon / ensure the Bridge is listening (reason: {0})": "Pareamento do Companion indisponível — inicie o Tachyon / confirme que a Bridge está a escutar (motivo: {0})"
 }

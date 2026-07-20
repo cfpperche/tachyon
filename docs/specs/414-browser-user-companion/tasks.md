@@ -23,7 +23,7 @@ _Updated 2026-07-20 after design ratify. Work top-to-bottom per plan slices._
 | 5 | `t-725317` | Unpacked Chromium dogfood |
 
 - [x] **Slice 1 — `t-32c627`** Scaffold `tachyon-companion` monorepo — public repo https://github.com/cfpperche/tachyon-companion (2026-07-20)
-- [ ] **Slice 2 — `t-77ce07`** Engine protocol + loopback pairing (ADE on `companion-track` WT only)
+- [x] **Slice 2 — `t-77ce07`** Engine protocol + loopback pairing — `/companion/v1` on Bridge listener + `tachyon.pairCompanion` (2026-07-20)
 - [ ] **Slice 3 — `t-523405`** Send tab → create_task (URL + title; no cookies)
 - [ ] **Slice 4 — `t-a45c6b`** Approvals list + resolve (host-authoritative)
 - [ ] **Slice 5 — `t-725317`** Unpacked Chromium dogfood (pair → send → approve)

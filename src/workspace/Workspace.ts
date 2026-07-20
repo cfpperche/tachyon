@@ -68,6 +68,8 @@ import { subtreeCpuTicks } from "../attention/cpu.js";
 import { Waiters } from "../bridge/Waiters.js";
 import { NoticeQueue, type NoticeQueueMetadata } from "../bridge/NoticeQueue.js";
 import { Bridge, derivePort } from "../bridge/Bridge.js";
+import { CompanionPairingService } from "../companion/CompanionPairingService.js";
+import { COMPANION_HTTP_PREFIX, type IssuedPairCode } from "../companion/protocol.js";
 import {
   BridgeClientRebindCoordinator,
   DEFAULT_BRIDGE_CLIENT_REBIND,
@@ -474,6 +476,8 @@ export class Workspace {
   readonly scheduler: Scheduler;
   readonly proposals: ProposalStore;
   readonly bridge: Bridge;
+  /** SDD 414 — Tachyon Companion pairing (loopback /companion/v1 on the Bridge listener). */
+  readonly companion: CompanionPairingService;
   readonly externalTools: ExternalToolRegistry;
   readonly token: string | undefined;
   readonly externalToken: string | undefined;
@@ -1451,6 +1455,14 @@ export class Workspace {
       onError: (name, err) => this.host.notify(this.t("schedule '{0}' failed: {1}", name, err instanceof Error ? err.message : String(err)), "error"),
     });
 
+    this.companion = new CompanionPairingService({
+      engineLabel: path.basename(this.workspaceRoot) || "tachyon",
+      engineId: this.wsHash,
+      getBaseUrl: () => {
+        const port = this.bridge.listenerPort;
+        return port === undefined ? undefined : `http://127.0.0.1:${port}`;
+      },
+    });
     this.bridge = new Bridge(
       {
         workspaceRoot: this.workspaceRoot,
@@ -1564,6 +1576,7 @@ export class Workspace {
       {
         token: this.token,
         externalToken: this.externalToken,
+        companion: this.companion,
         getRegistry: () => this.callerRegistry,
         scope: this.callerScope(),
         legacyCompatEnabled: this.legacyBridgeAuthEnabled,
@@ -2403,6 +2416,22 @@ export class Workspace {
   /** sidebar accessors */
   bridgeUrl(): string | undefined {
     return this.bridge.url;
+  }
+
+  /** SDD 414 — companion loopback base (no path), undefined if Bridge is down. */
+  companionBaseUrl(): string | undefined {
+    const port = this.bridge.listenerPort;
+    return port === undefined ? undefined : `http://127.0.0.1:${port}`;
+  }
+
+  /** SDD 414 — mint a short-lived pair code for Tachyon Companion. */
+  issueCompanionPairCode(): IssuedPairCode | { ok: false; reason: "bridge_down" } {
+    return this.companion.issuePairCode();
+  }
+
+  /** SDD 414 — companion HTTP prefix on the Bridge listener. */
+  companionHttpPrefix(): string {
+    return COMPANION_HTTP_PREFIX;
   }
 
   /** t-7f94f2 — human notice inbox (daemon host only; empty on VsCodeHost-only shells). */

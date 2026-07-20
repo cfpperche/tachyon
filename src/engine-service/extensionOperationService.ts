@@ -90,6 +90,19 @@ export async function executeExtensionQuery(
       return json(workspace.legacyDeliveryRetirement.preview());
     case "bridge.token":
       return json({ token: workspace.externalToken ?? null, authEnabled: workspace.authEnabled });
+    case "companion.pair-code": {
+      // SDD 414 — short-lived companion pair code + loopback base URL for Tachyon Companion.
+      const issued = workspace.issueCompanionPairCode();
+      if ("ok" in issued && issued.ok === false) {
+        return json({
+          ok: false,
+          reason: issued.reason,
+          protocolVersion: workspace.companion.protocolVersion,
+          prefix: workspace.companionHttpPrefix(),
+        });
+      }
+      return json({ ok: true, ...issued, prefix: workspace.companionHttpPrefix() });
+    }
     case "agent.inspect":
       return inspectAgent(workspace, query.agent);
     case "agent.fork-preview":
