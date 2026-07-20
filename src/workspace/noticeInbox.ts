@@ -28,7 +28,7 @@ export function restoreNoticeInbox(value: unknown): NoticeInboxEntry[] {
   const seen = new Set<string>();
   for (const row of value) {
     if (!isRecord(row)
-      || typeof row.id !== "string" || row.id.length === 0 || row.id.length > 128 || seen.has(row.id)
+      || !isUuid(row.id) || seen.has(row.id)
       || typeof row.message !== "string" || row.message.length === 0 || row.message.length > 4_096
       || (row.level !== "info" && row.level !== "warn" && row.level !== "error")
       || typeof row.at !== "string" || !Number.isFinite(Date.parse(row.at))
@@ -38,7 +38,7 @@ export function restoreNoticeInbox(value: unknown): NoticeInboxEntry[] {
     let valid = true;
     for (const action of row.actions) {
       if (!isRecord(action)
-        || typeof action.id !== "string" || action.id.length === 0 || action.id.length > 128
+        || !isUuid(action.id)
         || typeof action.label !== "string" || action.label.length === 0 || action.label.length > 128) {
         valid = false;
         break;
@@ -73,4 +73,9 @@ export function noticeDedupeKey(level: NotifyLevel, message: string): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isUuid(value: unknown): value is string {
+  return typeof value === "string"
+    && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(value);
 }

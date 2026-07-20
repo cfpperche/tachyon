@@ -5,7 +5,7 @@ import { NOTICE_INBOX_CAP, restoreNoticeInbox } from "../../src/workspace/notice
 
 function notice(index: number, workspace = "a"): NoticeVM {
   return {
-    id: `${workspace}-notice-${index}`,
+    id: `00000000-0000-4000-${workspace === "a" ? "8" : "9"}000-${String(index).padStart(12, "0")}`,
     message: `Attention ${index}`,
     level: index % 3 === 0 ? "error" : index % 2 === 0 ? "warn" : "info",
     at: new Date(Date.UTC(2026, 6, 19, 20, index)).toISOString(),
@@ -54,7 +54,11 @@ describe("Attention Stack headless dogfood (spec 415)", () => {
     const rows = Array.from({ length: NOTICE_INBOX_CAP + 5 }, (_, index) => notice(index + 1));
     const restored = restoreNoticeInbox([
       { nope: true },
-      ...rows.map((row) => ({ ...row, actions: [{ id: `${row.id}-action`, label: "Open" }], actionsLive: true })),
+      ...rows.map((row, index) => ({
+        ...row,
+        actions: [{ id: `10000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`, label: "Open" }],
+        actionsLive: true,
+      })),
     ]);
     expect(restored).toHaveLength(NOTICE_INBOX_CAP);
     expect(restored[0]?.message).toBe("Attention 1");
