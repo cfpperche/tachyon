@@ -29,6 +29,7 @@ const views: TaskView[] = [
   {
     task: task("t-2d3580", "inbox", "Bridge: sessoes MCP antigas nao veem tools novas apos reload", {
       kind: "bug",
+      author: "grok",
       body: "Resident agents need a reload path when bridge tools change.",
     }),
   },
@@ -49,6 +50,7 @@ const views: TaskView[] = [
   {
     task: task("t-9a41b2", "triaged", "Board v1.1: reorder in-column mantendo rank", {
       kind: "feature",
+      author: "codex",
       assignee: "codex",
       artifact_refs: [{ type: "sdd", ref: "shipped-partial" }],
     }),
@@ -57,6 +59,7 @@ const views: TaskView[] = [
   {
     task: task("t-a11f0e", "active", "Spec: Task Studio form completo de criacao/edicao de tasks", {
       kind: "feature",
+      author: "claude",
       priority: 1,
       assignee: "claude",
       artifact_refs: [{ type: "sdd", ref: "335" }],
@@ -66,8 +69,9 @@ const views: TaskView[] = [
   {
     task: task("t-82f870", "landed", "Board: separar trabalho landed do que ainda esta em voo", {
       kind: "feature",
+      author: "author-with-a-deliberately-long-name",
       priority: 2,
-      assignee: "finished-runner",
+      assignee: "assignee-with-a-deliberately-long-name",
       artifact_refs: [{ type: "sdd", ref: "335" }],
     }),
     derived: { sdd: { type: "sdd", ref: "335", status: "in-progress" } },

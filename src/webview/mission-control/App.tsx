@@ -513,43 +513,24 @@ function Card({ card, session, onDragStart, onDragEnd, onCardDragOver, onCardDro
   const isAwaitingHuman = card.attention.some((a) => a.code === "awaiting_human");
   const cls = ["card", card.isSpotlight && "next", card.isDimmed && "dimmed", card.status === "landed" && "landed", isAwaitingHuman && "awaiting-human"].filter(Boolean).join(" ");
   return (
-    // dogfood round 3 (#4, absorbs #1) — the meta row is now the ONE stable place for id/sdd/attention/
-    // assignee/priority; the quick-controls stop their own click/contextmenu from ever bubbling to this
-    // onClick/onContextMenu (the round-3 click-through: opening an editor also opened the detail tab), so
-    // the card handlers no longer need to guess by inspecting e.target.
+    // SDD 419 — card metadata has stable, independent regions: author/badges above and id/controls below.
+    // The controls still stop click/contextmenu propagation so editing or copying never opens the detail tab.
     // spec 335 (Gated v1.1) — a card is ALSO its own reorder drop target (onDragOver/onDrop); isReorderTarget
     // (App.tsx) no-ops these for any card outside the dragged card's status/priority lane, so they never
     // interfere with the existing column-level status-drop affordance.
     <div class={cls} data-card-id={card.id} draggable tabIndex={0} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragOver={onCardDragOver} onDrop={onCardDrop} onContextMenu={onContextMenu} onClick={onOpen}>
       {card.isSpotlight && <span class="next-tag">▶ next_task</span>}
-      {card.kind && (
-        <div class="top">
+      <div class="card-header">
+        <span class="card-author" title={`created by ${card.author}`}>{card.author}</span>
+        <span class="card-badges">
+          {card.kind && (
           <span class="kind" style={{ color: `var(${card.kindColorVar})`, borderColor: `var(${card.kindColorVar})` }}>{card.kind}</span>
-        </div>
-      )}
-      <p class="title">{card.title}</p>
-      <div class="meta">
-        <span class="meta-left">
-          <Button
-            class="ref ref-copy"
-            title={`Copy ${card.id}`}
-            aria-label={`Copy task ID ${card.id}`}
-            onClick={(e) => { e.stopPropagation(); onCopyId(); }}
-            onContextMenu={(e) => e.stopPropagation()}
-          >
-            {card.id}
-          </Button>
-          {/* t-8aeaac — who created the task, always shown (agent, human, external, …). */}
-          <span class="card-author" title={`created by ${card.author}`}>
-            <span class="dot" style={{ background: `var(${card.authorColorVar})` }} /><span class="author-name">{card.author}</span>
-          </span>
+          )}
           {card.sddStatus && <Badge tone="info">sdd · {card.sddStatus}</Badge>}
           {card.sddMissing && <Badge tone="err">sdd missing</Badge>}
           {card.attention.map((a) => (
             <span key={a.code} class="attn" title={a.message}><Icon name="warning" /></span>
           ))}
-          {/* dogfood round 1 (#5, spec 339) — a card with Studio attachments (e.g. a screenshot) previously
-              gave no hint it had visuals; count comes read-only from the sidecar via the board snapshot. */}
           {!!card.attachmentCount && (
             <span class="attach-count" title={`${card.attachmentCount} attachment${card.attachmentCount === 1 ? "" : "s"}`}>
               <Icon name="file-media" />{card.attachmentCount}
@@ -561,6 +542,18 @@ function Card({ card, session, onDragStart, onDragEnd, onCardDragOver, onCardDro
             </span>
           )}
         </span>
+      </div>
+      <p class="title">{card.title}</p>
+      <div class="card-footer">
+        <Button
+          class="ref ref-copy"
+          title={`Copy ${card.id}`}
+          aria-label={`Copy task ID ${card.id}`}
+          onClick={(e) => { e.stopPropagation(); onCopyId(); }}
+          onContextMenu={(e) => e.stopPropagation()}
+        >
+          {card.id}
+        </Button>
         <span class="quick-controls" onClick={(e) => e.stopPropagation()} onContextMenu={(e) => e.stopPropagation()}>
           <span class="mc-editable who">
             {session?.field === "assignee" ? (

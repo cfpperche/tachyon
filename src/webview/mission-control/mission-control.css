@@ -41,10 +41,10 @@ body { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
 
 /* board */
 .board { flex: 1 1 auto; min-height: 0; display: flex; gap: var(--ds-3); padding: 0 var(--ds-page-pad-x) var(--ds-page-pad-bottom); overflow-x: auto; }
-/* t-8aeaac polish — equal fixed-width columns (the Linear/Jira norm). `flex-basis` alone lets flexbox's
+/* SDD 419 — equal, modestly wider fixed-width columns. `flex-basis` alone lets flexbox's
    default `min-width: auto` stretch a column to its widest card's min-content (long unbroken tokens in
    titles), so every column ended up a different width. Pin all three bounds; content wraps instead. */
-.col { flex: 0 0 260px; width: 260px; min-width: 260px; max-width: 260px; display: flex; flex-direction: column; min-height: 0; }
+.col { flex: 0 0 300px; width: 300px; min-width: 300px; max-width: 300px; display: flex; flex-direction: column; min-height: 0; }
 .col-head { display: flex; align-items: baseline; gap: var(--ds-2); padding: 0 var(--ds-1) var(--ds-2); }
 .col-head .ds-section { margin: 0; }
 .col-head .cnt { color: var(--ds-muted); font-size: var(--ds-micro); opacity: .7; }
@@ -66,26 +66,20 @@ body { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
 .card.awaiting-human { border-color: var(--ds-err); box-shadow: 0 0 0 1px color-mix(in srgb, var(--ds-err) 55%, transparent); }
 .card.awaiting-human:hover { background: color-mix(in srgb, var(--ds-err) 6%, var(--ds-hover)); }
 .card .next-tag { position: absolute; top: -9px; right: var(--ds-2); font-size: 9px; letter-spacing: .05em; color: var(--ds-btn-fg); background: var(--ds-btn-bg); padding: 0 var(--ds-2); border-radius: 8px; }
-.card .top { display: flex; align-items: center; gap: var(--ds-icon-gap); margin-bottom: var(--ds-1); }
+.card-header, .card-footer { display: flex; align-items: center; justify-content: space-between; gap: var(--ds-2); min-width: 0; }
+.card-header { align-items: flex-start; margin-bottom: var(--ds-2); }
+.card-footer { margin-top: var(--ds-3); }
+.card-badges { min-width: 0; display: flex; flex: 1 1 auto; justify-content: flex-end; align-items: center; flex-wrap: wrap; gap: var(--ds-icon-gap); }
 /* overflow-wrap so a long unbroken token (ids, code names, URLs) wraps inside the fixed column
    instead of forcing horizontal overflow now that .col no longer stretches. */
-.card .title { font-size: var(--ds-small); line-height: 1.35; margin: 0 0 var(--ds-2); overflow-wrap: anywhere; }
-/* dogfood round 3 (#4) — ONE stable meta row: [id · sdd chip · … · assignee · P chip], never a second line.
-   `.meta-left` shrinks/clips instead of wrapping; `.quick-controls` is a fixed-width group pinned to the row's
-   end so swapping a display button for its editor never moves it or triggers a reflow. */
-.card .meta { display: flex; align-items: center; gap: var(--ds-icon-gap); flex-wrap: nowrap; }
-.meta-left { display: flex; align-items: center; gap: var(--ds-icon-gap); min-width: 0; overflow: hidden; flex: 1 1 auto; }
-/* dogfood round 4 — a wide sdd chip must ellipsize INSIDE meta-left, never bleed under the quick-controls
-   (maintainer screenshot: "unassigned" rendered over the P chip's outline). */
-.meta-left .ds-badge { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card .title { font-size: var(--ds-small); line-height: 1.35; margin: 0; min-height: 2.7em; overflow-wrap: anywhere; }
 .quick-controls { display: flex; align-items: center; gap: var(--ds-icon-gap); flex: none; margin-left: auto; white-space: nowrap; }
 .quick-controls > * { flex: none; }
 .ref { flex: none; font-size: 10px; color: var(--ds-muted); opacity: .8; font-family: var(--ds-mono); }
 .ref-copy { cursor: pointer; padding: 0; border: 0; background: transparent; text-align: left; color: inherit; height: auto; min-width: 0; }
 .ref-copy:hover, .ref-copy:focus-visible { color: var(--ds-info); opacity: 1; text-decoration: underline; }
-/* t-8aeaac — task author chip: same quiet meta voice as .ref, clipped before it can crowd the row. */
-.card-author { flex: 0 1 auto; min-width: 46px; display: inline-flex; align-items: center; gap: 4px; font-size: 10px; color: var(--ds-muted); opacity: .8; overflow: hidden; white-space: nowrap; }
-.card-author .author-name { overflow: hidden; text-overflow: ellipsis; }
+/* SDD 419 — author owns the upper-left region and never competes with assignee controls. */
+.card-author { flex: 0 1 42%; min-width: 48px; max-width: 42%; font-size: 10px; color: var(--ds-muted); opacity: .9; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* t-e1bd89 — force transparent chips so Cockpit-co-loaded surface CSS (e.g. unscoped approval buttons)
    cannot paint these as primary VS Code blue pills. */
 .who-btn, .prio-btn {
@@ -106,14 +100,9 @@ body { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
 .who-btn:disabled { cursor: default; }
 .who-btn:disabled:hover { text-decoration: none; }
 .who-btn.historical { color: var(--ds-muted); font-style: italic; }
-/* t-8aeaac follow-up — a long assignee label ("delivered by <agent>") is flex:none and ate the whole
-   meta row, clipping the author chip to nothing on landed/done cards (maintainer report: "some cards
-   show the author, others don't"). Cap the who-btn and ellipsize its text; the full label already
-   lives in the button's title tooltip. */
-.who-btn { max-width: 118px; overflow: hidden; justify-content: flex-start; }
-/* historical rows are the tightest (id + author + "delivered by …" + P chip in one 260px row);
-   the delivery label gives way first — its full text stays in the tooltip. */
-.who-btn.historical { max-width: 88px; }
+/* Footer assignee remains bounded so the task id always keeps its lower-left region. */
+.who-btn { max-width: 150px; overflow: hidden; justify-content: flex-start; }
+.who-btn.historical { max-width: 120px; }
 .who-btn > :last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .attn { color: var(--ds-warn); cursor: help; display: inline-flex; }
 .attn .codicon { font-size: 12px; }
