@@ -2,7 +2,8 @@
 
 _Created 2026-07-19._
 
-**Status:** in-progress
+**Status:** shipped
+**Closure:** Attention Stack integrated on `main` by merge `144b9981`; automated and human EDH evidence is recorded in `notes.md`, with the headless capture under `evidence/attention-overflow-360x900.png`.
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
