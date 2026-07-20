@@ -127,6 +127,11 @@ export interface BridgeDeps {
   probeSyncCapMs?: number;
   /** Attention state of an agent ("working" | "idle" | "needs-input"), when monitoring is active. */
   attentionOf?: (agent: string) => string | undefined;
+  /**
+   * SDD 414 / t-2a7010 — request a DOM outline of the human's active browser tab via Companion.
+   * Blocks until the extension fulfills or times out. Absent = tool returns unavailable.
+   */
+  companionTabSnapshot?: (opts?: { timeoutMs?: number }) => Promise<unknown>;
   /** True when the target has a profile-backed non-empty composer draft. */
   composerOccupiedOf?: (agent: string) => boolean | undefined;
   /** spec 341 — semantic agent notice delivery; queues unsafe recipients instead of raw pane submit. */
@@ -1468,6 +1473,44 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           }),
         );
         return ok(JSON.stringify(enriched, null, 2));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  // SDD 414 / t-2a7010 — governed read of the human's browser tab via Tachyon Companion.
+  mcp.registerTool(
+    "user_browser_snapshot",
+    {
+      description:
+        "Request a read-only DOM outline of the HUMAN user's active browser tab via Tachyon Companion " +
+        "(paired extension). Never returns cookies or password field values. Blocks until the extension " +
+        "fulfills the request or times out (~30s). Requires: Companion paired + live sync + agent tab reads enabled. " +
+        "Not agent-browser/CDP — this is the user's real browser session. Use for 'what is on my screen' context.",
+      inputSchema: {
+        timeoutSec: z
+          .number()
+          .int()
+          .min(5)
+          .max(120)
+          .optional()
+          .describe("How long to wait for Companion (default 30s)"),
+      },
+    },
+    async ({ timeoutSec }) => {
+      try {
+        if (!deps.companionTabSnapshot) {
+          return fail(
+            new Error(
+              "user_browser_snapshot is not available (Companion tab channel not wired on this engine).",
+            ),
+          );
+        }
+        const result = await deps.companionTabSnapshot({
+          timeoutMs: timeoutSec !== undefined ? timeoutSec * 1000 : undefined,
+        });
+        return ok(JSON.stringify(result, null, 2));
       } catch (err) {
         return fail(err);
       }

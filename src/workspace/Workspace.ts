@@ -70,6 +70,7 @@ import { NoticeQueue, type NoticeQueueMetadata } from "../bridge/NoticeQueue.js"
 import { Bridge, derivePort } from "../bridge/Bridge.js";
 import { CompanionPairingService } from "../companion/CompanionPairingService.js";
 import { CompanionLiveSync } from "../companion/CompanionLiveSync.js";
+import { CompanionTabChannel } from "../companion/CompanionTabChannel.js";
 import {
   COMPANION_HTTP_PREFIX,
   type CompanionAgentRow,
@@ -487,6 +488,8 @@ export class Workspace {
   readonly companion: CompanionPairingService;
   /** SDD 414 — companion SSE live state fan-out. */
   readonly companionLive: CompanionLiveSync;
+  /** SDD 414 — agent ↔ extension tab command channel. */
+  readonly companionTab: CompanionTabChannel;
   readonly externalTools: ExternalToolRegistry;
   readonly token: string | undefined;
   readonly externalToken: string | undefined;
@@ -1479,6 +1482,9 @@ export class Workspace {
       statusOf: (token) => this.companion.status(token),
       listAgents: () => this.companionListActiveAgents(),
     });
+    this.companionTab = new CompanionTabChannel({
+      push: (event, data) => this.companionLive.pushEvent(event, data),
+    });
     this.bridge = new Bridge(
       {
         workspaceRoot: this.workspaceRoot,
@@ -1508,6 +1514,8 @@ export class Workspace {
         probeCwd: () => this.workspaceRoot,
         attentionOf: (agent) => this.attentionOf(agent)?.state,
         composerOccupiedOf: (agent) => this.attentionOf(agent)?.composerOccupied,
+        // SDD 414 / t-2a7010 — agent tool user_browser_snapshot via Companion extension.
+        companionTabSnapshot: (opts) => this.companionTab.requestSnapshot(opts?.timeoutMs),
         deliverNotice: (target, line, metadata) => this.deliverNotice(target, line, metadata),
         sourceNoticeMetadata: (agent) => this.sourceNoticeMetadata(agent),
         markCompletionHint: (agent) => {
@@ -1595,6 +1603,7 @@ export class Workspace {
         companion: {
           pairing: this.companion,
           live: this.companionLive,
+          tab: this.companionTab,
           ops: {
             listActiveAgents: () => this.companionListActiveAgents(),
             sendPrompt: (agent, text) => this.companionSendPrompt(agent, text),

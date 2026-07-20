@@ -148,6 +148,24 @@ export class CompanionLiveSync {
     }
   }
 
+  /**
+   * Push an out-of-band SSE event to all live clients (e.g. tab.command).
+   * Does not advance agent-list snapshots.
+   */
+  pushEvent(event: string, data: unknown): void {
+    const at = new Date(this.now()).toISOString();
+    const payload =
+      data && typeof data === "object" && !Array.isArray(data)
+        ? { ...(data as Record<string, unknown>), seq: ++this.seq, at }
+        : { data, seq: ++this.seq, at };
+    for (const c of [...this.clients]) {
+      if (!writeSse(c.res, event, payload)) {
+        this.clients.delete(c);
+      }
+    }
+    if (this.clients.size === 0) this.stopHeartbeat();
+  }
+
   private async flushAll(): Promise<void> {
     if (this.clients.size === 0) return;
     // One agent list for all clients; connection status is per-token.

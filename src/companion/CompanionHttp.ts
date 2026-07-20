@@ -6,9 +6,11 @@
 import type http from "node:http";
 import type { CompanionPairingService } from "./CompanionPairingService.js";
 import type { CompanionLiveSync } from "./CompanionLiveSync.js";
+import type { CompanionTabChannel } from "./CompanionTabChannel.js";
 import {
   COMPANION_HTTP_PREFIX,
   COMPANION_PROTOCOL_VERSION,
+  type CompanionTabSnapshotResult,
   type CompanionWorkspaceOps,
   type PairRequestBody,
   type SendPromptRequest,
@@ -26,6 +28,8 @@ export interface CompanionHttpSurface {
   ops?: CompanionWorkspaceOps;
   /** Live SSE fan-out (GET /events). Optional until workspace wires CompanionLiveSync. */
   live?: CompanionLiveSync;
+  /** Tab command channel (agent tools ↔ extension). */
+  tab?: CompanionTabChannel;
 }
 
 function json(res: http.ServerResponse, status: number, body: unknown): void {
@@ -105,6 +109,7 @@ export async function handleCompanionHttp(
   const pairing = "pairing" in surface ? surface.pairing : surface;
   const ops = "pairing" in surface ? surface.ops : undefined;
   const live = "pairing" in surface ? surface.live : undefined;
+  const tab = "pairing" in surface ? surface.tab : undefined;
 
   const urlPath = (req.url ?? "").split("?")[0] ?? "";
   if (!isCompanionPath(urlPath)) return false;
@@ -242,7 +247,48 @@ export async function handleCompanionHttp(
       return true;
     }
 
-    // Approvals / tab-capture — later increments.
+    // --- Tab control: pending commands + extension results (t-2a7010) ---
+    if (req.method === "GET" && (sub === "/tab/pending" || sub === "tab/pending")) {
+      const auth = requireSession(pairing, bearer(req));
+      if (!auth.ok) {
+        json(res, auth.status, auth.body);
+        return true;
+      }
+      if (!tab) {
+        json(res, 501, { ok: false, code: "unknown", message: "Tab channel not wired on this engine." });
+        return true;
+      }
+      json(res, 200, { ok: true, commands: tab.listPending() });
+      return true;
+    }
+
+    if (req.method === "POST" && (sub === "/tab/result" || sub === "tab/result")) {
+      const auth = requireSession(pairing, bearer(req));
+      if (!auth.ok) {
+        json(res, auth.status, auth.body);
+        return true;
+      }
+      if (!tab) {
+        json(res, 501, { ok: false, code: "unknown", message: "Tab channel not wired on this engine." });
+        return true;
+      }
+      let body: CompanionTabSnapshotResult;
+      try {
+        body = JSON.parse((await readBody(req, 512 * 1024)) || "{}") as CompanionTabSnapshotResult;
+      } catch {
+        json(res, 400, { ok: false, code: "unknown", message: "Invalid JSON body." });
+        return true;
+      }
+      if (!body || typeof body !== "object" || typeof body.id !== "string") {
+        json(res, 400, { ok: false, code: "unknown", message: "Required field: id (string)." });
+        return true;
+      }
+      const submitted = tab.submitResult(body);
+      json(res, submitted.ok ? 200 : 404, submitted.ok ? { ok: true } : submitted);
+      return true;
+    }
+
+    // Approvals — later increment.
     if (
       (req.method === "POST" && (sub === "/capture" || sub === "capture")) ||
       (req.method === "GET" && (sub === "/approvals" || sub === "approvals")) ||
@@ -251,14 +297,14 @@ export async function handleCompanionHttp(
       json(res, 501, {
         ok: false,
         code: "unknown",
-        message: "Not in this increment — approvals / tab-capture come after send-prompt dogfood.",
+        message: "Not in this increment — approvals come after tab snapshot dogfood.",
       });
       return true;
     }
 
     json(res, 404, {
       error: "not found",
-      hint: `${COMPANION_HTTP_PREFIX}/health|pair|status|unpair|agents|prompt|events`,
+      hint: `${COMPANION_HTTP_PREFIX}/health|pair|status|unpair|agents|prompt|events|tab/pending|tab/result`,
       protocolVersion: COMPANION_PROTOCOL_VERSION,
     });
     return true;

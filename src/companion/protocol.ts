@@ -123,3 +123,37 @@ export interface CompanionLiveState {
   connection: ConnectionStatus;
   agents: CompanionAgentRow[];
 }
+
+/** Engine → extension: ask Companion to act on the user's tab (read-only for now). */
+export interface CompanionTabCommand {
+  id: string;
+  kind: "snapshot";
+  at: string;
+}
+
+/** Extension → engine: fulfillment of a tab command. */
+export type CompanionTabSnapshotResult =
+  | {
+      ok: true;
+      id: string;
+      url: string;
+      title: string;
+      capturedAt: string;
+      selection?: string;
+      outline: string;
+      stats: { nodes: number; truncated: boolean; outlineChars: number };
+    }
+  | {
+      ok: false;
+      id: string;
+      code:
+        | "timeout"
+        | "offline"
+        | "denied"
+        | "restricted"
+        | "no_tab"
+        | "inject_failed"
+        | "unknown";
+      message: string;
+      url?: string;
+    };

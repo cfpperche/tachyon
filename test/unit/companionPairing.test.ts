@@ -217,6 +217,106 @@ describe("Companion HTTP loopback (SDD 414)", () => {
     server.close();
   });
 
+  it("fulfills user tab snapshot via tab.command SSE + POST /tab/result", async () => {
+    const { CompanionLiveSync } = await import("../../src/companion/CompanionLiveSync.js");
+    const { CompanionTabChannel } = await import("../../src/companion/CompanionTabChannel.js");
+    const pairing = new CompanionPairingService({
+      engineLabel: "ws",
+      engineId: "hash",
+      getBaseUrl: () => `http://127.0.0.1:${port}`,
+    });
+    let port = 0;
+    const live = new CompanionLiveSync({
+      statusOf: (token) => pairing.status(token),
+      listAgents: async () => [],
+      heartbeatMs: 60_000,
+      debounceMs: 5,
+    });
+    const tab = new CompanionTabChannel({
+      push: (event, data) => live.pushEvent(event, data),
+      defaultTimeoutMs: 5_000,
+    });
+    const server = http.createServer((req, res) => {
+      void handleCompanionHttp(req, res, { pairing, live, tab, ops: {
+        listActiveAgents: async () => [],
+        sendPrompt: async (agent) => ({ ok: true, status: "notified", agent }),
+      }});
+    });
+    await new Promise<void>((resolve) => {
+      server.listen(0, "127.0.0.1", () => resolve());
+    });
+    port = (server.address() as AddressInfo).port;
+    const base = `http://127.0.0.1:${port}`;
+
+    const issued = pairing.issuePairCode();
+    if ("ok" in issued) throw new Error("expected code");
+    const paired = pairing.pair({
+      pairCode: issued.code,
+      protocolVersion: COMPANION_PROTOCOL_VERSION,
+      client: { kind: "browser", name: "t", version: "0" },
+    });
+    if (!paired.ok) throw new Error("pair failed");
+    const token = paired.sessionToken;
+
+    // Open SSE so tab.command can fan out.
+    const ac = new AbortController();
+    const stream = await fetch(`${base}/companion/v1/events`, {
+      headers: { authorization: `Bearer ${token}`, accept: "text/event-stream" },
+      signal: ac.signal,
+    });
+    expect(stream.status).toBe(200);
+    const reader = stream.body!.getReader();
+    const dec = new TextDecoder();
+    let buf = "";
+
+    const waitForCommand = (async () => {
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) throw new Error("stream ended");
+        buf += dec.decode(value, { stream: true });
+        const m = buf.match(/event: tab\.command\ndata: ({[^\n]+})\n/);
+        if (m) return JSON.parse(m[1]!) as { id: string; kind: string };
+      }
+    })();
+
+    // Give the SSE attach a moment to register the client.
+    await new Promise((r) => setTimeout(r, 30));
+
+    const toolPromise = tab.requestSnapshot(3_000);
+    const cmd = await waitForCommand;
+    expect(cmd.kind).toBe("snapshot");
+    expect(cmd.id).toBeTruthy();
+
+    const post = await fetch(`${base}/companion/v1/tab/result`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        ok: true,
+        id: cmd.id,
+        url: "https://example.com/",
+        title: "Example",
+        capturedAt: new Date().toISOString(),
+        outline: "html\n  body\n    h1 \"Example\"",
+        stats: { nodes: 3, truncated: false, outlineChars: 30 },
+      }),
+    });
+    expect(post.status).toBe(200);
+    const result = await toolPromise;
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.url).toBe("https://example.com/");
+      expect(result.outline).toContain("Example");
+    }
+
+    ac.abort();
+    server.close();
+    live.closeAll();
+    tab.closeAll();
+  });
+
   it("streams live snapshots on GET /companion/v1/events (SSE)", async () => {
     const { CompanionLiveSync } = await import("../../src/companion/CompanionLiveSync.js");
     const pairing = new CompanionPairingService({
