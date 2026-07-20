@@ -991,7 +991,7 @@ export class Workspace {
           },
         );
         if (!resolved?.worktree) return resolved;
-        this.managedWorktrees.syncAgentRecord(ctx.name, resolved.worktree);
+        this.managedWorktrees.syncAgentRecord(ctx.name, resolved.worktree, ctx.delegator);
         if (!ctx.gate) {
           let exactPreparedHead: string | undefined;
           try {

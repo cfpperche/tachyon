@@ -286,6 +286,26 @@ describe("SessionLedger", () => {
     expect(l.get("a")).toBeUndefined();
   });
 
+  it("round-trips a valid clean-exited lifecycle and ignores malformed lifecycle data", () => {
+    const ws = tmpWs();
+    const l = new SessionLedger(ws);
+    l.record("done", {
+      def: { cmd: "codex exec", kind: "agent" },
+      cwd: ws,
+      declared: false,
+      lifecycle: { state: "clean-exited", exitedAt: "2026-07-19T12:00:00.000Z" },
+    });
+    expect(new SessionLedger(ws).get("done")?.lifecycle).toEqual({
+      state: "clean-exited",
+      exitedAt: "2026-07-19T12:00:00.000Z",
+    });
+
+    const raw = JSON.parse(fs.readFileSync(l.path, "utf8")) as { sessions: Record<string, Record<string, unknown>> };
+    raw.sessions.done!.lifecycle = { state: "clean-exited", exitedAt: "not-a-date" };
+    fs.writeFileSync(l.path, JSON.stringify(raw), "utf8");
+    expect(new SessionLedger(ws).get("done")?.lifecycle).toBeUndefined();
+  });
+
   it("treats a corrupt or wrong-shape file as empty (never throws)", () => {
     const ws = tmpWs();
     const p = path.join(ws, ".tachyon");
@@ -577,6 +597,18 @@ describe("planResume", () => {
 
   it("is empty when the ledger is empty", () => {
     expect(planResume({ ledger: new Map(), declaredAutostart: new Set(), liveSessions: new Set() })).toEqual([]);
+  });
+
+  it("never reattaches, auto-resumes, or offers a clean-exited postmortem row", () => {
+    const ledger = new Map<string, SessionRecord>([
+      ["done", rec({ declared: false, lifecycle: { state: "clean-exited", exitedAt: "2026-07-19T12:00:00.000Z" } })],
+      ["ordinary", rec()],
+    ]);
+    expect(planResume({
+      ledger,
+      declaredAutostart: new Set(["done", "ordinary"]),
+      liveSessions: new Set(["done"]),
+    }).map(({ name, action }) => ({ name, action }))).toEqual([{ name: "ordinary", action: "auto-resume" }]);
   });
 
   it("SDD 368 T14 excludes valid and invalid Delivery-bound rows from auto-resume and offer", () => {

@@ -203,13 +203,14 @@ export class ManagedWorktreeService {
   }
 
   /** Upsert from WorktreeManager agent ensure/fork/remove (path already validated by manager). */
-  syncAgentRecord(agent: string, rec: WorktreeRecord | null): void {
+  syncAgentRecord(agent: string, rec: WorktreeRecord | null, createdBy?: string): void {
     if (!rec) {
       const existing = this.list({ kind: "agent" }).find((e) => e.agent === agent);
       if (existing) this.save(removeManagedEntry(this.load(), existing.id));
       return;
     }
     const abs = path.resolve(rec.path);
+    const prior = findManagedEntry(this.load(), abs);
     const entry: ManagedWorktreeEntry = {
       id: newManagedId("agent", agent),
       kind: "agent",
@@ -218,6 +219,7 @@ export class ManagedWorktreeService {
       baseRef: rec.baseRef,
       tachyonCreatedBranch: rec.tachyonCreatedBranch,
       agent,
+      ...(createdBy || prior?.createdBy ? { createdBy: createdBy ?? prior?.createdBy } : {}),
       createdAt: rec.createdAt || this.nowIso(),
       status: "active",
     };

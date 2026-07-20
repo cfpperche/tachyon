@@ -614,6 +614,8 @@ export interface SpawnCwdContext {
   def: AgentDef;
   /** lineage parent, if this is a sub-agent spawn (it inherits the parent's cwd) */
   parent?: string;
+  /** Authenticated coordinator for a gated top-level delegation. */
+  delegator?: string;
   /** ad-hoc (MCP-spawned) vs declared */
   adhoc: boolean;
   /** true on restart/resume — the resolver reuses the worktree and skips worktreeSetup */
@@ -994,6 +996,7 @@ export class AgentManager {
         const delegator = rec.def.delegator;
         if (delegator && delegator !== name) this.delegators.set(name, delegator);
       }
+      if (rec.lifecycle?.state === "clean-exited") this.cleanExited.add(name);
     }
     // spec 240 — backfill resume.configHome on pre-240 rows (derive from current config) so transcript lookup
     // is LOCKED before any later isolate/harness toggle. spec 305 follow-up: also repair rows whose persisted
@@ -1065,19 +1068,6 @@ export class AgentManager {
         declaredOwner: config?.declaredOwner[name],
       };
     });
-    // F6 (spec 211 follow-up): a finished ad-hoc one-shot (clean exit 0) must not
-    // survive a window reload as a zombie restartable row — drop its ledger entry
-    // so rehydrate skips it. The dead pane stays in-session for postmortem until
-    // dismissed; crashed (non-zero) ad-hocs ARE kept (restart/postmortem). remove()
-    // is idempotent (writes only when the row existed), so this is render-safe.
-    for (const info of infos) {
-      // spec 225 — a PERSISTENT forked sibling is exempt: even a clean self-exit keeps its row so it
-      // stays resumable until an explicit Dismiss (it's not a throwaway one-shot). Gated to the rare
-      // clean-exit-adhoc case, so the ledger read here is not a per-refresh hot-path cost.
-      if (!info.declared && info.dead && info.exitCode === 0 && this.opts.ledger?.get(info.name)?.def?.fork !== true) {
-        this.opts.ledger?.remove(info.name);
-      }
-    }
     return infos;
   }
 
@@ -1747,6 +1737,7 @@ export class AgentManager {
         name,
         def,
         parent,
+        delegator,
         adhoc,
         isRestart: false,
         gate: opts?.gate,
@@ -2722,6 +2713,16 @@ export class AgentManager {
     this.stopFailed.delete(name);
     if (!state?.dead || state.exitCode !== 0) return false;
     await this.capturePostmortemOutput(name, session);
+    const rec = this.opts.ledger?.get(name);
+    if (rec && !rec.declared && this.adhoc.has(name)) {
+      this.opts.ledger!.record(name, {
+        ...rec,
+        lifecycle: {
+          state: "clean-exited",
+          exitedAt: rec.lifecycle?.state === "clean-exited" ? rec.lifecycle.exitedAt : new Date().toISOString(),
+        },
+      });
+    }
     await this.detachPaneTranscript(session);
     await this.opts.tmux.killSession(session);
     this.cleanExited.add(name);
@@ -3313,7 +3314,8 @@ export class AgentManager {
       const capability = openingPromptCapability(def.cmd);
       const soul = resolvedSoul && capability.status === "prompt" ? this.soulSnapshot(resolvedSoul, capability.channel) : existing?.identity?.soul;
       const identity = soul ? { soul, health: "offered" as const } : existing?.identity;
-      this.opts.ledger.record(name, { ...(existing ?? { declared: !this.adhoc.has(name) }), cwd, ...(worktree ? { worktree } : {}), resume, identity });
+      const { lifecycle: _terminalLifecycle, ...restartable } = existing ?? { declared: !this.adhoc.has(name) };
+      this.opts.ledger.record(name, { ...restartable, cwd, ...(worktree ? { worktree } : {}), resume, identity });
     }
     if (preparationLocked && worktree) {
       const durable = this.opts.ledger?.get(name)?.worktree;
@@ -3698,7 +3700,10 @@ export class AgentManager {
     });
     // Resume re-attaches to existing state; only its newly launched session is disposable.
     await this.observeLaunchReadiness(name, cmd, session);
-    this.opts.ledger?.record(name, { ...record, resume: this.withConfigHome(name, this.definitionOf(name), { ...record.resume, runtime, sessionId: id }) }); // spec 240 — preserve persisted configHome
+    const { lifecycle: _terminalLifecycle, ...activeRecord } = record;
+    this.cleanExited.delete(name);
+    this.postmortemOutput.delete(name);
+    this.opts.ledger?.record(name, { ...activeRecord, resume: this.withConfigHome(name, this.definitionOf(name), { ...record.resume, runtime, sessionId: id }) }); // spec 240 — preserve persisted configHome
     // spec 364 — stamp bound_generation at resume time (rebind + human resume both land here).
     if (!opts?.deferBridgeStamp) this.stampBridgeClientBinding(name, resumeBridge.wired);
     this.opts.onSpawned?.(name, true); // resume is activation/human-driven — reveal

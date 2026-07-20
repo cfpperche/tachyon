@@ -5653,27 +5653,38 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     expect(retained?.text).toContain("TACHYON_BRIDGE_TOKEN=[redacted]");
   });
 
-  it("forgets a finished ad-hoc one-shot (clean exit 0) from the ledger; keeps a crashed one", async () => {
+  it("retains a clean-exited ad-hoc postmortem across manager reload until explicit dismiss", async () => {
     const ws = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-211f6-"));
     dirs.push(ws);
     const hash = workspaceHash(ws);
     const ledger = new SessionLedger(ws);
     ledger.record("review", { def: { cmd: "codex exec", kind: "agent" }, cwd: ws, declared: false }); // clean exit
     ledger.record("boom", { def: { cmd: "codex exec", kind: "agent" }, cwd: ws, declared: false }); // crashed
-    const exec = async (args: string[]): Promise<ExecResult> => {
-      if (args[2] === "list-panes")
-        return { stdout: `${sessionName(hash, "review")}\t1\t0\n${sessionName(hash, "boom")}\t1\t137\n`, stderr: "" };
-      return { stdout: "", stderr: "" };
-    };
-    const manager = new AgentManager({ tmux: new TmuxService(exec), wsHash: hash, workspaceRoot: ws, getConfig: () => configOf("agents:\n  decoy:\n    cmd: x\n"), getMaxAgents: () => 8, ledger });
+    const { tmux, sessions, dead, panes } = fakeTmux();
+    const reviewSession = sessionName(hash, "review");
+    const boomSession = sessionName(hash, "boom");
+    sessions.add(reviewSession);
+    sessions.add(boomSession);
+    dead.set(reviewSession, 0);
+    dead.set(boomSession, 137);
+    panes.set(reviewSession, "durable postmortem");
+    const opts = { tmux, wsHash: hash, workspaceRoot: ws, getConfig: () => configOf("agents:\n  decoy:\n    cmd: x\n"), getMaxAgents: () => 8, ledger };
+    const manager = new AgentManager(opts);
     await manager.rehydrateFromLedger();
-    const infos = await manager.list();
-    // dead panes still render in-session for postmortem...
-    expect(infos.find((a) => a.name === "review")).toMatchObject({ dead: true, crashed: false, exitCode: 0 });
-    expect(infos.find((a) => a.name === "boom")).toMatchObject({ dead: true, crashed: true });
-    // ...but the clean-exit one-shot is dropped from the ledger so it won't rehydrate after reload; the crash stays.
-    expect(ledger.get("review")).toBeUndefined();
+    await expect(manager.dismissCleanExitPane("review")).resolves.toBe(true);
+    expect(ledger.get("review")?.lifecycle).toMatchObject({ state: "clean-exited" });
     expect(ledger.get("boom")).toBeDefined();
+
+    const reloaded = new AgentManager(opts);
+    await reloaded.rehydrateFromLedger();
+    expect((await reloaded.list()).find((a) => a.name === "review")).toMatchObject({
+      cleanExited: true,
+      running: false,
+      dead: false,
+    });
+    reloaded.dismissAdhoc("review");
+    expect(ledger.get("review")).toBeUndefined();
+    expect((await reloaded.list()).find((a) => a.name === "review")).toBeUndefined();
   });
 
   it("dismissAdhoc forgets a sessionless stopped ad-hoc — def, lineage AND ledger row", async () => {

@@ -148,7 +148,14 @@ export interface SessionRecord {
    */
   delivery?: SessionDeliveryMarker;
   identity?: SessionIdentity;
+  /** Explicit terminal state for an ad-hoc row that remains visible until dismiss. */
+  lifecycle?: SessionLifecycle;
   updatedAt: string;
+}
+
+export interface SessionLifecycle {
+  state: "clean-exited";
+  exitedAt: string;
 }
 
 export interface SessionIdentity {
@@ -347,7 +354,7 @@ function normalize(r: unknown): SessionRecord | null {
   const updatedAt = typeof o.updatedAt === "string" ? o.updatedAt : new Date(0).toISOString();
 
   // New (211) shape: a def and/or resume object (+ spec 210 worktree + spec 364 bridgeClient + SDD 368 T14 delivery).
-  if (o.def !== undefined || o.resume !== undefined || o.worktree !== undefined || o.bridgeClient !== undefined || o.delivery !== undefined || o.identity !== undefined) {
+  if (o.def !== undefined || o.resume !== undefined || o.worktree !== undefined || o.bridgeClient !== undefined || o.delivery !== undefined || o.identity !== undefined || o.lifecycle !== undefined) {
     const def = parseDef(o.def);
     const resume = parseResume(o.resume);
     const worktree = parseWorktree(o.worktree);
@@ -355,8 +362,9 @@ function normalize(r: unknown): SessionRecord | null {
     // delivery field present → always keep a marker (valid or invalid); never drop it into an ordinary row.
     const delivery = o.delivery !== undefined ? parseDeliveryMarker(o.delivery) : undefined;
     const identity = parseIdentity(o.identity);
+    const lifecycle = parseLifecycle(o.lifecycle);
     if (!def && !resume && !worktree && !bridgeClient && delivery === undefined && !identity) return null;
-    return stripDeclaredParent({ def, resume, worktree, bridgeClient, delivery, identity, cwd: o.cwd, declared, updatedAt });
+    return stripDeclaredParent({ def, resume, worktree, bridgeClient, delivery, identity, lifecycle, cwd: o.cwd, declared, updatedAt });
   }
 
   // Pre-211 flat record → migrate.
@@ -370,6 +378,14 @@ function normalize(r: unknown): SessionRecord | null {
     });
   }
   return null;
+}
+
+function parseLifecycle(value: unknown): SessionLifecycle | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  const o = value as Record<string, unknown>;
+  if (o.state !== "clean-exited") return undefined;
+  if (typeof o.exitedAt !== "string" || !Number.isFinite(Date.parse(o.exitedAt))) return undefined;
+  return { state: "clean-exited", exitedAt: o.exitedAt };
 }
 
 function stripDeclaredParent<T extends SessionRecord>(rec: T): T {

@@ -211,6 +211,32 @@ describe("spec 392 ManagedWorktreeService (real git)", () => {
     expect(svc.get(entry.id)).toBeUndefined();
   });
 
+  it("authenticated coordinator retains authority to remove a stopped child worktree", async () => {
+    const svc = service();
+    const entry = await svc.createChange({ slug: "child-seed", createdBy: "child" });
+    svc.syncAgentRecord("child", {
+      path: entry.path,
+      branch: entry.branch,
+      baseRef: entry.baseRef,
+      tachyonCreatedBranch: entry.tachyonCreatedBranch,
+      createdAt: entry.createdAt,
+    }, "coordinator");
+    // Later lifecycle syncs do not know the original caller, but must preserve its authority.
+    svc.syncAgentRecord("child", {
+      path: entry.path,
+      branch: entry.branch,
+      baseRef: entry.baseRef,
+      tachyonCreatedBranch: entry.tachyonCreatedBranch,
+      createdAt: entry.createdAt,
+    });
+
+    const managed = svc.list({ kind: "agent" })[0]!;
+    expect(managed.createdBy).toBe("coordinator");
+    expect((await svc.remove(managed.id, { actor: { kind: "agent", name: "peer" } })).removed).toBe(false);
+    expect((await svc.remove(managed.id, { actor: { kind: "agent", name: "coordinator" } })).removed).toBe(true);
+    expect(fs.existsSync(entry.path)).toBe(false);
+  });
+
   it("dirty remove requires confirmDirty; registry survives refused remove", async () => {
     const svc = service();
     const entry = await svc.createChange({ slug: "dirty", createdBy: "alice" });

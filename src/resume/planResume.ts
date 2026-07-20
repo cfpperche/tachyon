@@ -46,6 +46,8 @@ export interface ResumeWorld {
 export function planResume(world: ResumeWorld): ResumePlanItem[] {
   const plan: ResumePlanItem[] = [];
   for (const [name, record] of world.ledger) {
+    // A clean-exited ad-hoc row is retained for explicit postmortem/dismiss, not activation.
+    if (record.lifecycle?.state === "clean-exited") continue;
     // spec 230 — pipeline-owned node sessions are reconciled by their PipelineManager run, never by
     // the generic resume/offer path (codex S4 M4). (autostartPending is already safe — it only
     // fresh-spawns DECLARED agents, and pipeline nodes are ad-hoc.)
