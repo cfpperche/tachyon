@@ -8,6 +8,7 @@ import {
 import { primaryActions, moreActions, ACTION_META, type ActionId } from "../../sidebar/actions";
 import { sortRows, groupByParent, SORT_LABEL, asSortMode, type SortMode } from "../../sidebar/sortRows";
 import { agentAncestorNames, agentGroupParent, agentHierarchyRows } from "./grouping";
+import { attentionWindow } from "../../sidebar/attentionStack.js";
 import { placeMoreMenu } from "./menuPosition";
 import {
   AGENT_STATUS_FILTERS,
@@ -725,23 +726,20 @@ function MoreMenu({ menu, onClose }: { menu: MenuState | null; onClose: () => vo
   );
 }
 
-/** t-7f94f2 — catch-up strip for engine human notices (toast remains attention channel).
- *  Only surfaces items still in the engine inbox; mark-read / mark-all clears them. */
-function NoticeStrip({ fleets, dispatch }: { fleets: FleetVM[]; dispatch?: Dispatch }) {
-  const rows = useMemo(
-    () => fleets.flatMap((f) => (f.notices ?? []).filter((n) => !n.read).map((n) => ({ n, hash: f.folder?.hash }))),
-    [fleets],
-  );
+/** spec 415 — Tachyon's sole non-modal attention surface. */
+function AttentionStack({ fleets, dispatch }: { fleets: FleetVM[]; dispatch?: Dispatch }) {
+  const { rows, visible, queued } = useMemo(() => attentionWindow(fleets), [fleets]);
   if (rows.length === 0) return null;
   return (
-    <div class="notice-strip" role="region" aria-label="Notices">
-      <div class="notice-strip-head">
-        <span class="notice-strip-title">
-          <Icon name="bell" /> Notices
+    <section class="attention-stack" aria-labelledby="attention-title">
+      <div class="attention-head">
+        <span class="attention-title" id="attention-title">
+          <Icon name="bell-dot" /> Attention
           <span class="notice-unread" title={`${rows.length} open`}>{rows.length}</span>
         </span>
-        <Button class="notice-mark-all"
-          title="Dismiss all notices"
+        {queued > 0 && <span class="attention-queued" aria-label={`${queued} queued`}>+{queued} queued</span>}
+        <Button class="attention-clear"
+          title="Dismiss all attention items"
           onClick={() => {
             for (const f of fleets) {
               if ((f.notices ?? []).some((n) => !n.read)) {
@@ -753,38 +751,41 @@ function NoticeStrip({ fleets, dispatch }: { fleets: FleetVM[]; dispatch?: Dispa
           Clear
         </Button>
       </div>
-      <div class="notice-strip-list">
-        {rows.slice(0, 12).map(({ n, hash }) => (
-          <div class={`notice-row level-${n.level} unread`} key={`${hash ?? ""}:${n.id}`}>
-            <Button class="notice-msg"
-              title={`${n.message} — click to dismiss`}
-              onClick={() => dispatch?.section("notice:markRead", n.id, undefined, hash)}
-            >
+      <div class="attention-list" role="list">
+        {visible.map(({ n, hash, folder }) => (
+          <article class={`attention-card level-${n.level}`} role="listitem" key={`${hash ?? ""}:${n.id}`}>
+            <div class="attention-card-head">
               <span class={`notice-level l-${n.level}`}>{n.level}</span>
-              <span class="notice-text">{n.message}</span>
-              {n.collapsedCount > 1 && <span class="notice-x">×{n.collapsedCount}</span>}
-            </Button>
-            {n.actionsLive && n.actions.map((a) => (
+              {folder && fleets.length > 1 ? <span class="attention-folder">{folder}</span> : null}
+              <time class="attention-time" dateTime={n.at} title={new Date(n.at).toLocaleString()}>
+                {new Date(n.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+              </time>
+              {n.collapsedCount > 1 && <span class="notice-x" title={`${n.collapsedCount} occurrences`}>×{n.collapsedCount}</span>}
+              <Button class="attention-dismiss"
+                title="Dismiss"
+                aria-label={`Dismiss: ${n.message}`}
+                onClick={() => dispatch?.section("notice:markRead", n.id, undefined, hash)}
+              >
+                <Icon name="close" />
+              </Button>
+            </div>
+            <div class="attention-message">{n.message}</div>
+            {n.actions.length > 0 && <div class="attention-actions">
+              {n.actions.map((a) => n.actionsLive ? (
               <Button
                 key={a.id}
-                class="notice-act"
+                class="attention-action"
                 title={a.label}
                 onClick={() => dispatch?.section("notice:invoke", n.id, { actionId: a.id }, hash)}
               >
                 {a.label}
               </Button>
-            ))}
-            <Button class="notice-dismiss"
-              title="Dismiss"
-              aria-label="Dismiss notice"
-              onClick={() => dispatch?.section("notice:markRead", n.id, undefined, hash)}
-            >
-              <Icon name="close" />
-            </Button>
-          </div>
+              ) : <span class="attention-action-expired" key={a.id} title={`${a.label} is unavailable after engine restart`}>{a.label} unavailable</span>)}
+            </div>}
+          </article>
         ))}
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -971,7 +972,7 @@ export function App({ fleets = [SAMPLE], dispatch, prefs = {}, collapsedKeys = [
         onClick={() => setOpen(true)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpen(true); } }}>
         <Icon name="search" /><span class="kgrow">Search agents, commands, pins…</span><span class="kbd">{isMac ? "⌘K" : "Ctrl K"}</span>
       </div>
-      <NoticeStrip fleets={fleets} dispatch={dispatch} />
+      <AttentionStack fleets={fleets} dispatch={dispatch} />
       <div class="tabs" role="tablist" aria-label="Sidebar sections">
         {TABS.map(({ id, icon }, i) => (
           <button class={`tab${tab === id ? " active" : ""}`} type="button" role="tab" id={`tab-${id}`}

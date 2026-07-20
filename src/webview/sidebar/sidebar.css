@@ -424,29 +424,33 @@
   .config-error-actions .ds-btn { font-size: 11px; padding: 3px 8px; }
 
 
-  /* t-7f94f2 — notice inbox strip (catch-up; toast stays attention) */
-  .notice-strip { flex: 0 0 auto; margin: 0 8px 6px; border: 1px solid var(--ds-border); border-radius: 4px; background: var(--vscode-sideBar-background, transparent); max-height: 160px; display: flex; flex-direction: column; min-height: 0; }
-  .notice-strip-head { display: flex; align-items: center; gap: 8px; padding: 4px 8px; border-bottom: 1px solid var(--ds-border); font-size: 11px; font-weight: 600; }
-  .notice-strip-title { display: inline-flex; align-items: center; gap: 5px; }
-  .notice-strip-title .codicon { font-size: 12px; opacity: .85; }
+  /* spec 415 — owned Attention Stack: six visible FIFO cards, no toast companion. */
+  .attention-stack { flex: 0 0 auto; margin: 0 8px 6px; border: 1px solid var(--ds-border); border-radius: 6px; background: var(--vscode-sideBar-background, transparent); max-height: min(64vh, 600px); display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+  .attention-head { display: flex; align-items: center; gap: 7px; padding: 5px 8px; border-bottom: 1px solid var(--ds-border); font-size: 11px; font-weight: 600; }
+  .attention-title { display: inline-flex; align-items: center; gap: 5px; }
+  .attention-title .codicon { font-size: 12px; color: var(--ds-warn); }
   .notice-unread { display: inline-flex; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; align-items: center; justify-content: center; font-size: 10px; background: var(--vscode-badge-background, var(--ds-accent)); color: var(--vscode-badge-foreground, #fff); }
-  .notice-mark-all { margin-left: auto; font: inherit; font-size: 10px; padding: 1px 6px; border-radius: 3px; border: 1px solid var(--ds-border); background: transparent; color: var(--ds-muted); cursor: pointer; }
-  .notice-mark-all:hover { color: var(--vscode-foreground); background: var(--hover); }
-  .notice-strip-list { overflow: auto; min-height: 0; }
-  .notice-row { display: flex; align-items: center; gap: 4px; padding: 3px 6px; border-bottom: 1px solid color-mix(in srgb, var(--ds-border) 60%, transparent); }
-  .notice-row:last-child { border-bottom: 0; }
-  .notice-row.unread { background: color-mix(in srgb, var(--vscode-list-hoverBackground) 55%, transparent); }
-  .notice-row.read { opacity: .72; }
-  .notice-msg { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; border: 0; background: transparent; color: inherit; font: inherit; font-size: 11px; text-align: left; cursor: pointer; padding: 2px 0; }
-  .notice-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .attention-queued { color: var(--ds-muted); font-size: 10px; font-weight: 400; white-space: nowrap; }
+  .attention-clear { margin-left: auto; font: inherit; font-size: 10px; padding: 1px 6px; border-radius: 3px; border: 1px solid var(--ds-border); background: transparent; color: var(--ds-muted); cursor: pointer; }
+  .attention-clear:hover { color: var(--vscode-foreground); background: var(--hover); }
+  .attention-list { overflow: auto; min-height: 0; display: flex; flex-direction: column; gap: 5px; padding: 6px; }
+  .attention-card { position: relative; display: flex; flex-direction: column; gap: 5px; padding: 6px 7px; border: 1px solid color-mix(in srgb, var(--ds-border) 85%, transparent); border-left: 3px solid var(--ds-info); border-radius: 4px; background: color-mix(in srgb, var(--vscode-list-hoverBackground) 46%, transparent); }
+  .attention-card.level-warn { border-left-color: var(--ds-warn); }
+  .attention-card.level-error { border-left-color: var(--ds-err); }
+  .attention-card-head { display: flex; align-items: center; gap: 5px; min-width: 0; }
+  .attention-folder { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ds-muted); font-size: 10px; }
+  .attention-time { margin-left: auto; color: var(--ds-muted); font-size: 9px; font-variant-numeric: tabular-nums; }
+  .attention-message { color: var(--vscode-foreground); font-size: 11px; line-height: 1.35; overflow-wrap: anywhere; }
+  .attention-actions { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; }
   .notice-level { flex: none; font-size: 9px; text-transform: uppercase; letter-spacing: .04em; padding: 0 4px; border-radius: 3px; border: 1px solid var(--ds-border); color: var(--ds-muted); }
   .notice-level.l-warn { color: var(--ds-warn, #cca700); border-color: color-mix(in srgb, var(--ds-warn, #cca700) 40%, var(--ds-border)); }
   .notice-level.l-error { color: var(--ds-err, #f14c4c); border-color: color-mix(in srgb, var(--ds-err, #f14c4c) 40%, var(--ds-border)); }
   .notice-x { flex: none; font-size: 10px; color: var(--ds-muted); }
-  .notice-act { flex: none; font: inherit; font-size: 10px; padding: 1px 6px; border-radius: 3px; border: 1px solid var(--ds-border); background: var(--vscode-button-secondaryBackground, transparent); color: var(--vscode-button-secondaryForeground, var(--vscode-foreground)); cursor: pointer; }
-  .notice-act:hover { filter: brightness(1.08); }
-  .notice-dismiss { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--ds-muted); cursor: pointer; }
-  .notice-dismiss:hover { color: var(--vscode-foreground); background: var(--hover); }
-  .notice-dismiss .codicon { font-size: 12px; }
+  .attention-action { flex: none; font: inherit; font-size: 10px; padding: 2px 7px; border-radius: 3px; border: 1px solid var(--ds-border); background: var(--vscode-button-secondaryBackground, transparent); color: var(--vscode-button-secondaryForeground, var(--vscode-foreground)); cursor: pointer; }
+  .attention-action:hover { filter: brightness(1.08); }
+  .attention-action-expired { color: var(--ds-muted); font-size: 10px; font-style: italic; }
+  .attention-dismiss { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--ds-muted); cursor: pointer; }
+  .attention-dismiss:hover { color: var(--vscode-foreground); background: var(--hover); }
+  .attention-dismiss .codicon { font-size: 12px; }
 
   @media (prefers-reduced-motion: reduce) { *, ::before, ::after { animation: none !important; transition: none !important; } }

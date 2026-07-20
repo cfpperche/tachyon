@@ -196,89 +196,6 @@ describe("remote WorkspaceClient", () => {
     await expect(client.sync()).rejects.toMatchObject({ code: "CLIENT_CLOSED" });
   });
 
-  it("keeps sync and read-only queries available while a claimed notification remains visible", async () => {
-    const root = temp("tachyon-workspace-client-notice-");
-    const workspaceRoot = path.join(root, "workspace");
-    const runtimeRoot = path.join(root, "runtime");
-    fs.mkdirSync(workspaceRoot, { mode: 0o700 });
-    fs.mkdirSync(runtimeRoot, { mode: 0o700 });
-    const socketPath = path.join(runtimeRoot, "control.sock");
-    const liveIdentity = identity(fs.realpathSync(workspaceRoot), "engine-notice", "bridge-notice");
-    let queryReads = 0;
-    const server = await startEngineControlServer({
-      socketPath,
-      identity: liveIdentity,
-      getSnapshot: () => snapshot(liveIdentity, 0, "notice-visible"),
-      readEvents: (afterSeq) => ({
-        schemaVersion: 1,
-        engineInstanceId: liveIdentity.instanceId,
-        afterSeq,
-        oldestSeq: 1,
-        latestSeq: 0,
-        resyncRequired: false,
-        events: [],
-      }),
-      query: async (query) => {
-        queryReads += 1;
-        if (query.method !== "probe.view") throw new Error("unexpected query");
-        return workspaceProbeViewSuccessV1({
-          rows: [], total: 0, running: 0, completed: 0, failed: 0, empty: true,
-        });
-      },
-    });
-    servers.push(server);
-
-    let markNoticePresented!: () => void;
-    const noticePresented = new Promise<void>((resolve) => { markNoticePresented = resolve; });
-    let resolveNotice!: (choice: string | null) => void;
-    const noticeChoice = new Promise<string | null>((resolve) => { resolveNotice = resolve; });
-    const client = await connectRemoteWorkspaceClient({
-      workspaceRoot,
-      bundle: dummyBundle(root),
-      runtime: dummyRuntime(root),
-      shell: { id: "shell-visible-notice", version: "test", locale: "en" },
-      capabilities: [ENGINE_UI_CAPABILITY],
-      uiHandler: async (request) => {
-        expect(request).toMatchObject({ kind: "notice.present", noticeId: "notice-sidebar-0001" });
-        markNoticePresented();
-        return noticeChoice;
-      },
-      ensure: async () => ({
-        identity: liveIdentity,
-        controlSocketPath: socketPath,
-        disposition: "reused-exact",
-      }),
-    });
-    const uiOutcome = server.requestUi({
-      schemaVersion: 1,
-      operationId: "ui-visible-notice-0001",
-      kind: "notice.present",
-      noticeId: "notice-sidebar-0001",
-      message: "Delivery records were quarantined",
-      level: "warn",
-      actions: [{ id: "notice-action-inspect-0001", label: "Inspect" }],
-    });
-    const sync = client.sync();
-
-    try {
-      await within(noticePresented, "notification presentation");
-      await expect(within(sync, "sync while notification remains visible"))
-        .resolves.toMatchObject({ resynced: false, engineChanged: false });
-      await expect(within(
-        client.query({ schemaVersion: 1, method: "probe.view", input: {} }),
-        "query while notification remains visible",
-      )).resolves.toMatchObject({ status: "ok", view: { empty: true } });
-      expect(queryReads).toBe(1);
-
-      resolveNotice("notice-action-inspect-0001");
-      await expect(within(uiOutcome, "notification completion")).resolves.toBe("notice-action-inspect-0001");
-    } finally {
-      resolveNotice(null);
-      await Promise.allSettled([sync, uiOutcome]);
-      await client.close();
-    }
-  });
-
   it("retries when the engine changes between supervisor proof and attach", async () => {
     const root = temp("tachyon-workspace-client-race-");
     const workspaceRoot = path.join(root, "workspace");
@@ -486,16 +403,4 @@ function temp(prefix: string): string {
   const root = makeSocketTemp(prefix);
   roots.push(root);
   return root;
-}
-
-async function within<T>(promise: Promise<T>, label: string, timeoutMs = 1_000): Promise<T> {
-  let timer!: ReturnType<typeof setTimeout>;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`${label} did not complete within ${timeoutMs}ms`)), timeoutMs);
-  });
-  try {
-    return await Promise.race([promise, timeout]);
-  } finally {
-    clearTimeout(timer);
-  }
 }

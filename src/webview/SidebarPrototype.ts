@@ -161,6 +161,13 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     if (this.view !== view || generation !== this.pushGeneration) return;
     this.lastFleets = fleets;
     this.applyNativeTitle(view);
+    const openAttention = fleets.reduce(
+      (total, fleet) => total + (fleet.notices ?? []).filter((notice) => !notice.read).length,
+      0,
+    );
+    view.badge = openAttention > 0
+      ? { value: openAttention, tooltip: `${openAttention} open Tachyon attention item${openAttention === 1 ? "" : "s"}` }
+      : undefined;
     // spec 242 — prefs travel WITH the fleet so the first render is already in the saved order (D8 no flicker).
     // spec 278 — built via the shared envelope so a `fleet`-shape drift breaks the build, not the preview harness.
     void view.webview.postMessage(fleetMessage(this.lastFleets, this.sortPrefs(), this.collapsedKeys(), this.appVersion));

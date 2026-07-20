@@ -1,5 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { NotificationService, type NotificationRequest, type UiNotificationPort } from "../../src/workspace/NotificationService.js";
+import { showNotification } from "../../src/workspace/NotificationService.js";
+import { initializeVsCodeNotifications, notify } from "../../src/workspace/notify.js";
+import {
+  __getQuickPickCalls,
+  __getStatusBarMessages,
+  __getWarningMessageCalls,
+  __resetVscodeMock,
+  __setQuickPickResult,
+  __setWarningMessageResult,
+} from "../mocks/vscode.js";
 
 class RecordingProvider implements UiNotificationPort {
   readonly requests: NotificationRequest[] = [];
@@ -47,5 +57,41 @@ describe("NotificationService", () => {
     await service.showActions("ready", "info", [{ label: "Run", run: () => { ran = true; } }]);
 
     expect(ran).toBe(true);
+  });
+});
+
+describe("VS Code notification routing (spec 415)", () => {
+  beforeEach(() => {
+    __resetVscodeMock();
+    initializeVsCodeNotifications();
+  });
+
+  it("routes non-modal acknowledgements to transient status feedback", () => {
+    notify("saved", "info");
+    expect(__getStatusBarMessages()).toEqual([{ text: "$(info) Tachyon: saved", timeout: 8_000 }]);
+    expect(__getWarningMessageCalls()).toHaveLength(0);
+  });
+
+  it("routes non-modal choices through QuickPick", async () => {
+    __setQuickPickResult("Open");
+    await expect(showNotification("ready", "warn", ["Open"])).resolves.toBe("Open");
+    expect(__getQuickPickCalls()).toEqual([{
+      items: ["Open"],
+      options: { title: "Tachyon: ready", ignoreFocusOut: true },
+    }]);
+    expect(__getWarningMessageCalls()).toHaveLength(0);
+  });
+
+  it("retains native presentation only for explicit modals", async () => {
+    __setWarningMessageResult("Delete");
+    await expect(showNotification("delete?", "warn", ["Delete"], { modal: true, detail: "Cannot be undone" }))
+      .resolves.toBe("Delete");
+    expect(__getWarningMessageCalls()).toEqual([{
+      message: "Tachyon: delete?",
+      options: { modal: true, detail: "Cannot be undone" },
+      actions: ["Delete"],
+    }]);
+    expect(__getQuickPickCalls()).toHaveLength(0);
+    expect(__getStatusBarMessages()).toHaveLength(0);
   });
 });

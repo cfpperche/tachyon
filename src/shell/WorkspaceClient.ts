@@ -384,15 +384,7 @@ export class RemoteWorkspaceClient implements WorkspaceClient {
     const control = this.control;
     const request = await control.claimUiRequest();
     if (!request) return;
-    const completion = this.executeAndCompleteUiRequest(control, request, uiHandler);
-    if (request.kind === "notice.present") {
-      // A native notification deliberately stays unresolved while it is visible. It has already been
-      // atomically claimed, so completing it in the background preserves at-most-once action execution
-      // without starving sync/query/invoke behind the client's serialized operational tail.
-      void completion.catch(() => undefined);
-      return;
-    }
-    await completion;
+    await this.executeAndCompleteUiRequest(control, request, uiHandler);
   }
 
   private async executeAndCompleteUiRequest(

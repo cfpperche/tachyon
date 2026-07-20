@@ -78,37 +78,29 @@ describe("DaemonEngineHost", () => {
     await expect(f.host.invokeNoticeAction(notice.id, notice.actions[0].id)).rejects.toThrow(/consumed/);
   });
 
-  it("retains an unclaimed notice until a shell attaches and consumes its action exactly once", async () => {
-    let shellAvailable = false;
+  it("retains an actionable notice without presenting shell UI and consumes its action exactly once", async () => {
     let invoked = 0;
     const requests: DaemonUiRequest[] = [];
     const f = fixture(async (request) => {
       requests.push(request);
-      if (!shellAvailable) throw new Error("no shell");
-      if (request.kind !== "notice.present") return null;
-      return request.actions[0]?.id ?? null;
+      return null;
     });
 
     f.host.notify("ready", "info", [{ label: "Open", run: () => { invoked++; } }]);
-    await waitFor(() => requests.length === 1);
+    const row = f.host.listNoticeInbox()[0]!;
+    expect(row).toMatchObject({ message: "ready", actionsLive: true, actions: [{ label: "Open" }] });
+    expect(requests).toHaveLength(0);
     expect(invoked).toBe(0);
-    await new Promise<void>((resolve) => setImmediate(resolve));
-    shellAvailable = true;
-    f.host.replayUiRequests();
-    await waitFor(() => invoked === 1);
-    f.host.replayUiRequests();
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await f.host.invokeNoticeAction(row.id, row.actions[0]!.id);
     expect(invoked).toBe(1);
-    expect(requests.filter((request) => request.kind === "notice.present")).toHaveLength(2);
+    await expect(f.host.invokeNoticeAction(row.id, row.actions[0]!.id)).rejects.toThrow(/consumed/);
+    expect(f.host.listNoticeInbox()).toHaveLength(0);
   });
 
   it("routes a retained human-approval Review action to the exact workspace once", async () => {
-    let shellAvailable = false;
     const requests: DaemonUiRequest[] = [];
     const f = fixture(async (request) => {
       requests.push(request);
-      if (!shellAvailable) throw new Error("no shell");
-      if (request.kind === "notice.present") return request.actions[0]?.id ?? null;
       return null;
     });
 
@@ -116,45 +108,36 @@ describe("DaemonEngineHost", () => {
       id: "a-abc123",
       requester: "child-agent",
     });
-    await waitFor(() => requests.length === 1);
-    expect(requests[0]).toMatchObject({
-      kind: "notice.present",
+    const row = f.host.listNoticeInbox()[0]!;
+    expect(row).toMatchObject({
       message: "Approval request a-abc123 from 'child-agent'",
       level: "info",
       actions: [{ label: "Review" }],
     });
-    expect(requests.some((request) => request.kind === "execute-command")).toBe(false);
+    expect(requests).toHaveLength(0);
 
-    await new Promise<void>((resolve) => setImmediate(resolve));
-    shellAvailable = true;
-    f.host.replayUiRequests();
-    await waitFor(() => requests.some((request) => request.kind === "execute-command"));
+    await f.host.invokeNoticeAction(row.id, row.actions[0]!.id);
     expect(requests.filter((request) => request.kind === "execute-command")).toMatchObject([{
       command: "tachyon.openApprovals",
       args: ["workspace-b-hash"],
     }]);
 
-    f.host.replayUiRequests();
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await expect(f.host.invokeNoticeAction(row.id, row.actions[0]!.id)).rejects.toThrow(/consumed/);
     expect(requests.filter((request) => request.kind === "execute-command")).toHaveLength(1);
   });
 
-  it("presents retained notices sequentially so a reconnect cannot overflow the UI broker", async () => {
-    let releaseFirst!: (value: null) => void;
+  it("queues notices oldest-first without using the shell UI broker", () => {
     const requests: DaemonUiRequest[] = [];
     const f = fixture((request) => {
       requests.push(request);
-      if (requests.length === 1) return new Promise<null>((resolve) => { releaseFirst = resolve; });
       return Promise.resolve(null);
     });
 
-    f.host.notify("first");
-    f.host.notify("second");
-    await waitFor(() => requests.length === 1);
-    expect(requests[0]).toMatchObject({ kind: "notice.present", message: "first (+1 more)" });
-    releaseFirst(null);
-    await waitFor(() => requests.length === 2);
-    expect(requests[1]).toMatchObject({ kind: "notice.present", message: "second" });
+    for (let index = 1; index <= 7; index++) f.host.notify(`notice ${index}`);
+    expect(f.host.listNoticeInbox().map((row) => row.message)).toEqual([
+      "notice 1", "notice 2", "notice 3", "notice 4", "notice 5", "notice 6", "notice 7",
+    ]);
+    expect(requests).toHaveLength(0);
   });
 
   it("persists terminal intents across a shell outage and replays exact present/close requests", async () => {
@@ -302,8 +285,7 @@ describe("DaemonEngineHost", () => {
     }
   });
 
-  it("t-ec5cd2: collapses exact-duplicate passive notices inside the dedupe window", async () => {
-    const requests: DaemonUiRequest[] = [];
+  it("spec 415: collapses exact duplicates without moving their FIFO position", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-daemon-host-"));
     roots.push(root);
     const mediaRoot = path.join(root, "bundle");
@@ -313,82 +295,50 @@ describe("DaemonEngineHost", () => {
       mediaRoot,
       appVersion: "0.57.0",
       noticeDedupeWindowMs: 5_000,
-      noticePassiveAutoDismissMs: 50,
-      requestUi: async (request) => {
-        requests.push(request);
-        if (request.kind !== "notice.present") return null;
-        await new Promise((r) => setTimeout(r, 200));
-        return null;
-      },
     });
     hosts.push(host);
     host.notify("hello world", "info");
     host.notify("hello world", "info");
     host.notify("hello   world", "info"); // whitespace-normalized same key
-    await waitFor(() => requests.length >= 1);
-    await new Promise((r) => setTimeout(r, 80));
-    expect(requests.filter((r) => r.kind === "notice.present")).toHaveLength(1);
+    host.notify("different", "warn");
+    expect(host.listNoticeInbox().map((row) => [row.message, row.collapsedCount])).toEqual([
+      ["hello world", 3],
+      ["different", 1],
+    ]);
   });
 
-  it("t-ec5cd2: auto-advances passive info queue without waiting for toast dismiss", async () => {
-    const presented: string[] = [];
+  it("spec 415: persists FIFO attention and restores callback actions as unavailable", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-daemon-host-"));
     roots.push(root);
     const mediaRoot = path.join(root, "bundle");
     fs.mkdirSync(mediaRoot);
+    const storageRoot = path.join(root, "state");
     const host = new DaemonEngineHost({
-      storageRoot: path.join(root, "state"),
+      storageRoot,
       mediaRoot,
       appVersion: "0.57.0",
-      noticePassiveAutoDismissMs: 40,
-      requestUi: async (request) => {
-        if (request.kind !== "notice.present") return null;
-        presented.push(request.message);
-        // Simulate VS Code toast that never resolves until long after auto-dismiss.
-        await new Promise((r) => setTimeout(r, 5_000));
-        return null;
-      },
     });
     hosts.push(host);
-    host.notify("a", "info");
-    host.notify("b", "info");
-    await waitFor(() => presented.length >= 2);
-    expect(presented[0]).toMatch(/a \(\+1 more\)/);
-    expect(presented[1]).toBe("b");
-  });
-
-  it("t-ec5cd2: never auto-dismisses notices that carry actions", async () => {
-    let resolvePresent: ((v: unknown) => void) | undefined;
-    const requests: DaemonUiRequest[] = [];
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-daemon-host-"));
-    roots.push(root);
-    const mediaRoot = path.join(root, "bundle");
-    fs.mkdirSync(mediaRoot);
     let invoked = 0;
-    const host = new DaemonEngineHost({
-      storageRoot: path.join(root, "state"),
+    host.notify("first", "info", [{ label: "Open", run: () => { invoked++; } }]);
+    host.notify("second", "warn");
+    const liveFirst = host.listNoticeInbox()[0]!;
+    expect(liveFirst.actionsLive).toBe(true);
+    host.dispose();
+
+    const restored = new DaemonEngineHost({
+      storageRoot,
       mediaRoot,
       appVersion: "0.57.0",
-      noticePassiveAutoDismissMs: 30,
-      requestUi: async (request) => {
-        requests.push(request);
-        if (request.kind !== "notice.present") return null;
-        return await new Promise((resolve) => { resolvePresent = resolve; });
-      },
     });
-    hosts.push(host);
-    host.notify("need action", "info", [{ label: "Open", run: () => { invoked++; } }]);
-    await waitFor(() => requests.length === 1);
-    await new Promise((r) => setTimeout(r, 80));
-    expect(requests).toHaveLength(1);
+    hosts.push(restored);
+    expect(restored.listNoticeInbox().map((row) => row.message)).toEqual(["first", "second"]);
+    expect(restored.listNoticeInbox()[0]).toMatchObject({ actionsLive: false, actions: [{ label: "Open" }] });
+    await expect(restored.invokeNoticeAction(liveFirst.id, liveFirst.actions[0]!.id)).rejects.toThrow(/missing|consumed/);
     expect(invoked).toBe(0);
-    const present = requests[0];
-    if (present.kind !== "notice.present") throw new Error("expected present");
-    resolvePresent?.(present.actions[0]?.id);
-    await waitFor(() => invoked === 1);
   });
 
-  it("t-7f94f2: keeps notice inbox history, unread across auto-dismiss, mark-read API", async () => {
+  it("spec 415: dismisses attention explicitly and promotes FIFO state", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-daemon-host-"));
     roots.push(root);
     const mediaRoot = path.join(root, "bundle");
@@ -397,24 +347,19 @@ describe("DaemonEngineHost", () => {
       storageRoot: path.join(root, "state"),
       mediaRoot,
       appVersion: "0.57.0",
-      noticePassiveAutoDismissMs: 30,
       noticeDedupeWindowMs: 5_000,
-      requestUi: async () => null,
     });
     hosts.push(host);
     host.notify("alpha", "info");
     host.notify("alpha", "info");
     host.notify("beta", "warn", [{ label: "Open", run: async () => undefined }]);
-    await waitFor(() => host.listNoticeInbox().length >= 2);
     const inbox = host.listNoticeInbox();
-    expect(inbox[0]?.message).toBe("beta");
-    expect(inbox[1]?.message).toBe("alpha");
-    expect(inbox[1]?.collapsedCount).toBe(2);
+    expect(inbox[0]?.message).toBe("alpha");
+    expect(inbox[1]?.message).toBe("beta");
+    expect(inbox[0]?.collapsedCount).toBe(2);
     expect(inbox.every((e) => !e.read)).toBe(true);
-    await new Promise((r) => setTimeout(r, 60));
-    expect(host.listNoticeInbox().find((e) => e.message === "alpha")?.read).toBe(false);
-    expect(host.markNoticeRead(inbox[1]!.id)).toBe(true);
-    expect(host.listNoticeInbox().find((e) => e.id === inbox[1]!.id)).toBeUndefined();
+    expect(host.markNoticeRead(inbox[0]!.id)).toBe(true);
+    expect(host.listNoticeInbox().map((row) => row.message)).toEqual(["beta"]);
     expect(host.markAllNoticesRead()).toBe(true);
     expect(host.listNoticeInbox()).toHaveLength(0);
   });

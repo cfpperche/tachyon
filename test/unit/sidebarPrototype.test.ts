@@ -5,14 +5,14 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as vscode from "vscode";
 import { __createdPanels, __getClipboardText, __getExecutedCommands, __getWarningMessageCalls, __resetVscodeMock, __setWarningMessageResult } from "../mocks/vscode.js";
 import { pinDocPreview, SidebarPrototypeProvider } from "../../src/webview/SidebarPrototype.js";
-import { initializeNativeNotifications } from "../../src/workspace/notify.js";
+import { initializeVsCodeNotifications } from "../../src/workspace/notify.js";
 import type { Workspace } from "../../src/workspace/Workspace.js";
 import type { Pin } from "../../src/pins/PinStore.js";
 import type { PinDetailRead } from "../../src/pins/PinStore.js";
 import type { AgentInfo } from "../../src/agents/AgentManager.js";
 import { legacySidebarTarget, type LegacySidebarSource, type WorkspaceSidebarTarget } from "../../src/shell/SidebarTarget.js";
 import type { ObservedModelInput } from "../../src/sidebar/agentModel.js";
-import type { FleetVM } from "../../src/sidebar/types.js";
+import { SAMPLE, type FleetVM, type NoticeVM } from "../../src/sidebar/types.js";
 import type { SidebarFleetV1 } from "../../src/runtime-api/sidebarProjection.js";
 import type { ScheduleProposal } from "../../src/schedule/ProposalStore.js";
 
@@ -29,6 +29,7 @@ function fakeWorkspace(pins: Pin[] = [], opts: {
   continuityBadge?: (agent: string) => "fresh" | "stale" | "missing" | undefined;
   observedModel?: (agent: string) => ObservedModelInput | undefined;
   proposals?: ScheduleProposal[];
+  notices?: NoticeVM[];
 } = {}): Workspace & WorkspaceSidebarTarget {
   const source = {
     wsHash: opts.hash ?? "demohash",
@@ -73,6 +74,7 @@ function fakeWorkspace(pins: Pin[] = [], opts: {
       },
     },
     proposals: { list: () => opts.proposals ?? [] },
+    listNoticeInbox: () => opts.notices ?? [],
     scheduler: { list: () => [] },
     toggleSchedulePause: (name: string) => { opts.calls?.push(`pause:${name}`); },
     deleteScheduleEntry: (name: string) => { opts.calls?.push(`delete-schedule:${name}`); },
@@ -139,7 +141,7 @@ function fakeView(onHtmlSet?: (handlers: Array<(msg: unknown) => void>) => void)
 describe("SidebarPrototypeProvider", () => {
   beforeEach(() => {
     __resetVscodeMock();
-    initializeNativeNotifications();
+    initializeVsCodeNotifications();
   });
 
   afterEach(() => {
@@ -158,6 +160,28 @@ describe("SidebarPrototypeProvider", () => {
     const fleetMsgs = posted.filter((m) => (m as { type?: string }).type === "fleet") as Array<{ fleets: Array<{ folder?: { name?: string } }> }>;
     expect(fleetMsgs.length).toBeGreaterThan(0);
     expect(fleetMsgs[0].fleets[0]?.folder?.name).toBe("Demo");
+  });
+
+  it("sets a passive native view badge to the total open attention count", async () => {
+    const notices: NoticeVM[] = Array.from({ length: 7 }, (_, index) => ({
+      id: `notice-${index}`,
+      message: `Attention ${index}`,
+      level: "info",
+      at: new Date(2026, 6, 19, 20, index).toISOString(),
+      collapsedCount: 1,
+      actions: [],
+      read: false,
+      actionsLive: false,
+    }));
+    const target = {
+      wsHash: "demohash",
+      loadSidebar: async () => ({ ...SAMPLE, folder: { hash: "demohash", name: "Demo" }, notices }),
+    } as unknown as WorkspaceSidebarTarget;
+    const provider = new SidebarPrototypeProvider(vscode.Uri.file("/extension"), () => [target]);
+    const { view } = fakeView();
+    provider.resolveWebviewView(view);
+    await flushPromises();
+    expect(view.badge).toEqual({ value: 7, tooltip: "7 open Tachyon attention items" });
   });
 
   it("pushes an initial fleet even if the webview ready message is lost", async () => {

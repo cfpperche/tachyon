@@ -63,4 +63,30 @@ export const sidebarFixtures: Record<string, Fixture<FleetVM>> = {
       ],
     } as FleetVM,
   },
+
+  "attention-overflow": {
+    provenance: "synthetic-edge",
+    vm: {
+      ...base,
+      agents: SAMPLE.agents,
+      notices: Array.from({ length: 7 }, (_, index) => ({
+        id: `attention-preview-${index + 1}`,
+        message: [
+          "codex needs a decision on the release boundary",
+          "claude completed the visual sweep and is waiting for review",
+          "Delivery verification failed at the behavior gate",
+          "grok proposed a schedule change for approval",
+          "The persistent engine recovered a wedged tmux server",
+          "A worktree action requires manual inspection",
+          "Queued item promoted after one of the cards is resolved",
+        ][index]!,
+        level: (["info", "info", "error", "warn", "warn", "error", "info"] as const)[index]!,
+        at: new Date(Date.UTC(2026, 6, 19, 20, index)).toISOString(),
+        collapsedCount: index === 4 ? 3 : 1,
+        actions: index < 2 ? [{ id: `attention-action-${index + 1}`, label: index === 0 ? "Review" : "Open" }] : [],
+        read: false,
+        actionsLive: index !== 1,
+      })),
+    } as FleetVM,
+  },
 };

@@ -308,7 +308,7 @@ export async function buildSidebarFleet(
     level: n.level,
     at: n.at,
     collapsedCount: n.collapsedCount,
-    actions: n.actionsLive ? n.actions.map((a) => ({ id: a.id, label: a.label })) : [],
+    actions: n.actions.map((a) => ({ id: a.id, label: a.label })),
     read: n.read,
     actionsLive: n.actionsLive,
   }));
