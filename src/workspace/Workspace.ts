@@ -2561,12 +2561,7 @@ export class Workspace {
           }
         },
       });
-      try {
-        this.deps.onViewsChanged("pins");
-      } catch {
-        /* host optional */
-      }
-      this.companionLive.pushEvent("approvals.changed", { id, decision });
+      this.afterApprovalResolved(result.request.id);
       return {
         ok: true,
         id: result.request.id,
@@ -2582,6 +2577,48 @@ export class Workspace {
         return { ok: false, code: "not_found", message };
       }
       return { ok: false, code: "unknown", message };
+    }
+  }
+
+  /**
+   * After any host-authoritative approval resolve: refresh Control/pins, Companion SSE,
+   * and drop matching durable Attention notices (the toast card is independent of the ledger).
+   */
+  afterApprovalResolved(approvalId: string): void {
+    this.dismissApprovalAttentionNotices(approvalId);
+    try {
+      this.deps.onViewsChanged("pins");
+      this.deps.onViewsChanged("agents");
+    } catch {
+      /* host optional */
+    }
+    try {
+      this.companionLive.pushEvent("approvals.changed", { id: approvalId });
+    } catch {
+      /* best-effort */
+    }
+  }
+
+  /**
+   * routeHumanApprovalRequest creates a durable notice-inbox card ("approval request a-… from '…'").
+   * Resolving the ledger does not auto-dismiss that card — clear entries that mention this id.
+   */
+  private dismissApprovalAttentionNotices(approvalId: string): void {
+    const host = this.host as EngineHost & {
+      listNoticeInbox?: () => Array<{ id: string; message: string }>;
+      markNoticeRead?: (id: string) => boolean;
+    };
+    const rows = host.listNoticeInbox?.() ?? [];
+    if (!rows.length || !host.markNoticeRead) return;
+    const needle = approvalId.toLowerCase();
+    for (const row of rows) {
+      if (row.message.toLowerCase().includes(needle)) {
+        try {
+          host.markNoticeRead(row.id);
+        } catch {
+          /* best-effort */
+        }
+      }
     }
   }
 

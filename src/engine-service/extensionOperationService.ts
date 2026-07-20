@@ -238,7 +238,8 @@ export async function executeExtensionCommand(
         },
         completePin: (pinId) => workspace.pinStore.setDone(pinId, true),
       });
-      onViewsChanged("pins");
+      // Drop Attention-stack notice cards + Companion SSE (ledger resolve alone does not dismiss UI).
+      workspace.afterApprovalResolved(command.id);
       return json(result);
     }
     case "prompt.inject": {

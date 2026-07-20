@@ -50,7 +50,6 @@ export class CompanionLiveSync {
   private readonly heartbeatMs: number;
   private readonly debounceMs: number;
   private readonly now: () => number;
-  private lastPayload: CompanionLiveState | undefined;
 
   constructor(private readonly options: CompanionLiveSyncOptions) {
     this.heartbeatMs = options.heartbeatMs ?? 20_000;
@@ -191,7 +190,6 @@ export class CompanionLiveSync {
         continue;
       }
       const payload: CompanionLiveState = { seq, at, connection, agents };
-      this.lastPayload = payload;
       if (!writeSse(c.res, "snapshot", payload)) {
         this.clients.delete(c);
       } else {
@@ -211,14 +209,12 @@ export class CompanionLiveSync {
         agents = [];
       }
     }
-    const payload: CompanionLiveState = {
+    return {
       seq: ++this.seq,
       at: new Date(this.now()).toISOString(),
       connection,
       agents,
     };
-    this.lastPayload = payload;
-    return payload;
   }
 
   private ensureHeartbeat(): void {

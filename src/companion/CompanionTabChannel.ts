@@ -17,7 +17,11 @@ export interface CompanionTabChannelOptions {
   now?: () => number;
 }
 
-type CommandBody = Omit<CompanionTabCommand, "id" | "at">;
+type CommandBody =
+  | { kind: "snapshot" }
+  | { kind: "click"; selector: string }
+  | { kind: "type"; selector: string; text: string; submit?: boolean }
+  | { kind: "fill"; selector: string; value: string };
 
 interface Pending {
   command: CompanionTabCommand;

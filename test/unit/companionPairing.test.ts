@@ -359,7 +359,7 @@ describe("Companion HTTP loopback (SDD 414)", () => {
     expect(post.status).toBe(200);
     const result = await toolPromise;
     expect(result.ok).toBe(true);
-    if (result.ok) {
+    if (result.ok && result.kind === "snapshot") {
       expect(result.url).toBe("https://example.com/");
       expect(result.outline).toContain("Example");
     }
