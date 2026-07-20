@@ -115,6 +115,49 @@ export function utf8LocaleEnv(
 
 type ExecFileImpl = typeof execFile;
 
+/**
+ * t-3da510 — a command that may START the tmux server must not run in the caller's cgroup.
+ * The engine daemon lives in a transient systemd unit with KillMode=control-group, and a
+ * server forked there is a member of that cgroup for life: every bundle activation (Reload
+ * with a version bump) stops the old unit, systemd kills the whole cgroup, the server dies,
+ * and every agent pane gets SIGHUP — the "all agents stopped after Reload" failure. Wrapping
+ * the server-creating client in its own `systemd-run --user --scope` puts the forked server
+ * in a scope that outlives the engine unit; when the server already exists the client just
+ * connects and the `--collect` scope evaporates with it. Only `new-session`/`start-server`
+ * can create a server (probes like `list-sessions` error out without forking one).
+ */
+function mayStartServer(args: string[]): boolean {
+  return args.includes("new-session") || args.includes("start-server");
+}
+
+export function serverScopeUnitName(nonceHex: string): string {
+  const nonce = nonceHex.replace(/[^a-f0-9]/gi, "").slice(0, 12) || "x";
+  return `tachyon-tmux-${nonce}.scope`;
+}
+
+export function serverScopeArgv(tmuxArgs: string[]): { file: string; argv: string[] } {
+  const unit = serverScopeUnitName(crypto.randomBytes(6).toString("hex"));
+  return {
+    file: "systemd-run",
+    argv: ["--user", "--scope", "--collect", "--quiet", `--unit=${unit}`, "--", "tmux", ...tmuxArgs],
+  };
+}
+
+/** Fail-open: when user systemd is unusable (no bus, no binary) fall back to a plain exec. */
+function isScopeLaunchFailure(err: Error & { code?: unknown }, stderr: string): boolean {
+  // systemd-run's own failures ("Failed to connect to bus", "Failed to connect to user scope bus
+  // via local transport", "Failed to start transient scope unit") — never tmux's, whose errors
+  // name sessions/servers, not the bus. Phrasing varies across systemd versions, so match loosely.
+  return err.code === "ENOENT" || /Failed to .*\b(?:bus|transient)\b/i.test(stderr || err.message);
+}
+
+let serverScopeUsable: boolean | undefined;
+
+/** Test seam: forget the cached systemd-run availability verdict. */
+export function resetServerScopeProbeForTests(): void {
+  serverScopeUsable = undefined;
+}
+
 export function createTmuxExecutor(execFileImpl: ExecFileImpl = execFile): TmuxExecutor {
   return (args: string[], options: TmuxExecOptions = {}): Promise<ExecResult> =>
     new Promise((resolve, reject) => {
@@ -136,21 +179,33 @@ export function createTmuxExecutor(execFileImpl: ExecFileImpl = execFile): TmuxE
             }, timeoutMs)
           : undefined;
 
-      child = execFileImpl(
-        "tmux",
-        isolatedArgs(args),
-        { encoding: "utf8", env: { ...process.env, ...utf8LocaleEnv() }, signal: controller?.signal },
-        (err, stdout, stderr) => {
-          if (settled) return;
-          settled = true;
-          if (timer) clearTimeout(timer);
-          if (err) {
-            reject(new TmuxError(stderr.trim() || err.message, args));
-          } else {
-            resolve({ stdout, stderr });
-          }
-        },
-      );
+      const wantScope = process.platform === "linux" && serverScopeUsable !== false && mayStartServer(args);
+      const launch = (useScope: boolean): void => {
+        const isolated = isolatedArgs(args);
+        const target = useScope ? serverScopeArgv(isolated) : { file: "tmux", argv: isolated };
+        child = execFileImpl(
+          target.file,
+          target.argv,
+          { encoding: "utf8", env: { ...process.env, ...utf8LocaleEnv() }, signal: controller?.signal },
+          (err, stdout, stderr) => {
+            if (settled) return;
+            if (err && useScope && isScopeLaunchFailure(err, stderr)) {
+              serverScopeUsable = false;
+              launch(false);
+              return;
+            }
+            if (useScope) serverScopeUsable = true;
+            settled = true;
+            if (timer) clearTimeout(timer);
+            if (err) {
+              reject(new TmuxError(stderr.trim() || err.message, args));
+            } else {
+              resolve({ stdout, stderr });
+            }
+          },
+        );
+      };
+      launch(wantScope);
     });
 }
 
