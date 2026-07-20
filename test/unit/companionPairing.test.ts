@@ -296,6 +296,7 @@ describe("Companion HTTP loopback (SDD 414)", () => {
       body: JSON.stringify({
         ok: true,
         id: cmd.id,
+        kind: "snapshot",
         url: "https://example.com/",
         title: "Example",
         capturedAt: new Date().toISOString(),

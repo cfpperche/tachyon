@@ -1,11 +1,11 @@
 /**
- * Companion tab command channel (SDD 414 / t-2a7010).
- * Agent tools enqueue snapshot requests; the browser extension fulfills them
+ * Companion tab command channel (SDD 414 / t-2a7010 + t-fbe280).
+ * Agent tools enqueue snapshot/act requests; the browser extension fulfills them
  * over SSE (tab.command) + POST /companion/v1/tab/result.
  */
 
 import { randomBytes } from "node:crypto";
-import type { CompanionTabCommand, CompanionTabSnapshotResult } from "./protocol.js";
+import type { CompanionTabCommand, CompanionTabResult } from "./protocol.js";
 
 export type TabChannelPush = (event: string, data: unknown) => void;
 
@@ -17,9 +17,11 @@ export interface CompanionTabChannelOptions {
   now?: () => number;
 }
 
+type CommandBody = Omit<CompanionTabCommand, "id" | "at">;
+
 interface Pending {
   command: CompanionTabCommand;
-  resolve: (result: CompanionTabSnapshotResult) => void;
+  resolve: (result: CompanionTabResult) => void;
   timer: ReturnType<typeof setTimeout>;
 }
 
@@ -45,20 +47,17 @@ export class CompanionTabChannel {
     return [...this.pending.values()].map((p) => p.command);
   }
 
-  /**
-   * Ask the paired Companion extension for a DOM outline of the user's active tab.
-   * Resolves when the extension POSTs a result, or times out / offline.
-   */
-  requestSnapshot(timeoutMs?: number): Promise<CompanionTabSnapshotResult> {
+  /** Generic enqueue (snapshot | click | type | fill). */
+  request(body: CommandBody, timeoutMs?: number): Promise<CompanionTabResult> {
     const id = newId();
-    const command: CompanionTabCommand = {
+    const command = {
+      ...body,
       id,
-      kind: "snapshot",
       at: new Date(this.now()).toISOString(),
-    };
+    } as CompanionTabCommand;
     const ms = timeoutMs ?? this.defaultTimeoutMs;
 
-    return new Promise<CompanionTabSnapshotResult>((resolve) => {
+    return new Promise<CompanionTabResult>((resolve) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         resolve({
@@ -66,8 +65,8 @@ export class CompanionTabChannel {
           id,
           code: "timeout",
           message:
-            "Companion extension did not fulfill the tab snapshot in time. " +
-            "Ensure Companion is paired, live sync is connected, and agent tab reads are enabled.",
+            "Companion extension did not fulfill the tab command in time. " +
+            "Ensure Companion is paired, live sync is connected, and agent tab access is enabled.",
         });
       }, ms);
       timer.unref?.();
@@ -88,8 +87,31 @@ export class CompanionTabChannel {
     });
   }
 
+  requestSnapshot(timeoutMs?: number): Promise<CompanionTabResult> {
+    return this.request({ kind: "snapshot" }, timeoutMs);
+  }
+
+  requestClick(selector: string, timeoutMs?: number): Promise<CompanionTabResult> {
+    return this.request({ kind: "click", selector }, timeoutMs);
+  }
+
+  requestType(
+    selector: string,
+    text: string,
+    opts?: { submit?: boolean; timeoutMs?: number },
+  ): Promise<CompanionTabResult> {
+    return this.request(
+      { kind: "type", selector, text, submit: opts?.submit },
+      opts?.timeoutMs,
+    );
+  }
+
+  requestFill(selector: string, value: string, timeoutMs?: number): Promise<CompanionTabResult> {
+    return this.request({ kind: "fill", selector, value }, timeoutMs);
+  }
+
   /** Extension fulfillment (or deny). */
-  submitResult(body: CompanionTabSnapshotResult): { ok: true } | { ok: false; code: "not_found"; message: string } {
+  submitResult(body: CompanionTabResult): { ok: true } | { ok: false; code: "not_found"; message: string } {
     const id = body.id;
     if (!id || typeof id !== "string") {
       return { ok: false, code: "not_found", message: "Missing result id." };

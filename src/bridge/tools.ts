@@ -132,6 +132,15 @@ export interface BridgeDeps {
    * Blocks until the extension fulfills or times out. Absent = tool returns unavailable.
    */
   companionTabSnapshot?: (opts?: { timeoutMs?: number }) => Promise<unknown>;
+  /** SDD 414 / t-fbe280 — click / type / fill on the human's active tab via Companion. */
+  companionTabAct?: (input: {
+    kind: "click" | "type" | "fill";
+    selector: string;
+    text?: string;
+    value?: string;
+    submit?: boolean;
+    timeoutMs?: number;
+  }) => Promise<unknown>;
   /** True when the target has a profile-backed non-empty composer draft. */
   composerOccupiedOf?: (agent: string) => boolean | undefined;
   /** spec 341 — semantic agent notice delivery; queues unsafe recipients instead of raw pane submit. */
@@ -1508,6 +1517,105 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           );
         }
         const result = await deps.companionTabSnapshot({
+          timeoutMs: timeoutSec !== undefined ? timeoutSec * 1000 : undefined,
+        });
+        return ok(JSON.stringify(result, null, 2));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  // SDD 414 / t-fbe280 — content-script actions on the human's active tab.
+  const tabTimeoutSchema = z
+    .number()
+    .int()
+    .min(5)
+    .max(120)
+    .optional()
+    .describe("How long to wait for Companion (default 30s)");
+
+  mcp.registerTool(
+    "user_browser_click",
+    {
+      description:
+        "Click an element on the HUMAN user's active browser tab via Tachyon Companion (CSS selector). " +
+        "Requires agent tab access enabled. Prefer selectors from a recent user_browser_snapshot outline.",
+      inputSchema: {
+        selector: z.string().min(1).max(500).describe("CSS selector for the element to click"),
+        timeoutSec: tabTimeoutSchema,
+      },
+    },
+    async ({ selector, timeoutSec }) => {
+      try {
+        if (!deps.companionTabAct) {
+          return fail(new Error("user_browser_click is not available (Companion tab channel not wired)."));
+        }
+        const result = await deps.companionTabAct({
+          kind: "click",
+          selector,
+          timeoutMs: timeoutSec !== undefined ? timeoutSec * 1000 : undefined,
+        });
+        return ok(JSON.stringify(result, null, 2));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
+    "user_browser_type",
+    {
+      description:
+        "Type text into an element on the HUMAN user's active tab (focus + insert, optional Enter). " +
+        "Does not clear existing value (use user_browser_fill to replace). Requires agent tab access.",
+      inputSchema: {
+        selector: z.string().min(1).max(500).describe("CSS selector for the input/editable target"),
+        text: z.string().max(4000).describe("Text to type"),
+        submit: z.boolean().optional().describe("If true, press Enter after typing"),
+        timeoutSec: tabTimeoutSchema,
+      },
+    },
+    async ({ selector, text, submit, timeoutSec }) => {
+      try {
+        if (!deps.companionTabAct) {
+          return fail(new Error("user_browser_type is not available (Companion tab channel not wired)."));
+        }
+        const result = await deps.companionTabAct({
+          kind: "type",
+          selector,
+          text,
+          submit,
+          timeoutMs: timeoutSec !== undefined ? timeoutSec * 1000 : undefined,
+        });
+        return ok(JSON.stringify(result, null, 2));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
+    "user_browser_fill",
+    {
+      description:
+        "Set the value of an input/textarea/select on the HUMAN user's active tab (replaces existing value). " +
+        "Password fields are refused. Requires agent tab access enabled.",
+      inputSchema: {
+        selector: z.string().min(1).max(500).describe("CSS selector for the field"),
+        value: z.string().max(4000).describe("New value"),
+        timeoutSec: tabTimeoutSchema,
+      },
+    },
+    async ({ selector, value, timeoutSec }) => {
+      try {
+        if (!deps.companionTabAct) {
+          return fail(new Error("user_browser_fill is not available (Companion tab channel not wired)."));
+        }
+        const result = await deps.companionTabAct({
+          kind: "fill",
+          selector,
+          value,
           timeoutMs: timeoutSec !== undefined ? timeoutSec * 1000 : undefined,
         });
         return ok(JSON.stringify(result, null, 2));

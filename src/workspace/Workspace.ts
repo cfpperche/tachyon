@@ -1514,8 +1514,20 @@ export class Workspace {
         probeCwd: () => this.workspaceRoot,
         attentionOf: (agent) => this.attentionOf(agent)?.state,
         composerOccupiedOf: (agent) => this.attentionOf(agent)?.composerOccupied,
-        // SDD 414 / t-2a7010 — agent tool user_browser_snapshot via Companion extension.
+        // SDD 414 / t-2a7010 + t-fbe280 — agent tab tools via Companion extension.
         companionTabSnapshot: (opts) => this.companionTab.requestSnapshot(opts?.timeoutMs),
+        companionTabAct: (input) => {
+          if (input.kind === "click") {
+            return this.companionTab.requestClick(input.selector, input.timeoutMs);
+          }
+          if (input.kind === "type") {
+            return this.companionTab.requestType(input.selector, input.text ?? "", {
+              submit: input.submit,
+              timeoutMs: input.timeoutMs,
+            });
+          }
+          return this.companionTab.requestFill(input.selector, input.value ?? "", input.timeoutMs);
+        },
         deliverNotice: (target, line, metadata) => this.deliverNotice(target, line, metadata),
         sourceNoticeMetadata: (agent) => this.sourceNoticeMetadata(agent),
         markCompletionHint: (agent) => {

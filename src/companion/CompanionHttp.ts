@@ -10,7 +10,7 @@ import type { CompanionTabChannel } from "./CompanionTabChannel.js";
 import {
   COMPANION_HTTP_PREFIX,
   COMPANION_PROTOCOL_VERSION,
-  type CompanionTabSnapshotResult,
+  type CompanionTabResult,
   type CompanionWorkspaceOps,
   type PairRequestBody,
   type SendPromptRequest,
@@ -272,9 +272,9 @@ export async function handleCompanionHttp(
         json(res, 501, { ok: false, code: "unknown", message: "Tab channel not wired on this engine." });
         return true;
       }
-      let body: CompanionTabSnapshotResult;
+      let body: CompanionTabResult;
       try {
-        body = JSON.parse((await readBody(req, 512 * 1024)) || "{}") as CompanionTabSnapshotResult;
+        body = JSON.parse((await readBody(req, 512 * 1024)) || "{}") as CompanionTabResult;
       } catch {
         json(res, 400, { ok: false, code: "unknown", message: "Invalid JSON body." });
         return true;

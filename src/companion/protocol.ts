@@ -124,18 +124,29 @@ export interface CompanionLiveState {
   agents: CompanionAgentRow[];
 }
 
-/** Engine → extension: ask Companion to act on the user's tab (read-only for now). */
-export interface CompanionTabCommand {
-  id: string;
-  kind: "snapshot";
-  at: string;
-}
+/** Engine → extension: read or act on the user's active tab. */
+export type CompanionTabCommand =
+  | { id: string; kind: "snapshot"; at: string }
+  | { id: string; kind: "click"; at: string; selector: string }
+  | { id: string; kind: "type"; at: string; selector: string; text: string; submit?: boolean }
+  | { id: string; kind: "fill"; at: string; selector: string; value: string };
+
+export type CompanionTabErrorCode =
+  | "timeout"
+  | "offline"
+  | "denied"
+  | "restricted"
+  | "no_tab"
+  | "inject_failed"
+  | "not_found"
+  | "unknown";
 
 /** Extension → engine: fulfillment of a tab command. */
-export type CompanionTabSnapshotResult =
+export type CompanionTabResult =
   | {
       ok: true;
       id: string;
+      kind: "snapshot";
       url: string;
       title: string;
       capturedAt: string;
@@ -144,16 +155,20 @@ export type CompanionTabSnapshotResult =
       stats: { nodes: number; truncated: boolean; outlineChars: number };
     }
   | {
+      ok: true;
+      id: string;
+      kind: "click" | "type" | "fill";
+      selector: string;
+      url?: string;
+      detail?: string;
+    }
+  | {
       ok: false;
       id: string;
-      code:
-        | "timeout"
-        | "offline"
-        | "denied"
-        | "restricted"
-        | "no_tab"
-        | "inject_failed"
-        | "unknown";
+      code: CompanionTabErrorCode;
       message: string;
       url?: string;
     };
+
+/** @deprecated Use CompanionTabResult */
+export type CompanionTabSnapshotResult = CompanionTabResult;
