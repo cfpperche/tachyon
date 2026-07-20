@@ -61,3 +61,7 @@ _Phase 0 product forks closed in `spec.md` § Open questions → Decisions._
 
 Implementation unknowns (transport details, exact Control entrypoint, CORS on loopback) land during
 pairing spike and are appended here.
+
+- 2026-07-20 — **Slice 2 dogfood PASS (human)**: pair + unpair working live.
+  Evidence: `.tachyon/evidence/companion-414/pair-unpair-dogfood-2026-07-20.png`
+  (source: `C:\Users\cfpp\Pictures\Screenshots\Screenshot 2026-07-20 133042.png`).
