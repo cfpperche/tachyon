@@ -1552,7 +1552,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   registerTrustedPanelSerializer<PipelineStudioPanelState>(context, PIPELINE_STUDIO_VIEW_TYPE, (panel, state) => pipelineStudioPanels.deserialize(panel, state));
   registerTrustedPanelSerializer<ServerInspectorPanelState>(context, SERVER_INSPECTOR_VIEW_TYPE, (panel) => openServerInspector(makeServerInspectorDeps(), panel));
   registerTrustedPanelSerializer<CockpitPanelState>(context, COCKPIT_VIEW_TYPE, (panel, state) =>
-    openCockpit(makeCockpitDeps(), { revivedPanel: panel, section: state?.section }),
+    openCockpit(makeCockpitDeps(), { revivedPanel: panel, section: state?.section, wsHash: state?.wsHash }),
   );
   for (const viewType of ["tachyonPluginSurface", "tachyonPluginSurfaces", "tachyonAgentFixtureStudio", "tachyonControlInspector", "tachyonSketch", "tachyonRuntimeOpsView"]) {
     registerDisposePanelSerializer(context, viewType);

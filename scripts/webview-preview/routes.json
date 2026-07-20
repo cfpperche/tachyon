@@ -673,6 +673,48 @@
     ]
   },
   {
+    "view": "cockpit",
+    "fixture": "multi-workspace",
+    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=multi-workspace",
+    "frame": {
+      "w": 1100,
+      "h": 720
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Control",
+    "aliases": [
+      "control",
+      "cockpit",
+      "sysadmin",
+      "project control",
+      "fleet control",
+      "control plane"
+    ]
+  },
+  {
+    "view": "cockpit",
+    "fixture": "multi-workspace-scoped",
+    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=multi-workspace-scoped",
+    "frame": {
+      "w": 1100,
+      "h": 720
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Control",
+    "aliases": [
+      "control",
+      "cockpit",
+      "sysadmin",
+      "project control",
+      "fleet control",
+      "control plane"
+    ]
+  },
+  {
     "view": "pin-preview",
     "fixture": "default",
     "url": "/scripts/webview-preview/index.html?view=pin-preview&fixture=default",

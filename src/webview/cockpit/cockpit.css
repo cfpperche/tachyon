@@ -64,6 +64,24 @@ body {
   align-items: center;
   min-width: 0;
   width: 100%;
+  gap: var(--ds-3);
+}
+
+/* t-d16a39 — the shell-level workspace scope, pinned to the tab strip's right edge. Quiet by
+   design: it's ambient context ("what is Control looking at"), not a primary action — compacted
+   to the tab row's own height and type size so it reads as part of the nav, not a form control. */
+.ck-workspace-select[data-slot="select-trigger"],
+select.ck-workspace-select {
+  flex: none;
+  margin-left: auto;
+  max-width: 180px;
+  min-width: 92px;
+  height: 24px;
+  padding-top: 0;
+  padding-bottom: 0;
+  font-size: 11px;
+  color: var(--ds-muted);
+  font-weight: 400;
 }
 
 .ck-auto {

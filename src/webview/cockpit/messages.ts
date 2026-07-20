@@ -118,6 +118,8 @@ export type CockpitAction =
   | { type: "openRuntimeOps" }
   | { type: "openDoctor" }
   | { type: "setSection"; section: CockpitSectionId }
+  /** t-d16a39 — shell-level workspace scope; "" selects "All workspaces". */
+  | { type: "switchControlWorkspace"; wsHash: string }
   | { type: "fleetStart"; name: string; wsHash?: string }
   | { type: "fleetStop"; name: string; wsHash?: string }
   | { type: "fleetTerminal"; name: string; wsHash?: string }
@@ -144,6 +146,7 @@ export const openApprovalsAction = (): CockpitAction => ({ type: "openApprovals"
 export const openRuntimeOpsAction = (): CockpitAction => ({ type: "openRuntimeOps" });
 export const openDoctorAction = (): CockpitAction => ({ type: "openDoctor" });
 export const setSectionAction = (section: CockpitSectionId): CockpitAction => ({ type: "setSection", section });
+export const switchControlWorkspaceAction = (wsHash: string): CockpitAction => ({ type: "switchControlWorkspace", wsHash });
 export const fleetStartAction = (name: string, wsHash?: string): CockpitAction => ({
   type: "fleetStart",
   name,

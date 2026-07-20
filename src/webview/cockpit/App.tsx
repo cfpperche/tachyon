@@ -9,6 +9,7 @@ import type { ControlInspectorWorkspaceRow } from "../../control-inspector/model
 import type { CockpitAction, CockpitStrings } from "./messages";
 import { EngineLogPanel } from "./EngineLogPanel";
 import { Button, Badge, ListRow, PageChrome, EmptyState } from "../shared/ui";
+import { KitSelect } from "../shared/ui/kit";
 import { loadSectionStylesheet } from "../shared/lazySectionStyles";
 import type { MissionControlDispatch, TaskErrorEvent } from "../mission-control/App";
 import type { MissionControlVM } from "../mission-control/messages";
@@ -62,6 +63,9 @@ function SectionFallback() {
   return <EmptyState kind="loading" message="Loading…" />;
 }
 
+/** t-d16a39 — non-empty UI sentinel for "All workspaces" (Radix Select forbids value=""). */
+const ALL_WORKSPACES = "__all__";
+
 export interface CockpitAppProps {
   model: CockpitModel | undefined;
   strings: CockpitStrings | undefined;
@@ -78,6 +82,8 @@ export interface CockpitAppProps {
   onOpenRuntimeOps: () => void;
   onOpenDoctor: () => void;
   onSetSection: (section: CockpitSectionId) => void;
+  /** t-d16a39 — shell-level workspace scope; "" = All workspaces. */
+  onSwitchWorkspace: (wsHash: string) => void;
   onFleetStart: (name: string, wsHash?: string) => void;
   onFleetStop: (name: string, wsHash?: string) => void;
   onFleetTerminal: (name: string, wsHash?: string) => void;
@@ -676,6 +682,23 @@ export function App(p: CockpitAppProps) {
               );
             })}
           </div>
+          {/* t-d16a39 — ONE shell-level workspace scope for every section. Hidden for the common
+              single-workspace case (nothing to choose). Radix Select rejects an empty-string item
+              value, so the UI uses the ALL_WORKSPACES sentinel and translates to "" on dispatch
+              (the wire/host side keeps "" = All). */}
+          {m && m.workspaces.length > 1 ? (
+            <KitSelect
+              aria-label="Control workspace"
+              data-testid="control-workspace-select"
+              class="ck-workspace-select"
+              value={m.selectedWsHash ?? ALL_WORKSPACES}
+              onValueChange={(value) => p.onSwitchWorkspace(value === ALL_WORKSPACES ? "" : value)}
+              options={[
+                { value: ALL_WORKSPACES, label: "All workspaces" },
+                ...m.workspaces.map((w) => ({ value: w.hash, label: w.folder })),
+              ]}
+            />
+          ) : null}
         </div>
       </header>
 

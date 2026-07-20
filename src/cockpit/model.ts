@@ -95,6 +95,10 @@ export interface CockpitWorkspaceBundle {
 export interface CockpitModel {
   checkedAt: string;
   section: CockpitSectionId;
+  /** t-d16a39 — every configured workspace, for the shell-level workspace selector. */
+  workspaces: Array<{ hash: string; folder: string }>;
+  /** t-d16a39 — the shell-selected workspace scoping every section; undefined = "All workspaces". */
+  selectedWsHash?: string;
   control: ControlInspectorModel;
   overview: {
     workspaceCount: number;
@@ -116,21 +120,30 @@ export interface CockpitModel {
 
 export function buildCockpitModel(
   bundles: CockpitWorkspaceBundle[],
-  opts?: { section?: CockpitSectionId; nowIso?: string },
+  opts?: { section?: CockpitSectionId; nowIso?: string; wsHash?: string },
 ): CockpitModel {
-  const controlInputs = bundles.map((b) => b.control);
+  // t-d16a39 — the shell-level workspace scope: when a specific workspace is selected, every
+  // aggregate section (overview/engine/fleet/worktrees/deliveries/tmux) narrows to that one
+  // bundle; "All workspaces" (wsHash undefined, or a hash that no longer exists — e.g. a folder
+  // was closed since the selection persisted) keeps today's aggregate behavior. The selector list
+  // itself always spans ALL bundles, never the filtered set.
+  const workspaces = bundles.map((b) => ({ hash: b.control.wsHash, folder: b.control.folderName }));
+  const selected = opts?.wsHash && workspaces.some((w) => w.hash === opts.wsHash) ? opts.wsHash : undefined;
+  const scoped = selected ? bundles.filter((b) => b.control.wsHash === selected) : bundles;
+
+  const controlInputs = scoped.map((b) => b.control);
   const control = buildControlInspectorModel(controlInputs, opts?.nowIso);
 
-  const fleet = bundles.flatMap((b) =>
+  const fleet = scoped.flatMap((b) =>
     b.agents.map((a) => ({
       ...a,
-      name: bundles.length > 1 ? `${a.name} (${b.control.folderName})` : a.name,
+      name: scoped.length > 1 ? `${a.name} (${b.control.folderName})` : a.name,
     })),
   );
-  const worktrees = bundles.flatMap((b) => b.worktrees);
-  const deliveries = bundles.flatMap((b) => b.deliveries);
-  const approvals = bundles.flatMap((b) => b.approvals);
-  const tmux = bundles.map((b) => ({
+  const worktrees = scoped.flatMap((b) => b.worktrees);
+  const deliveries = scoped.flatMap((b) => b.deliveries);
+  const approvals = scoped.flatMap((b) => b.approvals);
+  const tmux = scoped.map((b) => ({
     folder: b.control.folderName,
     state: b.tmux?.state ?? "unknown",
     version: b.tmux?.version,
@@ -143,6 +156,8 @@ export function buildCockpitModel(
   return {
     checkedAt: control.checkedAt,
     section: opts?.section && COCKPIT_SECTION_ORDER.includes(opts.section) ? opts.section : "overview",
+    workspaces,
+    ...(selected ? { selectedWsHash: selected } : {}),
     control,
     overview: {
       workspaceCount: control.summary.workspaceCount,

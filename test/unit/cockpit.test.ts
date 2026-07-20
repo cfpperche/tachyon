@@ -62,6 +62,46 @@ describe("cockpit model", () => {
     expect(m.tmux[0]?.state).toBe("healthy");
   });
 
+  // t-d16a39 — shell-level workspace scope
+  it("scopes aggregate sections to the selected workspace, keeps the full selector list", () => {
+    const bundle = (hash: string, folder: string, agents: number) => ({
+      control: {
+        folderName: folder,
+        workspaceRoot: `/${folder}`,
+        wsHash: hash,
+        bridgeUrl: "http://127.0.0.1:7421/mcp",
+        agents: { total: agents, running: agents },
+      },
+      agents: Array.from({ length: agents }, (_, i) => ({ name: `a${i}`, running: true })),
+      worktrees: [{ id: `${hash}-w`, kind: "change" as const, path: `/${folder}/x`, branch: "b", status: "active" as const }],
+      deliveries: [{ id: `${hash}-d`, phase: "open", branchRef: "br" }],
+      approvals: [{ id: `${hash}-a`, status: "pending" }],
+      tmux: { state: "healthy" },
+    });
+    const bundles = [bundle("aaa", "alpha", 2), bundle("bbb", "beta", 3)];
+
+    const scoped = buildCockpitModel(bundles, { section: "fleet", wsHash: "bbb", nowIso: "now" });
+    expect(scoped.selectedWsHash).toBe("bbb");
+    expect(scoped.workspaces).toEqual([
+      { hash: "aaa", folder: "alpha" },
+      { hash: "bbb", folder: "beta" },
+    ]);
+    expect(scoped.fleet).toHaveLength(3);
+    expect(scoped.fleet.every((a) => !a.name.includes("("))).toBe(true); // single-bundle scope drops the folder suffix
+    expect(scoped.worktrees.map((w) => w.id)).toEqual(["bbb-w"]);
+    expect(scoped.overview.approvalsPending).toBe(1);
+    expect(scoped.tmux).toEqual([{ folder: "beta", state: "healthy", version: undefined }]);
+
+    const all = buildCockpitModel(bundles, { section: "fleet", nowIso: "now" });
+    expect(all.selectedWsHash).toBeUndefined();
+    expect(all.fleet).toHaveLength(5);
+
+    // a persisted hash whose folder was closed since falls back to All, never an empty Control
+    const stale = buildCockpitModel(bundles, { section: "fleet", wsHash: "gone", nowIso: "now" });
+    expect(stale.selectedWsHash).toBeUndefined();
+    expect(stale.fleet).toHaveLength(5);
+  });
+
   it("formatCockpitDiagnostics is product-oriented", () => {
     const text = formatCockpitDiagnostics(buildCockpitModel([], { nowIso: "now" }));
     expect(text).toMatch(/Control/i);

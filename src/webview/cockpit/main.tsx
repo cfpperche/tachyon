@@ -15,6 +15,7 @@ import {
   openRuntimeOpsAction,
   openDoctorAction,
   setSectionAction,
+  switchControlWorkspaceAction,
   fleetStartAction,
   fleetStopAction,
   fleetTerminalAction,
@@ -335,6 +336,12 @@ function Root() {
         if (section === "mission") post(requestSnapshotAction());
         if (section === "approvals") post(refreshApprovalsAction());
         if (section === "validations") post(refreshValidationsAction());
+      }}
+      onSwitchWorkspace={(wsHash: string) => {
+        // t-d16a39 — optimistic model update (selector reflects the choice instantly); the host
+        // re-sends the authoritative scoped model + the active section's module right after.
+        setModel((prev) => (prev ? { ...prev, selectedWsHash: wsHash || undefined } : prev));
+        post(switchControlWorkspaceAction(wsHash));
       }}
     />
   );

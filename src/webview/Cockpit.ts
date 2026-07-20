@@ -59,6 +59,8 @@ export interface CockpitPanelState {
   schemaVersion: 1;
   view: typeof COCKPIT_VIEW_TYPE;
   section?: CockpitSectionId;
+  /** t-d16a39 — the shell-level workspace scope at open time; absent = All workspaces. */
+  wsHash?: string;
 }
 
 /** Board wiring for Mission tab embed (same targets as MissionControlPanelManager). */
@@ -275,8 +277,10 @@ function inspectorStrings(): InspectorStrings {
 
 let panel: vscode.WebviewPanel | undefined;
 let currentSection: CockpitSectionId = "overview";
-let missionWsHash: string | undefined;
-let approvalWsHash: string | undefined;
+/** t-d16a39 — the ONE shell-level workspace scope. undefined = "All workspaces" (aggregate
+ *  sections aggregate; per-workspace sections fall back to the first workspace). Replaces the
+ *  former per-section missionWsHash/approvalWsHash pair and Plugins' derived fallback. */
+let controlWsHash: string | undefined;
 let pushMissionBoard: (() => void) | undefined;
 let pushApprovals: (() => void) | undefined;
 let pushValidations: (() => void) | undefined;
@@ -335,8 +339,8 @@ function resolveMissionWs(board: CockpitMissionBoard, prefer?: string): Workspac
     const hit = all.find((w) => w.wsHash === prefer);
     if (hit) return hit;
   }
-  if (missionWsHash) {
-    const hit = all.find((w) => w.wsHash === missionWsHash);
+  if (controlWsHash) {
+    const hit = all.find((w) => w.wsHash === controlWsHash);
     if (hit) return hit;
   }
   return all[0];
@@ -349,8 +353,8 @@ function resolveApprovalWs(appr: CockpitApprovals, prefer?: string): WorkspacePr
     const hit = all.find((w) => w.wsHash === prefer);
     if (hit) return hit;
   }
-  if (approvalWsHash) {
-    const hit = all.find((w) => w.wsHash === approvalWsHash);
+  if (controlWsHash) {
+    const hit = all.find((w) => w.wsHash === controlWsHash);
     if (hit) return hit;
   }
   return all[0];
@@ -371,13 +375,15 @@ function sectionTitle(s: CockpitStrings, section: CockpitSectionId): string {
 
 export async function openCockpit(
   deps: CockpitDeps,
-  opts?: { section?: CockpitSectionId; revivedPanel?: vscode.WebviewPanel; missionWsHash?: string; approvalWsHash?: string },
+  opts?: { section?: CockpitSectionId; revivedPanel?: vscode.WebviewPanel; wsHash?: string; missionWsHash?: string; approvalWsHash?: string },
 ): Promise<void> {
   const s = strings();
   const inspS = inspectorStrings();
   if (opts?.section) currentSection = resolveCockpitSection(opts.section);
-  if (opts?.missionWsHash) missionWsHash = opts.missionWsHash;
-  if (opts?.approvalWsHash) approvalWsHash = opts.approvalWsHash;
+  // t-d16a39 — both legacy per-section opt names feed the ONE shell scope (callers unchanged).
+  if (opts?.wsHash) controlWsHash = opts.wsHash;
+  if (opts?.missionWsHash) controlWsHash = opts.missionWsHash;
+  if (opts?.approvalWsHash) controlWsHash = opts.approvalWsHash;
 
   const creating = !panel || !!opts?.revivedPanel;
   if (panel && !opts?.revivedPanel) {
@@ -412,7 +418,7 @@ export async function openCockpit(
     let model: CockpitModel;
     try {
       const bundles = await deps.collect();
-      model = buildCockpitModel(bundles, { section: currentSection });
+      model = buildCockpitModel(bundles, { section: currentSection, wsHash: controlWsHash });
     } catch (err) {
       model = buildCockpitModel(
         [
@@ -430,7 +436,7 @@ export async function openCockpit(
             approvals: [],
           },
         ],
-        { section: currentSection },
+        { section: currentSection, wsHash: controlWsHash },
       );
     }
     if (panel === live) {
@@ -447,7 +453,6 @@ export async function openCockpit(
       live.webview.postMessage(taskErrorMessage("No Tachyon workspace for Mission board."));
       return;
     }
-    missionWsHash = ws.wsHash;
     try {
       const vm = await buildMissionVm(ws, all);
       if (panel !== live || currentSection !== "mission") return;
@@ -465,7 +470,6 @@ export async function openCockpit(
       live.webview.postMessage(approvalErrorMessage("No Tachyon workspace for Approvals."));
       return;
     }
-    approvalWsHash = ws.wsHash;
     try {
       const vm = buildApprovalViewModel({ workspaceRoot: ws.workspaceRoot, folder: ws.folderName, wsHash: ws.wsHash });
       if (panel !== live || currentSection !== "approvals") return;
@@ -483,7 +487,6 @@ export async function openCockpit(
       live.webview.postMessage(validationErrorMessage("No Tachyon workspace for Validations."));
       return;
     }
-    missionWsHash = ws.wsHash;
     try {
       const vm = buildValidationsViewModel({ folder: ws.folderName, wsHash: ws.wsHash, validations: ws.listValidations() });
       if (panel !== live || currentSection !== "validations") return;
@@ -524,7 +527,7 @@ export async function openCockpit(
 
   const bindPluginsIfNeeded = () => {
     if (currentSection === "plugins") {
-      deps.plugins.bindControlEmbed(live.webview, approvalWsHash ?? missionWsHash);
+      deps.plugins.bindControlEmbed(live.webview, controlWsHash);
     } else {
       deps.plugins.unbindControlEmbed();
     }
@@ -593,7 +596,7 @@ export async function openCockpit(
       return true;
     }
     if (m.type === "switchWorkspace" && typeof m.wsHash === "string") {
-      missionWsHash = m.wsHash;
+      controlWsHash = m.wsHash;
       await sendMission();
       return true;
     }
@@ -735,6 +738,13 @@ export async function openCockpit(
           return;
         case "setSection":
           currentSection = resolveCockpitSection(c.section);
+          await sendModel();
+          await sendSectionModule();
+          return;
+        case "switchControlWorkspace":
+          // t-d16a39 — "" = All workspaces. Re-send model (aggregate sections re-scope) AND the
+          // active section's module (per-workspace sections re-resolve; plugins embed re-binds).
+          controlWsHash = c.wsHash || undefined;
           await sendModel();
           await sendSectionModule();
           return;
@@ -893,6 +903,7 @@ export async function openCockpit(
         schemaVersion: 1,
         view: COCKPIT_VIEW_TYPE,
         section: currentSection,
+        ...(controlWsHash ? { wsHash: controlWsHash } : {}),
       } satisfies CockpitPanelState,
       bootstrapGlobals: {
         __tachyonSectionStyles: {

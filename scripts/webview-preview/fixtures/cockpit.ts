@@ -165,6 +165,33 @@ const bundles: CockpitWorkspaceBundle[] = [
   },
 ];
 
+// t-d16a39 — a second workspace so the shell-level workspace selector renders (it hides with one).
+const goldenBundle: CockpitWorkspaceBundle = {
+  control: {
+    folderName: "golem",
+    workspaceRoot: "/home/goat/golem",
+    wsHash: "c7d21e90",
+    bridgeUrl: "http://127.0.0.1:7431/mcp",
+    identity: {
+      pid: 190_004,
+      instanceId: "eng-2b9d0e44",
+      processStartIdentity: "start-1a7f",
+      startedAt: "2026-07-16T13:22:41.000Z",
+      bundleId: "bundle-0.56.10-abc",
+      engineVersion: "0.56.10",
+      protocol: { min: 3, max: 3 },
+      bridge: { instanceId: "br-90aa", port: 7431 },
+    },
+    agents: { total: 1, running: 1 },
+    authConfigured: true,
+  },
+  agents: [{ name: "claude", kind: "agent", running: true, declared: true, folder: "golem", wsHash: "c7d21e90" }],
+  worktrees: [],
+  deliveries: [],
+  approvals: [],
+  tmux: { state: "healthy", version: "3.4" },
+};
+
 const now = "2026-07-16T18:40:00.000Z";
 
 // Representative queue for the embedded Validations tab (t-e61439): a pending agent item, a pending human
@@ -245,4 +272,13 @@ export const cockpitFixtures: Record<string, Fixture<CockpitModel>> = {
   deliveries: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "deliveries", nowIso: now }) },
   settings: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "settings", nowIso: now }) },
   empty: { provenance: "synthetic-edge", vm: buildCockpitModel([], { section: "overview", nowIso: now }) },
+  // t-d16a39 — the shell workspace selector: visible under "All workspaces" and scoped to one.
+  "multi-workspace": {
+    provenance: "synthetic-edge",
+    vm: buildCockpitModel([...bundles, goldenBundle], { section: "fleet", nowIso: now }),
+  },
+  "multi-workspace-scoped": {
+    provenance: "synthetic-edge",
+    vm: buildCockpitModel([...bundles, goldenBundle], { section: "fleet", nowIso: now, wsHash: "c7d21e90" }),
+  },
 };

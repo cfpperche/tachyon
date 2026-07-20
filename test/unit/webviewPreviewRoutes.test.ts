@@ -109,6 +109,8 @@ describe("preview route table", () => {
       "engine",
       "fleet",
       "mission",
+      "multi-workspace",
+      "multi-workspace-scoped",
       "plugins",
       "runtime",
       "settings",
