@@ -2,7 +2,9 @@
 
 _Created 2026-07-19. Task: t-838af6._
 
-**Status:** in-progress
+**Status:** shipped
+
+**Closure:** Shipped 2026-07-19 in `a9f37305`. Claude explicit-model delegation now yields an honest provisional preflight result and is validated by the existing bounded runtime-startup boundary; invalid models still reject and compensate, pending processes remain unassignable, and missing-adapter runtimes remain fail-closed. Dogfood, focused verification, typecheck, and the 5,108-test full suite passed headlessly.
 
 ## Intent
 
@@ -12,20 +14,20 @@ Preserve the honest distinction between catalog verification and runtime validat
 
 ## Acceptance criteria
 
-- [ ] **Scenario: route a delegated Claude agent by model**
+- [x] **Scenario: route a delegated Claude agent by model**
   - **Given** an ad-hoc delegated command `claude --model sonnet` or a literal full model id
   - **When** launch preflight runs without an account-aware Claude catalog
   - **Then** the result is explicitly provisional, not falsely catalog-supported or rejected as unverifiable, and normal bounded startup validation runs
-- [ ] **Scenario: reject an invalid Claude model at startup**
+- [x] **Scenario: reject an invalid Claude model at startup**
   - **Given** a provisional explicit-model Claude launch
   - **When** the runtime emits a classified model rejection or exits before readiness
   - **Then** spawn fails with the existing structured readiness code and executes existing session/worktree compensation
-- [ ] **Scenario: keep unknown runtimes fail-closed**
+- [x] **Scenario: keep unknown runtimes fail-closed**
   - **Given** an explicit model on Grok or another delegated runtime with no catalog or startup-validation adapter
   - **When** preflight runs
   - **Then** it still fails with `runtime_preflight_unverifiable` before tmux/ledger success
-- [ ] Ambiguous or shell-composed explicit-model commands remain rejected without execution.
-- [ ] Claude default-model launches and Codex authoritative-catalog behavior are unchanged.
+- [x] Ambiguous or shell-composed explicit-model commands remain rejected without execution.
+- [x] Claude default-model launches and Codex authoritative-catalog behavior are unchanged.
 
 ## Non-goals
 
