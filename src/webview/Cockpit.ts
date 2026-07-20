@@ -865,6 +865,10 @@ export async function openCockpit(
     live.webview.html = renderWebviewShell({
       cspSource: live.webview.cspSource,
       title: s.title,
+      // No nested `[...]` inside this literal — test/unit/cockpitCssParity.test.ts source-scans this
+      // exact array via a non-greedy `styles:\s*\[([\s\S]*?)\]` regex, so an inline array literal
+      // (e.g. a `...(cond ? [x] : [])` spread) closes the match early at ITS `]` and silently
+      // truncates everything after. Ternary-to-undefined + filter keeps the block bracket-free.
       styles: [
         uri("codicon.css"),
         uri("design-system.css"),
@@ -873,12 +877,12 @@ export async function openCockpit(
         uri("mission-control.css"),
         uri("plugins.tailwind.css"),
         uri("plugins.css"),
-        ...(approvalsIsActive ? [uri("approval.css")] : []),
+        approvalsIsActive ? uri("approval.css") : undefined,
         uri("validations.css"),
         uri("runtime-ops.css"),
         uri("inspector.css"),
         uri("cockpit.css"),
-      ],
+      ].filter((href): href is string => href !== undefined),
       bundle: uri("cockpit.js"),
       module: true,
       mode: "live",
