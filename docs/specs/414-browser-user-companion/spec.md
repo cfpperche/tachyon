@@ -1,15 +1,16 @@
 # 414 — browser-user-companion
 
-_Created 2026-07-19._
+_Created 2026-07-19._  
+_Design ratified 2026-07-20 (maintainer lean + open-question package)._
 
-**Status:** draft
+**Status:** in-progress
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
-**Board task:** `t-dec8a9` (design) · **Source pin:** `p-2112a8`  
-**Kind of this document:** concept brief + SDD seed (intent-first; plan/tasks after design ratify)
+**Board:** design `t-dec8a9` · track worktree `tachyon/change/companion-track` · source pin `p-2112a8`  
+**Kind:** product SDD (companion external shell) — design ratify done; implementation phased
 
 ## Intent
 
@@ -20,170 +21,171 @@ agent-session Chrome driven over CDP. That cannot see the human's real logged-in
 approvals where the human already is, and forces copy-paste of URLs, selections and screenshots into
 tasks.
 
-This seed proposes a **Browser User Companion**: a user-installed extension (Chromium first;
-Firefox/Safari later) that **pairs with the local Tachyon engine/Bridge** as another thin shell —
-not a second orchestrator and not a reimplementation of Mission Control. v1 turns the browser into a
-**sensor + approval surface**: pair, capture tab context into Tasks/notes, receive and resolve
-approvals. Later phases may add consented in-page assist and tightly scoped actuation on the user's
-session.
+This spec defines **Tachyon Companion** (browser app first): a user-installed extension (Chromium
+first; Firefox later) that **pairs with the local Tachyon engine** as another thin shell — not a
+second orchestrator and not Mission Control in the browser. **v1** turns the browser into a
+**sensor + approval surface**: pair, human-push tab context into Tasks, receive and resolve
+approvals. Later phases may add agent-pull capture, in-page assist, and tightly scoped actuation.
 
-"Done" for the full product line means: a human can install an extension, pair it to a running
-workspace engine, send the active tab into the board without leaving the browser, and receive
-delegation approvals there — while agents consume only **human-authorized, cookie-free captures** via
-Bridge tools. This seed only locks the problem, boundaries, MVP shape and open forks; implementation
-is out of scope until design is ratified.
+"Done" for **product v1** means: a human can install the Chromium extension (unpacked dogfood is
+enough for first land), pair it to a running workspace engine, send the active tab into the board
+without leaving the browser, and Accept/Deny pending approvals there — while agents only ever see
+**human-authorized, cookie-free** fields on Tasks/evidence. Cookies, passwords, and raw auth headers
+never appear in agent-visible tool results.
 
-**Affected Product Invariants:** none — design seed; no registered product promise changes.
+**Affected Product Invariants:** none — new external-shell surface; no registered PI promise changes
+in v1. Re-assess if a later phase alters a registered boundary.
 
 ## Concept brief
 
-### Product form
+### Product form (ratified)
 
-| Name | Browser User Companion |
+| Field | Value |
 |---|---|
-| Form | Browser extension (MV3 Chromium v1) + engine pairing module + optional agent skill |
-| Audience | Humans running Tachyon locally (or later a remote engine they control) |
-| Primary job | Bring real web work context into Tachyon and bring Tachyon approvals back to the browser |
-| Non-job | Replace VS Code Control; replace agent-browser; become a general RPA product |
+| Product name | **Tachyon Companion** |
+| First app | Browser (Chromium MV3); subtitle e.g. "for Chrome" |
+| Code / SDD slug | `browser-user-companion` / tools namespace `user_browser_*` (agent-pull era) |
+| Form | Extension + engine pairing module + optional agent skill |
+| Audience | Humans running Tachyon locally (remote engine later) |
+| Primary job | Web work context → Tachyon; Tachyon approvals → browser |
+| Non-job | Replace Control; replace agent-browser; general RPA |
 
 ### Two browser products (must not conflate)
 
-| | **agent-browser (267+)** | **Browser User Companion (this seed)** |
+| | **agent-browser (267+)** | **Tachyon Companion (this spec)** |
 |---|---|---|
 | Who owns the browser | Agent / Tachyon-provisioned session | The human's daily browser |
 | Session | Isolated, often headless | User cookies, extensions, SSO as-is |
-| Direction | Engine → CDP automation | User browser ↔ engine/Bridge |
+| Direction | Engine → CDP automation | User browser ↔ engine |
 | v1 risk class | Tool + skill provision | Privacy + pairing + shell auth |
-| Tool namespace (sketch) | existing `agent-browser` launcher | `user_browser_*` (read/capture only in v1) |
+| Tool namespace | `agent-browser` launcher | v1: none required (human-push → Task); later `user_browser_*` |
+
+### Repository strategy (ratified)
+
+```text
+cfpperche/tachyon                 ← ADE: engine, Bridge, VS Code shell, pairing SERVER, protocolVersion
+cfpperche/tachyon-companion       ← classic monorepo of external shells:
+                                      apps/browser   (now)
+                                      apps/mobile    (next)
+                                      packages/protocol, api-client, …
+```
+
+- **Hybrid:** engine surface stays in `tachyon`; client UX lives in `tachyon-companion`.
+- **Not** a Tachyon runtime plugin (spec 250). **Not** a reason to monorepoize the ADE first
+  (`docs/architecture/tachyon-monorepo-assessment.md`, `t-e4348c`).
+- **Server owns protocol semantics** (`protocolVersion`); companion monorepo owns client packages that
+  mirror it.
+- Early engine work for this track uses **one isolated change worktree** for the whole companion
+  track (`tachyon/change/companion-track`), not ad-hoc main edits.
 
 ### Value for agents assisting projects
 
-1. **Context without paste** — active tab URL, title, selection, optional screenshot become Task body /
-   journal / evidence, so agents implement against real repros and research sources.
-2. **Approvals where the human is** — `request_human_approval` / needs-input style surfaces in the
-   extension UI, with resolution still host-authoritative (`get_approval_status` remains truth).
-3. **Project loop** — dogfood a webapp, file a task with rich context, agents fix, human verifies in
-   the same browser surface.
-4. **Later automation** (not v1) — consented fills/clicks on **user** sessions for internal tools,
-   release checklists, multi-SaaS ops — under Bridge approval and per-host scopes.
+1. **Context without paste** — URL, title, selection (+ later screenshot) become Task body/evidence.
+2. **Approvals where the human is** — same host-authoritative approval records as Control.
+3. **Project loop** — dogfood webapp → rich task → agents fix → verify in the same browser.
+4. **Later automation** (v3) — consented fills/clicks on user sessions under scopes + confirm.
 
-### Architecture sketch (non-normative until plan)
+### Architecture sketch (v1)
 
 ```text
-[User browser extension]  --pair token / loopback-->  [Engine control + Bridge auth]
-        |                                                      |
-   capture / approvals UI                          tasks · approvals · agents · notify
-        |                                                      |
-   (no cookies to agents)  <--- Bridge tools ---  agents via user_browser_* (v1 read)
+[apps/browser MV3]  --pair token / loopback-->  [Engine pairing + companion endpoints]
+        |                                              |
+   Send tab / Approvals UI                    create_task · approvals resolve
+        |                                              |
+   (no cookies)  ---- agents read Tasks/board ---->  (human-push only in v1)
 ```
 
-Aligns with system-design: engine owns orchestration; shells adapt. VS Code remains the primary
-human shell; the extension is a **second shell**, same class as the deferred mobile companion
-(`t-fe52f0` frente 2) and any future CLI/web shell. Likely depends on a durable external-client /
-service-layer path (`t-784bc8` lineage) for clean pairing outside the VSIX process.
+v1 does **not** require Bridge tools for capture. Agents consume Task artifacts already on the board.
+Agent-pull (`user_browser_*`) is **v1.1+**.
 
 ### Security posture (v1 principles)
 
 - **Least privilege:** default `activeTab` + user gesture; avoid always-on `<all_urls>`.
-- **No credential exfil:** agents never receive cookies, passwords, or raw auth headers; captures are
-  content the human chose to send (URL/title/selection/screenshot bytes as evidence).
-- **Pairing:** short-lived codes / local loopback; token storage hardened; unpair is one click.
-- **No self-approval:** extension UI is a presentation + human gesture channel; approval records stay
-  engine/host authored (same anti-laundering rules as Control → Approvals).
-- **Engine offline:** degrade to local draft queue or clear error — never invent orchestration in the
-  extension.
+- **No credential exfil:** agents never receive cookies, passwords, or raw auth headers.
+- **Pairing:** short-lived codes / local loopback; hardened token storage; one-click unpair.
+- **No self-approval:** extension UI is presentation + human gesture; resolution is host-recorded;
+  agents confirm via `get_approval_status` (or equivalent), never the UI string alone.
+- **Engine offline:** clear error or local draft queue — no orchestration inside the extension.
 - **Fail closed** on unknown host, expired pair, or missing scope.
+- **One active pair** in v1 (single engine); multi-engine picker later.
 
-### Phased delivery (proposal)
+### Phased delivery (ratified)
 
 | Phase | Scope | Ship gate (sketch) |
 |---|---|---|
-| **v1 — Companion** | Pair; fleet badge; send tab → task/note; show + resolve approvals | Chromium unpacked dogfood + Bridge tools read |
-| **v1.1** | Firefox; selection/screenshot quality; multi-workspace picker | Store packaging optional |
-| **v2 — In-page assist** | Overlay/side panel anchored to page; agent suggestions without write | Visual QA + consent copy |
-| **v3 — Actuation** | Scoped click/fill on allowlisted hosts with per-action confirm | Trust policy sibling to 271 |
-
-### Packaging sketch
-
-- **Extension** — separate package (store / sideload); not a Tachyon runtime plugin in the 250 sense.
-- **Engine module** — pairing, scopes, Bridge tools, approval projection.
-- **Optional skill** — teaches agents when/how to call `user_browser_*` if a companion is paired.
-- A Tachyon "plugin" entry may later **distribute or document** the extension; it does not replace the
-  browser store package.
+| **v1 — Companion** | Pair; connection badge; send tab → task; list + resolve approvals | Chromium unpacked dogfood |
+| **v1.1** | Agent-pull capture; screenshot evidence quality; Firefox | Optional store packaging |
+| **v2 — In-page assist** | Overlay/side panel; suggestions without write | Visual QA + consent copy |
+| **v3 — Actuation** | Scoped click/fill on allowlisted hosts + per-action confirm | Trust policy sibling to 271 |
 
 ## Acceptance criteria
 
-_These criteria define the **design seed** being complete enough to ratify — not the product shipped.
-Implementation acceptance will replace/extend this list in a later revision after plan._
+### Design (Phase 0)
 
-- [ ] **Scenario: design distinguishes user companion from agent-browser**
+- [x] **Scenario: design distinguishes user companion from agent-browser**
   - **Given** a reader of this seed and specs 267/268/271
   - **When** they compare ownership, session model and tool namespaces
   - **Then** the two products are explicitly non-substitutable and non-merged in intent
-- [ ] **Scenario: v1 MVP is bounded**
+- [x] **Scenario: v1 MVP is bounded**
   - **Given** the ratified concept
   - **When** implementation is scoped
-  - **Then** v1 is limited to pair + capture + approval surface (no form-driving, no full Control clone)
-- [ ] **Scenario: agent-visible context is human-authorized and cookie-free**
-  - **Given** a paired extension and an agent using Bridge tools
-  - **When** the human sends a tab capture
-  - **Then** agents can only observe the authorized capture fields; cookies/credentials are not in the tool result
-- [ ] **Scenario: approval resolution stays host-authoritative**
-  - **Given** an approval shown in the extension
+  - **Then** v1 is limited to pair + human-push capture + approval surface (no form-driving, no full Control clone)
+- [x] **Scenario: agent-visible context is human-authorized and cookie-free**
+  - **Given** the ratified security posture
+  - **When** a human sends a tab capture
+  - **Then** agents only ever observe authorized capture fields on Tasks/evidence; cookies/credentials are out of band
+- [x] **Scenario: approval resolution stays host-authoritative**
+  - **Given** an approval shown in the companion UI
   - **When** the human accepts or denies
-  - **Then** the engine records the resolution and agents must confirm via the existing status path (not the UI string alone)
-- [ ] Concept brief sections (intent, form, security, phases, non-goals, open questions) are present and maintainer-reviewed
-- [ ] Board design task `t-dec8a9` links this SDD and pin `p-2112a8`
-- [ ] Related work (`t-fe52f0`, agent-browser, external-client/API gap) is named so decomposition does not reinvent them
+  - **Then** the engine records the resolution; agents must use the host status path, not the UI string alone
+- [x] Concept brief, security, phases, non-goals, and **decided** open questions are present
+- [x] Board design task `t-dec8a9` links this SDD and pin `p-2112a8`
+- [x] Repo strategy (ADE + `tachyon-companion` monorepo) is recorded
+- [x] Related work (`t-fe52f0`, agent-browser, ADE monorepo assessment) is named
 
-_Product implementation scenarios (to be promoted after design ratify):_
+### Product v1 (implementation)
 
-- [ ] **Scenario: pair extension to local engine** _(implementation — deferred)_
+- [ ] **Scenario: pair extension to local engine**
   - **Given** a running Tachyon engine for a workspace and an installed Chromium extension
   - **When** the human completes pairing with a short-lived code from Control (or equivalent)
   - **Then** the extension shows connected state for that workspace and can call authorized companion endpoints
-- [ ] **Scenario: send active tab into a Task** _(implementation — deferred)_
+- [ ] **Scenario: send active tab into a Task**
   - **Given** a paired extension on an ordinary page and a user gesture
   - **When** the human chooses "Send to Tachyon"
-  - **Then** a Task (or journal/note) appears with URL, title and optional selection/screenshot evidence
-- [ ] **Scenario: receive and resolve an approval in the browser** _(implementation — deferred)_
+  - **Then** a Task appears with URL and title (selection optional); no cookies in the task payload
+- [ ] **Scenario: receive and resolve an approval in the browser**
   - **Given** a pending human approval in the engine
   - **When** the extension is paired and online
-  - **Then** the human can Accept/Deny from the extension and `get_approval_status` reflects the host record
+  - **Then** the human can Accept/Deny from the extension and host approval status reflects the record
+- [ ] **Scenario: single active pair**
+  - **Given** an extension already paired to engine A
+  - **When** the human pairs to engine B (or re-pairs)
+  - **Then** at most one active pair remains; the UI does not silently multiplex engines in v1
+- [ ] Unpacked Chromium dogfood checklist recorded in `notes.md` or `tasks.md` Human dogfood section
 
 ## Non-goals
 
 - Replacing or forking Mission Control / Control as a full browser app in v1
 - Merging with `agent-browser` CDP automation or reusing its session store as the user session
 - Agent-initiated arbitrary DOM/JS execution or always-on full-history scraping
+- Agent-pull Bridge tools in v1 (`user_browser_*` is v1.1+)
 - Safari first-class support in v1 (Chromium first; Firefox next)
-- Mobile companion UX (tracked under `t-fe52f0`; may share pairing protocols later)
+- Multi-engine picker in v1
+- Mobile companion UX in this SDD's v1 ship (reserved in `tachyon-companion` monorepo; product sibling of `t-fe52f0` frente 2)
 - Marketplace monetization or multi-tenant SaaS hosting of engines
-- Changing PI-001 or any registered product invariant in this seed
-- Implementation code, VSIX packaging of the extension binary, or store submission in this design task
+- Monorepoizing the ADE as a prerequisite (`t-e4348c` is independent)
+- Changing PI-001 or any registered product invariant without separate governance
 
-## Open questions
+## Open questions → Decisions (2026-07-20)
 
-1. **Umbrella ownership** — Is this a child of `t-fe52f0` (companion family) or a standalone product line with a sibling link only?  
-   _Owner: maintainer. Path: decide at design ratify; affects task tree and naming._
+| # | Question | Decision |
+|---|---|---|
+| 1 | Umbrella vs standalone | **Standalone product line**, sibling of `t-fe52f0` (shared pairing protocol later; separate task tree) |
+| 2 | MVP depth | **Pair + send-tab + approvals** together in v1 (not capture-only) |
+| 3 | External client substrate | **Loopback spike now**; do not block on full `t-784bc8`; extract durable client contract from what works |
+| 4 | Tool surface v1 | **Human-push only**; agent-pull in v1.1 |
+| 5 | Multi-workspace | **One active pair** in v1; multi-engine later |
+| 6 | Evidence store | **Task / evidence (273–274 lineage)**; not pins; no new evidence kind in v1. Screenshot may trail URL+title |
+| 7 | Name | **Product:** Tachyon Companion · **Repo clients:** `tachyon-companion` · **Code/SDD:** browser-user-companion / `user_browser_*` |
 
-2. **MVP depth** — Ship **capture-only** first, or capture + approval surface together?  
-   _Owner: maintainer. Recommendation in discussion: both in v1 if pairing cost is paid once._
-
-3. **External client substrate** — Block on `t-784bc8` / service-layer generalization, or allow a
-   minimal loopback pairing prototype against today's engine control channel?  
-   _Owner: maintainer + engine owners. Path: spike after ratify._
-
-4. **Tool surface v1** — Human-push only (`send tab` creates task; agents read task artifacts) vs
-   agent-pull (`user_browser_context` requests a fresh capture with human prompt)?  
-   _Owner: design. Recommendation: human-push only in v1; agent-pull in v1.1._
-
-5. **Multi-workspace** — One extension ↔ one engine, or picker for multiple local engines?  
-   _Owner: design. Recommendation: one active pair in v1; multi later._
-
-6. **Evidence store** — Screenshots as Task attachments (spec 273/274 lineage) vs pin blobs vs new
-   companion evidence kind?  
-   _Owner: implementation plan after ratify._
-
-7. **Name** — "Browser User Companion" vs "Tachyon Browser Companion" vs shorter product name?  
-   _Owner: maintainer branding._
+_No open product forks remain for Phase 0. Implementation unknowns go to `plan.md` / `notes.md`._

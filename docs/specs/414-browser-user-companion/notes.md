@@ -6,28 +6,43 @@ _In-flight design memory — decisions, deviations, tradeoffs, and open question
 
 ## Provenance
 
-- 2026-07-19 — Human pin `p-2112a8`: discuss browser extension module that talks to Tachyon bridge/engine; what doors it opens for agents/automation.
-- 2026-07-19 — Free-run discussion with agent `grok`: product framing (user companion vs agent-browser), value for project assist, security, phased MVP, architecture sketch.
-- 2026-07-19 — Seed scaffolded via SDD `new browser-user-companion` → `docs/specs/414-browser-user-companion/`. Design board task `t-dec8a9` created. Spec filled as concept brief + draft acceptance for **design ratify**, not product ship.
-- Related already on board/specs: `t-fe52f0` (cockpit + mobile companion), agent-browser 267/268/271, system-design engine/shell split, external-client gap (`t-784bc8` lineage).
+- 2026-07-19 — Human pin `p-2112a8`: discuss browser extension module that talks to Tachyon bridge/engine.
+- 2026-07-19 — Discussion with `grok`: companion vs agent-browser, MVP, security, phases.
+- 2026-07-19 — SDD scaffold `414-browser-user-companion`; design task `t-dec8a9`.
+- 2026-07-20 — Maintainer agreed lean on all open questions + hybrid repo strategy +
+  `tachyon-companion` as classic monorepo (browser now, mobile next). ADE monorepo assessment
+  recorded separately (`docs/architecture/tachyon-monorepo-assessment.md`, `t-e4348c`).
+- 2026-07-20 — Phase 0 execution on isolated worktree `tachyon/change/companion-track`
+  (one WT for the entire companion track): ratify `spec.md`, write `plan.md`, decompose board tasks.
 
 ## Design decisions
 
-- **Two-product split is non-negotiable in the seed** — agent-browser stays agent-owned CDP; this companion is human browser ↔ engine. Avoids trust/session confusion.
-- **v1 = companion (pair + capture + approvals), not RPA** — actuation deferred to phase v3 with trust policy.
-- **Agents never see cookies** — captures are human-authorized content fields only.
-- **Approval UI is presentation; host remains authority** — same anti-laundering posture as Control → Approvals.
-- **plan.md / tasks.md left deferred** until maintainer ratifies open questions in `spec.md` — avoids fake implementation plans.
+- **Two-product split** — agent-browser = agent CDP; Companion = human browser ↔ engine.
+- **v1 = pair + send-tab + approvals** — not capture-only; not RPA.
+- **Human-push only in v1** — no `user_browser_*` until v1.1.
+- **Loopback spike** — do not block on full `t-784bc8`.
+- **One active pair** — multi-engine later.
+- **Task/evidence for captures** — not pins; no new evidence kind in v1.
+- **Product name Tachyon Companion**; clients repo `tachyon-companion`; SDD/code slug browser-user-companion.
+- **Standalone product line**, sibling of `t-fe52f0` (not a child task).
+- **Hybrid repos** — engine in `tachyon`; clients in companion monorepo.
+- **Track worktree** — all ADE companion work on `companion-track` until slices land.
+- **Agents never see cookies** — authorized fields only.
+- **Approval UI is presentation; host remains authority**.
 
 ## Deviations
 
-_None yet (seed only)._
+_None yet (design/plan only)._
 
 ## Tradeoffs
 
-- **Human-push vs agent-pull capture** — seed recommends human-push only for v1 (simpler consent story); agents still get context via Task artifacts without a live DOM channel.
-- **Block on full service-layer vs loopback spike** — left open; product value can be dogfooded on loopback, productionization wants external-client substrate.
+- **Human-push vs agent-pull** — v1 human-push for consent clarity; agents still get context via Tasks.
+- **Loopback vs full service layer** — speed of dogfood vs eventual generalization; extract contract after spike.
+- **Companion monorepo vs ADE monorepo** — multi-app clients need workspaces; ADE packaging cost is separate (`t-e4348c`).
 
 ## Open questions
 
-_See `spec.md` § Open questions (maintainer-owned forks)._
+_Phase 0 product forks closed in `spec.md` § Open questions → Decisions._
+
+Implementation unknowns (transport details, exact Control entrypoint, CORS on loopback) land during
+pairing spike and are appended here.

@@ -1,28 +1,55 @@
 # 414 — browser-user-companion — tasks
 
-_Design-seed phase only (2026-07-19). Implementation checklist after plan ratify._
+_Updated 2026-07-20 after design ratify. Work top-to-bottom per plan slices._
 
-## Design seed (this slice)
+## Phase 0 — Design (this commit)
 
-- [x] Scaffold SDD `414-browser-user-companion` via skill `new`
-- [x] Fill `spec.md` concept brief + design-level acceptance + non-goals + open questions
-- [x] Record provenance in `notes.md`; defer implementation `plan.md` content
-- [x] Create board design task `t-dec8a9` linked to pin `p-2112a8` and related work
-- [ ] Maintainer ratifies open questions in `spec.md` (or amends intent)
-- [ ] After ratify: write real `plan.md` + implementation `tasks.md`; split follow-up Tasks as needed
+- [x] Scaffold SDD `414-browser-user-companion`
+- [x] Concept brief + design acceptance
+- [x] Maintainer lean recorded; open questions → Decisions in `spec.md`
+- [x] Repo strategy (ADE + `tachyon-companion` monorepo multi-app)
+- [x] Real `plan.md` + delivery slices
+- [x] Isolated ADE track worktree `tachyon/change/companion-track`
+- [x] Board design task `t-dec8a9` + implementation follow-ups (see board)
 
-## Implementation
+## Phase 1 — Implementation (v1)
 
-_Deferred — do not start until design ratify and plan exist._
+| Slice | Board | Title |
+|---|---|---|
+| 1 | `t-32c627` | Scaffold monorepo `tachyon-companion` |
+| 2 | `t-77ce07` | Engine protocol + loopback pairing + Control pair code |
+| 3 | `t-523405` | Send tab → create_task (cookie-free) |
+| 4 | `t-a45c6b` | Approvals list + host-authoritative resolve |
+| 5 | `t-725317` | Unpacked Chromium dogfood |
+
+- [ ] **Slice 1 — `t-32c627`** Scaffold `tachyon-companion` monorepo (browser stub + packages)
+- [ ] **Slice 2 — `t-77ce07`** Engine protocol + loopback pairing (ADE on `companion-track` WT only)
+- [ ] **Slice 3 — `t-523405`** Send tab → create_task (URL + title; no cookies)
+- [ ] **Slice 4 — `t-a45c6b`** Approvals list + resolve (host-authoritative)
+- [ ] **Slice 5 — `t-725317`** Unpacked Chromium dogfood (pair → send → approve)
+
+## Post-v1 (do not start in v1)
+
+- [ ] Agent-pull `user_browser_*` + human confirm prompt
+- [ ] Screenshot → task evidence (273/274)
+- [ ] Firefox package
+- [ ] Multi-engine picker
+- [ ] `apps/mobile` real client
+- [ ] Store submission
 
 ## Verification
 
-- [x] Seed is readable under `docs/specs/414-browser-user-companion/spec.md`
-- [x] Board task references this SDD
-- [ ] Maintainer design review recorded (journal note or `notes.md`)
+- [x] Design criteria in `spec.md` checked for Phase 0
+- [ ] Product v1 scenarios in `spec.md` checked when slices land
+- [ ] Focused tests for pairing + capture on ADE side
+- [ ] Companion monorepo typecheck/pack green
 
-**Dogfood-Opt-Out:** design seed only — no runtime behavior to dogfood until implementation phase.
+**Verify:** _(add when implementation has a mechanical command, e.g. focused vitest for pairing)_
 
-**Visual QA Opt-Out:** no shipped UI in this design-seed slice.
+**Dogfood-Opt-Out:** design-only commits have no runtime dogfood.  
+**Human dogfood:** after slices 2–4 — unpacked Chromium + local engine; steps in slice 5.
 
-**Cookbook-Opt-Out:** no operator surface until pairing tools ship.
+**Visual QA Opt-Out:** Phase 0 docs only.  
+**Visual QA:** required for companion popup + Control pair affordance when UI lands (Evidence/Verdict in notes).
+
+**Cookbook-Opt-Out:** no operator tools until pairing ships; then add cookbook for pair/send/approve.
