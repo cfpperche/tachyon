@@ -19,6 +19,7 @@ import {
   copyTextAction,
   openConfigFileAction,
   setCompanionTabToolsAction,
+  unpairCompanionDeviceAction,
   type CockpitHostMessage,
   type CockpitStrings,
 } from "./messages";
@@ -302,6 +303,7 @@ function Root() {
       onCopyText={(text) => post(copyTextAction(text))}
       onOpenConfigFile={(wsHash) => post(openConfigFileAction(wsHash))}
       onSetCompanionTabTools={(wsHash, enabled) => post(setCompanionTabToolsAction(wsHash, enabled))}
+      onUnpairCompanionDevice={(wsHash) => post(unpairCompanionDeviceAction(wsHash))}
       onPost={(action) => post(action)}
       missionVm={missionVm}
       missionError={missionError}

@@ -105,6 +105,15 @@ export interface CockpitStrings {
   companionNotPaired: string;
   companionPickWorkspace: string;
   companionBaseUrl: string;
+  devicesTitle: string;
+  devicesHint: string;
+  devicesEmpty: string;
+  devicesUnpair: string;
+  devicesLive: string;
+  devicesOffline: string;
+  devicesKindBrowser: string;
+  devicesKindMobile: string;
+  devicesPairedAt: string;
   declared: string;
   adhoc: string;
   agent: string;
@@ -130,7 +139,9 @@ export type CockpitAction =
   | { type: "engineLogClear"; wsHash: string }
   | { type: "engineLogJournal"; wsHash: string }
   /** SDD 414 — patch settings.companion.tabTools for one workspace. */
-  | { type: "setCompanionTabTools"; wsHash: string; enabled: boolean };
+  | { type: "setCompanionTabTools"; wsHash: string; enabled: boolean }
+  /** SDD 414 — host unpair of the active Companion session. */
+  | { type: "unpairCompanionDevice"; wsHash: string };
 
 export type CockpitHostMessage =
   | { type: typeof INIT; strings: CockpitStrings }
@@ -176,6 +187,10 @@ export const setCompanionTabToolsAction = (wsHash: string, enabled: boolean): Co
   type: "setCompanionTabTools",
   wsHash,
   enabled,
+});
+export const unpairCompanionDeviceAction = (wsHash: string): CockpitAction => ({
+  type: "unpairCompanionDevice",
+  wsHash,
 });
 
 export const initMessage = (strings: CockpitStrings): CockpitHostMessage => ({ type: INIT, strings });

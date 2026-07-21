@@ -92,13 +92,15 @@ export async function executeExtensionQuery(
     case "bridge.token":
       return json({ token: workspace.externalToken ?? null, authEnabled: workspace.authEnabled });
     case "companion.status": {
-      // SDD 414 — Control Settings: tabTools opt-in + live pair presence (not host trust).
+      // SDD 414 — Control Settings: tabTools opt-in + connected devices (not host tab trust).
       const port = workspace.bridge.listenerPort;
+      const devices = workspace.companion.listDevices((token) => workspace.companionLive.hasLiveClient(token));
       return json({
         tabTools: workspace.config?.settings.companion?.tabTools === true,
         paired: workspace.companion.hasPairedDevice(),
         baseUrl: port === undefined ? undefined : `http://127.0.0.1:${port}`,
         engineLabel: path.basename(workspace.workspaceRoot) || "tachyon",
+        devices,
       });
     }
     case "companion.pair-code": {
@@ -279,6 +281,18 @@ export async function executeExtensionCommand(
     }
     case "config.health":
       return configHealth(workspace);
+    case "companion.unpair": {
+      // Host Control: force-revoke active Companion session (no device bearer required).
+      const result = workspace.companion.forceUnpair();
+      if (result.sessionToken) {
+        try {
+          workspace.companionLive.dropSession(result.sessionToken);
+        } catch {
+          /* best-effort */
+        }
+      }
+      return json({ ok: true, hadSession: result.hadSession });
+    }
     case "config.agent.add":
       return configMutation(workspace, () => workspace.mutateConfig(
         (text) => addAgent(text, command.agent, command.cmd, command.kind),

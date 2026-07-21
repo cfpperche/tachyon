@@ -41,6 +41,15 @@ describe("CompanionPairingService (SDD 414 slice 2)", () => {
     if (!first.ok) return;
     expect(first.sessionToken).toHaveLength(64);
     expect(svc.status(first.sessionToken).status).toBe("connected");
+    const devices = svc.listDevices(() => true);
+    expect(devices).toHaveLength(1);
+    expect(devices[0]).toMatchObject({
+      kind: "browser",
+      name: "Tachyon Companion",
+      version: "0.1.0",
+      live: true,
+    });
+    expect(devices[0]!.id).toMatch(/^[0-9a-f]{12}$/);
 
     const b = svc.issuePairCode();
     if ("ok" in b) throw new Error("expected code");
@@ -53,6 +62,29 @@ describe("CompanionPairingService (SDD 414 slice 2)", () => {
     if (!second.ok) return;
     expect(svc.status(first.sessionToken).status).toBe("error");
     expect(svc.status(second.sessionToken).status).toBe("connected");
+  });
+
+  it("forceUnpair clears the session for host Control revoke", () => {
+    const svc = new CompanionPairingService({
+      engineLabel: "demo",
+      engineId: "abc123",
+      getBaseUrl: () => "http://127.0.0.1:1",
+    });
+    const issued = svc.issuePairCode();
+    if ("ok" in issued) throw new Error("expected code");
+    const paired = svc.pair({
+      pairCode: issued.code,
+      protocolVersion: COMPANION_PROTOCOL_VERSION,
+      client: { kind: "browser", name: "Tachyon Companion", version: "0.4.8" },
+    });
+    expect(paired.ok).toBe(true);
+    if (!paired.ok) return;
+    const cleared = svc.forceUnpair();
+    expect(cleared.hadSession).toBe(true);
+    expect(cleared.sessionToken).toBe(paired.sessionToken);
+    expect(svc.hasPairedDevice()).toBe(false);
+    expect(svc.listDevices()).toEqual([]);
+    expect(svc.forceUnpair()).toEqual({ ok: true, hadSession: false });
   });
 
   it("rejects wrong code, expired code, and protocol mismatch", () => {

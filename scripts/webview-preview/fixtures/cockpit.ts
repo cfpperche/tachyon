@@ -111,6 +111,15 @@ export const strings: CockpitStrings = {
   companionNotPaired: "Not paired",
   companionPickWorkspace: "Select a single workspace in the header to manage Companion tab tools.",
   companionBaseUrl: "Engine Base URL",
+  devicesTitle: "Connected devices",
+  devicesHint: "Companion browsers paired to this workspace engine.",
+  devicesEmpty: "No Companion device paired.",
+  devicesUnpair: "Unpair",
+  devicesLive: "Live",
+  devicesOffline: "Offline",
+  devicesKindBrowser: "Browser",
+  devicesKindMobile: "Mobile",
+  devicesPairedAt: "Paired",
   declared: "declared",
   adhoc: "ad-hoc",
   agent: "agent",
@@ -173,6 +182,16 @@ const bundles: CockpitWorkspaceBundle[] = [
       paired: true,
       baseUrl: "http://127.0.0.1:7421",
       engineLabel: "tachyon",
+      devices: [
+        {
+          id: "fixture-dev",
+          kind: "browser",
+          name: "Tachyon Companion",
+          version: "0.4.8",
+          pairedAt: "2026-07-21T12:00:00.000Z",
+          live: true,
+        },
+      ],
     },
   },
 ];
@@ -207,6 +226,7 @@ const goldenBundle: CockpitWorkspaceBundle = {
     paired: false,
     baseUrl: "http://127.0.0.1:7431",
     engineLabel: "golem",
+    devices: [],
   },
 };
 

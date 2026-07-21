@@ -127,6 +127,8 @@ export interface CockpitDeps {
   openEngineJournal: (wsHash: string) => void;
   /** SDD 414 — settings.companion.tabTools for one workspace engine. */
   setCompanionTabTools: (wsHash: string, enabled: boolean) => Promise<void>;
+  /** SDD 414 — host-authoritative unpair of the active Companion device. */
+  unpairCompanionDevice: (wsHash: string) => Promise<void>;
 }
 
 function strings(): CockpitStrings {
@@ -236,6 +238,15 @@ function strings(): CockpitStrings {
     companionNotPaired: t("Not paired"),
     companionPickWorkspace: t("Select a single workspace in the header to manage Companion tab tools."),
     companionBaseUrl: t("Engine Base URL"),
+    devicesTitle: t("Connected devices"),
+    devicesHint: t("Companion browsers paired to this workspace engine."),
+    devicesEmpty: t("No Companion device paired. Open Tachyon Companion, pair with a code from this workspace, then refresh."),
+    devicesUnpair: t("Unpair"),
+    devicesLive: t("Live"),
+    devicesOffline: t("Offline"),
+    devicesKindBrowser: t("Browser"),
+    devicesKindMobile: t("Mobile"),
+    devicesPairedAt: t("Paired"),
     declared: t("declared"),
     adhoc: t("ad-hoc"),
     agent: t("agent"),
@@ -842,6 +853,17 @@ export async function openCockpit(
                     : vscode.l10n.t("Companion tab tools hidden from agents"),
                 ),
               );
+            } catch (err) {
+              live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err)));
+            }
+          }
+          return;
+        case "unpairCompanionDevice":
+          if (typeof c.wsHash === "string" && c.wsHash) {
+            try {
+              await deps.unpairCompanionDevice(c.wsHash);
+              await sendModel();
+              live.webview.postMessage(toastMessage(vscode.l10n.t("Companion device unpaired")));
             } catch (err) {
               live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err)));
             }

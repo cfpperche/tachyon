@@ -55,6 +55,16 @@ describe("cockpit model", () => {
             paired: true,
             baseUrl: "http://127.0.0.1:7421",
             engineLabel: "tachyon",
+            devices: [
+              {
+                id: "dev1",
+                kind: "browser",
+                name: "Tachyon Companion",
+                version: "0.4.8",
+                pairedAt: "2026-07-21T12:00:00.000Z",
+                live: true,
+              },
+            ],
           },
         },
       ],
@@ -66,7 +76,7 @@ describe("cockpit model", () => {
     expect(m.overview.approvalsPending).toBe(1);
     expect(m.fleet).toHaveLength(2);
     expect(m.tmux[0]?.state).toBe("healthy");
-    expect(m.companion).toEqual({
+    expect(m.companion).toMatchObject({
       wsHash: "abc",
       folderName: "tachyon",
       tabTools: true,
@@ -74,6 +84,8 @@ describe("cockpit model", () => {
       baseUrl: "http://127.0.0.1:7421",
       engineLabel: "tachyon",
     });
+    expect(m.companion?.devices).toHaveLength(1);
+    expect(m.companion?.devices[0]?.name).toBe("Tachyon Companion");
     expect(m.companionNeedsWorkspacePick).toBeUndefined();
   });
 
@@ -86,7 +98,7 @@ describe("cockpit model", () => {
           worktrees: [],
           deliveries: [],
           approvals: [],
-          companion: { tabTools: true, paired: false },
+          companion: { tabTools: true, paired: false, devices: [] },
         },
         {
           control: { folderName: "b", workspaceRoot: "/b", wsHash: "h2", bridgeUrl: "http://127.0.0.1:2/mcp" },
@@ -94,7 +106,7 @@ describe("cockpit model", () => {
           worktrees: [],
           deliveries: [],
           approvals: [],
-          companion: { tabTools: false, paired: true },
+          companion: { tabTools: false, paired: true, devices: [] },
         },
       ],
       { section: "settings", nowIso: "now" },

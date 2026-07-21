@@ -10,6 +10,7 @@ import {
   PAIR_CODE_TTL_MS,
   SESSION_TTL_MS,
   type CompanionClientInfo,
+  type CompanionDeviceRow,
   type ConnectionStatus,
   type EngineIdentity,
   type IssuedPairCode,
@@ -35,6 +36,8 @@ interface PendingCode {
 }
 
 interface ActiveSession {
+  /** Short opaque id for host UI (never the bearer token). */
+  id: string;
   token: string;
   expiresAtMs: number;
   client: CompanionClientInfo;
@@ -163,6 +166,7 @@ export class CompanionPairingService {
     const token = newSessionToken();
     const expiresAtMs = this.now() + this.sessionTtlMs;
     this.session = {
+      id: randomBytes(6).toString("hex"),
       token,
       expiresAtMs,
       client: body.client,
@@ -229,6 +233,39 @@ export class CompanionPairingService {
   activeClient(): CompanionClientInfo | undefined {
     this.sweep();
     return this.session?.client;
+  }
+
+  /**
+   * Host Control view: 0–1 device rows (array shaped for future multi-device).
+   * `isLive` reports whether the session has an open companion SSE stream.
+   */
+  listDevices(isLive?: (sessionToken: string) => boolean): CompanionDeviceRow[] {
+    this.sweep();
+    const s = this.session;
+    if (!s) return [];
+    return [
+      {
+        id: s.id,
+        kind: s.client.kind,
+        name: s.client.name,
+        version: s.client.version,
+        pairedAt: new Date(s.pairedAtMs).toISOString(),
+        expiresAt: new Date(s.expiresAtMs).toISOString(),
+        live: isLive?.(s.token) === true,
+      },
+    ];
+  }
+
+  /**
+   * Host-authoritative unpair (Control). Does not require the device's session token.
+   * Returns the cleared token so callers can drop SSE clients.
+   */
+  forceUnpair(): { ok: true; hadSession: boolean; sessionToken?: string } {
+    this.sweep();
+    if (!this.session) return { ok: true, hadSession: false };
+    const sessionToken = this.session.token;
+    this.session = undefined;
+    return { ok: true, hadSession: true, sessionToken };
   }
 
   private sweep(): void {

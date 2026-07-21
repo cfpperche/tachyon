@@ -104,6 +104,8 @@ export interface CockpitAppProps {
   onOpenConfigFile: (wsHash?: string) => void;
   /** SDD 414 — settings.companion.tabTools for the scoped workspace. */
   onSetCompanionTabTools: (wsHash: string, enabled: boolean) => void;
+  /** SDD 414 — host unpair of the active Companion device. */
+  onUnpairCompanionDevice: (wsHash: string) => void;
   /** Low-level post for Engine log actions (clear/journal/copy). */
   onPost: (action: CockpitAction) => void;
   /** Embedded Mission Control board (same Preact App as the standalone panel). */
@@ -701,6 +703,49 @@ export function App(p: CockpitAppProps) {
                     </span>
                   ) : null}
                   <span class="dim">{companion.folderName}</span>
+                </div>
+
+                <div class="ck-settings-block ck-settings-block-nested" data-testid="control-settings-devices">
+                  <h3 class="ck-settings-block-title">{s.devicesTitle}</h3>
+                  <p class="ck-settings-block-hint">{s.devicesHint}</p>
+                  {companion.devices.length === 0 ? (
+                    <p class="ck-settings-block-body dim" data-testid="companion-devices-empty">
+                      {s.devicesEmpty}
+                    </p>
+                  ) : (
+                    <ul class="ck-device-list">
+                      {companion.devices.map((d) => (
+                        <li key={d.id} class="ck-device-row" data-testid="companion-device-row">
+                          <div class="ck-device-main">
+                            <div class="ck-device-name">
+                              <strong>{d.name}</strong>
+                              {d.version ? <span class="dim"> · {d.version}</span> : null}
+                            </div>
+                            <div class="ck-device-meta">
+                              <span class="dim">
+                                {d.kind === "mobile" ? s.devicesKindMobile : s.devicesKindBrowser}
+                              </span>
+                              <span class={`ck-badge ${d.live ? "ok" : "muted"}`}>
+                                {d.live ? s.devicesLive : s.devicesOffline}
+                              </span>
+                              {d.pairedAt ? (
+                                <span class="dim" title={d.pairedAt}>
+                                  {s.devicesPairedAt} {d.pairedAt.slice(0, 19).replace("T", " ")}
+                                </span>
+                              ) : null}
+                            </div>
+                          </div>
+                          <Button
+                            variant="default"
+                            data-testid="companion-device-unpair"
+                            onClick={() => p.onUnpairCompanionDevice(companion.wsHash)}
+                          >
+                            {s.devicesUnpair}
+                          </Button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
               </>
             ) : (

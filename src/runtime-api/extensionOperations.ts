@@ -43,6 +43,7 @@ export const EXTENSION_COMMAND_ACTIONS = [
   "agent.inject-continuity", "agent.resume-all", "workspace.stop-all", "pipeline.start", "pipeline.approve",
   "pipeline.reject", "pipeline.cancel", "pipeline.rerun", "pipeline.dismiss", "pipeline.apply-input", "pipeline.delete",
   "bridge.restart", "bridge.stop", "config.health",
+  "companion.unpair",
   "handoff.note", "prompt.inject", "runtime-ops.provider.configure",
   "soul.profile.create", "soul.profile.import", "soul.profile.replace", "soul.profile.adopt",
   "soul.profile.enable", "soul.profile.disable", "soul.profile.delete",
@@ -111,6 +112,8 @@ export const extensionCommandSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("proposal.reject"), id: text(64, 1) }).strict(),
   z.object({ action: z.literal("approval.resolve"), id: text(128, 1), decision }).strict(),
   z.object({ action: z.literal("config.health") }).strict(),
+  /** Host Control: revoke the active Companion session without the device token. */
+  z.object({ action: z.literal("companion.unpair") }).strict(),
   z.object({ action: z.literal("config.agent.add"), agent: name, cmd: text(16_384, 1), kind: z.enum(["agent", "terminal"]).optional() }).strict(),
   z.object({ action: z.literal("config.agent.clone"), agent: name, newName: name }).strict(),
   z.object({ action: z.literal("config.agent.rename"), agent: name, newName: name }).strict(),

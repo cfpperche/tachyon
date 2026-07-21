@@ -62,6 +62,14 @@ export class CompanionLiveSync {
     return this.clients.size;
   }
 
+  /** True when at least one SSE subscriber is attached for this session token. */
+  hasLiveClient(sessionToken: string): boolean {
+    for (const c of this.clients) {
+      if (c.token === sessionToken) return true;
+    }
+    return false;
+  }
+
   /**
    * Attach an authenticated HTTP response as an SSE subscriber.
    * Sends an immediate snapshot, then keeps the connection open.

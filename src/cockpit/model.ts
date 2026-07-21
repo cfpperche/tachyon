@@ -83,16 +83,29 @@ export interface CockpitApprovalRow {
   title?: string;
 }
 
-/** SDD 414 — Companion tab tools (Bridge list opt-in) + live pair status for Control Settings. */
+/** SDD 414 — one paired Companion client row (Control → Connected devices). */
+export interface CockpitCompanionDevice {
+  id: string;
+  kind: string;
+  name: string;
+  version: string;
+  pairedAt: string;
+  expiresAt?: string;
+  live: boolean;
+}
+
+/** SDD 414 — Companion tab tools (Bridge list opt-in) + devices for Control Settings. */
 export interface CockpitCompanionSettings {
   wsHash: string;
   folderName: string;
   /** settings.companion.tabTools — tools listed on Bridge when true. */
   tabTools: boolean;
-  /** Companion device session live on this engine. */
+  /** Companion device session present on this engine (any device in devices[]). */
   paired: boolean;
   baseUrl?: string;
   engineLabel?: string;
+  /** 0–1 today; array-shaped for multi-device later. */
+  devices: CockpitCompanionDevice[];
 }
 
 export interface CockpitWorkspaceBundle {
@@ -182,9 +195,10 @@ export function buildCockpitModel(
       wsHash: b.control.wsHash,
       folderName: b.control.folderName,
       tabTools: b.companion?.tabTools === true,
-      paired: b.companion?.paired === true,
+      paired: b.companion?.paired === true || (b.companion?.devices?.length ?? 0) > 0,
       baseUrl: b.companion?.baseUrl,
       engineLabel: b.companion?.engineLabel,
+      devices: Array.isArray(b.companion?.devices) ? b.companion!.devices! : [],
     };
   } else if (scoped.length > 1) {
     companionNeedsWorkspacePick = true;

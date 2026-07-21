@@ -26,6 +26,21 @@ export interface CompanionClientInfo {
   version: string;
 }
 
+/**
+ * Host-facing device row for Control → Settings (Connected devices).
+ * Never includes the session token — only a short opaque id.
+ */
+export interface CompanionDeviceRow {
+  id: string;
+  kind: CompanionClientInfo["kind"];
+  name: string;
+  version: string;
+  pairedAt: string;
+  expiresAt?: string;
+  /** True when at least one SSE /events client is attached for this session. */
+  live: boolean;
+}
+
 export interface PairRequestBody {
   pairCode: string;
   protocolVersion: number;

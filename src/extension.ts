@@ -1221,11 +1221,30 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         let companion: CockpitWorkspaceBundle["companion"];
         try {
           const st = jsonObject(await extensionQuery(ws, { action: "companion.status" }), "companion.status");
+          const devicesRaw = Array.isArray(st.devices) ? st.devices : [];
+          const devices = devicesRaw.flatMap((raw) => {
+            if (!raw || typeof raw !== "object" || Array.isArray(raw)) return [];
+            const d = raw as { [key: string]: unknown };
+            const id = typeof d.id === "string" ? d.id : "";
+            if (!id) return [];
+            return [
+              {
+                id,
+                kind: typeof d.kind === "string" ? d.kind : "browser",
+                name: typeof d.name === "string" ? d.name : "Companion",
+                version: typeof d.version === "string" ? d.version : "",
+                pairedAt: typeof d.pairedAt === "string" ? d.pairedAt : "",
+                expiresAt: typeof d.expiresAt === "string" ? d.expiresAt : undefined,
+                live: d.live === true,
+              },
+            ];
+          });
           companion = {
             tabTools: st.tabTools === true,
-            paired: st.paired === true,
+            paired: st.paired === true || devices.length > 0,
             baseUrl: typeof st.baseUrl === "string" ? st.baseUrl : undefined,
             engineLabel: typeof st.engineLabel === "string" ? st.engineLabel : undefined,
+            devices,
           };
         } catch {
           /* engine without companion.status (older) or offline */
@@ -1369,6 +1388,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const ws = byHash(wsHash);
       if (!ws) throw new Error("no Tachyon workspace for that hash");
       await extensionInvoke(ws, { action: "config.companion.tabTools", enabled });
+    },
+    unpairCompanionDevice: async (wsHash) => {
+      const ws = byHash(wsHash);
+      if (!ws) throw new Error("no Tachyon workspace for that hash");
+      await extensionInvoke(ws, { action: "companion.unpair" });
     },
   });
 
