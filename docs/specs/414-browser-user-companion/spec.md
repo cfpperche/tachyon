@@ -3,14 +3,17 @@
 _Created 2026-07-19._  
 _Design ratified 2026-07-20 (maintainer lean + open-question package)._
 
-**Status:** in-progress
+**Status:** shipped
+
+**Closure:** Browser Companion MVP landed on ADE main through `c26baecf` (VSIX 0.56.88) + companion monorepo `cfpperche/tachyon-companion` @ 0.4.8. Shipped: loopback pair/unpair + multi-device registry, human send-prompt + approvals, agent-gated `user_browser_*` (snapshot/act/screenshot-to-path), Control Settings (tabTools + Connected devices), Preact side panel without prototype residue. Human dogfood: pair/unpair + tabTools + fixture actuation. Out of this SDD (sibling board, not 414 debt): Firefox/store packaging, mobile client (`t-fe52f0` / `t-619157`), multi-engine picker, Audit trail UI, broader actuation trust policy.
+
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
-**Board:** design `t-dec8a9` · track worktree `tachyon/change/companion-track` · source pin `p-2112a8`  
-**Kind:** product SDD (companion external shell) — design ratify done; implementation phased
+**Board:** design `t-dec8a9` (done) · source pin `p-2112a8` · sibling mobile `t-fe52f0` / `t-619157`  
+**Kind:** product SDD (companion external shell) — Phase 0 + browser MVP shipped
 
 ## Intent
 
@@ -145,23 +148,25 @@ Agent-pull (`user_browser_*`) is **v1.1+**.
 
 ### Product v1 (implementation)
 
-- [ ] **Scenario: pair extension to local engine**
+- [x] **Scenario: pair extension to local engine**
   - **Given** a running Tachyon engine for a workspace and an installed Chromium extension
   - **When** the human completes pairing with a short-lived code from Control (or equivalent)
   - **Then** the extension shows connected state for that workspace and can call authorized companion endpoints
-- [ ] **Scenario: send active tab into a Task**
+- [x] **Scenario: send active tab into a Task**
   - **Given** a paired extension on an ordinary page and a user gesture
   - **When** the human chooses "Send to Tachyon"
   - **Then** a Task appears with URL and title (selection optional); no cookies in the task payload
-- [ ] **Scenario: receive and resolve an approval in the browser**
+  - **Note (evolution):** also ships idle-safe **send prompt → active agent** (`t-523405`) and agent-pull tab tools under `settings.companion.tabTools`
+- [x] **Scenario: receive and resolve an approval in the browser**
   - **Given** a pending human approval in the engine
   - **When** the extension is paired and online
   - **Then** the human can Accept/Deny from the extension and host approval status reflects the record
-- [ ] **Scenario: single active pair**
+- [x] **Scenario: single active pair**
   - **Given** an extension already paired to engine A
   - **When** the human pairs to engine B (or re-pairs)
   - **Then** at most one active pair remains; the UI does not silently multiplex engines in v1
-- [ ] Unpacked Chromium dogfood checklist recorded in `notes.md` or `tasks.md` Human dogfood section
+  - **Note (evolution):** Control **Connected devices** lists paired devices and supports force-unpair; still one live session model per engine, not multi-engine picker
+- [x] Unpacked Chromium dogfood checklist recorded in `notes.md` or `tasks.md` Human dogfood section
 
 ## Non-goals
 

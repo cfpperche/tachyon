@@ -32,7 +32,9 @@ _In-flight design memory — decisions, deviations, tradeoffs, and open question
 
 ## Deviations
 
-_None yet (design/plan only)._
+- 2026-07-21 — Product evolved past pure human-push v1: agent-pull `user_browser_*` (snapshot/act/screenshot path) shipped under `settings.companion.tabTools` in the same browser MVP wave. Spec acceptance notes record the evolution; status is **shipped** (mobile/Firefox/store/audit trail are non-goals of this SDD — sibling board tasks).
+- Original "send tab → create_task" also grew **send prompt → active agent** (`t-523405`) as the primary human→agent path.
+- Multi-device registry + force-unpair in Control (`t-32b1de`) beyond the single-pair UX spike, without multi-engine picker.
 
 ## Implementation log
 
@@ -71,3 +73,21 @@ pairing spike and are appended here.
 Maintainer + grok: **Preact + preact/compat + Tailwind + Radix primitives**, **without shadcn**.
 Own component library for the extension (`packages/browser-ui` in tachyon-companion).
 Mobile is a separate product/stack — not shared app. See `tachyon-companion/docs/STACK.md`.
+
+## Visual QA
+
+Surface: Companion Chromium side panel (pair, agents, send) + Control Settings (tabTools toggle, Connected devices list/unpair).
+
+Evidence: pair/unpair dogfood screenshot `.tachyon/evidence/companion-414/pair-unpair-dogfood-2026-07-20.png`; maintainer live 2026-07-21 Connected devices pair/unpair PASS; tabTools toggle PASS; prototype Settings residue removed (agents-only UI).
+
+Verdict: pass for browser MVP ship. Residual non-blocker: Audit trail copy still "coming soon" (not implemented). Mobile/webapp out of scope.
+
+## Ship log (2026-07-21)
+
+- ADE main: Companion track merged; Connected devices `212f7af3` + bump `c26baecf` → **0.56.88** (`tachyon-0.56.88.vsix`).
+- Companion extension monorepo: **0.4.8** — Preact side panel; agents dropdown only; prototype mode / design-system residue removed; honest contenteditable type/fill; screenshot as workspace path under `.tachyon/companion/screenshots`.
+- Agent tools: always-register gated list with `not_paired` / tabTools-off fail-closed; `forceToolListRefresh` on pair state change.
+- Human dogfood PASS: pair/unpair Connected devices; tabTools toggle; multi-runtime fixture actuation (9/9 automated path).
+- Board: all 414 slice + 414-tab implementation tasks **done**; design `t-dec8a9` → **done** after SDD status **shipped**.
+- Residue kept open (not 414 debt): `t-fe52f0` (mobile/webapp companion), `t-619157` (Orca mobile study), `t-784bc8` (runtime API substrate), `t-e4348c` (ADE monorepo assessment).
+- Managed worktrees `companion-track` + `companion-devices-control` fully contained in main — prune after close.
