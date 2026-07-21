@@ -44,13 +44,50 @@ export interface CockpitTaskDetailRoute {
   readonly taskId: string;
 }
 
+/**
+ * t-610705 Phase C.2 — one agent's normalized activity feed (assistant messages, tool calls, files,
+ * usage), a subroute of Fleet. `wsHash` is the entity's immutable workspace locator, same reasoning
+ * as task-detail's `wsHash` (router dueto): never derived from the shell's workspace-scope selector.
+ */
+export interface CockpitAgentActivityRoute {
+  readonly kind: "agent-activity";
+  readonly wsHash: string;
+  readonly agent: string;
+}
+
+/**
+ * t-610705 Phase C.2 — one agent's captured probe runs, a subroute of Fleet.
+ */
+export interface CockpitAgentProbesRoute {
+  readonly kind: "agent-probes";
+  readonly wsHash: string;
+  readonly agent: string;
+}
+
+/**
+ * t-610705 Phase C.2 — the UNFILTERED probe ledger for a workspace (an internal/debug escape hatch
+ * for caller-less or orphaned records — spec 322 — never surfaced in the UI, reachable only via the
+ * agent-less `tachyon.openProbes` command). A hardening-dueto finding (probe-2d90286d) flagged that
+ * an `agent?: string` optional field on ONE route kind creates undefined/null/""-ambiguity across
+ * routeKey/decodeRoute/persistence — so this is its OWN kind instead, not agent-probes with an
+ * absent agent.
+ */
+export interface CockpitWorkspaceProbesRoute {
+  readonly kind: "workspace-probes";
+  readonly wsHash: string;
+}
+
 // C.1 also adds task-new/task-edit (Task Studio — deferred pending its own design pass, since it
-// shares StudioPanelManagerBase with 8 other panels); C.2 adds agentActivity/agentProbes; C.3 folds
-// handoff into a section (no new kind); C.4 adds pinEdit. Extend this union, then satisfy
-// parentRoute/decodeRoute/refreshPolicy/navSection's exhaustiveness checks — the compiler is the
-// checklist (assertNeverRoute's `never` parameter fails to compile until every function below
-// handles the new kind).
-export type CockpitRoute = CockpitSectionRoute | CockpitTaskDetailRoute;
+// shares StudioPanelManagerBase with 8 other panels); C.3 folds handoff into a section (no new
+// kind); C.4 adds pinEdit. Extend this union, then satisfy parentRoute/decodeRoute/refreshPolicy/
+// navSection's exhaustiveness checks — the compiler is the checklist (assertNeverRoute's `never`
+// parameter fails to compile until every function below handles the new kind).
+export type CockpitRoute =
+  | CockpitSectionRoute
+  | CockpitTaskDetailRoute
+  | CockpitAgentActivityRoute
+  | CockpitAgentProbesRoute
+  | CockpitWorkspaceProbesRoute;
 
 /** How often the active route's data should be re-fetched on the 3s shell timer. */
 export type CockpitRefreshPolicy = "poll" | "none";
@@ -65,6 +102,12 @@ export function routeKey(route: CockpitRoute): string {
       return `section:${route.section}`;
     case "task-detail":
       return `task-detail:${route.wsHash}:${route.taskId}`;
+    case "agent-activity":
+      return `agent-activity:${route.wsHash}:${route.agent}`;
+    case "agent-probes":
+      return `agent-probes:${route.wsHash}:${route.agent}`;
+    case "workspace-probes":
+      return `workspace-probes:${route.wsHash}`;
     default:
       return assertNeverRoute(route);
   }
@@ -77,6 +120,10 @@ export function parentRoute(route: CockpitRoute): CockpitRoute | null {
       return null;
     case "task-detail":
       return { kind: "section", section: "mission" };
+    case "agent-activity":
+    case "agent-probes":
+    case "workspace-probes":
+      return { kind: "section", section: "fleet" };
     default:
       return assertNeverRoute(route);
   }
@@ -89,6 +136,10 @@ export function navSection(route: CockpitRoute): CockpitSectionId {
       return route.section;
     case "task-detail":
       return "mission";
+    case "agent-activity":
+    case "agent-probes":
+    case "workspace-probes":
+      return "fleet";
     default:
       return assertNeverRoute(route);
   }
@@ -114,6 +165,18 @@ export function refreshPolicy(route: CockpitRoute): CockpitRefreshPolicy {
       // a document view, not a dashboard — real mutations already re-push via the onTasksChanged
       // fan-out; a timer-driven refetch mid-read (or mid-typing in the assignee field) is only downside.
       return "none";
+    case "agent-activity":
+      // a LIVE feed with its own push (fs.watchFile on the durable log + a 1s attention poll) — the
+      // shared 3s shell timer must never re-drive it: Cockpit.ts's sendSectionModule() has no
+      // agent-activity branch at all (hardening dueto probe-2d90286d blocker — conflating a route's
+      // own push with the shell's periodic poll reproduces the exact bug class t-0fc9ee just fixed,
+      // this time as a spammed image-resend rather than a wiped update-check).
+      return "none";
+    case "agent-probes":
+    case "workspace-probes":
+      // a cheap local disk read (ProbeStore), same cost class as Mission/Approvals/Validations —
+      // polls like any other section; the fan-out (refreshCockpitProbes) covers the gap between ticks.
+      return "poll";
     default:
       return assertNeverRoute(route);
   }
@@ -126,6 +189,12 @@ export function formatRoute(route: CockpitRoute): string {
       return route.section;
     case "task-detail":
       return `task ${route.taskId}`;
+    case "agent-activity":
+      return `${route.agent} activity`;
+    case "agent-probes":
+      return `${route.agent} probes`;
+    case "workspace-probes":
+      return "probes";
     default:
       return assertNeverRoute(route);
   }
@@ -134,6 +203,9 @@ export function formatRoute(route: CockpitRoute): string {
 export const routes = {
   section: (section: CockpitSectionId): CockpitSectionRoute => ({ kind: "section", section }),
   taskDetail: (wsHash: string, taskId: string): CockpitTaskDetailRoute => ({ kind: "task-detail", wsHash, taskId }),
+  agentActivity: (wsHash: string, agent: string): CockpitAgentActivityRoute => ({ kind: "agent-activity", wsHash, agent }),
+  agentProbes: (wsHash: string, agent: string): CockpitAgentProbesRoute => ({ kind: "agent-probes", wsHash, agent }),
+  workspaceProbes: (wsHash: string): CockpitWorkspaceProbesRoute => ({ kind: "workspace-probes", wsHash }),
 };
 
 /**
@@ -156,6 +228,17 @@ export function decodeRoute(raw: unknown): CockpitRoute | null {
     if (typeof obj.wsHash !== "string" || !obj.wsHash) return null;
     if (typeof obj.taskId !== "string" || !obj.taskId) return null;
     return { kind: "task-detail", wsHash: obj.wsHash, taskId: obj.taskId };
+  }
+  if (obj.kind === "agent-activity" || obj.kind === "agent-probes") {
+    if (keys.length !== 3 || !keys.includes("wsHash") || !keys.includes("agent")) return null;
+    if (typeof obj.wsHash !== "string" || !obj.wsHash) return null;
+    if (typeof obj.agent !== "string" || !obj.agent) return null;
+    return { kind: obj.kind, wsHash: obj.wsHash, agent: obj.agent };
+  }
+  if (obj.kind === "workspace-probes") {
+    if (keys.length !== 2 || !keys.includes("wsHash")) return null;
+    if (typeof obj.wsHash !== "string" || !obj.wsHash) return null;
+    return { kind: "workspace-probes", wsHash: obj.wsHash };
   }
   return null;
 }

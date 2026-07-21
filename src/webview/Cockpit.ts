@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import * as fs from "node:fs";
 import { panelIcon } from "./shared/panelIcon.js";
 import { renderWebviewShell } from "./shared/shell.js";
 import { resolveCockpitSection } from "../cockpit/resolveSection.js";
@@ -27,7 +28,7 @@ import {
   type CockpitStrings,
 } from "./cockpit/messages.js";
 import type { WorkspaceMissionControlTarget } from "../shell/MissionControlTarget.js";
-import type { WorkspacePresentationTarget } from "../shell/WorkspacePresentation.js";
+import type { WorkspacePresentationTarget, WorkspaceProbePresentationTarget } from "../shell/WorkspacePresentation.js";
 import {
   snapshotMessage,
   taskErrorMessage,
@@ -37,6 +38,19 @@ import { buildMissionVm, MissionAgentLists } from "../cockpit/missionVm.js";
 import { buildTaskDetailVm, emptyTombstoneVm } from "../cockpit/taskDetailVm.js";
 import { taskMessage, taskDetailErrorMessage, type TaskDetailAction } from "./task-detail/messages.js";
 import type { WorkspaceTaskDetailTarget } from "../shell/TaskDetailTarget.js";
+import { startActivityFeed, type ActivityFeed } from "../cockpit/activityFeed.js";
+import type { WorkspaceActivityTarget } from "../shell/ActivityTarget.js";
+import {
+  activityMessage,
+  imageDataMessage,
+  SHARE_EXTERNAL,
+  COPY_SHARE_TEXT,
+  SHARE_TO_AGENT,
+  type ActivityWebviewMessage,
+} from "./activity/messages.js";
+import { withActivityShareKeys, resolveActivityShare, internalSharePrompt } from "../activity/activityShare.js";
+import type { ActivityViewModel } from "../activity/activityView.js";
+import { probesMessage } from "./probes/messages.js";
 import {
   approvalsMessage,
   approvalErrorMessage,
@@ -62,7 +76,7 @@ import {
 } from "./inspector/messages.js";
 import { buildInspectorModel, type InspectorModel, type TmuxServerSnapshot } from "../inspector/model.js";
 import type { PaneSnapshot } from "../tmux/TmuxService.js";
-import { showNotification } from "../workspace/NotificationService.js";
+import { notify, showNotification } from "../workspace/NotificationService.js";
 import type { PluginsPanelManager } from "./PluginsPanel.js";
 
 export const COCKPIT_VIEW_TYPE = "tachyonCockpit";
@@ -106,6 +120,16 @@ export interface CockpitTaskDetail {
   getWorkspaces: () => WorkspaceTaskDetailTarget[];
 }
 
+/** t-610705 (Phase C.2) — one agent's normalized activity feed, a subroute of Fleet. */
+export interface CockpitActivity {
+  getWorkspaces: () => WorkspaceActivityTarget[];
+}
+
+/** t-610705 (Phase C.2) — captured probe runs, a subroute of Fleet. */
+export interface CockpitProbes {
+  getWorkspaces: () => WorkspaceProbePresentationTarget[];
+}
+
 export interface CockpitRuntimeOps {
   buildSnapshot: () => RuntimeOpsSnapshot | Promise<RuntimeOpsSnapshot>;
   configureProviderObservation?: (provider: RuntimeOpsProviderV2, enabled: boolean) => void | Promise<void>;
@@ -135,6 +159,8 @@ export interface CockpitDeps {
   collect: () => Promise<CockpitWorkspaceBundle[]>;
   missionBoard: CockpitMissionBoard;
   taskDetail: CockpitTaskDetail;
+  activity: CockpitActivity;
+  probes: CockpitProbes;
   approvals: CockpitApprovals;
   validations: CockpitValidations;
   runtimeOps: CockpitRuntimeOps;
@@ -146,7 +172,6 @@ export interface CockpitDeps {
   fleetStart: (name: string, wsHash?: string) => Promise<void>;
   fleetStop: (name: string, wsHash?: string) => Promise<void>;
   fleetTerminal: (name: string, wsHash?: string) => Promise<void>;
-  fleetActivity: (name: string, wsHash?: string) => void;
   revealPath: (fsPath: string) => void;
   openConfigFile: (wsHash?: string) => Promise<void>;
   clearEngineLog: (wsHash: string) => Promise<void>;
@@ -365,6 +390,7 @@ let currentRoute: CockpitRoute = routes.section("overview");
 let navEpoch = 0;
 
 function navigate(route: CockpitRoute): void {
+  reconcileActivityTeardown(route);
   currentRoute = route;
   navEpoch += 1;
 }
@@ -377,6 +403,8 @@ let pushMissionBoard: (() => void) | undefined;
 let pushApprovals: (() => void) | undefined;
 let pushValidations: (() => void) | undefined;
 let pushTaskDetail: (() => void) | undefined;
+let pushProbes: (() => void) | undefined;
+let doOpenActivityTranscript: (() => void) | undefined;
 let wiredPanel: vscode.WebviewPanel | undefined;
 
 /** Refresh embedded Mission board after task mutations. */
@@ -389,6 +417,21 @@ export function refreshCockpitMissionBoard(): void {
  *  sidebar already use. A no-op when the current route isn't task-detail (mirrors refreshCockpitMissionBoard). */
 export function refreshCockpitTaskDetail(): void {
   pushTaskDetail?.();
+}
+
+/** t-610705 (Phase C.2) — refresh an open agent-probes/workspace-probes subroute after the probe
+ *  ledger changes (wired into extension.ts's onViewsChanged("probes"), replacing the retired
+ *  ProbeResultPanelManager.refreshAll()). A no-op off a probes route (mirrors refreshCockpitTaskDetail). */
+export function refreshCockpitProbes(): void {
+  pushProbes?.();
+}
+
+/** t-610705 (Phase C.2) — the palette "Open Raw Transcript" escape hatch, wired to the CURRENT
+ *  route rather than a tracked "most recently active" panel (that concept doesn't survive
+ *  collapsing to a single shared binding — see activityBinding's doc comment). Off an agent-activity
+ *  route, notifies instead of guessing which agent the human meant. */
+export function openCockpitAgentTranscript(): void {
+  doOpenActivityTranscript?.();
 }
 
 /** Refresh embedded Approvals after resolve/fan-out. */
@@ -439,6 +482,57 @@ function resolveApprovalWs(appr: CockpitApprovals, prefer?: string): WorkspacePr
     if (hit) return hit;
   }
   return all[0];
+}
+
+/** Fallback-style resolver for the Fleet card's "Activity" click (mirrors resolveMissionWs/
+ *  resolveApprovalWs) — used ONLY to decide which wsHash to bake into a fresh agent-activity route.
+ *  Once that route exists, resolving ITS workspace is strict (see resolveActivityWs below, entity
+ *  routes carry an immutable locator, same reasoning as resolveTaskDetailWs). */
+function resolveFleetActivityWs(activity: CockpitActivity, prefer?: string): WorkspaceActivityTarget | undefined {
+  const all = activity.getWorkspaces();
+  if (all.length === 0) return undefined;
+  if (prefer) {
+    const hit = all.find((w) => w.wsHash === prefer);
+    if (hit) return hit;
+  }
+  if (controlWsHash) {
+    const hit = all.find((w) => w.wsHash === controlWsHash);
+    if (hit) return hit;
+  }
+  return all[0];
+}
+
+/**
+ * t-610705 (Phase C.2) — Control hosts AT MOST ONE active Activity feed at a time (unlike the
+ * retired standalone panel's one-Map-slot-per-agent). A hardening dueto (probe-2d90286d) found that
+ * navEpoch alone can't protect a live watcher's async continuations from posting into whatever feed
+ * replaced it: navEpoch bumps on ANY navigation (including unrelated ones, e.g. a shell workspace-
+ * scope switch, which must NOT tear down an open activity feed — same "immutable locator" reasoning
+ * as task-detail). So this gets its OWN generation counter, bumped only when the activity route
+ * itself starts/stops, and every callback/continuation in activityFeed.ts checks it via `isCurrent`
+ * before touching the shared webview.
+ */
+let activityBinding: { generation: number; wsHash: string; agent: string; feed: ActivityFeed } | undefined;
+let activityGeneration = 0;
+
+function stopActivityBinding(): void {
+  activityBinding?.feed.stop();
+  activityBinding = undefined;
+}
+
+/**
+ * Teardown ONLY — called synchronously from `navigate()` (the one place `currentRoute` changes) so
+ * an orphaned watcher can never survive a route change regardless of what the caller does next
+ * (closes the dueto's "lifecycle must be owned by route transition, not by rendering" finding).
+ * Starting a FRESH binding needs `deps`/`live` (openCockpit's closure), so that half lives in
+ * `ensureActivityBinding` below, called from sendSectionModule — same convention as task-detail's
+ * sendTaskDetail, always invoked right after `sendModel()` by every existing caller.
+ */
+function reconcileActivityTeardown(route: CockpitRoute): void {
+  if (route.kind === "agent-activity" && activityBinding && activityBinding.wsHash === route.wsHash && activityBinding.agent === route.agent) {
+    return; // same feed re-entered — sendSectionModule's ensureActivityBinding will replay it, not restart it
+  }
+  stopActivityBinding();
 }
 
 function sectionTitle(s: CockpitStrings, section: CockpitSectionId): string {
@@ -508,9 +602,12 @@ export async function openCockpit(
         pushApprovals = undefined;
         pushValidations = undefined;
         pushTaskDetail = undefined;
+        pushProbes = undefined;
+        doOpenActivityTranscript = undefined;
         wiredPanel = undefined;
         navEpoch += 1;
         missionAgentLists.clear();
+        stopActivityBinding();
         deps.plugins.unbindControlEmbed();
       }
     });
@@ -753,6 +850,189 @@ export async function openCockpit(
     return false;
   };
 
+  const resolveActivityWs = (wsHash: string): WorkspaceActivityTarget | undefined =>
+    deps.activity.getWorkspaces().find((w) => w.wsHash === wsHash);
+
+  // t-610705 (Phase C.2) — action-resolution bookkeeping for the CURRENT activity binding (openFile's
+  // allow-list, share/transcript resolution). Deliberately host-side state distinct from
+  // activityFeed.ts's own closure: that module owns feed MECHANICS only, this owns what a webview
+  // ACTION is allowed to touch — same split TaskDetailPanel's tombstone cache keeps from taskDetailVm.ts.
+  let activityKnownPaths = new Set<string>();
+  let activityLatestVm: ActivityViewModel | undefined;
+  let activityTranscriptPath: string | undefined;
+
+  /**
+   * Start-if-missing only. `navigate()` already tore down any MISMATCHED binding synchronously
+   * (reconcileActivityTeardown) — by the time this runs, either a binding for the CURRENT identity
+   * already exists (re-entry / cockpit READY on an unchanged route: nothing to do, the live watcher
+   * already covers it) or none exists at all (fresh entry: start one). Called from sendSectionModule,
+   * same convention every other route's content-push already follows (always right after sendModel()).
+   */
+  const ensureActivityBinding = () => {
+    if (currentRoute.kind !== "agent-activity") return;
+    const route = currentRoute;
+    if (activityBinding && activityBinding.wsHash === route.wsHash && activityBinding.agent === route.agent) return;
+    const ws = resolveActivityWs(route.wsHash);
+    if (!ws) return; // a stale revive/deep-link — no matching workspace; the route stays open, empty.
+    const generation = ++activityGeneration;
+    const capturedPanel = live;
+    const isCurrent = () => panel === capturedPanel && activityBinding?.generation === generation;
+    const feed = startActivityFeed(ws, route.agent, {
+      isCurrent,
+      post: (vm, prepended) => {
+        if (!isCurrent()) return;
+        const shareVm = withActivityShareKeys(route.agent, vm);
+        activityLatestVm = shareVm;
+        activityKnownPaths = new Set([...shareVm.summary.filesChanged, ...shareVm.summary.filesReferenced]);
+        activityTranscriptPath = shareVm.sourcePath;
+        capturedPanel.webview.postMessage(activityMessage(route.wsHash, route.agent, shareVm, prepended));
+      },
+      postImage: (id, dataUri) => {
+        if (!isCurrent()) return;
+        capturedPanel.webview.postMessage(imageDataMessage(route.wsHash, route.agent, id, dataUri));
+      },
+    });
+    activityBinding = { generation, wsHash: route.wsHash, agent: route.agent, feed };
+  };
+
+  const resolveActivityShareOrNotify = (agent: string, sequence: unknown, key: unknown) => {
+    const resolved = resolveActivityShare(agent, activityLatestVm, sequence, key);
+    if (!resolved.ok) {
+      notify("That Activity item is no longer available. Refresh the Activity view and try again.", "warn");
+      return undefined;
+    }
+    return resolved.payload;
+  };
+
+  const copyActivityShareText = async (agent: string, sequence: unknown, key: unknown): Promise<void> => {
+    const payload = resolveActivityShareOrNotify(agent, sequence, key);
+    if (!payload) return;
+    await vscode.env.clipboard.writeText(payload.text);
+    notify("Activity share text copied.");
+  };
+
+  const shareActivityExternal = async (agent: string, sequence: unknown, key: unknown): Promise<void> => {
+    const payload = resolveActivityShareOrNotify(agent, sequence, key);
+    if (!payload) return;
+    const picked = await vscode.window.showQuickPick([
+      { label: "Email", id: "email" as const, description: "Open a mail draft" },
+      { label: "WhatsApp", id: "whatsapp" as const, description: "Open WhatsApp Web" },
+    ], { placeHolder: "Share Activity item" });
+    if (!picked) return;
+    const preview = payload.text.length > 1400 ? `${payload.text.slice(0, 1400).trimEnd()}\n\n[preview truncated]` : payload.text;
+    const ok = await showNotification(`Share this Activity item via ${picked.label}?`, "info", ["Open"], { modal: true, detail: preview });
+    if (ok !== "Open") return;
+    if (picked.id === "email") {
+      const subject = encodeURIComponent(`Tachyon Activity from ${agent}`);
+      const body = encodeURIComponent(payload.urlText);
+      await vscode.env.openExternal(vscode.Uri.parse(`mailto:?subject=${subject}&body=${body}`));
+    } else {
+      await vscode.env.openExternal(vscode.Uri.parse(`https://wa.me/?text=${encodeURIComponent(payload.urlText)}`));
+    }
+  };
+
+  const runningActivityAgentTargets = async (ws: WorkspaceActivityTarget, sourceAgent: string): Promise<Array<{ name: string; description: string }>> => {
+    const context = await ws.activityContext(sourceAgent);
+    return context.targets.items.map((target) => ({
+      name: target.name,
+      description: target.declared ? "declared agent" : "ad-hoc agent",
+    }));
+  };
+
+  const shareActivityToAgent = async (wsHash: string, sourceAgent: string, sequence: unknown, key: unknown): Promise<void> => {
+    const payload = resolveActivityShareOrNotify(sourceAgent, sequence, key);
+    if (!payload) return;
+    const ws = resolveActivityWs(wsHash);
+    if (!ws) return;
+    // t-610705 (Phase C.2, hardening dueto probe-2d90286d MAJOR) — this flow spans a QuickPick + a
+    // modal confirm, both genuinely user-paced; capture the binding generation now and recheck
+    // before the actual side effect (ws.sendAgentInput) so navigating away mid-flow silently
+    // abandons the paste instead of sending it into whatever agent/workspace is now on screen.
+    const myGeneration = activityBinding?.generation;
+    const targets = await runningActivityAgentTargets(ws, sourceAgent);
+    if (targets.length === 0) {
+      notify("No other running Tachyon agent is available for this Activity share.");
+      return;
+    }
+    const picked = await vscode.window.showQuickPick(targets.map((t) => ({ label: t.name, description: t.description })), { placeHolder: "Send Activity item to agent" });
+    if (!picked) return;
+    if (activityBinding?.generation !== myGeneration) return;
+    const stillLive = (await runningActivityAgentTargets(ws, sourceAgent)).some((t) => t.name === picked.label);
+    if (!stillLive) {
+      notify(`Agent '${picked.label}' is no longer available.`, "warn");
+      return;
+    }
+    const prompt = internalSharePrompt(payload);
+    const preview = prompt.length > 1400 ? `${prompt.slice(0, 1400).trimEnd()}\n\n[preview truncated]` : prompt;
+    const ok = await showNotification(`Paste Activity context into '${picked.label}'?`, "info", ["Paste"], { modal: true, detail: preview });
+    if (ok !== "Paste") return;
+    if (activityBinding?.generation !== myGeneration) return;
+    await ws.sendAgentInput(picked.label, prompt, false);
+    notify(`Activity context pasted into '${picked.label}' (not submitted).`);
+  };
+
+  const handleActivityAction = async (m: Partial<ActivityWebviewMessage>): Promise<boolean> => {
+    if (!m?.type || currentRoute.kind !== "agent-activity") return false;
+    const route = currentRoute;
+    if (m.type === "openFile" && typeof m.path === "string" && activityKnownPaths.has(m.path)) {
+      void vscode.window.showTextDocument(vscode.Uri.file(m.path), { preview: true, viewColumn: vscode.ViewColumn.Beside });
+      return true;
+    }
+    if (m.type === "terminal") {
+      void vscode.commands.executeCommand("tachyon.openAgentTerminalItem", route.agent, route.wsHash);
+      return true;
+    }
+    if (m.type === "loadOlder") {
+      activityBinding?.feed.loadOlder();
+      return true;
+    }
+    if (m.type === COPY_SHARE_TEXT) {
+      void copyActivityShareText(route.agent, m.sequence, m.key);
+      return true;
+    }
+    if (m.type === SHARE_EXTERNAL) {
+      void shareActivityExternal(route.agent, m.sequence, m.key);
+      return true;
+    }
+    if (m.type === SHARE_TO_AGENT) {
+      void shareActivityToAgent(route.wsHash, route.agent, m.sequence, m.key);
+      return true;
+    }
+    return false;
+  };
+
+  const resolveProbesWs = (wsHash: string): WorkspaceProbePresentationTarget | undefined =>
+    deps.probes.getWorkspaces().find((w) => w.wsHash === wsHash);
+
+  // t-610705 (Phase C.2) — mirrors the retired ProbeResultPanelManager's renderToken (same-route
+  // double-call ordering guard) — deliberately a SEPARATE counter from navEpoch/activityGeneration,
+  // since two sendProbes() calls for the SAME route+epoch can legitimately overlap (e.g. cockpit
+  // READY racing the refreshCockpitProbes fan-out).
+  let probesRequestToken = 0;
+
+  const sendProbes = async () => {
+    if (panel !== live) return;
+    if (currentRoute.kind !== "agent-probes" && currentRoute.kind !== "workspace-probes") return;
+    const route = currentRoute;
+    const epoch = navEpoch;
+    const myToken = ++probesRequestToken;
+    const ws = resolveProbesWs(route.wsHash);
+    if (!ws) {
+      if (panel !== live || navEpoch !== epoch || myToken !== probesRequestToken) return;
+      live.webview.postMessage(probesMessage({ folder: "", error: "No Tachyon workspace for Probes." }));
+      return;
+    }
+    const caller = route.kind === "agent-probes" ? route.agent : undefined;
+    try {
+      const view = await ws.probeView(caller);
+      if (panel !== live || navEpoch !== epoch || myToken !== probesRequestToken) return;
+      live.webview.postMessage(probesMessage({ folder: ws.folderName, view }));
+    } catch (err) {
+      if (panel !== live || navEpoch !== epoch || myToken !== probesRequestToken) return;
+      live.webview.postMessage(probesMessage({ folder: ws.folderName, error: err instanceof Error ? err.message : String(err) }));
+    }
+  };
+
   const sendSectionModule = async () => {
     bindPluginsIfNeeded();
     if (isSection(currentRoute, "mission")) await sendMission();
@@ -762,12 +1042,26 @@ export async function openCockpit(
     else if (isSection(currentRoute, "tmux")) await sendInspector();
     else if (isSection(currentRoute, "plugins")) deps.plugins.refreshControlEmbed();
     else if (currentRoute.kind === "task-detail") await sendTaskDetail();
+    else if (currentRoute.kind === "agent-activity") ensureActivityBinding();
+    else if (currentRoute.kind === "agent-probes" || currentRoute.kind === "workspace-probes") await sendProbes();
   };
 
   pushMissionBoard = () => { void sendMission(); };
   pushApprovals = () => { void sendApprovals(); };
   pushValidations = () => { void sendValidations(); };
   pushTaskDetail = () => { void sendTaskDetail(); };
+  pushProbes = () => { void sendProbes(); };
+  doOpenActivityTranscript = () => {
+    if (currentRoute.kind !== "agent-activity") {
+      notify("Open an agent's Activity view first, then run “Open Raw Transcript”.");
+      return;
+    }
+    if (activityTranscriptPath && fs.existsSync(activityTranscriptPath)) {
+      void vscode.window.showTextDocument(vscode.Uri.file(activityTranscriptPath), { preview: true, viewColumn: vscode.ViewColumn.Beside });
+    } else {
+      notify("Source transcript is no longer on disk — the rendered activity is preserved in Tachyon's durable log.");
+    }
+  };
 
   const handleMissionAction = async (m: Partial<MissionControlAction>): Promise<boolean> => {
     if (!m?.type) return false;
@@ -860,6 +1154,13 @@ export async function openCockpit(
       await sendValidations();
       return true;
     }
+    // t-3990c3 — this handler used to resolve a workspace (and short-circuit `return true`) for
+    // EVERY inbound message reaching it, not just its own action types: when
+    // deps.validations.getWorkspaces() was empty, `if (!ws) return true` swallowed ANY message —
+    // including "ready" — so Control never initialized at all with zero validations-capable
+    // workspaces attached (discovered via t-610705 Phase C.2's cockpitActivity tests, which send a
+    // bare "ready" through the full chain instead of a route that intercepts it earlier).
+    if (m.type !== "closeValidationItem" && m.type !== "assignValidation") return false;
     const ws = resolveMissionWs({ ...deps.missionBoard, getWorkspaces: deps.validations.getWorkspaces });
     if (!ws) return true;
     try {
@@ -943,6 +1244,10 @@ export async function openCockpit(
       if (await handleApprovalAction(msg as Partial<ApprovalAction>)) return;
       if (await handleValidationsAction(msg as Partial<ValidationsAction>)) return;
       if (await handleInspectorAction(msg as Partial<InspectorAction>)) return;
+      // t-610705 (Phase C.2) — no shape collision with any registry above (openFile/terminal/
+      // loadOlder/shareExternal/copyShareText/shareToAgent are unique to Activity); route-gated
+      // (route.kind !== "agent-activity" → false) same as every other handler in this chain.
+      if (await handleActivityAction(msg as Partial<ActivityWebviewMessage>)) return;
 
       if (isRuntimeOpsSetProviderObservationAction(msg)) {
         try {
@@ -966,6 +1271,11 @@ export async function openCockpit(
           live.webview.postMessage(initMessage(s));
           await sendModel();
           await sendSectionModule();
+          // t-610705 (Phase C.2) — a (re)loaded cockpit webview's client-side image cache is empty;
+          // ensureActivityBinding() above is a no-op when the binding already exists (the shared 3s
+          // poll must never touch it — see route.ts's refreshPolicy doc), so THIS is the one place
+          // that explicitly recovers a still-live feed's images after a reload.
+          if (currentRoute.kind === "agent-activity") activityBinding?.feed.replayImages();
           return;
         case "refresh":
           await sendModel();
@@ -1037,8 +1347,16 @@ export async function openCockpit(
           }
           return;
         case "fleetActivity":
+          // t-610705 (Phase C.2) — navigates in place, same pattern as the Board's "openTask" case
+          // in C.1: resolve the workspace ONCE at dispatch time (fallback-style, mirrors every other
+          // Fleet action), then bake the resolved wsHash into the route as its immutable locator.
           if (typeof c.name === "string") {
-            deps.fleetActivity(c.name, typeof c.wsHash === "string" ? c.wsHash : undefined);
+            const ws = resolveFleetActivityWs(deps.activity, typeof c.wsHash === "string" ? c.wsHash : undefined);
+            if (ws) {
+              navigate(routes.agentActivity(ws.wsHash, c.name));
+              await sendModel();
+              await sendSectionModule();
+            }
           }
           return;
         case "revealPath":
@@ -1160,9 +1478,23 @@ export async function openCockpit(
     const tmuxIsActive = isSection(currentRoute, "tmux");
     const missionIsActive = isSection(currentRoute, "mission");
     const taskDetailIsActive = currentRoute.kind === "task-detail";
+    const activityIsActive = currentRoute.kind === "agent-activity";
+    const probesIsActive = currentRoute.kind === "agent-probes" || currentRoute.kind === "workspace-probes";
+    // t-610705 (Phase C.2) — ported from the retired standalone ActivityPanel.ts: mermaid/katex load
+    // ON DEMAND client-side (activity/markdown.tsx), gated on these globals being present at all —
+    // never previously wired into Cockpit.ts's shell (Task Detail's C.1 migration also uses
+    // MarkdownView but never needed these either; unrelated pre-existing gap, out of scope here).
+    // Static bundle URIs are harmless to include even on a route that never triggers them.
+    // ?? "auto" (not just the getConfiguration default param) — test/mocks/vscode.ts's naive
+    // getConfiguration().get() always returns undefined, ignoring the default entirely; without this
+    // fallback, __codeThemeForced below serializes to JSON `undefined` (not the string "undefined"),
+    // and jsonInline's JSON.stringify(...).replace(...) throws on every openCockpit() call in tests.
+    const codeTheme = vscode.workspace.getConfiguration("tachyon").get<string>("activity.codeTheme", "auto") ?? "auto";
+    const activityThemeClass = codeTheme === "dark" ? "tac-theme-dark" : codeTheme === "light" ? "tac-theme-light" : "";
     live.webview.html = renderWebviewShell({
       cspSource: live.webview.cspSource,
       title: s.title,
+      bodyClass: activityThemeClass || undefined,
       // t-610705 (Phase C.1) — task-detail needs frame-src 'self' for PrototypePreview's sandboxed
       // srcdoc iframe (the standalone TaskDetailPanel.ts set this too); purely additive to the CSP,
       // no effect on any other already-embedded section.
@@ -1183,8 +1515,14 @@ export async function openCockpit(
         validationsIsActive ? uri("validations.css") : undefined,
         runtimeIsActive ? uri("runtime-ops.css") : undefined,
         tmuxIsActive ? uri("inspector.css") : undefined,
-        taskDetailIsActive ? uri("mermaid-block.css") : undefined,
+        // one shared conditional for the mermaid stylesheet — task-detail and activity both render
+        // markdown that can carry mermaid blocks; a second, separately-gated call for that same file
+        // would duplicate the link and fail cockpitCssParity's no-duplicate-link check (its source
+        // scan can't tell a real call from one merely mentioned in a comment, so don't write it here).
+        (taskDetailIsActive || activityIsActive) ? uri("mermaid-block.css") : undefined,
         taskDetailIsActive ? uri("task-detail.css") : undefined,
+        activityIsActive ? uri("activity.css") : undefined,
+        probesIsActive ? uri("probes.css") : undefined,
         uri("cockpit.css"),
       ].filter((href): href is string => href !== undefined),
       bundle: uri("cockpit.js"),
@@ -1210,7 +1548,14 @@ export async function openCockpit(
           mission: uri("mission-control.css"),
           "task-detail-mermaid": uri("mermaid-block.css"),
           "task-detail": uri("task-detail.css"),
+          "activity-mermaid": uri("mermaid-block.css"),
+          activity: uri("activity.css"),
+          probes: uri("probes.css"),
         },
+        __mermaidSrc: uri("mermaid.js"),
+        __katexSrc: uri("katex.js"),
+        __katexCssUri: uri("katex.min.css"),
+        __codeThemeForced: codeTheme,
       },
     });
   } else {

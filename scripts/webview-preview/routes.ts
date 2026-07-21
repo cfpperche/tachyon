@@ -86,20 +86,10 @@ export const ROUTES: Record<string, Route> = {
   },
   // t-d23f93 — the standalone "plugins" route previewed the retired standalone panel; Plugins is a
   // cockpit-only section now — use ?view=cockpit&fixture=plugins (same App.tsx, same fixture VM).
-  activity: {
-    bundle: "/dist/webview/activity.js",
-    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/mermaid-block.css", "/dist/webview/activity.css"],
-    frame: { w: 820, h: 900 },
-    fixtures: activityFixtures as Record<string, Fixture>,
-    makeMessage: (vm) => activityMessage(vm as never),
-  },
-  probes: {
-    bundle: "/dist/webview/probes.js",
-    cssLinks: [DESIGN_SYSTEM, "/dist/webview/probes.css"],
-    frame: { w: 900, h: 600 },
-    fixtures: probesFixtures as Record<string, Fixture>,
-    makeMessage: (vm) => probesMessage(vm as never),
-  },
+  // t-610705 (SDD 410 Phase C.2) — the standalone "activity" and "probes" routes previewed the
+  // retired Activity/Probes panels; both are Fleet subroutes now — use ?view=cockpit&fixture=
+  // agent-activity / agent-probes (same App.tsx components, same fixture VMs, via the cockpit
+  // route's activeRoute injection above).
   // t-610705 (SDD 410 Phase B #5) — the standalone "inspector" route previewed the retired tmux
   // Server Inspector panel; tmux is a cockpit-only section now — use ?view=cockpit&fixture=tmux
   // (same App.tsx, same fixture VM).
@@ -124,6 +114,8 @@ export const ROUTES: Record<string, Route> = {
       "/dist/webview/inspector.css",
       "/dist/webview/mermaid-block.css",
       "/dist/webview/task-detail.css",
+      "/dist/webview/activity.css",
+      "/dist/webview/probes.css",
       "/dist/webview/cockpit.css",
     ],
     frame: { w: 1100, h: 720 },
@@ -162,11 +154,19 @@ export const ROUTES: Record<string, Route> = {
         const plugins = pluginsFixtures.default?.vm;
         if (plugins) msgs.push(pluginsMessage(plugins));
       }
-      // t-610705 (Phase C.1) — a subroute rides alongside its parent section's push (task-detail's
-      // nav section is "mission", so the board snapshot above still applies; this adds the task).
-      if ((model as { activeRoute?: { kind?: string } }).activeRoute?.kind === "task-detail") {
+      // t-610705 (Phase C.1/C.2) — a subroute rides alongside its parent section's push (task-detail
+      // and the Fleet subroutes below all nav to a section with no embed push of its own for THEM,
+      // so this just adds the subroute's own content on top).
+      const activeRoute = (model as { activeRoute?: { kind?: string; wsHash?: string; agent?: string } }).activeRoute;
+      if (activeRoute?.kind === "task-detail") {
         const detail = taskDetailFixtures.default?.vm;
         if (detail) msgs.push(taskMessage(detail));
+      } else if (activeRoute?.kind === "agent-activity" && activeRoute.wsHash && activeRoute.agent) {
+        const feed = activityFixtures.default?.vm;
+        if (feed) msgs.push(activityMessage(activeRoute.wsHash, activeRoute.agent, feed));
+      } else if (activeRoute?.kind === "agent-probes" || activeRoute?.kind === "workspace-probes") {
+        const probes = probesFixtures.default?.vm;
+        if (probes) msgs.push(probesMessage(probes));
       }
       return msgs;
     },

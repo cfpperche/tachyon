@@ -36,23 +36,6 @@ describe("preview route table", () => {
     expect(msg.fleets).toEqual([SAMPLE]);
   });
 
-  it("declares the activity route with its own envelope + ordered CSS", () => {
-    const r = ROUTES.activity;
-    expect(r.bundle).toBe("/dist/webview/activity.js");
-    expect(r.cssLinks).toEqual(["/dist/webview/codicon.css", "/dist/webview/design-system.css", "/dist/webview/mermaid-block.css", "/dist/webview/activity.css"]);
-    const msg = r.makeMessage(r.fixtures.default.vm) as { type: string; prepended: boolean };
-    expect(msg.type).toBe("activity");
-    expect(msg.prepended).toBe(false);
-  });
-
-  it("declares the probes route (spec 279 conversion) with its envelope + data/empty/error fixtures", () => {
-    const r = ROUTES.probes;
-    expect(r.bundle).toBe("/dist/webview/probes.js");
-    expect(r.cssLinks).toEqual(["/dist/webview/design-system.css", "/dist/webview/probes.css"]);
-    expect(Object.keys(r.fixtures).sort()).toEqual(["default", "empty", "error"]);
-    expect((r.makeMessage(r.fixtures.default.vm) as { type: string }).type).toBe("probes");
-  });
-
   it("declares the cockpit route (Control monolith embeds + CSS) with init + model", () => {
     const r = ROUTES.cockpit;
     expect(r.bundle).toBe("/dist/webview/cockpit.js");
@@ -70,9 +53,13 @@ describe("preview route table", () => {
       "/dist/webview/inspector.css",
       "/dist/webview/mermaid-block.css",
       "/dist/webview/task-detail.css",
+      "/dist/webview/activity.css",
+      "/dist/webview/probes.css",
       "/dist/webview/cockpit.css",
     ]);
     expect(Object.keys(r.fixtures).sort()).toEqual([
+      "agent-activity",
+      "agent-probes",
       "approvals",
       "default",
       "deliveries",
@@ -99,6 +86,12 @@ describe("preview route table", () => {
     // section's push (activeRoute carries the entity locator; section stays "mission").
     const taskDetailMsgs = r.makeMessage(r.fixtures["task-detail"]!.vm) as Array<{ type: string }>;
     expect(taskDetailMsgs.map((m) => m.type)).toEqual(["init", "model", "snapshot", "task"]);
+    // t-610705 (Phase C.2) — the Fleet subroute fixtures: nav section is "fleet" (no embed push of
+    // its own), so only the subroute's own content message rides alongside init+model.
+    const activityMsgs = r.makeMessage(r.fixtures["agent-activity"]!.vm) as Array<{ type: string }>;
+    expect(activityMsgs.map((m) => m.type)).toEqual(["init", "model", "activity"]);
+    const probesMsgs = r.makeMessage(r.fixtures["agent-probes"]!.vm) as Array<{ type: string }>;
+    expect(probesMsgs.map((m) => m.type)).toEqual(["init", "model", "probes"]);
     const validationsMsgs = r.makeMessage(r.fixtures.validations.vm) as Array<{ type: string }>;
     expect(validationsMsgs.map((m) => m.type)).toEqual(["init", "model", "validations"]);
     const approvalMsgs = r.makeMessage(r.fixtures.approvals.vm) as Array<{ type: string }>;

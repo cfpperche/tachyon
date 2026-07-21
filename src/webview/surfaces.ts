@@ -41,7 +41,12 @@ export interface WebviewSurface {
 export const WEBVIEW_SURFACES: WebviewSurface[] = [
   // already preact (the 5 that established the convention)
   { viewId: "tachyonSidebar", view: "sidebar", hostFile: "src/webview/SidebarPrototype.ts", mode: "live", converted: true, editorHome: "sidebar" },
-  { viewId: "tachyonActivity", view: "activity", hostFile: "src/webview/ActivityPanel.ts", mode: "live", converted: true, editorHome: "standalone-multi" },
+  // t-610705 (SDD 410 Phase C.2, 2026-07-21) — the standalone Activity panel was retired: it's a
+  // Control subroute now (src/webview/activity/App.tsx stays, lazy-imported by cockpit/App.tsx;
+  // standalone bundle + harness route retired — use ?view=cockpit&fixture=agent-activity instead).
+  // The trusted serializer for the legacy "tachyonActivity" viewType stays registered in
+  // extension.ts: a revived pre-410 panel disposes itself and redirects into Control → the agent's
+  // activity subroute.
   { viewId: "tachyonHandoff", view: "handoff", hostFile: "src/webview/HandoffPanel.ts", mode: "live", converted: true, editorHome: "standalone-multi" },
   { viewId: "tachyonApprovals", view: "approval", hostFile: "src/webview/ApprovalPanel.ts", mode: "live", converted: true, editorHome: "legacy-redirect", cockpitSectionId: "approvals" },
   // The standalone Plugins panel was retired (t-d23f93, 2026-07-20) — Plugins is a cockpit section
@@ -51,8 +56,12 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   // disposes itself and redirects into Control → Plugins.
   { viewId: "tachyonPinStudio", view: "pin-studio", hostFile: "src/webview/PinStudioPanel.ts", mode: "live", converted: true, editorHome: "standalone" },
   // spec 279 conversions (flip `converted` as each lane lands)
-  // probes re-pushes its model on refresh, so it's a `live` read-only surface (a listener, no inbound actions).
-  { viewId: "tachyonProbes", view: "probes", hostFile: "src/webview/ProbeResultPanel.ts", mode: "live", converted: true, editorHome: "standalone-multi" },
+  // t-610705 (SDD 410 Phase C.2, 2026-07-21) — the standalone Probes panel was retired: it's a
+  // Control subroute now (src/webview/probes/App.tsx stays, lazy-imported by cockpit/App.tsx;
+  // standalone bundle + harness route retired — use ?view=cockpit&fixture=agent-probes instead).
+  // The trusted serializer for the legacy "tachyonProbes" viewType stays registered in
+  // extension.ts: a revived pre-410 panel disposes itself and redirects into Control → the matching
+  // probes subroute.
   // The standalone tmux Server Inspector panel was retired (t-610705, SDD 410 Phase B #5, 2026-07-20) —
   // tmux is a cockpit section only (src/webview/inspector/App.tsx stays, lazy-imported by cockpit/App.tsx;
   // no per-workspace scoping needed — the tmux socket is cross-workspace by design). The trusted serializer

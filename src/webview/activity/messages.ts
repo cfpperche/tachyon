@@ -12,26 +12,37 @@ import type { ReadyMessage } from "../shared/ready";
 
 export { READY, readyMessage, type ReadyMessage } from "../shared/ready";
 
-/** host → webview: the normalized activity model. `prepended` ⇒ older items paged in at the TOP (scroll anchor). */
+/**
+ * host → webview: the normalized activity model. `prepended` ⇒ older items paged in at the TOP
+ * (scroll anchor). `wsHash`/`agent` are the feed's identity (t-610705 Phase C.2, hardening dueto
+ * probe-2d90286d) — Control hosts at most ONE active feed at a time (unlike the retired standalone
+ * panel's one-Map-slot-per-agent), so a message delayed behind an agent switch must be REJECTABLE
+ * by the client, not just trusted because it arrived on the shared channel.
+ */
 export const ACTIVITY = "activity" as const;
 export interface ActivityMessage {
   type: typeof ACTIVITY;
+  wsHash: string;
+  agent: string;
   vm: ActivityViewModel;
   prepended: boolean;
 }
-export function activityMessage(vm: ActivityViewModel, prepended = false): ActivityMessage {
-  return { type: ACTIVITY, vm, prepended };
+export function activityMessage(wsHash: string, agent: string, vm: ActivityViewModel, prepended = false): ActivityMessage {
+  return { type: ACTIVITY, wsHash, agent, vm, prepended };
 }
 
-/** host → webview: one image's data URI, delivered once per id on a side channel. */
+/** host → webview: one image's data URI, delivered once per id on a side channel. Carries the same
+ *  feed identity as ActivityMessage, for the same reason. */
 export const IMAGE_DATA = "imageData" as const;
 export interface ImageDataMessage {
   type: typeof IMAGE_DATA;
+  wsHash: string;
+  agent: string;
   id: string;
   dataUri: string;
 }
-export function imageDataMessage(id: string, dataUri: string): ImageDataMessage {
-  return { type: IMAGE_DATA, id, dataUri };
+export function imageDataMessage(wsHash: string, agent: string, id: string, dataUri: string): ImageDataMessage {
+  return { type: IMAGE_DATA, wsHash, agent, id, dataUri };
 }
 
 /** the union the Activity webview listens for (host → webview). */

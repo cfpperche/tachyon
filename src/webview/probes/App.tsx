@@ -11,22 +11,22 @@ function Status({ status }: { status: ProbeViewRow["status"] }) {
 }
 
 export function App({ vm }: { vm: ProbesVM | undefined }) {
-  if (!vm) return <div class="empty"><p>Loading…</p></div>;
+  if (!vm) return <div class="probes-root empty"><p>Loading…</p></div>;
   // spec 322 — a caller-scoped view is THIS agent's probe history; the unfiltered form is the internal
   // escape hatch for caller-less/orphaned records.
   const caller = "view" in vm ? vm.view.caller : undefined;
   const title = caller ? `⌕ Probes — ${caller} (${vm.folder})` : `⌕ Captured probes — ${vm.folder}`;
   if ("error" in vm) {
     return (
-      <>
+      <div class="probes-root">
         <h1>{title}</h1>
         <div class="error"><p>Could not load probes.</p><p class="hint">{vm.error}</p></div>
-      </>
+      </div>
     );
   }
   const view = vm.view;
   return (
-    <>
+    <div class="probes-root">
       <h1>{title}</h1>
       {view.empty ? (
         <div class="empty">
@@ -62,6 +62,6 @@ export function App({ vm }: { vm: ProbesVM | undefined }) {
           </table>
         </>
       )}
-    </>
+    </div>
   );
 }

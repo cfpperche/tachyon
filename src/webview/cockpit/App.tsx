@@ -1,6 +1,6 @@
 import type { ComponentChildren } from "preact";
 import { lazy, Suspense } from "preact/compat";
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import {
   COCKPIT_SECTION_ORDER,
   type CockpitModel,
@@ -22,6 +22,9 @@ import type { MissionControlDispatch, TaskErrorEvent } from "../mission-control/
 import type { MissionControlVM } from "../mission-control/messages";
 import type { TaskDetailDispatch } from "../task-detail/App";
 import type { TaskDetailVM } from "../task-detail/messages";
+import type { ActivityDispatch } from "../activity/App";
+import type { ActivityViewModel } from "../../activity/activityView";
+import type { ProbesVM } from "../probes/messages";
 import type { ValidationsDispatch } from "../validations/App";
 import type { ValidationsViewModel } from "../validations/viewModel";
 import type { ApprovalDispatch } from "../approval/App";
@@ -92,6 +95,25 @@ const InspectorApp = lazy(() =>
     return { default: m.App };
   }),
 );
+// t-610705 (Phase C.2) — CSS co-load, eighth surface: the agent-activity subroute of Fleet. Shares
+// the mermaid-block.css sheet with task-detail (see Cockpit.ts's combined eager-styles condition)
+// but under its OWN bootstrap-global key ("activity-mermaid") — same href, distinct id, so the
+// cockpitCssParity key-parity check stays a clean 1:1 client-id ↔ host-key mapping.
+const ActivityApp = lazy(() =>
+  import("../activity/App").then((m) => {
+    loadSectionStylesheet("activity-mermaid");
+    loadSectionStylesheet("activity");
+    return { default: m.App };
+  }),
+);
+// t-610705 (Phase C.2) — CSS co-load, ninth surface: the agent-probes/workspace-probes subroutes of
+// Fleet (read-only, no mermaid content).
+const ProbesApp = lazy(() =>
+  import("../probes/App").then((m) => {
+    loadSectionStylesheet("probes");
+    return { default: m.App };
+  }),
+);
 
 function SectionFallback() {
   return <EmptyState kind="loading" message="Loading…" />;
@@ -141,6 +163,13 @@ export interface CockpitAppProps {
   taskErrorSeq: number;
   taskErrorMessage?: string;
   taskDetailDispatch: TaskDetailDispatch;
+  /** t-610705 (Phase C.2) — the agent-activity subroute of Fleet. */
+  activityVm?: ActivityViewModel;
+  activityPrepended: boolean;
+  activityImages: Record<string, string>;
+  activityDispatch: ActivityDispatch;
+  /** t-610705 (Phase C.2) — the agent-probes/workspace-probes subroutes of Fleet. */
+  probesVm?: ProbesVM;
   /** Embedded product surfaces (not Task/Pin/form studios). */
   approvalVm?: ApprovalViewModel;
   approvalError?: string;
@@ -503,11 +532,20 @@ function DataTable({
 }
 
 export function App(p: CockpitAppProps) {
+  // t-610705 (Phase C.2) — declared BEFORE the `!s` early return below so this hook always runs in
+  // the same order every render (the Activity subroute needs the actual overflow:auto ancestor for
+  // its scroll math — window/document.body no longer work now that the standalone panel is retired).
+  const activityScrollRef = useRef<HTMLDivElement>(null);
   const s = p.strings;
   if (!s) return <div class="ds-empty" />;
   const m = p.model;
   const section = m?.section ?? "overview";
   const activeRoute = m?.activeRoute;
+  // t-610705 (Phase C.2) — Fleet subroutes want the SAME full-bleed/no-checkedAt-footer treatment
+  // as an embedded section, even though their nav section ("fleet") isn't one itself (Fleet's own
+  // plain list IS a native page and keeps its checkedAt footer — only its subroutes opt out).
+  const isFleetSubroute = activeRoute?.kind === "agent-activity" || activeRoute?.kind === "agent-probes" || activeRoute?.kind === "workspace-probes";
+  const isEmbed = EMBED_SECTIONS.has(section) || isFleetSubroute;
 
   let body: ComponentChildren = null;
   if (!m) {
@@ -531,6 +569,29 @@ export function App(p: CockpitAppProps) {
         ) : null}
         <Suspense fallback={<SectionFallback />}>
           <TaskDetailApp vm={p.taskVm} errorSeq={p.taskErrorSeq} errorMessage={p.taskErrorMessage} dispatch={p.taskDetailDispatch} />
+        </Suspense>
+      </div>
+    );
+  } else if (activeRoute?.kind === "agent-activity" || activeRoute?.kind === "agent-probes" || activeRoute?.kind === "workspace-probes") {
+    // t-610705 (Phase C.2) — Fleet subroutes: same "checked before the section branch" reasoning as
+    // task-detail above (nav section reads "fleet" for all three; this renders the actual content).
+    const parent = parentRoute(activeRoute);
+    const back = parent && parent.kind === "section" ? (
+      <div class="ck-subroute-breadcrumb" data-testid="control-fleet-subroute-breadcrumb">
+        <Button variant="default" icon="arrow-left" onClick={() => p.onSetSection(parent.section)}>
+          {s.navFleet}
+        </Button>
+      </div>
+    ) : null;
+    body = (
+      <div class="ck-embed-host" data-testid="control-fleet-subroute" ref={activityScrollRef}>
+        {back}
+        <Suspense fallback={<SectionFallback />}>
+          {activeRoute.kind === "agent-activity" ? (
+            <ActivityApp vm={p.activityVm} prepended={p.activityPrepended} images={p.activityImages} dispatch={p.activityDispatch} scrollContainer={activityScrollRef} />
+          ) : (
+            <ProbesApp vm={p.probesVm} />
+          )}
         </Suspense>
       </div>
     );
@@ -1053,9 +1114,9 @@ export function App(p: CockpitAppProps) {
         </div>
       </header>
 
-      <main class={`ck-main${EMBED_SECTIONS.has(section) ? " ck-main--embed" : ""}${section === "mission" ? " ck-main--mission" : ""}`}>
+      <main class={`ck-main${isEmbed ? " ck-main--embed" : ""}${section === "mission" ? " ck-main--mission" : ""}`}>
         {body}
-        {m && !EMBED_SECTIONS.has(section) ? (
+        {m && !isEmbed ? (
           <div class="ck-checked">
             {s.checkedAt}: {m.checkedAt}
           </div>

@@ -197,12 +197,9 @@ const sidebar = {
   alias: preactCompat,
 };
 
-// spec 238 — the Preact activity-view webview bundle (editor-area panel; never imports vscode).
-const activity = {
-  ...sidebar,
-  entryPoints: ["src/webview/activity/main.tsx"],
-  outfile: "dist/webview/activity.js",
-};
+// t-610705 (SDD 410 Phase C.2) — the standalone Activity bundle was retired: it's a Control
+// subroute now (src/webview/activity/App.tsx stays, lazy-imported by cockpit/App.tsx via CSS
+// co-load). activity.css is still copied below — Cockpit.ts co-loads it.
 
 // spec 245 — the Preact Project Handoff webview bundle (editor-area panel; never imports vscode).
 const handoff = {
@@ -219,12 +216,9 @@ const approval = {
 
 // spec 250 — the Preact Plugins View webview bundle (editor-area panel; never imports vscode).
 
-// spec 279 — the Preact Probes view bundle (converted from inline HTML; editor-area panel, never imports vscode).
-const probes = {
-  ...sidebar,
-  entryPoints: ["src/webview/probes/main.tsx"],
-  outfile: "dist/webview/probes.js",
-};
+// t-610705 (SDD 410 Phase C.2) — the standalone Probes bundle was retired: it's a Control subroute
+// now (src/webview/probes/App.tsx stays, lazy-imported by cockpit/App.tsx via CSS co-load).
+// probes.css is still copied below — Cockpit.ts co-loads it.
 
 // t-610705 (SDD 410 Phase B #5) — the standalone Inspector bundle was retired: the tmux Server
 // Inspector is a cockpit-only section now (src/webview/inspector/App.tsx stays, lazy-imported by
@@ -485,7 +479,7 @@ if (existsSync(excalidrawAssets)) {
   cpSync(excalidrawAssets, "dist/webview/excalidraw-assets", { recursive: true });
 }
 
-const targets = [extension, toolLauncher, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, activity, handoff, approval, probes, cockpit, pinPreview, pinStudio, taskStudio, pipelineStudio, agentStudioFixture, agentStudioShell, terminalStudioShell, commandStudioShell, runbookStudioShell, scheduleStudioShell, pluginHost, excalidraw, mermaid, katex, preview, uiGate];
+const targets = [extension, toolLauncher, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, handoff, approval, cockpit, pinPreview, pinStudio, taskStudio, pipelineStudio, agentStudioFixture, agentStudioShell, terminalStudioShell, commandStudioShell, runbookStudioShell, scheduleStudioShell, pluginHost, excalidraw, mermaid, katex, preview, uiGate];
 if (watch) {
   const ctxs = await Promise.all(targets.map((c) => esbuild.context(c)));
   await Promise.all(ctxs.map((c) => c.watch()));

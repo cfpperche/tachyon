@@ -42,6 +42,17 @@ import {
   notePrototypeAction,
   type TaskDetailVM,
 } from "../task-detail/messages";
+import type { ActivityDispatch } from "../activity/App";
+import type { ActivityViewModel } from "../../activity/activityView";
+import {
+  ACTIVITY,
+  IMAGE_DATA,
+  copyShareTextMessage,
+  shareExternalMessage,
+  shareToAgentMessage,
+} from "../activity/messages";
+import type { ProbesVM } from "../probes/messages";
+import { PROBES } from "../probes/messages";
 import {
   SNAPSHOT,
   TASK_ERROR,
@@ -124,6 +135,10 @@ function Root() {
   const [taskVm, setTaskVm] = useState<TaskDetailVM | undefined>(undefined);
   const [taskErrorSeq, setTaskErrorSeq] = useState(-1);
   const [taskErrorMessage, setTaskErrorMessage] = useState<string | undefined>(undefined);
+  const [activityVm, setActivityVm] = useState<ActivityViewModel | undefined>(undefined);
+  const [activityPrepended, setActivityPrepended] = useState(false);
+  const [activityImages, setActivityImages] = useState<Record<string, string>>({});
+  const [probesVm, setProbesVm] = useState<ProbesVM | undefined>(undefined);
   const [approvalVm, setApprovalVm] = useState<ApprovalViewModel | undefined>(undefined);
   const [approvalError, setApprovalError] = useState<string | undefined>(undefined);
   const [validationsVm, setValidationsVm] = useState<ValidationsViewModel | undefined>(undefined);
@@ -177,6 +192,16 @@ function Root() {
           setCompanionPairOffer(undefined);
         }
         companionPairSnapshot.current = { paired, deviceKey };
+        // t-610705 (Phase C.2, hardening dueto probe-2d90286d) — Control hosts at most one active
+        // Activity feed; a stale image lingering after navigating to a different agent/workspace is
+        // low-risk (content-addressed ids rarely collide) but grows unbounded across a session, so
+        // drop it the moment the identity actually changes (never on a same-identity re-push).
+        const prevActivity = activeRouteRef.current?.kind === "agent-activity" ? activeRouteRef.current : undefined;
+        const nextActivity = next.activeRoute?.kind === "agent-activity" ? next.activeRoute : undefined;
+        if (!nextActivity || !prevActivity || prevActivity.wsHash !== nextActivity.wsHash || prevActivity.agent !== nextActivity.agent) {
+          setActivityVm(undefined);
+          setActivityImages({});
+        }
         activeRouteRef.current = next.activeRoute;
         setModel(next);
       }
@@ -196,6 +221,25 @@ function Root() {
         }
       } else if (type === TASK && raw.vm) {
         setTaskVm(raw.vm as TaskDetailVM);
+      } else if (type === ACTIVITY && raw.vm) {
+        // t-610705 (Phase C.2, hardening dueto probe-2d90286d) — every Activity message carries its
+        // own feed identity (wsHash/agent); reject anything that doesn't match the CURRENT route
+        // rather than trusting message-arrival order alone (a delayed post from a torn-down feed
+        // must never repopulate whatever feed replaced it).
+        const route = activeRouteRef.current;
+        if (route?.kind === "agent-activity" && route.wsHash === raw.wsHash && route.agent === raw.agent) {
+          setActivityVm(raw.vm as ActivityViewModel);
+          setActivityPrepended(raw.prepended === true);
+        }
+      } else if (type === IMAGE_DATA && typeof raw.id === "string" && typeof raw.dataUri === "string") {
+        const route = activeRouteRef.current;
+        if (route?.kind === "agent-activity" && route.wsHash === raw.wsHash && route.agent === raw.agent) {
+          const id = raw.id;
+          const dataUri = raw.dataUri;
+          setActivityImages((prev) => (prev[id] ? prev : { ...prev, [id]: dataUri }));
+        }
+      } else if (type === PROBES && raw.vm) {
+        setProbesVm(raw.vm as ProbesVM);
       } else if (type === APPROVALS && raw.vm) {
         setApprovalVm(raw.vm as ApprovalViewModel);
         setApprovalError(undefined);
@@ -278,6 +322,18 @@ function Root() {
       approvePrototype: (id, expect, review) => post(approvePrototypeAction(id, expect, review)),
       rejectPrototype: (id, expect, review) => post(rejectPrototypeAction(id, expect, review)),
       notePrototype: (id, expect, review) => post(notePrototypeAction(id, expect, review)),
+    }),
+    [],
+  );
+
+  const activityDispatch: ActivityDispatch = useMemo(
+    () => ({
+      openFile: (path: string) => post({ type: "openFile", path }),
+      terminal: () => post({ type: "terminal" }),
+      loadOlder: () => post({ type: "loadOlder" }),
+      copyShareText: (sequence, key) => post(copyShareTextMessage(sequence, key)),
+      shareExternal: (sequence, key) => post(shareExternalMessage(sequence, key)),
+      shareToAgent: (sequence, key) => post(shareToAgentMessage(sequence, key)),
     }),
     [],
   );
@@ -390,6 +446,11 @@ function Root() {
       taskErrorSeq={taskErrorSeq}
       taskErrorMessage={taskErrorMessage}
       taskDetailDispatch={taskDetailDispatch}
+      activityVm={activityVm}
+      activityPrepended={activityPrepended}
+      activityImages={activityImages}
+      activityDispatch={activityDispatch}
+      probesVm={probesVm}
       approvalVm={approvalVm}
       approvalError={approvalError}
       approvalDispatch={approvalDispatch}
@@ -413,6 +474,10 @@ function Root() {
         // section, so a stale task-detail route would otherwise flash until the host's real reply.
         setModel((prev) => (prev ? { ...prev, section, activeRoute: undefined } : prev));
         activeRouteRef.current = undefined;
+        // t-610705 (Phase C.2) — same optimistic-clear reasoning as activeRoute above, for the
+        // feed-identity state the MODEL branch's reset otherwise only clears on the host's next reply.
+        setActivityVm(undefined);
+        setActivityImages({});
         post(setSectionAction(section));
         if (section === "mission") post(requestSnapshotAction());
         if (section === "approvals") post(refreshApprovalsAction());

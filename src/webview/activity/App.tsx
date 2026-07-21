@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "preact/hooks";
+import { useEffect, useMemo, useRef, useState } from "preact/hooks";
+import type { RefObject } from "preact";
 import type { ActivityItem, ActivityViewModel } from "../../activity/activityView";
 import { MarkdownView, linkify } from "./markdown";
 import { highlight } from "./markdownEngine";
@@ -317,17 +318,63 @@ function ActivityLine({ it, dispatch, cv }: { it: ActivityItem; dispatch: Activi
   );
 }
 
-export function App({ vm, dispatch, images, query, setQuery }: {
-  vm: ActivityViewModel; dispatch: ActivityDispatch; images: Record<string, string>;
-  query: string; setQuery: (q: string) => void;
+/**
+ * t-610705 (SDD 410 Phase C.2) — this used to be the STANDALONE panel's presentational half, with
+ * scroll/prepend/query state lifted into activity/main.tsx's Root (the window WAS the scroll
+ * container there). The standalone panel is retired; Control's shell (cockpit/main.tsx) now owns
+ * the message listener + vm/images state (same split every other migrated surface uses), and this
+ * component owns everything ELSE — including the scroll/prepend machinery that used to live in
+ * main.tsx, now retargeted at `scrollContainer` (Control's embed host div) instead of window.
+ */
+export function App({ vm, prepended, dispatch, images, scrollContainer }: {
+  vm?: ActivityViewModel;
+  /** True when THIS vm push paged in older items at the top (scroll-anchor case) — travels as its
+   *  own prop, set together with `vm` by the same host message, never inferred from vm alone. */
+  prepended: boolean;
+  dispatch: ActivityDispatch;
+  images: Record<string, string>;
+  scrollContainer: RefObject<HTMLDivElement>;
 }) {
-  const s = vm.summary;
+  const [query, setQuery] = useState("");
   const [zoom, setZoom] = useState<string | null>(null);
   const [filters, setFilters] = useState<ActivityFilterState>(() => readStoredFilters());
+  const [atBottom, setAtBottom] = useState(true);
+  // Chat sticks to the newest message — but only when the user is already near the bottom (don't yank them
+  // back while they scroll up to read history).
+  const stick = useRef(true);
+  // When the user loads earlier activity, older items prepend at the TOP → keep their view anchored on the
+  // item they were reading: record the pre-load scrollHeight (at click), then scroll by the height delta after
+  // the SPECIFIC paged VM renders. Gated on `prepended` (not merely "is an anchor armed") so a live append
+  // racing in before the paged response can't consume the anchor (codex MAJOR, ported from main.tsx).
+  const prependAnchor = useRef<number | null>(null);
+
+  useEffect(() => {
+    const el = scrollContainer.current;
+    if (!el) return;
+    const onScroll = () => {
+      const near = el.scrollTop + el.clientHeight >= el.scrollHeight - 140;
+      stick.current = near;
+      setAtBottom(near);
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [scrollContainer.current]);
+
+  useEffect(() => {
+    const el = scrollContainer.current;
+    if (!el) return;
+    if (prepended && prependAnchor.current != null) {
+      el.scrollTop += el.scrollHeight - prependAnchor.current;
+      prependAnchor.current = null;
+      return;
+    }
+    if (stick.current && !query) el.scrollTop = el.scrollHeight;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- prepended always changes together with vm
+  }, [vm, images, query]);
 
   // Lowercased search haystack, rebuilt only when the item list changes (NOT per keystroke). Each keystroke
   // then filters precomputed strings — O(n) substring checks, no re-lowercasing of multi-MB tool bodies.
-  const index = useMemo(() => buildSearchIndex(vm.items), [vm.items]);
+  const index = useMemo(() => buildSearchIndex(vm?.items ?? []), [vm?.items]);
   useEffect(() => {
     try {
       window.localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(filters));
@@ -348,6 +395,10 @@ export function App({ vm, dispatch, images, query, setQuery }: {
     <Button class="term" icon="terminal" onClick={() => dispatch.terminal()}>Open terminal</Button>
   );
 
+  if (!vm) {
+    return <div class="ds-degrade"><span class="codicon codicon-loading" /><div>Loading activity…</div></div>;
+  }
+
   if (vm.tier !== "structured") {
     return (
       <EmptyState
@@ -358,6 +409,7 @@ export function App({ vm, dispatch, images, query, setQuery }: {
       />
     );
   }
+  const s = vm.summary;
 
   // Recent-window search: filters the LOADED (capped) items only — the box label states the scope so this
   // never silently masquerades as a full-transcript search.
@@ -369,7 +421,17 @@ export function App({ vm, dispatch, images, query, setQuery }: {
   const tailFromSeq = tailFromSequence(items); // content-visibility boundary, in monotonic-sequence space
   const canLoadOlder = !q && !!vm.hasOlder; // older activity exists before the window → offer "load earlier"
 
+  const loadOlder = () => {
+    if (scrollContainer.current) prependAnchor.current = scrollContainer.current.scrollHeight;
+    dispatch.loadOlder();
+  };
+  const jumpToLatest = () => {
+    stick.current = true;
+    scrollContainer.current?.scrollTo({ top: scrollContainer.current.scrollHeight, behavior: "smooth" });
+  };
+
   return (
+    <>
     <div>
       <PageChrome
         class="activity-chrome"
@@ -406,7 +468,7 @@ export function App({ vm, dispatch, images, query, setQuery }: {
           </div>
         )}
         {canLoadOlder && (
-          <Button class="capnote" icon="chevron-up" title="Load earlier activity from the durable log" onClick={() => dispatch.loadOlder()}>
+          <Button class="capnote" icon="chevron-up" title="Load earlier activity from the durable log" onClick={loadOlder}>
             Load earlier activity
           </Button>
         )}
@@ -448,6 +510,10 @@ export function App({ vm, dispatch, images, query, setQuery }: {
         </div>
       )}
     </div>
+    {!atBottom && vm.items.length > 0 && (
+      <Button class="jump" icon="arrow-down" title="Jump to latest" onClick={jumpToLatest}>Latest</Button>
+    )}
+    </>
   );
 }
 

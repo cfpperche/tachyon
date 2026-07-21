@@ -36,6 +36,7 @@ describe("WEBVIEW_SURFACES editorHome (spec 410 / 279)", () => {
   it("multi-instance class is tagged standalone-multi", () => {
     const multi = WEBVIEW_SURFACES.filter((s) => s.editorHome === "standalone-multi").map((s) => s.view);
     // t-610705 Phase C.1 — task-detail's multi-instance exception closed (it's a Control subroute now).
-    expect(multi.sort()).toEqual(["activity", "handoff", "probes"].sort());
+    // t-610705 Phase C.2 — activity/probes' multi-instance exception closed the same way.
+    expect(multi.sort()).toEqual(["handoff"].sort());
   });
 });

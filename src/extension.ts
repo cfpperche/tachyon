@@ -16,6 +16,8 @@ import {
   refreshCockpitApprovals,
   refreshCockpitValidations,
   refreshCockpitTaskDetail,
+  refreshCockpitProbes,
+  openCockpitAgentTranscript,
   decodeCockpitPanelState,
   COCKPIT_VIEW_TYPE,
   type CockpitPanelState,
@@ -26,11 +28,11 @@ import type { CockpitWorkspaceBundle } from "./cockpit/model.js";
 import { routes as cockpitRoutes } from "./cockpit/route.js";
 import { readGitDeliveriesFromDisk, readManagedWorktreesFromDisk } from "./cockpit/disk.js";
 import { SidebarPrototypeProvider, PIN_PREVIEW_VIEW_TYPE, type PinPreviewPanelState } from "./webview/SidebarPrototype.js";
-import { ActivityPanelManager, ACTIVITY_VIEW_TYPE, type ActivityPanelState } from "./webview/ActivityPanel.js";
+import { ACTIVITY_VIEW_TYPE, type ActivityPanelState } from "./webview/ActivityPanel.js";
 import { PluginsPanelManager, PLUGINS_VIEW_TYPE, type PluginsPanelState } from "./webview/PluginsPanel.js";
 import { HandoffPanelManager, HANDOFF_VIEW_TYPE, type HandoffPanelState } from "./webview/HandoffPanel.js";
 import { ApprovalPanelManager, APPROVAL_VIEW_TYPE, type ApprovalPanelState } from "./webview/ApprovalPanel.js";
-import { ProbeResultPanelManager, PROBES_VIEW_TYPE, type ProbesPanelState } from "./webview/ProbeResultPanel.js";
+import { PROBES_VIEW_TYPE, type ProbesPanelState } from "./webview/ProbeResultPanel.js";
 import { PinStudioPanelManager, PIN_STUDIO_VIEW_TYPE, type PinStudioPanelState } from "./webview/PinStudioPanel.js";
 import { MISSION_CONTROL_VIEW_TYPE, type MissionControlPanelState } from "./webview/MissionControlPanel.js";
 import { TASK_DETAIL_VIEW_TYPE, type TaskDetailPanelState } from "./webview/TaskDetailPanel.js";
@@ -932,12 +934,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     (context.extension.packageJSON as { version?: string }).version,
   );
   // Runtime Ops lives in Control → Runtime only (bottom-panel webview contribution removed).
-  // spec 238 — the editor-area Runtime Activity View (normalized cockpit; reads the durable per-agent log).
-  const activityPanels = new ActivityPanelManager(
-    context.extensionUri,
-    () => workspaces().map((ws) => ws.activity),
-  );
-  context.subscriptions.push({ dispose: () => activityPanels.dispose() });
+  // t-610705 (SDD 410 Phase C.2) — the standalone Activity panel was retired: it's a Control
+  // subroute now (mission/... no — fleet/agent/<name>/activity; src/webview/activity/App.tsx stays,
+  // lazy-imported by cockpit/App.tsx; the watcher moved to src/cockpit/activityFeed.ts).
   // spec 245 — the editor-area Project Handoff panel (read-only doc + pending notes + staleness; one per root).
   const handoffPanels = new HandoffPanelManager(
     context.extensionUri,
@@ -955,9 +954,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // sidebar title button. Step B = read-only render of the installed list from the committed lockfile.
   const pluginsPanels = new PluginsPanelManager(context.extensionUri, () => workspaces().map((ws) => ws.git), () => pluginSurfaces.refreshAll());
   context.subscriptions.push({ dispose: () => pluginsPanels.dispose() });
-  // spec 257 — the editor-area Probes inspector (read-only list of captured probe runs, one per root).
-  const probePanels = new ProbeResultPanelManager(context.extensionUri, () => workspaces().map((ws) => ws.probe));
-  context.subscriptions.push({ dispose: () => probePanels.dispose() });
+  // t-610705 (SDD 410 Phase C.2) — the standalone Probes inspector was retired: it's a Control
+  // subroute now (fleet/agent/<name>/probes; src/webview/probes/App.tsx stays, lazy-imported by
+  // cockpit/App.tsx).
   // spec 335 — the Task board + Task Detail are both Control subroutes now (Board since t-610705
   // Phase B #6; Task Detail since Phase C.1 — standalone TaskDetailPanelManager retired).
   // dogfood round 1 (#1) — the ONE fan-out path for any task mutation: an MCP tool call (onViewsChanged("tasks")
@@ -993,7 +992,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // Any engine/Bridge-driven state change re-pushes the whole fleet to the webview.
   const onViewsChanged = (view: ViewKind) => {
     if (view === "handoff") handoffPanels.refreshAll(); // spec 245 — re-post to any open Project Handoff panel
-    if (view === "probes") probePanels.refreshAll(); // spec 257 — re-render any open Probes inspector
+    if (view === "probes") refreshCockpitProbes(); // t-610705 (Phase C.2) — Control → Probes subroute
     if (view === "tasks") onTasksChanged(); // spec 335 — same fan-out path engine-side mutations use directly
     if (view === "pins") approvalPanels.refreshAll();
     if (view === "commands") runbookStudioPanels.refreshReferenceData();
@@ -1287,6 +1286,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     taskDetail: {
       getWorkspaces: () => workspaces().map((ws) => ws.taskDetail),
     },
+    // t-610705 (Phase C.2) — Activity/Probes are Control subroutes now (WorkspaceActivityTarget /
+    // WorkspaceProbePresentationTarget already carry everything the host needs — no separate
+    // wrapper interface, same reasoning as taskDetail above).
+    activity: {
+      getWorkspaces: () => workspaces().map((ws) => ws.activity),
+    },
+    probes: {
+      getWorkspaces: () => workspaces().map((ws) => ws.probe),
+    },
     approvals: {
       getWorkspaces: () =>
         workspaces().map((ws) => ({
@@ -1353,9 +1361,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     },
     fleetTerminal: async (name, wsHash) => {
       await vscode.commands.executeCommand("tachyon.openAgentTerminalItem", name, wsHash);
-    },
-    fleetActivity: (name, wsHash) => {
-      void vscode.commands.executeCommand("tachyon.openAgentActivity", name, wsHash);
     },
     revealPath: (fsPath) => {
       void vscode.commands.executeCommand("revealFileInOS", vscode.Uri.file(fsPath));
@@ -1601,11 +1606,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     if (!state?.wsHash || !state?.taskId) return;
     void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.taskDetail(state.wsHash, state.taskId) });
   });
-  registerTrustedPanelSerializer<ActivityPanelState>(context, ACTIVITY_VIEW_TYPE, (panel, state) => activityPanels.deserialize(panel, state));
+  registerTrustedPanelSerializer<ActivityPanelState>(context, ACTIVITY_VIEW_TYPE, (panel, state) => {
+    panel.dispose();
+    if (isCockpitSingletonClaimed()) return;
+    if (!state?.wsHash || !state?.agent) return;
+    void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.agentActivity(state.wsHash, state.agent) });
+  });
   registerTrustedPanelSerializer<HandoffPanelState>(context, HANDOFF_VIEW_TYPE, (panel, state) => handoffPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   registerTrustedPanelSerializer<ApprovalPanelState>(context, APPROVAL_VIEW_TYPE, (panel, state) => approvalPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   registerTrustedPanelSerializer<PluginsPanelState>(context, PLUGINS_VIEW_TYPE, (panel, state) => pluginsPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
-  registerTrustedPanelSerializer<ProbesPanelState>(context, PROBES_VIEW_TYPE, (panel, state) => probePanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
+  registerTrustedPanelSerializer<ProbesPanelState>(context, PROBES_VIEW_TYPE, (panel, state) => {
+    panel.dispose();
+    if (isCockpitSingletonClaimed()) return;
+    if (!state?.wsHash) return;
+    const route = state.caller ? cockpitRoutes.agentProbes(state.wsHash, state.caller) : cockpitRoutes.workspaceProbes(state.wsHash);
+    void openCockpit(makeCockpitDeps(), { route });
+  });
   registerTrustedPanelSerializer<PinPreviewPanelState>(context, PIN_PREVIEW_VIEW_TYPE, (panel, state) => sidebarProto.deserializePinPreview(panel, state));
   registerTrustedPanelSerializer<PinStudioPanelState>(context, PIN_STUDIO_VIEW_TYPE, (panel, state) => pinStudioPanels.deserialize(panel, state));
   registerTrustedPanelSerializer<TaskStudioPanelState>(context, TASK_STUDIO_VIEW_TYPE, (panel, state) => taskStudioPanels.deserialize(panel, state));
@@ -2260,10 +2276,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         notify(error instanceof Error ? error.message : String(error), "error");
       }
     }),
-    // spec 238 — open the normalized activity cockpit for an agent (the terminal stays the escape hatch).
-    vscode.commands.registerCommand("tachyon.openAgentActivity", (agent: string, hash?: string) => activityPanels.open(agent, hash)),
+    // spec 238 / t-610705 (Phase C.2) — open the normalized activity cockpit for an agent, inside
+    // Control (the terminal stays the escape hatch). Silent first-workspace fallback when hash is
+    // omitted, matching the retired standalone panel's own resolution (not a picker prompt — this
+    // command is mostly invoked from a Fleet row that already knows its own wsHash).
+    vscode.commands.registerCommand("tachyon.openAgentActivity", async (agent: string, hash?: string) => {
+      const ws = hash ? byHash(hash) : workspaces()[0];
+      if (ws) await openCockpit(makeCockpitDeps(), { route: cockpitRoutes.agentActivity(ws.wsHash, agent) });
+    }),
     // 0.29.1 — raw transcript escape hatch, demoted from the Activity header button to a palette command.
-    vscode.commands.registerCommand("tachyon.openAgentTranscript", () => activityPanels.openTranscriptForActive()),
+    vscode.commands.registerCommand("tachyon.openAgentTranscript", () => openCockpitAgentTranscript()),
     // spec 245 — open the read-only Project Handoff panel for a workspace root (from the sidebar header button).
     // spec 297 — resolve the target folder via the shared picker when no hash is passed (no silent folder[0]
     // in a multi-root window); an explicit hash (e.g. the sidebar handoff bar) is honored verbatim.
@@ -2298,7 +2320,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // caller-less or orphaned records (not contributed to any menu/palette; probes are per-agent in the UI).
     vscode.commands.registerCommand("tachyon.openProbes", async (hash?: string, agent?: string) => {
       const ws = hash ? byHash(hash) : await pickWorkspace();
-      if (ws) probePanels.open(ws.wsHash, agent);
+      if (!ws) return;
+      const route = agent ? cockpitRoutes.agentProbes(ws.wsHash, agent) : cockpitRoutes.workspaceProbes(ws.wsHash);
+      await openCockpit(makeCockpitDeps(), { route });
     }),
     // ---- session resume (F29 / spec 209) ----
     vscode.commands.registerCommand("tachyon.resumeAgentItem", async (item: AgentItem) => {
