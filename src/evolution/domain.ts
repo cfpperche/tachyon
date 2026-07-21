@@ -88,6 +88,8 @@ export interface EvolutionCandidate {
   createdAt: string;
   status: EvolutionCandidateStatus;
   target: EvolutionCandidateTarget;
+  resolvedAt?: string;
+  promotedVersion?: number;
 }
 
 export interface EvolutionHistoryRecord {
@@ -100,6 +102,8 @@ export interface EvolutionHistoryRecord {
   recordedAt: string;
   previousDigest?: string;
   promotedDigest: string;
+  /** Preserves the replaced active bundle for an update; create/learning promotions omit it. */
+  previousSkillFiles?: EvolutionSkillFile[];
 }
 
 export function createInitialEvolutionProfile(input: {
@@ -137,7 +141,7 @@ export function evolutionCandidateTargetKey(candidate: Pick<EvolutionCandidate, 
 export function renderEvolutionLearnings(entries: readonly EvolutionLearning[]): string {
   const ordered = [...entries].sort((a, b) => compareText(a.approvedAt, b.approvedAt) || compareText(a.id, b.id));
   const body = ordered.map((entry) => [
-    `<!-- learning:${entry.id} task:${entry.sourceTaskId} review:${entry.sourceReviewId} -->`,
+    `<!-- learning:${entry.id} task:${entry.sourceTaskId} review:${entry.sourceReviewId} approved:${entry.approvedAt} -->`,
     entry.content.trim(),
   ].join("\n"));
   return [

@@ -58,25 +58,25 @@ before continuing._
 
 ## Slice 3 — Human promotion and next-session delivery
 
-- [ ] Implement proposal detail/diff projection plus target/version expectations for Approve and Reject.
-- [ ] Implement rejection as candidate-only state change with no active-file change.
-- [ ] Implement learning approval as one entry operation and skill approval as one complete bundle
+- [x] Implement proposal detail/diff projection plus target/version expectations for Approve and Reject.
+- [x] Implement rejection as candidate-only state change with no active-file change.
+- [x] Implement learning approval as one entry operation and skill approval as one complete bundle
   create/update; increment the active profile version and write history.
-- [ ] Reject stale target digests and collisions with user-declared harness skills while leaving both
+- [x] Reject stale target digests and collisions with user-declared harness skills while leaving both
   sources unchanged.
-- [ ] Resolve an immutable `EvolutionStartupSnapshot` containing active version/digest, Learned Context
+- [x] Resolve an immutable `EvolutionStartupSnapshot` containing active version/digest, Learned Context
   and the approved skill catalog.
-- [ ] Extend `AgentPromptLayers`/manifest with an optional labeled Evolution layer while preserving
+- [x] Extend `AgentPromptLayers`/manifest with an optional labeled Evolution layer while preserving
   exact disabled/no-Soul legacy bytes.
-- [ ] Add Evolution version/digest to `SessionLedger` and startup-brief inventory.
-- [ ] Resolve a new snapshot on fresh spawn/restart only; resume, rebind, native fork and re-anchor reuse
+- [x] Add Evolution version/digest to `SessionLedger` and startup-brief inventory.
+- [x] Resolve a new snapshot on fresh spawn/restart only; resume, rebind, native fork and re-anchor reuse
   the session's recorded snapshot.
-- [ ] Render standard skill name/description/digest/canonical path without copying to workspace-global
+- [x] Render standard skill name/description/digest/canonical path without copying to workspace-global
   runtime skill directories or inventing a runner.
-- [ ] Prove switching the declared runtime preserves the same canonical profile and logical startup
+- [x] Prove switching the declared runtime preserves the same canonical profile and logical startup
   snapshot.
-- [ ] Run PI-001 and obtain independent equivalence review if its executable evidence mechanics change.
-- [ ] Commit Slice 3 separately with focused prompt/session/runtime tests green.
+- [x] Run PI-001 and obtain independent equivalence review if its executable evidence mechanics change.
+- [x] Commit Slice 3 separately with focused prompt/session/runtime tests green.
 
 ## Slice 4 — Agent Studio
 
@@ -114,11 +114,11 @@ before continuing._
 ## Verification
 
 - [ ] Config/schema/FormState opt-in contract is covered.
-- [ ] EvolutionStore candidate/promotion/version/history contract is covered.
+- [x] EvolutionStore candidate/promotion/version/history contract is covered.
 - [x] Task completion produces exactly one review per completion revision and never changes Task outcome.
 - [x] Bridge submission accepts matching reviews and preserves independent proposals.
-- [ ] Reject/Approve/current-session/next-session behavior maps to the acceptance scenarios.
-- [ ] Disabled prompt bytes and PI-001's fixed oracle remain unchanged.
+- [x] Reject/Approve/current-session/next-session behavior maps to the acceptance scenarios.
+- [x] Disabled prompt bytes and PI-001's fixed oracle remain unchanged.
 - [ ] Agent Studio protocol, localized UI and lifecycle actions are covered.
 - [ ] Runtime-switch and standard skill/script use are proven by dogfood.
 

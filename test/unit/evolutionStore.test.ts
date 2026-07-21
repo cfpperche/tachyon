@@ -11,6 +11,7 @@ import {
 import { EvolutionStore, EvolutionStoreError } from "../../src/evolution/EvolutionStore.js";
 import {
   digestEvolutionSkillFiles,
+  declaredHarnessSkillNames,
   validateEvolutionSkillBundle,
   type EvolutionSkillBundleInput,
 } from "../../src/evolution/skillBundle.js";
@@ -92,6 +93,18 @@ describe("Agent Skills bundle validation (SDD 421)", () => {
     const updateWithoutDigest = validateEvolutionSkillBundle({ ...skillInput(), operation: "update" });
     expect(updateWithoutDigest.ok).toBe(false);
     if (!updateWithoutDigest.ok) expect(updateWithoutDigest.errors.some((error) => error.includes("expectedTargetDigest"))).toBe(true);
+  });
+
+  it("reserves human-declared harness skill names from both path and standard frontmatter", async () => {
+    const root = await tempRoot();
+    await fs.mkdir(path.join(root, "skills", "folder-name"), { recursive: true });
+    await fs.writeFile(
+      path.join(root, "skills", "folder-name", "SKILL.md"),
+      "---\nname: declared-name\ndescription: Human-owned skill.\n---\n",
+      "utf8",
+    );
+    expect(declaredHarnessSkillNames(root, ["skills/folder-name", "skills/missing-name"]))
+      .toEqual(new Set(["folder-name", "declared-name", "missing-name"]));
   });
 });
 
@@ -277,5 +290,117 @@ describe("EvolutionStore (SDD 421 Slice 1)", () => {
     await expect(store.submitReview("reviewer", failed.review.id, [])).rejects.toMatchObject({
       code: "evolution/review-conflict",
     } satisfies Partial<EvolutionStoreError>);
+  });
+
+  it("rejects or approves learning candidates independently with versioned history", async () => {
+    const root = await tempRoot();
+    const ids = ["profile-id", "keep-id", "reject-id"];
+    let tick = 0;
+    const store = new EvolutionStore(root, {
+      uuid: () => ids.shift()!,
+      now: () => new Date(Date.parse("2026-07-21T18:00:00.000Z") + tick++ * 1_000).toISOString(),
+    });
+    const keep = await store.createCandidate("reviewer", {
+      reviewId: "review-keep",
+      taskId: "t-111111",
+      target: { kind: "learning", content: "Run the focused test first.", reason: "It shortened diagnosis." },
+    });
+    const reject = await store.createCandidate("reviewer", {
+      reviewId: "review-reject",
+      taskId: "t-222222",
+      target: { kind: "learning", content: "Keep a temporary workaround.", reason: "It worked once." },
+    });
+    const detail = await store.candidateDetail("reviewer", keep.id);
+
+    const rejected = await store.rejectCandidate("reviewer", reject.id, {
+      expectedActiveVersion: 0,
+      expectedTargetDigest: detail.currentTargetDigest,
+    });
+    expect(rejected.status).toBe("rejected");
+    expect(rejected).not.toHaveProperty("promotedVersion");
+    expect((await store.readProfile("reviewer"))?.activeVersion).toBe(0);
+
+    const promoted = await store.approveCandidate("reviewer", keep.id, {
+      expectedActiveVersion: 0,
+      expectedTargetDigest: detail.currentTargetDigest,
+    });
+    expect(promoted.candidate).toMatchObject({ status: "approved", promotedVersion: 1 });
+    expect(promoted.profile.activeVersion).toBe(1);
+    expect(await store.readLearnings("reviewer")).toEqual([expect.objectContaining({
+      content: "Run the focused test first.",
+      sourceTaskId: "t-111111",
+      sourceReviewId: "review-keep",
+    })]);
+    expect(JSON.parse(await fs.readFile(path.join(store.historyDir("reviewer"), `000001-${promoted.history.id}.json`), "utf8")))
+      .toEqual(promoted.history);
+    await expect(store.approveCandidate("reviewer", keep.id, {
+      expectedActiveVersion: 1,
+      expectedTargetDigest: (await store.candidateDetail("reviewer", keep.id)).currentTargetDigest,
+    })).rejects.toMatchObject({ code: "evolution/promotion-conflict" } satisfies Partial<EvolutionStoreError>);
+  });
+
+  it("promotes complete skill bundles, preserves the replaced bundle, and blocks stale or declared collisions", async () => {
+    const root = await tempRoot();
+    const ids = ["profile-id", "create-id", "update-id", "reserved-id"];
+    const store = new EvolutionStore(root, {
+      uuid: () => ids.shift()!,
+      reservedSkillNames: () => new Set(["human-skill"]),
+    });
+    const created = await store.createCandidate("reviewer", {
+      reviewId: "review-create",
+      taskId: "t-111111",
+      target: { kind: "skill", ...skillInput("repo-check") },
+    });
+    const createDetail = await store.candidateDetail("reviewer", created.id);
+    const first = await store.approveCandidate("reviewer", created.id, {
+      expectedActiveVersion: 0,
+      expectedTargetDigest: createDetail.currentTargetDigest,
+    });
+    expect(first.profile.activeVersion).toBe(1);
+    const original = await store.readSkillFiles("reviewer", "repo-check");
+    expect(original?.map((file) => file.path)).toContain("scripts/check.sh");
+
+    const originalDigest = (first.candidate.target.kind === "skill" ? first.candidate.target.digest : "");
+    const updateInput: EvolutionSkillBundleInput = {
+      ...skillInput("repo-check"),
+      operation: "update",
+      expectedTargetDigest: originalDigest,
+      files: skillInput("repo-check").files.map((file) => file.path === "scripts/check.sh"
+        ? { ...file, content: "#!/bin/sh\nnpm run verify:full:quiet\n" }
+        : file),
+    };
+    const update = await store.createCandidate("reviewer", {
+      reviewId: "review-update",
+      taskId: "t-222222",
+      target: { kind: "skill", ...updateInput },
+    });
+    const updateDetail = await store.candidateDetail("reviewer", update.id);
+    expect(updateDetail.currentTargetDigest).toBe(originalDigest);
+    await expect(store.approveCandidate("reviewer", update.id, {
+      expectedActiveVersion: 0,
+      expectedTargetDigest: originalDigest,
+    })).rejects.toMatchObject({ code: "evolution/promotion-conflict" } satisfies Partial<EvolutionStoreError>);
+
+    const second = await store.approveCandidate("reviewer", update.id, {
+      expectedActiveVersion: 1,
+      expectedTargetDigest: originalDigest,
+    });
+    expect(second.profile.activeVersion).toBe(2);
+    expect(second.history.previousDigest).toBe(originalDigest);
+    expect(second.history.previousSkillFiles).toEqual(original);
+    expect((await store.readSkillFiles("reviewer", "repo-check"))?.find((file) => file.path === "scripts/check.sh")?.content)
+      .toContain("verify:full:quiet");
+
+    const reserved = await store.createCandidate("reviewer", {
+      reviewId: "review-reserved",
+      taskId: "t-333333",
+      target: { kind: "skill", ...skillInput("human-skill") },
+    });
+    await expect(store.approveCandidate("reviewer", reserved.id, {
+      expectedActiveVersion: 2,
+      expectedTargetDigest: undefined,
+    })).rejects.toMatchObject({ code: "evolution/promotion-conflict" } satisfies Partial<EvolutionStoreError>);
+    expect((await store.readCandidate("reviewer", reserved.id))?.status).toBe("pending");
+    expect(await store.readSkillFiles("reviewer", "human-skill")).toBeUndefined();
   });
 });

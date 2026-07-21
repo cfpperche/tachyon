@@ -3,8 +3,8 @@ import type { AgentPromptManifest, PromptTaskLayer } from "./promptLayers.js";
 
 /** Fixed protocol-only ceilings. Renderers accept no free-form strings, so these protect future
  * label growth from silently consuming the pane payload budget. */
-export const MAX_STARTUP_BRIEF_SUMMARY_BYTES = 384;
-export const MAX_STARTUP_BRIEF_INVENTORY_BYTES = 384;
+export const MAX_STARTUP_BRIEF_SUMMARY_BYTES = 512;
+export const MAX_STARTUP_BRIEF_INVENTORY_BYTES = 512;
 
 export interface StartupBriefManifest {
   projectGuidanceSources: number;
@@ -59,6 +59,7 @@ export function renderStartupBriefSummary(manifest: StartupBriefManifest): strin
     `soul (${present(prompt.soul)})`,
     `role (${present(prompt.role)})`,
     `persistent instructions (${present(prompt.persistentInstructions)})`,
+    ...(prompt.evolution ? [`Agent Evolution (v${prompt.evolution.version}; ${prompt.evolution.digest})`] : []),
     `Bridge guidance (${present(prompt.bridgeGuidance)})`,
     summaryTask(prompt.task),
   ].join("; ");
@@ -78,6 +79,7 @@ export function renderStartupBriefInventory(manifest: StartupBriefManifest): str
     `Soul: ${present(prompt.soul)}`,
     `Role: ${present(prompt.role)}`,
     `Persistent instructions: ${present(prompt.persistentInstructions)}`,
+    ...(prompt.evolution ? [`Agent Evolution: present (version ${prompt.evolution.version}; digest ${prompt.evolution.digest})`] : []),
     `Bridge guidance: ${present(prompt.bridgeGuidance)}`,
     `Task: ${inventoryTask(prompt.task)}`,
     "── END STARTUP BRIEF CONTENTS ──",

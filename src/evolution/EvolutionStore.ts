@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import type { Dirent } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { isValidAgentName } from "../config/nameValidation.js";
@@ -14,9 +15,11 @@ import {
   type EvolutionLearningTarget,
   type EvolutionProfile,
   type EvolutionReview,
+  type EvolutionSkillFile,
   type EvolutionSkillTarget,
 } from "./domain.js";
 import {
+  digestEvolutionSkillFiles,
   validateEvolutionSkillBundle,
   type EvolutionSkillBundleInput,
 } from "./skillBundle.js";
@@ -36,6 +39,7 @@ export type EvolutionStoreErrorCode =
   | "evolution/candidate-conflict"
   | "evolution/review-malformed"
   | "evolution/review-conflict"
+  | "evolution/promotion-conflict"
   | "evolution/skill-invalid"
   | "evolution/history-invalid";
 
@@ -73,9 +77,28 @@ export interface EvolutionReviewSubmission {
   replayed: boolean;
 }
 
+export interface EvolutionCandidateDetail {
+  candidate: EvolutionCandidate;
+  activeVersion: number;
+  currentTargetDigest?: string;
+}
+
+export interface ResolveEvolutionCandidateInput {
+  expectedActiveVersion: number;
+  expectedTargetDigest?: string;
+  reservedSkillNames?: ReadonlySet<string>;
+}
+
+export interface EvolutionPromotionResult {
+  candidate: EvolutionCandidate;
+  profile: EvolutionProfile;
+  history: EvolutionHistoryRecord;
+}
+
 export interface EvolutionStoreOptions {
   now?: () => string;
   uuid?: () => string;
+  reservedSkillNames?: (agent: string) => ReadonlySet<string>;
 }
 
 function assertAgentName(agent: string): void {
@@ -162,10 +185,50 @@ function parseCandidate(raw: string, agent: string, expectedId: string): Evoluti
     || !requiredString(candidate.createdAt)
     || !["pending", "approved", "rejected"].includes(candidate.status ?? "")
     || (!isLearningTarget(candidate.target) && !isSkillTarget(candidate.target))
+    || (candidate.resolvedAt !== undefined && !requiredString(candidate.resolvedAt))
+    || (candidate.promotedVersion !== undefined && (!Number.isSafeInteger(candidate.promotedVersion) || candidate.promotedVersion < 1))
+    || (candidate.status === "pending" && (candidate.resolvedAt !== undefined || candidate.promotedVersion !== undefined))
+    || (candidate.status === "rejected" && candidate.promotedVersion !== undefined)
   ) {
     throw new EvolutionStoreError("evolution/candidate-malformed", `Evolution candidate '${expectedId}' has an invalid v1 shape`);
   }
   return candidate as EvolutionCandidate;
+}
+
+function parseLearnings(raw: string, agent: string): EvolutionLearning[] {
+  if (!raw.startsWith("# Learned Context\n\nHuman-approved context for this Tachyon agent.\n")) {
+    throw new EvolutionStoreError("evolution/profile-malformed", `Evolution learnings for '${agent}' have an invalid v1 header`);
+  }
+  const marker = /^<!-- learning:([A-Za-z0-9_-]+) task:([^\s]+) review:([A-Za-z0-9_-]+) approved:([^\s]+) -->$/gm;
+  const matches = [...raw.matchAll(marker)];
+  if (matches.length === 0) {
+    if (raw !== renderEvolutionLearnings([])) {
+      throw new EvolutionStoreError("evolution/profile-malformed", `Evolution learnings for '${agent}' have invalid content`);
+    }
+    return [];
+  }
+  const entries: EvolutionLearning[] = [];
+  for (let index = 0; index < matches.length; index++) {
+    const match = matches[index]!;
+    const contentStart = (match.index ?? 0) + match[0].length + 1;
+    const contentEnd = index + 1 < matches.length ? matches[index + 1]!.index! - 2 : raw.length;
+    const content = raw.slice(contentStart, contentEnd).trim();
+    const approvedAt = match[4]!;
+    if (!content || !Number.isFinite(Date.parse(approvedAt))) {
+      throw new EvolutionStoreError("evolution/profile-malformed", `Evolution learnings for '${agent}' contain an invalid entry`);
+    }
+    entries.push({
+      id: match[1]!,
+      sourceTaskId: match[2]!,
+      sourceReviewId: match[3]!,
+      approvedAt,
+      content,
+    });
+  }
+  if (renderEvolutionLearnings(entries) !== raw) {
+    throw new EvolutionStoreError("evolution/profile-malformed", `Evolution learnings for '${agent}' are not canonical`);
+  }
+  return entries;
 }
 
 function parseReview(raw: string, agent: string, expectedId: string): EvolutionReview {
@@ -205,6 +268,7 @@ function parseReview(raw: string, agent: string, expectedId: string): EvolutionR
 export class EvolutionStore {
   private readonly now: () => string;
   private readonly uuid: () => string;
+  private readonly reservedSkillNames: (agent: string) => ReadonlySet<string>;
   private readonly mutationTails = new Map<string, Promise<void>>();
 
   constructor(
@@ -213,6 +277,7 @@ export class EvolutionStore {
   ) {
     this.now = options.now ?? (() => new Date().toISOString());
     this.uuid = options.uuid ?? (() => crypto.randomUUID());
+    this.reservedSkillNames = options.reservedSkillNames ?? (() => new Set());
   }
 
   rootFor(agent: string): string {
@@ -316,6 +381,140 @@ export class EvolutionStore {
   async listCandidates(agent: string): Promise<EvolutionCandidate[]> {
     assertAgentName(agent);
     return this.listCandidatesUnlocked(agent);
+  }
+
+  async candidateDetail(agent: string, candidateId: string): Promise<EvolutionCandidateDetail> {
+    const profile = await this.readProfile(agent);
+    const candidate = await this.readCandidate(agent, candidateId);
+    if (!profile || !candidate) {
+      throw new EvolutionStoreError("evolution/promotion-conflict", `unknown Evolution candidate '${candidateId}' for agent '${agent}'`);
+    }
+    const currentTargetDigest = await this.currentTargetDigest(agent, candidate);
+    return {
+      candidate,
+      activeVersion: profile.activeVersion,
+      ...(currentTargetDigest !== undefined ? { currentTargetDigest } : {}),
+    };
+  }
+
+  async rejectCandidate(
+    agent: string,
+    candidateId: string,
+    input: ResolveEvolutionCandidateInput,
+  ): Promise<EvolutionCandidate> {
+    return this.withAgentMutation(agent, async () => {
+      const { profile, candidate } = await this.requirePendingCandidate(agent, candidateId, input);
+      void profile;
+      const rejected: EvolutionCandidate = {
+        ...candidate,
+        status: "rejected",
+        resolvedAt: this.now(),
+      };
+      await this.atomicWriteJson(this.candidatePath(agent, candidateId), rejected);
+      return rejected;
+    });
+  }
+
+  async approveCandidate(
+    agent: string,
+    candidateId: string,
+    input: ResolveEvolutionCandidateInput,
+  ): Promise<EvolutionPromotionResult> {
+    return this.withAgentMutation(agent, async () => {
+      const { profile, candidate } = await this.requirePendingCandidate(agent, candidateId, input);
+      const promotedVersion = profile.activeVersion + 1;
+      const recordedAt = this.now();
+      let previousDigest: string | undefined;
+      let previousSkillFiles: EvolutionSkillFile[] | undefined;
+      let promotedDigest: string;
+
+      if (candidate.target.kind === "learning") {
+        const entries = await this.readLearningsUnlocked(agent);
+        const learning: EvolutionLearning = {
+          id: `learning-${candidate.id.slice("candidate-".length)}`,
+          content: candidate.target.content,
+          sourceTaskId: candidate.taskId,
+          sourceReviewId: candidate.reviewId,
+          approvedAt: recordedAt,
+        };
+        const rendered = renderEvolutionLearnings([...entries, learning]);
+        await this.atomicWrite(this.learningsPath(agent), rendered);
+        promotedDigest = crypto.createHash("sha256").update(rendered, "utf8").digest("hex");
+      } else {
+        if (this.reservedSkillNames(agent).has(candidate.target.name)
+          || input.reservedSkillNames?.has(candidate.target.name)) {
+          throw new EvolutionStoreError(
+            "evolution/promotion-conflict",
+            `skill '${candidate.target.name}' is declared by the human-owned harness and cannot be replaced by Agent Evolution`,
+          );
+        }
+        previousSkillFiles = await this.readSkillFilesUnlocked(agent, candidate.target.name);
+        previousDigest = previousSkillFiles ? digestEvolutionSkillFiles(previousSkillFiles) : undefined;
+        if (candidate.target.operation === "create" && previousSkillFiles) {
+          throw new EvolutionStoreError("evolution/promotion-conflict", `skill '${candidate.target.name}' already exists`);
+        }
+        if (candidate.target.operation === "update"
+          && (!previousSkillFiles || previousDigest !== candidate.target.expectedTargetDigest)) {
+          throw new EvolutionStoreError("evolution/promotion-conflict", `skill '${candidate.target.name}' changed since the proposal was created`);
+        }
+        await this.writeSkillBundleUnlocked(agent, candidate.target.name, candidate.target.files, candidate.target.operation);
+        promotedDigest = candidate.target.digest;
+      }
+
+      const history: EvolutionHistoryRecord = {
+        schemaVersion: EVOLUTION_SCHEMA_VERSION,
+        id: `promotion-${candidate.id.slice("candidate-".length)}`,
+        agent,
+        version: promotedVersion,
+        candidateId: candidate.id,
+        target: candidate.target.kind,
+        recordedAt,
+        ...(previousDigest !== undefined ? { previousDigest } : {}),
+        promotedDigest,
+        ...(previousSkillFiles !== undefined ? { previousSkillFiles } : {}),
+      };
+      await this.recordHistoryUnlocked(agent, history);
+
+      const nextProfile: EvolutionProfile = {
+        ...profile,
+        activeVersion: promotedVersion,
+        updatedAt: recordedAt,
+      };
+      await this.atomicWriteJson(this.profilePath(agent), nextProfile);
+      const approved: EvolutionCandidate = {
+        ...candidate,
+        status: "approved",
+        resolvedAt: recordedAt,
+        promotedVersion,
+      };
+      await this.atomicWriteJson(this.candidatePath(agent, candidate.id), approved);
+      return { candidate: approved, profile: nextProfile, history };
+    });
+  }
+
+  async readLearnings(agent: string): Promise<EvolutionLearning[]> {
+    assertAgentName(agent);
+    return this.readLearningsUnlocked(agent);
+  }
+
+  async readSkillFiles(agent: string, skillName: string): Promise<EvolutionSkillFile[] | undefined> {
+    assertAgentName(agent);
+    return this.readSkillFilesUnlocked(agent, skillName);
+  }
+
+  async listSkillNames(agent: string): Promise<string[]> {
+    assertAgentName(agent);
+    let entries: Dirent[];
+    try {
+      entries = await fs.readdir(this.skillsDir(agent), { withFileTypes: true });
+    } catch (error) {
+      if (isMissing(error)) return [];
+      throw error;
+    }
+    return entries
+      .filter((entry) => entry.isDirectory() && SAFE_SKILL_NAME.test(entry.name))
+      .map((entry) => entry.name)
+      .sort(compareText);
   }
 
   async createReview(agent: string, input: CreateEvolutionReviewInput): Promise<{ review: EvolutionReview; created: boolean }> {
@@ -505,23 +704,7 @@ export class EvolutionStore {
   async recordHistory(agent: string, record: EvolutionHistoryRecord): Promise<void> {
     await this.withAgentMutation(agent, async () => {
       await this.ensureProfileUnlocked(agent);
-      if (
-        record.schemaVersion !== EVOLUTION_SCHEMA_VERSION
-        || record.agent !== agent
-        || !Number.isSafeInteger(record.version)
-        || record.version < 1
-        || !requiredString(record.id)
-        || !requiredString(record.candidateId)
-        || (record.target !== "learning" && record.target !== "skill")
-        || !requiredString(record.recordedAt)
-        || !SHA256_RE.test(record.promotedDigest)
-        || (record.previousDigest !== undefined && !SHA256_RE.test(record.previousDigest))
-      ) {
-        throw new EvolutionStoreError("evolution/history-invalid", "Evolution history record has an invalid v1 shape");
-      }
-      assertRecordId("history", record.id);
-      const file = path.join(this.historyDir(agent), `${String(record.version).padStart(6, "0")}-${record.id}.json`);
-      await this.atomicWriteJson(file, record);
+      await this.recordHistoryUnlocked(agent, record);
     });
   }
 
@@ -572,6 +755,165 @@ export class EvolutionStore {
       throw new EvolutionStoreError("evolution/review-conflict", `unknown Evolution review '${reviewId}' for agent '${agent}'`);
     }
     return review;
+  }
+
+  private async requirePendingCandidate(
+    agent: string,
+    candidateId: string,
+    input: ResolveEvolutionCandidateInput,
+  ): Promise<{ profile: EvolutionProfile; candidate: EvolutionCandidate }> {
+    const profile = await this.readProfile(agent);
+    const candidate = await this.readCandidate(agent, candidateId);
+    if (!profile || !candidate) {
+      throw new EvolutionStoreError("evolution/promotion-conflict", `unknown Evolution candidate '${candidateId}' for agent '${agent}'`);
+    }
+    if (candidate.status !== "pending") {
+      throw new EvolutionStoreError("evolution/promotion-conflict", `Evolution candidate '${candidateId}' is already ${candidate.status}`);
+    }
+    if (!Number.isSafeInteger(input.expectedActiveVersion) || input.expectedActiveVersion !== profile.activeVersion) {
+      throw new EvolutionStoreError(
+        "evolution/promotion-conflict",
+        `Evolution profile version changed: expected ${input.expectedActiveVersion}, current ${profile.activeVersion}`,
+      );
+    }
+    const currentTargetDigest = await this.currentTargetDigest(agent, candidate);
+    if (input.expectedTargetDigest !== currentTargetDigest) {
+      throw new EvolutionStoreError(
+        "evolution/promotion-conflict",
+        `Evolution target changed: expected ${input.expectedTargetDigest ?? "absent"}, current ${currentTargetDigest ?? "absent"}`,
+      );
+    }
+    return { profile, candidate };
+  }
+
+  private async currentTargetDigest(agent: string, candidate: EvolutionCandidate): Promise<string | undefined> {
+    if (candidate.target.kind === "learning") {
+      try {
+        const raw = await fs.readFile(this.learningsPath(agent), "utf8");
+        parseLearnings(raw, agent);
+        return crypto.createHash("sha256").update(raw, "utf8").digest("hex");
+      } catch (error) {
+        if (isMissing(error)) return undefined;
+        throw error;
+      }
+    }
+    const files = await this.readSkillFilesUnlocked(agent, candidate.target.name);
+    return files ? digestEvolutionSkillFiles(files) : undefined;
+  }
+
+  private async readLearningsUnlocked(agent: string): Promise<EvolutionLearning[]> {
+    try {
+      return parseLearnings(await fs.readFile(this.learningsPath(agent), "utf8"), agent);
+    } catch (error) {
+      if (isMissing(error)) return [];
+      throw error;
+    }
+  }
+
+  private async readSkillFilesUnlocked(agent: string, skillName: string): Promise<EvolutionSkillFile[] | undefined> {
+    const root = this.skillDir(agent, skillName);
+    try {
+      const rootStat = await fs.lstat(root);
+      if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) {
+        throw new EvolutionStoreError("evolution/skill-invalid", `active skill '${skillName}' is not a regular directory`);
+      }
+    } catch (error) {
+      if (isMissing(error)) return undefined;
+      throw error;
+    }
+    const files: EvolutionSkillFile[] = [];
+    const visit = async (directory: string, prefix: string): Promise<void> => {
+      const entries = await fs.readdir(directory, { withFileTypes: true });
+      for (const entry of entries.sort((a, b) => compareText(a.name, b.name))) {
+        const absolute = path.join(directory, entry.name);
+        const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
+        if (entry.isSymbolicLink()) {
+          throw new EvolutionStoreError("evolution/skill-invalid", `active skill '${skillName}' contains a symbolic link`);
+        }
+        if (entry.isDirectory()) {
+          await visit(absolute, relative);
+          continue;
+        }
+        if (!entry.isFile()) {
+          throw new EvolutionStoreError("evolution/skill-invalid", `active skill '${skillName}' contains a special file`);
+        }
+        const stat = await fs.stat(absolute);
+        files.push({
+          path: relative,
+          content: await fs.readFile(absolute, "utf8"),
+          ...(stat.mode & 0o111 ? { executable: true } : {}),
+        });
+      }
+    };
+    await visit(root, "");
+    const validation = validateEvolutionSkillBundle({
+      operation: "create",
+      name: skillName,
+      reason: "validate active skill",
+      files,
+    });
+    if (!validation.ok || validation.bundle.digest !== digestEvolutionSkillFiles(files)) {
+      throw new EvolutionStoreError("evolution/skill-invalid", `active skill '${skillName}' is malformed`);
+    }
+    return validation.bundle.files;
+  }
+
+  private async writeSkillBundleUnlocked(
+    agent: string,
+    skillName: string,
+    files: readonly EvolutionSkillFile[],
+    operation: "create" | "update",
+  ): Promise<void> {
+    const skills = this.skillsDir(agent);
+    const target = this.skillDir(agent, skillName);
+    const staging = path.join(skills, `.staging-${skillName}-${crypto.randomBytes(4).toString("hex")}`);
+    const backup = path.join(skills, `.backup-${skillName}-${crypto.randomBytes(4).toString("hex")}`);
+    await fs.mkdir(staging, { recursive: true, mode: 0o700 });
+    try {
+      for (const file of files) {
+        const destination = path.join(staging, file.path);
+        await fs.mkdir(path.dirname(destination), { recursive: true, mode: 0o700 });
+        await fs.writeFile(destination, file.content, { encoding: "utf8", mode: file.executable ? 0o700 : 0o600, flag: "wx" });
+      }
+      if (operation === "create") {
+        await fs.rename(staging, target);
+        return;
+      }
+      await fs.rename(target, backup);
+      try {
+        await fs.rename(staging, target);
+      } catch (error) {
+        await fs.rename(backup, target).catch(() => undefined);
+        throw error;
+      }
+      await fs.rm(backup, { recursive: true, force: true }).catch(() => undefined);
+    } catch (error) {
+      await fs.rm(staging, { recursive: true, force: true }).catch(() => undefined);
+      throw error;
+    }
+  }
+
+  private async recordHistoryUnlocked(agent: string, record: EvolutionHistoryRecord): Promise<void> {
+    if (
+      record.schemaVersion !== EVOLUTION_SCHEMA_VERSION
+      || record.agent !== agent
+      || !Number.isSafeInteger(record.version)
+      || record.version < 1
+      || !requiredString(record.id)
+      || !requiredString(record.candidateId)
+      || (record.target !== "learning" && record.target !== "skill")
+      || !requiredString(record.recordedAt)
+      || !SHA256_RE.test(record.promotedDigest)
+      || (record.previousDigest !== undefined && !SHA256_RE.test(record.previousDigest))
+      || (record.previousSkillFiles !== undefined
+        && (record.target !== "skill"
+          || record.previousDigest !== digestEvolutionSkillFiles(record.previousSkillFiles)))
+    ) {
+      throw new EvolutionStoreError("evolution/history-invalid", "Evolution history record has an invalid v1 shape");
+    }
+    assertRecordId("history", record.id);
+    const file = path.join(this.historyDir(agent), `${String(record.version).padStart(6, "0")}-${record.id}.json`);
+    await this.atomicWriteJson(file, record);
   }
 
   private async candidatesForReviewRecord(agent: string, review: EvolutionReview): Promise<EvolutionCandidate[]> {

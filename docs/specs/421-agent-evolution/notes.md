@@ -19,6 +19,11 @@ _In-flight design memory — decisions, deviations, tradeoffs, and open question
   review creation, notice delivery and Studio refresh are best-effort observers that cannot revert it.
 - 2026-07-21 — A review is bound to the Bridge-resolved agent and one completion revision. Identical
   replay returns the original result; different replay, wrong-agent access and failed reviews reject.
+- 2026-07-21 — The session ledger keeps the complete immutable Evolution snapshot, in addition to its
+  version/digest. Resume and rebind need no reinjection; fork and re-anchor can reuse the exact old
+  content even after a human approves a newer active version.
+- 2026-07-21 — A fresh restart resolves the current canonical profile again. Changing only `cmd`
+  therefore changes the executor while preserving the same profile identity, version and snapshot.
 
 ## Deviations
 
@@ -50,3 +55,12 @@ _Questions surfaced during the build with no answer yet. Owner or path to resolu
   129 tests across the directly affected suites.
 - 2026-07-21 — `npm run verify:full:quiet` passed: 460 files, 5,202 tests passed and 3 skipped.
 - 2026-07-21 — `npm run typecheck` passed after the final Slice 2 changes.
+
+## Slice 3 validation
+
+- 2026-07-21 — Focused promotion, prompt, startup inventory, ledger, AgentManager, fork, re-anchor and
+  Workspace coverage passed: 554 tests across the directly affected suites.
+- 2026-07-21 — `npm run test:invariants` passed: PI-001's existing promise/oracle and evidence mechanics
+  were unchanged, so no independent mechanics-equivalence review was triggered.
+- 2026-07-21 — `npm run verify:full:quiet` passed: 461 files, 5,210 tests passed and 3 skipped.
+- 2026-07-21 — `npm run typecheck` passed after the final Slice 3 changes.

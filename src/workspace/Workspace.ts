@@ -124,6 +124,7 @@ import { PinStore } from "../pins/PinStore.js";
 import { TaskStore } from "../tasks/TaskStore.js";
 import { EvolutionStore } from "../evolution/EvolutionStore.js";
 import { EvolutionCoordinator } from "../evolution/EvolutionCoordinator.js";
+import { declaredHarnessSkillNames } from "../evolution/skillBundle.js";
 import { ValidationStore } from "../validations/ValidationStore.js";
 import { ProbeService } from "../probe/ProbeService.js";
 import { ProbeStore } from "../probe/ProbeStore.js";
@@ -1396,7 +1397,12 @@ export class Workspace {
     );
 
     this.pinStore = new PinStore(workspaceRoot);
-    this.evolutionStore = new EvolutionStore(workspaceRoot);
+    this.evolutionStore = new EvolutionStore(workspaceRoot, {
+      reservedSkillNames: (name) => declaredHarnessSkillNames(
+        workspaceRoot,
+        this.config?.agents[name]?.harness?.skills,
+      ),
+    });
     this.evolutionCoordinator = new EvolutionCoordinator({
       store: this.evolutionStore,
       declaredAgent: (name) => this.config?.agents[name],
@@ -3000,6 +3006,7 @@ export class Workspace {
     if (!(await this.tmux.hasSession(session))) throw new Error(`agent '${agent}' is not running`);
     const def = this.manager.defOf(agent);
     const canonicalGate = await this.canonicalPrimerGate(agent);
+    const sessionEvolution = this.ledger.get(agent)?.evolution;
     if (def?.soul) {
       const previous = this.ledger.get(agent)?.identity;
       try {
@@ -3016,6 +3023,7 @@ export class Workspace {
           soul,
           role: def.role,
           instructions: def.instructions,
+          evolution: sessionEvolution,
           bridgeGuidance: !!this.manager.parentOf(agent) && (this.config?.settings.bridgeGuidance ?? true),
           taskBrief: this.ledger.get(agent)?.def?.taskBrief,
         }).body ?? "";
@@ -3042,6 +3050,33 @@ export class Workspace {
       this.workspaceRoot,
       this.config?.settings.projectGuidance,
     );
+    if (sessionEvolution) {
+      const composed = composeAgentPrompt({
+        role: def?.role,
+        instructions: def?.instructions,
+        evolution: sessionEvolution,
+        bridgeGuidance: !!this.manager.parentOf(agent) && (this.config?.settings.bridgeGuidance ?? true),
+        taskBrief: this.ledger.get(agent)?.def?.taskBrief,
+      }).body;
+      const body = [projectGuidance, composed]
+        .filter((part): part is string => !!part?.trim())
+        .join("\n\n");
+      const frame = (deliverable: string): string => wrapWithPrimer(deliverable, {
+        agentName: agent,
+        delegator: this.manager.delegatorOf(agent),
+        parent: this.manager.parentOf(agent),
+        gate: canonicalGate,
+        verify: this.config?.settings.verify,
+      });
+      assertSafeBriefTransport(
+        frame(previewDeliverableBody(this.workspaceRoot, agent, body, "reanchor")),
+        `agent '${agent}' re-anchor brief`,
+      );
+      const injection = frame(deliverableBody(this.workspaceRoot, agent, body, "reanchor"));
+      assertSafeBriefTransport(injection, `agent '${agent}' re-anchor brief`);
+      await this.tmux.sendKeys(session, injection, true);
+      return;
+    }
     try {
       const abs = path.join(this.workspaceRoot, relPath);
       fs.mkdirSync(path.dirname(abs), { recursive: true });

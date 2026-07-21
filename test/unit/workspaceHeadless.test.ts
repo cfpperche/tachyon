@@ -383,6 +383,56 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     }
   });
 
+  it("SDD 421 re-anchor reuses the session's pinned Evolution snapshot", async () => {
+    const root = mkdir();
+    fs.writeFileSync(
+      path.join(root, "tachyon.yml"),
+      "agents:\n  a:\n    cmd: claude\n    selfEvolution: {enabled: true}\n",
+      "utf8",
+    );
+    const host = new FakeHost(mkdir());
+    const fake = fakeTmux();
+    const ws = await Workspace.createForTest(
+      root,
+      { host, onViewsChanged: () => {} },
+      { tmux: fake.tmux, startBridge: false },
+    );
+    try {
+      const first = await ws.evolutionStore.createCandidate("a", {
+        reviewId: "review-first",
+        taskId: "t-111111",
+        target: { kind: "learning", content: "Pinned first-session learning.", reason: "Approved before spawn." },
+      });
+      const firstDetail = await ws.evolutionStore.candidateDetail("a", first.id);
+      await ws.evolutionStore.approveCandidate("a", first.id, {
+        expectedActiveVersion: 0,
+        expectedTargetDigest: firstDetail.currentTargetDigest,
+      });
+      await ws.manager.spawn("a");
+      expect(ws.ledger.get("a")?.evolution?.version).toBe(1);
+
+      const second = await ws.evolutionStore.createCandidate("a", {
+        reviewId: "review-second",
+        taskId: "t-222222",
+        target: { kind: "learning", content: "Next-session-only learning.", reason: "Approved after spawn." },
+      });
+      const secondDetail = await ws.evolutionStore.candidateDetail("a", second.id);
+      await ws.evolutionStore.approveCandidate("a", second.id, {
+        expectedActiveVersion: 1,
+        expectedTargetDigest: secondDetail.currentTargetDigest,
+      });
+
+      await ws.reanchor("a");
+      const reanchorPayload = fake.sent.get(ws.manager.session("a")) ?? "";
+      expect(reanchorPayload).toContain("Pinned first-session learning.");
+      expect(reanchorPayload).not.toContain("Next-session-only learning.");
+      expect(ws.ledger.get("a")?.evolution?.version).toBe(1);
+    } finally {
+      ws.dispose();
+      await fake.cleanup();
+    }
+  });
+
   it("re-anchor leaves a running pane untouched when configured guidance becomes invalid", async () => {
     const root = mkdir();
     fs.writeFileSync(path.join(root, "guidance.md"), "valid guidance", "utf8");

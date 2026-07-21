@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
 import { parseSkillFrontmatter, type SkillFrontmatter } from "../plugins/skill.js";
 import type { EvolutionSkillFile } from "./domain.js";
 
@@ -103,4 +105,21 @@ export function validateEvolutionSkillBundle(input: EvolutionSkillBundleInput): 
       digest: digestEvolutionSkillFiles(files),
     },
   };
+}
+
+/** Names reserved by human-declared harness skill paths; malformed/missing bundles still reserve the basename. */
+export function declaredHarnessSkillNames(workspaceRoot: string, skillPaths: readonly string[] | undefined): ReadonlySet<string> {
+  const names = new Set<string>();
+  for (const configured of skillPaths ?? []) {
+    const basename = path.basename(configured.replace(/[\\/]+$/, ""));
+    if (basename) names.add(basename);
+    try {
+      const skillFile = fs.readFileSync(path.resolve(workspaceRoot, configured, "SKILL.md"), "utf8");
+      const parsed = parseSkillFrontmatter(skillFile);
+      if (parsed.frontmatter) names.add(parsed.frontmatter.name);
+    } catch {
+      // The human declaration remains reserved; normal harness validation reports its own path error.
+    }
+  }
+  return names;
 }

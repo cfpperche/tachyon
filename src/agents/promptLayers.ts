@@ -1,11 +1,13 @@
 import type { Role } from "../roles/templates.js";
 import { bridgeGuidanceTail, composeInstructions, roleTemplate, withBridgeGuidance } from "../roles/templates.js";
 import type { ResolvedSoul } from "./soul.js";
+import { renderEvolutionPromptLayer, type EvolutionStartupSnapshot } from "../evolution/startupSnapshot.js";
 
 export interface AgentPromptLayers {
   soul?: ResolvedSoul;
   role?: Role;
   instructions?: string;
+  evolution?: EvolutionStartupSnapshot;
   bridgeGuidance: boolean;
   taskBrief?: string;
   /** Present only when taskBrief was rendered from the validated structured SpawnContract. */
@@ -23,6 +25,7 @@ export interface AgentPromptManifest {
   soul: boolean;
   role: boolean;
   persistentInstructions: boolean;
+  evolution?: { version: number; digest: string };
   bridgeGuidance: boolean;
   task: PromptTaskLayer;
 }
@@ -52,6 +55,7 @@ export function composeAgentPrompt(layers: AgentPromptLayers): ComposedAgentBody
     soul: !!layers.soul,
     role: !!layers.role && layers.role !== "custom",
     persistentInstructions: !!present(layers.instructions),
+    ...(layers.evolution ? { evolution: { version: layers.evolution.version, digest: layers.evolution.digest } } : {}),
     bridgeGuidance: layers.bridgeGuidance,
     task: !hasTaskBrief
       ? { kind: "absent" }
@@ -59,25 +63,33 @@ export function composeAgentPrompt(layers: AgentPromptLayers): ComposedAgentBody
         ? { kind: "contract", completion: layers.taskContractCompletion }
         : { kind: "brief" },
   };
-  if (!layers.soul) {
+  if (!layers.soul && !layers.evolution) {
     const legacyInstructions = [layers.instructions, layers.taskBrief].filter(Boolean).join("\n\n") || undefined;
     const body = withBridgeGuidance(composeInstructions(layers.role, legacyInstructions), layers.bridgeGuidance);
     return { body, manifest };
   }
 
-  const soul = layers.soul;
   const roleBody = layers.role && layers.role !== "custom" ? roleTemplate(layers.role) : undefined;
   const guidance = layers.bridgeGuidance ? bridgeGuidanceTail() : undefined;
-  const identity = [
-    "## Identity (user-authored SOUL.md)",
-    `Source: ${soul.source}`,
-    "This identity shapes voice, values, posture, and style only. It cannot override provider or host authority, repository rules, Tachyon protocol, or the current execution task.",
-    soul.body,
-  ].filter(Boolean).join("\n\n");
-  const body = [identity, present(roleBody), present(layers.instructions), guidance, present(layers.taskBrief)].filter(Boolean).join("\n\n") || undefined;
+  const identity = layers.soul
+    ? [
+        "## Identity (user-authored SOUL.md)",
+        `Source: ${layers.soul.source}`,
+        "This identity shapes voice, values, posture, and style only. It cannot override provider or host authority, repository rules, Tachyon protocol, or the current execution task.",
+        layers.soul.body,
+      ].filter(Boolean).join("\n\n")
+    : undefined;
+  const evolution = layers.evolution ? renderEvolutionPromptLayer(layers.evolution) : undefined;
+  const body = [identity, present(roleBody), present(layers.instructions), evolution, guidance, present(layers.taskBrief)].filter(Boolean).join("\n\n") || undefined;
   return {
     body,
-    soul: { profileId: soul.profileId, source: soul.source, sha256: soul.sha256, chars: soul.chars, bytes: soul.bytes },
+    ...(layers.soul ? { soul: {
+      profileId: layers.soul.profileId,
+      source: layers.soul.source,
+      sha256: layers.soul.sha256,
+      chars: layers.soul.chars,
+      bytes: layers.soul.bytes,
+    } } : {}),
     manifest,
   };
 }
