@@ -15,6 +15,10 @@ _In-flight design memory — decisions, deviations, tradeoffs, and open question
 - 2026-07-21 — Mission Control decomposition: umbrella `t-6c351f`; Slice 1 `t-87cc14`; Slice 2
   `t-fc8279`; Slice 3 `t-0fa8ba`; Slice 4 `t-cec393`; Slice 5 `t-6218bf`. Dependencies enforce the
   approved delivery order.
+- 2026-07-21 — Task completion reviews live under `evolution/reviews/`. The Task write commits first;
+  review creation, notice delivery and Studio refresh are best-effort observers that cannot revert it.
+- 2026-07-21 — A review is bound to the Bridge-resolved agent and one completion revision. Identical
+  replay returns the original result; different replay, wrong-agent access and failed reviews reject.
 
 ## Deviations
 
@@ -39,3 +43,10 @@ _Questions surfaced during the build with no answer yet. Owner or path to resolu
 - 2026-07-21 — Focused config/schema/YAML/Studio/protocol/EvolutionStore coverage passed: 220 tests.
 - 2026-07-21 — `npm run verify:full:quiet` passed: 458 files, 5,192 tests passed and 3 skipped.
 - 2026-07-21 — `npm run typecheck` passed after the final Slice 1 changes.
+
+## Slice 2 validation
+
+- 2026-07-21 — Focused TaskStore, EvolutionStore, Coordinator, Bridge, auth and engine coverage passed:
+  129 tests across the directly affected suites.
+- 2026-07-21 — `npm run verify:full:quiet` passed: 460 files, 5,202 tests passed and 3 skipped.
+- 2026-07-21 — `npm run typecheck` passed after the final Slice 2 changes.

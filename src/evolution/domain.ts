@@ -20,6 +20,31 @@ export interface EvolutionProfile {
   updatedAt: string;
 }
 
+export type EvolutionReviewStatus = "pending" | "submitted" | "no-proposal" | "failed";
+
+export interface EvolutionReview {
+  schemaVersion: 1;
+  id: string;
+  agent: string;
+  taskId: string;
+  taskTitle: string;
+  completionRevision: string;
+  createdAt: string;
+  updatedAt: string;
+  status: EvolutionReviewStatus;
+  sessionAnchor: {
+    session: string;
+    activitySeq?: number;
+  };
+  delivery: {
+    status: "not-attempted" | "notified" | "queued" | "failed";
+    detail?: string;
+  };
+  candidateIds: string[];
+  submissionDigest?: string;
+  failure?: string;
+}
+
 export interface EvolutionLearning {
   id: string;
   content: string;

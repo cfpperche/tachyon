@@ -85,6 +85,7 @@ import { RuntimeLaunchReadinessError } from "../runtime/launchReadiness.js";
 import { modelFacingScreenshotResult } from "../companion/screenshotPersist.js";
 import { envelopeFromTabResult } from "../companion/tabEnvelope.js";
 import { appendMutationLog, evaluateMutationSafety } from "../companion/tabSafety.js";
+import type { EvolutionCandidateInputTarget, EvolutionStore } from "../evolution/EvolutionStore.js";
 
 export type NotifyLevel = "info" | "warn" | "error";
 export type NoticeDeliveryResult = { status: "notified" | "queued"; dropped?: number; queued?: number };
@@ -106,6 +107,8 @@ export interface BridgeDeps {
   pins: PinStore;
   /** spec 325 — project work queue entity (.tachyon/tasks/*.json). */
   tasks: TaskStore;
+  /** SDD 421 — canonical Agent Evolution profiles, reviews, and candidates. */
+  evolution?: EvolutionStore;
   /** spec 344 — project validation queue entity (.tachyon/validations/*.json), independent from SDD. */
   validations: ValidationStore;
   /** spec 241 — per-agent continuity briefs (.tachyon/continuity/<agent>.md). Enables get/set/status_continuity. */
@@ -566,6 +569,27 @@ const TASK_EXPECT = z.object({
   updatedAt: z.string().min(1).optional(),
 }).optional();
 const TASK_AWAITING_HUMAN_KIND = z.enum(["decision", "validation", "dogfood"]);
+const EVOLUTION_REVIEW_ID = z.string().regex(/^review-[A-Za-z0-9_-]+$/, "review id must be review-<id>");
+const EVOLUTION_SKILL_FILE = z.object({
+  path: z.string().min(1).max(500),
+  content: z.string().max(256 * 1024),
+  executable: z.boolean().optional(),
+});
+const EVOLUTION_PROPOSAL = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("learning"),
+    content: z.string().min(1).max(4000),
+    reason: z.string().min(1).max(2000),
+  }),
+  z.object({
+    kind: z.literal("skill"),
+    operation: z.enum(["create", "update"]),
+    name: z.string().regex(/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/),
+    reason: z.string().min(1).max(2000),
+    expectedTargetDigest: z.string().regex(/^[0-9a-f]{64}$/).optional(),
+    files: z.array(EVOLUTION_SKILL_FILE).min(1).max(64),
+  }),
+]);
 const VALIDATION_ID = z.string().regex(/^v-[0-9a-f]{6}$/, "validation id must be v-<6hex>");
 const VALIDATION_STATUS = z.enum(["pending", "triaged", "running", "closed"]);
 const VALIDATION_EXECUTOR = z.enum(["human", "agent", "either"]);
@@ -3528,6 +3552,50 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         return ok(JSON.stringify({ ...view, prototypes: prototypeBridgeView(prototypes) }, null, 2));
       } catch (err) {
         return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
+    "submit_evolution_review",
+    {
+      description:
+        "Submit the result of YOUR pending Tachyon Agent Evolution review. The review id comes from " +
+        "Tachyon's task-completion notice and is bound to the Bridge-resolved caller. Submit proposals:[] " +
+        "when nothing should be retained. Learning and standard Agent Skill proposals remain inert until " +
+        "a human approves them in Agent Studio; this tool never changes Soul or Persistent Instructions.",
+      inputSchema: {
+        review_id: EVOLUTION_REVIEW_ID,
+        proposals: z.array(EVOLUTION_PROPOSAL).max(8),
+      },
+    },
+    async ({ review_id, proposals }) => {
+      try {
+        if (!deps.evolution) throw new Error("Agent Evolution is not available on this Bridge");
+        const caller = deps.caller ?? { kind: "legacy" as const };
+        if (caller.kind !== "agent" || !caller.name) {
+          throw new Error("submit_evolution_review requires an agent-authenticated caller");
+        }
+        const submission = await deps.evolution.submitReview(
+          caller.name,
+          review_id,
+          proposals as EvolutionCandidateInputTarget[],
+        );
+        return ok(JSON.stringify({
+          review: {
+            id: submission.review.id,
+            taskId: submission.review.taskId,
+            status: submission.review.status,
+          },
+          candidates: submission.candidates.map((candidate) => ({
+            id: candidate.id,
+            kind: candidate.target.kind,
+            ...(candidate.target.kind === "skill" ? { name: candidate.target.name } : {}),
+          })),
+          replayed: submission.replayed,
+        }, null, 2));
+      } catch (error) {
+        return fail(error);
       }
     },
   );

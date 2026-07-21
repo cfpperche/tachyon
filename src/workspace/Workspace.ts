@@ -122,6 +122,8 @@ import { Scheduler } from "../schedule/Scheduler.js";
 import { ProposalStore } from "../schedule/ProposalStore.js";
 import { PinStore } from "../pins/PinStore.js";
 import { TaskStore } from "../tasks/TaskStore.js";
+import { EvolutionStore } from "../evolution/EvolutionStore.js";
+import { EvolutionCoordinator } from "../evolution/EvolutionCoordinator.js";
 import { ValidationStore } from "../validations/ValidationStore.js";
 import { ProbeService } from "../probe/ProbeService.js";
 import { ProbeStore } from "../probe/ProbeStore.js";
@@ -481,6 +483,8 @@ export class Workspace {
   readonly lifecycle: LifecycleMonitor;
   readonly pinStore: PinStore;
   readonly taskStore: TaskStore;
+  readonly evolutionStore: EvolutionStore;
+  private readonly evolutionCoordinator: EvolutionCoordinator;
   private readonly taskNotifications: TaskNotificationService;
   readonly validationStore: ValidationStore;
   readonly continuityStore: ContinuityStore;
@@ -1336,6 +1340,7 @@ export class Workspace {
       {
         onCrash: (agent, exitCode, willRestart, delayMs) => {
           this.waiters.notifyDead(agent, exitCode);
+          void this.evolutionCoordinator.onAgentUnavailable(agent, `agent '${agent}' exited before submitting the review`);
           this.noticeQueue.clear(agent);
           this.pokeParentOnDeath(agent, exitCode !== undefined ? String(exitCode) : "killed");
           // spec 230 — a pipeline node's process died: feed the exit to the executor (an exit-based node
@@ -1359,6 +1364,7 @@ export class Workspace {
         },
         onCleanExit: (agent) => {
           this.waiters.notifyDead(agent, 0);
+          void this.evolutionCoordinator.onAgentUnavailable(agent, `agent '${agent}' exited before submitting the review`);
           this.noticeQueue.clear(agent);
           this.pokeParentOnDeath(agent, "0");
           // spec 230 — a pipeline `cmd:` one-shot exited cleanly: complete its node by exit code.
@@ -1376,6 +1382,7 @@ export class Workspace {
         },
         onGone: (agent) => {
           this.waiters.notifyGone(agent);
+          void this.evolutionCoordinator.onAgentUnavailable(agent, `agent '${agent}' stopped before submitting the review`);
           this.noticeQueue.clear(agent);
           this.pokeParentOnDeath(agent, "killed", true);
         },
@@ -1389,7 +1396,18 @@ export class Workspace {
     );
 
     this.pinStore = new PinStore(workspaceRoot);
-    this.taskStore = new TaskStore(workspaceRoot);
+    this.evolutionStore = new EvolutionStore(workspaceRoot);
+    this.evolutionCoordinator = new EvolutionCoordinator({
+      store: this.evolutionStore,
+      declaredAgent: (name) => this.config?.agents[name],
+      sessionFor: (name) => this.manager.session(name),
+      activitySeq: (name) => this.currentActivitySeq(name),
+      deliverNotice: (name, line) => this.deliverNotice(name, line),
+      onReviewChanged: () => deps.onViewsChanged("agents"),
+    });
+    this.taskStore = new TaskStore(workspaceRoot, {
+      onMutation: (event) => this.evolutionCoordinator.onTaskMutation(event),
+    });
     this.validationStore = new ValidationStore(workspaceRoot);
     this.continuityStore = new ContinuityStore(workspaceRoot);
     this.continuityState = new ContinuityState(workspaceRoot);
@@ -1498,6 +1516,7 @@ export class Workspace {
         tmux: this.tmux,
         pins: this.pinStore,
         tasks: this.taskStore,
+        evolution: this.evolutionStore,
         validations: this.validationStore,
         continuity: this.continuityStore,
         currentActivitySeq: (agent) => this.currentActivitySeq(agent),

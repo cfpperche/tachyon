@@ -204,4 +204,78 @@ describe("EvolutionStore (SDD 421 Slice 1)", () => {
       target: { kind: "learning", content: "Fact", reason: "Reason" },
     })).rejects.toMatchObject({ code: "evolution/profile-malformed" } satisfies Partial<EvolutionStoreError>);
   });
+
+  it("creates one review per completion revision and makes submission idempotent", async () => {
+    const root = await tempRoot();
+    const ids = ["profile-id", "review-id"];
+    const store = new EvolutionStore(root, {
+      now: () => "2026-07-21T18:00:00.000Z",
+      uuid: () => ids.shift()!,
+    });
+    const input = {
+      taskId: "t-123456",
+      taskTitle: "Ship the change",
+      completionRevision: "b".repeat(64),
+      session: "tachyon-reviewer",
+      activitySeq: 42,
+    };
+    const first = await store.createReview("reviewer", input);
+    const duplicate = await store.createReview("reviewer", input);
+    expect(first.created).toBe(true);
+    expect(duplicate).toEqual({ review: first.review, created: false });
+    expect(await store.listReviews("reviewer")).toHaveLength(1);
+
+    const delivered = await store.markReviewDelivery("reviewer", first.review.id, "queued");
+    expect(delivered.delivery.status).toBe("queued");
+    const proposals = [
+      { kind: "learning" as const, content: "Use the focused test first.", reason: "It shortened diagnosis." },
+      { kind: "skill" as const, ...skillInput() },
+    ];
+    const submitted = await store.submitReview("reviewer", first.review.id, proposals);
+    expect(submitted.replayed).toBe(false);
+    expect(submitted.review.status).toBe("submitted");
+    expect(submitted.candidates.map((candidate) => candidate.id)).toEqual([
+      "candidate-review-id-1",
+      "candidate-review-id-2",
+    ]);
+    expect((await store.readProfile("reviewer"))?.activeVersion).toBe(0);
+
+    const replay = await store.submitReview("reviewer", first.review.id, proposals);
+    expect(replay.replayed).toBe(true);
+    expect(replay.review).toEqual(submitted.review);
+    await expect(store.submitReview("reviewer", first.review.id, [])).rejects.toMatchObject({
+      code: "evolution/review-conflict",
+    } satisfies Partial<EvolutionStoreError>);
+  });
+
+  it("records an empty review or a visible delivery failure without candidates", async () => {
+    const root = await tempRoot();
+    const ids = ["profile-id", "empty-review", "failed-review"];
+    const store = new EvolutionStore(root, { uuid: () => ids.shift()! });
+    const empty = await store.createReview("reviewer", {
+      taskId: "t-111111",
+      taskTitle: "No learning",
+      completionRevision: "c".repeat(64),
+      session: "tachyon-reviewer",
+    });
+    const noProposal = await store.submitReview("reviewer", empty.review.id, []);
+    expect(noProposal.review.status).toBe("no-proposal");
+    expect(noProposal.candidates).toEqual([]);
+
+    const failed = await store.createReview("reviewer", {
+      taskId: "t-222222",
+      taskTitle: "Session gone",
+      completionRevision: "d".repeat(64),
+      session: "tachyon-reviewer",
+    });
+    const marked = await store.markReviewFailed("reviewer", failed.review.id, "agent is not running");
+    expect(marked).toMatchObject({
+      status: "failed",
+      delivery: { status: "failed", detail: "agent is not running" },
+      failure: "agent is not running",
+    });
+    await expect(store.submitReview("reviewer", failed.review.id, [])).rejects.toMatchObject({
+      code: "evolution/review-conflict",
+    } satisfies Partial<EvolutionStoreError>);
+  });
 });

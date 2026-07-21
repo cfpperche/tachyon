@@ -49,6 +49,16 @@ export interface TaskListOptions {
   status?: TaskStatus;
 }
 
+/** A committed update observation. Observers cannot change or fail the Task mutation result. */
+export interface TaskMutationEvent {
+  before: Task;
+  after: Task;
+}
+
+export interface TaskStoreOptions {
+  onMutation?: (event: TaskMutationEvent) => void | Promise<void>;
+}
+
 const SDD_STATUSES = new Set<SddStatus>(["draft", "in-progress", "shipped", "shipped-partial", "superseded", "abandoned", "deferred"]);
 const RETRIAGE_SDD = new Set<SddStatus>(["superseded", "abandoned", "deferred"]);
 const TASK_AUTHORING_LIMIT_FIELDS = new Set<string>(["title", "body", "kind", "artifact_refs", "artifact_refs.type", "artifact_refs.ref"]);
@@ -76,7 +86,10 @@ export class TaskStore {
   private mutation: Promise<void> = Promise.resolve();
   readonly journal: TaskJournalStore;
 
-  constructor(private readonly workspaceRoot: string) {
+  constructor(
+    private readonly workspaceRoot: string,
+    private readonly options: TaskStoreOptions = {},
+  ) {
     this.journal = new TaskJournalStore(workspaceRoot);
   }
 
@@ -200,6 +213,7 @@ export class TaskStore {
       // minting the identical midpoint between the same observed neighbors (dueto F2 — reject, never last-write).
       if (typeof input.rank === "string") this.assertNoRankCollision(next);
       this.writeTask(next);
+      this.emitMutation({ before: current, after: next });
       return next;
     });
   }
@@ -266,6 +280,14 @@ export class TaskStore {
     const tmp = `${target}.tmp.${process.pid}.${crypto.randomBytes(3).toString("hex")}`;
     fs.writeFileSync(tmp, `${JSON.stringify(task, null, 2)}\n`, "utf8");
     fs.renameSync(tmp, target);
+  }
+
+  private emitMutation(event: TaskMutationEvent): void {
+    try {
+      void Promise.resolve(this.options.onMutation?.(event)).catch(() => undefined);
+    } catch {
+      // The Task is already committed; evolution/notification observers are best-effort side effects.
+    }
   }
 
   private viewFor(task: Task, allTasks: Task[], options: { includeJournal?: boolean } = {}): TaskView {

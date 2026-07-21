@@ -86,12 +86,14 @@ The canonical state is rooted in the coordinating workspace, alongside the exist
 │       ├── references/    # optional
 │       └── assets/        # optional
 ├── candidates/
+├── reviews/
 └── history/
 ```
 
 - `LEARNINGS.md` contains only the currently approved short Learned Context.
 - `skills/` contains only approved Agent Skills. A skill is a complete directory, not only a prompt.
 - `candidates/` contains pending or rejected proposals and their source task, reason and proposed diff.
+- `reviews/` contains one durable result per completed-task revision, including delivery/submission state.
 - `profile.json` identifies the profile and active version; `history/` preserves prior promoted versions.
 - Runtime-native copies are disposable projections. They never become the canonical profile.
 - The profile is local to one Tachyon agent. Sharing or publishing a skill is outside this V1.

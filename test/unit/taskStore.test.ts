@@ -85,6 +85,34 @@ describe("TaskStore", () => {
     await expect(store.update(task.id, { title: "late edit" })).rejects.toThrow(/immutable/);
   });
 
+  it("observes committed updates without letting observer failures change the Task result", async () => {
+    const events: Array<{ before: string; after: string; persisted: string }> = [];
+    const observed = new TaskStore(root, {
+      onMutation: (event) => {
+        events.push({
+          before: event.before.status,
+          after: event.after.status,
+          persisted: new TaskStore(root).get(event.after.id).status,
+        });
+      },
+    });
+    const task = await observed.create({ title: "committed observer", author: "human" });
+    const triaged = await observed.update(task.id, { status: "triaged" });
+    expect(triaged.status).toBe("triaged");
+    expect(events).toEqual([{ before: "inbox", after: "triaged", persisted: "triaged" }]);
+
+    const syncFailure = new TaskStore(root, { onMutation: () => { throw new Error("observer failed"); } });
+    await expect(syncFailure.update(task.id, { status: "active", assignee: "codex" }))
+      .resolves.toMatchObject({ status: "active" });
+    expect(syncFailure.get(task.id).status).toBe("active");
+
+    const asyncFailure = new TaskStore(root, { onMutation: async () => { throw new Error("observer rejected"); } });
+    await expect(asyncFailure.update(task.id, { status: "done" }))
+      .resolves.toMatchObject({ status: "done" });
+    await Promise.resolve();
+    expect(asyncFailure.get(task.id).status).toBe("done");
+  });
+
   // t-370286 — a prematurely-triaged task can be returned for re-evaluation; the move unscopes it.
   it("triaged → inbox returns a task for re-evaluation and clears the assignee (t-370286)", async () => {
     const task = await store.create({ title: "too early", author: "human" });

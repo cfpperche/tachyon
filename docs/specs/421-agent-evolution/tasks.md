@@ -38,23 +38,23 @@ before continuing._
 
 ## Slice 2 — Task-end review and Bridge submission
 
-- [ ] Add a post-write `TaskStore` mutation observation seam that exposes committed `before/after`
+- [x] Add a post-write `TaskStore` mutation observation seam that exposes committed `before/after`
   values without changing the Task mutation result.
-- [ ] Implement a stable completion revision so duplicate delivery is idempotent and a reopened Task
+- [x] Implement a stable completion revision so duplicate delivery is idempotent and a reopened Task
   can create a new review.
-- [ ] Implement `EvolutionCoordinator` eligibility: transition to `done`, assigned declared agent,
+- [x] Implement `EvolutionCoordinator` eligibility: transition to `done`, assigned declared agent,
   and `selfEvolution.enabled:true` only.
-- [ ] Create the durable pending review before attempting pane delivery, recording Task, agent,
+- [x] Create the durable pending review before attempting pane delivery, recording Task, agent,
   session and activity anchors.
-- [ ] Build the fixed runtime-neutral review prompt and queue it through Workspace `deliverNotice`.
-- [ ] Add `submit_evolution_review` to the Bridge with an empty result or independent learning/skill
+- [x] Build the fixed runtime-neutral review prompt and queue it through Workspace `deliverNotice`.
+- [x] Add `submit_evolution_review` to the Bridge with an empty result or independent learning/skill
   proposals and idempotent submission.
-- [ ] Wire Bridge-resolved caller/review matching and return clear errors for stale, completed or
+- [x] Wire Bridge-resolved caller/review matching and return clear errors for stale, completed or
   wrong-agent review ids.
-- [ ] Record a visible failed review when the assigned session is unavailable without reverting the
+- [x] Record a visible failed review when the assigned session is unavailable without reverting the
   completed Task.
-- [ ] Prove idle, `landed`, resume/rebind and the evolution review itself never recurse into analysis.
-- [ ] Commit Slice 2 separately with focused Task/Coordinator/Bridge tests green.
+- [x] Prove idle, `landed`, resume/rebind and the evolution review itself never recurse into analysis.
+- [x] Commit Slice 2 separately with focused Task/Coordinator/Bridge tests green.
 
 ## Slice 3 — Human promotion and next-session delivery
 
@@ -115,8 +115,8 @@ before continuing._
 
 - [ ] Config/schema/FormState opt-in contract is covered.
 - [ ] EvolutionStore candidate/promotion/version/history contract is covered.
-- [ ] Task completion produces exactly one review per completion revision and never changes Task outcome.
-- [ ] Bridge submission accepts matching reviews and preserves independent proposals.
+- [x] Task completion produces exactly one review per completion revision and never changes Task outcome.
+- [x] Bridge submission accepts matching reviews and preserves independent proposals.
 - [ ] Reject/Approve/current-session/next-session behavior maps to the acceptance scenarios.
 - [ ] Disabled prompt bytes and PI-001's fixed oracle remain unchanged.
 - [ ] Agent Studio protocol, localized UI and lifecycle actions are covered.
