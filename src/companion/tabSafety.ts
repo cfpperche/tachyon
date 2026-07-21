@@ -17,7 +17,26 @@ export type SafetyDecision =
   | { allow: true }
   | { allow: false; code: "needs_confirm" | "restricted"; message: string };
 
-/** Classify intent from tool + optional selector/ref/url (heuristic layer). */
+/** File-like download URLs (not merely browsing a /download index page). */
+export function isLikelyFileDownloadUrl(url: string | undefined): boolean {
+  if (!url) return false;
+  try {
+    const u = new URL(url);
+    if (/\.(zip|pdf|exe|dmg|pkg|msi|tar|tgz|gz|7z|rar|csv|xlsx?|docx?|pptx?)(\?|$)/i.test(u.pathname)) {
+      return true;
+    }
+    if (u.searchParams.has("download") || /attachment|content-disposition/i.test(u.search)) {
+      return true;
+    }
+    // /download/foo.zip style (has filename after download/)
+    if (/\/download\/[^/]+\.[a-z0-9]{2,5}$/i.test(u.pathname)) return true;
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+/** Classify intent from tool + selector/ref/url + optional resolved element hints. */
 export function classifyDangerousAction(input: {
   tool: string;
   selector?: string;
@@ -25,15 +44,53 @@ export function classifyDangerousAction(input: {
   text?: string;
   url?: string;
   submit?: boolean;
+  /** Resolved from last snapshot for @e refs (name, label, …). */
+  name?: string;
+  href?: string;
+  elementText?: string;
+  ariaLabel?: string;
 }): DangerousClass {
   if (input.submit === true) return "form_submit";
-  const blob = `${input.selector ?? ""} ${input.ref ?? ""} ${input.text ?? ""} ${input.url ?? ""}`.toLowerCase();
+
+  const isNavTool =
+    input.tool === "user_browser_navigate" || input.tool === "user_browser_tab_open";
+
+  // Navigate/open: only file-like downloads, not path segment "/download" alone (dogfood E3).
+  if (isNavTool) {
+    if (isLikelyFileDownloadUrl(input.url)) return "download";
+    // Still surface buy/delete words in free-form URL strings (rare).
+    const navBlob = `${input.url ?? ""}`.toLowerCase();
+    if (/\b(buy|purchase|checkout|pay|comprar|pagamento)\b/.test(navBlob)) return "buy";
+    if (/\b(delete|remove|destroy|excluir|apagar)\b/.test(navBlob) && !/\/download\/?$/i.test(navBlob)) {
+      return "delete";
+    }
+    return "none";
+  }
+
+  if (input.tool === "user_browser_download") {
+    return "download";
+  }
+
+  // Include resolved @e metadata so ref-only clicks still classify (dogfood F1b / t-8f0862).
+  const blob = [
+    input.selector,
+    input.ref,
+    input.text,
+    input.url,
+    input.name,
+    input.href,
+    input.elementText,
+    input.ariaLabel,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
   if (/\b(delete|remove|destroy|excluir|apagar)\b/.test(blob)) return "delete";
   if (/\b(buy|purchase|checkout|pay|comprar|pagamento)\b/.test(blob)) return "buy";
   if (/\b(download|export|baixar)\b/.test(blob)) return "download";
   if (/\b(publish|post|submit|enviar|publicar)\b/.test(blob)) return "publish";
   if (input.tool === "user_browser_type" || input.tool === "user_browser_fill") {
-    // typing alone is not auto-submit unless submit flag
     return "none";
   }
   return "none";
@@ -75,6 +132,10 @@ export function evaluateMutationSafety(input: {
   ref?: string;
   text?: string;
   submit?: boolean;
+  name?: string;
+  href?: string;
+  elementText?: string;
+  ariaLabel?: string;
   allowedHosts?: string[];
   /** When true, skip needs_confirm (used after explicit host approval path). */
   confirmed?: boolean;

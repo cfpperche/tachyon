@@ -374,6 +374,8 @@ export interface CompanionTabRefEntry {
   tag?: string;
   role?: string;
   name?: string;
+  /** Anchor href when known (safety classification for @e clicks). */
+  href?: string;
 }
 
 /** Extension → engine: fulfillment of a tab command. */

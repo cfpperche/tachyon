@@ -316,6 +316,14 @@ export interface BridgeDeps {
   /** SDD 420 optional host allowlist. */
   companionAllowedHosts?: () => string[] | undefined;
   /**
+   * SDD 420 — last-snapshot @e metadata for safety (name/href/selector).
+   * When agents click with only ref=@eN, gate still sees resolved labels.
+   */
+  companionRefHints?: (
+    tabId: string,
+    ref: string,
+  ) => { selector?: string; name?: string; href?: string; elementText?: string } | undefined;
+  /**
    * SDD 414 — true while a Companion device session is live on this engine.
    * Checked at call time when tab tools are enabled; not used to hide tools from the list.
    */
@@ -1686,13 +1694,20 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     submit?: boolean;
     confirmed?: boolean;
   }): { ok: true } | { ok: false; env: string } => {
+    const hints =
+      input.tabId && input.ref && deps.companionRefHints
+        ? deps.companionRefHints(input.tabId, input.ref)
+        : undefined;
     const decision = evaluateMutationSafety({
       tool: input.tool,
       url: input.url,
-      selector: input.selector,
+      selector: input.selector ?? hints?.selector,
       ref: input.ref,
       text: input.text,
       submit: input.submit,
+      name: hints?.name,
+      href: hints?.href,
+      elementText: hints?.elementText,
       allowedHosts: companionAllowedHosts(),
       confirmed: input.confirmed,
     });
@@ -1808,6 +1823,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
             expectedDocumentToken,
             timeoutMs: timeoutSec !== undefined ? timeoutSec * 1000 : undefined,
           });
+          // Workspace caches refs; optional double-cache via companionRefHints owner is enough.
           return ok(
             JSON.stringify(
               envelopeFromTabResult({ tool: "user_browser_snapshot", tabId, raw: result }),

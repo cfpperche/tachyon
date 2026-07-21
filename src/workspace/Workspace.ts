@@ -71,6 +71,7 @@ import { Bridge, derivePort } from "../bridge/Bridge.js";
 import { CompanionPairingService } from "../companion/CompanionPairingService.js";
 import { CompanionLiveSync } from "../companion/CompanionLiveSync.js";
 import { CompanionTabChannel } from "../companion/CompanionTabChannel.js";
+import { TabRefCache } from "../companion/tabRefCache.js";
 import {
   listPendingApprovalRequests,
   resolveApproval,
@@ -497,6 +498,8 @@ export class Workspace {
   readonly companionLive: CompanionLiveSync;
   /** SDD 414 — agent ↔ extension tab command channel. */
   readonly companionTab: CompanionTabChannel;
+  /** SDD 420 — last snapshot @e metadata for safety gates. */
+  readonly companionTabRefs = new TabRefCache();
   readonly externalTools: ExternalToolRegistry;
   readonly token: string | undefined;
   readonly externalToken: string | undefined;
@@ -1522,12 +1525,31 @@ export class Workspace {
         // Listed when settings.companion.tabTools is true; execution still requires a paired device.
         companionTabToolsEnabled: () => this.config?.settings.companion?.tabTools === true,
         companionBrowserPaired: () => this.companion.hasPairedDevice(),
+        companionRefHints: (tabId, ref) => this.companionTabRefs.hintsFor(tabId, ref),
         companionTabTabsList: (opts) => this.companionTab.requestTabsList(opts?.timeoutMs),
-        companionTabSnapshot: (opts) =>
-          this.companionTab.requestSnapshot(
+        companionTabSnapshot: async (opts) => {
+          const result = await this.companionTab.requestSnapshot(
             { tabId: opts.tabId, expectedDocumentToken: opts.expectedDocumentToken },
             opts.timeoutMs,
-          ),
+          );
+          // Cache @e metadata for ref-only safety classification (t-8f0862).
+          if (result && typeof result === "object" && (result as { ok?: boolean }).ok === true) {
+            const r = result as {
+              tabId?: string;
+              refs?: Array<{
+                ref: string;
+                selector?: string;
+                name?: string;
+                tag?: string;
+                role?: string;
+                href?: string;
+              }>;
+            };
+            const tid = typeof r.tabId === "string" ? r.tabId : opts.tabId;
+            this.companionTabRefs.putFromSnapshot(tid, r.refs);
+          }
+          return result;
+        },
         companionTabScreenshot: (opts) =>
           this.companionTab.requestScreenshot(
             { tabId: opts.tabId, expectedDocumentToken: opts.expectedDocumentToken },
