@@ -25,7 +25,14 @@ export type TabTarget = {
 type CommandBody =
   | { kind: "tabs_list" }
   | ({ kind: "snapshot" } & TabTarget)
-  | ({ kind: "screenshot"; format?: "jpeg" | "png"; quality?: number } & TabTarget)
+  | ({
+      kind: "screenshot";
+      format?: "jpeg" | "png";
+      quality?: number;
+      scope?: "viewport" | "full_page" | "element";
+      ref?: string;
+      selector?: string;
+    } & TabTarget)
   | ({ kind: "click"; ref?: string; selector?: string } & TabTarget)
   | ({ kind: "type"; ref?: string; selector?: string; text: string; submit?: boolean } & TabTarget)
   | ({ kind: "fill"; ref?: string; selector?: string; value: string } & TabTarget)
@@ -60,7 +67,25 @@ type CommandBody =
     } & TabTarget)
   | { kind: "tab_open"; url?: string; active?: boolean }
   | ({ kind: "tab_activate" } & TabTarget)
-  | ({ kind: "tab_close" } & TabTarget);
+  | ({ kind: "tab_close" } & TabTarget)
+  | ({
+      kind: "get";
+      what: "text" | "html" | "value" | "attribute" | "state";
+      attribute?: string;
+      ref?: string;
+      selector?: string;
+    } & TabTarget)
+  | ({ kind: "find"; text: string; limit?: number } & TabTarget)
+  | ({ kind: "hover"; ref?: string; selector?: string } & TabTarget)
+  | ({
+      kind: "select_option";
+      ref?: string;
+      selector?: string;
+      value?: string;
+      label?: string;
+      index?: number;
+    } & TabTarget)
+  | ({ kind: "check"; ref?: string; selector?: string; checked: boolean } & TabTarget);
 
 interface Pending {
   command: CompanionTabCommand;
@@ -149,11 +174,26 @@ export class CompanionTabChannel {
 
   requestScreenshot(
     target: TabTarget,
-    opts?: { format?: "jpeg" | "png"; quality?: number; timeoutMs?: number },
+    opts?: {
+      format?: "jpeg" | "png";
+      quality?: number;
+      scope?: "viewport" | "full_page" | "element";
+      ref?: string;
+      selector?: string;
+      timeoutMs?: number;
+    },
   ): Promise<CompanionTabResult> {
     requireTarget(target);
     return this.request(
-      { kind: "screenshot", ...target, format: opts?.format, quality: opts?.quality },
+      {
+        kind: "screenshot",
+        ...target,
+        format: opts?.format,
+        quality: opts?.quality,
+        scope: opts?.scope,
+        ref: opts?.ref,
+        selector: opts?.selector,
+      },
       opts?.timeoutMs,
     );
   }
@@ -339,6 +379,131 @@ export class CompanionTabChannel {
   requestTabClose(target: TabTarget, timeoutMs?: number): Promise<CompanionTabResult> {
     requireTarget(target);
     return this.request({ kind: "tab_close", ...target }, timeoutMs);
+  }
+
+  requestGet(
+    target: TabTarget,
+    opts: {
+      what: "text" | "html" | "value" | "attribute" | "state";
+      attribute?: string;
+      ref?: string;
+      selector?: string;
+      timeoutMs?: number;
+    },
+  ): Promise<CompanionTabResult> {
+    requireTarget(target);
+    if (!opts.ref?.trim() && !opts.selector?.trim()) {
+      return Promise.resolve({
+        ok: false,
+        id: "local",
+        code: "not_found",
+        message: "Provide ref (preferred) or selector.",
+        tabId: target.tabId,
+      });
+    }
+    return this.request(
+      {
+        kind: "get",
+        ...target,
+        what: opts.what,
+        attribute: opts.attribute,
+        ref: opts.ref,
+        selector: opts.selector,
+      },
+      opts.timeoutMs,
+    );
+  }
+
+  requestFind(
+    target: TabTarget,
+    opts: { text: string; limit?: number; timeoutMs?: number },
+  ): Promise<CompanionTabResult> {
+    requireTarget(target);
+    return this.request(
+      { kind: "find", ...target, text: opts.text, limit: opts.limit },
+      opts.timeoutMs,
+    );
+  }
+
+  requestHover(
+    target: TabTarget,
+    opts: { ref?: string; selector?: string; timeoutMs?: number },
+  ): Promise<CompanionTabResult> {
+    requireTarget(target);
+    if (!opts.ref?.trim() && !opts.selector?.trim()) {
+      return Promise.resolve({
+        ok: false,
+        id: "local",
+        code: "not_found",
+        message: "Provide ref (preferred) or selector.",
+        tabId: target.tabId,
+      });
+    }
+    return this.request(
+      { kind: "hover", ...target, ref: opts.ref, selector: opts.selector },
+      opts.timeoutMs,
+    );
+  }
+
+  requestSelectOption(
+    target: TabTarget,
+    opts: {
+      ref?: string;
+      selector?: string;
+      value?: string;
+      label?: string;
+      index?: number;
+      timeoutMs?: number;
+    },
+  ): Promise<CompanionTabResult> {
+    requireTarget(target);
+    if (!opts.ref?.trim() && !opts.selector?.trim()) {
+      return Promise.resolve({
+        ok: false,
+        id: "local",
+        code: "not_found",
+        message: "Provide ref (preferred) or selector.",
+        tabId: target.tabId,
+      });
+    }
+    return this.request(
+      {
+        kind: "select_option",
+        ...target,
+        ref: opts.ref,
+        selector: opts.selector,
+        value: opts.value,
+        label: opts.label,
+        index: opts.index,
+      },
+      opts.timeoutMs,
+    );
+  }
+
+  requestCheck(
+    target: TabTarget,
+    opts: { ref?: string; selector?: string; checked: boolean; timeoutMs?: number },
+  ): Promise<CompanionTabResult> {
+    requireTarget(target);
+    if (!opts.ref?.trim() && !opts.selector?.trim()) {
+      return Promise.resolve({
+        ok: false,
+        id: "local",
+        code: "not_found",
+        message: "Provide ref (preferred) or selector.",
+        tabId: target.tabId,
+      });
+    }
+    return this.request(
+      {
+        kind: "check",
+        ...target,
+        ref: opts.ref,
+        selector: opts.selector,
+        checked: opts.checked,
+      },
+      opts.timeoutMs,
+    );
   }
 
   /** Extension fulfillment (or deny). */

@@ -190,6 +190,10 @@ export type CompanionTabCommand =
       at: string;
       format?: "jpeg" | "png";
       quality?: number;
+      /** full_page = document scrollable; element = clip to ref/selector; default viewport. */
+      scope?: "viewport" | "full_page" | "element";
+      ref?: string;
+      selector?: string;
     } & CompanionTabTarget)
   | ({
       id: string;
@@ -260,7 +264,50 @@ export type CompanionTabCommand =
       active?: boolean;
     }
   | ({ id: string; kind: "tab_activate"; at: string } & CompanionTabTarget)
-  | ({ id: string; kind: "tab_close"; at: string } & CompanionTabTarget);
+  | ({ id: string; kind: "tab_close"; at: string } & CompanionTabTarget)
+  | ({
+      id: string;
+      kind: "get";
+      at: string;
+      /** What to read from the element. */
+      what: "text" | "html" | "value" | "attribute" | "state";
+      attribute?: string;
+      ref?: string;
+      selector?: string;
+    } & CompanionTabTarget)
+  | ({
+      id: string;
+      kind: "find";
+      at: string;
+      text: string;
+      /** Max matches to return (default 20). */
+      limit?: number;
+    } & CompanionTabTarget)
+  | ({
+      id: string;
+      kind: "hover";
+      at: string;
+      ref?: string;
+      selector?: string;
+    } & CompanionTabTarget)
+  | ({
+      id: string;
+      kind: "select_option";
+      at: string;
+      ref?: string;
+      selector?: string;
+      value?: string;
+      label?: string;
+      index?: number;
+    } & CompanionTabTarget)
+  | ({
+      id: string;
+      kind: "check";
+      at: string;
+      ref?: string;
+      selector?: string;
+      checked: boolean;
+    } & CompanionTabTarget);
 
 export type CompanionTabErrorCode =
   | "timeout"
@@ -363,7 +410,7 @@ export type CompanionTabResult =
   | {
       ok: true;
       id: string;
-      kind: "navigate" | "scroll" | "press_key" | "wait_for" | "tab_activate" | "tab_close";
+      kind: "navigate" | "scroll" | "press_key" | "wait_for" | "tab_activate" | "tab_close" | "hover" | "select_option" | "check";
       tabId: string;
       documentToken?: string;
       url?: string;
@@ -379,6 +426,32 @@ export type CompanionTabResult =
       documentToken: string;
       url: string;
       title: string;
+    }
+  | {
+      ok: true;
+      id: string;
+      kind: "get";
+      tabId: string;
+      documentToken?: string;
+      url?: string;
+      what: "text" | "html" | "value" | "attribute" | "state";
+      attribute?: string;
+      /** Redacted payload — never password values or secret-like attributes. */
+      data: unknown;
+    }
+  | {
+      ok: true;
+      id: string;
+      kind: "find";
+      tabId: string;
+      documentToken?: string;
+      url?: string;
+      matches: Array<{
+        ref?: string;
+        selector?: string;
+        text: string;
+        tag?: string;
+      }>;
     }
   | {
       ok: false;
