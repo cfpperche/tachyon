@@ -16,3 +16,7 @@ agents:
     cmd: grok
     autostart: false
     attention: false
+  claude:
+    cmd: claude
+  codex:
+    cmd: codex
