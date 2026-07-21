@@ -32,3 +32,9 @@ npm run dogfood:dev-host -- point \
 
 Human: **Run and Debug → Tachyon: Dev Host → F5**. Then `point-clear` when done.
 If you remove the worktree, run `point-clear` so the pointer is not left stale.
+
+## Actuation smoke
+
+- `actuation-smoke.html` — native input + contenteditable fixture (Gates C/D).
+- `DOGFOOD-ACTUATION.md` — multi-runtime validation prompt (screenshot path is ship-done;
+  focus is honesty + type/fill).

@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Companion actuation smoke</title>
+    <style>
+      :root {
+        font-family: system-ui, sans-serif;
+        color: #0f172a;
+        background: #f8fafc;
+      }
+      body {
+        max-width: 40rem;
+        margin: 2rem auto;
+        padding: 0 1rem;
+      }
+      h1 {
+        font-size: 1.25rem;
+      }
+      label {
+        display: block;
+        font-weight: 600;
+        margin-top: 1.25rem;
+        margin-bottom: 0.35rem;
+      }
+      input,
+      textarea,
+      [contenteditable] {
+        width: 100%;
+        box-sizing: border-box;
+        border: 1px solid #cbd5e1;
+        border-radius: 0.5rem;
+        padding: 0.6rem 0.75rem;
+        background: #fff;
+        font: inherit;
+      }
+      [contenteditable] {
+        min-height: 4.5rem;
+        white-space: pre-wrap;
+      }
+      [contenteditable]:empty:before {
+        content: attr(data-placeholder);
+        color: #94a3b8;
+      }
+      .hint {
+        color: #64748b;
+        font-size: 0.875rem;
+        margin-top: 0.25rem;
+      }
+      .panel {
+        margin-top: 1.5rem;
+        padding: 1rem;
+        border-radius: 0.75rem;
+        background: #e2e8f0;
+      }
+      code {
+        font-size: 0.85em;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Companion actuation smoke</h1>
+    <p class="hint">
+      Controlled fixture for Gates C (native) and D (contenteditable). Open this file in the
+      browser tab paired with Tachyon Companion (EDH dogfood). Prefer
+      <code>file://</code> or a local static server — not x.com.
+    </p>
+
+    <label for="native-input">Native input</label>
+    <input id="native-input" data-testid="native-input" type="text" placeholder="type here" />
+    <p class="hint">Selector: <code>#native-input</code> or <code>input[data-testid="native-input"]</code></p>
+
+    <label for="native-textarea">Native textarea</label>
+    <textarea id="native-textarea" data-testid="native-textarea" rows="3" placeholder="textarea"></textarea>
+    <p class="hint">Selector: <code>#native-textarea</code></p>
+
+    <label for="rich-editor">Contenteditable (plain rich)</label>
+    <div
+      id="rich-editor"
+      data-testid="rich-editor"
+      role="textbox"
+      contenteditable="true"
+      data-placeholder="rich editor placeholder"
+      aria-label="Rich editor"
+    ></div>
+    <p class="hint">
+      Selector: <code>#rich-editor</code> or
+      <code>[data-testid="rich-editor"]</code> or
+      <code>[contenteditable="true"][role="textbox"]</code>
+    </p>
+
+    <div class="panel">
+      <strong>Suggested markers</strong>
+      <ul>
+        <li>C fill: <code>tachyon-native-fill-smoke</code></li>
+        <li>D type: <code>tachyon-ce-dogfood-smoke</code></li>
+      </ul>
+      <p class="hint">
+        Pass = tool <code>ok:true</code> + <code>verified:true</code> + marker visible in snapshot /
+        screenshot. Fail honesty = <code>ok:false</code> code <code>not_applied</code> (never silent
+        success).
+      </p>
+    </div>
+
+    <!-- Lightweight "React-like" controlled input using value tracker pattern for extra smoke -->
+    <label for="controlled-input">JS-controlled input (setter listeners)</label>
+    <input id="controlled-input" data-testid="controlled-input" type="text" placeholder="controlled" />
+    <p class="hint">Selector: <code>#controlled-input</code> — listens only to <code>input</code> events.</p>
+    <script>
+      (function () {
+        const el = document.getElementById("controlled-input");
+        if (!el) return;
+        let state = "";
+        el.addEventListener("input", function () {
+          state = el.value;
+          el.setAttribute("data-controlled-value", state);
+        });
+      })();
+    </script>
+  </body>
+</html>
