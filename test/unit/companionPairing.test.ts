@@ -366,10 +366,11 @@ describe("Companion HTTP loopback (SDD 414)", () => {
     // Give the SSE attach a moment to register the client.
     await new Promise((r) => setTimeout(r, 30));
 
-    const toolPromise = tab.requestSnapshot(3_000);
+    const toolPromise = tab.requestSnapshot({ tabId: "ctab_test" }, 3_000);
     const cmd = await waitForCommand;
     expect(cmd.kind).toBe("snapshot");
     expect(cmd.id).toBeTruthy();
+    expect((cmd as { tabId?: string }).tabId).toBe("ctab_test");
 
     const post = await fetch(`${base}/companion/v1/tab/result`, {
       method: "POST",
@@ -381,10 +382,13 @@ describe("Companion HTTP loopback (SDD 414)", () => {
         ok: true,
         id: cmd.id,
         kind: "snapshot",
+        tabId: "ctab_test",
+        documentToken: "doc_1",
         url: "https://example.com/",
         title: "Example",
         capturedAt: new Date().toISOString(),
         outline: "html\n  body\n    h1 \"Example\"",
+        refs: [{ ref: "@e1", selector: "h1", tag: "H1" }],
         stats: { nodes: 3, truncated: false, outlineChars: 30 },
       }),
     });
