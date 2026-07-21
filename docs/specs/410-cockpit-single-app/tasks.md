@@ -33,8 +33,9 @@ _Status 2026-07-19: foundation + Approvals single-path + lazy ESM shipped in cod
 ## Phase C — Subroutes (supersedes the multi-instance plan — maintainer mandate, 2026-07-21)
 
 - [x] Mandate recorded: ALL screens open inside Control as subroutes; multi-instance exception revoked; side-by-side knowingly traded (maintainer, 2026-07-21, t-610705 journal).
-- [ ] C.0 Router: `{section, subroute, params}` + persisted revive + deep links (`openCockpit({route})`, `tachyon.*` commands become redirects) + breadcrumb/back in shell chrome. Design hardened in an adversarial dueto first.
-- [ ] C.1 Board subroutes: `mission/task/<id>` (Task Detail), `mission/task/new` + `mission/task/<id>/edit` (Task Studio); retire TaskDetailPanel + TaskStudioPanel hosts.
+- [x] C.0 Router: `CockpitRoute` discriminated union + navEpoch staleness guard + persisted revive (schemaVersion 2) + revive precedence. Design hardened in an adversarial dueto first (probe-840f7a80, 16 findings). Commit eeb28089.
+- [x] C.1a Task Detail subroute: `mission/task/<id>` navigates in place inside Control (tombstone contract + CAS updates ported verbatim); retire TaskDetailPanel host. Commit 19199b4a.
+- [ ] C.1b Task Studio subroutes (`mission/task/new`, `mission/task/<id>/edit`): deferred to its own design dueto — shares StudioPanelManagerBase with 8 other panels (maintainer decision, 2026-07-21, t-610705 journal); retire TaskStudioPanel host when it lands.
 - [ ] C.2 Fleet subroutes: `fleet/agent/<name>/activity` (Activity), `fleet/agent/<name>/probes` (Probes); retire ActivityPanel + ProbeResultPanel hosts.
 - [ ] C.3 Handoff section; retire HandoffPanel host.
 - [ ] C.4 Pin Studio nav-less route; retire PinStudioPanel host.
