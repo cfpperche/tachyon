@@ -5,7 +5,7 @@
  */
 
 import type { AgentStudioEntity } from "../../../src/webview/agent-studio-shell/domain";
-import { blankAgentFields } from "../../../src/webview/agent-studio-shell/domain";
+import { blankAgentFields, createAgentEvolutionLabels } from "../../../src/webview/agent-studio-shell/domain";
 import type { Fixture, Route } from "../routes";
 
 interface AgentStudioShellFixtureVM {
@@ -34,6 +34,7 @@ const chips = [
 ];
 
 const flagMap = { claude: ["--dangerously-skip-permissions", "--model sonnet", "--model haiku", "--permission-mode plan", "--continue"] };
+const evolutionLabels = createAgentEvolutionLabels();
 
 const newEntity: AgentStudioEntity = {
   fields: blankAgentFields(),
@@ -41,6 +42,7 @@ const newEntity: AgentStudioEntity = {
   flagMap,
   defaultCwd: "/home/dev/project",
   verifyCandidates: ["npm test", "npm run lint"],
+  evolutionLabels,
 };
 
 const denseEntity: AgentStudioEntity = {
@@ -65,6 +67,7 @@ const denseEntity: AgentStudioEntity = {
   flagMap,
   defaultCwd: "/home/dev/project",
   verifyCandidates: ["npm test", "npm run lint"],
+  evolutionLabels,
 };
 
 export const agentStudioShellFixtures: Record<string, Fixture<AgentStudioShellFixtureVM>> = {

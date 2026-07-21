@@ -6,6 +6,10 @@ import type { ProbeView } from "../probe/probeView.js";
 import type { AgentStatus, FleetVM } from "../sidebar/types.js";
 import type { WorkspaceAgentProjectionV1 } from "../runtime-api/workspaceProjection.js";
 import type { SoulProfileStatusMessage } from "../webview/agent-studio-shell/domain.js";
+import type {
+  EvolutionStudioCandidateDetail,
+  EvolutionStudioOverview,
+} from "../evolution/studioProjection.js";
 
 /** Narrow identity contract shared by editor panels during the shell cutover. */
 export interface WorkspacePresentationTarget {
@@ -53,6 +57,16 @@ export interface WorkspaceAgentStudioTarget extends WorkspaceStudioTarget {
   deleteSoulProfile(agent: string): Promise<SoulProfileMutationTargetResult>;
   refreshSoulProfile(agent: string): Promise<SoulProfileStatusMessage>;
   canonicalSoulPathForOpen(agent: string): Promise<string>;
+  readAgentEvolutionOverview(agent: string): Promise<EvolutionStudioOverview>;
+  readAgentEvolutionCandidate(agent: string, candidateId: string): Promise<EvolutionStudioCandidateDetail>;
+  approveAgentEvolutionCandidate(agent: string, candidateId: string, input: {
+    expectedActiveVersion: number;
+    expectedTargetDigest?: string;
+  }): Promise<{ candidateId: string; activeVersion: number }>;
+  rejectAgentEvolutionCandidate(agent: string, candidateId: string, input: {
+    expectedActiveVersion: number;
+    expectedTargetDigest?: string;
+  }): Promise<{ candidateId: string; activeVersion: number }>;
 }
 
 export function workspacePresentationTarget(client: WorkspaceClient): WorkspacePresentationTarget {

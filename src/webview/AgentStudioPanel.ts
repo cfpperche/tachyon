@@ -1,18 +1,28 @@
 import * as vscode from "vscode";
 import type { WorkspaceAgentStudioTarget } from "../shell/WorkspacePresentation.js";
 import { SoulError } from "../agents/soul.js";
+import { EvolutionStoreError } from "../evolution/EvolutionStore.js";
 import { StudioPanelManagerBase, type StudioDomainMessageContext, type StudioPanelState, type StudioSurfaceConfig } from "./shared/studio/StudioPanelManagerBase.js";
 import { envelope, type StudioRestoreSnapshot } from "./shared/studio/protocol.js";
 import { AgentStudioAdapter } from "./AgentStudioAdapter.js";
 import {
   projectSoulProfileStatus,
+  createAgentEvolutionLabels,
   validateAgentStudioInboundMessage,
   type AgentStudioEntity,
   type AgentStudioFields,
   type AgentStudioPatch,
   type SoulProfileStatusMessage,
 } from "./agent-studio-shell/domain.js";
-import { soulProfileErrorMessage, soulProfileStatusMessage } from "./agent-studio-shell/messages.js";
+import {
+  evolutionActionResultMessage,
+  evolutionCandidateDetailMessage,
+  evolutionCandidatesMessage,
+  evolutionErrorMessage,
+  evolutionSummaryMessage,
+  soulProfileErrorMessage,
+  soulProfileStatusMessage,
+} from "./agent-studio-shell/messages.js";
 
 /**
  * spec 350 Phase 3 T2 + spec 377 T15A — Agent Studio host wiring.
@@ -88,7 +98,7 @@ export class AgentStudioPanelManager {
       base = new StudioPanelManagerBase<AgentStudioEntity, AgentStudioFields, AgentStudioPatch>(
         this.extensionUri,
         surface,
-        new AgentStudioAdapter(ws),
+        new AgentStudioAdapter(ws, createAgentEvolutionLabels((message, ...args) => vscode.l10n.t(message, ...args))),
         this.onChanged,
         (ctx, message) => this.handleDomainMessage(ws, ctx, message),
       );
@@ -100,7 +110,12 @@ export class AgentStudioPanelManager {
   private handleDomainMessage(ws: WorkspaceAgentStudioTarget, ctx: StudioDomainMessageContext, message: { type: string }): void {
     const m = validateAgentStudioInboundMessage(message);
     if (!m) {
-      this.postProfileError(ctx, ctx.entityId ?? "Agent", new SoulError("soul/path-invalid", "Rejected malformed Agent Studio profile message"));
+      const type = typeof message.type === "string" ? message.type : "";
+      if (type.toLowerCase().includes("evolution")) {
+        this.postEvolutionError(ctx, ctx.entityId ?? "Agent", new Error("Rejected malformed Agent Evolution message"));
+      } else {
+        this.postProfileError(ctx, ctx.entityId ?? "Agent", new SoulError("soul/path-invalid", "Rejected malformed Agent Studio profile message"));
+      }
       return;
     }
     if (m.type === "browse") {
@@ -109,7 +124,20 @@ export class AgentStudioPanelManager {
     }
     const agent = ctx.entityId;
     if (!agent || m.agent !== agent) {
-      this.postProfileError(ctx, agent ?? "Agent", new SoulError("soul/path-invalid", "Profile action does not match this saved Agent Studio entity"));
+      if (m.type.toLowerCase().includes("evolution")) {
+        this.postEvolutionError(ctx, agent ?? "Agent", new Error("Evolution action does not match this saved Agent Studio entity"));
+      } else {
+        this.postProfileError(ctx, agent ?? "Agent", new SoulError("soul/path-invalid", "Profile action does not match this saved Agent Studio entity"));
+      }
+      return;
+    }
+    if (m.type === "refreshEvolution") { void this.refreshEvolution(ws, ctx, agent); return; }
+    if (m.type === "loadEvolutionCandidate") {
+      void this.loadEvolutionCandidate(ws, ctx, agent, m.candidateId);
+      return;
+    }
+    if (m.type === "approveEvolutionCandidate" || m.type === "rejectEvolutionCandidate") {
+      void this.resolveEvolutionCandidate(ws, ctx, agent, m);
       return;
     }
     if (m.type === "createSoul") { void this.runProfileAction(ws, ctx, agent, "create", () => ws.createSoulProfile(agent)); return; }
@@ -199,6 +227,77 @@ export class AgentStudioPanelManager {
     } catch (error) {
       this.postProfileError(ctx, agent, error);
     }
+  }
+
+  private async refreshEvolution(
+    ws: WorkspaceAgentStudioTarget,
+    ctx: StudioDomainMessageContext,
+    agent: string,
+  ): Promise<void> {
+    try {
+      const overview = await ws.readAgentEvolutionOverview(agent);
+      ctx.post(evolutionSummaryMessage(overview.summary));
+      ctx.post(evolutionCandidatesMessage(agent, overview.candidates));
+    } catch (error) {
+      this.postEvolutionError(ctx, agent, error);
+    }
+  }
+
+  private async loadEvolutionCandidate(
+    ws: WorkspaceAgentStudioTarget,
+    ctx: StudioDomainMessageContext,
+    agent: string,
+    candidateId: string,
+  ): Promise<void> {
+    try {
+      const detail = await ws.readAgentEvolutionCandidate(agent, candidateId);
+      ctx.post(evolutionCandidateDetailMessage(agent, detail));
+    } catch (error) {
+      this.postEvolutionError(ctx, agent, error);
+    }
+  }
+
+  private async resolveEvolutionCandidate(
+    ws: WorkspaceAgentStudioTarget,
+    ctx: StudioDomainMessageContext,
+    agent: string,
+    message: {
+      type: "approveEvolutionCandidate" | "rejectEvolutionCandidate";
+      candidateId: string;
+      expectedActiveVersion: number;
+      expectedTargetDigest?: string;
+    },
+  ): Promise<void> {
+    const input = {
+      expectedActiveVersion: message.expectedActiveVersion,
+      ...(message.expectedTargetDigest !== undefined ? { expectedTargetDigest: message.expectedTargetDigest } : {}),
+    };
+    try {
+      const result = message.type === "approveEvolutionCandidate"
+        ? await ws.approveAgentEvolutionCandidate(agent, message.candidateId, input)
+        : await ws.rejectAgentEvolutionCandidate(agent, message.candidateId, input);
+      ctx.post(evolutionActionResultMessage(
+        agent,
+        result.candidateId,
+        message.type === "approveEvolutionCandidate" ? "approved" : "rejected",
+        result.activeVersion,
+      ));
+      await this.refreshEvolution(ws, ctx, agent);
+    } catch (error) {
+      this.postEvolutionError(ctx, agent, error);
+      if (error instanceof EvolutionStoreError && error.code === "evolution/promotion-conflict") {
+        await this.refreshEvolution(ws, ctx, agent);
+      }
+    }
+  }
+
+  private postEvolutionError(ctx: StudioDomainMessageContext, agent: string, error: unknown): void {
+    const conflict = error instanceof EvolutionStoreError && error.code === "evolution/promotion-conflict";
+    const code = error instanceof EvolutionStoreError ? error.code : "evolution/io-error";
+    const message = conflict
+      ? vscode.l10n.t("This proposal changed or was already reviewed. The latest evolution state was loaded.")
+      : vscode.l10n.t("The Agent Evolution action could not be completed.");
+    ctx.post(evolutionErrorMessage(agent, code, message, conflict));
   }
 
   private postProfileError(ctx: StudioDomainMessageContext, agent: string, error: unknown): void {

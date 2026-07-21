@@ -42,6 +42,36 @@
 .ash-soul-replace-digests dt, .ash-soul-replace-digests dd { margin: 0; }
 .ash-soul-replace-confirm-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--ds-2); }
 .ash-soul-preview { max-height: 220px; overflow: auto; margin: 0; padding: var(--ds-3); border: 1px solid var(--ds-border); border-radius: var(--ds-radius); background: var(--vscode-textCodeBlock-background); color: var(--vscode-editor-foreground); font: var(--vscode-editor-font-size) / 1.45 var(--vscode-editor-font-family); white-space: pre-wrap; overflow-wrap: anywhere; }
+.ash-evolution { display: grid; gap: var(--ds-2); padding: var(--ds-3); border: 1px solid var(--ds-border); border-radius: var(--ds-radius); background: color-mix(in srgb, var(--vscode-editor-background) 94%, var(--vscode-testing-iconPassed)); }
+.ash-evolution-heading, .ash-evolution-toolbar, .ash-evolution-detail-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ds-3); }
+.ash-evolution-state, .ash-evolution-candidate-status { flex: none; padding: 2px var(--ds-2); border: 1px solid var(--ds-border); border-radius: 999px; font-size: var(--ds-small); font-weight: 600; }
+.ash-evolution-state-enabled, .ash-evolution-candidate-status-approved { border-color: var(--vscode-testing-iconPassed); }
+.ash-evolution-candidate-status-rejected { border-color: var(--vscode-errorForeground); }
+.ash-evolution-toggle { margin-top: var(--ds-1); font-weight: 600; }
+.ash-evolution-next-session { padding: var(--ds-2); border-left: 3px solid var(--vscode-focusBorder); background: color-mix(in srgb, var(--vscode-focusBorder) 8%, transparent); font-size: var(--ds-small); }
+.ash-evolution-empty, .ash-evolution-review { padding: var(--ds-2); border: 1px dashed var(--ds-border); border-radius: var(--ds-radius); color: var(--ds-muted); font-size: var(--ds-small); }
+.ash-evolution-review-failed { border-color: var(--vscode-errorForeground); color: var(--vscode-errorForeground); }
+.ash-evolution-metrics { display: flex; flex-wrap: wrap; gap: var(--ds-3); align-self: center; font-size: var(--ds-small); }
+.ash-evolution-active-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--ds-3); padding: var(--ds-2) 0; border-top: 1px solid var(--ds-border); border-bottom: 1px solid var(--ds-border); }
+.ash-evolution-active-grid ul { margin: var(--ds-1) 0 0; padding-left: var(--ds-4); }
+.ash-evolution-subtitle { color: var(--ds-muted); font-size: var(--ds-small); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
+.ash-evolution-skill-list { display: flex; flex-wrap: wrap; gap: var(--ds-1); margin-top: var(--ds-1); }
+.ash-evolution-skill-list code { padding: 2px var(--ds-1); border: 1px solid var(--ds-border); border-radius: var(--ds-radius); }
+.ash-evolution-candidates { display: grid; gap: var(--ds-1); }
+.ash-evolution-candidate { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) max-content; gap: var(--ds-2); align-items: center; width: 100%; padding: var(--ds-2); border: 1px solid var(--ds-border); border-radius: var(--ds-radius); background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); text-align: left; cursor: pointer; }
+.ash-evolution-candidate:hover, .ash-evolution-candidate-selected { border-color: var(--vscode-focusBorder); }
+.ash-evolution-candidate:disabled { cursor: default; opacity: .65; }
+.ash-evolution-detail { display: grid; gap: var(--ds-2); padding: var(--ds-3); border: 1px solid var(--vscode-focusBorder); border-radius: var(--ds-radius); background: var(--ds-card); }
+.ash-evolution-files { display: grid; gap: var(--ds-1); }
+.ash-evolution-file { padding: var(--ds-2); border: 1px solid var(--ds-border); border-radius: var(--ds-radius); }
+.ash-evolution-file > summary { text-transform: none; font-family: var(--vscode-editor-font-family); }
+.ash-evolution-file-diff { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--ds-2); margin-top: var(--ds-2); }
+.ash-evolution-diff-label { margin-bottom: var(--ds-1); color: var(--ds-muted); font-size: var(--ds-small); font-weight: 600; }
+.ash-evolution-diff { max-height: 300px; overflow: auto; margin: 0; padding: var(--ds-2); border: 1px solid var(--ds-border); border-radius: var(--ds-radius); background: var(--vscode-textCodeBlock-background); font: var(--vscode-editor-font-size) / 1.45 var(--vscode-editor-font-family); white-space: pre-wrap; overflow-wrap: anywhere; }
+.ash-evolution-diff-proposed { border-left: 3px solid var(--vscode-testing-iconPassed); }
+.ash-evolution-actions { display: flex; justify-content: flex-end; gap: var(--ds-2); }
+.ash-evolution-notice { padding: var(--ds-2); border-left: 3px solid var(--vscode-testing-iconPassed); font-size: var(--ds-small); }
+.ash-evolution-notice-error { border-color: var(--vscode-errorForeground); color: var(--vscode-errorForeground); }
 .checks { display: flex; flex-direction: column; gap: var(--ds-1); font-size: var(--ds-small); }
 .ash-check-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--ds-2); }
 .checks label, .check { display: flex; align-items: center; gap: var(--ds-2); min-width: 0; }
@@ -52,8 +82,10 @@ details > .ds-input, details > select, details > textarea, details > .hint, deta
 details > .ash-label { margin-top: var(--ds-3); }
 
 @media (max-width: 720px) {
-  .ash-grid-compact, .ash-check-grid { grid-template-columns: 1fr; }
+  .ash-grid-compact, .ash-check-grid, .ash-evolution-active-grid, .ash-evolution-file-diff { grid-template-columns: 1fr; }
   .ash-row { align-items: stretch; flex-direction: column; }
-  .ash-identity-heading { align-items: stretch; flex-direction: column; }
+  .ash-identity-heading, .ash-evolution-heading, .ash-evolution-toolbar { align-items: stretch; flex-direction: column; }
+  .ash-evolution-candidate { grid-template-columns: 1fr; }
   .ash-soul-state { align-self: flex-start; }
+  .ash-evolution-state { align-self: flex-start; }
 }

@@ -80,18 +80,18 @@ before continuing._
 
 ## Slice 4 — Agent Studio
 
-- [ ] Add host-localized Agent Evolution labels/help copy and project them into the webview entity.
-- [ ] Render the self-evolution toggle while creating/editing an agent, clearly separate from Identity
+- [x] Add host-localized Agent Evolution labels/help copy and project them into the webview entity.
+- [x] Render the self-evolution toggle while creating/editing an agent, clearly separate from Identity
   and Persistent Instructions.
-- [ ] Add typed host/webview messages for profile summary, proposal list/detail, Approve and Reject.
-- [ ] Extend `WorkspaceAgentStudioTarget`, `AgentStudioAdapter` and `AgentStudioPanel` with evolution
+- [x] Add typed host/webview messages for profile summary, proposal list/detail, Approve and Reject.
+- [x] Extend `WorkspaceAgentStudioTarget`, `AgentStudioAdapter` and `AgentStudioPanel` with evolution
   queries/actions.
-- [ ] Show saved-agent state, active version, last review outcome and pending proposal count.
-- [ ] Render learning and multi-file skill diffs on demand, including source Task and reason.
-- [ ] State visibly that approval applies to the next session; do not imply the current pane changed.
-- [ ] Handle empty, loading, failed-review, stale-conflict, rejected and approved states.
-- [ ] Add protocol/domain/adapter/component tests and update pt-BR localization bundles.
-- [ ] Commit Slice 4 separately with focused Agent Studio tests green.
+- [x] Show saved-agent state, active version, last review outcome and pending proposal count.
+- [x] Render learning and multi-file skill diffs on demand, including source Task and reason.
+- [x] State visibly that approval applies to the next session; do not imply the current pane changed.
+- [x] Handle empty, loading, failed-review, stale-conflict, rejected and approved states.
+- [x] Add protocol/domain/adapter/component tests and update pt-BR localization bundles.
+- [x] Commit Slice 4 separately with focused Agent Studio tests green.
 
 ## Slice 5 — Lifecycle, docs and closure proof
 
@@ -119,7 +119,7 @@ before continuing._
 - [x] Bridge submission accepts matching reviews and preserves independent proposals.
 - [x] Reject/Approve/current-session/next-session behavior maps to the acceptance scenarios.
 - [x] Disabled prompt bytes and PI-001's fixed oracle remain unchanged.
-- [ ] Agent Studio protocol, localized UI and lifecycle actions are covered.
+- [x] Agent Studio protocol, localized UI and lifecycle actions are covered.
 - [ ] Runtime-switch and standard skill/script use are proven by dogfood.
 
 **Verify:** `npm run typecheck`

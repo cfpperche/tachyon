@@ -125,6 +125,12 @@ import { TaskStore } from "../tasks/TaskStore.js";
 import { EvolutionStore } from "../evolution/EvolutionStore.js";
 import { EvolutionCoordinator } from "../evolution/EvolutionCoordinator.js";
 import { declaredHarnessSkillNames } from "../evolution/skillBundle.js";
+import {
+  readEvolutionStudioCandidateDetail,
+  readEvolutionStudioOverview,
+  type EvolutionStudioCandidateDetail,
+  type EvolutionStudioOverview,
+} from "../evolution/studioProjection.js";
 import { ValidationStore } from "../validations/ValidationStore.js";
 import { ProbeService } from "../probe/ProbeService.js";
 import { ProbeStore } from "../probe/ProbeStore.js";
@@ -4833,6 +4839,38 @@ export class Workspace {
 
   async refreshSoulProfile(agentName: string): Promise<SoulProfileStatus> {
     return refreshSoulProfileStatus(this.workspaceRoot, agentName, this.soulProfileConfigAccess(agentName));
+  }
+
+  async readAgentEvolutionOverview(agentName: string): Promise<EvolutionStudioOverview> {
+    const def = this.config?.agents[agentName];
+    return readEvolutionStudioOverview(
+      this.evolutionStore,
+      agentName,
+      def?.kind === "agent" && def.selfEvolution?.enabled === true,
+    );
+  }
+
+  async readAgentEvolutionCandidate(agentName: string, candidateId: string): Promise<EvolutionStudioCandidateDetail> {
+    return readEvolutionStudioCandidateDetail(this.evolutionStore, agentName, candidateId);
+  }
+
+  async approveAgentEvolutionCandidate(
+    agentName: string,
+    candidateId: string,
+    input: { expectedActiveVersion: number; expectedTargetDigest?: string },
+  ): Promise<{ candidateId: string; activeVersion: number }> {
+    const result = await this.evolutionStore.approveCandidate(agentName, candidateId, input);
+    return { candidateId: result.candidate.id, activeVersion: result.profile.activeVersion };
+  }
+
+  async rejectAgentEvolutionCandidate(
+    agentName: string,
+    candidateId: string,
+    input: { expectedActiveVersion: number; expectedTargetDigest?: string },
+  ): Promise<{ candidateId: string; activeVersion: number }> {
+    const candidate = await this.evolutionStore.rejectCandidate(agentName, candidateId, input);
+    const profile = await this.evolutionStore.readProfile(agentName);
+    return { candidateId: candidate.id, activeVersion: profile?.activeVersion ?? input.expectedActiveVersion };
   }
 
   canonicalSoulPath(agentName: string): string {

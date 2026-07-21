@@ -29,6 +29,10 @@ _In-flight design memory — decisions, deviations, tradeoffs, and open question
 
 _Where implementation intentionally departed from `plan.md`, and why it was necessary or better._
 
+- 2026-07-21 — Agent Studio runtime copy was added to `l10n/bundle.l10n*.json`, not
+  `package.nls*.json`: the latter localizes contribution-point titles, while the former is the existing
+  `vscode.l10n.t` bundle for host-projected webview labels. The product behavior from the plan is unchanged.
+
 ## Tradeoffs
 
 _Alternatives weighed mid-build. The chosen path + what was given up + why it was worth it._
@@ -64,3 +68,13 @@ _Questions surfaced during the build with no answer yet. Owner or path to resolu
   were unchanged, so no independent mechanics-equivalence review was triggered.
 - 2026-07-21 — `npm run verify:full:quiet` passed: 461 files, 5,210 tests passed and 3 skipped.
 - 2026-07-21 — `npm run typecheck` passed after the final Slice 3 changes.
+
+## Slice 4 validation
+
+- 2026-07-21 — The Agent Studio loads a bounded overview through the persistent engine and exact
+  learning/skill file content only when a proposal is opened. Approve/Reject carry the observed profile
+  version and target digest; an older window gets a visible conflict and refreshed state.
+- 2026-07-21 — Focused Agent Studio, persistent-client and engine protocol coverage passed: 111 tests,
+  including empty/loading, failed review, approved/rejected and stale-conflict projections.
+- 2026-07-21 — `npm run verify:full:quiet` passed after the Slice 4 implementation.
+- 2026-07-21 — `npm run typecheck` passed after the Slice 4 implementation.

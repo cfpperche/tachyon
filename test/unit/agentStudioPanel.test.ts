@@ -8,6 +8,7 @@ import type { Workspace } from "../../src/workspace/Workspace.js";
 import type { StudioSubmit } from "../../src/webview/studioSubmit.js";
 import type { AgentDef } from "../../src/config/loadConfig.js";
 import { SoulError } from "../../src/agents/soul.js";
+import { EvolutionStoreError } from "../../src/evolution/EvolutionStore.js";
 
 /**
  * spec 350 Phase 3 T2 — AgentStudioPanelManager's full shell lifecycle against a REAL AgentStudioAdapter (not
@@ -378,5 +379,78 @@ describe("AgentStudioPanelManager — Phase 3 pilot full lifecycle", () => {
     const status = findType(webview.posted, "soulProfileStatus").at(-1);
     expect(status).toMatchObject({ status: { lifecycle: "missing", soulEnabled: false, action: "delete" } });
     expect(JSON.stringify(status)).not.toContain("/private/workspace");
+  });
+
+  it("routes bounded Evolution overview, on-demand detail, approval, and stale conflict through the saved agent", async () => {
+    const { ws } = fakeWorkspace({ agents: { Ada: agentDef({ selfEvolution: { enabled: true } }) } });
+    const summary = {
+      agent: "Ada",
+      enabled: true,
+      profilePresent: true,
+      activeVersion: 2,
+      pendingCount: 1,
+      activeLearnings: [],
+      activeSkillNames: ["repo-check"],
+    };
+    const candidate = {
+      id: "candidate-one",
+      reviewId: "review-one",
+      taskId: "t-123456",
+      taskTitle: "Fix the repository",
+      createdAt: "2026-07-21T18:00:00.000Z",
+      status: "pending" as const,
+      kind: "learning" as const,
+      reason: "This correction should be reused.",
+    };
+    const detail = { ...candidate, expectedActiveVersion: 2, learningContent: "Run the focused test first." };
+    let stale = false;
+    Object.assign(ws, {
+      readAgentEvolutionOverview: async () => ({ summary, candidates: [candidate] }),
+      readAgentEvolutionCandidate: async () => detail,
+      approveAgentEvolutionCandidate: async (_agent: string, _candidateId: string, input: { expectedActiveVersion: number }) => {
+        if (stale) throw new EvolutionStoreError("evolution/promotion-conflict", "candidate changed");
+        expect(input.expectedActiveVersion).toBe(2);
+        return { candidateId: candidate.id, activeVersion: 3 };
+      },
+    });
+    const manager = new AgentStudioPanelManager(Uri.file("/ext"));
+    manager.openExisting(ws, "Ada");
+    await flush();
+    const webview = __createdPanels[0].webview;
+
+    webview.__receive(envelope({ type: "refreshEvolution" as const, agent: "Ada" }));
+    await flush();
+    expect(findType(webview.posted, "evolutionSummary").at(-1)).toMatchObject({ summary });
+    expect(findType(webview.posted, "evolutionCandidates").at(-1)).toMatchObject({ candidates: [candidate] });
+
+    webview.__receive(envelope({ type: "loadEvolutionCandidate" as const, agent: "Ada", candidateId: candidate.id }));
+    await flush();
+    expect(findType(webview.posted, "evolutionCandidateDetail").at(-1)).toMatchObject({ detail });
+
+    webview.__receive(envelope({
+      type: "approveEvolutionCandidate" as const,
+      agent: "Ada",
+      candidateId: candidate.id,
+      expectedActiveVersion: 2,
+    }));
+    await flush();
+    expect(findType(webview.posted, "evolutionActionResult").at(-1)).toMatchObject({
+      candidateId: candidate.id,
+      status: "approved",
+      activeVersion: 3,
+    });
+
+    stale = true;
+    webview.__receive(envelope({
+      type: "approveEvolutionCandidate" as const,
+      agent: "Ada",
+      candidateId: candidate.id,
+      expectedActiveVersion: 2,
+    }));
+    await flush();
+    expect(findType(webview.posted, "evolutionError").at(-1)).toMatchObject({
+      code: "evolution/promotion-conflict",
+      conflict: true,
+    });
   });
 });
