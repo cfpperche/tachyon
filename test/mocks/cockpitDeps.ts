@@ -40,6 +40,7 @@ export function makeFakeCockpitDeps(missionBoard: CockpitMissionBoard, overrides
     openEngineJournal: () => {},
     setCompanionTabTools: async () => {},
     unpairCompanionDevice: async () => {},
+    issueCompanionPairCode: async () => ({ ok: false as const, reason: "bridge_down" }),
     ...overrides,
   };
 }

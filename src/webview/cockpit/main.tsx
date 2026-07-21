@@ -20,8 +20,10 @@ import {
   openConfigFileAction,
   setCompanionTabToolsAction,
   unpairCompanionDeviceAction,
+  issueCompanionPairCodeAction,
   type CockpitHostMessage,
   type CockpitStrings,
+  type CompanionPairOffer,
 } from "./messages";
 import type { CockpitModel, CockpitSectionId } from "../../cockpit/model";
 import { persistWebviewState, type TachyonVsCodeApi } from "../shared/clientState";
@@ -101,6 +103,8 @@ function Root() {
   const [strings, setStrings] = useState<CockpitStrings | undefined>(undefined);
   const [model, setModel] = useState<CockpitModel | undefined>(undefined);
   const [toast, setToast] = useState<string | undefined>(undefined);
+  /** Ephemeral pair offer — not stored in polled model. */
+  const [companionPairOffer, setCompanionPairOffer] = useState<CompanionPairOffer | undefined>(undefined);
   const [auto, setAuto] = useState(true);
   const [missionVm, setMissionVm] = useState<MissionControlVM | undefined>(undefined);
   const [missionError, setMissionError] = useState<TaskErrorEvent | undefined>(undefined);
@@ -170,6 +174,8 @@ function Root() {
         setToast(raw.text);
         if (toastTimer.current) clearTimeout(toastTimer.current);
         toastTimer.current = window.setTimeout(() => setToast(undefined), 2200);
+      } else if (type === "companionPairOffer" && raw.offer && typeof raw.offer === "object") {
+        setCompanionPairOffer(raw.offer as CompanionPairOffer);
       }
     };
     window.addEventListener("message", onMsg);
@@ -304,6 +310,8 @@ function Root() {
       onOpenConfigFile={(wsHash) => post(openConfigFileAction(wsHash))}
       onSetCompanionTabTools={(wsHash, enabled) => post(setCompanionTabToolsAction(wsHash, enabled))}
       onUnpairCompanionDevice={(wsHash) => post(unpairCompanionDeviceAction(wsHash))}
+      onIssueCompanionPairCode={(wsHash) => post(issueCompanionPairCodeAction(wsHash))}
+      companionPairOffer={companionPairOffer}
       onPost={(action) => post(action)}
       missionVm={missionVm}
       missionError={missionError}
@@ -335,6 +343,7 @@ function Root() {
         // t-d16a39 — optimistic model update (selector reflects the choice instantly); the host
         // re-sends the authoritative scoped model + the active section's module right after.
         setModel((prev) => (prev ? { ...prev, selectedWsHash: wsHash || undefined } : prev));
+        setCompanionPairOffer(undefined);
         post(switchControlWorkspaceAction(wsHash));
       }}
     />

@@ -129,6 +129,18 @@ export interface CockpitDeps {
   setCompanionTabTools: (wsHash: string, enabled: boolean) => Promise<void>;
   /** SDD 414 — host-authoritative unpair of the active Companion device. */
   unpairCompanionDevice: (wsHash: string) => Promise<void>;
+  /**
+   * SDD 414 — mint short-lived pair code + baseUrl (same as tachyon.pairCompanion / companion.pair-code).
+   * Result is pushed as a one-shot webview message — not polled into CockpitModel.
+   */
+  issueCompanionPairCode: (wsHash: string) => Promise<{
+    ok: true;
+    code: string;
+    baseUrl: string;
+    expiresAt: string;
+    protocolVersion?: number;
+    prefix?: string;
+  } | { ok: false; reason: string }>;
 }
 
 function strings(): CockpitStrings {
@@ -227,20 +239,31 @@ function strings(): CockpitStrings {
     settingsOpenTachyon: t("Open Tachyon settings"),
     settingsOpenConfig: t("Open tachyon.yml"),
     settingsDoctor: t("Run Doctor"),
-    companionTitle: t("Companion tab tools"),
-    companionHint: t("First-person browser tools for agents (user_browser_*)."),
+    companionTitle: t("Companion"),
+    companionHint: t("Pair Tachyon Companion and opt-in first-person browser tools for agents (user_browser_*)."),
     companionBody: t(
-      "When on, agents see user_browser_* tools on the Bridge. Pairing Tachyon Companion is still required to run them. Agent tab access in the extension controls page inject/capture trust — a separate switch.",
+      "When tab tools are on, agents see user_browser_* on the Bridge. Pairing Companion is still required to run them. Generate a pair code here (or via the command palette).",
     ),
     companionTabTools: t("List Companion tab tools for agents"),
     companionTabToolsHelp: t("Writes settings.companion.tabTools in tachyon.yml and refreshes the Bridge tool list."),
     companionPaired: t("Paired"),
     companionNotPaired: t("Not paired"),
-    companionPickWorkspace: t("Select a single workspace in the header to manage Companion tab tools."),
+    companionPickWorkspace: t("Select a single workspace in the header to manage Companion settings."),
     companionBaseUrl: t("Engine Base URL"),
+    companionShowPairCode: t("Show pair code"),
+    companionCopyBaseUrl: t("Copy URL"),
+    companionPairCodeLabel: t("Code"),
+    companionPairUrlLabel: t("URL"),
+    companionPairExpires: t("Expires"),
+    companionPairExpired: t("Code expired — generate a new one."),
+    companionCopyCode: t("Copy code"),
+    companionCopyUrl: t("Copy URL"),
+    companionCopyAll: t("Copy all"),
+    companionNewCode: t("New code"),
+    companionPairUnavailable: t("Companion pairing unavailable — ensure the Bridge is listening."),
     devicesTitle: t("Connected devices"),
     devicesHint: t("Companion browsers paired to this workspace engine."),
-    devicesEmpty: t("No Companion device paired. Open Tachyon Companion, pair with a code from this workspace, then refresh."),
+    devicesEmpty: t("No Companion device paired. Generate a pair code above, enter it in Tachyon Companion, then refresh."),
     devicesUnpair: t("Unpair"),
     devicesLive: t("Live"),
     devicesOffline: t("Offline"),
@@ -865,6 +888,25 @@ export async function openCockpit(
               await sendModel();
               live.webview.postMessage(toastMessage(vscode.l10n.t("Companion device unpaired")));
             } catch (err) {
+              live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err)));
+            }
+          }
+          return;
+        case "issueCompanionPairCode":
+          if (typeof c.wsHash === "string" && c.wsHash) {
+            try {
+              const offer = await deps.issueCompanionPairCode(c.wsHash);
+              live.webview.postMessage({ type: "companionPairOffer", offer });
+              if (offer.ok) {
+                live.webview.postMessage(
+                  toastMessage(vscode.l10n.t("Companion pair code ready (expires soon)")),
+                );
+              }
+            } catch (err) {
+              live.webview.postMessage({
+                type: "companionPairOffer",
+                offer: { ok: false, reason: err instanceof Error ? err.message : String(err) },
+              });
               live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err)));
             }
           }

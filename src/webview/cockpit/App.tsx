@@ -1,12 +1,18 @@
 import type { ComponentChildren } from "preact";
 import { lazy, Suspense } from "preact/compat";
+import { useEffect, useState } from "preact/hooks";
 import {
   COCKPIT_SECTION_ORDER,
   type CockpitModel,
   type CockpitSectionId,
 } from "../../cockpit/model";
 import type { ControlInspectorWorkspaceRow } from "../../control-inspector/model";
-import type { CockpitAction, CockpitStrings } from "./messages";
+import {
+  formatCompanionPairClipboard,
+  type CockpitAction,
+  type CockpitStrings,
+  type CompanionPairOffer,
+} from "./messages";
 import { EngineLogPanel } from "./EngineLogPanel";
 import { Button, Badge, ListRow, PageChrome, EmptyState } from "../shared/ui";
 import { KitSelect } from "../shared/ui/kit";
@@ -106,6 +112,10 @@ export interface CockpitAppProps {
   onSetCompanionTabTools: (wsHash: string, enabled: boolean) => void;
   /** SDD 414 — host unpair of the active Companion device. */
   onUnpairCompanionDevice: (wsHash: string) => void;
+  /** SDD 414 — mint pair code (result arrives as companionPairOffer prop). */
+  onIssueCompanionPairCode: (wsHash: string) => void;
+  /** Ephemeral pair offer from host (not polled model). */
+  companionPairOffer?: CompanionPairOffer;
   /** Low-level post for Engine log actions (clear/journal/copy). */
   onPost: (action: CockpitAction) => void;
   /** Embedded Mission Control board (same Preact App as the standalone panel). */
@@ -163,6 +173,113 @@ function Kv({ k, v }: { k: string; v?: string | number | null }) {
       <span class="k">{k}</span>
       <span class="v">{String(v)}</span>
     </>
+  );
+}
+
+/** Countdown for pair-code TTL (mm:ss or "0:00" when expired). */
+function usePairCountdown(expiresAt?: string): { label: string; expired: boolean } {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!expiresAt) return;
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [expiresAt]);
+  if (!expiresAt) return { label: "", expired: false };
+  const ms = Date.parse(expiresAt) - now;
+  if (!Number.isFinite(ms) || ms <= 0) return { label: "0:00", expired: true };
+  const totalSec = Math.floor(ms / 1000);
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return { label: `${m}:${String(s).padStart(2, "0")}`, expired: false };
+}
+
+function CompanionPairOfferCard({
+  s,
+  offer,
+  onCopyText,
+  onNewCode,
+}: {
+  s: CockpitStrings;
+  offer: CompanionPairOffer;
+  onCopyText: (text: string) => void;
+  onNewCode: () => void;
+}) {
+  const expiresAt = offer.ok ? offer.expiresAt : undefined;
+  const { label: countdown, expired } = usePairCountdown(expiresAt);
+
+  if (!offer.ok) {
+    return (
+      <div class="ck-pair-offer ck-pair-offer-err" data-testid="companion-pair-offer">
+        <p class="ck-settings-block-body">
+          {s.companionPairUnavailable}
+          {offer.reason ? <span class="dim"> ({offer.reason})</span> : null}
+        </p>
+        <div class="ck-pair-offer-actions">
+          <Button variant="default" data-testid="companion-pair-retry" onClick={onNewCode}>
+            {s.companionShowPairCode}
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div class="ck-pair-offer" data-testid="companion-pair-offer">
+      {expired ? (
+        <p class="ck-settings-block-body dim" data-testid="companion-pair-expired">
+          {s.companionPairExpired}
+        </p>
+      ) : null}
+      <div class="ck-pair-offer-row">
+        <span class="ck-pair-offer-label">{s.companionPairCodeLabel}</span>
+        <span class="ck-pair-offer-code ck-mono" data-testid="companion-pair-code">
+          {offer.code}
+        </span>
+      </div>
+      <div class="ck-pair-offer-row">
+        <span class="ck-pair-offer-label">{s.companionPairUrlLabel}</span>
+        <span class="ck-pair-offer-url ck-mono" data-testid="companion-pair-url" title={offer.baseUrl}>
+          {offer.baseUrl}
+        </span>
+      </div>
+      <div class="ck-pair-offer-row">
+        <span class="ck-pair-offer-label">{s.companionPairExpires}</span>
+        <span class="ck-mono" data-testid="companion-pair-expires">
+          {expired ? "0:00" : countdown}
+          {!expired && expiresAt ? (
+            <span class="dim"> · {expiresAt.slice(0, 19).replace("T", " ")}</span>
+          ) : null}
+        </span>
+      </div>
+      <div class="ck-pair-offer-actions">
+        <Button
+          variant="default"
+          data-testid="companion-pair-copy-code"
+          disabled={expired}
+          onClick={() => onCopyText(offer.code)}
+        >
+          {s.companionCopyCode}
+        </Button>
+        <Button
+          variant="default"
+          data-testid="companion-pair-copy-url"
+          onClick={() => onCopyText(offer.baseUrl)}
+        >
+          {s.companionCopyUrl}
+        </Button>
+        <Button
+          variant="default"
+          data-testid="companion-pair-copy-all"
+          disabled={expired}
+          onClick={() => onCopyText(formatCompanionPairClipboard(offer))}
+        >
+          {s.companionCopyAll}
+        </Button>
+        <Button variant="default" data-testid="companion-pair-new-code" onClick={onNewCode}>
+          {s.companionNewCode}
+        </Button>
+      </div>
+    </div>
   );
 }
 
@@ -704,6 +821,33 @@ export function App(p: CockpitAppProps) {
                   ) : null}
                   <span class="dim">{companion.folderName}</span>
                 </div>
+
+                <div class="ck-pair-actions" data-testid="companion-pair-actions">
+                  <Button
+                    variant="default"
+                    data-testid="companion-show-pair-code"
+                    onClick={() => p.onIssueCompanionPairCode(companion.wsHash)}
+                  >
+                    {s.companionShowPairCode}
+                  </Button>
+                  {companion.baseUrl ? (
+                    <Button
+                      variant="default"
+                      data-testid="companion-copy-base-url"
+                      onClick={() => p.onCopyText(companion.baseUrl!)}
+                    >
+                      {s.companionCopyBaseUrl}
+                    </Button>
+                  ) : null}
+                </div>
+                {p.companionPairOffer ? (
+                  <CompanionPairOfferCard
+                    s={s}
+                    offer={p.companionPairOffer}
+                    onCopyText={p.onCopyText}
+                    onNewCode={() => p.onIssueCompanionPairCode(companion.wsHash)}
+                  />
+                ) : null}
 
                 <div class="ck-settings-block ck-settings-block-nested" data-testid="control-settings-devices">
                   <h3 class="ck-settings-block-title">{s.devicesTitle}</h3>

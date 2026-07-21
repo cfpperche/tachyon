@@ -1394,6 +1394,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (!ws) throw new Error("no Tachyon workspace for that hash");
       await extensionInvoke(ws, { action: "companion.unpair" });
     },
+    issueCompanionPairCode: async (wsHash) => {
+      const ws = byHash(wsHash);
+      if (!ws) throw new Error("no Tachyon workspace for that hash");
+      const result = jsonObject(await extensionQuery(ws, { action: "companion.pair-code" }), "companion.pair-code");
+      if (result.ok === false) {
+        return { ok: false as const, reason: String(result.reason ?? "bridge_down") };
+      }
+      const code = typeof result.code === "string" ? result.code : "";
+      const baseUrl = typeof result.baseUrl === "string" ? result.baseUrl : "";
+      const expiresAt = typeof result.expiresAt === "string" ? result.expiresAt : "";
+      if (!code || !baseUrl || !expiresAt) {
+        return { ok: false as const, reason: "invalid_pair_response" };
+      }
+      return {
+        ok: true as const,
+        code,
+        baseUrl,
+        expiresAt,
+        ...(typeof result.protocolVersion === "number" ? { protocolVersion: result.protocolVersion } : {}),
+        ...(typeof result.prefix === "string" ? { prefix: result.prefix } : {}),
+      };
+    },
   });
 
   const launcherBundlePath = () => vscode.Uri.joinPath(context.extensionUri, "dist", "tool-launcher.cjs").fsPath;

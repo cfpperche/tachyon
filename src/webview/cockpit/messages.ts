@@ -105,6 +105,18 @@ export interface CockpitStrings {
   companionNotPaired: string;
   companionPickWorkspace: string;
   companionBaseUrl: string;
+  /** SDD 414 — Control pair-code affordance (command palette still works). */
+  companionShowPairCode: string;
+  companionCopyBaseUrl: string;
+  companionPairCodeLabel: string;
+  companionPairUrlLabel: string;
+  companionPairExpires: string;
+  companionPairExpired: string;
+  companionCopyCode: string;
+  companionCopyUrl: string;
+  companionCopyAll: string;
+  companionNewCode: string;
+  companionPairUnavailable: string;
   devicesTitle: string;
   devicesHint: string;
   devicesEmpty: string;
@@ -141,12 +153,27 @@ export type CockpitAction =
   /** SDD 414 — patch settings.companion.tabTools for one workspace. */
   | { type: "setCompanionTabTools"; wsHash: string; enabled: boolean }
   /** SDD 414 — host unpair of the active Companion session. */
-  | { type: "unpairCompanionDevice"; wsHash: string };
+  | { type: "unpairCompanionDevice"; wsHash: string }
+  /** SDD 414 — mint a short-lived pair code (same op as tachyon.pairCompanion). */
+  | { type: "issueCompanionPairCode"; wsHash: string };
+
+/** Ephemeral pair offer — not part of the polled CockpitModel. */
+export type CompanionPairOffer =
+  | {
+      ok: true;
+      code: string;
+      baseUrl: string;
+      expiresAt: string;
+      protocolVersion?: number;
+      prefix?: string;
+    }
+  | { ok: false; reason: string };
 
 export type CockpitHostMessage =
   | { type: typeof INIT; strings: CockpitStrings }
   | { type: typeof MODEL; model: CockpitModel }
-  | { type: "toast"; text: string };
+  | { type: "toast"; text: string }
+  | { type: "companionPairOffer"; offer: CompanionPairOffer };
 
 export const readyMessage = (): CockpitAction => ({ type: READY });
 export const refreshAction = (): CockpitAction => ({ type: "refresh" });
@@ -192,7 +219,20 @@ export const unpairCompanionDeviceAction = (wsHash: string): CockpitAction => ({
   type: "unpairCompanionDevice",
   wsHash,
 });
+export const issueCompanionPairCodeAction = (wsHash: string): CockpitAction => ({
+  type: "issueCompanionPairCode",
+  wsHash,
+});
 
 export const initMessage = (strings: CockpitStrings): CockpitHostMessage => ({ type: INIT, strings });
 export const modelMessage = (model: CockpitModel): CockpitHostMessage => ({ type: MODEL, model });
 export const toastMessage = (text: string): CockpitHostMessage => ({ type: "toast", text });
+export const companionPairOfferMessage = (offer: CompanionPairOffer): CockpitHostMessage => ({
+  type: "companionPairOffer",
+  offer,
+});
+
+/** Clipboard blob matching tachyon.pairCompanion (code + baseUrl + expires). */
+export function formatCompanionPairClipboard(offer: Extract<CompanionPairOffer, { ok: true }>): string {
+  return `code=${offer.code} baseUrl=${offer.baseUrl} expires=${offer.expiresAt}`;
+}
