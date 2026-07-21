@@ -110,6 +110,12 @@ _Questions surfaced during the build with no answer yet. Owner or path to resolu
 - Fix after inspection: Persistent Instructions still named only four historical runtimes. The help is
   now host-localized and runtime-neutral: delivery occurs at startup through the selected runtime when
   supported. Component/adapter/localization tests cover the projected copy.
+- 2026-07-21 — The maintainer explicitly accepted the narrow Agent Evolution card without requesting
+  another screenshot. No synthetic narrow artifact was created; the recorded evidence remains the five
+  real Extension Development Host captures listed above.
+- 2026-07-21 — Local implementation closure uses `shipped-partial`: all product behavior and acceptance
+  evidence are complete on the isolated branch, while push/merge, worktree removal and branch deletion
+  remain a separate maintainer-authorized publication step.
 
 ## Dogfood log
 
@@ -122,3 +128,13 @@ _Questions surfaced during the build with no answer yet. Owner or path to resolu
 - `npm run typecheck` — pass
 - `npm run test:invariants` — pass
 - `npm run verify:full:quiet` — pass
+
+## Closure validation
+
+- 2026-07-21 — `sdd-close.sh docs/specs/421-agent-evolution` passed with no closure
+  inconsistencies.
+- 2026-07-21 — Final `npm run typecheck` passed.
+- 2026-07-21 — The first final `npm run verify:full:quiet` encountered one unrelated live tmux
+  cgroup-test failure. Its focused suite immediately passed 7/7 and the full rerun passed 462 files,
+  5,225 tests with 3 skipped. Backlog bug `t-5f6355` owns investigation of the nondeterministic process
+  selection; the original failure remains recorded rather than being hidden by the green rerun.

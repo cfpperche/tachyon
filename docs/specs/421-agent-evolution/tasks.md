@@ -104,12 +104,14 @@ before continuing._
 - [x] Scaffold and finish `cookbook.md` with opt-in, proposal review, active files and disable behavior.
 - [x] Point the Dev Host at this worktree and complete human Agent Studio dogfood with an actual declared
   agent and a standard skill containing one helper script.
-- [ ] Capture Agent Studio visual evidence for empty, pending-learning, pending-skill, approved and
-  narrow-width states; record verdict/fixes in `notes.md`.
+- [x] Capture Agent Studio visual evidence for empty, pending-learning, pending-skill and approved
+  states; obtain the maintainer's explicit acceptance of the narrow card and record verdict/fixes in
+  `notes.md` without fabricating a missing screenshot.
 - [x] Run focused tests, SDD dogfood, PI-001, typecheck and configured full verification.
-- [ ] Check every acceptance criterion against evidence, mark `spec.md` shipped, add Closure, and run
-  the SDD close audit.
-- [ ] Land the isolated branch through normal review, then remove the managed worktree and its branch.
+- [x] Check every acceptance criterion against evidence, mark `spec.md` shipped-partial, add Closure,
+  and run the SDD close audit.
+- [x] Prepare the isolated branch for normal review. Landing, worktree removal and branch deletion remain
+  a maintainer-authorized publication follow-up and are not claimed by this local closure.
 
 ## Verification
 
@@ -145,9 +147,10 @@ before continuing._
 
 ## Visual QA
 
-- [ ] Evidence: `.tachyon/evidence/421-agent-evolution/` contains real Agent Studio screenshots for
-  empty, pending learning, pending skill, approved and narrow-width states.
-- [ ] Verdict: recorded in `notes.md`, including any layout/copy fixes made after inspection.
+- [x] Evidence: `.tachyon/evidence/421-agent-evolution/` contains real Agent Studio screenshots for
+  empty, pending learning, pending skill and approved states; the maintainer explicitly accepted the
+  narrow card without requiring an additional artifact.
+- [x] Verdict: recorded in `notes.md`, including the layout/copy fix made after inspection.
 
 ## Cookbook
 

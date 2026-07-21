@@ -2,7 +2,13 @@
 
 _Created 2026-07-21._
 
-**Status:** in-progress
+**Status:** shipped-partial
+
+**Closure:** Agent Evolution V1 is implemented and verified on the isolated
+`tachyon/change/agent-evolution` branch, including opt-in configuration, task-end proposals, human
+approval, next-session activation, standard skill bundles, runtime-neutral delivery, Agent Studio,
+lifecycle handling, dogfood and visual review. Publication to the remote/main branch and managed
+worktree cleanup remain an explicitly separate maintainer-authorized follow-up.
 
 ## Intent
 
