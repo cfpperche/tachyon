@@ -1,5 +1,5 @@
 /**
- * Companion tab command channel (SDD 414 / t-2a7010 + t-fbe280).
+ * Companion tab command channel (SDD 414 + SDD 420 foundation).
  * Agent tools enqueue snapshot/act requests; the browser extension fulfills them
  * over SSE (tab.command) + POST /companion/v1/tab/result.
  */
@@ -17,14 +17,20 @@ export interface CompanionTabChannelOptions {
   now?: () => number;
 }
 
+export type TabTarget = {
+  tabId: string;
+  expectedDocumentToken?: string;
+};
+
 type CommandBody =
-  | { kind: "snapshot" }
-  | { kind: "screenshot"; format?: "jpeg" | "png"; quality?: number }
-  | { kind: "click"; selector: string }
-  | { kind: "type"; selector: string; text: string; submit?: boolean }
-  | { kind: "fill"; selector: string; value: string }
-  | { kind: "eval"; expression: string }
-  | { kind: "console"; limit?: number };
+  | { kind: "tabs_list" }
+  | ({ kind: "snapshot" } & TabTarget)
+  | ({ kind: "screenshot"; format?: "jpeg" | "png"; quality?: number } & TabTarget)
+  | ({ kind: "click"; ref?: string; selector?: string } & TabTarget)
+  | ({ kind: "type"; ref?: string; selector?: string; text: string; submit?: boolean } & TabTarget)
+  | ({ kind: "fill"; ref?: string; selector?: string; value: string } & TabTarget)
+  | ({ kind: "eval"; expression: string } & TabTarget)
+  | ({ kind: "console"; limit?: number } & TabTarget);
 
 interface Pending {
   command: CompanionTabCommand;
@@ -34,6 +40,12 @@ interface Pending {
 
 function newId(): string {
   return randomBytes(8).toString("hex");
+}
+
+function requireTarget(target: TabTarget): void {
+  if (!target.tabId?.trim()) {
+    throw new Error("tabId is required (SDD 420 — no active-tab default).");
+  }
 }
 
 export class CompanionTabChannel {
@@ -54,7 +66,7 @@ export class CompanionTabChannel {
     return [...this.pending.values()].map((p) => p.command);
   }
 
-  /** Generic enqueue (snapshot | screenshot | act | eval | console). */
+  /** Generic enqueue (tabs_list | snapshot | screenshot | act | eval | console). */
   request(body: CommandBody, timeoutMs?: number): Promise<CompanionTabResult> {
     const id = newId();
     const command = {
@@ -74,6 +86,7 @@ export class CompanionTabChannel {
           message:
             "Companion extension did not fulfill the tab command in time. " +
             "Ensure Companion is paired, live sync is connected, and agent tab access is enabled.",
+          tabId: "tabId" in body ? body.tabId : undefined,
         });
       }, ms);
       timer.unref?.();
@@ -89,49 +102,113 @@ export class CompanionTabChannel {
           id,
           code: "offline",
           message: "No Companion live stream to deliver tab.command (extension not connected).",
+          tabId: "tabId" in body ? body.tabId : undefined,
         });
       }
     });
   }
 
-  requestSnapshot(timeoutMs?: number): Promise<CompanionTabResult> {
-    return this.request({ kind: "snapshot" }, timeoutMs);
+  requestTabsList(timeoutMs?: number): Promise<CompanionTabResult> {
+    return this.request({ kind: "tabs_list" }, timeoutMs);
+  }
+
+  requestSnapshot(target: TabTarget, timeoutMs?: number): Promise<CompanionTabResult> {
+    requireTarget(target);
+    return this.request({ kind: "snapshot", ...target }, timeoutMs);
   }
 
   requestScreenshot(
+    target: TabTarget,
     opts?: { format?: "jpeg" | "png"; quality?: number; timeoutMs?: number },
   ): Promise<CompanionTabResult> {
+    requireTarget(target);
     return this.request(
-      { kind: "screenshot", format: opts?.format, quality: opts?.quality },
+      { kind: "screenshot", ...target, format: opts?.format, quality: opts?.quality },
       opts?.timeoutMs,
     );
   }
 
-  requestEval(expression: string, timeoutMs?: number): Promise<CompanionTabResult> {
-    return this.request({ kind: "eval", expression }, timeoutMs);
+  requestEval(target: TabTarget, expression: string, timeoutMs?: number): Promise<CompanionTabResult> {
+    requireTarget(target);
+    return this.request({ kind: "eval", ...target, expression }, timeoutMs);
   }
 
-  requestConsole(limit?: number, timeoutMs?: number): Promise<CompanionTabResult> {
-    return this.request({ kind: "console", limit }, timeoutMs);
+  requestConsole(target: TabTarget, limit?: number, timeoutMs?: number): Promise<CompanionTabResult> {
+    requireTarget(target);
+    return this.request({ kind: "console", ...target, limit }, timeoutMs);
   }
 
-  requestClick(selector: string, timeoutMs?: number): Promise<CompanionTabResult> {
-    return this.request({ kind: "click", selector }, timeoutMs);
+  requestClick(
+    target: TabTarget,
+    opts: { ref?: string; selector?: string; timeoutMs?: number },
+  ): Promise<CompanionTabResult> {
+    requireTarget(target);
+    if (!opts.ref?.trim() && !opts.selector?.trim()) {
+      return Promise.resolve({
+        ok: false,
+        id: "local",
+        code: "not_found",
+        message: "Provide ref (preferred) or selector.",
+        tabId: target.tabId,
+      });
+    }
+    return this.request(
+      { kind: "click", ...target, ref: opts.ref, selector: opts.selector },
+      opts.timeoutMs,
+    );
   }
 
   requestType(
-    selector: string,
-    text: string,
-    opts?: { submit?: boolean; timeoutMs?: number },
+    target: TabTarget,
+    opts: { ref?: string; selector?: string; text: string; submit?: boolean; timeoutMs?: number },
   ): Promise<CompanionTabResult> {
+    requireTarget(target);
+    if (!opts.ref?.trim() && !opts.selector?.trim()) {
+      return Promise.resolve({
+        ok: false,
+        id: "local",
+        code: "not_found",
+        message: "Provide ref (preferred) or selector.",
+        tabId: target.tabId,
+      });
+    }
     return this.request(
-      { kind: "type", selector, text, submit: opts?.submit },
-      opts?.timeoutMs,
+      {
+        kind: "type",
+        ...target,
+        ref: opts.ref,
+        selector: opts.selector,
+        text: opts.text,
+        submit: opts.submit,
+      },
+      opts.timeoutMs,
     );
   }
 
-  requestFill(selector: string, value: string, timeoutMs?: number): Promise<CompanionTabResult> {
-    return this.request({ kind: "fill", selector, value }, timeoutMs);
+  requestFill(
+    target: TabTarget,
+    opts: { ref?: string; selector?: string; value: string; timeoutMs?: number },
+  ): Promise<CompanionTabResult> {
+    requireTarget(target);
+    if (!opts.ref?.trim() && !opts.selector?.trim()) {
+      return Promise.resolve({
+        ok: false,
+        id: "local",
+        code: "not_found",
+        message: "Provide ref (preferred) or selector.",
+        tabId: target.tabId,
+      });
+    }
+    return this.request(
+      {
+        kind: "fill",
+        ...target,
+        ref: opts.ref,
+        selector: opts.selector,
+        value: opts.value,
+      },
+      opts.timeoutMs,
+    );
   }
 
   /** Extension fulfillment (or deny). */

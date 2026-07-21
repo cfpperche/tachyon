@@ -1522,21 +1522,53 @@ export class Workspace {
         // Listed when settings.companion.tabTools is true; execution still requires a paired device.
         companionTabToolsEnabled: () => this.config?.settings.companion?.tabTools === true,
         companionBrowserPaired: () => this.companion.hasPairedDevice(),
-        companionTabSnapshot: (opts) => this.companionTab.requestSnapshot(opts?.timeoutMs),
-        companionTabScreenshot: (opts) => this.companionTab.requestScreenshot(opts),
-        companionTabEval: (expression, timeoutMs) => this.companionTab.requestEval(expression, timeoutMs),
-        companionTabConsole: (limit, timeoutMs) => this.companionTab.requestConsole(limit, timeoutMs),
+        companionTabTabsList: (opts) => this.companionTab.requestTabsList(opts?.timeoutMs),
+        companionTabSnapshot: (opts) =>
+          this.companionTab.requestSnapshot(
+            { tabId: opts.tabId, expectedDocumentToken: opts.expectedDocumentToken },
+            opts.timeoutMs,
+          ),
+        companionTabScreenshot: (opts) =>
+          this.companionTab.requestScreenshot(
+            { tabId: opts.tabId, expectedDocumentToken: opts.expectedDocumentToken },
+            { format: opts.format, quality: opts.quality, timeoutMs: opts.timeoutMs },
+          ),
+        companionTabEval: (opts) =>
+          this.companionTab.requestEval(
+            { tabId: opts.tabId, expectedDocumentToken: opts.expectedDocumentToken },
+            opts.expression,
+            opts.timeoutMs,
+          ),
+        companionTabConsole: (opts) =>
+          this.companionTab.requestConsole(
+            { tabId: opts.tabId, expectedDocumentToken: opts.expectedDocumentToken },
+            opts.limit,
+            opts.timeoutMs,
+          ),
         companionTabAct: (input) => {
+          const target = { tabId: input.tabId, expectedDocumentToken: input.expectedDocumentToken };
           if (input.kind === "click") {
-            return this.companionTab.requestClick(input.selector, input.timeoutMs);
+            return this.companionTab.requestClick(target, {
+              ref: input.ref,
+              selector: input.selector,
+              timeoutMs: input.timeoutMs,
+            });
           }
           if (input.kind === "type") {
-            return this.companionTab.requestType(input.selector, input.text ?? "", {
+            return this.companionTab.requestType(target, {
+              ref: input.ref,
+              selector: input.selector,
+              text: input.text ?? "",
               submit: input.submit,
               timeoutMs: input.timeoutMs,
             });
           }
-          return this.companionTab.requestFill(input.selector, input.value ?? "", input.timeoutMs);
+          return this.companionTab.requestFill(target, {
+            ref: input.ref,
+            selector: input.selector,
+            value: input.value ?? "",
+            timeoutMs: input.timeoutMs,
+          });
         },
         deliverNotice: (target, line, metadata) => this.deliverNotice(target, line, metadata),
         sourceNoticeMetadata: (agent) => this.sourceNoticeMetadata(agent),

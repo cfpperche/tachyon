@@ -82,6 +82,7 @@ import type { ReloadReconciliationSnapshot } from "../delivery/reloadReconciliat
 import { RuntimeLaunchPreflightError } from "../runtime/launchPreflight.js";
 import { RuntimeLaunchReadinessError } from "../runtime/launchReadiness.js";
 import { modelFacingScreenshotResult } from "../companion/screenshotPersist.js";
+import { envelopeFromTabResult } from "../companion/tabEnvelope.js";
 
 export type NotifyLevel = "info" | "warn" | "error";
 export type NoticeDeliveryResult = { status: "notified" | "queued"; dropped?: number; queued?: number };
@@ -129,33 +130,45 @@ export interface BridgeDeps {
   /** Attention state of an agent ("working" | "idle" | "needs-input"), when monitoring is active. */
   attentionOf?: (agent: string) => string | undefined;
   /**
-   * SDD 414 / t-2a7010 — request a DOM outline of the human's active browser tab via Companion.
-   * Blocks until the extension fulfills or times out. Absent = tool returns unavailable.
+   * SDD 420 — tab-scoped Companion tools. All require opaque companion tabId
+   * (from user_browser_tabs_list). Blocks until extension fulfills or times out.
    */
-  companionTabSnapshot?: (opts?: { timeoutMs?: number }) => Promise<unknown>;
-  /** SDD 414 / t-fbe280 — click / type / fill on the human's active tab via Companion. */
+  companionTabTabsList?: (opts?: { timeoutMs?: number }) => Promise<unknown>;
+  companionTabSnapshot?: (opts: {
+    tabId: string;
+    expectedDocumentToken?: string;
+    timeoutMs?: number;
+  }) => Promise<unknown>;
   companionTabAct?: (input: {
     kind: "click" | "type" | "fill";
-    selector: string;
+    tabId: string;
+    expectedDocumentToken?: string;
+    ref?: string;
+    selector?: string;
     text?: string;
     value?: string;
     submit?: boolean;
     timeoutMs?: number;
   }) => Promise<unknown>;
-  /**
-   * First-person screenshot of the human's active tab via Companion.
-   * Transport may include a data URL; the tool handler persists bytes to the
-   * workspace and returns a path (never the data URL) to the model.
-   */
-  companionTabScreenshot?: (opts?: {
+  companionTabScreenshot?: (opts: {
+    tabId: string;
+    expectedDocumentToken?: string;
     format?: "jpeg" | "png";
     quality?: number;
     timeoutMs?: number;
   }) => Promise<unknown>;
-  /** MAIN-world JS eval (bounded) on the human's active tab. */
-  companionTabEval?: (expression: string, timeoutMs?: number) => Promise<unknown>;
-  /** Recent page console lines captured by Companion. */
-  companionTabConsole?: (limit?: number, timeoutMs?: number) => Promise<unknown>;
+  companionTabEval?: (opts: {
+    tabId: string;
+    expectedDocumentToken?: string;
+    expression: string;
+    timeoutMs?: number;
+  }) => Promise<unknown>;
+  companionTabConsole?: (opts: {
+    tabId: string;
+    expectedDocumentToken?: string;
+    limit?: number;
+    timeoutMs?: number;
+  }) => Promise<unknown>;
   /**
    * SDD 414 — human settings opt-in (settings.companion.tabTools).
    * When true, register user_browser_* tools on this Bridge request so agents can
@@ -1514,90 +1527,149 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     },
   );
 
-  // SDD 414 — Companion browser tools when human enables settings.companion.tabTools.
-  // Listed even before pair so agents can discover them; call fails with not_paired until paired.
-  // registerTools runs per new MCP session; settings toggles invalidate sessions + announce list change.
+  // SDD 414 + SDD 420 — Companion browser tools (tabId-scoped; tabTools settings opt-in).
   const companionNotPairedMessage =
     "Companion tab tools are enabled in settings (settings.companion.tabTools), but no browser is paired " +
     "to this engine. Open Tachyon Companion, pair this engine (same Base URL as the Bridge), enable " +
     "Agent tab access, then retry.";
 
+  const tabIdSchema = z
+    .string()
+    .min(1)
+    .max(128)
+    .describe("Opaque companion tabId from user_browser_tabs_list (required — no active-tab default)");
+  const documentTokenSchema = z
+    .string()
+    .min(1)
+    .max(256)
+    .optional()
+    .describe("Optional document token from last snapshot; mismatch fails stale_tab");
+  const refSchema = z
+    .string()
+    .min(1)
+    .max(64)
+    .optional()
+    .describe("Element ref from snapshot (e.g. @e3) — preferred over selector");
+  const selectorSchema = z
+    .string()
+    .min(1)
+    .max(500)
+    .optional()
+    .describe("CSS selector fallback when no ref (fragile)");
+  const tabTimeoutSchema = z
+    .number()
+    .int()
+    .min(5)
+    .max(120)
+    .optional()
+    .describe("How long to wait for Companion (default 30s)");
+
   if (deps.companionTabToolsEnabled?.()) {
-    // t-2a7010 — governed read of the human's browser tab via Tachyon Companion.
     mcp.registerTool(
-      "user_browser_snapshot",
+      "user_browser_tabs_list",
       {
         description:
-          "Request a read-only DOM outline of the HUMAN user's active browser tab via Tachyon Companion " +
-          "(paired extension). Never returns cookies or password field values. Blocks until the extension " +
-          "fulfills the request or times out (~30s). Requires settings.companion.tabTools, a paired Companion, " +
-          "live sync + agent tab access. Not agent-browser/CDP — the user's real browser session.",
-        inputSchema: {
-          timeoutSec: z
-            .number()
-            .int()
-            .min(5)
-            .max(120)
-            .optional()
-            .describe("How long to wait for Companion (default 30s)"),
-        },
+          "List the human's browser tabs via Tachyon Companion. Returns opaque tabId handles, title, url, " +
+          "active flag, and documentToken. Use tabId on every other user_browser_* call (SDD 420).",
+        inputSchema: { timeoutSec: tabTimeoutSchema },
       },
       async ({ timeoutSec }) => {
         try {
-          if (!deps.companionTabSnapshot) {
-            return fail(
-              new Error(
-                "user_browser_snapshot is not available (Companion tab channel not wired on this engine).",
-              ),
-            );
+          if (!deps.companionTabTabsList) {
+            return fail(new Error("user_browser_tabs_list is not available."));
           }
           if (!deps.companionBrowserPaired?.()) {
             return fail(new Error(companionNotPairedMessage));
           }
-          const result = await deps.companionTabSnapshot({
+          const result = await deps.companionTabTabsList({
             timeoutMs: timeoutSec !== undefined ? timeoutSec * 1000 : undefined,
           });
-          return ok(JSON.stringify(result, null, 2));
+          return ok(
+            JSON.stringify(
+              envelopeFromTabResult({ tool: "user_browser_tabs_list", raw: result }),
+              null,
+              2,
+            ),
+          );
         } catch (err) {
           return fail(err);
         }
       },
     );
 
-    // t-fbe280 — content-script actions on the human's active tab.
-    const tabTimeoutSchema = z
-      .number()
-      .int()
-      .min(5)
-      .max(120)
-      .optional()
-      .describe("How long to wait for Companion (default 30s)");
+    mcp.registerTool(
+      "user_browser_snapshot",
+      {
+        description:
+          "DOM outline of a specific companion tabId. Returns outline, stable @e refs, documentToken. SDD 420.",
+        inputSchema: {
+          tabId: tabIdSchema,
+          expectedDocumentToken: documentTokenSchema,
+          timeoutSec: tabTimeoutSchema,
+        },
+      },
+      async ({ tabId, expectedDocumentToken, timeoutSec }) => {
+        try {
+          if (!deps.companionTabSnapshot) {
+            return fail(new Error("user_browser_snapshot is not available."));
+          }
+          if (!deps.companionBrowserPaired?.()) {
+            return fail(new Error(companionNotPairedMessage));
+          }
+          const result = await deps.companionTabSnapshot({
+            tabId,
+            expectedDocumentToken,
+            timeoutMs: timeoutSec !== undefined ? timeoutSec * 1000 : undefined,
+          });
+          return ok(
+            JSON.stringify(
+              envelopeFromTabResult({ tool: "user_browser_snapshot", tabId, raw: result }),
+              null,
+              2,
+            ),
+          );
+        } catch (err) {
+          return fail(err);
+        }
+      },
+    );
 
     mcp.registerTool(
       "user_browser_click",
       {
         description:
-          "Click an element on the HUMAN user's active browser tab via Tachyon Companion (CSS selector). " +
-          "Requires agent tab access enabled. Prefer selectors from a recent user_browser_snapshot outline.",
+          "Click an element on companion tabId. Prefer ref from snapshot (@eN); selector is fragile fallback.",
         inputSchema: {
-          selector: z.string().min(1).max(500).describe("CSS selector for the element to click"),
+          tabId: tabIdSchema,
+          expectedDocumentToken: documentTokenSchema,
+          ref: refSchema,
+          selector: selectorSchema,
           timeoutSec: tabTimeoutSchema,
         },
       },
-      async ({ selector, timeoutSec }) => {
+      async ({ tabId, expectedDocumentToken, ref, selector, timeoutSec }) => {
         try {
           if (!deps.companionTabAct) {
-            return fail(new Error("user_browser_click is not available (Companion tab channel not wired)."));
+            return fail(new Error("user_browser_click is not available."));
           }
           if (!deps.companionBrowserPaired?.()) {
             return fail(new Error(companionNotPairedMessage));
           }
           const result = await deps.companionTabAct({
             kind: "click",
+            tabId,
+            expectedDocumentToken,
+            ref,
             selector,
             timeoutMs: timeoutSec !== undefined ? timeoutSec * 1000 : undefined,
           });
-          return ok(JSON.stringify(result, null, 2));
+          return ok(
+            JSON.stringify(
+              envelopeFromTabResult({ tool: "user_browser_click", tabId, raw: result }),
+              null,
+              2,
+            ),
+          );
         } catch (err) {
           return fail(err);
         }
@@ -1608,31 +1680,42 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       "user_browser_type",
       {
         description:
-          "Type text into an element on the HUMAN user's active tab (focus + insert, optional Enter). " +
-          "Does not clear existing value (use user_browser_fill to replace). Requires agent tab access.",
+          "Type into an element on companion tabId (focus + insert, optional Enter). Prefer ref from snapshot.",
         inputSchema: {
-          selector: z.string().min(1).max(500).describe("CSS selector for the input/editable target"),
+          tabId: tabIdSchema,
+          expectedDocumentToken: documentTokenSchema,
+          ref: refSchema,
+          selector: selectorSchema,
           text: z.string().max(4000).describe("Text to type"),
           submit: z.boolean().optional().describe("If true, press Enter after typing"),
           timeoutSec: tabTimeoutSchema,
         },
       },
-      async ({ selector, text, submit, timeoutSec }) => {
+      async ({ tabId, expectedDocumentToken, ref, selector, text, submit, timeoutSec }) => {
         try {
           if (!deps.companionTabAct) {
-            return fail(new Error("user_browser_type is not available (Companion tab channel not wired)."));
+            return fail(new Error("user_browser_type is not available."));
           }
           if (!deps.companionBrowserPaired?.()) {
             return fail(new Error(companionNotPairedMessage));
           }
           const result = await deps.companionTabAct({
             kind: "type",
+            tabId,
+            expectedDocumentToken,
+            ref,
             selector,
             text,
             submit,
             timeoutMs: timeoutSec !== undefined ? timeoutSec * 1000 : undefined,
           });
-          return ok(JSON.stringify(result, null, 2));
+          return ok(
+            JSON.stringify(
+              envelopeFromTabResult({ tool: "user_browser_type", tabId, raw: result }),
+              null,
+              2,
+            ),
+          );
         } catch (err) {
           return fail(err);
         }
@@ -1643,58 +1726,60 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       "user_browser_fill",
       {
         description:
-          "Set the value of an input/textarea/select on the HUMAN user's active tab (replaces existing value). " +
-          "Password fields are refused. Requires agent tab access enabled.",
+          "Set value of input/textarea/select on companion tabId. Password fields refused.",
         inputSchema: {
-          selector: z.string().min(1).max(500).describe("CSS selector for the field"),
+          tabId: tabIdSchema,
+          expectedDocumentToken: documentTokenSchema,
+          ref: refSchema,
+          selector: selectorSchema,
           value: z.string().max(4000).describe("New value"),
           timeoutSec: tabTimeoutSchema,
         },
       },
-      async ({ selector, value, timeoutSec }) => {
+      async ({ tabId, expectedDocumentToken, ref, selector, value, timeoutSec }) => {
         try {
           if (!deps.companionTabAct) {
-            return fail(new Error("user_browser_fill is not available (Companion tab channel not wired)."));
+            return fail(new Error("user_browser_fill is not available."));
           }
           if (!deps.companionBrowserPaired?.()) {
             return fail(new Error(companionNotPairedMessage));
           }
           const result = await deps.companionTabAct({
             kind: "fill",
+            tabId,
+            expectedDocumentToken,
+            ref,
             selector,
             value,
             timeoutMs: timeoutSec !== undefined ? timeoutSec * 1000 : undefined,
           });
-          return ok(JSON.stringify(result, null, 2));
+          return ok(
+            JSON.stringify(
+              envelopeFromTabResult({ tool: "user_browser_fill", tabId, raw: result }),
+              null,
+              2,
+            ),
+          );
         } catch (err) {
           return fail(err);
         }
       },
     );
 
-    // First-person visual — the killer demo for "what the human is looking at".
     mcp.registerTool(
       "user_browser_screenshot",
       {
         description:
-          "Capture a first-person screenshot of the HUMAN user's active browser tab via Tachyon Companion " +
-          "(what they are looking at right now). Saves the image under the workspace " +
-          "(.tachyon/companion/screenshots/) and returns a workspace-relative path plus tab metadata " +
-          "(url, title, mimeType, byteLength). Use read_file on that path for vision. " +
-          "Requires Companion paired + agent tab access. Prefer this when DOM outline is not enough " +
-          "to understand visual layout, charts, or UI state. Not agent-browser/CDP session.",
+          "Screenshot companion tabId. Saves under .tachyon/companion/screenshots/; returns workspace path.",
         inputSchema: {
+          tabId: tabIdSchema,
+          expectedDocumentToken: documentTokenSchema,
           format: z.enum(["jpeg", "png"]).optional().describe("Image format (default jpeg)"),
-          quality: z
-            .number()
-            .min(10)
-            .max(100)
-            .optional()
-            .describe("JPEG quality 10–100 (default 70). Ignored for png."),
+          quality: z.number().min(10).max(100).optional().describe("JPEG quality 10–100 (default 70)"),
           timeoutSec: tabTimeoutSchema,
         },
       },
-      async ({ format, quality, timeoutSec }) => {
+      async ({ tabId, expectedDocumentToken, format, quality, timeoutSec }) => {
         try {
           if (!deps.companionTabScreenshot) {
             return fail(new Error("user_browser_screenshot is not available."));
@@ -1703,16 +1788,35 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
             return fail(new Error(companionNotPairedMessage));
           }
           const result = await deps.companionTabScreenshot({
+            tabId,
+            expectedDocumentToken,
             format,
             quality,
             timeoutMs: timeoutSec !== undefined ? timeoutSec * 1000 : undefined,
           });
-          // Persist bytes; strip dataUrl so the multimodal path never sees a giant base64 blob.
           const facing = modelFacingScreenshotResult(result, deps.workspaceRoot);
           if (facing.kind === "persist_failed") {
             return fail(new Error(`Screenshot captured but failed to save: ${facing.reason}`));
           }
-          return ok(JSON.stringify(facing.payload, null, 2));
+          const rid =
+            typeof (result as { id?: string })?.id === "string"
+              ? (result as { id: string }).id
+              : "shot";
+          const payload =
+            facing.payload && typeof facing.payload === "object"
+              ? (facing.payload as Record<string, unknown>)
+              : {};
+          return ok(
+            JSON.stringify(
+              envelopeFromTabResult({
+                tool: "user_browser_screenshot",
+                tabId,
+                raw: { ok: true, id: rid, kind: "screenshot", ...payload },
+              }),
+              null,
+              2,
+            ),
+          );
         } catch (err) {
           return fail(err);
         }
@@ -1723,19 +1827,15 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       "user_browser_eval",
       {
         description:
-          "Run a short JavaScript expression in the MAIN world of the HUMAN user's active tab " +
-          "(page context, not the content-script isolated world). Result is JSON-stringified and capped. " +
-          "Use sparingly when DOM snapshot is insufficient. Requires agent tab access.",
+          "Evaluate a short JS expression in the MAIN world of companion tabId.",
         inputSchema: {
-          expression: z
-            .string()
-            .min(1)
-            .max(4000)
-            .describe("JS expression to evaluate (e.g. document.title, window.location.href)"),
+          tabId: tabIdSchema,
+          expectedDocumentToken: documentTokenSchema,
+          expression: z.string().min(1).max(4000).describe("JS expression"),
           timeoutSec: tabTimeoutSchema,
         },
       },
-      async ({ expression, timeoutSec }) => {
+      async ({ tabId, expectedDocumentToken, expression, timeoutSec }) => {
         try {
           if (!deps.companionTabEval) {
             return fail(new Error("user_browser_eval is not available."));
@@ -1743,11 +1843,19 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           if (!deps.companionBrowserPaired?.()) {
             return fail(new Error(companionNotPairedMessage));
           }
-          const result = await deps.companionTabEval(
+          const result = await deps.companionTabEval({
+            tabId,
+            expectedDocumentToken,
             expression,
-            timeoutSec !== undefined ? timeoutSec * 1000 : undefined,
+            timeoutMs: timeoutSec !== undefined ? timeoutSec * 1000 : undefined,
+          });
+          return ok(
+            JSON.stringify(
+              envelopeFromTabResult({ tool: "user_browser_eval", tabId, raw: result }),
+              null,
+              2,
+            ),
           );
-          return ok(JSON.stringify(result, null, 2));
         } catch (err) {
           return fail(err);
         }
@@ -1757,15 +1865,15 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     mcp.registerTool(
       "user_browser_console",
       {
-        description:
-          "Read recent console.* lines from the HUMAN user's active tab (captured by Companion). " +
-          "Useful for JS errors the human is hitting. Requires agent tab access.",
+        description: "Read recent console.* lines from companion tabId.",
         inputSchema: {
+          tabId: tabIdSchema,
+          expectedDocumentToken: documentTokenSchema,
           limit: z.number().int().min(1).max(100).optional().describe("Max lines (default 30)"),
           timeoutSec: tabTimeoutSchema,
         },
       },
-      async ({ limit, timeoutSec }) => {
+      async ({ tabId, expectedDocumentToken, limit, timeoutSec }) => {
         try {
           if (!deps.companionTabConsole) {
             return fail(new Error("user_browser_console is not available."));
@@ -1773,11 +1881,19 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           if (!deps.companionBrowserPaired?.()) {
             return fail(new Error(companionNotPairedMessage));
           }
-          const result = await deps.companionTabConsole(
+          const result = await deps.companionTabConsole({
+            tabId,
+            expectedDocumentToken,
             limit,
-            timeoutSec !== undefined ? timeoutSec * 1000 : undefined,
+            timeoutMs: timeoutSec !== undefined ? timeoutSec * 1000 : undefined,
+          });
+          return ok(
+            JSON.stringify(
+              envelopeFromTabResult({ tool: "user_browser_console", tabId, raw: result }),
+              null,
+              2,
+            ),
           );
-          return ok(JSON.stringify(result, null, 2));
         } catch (err) {
           return fail(err);
         }
