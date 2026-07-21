@@ -307,6 +307,50 @@ export type CompanionTabCommand =
       ref?: string;
       selector?: string;
       checked: boolean;
+    } & CompanionTabTarget)
+  | ({
+      id: string;
+      kind: "drag";
+      at: string;
+      sourceRef?: string;
+      sourceSelector?: string;
+      targetRef?: string;
+      targetSelector?: string;
+    } & CompanionTabTarget)
+  | ({
+      id: string;
+      kind: "upload";
+      at: string;
+      ref?: string;
+      selector?: string;
+      files: Array<{ name: string; mimeType: string; base64: string }>;
+    } & CompanionTabTarget)
+  | ({
+      id: string;
+      kind: "download";
+      at: string;
+      /** Click this element to start the download (optional if only wait). */
+      ref?: string;
+      selector?: string;
+      /** Max wait for chrome.downloads to complete (ms). */
+      timeoutMs?: number;
+    } & CompanionTabTarget)
+  | ({
+      id: string;
+      kind: "network";
+      at: string;
+      limit?: number;
+      /** Substring filter on URL. */
+      urlContains?: string;
+    } & CompanionTabTarget)
+  | ({ id: string; kind: "list_frames"; at: string } & CompanionTabTarget)
+  | ({
+      id: string;
+      kind: "dialog";
+      at: string;
+      action: "accept" | "dismiss" | "read";
+      /** Optional text for prompt-like dialogs (HTML dialog polyfill). */
+      text?: string;
     } & CompanionTabTarget);
 
 export type CompanionTabErrorCode =
@@ -410,7 +454,19 @@ export type CompanionTabResult =
   | {
       ok: true;
       id: string;
-      kind: "navigate" | "scroll" | "press_key" | "wait_for" | "tab_activate" | "tab_close" | "hover" | "select_option" | "check";
+      kind:
+        | "navigate"
+        | "scroll"
+        | "press_key"
+        | "wait_for"
+        | "tab_activate"
+        | "tab_close"
+        | "hover"
+        | "select_option"
+        | "check"
+        | "drag"
+        | "upload"
+        | "dialog";
       tabId: string;
       documentToken?: string;
       url?: string;
@@ -426,6 +482,47 @@ export type CompanionTabResult =
       documentToken: string;
       url: string;
       title: string;
+    }
+  | {
+      ok: true;
+      id: string;
+      kind: "download";
+      tabId: string;
+      documentToken?: string;
+      filename: string;
+      /** Absolute path on the browser host when known; else empty. */
+      path: string;
+      state: string;
+      mime?: string;
+      byteLength?: number;
+    }
+  | {
+      ok: true;
+      id: string;
+      kind: "network";
+      tabId: string;
+      documentToken?: string;
+      entries: Array<{
+        url: string;
+        method: string;
+        statusCode?: number;
+        type?: string;
+        error?: string;
+        at: string;
+      }>;
+    }
+  | {
+      ok: true;
+      id: string;
+      kind: "list_frames";
+      tabId: string;
+      documentToken?: string;
+      frames: Array<{
+        frameId: number;
+        parentFrameId: number;
+        url: string;
+        errorOccurred?: boolean;
+      }>;
     }
   | {
       ok: true;

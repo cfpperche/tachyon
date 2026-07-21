@@ -31,7 +31,14 @@ _Board is source of execution order; this file tracks SDD hygiene._
 
 ## Phase 5 — P1 (board)
 
-- [ ] `t-97c49a` … through `t-e7d917` per umbrella  
+- [x] `t-97c49a` directed get
+- [x] `t-1dfdfd` hover/select/check (+ `t-fc80bc` drag)
+- [x] `t-c5ad8e` screenshot full_page/element scopes
+- [x] `t-429a08` find text
+- [x] `t-d65e35` upload/download
+- [x] `t-25d335` list_frames + shadow pierce + dialog
+- [x] `t-e7d917` network log (redacted)
+  
 
 ## Verification
 

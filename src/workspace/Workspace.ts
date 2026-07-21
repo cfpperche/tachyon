@@ -1665,6 +1665,47 @@ export class Workspace {
               timeoutMs: opts.timeoutMs,
             },
           ),
+        companionTabDrag: (opts) =>
+          this.companionTab.requestDrag(
+            { tabId: opts.tabId, expectedDocumentToken: opts.expectedDocumentToken },
+            {
+              sourceRef: opts.sourceRef,
+              sourceSelector: opts.sourceSelector,
+              targetRef: opts.targetRef,
+              targetSelector: opts.targetSelector,
+              timeoutMs: opts.timeoutMs,
+            },
+          ),
+        companionTabUpload: (opts) =>
+          this.companionTab.requestUpload(
+            { tabId: opts.tabId, expectedDocumentToken: opts.expectedDocumentToken },
+            {
+              ref: opts.ref,
+              selector: opts.selector,
+              files: opts.files,
+              timeoutMs: opts.timeoutMs,
+            },
+          ),
+        companionTabDownload: (opts) =>
+          this.companionTab.requestDownload(
+            { tabId: opts.tabId, expectedDocumentToken: opts.expectedDocumentToken },
+            { ref: opts.ref, selector: opts.selector, timeoutMs: opts.timeoutMs },
+          ),
+        companionTabNetwork: (opts) =>
+          this.companionTab.requestNetwork(
+            { tabId: opts.tabId, expectedDocumentToken: opts.expectedDocumentToken },
+            { limit: opts.limit, urlContains: opts.urlContains, timeoutMs: opts.timeoutMs },
+          ),
+        companionTabListFrames: (opts) =>
+          this.companionTab.requestListFrames(
+            { tabId: opts.tabId, expectedDocumentToken: opts.expectedDocumentToken },
+            opts.timeoutMs,
+          ),
+        companionTabDialog: (opts) =>
+          this.companionTab.requestDialog(
+            { tabId: opts.tabId, expectedDocumentToken: opts.expectedDocumentToken },
+            { action: opts.action, text: opts.text, timeoutMs: opts.timeoutMs },
+          ),
 
         deliverNotice: (target, line, metadata) => this.deliverNotice(target, line, metadata),
         sourceNoticeMetadata: (agent) => this.sourceNoticeMetadata(agent),

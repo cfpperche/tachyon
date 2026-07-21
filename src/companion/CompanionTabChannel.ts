@@ -85,7 +85,29 @@ type CommandBody =
       label?: string;
       index?: number;
     } & TabTarget)
-  | ({ kind: "check"; ref?: string; selector?: string; checked: boolean } & TabTarget);
+  | ({ kind: "check"; ref?: string; selector?: string; checked: boolean } & TabTarget)
+  | ({
+      kind: "drag";
+      sourceRef?: string;
+      sourceSelector?: string;
+      targetRef?: string;
+      targetSelector?: string;
+    } & TabTarget)
+  | ({
+      kind: "upload";
+      ref?: string;
+      selector?: string;
+      files: Array<{ name: string; mimeType: string; base64: string }>;
+    } & TabTarget)
+  | ({
+      kind: "download";
+      ref?: string;
+      selector?: string;
+      timeoutMs?: number;
+    } & TabTarget)
+  | ({ kind: "network"; limit?: number; urlContains?: string } & TabTarget)
+  | ({ kind: "list_frames" } & TabTarget)
+  | ({ kind: "dialog"; action: "accept" | "dismiss" | "read"; text?: string } & TabTarget);
 
 interface Pending {
   command: CompanionTabCommand;
@@ -502,6 +524,101 @@ export class CompanionTabChannel {
         selector: opts.selector,
         checked: opts.checked,
       },
+      opts.timeoutMs,
+    );
+  }
+
+  requestDrag(
+    target: TabTarget,
+    opts: {
+      sourceRef?: string;
+      sourceSelector?: string;
+      targetRef?: string;
+      targetSelector?: string;
+      timeoutMs?: number;
+    },
+  ): Promise<CompanionTabResult> {
+    requireTarget(target);
+    return this.request(
+      {
+        kind: "drag",
+        ...target,
+        sourceRef: opts.sourceRef,
+        sourceSelector: opts.sourceSelector,
+        targetRef: opts.targetRef,
+        targetSelector: opts.targetSelector,
+      },
+      opts.timeoutMs,
+    );
+  }
+
+  requestUpload(
+    target: TabTarget,
+    opts: {
+      ref?: string;
+      selector?: string;
+      files: Array<{ name: string; mimeType: string; base64: string }>;
+      timeoutMs?: number;
+    },
+  ): Promise<CompanionTabResult> {
+    requireTarget(target);
+    return this.request(
+      {
+        kind: "upload",
+        ...target,
+        ref: opts.ref,
+        selector: opts.selector,
+        files: opts.files,
+      },
+      opts.timeoutMs,
+    );
+  }
+
+  requestDownload(
+    target: TabTarget,
+    opts: { ref?: string; selector?: string; timeoutMs?: number },
+  ): Promise<CompanionTabResult> {
+    requireTarget(target);
+    return this.request(
+      {
+        kind: "download",
+        ...target,
+        ref: opts.ref,
+        selector: opts.selector,
+        timeoutMs: opts.timeoutMs,
+      },
+      opts.timeoutMs,
+    );
+  }
+
+  requestNetwork(
+    target: TabTarget,
+    opts?: { limit?: number; urlContains?: string; timeoutMs?: number },
+  ): Promise<CompanionTabResult> {
+    requireTarget(target);
+    return this.request(
+      {
+        kind: "network",
+        ...target,
+        limit: opts?.limit,
+        urlContains: opts?.urlContains,
+      },
+      opts?.timeoutMs,
+    );
+  }
+
+  requestListFrames(target: TabTarget, timeoutMs?: number): Promise<CompanionTabResult> {
+    requireTarget(target);
+    return this.request({ kind: "list_frames", ...target }, timeoutMs);
+  }
+
+  requestDialog(
+    target: TabTarget,
+    opts: { action: "accept" | "dismiss" | "read"; text?: string; timeoutMs?: number },
+  ): Promise<CompanionTabResult> {
+    requireTarget(target);
+    return this.request(
+      { kind: "dialog", ...target, action: opts.action, text: opts.text },
       opts.timeoutMs,
     );
   }

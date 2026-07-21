@@ -1,5 +1,6 @@
 import { z, type ZodErrorMap } from "zod";
 import fs from "node:fs";
+import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { AgentManager } from "../agents/AgentManager.js";
 import { TmuxQueueError, type TmuxService } from "../tmux/TmuxService.js";
@@ -261,6 +262,49 @@ export interface BridgeDeps {
     ref?: string;
     selector?: string;
     checked: boolean;
+    timeoutMs?: number;
+  }) => Promise<unknown>;
+  companionTabDrag?: (opts: {
+    tabId: string;
+    expectedDocumentToken?: string;
+    sourceRef?: string;
+    sourceSelector?: string;
+    targetRef?: string;
+    targetSelector?: string;
+    timeoutMs?: number;
+  }) => Promise<unknown>;
+  companionTabUpload?: (opts: {
+    tabId: string;
+    expectedDocumentToken?: string;
+    ref?: string;
+    selector?: string;
+    files: Array<{ name: string; mimeType: string; base64: string }>;
+    timeoutMs?: number;
+  }) => Promise<unknown>;
+  companionTabDownload?: (opts: {
+    tabId: string;
+    expectedDocumentToken?: string;
+    ref?: string;
+    selector?: string;
+    timeoutMs?: number;
+  }) => Promise<unknown>;
+  companionTabNetwork?: (opts: {
+    tabId: string;
+    expectedDocumentToken?: string;
+    limit?: number;
+    urlContains?: string;
+    timeoutMs?: number;
+  }) => Promise<unknown>;
+  companionTabListFrames?: (opts: {
+    tabId: string;
+    expectedDocumentToken?: string;
+    timeoutMs?: number;
+  }) => Promise<unknown>;
+  companionTabDialog?: (opts: {
+    tabId: string;
+    expectedDocumentToken?: string;
+    action: "accept" | "dismiss" | "read";
+    text?: string;
     timeoutMs?: number;
   }) => Promise<unknown>;
   /**
@@ -2525,6 +2569,266 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
             detail: checked ? "checked" : "unchecked",
           });
           return ok(JSON.stringify(envelopeFromTabResult({ tool: "user_browser_check", tabId, raw: result }), null, 2));
+        } catch (err) {
+          return fail(err);
+        }
+      },
+    );
+
+    // ---- SDD 420 P1 residual ----
+    mcp.registerTool(
+      "user_browser_drag",
+      {
+        description: "Drag from source element to target on companion tabId (prefer @e refs).",
+        inputSchema: {
+          tabId: tabIdSchema,
+          expectedDocumentToken: documentTokenSchema,
+          sourceRef: refSchema,
+          sourceSelector: selectorSchema,
+          targetRef: refSchema,
+          targetSelector: selectorSchema,
+          timeoutSec: tabTimeoutSchema,
+        },
+      },
+      async ({ tabId, expectedDocumentToken, sourceRef, sourceSelector, targetRef, targetSelector, timeoutSec }) => {
+        try {
+          if (!deps.companionTabDrag) return fail(new Error("user_browser_drag unavailable"));
+          if (!deps.companionBrowserPaired?.()) return fail(new Error(companionNotPairedMessage));
+          if (!sourceRef?.trim() && !sourceSelector?.trim()) {
+            return fail(new Error("sourceRef or sourceSelector required"));
+          }
+          if (!targetRef?.trim() && !targetSelector?.trim()) {
+            return fail(new Error("targetRef or targetSelector required"));
+          }
+          const result = await deps.companionTabDrag({
+            tabId,
+            expectedDocumentToken,
+            sourceRef,
+            sourceSelector,
+            targetRef,
+            targetSelector,
+            timeoutMs: timeoutSec !== undefined ? timeoutSec * 1000 : undefined,
+          });
+          appendMutationLog(deps.workspaceRoot, {
+            at: new Date().toISOString(),
+            tool: "user_browser_drag",
+            tabId,
+            status: "applied",
+          });
+          return ok(JSON.stringify(envelopeFromTabResult({ tool: "user_browser_drag", tabId, raw: result }), null, 2));
+        } catch (err) {
+          return fail(err);
+        }
+      },
+    );
+
+    mcp.registerTool(
+      "user_browser_upload",
+      {
+        description:
+          "Upload workspace file(s) into an <input type=file> on companion tabId. Paths are relative to workspace root (or absolute under it).",
+        inputSchema: {
+          tabId: tabIdSchema,
+          expectedDocumentToken: documentTokenSchema,
+          ref: refSchema,
+          selector: selectorSchema,
+          paths: z
+            .array(z.string().min(1).max(500))
+            .min(1)
+            .max(5)
+            .describe("Workspace-relative file paths to attach"),
+          timeoutSec: tabTimeoutSchema,
+        },
+      },
+      async ({ tabId, expectedDocumentToken, ref, selector, paths, timeoutSec }) => {
+        try {
+          if (!deps.companionTabUpload) return fail(new Error("user_browser_upload unavailable"));
+          if (!deps.companionBrowserPaired?.()) return fail(new Error(companionNotPairedMessage));
+          const root = path.resolve(deps.workspaceRoot);
+          const files: Array<{ name: string; mimeType: string; base64: string }> = [];
+          for (const p of paths) {
+            const abs = path.resolve(root, p);
+            if (!abs.startsWith(root + path.sep) && abs !== root) {
+              return fail(new Error(`Path escapes workspace: ${p}`));
+            }
+            if (!fs.existsSync(abs) || !fs.statSync(abs).isFile()) {
+              return fail(new Error(`Not a file: ${p}`));
+            }
+            const st = fs.statSync(abs);
+            if (st.size > 5 * 1024 * 1024) {
+              return fail(new Error(`File too large (>5MB): ${p}`));
+            }
+            const buf = fs.readFileSync(abs);
+            const ext = path.extname(abs).toLowerCase();
+            const mime =
+              ext === ".png"
+                ? "image/png"
+                : ext === ".jpg" || ext === ".jpeg"
+                  ? "image/jpeg"
+                  : ext === ".pdf"
+                    ? "application/pdf"
+                    : ext === ".txt" || ext === ".md"
+                      ? "text/plain"
+                      : ext === ".json"
+                        ? "application/json"
+                        : "application/octet-stream";
+            files.push({ name: path.basename(abs), mimeType: mime, base64: buf.toString("base64") });
+          }
+          const result = await deps.companionTabUpload({
+            tabId,
+            expectedDocumentToken,
+            ref,
+            selector,
+            files,
+            timeoutMs: timeoutSec !== undefined ? timeoutSec * 1000 : undefined,
+          });
+          appendMutationLog(deps.workspaceRoot, {
+            at: new Date().toISOString(),
+            tool: "user_browser_upload",
+            tabId,
+            status: "applied",
+            detail: paths.join(","),
+          });
+          return ok(JSON.stringify(envelopeFromTabResult({ tool: "user_browser_upload", tabId, raw: result }), null, 2));
+        } catch (err) {
+          return fail(err);
+        }
+      },
+    );
+
+    mcp.registerTool(
+      "user_browser_download",
+      {
+        description:
+          "Trigger a download on companion tabId (optional click on ref) and wait for chrome.downloads result. Requires human confirm class when gated as download.",
+        inputSchema: {
+          tabId: tabIdSchema,
+          expectedDocumentToken: documentTokenSchema,
+          ref: refSchema,
+          selector: selectorSchema,
+          timeoutSec: tabTimeoutSchema,
+        },
+      },
+      async ({ tabId, expectedDocumentToken, ref, selector, timeoutSec }) => {
+        try {
+          if (!deps.companionTabDownload) return fail(new Error("user_browser_download unavailable"));
+          if (!deps.companionBrowserPaired?.()) return fail(new Error(companionNotPairedMessage));
+          const gated = gateMutation({
+            tool: "user_browser_download",
+            tabId,
+            selector: selector ?? "download",
+            ref,
+            text: "download",
+          });
+          if (!gated.ok) return ok(gated.env);
+          const result = await deps.companionTabDownload({
+            tabId,
+            expectedDocumentToken,
+            ref,
+            selector,
+            timeoutMs: timeoutSec !== undefined ? timeoutSec * 1000 : undefined,
+          });
+          appendMutationLog(deps.workspaceRoot, {
+            at: new Date().toISOString(),
+            tool: "user_browser_download",
+            tabId,
+            status: "applied",
+          });
+          return ok(
+            JSON.stringify(envelopeFromTabResult({ tool: "user_browser_download", tabId, raw: result }), null, 2),
+          );
+        } catch (err) {
+          return fail(err);
+        }
+      },
+    );
+
+    mcp.registerTool(
+      "user_browser_network",
+      {
+        description:
+          "Recent network requests for companion tabId (method, url, status). No cookies/Authorization bodies — redacted.",
+        inputSchema: {
+          tabId: tabIdSchema,
+          expectedDocumentToken: documentTokenSchema,
+          limit: z.number().int().min(1).max(100).optional(),
+          urlContains: z.string().max(300).optional(),
+          timeoutSec: tabTimeoutSchema,
+        },
+      },
+      async ({ tabId, expectedDocumentToken, limit, urlContains, timeoutSec }) => {
+        try {
+          if (!deps.companionTabNetwork) return fail(new Error("user_browser_network unavailable"));
+          if (!deps.companionBrowserPaired?.()) return fail(new Error(companionNotPairedMessage));
+          const result = await deps.companionTabNetwork({
+            tabId,
+            expectedDocumentToken,
+            limit,
+            urlContains,
+            timeoutMs: timeoutSec !== undefined ? timeoutSec * 1000 : undefined,
+          });
+          return ok(
+            JSON.stringify(envelopeFromTabResult({ tool: "user_browser_network", tabId, raw: result }), null, 2),
+          );
+        } catch (err) {
+          return fail(err);
+        }
+      },
+    );
+
+    mcp.registerTool(
+      "user_browser_list_frames",
+      {
+        description: "List frames/iframes for companion tabId (frameId, parent, url).",
+        inputSchema: {
+          tabId: tabIdSchema,
+          expectedDocumentToken: documentTokenSchema,
+          timeoutSec: tabTimeoutSchema,
+        },
+      },
+      async ({ tabId, expectedDocumentToken, timeoutSec }) => {
+        try {
+          if (!deps.companionTabListFrames) return fail(new Error("user_browser_list_frames unavailable"));
+          if (!deps.companionBrowserPaired?.()) return fail(new Error(companionNotPairedMessage));
+          const result = await deps.companionTabListFrames({
+            tabId,
+            expectedDocumentToken,
+            timeoutMs: timeoutSec !== undefined ? timeoutSec * 1000 : undefined,
+          });
+          return ok(
+            JSON.stringify(envelopeFromTabResult({ tool: "user_browser_list_frames", tabId, raw: result }), null, 2),
+          );
+        } catch (err) {
+          return fail(err);
+        }
+      },
+    );
+
+    mcp.registerTool(
+      "user_browser_dialog",
+      {
+        description:
+          "Read/accept/dismiss an open HTML <dialog> or role=dialog on companion tabId (native window.alert needs browser UI).",
+        inputSchema: {
+          tabId: tabIdSchema,
+          expectedDocumentToken: documentTokenSchema,
+          action: z.enum(["accept", "dismiss", "read"]),
+          text: z.string().max(500).optional(),
+          timeoutSec: tabTimeoutSchema,
+        },
+      },
+      async ({ tabId, expectedDocumentToken, action, text, timeoutSec }) => {
+        try {
+          if (!deps.companionTabDialog) return fail(new Error("user_browser_dialog unavailable"));
+          if (!deps.companionBrowserPaired?.()) return fail(new Error(companionNotPairedMessage));
+          const result = await deps.companionTabDialog({
+            tabId,
+            expectedDocumentToken,
+            action,
+            text,
+            timeoutMs: timeoutSec !== undefined ? timeoutSec * 1000 : undefined,
+          });
+          return ok(JSON.stringify(envelopeFromTabResult({ tool: "user_browser_dialog", tabId, raw: result }), null, 2));
         } catch (err) {
           return fail(err);
         }
