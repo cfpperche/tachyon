@@ -1,7 +1,7 @@
 # Companion Mobile v1 — research (Tachyon-first)
 
-_Status: research deliverable for board `t-619157` (2026-07-21)._  
-_Author: grok. **Not an SDD** — decisions below are **proposals for maintainer ratify** before scaffolding a product SDD._  
+_Status: **ratified** 2026-07-21 (maintainer). Product SDD: `docs/specs/422-companion-mobile-v1/`. Board umbrella: `t-af2c9b`._  
+_Research task: `t-619157` (done). Author: grok._  
 _Orca / other products: **reference only** (appendix). Not a blueprint._
 
 ## 1. Problem (Tachyon)
@@ -157,18 +157,18 @@ Phone is high-risk if it can dump terminals or run arbitrary host actions. **Fai
 - Full terminal multiplex on phone
 - Offline engine (phone cannot run fleet alone)
 
-## 9. Proposed decision table (for maintainer ratify)
+## 9. Decision table — **RATIFIED 2026-07-21**
 
-| # | Topic | Proposal | Alternatives |
+| # | Topic | Decision | Alternatives rejected |
 |---|---|---|---|
 | M1 | Form | PWA / local web in `apps/mobile` | RN later |
-| M2 | Network | Opt-in LAN bind + QR pair | Tunnel-only dogfood |
-| M3 | Protocol | Extend `/companion/v1` + existing pair; `client.kind=mobile` | New `/mobile/v1` namespace (avoid unless needed) |
-| M4 | Concurrent devices | Prefer browser+mobile co-exist if low cost; else last-pair-wins documented | Force single device |
-| M5 | Caps | Roster + attention + prompt + approvals only | Add read_output (reject for v1) |
-| M6 | ADE scope | Minimal: LAN flag, QR/baseUrl, static mobile assets | Full Bridge redesign (reject) |
-| M7 | SDD | New SDD after ratify (do not reopen 414) | Fold into 414 (reject) |
-| M8 | Board | Close `t-619157` on this doc; implement under `t-fe52f0` + child slices | — |
+| M2 | Network | Opt-in LAN bind + QR pair | Tunnel-only only / cloud |
+| M3 | Protocol | Extend `/companion/v1` + existing pair; `client.kind=mobile` | New `/mobile/v1` namespace |
+| M4 | Concurrent devices | Prefer browser+mobile co-exist if low cost; else last-pair-wins documented | Force single device forever |
+| M5 | Caps | Roster + attention + prompt + approvals only | read_output / full terminal |
+| M6 | ADE scope | Minimal: LAN flag, QR/baseUrl, static mobile assets | Full Bridge redesign / `t-784bc8` |
+| M7 | SDD | `422-companion-mobile-v1` | Fold into 414 |
+| M8 | Board | Umbrella `t-af2c9b` + `t-fe52f0` frente 2 | — |
 
 ## 10. Suggested implementation order (after ratify)
 
