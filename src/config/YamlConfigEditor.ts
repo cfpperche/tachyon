@@ -238,6 +238,20 @@ export function deleteSchedule(text: string, name: string): EditResult {
   return { text: String(doc), warnings: [] };
 }
 
+/**
+ * SDD 414 — set settings.companion.tabTools (human Control toggle).
+ * Requires an existing tachyon.yml (agents already declared).
+ * Persists explicit true/false so the opt-in is visible in the file.
+ */
+export function setCompanionTabTools(text: string | undefined, enabled: boolean): EditResult {
+  if (text === undefined || text.trim().length === 0) {
+    throw new Error("create an agent first — Companion settings need an existing tachyon.yml");
+  }
+  const doc = load(text);
+  doc.setIn(["settings", "companion", "tabTools"], enabled);
+  return { text: String(doc), warnings: [] };
+}
+
 /** 0-based line of a schedule's entry. */
 export function scheduleEntryLine(text: string, name: string): number | undefined {
   return entryLineIn(text, "schedules", name);

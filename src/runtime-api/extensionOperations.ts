@@ -29,7 +29,7 @@ const schedule = z.union([
 
 export const EXTENSION_QUERY_ACTIONS = [
   "agents.list", "attention.list", "pins.list", "commands.list", "runbooks.list", "schedules.list", "proposals.list",
-  "doctor.report", "bridge.token", "companion.pair-code", "agent.inspect", "agent.fork-preview", "prompt.catalog", "worktree.review",
+  "doctor.report", "bridge.token", "companion.pair-code", "companion.status", "agent.inspect", "agent.fork-preview", "prompt.catalog", "worktree.review",
   "worktrees.list", "pipeline.inspect", "agent.wait", "soul.profile.status", "legacy-delivery.retirement-preview",
   "tmux.snapshot", "tmux.health", "tmux.capture",
 ] as const;
@@ -38,6 +38,7 @@ export const EXTENSION_COMMAND_ACTIONS = [
   "pipeline.seed", "agent.spawn", "pin.create", "command.run", "command.tick", "runbook.run", "proposal.create",
   "proposal.approve", "proposal.reject", "approval.resolve", "config.agent.add", "config.agent.clone",
   "config.agent.rename", "config.agent.delete", "config.agent.promote", "config.command.delete", "config.runbook.delete",
+  "config.companion.tabTools",
   "agent.fork", "worktree.remove", "worktree.delete-branch", "agent.verify", "agent.reanchor",
   "agent.inject-continuity", "agent.resume-all", "workspace.stop-all", "pipeline.start", "pipeline.approve",
   "pipeline.reject", "pipeline.cancel", "pipeline.rerun", "pipeline.dismiss", "pipeline.apply-input", "pipeline.delete",
@@ -64,6 +65,7 @@ export const extensionQuerySchema = z.union([
   z.object({ action: z.literal("legacy-delivery.retirement-preview") }).strict(),
   z.object({ action: z.literal("bridge.token") }).strict(),
   z.object({ action: z.literal("companion.pair-code") }).strict(),
+  z.object({ action: z.literal("companion.status") }).strict(),
   z.object({ action: z.literal("agent.inspect"), agent: name }).strict(),
   z.object({ action: z.literal("agent.fork-preview"), agent: name }).strict(),
   z.object({ action: z.literal("soul.profile.status"), agent: name }).strict(),
@@ -116,6 +118,7 @@ export const extensionCommandSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("config.agent.promote"), agent: name }).strict(),
   z.object({ action: z.literal("config.command.delete"), name }).strict(),
   z.object({ action: z.literal("config.runbook.delete"), name }).strict(),
+  z.object({ action: z.literal("config.companion.tabTools"), enabled: z.boolean() }).strict(),
   z.object({ action: z.literal("agent.fork"), agent: name }).strict(),
   z.object({ action: z.literal("worktree.remove"), agent: name }).strict(),
   z.object({ action: z.literal("worktree.delete-branch"), branch: text(512, 1) }).strict(),

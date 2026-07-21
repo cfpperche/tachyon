@@ -18,6 +18,7 @@ import {
   revealPathAction,
   copyTextAction,
   openConfigFileAction,
+  setCompanionTabToolsAction,
   type CockpitHostMessage,
   type CockpitStrings,
 } from "./messages";
@@ -300,6 +301,7 @@ function Root() {
       onRevealPath={(path) => post(revealPathAction(path))}
       onCopyText={(text) => post(copyTextAction(text))}
       onOpenConfigFile={(wsHash) => post(openConfigFileAction(wsHash))}
+      onSetCompanionTabTools={(wsHash, enabled) => post(setCompanionTabToolsAction(wsHash, enabled))}
       onPost={(action) => post(action)}
       missionVm={missionVm}
       missionError={missionError}

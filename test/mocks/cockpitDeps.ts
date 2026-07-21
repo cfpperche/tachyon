@@ -38,6 +38,7 @@ export function makeFakeCockpitDeps(missionBoard: CockpitMissionBoard, overrides
     openConfigFile: async () => {},
     clearEngineLog: async () => {},
     openEngineJournal: () => {},
+    setCompanionTabTools: async () => {},
     ...overrides,
   };
 }

@@ -96,6 +96,15 @@ export interface CockpitStrings {
   settingsOpenTachyon: string;
   settingsOpenConfig: string;
   settingsDoctor: string;
+  companionTitle: string;
+  companionHint: string;
+  companionBody: string;
+  companionTabTools: string;
+  companionTabToolsHelp: string;
+  companionPaired: string;
+  companionNotPaired: string;
+  companionPickWorkspace: string;
+  companionBaseUrl: string;
   declared: string;
   adhoc: string;
   agent: string;
@@ -119,7 +128,9 @@ export type CockpitAction =
   | { type: "copyText"; text: string }
   | { type: "openConfigFile"; wsHash?: string }
   | { type: "engineLogClear"; wsHash: string }
-  | { type: "engineLogJournal"; wsHash: string };
+  | { type: "engineLogJournal"; wsHash: string }
+  /** SDD 414 — patch settings.companion.tabTools for one workspace. */
+  | { type: "setCompanionTabTools"; wsHash: string; enabled: boolean };
 
 export type CockpitHostMessage =
   | { type: typeof INIT; strings: CockpitStrings }
@@ -161,6 +172,11 @@ export const openConfigFileAction = (wsHash?: string): CockpitAction => ({
 });
 export const engineLogClearAction = (wsHash: string): CockpitAction => ({ type: "engineLogClear", wsHash });
 export const engineLogJournalAction = (wsHash: string): CockpitAction => ({ type: "engineLogJournal", wsHash });
+export const setCompanionTabToolsAction = (wsHash: string, enabled: boolean): CockpitAction => ({
+  type: "setCompanionTabTools",
+  wsHash,
+  enabled,
+});
 
 export const initMessage = (strings: CockpitStrings): CockpitHostMessage => ({ type: INIT, strings });
 export const modelMessage = (model: CockpitModel): CockpitHostMessage => ({ type: MODEL, model });

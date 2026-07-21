@@ -125,6 +125,8 @@ export interface CockpitDeps {
   openConfigFile: (wsHash?: string) => Promise<void>;
   clearEngineLog: (wsHash: string) => Promise<void>;
   openEngineJournal: (wsHash: string) => void;
+  /** SDD 414 — settings.companion.tabTools for one workspace engine. */
+  setCompanionTabTools: (wsHash: string, enabled: boolean) => Promise<void>;
 }
 
 function strings(): CockpitStrings {
@@ -223,6 +225,17 @@ function strings(): CockpitStrings {
     settingsOpenTachyon: t("Open Tachyon settings"),
     settingsOpenConfig: t("Open tachyon.yml"),
     settingsDoctor: t("Run Doctor"),
+    companionTitle: t("Companion tab tools"),
+    companionHint: t("First-person browser tools for agents (user_browser_*)."),
+    companionBody: t(
+      "When on, agents see user_browser_* tools on the Bridge. Pairing Tachyon Companion is still required to run them. Agent tab access in the extension controls page inject/capture trust — a separate switch.",
+    ),
+    companionTabTools: t("List Companion tab tools for agents"),
+    companionTabToolsHelp: t("Writes settings.companion.tabTools in tachyon.yml and refreshes the Bridge tool list."),
+    companionPaired: t("Paired"),
+    companionNotPaired: t("Not paired"),
+    companionPickWorkspace: t("Select a single workspace in the header to manage Companion tab tools."),
+    companionBaseUrl: t("Engine Base URL"),
     declared: t("declared"),
     adhoc: t("ad-hoc"),
     agent: t("agent"),
@@ -812,6 +825,23 @@ export async function openCockpit(
           if (typeof c.wsHash === "string" && c.wsHash) {
             try {
               deps.openEngineJournal(c.wsHash);
+            } catch (err) {
+              live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err)));
+            }
+          }
+          return;
+        case "setCompanionTabTools":
+          if (typeof c.wsHash === "string" && c.wsHash && typeof c.enabled === "boolean") {
+            try {
+              await deps.setCompanionTabTools(c.wsHash, c.enabled);
+              await sendModel();
+              live.webview.postMessage(
+                toastMessage(
+                  c.enabled
+                    ? vscode.l10n.t("Companion tab tools listed for agents")
+                    : vscode.l10n.t("Companion tab tools hidden from agents"),
+                ),
+              );
             } catch (err) {
               live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err)));
             }

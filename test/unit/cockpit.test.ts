@@ -50,6 +50,12 @@ describe("cockpit model", () => {
           ],
           approvals: [{ id: "a1", status: "pending" }],
           tmux: { state: "healthy", version: "3.4" },
+          companion: {
+            tabTools: true,
+            paired: true,
+            baseUrl: "http://127.0.0.1:7421",
+            engineLabel: "tachyon",
+          },
         },
       ],
       { section: "overview", nowIso: "now" },
@@ -60,6 +66,41 @@ describe("cockpit model", () => {
     expect(m.overview.approvalsPending).toBe(1);
     expect(m.fleet).toHaveLength(2);
     expect(m.tmux[0]?.state).toBe("healthy");
+    expect(m.companion).toEqual({
+      wsHash: "abc",
+      folderName: "tachyon",
+      tabTools: true,
+      paired: true,
+      baseUrl: "http://127.0.0.1:7421",
+      engineLabel: "tachyon",
+    });
+    expect(m.companionNeedsWorkspacePick).toBeUndefined();
+  });
+
+  it("marks companion settings as needing a workspace pick when All is selected with multi roots", () => {
+    const m = buildCockpitModel(
+      [
+        {
+          control: { folderName: "a", workspaceRoot: "/a", wsHash: "h1", bridgeUrl: "http://127.0.0.1:1/mcp" },
+          agents: [],
+          worktrees: [],
+          deliveries: [],
+          approvals: [],
+          companion: { tabTools: true, paired: false },
+        },
+        {
+          control: { folderName: "b", workspaceRoot: "/b", wsHash: "h2", bridgeUrl: "http://127.0.0.1:2/mcp" },
+          agents: [],
+          worktrees: [],
+          deliveries: [],
+          approvals: [],
+          companion: { tabTools: false, paired: true },
+        },
+      ],
+      { section: "settings", nowIso: "now" },
+    );
+    expect(m.companion).toBeUndefined();
+    expect(m.companionNeedsWorkspacePick).toBe(true);
   });
 
   // t-d16a39 — shell-level workspace scope

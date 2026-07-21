@@ -101,6 +101,16 @@ export const strings: CockpitStrings = {
   settingsOpenTachyon: "Open Tachyon settings",
   settingsOpenConfig: "Open tachyon.yml",
   settingsDoctor: "Run Doctor",
+  companionTitle: "Companion tab tools",
+  companionHint: "First-person browser tools for agents (user_browser_*).",
+  companionBody:
+    "When on, agents see user_browser_* tools on the Bridge. Pairing Tachyon Companion is still required to run them. Agent tab access in the extension controls page inject/capture trust — a separate switch.",
+  companionTabTools: "List Companion tab tools for agents",
+  companionTabToolsHelp: "Writes settings.companion.tabTools in tachyon.yml and refreshes the Bridge tool list.",
+  companionPaired: "Paired",
+  companionNotPaired: "Not paired",
+  companionPickWorkspace: "Select a single workspace in the header to manage Companion tab tools.",
+  companionBaseUrl: "Engine Base URL",
   declared: "declared",
   adhoc: "ad-hoc",
   agent: "agent",
@@ -158,6 +168,12 @@ const bundles: CockpitWorkspaceBundle[] = [
     ],
     approvals: [{ id: "a-0499c7", status: "pending", title: "Approve prune abandon" }],
     tmux: { state: "healthy", version: "3.4" },
+    companion: {
+      tabTools: true,
+      paired: true,
+      baseUrl: "http://127.0.0.1:7421",
+      engineLabel: "tachyon",
+    },
   },
 ];
 
@@ -186,6 +202,12 @@ const goldenBundle: CockpitWorkspaceBundle = {
   deliveries: [],
   approvals: [],
   tmux: { state: "healthy", version: "3.4" },
+  companion: {
+    tabTools: false,
+    paired: false,
+    baseUrl: "http://127.0.0.1:7431",
+    engineLabel: "golem",
+  },
 };
 
 const now = "2026-07-16T18:40:00.000Z";

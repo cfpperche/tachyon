@@ -832,3 +832,78 @@ main.ck-main.ck-main--mission,
   font-size: 10px;
   word-break: break-all;
 }
+
+/* Settings — Companion tab tools (SDD 414) */
+.ck-settings-block {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.35));
+}
+
+.ck-settings-block-title {
+  margin: 0 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--vscode-foreground);
+}
+
+.ck-settings-block-hint {
+  margin: 0 0 8px;
+  font-size: 11px;
+  color: var(--ds-muted);
+}
+
+.ck-settings-block-body {
+  margin: 0 0 10px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--vscode-foreground);
+}
+
+.ck-settings-toggle {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin: 0 0 10px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.ck-settings-toggle input {
+  margin-top: 2px;
+  flex: 0 0 auto;
+}
+
+.ck-settings-toggle-help {
+  display: block;
+  margin-top: 2px;
+  font-size: 10px;
+  color: var(--ds-muted);
+  font-weight: normal;
+}
+
+.ck-settings-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+  font-size: 11px;
+}
+
+.ck-settings-status .ck-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.ck-settings-status .ck-badge.ok {
+  background: color-mix(in srgb, var(--vscode-testing-iconPassed, #3ba55d) 22%, transparent);
+  color: var(--vscode-testing-iconPassed, #3ba55d);
+}
+
+.ck-settings-status .ck-badge.muted {
+  background: color-mix(in srgb, var(--ds-muted, #888) 18%, transparent);
+  color: var(--ds-muted, #888);
+}

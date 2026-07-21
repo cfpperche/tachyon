@@ -83,6 +83,18 @@ export interface CockpitApprovalRow {
   title?: string;
 }
 
+/** SDD 414 — Companion tab tools (Bridge list opt-in) + live pair status for Control Settings. */
+export interface CockpitCompanionSettings {
+  wsHash: string;
+  folderName: string;
+  /** settings.companion.tabTools — tools listed on Bridge when true. */
+  tabTools: boolean;
+  /** Companion device session live on this engine. */
+  paired: boolean;
+  baseUrl?: string;
+  engineLabel?: string;
+}
+
 export interface CockpitWorkspaceBundle {
   control: ControlInspectorWorkspaceInput;
   agents: CockpitAgentRow[];
@@ -90,6 +102,7 @@ export interface CockpitWorkspaceBundle {
   deliveries: CockpitDeliveryRow[];
   approvals: CockpitApprovalRow[];
   tmux?: { state: string; version?: string };
+  companion?: Omit<CockpitCompanionSettings, "wsHash" | "folderName">;
 }
 
 export interface CockpitModel {
@@ -116,6 +129,13 @@ export interface CockpitModel {
   deliveries: CockpitDeliveryRow[];
   approvals: CockpitApprovalRow[];
   tmux: Array<{ folder: string; state: string; version?: string }>;
+  /**
+   * Companion settings for the scoped workspace (single selection, or sole workspace).
+   * Undefined when "All workspaces" with multiple roots — UI asks to pick one.
+   */
+  companion?: CockpitCompanionSettings;
+  /** True when multiple workspaces are in scope and none is selected for Companion settings. */
+  companionNeedsWorkspacePick?: boolean;
 }
 
 export function buildCockpitModel(
@@ -153,6 +173,23 @@ export function buildCockpitModel(
   const worktreesActive = worktrees.filter((w) => w.status === "active").length;
   const approvalsPending = approvals.filter((a) => !a.status || a.status === "pending").length;
 
+  // Companion tabTools UI needs exactly one workspace in scope.
+  let companion: CockpitCompanionSettings | undefined;
+  let companionNeedsWorkspacePick = false;
+  if (scoped.length === 1) {
+    const b = scoped[0]!;
+    companion = {
+      wsHash: b.control.wsHash,
+      folderName: b.control.folderName,
+      tabTools: b.companion?.tabTools === true,
+      paired: b.companion?.paired === true,
+      baseUrl: b.companion?.baseUrl,
+      engineLabel: b.companion?.engineLabel,
+    };
+  } else if (scoped.length > 1) {
+    companionNeedsWorkspacePick = true;
+  }
+
   return {
     checkedAt: control.checkedAt,
     section: opts?.section && COCKPIT_SECTION_ORDER.includes(opts.section) ? opts.section : "overview",
@@ -180,6 +217,8 @@ export function buildCockpitModel(
     deliveries,
     approvals,
     tmux,
+    ...(companion ? { companion } : {}),
+    ...(companionNeedsWorkspacePick ? { companionNeedsWorkspacePick: true } : {}),
   };
 }
 

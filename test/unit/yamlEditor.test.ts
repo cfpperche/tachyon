@@ -9,6 +9,7 @@ import {
   upsertRunbook,
   deleteRunbook,
   runbookEntryLine,
+  setCompanionTabTools,
 } from "../../src/config/YamlConfigEditor.js";
 import { parseConfig } from "../../src/config/loadConfig.js";
 import schema from "../../src/config/tachyon.schema.json";
@@ -261,5 +262,19 @@ terminals:
     const { text } = deleteAgent(oneEach, "dev");
     expect(text).not.toContain("terminals:"); // empty block removed
     expect(expectValid(text).agents.a.kind).toBe("agent");
+  });
+});
+
+describe("setCompanionTabTools (SDD 414)", () => {
+  it("writes settings.companion.tabTools true/false and stays loadable", () => {
+    const on = setCompanionTabTools(YML, true).text;
+    expect(expectValid(on).settings.companion?.tabTools).toBe(true);
+    expect(on).toMatch(/companion:[\s\S]*tabTools:\s*true/);
+    const off = setCompanionTabTools(on, false).text;
+    expect(expectValid(off).settings.companion?.tabTools).toBe(false);
+  });
+
+  it("refuses empty yml", () => {
+    expect(() => setCompanionTabTools(undefined, true)).toThrow("existing tachyon.yml");
   });
 });

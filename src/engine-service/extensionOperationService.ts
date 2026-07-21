@@ -15,6 +15,7 @@ import {
   deleteAgent,
   deleteCommand,
   deleteRunbook,
+  setCompanionTabTools,
 } from "../config/YamlConfigEditor.js";
 import { isResumable } from "../resume/SessionLedger.js";
 import { PromptStore } from "../prompts/PromptStore.js";
@@ -90,6 +91,16 @@ export async function executeExtensionQuery(
       return json(workspace.legacyDeliveryRetirement.preview());
     case "bridge.token":
       return json({ token: workspace.externalToken ?? null, authEnabled: workspace.authEnabled });
+    case "companion.status": {
+      // SDD 414 — Control Settings: tabTools opt-in + live pair presence (not host trust).
+      const port = workspace.bridge.listenerPort;
+      return json({
+        tabTools: workspace.config?.settings.companion?.tabTools === true,
+        paired: workspace.companion.hasPairedDevice(),
+        baseUrl: port === undefined ? undefined : `http://127.0.0.1:${port}`,
+        engineLabel: path.basename(workspace.workspaceRoot) || "tachyon",
+      });
+    }
     case "companion.pair-code": {
       // SDD 414 — short-lived companion pair code + loopback base URL for Tachyon Companion.
       const issued = workspace.issueCompanionPairCode();
@@ -297,6 +308,12 @@ export async function executeExtensionCommand(
       return configMutation(workspace, () => workspace.mutateConfig(
         (text) => deleteRunbook(text ?? "", command.name),
         () => onViewsChanged("commands"),
+      ));
+    case "config.companion.tabTools":
+      // SDD 414 — human Control toggle; reloadConfig announces tool list change when the bit flips.
+      return configMutation(workspace, () => workspace.mutateConfig(
+        (text) => setCompanionTabTools(text, command.enabled),
+        () => onViewsChanged("agents"),
       ));
     case "agent.fork":
       return forkAgent(workspace, activityLog, command.agent);

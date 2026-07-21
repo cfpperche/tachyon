@@ -1218,6 +1218,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           tmux = { state: "unknown" };
         }
 
+        let companion: CockpitWorkspaceBundle["companion"];
+        try {
+          const st = jsonObject(await extensionQuery(ws, { action: "companion.status" }), "companion.status");
+          companion = {
+            tabTools: st.tabTools === true,
+            paired: st.paired === true,
+            baseUrl: typeof st.baseUrl === "string" ? st.baseUrl : undefined,
+            engineLabel: typeof st.engineLabel === "string" ? st.engineLabel : undefined,
+          };
+        } catch {
+          /* engine without companion.status (older) or offline */
+        }
+
         bundles.push({
           control: {
             folderName: ws.folderName,
@@ -1238,6 +1251,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           deliveries: readGitDeliveriesFromDisk(ws.workspaceRoot, { folder: ws.folderName, wsHash: ws.wsHash }),
           approvals: [], // pending list is owned by Approvals panel; deep-link for resolve
           tmux,
+          ...(companion ? { companion } : {}),
         });
       }
       return bundles;
@@ -1350,6 +1364,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       term.show();
       // follow journal for this workspace engine unit
       term.sendText(`journalctl --user -u ${JSON.stringify(unit)} -n 200 -f`, true);
+    },
+    setCompanionTabTools: async (wsHash, enabled) => {
+      const ws = byHash(wsHash);
+      if (!ws) throw new Error("no Tachyon workspace for that hash");
+      await extensionInvoke(ws, { action: "config.companion.tabTools", enabled });
     },
   });
 

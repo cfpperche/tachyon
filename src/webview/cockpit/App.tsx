@@ -102,6 +102,8 @@ export interface CockpitAppProps {
   onRevealPath: (path: string) => void;
   onCopyText: (text: string) => void;
   onOpenConfigFile: (wsHash?: string) => void;
+  /** SDD 414 — settings.companion.tabTools for the scoped workspace. */
+  onSetCompanionTabTools: (wsHash: string, enabled: boolean) => void;
   /** Low-level post for Engine log actions (clear/journal/copy). */
   onPost: (action: CockpitAction) => void;
   /** Embedded Mission Control board (same Preact App as the standalone panel). */
@@ -647,6 +649,7 @@ export function App(p: CockpitAppProps) {
     );
   } else {
     // settings (and any unknown section fallback)
+    const companion = m.companion;
     body = (
       <ModuleChrome title={s.settingsTitle} hint={s.settingsHint}>
         <div class="ck-panel" data-testid="control-settings">
@@ -655,12 +658,54 @@ export function App(p: CockpitAppProps) {
             <Button variant="default" onClick={p.onOpenSettings}>
               {s.settingsOpenTachyon}
             </Button>
-            <Button variant="default" onClick={() => p.onOpenConfigFile(m.control.workspaces[0]?.wsHash)}>
+            <Button
+              variant="default"
+              onClick={() => p.onOpenConfigFile(companion?.wsHash ?? m.control.workspaces[0]?.wsHash)}
+            >
               {s.settingsOpenConfig}
             </Button>
             <Button variant="default" onClick={p.onOpenDoctor}>
               {s.settingsDoctor}
             </Button>
+          </div>
+
+          <div class="ck-settings-block" data-testid="control-settings-companion">
+            <h3 class="ck-settings-block-title">{s.companionTitle}</h3>
+            <p class="ck-settings-block-hint">{s.companionHint}</p>
+            {m.companionNeedsWorkspacePick ? (
+              <p class="ck-settings-block-body dim">{s.companionPickWorkspace}</p>
+            ) : companion ? (
+              <>
+                <p class="ck-settings-block-body">{s.companionBody}</p>
+                <label class="ck-settings-toggle">
+                  <input
+                    type="checkbox"
+                    checked={companion.tabTools}
+                    data-testid="companion-tab-tools-toggle"
+                    onChange={(e) =>
+                      p.onSetCompanionTabTools(companion.wsHash, (e.target as HTMLInputElement).checked)
+                    }
+                  />
+                  <span>
+                    <strong>{s.companionTabTools}</strong>
+                    <span class="ck-settings-toggle-help">{s.companionTabToolsHelp}</span>
+                  </span>
+                </label>
+                <div class="ck-settings-status" data-testid="companion-pair-status">
+                  <span class={`ck-badge ${companion.paired ? "ok" : "muted"}`}>
+                    {companion.paired ? s.companionPaired : s.companionNotPaired}
+                  </span>
+                  {companion.baseUrl ? (
+                    <span class="ck-mono" title={s.companionBaseUrl}>
+                      {companion.baseUrl}
+                    </span>
+                  ) : null}
+                  <span class="dim">{companion.folderName}</span>
+                </div>
+              </>
+            ) : (
+              <p class="ck-settings-block-body dim">{s.empty}</p>
+            )}
           </div>
         </div>
       </ModuleChrome>
