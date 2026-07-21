@@ -6,7 +6,15 @@ _In-flight design memory — decisions, deviations, tradeoffs, and open question
 
 ## Design decisions
 
-_Choices made where the spec/plan was ambiguous. The decision + why this option over the others considered in the moment._
+- 2026-07-21 — The maintainer directed all remaining SDD 421 work to stay in one isolated managed
+  worktree. Tachyon created
+  `/home/goat/.cache/tachyon/worktrees/b349073a/change/agent-evolution` on
+  `tachyon/change/agent-evolution` from spec commit `ea6b50df`.
+- 2026-07-21 — The maintainer approved the architecture in `plan.md` without changes. The spec moved
+  to `in-progress`; implementation will follow the five sequential slices in `tasks.md`.
+- 2026-07-21 — Mission Control decomposition: umbrella `t-6c351f`; Slice 1 `t-87cc14`; Slice 2
+  `t-fc8279`; Slice 3 `t-0fa8ba`; Slice 4 `t-cec393`; Slice 5 `t-6218bf`. Dependencies enforce the
+  approved delivery order.
 
 ## Deviations
 
@@ -19,3 +27,9 @@ _Alternatives weighed mid-build. The chosen path + what was given up + why it wa
 ## Open questions
 
 _Questions surfaced during the build with no answer yet. Owner or path to resolution if known._
+
+## Architecture validation
+
+- 2026-07-21 — `git diff --check` passed; SDD ids are unique; no scaffold placeholders remain.
+- 2026-07-21 — `npm run verify:full:quiet` passed: 457 files, 5,180 tests passed and 3 skipped.
+- 2026-07-21 — `npm run typecheck` passed.
