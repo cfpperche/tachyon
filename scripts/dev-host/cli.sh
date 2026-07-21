@@ -261,16 +261,105 @@ find_code() {
   node "$RESOLVE_CODE" "$REPO"
 }
 
+# Explicit desktop GUI intent (t-fe621b). Isolation of fixture/tmux/cache does NOT prevent
+# Electron from opening a visible window on the human DISPLAY and stealing focus.
+gui_intent() {
+  case "${TACHYON_DEV_HOST_GUI:-${TACHYON_EDH_GUI:-}}" in
+    1|true|yes|YES|True) return 0 ;;
+  esac
+  local a
+  for a in "$@"; do
+    case "$a" in
+      --gui|--desktop) return 0 ;;
+    esac
+  done
+  return 1
+}
+
+# Locate monorepo F5 pointer meta if present (worktree or primary).
+f5_pointer_meta() {
+  if [ -f "$REPO/.tachyon/dev-host/meta.json" ]; then
+    printf '%s\n' "$REPO/.tachyon/dev-host/meta.json"
+    return 0
+  fi
+  local common primary
+  common="$(git -C "$REPO" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+  if [ -n "$common" ]; then
+    primary="$(dirname "$common")"
+    if [ -f "$primary/.tachyon/dev-host/meta.json" ]; then
+      printf '%s\n' "$primary/.tachyon/dev-host/meta.json"
+      return 0
+    fi
+  fi
+  return 1
+}
+
+require_gui_launch() {
+  if gui_intent "$@"; then
+    return 0
+  fi
+  cat >&2 <<'EOF'
+dev-host: refusing GUI `launch` without explicit desktop intent (t-fe621b).
+
+  `launch` opens a *visible* Extension Development Host on the human DISPLAY.
+  Fixture isolation (TACHYON_DEV_HOST_ID, private XDG/tmux) does **not** prevent
+  focus steal — a second EDH still interrupts an active session / F5 dogfood.
+
+Safe routes:
+  • Automated / agent dogfood →  npm run dogfood:dev-host -- headless
+  • Human F5 (preferred GUI)  →  npm run dogfood:dev-host -- point … then F5
+  • Intentional secondary GUI →  npm run dogfood:dev-host -- launch --gui
+                                 or TACHYON_DEV_HOST_GUI=1 npm run dogfood:dev-host -- launch
+
+See docs/runbooks/dev-host.md § GUI launch consent.
+EOF
+  exit 1
+}
+
+preflight_gui_launch() {
+  # Never mutates F5 pointer or foreign fixtures; only warns / refuses ambiguity.
+  if [ -n "${TACHYON_AGENT_NAME:-}" ]; then
+    info "WARNING: agent-driven GUI launch (caller TACHYON_AGENT_NAME=${TACHYON_AGENT_NAME})."
+    info "This will open/focus a desktop window. Prefer: npm run dogfood:dev-host -- headless"
+  fi
+  local meta
+  if meta="$(f5_pointer_meta)"; then
+    local o s w
+    o="$(python3 -c 'import json,sys; m=json.load(open(sys.argv[1])); print(m.get("owner") or "")' "$meta" 2>/dev/null || true)"
+    s="$(python3 -c 'import json,sys; m=json.load(open(sys.argv[1])); print(m.get("spec") or "")' "$meta" 2>/dev/null || true)"
+    w="$(python3 -c 'import json,sys; m=json.load(open(sys.argv[1])); print(m.get("worktree") or "")' "$meta" 2>/dev/null || true)"
+    info "WARNING: F5 Dev Host pointer is armed${o:+ (owner=$o)}${s:+ spec=$s}."
+    info "Secondary launch uses a different fixture/profile and does not rebind F5,"
+    info "but still opens another visible EDH on DISPLAY=${DISPLAY:-<unset>} and can steal focus."
+    [ -n "$w" ] && info "F5 worktree: $w"
+  fi
+  # Detect a live EDH we previously recorded for *this* fixture id (same BASE/ID).
+  if [ -f "$PID_FILE" ]; then
+    local old
+    old="$(tr -d '[:space:]' <"$PID_FILE" 2>/dev/null || true)"
+    if [ -n "$old" ] && kill -0 "$old" 2>/dev/null; then
+      die "fixture already has a live EDH (pid $old). Close it or run clean after closing the window. Refusing second launch on the same TACHYON_DEV_HOST_ID."
+    fi
+  fi
+}
+
 launch() {
+  require_gui_launch "$@"
+  preflight_gui_launch
   [ -d "$WS" ] || seed
   # Always rebuild through the dev channel; stale stable dist must never enter an Extension Development Host.
-  info "building dev-channel extension"
-  (cd "$REPO" && npm run build)
+  # Unit tests may set TACHYON_DEV_HOST_SKIP_BUILD=1 (fake code binary only).
+  if [ "${TACHYON_DEV_HOST_SKIP_BUILD:-${TACHYON_EDH_SKIP_BUILD:-}}" = "1" ]; then
+    info "skipping build (TACHYON_DEV_HOST_SKIP_BUILD=1)"
+  else
+    info "building dev-channel extension"
+    (cd "$REPO" && npm run build)
+  fi
   local code_bin
   if ! code_bin="$(find_code)"; then
     die "refusing EDH launch without a compatible VS Code executable"
   fi
-  info "launching EDH with $code_bin"
+  info "launching GUI EDH with $code_bin (explicit TACHYON_DEV_HOST_GUI / --gui)"
   info "isolation: TMUX_TMPDIR=$TMUX_DIR XDG_CACHE_HOME=$CACHE_HOME XDG_STATE_HOME=$STATE_HOME XDG_DATA_HOME=$DATA_HOME"
   # Background: return control to the caller (Codex/368 stays untouched).
   if [ "${TACHYON_DEV_HOST_FOREGROUND:-${TACHYON_EDH_FOREGROUND:-}}" = "1" ]; then
@@ -509,7 +598,7 @@ Commands:
   seed         Create isolated CLI fixture (valid config + LKG + ledger) [secondary]
   break        Arm fail-visible scenario (dangling subagent)
   restore      Restore valid tachyon.yml in the fixture
-  launch       Open GUI Extension Development Host via CLI [secondary]
+  launch       Open GUI EDH via CLI [secondary; requires --gui or TACHYON_DEV_HOST_GUI=1]
   resolve-code Print the compatible VS Code executable for Dev Host
   headless     Xvfb Dev Host + in-host runner (S1 fail-visible asserts)
   shortlist    Headless Chromium screenshots: mermaid | grok-activity | handoff-distill
@@ -523,6 +612,7 @@ Examples:
        --fixture foo --spec 381 --slug foo
   npm run dogfood:dev-host -- fixture-new --slug demo --spec 393 --intent focus
   npm run dogfood:dev-host -- headless
+  npm run dogfood:dev-host -- launch --gui   # secondary desktop EDH (steals focus!)
   npm run dogfood:dev-host -- shortlist mermaid
 
 Env (new preferred; old still accepted):
@@ -532,6 +622,8 @@ Env (new preferred; old still accepted):
   TACHYON_DEV_HOST_DISPLAY / TACHYON_EDH_DISPLAY      Xvfb display (default: :96)
   TACHYON_DEV_HOST_HEADLESS_TIMEOUT / TACHYON_EDH_HEADLESS_TIMEOUT  seconds (default: 120)
   TACHYON_DEV_HOST_FOREGROUND=1 / TACHYON_EDH_FOREGROUND=1  launch GUI in foreground
+  TACHYON_DEV_HOST_GUI=1 / TACHYON_EDH_GUI=1                 required consent for visible launch
+  launch --gui                                                 same consent via flag
   TACHYON_SHORTLIST_OUT       evidence root (default .tachyon/evidence/ui-shortlist)
   TACHYON_CHROME              Chrome/Chromium binary for preview shots
 
@@ -544,7 +636,7 @@ case "$CMD" in
   seed) seed ;;
   break) break_config ;;
   restore) restore_config ;;
-  launch) launch ;;
+  launch) launch "$@" ;;
   resolve-code) find_code ;;
   headless) headless ;;
   shortlist) shortlist "$@" ;;

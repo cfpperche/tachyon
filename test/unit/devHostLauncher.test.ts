@@ -76,7 +76,28 @@ describe("Dev Host VS Code resolver", () => {
 });
 
 describe("Dev Host child launch isolation", () => {
-  it("scrubs live agent identity, uses fixture-private state, and enables in-memory secret storage", () => {
+  it("refuses GUI launch without explicit desktop intent (t-fe621b)", () => {
+    const root = temporaryRoot("edh-launch-refuse");
+    const base = path.join(root, "fixtures");
+    const fakeCode = executable(path.join(root, "native-code"));
+    const result = spawnSync("bash", [launcher, "launch"], {
+      cwd: path.resolve("."),
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        TACHYON_DEV_HOST_BASE: base,
+        TACHYON_DEV_HOST_ID: "refuse",
+        TACHYON_EDH_CODE: fakeCode,
+        TACHYON_AGENT_NAME: "live-agent",
+      },
+    });
+    expect(result.status, result.stderr || result.stdout).toBe(1);
+    expect(result.stderr).toMatch(/refusing GUI `launch` without explicit desktop intent/);
+    expect(result.stderr).toMatch(/headless/);
+    expect(result.stderr).toMatch(/launch --gui/);
+  });
+
+  it("accepts --gui consent and still scrubs live agent identity into fixture-private state", () => {
     const root = temporaryRoot("edh-launch");
     const base = path.join(root, "fixtures");
     const capture = path.join(root, "capture");
@@ -84,7 +105,7 @@ describe("Dev Host child launch isolation", () => {
       path.join(root, "native-code"),
       '#!/usr/bin/env bash\nprintf "%s\\n" "$@" >"${EDH_TEST_CAPTURE}.args"\nenv >"${EDH_TEST_CAPTURE}.env"\n',
     );
-    const result = spawnSync("bash", [launcher, "launch"], {
+    const result = spawnSync("bash", [launcher, "launch", "--gui"], {
       cwd: path.resolve("."),
       encoding: "utf8",
       env: {
@@ -93,6 +114,8 @@ describe("Dev Host child launch isolation", () => {
         TACHYON_DEV_HOST_ID: "isolation",
         TACHYON_EDH_CODE: fakeCode,
         TACHYON_EDH_FOREGROUND: "1",
+        TACHYON_DEV_HOST_GUI: "1",
+        TACHYON_DEV_HOST_SKIP_BUILD: "1",
         EDH_TEST_CAPTURE: capture,
         ELECTRON_RUN_AS_NODE: "1",
         TACHYON_AGENT_BRIDGE_TOKEN: "agent-secret",
@@ -115,6 +138,7 @@ describe("Dev Host child launch isolation", () => {
     });
 
     expect(result.status, result.stderr || result.stdout).toBe(0);
+    expect(result.stdout + result.stderr).toMatch(/agent-driven GUI launch/);
     const args = fs.readFileSync(`${capture}.args`, "utf8").trim().split("\n");
     const childEnv = new Map(
       fs.readFileSync(`${capture}.env`, "utf8").trim().split("\n").map((line) => {

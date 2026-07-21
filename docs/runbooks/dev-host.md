@@ -192,19 +192,36 @@ Requirements: `Xvfb`, and a compatible VS Code test/native binary. The resolver 
 
 ## Optional: GUI launch
 
+### GUI launch consent (t-fe621b)
+
+`launch` opens a **visible** Extension Development Host on the human `DISPLAY`. Fixture isolation
+(`TACHYON_DEV_HOST_ID`, private XDG/tmux/user-data) does **not** prevent focus steal — a second
+desktop EDH still interrupts an active session or an F5 dogfood already on screen.
+
+| Mode | Command | When |
+|------|---------|------|
+| **Automated / agent** | `npm run dogfood:dev-host -- headless` | Default for agents — Xvfb, no desktop focus |
+| **Human F5 (preferred GUI)** | `point` … then F5 `Tachyon: Dev Host` | Shared monorepo pointer; one owner at a time |
+| **Secondary desktop GUI** | `launch --gui` or `TACHYON_DEV_HOST_GUI=1 … launch` | Explicit only; prints warnings if F5 is armed or caller is an agent |
+
+Without `--gui` / `TACHYON_DEV_HOST_GUI=1`, `launch` **fails closed** and points at the safe routes above.
+A second `launch` on the **same** `TACHYON_DEV_HOST_ID` while the recorded EDH pid is still alive is also refused.
+
 From the repo root (any clean-enough tree; prefer the SHA under test):
 
 ```bash
 # 1) Seed an isolated fixture (prints paths + the exact launch command)
 npm run dogfood:dev-host -- seed
 
-# 2) Launch EDH (always rebuilds the dev channel before opening)
-npm run dogfood:dev-host -- launch
+# 2) Launch EDH only with explicit GUI consent (always rebuilds the dev channel before opening)
+npm run dogfood:dev-host -- launch --gui
+# or: TACHYON_DEV_HOST_GUI=1 npm run dogfood:dev-host -- launch
 ```
 
 
 The exact manual equivalent, including its private environment, is printed by `seed`; use that output instead of
-a raw `code --extensionDevelopmentPath` command.
+a raw `code --extensionDevelopmentPath` command. Agents must not paste that launch line into automation —
+use `headless` instead.
 
 
 Record in the task note / PR:
