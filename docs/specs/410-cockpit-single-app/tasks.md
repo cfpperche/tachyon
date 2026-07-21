@@ -20,28 +20,29 @@ _Status 2026-07-19: foundation + Approvals single-path + lazy ESM shipped in cod
 
 ## Phase B — Control-family (one PR each; each PR updates WEBVIEW_SURFACES + MIGRATED_VIEWS if paths move)
 
-- [ ] Approvals complete (if not finished in A).
-- [ ] Runtime Ops.
-- [ ] Validations.
-- [ ] Plugins.
-- [ ] tmux inspector.
-- [ ] Board (mission) shell.
-- [ ] Overview/Engine/Fleet/Worktrees/Deliveries/Settings shell audit.
+**COMPLETE 2026-07-21** — all seven landed (t-610705 journal has per-item evidence/commits).
 
-## Phase C — Multi-instance class (interim step, not the final state — see override below)
+- [x] Approvals complete (CSS co-load pilot).
+- [x] Runtime Ops (co-load; dead RuntimeOpsView removed, t-ed3067).
+- [x] Validations.
+- [x] Plugins (co-load + standalone retirement, t-d23f93, after the shell workspace selector t-d16a39).
+- [x] tmux inspector (co-load + standalone retirement).
+- [x] Board (mission) shell (co-load + standalone retirement; bounded liveness ported to src/cockpit/missionVm.ts).
+- [x] Overview/Engine/Fleet/Worktrees/Deliveries/Settings shell audit (ck-pill→Badge, token geometry, EngineLogPanel kit adoption).
 
-- [x] Hosting decision confirmed: **B as sequencing**, not a permanent exception (maintainer, 2026-07-20, t-610705).
-- [ ] Document task detail / handoff / probes as `editorHome: "standalone"` with a forward note (Option A is the target, not a bare exception); share kit/shell components.
+## Phase C — Subroutes (supersedes the multi-instance plan — maintainer mandate, 2026-07-21)
 
-## Phase C.5 — Close the multi-instance exception (added by the 2026-07-20 override)
-
-- [ ] Design Option A: cockpit grows multi-instance / multi-tab section support.
-- [ ] Migrate Task Detail, Handoff, Probes onto it; retire their standalone hosts.
-- [ ] Update `WEBVIEW_SURFACES` (`editorHome: "cockpit"`, drop the standalone exception note).
+- [x] Mandate recorded: ALL screens open inside Control as subroutes; multi-instance exception revoked; side-by-side knowingly traded (maintainer, 2026-07-21, t-610705 journal).
+- [ ] C.0 Router: `{section, subroute, params}` + persisted revive + deep links (`openCockpit({route})`, `tachyon.*` commands become redirects) + breadcrumb/back in shell chrome. Design hardened in an adversarial dueto first.
+- [ ] C.1 Board subroutes: `mission/task/<id>` (Task Detail), `mission/task/new` + `mission/task/<id>/edit` (Task Studio); retire TaskDetailPanel + TaskStudioPanel hosts.
+- [ ] C.2 Fleet subroutes: `fleet/agent/<name>/activity` (Activity), `fleet/agent/<name>/probes` (Probes); retire ActivityPanel + ProbeResultPanel hosts.
+- [ ] C.3 Handoff section; retire HandoffPanel host.
+- [ ] C.4 Pin Studio nav-less route; retire PinStudioPanel host.
+- [x] Standing exceptions approved: plugin surfaces stay out (security isolation); dev-only spec-350 fakes stay.
 
 ## Phase D — Studios
 
-- [ ] Lazy studio routes under cockpit; StudioFrame preserved.
+- [ ] The 5 studio shells become routes on the Phase C router; StudioFrame preserved.
 - [ ] Migrate studios one PR at a time; WEBVIEW_SURFACES each time.
 
 ## Phase E — Cleanup

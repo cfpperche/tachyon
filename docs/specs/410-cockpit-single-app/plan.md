@@ -72,32 +72,41 @@ approval App ─┤                 ├─ sections/* (in-tree)
 Each PR DoD: lazy section; `WEBVIEW_SURFACES` update; convention + kit tests green; CSS co-load
 shrink; visual QA shell vs Fleet; size note vs 350 KB eager budget.
 
-### Phase C — Multi-instance class (blocked until decision)
+### Phase C — Subroutes (SUPERSEDES the multi-instance decision — maintainer mandate, 2026-07-21)
 
-**Key decision (architecture — pick before any Phase C code):**
+**Mandate (maintainer, 2026-07-21, t-610705): ALL screens open inside Control, as subroutes.**
+The earlier Option A/B/C framing and the 2026-07-20 override (Option B as sequencing, Option A as
+eventual target) are both superseded: instead of the cockpit growing multi-instance/multi-tab
+support, it grows an **internal router** (SPA model — Linear-style: board == task list; task
+detail / edit / new are subroutes of the board). Concurrent side-by-side instances of the same
+screen class are knowingly traded for the coherent single app (former Option C's regression,
+explicitly accepted by product).
 
-| Option | Meaning |
-|--------|---------|
-| **B (default recommendation)** | Task detail, Handoff, Probes remain **thin standalone hosts** (multi-instance `Map` managers stay). They may share kit/shell components via imports but are **not** cockpit singleton sections. Mark `editorHome: "standalone"` + exception note. |
-| A | Cockpit grows multi-instance / multi-tab section support (large design). |
-| C | Singleton-only (regress N concurrent panels) — only if product explicitly accepts. |
+**C.0 — Router (prerequisite for every group):**
+route = `{section, subroute, params}`; persisted panel state + revive carries the full route;
+deep links via `openCockpit({route})` with the `tachyon.*` open-commands becoming redirects;
+back navigation/breadcrumb in the shell chrome (e.g. `Board → t-8f86e2 → edit`). Design hardened
+in an adversarial dueto before implementation.
 
-**Override (maintainer, 2026-07-20, t-610705): Option B is a SEQUENCING choice, not a permanent
-exception.** Task Detail / Handoff / Probes stay thin standalone hosts through Phase B/C so the
-Control-family migration isn't blocked on the harder multi-instance design, but they are NOT
-exempt from the two-app rule long-term — Option A (cockpit grows multi-instance/multi-tab section
-support) is the eventual target. Mark `editorHome: "standalone"` with an explicit
-`retiredInFavorOf`-style forward note (not a bare "exception"), and open the Option A design once
-Phase B's single-instance surfaces are done.
+**Migration groups (one PR each, visual pass each):**
 
-Phase C (as originally scoped, now the INTERIM step): extract shared bodies, align shell chrome,
-optionally deep-link "open in cockpit" without killing multi-instance panels.
-Phase C.5 (new, added by the override): design + implement Option A — cockpit multi-instance
-section support — then migrate Task Detail / Handoff / Probes onto it, closing the exception.
+| Group | Surfaces | Routes |
+|-------|----------|--------|
+| C.1 Board | Task Detail, Task Studio (new/edit) | `mission/task/<id>`, `mission/task/new`, `mission/task/<id>/edit` |
+| C.2 Fleet | Activity, Probes (per-agent) | `fleet/agent/<name>/activity`, `fleet/agent/<name>/probes` |
+| C.3 Handoff | Handoff (global per-workspace dashboard) | own section `handoff` |
+| C.4 Pins | Pin Studio | nav-less route (`pins/<id>/edit` style) — opens Control directly, no nav entry |
+
+**Standing exceptions (maintainer-approved, not debt):**
+- Plugin surfaces (spec 349) stay OUT of Control — third-party iframe isolation is a security
+  boundary, not a convenience choice.
+- Dev-only fakes (pipeline-studio, agent-fixture-studio; spec 350 studio-shell scaffolding) stay
+  as-is — never registered in production.
 
 ### Phase D — Studios
 
-- Lazy routes under cockpit; `StudioFrame` preserved.
+- The 5 studio shells (Agent/Terminal/Command/Runbook/Schedule) become routes on the Phase C
+  router (`fleet/agent/new` etc.); `StudioFrame` preserved.
 - Same `WEBVIEW_SURFACES` retirement discipline.
 
 ### Phase E — Cleanup
