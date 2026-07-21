@@ -83,6 +83,7 @@ import { RuntimeLaunchPreflightError } from "../runtime/launchPreflight.js";
 import { RuntimeLaunchReadinessError } from "../runtime/launchReadiness.js";
 import { modelFacingScreenshotResult } from "../companion/screenshotPersist.js";
 import { envelopeFromTabResult } from "../companion/tabEnvelope.js";
+import { appendMutationLog, evaluateMutationSafety } from "../companion/tabSafety.js";
 
 export type NotifyLevel = "info" | "warn" | "error";
 export type NoticeDeliveryResult = { status: "notified" | "queued"; dropped?: number; queued?: number };
@@ -169,12 +170,62 @@ export interface BridgeDeps {
     limit?: number;
     timeoutMs?: number;
   }) => Promise<unknown>;
+  /** SDD 420 P0 — navigate / scroll / keys / wait / tab lifecycle. */
+  companionTabNavigate?: (opts: {
+    tabId: string;
+    expectedDocumentToken?: string;
+    action: "goto" | "back" | "forward" | "reload";
+    url?: string;
+    timeoutMs?: number;
+  }) => Promise<unknown>;
+  companionTabScroll?: (opts: {
+    tabId: string;
+    expectedDocumentToken?: string;
+    direction?: "up" | "down" | "left" | "right";
+    pixels?: number;
+    ref?: string;
+    selector?: string;
+    timeoutMs?: number;
+  }) => Promise<unknown>;
+  companionTabPressKey?: (opts: {
+    tabId: string;
+    expectedDocumentToken?: string;
+    key: string;
+    modifiers?: string[];
+    ref?: string;
+    selector?: string;
+    timeoutMs?: number;
+  }) => Promise<unknown>;
+  companionTabWaitFor?: (opts: {
+    tabId: string;
+    expectedDocumentToken?: string;
+    what: "element" | "text" | "navigation" | "load";
+    ref?: string;
+    selector?: string;
+    text?: string;
+    timeoutMs?: number;
+  }) => Promise<unknown>;
+  companionTabOpen?: (opts: {
+    url?: string;
+    active?: boolean;
+    timeoutMs?: number;
+  }) => Promise<unknown>;
+  companionTabActivate?: (opts: {
+    tabId: string;
+    timeoutMs?: number;
+  }) => Promise<unknown>;
+  companionTabClose?: (opts: {
+    tabId: string;
+    timeoutMs?: number;
+  }) => Promise<unknown>;
   /**
    * SDD 414 — human settings opt-in (settings.companion.tabTools).
    * When true, register user_browser_* tools on this Bridge request so agents can
    * discover them. Absent/false → tools omitted (no list pollution).
    */
   companionTabToolsEnabled?: () => boolean;
+  /** SDD 420 optional host allowlist. */
+  companionAllowedHosts?: () => string[] | undefined;
   /**
    * SDD 414 — true while a Companion device session is live on this engine.
    * Checked at call time when tab tools are enabled; not used to hide tools from the list.
@@ -1533,6 +1584,53 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     "to this engine. Open Tachyon Companion, pair this engine (same Base URL as the Bridge), enable " +
     "Agent tab access, then retry.";
 
+  const companionAllowedHosts = (): string[] | undefined =>
+    deps.companionAllowedHosts?.() ?? undefined;
+
+  const gateMutation = (input: {
+    tool: string;
+    tabId?: string;
+    url?: string;
+    selector?: string;
+    ref?: string;
+    text?: string;
+    submit?: boolean;
+    confirmed?: boolean;
+  }): { ok: true } | { ok: false; env: string } => {
+    const decision = evaluateMutationSafety({
+      tool: input.tool,
+      url: input.url,
+      selector: input.selector,
+      ref: input.ref,
+      text: input.text,
+      submit: input.submit,
+      allowedHosts: companionAllowedHosts(),
+      confirmed: input.confirmed,
+    });
+    if (decision.allow) return { ok: true };
+    const env = envelopeFromTabResult({
+      tool: input.tool,
+      tabId: input.tabId,
+      raw: {
+        ok: false,
+        id: "safety",
+        code: decision.code,
+        message: decision.message,
+        tabId: input.tabId,
+      },
+    });
+    appendMutationLog(deps.workspaceRoot, {
+      at: new Date().toISOString(),
+      tool: input.tool,
+      tabId: input.tabId,
+      status: env.status,
+      code: decision.code,
+      detail: decision.message,
+    });
+    return { ok: false, env: JSON.stringify(env, null, 2) };
+  };
+
+
   const tabIdSchema = z
     .string()
     .min(1)
@@ -1655,6 +1753,13 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           if (!deps.companionBrowserPaired?.()) {
             return fail(new Error(companionNotPairedMessage));
           }
+          const gated = gateMutation({
+            tool: "user_browser_click",
+            tabId,
+            selector,
+            ref,
+          });
+          if (!gated.ok) return ok(gated.env);
           const result = await deps.companionTabAct({
             kind: "click",
             tabId,
@@ -1662,6 +1767,13 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
             ref,
             selector,
             timeoutMs: timeoutSec !== undefined ? timeoutSec * 1000 : undefined,
+          });
+          appendMutationLog(deps.workspaceRoot, {
+            at: new Date().toISOString(),
+            tool: "user_browser_click",
+            tabId,
+            status: "applied",
+            detail: typeof ref === "string" ? ref : selector,
           });
           return ok(
             JSON.stringify(
@@ -1699,6 +1811,15 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           if (!deps.companionBrowserPaired?.()) {
             return fail(new Error(companionNotPairedMessage));
           }
+          const gated = gateMutation({
+            tool: "user_browser_type",
+            tabId,
+            selector,
+            ref,
+            text,
+            submit,
+          });
+          if (!gated.ok) return ok(gated.env);
           const result = await deps.companionTabAct({
             kind: "type",
             tabId,
@@ -1708,6 +1829,12 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
             text,
             submit,
             timeoutMs: timeoutSec !== undefined ? timeoutSec * 1000 : undefined,
+          });
+          appendMutationLog(deps.workspaceRoot, {
+            at: new Date().toISOString(),
+            tool: "user_browser_type",
+            tabId,
+            status: "applied",
           });
           return ok(
             JSON.stringify(
@@ -1744,6 +1871,14 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           if (!deps.companionBrowserPaired?.()) {
             return fail(new Error(companionNotPairedMessage));
           }
+          const gated = gateMutation({
+            tool: "user_browser_fill",
+            tabId,
+            selector,
+            ref,
+            text: value,
+          });
+          if (!gated.ok) return ok(gated.env);
           const result = await deps.companionTabAct({
             kind: "fill",
             tabId,
@@ -1752,6 +1887,12 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
             selector,
             value,
             timeoutMs: timeoutSec !== undefined ? timeoutSec * 1000 : undefined,
+          });
+          appendMutationLog(deps.workspaceRoot, {
+            at: new Date().toISOString(),
+            tool: "user_browser_fill",
+            tabId,
+            status: "applied",
           });
           return ok(
             JSON.stringify(
@@ -1894,6 +2035,253 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
               2,
             ),
           );
+        } catch (err) {
+          return fail(err);
+        }
+      },
+    );
+
+    mcp.registerTool(
+      "user_browser_navigate",
+      {
+        description: "Navigate companion tabId: goto URL, back, forward, or reload.",
+        inputSchema: {
+          tabId: tabIdSchema,
+          expectedDocumentToken: documentTokenSchema,
+          action: z.enum(["goto", "back", "forward", "reload"]),
+          url: z.string().url().optional().describe("Required when action=goto"),
+          timeoutSec: tabTimeoutSchema,
+        },
+      },
+      async ({ tabId, expectedDocumentToken, action, url, timeoutSec }) => {
+        try {
+          if (!deps.companionTabNavigate) return fail(new Error("user_browser_navigate unavailable"));
+          if (!deps.companionBrowserPaired?.()) return fail(new Error(companionNotPairedMessage));
+          if (action === "goto" && !url) return fail(new Error("url required for action=goto"));
+          const gated = gateMutation({
+            tool: "user_browser_navigate",
+            tabId,
+            url: action === "goto" ? url : undefined,
+          });
+          if (!gated.ok) return ok(gated.env);
+          const result = await deps.companionTabNavigate({
+            tabId,
+            expectedDocumentToken,
+            action,
+            url,
+            timeoutMs: timeoutSec !== undefined ? timeoutSec * 1000 : undefined,
+          });
+          appendMutationLog(deps.workspaceRoot, {
+            at: new Date().toISOString(),
+            tool: "user_browser_navigate",
+            tabId,
+            url,
+            status: "applied",
+            detail: action,
+          });
+          return ok(JSON.stringify(envelopeFromTabResult({ tool: "user_browser_navigate", tabId, raw: result }), null, 2));
+        } catch (err) {
+          return fail(err);
+        }
+      },
+    );
+
+    mcp.registerTool(
+      "user_browser_scroll",
+      {
+        description: "Scroll companion tabId by direction/pixels or until element ref/selector.",
+        inputSchema: {
+          tabId: tabIdSchema,
+          expectedDocumentToken: documentTokenSchema,
+          direction: z.enum(["up", "down", "left", "right"]).optional(),
+          pixels: z.number().int().min(1).max(50_000).optional(),
+          ref: refSchema,
+          selector: selectorSchema,
+          timeoutSec: tabTimeoutSchema,
+        },
+      },
+      async ({ tabId, expectedDocumentToken, direction, pixels, ref, selector, timeoutSec }) => {
+        try {
+          if (!deps.companionTabScroll) return fail(new Error("user_browser_scroll unavailable"));
+          if (!deps.companionBrowserPaired?.()) return fail(new Error(companionNotPairedMessage));
+          const result = await deps.companionTabScroll({
+            tabId,
+            expectedDocumentToken,
+            direction,
+            pixels,
+            ref,
+            selector,
+            timeoutMs: timeoutSec !== undefined ? timeoutSec * 1000 : undefined,
+          });
+          return ok(JSON.stringify(envelopeFromTabResult({ tool: "user_browser_scroll", tabId, raw: result }), null, 2));
+        } catch (err) {
+          return fail(err);
+        }
+      },
+    );
+
+    mcp.registerTool(
+      "user_browser_press_key",
+      {
+        description: "Press a key or chord on companion tabId (optional focused ref).",
+        inputSchema: {
+          tabId: tabIdSchema,
+          expectedDocumentToken: documentTokenSchema,
+          key: z.string().min(1).max(32).describe("Key name e.g. Enter, Escape, a"),
+          modifiers: z.array(z.string()).optional(),
+          ref: refSchema,
+          selector: selectorSchema,
+          timeoutSec: tabTimeoutSchema,
+        },
+      },
+      async ({ tabId, expectedDocumentToken, key, modifiers, ref, selector, timeoutSec }) => {
+        try {
+          if (!deps.companionTabPressKey) return fail(new Error("user_browser_press_key unavailable"));
+          if (!deps.companionBrowserPaired?.()) return fail(new Error(companionNotPairedMessage));
+          const gated = gateMutation({
+            tool: "user_browser_press_key",
+            tabId,
+            selector,
+            ref,
+            text: key,
+          });
+          if (!gated.ok) return ok(gated.env);
+          const result = await deps.companionTabPressKey({
+            tabId,
+            expectedDocumentToken,
+            key,
+            modifiers,
+            ref,
+            selector,
+            timeoutMs: timeoutSec !== undefined ? timeoutSec * 1000 : undefined,
+          });
+          appendMutationLog(deps.workspaceRoot, {
+            at: new Date().toISOString(),
+            tool: "user_browser_press_key",
+            tabId,
+            status: "applied",
+            detail: key,
+          });
+          return ok(JSON.stringify(envelopeFromTabResult({ tool: "user_browser_press_key", tabId, raw: result }), null, 2));
+        } catch (err) {
+          return fail(err);
+        }
+      },
+    );
+
+    mcp.registerTool(
+      "user_browser_wait_for",
+      {
+        description: "Wait on companion tabId for element, text, navigation, or load (bounded).",
+        inputSchema: {
+          tabId: tabIdSchema,
+          expectedDocumentToken: documentTokenSchema,
+          what: z.enum(["element", "text", "navigation", "load"]),
+          ref: refSchema,
+          selector: selectorSchema,
+          text: z.string().max(500).optional(),
+          timeoutSec: tabTimeoutSchema,
+        },
+      },
+      async ({ tabId, expectedDocumentToken, what, ref, selector, text, timeoutSec }) => {
+        try {
+          if (!deps.companionTabWaitFor) return fail(new Error("user_browser_wait_for unavailable"));
+          if (!deps.companionBrowserPaired?.()) return fail(new Error(companionNotPairedMessage));
+          const result = await deps.companionTabWaitFor({
+            tabId,
+            expectedDocumentToken,
+            what,
+            ref,
+            selector,
+            text,
+            timeoutMs: timeoutSec !== undefined ? timeoutSec * 1000 : undefined,
+          });
+          return ok(JSON.stringify(envelopeFromTabResult({ tool: "user_browser_wait_for", tabId, raw: result }), null, 2));
+        } catch (err) {
+          return fail(err);
+        }
+      },
+    );
+
+    mcp.registerTool(
+      "user_browser_tab_open",
+      {
+        description: "Open a new browser tab (optional URL). Returns new opaque tabId.",
+        inputSchema: {
+          url: z.string().url().optional(),
+          active: z.boolean().optional(),
+          timeoutSec: tabTimeoutSchema,
+        },
+      },
+      async ({ url, active, timeoutSec }) => {
+        try {
+          if (!deps.companionTabOpen) return fail(new Error("user_browser_tab_open unavailable"));
+          if (!deps.companionBrowserPaired?.()) return fail(new Error(companionNotPairedMessage));
+          const gated = gateMutation({
+            tool: "user_browser_tab_open",
+            url,
+          });
+          if (!gated.ok) return ok(gated.env);
+          const result = await deps.companionTabOpen({
+            url,
+            active,
+            timeoutMs: timeoutSec !== undefined ? timeoutSec * 1000 : undefined,
+          });
+          appendMutationLog(deps.workspaceRoot, {
+            at: new Date().toISOString(),
+            tool: "user_browser_tab_open",
+            url,
+            status: "applied",
+          });
+          return ok(JSON.stringify(envelopeFromTabResult({ tool: "user_browser_tab_open", raw: result }), null, 2));
+        } catch (err) {
+          return fail(err);
+        }
+      },
+    );
+
+    mcp.registerTool(
+      "user_browser_tab_activate",
+      {
+        description: "Focus/activate companion tabId in the browser.",
+        inputSchema: { tabId: tabIdSchema, timeoutSec: tabTimeoutSchema },
+      },
+      async ({ tabId, timeoutSec }) => {
+        try {
+          if (!deps.companionTabActivate) return fail(new Error("user_browser_tab_activate unavailable"));
+          if (!deps.companionBrowserPaired?.()) return fail(new Error(companionNotPairedMessage));
+          const result = await deps.companionTabActivate({
+            tabId,
+            timeoutMs: timeoutSec !== undefined ? timeoutSec * 1000 : undefined,
+          });
+          return ok(JSON.stringify(envelopeFromTabResult({ tool: "user_browser_tab_activate", tabId, raw: result }), null, 2));
+        } catch (err) {
+          return fail(err);
+        }
+      },
+    );
+
+    mcp.registerTool(
+      "user_browser_tab_close",
+      {
+        description: "Close companion tabId.",
+        inputSchema: { tabId: tabIdSchema, timeoutSec: tabTimeoutSchema },
+      },
+      async ({ tabId, timeoutSec }) => {
+        try {
+          if (!deps.companionTabClose) return fail(new Error("user_browser_tab_close unavailable"));
+          if (!deps.companionBrowserPaired?.()) return fail(new Error(companionNotPairedMessage));
+          const result = await deps.companionTabClose({
+            tabId,
+            timeoutMs: timeoutSec !== undefined ? timeoutSec * 1000 : undefined,
+          });
+          appendMutationLog(deps.workspaceRoot, {
+            at: new Date().toISOString(),
+            tool: "user_browser_tab_close",
+            tabId,
+            status: "applied",
+          });
+          return ok(JSON.stringify(envelopeFromTabResult({ tool: "user_browser_tab_close", tabId, raw: result }), null, 2));
         } catch (err) {
           return fail(err);
         }

@@ -459,6 +459,11 @@
           "description": "Tachyon Companion (browser shell) Bridge tools. Human opt-in: tabTools lists user_browser_* on the Bridge; a paired extension is still required to execute them.",
           "additionalProperties": false,
           "properties": {
+            "allowedHosts": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Optional host allowlist globs for Companion tab tools (e.g. example.com, *.example.com). Empty = all hosts."
+            },
             "tabTools": {
               "type": "boolean",
               "default": false,

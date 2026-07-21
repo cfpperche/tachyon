@@ -1570,6 +1570,52 @@ export class Workspace {
             timeoutMs: input.timeoutMs,
           });
         },
+        companionAllowedHosts: () => this.config?.settings.companion?.allowedHosts,
+        companionTabNavigate: (opts) =>
+          this.companionTab.requestNavigate(
+            { tabId: opts.tabId, expectedDocumentToken: opts.expectedDocumentToken },
+            opts.action,
+            { url: opts.url, timeoutMs: opts.timeoutMs },
+          ),
+        companionTabScroll: (opts) =>
+          this.companionTab.requestScroll(
+            { tabId: opts.tabId, expectedDocumentToken: opts.expectedDocumentToken },
+            {
+              direction: opts.direction,
+              pixels: opts.pixels,
+              ref: opts.ref,
+              selector: opts.selector,
+              timeoutMs: opts.timeoutMs,
+            },
+          ),
+        companionTabPressKey: (opts) =>
+          this.companionTab.requestPressKey(
+            { tabId: opts.tabId, expectedDocumentToken: opts.expectedDocumentToken },
+            {
+              key: opts.key,
+              modifiers: opts.modifiers,
+              ref: opts.ref,
+              selector: opts.selector,
+              timeoutMs: opts.timeoutMs,
+            },
+          ),
+        companionTabWaitFor: (opts) =>
+          this.companionTab.requestWaitFor(
+            { tabId: opts.tabId, expectedDocumentToken: opts.expectedDocumentToken },
+            {
+              what: opts.what,
+              ref: opts.ref,
+              selector: opts.selector,
+              text: opts.text,
+              timeoutMs: opts.timeoutMs,
+            },
+          ),
+        companionTabOpen: (opts) => this.companionTab.requestTabOpen(opts),
+        companionTabActivate: (opts) =>
+          this.companionTab.requestTabActivate({ tabId: opts.tabId }, opts.timeoutMs),
+        companionTabClose: (opts) =>
+          this.companionTab.requestTabClose({ tabId: opts.tabId }, opts.timeoutMs),
+
         deliverNotice: (target, line, metadata) => this.deliverNotice(target, line, metadata),
         sourceNoticeMetadata: (agent) => this.sourceNoticeMetadata(agent),
         markCompletionHint: (agent) => {

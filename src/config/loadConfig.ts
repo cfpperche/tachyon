@@ -421,7 +421,7 @@ export interface TachyonConfig {
      * calls still require a paired Companion device (clear not_paired error otherwise).
      * Default absent/false = tools not registered (no list pollution).
      */
-    companion?: { tabTools?: boolean };
+    companion?: { tabTools?: boolean; allowedHosts?: string[] };
   };
 }
 
@@ -1478,13 +1478,20 @@ export function parseConfig(yamlText: string): ParseResult {
           errors.push("settings.companion: must be a mapping with 'tabTools'");
         } else {
           const c = raw.settings.companion;
-          const out: { tabTools?: boolean } = {};
+          const out: { tabTools?: boolean; allowedHosts?: string[] } = {};
           if (c.tabTools !== undefined) {
             if (typeof c.tabTools !== "boolean") errors.push("settings.companion.tabTools: must be a boolean");
             else out.tabTools = c.tabTools;
           }
+          if (c.allowedHosts !== undefined) {
+            if (!Array.isArray(c.allowedHosts) || !c.allowedHosts.every((x: unknown) => typeof x === "string")) {
+              errors.push("settings.companion.allowedHosts: must be a string array of host globs");
+            } else {
+              (out as { allowedHosts?: string[] }).allowedHosts = c.allowedHosts as string[];
+            }
+          }
           for (const key of Object.keys(c)) {
-            if (key !== "tabTools") errors.push(`settings.companion: unknown key '${key}'`);
+            if (key !== "tabTools" && key !== "allowedHosts") errors.push(`settings.companion: unknown key '${key}'`);
           }
           if (Object.keys(out).length > 0) settings.companion = out;
         }

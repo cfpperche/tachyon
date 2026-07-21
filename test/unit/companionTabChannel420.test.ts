@@ -59,4 +59,55 @@ describe("SDD 420 CompanionTabChannel", () => {
     expect(env.retrySafe).toBe(false);
     expect(env.protocolVersion).toBe(COMPANION_PROTOCOL_VERSION);
   });
+
+  it("P0: navigate / scroll / press_key / wait_for / tab lifecycle round-trip", async () => {
+    const pushed: unknown[] = [];
+    const ch = new CompanionTabChannel({
+      push: (_ev, data) => {
+        pushed.push(data);
+      },
+    });
+    const target = { tabId: "ctab_p0" };
+    const pending = [
+      ch.requestNavigate(target, "goto", { url: "https://example.test/", timeoutMs: 50 }),
+      ch.requestScroll(target, { direction: "down", pixels: 100, timeoutMs: 50 }),
+      ch.requestPressKey(target, { key: "Escape", timeoutMs: 50 }),
+      ch.requestWaitFor(target, { what: "load", timeoutMs: 50 }),
+      ch.requestTabOpen({ url: "https://example.test/new", timeoutMs: 50 }),
+      ch.requestTabActivate(target, 50),
+      ch.requestTabClose(target, 50),
+    ];
+    expect(pushed.map((p) => (p as { kind: string }).kind)).toEqual([
+      "navigate",
+      "scroll",
+      "press_key",
+      "wait_for",
+      "tab_open",
+      "tab_activate",
+      "tab_close",
+    ]);
+    for (const cmd of pushed as Array<{ id: string; kind: string }>) {
+      if (cmd.kind === "tab_open") {
+        ch.submitResult({
+          ok: true,
+          id: cmd.id,
+          kind: "tab_open",
+          tabId: "ctab_new",
+          documentToken: "d2",
+          url: "https://example.test/new",
+          title: "New",
+        });
+      } else {
+        ch.submitResult({
+          ok: true,
+          id: cmd.id,
+          kind: cmd.kind as "navigate",
+          tabId: "ctab_p0",
+          detail: cmd.kind,
+        });
+      }
+    }
+    const results = await Promise.all(pending);
+    expect(results.every((r) => r.ok === true)).toBe(true);
+  });
 });

@@ -30,7 +30,37 @@ type CommandBody =
   | ({ kind: "type"; ref?: string; selector?: string; text: string; submit?: boolean } & TabTarget)
   | ({ kind: "fill"; ref?: string; selector?: string; value: string } & TabTarget)
   | ({ kind: "eval"; expression: string } & TabTarget)
-  | ({ kind: "console"; limit?: number } & TabTarget);
+  | ({ kind: "console"; limit?: number } & TabTarget)
+  | ({
+      kind: "navigate";
+      action: "goto" | "back" | "forward" | "reload";
+      url?: string;
+    } & TabTarget)
+  | ({
+      kind: "scroll";
+      direction?: "up" | "down" | "left" | "right";
+      pixels?: number;
+      ref?: string;
+      selector?: string;
+    } & TabTarget)
+  | ({
+      kind: "press_key";
+      key: string;
+      modifiers?: string[];
+      ref?: string;
+      selector?: string;
+    } & TabTarget)
+  | ({
+      kind: "wait_for";
+      what: "element" | "text" | "navigation" | "load";
+      ref?: string;
+      selector?: string;
+      text?: string;
+      timeoutMs?: number;
+    } & TabTarget)
+  | { kind: "tab_open"; url?: string; active?: boolean }
+  | ({ kind: "tab_activate" } & TabTarget)
+  | ({ kind: "tab_close" } & TabTarget);
 
 interface Pending {
   command: CompanionTabCommand;
@@ -209,6 +239,106 @@ export class CompanionTabChannel {
       },
       opts.timeoutMs,
     );
+  }
+
+
+  requestNavigate(
+    target: TabTarget,
+    action: "goto" | "back" | "forward" | "reload",
+    opts?: { url?: string; timeoutMs?: number },
+  ): Promise<CompanionTabResult> {
+    requireTarget(target);
+    return this.request(
+      { kind: "navigate", ...target, action, url: opts?.url },
+      opts?.timeoutMs,
+    );
+  }
+
+  requestScroll(
+    target: TabTarget,
+    opts: {
+      direction?: "up" | "down" | "left" | "right";
+      pixels?: number;
+      ref?: string;
+      selector?: string;
+      timeoutMs?: number;
+    },
+  ): Promise<CompanionTabResult> {
+    requireTarget(target);
+    return this.request(
+      {
+        kind: "scroll",
+        ...target,
+        direction: opts.direction,
+        pixels: opts.pixels,
+        ref: opts.ref,
+        selector: opts.selector,
+      },
+      opts.timeoutMs,
+    );
+  }
+
+  requestPressKey(
+    target: TabTarget,
+    opts: {
+      key: string;
+      modifiers?: string[];
+      ref?: string;
+      selector?: string;
+      timeoutMs?: number;
+    },
+  ): Promise<CompanionTabResult> {
+    requireTarget(target);
+    return this.request(
+      {
+        kind: "press_key",
+        ...target,
+        key: opts.key,
+        modifiers: opts.modifiers,
+        ref: opts.ref,
+        selector: opts.selector,
+      },
+      opts.timeoutMs,
+    );
+  }
+
+  requestWaitFor(
+    target: TabTarget,
+    opts: {
+      what: "element" | "text" | "navigation" | "load";
+      ref?: string;
+      selector?: string;
+      text?: string;
+      timeoutMs?: number;
+    },
+  ): Promise<CompanionTabResult> {
+    requireTarget(target);
+    return this.request(
+      {
+        kind: "wait_for",
+        ...target,
+        what: opts.what,
+        ref: opts.ref,
+        selector: opts.selector,
+        text: opts.text,
+        timeoutMs: opts.timeoutMs,
+      },
+      opts.timeoutMs,
+    );
+  }
+
+  requestTabOpen(opts?: { url?: string; active?: boolean; timeoutMs?: number }): Promise<CompanionTabResult> {
+    return this.request({ kind: "tab_open", url: opts?.url, active: opts?.active }, opts?.timeoutMs);
+  }
+
+  requestTabActivate(target: TabTarget, timeoutMs?: number): Promise<CompanionTabResult> {
+    requireTarget(target);
+    return this.request({ kind: "tab_activate", ...target }, timeoutMs);
+  }
+
+  requestTabClose(target: TabTarget, timeoutMs?: number): Promise<CompanionTabResult> {
+    requireTarget(target);
+    return this.request({ kind: "tab_close", ...target }, timeoutMs);
   }
 
   /** Extension fulfillment (or deny). */
