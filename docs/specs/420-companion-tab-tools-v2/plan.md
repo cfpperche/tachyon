@@ -17,12 +17,14 @@ _Draft with design (`t-a5154a`). Refine after ratify._
    classifier for sensitive mutations → append mutation log after result.
 7. **P0 tools** then dogfood fixture multi-tab; then P1 tools per board order.
 
-## Key decisions (see spec)
+## Key decisions (see spec — probe-adjusted)
 
-- tabId required; Chrome tab id as string  
-- @e preferred; selector fallback  
-- Shared envelope  
-- Safety day one  
+- Opaque companion tabId on wire; Chrome id internal  
+- Document token validation before mutate  
+- @e scoped to document generation; no silent CSS fallthrough  
+- Envelope with unknown_outcome + retrySafe  
+- Layered confirm (not heuristic-only)  
+- Redacted rotating mutations.jsonl (gitignored)  
 - New SDD 420; 414 stays shipped  
 
 ## Files likely touched (implementation, not this design commit)
@@ -30,10 +32,11 @@ _Draft with design (`t-a5154a`). Refine after ratify._
 | Area | Paths |
 |---|---|
 | Protocol | `src/companion/protocol.ts`, companion monorepo `packages/protocol` |
-| Channel | `src/companion/CompanionTabChannel.ts`, `CompanionLiveSync` if needed |
+| Channel | `src/companion/CompanionTabChannel.ts`, tab handle registry in extension |
 | Tools | `src/bridge/tools.ts`, Workspace wiring |
 | Settings | `settings.companion.allowedHosts` (schema + YamlConfigEditor) |
-| Extension | `tachyon-companion` content script, background tab router, actions |
+| Extension | tab router by handle, content script refs, confirm UX |
+| Audit | mutation log writer + redaction + rotation |
 | Config/tests | unit tests channel + tools; dogfood fixture under `test/fixtures/` |
 | Evidence | `.tachyon/companion/mutations.jsonl`, screenshots path (existing) |
 
@@ -41,10 +44,12 @@ _Draft with design (`t-a5154a`). Refine after ratify._
 
 | Risk | Mitigation |
 |---|---|
-| Chrome tab ids recycle | Fail closed on missing tab; tabs_list refresh |
-| Ref stale after DOM morph | not_found / not_applied; re-snapshot guidance in tool descriptions |
-| Confirm UX friction | Tight matrix; batch only when same navigation |
-| Protocol skew ADE ↔ extension | protocolVersion fail-closed; ship in lockstep |
+| Chrome tab ids recycle / navigate | Opaque handle + document token; fail stale_tab |
+| Ref stale after DOM morph | Scope @e to document generation; reject stale_ref |
+| Confirm false negatives/positives | Layered policy; fail closed on ambiguous consequential |
+| Unsafe retry after timeout | unknown_outcome + retrySafe=false default |
+| Log leaks secrets / git pollution | Redaction schema + gitignore + rotation |
+| Protocol skew ADE ↔ extension | protocolVersion fail-closed; mixed-version tests |
 | Network tool privacy | Default off or redact heavy; no cookie/auth headers |
 
 ## Delivery slices

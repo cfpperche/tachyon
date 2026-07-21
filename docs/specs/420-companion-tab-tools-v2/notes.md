@@ -8,30 +8,44 @@ _Created 2026-07-21._
 - 2026-07-21 — Design task `t-a5154a` active; SDD scaffolded on worktree
   `tachyon/change/companion-tab-tools-v2-design`.
 - Parent product: SDD 414 shipped (browser Companion MVP).
+- 2026-07-21 — Maintainer: design open questions always via `probe_agent` (prefer codex gpt-5.6-sol;
+  claude fable OK). Record runId in notes/journal — **not** pins (pins are human-facing).
 
-## Design decisions (draft — pending ratify)
+## Probe log
 
-See `spec.md` § Decisions. Summary lean:
+### 2026-07-21 — codex gpt-5.6-sol · adversarial-review
 
-- **tabId required** (Chrome tab id string); no active-tab default in v2.
-- **@e refs** from snapshot; selector fallback; ref wins if both.
-- **Envelope** with status applied|not_applied|timeout|error.
-- **Safety day one**: confirm matrix, secrets block, mutation jsonl, optional allowedHosts.
-- **protocolVersion** bump when wire breaks.
-- **P1 after** multi-tab dogfood.
+- **runId:** `probe-94a1a975-c98a-4c2d-bed6-7bd8fc19a745`
+- **Verdict:** **block** (ratify only after must-fix)
+- **Q1 tabId required:** modify — require + document identity validation  
+- **Q2 Chrome id on wire:** **no** — opaque companion handle  
+- **Q3 mutations.jsonl path:** modify — redaction, rotation, schema, gitignore  
+- **Q4 confirm heuristic/URL only:** **blocker** — layered policy  
+- **Q5 no P1 before dogfood:** modify — promote risk prerequisites, not product P1  
+- **Extra:** envelope needs `unknown_outcome` + no unsafe retry; @e lifecycle; protocol fail-closed  
+
+Incorporated into `spec.md` Decisions table (probe-adjusted).
+
+## Design decisions (current)
+
+See `spec.md` § Decisions. Summary:
+
+- Opaque companion **tabId** on wire; Chrome id internal.  
+- tabId **required** + document token validation before mutate.  
+- @e scoped to tab/frame/document generation; no silent CSS fallthrough.  
+- Envelope with `unknown_outcome` / `retrySafe`.  
+- Layered confirm; redacted mutation log under `.tachyon/companion/mutations.jsonl`.  
+- Dogfood gated on identity/safety prerequisites; product P1 after multi-tab dogfood.
 
 ## Deviations
 
-_None yet._
+- Original draft used Chrome tab id on the wire; probe rejected → opaque handle.
 
 ## Implementation log
 
 _Empty (design only)._
 
-## Open questions for maintainer ratify
+## Awaiting maintainer
 
-1. Confirm **tabId required** (no soft active default) — recommended yes.  
-2. Confirm **Chrome tab id** vs opaque Companion-generated id — recommended Chrome id.  
-3. Confirm **mutation log path** `.tachyon/companion/mutations.jsonl` — ok?  
-4. Confirm matrix: is “publish” heuristic enough (button labels / role=submit) or URL allowlist only?  
-5. Any P1 item that should jump ahead of P0 dogfood? (default no.)  
+**Ratify** the probe-adjusted Decisions table in `spec.md` (one “yes” is enough to close design
+and start foundation `t-f56a16`).
