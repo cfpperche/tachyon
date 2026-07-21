@@ -13,7 +13,7 @@ Existing row chrome answers *state*, not *subject*.
 
 Ship a **focus line** per AI agent row: one short string from existing sources (task → brief → continuity goal), plus **On task** / **Has focus** filters. Live-dot replaces a redundant `working` chip; tree indent replaces “delegated by” text.
 
-**POC approved** 2026-07-16 — `docs/prototypes/agent-focus-line.html`.  
+**POC approved** 2026-07-16 — `docs/specs/390-agent-focus-line/prototype.html`.
 **Dogfood closed** 2026-07-16 — fixture `test/fixtures/agent-focus-line-dogfood` + Dev Host.
 
 ## Acceptance criteria

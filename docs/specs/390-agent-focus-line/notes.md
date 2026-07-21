@@ -10,8 +10,8 @@ Interactive HTML (no runtime wiring yet):
 
 ```bash
 # open in browser
-xdg-open docs/prototypes/agent-focus-line.html
-# or: file:///…/docs/prototypes/agent-focus-line.html
+xdg-open docs/specs/390-agent-focus-line/prototype.html
+# or: file:///…/docs/specs/390-agent-focus-line/prototype.html
 ```
 
 **Idea under test:** one truncated **focus line** under each agent row.

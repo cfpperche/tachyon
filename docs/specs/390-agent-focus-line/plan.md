@@ -1,6 +1,6 @@
 # 390 — agent-focus-line — plan
 
-_POC approved 2026-07-16 (`docs/prototypes/agent-focus-line.html` + screenshot)._
+_POC approved 2026-07-16 (`docs/specs/390-agent-focus-line/prototype.html` + screenshot)._
 
 ## Approach
 
@@ -90,7 +90,7 @@ priority:  task (MC assignee, open)  →  spawn brief / taskBrief  →  continui
 
 ## Sources
 
-- POC `docs/prototypes/agent-focus-line.html` (approved)
+- POC `docs/specs/390-agent-focus-line/prototype.html` (approved)
 - Screenshot 2026-07-16 fleet + POC
 - `inferKind` / Agents vs Terminals
 - Tasks: `OPEN_TASK_STATUSES`, assignee

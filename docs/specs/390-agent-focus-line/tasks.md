@@ -1,7 +1,7 @@
 # 390 — tasks
 
 **Verify:** `npx vitest run test/unit/agentFocus.test.ts test/unit/agentStatusFilter.test.ts test/unit/sidebarRowAlignment.test.ts`  
-**Dogfood:** live sidebar with mixed sources; compare to `docs/prototypes/agent-focus-line.html`  
+**Dogfood:** live sidebar with mixed sources; compare to `docs/specs/390-agent-focus-line/prototype.html`
 **Human dogfood:** fleet glance — can you name each agent’s work without opening a terminal?
 
 ## After POC approval
