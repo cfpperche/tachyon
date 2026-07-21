@@ -6,9 +6,9 @@ _Design by grok (`t-a5154a`); probe-adjusted 2026-07-21; **maintainer ratified R
 **Status:** shipped-partial
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      P0+P1 product path + human dogfood B–F green; Phase 6 follow-ups closed (ADE 61eabe5f + Companion 0.5.6).
-     Residual long-term: native alerts/CDP, cross-origin iframes, full human confirm UI. -->
+     Residual long-term tracked as board backlog `t-cb36c5` (confirm UI, native alerts/CDP, cross-origin iframes, …). -->
 
-**Board:** umbrella `t-ca13aa` done · dogfood `t-4ffb40` done · Phase 6 follow-ups done · parent 414 shipped  
+**Board:** umbrella `t-ca13aa` done · dogfood `t-4ffb40` done · Phase 6 follow-ups done · long-tail backlog `t-cb36c5` · parent 414 shipped  
 **Kind:** product SDD (Companion agent-pull tools v2) — tab targeting, refs, safety, expanded surface  
 **Probe:** codex `gpt-5.6-sol` `probe-94a1a975-c98a-4c2d-bed6-7bd8fc19a745` → folded; **ratify R1–R6 yes** (maintainer).  
 **Visual ratify:** `RATIFY.md` + `diagrams/`

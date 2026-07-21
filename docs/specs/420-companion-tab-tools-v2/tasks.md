@@ -47,7 +47,10 @@ _Board is source of execution order; this file tracks SDD hygiene._
 - [x] `t-bb8858` list_frames: investigated (TinyMCE site limit; nested_frames OK)
 - [x] `t-a8e4ed` screenshot retry once on readback fail — 0.5.6
 - [x] `t-d16753` password `@e` stamp — 0.5.6
-  
+
+## Phase 7 — Deferred long-tail (board backlog, not this ship)
+
+- [ ] `t-cb36c5` backlog umbrella: human confirm UI, native alerts/CDP dialogs, cross-origin iframes, frames edge, mutations.jsonl rotation, broader trust policy, audit trail UI, Firefox/store, multi-engine picker, cookbook — split children when prioritized; do not re-open `t-ca13aa`
 
 ## Verification
 

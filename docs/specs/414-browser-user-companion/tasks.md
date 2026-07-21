@@ -47,6 +47,7 @@ Settings: `settings.companion.tabTools` + Connected devices UI (main `c26baecf` 
 
 Not open work on this SDD (no unchecked delivery boxes). Track on sibling board tasks / future slices:
 
+- **Board backlog umbrella:** `t-cb36c5` (414/420 long-tail inventory)
 - Agent-pull hardening beyond fixture hosts (broader trust policy)
 - Firefox package
 - Multi-engine picker
