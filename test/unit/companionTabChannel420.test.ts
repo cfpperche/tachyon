@@ -60,6 +60,60 @@ describe("SDD 420 CompanionTabChannel", () => {
     expect(env.protocolVersion).toBe(COMPANION_PROTOCOL_VERSION);
   });
 
+  it("P1: get / find / hover / select_option / check round-trip", async () => {
+    const pushed: unknown[] = [];
+    const ch = new CompanionTabChannel({
+      push: (_ev, data) => {
+        pushed.push(data);
+      },
+    });
+    const target = { tabId: "ctab_p1" };
+    const pending = [
+      ch.requestGet(target, { what: "text", ref: "@e1", timeoutMs: 50 }),
+      ch.requestFind(target, { text: "Submit", timeoutMs: 50 }),
+      ch.requestHover(target, { ref: "@e1", timeoutMs: 50 }),
+      ch.requestSelectOption(target, { ref: "@e2", value: "a", timeoutMs: 50 }),
+      ch.requestCheck(target, { ref: "@e3", checked: true, timeoutMs: 50 }),
+    ];
+    expect(pushed.map((p) => (p as { kind: string }).kind)).toEqual([
+      "get",
+      "find",
+      "hover",
+      "select_option",
+      "check",
+    ]);
+    for (const cmd of pushed as Array<{ id: string; kind: string }>) {
+      if (cmd.kind === "get") {
+        ch.submitResult({
+          ok: true,
+          id: cmd.id,
+          kind: "get",
+          tabId: "ctab_p1",
+          what: "text",
+          data: "hello",
+        });
+      } else if (cmd.kind === "find") {
+        ch.submitResult({
+          ok: true,
+          id: cmd.id,
+          kind: "find",
+          tabId: "ctab_p1",
+          matches: [{ text: "Submit", ref: "@e1", tag: "button" }],
+        });
+      } else {
+        ch.submitResult({
+          ok: true,
+          id: cmd.id,
+          kind: cmd.kind as "hover",
+          tabId: "ctab_p1",
+          detail: cmd.kind,
+        });
+      }
+    }
+    const results = await Promise.all(pending);
+    expect(results.every((r) => r.ok === true)).toBe(true);
+  });
+
   it("P0: navigate / scroll / press_key / wait_for / tab lifecycle round-trip", async () => {
     const pushed: unknown[] = [];
     const ch = new CompanionTabChannel({

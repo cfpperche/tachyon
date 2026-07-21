@@ -156,6 +156,9 @@ export interface BridgeDeps {
     expectedDocumentToken?: string;
     format?: "jpeg" | "png";
     quality?: number;
+    scope?: "viewport" | "full_page" | "element";
+    ref?: string;
+    selector?: string;
     timeoutMs?: number;
   }) => Promise<unknown>;
   companionTabEval?: (opts: {
@@ -216,6 +219,48 @@ export interface BridgeDeps {
   }) => Promise<unknown>;
   companionTabClose?: (opts: {
     tabId: string;
+    timeoutMs?: number;
+  }) => Promise<unknown>;
+  /** SDD 420 P1 — directed read / find / hover / select / check. */
+  companionTabGet?: (opts: {
+    tabId: string;
+    expectedDocumentToken?: string;
+    what: "text" | "html" | "value" | "attribute" | "state";
+    attribute?: string;
+    ref?: string;
+    selector?: string;
+    timeoutMs?: number;
+  }) => Promise<unknown>;
+  companionTabFind?: (opts: {
+    tabId: string;
+    expectedDocumentToken?: string;
+    text: string;
+    limit?: number;
+    timeoutMs?: number;
+  }) => Promise<unknown>;
+  companionTabHover?: (opts: {
+    tabId: string;
+    expectedDocumentToken?: string;
+    ref?: string;
+    selector?: string;
+    timeoutMs?: number;
+  }) => Promise<unknown>;
+  companionTabSelectOption?: (opts: {
+    tabId: string;
+    expectedDocumentToken?: string;
+    ref?: string;
+    selector?: string;
+    value?: string;
+    label?: string;
+    index?: number;
+    timeoutMs?: number;
+  }) => Promise<unknown>;
+  companionTabCheck?: (opts: {
+    tabId: string;
+    expectedDocumentToken?: string;
+    ref?: string;
+    selector?: string;
+    checked: boolean;
     timeoutMs?: number;
   }) => Promise<unknown>;
   /**
@@ -1911,16 +1956,22 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       "user_browser_screenshot",
       {
         description:
-          "Screenshot companion tabId. Saves under .tachyon/companion/screenshots/; returns workspace path.",
+          "Screenshot companion tabId (viewport, full page, or element). Saves under .tachyon/companion/screenshots/.",
         inputSchema: {
           tabId: tabIdSchema,
           expectedDocumentToken: documentTokenSchema,
           format: z.enum(["jpeg", "png"]).optional().describe("Image format (default jpeg)"),
           quality: z.number().min(10).max(100).optional().describe("JPEG quality 10–100 (default 70)"),
+          scope: z
+            .enum(["viewport", "full_page", "element"])
+            .optional()
+            .describe("viewport (default), full_page, or element (needs ref/selector)"),
+          ref: refSchema,
+          selector: selectorSchema,
           timeoutSec: tabTimeoutSchema,
         },
       },
-      async ({ tabId, expectedDocumentToken, format, quality, timeoutSec }) => {
+      async ({ tabId, expectedDocumentToken, format, quality, scope, ref, selector, timeoutSec }) => {
         try {
           if (!deps.companionTabScreenshot) {
             return fail(new Error("user_browser_screenshot is not available."));
@@ -1928,11 +1979,17 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           if (!deps.companionBrowserPaired?.()) {
             return fail(new Error(companionNotPairedMessage));
           }
+          if (scope === "element" && !ref?.trim() && !selector?.trim()) {
+            return fail(new Error("scope=element requires ref or selector"));
+          }
           const result = await deps.companionTabScreenshot({
             tabId,
             expectedDocumentToken,
             format,
             quality,
+            scope,
+            ref,
+            selector,
             timeoutMs: timeoutSec !== undefined ? timeoutSec * 1000 : undefined,
           });
           const facing = modelFacingScreenshotResult(result, deps.workspaceRoot);
@@ -2282,6 +2339,192 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
             status: "applied",
           });
           return ok(JSON.stringify(envelopeFromTabResult({ tool: "user_browser_tab_close", tabId, raw: result }), null, 2));
+        } catch (err) {
+          return fail(err);
+        }
+      },
+    );
+
+    // ---- SDD 420 P1 ----
+    mcp.registerTool(
+      "user_browser_get",
+      {
+        description:
+          "Directed read on companion tabId element (prefer ref): text, html, value, attribute, or state. Never returns password values or secret-like attributes.",
+        inputSchema: {
+          tabId: tabIdSchema,
+          expectedDocumentToken: documentTokenSchema,
+          what: z.enum(["text", "html", "value", "attribute", "state"]),
+          attribute: z.string().min(1).max(128).optional().describe("Required when what=attribute"),
+          ref: refSchema,
+          selector: selectorSchema,
+          timeoutSec: tabTimeoutSchema,
+        },
+      },
+      async ({ tabId, expectedDocumentToken, what, attribute, ref, selector, timeoutSec }) => {
+        try {
+          if (!deps.companionTabGet) return fail(new Error("user_browser_get unavailable"));
+          if (!deps.companionBrowserPaired?.()) return fail(new Error(companionNotPairedMessage));
+          if (what === "attribute" && !attribute?.trim()) {
+            return fail(new Error("attribute name required when what=attribute"));
+          }
+          const result = await deps.companionTabGet({
+            tabId,
+            expectedDocumentToken,
+            what,
+            attribute,
+            ref,
+            selector,
+            timeoutMs: timeoutSec !== undefined ? timeoutSec * 1000 : undefined,
+          });
+          return ok(JSON.stringify(envelopeFromTabResult({ tool: "user_browser_get", tabId, raw: result }), null, 2));
+        } catch (err) {
+          return fail(err);
+        }
+      },
+    );
+
+    mcp.registerTool(
+      "user_browser_find",
+      {
+        description: "Find visible text on companion tabId; returns matching nodes (ref when stamped).",
+        inputSchema: {
+          tabId: tabIdSchema,
+          expectedDocumentToken: documentTokenSchema,
+          text: z.string().min(1).max(500),
+          limit: z.number().int().min(1).max(50).optional(),
+          timeoutSec: tabTimeoutSchema,
+        },
+      },
+      async ({ tabId, expectedDocumentToken, text, limit, timeoutSec }) => {
+        try {
+          if (!deps.companionTabFind) return fail(new Error("user_browser_find unavailable"));
+          if (!deps.companionBrowserPaired?.()) return fail(new Error(companionNotPairedMessage));
+          const result = await deps.companionTabFind({
+            tabId,
+            expectedDocumentToken,
+            text,
+            limit,
+            timeoutMs: timeoutSec !== undefined ? timeoutSec * 1000 : undefined,
+          });
+          return ok(JSON.stringify(envelopeFromTabResult({ tool: "user_browser_find", tabId, raw: result }), null, 2));
+        } catch (err) {
+          return fail(err);
+        }
+      },
+    );
+
+    mcp.registerTool(
+      "user_browser_hover",
+      {
+        description: "Hover an element on companion tabId (prefer ref).",
+        inputSchema: {
+          tabId: tabIdSchema,
+          expectedDocumentToken: documentTokenSchema,
+          ref: refSchema,
+          selector: selectorSchema,
+          timeoutSec: tabTimeoutSchema,
+        },
+      },
+      async ({ tabId, expectedDocumentToken, ref, selector, timeoutSec }) => {
+        try {
+          if (!deps.companionTabHover) return fail(new Error("user_browser_hover unavailable"));
+          if (!deps.companionBrowserPaired?.()) return fail(new Error(companionNotPairedMessage));
+          const result = await deps.companionTabHover({
+            tabId,
+            expectedDocumentToken,
+            ref,
+            selector,
+            timeoutMs: timeoutSec !== undefined ? timeoutSec * 1000 : undefined,
+          });
+          return ok(JSON.stringify(envelopeFromTabResult({ tool: "user_browser_hover", tabId, raw: result }), null, 2));
+        } catch (err) {
+          return fail(err);
+        }
+      },
+    );
+
+    mcp.registerTool(
+      "user_browser_select_option",
+      {
+        description: "Select an option in a <select> on companion tabId (by value, label, or index).",
+        inputSchema: {
+          tabId: tabIdSchema,
+          expectedDocumentToken: documentTokenSchema,
+          ref: refSchema,
+          selector: selectorSchema,
+          value: z.string().max(500).optional(),
+          label: z.string().max(500).optional(),
+          index: z.number().int().min(0).max(10_000).optional(),
+          timeoutSec: tabTimeoutSchema,
+        },
+      },
+      async ({ tabId, expectedDocumentToken, ref, selector, value, label, index, timeoutSec }) => {
+        try {
+          if (!deps.companionTabSelectOption) return fail(new Error("user_browser_select_option unavailable"));
+          if (!deps.companionBrowserPaired?.()) return fail(new Error(companionNotPairedMessage));
+          if (value === undefined && label === undefined && index === undefined) {
+            return fail(new Error("Provide value, label, or index"));
+          }
+          const result = await deps.companionTabSelectOption({
+            tabId,
+            expectedDocumentToken,
+            ref,
+            selector,
+            value,
+            label,
+            index,
+            timeoutMs: timeoutSec !== undefined ? timeoutSec * 1000 : undefined,
+          });
+          appendMutationLog(deps.workspaceRoot, {
+            at: new Date().toISOString(),
+            tool: "user_browser_select_option",
+            tabId,
+            status: "applied",
+            detail: value ?? label ?? String(index),
+          });
+          return ok(
+            JSON.stringify(envelopeFromTabResult({ tool: "user_browser_select_option", tabId, raw: result }), null, 2),
+          );
+        } catch (err) {
+          return fail(err);
+        }
+      },
+    );
+
+    mcp.registerTool(
+      "user_browser_check",
+      {
+        description: "Check or uncheck a checkbox/radio on companion tabId.",
+        inputSchema: {
+          tabId: tabIdSchema,
+          expectedDocumentToken: documentTokenSchema,
+          ref: refSchema,
+          selector: selectorSchema,
+          checked: z.boolean(),
+          timeoutSec: tabTimeoutSchema,
+        },
+      },
+      async ({ tabId, expectedDocumentToken, ref, selector, checked, timeoutSec }) => {
+        try {
+          if (!deps.companionTabCheck) return fail(new Error("user_browser_check unavailable"));
+          if (!deps.companionBrowserPaired?.()) return fail(new Error(companionNotPairedMessage));
+          const result = await deps.companionTabCheck({
+            tabId,
+            expectedDocumentToken,
+            ref,
+            selector,
+            checked,
+            timeoutMs: timeoutSec !== undefined ? timeoutSec * 1000 : undefined,
+          });
+          appendMutationLog(deps.workspaceRoot, {
+            at: new Date().toISOString(),
+            tool: "user_browser_check",
+            tabId,
+            status: "applied",
+            detail: checked ? "checked" : "unchecked",
+          });
+          return ok(JSON.stringify(envelopeFromTabResult({ tool: "user_browser_check", tabId, raw: result }), null, 2));
         } catch (err) {
           return fail(err);
         }

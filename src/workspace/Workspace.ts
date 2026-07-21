@@ -1531,7 +1531,14 @@ export class Workspace {
         companionTabScreenshot: (opts) =>
           this.companionTab.requestScreenshot(
             { tabId: opts.tabId, expectedDocumentToken: opts.expectedDocumentToken },
-            { format: opts.format, quality: opts.quality, timeoutMs: opts.timeoutMs },
+            {
+              format: opts.format,
+              quality: opts.quality,
+              scope: opts.scope,
+              ref: opts.ref,
+              selector: opts.selector,
+              timeoutMs: opts.timeoutMs,
+            },
           ),
         companionTabEval: (opts) =>
           this.companionTab.requestEval(
@@ -1615,6 +1622,49 @@ export class Workspace {
           this.companionTab.requestTabActivate({ tabId: opts.tabId }, opts.timeoutMs),
         companionTabClose: (opts) =>
           this.companionTab.requestTabClose({ tabId: opts.tabId }, opts.timeoutMs),
+        companionTabGet: (opts) =>
+          this.companionTab.requestGet(
+            { tabId: opts.tabId, expectedDocumentToken: opts.expectedDocumentToken },
+            {
+              what: opts.what,
+              attribute: opts.attribute,
+              ref: opts.ref,
+              selector: opts.selector,
+              timeoutMs: opts.timeoutMs,
+            },
+          ),
+        companionTabFind: (opts) =>
+          this.companionTab.requestFind(
+            { tabId: opts.tabId, expectedDocumentToken: opts.expectedDocumentToken },
+            { text: opts.text, limit: opts.limit, timeoutMs: opts.timeoutMs },
+          ),
+        companionTabHover: (opts) =>
+          this.companionTab.requestHover(
+            { tabId: opts.tabId, expectedDocumentToken: opts.expectedDocumentToken },
+            { ref: opts.ref, selector: opts.selector, timeoutMs: opts.timeoutMs },
+          ),
+        companionTabSelectOption: (opts) =>
+          this.companionTab.requestSelectOption(
+            { tabId: opts.tabId, expectedDocumentToken: opts.expectedDocumentToken },
+            {
+              ref: opts.ref,
+              selector: opts.selector,
+              value: opts.value,
+              label: opts.label,
+              index: opts.index,
+              timeoutMs: opts.timeoutMs,
+            },
+          ),
+        companionTabCheck: (opts) =>
+          this.companionTab.requestCheck(
+            { tabId: opts.tabId, expectedDocumentToken: opts.expectedDocumentToken },
+            {
+              ref: opts.ref,
+              selector: opts.selector,
+              checked: opts.checked,
+              timeoutMs: opts.timeoutMs,
+            },
+          ),
 
         deliverNotice: (target, line, metadata) => this.deliverNotice(target, line, metadata),
         sourceNoticeMetadata: (agent) => this.sourceNoticeMetadata(agent),
