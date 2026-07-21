@@ -18,23 +18,23 @@ before continuing._
 
 ## Slice 1 — Configuration and Evolution Profile foundation
 
-- [ ] Add `SelfEvolutionDef` and `ManagedEntryDef.selfEvolution` with the closed
+- [x] Add `SelfEvolutionDef` and `ManagedEntryDef.selfEvolution` with the closed
   `{ enabled: boolean }` shape.
-- [ ] Parse/validate `agents.<name>.selfEvolution`, reject it for terminals, add it to `AGENT_KEYS`,
+- [x] Parse/validate `agents.<name>.selfEvolution`, reject it for terminals, add it to `AGENT_KEYS`,
   and prove absence/false remain disabled.
-- [ ] Publish the same closed contract in `tachyon.schema.json` and update the schema contract test.
-- [ ] Add `FormState.selfEvolution`, blank/fromDef/toEntry round-trip and form tests; write only
+- [x] Publish the same closed contract in `tachyon.schema.json` and update the schema contract test.
+- [x] Add `FormState.selfEvolution`, blank/fromDef/toEntry round-trip and form tests; write only
   `selfEvolution: { enabled: true }` when enabled.
-- [ ] Add pure Evolution domain types for profile, active version, review and target-scoped candidate
+- [x] Add pure Evolution domain types for profile, active version, review and target-scoped candidate
   operations.
-- [ ] Implement `EvolutionStore` canonical paths, create/read/list behavior and serialized atomic
+- [x] Implement `EvolutionStore` canonical paths, create/read/list behavior and serialized atomic
   per-agent mutation.
-- [ ] Render approved individual learning entries deterministically into `LEARNINGS.md`.
-- [ ] Validate skill create/update bundles with the existing Agent Skills frontmatter parser,
+- [x] Render approved individual learning entries deterministically into `LEARNINGS.md`.
+- [x] Validate skill create/update bundles with the existing Agent Skills frontmatter parser,
   including `scripts/`, `references/` and `assets/` file inventories.
-- [ ] Persist candidates and promotion history without changing active state on proposal creation.
-- [ ] Cover store reload, malformed profile, independent candidate targets and skill-name collisions.
-- [ ] Commit Slice 1 separately with focused tests green.
+- [x] Persist candidates and promotion history without changing active state on proposal creation.
+- [x] Cover store reload, malformed profile, independent candidate targets and skill-name collisions.
+- [x] Commit Slice 1 separately with focused tests green.
 
 ## Slice 2 — Task-end review and Bridge submission
 

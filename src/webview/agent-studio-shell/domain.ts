@@ -218,6 +218,7 @@ export function blankAgentFields(): FormState {
     kind: "agent",
     instructions: "",
     soul: false,
+    selfEvolution: false,
     role: "",
     watch: "",
     steps: "",

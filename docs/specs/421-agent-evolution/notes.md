@@ -33,3 +33,9 @@ _Questions surfaced during the build with no answer yet. Owner or path to resolu
 - 2026-07-21 — `git diff --check` passed; SDD ids are unique; no scaffold placeholders remain.
 - 2026-07-21 — `npm run verify:full:quiet` passed: 457 files, 5,180 tests passed and 3 skipped.
 - 2026-07-21 — `npm run typecheck` passed.
+
+## Slice 1 validation
+
+- 2026-07-21 — Focused config/schema/YAML/Studio/protocol/EvolutionStore coverage passed: 220 tests.
+- 2026-07-21 — `npm run verify:full:quiet` passed: 458 files, 5,192 tests passed and 3 skipped.
+- 2026-07-21 — `npm run typecheck` passed after the final Slice 1 changes.

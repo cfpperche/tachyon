@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 interface SchemaNode {
   type?: string;
   description?: string;
-  additionalProperties?: boolean;
+  additionalProperties?: boolean | SchemaNode;
   required?: string[];
   properties?: Record<string, SchemaNode>;
   minItems?: number;
@@ -22,6 +22,22 @@ interface SchemaNode {
 
 const schemaPath = path.join(process.cwd(), "src", "config", "tachyon.schema.json");
 const schema = JSON.parse(fs.readFileSync(schemaPath, "utf8")) as SchemaNode;
+
+describe("tachyon.schema.json — agents.selfEvolution", () => {
+  it("publishes the closed opt-in object without an implicit default", () => {
+    const entrySchema = schema.properties?.agents?.additionalProperties;
+    const evolution = typeof entrySchema === "object" ? entrySchema.properties?.selfEvolution : undefined;
+
+    expect(evolution).toMatchObject({
+      type: "object",
+      additionalProperties: false,
+      required: ["enabled"],
+      properties: { enabled: { type: "boolean" } },
+    });
+    expect(evolution).not.toHaveProperty("default");
+    expect(evolution?.description).toMatch(/human-reviewed Agent Evolution/i);
+  });
+});
 
 describe("tachyon.schema.json — settings.companion", () => {
   it("publishes tabTools opt-in and the allowedHosts boundary for Companion tools", () => {

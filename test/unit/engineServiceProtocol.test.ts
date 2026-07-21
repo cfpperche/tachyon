@@ -726,6 +726,7 @@ function studioForm(): WorkspaceStudioFormV1 {
     restartOnCrash: false,
     attention: false,
     soul: false,
+    selfEvolution: false,
     worktree: false,
     branch: "",
     worktreeSetup: "",

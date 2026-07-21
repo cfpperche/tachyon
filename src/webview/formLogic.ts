@@ -101,6 +101,8 @@ export interface FormState {
   instructions: string;
   /** spec 377 T14 — opt in to the agent's persistent soul profile. */
   soul: boolean;
+  /** spec 421 — opt in to Tachyon-owned, human-reviewed evolution. */
+  selfEvolution: boolean;
   /** spec 216 — built-in role template ("" = none); agent kind only */
   role: string;
   /** comma-separated globs (terminal kind) — parsed into the watch list */
@@ -189,6 +191,7 @@ export interface FormIssue {
     | "instructions-not-deliverable"
     | "soul-invalid"
     | "soul-runtime-unsupported"
+    | "self-evolution-invalid"
     | "timing-invalid"
     | "target-required"
     | "harness-claude-only"
@@ -251,6 +254,9 @@ export function validateForm(state: FormState, takenNames: string[], editingName
     if (capability.status !== "prompt") {
       issues.push({ code: "soul-runtime-unsupported", blocking: true, param: capability.runtime });
     }
+  }
+  if (state.selfEvolution !== undefined && typeof state.selfEvolution !== "boolean") {
+    issues.push({ code: "self-evolution-invalid", blocking: true });
   }
   // spec 226/228 — isolated harness (agent kind). The deep rules (${VAR}-only mcp env, reserved cmd
   // flags) are enforced by loadConfig on write; the Studio catches the obvious mistakes early.
@@ -320,6 +326,7 @@ export function toEntry(state: FormState): Record<string, unknown> {
   if (state.kind === "agent" && state.instructions.trim().length > 0) entry.instructions = state.instructions.trim();
   if (state.kind === "agent" && state.role.trim().length > 0) entry.role = state.role.trim();
   if (state.kind === "agent" && state.soul === true) entry.soul = true;
+  if (state.kind === "agent" && state.selfEvolution === true) entry.selfEvolution = { enabled: true };
   const watch = state.kind === "terminal" ? parseWatch(state.watch) : [];
   if (watch.length === 1) entry.watch = watch[0];
   else if (watch.length > 1) entry.watch = watch;
@@ -389,6 +396,7 @@ export function fromScheduleDef(name: string, def: ScheduleDef): FormState {
     verify: "",
     instructions: def.instructions ?? "",
     soul: false,
+    selfEvolution: false,
     role: "",
     watch: "",
     steps: "",
@@ -418,6 +426,7 @@ export function fromCommandDef(name: string, def: { cmd: string; cwd?: string })
     verify: "",
     instructions: "",
     soul: false,
+    selfEvolution: false,
     role: "",
     watch: "",
     steps: "",
@@ -442,6 +451,7 @@ export function fromRunbookDef(name: string, def: { steps: string[] }): FormStat
     verify: "",
     instructions: "",
     soul: false,
+    selfEvolution: false,
     role: "",
     watch: "",
     steps: def.steps.join("\n"),
@@ -463,6 +473,7 @@ export function fromDef(name: string, def: AgentDef): FormState {
     kind: def.kind,
     instructions: def.instructions ?? "",
     soul: def.soul === true,
+    selfEvolution: def.selfEvolution?.enabled === true,
     role: def.role ?? "",
     watch: def.watch.join(", "),
     steps: "",

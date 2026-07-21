@@ -916,3 +916,28 @@ describe("agent soul config (spec 377)", () => {
     expect(parseConfig("agents:\n  Reviewer:\n    cmd: codex\n  reviewer:\n    cmd: claude\n").errors).toEqual([]);
   });
 });
+
+describe("agent evolution config (spec 421)", () => {
+  it("accepts the closed true/false opt-in and preserves absence", () => {
+    const result = parseConfig("agents:\n  enabled:\n    cmd: codex\n    selfEvolution: {enabled: true}\n  disabled:\n    cmd: claude\n    selfEvolution: {enabled: false}\n  legacy:\n    cmd: hermes\n");
+    expect(result.errors).toEqual([]);
+    expect(result.config?.agents.enabled.selfEvolution).toEqual({ enabled: true });
+    expect(result.config?.agents.disabled.selfEvolution).toEqual({ enabled: false });
+    expect(result.config?.agents.legacy.selfEvolution).toBeUndefined();
+  });
+
+  it("rejects malformed, open, and terminal declarations", () => {
+    expect(parseConfig("agents:\n  a:\n    cmd: codex\n    selfEvolution: true\n").errors)
+      .toContain("agents.a.selfEvolution: must be a mapping with enabled: boolean");
+    expect(parseConfig("agents:\n  a:\n    cmd: codex\n    selfEvolution: {}\n").errors)
+      .toContain("agents.a.selfEvolution.enabled: must be a boolean");
+    expect(parseConfig("agents:\n  a:\n    cmd: codex\n    selfEvolution: {enabled: true, mode: auto}\n").errors)
+      .toContain("agents.a.selfEvolution: unknown key 'mode'");
+    expect(parseConfig("terminals:\n  shell:\n    cmd: bash\n    selfEvolution: {enabled: true}\n").errors
+      .some((error) => error.includes("'selfEvolution' applies only to agents"))).toBe(true);
+    expect(parseConfig("agents:\n  shell:\n    cmd: bash\n    kind: terminal\n    selfEvolution: {enabled: true}\n").errors
+      .some((error) => error.includes("'selfEvolution' applies only to agents"))).toBe(true);
+    const collision = parseConfig("agents:\n  Reviewer:\n    cmd: codex\n    selfEvolution: {enabled: true}\n  reviewer:\n    cmd: claude\n    selfEvolution: {enabled: true}\n");
+    expect(collision.errors.some((error) => error.includes("evolution-enabled agent") && error.includes("ASCII case folding"))).toBe(true);
+  });
+});
