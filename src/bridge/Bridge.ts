@@ -124,6 +124,21 @@ export class Bridge {
     }
   }
 
+  /**
+   * Settings-driven tool catalog change (e.g. settings.companion.tabTools flip).
+   * Closes live MCP sessions so the next client request re-runs registerTools with
+   * the current deps, then announces tools/list_changed so runtimes re-discover.
+   * Pair/unpair alone should NOT call this — tools stay listed when tabTools is on.
+   */
+  forceToolListRefresh(): void {
+    const sessions = [...this.sessions.entries()];
+    for (const [id, session] of sessions) {
+      void this.closeSession(id, session);
+    }
+    bridgeToolState.signature = undefined;
+    this.announceToolListChanged();
+  }
+
   /** Binds the preferred port when given; falls back to an ephemeral one if it is taken. */
   async start(preferredPort?: number): Promise<number> {
     if (this.server) throw new Error("Bridge already started");

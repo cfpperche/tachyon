@@ -415,6 +415,13 @@ export interface TachyonConfig {
     };
     /** Shared defaults for human-facing task mutation toasts; explicit VS Code settings override these. */
     taskNotifications?: TaskNotificationSettingsInput;
+    /**
+     * SDD 414 — Companion browser tab tools (user_browser_*).
+     * Human opt-in: when tabTools is true, tools are always listed on the Bridge;
+     * calls still require a paired Companion device (clear not_paired error otherwise).
+     * Default absent/false = tools not registered (no list pollution).
+     */
+    companion?: { tabTools?: boolean };
   };
 }
 
@@ -1466,6 +1473,22 @@ export function parseConfig(yamlText: string): ParseResult {
           settings.anchor = out;
         }
       }
+      if (raw.settings.companion !== undefined) {
+        if (!isPlainObject(raw.settings.companion)) {
+          errors.push("settings.companion: must be a mapping with 'tabTools'");
+        } else {
+          const c = raw.settings.companion;
+          const out: { tabTools?: boolean } = {};
+          if (c.tabTools !== undefined) {
+            if (typeof c.tabTools !== "boolean") errors.push("settings.companion.tabTools: must be a boolean");
+            else out.tabTools = c.tabTools;
+          }
+          for (const key of Object.keys(c)) {
+            if (key !== "tabTools") errors.push(`settings.companion: unknown key '${key}'`);
+          }
+          if (Object.keys(out).length > 0) settings.companion = out;
+        }
+      }
       if (raw.settings.bridgeGuidance !== undefined) {
         if (typeof raw.settings.bridgeGuidance !== "boolean") errors.push("settings.bridgeGuidance: must be a boolean");
         else settings.bridgeGuidance = raw.settings.bridgeGuidance;
@@ -1607,7 +1630,7 @@ export function parseConfig(yamlText: string): ParseResult {
         }
       }
       for (const key of Object.keys(raw.settings)) {
-        if (!["maxAgents", "agentMemoryMax", "bridgePort", "auth", "legacyBridgeAuth", "layout", "tmux", "worktree", "verify", "projectGuidance", "anchor", "bridgeGuidance", "clipboard", "handoff", "persistence", "bridgeClientRebind", "gitDelivery", "delivery", "taskNotifications"].includes(key)) errors.push(`settings: unknown key '${key}'`);
+        if (!["maxAgents", "agentMemoryMax", "bridgePort", "auth", "legacyBridgeAuth", "layout", "tmux", "worktree", "verify", "projectGuidance", "anchor", "companion", "bridgeGuidance", "clipboard", "handoff", "persistence", "bridgeClientRebind", "gitDelivery", "delivery", "taskNotifications"].includes(key)) errors.push(`settings: unknown key '${key}'`);
       }
     }
   }

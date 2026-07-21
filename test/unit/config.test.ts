@@ -177,6 +177,20 @@ describe("parseConfig", () => {
     expect(parseConfig(`${base}settings:\n  other: 1\n`).errors[0]).toContain("unknown key 'other'");
   });
 
+  it("parses settings.companion.tabTools (SDD 414 tool list opt-in)", () => {
+    const base = `agents:\n  a:\n    cmd: x\n`;
+    const on = parseConfig(`${base}settings:\n  companion:\n    tabTools: true\n`);
+    expect(on.errors).toEqual([]);
+    expect(on.config?.settings.companion?.tabTools).toBe(true);
+    const off = parseConfig(`${base}settings:\n  companion:\n    tabTools: false\n`);
+    expect(off.errors).toEqual([]);
+    expect(off.config?.settings.companion?.tabTools).toBe(false);
+    const absent = parseConfig(`${base}settings:\n  maxAgents: 2\n`);
+    expect(absent.config?.settings.companion).toBeUndefined();
+    expect(parseConfig(`${base}settings:\n  companion:\n    tabTools: yes\n`).errors[0]).toContain("tabTools");
+    expect(parseConfig(`${base}settings:\n  companion:\n    nope: true\n`).errors[0]).toContain("unknown key");
+  });
+
   it("parses settings.tmux: bool -> on/off, number -> string, string literal", () => {
     const base = `agents:\n  a:\n    cmd: x\n`;
     const { config, errors } = parseConfig(`${base}settings:\n  tmux:\n    mouse: false\n    history-limit: 50000\n    mode-keys: vi\n`);

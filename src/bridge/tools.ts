@@ -157,9 +157,14 @@ export interface BridgeDeps {
   /** Recent page console lines captured by Companion. */
   companionTabConsole?: (limit?: number, timeoutMs?: number) => Promise<unknown>;
   /**
-   * SDD 414 — when true, register user_browser_* tools on this Bridge request.
-   * Prefer: true only while a Companion browser (or future mobile) device is paired.
-   * Absent/false → tools are omitted from the agent tool list (no context pollution).
+   * SDD 414 — human settings opt-in (settings.companion.tabTools).
+   * When true, register user_browser_* tools on this Bridge request so agents can
+   * discover them. Absent/false → tools omitted (no list pollution).
+   */
+  companionTabToolsEnabled?: () => boolean;
+  /**
+   * SDD 414 — true while a Companion device session is live on this engine.
+   * Checked at call time when tab tools are enabled; not used to hide tools from the list.
    */
   companionBrowserPaired?: () => boolean;
   /** True when the target has a profile-backed non-empty composer draft. */
@@ -1509,9 +1514,15 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     },
   );
 
-  // SDD 414 — Companion browser tools only while a device is paired (no list pollution otherwise).
-  // registerTools runs per Bridge request, so pair/unpair flips visibility on the next agent turn.
-  if (deps.companionBrowserPaired?.()) {
+  // SDD 414 — Companion browser tools when human enables settings.companion.tabTools.
+  // Listed even before pair so agents can discover them; call fails with not_paired until paired.
+  // registerTools runs per new MCP session; settings toggles invalidate sessions + announce list change.
+  const companionNotPairedMessage =
+    "Companion tab tools are enabled in settings (settings.companion.tabTools), but no browser is paired " +
+    "to this engine. Open Tachyon Companion, pair this engine (same Base URL as the Bridge), enable " +
+    "Agent tab access, then retry.";
+
+  if (deps.companionTabToolsEnabled?.()) {
     // t-2a7010 — governed read of the human's browser tab via Tachyon Companion.
     mcp.registerTool(
       "user_browser_snapshot",
@@ -1519,8 +1530,8 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         description:
           "Request a read-only DOM outline of the HUMAN user's active browser tab via Tachyon Companion " +
           "(paired extension). Never returns cookies or password field values. Blocks until the extension " +
-          "fulfills the request or times out (~30s). Requires live sync + agent tab access in Companion Settings. " +
-          "Not agent-browser/CDP — the user's real browser session.",
+          "fulfills the request or times out (~30s). Requires settings.companion.tabTools, a paired Companion, " +
+          "live sync + agent tab access. Not agent-browser/CDP — the user's real browser session.",
         inputSchema: {
           timeoutSec: z
             .number()
@@ -1541,7 +1552,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
             );
           }
           if (!deps.companionBrowserPaired?.()) {
-            return fail(new Error("No Companion browser paired — tab tools are unavailable."));
+            return fail(new Error(companionNotPairedMessage));
           }
           const result = await deps.companionTabSnapshot({
             timeoutMs: timeoutSec !== undefined ? timeoutSec * 1000 : undefined,
@@ -1579,7 +1590,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
             return fail(new Error("user_browser_click is not available (Companion tab channel not wired)."));
           }
           if (!deps.companionBrowserPaired?.()) {
-            return fail(new Error("No Companion browser paired — tab tools are unavailable."));
+            return fail(new Error(companionNotPairedMessage));
           }
           const result = await deps.companionTabAct({
             kind: "click",
@@ -1612,7 +1623,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
             return fail(new Error("user_browser_type is not available (Companion tab channel not wired)."));
           }
           if (!deps.companionBrowserPaired?.()) {
-            return fail(new Error("No Companion browser paired — tab tools are unavailable."));
+            return fail(new Error(companionNotPairedMessage));
           }
           const result = await deps.companionTabAct({
             kind: "type",
@@ -1646,7 +1657,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
             return fail(new Error("user_browser_fill is not available (Companion tab channel not wired)."));
           }
           if (!deps.companionBrowserPaired?.()) {
-            return fail(new Error("No Companion browser paired — tab tools are unavailable."));
+            return fail(new Error(companionNotPairedMessage));
           }
           const result = await deps.companionTabAct({
             kind: "fill",
@@ -1689,7 +1700,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
             return fail(new Error("user_browser_screenshot is not available."));
           }
           if (!deps.companionBrowserPaired?.()) {
-            return fail(new Error("No Companion browser paired — tab tools are unavailable."));
+            return fail(new Error(companionNotPairedMessage));
           }
           const result = await deps.companionTabScreenshot({
             format,
@@ -1730,7 +1741,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
             return fail(new Error("user_browser_eval is not available."));
           }
           if (!deps.companionBrowserPaired?.()) {
-            return fail(new Error("No Companion browser paired — tab tools are unavailable."));
+            return fail(new Error(companionNotPairedMessage));
           }
           const result = await deps.companionTabEval(
             expression,
@@ -1760,7 +1771,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
             return fail(new Error("user_browser_console is not available."));
           }
           if (!deps.companionBrowserPaired?.()) {
-            return fail(new Error("No Companion browser paired — tab tools are unavailable."));
+            return fail(new Error(companionNotPairedMessage));
           }
           const result = await deps.companionTabConsole(
             limit,

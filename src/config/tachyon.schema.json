@@ -454,6 +454,18 @@
             }
           }
         },
+        "companion": {
+          "type": "object",
+          "description": "Tachyon Companion (browser shell) Bridge tools. Human opt-in: tabTools lists user_browser_* on the Bridge; a paired extension is still required to execute them.",
+          "additionalProperties": false,
+          "properties": {
+            "tabTools": {
+              "type": "boolean",
+              "default": false,
+              "description": "When true, register user_browser_* tools for agents (snapshot/screenshot/click/type/fill/eval/console). Calls fail with a clear not_paired error until Companion is paired to this engine. When false (default), tools are omitted from the tool list."
+            }
+          }
+        },
         "delivery": {
           "deprecated": true,
           "description": "Ignored compatibility key. Canonical Delivery with mechanism-only handoff is always active; remove this block from tachyon.yml."

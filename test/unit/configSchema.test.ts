@@ -23,6 +23,20 @@ interface SchemaNode {
 const schemaPath = path.join(process.cwd(), "src", "config", "tachyon.schema.json");
 const schema = JSON.parse(fs.readFileSync(schemaPath, "utf8")) as SchemaNode;
 
+describe("tachyon.schema.json — settings.companion", () => {
+  it("publishes tabTools opt-in for Bridge user_browser_* listing", () => {
+    const settings = schema.properties?.settings;
+    const companion = settings?.properties?.companion;
+    const tabTools = companion?.properties?.tabTools;
+
+    expect(companion).toMatchObject({ type: "object", additionalProperties: false });
+    expect(companion?.description).toMatch(/Companion/i);
+    expect(tabTools).toMatchObject({ type: "boolean", default: false });
+    expect(tabTools?.description).toMatch(/user_browser_/);
+    expect(Object.keys(companion?.properties ?? {})).toEqual(["tabTools"]);
+  });
+});
+
 describe("tachyon.schema.json — settings.projectGuidance", () => {
   it("publishes the closed opt-in file-list contract without an implicit default", () => {
     const settings = schema.properties?.settings;

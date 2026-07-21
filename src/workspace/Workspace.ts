@@ -1519,7 +1519,8 @@ export class Workspace {
         attentionOf: (agent) => this.attentionOf(agent)?.state,
         composerOccupiedOf: (agent) => this.attentionOf(agent)?.composerOccupied,
         // SDD 414 / t-2a7010 + t-fbe280 — agent tab tools via Companion extension.
-        // Tools are registered only while a browser device is paired (companionBrowserPaired).
+        // Listed when settings.companion.tabTools is true; execution still requires a paired device.
+        companionTabToolsEnabled: () => this.config?.settings.companion?.tabTools === true,
         companionBrowserPaired: () => this.companion.hasPairedDevice(),
         companionTabSnapshot: (opts) => this.companionTab.requestSnapshot(opts?.timeoutMs),
         companionTabScreenshot: (opts) => this.companionTab.requestScreenshot(opts),
@@ -3899,9 +3900,18 @@ export class Workspace {
 
   reloadConfig(): boolean {
     const file = this.configPath();
+    const prevCompanionTabTools = this.config?.settings.companion?.tabTools === true;
     if (!file) {
       this.config = undefined;
       this.configFailure = undefined;
+      if (prevCompanionTabTools) {
+        // Settings gone → drop companion tools from live MCP sessions.
+        try {
+          this.bridge.forceToolListRefresh();
+        } catch {
+          /* bridge may not be ready on early dispose paths */
+        }
+      }
       return false;
     }
     const { config, errors, warnings } = loadConfigFile(file);
@@ -3921,6 +3931,16 @@ export class Workspace {
     for (const warning of warnings) this.host.notify(this.t("{0}: {1}", path.basename(file), warning), "warn");
     this.config = config;
     this.configFailure = undefined;
+    // SDD 414 — human toggle settings.companion.tabTools changes the Bridge tool catalog.
+    // Close MCP sessions + announce list_changed so runtimes re-discover (pair alone does not).
+    const nextCompanionTabTools = config?.settings.companion?.tabTools === true;
+    if (prevCompanionTabTools !== nextCompanionTabTools) {
+      try {
+        this.bridge.forceToolListRefresh();
+      } catch {
+        /* best-effort */
+      }
+    }
     // spec 377 T15A — reconcile incomplete profile journals on every successful reload.
     void this.reconcileSoulProfileTransactions().catch(() => undefined);
     // t-8354ae — persist last-known-good roster for degraded sidebar rendering if config later breaks.

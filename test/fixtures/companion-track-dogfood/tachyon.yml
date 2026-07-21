@@ -2,6 +2,9 @@
 # Spec: 414. Agents start STOPPED; focus still projects without a live process.
 settings:
   maxAgents: 8
+  # List user_browser_* on the Bridge so agents can discover them; pair still required to execute.
+  companion:
+    tabTools: true
 
 agents:
   grok:
