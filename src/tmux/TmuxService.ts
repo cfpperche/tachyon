@@ -151,6 +151,12 @@ function isScopeLaunchFailure(err: Error & { code?: unknown }, stderr: string): 
   return err.code === "ENOENT" || /Failed to .*\b(?:bus|transient)\b/i.test(stderr || err.message);
 }
 
+/** Only missing binary is process-lifetime permanent. Bus/transient unit races must not poison
+ *  the probe — under verify:full concurrent systemd-run load they flake (t-5f6355 / t-ed5c25). */
+function isPermanentScopeUnavailable(err: Error & { code?: unknown }): boolean {
+  return err.code === "ENOENT";
+}
+
 let serverScopeUsable: boolean | undefined;
 
 /** Test seam: forget the cached systemd-run availability verdict. */
@@ -165,6 +171,7 @@ export function createTmuxExecutor(execFileImpl: ExecFileImpl = execFile): TmuxE
       const controller = timeoutMs !== undefined ? new AbortController() : undefined;
       let settled = false;
       let child: ChildProcess | undefined;
+      let transientScopeAttempts = 0;
       const command = ["tmux", ...isolatedArgs(args)].join(" ");
       const timer =
         timeoutMs !== undefined
@@ -190,7 +197,18 @@ export function createTmuxExecutor(execFileImpl: ExecFileImpl = execFile): TmuxE
           (err, stdout, stderr) => {
             if (settled) return;
             if (err && useScope && isScopeLaunchFailure(err, stderr)) {
-              serverScopeUsable = false;
+              if (isPermanentScopeUnavailable(err)) {
+                serverScopeUsable = false;
+                launch(false);
+                return;
+              }
+              // Transient bus / unit race: one retry with a fresh unit name, then plain exec
+              // for this call only — never cache false (poisoned workers under verify:full).
+              if (transientScopeAttempts < 1) {
+                transientScopeAttempts += 1;
+                launch(true);
+                return;
+              }
               launch(false);
               return;
             }
