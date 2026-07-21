@@ -609,10 +609,21 @@ export class PluginsPanelManager {
   /**
    * Control monolith: drive Plugins UI into an existing webview (no separate panel).
    * Posts the same plugins/consent/busy/result envelope the standalone panel uses.
+   *
+   * IDEMPOTENT for the same webview + workspace (t-0fc9ee): the shell's 3s poll routes through
+   * here on every tick, and the session state below (checks/pending/busy) is closure-owned — a
+   * blind rebind wiped a just-found update check, orphaned a pending consent drawer (confirmOp
+   * finds no pending and silently returns), and forgot the busy guard. Data refresh must never
+   * recreate the session; a NEW session is created only on first entry, a real workspace switch,
+   * or a replaced webview (leaving the section unbinds — see unbindControlEmbed).
    */
   bindControlEmbed(webview: vscode.Webview, wsHash?: string): void {
     const ws = wsHash === undefined ? this.getWorkspaces()[0] : this.getWorkspaces().find((w) => w.wsHash === wsHash);
     if (!ws) return;
+    if (this.embed && this.embed.webview === webview && this.embed.ws.wsHash === ws.wsHash) {
+      this.embed.post();
+      return;
+    }
     let checks: Record<string, UpdateCheck> = {};
     let pending: PendingOp | undefined;
     let busy = false;
