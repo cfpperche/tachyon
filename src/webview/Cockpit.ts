@@ -23,8 +23,8 @@ import {
   snapshotMessage,
   taskErrorMessage,
   type MissionControlAction,
-  type MissionControlVM,
 } from "./mission-control/messages.js";
+import { buildMissionVm, MissionAgentLists } from "../cockpit/missionVm.js";
 import {
   approvalsMessage,
   approvalErrorMessage,
@@ -303,30 +303,11 @@ const PLUGIN_ACTION_TYPES = new Set([
 
 const INSPECTOR_ACTION_TYPES = new Set(["open", "kill", "capture", "reapDead", "reapOrphans"]);
 
-async function buildMissionVm(
-  ws: WorkspaceMissionControlTarget,
-  all: WorkspaceMissionControlTarget[],
-): Promise<MissionControlVM> {
-  const declared = new Set(ws.declaredAgentNames());
-  let agents: Awaited<ReturnType<WorkspaceMissionControlTarget["listMissionControlAgents"]>> = [];
-  let agentLiveness: NonNullable<MissionControlVM["agentLiveness"]> = { status: "available" };
-  try {
-    agents = await ws.listMissionControlAgents();
-  } catch {
-    agentLiveness = { status: "unavailable" };
-  }
-  const liveManaged = agents.filter((a) => a.kind === "agent" && a.running);
-  const liveAdhoc = liveManaged
-    .filter((a) => !a.declared && !declared.has(a.name))
-    .map((a) => a.name);
-  return {
-    folder: ws.folderName,
-    wsHash: ws.wsHash,
-    workspaces: all.map((w) => ({ hash: w.wsHash, folder: w.folderName })),
-    agentLiveness,
-    snapshot: await ws.boardSnapshot(liveAdhoc),
-  };
-}
+// t-610705 (Phase B #6) — the bounded/coalesced agent-liveness pass lives in src/cockpit/missionVm.ts
+// (ported from the retired MissionControlPanelManager so the embedded board keeps the 250ms
+// never-block guarantee). One shared instance for the singleton panel; generation guards staleness.
+const missionAgentLists = new MissionAgentLists();
+let missionGeneration = 0;
 
 function resolveMissionWs(board: CockpitMissionBoard, prefer?: string): WorkspaceMissionControlTarget | undefined {
   const all = board.getWorkspaces();
@@ -404,6 +385,8 @@ export async function openCockpit(
         pushApprovals = undefined;
         pushValidations = undefined;
         wiredPanel = undefined;
+        missionGeneration += 1;
+        missionAgentLists.clear();
         deps.plugins.unbindControlEmbed();
       }
     });
@@ -449,12 +432,15 @@ export async function openCockpit(
       live.webview.postMessage(taskErrorMessage("No Tachyon workspace for Mission board."));
       return;
     }
+    const generation = ++missionGeneration;
     try {
-      const vm = await buildMissionVm(ws, all);
-      if (panel !== live || currentSection !== "mission") return;
+      // Trailing retry: a list that settles late (after its 250ms fallback already rendered, with
+      // further refreshes coalesced behind it) re-posts once so real liveness replaces "unavailable".
+      const vm = await buildMissionVm(ws, all, missionAgentLists, () => void sendMission());
+      if (panel !== live || currentSection !== "mission" || missionGeneration !== generation) return;
       live.webview.postMessage(snapshotMessage(vm));
     } catch (err) {
-      if (panel !== live) return;
+      if (panel !== live || missionGeneration !== generation) return;
       live.webview.postMessage(taskErrorMessage(err instanceof Error ? err.message : String(err)));
     }
   };
@@ -847,6 +833,7 @@ export async function openCockpit(
     const validationsIsActive = currentSection === "validations";
     const pluginsIsActive = currentSection === "plugins";
     const tmuxIsActive = currentSection === "tmux";
+    const missionIsActive = currentSection === "mission";
     live.webview.html = renderWebviewShell({
       cspSource: live.webview.cspSource,
       title: s.title,
@@ -858,8 +845,8 @@ export async function openCockpit(
         uri("codicon.css"),
         uri("design-system.css"),
         uri("vscode-theme.css"),
-        uri("mission-control.tailwind.css"),
-        uri("mission-control.css"),
+        missionIsActive ? uri("mission-control.tailwind.css") : undefined,
+        missionIsActive ? uri("mission-control.css") : undefined,
         pluginsIsActive ? uri("plugins.tailwind.css") : undefined,
         pluginsIsActive ? uri("plugins.css") : undefined,
         approvalsIsActive ? uri("approval.css") : undefined,
@@ -885,6 +872,8 @@ export async function openCockpit(
           "plugins-tailwind": uri("plugins.tailwind.css"),
           plugins: uri("plugins.css"),
           tmux: uri("inspector.css"),
+          "mission-tailwind": uri("mission-control.tailwind.css"),
+          mission: uri("mission-control.css"),
         },
       },
     });

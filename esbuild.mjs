@@ -326,12 +326,9 @@ const pluginHost = {
   outfile: "dist/webview/plugin-host.js",
 };
 
-// spec 335 — the Preact Mission Control board webview bundle (editor-area panel; never imports vscode).
-const missionControl = {
-  ...sidebar,
-  entryPoints: ["src/webview/mission-control/main.tsx"],
-  outfile: "dist/webview/mission-control.js",
-};
+// t-610705 (SDD 410 Phase B #6) — the standalone Mission Control bundle was retired: the Board is a
+// cockpit-only section (src/webview/mission-control/App.tsx stays, lazy-imported by cockpit/App.tsx
+// via CSS co-load). Both mission-control CSS files are still emitted below — Cockpit.ts co-loads them.
 
 // spec 335 — the Preact Task Detail webview bundle (editor-area panel, one per task id; never imports vscode).
 const taskDetail = {
@@ -491,7 +488,7 @@ if (existsSync(excalidrawAssets)) {
   cpSync(excalidrawAssets, "dist/webview/excalidraw-assets", { recursive: true });
 }
 
-const targets = [extension, toolLauncher, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, activity, handoff, approval, probes, cockpit, pinPreview, pinStudio, missionControl, taskDetail, taskStudio, pipelineStudio, agentStudioFixture, agentStudioShell, terminalStudioShell, commandStudioShell, runbookStudioShell, scheduleStudioShell, pluginHost, excalidraw, mermaid, katex, preview, uiGate];
+const targets = [extension, toolLauncher, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, activity, handoff, approval, probes, cockpit, pinPreview, pinStudio, taskDetail, taskStudio, pipelineStudio, agentStudioFixture, agentStudioShell, terminalStudioShell, commandStudioShell, runbookStudioShell, scheduleStudioShell, pluginHost, excalidraw, mermaid, katex, preview, uiGate];
 if (watch) {
   const ctxs = await Promise.all(targets.map((c) => esbuild.context(c)));
   await Promise.all(ctxs.map((c) => c.watch()));

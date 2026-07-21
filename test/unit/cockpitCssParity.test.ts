@@ -52,4 +52,21 @@ describe("cockpit css parity (harness ↔ real Control host)", () => {
     expect(hostCssOrder()).toContain("validations.css");
     expect(harnessCssOrder()).toContain("validations.css");
   });
+
+  // t-610705 Phase B — CSS co-load key parity: every loadSectionStylesheet("<id>") the client calls
+  // must have a URI registered under that exact key in the host's __tachyonSectionStyles bootstrap
+  // global, or that section's stylesheet silently never loads in production (only when it wasn't the
+  // opening section — the worst kind of drift: invisible in the harness, which links everything).
+  it("every client co-load id has a host bootstrap-global key (and vice versa)", () => {
+    const app = readFileSync("src/webview/cockpit/App.tsx", "utf8");
+    const clientIds = [...app.matchAll(/loadSectionStylesheet\(\s*["'`]([^"'`]+)["'`]\s*\)/g)].map((m) => m[1]).sort();
+    expect(clientIds.length, "no loadSectionStylesheet calls found in cockpit/App.tsx — did the co-load move?").toBeGreaterThan(0);
+
+    const host = readFileSync(COCKPIT_HOST, "utf8");
+    const block = /__tachyonSectionStyles:\s*\{([\s\S]*?)\}/.exec(host);
+    expect(block, `${COCKPIT_HOST}: no __tachyonSectionStyles bootstrap-global block found`).not.toBeNull();
+    const hostKeys = [...block![1].matchAll(/(?:"([^"]+)"|([A-Za-z-]+)):\s*uri\(/g)].map((m) => m[1] ?? m[2]).sort();
+
+    expect(clientIds).toEqual(hostKeys);
+  });
 });

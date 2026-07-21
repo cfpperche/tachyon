@@ -44,7 +44,9 @@ describe("persistent workspace presentation boundary", () => {
       "src/webview/TerminalStudioAdapter.ts",
       "src/webview/TerminalStudioPanel.ts",
       "src/webview/ProbeResultPanel.ts",
-      "src/webview/MissionControlPanel.ts",
+      // MissionControlPanel.ts left this list on t-610705 Phase B #6: the panel host was retired and the
+      // file is types-only now (no Workspace, no Target) — the board is hosted by Cockpit.ts, which was
+      // born on WorkspaceMissionControlTarget.
       "src/webview/TaskDetailPanel.ts",
       "src/webview/TaskStudioAdapter.ts",
       "src/webview/TaskStudioPanel.ts",

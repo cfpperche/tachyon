@@ -8,7 +8,8 @@ import { TaskStore } from "../../src/tasks/TaskStore.js";
 import { TaskDetailStore } from "../../src/tasks/TaskDetailStore.js";
 import { TaskAttachmentStore } from "../../src/tasks/TaskAttachmentStore.js";
 import { ValidationStore } from "../../src/validations/ValidationStore.js";
-import { MissionControlPanelManager } from "../../src/webview/MissionControlPanel.js";
+import { openCockpit, refreshCockpitMissionBoard } from "../../src/webview/Cockpit.js";
+import { makeFakeCockpitDeps } from "../mocks/cockpitDeps.js";
 import { legacyMissionControlTarget } from "../../src/shell/MissionControlTarget.js";
 import { legacyTaskDetailTarget } from "../../src/shell/TaskDetailTarget.js";
 import { legacyTaskStudioTarget } from "../../src/shell/TaskStudioTarget.js";
@@ -36,6 +37,8 @@ const mkroot = (): string => {
 
 beforeEach(() => __resetVscodeMock());
 afterEach(() => {
+  // Cockpit's panel is a module-level singleton — dispose it so the next test creates a fresh one.
+  for (const p of __createdPanels) if (!p.disposed) p.dispose();
   for (const dir of dirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
 });
 
@@ -51,14 +54,15 @@ function fakeWorkspace(root = mkroot(), agents: Record<string, unknown> = {}) {
   } as unknown as Workspace;
 }
 
-/** Wires the three panel managers exactly like extension.ts does. */
+/** Wires the board (Control → Mission since t-610705 Phase B #6) + detail/studio managers exactly
+ *  like extension.ts does: the standalone board panel is retired, so the board half is CockpitDeps'
+ *  missionBoard and the board UI is the cockpit panel's mission section. */
 function wireManagers(ws: Workspace) {
-  let missionControlPanels!: MissionControlPanelManager;
   let taskDetailPanels!: TaskDetailPanelManager;
   let fanOuts = 0;
   const onTasksChanged = () => {
     fanOuts += 1;
-    missionControlPanels.refreshAll();
+    refreshCockpitMissionBoard();
     taskDetailPanels.refreshAll();
     taskStudioPanels.refreshAll();
   };
@@ -70,14 +74,14 @@ function wireManagers(ws: Workspace) {
     (_target, id) => taskStudioPanels.openExisting(studio, id),
     onTasksChanged,
   );
-  missionControlPanels = new MissionControlPanelManager(
-    Uri.file("/ext"),
-    () => [legacyMissionControlTarget(ws)],
-    (_target, id) => taskDetailPanels.open(legacyTaskDetailTarget(ws), id),
-    (_target, id) => { if (id) taskStudioPanels.openExisting(studio, id); else taskStudioPanels.openNew(studio); },
+  const cockpitDeps = makeFakeCockpitDeps({
+    getWorkspaces: () => [legacyMissionControlTarget(ws)],
+    openTaskDetail: (_target, id) => taskDetailPanels.open(legacyTaskDetailTarget(ws), id),
+    openTaskStudio: (_target, id) => { if (id) taskStudioPanels.openExisting(studio, id); else taskStudioPanels.openNew(studio); },
     onTasksChanged,
-  );
-  return { missionControlPanels, taskDetailPanels, taskStudioPanels, fanOuts: () => fanOuts };
+  });
+  const openBoard = () => openCockpit(cockpitDeps, { section: "mission", wsHash: ws.wsHash });
+  return { openBoard, taskDetailPanels, taskStudioPanels, fanOuts: () => fanOuts };
 }
 
 function settled<T>(fn: () => T): Promise<T> {
@@ -104,9 +108,9 @@ function saveVia(panelIndex: number, patch: TaskPatch): void {
 describe("board '+ Task' flow end to end (spec F12/F19)", () => {
   it("board -> openTaskStudio(new) -> Studio Save -> task exists -> board reflects it", async () => {
     const ws = fakeWorkspace();
-    const { missionControlPanels, fanOuts } = wireManagers(ws);
+    const { openBoard, fanOuts } = wireManagers(ws);
 
-    missionControlPanels.open(ws.wsHash);
+    await openBoard();
     expect(__createdPanels).toHaveLength(1);
 
     // the board's "+ Task" button posts this exact action (mission-control/App.tsx)
@@ -143,8 +147,8 @@ describe("board '+ Task' flow end to end (spec F12/F19)", () => {
   it("board -> card menu 'Edit in Studio' -> openTaskStudio(id) opens the SAME task, never a duplicate create", async () => {
     const ws = fakeWorkspace();
     const task = await ws.taskStore.create({ title: "existing", author: "human" });
-    const { missionControlPanels } = wireManagers(ws);
-    missionControlPanels.open(ws.wsHash);
+    const { openBoard } = wireManagers(ws);
+    await openBoard();
 
     __createdPanels[0].webview.__receive({ type: "openTaskStudio", id: task.id });
     expect(__createdPanels).toHaveLength(2);

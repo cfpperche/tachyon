@@ -24,7 +24,6 @@ import { approvalsMessage } from "../../src/webview/approval/messages";
 import { validationsMessage } from "../../src/webview/validations/messages";
 import { pinStudioMessage } from "../../src/webview/pin-studio/messages";
 import { taskMessage } from "../../src/webview/task-detail/messages";
-import { snapshotMessage } from "../../src/webview/mission-control/messages";
 import { runtimeOpsLoadingMessage, runtimeOpsSnapshotMessage } from "../../src/webview/runtime-ops/messages";
 import { sidebarFixtures } from "./fixtures/sidebar";
 import { handoffFixtures } from "./fixtures/handoff";
@@ -192,15 +191,9 @@ export const ROUTES: Record<string, Route> = {
     fixtures: pinStudioFixtures as Record<string, Fixture>,
     makeMessage: (vm) => pinStudioMessage(vm as never),
   },
-  // t-6da5f0 — vscode-theme.css + mission-control.tailwind.css for this panel's Kit adoption (order: design-
-  // system → vscode-theme → Tailwind → surface CSS, matching MissionControlPanel.ts's real shell call).
-  "mission-control": {
-    bundle: "/dist/webview/mission-control.js",
-    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/vscode-theme.css", "/dist/webview/mission-control.tailwind.css", "/dist/webview/mission-control.css"],
-    frame: { w: 1280, h: 760 },
-    fixtures: missionControlFixtures as Record<string, Fixture>,
-    makeMessage: (vm) => snapshotMessage(vm as never),
-  },
+  // t-610705 (SDD 410 Phase B #6) — the standalone "mission-control" route previewed the retired
+  // Board panel; the Board is a cockpit-only section now — use ?view=cockpit&fixture=mission
+  // (same App.tsx, same fixture VM via the cockpit route's board injection below).
   // t-ed3067 — the standalone "runtime-ops" route previewed RuntimeOpsView.ts, retired as dead code
   // (never registered in production). Runtime Ops is a cockpit-only section now; use
   // ?view=cockpit&fixture=runtime for its visual QA — same App.tsx component either way.
@@ -307,7 +300,6 @@ export const VIEW_META: Record<string, { title: string; aliases: string[] }> = {
   handoff: { title: "Project Handoff", aliases: ["handoff", "project handoff"] },
   approval: { title: "Human Approvals", aliases: ["approvals", "human approvals", "approval view"] },
   "pin-studio": { title: "Pin Studio", aliases: ["pin studio", "pin editor", "sketch"] },
-  "mission-control": { title: "Mission Control", aliases: ["mission control", "board", "task board"] },
   "task-studio": { title: "Task Studio", aliases: ["task studio", "task editor"] },
   "task-detail": { title: "Task Detail", aliases: ["task detail", "task tab"] },
   "pipeline-studio": { title: "Pipeline Studio (shell fake)", aliases: ["pipeline studio", "studio shell fake", "spec 350"] },

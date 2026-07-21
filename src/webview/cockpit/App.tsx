@@ -25,7 +25,15 @@ import type { ConsentVM } from "../../plugins/consentViewModel";
 import type { Toast as PluginsToast } from "../plugins/messages";
 
 // spec 410 — lazy section bodies (ESM chunks). Keeps eager cockpit.js under budget.
-const MissionControlApp = lazy(() => import("../mission-control/App").then((m) => ({ default: m.App })));
+// t-610705 (Phase B #6) — CSS co-load, sixth surface (see the Approvals comment below for the
+// mechanism); two sheets (Tailwind layer + base) share the chunk, like Plugins.
+const MissionControlApp = lazy(() =>
+  import("../mission-control/App").then((m) => {
+    loadSectionStylesheet("mission-tailwind");
+    loadSectionStylesheet("mission");
+    return { default: m.App };
+  }),
+);
 // t-610705 — CSS co-load, third surface (see the Approvals comment below for the mechanism).
 const ValidationsApp = lazy(() =>
   import("../validations/App").then((m) => {

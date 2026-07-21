@@ -149,17 +149,6 @@ describe("preview route table", () => {
     ]);
   });
 
-  it("declares the mission-control route with its snapshot envelope + ordered CSS", () => {
-    const r = ROUTES["mission-control"];
-    expect(r.bundle).toBe("/dist/webview/mission-control.js");
-    expect(r.cssLinks).toEqual(["/dist/webview/codicon.css", "/dist/webview/design-system.css", "/dist/webview/vscode-theme.css", "/dist/webview/mission-control.tailwind.css", "/dist/webview/mission-control.css"]);
-    expect(r.frame).toEqual({ w: 1280, h: 760 });
-    expect(Object.keys(r.fixtures).sort()).toEqual(["default"]);
-    const msg = r.makeMessage(r.fixtures.default.vm) as { type: string; vm?: unknown };
-    expect(msg.type).toBe("snapshot");
-    expect(msg.vm).toBe(r.fixtures.default.vm);
-  });
-
   it("declares the task-detail route (spec 342 dogfood round 2 #4) with its envelope + ordered CSS", () => {
     const r = ROUTES["task-detail"];
     expect(r.bundle).toBe("/dist/webview/task-detail.js");
