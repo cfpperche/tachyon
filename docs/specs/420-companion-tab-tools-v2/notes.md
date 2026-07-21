@@ -45,7 +45,7 @@ See `spec.md` § Decisions. Summary:
 
 _Empty (design only)._
 
-## Awaiting maintainer
+## Ratification
 
-**Ratify** the probe-adjusted Decisions table in `spec.md` (one “yes” is enough to close design
-and start foundation `t-f56a16`).
+- **2026-07-21** — Maintainer approved R1–R6 (visual `RATIFY.md` pack). Design closed.
+- Next: foundation `t-f56a16` (opaque tab handle + @e + envelope on existing tools).

@@ -1,6 +1,7 @@
 # 420 — cartão de ratificação (visual)
 
-_Decisões a dizer **sim / não / mudar**. Diagramas em `diagrams/`._
+**Status: RATIFIED 2026-07-21** (maintainer: R1–R6 sim).  
+Diagramas em `diagrams/`.
 
 ## Ordem de entrega
 

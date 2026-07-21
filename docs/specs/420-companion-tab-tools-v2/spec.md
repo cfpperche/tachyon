@@ -1,14 +1,16 @@
 # 420 — companion-tab-tools-v2
 
 _Created 2026-07-21._  
-_Design by grok (`t-a5154a`); probe-adjusted 2026-07-21; awaiting maintainer ratify._
+_Design by grok (`t-a5154a`); probe-adjusted 2026-07-21; **maintainer ratified R1–R6** 2026-07-21._
 
 **Status:** in-progress
-<!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred. -->
+<!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
+     Design is ratified; status stays in-progress until P0+foundation+safety+dogfood ship. -->
 
-**Board:** design `t-a5154a` · umbrella `t-ca13aa` · parent product 414 shipped  
+**Board:** design `t-a5154a` (done) · umbrella `t-ca13aa` · next `t-f56a16` foundation · parent 414 shipped  
 **Kind:** product SDD (Companion agent-pull tools v2) — tab targeting, refs, safety, expanded surface  
-**Probe:** codex `gpt-5.6-sol` adversarial-review `probe-94a1a975-c98a-4c2d-bed6-7bd8fc19a745` → **block** until identity/confirm/log fixes below.
+**Probe:** codex `gpt-5.6-sol` `probe-94a1a975-c98a-4c2d-bed6-7bd8fc19a745` → folded; **ratify R1–R6 yes** (maintainer).  
+**Visual ratify:** `RATIFY.md` + `diagrams/`
 
 ## Intent
 
@@ -65,7 +67,7 @@ registered boundary.
 4. **Honest envelope** including `unknown_outcome` (do not auto-retry unless idempotent).
 5. **Layered safety from day one** — not a P1 bolt-on; not heuristic-only.
 
-### Decisions (probe-adjusted — ratify)
+### Decisions (probe-adjusted — **ratified 2026-07-21**)
 
 | # | Topic | Decision |
 |---|---|---|
@@ -87,9 +89,9 @@ registered boundary.
 
 ### Phase 0 — Design (this task)
 
-- [ ] Ratify decisions table
-- [ ] Spec + plan + tasks checked in
-- [ ] Board deps unchanged except artifact_refs → this SDD
+- [x] Ratify decisions table (R1–R6 yes, maintainer 2026-07-21)
+- [x] Spec + plan + tasks + RATIFY.md + diagrams checked in
+- [x] Board design task closed after merge
 
 ### Phase 1 — Foundation + safety
 
@@ -168,7 +170,7 @@ Failure / unknown:
 - [x] Decisions table complete after probe (opaque id, layered confirm, redacted audit, unknown_outcome)
 - [x] Board umbrella `t-ca13aa` lists full maintainer roadmap
 - [x] 414 remains shipped; this is a new SDD
-- [ ] Maintainer **ratify** decisions table (blocking)
+- [x] Maintainer **ratify** decisions table (R1–R6 yes, 2026-07-21)
 
 ### Product (implementation — later)
 

@@ -7,9 +7,9 @@ _Board is source of execution order; this file tracks SDD hygiene._
 - [x] Scaffold SDD `420-companion-tab-tools-v2`
 - [x] Probe open questions (codex gpt-5.6-sol `probe-94a1a975…`) and fold must-fix into Decisions
 - [x] Status → `in-progress` (post-probe)
-- [ ] Maintainer ratifies Decisions table in `spec.md`
-- [ ] Design task `t-a5154a` → done after ratify + merge of design docs
-- [ ] Artifact refs on board point to this SDD (foundation+)
+- [x] Maintainer ratifies Decisions table (R1–R6 yes, 2026-07-21) + RATIFY.md visuals
+- [x] Design task `t-a5154a` → done after ratify + merge of design docs
+- [ ] Artifact refs on foundation tasks point to this SDD
 
 ## Phase 1 — Foundation + safety (board)
 
