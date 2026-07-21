@@ -5,6 +5,9 @@ settings:
   # List user_browser_* on the Bridge so agents can discover them; pair still required to execute.
   companion:
     tabTools: true
+    allowedHosts:
+      - the-internet.herokuapp.com
+      - "*.herokuapp.com"
 
 agents:
   grok:

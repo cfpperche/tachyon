@@ -39,14 +39,14 @@ _Board is source of execution order; this file tracks SDD hygiene._
 - [x] `t-25d335` list_frames + shadow pierce + dialog
 - [x] `t-e7d917` network log (redacted)
 
-## Phase 6 — Post-dogfood follow-ups (open)
+## Phase 6 — Post-dogfood follow-ups
 
-- [ ] `t-8f0862` safety: needs_confirm resolves `@e` (P1)
-- [ ] `t-ca6420` download tool path without navigate false-positive
-- [ ] `t-39cbec` dialog custom modals
-- [ ] `t-bb8858` list_frames same-origin children
-- [ ] `t-a8e4ed` screenshot image readback flaky
-- [ ] `t-d16753` password `@e` stamp
+- [x] `t-8f0862` safety: needs_confirm resolves `@e` (TabRefCache) — ADE `61eabe5f`
+- [x] `t-ca6420` navigate `/download` not auto-confirm; file-like URLs only
+- [x] `t-39cbec` dialog custom modals — Companion 0.5.6
+- [x] `t-bb8858` list_frames: investigated (TinyMCE site limit; nested_frames OK)
+- [x] `t-a8e4ed` screenshot retry once on readback fail — 0.5.6
+- [x] `t-d16753` password `@e` stamp — 0.5.6
   
 
 ## Verification
