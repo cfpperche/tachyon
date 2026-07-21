@@ -51,7 +51,7 @@ Not open work on this SDD (no unchecked delivery boxes). Track on sibling board 
 - Agent-pull hardening beyond fixture hosts (broader trust policy)
 - Firefox package
 - Multi-engine picker
-- `apps/mobile` real client — board: `t-fe52f0`, `t-619157`
+- `apps/mobile` real client — board: `t-fe52f0`; research `t-619157` → `docs/architecture/companion-mobile-v1-research.md` (await maintainer ratify → new SDD)
 - Store submission
 - Companion Audit trail surface ("coming soon" residual)
 
