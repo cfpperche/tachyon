@@ -38,7 +38,7 @@ _Status 2026-07-19: foundation + Approvals single-path + lazy ESM shipped in cod
 - [ ] C.1b Task Studio subroutes (`mission/task/new`, `mission/task/<id>/edit`): deferred to its own design dueto — shares StudioPanelManagerBase with 8 other panels (maintainer decision, 2026-07-21, t-610705 journal); retire TaskStudioPanel host when it lands.
 - [x] C.2 Fleet subroutes: `fleet/agent/<name>/activity` (Activity), `fleet/agent/<name>/probes` + `fleet/probes` unfiltered debug route (Probes); retire ActivityPanel + ProbeResultPanel hosts. Design hardened in an adversarial dueto first (probe-2d90286d, REDESIGN verdict, binding-generation + envelope-identity guard added). Commit 937f3701.
 - [x] C.3 Handoff section: folds directly into a `"handoff"` CockpitSectionId (workspace-scoped like Approvals/Validations, no new route kind — no immutable per-entity locator unlike Fleet's subroutes); retire HandoffPanel host. Also fixed a coverage gap found in the same PR: `src/webview/cockpit/**/*.tsx` was never typechecked by any tsconfig. Commit 985708bb.
-- [ ] C.4 Pin Studio nav-less route; retire PinStudioPanel host.
+- [ ] C.4 Pin Studio nav-less route; retire PinStudioPanel host. **Regrouped with C.1b + Phase D (maintainer decision, 2026-07-21, t-610705 journal): PinStudioPanelManager is also built on StudioPanelManagerBase, the same shared base as Task Studio and the 5 studio shells — one design dueto should cover routing/dirty-guard for all 9 StudioPanelManagerBase-based panels at once instead of deciding it piecemeal per surface.**
 - [x] Standing exceptions approved: plugin surfaces stay out (security isolation); dev-only spec-350 fakes stay.
 
 ## Phase D — Studios
