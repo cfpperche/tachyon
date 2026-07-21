@@ -1,7 +1,8 @@
 # 377 — agent-soul-identity — tasks
 
-_Generated from `plan.md` on 2026-07-13. The ratification gate was locked on 2026-07-14;
-implementation still requires separately assigned bounded Deliveries._
+_Generated from `plan.md` on 2026-07-13. Ratified on 2026-07-14 and reconciled against the bounded
+MVP shipped on `main` at `7761e46d` on 2026-07-15. Checked items below mean delivered with cited
+evidence; deferred bullets are not delivery claims._
 
 ## Ratification
 
@@ -69,11 +70,11 @@ implementation still requires separately assigned bounded Deliveries._
       each path; prove none calls any legacy/soul prompt serializer, soul resolver, or long-brief
       compositor; prove resume/rebind never reload/inject soul, native fork never duplicates it, and
       fork metadata keeps enablement/canonical profile identity/digest for later restart/re-anchor.
-- [ ] **T9. Integrate declared executions.** Preserve `soul` in
+- [x] **T9. Integrate declared executions.** Preserve `soul` in
       `deliveryDefinitionSnapshot`; cover bound Delivery, pipeline, schedule, declared subagent,
-      parent ad-hoc non-inheritance, isolated worktree coordinator-root resolution, and rename
-      transaction/collision/rollback plus clear/delete profile retention and explicit adoption on
-      later name reuse.
+      parent ad-hoc non-inheritance, and isolated worktree coordinator-root resolution.
+- **Deferred from T9:** rename transaction/collision/rollback. Clear/delete retention, explicit
+  adoption on later name reuse, and permanent deletion were delivered through T15A/T16-MVP.
 - [x] **T10. Extend the ledger defensively.** Add typed optional role/soul/task and metadata-only
       identity offer/health fields; migrate by absence, drop malformed snapshots safely, support
       `identity-degraded` without body/error-text leakage, and assert a distinctive soul body never
@@ -100,112 +101,76 @@ implementation still requires separately assigned bounded Deliveries._
       defaults, dirty restore, `fromDef`/`toEntry`, host validation, and error codes: accept explicit
       `false` as disabled and emit `true` or omission from the two-state control. Relabel the existing
       textarea “Persistent instructions”.
-- [ ] **T15. Add typed canonical profile actions.** Implement import/create/open/refresh/preview/
-      adopt/enable/disable/delete/rename/repair domain messages. Import uses an in-Studio picker to
-      read a bounded selected file, validates and stages exact bytes for
-      `.tachyon/agents/<agent>/SOUL.md`, never sends or persists the source path,
-      treats self-selection as Adopt/Enable, and requires digest-backed replace confirmation. Create
-      a stable random `profileId`; Clear/roster deletion mark its manifest retained and retain data.
-      Explicit permanent deletion requires confirmation and removes only canonical `SOUL.md` plus
-      Soul-owned `profile.json`, never the containing agent directory or unrelated per-agent files.
-      Every import/create/replace/adopt/enable/disable/rename/delete mutation is serialized through a
-      durable `.tachyon/agent-profile-transactions/` journal with same-filesystem staging/backup,
-      affected-stanza/name-presence compare-and-swap, profile ID/digests, compensation/startup
-      recovery, and blocking `profile-transaction-degraded` state; unrelated `tachyon.yml` edits do
-      not invalidate recovery. Add a confirmed Repair action that can Complete or Roll Back a
-      provably reconcilable journal; never reuse
-      plugin-owned `.tachyon/transactions/`. Profile deletion remains a separate,
-      destructive, confirmed action allowed only with soul disabled and no live session; any resumable
-      row must first be permanently dismissed/purged, optionally through a second-confirmed combined
-      action. Recheck those preconditions under the shared lock. Case-only rename must record its
-      unique temporary sibling before journaling `old → temporary sibling → new`, treat the same
-      folded-name/profile ID as self-rename, reject any distinct active/retained folded manifest on
-      create/import/adopt/rename, and recover every phase. Durably flush staged bytes,
-      quarantine/verify a confirmed Replace destination with separate rollback bytes, publish through
-      an atomic no-replace primitive, flush the directory where supported, then reopen through the
-      strict resolver and verify the expected digest before committing config/manifest state.
-- [ ] **T16. Build the accessible Identity UI.** Place Identity before Role/Instructions, show
-      lifecycle/runtime/not-for-secrets status, provide keyboard-operable file actions,
-      `aria-live` feedback, labeled preview, narrow-width wrapping, and non-color-only states.
-- [ ] **T17. Cover Studio behavior.** Add form, adapter, panel, shell protocol, browser-surface, and
-      extension integration tests for valid/missing/oversize/import-symlink/unsupported/Hermes states,
-      create/import/adopt/replace/open/clear/delete, dirty restore, source-path non-persistence, and
-      every profile-mutation success/collision/rollback plus crash injection at every journal phase.
-      Prove retained-profile/name-reuse adoption, stable profile IDs, affected-stanza recovery despite
-      unrelated config edits, active/retained folded-name collision refusal, operator Complete/Roll
-      Back repair, and bounded resume purge before deletion. Race every mutation and Replace digest
-      confirmation against spawn/restart/re-anchor
-      admission; assert stale digests and launch reservations block conflicting writes.
-- [ ] **T18. Update product/runtime docs.** Update `README.md`, `docs/funcionalidades.html`, and
+- [x] **T15-MVP. Add typed canonical profile actions.** The shipped common path covers
+      create/import-as-copy/open/automatic preview/adopt-or-enable/disable/confirmed replace and
+      confirmed permanent deletion. Mutations use the Soul-owned durable journal, profile/digest CAS,
+      admission lock and recovery/degraded state; the import source path is neither sent nor persisted.
+- **Deferred from full T15:** agent rename, operator Complete/Roll Back Repair UI, exhaustive
+  phase-by-phase crash injection, and the stronger adversarial external-writer/no-replace publication
+  proof. These are not claimed by the MVP.
+- [x] **T16-MVP. Build the accessible Identity UI.** Identity appears before Role/Persistent
+      instructions with lifecycle/runtime status, automatic bounded preview, keyboard-operable common
+      actions, explicit replace/delete confirmation, responsive wrapping, and non-color-only feedback.
+- [x] **T17-MVP. Cover shipped Studio behavior.** Form, adapter, panel, shell protocol, engine and
+      workspace tests cover the delivered common actions, validation, source-path non-persistence,
+      stable profile IDs, retained-profile adoption, stale replacement digests, rollback, collision,
+      and launch-reservation admission.
+- **Deferred from full T17:** rename/repair UI, exhaustive crash-at-every-phase coverage, and the full
+  combinatorial browser matrix for every invalid state.
+- [x] **T18. Update product/runtime docs.** Update `README.md`, `docs/funcionalidades.html`, and
       `docs/runtimes/parity.md` with identity-vs-role-vs-instructions, configuration, precedence,
       canonical profile/import-copy semantics, lifecycle, raw-byte/CRLF semantics, argv/retention
       exposure, future-persistence boundary, offered-vs-consumed channel state,
       prompt/prefill/native/unsupported matrix, wrapper limits, and the Hermes follow-up boundary.
-- [ ] **T19. Add deterministic headless dogfood.** Add `npm run dogfood:agent-soul` with two
+- **Deferred T19:** Add deterministic `npm run dogfood:agent-soul` coverage with two
       same-role agents, distinct souls, real composition/shell delivery, no paid inference,
       metadata-only ledger assertions, and resume-vs-restart/re-anchor refresh proof.
-- [ ] **T20. Run human dogfood and Visual QA.** Exercise two real agents only with maintainer-approved
-      provider use; inspect wide/narrow Agent Studio states with the `visual-qa` skill and attach
-      screenshots/verdict. Treat personality differences as advisory; offer/composition evidence is
-      the gate.
-- [ ] **T21. Closure audit.** Re-run full verification, audit every acceptance criterion/non-goal,
-      update runtime parity with concrete dated proof, close or create the separately scoped Hermes
-      native adapter task, and mark the spec shipped only with dogfood evidence.
+- [x] **T20-MVP. Run human dogfood and Visual QA.** Human dogfood confirmed distinct Soul delivery
+      through Claude, Codex, Grok, and OpenCode plus create/import/replace/enable/disable/edit/delete.
+      The T14 visual review accepted the Identity ordering and dense 900x900 state. No subjective
+      personality claim is used as a gate.
+- [x] **T21. Closure audit.** Re-run full verification, audit the acceptance/non-goals, update runtime
+      parity with dated proof, and mark the spec `shipped-partial`. Native Hermes support remains an
+      explicit independent candidate, not a hidden part of this closure.
 
 ## Verification
 
-- [ ] Config/schema/YAML tests prove boolean `soul` semantics (`true`, `false`, absence, and rejected
-      non-booleans), canonical path derivation, agent-only validation, inert leftover files, init
-      gitignore coverage, existing whole-config/LKG behavior, and old-config compatibility.
-- [ ] Soul profile/resolver tests prove import-as-copy and source-path disposal, atomic private writes,
-      containment, regular-file/no-symlink, UTF-8/NUL/empty, two limits, exact-byte/CRLF digest,
-      Unicode-scalar counting, manifest/profile-ID ownership and adoption-required states, durable
-      flush/reopen/digest verification, documented platform behavior, and actionable errors.
-- [ ] Prompt tests prove exact soul-enabled order and `BASE_SHA`-provenanced golden byte-identical
-      no-soul rendering across spawn/restart/re-anchor/Delivery/pipeline/short/long paths, with
-      manifest/per-fixture SHA enforcement, exact resume/rebind/fork command/send-key parity, and
-      negative all-compositor assertions for those bypass paths.
-- [ ] Lifecycle tests prove fresh/restart refresh; resume/rebind/fork no-duplicate; re-anchor refresh;
-      degraded recovery; deterministic and unknown-error immediate latch; concrete source-change
-      detection only for within-cap reads; zero-retry stable oversize; transient-only 2s/4s/8s
-      exhaustion including live-process-preserving human restart; and bound/pipeline/schedule/
-      worktree/canonical rename/retention semantics, including journaled crash recovery and blocking
-      degraded transactions, affected-stanza recovery across unrelated config edits, case-only
-      rename recovery, and operator Complete/Roll Back repair.
-- [ ] Persistence/privacy tests prove enablement/canonical-profile/digest/channel/offer/health-only
-      ledger state, no original import path, clear/delete retention, pointer-safe explicit profile
-      deletion/generated-file cleanup, and documented transcript/argv/provider exposure.
-- [ ] Runtime tests prove prompt-capable delivery and fail-closed native-external/unsupported
-      behavior, including recognized launchers, rejected wrappers, OpenCode prefill, and Hermes.
-- [ ] Agent Studio unit/browser/integration tests prove canonical create/import/adopt/replace/open/
-      clear/rename/delete/repair actions, digest compare-and-swap, bounded resume purge, validation,
-      accessibility, and clear conceptual hierarchy.
-- [ ] Headless dogfood proves two same-role agents receive only their distinct souls without provider
-      inference.
-- [ ] Full repository gate is green and the worktree is clean.
+- [x] Config/schema/YAML tests cover boolean semantics, canonical path derivation, agent-only
+      validation, case-fold collisions, init ignore coverage, LKG behavior, and legacy compatibility.
+- [x] Profile/resolver tests cover import-as-copy, private atomic writes, containment, file/encoding/
+      size validation, exact-byte digests, stable profile ownership, adoption, and actionable errors.
+- [x] Prompt/lifecycle tests cover typed ordering, byte-identical no-soul fixtures, spawn/restart/
+      re-anchor refresh, resume/rebind/fork non-duplication, declared executions, bounded retry,
+      reservations, degraded state, and long-brief transport for the shipped scope.
+- [x] Persistence/privacy/runtime tests cover metadata-only ledger state, import-path disposal,
+      generated-copy cleanup, prompt-capable channels, recognized launchers, OpenCode prefill, and
+      fail-closed Hermes/unsupported handling.
+- [x] Agent Studio/domain/engine/workspace/browser tests cover the shipped create/import/adopt/
+      replace/open/disable/delete common path, digest CAS, validation, rollback, and accessible
+      conceptual hierarchy.
+- **Deferred verification:** deterministic headless Soul dogfood, rename/repair, and the exhaustive
+  crash/browser permutations attached to those unshipped surfaces.
+- [x] Full repository gate is green on the delivered SHA and is re-run for this closure.
 
 **Verify:** `npm run typecheck`
 
-**Verify:** `npx vitest run test/unit/soul.test.ts test/unit/promptLayers.test.ts test/unit/config.test.ts test/unit/agentManager.test.ts test/unit/resume.test.ts test/unit/agentStudio.test.ts test/unit/agentStudioAdapter.test.ts test/unit/agentStudioPanel.test.ts test/unit/webviewShellParity.test.ts`
-
-**Verify:** `npm run test:browser`
-
 **Verify:** `npm run verify:full:quiet`
-
-**Headless check:** `npm run dogfood:agent-soul`
 
 ## Dogfood
 
-**Dogfood:** `npm run dogfood:agent-soul`
-
-**Human dogfood:** Create two same-role Claude/Codex agents, import distinct files, and verify only
-their canonical `.tachyon/agents/<agent>/SOUL.md` copies are used. Compare the same neutral prompt,
-edit one canonical copy, verify resume does not refresh and restart/re-anchor does, then rename and
-confirm the profile moved transactionally. Provider use requires maintainer approval.
+**Dogfood-Opt-Out:** This documentation-only closure adds no behavior to exercise. The shipped MVP
+already has maintainer-confirmed real dogfood for distinct canonical identities on Claude, Codex,
+Grok, and OpenCode, including create, import/confirmed replace, enable/disable, edit, and delete.
+Deterministic headless dogfood remains explicitly deferred instead of being fabricated here.
 
 ## Visual QA
 
-- [ ] Evidence: wide and narrow Agent Studio captures for valid soul, import/replace confirmation,
-      retained profile, missing file, unsupported runtime, and Hermes externally managed.
-- [ ] Verdict: Identity reads as “who”, Role/Instructions as “work”; file actions/status remain
-      usable and advanced sections keep natural flow.
+Evidence: the T14 review accepted new/off and dense-edit/on Agent Studio fixtures at 900×900; the
+subsequent Dev Host session exercised the functional Identity panel and confirmed replacement flow.
+
+Verdict: the shipped common path keeps Identity as “who” ahead of Role/Persistent instructions as
+“work”, with usable file actions and explicit destructive confirmations. The unshipped exhaustive
+state gallery is not claimed.
+
+**Cookbook-Opt-Out:** Soul is configured and managed through existing Agent Studio and
+`tachyon.yml` surfaces documented in the product guide; it introduces no standalone operator tool.

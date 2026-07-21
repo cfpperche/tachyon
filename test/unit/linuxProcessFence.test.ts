@@ -548,6 +548,23 @@ describe("prepareLaunch and confirmLaunch", () => {
     await expect(fence.confirmLaunch(nonce)).rejects.toThrow(/unit id/);
   });
 
+  it("rejects a wrong unit id immediately while the unit is activating", async () => {
+    const h = makeHarness();
+    const fence = await h.createFence({ supported: true, domain: LINUX_PROCESS_FENCE_DOMAIN });
+    const nonce = "nonce-activating-collision";
+    const prepared = await fence.prepareLaunch(nonce, "cmd");
+    const unit = h.putUnit(prepared.unitName, {
+      invocationId: "",
+      controlGroup: "",
+      procs: [1],
+      activeState: "activating",
+    });
+    unit.snap.id = "foreign.scope";
+
+    await expect(fence.confirmLaunch(nonce)).rejects.toThrow(/unit id/);
+    expect(h.clock.sleeps).toEqual([]);
+  });
+
   it("refuses pending and confirmed replay, so create has exactly one winner", async () => {
     const h = makeHarness();
     const fence = await h.createFence({ supported: true, domain: LINUX_PROCESS_FENCE_DOMAIN });

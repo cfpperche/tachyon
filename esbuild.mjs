@@ -218,11 +218,6 @@ const approval = {
 };
 
 // spec 250 — the Preact Plugins View webview bundle (editor-area panel; never imports vscode).
-const plugins = {
-  ...sidebar,
-  entryPoints: ["src/webview/plugins/main.tsx"],
-  outfile: "dist/webview/plugins.js",
-};
 
 // spec 279 — the Preact Probes view bundle (converted from inline HTML; editor-area panel, never imports vscode).
 const probes = {
@@ -231,19 +226,14 @@ const probes = {
   outfile: "dist/webview/probes.js",
 };
 
-// spec 279 — the Preact Inspector view bundle (converted from inline HTML; editor-area panel, never imports vscode).
-const inspector = {
-  ...sidebar,
-  entryPoints: ["src/webview/inspector/main.tsx"],
-  outfile: "dist/webview/inspector.js",
-};
+// t-610705 (SDD 410 Phase B #5) — the standalone Inspector bundle was retired: the tmux Server
+// Inspector is a cockpit-only section now (src/webview/inspector/App.tsx stays, lazy-imported by
+// cockpit/App.tsx via CSS co-load). inspector.css is still copied below — Cockpit.ts co-loads it.
 
-// POC — Engine/Bridge Control Inspector (module model; UI superseded by Cockpit shell).
-const controlInspector = {
-  ...sidebar,
-  entryPoints: ["src/webview/control-inspector/main.tsx"],
-  outfile: "dist/webview/control-inspector.js",
-};
+// t-b5dcae — the Engine/Bridge Control Inspector POC bundle was removed as dead code: its host
+// (ControlInspector.ts) had zero importers and its webview app (src/webview/control-inspector/*)
+// was only reachable from that host and the dev-preview harness. The real domain logic
+// (src/control-inspector/model.ts) survives — Cockpit's own Engine tab uses it directly.
 
 // POC — Tachyon Cockpit desktop shell (editor sysadmin; t-fe52f0 frente 1; no mobile).
 // spec 410 — ESM + code-splitting so section bodies can lazy-import without bloating eager cockpit.js.
@@ -336,12 +326,9 @@ const pluginHost = {
   outfile: "dist/webview/plugin-host.js",
 };
 
-// spec 335 — the Preact Mission Control board webview bundle (editor-area panel; never imports vscode).
-const missionControl = {
-  ...sidebar,
-  entryPoints: ["src/webview/mission-control/main.tsx"],
-  outfile: "dist/webview/mission-control.js",
-};
+// t-610705 (SDD 410 Phase B #6) — the standalone Mission Control bundle was retired: the Board is a
+// cockpit-only section (src/webview/mission-control/App.tsx stays, lazy-imported by cockpit/App.tsx
+// via CSS co-load). Both mission-control CSS files are still emitted below — Cockpit.ts co-loads them.
 
 // spec 335 — the Preact Task Detail webview bundle (editor-area panel, one per task id; never imports vscode).
 const taskDetail = {
@@ -356,13 +343,6 @@ const taskStudio = {
   ...sidebar,
   entryPoints: ["src/webview/task-studio/main.tsx"],
   outfile: "dist/webview/task-studio.js",
-};
-
-// spec 367 Phase 1 — the statically contributed Runtime Ops bottom-panel view.
-const runtimeOps = {
-  ...sidebar,
-  entryPoints: ["src/webview/runtime-ops/main.tsx"],
-  outfile: "dist/webview/runtime-ops.js",
 };
 
 // spec 256 — Excalidraw as its OWN on-demand bundle. It declares React peers; Tachyon webviews stay
@@ -474,7 +454,6 @@ copyFileSync("src/webview/plugins/plugins.css", "dist/webview/plugins.css"); // 
 copyFileSync("src/webview/activity/activity.css", "dist/webview/activity.css"); // spec 278 — activity styles (shared by the webview + the dev preview harness)
 copyFileSync("src/webview/probes/probes.css", "dist/webview/probes.css"); // spec 279 — probes styles (shared by the webview + the dev preview harness)
 copyFileSync("src/webview/inspector/inspector.css", "dist/webview/inspector.css"); // spec 279 — inspector styles (shared by the webview + the dev preview harness)
-copyFileSync("src/webview/control-inspector/control-inspector.css", "dist/webview/control-inspector.css"); // legacy module CSS
 copyFileSync("src/webview/cockpit/cockpit.css", "dist/webview/cockpit.css"); // Cockpit desktop POC
 copyFileSync("src/webview/pin-preview/pin-preview.css", "dist/webview/pin-preview.css"); // spec 279 — pin-preview styles (shared by the webview + the dev preview harness)
 copyFileSync("src/webview/shared/studio/studio-frame.css", "dist/webview/studio-frame.css"); // spec 350 — the studio shell's chrome (shared by any studio built on it + the dev preview harness)
@@ -509,7 +488,7 @@ if (existsSync(excalidrawAssets)) {
   cpSync(excalidrawAssets, "dist/webview/excalidraw-assets", { recursive: true });
 }
 
-const targets = [extension, toolLauncher, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, activity, handoff, approval, plugins, probes, inspector, controlInspector, cockpit, pinPreview, pinStudio, missionControl, taskDetail, taskStudio, runtimeOps, pipelineStudio, agentStudioFixture, agentStudioShell, terminalStudioShell, commandStudioShell, runbookStudioShell, scheduleStudioShell, pluginHost, excalidraw, mermaid, katex, preview, uiGate];
+const targets = [extension, toolLauncher, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, activity, handoff, approval, probes, cockpit, pinPreview, pinStudio, taskDetail, taskStudio, pipelineStudio, agentStudioFixture, agentStudioShell, terminalStudioShell, commandStudioShell, runbookStudioShell, scheduleStudioShell, pluginHost, excalidraw, mermaid, katex, preview, uiGate];
 if (watch) {
   const ctxs = await Promise.all(targets.map((c) => esbuild.context(c)));
   await Promise.all(ctxs.map((c) => c.watch()));

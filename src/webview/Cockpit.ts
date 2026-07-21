@@ -23,8 +23,8 @@ import {
   snapshotMessage,
   taskErrorMessage,
   type MissionControlAction,
-  type MissionControlVM,
 } from "./mission-control/messages.js";
+import { buildMissionVm, MissionAgentLists } from "../cockpit/missionVm.js";
 import {
   approvalsMessage,
   approvalErrorMessage,
@@ -59,6 +59,8 @@ export interface CockpitPanelState {
   schemaVersion: 1;
   view: typeof COCKPIT_VIEW_TYPE;
   section?: CockpitSectionId;
+  /** t-d16a39 — the shell-level workspace scope at open time; absent = All workspaces. */
+  wsHash?: string;
 }
 
 /** Board wiring for Mission tab embed (same targets as MissionControlPanelManager). */
@@ -146,12 +148,8 @@ function strings(): CockpitStrings {
     auto: t("Auto-refresh"),
     empty: t("No Tachyon workspace attached in this window."),
     copyDiagnostics: t("Copy diagnostics"),
-    openServerInspector: t("Open tmux Inspector"),
     openMissionControl: t("Open Board"),
-    openPlugins: t("Open Plugins"),
     openSettings: t("Open Settings"),
-    openApprovals: t("Open Approvals"),
-    openRuntimeOps: t("Open Runtime Ops"),
     openDoctor: t("Run Doctor"),
     copied: t("Diagnostics copied"),
     overviewTitle: t("Overview"),
@@ -275,8 +273,10 @@ function inspectorStrings(): InspectorStrings {
 
 let panel: vscode.WebviewPanel | undefined;
 let currentSection: CockpitSectionId = "overview";
-let missionWsHash: string | undefined;
-let approvalWsHash: string | undefined;
+/** t-d16a39 — the ONE shell-level workspace scope. undefined = "All workspaces" (aggregate
+ *  sections aggregate; per-workspace sections fall back to the first workspace). Replaces the
+ *  former per-section missionWsHash/approvalWsHash pair and Plugins' derived fallback. */
+let controlWsHash: string | undefined;
 let pushMissionBoard: (() => void) | undefined;
 let pushApprovals: (() => void) | undefined;
 let pushValidations: (() => void) | undefined;
@@ -303,30 +303,11 @@ const PLUGIN_ACTION_TYPES = new Set([
 
 const INSPECTOR_ACTION_TYPES = new Set(["open", "kill", "capture", "reapDead", "reapOrphans"]);
 
-async function buildMissionVm(
-  ws: WorkspaceMissionControlTarget,
-  all: WorkspaceMissionControlTarget[],
-): Promise<MissionControlVM> {
-  const declared = new Set(ws.declaredAgentNames());
-  let agents: Awaited<ReturnType<WorkspaceMissionControlTarget["listMissionControlAgents"]>> = [];
-  let agentLiveness: NonNullable<MissionControlVM["agentLiveness"]> = { status: "available" };
-  try {
-    agents = await ws.listMissionControlAgents();
-  } catch {
-    agentLiveness = { status: "unavailable" };
-  }
-  const liveManaged = agents.filter((a) => a.kind === "agent" && a.running);
-  const liveAdhoc = liveManaged
-    .filter((a) => !a.declared && !declared.has(a.name))
-    .map((a) => a.name);
-  return {
-    folder: ws.folderName,
-    wsHash: ws.wsHash,
-    workspaces: all.map((w) => ({ hash: w.wsHash, folder: w.folderName })),
-    agentLiveness,
-    snapshot: await ws.boardSnapshot(liveAdhoc),
-  };
-}
+// t-610705 (Phase B #6) — the bounded/coalesced agent-liveness pass lives in src/cockpit/missionVm.ts
+// (ported from the retired MissionControlPanelManager so the embedded board keeps the 250ms
+// never-block guarantee). One shared instance for the singleton panel; generation guards staleness.
+const missionAgentLists = new MissionAgentLists();
+let missionGeneration = 0;
 
 function resolveMissionWs(board: CockpitMissionBoard, prefer?: string): WorkspaceMissionControlTarget | undefined {
   const all = board.getWorkspaces();
@@ -335,8 +316,8 @@ function resolveMissionWs(board: CockpitMissionBoard, prefer?: string): Workspac
     const hit = all.find((w) => w.wsHash === prefer);
     if (hit) return hit;
   }
-  if (missionWsHash) {
-    const hit = all.find((w) => w.wsHash === missionWsHash);
+  if (controlWsHash) {
+    const hit = all.find((w) => w.wsHash === controlWsHash);
     if (hit) return hit;
   }
   return all[0];
@@ -349,8 +330,8 @@ function resolveApprovalWs(appr: CockpitApprovals, prefer?: string): WorkspacePr
     const hit = all.find((w) => w.wsHash === prefer);
     if (hit) return hit;
   }
-  if (approvalWsHash) {
-    const hit = all.find((w) => w.wsHash === approvalWsHash);
+  if (controlWsHash) {
+    const hit = all.find((w) => w.wsHash === controlWsHash);
     if (hit) return hit;
   }
   return all[0];
@@ -371,13 +352,15 @@ function sectionTitle(s: CockpitStrings, section: CockpitSectionId): string {
 
 export async function openCockpit(
   deps: CockpitDeps,
-  opts?: { section?: CockpitSectionId; revivedPanel?: vscode.WebviewPanel; missionWsHash?: string; approvalWsHash?: string },
+  opts?: { section?: CockpitSectionId; revivedPanel?: vscode.WebviewPanel; wsHash?: string; missionWsHash?: string; approvalWsHash?: string },
 ): Promise<void> {
   const s = strings();
   const inspS = inspectorStrings();
   if (opts?.section) currentSection = resolveCockpitSection(opts.section);
-  if (opts?.missionWsHash) missionWsHash = opts.missionWsHash;
-  if (opts?.approvalWsHash) approvalWsHash = opts.approvalWsHash;
+  // t-d16a39 — both legacy per-section opt names feed the ONE shell scope (callers unchanged).
+  if (opts?.wsHash) controlWsHash = opts.wsHash;
+  if (opts?.missionWsHash) controlWsHash = opts.missionWsHash;
+  if (opts?.approvalWsHash) controlWsHash = opts.approvalWsHash;
 
   const creating = !panel || !!opts?.revivedPanel;
   if (panel && !opts?.revivedPanel) {
@@ -402,6 +385,8 @@ export async function openCockpit(
         pushApprovals = undefined;
         pushValidations = undefined;
         wiredPanel = undefined;
+        missionGeneration += 1;
+        missionAgentLists.clear();
         deps.plugins.unbindControlEmbed();
       }
     });
@@ -412,7 +397,7 @@ export async function openCockpit(
     let model: CockpitModel;
     try {
       const bundles = await deps.collect();
-      model = buildCockpitModel(bundles, { section: currentSection });
+      model = buildCockpitModel(bundles, { section: currentSection, wsHash: controlWsHash });
     } catch (err) {
       model = buildCockpitModel(
         [
@@ -430,7 +415,7 @@ export async function openCockpit(
             approvals: [],
           },
         ],
-        { section: currentSection },
+        { section: currentSection, wsHash: controlWsHash },
       );
     }
     if (panel === live) {
@@ -447,13 +432,15 @@ export async function openCockpit(
       live.webview.postMessage(taskErrorMessage("No Tachyon workspace for Mission board."));
       return;
     }
-    missionWsHash = ws.wsHash;
+    const generation = ++missionGeneration;
     try {
-      const vm = await buildMissionVm(ws, all);
-      if (panel !== live || currentSection !== "mission") return;
+      // Trailing retry: a list that settles late (after its 250ms fallback already rendered, with
+      // further refreshes coalesced behind it) re-posts once so real liveness replaces "unavailable".
+      const vm = await buildMissionVm(ws, all, missionAgentLists, () => void sendMission());
+      if (panel !== live || currentSection !== "mission" || missionGeneration !== generation) return;
       live.webview.postMessage(snapshotMessage(vm));
     } catch (err) {
-      if (panel !== live) return;
+      if (panel !== live || missionGeneration !== generation) return;
       live.webview.postMessage(taskErrorMessage(err instanceof Error ? err.message : String(err)));
     }
   };
@@ -465,7 +452,6 @@ export async function openCockpit(
       live.webview.postMessage(approvalErrorMessage("No Tachyon workspace for Approvals."));
       return;
     }
-    approvalWsHash = ws.wsHash;
     try {
       const vm = buildApprovalViewModel({ workspaceRoot: ws.workspaceRoot, folder: ws.folderName, wsHash: ws.wsHash });
       if (panel !== live || currentSection !== "approvals") return;
@@ -483,7 +469,6 @@ export async function openCockpit(
       live.webview.postMessage(validationErrorMessage("No Tachyon workspace for Validations."));
       return;
     }
-    missionWsHash = ws.wsHash;
     try {
       const vm = buildValidationsViewModel({ folder: ws.folderName, wsHash: ws.wsHash, validations: ws.listValidations() });
       if (panel !== live || currentSection !== "validations") return;
@@ -524,7 +509,7 @@ export async function openCockpit(
 
   const bindPluginsIfNeeded = () => {
     if (currentSection === "plugins") {
-      deps.plugins.bindControlEmbed(live.webview, approvalWsHash ?? missionWsHash);
+      deps.plugins.bindControlEmbed(live.webview, controlWsHash);
     } else {
       deps.plugins.unbindControlEmbed();
     }
@@ -593,7 +578,7 @@ export async function openCockpit(
       return true;
     }
     if (m.type === "switchWorkspace" && typeof m.wsHash === "string") {
-      missionWsHash = m.wsHash;
+      controlWsHash = m.wsHash;
       await sendMission();
       return true;
     }
@@ -738,6 +723,13 @@ export async function openCockpit(
           await sendModel();
           await sendSectionModule();
           return;
+        case "switchControlWorkspace":
+          // t-d16a39 — "" = All workspaces. Re-send model (aggregate sections re-scope) AND the
+          // active section's module (per-workspace sections re-resolve; plugins embed re-binds).
+          controlWsHash = c.wsHash || undefined;
+          await sendModel();
+          await sendSectionModule();
+          return;
         case "copyDiagnostics": {
           try {
             const bundles = await deps.collect();
@@ -749,33 +741,8 @@ export async function openCockpit(
           }
           return;
         }
-        case "openServerInspector":
-          currentSection = "tmux";
-          await sendModel();
-          await sendSectionModule();
-          return;
-        case "openMissionControl":
-          currentSection = "mission";
-          await sendModel();
-          await sendSectionModule();
-          return;
-        case "openPlugins":
-          currentSection = "plugins";
-          await sendModel();
-          await sendSectionModule();
-          return;
         case "openSettings":
           deps.openSettings();
-          return;
-        case "openApprovals":
-          currentSection = "approvals";
-          await sendModel();
-          await sendSectionModule();
-          return;
-        case "openRuntimeOps":
-          currentSection = "runtime";
-          await sendModel();
-          await sendSectionModule();
           return;
         case "openDoctor":
           deps.openDoctor();
@@ -856,23 +823,38 @@ export async function openCockpit(
 
   if (creating) {
     const uri = (f: string): string => live.webview.asWebviewUri(vscode.Uri.joinPath(deps.extensionUri, "dist", "webview", f)).toString();
+    // t-610705 (SDD 410 Phase B) — CSS co-load: a section's sheet only loads eagerly in the shell
+    // when it's the opening section (flash-free first paint); otherwise its URI ships via a
+    // bootstrap global and the client injects it when the lazy section body loads
+    // (src/webview/shared/lazySectionStyles.ts). Each Phase B PR moves one more surface's sheet
+    // from always-eager to this scheme; sheets not yet migrated stay eager unconditionally.
+    const approvalsIsActive = currentSection === "approvals";
+    const runtimeIsActive = currentSection === "runtime";
+    const validationsIsActive = currentSection === "validations";
+    const pluginsIsActive = currentSection === "plugins";
+    const tmuxIsActive = currentSection === "tmux";
+    const missionIsActive = currentSection === "mission";
     live.webview.html = renderWebviewShell({
       cspSource: live.webview.cspSource,
       title: s.title,
+      // No nested `[...]` inside this literal — test/unit/cockpitCssParity.test.ts source-scans this
+      // exact array via a non-greedy `styles:\s*\[([\s\S]*?)\]` regex, so an inline array literal
+      // (e.g. a `...(cond ? [x] : [])` spread) closes the match early at ITS `]` and silently
+      // truncates everything after. Ternary-to-undefined + filter keeps the block bracket-free.
       styles: [
         uri("codicon.css"),
         uri("design-system.css"),
         uri("vscode-theme.css"),
-        uri("mission-control.tailwind.css"),
-        uri("mission-control.css"),
-        uri("plugins.tailwind.css"),
-        uri("plugins.css"),
-        uri("approval.css"),
-        uri("validations.css"),
-        uri("runtime-ops.css"),
-        uri("inspector.css"),
+        missionIsActive ? uri("mission-control.tailwind.css") : undefined,
+        missionIsActive ? uri("mission-control.css") : undefined,
+        pluginsIsActive ? uri("plugins.tailwind.css") : undefined,
+        pluginsIsActive ? uri("plugins.css") : undefined,
+        approvalsIsActive ? uri("approval.css") : undefined,
+        validationsIsActive ? uri("validations.css") : undefined,
+        runtimeIsActive ? uri("runtime-ops.css") : undefined,
+        tmuxIsActive ? uri("inspector.css") : undefined,
         uri("cockpit.css"),
-      ],
+      ].filter((href): href is string => href !== undefined),
       bundle: uri("cockpit.js"),
       module: true,
       mode: "live",
@@ -880,7 +862,20 @@ export async function openCockpit(
         schemaVersion: 1,
         view: COCKPIT_VIEW_TYPE,
         section: currentSection,
+        ...(controlWsHash ? { wsHash: controlWsHash } : {}),
       } satisfies CockpitPanelState,
+      bootstrapGlobals: {
+        __tachyonSectionStyles: {
+          approvals: uri("approval.css"),
+          runtime: uri("runtime-ops.css"),
+          validations: uri("validations.css"),
+          "plugins-tailwind": uri("plugins.tailwind.css"),
+          plugins: uri("plugins.css"),
+          tmux: uri("inspector.css"),
+          "mission-tailwind": uri("mission-control.tailwind.css"),
+          mission: uri("mission-control.css"),
+        },
+      },
     });
   } else {
     await sendModel();

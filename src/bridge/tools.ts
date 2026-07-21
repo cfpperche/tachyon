@@ -3686,7 +3686,11 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     },
     async ({ message, level }) => {
       try {
-        deps.notify(message, level);
+        // t-18a658 — attribute agent-authored notifications with the Bridge-resolved caller (never
+        // an input the agent could spoof); non-agent principals keep the unprefixed message.
+        const caller = deps.caller ?? { kind: "legacy" as const };
+        const prefix = caller.kind === "agent" && caller.name ? `[${caller.name}] ` : "";
+        deps.notify(`${prefix}${message}`, level);
         return ok("notification shown");
       } catch (err) {
         return fail(err);

@@ -44,24 +44,44 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   { viewId: "tachyonActivity", view: "activity", hostFile: "src/webview/ActivityPanel.ts", mode: "live", converted: true, editorHome: "standalone-multi" },
   { viewId: "tachyonHandoff", view: "handoff", hostFile: "src/webview/HandoffPanel.ts", mode: "live", converted: true, editorHome: "standalone-multi" },
   { viewId: "tachyonApprovals", view: "approval", hostFile: "src/webview/ApprovalPanel.ts", mode: "live", converted: true, editorHome: "legacy-redirect", cockpitSectionId: "approvals" },
-  { viewId: "tachyonPlugins", view: "plugins", hostFile: "src/webview/PluginsPanel.ts", mode: "live", converted: true, editorHome: "standalone" },
+  // The standalone Plugins panel was retired (t-d23f93, 2026-07-20) — Plugins is a cockpit section
+  // only (src/webview/plugins/App.tsx stays, lazy-imported by cockpit/App.tsx; the per-workspace
+  // need is served by Control's shell workspace selector, t-d16a39). The trusted serializer for
+  // the legacy "tachyonPlugins" viewType stays registered in extension.ts: a revived pre-410 panel
+  // disposes itself and redirects into Control → Plugins.
   { viewId: "tachyonPinStudio", view: "pin-studio", hostFile: "src/webview/PinStudioPanel.ts", mode: "live", converted: true, editorHome: "standalone" },
   // spec 279 conversions (flip `converted` as each lane lands)
   // probes re-pushes its model on refresh, so it's a `live` read-only surface (a listener, no inbound actions).
   { viewId: "tachyonProbes", view: "probes", hostFile: "src/webview/ProbeResultPanel.ts", mode: "live", converted: true, editorHome: "standalone-multi" },
-  { viewId: "tachyonServerInspector", view: "inspector", hostFile: "src/webview/ServerInspector.ts", mode: "live", converted: true, editorHome: "standalone" },
+  // The standalone tmux Server Inspector panel was retired (t-610705, SDD 410 Phase B #5, 2026-07-20) —
+  // tmux is a cockpit section only (src/webview/inspector/App.tsx stays, lazy-imported by cockpit/App.tsx;
+  // no per-workspace scoping needed — the tmux socket is cross-workspace by design). The trusted serializer
+  // for the legacy "tachyonServerInspector" viewType stays registered in extension.ts: a revived pre-410
+  // panel disposes itself and redirects into Control → tmux (same command the live open path uses).
   { viewId: "tachyonCockpit", view: "cockpit", hostFile: "src/webview/Cockpit.ts", mode: "live", converted: true, editorHome: "cockpit" },
-  // Superseded by Control in production; retained as a preview surface and disposed if VS Code restores an old panel.
-  { viewId: "tachyonControlInspector", view: "control-inspector", hostFile: "src/webview/ControlInspector.ts", mode: "live", converted: true, editorHome: "dev-only" },
+  // The Engine/Bridge Control Inspector POC was removed as dead code (t-b5dcae, 2026-07-20):
+  // ControlInspector.ts and src/webview/control-inspector/* had zero real importers — Cockpit's
+  // Engine tab was already built on its own JSX + EngineLogPanel.tsx, using src/control-inspector/
+  // model.ts's types directly (that pure model survives). The dispose-only serializer for the
+  // legacy "tachyonControlInspector" viewType stays registered in extension.ts, same defensive
+  // reasoning as the other retired panels: any still-persisted pre-migration window state.
   // pin-preview is hosted in SidebarPrototype.previewPin but renders via its own preact bundle (spec 279 Lane E).
   { viewId: "tachyonPinPreview", view: "pin-preview", hostFile: "src/webview/SidebarPrototype.ts", mode: "static", converted: true, editorHome: "sidebar" },
   // spec 335/339 panels — always preact, just predated this manifest; added on spec 342 dogfood round 2 (#4)
   // when they gained a webview-preview harness route (this list is what the catalog-completeness test spans).
-  { viewId: "tachyonMissionControl", view: "mission-control", hostFile: "src/webview/MissionControlPanel.ts", mode: "live", converted: true, editorHome: "standalone" },
+  // The standalone Mission Control (Board) panel was retired (t-610705, SDD 410 Phase B #6, 2026-07-20) —
+  // the Board is a cockpit section only (src/webview/mission-control/App.tsx stays, lazy-imported by
+  // cockpit/App.tsx; the bounded agent-liveness pass moved to src/cockpit/missionVm.ts). The trusted
+  // serializer for the legacy "tachyonMissionControl" viewType stays registered in extension.ts: a revived
+  // pre-410 panel disposes itself and redirects into Control → Mission scoped to its persisted workspace.
   { viewId: "tachyonTaskDetail", view: "task-detail", hostFile: "src/webview/TaskDetailPanel.ts", mode: "live", converted: true, editorHome: "standalone-multi" },
   { viewId: "tachyonTaskStudio", view: "task-studio", hostFile: "src/webview/TaskStudioPanel.ts", mode: "live", converted: true, editorHome: "standalone" },
-  // spec 367 Phase 1 — statically contributed bottom-panel WebviewView; host republishes on ready/reveal.
-  { viewId: "tachyonRuntimeOpsView", view: "runtime-ops", hostFile: "src/webview/RuntimeOpsView.ts", mode: "live", converted: true, editorHome: "legacy-redirect", cockpitSectionId: "runtime" },
+  // spec 367 Phase 1's WebviewView (RuntimeOpsView.ts) was retired (t-ed3067, 2026-07-20) — it was never
+  // registered (no registerWebviewViewProvider call), unreachable in production. Runtime Ops lives ONLY as
+  // a cockpit section now (view: "runtime-ops" the directory still exists — src/webview/runtime-ops/App.tsx
+  // is lazy-imported by cockpit/App.tsx). The dispose-only serializer for the legacy "tachyonRuntimeOpsView"
+  // viewType stays registered in extension.ts regardless of this manifest entry — real defensive code for
+  // any still-persisted pre-migration window state, independent of whether the class exists.
   // spec 350 T4 — Pipeline Studio (Fake 1), the studio-shell's Phase 1 proof surface. Dev-flag-hidden: this
   // manifest entry is a dev-tooling/catalog-completeness concern (preview harness + convention guard), NOT a
   // user-facing activation — extension.ts never instantiates PipelineStudioPanelManager or registers a command.

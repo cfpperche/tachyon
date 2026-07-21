@@ -200,7 +200,9 @@ export async function main() {
       [vitestEntry, "run", `--maxWorkers=${workers}`, "--reporter=json", `--outputFile=${reportFile}`, "--silent=passed-only"], testLog, active);
     let report;
     try { report = JSON.parse(readFileSync(reportFile, "utf8")); } catch { report = undefined; }
-    if (tests.code !== 0 || tests.signal || receivedSignal || !report) {
+    const reportSummary = report ? summarizeReport(report) : undefined;
+    const reportFailed = report?.success === false || (reportSummary?.failed ?? 0) > 0 || (reportSummary?.failedFiles ?? 0) > 0;
+    if (tests.code !== 0 || tests.signal || receivedSignal || !report || reportFailed) {
       process.stderr.write(`${formatFailure({ phase: "tests", report, fallback: await readTail(testLog), logDir: root })}\n`);
       return receivedSignal === "SIGINT" ? 130 : receivedSignal === "SIGTERM" ? 143 : tests.code || 1;
     }

@@ -9,7 +9,7 @@ import type { TmuxServerSnapshot } from "./inspector/model.js";
 import { CONFIG_FILENAMES, inferKind, type ScheduleDef } from "./config/loadConfig.js";
 import { agentEntryLine, commandEntryLine, runbookEntryLine, scheduleEntryLine } from "./config/YamlConfigEditor.js";
 import type { StudioSubmit } from "./webview/studioSubmit.js";
-import { openServerInspector, SERVER_INSPECTOR_VIEW_TYPE, type ServerInspectorPanelState, type InspectorDeps } from "./webview/ServerInspector.js";
+import { SERVER_INSPECTOR_VIEW_TYPE, type ServerInspectorPanelState, type InspectorDeps } from "./webview/ServerInspector.js";
 import {
   openCockpit,
   refreshCockpitMissionBoard,
@@ -28,7 +28,7 @@ import { HandoffPanelManager, HANDOFF_VIEW_TYPE, type HandoffPanelState } from "
 import { ApprovalPanelManager, APPROVAL_VIEW_TYPE, type ApprovalPanelState } from "./webview/ApprovalPanel.js";
 import { ProbeResultPanelManager, PROBES_VIEW_TYPE, type ProbesPanelState } from "./webview/ProbeResultPanel.js";
 import { PinStudioPanelManager, PIN_STUDIO_VIEW_TYPE, type PinStudioPanelState } from "./webview/PinStudioPanel.js";
-import { MissionControlPanelManager, MISSION_CONTROL_VIEW_TYPE, type MissionControlPanelState } from "./webview/MissionControlPanel.js";
+import { MISSION_CONTROL_VIEW_TYPE, type MissionControlPanelState } from "./webview/MissionControlPanel.js";
 import { TaskDetailPanelManager, TASK_DETAIL_VIEW_TYPE, type TaskDetailPanelState } from "./webview/TaskDetailPanel.js";
 import { TaskStudioPanelManager, TASK_STUDIO_VIEW_TYPE, type TaskStudioPanelState } from "./webview/TaskStudioPanel.js";
 import { AgentStudioPanelManager, AGENT_STUDIO_SHELL_VIEW_TYPE, type AgentStudioPanelState } from "./webview/AgentStudioPanel.js";
@@ -954,16 +954,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // spec 257 — the editor-area Probes inspector (read-only list of captured probe runs, one per root).
   const probePanels = new ProbeResultPanelManager(context.extensionUri, () => workspaces().map((ws) => ws.probe));
   context.subscriptions.push({ dispose: () => probePanels.dispose() });
-  // spec 335 — Mission Control (the Task board) + its per-task Detail tab. Declared with `let` so each manager
-  // can close over the other before both exist (openTask ↔ onTasksChanged), assigned in dependency order below.
-  let missionControlPanels: MissionControlPanelManager;
+  // spec 335 — the Task board (Control → Mission since t-610705 Phase B #6) + its per-task Detail tab.
   let taskDetailPanels: TaskDetailPanelManager;
   // dogfood round 1 (#1) — the ONE fan-out path for any task mutation: an MCP tool call (onViewsChanged("tasks")
   // below) and an engine-side panel mutation (board drag/edit, detail edit) must reach the same three targets,
   // so a board-side edit is never invisible to an open Detail tab (and vice versa).
   const onTasksChanged = () => {
-    missionControlPanels.refreshAll();
-    refreshCockpitMissionBoard(); // Control monolith: Mission tab embeds the same board
+    refreshCockpitMissionBoard(); // Control → Mission is THE board since t-610705 (standalone panel retired)
     taskDetailPanels.refreshAll();
     taskStudioPanels.refreshAll();
     sidebarProto.refresh();
@@ -986,22 +983,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     onTasksChanged,
   );
   context.subscriptions.push({ dispose: () => taskDetailPanels.dispose() });
-  missionControlPanels = new MissionControlPanelManager(
-    context.extensionUri,
-    () => workspaces().map((ws) => ws.missionControl),
-    (target, id) => {
-      const ws = wsOf({ ws: target });
-      if (ws) taskDetailPanels.open(ws.taskDetail, id);
-    },
-    (target, id) => {
-      const ws = wsOf({ ws: target });
-      if (!ws) return;
-      const studio = ws.taskStudio;
-      if (id) taskStudioPanels.openExisting(studio, id); else taskStudioPanels.openNew(studio);
-    },
-    onTasksChanged,
-  );
-  context.subscriptions.push({ dispose: () => missionControlPanels.dispose() });
   let lastBridgeLagNoticeAt = 0;
   let bridgeLagExpectedAt = Date.now() + 5_000;
   const bridgeLagTimer = setInterval(() => {
@@ -1136,7 +1117,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       return killed;
     };
     return {
-      extensionUri: context.extensionUri,
       snapshot,
       serverHealth: async () => tmuxHealthSnapshot(await extensionQuery(tmuxWorkspace(), { action: "tmux.health" })),
       folderByHash,
@@ -1534,7 +1514,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     for (const callback of deferredWorkspacePanelRevives.splice(0)) callback();
   };
 
-  registerTrustedPanelSerializer<MissionControlPanelState>(context, MISSION_CONTROL_VIEW_TYPE, (panel, state) => missionControlPanels.deserialize(panel, state));
+  // t-610705 (Phase B #6) — a revived pre-410 standalone Board panel disposes itself and redirects
+  // into Control → Mission scoped to its persisted workspace, same as tachyon.missionControl.
+  registerTrustedPanelSerializer<MissionControlPanelState>(context, MISSION_CONTROL_VIEW_TYPE, (panel, state) => {
+    panel.dispose();
+    void openCockpit(makeCockpitDeps(), { section: "mission", wsHash: state?.wsHash });
+  });
   registerTrustedPanelSerializer<TaskDetailPanelState>(context, TASK_DETAIL_VIEW_TYPE, (panel, state) => taskDetailPanels.deserialize(panel, state));
   registerTrustedPanelSerializer<ActivityPanelState>(context, ACTIVITY_VIEW_TYPE, (panel, state) => activityPanels.deserialize(panel, state));
   registerTrustedPanelSerializer<HandoffPanelState>(context, HANDOFF_VIEW_TYPE, (panel, state) => handoffPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
@@ -1550,9 +1535,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   registerTrustedPanelSerializer<RunbookStudioPanelState>(context, RUNBOOK_STUDIO_SHELL_VIEW_TYPE, (panel, state) => runbookStudioPanels.deserialize(panel, state));
   registerTrustedPanelSerializer<ScheduleStudioPanelState>(context, SCHEDULE_STUDIO_SHELL_VIEW_TYPE, (panel, state) => scheduleStudioPanels.deserialize(panel, state));
   registerTrustedPanelSerializer<PipelineStudioPanelState>(context, PIPELINE_STUDIO_VIEW_TYPE, (panel, state) => pipelineStudioPanels.deserialize(panel, state));
-  registerTrustedPanelSerializer<ServerInspectorPanelState>(context, SERVER_INSPECTOR_VIEW_TYPE, (panel) => openServerInspector(makeServerInspectorDeps(), panel));
+  // t-610705 (SDD 410 Phase B #5) — a revived pre-410 standalone panel disposes itself and
+  // redirects into Control → tmux via tachyon.inspectServer, same as the live open path below.
+  registerTrustedPanelSerializer<ServerInspectorPanelState>(context, SERVER_INSPECTOR_VIEW_TYPE, (panel) => {
+    panel.dispose();
+    void vscode.commands.executeCommand("tachyon.inspectServer");
+  });
   registerTrustedPanelSerializer<CockpitPanelState>(context, COCKPIT_VIEW_TYPE, (panel, state) =>
-    openCockpit(makeCockpitDeps(), { revivedPanel: panel, section: state?.section }),
+    openCockpit(makeCockpitDeps(), { revivedPanel: panel, section: state?.section, wsHash: state?.wsHash }),
   );
   for (const viewType of ["tachyonPluginSurface", "tachyonPluginSurfaces", "tachyonAgentFixtureStudio", "tachyonControlInspector", "tachyonSketch", "tachyonRuntimeOpsView"]) {
     registerDisposePanelSerializer(context, viewType);
@@ -1831,8 +1821,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       vscode.commands.executeCommand("workbench.action.openSettings", "@ext:cfpperche.tachyon"),
     ),
     // t-7bcba6 — tachyon.persistenceSettings (Visible legacy reminders / silentHooks kill switch) removed.
-    // ---- server inspector (F27) — cross-workspace, standalone socket queries ----
-    vscode.commands.registerCommand("tachyon.inspectServer", () => openServerInspector(makeServerInspectorDeps())),
+    // ---- server inspector (F27) — cross-workspace socket queries; Control → tmux (t-610705 Phase B #5) ----
+    vscode.commands.registerCommand("tachyon.inspectServer", () => openCockpit(makeCockpitDeps(), { section: "tmux" })),
     // ---- Control (desktop MVP, t-fe52f0 frente 1) — editor sysadmin; sidebar header button + palette ----
     vscode.commands.registerCommand("tachyon.openControl", () => openCockpit(makeCockpitDeps())),
     // legacy aliases (palette hidden for openCockpit)
@@ -2196,8 +2186,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (ws) handoffPanels.open(ws.wsHash);
     }),
     vscode.commands.registerCommand("tachyon.openPlugins", async (hash?: string) => {
+      // spec 410 (t-d23f93) — Plugins live in Control (cockpit section); no second peer panel.
       const ws = hash ? byHash(hash) : await pickWorkspace();
-      if (ws) pluginsPanels.open(ws.wsHash);
+      await openCockpit(makeCockpitDeps(), {
+        section: "plugins",
+        ...(ws ? { wsHash: ws.wsHash } : {}),
+      });
     }),
     vscode.commands.registerCommand("tachyon.openPluginSurface", (arg?: { pluginId?: string; viewId?: string; wsHash?: string } | string) => pluginSurfaces.openSurface(arg)),
     // spec 335 + Control monolith POC — open the Mission board *inside* Control (same board UX; new access path).

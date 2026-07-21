@@ -90,7 +90,6 @@ describe("shared UI product patterns (STYLEGUIDE)", () => {
       ["src/webview/activity/App.tsx", ["PageChrome", "EmptyState"]],
       ["src/webview/plugins/App.tsx", ["PageChrome", "Badge"]],
       ["src/webview/task-detail/App.tsx", ["PageChrome", "Chip"]],
-      ["src/webview/control-inspector/App.tsx", ["PageChrome", "Badge"]],
       ["src/webview/pipeline-studio/App.tsx", ["IconButton"]],
       ["src/webview/runtime-ops/App.tsx", ["Button"]],
     ] as const) {

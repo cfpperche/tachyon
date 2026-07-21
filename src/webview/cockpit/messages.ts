@@ -23,12 +23,8 @@ export interface CockpitStrings {
   auto: string;
   empty: string;
   copyDiagnostics: string;
-  openServerInspector: string;
   openMissionControl: string;
-  openPlugins: string;
   openSettings: string;
-  openApprovals: string;
-  openRuntimeOps: string;
   openDoctor: string;
   copied: string;
   overviewTitle: string;
@@ -110,14 +106,11 @@ export type CockpitAction =
   | { type: typeof READY }
   | { type: "refresh" }
   | { type: "copyDiagnostics" }
-  | { type: "openServerInspector" }
-  | { type: "openMissionControl" }
-  | { type: "openPlugins" }
   | { type: "openSettings" }
-  | { type: "openApprovals" }
-  | { type: "openRuntimeOps" }
   | { type: "openDoctor" }
   | { type: "setSection"; section: CockpitSectionId }
+  /** t-d16a39 — shell-level workspace scope; "" selects "All workspaces". */
+  | { type: "switchControlWorkspace"; wsHash: string }
   | { type: "fleetStart"; name: string; wsHash?: string }
   | { type: "fleetStop"; name: string; wsHash?: string }
   | { type: "fleetTerminal"; name: string; wsHash?: string }
@@ -136,14 +129,10 @@ export type CockpitHostMessage =
 export const readyMessage = (): CockpitAction => ({ type: READY });
 export const refreshAction = (): CockpitAction => ({ type: "refresh" });
 export const copyDiagnosticsAction = (): CockpitAction => ({ type: "copyDiagnostics" });
-export const openServerInspectorAction = (): CockpitAction => ({ type: "openServerInspector" });
-export const openMissionControlAction = (): CockpitAction => ({ type: "openMissionControl" });
-export const openPluginsAction = (): CockpitAction => ({ type: "openPlugins" });
 export const openSettingsAction = (): CockpitAction => ({ type: "openSettings" });
-export const openApprovalsAction = (): CockpitAction => ({ type: "openApprovals" });
-export const openRuntimeOpsAction = (): CockpitAction => ({ type: "openRuntimeOps" });
 export const openDoctorAction = (): CockpitAction => ({ type: "openDoctor" });
 export const setSectionAction = (section: CockpitSectionId): CockpitAction => ({ type: "setSection", section });
+export const switchControlWorkspaceAction = (wsHash: string): CockpitAction => ({ type: "switchControlWorkspace", wsHash });
 export const fleetStartAction = (name: string, wsHash?: string): CockpitAction => ({
   type: "fleetStart",
   name,

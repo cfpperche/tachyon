@@ -24,7 +24,6 @@ const MIGRATED_VIEWS = [
   "runtime-ops",
   "mission-control",
   "task-detail",
-  "control-inspector",
   "pipeline-studio",
 ];
 

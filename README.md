@@ -714,6 +714,41 @@ Right-click any sidebar item for **Edit (Studio)**, **Edit in tachyon.yml** (cur
 the entry, schema-validated), **Clone**, **Rename**, **Delete** — with guardrails (rename/delete
 refuse while running where it matters; deleting the last agent is refused).
 
+### Soul — optional per-agent identity
+
+`soul` answers **who this declared agent is**: its stable voice, values, posture, and behavioral
+boundaries. It is separate from `role` (reusable work contract), `instructions` (persistent work
+specialization), and the current task. Enable it explicitly for an agent:
+
+```yaml
+agents:
+  security-reviewer:
+    cmd: claude
+    soul: true
+    role: reviewer
+    instructions: Focus on authentication boundaries.
+```
+
+Agent Studio's **Identity (SOUL.md)** section can create, import a local file as an exact managed
+copy, open, enable/disable, replace with digest-backed confirmation, and permanently delete the
+profile with confirmation. The canonical files are machine-local at
+`.tachyon/agents/<agent>/SOUL.md` and `.tachyon/agents/<agent>/profile.json`; Tachyon never keeps the
+import source path. A retained profile is inert until explicitly enabled/adopted, and `soul: false`
+or absence means disabled. Editing the original imported file never changes the canonical copy.
+
+On a soul-enabled fresh spawn or restart, Tachyon composes identity before role and persistent
+instructions, with Bridge guidance and the current task following as separate layers. Resume/rebind
+does not inject a changed identity into an existing transcript; restart or re-anchor refreshes it.
+Short composed prompts may be visible in process arguments and all delivered content reaches the
+runtime/provider, so SOUL.md is trusted configuration, **not a secrets or authorization surface**.
+
+Direct Claude, Codex, Gemini, `agy`, Grok, Pi, and OpenCode commands have a Tachyon opening-prompt
+adapter; OpenCode receives a TUI prefill, so Tachyon records an offer rather than claiming model
+consumption. Recognized `env`/`npx`/`bunx`/`pnpx` launchers use the same adapters. Shell wrappers,
+renamed/unknown binaries, and Hermes fail closed when `soul: true`; Hermes' native global
+`$HERMES_HOME/SOUL.md` remains externally managed and Tachyon never overwrites it. See the
+[runtime parity matrix](docs/runtimes/parity.md#soul-identity-delivery) for evidence levels.
+
 ### Instructions — agents as roles
 
 ```yaml

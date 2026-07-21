@@ -426,3 +426,44 @@ pass is recorded below.
   integration branch/spec.
 - Native Hermes support needs its own proof task after phase 1. The exact profile/home mechanism is
   intentionally not guessed in this SDD.
+
+## Closure
+
+### 2026-07-20 — shipped-partial closure
+
+- The bounded MVP landed on `main` at `7761e46d99f383fa0923c929645ecad5d12f30a3` through
+  `t-2278bc`. Verification on that exact delivered SHA passed `npm run typecheck` and
+  `npm run verify:full:quiet` with 368 files, 4,494 passing tests, and 3 skipped tests.
+- Maintainer-confirmed Dev Host dogfood covered distinct canonical identities on Claude, Codex,
+  Grok, and OpenCode. The same session exercised create, import-as-copy, confirmed replacement,
+  enable/disable, canonical editing, and confirmed permanent deletion. T14's independent visual
+  review accepted new/off and dense-edit/on Agent Studio fixtures at 900×900.
+- `README.md`, `docs/funcionalidades.html`, and `docs/runtimes/parity.md` now document identity versus
+  role/instructions/task, canonical copy and retention semantics, lifecycle refresh boundaries,
+  exposure/trust limits, channel state, launcher limits, dated runtime evidence, and the Hermes
+  boundary.
+- The status is deliberately `shipped-partial`. Rename and Repair transactions/UI, exhaustive
+  phase-by-phase crash/browser coverage, the stronger external-writer publication proof, and
+  deterministic headless Soul dogfood were not delivered and are not checked as complete.
+- Mission Control inventory found no open Soul implementation follow-up. `t-1bad56`, `t-2278bc`,
+  and this closure remain `landed`: the board correctly refuses `done` while their shared SDD is
+  `shipped-partial`. They are evidence records for code/docs already on `main`, not executable queue
+  items. The superseded umbrella `t-c10dfe` remains dropped. Native Hermes Soul support is an
+  explicit candidate for a future independent task, not an accepted or silently open commitment.
+
+Evidence: `t-eb926c`, `t-dac8d0`, `t-2f380c`, `t-6c328e`, `t-1bad56`, `t-2278bc`, and
+`7761e46d99f383fa0923c929645ecad5d12f30a3`.
+
+## Verification log
+
+### 2026-07-20T17:45:36Z — fail (0/2) — source: tasks.md
+- `npm run typecheck` — fail
+- `npm run verify:full:quiet` — fail
+
+Environment note: this first attempt ran before the isolated worktree had `node_modules`; both npm
+commands failed at dependency/tool resolution. `npm ci` materialized the committed lockfile, then the
+unchanged commands passed in the immediately following run.
+
+### 2026-07-20T17:45:56Z — pass (2/2) — source: tasks.md
+- `npm run typecheck` — pass
+- `npm run verify:full:quiet` — pass

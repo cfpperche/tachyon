@@ -2,9 +2,10 @@
 
 _Drafted from `spec.md` on 2026-07-13._
 
-This is an implementation plan, not an implementation diff. The maintainer locked `R1`–`R6` on
-2026-07-14; production work still begins only through separately assigned, bounded implementation
-Deliveries.
+This is the historical implementation plan, not a statement of current product state. The
+maintainer locked `R1`–`R6` on 2026-07-14; bounded Deliveries subsequently shipped the Soul MVP on
+`main` at `7761e46d`. See `spec.md`, `tasks.md`, and the closure entry in `notes.md` for the truthful
+shipped/deferred disposition.
 
 ## Current-state inventory
 

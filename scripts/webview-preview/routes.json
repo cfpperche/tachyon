@@ -102,60 +102,6 @@
     ]
   },
   {
-    "view": "plugins",
-    "fixture": "default",
-    "url": "/scripts/webview-preview/index.html?view=plugins&fixture=default",
-    "frame": {
-      "w": 900,
-      "h": 760
-    },
-    "tags": [
-      "captured-host-vm"
-    ],
-    "title": "Plugins",
-    "aliases": [
-      "plugins",
-      "plugin drawer",
-      "marketplace"
-    ]
-  },
-  {
-    "view": "plugins",
-    "fixture": "update-available",
-    "url": "/scripts/webview-preview/index.html?view=plugins&fixture=update-available",
-    "frame": {
-      "w": 900,
-      "h": 760
-    },
-    "tags": [
-      "captured-host-vm"
-    ],
-    "title": "Plugins",
-    "aliases": [
-      "plugins",
-      "plugin drawer",
-      "marketplace"
-    ]
-  },
-  {
-    "view": "plugins",
-    "fixture": "empty",
-    "url": "/scripts/webview-preview/index.html?view=plugins&fixture=empty",
-    "frame": {
-      "w": 900,
-      "h": 760
-    },
-    "tags": [
-      "captured-host-vm"
-    ],
-    "title": "Plugins",
-    "aliases": [
-      "plugins",
-      "plugin drawer",
-      "marketplace"
-    ]
-  },
-  {
     "view": "activity",
     "fixture": "default",
     "url": "/scripts/webview-preview/index.html?view=activity&fixture=default",
@@ -304,99 +250,6 @@
     "aliases": [
       "probes",
       "probe inspector"
-    ]
-  },
-  {
-    "view": "inspector",
-    "fixture": "default",
-    "url": "/scripts/webview-preview/index.html?view=inspector&fixture=default",
-    "frame": {
-      "w": 800,
-      "h": 760
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "tmux Inspector",
-    "aliases": [
-      "inspector",
-      "server inspector",
-      "tmux"
-    ]
-  },
-  {
-    "view": "inspector",
-    "fixture": "empty",
-    "url": "/scripts/webview-preview/index.html?view=inspector&fixture=empty",
-    "frame": {
-      "w": 800,
-      "h": 760
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "tmux Inspector",
-    "aliases": [
-      "inspector",
-      "server inspector",
-      "tmux"
-    ]
-  },
-  {
-    "view": "control-inspector",
-    "fixture": "default",
-    "url": "/scripts/webview-preview/index.html?view=control-inspector&fixture=default",
-    "frame": {
-      "w": 920,
-      "h": 820
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Engine/Bridge Inspector",
-    "aliases": [
-      "control inspector",
-      "engine inspector",
-      "bridge inspector",
-      "engine bridge"
-    ]
-  },
-  {
-    "view": "control-inspector",
-    "fixture": "healthy",
-    "url": "/scripts/webview-preview/index.html?view=control-inspector&fixture=healthy",
-    "frame": {
-      "w": 920,
-      "h": 820
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Engine/Bridge Inspector",
-    "aliases": [
-      "control inspector",
-      "engine inspector",
-      "bridge inspector",
-      "engine bridge"
-    ]
-  },
-  {
-    "view": "control-inspector",
-    "fixture": "empty",
-    "url": "/scripts/webview-preview/index.html?view=control-inspector&fixture=empty",
-    "frame": {
-      "w": 920,
-      "h": 820
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Engine/Bridge Inspector",
-    "aliases": [
-      "control inspector",
-      "engine inspector",
-      "bridge inspector",
-      "engine bridge"
     ]
   },
   {
@@ -673,6 +526,48 @@
     ]
   },
   {
+    "view": "cockpit",
+    "fixture": "multi-workspace",
+    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=multi-workspace",
+    "frame": {
+      "w": 1100,
+      "h": 720
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Control",
+    "aliases": [
+      "control",
+      "cockpit",
+      "sysadmin",
+      "project control",
+      "fleet control",
+      "control plane"
+    ]
+  },
+  {
+    "view": "cockpit",
+    "fixture": "multi-workspace-scoped",
+    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=multi-workspace-scoped",
+    "frame": {
+      "w": 1100,
+      "h": 720
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Control",
+    "aliases": [
+      "control",
+      "cockpit",
+      "sysadmin",
+      "project control",
+      "fleet control",
+      "control plane"
+    ]
+  },
+  {
     "view": "pin-preview",
     "fixture": "default",
     "url": "/scripts/webview-preview/index.html?view=pin-preview&fixture=default",
@@ -843,330 +738,6 @@
       "pin studio",
       "pin editor",
       "sketch"
-    ]
-  },
-  {
-    "view": "mission-control",
-    "fixture": "default",
-    "url": "/scripts/webview-preview/index.html?view=mission-control&fixture=default",
-    "frame": {
-      "w": 1280,
-      "h": 760
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Mission Control",
-    "aliases": [
-      "mission control",
-      "board",
-      "task board"
-    ]
-  },
-  {
-    "view": "runtime-ops",
-    "fixture": "default",
-    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=default",
-    "frame": {
-      "w": 1100,
-      "h": 360
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Runtime Ops",
-    "aliases": [
-      "runtime ops",
-      "runtime usage",
-      "usage"
-    ]
-  },
-  {
-    "view": "runtime-ops",
-    "fixture": "loading",
-    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=loading",
-    "frame": {
-      "w": 1100,
-      "h": 360
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Runtime Ops",
-    "aliases": [
-      "runtime ops",
-      "runtime usage",
-      "usage"
-    ]
-  },
-  {
-    "view": "runtime-ops",
-    "fixture": "empty",
-    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=empty",
-    "frame": {
-      "w": 1100,
-      "h": 360
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Runtime Ops",
-    "aliases": [
-      "runtime ops",
-      "runtime usage",
-      "usage"
-    ]
-  },
-  {
-    "view": "runtime-ops",
-    "fixture": "error",
-    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=error",
-    "frame": {
-      "w": 1100,
-      "h": 360
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Runtime Ops",
-    "aliases": [
-      "runtime ops",
-      "runtime usage",
-      "usage"
-    ]
-  },
-  {
-    "view": "runtime-ops",
-    "fixture": "mixed",
-    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=mixed",
-    "frame": {
-      "w": 1100,
-      "h": 360
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Runtime Ops",
-    "aliases": [
-      "runtime ops",
-      "runtime usage",
-      "usage"
-    ]
-  },
-  {
-    "view": "runtime-ops",
-    "fixture": "throttled",
-    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=throttled",
-    "frame": {
-      "w": 1100,
-      "h": 360
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Runtime Ops",
-    "aliases": [
-      "runtime ops",
-      "runtime usage",
-      "usage"
-    ]
-  },
-  {
-    "view": "runtime-ops",
-    "fixture": "stale-bridge",
-    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=stale-bridge",
-    "frame": {
-      "w": 1100,
-      "h": 360
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Runtime Ops",
-    "aliases": [
-      "runtime ops",
-      "runtime usage",
-      "usage"
-    ]
-  },
-  {
-    "view": "runtime-ops",
-    "fixture": "long-label",
-    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=long-label",
-    "frame": {
-      "w": 1100,
-      "h": 360
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Runtime Ops",
-    "aliases": [
-      "runtime ops",
-      "runtime usage",
-      "usage"
-    ]
-  },
-  {
-    "view": "runtime-ops",
-    "fixture": "duplicate-workspace",
-    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=duplicate-workspace",
-    "frame": {
-      "w": 1100,
-      "h": 360
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Runtime Ops",
-    "aliases": [
-      "runtime ops",
-      "runtime usage",
-      "usage"
-    ]
-  },
-  {
-    "view": "runtime-ops",
-    "fixture": "provider-healthy",
-    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=provider-healthy",
-    "frame": {
-      "w": 1100,
-      "h": 360
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Runtime Ops",
-    "aliases": [
-      "runtime ops",
-      "runtime usage",
-      "usage"
-    ]
-  },
-  {
-    "view": "runtime-ops",
-    "fixture": "provider-exhausted",
-    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=provider-exhausted",
-    "frame": {
-      "w": 1100,
-      "h": 360
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Runtime Ops",
-    "aliases": [
-      "runtime ops",
-      "runtime usage",
-      "usage"
-    ]
-  },
-  {
-    "view": "runtime-ops",
-    "fixture": "provider-partial",
-    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=provider-partial",
-    "frame": {
-      "w": 1100,
-      "h": 360
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Runtime Ops",
-    "aliases": [
-      "runtime ops",
-      "runtime usage",
-      "usage"
-    ]
-  },
-  {
-    "view": "runtime-ops",
-    "fixture": "provider-unauthenticated",
-    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=provider-unauthenticated",
-    "frame": {
-      "w": 1100,
-      "h": 360
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Runtime Ops",
-    "aliases": [
-      "runtime ops",
-      "runtime usage",
-      "usage"
-    ]
-  },
-  {
-    "view": "runtime-ops",
-    "fixture": "provider-stale",
-    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=provider-stale",
-    "frame": {
-      "w": 1100,
-      "h": 360
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Runtime Ops",
-    "aliases": [
-      "runtime ops",
-      "runtime usage",
-      "usage"
-    ]
-  },
-  {
-    "view": "runtime-ops",
-    "fixture": "provider-timeout",
-    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=provider-timeout",
-    "frame": {
-      "w": 1100,
-      "h": 360
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Runtime Ops",
-    "aliases": [
-      "runtime ops",
-      "runtime usage",
-      "usage"
-    ]
-  },
-  {
-    "view": "runtime-ops",
-    "fixture": "provider-invalid",
-    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=provider-invalid",
-    "frame": {
-      "w": 1100,
-      "h": 360
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Runtime Ops",
-    "aliases": [
-      "runtime ops",
-      "runtime usage",
-      "usage"
-    ]
-  },
-  {
-    "view": "runtime-ops",
-    "fixture": "provider-disabled",
-    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=provider-disabled",
-    "frame": {
-      "w": 1100,
-      "h": 360
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Runtime Ops",
-    "aliases": [
-      "runtime ops",
-      "runtime usage",
-      "usage"
     ]
   },
   {

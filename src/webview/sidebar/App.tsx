@@ -8,7 +8,7 @@ import {
 import { primaryActions, moreActions, ACTION_META, type ActionId } from "../../sidebar/actions";
 import { sortRows, groupByParent, SORT_LABEL, asSortMode, type SortMode } from "../../sidebar/sortRows";
 import { agentAncestorNames, agentGroupParent, agentHierarchyRows } from "./grouping";
-import { attentionWindow } from "../../sidebar/attentionStack.js";
+import { attentionWindow, splitNoticeAuthor } from "../../sidebar/attentionStack.js";
 import { placeMoreMenu } from "./menuPosition";
 import {
   AGENT_STATUS_FILTERS,
@@ -752,7 +752,9 @@ function AttentionStack({ fleets, dispatch }: { fleets: FleetVM[]; dispatch?: Di
         </Button>
       </div>
       <div class="attention-list" role="list">
-        {visible.map(({ n, hash, folder }) => (
+        {visible.map(({ n, hash, folder }) => {
+          const { body, author } = splitNoticeAuthor(n.message);
+          return (
           <article class={`attention-card level-${n.level}`} role="listitem" key={`${hash ?? ""}:${n.id}`}>
             <div class="attention-card-head">
               <span class={`notice-level l-${n.level}`}>{n.level}</span>
@@ -769,21 +771,27 @@ function AttentionStack({ fleets, dispatch }: { fleets: FleetVM[]; dispatch?: Di
                 <Icon name="close" />
               </Button>
             </div>
-            <div class="attention-message">{n.message}</div>
-            {n.actions.length > 0 && <div class="attention-actions">
-              {n.actions.map((a) => n.actionsLive ? (
-              <Button
-                key={a.id}
-                class="attention-action"
-                title={a.label}
-                onClick={() => dispatch?.section("notice:invoke", n.id, { actionId: a.id }, hash)}
-              >
-                {a.label}
-              </Button>
-              ) : <span class="attention-action-expired" key={a.id} title={`${a.label} is unavailable after engine restart`}>{a.label} unavailable</span>)}
+            <div class="attention-message">{body}</div>
+            {/* t-8aeaac follow-up — one footer row: author on the left (when the message carried
+                one), actions on the right; empty and collapses cleanly when neither is present. */}
+            {(author || n.actions.length > 0) && <div class="attention-foot">
+              <span class="attention-author">{author}</span>
+              {n.actions.length > 0 && <div class="attention-actions">
+                {n.actions.map((a) => n.actionsLive ? (
+                <Button
+                  key={a.id}
+                  class="attention-action"
+                  title={a.label}
+                  onClick={() => dispatch?.section("notice:invoke", n.id, { actionId: a.id }, hash)}
+                >
+                  {a.label}
+                </Button>
+                ) : <span class="attention-action-expired" key={a.id} title={`${a.label} is unavailable after engine restart`}>{a.label} unavailable</span>)}
+              </div>}
             </div>}
           </article>
-        ))}
+          );
+        })}
       </div>
     </section>
   );

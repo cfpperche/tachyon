@@ -2183,3 +2183,55 @@ canonical gate accepted without waivers at
 `.tachyon/verifications/d90a49e267ac9af48655586cd0af5b05b05f8eae.ceb27cbf9a5927ac.json`. The versioned evidence
 is `dogfood-0.55.95.md`. Mechanism-only is therefore live-proven for clean sequential reuse, while descendant
 absence, crash recovery, quarantine recovery and strong isolation remain explicitly T14.6C/T18 work.
+
+
+### 2026-07-20T15:54:26Z — pass (1/1) — source: tasks.md — commit: 715276d61531ed07e646c886784d5c2b4961bc06
+- `node scripts/dogfood/delivery-lease.mjs` — pass
+
+## Closure reconciliation — 2026-07-20
+
+Task `t-2c3c94` audited the original design task `t-0b5723` against the product that shipped after the live 0.55.95
+dogfood. The task contract asked for a specification and migration plan and explicitly excluded immediate
+implementation; keeping it active until strong process fencing would therefore preserve accidental scope creep,
+not an unmet design deliverable.
+
+Later product decisions and evidence resolve the stale Phase-4 checklist:
+
+- spec 376 shipped the canonical-only hard cut. The legacy selector, `verify_task(agent)` lifecycle authority,
+  standalone GitDelivery lifecycle, and eager legacy promotion were retired. The deprecated config key remains
+  loadable but effect-free;
+- specs 376/379 and follow-up tasks including `t-9e57e8` and `t-2dd637` extended governed recovery, reconciliation,
+  and hygiene. These paths use fence proof where available or explicit approval/liveness/occupancy evidence with
+  distinct labels; none turns mechanism-only root absence into `proven_empty`;
+- the installed 0.55.95 record remains the representative real sequential dogfood and explicitly records
+  `mechanism_only_limit: descendants_unproven`;
+- the forcing test `mechanism-only canonical Delivery reuses one worktree through review completion` now performs
+  implement -> verify -> review FINDINGS -> fix -> verify -> review ACCEPT on one canonical worktree while a second
+  independent Delivery remains live in a distinct Git worktree. The test counts actual `git worktree list` paths,
+  correcting the older weak assertion that counted only the shared workspace-hash directory;
+- production still constructs `UnavailableProcessFence` for the strong port and fixes the shipped safety label to
+  `mechanism-only`. This is the truthful boundary, not a missing switch to flip during documentation closure.
+
+Strong T14.6C work was extracted before closure into umbrella `t-f25434`:
+
+1. `t-a26f3c` — host capability, checksum-pinned helper, and provisioning;
+2. `t-816d7f` — Delivery-bound launch/reload wiring and persistent fence identity;
+3. `t-f55bf7` — compensation and recovery fail-closed;
+4. `t-9cf3ae` — installed adversarial dogfood and explicit rollout decision.
+
+The sequential dependency chain is recorded on the board, and umbrella completion depends on all four slices.
+No process-fenced behavior, configuration, or evidence is claimed by this shipped closure.
+
+### Closure verification plan
+
+- Headless dogfood: `node scripts/dogfood/delivery-lease.mjs`.
+- TypeScript: `npm run typecheck`.
+- Full configured gate: `npm run verify:full:quiet`.
+- SDD closure: `bash /home/goat/tachyon/.agents/skills/sdd/scripts/sdd-close.sh 368 --json`.
+- Visual QA is intentionally omitted because this closure changes only orchestration tests and documentation.
+
+## Verification log
+
+### 2026-07-20T15:54:35Z — pass (2/2) — source: tasks.md
+- `npm run typecheck` — pass
+- `npm run verify:full:quiet` — pass

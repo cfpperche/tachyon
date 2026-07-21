@@ -9,6 +9,8 @@ import type { ControlInspectorWorkspaceRow } from "../../control-inspector/model
 import type { CockpitAction, CockpitStrings } from "./messages";
 import { EngineLogPanel } from "./EngineLogPanel";
 import { Button, Badge, ListRow, PageChrome, EmptyState } from "../shared/ui";
+import { KitSelect } from "../shared/ui/kit";
+import { loadSectionStylesheet } from "../shared/lazySectionStyles";
 import type { MissionControlDispatch, TaskErrorEvent } from "../mission-control/App";
 import type { MissionControlVM } from "../mission-control/messages";
 import type { ValidationsDispatch } from "../validations/App";
@@ -20,19 +22,65 @@ import type { InspectorAppProps } from "../inspector/App";
 import type { PluginsDispatch } from "../plugins/App";
 import type { PluginsViewModel } from "../../plugins/viewModel";
 import type { ConsentVM } from "../../plugins/consentViewModel";
-import type { Toast as PluginsToast } from "../plugins/main";
+import type { Toast as PluginsToast } from "../plugins/messages";
 
 // spec 410 — lazy section bodies (ESM chunks). Keeps eager cockpit.js under budget.
-const MissionControlApp = lazy(() => import("../mission-control/App").then((m) => ({ default: m.App })));
-const ValidationsApp = lazy(() => import("../validations/App").then((m) => ({ default: m.App })));
-const ApprovalsApp = lazy(() => import("../approval/App").then((m) => ({ default: m.App })));
-const RuntimeOpsApp = lazy(() => import("../runtime-ops/App").then((m) => ({ default: m.App })));
-const InspectorApp = lazy(() => import("../inspector/App").then((m) => ({ default: m.App })));
-const PluginsApp = lazy(() => import("../plugins/App").then((m) => ({ default: m.App })));
+// t-610705 (Phase B #6) — CSS co-load, sixth surface (see the Approvals comment below for the
+// mechanism); two sheets (Tailwind layer + base) share the chunk, like Plugins.
+const MissionControlApp = lazy(() =>
+  import("../mission-control/App").then((m) => {
+    loadSectionStylesheet("mission-tailwind");
+    loadSectionStylesheet("mission");
+    return { default: m.App };
+  }),
+);
+// t-610705 — CSS co-load, third surface (see the Approvals comment below for the mechanism).
+const ValidationsApp = lazy(() =>
+  import("../validations/App").then((m) => {
+    loadSectionStylesheet("validations");
+    return { default: m.App };
+  }),
+);
+// t-610705 — pilot for CSS co-load: approval.css loads with this chunk, not unconditionally in
+// the cockpit shell (the shell still loads it eagerly ONLY when Approvals is the opening section).
+const ApprovalsApp = lazy(() =>
+  import("../approval/App").then((m) => {
+    loadSectionStylesheet("approvals");
+    return { default: m.App };
+  }),
+);
+// t-610705 — CSS co-load, second surface (see the Approvals comment above for the mechanism).
+const RuntimeOpsApp = lazy(() =>
+  import("../runtime-ops/App").then((m) => {
+    loadSectionStylesheet("runtime");
+    return { default: m.App };
+  }),
+);
+// t-610705 — CSS co-load, fourth surface; two sheets (base + its Tailwind utility layer) share the
+// section id's chunk, so both load via distinct bootstrap-global keys off one lazy-import resolve.
+const PluginsApp = lazy(() =>
+  import("../plugins/App").then((m) => {
+    loadSectionStylesheet("plugins-tailwind");
+    loadSectionStylesheet("plugins");
+    return { default: m.App };
+  }),
+);
+// t-610705 (SDD 410 Phase B #5) — CSS co-load, fifth surface (see the Approvals comment above for
+// the mechanism). Also retires the tmux Server Inspector's standalone dual-path: Cockpit.ts already
+// builds and handles the tmux model/actions independently of ServerInspector.ts (spec 410 Phase B #5).
+const InspectorApp = lazy(() =>
+  import("../inspector/App").then((m) => {
+    loadSectionStylesheet("tmux");
+    return { default: m.App };
+  }),
+);
 
 function SectionFallback() {
   return <EmptyState kind="loading" message="Loading…" />;
 }
+
+/** t-d16a39 — non-empty UI sentinel for "All workspaces" (Radix Select forbids value=""). */
+const ALL_WORKSPACES = "__all__";
 
 export interface CockpitAppProps {
   model: CockpitModel | undefined;
@@ -42,14 +90,11 @@ export interface CockpitAppProps {
   onToggleAuto: (on: boolean) => void;
   onRefresh: () => void;
   onCopyDiagnostics: () => void;
-  onOpenServerInspector: () => void;
-  onOpenMissionControl: () => void;
-  onOpenPlugins: () => void;
   onOpenSettings: () => void;
-  onOpenApprovals: () => void;
-  onOpenRuntimeOps: () => void;
   onOpenDoctor: () => void;
   onSetSection: (section: CockpitSectionId) => void;
+  /** t-d16a39 — shell-level workspace scope; "" = All workspaces. */
+  onSwitchWorkspace: (wsHash: string) => void;
   onFleetStart: (name: string, wsHash?: string) => void;
   onFleetStop: (name: string, wsHash?: string) => void;
   onFleetTerminal: (name: string, wsHash?: string) => void;
@@ -401,8 +446,8 @@ export function App(p: CockpitAppProps) {
                   <>
                     <span class="name">{a.name}</span>
                     <Badge tone={a.running ? "ok" : "default"}>{a.running ? s.running : s.stopped}</Badge>
-                    {a.declared === false ? <span class="ck-pill">{s.adhoc}</span> : <span class="ck-pill muted">{s.declared}</span>}
-                    {a.kind ? <span class="ck-pill muted">{a.kind}</span> : null}
+                    {a.declared === false ? <Badge tone="info">{s.adhoc}</Badge> : <Badge>{s.declared}</Badge>}
+                    {a.kind ? <Badge>{a.kind}</Badge> : null}
                   </>
                 }
                 meta={
@@ -476,7 +521,7 @@ export function App(p: CockpitAppProps) {
                   <>
                     <span class="name">{w.slug || w.id}</span>
                     <Badge tone={w.status === "active" ? "ok" : "default"}>{w.status}</Badge>
-                    <span class="ck-pill muted">{w.kind === "agent" ? s.agent : w.kind === "change" ? s.change : w.kind}</span>
+                    <Badge>{w.kind === "agent" ? s.agent : w.kind === "change" ? s.change : w.kind}</Badge>
                   </>
                 }
                 meta={
@@ -648,6 +693,23 @@ export function App(p: CockpitAppProps) {
               );
             })}
           </div>
+          {/* t-d16a39 — ONE shell-level workspace scope for every section. Hidden for the common
+              single-workspace case (nothing to choose). Radix Select rejects an empty-string item
+              value, so the UI uses the ALL_WORKSPACES sentinel and translates to "" on dispatch
+              (the wire/host side keeps "" = All). */}
+          {m && m.workspaces.length > 1 ? (
+            <KitSelect
+              aria-label="Control workspace"
+              data-testid="control-workspace-select"
+              class="ck-workspace-select"
+              value={m.selectedWsHash ?? ALL_WORKSPACES}
+              onValueChange={(value) => p.onSwitchWorkspace(value === ALL_WORKSPACES ? "" : value)}
+              options={[
+                { value: ALL_WORKSPACES, label: "All workspaces" },
+                ...m.workspaces.map((w) => ({ value: w.hash, label: w.folder })),
+              ]}
+            />
+          ) : null}
         </div>
       </header>
 

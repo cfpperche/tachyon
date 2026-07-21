@@ -1,6 +1,6 @@
 # Runtime capability parity (living document)
 
-**Status:** living · **Owner:** Tachyon maintainers · **Last verified:** 2026-07-19 (startup-brief semantic envelope across positional and Hermes TUI channels)
+**Status:** living · **Owner:** Tachyon maintainers · **Last verified:** 2026-07-20 (Soul MVP closure and runtime delivery audit)
 **Seams (code of record):** `src/resume/adapters.ts`, `src/runtime/runtimeProfile.ts`, `src/agents/AgentManager.ts` (`withRuntimeBridge`, `effectiveCmd`), `src/harness/HarnessManager.ts`, `src/activity/*Normalizer.ts`, `src/attention/patterns.ts`, `src/config/loadConfig.ts` (`INSTRUCTION_ARG`)
 
 This document is the **source of truth** for how Tachyon treats AI CLIs as first-class runtimes.  
@@ -48,6 +48,31 @@ What “first-class” means in Tachyon (ordered for reading, not strict priorit
 | 11 | **Restart** | Kill + respawn with same definition; Bridge re-injected. |
 
 Also real, uneven seams (not full matrix rows yet — see open gaps): **session-id strategy** (mint vs capture), **deterministic `transcriptPath`**, **session-ownership hooks** (Claude `--settings`), **model-label normalization** (Claude/Codex), and **live/observed model provenance** (spec 378 plus the Hermes SQLite reader — claude/codex/grok/hermes can latch an observed model; opencode/gemini/qwen/etc. stay declared-only).
+
+### Soul identity delivery
+
+Soul is a Tachyon-owned optional layer loaded from `.tachyon/agents/<agent>/SOUL.md` only when the
+declared agent has `soul: true`. It uses the same opening-prompt adapter registry as startup briefs,
+but applies a stricter contract: unsupported delivery fails the launch instead of silently dropping
+identity. The product records `offered` channel metadata; it does not claim that a provider consumed
+or obeyed the text.
+
+| Runtime | Delivery when `soul: true` | Evidence as of 2026-07-20 |
+|---------|-----------------------------|---------------------------|
+| Claude | `startup-argument` | **✓** Human Dev Host dogfood, task `t-2278bc` |
+| Codex | `startup-argument` | **✓** Human Dev Host dogfood, task `t-2278bc` |
+| Grok | `startup-argument` | **✓** Human Dev Host dogfood, task `t-2278bc` |
+| OpenCode | `tui-prefill` (`offered`, consumption not guaranteed) | **✓** Human Dev Host dogfood, task `t-2278bc` |
+| Gemini | `startup-argument` | **~** Adapter and unit coverage; no Soul-specific human dogfood recorded |
+| Antigravity / `agy` | `startup-argument` | **~** Adapter and unit coverage; no Soul-specific human dogfood recorded |
+| Pi | `startup-argument` | **~** Adapter is wired after the original MVP; no Soul-specific human dogfood recorded |
+| Hermes | Native external `$HERMES_HOME/SOUL.md` | **✗** Tachyon Soul fails closed; no per-agent Hermes profile/home adapter |
+| Unknown, renamed binary, arbitrary shell wrapper | None | **✗** Fails closed with a direct-command diagnostic |
+
+Recognized direct commands and `env`/`npx`/`bunx`/`pnpx` launchers are classified syntactically by
+basename. This is adapter selection, not binary provenance. Hermes' global/profile-native Soul is
+external user state: Tachyon neither composes with it nor overwrites it. A future native Hermes Soul
+adapter requires a separately proven per-agent home/profile lifecycle.
 
 **Host-only policies** (e.g. `run_host_action` allowlists) are **product governance**, not runtime capability — [§5](#5-host-governance-not-runtime-parity).
 

@@ -7,14 +7,10 @@ import {
   readyMessage,
   refreshAction,
   copyDiagnosticsAction,
-  openServerInspectorAction,
-  openMissionControlAction,
-  openPluginsAction,
   openSettingsAction,
-  openApprovalsAction,
-  openRuntimeOpsAction,
   openDoctorAction,
   setSectionAction,
+  switchControlWorkspaceAction,
   fleetStartAction,
   fleetStopAction,
   fleetTerminalAction,
@@ -295,12 +291,7 @@ function Root() {
       onToggleAuto={setAuto}
       onRefresh={() => post(refreshAction())}
       onCopyDiagnostics={() => post(copyDiagnosticsAction())}
-      onOpenServerInspector={() => post(openServerInspectorAction())}
-      onOpenMissionControl={() => post(openMissionControlAction())}
-      onOpenPlugins={() => post(openPluginsAction())}
       onOpenSettings={() => post(openSettingsAction())}
-      onOpenApprovals={() => post(openApprovalsAction())}
-      onOpenRuntimeOps={() => post(openRuntimeOpsAction())}
       onOpenDoctor={() => post(openDoctorAction())}
       onFleetStart={(name, wsHash) => post(fleetStartAction(name, wsHash))}
       onFleetStop={(name, wsHash) => post(fleetStopAction(name, wsHash))}
@@ -335,6 +326,12 @@ function Root() {
         if (section === "mission") post(requestSnapshotAction());
         if (section === "approvals") post(refreshApprovalsAction());
         if (section === "validations") post(refreshValidationsAction());
+      }}
+      onSwitchWorkspace={(wsHash: string) => {
+        // t-d16a39 — optimistic model update (selector reflects the choice instantly); the host
+        // re-sends the authoritative scoped model + the active section's module right after.
+        setModel((prev) => (prev ? { ...prev, selectedWsHash: wsHash || undefined } : prev));
+        post(switchControlWorkspaceAction(wsHash));
       }}
     />
   );

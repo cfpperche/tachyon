@@ -78,6 +78,16 @@ describe("buildBoardModel", () => {
     expect(card.attention).toEqual([{ code: "ready_to_close", message: "close it" }]);
   });
 
+  // t-8aeaac — the card always carries its creator, agent or human, with a stable color token.
+  it("card.author flows from Task.author for agents and humans alike", () => {
+    const byAgent = task({ id: "t-000001", author: "claude" });
+    const byHuman = task({ id: "t-000002", author: "human" });
+    const model = buildBoardModel({ snapshot: snapshotFor([byAgent, byHuman]) });
+    const cards = model.columns.find((c) => c.status === "inbox")!.cards;
+    expect(cards.find((c) => c.id === "t-000001")).toMatchObject({ author: "claude", authorColorVar: colorTokenFor("claude") });
+    expect(cards.find((c) => c.id === "t-000002")).toMatchObject({ author: "human", authorColorVar: colorTokenFor("human") });
+  });
+
   it("places landed tasks in their own first-class column", () => {
     const landed = task({ id: "t-000001", status: "landed", assignee: "finished-runner" });
     const active = task({ id: "t-000002", status: "active", assignee: "codex" });

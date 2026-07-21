@@ -386,7 +386,11 @@
   .attention-folder { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ds-muted); font-size: 10px; }
   .attention-time { margin-left: auto; color: var(--ds-muted); font-size: 9px; font-variant-numeric: tabular-nums; }
   .attention-message { color: var(--vscode-foreground); font-size: 11px; line-height: 1.35; overflow-wrap: anywhere; }
-  .attention-actions { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; }
+  /* t-8aeaac follow-up — footer row: author left, actions right (same slot the lone Open button
+     used to sit in alone), only rendered when there is an author and/or at least one action. */
+  .attention-foot { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+  .attention-author { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ds-muted); font-size: 10px; }
+  .attention-actions { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; margin-left: auto; }
   .notice-level { flex: none; font-size: 9px; text-transform: uppercase; letter-spacing: .04em; padding: 0 4px; border-radius: 3px; border: 1px solid var(--ds-border); color: var(--ds-muted); }
   .notice-level.l-warn { color: var(--ds-warn, #cca700); border-color: color-mix(in srgb, var(--ds-warn, #cca700) 40%, var(--ds-border)); }
   .notice-level.l-error { color: var(--ds-err, #f14c4c); border-color: color-mix(in srgb, var(--ds-err, #f14c4c) 40%, var(--ds-border)); }

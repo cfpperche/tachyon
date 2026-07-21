@@ -36,16 +36,6 @@ describe("preview route table", () => {
     expect(msg.fleets).toEqual([SAMPLE]);
   });
 
-  it("declares the plugins route with its bundle + ordered CSS + a wider frame", () => {
-    const r = ROUTES.plugins;
-    expect(r.bundle).toBe("/dist/webview/plugins.js");
-    expect(r.cssLinks).toEqual(["/dist/webview/codicon.css", "/dist/webview/design-system.css", "/dist/webview/vscode-theme.css", "/dist/webview/plugins.tailwind.css", "/dist/webview/plugins.css"]);
-    expect(r.frame).toEqual({ w: 900, h: 760 });
-    // its makeMessage uses the plugins envelope (a different contract than the sidebar's fleet push).
-    const msg = r.makeMessage(r.fixtures.default.vm) as { type: string };
-    expect(msg.type).toBe("plugins");
-  });
-
   it("declares the activity route with its own envelope + ordered CSS", () => {
     const r = ROUTES.activity;
     expect(r.bundle).toBe("/dist/webview/activity.js");
@@ -61,27 +51,6 @@ describe("preview route table", () => {
     expect(r.cssLinks).toEqual(["/dist/webview/design-system.css", "/dist/webview/probes.css"]);
     expect(Object.keys(r.fixtures).sort()).toEqual(["default", "empty", "error"]);
     expect((r.makeMessage(r.fixtures.default.vm) as { type: string }).type).toBe("probes");
-  });
-
-  it("declares the inspector route (spec 279) injecting BOTH init + model messages", () => {
-    const r = ROUTES.inspector;
-    expect(r.bundle).toBe("/dist/webview/inspector.js");
-    const msgs = r.makeMessage(r.fixtures.default.vm) as Array<{ type: string }>;
-    expect(Array.isArray(msgs)).toBe(true);
-    expect(msgs.map((m) => m.type)).toEqual(["init", "model"]);
-  });
-
-  it("declares the control-inspector route (Engine/Bridge POC) with init + model", () => {
-    const r = ROUTES["control-inspector"];
-    expect(r.bundle).toBe("/dist/webview/control-inspector.js");
-    expect(r.cssLinks).toEqual([
-      "/dist/webview/codicon.css",
-      "/dist/webview/design-system.css",
-      "/dist/webview/control-inspector.css",
-    ]);
-    expect(Object.keys(r.fixtures).sort()).toEqual(["default", "empty", "healthy"]);
-    const msgs = r.makeMessage(r.fixtures.default.vm) as Array<{ type: string }>;
-    expect(msgs.map((m) => m.type)).toEqual(["init", "model"]);
   });
 
   it("declares the cockpit route (Control monolith embeds + CSS) with init + model", () => {
@@ -109,6 +78,8 @@ describe("preview route table", () => {
       "engine",
       "fleet",
       "mission",
+      "multi-workspace",
+      "multi-workspace-scoped",
       "plugins",
       "runtime",
       "settings",
@@ -176,44 +147,6 @@ describe("preview route table", () => {
       "/dist/webview/studio-frame.css",
       "/dist/webview/agent-studio-shell.css",
     ]);
-  });
-
-  it("declares the mission-control route with its snapshot envelope + ordered CSS", () => {
-    const r = ROUTES["mission-control"];
-    expect(r.bundle).toBe("/dist/webview/mission-control.js");
-    expect(r.cssLinks).toEqual(["/dist/webview/codicon.css", "/dist/webview/design-system.css", "/dist/webview/vscode-theme.css", "/dist/webview/mission-control.tailwind.css", "/dist/webview/mission-control.css"]);
-    expect(r.frame).toEqual({ w: 1280, h: 760 });
-    expect(Object.keys(r.fixtures).sort()).toEqual(["default"]);
-    const msg = r.makeMessage(r.fixtures.default.vm) as { type: string; vm?: unknown };
-    expect(msg.type).toBe("snapshot");
-    expect(msg.vm).toBe(r.fixtures.default.vm);
-  });
-
-  it("declares the Runtime Ops panel with typed state fixtures", () => {
-    const route = ROUTES["runtime-ops"];
-    expect(route.bundle).toBe("/dist/webview/runtime-ops.js");
-    expect(route.cssLinks).toEqual(["/dist/webview/design-system.css", "/dist/webview/runtime-ops.css"]);
-    expect(Object.keys(route.fixtures).sort()).toEqual([
-      "default",
-      "duplicate-workspace",
-      "empty",
-      "error",
-      "loading",
-      "long-label",
-      "mixed",
-      "provider-disabled",
-      "provider-exhausted",
-      "provider-healthy",
-      "provider-invalid",
-      "provider-partial",
-      "provider-stale",
-      "provider-timeout",
-      "provider-unauthenticated",
-      "stale-bridge",
-      "throttled",
-    ]);
-    expect((route.makeMessage(route.fixtures.default.vm) as { type: string }).type).toBe("runtimeOpsSnapshot");
-    expect((route.makeMessage(route.fixtures.loading.vm) as { type: string }).type).toBe("runtimeOpsLoading");
   });
 
   it("declares the task-detail route (spec 342 dogfood round 2 #4) with its envelope + ordered CSS", () => {

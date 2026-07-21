@@ -617,12 +617,56 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
       });
       await expect(ws.manager.restart("implementer")).rejects.toThrow(/Delivery/);
       const head = git(canonical, ["rev-parse", "HEAD"]);
+      const tree = git(canonical, ["rev-parse", "HEAD^{tree}"]);
+
+      // SDD 368 T17: an independently gated change stays live in parallel, but receives its own
+      // Delivery/worktree. Sequential exclusivity is per Delivery, never a workspace-global lock.
+      await ws.manager.spawn("parallel-implementer", {
+        cmd: "claude",
+        delegator: "boss",
+        contract: { ...contract, task: "independent parallel change" },
+        gate: { behaviorTest: "cmd:node scripts/check-behavior.mjs", owns: ["docs"] },
+        reveal: false,
+      });
+      const parallel = (await ws.deliveries.list()).find((delivery) =>
+        delivery.lease.holder?.executionAgent === "parallel-implementer");
+      expect(parallel).toBeDefined();
+      const parallelCanonical = fs.realpathSync(ws.ledger.get("parallel-implementer")!.worktree!.path);
+      expect(parallel?.id).not.toBe(initial.id);
+      expect(parallelCanonical).not.toBe(canonical);
+      expect(parallel?.lease.state).toBe("held");
+      expect(fake.children.get(ws.manager.session("parallel-implementer"))?.exitCode).toBeNull();
+      expect((await ws.gitDeliveries.list()).filter((delivery) =>
+        delivery.deliveryId === initial.id || delivery.deliveryId === parallel?.id)).toHaveLength(2);
+      const canonicalBase = fs.realpathSync(base) + path.sep;
+      const deliveryWorktrees = () => git(root, ["worktree", "list", "--porcelain"])
+        .split("\n")
+        .filter((line) => line.startsWith("worktree "))
+        .map((line) => fs.realpathSync(line.slice("worktree ".length)))
+        .filter((worktree) => worktree.startsWith(canonicalBase));
+      expect(deliveryWorktrees()).toEqual(expect.arrayContaining([canonical, parallelCanonical]));
+      expect(deliveryWorktrees()).toHaveLength(2);
+
+      const verify = async (integrityHash: string) => ws.deliveryVerification.run(
+        initial.id,
+        { kind: "agent", name: "boss" },
+        async () => ({ publish: async () => ({
+          result: "accepted",
+          evidence: { refSha: head, treeSha: tree, verdict: "accept", integrityHash, recordPath: `${integrityHash}.json` },
+        }) }),
+      );
+      await expect(verify("pre-review-verification")).resolves.toBe("accepted");
+      expect(fake.sessions.has(ws.manager.session("implementer"))).toBe(false);
+      expect(fake.children.get(ws.manager.session("parallel-implementer"))?.exitCode).toBeNull();
+
       const join = async (name: string, role: "reviewer" | "fixer", operation: string) => ws.manager.spawn(name, { cmd: "claude", reveal: false, deliveryJoin: { deliveryId: initial.id, role, ownsSubset: role === "reviewer" ? [] : ["src"], expectedHead: head, operationId: operation } });
       await join("reviewer-1", "reviewer", "review-1");
       expect(fake.children.get(ws.manager.session("implementer"))?.exitCode).not.toBeNull();
       expect(fs.realpathSync(ws.ledger.get("reviewer-1")!.cwd)).toBe(canonical);
       await ws.deliveryLease.completeReview({ deliveryId: initial.id, canonicalWorktree: canonical, expectedReviewedHeadSha: head, verdict: "FINDINGS", actor: { kind: "agent", name: "boss" }, operationId: "findings" });
-      await join("fixer", "fixer", "fixer"); await join("reviewer-2", "reviewer", "review-2");
+      await join("fixer", "fixer", "fixer");
+      await expect(verify("post-fix-verification")).resolves.toBe("accepted");
+      await join("reviewer-2", "reviewer", "review-2");
       await ws.deliveryLease.completeReview({ deliveryId: initial.id, canonicalWorktree: canonical, expectedReviewedHeadSha: head, verdict: "ACCEPT", actor: { kind: "agent", name: "boss" }, operationId: "accept" });
       const final = await ws.deliveries.get(initial.id);
       expect(final?.lease.state).toBe("free"); expect(final?.segments.map((s) => s.role)).toEqual(["implementer", "reviewer", "fixer", "reviewer"]);
@@ -632,7 +676,10 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
         mac: final?.authorityIntegrity?.mac,
       });
       expect((await ws.gitDeliveries.list()).filter((g) => g.deliveryId === initial.id)).toHaveLength(1);
-      expect(fs.readdirSync(base).filter((x) => fs.statSync(path.join(base, x)).isDirectory())).toHaveLength(1);
+      expect((await ws.deliveries.get(parallel!.id))?.lease.state).toBe("held");
+      expect(fake.children.get(ws.manager.session("parallel-implementer"))?.exitCode).toBeNull();
+      expect(deliveryWorktrees()).toEqual(expect.arrayContaining([canonical, parallelCanonical]));
+      expect(deliveryWorktrees()).toHaveLength(2);
     } finally { await fake.cleanup(); ws.dispose(); }
   });
 

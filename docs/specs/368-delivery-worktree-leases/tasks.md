@@ -74,8 +74,9 @@ _Generated from `plan.md` on 2026-07-10. Work top-to-bottom. Check boxes as task
   containment plus a checksum-pinned `CAP_SYS_PTRACE` helper must return exact empty/survivor outcomes with zero
   unknown evidence; deliberate malicious control of the same Linux account is explicitly out of scope.
   - Gate: `a capped FDSize-bounded audit reports empty with no binding and the exact open FD as a survivor`.
-- [ ] T14.6. Complete the staged handoff-safety rollout. Preserve the reviewed Linux `ProcessFencePort` path while
-  adding an explicitly weaker mechanism-only dogfood level that can never impersonate its proof.
+- [x] T14.6. Complete the shipped mechanism-only handoff-safety stage, preserve the reviewed Linux
+  `ProcessFencePort` core, and extract the stronger production rollout so mechanism-only can never impersonate its
+  proof.
   - [x] T14.6A. Land and independently review the injected Linux systemd/cgroup adapter, nonce-bound identity
     registry, exact-snapshot action gates, checksum-pinned helper parser, and deterministic adversarial matrix.
   - [x] T14.6B. Wire an explicitly experimental `mechanism-only` policy into exact Delivery-bound
@@ -88,44 +89,46 @@ _Generated from `plan.md` on 2026-07-10. Work top-to-bottom. Check boxes as task
       semantics, exact-root stop/observe path, quarantine behavior, and deterministic forcing matrix.
     - [x] T14.6B2. Wire Workspace/AgentManager/config/Bridge, initial process identity and nonce persistence,
       review completion authority, and operator-visible mechanism-only warnings.
-  - [ ] T14.6C. Wire the accepted Linux adapter into exact Delivery-bound launch/reload/compensation paths plus
-    persistent fence identity storage and `process-fenced` configuration; never silently downgrade to
-    `mechanism-only`.
-  - Gate: `a detached Delivery writer survives pane death but cannot cross handoff after scope kill and exact audit`.
+  - [x] T14.6C disposition. Do not claim or wire strong mode in this shipped boundary. Transfer capability/helper,
+    launch/reload identity, compensation/recovery, and installed adversarial rollout to umbrella `t-f25434` and
+    follow-ups `t-a26f3c`, `t-816d7f`, `t-f55bf7`, and `t-9cf3ae`.
+  - Deferred gate: `a detached Delivery writer survives pane death but cannot cross handoff after scope kill and
+    exact audit` — owned by `t-9cf3ae`, not satisfied by this spec.
 - [x] T15. Serialize linked GitDelivery mutation under the canonical Delivery lock, add idempotent projection
   reconciliation, and make list/hygiene/integration/prune refuse pending, held, verifying, unknown, or quarantined.
   T15 policy acceptance is a prerequisite for mechanism-only dogfood so no legacy projection mutation bypasses the
   experimental lease.
   - Gate: `concurrent reconcile and prune cannot diverge GitDelivery from canonical lease safety`.
-- [ ] T16. Add config/schema for canonical rollout, recovery principals, and explicit
-  `handoffSafety: disabled | mechanism-only | process-fenced`; retain `disabled`/legacy behavior by default,
-  reject incompatible combinations, and surface the mechanism-only isolation warning until process-fenced
-  dogfood evidence is recorded.
-  - Gate: `Delivery lease rollout is opt-in and legacy configuration remains compatible`.
-- [ ] T17. Add a temp-git integration test covering implement → verify → review FINDINGS → fix → verify → ACCEPT on
-  one worktree plus a second concurrent Delivery.
-- [ ] T18. Add and run headless dogfood covering the sequential lifecycle, same-Delivery contention refusal, dirty
-  crash quarantine, salvage/abandon policy, and GitDelivery hygiene/prune refusal.
-  T14.6B mechanism-only dogfood may cover clean implement -> review -> fix reuse and contention, with explicit
-  evidence that detached descendants are unproven and destructive/recovery paths refuse. Full crash quarantine,
-  recovery, and isolation acceptance still requires T14.6C plus an explicitly installed/verified helper.
-- [ ] T19. After dogfood and full verification pass, switch new gated orchestration to Delivery leases by default,
-  retain explicit legacy compatibility, update docs/tool descriptions, and record the rollout decision.
-- [ ] T20. Run SDD closure audit, attach verification/dogfood evidence, mark acceptance criteria, and move
-  `t-0b5723` through landed to done only after the shipped status and evidence agree.
+- [x] T16 supersession. Spec 376 replaced the selectable rollout with canonical mechanism-only as the sole product
+  path, retained only an effect-free deprecated `settings.delivery` compatibility key, and preserved governed
+  recovery principals plus the descendant-isolation warning. Strong `process-fenced` configuration is deferred to
+  `t-816d7f`; the originally planned disabled/legacy default did not ship and is not claimed.
+- [x] T17. Add a temp-git integration test covering implement → verify → review FINDINGS → fix → verify → ACCEPT on
+  one worktree while a second independent Delivery remains live in its own worktree. The forcing test is
+  `test/unit/workspaceHeadless.test.ts` under the dogfood title used by `scripts/dogfood/delivery-lease.mjs`.
+- [x] T18. Run mechanism-only headless and installed dogfood for the sequential lifecycle, and retain the focused
+  forcing matrices for same-Delivery contention, dirty/head drift quarantine, salvage/abandon policy, and
+  GitDelivery hygiene/prune refusal. `dogfood-0.55.95.md` explicitly records `descendants_unproven`; later governed
+  recovery dogfood is recorded by specs 376/379 and their task journals. Strong crash isolation remains in
+  `t-f25434`.
+- [x] T19 supersession. Spec 376 removed the legacy selector and made new gated orchestration canonical
+  mechanism-only after installed dogfood; current schemas/tool descriptions expose no selectable legacy lifecycle.
+- [x] T20. Reconcile the SDD as shipped, attach current verification/dogfood evidence, extract T14.6C into
+  explicit follow-ups, and close the original design task `t-0b5723` through `landed` to `done` under closure task
+  `t-2c3c94`.
 
 ## Verification
 
-- [ ] Focused Delivery, Bridge, AgentManager, verify_task, GitDelivery, config, and ledger suites pass.
-- [ ] TypeScript checks for extension and webview projects pass.
-- [ ] Full canonical verification passes after each integrated phase and at final HEAD.
-- [ ] The behavior verifier for every delegated implementation fails at its BASE_SHA and passes at delivered HEAD.
-- [ ] No test suppression, authority widening, same-Delivery worktree fork, or destructive recovery bypass is present.
+- [x] Focused Delivery, Bridge, AgentManager, verify_task, GitDelivery, config, and ledger suites pass.
+- [x] TypeScript checks for extension and webview projects pass.
+- [x] Full canonical verification passes after each integrated phase and at final HEAD.
+- [x] The behavior verifier for every delegated implementation fails at its BASE_SHA and passes at delivered HEAD.
+- [x] No test suppression, authority widening, same-Delivery worktree fork, or destructive recovery bypass is present.
 
-**Headless check:** `npm run verify:full`
+**Headless check:** `npm run verify:full:quiet`
 
 **Verify:** `npm run typecheck`
-**Verify:** `npm run verify:full`
+**Verify:** `npm run verify:full:quiet`
 
 ## Dogfood
 
@@ -138,3 +141,6 @@ sequence and confirm that one Delivery/worktree changes occupants without spawni
 
 **Visual QA Opt-Out:** v1 changes headless orchestration, persistence, and structured Bridge output; no visual UI
 surface is introduced by this spec.
+
+**Cookbook-Opt-Out:** canonical Delivery operations are documented by their current Bridge tool schemas and later
+recovery specs; this historical architecture spec introduces no additional operator workflow at closure.

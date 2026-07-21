@@ -122,6 +122,16 @@ describe("quiet full verification", () => {
     expect(Buffer.byteLength(result.stderr)).toBeLessThanOrEqual(FAILURE_LIMITS.totalBytes + 1);
   });
 
+  it("fails closed when the JSON report records failures even if Vitest exits zero", async () => {
+    const report = { ...passingReport, success: false, numFailedTests: 1, numPassedTests: 9,
+      testResults: [{ status: "failed", assertionResults: [{ status: "failed", fullName: "reported failure", failureMessages: ["expected true"] }] }] };
+    const result = await execute(workspace(), { FAKE_REPORT: JSON.stringify(report), FAKE_EXIT: "0" });
+    expect(result.code).not.toBe(0);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toContain("failed during tests");
+    expect(result.stderr).toContain("reported failure");
+  });
+
   it("falls back to a bounded build tail when no JSON report exists", async () => {
     const result = await execute(workspace("console.error('BUILD FAILURE DETAIL'); process.exit(4)\n"));
     expect(result.code).toBe(4);

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { ControlInspectorWorkspaceRow } from "../../control-inspector/model";
+import { Button, Input, Select } from "../shared/ui";
 import {
   copyTextAction,
   engineLogClearAction,
@@ -119,14 +120,14 @@ export function EngineLogPanel({
               </button>
             ))}
           </div>
-          <input
+          <Input
             class="ci-log-filter"
             type="search"
             placeholder="Filter…"
             value={filter}
             onInput={(e) => setFilter((e.currentTarget as HTMLInputElement).value)}
           />
-          <select
+          <Select
             class="ci-log-since"
             value={since}
             onChange={(e) => setSince((e.currentTarget as HTMLSelectElement).value as Since)}
@@ -135,27 +136,25 @@ export function EngineLogPanel({
             <option value="all">All</option>
             <option value="2m">2m</option>
             <option value="15m">15m</option>
-          </select>
-          <button
-            type="button"
-            class="ci-log-btn"
+          </Select>
+          <Button
+            variant="default"
             disabled={filtered.length === 0}
             onClick={() => post(copyTextAction(filtered.join("\n")))}
           >
             Copy
-          </button>
-          <button
-            type="button"
-            class="ci-log-btn"
+          </Button>
+          <Button
+            variant="default"
             disabled={source !== "daemon"}
             title={source !== "daemon" ? "Clear applies to daemon ring only" : "Clear daemon ring"}
             onClick={() => post(engineLogClearAction(row.wsHash))}
           >
             Clear
-          </button>
-          <button type="button" class="ci-log-btn" onClick={() => post(engineLogJournalAction(row.wsHash))}>
+          </Button>
+          <Button variant="default" onClick={() => post(engineLogJournalAction(row.wsHash))}>
             Journal
-          </button>
+          </Button>
         </div>
       </div>
       {filtered.length > 0 ? (

@@ -14,11 +14,6 @@ import { fleetMessage } from "../../src/webview/sidebar/messages";
 import { pluginsMessage } from "../../src/webview/plugins/messages";
 import { activityMessage } from "../../src/webview/activity/messages";
 import { probesMessage } from "../../src/webview/probes/messages";
-import { initMessage, modelMessage } from "../../src/webview/inspector/messages";
-import {
-  initMessage as controlInspectorInitMessage,
-  modelMessage as controlInspectorModelMessage,
-} from "../../src/webview/control-inspector/messages";
 import {
   initMessage as cockpitInitMessage,
   modelMessage as cockpitModelMessage,
@@ -29,7 +24,6 @@ import { approvalsMessage } from "../../src/webview/approval/messages";
 import { validationsMessage } from "../../src/webview/validations/messages";
 import { pinStudioMessage } from "../../src/webview/pin-studio/messages";
 import { taskMessage } from "../../src/webview/task-detail/messages";
-import { snapshotMessage } from "../../src/webview/mission-control/messages";
 import { runtimeOpsLoadingMessage, runtimeOpsSnapshotMessage } from "../../src/webview/runtime-ops/messages";
 import { sidebarFixtures } from "./fixtures/sidebar";
 import { handoffFixtures } from "./fixtures/handoff";
@@ -39,7 +33,6 @@ import { pluginsFixtures } from "./fixtures/plugins";
 import { activityFixtures } from "./fixtures/activity";
 import { probesFixtures } from "./fixtures/probes";
 import { inspectorFixtures, strings as inspectorStrings } from "./fixtures/inspector";
-import { controlInspectorFixtures, strings as controlInspectorStrings } from "./fixtures/control-inspector";
 import { cockpitFixtures, strings as cockpitStrings, validationsFixtureVm } from "./fixtures/cockpit";
 import { pinPreviewFixtures } from "./fixtures/pin-preview";
 import { taskStudioFixtures, taskStudioMakeMessage } from "./fixtures/task-studio";
@@ -91,15 +84,8 @@ export const ROUTES: Record<string, Route> = {
     // the sidebar host message wraps a single FleetVM in a one-fleet push (matches the real provider).
     makeMessage: (vm) => fleetMessage([vm as never], {}),
   },
-  plugins: {
-    bundle: "/dist/webview/plugins.js",
-    // spec 342 Pilot A — vscode-theme.css + plugins.tailwind.css for this panel's Kit components (order:
-    // design-system → vscode-theme → Tailwind → surface CSS, matching PluginsPanel.ts's real shell call).
-    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/vscode-theme.css", "/dist/webview/plugins.tailwind.css", "/dist/webview/plugins.css"],
-    frame: { w: 900, h: 760 },
-    fixtures: pluginsFixtures as Record<string, Fixture>,
-    makeMessage: (vm) => pluginsMessage(vm as never),
-  },
+  // t-d23f93 — the standalone "plugins" route previewed the retired standalone panel; Plugins is a
+  // cockpit-only section now — use ?view=cockpit&fixture=plugins (same App.tsx, same fixture VM).
   activity: {
     bundle: "/dist/webview/activity.js",
     cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/mermaid-block.css", "/dist/webview/activity.css"],
@@ -114,25 +100,13 @@ export const ROUTES: Record<string, Route> = {
     fixtures: probesFixtures as Record<string, Fixture>,
     makeMessage: (vm) => probesMessage(vm as never),
   },
-  inspector: {
-    bundle: "/dist/webview/inspector.js",
-    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/inspector.css"],
-    frame: { w: 800, h: 760 },
-    fixtures: inspectorFixtures as Record<string, Fixture>,
-    // the inspector needs init (strings) THEN model — two messages.
-    makeMessage: (vm) => [initMessage(inspectorStrings), modelMessage(vm as never)],
-  },
-  // POC — Engine/Bridge Control Inspector (module; superseded as primary UI by Cockpit).
-  "control-inspector": {
-    bundle: "/dist/webview/control-inspector.js",
-    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/control-inspector.css"],
-    frame: { w: 920, h: 820 },
-    fixtures: controlInspectorFixtures as Record<string, Fixture>,
-    makeMessage: (vm) => [
-      controlInspectorInitMessage(controlInspectorStrings),
-      controlInspectorModelMessage(vm as never),
-    ],
-  },
+  // t-610705 (SDD 410 Phase B #5) — the standalone "inspector" route previewed the retired tmux
+  // Server Inspector panel; tmux is a cockpit-only section now — use ?view=cockpit&fixture=tmux
+  // (same App.tsx, same fixture VM).
+  // t-b5dcae — the standalone "control-inspector" route previewed the Engine/Bridge Control
+  // Inspector POC, which was dead code (ControlInspector.ts had zero importers). The real domain
+  // logic (src/control-inspector/model.ts) survives — Cockpit's own Engine tab uses it directly,
+  // covered by the cockpit route's own fixtures below.
   // Control visual monolith — Mission + Approvals + Plugins + Runtime Ops + tmux Inspector embeds.
   cockpit: {
     bundle: "/dist/webview/cockpit.js",
@@ -217,25 +191,12 @@ export const ROUTES: Record<string, Route> = {
     fixtures: pinStudioFixtures as Record<string, Fixture>,
     makeMessage: (vm) => pinStudioMessage(vm as never),
   },
-  // t-6da5f0 — vscode-theme.css + mission-control.tailwind.css for this panel's Kit adoption (order: design-
-  // system → vscode-theme → Tailwind → surface CSS, matching MissionControlPanel.ts's real shell call).
-  "mission-control": {
-    bundle: "/dist/webview/mission-control.js",
-    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/vscode-theme.css", "/dist/webview/mission-control.tailwind.css", "/dist/webview/mission-control.css"],
-    frame: { w: 1280, h: 760 },
-    fixtures: missionControlFixtures as Record<string, Fixture>,
-    makeMessage: (vm) => snapshotMessage(vm as never),
-  },
-  "runtime-ops": {
-    bundle: "/dist/webview/runtime-ops.js",
-    cssLinks: [DESIGN_SYSTEM, "/dist/webview/runtime-ops.css"],
-    frame: { w: 1100, h: 360 },
-    fixtures: runtimeOpsFixtures as Record<string, Fixture>,
-    makeMessage: (vm) => {
-      const state = vm as RuntimeOpsPreviewState;
-      return state.state === "loading" ? runtimeOpsLoadingMessage() : runtimeOpsSnapshotMessage(state.snapshot);
-    },
-  },
+  // t-610705 (SDD 410 Phase B #6) — the standalone "mission-control" route previewed the retired
+  // Board panel; the Board is a cockpit-only section now — use ?view=cockpit&fixture=mission
+  // (same App.tsx, same fixture VM via the cockpit route's board injection below).
+  // t-ed3067 — the standalone "runtime-ops" route previewed RuntimeOpsView.ts, retired as dead code
+  // (never registered in production). Runtime Ops is a cockpit-only section now; use
+  // ?view=cockpit&fixture=runtime for its visual QA — same App.tsx component either way.
   // spec 342 dogfood round 2 (#4) — onboards Task Studio (the surface that motivated this spec's Pilot B)
   // into the harness; spec 350 T3 migrated it onto the studio shell (StudioFrame chrome, studio-frame.css
   // added to the CSS order — matches TaskStudioPanel.ts's real renderWebviewShell call exactly).
@@ -329,14 +290,8 @@ export const PREVIEW_ROUTE_OPTOUTS: Record<string, string> = {
  *  matches a named surface deterministically against `view`/`title`/`aliases` before any semantic guess). */
 export const VIEW_META: Record<string, { title: string; aliases: string[] }> = {
   sidebar: { title: "Tachyon Sidebar", aliases: ["sidebar", "fleet"] },
-  plugins: { title: "Plugins", aliases: ["plugins", "plugin drawer", "marketplace"] },
   activity: { title: "Activity", aliases: ["activity", "agent activity", "chat", "transcript", "studio chat"] },
   probes: { title: "Probes", aliases: ["probes", "probe inspector"] },
-  inspector: { title: "tmux Inspector", aliases: ["inspector", "server inspector", "tmux"] },
-  "control-inspector": {
-    title: "Engine/Bridge Inspector",
-    aliases: ["control inspector", "engine inspector", "bridge inspector", "engine bridge"],
-  },
   cockpit: {
     title: "Control",
     aliases: ["control", "cockpit", "sysadmin", "project control", "fleet control", "control plane"],
@@ -345,8 +300,6 @@ export const VIEW_META: Record<string, { title: string; aliases: string[] }> = {
   handoff: { title: "Project Handoff", aliases: ["handoff", "project handoff"] },
   approval: { title: "Human Approvals", aliases: ["approvals", "human approvals", "approval view"] },
   "pin-studio": { title: "Pin Studio", aliases: ["pin studio", "pin editor", "sketch"] },
-  "mission-control": { title: "Mission Control", aliases: ["mission control", "board", "task board"] },
-  "runtime-ops": { title: "Runtime Ops", aliases: ["runtime ops", "runtime usage", "usage"] },
   "task-studio": { title: "Task Studio", aliases: ["task studio", "task editor"] },
   "task-detail": { title: "Task Detail", aliases: ["task detail", "task tab"] },
   "pipeline-studio": { title: "Pipeline Studio (shell fake)", aliases: ["pipeline studio", "studio shell fake", "spec 350"] },

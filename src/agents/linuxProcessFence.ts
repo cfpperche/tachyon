@@ -445,8 +445,12 @@ export class LinuxSystemdProcessFence implements LinuxProcessFencePort {
 
     const snap = await this.pollUntil(async () => {
       const s = await this.systemd.show(unitName);
-      if (s.loadState === "not-found" || s.activeState === "activating") return null;
-      if (s.id !== unitName || s.activeState === "inactive" || s.activeState === "failed") {
+      if (s.loadState === "not-found") return null;
+      if (s.id !== unitName) {
+        throw new ProcessFenceError("PROCESS_FENCE_IDENTITY", "unit identity has an unexpected unit id");
+      }
+      if (s.activeState === "activating") return null;
+      if (s.activeState === "inactive" || s.activeState === "failed") {
         throw new ProcessFenceError("PROCESS_FENCE_IDENTITY", "unit identity is not exact active receipt");
       }
       if (s.activeState !== "active" || !s.invocationId.trim() || !s.controlGroup.trim()) return null;
