@@ -17,6 +17,7 @@ import {
   refreshCockpitValidations,
   refreshCockpitTaskDetail,
   refreshCockpitProbes,
+  refreshCockpitHandoff,
   openCockpitAgentTranscript,
   decodeCockpitPanelState,
   COCKPIT_VIEW_TYPE,
@@ -30,7 +31,7 @@ import { readGitDeliveriesFromDisk, readManagedWorktreesFromDisk } from "./cockp
 import { SidebarPrototypeProvider, PIN_PREVIEW_VIEW_TYPE, type PinPreviewPanelState } from "./webview/SidebarPrototype.js";
 import { ACTIVITY_VIEW_TYPE, type ActivityPanelState } from "./webview/ActivityPanel.js";
 import { PluginsPanelManager, PLUGINS_VIEW_TYPE, type PluginsPanelState } from "./webview/PluginsPanel.js";
-import { HandoffPanelManager, HANDOFF_VIEW_TYPE, type HandoffPanelState } from "./webview/HandoffPanel.js";
+import { HANDOFF_VIEW_TYPE, type HandoffPanelState } from "./webview/HandoffPanel.js";
 import { ApprovalPanelManager, APPROVAL_VIEW_TYPE, type ApprovalPanelState } from "./webview/ApprovalPanel.js";
 import { PROBES_VIEW_TYPE, type ProbesPanelState } from "./webview/ProbeResultPanel.js";
 import { PinStudioPanelManager, PIN_STUDIO_VIEW_TYPE, type PinStudioPanelState } from "./webview/PinStudioPanel.js";
@@ -935,14 +936,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   );
   // Runtime Ops lives in Control → Runtime only (bottom-panel webview contribution removed).
   // t-610705 (SDD 410 Phase C.2) — the standalone Activity panel was retired: it's a Control
-  // subroute now (mission/... no — fleet/agent/<name>/activity; src/webview/activity/App.tsx stays,
-  // lazy-imported by cockpit/App.tsx; the watcher moved to src/cockpit/activityFeed.ts).
-  // spec 245 — the editor-area Project Handoff panel (read-only doc + pending notes + staleness; one per root).
-  const handoffPanels = new HandoffPanelManager(
-    context.extensionUri,
-    () => workspaces().map((ws) => ws.handoff),
-  );
-  context.subscriptions.push({ dispose: () => handoffPanels.dispose() });
+  // subroute now (fleet/agent/<name>/activity; src/webview/activity/App.tsx stays, lazy-imported by
+  // cockpit/App.tsx; the watcher moved to src/cockpit/activityFeed.ts).
+  // t-610705 (SDD 410 Phase C.3) — the standalone Project Handoff panel was retired: it's a Control
+  // section now (src/webview/handoff/App.tsx stays, lazy-imported by cockpit/App.tsx).
   // spec 349 — first-party host for untrusted plugin UI surfaces. It reads committed plugin lockfiles and
   // revokes open channels when an installed view target disappears.
   const pluginSurfaces = new PluginSurfaceHost(
@@ -991,7 +988,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   // Any engine/Bridge-driven state change re-pushes the whole fleet to the webview.
   const onViewsChanged = (view: ViewKind) => {
-    if (view === "handoff") handoffPanels.refreshAll(); // spec 245 — re-post to any open Project Handoff panel
+    if (view === "handoff") refreshCockpitHandoff(); // t-610705 (Phase C.3) — Control → Handoff section
     if (view === "probes") refreshCockpitProbes(); // t-610705 (Phase C.2) — Control → Probes subroute
     if (view === "tasks") onTasksChanged(); // spec 335 — same fan-out path engine-side mutations use directly
     if (view === "pins") approvalPanels.refreshAll();
@@ -1294,6 +1291,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     },
     probes: {
       getWorkspaces: () => workspaces().map((ws) => ws.probe),
+    },
+    // t-610705 (Phase C.3) — Handoff folds into a Control section (WorkspaceHandoffTarget already
+    // carries everything the host needs).
+    handoff: {
+      getWorkspaces: () => workspaces().map((ws) => ws.handoff),
     },
     approvals: {
       getWorkspaces: () =>
@@ -1612,7 +1614,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     if (!state?.wsHash || !state?.agent) return;
     void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.agentActivity(state.wsHash, state.agent) });
   });
-  registerTrustedPanelSerializer<HandoffPanelState>(context, HANDOFF_VIEW_TYPE, (panel, state) => handoffPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
+  registerTrustedPanelSerializer<HandoffPanelState>(context, HANDOFF_VIEW_TYPE, (panel, state) => {
+    panel.dispose();
+    if (isCockpitSingletonClaimed()) return;
+    if (!state?.wsHash) return;
+    void openCockpit(makeCockpitDeps(), { section: "handoff", wsHash: state.wsHash });
+  });
   registerTrustedPanelSerializer<ApprovalPanelState>(context, APPROVAL_VIEW_TYPE, (panel, state) => approvalPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   registerTrustedPanelSerializer<PluginsPanelState>(context, PLUGINS_VIEW_TYPE, (panel, state) => pluginsPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   registerTrustedPanelSerializer<ProbesPanelState>(context, PROBES_VIEW_TYPE, (panel, state) => {
@@ -2290,8 +2297,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // spec 297 — resolve the target folder via the shared picker when no hash is passed (no silent folder[0]
     // in a multi-root window); an explicit hash (e.g. the sidebar handoff bar) is honored verbatim.
     vscode.commands.registerCommand("tachyon.openProjectHandoff", async (hash?: string) => {
+      // t-610705 (Phase C.3) — Handoff lives in Control (cockpit section); no second peer panel.
       const ws = hash ? byHash(hash) : await pickWorkspace();
-      if (ws) handoffPanels.open(ws.wsHash);
+      await openCockpit(makeCockpitDeps(), { section: "handoff", ...(ws ? { wsHash: ws.wsHash } : {}) });
     }),
     vscode.commands.registerCommand("tachyon.openPlugins", async (hash?: string) => {
       // spec 410 (t-d23f93) — Plugins live in Control (cockpit section); no second peer panel.

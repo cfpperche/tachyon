@@ -292,6 +292,27 @@
   },
   {
     "view": "cockpit",
+    "fixture": "handoff",
+    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=handoff",
+    "frame": {
+      "w": 1100,
+      "h": 720
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Control",
+    "aliases": [
+      "control",
+      "cockpit",
+      "sysadmin",
+      "project control",
+      "fleet control",
+      "control plane"
+    ]
+  },
+  {
+    "view": "cockpit",
     "fixture": "runtime",
     "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=runtime",
     "frame": {
@@ -528,74 +549,6 @@
     "aliases": [
       "pin preview",
       "pin readonly"
-    ]
-  },
-  {
-    "view": "handoff",
-    "fixture": "default",
-    "url": "/scripts/webview-preview/index.html?view=handoff&fixture=default",
-    "frame": {
-      "w": 900,
-      "h": 760
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Project Handoff",
-    "aliases": [
-      "handoff",
-      "project handoff"
-    ]
-  },
-  {
-    "view": "handoff",
-    "fixture": "cold",
-    "url": "/scripts/webview-preview/index.html?view=handoff&fixture=cold",
-    "frame": {
-      "w": 900,
-      "h": 760
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Project Handoff",
-    "aliases": [
-      "handoff",
-      "project handoff"
-    ]
-  },
-  {
-    "view": "handoff",
-    "fixture": "stale",
-    "url": "/scripts/webview-preview/index.html?view=handoff&fixture=stale",
-    "frame": {
-      "w": 900,
-      "h": 760
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Project Handoff",
-    "aliases": [
-      "handoff",
-      "project handoff"
-    ]
-  },
-  {
-    "view": "handoff",
-    "fixture": "distill-list",
-    "url": "/scripts/webview-preview/index.html?view=handoff&fixture=distill-list",
-    "frame": {
-      "w": 900,
-      "h": 760
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Project Handoff",
-    "aliases": [
-      "handoff",
-      "project handoff"
     ]
   },
   {

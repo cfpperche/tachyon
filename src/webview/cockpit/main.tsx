@@ -22,7 +22,6 @@ import {
   setCompanionAllowedHostsAction,
   unpairCompanionDeviceAction,
   issueCompanionPairCodeAction,
-  type CockpitHostMessage,
   type CockpitStrings,
   type CompanionPairOffer,
 } from "./messages";
@@ -53,6 +52,15 @@ import {
 } from "../activity/messages";
 import type { ProbesVM } from "../probes/messages";
 import { PROBES } from "../probes/messages";
+import type { HandoffDispatch } from "../handoff/App";
+import type { HandoffViewModel } from "../handoff/handoffViewModel";
+import {
+  HANDOFF,
+  refreshAction as refreshHandoffAction,
+  openFileAction as openHandoffFileAction,
+  distillExistingAction,
+  distillAdhocAction,
+} from "../handoff/messages";
 import {
   SNAPSHOT,
   TASK_ERROR,
@@ -64,7 +72,6 @@ import {
   copyTaskIdAction,
   openTaskStudioAction,
   switchWorkspaceAction,
-  type MissionControlHostMessage,
 } from "../mission-control/messages";
 import type { TaskPriority, TaskStatus, TaskUpdateInput } from "../../tasks/types";
 import type { ValidationOutcome } from "../../validations/types";
@@ -139,6 +146,7 @@ function Root() {
   const [activityPrepended, setActivityPrepended] = useState(false);
   const [activityImages, setActivityImages] = useState<Record<string, string>>({});
   const [probesVm, setProbesVm] = useState<ProbesVM | undefined>(undefined);
+  const [handoffVm, setHandoffVm] = useState<HandoffViewModel | undefined>(undefined);
   const [approvalVm, setApprovalVm] = useState<ApprovalViewModel | undefined>(undefined);
   const [approvalError, setApprovalError] = useState<string | undefined>(undefined);
   const [validationsVm, setValidationsVm] = useState<ValidationsViewModel | undefined>(undefined);
@@ -240,6 +248,8 @@ function Root() {
         }
       } else if (type === PROBES && raw.vm) {
         setProbesVm(raw.vm as ProbesVM);
+      } else if (type === HANDOFF && raw.vm) {
+        setHandoffVm(raw.vm as HandoffViewModel);
       } else if (type === APPROVALS && raw.vm) {
         setApprovalVm(raw.vm as ApprovalViewModel);
         setApprovalError(undefined);
@@ -334,6 +344,16 @@ function Root() {
       copyShareText: (sequence, key) => post(copyShareTextMessage(sequence, key)),
       shareExternal: (sequence, key) => post(shareExternalMessage(sequence, key)),
       shareToAgent: (sequence, key) => post(shareToAgentMessage(sequence, key)),
+    }),
+    [],
+  );
+
+  const handoffDispatch: HandoffDispatch = useMemo(
+    () => ({
+      refresh: () => post(refreshHandoffAction()),
+      openFile: () => post(openHandoffFileAction()),
+      distillExisting: (agent: string, instructions?: string) => post(distillExistingAction(agent, instructions)),
+      distillAdhoc: (profileId: string, args?: string, instructions?: string) => post(distillAdhocAction(profileId, args, instructions)),
     }),
     [],
   );
@@ -451,6 +471,8 @@ function Root() {
       activityImages={activityImages}
       activityDispatch={activityDispatch}
       probesVm={probesVm}
+      handoffVm={handoffVm}
+      handoffDispatch={handoffDispatch}
       approvalVm={approvalVm}
       approvalError={approvalError}
       approvalDispatch={approvalDispatch}

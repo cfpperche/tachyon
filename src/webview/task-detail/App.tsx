@@ -189,23 +189,28 @@ export function App({ vm, errorSeq, errorMessage, dispatch }: { vm?: TaskDetailV
         </div>
       )}
 
-      {vm.prototypes && vm.prototypes.prototypes.length > 0 && (
-        <div class="td-prototype">
-          <PrototypePreview value={vm.prototypes} onSelect={setSelectedPrototypeId} />
-          {(() => {
-            const draft = selectedReviewablePrototype(vm.prototypes, selectedPrototypeId);
-            if (!draft) return null;
-            return <div class="prototype-decision">
-              <label>First-party review note<textarea value={prototypeReview} maxLength={4000} onInput={(e) => setPrototypeReview((e.currentTarget as HTMLTextAreaElement).value)} /></label>
-              <div class="ds-actions">
-                <Button onClick={() => { dispatch.notePrototype(draft.id, vm.prototypes.updatedAt!, prototypeReview); setPrototypeReview(""); }}>Add note</Button>
-                <Button onClick={() => dispatch.rejectPrototype(draft.id, vm.prototypes.updatedAt!, prototypeReview)}>Request changes</Button>
-                <Button onClick={() => dispatch.approvePrototype(draft.id, vm.prototypes.updatedAt!, prototypeReview)}>Approve prototype</Button>
-              </div>
-            </div>;
-          })()}
-        </div>
-      )}
+      {vm.prototypes && vm.prototypes.prototypes.length > 0 && (() => {
+        // captured into a local const so the closure below narrows on an immutable binding — `vm.prototypes`
+        // re-read inside the IIFE doesn't retain the outer truthy check's narrowing across the closure boundary.
+        const prototypes = vm.prototypes;
+        return (
+          <div class="td-prototype">
+            <PrototypePreview value={prototypes} onSelect={setSelectedPrototypeId} />
+            {(() => {
+              const draft = selectedReviewablePrototype(prototypes, selectedPrototypeId);
+              if (!draft) return null;
+              return <div class="prototype-decision">
+                <label>First-party review note<textarea value={prototypeReview} maxLength={4000} onInput={(e) => setPrototypeReview((e.currentTarget as HTMLTextAreaElement).value)} /></label>
+                <div class="ds-actions">
+                  <Button onClick={() => { dispatch.notePrototype(draft.id, prototypes.updatedAt!, prototypeReview); setPrototypeReview(""); }}>Add note</Button>
+                  <Button onClick={() => dispatch.rejectPrototype(draft.id, prototypes.updatedAt!, prototypeReview)}>Request changes</Button>
+                  <Button onClick={() => dispatch.approvePrototype(draft.id, prototypes.updatedAt!, prototypeReview)}>Approve prototype</Button>
+                </div>
+              </div>;
+            })()}
+          </div>
+        );
+      })()}
 
       <div class="td-body">
         <span class="ds-section">Body</span>

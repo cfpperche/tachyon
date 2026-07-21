@@ -47,7 +47,11 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   // The trusted serializer for the legacy "tachyonActivity" viewType stays registered in
   // extension.ts: a revived pre-410 panel disposes itself and redirects into Control → the agent's
   // activity subroute.
-  { viewId: "tachyonHandoff", view: "handoff", hostFile: "src/webview/HandoffPanel.ts", mode: "live", converted: true, editorHome: "standalone-multi" },
+  // t-610705 (SDD 410 Phase C.3, 2026-07-21) — the standalone Project Handoff panel was retired:
+  // it's a Control section now (src/webview/handoff/App.tsx stays, lazy-imported by cockpit/App.tsx;
+  // standalone bundle + harness route retired — use ?view=cockpit&fixture=handoff instead). The
+  // trusted serializer for the legacy "tachyonHandoff" viewType stays registered in extension.ts: a
+  // revived pre-410 panel disposes itself and redirects into Control → Handoff.
   { viewId: "tachyonApprovals", view: "approval", hostFile: "src/webview/ApprovalPanel.ts", mode: "live", converted: true, editorHome: "legacy-redirect", cockpitSectionId: "approvals" },
   // The standalone Plugins panel was retired (t-d23f93, 2026-07-20) — Plugins is a cockpit section
   // only (src/webview/plugins/App.tsx stays, lazy-imported by cockpit/App.tsx; the per-workspace

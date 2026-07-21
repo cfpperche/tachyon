@@ -18,6 +18,7 @@ export const strings: CockpitStrings = {
   navApprovals: "Approvals",
   navMission: "Board",
   navValidations: "Validations",
+  navHandoff: "Handoff",
   navWorktrees: "Worktrees",
   navDeliveries: "Deliveries",
   navRuntime: "Runtime",
@@ -43,6 +44,8 @@ export const strings: CockpitStrings = {
   missionHint: "Work queue — tasks and lanes. Agents live in the sidebar Fleet.",
   validationsTitle: "Validations",
   validationsHint: "Validation queue — close dogfoods and checks (not on the Board).",
+  handoffTitle: "Project Handoff",
+  handoffHint: "Shared, curated project state — the doc a fresh agent reads first (embedded).",
   worktreesTitle: "Managed worktrees",
   worktreesHint: "Tachyon-managed checkouts — reveal and copy paths.",
   deliveriesTitle: "Deliveries",
@@ -338,6 +341,9 @@ export const cockpitFixtures: Record<string, Fixture<CockpitModel>> = {
   },
   validations: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "validations", nowIso: now }) },
   approvals: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "approvals", nowIso: now }) },
+  // t-610705 (Phase C.3) — Handoff folds into a section (no activeRoute, unlike task-detail/Fleet
+  // subroutes above): same simple section-only pattern as validations/approvals.
+  handoff: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "handoff", nowIso: now }) },
   runtime: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "runtime", nowIso: now }) },
   tmux: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "tmux", nowIso: now }) },
   plugins: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "plugins", nowIso: now }) },

@@ -116,6 +116,7 @@ export const ROUTES: Record<string, Route> = {
       "/dist/webview/task-detail.css",
       "/dist/webview/activity.css",
       "/dist/webview/probes.css",
+      "/dist/webview/handoff.css",
       "/dist/webview/cockpit.css",
     ],
     frame: { w: 1100, h: 720 },
@@ -153,6 +154,9 @@ export const ROUTES: Record<string, Route> = {
       } else if (model.section === "plugins") {
         const plugins = pluginsFixtures.default?.vm;
         if (plugins) msgs.push(pluginsMessage(plugins));
+      } else if (model.section === "handoff") {
+        const handoff = handoffFixtures.default?.vm;
+        if (handoff) msgs.push(handoffMessage(handoff));
       }
       // t-610705 (Phase C.1/C.2) — a subroute rides alongside its parent section's push (task-detail
       // and the Fleet subroutes below all nav to a section with no embed push of its own for THEM,
@@ -178,13 +182,9 @@ export const ROUTES: Record<string, Route> = {
     fixtures: pinPreviewFixtures as Record<string, Fixture>,
     makeMessage: (vm) => pinPreviewMessage(vm as never),
   },
-  handoff: {
-    bundle: "/dist/webview/handoff.js",
-    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/mermaid-block.css", "/dist/webview/handoff.css"],
-    frame: { w: 900, h: 760 },
-    fixtures: handoffFixtures as Record<string, Fixture>,
-    makeMessage: (vm) => handoffMessage(vm as never),
-  },
+  // t-610705 (SDD 410 Phase C.3) — the standalone "handoff" route previewed the retired Project
+  // Handoff panel; Handoff is a cockpit-only section now — use ?view=cockpit&fixture=handoff (same
+  // App.tsx, same fixture VM, via the cockpit route's section injection above).
   approval: {
     bundle: "/dist/webview/approval.js",
     cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/approval.css"],

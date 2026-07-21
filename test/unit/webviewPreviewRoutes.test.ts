@@ -55,6 +55,7 @@ describe("preview route table", () => {
       "/dist/webview/task-detail.css",
       "/dist/webview/activity.css",
       "/dist/webview/probes.css",
+      "/dist/webview/handoff.css",
       "/dist/webview/cockpit.css",
     ]);
     expect(Object.keys(r.fixtures).sort()).toEqual([
@@ -66,6 +67,7 @@ describe("preview route table", () => {
       "empty",
       "engine",
       "fleet",
+      "handoff",
       "mission",
       "multi-workspace",
       "multi-workspace-scoped",
@@ -102,14 +104,10 @@ describe("preview route table", () => {
     expect(tmuxMsgs.map((m) => m.type)).toEqual(["init", "model", "inspectorInit", "inspectorModel"]);
     const pluginsMsgs = r.makeMessage(r.fixtures.plugins.vm) as Array<{ type: string }>;
     expect(pluginsMsgs.map((m) => m.type)).toEqual(["init", "model", "plugins"]);
-  });
-
-  it("declares the handoff route (spec 280) with its envelope + default/cold/stale fixtures", () => {
-    const r = ROUTES.handoff;
-    expect(r.bundle).toBe("/dist/webview/handoff.js");
-    expect(r.cssLinks).toEqual(["/dist/webview/codicon.css", "/dist/webview/design-system.css", "/dist/webview/mermaid-block.css", "/dist/webview/handoff.css"]);
-    expect(Object.keys(r.fixtures).sort()).toEqual(["cold", "default", "distill-list", "stale"]);
-    expect((r.makeMessage(r.fixtures.default.vm) as { type: string }).type).toBe("handoff");
+    // t-610705 (Phase C.3) — Handoff folds into a section (unlike Fleet's subroutes): nav section is
+    // "handoff" itself, so its own content message rides alongside init+model directly.
+    const handoffMsgs = r.makeMessage(r.fixtures.handoff.vm) as Array<{ type: string }>;
+    expect(handoffMsgs.map((m) => m.type)).toEqual(["init", "model", "handoff"]);
   });
 
   it("declares the pin-studio route (spec 278 — the last view onboarded) with its envelope", () => {

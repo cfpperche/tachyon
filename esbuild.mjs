@@ -201,12 +201,9 @@ const sidebar = {
 // subroute now (src/webview/activity/App.tsx stays, lazy-imported by cockpit/App.tsx via CSS
 // co-load). activity.css is still copied below — Cockpit.ts co-loads it.
 
-// spec 245 — the Preact Project Handoff webview bundle (editor-area panel; never imports vscode).
-const handoff = {
-  ...sidebar,
-  entryPoints: ["src/webview/handoff/main.tsx"],
-  outfile: "dist/webview/handoff.js",
-};
+// t-610705 (SDD 410 Phase C.3) — the standalone Project Handoff bundle was retired: it's a Control
+// section now (src/webview/handoff/App.tsx stays, lazy-imported by cockpit/App.tsx via CSS
+// co-load). handoff.css is still copied below — Cockpit.ts co-loads it.
 
 const approval = {
   ...sidebar,
@@ -479,7 +476,7 @@ if (existsSync(excalidrawAssets)) {
   cpSync(excalidrawAssets, "dist/webview/excalidraw-assets", { recursive: true });
 }
 
-const targets = [extension, toolLauncher, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, handoff, approval, cockpit, pinPreview, pinStudio, taskStudio, pipelineStudio, agentStudioFixture, agentStudioShell, terminalStudioShell, commandStudioShell, runbookStudioShell, scheduleStudioShell, pluginHost, excalidraw, mermaid, katex, preview, uiGate];
+const targets = [extension, toolLauncher, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, approval, cockpit, pinPreview, pinStudio, taskStudio, pipelineStudio, agentStudioFixture, agentStudioShell, terminalStudioShell, commandStudioShell, runbookStudioShell, scheduleStudioShell, pluginHost, excalidraw, mermaid, katex, preview, uiGate];
 if (watch) {
   const ctxs = await Promise.all(targets.map((c) => esbuild.context(c)));
   await Promise.all(ctxs.map((c) => c.watch()));

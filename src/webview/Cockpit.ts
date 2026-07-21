@@ -51,6 +51,11 @@ import {
 import { withActivityShareKeys, resolveActivityShare, internalSharePrompt } from "../activity/activityShare.js";
 import type { ActivityViewModel } from "../activity/activityView.js";
 import { probesMessage } from "./probes/messages.js";
+import { handoffMessage, type HandoffAction } from "./handoff/messages.js";
+import type { HandoffViewModel, HandoffNoteVM, HandoffDistillTargetVM } from "./handoff/handoffViewModel.js";
+import { HANDOFF_DISTILL_PROFILES, normalizeAdditionalInstruction, normalizeHandoffDistillArgs } from "../handoff/distill.js";
+import { parseHandoffDistillInputV1, type HandoffDistillInputV1 } from "../runtime-api/handoffCommands.js";
+import type { WorkspaceHandoffTarget } from "../shell/HandoffTarget.js";
 import {
   approvalsMessage,
   approvalErrorMessage,
@@ -113,6 +118,14 @@ export interface CockpitValidations {
   onValidationsChanged: () => void;
 }
 
+/** t-610705 (Phase C.3) — Project Handoff folds into a section (no new route kind — the plan.md
+ *  distinction from Fleet's subroutes: Handoff is workspace-scoped like Approvals/Validations, not
+ *  an entity with its own immutable locator). WorkspaceHandoffTarget already carries everything the
+ *  host needs — same minimal-wrapper shape as CockpitTaskDetail/CockpitActivity/CockpitProbes. */
+export interface CockpitHandoff {
+  getWorkspaces: () => WorkspaceHandoffTarget[];
+}
+
 /** t-610705 (Phase C.1) — Task Detail's own read/mutate surface (WorkspaceTaskDetailTarget already
  *  carries loadTaskDetail/updateTask/reviewPrototype/attachment resolution — no separate VM-building
  *  interface needed, unlike CockpitMissionBoard's thinner wrapper). */
@@ -161,6 +174,7 @@ export interface CockpitDeps {
   taskDetail: CockpitTaskDetail;
   activity: CockpitActivity;
   probes: CockpitProbes;
+  handoff: CockpitHandoff;
   approvals: CockpitApprovals;
   validations: CockpitValidations;
   runtimeOps: CockpitRuntimeOps;
@@ -207,6 +221,7 @@ function strings(): CockpitStrings {
     navApprovals: t("Approvals"),
     navMission: t("Board"),
     navValidations: t("Validations"),
+    navHandoff: t("Handoff"),
     navWorktrees: t("Worktrees"),
     navDeliveries: t("Deliveries"),
     navRuntime: t("Runtime"),
@@ -232,6 +247,8 @@ function strings(): CockpitStrings {
     missionHint: t("Work queue — tasks and lanes. Agents live in the sidebar Fleet."),
     validationsTitle: t("Validations"),
     validationsHint: t("Validation queue — close dogfoods and checks (not on the Board)."),
+    handoffTitle: t("Project Handoff"),
+    handoffHint: t("Shared, curated project state — the doc a fresh agent reads first (embedded)."),
     worktreesTitle: t("Managed worktrees"),
     worktreesHint: t("Tachyon-managed checkouts — reveal and copy paths."),
     deliveriesTitle: t("Deliveries"),
@@ -402,6 +419,7 @@ let controlWsHash: string | undefined;
 let pushMissionBoard: (() => void) | undefined;
 let pushApprovals: (() => void) | undefined;
 let pushValidations: (() => void) | undefined;
+let pushHandoff: (() => void) | undefined;
 let pushTaskDetail: (() => void) | undefined;
 let pushProbes: (() => void) | undefined;
 let doOpenActivityTranscript: (() => void) | undefined;
@@ -443,6 +461,12 @@ export function refreshCockpitValidations(): void {
   pushValidations?.();
 }
 
+/** t-610705 (Phase C.3) — re-post the Handoff snapshot (wired into onViewsChanged("handoff"),
+ *  replacing the retired HandoffPanelManager.refreshAll()). A no-op off the handoff section. */
+export function refreshCockpitHandoff(): void {
+  pushHandoff?.();
+}
+
 const PLUGIN_ACTION_TYPES = new Set([
   "checkUpdates", "checkPluginUpdate", "install", "update", "reinstall", "remove",
   "reselect", "repair", "rehydrate", "confirm", "cancel", "openConfig", "openDocs", "installExternal",
@@ -472,6 +496,20 @@ function resolveMissionWs(board: CockpitMissionBoard, prefer?: string): Workspac
 
 function resolveApprovalWs(appr: CockpitApprovals, prefer?: string): WorkspacePresentationTarget | undefined {
   const all = appr.getWorkspaces();
+  if (all.length === 0) return undefined;
+  if (prefer) {
+    const hit = all.find((w) => w.wsHash === prefer);
+    if (hit) return hit;
+  }
+  if (controlWsHash) {
+    const hit = all.find((w) => w.wsHash === controlWsHash);
+    if (hit) return hit;
+  }
+  return all[0];
+}
+
+function resolveHandoffWs(handoff: CockpitHandoff, prefer?: string): WorkspaceHandoffTarget | undefined {
+  const all = handoff.getWorkspaces();
   if (all.length === 0) return undefined;
   if (prefer) {
     const hit = all.find((w) => w.wsHash === prefer);
@@ -535,10 +573,25 @@ function reconcileActivityTeardown(route: CockpitRoute): void {
   stopActivityBinding();
 }
 
+/** Ported verbatim from the retired HandoffPanelManager. */
+function parseHandoffDistillAction(m: Partial<HandoffAction>): HandoffDistillInputV1 | null {
+  if (m.type !== "distill") return null;
+  const instructions = normalizeAdditionalInstruction(m.instructions);
+  const args = normalizeHandoffDistillArgs(m.mode === "adhoc" ? m.args : undefined);
+  const candidate = m.mode === "existing" && typeof m.agent === "string"
+    ? { mode: "existing", agent: m.agent.trim(), ...(instructions ? { instructions } : {}) }
+    : m.mode === "adhoc" && typeof m.profileId === "string"
+      ? { mode: "adhoc", profileId: m.profileId, ...(args ? { args } : {}), ...(instructions ? { instructions } : {}) }
+      : undefined;
+  if (!candidate) return null;
+  try { return parseHandoffDistillInputV1(candidate); } catch { return null; }
+}
+
 function sectionTitle(s: CockpitStrings, section: CockpitSectionId): string {
   const map: Partial<Record<CockpitSectionId, string>> = {
     mission: s.navMission,
     validations: s.navValidations,
+    handoff: s.navHandoff,
     approvals: s.navApprovals,
     plugins: s.navPlugins,
     runtime: s.navRuntime,
@@ -601,6 +654,7 @@ export async function openCockpit(
         pushMissionBoard = undefined;
         pushApprovals = undefined;
         pushValidations = undefined;
+        pushHandoff = undefined;
         pushTaskDetail = undefined;
         pushProbes = undefined;
         doOpenActivityTranscript = undefined;
@@ -704,6 +758,81 @@ export async function openCockpit(
       if (panel !== live || navEpoch !== epoch) return;
       live.webview.postMessage(validationErrorMessage(err instanceof Error ? err.message : String(err)));
     }
+  };
+
+  // t-610705 (Phase C.3) — ported verbatim from the retired HandoffPanelManager's post(): a load
+  // failure notifies (a toast), it does NOT post a distinct error VM — the client keeps whatever it
+  // last had (or the loading state if nothing yet). Handoff's own VM already models "no file yet"
+  // via `exists: false`, which isn't a failure case at all.
+  const sendHandoff = async () => {
+    if (panel !== live || !isSection(currentRoute, "handoff")) return;
+    const epoch = navEpoch;
+    const ws = resolveHandoffWs(deps.handoff);
+    if (!ws) return;
+    try {
+      const snap = await ws.loadHandoff();
+      if (panel !== live || navEpoch !== epoch) return;
+      const notes: HandoffNoteVM[] = snap.notes.map((note) => ({ ...note, evidence: [...note.evidence] }));
+      const distillTargets: HandoffDistillTargetVM[] = snap.distillTargets.map((target) => ({ ...target }));
+      const vm: HandoffViewModel = {
+        folder: ws.folderName,
+        exists: snap.exists,
+        body: snap.body,
+        staleness: snap.staleness,
+        pendingCount: snap.pendingCount,
+        updatedAt: snap.updatedAt,
+        updatedBy: snap.updatedBy,
+        revision: snap.revision,
+        notes,
+        distillTargets,
+        distillProfiles: HANDOFF_DISTILL_PROFILES,
+      };
+      live.webview.postMessage(handoffMessage(vm));
+    } catch (err) {
+      if (panel !== live || navEpoch !== epoch) return;
+      notify(`Could not refresh Project Handoff: ${err instanceof Error ? err.message : String(err)}`, "warn");
+    }
+  };
+
+  const handleHandoffAction = async (m: Partial<HandoffAction>): Promise<boolean> => {
+    // "ready"/"refresh" are NOT handled here — they're the same wire strings as the shell's own
+    // handshake/poll (case READY/"refresh" in the main switch below), which already calls
+    // sendSectionModule() → sendHandoff() for the active section. Only Handoff's OWN action types
+    // need a dedicated handler.
+    if (!m?.type || !isSection(currentRoute, "handoff")) return false;
+    if (m.type === "openFile") {
+      const ws = resolveHandoffWs(deps.handoff);
+      if (ws) {
+        try {
+          const filePath = await ws.ensureHandoffFile();
+          await vscode.window.showTextDocument(vscode.Uri.file(filePath), { preview: false, viewColumn: vscode.ViewColumn.Beside });
+          await sendHandoff();
+        } catch (err) {
+          notify(`Could not open Project Handoff: ${err instanceof Error ? err.message : String(err)}`, "error");
+        }
+      }
+      return true;
+    }
+    if (m.type === "distill") {
+      const ws = resolveHandoffWs(deps.handoff);
+      const action = parseHandoffDistillAction(m);
+      if (!action) {
+        notify("Invalid handoff distillation request.", "warn");
+        return true;
+      }
+      if (ws) {
+        try {
+          const result = await ws.startHandoffDistill(action);
+          notify(result.mode === "existing"
+            ? `Handoff distillation task sent to '${result.agent}'.`
+            : `Handoff distillation agent '${result.agent}' started.`);
+        } catch (err) {
+          notify(`Could not start handoff distillation: ${err instanceof Error ? err.message : String(err)}`, "error");
+        }
+      }
+      return true;
+    }
+    return false;
   };
 
   const sendRuntime = async () => {
@@ -1037,6 +1166,7 @@ export async function openCockpit(
     bindPluginsIfNeeded();
     if (isSection(currentRoute, "mission")) await sendMission();
     else if (isSection(currentRoute, "validations")) await sendValidations();
+    else if (isSection(currentRoute, "handoff")) await sendHandoff();
     else if (isSection(currentRoute, "approvals")) await sendApprovals();
     else if (isSection(currentRoute, "runtime")) await sendRuntime();
     else if (isSection(currentRoute, "tmux")) await sendInspector();
@@ -1049,6 +1179,7 @@ export async function openCockpit(
   pushMissionBoard = () => { void sendMission(); };
   pushApprovals = () => { void sendApprovals(); };
   pushValidations = () => { void sendValidations(); };
+  pushHandoff = () => { void sendHandoff(); };
   pushTaskDetail = () => { void sendTaskDetail(); };
   pushProbes = () => { void sendProbes(); };
   doOpenActivityTranscript = () => {
@@ -1248,6 +1379,8 @@ export async function openCockpit(
       // loadOlder/shareExternal/copyShareText/shareToAgent are unique to Activity); route-gated
       // (route.kind !== "agent-activity" → false) same as every other handler in this chain.
       if (await handleActivityAction(msg as Partial<ActivityWebviewMessage>)) return;
+      // t-610705 (Phase C.3) — "openFile"/"distill" are unique to Handoff; route-gated the same way.
+      if (await handleHandoffAction(msg as Partial<HandoffAction>)) return;
 
       if (isRuntimeOpsSetProviderObservationAction(msg)) {
         try {
@@ -1480,6 +1613,7 @@ export async function openCockpit(
     const taskDetailIsActive = currentRoute.kind === "task-detail";
     const activityIsActive = currentRoute.kind === "agent-activity";
     const probesIsActive = currentRoute.kind === "agent-probes" || currentRoute.kind === "workspace-probes";
+    const handoffIsActive = isSection(currentRoute, "handoff");
     // t-610705 (Phase C.2) — ported from the retired standalone ActivityPanel.ts: mermaid/katex load
     // ON DEMAND client-side (activity/markdown.tsx), gated on these globals being present at all —
     // never previously wired into Cockpit.ts's shell (Task Detail's C.1 migration also uses
@@ -1519,10 +1653,11 @@ export async function openCockpit(
         // markdown that can carry mermaid blocks; a second, separately-gated call for that same file
         // would duplicate the link and fail cockpitCssParity's no-duplicate-link check (its source
         // scan can't tell a real call from one merely mentioned in a comment, so don't write it here).
-        (taskDetailIsActive || activityIsActive) ? uri("mermaid-block.css") : undefined,
+        (taskDetailIsActive || activityIsActive || handoffIsActive) ? uri("mermaid-block.css") : undefined,
         taskDetailIsActive ? uri("task-detail.css") : undefined,
         activityIsActive ? uri("activity.css") : undefined,
         probesIsActive ? uri("probes.css") : undefined,
+        handoffIsActive ? uri("handoff.css") : undefined,
         uri("cockpit.css"),
       ].filter((href): href is string => href !== undefined),
       bundle: uri("cockpit.js"),
@@ -1551,6 +1686,8 @@ export async function openCockpit(
           "activity-mermaid": uri("mermaid-block.css"),
           activity: uri("activity.css"),
           probes: uri("probes.css"),
+          "handoff-mermaid": uri("mermaid-block.css"),
+          handoff: uri("handoff.css"),
         },
         __mermaidSrc: uri("mermaid.js"),
         __katexSrc: uri("katex.js"),

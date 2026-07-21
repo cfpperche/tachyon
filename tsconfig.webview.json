@@ -18,6 +18,8 @@
     }
   },
   "include": [
+    "src/webview/cockpit/**/*.ts",
+    "src/webview/cockpit/**/*.tsx",
     "src/webview/sidebar/**/*.ts",
     "src/webview/sidebar/**/*.tsx",
     "src/webview/activity/**/*.ts",

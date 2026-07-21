@@ -25,6 +25,8 @@ import type { TaskDetailVM } from "../task-detail/messages";
 import type { ActivityDispatch } from "../activity/App";
 import type { ActivityViewModel } from "../../activity/activityView";
 import type { ProbesVM } from "../probes/messages";
+import type { HandoffDispatch } from "../handoff/App";
+import type { HandoffViewModel } from "../handoff/handoffViewModel";
 import type { ValidationsDispatch } from "../validations/App";
 import type { ValidationsViewModel } from "../validations/viewModel";
 import type { ApprovalDispatch } from "../approval/App";
@@ -114,6 +116,16 @@ const ProbesApp = lazy(() =>
     return { default: m.App };
   }),
 );
+// t-610705 (Phase C.3) — CSS co-load, tenth surface: the Handoff section (its own sheet plus the
+// mermaid-block sheet its doc body's MarkdownView can render, same combined-condition mechanism as
+// task-detail/activity above).
+const HandoffApp = lazy(() =>
+  import("../handoff/App").then((m) => {
+    loadSectionStylesheet("handoff-mermaid");
+    loadSectionStylesheet("handoff");
+    return { default: m.App };
+  }),
+);
 
 function SectionFallback() {
   return <EmptyState kind="loading" message="Loading…" />;
@@ -170,6 +182,9 @@ export interface CockpitAppProps {
   activityDispatch: ActivityDispatch;
   /** t-610705 (Phase C.2) — the agent-probes/workspace-probes subroutes of Fleet. */
   probesVm?: ProbesVM;
+  /** t-610705 (Phase C.3) — the Handoff section. */
+  handoffVm?: HandoffViewModel;
+  handoffDispatch: HandoffDispatch;
   /** Embedded product surfaces (not Task/Pin/form studios). */
   approvalVm?: ApprovalViewModel;
   approvalError?: string;
@@ -191,7 +206,7 @@ export interface CockpitAppProps {
 }
 
 /** Tabs that host a full product surface (no ModuleChrome table / deep-link stub). */
-const EMBED_SECTIONS = new Set<CockpitSectionId>(["mission", "validations", "approvals", "runtime", "tmux", "plugins"]);
+const EMBED_SECTIONS = new Set<CockpitSectionId>(["mission", "validations", "handoff", "approvals", "runtime", "tmux", "plugins"]);
 
 const TAB_META: Record<CockpitSectionId, { icon: string; navKey: keyof CockpitStrings }> = {
   overview: { icon: "dashboard", navKey: "navOverview" },
@@ -200,6 +215,7 @@ const TAB_META: Record<CockpitSectionId, { icon: string; navKey: keyof CockpitSt
   approvals: { icon: "pass", navKey: "navApprovals" },
   mission: { icon: "checklist", navKey: "navMission" },
   validations: { icon: "checklist", navKey: "navValidations" },
+  handoff: { icon: "book", navKey: "navHandoff" },
   worktrees: { icon: "folder-library", navKey: "navWorktrees" },
   deliveries: { icon: "git-commit", navKey: "navDeliveries" },
   runtime: { icon: "graph", navKey: "navRuntime" },
@@ -491,46 +507,6 @@ function ModuleChrome({
   );
 }
 
-function DataTable({
-  headers,
-  rows,
-  empty,
-  monoCols = [],
-}: {
-  headers: string[];
-  rows: string[][];
-  empty: string;
-  /** Column indexes that are technical (paths, ids) — Tachyon Mono. */
-  monoCols?: number[];
-}) {
-  if (rows.length === 0) return <p class="ck-empty">{empty}</p>;
-  const mono = new Set(monoCols);
-  return (
-    <div class="ck-table-wrap">
-      <table class="ck-table">
-        <thead>
-          <tr>
-            {headers.map((h) => (
-              <th key={h}>{h}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r, i) => (
-            <tr key={i}>
-              {r.map((c, j) => (
-                <td key={j} class={mono.has(j) ? "ck-mono" : undefined}>
-                  {c}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
 export function App(p: CockpitAppProps) {
   // t-610705 (Phase C.2) — declared BEFORE the `!s` early return below so this hook always runs in
   // the same order every render (the Activity subroute needs the actual overflow:auto ancestor for
@@ -683,6 +659,9 @@ export function App(p: CockpitAppProps) {
             <Button variant="default" onClick={() => p.onSetSection("validations")}>
               {s.navValidations}
             </Button>
+            <Button variant="default" onClick={() => p.onSetSection("handoff")}>
+              {s.navHandoff}
+            </Button>
             <Button variant="default" onClick={() => p.onSetSection("runtime")}>
               {s.navRuntime}
             </Button>
@@ -786,6 +765,14 @@ export function App(p: CockpitAppProps) {
       <div class="ck-embed-host" data-testid="control-validations-host">
         <Suspense fallback={<SectionFallback />}>
           <ValidationsApp vm={p.validationsVm} error={p.validationsError} dispatch={p.validationsDispatch} />
+        </Suspense>
+      </div>
+    );
+  } else if (section === "handoff") {
+    body = (
+      <div class="ck-embed-host" data-testid="control-handoff">
+        <Suspense fallback={<SectionFallback />}>
+          <HandoffApp vm={p.handoffVm} dispatch={p.handoffDispatch} />
         </Suspense>
       </div>
     );

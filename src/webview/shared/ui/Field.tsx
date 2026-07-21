@@ -8,7 +8,7 @@ export const Input = forwardRef<HTMLInputElement, { class?: string } & Omit<JSX.
   ({ class: cls, ...rest }, ref) => <input ref={ref} class={cx("ds-input", cls)} {...rest} />,
 );
 
-export function Textarea({ class: cls, ...rest }: { class?: string } & Omit<JSX.HTMLAttributes<HTMLTextAreaElement>, "class">) {
+export function Textarea({ class: cls, ...rest }: { class?: string } & Omit<JSX.TextareaHTMLAttributes<HTMLTextAreaElement>, "class">) {
   return <textarea class={cx("ds-input", cls)} {...rest} />;
 }
 
@@ -16,7 +16,7 @@ export function Textarea({ class: cls, ...rest }: { class?: string } & Omit<JSX.
 export const Select = forwardRef<
   HTMLSelectElement,
   { class?: string; value?: string | number; children?: import("preact").ComponentChildren } & Omit<
-    JSX.HTMLAttributes<HTMLSelectElement>,
+    JSX.SelectHTMLAttributes<HTMLSelectElement>,
     "class" | "value"
   >
 >(({ class: cls, children, value, ...rest }, ref) => (

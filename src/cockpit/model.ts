@@ -22,6 +22,7 @@ export type CockpitSectionId =
   | "approvals"
   | "mission"
   | "validations"
+  | "handoff"
   | "worktrees"
   | "deliveries"
   | "runtime"
@@ -36,6 +37,7 @@ export const COCKPIT_SECTION_ORDER: CockpitSectionId[] = [
   "approvals",
   "mission",
   "validations",
+  "handoff",
   "worktrees",
   "deliveries",
   "runtime",

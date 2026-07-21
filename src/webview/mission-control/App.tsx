@@ -6,7 +6,7 @@ import type { BoardSnapshot } from "../../tasks/boardSnapshot";
 import { compareTasksByPriorityRank } from "../../tasks/nextTask";
 import type { MissionControlVM } from "./messages";
 import { applyAwaitingHumanFilter, assigneePatch, canSubmitEdit, cardMenuActions, priorityPatch, resolveDrop, resolveReorder, isStaleError, shouldShowAwaitingFilterButton, type DragSession } from "./interactions";
-import type { Task, TaskPriority, TaskStatus, TaskUpdateExpect, TaskUpdateInput } from "../../tasks/types";
+import type { TaskPriority, TaskStatus, TaskUpdateExpect, TaskUpdateInput } from "../../tasks/types";
 import type { ValidationOutcome } from "../../validations/types";
 
 // spec 335 — Mission Control board. The webview NEVER computes affordances/ordering itself: every column, card
@@ -175,8 +175,6 @@ export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastEr
   if (!vm || !model || !liveSnapshot) {
     return <div class="ds-degrade"><span class="codicon codicon-loading" /><div>Loading Board…</div></div>;
   }
-
-  const findTask = (id: string): Task | undefined => liveSnapshot.views.find((v) => v.task.id === id)?.task;
 
   const onDragStart = (card: BoardCardVM, e: DragEvent) => {
     drag.current = { taskId: card.id, fromStatus: card.status, startUpdatedAt: card.updatedAt, priority: card.priority };
