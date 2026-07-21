@@ -3,11 +3,11 @@
 _Created 2026-07-21._  
 _Design by grok (`t-a5154a`); probe-adjusted 2026-07-21; **maintainer ratified R1–R6** 2026-07-21._
 
-**Status:** in-progress
+**Status:** shipped-partial
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
-     Design is ratified; status stays in-progress until P0+foundation+safety+dogfood ship. -->
+     P0+P1 product path + human dogfood B–F green; residual follow-ups on board (safety @e, download path, dialog overlays, frames, screenshot flaky, password @e). -->
 
-**Board:** design `t-a5154a` (done) · umbrella `t-ca13aa` · next `t-f56a16` foundation · parent 414 shipped  
+**Board:** umbrella `t-ca13aa` done · dogfood `t-4ffb40` done · open follow-ups `t-8f0862`… · parent 414 shipped  
 **Kind:** product SDD (Companion agent-pull tools v2) — tab targeting, refs, safety, expanded surface  
 **Probe:** codex `gpt-5.6-sol` `probe-94a1a975-c98a-4c2d-bed6-7bd8fc19a745` → folded; **ratify R1–R6 yes** (maintainer).  
 **Visual ratify:** `RATIFY.md` + `diagrams/`

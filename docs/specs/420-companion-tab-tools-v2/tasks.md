@@ -27,7 +27,7 @@ _Board is source of execution order; this file tracks SDD hygiene._
 
 ## Phase 4 — Dogfood
 
-- [ ] `t-4ffb40` multi-tab race — **human dogfood batched at end of roadmap** (maintainer)
+- [x] `t-4ffb40` multi-tab race + human dogfood B–F (Dev Host, Companion 0.5.4/0.5.5)
 
 ## Phase 5 — P1 (board)
 
@@ -38,18 +38,19 @@ _Board is source of execution order; this file tracks SDD hygiene._
 - [x] `t-d65e35` upload/download
 - [x] `t-25d335` list_frames + shadow pierce + dialog
 - [x] `t-e7d917` network log (redacted)
+
+## Phase 6 — Post-dogfood follow-ups (open)
+
+- [ ] `t-8f0862` safety: needs_confirm resolves `@e` (P1)
+- [ ] `t-ca6420` download tool path without navigate false-positive
+- [ ] `t-39cbec` dialog custom modals
+- [ ] `t-bb8858` list_frames same-origin children
+- [ ] `t-a8e4ed` screenshot image readback flaky
+- [ ] `t-d16753` password `@e` stamp
   
 
 ## Verification
 
-**Verify (headless):**
-- `vitest` companionTabSafety + companionTabChannel420 + companionPairing
-- `tsc --noEmit` ADE + companion monorepo typecheck
-- Companion browser 0.5.1 handlers for P0 kinds
-
-**Dogfood-Opt-Out:** headless unit/protocol gates only until end-of-roadmap batch.  
-**Human dogfood:** full P0+P1 batch after roadmap (no incremental dogfood).  
-
-**Visual QA Opt-Out:** agent tools; no new Control chrome required for P0 (confirm UI may need visual pass when implemented).  
-
-**Cookbook:** yes — after first P0 tool ship (operator: tabId + snapshot + act).  
+**Verify (headless):** companionTabSafety + companionTabChannel420 + pairing; ADE+companion tsc.  
+**Human dogfood:** B–F complete (Dev Host + Companion 0.5.4/0.5.5); evidence under `.tachyon/dev-host/workspace/.tachyon/dogfood/`.  
+**Visual QA Opt-Out:** agent tools; Companion sidepanel UI refreshed 0.5.5 (maintainer approved).  
