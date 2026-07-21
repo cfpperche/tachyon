@@ -5,6 +5,8 @@ import { resolveCockpitSection } from "../cockpit/resolveSection.js";
 import {
   routes,
   decodePanelState as decodeCockpitPanelState,
+  navSection,
+  isSection,
   type CockpitRoute,
   type CockpitPanelState,
 } from "../cockpit/route.js";
@@ -32,6 +34,9 @@ import {
   type MissionControlAction,
 } from "./mission-control/messages.js";
 import { buildMissionVm, MissionAgentLists } from "../cockpit/missionVm.js";
+import { buildTaskDetailVm, emptyTombstoneVm } from "../cockpit/taskDetailVm.js";
+import { taskMessage, taskDetailErrorMessage, type TaskDetailAction } from "./task-detail/messages.js";
+import type { WorkspaceTaskDetailTarget } from "../shell/TaskDetailTarget.js";
 import {
   approvalsMessage,
   approvalErrorMessage,
@@ -71,8 +76,16 @@ export { decodeCockpitPanelState };
 /** Board wiring for Mission tab embed (same targets as MissionControlPanelManager). */
 export interface CockpitMissionBoard {
   getWorkspaces: () => WorkspaceMissionControlTarget[];
-  openTaskDetail: (ws: WorkspaceMissionControlTarget, id: string) => void;
-  openTaskStudio: (ws: WorkspaceMissionControlTarget, id?: string) => void;
+  /**
+   * t-610705 (Phase C.1) — Task Studio isn't migrated yet (it shares StudioPanelManagerBase with 8
+   * other panels; deferred to its own design pass). "Open task" no longer routes through here — the
+   * Board's openTask message navigates to the task-detail subroute directly (see
+   * handleMissionAction's "openTask" case) — Task Detail is fully Control-native now.
+   * Typed on the shared WorkspacePresentationTarget base (not the narrower WorkspaceMissionControlTarget)
+   * since the task-detail route also calls this with its own WorkspaceTaskDetailTarget — the real
+   * implementation (extension.ts) only ever needs `wsHash` to look up the underlying workspace.
+   */
+  openTaskStudio: (ws: WorkspacePresentationTarget, id?: string) => void;
   onTasksChanged: () => void;
 }
 
@@ -84,6 +97,13 @@ export interface CockpitApprovals {
 export interface CockpitValidations {
   getWorkspaces: () => WorkspaceMissionControlTarget[];
   onValidationsChanged: () => void;
+}
+
+/** t-610705 (Phase C.1) — Task Detail's own read/mutate surface (WorkspaceTaskDetailTarget already
+ *  carries loadTaskDetail/updateTask/reviewPrototype/attachment resolution — no separate VM-building
+ *  interface needed, unlike CockpitMissionBoard's thinner wrapper). */
+export interface CockpitTaskDetail {
+  getWorkspaces: () => WorkspaceTaskDetailTarget[];
 }
 
 export interface CockpitRuntimeOps {
@@ -114,6 +134,7 @@ export interface CockpitDeps {
   extensionUri: vscode.Uri;
   collect: () => Promise<CockpitWorkspaceBundle[]>;
   missionBoard: CockpitMissionBoard;
+  taskDetail: CockpitTaskDetail;
   approvals: CockpitApprovals;
   validations: CockpitValidations;
   runtimeOps: CockpitRuntimeOps;
@@ -347,11 +368,19 @@ let controlWsHash: string | undefined;
 let pushMissionBoard: (() => void) | undefined;
 let pushApprovals: (() => void) | undefined;
 let pushValidations: (() => void) | undefined;
+let pushTaskDetail: (() => void) | undefined;
 let wiredPanel: vscode.WebviewPanel | undefined;
 
 /** Refresh embedded Mission board after task mutations. */
 export function refreshCockpitMissionBoard(): void {
   pushMissionBoard?.();
+}
+
+/** t-610705 (Phase C.1) — refresh an open task-detail subroute after any task mutation, from ANY
+ *  source (board drag/edit, detail edit, MCP tool call) — the same shared fan-out the board and
+ *  sidebar already use. A no-op when the current route isn't task-detail (mirrors refreshCockpitMissionBoard). */
+export function refreshCockpitTaskDetail(): void {
+  pushTaskDetail?.();
 }
 
 /** Refresh embedded Approvals after resolve/fan-out. */
@@ -470,6 +499,7 @@ export async function openCockpit(
         pushMissionBoard = undefined;
         pushApprovals = undefined;
         pushValidations = undefined;
+        pushTaskDetail = undefined;
         wiredPanel = undefined;
         navEpoch += 1;
         missionAgentLists.clear();
@@ -484,7 +514,7 @@ export async function openCockpit(
     let model: CockpitModel;
     try {
       const bundles = await deps.collect();
-      model = buildCockpitModel(bundles, { section: currentRoute.section, wsHash: controlWsHash });
+      model = buildCockpitModel(bundles, { section: navSection(currentRoute), wsHash: controlWsHash });
     } catch (err) {
       model = buildCockpitModel(
         [
@@ -502,17 +532,20 @@ export async function openCockpit(
             approvals: [],
           },
         ],
-        { section: currentRoute.section, wsHash: controlWsHash },
+        { section: navSection(currentRoute), wsHash: controlWsHash },
       );
     }
+    // t-610705 (Phase C.1) — carries the exact route when it's a subroute; buildCockpitModel stays
+    // route-shape-agnostic (see the field's doc comment on CockpitModel).
+    if (currentRoute.kind !== "section") model.activeRoute = currentRoute;
     if (panel === live && navEpoch === epoch) {
       live.webview.postMessage(modelMessage(model));
-      live.title = sectionTitle(s, currentRoute.section);
+      live.title = sectionTitle(s, navSection(currentRoute));
     }
   };
 
   const sendMission = async () => {
-    if (panel !== live || currentRoute.section !== "mission") return;
+    if (panel !== live || !isSection(currentRoute, "mission")) return;
     const epoch = navEpoch;
     const all = deps.missionBoard.getWorkspaces();
     const ws = resolveMissionWs(deps.missionBoard);
@@ -533,7 +566,7 @@ export async function openCockpit(
   };
 
   const sendApprovals = async () => {
-    if (panel !== live || currentRoute.section !== "approvals") return;
+    if (panel !== live || !isSection(currentRoute, "approvals")) return;
     const epoch = navEpoch;
     const ws = resolveApprovalWs(deps.approvals);
     if (!ws) {
@@ -551,7 +584,7 @@ export async function openCockpit(
   };
 
   const sendValidations = async () => {
-    if (panel !== live || currentRoute.section !== "validations") return;
+    if (panel !== live || !isSection(currentRoute, "validations")) return;
     const epoch = navEpoch;
     const ws = resolveMissionWs({ ...deps.missionBoard, getWorkspaces: deps.validations.getWorkspaces });
     if (!ws) {
@@ -569,7 +602,7 @@ export async function openCockpit(
   };
 
   const sendRuntime = async () => {
-    if (panel !== live || currentRoute.section !== "runtime") return;
+    if (panel !== live || !isSection(currentRoute, "runtime")) return;
     const epoch = navEpoch;
     try {
       const snap = await deps.runtimeOps.buildSnapshot();
@@ -582,7 +615,7 @@ export async function openCockpit(
   };
 
   const sendInspector = async () => {
-    if (panel !== live || currentRoute.section !== "tmux") return;
+    if (panel !== live || !isSection(currentRoute, "tmux")) return;
     const epoch = navEpoch;
     let model: InspectorModel;
     try {
@@ -599,26 +632,134 @@ export async function openCockpit(
   };
 
   const bindPluginsIfNeeded = () => {
-    if (currentRoute.section === "plugins") {
+    if (isSection(currentRoute, "plugins")) {
       deps.plugins.bindControlEmbed(live.webview, controlWsHash);
     } else {
       deps.plugins.unbindControlEmbed();
     }
   };
 
+  // t-610705 (Phase C.1) — the LAST KNOWN good projection for the task-detail route currently open,
+  // keyed by task id (reset the moment the route changes to a different task or away entirely).
+  // Ported verbatim from TaskDetailPanel.ts's tombstone contract (dueto F8): a task that disappears
+  // or becomes unparseable renders from this cache instead of an empty/error screen. Control is a
+  // singleton — at most one task-detail route is ever open, so a single slot (not a Map) suffices.
+  let lastKnownTaskDetail: { taskId: string; wsHash: string; detail: import("../runtime-api/taskDetailProjection.js").TaskDetailProjectionV1 } | undefined;
+
+  const resolveTaskDetailWs = (wsHash: string): WorkspaceTaskDetailTarget | undefined =>
+    deps.taskDetail.getWorkspaces().find((w) => w.wsHash === wsHash);
+
+  const sendTaskDetail = async () => {
+    if (panel !== live || currentRoute.kind !== "task-detail") return;
+    const route = currentRoute;
+    const epoch = navEpoch;
+    const ws = resolveTaskDetailWs(route.wsHash);
+    const resolveBlobUri = (localPath: string): string => live.webview.asWebviewUri(vscode.Uri.file(localPath)).toString();
+    if (!ws) {
+      if (panel !== live || navEpoch !== epoch) return;
+      live.webview.postMessage(taskMessage(emptyTombstoneVm(route.wsHash, route.taskId)));
+      return;
+    }
+    // dogfood round 1 (#5, spec 339, ported from TaskDetailPanel.ts) — the blob root must be an
+    // allowed local resource root before asWebviewUri() below can resolve `attachment:<id>` refs.
+    // Least-privilege: only the CURRENT task's root is allowed (Control is single-instance, so a
+    // prior task's images simply stop resolving once navigated away — nothing still displays them).
+    live.webview.options = {
+      enableScripts: true,
+      localResourceRoots: [
+        vscode.Uri.joinPath(deps.extensionUri, "dist", "webview"),
+        vscode.Uri.file(ws.attachmentBlobRoot(route.taskId)),
+      ],
+    };
+    try {
+      const detail = await ws.loadTaskDetail(route.taskId);
+      if (panel !== live || navEpoch !== epoch) return;
+      lastKnownTaskDetail = { taskId: route.taskId, wsHash: route.wsHash, detail };
+      live.webview.postMessage(taskMessage(buildTaskDetailVm(ws, route.taskId, detail, false, resolveBlobUri)));
+    } catch {
+      if (panel !== live || navEpoch !== epoch) return;
+      // the file disappeared or became unparseable — render a tombstone from the LAST KNOWN state,
+      // never an empty screen (dueto F8); this task-detail route never redirects away on its own.
+      if (lastKnownTaskDetail && lastKnownTaskDetail.taskId === route.taskId && lastKnownTaskDetail.wsHash === route.wsHash) {
+        live.webview.postMessage(taskMessage(buildTaskDetailVm(ws, route.taskId, lastKnownTaskDetail.detail, true, resolveBlobUri)));
+      } else {
+        live.webview.postMessage(taskMessage(emptyTombstoneVm(route.wsHash, route.taskId)));
+      }
+    }
+  };
+
+  const handleTaskDetailAction = async (m: Partial<TaskDetailAction>): Promise<boolean> => {
+    if (!m?.type || currentRoute.kind !== "task-detail") return false;
+    const route = currentRoute;
+    if (m.type === READY || m.type === "requestSnapshot") {
+      await sendTaskDetail();
+      return true;
+    }
+    const ws = resolveTaskDetailWs(route.wsHash);
+    if (m.type === "updateTask" && m.patch) {
+      if (ws) {
+        try {
+          await ws.updateTask(route.taskId, m.patch);
+          // dogfood round 1 (#1) — the shared fan-out: re-posts this route, the Board, and the sidebar.
+          deps.missionBoard.onTasksChanged();
+        } catch (err) {
+          live.webview.postMessage(taskDetailErrorMessage(err instanceof Error ? err.message : String(err)));
+        }
+      }
+      return true;
+    }
+    if (m.type === "openTask" && typeof m.id === "string") {
+      // in-place navigate to another task in the SAME workspace (a dep/related-task link) — a
+      // subroute of a subroute stays a single active route, not a stack (the accepted multi-
+      // instance trade-off applies here too).
+      navigate(routes.taskDetail(route.wsHash, m.id));
+      lastKnownTaskDetail = undefined;
+      await sendModel();
+      await sendSectionModule();
+      return true;
+    }
+    if ((m.type === "approvePrototype" || m.type === "rejectPrototype" || m.type === "notePrototype") &&
+        typeof m.prototypeId === "string" && typeof m.expectUpdatedAt === "string") {
+      if (ws) {
+        try {
+          const action = m.type === "approvePrototype" ? "approve" : m.type === "rejectPrototype" ? "reject" : "note";
+          await ws.reviewPrototype(route.taskId, {
+            prototypeId: m.prototypeId,
+            action,
+            expectUpdatedAt: m.expectUpdatedAt,
+            ...(m.review ? { review: m.review } : {}),
+          });
+          deps.missionBoard.onTasksChanged();
+        } catch (err) {
+          live.webview.postMessage(taskDetailErrorMessage(err instanceof Error ? err.message : String(err)));
+        }
+      }
+      return true;
+    }
+    if (m.type === "openTaskStudio") {
+      // Task Studio isn't migrated yet (t-610705 Phase C.1 note on CockpitMissionBoard) — falls
+      // through to the still-standalone TaskStudioPanelManager via the same deps hook the Board uses.
+      if (ws) deps.missionBoard.openTaskStudio(ws, route.taskId);
+      return true;
+    }
+    return false;
+  };
+
   const sendSectionModule = async () => {
     bindPluginsIfNeeded();
-    if (currentRoute.section === "mission") await sendMission();
-    else if (currentRoute.section === "validations") await sendValidations();
-    else if (currentRoute.section === "approvals") await sendApprovals();
-    else if (currentRoute.section === "runtime") await sendRuntime();
-    else if (currentRoute.section === "tmux") await sendInspector();
-    else if (currentRoute.section === "plugins") deps.plugins.refreshControlEmbed();
+    if (isSection(currentRoute, "mission")) await sendMission();
+    else if (isSection(currentRoute, "validations")) await sendValidations();
+    else if (isSection(currentRoute, "approvals")) await sendApprovals();
+    else if (isSection(currentRoute, "runtime")) await sendRuntime();
+    else if (isSection(currentRoute, "tmux")) await sendInspector();
+    else if (isSection(currentRoute, "plugins")) deps.plugins.refreshControlEmbed();
+    else if (currentRoute.kind === "task-detail") await sendTaskDetail();
   };
 
   pushMissionBoard = () => { void sendMission(); };
   pushApprovals = () => { void sendApprovals(); };
   pushValidations = () => { void sendValidations(); };
+  pushTaskDetail = () => { void sendTaskDetail(); };
 
   const handleMissionAction = async (m: Partial<MissionControlAction>): Promise<boolean> => {
     if (!m?.type) return false;
@@ -660,8 +801,16 @@ export async function openCockpit(
       return true;
     }
     if (m.type === "openTask" && typeof m.id === "string") {
+      // t-610705 (Phase C.1) — Task Detail is a Control subroute now: navigate in place instead of
+      // opening a standalone panel. The board card's own workspace resolves the entity's wsHash
+      // (the route's immutable locator — independent of the shell's workspace-scope selector).
       const ws = resolveMissionWs(deps.missionBoard);
-      if (ws) deps.missionBoard.openTaskDetail(ws, m.id);
+      if (ws) {
+        navigate(routes.taskDetail(ws.wsHash, m.id));
+        lastKnownTaskDetail = undefined;
+        await sendModel();
+        await sendSectionModule();
+      }
       return true;
     }
     if (m.type === "copyTaskId" && typeof m.id === "string") {
@@ -724,7 +873,7 @@ export async function openCockpit(
 
   const handleInspectorAction = async (m: Partial<InspectorAction>): Promise<boolean> => {
     if (!m?.type || !INSPECTOR_ACTION_TYPES.has(m.type)) return false;
-    if (currentRoute.section !== "tmux") return false;
+    if (!isSection(currentRoute, "tmux")) return false;
     switch (m.type) {
       case "open":
         if (m.session) deps.inspector.open(m.session);
@@ -777,6 +926,11 @@ export async function openCockpit(
       if (panel !== live || !msg || typeof msg !== "object" || typeof msg.type !== "string") return;
       const type = msg.type;
 
+      // t-610705 (Phase C.1) — MUST run before handleMissionAction: TaskDetailAction's "openTask"
+      // is the same {type,id} shape as MissionControlAction's, and would otherwise be misrouted to
+      // the Board's handler (wrong workspace resolution — task-detail pins its own wsHash, not the
+      // shell scope). handleTaskDetailAction itself no-ops (returns false) off a task-detail route.
+      if (await handleTaskDetailAction(msg as Partial<TaskDetailAction>)) return;
       if (await handleMissionAction(msg as Partial<MissionControlAction>)) return;
       if (await handleApprovalAction(msg as Partial<ApprovalAction>)) return;
       if (await handleValidationsAction(msg as Partial<ValidationsAction>)) return;
@@ -794,7 +948,7 @@ export async function openCockpit(
 
       // Plugin product actions only (install/update/…). Never steal cockpit `ready`/`refresh` —
       // those must always run the Control shell init/model + sendSectionModule path (which binds the embed).
-      if (PLUGIN_ACTION_TYPES.has(type) && currentRoute.section === "plugins") {
+      if (PLUGIN_ACTION_TYPES.has(type) && isSection(currentRoute, "plugins")) {
         if (deps.plugins.handleControlEmbedMessage(msg as never)) return;
       }
 
@@ -831,7 +985,7 @@ export async function openCockpit(
         case "copyDiagnostics": {
           try {
             const bundles = await deps.collect();
-            const text = formatCockpitDiagnostics(buildCockpitModel(bundles, { section: currentRoute.section }));
+            const text = formatCockpitDiagnostics(buildCockpitModel(bundles, { section: navSection(currentRoute) }));
             await vscode.env.clipboard.writeText(text);
             live.webview.postMessage(toastMessage(s.copied));
           } catch (err) {
@@ -973,15 +1127,20 @@ export async function openCockpit(
     // bootstrap global and the client injects it when the lazy section body loads
     // (src/webview/shared/lazySectionStyles.ts). Each Phase B PR moves one more surface's sheet
     // from always-eager to this scheme; sheets not yet migrated stay eager unconditionally.
-    const approvalsIsActive = currentRoute.section === "approvals";
-    const runtimeIsActive = currentRoute.section === "runtime";
-    const validationsIsActive = currentRoute.section === "validations";
-    const pluginsIsActive = currentRoute.section === "plugins";
-    const tmuxIsActive = currentRoute.section === "tmux";
-    const missionIsActive = currentRoute.section === "mission";
+    const approvalsIsActive = isSection(currentRoute, "approvals");
+    const runtimeIsActive = isSection(currentRoute, "runtime");
+    const validationsIsActive = isSection(currentRoute, "validations");
+    const pluginsIsActive = isSection(currentRoute, "plugins");
+    const tmuxIsActive = isSection(currentRoute, "tmux");
+    const missionIsActive = isSection(currentRoute, "mission");
+    const taskDetailIsActive = currentRoute.kind === "task-detail";
     live.webview.html = renderWebviewShell({
       cspSource: live.webview.cspSource,
       title: s.title,
+      // t-610705 (Phase C.1) — task-detail needs frame-src 'self' for PrototypePreview's sandboxed
+      // srcdoc iframe (the standalone TaskDetailPanel.ts set this too); purely additive to the CSP,
+      // no effect on any other already-embedded section.
+      frameSrc: "self",
       // No nested `[...]` inside this literal — test/unit/cockpitCssParity.test.ts source-scans this
       // exact array via a non-greedy `styles:\s*\[([\s\S]*?)\]` regex, so an inline array literal
       // (e.g. a `...(cond ? [x] : [])` spread) closes the match early at ITS `]` and silently
@@ -998,6 +1157,8 @@ export async function openCockpit(
         validationsIsActive ? uri("validations.css") : undefined,
         runtimeIsActive ? uri("runtime-ops.css") : undefined,
         tmuxIsActive ? uri("inspector.css") : undefined,
+        taskDetailIsActive ? uri("mermaid-block.css") : undefined,
+        taskDetailIsActive ? uri("task-detail.css") : undefined,
         uri("cockpit.css"),
       ].filter((href): href is string => href !== undefined),
       bundle: uri("cockpit.js"),
@@ -1021,6 +1182,8 @@ export async function openCockpit(
           tmux: uri("inspector.css"),
           "mission-tailwind": uri("mission-control.tailwind.css"),
           mission: uri("mission-control.css"),
+          "task-detail-mermaid": uri("mermaid-block.css"),
+          "task-detail": uri("task-detail.css"),
         },
       },
     });

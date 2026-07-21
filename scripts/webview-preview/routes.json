@@ -338,6 +338,27 @@
   },
   {
     "view": "cockpit",
+    "fixture": "task-detail",
+    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=task-detail",
+    "frame": {
+      "w": 1100,
+      "h": 720
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Control",
+    "aliases": [
+      "control",
+      "cockpit",
+      "sysadmin",
+      "project control",
+      "fleet control",
+      "control plane"
+    ]
+  },
+  {
+    "view": "cockpit",
     "fixture": "validations",
     "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=validations",
     "frame": {
@@ -789,23 +810,6 @@
     "aliases": [
       "task studio",
       "task editor"
-    ]
-  },
-  {
-    "view": "task-detail",
-    "fixture": "default",
-    "url": "/scripts/webview-preview/index.html?view=task-detail&fixture=default",
-    "frame": {
-      "w": 820,
-      "h": 760
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Task Detail",
-    "aliases": [
-      "task detail",
-      "task tab"
     ]
   },
   {

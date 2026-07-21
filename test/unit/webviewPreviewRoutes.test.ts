@@ -68,6 +68,8 @@ describe("preview route table", () => {
       "/dist/webview/validations.css",
       "/dist/webview/runtime-ops.css",
       "/dist/webview/inspector.css",
+      "/dist/webview/mermaid-block.css",
+      "/dist/webview/task-detail.css",
       "/dist/webview/cockpit.css",
     ]);
     expect(Object.keys(r.fixtures).sort()).toEqual([
@@ -83,6 +85,7 @@ describe("preview route table", () => {
       "plugins",
       "runtime",
       "settings",
+      "task-detail",
       "tmux",
       "validations",
       "worktrees",
@@ -92,6 +95,10 @@ describe("preview route table", () => {
     expect(msgs[1]?.model?.section).toBe("overview");
     const missionMsgs = r.makeMessage(r.fixtures.mission.vm) as Array<{ type: string }>;
     expect(missionMsgs.map((m) => m.type)).toEqual(["init", "model", "snapshot"]);
+    // t-610705 (Phase C.1) — the task-detail subroute fixture rides alongside its parent
+    // section's push (activeRoute carries the entity locator; section stays "mission").
+    const taskDetailMsgs = r.makeMessage(r.fixtures["task-detail"]!.vm) as Array<{ type: string }>;
+    expect(taskDetailMsgs.map((m) => m.type)).toEqual(["init", "model", "snapshot", "task"]);
     const validationsMsgs = r.makeMessage(r.fixtures.validations.vm) as Array<{ type: string }>;
     expect(validationsMsgs.map((m) => m.type)).toEqual(["init", "model", "validations"]);
     const approvalMsgs = r.makeMessage(r.fixtures.approvals.vm) as Array<{ type: string }>;
@@ -147,13 +154,6 @@ describe("preview route table", () => {
       "/dist/webview/studio-frame.css",
       "/dist/webview/agent-studio-shell.css",
     ]);
-  });
-
-  it("declares the task-detail route (spec 342 dogfood round 2 #4) with its envelope + ordered CSS", () => {
-    const r = ROUTES["task-detail"];
-    expect(r.bundle).toBe("/dist/webview/task-detail.js");
-    expect(r.cssLinks).toEqual(["/dist/webview/codicon.css", "/dist/webview/design-system.css", "/dist/webview/mermaid-block.css", "/dist/webview/task-detail.css"]);
-    expect((r.makeMessage(r.fixtures.default.vm) as { type: string }).type).toBe("task");
   });
 
   it("declares the pin-preview route (spec 279) with a hostile fixture carrying injection payloads", () => {

@@ -11,9 +11,7 @@ import { ValidationStore } from "../../src/validations/ValidationStore.js";
 import { openCockpit, refreshCockpitMissionBoard } from "../../src/webview/Cockpit.js";
 import { makeFakeCockpitDeps } from "../mocks/cockpitDeps.js";
 import { legacyMissionControlTarget } from "../../src/shell/MissionControlTarget.js";
-import { legacyTaskDetailTarget } from "../../src/shell/TaskDetailTarget.js";
 import { legacyTaskStudioTarget } from "../../src/shell/TaskStudioTarget.js";
-import { TaskDetailPanelManager } from "../../src/webview/TaskDetailPanel.js";
 import { TaskStudioPanelManager } from "../../src/webview/TaskStudioPanel.js";
 import { envelope } from "../../src/webview/shared/studio/protocol.js";
 import type { Workspace } from "../../src/workspace/Workspace.js";
@@ -54,34 +52,25 @@ function fakeWorkspace(root = mkroot(), agents: Record<string, unknown> = {}) {
   } as unknown as Workspace;
 }
 
-/** Wires the board (Control → Mission since t-610705 Phase B #6) + detail/studio managers exactly
- *  like extension.ts does: the standalone board panel is retired, so the board half is CockpitDeps'
- *  missionBoard and the board UI is the cockpit panel's mission section. */
+/** Wires the board (Control → Mission since t-610705 Phase B #6) + Task Studio manager exactly like
+ *  extension.ts does: the standalone board AND Task Detail panels are both retired now (Phase C.1)
+ *  — the board half is CockpitDeps' missionBoard and the board/detail UI are cockpit sections/subroutes. */
 function wireManagers(ws: Workspace) {
-  let taskDetailPanels!: TaskDetailPanelManager;
   let fanOuts = 0;
   const onTasksChanged = () => {
     fanOuts += 1;
     refreshCockpitMissionBoard();
-    taskDetailPanels.refreshAll();
     taskStudioPanels.refreshAll();
   };
   const studio = legacyTaskStudioTarget(ws);
   const taskStudioPanels = new TaskStudioPanelManager(Uri.file("/ext"), onTasksChanged);
-  taskDetailPanels = new TaskDetailPanelManager(
-    Uri.file("/ext"),
-    () => [legacyTaskDetailTarget(ws)],
-    (_target, id) => taskStudioPanels.openExisting(studio, id),
-    onTasksChanged,
-  );
   const cockpitDeps = makeFakeCockpitDeps({
     getWorkspaces: () => [legacyMissionControlTarget(ws)],
-    openTaskDetail: (_target, id) => taskDetailPanels.open(legacyTaskDetailTarget(ws), id),
     openTaskStudio: (_target, id) => { if (id) taskStudioPanels.openExisting(studio, id); else taskStudioPanels.openNew(studio); },
     onTasksChanged,
   });
   const openBoard = () => openCockpit(cockpitDeps, { section: "mission", wsHash: ws.wsHash });
-  return { openBoard, taskDetailPanels, taskStudioPanels, fanOuts: () => fanOuts };
+  return { openBoard, taskStudioPanels, fanOuts: () => fanOuts };
 }
 
 function settled<T>(fn: () => T): Promise<T> {
@@ -115,7 +104,7 @@ describe("board '+ Task' flow end to end (spec F12/F19)", () => {
 
     // the board's "+ Task" button posts this exact action (mission-control/App.tsx)
     __createdPanels[0].webview.__receive({ type: "openTaskStudio" });
-    expect(__createdPanels).toHaveLength(2); // Task Studio opened as a second panel
+    await settled(() => expect(__createdPanels).toHaveLength(2)); // Task Studio opened as a second panel
     const entity = await studioEntityOf(1);
     expect(entity.expectUpdatedAt).toBeUndefined(); // new mode: no task behind this id yet
 
@@ -151,7 +140,7 @@ describe("board '+ Task' flow end to end (spec F12/F19)", () => {
     await openBoard();
 
     __createdPanels[0].webview.__receive({ type: "openTaskStudio", id: task.id });
-    expect(__createdPanels).toHaveLength(2);
+    await settled(() => expect(__createdPanels).toHaveLength(2));
     const entity = await studioEntityOf(1);
     expect(entity.expectUpdatedAt).toBe(task.updatedAt); // edit mode: a real, already-loaded task
     expect(entity.taskId).toBe(task.id);

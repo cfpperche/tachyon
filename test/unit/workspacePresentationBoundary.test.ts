@@ -47,7 +47,9 @@ describe("persistent workspace presentation boundary", () => {
       // MissionControlPanel.ts left this list on t-610705 Phase B #6: the panel host was retired and the
       // file is types-only now (no Workspace, no Target) — the board is hosted by Cockpit.ts, which was
       // born on WorkspaceMissionControlTarget.
-      "src/webview/TaskDetailPanel.ts",
+      // TaskDetailPanel.ts left this list on t-610705 Phase C.1 for the same reason: the panel host was
+      // retired and the file is types-only now (VIEW_TYPE + PanelState only) — Task Detail is hosted by
+      // Cockpit.ts, which was born on WorkspaceTaskDetailTarget.
       "src/webview/TaskStudioAdapter.ts",
       "src/webview/TaskStudioPanel.ts",
       "src/webview/PinStudioAdapter.ts",

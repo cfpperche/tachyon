@@ -1,23 +1,27 @@
 /**
- * t-610705 (SDD 410 Phase C.0) — the Control cockpit's internal router. Maintainer mandate
+ * t-610705 (SDD 410 Phase C.0/C.1) — the Control cockpit's internal router. Maintainer mandate
  * (2026-07-21): ALL screens open inside Control as subroutes (SPA model — board == task list;
- * task detail/edit/new are subroutes of the board). This module is the seam every future group
- * (C.1 Board subroutes, C.2 Fleet subroutes, C.3 Handoff, C.4 Pins) extends.
+ * task detail/edit/new are subroutes of the board). This module is the seam every group (C.1 Board
+ * subroutes, C.2 Fleet subroutes, C.3 Handoff, C.4 Pins) extends.
  *
  * Design hardened via an adversarial dueto (probe-840f7a80, 16 findings, journal on t-610705).
  * Load-bearing decisions baked into this shape:
  *  - Routes are a discriminated union, never a bare string or Record<string,string> — every
  *    field is typed per variant. `decodeRoute` is the ONE total runtime decoder at every trust
  *    boundary (webview messages, persisted state); it rejects unknown/extra fields.
- *  - `parentRoute` is meant to be an EXHAUSTIVE switch over `route.kind` once there is more than
- *    one kind to be exhaustive OVER — see the note above each function below. No generic
- *    structural derivation, ever, even once real hierarchy (task-edit -> task-detail -> mission)
- *    exists.
- *  - `refreshPolicy` is per-kind, not a global timer default — a future entity/form route can opt
- *    out of the 3s auto-refresh without touching call sites that don't care.
- *
- * Only the "section" kind exists today (C.1-C.4 add sibling kinds). A route with only one kind
- * looks over-engineered in isolation; it earns its keep the moment C.1 adds a second one.
+ *  - `parentRoute` is an EXHAUSTIVE switch over `route.kind` (assertNeverRoute) — adding a new
+ *    kind without a matching case is a compile error. No generic structural derivation, ever, even
+ *    though task-detail's parent genuinely IS the mission section — that mapping is spelled out
+ *    explicitly per kind, not inferred.
+ *  - `refreshPolicy` is per-kind, not a global timer default — task-detail already opts out (a
+ *    stray 3s auto-refresh mid-read is jarring for a document view; the fan-out from real
+ *    mutations elsewhere already re-pushes it — see refreshCockpitTaskDetail in Cockpit.ts). A
+ *    future form route (task-new/task-edit) opts out too, for a sharper reason: don't clobber
+ *    in-progress edits.
+ *  - `navSection` answers "which NAV TAB should be highlighted" — distinct from parentRoute's
+ *    "where does back/breadcrumb go": today they agree (task-detail's nav tab AND its breadcrumb
+ *    parent are both Mission), but a future route could highlight one tab while its breadcrumb
+ *    parent is a different node, so these stay two functions on purpose.
  */
 import type { CockpitSectionId } from "./model.js";
 import { resolveCockpitSection, isCockpitSectionId } from "./resolveSection.js";
@@ -28,57 +32,132 @@ export interface CockpitSectionRoute {
   readonly section: CockpitSectionId;
 }
 
-// C.1 adds taskDetail/taskForm; C.2 adds agentActivity/agentProbes; C.3 folds handoff into a
-// section (no new kind); C.4 adds pinEdit. Extend this union, then satisfy parentRoute/decodeRoute/
-// refreshPolicy's exhaustiveness checks — the compiler is the checklist.
-export type CockpitRoute = CockpitSectionRoute;
+/**
+ * t-610705 Phase C.1 — one task's read/edit-lite view, a subroute of the Board (mission section).
+ * `wsHash` is the entity's IMMUTABLE workspace locator (router dueto finding: data identity is
+ * NOT the same thing as the shell's workspace-scope selector, and must never be derived from it —
+ * switching the shell scope while a task-detail route is open does not re-target this route).
+ */
+export interface CockpitTaskDetailRoute {
+  readonly kind: "task-detail";
+  readonly wsHash: string;
+  readonly taskId: string;
+}
+
+// C.1 also adds task-new/task-edit (Task Studio — deferred pending its own design pass, since it
+// shares StudioPanelManagerBase with 8 other panels); C.2 adds agentActivity/agentProbes; C.3 folds
+// handoff into a section (no new kind); C.4 adds pinEdit. Extend this union, then satisfy
+// parentRoute/decodeRoute/refreshPolicy/navSection's exhaustiveness checks — the compiler is the
+// checklist (assertNeverRoute's `never` parameter fails to compile until every function below
+// handles the new kind).
+export type CockpitRoute = CockpitSectionRoute | CockpitTaskDetailRoute;
 
 /** How often the active route's data should be re-fetched on the 3s shell timer. */
 export type CockpitRefreshPolicy = "poll" | "none";
 
-// t-610705 — with a single union member, `route.kind === "section"` already covers every
-// CockpitRoute; there is no unreachable branch to guard against yet, so these are straight-line,
-// not switch/default-with-never. The FIRST time C.1 adds a second `kind`, convert each of these to
-// a switch with a `default: return assertNever(route)` — TypeScript's real exhaustiveness checking
-// only earns its keep (and narrows correctly) once there is more than one member to exclude.
+function assertNeverRoute(route: never): never {
+  throw new Error(`cockpit route: unhandled kind ${JSON.stringify(route)}`);
+}
 
 export function routeKey(route: CockpitRoute): string {
-  return `section:${route.section}`;
+  switch (route.kind) {
+    case "section":
+      return `section:${route.section}`;
+    case "task-detail":
+      return `task-detail:${route.wsHash}:${route.taskId}`;
+    default:
+      return assertNeverRoute(route);
+  }
 }
 
-export function parentRoute(_route: CockpitRoute): CockpitRoute | null {
-  // sections are top-level; no parent to derive.
-  return null;
+/** Where breadcrumb/back navigation goes. Sections are top-level (no parent). */
+export function parentRoute(route: CockpitRoute): CockpitRoute | null {
+  switch (route.kind) {
+    case "section":
+      return null;
+    case "task-detail":
+      return { kind: "section", section: "mission" };
+    default:
+      return assertNeverRoute(route);
+  }
 }
 
-export function refreshPolicy(_route: CockpitRoute): CockpitRefreshPolicy {
-  // matches today's behavior exactly — every section already polls on the shared 3s timer.
-  return "poll";
+/** Which nav-bar tab should read as active while this route is showing. */
+export function navSection(route: CockpitRoute): CockpitSectionId {
+  switch (route.kind) {
+    case "section":
+      return route.section;
+    case "task-detail":
+      return "mission";
+    default:
+      return assertNeverRoute(route);
+  }
+}
+
+/**
+ * True only when `route` genuinely IS that section (not merely a subroute nested under it, e.g.
+ * task-detail's parent). Distinct from `navSection` on purpose: nav highlighting wants "which tab
+ * reads as active", but a section's own data-refresh guard wants "is this section literally what's
+ * rendered right now" — the board's data has no reason to keep refreshing while a task-detail
+ * subroute is what's actually on screen.
+ */
+export function isSection(route: CockpitRoute, section: CockpitSectionId): boolean {
+  return route.kind === "section" && route.section === section;
+}
+
+export function refreshPolicy(route: CockpitRoute): CockpitRefreshPolicy {
+  switch (route.kind) {
+    case "section":
+      // matches today's behavior exactly — every section already polls on the shared 3s timer.
+      return "poll";
+    case "task-detail":
+      // a document view, not a dashboard — real mutations already re-push via the onTasksChanged
+      // fan-out; a timer-driven refetch mid-read (or mid-typing in the assignee field) is only downside.
+      return "none";
+    default:
+      return assertNeverRoute(route);
+  }
 }
 
 /** Plain (non-localized) slug for logging/breadcrumb keys. UI localizes via its own strings map. */
 export function formatRoute(route: CockpitRoute): string {
-  return route.section;
+  switch (route.kind) {
+    case "section":
+      return route.section;
+    case "task-detail":
+      return `task ${route.taskId}`;
+    default:
+      return assertNeverRoute(route);
+  }
 }
 
 export const routes = {
   section: (section: CockpitSectionId): CockpitSectionRoute => ({ kind: "section", section }),
+  taskDetail: (wsHash: string, taskId: string): CockpitTaskDetailRoute => ({ kind: "task-detail", wsHash, taskId }),
 };
 
 /**
  * The ONE runtime decoder for a route arriving from an untrusted boundary (webview message,
- * persisted panel state). Rejects unknown kinds, missing/extra fields, and invalid section ids —
+ * persisted panel state). Rejects unknown kinds, missing/extra fields, and invalid values —
  * returns null rather than guessing, so callers choose their own fallback (usually
  * `routes.section("overview")`).
  */
 export function decodeRoute(raw: unknown): CockpitRoute | null {
   if (!raw || typeof raw !== "object") return null;
   const obj = raw as Record<string, unknown>;
-  if (obj.kind !== "section") return null;
   const keys = Object.keys(obj);
-  if (keys.length !== 2 || !keys.includes("kind") || !keys.includes("section")) return null;
-  if (!isCockpitSectionId(obj.section)) return null;
-  return { kind: "section", section: obj.section };
+  if (obj.kind === "section") {
+    if (keys.length !== 2 || !keys.includes("kind") || !keys.includes("section")) return null;
+    if (!isCockpitSectionId(obj.section)) return null;
+    return { kind: "section", section: obj.section };
+  }
+  if (obj.kind === "task-detail") {
+    if (keys.length !== 3 || !keys.includes("wsHash") || !keys.includes("taskId")) return null;
+    if (typeof obj.wsHash !== "string" || !obj.wsHash) return null;
+    if (typeof obj.taskId !== "string" || !obj.taskId) return null;
+    return { kind: "task-detail", wsHash: obj.wsHash, taskId: obj.taskId };
+  }
+  return null;
 }
 
 const COCKPIT_PANEL_VIEW = "tachyonCockpit" as const;

@@ -63,7 +63,6 @@ const target = (workspace: Workspace): WorkspaceMissionControlTarget => legacyMi
 function boardOf(targets: WorkspaceMissionControlTarget[]): CockpitMissionBoard {
   return {
     getWorkspaces: () => targets,
-    openTaskDetail: () => {},
     openTaskStudio: () => {},
     onTasksChanged: () => {},
   };

@@ -6,6 +6,7 @@ import {
   type CockpitModel,
   type CockpitSectionId,
 } from "../../cockpit/model";
+import { parentRoute } from "../../cockpit/route";
 import type { ControlInspectorWorkspaceRow } from "../../control-inspector/model";
 import {
   formatCompanionPairClipboard,
@@ -19,6 +20,8 @@ import { KitSelect } from "../shared/ui/kit";
 import { loadSectionStylesheet } from "../shared/lazySectionStyles";
 import type { MissionControlDispatch, TaskErrorEvent } from "../mission-control/App";
 import type { MissionControlVM } from "../mission-control/messages";
+import type { TaskDetailDispatch } from "../task-detail/App";
+import type { TaskDetailVM } from "../task-detail/messages";
 import type { ValidationsDispatch } from "../validations/App";
 import type { ValidationsViewModel } from "../validations/viewModel";
 import type { ApprovalDispatch } from "../approval/App";
@@ -37,6 +40,15 @@ const MissionControlApp = lazy(() =>
   import("../mission-control/App").then((m) => {
     loadSectionStylesheet("mission-tailwind");
     loadSectionStylesheet("mission");
+    return { default: m.App };
+  }),
+);
+// t-610705 (Phase C.1) — CSS co-load, seventh surface: the task-detail subroute of Mission (its own
+// sheet plus the mermaid-block sheet its body's MarkdownView can render).
+const TaskDetailApp = lazy(() =>
+  import("../task-detail/App").then((m) => {
+    loadSectionStylesheet("task-detail-mermaid");
+    loadSectionStylesheet("task-detail");
     return { default: m.App };
   }),
 );
@@ -122,6 +134,11 @@ export interface CockpitAppProps {
   missionVm?: MissionControlVM;
   missionError?: TaskErrorEvent;
   missionDispatch: MissionControlDispatch;
+  /** t-610705 (Phase C.1) — the task-detail subroute of Mission (model.activeRoute drives which). */
+  taskVm?: TaskDetailVM;
+  taskErrorSeq: number;
+  taskErrorMessage?: string;
+  taskDetailDispatch: TaskDetailDispatch;
   /** Embedded product surfaces (not Task/Pin/form studios). */
   approvalVm?: ApprovalViewModel;
   approvalError?: string;
@@ -430,10 +447,33 @@ export function App(p: CockpitAppProps) {
   if (!s) return <div class="ds-empty" />;
   const m = p.model;
   const section = m?.section ?? "overview";
+  const activeRoute = m?.activeRoute;
 
   let body: ComponentChildren = null;
   if (!m) {
     body = <div class="ck-empty">{s.empty}</div>;
+  } else if (activeRoute?.kind === "task-detail") {
+    // t-610705 (Phase C.1) — a subroute of Mission: same embed host styling as the board (checked
+    // BEFORE the section branch below, since model.section still reads "mission" here — navSection
+    // keeps the Mission tab highlighted while this subroute is what's actually on screen).
+    const parent = parentRoute(activeRoute);
+    // t-610705 (Phase C.1) — a lone back-link, not a full "parent / current" trail: the task's own
+    // title already renders right below as the page H1 (PageChrome), so repeating it here would just
+    // be the same text twice with nothing between them.
+    body = (
+      <div class="ck-embed-host" data-testid="control-task-detail">
+        {parent && parent.kind === "section" ? (
+          <div class="td-breadcrumb" data-testid="control-task-detail-breadcrumb">
+            <Button variant="default" icon="arrow-left" onClick={() => p.onSetSection(parent.section)}>
+              {s.navMission}
+            </Button>
+          </div>
+        ) : null}
+        <Suspense fallback={<SectionFallback />}>
+          <TaskDetailApp vm={p.taskVm} errorSeq={p.taskErrorSeq} errorMessage={p.taskErrorMessage} dispatch={p.taskDetailDispatch} />
+        </Suspense>
+      </div>
+    );
   } else if (section === "overview") {
     const o = m.overview;
     body = (

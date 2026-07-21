@@ -122,6 +122,8 @@ export const ROUTES: Record<string, Route> = {
       "/dist/webview/validations.css",
       "/dist/webview/runtime-ops.css",
       "/dist/webview/inspector.css",
+      "/dist/webview/mermaid-block.css",
+      "/dist/webview/task-detail.css",
       "/dist/webview/cockpit.css",
     ],
     frame: { w: 1100, h: 720 },
@@ -159,6 +161,12 @@ export const ROUTES: Record<string, Route> = {
       } else if (model.section === "plugins") {
         const plugins = pluginsFixtures.default?.vm;
         if (plugins) msgs.push(pluginsMessage(plugins));
+      }
+      // t-610705 (Phase C.1) — a subroute rides alongside its parent section's push (task-detail's
+      // nav section is "mission", so the board snapshot above still applies; this adds the task).
+      if ((model as { activeRoute?: { kind?: string } }).activeRoute?.kind === "task-detail") {
+        const detail = taskDetailFixtures.default?.vm;
+        if (detail) msgs.push(taskMessage(detail));
       }
       return msgs;
     },
@@ -215,15 +223,10 @@ export const ROUTES: Record<string, Route> = {
     fixtures: taskStudioFixtures as Record<string, Fixture>,
     makeMessage: (vm) => taskStudioMakeMessage(vm as never),
   },
-  // spec 342 dogfood round 2 (#4) — cheap to add alongside task-studio: no Kit/Tailwind components on this
-  // surface yet, so its CSS list is the plain codicon/design-system/panel-specific triad.
-  "task-detail": {
-    bundle: "/dist/webview/task-detail.js",
-    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/mermaid-block.css", "/dist/webview/task-detail.css"],
-    frame: { w: 820, h: 760 },
-    fixtures: taskDetailFixtures as Record<string, Fixture>,
-    makeMessage: (vm) => taskMessage(vm as never),
-  },
+  // t-610705 (SDD 410 Phase C.1) — the standalone "task-detail" route previewed the retired Task
+  // Detail panel; Task Detail is a cockpit-only subroute now — use
+  // ?view=cockpit&fixture=task-detail (same App.tsx, same fixture VM, via the cockpit route's
+  // activeRoute injection above).
   // spec 350 T4 — Pipeline Studio (Fake 1): the studio-shell's Phase 1 proof surface. Dev-flag-hidden (no
   // command contribution) — reachable only through this route and its own host-side tests.
   "pipeline-studio": {
@@ -301,7 +304,6 @@ export const VIEW_META: Record<string, { title: string; aliases: string[] }> = {
   approval: { title: "Human Approvals", aliases: ["approvals", "human approvals", "approval view"] },
   "pin-studio": { title: "Pin Studio", aliases: ["pin studio", "pin editor", "sketch"] },
   "task-studio": { title: "Task Studio", aliases: ["task studio", "task editor"] },
-  "task-detail": { title: "Task Detail", aliases: ["task detail", "task tab"] },
   "pipeline-studio": { title: "Pipeline Studio (shell fake)", aliases: ["pipeline studio", "studio shell fake", "spec 350"] },
   "agent-studio-fixture": { title: "Agent fixture (shell fake)", aliases: ["agent fixture", "agent shell fixture", "spec 350"] },
   "agent-studio-shell": { title: "Agent Studio", aliases: ["agent studio", "new agent", "edit agent"] },

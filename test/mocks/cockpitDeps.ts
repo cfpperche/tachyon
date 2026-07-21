@@ -13,6 +13,7 @@ export function makeFakeCockpitDeps(missionBoard: CockpitMissionBoard, overrides
     extensionUri: Uri.file("/ext"),
     collect: async () => [],
     missionBoard,
+    taskDetail: { getWorkspaces: () => [] },
     approvals: { getWorkspaces: () => [], resolve: async () => {} },
     validations: { getWorkspaces: () => [], onValidationsChanged: () => {} },
     runtimeOps: { buildSnapshot: () => ({ generatedAt: "", providers: [] }) as unknown as RuntimeOpsSnapshot },

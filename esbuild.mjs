@@ -330,12 +330,9 @@ const pluginHost = {
 // cockpit-only section (src/webview/mission-control/App.tsx stays, lazy-imported by cockpit/App.tsx
 // via CSS co-load). Both mission-control CSS files are still emitted below — Cockpit.ts co-loads them.
 
-// spec 335 — the Preact Task Detail webview bundle (editor-area panel, one per task id; never imports vscode).
-const taskDetail = {
-  ...sidebar,
-  entryPoints: ["src/webview/task-detail/main.tsx"],
-  outfile: "dist/webview/task-detail.js",
-};
+// t-610705 (SDD 410 Phase C.1) — the standalone Task Detail bundle was retired: Task Detail is a
+// cockpit-only subroute now (src/webview/task-detail/App.tsx stays, lazy-imported by cockpit/App.tsx
+// via CSS co-load). task-detail.css is still emitted below — Cockpit.ts co-loads it.
 
 // spec 339 — the Preact Task Studio editor-area webview bundle (one panel per task id + a new-task
 // singleton per workspace; shares the rich-doc editor stack + excalidraw bundle with Pin Studio).
@@ -488,7 +485,7 @@ if (existsSync(excalidrawAssets)) {
   cpSync(excalidrawAssets, "dist/webview/excalidraw-assets", { recursive: true });
 }
 
-const targets = [extension, toolLauncher, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, activity, handoff, approval, probes, cockpit, pinPreview, pinStudio, taskDetail, taskStudio, pipelineStudio, agentStudioFixture, agentStudioShell, terminalStudioShell, commandStudioShell, runbookStudioShell, scheduleStudioShell, pluginHost, excalidraw, mermaid, katex, preview, uiGate];
+const targets = [extension, toolLauncher, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, activity, handoff, approval, probes, cockpit, pinPreview, pinStudio, taskStudio, pipelineStudio, agentStudioFixture, agentStudioShell, terminalStudioShell, commandStudioShell, runbookStudioShell, scheduleStudioShell, pluginHost, excalidraw, mermaid, katex, preview, uiGate];
 if (watch) {
   const ctxs = await Promise.all(targets.map((c) => esbuild.context(c)));
   await Promise.all(ctxs.map((c) => c.watch()));

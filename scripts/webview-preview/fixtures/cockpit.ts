@@ -3,6 +3,7 @@
  */
 
 import { buildCockpitModel, type CockpitModel, type CockpitWorkspaceBundle } from "../../../src/cockpit/model";
+import { routes as cockpitRoutes } from "../../../src/cockpit/route";
 import type { CockpitStrings } from "../../../src/webview/cockpit/messages";
 import { buildValidationsViewModel, type ValidationsViewModel } from "../../../src/webview/validations/viewModel";
 import type { Validation } from "../../../src/validations/types";
@@ -15,7 +16,7 @@ export const strings: CockpitStrings = {
   navEngine: "Engine",
   navFleet: "Fleet",
   navApprovals: "Approvals",
-  navMission: "Mission",
+  navMission: "Board",
   navValidations: "Validations",
   navWorktrees: "Worktrees",
   navDeliveries: "Deliveries",
@@ -27,21 +28,21 @@ export const strings: CockpitStrings = {
   auto: "Auto-refresh",
   empty: "No Tachyon workspace attached in this window.",
   copyDiagnostics: "Copy diagnostics",
-  openMissionControl: "Open Mission Control",
+  openMissionControl: "Open Board",
   openSettings: "Open Settings",
   openDoctor: "Run Doctor",
   copied: "Diagnostics copied",
   overviewTitle: "Overview",
-  overviewHint: "Health snapshot and shortcuts across this workspace.",
+  overviewHint: "Health snapshot. Fleet = agents (sidebar); Board = work queue.",
   engineTitle: "Engine / Bridge",
   fleetTitle: "Fleet",
-  fleetHint: "Managed agents — start, stop, terminal, activity.",
+  fleetHint: "Agents (runtime) — start, stop, terminal, activity. Work items are on the Board.",
   approvalsTitle: "Approvals",
   approvalsHint: "Human gates that block the fleet (embedded).",
-  missionTitle: "Mission Control",
-  missionHint: "Full work board (embedded).",
+  missionTitle: "Board",
+  missionHint: "Work queue — tasks and lanes. Agents live in the sidebar Fleet.",
   validationsTitle: "Validations",
-  validationsHint: "Validation queue — close dogfoods and checks (not on the Mission board).",
+  validationsHint: "Validation queue — close dogfoods and checks (not on the Board).",
   worktreesTitle: "Managed worktrees",
   worktreesHint: "Tachyon-managed checkouts — reveal and copy paths.",
   deliveriesTitle: "Deliveries",
@@ -312,6 +313,12 @@ export const cockpitFixtures: Record<string, Fixture<CockpitModel>> = {
   engine: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "engine", nowIso: now }) },
   fleet: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "fleet", nowIso: now }) },
   mission: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "mission", nowIso: now }) },
+  // t-610705 (Phase C.1) — previews the task-detail subroute: buildCockpitModel only knows sections,
+  // so activeRoute is attached after, exactly like Cockpit.ts's sendModel() does for the real host.
+  "task-detail": {
+    provenance: "synthetic-edge",
+    vm: { ...buildCockpitModel(bundles, { section: "mission", nowIso: now }), activeRoute: cockpitRoutes.taskDetail("b349073a", "t-4f2c91") },
+  },
   validations: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "validations", nowIso: now }) },
   approvals: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "approvals", nowIso: now }) },
   runtime: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "runtime", nowIso: now }) },

@@ -120,7 +120,16 @@ export interface CockpitWorkspaceBundle {
 
 export interface CockpitModel {
   checkedAt: string;
+  /** Which NAV TAB reads as active (a subroute's parent section, e.g. task-detail -> "mission"). */
   section: CockpitSectionId;
+  /**
+   * t-610705 (Phase C.1) — the exact route being rendered, when it's more specific than the bare
+   * section (a subroute). Undefined for a plain section route — the client's existing `section`
+   * switch already covers that case, so this stays absent rather than redundantly echoing it.
+   * Attached by Cockpit.ts's sendModel() (this pure builder stays route-shape-agnostic); import is
+   * type-only, so there is no runtime coupling to route.ts.
+   */
+  activeRoute?: import("./route.js").CockpitRoute;
   /** t-d16a39 — every configured workspace, for the shell-level workspace selector. */
   workspaces: Array<{ hash: string; folder: string }>;
   /** t-d16a39 — the shell-selected workspace scoping every section; undefined = "All workspaces". */

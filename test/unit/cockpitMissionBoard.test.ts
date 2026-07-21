@@ -7,6 +7,7 @@ import { TaskStore } from "../../src/tasks/TaskStore.js";
 import { ValidationStore } from "../../src/validations/ValidationStore.js";
 import { openCockpit, refreshCockpitMissionBoard, type CockpitMissionBoard } from "../../src/webview/Cockpit.js";
 import { legacyMissionControlTarget, type WorkspaceMissionControlTarget } from "../../src/shell/MissionControlTarget.js";
+import type { WorkspacePresentationTarget } from "../../src/shell/WorkspacePresentation.js";
 import { makeFakeCockpitDeps } from "../mocks/cockpitDeps.js";
 import type { Workspace } from "../../src/workspace/Workspace.js";
 
@@ -52,7 +53,6 @@ function boardOf(targets: WorkspaceMissionControlTarget[], hooks: Partial<Cockpi
   let fanOuts = 0;
   const board: CockpitMissionBoard = {
     getWorkspaces: () => targets,
-    openTaskDetail: () => {},
     openTaskStudio: () => {},
     onTasksChanged: () => {
       fanOuts += 1;
@@ -137,23 +137,34 @@ describe("Control → Mission board routing", () => {
     expect(fanOuts()).toBe(1);
   });
 
-  it("routes openTask and openTaskStudio to the injected callbacks with the resolved workspace", async () => {
+  it("openTask navigates in place to the task-detail subroute (t-610705 Phase C.1) — no standalone panel", async () => {
     const ws = fakeWorkspace();
-    let detail: [WorkspaceMissionControlTarget, string] | undefined;
-    let studio: [WorkspaceMissionControlTarget, string | undefined] | undefined;
+    const { board } = boardOf([target(ws)]);
+    await openCockpit(makeFakeCockpitDeps(board), { section: "mission", wsHash: ws.wsHash });
+
+    __createdPanels[0].webview.__receive({ type: "openTask", id: "t-abc123" });
+    await flush();
+
+    const models = __createdPanels[0].webview.posted.filter((m) => (m as { type?: string }).type === "model") as Array<{ model: { section: string; activeRoute?: { kind: string; wsHash: string; taskId: string } } }>;
+    const latest = models.at(-1);
+    // the nav tab still reads "mission" (task-detail is a subroute of the board), but the exact
+    // route carries the entity locator the client needs to render the task-detail body instead.
+    expect(latest?.model.section).toBe("mission");
+    expect(latest?.model.activeRoute).toEqual({ kind: "task-detail", wsHash: ws.wsHash, taskId: "t-abc123" });
+  });
+
+  it("openTaskStudio still routes to the injected callback with the resolved workspace (Task Studio isn't migrated yet)", async () => {
+    const ws = fakeWorkspace();
+    let studio: [WorkspacePresentationTarget, string | undefined] | undefined;
     const { board } = boardOf([target(ws)], {
-      openTaskDetail: (w, id) => { detail = [w, id]; },
       openTaskStudio: (w, id) => { studio = [w, id]; },
     });
     await openCockpit(makeFakeCockpitDeps(board), { section: "mission", wsHash: ws.wsHash });
 
-    __createdPanels[0].webview.__receive({ type: "openTask", id: "t-abc123" });
     __createdPanels[0].webview.__receive({ type: "openTaskStudio" });
     __createdPanels[0].webview.__receive({ type: "openTaskStudio", id: "t-abc123" });
     await flush();
 
-    expect(detail?.[0].wsHash).toBe(ws.wsHash);
-    expect(detail?.[1]).toBe("t-abc123");
     expect(studio?.[0].wsHash).toBe(ws.wsHash);
     expect(studio?.[1]).toBe("t-abc123");
   });

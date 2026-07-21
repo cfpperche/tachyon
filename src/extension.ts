@@ -15,6 +15,7 @@ import {
   refreshCockpitMissionBoard,
   refreshCockpitApprovals,
   refreshCockpitValidations,
+  refreshCockpitTaskDetail,
   decodeCockpitPanelState,
   COCKPIT_VIEW_TYPE,
   type CockpitPanelState,
@@ -22,6 +23,7 @@ import {
 } from "./webview/Cockpit.js";
 import { isCockpitSingletonClaimed } from "./webview/cockpitSingleton.js";
 import type { CockpitWorkspaceBundle } from "./cockpit/model.js";
+import { routes as cockpitRoutes } from "./cockpit/route.js";
 import { readGitDeliveriesFromDisk, readManagedWorktreesFromDisk } from "./cockpit/disk.js";
 import { SidebarPrototypeProvider, PIN_PREVIEW_VIEW_TYPE, type PinPreviewPanelState } from "./webview/SidebarPrototype.js";
 import { ActivityPanelManager, ACTIVITY_VIEW_TYPE, type ActivityPanelState } from "./webview/ActivityPanel.js";
@@ -31,7 +33,7 @@ import { ApprovalPanelManager, APPROVAL_VIEW_TYPE, type ApprovalPanelState } fro
 import { ProbeResultPanelManager, PROBES_VIEW_TYPE, type ProbesPanelState } from "./webview/ProbeResultPanel.js";
 import { PinStudioPanelManager, PIN_STUDIO_VIEW_TYPE, type PinStudioPanelState } from "./webview/PinStudioPanel.js";
 import { MISSION_CONTROL_VIEW_TYPE, type MissionControlPanelState } from "./webview/MissionControlPanel.js";
-import { TaskDetailPanelManager, TASK_DETAIL_VIEW_TYPE, type TaskDetailPanelState } from "./webview/TaskDetailPanel.js";
+import { TASK_DETAIL_VIEW_TYPE, type TaskDetailPanelState } from "./webview/TaskDetailPanel.js";
 import { TaskStudioPanelManager, TASK_STUDIO_VIEW_TYPE, type TaskStudioPanelState } from "./webview/TaskStudioPanel.js";
 import { AgentStudioPanelManager, AGENT_STUDIO_SHELL_VIEW_TYPE, type AgentStudioPanelState } from "./webview/AgentStudioPanel.js";
 import { TerminalStudioPanelManager, TERMINAL_STUDIO_SHELL_VIEW_TYPE, type TerminalStudioPanelState } from "./webview/TerminalStudioPanel.js";
@@ -956,14 +958,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // spec 257 — the editor-area Probes inspector (read-only list of captured probe runs, one per root).
   const probePanels = new ProbeResultPanelManager(context.extensionUri, () => workspaces().map((ws) => ws.probe));
   context.subscriptions.push({ dispose: () => probePanels.dispose() });
-  // spec 335 — the Task board (Control → Mission since t-610705 Phase B #6) + its per-task Detail tab.
-  let taskDetailPanels: TaskDetailPanelManager;
+  // spec 335 — the Task board + Task Detail are both Control subroutes now (Board since t-610705
+  // Phase B #6; Task Detail since Phase C.1 — standalone TaskDetailPanelManager retired).
   // dogfood round 1 (#1) — the ONE fan-out path for any task mutation: an MCP tool call (onViewsChanged("tasks")
   // below) and an engine-side panel mutation (board drag/edit, detail edit) must reach the same three targets,
   // so a board-side edit is never invisible to an open Detail tab (and vice versa).
   const onTasksChanged = () => {
     refreshCockpitMissionBoard(); // Control → Mission is THE board since t-610705 (standalone panel retired)
-    taskDetailPanels.refreshAll();
+    refreshCockpitTaskDetail(); // Control → task-detail subroute (t-610705 Phase C.1, same reasoning)
     taskStudioPanels.refreshAll();
     sidebarProto.refresh();
   };
@@ -975,16 +977,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     onTasksChanged,
   );
   context.subscriptions.push({ dispose: () => taskStudioPanels.dispose() });
-  taskDetailPanels = new TaskDetailPanelManager(
-    context.extensionUri,
-    () => workspaces().map((ws) => ws.taskDetail),
-    (target, id) => {
-      const ws = wsOf({ ws: target });
-      if (ws) taskStudioPanels.openExisting(ws.taskStudio, id);
-    },
-    onTasksChanged,
-  );
-  context.subscriptions.push({ dispose: () => taskDetailPanels.dispose() });
   let lastBridgeLagNoticeAt = 0;
   let bridgeLagExpectedAt = Date.now() + 5_000;
   const bridgeLagTimer = setInterval(() => {
@@ -1279,10 +1271,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     },
     missionBoard: {
       getWorkspaces: () => workspaces().map((ws) => ws.missionControl),
-      openTaskDetail: (target, id) => {
-        const ws = wsOf({ ws: target });
-        if (ws) taskDetailPanels.open(ws.taskDetail, id);
-      },
       openTaskStudio: (target, id) => {
         const ws = wsOf({ ws: target });
         if (!ws) return;
@@ -1290,6 +1278,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         else taskStudioPanels.openNew(ws.taskStudio);
       },
       onTasksChanged,
+    },
+    // t-610705 (Phase C.1) — Task Detail is a Control subroute now (WorkspaceTaskDetailTarget
+    // already carries loadTaskDetail/updateTask/reviewPrototype/attachment resolution).
+    taskDetail: {
+      getWorkspaces: () => workspaces().map((ws) => ws.taskDetail),
     },
     approvals: {
       getWorkspaces: () =>
@@ -1591,7 +1584,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     if (isCockpitSingletonClaimed()) return;
     void openCockpit(makeCockpitDeps(), { section: "mission", wsHash: state?.wsHash });
   });
-  registerTrustedPanelSerializer<TaskDetailPanelState>(context, TASK_DETAIL_VIEW_TYPE, (panel, state) => taskDetailPanels.deserialize(panel, state));
+  // t-610705 (Phase C.1) — a revived pre-410 standalone Task Detail panel disposes itself and
+  // redirects into Control → the task's subroute; same claimed-singleton guard as Board/tmux above
+  // (open() was already unreachable — nothing to "keep working" here beyond this revive path).
+  registerTrustedPanelSerializer<TaskDetailPanelState>(context, TASK_DETAIL_VIEW_TYPE, (panel, state) => {
+    panel.dispose();
+    if (isCockpitSingletonClaimed()) return;
+    if (!state?.wsHash || !state?.taskId) return;
+    void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.taskDetail(state.wsHash, state.taskId) });
+  });
   registerTrustedPanelSerializer<ActivityPanelState>(context, ACTIVITY_VIEW_TYPE, (panel, state) => activityPanels.deserialize(panel, state));
   registerTrustedPanelSerializer<HandoffPanelState>(context, HANDOFF_VIEW_TYPE, (panel, state) => handoffPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   registerTrustedPanelSerializer<ApprovalPanelState>(context, APPROVAL_VIEW_TYPE, (panel, state) => approvalPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });

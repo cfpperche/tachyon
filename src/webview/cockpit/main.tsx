@@ -29,6 +29,18 @@ import type { CockpitModel, CockpitSectionId } from "../../cockpit/model";
 import { persistWebviewState, type TachyonVsCodeApi } from "../shared/clientState";
 import type { MissionControlDispatch, TaskErrorEvent } from "../mission-control/App";
 import type { MissionControlVM } from "../mission-control/messages";
+import type { TaskDetailDispatch } from "../task-detail/App";
+import {
+  TASK,
+  requestSnapshotAction as requestTaskSnapshotAction,
+  updateTaskAction as updateTaskDetailAction,
+  openTaskAction as openTaskDetailAction,
+  openTaskStudioAction as openTaskDetailStudioAction,
+  approvePrototypeAction,
+  rejectPrototypeAction,
+  notePrototypeAction,
+  type TaskDetailVM,
+} from "../task-detail/messages";
 import {
   SNAPSHOT,
   TASK_ERROR,
@@ -108,6 +120,9 @@ function Root() {
   const [auto, setAuto] = useState(true);
   const [missionVm, setMissionVm] = useState<MissionControlVM | undefined>(undefined);
   const [missionError, setMissionError] = useState<TaskErrorEvent | undefined>(undefined);
+  const [taskVm, setTaskVm] = useState<TaskDetailVM | undefined>(undefined);
+  const [taskErrorSeq, setTaskErrorSeq] = useState(-1);
+  const [taskErrorMessage, setTaskErrorMessage] = useState<string | undefined>(undefined);
   const [approvalVm, setApprovalVm] = useState<ApprovalViewModel | undefined>(undefined);
   const [approvalError, setApprovalError] = useState<string | undefined>(undefined);
   const [validationsVm, setValidationsVm] = useState<ValidationsViewModel | undefined>(undefined);
@@ -124,11 +139,18 @@ function Root() {
   const timer = useRef<number | undefined>(undefined);
   const toastTimer = useRef<number | undefined>(undefined);
   const errorSeq = useRef(0);
+  const taskErrorSeqCounter = useRef(0);
   /**
    * Track companion devices so a successful pair dismisses the ephemeral code card.
    * Fingerprint = sorted device ids (count alone is not enough if a device is replaced in place).
    */
   const companionPairSnapshot = useRef<{ paired: boolean; deviceKey: string } | null>(null);
+  // t-610705 (Phase C.1) — mission-control's TASK_ERROR and task-detail's TASK_DETAIL_ERROR are the
+  // SAME wire string ("taskError", identical {type,message} shape — ported verbatim from the two
+  // panels' pre-410 messages.ts files, never meant to share a client). The onMsg listener below is
+  // mounted once ([] deps), so it can't read fresh `model` state directly (stale closure) — this ref
+  // is kept current from the MODEL branch so the taskError branch can tell which surface it's for.
+  const activeRouteRef = useRef<CockpitModel["activeRoute"]>(undefined);
 
   useEffect(() => {
     const onMsg = (e: MessageEvent) => {
@@ -154,15 +176,25 @@ function Root() {
           setCompanionPairOffer(undefined);
         }
         companionPairSnapshot.current = { paired, deviceKey };
+        activeRouteRef.current = next.activeRoute;
         setModel(next);
       }
       else if (type === SNAPSHOT && raw.vm) setMissionVm(raw.vm as MissionControlVM);
       else if (type === TASK_ERROR && typeof raw.message === "string") {
-        setMissionError({
-          seq: ++errorSeq.current,
-          message: raw.message,
-          ...(typeof raw.taskId === "string" ? { taskId: raw.taskId } : {}),
-        });
+        // mission-control's TASK_ERROR and task-detail's TASK_DETAIL_ERROR are the same wire
+        // string — see activeRouteRef's doc comment above for why this can't be two `else if`s.
+        if (activeRouteRef.current?.kind === "task-detail") {
+          setTaskErrorSeq(++taskErrorSeqCounter.current);
+          setTaskErrorMessage(raw.message);
+        } else {
+          setMissionError({
+            seq: ++errorSeq.current,
+            message: raw.message,
+            ...(typeof raw.taskId === "string" ? { taskId: raw.taskId } : {}),
+          });
+        }
+      } else if (type === TASK && raw.vm) {
+        setTaskVm(raw.vm as TaskDetailVM);
       } else if (type === APPROVALS && raw.vm) {
         setApprovalVm(raw.vm as ApprovalViewModel);
         setApprovalError(undefined);
@@ -232,6 +264,19 @@ function Root() {
       openTask: (id: string) => post(openTaskAction(id)),
       copyTaskId: (id: string) => post(copyTaskIdAction(id)),
       switchWorkspace: (wsHash: string) => post(switchWorkspaceAction(wsHash)),
+    }),
+    [],
+  );
+
+  const taskDetailDispatch: TaskDetailDispatch = useMemo(
+    () => ({
+      updateTask: (patch: TaskUpdateInput) => post(updateTaskDetailAction(patch)),
+      openTask: (id: string) => post(openTaskDetailAction(id)),
+      openStudio: () => post(openTaskDetailStudioAction()),
+      refresh: () => post(requestTaskSnapshotAction()),
+      approvePrototype: (id, expect, review) => post(approvePrototypeAction(id, expect, review)),
+      rejectPrototype: (id, expect, review) => post(rejectPrototypeAction(id, expect, review)),
+      notePrototype: (id, expect, review) => post(notePrototypeAction(id, expect, review)),
     }),
     [],
   );
@@ -339,6 +384,10 @@ function Root() {
       missionVm={missionVm}
       missionError={missionError}
       missionDispatch={missionDispatch}
+      taskVm={taskVm}
+      taskErrorSeq={taskErrorSeq}
+      taskErrorMessage={taskErrorMessage}
+      taskDetailDispatch={taskDetailDispatch}
       approvalVm={approvalVm}
       approvalError={approvalError}
       approvalDispatch={approvalDispatch}
@@ -356,7 +405,12 @@ function Root() {
       pluginsToast={pluginsToast}
       pluginsDispatch={pluginsDispatch}
       onSetSection={(section: CockpitSectionId) => {
-        setModel((prev) => (prev ? { ...prev, section } : prev));
+        // t-610705 (Phase C.1) — a plain setSection always lands on that section's own top-level
+        // route (never a subroute), so any activeRoute left over from a prior task-detail visit
+        // must clear optimistically too — the App's render switch checks activeRoute BEFORE
+        // section, so a stale task-detail route would otherwise flash until the host's real reply.
+        setModel((prev) => (prev ? { ...prev, section, activeRoute: undefined } : prev));
+        activeRouteRef.current = undefined;
         post(setSectionAction(section));
         if (section === "mission") post(requestSnapshotAction());
         if (section === "approvals") post(refreshApprovalsAction());
