@@ -124,6 +124,11 @@ function Root() {
   const timer = useRef<number | undefined>(undefined);
   const toastTimer = useRef<number | undefined>(undefined);
   const errorSeq = useRef(0);
+  /**
+   * Track companion devices so a successful pair dismisses the ephemeral code card.
+   * Fingerprint = sorted device ids (count alone is not enough if a device is replaced in place).
+   */
+  const companionPairSnapshot = useRef<{ paired: boolean; deviceKey: string } | null>(null);
 
   useEffect(() => {
     const onMsg = (e: MessageEvent) => {
@@ -132,7 +137,25 @@ function Root() {
       const type = raw.type;
 
       if (type === INIT && raw.strings) setStrings(raw.strings as CockpitStrings);
-      else if (type === MODEL && raw.model) setModel(raw.model as CockpitModel);
+      else if (type === MODEL && raw.model) {
+        const next = raw.model as CockpitModel;
+        const paired = next.companion?.paired === true;
+        const deviceKey = (next.companion?.devices ?? [])
+          .map((d) => d.id)
+          .filter(Boolean)
+          .slice()
+          .sort()
+          .join("|");
+        const prev = companionPairSnapshot.current;
+        // Dismiss offer when pairing lands: not-paired→paired, or connected-device set changes
+        // (new/replaced device). Unpair also clears a stale offer. Fresh "Show pair code" while
+        // already paired still shows until the next device change.
+        if (prev && ((!prev.paired && paired) || prev.deviceKey !== deviceKey)) {
+          setCompanionPairOffer(undefined);
+        }
+        companionPairSnapshot.current = { paired, deviceKey };
+        setModel(next);
+      }
       else if (type === SNAPSHOT && raw.vm) setMissionVm(raw.vm as MissionControlVM);
       else if (type === TASK_ERROR && typeof raw.message === "string") {
         setMissionError({
