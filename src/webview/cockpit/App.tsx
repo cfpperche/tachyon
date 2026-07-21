@@ -446,8 +446,8 @@ export function App(p: CockpitAppProps) {
                   <>
                     <span class="name">{a.name}</span>
                     <Badge tone={a.running ? "ok" : "default"}>{a.running ? s.running : s.stopped}</Badge>
-                    {a.declared === false ? <span class="ck-pill">{s.adhoc}</span> : <span class="ck-pill muted">{s.declared}</span>}
-                    {a.kind ? <span class="ck-pill muted">{a.kind}</span> : null}
+                    {a.declared === false ? <Badge tone="info">{s.adhoc}</Badge> : <Badge>{s.declared}</Badge>}
+                    {a.kind ? <Badge>{a.kind}</Badge> : null}
                   </>
                 }
                 meta={
@@ -521,7 +521,7 @@ export function App(p: CockpitAppProps) {
                   <>
                     <span class="name">{w.slug || w.id}</span>
                     <Badge tone={w.status === "active" ? "ok" : "default"}>{w.status}</Badge>
-                    <span class="ck-pill muted">{w.kind === "agent" ? s.agent : w.kind === "change" ? s.change : w.kind}</span>
+                    <Badge>{w.kind === "agent" ? s.agent : w.kind === "change" ? s.change : w.kind}</Badge>
                   </>
                 }
                 meta={

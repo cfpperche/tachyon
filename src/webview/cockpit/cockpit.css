@@ -330,14 +330,14 @@ main.ck-main.ck-main--mission,
 .ck-metrics {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
-  gap: 6px;
-  margin-bottom: 12px;
+  gap: var(--ds-2);
+  margin-bottom: var(--ds-3);
 }
 
 .ck-metric {
-  border: 1px solid var(--ds-border);
-  border-radius: 4px;
-  padding: 6px 8px;
+  border: var(--ds-border-width) solid var(--ds-border);
+  border-radius: var(--ds-radius);
+  padding: var(--ds-2);
   background: color-mix(in srgb, var(--vscode-foreground) 4%, transparent);
 }
 
@@ -367,10 +367,10 @@ main.ck-main.ck-main--mission,
 }
 
 .ck-panel {
-  border: 1px solid var(--ds-border);
-  border-radius: 4px;
-  padding: 10px 12px;
-  margin-bottom: 10px;
+  border: var(--ds-border-width) solid var(--ds-border);
+  border-radius: var(--ds-radius);
+  padding: var(--ds-3);
+  margin-bottom: var(--ds-3);
   background: color-mix(in srgb, var(--vscode-foreground) 3%, transparent);
 }
 
@@ -542,10 +542,13 @@ main.ck-main.ck-main--mission,
   gap: 4px;
   min-width: 0;
 }
+/* Local segmented source picker — kept bespoke on the t-610705 Phase B #7 audit: the kit has no
+   Segmented pattern yet (Tabs is page-level chrome, too tall for this dense toolbar). Candidate for
+   the t-b0a229 kit batch; if a kit Segmented lands, migrate this and retire these rules. */
 .ci-log-sources {
   display: inline-flex;
-  border: 1px solid var(--ds-border);
-  border-radius: 4px;
+  border: var(--ds-border-width) solid var(--ds-border);
+  border-radius: var(--ds-radius);
   overflow: hidden;
 }
 .ci-log-src {
@@ -562,43 +565,18 @@ main.ck-main.ck-main--mission,
   background: color-mix(in srgb, var(--vscode-focusBorder, #3794ff) 22%, transparent);
   color: var(--vscode-foreground);
 }
-.ci-log-filter {
+/* t-610705 Phase B #7 — filter/since/buttons are kit Input/Select/Button now (.ds-input/.ds-btn
+   bring the box); these classes keep only the log toolbar's density overrides. */
+.ci-log-filter.ds-input {
   width: 7.5rem;
   max-width: 30vw;
-  font-size: 10px;
+  font-size: var(--ds-micro);
   padding: 2px 6px;
-  border-radius: 3px;
-  border: 1px solid var(--ds-border);
-  background: var(--vscode-input-background, transparent);
-  color: var(--vscode-input-foreground, inherit);
-  font-family: inherit;
 }
-.ci-log-since {
-  font-size: 10px;
+.ci-log-since.ds-input {
+  font-size: var(--ds-micro);
   padding: 2px 4px;
-  border-radius: 3px;
-  border: 1px solid var(--ds-border);
-  background: var(--vscode-dropdown-background, transparent);
-  color: inherit;
-  font-family: inherit;
-}
-.ci-log-btn {
-  appearance: none;
-  border: 1px solid var(--ds-border);
-  background: transparent;
-  color: var(--vscode-foreground);
-  font-size: 10px;
-  padding: 2px 7px;
-  border-radius: 3px;
-  cursor: pointer;
-  font-family: inherit;
-}
-.ci-log-btn:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-.ci-log-btn:not(:disabled):hover {
-  border-color: var(--vscode-focusBorder, #3794ff);
+  width: auto;
 }
 .ci-log-pre {
   margin: 0;
@@ -847,20 +825,6 @@ main.ck-main.ck-main--mission,
   font-size: 11px;
   padding: 2px 8px;
   min-height: 22px;
-}
-
-.ck-pill {
-  display: inline-flex;
-  padding: 0 6px;
-  border-radius: 3px;
-  font-size: 10px;
-  line-height: 16px;
-  border: 1px solid var(--ds-border);
-  color: var(--vscode-foreground);
-}
-
-.ck-pill.muted {
-  color: var(--ds-muted);
 }
 
 .ck-mono {
