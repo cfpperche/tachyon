@@ -35,6 +35,7 @@ export class AgentStudioAdapter implements StudioHostAdapter<AgentStudioEntity, 
   constructor(
     private readonly ws: WorkspaceAgentStudioTarget,
     private readonly evolutionLabels: AgentEvolutionLabels = createAgentEvolutionLabels(),
+    private readonly persistentInstructionsHelp = "When supported, delivered at startup through the selected runtime.",
   ) {}
 
   titleFor(mode: "new" | "edit", entityId: string | undefined, entity: AgentStudioEntity | undefined): string {
@@ -49,6 +50,7 @@ export class AgentStudioAdapter implements StudioHostAdapter<AgentStudioEntity, 
       flagMap: FLAG_SUGGESTIONS,
       defaultCwd: deps.defaultCwd,
       verifyCandidates: deps.verifyCandidates(),
+      persistentInstructionsHelp: this.persistentInstructionsHelp,
       evolutionLabels: this.evolutionLabels,
     };
     if (entityId === undefined) {

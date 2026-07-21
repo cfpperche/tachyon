@@ -4996,13 +4996,41 @@ export class Workspace {
     const wasOpen = this.terminals.has(oldName);
     if (wasOpen) this.terminals.close(oldName);
     await this.manager.rename(oldName, newName);
-    if (this.config?.agents[oldName] !== undefined) {
+    const wasDeclared = this.config?.agents[oldName] !== undefined;
+    if (wasDeclared) {
       if (!this.mutateConfig((text) => renameAgentInYml(text ?? "", oldName, newName))) {
         // yml refused after the session moved — move it back so tree and config agree.
         await this.manager.rename(newName, oldName);
         if (wasOpen) this.terminals.open(oldName, this.manager.session(oldName));
         return; // rolled back — the flag correctly stays under oldName
       }
+    }
+    try {
+      await this.evolutionStore.renameAgent(oldName, newName);
+    } catch (error) {
+      // Config now names the new agent, so the old manager key is free for a rollback.
+      const rollbackFailures: unknown[] = [error];
+      let managerRolledBack = false;
+      try {
+        await this.manager.rename(newName, oldName);
+        managerRolledBack = true;
+      } catch (rollbackError) {
+        rollbackFailures.push(rollbackError);
+      }
+      if (wasDeclared && !this.mutateConfig((text) => renameAgentInYml(text ?? "", newName, oldName))) {
+        rollbackFailures.push(new Error("tachyon.yml rollback was refused"));
+      }
+      if (wasOpen && managerRolledBack) {
+        try {
+          this.terminals.open(oldName, this.manager.session(oldName));
+        } catch (rollbackError) {
+          rollbackFailures.push(rollbackError);
+        }
+      }
+      if (rollbackFailures.length > 1) {
+        throw new AggregateError(rollbackFailures, "Agent Evolution rename failed and rollback was incomplete");
+      }
+      throw error;
     }
     // spec 216 (codex r2): a live rename moves the SAME session (no restart, no onSpawned/onKilled),
     // so carry any pending re-anchor flag to the new name and clear a stale flag on the new identity.

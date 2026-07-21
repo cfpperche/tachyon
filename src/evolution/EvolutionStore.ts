@@ -34,6 +34,7 @@ function compareText(a: string, b: string): number {
 
 export type EvolutionStoreErrorCode =
   | "evolution/path-invalid"
+  | "evolution/profile-conflict"
   | "evolution/profile-malformed"
   | "evolution/candidate-malformed"
   | "evolution/candidate-conflict"
@@ -338,6 +339,74 @@ export class EvolutionStore {
 
   async ensureProfile(agent: string): Promise<EvolutionProfile> {
     return this.withAgentMutation(agent, () => this.ensureProfileUnlocked(agent));
+  }
+
+  /** Move one canonical profile to a renamed Tachyon agent without changing its identity or version. */
+  async renameAgent(oldAgent: string, newAgent: string): Promise<boolean> {
+    assertAgentName(oldAgent);
+    assertAgentName(newAgent);
+    if (oldAgent === newAgent) return (await this.readProfile(oldAgent)) !== undefined;
+    return this.withAgentMutations([oldAgent, newAgent], async () => {
+      const profile = await this.readProfile(oldAgent);
+      if (!profile) return false;
+      let destinationExists = false;
+      try {
+        await fs.access(this.rootFor(newAgent));
+        destinationExists = true;
+      } catch (error) {
+        if (!isMissing(error)) throw error;
+      }
+      if (destinationExists) {
+        throw new EvolutionStoreError(
+          "evolution/profile-conflict",
+          `Agent Evolution Profile already exists for '${newAgent}'`,
+        );
+      }
+
+      const oldRoot = this.rootFor(oldAgent);
+      const newRoot = this.rootFor(newAgent);
+      const newParent = path.dirname(newRoot);
+      const staging = path.join(newParent, `.evolution-rename-${this.uuid()}`);
+      await fs.mkdir(newParent, { recursive: true });
+      try {
+        await fs.cp(oldRoot, staging, { recursive: true, errorOnExist: true, force: false });
+        const rewriteOwnedJson = async (file: string, profileFile = false): Promise<void> => {
+          const value = JSON.parse(await fs.readFile(file, "utf8")) as Record<string, unknown>;
+          if (value.agent !== oldAgent) {
+            throw new EvolutionStoreError(
+              "evolution/profile-malformed",
+              `Evolution rename found mismatched owner in '${path.basename(file)}'`,
+            );
+          }
+          value.agent = newAgent;
+          if (profileFile) value.updatedAt = this.now();
+          await fs.writeFile(file, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+        };
+        await rewriteOwnedJson(path.join(staging, "profile.json"), true);
+        for (const directory of ["candidates", "reviews", "history"]) {
+          let names: string[];
+          try {
+            names = await fs.readdir(path.join(staging, directory));
+          } catch (error) {
+            if (isMissing(error)) continue;
+            throw error;
+          }
+          for (const name of names) {
+            if (name.endsWith(".json")) await rewriteOwnedJson(path.join(staging, directory, name));
+          }
+        }
+        await fs.rename(staging, newRoot);
+        try {
+          await fs.rm(oldRoot, { recursive: true, force: false });
+        } catch (error) {
+          await fs.rm(newRoot, { recursive: true, force: true });
+          throw error;
+        }
+        return true;
+      } finally {
+        await fs.rm(staging, { recursive: true, force: true });
+      }
+    });
   }
 
   async createCandidate(agent: string, input: CreateEvolutionCandidateInput): Promise<EvolutionCandidate> {
@@ -985,15 +1054,22 @@ export class EvolutionStore {
   }
 
   private async withAgentMutation<T>(agent: string, action: () => Promise<T>): Promise<T> {
-    assertAgentName(agent);
-    const previous = this.mutationTails.get(agent) ?? Promise.resolve();
-    const result = previous.then(action, action);
+    return this.withAgentMutations([agent], action);
+  }
+
+  private async withAgentMutations<T>(agents: readonly string[], action: () => Promise<T>): Promise<T> {
+    const keys = [...new Set(agents)].sort(compareText);
+    for (const agent of keys) assertAgentName(agent);
+    const previous = keys.map((agent) => this.mutationTails.get(agent) ?? Promise.resolve());
+    const result = Promise.all(previous).then(action);
     const tail = result.then(() => undefined, () => undefined);
-    this.mutationTails.set(agent, tail);
+    for (const agent of keys) this.mutationTails.set(agent, tail);
     try {
       return await result;
     } finally {
-      if (this.mutationTails.get(agent) === tail) this.mutationTails.delete(agent);
+      for (const agent of keys) {
+        if (this.mutationTails.get(agent) === tail) this.mutationTails.delete(agent);
+      }
     }
   }
 

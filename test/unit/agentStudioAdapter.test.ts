@@ -49,6 +49,7 @@ describe("AgentStudioAdapter — load", () => {
     expect(result.entity.fields).toEqual(blankAgentFields());
     expect(result.entity.defaultCwd).toBe("/ws/root");
     expect(result.entity.verifyCandidates).toEqual(["npm test"]);
+    expect(result.entity.persistentInstructionsHelp).toBe("When supported, delivered at startup through the selected runtime.");
     expect(result.entity.chips.find((c) => c.bin === "claude")?.detected).toBe(true);
     expect(result.entity.evolutionLabels.title).toBe("Agent Evolution");
   });
@@ -61,6 +62,18 @@ describe("AgentStudioAdapter — load", () => {
     if (result.status !== "ok") throw new Error("unreachable");
     expect(result.entity.evolutionLabels.title).toBe("localized:Agent Evolution");
     expect(result.entity.evolutionLabels.approve).toBe("localized:Approve");
+  });
+
+  it("projects host-localized runtime-neutral Persistent Instructions help", async () => {
+    const { ws } = fakeWorkspace();
+    const result = await new AgentStudioAdapter(
+      ws,
+      createAgentEvolutionLabels(),
+      "localized:runtime-neutral startup delivery",
+    ).load(undefined);
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") throw new Error("unreachable");
+    expect(result.entity.persistentInstructionsHelp).toBe("localized:runtime-neutral startup delivery");
   });
 
   it("resolves an existing agent-kind entry via formLogic's fromDef", async () => {

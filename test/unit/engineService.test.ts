@@ -690,11 +690,15 @@ describe("daemon engine service", () => {
     })).toMatchObject({ status: "ok", action: "config.agent.add", value: { changed: true } });
     expect(await first.query({ schemaVersion: 1, method: "extension.query", input: { action: "agents.list" } }))
       .toMatchObject({ value: expect.arrayContaining([expect.objectContaining({ name: "temporary", declared: true })]) });
+    const temporaryEvolution = path.join(workspaceRoot, ".tachyon", "agents", "temporary", "evolution");
+    fs.mkdirSync(temporaryEvolution, { recursive: true });
+    fs.writeFileSync(path.join(temporaryEvolution, "profile.json"), "{}\n", "utf8");
     expect(await first.invoke("operation-extension-agent-delete-0001", {
       schemaVersion: 1,
       method: "extension.invoke",
       input: { action: "config.agent.delete", agent: "temporary", removeWorktree: false },
     })).toMatchObject({ status: "ok", action: "config.agent.delete", value: { changed: true } });
+    expect(fs.existsSync(temporaryEvolution)).toBe(false);
     expect(await first.invoke("operation-extension-stop-all-0001", {
       schemaVersion: 1,
       method: "extension.invoke",

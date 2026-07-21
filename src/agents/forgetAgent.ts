@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 import { deleteActivityLog } from "../activity/logStore.js";
 import { removeSessionOwnerRows, removeSpawnSettings, sessionOwnersFile } from "../activity/sessionOwners.js";
@@ -14,6 +15,7 @@ export const FORGET_AGENT_FOOTPRINTS = [
   "per-spawn settings file",
   "generated spawn brief and soul anchor",
   "durable pane transcript",
+  "Agent Evolution Profile",
 ] as const;
 
 export interface ForgetAgentDeps {
@@ -43,5 +45,6 @@ export function forgetAgent(name: string, deps: ForgetAgentDeps): void {
   attempt(() => removeSpawnSettings(deps.workspaceRoot, name));
   attempt(() => removeDerivedAgentFiles(deps.workspaceRoot, name));
   attempt(() => removePaneTranscript(deps.workspaceRoot, name));
+  attempt(() => fs.rmSync(path.join(deps.workspaceRoot, ".tachyon", "agents", name, "evolution"), { recursive: true, force: true }));
   if (failures.length) throw new AggregateError(failures, `failed to remove agent '${name}' footprints`);
 }

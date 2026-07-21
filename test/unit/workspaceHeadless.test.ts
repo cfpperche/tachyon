@@ -222,6 +222,55 @@ it("returns actionable Agent Studio messages for invalid soul values and unsuppo
   ws.dispose();
 });
 
+it("moves Evolution on rename while disable and runtime changes retain the same canonical profile", async () => {
+  const { ws } = await makeWorkspace(() => {}, {
+    tachyonYaml: "agents:\n  reviewer:\n    cmd: codex\n    selfEvolution: { enabled: true }\n",
+  });
+  const profile = await ws.evolutionStore.ensureProfile("reviewer");
+  const originalRoot = ws.evolutionStore.rootFor("reviewer");
+
+  expect(ws.writeTachyonConfigText("agents:\n  reviewer:\n    cmd: grok\n    selfEvolution: { enabled: false }\n")).toMatchObject({ ok: true });
+  expect((await ws.readAgentEvolutionOverview("reviewer")).summary).toMatchObject({
+    enabled: false,
+    profilePresent: true,
+    activeVersion: 0,
+  });
+  expect(ws.evolutionStore.rootFor("reviewer")).toBe(originalRoot);
+  expect((await ws.evolutionStore.readProfile("reviewer"))?.profileId).toBe(profile.profileId);
+
+  expect(ws.writeTachyonConfigText("agents:\n  reviewer:\n    cmd: grok\n    selfEvolution: { enabled: true }\n")).toMatchObject({ ok: true });
+  await ws.renameAgent("reviewer", "maintainer");
+  expect(ws.config?.agents.reviewer).toBeUndefined();
+  expect(ws.config?.agents.maintainer?.cmd).toBe("grok");
+  expect(await ws.evolutionStore.readProfile("reviewer")).toBeUndefined();
+  expect(await ws.evolutionStore.readProfile("maintainer")).toMatchObject({
+    profileId: profile.profileId,
+    agent: "maintainer",
+    activeVersion: 0,
+  });
+
+  ws.forgetAgent("maintainer");
+  expect(fs.existsSync(ws.evolutionStore.rootFor("maintainer"))).toBe(false);
+  await ws.dispose();
+});
+
+it("rolls back a declared agent rename when the Evolution destination already exists", async () => {
+  const { ws } = await makeWorkspace(() => {}, {
+    tachyonYaml: "agents:\n  reviewer:\n    cmd: codex\n    selfEvolution: { enabled: true }\n",
+  });
+  const reviewer = await ws.evolutionStore.ensureProfile("reviewer");
+  const orphan = await ws.evolutionStore.ensureProfile("maintainer");
+
+  await expect(ws.renameAgent("reviewer", "maintainer")).rejects.toMatchObject({
+    code: "evolution/profile-conflict",
+  });
+  expect(ws.config?.agents.reviewer?.cmd).toBe("codex");
+  expect(ws.config?.agents.maintainer).toBeUndefined();
+  expect(await ws.evolutionStore.readProfile("reviewer")).toEqual(reviewer);
+  expect(await ws.evolutionStore.readProfile("maintainer")).toEqual(orphan);
+  await ws.dispose();
+});
+
 it("runs a profile mutation through the real Workspace config writer without reconciling its own live journal", async () => {
   const { ws } = await makeWorkspace(() => {}, { tachyonYaml: "agents:\n  Ada:\n    cmd: codex\n" });
   try {

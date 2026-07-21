@@ -42,6 +42,7 @@ const newEntity: AgentStudioEntity = {
   flagMap,
   defaultCwd: "/home/dev/project",
   verifyCandidates: ["npm test", "npm run lint"],
+  persistentInstructionsHelp: "When supported, delivered at startup through the selected runtime.",
   evolutionLabels,
 };
 
@@ -67,6 +68,7 @@ const denseEntity: AgentStudioEntity = {
   flagMap,
   defaultCwd: "/home/dev/project",
   verifyCandidates: ["npm test", "npm run lint"],
+  persistentInstructionsHelp: "When supported, delivered at startup through the selected runtime.",
   evolutionLabels,
 };
 

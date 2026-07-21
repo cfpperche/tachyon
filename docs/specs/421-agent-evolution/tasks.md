@@ -95,32 +95,32 @@ before continuing._
 
 ## Slice 5 — Lifecycle, docs and closure proof
 
-- [ ] Move the Evolution Profile on supported agent rename and keep profile ownership metadata aligned.
-- [ ] Add evolution artifacts to `FORGET_AGENT_FOOTPRINTS` and explicit declared-agent deletion.
-- [ ] Prove disabling retains but deactivates the profile and changing `cmd` does not move/recreate it.
-- [ ] Add runtime-parity tests for every currently supported startup delivery channel.
-- [ ] Add `scripts/dogfood-agent-evolution.mts` covering Task completion, empty/proposed review,
+- [x] Move the Evolution Profile on supported agent rename and keep profile ownership metadata aligned.
+- [x] Add evolution artifacts to `FORGET_AGENT_FOOTPRINTS` and explicit declared-agent deletion.
+- [x] Prove disabling retains but deactivates the profile and changing `cmd` does not move/recreate it.
+- [x] Add runtime-parity tests for every currently supported startup delivery channel.
+- [x] Add `scripts/dogfood-agent-evolution.mts` covering Task completion, empty/proposed review,
   rejection, approval-next-session and runtime switch in a temporary workspace.
-- [ ] Scaffold and finish `cookbook.md` with opt-in, proposal review, active files and disable behavior.
-- [ ] Point the Dev Host at this worktree and complete human Agent Studio dogfood with an actual declared
+- [x] Scaffold and finish `cookbook.md` with opt-in, proposal review, active files and disable behavior.
+- [x] Point the Dev Host at this worktree and complete human Agent Studio dogfood with an actual declared
   agent and a standard skill containing one helper script.
 - [ ] Capture Agent Studio visual evidence for empty, pending-learning, pending-skill, approved and
   narrow-width states; record verdict/fixes in `notes.md`.
-- [ ] Run focused tests, SDD dogfood, PI-001, typecheck and configured full verification.
+- [x] Run focused tests, SDD dogfood, PI-001, typecheck and configured full verification.
 - [ ] Check every acceptance criterion against evidence, mark `spec.md` shipped, add Closure, and run
   the SDD close audit.
 - [ ] Land the isolated branch through normal review, then remove the managed worktree and its branch.
 
 ## Verification
 
-- [ ] Config/schema/FormState opt-in contract is covered.
+- [x] Config/schema/FormState opt-in contract is covered.
 - [x] EvolutionStore candidate/promotion/version/history contract is covered.
 - [x] Task completion produces exactly one review per completion revision and never changes Task outcome.
 - [x] Bridge submission accepts matching reviews and preserves independent proposals.
 - [x] Reject/Approve/current-session/next-session behavior maps to the acceptance scenarios.
 - [x] Disabled prompt bytes and PI-001's fixed oracle remain unchanged.
 - [x] Agent Studio protocol, localized UI and lifecycle actions are covered.
-- [ ] Runtime-switch and standard skill/script use are proven by dogfood.
+- [x] Runtime-switch and standard skill/script use are proven by dogfood.
 
 **Verify:** `npm run typecheck`
 

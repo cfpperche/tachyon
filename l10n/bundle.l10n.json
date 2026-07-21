@@ -103,6 +103,7 @@
   "Update": "Update",
   "Unpair": "Unpair",
   "Watch files": "Watch files",
+  "When supported, delivered at startup through the selected runtime.": "When supported, delivered at startup through the selected runtime.",
   "When on, agents see user_browser_* tools on the Bridge. Pairing Tachyon Companion is still required to run them. Agent tab access in the extension controls page inject/capture trust — a separate switch.": "When on, agents see user_browser_* tools on the Bridge. Pairing Tachyon Companion is still required to run them. Agent tab access in the extension controls page inject/capture trust — a separate switch.",
   "When tab tools are on, agents see user_browser_* on the Bridge. Pairing Companion is still required to run them. Generate a pair code here (or via the command palette).": "When tab tools are on, agents see user_browser_* on the Bridge. Pairing Companion is still required to run them. Generate a pair code here (or via the command palette).",
   "Writes settings.companion.tabTools in tachyon.yml and refreshes the Bridge tool list.": "Writes settings.companion.tabTools in tachyon.yml and refreshes the Bridge tool list.",

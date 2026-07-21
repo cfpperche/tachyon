@@ -78,3 +78,47 @@ _Questions surfaced during the build with no answer yet. Owner or path to resolu
   including empty/loading, failed review, approved/rejected and stale-conflict projections.
 - 2026-07-21 — `npm run verify:full:quiet` passed after the Slice 4 implementation.
 - 2026-07-21 — `npm run typecheck` passed after the Slice 4 implementation.
+
+## Slice 5 validation
+
+- 2026-07-21 — Rename moves the complete canonical Evolution Profile, rewrites ownership metadata and
+  preserves profile identity, active version and skill bytes. Destination conflicts leave both profiles
+  unchanged, and the Workspace restores the prior manager/config identity.
+- 2026-07-21 — Explicit forget/delete removes the Evolution Profile. Disabling retains but deactivates
+  it, while runtime changes keep the same canonical profile.
+- 2026-07-21 — Startup parity passed for Claude, Codex, Antigravity, Gemini, OpenCode, Grok, Hermes and
+  Pi through their existing delivery channels. Focused lifecycle, engine, Agent Studio and runtime tests
+  passed: 503 tests across seven suites.
+- 2026-07-21 — Deterministic dogfood drove real Task completion observation for an empty review and a
+  proposed review, rejected the learning, approved a standard skill with executable helper script,
+  proved current-session version 0 versus next-session version 1, and preserved the profile across a
+  Codex-to-Grok runtime change.
+- 2026-07-21 — The real Extension Development Host used the declared `reviewer` agent with Agent
+  Evolution enabled. Agent Studio displayed the pending learning and complete multi-file `repo-check`
+  skill, then projected the human decisions as rejected/approved with active version 1 and no pending
+  proposals. Canonical disk inspection confirmed empty active `LEARNINGS.md`, approved `SKILL.md`, and
+  executable `scripts/check.sh` mode `0700`.
+
+## Visual QA
+
+- Evidence: `.tachyon/evidence/421-agent-evolution/empty.png`, `pending-list.png`,
+  `pending-learning.png`, `pending-skill.png` and `approved.png` capture the real Agent Studio flow in
+  the Extension Development Host. The narrow-width capture remains pending.
+- Verdict: the wide layout keeps identity/instructions/evolution distinct, proposal summaries scan
+  cleanly, learning detail is readable, and the multi-file skill exposes both `SKILL.md` and its helper
+  script before approval. The approved/rejected state and next-session warning remain unambiguous.
+- Fix after inspection: Persistent Instructions still named only four historical runtimes. The help is
+  now host-localized and runtime-neutral: delivery occurs at startup through the selected runtime when
+  supported. Component/adapter/localization tests cover the projected copy.
+
+## Dogfood log
+
+### 2026-07-21T20:12:04Z — pass (1/1) — source: tasks.md — commit: e0856eaa52ceece045adc2826c2cfc4835261b8a
+- `npm exec -- vite-node scripts/dogfood-agent-evolution.mts` — pass
+
+## Verification log
+
+### 2026-07-21T20:12:10Z — pass (3/3) — source: tasks.md
+- `npm run typecheck` — pass
+- `npm run test:invariants` — pass
+- `npm run verify:full:quiet` — pass

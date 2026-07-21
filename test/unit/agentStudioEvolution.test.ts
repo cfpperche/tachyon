@@ -179,6 +179,8 @@ describe("Agent Studio Evolution protocol and component contract", () => {
     const section = fs.readFileSync(path.resolve("src/webview/agent-studio-shell/EvolutionSection.tsx"), "utf8");
     expect(app.indexOf("Identity (SOUL.md)")).toBeLessThan(app.indexOf("Persistent instructions"));
     expect(app.indexOf("Persistent instructions")).toBeLessThan(app.indexOf("<EvolutionSection"));
+    expect(app).toContain("entity.persistentInstructionsHelp");
+    expect(app).not.toContain("claude / codex / agy / gemini");
     expect(app).toContain('onToggle={(enabled) => set("selfEvolution", enabled)}');
     expect(section).toContain("labels.nextSession");
     expect(section).toContain("detail.currentFiles");
@@ -194,5 +196,7 @@ describe("Agent Studio Evolution protocol and component contract", () => {
     expect(pt["Agent Evolution"]).toBe("Evolução do agente");
     expect(pt["Approved changes are available only in the next fresh session. The current session does not change."])
       .toContain("próxima sessão");
+    expect(pt["When supported, delivered at startup through the selected runtime."])
+      .toContain("runtime selecionado");
   });
 });

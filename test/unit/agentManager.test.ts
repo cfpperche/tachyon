@@ -361,6 +361,49 @@ describe("AgentManager", () => {
     }
   });
 
+  it("SDD 421 delivers the same approved evolution snapshot through every supported runtime channel", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-agent-manager-evolution-runtimes-"));
+    try {
+      const evolution = new EvolutionStore(root);
+      const candidate = await evolution.createCandidate("reviewer", {
+        reviewId: "review-runtime-parity",
+        taskId: "t-333333",
+        target: { kind: "learning", content: "Keep runtime-neutral evidence.", reason: "The profile belongs to Tachyon." },
+      });
+      const detail = await evolution.candidateDetail("reviewer", candidate.id);
+      await evolution.approveCandidate("reviewer", candidate.id, {
+        expectedActiveVersion: 0,
+        expectedTargetDigest: detail.currentTargetDigest,
+      });
+      const expected = await resolveEvolutionStartupSnapshot(root, "reviewer", evolution);
+
+      for (const cmd of ["claude", "codex", "agy", "gemini", "opencode", "grok", "hermes", "pi"]) {
+        const fake = fakeTmux();
+        const ledger = new SessionLedger(root);
+        const config = configOf(`agents:\n  reviewer:\n    cmd: ${cmd}\n    selfEvolution: {enabled: true}\n`);
+        const manager = new AgentManager({
+          tmux: fake.tmux,
+          wsHash: workspaceHash(root),
+          workspaceRoot: root,
+          ledger,
+          getConfig: () => config,
+          getMaxAgents: () => 8,
+          materializePiSessionDir: (name) => path.join(root, ".tachyon", "pi-sessions", name),
+        });
+
+        await manager.spawn("reviewer");
+        const session = sessionName(workspaceHash(root), "reviewer");
+        const delivered = cmd === "hermes"
+          ? fake.sessionEnv.get(session)?.HERMES_TUI_QUERY
+          : fake.newSessionArgs[0]?.at(-1);
+        expect(delivered, `runtime=${cmd}`).toContain("Keep runtime-neutral evidence.");
+        expect(ledger.get("reviewer")?.evolution, `runtime=${cmd}`).toEqual(expected);
+      }
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("rejects spawning an unknown agent without an ad-hoc cmd, accepts with one", async () => {
     const { manager, sessions } = makeManager("agents:\n  a:\n    cmd: x\n");
     await expect(manager.spawn("ghost")).rejects.toThrow("unknown agent");
@@ -3362,12 +3405,17 @@ describe("AgentManager — session resume (spec 209)", () => {
     fs.mkdirSync(path.join(home, "sessions"), { recursive: true });
     fs.writeFileSync(path.join(home, "config.toml"), "model = \"gpt-5\"\n", "utf8");
     fs.writeFileSync(path.join(home, "sessions", "session.jsonl"), "{}\n", "utf8");
+    const evolutionRoot = path.join(ws, ".tachyon", "agents", name, "evolution");
+    fs.mkdirSync(path.join(evolutionRoot, "skills", "helper"), { recursive: true });
+    fs.writeFileSync(path.join(evolutionRoot, "profile.json"), "{}\n", "utf8");
+    fs.writeFileSync(path.join(evolutionRoot, "skills", "helper", "SKILL.md"), "# helper\n", "utf8");
 
     expect(() => forgetAgent(name, {
       workspaceRoot: ws,
       removeHarnessHome: (agent) => new HarnessManager(ws).remove(agent),
     })).not.toThrow();
     expect(fs.existsSync(home)).toBe(false);
+    expect(fs.existsSync(evolutionRoot)).toBe(false);
   });
 
   it("canonical forgetAgent footprint list names every per-agent removal surface", () => {
@@ -3380,6 +3428,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       "per-spawn settings file",
       "generated spawn brief and soul anchor",
       "durable pane transcript",
+      "Agent Evolution Profile",
     ]);
   });
 

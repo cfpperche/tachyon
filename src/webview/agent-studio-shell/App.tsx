@@ -650,7 +650,7 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
             <details open={!!fields.instructions}>
               <summary>Persistent instructions</summary>
               <Textarea rows={4} value={fields.instructions} placeholder="you are a code reviewer; read the diff and flag correctness issues…" onInput={(e) => set("instructions", (e.currentTarget as HTMLTextAreaElement).value)} />
-              <div class="hint">Delivered as a startup prompt for claude / codex / agy / gemini.</div>
+              <div class="hint">{entity.persistentInstructionsHelp}</div>
             </details>
 
             <EvolutionSection

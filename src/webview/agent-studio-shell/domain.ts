@@ -335,6 +335,7 @@ export interface AgentStudioEntity {
   flagMap: Record<string, string[]>;
   defaultCwd: string;
   verifyCandidates: string[];
+  persistentInstructionsHelp: string;
   evolutionLabels: AgentEvolutionLabels;
 }
 

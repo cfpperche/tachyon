@@ -98,7 +98,11 @@ export class AgentStudioPanelManager {
       base = new StudioPanelManagerBase<AgentStudioEntity, AgentStudioFields, AgentStudioPatch>(
         this.extensionUri,
         surface,
-        new AgentStudioAdapter(ws, createAgentEvolutionLabels((message, ...args) => vscode.l10n.t(message, ...args))),
+        new AgentStudioAdapter(
+          ws,
+          createAgentEvolutionLabels((message, ...args) => vscode.l10n.t(message, ...args)),
+          vscode.l10n.t("When supported, delivered at startup through the selected runtime."),
+        ),
         this.onChanged,
         (ctx, message) => this.handleDomainMessage(ws, ctx, message),
       );

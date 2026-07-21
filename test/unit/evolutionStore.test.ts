@@ -109,6 +109,61 @@ describe("Agent Skills bundle validation (SDD 421)", () => {
 });
 
 describe("EvolutionStore (SDD 421 Slice 1)", () => {
+  it("moves a complete profile to a renamed agent while preserving identity, version, and skill bytes", async () => {
+    const root = await tempRoot();
+    const ids = ["profile-id", "review-id", "rename-stage"];
+    const store = new EvolutionStore(root, {
+      now: () => "2026-07-21T18:00:00.000Z",
+      uuid: () => ids.shift()!,
+    });
+    const { review } = await store.createReview("reviewer", {
+      taskId: "t-123456",
+      taskTitle: "Review repository",
+      completionRevision: "a".repeat(64),
+      session: "tachyon-reviewer",
+    });
+    const { candidates } = await store.submitReview("reviewer", review.id, [
+      { kind: "learning", content: "Run focused tests first.", reason: "Faster feedback." },
+      { kind: "skill", ...skillInput() },
+    ]);
+    const learningDetail = await store.candidateDetail("reviewer", candidates[0]!.id);
+    await store.approveCandidate("reviewer", candidates[0]!.id, {
+      expectedActiveVersion: 0,
+      expectedTargetDigest: learningDetail.currentTargetDigest,
+    });
+    await store.approveCandidate("reviewer", candidates[1]!.id, { expectedActiveVersion: 1 });
+    const before = await store.readProfile("reviewer");
+    const skillBefore = await store.readSkillFiles("reviewer", "repo-check");
+
+    await expect(store.renameAgent("reviewer", "maintainer")).resolves.toBe(true);
+    expect(await store.readProfile("reviewer")).toBeUndefined();
+    expect(await store.readProfile("maintainer")).toMatchObject({
+      profileId: before!.profileId,
+      agent: "maintainer",
+      activeVersion: 2,
+    });
+    expect((await store.listReviews("maintainer")).map((item) => item.agent)).toEqual(["maintainer"]);
+    expect((await store.listCandidates("maintainer")).map((item) => item.agent)).toEqual(["maintainer", "maintainer"]);
+    expect(await store.readSkillFiles("maintainer", "repo-check")).toEqual(skillBefore);
+    const historyFiles = await fs.readdir(store.historyDir("maintainer"));
+    const history = JSON.parse(await fs.readFile(path.join(store.historyDir("maintainer"), historyFiles[0]!), "utf8"));
+    expect(history.agent).toBe("maintainer");
+  });
+
+  it("refuses a rename onto an existing profile and leaves both profiles unchanged", async () => {
+    const root = await tempRoot();
+    const ids = ["reviewer-profile", "maintainer-profile"];
+    const store = new EvolutionStore(root, { uuid: () => ids.shift()! });
+    const reviewer = await store.ensureProfile("reviewer");
+    const maintainer = await store.ensureProfile("maintainer");
+
+    await expect(store.renameAgent("reviewer", "maintainer")).rejects.toMatchObject({
+      code: "evolution/profile-conflict",
+    });
+    expect(await store.readProfile("reviewer")).toEqual(reviewer);
+    expect(await store.readProfile("maintainer")).toEqual(maintainer);
+  });
+
   it("creates and reloads the canonical profile without changing active version", async () => {
     const root = await tempRoot();
     const ids = ["profile-id", "candidate-id"];
