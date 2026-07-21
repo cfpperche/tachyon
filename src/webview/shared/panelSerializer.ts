@@ -1,7 +1,11 @@
 import * as vscode from "vscode";
 
 export interface TrustedPanelState {
-  schemaVersion: 1;
+  // t-610705 (Phase C.0) — Cockpit's persisted state carries schemaVersion 2 (a CockpitRoute
+  // instead of a bare section); every other panel type still only ever writes 1. Widened here
+  // rather than per-type: `view` already scopes each deserializer to its own viewType, so this
+  // union only ever matters for the one view that actually writes 2.
+  schemaVersion: 1 | 2;
   view: string;
 }
 
@@ -60,5 +64,5 @@ export function registerDisposePanelSerializer(context: vscode.ExtensionContext,
 function isTrustedPanelState(value: unknown): value is TrustedPanelState {
   if (!value || typeof value !== "object") return false;
   const record = value as Record<string, unknown>;
-  return record.schemaVersion === 1 && typeof record.view === "string";
+  return (record.schemaVersion === 1 || record.schemaVersion === 2) && typeof record.view === "string";
 }

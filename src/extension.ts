@@ -15,10 +15,12 @@ import {
   refreshCockpitMissionBoard,
   refreshCockpitApprovals,
   refreshCockpitValidations,
+  decodeCockpitPanelState,
   COCKPIT_VIEW_TYPE,
   type CockpitPanelState,
   type CockpitDeps,
 } from "./webview/Cockpit.js";
+import { isCockpitSingletonClaimed } from "./webview/cockpitSingleton.js";
 import type { CockpitWorkspaceBundle } from "./cockpit/model.js";
 import { readGitDeliveriesFromDisk, readManagedWorktreesFromDisk } from "./cockpit/disk.js";
 import { SidebarPrototypeProvider, PIN_PREVIEW_VIEW_TYPE, type PinPreviewPanelState } from "./webview/SidebarPrototype.js";
@@ -1581,8 +1583,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   // t-610705 (Phase B #6) — a revived pre-410 standalone Board panel disposes itself and redirects
   // into Control → Mission scoped to its persisted workspace, same as tachyon.missionControl.
+  // (Phase C.0) — unless Control's OWN revival/open already claimed the singleton this session:
+  // VS Code doesn't guarantee revive order, and a shim redirect after the real Cockpit already
+  // restored (possibly onto a different route the user is looking at) must not clobber it.
   registerTrustedPanelSerializer<MissionControlPanelState>(context, MISSION_CONTROL_VIEW_TYPE, (panel, state) => {
     panel.dispose();
+    if (isCockpitSingletonClaimed()) return;
     void openCockpit(makeCockpitDeps(), { section: "mission", wsHash: state?.wsHash });
   });
   registerTrustedPanelSerializer<TaskDetailPanelState>(context, TASK_DETAIL_VIEW_TYPE, (panel, state) => taskDetailPanels.deserialize(panel, state));
@@ -1602,13 +1608,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   registerTrustedPanelSerializer<PipelineStudioPanelState>(context, PIPELINE_STUDIO_VIEW_TYPE, (panel, state) => pipelineStudioPanels.deserialize(panel, state));
   // t-610705 (SDD 410 Phase B #5) — a revived pre-410 standalone panel disposes itself and
   // redirects into Control → tmux via tachyon.inspectServer, same as the live open path below.
+  // (Phase C.0) — same claimed-singleton guard as the Board shim above.
   registerTrustedPanelSerializer<ServerInspectorPanelState>(context, SERVER_INSPECTOR_VIEW_TYPE, (panel) => {
     panel.dispose();
+    if (isCockpitSingletonClaimed()) return;
     void vscode.commands.executeCommand("tachyon.inspectServer");
   });
-  registerTrustedPanelSerializer<CockpitPanelState>(context, COCKPIT_VIEW_TYPE, (panel, state) =>
-    openCockpit(makeCockpitDeps(), { revivedPanel: panel, section: state?.section, wsHash: state?.wsHash }),
-  );
+  // t-610705 (Phase C.0) — decodePanelState is the ONE place a v1 disk record (bare section) or a
+  // v2 record (a real CockpitRoute) gets trusted; a malformed/unrecognized route falls back to
+  // overview rather than reviving into whatever the raw payload happened to contain.
+  registerTrustedPanelSerializer<CockpitPanelState>(context, COCKPIT_VIEW_TYPE, (panel, state) => {
+    const { route, wsHash } = decodeCockpitPanelState(state);
+    return openCockpit(makeCockpitDeps(), { revivedPanel: panel, route, wsHash });
+  });
   for (const viewType of ["tachyonPluginSurface", "tachyonPluginSurfaces", "tachyonAgentFixtureStudio", "tachyonControlInspector", "tachyonSketch", "tachyonRuntimeOpsView"]) {
     registerDisposePanelSerializer(context, viewType);
   }

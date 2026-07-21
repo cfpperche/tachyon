@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import type { WorkspacePresentationTarget } from "../shell/WorkspacePresentation.js";
+import { isCockpitSingletonClaimed } from "./cockpitSingleton.js";
 
 export const APPROVAL_VIEW_TYPE = "tachyonApprovals";
 
@@ -24,6 +25,11 @@ export class ApprovalPanelManager {
 
   deserialize(panel: vscode.WebviewPanel, state: ApprovalPanelState): void {
     panel.dispose();
+    // t-610705 (Phase C.0) — VS Code doesn't guarantee revive order across view types; if Control's
+    // own revival/open already claimed the singleton this session, a redirect here would clobber
+    // whatever route the user is already looking at. `open()` below is unguarded — it is a live,
+    // user-initiated jump and must always navigate.
+    if (isCockpitSingletonClaimed()) return;
     void vscode.commands.executeCommand("tachyon.openApprovals", state.wsHash);
   }
 

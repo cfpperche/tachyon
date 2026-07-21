@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { WorkspaceGitPresentationTarget } from "../shell/WorkspacePresentation.js";
+import { isCockpitSingletonClaimed } from "./cockpitSingleton.js";
 import {
   detectRuntimes,
   loadPluginFromSource,
@@ -138,9 +139,16 @@ export class PluginsPanelManager {
     void vscode.commands.executeCommand("tachyon.openPlugins", wsHash);
   }
 
-  /** A revived pre-410 standalone panel is disposed and re-opened as Control → Plugins. */
+  /**
+   * A revived pre-410 standalone panel is disposed and re-opened as Control → Plugins — UNLESS
+   * Control's own revival/open already claimed the singleton this session (t-610705 Phase C.0):
+   * VS Code doesn't guarantee revive order across view types, and a redirect after the real
+   * Cockpit already restored would clobber whatever route the user is already looking at.
+   * `open()` above is unguarded — it is a live, user-initiated jump and must always navigate.
+   */
   deserialize(panel: vscode.WebviewPanel, state: PluginsPanelState): void {
     panel.dispose();
+    if (isCockpitSingletonClaimed()) return;
     void vscode.commands.executeCommand("tachyon.openPlugins", state.wsHash);
   }
 

@@ -2,6 +2,13 @@ import * as vscode from "vscode";
 import { panelIcon } from "./shared/panelIcon.js";
 import { renderWebviewShell } from "./shared/shell.js";
 import { resolveCockpitSection } from "../cockpit/resolveSection.js";
+import {
+  routes,
+  decodePanelState as decodeCockpitPanelState,
+  type CockpitRoute,
+  type CockpitPanelState,
+} from "../cockpit/route.js";
+import { markCockpitSingletonClaimed, clearCockpitSingletonClaim } from "./cockpitSingleton.js";
 import { READY } from "./shared/ready.js";
 import {
   buildCockpitModel,
@@ -55,13 +62,11 @@ import type { PluginsPanelManager } from "./PluginsPanel.js";
 
 export const COCKPIT_VIEW_TYPE = "tachyonCockpit";
 
-export interface CockpitPanelState {
-  schemaVersion: 1;
-  view: typeof COCKPIT_VIEW_TYPE;
-  section?: CockpitSectionId;
-  /** t-d16a39 — the shell-level workspace scope at open time; absent = All workspaces. */
-  wsHash?: string;
-}
+// t-610705 (Phase C.0) — the persisted-state shape (schemaVersion 1|2, decode boundary) now lives
+// in src/cockpit/route.ts alongside the route it carries; re-exported here so extension.ts's
+// `import type { CockpitPanelState } from "./webview/Cockpit.js"` stays unchanged.
+export type { CockpitPanelState };
+export { decodeCockpitPanelState };
 
 /** Board wiring for Mission tab embed (same targets as MissionControlPanelManager). */
 export interface CockpitMissionBoard {
@@ -319,7 +324,22 @@ function inspectorStrings(): InspectorStrings {
 }
 
 let panel: vscode.WebviewPanel | undefined;
-let currentSection: CockpitSectionId = "overview";
+let currentRoute: CockpitRoute = routes.section("overview");
+/**
+ * t-610705 (Phase C.0) — bumped on every route change AND every workspace-scope change (both are
+ * "the world changed" events). Async send*() functions capture this at the start and re-check it
+ * after their awaits; a mismatch means a newer navigation/scope-switch has superseded this call,
+ * so its result must be discarded rather than posted (closes the router design dueto's "out-of-
+ * order module pushes can render data for the wrong route" finding). Replaces the old
+ * mission-only `missionGeneration` counter with one mechanism shared by every section.
+ */
+let navEpoch = 0;
+
+function navigate(route: CockpitRoute): void {
+  currentRoute = route;
+  navEpoch += 1;
+}
+
 /** t-d16a39 — the ONE shell-level workspace scope. undefined = "All workspaces" (aggregate
  *  sections aggregate; per-workspace sections fall back to the first workspace). Replaces the
  *  former per-section missionWsHash/approvalWsHash pair and Plugins' derived fallback. */
@@ -352,9 +372,9 @@ const INSPECTOR_ACTION_TYPES = new Set(["open", "kill", "capture", "reapDead", "
 
 // t-610705 (Phase B #6) — the bounded/coalesced agent-liveness pass lives in src/cockpit/missionVm.ts
 // (ported from the retired MissionControlPanelManager so the embedded board keeps the 250ms
-// never-block guarantee). One shared instance for the singleton panel; generation guards staleness.
+// never-block guarantee). One shared instance for the singleton panel; the shared navEpoch (Phase
+// C.0) now guards staleness — this used to be its own `missionGeneration` counter.
 const missionAgentLists = new MissionAgentLists();
-let missionGeneration = 0;
 
 function resolveMissionWs(board: CockpitMissionBoard, prefer?: string): WorkspaceMissionControlTarget | undefined {
   const all = board.getWorkspaces();
@@ -399,11 +419,28 @@ function sectionTitle(s: CockpitStrings, section: CockpitSectionId): string {
 
 export async function openCockpit(
   deps: CockpitDeps,
-  opts?: { section?: CockpitSectionId; revivedPanel?: vscode.WebviewPanel; wsHash?: string; missionWsHash?: string; approvalWsHash?: string },
+  opts?: {
+    section?: CockpitSectionId;
+    route?: CockpitRoute;
+    revivedPanel?: vscode.WebviewPanel;
+    wsHash?: string;
+    missionWsHash?: string;
+    approvalWsHash?: string;
+  },
 ): Promise<void> {
   const s = strings();
   const inspS = inspectorStrings();
-  if (opts?.section) currentSection = resolveCockpitSection(opts.section);
+  // t-610705 (Phase C.0) — the router design dueto's "retired-panel revive redirects can overwrite
+  // a live cockpit session" finding: VS Code does not guarantee revive order across view types.
+  // If a legacy shim's redirect raced ahead of the Cockpit's OWN trusted revival and already
+  // created a duplicate panel, the real revival is authoritative — retire the interim duplicate.
+  if (opts?.revivedPanel && panel && panel !== opts.revivedPanel) {
+    const stale = panel;
+    panel = undefined;
+    stale.dispose();
+  }
+  if (opts?.route) navigate(opts.route);
+  else if (opts?.section) navigate(routes.section(resolveCockpitSection(opts.section)));
   // t-d16a39 — both legacy per-section opt names feed the ONE shell scope (callers unchanged).
   if (opts?.wsHash) controlWsHash = opts.wsHash;
   if (opts?.missionWsHash) controlWsHash = opts.missionWsHash;
@@ -425,14 +462,16 @@ export async function openCockpit(
       localResourceRoots: [vscode.Uri.joinPath(deps.extensionUri, "dist", "webview")],
     };
     panel.iconPath = panelIcon(deps.extensionUri, "pulse");
+    markCockpitSingletonClaimed();
     panel.onDidDispose(() => {
       if (panel) {
         panel = undefined;
+        clearCockpitSingletonClaim();
         pushMissionBoard = undefined;
         pushApprovals = undefined;
         pushValidations = undefined;
         wiredPanel = undefined;
-        missionGeneration += 1;
+        navEpoch += 1;
         missionAgentLists.clear();
         deps.plugins.unbindControlEmbed();
       }
@@ -441,10 +480,11 @@ export async function openCockpit(
   const live = panel;
 
   const sendModel = async () => {
+    const epoch = navEpoch;
     let model: CockpitModel;
     try {
       const bundles = await deps.collect();
-      model = buildCockpitModel(bundles, { section: currentSection, wsHash: controlWsHash });
+      model = buildCockpitModel(bundles, { section: currentRoute.section, wsHash: controlWsHash });
     } catch (err) {
       model = buildCockpitModel(
         [
@@ -462,38 +502,39 @@ export async function openCockpit(
             approvals: [],
           },
         ],
-        { section: currentSection, wsHash: controlWsHash },
+        { section: currentRoute.section, wsHash: controlWsHash },
       );
     }
-    if (panel === live) {
+    if (panel === live && navEpoch === epoch) {
       live.webview.postMessage(modelMessage(model));
-      live.title = sectionTitle(s, currentSection);
+      live.title = sectionTitle(s, currentRoute.section);
     }
   };
 
   const sendMission = async () => {
-    if (panel !== live || currentSection !== "mission") return;
+    if (panel !== live || currentRoute.section !== "mission") return;
+    const epoch = navEpoch;
     const all = deps.missionBoard.getWorkspaces();
     const ws = resolveMissionWs(deps.missionBoard);
     if (!ws) {
       live.webview.postMessage(taskErrorMessage("No Tachyon workspace for Mission board."));
       return;
     }
-    const generation = ++missionGeneration;
     try {
       // Trailing retry: a list that settles late (after its 250ms fallback already rendered, with
       // further refreshes coalesced behind it) re-posts once so real liveness replaces "unavailable".
       const vm = await buildMissionVm(ws, all, missionAgentLists, () => void sendMission());
-      if (panel !== live || currentSection !== "mission" || missionGeneration !== generation) return;
+      if (panel !== live || navEpoch !== epoch) return;
       live.webview.postMessage(snapshotMessage(vm));
     } catch (err) {
-      if (panel !== live || missionGeneration !== generation) return;
+      if (panel !== live || navEpoch !== epoch) return;
       live.webview.postMessage(taskErrorMessage(err instanceof Error ? err.message : String(err)));
     }
   };
 
   const sendApprovals = async () => {
-    if (panel !== live || currentSection !== "approvals") return;
+    if (panel !== live || currentRoute.section !== "approvals") return;
+    const epoch = navEpoch;
     const ws = resolveApprovalWs(deps.approvals);
     if (!ws) {
       live.webview.postMessage(approvalErrorMessage("No Tachyon workspace for Approvals."));
@@ -501,16 +542,17 @@ export async function openCockpit(
     }
     try {
       const vm = buildApprovalViewModel({ workspaceRoot: ws.workspaceRoot, folder: ws.folderName, wsHash: ws.wsHash });
-      if (panel !== live || currentSection !== "approvals") return;
+      if (panel !== live || navEpoch !== epoch) return;
       live.webview.postMessage(approvalsMessage(vm));
     } catch (err) {
-      if (panel !== live) return;
+      if (panel !== live || navEpoch !== epoch) return;
       live.webview.postMessage(approvalErrorMessage(err instanceof Error ? err.message : String(err)));
     }
   };
 
   const sendValidations = async () => {
-    if (panel !== live || currentSection !== "validations") return;
+    if (panel !== live || currentRoute.section !== "validations") return;
+    const epoch = navEpoch;
     const ws = resolveMissionWs({ ...deps.missionBoard, getWorkspaces: deps.validations.getWorkspaces });
     if (!ws) {
       live.webview.postMessage(validationErrorMessage("No Tachyon workspace for Validations."));
@@ -518,28 +560,30 @@ export async function openCockpit(
     }
     try {
       const vm = buildValidationsViewModel({ folder: ws.folderName, wsHash: ws.wsHash, validations: ws.listValidations() });
-      if (panel !== live || currentSection !== "validations") return;
+      if (panel !== live || navEpoch !== epoch) return;
       live.webview.postMessage(validationsMessage(vm));
     } catch (err) {
-      if (panel !== live) return;
+      if (panel !== live || navEpoch !== epoch) return;
       live.webview.postMessage(validationErrorMessage(err instanceof Error ? err.message : String(err)));
     }
   };
 
   const sendRuntime = async () => {
-    if (panel !== live || currentSection !== "runtime") return;
+    if (panel !== live || currentRoute.section !== "runtime") return;
+    const epoch = navEpoch;
     try {
       const snap = await deps.runtimeOps.buildSnapshot();
-      if (panel !== live || currentSection !== "runtime") return;
+      if (panel !== live || navEpoch !== epoch) return;
       live.webview.postMessage(runtimeOpsSnapshotMessage(snap));
     } catch {
-      if (panel !== live) return;
+      if (panel !== live || navEpoch !== epoch) return;
       live.webview.postMessage(runtimeOpsSnapshotUnavailableMessage());
     }
   };
 
   const sendInspector = async () => {
-    if (panel !== live || currentSection !== "tmux") return;
+    if (panel !== live || currentRoute.section !== "tmux") return;
+    const epoch = navEpoch;
     let model: InspectorModel;
     try {
       const [snap, server] = await Promise.all([deps.inspector.snapshot(), deps.inspector.serverHealth()]);
@@ -548,14 +592,14 @@ export async function openCockpit(
     } catch {
       model = { groups: [], totalSessions: 0, liveSessions: 0, deadSessions: 0, orphanSessions: 0, busySessions: 0 };
     }
-    if (panel !== live || currentSection !== "tmux") return;
+    if (panel !== live || navEpoch !== epoch) return;
     // Namespaced to avoid colliding with Control's own `init`/`model` messages.
     live.webview.postMessage({ type: "inspectorInit", strings: inspS });
     live.webview.postMessage({ type: "inspectorModel", model });
   };
 
   const bindPluginsIfNeeded = () => {
-    if (currentSection === "plugins") {
+    if (currentRoute.section === "plugins") {
       deps.plugins.bindControlEmbed(live.webview, controlWsHash);
     } else {
       deps.plugins.unbindControlEmbed();
@@ -564,12 +608,12 @@ export async function openCockpit(
 
   const sendSectionModule = async () => {
     bindPluginsIfNeeded();
-    if (currentSection === "mission") await sendMission();
-    else if (currentSection === "validations") await sendValidations();
-    else if (currentSection === "approvals") await sendApprovals();
-    else if (currentSection === "runtime") await sendRuntime();
-    else if (currentSection === "tmux") await sendInspector();
-    else if (currentSection === "plugins") deps.plugins.refreshControlEmbed();
+    if (currentRoute.section === "mission") await sendMission();
+    else if (currentRoute.section === "validations") await sendValidations();
+    else if (currentRoute.section === "approvals") await sendApprovals();
+    else if (currentRoute.section === "runtime") await sendRuntime();
+    else if (currentRoute.section === "tmux") await sendInspector();
+    else if (currentRoute.section === "plugins") deps.plugins.refreshControlEmbed();
   };
 
   pushMissionBoard = () => { void sendMission(); };
@@ -680,7 +724,7 @@ export async function openCockpit(
 
   const handleInspectorAction = async (m: Partial<InspectorAction>): Promise<boolean> => {
     if (!m?.type || !INSPECTOR_ACTION_TYPES.has(m.type)) return false;
-    if (currentSection !== "tmux") return false;
+    if (currentRoute.section !== "tmux") return false;
     switch (m.type) {
       case "open":
         if (m.session) deps.inspector.open(m.session);
@@ -750,7 +794,7 @@ export async function openCockpit(
 
       // Plugin product actions only (install/update/…). Never steal cockpit `ready`/`refresh` —
       // those must always run the Control shell init/model + sendSectionModule path (which binds the embed).
-      if (PLUGIN_ACTION_TYPES.has(type) && currentSection === "plugins") {
+      if (PLUGIN_ACTION_TYPES.has(type) && currentRoute.section === "plugins") {
         if (deps.plugins.handleControlEmbedMessage(msg as never)) return;
       }
 
@@ -766,21 +810,28 @@ export async function openCockpit(
           await sendSectionModule();
           return;
         case "setSection":
-          currentSection = resolveCockpitSection(c.section);
+          // t-610705 (Phase C.0) — sugar over navigate(); C.1+ adds a "navigate" message carrying
+          // real subroute params once there's a subroute to send. Bumps navEpoch, so any in-flight
+          // send*() from the section being left discards its result instead of posting it late.
+          navigate(routes.section(resolveCockpitSection(c.section)));
           await sendModel();
           await sendSectionModule();
           return;
         case "switchControlWorkspace":
           // t-d16a39 — "" = All workspaces. Re-send model (aggregate sections re-scope) AND the
           // active section's module (per-workspace sections re-resolve; plugins embed re-binds).
+          // t-610705 (Phase C.0) — a scope switch also bumps navEpoch: it's the same "the world
+          // changed" event class as navigation (a slow response built for the old scope must not
+          // land after the switch).
           controlWsHash = c.wsHash || undefined;
+          navEpoch += 1;
           await sendModel();
           await sendSectionModule();
           return;
         case "copyDiagnostics": {
           try {
             const bundles = await deps.collect();
-            const text = formatCockpitDiagnostics(buildCockpitModel(bundles, { section: currentSection }));
+            const text = formatCockpitDiagnostics(buildCockpitModel(bundles, { section: currentRoute.section }));
             await vscode.env.clipboard.writeText(text);
             live.webview.postMessage(toastMessage(s.copied));
           } catch (err) {
@@ -922,12 +973,12 @@ export async function openCockpit(
     // bootstrap global and the client injects it when the lazy section body loads
     // (src/webview/shared/lazySectionStyles.ts). Each Phase B PR moves one more surface's sheet
     // from always-eager to this scheme; sheets not yet migrated stay eager unconditionally.
-    const approvalsIsActive = currentSection === "approvals";
-    const runtimeIsActive = currentSection === "runtime";
-    const validationsIsActive = currentSection === "validations";
-    const pluginsIsActive = currentSection === "plugins";
-    const tmuxIsActive = currentSection === "tmux";
-    const missionIsActive = currentSection === "mission";
+    const approvalsIsActive = currentRoute.section === "approvals";
+    const runtimeIsActive = currentRoute.section === "runtime";
+    const validationsIsActive = currentRoute.section === "validations";
+    const pluginsIsActive = currentRoute.section === "plugins";
+    const tmuxIsActive = currentRoute.section === "tmux";
+    const missionIsActive = currentRoute.section === "mission";
     live.webview.html = renderWebviewShell({
       cspSource: live.webview.cspSource,
       title: s.title,
@@ -952,10 +1003,12 @@ export async function openCockpit(
       bundle: uri("cockpit.js"),
       module: true,
       mode: "live",
+      // t-610705 (Phase C.0) — always PERSIST v2 (route, not section); decodePanelState still
+      // understands a v1 disk record for the restore boundary of a panel closed before this PR.
       persistedState: {
-        schemaVersion: 1,
+        schemaVersion: 2,
         view: COCKPIT_VIEW_TYPE,
-        section: currentSection,
+        route: currentRoute,
         ...(controlWsHash ? { wsHash: controlWsHash } : {}),
       } satisfies CockpitPanelState,
       bootstrapGlobals: {
