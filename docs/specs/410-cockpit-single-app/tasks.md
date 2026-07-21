@@ -36,7 +36,7 @@ _Status 2026-07-19: foundation + Approvals single-path + lazy ESM shipped in cod
 - [x] C.0 Router: `CockpitRoute` discriminated union + navEpoch staleness guard + persisted revive (schemaVersion 2) + revive precedence. Design hardened in an adversarial dueto first (probe-840f7a80, 16 findings). Commit eeb28089.
 - [x] C.1a Task Detail subroute: `mission/task/<id>` navigates in place inside Control (tombstone contract + CAS updates ported verbatim); retire TaskDetailPanel host. Commit 19199b4a.
 - [ ] C.1b Task Studio subroutes (`mission/task/new`, `mission/task/<id>/edit`): deferred to its own design dueto — shares StudioPanelManagerBase with 8 other panels (maintainer decision, 2026-07-21, t-610705 journal); retire TaskStudioPanel host when it lands.
-- [ ] C.2 Fleet subroutes: `fleet/agent/<name>/activity` (Activity), `fleet/agent/<name>/probes` (Probes); retire ActivityPanel + ProbeResultPanel hosts.
+- [x] C.2 Fleet subroutes: `fleet/agent/<name>/activity` (Activity), `fleet/agent/<name>/probes` + `fleet/probes` unfiltered debug route (Probes); retire ActivityPanel + ProbeResultPanel hosts. Design hardened in an adversarial dueto first (probe-2d90286d, REDESIGN verdict, binding-generation + envelope-identity guard added). Commit 937f3701.
 - [ ] C.3 Handoff section; retire HandoffPanel host.
 - [ ] C.4 Pin Studio nav-less route; retire PinStudioPanel host.
 - [x] Standing exceptions approved: plugin surfaces stay out (security isolation); dev-only spec-350 fakes stay.
