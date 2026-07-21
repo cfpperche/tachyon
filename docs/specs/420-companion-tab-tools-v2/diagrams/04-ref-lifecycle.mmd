@@ -1,0 +1,20 @@
+sequenceDiagram
+  participant A as Agente
+  participant E as Engine
+  participant C as Companion
+  A->>E: tabs_list
+  E->>C: list tabs
+  C-->>E: ctab_A, ctab_B
+  E-->>A: tabIds opacos
+  A->>E: snapshot tabId=ctab_A
+  E->>C: snapshot chromeId+docGen
+  C-->>E: outline + @e1 @e2 docGen=7
+  E-->>A: refs + documentToken
+  Note over A: humano troca de aba visualmente
+  A->>E: click tabId=ctab_A ref=@e1
+  E->>C: resolve ctab_A, check docGen=7
+  alt docGen ainda 7
+    C-->>E: applied
+  else navegado ou tab morta
+    C-->>E: not_applied stale_*
+  end

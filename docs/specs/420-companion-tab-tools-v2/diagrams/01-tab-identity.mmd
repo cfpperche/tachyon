@@ -1,0 +1,30 @@
+flowchart TD
+  subgraph agent [Agente]
+    A[user_browser_click<br/>tabId + ref?]
+  end
+  subgraph engine [Engine ADE]
+    B{tabId<br/>presente?}
+    C[Resolver handle opaco]
+    D{Chrome tab<br/>ainda existe?}
+    E{documentToken<br/>bate com o atual?}
+    F[Aplicar ação]
+    G[not_applied<br/>stale_tab / stale_ref]
+    H[Envelope<br/>applied / unknown_outcome]
+  end
+  subgraph browser [Companion extensão]
+    I[(mapa: ctab_* → chromeId + docGen)]
+    J[Aba real do humano]
+  end
+
+  A --> B
+  B -->|não| X[erro: tabId obrigatório]
+  B -->|sim| C
+  C --> I
+  I --> D
+  D -->|não| G
+  D -->|sim| E
+  E -->|não| G
+  E -->|sim| F
+  F --> J
+  F --> H
+  G --> H

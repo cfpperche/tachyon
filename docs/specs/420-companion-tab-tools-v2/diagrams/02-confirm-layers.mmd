@@ -1,0 +1,13 @@
+flowchart TD
+  A[Pedido de mutação] --> B{Classe da operação<br/>submit / buy / delete / download / publish?}
+  B -->|sim, perigosa| C[Pedir confirmação humana]
+  B -->|não clara| D{Heurística DOM<br/>role=submit / labels?}
+  D -->|sinal forte| C
+  D -->|fraco| E{Host na allowlist?}
+  B -->|segura e clara| E
+  E -->|fora da allowlist| C
+  E -->|ok ou allowlist vazia| F[Executar na tabId]
+  C -->|humano nega / timeout| G[needs_confirm / not_applied]
+  C -->|humano aceita| F
+  F --> H[Log redacted + envelope]
+  G --> H
