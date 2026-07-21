@@ -152,19 +152,76 @@ function isScopeLaunchFailure(err: Error & { code?: unknown }, stderr: string): 
 }
 
 /** Only missing binary is process-lifetime permanent. Bus/transient unit races must not poison
- *  the probe — under verify:full concurrent systemd-run load they flake (t-5f6355 / t-ed5c25). */
+ *  the probe — under verify:full concurrent systemd-run load they flake (t-5f6355 / t-ed5c25).
+ *  Persistent bus-down hosts use a cooldown circuit-breaker instead (t-7d0fd8). */
 function isPermanentScopeUnavailable(err: Error & { code?: unknown }): boolean {
   return err.code === "ENOENT";
 }
 
-let serverScopeUsable: boolean | undefined;
+/** One immediate retry after a short backoff when the user bus flaps under load. */
+export const SERVER_SCOPE_RETRY_BACKOFF_MS = 25;
+/** After this many call-level transient failures, skip systemd-run for a cooldown window. */
+export const SERVER_SCOPE_TRANSIENT_FAILS_BEFORE_COOLDOWN = 2;
+/** Cooldown length before the next probe (ms). */
+export const SERVER_SCOPE_COOLDOWN_MS = 2_000;
 
-/** Test seam: forget the cached systemd-run availability verdict. */
-export function resetServerScopeProbeForTests(): void {
-  serverScopeUsable = undefined;
+let serverScopeUsable: boolean | undefined;
+/** Consecutive server-creating calls that exhausted scope and fell back due to transient errors. */
+let scopeTransientFailStreak = 0;
+/** Epoch ms until which we skip systemd-run probes (circuit open). */
+let scopeCooldownUntilMs = 0;
+
+export type TmuxExecutorHooks = {
+  /** Test seam: inject clock (default Date.now). */
+  now?: () => number;
+  /** Test seam: inject backoff sleep (default setTimeout). */
+  sleep?: (ms: number) => Promise<void>;
+};
+
+let scopeHooks: TmuxExecutorHooks = {};
+
+function scopeNow(): number {
+  return (scopeHooks.now ?? Date.now)();
 }
 
-export function createTmuxExecutor(execFileImpl: ExecFileImpl = execFile): TmuxExecutor {
+function scopeSleep(ms: number): Promise<void> {
+  const sleep = scopeHooks.sleep;
+  if (sleep) return sleep(ms);
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function noteScopeSuccess(): void {
+  serverScopeUsable = true;
+  scopeTransientFailStreak = 0;
+  scopeCooldownUntilMs = 0;
+}
+
+function noteTransientScopeExhausted(): void {
+  scopeTransientFailStreak += 1;
+  if (scopeTransientFailStreak >= SERVER_SCOPE_TRANSIENT_FAILS_BEFORE_COOLDOWN) {
+    scopeCooldownUntilMs = scopeNow() + SERVER_SCOPE_COOLDOWN_MS;
+  }
+}
+
+function scopeProbeAllowed(): boolean {
+  if (serverScopeUsable === false) return false;
+  if (scopeNow() < scopeCooldownUntilMs) return false;
+  return true;
+}
+
+/** Test seam: forget the cached systemd-run availability verdict + circuit state. */
+export function resetServerScopeProbeForTests(hooks?: TmuxExecutorHooks): void {
+  serverScopeUsable = undefined;
+  scopeTransientFailStreak = 0;
+  scopeCooldownUntilMs = 0;
+  scopeHooks = hooks ?? {};
+}
+
+export function createTmuxExecutor(
+  execFileImpl: ExecFileImpl = execFile,
+  hooks?: TmuxExecutorHooks,
+): TmuxExecutor {
+  if (hooks) scopeHooks = { ...scopeHooks, ...hooks };
   return (args: string[], options: TmuxExecOptions = {}): Promise<ExecResult> =>
     new Promise((resolve, reject) => {
       const timeoutMs = options.timeoutMs;
@@ -186,7 +243,20 @@ export function createTmuxExecutor(execFileImpl: ExecFileImpl = execFile): TmuxE
             }, timeoutMs)
           : undefined;
 
-      const wantScope = process.platform === "linux" && serverScopeUsable !== false && mayStartServer(args);
+      const wantScope =
+        process.platform === "linux" && scopeProbeAllowed() && mayStartServer(args);
+
+      const finish = (err: Error | null, stdout: string, stderr: string): void => {
+        if (settled) return;
+        settled = true;
+        if (timer) clearTimeout(timer);
+        if (err) {
+          reject(new TmuxError(stderr.trim() || err.message, args));
+        } else {
+          resolve({ stdout, stderr });
+        }
+      };
+
       const launch = (useScope: boolean): void => {
         const isolated = isolatedArgs(args);
         const target = useScope ? serverScopeArgv(isolated) : { file: "tmux", argv: isolated };
@@ -202,24 +272,24 @@ export function createTmuxExecutor(execFileImpl: ExecFileImpl = execFile): TmuxE
                 launch(false);
                 return;
               }
-              // Transient bus / unit race: one retry with a fresh unit name, then plain exec
-              // for this call only — never cache false (poisoned workers under verify:full).
+              // Transient bus / unit race: one retry with backoff + fresh unit, then plain exec
+              // for this call only. Repeated call-level failures open a short cooldown so a host
+              // without a user bus does not pay 2× systemd-run on every new-session (t-7d0fd8).
               if (transientScopeAttempts < 1) {
                 transientScopeAttempts += 1;
-                launch(true);
+                void scopeSleep(SERVER_SCOPE_RETRY_BACKOFF_MS).then(() => {
+                  if (settled) return;
+                  launch(true);
+                });
                 return;
               }
+              noteTransientScopeExhausted();
               launch(false);
               return;
             }
-            if (useScope) serverScopeUsable = true;
-            settled = true;
-            if (timer) clearTimeout(timer);
-            if (err) {
-              reject(new TmuxError(stderr.trim() || err.message, args));
-            } else {
-              resolve({ stdout, stderr });
-            }
+            // systemd-run itself succeeded (tmux may still error, e.g. duplicate session).
+            if (useScope) noteScopeSuccess();
+            finish(err, stdout, stderr);
           },
         );
       };

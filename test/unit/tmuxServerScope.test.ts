@@ -8,6 +8,9 @@ import {
   serverScopeArgv,
   serverScopeUnitName,
   socketPath,
+  SERVER_SCOPE_COOLDOWN_MS,
+  SERVER_SCOPE_RETRY_BACKOFF_MS,
+  SERVER_SCOPE_TRANSIENT_FAILS_BEFORE_COOLDOWN,
 } from "../../src/tmux/TmuxService.js";
 import { makeSocketTemp } from "../helpers/socketTemp.js";
 
@@ -16,8 +19,12 @@ import { makeSocketTemp } from "../helpers/socketTemp.js";
 // that unit stays in its cgroup forever: every bundle activation (Reload with a bump) killed the
 // server and SIGHUP'd every agent pane. The fix wraps server-creating tmux commands in their own
 // `systemd-run --user --scope`, so the server's cgroup is never the caller's. These tests are the
-// boundary forcing function: the argv-shape tests pin the wrap, and the live test proves the
-// forked server actually lands outside the caller's cgroup.
+// boundary forcing function: the argv-shape tests pin the wrap, the fail-open path, and — live
+// where user systemd exists — forks a real server on a private socket and asserts its cgroup is a
+// tachyon-tmux-* scope distinct from the caller's.
+//
+// t-5f6355 / t-ed5c25 / t-7d0fd8 — transient bus races must not permanently poison the probe;
+// persistent bus-down hosts use a cooldown circuit-breaker (not 2× systemd-run per new-session).
 
 type ExecFileImpl = typeof execFile;
 
@@ -36,6 +43,35 @@ function fakeExec(
     queueMicrotask(() => cb(result.err ?? null, result.stdout ?? "", result.stderr ?? ""));
     return { kill() {}, stdout: undefined, stderr: undefined } as never;
   }) as unknown as ExecFileImpl;
+}
+
+function busFail() {
+  return {
+    err: Object.assign(new Error("exit 1"), { code: 1 }) as never,
+    stderr: "Failed to connect to bus: Connection refused",
+  };
+}
+
+/** Fake clock + zero-delay sleep so backoff/cooldown tests stay fast. */
+function installProbeClock() {
+  let now = 1_000_000;
+  const sleeps: number[] = [];
+  resetServerScopeProbeForTests({
+    now: () => now,
+    sleep: async (ms) => {
+      sleeps.push(ms);
+      now += ms;
+    },
+  });
+  return {
+    sleeps,
+    advance: (ms: number) => {
+      now += ms;
+    },
+    get now() {
+      return now;
+    },
+  };
 }
 
 beforeEach(() => resetServerScopeProbeForTests());
@@ -81,6 +117,7 @@ describe("tmux server scope isolation (t-3da510)", () => {
   });
 
   it("recognizes version-specific bus failure phrasings (private XDG_RUNTIME_DIR daemons)", async () => {
+    const clock = installProbeClock();
     const calls: Call[] = [];
     const exec = createTmuxExecutor(fakeExec(calls, (file) => {
       if (file === "systemd-run") {
@@ -94,19 +131,18 @@ describe("tmux server scope isolation (t-3da510)", () => {
     await exec(["-L", "tachyon", "new-session", "-d", "-s", "s1", "x"]);
     // transient bus: one retry (fresh unit) then plain fallback — never poisons the probe.
     expect(calls.map((c) => c.file)).toEqual(["systemd-run", "systemd-run", "tmux"]);
+    expect(clock.sleeps).toEqual([SERVER_SCOPE_RETRY_BACKOFF_MS]);
   });
 
   it("does not poison the process-wide probe after a transient bus failure (t-5f6355)", async () => {
+    installProbeClock();
     const calls: Call[] = [];
     let busFails = 2; // fail both attempts of the first new-session, then succeed
     const exec = createTmuxExecutor(fakeExec(calls, (file) => {
       if (file === "systemd-run") {
         if (busFails > 0) {
           busFails -= 1;
-          return {
-            err: Object.assign(new Error("exit 1"), { code: 1 }) as never,
-            stderr: "Failed to connect to bus: Connection refused",
-          };
+          return busFail();
         }
         return { stdout: "" };
       }
@@ -116,6 +152,35 @@ describe("tmux server scope isolation (t-3da510)", () => {
     await exec(["-L", "tachyon", "new-session", "-d", "-s", "s2", "x"]);
     // first op: 2× systemd-run (retry) + plain tmux; second op still probes systemd-run and succeeds.
     expect(calls.map((c) => c.file)).toEqual(["systemd-run", "systemd-run", "tmux", "systemd-run"]);
+  });
+
+  it("opens a cooldown after repeated transient failures and re-probes after it (t-7d0fd8)", async () => {
+    const clock = installProbeClock();
+    const calls: Call[] = [];
+    const exec = createTmuxExecutor(fakeExec(calls, (file) => {
+      if (file === "systemd-run") return busFail();
+      return { stdout: "" };
+    }));
+
+    // Exhaust transient retries SERVER_SCOPE_TRANSIENT_FAILS_BEFORE_COOLDOWN times.
+    for (let i = 0; i < SERVER_SCOPE_TRANSIENT_FAILS_BEFORE_COOLDOWN; i++) {
+      await exec(["-L", "tachyon", "new-session", "-d", "-s", `s${i}`, "x"]);
+    }
+    // Each failed call: 2× systemd-run + plain.
+    const perCall = ["systemd-run", "systemd-run", "tmux"];
+    const afterCooldownTrip = Array.from({ length: SERVER_SCOPE_TRANSIENT_FAILS_BEFORE_COOLDOWN }, () => perCall).flat();
+    expect(calls.map((c) => c.file)).toEqual(afterCooldownTrip);
+
+    // During cooldown: plain only (no doomed double probe).
+    calls.length = 0;
+    await exec(["-L", "tachyon", "new-session", "-d", "-s", "cool", "x"]);
+    expect(calls.map((c) => c.file)).toEqual(["tmux"]);
+
+    // After cooldown window: re-probe systemd-run.
+    calls.length = 0;
+    clock.advance(SERVER_SCOPE_COOLDOWN_MS);
+    await exec(["-L", "tachyon", "new-session", "-d", "-s", "reprobe", "x"]);
+    expect(calls.map((c) => c.file)).toEqual(["systemd-run", "systemd-run", "tmux"]);
   });
 
   it("still surfaces tmux's own errors through the scope wrapper unchanged", async () => {
@@ -166,17 +231,14 @@ describe("tmux server scope isolation (t-3da510)", () => {
       // match wrong processes under load, and the server is the process that holds the socket.
       const sock = socketPath(socket);
       expect(fs.existsSync(sock), `missing tmux socket ${sock}`).toBe(true);
-      const serverPids = tmuxServerPidsForSocket(sock);
-      expect(serverPids.length, `no server pid for socket ${sock}`).toBeGreaterThan(0);
+      const serverPid = resolveStableTmuxServerPid(sock);
       const own = fs.readFileSync("/proc/self/cgroup", "utf8").trim();
-      for (const pid of serverPids) {
-        const serverCgroup = fs.readFileSync(`/proc/${pid}/cgroup`, "utf8").trim();
-        expect(serverCgroup, `pid ${pid} still in caller cgroup (scoped launch fell back?)`).not.toBe(own);
-        expect(
-          serverCgroup,
-          `pid ${pid} cgroup=${serverCgroup} — expected tachyon-tmux-*.scope (t-5f6355/t-ed5c25)`,
-        ).toMatch(/tachyon-tmux-[a-f0-9]+\.scope/);
-      }
+      const serverCgroup = fs.readFileSync(`/proc/${serverPid}/cgroup`, "utf8").trim();
+      expect(serverCgroup, `pid ${serverPid} still in caller cgroup (scoped launch fell back?)`).not.toBe(own);
+      expect(
+        serverCgroup,
+        `pid ${serverPid} cgroup=${serverCgroup} — expected tachyon-tmux-*.scope (t-5f6355/t-ed5c25)`,
+      ).toMatch(/tachyon-tmux-[a-f0-9]+\.scope/);
     } finally {
       try { await exec(["-L", socket, "kill-server"], { timeoutMs: 5_000 }); } catch { /* already down */ }
       if (priorTmuxTmp === undefined) delete process.env.TMUX_TMPDIR;
@@ -186,14 +248,39 @@ describe("tmux server scope isolation (t-3da510)", () => {
   });
 });
 
+/**
+ * Resolve a single stable tmux server PID for `sock`.
+ * Samples twice; rejects empty/ambiguous sets (codex probe residual on fuser oracle).
+ */
+function resolveStableTmuxServerPid(sock: string): number {
+  const a = tmuxServerPidsForSocket(sock);
+  const b = tmuxServerPidsForSocket(sock);
+  const stable = a.filter((pid) => b.includes(pid));
+  const tmuxish = stable.filter((pid) => {
+    try {
+      const cmd = fs.readFileSync(`/proc/${pid}/cmdline`, "utf8");
+      return cmd.includes("tmux");
+    } catch {
+      return false;
+    }
+  });
+  const candidates = tmuxish.length > 0 ? tmuxish : stable;
+  expect(candidates.length, `ambiguous/missing server pids for ${sock}: first=${a} second=${b}`).toBe(1);
+  return candidates[0]!;
+}
+
 /** Resolve the tmux server PID(s) that hold `sock` open (Linux). Prefer fuser; fall back to /proc scan. */
 function tmuxServerPidsForSocket(sock: string): number[] {
   try {
     const out = execFileSync("fuser", [sock], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
-    const pids = out.trim().split(/\s+/).map(Number).filter((n) => Number.isFinite(n) && n > 0);
+    // fuser may write pids to stdout and/or stderr depending on build.
+    const merged = `${out}`;
+    const pids = merged.trim().split(/\s+/).map(Number).filter((n) => Number.isFinite(n) && n > 0);
     if (pids.length > 0) return [...new Set(pids)];
-  } catch {
-    /* fuser may exit 1 when no users; try /proc */
+  } catch (err) {
+    const stderr = err && typeof err === "object" && "stderr" in err ? String((err as { stderr?: unknown }).stderr ?? "") : "";
+    const pids = stderr.trim().split(/\s+/).map(Number).filter((n) => Number.isFinite(n) && n > 0);
+    if (pids.length > 0) return [...new Set(pids)];
   }
   const found: number[] = [];
   for (const ent of fs.readdirSync("/proc")) {
