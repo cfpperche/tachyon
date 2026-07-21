@@ -1235,6 +1235,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           });
           companion = {
             tabTools: st.tabTools === true,
+            allowedHosts: Array.isArray(st.allowedHosts)
+              ? st.allowedHosts.filter((h): h is string => typeof h === "string")
+              : [],
             paired: st.paired === true || devices.length > 0,
             baseUrl: typeof st.baseUrl === "string" ? st.baseUrl : undefined,
             engineLabel: typeof st.engineLabel === "string" ? st.engineLabel : undefined,
@@ -1383,6 +1386,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const ws = byHash(wsHash);
       if (!ws) throw new Error("no Tachyon workspace for that hash");
       await extensionInvoke(ws, { action: "config.companion.tabTools", enabled });
+    },
+    setCompanionAllowedHosts: async (wsHash, hosts) => {
+      const ws = byHash(wsHash);
+      if (!ws) throw new Error("no Tachyon workspace for that hash");
+      await extensionInvoke(ws, { action: "config.companion.allowedHosts", hosts });
     },
     unpairCompanionDevice: async (wsHash) => {
       const ws = byHash(wsHash);

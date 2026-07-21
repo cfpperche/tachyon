@@ -10,6 +10,7 @@ import {
   deleteRunbook,
   runbookEntryLine,
   setCompanionTabTools,
+  setCompanionAllowedHosts,
 } from "../../src/config/YamlConfigEditor.js";
 import { parseConfig } from "../../src/config/loadConfig.js";
 import schema from "../../src/config/tachyon.schema.json";
@@ -276,5 +277,22 @@ describe("setCompanionTabTools (SDD 414)", () => {
 
   it("refuses empty yml", () => {
     expect(() => setCompanionTabTools(undefined, true)).toThrow("existing tachyon.yml");
+  });
+});
+
+describe("setCompanionAllowedHosts (SDD 420)", () => {
+  it("writes hosts and clears when empty", () => {
+    const withHosts = setCompanionAllowedHosts(YML, [" example.com ", "example.com", "*.herokuapp.com"]).text;
+    expect(expectValid(withHosts).settings.companion?.allowedHosts).toEqual([
+      "example.com",
+      "*.herokuapp.com",
+    ]);
+    const cleared = setCompanionAllowedHosts(withHosts, []).text;
+    expect(expectValid(cleared).settings.companion?.allowedHosts).toBeUndefined();
+    expect(cleared).not.toMatch(/allowedHosts/);
+  });
+
+  it("refuses empty yml", () => {
+    expect(() => setCompanionAllowedHosts(undefined, ["a.com"])).toThrow("existing tachyon.yml");
   });
 });

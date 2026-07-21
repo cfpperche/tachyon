@@ -252,6 +252,33 @@ export function setCompanionTabTools(text: string | undefined, enabled: boolean)
   return { text: String(doc), warnings: [] };
 }
 
+/**
+ * SDD 420 — set settings.companion.allowedHosts (Control Settings).
+ * Empty list removes the key (all hosts still under confirm rules).
+ * Hosts are trimmed, de-duped; invalid empty entries dropped.
+ */
+export function setCompanionAllowedHosts(text: string | undefined, hosts: string[]): EditResult {
+  if (text === undefined || text.trim().length === 0) {
+    throw new Error("create an agent first — Companion settings need an existing tachyon.yml");
+  }
+  const cleaned = [
+    ...new Set(
+      hosts
+        .map((h) => h.trim())
+        .filter((h) => h.length > 0 && h.length <= 253),
+    ),
+  ];
+  const doc = load(text);
+  if (cleaned.length === 0) {
+    if (doc.hasIn(["settings", "companion", "allowedHosts"])) {
+      doc.deleteIn(["settings", "companion", "allowedHosts"]);
+    }
+  } else {
+    doc.setIn(["settings", "companion", "allowedHosts"], cleaned);
+  }
+  return { text: String(doc), warnings: [] };
+}
+
 /** 0-based line of a schedule's entry. */
 export function scheduleEntryLine(text: string, name: string): number | undefined {
   return entryLineIn(text, "schedules", name);

@@ -19,6 +19,7 @@ import {
   copyTextAction,
   openConfigFileAction,
   setCompanionTabToolsAction,
+  setCompanionAllowedHostsAction,
   unpairCompanionDeviceAction,
   issueCompanionPairCodeAction,
   type CockpitHostMessage,
@@ -377,6 +378,7 @@ function Root() {
       onCopyText={(text) => post(copyTextAction(text))}
       onOpenConfigFile={(wsHash) => post(openConfigFileAction(wsHash))}
       onSetCompanionTabTools={(wsHash, enabled) => post(setCompanionTabToolsAction(wsHash, enabled))}
+      onSetCompanionAllowedHosts={(wsHash, hosts) => post(setCompanionAllowedHostsAction(wsHash, hosts))}
       onUnpairCompanionDevice={(wsHash) => post(unpairCompanionDeviceAction(wsHash))}
       onIssueCompanionPairCode={(wsHash) => post(issueCompanionPairCodeAction(wsHash))}
       companionPairOffer={companionPairOffer}

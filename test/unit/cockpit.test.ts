@@ -52,6 +52,7 @@ describe("cockpit model", () => {
           tmux: { state: "healthy", version: "3.4" },
           companion: {
             tabTools: true,
+            allowedHosts: [],
             paired: true,
             baseUrl: "http://127.0.0.1:7421",
             engineLabel: "tachyon",
@@ -98,7 +99,7 @@ describe("cockpit model", () => {
           worktrees: [],
           deliveries: [],
           approvals: [],
-          companion: { tabTools: true, paired: false, devices: [] },
+          companion: { tabTools: true, allowedHosts: [], paired: false, devices: [] },
         },
         {
           control: { folderName: "b", workspaceRoot: "/b", wsHash: "h2", bridgeUrl: "http://127.0.0.1:2/mcp" },
@@ -106,7 +107,7 @@ describe("cockpit model", () => {
           worktrees: [],
           deliveries: [],
           approvals: [],
-          companion: { tabTools: false, paired: true, devices: [] },
+          companion: { tabTools: false, allowedHosts: ["example.com"], paired: true, devices: [] },
         },
       ],
       { section: "settings", nowIso: "now" },

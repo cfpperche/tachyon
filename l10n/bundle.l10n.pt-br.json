@@ -481,5 +481,11 @@
   "⚠ {0} commit(s) ahead of base, {1} unpushed": "⚠ {0} commit(s) à frente da base, {1} não enviado(s)",
   "⚠ {0} commit(s) ahead of base, {1} unpushed — the branch is kept unless you confirm again": "⚠ {0} commit(s) à frente da base, {1} não enviado(s) — a branch é mantida a menos que você confirme de novo",
   "⚠ {0} uncommitted change(s) will be lost": "⚠ {0} alteração(ões) não commitada(s) será(ão) perdida(s)",
-  "✓ '{0}' verified — {1} passed": "✓ '{0}' verificado — {1} passou"
+  "✓ '{0}' verified — {1} passed": "✓ '{0}' verificado — {1} passou",
+  "Allowed hosts (optional)": "Hosts permitidos (opcional)",
+  "One host or glob per line (example.com, *.herokuapp.com). Empty = all hosts. Writes settings.companion.allowedHosts in tachyon.yml.": "Um host ou glob por linha (example.com, *.herokuapp.com). Vazio = todos os hosts. Grava settings.companion.allowedHosts no tachyon.yml.",
+  "example.com\n*.herokuapp.com": "example.com\n*.herokuapp.com",
+  "Save allowed hosts": "Salvar hosts permitidos",
+  "Companion allowed hosts cleared (all hosts)": "Hosts permitidos do Companion limpos (todos os hosts)",
+  "Companion allowed hosts updated ({0})": "Hosts permitidos do Companion atualizados ({0})"
 }

@@ -122,6 +122,8 @@ export interface CockpitAppProps {
   onOpenConfigFile: (wsHash?: string) => void;
   /** SDD 414 — settings.companion.tabTools for the scoped workspace. */
   onSetCompanionTabTools: (wsHash: string, enabled: boolean) => void;
+  /** SDD 420 — settings.companion.allowedHosts for the scoped workspace. */
+  onSetCompanionAllowedHosts: (wsHash: string, hosts: string[]) => void;
   /** SDD 414 — host unpair of the active Companion device. */
   onUnpairCompanionDevice: (wsHash: string) => void;
   /** SDD 414 — mint pair code (result arrives as companionPairOffer prop). */
@@ -208,6 +210,64 @@ function usePairCountdown(expiresAt?: string): { label: string; expired: boolean
   const m = Math.floor(totalSec / 60);
   const s = totalSec % 60;
   return { label: `${m}:${String(s).padStart(2, "0")}`, expired: false };
+}
+
+/** Parse host globs from textarea (newlines and commas). */
+export function parseAllowedHostsDraft(raw: string): string[] {
+  return [
+    ...new Set(
+      raw
+        .split(/[\n,]+/)
+        .map((h) => h.trim())
+        .filter((h) => h.length > 0),
+    ),
+  ];
+}
+
+function CompanionAllowedHostsField({
+  s,
+  wsHash,
+  allowedHosts,
+  onSave,
+}: {
+  s: CockpitStrings;
+  wsHash: string;
+  allowedHosts: string[];
+  onSave: (wsHash: string, hosts: string[]) => void;
+}) {
+  const serverKey = allowedHosts.join("\n");
+  const [draft, setDraft] = useState(serverKey);
+  useEffect(() => {
+    setDraft(serverKey);
+  }, [wsHash, serverKey]);
+  const dirty = parseAllowedHostsDraft(draft).join("\n") !== serverKey;
+  return (
+    <div class="ck-settings-hosts" data-testid="companion-allowed-hosts">
+      <div class="ck-settings-hosts-label">
+        <strong>{s.companionAllowedHosts}</strong>
+        <span class="ck-settings-toggle-help">{s.companionAllowedHostsHelp}</span>
+      </div>
+      <textarea
+        class="ck-settings-hosts-input"
+        data-testid="companion-allowed-hosts-input"
+        rows={3}
+        value={draft}
+        placeholder={s.companionAllowedHostsPlaceholder}
+        spellcheck={false}
+        onInput={(e) => setDraft((e.target as HTMLTextAreaElement).value)}
+      />
+      <div class="ck-settings-hosts-actions">
+        <Button
+          variant="default"
+          data-testid="companion-allowed-hosts-save"
+          disabled={!dirty}
+          onClick={() => onSave(wsHash, parseAllowedHostsDraft(draft))}
+        >
+          {s.companionAllowedHostsSave}
+        </Button>
+      </div>
+    </div>
+  );
 }
 
 function CompanionPairOfferCard({
@@ -850,6 +910,12 @@ export function App(p: CockpitAppProps) {
                     <span class="ck-settings-toggle-help">{s.companionTabToolsHelp}</span>
                   </span>
                 </label>
+                <CompanionAllowedHostsField
+                  s={s}
+                  wsHash={companion.wsHash}
+                  allowedHosts={companion.allowedHosts}
+                  onSave={p.onSetCompanionAllowedHosts}
+                />
                 <div class="ck-settings-status" data-testid="companion-pair-status">
                   <span class={`ck-badge ${companion.paired ? "ok" : "muted"}`}>
                     {companion.paired ? s.companionPaired : s.companionNotPaired}

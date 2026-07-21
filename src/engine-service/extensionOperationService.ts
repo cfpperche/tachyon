@@ -16,6 +16,7 @@ import {
   deleteCommand,
   deleteRunbook,
   setCompanionTabTools,
+  setCompanionAllowedHosts,
 } from "../config/YamlConfigEditor.js";
 import { isResumable } from "../resume/SessionLedger.js";
 import { PromptStore } from "../prompts/PromptStore.js";
@@ -97,6 +98,9 @@ export async function executeExtensionQuery(
       const devices = workspace.companion.listDevices((token) => workspace.companionLive.hasLiveClient(token));
       return json({
         tabTools: workspace.config?.settings.companion?.tabTools === true,
+        allowedHosts: Array.isArray(workspace.config?.settings.companion?.allowedHosts)
+          ? workspace.config!.settings.companion!.allowedHosts!
+          : [],
         paired: workspace.companion.hasPairedDevice(),
         baseUrl: port === undefined ? undefined : `http://127.0.0.1:${port}`,
         engineLabel: path.basename(workspace.workspaceRoot) || "tachyon",
@@ -327,6 +331,12 @@ export async function executeExtensionCommand(
       // SDD 414 — human Control toggle; reloadConfig announces tool list change when the bit flips.
       return configMutation(workspace, () => workspace.mutateConfig(
         (text) => setCompanionTabTools(text, command.enabled),
+        () => onViewsChanged("agents"),
+      ));
+    case "config.companion.allowedHosts":
+      // SDD 420 — optional host allowlist for user_browser_* (Control Settings).
+      return configMutation(workspace, () => workspace.mutateConfig(
+        (text) => setCompanionAllowedHosts(text, command.hosts),
         () => onViewsChanged("agents"),
       ));
     case "agent.fork":

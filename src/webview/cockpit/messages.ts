@@ -101,6 +101,10 @@ export interface CockpitStrings {
   companionBody: string;
   companionTabTools: string;
   companionTabToolsHelp: string;
+  companionAllowedHosts: string;
+  companionAllowedHostsHelp: string;
+  companionAllowedHostsPlaceholder: string;
+  companionAllowedHostsSave: string;
   companionPaired: string;
   companionNotPaired: string;
   companionPickWorkspace: string;
@@ -152,6 +156,8 @@ export type CockpitAction =
   | { type: "engineLogJournal"; wsHash: string }
   /** SDD 414 — patch settings.companion.tabTools for one workspace. */
   | { type: "setCompanionTabTools"; wsHash: string; enabled: boolean }
+  /** SDD 420 — patch settings.companion.allowedHosts for one workspace. */
+  | { type: "setCompanionAllowedHosts"; wsHash: string; hosts: string[] }
   /** SDD 414 — host unpair of the active Companion session. */
   | { type: "unpairCompanionDevice"; wsHash: string }
   /** SDD 414 — mint a short-lived pair code (same op as tachyon.pairCompanion). */
@@ -214,6 +220,11 @@ export const setCompanionTabToolsAction = (wsHash: string, enabled: boolean): Co
   type: "setCompanionTabTools",
   wsHash,
   enabled,
+});
+export const setCompanionAllowedHostsAction = (wsHash: string, hosts: string[]): CockpitAction => ({
+  type: "setCompanionAllowedHosts",
+  wsHash,
+  hosts,
 });
 export const unpairCompanionDeviceAction = (wsHash: string): CockpitAction => ({
   type: "unpairCompanionDevice",

@@ -108,6 +108,11 @@ export const strings: CockpitStrings = {
     "When tab tools are on, agents see user_browser_* on the Bridge. Pairing Companion is still required to run them. Generate a pair code here (or via the command palette).",
   companionTabTools: "List Companion tab tools for agents",
   companionTabToolsHelp: "Writes settings.companion.tabTools in tachyon.yml and refreshes the Bridge tool list.",
+  companionAllowedHosts: "Allowed hosts (optional)",
+  companionAllowedHostsHelp:
+    "One host or glob per line (example.com, *.herokuapp.com). Empty = all hosts. Writes settings.companion.allowedHosts in tachyon.yml.",
+  companionAllowedHostsPlaceholder: "example.com\n*.herokuapp.com",
+  companionAllowedHostsSave: "Save allowed hosts",
   companionPaired: "Paired",
   companionNotPaired: "Not paired",
   companionPickWorkspace: "Select a single workspace in the header to manage Companion settings.",
@@ -191,6 +196,7 @@ const bundles: CockpitWorkspaceBundle[] = [
     tmux: { state: "healthy", version: "3.4" },
     companion: {
       tabTools: true,
+      allowedHosts: ["the-internet.herokuapp.com", "*.herokuapp.com"],
       paired: true,
       baseUrl: "http://127.0.0.1:7421",
       engineLabel: "tachyon",
@@ -235,6 +241,7 @@ const goldenBundle: CockpitWorkspaceBundle = {
   tmux: { state: "healthy", version: "3.4" },
   companion: {
     tabTools: false,
+    allowedHosts: [],
     paired: false,
     baseUrl: "http://127.0.0.1:7431",
     engineLabel: "golem",

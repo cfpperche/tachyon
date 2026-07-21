@@ -100,6 +100,11 @@ export interface CockpitCompanionSettings {
   folderName: string;
   /** settings.companion.tabTools — tools listed on Bridge when true. */
   tabTools: boolean;
+  /**
+   * settings.companion.allowedHosts — host globs for user_browser_* (empty = all hosts).
+   * Written from Control Settings; optional.
+   */
+  allowedHosts: string[];
   /** Companion device session present on this engine (any device in devices[]). */
   paired: boolean;
   baseUrl?: string;
@@ -204,6 +209,7 @@ export function buildCockpitModel(
       wsHash: b.control.wsHash,
       folderName: b.control.folderName,
       tabTools: b.companion?.tabTools === true,
+      allowedHosts: Array.isArray(b.companion?.allowedHosts) ? b.companion!.allowedHosts! : [],
       paired: b.companion?.paired === true || (b.companion?.devices?.length ?? 0) > 0,
       baseUrl: b.companion?.baseUrl,
       engineLabel: b.companion?.engineLabel,

@@ -39,6 +39,7 @@ export const EXTENSION_COMMAND_ACTIONS = [
   "proposal.approve", "proposal.reject", "approval.resolve", "config.agent.add", "config.agent.clone",
   "config.agent.rename", "config.agent.delete", "config.agent.promote", "config.command.delete", "config.runbook.delete",
   "config.companion.tabTools",
+  "config.companion.allowedHosts",
   "agent.fork", "worktree.remove", "worktree.delete-branch", "agent.verify", "agent.reanchor",
   "agent.inject-continuity", "agent.resume-all", "workspace.stop-all", "pipeline.start", "pipeline.approve",
   "pipeline.reject", "pipeline.cancel", "pipeline.rerun", "pipeline.dismiss", "pipeline.apply-input", "pipeline.delete",
@@ -122,6 +123,10 @@ export const extensionCommandSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("config.command.delete"), name }).strict(),
   z.object({ action: z.literal("config.runbook.delete"), name }).strict(),
   z.object({ action: z.literal("config.companion.tabTools"), enabled: z.boolean() }).strict(),
+  z.object({
+    action: z.literal("config.companion.allowedHosts"),
+    hosts: z.array(z.string().max(253)).max(64),
+  }).strict(),
   z.object({ action: z.literal("agent.fork"), agent: name }).strict(),
   z.object({ action: z.literal("worktree.remove"), agent: name }).strict(),
   z.object({ action: z.literal("worktree.delete-branch"), branch: text(512, 1) }).strict(),

@@ -153,6 +153,8 @@ export interface CockpitDeps {
   openEngineJournal: (wsHash: string) => void;
   /** SDD 414 — settings.companion.tabTools for one workspace engine. */
   setCompanionTabTools: (wsHash: string, enabled: boolean) => Promise<void>;
+  /** SDD 420 — settings.companion.allowedHosts for one workspace engine. */
+  setCompanionAllowedHosts: (wsHash: string, hosts: string[]) => Promise<void>;
   /** SDD 414 — host-authoritative unpair of the active Companion device. */
   unpairCompanionDevice: (wsHash: string) => Promise<void>;
   /**
@@ -272,6 +274,12 @@ function strings(): CockpitStrings {
     ),
     companionTabTools: t("List Companion tab tools for agents"),
     companionTabToolsHelp: t("Writes settings.companion.tabTools in tachyon.yml and refreshes the Bridge tool list."),
+    companionAllowedHosts: t("Allowed hosts (optional)"),
+    companionAllowedHostsHelp: t(
+      "One host or glob per line (example.com, *.herokuapp.com). Empty = all hosts. Writes settings.companion.allowedHosts in tachyon.yml.",
+    ),
+    companionAllowedHostsPlaceholder: t("example.com\n*.herokuapp.com"),
+    companionAllowedHostsSave: t("Save allowed hosts"),
     companionPaired: t("Paired"),
     companionNotPaired: t("Not paired"),
     companionPickWorkspace: t("Select a single workspace in the header to manage Companion settings."),
@@ -1079,6 +1087,24 @@ export async function openCockpit(
                   c.enabled
                     ? vscode.l10n.t("Companion tab tools listed for agents")
                     : vscode.l10n.t("Companion tab tools hidden from agents"),
+                ),
+              );
+            } catch (err) {
+              live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err)));
+            }
+          }
+          return;
+        case "setCompanionAllowedHosts":
+          if (typeof c.wsHash === "string" && c.wsHash && Array.isArray(c.hosts)) {
+            try {
+              const hosts = c.hosts.filter((h): h is string => typeof h === "string");
+              await deps.setCompanionAllowedHosts(c.wsHash, hosts);
+              await sendModel();
+              live.webview.postMessage(
+                toastMessage(
+                  hosts.length === 0
+                    ? vscode.l10n.t("Companion allowed hosts cleared (all hosts)")
+                    : vscode.l10n.t("Companion allowed hosts updated ({0})", String(hosts.length)),
                 ),
               );
             } catch (err) {

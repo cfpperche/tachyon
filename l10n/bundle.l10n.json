@@ -70,5 +70,11 @@
   "busy ({0})": "busy ({0})",
   "composer has a draft": "composer has a draft",
   "default": "default",
-  "explicit": "explicit"
+  "explicit": "explicit",
+  "Allowed hosts (optional)": "Allowed hosts (optional)",
+  "One host or glob per line (example.com, *.herokuapp.com). Empty = all hosts. Writes settings.companion.allowedHosts in tachyon.yml.": "One host or glob per line (example.com, *.herokuapp.com). Empty = all hosts. Writes settings.companion.allowedHosts in tachyon.yml.",
+  "example.com\n*.herokuapp.com": "example.com\n*.herokuapp.com",
+  "Save allowed hosts": "Save allowed hosts",
+  "Companion allowed hosts cleared (all hosts)": "Companion allowed hosts cleared (all hosts)",
+  "Companion allowed hosts updated ({0})": "Companion allowed hosts updated ({0})"
 }
