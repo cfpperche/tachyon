@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Bridge, isLoopbackRemote } from "../../src/bridge/Bridge.js";
+import { Bridge, isLoopbackRemote, shouldRejectLanNonCompanion } from "../../src/bridge/Bridge.js";
 import type { BridgeDeps } from "../../src/bridge/tools.js";
 import {
   companionListenHost,
@@ -72,6 +72,21 @@ describe("Bridge listen host (SDD 422)", () => {
     expect(isLoopbackRemote("::ffff:127.0.0.1")).toBe(true);
     expect(isLoopbackRemote("10.0.0.5")).toBe(false);
     expect(isLoopbackRemote(undefined)).toBe(false);
+  });
+
+  it("rejects non-companion routes for non-loopback peers when LAN-bound", () => {
+    expect(shouldRejectLanNonCompanion("0.0.0.0", "10.0.0.9", "/mcp")).toBe(true);
+    expect(shouldRejectLanNonCompanion("0.0.0.0", "10.0.0.9", "/other")).toBe(true);
+    expect(shouldRejectLanNonCompanion("0.0.0.0", "10.0.0.9", "/companion/v1/health")).toBe(false);
+    expect(shouldRejectLanNonCompanion("0.0.0.0", "10.0.0.9", "/companion/v1/pair")).toBe(false);
+    // loopback peer still gets MCP
+    expect(shouldRejectLanNonCompanion("0.0.0.0", "127.0.0.1", "/mcp")).toBe(false);
+    expect(shouldRejectLanNonCompanion("0.0.0.0", "::ffff:127.0.0.1", "/mcp")).toBe(false);
+    // loopback-only listen: no LAN filter
+    expect(shouldRejectLanNonCompanion("127.0.0.1", "10.0.0.9", "/mcp")).toBe(false);
+    // path boundary
+    expect(shouldRejectLanNonCompanion("0.0.0.0", "10.0.0.9", "/companion/v1")).toBe(false);
+    expect(shouldRejectLanNonCompanion("0.0.0.0", "10.0.0.9", "/companion/v2/x")).toBe(true);
   });
 
   it("records 0.0.0.0 when started with lan host; MCP url stays loopback", async () => {

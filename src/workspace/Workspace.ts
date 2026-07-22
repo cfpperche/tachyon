@@ -3017,28 +3017,36 @@ export class Workspace {
   }
 
   /** Serialize Bridge restarts so concurrent reloadConfig lanAccess flips cannot race dispose/start. */
-  private bridgeRestartChain: Promise<number> | undefined;
+  private bridgeRestartTail: Promise<void> = Promise.resolve();
 
   async restartBridge(): Promise<number> {
-    const run = async (): Promise<number> => {
-      const preferred = this.config?.settings.bridgePort ?? derivePort(this.wsHash);
-      await this.bridge.dispose();
-      const port = await this.startBridgeListener(preferred);
-      if (port !== preferred) {
-        this.host.notify(
-          this.t("Bridge port {0} is in use — fell back to {1}. Registered runtimes need re-connecting (or free the port and restart the Bridge).", preferred, port),
-          "warn",
-        );
+    const preferred = this.config?.settings.bridgePort ?? derivePort(this.wsHash);
+    let result!: number;
+    let error: unknown;
+    const turn = this.bridgeRestartTail.then(async () => {
+      try {
+        await this.bridge.dispose();
+        result = await this.startBridgeListener(preferred);
+        if (result !== preferred) {
+          this.host.notify(
+            this.t("Bridge port {0} is in use — fell back to {1}. Registered runtimes need re-connecting (or free the port and restart the Bridge).", preferred, result),
+            "warn",
+          );
+        }
+        this.refreshAgentsViews();
+      } catch (err) {
+        error = err;
+        throw err;
       }
-      this.refreshAgentsViews();
-      return port;
-    };
-    const next = (this.bridgeRestartChain ?? Promise.resolve(0)).then(run, run);
-    this.bridgeRestartChain = next.then(
-      (p) => p,
-      () => 0,
+    });
+    // Always advance the queue past failures so a rejected restart cannot poison later ones.
+    this.bridgeRestartTail = turn.then(
+      () => undefined,
+      () => undefined,
     );
-    return next;
+    await turn;
+    if (error) throw error;
+    return result;
   }
 
   async stopBridge(): Promise<void> {

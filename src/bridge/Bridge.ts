@@ -20,6 +20,20 @@ export function isLoopbackRemote(addr: string | undefined): boolean {
   return false;
 }
 
+/**
+ * When the Bridge listens beyond loopback, non-loopback peers may only hit companion paths.
+ * Pure helper for unit tests + handle().
+ */
+export function shouldRejectLanNonCompanion(
+  listenHost: string,
+  remoteAddress: string | undefined,
+  urlPath: string,
+): boolean {
+  if (listenHost === "127.0.0.1") return false;
+  if (isLoopbackRemote(remoteAddress)) return false;
+  return !isCompanionPath(urlPath);
+}
+
 interface BridgeMcpSession {
   transport: StreamableHTTPServerTransport;
   mcp: McpServer;
@@ -234,17 +248,15 @@ export class Bridge {
     // SDD 422 — when listening on all interfaces, only /companion/v1 is allowed from
     // non-loopback peers. MCP and other routes stay loopback-only even though the socket
     // is shared (companion-only second port deferred).
-    if (this._listenHost !== "127.0.0.1" && !isLoopbackRemote(req.socket.remoteAddress)) {
-      if (!(this.options.companion && isCompanionPath(url))) {
-        res.writeHead(403, { "content-type": "application/json" });
-        res.end(
-          JSON.stringify({
-            error:
-              "LAN clients may only use /companion/v1/* when settings.companion.lanAccess is enabled. MCP remains loopback-only.",
-          }),
-        );
-        return;
-      }
+    if (shouldRejectLanNonCompanion(this._listenHost, req.socket.remoteAddress, url)) {
+      res.writeHead(403, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          error:
+            "LAN clients may only use /companion/v1/* when settings.companion.lanAccess is enabled. MCP remains loopback-only.",
+        }),
+      );
+      return;
     }
     // SDD 414 — companion shell uses companion-scoped tokens, not Bridge agent auth.
     if (this.options.companion && isCompanionPath(url)) {
