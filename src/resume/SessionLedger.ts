@@ -8,6 +8,7 @@ import type { VerifyState } from "../worktree/verify.js";
 import { spawnContractCompletion, type SpawnContract } from "../bridge/spawnContract.js";
 import type { Role } from "../roles/templates.js";
 import type { SoulSnapshot } from "../agents/promptLayers.js";
+import { immutableEvolutionStartupSnapshot, isEvolutionStartupSnapshot, type EvolutionStartupSnapshot } from "../evolution/startupSnapshot.js";
 
 /**
  * Per-workspace session ledger (spec 209 + 211): `agentName -> SessionRecord`,
@@ -148,6 +149,8 @@ export interface SessionRecord {
    */
   delivery?: SessionDeliveryMarker;
   identity?: SessionIdentity;
+  /** Immutable human-approved Agent Evolution snapshot offered to this exact session. */
+  evolution?: EvolutionStartupSnapshot;
   /** Explicit terminal state for an ad-hoc row that remains visible until dismiss. */
   lifecycle?: SessionLifecycle;
   updatedAt: string;
@@ -354,7 +357,7 @@ function normalize(r: unknown): SessionRecord | null {
   const updatedAt = typeof o.updatedAt === "string" ? o.updatedAt : new Date(0).toISOString();
 
   // New (211) shape: a def and/or resume object (+ spec 210 worktree + spec 364 bridgeClient + SDD 368 T14 delivery).
-  if (o.def !== undefined || o.resume !== undefined || o.worktree !== undefined || o.bridgeClient !== undefined || o.delivery !== undefined || o.identity !== undefined || o.lifecycle !== undefined) {
+  if (o.def !== undefined || o.resume !== undefined || o.worktree !== undefined || o.bridgeClient !== undefined || o.delivery !== undefined || o.identity !== undefined || o.evolution !== undefined || o.lifecycle !== undefined) {
     const def = parseDef(o.def);
     const resume = parseResume(o.resume);
     const worktree = parseWorktree(o.worktree);
@@ -362,9 +365,10 @@ function normalize(r: unknown): SessionRecord | null {
     // delivery field present → always keep a marker (valid or invalid); never drop it into an ordinary row.
     const delivery = o.delivery !== undefined ? parseDeliveryMarker(o.delivery) : undefined;
     const identity = parseIdentity(o.identity);
+    const evolution = parseEvolution(o.evolution);
     const lifecycle = parseLifecycle(o.lifecycle);
-    if (!def && !resume && !worktree && !bridgeClient && delivery === undefined && !identity) return null;
-    return stripDeclaredParent({ def, resume, worktree, bridgeClient, delivery, identity, lifecycle, cwd: o.cwd, declared, updatedAt });
+    if (!def && !resume && !worktree && !bridgeClient && delivery === undefined && !identity && !evolution) return null;
+    return stripDeclaredParent({ def, resume, worktree, bridgeClient, delivery, identity, evolution, lifecycle, cwd: o.cwd, declared, updatedAt });
   }
 
   // Pre-211 flat record → migrate.
@@ -440,6 +444,11 @@ function parseIdentity(value: unknown): SessionIdentity | undefined {
     ...(typeof o.degradedAt === "string" ? { degradedAt: o.degradedAt } : {}),
     ...(typeof o.degradedCode === "string" && /^soul\/[a-z-]+$/.test(o.degradedCode) ? { degradedCode: o.degradedCode } : {}),
   };
+}
+
+function parseEvolution(value: unknown): EvolutionStartupSnapshot | undefined {
+  if (!isEvolutionStartupSnapshot(value)) return undefined;
+  return immutableEvolutionStartupSnapshot(value);
 }
 
 /** A persisted spawn-contract (spec 246) — required strings plus exactly one populated completion. */

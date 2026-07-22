@@ -8,7 +8,9 @@ import {
   blankAgentFields,
   canDiscardAgentFields,
   computeAgentDirty,
+  createAgentEvolutionLabels,
   serializeAgentPatch,
+  type AgentEvolutionLabels,
   type AgentStudioEntity,
   type AgentStudioFields,
   type AgentStudioPatch,
@@ -30,7 +32,11 @@ export class AgentStudioAdapter implements StudioHostAdapter<AgentStudioEntity, 
   allowPatchRestore = true;
   dirty = { computeDirty: computeAgentDirty, serializePatch: serializeAgentPatch, canDiscard: canDiscardAgentFields };
 
-  constructor(private readonly ws: WorkspaceAgentStudioTarget) {}
+  constructor(
+    private readonly ws: WorkspaceAgentStudioTarget,
+    private readonly evolutionLabels: AgentEvolutionLabels = createAgentEvolutionLabels(),
+    private readonly persistentInstructionsHelp = "When supported, delivered at startup through the selected runtime.",
+  ) {}
 
   titleFor(mode: "new" | "edit", entityId: string | undefined, entity: AgentStudioEntity | undefined): string {
     return agentStudioTitleFor(mode, entityId, entity);
@@ -44,6 +50,8 @@ export class AgentStudioAdapter implements StudioHostAdapter<AgentStudioEntity, 
       flagMap: FLAG_SUGGESTIONS,
       defaultCwd: deps.defaultCwd,
       verifyCandidates: deps.verifyCandidates(),
+      persistentInstructionsHelp: this.persistentInstructionsHelp,
+      evolutionLabels: this.evolutionLabels,
     };
     if (entityId === undefined) {
       return { status: "ok", entity: { fields: blankAgentFields(), ...reference } };

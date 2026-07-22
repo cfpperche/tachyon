@@ -114,6 +114,17 @@
             "description": "Enable identity from the canonical Tachyon-owned .tachyon/agents/<agent>/SOUL.md profile. true enables; false or absence disables. Agents only.",
             "type": "boolean"
           },
+          "selfEvolution": {
+            "description": "Opt in to Tachyon-owned, human-reviewed Agent Evolution. enabled:false or absence disables it. Agents only.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["enabled"],
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              }
+            }
+          },
           "role": {
             "description": "Built-in role template (spec 216): a reusable task contract composed with 'instructions' at delivery (template first). agents-only; not valid for a terminal.",
             "type": "string",

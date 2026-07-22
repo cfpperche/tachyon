@@ -18,6 +18,8 @@ import { boundDeliveryPreReservationRefusals, exerciseBoundDeliveryPreReservatio
 import { briefFilePath } from "../../src/agents/briefFile.js";
 import { SOUL_LAUNCH_RESERVATION_BOOT_ID, soulLaunchReservationsDir } from "../../src/agents/soul.js";
 import { paneTranscriptPath, paneTranscriptExists, ensurePaneTranscriptFile } from "../../src/agents/paneTranscript.js";
+import { EvolutionStore } from "../../src/evolution/EvolutionStore.js";
+import { resolveEvolutionStartupSnapshot } from "../../src/evolution/startupSnapshot.js";
 
 const WS = "/repo";
 const HASH = workspaceHash(WS);
@@ -299,6 +301,107 @@ describe("AgentManager", () => {
     await manager.spawn("claude");
     expect(sessions.has(`tachyon-${HASH}-claude`)).toBe(true);
     expect(spawned).toEqual(["claude"]);
+  });
+
+  it("SDD 421 pins Agent Evolution to the session and resolves a newer version only on fresh restart", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-agent-manager-evolution-"));
+    try {
+      const evolution = new EvolutionStore(root);
+      const first = await evolution.createCandidate("reviewer", {
+        reviewId: "review-first",
+        taskId: "t-111111",
+        target: { kind: "learning", content: "Use the first approved method.", reason: "It is repeatable." },
+      });
+      const firstDetail = await evolution.candidateDetail("reviewer", first.id);
+      await evolution.approveCandidate("reviewer", first.id, {
+        expectedActiveVersion: 0,
+        expectedTargetDigest: firstDetail.currentTargetDigest,
+      });
+
+      const fake = fakeTmux();
+      const ledger = new SessionLedger(root);
+      let config = configOf("agents:\n  reviewer:\n    cmd: claude\n    selfEvolution: {enabled: true}\n");
+      const manager = new AgentManager({
+        tmux: fake.tmux,
+        wsHash: workspaceHash(root),
+        workspaceRoot: root,
+        ledger,
+        getConfig: () => config,
+        getMaxAgents: () => 8,
+      });
+      await manager.spawn("reviewer");
+      expect(fake.newSessionArgs[0]!.at(-1)).toContain("Use the first approved method.");
+      const pinned = ledger.get("reviewer")!.evolution!;
+      expect(pinned.version).toBe(1);
+
+      const second = await evolution.createCandidate("reviewer", {
+        reviewId: "review-second",
+        taskId: "t-222222",
+        target: { kind: "learning", content: "Use the second approved method.", reason: "It improves the next run." },
+      });
+      const secondDetail = await evolution.candidateDetail("reviewer", second.id);
+      await evolution.approveCandidate("reviewer", second.id, {
+        expectedActiveVersion: 1,
+        expectedTargetDigest: secondDetail.currentTargetDigest,
+      });
+      expect(ledger.get("reviewer")!.evolution).toEqual(pinned);
+
+      await manager.restart("reviewer", { stop: "force", session: "new" });
+      expect(fake.respawnArgs.at(-1)!.at(-1)).toContain("Use the second approved method.");
+      expect(ledger.get("reviewer")!.evolution).toMatchObject({ version: 2, agent: "reviewer" });
+      expect(ledger.get("reviewer")!.evolution!.digest).not.toBe(pinned.digest);
+
+      const versionTwoDigest = ledger.get("reviewer")!.evolution!.digest;
+      config = configOf("agents:\n  reviewer:\n    cmd: grok\n    selfEvolution: {enabled: true}\n");
+      await manager.restart("reviewer", { stop: "force", session: "new" });
+      expect(fake.respawnArgs.at(-1)!.at(-1)).toContain("Use the second approved method.");
+      expect(ledger.get("reviewer")!.evolution).toMatchObject({ version: 2, digest: versionTwoDigest });
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("SDD 421 delivers the same approved evolution snapshot through every supported runtime channel", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-agent-manager-evolution-runtimes-"));
+    try {
+      const evolution = new EvolutionStore(root);
+      const candidate = await evolution.createCandidate("reviewer", {
+        reviewId: "review-runtime-parity",
+        taskId: "t-333333",
+        target: { kind: "learning", content: "Keep runtime-neutral evidence.", reason: "The profile belongs to Tachyon." },
+      });
+      const detail = await evolution.candidateDetail("reviewer", candidate.id);
+      await evolution.approveCandidate("reviewer", candidate.id, {
+        expectedActiveVersion: 0,
+        expectedTargetDigest: detail.currentTargetDigest,
+      });
+      const expected = await resolveEvolutionStartupSnapshot(root, "reviewer", evolution);
+
+      for (const cmd of ["claude", "codex", "agy", "gemini", "opencode", "grok", "hermes", "pi"]) {
+        const fake = fakeTmux();
+        const ledger = new SessionLedger(root);
+        const config = configOf(`agents:\n  reviewer:\n    cmd: ${cmd}\n    selfEvolution: {enabled: true}\n`);
+        const manager = new AgentManager({
+          tmux: fake.tmux,
+          wsHash: workspaceHash(root),
+          workspaceRoot: root,
+          ledger,
+          getConfig: () => config,
+          getMaxAgents: () => 8,
+          materializePiSessionDir: (name) => path.join(root, ".tachyon", "pi-sessions", name),
+        });
+
+        await manager.spawn("reviewer");
+        const session = sessionName(workspaceHash(root), "reviewer");
+        const delivered = cmd === "hermes"
+          ? fake.sessionEnv.get(session)?.HERMES_TUI_QUERY
+          : fake.newSessionArgs[0]?.at(-1);
+        expect(delivered, `runtime=${cmd}`).toContain("Keep runtime-neutral evidence.");
+        expect(ledger.get("reviewer")?.evolution, `runtime=${cmd}`).toEqual(expected);
+      }
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("rejects spawning an unknown agent without an ad-hoc cmd, accepts with one", async () => {
@@ -3136,7 +3239,7 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(soulResolver).not.toHaveBeenCalled();
   });
 
-  it("commitFork copies soul/role/task offer metadata without resolving or composing identity", async () => {
+  it("commitFork copies soul/role/task/evolution offer metadata without resolving or composing identity", async () => {
     const { manager, ledger, ws } = resumeHarness("agents:\n  claude:\n    cmd: claude\n    role: reviewer\n    soul: true\n", { resolveCurrentSession: async () => UUID });
     const profile = path.join(ws, ".tachyon", "agents", "claude");
     fs.mkdirSync(profile, { recursive: true, mode: 0o700 });
@@ -3144,6 +3247,8 @@ describe("AgentManager — session resume (spec 209)", () => {
     fs.writeFileSync(path.join(profile, "profile.json"), JSON.stringify({ schemaVersion: 1, profileId: "123e4567-e89b-42d3-a456-426614174000", owner: "claude", state: "active" }), { mode: 0o600 });
     await manager.spawn("claude", { taskBrief: "One-run objective." });
     expect(fs.readdirSync(path.join(ws, ".tachyon", "agent-profile-transactions", "launch-reservations"))).toEqual([]);
+    const evolution = await resolveEvolutionStartupSnapshot(ws, "claude");
+    ledger.record("claude", { ...ledger.get("claude")!, evolution });
     const source = ledger.get("claude")!;
     const plan = await manager.planFork("claude");
     fs.renameSync(path.join(profile, "SOUL.md"), path.join(profile, "SOUL.removed-after-spawn.md"));
@@ -3154,6 +3259,7 @@ describe("AgentManager — session resume (spec 209)", () => {
     const fork = ledger.get(forkName)!;
     expect(fork.def).toMatchObject({ role: "reviewer", soul: true, taskBrief: "One-run objective.", fork: true });
     expect(fork.identity).toEqual(source.identity);
+    expect(fork.evolution).toEqual(source.evolution);
     expect(compositor).not.toHaveBeenCalled();
     expect(soulResolver).not.toHaveBeenCalled();
   });
@@ -3299,12 +3405,17 @@ describe("AgentManager — session resume (spec 209)", () => {
     fs.mkdirSync(path.join(home, "sessions"), { recursive: true });
     fs.writeFileSync(path.join(home, "config.toml"), "model = \"gpt-5\"\n", "utf8");
     fs.writeFileSync(path.join(home, "sessions", "session.jsonl"), "{}\n", "utf8");
+    const evolutionRoot = path.join(ws, ".tachyon", "agents", name, "evolution");
+    fs.mkdirSync(path.join(evolutionRoot, "skills", "helper"), { recursive: true });
+    fs.writeFileSync(path.join(evolutionRoot, "profile.json"), "{}\n", "utf8");
+    fs.writeFileSync(path.join(evolutionRoot, "skills", "helper", "SKILL.md"), "# helper\n", "utf8");
 
     expect(() => forgetAgent(name, {
       workspaceRoot: ws,
       removeHarnessHome: (agent) => new HarnessManager(ws).remove(agent),
     })).not.toThrow();
     expect(fs.existsSync(home)).toBe(false);
+    expect(fs.existsSync(evolutionRoot)).toBe(false);
   });
 
   it("canonical forgetAgent footprint list names every per-agent removal surface", () => {
@@ -3317,6 +3428,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       "per-spawn settings file",
       "generated spawn brief and soul anchor",
       "durable pane transcript",
+      "Agent Evolution Profile",
     ]);
   });
 

@@ -23,6 +23,7 @@ export function blankTerminalFields(): FormState {
     kind: "terminal",
     instructions: "",
     soul: false,
+    selfEvolution: false,
     role: "",
     watch: "",
     steps: "",

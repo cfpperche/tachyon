@@ -47,7 +47,7 @@ function entryCount(doc: ReturnType<typeof parseDocument>): number {
 /** A `terminals:` entry must not carry AI-only fields (kind is implied; no AI) — strip them. */
 function sanitizeForSection(section: Section, entry: Record<string, unknown>): Record<string, unknown> {
   if (section !== "terminals") return entry;
-  const { kind: _kind, instructions: _instructions, soul: _soul, ...rest } = entry;
+  const { kind: _kind, instructions: _instructions, soul: _soul, selfEvolution: _selfEvolution, ...rest } = entry;
   return rest;
 }
 

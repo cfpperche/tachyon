@@ -270,6 +270,27 @@ describe("persistent engine protocol", () => {
     expect(isWorkspaceCommandV1({ ...soulReplace, input: { ...soulReplace.input, payload: { ...soulPayload, byteSize: 64 * 1024 + 1 } } })).toBe(false);
     expect(isWorkspaceCommandV1({ ...soulReplace, input: { ...soulReplace.input, expectedDigest: "stale" } })).toBe(false);
     expect(isWorkspaceCommandV1({ ...soulReplace, input: { ...soulReplace.input, sourcePath: "/tmp/SOUL.md" } })).toBe(false);
+    const evolutionDetail = {
+      schemaVersion: 1 as const,
+      method: "extension.query" as const,
+      input: { action: "evolution.candidate" as const, agent: "worker-1", candidateId: "candidate-one" },
+    };
+    expect(isWorkspaceQueryV1(evolutionDetail)).toBe(true);
+    expect(isWorkspaceQueryV1({ ...evolutionDetail, input: { ...evolutionDetail.input, candidateId: "../escape" } })).toBe(false);
+    const evolutionApprove = {
+      schemaVersion: 1 as const,
+      method: "extension.invoke" as const,
+      input: {
+        action: "evolution.approve" as const,
+        agent: "worker-1",
+        candidateId: "candidate-one",
+        expectedActiveVersion: 2,
+        expectedTargetDigest: "d".repeat(64),
+      },
+    };
+    expect(isWorkspaceCommandV1(evolutionApprove)).toBe(true);
+    expect(isWorkspaceCommandV1({ ...evolutionApprove, input: { ...evolutionApprove.input, expectedActiveVersion: -1 } })).toBe(false);
+    expect(isWorkspaceCommandV1({ ...evolutionApprove, input: { ...evolutionApprove.input, approved: true } })).toBe(false);
     expect(() => workspaceExtensionQuerySuccessV1(
       { schemaVersion: 1, method: "extension.query", input: { action: "agents.list" } },
       "x".repeat(2 * 1024 * 1024),
@@ -726,6 +747,7 @@ function studioForm(): WorkspaceStudioFormV1 {
     restartOnCrash: false,
     attention: false,
     soul: false,
+    selfEvolution: false,
     worktree: false,
     branch: "",
     worktreeSetup: "",

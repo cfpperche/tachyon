@@ -1,5 +1,12 @@
 import { envelope } from "../shared/studio/protocol";
-import { projectSoulProfileStatus, type AgentStudioPatch, type SoulProfileStatusMessage } from "./domain";
+import {
+  projectSoulProfileStatus,
+  type AgentEvolutionCandidateDetailMessage,
+  type AgentEvolutionCandidateSummaryMessage,
+  type AgentEvolutionSummaryMessage,
+  type AgentStudioPatch,
+  type SoulProfileStatusMessage,
+} from "./domain";
 
 export const readyMessage = () => envelope({ type: "ready" as const });
 export const patchMessage = (patch: AgentStudioPatch) => envelope({ type: "patch" as const, patch });
@@ -32,6 +39,36 @@ export const disableSoulMessage = (agent: string) => envelope({ type: "disableSo
 /** Webview → host: permanently delete only the confirmed Soul-owned canonical files. */
 export const deleteSoulProfileMessage = (agent: string) => envelope({ type: "deleteSoulProfile" as const, agent });
 
+/** Webview → host: reload the bounded active-profile summary and proposal list. */
+export const refreshEvolutionMessage = (agent: string) => envelope({ type: "refreshEvolution" as const, agent });
+/** Webview → host: load exact text/files for one selected proposal. */
+export const loadEvolutionCandidateMessage = (agent: string, candidateId: string) =>
+  envelope({ type: "loadEvolutionCandidate" as const, agent, candidateId });
+export const approveEvolutionCandidateMessage = (
+  agent: string,
+  candidateId: string,
+  expectedActiveVersion: number,
+  expectedTargetDigest?: string,
+) => envelope({
+  type: "approveEvolutionCandidate" as const,
+  agent,
+  candidateId,
+  expectedActiveVersion,
+  ...(expectedTargetDigest !== undefined ? { expectedTargetDigest } : {}),
+});
+export const rejectEvolutionCandidateMessage = (
+  agent: string,
+  candidateId: string,
+  expectedActiveVersion: number,
+  expectedTargetDigest?: string,
+) => envelope({
+  type: "rejectEvolutionCandidate" as const,
+  agent,
+  candidateId,
+  expectedActiveVersion,
+  ...(expectedTargetDigest !== undefined ? { expectedTargetDigest } : {}),
+});
+
 /** Host → webview: profile status / preview reply. */
 export const soulProfileStatusMessage = (status: SoulProfileStatusMessage) =>
   envelope({ type: "soulProfileStatus" as const, status: projectSoulProfileStatus(status) });
@@ -39,3 +76,18 @@ export const soulProfileStatusMessage = (status: SoulProfileStatusMessage) =>
 /** Host → webview: profile action failure (typed; no source path). */
 export const soulProfileErrorMessage = (agent: string, code: string, message: string) =>
   envelope({ type: "soulProfileError" as const, agent, code, message });
+
+export const evolutionSummaryMessage = (summary: AgentEvolutionSummaryMessage) =>
+  envelope({ type: "evolutionSummary" as const, summary });
+export const evolutionCandidatesMessage = (agent: string, candidates: AgentEvolutionCandidateSummaryMessage[]) =>
+  envelope({ type: "evolutionCandidates" as const, agent, candidates });
+export const evolutionCandidateDetailMessage = (agent: string, detail: AgentEvolutionCandidateDetailMessage) =>
+  envelope({ type: "evolutionCandidateDetail" as const, agent, detail });
+export const evolutionActionResultMessage = (
+  agent: string,
+  candidateId: string,
+  status: "approved" | "rejected",
+  activeVersion: number,
+) => envelope({ type: "evolutionActionResult" as const, agent, candidateId, status, activeVersion });
+export const evolutionErrorMessage = (agent: string, code: string, message: string, conflict: boolean) =>
+  envelope({ type: "evolutionError" as const, agent, code, message, conflict });

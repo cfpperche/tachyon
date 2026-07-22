@@ -58,6 +58,7 @@ import { cleanupStaleSoulLaunchReservationsSync, ensureSoulLaunchReservationsDir
 import { principalBlockedByProfileTransaction } from "./soulProfileTransactions.js";
 import { composeAgentPrompt, type SoulSnapshot } from "./promptLayers.js";
 import type { CanonicalDeliverySpawnReceipt } from "../delivery/types.js";
+import { resolveEvolutionStartupSnapshot, type EvolutionStartupSnapshot } from "../evolution/startupSnapshot.js";
 
 /** t-815796 MEDIUM fix — is `pid` still alive? `process.kill(pid, 0)` sends no signal, only probes.
  *  ESRCH is the one unambiguous "gone" answer; any other error (e.g. EPERM — exists, owned by someone
@@ -480,6 +481,8 @@ export interface AgentManagerOptions {
   onRestart?: (name: string) => void;
   /** Session-resume ledger (spec 209); absent = resume tracking disabled. */
   ledger?: SessionLedger;
+  /** Workspace-owned resolver so production startup uses host-custodied Evolution authority. */
+  resolveEvolutionSnapshot?: (principal: string) => Promise<EvolutionStartupSnapshot>;
   /**
    * spec 364 — current Bridge generation for durable bridgeClient stamps on spawn/resume.
    * Workspace provides this from BridgeClientRebindCoordinator; default 0 when unwired.
@@ -700,6 +703,25 @@ export class AgentManager {
   }
   private soulSnapshot(soul: ResolvedSoul, channel: SoulSnapshot["channel"]): SoulSnapshot {
     return { profileId: soul.profileId, source: soul.source, sha256: soul.sha256, chars: soul.chars, bytes: soul.bytes, offeredAt: new Date().toISOString(), channel, state: "offered" };
+  }
+
+  private async evolutionForFreshSession(
+    name: string,
+    def: AgentDef,
+    principal = name,
+  ): Promise<EvolutionStartupSnapshot | undefined> {
+    const prior = this.opts.ledger?.get(name);
+    if (managesOwnSession(def.cmd)) return prior?.evolution;
+    if (!instructionsDeliverable(def.cmd)) return undefined;
+    if (def.selfEvolution?.enabled === true) {
+      return this.opts.resolveEvolutionSnapshot?.(principal)
+        ?? resolveEvolutionStartupSnapshot(this.opts.workspaceRoot, principal);
+    }
+    if (prior?.def?.fork && prior.evolution) {
+      return this.opts.resolveEvolutionSnapshot?.(prior.evolution.agent)
+        ?? resolveEvolutionStartupSnapshot(this.opts.workspaceRoot, prior.evolution.agent);
+    }
+    return undefined;
   }
 
   private async preflightSoul(name: string, def: AgentDef): Promise<ResolvedSoul> {
@@ -1102,6 +1124,7 @@ export class AgentManager {
     taskBrief?: string,
     taskContract?: SpawnContract,
     soul?: ResolvedSoul,
+    evolution?: EvolutionStartupSnapshot,
     projectGuidance?: RenderedProjectGuidanceBundle,
   ): string | undefined {
     // An explicit --resume/--continue/--session-id command owns its transcript and argv. Do not add
@@ -1119,6 +1142,7 @@ export class AgentManager {
       soul,
       role: def.role,
       instructions: def.instructions,
+      evolution,
       bridgeGuidance: guidance,
       taskBrief,
       taskContractCompletion,
@@ -1375,6 +1399,9 @@ export class AgentManager {
       await this.assertLaunchPreflight(name, effective, { ...(definition?.env ?? this.definitionOf(name)?.env), ...(opts.env ?? {}) });
     }
     const resolvedSoul = definition?.soul ? await this.reserveSoulLaunch(name, bound!, definition) : undefined;
+    const resolvedEvolution = definition?.selfEvolution?.enabled === true
+      ? await this.evolutionForFreshSession(name, definition, bound ?? name)
+      : undefined;
     // Preparation is not an acquisition boundary: a same-named session can appear while
     // the Delivery reservation is being prepared.  The inner spawn boundary records
     // acquisition only after it rechecks every identity source.
@@ -1386,7 +1413,17 @@ export class AgentManager {
     const attempt: DeliveryLaunchAttempt = { mode, acquired: false, token: false, materialized: "not-started", session: "not-started", ledger: false };
     const prepared = await this.opts.prepareDeliveryJoin(name, request);
     try {
-      await this.spawnCore(name, opts, { cwd: prepared.cwd, worktree: prepared.worktree, commandOverride, definition, ephemeral: mode !== "declared", preliminaryPreflight, attempt, resolvedSoul });
+      await this.spawnCore(name, opts, {
+        cwd: prepared.cwd,
+        worktree: prepared.worktree,
+        commandOverride,
+        definition,
+        ephemeral: mode !== "declared",
+        preliminaryPreflight,
+        attempt,
+        resolvedSoul,
+        resolvedEvolution,
+      });
       await this.opts.confirmDeliveryJoin(name, request, prepared, await this.tryPanePid(name));
       // SDD 368 T14 — reverse binding after confirm; failure is a failed join (never unbound successful holder).
       this.persistDeliveryBinding(name, {
@@ -1622,7 +1659,7 @@ export class AgentManager {
   }
 
   /** Core spawn machinery shared by ordinary spawn and canonical Delivery execution. */
-  private async spawnCore(name: string, opts?: SpawnOptions, forced?: { cwd: string; worktree: WorktreeRecord; commandOverride?: string; definition?: AgentDef; ephemeral?: boolean; preliminaryPreflight?: boolean; attempt?: DeliveryLaunchAttempt; resolvedSoul?: ResolvedSoul }): Promise<CanonicalDeliverySpawnReceipt | void> {
+  private async spawnCore(name: string, opts?: SpawnOptions, forced?: { cwd: string; worktree: WorktreeRecord; commandOverride?: string; definition?: AgentDef; ephemeral?: boolean; preliminaryPreflight?: boolean; attempt?: DeliveryLaunchAttempt; resolvedSoul?: ResolvedSoul; resolvedEvolution?: EvolutionStartupSnapshot }): Promise<CanonicalDeliverySpawnReceipt | void> {
     const clearTransientState = () => {
       this.readyAgents.delete(name);
       this.readinessCache.delete(name);
@@ -1655,6 +1692,7 @@ export class AgentManager {
     // Identity preflight remains before dead-pane replacement. Runtime preflight moves below cwd/private-home
     // preparation so its probe sees the exact prospective environment and owns explicit compensation.
     const resolvedSoul = forced?.resolvedSoul ?? (def.soul ? await this.reserveSoulLaunch(name, this.soulPrincipal(name), def) : undefined);
+    const resolvedEvolution = forced?.resolvedEvolution ?? await this.evolutionForFreshSession(name, def);
 
     const session = this.session(name);
     let replaceDeadSession = false;
@@ -1813,6 +1851,7 @@ export class AgentManager {
       taskBrief,
       opts?.contract,
       resolvedSoul,
+      resolvedEvolution,
       projectGuidance,
     );
     // Session-resume bookkeeping (spec 209): mint a session id for runtimes that
@@ -2090,7 +2129,7 @@ export class AgentManager {
     const resumeBlock = adapter && !selfManaged ? this.withConfigHome(name, def, { runtime: adapter.runtime, sessionId: resumeId }) : undefined; // spec 240
     const promptCapability = openingPromptCapability(def.cmd);
     const identity = resolvedSoul ? this.soulSnapshot(resolvedSoul, promptCapability.status === "prompt" ? promptCapability.channel : "startup-argument") : undefined;
-    const shouldPersistLaunch = !!this.opts.ledger && !preservesDeclaredLedger && !!(adhoc || adapter || worktree || parent);
+    const shouldPersistLaunch = !!this.opts.ledger && !preservesDeclaredLedger && !!(adhoc || adapter || worktree || parent || resolvedEvolution);
     // A gated launch is restart-denied from its very first durable row. The marker is removed only
     // after the host has authenticated and persisted the delegation authority. This two-phase row
     // stays fail-closed even if canonical persistence and every subsequent cleanup write all fail.
@@ -2102,6 +2141,7 @@ export class AgentManager {
       cwd,
       declared: !adhoc,
       ...(identity ? { identity: { soul: identity, health: "offered" as const } } : {}),
+      ...(resolvedEvolution ? { evolution: resolvedEvolution } : {}),
       ...(delegationPending ? { delivery: { invalid: true as const } } : {}),
     };
     try {
@@ -3189,6 +3229,7 @@ export class AgentManager {
     // state changes so an invalid configured source leaves the live pane and its status untouched.
     const projectGuidance = this.projectGuidanceFor(def);
     const resolvedSoul = def.soul ? await this.reserveSoulLaunch(name, this.soulPrincipal(name), def) : undefined;
+    const resolvedEvolution = await this.evolutionForFreshSession(name, def);
     const session = this.session(name);
     let worktree: WorktreeRecord | undefined;
     let preparationLocked = false;
@@ -3236,6 +3277,7 @@ export class AgentManager {
       persistedDef?.taskBrief,
       persistedDef?.contract,
       resolvedSoul,
+      resolvedEvolution,
       projectGuidance,
     );
     this.stoppingSince.delete(name);
@@ -3307,7 +3349,7 @@ export class AgentManager {
     // Persist the (re)resolved worktree so cleanup/C2 keep a source of truth even if the
     // prior row was cleared/missing (review fix: restart used to discard the record), and refresh
     // the resume block (reset sessionId → name) for adapter-backed, non-self-managed runtimes.
-    if (this.opts.ledger && (worktree || (injected.adapter && !injected.selfManaged))) {
+    if (this.opts.ledger && (worktree || (injected.adapter && !injected.selfManaged) || resolvedEvolution || this.opts.ledger.get(name)?.evolution)) {
       const existing = this.opts.ledger.get(name);
       const resume = injected.adapter && !injected.selfManaged
         ? // spec 240 — restart mints a FRESH session under the CURRENT derived home, so RE-DERIVE configHome (do
@@ -3319,7 +3361,14 @@ export class AgentManager {
       const soul = resolvedSoul && capability.status === "prompt" ? this.soulSnapshot(resolvedSoul, capability.channel) : existing?.identity?.soul;
       const identity = soul ? { soul, health: "offered" as const } : existing?.identity;
       const { lifecycle: _terminalLifecycle, ...restartable } = existing ?? { declared: !this.adhoc.has(name) };
-      this.opts.ledger.record(name, { ...restartable, cwd, ...(worktree ? { worktree } : {}), resume, identity });
+      this.opts.ledger.record(name, {
+        ...restartable,
+        cwd,
+        ...(worktree ? { worktree } : {}),
+        resume,
+        identity,
+        evolution: resolvedEvolution,
+      });
     }
     if (preparationLocked && worktree) {
       const durable = this.opts.ledger?.get(name)?.worktree;
@@ -3939,6 +3988,7 @@ export class AgentManager {
       },
       resume: this.withConfigHome(forkName, forkDefinition, { runtime: src.runtime, sessionId: forkSessionId }),
       ...(sourceRecord?.identity ? { identity: structuredClone(sourceRecord.identity) } : {}),
+      ...(sourceRecord?.evolution ? { evolution: structuredClone(sourceRecord.evolution) } : {}),
       ...(worktree ? { worktree } : {}),
       cwd,
       declared: false,

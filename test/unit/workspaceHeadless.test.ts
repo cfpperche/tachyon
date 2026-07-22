@@ -24,6 +24,7 @@ import type { FormState } from "../../src/webview/formLogic.js";
 import { agentSoulPath } from "../../src/agents/soul.js";
 import { loadOrCreateHmacKey } from "../../src/bridge/callerIdentity.js";
 import { deterministicGitDeliveryId } from "../../src/git-delivery/store.js";
+import { renderEvolutionLearnings } from "../../src/evolution/domain.js";
 
 /**
  * spec 235 — the headless Workspace smoke test (the deferred spec-233 payoff): drive the orchestrator with
@@ -222,6 +223,87 @@ it("returns actionable Agent Studio messages for invalid soul values and unsuppo
   ws.dispose();
 });
 
+it("moves Evolution on rename while disable and runtime changes retain the same canonical profile", async () => {
+  const { ws } = await makeWorkspace(() => {}, {
+    tachyonYaml: "agents:\n  reviewer:\n    cmd: codex\n    selfEvolution: { enabled: true }\n",
+  });
+  const profile = await ws.evolutionStore.ensureProfile("reviewer");
+  const originalRoot = ws.evolutionStore.rootFor("reviewer");
+
+  expect(ws.writeTachyonConfigText("agents:\n  reviewer:\n    cmd: grok\n    selfEvolution: { enabled: false }\n")).toMatchObject({ ok: true });
+  expect((await ws.readAgentEvolutionOverview("reviewer")).summary).toMatchObject({
+    enabled: false,
+    profilePresent: true,
+    activeVersion: 0,
+  });
+  expect(ws.evolutionStore.rootFor("reviewer")).toBe(originalRoot);
+  expect((await ws.evolutionStore.readProfile("reviewer"))?.profileId).toBe(profile.profileId);
+
+  expect(ws.writeTachyonConfigText("agents:\n  reviewer:\n    cmd: grok\n    selfEvolution: { enabled: true }\n")).toMatchObject({ ok: true });
+  await ws.renameAgent("reviewer", "maintainer");
+  expect(ws.config?.agents.reviewer).toBeUndefined();
+  expect(ws.config?.agents.maintainer?.cmd).toBe("grok");
+  expect(await ws.evolutionStore.readProfile("reviewer")).toBeUndefined();
+  expect(await ws.evolutionStore.readProfile("maintainer")).toMatchObject({
+    profileId: profile.profileId,
+    agent: "maintainer",
+    activeVersion: 0,
+  });
+  const reusedOldName = await ws.evolutionStore.ensureProfile("reviewer");
+  expect(reusedOldName.profileId).not.toBe(profile.profileId);
+
+  await ws.forgetAgent("maintainer");
+  expect(fs.existsSync(ws.evolutionStore.rootFor("maintainer"))).toBe(false);
+  const recreated = await ws.evolutionStore.ensureProfile("maintainer");
+  expect(recreated.profileId).not.toBe(profile.profileId);
+  await ws.dispose();
+});
+
+it("uses Workspace authority for first-session creation and rejects tampered production startup", async () => {
+  const { ws } = await makeWorkspace(() => {}, {
+    tachyonYaml: [
+      "agents:",
+      "  fresh:",
+      "    cmd: claude",
+      "    selfEvolution: { enabled: true }",
+      "  tampered:",
+      "    cmd: claude",
+      "    selfEvolution: { enabled: true }",
+      "",
+    ].join("\n"),
+  });
+  await ws.manager.spawn("fresh");
+  await expect(ws.evolutionStore.readProfile("fresh")).resolves.toMatchObject({ agent: "fresh", activeVersion: 0 });
+
+  await ws.evolutionStore.ensureProfile("tampered");
+  await fs.promises.writeFile(ws.evolutionStore.learningsPath("tampered"), renderEvolutionLearnings([{
+    id: "forged",
+    sourceTaskId: "t-999999",
+    sourceReviewId: "review-forged",
+    approvedAt: "2026-07-21T20:00:00.000Z",
+    content: "Unapproved edit.",
+  }]), "utf8");
+  await expect(ws.manager.spawn("tampered")).rejects.toMatchObject({ code: "evolution/authority-invalid" });
+  await ws.dispose();
+});
+
+it("rolls back a declared agent rename when the Evolution destination already exists", async () => {
+  const { ws } = await makeWorkspace(() => {}, {
+    tachyonYaml: "agents:\n  reviewer:\n    cmd: codex\n    selfEvolution: { enabled: true }\n",
+  });
+  const reviewer = await ws.evolutionStore.ensureProfile("reviewer");
+  const orphan = await ws.evolutionStore.ensureProfile("maintainer");
+
+  await expect(ws.renameAgent("reviewer", "maintainer")).rejects.toMatchObject({
+    code: "evolution/profile-conflict",
+  });
+  expect(ws.config?.agents.reviewer?.cmd).toBe("codex");
+  expect(ws.config?.agents.maintainer).toBeUndefined();
+  expect(await ws.evolutionStore.readProfile("reviewer")).toEqual(reviewer);
+  expect(await ws.evolutionStore.readProfile("maintainer")).toEqual(orphan);
+  await ws.dispose();
+});
+
 it("runs a profile mutation through the real Workspace config writer without reconciling its own live journal", async () => {
   const { ws } = await makeWorkspace(() => {}, { tachyonYaml: "agents:\n  Ada:\n    cmd: codex\n" });
   try {
@@ -380,6 +462,56 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
       expect(fs.readFileSync(spawnFile, "utf8")).toBe(originalSpawnBrief);
     } finally {
       ws.dispose();
+    }
+  });
+
+  it("SDD 421 re-anchor reuses the session's pinned Evolution snapshot", async () => {
+    const root = mkdir();
+    fs.writeFileSync(
+      path.join(root, "tachyon.yml"),
+      "agents:\n  a:\n    cmd: claude\n    selfEvolution: {enabled: true}\n",
+      "utf8",
+    );
+    const host = new FakeHost(mkdir());
+    const fake = fakeTmux();
+    const ws = await Workspace.createForTest(
+      root,
+      { host, onViewsChanged: () => {} },
+      { tmux: fake.tmux, startBridge: false },
+    );
+    try {
+      const first = await ws.evolutionStore.createCandidate("a", {
+        reviewId: "review-first",
+        taskId: "t-111111",
+        target: { kind: "learning", content: "Pinned first-session learning.", reason: "Approved before spawn." },
+      });
+      const firstDetail = await ws.evolutionStore.candidateDetail("a", first.id);
+      await ws.evolutionStore.approveCandidate("a", first.id, {
+        expectedActiveVersion: 0,
+        expectedTargetDigest: firstDetail.currentTargetDigest,
+      });
+      await ws.manager.spawn("a");
+      expect(ws.ledger.get("a")?.evolution?.version).toBe(1);
+
+      const second = await ws.evolutionStore.createCandidate("a", {
+        reviewId: "review-second",
+        taskId: "t-222222",
+        target: { kind: "learning", content: "Next-session-only learning.", reason: "Approved after spawn." },
+      });
+      const secondDetail = await ws.evolutionStore.candidateDetail("a", second.id);
+      await ws.evolutionStore.approveCandidate("a", second.id, {
+        expectedActiveVersion: 1,
+        expectedTargetDigest: secondDetail.currentTargetDigest,
+      });
+
+      await ws.reanchor("a");
+      const reanchorPayload = fake.sent.get(ws.manager.session("a")) ?? "";
+      expect(reanchorPayload).toContain("Pinned first-session learning.");
+      expect(reanchorPayload).not.toContain("Next-session-only learning.");
+      expect(ws.ledger.get("a")?.evolution?.version).toBe(1);
+    } finally {
+      ws.dispose();
+      await fake.cleanup();
     }
   });
 
@@ -1627,12 +1759,28 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
       JSON.stringify({ agent: "a", sessionId: "s-a", transcriptPath: "/p/a.jsonl", cwd: ws.workspaceRoot, source: "startup", ts: "t2" }),
     ].join("\n") + "\n", "utf8");
 
-    (ws as unknown as { gcLedger(declaredInConfig: Set<string>, live: Set<string>): void }).gcLedger(new Set(["a", "b"]), new Set());
+    await (ws as unknown as { gcLedger(declaredInConfig: Set<string>, live: Set<string>): Promise<void> })
+      .gcLedger(new Set(["a", "b"]), new Set());
 
     expect(ws.ledger.get("old")).toBeUndefined();
     expect(fs.existsSync(logFile)).toBe(false);
     expect(fs.existsSync(stateFile)).toBe(false);
     expect(readSessionOwners(sessionOwnersFile(ws.workspaceRoot)).map((r) => r.agent)).toEqual(["a"]);
+    ws.dispose();
+  });
+
+  it("keeps a removed agent footprint retryable when authority retirement fails", async () => {
+    const { ws, host } = await makeWorkspace();
+    ws.ledger.record("old", { def: { cmd: "sh", kind: "agent" }, cwd: ws.workspaceRoot, declared: true, updatedAt: "t" });
+    await ws.evolutionStore.ensureProfile("old");
+    vi.spyOn(ws.evolutionStore, "retireAgent").mockRejectedValueOnce(new Error("secret storage unavailable"));
+
+    await (ws as unknown as { gcLedger(declaredInConfig: Set<string>, live: Set<string>): Promise<void> })
+      .gcLedger(new Set(), new Set());
+
+    expect(ws.ledger.get("old")).toBeDefined();
+    expect(fs.existsSync(ws.evolutionStore.rootFor("old"))).toBe(true);
+    expect(host.notices.some((notice) => notice.level === "warn" && notice.message.includes("secret storage unavailable"))).toBe(true);
     ws.dispose();
   });
 

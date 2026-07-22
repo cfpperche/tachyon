@@ -1,4 +1,9 @@
 import type { FormState, QuickAddChip } from "../formLogic.js";
+import type {
+  EvolutionStudioCandidateDetail,
+  EvolutionStudioCandidateSummary,
+  EvolutionStudioSummary,
+} from "../../evolution/studioProjection.js";
 
 /**
  * spec 350 Phase 3 T1 — the Agent-kind studio's vscode-free AND node-free domain: pure entity/fields/patch
@@ -38,12 +43,21 @@ export const AGENT_STUDIO_WEBVIEW_MESSAGE_NAMES = [
   "enableSoul",
   "disableSoul",
   "deleteSoulProfile",
+  "refreshEvolution",
+  "loadEvolutionCandidate",
+  "approveEvolutionCandidate",
+  "rejectEvolutionCandidate",
 ] as const;
 
 export const AGENT_STUDIO_HOST_MESSAGE_NAMES = [
   "cwd",
   "soulProfileStatus",
   "soulProfileError",
+  "evolutionSummary",
+  "evolutionCandidates",
+  "evolutionCandidateDetail",
+  "evolutionActionResult",
+  "evolutionError",
 ] as const;
 
 /** Complete surface vocabulary for collision checks only; boundary decoders use the directional lists. */
@@ -90,7 +104,21 @@ export type AgentStudioSoulActionMessage =
   | { type: "replaceSoul"; agent: string; contentBase64: string; expectedDigest: string }
   | { type: "adoptSoulProfile"; agent: string; expectedDigest: string };
 
-export type AgentStudioInboundDomainMessage = { type: "browse" } | AgentStudioSoulActionMessage;
+export type AgentStudioEvolutionActionMessage =
+  | { type: "refreshEvolution"; agent: string }
+  | { type: "loadEvolutionCandidate"; agent: string; candidateId: string }
+  | {
+      type: "approveEvolutionCandidate" | "rejectEvolutionCandidate";
+      agent: string;
+      candidateId: string;
+      expectedActiveVersion: number;
+      expectedTargetDigest?: string;
+    };
+
+export type AgentStudioInboundDomainMessage =
+  | { type: "browse" }
+  | AgentStudioSoulActionMessage
+  | AgentStudioEvolutionActionMessage;
 
 function exactKeys(value: Record<string, unknown>, expected: readonly string[]): boolean {
   const keys = Object.keys(value).filter((key) => key !== "studioProtocolVersion").sort();
@@ -102,6 +130,33 @@ export function validateAgentStudioInboundMessage(raw: unknown): AgentStudioInbo
   if (!raw || typeof raw !== "object") return undefined;
   const value = raw as Record<string, unknown>;
   if (value.type === "browse") return exactKeys(value, ["type"]) ? { type: "browse" } : undefined;
+  if (value.type === "refreshEvolution") {
+    return exactKeys(value, ["type", "agent"]) && typeof value.agent === "string" && AGENT_NAME_RE.test(value.agent)
+      ? { type: "refreshEvolution", agent: value.agent }
+      : undefined;
+  }
+  if (value.type === "loadEvolutionCandidate") {
+    return exactKeys(value, ["type", "agent", "candidateId"])
+      && typeof value.agent === "string" && AGENT_NAME_RE.test(value.agent)
+      && typeof value.candidateId === "string" && /^candidate-[A-Za-z0-9_-]+$/.test(value.candidateId)
+      ? { type: "loadEvolutionCandidate", agent: value.agent, candidateId: value.candidateId }
+      : undefined;
+  }
+  if (value.type === "approveEvolutionCandidate" || value.type === "rejectEvolutionCandidate") {
+    const hasDigest = value.expectedTargetDigest !== undefined;
+    if (!exactKeys(value, ["type", "agent", "candidateId", "expectedActiveVersion", ...(hasDigest ? ["expectedTargetDigest"] : [])])
+      || typeof value.agent !== "string" || !AGENT_NAME_RE.test(value.agent)
+      || typeof value.candidateId !== "string" || !/^candidate-[A-Za-z0-9_-]+$/.test(value.candidateId)
+      || !Number.isSafeInteger(value.expectedActiveVersion) || (value.expectedActiveVersion as number) < 0
+      || (hasDigest && (typeof value.expectedTargetDigest !== "string" || !SHA256_RE.test(value.expectedTargetDigest)))) return undefined;
+    return {
+      type: value.type,
+      agent: value.agent,
+      candidateId: value.candidateId,
+      expectedActiveVersion: value.expectedActiveVersion as number,
+      ...(hasDigest ? { expectedTargetDigest: value.expectedTargetDigest as string } : {}),
+    };
+  }
   if (typeof value.type !== "string" || !AGENT_STUDIO_WEBVIEW_MESSAGE_NAMES.includes(value.type as never)
     || value.type === "browse" || typeof value.agent !== "string" || !AGENT_NAME_RE.test(value.agent)) return undefined;
   if (value.type === "adoptSoulProfile") {
@@ -178,7 +233,56 @@ export function isSoulProfileStatusMessage(raw: unknown): raw is SoulProfileStat
   return value.selfSelected === undefined || typeof value.selfSelected === "boolean";
 }
 
-/** Runtime validation for the three host-only domain responses consumed by the browser shell. */
+function isEvolutionCandidateSummary(raw: unknown): raw is AgentEvolutionCandidateSummaryMessage {
+  if (!raw || typeof raw !== "object") return false;
+  const value = raw as Partial<AgentEvolutionCandidateSummaryMessage>;
+  return typeof value.id === "string" && /^candidate-[A-Za-z0-9_-]+$/.test(value.id)
+    && typeof value.reviewId === "string" && /^review-[A-Za-z0-9_-]+$/.test(value.reviewId)
+    && typeof value.taskId === "string" && value.taskId.length > 0
+    && (value.taskTitle === undefined || typeof value.taskTitle === "string")
+    && typeof value.createdAt === "string"
+    && ["pending", "approved", "rejected"].includes(value.status ?? "")
+    && ["learning", "skill"].includes(value.kind ?? "")
+    && typeof value.reason === "string"
+    && (value.operation === undefined || ["create", "update"].includes(value.operation))
+    && (value.skillName === undefined || typeof value.skillName === "string");
+}
+
+function isEvolutionSummary(raw: unknown): raw is AgentEvolutionSummaryMessage {
+  if (!raw || typeof raw !== "object") return false;
+  const value = raw as Partial<AgentEvolutionSummaryMessage>;
+  if (typeof value.agent !== "string" || !AGENT_NAME_RE.test(value.agent)
+    || typeof value.enabled !== "boolean" || typeof value.profilePresent !== "boolean"
+    || !Number.isSafeInteger(value.activeVersion) || (value.activeVersion ?? -1) < 0
+    || !Number.isSafeInteger(value.pendingCount) || (value.pendingCount ?? -1) < 0
+    || !Array.isArray(value.activeLearnings) || !Array.isArray(value.activeSkillNames)) return false;
+  if (!value.activeLearnings.every((entry) => entry && typeof entry.id === "string" && typeof entry.content === "string")
+    || !value.activeSkillNames.every((name) => typeof name === "string")) return false;
+  if (value.lastReview === undefined) return true;
+  return typeof value.lastReview.id === "string" && /^review-[A-Za-z0-9_-]+$/.test(value.lastReview.id)
+    && typeof value.lastReview.taskId === "string" && typeof value.lastReview.taskTitle === "string"
+    && typeof value.lastReview.createdAt === "string"
+    && ["pending", "submitted", "no-proposal", "failed"].includes(value.lastReview.status)
+    && (value.lastReview.failure === undefined || typeof value.lastReview.failure === "string");
+}
+
+function isEvolutionCandidateDetail(raw: unknown): raw is AgentEvolutionCandidateDetailMessage {
+  if (!isEvolutionCandidateSummary(raw)) return false;
+  const value = raw as AgentEvolutionCandidateDetailMessage;
+  if (!Number.isSafeInteger(value.expectedActiveVersion) || value.expectedActiveVersion < 0
+    || (value.expectedTargetDigest !== undefined && !SHA256_RE.test(value.expectedTargetDigest))) return false;
+  if (value.kind === "learning") return typeof value.learningContent === "string" && value.files === undefined;
+  const validFiles = (files: unknown): boolean => Array.isArray(files) && files.every((file) => {
+    if (!file || typeof file !== "object") return false;
+    const candidate = file as Record<string, unknown>;
+    return typeof candidate.path === "string" && typeof candidate.content === "string"
+      && (candidate.executable === undefined || typeof candidate.executable === "boolean");
+  });
+  return value.learningContent === undefined && validFiles(value.files)
+    && (value.currentFiles === undefined || validFiles(value.currentFiles));
+}
+
+/** Runtime validation for host-only domain responses consumed by the browser shell. */
 export function validateAgentStudioHostDomainMessage(raw: unknown): boolean {
   if (!raw || typeof raw !== "object") return false;
   const value = raw as Record<string, unknown>;
@@ -189,6 +293,33 @@ export function validateAgentStudioHostDomainMessage(raw: unknown): boolean {
       && typeof value.agent === "string" && AGENT_NAME_RE.test(value.agent)
       && typeof value.code === "string" && /^soul\/[a-z0-9-]+$/.test(value.code)
       && typeof value.message === "string" && value.message.length <= 2_000;
+  }
+  if (value.type === "evolutionSummary") {
+    return exactKeys(value, ["type", "summary"]) && isEvolutionSummary(value.summary);
+  }
+  if (value.type === "evolutionCandidates") {
+    return exactKeys(value, ["type", "agent", "candidates"])
+      && typeof value.agent === "string" && AGENT_NAME_RE.test(value.agent)
+      && Array.isArray(value.candidates) && value.candidates.every(isEvolutionCandidateSummary);
+  }
+  if (value.type === "evolutionCandidateDetail") {
+    return exactKeys(value, ["type", "agent", "detail"])
+      && typeof value.agent === "string" && AGENT_NAME_RE.test(value.agent)
+      && isEvolutionCandidateDetail(value.detail);
+  }
+  if (value.type === "evolutionActionResult") {
+    return exactKeys(value, ["type", "agent", "candidateId", "status", "activeVersion"])
+      && typeof value.agent === "string" && AGENT_NAME_RE.test(value.agent)
+      && typeof value.candidateId === "string" && /^candidate-[A-Za-z0-9_-]+$/.test(value.candidateId)
+      && ["approved", "rejected"].includes(String(value.status))
+      && Number.isSafeInteger(value.activeVersion) && (value.activeVersion as number) >= 0;
+  }
+  if (value.type === "evolutionError") {
+    return exactKeys(value, ["type", "agent", "code", "message", "conflict"])
+      && typeof value.agent === "string" && AGENT_NAME_RE.test(value.agent)
+      && typeof value.code === "string" && /^evolution\/[a-z0-9-]+$/.test(value.code)
+      && typeof value.message === "string" && value.message.length <= 2_000
+      && typeof value.conflict === "boolean";
   }
   return false;
 }
@@ -204,7 +335,99 @@ export interface AgentStudioEntity {
   flagMap: Record<string, string[]>;
   defaultCwd: string;
   verifyCandidates: string[];
+  persistentInstructionsHelp: string;
+  evolutionLabels: AgentEvolutionLabels;
 }
+
+/** Human-visible copy is translated by the extension host and projected in the load entity. */
+export interface AgentEvolutionLabels {
+  title: string;
+  description: string;
+  enable: string;
+  enableHelp: string;
+  enabled: string;
+  disabled: string;
+  saveFirst: string;
+  loading: string;
+  refresh: string;
+  activeVersion: string;
+  pendingProposals: string;
+  lastReview: string;
+  noReview: string;
+  reviewPending: string;
+  reviewSubmitted: string;
+  reviewNoProposal: string;
+  reviewFailed: string;
+  activeLearnings: string;
+  activeSkills: string;
+  none: string;
+  proposals: string;
+  noProposals: string;
+  learning: string;
+  skill: string;
+  create: string;
+  update: string;
+  sourceTask: string;
+  reason: string;
+  inspect: string;
+  before: string;
+  proposed: string;
+  approve: string;
+  reject: string;
+  approved: string;
+  rejected: string;
+  nextSession: string;
+  profilePending: string;
+}
+
+export type AgentStudioTranslate = (message: string, ...args: (string | number | boolean)[]) => string;
+
+/** Called by the host with vscode.l10n.t; the browser only receives the resulting strings. */
+export function createAgentEvolutionLabels(t: AgentStudioTranslate = (message) => message): AgentEvolutionLabels {
+  return {
+    title: t("Agent Evolution"),
+    description: t("Tachyon reviews completed tasks and proposes reusable learnings or Agent Skills."),
+    enable: t("Enable self-evolution for this agent"),
+    enableHelp: t("Every proposal stays inactive until you approve or reject it here."),
+    enabled: t("Enabled"),
+    disabled: t("Disabled"),
+    saveFirst: t("Save agent first"),
+    loading: t("Loading evolution state…"),
+    refresh: t("Refresh"),
+    activeVersion: t("Active version"),
+    pendingProposals: t("Pending proposals"),
+    lastReview: t("Last task review"),
+    noReview: t("No completed-task review yet"),
+    reviewPending: t("Review pending"),
+    reviewSubmitted: t("Proposals submitted"),
+    reviewNoProposal: t("Reviewed — no useful proposal"),
+    reviewFailed: t("Review failed"),
+    activeLearnings: t("Active learnings"),
+    activeSkills: t("Active Agent Skills"),
+    none: t("None"),
+    proposals: t("Proposals"),
+    noProposals: t("No proposals yet"),
+    learning: t("Learning"),
+    skill: t("Agent Skill"),
+    create: t("Create"),
+    update: t("Update"),
+    sourceTask: t("Source Task"),
+    reason: t("Reason"),
+    inspect: t("Inspect proposal"),
+    before: t("Current"),
+    proposed: t("Proposed"),
+    approve: t("Approve"),
+    reject: t("Reject"),
+    approved: t("Approved"),
+    rejected: t("Rejected"),
+    nextSession: t("Approved changes are available only in the next fresh session. The current session does not change."),
+    profilePending: t("The Evolution Profile will be created after the first completed-task review."),
+  };
+}
+
+export type AgentEvolutionSummaryMessage = EvolutionStudioSummary;
+export type AgentEvolutionCandidateSummaryMessage = EvolutionStudioCandidateSummary;
+export type AgentEvolutionCandidateDetailMessage = EvolutionStudioCandidateDetail;
 
 export type AgentStudioFields = FormState;
 export type AgentStudioPatch = FormState;
@@ -218,6 +441,7 @@ export function blankAgentFields(): FormState {
     kind: "agent",
     instructions: "",
     soul: false,
+    selfEvolution: false,
     role: "",
     watch: "",
     steps: "",

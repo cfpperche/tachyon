@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { parseConfig } from "../../src/config/loadConfig.js";
-import { blankAgentFields, computeAgentDirty, serializeAgentPatch } from "../../src/webview/agent-studio-shell/domain.js";
+import { blankAgentFields, computeAgentDirty, createAgentEvolutionLabels, serializeAgentPatch } from "../../src/webview/agent-studio-shell/domain.js";
 import { fromDef, toEntry, validateForm, type FormState } from "../../src/webview/formLogic.js";
 
 describe("spec 377 T14 soul enablement in Agent Studio", () => {
@@ -20,7 +20,7 @@ describe("spec 377 T14 soul enablement in Agent Studio", () => {
     expect(toEntry(enabled).soul).toBe(true);
     expect(toEntry(disabled).soul).toBeUndefined();
 
-    expect(computeAgentDirty({ fields: enabled, chips: [], flagMap: {}, defaultCwd: "", verifyCandidates: [] }, { ...enabled, soul: false })).toBe(true);
+    expect(computeAgentDirty({ fields: enabled, chips: [], flagMap: {}, defaultCwd: "", verifyCandidates: [], persistentInstructionsHelp: "", evolutionLabels: createAgentEvolutionLabels() }, { ...enabled, soul: false })).toBe(true);
     expect(serializeAgentPatch({ ...enabled, soul: false }, true)?.soul).toBe(false);
   });
 

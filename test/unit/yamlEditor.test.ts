@@ -94,9 +94,35 @@ describe("YamlConfigEditor", () => {
     expect(terminalText).not.toContain("soul:");
   });
 
+  it("round-trips Agent Evolution and strips it from terminal entries", () => {
+    const agentText = upsertAgent(undefined, "ada", { cmd: "codex", selfEvolution: { enabled: true } }).text;
+    expect(expectValid(agentText).agents.ada.selfEvolution).toEqual({ enabled: true });
+    expect(agentText).toContain("selfEvolution:");
+
+    const terminalText = upsertAgent(
+      undefined,
+      "shell",
+      { cmd: "bash", kind: "terminal", selfEvolution: { enabled: true } },
+      undefined,
+      "terminals",
+    ).text;
+    expect(expectValid(terminalText).agents.shell.selfEvolution).toBeUndefined();
+    expect(terminalText).not.toContain("selfEvolution:");
+  });
+
   it("declares soul as a JSON-schema boolean", () => {
     const soul = schema.properties.agents.additionalProperties.properties.soul;
     expect(soul.type).toBe("boolean");
+  });
+
+  it("declares Agent Evolution as a closed JSON-schema opt-in", () => {
+    const evolution = schema.properties.agents.additionalProperties.properties.selfEvolution;
+    expect(evolution).toMatchObject({
+      type: "object",
+      additionalProperties: false,
+      required: ["enabled"],
+      properties: { enabled: { type: "boolean" } },
+    });
   });
 
   it("cloneAgent copies the full definition under a new name", () => {

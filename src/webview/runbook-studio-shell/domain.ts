@@ -21,6 +21,7 @@ export function blankRunbookFields(): FormState {
     kind: "runbook",
     instructions: "",
     soul: false,
+    selfEvolution: false,
     role: "",
     watch: "",
     steps: "",

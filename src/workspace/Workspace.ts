@@ -123,6 +123,16 @@ import { Scheduler } from "../schedule/Scheduler.js";
 import { ProposalStore } from "../schedule/ProposalStore.js";
 import { PinStore } from "../pins/PinStore.js";
 import { TaskStore } from "../tasks/TaskStore.js";
+import { EvolutionStore } from "../evolution/EvolutionStore.js";
+import { resolveEvolutionStartupSnapshot } from "../evolution/startupSnapshot.js";
+import { EvolutionCoordinator } from "../evolution/EvolutionCoordinator.js";
+import { declaredHarnessSkillNames } from "../evolution/skillBundle.js";
+import {
+  readEvolutionStudioCandidateDetail,
+  readEvolutionStudioOverview,
+  type EvolutionStudioCandidateDetail,
+  type EvolutionStudioOverview,
+} from "../evolution/studioProjection.js";
 import { ValidationStore } from "../validations/ValidationStore.js";
 import { ProbeService } from "../probe/ProbeService.js";
 import { ProbeStore } from "../probe/ProbeStore.js";
@@ -482,6 +492,8 @@ export class Workspace {
   readonly lifecycle: LifecycleMonitor;
   readonly pinStore: PinStore;
   readonly taskStore: TaskStore;
+  readonly evolutionStore: EvolutionStore;
+  private readonly evolutionCoordinator: EvolutionCoordinator;
   private readonly taskNotifications: TaskNotificationService;
   readonly validationStore: ValidationStore;
   readonly continuityStore: ContinuityStore;
@@ -768,6 +780,11 @@ export class Workspace {
       // resolution must use the same value; an unknown external home then fails capture closed.
       defaultClaudeConfigHome,
       ledger: this.ledger,
+      resolveEvolutionSnapshot: (principal) => resolveEvolutionStartupSnapshot(
+        this.workspaceRoot,
+        principal,
+        this.evolutionStore,
+      ),
       // spec 364 — stamp bound_generation from the live coordinator (0 until first listener-ready bump).
       getBridgeGeneration: () => this.clientRebind?.getGeneration() ?? 0,
       resolveCaptureId: (runtime, cwd, configHome) => runtime === "opencode"
@@ -1339,6 +1356,7 @@ export class Workspace {
       {
         onCrash: (agent, exitCode, willRestart, delayMs) => {
           this.waiters.notifyDead(agent, exitCode);
+          void this.evolutionCoordinator.onAgentUnavailable(agent, `agent '${agent}' exited before submitting the review`);
           this.noticeQueue.clear(agent);
           this.pokeParentOnDeath(agent, exitCode !== undefined ? String(exitCode) : "killed");
           // spec 230 — a pipeline node's process died: feed the exit to the executor (an exit-based node
@@ -1362,6 +1380,7 @@ export class Workspace {
         },
         onCleanExit: (agent) => {
           this.waiters.notifyDead(agent, 0);
+          void this.evolutionCoordinator.onAgentUnavailable(agent, `agent '${agent}' exited before submitting the review`);
           this.noticeQueue.clear(agent);
           this.pokeParentOnDeath(agent, "0");
           // spec 230 — a pipeline `cmd:` one-shot exited cleanly: complete its node by exit code.
@@ -1379,6 +1398,7 @@ export class Workspace {
         },
         onGone: (agent) => {
           this.waiters.notifyGone(agent);
+          void this.evolutionCoordinator.onAgentUnavailable(agent, `agent '${agent}' stopped before submitting the review`);
           this.noticeQueue.clear(agent);
           this.pokeParentOnDeath(agent, "killed", true);
         },
@@ -1392,7 +1412,28 @@ export class Workspace {
     );
 
     this.pinStore = new PinStore(workspaceRoot);
-    this.taskStore = new TaskStore(workspaceRoot);
+    this.evolutionStore = new EvolutionStore(workspaceRoot, {
+      reservedSkillNames: (name) => declaredHarnessSkillNames(
+        workspaceRoot,
+        this.config?.agents[name]?.harness?.skills,
+      ),
+      authorityIntegrityKey: () => this.authorityIntegrityKey,
+      authorityHead: this.canonicalAuthorityHeadPort(),
+      sessionSnapshotsRoot: path.join(deps.host.globalStoragePath(), "evolution-session-snapshots", this.wsHash),
+    });
+    this.evolutionCoordinator = new EvolutionCoordinator({
+      store: this.evolutionStore,
+      declaredAgent: (name) => this.config?.agents[name],
+      sessionFor: (name) => this.manager.session(name),
+      activitySeq: (name) => this.currentActivitySeq(name),
+      deliverNotice: (name, line) => this.deliverNotice(name, line),
+      onReviewChanged: () => deps.onViewsChanged("agents"),
+      onError: (message) => this.host.notify(message, "error"),
+    });
+    this.taskStore = new TaskStore(workspaceRoot, {
+      evolutionCompletionFor: (event) => this.evolutionCoordinator.completionMarker(event),
+      onMutation: (event) => this.evolutionCoordinator.onTaskMutation(event),
+    });
     this.validationStore = new ValidationStore(workspaceRoot);
     this.continuityStore = new ContinuityStore(workspaceRoot);
     this.continuityState = new ContinuityState(workspaceRoot);
@@ -1501,6 +1542,7 @@ export class Workspace {
         tmux: this.tmux,
         pins: this.pinStore,
         tasks: this.taskStore,
+        evolution: this.evolutionStore,
         validations: this.validationStore,
         continuity: this.continuityStore,
         currentActivitySeq: (agent) => this.currentActivitySeq(agent),
@@ -2385,6 +2427,10 @@ export class Workspace {
   private async commitAuthorityHead(mapKey: string, head: AuthorityHead): Promise<void> {
     const updated = new Map(this.authorityHeads);
     updated.set(mapKey, { ...head });
+    await this.commitAuthorityHeads(updated, mapKey);
+  }
+
+  private async commitAuthorityHeads(updated: Map<string, AuthorityHead>, operation: string): Promise<void> {
     const serialized = serializeAuthorityHeads(updated);
     // SecretStorage is prepared before the workspace/SQLite commit. A crash after this await leaves
     // the head ahead of workspace state, which is an explicit fail-closed recovery condition.
@@ -2392,9 +2438,60 @@ export class Workspace {
     const persisted = parseAuthorityHeads(await this.host.getSecret(this.authorityHeadsSecretKey()));
     if (serializeAuthorityHeads(persisted) !== serialized) {
       this.authorityHeads = persisted;
-      throw new Error(`authority head '${mapKey}' changed during durable prepare`);
+      throw new Error(`authority head '${operation}' changed during durable prepare`);
     }
     this.authorityHeads = persisted;
+  }
+
+  private async retireAuthorityHead(identity: string, expectedMac?: string): Promise<void> {
+    const retired = this.authorityHeadPrepareTail.then(async () => {
+      if (!identity) throw new Error("invalid authority freshness identity");
+      this.authorityHeads = parseAuthorityHeads(await this.host.getSecret(this.authorityHeadsSecretKey()));
+      const mapKey = this.authorityHeadMapKey(identity);
+      const current = this.authorityHeads.get(mapKey);
+      if (!current) return;
+      if (expectedMac !== undefined && current.mac !== expectedMac) {
+        throw new Error(`authority head '${mapKey}' changed before retirement`);
+      }
+      const updated = new Map(this.authorityHeads);
+      updated.delete(mapKey);
+      await this.commitAuthorityHeads(updated, `retire:${mapKey}`);
+    });
+    this.authorityHeadPrepareTail = retired.catch(() => undefined);
+    return retired;
+  }
+
+  private async moveAuthorityHead(
+    fromIdentity: string,
+    toIdentity: string,
+    next: AuthorityHead,
+    expectedMac: string,
+  ): Promise<void> {
+    const moved = this.authorityHeadPrepareTail.then(async () => {
+      if (!fromIdentity || !toIdentity || fromIdentity === toIdentity
+        || !Number.isSafeInteger(next.revision) || next.revision < 1
+        || !/^[0-9a-f]{64}$/.test(next.mac) || !/^[0-9a-f]{64}$/.test(expectedMac)) {
+        throw new Error("invalid authority freshness move");
+      }
+      this.authorityHeads = parseAuthorityHeads(await this.host.getSecret(this.authorityHeadsSecretKey()));
+      const fromKey = this.authorityHeadMapKey(fromIdentity);
+      const toKey = this.authorityHeadMapKey(toIdentity);
+      const current = this.authorityHeads.get(fromKey);
+      const destination = this.authorityHeads.get(toKey);
+      if (!current || current.mac !== expectedMac) {
+        if (!current && destination?.revision === next.revision && destination.mac === next.mac) return;
+        throw new Error(`authority head '${fromKey}' changed before move`);
+      }
+      if (destination && (destination.revision !== next.revision || destination.mac !== next.mac)) {
+        throw new Error(`authority head '${toKey}' already exists with different state`);
+      }
+      const updated = new Map(this.authorityHeads);
+      updated.delete(fromKey);
+      updated.set(toKey, { ...next });
+      await this.commitAuthorityHeads(updated, `move:${fromKey}->${toKey}`);
+    });
+    this.authorityHeadPrepareTail = moved.catch(() => undefined);
+    return moved;
   }
 
   private canonicalAuthorityHeadPort(): AuthorityHeadPort {
@@ -2402,6 +2499,8 @@ export class Workspace {
       current: (identity) => this.currentAuthorityHead(identity),
       prepare: (identity, next, expectedMac) => this.prepareAuthorityHead(identity, next, expectedMac),
       establishInitial: (identity, head) => this.establishInitialAuthorityHead(identity, head),
+      retire: (identity, expectedMac) => this.retireAuthorityHead(identity, expectedMac),
+      move: (fromIdentity, toIdentity, next, expectedMac) => this.moveAuthorityHead(fromIdentity, toIdentity, next, expectedMac),
     };
   }
 
@@ -3003,6 +3102,7 @@ export class Workspace {
     if (!(await this.tmux.hasSession(session))) throw new Error(`agent '${agent}' is not running`);
     const def = this.manager.defOf(agent);
     const canonicalGate = await this.canonicalPrimerGate(agent);
+    const sessionEvolution = this.ledger.get(agent)?.evolution;
     if (def?.soul) {
       const previous = this.ledger.get(agent)?.identity;
       try {
@@ -3019,6 +3119,7 @@ export class Workspace {
           soul,
           role: def.role,
           instructions: def.instructions,
+          evolution: sessionEvolution,
           bridgeGuidance: !!this.manager.parentOf(agent) && (this.config?.settings.bridgeGuidance ?? true),
           taskBrief: this.ledger.get(agent)?.def?.taskBrief,
         }).body ?? "";
@@ -3045,6 +3146,33 @@ export class Workspace {
       this.workspaceRoot,
       this.config?.settings.projectGuidance,
     );
+    if (sessionEvolution) {
+      const composed = composeAgentPrompt({
+        role: def?.role,
+        instructions: def?.instructions,
+        evolution: sessionEvolution,
+        bridgeGuidance: !!this.manager.parentOf(agent) && (this.config?.settings.bridgeGuidance ?? true),
+        taskBrief: this.ledger.get(agent)?.def?.taskBrief,
+      }).body;
+      const body = [projectGuidance, composed]
+        .filter((part): part is string => !!part?.trim())
+        .join("\n\n");
+      const frame = (deliverable: string): string => wrapWithPrimer(deliverable, {
+        agentName: agent,
+        delegator: this.manager.delegatorOf(agent),
+        parent: this.manager.parentOf(agent),
+        gate: canonicalGate,
+        verify: this.config?.settings.verify,
+      });
+      assertSafeBriefTransport(
+        frame(previewDeliverableBody(this.workspaceRoot, agent, body, "reanchor")),
+        `agent '${agent}' re-anchor brief`,
+      );
+      const injection = frame(deliverableBody(this.workspaceRoot, agent, body, "reanchor"));
+      assertSafeBriefTransport(injection, `agent '${agent}' re-anchor brief`);
+      await this.tmux.sendKeys(session, injection, true);
+      return;
+    }
     try {
       const abs = path.join(this.workspaceRoot, relPath);
       fs.mkdirSync(path.dirname(abs), { recursive: true });
@@ -3146,7 +3274,8 @@ export class Workspace {
   }
 
   /** Canonical declared-agent removal tail. Caller owns deleting the tachyon.yml entry first. */
-  forgetAgent(name: string): void {
+  async forgetAgent(name: string): Promise<void> {
+    await this.evolutionStore.retireAgent(name);
     forgetAgentFootprint(name, {
       workspaceRoot: this.workspaceRoot,
       ledger: this.ledger,
@@ -4042,19 +4171,26 @@ export class Workspace {
    * external yaml edits / crash paths; the delete command also removes its row directly). Narrow on purpose —
    * never touches ad-hoc/fork rows (declared=false) or a stopped-but-still-declared agent (kept for resume).
    */
-  private gcLedger(declaredInConfig: Set<string>, live: Set<string>): void {
-    try {
-      for (const [name, rec] of this.ledger.all()) {
-        if (rec.declared && !declaredInConfig.has(name) && !live.has(name)) {
+  private async gcLedger(declaredInConfig: Set<string>, live: Set<string>): Promise<void> {
+    for (const [name, rec] of this.ledger.all()) {
+      if (rec.declared && !declaredInConfig.has(name) && !live.has(name)) {
+        try {
+          await this.evolutionStore.retireAgent(name);
           forgetAgentFootprint(name, {
             workspaceRoot: this.workspaceRoot,
             ledger: this.ledger,
             removeHarnessHome: (agent) => this.harness.remove(agent),
             removePiSessionDir: (agent) => removePiSessionDir(this.workspaceRoot, agent),
           });
+        } catch (error) {
+          this.host.notify(this.t(
+            "Could not finish cleanup for removed agent {0}: {1}",
+            name,
+            error instanceof Error ? error.message : String(error),
+          ), "warn");
         }
       }
-    } catch { /* best-effort — a faxina must never block activation */ }
+    }
   }
 
   /**
@@ -4134,6 +4270,9 @@ export class Workspace {
     }
     // spec 377 T15A — reconcile incomplete profile journals on every successful reload.
     void this.reconcileSoulProfileTransactions().catch(() => undefined);
+    void this.evolutionCoordinator.reconcileCompletedTasks(this.taskStore.listRaw()).catch((error) => {
+      this.host.notify(this.t("Agent Evolution review reconciliation failed: {0}", error instanceof Error ? error.message : String(error)), "error");
+    });
     // t-8354ae — persist last-known-good roster for degraded sidebar rendering if config later breaks.
     if (config) writeConfigLkg(this.workspaceRoot, snapshotFromConfig(config, file));
     // Push the user's tmux overlay (settings.tmux) to the server-options layer;
@@ -4548,7 +4687,7 @@ export class Workspace {
     );
     this.gcHarnessHomes(); // spec 226 (H8): drop config homes left by agents no longer declared/tracked
     const declaredInConfig = new Set(Object.keys(this.config?.agents ?? {}));
-    this.gcLedger(declaredInConfig, liveSessions); // spec 239: prune stale declared rows
+    await this.gcLedger(declaredInConfig, liveSessions); // spec 239: prune stale declared rows
     this.compactSessionOwners(declaredInConfig, liveSessions); // t-123143: prune stale session-owner rows
     this.gcOrphanAgentFootprints(liveSessions); // t-8310ca: continuity (+ activity) for names no longer known
     await this.rehydratePipelines(); // spec 230: restore pipeline runs so a reloaded run's surviving nodes can still complete
@@ -4803,6 +4942,38 @@ export class Workspace {
     return refreshSoulProfileStatus(this.workspaceRoot, agentName, this.soulProfileConfigAccess(agentName));
   }
 
+  async readAgentEvolutionOverview(agentName: string): Promise<EvolutionStudioOverview> {
+    const def = this.config?.agents[agentName];
+    return readEvolutionStudioOverview(
+      this.evolutionStore,
+      agentName,
+      def?.kind === "agent" && def.selfEvolution?.enabled === true,
+    );
+  }
+
+  async readAgentEvolutionCandidate(agentName: string, candidateId: string): Promise<EvolutionStudioCandidateDetail> {
+    return readEvolutionStudioCandidateDetail(this.evolutionStore, agentName, candidateId);
+  }
+
+  async approveAgentEvolutionCandidate(
+    agentName: string,
+    candidateId: string,
+    input: { expectedActiveVersion: number; expectedTargetDigest?: string },
+  ): Promise<{ candidateId: string; activeVersion: number }> {
+    const result = await this.evolutionStore.approveCandidate(agentName, candidateId, input);
+    return { candidateId: result.candidate.id, activeVersion: result.profile.activeVersion };
+  }
+
+  async rejectAgentEvolutionCandidate(
+    agentName: string,
+    candidateId: string,
+    input: { expectedActiveVersion: number; expectedTargetDigest?: string },
+  ): Promise<{ candidateId: string; activeVersion: number }> {
+    const candidate = await this.evolutionStore.rejectCandidate(agentName, candidateId, input);
+    const profile = await this.evolutionStore.readProfile(agentName);
+    return { candidateId: candidate.id, activeVersion: profile?.activeVersion ?? input.expectedActiveVersion };
+  }
+
   canonicalSoulPath(agentName: string): string {
     return agentSoulPath(this.workspaceRoot, agentName);
   }
@@ -4926,13 +5097,41 @@ export class Workspace {
     const wasOpen = this.terminals.has(oldName);
     if (wasOpen) this.terminals.close(oldName);
     await this.manager.rename(oldName, newName);
-    if (this.config?.agents[oldName] !== undefined) {
+    const wasDeclared = this.config?.agents[oldName] !== undefined;
+    if (wasDeclared) {
       if (!this.mutateConfig((text) => renameAgentInYml(text ?? "", oldName, newName))) {
         // yml refused after the session moved — move it back so tree and config agree.
         await this.manager.rename(newName, oldName);
         if (wasOpen) this.terminals.open(oldName, this.manager.session(oldName));
         return; // rolled back — the flag correctly stays under oldName
       }
+    }
+    try {
+      await this.evolutionStore.renameAgent(oldName, newName);
+    } catch (error) {
+      // Config now names the new agent, so the old manager key is free for a rollback.
+      const rollbackFailures: unknown[] = [error];
+      let managerRolledBack = false;
+      try {
+        await this.manager.rename(newName, oldName);
+        managerRolledBack = true;
+      } catch (rollbackError) {
+        rollbackFailures.push(rollbackError);
+      }
+      if (wasDeclared && !this.mutateConfig((text) => renameAgentInYml(text ?? "", newName, oldName))) {
+        rollbackFailures.push(new Error("tachyon.yml rollback was refused"));
+      }
+      if (wasOpen && managerRolledBack) {
+        try {
+          this.terminals.open(oldName, this.manager.session(oldName));
+        } catch (rollbackError) {
+          rollbackFailures.push(rollbackError);
+        }
+      }
+      if (rollbackFailures.length > 1) {
+        throw new AggregateError(rollbackFailures, "Agent Evolution rename failed and rollback was incomplete");
+      }
+      throw error;
     }
     // spec 216 (codex r2): a live rename moves the SAME session (no restart, no onSpawned/onKilled),
     // so carry any pending re-anchor flag to the new name and clear a stale flag on the new identity.

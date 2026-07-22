@@ -49,6 +49,17 @@ export interface TaskListOptions {
   status?: TaskStatus;
 }
 
+/** A committed update observation. Observers cannot change or fail the Task mutation result. */
+export interface TaskMutationEvent {
+  before: Task;
+  after: Task;
+}
+
+export interface TaskStoreOptions {
+  onMutation?: (event: TaskMutationEvent) => void | Promise<void>;
+  evolutionCompletionFor?: (event: TaskMutationEvent) => Task["evolutionCompletion"];
+}
+
 const SDD_STATUSES = new Set<SddStatus>(["draft", "in-progress", "shipped", "shipped-partial", "superseded", "abandoned", "deferred"]);
 const RETRIAGE_SDD = new Set<SddStatus>(["superseded", "abandoned", "deferred"]);
 const TASK_AUTHORING_LIMIT_FIELDS = new Set<string>(["title", "body", "kind", "artifact_refs", "artifact_refs.type", "artifact_refs.ref"]);
@@ -76,7 +87,10 @@ export class TaskStore {
   private mutation: Promise<void> = Promise.resolve();
   readonly journal: TaskJournalStore;
 
-  constructor(private readonly workspaceRoot: string) {
+  constructor(
+    private readonly workspaceRoot: string,
+    private readonly options: TaskStoreOptions = {},
+  ) {
     this.journal = new TaskJournalStore(workspaceRoot);
   }
 
@@ -189,6 +203,11 @@ export class TaskStore {
       // t-1339a8 — any status transition means the task advanced, so it is no longer waiting on the human;
       // clear the authored flag regardless of whether this same patch also tried to set/replace it.
       if (next.status !== current.status) delete next.awaitingHuman;
+      if (next.status !== current.status) delete next.evolutionCompletion;
+      if (current.status !== "done" && next.status === "done") {
+        const marker = this.options.evolutionCompletionFor?.({ before: current, after: next });
+        if (marker) next.evolutionCompletion = marker;
+      }
       if (JSON.stringify({ ...current, updatedAt: next.updatedAt }) === JSON.stringify(next)) {
         throw new Error("update_task requires at least one changed field");
       }
@@ -200,6 +219,7 @@ export class TaskStore {
       // minting the identical midpoint between the same observed neighbors (dueto F2 — reject, never last-write).
       if (typeof input.rank === "string") this.assertNoRankCollision(next);
       this.writeTask(next);
+      this.emitMutation({ before: current, after: next });
       return next;
     });
   }
@@ -266,6 +286,14 @@ export class TaskStore {
     const tmp = `${target}.tmp.${process.pid}.${crypto.randomBytes(3).toString("hex")}`;
     fs.writeFileSync(tmp, `${JSON.stringify(task, null, 2)}\n`, "utf8");
     fs.renameSync(tmp, target);
+  }
+
+  private emitMutation(event: TaskMutationEvent): void {
+    try {
+      void Promise.resolve(this.options.onMutation?.(event)).catch(() => undefined);
+    } catch {
+      // The Task is already committed; evolution/notification observers are best-effort side effects.
+    }
   }
 
   private viewFor(task: Task, allTasks: Task[], options: { includeJournal?: boolean } = {}): TaskView {
@@ -386,9 +414,18 @@ function normalizeTask(input: unknown, expectedId: string): Task | null {
     ...optionalDeps(row.deps),
     // t-1339a8 — backward-compatible: task JSON written before this field existed just has no key here.
     ...(row.awaitingHuman !== undefined ? optionalAwaitingHuman(row.awaitingHuman) : {}),
+    ...(row.evolutionCompletion !== undefined ? optionalEvolutionCompletion(row.evolutionCompletion) : {}),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
+}
+
+function optionalEvolutionCompletion(value: unknown): Pick<Task, "evolutionCompletion"> {
+  if (!value || typeof value !== "object") return {};
+  const marker = value as { agent?: unknown; revision?: unknown };
+  if (typeof marker.agent !== "string" || marker.agent.length === 0 || marker.agent.length > 64
+    || typeof marker.revision !== "string" || !/^[0-9a-f]{64}$/.test(marker.revision)) return {};
+  return { evolutionCompletion: { agent: marker.agent, revision: marker.revision } };
 }
 
 function applyUpdate(current: Task, input: TaskUpdateInput): Task {

@@ -24,15 +24,28 @@ import {
   disableSoulMessage,
   enableSoulMessage,
   importSoulMessage,
+  approveEvolutionCandidateMessage,
+  loadEvolutionCandidateMessage,
   openSoulMessage,
   patchMessage,
   readyMessage,
   replaceSoulMessage,
   refreshSoulMessage,
+  refreshEvolutionMessage,
+  rejectEvolutionCandidateMessage,
   saveMessage,
 } from "./messages";
 import { RuntimeLogo } from "./runtimeLogos";
-import type { AgentStudioEntity, AgentStudioFields, AgentStudioHostMessage, SoulProfileStatusMessage } from "./types";
+import { EvolutionSection } from "./EvolutionSection";
+import type {
+  AgentEvolutionCandidateDetailMessage,
+  AgentEvolutionCandidateSummaryMessage,
+  AgentEvolutionSummaryMessage,
+  AgentStudioEntity,
+  AgentStudioFields,
+  AgentStudioHostMessage,
+  SoulProfileStatusMessage,
+} from "./types";
 
 /**
  * spec 350 Phase 3 T3 — the Agent-kind studio's webview surface: quick-add chips, name,
@@ -150,6 +163,11 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
   const [soulImportOpen, setSoulImportOpen] = useState(false);
   const [soulReplacePending, setSoulReplacePending] = useState<SoulImportSelection | undefined>(undefined);
   const [soulDeleteConfirmOpen, setSoulDeleteConfirmOpen] = useState(false);
+  const [evolutionSummary, setEvolutionSummary] = useState<AgentEvolutionSummaryMessage | undefined>(undefined);
+  const [evolutionCandidates, setEvolutionCandidates] = useState<AgentEvolutionCandidateSummaryMessage[] | undefined>(undefined);
+  const [evolutionDetail, setEvolutionDetail] = useState<AgentEvolutionCandidateDetailMessage | undefined>(undefined);
+  const [evolutionBusy, setEvolutionBusy] = useState<string | undefined>(undefined);
+  const [evolutionNotice, setEvolutionNotice] = useState<{ kind: "success" | "error"; text: string } | undefined>(undefined);
   const [ready, setReady] = useState(false);
   const entityRef = useRef<AgentStudioEntity | undefined>(undefined);
   const deleteCancelButtonRef = useRef<HTMLButtonElement>(null);
@@ -191,8 +209,16 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
         setSoulImportOpen(false);
         setSoulReplacePending(undefined);
         setSoulDeleteConfirmOpen(false);
+        setEvolutionSummary(undefined);
+        setEvolutionCandidates(undefined);
+        setEvolutionDetail(undefined);
+        setEvolutionBusy(d.entity.name ? "overview" : undefined);
+        setEvolutionNotice(undefined);
         setReady(true);
-        if (d.entity.name) dispatch.post(refreshSoulMessage(d.entity.name));
+        if (d.entity.name) {
+          dispatch.post(refreshSoulMessage(d.entity.name));
+          dispatch.post(refreshEvolutionMessage(d.entity.name));
+        }
       } else if (d.type === "error") {
         setHostError({ code: d.code, message: d.message, source: d.source ?? "persistence", blocking: d.blocking });
         if (!entityRef.current) setLoadFailed(true);
@@ -232,6 +258,47 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
         }
         setSoulBusy(undefined);
         setHostError({ code: d.code, message: d.message, source: "persistence", blocking: false });
+      } else if (d.type === "evolutionSummary") {
+        if (entityRef.current?.name !== d.summary.agent) {
+          setHostError({ code: "transport/protocol", message: "studio protocol: evolution summary belongs to another agent", source: "transport", blocking: true });
+          return;
+        }
+        setEvolutionSummary(d.summary);
+      } else if (d.type === "evolutionCandidates") {
+        if (entityRef.current?.name !== d.agent) {
+          setHostError({ code: "transport/protocol", message: "studio protocol: evolution candidates belong to another agent", source: "transport", blocking: true });
+          return;
+        }
+        setEvolutionCandidates(d.candidates);
+        setEvolutionBusy(undefined);
+      } else if (d.type === "evolutionCandidateDetail") {
+        if (entityRef.current?.name !== d.agent) {
+          setHostError({ code: "transport/protocol", message: "studio protocol: evolution detail belongs to another agent", source: "transport", blocking: true });
+          return;
+        }
+        setEvolutionDetail(d.detail);
+        setEvolutionBusy(undefined);
+        setEvolutionNotice(undefined);
+      } else if (d.type === "evolutionActionResult") {
+        if (entityRef.current?.name !== d.agent) {
+          setHostError({ code: "transport/protocol", message: "studio protocol: evolution result belongs to another agent", source: "transport", blocking: true });
+          return;
+        }
+        const labels = entityRef.current.evolutionLabels;
+        setEvolutionDetail(undefined);
+        setEvolutionBusy("overview");
+        setEvolutionNotice({
+          kind: "success",
+          text: `${d.status === "approved" ? labels.approved : labels.rejected}. ${labels.nextSession}`,
+        });
+      } else if (d.type === "evolutionError") {
+        if (entityRef.current?.name !== d.agent) {
+          setHostError({ code: "transport/protocol", message: "studio protocol: evolution error belongs to another agent", source: "transport", blocking: true });
+          return;
+        }
+        setEvolutionBusy(undefined);
+        if (d.conflict) setEvolutionDetail(undefined);
+        setEvolutionNotice({ kind: "error", text: d.message });
       }
     };
     window.addEventListener("message", onMsg);
@@ -341,6 +408,27 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
       ? adoptSoulProfileMessage(savedAgent, soulStatus.sha256)
       : enableSoulMessage(savedAgent),
   );
+  const refreshEvolution = () => {
+    if (!savedAgent) return;
+    setEvolutionBusy("overview");
+    setEvolutionNotice(undefined);
+    dispatch.post(refreshEvolutionMessage(savedAgent));
+  };
+  const inspectEvolutionCandidate = (candidateId: string) => {
+    if (!savedAgent) return;
+    setEvolutionDetail(undefined);
+    setEvolutionBusy(`candidate:${candidateId}`);
+    setEvolutionNotice(undefined);
+    dispatch.post(loadEvolutionCandidateMessage(savedAgent, candidateId));
+  };
+  const resolveEvolutionCandidate = (detail: AgentEvolutionCandidateDetailMessage, action: "approve" | "reject") => {
+    if (!savedAgent) return;
+    setEvolutionBusy(action);
+    setEvolutionNotice(undefined);
+    dispatch.post(action === "approve"
+      ? approveEvolutionCandidateMessage(savedAgent, detail.id, detail.expectedActiveVersion, detail.expectedTargetDigest)
+      : rejectEvolutionCandidateMessage(savedAgent, detail.id, detail.expectedActiveVersion, detail.expectedTargetDigest));
+  };
 
   return (
     <StudioFrame
@@ -562,8 +650,24 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
             <details open={!!fields.instructions}>
               <summary>Persistent instructions</summary>
               <Textarea rows={4} value={fields.instructions} placeholder="you are a code reviewer; read the diff and flag correctness issues…" onInput={(e) => set("instructions", (e.currentTarget as HTMLTextAreaElement).value)} />
-              <div class="hint">Delivered as a startup prompt for claude / codex / agy / gemini.</div>
+              <div class="hint">{entity.persistentInstructionsHelp}</div>
             </details>
+
+            <EvolutionSection
+              labels={entity.evolutionLabels}
+              savedAgent={savedAgent}
+              enabled={fields.selfEvolution}
+              summary={evolutionSummary}
+              candidates={evolutionCandidates}
+              detail={evolutionDetail}
+              busy={evolutionBusy}
+              notice={evolutionNotice}
+              onToggle={(enabled) => set("selfEvolution", enabled)}
+              onRefresh={refreshEvolution}
+              onInspect={inspectEvolutionCandidate}
+              onApprove={(detail) => resolveEvolutionCandidate(detail, "approve")}
+              onReject={(detail) => resolveEvolutionCandidate(detail, "reject")}
+            />
 
             <div class="checks ash-check-grid">
               <label><input type="checkbox" checked={fields.autostart} onChange={(e) => set("autostart", (e.currentTarget as HTMLInputElement).checked)} /> Auto-start</label>

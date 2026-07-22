@@ -121,6 +121,8 @@ export interface ManagedEntryDef {
   role?: Role;
   /** spec 377 — enable the canonical, Tachyon-owned per-agent SOUL.md profile. */
   soul?: boolean;
+  /** spec 421 — opt in to Tachyon-owned, human-reviewed agent evolution. */
+  selfEvolution?: SelfEvolutionDef;
   /** spec 210 — run this agent in its own git worktree+branch (opt-in, off by default) */
   worktree?: boolean;
   /** per-agent literal branch name (overrides the global template); authoritatively validated via git check-ref-format at worktree-create */
@@ -138,6 +140,11 @@ export interface ManagedEntryDef {
   /** spec 352 — config-level ownership edge. Names top-level agent entries owned by this agent;
    *  parsed for display/YAML round-trip only. Runtime lineage keeps using spawn parent. */
   subagents?: string[];
+}
+
+/** Closed v1 opt-in. Absence and enabled:false are equivalent disabled states. */
+export interface SelfEvolutionDef {
+  enabled: boolean;
 }
 
 /** Compatibility name for the unified managed-entry definition. Prefer `ManagedEntryDef`
@@ -460,7 +467,7 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
 /** Every recognized entry key. `isolate` remains recognized only as a deprecated read-compat key. `kind`/
  *  `instructions` are recognized everywhere (so they're never "unknown"); under `terminals:` they're rejected
  *  explicitly with a clearer message instead. */
-const AGENT_KEYS = ["cmd", "cwd", "env", "autostart", "watch", "attention", "restart", "kind", "instructions", "role", "soul", "worktree", "branch", "worktreeSetup", "verify", "harness", "isolate", "subagents"];
+const AGENT_KEYS = ["cmd", "cwd", "env", "autostart", "watch", "attention", "restart", "kind", "instructions", "role", "soul", "selfEvolution", "worktree", "branch", "worktreeSetup", "verify", "harness", "isolate", "subagents"];
 
 /** Recognized harness keys (spec 226/228 plus spec 406 Pi resources). */
 const HARNESS_KEYS = ["inherit", "mcp", "hooks", "rules", "instructions", "skills", "extensions", "prompts", "themes", "packages"];
@@ -751,6 +758,7 @@ function parseAgentEntry(section: "agents" | "terminals", name: string, def: Rec
     if (def.kind !== undefined) errors.push(`terminals.${name}: remove 'kind' — entries under terminals: are always terminals`);
     if (def.instructions !== undefined) errors.push(`terminals.${name}: 'instructions' applies only to agents (declare it under agents: with kind: agent)`);
     if (def.soul !== undefined) errors.push(`terminals.${name}: 'soul' applies only to agents (declare it under agents: with kind: agent)`);
+    if (def.selfEvolution !== undefined) errors.push(`terminals.${name}: 'selfEvolution' applies only to agents (declare it under agents: with kind: agent)`);
   } else if (def.kind !== undefined) {
     if (def.kind !== "agent" && def.kind !== "terminal") errors.push(`agents.${name}.kind: must be 'agent' or 'terminal'`);
     else agent.kind = def.kind;
@@ -846,6 +854,23 @@ function parseAgentEntry(section: "agents" | "terminals", name: string, def: Rec
       errors.push(`agents.${name}.soul: must be a boolean`);
     } else {
       agent.soul = def.soul;
+    }
+  }
+  if (def.selfEvolution !== undefined) {
+    if (forceTerminal || agent.kind === "terminal") {
+      if (!forceTerminal) errors.push(`${section}.${name}: 'selfEvolution' applies only to agents (this entry is a terminal — it has no AI to evolve)`);
+    } else if (!isPlainObject(def.selfEvolution)) {
+      errors.push(`agents.${name}.selfEvolution: must be a mapping with enabled: boolean`);
+    } else {
+      const evolution = def.selfEvolution;
+      if (typeof evolution.enabled !== "boolean") {
+        errors.push(`agents.${name}.selfEvolution.enabled: must be a boolean`);
+      } else {
+        agent.selfEvolution = { enabled: evolution.enabled };
+      }
+      for (const key of Object.keys(evolution)) {
+        if (key !== "enabled") errors.push(`agents.${name}.selfEvolution: unknown key '${key}'`);
+      }
     }
   }
   if (def.restart !== undefined) {
@@ -1041,14 +1066,24 @@ export function parseConfig(yamlText: string): ParseResult {
       if (agent) agents[name] = agent;
     }
     const enabledByFold = new Map<string, string>();
+    const evolutionEnabledByFold = new Map<string, string>();
     for (const [name, agent] of Object.entries(agents)) {
-      if (agent.soul !== true) continue;
       const folded = asciiFoldAgentName(name);
-      const prior = enabledByFold.get(folded);
-      if (prior !== undefined) {
-        errors.push(`agents.${name}.soul: conflicts with soul-enabled agent '${prior}' after ASCII case folding`);
-      } else {
-        enabledByFold.set(folded, name);
+      if (agent.soul === true) {
+        const prior = enabledByFold.get(folded);
+        if (prior !== undefined) {
+          errors.push(`agents.${name}.soul: conflicts with soul-enabled agent '${prior}' after ASCII case folding`);
+        } else {
+          enabledByFold.set(folded, name);
+        }
+      }
+      if (agent.selfEvolution?.enabled === true) {
+        const prior = evolutionEnabledByFold.get(folded);
+        if (prior !== undefined) {
+          errors.push(`agents.${name}.selfEvolution: conflicts with evolution-enabled agent '${prior}' after ASCII case folding`);
+        } else {
+          evolutionEnabledByFold.set(folded, name);
+        }
       }
     }
   }

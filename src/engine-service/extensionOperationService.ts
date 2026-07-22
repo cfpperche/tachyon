@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import type { ActivityLogManager } from "../activity/ActivityLogManager.js";
 import { SoulError, SOUL_MAX_BYTES, type SoulProfileStatus } from "../agents/soul.js";
 import type { ProfileMutationResult } from "../agents/soulProfileTransactions.js";
+import { EvolutionStoreError } from "../evolution/EvolutionStore.js";
 import { executeWait, type BridgeDeps } from "../bridge/tools.js";
 import { resolveApproval } from "../bridge/approvalRequest.js";
 import { degradedRosterExtras } from "../config/configFailure.js";
@@ -126,6 +127,10 @@ export async function executeExtensionQuery(
       return json(await workspace.manager.planFork(query.agent));
     case "soul.profile.status":
       return soulProfileOutcome(() => workspace.refreshSoulProfile(query.agent));
+    case "evolution.overview":
+      return json(await workspace.readAgentEvolutionOverview(query.agent));
+    case "evolution.candidate":
+      return json(await workspace.readAgentEvolutionCandidate(query.agent, query.candidateId));
     case "tmux.snapshot":
       return json(await workspace.tmux.serverSnapshot(SESSION_PREFIX));
     case "tmux.capture":
@@ -445,6 +450,16 @@ export async function executeExtensionCommand(
       return soulProfileMutation(() => workspace.disableSoulProfile(command.agent), onViewsChanged);
     case "soul.profile.delete":
       return soulProfileMutation(() => workspace.deleteSoulProfile(command.agent), onViewsChanged);
+    case "evolution.approve":
+      return evolutionCandidateMutation(() => workspace.approveAgentEvolutionCandidate(command.agent, command.candidateId, {
+        expectedActiveVersion: command.expectedActiveVersion,
+        ...(command.expectedTargetDigest !== undefined ? { expectedTargetDigest: command.expectedTargetDigest } : {}),
+      }));
+    case "evolution.reject":
+      return evolutionCandidateMutation(() => workspace.rejectAgentEvolutionCandidate(command.agent, command.candidateId, {
+        expectedActiveVersion: command.expectedActiveVersion,
+        ...(command.expectedTargetDigest !== undefined ? { expectedTargetDigest: command.expectedTargetDigest } : {}),
+      }));
     case "runtime-ops.provider.configure": {
       await context.providerObservations.configureProvider(command.provider, command.enabled
         ? { state: "granted", consent: "explicit-user", sources: ["cli"] }
@@ -490,6 +505,17 @@ async function soulProfileMutation(
   const outcome = await soulProfileOutcome(run);
   if (isSuccessfulSoulProfileOutcome(outcome)) onViewsChanged("agents");
   return outcome;
+}
+
+async function evolutionCandidateMutation(
+  run: () => Promise<{ candidateId: string; activeVersion: number }>,
+): Promise<JsonValue> {
+  try {
+    return json({ outcome: "ok", ...(await run()) });
+  } catch (error) {
+    if (error instanceof EvolutionStoreError) return json({ outcome: "error", code: error.code });
+    throw error;
+  }
 }
 
 async function soulProfileOutcome(
@@ -718,15 +744,12 @@ async function deleteConfiguredAgent(
   }
   if (workspace.config?.agents[agent] === undefined) {
     workspace.manager.dismissAdhoc(agent);
+    await workspace.forgetAgent(agent);
   } else {
-    const changed = workspace.mutateConfig(
-      (text) => deleteAgent(text ?? "", agent),
-      () => {
-        workspace.forgetAgent(agent);
-        onViewsChanged("agents");
-      },
-    );
+    const changed = workspace.mutateConfig((text) => deleteAgent(text ?? "", agent));
     if (!changed) throw new Error(`could not remove '${agent}' from tachyon.yml`);
+    await workspace.forgetAgent(agent);
+    onViewsChanged("agents");
   }
   return json({ changed: true });
 }

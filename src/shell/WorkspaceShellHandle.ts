@@ -87,6 +87,24 @@ export class WorkspaceShellHandle implements WorkspaceAgentStudioTarget {
   deleteSoulProfile(agent: string) { return this.studio.deleteSoulProfile(agent); }
   refreshSoulProfile(agent: string) { return this.studio.refreshSoulProfile(agent); }
   canonicalSoulPathForOpen(agent: string) { return this.studio.canonicalSoulPathForOpen(agent); }
+  readAgentEvolutionOverview(agent: string) { return this.studio.readAgentEvolutionOverview(agent); }
+  readAgentEvolutionCandidate(agent: string, candidateId: string) {
+    return this.studio.readAgentEvolutionCandidate(agent, candidateId);
+  }
+  approveAgentEvolutionCandidate(
+    agent: string,
+    candidateId: string,
+    input: { expectedActiveVersion: number; expectedTargetDigest?: string },
+  ) {
+    return this.studio.approveAgentEvolutionCandidate(agent, candidateId, input);
+  }
+  rejectAgentEvolutionCandidate(
+    agent: string,
+    candidateId: string,
+    input: { expectedActiveVersion: number; expectedTargetDigest?: string },
+  ) {
+    return this.studio.rejectAgentEvolutionCandidate(agent, candidateId, input);
+  }
 
   /** t-a39c7d — clear done(unseen) via engine sidebar mutation. */
   async markAgentPaneSeen(agent: string): Promise<void> {

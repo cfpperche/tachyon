@@ -14,7 +14,13 @@ import type { StudioDeps, StudioSubmit } from "../webview/studioSubmit.js";
 import {
   isSoulProfileStatusMessage,
   projectSoulProfileStatus,
+  validateAgentStudioHostDomainMessage,
 } from "../webview/agent-studio-shell/domain.js";
+import { EvolutionStoreError, type EvolutionStoreErrorCode } from "../evolution/EvolutionStore.js";
+import type {
+  EvolutionStudioCandidateDetail,
+  EvolutionStudioOverview,
+} from "../evolution/studioProjection.js";
 import type { ExtensionCommandV1, JsonValue } from "../runtime-api/extensionOperations.js";
 import type { WorkspaceClient } from "./WorkspaceClient.js";
 import type {
@@ -166,6 +172,72 @@ export class ClientWorkspaceStudioTarget implements WorkspaceAgentStudioTarget {
     return candidate;
   }
 
+  async readAgentEvolutionOverview(agent: string): Promise<EvolutionStudioOverview> {
+    const result = await this.client.query({
+      schemaVersion: 1,
+      method: "extension.query",
+      input: { action: "evolution.overview", agent },
+    });
+    if (result.status === "error") throw new Error(result.message);
+    if (result.method !== "extension.query" || result.action !== "evolution.overview") {
+      throw new Error("persistent engine returned a mismatched Agent Evolution overview result");
+    }
+    return decodeEvolutionOverview(result.value, agent);
+  }
+
+  async readAgentEvolutionCandidate(agent: string, candidateId: string): Promise<EvolutionStudioCandidateDetail> {
+    const result = await this.client.query({
+      schemaVersion: 1,
+      method: "extension.query",
+      input: { action: "evolution.candidate", agent, candidateId },
+    });
+    if (result.status === "error") throw new Error(result.message);
+    if (result.method !== "extension.query" || result.action !== "evolution.candidate") {
+      throw new Error("persistent engine returned a mismatched Agent Evolution candidate result");
+    }
+    return decodeEvolutionCandidateDetail(result.value, agent);
+  }
+
+  approveAgentEvolutionCandidate(
+    agent: string,
+    candidateId: string,
+    input: { expectedActiveVersion: number; expectedTargetDigest?: string },
+  ): Promise<{ candidateId: string; activeVersion: number }> {
+    return this.resolveEvolutionCandidate("evolution.approve", agent, candidateId, input);
+  }
+
+  rejectAgentEvolutionCandidate(
+    agent: string,
+    candidateId: string,
+    input: { expectedActiveVersion: number; expectedTargetDigest?: string },
+  ): Promise<{ candidateId: string; activeVersion: number }> {
+    return this.resolveEvolutionCandidate("evolution.reject", agent, candidateId, input);
+  }
+
+  private async resolveEvolutionCandidate(
+    action: "evolution.approve" | "evolution.reject",
+    agent: string,
+    candidateId: string,
+    input: { expectedActiveVersion: number; expectedTargetDigest?: string },
+  ): Promise<{ candidateId: string; activeVersion: number }> {
+    const result = await this.client.invoke(`agent-evolution:${this.operationId()}`, {
+      schemaVersion: 1,
+      method: "extension.invoke",
+      input: {
+        action,
+        agent,
+        candidateId,
+        expectedActiveVersion: input.expectedActiveVersion,
+        ...(input.expectedTargetDigest !== undefined ? { expectedTargetDigest: input.expectedTargetDigest } : {}),
+      },
+    });
+    if (result.status === "error") throw new Error(result.message);
+    if (result.method !== "extension.invoke" || result.action !== action) {
+      throw new Error("persistent engine returned a mismatched Agent Evolution action result");
+    }
+    return decodeEvolutionActionResult(result.value, candidateId);
+  }
+
   private async invokeSoulProfile(command: SoulProfileCommand): Promise<SoulProfileMutationTargetResult> {
     const result = await this.client.invoke(`soul-profile:${this.operationId()}`, {
       schemaVersion: 1,
@@ -224,6 +296,52 @@ function decodeSoulProfileOutcome(value: JsonValue, expectedAgent: string): Soul
     status: projectSoulProfileStatus(value.status),
     ...(value.selfSelected !== undefined ? { selfSelected: value.selfSelected } : {}),
   };
+}
+
+function decodeEvolutionOverview(value: JsonValue, expectedAgent: string): EvolutionStudioOverview {
+  if (!value || typeof value !== "object" || Array.isArray(value)
+    || !("summary" in value) || !("candidates" in value)
+    || !validateAgentStudioHostDomainMessage({ type: "evolutionSummary", studioProtocolVersion: 1, summary: value.summary })
+    || !validateAgentStudioHostDomainMessage({ type: "evolutionCandidates", studioProtocolVersion: 1, agent: expectedAgent, candidates: value.candidates })
+    || typeof value.summary !== "object" || value.summary === null || Array.isArray(value.summary)
+    || value.summary.agent !== expectedAgent) {
+    throw new Error("persistent engine returned an invalid Agent Evolution overview");
+  }
+  return value as unknown as EvolutionStudioOverview;
+}
+
+function decodeEvolutionCandidateDetail(value: JsonValue, expectedAgent: string): EvolutionStudioCandidateDetail {
+  if (!validateAgentStudioHostDomainMessage({
+    type: "evolutionCandidateDetail",
+    studioProtocolVersion: 1,
+    agent: expectedAgent,
+    detail: value,
+  })) {
+    throw new Error("persistent engine returned an invalid Agent Evolution candidate detail");
+  }
+  return value as unknown as EvolutionStudioCandidateDetail;
+}
+
+function decodeEvolutionActionResult(
+  value: JsonValue,
+  expectedCandidateId: string,
+): { candidateId: string; activeVersion: number } {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("persistent engine returned an invalid Agent Evolution action result");
+  }
+  if (value.outcome === "error") {
+    if (Object.keys(value).length !== 2 || typeof value.code !== "string" || !/^evolution\/[a-z0-9-]+$/.test(value.code)) {
+      throw new Error("persistent engine returned an invalid Agent Evolution action error");
+    }
+    throw new EvolutionStoreError(value.code as EvolutionStoreErrorCode, "Agent Evolution action failed");
+  }
+  if (value.outcome !== "ok"
+    || Object.keys(value).some((key) => key !== "outcome" && key !== "candidateId" && key !== "activeVersion")
+    || value.candidateId !== expectedCandidateId
+    || !Number.isSafeInteger(value.activeVersion) || (value.activeVersion as number) < 0) {
+    throw new Error("persistent engine returned an invalid Agent Evolution action result");
+  }
+  return { candidateId: value.candidateId, activeVersion: value.activeVersion as number };
 }
 
 function readWorkspaceConfig(workspaceRoot: string): WorkspaceConfigReadResult {

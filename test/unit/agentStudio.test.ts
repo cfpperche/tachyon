@@ -26,6 +26,7 @@ const BASE: FormState = {
   kind: "agent",
   instructions: "",
   soul: false,
+  selfEvolution: false,
   role: "",
   watch: "",
   steps: "",
@@ -167,6 +168,17 @@ describe("formLogic", () => {
     const { config } = parseConfig("agents:\n  rev:\n    cmd: claude\n    worktree: true\n    verify: test\n");
     expect(fromDef("rev", config!.agents.rev).verify).toBe("test");
     expect(toEntry(fromDef("rev", config!.agents.rev))).toMatchObject({ verify: "test" });
+  });
+
+  it("round-trips only the enabled Agent Evolution opt-in (spec 421)", () => {
+    expect(toEntry({ ...BASE }).selfEvolution).toBeUndefined();
+    expect(toEntry({ ...BASE, selfEvolution: true })).toMatchObject({ selfEvolution: { enabled: true } });
+    expect(toEntry({ ...BASE, kind: "terminal", cmd: "bash", attention: false, selfEvolution: true }).selfEvolution).toBeUndefined();
+
+    const { config } = parseConfig("agents:\n  enabled:\n    cmd: codex\n    selfEvolution: {enabled: true}\n  disabled:\n    cmd: codex\n    selfEvolution: {enabled: false}\n");
+    expect(fromDef("enabled", config!.agents.enabled).selfEvolution).toBe(true);
+    expect(fromDef("disabled", config!.agents.disabled).selfEvolution).toBe(false);
+    expect(toEntry(fromDef("disabled", config!.agents.disabled)).selfEvolution).toBeUndefined();
   });
 
   // spec 358 phase 2 — Agent Studio no longer creates the deprecated isolate config tier

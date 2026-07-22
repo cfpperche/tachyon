@@ -31,6 +31,7 @@ export const EXTENSION_QUERY_ACTIONS = [
   "agents.list", "attention.list", "pins.list", "commands.list", "runbooks.list", "schedules.list", "proposals.list",
   "doctor.report", "bridge.token", "companion.pair-code", "companion.status", "agent.inspect", "agent.fork-preview", "prompt.catalog", "worktree.review",
   "worktrees.list", "pipeline.inspect", "agent.wait", "soul.profile.status", "legacy-delivery.retirement-preview",
+  "evolution.overview", "evolution.candidate",
   "tmux.snapshot", "tmux.health", "tmux.capture",
 ] as const;
 
@@ -48,6 +49,7 @@ export const EXTENSION_COMMAND_ACTIONS = [
   "handoff.note", "prompt.inject", "runtime-ops.provider.configure",
   "soul.profile.create", "soul.profile.import", "soul.profile.replace", "soul.profile.adopt",
   "soul.profile.enable", "soul.profile.disable", "soul.profile.delete",
+  "evolution.approve", "evolution.reject",
   "tmux.kill", "tmux.recover", "terminal.open", "terminal.close",
   "legacy-delivery.retirement-apply",
 ] as const;
@@ -71,6 +73,8 @@ export const extensionQuerySchema = z.union([
   z.object({ action: z.literal("agent.inspect"), agent: name }).strict(),
   z.object({ action: z.literal("agent.fork-preview"), agent: name }).strict(),
   z.object({ action: z.literal("soul.profile.status"), agent: name }).strict(),
+  z.object({ action: z.literal("evolution.overview"), agent: name }).strict(),
+  z.object({ action: z.literal("evolution.candidate"), agent: name, candidateId: text(256, 1).regex(/^candidate-[A-Za-z0-9_-]+$/) }).strict(),
   z.object({ action: z.literal("tmux.snapshot") }).strict(),
   z.object({ action: z.literal("tmux.health") }).strict(),
   z.object({ action: z.literal("tmux.capture"), session: tmuxSession }).strict(),
@@ -166,6 +170,20 @@ export const extensionCommandSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("soul.profile.enable"), agent: name }).strict(),
   z.object({ action: z.literal("soul.profile.disable"), agent: name }).strict(),
   z.object({ action: z.literal("soul.profile.delete"), agent: name }).strict(),
+  z.object({
+    action: z.literal("evolution.approve"),
+    agent: name,
+    candidateId: text(256, 1).regex(/^candidate-[A-Za-z0-9_-]+$/),
+    expectedActiveVersion: z.number().int().nonnegative(),
+    expectedTargetDigest: sha256.optional(),
+  }).strict(),
+  z.object({
+    action: z.literal("evolution.reject"),
+    agent: name,
+    candidateId: text(256, 1).regex(/^candidate-[A-Za-z0-9_-]+$/),
+    expectedActiveVersion: z.number().int().nonnegative(),
+    expectedTargetDigest: sha256.optional(),
+  }).strict(),
   z.object({
     action: z.literal("runtime-ops.provider.configure"),
     provider: z.enum(["codex", "claude"]),

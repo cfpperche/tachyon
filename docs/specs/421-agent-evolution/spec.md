@@ -2,7 +2,10 @@
 
 _Created 2026-07-21._
 
-**Status:** draft
+**Status:** shipped-partial
+
+**Closure:** Implementation, independent publication review, recovery hardening, full verification and
+live-runtime dogfood are complete. Maintainer publication remains a separate explicit step.
 
 ## Intent
 
@@ -86,12 +89,14 @@ The canonical state is rooted in the coordinating workspace, alongside the exist
 │       ├── references/    # optional
 │       └── assets/        # optional
 ├── candidates/
+├── reviews/
 └── history/
 ```
 
 - `LEARNINGS.md` contains only the currently approved short Learned Context.
 - `skills/` contains only approved Agent Skills. A skill is a complete directory, not only a prompt.
 - `candidates/` contains pending or rejected proposals and their source task, reason and proposed diff.
+- `reviews/` contains one durable result per completed-task revision, including delivery/submission state.
 - `profile.json` identifies the profile and active version; `history/` preserves prior promoted versions.
 - Runtime-native copies are disposable projections. They never become the canonical profile.
 - The profile is local to one Tachyon agent. Sharing or publishing a skill is outside this V1.
@@ -156,68 +161,68 @@ outputs.
 
 ## Acceptance criteria
 
-- [ ] **Scenario: disabled agents retain existing behavior**
+- [x] **Scenario: disabled agents retain existing behavior**
   - **Given** a declared agent with no `selfEvolution` field or `enabled: false`
   - **When** it completes work, starts, resumes, restarts or changes runtime
   - **Then** no evolution review runs, no evolution proposal or active artifact is created, no learned
     layer or evolved skill is delivered, and existing startup composition remains compatible
-- [ ] **Scenario: configuration round-trips as an agent-only opt-in**
+- [x] **Scenario: configuration round-trips as an agent-only opt-in**
   - **Given** a declared agent with `selfEvolution.enabled: true`
   - **When** configuration is parsed, shown and saved through Agent Studio
   - **Then** the enabled state round-trips through YAML and the closed schema, while terminals reject
     the field and invalid shapes follow the existing whole-config rejection behavior
-- [ ] **Scenario: task completion produces one review with independent proposals**
+- [x] **Scenario: task completion produces one review with independent proposals**
   - **Given** an enabled agent finishes a managed task execution with a Tachyon-observed outcome
   - **When** the completion boundary is recorded
   - **Then** Tachyon runs exactly one evolution review for that execution and records either no useful
     learning or individually reviewable proposals linked to the source task and result
   - **And** idle panes, resume/rebind and the evolution review itself do not recursively trigger reviews
-- [ ] **Scenario: a Learned Context proposal waits for human review**
+- [x] **Scenario: a Learned Context proposal waits for human review**
   - **Given** the evolution review identifies a reusable fact, preference or correction
   - **When** it creates a Learned Context proposal
   - **Then** Agent Studio shows its source, reason and exact proposed content, while the active
     `LEARNINGS.md` and current session remain unchanged
-- [ ] **Scenario: an Agent Skill proposal is a standard skill bundle**
+- [x] **Scenario: an Agent Skill proposal is a standard skill bundle**
   - **Given** the evolution review identifies a reusable procedure or improvement to an existing skill
   - **When** it creates the proposal
   - **Then** the proposal contains a valid Agent Skills directory with required `SKILL.md` and may add
     or update helper `scripts/`, `references/` and `assets/`
   - **And** Tachyon does not invent a competing skill format or reduce the proposal to prompt text
-- [ ] **Scenario: rejection never changes the active profile**
+- [x] **Scenario: rejection never changes the active profile**
   - **Given** a pending learning or skill proposal
   - **When** the human rejects it in Agent Studio
   - **Then** it is recorded as rejected and is absent from future Learned Context and skill catalogs
-- [ ] **Scenario: approval activates only in the next session**
+- [x] **Scenario: approval activates only in the next session**
   - **Given** an active session and a pending proposal
   - **When** the human approves the proposal
   - **Then** Tachyon creates a new active Evolution Profile version but does not inject it into the
     running session, resume, rebind, native fork or re-anchor
   - **And** the next fresh session records and receives exactly that approved version
-- [ ] **Scenario: evolution cannot rewrite human-authored layers**
+- [x] **Scenario: evolution cannot rewrite human-authored layers**
   - **Given** any task history or evolution proposal
   - **When** the proposal is generated, approved or delivered
   - **Then** `SOUL.md`, role, Persistent Instructions, Project Guidance and the current task remain
     byte-for-byte outside the proposal and are not modified by the evolution lifecycle
-- [ ] **Scenario: runtime changes preserve the Tachyon agent's learning**
+- [x] **Scenario: runtime changes preserve the Tachyon agent's learning**
   - **Given** one enabled agent with approved Learned Context and Agent Skills
   - **When** its runtime changes among supported agent runtimes
   - **Then** the same Tachyon Evolution Profile remains canonical and the new runtime receives the same
     logical approved snapshot and skill bundles without importing runtime-native memory as authority
-- [ ] **Scenario: Agent Studio separates identity, instructions and learning**
+- [x] **Scenario: Agent Studio separates identity, instructions and learning**
   - **Given** an agent that uses Soul, Persistent Instructions and Agent Evolution
   - **When** the human opens Agent Studio
   - **Then** identity, operating instructions, active learning and pending proposals are visibly distinct,
     and review actions state that accepted changes begin in the next session
-- [ ] **Scenario: Project Guidance invariant remains unchanged**
+- [x] **Scenario: Project Guidance invariant remains unchanged**
   - **Given** configured and unconfigured consumer workspaces with Agent Evolution on or off
   - **When** startup briefs are composed across supported adapters
   - **Then** PI-001's fixed oracle remains true: configured sources are lossless, labelled and ordered,
     while unconfigured consumers receive none
-- [ ] Every currently supported agent runtime uses the same Tachyon-owned profile and proposal contract;
+- [x] Every currently supported agent runtime uses the same Tachyon-owned profile and proposal contract;
   runtime-specific mechanisms are adapters or projections only.
-- [ ] Focused config, store, lifecycle, prompt-composition, Agent Studio and multi-runtime adapter tests,
+- [x] Focused config, store, lifecycle, prompt-composition, Agent Studio and multi-runtime adapter tests,
   PI-001, typecheck and configured full verification pass.
-- [ ] Representative dogfood proves proposal, rejection, approval-next-session and runtime-switch behavior;
+- [x] Representative dogfood proves proposal, rejection, approval-next-session and runtime-switch behavior;
   Agent Studio visual evidence records the proposal review flow.
 
 ## Non-goals
