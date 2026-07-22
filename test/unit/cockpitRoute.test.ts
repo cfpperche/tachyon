@@ -124,16 +124,20 @@ describe("studio-new / studio-edit (t-610705 Phase D, D0)", () => {
     }
   });
 
-  it("command studio's parent/nav is the fleet section for both new and edit", () => {
-    expect(parentRoute(routes.studioNew("command", "ws-1"))).toEqual({ kind: "section", section: "fleet" });
-    expect(parentRoute(routes.studioEdit("command", "ws-1", "cmd-a"))).toEqual({ kind: "section", section: "fleet" });
-    expect(navSection(routes.studioNew("command", "ws-1"))).toBe("fleet");
-    expect(navSection(routes.studioEdit("command", "ws-1", "cmd-a"))).toBe("fleet");
+  it("every StudioId's parent/nav is the fleet section for both new and edit (t-610705 Phase D, D1a)", () => {
+    for (const studio of STUDIO_IDS) {
+      expect(parentRoute(routes.studioNew(studio, "ws-1"))).toEqual({ kind: "section", section: "fleet" });
+      expect(parentRoute(routes.studioEdit(studio, "ws-1", "cmd-a"))).toEqual({ kind: "section", section: "fleet" });
+      expect(navSection(routes.studioNew(studio, "ws-1"))).toBe("fleet");
+      expect(navSection(routes.studioEdit(studio, "ws-1", "cmd-a"))).toBe("fleet");
+    }
   });
 
   it("never polls on the shared shell timer — a form must not be clobbered mid-edit", () => {
-    expect(refreshPolicy(routes.studioNew("command", "ws-1"))).toBe("none");
-    expect(refreshPolicy(routes.studioEdit("command", "ws-1", "cmd-a"))).toBe("none");
+    for (const studio of STUDIO_IDS) {
+      expect(refreshPolicy(routes.studioNew(studio, "ws-1"))).toBe("none");
+      expect(refreshPolicy(routes.studioEdit(studio, "ws-1", "cmd-a"))).toBe("none");
+    }
   });
 
   it("isStudioRoute is true for both kinds and false for everything else", () => {

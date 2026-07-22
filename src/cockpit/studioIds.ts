@@ -5,10 +5,11 @@
  * how a registry silently drifts from the type. Each Phase D PR appends its studio(s) here AND to
  * every exhaustive switch in route.ts/studioRegistry.ts — the compiler is the checklist.
  *
- * D0 ships with "command" only (the pilot). D1 adds terminal/runbook/schedule/agent. D2 adds task
- * (closes C.1b). D3 adds pin (closes C.4).
+ * D0 shipped "command" (the pilot). D1 adds terminal/runbook/schedule (Agent Studio deferred to its
+ * own D1b PR — its evolution/soul-profile domain messages are substantially larger than the other
+ * three's shared shape). D2 adds task (closes C.1b). D3 adds pin (closes C.4).
  */
-export const STUDIO_IDS = ["command"] as const;
+export const STUDIO_IDS = ["command", "terminal", "runbook", "schedule"] as const;
 
 export type StudioId = (typeof STUDIO_IDS)[number];
 

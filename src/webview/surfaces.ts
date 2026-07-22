@@ -108,16 +108,12 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   { viewId: "tachyonAgentFixtureStudio", view: "agent-studio-fixture", hostFile: "src/webview/AgentFixtureStudioPanel.ts", mode: "live", converted: true, editorHome: "dev-only" },
   // spec 350 Phase 3 — Agent Studio (shell), the per-entity single-document agent-kind studio.
   { viewId: "tachyonAgentStudioShell", view: "agent-studio-shell", hostFile: "src/webview/AgentStudioPanel.ts", mode: "live", converted: true, editorHome: "standalone" },
-  // Phase 4 — remaining first-party studio shells.
-  { viewId: "tachyonTerminalStudioShell", view: "terminal-studio-shell", hostFile: "src/webview/TerminalStudioPanel.ts", mode: "live", converted: true, editorHome: "standalone" },
-  // t-610705 (SDD 410 Phase D, D0) — the standalone Command Studio (shell) panel was retired: it's
-  // the pilot Control route now (studio-new/studio-edit, studio:"command" —
-  // studios-routes-design.md; standalone bundle + harness route retired — use
-  // ?view=cockpit&fixture=studio-command instead). The trusted serializer for the legacy
-  // "tachyonCommandStudioShell" viewType stays registered in extension.ts: a revived pre-410 panel
+  // t-610705 (SDD 410 Phase D, D0/D1a) — the standalone Command/Terminal/Runbook/Schedule Studio
+  // (shell) panels were retired: they're Control routes now (studio-new/studio-edit, studio:
+  // "command"/"terminal"/"runbook"/"schedule" — studios-routes-design.md; standalone bundles +
+  // harness routes retired — use ?view=cockpit&fixture=studio-<name> instead). The trusted
+  // serializer for each legacy viewType stays registered in extension.ts: a revived pre-410 panel
   // disposes itself and redirects into Control → the mapped studio route.
-  { viewId: "tachyonRunbookStudioShell", view: "runbook-studio-shell", hostFile: "src/webview/RunbookStudioPanel.ts", mode: "live", converted: true, editorHome: "standalone" },
-  { viewId: "tachyonScheduleStudioShell", view: "schedule-studio-shell", hostFile: "src/webview/ScheduleStudioPanel.ts", mode: "live", converted: true, editorHome: "standalone" },
   // spec 349 T10/T11 — first-party relay for untrusted plugin UI surfaces.
   { viewId: "tachyonPluginSurface", view: "plugin-host", hostFile: "src/plugins/ui/host.ts", mode: "live", converted: true, editorHome: "standalone" },
   { viewId: "tachyonPluginSurfaces", view: "plugin-host", hostFile: "src/plugins/ui/host.ts", mode: "live", converted: true, editorHome: "standalone" },

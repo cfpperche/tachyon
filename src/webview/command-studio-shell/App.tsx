@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "preact/hooks";
-import { decodeStudioMessage } from "../shared/studio/protocol";
+import { decodeStudioMessage, type StudioDispatch } from "../shared/studio/protocol";
 import { StudioFrame } from "../shared/studio/StudioFrame";
 import { canSave as computeCanSave } from "../shared/studio/dirtyGating";
 import { useStudioFreeze } from "../shared/studio/useStudioFreeze";
@@ -9,10 +9,6 @@ import { blankCommandFields, computeCommandDirty, commandStudioTitleFor, type Co
 import { browseMessage, cancelMessage, dirtyMessage, patchMessage, readyMessage, saveMessage } from "./messages";
 import type { CommandStudioEntity, CommandStudioFields, CommandStudioHostMessage } from "./types";
 
-export interface CommandStudioDispatch {
-  post(msg: unknown): void;
-}
-
 /**
  * t-610705 (SDD 410 Phase D, D0) — Control-hosted now: props-driven (cockpit/main.tsx's single
  * message listener forwards studio-envelope messages down), same split as every other migrated
@@ -20,9 +16,14 @@ export interface CommandStudioDispatch {
  * identity (studioHost.ts's round-2 F3 fix) — `routeKey`/`mountNonce` change whenever the host
  * starts a fresh binding (a different command, or a same-route re-entry after a navigate-away);
  * this component re-sends "ready" whenever that identity changes.
+ *
+ * `dispatch: StudioDispatch` (D1a) — was a locally-declared `CommandStudioDispatch` with the same
+ * one-line shape; every studio's dispatch is IDENTICAL (`{post(msg: unknown): void}` wrapping
+ * cockpit/main.tsx's single shared `post`), so D1a factored the one shared type into protocol.ts
+ * instead of every new shell re-declaring its own copy.
  */
 export interface CommandStudioAppProps {
-  dispatch: CommandStudioDispatch;
+  dispatch: StudioDispatch;
   routeKey: string;
   mountNonce: string;
   /** the latest STUDIO-ENVELOPE message this mount should react to (load/error/restore/cwd/save) —

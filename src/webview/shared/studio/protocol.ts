@@ -91,6 +91,15 @@ export type StudioWebviewCoreMessage<TPatch> =
  *  the envelope field for free — never re-declare `studioProtocolVersion` by hand. */
 export type StudioDomainMessage<T extends { type: string }> = T & StudioEnvelope;
 
+/** t-610705 (Phase D, D1) — the whole outbound contract every Control-hosted studio App needs:
+ *  post a raw message toward the host. Identical across every StudioId (command/terminal/runbook/
+ *  schedule/agent all posted `{ post }` wrapping the SAME cockpit/main.tsx `post` function even
+ *  before this was factored out — D0 declared a per-shell `CommandStudioDispatch` copy; this is the
+ *  ONE shared type every shell's App.tsx now imports instead of re-declaring an identical one-liner. */
+export interface StudioDispatch {
+  post(msg: unknown): void;
+}
+
 export interface StudioDecodeResult<T> {
   ok: boolean;
   message?: T;

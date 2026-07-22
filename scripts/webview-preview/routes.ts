@@ -119,6 +119,9 @@ export const ROUTES: Record<string, Route> = {
       "/dist/webview/handoff.css",
       "/dist/webview/studio-frame.css",
       "/dist/webview/command-studio-shell.css",
+      "/dist/webview/terminal-studio-shell.css",
+      "/dist/webview/runbook-studio-shell.css",
+      "/dist/webview/schedule-studio-shell.css",
       "/dist/webview/cockpit.css",
     ],
     frame: { w: 1100, h: 720 },
@@ -173,14 +176,21 @@ export const ROUTES: Record<string, Route> = {
       } else if (activeRoute?.kind === "agent-probes" || activeRoute?.kind === "workspace-probes") {
         const probes = probesFixtures.default?.vm;
         if (probes) msgs.push(probesMessage(probes));
-      } else if ((activeRoute?.kind === "studio-new" || activeRoute?.kind === "studio-edit") && (activeRoute as { studio?: string }).studio === "command") {
-        // t-610705 (Phase D, D0) — the pilot studio route: reuses the SAME fixture VMs + envelope
-        // shape the (now-retired-standalone) command-studio-shell route used, pushed unconditionally
+      } else if ((activeRoute?.kind === "studio-new" || activeRoute?.kind === "studio-edit") && (activeRoute as { studio?: string }).studio) {
+        // t-610705 (Phase D, D0/D1a) — a studio route: reuses the SAME fixture VMs + envelope shape
+        // each (now-retired-standalone) <studio>-studio-shell route used, pushed unconditionally
         // rather than gated on a real "ready" mount handshake (this static harness has no live host
         // to answer one — the client processes whatever arrives regardless of handshake state).
         const key = activeRoute.kind === "studio-edit" ? "dense-edit" : "new";
-        const studio = commandStudioShellFixtures[key]?.vm;
-        if (studio) msgs.push(commandStudioShellMakeMessage(studio));
+        const byStudio: Record<string, { fixtures: Record<string, Fixture>; makeMessage: (vm: unknown) => unknown }> = {
+          command: { fixtures: commandStudioShellFixtures as Record<string, Fixture>, makeMessage: (vm) => commandStudioShellMakeMessage(vm as never) },
+          terminal: { fixtures: terminalStudioShellFixtures as Record<string, Fixture>, makeMessage: (vm) => terminalStudioShellMakeMessage(vm as never) },
+          runbook: { fixtures: runbookStudioShellFixtures as Record<string, Fixture>, makeMessage: (vm) => runbookStudioShellMakeMessage(vm as never) },
+          schedule: { fixtures: scheduleStudioShellFixtures as Record<string, Fixture>, makeMessage: (vm) => scheduleStudioShellMakeMessage(vm as never) },
+        };
+        const entry = byStudio[(activeRoute as { studio: string }).studio];
+        const studio = entry?.fixtures[key]?.vm;
+        if (studio) msgs.push(entry.makeMessage(studio));
       }
       return msgs;
     },
@@ -264,31 +274,11 @@ export const ROUTES: Record<string, Route> = {
     fixtures: agentStudioShellFixtures as Record<string, Fixture>,
     makeMessage: (vm) => agentStudioShellMakeMessage(vm as never),
   },
-  "terminal-studio-shell": {
-    bundle: "/dist/webview/terminal-studio-shell.js",
-    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/studio-frame.css", "/dist/webview/terminal-studio-shell.css"],
-    frame: { w: 900, h: 760 },
-    fixtures: terminalStudioShellFixtures as Record<string, Fixture>,
-    makeMessage: (vm) => terminalStudioShellMakeMessage(vm as never),
-  },
-  // t-610705 (SDD 410 Phase D, D0) — the standalone "command-studio-shell" route previewed the
-  // retired Command Studio panel; it's the pilot Control route now (studio-new/studio-edit,
-  // studio:"command") — use ?view=cockpit&fixture=studio-command / studio-command-edit (same
-  // App.tsx component, same fixture VMs via the cockpit route's activeRoute injection above).
-  "runbook-studio-shell": {
-    bundle: "/dist/webview/runbook-studio-shell.js",
-    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/studio-frame.css", "/dist/webview/runbook-studio-shell.css"],
-    frame: { w: 760, h: 760 },
-    fixtures: runbookStudioShellFixtures as Record<string, Fixture>,
-    makeMessage: (vm) => runbookStudioShellMakeMessage(vm as never),
-  },
-  "schedule-studio-shell": {
-    bundle: "/dist/webview/schedule-studio-shell.js",
-    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/studio-frame.css", "/dist/webview/schedule-studio-shell.css"],
-    frame: { w: 760, h: 760 },
-    fixtures: scheduleStudioShellFixtures as Record<string, Fixture>,
-    makeMessage: (vm) => scheduleStudioShellMakeMessage(vm as never),
-  },
+  // t-610705 (SDD 410 Phase D, D0/D1a) — the standalone "command"/"terminal"/"runbook"/"schedule"
+  // -studio-shell routes previewed the retired standalone panels; they're Control routes now
+  // (studio-new/studio-edit, studio:"command"/"terminal"/"runbook"/"schedule") — use
+  // ?view=cockpit&fixture=studio-<name> / studio-<name>-edit (same App.tsx components, same fixture
+  // VMs via the cockpit route's activeRoute injection above).
 };
 
 /** Converted webviews may opt out only with a written reason. */

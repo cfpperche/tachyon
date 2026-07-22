@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { __createdPanels, __resetVscodeMock, __setWarningMessageResult, __getWarningMessageCalls, __setOpenDialogResult } from "../mocks/vscode.js";
 import { Uri, window } from "vscode";
-import { openCockpit, type CockpitMissionBoard } from "../../src/webview/Cockpit.js";
+import { openCockpit, refreshCockpitStudioReferenceData, type CockpitMissionBoard } from "../../src/webview/Cockpit.js";
 import type { CockpitStudios } from "../../src/cockpit/studioRegistry.js";
 import { makeFakeCockpitDeps } from "../mocks/cockpitDeps.js";
 import type { WorkspaceStudioTarget } from "../../src/shell/WorkspacePresentation.js";
@@ -588,5 +588,40 @@ describe("Control → studio (D0 pilot: command) routing", () => {
     __createdPanels[0].webview.__receive({ type: "ready" });
     await flush();
     expect(loadMessages()).toHaveLength(0);
+  });
+});
+
+describe("Control → studio (D1a: refreshStudioReferenceData)", () => {
+  const referenceDataMessages = () =>
+    __createdPanels[0].webview.posted.filter((m) => (m as { type?: string }).type === "referenceData") as Array<{ referenceData?: { verifyCandidates: string[] } }>;
+
+  it("re-fetches reference data without touching the loaded entity/patch/dirty state", async () => {
+    let verifyCandidates = ["npm test"];
+    const ws = commandStudioTarget({ studioDeps: () => ({ ...fakeStudioDeps(), verifyCandidates: () => verifyCandidates }) });
+    const deps = depsFor({ getWorkspaces: () => [ws], onChanged: () => {} });
+    const { routeKey, mountNonce } = await openStudioNew(deps);
+    sendStudioReady(routeKey, mountNonce);
+    await flush();
+    expect(loadMessages().at(-1)?.entity.name).toBeUndefined();
+
+    // simulate an external tachyon.yml change (e.g. a new command declared elsewhere) between the
+    // initial load and the refresh — same trigger extension.ts's onViewsChanged("commands") used to
+    // fan out to the retired RunbookStudioPanelManager/ScheduleStudioPanelManager.
+    verifyCandidates = ["npm test", "npm run lint"];
+    refreshCockpitStudioReferenceData();
+    await flush();
+
+    const refreshed = referenceDataMessages().at(-1);
+    expect(refreshed?.referenceData?.verifyCandidates).toEqual(["npm test", "npm run lint"]);
+    // no NEW load/error envelope — the entity/patch/dirty state is untouched by this path.
+    expect(loadMessages()).toHaveLength(1);
+  });
+
+  it("is a no-op off a studio route", async () => {
+    const deps = depsFor({ getWorkspaces: () => [], onChanged: () => {} });
+    await openCockpit(deps, { section: "fleet" });
+    await flush();
+    expect(() => refreshCockpitStudioReferenceData()).not.toThrow();
+    expect(referenceDataMessages()).toHaveLength(0);
   });
 });

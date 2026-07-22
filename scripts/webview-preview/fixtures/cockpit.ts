@@ -352,6 +352,31 @@ export const cockpitFixtures: Record<string, Fixture<CockpitModel>> = {
     provenance: "synthetic-edge",
     vm: { ...buildCockpitModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.studioEdit("command", "b349073a", "verify-ui"), studioMountNonce: "fixture-mount-nonce" },
   },
+  // t-610705 (Phase D, D1a) — same pattern as studio-command/-edit above for the 3 D1a studios.
+  "studio-terminal": {
+    provenance: "synthetic-edge",
+    vm: { ...buildCockpitModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.studioNew("terminal", "b349073a"), studioMountNonce: "fixture-mount-nonce" },
+  },
+  "studio-terminal-edit": {
+    provenance: "synthetic-edge",
+    vm: { ...buildCockpitModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.studioEdit("terminal", "b349073a", "dev-server"), studioMountNonce: "fixture-mount-nonce" },
+  },
+  "studio-runbook": {
+    provenance: "synthetic-edge",
+    vm: { ...buildCockpitModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.studioNew("runbook", "b349073a"), studioMountNonce: "fixture-mount-nonce" },
+  },
+  "studio-runbook-edit": {
+    provenance: "synthetic-edge",
+    vm: { ...buildCockpitModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.studioEdit("runbook", "b349073a", "release-preview"), studioMountNonce: "fixture-mount-nonce" },
+  },
+  "studio-schedule": {
+    provenance: "synthetic-edge",
+    vm: { ...buildCockpitModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.studioNew("schedule", "b349073a"), studioMountNonce: "fixture-mount-nonce" },
+  },
+  "studio-schedule-edit": {
+    provenance: "synthetic-edge",
+    vm: { ...buildCockpitModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.studioEdit("schedule", "b349073a", "nightly-release-check"), studioMountNonce: "fixture-mount-nonce" },
+  },
   validations: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "validations", nowIso: now }) },
   approvals: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "approvals", nowIso: now }) },
   // t-610705 (Phase C.3) — Handoff folds into a section (no activeRoute, unlike task-detail/Fleet

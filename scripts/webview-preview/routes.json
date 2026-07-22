@@ -292,6 +292,132 @@
   },
   {
     "view": "cockpit",
+    "fixture": "studio-terminal",
+    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=studio-terminal",
+    "frame": {
+      "w": 1100,
+      "h": 720
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Control",
+    "aliases": [
+      "control",
+      "cockpit",
+      "sysadmin",
+      "project control",
+      "fleet control",
+      "control plane"
+    ]
+  },
+  {
+    "view": "cockpit",
+    "fixture": "studio-terminal-edit",
+    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=studio-terminal-edit",
+    "frame": {
+      "w": 1100,
+      "h": 720
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Control",
+    "aliases": [
+      "control",
+      "cockpit",
+      "sysadmin",
+      "project control",
+      "fleet control",
+      "control plane"
+    ]
+  },
+  {
+    "view": "cockpit",
+    "fixture": "studio-runbook",
+    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=studio-runbook",
+    "frame": {
+      "w": 1100,
+      "h": 720
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Control",
+    "aliases": [
+      "control",
+      "cockpit",
+      "sysadmin",
+      "project control",
+      "fleet control",
+      "control plane"
+    ]
+  },
+  {
+    "view": "cockpit",
+    "fixture": "studio-runbook-edit",
+    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=studio-runbook-edit",
+    "frame": {
+      "w": 1100,
+      "h": 720
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Control",
+    "aliases": [
+      "control",
+      "cockpit",
+      "sysadmin",
+      "project control",
+      "fleet control",
+      "control plane"
+    ]
+  },
+  {
+    "view": "cockpit",
+    "fixture": "studio-schedule",
+    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=studio-schedule",
+    "frame": {
+      "w": 1100,
+      "h": 720
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Control",
+    "aliases": [
+      "control",
+      "cockpit",
+      "sysadmin",
+      "project control",
+      "fleet control",
+      "control plane"
+    ]
+  },
+  {
+    "view": "cockpit",
+    "fixture": "studio-schedule-edit",
+    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=studio-schedule-edit",
+    "frame": {
+      "w": 1100,
+      "h": 720
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Control",
+    "aliases": [
+      "control",
+      "cockpit",
+      "sysadmin",
+      "project control",
+      "fleet control",
+      "control plane"
+    ]
+  },
+  {
+    "view": "cockpit",
     "fixture": "validations",
     "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=validations",
     "frame": {
@@ -912,168 +1038,6 @@
       "agent studio",
       "new agent",
       "edit agent"
-    ]
-  },
-  {
-    "view": "terminal-studio-shell",
-    "fixture": "new",
-    "url": "/scripts/webview-preview/index.html?view=terminal-studio-shell&fixture=new",
-    "frame": {
-      "w": 900,
-      "h": 760
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Terminal Studio",
-    "aliases": [
-      "terminal studio",
-      "new terminal",
-      "edit terminal"
-    ]
-  },
-  {
-    "view": "terminal-studio-shell",
-    "fixture": "dense-edit",
-    "url": "/scripts/webview-preview/index.html?view=terminal-studio-shell&fixture=dense-edit",
-    "frame": {
-      "w": 900,
-      "h": 760
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Terminal Studio",
-    "aliases": [
-      "terminal studio",
-      "new terminal",
-      "edit terminal"
-    ]
-  },
-  {
-    "view": "terminal-studio-shell",
-    "fixture": "load-error",
-    "url": "/scripts/webview-preview/index.html?view=terminal-studio-shell&fixture=load-error",
-    "frame": {
-      "w": 900,
-      "h": 760
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Terminal Studio",
-    "aliases": [
-      "terminal studio",
-      "new terminal",
-      "edit terminal"
-    ]
-  },
-  {
-    "view": "runbook-studio-shell",
-    "fixture": "new",
-    "url": "/scripts/webview-preview/index.html?view=runbook-studio-shell&fixture=new",
-    "frame": {
-      "w": 760,
-      "h": 760
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Runbook Studio",
-    "aliases": [
-      "runbook studio",
-      "new runbook",
-      "edit runbook"
-    ]
-  },
-  {
-    "view": "runbook-studio-shell",
-    "fixture": "dense-edit",
-    "url": "/scripts/webview-preview/index.html?view=runbook-studio-shell&fixture=dense-edit",
-    "frame": {
-      "w": 760,
-      "h": 760
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Runbook Studio",
-    "aliases": [
-      "runbook studio",
-      "new runbook",
-      "edit runbook"
-    ]
-  },
-  {
-    "view": "runbook-studio-shell",
-    "fixture": "load-error",
-    "url": "/scripts/webview-preview/index.html?view=runbook-studio-shell&fixture=load-error",
-    "frame": {
-      "w": 760,
-      "h": 760
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Runbook Studio",
-    "aliases": [
-      "runbook studio",
-      "new runbook",
-      "edit runbook"
-    ]
-  },
-  {
-    "view": "schedule-studio-shell",
-    "fixture": "new",
-    "url": "/scripts/webview-preview/index.html?view=schedule-studio-shell&fixture=new",
-    "frame": {
-      "w": 760,
-      "h": 760
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Schedule Studio",
-    "aliases": [
-      "schedule studio",
-      "new schedule",
-      "edit schedule"
-    ]
-  },
-  {
-    "view": "schedule-studio-shell",
-    "fixture": "dense-edit",
-    "url": "/scripts/webview-preview/index.html?view=schedule-studio-shell&fixture=dense-edit",
-    "frame": {
-      "w": 760,
-      "h": 760
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Schedule Studio",
-    "aliases": [
-      "schedule studio",
-      "new schedule",
-      "edit schedule"
-    ]
-  },
-  {
-    "view": "schedule-studio-shell",
-    "fixture": "load-error",
-    "url": "/scripts/webview-preview/index.html?view=schedule-studio-shell&fixture=load-error",
-    "frame": {
-      "w": 760,
-      "h": 760
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Schedule Studio",
-    "aliases": [
-      "schedule studio",
-      "new schedule",
-      "edit schedule"
     ]
   }
 ]

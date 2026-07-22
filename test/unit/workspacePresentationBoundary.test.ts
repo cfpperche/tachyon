@@ -37,11 +37,8 @@ describe("persistent workspace presentation boundary", () => {
       "src/webview/AgentStudioPanel.ts",
       "src/webview/CommandStudioAdapter.ts",
       "src/webview/RunbookStudioAdapter.ts",
-      "src/webview/RunbookStudioPanel.ts",
       "src/webview/ScheduleStudioAdapter.ts",
-      "src/webview/ScheduleStudioPanel.ts",
       "src/webview/TerminalStudioAdapter.ts",
-      "src/webview/TerminalStudioPanel.ts",
       // MissionControlPanel.ts left this list on t-610705 Phase B #6: the panel host was retired and the
       // file is types-only now (no Workspace, no Target) — the board is hosted by Cockpit.ts, which was
       // born on WorkspaceMissionControlTarget.
@@ -58,6 +55,8 @@ describe("persistent workspace presentation boundary", () => {
       // host was retired (it's the pilot Control route now — studios-routes-design.md) and the file
       // is types-only (VIEW_TYPE + PanelState only) — Command Studio is hosted by studioHost.ts /
       // Cockpit.ts, which resolve WorkspaceStudioTarget through CockpitDeps.studios, not this file.
+      // TerminalStudioPanel.ts/RunbookStudioPanel.ts/ScheduleStudioPanel.ts left this list on
+      // t-610705 Phase D D1a for the same reason as CommandStudioPanel.ts above.
       "src/webview/TaskStudioAdapter.ts",
       "src/webview/TaskStudioPanel.ts",
       "src/webview/PinStudioAdapter.ts",

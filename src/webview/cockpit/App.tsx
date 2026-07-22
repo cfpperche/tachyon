@@ -37,7 +37,7 @@ import type { PluginsDispatch } from "../plugins/App";
 import type { PluginsViewModel } from "../../plugins/viewModel";
 import type { ConsentVM } from "../../plugins/consentViewModel";
 import type { Toast as PluginsToast } from "../plugins/messages";
-import type { CommandStudioDispatch } from "../command-studio-shell/App";
+import type { StudioDispatch } from "../shared/studio/protocol";
 
 // spec 410 — lazy section bodies (ESM chunks). Keeps eager cockpit.js under budget.
 // t-610705 (Phase B #6) — CSS co-load, sixth surface (see the Approvals comment below for the
@@ -128,13 +128,40 @@ const HandoffApp = lazy(() =>
   }),
 );
 
-// t-610705 (Phase D, D0) — CSS co-load, eleventh surface: the shared studio-frame.css (every
+// t-610705 (Phase D, D0/D1a) — CSS co-load, eleventh+ surfaces: the shared studio-frame.css (every
 // StudioPanelManagerBase-based studio) plus THIS studio's own sheet under its own bootstrap-global
-// key. D1-D3 each add their own studio-scoped loadSectionStylesheet call the same way.
+// key. D1b/D2/D3 each add their own studio-scoped loadSectionStylesheet call the same way. Each
+// studio's own loadSectionStylesheet call for the shared sheet uses a PER-STUDIO "studio-frame-X" key
+// even though every key resolves to the SAME studio-frame.css href — same convention as the 3
+// "*-mermaid" keys below
+// (task-detail-mermaid/activity-mermaid/handoff-mermaid, all → mermaid-block.css): cockpitCssParity's
+// client/host id-set comparison is a plain 1:1 match, not a dedup, so 4 lazy blocks sharing ONE
+// "studio-frame" key would read as 4 client calls against 1 host key and fail parity.
 const CommandStudioApp = lazy(() =>
   import("../command-studio-shell/App").then((m) => {
-    loadSectionStylesheet("studio-frame");
+    loadSectionStylesheet("studio-frame-command");
     loadSectionStylesheet("studio-command");
+    return { default: m.App };
+  }),
+);
+const TerminalStudioApp = lazy(() =>
+  import("../terminal-studio-shell/App").then((m) => {
+    loadSectionStylesheet("studio-frame-terminal");
+    loadSectionStylesheet("studio-terminal");
+    return { default: m.App };
+  }),
+);
+const RunbookStudioApp = lazy(() =>
+  import("../runbook-studio-shell/App").then((m) => {
+    loadSectionStylesheet("studio-frame-runbook");
+    loadSectionStylesheet("studio-runbook");
+    return { default: m.App };
+  }),
+);
+const ScheduleStudioApp = lazy(() =>
+  import("../schedule-studio-shell/App").then((m) => {
+    loadSectionStylesheet("studio-frame-schedule");
+    loadSectionStylesheet("studio-schedule");
     return { default: m.App };
   }),
 );
@@ -215,11 +242,15 @@ export interface CockpitAppProps {
   pluginsBusy?: string;
   pluginsToast?: PluginsToast;
   pluginsDispatch: PluginsDispatch;
-  /** t-610705 (Phase D, D0) — the studio-new/studio-edit subroute (fleet/... pilot: "command"). The
-   *  studio App receives raw protocol/nav-transaction messages, not a decoded VM — see
-   *  command-studio-shell/App.tsx's own doc comment for why. */
+  /** t-610705 (Phase D, D0/D1a) — the studio-new/studio-edit subroute (fleet/... — command, terminal,
+   *  runbook, schedule). The studio App receives raw protocol/nav-transaction messages, not a
+   *  decoded VM — see command-studio-shell/App.tsx's own doc comment for why. `studioDispatch` is
+   *  ONE shared prop for every StudioId (D1a — was `commandStudioDispatch: CommandStudioDispatch`,
+   *  D0's studio-specific name/type for what turned out to be an identical `{post}` wrapper every
+   *  studio needs): only one studio binding is ever active at a time, so there is nothing to
+   *  disambiguate between studios on this prop the way there is for e.g. `taskVm`/`activityVm`. */
   studioIncoming?: { seq: number; message: unknown };
-  commandStudioDispatch: CommandStudioDispatch;
+  studioDispatch: StudioDispatch;
 }
 
 /** Tabs that host a full product surface (no ModuleChrome table / deep-link stub). */
@@ -590,11 +621,12 @@ export function App(p: CockpitAppProps) {
       </div>
     );
   } else if (activeRoute && isStudioRoute(activeRoute)) {
-    // t-610705 (Phase D, D0) — a studio route is its own full-bleed body (StudioFrame is its own
+    // t-610705 (Phase D, D0/D1a) — a studio route is its own full-bleed body (StudioFrame is its own
     // chrome: title, dirty dot, Cancel/Save) — same "checked before the section branch" pattern as
-    // task-detail/Fleet subroutes above. D0 only routes studio:"command" to a real component; D1-D3
-    // add their own branch the same way (no generic dispatch-by-registry on the client — Preact's
-    // `lazy()` calls must stay static top-level calls for esbuild's code-split analysis).
+    // task-detail/Fleet subroutes above. D1b/D2/D3 add their own branch the same way (no generic
+    // dispatch-by-registry on the client — Preact's `lazy()` calls must stay static top-level calls
+    // for esbuild's code-split analysis). Every branch shares `key`/`routeKey`/`mountNonce`/
+    // `incoming`/`dispatch` wiring — only the component and its own studio-scoped stylesheet differ.
     const parent = parentRoute(activeRoute);
     const back = parent && parent.kind === "section" ? (
       <div class="ck-subroute-breadcrumb" data-testid="control-studio-breadcrumb">
@@ -603,22 +635,24 @@ export function App(p: CockpitAppProps) {
         </Button>
       </div>
     ) : null;
+    // t-610705 (Phase D, D0, round-3 major) — an explicit `key` forces Preact to fully UNMOUNT +
+    // remount on identity change instead of reusing the component instance with stale state visible
+    // under the new props for one render (the internal reset-effect alone left exactly that window —
+    // code review round 3 caught it).
+    const studioKey = `${routeKey(activeRoute)}:${m.studioMountNonce ?? ""}`;
+    const studioMountProps = { routeKey: routeKey(activeRoute), mountNonce: m.studioMountNonce ?? "", incoming: p.studioIncoming, dispatch: p.studioDispatch };
     body = (
       <div class="ck-embed-host" data-testid="control-studio">
         {back}
         <Suspense fallback={<SectionFallback />}>
           {activeRoute.studio === "command" ? (
-            <CommandStudioApp
-              // t-610705 (Phase D, D0, round-3 major) — an explicit `key` forces Preact to fully
-              // UNMOUNT + remount on identity change instead of reusing the component instance with
-              // stale state visible under the new props for one render (the internal reset-effect
-              // alone left exactly that window — code review round 3 caught it).
-              key={`${routeKey(activeRoute)}:${m.studioMountNonce ?? ""}`}
-              routeKey={routeKey(activeRoute)}
-              mountNonce={m.studioMountNonce ?? ""}
-              incoming={p.studioIncoming}
-              dispatch={p.commandStudioDispatch}
-            />
+            <CommandStudioApp key={studioKey} {...studioMountProps} />
+          ) : activeRoute.studio === "terminal" ? (
+            <TerminalStudioApp key={studioKey} {...studioMountProps} />
+          ) : activeRoute.studio === "runbook" ? (
+            <RunbookStudioApp key={studioKey} {...studioMountProps} />
+          ) : activeRoute.studio === "schedule" ? (
+            <ScheduleStudioApp key={studioKey} {...studioMountProps} />
           ) : null}
         </Suspense>
       </div>

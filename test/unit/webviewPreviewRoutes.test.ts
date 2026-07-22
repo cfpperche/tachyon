@@ -58,6 +58,9 @@ describe("preview route table", () => {
       "/dist/webview/handoff.css",
       "/dist/webview/studio-frame.css",
       "/dist/webview/command-studio-shell.css",
+      "/dist/webview/terminal-studio-shell.css",
+      "/dist/webview/runbook-studio-shell.css",
+      "/dist/webview/schedule-studio-shell.css",
       "/dist/webview/cockpit.css",
     ]);
     expect(Object.keys(r.fixtures).sort()).toEqual([
@@ -78,6 +81,12 @@ describe("preview route table", () => {
       "settings",
       "studio-command",
       "studio-command-edit",
+      "studio-runbook",
+      "studio-runbook-edit",
+      "studio-schedule",
+      "studio-schedule-edit",
+      "studio-terminal",
+      "studio-terminal-edit",
       "task-detail",
       "tmux",
       "validations",
@@ -118,6 +127,12 @@ describe("preview route table", () => {
     const studioMsgs = r.makeMessage(r.fixtures["studio-command"]!.vm) as Array<{ type: string; studioProtocolVersion?: number }>;
     expect(studioMsgs.map((m) => m.type)).toEqual(["init", "model", "load"]);
     expect(studioMsgs[2]?.studioProtocolVersion).toBe(1);
+    // t-610705 (Phase D, D1a) — the same studio branch, generalized by StudioId (routes.ts's
+    // `byStudio` lookup) rather than hardcoded to "command" — one more StudioId is enough to prove
+    // the lookup, not the loop.
+    const terminalMsgs = r.makeMessage(r.fixtures["studio-terminal-edit"]!.vm) as Array<{ type: string; studioProtocolVersion?: number }>;
+    expect(terminalMsgs.map((m) => m.type)).toEqual(["init", "model", "load"]);
+    expect(terminalMsgs[2]?.studioProtocolVersion).toBe(1);
   });
 
   it("declares the pin-studio route (spec 278 — the last view onboarded) with its envelope", () => {

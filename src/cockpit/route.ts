@@ -129,6 +129,9 @@ export type CockpitRoute =
 function studioParentSection(studio: StudioId): CockpitSectionId {
   switch (studio) {
     case "command":
+    case "terminal":
+    case "runbook":
+    case "schedule":
       return "fleet";
     default: {
       const _never: never = studio;

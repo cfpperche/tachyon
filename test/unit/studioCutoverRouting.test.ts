@@ -23,13 +23,16 @@ describe("spec 350 Phase 4 cutover studio routing", () => {
   it("routes existing entries to the studio manager for their persisted kind", () => {
     const agentEdit = commandBody("tachyon.editAgentStudioItem");
     expect(agentEdit).toContain("agent: () => agentStudioPanels.openExisting(ws, item.agentName)");
-    expect(agentEdit).toContain("terminal: () => terminalStudioPanels.openExisting(ws, item.agentName)");
+    // t-610705 (Phase D, D1a) — the "terminal" branch is a Control route now (Agent Studio's "agent"
+    // branch stays on the legacy panel manager until D1b).
+    expect(agentEdit).toContain('cockpitRoutes.studioEdit("terminal", ws.wsHash, item.agentName)');
     expect(agentEdit).toContain('dispatch[def.kind === "terminal" ? "terminal" : "agent"]()');
 
-    // t-610705 (Phase D, D0) — Command Studio is the pilot Control route now (studios-routes-design.md):
-    // no more per-panel manager, routes via openCockpit + the studio-edit route builder instead.
+    // t-610705 (Phase D, D0/D1a) — Command/Terminal/Runbook/Schedule Studio are Control routes now
+    // (studios-routes-design.md): no more per-panel manager, routes via openCockpit + the
+    // studio-new/studio-edit route builders instead.
     expect(commandBody("tachyon.editCommandStudioItem")).toContain('cockpitRoutes.studioEdit("command", ws.wsHash, item.commandName)');
-    expect(commandBody("tachyon.editRunbookStudioItem")).toContain("runbookStudioPanels.openExisting(ws, item.runbookName)");
-    expect(commandBody("tachyon.editScheduleStudioItem")).toContain("scheduleStudioPanels.openExisting(ws, item.scheduleName)");
+    expect(commandBody("tachyon.editRunbookStudioItem")).toContain('cockpitRoutes.studioEdit("runbook", ws.wsHash, item.runbookName)');
+    expect(commandBody("tachyon.editScheduleStudioItem")).toContain('cockpitRoutes.studioEdit("schedule", ws.wsHash, item.scheduleName)');
   });
 });

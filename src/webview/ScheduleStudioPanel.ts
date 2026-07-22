@@ -1,86 +1,15 @@
-import * as vscode from "vscode";
-import type { WorkspaceStudioTarget } from "../shell/WorkspacePresentation.js";
-import { StudioPanelManagerBase, type StudioPanelState, type StudioSurfaceConfig } from "./shared/studio/StudioPanelManagerBase.js";
-import type { StudioRestoreSnapshot } from "./shared/studio/protocol.js";
-import { ScheduleStudioAdapter } from "./ScheduleStudioAdapter.js";
-import type { ScheduleStudioEntity, ScheduleStudioFields, ScheduleStudioPatch, ScheduleStudioReferenceData } from "./schedule-studio-shell/domain.js";
+import type { StudioPanelState } from "./shared/studio/StudioPanelManagerBase.js";
+import type { ScheduleStudioPatch } from "./schedule-studio-shell/domain.js";
 
-const surface: StudioSurfaceConfig = {
-  viewType: "tachyonScheduleStudioShell",
-  bundleFile: "schedule-studio-shell.js",
-  styleFiles: ["codicon.css", "design-system.css", "studio-frame.css", "schedule-studio-shell.css"],
-  iconName: "pulse",
-};
+export const SCHEDULE_STUDIO_SHELL_VIEW_TYPE = "tachyonScheduleStudioShell";
 
-export const SCHEDULE_STUDIO_SHELL_VIEW_TYPE = surface.viewType;
+/**
+ * t-610705 (SDD 410 Phase D, D1a) — the standalone Schedule Studio panel was retired: it's a Control
+ * route now (studio-new/studio-edit, studio:"schedule" — studios-routes-design.md). src/webview/
+ * schedule-studio-shell/App.tsx stays, lazy-imported by cockpit/App.tsx. The trusted serializer for
+ * the legacy "tachyonScheduleStudioShell" viewType stays registered in extension.ts: a revived
+ * pre-410 panel disposes itself and redirects into Control → the mapped studio route. The old
+ * `refreshReferenceData()` fan-out (external tachyon.yml command/agent changes) is now
+ * `refreshCockpitStudioReferenceData()` (Cockpit.ts) → `refreshStudioReferenceData` (studioHost.ts).
+ */
 export type ScheduleStudioPanelState = StudioPanelState<ScheduleStudioPatch>;
-
-export class ScheduleStudioPanelManager {
-  private readonly workspaces = new Map<string, StudioPanelManagerBase<ScheduleStudioEntity, ScheduleStudioFields, ScheduleStudioPatch, ScheduleStudioReferenceData>>();
-
-  constructor(
-    private readonly extensionUri: vscode.Uri,
-    getWorkspacesOrOnChanged?: (() => WorkspaceStudioTarget[]) | (() => void),
-    onChangedMaybe?: () => void,
-  ) {
-    if (onChangedMaybe) {
-      this.getWorkspaces = getWorkspacesOrOnChanged as () => WorkspaceStudioTarget[];
-      this.onChanged = onChangedMaybe;
-    } else {
-      this.getWorkspaces = () => [];
-      this.onChanged = (getWorkspacesOrOnChanged as (() => void) | undefined) ?? (() => {});
-    }
-  }
-
-  private readonly getWorkspaces: () => WorkspaceStudioTarget[];
-  private readonly onChanged: () => void;
-
-  openNew(ws: WorkspaceStudioTarget): void {
-    this.baseFor(ws).openNew(ws.wsHash);
-  }
-
-  openExisting(ws: WorkspaceStudioTarget, scheduleName: string): void {
-    this.baseFor(ws).openExisting(ws.wsHash, scheduleName);
-  }
-
-  refreshAll(): void {
-    for (const base of this.workspaces.values()) base.refreshAll();
-  }
-
-  refreshReferenceData(): void {
-    for (const base of this.workspaces.values()) base.refreshReferenceData();
-  }
-
-  dispose(): void {
-    for (const base of this.workspaces.values()) base.dispose();
-    this.workspaces.clear();
-  }
-
-  captureSnapshot(ws: WorkspaceStudioTarget, entityId?: string): StudioRestoreSnapshot<string, ScheduleStudioPatch> | undefined {
-    return this.workspaces.get(ws.wsHash)?.captureSnapshot(ws.wsHash, entityId);
-  }
-
-  restoreFromSnapshot(ws: WorkspaceStudioTarget, snapshot: StudioRestoreSnapshot<string, ScheduleStudioPatch>): void {
-    this.baseFor(ws).restoreFromSnapshot(ws.wsHash, snapshot);
-  }
-
-  deserialize(panel: vscode.WebviewPanel, state: ScheduleStudioPanelState): void {
-    const ws = this.getWorkspaces().find((w) => w.wsHash === state.wsKey);
-    if (!ws) { panel.dispose(); return; }
-    this.baseFor(ws).deserializePanel(panel, state);
-  }
-
-  private baseFor(ws: WorkspaceStudioTarget): StudioPanelManagerBase<ScheduleStudioEntity, ScheduleStudioFields, ScheduleStudioPatch, ScheduleStudioReferenceData> {
-    let base = this.workspaces.get(ws.wsHash);
-    if (!base) {
-      base = new StudioPanelManagerBase<ScheduleStudioEntity, ScheduleStudioFields, ScheduleStudioPatch, ScheduleStudioReferenceData>(
-        this.extensionUri,
-        surface,
-        new ScheduleStudioAdapter(ws),
-        this.onChanged,
-      );
-      this.workspaces.set(ws.wsHash, base);
-    }
-    return base;
-  }
-}

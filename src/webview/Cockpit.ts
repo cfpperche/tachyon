@@ -93,6 +93,7 @@ import {
   handleStudioNavCheckpointAck,
   beginStudioNavTransaction,
   currentStudioBindingFor,
+  refreshStudioReferenceData,
 } from "../cockpit/studioHost.js";
 import { makeStudioAdapterFactory, makeStudioDomainDispatch, type CockpitStudios } from "../cockpit/studioRegistry.js";
 export type { CockpitStudios };
@@ -480,6 +481,7 @@ let pushValidations: (() => void) | undefined;
 let pushHandoff: (() => void) | undefined;
 let pushTaskDetail: (() => void) | undefined;
 let pushProbes: (() => void) | undefined;
+let pushStudioReferenceData: (() => void) | undefined;
 let doOpenActivityTranscript: (() => void) | undefined;
 let wiredPanel: vscode.WebviewPanel | undefined;
 
@@ -500,6 +502,16 @@ export function refreshCockpitTaskDetail(): void {
  *  ProbeResultPanelManager.refreshAll()). A no-op off a probes route (mirrors refreshCockpitTaskDetail). */
 export function refreshCockpitProbes(): void {
   pushProbes?.();
+}
+
+/** t-610705 (Phase D, D1a) — re-fetch reference data (catalogs, not the entity) for an open studio
+ *  route after an external tachyon.yml change (wired into extension.ts's onViewsChanged("commands")/
+ *  refreshAll, replacing the retired RunbookStudioPanelManager/ScheduleStudioPanelManager's
+ *  `refreshReferenceData()`). A no-op off a studio route (mirrors refreshCockpitProbes); a no-op for
+ *  a studio whose adapter never changes its own referenceData externally is harmless (best-effort,
+ *  see studioHost.ts's refreshStudioReferenceData doc comment). */
+export function refreshCockpitStudioReferenceData(): void {
+  pushStudioReferenceData?.();
 }
 
 /** t-610705 (Phase C.2) — the palette "Open Raw Transcript" escape hatch, wired to the CURRENT
@@ -718,6 +730,7 @@ export async function openCockpit(
         pushHandoff = undefined;
         pushTaskDetail = undefined;
         pushProbes = undefined;
+        pushStudioReferenceData = undefined;
         doOpenActivityTranscript = undefined;
         wiredPanel = undefined;
         navEpoch += 1;
@@ -1287,6 +1300,10 @@ export async function openCockpit(
   pushHandoff = () => { void sendHandoff(); };
   pushTaskDetail = () => { void sendTaskDetail(); };
   pushProbes = () => { void sendProbes(); };
+  // t-610705 (Phase D, D1a) — no "sendX" wrapper needed: refreshStudioReferenceData already takes
+  // the io capability directly (same studioIo the studio-envelope dispatch above uses), and is a
+  // no-op with no binding — the isStudioRoute guard here just avoids the pointless call off-route.
+  pushStudioReferenceData = () => { if (isStudioRoute(currentRoute)) void refreshStudioReferenceData(studioIo); };
   doOpenActivityTranscript = () => {
     if (currentRoute.kind !== "agent-activity") {
       notify("Open an agent's Activity view first, then run “Open Raw Transcript”.");
@@ -1731,13 +1748,17 @@ export async function openCockpit(
     const activityIsActive = currentRoute.kind === "agent-activity";
     const probesIsActive = currentRoute.kind === "agent-probes" || currentRoute.kind === "workspace-probes";
     const handoffIsActive = isSection(currentRoute, "handoff");
-    // t-610705 (Phase D, D0) — studio-frame.css is shared by every StudioPanelManagerBase-based
-    // studio (StudioFrame.tsx); each studio's OWN sheet is a separate conditional (D1-D3 add theirs
-    // alongside command's here, one `studioX ? uri(...) : undefined` per StudioId — no shared/combined
-    // conditional the way mermaid-block.css above is, since each studio's own sheet is genuinely
-    // distinct content, not the same href under a different bootstrap-global key).
+    // t-610705 (Phase D, D0/D1a) — studio-frame.css is shared by every StudioPanelManagerBase-based
+    // studio (StudioFrame.tsx); each studio's OWN sheet is a separate conditional (D1b/D2/D3 add
+    // theirs alongside command/terminal/runbook/schedule here, one `studioX ? uri(...) : undefined`
+    // per StudioId — no shared/combined conditional the way mermaid-block.css above is, since each
+    // studio's own sheet is genuinely distinct content, not the same href under a different
+    // bootstrap-global key).
     const studioIsActive = isStudioRoute(currentRoute);
     const commandStudioIsActive = isStudioRoute(currentRoute) && currentRoute.studio === "command";
+    const terminalStudioIsActive = isStudioRoute(currentRoute) && currentRoute.studio === "terminal";
+    const runbookStudioIsActive = isStudioRoute(currentRoute) && currentRoute.studio === "runbook";
+    const scheduleStudioIsActive = isStudioRoute(currentRoute) && currentRoute.studio === "schedule";
     // t-610705 (Phase C.2) — ported from the retired standalone ActivityPanel.ts: mermaid/katex load
     // ON DEMAND client-side (activity/markdown.tsx), gated on these globals being present at all —
     // never previously wired into Cockpit.ts's shell (Task Detail's C.1 migration also uses
@@ -1784,6 +1805,9 @@ export async function openCockpit(
         handoffIsActive ? uri("handoff.css") : undefined,
         studioIsActive ? uri("studio-frame.css") : undefined,
         commandStudioIsActive ? uri("command-studio-shell.css") : undefined,
+        terminalStudioIsActive ? uri("terminal-studio-shell.css") : undefined,
+        runbookStudioIsActive ? uri("runbook-studio-shell.css") : undefined,
+        scheduleStudioIsActive ? uri("schedule-studio-shell.css") : undefined,
         uri("cockpit.css"),
       ].filter((href): href is string => href !== undefined),
       bundle: uri("cockpit.js"),
@@ -1814,8 +1838,18 @@ export async function openCockpit(
           probes: uri("probes.css"),
           "handoff-mermaid": uri("mermaid-block.css"),
           handoff: uri("handoff.css"),
-          "studio-frame": uri("studio-frame.css"),
+          // per-studio "studio-frame-<id>" keys (not one shared "studio-frame") — see
+          // cockpit/App.tsx's doc comment on the lazy studio blocks for why: same convention as the
+          // 3 "*-mermaid" keys above, one distinct key per client call site even though every key
+          // resolves to the same studio-frame.css href.
+          "studio-frame-command": uri("studio-frame.css"),
           "studio-command": uri("command-studio-shell.css"),
+          "studio-frame-terminal": uri("studio-frame.css"),
+          "studio-terminal": uri("terminal-studio-shell.css"),
+          "studio-frame-runbook": uri("studio-frame.css"),
+          "studio-runbook": uri("runbook-studio-shell.css"),
+          "studio-frame-schedule": uri("studio-frame.css"),
+          "studio-schedule": uri("schedule-studio-shell.css"),
         },
         __mermaidSrc: uri("mermaid.js"),
         __katexSrc: uri("katex.js"),

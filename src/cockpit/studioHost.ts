@@ -49,6 +49,10 @@
  *    the route/persistence layer — out of scope for D0's pilot; flagged for D1+ if it proves to
  *    matter in practice (single-slot "one abandoned new-entity draft at a time" is a reasonable
  *    default, just not the CORRECT one for two truly independent abandoned creations).
+ *  - D1a ADDITION: `refreshStudioReferenceData` — Runbook/Schedule's StudioPanelManagerBase hosts
+ *    used to expose a `refreshReferenceData()` fan-out (tachyon.yml command/agent list changed
+ *    elsewhere); this is its Control-route equivalent, generalized to any StudioId rather than
+ *    special-cased to those two (see its own doc comment below).
  */
 import { randomUUID } from "node:crypto";
 import * as vscode from "vscode";
@@ -187,6 +191,34 @@ export async function sendStudioLoad(io: StudioHostIO): Promise<void> {
     if (!io.isCurrent() || binding !== b || binding.generation !== generation) return;
     b.loadFailed = true;
     io.post(envelope(errorEnvelope(mapUnknownError("transport", err))));
+  }
+}
+
+/**
+ * t-610705 (Phase D, D1a) — a reference-data-ONLY refresh (Runbook/Schedule's live command/runbook/
+ * agent-name catalogs after an external tachyon.yml change elsewhere), independent of the bound
+ * entity/patch/dirty state. Mirrors StudioPanelManagerBase.refreshReferenceData()'s behavior (a
+ * plain `adapter.load()` re-call that only ever posts the `referenceData` field back), generalized
+ * from "every open panel in a Map" to "the single active binding" — generic over EVERY StudioId, not
+ * just runbook/schedule (an adapter with no external reference-data trigger simply never has this
+ * called for it; there is nothing runbook/schedule-specific to gate here). Best-effort: a load
+ * failure here is silently skipped rather than surfaced as an `error` envelope — this path never
+ * touches entity/patch/dirty, so skipping a failed catalog refresh is strictly less disruptive than
+ * a full reload's error banner would be for what is still just a live-catalog nicety; a REAL load
+ * failure already gets surfaced through the normal `sendStudioLoad` path on the next "ready"/re-open.
+ */
+export async function refreshStudioReferenceData(io: StudioHostIO): Promise<void> {
+  const b = binding;
+  if (!b) return;
+  const generation = b.generation;
+  try {
+    const result = await b.adapter.load(b.entityId);
+    if (!io.isCurrent() || binding !== b || binding.generation !== generation) return;
+    if (result.status !== "ok") return;
+    b.referenceData = result.referenceData;
+    io.post(envelope({ type: "referenceData", ...(result.referenceData !== undefined ? { referenceData: result.referenceData } : {}) }));
+  } catch {
+    // best-effort — see doc comment above.
   }
 }
 

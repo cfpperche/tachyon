@@ -1,22 +1,33 @@
 import { useEffect, useRef, useState } from "preact/hooks";
-import { decodeStudioMessage } from "../shared/studio/protocol";
+import { decodeStudioMessage, type StudioDispatch } from "../shared/studio/protocol";
 import { StudioFrame } from "../shared/studio/StudioFrame";
 import { canSave as computeCanSave } from "../shared/studio/dirtyGating";
+import { useStudioFreeze } from "../shared/studio/useStudioFreeze";
 import type { StudioError } from "../shared/studio/errorTaxonomy";
 import { Chip, Input, Textarea } from "../shared/ui";
 import { blankRunbookFields, computeRunbookDirty, runbookStudioTitleFor, type RunbookStudioReferenceData } from "./domain";
 import { cancelMessage, dirtyMessage, patchMessage, readyMessage, saveMessage } from "./messages";
 import type { RunbookStudioEntity, RunbookStudioFields, RunbookStudioHostMessage } from "./types";
 
-export interface RunbookStudioDispatch {
-  post(msg: unknown): void;
+/**
+ * t-610705 (SDD 410 Phase D, D1a) — Control-hosted, same props-driven split as Command/Terminal
+ * Studio (command-studio-shell/App.tsx's doc comment has the full rationale). Runbook additionally
+ * handles the "referenceData" core message on its own — pushed independently of a full `load` by
+ * `refreshCockpitStudioReferenceData` (studioHost.ts) after an external command-catalog change, so
+ * the step-resolution chips stay current without disturbing the in-progress edit.
+ */
+export interface RunbookStudioAppProps {
+  dispatch: StudioDispatch;
+  routeKey: string;
+  mountNonce: string;
+  incoming?: { seq: number; message: unknown };
 }
 
 const emptyReferenceData = (): RunbookStudioReferenceData => ({ commandNames: [] });
 const stepResolutionsFor = (raw: string, commandNames: string[]): Array<{ step: string; ref: boolean }> =>
   raw.split("\n").map((l) => l.trim()).filter(Boolean).map((step) => ({ step, ref: commandNames.includes(step) }));
 
-export function App({ dispatch }: { dispatch: RunbookStudioDispatch }) {
+export function App({ dispatch, routeKey, mountNonce, incoming }: RunbookStudioAppProps) {
   const [mode, setMode] = useState<"new" | "edit">("new");
   const [entityId, setEntityId] = useState<string | undefined>(undefined);
   const [entity, setEntity] = useState<RunbookStudioEntity | undefined>(undefined);
@@ -24,86 +35,125 @@ export function App({ dispatch }: { dispatch: RunbookStudioDispatch }) {
   const [fields, setFields] = useState<RunbookStudioFields>(blankRunbookFields());
   const [hostError, setHostError] = useState<StudioError | undefined>(undefined);
   const [loadFailed, setLoadFailed] = useState(false);
-  const [saveInFlight, setSaveInFlight] = useState(false);
   const [ready, setReady] = useState(false);
   const entityRef = useRef<RunbookStudioEntity | undefined>(undefined);
-
-  useEffect(() => {
-    const onMsg = (e: MessageEvent) => {
-      const decoded = decodeStudioMessage<RunbookStudioHostMessage>(e.data, []);
-      if (!decoded.ok || !decoded.message) {
-        setHostError({
-          code: "transport/protocol",
-          message: `studio protocol: ${decoded.reason ?? "undecodable message"}`,
-          source: "transport",
-          blocking: true,
-        });
-        if (!entityRef.current) setLoadFailed(true);
-        setSaveInFlight(false);
-        setReady(true);
-        return;
-      }
-      const d = decoded.message;
-      if (d.type === "load") {
-        entityRef.current = d.entity;
-        setEntity(d.entity);
-        setReferenceData(d.referenceData ?? emptyReferenceData());
-        setFields(d.entity.fields);
-        setMode(d.entity.name === undefined ? "new" : "edit");
-        setEntityId(d.entity.name);
-        setSaveInFlight(!!d.saveInFlight);
-        setHostError(undefined);
-        setLoadFailed(false);
-        setReady(true);
-      } else if (d.type === "referenceData") {
-        setReferenceData(d.referenceData ?? emptyReferenceData());
-      } else if (d.type === "error") {
-        setHostError({ code: d.code, message: d.message, source: d.source ?? "persistence", blocking: d.blocking });
-        if (!entityRef.current) setLoadFailed(true);
-        setSaveInFlight(false);
-        setReady(true);
-      } else if (d.type === "restore") {
-        if (d.snapshot?.patch) setFields(d.snapshot.patch);
-      }
-    };
-    window.addEventListener("message", onMsg);
-    dispatch.post(readyMessage());
-    return () => window.removeEventListener("message", onMsg);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const fieldsRef = useRef(fields);
+  fieldsRef.current = fields;
+  const dirtyRef = useRef(false);
+  const editRevisionRef = useRef(0);
 
   const dirty = computeRunbookDirty(entity, fields);
+  dirtyRef.current = dirty;
+
+  const post = (msg: object): void => dispatch.post({ ...msg, routeKey, mountNonce });
+
+  const { frozen, saving, frozenRef, freezeForSave } = useStudioFreeze({
+    post: dispatch.post,
+    getSnapshot: () => ({ dirty: dirtyRef.current, editRevision: editRevisionRef.current, patch: dirtyRef.current ? fieldsRef.current : undefined }),
+  });
+
   useEffect(() => {
-    if (!ready) return;
-    dispatch.post(dirtyMessage(dirty));
-    dispatch.post(patchMessage(fields));
+    setMode("new");
+    setEntityId(undefined);
+    setEntity(undefined);
+    entityRef.current = undefined;
+    setReferenceData(emptyReferenceData());
+    fieldsRef.current = blankRunbookFields();
+    dirtyRef.current = false;
+    setFields(fieldsRef.current);
+    setHostError(undefined);
+    setLoadFailed(false);
+    setReady(false);
+    dispatch.post(readyMessage({ routeKey, mountNonce }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, dirty, fields]);
+  }, [routeKey, mountNonce]);
+
+  useEffect(() => {
+    if (!incoming) return;
+    const decoded = decodeStudioMessage<RunbookStudioHostMessage>(incoming.message, []);
+    if (!decoded.ok || !decoded.message) {
+      setHostError({
+        code: "transport/protocol",
+        message: `studio protocol: ${decoded.reason ?? "undecodable message"}`,
+        source: "transport",
+        blocking: true,
+      });
+      if (!entityRef.current) setLoadFailed(true);
+      setReady(true);
+      return;
+    }
+    const d = decoded.message;
+    if (d.type === "load") {
+      entityRef.current = d.entity;
+      setEntity(d.entity);
+      setReferenceData(d.referenceData ?? emptyReferenceData());
+      fieldsRef.current = d.entity.fields;
+      dirtyRef.current = computeRunbookDirty(d.entity, d.entity.fields);
+      setFields(d.entity.fields);
+      setMode(d.entity.name === undefined ? "new" : "edit");
+      setEntityId(d.entity.name);
+      setHostError(undefined);
+      setLoadFailed(false);
+      setReady(true);
+    } else if (d.type === "referenceData") {
+      setReferenceData(d.referenceData ?? emptyReferenceData());
+    } else if (d.type === "error") {
+      setHostError({ code: d.code, message: d.message, source: d.source ?? "persistence", blocking: d.blocking });
+      if (!entityRef.current) setLoadFailed(true);
+      setReady(true);
+    } else if (d.type === "restore") {
+      if (d.snapshot?.patch) {
+        fieldsRef.current = d.snapshot.patch;
+        dirtyRef.current = computeRunbookDirty(entityRef.current, d.snapshot.patch);
+        setFields(d.snapshot.patch);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [incoming?.seq]);
+
+  useEffect(() => {
+    if (!ready || frozen) return;
+    editRevisionRef.current += 1;
+    post(dirtyMessage(dirty));
+    post(patchMessage(fields, editRevisionRef.current));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, dirty, fields, frozen]);
 
   if (!ready || !entity) {
     return <div class="ds-degrade"><span class="codicon codicon-loading" /><div>Loading Runbook Studio...</div></div>;
   }
 
   const errors: StudioError[] = hostError ? [hostError] : [];
-  const canSave = computeCanSave({ dirty, blockingErrorCount: hostError?.blocking ? 1 : 0, saveInFlight, concurrencyStale: false });
+  const canSave = computeCanSave({ dirty, blockingErrorCount: hostError?.blocking ? 1 : 0, saveInFlight: saving, concurrencyStale: false });
   const updateFields = (updater: (fields: RunbookStudioFields) => RunbookStudioFields) => {
+    if (frozenRef.current) return;
     setHostError(undefined);
     setLoadFailed(false);
-    setFields(updater);
+    const next = updater(fieldsRef.current);
+    fieldsRef.current = next;
+    dirtyRef.current = computeRunbookDirty(entityRef.current, next);
+    setFields(next);
   };
   const set = <K extends keyof RunbookStudioFields>(key: K, value: RunbookStudioFields[K]) => updateFields((f) => ({ ...f, [key]: value }));
   const resolutions = stepResolutionsFor(fields.steps, referenceData.commandNames);
+
+  const onSave = () => {
+    if (frozenRef.current) return;
+    freezeForSave();
+    post(saveMessage());
+  };
 
   return (
     <StudioFrame
       title={runbookStudioTitleFor(mode, entityId, entity)}
       errors={errors}
       dirty={dirty}
-      saveInFlight={saveInFlight}
+      saveInFlight={saving}
       loadFailed={loadFailed}
       canSave={canSave}
-      onSave={() => dispatch.post(saveMessage())}
-      onCancel={() => dispatch.post(cancelMessage())}
+      frozen={frozen}
+      onSave={onSave}
+      onCancel={() => post(cancelMessage())}
       regions={{
         fields: (
           <div class="rbsh-fields">

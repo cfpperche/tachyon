@@ -109,7 +109,7 @@ import {
   reapDeadAction,
   reapOrphansAction,
 } from "../inspector/messages";
-import type { CommandStudioDispatch } from "../command-studio-shell/App";
+import type { StudioDispatch } from "../shared/studio/protocol";
 import { dispatchStudioFreezeMessage, isStudioFreezeBusMessage } from "../shared/studio/studioFreezeBus";
 import type { PluginsDispatch } from "../plugins/App";
 import type { PluginsViewModel } from "../../plugins/viewModel";
@@ -378,10 +378,11 @@ function Root() {
     [],
   );
 
-  // t-610705 (Phase D, D0) — {post} is the whole contract (CommandStudioDispatch); the studio App
-  // posts fully-formed enveloped messages itself (readyMessage/patchMessage/etc.), same as it did
-  // as a standalone panel.
-  const commandStudioDispatch: CommandStudioDispatch = useMemo(() => ({ post }), []);
+  // t-610705 (Phase D, D0/D1a) — {post} is the whole contract (StudioDispatch); every studio App
+  // posts fully-formed enveloped messages itself (readyMessage/patchMessage/etc.), same as it did as
+  // a standalone panel. ONE shared dispatch for every StudioId (D1a — was command-specific) since
+  // only one studio binding is ever active at a time.
+  const studioDispatch: StudioDispatch = useMemo(() => ({ post }), []);
 
   const approvalDispatch: ApprovalDispatch = useMemo(
     () => ({
@@ -499,7 +500,7 @@ function Root() {
       handoffVm={handoffVm}
       handoffDispatch={handoffDispatch}
       studioIncoming={studioIncoming}
-      commandStudioDispatch={commandStudioDispatch}
+      studioDispatch={studioDispatch}
       approvalVm={approvalVm}
       approvalError={approvalError}
       approvalDispatch={approvalDispatch}

@@ -279,34 +279,11 @@ const agentStudioShell = {
   outfile: "dist/webview/agent-studio-shell.js",
 };
 
-// spec 350 Phase 4 Step 1 — the Terminal Studio (shell) webview bundle: terminal kind only.
-const terminalStudioShell = {
-  ...sidebar,
-  entryPoints: ["src/webview/terminal-studio-shell/main.tsx"],
-  outfile: "dist/webview/terminal-studio-shell.js",
-};
-
-// t-610705 (SDD 410 Phase D, D0) — the standalone Command Studio (shell) bundle was retired: it's
-// the pilot Control route now (studio-new/studio-edit, studio:"command" — studios-routes-design.md,
-// cockpit.js lazy-imports src/webview/command-studio-shell/App.tsx). The command-studio-shell.css
-// copyFileSync call below stays (Control still co-loads it) — only the standalone entry point/bundle
-// is gone.
-
-// spec 350 Phase 4 Step 3 — the Runbook Studio (shell) webview bundle: runbook kind only, with live
-// command-catalog referenceData refreshes.
-const runbookStudioShell = {
-  ...sidebar,
-  entryPoints: ["src/webview/runbook-studio-shell/main.tsx"],
-  outfile: "dist/webview/runbook-studio-shell.js",
-};
-
-// spec 350 Phase 4 Step 4 — the Schedule Studio (shell) webview bundle: schedule kind only, preserving the
-// Workspace.studioSubmit scheduler activation side effect on save.
-const scheduleStudioShell = {
-  ...sidebar,
-  entryPoints: ["src/webview/schedule-studio-shell/main.tsx"],
-  outfile: "dist/webview/schedule-studio-shell.js",
-};
+// t-610705 (SDD 410 Phase D, D0/D1a) — the standalone Command/Terminal/Runbook/Schedule Studio
+// (shell) bundles were retired: they're Control routes now (studio-new/studio-edit, studio:"command"
+// /"terminal"/"runbook"/"schedule" — studios-routes-design.md; cockpit.js lazy-imports each shell's
+// App.tsx directly). Each shell's own copyFileSync call below stays (Control still co-loads that
+// stylesheet) — only the standalone entry point/bundle is gone.
 
 // spec 349 T10 — first-party plugin surface relay. It mounts the opaque-origin plugin iframe, nonce-stamps
 // inline plugin scripts, and relays typed messages to the VS Code host.
@@ -447,10 +424,12 @@ copyFileSync("src/webview/shared/studio/studio-frame.css", "dist/webview/studio-
 copyFileSync("src/webview/pipeline-studio/pipeline-studio.css", "dist/webview/pipeline-studio.css"); // spec 350 T4 — Pipeline Studio (Fake 1) domain-region styles
 copyFileSync("src/webview/agent-studio-fixture/agent-studio-fixture.css", "dist/webview/agent-studio-fixture.css"); // spec 350 T5 — Agent-entity fixture (Fake 2) domain-region styles
 copyFileSync("src/webview/agent-studio-shell/agent-studio-shell.css", "dist/webview/agent-studio-shell.css"); // spec 350 Phase 3 T3 — Agent Studio (shell) domain-region styles
-copyFileSync("src/webview/terminal-studio-shell/terminal-studio-shell.css", "dist/webview/terminal-studio-shell.css"); // spec 350 Phase 4 Step 1 — Terminal Studio (shell) domain-region styles
-copyFileSync("src/webview/command-studio-shell/command-studio-shell.css", "dist/webview/command-studio-shell.css"); // spec 350 Phase 4 Step 2 — Command Studio (shell) domain-region styles
-copyFileSync("src/webview/runbook-studio-shell/runbook-studio-shell.css", "dist/webview/runbook-studio-shell.css"); // spec 350 Phase 4 Step 3 — Runbook Studio (shell) domain-region styles
-copyFileSync("src/webview/schedule-studio-shell/schedule-studio-shell.css", "dist/webview/schedule-studio-shell.css"); // spec 350 Phase 4 Step 4 — Schedule Studio (shell) domain-region styles
+// t-610705 (Phase D, D0/D1a) — these four studio-shell stylesheets are co-loaded by Control now
+// (Cockpit.ts), not a standalone bundle's own entry point; the standalone .js targets are gone.
+copyFileSync("src/webview/terminal-studio-shell/terminal-studio-shell.css", "dist/webview/terminal-studio-shell.css");
+copyFileSync("src/webview/command-studio-shell/command-studio-shell.css", "dist/webview/command-studio-shell.css");
+copyFileSync("src/webview/runbook-studio-shell/runbook-studio-shell.css", "dist/webview/runbook-studio-shell.css");
+copyFileSync("src/webview/schedule-studio-shell/schedule-studio-shell.css", "dist/webview/schedule-studio-shell.css");
 copyFileSync("src/webview/plugin-host/plugin-host.css", "dist/webview/plugin-host.css"); // spec 349 T10 — plugin UI relay shell
 copyFileSync("node_modules/@vscode/codicons/dist/codicon.ttf", "dist/webview/codicon.ttf");
 // KaTeX stylesheet + fonts (the CSS references fonts/ relatively → keep them adjacent under dist/webview).
@@ -475,7 +454,7 @@ if (existsSync(excalidrawAssets)) {
   cpSync(excalidrawAssets, "dist/webview/excalidraw-assets", { recursive: true });
 }
 
-const targets = [extension, toolLauncher, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, approval, cockpit, pinPreview, pinStudio, taskStudio, pipelineStudio, agentStudioFixture, agentStudioShell, terminalStudioShell, runbookStudioShell, scheduleStudioShell, pluginHost, excalidraw, mermaid, katex, preview, uiGate];
+const targets = [extension, toolLauncher, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, approval, cockpit, pinPreview, pinStudio, taskStudio, pipelineStudio, agentStudioFixture, agentStudioShell, pluginHost, excalidraw, mermaid, katex, preview, uiGate];
 if (watch) {
   const ctxs = await Promise.all(targets.map((c) => esbuild.context(c)));
   await Promise.all(ctxs.map((c) => c.watch()));
