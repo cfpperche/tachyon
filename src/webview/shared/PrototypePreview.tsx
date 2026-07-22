@@ -17,7 +17,12 @@ export function PrototypePreview({ value, onSelect }: { value: TaskPrototypeList
         <select aria-label="Prototype revision" value={selected.id} onChange={(e) => { const id = (e.currentTarget as HTMLSelectElement).value; setSelectedId(id); onSelect?.(id); }}>
           {value.prototypes.map((p, index) => <option key={p.id} value={p.id}>v{index + 1} · {p.state} · {p.title}</option>)}
         </select>
-        <div class="prototype-meta"><code>{selected.sha256.slice(0, 12)}</code> · {selected.integrity}</div>
+        {/* t-668b05 — `sha256` is a compile-time-only guarantee (TaskPrototypeVM); the actual value is
+         *  read straight through from an on-disk manifest record never runtime-validated, so a
+         *  missing/malformed one (e.g. an interrupted attach_task_prototype write) must degrade to a
+         *  placeholder here instead of throwing during render — an uncaught render exception blanks
+         *  the WHOLE Cockpit panel (no error boundary catches it), not just this one section. */}
+        <div class="prototype-meta"><code>{typeof selected.sha256 === "string" && selected.sha256 ? selected.sha256.slice(0, 12) : "unknown"}</code> · {selected.integrity}</div>
       </header>
       {value.error && <div class="prototype-unavailable">Manifest unavailable: {value.error}</div>}
       {selected.available && selected.staticSrcdoc ? (

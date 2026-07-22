@@ -1,4 +1,5 @@
 import { render } from "preact";
+import { ErrorBoundary } from "../shared/ErrorBoundary";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { App } from "./App";
 import {
@@ -583,4 +584,6 @@ function Root() {
 }
 
 const root = document.getElementById("root");
-if (root) render(<Root />, root);
+// t-668b05 — the ONE catch-all safety net: an uncaught render exception anywhere in Root's tree
+// (any embedded surface, any route) now degrades to a visible error instead of a blank/black panel.
+if (root) render(<ErrorBoundary><Root /></ErrorBoundary>, root);
