@@ -24,7 +24,10 @@ export function listLanIPv4Addresses(
   for (const entries of Object.values(interfaces)) {
     if (!entries) continue;
     for (const ent of entries) {
-      if (ent.family !== "IPv4" && ent.family !== 4) continue;
+      // @types/node's NetworkInterfaceInfo only declares family as "IPv4"/"IPv6", but some Node
+      // versions have historically reported it numerically (4/6) at runtime — cast to compare
+      // defensively without asserting a minimum Node version the type-only check can't express.
+      if (ent.family !== "IPv4" && (ent.family as string | number) !== 4) continue;
       if (ent.internal) continue;
       if (ent.address.startsWith("169.254.")) continue;
       if (!out.includes(ent.address)) out.push(ent.address);
