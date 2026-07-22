@@ -82,8 +82,29 @@ describe("Fleet Edit (Agent Studio) button", () => {
     const config = { agents: {} } as unknown as TachyonConfig;
     const deps = makeFakeCockpitDeps(missionBoard, { studios: { getWorkspaces: () => [studioWs(config)], onChanged: () => {} } });
     await openCockpit(deps, { section: "fleet" });
+    // t-610705 (Phase D, D1c) — checking `lastModel()?.activeRoute` alone would pass even if this
+    // handler silently did nothing for an unrelated reason (no model ever gets an activeRoute on the
+    // "fleet" section either way) — count model pushes before/after instead, so a REAL navigation
+    // (which always triggers a fresh sendModel() via requestNavigate's commit) would be caught.
+    const modelCountBefore = __createdPanels[0].webview.posted.filter((m) => (m as { type?: string }).type === "model").length;
     __createdPanels[0].webview.__receive({ type: "fleetAgentStudio", name: "ephemeral", wsHash: "ws-1" });
     await flush();
+    const modelCountAfter = __createdPanels[0].webview.posted.filter((m) => (m as { type?: string }).type === "model").length;
+    expect(modelCountAfter).toBe(modelCountBefore);
+    expect(lastModel()?.activeRoute).toBeUndefined();
+  });
+
+  it("rejects an inherited Object.prototype property name instead of navigating to a bogus entity (code-review finding)", async () => {
+    const config = { agents: {} } as unknown as TachyonConfig;
+    const deps = makeFakeCockpitDeps(missionBoard, { studios: { getWorkspaces: () => [studioWs(config)], onChanged: () => {} } });
+    await openCockpit(deps, { section: "fleet" });
+    const modelCountBefore = __createdPanels[0].webview.posted.filter((m) => (m as { type?: string }).type === "model").length;
+    for (const name of ["constructor", "__proto__", "toString", "hasOwnProperty"]) {
+      __createdPanels[0].webview.__receive({ type: "fleetAgentStudio", name, wsHash: "ws-1" });
+    }
+    await flush();
+    const modelCountAfter = __createdPanels[0].webview.posted.filter((m) => (m as { type?: string }).type === "model").length;
+    expect(modelCountAfter).toBe(modelCountBefore);
     expect(lastModel()?.activeRoute).toBeUndefined();
   });
 });

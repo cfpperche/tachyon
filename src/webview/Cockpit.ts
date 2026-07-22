@@ -1682,7 +1682,13 @@ export async function openCockpit(
           // !== false`), this re-checks authoritatively rather than trusting that client-side gate.
           if (typeof c.name === "string") {
             const ws = resolveFleetStudioWs(deps.studios, typeof c.wsHash === "string" ? c.wsHash : undefined);
-            const def = ws?.config?.agents[c.name];
+            // t-610705 (Phase D, D1c code-review finding) — Object.hasOwn, not a plain index read:
+            // `c.name` is an attacker-reachable webview-message field, and `agents[c.name]` for a
+            // name like "constructor"/"__proto__"/"toString" would otherwise resolve an INHERITED
+            // Object.prototype property instead of `undefined` — truthy, so it would slip past the
+            // "not declared" guard and navigate to a bogus studio-edit route for a nonexistent
+            // entity instead of warning.
+            const def = ws?.config && Object.hasOwn(ws.config.agents, c.name) ? ws.config.agents[c.name] : undefined;
             if (ws && def) {
               const studio = def.kind === "terminal" ? "terminal" : "agent";
               await requestNavigate(routes.studioEdit(studio, ws.wsHash, c.name), live, async () => {
