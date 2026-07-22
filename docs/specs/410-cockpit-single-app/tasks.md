@@ -48,7 +48,7 @@ protocol-completeness findings → v3). Product sign-offs recorded: draft policy
 (Save / Leave and keep draft / Discard) + bounded host cache; CSP acceptance deferred to D2/D3
 landing gates with security probes._
 
-- [ ] D0: router kinds (studio-new/studio-edit + StudioId) + STUDIO_REGISTRY + StudioRouteHost + nav-transaction FSM + mount handshake + revisioned persistence + draft cache + Command Studio pilot; retire CommandStudioPanel. DoD includes a design-conformance probe on the real FSM code.
+- [x] D0: router kinds (studio-new/studio-edit + StudioId) + STUDIO_REGISTRY + StudioRouteHost + nav-transaction FSM + mount handshake + revisioned persistence + draft cache + Command Studio pilot; retire CommandStudioPanel. DoD includes a design-conformance probe on the real FSM code. Landed `3aa19029` (2026-07-21); implemented inline (Fable, maintainer-authorized exception) with 6 adversarial probe rounds (2 design + 4 code) before landing.
 - [ ] D1: Terminal + Runbook + Schedule + Agent Studio; retire the 4 hosts.
 - [ ] D2: Task Studio (CAS/rich-doc/visuals, task-edit→task-detail chain) + CSP tranche 1 + security probe; retires TaskStudioPanel (closes C.1b).
 - [ ] D3: Pin Studio (Excalidraw, attachment roots, nav-less returnRoute) + CSP tranche 2 + security probe; retires PinStudioPanel (closes C.4).
