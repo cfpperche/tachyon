@@ -98,3 +98,36 @@ generation and that re-anchor consumes immutable pre-rendered bytes. Implementat
 into `t-4d6385` (foundation), `t-8f4420` (Soul/instructions), `t-59cbd6` (Evolution), `t-7217e1`
 (human-approved memory) and `t-3ef947` (integration). Runtime-managed memory is isolated in
 `t-d4c42e`.
+
+## 2026-07-22 — foundation implementation and closure review
+
+The foundation implements the closed authority model without enabling any new lane: validated v2
+profile/lane heads, the complete formation-generation vector, immutable content-addressed objects,
+prepared publication leases, atomic selector commit, exact fresh/fork replay, live lineage checks and
+dedicated read/revocation authorization. The compatibility converter starts every legacy v1 lane in
+`disabled`; plugin paths and plugin-shaped namespaces are rejected from the Evolution skill inventory.
+
+Adversarial code review was intentionally iterative:
+
+- `probe-22efc983-563e-4e80-a54c-1bf560149c65` found the original caller-owned payload, weak mutation
+  labels, unsafe paths, non-expiring ownerless leases, wrong revocation capability and missing cascade.
+- `probe-288a640f-1333-48fc-95c9-5485f3ef3509` found rollback-unsafe GC, orphan disabled-lane heads,
+  incomplete caller replay identity, unsafe authority-root handling and textual time ordering.
+- `probe-cab35658-ea1f-42fa-ba3a-52de01b06d84` found prepare-to-commit caller takeover, fabricated
+  bootstrap history, insufficient object-store directory protection and reusable expired operations.
+- `probe-d2b9b556-a07f-422a-95a7-a46bb3f38b5d` found unauthenticated payload reads and leases that
+  could expire between the final heartbeat and publication.
+- `probe-b5998afc-1855-4425-aa2b-a5c46904958b` found missing manifest-digest verification and
+  crash-abandoned staging files outside GC.
+
+All findings were converted into fixed-oracle regressions. Payload bytes now come only from a trusted
+resolver bound to the exact authority vector and renderer set; caller principal and kind are bound
+from prepare through commit/read/replay; every lease transition checks owner, state and numeric expiry;
+expired operation ids become terminal tombstones; GC commits reference removal before deleting files;
+manifests and objects are integrity-read before publication; private roots reject symlinks, foreign
+owners and non-private permissions; revocation cascades over the complete root lineage; and stale
+staging is collected after a conservative grace period.
+
+Closure probe `probe-d7974bda-f6ee-47ad-aacd-c165da7111f1` returned no blocker or major findings.
+Focused evidence: `test/unit/agentFormationFoundation.test.ts` (17 tests). Full probe artifacts remain
+under `.tachyon/probes/<probe-id>/result.json`.

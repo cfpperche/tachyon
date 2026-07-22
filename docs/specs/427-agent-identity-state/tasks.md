@@ -14,11 +14,11 @@ _Generated from `plan.md` on 2026-07-22._
 
 ## Foundation — `t-4d6385`
 
-- [ ] Characterize legacy/disabled bytes and plugin discovery/injection calls.
-- [ ] Add authority v2 + formation-generation transactional store and compatibility reader.
-- [ ] Add immutable object/snapshot store, prepare/commit recovery, leases and GC.
-- [ ] Add authenticated/idempotent fresh/fork selector operations and transition validators.
-- [ ] Prove complete-vector CAS/read barrier without enabling new lanes.
+- [x] Characterize legacy/disabled bytes and plugin discovery/injection calls.
+- [x] Add authority v2 + formation-generation transactional store and compatibility reader.
+- [x] Add immutable object/snapshot store, prepare/commit recovery, leases and GC.
+- [x] Add authenticated/idempotent fresh/fork selector operations and transition validators.
+- [x] Prove complete-vector CAS/read barrier without enabling new lanes.
 
 ## Human lanes — `t-8f4420`
 
