@@ -2,7 +2,8 @@
 
 _Created 2026-07-22._
 
-**Status:** in-progress
+**Status:** shipped
+**Closure:** Shipped through `t-152041` (`599441cc`), `t-c3605c` (`885f8e9d`) and `t-980e6e` (`c8bcf33c`); all child SDDs and final compatibility gates are green.
 
 **Task:** `t-c111e4` · **Parent:** `t-e50d4f` / SDD 429 · **Depends on:** SDD 430
 
@@ -35,32 +36,32 @@ The umbrella closes only when all three pass their own SDD and compatibility gat
 
 ## Acceptance criteria
 
-- [ ] **Scenario: rename preserves identity**
+- [x] **Scenario: rename preserves identity**
   - **Given** a profile-backed agent and free destination name
   - **When** rename commits
   - **Then** the canonical directory, locator and authority move to the destination with the same `agentId`, grants and profile bytes
-- [ ] **Scenario: canonical commit precedes live convergence**
+- [x] **Scenario: canonical commit precedes live convergence**
   - **Given** a running or stopped profile-backed agent
   - **When** rename is requested
   - **Then** persistent identity commits first, live/session state converges afterward, and both names remain blocked while convergence is incomplete
-- [ ] **Scenario: rename conflicts fail closed**
+- [x] **Scenario: rename conflicts fail closed**
   - **Given** a stale revision, occupied destination, worktree/path collision or concurrent writer
   - **When** rename is attempted
   - **Then** no second identity is created and diagnostics reveal no authority content
-- [ ] **Scenario: forget retires before deletion**
+- [x] **Scenario: forget retires before deletion**
   - **Given** a stopped profile-backed agent and current revision
   - **When** forget commits
   - **Then** authority and locator retire before allowlisted canonical/projection cleanup and a completed retirement receipt remains inspectable
-- [ ] **Scenario: forget preserves external state**
+- [x] **Scenario: forget preserves external state**
   - **Given** runtime homes/memory, plugins, worktrees, secrets or other external bindings
   - **When** forget commits
   - **Then** those resources remain untouched and retained-binding diagnostics identify them without exposing secrets
-- [ ] **Scenario: crash recovery is deterministic**
+- [x] **Scenario: crash recovery is deterministic**
   - **Given** interruption after any durable rename or forget phase
   - **When** startup reconciliation runs
   - **Then** it finishes the known target, restores a provable prior state, or leaves a degraded journal blocking both names
-- [ ] Name reuse is refused during unresolved retirement and allowed only after completion with a fresh `agentId`.
-- [ ] Legacy rename/forget behavior remains compatible for non-profile agents.
+- [x] Name reuse is refused during unresolved retirement and allowed only after completion with a fresh `agentId`.
+- [x] Legacy rename/forget behavior remains compatible for non-profile agents.
 
 ## Non-goals
 

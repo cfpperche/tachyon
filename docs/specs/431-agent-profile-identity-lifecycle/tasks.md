@@ -10,18 +10,18 @@ _Generated from `plan.md` on 2026-07-22._
 
 ## Implementation
 
-- [ ] `t-152041` ships stopped-agent canonical rename and recovery.
-- [ ] `t-c3605c` ships idempotent live-session convergence.
-- [ ] `t-980e6e` ships retirement, custody-qualified cleanup and safe name reuse.
-- [ ] Integration audit preserves the existing legacy rename/forget path.
+- [x] `t-152041` ships stopped-agent canonical rename and recovery.
+- [x] `t-c3605c` ships idempotent live-session convergence.
+- [x] `t-980e6e` ships retirement, custody-qualified cleanup and safe name reuse.
+- [x] Integration audit preserves the existing legacy rename/forget path.
 
 ## Verification
 
-- [ ] Focused tests cover stale/collision/concurrency, every durable phase, retry and degraded state.
-- [ ] Live/stopped rename and live forget refusal are covered headlessly.
-- [ ] External bindings survive forget and completed name reuse gets a fresh `agentId`.
-- [ ] Migration, lifecycle, Evolution and Workspace compatibility suites pass.
-- [ ] Full configured verification and typecheck pass.
+- [x] Focused tests cover stale/collision/concurrency, every durable phase, retry and degraded state.
+- [x] Live/stopped rename and live forget refusal are covered headlessly.
+- [x] External bindings survive forget and completed name reuse gets a fresh `agentId`.
+- [x] Migration, lifecycle, Evolution and Workspace compatibility suites pass.
+- [x] Full configured verification and typecheck pass.
 
 **Headless check:** `npm run verify:full:quiet`
 

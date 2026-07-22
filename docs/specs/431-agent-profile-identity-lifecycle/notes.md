@@ -12,12 +12,19 @@ _In-flight design memory — decisions, deviations, tradeoffs, and open question
 
 ## Deviations
 
-_Where implementation intentionally departed from `plan.md`, and why it was necessary or better._
+- Canonical forget quarantines the complete profile home instead of deleting selected children. This keeps current Evolution and future profile-local plugin bytes recoverable while still removing the active locator.
 
 ## Tradeoffs
 
-_Alternatives weighed mid-build. The chosen path + what was given up + why it was worth it._
+- Completed retirement receipts remain durable and teach legacy GC which name-only runtime state must be retained. This costs a small permanent receipt but prevents delayed cleanup from violating retirement custody.
 
 ## Open questions
 
-Each child SDD must resolve its own exact phase/recovery table and cross-lock ordering before code.
+None. All three child SDDs shipped and their phase/recovery contracts are recorded in SDDs 432, 433 and 436.
+
+## Closure evidence
+
+- Persistent canonical rename: `599441cc` / SDD 432.
+- Live convergence: `885f8e9d` / SDD 433.
+- Canonical forget: `c8bcf33c` / SDD 436.
+- Final main gate after the third slice: 475 files passed; 5,434 tests passed; 3 skipped; typecheck passed.
