@@ -59,15 +59,37 @@ landing gates with security probes._
       `studioIncoming` message from the PREVIOUS studio landing in a freshly-mounted DIFFERENT
       studio) + a missing Terminal `referenceData` handler, both fixed; round 2 verified the fix
       against studioHost.ts's actual binding-teardown ordering (no late-message race).
-- [ ] D1b: Agent Studio (soul profile + evolution candidates messaging); retire AgentStudioPanel.
+- [x] D1b: Agent Studio (soul profile + evolution candidates messaging); retired AgentStudioPanel.
+      Landed `9d3bd256` (2026-07-21); implemented inline (Fable, maintainer-authorized exception)
+      with 2 adversarial probe rounds. Required one deliberate extension to the shared mechanism:
+      `StudioMessageHooks.handleDomainMessage`'s ctx now also carries the binding's `entityId`
+      (studioHost.ts), threaded through so soul/evolution actions (each carrying their own `agent`
+      field) can be validated against the bound entity, mirroring the retired panel's guard. Round 1
+      found + fixed 2 real bugs: a lazy CSS load-order bug (Agent Studio's Tailwind sheet requested
+      AFTER studio-frame.css on an in-session navigation into Agent Studio, reversing the cascade vs
+      a direct deep-link) and confirmed-safe-but-worth-documenting: `binding.entityId` never updates
+      after a successful `studio-new` save, so soul/evolution actions stay unavailable for a
+      just-created agent until the user navigates away and back — a real UX gap (not a correctness
+      bug: the client's own entity state also never refreshes post-save, so host and client agree)
+      pre-existing since D0 but only made visible by Agent Studio's post-save domain actions; kept as
+      a documented known limitation (studioHost.ts) rather than the larger `StudioSaveResult`
+      interface change it would need — see D1d below.
 - [ ] D1c: Fleet agent rows are missing a "Probes" and an "Agent Studio" (edit) button — today only
       Stop/Start, Terminal, Activity are wired (maintainer screenshot, 2026-07-21). The agent-probes
       route already exists (C.2) but per route.ts's own doc comment is deliberately unsurfaced in the
       UI ("an internal/debug escape hatch... never surfaced"); editing an agent's definition from
       Fleet is reachable today only via the sidebar tree's context menu (`tachyon.editAgentStudioItem`),
       not from Control's embedded Fleet rows. Probes button has no blocking dependency; the Agent
-      Studio button wants D1b landed first so it opens a real Control route instead of the legacy
-      standalone panel. Lands after D1b.
+      Studio button wants D1b landed first (done) so it opens a real Control route instead of the
+      legacy standalone panel.
+- [ ] D1d: after a successful `studio-new` save, `beginStudioSave` (studioHost.ts) never updates the
+      binding's `entityId` to the newly-persisted entity, and no studio's App.tsx handles a `save`
+      reply to re-request a fresh load — so a form stays effectively in "new" mode client-side even
+      after a real save succeeded. Invisible for command/terminal/runbook/schedule (no post-save
+      domain actions); real UX gap for Agent Studio (soul/evolution actions need a named, saved
+      entity). Needs `StudioSaveResult`'s "ok" case to optionally carry the persisted entity id
+      (adapter.ts — a shared-interface change touching every adapter) + a fresh load push on success.
+      Found during D1b's code review (2026-07-21); not a blocker for D1b's landing.
 - [ ] D2: Task Studio (CAS/rich-doc/visuals, task-edit→task-detail chain) + CSP tranche 1 + security probe; retires TaskStudioPanel (closes C.1b).
 - [ ] D3: Pin Studio (Excalidraw, attachment roots, nav-less returnRoute) + CSP tranche 2 + security probe; retires PinStudioPanel (closes C.4).
 
