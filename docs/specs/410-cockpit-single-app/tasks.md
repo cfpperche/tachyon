@@ -49,7 +49,21 @@ protocol-completeness findings → v3). Product sign-offs recorded: draft policy
 landing gates with security probes._
 
 - [x] D0: router kinds (studio-new/studio-edit + StudioId) + STUDIO_REGISTRY + StudioRouteHost + nav-transaction FSM + mount handshake + revisioned persistence + draft cache + Command Studio pilot; retire CommandStudioPanel. DoD includes a design-conformance probe on the real FSM code. Landed `3aa19029` (2026-07-21); implemented inline (Fable, maintainer-authorized exception) with 6 adversarial probe rounds (2 design + 4 code) before landing.
-- [ ] D1: Terminal + Runbook + Schedule + Agent Studio; retire the 4 hosts.
+- [ ] D1a: Terminal + Runbook + Schedule Studio (shared shape, reuses D0's FSM as-is + a new
+      generic `refreshStudioReferenceData` push for Runbook/Schedule's live command/agent catalogs);
+      retire the 3 hosts. Split from D1 in-flight (2026-07-21): Agent Studio's evolution/soul-profile
+      domain messages are ~5x the size of the other three combined — bundling it into the same PR
+      mixed risk profiles for no reason, so it moves to its own D1b. In progress (inline, same
+      Fable-implements/probe-review mode as D0, maintainer re-confirmed 2026-07-21 for D1-D3).
+- [ ] D1b: Agent Studio (soul profile + evolution candidates messaging); retire AgentStudioPanel.
+- [ ] D1c: Fleet agent rows are missing a "Probes" and an "Agent Studio" (edit) button — today only
+      Stop/Start, Terminal, Activity are wired (maintainer screenshot, 2026-07-21). The agent-probes
+      route already exists (C.2) but per route.ts's own doc comment is deliberately unsurfaced in the
+      UI ("an internal/debug escape hatch... never surfaced"); editing an agent's definition from
+      Fleet is reachable today only via the sidebar tree's context menu (`tachyon.editAgentStudioItem`),
+      not from Control's embedded Fleet rows. Probes button has no blocking dependency; the Agent
+      Studio button wants D1b landed first so it opens a real Control route instead of the legacy
+      standalone panel. Lands after D1b.
 - [ ] D2: Task Studio (CAS/rich-doc/visuals, task-edit→task-detail chain) + CSP tranche 1 + security probe; retires TaskStudioPanel (closes C.1b).
 - [ ] D3: Pin Studio (Excalidraw, attachment roots, nav-less returnRoute) + CSP tranche 2 + security probe; retires PinStudioPanel (closes C.4).
 
