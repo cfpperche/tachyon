@@ -53,6 +53,30 @@ const SCHEMA = `
     intent_fingerprint TEXT NOT NULL,
     abandoned_at TEXT NOT NULL
   ) STRICT;
+  CREATE TABLE IF NOT EXISTS formation_mutation_barriers (
+    agent_id TEXT PRIMARY KEY,
+    operation_id TEXT NOT NULL UNIQUE,
+    mutation TEXT NOT NULL,
+    caller_principal TEXT NOT NULL,
+    caller_kind TEXT NOT NULL CHECK (caller_kind IN ('human', 'system', 'agent')),
+    workspace_id TEXT NOT NULL,
+    expected_generation_digest TEXT NOT NULL,
+    phase TEXT NOT NULL CHECK (phase IN ('prepared', 'source-published', 'authority-committed')),
+    intent_json TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  ) STRICT;
+  CREATE TABLE IF NOT EXISTS formation_mutation_receipts (
+    operation_id TEXT PRIMARY KEY,
+    mutation TEXT NOT NULL,
+    caller_principal TEXT NOT NULL,
+    caller_kind TEXT NOT NULL CHECK (caller_kind IN ('human', 'system', 'agent')),
+    workspace_id TEXT NOT NULL,
+    agent_id TEXT NOT NULL,
+    prior_generation_digest TEXT NOT NULL,
+    next_generation_digest TEXT,
+    outcome TEXT NOT NULL CHECK (outcome IN ('committed', 'rolled-back')),
+    completed_at TEXT NOT NULL
+  ) STRICT;
   CREATE TABLE IF NOT EXISTS formation_snapshot_manifests (
     snapshot_id TEXT PRIMARY KEY,
     manifest_digest TEXT NOT NULL UNIQUE,
@@ -141,6 +165,7 @@ export interface FormationAuthorityStoreOptions {
     runtimeTrustClass: string;
   }) => boolean;
   resolvePayload: (input: {
+    operationId: string;
     vector: FormationAuthorityVector;
     workspaceId: string;
     agentId: string;
@@ -157,6 +182,29 @@ export interface PrepareFormationSnapshotInput {
   agentName: string;
   runtimeTrustClass: string;
   expectedGenerationSha256: string;
+}
+
+export interface FormationMutationBarrier {
+  operationId: string;
+  mutation: FormationVectorMutation;
+  caller: FormationCaller;
+  workspaceId: string;
+  agentId: string;
+  expectedGenerationSha256: string;
+  phase: "prepared" | "source-published" | "authority-committed";
+  intent: unknown;
+  createdAt: string;
+}
+
+export interface FormationMutationReceipt {
+  operationId: string;
+  mutation: FormationVectorMutation;
+  workspaceId: string;
+  agentId: string;
+  priorGenerationSha256: string;
+  nextGenerationSha256?: string;
+  outcome: "committed" | "rolled-back";
+  completedAt: string;
 }
 
 interface StoredPayload {
@@ -388,6 +436,19 @@ export class FormationAuthorityStore {
       })) throw new FormationAuthorityStoreError("formation authority mutation is not authorized for this caller");
       const currentRow = db.prepare("SELECT generation_digest, vector_json FROM formation_generations WHERE agent_id = ?")
         .get(input.vector.generation.agentId) as SqlRow | undefined;
+      const barrierRow = db.prepare("SELECT * FROM formation_mutation_barriers WHERE agent_id = ?")
+        .get(input.vector.generation.agentId) as SqlRow | undefined;
+      if (barrierRow) {
+        const barrier = this.parseMutationBarrier(barrierRow);
+        const intent = barrier.intent as { nextVector?: unknown } | undefined;
+        if (barrier.operationId !== input.operationId || !sameValue(barrier.caller, input.caller)
+          || barrier.mutation !== input.mutation || barrier.agentId !== input.vector.profile.agentId
+          || barrier.workspaceId !== input.vector.profile.workspaceId
+          || barrier.expectedGenerationSha256 !== input.expectedGenerationSha256
+          || !intent?.nextVector || !sameValue(intent.nextVector, input.vector)) {
+          throw new FormationAuthorityStoreError("formation authority mutation does not match its prepared barrier intent");
+        }
+      }
       if (input.expectedGenerationSha256 === undefined ? currentRow !== undefined : currentRow?.generation_digest !== input.expectedGenerationSha256) {
         throw new FormationAuthorityStoreError("formation generation CAS mismatch");
       }
@@ -415,6 +476,7 @@ export class FormationAuthorityStore {
     const vector = this.currentVector(input.agentId);
     this.assertFreshRequest(input, vector);
     const resolved = this.options.resolvePayload({
+      operationId: input.operationId,
       vector: structuredClone(vector!),
       workspaceId: input.workspaceId,
       agentId: input.agentId,
@@ -441,7 +503,7 @@ export class FormationAuthorityStore {
         throw new FormationAuthorityStoreError("formation snapshot preparation lease expired and cannot be reused");
       }
       const current = this.readCurrentVector(db, input.agentId);
-      this.assertFreshRequest(input, current);
+      this.assertFreshRequest(input, current, db);
       const expiresAtMs = nowMs + this.leaseTtlMs;
       db.prepare(`INSERT INTO formation_publication_leases
         (operation_id, intent_fingerprint, caller_principal, caller_kind, owner_token, expires_at_ms, manifest_digest, manifest_json, payload_json, state, created_at)
@@ -470,7 +532,12 @@ export class FormationAuthorityStore {
     assertOperationId(input.operationId);
     const committed = this.writeTransaction((db) => {
       const lease = db.prepare("SELECT * FROM formation_publication_leases WHERE operation_id = ?").get(input.operationId) as SqlRow | undefined;
-      if (!lease) return this.readCommittedSelectorForCaller(db, input.operationId, "fresh", input.caller);
+      if (!lease) {
+        const abandoned = db.prepare("SELECT operation_id FROM formation_abandoned_operations WHERE operation_id = ?")
+          .get(input.operationId) as SqlRow | undefined;
+        if (abandoned) throw new FormationAuthorityStoreError("formation snapshot operation was terminally abandoned");
+        return this.readCommittedSelectorForCaller(db, input.operationId, "fresh", input.caller);
+      }
       if (lease.state !== "ready") throw new FormationAuthorityStoreError("formation snapshot preparation is incomplete");
       if (lease.caller_principal !== input.caller.principal || lease.caller_kind !== input.caller.kind) {
         throw new FormationAuthorityStoreError("formation snapshot was prepared by another caller");
@@ -481,6 +548,9 @@ export class FormationAuthorityStore {
         return undefined;
       }
       const manifest = parseManifestWithDigest(String(lease.manifest_json), String(lease.manifest_digest));
+      const barrier = db.prepare("SELECT operation_id FROM formation_mutation_barriers WHERE agent_id = ?")
+        .get(manifest.agentId) as SqlRow | undefined;
+      if (barrier) throw new FormationAuthorityStoreError("fresh formation is blocked by an active authority mutation");
       const vector = this.readCurrentVector(db, manifest.agentId);
       if (!vector || formationDigest(vector.generation) !== manifest.formationGenerationSha256
         || vector.generation.retired || vector.generation.generation !== manifest.formationGeneration) {
@@ -650,10 +720,15 @@ export class FormationAuthorityStore {
     return { abandonedOperations, removedObjects };
   }
 
-  private assertFreshRequest(input: PrepareFormationSnapshotInput, vector: FormationAuthorityVector | undefined): void {
+  private assertFreshRequest(input: PrepareFormationSnapshotInput, vector: FormationAuthorityVector | undefined, db?: DatabaseSync): void {
     if (!vector || formationDigest(vector.generation) !== input.expectedGenerationSha256 || vector.generation.retired) {
       throw new FormationAuthorityStoreError("formation generation changed or retired before snapshot preparation");
     }
+    const blocked = db
+      ? db.prepare("SELECT operation_id FROM formation_mutation_barriers WHERE agent_id = ?").get(input.agentId) as SqlRow | undefined
+      : this.withDatabase((database) => database.prepare("SELECT operation_id FROM formation_mutation_barriers WHERE agent_id = ?")
+        .get(input.agentId) as SqlRow | undefined);
+    if (blocked) throw new FormationAuthorityStoreError("fresh formation is blocked by a prepared authority mutation");
     if (vector.generation.workspaceId !== input.workspaceId || vector.profile.agentName !== input.agentName) {
       throw new FormationAuthorityStoreError("snapshot request does not match formation authority identity");
     }
@@ -665,6 +740,165 @@ export class FormationAuthorityStore {
       agentName: input.agentName,
       runtimeTrustClass: input.runtimeTrustClass,
     })) throw new FormationAuthorityStoreError("fresh formation is not authorized for this caller");
+  }
+
+  beginMutationBarrier(input: {
+    operationId: string;
+    mutation: FormationVectorMutation;
+    caller: FormationCaller;
+    workspaceId: string;
+    agentId: string;
+    expectedGenerationSha256: string;
+    intent: unknown;
+  }): FormationMutationBarrier {
+    assertOperationId(input.operationId);
+    const serialized = JSON.stringify(input.intent);
+    if (Buffer.byteLength(serialized, "utf8") > 4 * 1024 * 1024) throw new FormationAuthorityStoreError("formation mutation intent is too large");
+    if (!this.options.authorizeMutation({ operation: input.mutation, caller: input.caller, workspaceId: input.workspaceId, agentId: input.agentId })) {
+      throw new FormationAuthorityStoreError("formation authority mutation is not authorized for this caller");
+    }
+    return this.writeTransaction((db) => {
+      const terminal = db.prepare("SELECT agent_id, caller_principal, caller_kind FROM formation_mutation_receipts WHERE operation_id = ?")
+        .get(input.operationId) as SqlRow | undefined;
+      if (terminal) throw new FormationAuthorityStoreError("formation mutation operation is already terminal");
+      const existing = db.prepare("SELECT * FROM formation_mutation_barriers WHERE agent_id = ? OR operation_id = ?")
+        .get(input.agentId, input.operationId) as SqlRow | undefined;
+      if (existing) {
+        const parsed = this.parseMutationBarrier(existing);
+        if (parsed.operationId !== input.operationId || parsed.mutation !== input.mutation
+          || !sameValue(parsed.caller, input.caller) || parsed.workspaceId !== input.workspaceId
+          || parsed.agentId !== input.agentId || parsed.expectedGenerationSha256 !== input.expectedGenerationSha256
+          || !sameValue(parsed.intent, input.intent)) {
+          throw new FormationAuthorityStoreError("formation mutation barrier conflicts with an active operation");
+        }
+        return parsed;
+      }
+      const current = db.prepare("SELECT generation_digest FROM formation_generations WHERE agent_id = ?").get(input.agentId) as SqlRow | undefined;
+      if (!current || current.generation_digest !== input.expectedGenerationSha256) throw new FormationAuthorityStoreError("formation mutation barrier generation CAS mismatch");
+      const createdAt = this.now();
+      for (const lease of db.prepare("SELECT * FROM formation_publication_leases").all() as SqlRow[]) {
+        const manifest = parseManifestWithDigest(String(lease.manifest_json), String(lease.manifest_digest));
+        if (manifest.agentId !== input.agentId) continue;
+        this.abandonOwnedLease(db, String(lease.operation_id), String(lease.owner_token), String(lease.intent_fingerprint), createdAt);
+      }
+      db.prepare(`INSERT INTO formation_mutation_barriers
+        (agent_id, operation_id, mutation, caller_principal, caller_kind, workspace_id, expected_generation_digest, phase, intent_json, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'prepared', ?, ?)`)
+        .run(input.agentId, input.operationId, input.mutation, input.caller.principal, input.caller.kind,
+          input.workspaceId, input.expectedGenerationSha256, serialized, createdAt);
+      return { ...input, phase: "prepared", createdAt };
+    });
+  }
+
+  mutationBarrier(agentId: string, caller: FormationCaller): FormationMutationBarrier | undefined {
+    return this.withDatabase((db) => {
+      const row = db.prepare("SELECT * FROM formation_mutation_barriers WHERE agent_id = ?").get(agentId) as SqlRow | undefined;
+      if (!row) return undefined;
+      const barrier = this.parseMutationBarrier(row);
+      if (!sameValue(barrier.caller, caller)) throw new FormationAuthorityStoreError("formation mutation barrier belongs to another caller");
+      return barrier;
+    });
+  }
+
+  mutationReceipt(operationId: string, caller: FormationCaller): FormationMutationReceipt | undefined {
+    assertOperationId(operationId);
+    return this.withDatabase((db) => {
+      const row = db.prepare("SELECT * FROM formation_mutation_receipts WHERE operation_id = ?").get(operationId) as SqlRow | undefined;
+      if (!row) return undefined;
+      if (row.caller_principal !== caller.principal || row.caller_kind !== caller.kind) {
+        throw new FormationAuthorityStoreError("formation mutation receipt belongs to another caller");
+      }
+      return {
+        operationId: String(row.operation_id),
+        mutation: String(row.mutation) as FormationVectorMutation,
+        workspaceId: String(row.workspace_id),
+        agentId: String(row.agent_id),
+        priorGenerationSha256: String(row.prior_generation_digest),
+        ...(row.next_generation_digest ? { nextGenerationSha256: String(row.next_generation_digest) } : {}),
+        outcome: String(row.outcome) as FormationMutationReceipt["outcome"],
+        completedAt: String(row.completed_at),
+      };
+    });
+  }
+
+  advanceMutationBarrier(input: {
+    operationId: string;
+    caller: FormationCaller;
+    expectedPhase: FormationMutationBarrier["phase"];
+    phase: FormationMutationBarrier["phase"];
+  }): FormationMutationBarrier {
+    assertOperationId(input.operationId);
+    const allowed = (input.expectedPhase === "prepared" && input.phase === "source-published")
+      || (input.expectedPhase === "source-published" && input.phase === "authority-committed");
+    if (!allowed) throw new FormationAuthorityStoreError("formation mutation barrier phase transition is invalid");
+    return this.writeTransaction((db) => {
+      const row = db.prepare("SELECT * FROM formation_mutation_barriers WHERE operation_id = ?").get(input.operationId) as SqlRow | undefined;
+      if (!row) throw new FormationAuthorityStoreError("formation mutation barrier is unavailable");
+      const current = this.parseMutationBarrier(row);
+      if (!sameValue(current.caller, input.caller)) throw new FormationAuthorityStoreError("formation mutation barrier belongs to another caller");
+      const result = db.prepare("UPDATE formation_mutation_barriers SET phase = ? WHERE operation_id = ? AND phase = ?")
+        .run(input.phase, input.operationId, input.expectedPhase);
+      if (result.changes !== 1) throw new FormationAuthorityStoreError("formation mutation barrier phase CAS mismatch");
+      return { ...current, phase: input.phase };
+    });
+  }
+
+  finishMutationBarrier(input: {
+    operationId: string;
+    caller: FormationCaller;
+    outcome: "committed" | "rolled-back";
+    nextGenerationSha256?: string;
+  }): void {
+    assertOperationId(input.operationId);
+    this.writeTransaction((db) => {
+      const row = db.prepare("SELECT * FROM formation_mutation_barriers WHERE operation_id = ?").get(input.operationId) as SqlRow | undefined;
+      if (!row) return;
+      const current = this.parseMutationBarrier(row);
+      if (!sameValue(current.caller, input.caller)) throw new FormationAuthorityStoreError("formation mutation barrier belongs to another caller");
+      const authority = this.readCurrentVector(db, current.agentId);
+      const authorityDigest = authority ? formationDigest(authority.generation) : undefined;
+      if (input.outcome === "committed") {
+        if (current.phase !== "authority-committed" || !input.nextGenerationSha256 || authorityDigest !== input.nextGenerationSha256) {
+          throw new FormationAuthorityStoreError("formation mutation cannot finish before committed authority is durable");
+        }
+      } else if ((current.phase !== "prepared" && current.phase !== "source-published")
+        || authorityDigest !== current.expectedGenerationSha256 || input.nextGenerationSha256 !== undefined) {
+        throw new FormationAuthorityStoreError("formation mutation rollback cannot finish before prior authority is restored");
+      }
+      db.prepare(`INSERT INTO formation_mutation_receipts
+        (operation_id, mutation, caller_principal, caller_kind, workspace_id, agent_id, prior_generation_digest, next_generation_digest, outcome, completed_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(current.operationId, current.mutation, current.caller.principal, current.caller.kind, current.workspaceId,
+          current.agentId, current.expectedGenerationSha256, input.nextGenerationSha256 ?? null, input.outcome, this.now());
+      db.prepare("DELETE FROM formation_mutation_barriers WHERE operation_id = ?").run(input.operationId);
+    });
+  }
+
+  private parseMutationBarrier(row: SqlRow): FormationMutationBarrier {
+    let intent: unknown;
+    try { intent = JSON.parse(String(row.intent_json)) as unknown; }
+    catch { throw new FormationAuthorityStoreError("formation mutation barrier intent is corrupt"); }
+    const mutation = String(row.mutation) as FormationVectorMutation;
+    if (!["bootstrap", "profile-edit", "evolution-promotion", "memory-promotion", "retire"].includes(mutation)) {
+      throw new FormationAuthorityStoreError("formation mutation barrier kind is corrupt");
+    }
+    const kind = String(row.caller_kind);
+    if (kind !== "human" && kind !== "system" && kind !== "agent") throw new FormationAuthorityStoreError("formation mutation barrier caller is corrupt");
+    const phase = String(row.phase);
+    if (phase !== "prepared" && phase !== "source-published" && phase !== "authority-committed") {
+      throw new FormationAuthorityStoreError("formation mutation barrier phase is corrupt");
+    }
+    return {
+      operationId: String(row.operation_id),
+      mutation,
+      caller: { principal: String(row.caller_principal), kind },
+      workspaceId: String(row.workspace_id),
+      agentId: String(row.agent_id),
+      expectedGenerationSha256: String(row.expected_generation_digest),
+      phase,
+      intent,
+      createdAt: String(row.created_at),
+    };
   }
 
   private buildManifest(input: PrepareFormationSnapshotInput, vector: FormationAuthorityVector, resolved: ResolvedFormationPayload): {

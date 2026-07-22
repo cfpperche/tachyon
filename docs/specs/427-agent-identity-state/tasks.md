@@ -22,11 +22,11 @@ _Generated from `plan.md` on 2026-07-22._
 
 ## Human lanes — `t-8f4420`
 
-- [ ] Bind Soul manifest/reference to `agentId` with compatible governed upgrade.
-- [ ] Add bounded no-follow `instructions.md` reader and transaction.
-- [ ] Migrate eligible legacy Soul/instructions without fallback or dual authority.
-- [ ] Deliver exact Soul/instruction and re-anchor bytes through immutable session payload.
-- [ ] Provide idempotent lane-local lifecycle hooks for `t-e50d4f`.
+- [x] Bind Soul manifest/reference to `agentId` with compatible governed upgrade.
+- [x] Add bounded no-follow `instructions.md` reader and coordinated transaction.
+- [x] Migrate eligible legacy Soul/instructions without fallback or dual authority.
+- [x] Deliver exact Soul/instruction and re-anchor bytes through immutable session payload.
+- [x] Provide idempotent prepare/commit/recover/inspect/retire lifecycle primitives for `t-e50d4f`.
 
 ## Evolution lane — `t-59cbd6`
 

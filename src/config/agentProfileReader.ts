@@ -322,6 +322,124 @@ export function closeCanonicalAgentProfile(source: CanonicalAgentProfileSource):
   closeQuietly(fd);
 }
 
+/** Execute a synchronous operation under the retained canonical profile directory descriptor. */
+export function withCanonicalAgentProfileDirectory<T>(source: CanonicalAgentProfileSource, operation: (descriptorRoot: string) => T): T {
+  if (source.profileDirectoryFd < 0) fail("profile/changed-during-read", source.source, "profile directory descriptor is already closed");
+  const before = fs.fstatSync(source.profileDirectoryFd, { bigint: true });
+  const root = descriptorPath(source.profileDirectoryFd, source.source);
+  const result = operation(root);
+  const after = fs.fstatSync(source.profileDirectoryFd, { bigint: true });
+  if (!sameIdentity(before, after)) fail("profile/changed-during-read", source.source, "profile directory descriptor changed during operation");
+  return result;
+}
+
+export function readCanonicalAgentProfileEntry(
+  source: CanonicalAgentProfileSource,
+  name: "agent.yml" | "SOUL.md" | "profile.json" | "instructions.md",
+): BoundAgentProfileFile | undefined {
+  if (source.profileDirectoryFd < 0) fail("profile/changed-during-read", source.source, "profile directory descriptor is already closed");
+  return readBoundFileAt(source.profileDirectoryFd, name, name, path.join(source.profileRoot, name), AGENT_PROFILE_REFERENCE_MAX_BYTES, true);
+}
+
+/** Low-level descriptor-pinned CAS primitive. Callers must hold their host authority mutation barrier. */
+export function replaceCanonicalAgentProfileEntry(input: {
+  source: CanonicalAgentProfileSource;
+  name: "agent.yml" | "SOUL.md" | "profile.json" | "instructions.md";
+  expectedSha256: string | null;
+  bytes: Buffer | null;
+  mode?: number;
+}): void {
+  withCanonicalAgentProfileDirectory(input.source, (root) => {
+    const syncDirectory = () => fs.fsyncSync(input.source.profileDirectoryFd);
+    const target = path.join(root, input.name);
+    const custody = path.join(root, `.${input.name}.${input.expectedSha256 ?? "absent"}.custody`);
+    const custodyEntry = readBoundFileAt(input.source.profileDirectoryFd, path.basename(custody), input.name,
+      path.join(input.source.profileRoot, path.basename(custody)), AGENT_PROFILE_REFERENCE_MAX_BYTES, true);
+    if (custodyEntry) {
+      const targetEntry = readBoundFileAt(input.source.profileDirectoryFd, input.name, input.name,
+        path.join(input.source.profileRoot, input.name), AGENT_PROFILE_REFERENCE_MAX_BYTES, true);
+      const desiredSha256 = input.bytes ? crypto.createHash("sha256").update(input.bytes).digest("hex") : null;
+      if ((targetEntry?.sha256 ?? null) === desiredSha256) {
+        fs.unlinkSync(custody);
+        syncDirectory();
+      } else if (!targetEntry && custodyEntry.sha256 === input.expectedSha256) {
+        fs.renameSync(custody, target);
+        syncDirectory();
+      }
+      else fail("profile/changed-during-read", input.name, "entry custody from an interrupted mutation is inconsistent");
+    }
+    const current = readBoundFileAt(input.source.profileDirectoryFd, input.name, input.name, path.join(input.source.profileRoot, input.name), AGENT_PROFILE_REFERENCE_MAX_BYTES, true);
+    if ((current?.sha256 ?? null) !== input.expectedSha256) fail("profile/digest-mismatch", input.name, "entry changed before mutation commit");
+    if (input.bytes === null) {
+      if (current) {
+        fs.renameSync(target, custody);
+        syncDirectory();
+        const moved = readBoundFileAt(input.source.profileDirectoryFd, path.basename(custody), input.name,
+          path.join(input.source.profileRoot, path.basename(custody)), AGENT_PROFILE_REFERENCE_MAX_BYTES, false)!;
+        if (moved.sha256 !== input.expectedSha256) {
+          if (!fs.existsSync(target)) {
+            fs.renameSync(custody, target);
+            syncDirectory();
+          }
+          fail("profile/changed-during-read", input.name, "entry changed before retirement custody");
+        }
+        fs.unlinkSync(custody);
+        const directory = fs.openSync(root, fs.constants.O_RDONLY | requireCustodyFlags(input.name).directory);
+        try { fs.fsyncSync(directory); } finally { fs.closeSync(directory); }
+      }
+      return;
+    }
+    if (input.bytes.length > AGENT_PROFILE_REFERENCE_MAX_BYTES) fail("profile/too-large", input.name, "replacement exceeds profile entry bound");
+    const temporary = path.join(root, `.${input.name}.${crypto.randomUUID()}.stage`);
+    let fd: number | undefined;
+    try {
+      fd = fs.openSync(temporary, fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY | requireCustodyFlags(input.name).noFollow, input.mode ?? 0o600);
+      fs.writeFileSync(fd, input.bytes);
+      fs.fsyncSync(fd);
+      fs.closeSync(fd);
+      fd = undefined;
+      const again = readBoundFileAt(input.source.profileDirectoryFd, input.name, input.name, path.join(input.source.profileRoot, input.name), AGENT_PROFILE_REFERENCE_MAX_BYTES, true);
+      if ((again?.sha256 ?? null) !== input.expectedSha256) fail("profile/digest-mismatch", input.name, "entry changed during mutation commit");
+      if (again) {
+        fs.renameSync(target, custody);
+        syncDirectory();
+        const moved = readBoundFileAt(input.source.profileDirectoryFd, path.basename(custody), input.name,
+          path.join(input.source.profileRoot, path.basename(custody)), AGENT_PROFILE_REFERENCE_MAX_BYTES, false)!;
+        if (moved.sha256 !== input.expectedSha256) {
+          if (!fs.existsSync(target)) {
+            fs.renameSync(custody, target);
+            syncDirectory();
+          }
+          fail("profile/changed-during-read", input.name, "entry changed before replacement custody");
+        }
+      }
+      try { fs.linkSync(temporary, target); }
+      catch (error) {
+        if (again && !fs.existsSync(target)) {
+          fs.renameSync(custody, target);
+          syncDirectory();
+        }
+        fail("profile/changed-during-read", input.name, `entry was concurrently replaced: ${errorText(error)}`);
+      }
+      syncDirectory();
+      fs.unlinkSync(temporary);
+      syncDirectory();
+      if (again) {
+        fs.unlinkSync(custody);
+        syncDirectory();
+      }
+      const directory = fs.openSync(root, fs.constants.O_RDONLY | requireCustodyFlags(input.name).directory);
+      try { fs.fsyncSync(directory); } finally { fs.closeSync(directory); }
+      const published = readBoundFileAt(input.source.profileDirectoryFd, input.name, input.name, path.join(input.source.profileRoot, input.name), AGENT_PROFILE_REFERENCE_MAX_BYTES, false)!;
+      const expected = crypto.createHash("sha256").update(input.bytes).digest("hex");
+      if (published.sha256 !== expected) fail("profile/digest-mismatch", input.name, "published entry failed digest verification");
+    } finally {
+      if (fd !== undefined) fs.closeSync(fd);
+      try { fs.unlinkSync(temporary); } catch { /* renamed or absent */ }
+    }
+  });
+}
+
 /** Read one pinned profile-local reference under the retained profile descriptor. */
 export function readAgentProfileReference(
   source: CanonicalAgentProfileSource,

@@ -131,3 +131,45 @@ staging is collected after a conservative grace period.
 Closure probe `probe-d7974bda-f6ee-47ad-aacd-c165da7111f1` returned no blocker or major findings.
 Focused evidence: `test/unit/agentFormationFoundation.test.ts` (17 tests). Full probe artifacts remain
 under `.tachyon/probes/<probe-id>/result.json`.
+
+## 2026-07-22 — Soul and Persistent Instructions implementation
+
+The human-lane slice makes `.tachyon/agents/<agent>/agent.yml` the exact profile authority for Soul
+and Persistent Instructions. Soul manifests accept legacy v1 for discovery but active resolution
+requires v2 bound to immutable `agentId`; the coordinated legacy cutover upgrades that manifest in
+the same recoverable operation that publishes `agent.yml`, `instructions.md`, the config pointer and
+the next formation generation. There is no corruption-triggered fallback to inline legacy fields.
+
+Persistent Instructions and Soul bytes are bounded, UTF-8/no-follow reads selected by pinned profile
+references. The active profile digest, selector, subordinate identity, path and source digest are all
+checked before rendering. Native runtime suppression is represented by a host-keyed HMAC receipt
+bound to the exact fresh operation, authority vector, adapter, trust class, enabled lane set and a
+bounded issuance time. Startup and fixed re-anchor bytes are then stored in the immutable formation
+snapshot; re-anchor excludes one-run task text.
+
+Source publication and authority replacement use one durable mutation barrier. Beginning the barrier
+terminally abandons pre-existing fresh leases for that agent, and `commitFresh` also rejects an active
+barrier. The barrier commits the exact caller, mutation, workspace, agent, prior generation and next
+vector. Descriptor-rooted source replacement uses staged files plus recoverable custody links and
+directory-fsync checkpoints. Crash recovery either restores every prior byte before recording a
+rolled-back receipt or completes the exact next bytes/generation before recording a committed receipt.
+Terminal receipts make commit/recovery idempotently inspectable without exposing stored source bytes.
+Retirement preserves the exact lane heads and performs the single active-to-retired generation
+transition required by the foundation contract.
+
+Adversarial review was iterative. `probe-9200b5af-db0d-4f51-a054-2aa9dfbfb218` identified the missing
+coordinated cutover, weak mutation authorization and lifecycle placeholders. `probe-15c22795-0e52-40ff-8ec0-1546b759202d`
+found fresh leases crossing the barrier, unsafe abort, replayable suppression, source TOCTOU, missing
+Soul-byte validation and incomplete transaction identity. The full-patch closure reviews
+`probe-1117286b-9288-43c6-807b-978069da0540` and `probe-c48613f9-2ac6-4d72-9ad2-5f543c4761fa`
+then found exact barrier-intent, legacy-source and fsync gaps; each became a regression or explicit
+validation. Final probes `probe-91498aa6-aa3c-4219-82a9-22984a7eacdd` and
+`probe-881d4e5c-57ac-4172-8eee-9901a1cad89c` confirmed the remaining canonical-path correction and
+returned no blocker/major finding. Detailed probe artifacts remain under `.tachyon/probes/<probe-id>/result.json`.
+
+## Verification log
+
+### 2026-07-22T18:50:42Z — pass (3/3) — source: tasks.md
+- `npm run test:invariants` — pass
+- `npm run typecheck` — pass
+- `npm run verify:full:quiet` — pass

@@ -320,6 +320,56 @@ describe("agent formation authority foundation", () => {
       .toThrow("generation changed or retired before selector commit");
   });
 
+  it("blocks fresh formation and competing mutations behind a recoverable mutation barrier", () => {
+    const { store } = fixture();
+    const first = vector();
+    const next = vector(2, 1, profile(2));
+    store.replaceVector({ operationId: "generation-barrier", caller: human, mutation: "bootstrap", vector: first });
+    store.beginMutationBarrier({
+      operationId: "profile-barrier",
+      mutation: "profile-edit",
+      caller: human,
+      workspaceId: WORKSPACE_ID,
+      agentId: AGENT_ID,
+      expectedGenerationSha256: formationDigest(first.generation),
+      intent: { kind: "human-lanes", revision: 2, nextVector: next },
+    });
+    expect(() => prepare(store, "fresh-blocked", first)).toThrow("blocked by a prepared authority mutation");
+    expect(() => store.replaceVector({
+      operationId: "competing-edit",
+      caller: human,
+      mutation: "profile-edit",
+      vector: next,
+      expectedGenerationSha256: formationDigest(first.generation),
+    })).toThrow("does not match its prepared barrier intent");
+    expect(() => store.replaceVector({
+      operationId: "profile-barrier",
+      caller: { principal: "human-mallory", kind: "human" },
+      mutation: "profile-edit",
+      vector: next,
+      expectedGenerationSha256: formationDigest(first.generation),
+    })).toThrow("does not match its prepared barrier intent");
+    store.finishMutationBarrier({ operationId: "profile-barrier", caller: human, outcome: "rolled-back" });
+    expect(prepare(store, "fresh-unblocked", first).formationGeneration).toBe(1);
+  });
+
+  it("terminally abandons a prepared fresh lease when a mutation barrier begins", () => {
+    const { store } = fixture();
+    const first = vector();
+    store.replaceVector({ operationId: "generation-prepared-race", caller: human, mutation: "bootstrap", vector: first });
+    prepare(store, "fresh-before-barrier", first);
+    store.beginMutationBarrier({
+      operationId: "profile-after-fresh",
+      mutation: "profile-edit",
+      caller: human,
+      workspaceId: WORKSPACE_ID,
+      agentId: AGENT_ID,
+      expectedGenerationSha256: formationDigest(first.generation),
+      intent: { kind: "human-lanes", revision: 2 },
+    });
+    expect(() => store.commitFresh({ operationId: "fresh-before-barrier", caller: human })).toThrow("terminally abandoned");
+  });
+
   it("keeps live leases and reclaims only expired unreferenced payloads", () => {
     const context = fixture();
     const initial = vector();
