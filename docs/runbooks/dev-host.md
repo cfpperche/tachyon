@@ -190,6 +190,61 @@ Requirements: `Xvfb`, and a compatible VS Code test/native binary. The resolver 
 
 ---
 
+## Interactive headless (agent-drivable, full webview access)
+
+`scripts/dev-host/headless-runner.js` (above) runs INSIDE the extension host — it has the full
+`vscode` API but **cannot see webview DOM/console** (webviews are separate renderer targets). When a
+bug lives in a webview — a Control route, a studio form, the sidebar — use the **interactive** harness
+instead: it launches the SAME pointed Dev Host on Xvfb with `--remote-debugging-port`, then drives it
+over CDP (puppeteer-core, already a dep) with every webview iframe reachable for clicks, DOM reads,
+console capture, and screenshots. This is the "agent reproduces a UI bug end-to-end, headless, no
+human clicking" primitive.
+
+```bash
+# arm the pointer once (any worktree/fixture — primary checkout is fine):
+npm run dogfood:dev-host -- point --worktree /home/goat/tachyon --fixture <slug> --spec NNN --slug <slug>
+# build the pointed extension's dev bundle (the harness refuses a missing dist/extension.js):
+TACHYON_ENGINE_CHANNEL=dev npm run build
+
+# boot smoke (settle, dump CDP targets + one screenshot, exit):
+node scripts/dev-host/headless-interactive.mjs
+
+# run a scenario (reproduce a specific bug, assert, capture evidence):
+node scripts/dev-host/headless-interactive.mjs --scenario scripts/dev-host/scenarios/<name>.mjs
+```
+
+Output (default `.tachyon/dev-host/interactive-out/`, wiped per run): `console.log` (every target's
+console + pageerrors, captured continuously), `driver.log`, `host.log`, `result.json`
+(`{ ok, asserts: [{id, ok, detail}] }`), and `<name>.png` screenshots.
+
+**Scenario contract** — an ES module exporting `run(ctx)`; `ctx` gives you:
+
+| `ctx.*` | what |
+|---|---|
+| `workbench` | puppeteer `Page` for the VS Code workbench renderer |
+| `findWebviewFrame(predJs)` | locate a webview iframe by a JS predicate string evaluated inside each candidate frame (e.g. `"!!document.querySelector('.ck-tabs')"` finds Control) |
+| `command(id)` | run a VS Code command via the keyboard-driven Command Palette (e.g. `"Tachyon: Open Control"`) |
+| `shot(name)` | screenshot the workbench → `<out>/<name>.png` |
+| `log(msg)` / `sleep(ms)` | timestamped driver log line / delay |
+
+`scripts/dev-host/scenarios/t-0e8a9a-agent-studio-nav-loop.mjs` is the worked reference: it opens
+Control, edits an agent, clicks the breadcrumb back, and asserts the route actually stays put — the
+exact repro that caught the studio nav-checkpoint teardown bug (t-0e8a9a). Copy it as a template for
+any "click here, then this should happen" webview repro.
+
+**Webview-console caveat:** the parent CDP target does NOT surface a webview iframe's own
+`console.log` (separate execution context). When you need client-side visibility, inject a spy INTO
+the frame with `frame.evaluate` — e.g. `window.addEventListener('message', …)` recording inbound host
+messages into a `window.__x` array, then read it back with another `frame.evaluate`. The reference
+scenario does exactly this to prove the checkpoint/ack handshake.
+
+Requirements: `Xvfb`, `puppeteer-core` (dep), a compatible VS Code binary (`resolve-code.mjs` finds
+`.vscode-test/…/bin/code` — the sh launcher, NOT the raw ELF, which is the tunnel CLI). The harness
+strips `VSCODE_IPC_HOOK_CLI`/`ELECTRON_RUN_AS_NODE` from the child env so it never hijacks the human's
+live window. Uses display `:97` (distinct from the S1 lane's `:96`) and its own private profile dirs.
+
+---
+
 ## Optional: GUI launch
 
 ### GUI launch consent (t-fe621b)

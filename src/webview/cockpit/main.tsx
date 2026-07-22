@@ -135,6 +135,13 @@ const post = (msg: unknown): void => {
   else window.postMessage(msg, "*");
 };
 
+/** t-0e8a9a — true when the currently-active route is a studio form (owns the nav-transaction freeze
+ *  listener; must not be unmounted optimistically on a nav-away — see onSetSection below). Kept as a
+ *  local kind-check rather than importing route.ts's `isStudioRoute` to keep main.tsx's import graph
+ *  unchanged; the two studio kinds are a closed set. */
+const isStudioActiveRoute = (r: CockpitModel["activeRoute"]): boolean =>
+  r?.kind === "studio-new" || r?.kind === "studio-edit";
+
 function Root() {
   const [strings, setStrings] = useState<CockpitStrings | undefined>(undefined);
   const [model, setModel] = useState<CockpitModel | undefined>(undefined);
@@ -561,8 +568,25 @@ function Root() {
         // route (never a subroute), so any activeRoute left over from a prior task-detail visit
         // must clear optimistically too — the App's render switch checks activeRoute BEFORE
         // section, so a stale task-detail route would otherwise flash until the host's real reply.
-        setModel((prev) => (prev ? { ...prev, section, activeRoute: undefined } : prev));
-        activeRouteRef.current = undefined;
+        //
+        // t-0e8a9a EXCEPTION — but NOT when leaving a STUDIO route: a studio owns the nav-transaction
+        // freeze listener (useStudioFreeze), and the host answers a nav-away by posting
+        // studioNavCheckpoint that ONLY the mounted studio can ack. Clearing activeRoute here unmounts
+        // the studio synchronously → its freeze listener tears down → the checkpoint is dropped → the
+        // host's 3s timeout aborts the navigation → the 3s poll re-asserts the studio route → the user
+        // is trapped, unable to leave the studio at all (found in 0.56.91 dogfood; affects every
+        // studio whose breadcrumb targets a section — command/terminal/runbook/schedule/agent). For a
+        // studio route we leave activeRoute in place and let the HOST drive the transition: it either
+        // commits the nav (and pushes a clean model that clears activeRoute) or aborts (keeping the
+        // studio). No optimistic flash to avoid here anyway — the studio stays put until the
+        // checkpoint resolves, which is the correct UX.
+        const leavingStudio = isStudioActiveRoute(activeRouteRef.current);
+        if (leavingStudio) {
+          setModel((prev) => (prev ? { ...prev, section } : prev));
+        } else {
+          setModel((prev) => (prev ? { ...prev, section, activeRoute: undefined } : prev));
+          activeRouteRef.current = undefined;
+        }
         // t-610705 (Phase C.2) — same optimistic-clear reasoning as activeRoute above, for the
         // feed-identity state the MODEL branch's reset otherwise only clears on the host's next reply.
         setActivityVm(undefined);
