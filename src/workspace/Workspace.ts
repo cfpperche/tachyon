@@ -11,8 +11,18 @@ import {
 } from "../config/agentProfileConfigLoader.js";
 import {
   parseAgentProfileAuthorityRegistry,
+  serializeAgentProfileAuthorityRegistry,
   type AgentProfileAuthorityRecord,
 } from "../config/agentProfileAuthority.js";
+import {
+  commitLegacyAgentProfileMigration,
+  planLegacyAgentProfileMigration,
+  reconcileAgentProfileMigrations,
+  rollbackLegacyAgentProfileMigration,
+  type AgentProfileMigrationAuthorityPort,
+  type AgentProfileMigrationResult,
+  type PlanLegacyAgentProfileMigrationResult,
+} from "../config/agentProfileMigration.js";
 import { composeAgentPrompt } from "../agents/promptLayers.js";
 import { SoulError, agentSoulPath, readCanonicalSoulBytes } from "../agents/soul.js";
 import {
@@ -550,6 +560,7 @@ export class Workspace {
   /** Host-custodied profile heads selected before any profile-backed config can load. */
   private agentProfileAuthorities = new Map<string, AgentProfileAuthorityRecord>();
   private readonly agentProfileHomeDir: string | undefined;
+  private agentProfileAuthorityTail: Promise<void> = Promise.resolve();
   /** Serializes the async SecretStorage read/prepare/readback sequence inside this extension host. */
   private authorityHeadPrepareTail: Promise<void> = Promise.resolve();
   private readonly reloadTransactions: ReloadTransactionStore;
@@ -2376,6 +2387,53 @@ export class Workspace {
     return authorityHeadsSecretKey(this.wsHash);
   }
 
+  private profileAuthorityPort(): AgentProfileMigrationAuthorityPort {
+    const refresh = async (): Promise<Map<string, AgentProfileAuthorityRecord>> => {
+      await this.agentProfileAuthorityTail;
+      const records = parseAgentProfileAuthorityRegistry(
+        await this.host.getSecret(agentProfileAuthoritiesSecretKey(this.wsHash)),
+      );
+      this.agentProfileAuthorities = records;
+      return records;
+    };
+    const mutate = async (operation: (records: Map<string, AgentProfileAuthorityRecord>) => void): Promise<void> => {
+      const pending = this.agentProfileAuthorityTail.then(async () => {
+        const records = parseAgentProfileAuthorityRegistry(
+          await this.host.getSecret(agentProfileAuthoritiesSecretKey(this.wsHash)),
+        );
+        operation(records);
+        const serialized = serializeAgentProfileAuthorityRegistry(records);
+        await this.host.setSecret(agentProfileAuthoritiesSecretKey(this.wsHash), serialized);
+        const persisted = parseAgentProfileAuthorityRegistry(
+          await this.host.getSecret(agentProfileAuthoritiesSecretKey(this.wsHash)),
+        );
+        if (serializeAgentProfileAuthorityRegistry(persisted) !== serialized) {
+          throw new Error("agent profile authority SecretStorage readback mismatch");
+        }
+        this.agentProfileAuthorities = persisted;
+      });
+      this.agentProfileAuthorityTail = pending.catch(() => undefined);
+      return pending;
+    };
+    return {
+      read: async (agentName) => {
+        const record = (await refresh()).get(agentName);
+        return record ? structuredClone(record) : undefined;
+      },
+      publish: async (record) => mutate((records) => {
+        if (records.has(record.agentName)) throw new Error(`agent profile authority CAS conflict for '${record.agentName}'`);
+        records.set(record.agentName, structuredClone(record));
+      }),
+      retire: async (agentName, expected) => mutate((records) => {
+        const current = records.get(agentName);
+        if (!current || JSON.stringify(current) !== JSON.stringify(expected)) {
+          throw new Error(`agent profile authority CAS conflict for '${agentName}'`);
+        }
+        records.delete(agentName);
+      }),
+    };
+  }
+
   private authorityHeadMapKey(identity: string): string {
     return `canonical:${identity}`;
   }
@@ -2715,6 +2773,17 @@ export class Workspace {
       );
     } catch (err) {
       ws.host.notify(ws.t("agent profile authority custody unavailable: {0} (profile-backed agents remain fail-closed)", err instanceof Error ? err.message : String(err)), "warn");
+    }
+    const profileMigrationConfig = ws.configPath();
+    if (profileMigrationConfig) {
+      const reconciled = await reconcileAgentProfileMigrations({
+        workspaceRoot,
+        configPath: profileMigrationConfig,
+        authority: ws.profileAuthorityPort(),
+      });
+      if (reconciled.degraded.length > 0) {
+        ws.host.notify(ws.t("agent profile migration recovery found {0} degraded transaction(s); affected agents remain fail-closed", reconciled.degraded.length), "error");
+      }
     }
 
     try {
@@ -4422,6 +4491,59 @@ export class Workspace {
     this.profileSpawnBlocked = new Set(
       Object.entries(sources ?? {}).filter(([, source]) => source.mode === "profile").map(([name]) => name),
     );
+  }
+
+  planAgentProfileMigration(agentName: string, nonSecretEnv: readonly string[] = []): PlanLegacyAgentProfileMigrationResult {
+    const file = this.configPath();
+    if (!file) return { ok: false, blockers: ["tachyon.yml does not exist"] };
+    return planLegacyAgentProfileMigration({
+      workspaceRoot: this.workspaceRoot,
+      configText: fs.readFileSync(file, "utf8"),
+      agentName,
+      nonSecretEnv,
+      currentAuthority: this.agentProfileAuthorities.get(agentName),
+    });
+  }
+
+  private async assertAgentStoppedForProfileMigration(agentName: string): Promise<void> {
+    if ((await this.manager.runningAgents()).includes(agentName)) {
+      throw new Error(`agent '${agentName}' must be stopped before profile migration`);
+    }
+  }
+
+  async migrateAgentProfile(agentName: string, nonSecretEnv: readonly string[] = []): Promise<AgentProfileMigrationResult> {
+    const file = this.configPath();
+    if (!file) throw new Error("tachyon.yml does not exist");
+    const planned = this.planAgentProfileMigration(agentName, nonSecretEnv);
+    if (!planned.ok) throw new Error(planned.blockers.join("; "));
+    const result = await commitLegacyAgentProfileMigration({
+      workspaceRoot: this.workspaceRoot,
+      configPath: file,
+      plan: planned.plan,
+      authority: this.profileAuthorityPort(),
+      homeDir: this.agentProfileHomeDir,
+      assertStopped: (name) => this.assertAgentStoppedForProfileMigration(name),
+    });
+    if (!this.reloadConfig()) throw new Error(`migration '${result.txid}' committed but trusted reload failed`);
+    this.rebuildWatches();
+    this.refreshAgentsViews();
+    return result;
+  }
+
+  async rollbackAgentProfileMigration(txid: string): Promise<AgentProfileMigrationResult> {
+    const file = this.configPath();
+    if (!file) throw new Error("tachyon.yml does not exist");
+    const result = await rollbackLegacyAgentProfileMigration({
+      workspaceRoot: this.workspaceRoot,
+      configPath: file,
+      authority: this.profileAuthorityPort(),
+      txid,
+      assertStopped: (name) => this.assertAgentStoppedForProfileMigration(name),
+    });
+    if (!this.reloadConfig()) throw new Error(`rollback '${result.txid}' completed but legacy reload failed`);
+    this.rebuildWatches();
+    this.refreshAgentsViews();
+    return result;
   }
 
   /** t-8354ae — last successful roster snapshot (null when never written / corrupt). */

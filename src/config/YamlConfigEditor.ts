@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { parseDocument, stringify, YAMLMap, YAMLSeq } from "yaml";
+import { isAlias, isScalar, parseDocument, stringify, visit, YAMLMap, YAMLSeq } from "yaml";
 
 /**
  * UI-driven mutations over tachyon.yml. The FILE stays the source of truth —
@@ -428,4 +428,71 @@ export function setAgentSoulEnablement(
     doc.deleteIn([section, name, "soul"]);
   }
   return { text: String(doc), warnings: [] };
+}
+
+export interface AgentStanzaSourceSlice {
+  section: "agents";
+  name: string;
+  valueStart: number;
+  valueEnd: number;
+  valueText: string;
+  valueSha256: string;
+}
+
+/**
+ * Capture one plain agent mapping by exact source range. Migration rejects
+ * aliases/anchors/merge keys because they make single-owner replacement
+ * ambiguous even when YAML could resolve them to an object.
+ */
+export function agentStanzaSourceSlice(text: string, name: string): AgentStanzaSourceSlice {
+  assertValidName(name);
+  const doc = parseDocument(text, { uniqueKeys: true, keepSourceTokens: true });
+  if (doc.errors.length > 0) throw new Error(`tachyon.yml is not parseable: ${doc.errors[0]!.message}`);
+  if (doc.hasIn(["terminals", name])) throw new Error(`terminal '${name}' cannot be migrated to an agent profile`);
+  const agents = doc.get("agents", true);
+  if (!(agents instanceof YAMLMap)) throw new Error("'agents' must be a mapping");
+  const pair = agents.items.find((entry) => isScalar(entry.key) && entry.key.value === name);
+  if (!pair) throw new Error(`agent '${name}' does not exist`);
+  const value = pair.value;
+  if (!(value instanceof YAMLMap)) throw new Error(`agents.${name}: must be a plain mapping`);
+  if (value.anchor) throw new Error(`agents.${name}: anchors are not supported by profile migration`);
+  if (value.items.some((entry) => isScalar(entry.key) && entry.key.value === "<<")) {
+    throw new Error(`agents.${name}: YAML merge keys are not supported by profile migration`);
+  }
+  let alias = false;
+  visit(value, (_key, node) => {
+    if (isAlias(node)) alias = true;
+  });
+  if (alias) throw new Error(`agents.${name}: aliases are not supported by profile migration`);
+  const range = value.range;
+  if (!range || range.length < 3) throw new Error(`agents.${name}: source range is unavailable`);
+  const valueStart = range[0];
+  const valueEnd = range[2];
+  const valueText = text.slice(valueStart, valueEnd);
+  return {
+    section: "agents",
+    name,
+    valueStart,
+    valueEnd,
+    valueText,
+    valueSha256: createHash("sha256").update(valueText).digest("hex"),
+  };
+}
+
+export function replaceAgentStanzaValue(
+  text: string,
+  name: string,
+  expectedValueSha256: string,
+  replacement: string,
+): { text: string; prior: AgentStanzaSourceSlice; next: AgentStanzaSourceSlice } {
+  if (replacement.length === 0 || !replacement.endsWith("\n") || replacement.includes("\r")) {
+    throw new Error("agent stanza replacement must be non-empty LF-terminated text");
+  }
+  const prior = agentStanzaSourceSlice(text, name);
+  if (prior.valueSha256 !== expectedValueSha256) {
+    throw new Error(`agents.${name}: affected stanza changed (CAS mismatch)`);
+  }
+  const nextText = `${text.slice(0, prior.valueStart)}${replacement}${text.slice(prior.valueEnd)}`;
+  const next = agentStanzaSourceSlice(nextText, name);
+  return { text: nextText, prior, next };
 }

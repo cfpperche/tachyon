@@ -12,6 +12,8 @@ import {
   setCompanionTabTools,
   setCompanionLanAccess,
   setCompanionAllowedHosts,
+  agentStanzaSourceSlice,
+  replaceAgentStanzaValue,
 } from "../../src/config/YamlConfigEditor.js";
 import { parseConfig } from "../../src/config/loadConfig.js";
 import schema from "../../src/config/tachyon.schema.json";
@@ -43,6 +45,25 @@ function expectValid(text: string) {
 }
 
 describe("YamlConfigEditor", () => {
+  it("replaces exactly one agent stanza value and preserves every outside byte", () => {
+    const before = agentStanzaSourceSlice(YML, "frontend");
+    const result = replaceAgentStanzaValue(
+      YML,
+      "frontend",
+      before.valueSha256,
+      "profile: .tachyon/agents/frontend/agent.yml\n",
+    );
+    expect(result.text.slice(0, before.valueStart)).toBe(YML.slice(0, before.valueStart));
+    expect(result.text.slice(result.next.valueEnd)).toBe(YML.slice(before.valueEnd));
+    expect(result.next.valueText).toBe("profile: .tachyon/agents/frontend/agent.yml\n");
+    expect(() => replaceAgentStanzaValue(YML, "frontend", "0".repeat(64), "profile: x\n")).toThrow("CAS mismatch");
+  });
+
+  it("rejects aliases and merge keys for source-range profile migration", () => {
+    expect(() => agentStanzaSourceSlice("agents:\n  codex: &shared\n    cmd: codex\n", "codex")).toThrow("anchors");
+    expect(() => agentStanzaSourceSlice("base: &base\n  cmd: codex\nagents:\n  codex:\n    <<: *base\n", "codex")).toThrow("merge keys");
+  });
+
   it("addAgent appends without touching comments elsewhere", () => {
     const { text } = addAgent(YML, "backend", "claude");
     const config = expectValid(text);

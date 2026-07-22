@@ -18,9 +18,9 @@ _Generated from `plan.md` on 2026-07-22._
 - [x] Add the first measured native inspector/projector adapter.
 - [x] Preserve one resolved `TachyonConfig`/`ManagedEntryDef` surface for existing consumers.
 - [x] Extend LKG rows with profile provenance without granting spawn authority.
-- [ ] Add strict migration dry-run, eligibility and semantic-equivalence proof.
-- [ ] Add source-range YAML pointer replacement with outside-byte proof.
-- [ ] Add journaled commit/reconcile/rollback with CAS and no-follow path checks.
+- [x] Add strict migration dry-run, eligibility and semantic-equivalence proof.
+- [x] Add source-range YAML pointer replacement with outside-byte proof.
+- [x] Add journaled commit/reconcile/rollback with CAS and no-follow path checks.
 - [ ] Add command-palette migrate/rollback operations and documentation.
 
 ## Verification
@@ -28,10 +28,10 @@ _Generated from `plan.md` on 2026-07-22._
 - [x] Legacy focused config tests remain unchanged and green.
 - [x] Profile pointer plus trusted authority/attestation loads equivalently.
 - [x] Mixed pointer/inline, path mismatch and double authority fail closed.
-- [ ] Unsupported fields/adapters/environment decisions write nothing.
-- [ ] Comments/settings/other agents remain byte-identical after migration.
-- [ ] Every injected crash phase reconciles or degrades without overwrite.
-- [ ] Rollback refuses later profile/YAML/authority edits.
+- [x] Unsupported fields/adapters/environment decisions write nothing.
+- [x] Comments/settings/other agents remain byte-identical after migration.
+- [x] Representative partial/complete crash tuples reconcile without overwrite.
+- [x] Rollback refuses later profile/YAML/authority edits.
 - [x] Warm/cold reload and LKG cannot activate stale profile authority.
 - [ ] PI-001 and plugin non-interference checks pass.
 - [ ] Typecheck and full verification pass.

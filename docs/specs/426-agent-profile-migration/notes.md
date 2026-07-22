@@ -47,3 +47,23 @@ profile identity/digests for rendering only.
 The implementation uses a separate SecretStorage registry from Delivery authority heads. Corruption
 in profile custody fails profile-backed agents closed without disabling Bridge caller identity or
 Delivery authority. Migration-time authority mutation/reconciliation remains in `t-1d1842`.
+
+## 2026-07-22 — transactional migration slice
+
+The first migration registry is deliberately strict: exact literal `codex`; lifecycle, cwd, role,
+worktree/isolation/ownership; and environment values only when every key is explicitly acknowledged as
+non-secret. Runtime arguments, Soul, persistent instructions, Evolution, harness/capabilities,
+worktree setup and verification refuse the whole migration. The planner materializes the candidate in
+an isolated preflight root and requires deep equality with the normalized legacy `ManagedEntryDef`.
+
+The YAML editor now captures the exact source range and digest of one plain stanza value. It rejects
+anchors, aliases and merge keys, then replaces only that range. Commit and rollback re-read the latest
+file and CAS only that range, so unrelated edits made before commit or after migration survive.
+
+Transactions live under `.tachyon/agent-profile-migrations/<txid>` with durable journal, original
+stanza backup and staged profile. A per-principal durable lock serializes concurrent attempts. Profile
+publication/removal is descriptor-relative and no-follow; host authority uses SecretStorage CAS and
+readback; `tachyon.yml` is written last after the exact prospective trusted reload passes. Startup
+reconciliation commits a complete target tuple, compensates a partial tuple, and marks divergence
+degraded. Committed journals remain as the rollback authority; rollback refuses any later change to
+the pointer stanza, profile bytes or host authority.

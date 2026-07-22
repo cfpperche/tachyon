@@ -274,6 +274,38 @@ it("loads a canonical agent profile only after host-custodied authority is avail
   }
 });
 
+it("migrates and rolls back a stopped eligible agent through host authority custody", async () => {
+  const root = mkdir();
+  const homeDir = mkdir();
+  const original = "# before\nagents:\n  codex:\n    cmd: codex\n    role: reviewer\n  helper:\n    cmd: claude\nsettings:\n  auth: false\n";
+  fs.writeFileSync(path.join(root, "tachyon.yml"), original);
+  const secrets = new Map<string, string>();
+  const host = new SharedSecretHost(mkdir(), secrets);
+  const fake = fakeTmux();
+  const ws = await Workspace.createForTest(
+    root,
+    { host, onViewsChanged: () => {} },
+    { tmux: fake.tmux, startBridge: false, agentProfileHomeDir: homeDir },
+  );
+  try {
+    const preview = ws.planAgentProfileMigration("codex");
+    expect(preview.ok, preview.ok ? undefined : preview.blockers.join("\n")).toBe(true);
+    const migrated = await ws.migrateAgentProfile("codex");
+    expect(migrated.phase).toBe("committed");
+    expect(fs.readFileSync(path.join(root, "tachyon.yml"), "utf8")).toContain("profile: .tachyon/agents/codex/agent.yml");
+    expect(ws.config?.agents.codex).toMatchObject({ cmd: "codex", role: "reviewer" });
+    const authorityRaw = secrets.get(agentProfileAuthoritiesSecretKey(workspaceHash(root)));
+    expect(authorityRaw).toContain('"agentName": "codex"');
+
+    await ws.rollbackAgentProfileMigration(migrated.txid);
+    expect(fs.readFileSync(path.join(root, "tachyon.yml"), "utf8")).toBe(original);
+    expect(secrets.get(agentProfileAuthoritiesSecretKey(workspaceHash(root)))).toContain('"records": []');
+    expect(ws.config?.agents.codex).toMatchObject({ cmd: "codex", role: "reviewer" });
+  } finally {
+    ws.dispose();
+  }
+});
+
 it("returns actionable Agent Studio messages for invalid soul values and unsupported runtimes", async () => {
   const { ws } = await makeWorkspace();
   const invalid = { ...blankAgentFields(), name: "invalid", cmd: "codex", soul: "yes" } as unknown as FormState;
