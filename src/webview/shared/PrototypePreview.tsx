@@ -2,20 +2,26 @@ import { useEffect, useState } from "preact/hooks";
 import type { TaskPrototypeListVM } from "../task-prototype/types";
 
 export function PrototypePreview({ value, onSelect }: { value: TaskPrototypeListVM; onSelect?: (id: string) => void }) {
-  const preferred = value.prototypes.filter((p) => p.state === "draft").at(-1) ?? value.prototypes.find((p) => p.state === "approved") ?? value.prototypes.at(-1);
+  // t-668b05 (round-1 code-review finding) — `TaskPrototypeListVM.prototypes: TaskPrototypeVM[]` is a
+  // compile-time-only guarantee, same as `sha256` below: the actual value is read straight through
+  // from an on-disk manifest never runtime-validated, so `.filter`/`.find`/`.some`/`.at`/`.map` on a
+  // non-array here would throw BEFORE the sha256 guard is even reached. Normalize once, at the top,
+  // rather than defensively re-checking at every call site below.
+  const prototypes = Array.isArray(value.prototypes) ? value.prototypes : [];
+  const preferred = prototypes.filter((p) => p.state === "draft").at(-1) ?? prototypes.find((p) => p.state === "approved") ?? prototypes.at(-1);
   const [selectedId, setSelectedId] = useState(preferred?.id ?? "");
   useEffect(() => {
-    if (!value.prototypes.some((p) => p.id === selectedId)) setSelectedId(preferred?.id ?? "");
-    onSelect?.(value.prototypes.some((p) => p.id === selectedId) ? selectedId : (preferred?.id ?? ""));
-  }, [value.updatedAt, preferred?.id, selectedId, value.prototypes]);
-  const selected = value.prototypes.find((p) => p.id === selectedId) ?? preferred;
+    if (!prototypes.some((p) => p.id === selectedId)) setSelectedId(preferred?.id ?? "");
+    onSelect?.(prototypes.some((p) => p.id === selectedId) ? selectedId : (preferred?.id ?? ""));
+  }, [value.updatedAt, preferred?.id, selectedId, prototypes]);
+  const selected = prototypes.find((p) => p.id === selectedId) ?? preferred;
   if (!selected) return null;
   return (
     <section class="prototype-section" aria-label="Untrusted task prototype">
       <header class="prototype-header">
         <div><strong>Untrusted prototype preview</strong><span class="prototype-static-label">Static · interaction disabled</span></div>
         <select aria-label="Prototype revision" value={selected.id} onChange={(e) => { const id = (e.currentTarget as HTMLSelectElement).value; setSelectedId(id); onSelect?.(id); }}>
-          {value.prototypes.map((p, index) => <option key={p.id} value={p.id}>v{index + 1} · {p.state} · {p.title}</option>)}
+          {prototypes.map((p, index) => <option key={p.id} value={p.id}>v{index + 1} · {p.state} · {p.title}</option>)}
         </select>
         {/* t-668b05 — `sha256` is a compile-time-only guarantee (TaskPrototypeVM); the actual value is
          *  read straight through from an on-disk manifest record never runtime-validated, so a

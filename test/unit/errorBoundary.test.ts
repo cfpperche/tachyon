@@ -27,4 +27,21 @@ describe("ErrorBoundary exists and is wired around Control's render root (t-668b
     expect(src).toMatch(/import\s*\{\s*ErrorBoundary\s*\}\s*from\s*"\.\.\/shared\/ErrorBoundary"/);
     expect(src).toMatch(/render\(<ErrorBoundary><Root \/><\/ErrorBoundary>,\s*root\)/);
   });
+
+  // t-668b05 (round-1 code-review finding) — "Try again" merely clearing the caught error does NOT
+  // guarantee recovery (the child keeps its own hooks/state across the catch — same element identity,
+  // no remount — so if the crash-causing data is still there, the very next render throws again in a
+  // loop). Fixed by cloning the child with a fresh `key` on every reset, forcing a genuine remount.
+  it("Try again forces a genuine remount (cloneElement with a fresh key), not just clearing the error flag", () => {
+    const src = readFileSync("src/webview/shared/ErrorBoundary.tsx", "utf8");
+    expect(src).toMatch(/import\s*\{\s*Component,\s*cloneElement,/);
+    expect(src).toMatch(/resetGeneration:\s*prev\.resetGeneration \+ 1/);
+    expect(src).toMatch(/cloneElement\(this\.props\.children,\s*\{\s*key:\s*resetGeneration\s*\}\)/);
+  });
+
+  it("offers Copy details for a screenshot-unfriendly error (name/message/stack, not just the message)", () => {
+    const src = readFileSync("src/webview/shared/ErrorBoundary.tsx", "utf8");
+    expect(src).toMatch(/error\.stack/);
+    expect(src).toMatch(/navigator\.clipboard\?\.writeText/);
+  });
 });

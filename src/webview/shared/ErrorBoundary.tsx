@@ -1,4 +1,4 @@
-import { Component, type ComponentChildren } from "preact";
+import { Component, cloneElement, type VNode } from "preact";
 
 /**
  * t-668b05 — Control had ZERO error boundaries anywhere: an uncaught exception thrown during ANY
@@ -8,15 +8,26 @@ import { Component, type ComponentChildren } from "preact";
  * safety net: wraps the whole render tree in cockpit/main.tsx so a future bug degrades to a visible,
  * dismissable error message instead of silently blanking the panel. Preact's error-boundary contract
  * (`getDerivedStateFromError`/`componentDidCatch`) requires a class component — no hook equivalent.
+ *
+ * Round-1 code-review finding: "Try again" merely clearing `state.error` does NOT guarantee recovery —
+ * the child tree (`<Root/>` in cockpit/main.tsx) keeps its OWN hooks/state across the catch (same
+ * element identity, no remount), so if whatever data caused the crash is still there, the very next
+ * render throws the SAME error again, in a loop, with no visible sign anything happened. Fixed via
+ * `resetGeneration`: every "Try again" click clones the single child with a NEW `key`, forcing Preact
+ * to fully discard the old (possibly-corrupted) instance and mount a genuinely fresh one — a real
+ * reset, not just clearing this boundary's own local flag. `children` is typed as exactly one VNode
+ * (not general ComponentChildren) because cloning to retarget `key` only makes sense for a single
+ * element — this component only ever wraps one thing (`<Root/>`).
  */
 interface ErrorBoundaryState {
   error: Error | undefined;
+  resetGeneration: number;
 }
 
-export class ErrorBoundary extends Component<{ children: ComponentChildren }, ErrorBoundaryState> {
-  state: ErrorBoundaryState = { error: undefined };
+export class ErrorBoundary extends Component<{ children: VNode }, ErrorBoundaryState> {
+  state: ErrorBoundaryState = { error: undefined, resetGeneration: 0 };
 
-  static getDerivedStateFromError(error: unknown): ErrorBoundaryState {
+  static getDerivedStateFromError(error: unknown): Pick<ErrorBoundaryState, "error"> {
     return { error: error instanceof Error ? error : new Error(String(error)) };
   }
 
@@ -25,9 +36,25 @@ export class ErrorBoundary extends Component<{ children: ComponentChildren }, Er
     console.error("[tachyon] Control render crashed", error);
   }
 
-  render() {
+  private reset = (): void => {
+    this.setState((prev) => ({ error: undefined, resetGeneration: prev.resetGeneration + 1 }));
+  };
+
+  private copyDetails = (): void => {
     const { error } = this.state;
-    if (!error) return this.props.children;
+    if (!error) return;
+    const details = `${error.name}: ${error.message}\n${error.stack ?? "(no stack trace captured)"}`;
+    void navigator.clipboard?.writeText(details);
+  };
+
+  render() {
+    const { error, resetGeneration } = this.state;
+    if (!error) {
+      // t-668b05 round-1 — keyed on resetGeneration so a "Try again" click always mounts a genuinely
+      // NEW instance of the child (see class doc comment above for why clearing `error` alone isn't
+      // a real reset).
+      return cloneElement(this.props.children, { key: resetGeneration });
+    }
     return (
       <div
         role="alert"
@@ -42,12 +69,13 @@ export class ErrorBoundary extends Component<{ children: ComponentChildren }, Er
         }}
       >
         <div style={{ fontWeight: 600, marginBottom: "6px" }}>Something went wrong rendering this view.</div>
-        <div style={{ opacity: 0.85, marginBottom: "10px", fontFamily: "var(--vscode-editor-font-family, monospace)", fontSize: "12px" }}>
-          {error.message}
+        <div style={{ opacity: 0.85, marginBottom: "10px", fontFamily: "var(--vscode-editor-font-family, monospace)", fontSize: "12px", whiteSpace: "pre-wrap" }}>
+          {error.name}: {error.message}
         </div>
-        <button type="button" onClick={() => this.setState({ error: undefined })}>
-          Try again
-        </button>
+        <div style={{ display: "flex", gap: "8px" }}>
+          <button type="button" onClick={this.reset}>Try again</button>
+          <button type="button" onClick={this.copyDetails}>Copy details</button>
+        </div>
       </div>
     );
   }
