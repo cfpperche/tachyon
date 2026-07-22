@@ -131,7 +131,12 @@ export class CompanionPairingService {
       baseUrl,
       baseUrls: ordered,
       protocolVersion,
-      qrPayload: buildCompanionPairQrPayload({ baseUrl, pairCode: code, protocolVersion }),
+      qrPayload: buildCompanionPairQrPayload({
+        baseUrl,
+        baseUrls: ordered,
+        pairCode: code,
+        protocolVersion,
+      }),
     };
   }
 

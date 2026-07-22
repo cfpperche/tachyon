@@ -23,9 +23,22 @@ describe("CompanionPairingService (SDD 414 slice 2)", () => {
     if ("ok" in issued) throw new Error("expected success");
     expect(issued.code).toMatch(/^[A-Z2-9]{8}$/);
     expect(issued.baseUrls).toEqual([base]);
-    expect(issued.qrPayload).toBe(
-      JSON.stringify({ baseUrl: base, pairCode: issued.code, protocolVersion: COMPANION_PROTOCOL_VERSION }),
-    );
+    const payload = JSON.parse(issued.qrPayload) as {
+      type: string;
+      schemaVersion: number;
+      baseUrl: string;
+      baseUrls: string[];
+      pairCode: string;
+      protocolVersion: number;
+    };
+    expect(payload).toMatchObject({
+      type: "tachyon.companion.pair",
+      schemaVersion: 1,
+      baseUrl: base,
+      pairCode: issued.code,
+      protocolVersion: COMPANION_PROTOCOL_VERSION,
+    });
+    expect(payload.baseUrls).toContain(base);
   });
 
   it("includes LAN baseUrl candidates when provided (SDD 422)", () => {
