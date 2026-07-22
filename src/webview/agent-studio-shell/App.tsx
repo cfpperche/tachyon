@@ -293,10 +293,13 @@ export function App({ dispatch, routeKey, mountNonce, incoming }: AgentStudioApp
       dirtyRef.current = computeAgentDirty(entityRef.current, next);
       setFields(next);
     } else if (d.type === "soulProfileStatus") {
-      if (entityRef.current?.name !== d.status.agent) {
-        setHostError({ code: "transport/protocol", message: "studio protocol: profile status belongs to another agent", source: "transport", blocking: true });
-        return;
-      }
+      // t-0e8a9a — a stale response for a PREVIOUSLY-viewed agent (still in flight when the user
+      // switched to this one) is discarded silently, not surfaced as a blocking protocol error: the
+      // old "set hostError + return" here left `soulBusy`/`evolutionBusy` stuck forever (every sibling
+      // branch below had the identical bug) since only the matching-agent path ever cleared it —
+      // matches this codebase's established discipline elsewhere for a stale cross-binding message
+      // (discard, don't error).
+      if (entityRef.current?.name !== d.status.agent) return;
       setHostError(undefined);
       setSoulStatus(d.status);
       setSoulBusy(undefined);
@@ -316,38 +319,28 @@ export function App({ dispatch, routeKey, mountNonce, incoming }: AgentStudioApp
         setFields(next);
       }
     } else if (d.type === "soulProfileError") {
-      if (entityRef.current?.name !== d.agent) {
-        setHostError({ code: "transport/protocol", message: "studio protocol: profile error belongs to another agent", source: "transport", blocking: true });
-        return;
-      }
+      // t-0e8a9a — see soulProfileStatus's comment above; same discard-stale-cross-agent-message fix.
+      if (entityRef.current?.name !== d.agent) return;
       setSoulBusy(undefined);
       setHostError({ code: d.code, message: d.message, source: "persistence", blocking: false });
     } else if (d.type === "evolutionSummary") {
-      if (entityRef.current?.name !== d.summary.agent) {
-        setHostError({ code: "transport/protocol", message: "studio protocol: evolution summary belongs to another agent", source: "transport", blocking: true });
-        return;
-      }
+      // t-0e8a9a — see soulProfileStatus's comment above; same discard-stale-cross-agent-message fix
+      // (all 5 evolution message branches below share the identical pre-existing bug: only the
+      // matching-agent path ever cleared `evolutionBusy`, so a stale response for a previously-viewed
+      // agent left "Loading evolution state…" stuck forever).
+      if (entityRef.current?.name !== d.summary.agent) return;
       setEvolutionSummary(d.summary);
     } else if (d.type === "evolutionCandidates") {
-      if (entityRef.current?.name !== d.agent) {
-        setHostError({ code: "transport/protocol", message: "studio protocol: evolution candidates belong to another agent", source: "transport", blocking: true });
-        return;
-      }
+      if (entityRef.current?.name !== d.agent) return;
       setEvolutionCandidates(d.candidates);
       setEvolutionBusy(undefined);
     } else if (d.type === "evolutionCandidateDetail") {
-      if (entityRef.current?.name !== d.agent) {
-        setHostError({ code: "transport/protocol", message: "studio protocol: evolution detail belongs to another agent", source: "transport", blocking: true });
-        return;
-      }
+      if (entityRef.current?.name !== d.agent) return;
       setEvolutionDetail(d.detail);
       setEvolutionBusy(undefined);
       setEvolutionNotice(undefined);
     } else if (d.type === "evolutionActionResult") {
-      if (entityRef.current?.name !== d.agent) {
-        setHostError({ code: "transport/protocol", message: "studio protocol: evolution result belongs to another agent", source: "transport", blocking: true });
-        return;
-      }
+      if (entityRef.current?.name !== d.agent) return;
       const labels = entityRef.current.evolutionLabels;
       setEvolutionDetail(undefined);
       setEvolutionBusy("overview");
@@ -356,10 +349,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming }: AgentStudioApp
         text: `${d.status === "approved" ? labels.approved : labels.rejected}. ${labels.nextSession}`,
       });
     } else if (d.type === "evolutionError") {
-      if (entityRef.current?.name !== d.agent) {
-        setHostError({ code: "transport/protocol", message: "studio protocol: evolution error belongs to another agent", source: "transport", blocking: true });
-        return;
-      }
+      if (entityRef.current?.name !== d.agent) return;
       setEvolutionBusy(undefined);
       if (d.conflict) setEvolutionDetail(undefined);
       setEvolutionNotice({ kind: "error", text: d.message });
