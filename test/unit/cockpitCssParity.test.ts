@@ -69,4 +69,19 @@ describe("cockpit css parity (harness ↔ real Control host)", () => {
 
     expect(clientIds).toEqual(hostKeys);
   });
+
+  // t-610705 (Phase D, D1b code-review finding) — loadSectionStylesheet APPENDS a real <link> on every
+  // call, so a lazy studio block's CALL ORDER determines the DOM cascade order for an in-session
+  // navigation into that studio — a Tailwind utilities sheet requested AFTER the shared studio-frame
+  // sheet reverses the intended cascade for a route reached by navigating IN (as opposed to a direct
+  // deep-link, whose initial <link> tags come from Cockpit.ts's own array and are unaffected). Only
+  // Agent Studio has this shape today (the only studio needing a Tailwind co-load); this guards that
+  // specific ordering rather than a generic property, since it's the concrete bug that shipped once.
+  it("Agent Studio's lazy block requests its Tailwind sheet before the shared studio-frame sheet", () => {
+    const app = readFileSync("src/webview/cockpit/App.tsx", "utf8");
+    const block = /AgentStudioApp = lazy\(([\s\S]*?)return \{ default: m\.App \};/.exec(app);
+    expect(block, "cockpit/App.tsx: AgentStudioApp lazy block not found — did it move or get renamed?").not.toBeNull();
+    const calls = [...block![1].matchAll(/loadSectionStylesheet\(\s*["'`]([^"'`]+)["'`]\s*\)/g)].map((m) => m[1]);
+    expect(calls).toEqual(["studio-agent-tailwind", "studio-frame-agent", "studio-agent"]);
+  });
 });

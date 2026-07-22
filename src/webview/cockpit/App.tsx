@@ -169,10 +169,19 @@ const ScheduleStudioApp = lazy(() =>
 // (KitDropdown/KitFilePicker) before its surface CSS — same 3-sheet order the retired standalone
 // panel's styleFiles declared (vscode-theme.css is already unconditional in Cockpit.ts's main
 // styles: [...] array, so only the token-bridge Tailwind sheet needs its own co-load key here).
+// t-610705 (Phase D, D1b code-review finding) — `loadSectionStylesheet` APPENDS a real `<link>` to
+// <head> on every call, so CSS precedence follows the ACTUAL DOM insertion order, not call intent —
+// the tailwind sheet must be requested BEFORE studio-frame-agent here, or a lazy in-session
+// navigation INTO Agent Studio (e.g. from Terminal) ends up with the opposite cascade order from a
+// direct deep-link (whose initial unconditional <link> tags — Cockpit.ts's styles: [...] array — are
+// already correctly ordered tailwind-before-studio-frame). Getting this backwards is invisible on a
+// fresh Control open (agent-studio-shell.tailwind.css never gets a lazy call at all when it was
+// already eagerly linked) and only bites on the lazy-navigation path — exactly the kind of
+// route-history-dependent rendering bug that's easy to miss without testing BOTH entry paths.
 const AgentStudioApp = lazy(() =>
   import("../agent-studio-shell/App").then((m) => {
-    loadSectionStylesheet("studio-frame-agent");
     loadSectionStylesheet("studio-agent-tailwind");
+    loadSectionStylesheet("studio-frame-agent");
     loadSectionStylesheet("studio-agent");
     return { default: m.App };
   }),
