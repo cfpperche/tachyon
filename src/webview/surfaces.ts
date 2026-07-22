@@ -14,7 +14,6 @@ export type WebviewEditorHome =
   | "sidebar"
   | "cockpit"
   | "standalone"
-  | "standalone-multi"
   | "dev-only"
   | "legacy-redirect";
 
@@ -31,7 +30,9 @@ export interface WebviewSurface {
   /**
    * spec 410 — preferred editor home after cockpit-single-app migration.
    * `legacy-redirect`: host retained for serializer/revive; new opens should go to cockpit.
-   * `standalone-multi`: multi-instance panels (task detail / handoff / probes) — thin-host exception.
+   * `standalone-multi` (the multi-instance thin-host exception for task detail/handoff/probes) was
+   * removed (Phase C, t-610705): all three closed into Control subroutes, so nothing uses it anymore
+   * — see docs/specs/410-cockpit-single-app/tasks.md's C.1a/C.2/C.3.
    */
   editorHome?: WebviewEditorHome;
   /** When editorHome is cockpit or legacy-redirect, the CockpitSectionId to open. */

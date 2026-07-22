@@ -33,11 +33,9 @@ describe("WEBVIEW_SURFACES editorHome (spec 410 / 279)", () => {
     expect(a?.cockpitSectionId).toBe("approvals");
   });
 
-  it("multi-instance class is tagged standalone-multi", () => {
-    const multi = WEBVIEW_SURFACES.filter((s) => s.editorHome === "standalone-multi").map((s) => s.view);
-    // t-610705 Phase C.1 — task-detail's multi-instance exception closed (it's a Control subroute now).
-    // t-610705 Phase C.2 — activity/probes' multi-instance exception closed the same way.
-    // t-610705 Phase C.3 — handoff's multi-instance exception closed (it's a Control section now).
-    expect(multi.sort()).toEqual([]);
-  });
+  // t-610705 (Phase E cleanup) — the "multi-instance class is tagged standalone-multi" test that
+  // used to live here is gone, not just green: `standalone-multi` (task-detail/activity/probes/
+  // handoff's thin-host exception — Phase C.1/C.2/C.3 closed all three into Control subroutes/
+  // sections) was removed from `WebviewEditorHome` itself, so the invariant is compiler-enforced now
+  // — a stronger guarantee than a runtime filter asserting an empty array.
 });
