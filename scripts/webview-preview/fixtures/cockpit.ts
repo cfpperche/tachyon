@@ -394,6 +394,14 @@ export const cockpitFixtures: Record<string, Fixture<CockpitModel>> = {
     provenance: "synthetic-edge",
     vm: { ...buildCockpitModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.studioEdit("agent", "b349073a", "reviewer"), studioMountNonce: "fixture-mount-nonce" },
   },
+  // t-610705 (Phase D, D2) — task is edit-only in practice (route.ts's decodeRoute rejects
+  // studio-new + "task" outright — every real caller pre-mints an id), so there is no "studio-task"
+  // new-session fixture to match command/terminal/runbook/schedule/agent above. Nav section is
+  // "mission", not "fleet" — route.ts's studioParentSection special-cases "task" (D2).
+  "studio-task-edit": {
+    provenance: "synthetic-edge",
+    vm: { ...buildCockpitModel(bundles, { section: "mission", nowIso: now }), activeRoute: cockpitRoutes.studioEdit("task", "b349073a", "t-4f2c91"), studioMountNonce: "fixture-mount-nonce" },
+  },
   validations: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "validations", nowIso: now }) },
   approvals: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "approvals", nowIso: now }) },
   // t-610705 (Phase C.3) — Handoff folds into a section (no activeRoute, unlike task-detail/Fleet

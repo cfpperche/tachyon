@@ -186,6 +186,21 @@ const AgentStudioApp = lazy(() =>
     return { default: m.App };
   }),
 );
+// t-610705 (Phase D, D2) — Task Studio needs its own compiled Tailwind utilities (KitFieldRow/
+// KitLabeledInput/KitSelect) PLUS the entity-neutral rich-doc editor sheet (shared with the retired
+// standalone panel and Pin Studio's future D3 migration) BEFORE studio-frame.css — same cascade-order
+// requirement Agent Studio's own comment above explains (actual <link> DOM insertion order, not call
+// intent), matching Cockpit.ts's eager `styles: [...]` order exactly: tailwind, rich-doc,
+// studio-frame, THEN Task Studio's own sheet.
+const TaskStudioApp = lazy(() =>
+  import("../task-studio/App").then((m) => {
+    loadSectionStylesheet("studio-task-tailwind");
+    loadSectionStylesheet("studio-task-richdoc");
+    loadSectionStylesheet("studio-frame-task");
+    loadSectionStylesheet("studio-task");
+    return { default: m.App };
+  }),
+);
 
 function SectionFallback() {
   return <EmptyState kind="loading" message="Loading…" />;
@@ -711,10 +726,21 @@ export function App(p: CockpitAppProps) {
     // for esbuild's code-split analysis). Every branch shares `key`/`routeKey`/`mountNonce`/
     // `incoming`/`dispatch` wiring — only the component and its own studio-scoped stylesheet differ.
     const parent = parentRoute(activeRoute);
+    // t-610705 (Phase D, D2) — Task Studio's edit route is the one studio whose parent is NOT a flat
+    // section (route.ts's parentRoute special-cases studio-edit + studio:"task" to the task's own
+    // task-detail subroute) — reuses taskDetailDispatch's existing "openTask" round trip (the SAME
+    // one Task Detail's own breadcrumb and the Board's card-click already navigate through) rather
+    // than inventing a new generic route-navigate prop for this one case.
     const back = parent && parent.kind === "section" ? (
       <div class="ck-subroute-breadcrumb" data-testid="control-studio-breadcrumb">
         <Button variant="default" icon="arrow-left" onClick={() => p.onSetSection(parent.section)}>
           {s[TAB_META[parent.section].navKey]}
+        </Button>
+      </div>
+    ) : parent && parent.kind === "task-detail" ? (
+      <div class="ck-subroute-breadcrumb" data-testid="control-studio-breadcrumb">
+        <Button variant="default" icon="arrow-left" onClick={() => p.taskDetailDispatch.openTask(parent.taskId)}>
+          {s.navMission}
         </Button>
       </div>
     ) : null;
@@ -738,6 +764,8 @@ export function App(p: CockpitAppProps) {
             <ScheduleStudioApp key={studioKey} {...studioMountProps} />
           ) : activeRoute.studio === "agent" ? (
             <AgentStudioApp key={studioKey} {...studioMountProps} />
+          ) : activeRoute.studio === "task" ? (
+            <TaskStudioApp key={studioKey} {...studioMountProps} />
           ) : null}
         </Suspense>
       </div>

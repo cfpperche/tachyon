@@ -4,6 +4,9 @@ import { Button } from "../shared/ui";
 import { KitFieldRow, KitLabeledInput, KitSelect } from "../shared/ui/kit";
 import { StudioFrame } from "../shared/studio/StudioFrame";
 import type { StudioError } from "../shared/studio/errorTaxonomy";
+import { decodeStudioMessage, type StudioDispatch } from "../shared/studio/protocol";
+import { canSave as computeCanSave } from "../shared/studio/dirtyGating";
+import { useStudioFreeze } from "../shared/studio/useStudioFreeze";
 import { createRichDocEditor } from "../rich-doc/tiptap";
 import { attachmentFromVM, attachmentsForSave, attachmentsUsedByDoc, toEditorDoc, toStoredDoc, upsertAttachment } from "../rich-doc/document";
 import { EditorToolbar, SlashMenu } from "../rich-doc/toolbar";
@@ -12,8 +15,19 @@ import { createTaskStudioAdapter } from "../rich-doc/adapter";
 import type { RichDocAssets, RichDocAttachmentVM } from "../rich-doc/types";
 import type { ArtifactRef, TaskPriority } from "../../tasks/types";
 import { TASK_ID_RE } from "../../tasks/types";
-import { computeTaskDirty, taskStudioTitleFor, type TaskDetailEntity, type TaskFields, type TaskFieldsDirty } from "./domain";
-import { attachImageMessage, cancelMessage, dirtyMessage, importImageMessage, importPrototypeMessage, patchMessage, saveMessage, storeSketchMessage } from "./messages";
+import { computeTaskDirty, taskStudioTitleFor, TASK_STUDIO_HOST_MESSAGE_NAMES, type TaskDetailEntity, type TaskFields, type TaskFieldsDirty } from "./domain";
+import {
+  attachImageMessage,
+  cancelMessage,
+  dirtyMessage,
+  importImageMessage,
+  importPrototypeMessage,
+  patchMessage,
+  readyMessage,
+  saveMessage,
+  storeSketchMessage,
+} from "./messages";
+import type { TaskStudioHostMessage } from "./types";
 import { PrototypePreview } from "../shared/PrototypePreview";
 
 const Icon = ({ name }: { name: string }) => <span class={`codicon codicon-${name}`} aria-hidden="true" />;
@@ -30,10 +44,6 @@ const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const ALLOWED_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
 
 const adapter = createTaskStudioAdapter();
-
-export interface TaskStudioDispatch {
-  post(msg: unknown): void;
-}
 
 interface FieldValues {
   title: string;
@@ -55,6 +65,10 @@ function fieldsFromEntity(entity: TaskDetailEntity): FieldValues {
   };
 }
 
+function blankFieldValues(): FieldValues {
+  return { title: "", kind: "", priority: undefined, assignee: "", deps: [], artifact_refs: [] };
+}
+
 /** spec 350 T3 — the Excalidraw asset locations, injected as `window.*` globals by the panel's
  *  `bootstrapGlobals` (Amendment 2) rather than riding the entity payload — they're webview-static, not
  *  per-task, so they don't belong on `TaskDetailEntity`. */
@@ -64,21 +78,30 @@ function readAssets(): RichDocAssets | undefined {
   return { excalidrawScriptUri: w.EXCALIDRAW_SCRIPT_URI, excalidrawCssUri: w.EXCALIDRAW_CSS_URI, excalidrawAssetPath: w.EXCALIDRAW_ASSET_PATH };
 }
 
-export function App({
-  entity,
-  saveInFlight,
-  loadFailed,
-  hostError,
-  hostConflict,
-  dispatch,
-}: {
-  entity?: TaskDetailEntity;
-  saveInFlight: boolean;
-  loadFailed: boolean;
-  hostError?: StudioError;
-  hostConflict?: string;
-  dispatch: TaskStudioDispatch;
-}) {
+/**
+ * t-610705 (SDD 410 Phase D, D2) — Control-hosted now: props-driven, same split as every other
+ * migrated studio (command-studio-shell/App.tsx's doc comment has the full rationale for
+ * routeKey/mountNonce/useStudioFreeze/eager ref updates). Ported from the standalone
+ * task-studio/main.tsx's `Root` component (retired), which used to decode the raw postMessage
+ * envelope itself and hand this component already-parsed props — that decoding now happens HERE,
+ * inline, against the shared studio protocol (types.ts's TaskStudioHostMessage is already the
+ * shared-protocol shape; only this component's prop contract predated the migration).
+ *
+ * Task Studio is the first Control-hosted studio with `concurrency.kind === "cas"`
+ * (TaskStudioAdapter.ts) — the OTHER five migrated studios all pass `concurrencyStale: false` to
+ * StudioFrame/dirtyGating because they never stale. Rather than wire StudioFrame's generic (and, as
+ * of D2, still unexercised) `concurrencyStale`/`onReload` banner, this keeps Task Studio's own
+ * richer pre-existing conflict UX (Reload latest / Export local draft) exactly as the standalone
+ * panel had it — sourced from the `task/precondition-failed` error code, same as before.
+ */
+export interface TaskStudioAppProps {
+  dispatch: StudioDispatch;
+  routeKey: string;
+  mountNonce: string;
+  incoming?: { seq: number; message: unknown };
+}
+
+export function App({ dispatch, routeKey, mountNonce, incoming }: TaskStudioAppProps) {
   const mount = useRef<HTMLDivElement>(null);
   const editorRef = useRef<Editor | null>(null);
   const attachmentsRef = useRef<RichDocAttachmentVM[]>([]);
@@ -86,7 +109,16 @@ export function App({
   const pendingSketchScenes = useRef(new Map<string, string>());
   const originalRef = useRef<FieldValues | null>(null);
   const depTitlesRef = useRef<Record<string, string | undefined>>({});
-  const [reloadNonce, setReloadNonce] = useState(0);
+  const entityRef = useRef<TaskDetailEntity | undefined>(undefined);
+  const hasLoadedRef = useRef(false);
+  const editRevisionRef = useRef(0);
+  const dirtyRef = useRef(false);
+
+  const [entity, setEntity] = useState<TaskDetailEntity | undefined>(undefined);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [hostError, setHostError] = useState<StudioError | undefined>(undefined);
+  const [hostConflict, setHostConflict] = useState<string | undefined>(undefined);
+  const [ready, setReady] = useState(false);
 
   const [title, setTitle] = useState("");
   const [kind, setKind] = useState("");
@@ -108,86 +140,9 @@ export function App({
 
   const isNew = entity !== undefined && entity.expectUpdatedAt === undefined;
 
+  const post = (msg: object): void => dispatch.post({ ...msg, routeKey, mountNonce });
+
   const markDirty = (field: keyof TaskFieldsDirty) => setDirty((d) => (d[field] ? d : { ...d, [field]: true }));
-
-  // full reset — initial load, or an explicit "Reload latest" (bumps reloadNonce)
-  useEffect(() => {
-    if (!entity || !mount.current) return;
-    const fields = fieldsFromEntity(entity);
-    originalRef.current = fields;
-    depTitlesRef.current = Object.fromEntries(entity.deps.map((d) => [d.id, d.title]));
-    setTitle(fields.title);
-    setKind(fields.kind);
-    setPriority(fields.priority);
-    setAssignee(fields.assignee);
-    setDeps(fields.deps);
-    setDepInput("");
-    setArtifactRefs(fields.artifact_refs);
-    setArtifactInput("");
-    setDirty({});
-    setDocDirty(false);
-    setExpectUpdatedAt(entity.expectUpdatedAt);
-    attachmentsRef.current = entity.attachments;
-    setAttachments(entity.attachments);
-    setError(undefined);
-    setFreshFields([]);
-    editorRef.current?.destroy();
-    editorRef.current = createRichDocEditor(
-      mount.current,
-      toEditorDoc(entity.doc, entity.attachments),
-      (file, source) => void attachFile(file, source),
-      () => setSlashOpen(true),
-      () => setDocDirty(true),
-    );
-    setDocVersion((v) => v + 1);
-    return () => {
-      editorRef.current?.destroy();
-      editorRef.current = null;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entity?.workspaceHash, entity?.taskId, isNew, reloadNonce]);
-
-  // live merge — every OTHER load push (concurrent safety, spec F10/F18): non-dirty fields adopt the fresh
-  // value silently; a dirty field whose loaded value diverged from the fresh one surfaces in the freshness
-  // banner (never auto-merged); the rich doc itself NEVER auto-merges regardless of dirty state.
-  useEffect(() => {
-    if (!entity || !originalRef.current || !editorRef.current) return;
-    const fresh = fieldsFromEntity(entity);
-    const original = originalRef.current;
-    const diverged: string[] = [];
-    (Object.keys(fresh) as Array<keyof FieldValues>).forEach((key) => {
-      const changed = JSON.stringify(fresh[key]) !== JSON.stringify(original[key]);
-      if (!changed) return;
-      const fieldDirty = key === "artifact_refs" ? dirty.artifact_refs : key === "deps" ? dirty.deps : dirty[key as keyof TaskFieldsDirty];
-      if (fieldDirty) { diverged.push(key); return; }
-      // not dirty — safe to adopt transparently
-      if (key === "title") setTitle(fresh.title);
-      else if (key === "kind") setKind(fresh.kind);
-      else if (key === "priority") setPriority(fresh.priority);
-      else if (key === "assignee") setAssignee(fresh.assignee);
-      else if (key === "deps") setDeps(fresh.deps);
-      else if (key === "artifact_refs") setArtifactRefs(fresh.artifact_refs);
-    });
-    depTitlesRef.current = { ...depTitlesRef.current, ...Object.fromEntries(entity.deps.map((d) => [d.id, d.title])) };
-    if (!docDirty) {
-      attachmentsRef.current = entity.attachments;
-      setAttachments(entity.attachments);
-      editorRef.current.commands.setContent(toEditorDoc(entity.doc, entity.attachments), { emitUpdate: false });
-      setDocVersion((v) => v + 1);
-      setExpectUpdatedAt(entity.expectUpdatedAt);
-    }
-    if (!docDirty && Object.keys(dirty).every((k) => !dirty[k as keyof TaskFieldsDirty])) {
-      // nothing at all is dirty — the whole panel is a passive viewer right now, safe to fully re-anchor
-      originalRef.current = fresh;
-      setExpectUpdatedAt(entity.expectUpdatedAt);
-    }
-    setFreshFields(diverged);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entity]);
-
-  useEffect(() => {
-    if (hostError) setError(hostError.message);
-  }, [hostError]);
 
   const currentStoredDoc = () => toStoredDoc((editorRef.current?.getJSON() ?? { type: "doc", content: [] }) as never);
   const currentFields = (): TaskFields => {
@@ -201,28 +156,214 @@ export function App({
       artifact_refs: artifactRefs,
       doc,
       attachments: attachmentsForSave(doc, attachmentsRef.current).map(attachmentFromVM),
-      ...(entity?.bodyBaseline !== undefined ? { bodyBaseline: entity.bodyBaseline } : {}),
+      ...(entityRef.current?.bodyBaseline !== undefined ? { bodyBaseline: entityRef.current.bodyBaseline } : {}),
       dirty,
       docDirty,
       ...(expectUpdatedAt !== undefined ? { expectUpdatedAt } : {}),
     };
   };
 
-  // spec 350 T2/T3 — patch/dirty still ride every field change for restore/discard, while Save also carries
-  // a fresh click-time snapshot so editor updates cannot race the continuous patch effect.
+  const dirtyComputed = computeTaskDirty(entity, currentFields());
+  dirtyRef.current = dirtyComputed;
+
+  const { frozen, saving: saveInFlight, frozenRef, freezeForSave } = useStudioFreeze({
+    post: dispatch.post,
+    getSnapshot: () => ({ dirty: dirtyRef.current, editRevision: editRevisionRef.current, patch: currentFields() }),
+  });
+
+  const resetEditorFrom = (loadedEntity: TaskDetailEntity) => {
+    const fields = fieldsFromEntity(loadedEntity);
+    originalRef.current = fields;
+    depTitlesRef.current = Object.fromEntries(loadedEntity.deps.map((d) => [d.id, d.title]));
+    setTitle(fields.title);
+    setKind(fields.kind);
+    setPriority(fields.priority);
+    setAssignee(fields.assignee);
+    setDeps(fields.deps);
+    setDepInput("");
+    setArtifactRefs(fields.artifact_refs);
+    setArtifactInput("");
+    setDirty({});
+    setDocDirty(false);
+    setExpectUpdatedAt(loadedEntity.expectUpdatedAt);
+    attachmentsRef.current = loadedEntity.attachments;
+    setAttachments(loadedEntity.attachments);
+    setError(undefined);
+    setFreshFields([]);
+    if (mount.current) {
+      editorRef.current?.destroy();
+      editorRef.current = createRichDocEditor(
+        mount.current,
+        toEditorDoc(loadedEntity.doc, loadedEntity.attachments),
+        (file, source) => void attachFile(file, source),
+        () => setSlashOpen(true),
+        () => setDocDirty(true),
+      );
+    }
+    setDocVersion((v) => v + 1);
+  };
+
+  // Re-handshake whenever the binding identity changes (fresh mount OR a same-route re-entry the
+  // host rebound) — resets ALL local state so a stale entity never lingers across bindings, same
+  // pattern as every other migrated studio.
   useEffect(() => {
-    if (!entity) return;
-    const fields = currentFields();
-    dispatch.post(dirtyMessage(computeTaskDirty(entity, fields)));
-    dispatch.post(patchMessage(fields));
+    hasLoadedRef.current = false;
+    entityRef.current = undefined;
+    setEntity(undefined);
+    editorRef.current?.destroy();
+    editorRef.current = null;
+    attachmentsRef.current = [];
+    originalRef.current = null;
+    depTitlesRef.current = {};
+    pendingSketch.current = null;
+    pendingSketchScenes.current.clear();
+    const blank = blankFieldValues();
+    setTitle(blank.title);
+    setKind(blank.kind);
+    setPriority(blank.priority);
+    setAssignee(blank.assignee);
+    setDeps(blank.deps);
+    setDepInput("");
+    setArtifactRefs(blank.artifact_refs);
+    setArtifactInput("");
+    setDirty({});
+    setDocDirty(false);
+    setExpectUpdatedAt(undefined);
+    setAttachments([]);
+    setDocVersion(0);
+    setError(undefined);
+    setFreshFields([]);
+    setSlashOpen(false);
+    setSketch(null);
+    setLoadFailed(false);
+    setHostError(undefined);
+    setHostConflict(undefined);
+    setReady(false);
+    dispatch.post(readyMessage({ routeKey, mountNonce }));
+    return () => {
+      editorRef.current?.destroy();
+      editorRef.current = null;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entity, title, kind, priority, assignee, deps, artifactRefs, dirty, docDirty, expectUpdatedAt, docVersion]);
+  }, [routeKey, mountNonce]);
+
+  useEffect(() => {
+    if (!incoming) return;
+    const decoded = decodeStudioMessage<TaskStudioHostMessage>(incoming.message, TASK_STUDIO_HOST_MESSAGE_NAMES);
+    if (!decoded.ok || !decoded.message) {
+      setHostError({
+        code: "transport/protocol",
+        message: `studio protocol: ${decoded.reason ?? "undecodable message"}`,
+        source: "transport",
+        blocking: true,
+      });
+      if (!entityRef.current) setLoadFailed(true);
+      setReady(true);
+      return;
+    }
+    const d = decoded.message;
+    if (d.type === "load") {
+      const wasFirstLoad = !hasLoadedRef.current;
+      hasLoadedRef.current = true;
+      const prevEntity = entityRef.current;
+      entityRef.current = d.entity;
+      setEntity(d.entity);
+      setHostError(undefined);
+      setLoadFailed(false);
+      setHostConflict(undefined);
+      setReady(true);
+      if (wasFirstLoad || !prevEntity) {
+        // first load for this mount — full reset, editor (re)created from the loaded doc.
+        resetEditorFrom(d.entity);
+        return;
+      }
+      // live merge — a later load push for the SAME mount (e.g. "Reload latest" re-requesting via
+      // "ready", spec F10/F18): non-dirty fields adopt the fresh value silently; a dirty field whose
+      // loaded value diverged from the fresh one surfaces in the freshness banner (never
+      // auto-merged); the rich doc itself NEVER auto-merges regardless of dirty state.
+      const fresh = fieldsFromEntity(d.entity);
+      const original = originalRef.current ?? fresh;
+      const diverged: string[] = [];
+      (Object.keys(fresh) as Array<keyof FieldValues>).forEach((key) => {
+        const changed = JSON.stringify(fresh[key]) !== JSON.stringify(original[key]);
+        if (!changed) return;
+        const fieldDirty = key === "artifact_refs" ? dirty.artifact_refs : key === "deps" ? dirty.deps : dirty[key as keyof TaskFieldsDirty];
+        if (fieldDirty) { diverged.push(key); return; }
+        if (key === "title") setTitle(fresh.title);
+        else if (key === "kind") setKind(fresh.kind);
+        else if (key === "priority") setPriority(fresh.priority);
+        else if (key === "assignee") setAssignee(fresh.assignee);
+        else if (key === "deps") setDeps(fresh.deps);
+        else if (key === "artifact_refs") setArtifactRefs(fresh.artifact_refs);
+      });
+      depTitlesRef.current = { ...depTitlesRef.current, ...Object.fromEntries(d.entity.deps.map((dep) => [dep.id, dep.title])) };
+      if (!docDirty) {
+        attachmentsRef.current = d.entity.attachments;
+        setAttachments(d.entity.attachments);
+        editorRef.current?.commands.setContent(toEditorDoc(d.entity.doc, d.entity.attachments), { emitUpdate: false });
+        setDocVersion((v) => v + 1);
+        setExpectUpdatedAt(d.entity.expectUpdatedAt);
+      }
+      if (!docDirty && Object.keys(dirty).every((k) => !dirty[k as keyof TaskFieldsDirty])) {
+        originalRef.current = fresh;
+        setExpectUpdatedAt(d.entity.expectUpdatedAt);
+      }
+      setFreshFields(diverged);
+    } else if (d.type === "error") {
+      // a CAS conflict (spec 350 T1's `task/precondition-failed`) gets its own banner (with Reload
+      // latest/Export local draft) — every other error rides the shell's generic StudioError shape.
+      if (d.code === "task/precondition-failed") { setHostConflict(d.message); setReady(true); return; }
+      setHostError({ code: d.code, message: d.message, source: d.source ?? "persistence", blocking: d.blocking });
+      if (!entityRef.current) setLoadFailed(true);
+      setReady(true);
+    } else if (d.type === "restore") {
+      // t-610705 (Phase D, D2) — KNOWN, DOCUMENTED LIMITATION: a kept draft's `patch.attachments` are
+      // the PLAIN stored shape (no resolved `uri`/`previewUri` — those are VM-only, resolved from a
+      // real `loadTaskStudio` call). Restoring the doc's text/structure is faithful; any image/sketch
+      // node it references may render as a broken thumbnail until the user reloads. None of the other
+      // 5 migrated studios carry rich-media state at all, so there is no existing pattern to match —
+      // scoped down the same way D2's taskStudioDomain.ts already accepted for `onTasksChanged`.
+      const patch = d.snapshot?.patch;
+      if (!patch) return;
+      setTitle(patch.title);
+      setKind(patch.kind ?? "");
+      setPriority(patch.priority);
+      setAssignee(patch.assignee ?? "");
+      setDeps(patch.deps);
+      setArtifactRefs(patch.artifact_refs);
+      setDirty(patch.dirty);
+      setDocDirty(patch.docDirty);
+      setExpectUpdatedAt(patch.expectUpdatedAt);
+      if (editorRef.current) {
+        editorRef.current.commands.setContent(toEditorDoc(patch.doc, attachmentsRef.current), { emitUpdate: false });
+        setDocVersion((v) => v + 1);
+      }
+    } else if (d.type === "attachmentStored") {
+      insertAttachment(d.attachment);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [incoming?.seq]);
+
+  // spec 350 T2/T3 — patch/dirty ride every field change for restore/discard; Save also carries a
+  // fresh click-time snapshot (in `onSave` below) so editor updates cannot race this effect.
+  useEffect(() => {
+    if (!ready || !entity || frozen) return;
+    editRevisionRef.current += 1;
+    const fields = currentFields();
+    post(dirtyMessage(computeTaskDirty(entity, fields)));
+    post(patchMessage(fields, editRevisionRef.current));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, entity, frozen, title, kind, priority, assignee, deps, artifactRefs, dirty, docDirty, expectUpdatedAt, docVersion]);
+
+  useEffect(() => {
+    if (hostError) setError(hostError.message);
+  }, [hostError]);
 
   const attachFile = async (file: File, source: "paste" | "drop") => {
     if (!ALLOWED_IMAGE_TYPES.has(file.type)) { setError(`Unsupported image type: ${file.type || "unknown"}`); return; }
     if (file.size > MAX_IMAGE_BYTES) { setError("Image exceeds the 10 MB limit"); return; }
     const dataBase64 = await fileToBase64(file);
-    dispatch.post(attachImageMessage({ mediaType: file.type, name: file.name, source, dataBase64 }));
+    post(attachImageMessage({ mediaType: file.type, name: file.name, source, dataBase64 }));
   };
 
   const rememberAttachment = (att: RichDocAttachmentVM): RichDocAttachmentVM[] => {
@@ -254,15 +395,7 @@ export function App({
     }
   };
 
-  useEffect(() => {
-    const win = window as unknown as { __tachyonTaskStored?: (att: RichDocAttachmentVM) => void };
-    win.__tachyonTaskStored = insertAttachment;
-    return () => {
-      if (win.__tachyonTaskStored === insertAttachment) delete win.__tachyonTaskStored;
-    };
-  });
-
-  if (!entity) {
+  if (!ready || !entity) {
     return <div class="ds-degrade"><span class="codicon codicon-loading" /><div>Loading Task Studio...</div></div>;
   }
 
@@ -321,7 +454,7 @@ export function App({
 
   const storeSketch = (request: SketchRequest, result: RichDocExcalidrawSaveResult) => {
     pendingSketchScenes.current.set(request.attachmentId ?? "__pending", result.sceneJson);
-    dispatch.post(storeSketchMessage({
+    post(storeSketchMessage({
       ...(request.attachmentId ? { attachmentId: request.attachmentId } : {}),
       name: request.name,
       source: request.source,
@@ -334,16 +467,22 @@ export function App({
 
   const visibleAttachments = docVersion >= 0 && editorRef.current ? attachmentsUsedByDoc(currentStoredDoc(), attachments) : attachments;
 
-  const save = () => {
+  const onSave = () => {
+    if (frozenRef.current) return;
     const trimmed = title.trim();
     if (!trimmed) { setError("Task title is required"); return; }
-    const fields = currentFields();
-    dispatch.post(patchMessage(fields));
-    dispatch.post(saveMessage(fields));
+    editRevisionRef.current += 1;
+    post(patchMessage(currentFields(), editRevisionRef.current));
+    freezeForSave();
+    post(saveMessage());
   };
 
+  // t-610705 (Phase D, D2) — re-requesting "ready" makes the host resend a fresh `load` for the
+  // current binding (studioHost.ts's `case "ready": await sendStudioLoad(io);`) — the actual fix for
+  // what the standalone panel's "Reload latest" button used to do (re-apply whatever `entity` state
+  // was already held locally, which a CAS-conflict error never actually refreshed).
   const reloadLatest = () => {
-    setReloadNonce((n) => n + 1);
+    post(readyMessage({ routeKey, mountNonce }));
   };
 
   const addDep = () => {
@@ -377,26 +516,31 @@ export function App({
   const removeArtifactRef = (type: string, ref: string) => { setArtifactRefs((refs) => refs.filter((a) => !(a.type === type && a.ref === ref))); markDirty("artifact_refs"); };
 
   const assets = readAssets();
-  // 339 always allowed clicking Save unless the sidecar anchor is read-only (a no-op save on an unmodified
-  // task is a valid, dogfooded path — it just disposes the panel) — never dirty-gated. `!saveInFlight` is a
-  // pure addition (prevents a double-submit race the old code never guarded).
-  const canSave = !saveInFlight && entity.anchor !== "read-only";
+  // spec 339 always allowed clicking Save unless the sidecar anchor is read-only (a no-op save on an
+  // unmodified task is a valid, dogfooded path — it just disposes the panel), so `dirty: true` is
+  // passed unconditionally here (never gating on it) — but StudioFrame's own invariant (dueto F9/F10:
+  // "an adapter cannot show a blocking error while leaving Save clickable") still applies now that
+  // Task Studio rides the same shared frame as every other migrated studio, so blockingErrorCount/
+  // saveInFlight/concurrencyStale still gate exactly like they do everywhere else.
+  const canSave = computeCanSave({ dirty: true, blockingErrorCount: hostError?.blocking ? 1 : 0, saveInFlight, concurrencyStale: false })
+    && entity.anchor !== "read-only";
 
   return (
     <>
       <StudioFrame
         title={taskStudioTitleFor(isNew ? "new" : "edit", entity.taskId, entity)}
-        errors={[]}
-        dirty={computeTaskDirty(entity, { title, kind, priority, assignee, deps, artifact_refs: artifactRefs, doc: currentStoredDoc(), attachments: attachmentsRef.current, ...(entity.bodyBaseline !== undefined ? { bodyBaseline: entity.bodyBaseline } : {}), dirty, docDirty, expectUpdatedAt })}
+        errors={hostError ? [hostError] : []}
+        dirty={dirtyComputed}
         saveInFlight={saveInFlight}
         loadFailed={loadFailed}
         canSave={canSave}
-        onSave={save}
-        onCancel={() => dispatch.post(cancelMessage())}
+        frozen={frozen}
+        onSave={onSave}
+        onCancel={() => post(cancelMessage())}
         headerActions={
           <>
-            <Button icon="file-media" onClick={() => dispatch.post(importImageMessage())}>Import</Button>
-            <Button icon="preview" onClick={() => dispatch.post(importPrototypeMessage())}>Import prototype</Button>
+            <Button icon="file-media" onClick={() => post(importImageMessage())}>Import</Button>
+            <Button icon="preview" onClick={() => post(importPrototypeMessage())}>Import prototype</Button>
             <Button icon="edit" onClick={openBlankSketch}>Sketch</Button>
           </>
         }
@@ -406,12 +550,6 @@ export function App({
               <div class="eyebrow">{isNew ? adapter.newLabel() : adapter.editLabel(entity.taskId)}</div>
               <input class="title" value={title} onInput={(e) => { setTitle((e.currentTarget as HTMLInputElement).value); markDirty("title"); }} placeholder="Task title" aria-label="Task title" />
 
-              {/* spec 342 Pilot B — before: plain `<label class="ts-field">` wrappers around a raw `<input
-                 class="ds-input">` (Kind/Assignee) and the legacy `Select` (Priority). After: KitFieldRow (a
-                 thin re-export of the SAME FieldRow, so the row rhythm is byte-identical) with
-                 KitLabeledInput (Kind/Assignee) and KitSelect (Priority) — see notes.md's T7 entry for the
-                 exact parity notes (label presentation moves to Kit's own `ds-section` look; Priority's
-                 "none" state needed a non-empty sentinel value since Radix Select rejects an empty string). */}
               <KitFieldRow class="ts-fields">
                 <div class="ts-field">
                   <KitLabeledInput
@@ -423,11 +561,6 @@ export function App({
                   />
                 </div>
                 <div class="ts-field">
-                  {/* dogfood round 1 (#2) — Kind/Assignee's KitLabeledInput renders its own `ds-section`
-                     label (uppercase, T7's deliberate look); Priority's plain `<span>` never got the same
-                     treatment, so three adjacent fields in one row showed two different label styles.
-                     `ds-section` here matches them, purely visual — the KitSelect↔label association still
-                     goes through `aria-label` below. */}
                   <span class="ds-section">Priority</span>
                   <KitSelect
                     aria-label="Priority"
@@ -479,7 +612,6 @@ export function App({
                         aria-label={`Remove artifact ${label}`}
                         onClick={() => removeArtifactRef(a.type, a.ref)}
                       >
-                        {/* t-dd22e8 — same ellipsis shell as deps; raw {type}:{ref} was overflowing/overlapping long screenshot paths */}
                         <span class="chip-pill-text">{label}</span><Icon name="close" />
                       </button>
                     );
@@ -521,7 +653,7 @@ export function App({
           ),
           previewVisual: (
             <>
-              <VisualsPanel attachments={visibleAttachments} onImport={() => dispatch.post(importImageMessage())} onAnnotate={(a) => void openAnnotate(a)} onEditSketch={openExistingSketch} />
+              <VisualsPanel attachments={visibleAttachments} onImport={() => post(importImageMessage())} onAnnotate={(a) => void openAnnotate(a)} onEditSketch={openExistingSketch} />
               <PrototypePreview value={entity.prototypes ?? { readOnly: false, prototypes: [] }} />
             </>
           ),

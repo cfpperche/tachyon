@@ -118,12 +118,15 @@ export const ROUTES: Record<string, Route> = {
       "/dist/webview/probes.css",
       "/dist/webview/handoff.css",
       "/dist/webview/agent-studio-shell.tailwind.css",
+      "/dist/webview/task-studio.tailwind.css",
+      "/dist/webview/rich-doc.css",
       "/dist/webview/studio-frame.css",
       "/dist/webview/command-studio-shell.css",
       "/dist/webview/terminal-studio-shell.css",
       "/dist/webview/runbook-studio-shell.css",
       "/dist/webview/schedule-studio-shell.css",
       "/dist/webview/agent-studio-shell.css",
+      "/dist/webview/task-studio.css",
       "/dist/webview/cockpit.css",
     ],
     frame: { w: 1100, h: 720 },
@@ -190,10 +193,23 @@ export const ROUTES: Record<string, Route> = {
           runbook: { fixtures: runbookStudioShellFixtures as Record<string, Fixture>, makeMessage: (vm) => runbookStudioShellMakeMessage(vm as never) },
           schedule: { fixtures: scheduleStudioShellFixtures as Record<string, Fixture>, makeMessage: (vm) => scheduleStudioShellMakeMessage(vm as never) },
           agent: { fixtures: agentStudioShellFixtures as Record<string, Fixture>, makeMessage: (vm) => agentStudioShellMakeMessage(vm as never) },
+          // t-610705 (Phase D, D2) — task's fixtures module predates the "-shell" naming convention
+          // (it's task-studio/, not task-studio-shell/) and was written for the now-retired standalone
+          // "task-studio" preview route below — reused as-is here rather than renamed, same "dense-edit"
+          // key every other studio's fixtures module provides.
+          task: { fixtures: taskStudioFixtures as Record<string, Fixture>, makeMessage: (vm) => taskStudioMakeMessage(vm as never) },
         };
         const entry = byStudio[(activeRoute as { studio: string }).studio];
         const studio = entry?.fixtures[key]?.vm;
-        if (studio) msgs.push(entry.makeMessage(studio));
+        if (studio) {
+          // t-610705 (Phase D, D2) — task's makeMessage (unlike the other 5 studio-shell modules'
+          // single-object return) returns unknown[] (its "conflict" fixture needs a second, distinct
+          // error envelope alongside "load" — see fixtures/task-studio.ts) — spread rather than push
+          // the array itself as one opaque element.
+          const result = entry.makeMessage(studio);
+          if (Array.isArray(result)) msgs.push(...result);
+          else msgs.push(result);
+        }
       }
       return msgs;
     },
@@ -228,24 +244,10 @@ export const ROUTES: Record<string, Route> = {
   // t-ed3067 — the standalone "runtime-ops" route previewed RuntimeOpsView.ts, retired as dead code
   // (never registered in production). Runtime Ops is a cockpit-only section now; use
   // ?view=cockpit&fixture=runtime for its visual QA — same App.tsx component either way.
-  // spec 342 dogfood round 2 (#4) — onboards Task Studio (the surface that motivated this spec's Pilot B)
-  // into the harness; spec 350 T3 migrated it onto the studio shell (StudioFrame chrome, studio-frame.css
-  // added to the CSS order — matches TaskStudioPanel.ts's real renderWebviewShell call exactly).
-  "task-studio": {
-    bundle: "/dist/webview/task-studio.js",
-    cssLinks: [
-      CODICON,
-      DESIGN_SYSTEM,
-      "/dist/webview/vscode-theme.css",
-      "/dist/webview/task-studio.tailwind.css",
-      "/dist/webview/rich-doc.css",
-      "/dist/webview/studio-frame.css",
-      "/dist/webview/task-studio.css",
-    ],
-    frame: { w: 900, h: 800 },
-    fixtures: taskStudioFixtures as Record<string, Fixture>,
-    makeMessage: (vm) => taskStudioMakeMessage(vm as never),
-  },
+  // t-610705 (SDD 410 Phase D, D2) — the standalone "task-studio" route previewed the retired
+  // TaskStudioPanel.ts webview; Task Studio is a cockpit-only studio route now — use
+  // ?view=cockpit&fixture=studio-task-edit (same App.tsx, same fixture VMs, via the cockpit route's
+  // byStudio fixture injection above).
   // t-610705 (SDD 410 Phase C.1) — the standalone "task-detail" route previewed the retired Task
   // Detail panel; Task Detail is a cockpit-only subroute now — use
   // ?view=cockpit&fixture=task-detail (same App.tsx, same fixture VM, via the cockpit route's

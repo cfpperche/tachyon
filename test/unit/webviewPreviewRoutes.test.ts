@@ -57,12 +57,15 @@ describe("preview route table", () => {
       "/dist/webview/probes.css",
       "/dist/webview/handoff.css",
       "/dist/webview/agent-studio-shell.tailwind.css",
+      "/dist/webview/task-studio.tailwind.css",
+      "/dist/webview/rich-doc.css",
       "/dist/webview/studio-frame.css",
       "/dist/webview/command-studio-shell.css",
       "/dist/webview/terminal-studio-shell.css",
       "/dist/webview/runbook-studio-shell.css",
       "/dist/webview/schedule-studio-shell.css",
       "/dist/webview/agent-studio-shell.css",
+      "/dist/webview/task-studio.css",
       "/dist/webview/cockpit.css",
     ]);
     expect(Object.keys(r.fixtures).sort()).toEqual([
@@ -89,6 +92,7 @@ describe("preview route table", () => {
       "studio-runbook-edit",
       "studio-schedule",
       "studio-schedule-edit",
+      "studio-task-edit",
       "studio-terminal",
       "studio-terminal-edit",
       "task-detail",
@@ -137,6 +141,14 @@ describe("preview route table", () => {
     const terminalMsgs = r.makeMessage(r.fixtures["studio-terminal-edit"]!.vm) as Array<{ type: string; studioProtocolVersion?: number }>;
     expect(terminalMsgs.map((m) => m.type)).toEqual(["init", "model", "load"]);
     expect(terminalMsgs[2]?.studioProtocolVersion).toBe(1);
+    // t-610705 (Phase D, D2) — task's fixtures module reuses "dense-edit" via the SAME byStudio
+    // lookup (routes.ts) — no separate "studio-task" new-session fixture (task is edit-only). Nav
+    // section is "mission" (not "fleet" like the other 5 studios), so the mission board's own
+    // "snapshot" push rides alongside "load" too — same dual-push shape as the task-detail fixture
+    // above (both are subroutes of the "mission" section).
+    const taskMsgs = r.makeMessage(r.fixtures["studio-task-edit"]!.vm) as Array<{ type: string; studioProtocolVersion?: number }>;
+    expect(taskMsgs.map((m) => m.type)).toEqual(["init", "model", "snapshot", "load"]);
+    expect(taskMsgs[3]?.studioProtocolVersion).toBe(1);
   });
 
   it("declares the pin-studio route (spec 278 — the last view onboarded) with its envelope", () => {
@@ -145,23 +157,6 @@ describe("preview route table", () => {
     expect(r.cssLinks).toEqual(["/dist/webview/codicon.css", "/dist/webview/design-system.css", "/dist/webview/rich-doc.css", "/dist/webview/studio-frame.css", "/dist/webview/pin-studio.css"]);
     expect(Object.keys(r.fixtures).sort()).toEqual(["default", "new"]);
     expect((r.makeMessage(r.fixtures.default.vm) as { type: string }).type).toBe("load");
-  });
-
-  it("declares the task-studio route (spec 342 dogfood round 2 #4, migrated onto the studio shell by spec 350 T3) with its envelope + ordered CSS", () => {
-    const r = ROUTES["task-studio"];
-    expect(r.bundle).toBe("/dist/webview/task-studio.js");
-    expect(r.cssLinks).toEqual([
-      "/dist/webview/codicon.css",
-      "/dist/webview/design-system.css",
-      "/dist/webview/vscode-theme.css",
-      "/dist/webview/task-studio.tailwind.css",
-      "/dist/webview/rich-doc.css",
-      "/dist/webview/studio-frame.css",
-      "/dist/webview/task-studio.css",
-    ]);
-    expect(Object.keys(r.fixtures).sort()).toEqual(["conflict", "default", "new"]);
-    const messages = r.makeMessage(r.fixtures.default.vm) as { type: string }[];
-    expect(messages[0]!.type).toBe("load");
   });
 
   it("declares the pin-preview route (spec 279) with a hostile fixture carrying injection payloads", () => {

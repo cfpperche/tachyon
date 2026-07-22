@@ -1846,6 +1846,7 @@ export async function openCockpit(
     const runbookStudioIsActive = isStudioRoute(currentRoute) && currentRoute.studio === "runbook";
     const scheduleStudioIsActive = isStudioRoute(currentRoute) && currentRoute.studio === "schedule";
     const agentStudioIsActive = isStudioRoute(currentRoute) && currentRoute.studio === "agent";
+    const taskStudioIsActive = isStudioRoute(currentRoute) && currentRoute.studio === "task";
     // t-610705 (Phase C.2) — ported from the retired standalone ActivityPanel.ts: mermaid/katex load
     // ON DEMAND client-side (activity/markdown.tsx), gated on these globals being present at all —
     // never previously wired into Cockpit.ts's shell (Task Detail's C.1 migration also uses
@@ -1865,6 +1866,19 @@ export async function openCockpit(
       // srcdoc iframe (the standalone TaskDetailPanel.ts set this too); purely additive to the CSP,
       // no effect on any other already-embedded section.
       frameSrc: "self",
+      // t-610705 (Phase D, D2) — the CSP tranche the design doc's security-probe requirement exists
+      // to gate: Task Studio's rich-doc editor needs pasted-image blob: URIs (imgBlob), the Excalidraw
+      // sketch worker (workerSrc: "blob"), its own module bundle load (childSrc: "blob"), and
+      // connect-src for the editor's asset fetches — the EXACT same 4 grants the standalone
+      // TaskStudioPanel.ts (and PinStudioPanel.ts, D3's future migration) already made for their own
+      // single-surface webviews. Emitted ONCE at panel creation for Control's whole lifetime (this
+      // `<meta>` isn't re-rendered per route) — a PERMANENT grant across the entire Cockpit surface,
+      // not scoped to when a Task Studio route is actually active; this is the real blast-radius the
+      // mandatory adversarial CSP-diff probe (before landing) is meant to catch.
+      imgBlob: true,
+      connectSrc: true,
+      workerSrc: "blob",
+      childSrc: "blob",
       // No nested `[...]` inside this literal — test/unit/cockpitCssParity.test.ts source-scans this
       // exact array via a non-greedy `styles:\s*\[([\s\S]*?)\]` regex, so an inline array literal
       // (e.g. a `...(cond ? [x] : [])` spread) closes the match early at ITS `]` and silently
@@ -1896,12 +1910,21 @@ export async function openCockpit(
         // → agent-studio-shell.css), so studio-frame.css's own rules still win the cascade over any
         // Tailwind utility class at equal specificity, same as it always has for this surface.
         agentStudioIsActive ? uri("agent-studio-shell.tailwind.css") : undefined,
+        // t-610705 (Phase D, D2) — same Tailwind-before-studio-frame ordering as Agent Studio above;
+        // rich-doc.css (entity-neutral editor styles, shared with the retired standalone panel + the
+        // dev preview harness) loads BEFORE studio-frame.css too — matches the old standalone panel's
+        // `styleFiles` order exactly (codicon, design-system, vscode-theme, task-studio.tailwind,
+        // rich-doc, studio-frame, task-studio), so studio-frame.css's shell-chrome rules still win the
+        // cascade over rich-doc.css at equal specificity, same as they always have for this surface.
+        taskStudioIsActive ? uri("task-studio.tailwind.css") : undefined,
+        taskStudioIsActive ? uri("rich-doc.css") : undefined,
         studioIsActive ? uri("studio-frame.css") : undefined,
         commandStudioIsActive ? uri("command-studio-shell.css") : undefined,
         terminalStudioIsActive ? uri("terminal-studio-shell.css") : undefined,
         runbookStudioIsActive ? uri("runbook-studio-shell.css") : undefined,
         scheduleStudioIsActive ? uri("schedule-studio-shell.css") : undefined,
         agentStudioIsActive ? uri("agent-studio-shell.css") : undefined,
+        taskStudioIsActive ? uri("task-studio.css") : undefined,
         uri("cockpit.css"),
       ].filter((href): href is string => href !== undefined),
       bundle: uri("cockpit.js"),
@@ -1947,11 +1970,23 @@ export async function openCockpit(
           "studio-frame-agent": uri("studio-frame.css"),
           "studio-agent-tailwind": uri("agent-studio-shell.tailwind.css"),
           "studio-agent": uri("agent-studio-shell.css"),
+          "studio-frame-task": uri("studio-frame.css"),
+          "studio-task-tailwind": uri("task-studio.tailwind.css"),
+          "studio-task-richdoc": uri("rich-doc.css"),
+          "studio-task": uri("task-studio.css"),
         },
         __mermaidSrc: uri("mermaid.js"),
         __katexSrc: uri("katex.js"),
         __katexCssUri: uri("katex.min.css"),
         __codeThemeForced: codeTheme,
+        // t-610705 (Phase D, D2) — Task Studio's VisualsPanel/SketchModal read these three
+        // `window.*` globals (task-studio/App.tsx's `readAssets()`) to locate the Excalidraw bundle —
+        // same shape TaskStudioPanel.ts's (retired) standalone `bootstrapGlobals` already provided,
+        // now emitted unconditionally like every other bootstrap global here (harmless on a route
+        // that never mounts Task Studio — same reasoning Phase C.2's mermaid/katex URIs already use).
+        EXCALIDRAW_SCRIPT_URI: uri("excalidraw.js"),
+        EXCALIDRAW_CSS_URI: uri("excalidraw.css"),
+        EXCALIDRAW_ASSET_PATH: uri("").replace(/\/?$/, "/"),
       },
     });
   } else {

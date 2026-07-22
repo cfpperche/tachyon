@@ -293,13 +293,9 @@ const pluginHost = {
 // cockpit-only subroute now (src/webview/task-detail/App.tsx stays, lazy-imported by cockpit/App.tsx
 // via CSS co-load). task-detail.css is still emitted below — Cockpit.ts co-loads it.
 
-// spec 339 — the Preact Task Studio editor-area webview bundle (one panel per task id + a new-task
-// singleton per workspace; shares the rich-doc editor stack + excalidraw bundle with Pin Studio).
-const taskStudio = {
-  ...sidebar,
-  entryPoints: ["src/webview/task-studio/main.tsx"],
-  outfile: "dist/webview/task-studio.js",
-};
+// t-610705 (SDD 410 Phase D, D2) — the standalone Task Studio bundle was retired: Task Studio is a
+// cockpit-only studio route now (src/webview/task-studio/App.tsx stays, lazy-imported by
+// cockpit/App.tsx via CSS co-load, same as command/terminal/runbook/schedule/agent before it).
 
 // spec 256 — Excalidraw as its OWN on-demand bundle. It declares React peers; Tachyon webviews stay
 // Preact-only by aliasing those peers at the bundle boundary and loading this file only for sketch editing.
@@ -446,7 +442,7 @@ if (existsSync(excalidrawAssets)) {
   cpSync(excalidrawAssets, "dist/webview/excalidraw-assets", { recursive: true });
 }
 
-const targets = [extension, toolLauncher, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, approval, cockpit, pinPreview, pinStudio, taskStudio, pipelineStudio, agentStudioFixture, pluginHost, excalidraw, mermaid, katex, preview, uiGate];
+const targets = [extension, toolLauncher, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, approval, cockpit, pinPreview, pinStudio, pipelineStudio, agentStudioFixture, pluginHost, excalidraw, mermaid, katex, preview, uiGate];
 if (watch) {
   const ctxs = await Promise.all(targets.map((c) => esbuild.context(c)));
   await Promise.all(ctxs.map((c) => c.watch()));

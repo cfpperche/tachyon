@@ -84,4 +84,16 @@ describe("cockpit css parity (harness ↔ real Control host)", () => {
     const calls = [...block![1].matchAll(/loadSectionStylesheet\(\s*["'`]([^"'`]+)["'`]\s*\)/g)].map((m) => m[1]);
     expect(calls).toEqual(["studio-agent-tailwind", "studio-frame-agent", "studio-agent"]);
   });
+
+  // t-610705 (Phase D, D2) — same ordering hazard as Agent Studio above, one sheet deeper: Task
+  // Studio's lazy block must request tailwind, THEN rich-doc, THEN the shared studio-frame sheet,
+  // THEN its own sheet — matching Cockpit.ts's eager `styles: [...]` order exactly (see that array's
+  // own D2 comment for why rich-doc must precede studio-frame, not follow it).
+  it("Task Studio's lazy block requests tailwind, then rich-doc, then the shared studio-frame sheet, in that order", () => {
+    const app = readFileSync("src/webview/cockpit/App.tsx", "utf8");
+    const block = /TaskStudioApp = lazy\(([\s\S]*?)return \{ default: m\.App \};/.exec(app);
+    expect(block, "cockpit/App.tsx: TaskStudioApp lazy block not found — did it move or get renamed?").not.toBeNull();
+    const calls = [...block![1].matchAll(/loadSectionStylesheet\(\s*["'`]([^"'`]+)["'`]\s*\)/g)].map((m) => m[1]);
+    expect(calls).toEqual(["studio-task-tailwind", "studio-task-richdoc", "studio-frame-task", "studio-task"]);
+  });
 });

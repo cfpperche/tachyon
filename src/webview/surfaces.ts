@@ -92,7 +92,11 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   // standalone bundle + harness route retired — use ?view=cockpit&fixture=task-detail instead). The
   // trusted serializer for the legacy "tachyonTaskDetail" viewType stays registered in extension.ts:
   // a revived pre-410 panel disposes itself and redirects into Control → the task's subroute.
-  { viewId: "tachyonTaskStudio", view: "task-studio", hostFile: "src/webview/TaskStudioPanel.ts", mode: "live", converted: true, editorHome: "standalone" },
+  // t-610705 (SDD 410 Phase D, D2) — the standalone Task Studio panel was retired: it's a Control
+  // studio route now (src/webview/task-studio/App.tsx stays, lazy-imported by cockpit/App.tsx via
+  // CSS co-load, same as command/terminal/runbook/schedule/agent before it). The trusted serializer
+  // for the legacy "tachyonTaskStudio" viewType stays registered in extension.ts: a revived pre-410
+  // panel disposes itself and redirects into Control → the task's studio-edit route.
   // spec 367 Phase 1's WebviewView (RuntimeOpsView.ts) was retired (t-ed3067, 2026-07-20) — it was never
   // registered (no registerWebviewViewProvider call), unreachable in production. Runtime Ops lives ONLY as
   // a cockpit section now (view: "runtime-ops" the directory still exists — src/webview/runtime-ops/App.tsx

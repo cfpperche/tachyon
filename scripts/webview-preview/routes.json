@@ -460,6 +460,27 @@
   },
   {
     "view": "cockpit",
+    "fixture": "studio-task-edit",
+    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=studio-task-edit",
+    "frame": {
+      "w": 1100,
+      "h": 720
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Control",
+    "aliases": [
+      "control",
+      "cockpit",
+      "sysadmin",
+      "project control",
+      "fleet control",
+      "control plane"
+    ]
+  },
+  {
+    "view": "cockpit",
     "fixture": "validations",
     "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=validations",
     "frame": {
@@ -813,57 +834,6 @@
       "pin studio",
       "pin editor",
       "sketch"
-    ]
-  },
-  {
-    "view": "task-studio",
-    "fixture": "default",
-    "url": "/scripts/webview-preview/index.html?view=task-studio&fixture=default",
-    "frame": {
-      "w": 900,
-      "h": 800
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Task Studio",
-    "aliases": [
-      "task studio",
-      "task editor"
-    ]
-  },
-  {
-    "view": "task-studio",
-    "fixture": "new",
-    "url": "/scripts/webview-preview/index.html?view=task-studio&fixture=new",
-    "frame": {
-      "w": 900,
-      "h": 800
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Task Studio",
-    "aliases": [
-      "task studio",
-      "task editor"
-    ]
-  },
-  {
-    "view": "task-studio",
-    "fixture": "conflict",
-    "url": "/scripts/webview-preview/index.html?view=task-studio&fixture=conflict",
-    "frame": {
-      "w": 900,
-      "h": 800
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Task Studio",
-    "aliases": [
-      "task studio",
-      "task editor"
     ]
   },
   {
