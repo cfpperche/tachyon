@@ -95,7 +95,6 @@ export async function executeExtensionQuery(
       return json({ token: workspace.externalToken ?? null, authEnabled: workspace.authEnabled });
     case "companion.status": {
       // SDD 414 — Control Settings: tabTools opt-in + connected devices (not host tab trust).
-      const port = workspace.bridge.listenerPort;
       const devices = workspace.companion.listDevices((token) => workspace.companionLive.hasLiveClient(token));
       return json({
         tabTools: workspace.config?.settings.companion?.tabTools === true,
