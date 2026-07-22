@@ -74,14 +74,14 @@ landing gates with security probes._
       pre-existing since D0 but only made visible by Agent Studio's post-save domain actions; kept as
       a documented known limitation (studioHost.ts) rather than the larger `StudioSaveResult`
       interface change it would need — see D1d below.
-- [ ] D1c: Fleet agent rows are missing a "Probes" and an "Agent Studio" (edit) button — today only
-      Stop/Start, Terminal, Activity are wired (maintainer screenshot, 2026-07-21). The agent-probes
-      route already exists (C.2) but per route.ts's own doc comment is deliberately unsurfaced in the
-      UI ("an internal/debug escape hatch... never surfaced"); editing an agent's definition from
-      Fleet is reachable today only via the sidebar tree's context menu (`tachyon.editAgentStudioItem`),
-      not from Control's embedded Fleet rows. Probes button has no blocking dependency; the Agent
-      Studio button wants D1b landed first (done) so it opens a real Control route instead of the
-      legacy standalone panel.
+- [x] D1c: Fleet agent rows gained a "Probes" and an "Edit" (Agent/Terminal Studio) button — mirrors
+      the existing fleetActivity fallback-resolve-then-requestNavigate pattern exactly (dirty-form
+      checkpoint gate included). "Edit" is kind-routed the same way the sidebar's
+      `tachyon.editAgentStudioItem` already dispatches, hidden for ad-hoc (undeclared) rows and
+      re-checked authoritatively host-side. Landed `421b0f81` (2026-07-22); 1 adversarial probe round
+      caught a real bug (`ws.config?.agents[c.name]` read by plain index — a webview-message `name`
+      of "constructor"/"__proto__"/"toString" would resolve an inherited Object.prototype property
+      instead of `undefined`, slipping past the "not declared" guard; fixed with `Object.hasOwn`).
 - [ ] D1d: after a successful `studio-new` save, `beginStudioSave` (studioHost.ts) never updates the
       binding's `entityId` to the newly-persisted entity, and no studio's App.tsx handles a `save`
       reply to re-request a fresh load — so a form stays effectively in "new" mode client-side even
