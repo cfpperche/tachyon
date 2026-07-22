@@ -38,7 +38,7 @@ _Status 2026-07-19: foundation + Approvals single-path + lazy ESM shipped in cod
 - [x] C.1b Task Studio subroutes (`mission/task/new`, `mission/task/<id>/edit`): lands as Phase D **D2** (below) — closed there; TaskStudioPanel host retired.
 - [x] C.2 Fleet subroutes: `fleet/agent/<name>/activity` (Activity), `fleet/agent/<name>/probes` + `fleet/probes` unfiltered debug route (Probes); retire ActivityPanel + ProbeResultPanel hosts. Design hardened in an adversarial dueto first (probe-2d90286d, REDESIGN verdict, binding-generation + envelope-identity guard added). Commit 937f3701.
 - [x] C.3 Handoff section: folds directly into a `"handoff"` CockpitSectionId (workspace-scoped like Approvals/Validations, no new route kind — no immutable per-entity locator unlike Fleet's subroutes); retire HandoffPanel host. Also fixed a coverage gap found in the same PR: `src/webview/cockpit/**/*.tsx` was never typechecked by any tsconfig. Commit 985708bb.
-- [ ] C.4 Pin Studio nav-less route; retire PinStudioPanel host. Regrouped with C.1b + Phase D (maintainer decision, 2026-07-21); design DONE (studios-routes-design.md); lands as Phase D PR **D3**.
+- [x] C.4 Pin Studio nav-less route; retire PinStudioPanel host. Regrouped with C.1b + Phase D (maintainer decision, 2026-07-21); design DONE (studios-routes-design.md); landed as Phase D PR **D3**.
 - [x] Standing exceptions approved: plugin surfaces stay out (security isolation); dev-only spec-350 fakes stay.
 
 ## Phase D — Studios (design hardened 2026-07-21 — see studios-routes-design.md)
@@ -115,8 +115,36 @@ landing gates with security probes._
       `childSrc:"blob"` grant; maintainer explicitly accepted the panel-wide-CSP structural trade-off
       (journal `j-50b86d04e857`). Full unit suite green throughout (468 files / 5354 tests), typecheck
       and production build clean.
-- [ ] D3: Pin Studio (Excalidraw, attachment roots, nav-less returnRoute) + CSP tranche 2 + security probe; retires PinStudioPanel (closes C.4).
-- [ ] D3: Pin Studio (Excalidraw, attachment roots, nav-less returnRoute) + CSP tranche 2 + security probe; retires PinStudioPanel (closes C.4).
+- [x] D3: Pin Studio (Excalidraw, attachment roots, nav-less returnRoute) + CSP tranche 2 + security
+      probe; retires PinStudioPanel (closes C.4). The last studio migration — Phase D is now
+      complete. Pin is the ONE nav-less studio (no fixed Control nav tab; opened only from the
+      sidebar TreeView's `tachyon.addPin`/`tachyon.editPinItem`), so its close-target is a
+      `returnRoute` captured automatically at commit time rather than a static parent-section table.
+      route.ts gained `CockpitNonStudioRoute` (every kind except the two studio kinds — the type a
+      returnRoute is allowed to hold, excluding studio kinds by construction); `returnRoute` is a
+      mandatory field on both studio route kinds (`null` for every non-pin studio, enforced both by
+      `decodeRoute` at the untrusted boundary and by a runtime guard in `routes.studioNew/studioEdit`
+      for trusted callers); `routeKey` deliberately excludes it (provenance, not identity).
+      Cockpit.ts's `navigate()` captures the last-committed non-studio route into a freshly-committing
+      pin route (tracked in its own var, reset on panel dispose); a new parameterless
+      `navigateReturn` client action (routeKey-bound against a stale post-navigation click) is the
+      ONE trust boundary for "go back" — destination always read from the host's own sanitized
+      `currentRoute.returnRoute`, never client-sent. `navSection` is now `CockpitSectionId | null`
+      (null for pin); the "overview" fallback used for background-data purposes is kept distinct from
+      the client's own nav-tab-highlight suppression so "nav-less" and "Overview genuinely active"
+      never collapse. Attachment hydration (PinStudioTarget.ts) ported to the same `data:` URI
+      pattern D2's TaskStudioTarget.ts fix established — no new CSP surface (confirmed against
+      shell.ts's actual directive construction: `img-src` already allows `data:` unconditionally; Pin
+      reuses the SAME excalidraw-entry.tsx/rich-doc components D2's CSP grant already covers).
+      Hardened via two adversarial probes before landing: round 1 (design, `probe-43bca1cc`) found
+      and fixed 5 blocker/major issues in the returnRoute capture/decode design (lost provenance on
+      pin re-entry, unbounded recursive decode, no cross-workspace-match check, an over-widened
+      client→host trust boundary — replaced a route-payload-carrying action with the parameterless
+      one); round 2 (code, `probe-12f603f3`), the mandatory pre-landing CSP gate, found and fixed a
+      trusted-constructor footgun and the stale-message navigateReturn race, and required concrete
+      CSP evidence (not just an equivalence claim) before the maintainer's recorded security
+      acceptance. Full unit suite green throughout (469 files / 5378 tests), typecheck and production
+      build clean.
 
 ## Phase E — Cleanup
 
