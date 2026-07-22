@@ -109,9 +109,17 @@ describe("decodePanelState (persisted-state restore boundary)", () => {
   });
 });
 
+// t-610705 (Phase D, D2) — "task" is the one StudioId whose "new" session is never actually
+// id-less (every real caller pre-mints and opens studio-edit directly — route.ts's decodeRoute
+// rejects studio-new+task outright, and routes.studioNew("task",...) throws defensively). The
+// generic per-StudioId loops below therefore exclude "task" from the studio-new half and cover it
+// separately, in its own dedicated block, using the raw route object (still a valid CockpitRoute
+// literal — only the trust-boundary decoder and the factory function refuse to construct one).
+const NON_TASK_STUDIO_IDS = STUDIO_IDS.filter((s) => s !== "task");
+
 describe("studio-new / studio-edit (t-610705 Phase D, D0)", () => {
   it("builds routes, derives keys, and formats a display string per StudioId", () => {
-    for (const studio of STUDIO_IDS) {
+    for (const studio of NON_TASK_STUDIO_IDS) {
       const fresh = routes.studioNew(studio, "ws-1");
       expect(fresh).toEqual({ kind: "studio-new", studio, wsHash: "ws-1" });
       expect(routeKey(fresh)).toBe(`studio-new:${studio}:ws-1`);
@@ -124,8 +132,8 @@ describe("studio-new / studio-edit (t-610705 Phase D, D0)", () => {
     }
   });
 
-  it("every StudioId's parent/nav is the fleet section for both new and edit (t-610705 Phase D, D1a)", () => {
-    for (const studio of STUDIO_IDS) {
+  it("every non-task StudioId's parent/nav is the fleet section for both new and edit (t-610705 Phase D, D1a)", () => {
+    for (const studio of NON_TASK_STUDIO_IDS) {
       expect(parentRoute(routes.studioNew(studio, "ws-1"))).toEqual({ kind: "section", section: "fleet" });
       expect(parentRoute(routes.studioEdit(studio, "ws-1", "cmd-a"))).toEqual({ kind: "section", section: "fleet" });
       expect(navSection(routes.studioNew(studio, "ws-1"))).toBe("fleet");
@@ -133,11 +141,27 @@ describe("studio-new / studio-edit (t-610705 Phase D, D0)", () => {
     }
   });
 
+  it("task's parent/nav: new falls back to mission (unreachable in practice), edit goes to the specific task-detail subroute (t-610705 Phase D, D2)", () => {
+    const fresh: CockpitRoute = { kind: "studio-new", studio: "task", wsHash: "ws-1" };
+    expect(parentRoute(fresh)).toEqual({ kind: "section", section: "mission" });
+    expect(navSection(fresh)).toBe("mission");
+
+    const edit = routes.studioEdit("task", "ws-1", "t-abc123");
+    expect(parentRoute(edit)).toEqual({ kind: "task-detail", wsHash: "ws-1", taskId: "t-abc123" });
+    expect(navSection(edit)).toBe("mission");
+  });
+
+  it("routes.studioNew refuses to construct a task route — every real 'new task' caller pre-mints an id and opens studio-edit directly", () => {
+    expect(() => routes.studioNew("task", "ws-1")).toThrow(/task is never id-less/);
+  });
+
   it("never polls on the shared shell timer — a form must not be clobbered mid-edit", () => {
-    for (const studio of STUDIO_IDS) {
+    for (const studio of NON_TASK_STUDIO_IDS) {
       expect(refreshPolicy(routes.studioNew(studio, "ws-1"))).toBe("none");
       expect(refreshPolicy(routes.studioEdit(studio, "ws-1", "cmd-a"))).toBe("none");
     }
+    expect(refreshPolicy({ kind: "studio-new", studio: "task", wsHash: "ws-1" })).toBe("none");
+    expect(refreshPolicy(routes.studioEdit("task", "ws-1", "t-abc123"))).toBe("none");
   });
 
   it("isStudioRoute is true for both kinds and false for everything else", () => {
@@ -160,6 +184,12 @@ describe("studio-new / studio-edit (t-610705 Phase D, D0)", () => {
     expect(decodeRoute({ kind: "studio-new", studio: "command", wsHash: "ws-1", extra: 1 })).toBeNull();
     expect(decodeRoute({ kind: "studio-edit", studio: "command", wsHash: "ws-1" })).toBeNull();
     expect(decodeRoute({ kind: "studio-edit", studio: "command", wsHash: "ws-1", entityId: "" })).toBeNull();
+  });
+
+  it("decodeRoute rejects studio-new for task (t-610705, D2) — never id-less, even though 'task' is otherwise a well-formed StudioId", () => {
+    expect(decodeRoute({ kind: "studio-new", studio: "task", wsHash: "ws-1" })).toBeNull();
+    // studio-edit for task is unaffected — a real, addressable in-progress edit is exactly the supported shape.
+    expect(decodeRoute({ kind: "studio-edit", studio: "task", wsHash: "ws-1", entityId: "t-abc123" })).toEqual({ kind: "studio-edit", studio: "task", wsHash: "ws-1", entityId: "t-abc123" });
   });
 });
 

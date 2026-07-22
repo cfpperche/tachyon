@@ -134,6 +134,13 @@ function studioParentSection(studio: StudioId): CockpitSectionId {
     case "schedule":
     case "agent":
       return "fleet";
+    case "task":
+      // t-610705 (Phase D, D2) — "mission" for BOTH studio-new (no entity yet, this is the correct
+      // fallback per studios-routes-design.md's parent-policy table) and as navSection's nav-tab
+      // answer for studio-edit too (parentRoute's studio-edit case overrides the PARENT itself to
+      // task-detail(ws,id) below — a real subroute, not a section — but the nav tab that reads as
+      // active is still "mission" either way, so this single case correctly answers both callers).
+      return "mission";
     default: {
       const _never: never = studio;
       throw new Error(`cockpit route: unhandled studio ${JSON.stringify(_never)}`);
@@ -181,7 +188,17 @@ export function parentRoute(route: CockpitRoute): CockpitRoute | null {
     case "workspace-probes":
       return { kind: "section", section: "fleet" };
     case "studio-new":
+      return { kind: "section", section: studioParentSection(route.studio) };
     case "studio-edit":
+      // t-610705 (Phase D, D2) — task is the one studio whose EDIT parent is a specific entity's
+      // own subroute, not a flat section (studios-routes-design.md's table: "task | edit →
+      // task-detail(ws, id)") — this is the whole "task-edit→task-detail chain" the D2 line item
+      // asks for: Control's existing generic back/breadcrumb navigation (built on parentRoute,
+      // unchanged) now lands on the task instead of the whole Board. No save-triggered auto-
+      // navigation was added — an adversarial dueto (REDESIGN verdict) found that unsafe to bolt
+      // onto beginStudioSave without a much larger atomic-transaction redesign; this reuses the
+      // ALREADY-safe, already-proven back-navigation path instead.
+      if (route.studio === "task") return { kind: "task-detail", wsHash: route.wsHash, taskId: route.entityId };
       return { kind: "section", section: studioParentSection(route.studio) };
     default:
       return assertNeverRoute(route);
@@ -284,7 +301,13 @@ export const routes = {
   agentActivity: (wsHash: string, agent: string): CockpitAgentActivityRoute => ({ kind: "agent-activity", wsHash, agent }),
   agentProbes: (wsHash: string, agent: string): CockpitAgentProbesRoute => ({ kind: "agent-probes", wsHash, agent }),
   workspaceProbes: (wsHash: string): CockpitWorkspaceProbesRoute => ({ kind: "workspace-probes", wsHash }),
-  studioNew: (studio: StudioId, wsHash: string): CockpitStudioNewRoute => ({ kind: "studio-new", studio, wsHash }),
+  studioNew: (studio: StudioId, wsHash: string): CockpitStudioNewRoute => {
+    // t-610705 (Phase D, D2) — mirrors decodeRoute's own rejection: every "new task" caller must
+    // pre-mint an id and call studioEdit directly instead (see decodeRoute's doc comment on this
+    // same rule). A defensive assertion, not a reachable production path.
+    if (studio === "task") throw new Error("routes.studioNew: task is never id-less — pre-mint an id and call routes.studioEdit instead");
+    return { kind: "studio-new", studio, wsHash };
+  },
   studioEdit: (studio: StudioId, wsHash: string, entityId: string): CockpitStudioEditRoute => ({ kind: "studio-edit", studio, wsHash, entityId }),
 };
 
@@ -324,6 +347,14 @@ export function decodeRoute(raw: unknown): CockpitRoute | null {
     if (keys.length !== 3 || !keys.includes("studio") || !keys.includes("wsHash")) return null;
     if (!isStudioId(obj.studio)) return null;
     if (typeof obj.wsHash !== "string" || !obj.wsHash) return null;
+    // t-610705 (Phase D, D2) — "task" is declared in StudioId (registry exhaustiveness, satisfies
+    // Record<StudioId,...>) but its "new" session is NEVER actually id-less: attachments (image/
+    // sketch/prototype) are keyed by the task's own id from the moment the form opens, so every real
+    // caller pre-mints via mintTaskId() and navigates straight to studio-edit instead (an adversarial
+    // dueto's minor finding: an unreachable-but-nominally-valid route is a footgun for deep links/
+    // tests/future callers, not harmless exhaustiveness scaffolding — reject it here, fail closed,
+    // rather than silently reaching semantics no adapter actually supports).
+    if (obj.studio === "task") return null;
     return { kind: "studio-new", studio: obj.studio, wsHash: obj.wsHash };
   }
   if (obj.kind === "studio-edit") {

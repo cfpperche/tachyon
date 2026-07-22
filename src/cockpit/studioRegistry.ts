@@ -14,13 +14,16 @@ import * as vscode from "vscode";
 import type { StudioId } from "./studioIds.js";
 import type { StudioHostAdapter } from "../webview/shared/studio/adapter.js";
 import type { WorkspaceStudioTarget, WorkspaceAgentStudioTarget } from "../shell/WorkspacePresentation.js";
+import type { WorkspaceTaskStudioTarget } from "../shell/TaskStudioTarget.js";
 import { CommandStudioAdapter } from "../webview/CommandStudioAdapter.js";
 import { TerminalStudioAdapter } from "../webview/TerminalStudioAdapter.js";
 import { RunbookStudioAdapter } from "../webview/RunbookStudioAdapter.js";
 import { ScheduleStudioAdapter } from "../webview/ScheduleStudioAdapter.js";
 import { AgentStudioAdapter } from "../webview/AgentStudioAdapter.js";
+import { TaskStudioAdapter } from "../webview/TaskStudioAdapter.js";
 import { createAgentEvolutionLabels } from "../webview/agent-studio-shell/domain.js";
 import { handleAgentStudioDomainMessage } from "./agentStudioDomain.js";
+import { handleTaskStudioDomainMessage } from "./taskStudioDomain.js";
 import { envelope } from "../webview/shared/studio/protocol.js";
 
 type Adapter = StudioHostAdapter<unknown, unknown, unknown, unknown>;
@@ -98,6 +101,16 @@ export const STUDIO_REGISTRY: Record<StudioId, StudioRegistryEntry> = {
       vscode.l10n.t("When supported, delivered at startup through the selected runtime."),
     ) as unknown as Adapter,
     handleDomainMessage: (ws, ctx, message) => handleAgentStudioDomainMessage(ws as unknown as WorkspaceAgentStudioTarget, ctx, message),
+  },
+  task: {
+    legacyViewType: "tachyonTaskStudio",
+    // t-610705 (Phase D, D2) — same structural-cast pattern as agent (D1b): WorkspaceStudioTarget is
+    // a structural subset of the richer WorkspaceTaskStudioTarget TaskStudioAdapter actually needs
+    // (loadTaskStudio/saveTaskStudio/cancelTaskStudio/putTaskStudioImage/putTaskStudioSketch/
+    // importTaskStudioPrototype/declaredAgentNames) — the runtime object (WorkspaceShellHandle)
+    // already implements the full task-specific surface.
+    makeAdapter: (ws) => new TaskStudioAdapter(ws as unknown as WorkspaceTaskStudioTarget) as unknown as Adapter,
+    handleDomainMessage: (ws, ctx, message) => handleTaskStudioDomainMessage(ws as unknown as WorkspaceTaskStudioTarget, ctx, message),
   },
 } satisfies Record<StudioId, StudioRegistryEntry>;
 

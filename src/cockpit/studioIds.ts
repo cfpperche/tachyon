@@ -9,7 +9,7 @@
  * its evolution/soul-profile domain messages are substantially larger than the other three's shared
  * shape, hence its own PR. D2 adds task (closes C.1b). D3 adds pin (closes C.4).
  */
-export const STUDIO_IDS = ["command", "terminal", "runbook", "schedule", "agent"] as const;
+export const STUDIO_IDS = ["command", "terminal", "runbook", "schedule", "agent", "task"] as const;
 
 export type StudioId = (typeof STUDIO_IDS)[number];
 
