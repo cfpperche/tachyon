@@ -317,6 +317,25 @@ export async function handleStudioMessage(io: StudioHostIO, raw: unknown, hooks:
  * entity — see agentStudioDomain.ts's `ctx.entityId` guard). `b.mode` is updated to "edit" alongside
  * `b.entityId` — read by `sendStudioLoad`'s own restore-snapshot construction (`mode: b.mode`), so a
  * later peeked draft's snapshot correctly reports "edit" instead of a now-stale "new".
+ *
+ * KNOWN, DOCUMENTED LIMITATION (D1d probe finding, NOT fixed here — same convention as this module's
+ * other scope notes above): `b.route` itself is deliberately LEFT UNCHANGED (still `studio-new`) —
+ * `b.entityId`/`b.mode` now say "edit" but `routeKey(b.route)` and `draftIdentityKey(b.route)` still
+ * resolve to the shared `studio-new` identity, not the entity's own `studio-edit:...:entityId` one.
+ * This is intentional, not an oversight: canonicalizing `b.route` here would desync the CLIENT, which
+ * keeps posting `patch`/`save` messages tagged with its OWN (unchanged) routeKey+mountNonce — the
+ * per-message scoping check a few lines up (`msg.routeKey !== routeKey(b.route)`) would then reject
+ * every subsequent message as stale, breaking the studio for the rest of the session. A correct fix
+ * needs an actual re-navigation push to the client (new mountNonce, protocol support for "your
+ * identity just changed under you") — out of scope for this fix. Net effect while unfixed: if the
+ * user keeps editing after this auto-reload, goes dirty, and a SEPARATE navigation (e.g. a Fleet
+ * sidebar "Edit" click on the entity just created) opens the canonical `studio-edit` route for it
+ * while this binding is still mounted, `ensureStudioBinding`'s dedup check won't match (different
+ * routeKey) and tears this binding down through the normal dirty-checkpoint flow — so nothing is
+ * silently lost outright (the checkpoint/discard/keep-draft modal still fires), but a chosen "Leave
+ * and keep draft" caches under the shared `studio-new` slot, not the entity's own slot, so it won't
+ * be offered back when reopening that specific entity later. Flagged for a future pass if it proves
+ * to matter in practice.
  */
 async function beginStudioSave(io: StudioHostIO, hooks: StudioMessageHooks): Promise<void> {
   const b = binding;
