@@ -183,6 +183,19 @@ function Root() {
   // mounted once ([] deps), so it can't read fresh `model` state directly (stale closure) — this ref
   // is kept current from the MODEL branch so the taskError branch can tell which surface it's for.
   const activeRouteRef = useRef<CockpitModel["activeRoute"]>(undefined);
+  // t-610705 (Phase D, D1a code-review finding) — `studioIncoming` is ONE shared state slot every
+  // studio App reads via its `incoming` prop; a fresh studio component mount does NOT clear it (only
+  // a NEW message does), so a stale `incoming` from the PREVIOUS studio binding is what a just-
+  // mounted DIFFERENT studio's component sees on its first render — decodeStudioMessage only checks
+  // `type`/`studioProtocolVersion`, not the studio-specific field shape, so a cross-studio residue
+  // (e.g. Schedule's `load` envelope reaching a freshly-mounted Terminal component) is accepted as if
+  // it were Terminal's own load and can crash on a field the two studios don't share (e.g. Terminal's
+  // `firstToken(fields.cmd)` against Schedule's fields, which have no `cmd`). Tracked here (not in an
+  // effect on the studio App side) because the fix must land BEFORE the new component's first render
+  // — an effect that clears `studioIncoming` only runs AFTER that render already used the stale
+  // value. Comparing `studioMountNonce` catches every rebind (cross-studio AND same-studio-different-
+  // entity), same "identity" concept `ensureStudioBinding`/`useEffect([routeKey, mountNonce])` uses.
+  const studioMountNonceRef = useRef<string | undefined>(undefined);
 
   useEffect(() => {
     const onMsg = (e: MessageEvent) => {
@@ -219,6 +232,10 @@ function Root() {
           setActivityImages({});
         }
         activeRouteRef.current = next.activeRoute;
+        if (next.studioMountNonce !== studioMountNonceRef.current) {
+          studioMountNonceRef.current = next.studioMountNonce;
+          setStudioIncoming(undefined);
+        }
         setModel(next);
       }
       else if (type === SNAPSHOT && raw.vm) setMissionVm(raw.vm as MissionControlVM);

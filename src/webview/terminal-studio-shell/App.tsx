@@ -94,6 +94,15 @@ export function App({ dispatch, routeKey, mountNonce, incoming }: TerminalStudio
       setHostError(undefined);
       setLoadFailed(false);
       setReady(true);
+    } else if (d.type === "referenceData") {
+      // t-610705 (Phase D, D1a code-review finding) — refreshStudioReferenceData (studioHost.ts) is
+      // generic over every StudioId, not gated to Runbook/Schedule specifically: an external
+      // tachyon.yml change while a Terminal Studio route is active pushes this here too. Without this
+      // branch it fell through to a silent no-op, leaving flagMap/defaultCwd/verifyCandidates stale
+      // until the next full load — never a crash, but a real staleness regression vs the retired
+      // TerminalStudioPanelManager (which had no live-refresh trigger of its own, but also never lost
+      // one once Runbook/Schedule started sharing the same generic host fan-out).
+      setReferenceData(d.referenceData ?? emptyReferenceData());
     } else if (d.type === "error") {
       setHostError({ code: d.code, message: d.message, source: d.source ?? "persistence", blocking: d.blocking });
       if (!entityRef.current) setLoadFailed(true);
