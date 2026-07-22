@@ -88,9 +88,33 @@ export const evolutionActivationHeadV2Schema = z.object({
   profileManifestSha256: digest,
   learningsSha256: digest,
   skillsInventorySha256: digest,
+  skillInventory: z.array(z.object({
+    path: z.string(),
+    sha256: digest,
+    bytes: z.number().int().min(0).max(16 * 1024 * 1024),
+    executable: z.boolean(),
+  }).strict()).max(1024),
 }).strict().superRefine((head, ctx) => {
   if (head.revision !== head.priorRevision + 1) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["revision"], message: "must advance priorRevision by exactly one" });
+  }
+  const paths = new Set<string>();
+  for (const [index, entry] of head.skillInventory.entries()) {
+    if (formationSkillRelativePathError(entry.path) || !entry.path.startsWith("evolution/")) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["skillInventory", index, "path"], message: "must be a safe Evolution snapshot path" });
+    }
+    const canonicalPath = entry.path.toLowerCase();
+    if (canonicalPath === "evolution/learnings.md") {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["skillInventory", index, "path"], message: "is reserved for active Evolution learnings" });
+    }
+    if (paths.has(canonicalPath) || (index > 0 && head.skillInventory[index - 1]!.path >= entry.path)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["skillInventory", index, "path"], message: "must be unique and strictly sorted" });
+    }
+    paths.add(canonicalPath);
+  }
+  const objects: FormationObject[] = head.skillInventory.map((entry) => ({ kind: "evolution-skill", ...entry }));
+  if (formationSkillInventoryDigest(objects) !== head.skillsInventorySha256) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["skillsInventorySha256"], message: "must bind the complete skill inventory" });
   }
 });
 export type EvolutionActivationHeadV2 = z.infer<typeof evolutionActivationHeadV2Schema>;
@@ -167,7 +191,6 @@ export function validateFormationAuthorityVector(vector: FormationAuthorityVecto
     if (!evolution) errors.push("enabled Evolution lane has no activation head");
     else {
       if (evolutionLane.subjectId !== evolution.profileId) errors.push("Evolution selector subject does not match activation profileId");
-      if (evolutionLane.sourceSha256 !== evolution.profileManifestSha256) errors.push("Evolution selector does not match active profile manifest");
       if (!generation.evolution || generation.evolution.revision !== evolution.revision
         || generation.evolution.digest !== formationDigest(evolution)) errors.push("formation generation does not bind the exact Evolution head");
     }
@@ -210,7 +233,7 @@ export function formationSkillRelativePathError(value: string): string | undefin
 }
 
 export const formationObjectSchema = z.object({
-  kind: z.enum(["startup-prompt", "reanchor-reminder", "evolution-skill"]),
+  kind: z.enum(["startup-prompt", "reanchor-reminder", "evolution-learnings", "evolution-skill"]),
   path: z.string().superRefine((value, ctx) => {
     const error = formationSkillRelativePathError(value);
     if (error) ctx.addIssue({ code: z.ZodIssueCode.custom, message: error });
@@ -240,15 +263,27 @@ export const formationSnapshotManifestV1Schema = z.object({
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["objects"], message: "must contain exactly one re-anchor reminder" });
   }
   const keys = new Set<string>();
+  const paths = new Set<string>();
   for (const [index, object] of manifest.objects.entries()) {
     const key = `${object.kind}\0${(object.path ?? "").toLowerCase()}`;
     if (keys.has(key)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["objects", index], message: "duplicates another object role/path" });
     keys.add(key);
-    if (object.kind === "evolution-skill" && !object.path) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["objects", index, "path"], message: "is required for Evolution skill objects" });
+    if (object.path) {
+      const normalizedPath = object.path.toLowerCase();
+      if (paths.has(normalizedPath)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["objects", index, "path"], message: "collides with another immutable object path" });
+      paths.add(normalizedPath);
+      if (object.kind === "evolution-skill" && normalizedPath === "evolution/learnings.md") {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["objects", index, "path"], message: "is reserved for active Evolution learnings" });
+      }
     }
-    if (object.kind !== "evolution-skill" && (object.path !== undefined || object.executable !== undefined)) {
+    if ((object.kind === "evolution-skill" || object.kind === "evolution-learnings") && !object.path) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["objects", index, "path"], message: "is required for Evolution objects" });
+    }
+    if ((object.kind === "startup-prompt" || object.kind === "reanchor-reminder") && (object.path !== undefined || object.executable !== undefined)) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["objects", index], message: "prompt objects cannot declare path or executable" });
+    }
+    if (object.kind === "evolution-learnings" && (object.path !== "evolution/LEARNINGS.md" || object.executable !== undefined)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["objects", index], message: "Evolution learnings must use the canonical non-executable path" });
     }
   }
 });

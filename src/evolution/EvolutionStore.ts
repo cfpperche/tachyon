@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import type { Dirent } from "node:fs";
+import { constants as fsConstants, type Dirent } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { isValidAgentName } from "../config/nameValidation.js";
@@ -36,9 +36,76 @@ import {
 const SAFE_RECORD_ID = /^[A-Za-z0-9_-]+$/;
 const SAFE_SKILL_NAME = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 const SHA256_RE = /^[0-9a-f]{64}$/;
+const ACTIVE_TEXT_MAX_BYTES = 256 * 1024;
+const ACTIVE_SKILL_FILE_MAX_BYTES = 1024 * 1024;
+const ACTIVE_SKILL_FILES_MAX = 1024;
+const ACTIVE_SKILL_TOTAL_MAX_BYTES = 16 * 1024 * 1024;
 
 function compareText(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
+}
+
+function formationActiveNamesDigest(names: readonly string[]): string {
+  return crypto.createHash("sha256").update(JSON.stringify(names)).digest("hex");
+}
+
+interface OpenedUtf8File {
+  content: string;
+  mode: number;
+}
+
+async function readBoundedNoFollowUtf8WithMode(file: string, maxBytes: number, label: string): Promise<OpenedUtf8File> {
+  const before = await fs.lstat(file, { bigint: true });
+  if (before.isSymbolicLink() || !before.isFile() || before.size > BigInt(maxBytes)) {
+    throw new EvolutionStoreError("evolution/authority-invalid", `${label} is unsafe or exceeds ${maxBytes} bytes`);
+  }
+  const handle = await fs.open(file, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0) | (fsConstants.O_NONBLOCK ?? 0));
+  try {
+    const opened = await handle.stat({ bigint: true });
+    if (!opened.isFile() || opened.dev !== before.dev || opened.ino !== before.ino || opened.size > BigInt(maxBytes)) {
+      throw new EvolutionStoreError("evolution/authority-invalid", `${label} changed while opened`);
+    }
+    const bytes = await handle.readFile();
+    if (bytes.length > maxBytes) throw new EvolutionStoreError("evolution/authority-invalid", `${label} exceeds ${maxBytes} bytes`);
+    const after = await handle.stat({ bigint: true });
+    const atPath = await fs.lstat(file, { bigint: true });
+    if (atPath.isSymbolicLink() || opened.dev !== after.dev || opened.ino !== after.ino
+      || opened.dev !== atPath.dev || opened.ino !== atPath.ino || opened.size !== after.size
+      || opened.mtimeNs !== after.mtimeNs || opened.ctimeNs !== after.ctimeNs) {
+      throw new EvolutionStoreError("evolution/authority-invalid", `${label} changed during read`);
+    }
+    return { content: new TextDecoder("utf-8", { fatal: true }).decode(bytes), mode: Number(opened.mode) };
+  } catch (error) {
+    if (error instanceof EvolutionStoreError) throw error;
+    throw new EvolutionStoreError("evolution/authority-invalid", `${label} cannot be read safely: ${error instanceof Error ? error.message : String(error)}`);
+  } finally { await handle.close(); }
+}
+
+async function readBoundedNoFollowUtf8(file: string, maxBytes: number, label: string): Promise<string> {
+  return (await readBoundedNoFollowUtf8WithMode(file, maxBytes, label)).content;
+}
+
+async function openNoFollowDirectory(directory: string, label: string): Promise<Awaited<ReturnType<typeof fs.open>>> {
+  if (fsConstants.O_NOFOLLOW === undefined || process.platform !== "linux") {
+    throw new EvolutionStoreError("evolution/authority-invalid", `${label} requires secure no-follow directory access`);
+  }
+  const before = await fs.lstat(directory, { bigint: true });
+  if (before.isSymbolicLink() || !before.isDirectory()) {
+    throw new EvolutionStoreError("evolution/authority-invalid", `${label} is not a safe directory`);
+  }
+  const handle = await fs.open(directory, fsConstants.O_RDONLY | fsConstants.O_DIRECTORY | fsConstants.O_NOFOLLOW | (fsConstants.O_NONBLOCK ?? 0));
+  try {
+    const opened = await handle.stat({ bigint: true });
+    const atPath = await fs.lstat(directory, { bigint: true });
+    if (!opened.isDirectory() || atPath.isSymbolicLink() || opened.dev !== before.dev || opened.ino !== before.ino
+      || opened.dev !== atPath.dev || opened.ino !== atPath.ino) {
+      throw new EvolutionStoreError("evolution/authority-invalid", `${label} changed while opened`);
+    }
+    return handle;
+  } catch (error) {
+    await handle.close();
+    throw error;
+  }
 }
 
 export type EvolutionStoreErrorCode =
@@ -100,6 +167,20 @@ export interface ResolveEvolutionCandidateInput {
   reservedSkillNames?: ReadonlySet<string>;
 }
 
+export interface EvolutionFormationPromotionToken {
+  schemaVersion: 1;
+  agent: string;
+  candidateId: string;
+  reviewId: string;
+  expectedActiveVersion: number;
+  expectedTargetDigest?: string;
+  approvedAt: string;
+  priorActiveSha256: string;
+  nextActiveSha256: string;
+  nextActive: EvolutionActiveSnapshotBytes;
+  authorization: string;
+}
+
 export interface EvolutionPromotionResult {
   candidate: EvolutionCandidate;
   profile: EvolutionProfile;
@@ -131,6 +212,10 @@ export interface EvolutionActiveSnapshotBytes {
   profile: EvolutionProfile;
   learnings: string;
   skills: Array<{ name: string; files: EvolutionSkillFile[] }>;
+}
+
+export function evolutionActiveSnapshotDigest(active: EvolutionActiveSnapshotBytes): string {
+  return crypto.createHash("sha256").update(JSON.stringify(active), "utf8").digest("hex");
 }
 
 export type EvolutionPromotionFaultPoint =
@@ -389,6 +474,29 @@ export class EvolutionStore {
     return path.join(this.rootFor(agent), "LEARNINGS.md");
   }
 
+  private async openEvolutionRootAnchored(agent: string): Promise<Awaited<ReturnType<typeof fs.open>>> {
+    assertAgentName(agent);
+    let current = await openNoFollowDirectory(this.workspaceRoot, "Evolution workspace root");
+    try {
+      for (const segment of [".tachyon", "agents", agent, "evolution"]) {
+        const next = await openNoFollowDirectory(`/proc/self/fd/${current.fd}/${segment}`, `Evolution path component '${segment}'`);
+        await current.close();
+        current = next;
+      }
+      return current;
+    } catch (error) {
+      await current.close();
+      throw error;
+    }
+  }
+
+  private async readActiveLearningsUnlocked(agent: string): Promise<string> {
+    const root = await this.openEvolutionRootAnchored(agent);
+    try {
+      return await readBoundedNoFollowUtf8(`/proc/self/fd/${root.fd}/LEARNINGS.md`, ACTIVE_TEXT_MAX_BYTES, "active Evolution learnings");
+    } finally { await root.close(); }
+  }
+
   candidatesDir(agent: string): string {
     return path.join(this.rootFor(agent), "candidates");
   }
@@ -470,12 +578,17 @@ export class EvolutionStore {
     return this.withAgentMutation(agent, async () => {
       await this.reconcilePromotionUnlocked(agent);
       const profile = await this.ensureProfileUnlocked(agent);
-      const learnings = await fs.readFile(this.learningsPath(agent), "utf8");
+      const learnings = await this.readActiveLearningsUnlocked(agent);
       parseLearnings(learnings, agent);
       const skills: EvolutionActiveSnapshotBytes["skills"] = [];
-      for (const name of await this.listSkillNamesUnlocked(agent)) {
-        const files = await this.readSkillFilesUnlocked(agent, name);
+      const budget = { files: 0, bytes: 0 };
+      const skillNames = await this.listSkillNamesUnlocked(agent);
+      for (const name of skillNames) {
+        const files = await this.readSkillFilesUnlocked(agent, name, budget);
         if (files) skills.push({ name, files });
+      }
+      if (formationActiveNamesDigest(skillNames) !== formationActiveNamesDigest(await this.listSkillNamesUnlocked(agent))) {
+        throw new EvolutionStoreError("evolution/authority-invalid", "active Evolution skills changed during capture");
       }
       const expected = this.authorityHeadForCapturedState(agent, profile, learnings, skills);
       await this.assertExpectedAuthorityHeadUnlocked(agent, profile, expected);
@@ -736,16 +849,114 @@ export class EvolutionStore {
     });
   }
 
-  async approveCandidate(
+  private formationTokenAuthorization(token: Omit<EvolutionFormationPromotionToken, "authorization">): string {
+    const payload = JSON.stringify(token);
+    const key = this.authorityIntegrityKey?.();
+    if (!key) throw new EvolutionStoreError("evolution/authority-invalid", "Evolution formation promotion requires durable host authority custody");
+    return crypto.createHmac("sha256", key).update("tachyon:evolution-formation-promotion:v1\0").update(this.workspaceRoot).update("\0").update(payload).digest("hex");
+  }
+
+  verifyFormationPromotionToken(token: EvolutionFormationPromotionToken): boolean {
+    const { authorization, ...payload } = token;
+    if (token.schemaVersion !== 1 || !requiredString(token.agent) || !requiredString(token.candidateId)
+      || !requiredString(token.reviewId) || !Number.isSafeInteger(token.expectedActiveVersion)
+      || !requiredString(token.approvedAt) || !SHA256_RE.test(token.priorActiveSha256)
+      || !SHA256_RE.test(token.nextActiveSha256) || evolutionActiveSnapshotDigest(token.nextActive) !== token.nextActiveSha256) return false;
+    let expected: string;
+    try { expected = this.formationTokenAuthorization(payload); } catch { return false; }
+    const actualBytes = SHA256_RE.test(authorization) ? Buffer.from(authorization, "hex") : Buffer.alloc(0);
+    const expectedBytes = Buffer.from(expected, "hex");
+    return actualBytes.length === expectedBytes.length && crypto.timingSafeEqual(actualBytes, expectedBytes);
+  }
+
+  /** Prepare the exact result of one pending human-reviewed candidate without publishing active bytes. */
+  async prepareFormationPromotion(
     agent: string,
     candidateId: string,
     input: ResolveEvolutionCandidateInput,
+  ): Promise<EvolutionFormationPromotionToken> {
+    return this.withAgentMutation(agent, async () => {
+      await this.reconcilePromotionUnlocked(agent);
+      const { profile, candidate } = await this.requirePendingCandidate(agent, candidateId, input);
+      const prior = await this.capturedStateBytesUnlocked(agent, profile);
+      const approvedAt = this.now();
+      const nextProfile: EvolutionProfile = { ...profile, activeVersion: profile.activeVersion + 1, updatedAt: approvedAt };
+      let nextLearnings = prior.learnings;
+      const nextSkills = structuredClone(prior.skills);
+      if (candidate.target.kind === "learning") {
+        const entries = await this.readLearningsUnlocked(agent);
+        nextLearnings = renderEvolutionLearnings([...entries, {
+          id: `learning-${candidate.id.slice("candidate-".length)}`,
+          content: candidate.target.content,
+          sourceTaskId: candidate.taskId,
+          sourceReviewId: candidate.reviewId,
+          approvedAt,
+        }]);
+      } else {
+        const target = candidate.target;
+        if (this.reservedSkillNames(agent).has(target.name)
+          || input.reservedSkillNames?.has(target.name)) {
+          throw new EvolutionStoreError("evolution/promotion-conflict", `skill '${target.name}' is declared by the human-owned harness and cannot be replaced by Agent Evolution`);
+        }
+        const index = nextSkills.findIndex((skill) => skill.name === target.name);
+        if (target.operation === "create" && index >= 0) {
+          throw new EvolutionStoreError("evolution/promotion-conflict", `skill '${target.name}' already exists`);
+        }
+        if (target.operation === "update" && index < 0) {
+          throw new EvolutionStoreError("evolution/promotion-conflict", `skill '${target.name}' changed since the proposal was created`);
+        }
+        const replacement = { name: target.name, files: structuredClone(target.files) };
+        if (index >= 0) nextSkills[index] = replacement;
+        else nextSkills.push(replacement);
+        nextSkills.sort((a, b) => compareText(a.name, b.name));
+      }
+      const nextActive: EvolutionActiveSnapshotBytes = { profile: nextProfile, learnings: nextLearnings, skills: nextSkills };
+      const payload: Omit<EvolutionFormationPromotionToken, "authorization"> = {
+        schemaVersion: 1,
+        agent,
+        candidateId: candidate.id,
+        reviewId: candidate.reviewId,
+        expectedActiveVersion: input.expectedActiveVersion,
+        ...(input.expectedTargetDigest !== undefined ? { expectedTargetDigest: input.expectedTargetDigest } : {}),
+        approvedAt,
+        priorActiveSha256: evolutionActiveSnapshotDigest(prior),
+        nextActiveSha256: evolutionActiveSnapshotDigest(nextActive),
+        nextActive,
+      };
+      return { ...payload, authorization: this.formationTokenAuthorization(payload) };
+    });
+  }
+
+  async approvePreparedFormationPromotion(token: EvolutionFormationPromotionToken): Promise<EvolutionPromotionResult> {
+    if (!this.verifyFormationPromotionToken(token)) {
+      throw new EvolutionStoreError("evolution/authority-invalid", "Evolution formation promotion token is invalid");
+    }
+    const prior = await this.readAuthorizedActiveState(token.agent);
+    if (evolutionActiveSnapshotDigest(prior) !== token.priorActiveSha256) {
+      throw new EvolutionStoreError("evolution/promotion-conflict", "Evolution active state changed after formation preparation");
+    }
+    const result = await this.approveCandidate(token.agent, token.candidateId, {
+      expectedActiveVersion: token.expectedActiveVersion,
+      ...(token.expectedTargetDigest !== undefined ? { expectedTargetDigest: token.expectedTargetDigest } : {}),
+      approvedAt: token.approvedAt,
+    });
+    const active = await this.readAuthorizedActiveState(token.agent);
+    if (evolutionActiveSnapshotDigest(active) !== token.nextActiveSha256) {
+      throw new EvolutionStoreError("evolution/authority-invalid", "Evolution approved state does not match its prepared formation token");
+    }
+    return result;
+  }
+
+  async approveCandidate(
+    agent: string,
+    candidateId: string,
+    input: ResolveEvolutionCandidateInput & { approvedAt?: string },
   ): Promise<EvolutionPromotionResult> {
     return this.withAgentMutation(agent, async () => {
       await this.reconcilePromotionUnlocked(agent);
       const { profile, candidate } = await this.requirePendingCandidate(agent, candidateId, input);
       const promotedVersion = profile.activeVersion + 1;
-      const recordedAt = this.now();
+      const recordedAt = input.approvedAt ?? this.now();
       let previousDigest: string | undefined;
       let previousSkillFiles: EvolutionSkillFile[] | undefined;
       let promotedDigest: string;
@@ -887,16 +1098,30 @@ export class EvolutionStore {
 
   private async listSkillNamesUnlocked(agent: string): Promise<string[]> {
     let entries: Dirent[];
+    let evolutionRoot: Awaited<ReturnType<typeof fs.open>> | undefined;
+    let skillsRoot: Awaited<ReturnType<typeof fs.open>> | undefined;
     try {
-      entries = await fs.readdir(this.skillsDir(agent), { withFileTypes: true });
+      evolutionRoot = await this.openEvolutionRootAnchored(agent);
+      skillsRoot = await openNoFollowDirectory(`/proc/self/fd/${evolutionRoot.fd}/skills`, "active Evolution skills root");
+      const before = await skillsRoot.stat({ bigint: true });
+      entries = await fs.readdir(`/proc/self/fd/${skillsRoot.fd}`, { withFileTypes: true });
+      const after = await skillsRoot.stat({ bigint: true });
+      if (before.dev !== after.dev || before.ino !== after.ino || before.mtimeNs !== after.mtimeNs || before.ctimeNs !== after.ctimeNs) {
+        throw new EvolutionStoreError("evolution/authority-invalid", "active Evolution skills root changed during enumeration");
+      }
     } catch (error) {
       if (isMissing(error)) return [];
       throw error;
+    } finally {
+      await skillsRoot?.close();
+      await evolutionRoot?.close();
     }
-    return entries
-      .filter((entry) => entry.isDirectory() && SAFE_SKILL_NAME.test(entry.name))
-      .map((entry) => entry.name)
-      .sort(compareText);
+    for (const entry of entries) {
+      if (!SAFE_SKILL_NAME.test(entry.name) || !entry.isDirectory() || entry.isSymbolicLink()) {
+        throw new EvolutionStoreError("evolution/skill-invalid", `active Evolution skills root contains unsafe entry '${entry.name}'`);
+      }
+    }
+    return entries.map((entry) => entry.name).sort(compareText);
   }
 
   async createReview(agent: string, input: CreateEvolutionReviewInput): Promise<{ review: EvolutionReview; created: boolean }> {
@@ -1174,7 +1399,7 @@ export class EvolutionStore {
   private async currentTargetDigest(agent: string, candidate: EvolutionCandidate): Promise<string | undefined> {
     if (candidate.target.kind === "learning") {
       try {
-        const raw = await fs.readFile(this.learningsPath(agent), "utf8");
+        const raw = await this.readActiveLearningsUnlocked(agent);
         parseLearnings(raw, agent);
         return crypto.createHash("sha256").update(raw, "utf8").digest("hex");
       } catch (error) {
@@ -1188,49 +1413,65 @@ export class EvolutionStore {
 
   private async readLearningsUnlocked(agent: string): Promise<EvolutionLearning[]> {
     try {
-      return parseLearnings(await fs.readFile(this.learningsPath(agent), "utf8"), agent);
+      return parseLearnings(await this.readActiveLearningsUnlocked(agent), agent);
     } catch (error) {
       if (isMissing(error)) return [];
       throw error;
     }
   }
 
-  private async readSkillFilesUnlocked(agent: string, skillName: string): Promise<EvolutionSkillFile[] | undefined> {
-    const root = this.skillDir(agent, skillName);
+  private async readSkillFilesUnlocked(
+    agent: string,
+    skillName: string,
+    budget: { files: number; bytes: number } = { files: 0, bytes: 0 },
+  ): Promise<EvolutionSkillFile[] | undefined> {
+    const evolutionRoot = await this.openEvolutionRootAnchored(agent);
+    let rootHandle: Awaited<ReturnType<typeof fs.open>>;
     try {
-      const rootStat = await fs.lstat(root);
-      if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) {
-        throw new EvolutionStoreError("evolution/skill-invalid", `active skill '${skillName}' is not a regular directory`);
-      }
+      const skillsRoot = await openNoFollowDirectory(`/proc/self/fd/${evolutionRoot.fd}/skills`, "active Evolution skills root");
+      try {
+        rootHandle = await openNoFollowDirectory(`/proc/self/fd/${skillsRoot.fd}/${skillName}`, `active skill '${skillName}'`);
+      } finally { await skillsRoot.close(); }
     } catch (error) {
+      await evolutionRoot.close();
       if (isMissing(error)) return undefined;
-      throw error;
+      throw new EvolutionStoreError("evolution/skill-invalid", `active skill '${skillName}' is not a safe directory`);
     }
+    await evolutionRoot.close();
     const files: EvolutionSkillFile[] = [];
-    const visit = async (directory: string, prefix: string): Promise<void> => {
-      const entries = await fs.readdir(directory, { withFileTypes: true });
+    const visit = async (directory: Awaited<ReturnType<typeof fs.open>>, prefix: string): Promise<void> => {
+      const before = await directory.stat({ bigint: true });
+      if (!before.isDirectory()) throw new EvolutionStoreError("evolution/skill-invalid", `active skill '${skillName}' contains an unsafe directory`);
+      const directoryPath = `/proc/self/fd/${directory.fd}`;
+      const entries = await fs.readdir(directoryPath, { withFileTypes: true });
       for (const entry of entries.sort((a, b) => compareText(a.name, b.name))) {
-        const absolute = path.join(directory, entry.name);
         const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
-        if (entry.isSymbolicLink()) {
-          throw new EvolutionStoreError("evolution/skill-invalid", `active skill '${skillName}' contains a symbolic link`);
-        }
+        const childPath = path.join(directoryPath, entry.name);
+        if (entry.isSymbolicLink()) throw new EvolutionStoreError("evolution/skill-invalid", `active skill '${skillName}' contains a symbolic link`);
         if (entry.isDirectory()) {
-          await visit(absolute, relative);
+          const child = await openNoFollowDirectory(childPath, `active skill '${skillName}' directory '${relative}'`);
+          try { await visit(child, relative); } finally { await child.close(); }
           continue;
         }
-        if (!entry.isFile()) {
-          throw new EvolutionStoreError("evolution/skill-invalid", `active skill '${skillName}' contains a special file`);
+        if (!entry.isFile()) throw new EvolutionStoreError("evolution/skill-invalid", `active skill '${skillName}' contains a special file`);
+        const opened = await readBoundedNoFollowUtf8WithMode(childPath, ACTIVE_SKILL_FILE_MAX_BYTES, `active skill '${skillName}' file '${relative}'`);
+        budget.files += 1;
+        budget.bytes += Buffer.byteLength(opened.content, "utf8");
+        if (budget.files > ACTIVE_SKILL_FILES_MAX || budget.bytes > ACTIVE_SKILL_TOTAL_MAX_BYTES) {
+          throw new EvolutionStoreError("evolution/skill-invalid", "active Evolution skill inventory exceeds its bounds");
         }
-        const stat = await fs.stat(absolute);
         files.push({
           path: relative,
-          content: await fs.readFile(absolute, "utf8"),
-          ...(stat.mode & 0o111 ? { executable: true } : {}),
+          content: opened.content,
+          ...(opened.mode & 0o111 ? { executable: true } : {}),
         });
       }
+      const after = await directory.stat({ bigint: true });
+      if (before.dev !== after.dev || before.ino !== after.ino || before.mtimeNs !== after.mtimeNs || before.ctimeNs !== after.ctimeNs) {
+        throw new EvolutionStoreError("evolution/skill-invalid", `active skill '${skillName}' changed during directory traversal`);
+      }
     };
-    await visit(root, "");
+    try { await visit(rootHandle, ""); } finally { await rootHandle.close(); }
     const validation = validateEvolutionSkillBundle({
       operation: "create",
       name: skillName,
@@ -1558,12 +1799,17 @@ export class EvolutionStore {
     agent: string,
     profile: EvolutionProfile,
   ): Promise<EvolutionActiveSnapshotBytes> {
-    const learnings = await fs.readFile(this.learningsPath(agent), "utf8");
+    const learnings = await this.readActiveLearningsUnlocked(agent);
     parseLearnings(learnings, agent);
     const skills: EvolutionActiveSnapshotBytes["skills"] = [];
-    for (const name of await this.listSkillNamesUnlocked(agent)) {
-      const files = await this.readSkillFilesUnlocked(agent, name);
+    const budget = { files: 0, bytes: 0 };
+    const skillNames = await this.listSkillNamesUnlocked(agent);
+    for (const name of skillNames) {
+      const files = await this.readSkillFilesUnlocked(agent, name, budget);
       if (files) skills.push({ name, files });
+    }
+    if (formationActiveNamesDigest(skillNames) !== formationActiveNamesDigest(await this.listSkillNamesUnlocked(agent))) {
+      throw new EvolutionStoreError("evolution/authority-invalid", "active Evolution skills changed during capture");
     }
     return { profile, learnings, skills };
   }
@@ -1575,7 +1821,7 @@ export class EvolutionStore {
   ): Promise<AuthorityHead> {
     let learnings: string;
     try {
-      learnings = override.learnings ?? await fs.readFile(this.learningsPath(agent), "utf8");
+      learnings = override.learnings ?? await this.readActiveLearningsUnlocked(agent);
       parseLearnings(learnings, agent);
     } catch (error) {
       if (!isMissing(error)) throw error;
@@ -1584,9 +1830,23 @@ export class EvolutionStore {
     const skills: EvolutionActiveSnapshotBytes["skills"] = [];
     const skillNames = new Set(await this.listSkillNamesUnlocked(agent));
     if (override.skill) skillNames.add(override.skill.name);
+    const budget = { files: 0, bytes: 0 };
     for (const name of [...skillNames].sort(compareText)) {
-      const files = override.skill?.name === name ? [...override.skill.files] : await this.readSkillFilesUnlocked(agent, name);
+      const files = override.skill?.name === name ? [...override.skill.files] : await this.readSkillFilesUnlocked(agent, name, budget);
+      if (override.skill?.name === name && files) {
+        budget.files += files.length;
+        budget.bytes += files.reduce((total, file) => total + Buffer.byteLength(file.content, "utf8"), 0);
+        if (budget.files > ACTIVE_SKILL_FILES_MAX || budget.bytes > ACTIVE_SKILL_TOTAL_MAX_BYTES) {
+          throw new EvolutionStoreError("evolution/skill-invalid", "active Evolution skill inventory exceeds its bounds");
+        }
+      }
       if (files) skills.push({ name, files });
+    }
+    const expectedNames = [...skillNames].sort(compareText);
+    const observedNames = await this.listSkillNamesUnlocked(agent);
+    const sourceNames = override.skill ? observedNames.includes(override.skill.name) ? observedNames : [...observedNames, override.skill.name].sort(compareText) : observedNames;
+    if (formationActiveNamesDigest(expectedNames) !== formationActiveNamesDigest(sourceNames)) {
+      throw new EvolutionStoreError("evolution/authority-invalid", "active Evolution skills changed during authority calculation");
     }
     return this.authorityHeadForCapturedState(agent, profile, learnings, skills);
   }

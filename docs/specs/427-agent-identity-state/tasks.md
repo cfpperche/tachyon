@@ -30,11 +30,11 @@ _Generated from `plan.md` on 2026-07-22._
 
 ## Evolution lane — `t-59cbd6`
 
-- [ ] Add `agentId`-bound complete Evolution active inventory/head.
-- [ ] Exclude governance/recovery roots structurally and use bounded no-follow reads.
-- [ ] Atomically promote lane head plus formation generation.
-- [ ] Pin learning and all skill artifacts across fresh/resume/fork/re-anchor.
-- [ ] Preserve existing human review and next-session activation semantics.
+- [x] Add `agentId`-bound complete Evolution active inventory/head.
+- [x] Exclude governance/recovery roots structurally and use bounded no-follow reads.
+- [x] Atomically promote lane head plus formation generation.
+- [x] Pin learning and all skill artifacts across fresh/resume/fork/re-anchor.
+- [x] Preserve existing human review and next-session activation semantics.
 
 ## Human-approved memory lane — `t-7217e1`
 

@@ -107,6 +107,31 @@ prepared publication leases, atomic selector commit, exact fresh/fork replay, li
 dedicated read/revocation authorization. The compatibility converter starts every legacy v1 lane in
 `disabled`; plugin paths and plugin-shaped namespaces are rejected from the Evolution skill inventory.
 
+## Evolution lane implementation — `t-59cbd6`
+
+- `EvolutionActivationHeadV2` now binds the primary `agentId`, subordinate `profileId`, active
+  version, exact `profile.json` and `LEARNINGS.md` digests, and a sorted complete inventory of every
+  active skill file including bytes and executable metadata. `profile.json` remains a mutable,
+  non-authoritative projection; its current digest belongs to the Evolution head, while the canonical
+  profile reference selects the lane and therefore deliberately remains stable across promotions.
+- Fresh formation snapshots store exact `LEARNINGS.md` bytes as their own immutable object and every
+  approved skill artifact. Resume/fork/re-anchor reuse the foundation's immutable selector/object
+  path, so later workspace mutation cannot alter a pinned session.
+- Formation promotion no longer accepts caller-described prior/next inventories or an opaque publish
+  callback. `EvolutionStore` derives the next state from the pending reviewed candidate, signs it with
+  durable host authority custody, and the formation transaction derives and commits the next lane head
+  and generation. Recovery was exercised with a newly constructed store after source publication.
+- Active reads are UTF-8, bounded and no-follow. Skill recursion retains directory descriptors,
+  verifies path/opened inode identity for every directory, gets executable mode from the same opened
+  file descriptor, applies inventory-wide limits, and fails closed off Linux or without `O_NOFOLLOW`.
+  Governance/recovery directories are not enumerated because inventory starts only from validated
+  active skill names.
+- Adversarial review initially found caller-forgeable promotion state, path traversal races,
+  non-durable process-local token custody and immutable-path collision. Those were corrected. The
+  suggested selector/current-projection digest equality was rejected because it contradicts the
+  specified non-authoritative projection model and would require an identity-profile edit for every
+  Evolution promotion.
+
 Adversarial code review was intentionally iterative:
 
 - `probe-22efc983-563e-4e80-a54c-1bf560149c65` found the original caller-owned payload, weak mutation
@@ -170,6 +195,11 @@ returned no blocker/major finding. Detailed probe artifacts remain under `.tachy
 ## Verification log
 
 ### 2026-07-22T18:50:42Z — pass (3/3) — source: tasks.md
+- `npm run test:invariants` — pass
+- `npm run typecheck` — pass
+- `npm run verify:full:quiet` — pass
+
+### 2026-07-22T19:11:23Z — pass (3/3) — source: tasks.md
 - `npm run test:invariants` — pass
 - `npm run typecheck` — pass
 - `npm run verify:full:quiet` — pass

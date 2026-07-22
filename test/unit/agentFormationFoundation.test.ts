@@ -8,6 +8,7 @@ import {
 } from "../../src/agents/formation/authorityStore.js";
 import {
   formationDigest,
+  formationSkillInventoryDigest,
   formationSkillRelativePathError,
   profileActivationHeadV2FromV1,
   validateFormationAuthorityVector,
@@ -166,7 +167,8 @@ describe("agent formation authority foundation", () => {
       activeVersion: 1,
       profileManifestSha256: HEX_A,
       learningsSha256: HEX_B,
-      skillsInventorySha256: HEX_C,
+      skillsInventorySha256: formationSkillInventoryDigest([]),
+      skillInventory: [],
     } satisfies EvolutionActivationHeadV2;
     expect(validateFormationAuthorityVector(orphan)).toContain("disabled/legacy Evolution lane must not have an activation head");
   });

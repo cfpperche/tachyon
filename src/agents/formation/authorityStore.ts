@@ -131,6 +131,7 @@ export interface ResolvedFormationPayload {
   rendererContractsSha256: string;
   startupPrompt: Buffer | string;
   reanchorReminder: Buffer | string;
+  evolutionLearnings?: Buffer | string;
   evolutionSkills?: readonly FormationSkillPayload[];
 }
 
@@ -210,6 +211,7 @@ export interface FormationMutationReceipt {
 interface StoredPayload {
   startupPrompt: string;
   reanchorReminder: string;
+  evolutionLearnings?: string;
   evolutionSkills: Array<{ path: string; bytes: string; executable: boolean }>;
 }
 
@@ -915,13 +917,20 @@ export class FormationAuthorityStore {
     const objects: FormationObject[] = [
       { kind: "startup-prompt", ...startup },
       { kind: "reanchor-reminder", ...reanchor },
+      ...(resolved.evolutionLearnings === undefined ? [] : [{
+        kind: "evolution-learnings" as const,
+        path: "evolution/LEARNINGS.md",
+        ...this.objectStore.digest(resolved.evolutionLearnings),
+      }]),
       ...skills.map((skill) => ({ kind: "evolution-skill" as const, path: skill.path, ...this.objectStore.digest(skill.bytes), executable: skill.executable === true })),
     ];
-    if (vector.profile.lanes.evolution.mode !== "profile" && skills.length > 0) {
-      throw new FormationAuthorityStoreError("disabled Evolution lane cannot publish skill artifacts");
+    if (vector.profile.lanes.evolution.mode !== "profile" && (skills.length > 0 || resolved.evolutionLearnings !== undefined)) {
+      throw new FormationAuthorityStoreError("disabled Evolution lane cannot publish active artifacts");
     }
     if (vector.profile.lanes.evolution.mode === "profile") {
-      if (!vector.evolution || formationSkillInventoryDigest(objects) !== vector.evolution.skillsInventorySha256) {
+      const learningObject = objects.find((object) => object.kind === "evolution-learnings");
+      if (!vector.evolution || !learningObject || learningObject.sha256 !== vector.evolution.learningsSha256
+        || formationSkillInventoryDigest(objects) !== vector.evolution.skillsInventorySha256) {
         throw new FormationAuthorityStoreError("Evolution skill inventory does not match active authority");
       }
     }
@@ -942,6 +951,7 @@ export class FormationAuthorityStore {
       payload: {
         startupPrompt: asBuffer(resolved.startupPrompt).toString("base64"),
         reanchorReminder: asBuffer(resolved.reanchorReminder).toString("base64"),
+        ...(resolved.evolutionLearnings === undefined ? {} : { evolutionLearnings: asBuffer(resolved.evolutionLearnings).toString("base64") }),
         evolutionSkills: skills.map((skill) => ({ path: skill.path, bytes: asBuffer(skill.bytes).toString("base64"), executable: skill.executable === true })),
       },
     };
@@ -951,6 +961,7 @@ export class FormationAuthorityStore {
     const sources = [
       Buffer.from(payload.startupPrompt, "base64"),
       Buffer.from(payload.reanchorReminder, "base64"),
+      ...(payload.evolutionLearnings === undefined ? [] : [Buffer.from(payload.evolutionLearnings, "base64")]),
       ...payload.evolutionSkills.map((skill) => Buffer.from(skill.bytes, "base64")),
     ];
     if (sources.length !== manifest.objects.length) throw new FormationAuthorityStoreError("formation payload inventory mismatch");
