@@ -1883,18 +1883,31 @@ export async function openCockpit(
       // no effect on any other already-embedded section.
       frameSrc: "self",
       // t-610705 (Phase D, D2) — the CSP tranche the design doc's security-probe requirement exists
-      // to gate: Task Studio's rich-doc editor needs pasted-image blob: URIs (imgBlob), the Excalidraw
-      // sketch worker (workerSrc: "blob"), its own module bundle load (childSrc: "blob"), and
-      // connect-src for the editor's asset fetches — the EXACT same 4 grants the standalone
-      // TaskStudioPanel.ts (and PinStudioPanel.ts, D3's future migration) already made for their own
-      // single-surface webviews. Emitted ONCE at panel creation for Control's whole lifetime (this
-      // `<meta>` isn't re-rendered per route) — a PERMANENT grant across the entire Cockpit surface,
-      // not scoped to when a Task Studio route is actually active; this is the real blast-radius the
-      // mandatory adversarial CSP-diff probe (before landing) is meant to catch.
+      // to gate. Verified against the actual code paths (not copied blind from the retired
+      // TaskStudioPanel.ts config), per probe-6a55db50's adversarial review:
+      //  - imgBlob: pasted-image blob: URLs rendered inline in the rich-doc editor.
+      //  - connectSrc: rich-doc/VisualsPanel.tsx's uriToDataURL() does `fetch(att.uri)` on a same-
+      //    origin asWebviewUri resource (the "annotate an existing image" flow) — without this,
+      //    that fetch is blocked outright (falls back to default-src 'none').
+      //  - workerSrc: "blob" — Excalidraw's own vendor bundle constructs a Worker via
+      //    `new Worker(URL.createObjectURL(...))`; confirmed by grepping
+      //    node_modules/@excalidraw/excalidraw/dist for the literal `new Worker(` call.
+      //  - childSrc: "blob" was DROPPED (present in the old standalone panel's config, copied
+      //    forward into the first cut of this diff) — the probe's adversarial pass caught that it's
+      //    INERT here: CSP only falls back to child-src for frame/worker loads when frame-src/
+      //    worker-src are ABSENT, and this shell always sets frame-src ('self', for the unrelated
+      //    PrototypePreview iframe) and worker-src (blob:, above) explicitly — so child-src's blob:
+      //    token is never consulted for either. No blob-iframe usage exists in rich-doc/excalidraw
+      //    to justify it either way. Removing it shrinks the grant to only what's provably load-
+      //    bearing.
+      //
+      // Emitted ONCE at panel creation for Control's whole lifetime (this `<meta>` isn't re-rendered
+      // per route) — a PERMANENT grant across the entire Cockpit surface, not scoped to when a Task
+      // Studio route is actually active. The probe's verdict (SHIP WITH CONDITIONS) and the
+      // maintainer's recorded acceptance of the panel-wide-CSP trade-off are in t-610705's journal.
       imgBlob: true,
       connectSrc: true,
       workerSrc: "blob",
-      childSrc: "blob",
       // No nested `[...]` inside this literal — test/unit/cockpitCssParity.test.ts source-scans this
       // exact array via a non-greedy `styles:\s*\[([\s\S]*?)\]` regex, so an inline array literal
       // (e.g. a `...(cond ? [x] : [])` spread) closes the match early at ITS `]` and silently
