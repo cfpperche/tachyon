@@ -219,7 +219,7 @@ describe("loadProfileAwareConfig", () => {
     const root = temporaryRoot("tachyon-agent-profile-workspace-");
     const bytes = writeProfile(root, {
       prompt: { role: "reviewer" },
-      lifecycle: { autostart: true, restart: "on-crash" },
+      lifecycle: { enabled: false, autostart: true, restart: "on-crash" },
     });
     const result = load(root, authority(bytes), {
       yamlText: [
@@ -238,6 +238,12 @@ describe("loadProfileAwareConfig", () => {
       role: "reviewer",
       autostart: true,
       restart: "on-crash",
+      profileLifecycle: {
+        enabled: false,
+        agentId: AGENT_ID,
+        canonicalSha256: sha256(bytes),
+        authorityRevision: "profile-r1",
+      },
     });
     expect(result.config?.agentSources.codex).toMatchObject({
       mode: "profile",
@@ -246,6 +252,13 @@ describe("loadProfileAwareConfig", () => {
       authorityRevision: "profile-r1",
     });
     expect(result.config?.agentSources.helper?.mode).toBe("legacy");
+
+    const authored = loadProfileAwareConfig({
+      yamlText: "agents:\n  codex:\n    cmd: codex\n    profileLifecycle:\n      enabled: false\n",
+      workspaceRoot: temporaryRoot("tachyon-profile-authored-lifecycle-"),
+      authorities: new Map(),
+    });
+    expect(authored.errors.join("\n")).toContain("unknown key 'profileLifecycle'");
   });
 
   it("fails closed when authority is absent, stale, or native config is non-empty", () => {

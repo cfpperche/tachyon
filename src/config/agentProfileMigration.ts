@@ -91,6 +91,7 @@ export interface AgentProfileMigrationJournal {
 export interface AgentProfileMigrationAuthorityPort {
   read(agentName: string): Promise<AgentProfileAuthorityRecord | undefined>;
   publish(record: AgentProfileAuthorityRecord, expected: undefined): Promise<void>;
+  replace(record: AgentProfileAuthorityRecord, expected: AgentProfileAuthorityRecord): Promise<void>;
   retire(agentName: string, expected: AgentProfileAuthorityRecord): Promise<void>;
 }
 
@@ -114,12 +115,12 @@ function digest(value: string | Buffer): string {
   return crypto.createHash("sha256").update(value).digest("hex");
 }
 
-function migrationsRoot(workspaceRoot: string): string {
+export function agentProfileTransactionsRoot(workspaceRoot: string): string {
   return path.join(path.resolve(workspaceRoot), AGENT_PROFILE_MIGRATIONS_REL);
 }
 
 function ensureMigrationsRoot(workspaceRoot: string): string {
-  const root = migrationsRoot(workspaceRoot);
+  const root = agentProfileTransactionsRoot(workspaceRoot);
   for (const directory of [path.dirname(root), root, path.join(root, "locks")]) {
     try { ensureSafeDirectory(workspaceRoot, directory); }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; requireSafeDirectory(workspaceRoot, directory); }
@@ -168,6 +169,17 @@ function acquireMigrationLock(root: string, agentName: string, txid: string): ()
     fs.unlinkSync(file);
     syncDirectory(path.dirname(file));
   };
+}
+
+/** Shared durable admission lock for migration and canonical lifecycle mutations. */
+export function acquireAgentProfileTransactionLock(workspaceRoot: string, agentName: string, txid: string): () => void {
+  return acquireMigrationLock(ensureMigrationsRoot(workspaceRoot), agentName, txid);
+}
+
+export function acquireAgentProfileRecoveryLock(workspaceRoot: string, agentName: string, txid: string): () => void {
+  const root = ensureMigrationsRoot(workspaceRoot);
+  releaseRecoveredMigrationLock(root, agentName, txid);
+  return acquireMigrationLock(root, agentName, txid);
 }
 
 function releaseRecoveredMigrationLock(root: string, agentName: string, txid: string): void {
@@ -337,6 +349,17 @@ function atomicReplaceIfUnchanged(file: string, snapshot: FileSnapshot, nextText
   }
 }
 
+/** No-follow config access shared by migration and lifecycle mutations. */
+export function readAgentProfileConfigText(file: string): string {
+  return readRegularFileSnapshot(file).text;
+}
+
+export function replaceAgentProfileConfigIfDigest(file: string, expectedSha256: string, nextText: string): void {
+  const snapshot = readRegularFileSnapshot(file);
+  if (digest(snapshot.text) !== expectedSha256) throw new Error(`${file} changed (CAS mismatch)`);
+  atomicReplaceIfUnchanged(file, snapshot, nextText);
+}
+
 function sameAuthority(left: AgentProfileAuthorityRecord | undefined, right: AgentProfileAuthorityRecord): boolean {
   return left !== undefined && isDeepStrictEqual(left, right);
 }
@@ -407,11 +430,21 @@ function prospectiveProjection(
       authority,
       homeDir: home,
     });
-    return result.ok ? result.definition : result.errors;
+    if (!result.ok) return result.errors;
+    return runtimeBehaviorDefinition(result.definition);
   } finally {
     fs.rmSync(preflight, { recursive: true, force: true });
     fs.rmSync(home, { recursive: true, force: true });
   }
+}
+
+function runtimeBehaviorDefinition(definition: AgentDef): AgentDef {
+  const {
+    profileCapabilities: _profileCapabilities,
+    profileLifecycle: _profileLifecycle,
+    ...publicDefinition
+  } = definition;
+  return publicDefinition;
 }
 
 export function planLegacyAgentProfileMigration(
@@ -495,7 +528,7 @@ export function planLegacyAgentProfileMigration(
   };
 }
 
-function currentProfileDigest(workspaceRoot: string, agentName: string): string | null {
+export function currentProfileDigest(workspaceRoot: string, agentName: string): string | null {
   const source = readCanonicalAgentProfile(workspaceRoot, agentName);
   if (!source) return null;
   try {
@@ -505,7 +538,7 @@ function currentProfileDigest(workspaceRoot: string, agentName: string): string 
   }
 }
 
-function publishCanonicalProfile(workspaceRoot: string, agentName: string, profileText: string): void {
+export function publishCanonicalProfile(workspaceRoot: string, agentName: string, profileText: string): void {
   const tachyon = path.join(workspaceRoot, ".tachyon");
   const agents = path.join(tachyon, "agents");
   const principal = path.join(agents, agentName);
@@ -525,7 +558,7 @@ function publishCanonicalProfile(workspaceRoot: string, agentName: string, profi
   }
 }
 
-function removeCanonicalProfileIfExact(workspaceRoot: string, agentName: string, expectedSha256: string): void {
+export function removeCanonicalProfileIfExact(workspaceRoot: string, agentName: string, expectedSha256: string): void {
   const source = readCanonicalAgentProfile(workspaceRoot, agentName);
   if (!source) return;
   try {
@@ -647,7 +680,10 @@ export async function commitLegacyAgentProfileMigration(
       if (!preflight.config || preflight.errors.length > 0) {
         throw new Error(`prospective trusted reload failed: ${preflight.errors.join("; ")}`);
       }
-      if (!isDeepStrictEqual(preflight.config.agents[input.plan.agentName], input.plan.originalDefinition)) {
+      if (!isDeepStrictEqual(
+        runtimeBehaviorDefinition(preflight.config.agents[input.plan.agentName]!),
+        input.plan.originalDefinition,
+      )) {
         throw new Error("prospective trusted reload changed normalized runtime behavior");
       }
       atomicReplaceIfUnchanged(input.configPath, config, patched.text);
@@ -706,7 +742,7 @@ export async function rollbackLegacyAgentProfileMigration(
 export async function reconcileAgentProfileMigrations(
   input: Pick<CommitLegacyAgentProfileMigrationInput, "workspaceRoot" | "configPath" | "authority">,
 ): Promise<{ reconciled: string[]; degraded: string[] }> {
-  const root = migrationsRoot(input.workspaceRoot);
+  const root = agentProfileTransactionsRoot(input.workspaceRoot);
   try { requireSafeDirectory(input.workspaceRoot, root); }
   catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return { reconciled: [], degraded: [] };
@@ -715,7 +751,7 @@ export async function reconcileAgentProfileMigrations(
   const reconciled: string[] = [];
   const degraded: string[] = [];
   for (const entry of fs.readdirSync(root)) {
-    if (entry === "locks") continue;
+    if (entry === "locks" || entry === "lifecycle") continue;
     const txDir = path.join(root, entry);
     try {
       requireSafeDirectory(input.workspaceRoot, txDir);
@@ -755,7 +791,7 @@ export interface RollbackableAgentProfileMigration {
 }
 
 export function listRollbackableAgentProfileMigrations(workspaceRoot: string): RollbackableAgentProfileMigration[] {
-  const root = migrationsRoot(workspaceRoot);
+  const root = agentProfileTransactionsRoot(workspaceRoot);
   try { requireSafeDirectory(workspaceRoot, root); }
   catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
@@ -763,7 +799,7 @@ export function listRollbackableAgentProfileMigrations(workspaceRoot: string): R
   }
   const rows: RollbackableAgentProfileMigration[] = [];
   for (const entry of fs.readdirSync(root)) {
-    if (entry === "locks") continue;
+    if (entry === "locks" || entry === "lifecycle") continue;
     const txDir = path.join(root, entry);
     try {
       requireSafeDirectory(workspaceRoot, txDir);

@@ -130,7 +130,11 @@ export function loadProfileAwareConfig(input: LoadProfileAwareConfigInput): Prof
 
   if (errors.length > 0) return { errors, warnings: [] };
   for (const [agentName, definition] of projected) {
-    const { profileCapabilities: _profileCapabilities, ...publicDefinition } = definition;
+    const {
+      profileCapabilities: _profileCapabilities,
+      profileLifecycle: _profileLifecycle,
+      ...publicDefinition
+    } = definition;
     const parserInput: Record<string, unknown> = { ...publicDefinition };
     // The legacy parser's normalized output always contains watch: [], while
     // its source syntax deliberately rejects an explicitly empty watch list.
@@ -146,6 +150,7 @@ export function loadProfileAwareConfig(input: LoadProfileAwareConfigInput): Prof
   });
   for (const [agentName, definition] of projected) {
     if (definition.profileCapabilities) parsed.config.agents[agentName]!.profileCapabilities = definition.profileCapabilities;
+    if (definition.profileLifecycle) parsed.config.agents[agentName]!.profileLifecycle = definition.profileLifecycle;
   }
   const agentSources: Record<string, AgentConfigSource> = {};
   for (const name of Object.keys(parsed.config.agents)) {

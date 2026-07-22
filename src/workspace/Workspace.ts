@@ -1,7 +1,7 @@
 import path from "node:path";
 import fs from "node:fs";
 import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import { isDeepStrictEqual, promisify } from "node:util";
 import { TmuxService, workspaceHash, SESSION_PREFIX } from "../tmux/TmuxService.js";
 import { ControlModeClient } from "../tmux/ControlModeClient.js";
 import { CONFIG_FILENAMES, inferKind, shellQuote, type TachyonConfig } from "../config/loadConfig.js";
@@ -18,11 +18,23 @@ import {
   commitLegacyAgentProfileMigration,
   planLegacyAgentProfileMigration,
   reconcileAgentProfileMigrations,
+  readAgentProfileConfigText,
+  replaceAgentProfileConfigIfDigest,
   rollbackLegacyAgentProfileMigration,
   type AgentProfileMigrationAuthorityPort,
   type AgentProfileMigrationResult,
   type PlanLegacyAgentProfileMigrationResult,
 } from "../config/agentProfileMigration.js";
+import {
+  agentProfileLifecycleBlocked,
+  commitAgentProfileLifecycle as commitCanonicalAgentProfileLifecycle,
+  inspectAgentProfileLifecycle as inspectCanonicalAgentProfileLifecycle,
+  reconcileAgentProfileLifecycle,
+  type AgentProfileLifecycleConfigPort,
+  type AgentProfileLifecycleCommitResult,
+  type AgentProfileLifecycleSnapshot,
+  type CommitAgentProfileLifecycleInput,
+} from "../config/agentProfileLifecycle.js";
 import { composeAgentPrompt } from "../agents/promptLayers.js";
 import { SoulError, agentSoulPath, readCanonicalSoulBytes } from "../agents/soul.js";
 import {
@@ -2428,13 +2440,28 @@ export class Workspace {
         if (records.has(record.agentName)) throw new Error(`agent profile authority CAS conflict for '${record.agentName}'`);
         records.set(record.agentName, structuredClone(record));
       }),
+      replace: async (record, expected) => mutate((records) => {
+        const current = records.get(record.agentName);
+        if (!current || !isDeepStrictEqual(current, expected)) {
+          throw new Error(`agent profile authority CAS conflict for '${record.agentName}'`);
+        }
+        records.set(record.agentName, structuredClone(record));
+      }),
       retire: async (agentName, expected) => mutate((records) => {
         const current = records.get(agentName);
-        if (!current || JSON.stringify(current) !== JSON.stringify(expected)) {
+        if (!current || !isDeepStrictEqual(current, expected)) {
           throw new Error(`agent profile authority CAS conflict for '${agentName}'`);
         }
         records.delete(agentName);
       }),
+    };
+  }
+
+  private agentProfileLifecycleConfigPort(): AgentProfileLifecycleConfigPort {
+    const file = this.configPath() ?? path.join(this.workspaceRoot, "tachyon.yml");
+    return {
+      read: () => readAgentProfileConfigText(file),
+      replace: (expectedSha256, text) => replaceAgentProfileConfigIfDigest(file, expectedSha256, text),
     };
   }
 
@@ -2787,6 +2814,15 @@ export class Workspace {
       });
       if (reconciled.degraded.length > 0) {
         ws.host.notify(ws.t("agent profile migration recovery found {0} degraded transaction(s); affected agents remain fail-closed", reconciled.degraded.length), "error");
+      }
+      const lifecycle = await reconcileAgentProfileLifecycle({
+        workspaceRoot,
+        authority: ws.profileAuthorityPort(),
+        config: ws.agentProfileLifecycleConfigPort(),
+        activateState: (agentName, state) => ws.activateAgentProfileLifecycleState(agentName, state),
+      });
+      if (lifecycle.degraded.length > 0) {
+        ws.host.notify(ws.t("agent profile lifecycle recovery found {0} degraded transaction(s); affected agents remain fail-closed", lifecycle.degraded.length), "error");
       }
     }
 
@@ -4550,6 +4586,44 @@ export class Workspace {
     return result;
   }
 
+  async inspectAgentProfileLifecycle(agentName: string): Promise<AgentProfileLifecycleSnapshot> {
+    return inspectCanonicalAgentProfileLifecycle({
+      workspaceRoot: this.workspaceRoot,
+      agentName,
+      authority: this.profileAuthorityPort(),
+      config: this.agentProfileLifecycleConfigPort(),
+    });
+  }
+
+  async commitAgentProfileLifecycle(
+    input: Omit<CommitAgentProfileLifecycleInput, "workspaceRoot" | "authority" | "config" | "activateState">,
+  ): Promise<AgentProfileLifecycleCommitResult> {
+    await this.assertAgentStoppedForProfileMigration(input.agentName);
+    const result = await commitCanonicalAgentProfileLifecycle({
+      ...input,
+      workspaceRoot: this.workspaceRoot,
+      authority: this.profileAuthorityPort(),
+      config: this.agentProfileLifecycleConfigPort(),
+      activateState: (state) => this.activateAgentProfileLifecycleState(input.agentName, state),
+    });
+    this.rebuildWatches();
+    this.refreshAgentsViews();
+    return result;
+  }
+
+  private activateAgentProfileLifecycleState(agentName: string, state: "target" | "prior" | "blocked"): void {
+    if (state !== "blocked") {
+      if (!this.reloadConfig()) throw new Error(`trusted profile ${state} activation failed`);
+      this.profileSpawnBlocked.delete(agentName);
+      return;
+    }
+    this.profileSpawnBlocked.add(agentName);
+    const definition = this.config?.agents[agentName];
+    if (definition?.profileLifecycle) {
+      definition.profileLifecycle = { ...definition.profileLifecycle, enabled: false };
+    }
+  }
+
   /** t-8354ae — last successful roster snapshot (null when never written / corrupt). */
   readConfigLkg(): ConfigLkgSnapshot | null {
     return readConfigLkg(this.workspaceRoot);
@@ -4560,6 +4634,9 @@ export class Workspace {
    * name is not known via live config or an in-memory ad-hoc def (i.e. it would only come from LKG).
    */
   assertNotLkgOnlySpawn(name: string): void {
+    if (agentProfileLifecycleBlocked(this.workspaceRoot, name)) {
+      throw new Error(`cannot spawn profile-backed agent '${name}' while its lifecycle transaction requires recovery`);
+    }
     if (this.profileSpawnBlocked.has(name)) {
       throw new Error(`cannot spawn profile-backed agent '${name}' while its trusted configuration is invalid; fix the profile/authority error and reload`);
     }

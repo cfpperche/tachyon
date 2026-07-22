@@ -306,6 +306,45 @@ it("migrates and rolls back a stopped eligible agent through host authority cust
   }
 });
 
+it("creates, edits and disables a canonical profile through the Workspace lifecycle boundary", async () => {
+  const root = mkdir();
+  const homeDir = mkdir();
+  fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nsettings:\n  auth: false\n");
+  const host = new SharedSecretHost(mkdir(), new Map());
+  const fake = fakeTmux();
+  const ws = await Workspace.createForTest(
+    root,
+    { host, onViewsChanged: () => {} },
+    { tmux: fake.tmux, startBridge: false, agentProfileHomeDir: homeDir },
+  );
+  try {
+    const created = await ws.commitAgentProfileLifecycle({
+      agentName: "reviewer",
+      operation: "create",
+      createProfile: { runtime: { adapter: "codex", executable: "codex" } },
+    });
+    expect(ws.config?.agents.reviewer).toMatchObject({ cmd: "codex" });
+    const edited = await ws.commitAgentProfileLifecycle({
+      agentName: "reviewer",
+      operation: "edit",
+      expectedRevision: created.revision,
+      patch: { displayName: "Review Agent" },
+    });
+    expect((await ws.inspectAgentProfileLifecycle("reviewer")).profile.displayName).toBe("Review Agent");
+    await ws.commitAgentProfileLifecycle({
+      agentName: "reviewer",
+      operation: "set-enabled",
+      expectedRevision: edited.revision,
+      enabled: false,
+    });
+    expect(ws.config?.agents.reviewer.profileLifecycle?.enabled).toBe(false);
+    await expect(ws.manager.spawn("reviewer")).rejects.toThrow("canonical agent profile is disabled");
+    expect(fake.sessions.size).toBe(0);
+  } finally {
+    ws.dispose();
+  }
+});
+
 it("returns actionable Agent Studio messages for invalid soul values and unsupported runtimes", async () => {
   const { ws } = await makeWorkspace();
   const invalid = { ...blankAgentFields(), name: "invalid", cmd: "codex", soul: "yes" } as unknown as FormState;

@@ -129,6 +129,7 @@ const promptSchema = z.object({
 }).strict();
 
 const lifecycleSchema = z.object({
+  enabled: z.boolean().optional(),
   autostart: z.boolean().optional(),
   watch: z.array(boundedText("watch pattern", 1024)).max(128).optional(),
   attention: attentionSchema.optional(),

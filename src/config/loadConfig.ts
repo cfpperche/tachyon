@@ -136,6 +136,13 @@ export interface ManagedEntryDef {
   harness?: HarnessDef;
   /** Internal canonical-profile launch snapshot. It is attached after YAML parsing and is not an accepted config key. */
   profileCapabilities?: ResolvedAgentCapabilityProjection;
+  /** Internal canonical-profile lifecycle snapshot. It cannot be authored in tachyon.yml. */
+  profileLifecycle?: {
+    enabled: boolean;
+    agentId: string;
+    canonicalSha256: string;
+    authorityRevision: string;
+  };
   /** spec 240 — lightweight per-agent isolation of the claude config HOME (its own transcript namespace) WITHOUT
    *  the harness MCP/skills isolation. Lets agents that share a cwd each get an attributable session + activity
    *  log while still loading the workspace project config. Claude/Codex; "transcript" is the only mode in v1. */

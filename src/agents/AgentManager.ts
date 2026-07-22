@@ -808,6 +808,12 @@ export class AgentManager {
     return this.opts.getConfig()?.agents[name] ?? this.adhoc.get(name);
   }
 
+  private assertProfileLifecycleEnabled(name: string, definition = this.definitionOf(name)): void {
+    if (definition?.profileLifecycle) this.opts.assertSpawnAllowed?.(name);
+    if (definition?.profileLifecycle?.enabled !== false) return;
+    throw new Error(`cannot launch '${name}': canonical agent profile is disabled`);
+  }
+
   private async assertLaunchPreflight(
     name: string,
     cmd: string,
@@ -1314,8 +1320,10 @@ export class AgentManager {
   private async spawnUnlocked(name: string, opts?: SpawnOptions): Promise<CanonicalDeliverySpawnReceipt | void> {
     try {
       // t-8354ae — config-failure / LKG-only refusal (before any delivery or occupancy mutation).
-      // Ad-hoc spawns with an explicit cmd are allowed (caller supplies the def); declared LKG-only names are not.
-      if (!opts?.cmd) this.opts.assertSpawnAllowed?.(name);
+      // An explicit cmd creates an ad-hoc identity only when the name is not already declared.
+      const declared = this.opts.getConfig()?.agents[name];
+      if (!opts?.cmd || declared) this.opts.assertSpawnAllowed?.(name);
+      this.assertProfileLifecycleEnabled(name, declared ?? (opts?.cmd ? undefined : this.definitionOf(name)));
       if (opts?.deliveryJoin) {
         if (opts.gate || opts.worktree) {
           throw new Error("spawn_agent delivery_join cannot combine with gate or worktree:true");
@@ -1378,6 +1386,7 @@ export class AgentManager {
       const config = this.opts.getConfig();
       const source = config?.agents[bound];
       if (!source) throw new UnknownAgentError(bound);
+      this.assertProfileLifecycleEnabled(bound, source);
       if (source.kind !== "agent") throw new Error(`delivery_join.declared_agent '${bound}' must have kind: agent`);
       if (source.env?.TACHYON_AGENT_BRIDGE_TOKEN !== undefined) throw new Error(`delivery_join.declared_agent '${bound}' may not declare TACHYON_AGENT_BRIDGE_TOKEN`);
       if (config?.agents[name] || this.adhoc.has(name) || this.opts.ledger?.get(name) || await this.opts.tmux.hasSession(this.session(name))) throw new Error(`delivery_join execution name '${name}' is already in use`);
@@ -3105,6 +3114,7 @@ export class AgentManager {
   async restart(name: string, opts: RestartOptions = {}): Promise<RestartResult> {
     // SDD 368 T14 — refuse before any stop/replace mutation.
     this.assertNotDeliveryLifecycleDenied(name, "restart");
+    this.assertProfileLifecycleEnabled(name);
     const stop: RestartStopMode = opts.stop ?? RESTART_DEFAULTS.stop;
     const session: RestartSessionMode = opts.session ?? RESTART_DEFAULTS.session;
     const gracefulTimeoutMs = opts.gracefulTimeoutMs ?? AgentManager.STOPPING_FALLBACK_MS;
@@ -3620,6 +3630,7 @@ export class AgentManager {
   async resume(name: string, record: SessionRecord, opts?: { injectPrimer?: boolean; deferBridgeStamp?: boolean }): Promise<void> {
     // SDD 368 T14 — refuse before mutating readiness cache (markers + snapshot deny set).
     this.assertNotDeliveryLifecycleDenied(name, "resume", record);
+    this.assertProfileLifecycleEnabled(name);
     if (!record.resume) throw new ResumeUnavailableError(name, "record is not resumable (no resume block)");
     const { runtime } = record.resume;
     const cmd = record.def?.cmd;

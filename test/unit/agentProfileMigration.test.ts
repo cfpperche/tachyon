@@ -32,6 +32,10 @@ class MemoryAuthority implements AgentProfileMigrationAuthorityPort {
     this.records.set(record.agentName, structuredClone(record));
     if (this.failAfterPublish) throw new Error("injected publish acknowledgement failure");
   }
+  async replace(record: AgentProfileAuthorityRecord, expected: AgentProfileAuthorityRecord): Promise<void> {
+    expect(this.records.get(record.agentName)).toEqual(expected);
+    this.records.set(record.agentName, structuredClone(record));
+  }
   async retire(agentName: string, expected: AgentProfileAuthorityRecord): Promise<void> {
     expect(this.records.get(agentName)).toEqual(expected);
     this.records.delete(agentName);

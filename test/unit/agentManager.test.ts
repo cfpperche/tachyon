@@ -1561,6 +1561,45 @@ describe("AgentManager — session resume (spec 209)", () => {
     return { manager, ledger, sessions, dead, cmds, newSessionArgs, respawnArgs, startArgs, paneInjections, failRespawn, ws, hash };
   }
 
+  it("refuses disabled canonical profiles before spawn, resume, restart, or bound Delivery preparation", async () => {
+    let prepared = 0;
+    const h = resumeHarness("agents:\n  reviewer:\n    cmd: codex\n", {
+      prepareDeliveryJoin: async () => { prepared += 1; throw new Error("must not prepare"); },
+      confirmDeliveryJoin: async () => undefined,
+    });
+    h.manager.defOf("reviewer")!.profileLifecycle = {
+      enabled: false,
+      agentId: "11111111-1111-4111-8111-111111111111",
+      canonicalSha256: "a".repeat(64),
+      authorityRevision: "r1",
+    };
+
+    await expect(h.manager.spawn("reviewer")).rejects.toThrow("canonical agent profile is disabled");
+    await expect(h.manager.spawn("reviewer", { cmd: "codex" })).rejects.toThrow("canonical agent profile is disabled");
+    await expect(h.manager.resume("reviewer", {
+      def: { cmd: "codex", kind: "agent" },
+      resume: { runtime: "codex", sessionId: "session-1" },
+      cwd: h.ws,
+      declared: true,
+      updatedAt: "now",
+    })).rejects.toThrow("canonical agent profile is disabled");
+    await expect(h.manager.restart("reviewer", { stop: "force", session: "new" })).rejects.toThrow("canonical agent profile is disabled");
+    await expect(h.manager.spawn("review-run", {
+      deliveryJoin: {
+        deliveryId: "delivery-1",
+        role: "reviewer",
+        ownsSubset: [],
+        expectedHead: "abc",
+        declaredAgent: "reviewer",
+        operationId: "join-disabled",
+      },
+    })).rejects.toThrow("canonical agent profile is disabled");
+
+    expect(prepared).toBe(0);
+    expect(h.sessions.size).toBe(0);
+    expect(h.newSessionArgs).toEqual([]);
+  });
+
   it("SDD 368 T6 reuses the prepared Delivery worktree and never invokes fresh-worktree resolution", async () => {
     const prepared: string[] = [];
     const confirmed: string[] = [];

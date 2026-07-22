@@ -108,7 +108,7 @@ function sameRevision(left: fs.BigIntStats, right: fs.BigIntStats): boolean {
  * retained directory descriptor. We verify the descriptor identity before use
  * and fail closed when neither mechanism exists.
  */
-function descriptorPath(fd: number, source: string): string {
+export function verifiedDescriptorPath(fd: number, source: string): string {
   const expected = fs.fstatSync(fd, { bigint: true });
   for (const root of ["/proc/self/fd", "/dev/fd"]) {
     const candidate = `${root}/${fd}`;
@@ -133,7 +133,7 @@ function openRootDirectory(root: string, source: string): number {
   try {
     const opened = fs.fstatSync(fd, { bigint: true });
     if (!opened.isDirectory()) fail("profile/not-regular", source, "canonical root must remain a directory");
-    descriptorPath(fd, source);
+    verifiedDescriptorPath(fd, source);
     return fd;
   } catch (error) {
     closeQuietly(fd);
@@ -158,7 +158,7 @@ function classifyOpenError(candidate: string, source: string, error: unknown, mi
 
 function openChildDirectory(parentFd: number, segment: string, source: string, missingIsAbsent: boolean): number | undefined {
   const flags = requireCustodyFlags(source);
-  const candidate = `${descriptorPath(parentFd, source)}/${segment}`;
+  const candidate = `${verifiedDescriptorPath(parentFd, source)}/${segment}`;
   let fd: number;
   try {
     fd = fs.openSync(candidate, fs.constants.O_RDONLY | flags.directory | flags.noFollow | flags.nonBlock);
@@ -168,7 +168,7 @@ function openChildDirectory(parentFd: number, segment: string, source: string, m
   try {
     const opened = fs.fstatSync(fd, { bigint: true });
     if (!opened.isDirectory()) fail("profile/not-regular", source, `path component ${JSON.stringify(segment)} must be a directory`);
-    descriptorPath(fd, source);
+    verifiedDescriptorPath(fd, source);
     return fd;
   } catch (error) {
     closeQuietly(fd);
@@ -183,7 +183,7 @@ function duplicateDirectory(fd: number, source: string): number {
   try {
     // The descriptor filesystem entry itself is a host-owned symlink to the
     // retained descriptor, so O_NOFOLLOW applies only to descendants, not here.
-    duplicate = fs.openSync(descriptorPath(fd, source), fs.constants.O_RDONLY | flags.directory | flags.nonBlock);
+    duplicate = fs.openSync(verifiedDescriptorPath(fd, source), fs.constants.O_RDONLY | flags.directory | flags.nonBlock);
   } catch (error) {
     fail("profile/unsupported-custody", source, `cannot duplicate directory descriptor: ${errorText(error)}`);
   }
@@ -219,7 +219,7 @@ function readBoundFileAt(
   missingIsAbsent: boolean,
 ): BoundAgentProfileFile | undefined {
   const flags = requireCustodyFlags(source);
-  const candidate = `${descriptorPath(parentFd, source)}/${leaf}`;
+  const candidate = `${verifiedDescriptorPath(parentFd, source)}/${leaf}`;
   let before: fs.BigIntStats;
   try {
     before = fs.lstatSync(candidate, { bigint: true });

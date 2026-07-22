@@ -236,6 +236,7 @@ function captureProjectCapabilities(input: ProjectAgentProfileInput, profile: Ag
 function projectDefinition(resolved: ResolvedAgentProfile): AgentDef | string[] {
   const definition = resolved.definition;
   const errors: string[] = [];
+  if (!resolved.agentId) errors.push("profile/projection: canonical profile identity is missing");
   if (!(["codex", "pi"].includes(definition.runtime.adapter)) || definition.runtime.executable !== definition.runtime.adapter || definition.runtime.args?.length) {
     errors.push("profile/projection: unsupported runtime projection");
   }
@@ -279,6 +280,12 @@ function projectDefinition(resolved: ResolvedAgentProfile): AgentDef | string[] 
   if (resolved.capabilityProjection) {
     projected.profileCapabilities = { ...resolved.capabilityProjection, effectiveProfileSha256: resolved.effectiveSha256 };
   }
+  projected.profileLifecycle = {
+    enabled: definition.lifecycle?.enabled ?? true,
+    agentId: resolved.agentId!,
+    canonicalSha256: resolved.sourceSha256,
+    authorityRevision: resolved.authorityRevision,
+  };
   return projected;
 }
 
