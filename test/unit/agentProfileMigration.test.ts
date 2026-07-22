@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   commitLegacyAgentProfileMigration,
+  listRollbackableAgentProfileMigrations,
   planLegacyAgentProfileMigration,
   reconcileAgentProfileMigrations,
   rollbackLegacyAgentProfileMigration,
@@ -149,7 +150,7 @@ describe("agent profile migration transaction", () => {
     return { workspaceRoot: root, homeDir, configPath, configText, plan: planned.plan, authority: new MemoryAuthority() };
   }
 
-  it("commits and rolls back the exact affected stanza while preserving outside bytes", async () => {
+  it("dogfood: commits and rolls back an isolated profile fixture while preserving outside bytes", async () => {
     const f = fixture();
     let stopped = 0;
     const committed = await commitLegacyAgentProfileMigration({
@@ -164,6 +165,9 @@ describe("agent profile migration transaction", () => {
     expect(migrated).toContain("settings:\n  auth: false # tail");
     expect(fs.readFileSync(path.join(f.workspaceRoot, ".tachyon", "agents", "codex", "agent.yml"), "utf8")).toBe(f.plan.profileText);
     expect(await f.authority.read("codex")).toEqual(f.plan.authority);
+    expect(listRollbackableAgentProfileMigrations(f.workspaceRoot)).toEqual([
+      expect.objectContaining({ txid: committed.txid, agentName: "codex" }),
+    ]);
 
     const rolledBack = await rollbackLegacyAgentProfileMigration({
       workspaceRoot: f.workspaceRoot,
@@ -177,6 +181,7 @@ describe("agent profile migration transaction", () => {
     expect(fs.readFileSync(f.configPath, "utf8")).toBe(f.configText);
     expect(fs.existsSync(path.join(f.workspaceRoot, ".tachyon", "agents", "codex", "agent.yml"))).toBe(false);
     expect(await f.authority.read("codex")).toBeUndefined();
+    expect(listRollbackableAgentProfileMigrations(f.workspaceRoot)).toEqual([]);
   });
 
   it("compensates an authority acknowledgement failure without changing config", async () => {

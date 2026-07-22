@@ -2,7 +2,11 @@
 
 _Created 2026-07-22._
 
-**Status:** in-progress
+**Status:** shipped
+
+**Closure:** Shipped 2026-07-22 — trusted profile loading, lossless offline migration, durable
+reconciliation/rollback, command-palette operations, operator documentation and isolated dogfood are
+complete. Focused, invariant, typecheck and full verification gates pass.
 
 ## Intent
 
@@ -120,37 +124,37 @@ editing and general lifecycle operations remain owned by `t-e50d4f`.
 
 ## Acceptance criteria
 
-- [ ] **Scenario: mixed rollout loads safely**
+- [x] **Scenario: mixed rollout loads safely**
   - **Given** a workspace with legacy agents and one exact profile pointer
   - **When** configuration reloads with valid host authority and adapter attestation
   - **Then** all entries produce equivalent `ManagedEntryDef` values and retain explicit source mode
-- [ ] **Scenario: split authority fails closed**
+- [x] **Scenario: split authority fails closed**
   - **Given** one stanza contains `profile` plus any inline field, or canonical bytes exist against an inline owner
   - **When** initial load or reload runs
   - **Then** the agent is not activated and diagnostics name both owners without choosing precedence
-- [ ] **Scenario: migration is lossless and local**
+- [x] **Scenario: migration is lossless and local**
   - **Given** an eligible stopped legacy agent and unrelated comments/settings/agents
   - **When** dry run and confirmed migration complete
   - **Then** only that stanza becomes the exact pointer, outside bytes are unchanged, and effective behavior is equivalent
-- [ ] **Scenario: unsupported data remains legacy**
+- [x] **Scenario: unsupported data remains legacy**
   - **Given** an unknown/deferred field, ambiguous YAML construct, unclassified environment value or unsupported adapter
   - **When** migration is requested
   - **Then** exact blockers are returned and no workspace, authority or profile bytes change
-- [ ] **Scenario: crash recovery is deterministic**
+- [x] **Scenario: crash recovery is deterministic**
   - **Given** interruption after any journal phase
   - **When** startup reconciliation runs
   - **Then** it finishes the exact intended state or restores the exact prior state; divergence becomes degraded without overwrite
-- [ ] **Scenario: rollback respects later edits**
+- [x] **Scenario: rollback respects later edits**
   - **Given** a completed migration whose profile or pointer was edited later
   - **When** rollback is requested
   - **Then** CAS refuses destructive rollback and reports a three-way conflict
-- [ ] **Scenario: invalid profile does not borrow LKG authority**
+- [x] **Scenario: invalid profile does not borrow LKG authority**
   - **Given** a valid profile-backed load followed by changed profile/head/attestation
   - **When** reload or cold start runs
   - **Then** prior live state may remain visible, but new spawn is refused and LKG never authorizes stale bytes
-- [ ] PI-001 remains green with unchanged oracle and unchanged project-owned guidance bytes/order.
-- [ ] Profile migration never reads or writes plugin payloads, locks, assignment, consent or scope.
-- [ ] The command surface provides dry-run, explicit confirmation, commit, rollback and actionable conflicts.
+- [x] PI-001 remains green with unchanged oracle and unchanged project-owned guidance bytes/order.
+- [x] Profile migration never reads or writes plugin payloads, locks, assignment, consent or scope.
+- [x] The command surface provides dry-run, explicit confirmation, commit, rollback and actionable conflicts.
 
 ## Non-goals
 

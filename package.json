@@ -158,6 +158,14 @@
         "title": "%command.editAgentItem%"
       },
       {
+        "command": "tachyon.migrateAgentProfile",
+        "title": "%command.migrateAgentProfile%"
+      },
+      {
+        "command": "tachyon.rollbackAgentProfile",
+        "title": "%command.rollbackAgentProfile%"
+      },
+      {
         "command": "tachyon.renameAgentItem",
         "title": "%command.renameAgentItem%"
       },

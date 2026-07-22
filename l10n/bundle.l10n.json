@@ -116,5 +116,19 @@
   "example.com\n*.herokuapp.com": "example.com\n*.herokuapp.com",
   "Save allowed hosts": "Save allowed hosts",
   "Companion allowed hosts cleared (all hosts)": "Companion allowed hosts cleared (all hosts)",
-  "Companion allowed hosts updated ({0})": "Companion allowed hosts updated ({0})"
+  "Companion allowed hosts updated ({0})": "Companion allowed hosts updated ({0})",
+  "No stopped agent is available for profile migration.": "No stopped agent is available for profile migration.",
+  "Migrate which stopped agent to agent.yml?": "Migrate which stopped agent to agent.yml?",
+  "Treat as non-secret values": "Treat as non-secret values",
+  "'{0}' has environment value(s): {1}. Confirm they are non-secret before storing them in agent.yml.": "'{0}' has environment value(s): {1}. Confirm they are non-secret before storing them in agent.yml.",
+  "Profile migration blocked for '{0}': {1}": "Profile migration blocked for '{0}': {1}",
+  "unknown blocker": "unknown blocker",
+  "Migrate profile": "Migrate profile",
+  "Migrate stopped agent '{0}' to {1}? A recoverable journal will be kept for rollback.": "Migrate stopped agent '{0}' to {1}? A recoverable journal will be kept for rollback.",
+  "Agent '{0}' migrated to agent.yml (transaction {1}).": "Agent '{0}' migrated to agent.yml (transaction {1}).",
+  "No safely rollbackable agent profile migration was found.": "No safely rollbackable agent profile migration was found.",
+  "Roll back which agent profile migration?": "Roll back which agent profile migration?",
+  "Roll back profile": "Roll back profile",
+  "Restore the legacy tachyon.yml stanza for stopped agent '{0}'? Later edits will make rollback refuse safely.": "Restore the legacy tachyon.yml stanza for stopped agent '{0}'? Later edits will make rollback refuse safely.",
+  "Agent '{0}' profile migration rolled back.": "Agent '{0}' profile migration rolled back."
 }

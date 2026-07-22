@@ -4495,7 +4495,7 @@ export class Workspace {
 
   planAgentProfileMigration(agentName: string, nonSecretEnv: readonly string[] = []): PlanLegacyAgentProfileMigrationResult {
     const file = this.configPath();
-    if (!file) return { ok: false, blockers: ["tachyon.yml does not exist"] };
+    if (!file) return { ok: false, blockers: ["tachyon.yml does not exist"], unclassifiedEnv: [] };
     return planLegacyAgentProfileMigration({
       workspaceRoot: this.workspaceRoot,
       configText: fs.readFileSync(file, "utf8"),

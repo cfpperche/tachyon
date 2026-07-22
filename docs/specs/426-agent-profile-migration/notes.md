@@ -67,3 +67,40 @@ readback; `tachyon.yml` is written last after the exact prospective trusted relo
 reconciliation commits a complete target tuple, compensates a partial tuple, and marks divergence
 degraded. Committed journals remain as the rollback authority; rollback refuses any later change to
 the pointer stanza, profile bytes or host authority.
+
+## 2026-07-22 — operator surface and documentation
+
+Two native VS Code commands expose the transaction without adding a custom UI: `Tachyon: Migrate
+Agent Profile` lists stopped agents, reports dry-run blockers, requires explicit classification of
+non-secret environment values and asks for modal commit confirmation; `Tachyon: Roll Back Agent
+Profile Migration` lists committed rollback journals and requires modal confirmation. The service
+rechecks stopped state and every CAS invariant at commit/rollback time, so a stale picker result cannot
+bypass the transaction boundary.
+
+The architecture guide records the ownership boundary between workspace configuration, canonical
+agent profile, host-custodied authority and runtime-native inputs. The cookbook gives operators a
+preview/migrate/verify/rollback path and calls out deferred lanes, especially plugins. No plugin path,
+payload, assignment, lock, consent or scope participates in this implementation.
+
+Focused i18n/protocol tests passed, the isolated migration + rollback dogfood passed, PI-001 invariants
+passed, typecheck passed, and `verify:full:quiet` completed with 471 files passing and 5,359 tests
+passing (3 skipped).
+
+## Verification log
+
+### 2026-07-22T16:57:07Z — fail (3/4) — source: tasks.md
+- `npm test -- test/unit/agentProfileMigration.test.ts test/unit/config.test.ts test/unit/yamlEditor.test.ts test/unit/configFailure.test.ts test/unit/workspaceHeadless.test.ts` — pass
+- `npm run test:invariants` — pass
+- `npm run typecheck` — pass
+- `npm run verify:full:quiet` — fail
+
+### 2026-07-22T17:02:06Z — pass (4/4) — source: tasks.md
+- `npm test -- test/unit/agentProfileMigration.test.ts test/unit/config.test.ts test/unit/yamlEditor.test.ts test/unit/configFailure.test.ts test/unit/workspaceHeadless.test.ts` — pass
+- `npm run test:invariants` — pass
+- `npm run typecheck` — pass
+- `npm run verify:full:quiet` — pass
+
+## Dogfood log
+
+### 2026-07-22T17:03:15Z — pass (1/1) — source: tasks.md — commit: 225ad1375425ddc88d6acc4d8db029530f3e4820
+- `npx vitest run test/unit/agentProfileMigration.test.ts -t "dogfood: commits and rolls back an isolated profile fixture"` — pass

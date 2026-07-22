@@ -59,7 +59,7 @@ export interface LegacyAgentProfileMigrationPlan {
 
 export type PlanLegacyAgentProfileMigrationResult =
   | { ok: true; plan: LegacyAgentProfileMigrationPlan }
-  | { ok: false; blockers: string[] };
+  | { ok: false; blockers: string[]; unclassifiedEnv: string[] };
 
 export const AGENT_PROFILE_MIGRATIONS_REL = ".tachyon/agent-profile-migrations";
 export const AGENT_PROFILE_MIGRATION_SCHEMA_VERSION = 1 as const;
@@ -454,14 +454,14 @@ export function planLegacyAgentProfileMigration(
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") blockers.push(`agents.${input.agentName}: cannot prove canonical agent.yml absence`);
   }
-  if (blockers.length > 0 || !originalDefinition || !source) return { ok: false, blockers };
+  if (blockers.length > 0 || !originalDefinition || !source) return { ok: false, blockers, unclassifiedEnv: envKeys.filter((key) => !classified.includes(key)) };
 
   const agentId = input.agentId ?? crypto.randomUUID();
   let profile: AgentProfileV1;
   try {
     profile = buildProfile(agentId, originalDefinition);
   } catch (error) {
-    return { ok: false, blockers: [`agents.${input.agentName}: canonical projection failed: ${error instanceof Error ? error.message : String(error)}`] };
+    return { ok: false, blockers: [`agents.${input.agentName}: canonical projection failed: ${error instanceof Error ? error.message : String(error)}`], unclassifiedEnv: [] };
   }
   const profileText = stringify(profile);
   const profileSha256 = digest(profileText);
@@ -474,9 +474,9 @@ export function planLegacyAgentProfileMigration(
     runtimeInspector: { ...CODEX_EMPTY_NATIVE_INPUT_INSPECTOR },
   };
   const projection = prospectiveProjection(input.agentName, profileText, authority);
-  if (Array.isArray(projection)) return { ok: false, blockers: projection };
+  if (Array.isArray(projection)) return { ok: false, blockers: projection, unclassifiedEnv: [] };
   if (!isDeepStrictEqual(originalDefinition, projection)) {
-    return { ok: false, blockers: [`agents.${input.agentName}: normalized before/after definitions are not equivalent`] };
+    return { ok: false, blockers: [`agents.${input.agentName}: normalized before/after definitions are not equivalent`], unclassifiedEnv: [] };
   }
   return {
     ok: true,
@@ -746,4 +746,34 @@ export async function reconcileAgentProfileMigrations(
     }
   }
   return { reconciled, degraded };
+}
+
+export interface RollbackableAgentProfileMigration {
+  txid: string;
+  agentName: string;
+  createdAt: string;
+}
+
+export function listRollbackableAgentProfileMigrations(workspaceRoot: string): RollbackableAgentProfileMigration[] {
+  const root = migrationsRoot(workspaceRoot);
+  try { requireSafeDirectory(workspaceRoot, root); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  }
+  const rows: RollbackableAgentProfileMigration[] = [];
+  for (const entry of fs.readdirSync(root)) {
+    if (entry === "locks") continue;
+    const txDir = path.join(root, entry);
+    try {
+      requireSafeDirectory(workspaceRoot, txDir);
+      const journal = readJournal(txDir);
+      if (journal.phase === "committed") {
+        rows.push({ txid: journal.txid, agentName: journal.agentName, createdAt: journal.createdAt });
+      }
+    } catch {
+      // Corrupt/degraded journals are intentionally not advertised as safely rollbackable.
+    }
+  }
+  return rows.sort((left, right) => right.createdAt.localeCompare(left.createdAt));
 }

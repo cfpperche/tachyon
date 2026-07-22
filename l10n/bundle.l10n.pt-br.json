@@ -524,5 +524,19 @@
   "example.com\n*.herokuapp.com": "example.com\n*.herokuapp.com",
   "Save allowed hosts": "Salvar hosts permitidos",
   "Companion allowed hosts cleared (all hosts)": "Hosts permitidos do Companion limpos (todos os hosts)",
-  "Companion allowed hosts updated ({0})": "Hosts permitidos do Companion atualizados ({0})"
+  "Companion allowed hosts updated ({0})": "Hosts permitidos do Companion atualizados ({0})",
+  "No stopped agent is available for profile migration.": "Nenhum agente parado está disponível para migração de perfil.",
+  "Migrate which stopped agent to agent.yml?": "Migrar qual agente parado para agent.yml?",
+  "Treat as non-secret values": "Tratar como valores não secretos",
+  "'{0}' has environment value(s): {1}. Confirm they are non-secret before storing them in agent.yml.": "'{0}' possui valor(es) de ambiente: {1}. Confirme que não são secretos antes de armazená-los em agent.yml.",
+  "Profile migration blocked for '{0}': {1}": "Migração de perfil bloqueada para '{0}': {1}",
+  "unknown blocker": "bloqueio desconhecido",
+  "Migrate profile": "Migrar perfil",
+  "Migrate stopped agent '{0}' to {1}? A recoverable journal will be kept for rollback.": "Migrar o agente parado '{0}' para {1}? Um journal recuperável será mantido para reversão.",
+  "Agent '{0}' migrated to agent.yml (transaction {1}).": "Agente '{0}' migrado para agent.yml (transação {1}).",
+  "No safely rollbackable agent profile migration was found.": "Nenhuma migração de perfil de agente com reversão segura foi encontrada.",
+  "Roll back which agent profile migration?": "Reverter qual migração de perfil de agente?",
+  "Roll back profile": "Reverter perfil",
+  "Restore the legacy tachyon.yml stanza for stopped agent '{0}'? Later edits will make rollback refuse safely.": "Restaurar a stanza legada do tachyon.yml para o agente parado '{0}'? Edições posteriores farão a reversão recusar com segurança.",
+  "Agent '{0}' profile migration rolled back.": "Migração de perfil do agente '{0}' revertida."
 }
