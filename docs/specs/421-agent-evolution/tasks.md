@@ -108,10 +108,10 @@ before continuing._
   states; obtain the maintainer's explicit acceptance of the narrow card and record verdict/fixes in
   `notes.md` without fabricating a missing screenshot.
 - [x] Run focused tests, SDD dogfood, PI-001, typecheck and configured full verification.
-- [x] Check every acceptance criterion against evidence, mark `spec.md` shipped-partial, add Closure,
+- [x] Check every acceptance criterion against evidence, mark `spec.md` shipped-partial for review, add Closure,
   and run the SDD close audit.
-- [x] Prepare the isolated branch for normal review. Landing, worktree removal and branch deletion remain
-  a maintainer-authorized publication follow-up and are not claimed by this local closure.
+- [x] Prepare the isolated branch for normal review, land it on `main`, remove the managed worktree and
+  local branch, then mark the spec `shipped` after ancestry verification.
 
 ## Verification
 

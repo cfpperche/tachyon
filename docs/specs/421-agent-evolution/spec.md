@@ -2,10 +2,12 @@
 
 _Created 2026-07-21._
 
-**Status:** shipped-partial
+**Status:** shipped
 
-**Closure:** Implementation, independent publication review, recovery hardening, full verification and
-live-runtime dogfood are complete. Maintainer publication remains a separate explicit step.
+**Closure:** Shipped on `main` by 2026-07-22. Implementation, independent publication review,
+recovery hardening, full verification, Agent Studio Visual QA and live Codex runtime dogfood are
+complete. The final publication hardening commit `3a195cf7` is fully contained in `main`; the managed
+worktree and local branch were removed after landing.
 
 ## Intent
 

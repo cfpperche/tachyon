@@ -214,3 +214,19 @@ _Questions surfaced during the build with no answer yet. Owner or path to resolu
 - `npm run typecheck` — pass
 - `npm run test:invariants` — pass
 - `npm run verify:full:quiet` — pass
+
+## Publication reconciliation — 2026-07-22
+
+- All five delivery slices and all four corrective follow-ups are `done` in Mission Control.
+- `origin/tachyon/change/agent-evolution` points at final hardening commit `3a195cf7`; Git ancestry
+  confirms that commit is fully contained in `main`, with the branch zero commits ahead of `main`.
+- The managed `agent-evolution` worktree and local branch had already been removed safely. The remote
+  review branch is now disposable publication residue, not an unlanded source of truth.
+- The former `shipped-partial` qualifier therefore represented stale publication bookkeeping, not
+  unfinished product behavior. The spec is now `shipped`; the current three-command verification and
+  targeted SDD closure audit passed, so umbrella `t-6c351f` can close.
+
+### 2026-07-22T20:46:30Z — pass (3/3) — source: tasks.md
+- `npm run typecheck` — pass
+- `npm run test:invariants` — pass
+- `npm run verify:full:quiet` — pass
