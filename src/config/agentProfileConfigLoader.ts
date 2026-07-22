@@ -130,7 +130,8 @@ export function loadProfileAwareConfig(input: LoadProfileAwareConfigInput): Prof
 
   if (errors.length > 0) return { errors, warnings: [] };
   for (const [agentName, definition] of projected) {
-    const parserInput: Record<string, unknown> = { ...definition };
+    const { profileCapabilities: _profileCapabilities, ...publicDefinition } = definition;
+    const parserInput: Record<string, unknown> = { ...publicDefinition };
     // The legacy parser's normalized output always contains watch: [], while
     // its source syntax deliberately rejects an explicitly empty watch list.
     if (definition.watch.length === 0) delete parserInput.watch;
@@ -143,6 +144,9 @@ export function loadProfileAwareConfig(input: LoadProfileAwareConfigInput): Prof
     const profileName = [...projected.keys()].find((name) => warning.startsWith(`agents.${name}: isolate: transcript is deprecated`));
     return profileName === undefined;
   });
+  for (const [agentName, definition] of projected) {
+    if (definition.profileCapabilities) parsed.config.agents[agentName]!.profileCapabilities = definition.profileCapabilities;
+  }
   const agentSources: Record<string, AgentConfigSource> = {};
   for (const name of Object.keys(parsed.config.agents)) {
     agentSources[name] = profileSources[name] ?? {

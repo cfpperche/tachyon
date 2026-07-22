@@ -14,6 +14,21 @@ const inspector = z.object({
   sha256: digest,
 }).strict();
 
+const capabilityGrant = z.object({
+  referenceId: publicId,
+  sourceSha256: digest,
+  adapter: z.enum(["codex", "pi"]),
+  kind: z.enum(["mcp", "hook", "pi-extension", "pi-package"]),
+  hookClass: z.enum(["capability", "prompt-transform", "observability", "enforcement"]).optional(),
+}).strict().superRefine((grant, ctx) => {
+  if (grant.kind === "hook" && !grant.hookClass) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["hookClass"], message: "is required for a hook grant" });
+  }
+  if (grant.kind !== "hook" && grant.hookClass) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["hookClass"], message: "is allowed only for a hook grant" });
+  }
+});
+
 const recordSchema = z.object({
   schemaVersion: z.literal(AGENT_PROFILE_AUTHORITY_SCHEMA_VERSION),
   agentName: z.string().regex(AGENT_NAME_PATTERN),
@@ -21,7 +36,17 @@ const recordSchema = z.object({
   revision: publicId,
   canonicalSha256: digest,
   runtimeInspector: inspector,
-}).strict();
+  capabilityGrants: z.array(capabilityGrant).max(256).optional(),
+}).strict().superRefine((record, ctx) => {
+  const seen = new Set<string>();
+  for (let index = 0; index < (record.capabilityGrants ?? []).length; index++) {
+    const grant = record.capabilityGrants![index]!;
+    if (seen.has(grant.referenceId)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["capabilityGrants", index, "referenceId"], message: "duplicates another capability grant" });
+    }
+    seen.add(grant.referenceId);
+  }
+});
 
 export type AgentProfileAuthorityRecord = z.infer<typeof recordSchema>;
 
@@ -58,5 +83,6 @@ export function authoritySnapshotFor(record: AgentProfileAuthorityRecord): Agent
     revision: record.revision,
     canonical: { state: "present", sha256: record.canonicalSha256 },
     runtimeInspector: { ...record.runtimeInspector },
+    capabilityGrants: record.capabilityGrants?.map((grant) => ({ ...grant })),
   };
 }

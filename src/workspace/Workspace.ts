@@ -840,6 +840,10 @@ export class Workspace {
       // env + MCP wiring; null when the agent has no harness / runtime can't.
       materializeHarness: ({ name, def, cwd }) => {
         const adapter = adapterFor(def.cmd);
+        if (def.profileCapabilities) {
+          if (!adapter) throw new Error(`runtime for '${name}' has no capability projection adapter`);
+          return this.harness.materializeProfileCapabilities(name, def.profileCapabilities, adapter, cwd, this.bridgeEntry());
+        }
         // SDD 401/406 — Pi is private-home by default; an opt-in resource harness uses its
         // dedicated exact-resource materializer rather than pretending Pi has generic MCP wiring.
         if (adapter?.runtime === "pi" && def.isolate === undefined) {

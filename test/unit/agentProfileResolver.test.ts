@@ -13,6 +13,7 @@ import {
   type ResolveAgentProfileInput,
   type ResolveAgentProfileResult,
 } from "../../src/config/agentProfileResolver.js";
+import { digestCapturedCapability, type CapturedCapabilityEntry } from "../../src/config/agentCapabilitySource.js";
 
 const roots: string[] = [];
 const AGENT_ID = "11111111-1111-4111-8111-111111111111";
@@ -26,6 +27,17 @@ function workspace(): string {
 
 function digest(value: string | Buffer): string {
   return crypto.createHash("sha256").update(value).digest("hex");
+}
+
+function treeDigest(root: string): string {
+  const entries: CapturedCapabilityEntry[] = [];
+  const visit = (current: string, relative: string): void => {
+    const stat = fs.lstatSync(current);
+    entries.push({ path: relative || ".", type: stat.isDirectory() ? "directory" : "file", mode: stat.mode & 0o777, ...(stat.isFile() ? { bytes: fs.readFileSync(current) } : {}) });
+    if (stat.isDirectory()) for (const name of fs.readdirSync(current).sort()) visit(path.join(current, name), relative ? `${relative}/${name}` : name);
+  };
+  visit(root, "");
+  return digestCapturedCapability("tree", entries);
 }
 
 function profileDir(root: string, agent = "codex"): string {
@@ -111,6 +123,133 @@ afterEach(() => {
 });
 
 describe("resolveAgentProfile", () => {
+  it("resolves an exact captured local skill tree into the effective capability digest", () => {
+    const root = workspace();
+    const skill = path.join(profileDir(root), "capabilities", "research");
+    fs.mkdirSync(skill, { recursive: true });
+    fs.writeFileSync(path.join(skill, "SKILL.md"), "---\nname: research\ndescription: research\n---\nUse evidence.\n");
+    const skillSha = treeDigest(skill);
+    writeProfile(root, canonical({
+      capabilities: { skills: ["research-skill"] },
+      references: [{ id: "research-skill", kind: "skill", scope: "profile", owner: AGENT_ID, path: "capabilities/research", mode: "pinned", sha256: skillSha }],
+    }));
+
+    const value = expectSuccess(resolve(root));
+    expect(value.capabilityProjection).toMatchObject({
+      adapter: "codex",
+      sources: [{ referenceId: "research-skill", scope: "profile", sha256: skillSha }],
+      skills: [{ name: "research", source: { type: "tree", sha256: skillSha } }],
+    });
+    expect(value.capabilityProjection?.sha256).toMatch(/^[a-f0-9]{64}$/);
+    expect(value.effectiveSha256).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it("requires an exact host grant for MCP and hook payloads", () => {
+    const root = workspace();
+    const directory = path.join(profileDir(root), "capabilities");
+    fs.mkdirSync(directory, { recursive: true });
+    const mcp = "schemaVersion: 1\nname: docs\ncommand: node\nargs: [server.js]\nenv:\n  DOCS_TOKEN: ${DOCS_TOKEN}\n";
+    const hook = "schemaVersion: 1\nclass: enforcement\nhooks:\n  PreToolUse:\n    - hooks:\n        - type: command\n          command: node guard.js\n";
+    fs.writeFileSync(path.join(directory, "mcp.yml"), mcp);
+    fs.writeFileSync(path.join(directory, "hook.yml"), hook);
+    writeProfile(root, canonical({
+      capabilities: { mcp: ["docs-mcp"], hooks: ["guard-hook"] },
+      references: [
+        { id: "docs-mcp", kind: "mcp", scope: "profile", owner: AGENT_ID, path: "capabilities/mcp.yml", mode: "pinned", sha256: digest(mcp) },
+        { id: "guard-hook", kind: "hook", scope: "profile", owner: AGENT_ID, path: "capabilities/hook.yml", mode: "pinned", sha256: digest(hook) },
+      ],
+    }));
+    const profilePath = path.join(root, ".tachyon", "agents", "codex", "agent.yml");
+    const baseAuthority = { revision: "test-profile-r1", canonical: { state: "present" as const, sha256: digest(fs.readFileSync(profilePath)) }, runtimeInspector: INSPECTOR };
+    const denied = resolve(root, { authority: baseAuthority });
+    expect(denied.ok).toBe(false);
+    if (denied.ok) throw new Error("expected denial");
+    expect(denied.errors.filter((error) => error.code === "profile/capability-authority")).toHaveLength(2);
+
+    const value = expectSuccess(resolve(root, { authority: { ...baseAuthority, capabilityGrants: [
+      { referenceId: "docs-mcp", sourceSha256: digest(mcp), adapter: "codex", kind: "mcp" },
+      { referenceId: "guard-hook", sourceSha256: digest(hook), adapter: "codex", kind: "hook", hookClass: "enforcement" },
+    ] } }));
+    expect(value.capabilityProjection?.mcp.docs).toEqual({ command: "node", args: ["server.js"], env: { DOCS_TOKEN: "${DOCS_TOKEN}" } });
+    expect(value.capabilityProjection?.hooks.PreToolUse).toBeDefined();
+    expect(JSON.stringify(value.capabilityProjection)).not.toContain("ambient-secret");
+
+    const invalidHook = hook.replace("PreToolUse", "MadeUpEvent");
+    fs.writeFileSync(path.join(directory, "hook.yml"), invalidHook);
+    writeProfile(root, canonical({
+      capabilities: { mcp: ["docs-mcp"], hooks: ["guard-hook"] },
+      references: [
+        { id: "docs-mcp", kind: "mcp", scope: "profile", owner: AGENT_ID, path: "capabilities/mcp.yml", mode: "pinned", sha256: digest(mcp) },
+        { id: "guard-hook", kind: "hook", scope: "profile", owner: AGENT_ID, path: "capabilities/hook.yml", mode: "pinned", sha256: digest(invalidHook) },
+      ],
+    }));
+    const invalidProfile = path.join(root, ".tachyon", "agents", "codex", "agent.yml");
+    const rejected = resolve(root, { authority: {
+      revision: "test-profile-r1",
+      canonical: { state: "present", sha256: digest(fs.readFileSync(invalidProfile)) },
+      runtimeInspector: INSPECTOR,
+      capabilityGrants: [
+        { referenceId: "docs-mcp", sourceSha256: digest(mcp), adapter: "codex", kind: "mcp" },
+        { referenceId: "guard-hook", sourceSha256: digest(invalidHook), adapter: "codex", kind: "hook", hookClass: "enforcement" },
+      ],
+    } });
+    expect(rejected.ok).toBe(false);
+    if (rejected.ok) throw new Error("expected hook rejection");
+    expect(rejected.errors.some((error) => error.code === "profile/capability" && error.message.includes("MadeUpEvent"))).toBe(true);
+  });
+
+  it("rejects symlinks in captured capability trees", () => {
+    const root = workspace();
+    const skill = path.join(profileDir(root), "capabilities", "unsafe");
+    fs.mkdirSync(skill, { recursive: true });
+    fs.writeFileSync(path.join(skill, "SKILL.md"), "body");
+    fs.symlinkSync("SKILL.md", path.join(skill, "alias"));
+    writeProfile(root, canonical({
+      capabilities: { skills: ["unsafe-skill"] },
+      references: [{ id: "unsafe-skill", kind: "skill", scope: "profile", owner: AGENT_ID, path: "capabilities/unsafe", mode: "pinned", sha256: "0".repeat(64) }],
+    }));
+    const result = resolve(root);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected failure");
+    expect(result.errors.some((error) => error.code === "profile/unsafe-path")).toBe(true);
+  });
+
+  it("rejects destination-name collisions after scope/path normalization", () => {
+    const root = workspace();
+    const first = path.join(profileDir(root), "capabilities", "one", "Research");
+    const second = path.join(profileDir(root), "capabilities", "two", "research");
+    for (const directory of [first, second]) {
+      fs.mkdirSync(directory, { recursive: true });
+      fs.writeFileSync(path.join(directory, "SKILL.md"), "skill\n");
+    }
+    writeProfile(root, canonical({
+      capabilities: { skills: ["first-skill", "second-skill"] },
+      references: [
+        { id: "first-skill", kind: "skill", scope: "profile", owner: AGENT_ID, path: "capabilities/one/Research", mode: "pinned", sha256: treeDigest(first) },
+        { id: "second-skill", kind: "skill", scope: "profile", owner: AGENT_ID, path: "capabilities/two/research", mode: "pinned", sha256: treeDigest(second) },
+      ],
+    }));
+    const result = resolve(root);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected collision");
+    expect(result.errors.some((error) => error.code === "profile/capability-collision")).toBe(true);
+  });
+
+  it("does not open an unselected capability reference", () => {
+    const root = workspace();
+    const outside = path.join(root, "outside-skill");
+    fs.mkdirSync(outside);
+    fs.writeFileSync(path.join(outside, "SKILL.md"), "outside\n");
+    fs.symlinkSync(outside, path.join(profileDir(root), "dormant-skill"));
+    writeProfile(root, canonical({
+      capabilities: {},
+      references: [{ id: "dormant", kind: "skill", scope: "profile", owner: AGENT_ID, path: "dormant-skill", mode: "pinned", sha256: "0".repeat(64) }],
+    }));
+
+    const value = expectSuccess(resolve(root));
+    expect(value.references).toEqual([]);
+    expect(value.capabilityProjection).toBeUndefined();
+  });
   it("resolves canonical bytes and pinned local references deterministically with field provenance", () => {
     const root = workspace();
     const instructions = "Always explain the reason.\n";

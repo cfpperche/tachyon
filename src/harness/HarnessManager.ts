@@ -22,6 +22,8 @@ import os from "node:os";
 import path from "node:path";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import type { HarnessDef } from "../config/loadConfig.js";
+import type { ResolvedAgentCapabilityProjection } from "../config/agentProfileResolver.js";
+import type { CapturedCapabilitySource } from "../config/agentCapabilitySource.js";
 import type { ResumeAdapter } from "../resume/adapters.js";
 import {
   buildCodexSessionStartHookConfig,
@@ -673,6 +675,7 @@ const PI_PRIVATE_JSON_FILES = [
 ] as const;
 const PI_EXECUTABLE_RESOURCE_SETTINGS = ["packages", "extensions", "skills", "prompts", "themes"] as const;
 const PI_RESOURCE_ROOT = ".tachyon-resources";
+const PROFILE_CAPABILITY_ROOT = ".tachyon-profile-capabilities";
 const PI_RESOURCE_DISABLE_ARGS = ["--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes"] as const;
 
 type PiResourceKind = "extensions" | "skills" | "prompts" | "themes" | "packages";
@@ -780,6 +783,125 @@ export class HarnessManager {
     return harnessHome(this.workspaceRoot, agent);
   }
 
+  /** Materialize a canonical-profile capability snapshot through the measured runtime adapter only. */
+  materializeProfileCapabilities(
+    agent: string,
+    projection: ResolvedAgentCapabilityProjection,
+    adapter: ResumeAdapter,
+    cwd?: string,
+    bridgeEntry?: Record<string, unknown>,
+  ): MaterializedHarness {
+    if (projection.adapter !== adapter.runtime) {
+      throw new HarnessUnavailableError(agent, `capability snapshot targets '${projection.adapter}', not '${adapter.runtime}'`);
+    }
+    if (adapter.runtime === "pi") return this.materializePiProfileHome(agent, projection);
+    if (adapter.runtime !== "codex") {
+      throw new HarnessUnavailableError(agent, `runtime '${adapter.runtime}' has no measured profile capability projection`);
+    }
+    const def: HarnessDef = {
+      inherit: "none",
+      ...(Object.keys(projection.mcp).length > 0 ? { mcp: projection.mcp } : {}),
+      ...(Object.keys(projection.hooks).length > 0 ? { hooks: projection.hooks } : {}),
+    };
+    return this.materialize(agent, def, adapter, cwd, bridgeEntry, undefined, projection);
+  }
+
+  private ensureProfileCapabilityRoot(agent: string, home: string): string {
+    const root = path.join(home, PROFILE_CAPABILITY_ROOT);
+    try {
+      const stat = fs.lstatSync(root);
+      if (stat.isSymbolicLink() || !stat.isDirectory()) {
+        throw new HarnessUnavailableError(agent, `profile capability metadata root must be a real directory: ${root}`);
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      fs.mkdirSync(root, { mode: 0o700 });
+    }
+    return root;
+  }
+
+  private writeCapturedCapability(agent: string, source: CapturedCapabilitySource, target: string): void {
+    if (source.type === "file") {
+      const entry = source.entries.find((candidate) => candidate.type === "file" && candidate.path === ".");
+      if (!entry?.bytes) throw new HarnessUnavailableError(agent, `captured capability ${source.source} has no file bytes`);
+      fs.mkdirSync(path.dirname(target), { recursive: true, mode: 0o700 });
+      fs.writeFileSync(target, entry.bytes, { flag: "wx", mode: entry.mode });
+      return;
+    }
+    fs.mkdirSync(target, { mode: 0o700 });
+    for (const entry of source.entries) {
+      if (entry.path === ".") {
+        fs.chmodSync(target, entry.mode);
+        continue;
+      }
+      const segments = entry.path.split("/");
+      if (segments.some((segment) => !segment || segment === "." || segment === "..")) {
+        throw new HarnessUnavailableError(agent, `captured capability contains an unsafe path: ${entry.path}`);
+      }
+      const destination = path.join(target, ...segments);
+      const relative = path.relative(target, destination);
+      if (relative.startsWith("..") || path.isAbsolute(relative)) {
+        throw new HarnessUnavailableError(agent, `captured capability escapes its projection root: ${entry.path}`);
+      }
+      if (entry.type === "directory") {
+        fs.mkdirSync(destination, { mode: entry.mode });
+      } else {
+        if (!entry.bytes) throw new HarnessUnavailableError(agent, `captured capability file has no bytes: ${entry.path}`);
+        fs.mkdirSync(path.dirname(destination), { recursive: true, mode: 0o700 });
+        fs.writeFileSync(destination, entry.bytes, { flag: "wx", mode: entry.mode });
+      }
+    }
+  }
+
+  private replaceCapturedSkillTree(agent: string, home: string, projection: ResolvedAgentCapabilityProjection): void {
+    const target = path.join(home, "skills");
+    const stage = path.join(home, `.skills-staging-${randomUUID()}`);
+    const prior = path.join(home, `.skills-prior-${randomUUID()}`);
+    fs.mkdirSync(stage, { mode: 0o700 });
+    try {
+      for (const skill of projection.skills) this.writeCapturedCapability(agent, skill.source, path.join(stage, skill.name));
+      let hadPrior = false;
+      try {
+        const stat = fs.lstatSync(target);
+        if (stat.isSymbolicLink() || !stat.isDirectory()) {
+          throw new HarnessUnavailableError(agent, `profile skill projection target must be a real directory: ${target}`);
+        }
+        fs.renameSync(target, prior);
+        hadPrior = true;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+      try {
+        fs.renameSync(stage, target);
+      } catch (error) {
+        if (hadPrior) fs.renameSync(prior, target);
+        throw error;
+      }
+      if (hadPrior) removeDirByRenameThenRm(prior);
+    } catch (error) {
+      removeDirByRenameThenRm(stage);
+      throw error;
+    }
+  }
+
+  private writeProfileCapabilityManifest(agent: string, home: string, projection: ResolvedAgentCapabilityProjection): void {
+    const root = this.ensureProfileCapabilityRoot(agent, home);
+    const manifest = {
+      schemaVersion: 1,
+      adapter: projection.adapter,
+      effectiveProfileSha256: projection.effectiveProfileSha256 ?? null,
+      capabilityProjectionSha256: projection.sha256,
+      sources: projection.sources,
+      outputs: {
+        skills: projection.skills.map((entry) => ({ name: entry.name, sha256: entry.source.sha256 })),
+        mcp: Object.keys(projection.mcp).sort(),
+        hooks: Object.keys(projection.hooks).sort(),
+        pi: Object.fromEntries(Object.entries(projection.pi).map(([kind, entries]) => [kind, entries.map((entry) => ({ name: entry.name, sha256: entry.source.sha256 }))])),
+      },
+    };
+    atomicWrite(path.join(root, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
+  }
+
   /**
    * Materialize Pi's complete default private home. Snapshot only inert top-level JSON state; executable
    * global resource trees deliberately do not cross this boundary. Existing private files belong to Pi
@@ -840,23 +962,62 @@ export class HarnessManager {
       const generationDigest = this.hashPiResourceTree(agent, stage);
       const generationName = `generation-${generationDigest}`;
       const generation = path.join(root, generationName);
-      try {
-        const existing = fs.lstatSync(generation);
-        if (existing.isSymbolicLink() || !existing.isDirectory()) {
-          throw new HarnessUnavailableError(agent, `Pi resource generation must be a real directory: ${generation}`);
-        }
-        if (this.hashPiResourceTree(agent, generation) !== generationDigest) {
-          throw new HarnessUnavailableError(agent, `Pi resource generation content does not match its digest: ${generation}`);
-        }
-        removeDirByRenameThenRm(stage);
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-        fs.renameSync(stage, generation);
-      }
+      this.publishPiResourceGeneration(agent, root, stage, generation, generationDigest);
       const rewritten = args.map((arg) => arg.includes(stage) ? arg.replace(stage, generation) : arg);
       return { ...base, args: rewritten };
     } catch (error) {
       removeRecursiveWithRetry(stage);
+      throw error;
+    }
+  }
+
+  private materializePiProfileHome(agent: string, projection: ResolvedAgentCapabilityProjection): MaterializedHarness {
+    const base = this.materializePiBaseHome(agent);
+    const root = path.join(base.home, PI_RESOURCE_ROOT);
+    this.ensurePiResourceDir(agent, root);
+    this.cleanPiStagingDirs(agent, root);
+    const stage = path.join(root, `.staging-${randomUUID()}`);
+    fs.mkdirSync(stage, { mode: 0o700 });
+    const args: string[] = [...PI_RESOURCE_DISABLE_ARGS];
+    try {
+      const fields: Array<[PiResourceKind, Array<{ name: string; source: CapturedCapabilitySource }>]> = [
+        ["extensions", projection.pi.extensions],
+        ["skills", projection.skills],
+        ["prompts", projection.pi.prompts],
+        ["themes", projection.pi.themes],
+        ["packages", projection.pi.packages],
+      ];
+      for (const [kind, entries] of fields) {
+        if (entries.length === 0) continue;
+        const targetRoot = path.join(stage, kind);
+        fs.mkdirSync(targetRoot, { mode: 0o700 });
+        for (const entry of entries) {
+          const target = path.join(targetRoot, entry.name);
+          this.writeCapturedCapability(agent, entry.source, target);
+          let explicitPath = target;
+          if (kind === "extensions" && entry.source.type === "tree") {
+            const index = entry.source.entries.find((candidate) => candidate.type === "file" && ["index.ts", "index.js"].includes(candidate.path));
+            if (!index) throw new HarnessUnavailableError(agent, `captured Pi extension ${entry.name} has no root entrypoint`);
+            explicitPath = path.join(target, index.path);
+          }
+          const flag = kind === "skills"
+            ? "--skill"
+            : kind === "prompts"
+              ? "--prompt-template"
+              : kind === "themes"
+                ? "--theme"
+                : "--extension";
+          args.push(flag, shellResourcePath(explicitPath));
+        }
+      }
+      const generationDigest = this.hashPiResourceTree(agent, stage);
+      const generation = path.join(root, `generation-${generationDigest}`);
+      this.publishPiResourceGeneration(agent, root, stage, generation, generationDigest);
+      const rewritten = args.map((arg) => arg.includes(stage) ? arg.replace(stage, generation) : arg);
+      this.writeProfileCapabilityManifest(agent, base.home, projection);
+      return { ...base, args: rewritten };
+    } catch (error) {
+      removeDirByRenameThenRm(stage);
       throw error;
     }
   }
@@ -944,6 +1105,33 @@ export class HarnessManager {
     fs.chmodSync(root, 0o700);
   }
 
+  private publishPiResourceGeneration(agent: string, root: string, stage: string, generation: string, digest: string): void {
+    try {
+      const existing = fs.lstatSync(generation);
+      let intact = false;
+      if (!existing.isSymbolicLink() && existing.isDirectory()) {
+        try { intact = this.hashPiResourceTree(agent, generation) === digest; }
+        catch { intact = false; }
+      }
+      if (intact) {
+        removeDirByRenameThenRm(stage);
+        return;
+      }
+      const prior = path.join(root, `.corrupt-${digest}-${randomUUID()}`);
+      fs.renameSync(generation, prior);
+      try {
+        fs.renameSync(stage, generation);
+      } catch (error) {
+        fs.renameSync(prior, generation);
+        throw error;
+      }
+      removeDirByRenameThenRm(prior);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      fs.renameSync(stage, generation);
+    }
+  }
+
   private cleanPiStagingDirs(agent: string, root: string): void {
     for (const name of fs.readdirSync(root)) {
       if (!name.startsWith(".staging-")) continue;
@@ -1012,27 +1200,36 @@ export class HarnessManager {
         const parsed = JSON.parse(fs.readFileSync(manifest, "utf8")) as Record<string, unknown>;
         if (parsed.pi && typeof parsed.pi === "object" && !Array.isArray(parsed.pi)) {
           const pi = parsed.pi as Record<string, unknown>;
+          let resourceCount = 0;
           for (const key of ["extensions", "skills", "prompts", "themes"]) {
             const entries = pi[key];
             if (entries === undefined) continue;
-            if (!Array.isArray(entries) || entries.some((entry) => typeof entry !== "string" || !this.isSafePiPackageEntry(entry))) {
+            if (!Array.isArray(entries) || entries.some((entry) => typeof entry !== "string"
+              || !this.isSafePiPackageEntry(entry) || !this.isValidPiPackageEntry(source, key, entry))) {
               return false;
             }
+            resourceCount += entries.length;
           }
-          return true;
+          return resourceCount > 0;
         }
       } catch {
         return false;
       }
     }
-    return ["extensions", "skills", "prompts", "themes"].some((name) => {
+    let resourceCount = 0;
+    for (const name of ["extensions", "skills", "prompts", "themes"]) {
+      const root = path.join(source, name);
       try {
-        const stat = fs.lstatSync(path.join(source, name));
-        return stat.isDirectory() && !stat.isSymbolicLink();
-      } catch {
-        return false;
+        const stat = fs.lstatSync(root);
+        if (stat.isSymbolicLink() || !stat.isDirectory()) return false;
+        const entries = fs.readdirSync(root);
+        if (entries.length === 0 || entries.some((entry) => !this.isValidPiPackageEntry(source, name, `${name}/${entry}`))) return false;
+        resourceCount += entries.length;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") return false;
       }
-    });
+    }
+    return resourceCount > 0;
   }
 
   private isSafePiPackageEntry(entry: string): boolean {
@@ -1044,6 +1241,48 @@ export class HarnessManager {
       && !candidate.startsWith("~")
       && !/^[A-Za-z][A-Za-z0-9+.-]*:/.test(candidate)
       && !/^[A-Za-z]:[\\/]/.test(candidate);
+  }
+
+  private isValidPiPackageEntry(source: string, kind: string, entry: string): boolean {
+    const candidate = entry.replace(/^[!+-]/, "").trim();
+    if (!this.isSafePiPackageEntry(entry)) return false;
+    const target = path.resolve(source, candidate);
+    const relative = path.relative(source, target);
+    if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) return false;
+    const validLeaf = (item: string): boolean => {
+      let stat: fs.Stats;
+      try { stat = fs.lstatSync(item); }
+      catch { return false; }
+      if (stat.isSymbolicLink()) return false;
+      if (kind === "extensions") {
+        if (stat.isFile()) return [".ts", ".js"].includes(path.extname(item));
+        if (!stat.isDirectory()) return false;
+        return ["index.ts", "index.js"].some((name) => {
+          try {
+            const index = fs.lstatSync(path.join(item, name));
+            return index.isFile() && !index.isSymbolicLink();
+          } catch { return false; }
+        });
+      }
+      if (kind === "skills") {
+        if (!stat.isDirectory()) return false;
+        try {
+          const skill = fs.lstatSync(path.join(item, "SKILL.md"));
+          return skill.isFile() && !skill.isSymbolicLink();
+        } catch { return false; }
+      }
+      if (kind === "prompts") return stat.isFile() && path.extname(item) === ".md";
+      return kind === "themes" && stat.isFile() && path.extname(item) === ".json" && isReadableNoFollowJsonObjectFile(item);
+    };
+    if (validLeaf(target)) return true;
+    let targetStat: fs.Stats;
+    try { targetStat = fs.lstatSync(target); }
+    catch { return false; }
+    if (targetStat.isSymbolicLink() || !targetStat.isDirectory()) return false;
+    let children: string[];
+    try { children = fs.readdirSync(target); }
+    catch { return false; }
+    return children.length > 0 && children.every((name) => validLeaf(path.join(target, name)));
   }
 
   private copyNoFollowTree(agent: string, source: string, target: string, declared: string): void {
@@ -1103,9 +1342,13 @@ export class HarnessManager {
     cwd?: string,
     bridgeEntry?: Record<string, unknown>,
     lifecycle?: { handoffPath?: string; silentPersistence?: boolean },
+    profileCapabilities?: ResolvedAgentCapabilityProjection,
   ): MaterializedHarness {
     const h = adapter.harness;
     if (!h) throw new Error(`runtime '${adapter.runtime}' does not support an isolated harness`);
+    if (profileCapabilities && (profileCapabilities.adapter !== "codex" || adapter.runtime !== "codex")) {
+      throw new HarnessUnavailableError(agent, `profile capability snapshot cannot be consumed by '${adapter.runtime}'`);
+    }
 
     // H7 — resolve the ${VAR} secret refs BEFORE any fs side effect, and fail closed if one is missing:
     // claude expands ${VAR} from the spawned PROCESS env (not the mcp.json file), so the real value must
@@ -1134,6 +1377,10 @@ export class HarnessManager {
     }
 
     const home = this.materializeHome(agent, adapter, cwd); // private home + auth symlink/onboarding markers
+    if (profileCapabilities) {
+      const manifest = path.join(this.ensureProfileCapabilityRoot(agent, home), "manifest.json");
+      fs.rmSync(manifest, { force: true });
+    }
 
     // mcp — ALWAYS scope a harness agent. Claude gets a strict `mcp.json` + flags; Codex gets a private
     // `config.toml` under CODEX_HOME; opencode (XDG) gets `opencode/opencode.json` under XDG_CONFIG_HOME.
@@ -1156,7 +1403,9 @@ export class HarnessManager {
     }
     if (adapter.runtime === "codex") {
       this.materializeCodexInstructions(agent, def, home);
-      this.materializeSkills(agent, def, home);
+      if (profileCapabilities) this.replaceCapturedSkillTree(agent, home, profileCapabilities);
+      else this.materializeSkills(agent, def, home);
+      if (profileCapabilities) this.writeProfileCapabilityManifest(agent, home, profileCapabilities);
       return { home, env: { [h.configHomeEnv]: home, ...secretEnv }, args };
     }
 

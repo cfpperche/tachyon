@@ -31,9 +31,11 @@ import {
 } from "../../src/harness/HarnessManager.js";
 import { adapterForRuntime } from "../../src/resume/adapters.js";
 import type { HarnessDef } from "../../src/config/loadConfig.js";
+import type { ResolvedAgentCapabilityProjection } from "../../src/config/agentProfileResolver.js";
 
 const claude = adapterForRuntime("claude")!;
 const codex = adapterForRuntime("codex")!;
+const pi = adapterForRuntime("pi")!;
 const DEF = (inherit: "none" | "workspace"): HarnessDef => ({
   inherit,
   mcp: { "fal-ai": { command: "npx", args: ["-y", "@fal-ai/mcp"], env: { FAL_KEY: "${FAL_KEY}" } } },
@@ -293,6 +295,10 @@ describe("HarnessManager materialize (fs)", () => {
     const firstSkillPath = first.args[first.args.indexOf("--skill") + 1]!.slice(1, -1);
     expect(fs.existsSync(firstSkillPath)).toBe(true);
     expect(repeated.args).toEqual(first.args);
+    fs.writeFileSync(path.join(firstSkillPath, "SKILL.md"), "tampered\n");
+    const repaired = mgr.materializePiHome("pi-a", { inherit: "workspace", skills: ["skills/one"] });
+    expect(repaired.args).toEqual(first.args);
+    expect(fs.readFileSync(path.join(firstSkillPath, "SKILL.md"), "utf8")).toContain("name: one");
     expect(second.args.join(" ")).toContain("/skills/two");
     expect(second.args.join(" ")).not.toContain("/skills/one");
     expect(sibling.home).not.toBe(first.home);
@@ -337,17 +343,69 @@ describe("HarnessManager materialize (fs)", () => {
     execFileSync("mkfifo", [path.join(ws, "special.md")]);
     fs.mkdirSync(path.join(ws, "unsafe-package"), { recursive: true });
     fs.writeFileSync(path.join(ws, "unsafe-package", "package.json"), '{"pi":{"extensions":["../../auth.json"]}}');
+    const malformedPackages = [
+      ["bad-extension-package", "extensions", "readme.txt", "not code"],
+      ["bad-skill-package", "skills/bad", "README.md", "no skill manifest"],
+      ["bad-prompt-package", "prompts", "prompt.txt", "wrong extension"],
+      ["bad-theme-package", "themes", "theme.json", "not json"],
+    ] as const;
+    for (const [pkg, directory, file, content] of malformedPackages) {
+      fs.mkdirSync(path.join(ws, pkg, directory), { recursive: true });
+      fs.writeFileSync(path.join(ws, pkg, directory, file), content);
+    }
     const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), undefined, undefined, undefined, undefined, undefined, piHome);
 
     expect(() => mgr.materializePiHome("pi-duplicate", { inherit: "workspace", prompts: ["one/same.md", "two/same.md"] })).toThrow(/duplicate Pi prompts resource basename/);
     expect(() => mgr.materializePiHome("pi-escape", { inherit: "workspace", skills: ["escaping-skill"] })).toThrow(/escapes the workspace/);
     expect(() => mgr.materializePiHome("pi-special", { inherit: "workspace", prompts: ["special.md"] })).toThrow(/regular no-follow file or directory/);
     expect(() => mgr.materializePiHome("pi-package", { inherit: "workspace", packages: ["unsafe-package"] })).toThrow(/pi manifest or conventional resource directory/);
+    for (const [pkg] of malformedPackages) {
+      expect(() => mgr.materializePiHome(`pi-${pkg}`, { inherit: "workspace", packages: [pkg] })).toThrow(/pi manifest or conventional resource directory/);
+    }
 
     const ownedRoot = path.join(harnessHome(ws, "pi-root"), ".tachyon-resources");
     fs.mkdirSync(path.dirname(ownedRoot), { recursive: true });
     fs.symlinkSync(outside, ownedRoot);
     expect(() => mgr.materializePiHome("pi-root", { inherit: "workspace", skills: ["escaping-skill"] })).toThrow(/resource root must be a real directory/);
+  });
+
+  it("SDD 428: Pi materializes captured profile resources into a content-addressed generation", () => {
+    const piHome = path.join(path.dirname(realHome), "realpi-profile");
+    fs.mkdirSync(piHome, { recursive: true });
+    const promptBytes = Buffer.from("Review with evidence.\n");
+    const projection: ResolvedAgentCapabilityProjection = {
+      schemaVersion: 1,
+      adapter: "pi",
+      sha256: "d".repeat(64),
+      effectiveProfileSha256: "e".repeat(64),
+      sources: [{ referenceId: "review-prompt", kind: "pi-prompt", scope: "profile", owner: "11111111-1111-4111-8111-111111111111", path: "capabilities/review.md", sha256: "f".repeat(64) }],
+      skills: [],
+      mcp: {},
+      hooks: {},
+      pi: { extensions: [], themes: [], packages: [], prompts: [{ name: "review.md", source: {
+        source: "capabilities/review.md",
+        sourcePath: path.join(ws, "capabilities/review.md"),
+        type: "file",
+        sha256: "f".repeat(64),
+        entries: [{ path: ".", type: "file", mode: 0o644, bytes: promptBytes }],
+      } }] },
+    };
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), undefined, undefined, undefined, undefined, undefined, piHome);
+    const first = mgr.materializeProfileCapabilities("pi-profile", projection, pi);
+    const repeated = mgr.materializeProfileCapabilities("pi-profile", projection, pi);
+
+    expect(repeated.args).toEqual(first.args);
+    const promptArg = first.args[first.args.indexOf("--prompt-template") + 1]!.slice(1, -1);
+    expect(fs.readFileSync(promptArg, "utf8")).toBe("Review with evidence.\n");
+    expect(promptArg).toContain("generation-");
+    const manifest = JSON.parse(fs.readFileSync(path.join(first.home, ".tachyon-profile-capabilities", "manifest.json"), "utf8"));
+    expect(manifest).toMatchObject({ adapter: "pi", capabilityProjectionSha256: "d".repeat(64) });
+
+    fs.writeFileSync(promptArg, "tampered\n");
+    const repaired = mgr.materializeProfileCapabilities("pi-profile", projection, pi);
+    const repairedPrompt = repaired.args[repaired.args.indexOf("--prompt-template") + 1]!.slice(1, -1);
+    expect(repairedPrompt).toBe(promptArg);
+    expect(fs.readFileSync(repairedPrompt, "utf8")).toBe("Review with evidence.\n");
   });
 
   it("spec 298: codex harness writes private config.toml, symlinks auth, and returns CODEX_HOME only", () => {
@@ -373,6 +431,59 @@ describe("HarnessManager materialize (fs)", () => {
     expect(toml).toContain("[mcp_servers.tachyon_bridge]");
     expect(toml).toContain('bearer_token_env_var = "TACHYON_BRIDGE_TOKEN"');
     expect(toml).not.toContain("real-key");
+  });
+
+  it("SDD 428: Codex consumes captured profile bytes, records provenance, and repairs projection tampering", () => {
+    const codexHome = path.join(path.dirname(realHome), "realcodex-profile");
+    fs.mkdirSync(codexHome, { recursive: true });
+    fs.writeFileSync(path.join(codexHome, "auth.json"), "{}");
+    fs.mkdirSync(path.join(ws, ".agents", "skills", "workspace-plugin"), { recursive: true });
+    const pluginSkill = "workspace plugin bytes\n";
+    const pluginConfig = "[mcp_servers.workspace_plugin]\ncommand = \"plugin-server\"\n";
+    fs.writeFileSync(path.join(ws, ".agents", "skills", "workspace-plugin", "SKILL.md"), pluginSkill);
+    fs.mkdirSync(path.join(ws, ".codex"), { recursive: true });
+    fs.writeFileSync(path.join(ws, ".codex", "config.toml"), pluginConfig);
+    const skillBytes = Buffer.from("---\nname: research\ndescription: research\n---\nCanonical skill.\n");
+    const projection: ResolvedAgentCapabilityProjection = {
+      schemaVersion: 1,
+      adapter: "codex",
+      sha256: "a".repeat(64),
+      effectiveProfileSha256: "b".repeat(64),
+      sources: [{ referenceId: "research", kind: "skill", scope: "project", owner: "workspace", path: "shared/research", sha256: "c".repeat(64) }],
+      skills: [{ name: "research", source: { source: "shared/research", sourcePath: path.join(ws, "shared/research"), type: "tree", sha256: "c".repeat(64), entries: [
+        { path: ".", type: "directory", mode: 0o755 },
+        { path: "SKILL.md", type: "file", mode: 0o644, bytes: skillBytes },
+      ] } }],
+      mcp: { docs: { command: "node", args: ["server.js"], env: { FAL_KEY: "${FAL_KEY}" } } },
+      hooks: { SessionStart: [{ hooks: [{ type: "command", command: "node guard.js" }] }] },
+      pi: { extensions: [], prompts: [], themes: [], packages: [] },
+    };
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), codexHome);
+    const first = mgr.materializeProfileCapabilities("coder", projection, codex);
+    const skillFile = path.join(first.home, "skills", "research", "SKILL.md");
+    const manifestFile = path.join(first.home, ".tachyon-profile-capabilities", "manifest.json");
+
+    expect(fs.readFileSync(skillFile, "utf8")).toContain("Canonical skill");
+    expect(fs.readFileSync(path.join(first.home, "config.toml"), "utf8")).toContain("[mcp_servers.docs]");
+    const manifest = JSON.parse(fs.readFileSync(manifestFile, "utf8"));
+    expect(manifest).toMatchObject({ effectiveProfileSha256: "b".repeat(64), capabilityProjectionSha256: "a".repeat(64), sources: [{ owner: "workspace" }] });
+    expect(JSON.stringify(manifest)).not.toContain("real-key");
+    expect(fs.readFileSync(path.join(ws, ".agents", "skills", "workspace-plugin", "SKILL.md"), "utf8")).toBe(pluginSkill);
+    expect(fs.readFileSync(path.join(ws, ".codex", "config.toml"), "utf8")).toBe(pluginConfig);
+
+    fs.writeFileSync(skillFile, "tampered");
+    fs.writeFileSync(manifestFile, "tampered");
+    fs.writeFileSync(path.join(first.home, "config.toml"), "[mcp_servers.attacker]\ncommand = \"evil\"\n");
+    mgr.materializeProfileCapabilities("coder", projection, codex);
+    expect(fs.readFileSync(skillFile, "utf8")).toContain("Canonical skill");
+    expect(fs.readFileSync(path.join(first.home, "config.toml"), "utf8")).not.toContain("attacker");
+    expect(JSON.parse(fs.readFileSync(manifestFile, "utf8"))).toMatchObject({ capabilityProjectionSha256: "a".repeat(64) });
+    expect(fs.readFileSync(path.join(ws, ".codex", "config.toml"), "utf8")).toBe(pluginConfig);
+
+    fs.rmSync(path.join(first.home, "skills"), { recursive: true });
+    fs.writeFileSync(path.join(first.home, "skills"), "unsafe replacement");
+    expect(() => mgr.materializeProfileCapabilities("coder", projection, codex)).toThrow(/skill projection target must be a real directory/);
+    expect(fs.existsSync(manifestFile)).toBe(false);
   });
 
   it("spec 298: codex inherit:workspace preserves workspace config.toml and overlays declared servers", () => {

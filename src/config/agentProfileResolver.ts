@@ -1,4 +1,6 @@
 import crypto from "node:crypto";
+import path from "node:path";
+import { TextDecoder } from "node:util";
 import { parseDocument } from "yaml";
 import { z } from "zod";
 import type { AgentDef } from "./loadConfig.js";
@@ -15,6 +17,12 @@ import {
   type AgentProfileReferenceV1,
   type AgentProfileV1,
 } from "./agentProfileSchema.js";
+import {
+  AgentCapabilitySourceError,
+  captureCapabilitySourceFromDirectory,
+  type CapturedCapabilitySource,
+} from "./agentCapabilitySource.js";
+import { parseCodexHooksBlock } from "../plugins/adapters/codex.js";
 
 export type AgentProfileDiagnosticCode =
   | "profile/missing"
@@ -25,6 +33,9 @@ export type AgentProfileDiagnosticCode =
   | "profile/missing-inheritance"
   | "profile/reference-unavailable"
   | "profile/reference-conflict"
+  | "profile/capability"
+  | "profile/capability-authority"
+  | "profile/capability-collision"
   | "profile/authority-boundary"
   | "profile/native-attestation"
   | "profile/native-override"
@@ -54,10 +65,50 @@ export interface ExternalProfileReference {
   path: string;
   sha256: string;
   version?: string;
+  /** Exact owner-custodied bytes for selected non-plugin capabilities. */
+  capturedCapability?: CapturedCapabilitySource;
 }
 
 export interface ResolvedProfileReference extends AgentProfileReferenceV1 {
   resolvedSha256: string;
+  capturedCapability?: CapturedCapabilitySource;
+}
+
+export type AgentCapabilityHookClass = "capability" | "prompt-transform" | "observability" | "enforcement";
+
+export interface AgentCapabilityGrant {
+  referenceId: string;
+  sourceSha256: string;
+  adapter: "codex" | "pi";
+  kind: "mcp" | "hook" | "pi-extension" | "pi-package";
+  hookClass?: AgentCapabilityHookClass;
+}
+
+export interface ResolvedAgentCapabilitySource {
+  referenceId: string;
+  kind: AgentProfileReferenceV1["kind"];
+  scope: AgentProfileReferenceV1["scope"];
+  owner: string;
+  path: string;
+  sha256: string;
+}
+
+export interface ResolvedAgentCapabilityProjection {
+  schemaVersion: 1;
+  adapter: "codex" | "pi";
+  sha256: string;
+  /** Added only to the launch copy after the complete profile digest is known. */
+  effectiveProfileSha256?: string;
+  sources: ResolvedAgentCapabilitySource[];
+  skills: Array<{ name: string; source: CapturedCapabilitySource }>;
+  mcp: Record<string, { command: string; args?: string[]; env?: Record<string, string> }>;
+  hooks: Record<string, unknown>;
+  pi: {
+    extensions: Array<{ name: string; source: CapturedCapabilitySource }>;
+    prompts: Array<{ name: string; source: CapturedCapabilitySource }>;
+    themes: Array<{ name: string; source: CapturedCapabilitySource }>;
+    packages: Array<{ name: string; source: CapturedCapabilitySource }>;
+  };
 }
 
 export interface WorkspaceProfileDefaults {
@@ -97,6 +148,7 @@ export type AgentProfileAuthoritySnapshot = {
     version: string;
     sha256: string;
   };
+  capabilityGrants?: AgentCapabilityGrant[];
 };
 
 export interface ResolveAgentProfileInput {
@@ -179,6 +231,7 @@ export interface ResolvedAgentProfile {
   references: ResolvedProfileReference[];
   provenance: AgentProfileFieldProvenance[];
   nativeRuntime: NativeRuntimeAttestation;
+  capabilityProjection?: ResolvedAgentCapabilityProjection;
 }
 
 export type ResolveAgentProfileResult =
@@ -202,12 +255,34 @@ const authoritySnapshotSchema = z.object({
     z.object({ state: z.literal("present"), sha256: digestSchema }).strict(),
   ]),
   runtimeInspector: inspectorDescriptorSchema,
-}).strict();
+  capabilityGrants: z.array(z.object({
+    referenceId: publicIdSchema,
+    sourceSha256: digestSchema,
+    adapter: z.enum(["codex", "pi"]),
+    kind: z.enum(["mcp", "hook", "pi-extension", "pi-package"]),
+    hookClass: z.enum(["capability", "prompt-transform", "observability", "enforcement"]).optional(),
+  }).strict()).max(256).optional(),
+}).strict().superRefine((authority, ctx) => {
+  const seen = new Set<string>();
+  for (let index = 0; index < (authority.capabilityGrants ?? []).length; index++) {
+    const grant = authority.capabilityGrants![index]!;
+    if (seen.has(grant.referenceId)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["capabilityGrants", index, "referenceId"], message: "duplicates another capability grant" });
+    }
+    seen.add(grant.referenceId);
+    if (grant.kind === "hook" && !grant.hookClass) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["capabilityGrants", index, "hookClass"], message: "is required for a hook grant" });
+    }
+    if (grant.kind !== "hook" && grant.hookClass) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["capabilityGrants", index, "hookClass"], message: "is allowed only for a hook grant" });
+    }
+  }
+});
 const nativeObservationSchema = z.object({
   field: z.string().refine((field) =>
     ["runtime.model", "runtime.provider", "runtime.reasoningEffort", "runtime.serviceTier"].includes(field)
       || /^environment\.[A-Za-z_][A-Za-z0-9_]*$/.test(field)
-      || /^capabilities\.(?:skills|mcp|hooks)(?:\..+)?$/.test(field), "unknown runtime-native field"),
+      || /^capabilities\.(?:skills|mcp|hooks|pi)(?:\..+)?$/.test(field), "unknown runtime-native field"),
   source: z.enum(["command-flag", "environment", "private-runtime-config"]),
   suppressed: z.boolean(),
 }).strict();
@@ -319,6 +394,16 @@ function externalReferenceIndex(values: readonly ExternalProfileReference[] | un
   return { references, duplicates };
 }
 
+const CAPABILITY_REFERENCE_KINDS = new Set<AgentProfileReferenceV1["kind"]>([
+  "skill",
+  "mcp",
+  "hook",
+  "pi-extension",
+  "pi-prompt",
+  "pi-theme",
+  "pi-package",
+]);
+
 function resolveReferences(
   source: CanonicalAgentProfileSource,
   profile: AgentProfileV1,
@@ -328,9 +413,29 @@ function resolveReferences(
   const references: ResolvedProfileReference[] = [];
   const errors: AgentProfileDiagnostic[] = [];
   const provenance: AgentProfileFieldProvenance[] = [];
+  const selectedCapabilities = new Set([
+    ...(profile.capabilities?.skills ?? []),
+    ...(profile.capabilities?.mcp ?? []),
+    ...(profile.capabilities?.hooks ?? []),
+    ...Object.values(profile.capabilities?.pi ?? {}).flatMap((values) => values ?? []),
+  ]);
   for (const reference of [...(profile.references ?? [])].sort((left, right) => compareText(left.id, right.id))) {
+    if (CAPABILITY_REFERENCE_KINDS.has(reference.kind) && !selectedCapabilities.has(reference.id)) continue;
     if (reference.scope === "profile") {
       try {
+        if (CAPABILITY_REFERENCE_KINDS.has(reference.kind)) {
+          const captured = captureCapabilitySourceFromDirectory(source.profileDirectoryFd, source.profileRoot, reference.path, reference.sha256!);
+          references.push({ ...reference, resolvedSha256: captured.sha256, capturedCapability: captured });
+          provenance.push({
+            field: `references.${reference.id}`,
+            sourceKind: "profile",
+            source: `${source.source}#${reference.path}`,
+            sha256: captured.sha256,
+            referenceId: reference.id,
+            referenceMode: reference.mode,
+          });
+          continue;
+        }
         const file = readAgentProfileReference(source, reference.path, reference.sha256!);
         references.push({ ...reference, resolvedSha256: file.sha256 });
         provenance.push({
@@ -342,7 +447,7 @@ function resolveReferences(
           referenceMode: reference.mode,
         });
       } catch (error) {
-        if (error instanceof AgentProfileReadError) {
+        if (error instanceof AgentProfileReadError || error instanceof AgentCapabilitySourceError) {
           errors.push(diagnostic(error.code, error.source, error.message, `references.${reference.id}`));
         } else {
           errors.push(diagnostic("profile/reference-unavailable", reference.path, "profile-local reference could not be resolved", `references.${reference.id}`));
@@ -365,11 +470,16 @@ function resolveReferences(
       || resolved.owner !== reference.owner
       || resolved.path !== reference.path
       || (reference.version !== undefined && resolved.version !== reference.version)
-      || (reference.sha256 !== undefined && resolved.sha256 !== reference.sha256)) {
+      || (reference.sha256 !== undefined && resolved.sha256 !== reference.sha256)
+      || (resolved.capturedCapability !== undefined && resolved.capturedCapability.sha256 !== resolved.sha256)) {
       errors.push(diagnostic("profile/reference-conflict", reference.path, `external reference ${JSON.stringify(reference.id)} does not match its declared owner, identity, version or digest`, `references.${reference.id}`));
       continue;
     }
-    references.push({ ...reference, resolvedSha256: resolved.sha256 });
+    references.push({
+      ...reference,
+      resolvedSha256: resolved.sha256,
+      ...(resolved.capturedCapability ? { capturedCapability: resolved.capturedCapability } : {}),
+    });
     provenance.push({
       field: `references.${reference.id}`,
       sourceKind: reference.scope,
@@ -393,6 +503,377 @@ function canonicalDefinition(profile: AgentProfileV1): NormalizedAgentDefinition
     ...(profile.ownership ? { ownership: clone(profile.ownership) } : {}),
     ...(profile.capabilities ? { capabilities: clone(profile.capabilities) } : {}),
     ...(profile.guidance ? { guidance: clone(profile.guidance) } : {}),
+  };
+}
+
+const capabilityMcpSchema = z.object({
+  schemaVersion: z.literal(1),
+  name: z.string().regex(/^[A-Za-z][A-Za-z0-9._-]{0,127}$/),
+  command: z.string().min(1).max(4096).refine((value) => !containsUnsafeCapabilityText(value), "must not contain control characters"),
+  args: z.array(z.string().max(16 * 1024).refine((value) => !containsUnsafeCapabilityText(value), "must not contain control characters")).max(256).optional(),
+  env: z.record(
+    z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/),
+    z.string().regex(/^\$\{[A-Za-z_][A-Za-z0-9_]*\}$/, "must be an exact ${VAR} secret reference"),
+  ).optional(),
+}).strict().superRefine((server, ctx) => {
+  for (const [name, reference] of Object.entries(server.env ?? {})) {
+    if (reference !== `\${${name}}`) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["env", name], message: `Codex requires the env key to match its reference ('\${${name}}')` });
+    }
+  }
+});
+
+const capabilityHookSchema = z.object({
+  schemaVersion: z.literal(1),
+  class: z.enum(["capability", "prompt-transform", "observability", "enforcement"]),
+  hooks: z.record(z.string().regex(/^[A-Za-z][A-Za-z0-9._-]{0,127}$/), z.unknown()),
+}).strict().refine((value) => Object.keys(value.hooks).length > 0, { path: ["hooks"], message: "must not be empty" });
+
+function containsUnsafeCapabilityText(value: string): boolean {
+  return /[\u0000-\u001f\u007f]/.test(value);
+}
+
+function capturedFileText(reference: ResolvedProfileReference): string | undefined {
+  const captured = reference.capturedCapability;
+  if (!captured || captured.type !== "file") return undefined;
+  const bytes = captured.entries.find((entry) => entry.type === "file")?.bytes;
+  if (!bytes) return undefined;
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    return undefined;
+  }
+}
+
+function parseCapabilityYaml<T>(reference: ResolvedProfileReference, schema: z.ZodType<T>): T | string {
+  const text = capturedFileText(reference);
+  if (text === undefined) return "must resolve to one UTF-8 regular file";
+  const doc = parseDocument(text, { prettyErrors: false, uniqueKeys: true });
+  if (doc.errors.length > 0) return `contains invalid YAML: ${doc.errors[0]!.message}`;
+  const parsed = schema.safeParse(doc.toJS());
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0]!;
+    return `${issue.path.join(".") || "payload"}: ${issue.message}`;
+  }
+  return parsed.data;
+}
+
+function sourceSummary(reference: ResolvedProfileReference): ResolvedAgentCapabilitySource {
+  return {
+    referenceId: reference.id,
+    kind: reference.kind,
+    scope: reference.scope,
+    owner: reference.owner,
+    path: reference.path,
+    sha256: reference.resolvedSha256,
+  };
+}
+
+function projectionDigestInput(projection: Omit<ResolvedAgentCapabilityProjection, "sha256">): unknown {
+  const summarize = (entry: { name: string; source: CapturedCapabilitySource }) => ({ name: entry.name, sha256: entry.source.sha256 });
+  return {
+    schemaVersion: projection.schemaVersion,
+    adapter: projection.adapter,
+    sources: projection.sources,
+    skills: projection.skills.map(summarize),
+    mcp: projection.mcp,
+    hooks: projection.hooks,
+    pi: {
+      extensions: projection.pi.extensions.map(summarize),
+      prompts: projection.pi.prompts.map(summarize),
+      themes: projection.pi.themes.map(summarize),
+      packages: projection.pi.packages.map(summarize),
+    },
+  };
+}
+
+function resolveCapabilities(
+  profile: AgentProfileV1,
+  references: readonly ResolvedProfileReference[],
+  authority: AgentProfileAuthoritySnapshot,
+): { projection?: ResolvedAgentCapabilityProjection; errors: AgentProfileDiagnostic[] } {
+  const selected = profile.capabilities;
+  const ids = [
+    ...(selected?.skills ?? []),
+    ...(selected?.mcp ?? []),
+    ...(selected?.hooks ?? []),
+    ...(selected?.pi?.extensions ?? []),
+    ...(selected?.pi?.prompts ?? []),
+    ...(selected?.pi?.themes ?? []),
+    ...(selected?.pi?.packages ?? []),
+  ];
+  if (ids.length === 0) return { errors: [] };
+  const errors: AgentProfileDiagnostic[] = [];
+  const duplicateIds = ids.filter((id, index) => ids.indexOf(id) !== index);
+  for (const id of [...new Set(duplicateIds)].sort(compareText)) {
+    errors.push(diagnostic("profile/capability-collision", "agent.yml", `capability reference ${JSON.stringify(id)} is selected more than once`, "capabilities"));
+  }
+  const adapter = profile.runtime.adapter;
+  if (adapter !== "codex" && adapter !== "pi") {
+    errors.push(diagnostic("profile/capability", "runtime adapter", `adapter ${JSON.stringify(adapter)} has no measured profile capability projection`, "runtime.adapter"));
+    return { errors };
+  }
+  const hasPi = Object.values(selected?.pi ?? {}).some((value) => (value?.length ?? 0) > 0);
+  if (adapter === "codex" && hasPi) {
+    errors.push(diagnostic("profile/capability", "runtime adapter", "Pi resources are not supported by the Codex projection", "capabilities.pi"));
+  }
+  if (adapter === "pi" && ((selected?.mcp?.length ?? 0) > 0 || (selected?.hooks?.length ?? 0) > 0)) {
+    errors.push(diagnostic("profile/capability", "runtime adapter", "Pi profile projections support skills and explicit Pi resources, not MCP or hooks", "capabilities"));
+  }
+
+  const byId = new Map(references.map((reference) => [reference.id, reference]));
+  const grants = new Map((authority.capabilityGrants ?? []).map((grant) => [grant.referenceId, grant]));
+  const sources: ResolvedAgentCapabilitySource[] = [];
+  const skills: ResolvedAgentCapabilityProjection["skills"] = [];
+  const mcp: ResolvedAgentCapabilityProjection["mcp"] = {};
+  const hooks: ResolvedAgentCapabilityProjection["hooks"] = {};
+  const pi: ResolvedAgentCapabilityProjection["pi"] = { extensions: [], prompts: [], themes: [], packages: [] };
+  const claims = new Map<string, string>();
+
+  const claim = (namespace: string, name: string, referenceId: string): boolean => {
+    const key = `${namespace}:${name.normalize("NFC").toLocaleLowerCase("en-US")}`;
+    const prior = claims.get(key);
+    if (prior) {
+      errors.push(diagnostic("profile/capability-collision", "capability projection", `${namespace} name ${JSON.stringify(name)} collides between ${JSON.stringify(prior)} and ${JSON.stringify(referenceId)}`, `capabilities.${namespace}`));
+      return false;
+    }
+    claims.set(key, referenceId);
+    return true;
+  };
+  const get = (id: string): ResolvedProfileReference | undefined => {
+    const reference = byId.get(id);
+    if (!reference?.capturedCapability) {
+      errors.push(diagnostic("profile/capability", reference?.path ?? "agent.yml", `selected capability ${JSON.stringify(id)} has no owner-captured payload`, `capabilities.${id}`));
+      return undefined;
+    }
+    if (reference.scope === "product") {
+      errors.push(diagnostic("profile/capability", reference.path, `product-scoped capability ${JSON.stringify(id)} has no registered V1 payload resolver`, `capabilities.${id}`));
+      return undefined;
+    }
+    sources.push(sourceSummary(reference));
+    return reference;
+  };
+  const requireGrant = (reference: ResolvedProfileReference, kind: AgentCapabilityGrant["kind"], hookClass?: AgentCapabilityHookClass): boolean => {
+    const grant = grants.get(reference.id);
+    if (!grant || grant.sourceSha256 !== reference.resolvedSha256 || grant.adapter !== adapter || grant.kind !== kind || grant.hookClass !== hookClass) {
+      errors.push(diagnostic("profile/capability-authority", reference.path, `capability ${JSON.stringify(reference.id)} lacks an exact host-custodied ${kind} grant`, `capabilities.${reference.id}`));
+      return false;
+    }
+    return true;
+  };
+
+  for (const id of selected?.skills ?? []) {
+    const reference = get(id);
+    if (!reference) continue;
+    const captured = reference.capturedCapability!;
+    const hasSkill = captured.type === "tree" && captured.entries.some((entry) => entry.type === "file" && entry.path === "SKILL.md");
+    if (!hasSkill) {
+      errors.push(diagnostic("profile/capability", reference.path, `skill ${JSON.stringify(id)} must be a directory tree with a root SKILL.md`, `capabilities.skills`));
+      continue;
+    }
+    const name = path.posix.basename(reference.path);
+    if (claim("skills", name, id)) skills.push({ name, source: captured });
+  }
+
+  for (const id of selected?.mcp ?? []) {
+    const reference = get(id);
+    if (!reference || adapter !== "codex") continue;
+    const parsed = parseCapabilityYaml(reference, capabilityMcpSchema);
+    if (typeof parsed === "string") {
+      errors.push(diagnostic("profile/capability", reference.path, `MCP declaration ${JSON.stringify(id)} ${parsed}`, `capabilities.mcp`));
+      continue;
+    }
+    if (["tachyon", "tachyon_bridge"].includes(parsed.name)) {
+      errors.push(diagnostic("profile/capability-collision", reference.path, `MCP name ${JSON.stringify(parsed.name)} is reserved for the Tachyon Bridge`, `capabilities.mcp`));
+      continue;
+    }
+    if (!requireGrant(reference, "mcp") || !claim("mcp", parsed.name, id)) continue;
+    mcp[parsed.name] = { command: parsed.command, ...(parsed.args ? { args: parsed.args } : {}), ...(parsed.env ? { env: parsed.env } : {}) };
+  }
+
+  for (const id of selected?.hooks ?? []) {
+    const reference = get(id);
+    if (!reference || adapter !== "codex") continue;
+    const parsed = parseCapabilityYaml(reference, capabilityHookSchema);
+    if (typeof parsed === "string") {
+      errors.push(diagnostic("profile/capability", reference.path, `hook declaration ${JSON.stringify(id)} ${parsed}`, `capabilities.hooks`));
+      continue;
+    }
+    const normalized = parseCodexHooksBlock(JSON.stringify(parsed.hooks));
+    if (!normalized.hooks) {
+      errors.push(diagnostic("profile/capability", reference.path, `hook declaration ${JSON.stringify(id)} is not a valid Codex hook block: ${normalized.errors.join("; ")}`, `capabilities.hooks`));
+      continue;
+    }
+    if (!requireGrant(reference, "hook", parsed.class)) continue;
+    for (const [event, value] of Object.entries(normalized.hooks).sort(([left], [right]) => compareText(left, right))) {
+      if (claim("hooks", event, id)) hooks[event] = value;
+    }
+  }
+
+  const addPi = (idsForKind: readonly string[], target: keyof ResolvedAgentCapabilityProjection["pi"], kind: AgentCapabilityGrant["kind"] | undefined, validate: (reference: ResolvedProfileReference) => string | undefined) => {
+    for (const id of idsForKind) {
+      const reference = get(id);
+      if (!reference || adapter !== "pi") continue;
+      const invalid = validate(reference);
+      if (invalid) {
+        errors.push(diagnostic("profile/capability", reference.path, `${target} capability ${JSON.stringify(id)} ${invalid}`, `capabilities.pi.${target}`));
+        continue;
+      }
+      if (kind && !requireGrant(reference, kind)) continue;
+      const name = path.posix.basename(reference.path);
+      if (claim(`pi.${target}`, name, id)) pi[target].push({ name, source: reference.capturedCapability! });
+    }
+  };
+  const extensionValid = (reference: ResolvedProfileReference): string | undefined => {
+    const source = reference.capturedCapability!;
+    if (source.type === "file") return /\.(?:ts|js)$/.test(reference.path) ? undefined : "must be a .ts or .js file";
+    return source.entries.some((entry) => entry.type === "file" && ["index.ts", "index.js"].includes(entry.path)) ? undefined : "must contain root index.ts or index.js";
+  };
+  const regularExtension = (extension: string) => (reference: ResolvedProfileReference): string | undefined =>
+    reference.capturedCapability!.type === "file" && reference.path.endsWith(extension) ? undefined : `must be one ${extension} file`;
+  const themeValid = (reference: ResolvedProfileReference): string | undefined => {
+    const basic = regularExtension(".json")(reference);
+    if (basic) return basic;
+    const text = capturedFileText(reference);
+    try {
+      const parsed = JSON.parse(text ?? "") as unknown;
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? undefined : "must contain one JSON object";
+    } catch {
+      return "must contain valid JSON";
+    }
+  };
+  const packageClaims = (reference: ResolvedProfileReference): { claims?: Array<{ namespace: string; name: string }>; error?: string } => {
+    const source = reference.capturedCapability!;
+    if (source.type !== "tree") return { error: "must be a directory tree" };
+    const entries = new Map(source.entries.map((entry) => [entry.path, entry]));
+    const validateResource = (kind: string, raw: string): string | undefined => {
+      const candidate = raw.replace(/^[!+-]/, "").trim();
+      if (!candidate || candidate.includes("..") || candidate.startsWith("~") || path.posix.isAbsolute(candidate)
+        || /^[A-Za-z][A-Za-z0-9+.-]*:/.test(candidate)) return `${kind} contains an unsafe entry`;
+      const entry = entries.get(candidate);
+      if (!entry) return `${kind} entry ${JSON.stringify(candidate)} is missing`;
+      const validateLeaf = (leaf: string): string | undefined => {
+        const leafEntry = entries.get(leaf);
+        if (!leafEntry) return `${leaf} is missing`;
+        if (kind === "extensions") {
+          if (leafEntry.type === "file") return /\.(?:ts|js)$/.test(leaf) ? undefined : `${leaf} must end in .ts or .js`;
+          return ["index.ts", "index.js"].some((name) => entries.get(`${leaf}/${name}`)?.type === "file") ? undefined : `${leaf} must contain index.ts or index.js`;
+        }
+        if (kind === "skills") return leafEntry.type === "directory" && entries.get(`${leaf}/SKILL.md`)?.type === "file" ? undefined : `${leaf} must be a skill directory with SKILL.md`;
+        if (kind === "prompts") return leafEntry.type === "file" && leaf.endsWith(".md") ? undefined : `${leaf} must be a .md file`;
+        if (kind === "themes") {
+          if (leafEntry.type !== "file" || !leaf.endsWith(".json") || !leafEntry.bytes) return `${leaf} must be a .json file`;
+          try {
+            const parsed = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(leafEntry.bytes)) as unknown;
+            return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? undefined : `${leaf} must contain a JSON object`;
+          } catch {
+            return `${leaf} must contain valid JSON`;
+          }
+        }
+        return `unsupported package resource kind ${kind}`;
+      };
+      const direct = validateLeaf(candidate);
+      if (!direct) return undefined;
+      if (entry.type !== "directory") return direct;
+      const children = new Set<string>();
+      for (const item of source.entries) {
+        if (!item.path.startsWith(`${candidate}/`)) continue;
+        const immediate = item.path.slice(candidate.length + 1).split("/")[0]!;
+        if (immediate) children.add(`${candidate}/${immediate}`);
+      }
+      if (children.size === 0) return `${candidate} must not be empty`;
+      for (const child of [...children].sort(compareText)) {
+        const invalid = validateLeaf(child);
+        if (invalid) return invalid;
+      }
+      return undefined;
+    };
+    const claimed: Array<{ namespace: string; name: string }> = [];
+    const add = (kind: string, value: string): string | undefined => {
+      const invalid = validateResource(kind, value);
+      if (invalid) return invalid;
+      const candidate = value.replace(/^[!+-]/, "").trim();
+      const entry = entries.get(candidate)!;
+      const directDirectory = entry.type === "directory" && (kind === "extensions"
+        ? ["index.ts", "index.js"].some((name) => entries.get(`${candidate}/${name}`)?.type === "file")
+        : kind === "skills" && entries.get(`${candidate}/SKILL.md`)?.type === "file");
+      if (entry.type === "directory" && !directDirectory) {
+        const children = new Set<string>();
+        for (const item of source.entries) {
+          if (!item.path.startsWith(`${candidate}/`)) continue;
+          const immediate = item.path.slice(candidate.length + 1).split("/")[0]!;
+          if (immediate) children.add(immediate);
+        }
+        for (const name of [...children].sort(compareText)) claimed.push({ namespace: `pi.${kind}`, name });
+      } else {
+        claimed.push({ namespace: `pi.${kind}`, name: path.posix.basename(candidate) });
+      }
+      return undefined;
+    };
+    const manifest = source.entries.find((entry) => entry.type === "file" && entry.path === "package.json")?.bytes;
+    if (manifest) {
+      try {
+        const parsed = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(manifest)) as Record<string, unknown>;
+        if (!parsed.pi || typeof parsed.pi !== "object" || Array.isArray(parsed.pi)) return { error: "package.json must contain a pi object" };
+        for (const [kind, values] of Object.entries(parsed.pi as Record<string, unknown>)) {
+          if (!["extensions", "skills", "prompts", "themes"].includes(kind)) continue;
+          if (!Array.isArray(values) || values.some((value) => typeof value !== "string")) return { error: `package.json pi.${kind} must be a string list` };
+          for (const value of values as string[]) {
+            const invalid = add(kind, value);
+            if (invalid) return { error: `package.json pi.${kind} ${invalid}` };
+          }
+        }
+      } catch {
+        return { error: "package.json must contain valid UTF-8 JSON" };
+      }
+    } else {
+      for (const kind of ["extensions", "skills", "prompts", "themes"]) {
+        const root = entries.get(kind);
+        if (!root) continue;
+        if (root.type !== "directory") return { error: `conventional ${kind} root must be a directory` };
+        const names = new Set<string>();
+        for (const entry of source.entries) {
+          if (!entry.path.startsWith(`${kind}/`)) continue;
+          const immediate = entry.path.slice(kind.length + 1).split("/")[0]!;
+          if (immediate) names.add(immediate);
+        }
+        if (names.size === 0) return { error: `conventional ${kind} root must not be empty` };
+        for (const name of [...names].sort(compareText)) {
+          const invalid = add(kind, `${kind}/${name}`);
+          if (invalid) return { error: invalid };
+        }
+      }
+    }
+    return claimed.length > 0 ? { claims: claimed } : { error: "must expose at least one validated Pi resource" };
+  };
+  const packageValid = (reference: ResolvedProfileReference): string | undefined => packageClaims(reference).error;
+  addPi(selected?.pi?.extensions ?? [], "extensions", "pi-extension", extensionValid);
+  addPi(selected?.pi?.prompts ?? [], "prompts", undefined, regularExtension(".md"));
+  addPi(selected?.pi?.themes ?? [], "themes", undefined, themeValid);
+  addPi(selected?.pi?.packages ?? [], "packages", "pi-package", packageValid);
+  for (const id of selected?.pi?.packages ?? []) {
+    const reference = byId.get(id);
+    if (!reference?.capturedCapability || adapter !== "pi" || packageValid(reference)
+      || !pi.packages.some((entry) => entry.source === reference.capturedCapability)) continue;
+    for (const resource of packageClaims(reference).claims ?? []) claim(resource.namespace, resource.name, id);
+  }
+
+  if (errors.length > 0) return { errors };
+  sources.sort((left, right) => compareText(`${left.scope}:${left.owner}:${left.referenceId}`, `${right.scope}:${right.owner}:${right.referenceId}`));
+  skills.sort((left, right) => compareText(left.name, right.name));
+  for (const values of Object.values(pi)) values.sort((left, right) => compareText(left.name, right.name));
+  const withoutDigest: Omit<ResolvedAgentCapabilityProjection, "sha256"> = {
+    schemaVersion: 1,
+    adapter,
+    sources,
+    skills,
+    mcp: Object.fromEntries(Object.entries(mcp).sort(([left], [right]) => compareText(left, right))),
+    hooks: Object.fromEntries(Object.entries(hooks).sort(([left], [right]) => compareText(left, right))),
+    pi,
+  };
+  return {
+    projection: { ...withoutDigest, sha256: sha256(stableJson(projectionDigestInput(withoutDigest))) },
+    errors: [],
   };
 }
 
@@ -639,6 +1120,7 @@ function finalize(
   provenance: AgentProfileFieldProvenance[],
   references: ResolvedProfileReference[],
   profile?: AgentProfileV1,
+  capabilityProjection?: ResolvedAgentCapabilityProjection,
 ): ResolvedAgentProfile {
   const nativeRuntime = normalizedAttestation(input.nativeRuntime);
   const orderedProvenance = [...provenance].sort((left, right) => compareText(`${left.field}:${left.source}`, `${right.field}:${right.source}`));
@@ -649,7 +1131,8 @@ function finalize(
     ...(profile ? { agentId: profile.agentId } : {}),
     authorityRevision: input.authority.revision,
     definition,
-    references,
+    references: references.map(({ capturedCapability: _capturedCapability, ...reference }) => reference),
+    ...(capabilityProjection ? { capabilityProjectionSha256: capabilityProjection.sha256 } : {}),
     provenance: orderedProvenance,
     nativeRuntime,
   };
@@ -666,6 +1149,7 @@ function finalize(
     references,
     provenance: orderedProvenance,
     nativeRuntime,
+    ...(capabilityProjection ? { capabilityProjection } : {}),
   };
 }
 
@@ -717,9 +1201,11 @@ export function resolveAgentProfile(input: ResolveAgentProfileInput): ResolveAge
     const definition = canonicalDefinition(profile);
     const referenceResult = resolveReferences(canonical!, profile, input.externalReferences);
     const inheritance = applyInheritance(profile, definition, input, referenceResult.references);
+    const capabilityResult = resolveCapabilities(profile, referenceResult.references, input.authority);
     const errors = [
       ...referenceResult.errors,
       ...inheritance.errors,
+      ...capabilityResult.errors,
       ...nativeAttestationErrors(input.nativeRuntime, definition.runtime, input.authority),
     ];
     if (errors.length > 0) return failure(errors, warnings);
@@ -735,7 +1221,7 @@ export function resolveAgentProfile(input: ResolveAgentProfileInput): ResolveAge
     if (coverage.length > 0) return failure(coverage, warnings);
     return {
       ok: true,
-      value: finalize("canonical", input, canonical!.source, canonical!.sha256, definition, provenance, referenceResult.references, profile),
+      value: finalize("canonical", input, canonical!.source, canonical!.sha256, definition, provenance, referenceResult.references, profile, capabilityResult.projection),
       warnings,
     };
   } finally {

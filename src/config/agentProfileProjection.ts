@@ -8,6 +8,7 @@ import {
   agentProfileRuntimeSelectorsSha256,
   resolveAgentProfile,
   type NativeRuntimeAttestation,
+  type ExternalProfileReference,
   type ResolvedAgentProfile,
   type WorkspaceProfileDefaults,
 } from "./agentProfileResolver.js";
@@ -18,8 +19,10 @@ import {
   readCanonicalAgentProfile,
   type CanonicalAgentProfileSource,
 } from "./agentProfileReader.js";
+import { AgentCapabilitySourceError, captureCapabilitySourceAtRoot } from "./agentCapabilitySource.js";
 
 const INSPECTOR_CONTRACT = "tachyon/codex-empty-native-input-inspector/v1";
+const PI_INSPECTOR_CONTRACT = "tachyon/pi-private-capability-input-inspector/v1";
 const PROFILE_ATTENTION_DEFAULT_SILENCE_SEC = 8;
 const NATIVE_CONFIG_MAX_BYTES = 1024 * 1024;
 export const CODEX_EMPTY_NATIVE_INPUT_INSPECTOR = Object.freeze({
@@ -27,6 +30,12 @@ export const CODEX_EMPTY_NATIVE_INPUT_INSPECTOR = Object.freeze({
   id: "tachyon.codex-empty-native-inputs",
   version: "1",
   sha256: crypto.createHash("sha256").update(INSPECTOR_CONTRACT).digest("hex"),
+});
+export const PI_PRIVATE_CAPABILITY_INPUT_INSPECTOR = Object.freeze({
+  adapter: "pi",
+  id: "tachyon.pi-private-capability-inputs",
+  version: "1",
+  sha256: crypto.createHash("sha256").update(PI_INSPECTOR_CONTRACT).digest("hex"),
 });
 
 export interface ProjectAgentProfileInput {
@@ -140,50 +149,94 @@ function parseCanonicalProfile(workspaceRoot: string, agentName: string): { prof
   }
 }
 
-function inspectEmptyCodexNativeInputs(input: ProjectAgentProfileInput, profile: AgentProfileV1): NativeRuntimeAttestation | string[] {
-  if (profile.runtime.adapter !== "codex" || profile.runtime.executable !== "codex") {
-    return ["profile/native-attestation: the v1 measured adapter supports only the literal 'codex' executable"];
+function inspectMeasuredNativeInputs(input: ProjectAgentProfileInput, profile: AgentProfileV1): NativeRuntimeAttestation | string[] {
+  if (!(["codex", "pi"].includes(profile.runtime.adapter)) || profile.runtime.executable !== profile.runtime.adapter) {
+    return ["profile/native-attestation: measured profile projection supports only literal 'codex' and 'pi' executables"];
   }
   if (profile.runtime.model || profile.runtime.provider || profile.runtime.reasoningEffort || profile.runtime.serviceTier) {
-    return ["profile/native-attestation: codex selector migration requires a later measured projector"];
+    return ["profile/native-attestation: runtime selector migration requires a later measured projector"];
   }
-  const expected = CODEX_EMPTY_NATIVE_INPUT_INSPECTOR;
+  const expected = profile.runtime.adapter === "codex" ? CODEX_EMPTY_NATIVE_INPUT_INSPECTOR : PI_PRIVATE_CAPABILITY_INPUT_INSPECTOR;
   const actual = input.authority.runtimeInspector;
   if (actual.adapter !== expected.adapter || actual.id !== expected.id || actual.version !== expected.version || actual.sha256 !== expected.sha256) {
-    return ["profile/native-attestation: host authority does not select the registered Codex inspector"];
+    return [`profile/native-attestation: host authority does not select the registered ${expected.adapter} inspector`];
   }
 
-  const home = input.homeDir ?? os.homedir();
-  const candidates: Array<[string, string[]]> = [
-    [home, [".codex", "config.toml"]],
-    [input.workspaceRoot, [".codex", "config.toml"]],
-    [input.workspaceRoot, [".tachyon", "harness", input.agentName, "config.toml"]],
-  ];
-  const blockers: string[] = [];
-  for (const [root, segments] of candidates) {
-    const blocker = inspectEmptyFileAt(root, segments);
-    if (blocker) blockers.push(blocker);
+  const hasCapabilities = [
+    ...(profile.capabilities?.skills ?? []),
+    ...(profile.capabilities?.mcp ?? []),
+    ...(profile.capabilities?.hooks ?? []),
+    ...Object.values(profile.capabilities?.pi ?? {}).flatMap((values) => values ?? []),
+  ].length > 0;
+
+  if (profile.runtime.adapter === "codex") {
+    const home = input.homeDir ?? os.homedir();
+    const candidates: Array<[string, string[]]> = [
+      [home, [".codex", "config.toml"]],
+      [input.workspaceRoot, [".codex", "config.toml"]],
+      ...(!hasCapabilities ? [[input.workspaceRoot, [".tachyon", "harness", input.agentName, "config.toml"]] as [string, string[]]] : []),
+    ];
+    const blockers: string[] = [];
+    for (const [root, segments] of candidates) {
+      const blocker = inspectEmptyFileAt(root, segments);
+      if (blocker) blockers.push(blocker);
+    }
+    if (blockers.length > 0) return blockers;
   }
-  if (blockers.length > 0) return blockers;
 
   const runtime = {
     adapter: profile.runtime.adapter,
     executable: profile.runtime.executable,
   };
   return {
-    adapter: "codex",
+    adapter: profile.runtime.adapter,
     exhaustive: true,
     authorityRevision: input.authority.revision,
     selectorsSha256: agentProfileRuntimeSelectorsSha256(runtime),
     inspector: { id: expected.id, version: expected.version, sha256: expected.sha256 },
-    observations: [],
+    observations: hasCapabilities ? [{
+      field: profile.runtime.adapter === "pi" ? "capabilities.pi" : "capabilities.mcp",
+      source: "private-runtime-config",
+      suppressed: true,
+    }] : [],
   };
+}
+
+const CAPABILITY_REFERENCE_KINDS = new Set(["skill", "mcp", "hook", "pi-extension", "pi-prompt", "pi-theme", "pi-package"]);
+
+function captureProjectCapabilities(input: ProjectAgentProfileInput, profile: AgentProfileV1): ExternalProfileReference[] | string[] {
+  const external: ExternalProfileReference[] = [];
+  const selected = new Set([
+    ...(profile.capabilities?.skills ?? []),
+    ...(profile.capabilities?.mcp ?? []),
+    ...(profile.capabilities?.hooks ?? []),
+    ...Object.values(profile.capabilities?.pi ?? {}).flatMap((values) => values ?? []),
+  ]);
+  for (const reference of profile.references ?? []) {
+    if (reference.scope !== "project" || !CAPABILITY_REFERENCE_KINDS.has(reference.kind) || !selected.has(reference.id)) continue;
+    try {
+      const capturedCapability = captureCapabilitySourceAtRoot(input.workspaceRoot, reference.path, reference.sha256!);
+      external.push({
+        id: reference.id,
+        scope: "project",
+        owner: reference.owner,
+        path: reference.path,
+        sha256: capturedCapability.sha256,
+        ...(reference.version ? { version: reference.version } : {}),
+        capturedCapability,
+      });
+    } catch (error) {
+      if (error instanceof AgentCapabilitySourceError) return [`${error.code}: ${error.message}`];
+      return [`profile/reference-unavailable: ${reference.path}: project capability could not be captured`];
+    }
+  }
+  return external;
 }
 
 function projectDefinition(resolved: ResolvedAgentProfile): AgentDef | string[] {
   const definition = resolved.definition;
   const errors: string[] = [];
-  if (definition.runtime.adapter !== "codex" || definition.runtime.executable !== "codex" || definition.runtime.args?.length) {
+  if (!(["codex", "pi"].includes(definition.runtime.adapter)) || definition.runtime.executable !== definition.runtime.adapter || definition.runtime.args?.length) {
     errors.push("profile/projection: unsupported runtime projection");
   }
   if (definition.environment?.secrets && Object.keys(definition.environment.secrets).length > 0) {
@@ -192,10 +245,8 @@ function projectDefinition(resolved: ResolvedAgentProfile): AgentDef | string[] 
   if (definition.prompt?.soul || definition.prompt?.instructions || definition.prompt?.evolution || definition.prompt?.memory) {
     errors.push("profile/projection: Soul, instructions, Evolution and memory belong to t-a2827d");
   }
-  if (definition.capabilities && Object.keys(definition.capabilities).length > 0) {
-    errors.push("profile/projection: non-plugin capabilities belong to t-a34bb7");
-  }
-  if (resolved.references.length > 0) errors.push("profile/projection: referenced setup/capability materialization is not available yet");
+  const nonCapabilityReferences = resolved.references.filter((reference) => !CAPABILITY_REFERENCE_KINDS.has(reference.kind));
+  if (nonCapabilityReferences.length > 0) errors.push("profile/projection: referenced setup/prompt materialization is not available yet");
   if (definition.workspace?.verify || definition.workspace?.worktree?.setup?.length) {
     errors.push("profile/projection: verification/setup references are not materialized yet");
   }
@@ -207,7 +258,7 @@ function projectDefinition(resolved: ResolvedAgentProfile): AgentDef | string[] 
   if (errors.length > 0) return errors;
 
   const projected: AgentDef = {
-    cmd: "codex",
+    cmd: definition.runtime.executable,
     autostart: definition.lifecycle?.autostart ?? false,
     watch: [...(definition.lifecycle?.watch ?? [])],
     attention: {
@@ -225,6 +276,9 @@ function projectDefinition(resolved: ResolvedAgentProfile): AgentDef | string[] 
   if (definition.workspace?.worktree?.branch) projected.branch = definition.workspace.worktree.branch;
   if (definition.isolation) projected.isolate = definition.isolation;
   if (definition.ownership?.subagents) projected.subagents = [...definition.ownership.subagents];
+  if (resolved.capabilityProjection) {
+    projected.profileCapabilities = { ...resolved.capabilityProjection, effectiveProfileSha256: resolved.effectiveSha256 };
+  }
   return projected;
 }
 
@@ -234,7 +288,11 @@ export function projectCanonicalAgentProfile(input: ProjectAgentProfileInput): P
   if (parsed.profile.agentId !== input.authority.agentId || input.authority.agentName !== input.agentName) {
     return { ok: false, errors: ["profile/authority-boundary: authority identity does not match canonical profile"] };
   }
-  const attestation = inspectEmptyCodexNativeInputs(input, parsed.profile);
+  const externalReferences = captureProjectCapabilities(input, parsed.profile);
+  if (Array.isArray(externalReferences) && externalReferences.length > 0 && typeof externalReferences[0] === "string") {
+    return { ok: false, errors: externalReferences as string[] };
+  }
+  const attestation = inspectMeasuredNativeInputs(input, parsed.profile);
   if (Array.isArray(attestation)) return { ok: false, errors: attestation };
   const resolved = resolveAgentProfile({
     workspaceRoot: input.workspaceRoot,
@@ -242,6 +300,7 @@ export function projectCanonicalAgentProfile(input: ProjectAgentProfileInput): P
     authority: authoritySnapshotFor(input.authority),
     nativeRuntime: attestation,
     workspaceDefaults: input.workspaceDefaults,
+    externalReferences: externalReferences as ExternalProfileReference[],
   });
   if (!resolved.ok) return { ok: false, errors: resolved.errors.map((error) => `${error.code}: ${error.message}`) };
   const definition = projectDefinition(resolved.value);

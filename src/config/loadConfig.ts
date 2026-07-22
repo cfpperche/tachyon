@@ -21,6 +21,7 @@ import {
 } from "./behaviorVerification.js";
 import { parseArgvCommand } from "./argvCommand.js";
 import { containsUnsafeFramingCharacter } from "./framingSafety.js";
+import type { ResolvedAgentCapabilityProjection } from "./agentProfileResolver.js";
 
 export interface AttentionDef {
   enabled: boolean;
@@ -133,6 +134,8 @@ export interface ManagedEntryDef {
   verify?: string;
   /** spec 226 — isolated harness: agent-scoped MCP/config materialized into a private config home. */
   harness?: HarnessDef;
+  /** Internal canonical-profile launch snapshot. It is attached after YAML parsing and is not an accepted config key. */
+  profileCapabilities?: ResolvedAgentCapabilityProjection;
   /** spec 240 — lightweight per-agent isolation of the claude config HOME (its own transcript namespace) WITHOUT
    *  the harness MCP/skills isolation. Lets agents that share a cwd each get an attributable session + activity
    *  log while still loading the workspace project config. Claude/Codex; "transcript" is the only mode in v1. */
