@@ -195,6 +195,23 @@ function Root() {
   // — an effect that clears `studioIncoming` only runs AFTER that render already used the stale
   // value. Comparing `studioMountNonce` catches every rebind (cross-studio AND same-studio-different-
   // entity), same "identity" concept `ensureStudioBinding`/`useEffect([routeKey, mountNonce])` uses.
+  //
+  // A round-2 review pass asked whether a message legitimately posted for the OLD binding could
+  // still arrive at the client AFTER this clear runs (this ref only clears what's ALREADY stored at
+  // transition time — it has no way to reject a late arrival, since host->client studio-envelope
+  // messages carry no routeKey/mountNonce, unlike client->host ones since round-5). Verified against
+  // studioHost.ts/Cockpit.ts directly (not just reasoned about): `navigate()` — called SYNCHRONOUSLY
+  // by every commit path (`beginStudioNavTransaction`'s `commit`) BEFORE `sendModel()`/`ensureStudio-
+  // Binding` ever run for the NEW binding — tears the OLD binding down first via
+  // `reconcileStudioTeardown` (`binding = undefined`). Every host-side post path for the old binding
+  // (`sendStudioLoad`, `refreshStudioReferenceData`, `beginStudioSave`, `beginStudioNavTransaction`'s
+  // own checkpoint/save flow) re-checks `binding !== b` (the captured old binding) immediately before
+  // every `io.post(...)` — since `binding` is ALREADY torn down (or reassigned to the new one) before
+  // `sendModel()`'s own internal `await deps.collect()` gap even opens, there is no window where the
+  // OLD binding's async continuation can find `binding === b` and legitimately post AFTER the new
+  // binding's own "model" push. This is the same generation/`binding !== b` invariant D0's own 6
+  // review rounds already hardened for every host post path — this ref's job is only the CLIENT-side
+  // half (drop a residue the host correctly never re-sends), not a second independent proof of it.
   const studioMountNonceRef = useRef<string | undefined>(undefined);
 
   useEffect(() => {
