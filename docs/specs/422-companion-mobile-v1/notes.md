@@ -13,7 +13,7 @@
 
 ## Deviations
 
-- 2026-07-22 — **t-da645b:** companion-only second listener deferred. LAN mode binds the **shared Bridge** on `0.0.0.0` (MCP + `/companion/v1`). Documented in schema/doctor: MCP still requires agent tokens. Prefer companion-only bind if/when a second port is justified.
+- 2026-07-22 — **t-da645b:** shared Bridge on `0.0.0.0` when lanAccess, with **route filter**: non-loopback peers only get `/companion/v1/*` (MCP → 403). Companion-only second port still deferred. Pair baseUrl first-LAN-IP residual for multi-NIC → t-0e1f58 candidates UI.
 
 ## Implementation log
 

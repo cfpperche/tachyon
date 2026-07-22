@@ -3016,18 +3016,29 @@ export class Workspace {
     return this.lastBridgeStartFailure ? { ...this.lastBridgeStartFailure } : undefined;
   }
 
+  /** Serialize Bridge restarts so concurrent reloadConfig lanAccess flips cannot race dispose/start. */
+  private bridgeRestartChain: Promise<number> | undefined;
+
   async restartBridge(): Promise<number> {
-    const preferred = this.config?.settings.bridgePort ?? derivePort(this.wsHash);
-    await this.bridge.dispose();
-    const port = await this.startBridgeListener(preferred);
-    if (port !== preferred) {
-      this.host.notify(
-        this.t("Bridge port {0} is in use — fell back to {1}. Registered runtimes need re-connecting (or free the port and restart the Bridge).", preferred, port),
-        "warn",
-      );
-    }
-    this.refreshAgentsViews();
-    return port;
+    const run = async (): Promise<number> => {
+      const preferred = this.config?.settings.bridgePort ?? derivePort(this.wsHash);
+      await this.bridge.dispose();
+      const port = await this.startBridgeListener(preferred);
+      if (port !== preferred) {
+        this.host.notify(
+          this.t("Bridge port {0} is in use — fell back to {1}. Registered runtimes need re-connecting (or free the port and restart the Bridge).", preferred, port),
+          "warn",
+        );
+      }
+      this.refreshAgentsViews();
+      return port;
+    };
+    const next = (this.bridgeRestartChain ?? Promise.resolve(0)).then(run, run);
+    this.bridgeRestartChain = next.then(
+      (p) => p,
+      () => 0,
+    );
+    return next;
   }
 
   async stopBridge(): Promise<void> {

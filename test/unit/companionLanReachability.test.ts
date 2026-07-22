@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Bridge } from "../../src/bridge/Bridge.js";
+import { Bridge, isLoopbackRemote } from "../../src/bridge/Bridge.js";
 import type { BridgeDeps } from "../../src/bridge/tools.js";
 import {
   companionListenHost,
@@ -66,6 +66,14 @@ describe("companion LAN reachability (SDD 422 / t-da645b)", () => {
 });
 
 describe("Bridge listen host (SDD 422)", () => {
+  it("classifies loopback remotes for LAN route filter", () => {
+    expect(isLoopbackRemote("127.0.0.1")).toBe(true);
+    expect(isLoopbackRemote("::1")).toBe(true);
+    expect(isLoopbackRemote("::ffff:127.0.0.1")).toBe(true);
+    expect(isLoopbackRemote("10.0.0.5")).toBe(false);
+    expect(isLoopbackRemote(undefined)).toBe(false);
+  });
+
   it("records 0.0.0.0 when started with lan host; MCP url stays loopback", async () => {
     const deps = {
       workspaceRoot: "/tmp",
@@ -78,8 +86,16 @@ describe("Bridge listen host (SDD 422)", () => {
       expect(bridge.listenHost).toBe("0.0.0.0");
       expect(bridge.port).toBeTypeOf("number");
       expect(bridge.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/mcp$/);
+      // From this host, peer is loopback — MCP is not blocked by the LAN route filter.
+      const mcp = await fetch(`http://127.0.0.1:${bridge.port}/mcp`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      });
+      expect(mcp.status).not.toBe(403);
     } finally {
       await bridge.dispose();
     }
   });
 });
+
