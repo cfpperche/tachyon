@@ -35,7 +35,7 @@ _Status 2026-07-19: foundation + Approvals single-path + lazy ESM shipped in cod
 - [x] Mandate recorded: ALL screens open inside Control as subroutes; multi-instance exception revoked; side-by-side knowingly traded (maintainer, 2026-07-21, t-610705 journal).
 - [x] C.0 Router: `CockpitRoute` discriminated union + navEpoch staleness guard + persisted revive (schemaVersion 2) + revive precedence. Design hardened in an adversarial dueto first (probe-840f7a80, 16 findings). Commit eeb28089.
 - [x] C.1a Task Detail subroute: `mission/task/<id>` navigates in place inside Control (tombstone contract + CAS updates ported verbatim); retire TaskDetailPanel host. Commit 19199b4a.
-- [ ] C.1b Task Studio subroutes (`mission/task/new`, `mission/task/<id>/edit`): design DONE (studios-routes-design.md, 2 duetos 2026-07-21); lands as Phase D PR **D2**; retire TaskStudioPanel host when it lands.
+- [x] C.1b Task Studio subroutes (`mission/task/new`, `mission/task/<id>/edit`): lands as Phase D **D2** (below) — closed there; TaskStudioPanel host retired.
 - [x] C.2 Fleet subroutes: `fleet/agent/<name>/activity` (Activity), `fleet/agent/<name>/probes` + `fleet/probes` unfiltered debug route (Probes); retire ActivityPanel + ProbeResultPanel hosts. Design hardened in an adversarial dueto first (probe-2d90286d, REDESIGN verdict, binding-generation + envelope-identity guard added). Commit 937f3701.
 - [x] C.3 Handoff section: folds directly into a `"handoff"` CockpitSectionId (workspace-scoped like Approvals/Validations, no new route kind — no immutable per-entity locator unlike Fleet's subroutes); retire HandoffPanel host. Also fixed a coverage gap found in the same PR: `src/webview/cockpit/**/*.tsx` was never typechecked by any tsconfig. Commit 985708bb.
 - [ ] C.4 Pin Studio nav-less route; retire PinStudioPanel host. Regrouped with C.1b + Phase D (maintainer decision, 2026-07-21); design DONE (studios-routes-design.md); lands as Phase D PR **D3**.
@@ -96,7 +96,26 @@ landing gates with security probes._
       caches under the wrong slot), and a doc-comment on the `patch.name`-as-persisted-key invariant).
       Also fixed 2 unrelated pre-existing typecheck breaks discovered blocking this landing on main
       (companion LAN/pair-QR work from other agents, `129c7a9b`) — not part of D1d's scope.
-- [ ] D2: Task Studio (CAS/rich-doc/visuals, task-edit→task-detail chain) + CSP tranche 1 + security probe; retires TaskStudioPanel (closes C.1b).
+- [x] D2: Task Studio (CAS/rich-doc/visuals, task-edit→task-detail chain) + CSP tranche 1 + security
+      probe; retires TaskStudioPanel (closes C.1b). App.tsx ported from the old standalone Root's
+      already-decoded-props shape onto the shared studio protocol (inline envelope decode,
+      useStudioFreeze, editRevision) — the same rewrite each of D0/D1a/D1b's simpler shells underwent,
+      here for the largest/richest surface (rich-doc editor, Excalidraw, attachments, CAS conflict
+      banner). `persisted` derived from `TaskDetailEntity.expectUpdatedAt`'s presence — zero
+      wire-protocol change. Design-doc-mandated onCancel/nav-transaction gap fixed via a new
+      `Binding.persisted` field + `abandonProvisionalIfNeeded` (foundation commits `d551ec45`/
+      `689d9274`); save-triggered auto-navigation dropped from scope after an adversarial design
+      dueto (REDESIGN verdict) found it unsafe — task-edit→task-detail back-navigation instead reuses
+      `parentRoute`'s existing generic path (route.ts special-cases studio-edit+"task" to the task's
+      own task-detail route). All ~4 real `openTaskStudio` host call sites migrated to
+      `requestNavigate`/`openCockpit` (mints an id up front for "new", since studio-new is rejected
+      for "task"); TaskStudioPanel.ts reduced to a types-only stub (CommandStudioPanel.ts's shape).
+      CSP tranche (imgBlob/connectSrc/workerSrc:"blob") verified against actual code paths (not
+      copied blind) via adversarial probe `probe-6a55db50` — caught and removed an inert
+      `childSrc:"blob"` grant; maintainer explicitly accepted the panel-wide-CSP structural trade-off
+      (journal `j-50b86d04e857`). Full unit suite green throughout (468 files / 5354 tests), typecheck
+      and production build clean.
+- [ ] D3: Pin Studio (Excalidraw, attachment roots, nav-less returnRoute) + CSP tranche 2 + security probe; retires PinStudioPanel (closes C.4).
 - [ ] D3: Pin Studio (Excalidraw, attachment roots, nav-less returnRoute) + CSP tranche 2 + security probe; retires PinStudioPanel (closes C.4).
 
 ## Phase E — Cleanup
