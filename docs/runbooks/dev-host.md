@@ -10,6 +10,25 @@ fleet window.
 **Canonical F5 config:** `Tachyon: Dev Host` (pointer under `.tachyon/dev-host/`)
 **Scripts:** `scripts/dev-host/`
 
+## Maintaining the harness (read this if you dogfood)
+
+**Everything under `scripts/dev-host/` is FIRST-PARTY, living code — ours to keep sharp.** The harness
+_orchestrates_ third-party primitives (VS Code / the Extension Development Host, `Xvfb`, `puppeteer-core`,
+the Chrome DevTools Protocol) but the scenario runner, the verb dispatch, the frame targeting, the
+pointer/fixture lane, and every assertion are ours.
+
+Standing directive (maintainer, 2026-07-22): **if you hit a bug or a rough edge IN THE HARNESS while
+dogfooding, fix it — don't work around it silently.** A broken/awkward harness is a product defect on
+our own tooling; treat it to the same bar as any other code (branch, test, land, journal). Every real
+dogfood session is also a chance to harden the harness: a new reusable verb, better frame targeting, a
+new scenario worth keeping — land it back into `scripts/dev-host/` so the next agent starts ahead.
+
+The one line to hold: distinguish **our bugs from their limits.** A defect in what we built → fix it.
+A genuine limitation of a third-party primitive (an EDH quirk, an Xvfb/CDP constraint) → work around it
+AND document the workaround here (or report upstream) — that is not ours to patch, but the reader after
+you must not have to rediscover it. The webview-console caveat below is the model: a real CDP limit,
+documented, with the injected-spy workaround captured next to it.
+
 ## Evolution (keep this on purpose)
 
 The *mechanism* did not change; the **name and entry surface** did. Agents and humans reading old
