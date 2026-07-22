@@ -96,6 +96,8 @@ export const strings: CockpitStrings = {
   stop: "Stop",
   openTerminal: "Terminal",
   openActivity: "Activity",
+  openProbes: "Probes",
+  editAgent: "Edit",
   reveal: "Reveal",
   copyPath: "Copy path",
   copyId: "Copy id",

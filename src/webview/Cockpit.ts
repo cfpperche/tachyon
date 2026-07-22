@@ -29,7 +29,7 @@ import {
   type CockpitStrings,
 } from "./cockpit/messages.js";
 import type { WorkspaceMissionControlTarget } from "../shell/MissionControlTarget.js";
-import type { WorkspacePresentationTarget, WorkspaceProbePresentationTarget } from "../shell/WorkspacePresentation.js";
+import type { WorkspacePresentationTarget, WorkspaceProbePresentationTarget, WorkspaceStudioTarget } from "../shell/WorkspacePresentation.js";
 import {
   snapshotMessage,
   taskErrorMessage,
@@ -318,6 +318,8 @@ function strings(): CockpitStrings {
     stop: t("Stop"),
     openTerminal: t("Terminal"),
     openActivity: t("Activity"),
+    openProbes: t("Probes"),
+    editAgent: t("Edit"),
     reveal: t("Reveal"),
     copyPath: t("Copy path"),
     copyId: t("Copy id"),
@@ -598,6 +600,39 @@ function resolveHandoffWs(handoff: CockpitHandoff, prefer?: string): WorkspaceHa
  *  routes carry an immutable locator, same reasoning as resolveTaskDetailWs). */
 function resolveFleetActivityWs(activity: CockpitActivity, prefer?: string): WorkspaceActivityTarget | undefined {
   const all = activity.getWorkspaces();
+  if (all.length === 0) return undefined;
+  if (prefer) {
+    const hit = all.find((w) => w.wsHash === prefer);
+    if (hit) return hit;
+  }
+  if (controlWsHash) {
+    const hit = all.find((w) => w.wsHash === controlWsHash);
+    if (hit) return hit;
+  }
+  return all[0];
+}
+
+/** t-610705 (Phase D, D1c) — same fallback-style resolver shape as resolveFleetActivityWs above, for
+ *  Fleet's own "Probes" button. */
+function resolveFleetProbesWs(probes: CockpitProbes, prefer?: string): WorkspaceProbePresentationTarget | undefined {
+  const all = probes.getWorkspaces();
+  if (all.length === 0) return undefined;
+  if (prefer) {
+    const hit = all.find((w) => w.wsHash === prefer);
+    if (hit) return hit;
+  }
+  if (controlWsHash) {
+    const hit = all.find((w) => w.wsHash === controlWsHash);
+    if (hit) return hit;
+  }
+  return all[0];
+}
+
+/** t-610705 (Phase D, D1c) — same fallback-style resolver shape, for Fleet's own "Edit" button
+ *  (opens the agent's definition in Agent or Terminal Studio — studios.getWorkspaces() already
+ *  carries `config`, unlike CockpitActivity/CockpitProbes's narrower target shapes). */
+function resolveFleetStudioWs(studios: CockpitStudios, prefer?: string): WorkspaceStudioTarget | undefined {
+  const all = studios.getWorkspaces();
   if (all.length === 0) return undefined;
   if (prefer) {
     const hit = all.find((w) => w.wsHash === prefer);
@@ -1623,6 +1658,39 @@ export async function openCockpit(
                 await sendModel();
                 await sendSectionModule();
               });
+            }
+          }
+          return;
+        case "fleetProbes":
+          // t-610705 (Phase D, D1c) — same fallback-resolve-then-navigate pattern as fleetActivity
+          // above; the agent-probes route existed since C.2 but was only reachable via the
+          // agent-less `tachyon.openProbes` command until Fleet grew its own button.
+          if (typeof c.name === "string") {
+            const ws = resolveFleetProbesWs(deps.probes, typeof c.wsHash === "string" ? c.wsHash : undefined);
+            if (ws) {
+              await requestNavigate(routes.agentProbes(ws.wsHash, c.name), live, async () => {
+                await sendModel();
+                await sendSectionModule();
+              });
+            }
+          }
+          return;
+        case "fleetAgentStudio":
+          // t-610705 (Phase D, D1c) — same kind-routed dispatch as the sidebar's
+          // `tachyon.editAgentStudioItem` (extension.ts): an ad-hoc (undeclared) agent has no stored
+          // definition to edit — the client already hides this button for those rows (`a.declared
+          // !== false`), this re-checks authoritatively rather than trusting that client-side gate.
+          if (typeof c.name === "string") {
+            const ws = resolveFleetStudioWs(deps.studios, typeof c.wsHash === "string" ? c.wsHash : undefined);
+            const def = ws?.config?.agents[c.name];
+            if (ws && def) {
+              const studio = def.kind === "terminal" ? "terminal" : "agent";
+              await requestNavigate(routes.studioEdit(studio, ws.wsHash, c.name), live, async () => {
+                await sendModel();
+                await sendSectionModule();
+              });
+            } else if (ws) {
+              notify(`'${c.name}' is not declared in tachyon.yml (ad-hoc agents have no stored definition)`, "warn");
             }
           }
           return;

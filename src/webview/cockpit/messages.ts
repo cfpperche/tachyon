@@ -91,6 +91,8 @@ export interface CockpitStrings {
   stop: string;
   openTerminal: string;
   openActivity: string;
+  openProbes: string;
+  editAgent: string;
   reveal: string;
   copyPath: string;
   copyId: string;
@@ -152,6 +154,12 @@ export type CockpitAction =
   | { type: "fleetStop"; name: string; wsHash?: string }
   | { type: "fleetTerminal"; name: string; wsHash?: string }
   | { type: "fleetActivity"; name: string; wsHash?: string }
+  /** t-610705 (Phase D, D1c) — Fleet's own "Probes" button (the agent-probes subroute existed since
+   *  C.2 but was only ever reachable via the agent-less `tachyon.openProbes` command). */
+  | { type: "fleetProbes"; name: string; wsHash?: string }
+  /** t-610705 (Phase D, D1c) — Fleet's own "Edit" button, opening the agent's definition in Agent or
+   *  Terminal Studio (same kind-routed dispatch as the sidebar's `tachyon.editAgentStudioItem`). */
+  | { type: "fleetAgentStudio"; name: string; wsHash?: string }
   | { type: "revealPath"; path: string }
   | { type: "copyText"; text: string }
   | { type: "openConfigFile"; wsHash?: string }
@@ -221,6 +229,16 @@ export const fleetTerminalAction = (name: string, wsHash?: string): CockpitActio
 });
 export const fleetActivityAction = (name: string, wsHash?: string): CockpitAction => ({
   type: "fleetActivity",
+  name,
+  ...(wsHash ? { wsHash } : {}),
+});
+export const fleetProbesAction = (name: string, wsHash?: string): CockpitAction => ({
+  type: "fleetProbes",
+  name,
+  ...(wsHash ? { wsHash } : {}),
+});
+export const fleetAgentStudioAction = (name: string, wsHash?: string): CockpitAction => ({
+  type: "fleetAgentStudio",
   name,
   ...(wsHash ? { wsHash } : {}),
 });

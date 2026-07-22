@@ -211,6 +211,10 @@ export interface CockpitAppProps {
   onFleetStop: (name: string, wsHash?: string) => void;
   onFleetTerminal: (name: string, wsHash?: string) => void;
   onFleetActivity: (name: string, wsHash?: string) => void;
+  /** t-610705 (Phase D, D1c) — Fleet's own Probes/Edit buttons (previously only reachable via the
+   *  agent-less `tachyon.openProbes` command / the sidebar tree's context menu). */
+  onFleetProbes: (name: string, wsHash?: string) => void;
+  onFleetAgentStudio: (name: string, wsHash?: string) => void;
   onRevealPath: (path: string) => void;
   onCopyText: (text: string) => void;
   onOpenConfigFile: (wsHash?: string) => void;
@@ -843,6 +847,14 @@ export function App(p: CockpitAppProps) {
                     <Button variant="default" onClick={() => p.onFleetActivity(a.name, a.wsHash)}>
                       {s.openActivity}
                     </Button>
+                    <Button variant="default" onClick={() => p.onFleetProbes(a.name, a.wsHash)}>
+                      {s.openProbes}
+                    </Button>
+                    {a.declared !== false ? (
+                      <Button variant="default" onClick={() => p.onFleetAgentStudio(a.name, a.wsHash)}>
+                        {s.editAgent}
+                      </Button>
+                    ) : null}
                   </>
                 }
               />
