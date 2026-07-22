@@ -132,6 +132,34 @@ dedicated read/revocation authorization. The compatibility converter starts ever
   specified non-authoritative projection model and would require an identity-profile edit for every
   Evolution promotion.
 
+## Human-approved selected memory — `t-7217e1`
+
+- V1 introduces only the human-approved lane. Runtime-native/runtime-managed memory was kept out and
+  moved to independent architecture/parity research task `t-d4c42e`.
+- `SelectedMemoryStore` separates pending candidates from a canonical manifest and manifest-listed
+  bounded UTF-8 files. Candidate provenance is descriptive only. Promotion authorization binds the
+  exact candidate bytes reviewed by the human, `agentId`, activation/version base and complete next
+  state under durable host key custody.
+- New active files are immutable random-id paths. Each file rename is fsynced before `manifest.json`
+  is renamed and its directory fsynced as the source commit point. The formation mutation barrier
+  blocks fresh snapshots until the matching Memory head and FormationGeneration commit. Recovery
+  also terminalizes a pending candidate when it observes an already-published next manifest.
+- Reads and writes walk from the host-provided workspace root through retained Linux directory
+  descriptors with `O_NOFOLLOW`; candidates, transcript/DB/index files, continuity and unmanifested
+  content are never enumerated by formation resolution.
+- The renderer escapes delimiter characters, labels the content as human-approved learned context,
+  and enforces entry, total-source and rendered-output bounds. Exact source bytes are separate
+  immutable snapshot objects and remain pinned for forks and re-anchor reminders after source tamper.
+- Architecture probe `probe-9f0c8103-d84a-4eaa-8af4-c50eaa16abbf` usefully required exact reviewed
+  candidate binding. Patch probe `probe-d7a74b2c-bae8-41e9-95c9-6632e5229c70` found missing directory
+  fsync and candidate finalization recovery; both were fixed. Requests to mutate the canonical profile
+  on every memory promotion were rejected because SDD 427 makes the lane head authoritative for the
+  mutable projection, matching Evolution. A compatibility migration for earlier active Memory head
+  V1 records is unnecessary because no prior store/resolver could activate that placeholder schema.
+- Final candidate-integrity fix was reviewed by `probe-4c15689b-5e70-45a8-a5be-2dc3fcbafc89`;
+  durability ordering was factually confirmed by `probe-561b7072-0d3c-4303-8d14-74b4ea9b9cfa`
+  and `probe-4f246a37-92ae-4eb6-95c9-f1d3456fe939`.
+
 Adversarial code review was intentionally iterative:
 
 - `probe-22efc983-563e-4e80-a54c-1bf560149c65` found the original caller-owned payload, weak mutation
@@ -200,6 +228,11 @@ returned no blocker/major finding. Detailed probe artifacts remain under `.tachy
 - `npm run verify:full:quiet` — pass
 
 ### 2026-07-22T19:11:23Z — pass (3/3) — source: tasks.md
+- `npm run test:invariants` — pass
+- `npm run typecheck` — pass
+- `npm run verify:full:quiet` — pass
+
+### 2026-07-22T19:47:44Z — pass (3/3) — source: tasks.md
 - `npm run test:invariants` — pass
 - `npm run typecheck` — pass
 - `npm run verify:full:quiet` — pass

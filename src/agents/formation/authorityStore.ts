@@ -133,6 +133,7 @@ export interface ResolvedFormationPayload {
   reanchorReminder: Buffer | string;
   evolutionLearnings?: Buffer | string;
   evolutionSkills?: readonly FormationSkillPayload[];
+  selectedMemory?: readonly FormationSkillPayload[];
 }
 
 export interface FormationAuthorityStoreOptions {
@@ -213,6 +214,7 @@ interface StoredPayload {
   reanchorReminder: string;
   evolutionLearnings?: string;
   evolutionSkills: Array<{ path: string; bytes: string; executable: boolean }>;
+  selectedMemory?: Array<{ path: string; bytes: string }>;
 }
 
 function loadDatabase(): DatabaseConstructor {
@@ -912,6 +914,7 @@ export class FormationAuthorityStore {
       throw new FormationAuthorityStoreError("resolved formation payload uses another renderer contract set");
     }
     const skills = [...(resolved.evolutionSkills ?? [])].sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0);
+    const selectedMemory = [...(resolved.selectedMemory ?? [])].sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0);
     const startup = this.objectStore.digest(resolved.startupPrompt);
     const reanchor = this.objectStore.digest(resolved.reanchorReminder);
     const objects: FormationObject[] = [
@@ -923,6 +926,7 @@ export class FormationAuthorityStore {
         ...this.objectStore.digest(resolved.evolutionLearnings),
       }]),
       ...skills.map((skill) => ({ kind: "evolution-skill" as const, path: skill.path, ...this.objectStore.digest(skill.bytes), executable: skill.executable === true })),
+      ...selectedMemory.map((entry) => ({ kind: "selected-memory" as const, path: entry.path, ...this.objectStore.digest(entry.bytes) })),
     ];
     if (vector.profile.lanes.evolution.mode !== "profile" && (skills.length > 0 || resolved.evolutionLearnings !== undefined)) {
       throw new FormationAuthorityStoreError("disabled Evolution lane cannot publish active artifacts");
@@ -932,6 +936,17 @@ export class FormationAuthorityStore {
       if (!vector.evolution || !learningObject || learningObject.sha256 !== vector.evolution.learningsSha256
         || formationSkillInventoryDigest(objects) !== vector.evolution.skillsInventorySha256) {
         throw new FormationAuthorityStoreError("Evolution skill inventory does not match active authority");
+      }
+    }
+    if (vector.profile.lanes.memory.mode !== "profile" && selectedMemory.length > 0) {
+      throw new FormationAuthorityStoreError("disabled memory lane cannot publish selected-memory artifacts");
+    }
+    if (vector.profile.lanes.memory.mode === "profile") {
+      const memoryObjects = objects.filter((object) => object.kind === "selected-memory")
+        .map(({ path, sha256, bytes }) => ({ path: path!, sha256, bytes }));
+      if (!vector.memory || formationDigest(memoryObjects) !== vector.memory.contentInventorySha256
+        || formationDigest(memoryObjects) !== formationDigest(vector.memory.contentInventory)) {
+        throw new FormationAuthorityStoreError("selected-memory inventory does not match active authority");
       }
     }
     const manifest = formationSnapshotManifestV1Schema.parse({
@@ -953,6 +968,7 @@ export class FormationAuthorityStore {
         reanchorReminder: asBuffer(resolved.reanchorReminder).toString("base64"),
         ...(resolved.evolutionLearnings === undefined ? {} : { evolutionLearnings: asBuffer(resolved.evolutionLearnings).toString("base64") }),
         evolutionSkills: skills.map((skill) => ({ path: skill.path, bytes: asBuffer(skill.bytes).toString("base64"), executable: skill.executable === true })),
+        selectedMemory: selectedMemory.map((entry) => ({ path: entry.path, bytes: asBuffer(entry.bytes).toString("base64") })),
       },
     };
   }
@@ -963,6 +979,7 @@ export class FormationAuthorityStore {
       Buffer.from(payload.reanchorReminder, "base64"),
       ...(payload.evolutionLearnings === undefined ? [] : [Buffer.from(payload.evolutionLearnings, "base64")]),
       ...payload.evolutionSkills.map((skill) => Buffer.from(skill.bytes, "base64")),
+      ...(payload.selectedMemory ?? []).map((entry) => Buffer.from(entry.bytes, "base64")),
     ];
     if (sources.length !== manifest.objects.length) throw new FormationAuthorityStoreError("formation payload inventory mismatch");
     for (const [index, bytes] of sources.entries()) {

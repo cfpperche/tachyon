@@ -38,11 +38,11 @@ _Generated from `plan.md` on 2026-07-22._
 
 ## Human-approved memory lane — `t-7217e1`
 
-- [ ] Add selected-text manifest/active/candidate store with strict bounds and provenance.
-- [ ] Add human-only promotion head plus formation-generation CAS.
-- [ ] Add versioned renderer/framing and adversarial text tests.
-- [ ] Pin exact selected-memory bytes across session operations.
-- [ ] Prove raw transcripts, DBs, indexes and continuity are never discovered/imported.
+- [x] Add selected-text manifest/active/candidate store with strict bounds and provenance.
+- [x] Add human-only promotion head plus formation-generation CAS.
+- [x] Add versioned renderer/framing and adversarial text tests.
+- [x] Pin exact selected-memory bytes across session operations.
+- [x] Prove raw transcripts, DBs, indexes and continuity are never discovered/imported.
 
 ## Integration — `t-3ef947`
 

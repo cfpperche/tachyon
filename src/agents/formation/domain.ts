@@ -129,11 +129,27 @@ export const memoryActivationHeadV1Schema = z.object({
   priorRevision: z.number().int().min(0),
   manifestSha256: digest,
   contentInventorySha256: digest,
+  contentInventory: z.array(z.object({
+    path: z.string().regex(/^memory\/active\/memory-[0-9a-f-]{36}\.md$/),
+    sha256: digest,
+    bytes: z.number().int().min(0).max(32 * 1024),
+  }).strict()).max(128),
   rendererContract: publicId,
   rendererSha256: digest,
 }).strict().superRefine((head, ctx) => {
   if (head.revision !== head.priorRevision + 1) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["revision"], message: "must advance priorRevision by exactly one" });
+  }
+  const paths = new Set<string>();
+  for (const [index, entry] of head.contentInventory.entries()) {
+    const canonicalPath = entry.path.toLowerCase();
+    if (paths.has(canonicalPath) || (index > 0 && head.contentInventory[index - 1]!.path >= entry.path)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["contentInventory", index, "path"], message: "must be case-fold unique and strictly sorted" });
+    }
+    paths.add(canonicalPath);
+  }
+  if (formationDigest(head.contentInventory) !== head.contentInventorySha256) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["contentInventorySha256"], message: "must bind the complete selected-memory inventory" });
   }
 });
 export type MemoryActivationHeadV1 = z.infer<typeof memoryActivationHeadV1Schema>;
@@ -205,7 +221,6 @@ export function validateFormationAuthorityVector(vector: FormationAuthorityVecto
     else {
       if (memory.profileRevision !== profile.revision) errors.push("memory activation is bound to another profile revision");
       if (memoryLane.subjectId !== memory.activationId) errors.push("memory selector subject does not match activation id");
-      if (memoryLane.sourceSha256 !== memory.manifestSha256) errors.push("memory selector does not match active manifest");
       if (memoryLane.rendererContract !== memory.rendererContract || memoryLane.rendererSha256 !== memory.rendererSha256) {
         errors.push("memory renderer does not match profile selection");
       }
@@ -233,7 +248,7 @@ export function formationSkillRelativePathError(value: string): string | undefin
 }
 
 export const formationObjectSchema = z.object({
-  kind: z.enum(["startup-prompt", "reanchor-reminder", "evolution-learnings", "evolution-skill"]),
+  kind: z.enum(["startup-prompt", "reanchor-reminder", "evolution-learnings", "evolution-skill", "selected-memory"]),
   path: z.string().superRefine((value, ctx) => {
     const error = formationSkillRelativePathError(value);
     if (error) ctx.addIssue({ code: z.ZodIssueCode.custom, message: error });
@@ -253,7 +268,7 @@ export const formationSnapshotManifestV1Schema = z.object({
   runtimeTrustClass: publicId,
   formationGeneration: revision,
   formationGenerationSha256: digest,
-  objects: z.array(formationObjectSchema).min(2).max(1024),
+  objects: z.array(formationObjectSchema).min(2).max(2048),
   createdAt: z.string().datetime(),
 }).strict().superRefine((manifest, ctx) => {
   if (manifest.objects.filter((object) => object.kind === "startup-prompt").length !== 1) {
@@ -276,14 +291,17 @@ export const formationSnapshotManifestV1Schema = z.object({
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["objects", index, "path"], message: "is reserved for active Evolution learnings" });
       }
     }
-    if ((object.kind === "evolution-skill" || object.kind === "evolution-learnings") && !object.path) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["objects", index, "path"], message: "is required for Evolution objects" });
+    if ((object.kind === "evolution-skill" || object.kind === "evolution-learnings" || object.kind === "selected-memory") && !object.path) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["objects", index, "path"], message: "is required for lane artifacts" });
     }
     if ((object.kind === "startup-prompt" || object.kind === "reanchor-reminder") && (object.path !== undefined || object.executable !== undefined)) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["objects", index], message: "prompt objects cannot declare path or executable" });
     }
     if (object.kind === "evolution-learnings" && (object.path !== "evolution/LEARNINGS.md" || object.executable !== undefined)) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["objects", index], message: "Evolution learnings must use the canonical non-executable path" });
+    }
+    if (object.kind === "selected-memory" && (!object.path?.startsWith("memory/active/") || object.executable !== undefined)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["objects", index], message: "selected memory must use its canonical non-executable namespace" });
     }
   }
 });
