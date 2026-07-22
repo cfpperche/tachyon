@@ -10,6 +10,7 @@ import { executeWait, type BridgeDeps } from "../bridge/tools.js";
 import { resolveApproval } from "../bridge/approvalRequest.js";
 import { degradedRosterExtras } from "../config/configFailure.js";
 import { loadConfigFile } from "../config/loadConfig.js";
+import { listRollbackableAgentProfileMigrations } from "../config/agentProfileMigration.js";
 import {
   addAgent,
   cloneAgent,
@@ -91,6 +92,14 @@ export async function executeExtensionQuery(
       return doctorReport(workspace);
     case "legacy-delivery.retirement-preview":
       return json(workspace.legacyDeliveryRetirement.preview());
+    case "agent-profile.migration-preview": {
+      const result = workspace.planAgentProfileMigration(query.agent, query.nonSecretEnv);
+      return result.ok
+        ? json({ ok: true, agent: result.plan.agentName, profilePath: `.tachyon/agents/${result.plan.agentName}/agent.yml` })
+        : json({ ok: false, blockers: result.blockers, unclassifiedEnv: result.unclassifiedEnv });
+    }
+    case "agent-profile.rollbackable":
+      return json(listRollbackableAgentProfileMigrations(workspace.workspaceRoot));
     case "bridge.token":
       return json({ token: workspace.externalToken ?? null, authEnabled: workspace.authEnabled });
     case "companion.status": {
@@ -333,6 +342,10 @@ export async function executeExtensionCommand(
       return deleteConfiguredAgent(workspace, command.agent, command.removeWorktree, onViewsChanged);
     case "config.agent.promote":
       return promoteAgent(workspace, command.agent, onViewsChanged);
+    case "agent-profile.migrate":
+      return json(await workspace.migrateAgentProfile(command.agent, command.nonSecretEnv));
+    case "agent-profile.rollback":
+      return json(await workspace.rollbackAgentProfileMigration(command.txid));
     case "config.command.delete":
       return configMutation(workspace, () => workspace.mutateConfig(
         (text) => deleteCommand(text ?? "", command.name),

@@ -151,6 +151,15 @@ describe("persistent engine protocol", () => {
     })).toBe(false);
   });
 
+  it("validates bounded agent-profile migration shell operations", () => {
+    expect(isExtensionQueryV1({ action: "agent-profile.migration-preview", agent: "codex", nonSecretEnv: ["MODE"] })).toBe(true);
+    expect(isExtensionQueryV1({ action: "agent-profile.rollbackable" })).toBe(true);
+    expect(isExtensionCommandV1({ action: "agent-profile.migrate", agent: "codex", nonSecretEnv: [] })).toBe(true);
+    expect(isExtensionCommandV1({ action: "agent-profile.rollback", txid: "11111111-1111-4111-8111-111111111111" })).toBe(true);
+    expect(isExtensionCommandV1({ action: "agent-profile.rollback", txid: "../bad" })).toBe(false);
+    expect(isExtensionQueryV1({ action: "agent-profile.migration-preview", agent: "codex", nonSecretEnv: ["BAD-NAME"] })).toBe(false);
+  });
+
   it("derives one stable bundle id independent of file declaration order", () => {
     const a = { path: "engine.cjs", sha256: hash("engine"), executable: true };
     const b = { path: "assets/helper.js", sha256: hash("helper") };
