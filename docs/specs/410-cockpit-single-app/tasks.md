@@ -4,19 +4,20 @@ _From plan.md. Revised 2026-07-19 (fable P0s). Work phase-by-phase; one migratio
 
 ## Phase A — Foundation
 
-_Status 2026-07-19: foundation + Approvals single-path + lazy ESM shipped in code; human Visual QA still pending._
+_Status 2026-07-22: foundation + Approvals single-path + lazy ESM shipped in code; Visual QA closed
+via real production usage acceptance, not a written A/B (maintainer decision, see notes.md)._
 
 
-- [ ] STYLEGUIDE: two-app rule + link spec 410; no new editor `main.tsx` without `WEBVIEW_SURFACES` entry.
-- [ ] Extend `WebviewSurface` in `src/webview/surfaces.ts` (editorHome / cockpitSectionId / retiredInFavorOf as needed) + update `webviewConvention.test.ts` — **no parallel inventory test file**.
-- [ ] Section module interface + shell wrapper (`PageChrome` + page pad).
-- [ ] **Implement lazy section `import()` loader in Phase A** (required before Phase B).
-- [ ] Document/enforce eager `cockpit.js` **≤ 350 KB** through Phase B (assert or PR size note + fail policy).
-- [ ] Harden section restore: exact S; unknown → `overview` + unit test.
-- [ ] Map commands → `openCockpit({ section })` for native; leave standalone while `editorHome=standalone`.
-- [ ] **Pilot = Approvals:** in-tree section body; single open path; drop dual `ApprovalPanel` route when ready; stop always-on approval.css co-load when section inactive.
-- [ ] Pilot updates `WEBVIEW_SURFACES` (+ serializers) in the same PR.
-- [ ] Visual QA pilot vs Fleet; Evidence/Verdict in `notes.md`.
+- [x] STYLEGUIDE: two-app rule + link spec 410; no new editor `main.tsx` without `WEBVIEW_SURFACES` entry.
+- [x] Extend `WebviewSurface` in `src/webview/surfaces.ts` (editorHome / cockpitSectionId / retiredInFavorOf as needed) + update `webviewConvention.test.ts` — **no parallel inventory test file**.
+- [x] Section module interface + shell wrapper (`PageChrome` + page pad).
+- [x] **Implement lazy section `import()` loader in Phase A** (required before Phase B).
+- [x] Document/enforce eager `cockpit.js` **≤ 350 KB** through Phase B (assert or PR size note + fail policy). Enforced by `cockpitBundleBudget.test.ts`.
+- [x] Harden section restore: exact S; unknown → `overview` + unit test.
+- [x] Map commands → `openCockpit({ section })` for native; leave standalone while `editorHome=standalone`.
+- [x] **Pilot = Approvals:** in-tree section body; single open path; drop dual `ApprovalPanel` route when ready; stop always-on approval.css co-load when section inactive.
+- [x] Pilot updates `WEBVIEW_SURFACES` (+ serializers) in the same PR.
+- [x] Visual QA pilot vs Fleet; Evidence/Verdict in `notes.md`. Closed 2026-07-22 via production-usage acceptance (no formal A/B recorded) — see notes.md's "Phase E close-out".
 
 ## Phase B — Control-family (one PR each; each PR updates WEBVIEW_SURFACES + MIGRATED_VIEWS if paths move)
 
@@ -148,17 +149,20 @@ landing gates with security probes._
 
 ## Phase E — Cleanup
 
-- [ ] Delete dead bundles; convention tests green.
-- [ ] Optional cookbook via `sdd-cookbook.sh`.
-- [ ] Closure line on spec when agreed tranche ships.
+- [x] Delete dead bundles; convention tests green. Confirmed no lingering standalone panel that
+      should be converted (only the approved standing exceptions: plugin surfaces, 2 dev-only
+      fakes); found + fixed one real drift (`standalone-multi` dead type, `43164ebb`).
+- [x] Optional cookbook via `sdd-cookbook.sh`. Added `c973b8fc`.
+- [ ] Closure line on spec when agreed tranche ships. Deliberately deferred (maintainer, 2026-07-22)
+      — waiting for Phase E to be genuinely finished, not just Phase D. The one item left in this file.
 
 ## Verification
 
-- [ ] `webviewConvention.test.ts` green (primary guard).
-- [ ] Kit / patterns tests green.
-- [ ] Lazy loader present before first heavy Phase B merge.
-- [ ] Pilot visual QA recorded.
-- [ ] Eager cockpit.js size noted vs 350 KB budget.
+- [x] `webviewConvention.test.ts` green (primary guard).
+- [x] Kit / patterns tests green.
+- [x] Lazy loader present before first heavy Phase B merge.
+- [x] Pilot visual QA recorded. Closed via production-usage acceptance, 2026-07-22 — see notes.md.
+- [x] Eager cockpit.js size noted vs 350 KB budget. ~42KB as of D3, well under budget; enforced by `cockpitBundleBudget.test.ts`.
 
 **Verify:** `npm run typecheck && npx vitest run test/unit/webviewConvention.test.ts test/unit/webviewComponentKit.test.ts test/unit/uiPatterns.test.ts`
 
@@ -175,7 +179,8 @@ Required for pilot and every migrated surface (shell vs Fleet).
 - Risk: double pad, dual open paths, button overrides, co-load bleed, multi-instance regressions.
 - Record `Evidence:` + `Verdict:` in notes or PR.
 
-**Visual QA:** pending foundation pilot.
+**Visual QA:** closed 2026-07-22 via production-usage acceptance (no formal Approvals-vs-Fleet A/B
+recorded) — see notes.md's "Phase E close-out".
 
 ## Cookbook
 

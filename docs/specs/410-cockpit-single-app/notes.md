@@ -65,3 +65,23 @@ Approvals — dual `tachyon.openApprovals` vs cockpit section is the proof targe
 - STYLEGUIDE: two-app rule.
 
 **Eager size after Phase A build:** ~22015 bytes cockpit.js.
+
+## Phase E close-out (2026-07-22)
+
+- Audited Phase A/E/Verification checkboxes against actual code state after D3 (the last studio)
+  landed: foundation, lazy loader, bundle budget, dead-bundle cleanup, and every convention/kit/
+  pattern test were already shipped/green — only the checkboxes were stale bookkeeping.
+- Found and fixed one real drift during the audit: `WebviewEditorHome`'s `"standalone-multi"` (the
+  multi-instance thin-host exception for task detail/handoff/probes) had been dead since Phase C
+  closed it, but the type union and `docs/STYLEGUIDE.md` still described it as available. Removed
+  the union member (the invariant is compiler-enforced now) and corrected STYLEGUIDE.md. Landed `43164ebb`.
+- **Visual QA — Approvals pilot vs Fleet:** never formally recorded (no Evidence/Verdict pair). The
+  maintainer explicitly accepted this as closed via real production usage instead of a retroactive
+  QA pass — Approvals has run in production as the Phase A pilot for weeks with no reported
+  regression, and every migrated section/studio since has followed the exact same shell pattern
+  without incident. Decision recorded 2026-07-22; treating Phase A's + Verification's "Pilot visual
+  QA recorded" items as satisfied by this acceptance, not by a written A/B comparison.
+- **Cookbook:** added `cookbook.md` (the section/studio recipe, distilled from 7 real applications —
+  Approvals + 6 studios). Landed `c973b8fc`.
+- **Spec closure line (`spec.md`'s `Status: draft`):** deliberately DEFERRED — the maintainer wants
+  to wait until Phase E is genuinely finished (not just Phase D) before touching it. Still open.
