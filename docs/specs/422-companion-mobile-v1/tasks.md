@@ -23,7 +23,7 @@ _Board umbrella: `t-af2c9b`. Research: `t-619157` done. Product card: `t-fe52f0`
 
 ## Phase 3 — apps/mobile PWA
 
-- [ ] `t-cc73c4` — scaffold + pair (`kind=mobile`)
+- [x] `t-cc73c4` — scaffold + pair (`kind=mobile`)
 - [ ] `t-5b3445` — roster + attention + prompt + approvals
 
 ## Phase 4 — Serve & dogfood
