@@ -60,8 +60,12 @@ describe("persistent workspace presentation boundary", () => {
       // host was retired and the file is types-only now; Agent Studio is hosted by studioHost.ts /
       // Cockpit.ts / agentStudioDomain.ts. AgentStudioAdapter.ts stays in this list (unchanged —
       // still legitimately typed against WorkspaceAgentStudioTarget).
+      // TaskStudioPanel.ts left this list on t-610705 Phase D D2 for the same reason as
+      // CommandStudioPanel.ts above — the panel host was retired and the file is types-only now
+      // (VIEW_TYPE + PanelState only); Task Studio is hosted by studioHost.ts / Cockpit.ts /
+      // taskStudioDomain.ts. TaskStudioAdapter.ts stays in this list (unchanged — still legitimately
+      // typed against WorkspaceTaskStudioTarget).
       "src/webview/TaskStudioAdapter.ts",
-      "src/webview/TaskStudioPanel.ts",
       "src/webview/PinStudioAdapter.ts",
       "src/webview/PinStudioPanel.ts",
       "src/webview/SidebarPrototype.ts",

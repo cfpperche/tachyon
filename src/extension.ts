@@ -16,6 +16,7 @@ import {
   refreshCockpitApprovals,
   refreshCockpitValidations,
   refreshCockpitTaskDetail,
+  refreshCockpitTaskStudioEntity,
   refreshCockpitProbes,
   refreshCockpitHandoff,
   refreshCockpitStudioReferenceData,
@@ -40,7 +41,8 @@ import { PROBES_VIEW_TYPE, type ProbesPanelState } from "./webview/ProbeResultPa
 import { PinStudioPanelManager, PIN_STUDIO_VIEW_TYPE, type PinStudioPanelState } from "./webview/PinStudioPanel.js";
 import { MISSION_CONTROL_VIEW_TYPE, type MissionControlPanelState } from "./webview/MissionControlPanel.js";
 import { TASK_DETAIL_VIEW_TYPE, type TaskDetailPanelState } from "./webview/TaskDetailPanel.js";
-import { TaskStudioPanelManager, TASK_STUDIO_VIEW_TYPE, type TaskStudioPanelState } from "./webview/TaskStudioPanel.js";
+import { TASK_STUDIO_VIEW_TYPE, type TaskStudioPanelState } from "./webview/TaskStudioPanel.js";
+import { mintTaskId } from "./tasks/TaskStore.js";
 import { AGENT_STUDIO_SHELL_VIEW_TYPE, type AgentStudioPanelState } from "./webview/AgentStudioPanel.js";
 import { TERMINAL_STUDIO_SHELL_VIEW_TYPE, type TerminalStudioPanelState } from "./webview/TerminalStudioPanel.js";
 import { COMMAND_STUDIO_SHELL_VIEW_TYPE, type CommandStudioPanelState } from "./webview/CommandStudioPanel.js";
@@ -1055,17 +1057,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const onTasksChanged = () => {
     refreshCockpitMissionBoard(); // Control → Mission is THE board since t-610705 (standalone panel retired)
     refreshCockpitTaskDetail(); // Control → task-detail subroute (t-610705 Phase C.1, same reasoning)
-    taskStudioPanels.refreshAll();
+    refreshCockpitTaskStudioEntity(); // Control → task studio-edit route (t-610705 Phase D, D2, same reasoning)
     sidebarProto.refresh();
   };
-  // spec 339 — Task Studio: constructed first (no forward declaration needed) so the board/detail panels
-  // can inject an `openTaskStudio` callback into their own constructors below.
-  const taskStudioPanels = new TaskStudioPanelManager(
-    context.extensionUri,
-    () => workspaces().map((ws) => ws.taskStudio),
-    onTasksChanged,
-  );
-  context.subscriptions.push({ dispose: () => taskStudioPanels.dispose() });
   let lastBridgeLagNoticeAt = 0;
   let bridgeLagExpectedAt = Date.now() + 5_000;
   const bridgeLagTimer = setInterval(() => {
@@ -1355,11 +1349,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     },
     missionBoard: {
       getWorkspaces: () => workspaces().map((ws) => ws.missionControl),
+      // t-610705 (Phase D, D2) — Task Studio is a Control studio-edit route now, not a standalone
+      // panel: navigate the (already-open, since this fires from inside a live Cockpit message
+      // handler) singleton in place, same idiom every other "open a studio route" command/action
+      // uses elsewhere in this file. "new" mints an id up front (route.ts's decodeRoute rejects
+      // studio-new + "task" outright — same pre-minting TaskStudioAdapter.save() already does for a
+      // caller that skips this path entirely) rather than reaching for a "studio-new" route that
+      // doesn't exist for "task".
       openTaskStudio: (target, id) => {
         const ws = wsOf({ ws: target });
         if (!ws) return;
-        if (id) taskStudioPanels.openExisting(ws.taskStudio, id);
-        else taskStudioPanels.openNew(ws.taskStudio);
+        void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.studioEdit("task", ws.wsHash, id ?? mintTaskId()) });
       },
       onTasksChanged,
     },
@@ -1731,7 +1731,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   });
   registerTrustedPanelSerializer<PinPreviewPanelState>(context, PIN_PREVIEW_VIEW_TYPE, (panel, state) => sidebarProto.deserializePinPreview(panel, state));
   registerTrustedPanelSerializer<PinStudioPanelState>(context, PIN_STUDIO_VIEW_TYPE, (panel, state) => pinStudioPanels.deserialize(panel, state));
-  registerTrustedPanelSerializer<TaskStudioPanelState>(context, TASK_STUDIO_VIEW_TYPE, (panel, state) => taskStudioPanels.deserialize(panel, state));
   // t-610705 (SDD 410 Phase D, D0/D1a/D1b) — a revived pre-410 standalone studio panel disposes itself
   // and redirects into Control → the mapped studio route, same claimed-singleton guard as every
   // other retired-panel serializer above. KNOWN GAP (documented, not silently dropped): unlike the
@@ -1758,6 +1757,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   registerLegacyStudioRedirect<RunbookStudioPanelState>(RUNBOOK_STUDIO_SHELL_VIEW_TYPE, "runbook");
   registerLegacyStudioRedirect<ScheduleStudioPanelState>(SCHEDULE_STUDIO_SHELL_VIEW_TYPE, "schedule");
   registerLegacyStudioRedirect<AgentStudioPanelState>(AGENT_STUDIO_SHELL_VIEW_TYPE, "agent");
+  // t-610705 (Phase D, D2) — Task Studio's redirect can't reuse registerLegacyStudioRedirect's shared
+  // helper as-is: its non-edit fallback calls cockpitRoutes.studioNew(studio, wsKey), which THROWS for
+  // "task" (route.ts's defensive assertion — task is never id-less in practice). A persisted "new"
+  // Task Studio panel state is a genuinely malformed/legacy edge case (every real "new" caller
+  // pre-mints an id and never persists panel state before its first save completes), so this redirects
+  // to Mission instead of constructing an invalid route.
+  registerTrustedPanelSerializer<TaskStudioPanelState>(context, TASK_STUDIO_VIEW_TYPE, (panel, state) => {
+    panel.dispose();
+    if (isCockpitSingletonClaimed()) return;
+    if (!state?.wsKey) return;
+    if (state.snapshot.mode === "edit" && state.snapshot.entityId) {
+      void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.studioEdit("task", state.wsKey, state.snapshot.entityId) });
+      return;
+    }
+    void openCockpit(makeCockpitDeps(), { section: "mission", wsHash: state.wsKey });
+  });
   registerTrustedPanelSerializer<PipelineStudioPanelState>(context, PIPELINE_STUDIO_VIEW_TYPE, (panel, state) => pipelineStudioPanels.deserialize(panel, state));
   // t-610705 (SDD 410 Phase B #5) — a revived pre-410 standalone panel disposes itself and
   // redirects into Control → tmux via tachyon.inspectServer, same as the live open path below.
@@ -2442,7 +2457,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // webview's openTaskStudio action instead of a command).
     vscode.commands.registerCommand("tachyon.taskStudio.new", async (hash?: string) => {
       const ws = hash ? byHash(hash) : await pickWorkspace();
-      if (ws) taskStudioPanels.openNew(ws.taskStudio);
+      if (ws) await openCockpit(makeCockpitDeps(), { route: cockpitRoutes.studioEdit("task", ws.wsHash, mintTaskId()) });
     }),
     // spec 322 — per-agent probes: the agent row's "…" action passes (hash, agent) and gets that agent's
     // probes only. The no-arg/agent-less form opens the UNFILTERED list — an internal/debug escape hatch for

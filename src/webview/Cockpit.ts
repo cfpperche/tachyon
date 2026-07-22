@@ -94,6 +94,7 @@ import {
   beginStudioNavTransaction,
   currentStudioBindingFor,
   refreshStudioReferenceData,
+  sendStudioLoad,
 } from "../cockpit/studioHost.js";
 import { makeStudioAdapterFactory, makeStudioDomainDispatch, type CockpitStudios } from "../cockpit/studioRegistry.js";
 export type { CockpitStudios };
@@ -496,6 +497,7 @@ let pushHandoff: (() => void) | undefined;
 let pushTaskDetail: (() => void) | undefined;
 let pushProbes: (() => void) | undefined;
 let pushStudioReferenceData: (() => void) | undefined;
+let pushTaskStudioEntity: (() => void) | undefined;
 let doOpenActivityTranscript: (() => void) | undefined;
 let wiredPanel: vscode.WebviewPanel | undefined;
 
@@ -526,6 +528,18 @@ export function refreshCockpitProbes(): void {
  *  see studioHost.ts's refreshStudioReferenceData doc comment). */
 export function refreshCockpitStudioReferenceData(): void {
   pushStudioReferenceData?.();
+}
+
+/** t-610705 (Phase D, D2) — re-send a fresh `load` for an open Task Studio binding after ANY task
+ *  mutation, from ANY source (board drag/edit, detail edit, MCP tool call) — the same fan-out the
+ *  retired standalone TaskStudioPanelManager wired via `base.refreshAll()` into `onTasksChanged`.
+ *  Task Studio is the one migrated studio whose underlying entity can change out from under an open
+ *  binding through paths OTHER than Save (a Task can be edited via the Board, Task Detail, or an MCP
+ *  tool call while its Studio tab is open) — the other 5 studios' entities have no such external-
+ *  mutation path, so they have no equivalent push. A no-op off a task studio-edit route, and
+ *  best-effort (sendStudioLoad already tolerates a load failure) otherwise. */
+export function refreshCockpitTaskStudioEntity(): void {
+  pushTaskStudioEntity?.();
 }
 
 /** t-610705 (Phase C.2) — the palette "Open Raw Transcript" escape hatch, wired to the CURRENT
@@ -778,6 +792,7 @@ export async function openCockpit(
         pushTaskDetail = undefined;
         pushProbes = undefined;
         pushStudioReferenceData = undefined;
+        pushTaskStudioEntity = undefined;
         doOpenActivityTranscript = undefined;
         wiredPanel = undefined;
         navEpoch += 1;
@@ -1351,6 +1366,7 @@ export async function openCockpit(
   // the io capability directly (same studioIo the studio-envelope dispatch above uses), and is a
   // no-op with no binding — the isStudioRoute guard here just avoids the pointless call off-route.
   pushStudioReferenceData = () => { if (isStudioRoute(currentRoute)) void refreshStudioReferenceData(studioIo); };
+  pushTaskStudioEntity = () => { if (isStudioRoute(currentRoute) && currentRoute.studio === "task") void sendStudioLoad(studioIo); };
   doOpenActivityTranscript = () => {
     if (currentRoute.kind !== "agent-activity") {
       notify("Open an agent's Activity view first, then run “Open Raw Transcript”.");
