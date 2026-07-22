@@ -176,3 +176,8 @@ Required for pilot and every migrated surface (shell vs Fleet).
 - Record `Evidence:` + `Verdict:` in notes or PR.
 
 **Visual QA:** pending foundation pilot.
+
+## Cookbook
+
+**Cookbook:** yes — [`cookbook.md`](./cookbook.md), the "add a new Control section/studio" recipe
+(written after 7 real applications of the pattern: Approvals + 6 studios).
