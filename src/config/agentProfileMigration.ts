@@ -18,6 +18,7 @@ import {
 } from "./YamlConfigEditor.js";
 import { loadProfileAwareConfig } from "./agentProfileConfigLoader.js";
 import { closeCanonicalAgentProfile, readCanonicalAgentProfile } from "./agentProfileReader.js";
+import { asciiFoldAgentName } from "./nameValidation.js";
 
 const SUPPORTED_KEYS = new Set([
   "cmd", "cwd", "env", "autostart", "watch", "attention", "restart", "kind", "role",
@@ -93,6 +94,13 @@ export interface AgentProfileMigrationAuthorityPort {
   publish(record: AgentProfileAuthorityRecord, expected: undefined): Promise<void>;
   replace(record: AgentProfileAuthorityRecord, expected: AgentProfileAuthorityRecord): Promise<void>;
   retire(agentName: string, expected: AgentProfileAuthorityRecord): Promise<void>;
+  /** Atomically remove the exact source record and publish the exact renamed target. */
+  move?(
+    oldAgentName: string,
+    newAgentName: string,
+    expected: AgentProfileAuthorityRecord,
+    target: AgentProfileAuthorityRecord,
+  ): Promise<void>;
 }
 
 export interface CommitLegacyAgentProfileMigrationInput {
@@ -129,7 +137,8 @@ function ensureMigrationsRoot(workspaceRoot: string): string {
 }
 
 function migrationLockPath(root: string, agentName: string): string {
-  return path.join(root, "locks", `${agentName}.lock`);
+  const key = Buffer.from(asciiFoldAgentName(agentName), "utf8").toString("hex");
+  return path.join(root, "locks", `${key}.lock`);
 }
 
 interface MigrationLockRecord { txid: string; pid: number }
@@ -176,10 +185,51 @@ export function acquireAgentProfileTransactionLock(workspaceRoot: string, agentN
   return acquireMigrationLock(ensureMigrationsRoot(workspaceRoot), agentName, txid);
 }
 
+/** Acquire every name in one canonical order so opposing renames cannot deadlock. */
+export function acquireAgentProfileTransactionLocks(
+  workspaceRoot: string,
+  agentNames: readonly string[],
+  txid: string,
+): () => void {
+  const names = [...new Map(agentNames.map((name) => [asciiFoldAgentName(name), name])).entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([, name]) => name);
+  const releases: Array<() => void> = [];
+  try {
+    for (const name of names) releases.push(acquireAgentProfileTransactionLock(workspaceRoot, name, txid));
+  } catch (error) {
+    for (const release of releases.reverse()) release();
+    throw error;
+  }
+  return () => {
+    for (const release of releases.reverse()) release();
+  };
+}
+
 export function acquireAgentProfileRecoveryLock(workspaceRoot: string, agentName: string, txid: string): () => void {
   const root = ensureMigrationsRoot(workspaceRoot);
   releaseRecoveredMigrationLock(root, agentName, txid);
   return acquireMigrationLock(root, agentName, txid);
+}
+
+export function acquireAgentProfileRecoveryLocks(
+  workspaceRoot: string,
+  agentNames: readonly string[],
+  txid: string,
+): () => void {
+  const names = [...new Map(agentNames.map((name) => [asciiFoldAgentName(name), name])).entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([, name]) => name);
+  const releases: Array<() => void> = [];
+  try {
+    for (const name of names) releases.push(acquireAgentProfileRecoveryLock(workspaceRoot, name, txid));
+  } catch (error) {
+    for (const release of releases.reverse()) release();
+    throw error;
+  }
+  return () => {
+    for (const release of releases.reverse()) release();
+  };
 }
 
 function releaseRecoveredMigrationLock(root: string, agentName: string, txid: string): void {

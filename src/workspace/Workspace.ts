@@ -35,6 +35,11 @@ import {
   type AgentProfileLifecycleSnapshot,
   type CommitAgentProfileLifecycleInput,
 } from "../config/agentProfileLifecycle.js";
+import {
+  agentProfileRenameBlocked,
+  commitAgentProfileRename,
+  reconcileAgentProfileRenames,
+} from "../config/agentProfileRename.js";
 import { composeAgentPrompt } from "../agents/promptLayers.js";
 import { SoulError, agentSoulPath, readCanonicalSoulBytes } from "../agents/soul.js";
 import {
@@ -2454,6 +2459,20 @@ export class Workspace {
         }
         records.delete(agentName);
       }),
+      move: async (oldAgentName, newAgentName, expected, target) => mutate((records) => {
+        const current = records.get(oldAgentName);
+        const destination = records.get(newAgentName);
+        if (!current) {
+          if (destination && isDeepStrictEqual(destination, target)) return;
+          throw new Error(`agent profile authority CAS conflict for '${oldAgentName}'`);
+        }
+        if (!isDeepStrictEqual(current, expected) || destination !== undefined
+          || target.agentName !== newAgentName || target.agentId !== expected.agentId) {
+          throw new Error(`agent profile authority CAS conflict for '${oldAgentName}' -> '${newAgentName}'`);
+        }
+        records.delete(oldAgentName);
+        records.set(newAgentName, structuredClone(target));
+      }),
     };
   }
 
@@ -2823,6 +2842,21 @@ export class Workspace {
       });
       if (lifecycle.degraded.length > 0) {
         ws.host.notify(ws.t("agent profile lifecycle recovery found {0} degraded transaction(s); affected agents remain fail-closed", lifecycle.degraded.length), "error");
+      }
+      const renames = await reconcileAgentProfileRenames({
+        workspaceRoot,
+        authority: ws.profileAuthorityPort(),
+        config: ws.agentProfileLifecycleConfigPort(),
+        evolution: {
+          readProfileId: async (agentName) => (await ws.evolutionStore.readProfile(agentName))?.profileId,
+          rename: (oldAgentName, newAgentName) => ws.evolutionStore.renameAgent(oldAgentName, newAgentName),
+        },
+        activateState: () => {
+          if (!ws.reloadConfig()) throw new Error("trusted profile rename activation failed");
+        },
+      });
+      if (renames.degraded.length > 0) {
+        ws.host.notify(ws.t("agent profile rename recovery found {0} degraded transaction(s); affected agents remain fail-closed", renames.degraded.length), "error");
       }
     }
 
@@ -4634,7 +4668,7 @@ export class Workspace {
    * name is not known via live config or an in-memory ad-hoc def (i.e. it would only come from LKG).
    */
   assertNotLkgOnlySpawn(name: string): void {
-    if (agentProfileLifecycleBlocked(this.workspaceRoot, name)) {
+    if (agentProfileLifecycleBlocked(this.workspaceRoot, name) || agentProfileRenameBlocked(this.workspaceRoot, name)) {
       throw new Error(`cannot spawn profile-backed agent '${name}' while its lifecycle transaction requires recovery`);
     }
     if (this.profileSpawnBlocked.has(name)) {
@@ -5430,6 +5464,31 @@ export class Workspace {
    * Attention state self-heals on the next tick; watchers rebuild on reload.
    */
   async renameAgent(oldName: string, newName: string): Promise<void> {
+    const profileLifecycle = this.config?.agents[oldName]?.profileLifecycle;
+    if (profileLifecycle) {
+      await this.assertAgentStoppedForProfileMigration(oldName);
+      const inspected = await this.inspectAgentProfileLifecycle(oldName);
+      await commitAgentProfileRename({
+        workspaceRoot: this.workspaceRoot,
+        oldAgentName: oldName,
+        newAgentName: newName,
+        expectedRevision: inspected.revision,
+        authority: this.profileAuthorityPort(),
+        config: this.agentProfileLifecycleConfigPort(),
+        evolution: {
+          readProfileId: async (agentName) => (await this.evolutionStore.readProfile(agentName))?.profileId,
+          rename: (oldAgentName, newAgentName) => this.evolutionStore.renameAgent(oldAgentName, newAgentName),
+        },
+        activateState: () => {
+          if (!this.reloadConfig()) throw new Error("trusted profile rename activation failed");
+          this.profileSpawnBlocked.delete(oldName);
+          this.profileSpawnBlocked.delete(newName);
+        },
+      });
+      this.rebuildWatches();
+      this.refreshAgentsViews();
+      return;
+    }
     const wasOpen = this.terminals.has(oldName);
     if (wasOpen) this.terminals.close(oldName);
     await this.manager.rename(oldName, newName);

@@ -345,6 +345,39 @@ it("creates, edits and disables a canonical profile through the Workspace lifecy
   }
 });
 
+it("renames a stopped canonical profile through the Workspace transaction boundary", async () => {
+  const root = mkdir();
+  const homeDir = mkdir();
+  fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nsettings:\n  auth: false\n");
+  const secrets = new Map<string, string>();
+  const host = new SharedSecretHost(mkdir(), secrets);
+  const fake = fakeTmux();
+  const ws = await Workspace.createForTest(
+    root,
+    { host, onViewsChanged: () => {} },
+    { tmux: fake.tmux, startBridge: false, agentProfileHomeDir: homeDir },
+  );
+  try {
+    const created = await ws.commitAgentProfileLifecycle({
+      agentName: "reviewer",
+      operation: "create",
+      createProfile: { runtime: { adapter: "codex", executable: "codex" } },
+    });
+    const evolution = await ws.evolutionStore.ensureProfile("reviewer");
+    await ws.renameAgent("reviewer", "maintainer");
+
+    expect(ws.config?.agents.reviewer).toBeUndefined();
+    expect(ws.config?.agents.maintainer?.profileLifecycle).toMatchObject({ agentId: created.snapshot.agentId });
+    expect(await ws.inspectAgentProfileLifecycle("maintainer")).toMatchObject({ agentId: created.snapshot.agentId });
+    expect(await ws.evolutionStore.readProfile("reviewer")).toBeUndefined();
+    expect(await ws.evolutionStore.readProfile("maintainer")).toMatchObject({ profileId: evolution.profileId, agent: "maintainer" });
+    expect(fs.existsSync(path.join(root, ".tachyon", "agents", "reviewer"))).toBe(false);
+    expect(fs.existsSync(path.join(root, ".tachyon", "agents", "maintainer", "agent.yml"))).toBe(true);
+  } finally {
+    ws.dispose();
+  }
+});
+
 it("returns actionable Agent Studio messages for invalid soul values and unsupported runtimes", async () => {
   const { ws } = await makeWorkspace();
   const invalid = { ...blankAgentFields(), name: "invalid", cmd: "codex", soul: "yes" } as unknown as FormState;
