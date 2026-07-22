@@ -6,7 +6,12 @@ import { agentProfileSchemaV1, type AgentProfileV1 } from "../../config/agentPro
 import { composeAgentPrompt } from "../promptLayers.js";
 import { resolveSoul, type ResolvedSoul } from "../soul.js";
 import { resolvePersistentInstructions, type ResolvedPersistentInstructions } from "../persistentInstructions.js";
-import { formationDigest, type FormationAuthorityVector, type FormationLaneName } from "./domain.js";
+import {
+  formationDigest,
+  type FormationAuthorityVector,
+  type FormationLaneName,
+  type FormationNativeSuppressionEvidenceV1,
+} from "./domain.js";
 import type { ResolvedFormationPayload } from "./authorityStore.js";
 
 export const HUMAN_SOUL_RENDERER_CONTRACT = "tachyon-soul-prompt-v1";
@@ -27,16 +32,7 @@ export class HumanFormationLaneError extends Error {
   }
 }
 
-export interface HumanLaneSuppressionReceipt {
-  schemaVersion: 1;
-  operationId: string;
-  sourceVectorSha256: string;
-  runtimeAdapter: string;
-  runtimeTrustClass: string;
-  lanes: Array<"soul" | "instructions">;
-  issuedAt: string;
-  mac: string;
-}
+export type HumanLaneSuppressionReceipt = FormationNativeSuppressionEvidenceV1;
 
 function suppressionPayload(receipt: Omit<HumanLaneSuppressionReceipt, "mac">): string {
   return JSON.stringify(receipt);
@@ -55,11 +51,12 @@ export class HumanLaneSuppressionAuthority {
     vector: FormationAuthorityVector;
     runtimeAdapter: string;
     runtimeTrustClass: string;
-    lanes: readonly ("soul" | "instructions")[];
+    lanes: readonly FormationLaneName[];
     issuedAt: string;
   }): HumanLaneSuppressionReceipt {
     const lanes = [...input.lanes].sort();
-    const expected = (["soul", "instructions"] as const).filter((lane) => input.vector.profile.lanes[lane].mode === "profile").sort();
+    const expected = (["soul", "instructions", "evolution", "memory"] as const)
+      .filter((lane) => input.vector.profile.lanes[lane].mode === "profile").sort();
     if (new Set(lanes).size !== lanes.length || formationDigest(lanes) !== formationDigest(expected)) {
       throw new HumanFormationLaneError("suppression receipt must cover every enabled human lane exactly once");
     }
@@ -78,13 +75,20 @@ export class HumanLaneSuppressionAuthority {
     return { ...payload, mac: crypto.createHmac("sha256", this.key).update(suppressionPayload(payload)).digest("hex") };
   }
 
-  verify(receipt: HumanLaneSuppressionReceipt, vector: FormationAuthorityVector, runtimeTrustClass: string, operationId: string): boolean {
+  verify(
+    receipt: HumanLaneSuppressionReceipt,
+    vector: FormationAuthorityVector,
+    runtimeTrustClass: string,
+    operationId: string,
+    verifiedAt = this.now(),
+  ): boolean {
     const { mac, ...payload } = receipt;
     const expectedMac = crypto.createHmac("sha256", this.key).update(suppressionPayload(payload)).digest();
     const actualMac = /^[a-f0-9]{64}$/.test(mac) ? Buffer.from(mac, "hex") : Buffer.alloc(0);
-    const enabled = (["soul", "instructions"] as const).filter((lane) => vector.profile.lanes[lane].mode === "profile").sort();
+    const enabled = (["soul", "instructions", "evolution", "memory"] as const)
+      .filter((lane) => vector.profile.lanes[lane].mode === "profile").sort();
     const issuedAt = Date.parse(receipt.issuedAt);
-    const now = Date.parse(this.now());
+    const now = Date.parse(verifiedAt);
     return actualMac.length === expectedMac.length && crypto.timingSafeEqual(actualMac, expectedMac)
       && receipt.operationId === operationId
       && Number.isFinite(issuedAt) && Number.isFinite(now) && issuedAt <= now && now - issuedAt <= this.maxAgeMs
@@ -115,12 +119,9 @@ function validateLaneRenderer(
   }
 }
 
-function rejectUnsupportedModes(vector: FormationAuthorityVector): void {
+function rejectLegacyModes(vector: FormationAuthorityVector): void {
   for (const laneName of ["soul", "instructions", "evolution", "memory"] as FormationLaneName[]) {
     if (vector.profile.lanes[laneName].mode === "legacy") throw new HumanFormationLaneError("canonical human-lane resolution cannot consume legacy authority");
-  }
-  if (vector.profile.lanes.evolution.mode === "profile" || vector.profile.lanes.memory.mode === "profile") {
-    throw new HumanFormationLaneError("Evolution and memory must be composed by their owning formation slices");
   }
 }
 
@@ -136,13 +137,16 @@ export async function resolveHumanFormationPayload(input: {
   runtimeTrustClass: string;
   suppressionAuthority: HumanLaneSuppressionAuthority;
   suppressionReceipt: HumanLaneSuppressionReceipt;
+  /** Complete renderer-set digest expected by the caller composing additional canonical lanes. */
+  expectedRendererContractsSha256?: string;
 }): Promise<ResolvedHumanFormationPayload> {
   const { vector } = input;
   if (vector.generation.retired) throw new HumanFormationLaneError("retired formation authority cannot be rendered");
-  if (vector.generation.rendererContractsSha256 !== HUMAN_FORMATION_RENDERER_CONTRACTS_SHA256) {
+  const expectedRendererContractsSha256 = input.expectedRendererContractsSha256 ?? HUMAN_FORMATION_RENDERER_CONTRACTS_SHA256;
+  if (vector.generation.rendererContractsSha256 !== expectedRendererContractsSha256) {
     throw new HumanFormationLaneError("formation generation does not bind the human renderer contract set");
   }
-  rejectUnsupportedModes(vector);
+  rejectLegacyModes(vector);
   validateLaneRenderer(vector, "soul", HUMAN_SOUL_RENDERER_CONTRACT, HUMAN_SOUL_RENDERER_SHA256);
   validateLaneRenderer(vector, "instructions", HUMAN_INSTRUCTIONS_RENDERER_CONTRACT, HUMAN_INSTRUCTIONS_RENDERER_SHA256);
   if (!input.suppressionAuthority.verify(input.suppressionReceipt, vector, input.runtimeTrustClass, input.operationId)) {
@@ -216,10 +220,11 @@ export async function resolveHumanFormationPayload(input: {
   ].join("\n");
   return {
     sourceVectorSha256: formationDigest(vector),
-    rendererContractsSha256: HUMAN_FORMATION_RENDERER_CONTRACTS_SHA256,
+    rendererContractsSha256: expectedRendererContractsSha256,
     startupPrompt,
     reanchorReminder,
     suppression: structuredClone(input.suppressionReceipt),
+    nativeSuppression: structuredClone(input.suppressionReceipt),
     ...(soul ? { soul } : {}),
     ...(instructions ? { instructions } : {}),
   };

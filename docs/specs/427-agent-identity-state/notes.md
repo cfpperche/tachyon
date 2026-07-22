@@ -236,3 +236,44 @@ returned no blocker/major finding. Detailed probe artifacts remain under `.tachy
 - `npm run test:invariants` — pass
 - `npm run typecheck` — pass
 - `npm run verify:full:quiet` — pass
+
+## 2026-07-22 — Complete formation integration
+
+The integration slice adds one asynchronous resolver for the complete authority vector. It validates
+the closed vector and renderer set, requires one runtime suppression receipt covering every enabled
+lane, resolves Soul, role, Persistent Instructions, Evolution and selected memory in their fixed
+order, and emits exactly one startup prompt plus one task-free re-anchor reminder. The synchronous
+authority store accepts that pre-resolved host payload but still re-reads and CAS-checks the complete
+generation before publication; an authority race therefore cannot publish a mixed snapshot.
+
+The consumer boundary handed to `t-e50d4f` is deliberately lane-local: exactly one inspect/recover/
+retire hook for each of `soul`, `instructions`, `evolution` and `memory`, with optional inactive-
+candidate import. It contains no ordering, journal, UI, plugin or runtime-memory behavior, so the
+future lifecycle task remains the sole cross-lane orchestrator.
+
+The isolated dogfood fixture exercises fresh formation, human-approved memory promotion, a new fresh
+session, source mutation, restart/resume/rebind/re-anchor validation and same-snapshot fork. It also
+runs the real plugin loader and installation planner before and after formation and proves identical
+discovery and injection plans plus untouched plugin bytes. Existing lane suites supply the fault,
+recovery, migration and adversarial tamper matrix; PI-001 protects legacy/disabled prompt bytes.
+
+Adversarial integration review `probe-28b45601-341a-482d-ac9a-cee61108cad1` found that native-lane
+suppression was checked before asynchronous resolution but discarded before publication. Follow-up
+`probe-334c0fde-ae7a-4b3d-8bfb-43cbbc63eb01` found that checking only at prepare still allowed expiry
+before selector commit, and `probe-cee87700-4620-4111-8a9b-4c3dafec3a2d` found omission could bypass
+conditional verification. The snapshot manifest now binds the receipt, every profile-mode vector
+requires it, and `commitFresh` verifies its MAC, complete enabled-lane set, exact vector, adapter,
+trust class, operation and expiry at the same timestamp written by the selector transaction. A
+factual check (`probe-5b9cf587-99e2-4873-9364-f781b56d250e`) confirmed that the adapter is already
+authoritatively bound by `ProfileActivationHeadV2.runtimeInspector.adapter` plus the vector digest;
+there is no independent caller-selected adapter that could weaken that binding.
+
+## Dogfood log
+
+### 2026-07-22T20:03:22Z — pass (1/1) — source: tasks.md — commit: 4c1eb18264d68c89fab53fdd30119c4b7f3ae969
+- `npm test -- test/unit/agentFormationDogfood.test.ts` — pass
+
+### 2026-07-22T20:09:06Z — pass (3/3) — source: tasks.md
+- `npm run test:invariants` — pass
+- `npm run typecheck` — pass
+- `npm run verify:full:quiet` — pass

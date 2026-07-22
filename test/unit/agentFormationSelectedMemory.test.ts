@@ -15,6 +15,7 @@ import {
 import { SelectedMemoryFormationTransactionService } from "../../src/agents/formation/memoryTransactions.js";
 import { SelectedMemoryStore, type SelectedMemoryPromotionToken } from "../../src/memory/SelectedMemoryStore.js";
 import { selectedMemoryCandidateBytes, selectedMemoryManifestBytes, selectedMemorySha256 } from "../../src/memory/domain.js";
+import { HumanLaneSuppressionAuthority } from "../../src/agents/formation/humanLanes.js";
 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true }); });
@@ -93,13 +94,22 @@ async function fixture() {
   let resolved = await resolveSelectedMemoryFormationLane({
     workspaceRoot: root, workspaceId: WORKSPACE_ID, agentId: AGENT_ID, agentName: "codex", vector, store: memory,
   });
+  const suppression = new HumanLaneSuppressionAuthority(Buffer.alloc(32, 6), () => NOW);
   const formation = new FormationAuthorityStore(host, {
     now: () => NOW,
     authorizeLaunch: () => true,
     authorizeMutation: () => true,
     authorizeSelectorRevocation: () => true,
     authorizeSelectorRead: () => true,
-    resolvePayload: () => resolved,
+    resolvePayload: ({ operationId, vector: current, runtimeTrustClass }) => ({
+      ...resolved,
+      nativeSuppression: suppression.issueAfterSuppression({
+        operationId, vector: current, runtimeAdapter: "codex", runtimeTrustClass,
+        lanes: ["memory"], issuedAt: NOW,
+      }),
+    }),
+    verifyNativeSuppression: ({ evidence, vector: current, operationId, runtimeTrustClass, verifiedAt }) =>
+      suppression.verify(evidence, current, runtimeTrustClass, operationId, verifiedAt),
   });
   formation.replaceVector({ operationId: "memory-bootstrap", caller: human, mutation: "bootstrap", vector });
   return { root, options, memory, formation, vector, setResolved: (value: typeof resolved) => { resolved = value; } };

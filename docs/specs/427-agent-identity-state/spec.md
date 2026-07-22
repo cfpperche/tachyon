@@ -2,7 +2,14 @@
 
 _Created 2026-07-22._
 
-**Status:** in-progress
+**Status:** shipped
+
+**Closure:** Shipped 2026-07-22 as the complete host-authorized formation foundation and four lane
+implementations: Soul, Persistent Instructions, approved Evolution and human-approved selected
+memory resolve into one immutable fresh-session snapshot with pinned resume/re-anchor/fork bytes.
+PI-001, focused matrices, isolated dogfood, typecheck and full verification (476 files; 5,390 passed,
+3 skipped) are green. Residual scope is intentionally separate: cross-lane lifecycle orchestration
+and UI (`t-e50d4f`), runtime-native memory architecture (`t-d4c42e`) and agent-scoped plugins.
 
 ## Intent
 
@@ -287,61 +294,61 @@ Runtime-managed memory is a separate later spec/task.
 
 ## Acceptance criteria
 
-- [ ] **Scenario: workspace bytes cannot activate themselves**
+- [x] **Scenario: workspace bytes cannot activate themselves**
   - **Given** edited profile/lane bytes without the exact next host head
   - **When** fresh formation resolves
   - **Then** launch fails without fallback, partial lane omission or host signing of inferred authority
-- [ ] **Scenario: enabled lane failure cannot downgrade identity**
+- [x] **Scenario: enabled lane failure cannot downgrade identity**
   - **Given** an authorized required Soul, instructions, Evolution or memory lane
   - **When** its identity, source, inventory, renderer or authority mismatches
   - **Then** the entire fresh launch fails rather than silently removing or mixing the lane
-- [ ] **Scenario: fresh formation is one consistent authority vector**
+- [x] **Scenario: fresh formation is one consistent authority vector**
   - **Given** independently changing profile, Evolution and memory heads
   - **When** a fresh snapshot is built
   - **Then** all revisions are revalidated before atomic selector commit and no mixed/partial snapshot is selectable
-- [ ] **Scenario: selector publication survives every crash boundary**
+- [x] **Scenario: selector publication survives every crash boundary**
   - **Given** durable objects, a prepared manifest and no committed selector
   - **When** publication crashes or retries before/during/after the authority-store transaction
   - **Then** recovery exposes exactly one committed selector+manifest or none, and GC never deletes an in-flight/reachable object
-- [ ] **Scenario: session ownership cannot be chosen or replayed by payload**
+- [x] **Scenario: session ownership cannot be chosen or replayed by payload**
   - **Given** an authenticated launch/fork caller and bounded idempotency key
   - **When** it requests formation with forged owner/session/trust fields or reuses the key with different input
   - **Then** host-derived identity wins, conflicting replay fails, and exact replay returns only the original selector
-- [ ] **Scenario: resume and fork preserve exact payload bytes**
+- [x] **Scenario: resume and fork preserve exact payload bytes**
   - **Given** a selected immutable payload and later source mutation/deletion/rename
   - **When** restart, resume, rebind, re-anchor or same-snapshot fork runs
   - **Then** the exact retained prompt/skill payload is reused or the operation fails deterministically
-- [ ] **Scenario: operation boundaries prevent identity transfer**
+- [x] **Scenario: operation boundaries prevent identity transfer**
   - **Given** an existing selector
   - **When** a caller changes principal, agent, runtime trust class or formation-affecting runtime policy
   - **Then** rebind/fork is refused and only a newly authorized fresh formation can proceed
-- [ ] **Scenario: Soul and instructions are bound to primary identity**
+- [x] **Scenario: Soul and instructions are bound to primary identity**
   - **Given** valid digest-bound sources whose subordinate metadata matches `agentId`
   - **When** a fresh profile session starts
   - **Then** exact bytes appear once in their existing ordered layers; name-only or stale bindings fail closed
-- [ ] **Scenario: Evolution exposes only the promoted active inventory**
+- [x] **Scenario: Evolution exposes only the promoted active inventory**
   - **Given** a valid promotion head plus candidates/reviews/history/intents
   - **When** formation resolves
   - **Then** only enumerated active learning and skill artifacts enter the immutable payload
-- [ ] **Scenario: selected memory requires human promotion**
+- [x] **Scenario: selected memory requires human promotion**
   - **Given** memory candidates, raw runtime history and one human-approved active inventory
   - **When** formation resolves
   - **Then** only bounded manifest-listed text is framed in the learned-memory layer
-- [ ] **Scenario: legacy and disabled agents remain compatible**
+- [x] **Scenario: legacy and disabled agents remain compatible**
   - **Given** legacy agents or profile agents with lanes disabled
   - **When** they load/start/resume/fork
   - **Then** effective definitions, prompt bytes and plugin delivery remain unchanged
-- [ ] **Scenario: migration has one recoverable cutover point**
+- [x] **Scenario: migration has one recoverable cutover point**
   - **Given** a legacy agent and prepared canonical sources/heads
   - **When** migration fails at any intent, pointer or host-commit boundary
   - **Then** launch remains blocked until recovery restores exact legacy state or completes exact canonical state, without fallback or dual authority
-- [ ] **Scenario: lifecycle ownership composes without duplicated orchestration**
+- [x] **Scenario: lifecycle ownership composes without duplicated orchestration**
   - **Given** lane-local prepare/retire/import operations from 427
   - **When** `t-e50d4f` orchestrates rename, clone or forget
   - **Then** one host intent owns ordering/recovery, authorities do not transfer, and plugin/external paths remain untouched
-- [ ] PI-001 passes with the same promise, oracle, guidance bytes and ordering.
-- [ ] Runtime-managed memory has a separate task/spec and no activation path in SDD 427.
-- [ ] Focused authority/snapshot/Soul/instructions/Evolution/memory/session/lifecycle/plugin tests, typecheck and configured full verification pass.
+- [x] PI-001 passes with the same promise, oracle, guidance bytes and ordering.
+- [x] Runtime-managed memory has a separate task/spec and no activation path in SDD 427.
+- [x] Focused authority/snapshot/Soul/instructions/Evolution/memory/session/lifecycle/plugin tests, typecheck and configured full verification pass.
 
 ## Non-goals
 

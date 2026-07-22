@@ -14,6 +14,7 @@ import {
   validateFormationAuthorityVector,
   type FormationAuthorityVector,
   type FormationObject,
+  type FormationNativeSuppressionEvidenceV1,
   type FormationSessionSelectorV1,
   type FormationSnapshotManifestV1,
 } from "./domain.js";
@@ -134,6 +135,7 @@ export interface ResolvedFormationPayload {
   evolutionLearnings?: Buffer | string;
   evolutionSkills?: readonly FormationSkillPayload[];
   selectedMemory?: readonly FormationSkillPayload[];
+  nativeSuppression?: FormationNativeSuppressionEvidenceV1;
 }
 
 export interface FormationAuthorityStoreOptions {
@@ -174,6 +176,15 @@ export interface FormationAuthorityStoreOptions {
     agentName: string;
     runtimeTrustClass: string;
   }) => ResolvedFormationPayload;
+  /** Rechecks host-keyed native-lane suppression at the publication boundary. */
+  verifyNativeSuppression?: (input: {
+    evidence: FormationNativeSuppressionEvidenceV1;
+    vector: FormationAuthorityVector;
+    operationId: string;
+    runtimeTrustClass: string;
+    /** Host timestamp that becomes the selector/manifest publication timestamp in this transaction. */
+    verifiedAt: string;
+  }) => boolean;
 }
 
 export interface PrepareFormationSnapshotInput {
@@ -469,6 +480,17 @@ export class FormationAuthorityStore {
   }
 
   prepareSnapshot(input: PrepareFormationSnapshotInput): FormationSnapshotManifestV1 {
+    return this.prepareResolvedSnapshot(input);
+  }
+
+  /**
+   * Async lane resolvers run outside this synchronous SQLite store, then hand their exact payload
+   * back here. The store still re-reads and CAS-checks the complete vector before publication.
+   */
+  prepareResolvedSnapshot(
+    input: PrepareFormationSnapshotInput,
+    preResolved?: ResolvedFormationPayload,
+  ): FormationSnapshotManifestV1 {
     assertOperationId(input.operationId);
     const intentFingerprint = prepareFingerprint(input);
     const replay = this.withDatabase((db) => {
@@ -479,7 +501,7 @@ export class FormationAuthorityStore {
 
     const vector = this.currentVector(input.agentId);
     this.assertFreshRequest(input, vector);
-    const resolved = this.options.resolvePayload({
+    const resolved = preResolved ?? this.options.resolvePayload({
       operationId: input.operationId,
       vector: structuredClone(vector!),
       workspaceId: input.workspaceId,
@@ -572,6 +594,20 @@ export class FormationAuthorityStore {
         const bytes = this.objectStore.read(object.sha256);
         if (bytes.length !== object.bytes) throw new FormationAuthorityStoreError("formation snapshot object length failed integrity");
       }
+      const publicationAt = this.now();
+      const suppressionRequired = Object.values(vector.profile.lanes).some((lane) => lane.mode === "profile");
+      if (suppressionRequired !== (manifest.nativeSuppression !== undefined)) {
+        throw new FormationAuthorityStoreError(suppressionRequired
+          ? "profile formation requires native suppression evidence at selector commit"
+          : "disabled/legacy formation cannot commit native suppression evidence");
+      }
+      if (manifest.nativeSuppression && !this.options.verifyNativeSuppression?.({
+        evidence: manifest.nativeSuppression,
+        vector: structuredClone(vector),
+        operationId: input.operationId,
+        runtimeTrustClass: manifest.runtimeTrustClass,
+        verifiedAt: publicationAt,
+      })) throw new FormationAuthorityStoreError("native formation suppression expired before selector commit");
       const sessionId = this.uuid();
       const selector = formationSessionSelectorV1Schema.parse({
         schemaVersion: 1,
@@ -587,10 +623,10 @@ export class FormationAuthorityStore {
         snapshotSha256: String(lease.manifest_digest),
         formationGeneration: manifest.formationGeneration,
         formationGenerationSha256: manifest.formationGenerationSha256,
-        createdAt: this.now(),
+        createdAt: publicationAt,
       });
       db.prepare("INSERT INTO formation_snapshot_manifests(snapshot_id, manifest_digest, manifest_json, committed_at) VALUES (?, ?, ?, ?)")
-        .run(manifest.snapshotId, lease.manifest_digest, JSON.stringify(manifest), this.now());
+        .run(manifest.snapshotId, lease.manifest_digest, JSON.stringify(manifest), publicationAt);
       db.prepare("INSERT INTO formation_session_selectors(session_id, selector_json) VALUES (?, ?)")
         .run(selector.sessionId, JSON.stringify(selector));
       this.writeReceipt(db, input.operationId, "fresh", String(lease.intent_fingerprint), JSON.stringify(selector));
@@ -913,6 +949,21 @@ export class FormationAuthorityStore {
     if (resolved.rendererContractsSha256 !== vector.generation.rendererContractsSha256) {
       throw new FormationAuthorityStoreError("resolved formation payload uses another renderer contract set");
     }
+    const suppressionRequired = Object.values(vector.profile.lanes).some((lane) => lane.mode === "profile");
+    if (suppressionRequired !== (resolved.nativeSuppression !== undefined)) {
+      throw new FormationAuthorityStoreError(suppressionRequired
+        ? "profile formation requires native suppression evidence"
+        : "disabled/legacy formation cannot publish native suppression evidence");
+    }
+    if (resolved.nativeSuppression) {
+      if (!this.options.verifyNativeSuppression?.({
+        evidence: resolved.nativeSuppression,
+        vector: structuredClone(vector),
+        operationId: input.operationId,
+        runtimeTrustClass: input.runtimeTrustClass,
+        verifiedAt: this.now(),
+      })) throw new FormationAuthorityStoreError("native formation suppression is invalid at publication");
+    }
     const skills = [...(resolved.evolutionSkills ?? [])].sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0);
     const selectedMemory = [...(resolved.selectedMemory ?? [])].sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0);
     const startup = this.objectStore.digest(resolved.startupPrompt);
@@ -958,6 +1009,7 @@ export class FormationAuthorityStore {
       runtimeTrustClass: input.runtimeTrustClass,
       formationGeneration: vector.generation.generation,
       formationGenerationSha256: input.expectedGenerationSha256,
+      ...(resolved.nativeSuppression ? { nativeSuppression: structuredClone(resolved.nativeSuppression) } : {}),
       objects,
       createdAt: this.now(),
     });

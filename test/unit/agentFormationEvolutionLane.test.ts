@@ -17,6 +17,7 @@ import {
 } from "../../src/agents/formation/evolutionLane.js";
 import { EvolutionFormationTransactionService } from "../../src/agents/formation/evolutionTransactions.js";
 import { formationDigest, type FormationAuthorityVector, type ProfileActivationHeadV2 } from "../../src/agents/formation/domain.js";
+import { HumanLaneSuppressionAuthority } from "../../src/agents/formation/humanLanes.js";
 
 const roots: string[] = [];
 afterEach(() => {
@@ -158,13 +159,22 @@ async function fixture() {
     vector,
     store: evolution,
   });
+  const suppression = new HumanLaneSuppressionAuthority(Buffer.alloc(32, 8), () => NOW);
   const formation = new FormationAuthorityStore(host, {
     now: () => NOW,
     authorizeLaunch: () => true,
     authorizeMutation: () => true,
     authorizeSelectorRevocation: () => true,
     authorizeSelectorRead: () => true,
-    resolvePayload: () => captured,
+    resolvePayload: ({ operationId, vector: current, runtimeTrustClass }) => ({
+      ...captured,
+      nativeSuppression: suppression.issueAfterSuppression({
+        operationId, vector: current, runtimeAdapter: "codex", runtimeTrustClass,
+        lanes: ["evolution"], issuedAt: NOW,
+      }),
+    }),
+    verifyNativeSuppression: ({ evidence, vector: current, operationId, runtimeTrustClass, verifiedAt }) =>
+      suppression.verify(evidence, current, runtimeTrustClass, operationId, verifiedAt),
   });
   formation.replaceVector({ operationId: "evolution-bootstrap", caller: human, mutation: "bootstrap", vector });
   return { root, evolution, evolutionOptions, formation, vector, active };

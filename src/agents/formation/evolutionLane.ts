@@ -124,7 +124,7 @@ export function evolutionActivationHeadForState(input: {
   };
 }
 
-function renderEvolution(active: EvolutionActiveSnapshotBytes, head: EvolutionActivationHeadV2): string {
+export function renderEvolutionFormation(active: EvolutionActiveSnapshotBytes, head: EvolutionActivationHeadV2): string {
   const catalog = active.skills.length === 0
     ? "No human-approved Agent Skills are active in this formation."
     : [...active.skills].sort((a, b) => compareText(a.name, b.name)).map((skill) => {
@@ -190,7 +190,7 @@ export async function resolveEvolutionFormationLane(input: {
       || formationDigest(captured.entries) !== formationDigest(head.skillInventory)) {
       throw new EvolutionFormationLaneError("Evolution active bytes do not match active authority head");
     }
-    const prompt = renderEvolution(active, head);
+    const prompt = renderEvolutionFormation(active, head);
     return {
       sourceVectorSha256: formationDigest(input.vector),
       rendererContractsSha256: input.vector.generation.rendererContractsSha256,

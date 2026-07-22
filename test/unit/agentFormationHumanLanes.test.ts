@@ -197,11 +197,14 @@ describe("human formation lanes", () => {
     const hostRoot = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-human-lanes-host-"));
     roots.push(hostRoot);
     const store = new FormationAuthorityStore(hostRoot, {
+      now: () => "2026-07-22T12:01:00.000Z",
       authorizeLaunch: () => true,
       authorizeMutation: () => true,
       authorizeSelectorRevocation: () => true,
       authorizeSelectorRead: ({ caller, ownerPrincipal, ownerKind }) => caller.principal === ownerPrincipal && caller.kind === ownerKind,
       resolvePayload: () => payload,
+      verifyNativeSuppression: ({ evidence, vector: current, operationId, runtimeTrustClass, verifiedAt }) =>
+        suppressionAuthority.verify(evidence, current, runtimeTrustClass, operationId, verifiedAt),
     });
     store.replaceVector({ operationId: "human-bootstrap", caller: human, mutation: "bootstrap", vector: active });
     const manifest = store.prepareSnapshot({

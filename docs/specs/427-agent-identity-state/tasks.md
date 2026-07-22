@@ -46,11 +46,11 @@ _Generated from `plan.md` on 2026-07-22._
 
 ## Integration — `t-3ef947`
 
-- [ ] Integrate complete formation vector and stable lane lifecycle consumer contract.
-- [ ] Prove migration/recovery/tamper/session/plugin matrices.
-- [ ] Dogfood fresh launch, promotion, next session, resume, re-anchor and fork.
-- [ ] Add architecture/operator documentation and closure evidence.
-- [ ] Run PI-001, focused tests, typecheck and configured full verification.
+- [x] Integrate complete formation vector and stable lane lifecycle consumer contract.
+- [x] Prove migration/recovery/tamper/session/plugin matrices.
+- [x] Dogfood fresh launch, promotion, next session, resume, re-anchor and fork.
+- [x] Add architecture/operator documentation and closure evidence.
+- [x] Run PI-001, focused tests, typecheck and configured full verification.
 
 **Headless check:** `npm test -- test/unit/agentFormation*.test.ts test/unit/evolutionPromptLayers.test.ts test/unit/soulProfileTransactions.test.ts`
 

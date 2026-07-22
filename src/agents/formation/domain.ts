@@ -43,6 +43,18 @@ export const formationLaneSchema = z.discriminatedUnion("mode", [legacyLaneSchem
 export type FormationLane = z.infer<typeof formationLaneSchema>;
 export type FormationLaneName = "soul" | "instructions" | "evolution" | "memory";
 
+export const formationNativeSuppressionEvidenceV1Schema = z.object({
+  schemaVersion: z.literal(1),
+  operationId: publicId,
+  sourceVectorSha256: digest,
+  runtimeAdapter: publicId,
+  runtimeTrustClass: publicId,
+  lanes: z.array(z.enum(["soul", "instructions", "evolution", "memory"])).max(4),
+  issuedAt: z.string().datetime(),
+  mac: digest,
+}).strict();
+export type FormationNativeSuppressionEvidenceV1 = z.infer<typeof formationNativeSuppressionEvidenceV1Schema>;
+
 export const profileActivationHeadV2Schema = z.object({
   schemaVersion: z.literal(PROFILE_ACTIVATION_HEAD_SCHEMA_VERSION),
   workspaceId: publicId,
@@ -268,6 +280,7 @@ export const formationSnapshotManifestV1Schema = z.object({
   runtimeTrustClass: publicId,
   formationGeneration: revision,
   formationGenerationSha256: digest,
+  nativeSuppression: formationNativeSuppressionEvidenceV1Schema.optional(),
   objects: z.array(formationObjectSchema).min(2).max(2048),
   createdAt: z.string().datetime(),
 }).strict().superRefine((manifest, ctx) => {
