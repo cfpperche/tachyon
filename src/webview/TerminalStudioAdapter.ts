@@ -52,6 +52,7 @@ export class TerminalStudioAdapter implements StudioHostAdapter<TerminalStudioEn
     return mapStudioSubmitResult(
       this.ws.studioSubmit({ state: patch, editingName: entityId }),
       "validation/terminal-save-failed",
+      entityId === undefined ? patch.name : undefined,
     );
   }
 }

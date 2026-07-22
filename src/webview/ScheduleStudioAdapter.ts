@@ -52,6 +52,7 @@ export class ScheduleStudioAdapter implements StudioHostAdapter<ScheduleStudioEn
     return mapStudioSubmitResult(
       this.ws.studioSubmit({ state: patch, editingName: entityId }),
       "validation/schedule-save-failed",
+      entityId === undefined ? patch.name : undefined,
     );
   }
 }

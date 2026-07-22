@@ -52,6 +52,7 @@ export class CommandStudioAdapter implements StudioHostAdapter<CommandStudioEnti
     return mapStudioSubmitResult(
       this.ws.studioSubmit({ state: patch, editingName: entityId }),
       "validation/command-save-failed",
+      entityId === undefined ? patch.name : undefined,
     );
   }
 }

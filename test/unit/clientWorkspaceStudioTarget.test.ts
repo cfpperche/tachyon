@@ -59,7 +59,7 @@ describe("ClientWorkspaceStudioTarget", () => {
     expect(target.studioDeps().verifyCandidates()).toEqual(expect.arrayContaining(["npm test", "lint", "ship"]));
 
     const saved = await adapter.save(undefined, { ...blankCommandFields(), name: "deploy", cmd: "npm run deploy" });
-    expect(saved).toEqual({ status: "ok" });
+    expect(saved).toEqual({ status: "ok", entityId: "deploy" });
     expect(operations).toEqual(["studio-operation-1"]);
     expect(fake.invocations[0]?.command).toMatchObject({ method: "studio.submit", input: { state: { name: "deploy" } } });
     expect(target.config?.commands.deploy?.cmd).toBe("npm run deploy");

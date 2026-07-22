@@ -38,7 +38,12 @@ export type StudioLoadResult<TEntity, TReferenceData = unknown> =
   | { status: "error"; error: string };
 
 export type StudioSaveResult =
-  | { status: "ok" }
+  /** t-610705 (Phase D, D1d) — `entityId` is set ONLY when this save just PERSISTED A NEW entity
+   *  (the adapter was called with `entityId: undefined`) — it's the id the host should now bind to,
+   *  so a `studio-new` route stops being permanently stuck in "new" mode after its first successful
+   *  save (see studioHost.ts's beginStudioSave doc comment for the full gap this closes). Absent for
+   *  an edit-mode save (nothing about the bound entity's id changed). */
+  | { status: "ok"; entityId?: string }
   | { status: "error"; error: { code: string; message: string; source: StudioErrorSource } }
   | { status: "conflict"; error: { code: string; message: string } };
 

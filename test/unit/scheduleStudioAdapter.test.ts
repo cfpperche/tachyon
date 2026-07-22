@@ -79,7 +79,7 @@ describe("ScheduleStudioAdapter", () => {
   it("preserves scheduler activation by saving through Workspace.studioSubmit", async () => {
     const { ws, schedulerActivations } = fakeWorkspace({ activateOnSubmit: true });
     const patch = { ...blankScheduleFields(), name: "hourly", schedTarget: "lint" };
-    expect(await new ScheduleStudioAdapter(ws).save(undefined, patch)).toEqual({ status: "ok" });
+    expect(await new ScheduleStudioAdapter(ws).save(undefined, patch)).toEqual({ status: "ok", entityId: "hourly" });
     expect(schedulerActivations()).toBe(1);
   });
 

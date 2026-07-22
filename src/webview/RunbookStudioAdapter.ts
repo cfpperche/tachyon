@@ -50,6 +50,7 @@ export class RunbookStudioAdapter implements StudioHostAdapter<RunbookStudioEnti
     return mapStudioSubmitResult(
       this.ws.studioSubmit({ state: patch, editingName: entityId }),
       "validation/runbook-save-failed",
+      entityId === undefined ? patch.name : undefined,
     );
   }
 }

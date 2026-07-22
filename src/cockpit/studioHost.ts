@@ -306,26 +306,17 @@ export async function handleStudioMessage(io: StudioHostIO, raw: unknown, hooks:
  * already unmounted (the post is a harmless no-op, studioFreezeBus.dispatchStudioFreezeMessage
  * returns false with no listener registered).
  *
- * KNOWN, DOCUMENTED LIMITATION (D1b code-review finding, NOT fixed here — scope note, not a silent
- * gap, same convention as the module doc's studio-new draft-cache bullet above): on a successful
- * save from a `studio-new` binding (`b.entityId` was `undefined`), `b.entityId` is NEVER updated to
- * the newly-created entity's id — `StudioSaveResult`'s "ok" variant carries no id back, and the
- * route itself stays `studio-new` (nothing here navigates to `studio-edit`). This was invisible for
- * command/terminal/runbook/schedule (their only post-save domain actions are pre-save "browse"
- * folder-picks); D1b's Agent Studio review surfaced it because soul-profile/evolution actions are
- * genuinely POST-save follow-ups gated on a named entity (`ctx.entityId`, agentStudioDomain.ts). NOT
- * a correctness bug: the CLIENT'S OWN `entity`/`savedAgent` state also never refreshes after a save
- * reply (no studio's App.tsx has a `d.type === "save"` handler that re-requests a load), so the UI
- * stays showing "Save this agent first" and never renders a clickable soul/evolution button in this
- * exact state either — host and client agree, nothing is silently rejected that the user could
- * plausibly have clicked. The real gap is UX, not safety: a user can't seamlessly continue
- * configuring soul/evolution for an agent they JUST created without navigating away (e.g. back to
- * Fleet) and back in via `tachyon.editAgentStudioItem` (which correctly opens `studio-edit` with the
- * real id once the sidebar reflects the new entry). Fixing this properly needs `StudioSaveResult`'s
- * "ok" case to optionally carry the persisted entity id (adapter.ts, a shared-interface change
- * touching every adapter) plus a fresh `sendStudioLoad`-equivalent push here — out of scope for a
- * single-studio migration PR; flagged in docs/specs/410-cockpit-single-app/tasks.md for a future pass
- * if it proves to matter in practice for Agent Studio's actual dogfood usage.
+ * D1d FIX (was a D1b-documented known limitation): on a successful save from a `studio-new` binding
+ * (`b.entityId` was `undefined`), `b.entityId` now adopts the newly-persisted entity's id
+ * (`result.entityId` — `StudioSaveResult`'s "ok" variant, adapter.ts) and this immediately re-runs
+ * `sendStudioLoad` so the client gets a fresh `load` reflecting the now-named entity. Without this, a
+ * `studio-new` route stayed permanently stuck in "new" mode client-side even after a real save
+ * succeeded (no studio's App.tsx has ever had a `d.type === "save"` handler that re-requests a load
+ * on its own) — invisible for command/terminal/runbook/schedule (no post-save domain actions), a real
+ * UX gap for Agent Studio (soul/evolution actions are genuinely post-save follow-ups gated on a named
+ * entity — see agentStudioDomain.ts's `ctx.entityId` guard). `b.mode` is updated to "edit" alongside
+ * `b.entityId` — read by `sendStudioLoad`'s own restore-snapshot construction (`mode: b.mode`), so a
+ * later peeked draft's snapshot correctly reports "edit" instead of a now-stale "new".
  */
 async function beginStudioSave(io: StudioHostIO, hooks: StudioMessageHooks): Promise<void> {
   const b = binding;
@@ -352,6 +343,11 @@ async function beginStudioSave(io: StudioHostIO, hooks: StudioMessageHooks): Pro
       discardDraft(b.route); // saved, not abandoned — nothing left to keep as a draft
       hooks.onChanged();
       io.post(envelope({ type: "save", status: "ok" as const }));
+      if (result.entityId !== undefined && b.entityId === undefined) {
+        b.entityId = result.entityId;
+        b.mode = "edit";
+        await sendStudioLoad(io);
+      }
     } else {
       const error: StudioError = result.status === "conflict"
         ? { code: result.error.code, message: result.error.message, source: "transport", blocking: true }

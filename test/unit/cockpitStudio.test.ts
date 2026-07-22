@@ -625,3 +625,55 @@ describe("Control → studio (D1a: refreshStudioReferenceData)", () => {
     expect(referenceDataMessages()).toHaveLength(0);
   });
 });
+
+describe("Control → studio (D1d: entityId adoption after create-save)", () => {
+  it("a successful save from studio-new adopts the persisted entityId, switches to edit mode, and re-loads", async () => {
+    // the fake studioSubmit doesn't mutate config itself (real persistence is engine-side); the
+    // config is pre-populated with the entity the save is expected to have just persisted, so the
+    // post-save reload this test asserts on can actually resolve it.
+    const ws = commandStudioTarget({
+      config: fakeConfig({ build: { cmd: "npm run build" } } as unknown as TachyonConfig["commands"]),
+      studioSubmit: () => undefined,
+    });
+    const deps = depsFor({ getWorkspaces: () => [ws], onChanged: () => {} });
+    const { routeKey, mountNonce } = await openStudioNew(deps);
+    sendStudioReady(routeKey, mountNonce);
+    await flush();
+    expect(loadMessages()).toHaveLength(1);
+    expect(loadMessages().at(-1)?.entity.name).toBeUndefined();
+
+    const fields = { ...blankCommandFields(), name: "build", cmd: "npm run build" };
+    __createdPanels[0].webview.__receive(scoped(routeKey, mountNonce, { type: "patch", patch: fields, editRevision: 1 }));
+    __createdPanels[0].webview.__receive(scoped(routeKey, mountNonce, { type: "save" }));
+    await flush();
+
+    // a second load envelope, now naming the just-persisted entity, proves the binding adopted the
+    // new entityId and re-ran sendStudioLoad — not just accepted the save and stayed stuck on "new".
+    expect(loadMessages()).toHaveLength(2);
+    expect(loadMessages().at(-1)?.entity.name).toBe("build");
+  });
+
+  it("a successful save from studio-EDIT does not re-load (entityId was already bound)", async () => {
+    const ws = commandStudioTarget({
+      config: fakeConfig({ build: { cmd: "npm run build" } } as unknown as TachyonConfig["commands"]),
+      studioSubmit: () => undefined,
+    });
+    const deps = depsFor({ getWorkspaces: () => [ws], onChanged: () => {} });
+    await openCockpit(deps, { route: { kind: "studio-edit", studio: "command", wsHash: "ws-1", entityId: "build" } });
+    __createdPanels[0].webview.__receive({ type: "ready" });
+    await flush();
+    const model = __createdPanels[0].webview.posted.find((m) => (m as { type?: string }).type === "model") as { model: { studioMountNonce?: string } } | undefined;
+    const mountNonce = model!.model.studioMountNonce!;
+    const routeKey = "studio-edit:command:ws-1:build";
+    sendStudioReady(routeKey, mountNonce);
+    await flush();
+    expect(loadMessages()).toHaveLength(1);
+
+    const fields = { ...blankCommandFields(), name: "build", cmd: "npm run build --verbose" };
+    __createdPanels[0].webview.__receive(scoped(routeKey, mountNonce, { type: "patch", patch: fields, editRevision: 1 }));
+    __createdPanels[0].webview.__receive(scoped(routeKey, mountNonce, { type: "save" }));
+    await flush();
+
+    expect(loadMessages()).toHaveLength(1);
+  });
+});

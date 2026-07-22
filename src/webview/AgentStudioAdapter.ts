@@ -69,6 +69,7 @@ export class AgentStudioAdapter implements StudioHostAdapter<AgentStudioEntity, 
     return mapStudioSubmitResult(
       this.ws.studioSubmit({ state: patch, editingName: entityId }),
       "validation/agent-save-failed",
+      entityId === undefined ? patch.name : undefined,
     );
   }
 

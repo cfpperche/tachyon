@@ -117,7 +117,7 @@ describe("AgentStudioAdapter — save", () => {
     const patch = { ...blankAgentFields(), name: "frontend", cmd: "claude" };
     const result = adapter.save(undefined, patch);
     expect(result).not.toBeInstanceOf(Promise);
-    expect(await result).toEqual({ status: "ok" });
+    expect(await result).toEqual({ status: "ok", entityId: "frontend" });
     expect(submits).toEqual([{ state: patch, editingName: undefined }]);
   });
 

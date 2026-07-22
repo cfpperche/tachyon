@@ -21,14 +21,19 @@ export interface StudioDeps {
   onSubmit: (submit: StudioSubmit) => string[] | undefined | Promise<string[] | undefined>;
 }
 
-/** Preserves the legacy synchronous adapter path while allowing a remote target to resolve asynchronously. */
+/** Preserves the legacy synchronous adapter path while allowing a remote target to resolve asynchronously.
+ *  `newEntityId` (t-610705, Phase D, D1d) — pass the patch's own name ONLY when this save call was for a
+ *  NEW entity (the adapter's own `entityId` param was `undefined`); every one of the 5 studio adapters'
+ *  `TPatch` is `FormState` (always carries `.name`), so this is the same value across all of them —
+ *  see StudioSaveResult's own doc comment for why the host needs it back. */
 export function mapStudioSubmitResult(
   result: string[] | undefined | Promise<string[] | undefined>,
   errorCode: string,
+  newEntityId?: string,
 ): StudioSaveResult | Promise<StudioSaveResult> {
   const map = (errors: string[] | undefined): StudioSaveResult => errors && errors.length > 0
     ? { status: "error", error: { code: errorCode, message: errors.join("; "), source: "validation" } }
-    : { status: "ok" };
+    : { status: "ok", ...(newEntityId ? { entityId: newEntityId } : {}) };
   return result && typeof (result as Promise<string[] | undefined>).then === "function"
     ? Promise.resolve(result).then(map)
     : map(result as string[] | undefined);
