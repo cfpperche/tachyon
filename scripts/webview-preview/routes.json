@@ -418,6 +418,48 @@
   },
   {
     "view": "cockpit",
+    "fixture": "studio-agent",
+    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=studio-agent",
+    "frame": {
+      "w": 1100,
+      "h": 720
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Control",
+    "aliases": [
+      "control",
+      "cockpit",
+      "sysadmin",
+      "project control",
+      "fleet control",
+      "control plane"
+    ]
+  },
+  {
+    "view": "cockpit",
+    "fixture": "studio-agent-edit",
+    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=studio-agent-edit",
+    "frame": {
+      "w": 1100,
+      "h": 720
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Control",
+    "aliases": [
+      "control",
+      "cockpit",
+      "sysadmin",
+      "project control",
+      "fleet control",
+      "control plane"
+    ]
+  },
+  {
+    "view": "cockpit",
     "fixture": "validations",
     "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=validations",
     "frame": {
@@ -984,60 +1026,6 @@
       "agent fixture",
       "agent shell fixture",
       "spec 350"
-    ]
-  },
-  {
-    "view": "agent-studio-shell",
-    "fixture": "new",
-    "url": "/scripts/webview-preview/index.html?view=agent-studio-shell&fixture=new",
-    "frame": {
-      "w": 900,
-      "h": 900
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Agent Studio",
-    "aliases": [
-      "agent studio",
-      "new agent",
-      "edit agent"
-    ]
-  },
-  {
-    "view": "agent-studio-shell",
-    "fixture": "dense-edit",
-    "url": "/scripts/webview-preview/index.html?view=agent-studio-shell&fixture=dense-edit",
-    "frame": {
-      "w": 900,
-      "h": 900
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Agent Studio",
-    "aliases": [
-      "agent studio",
-      "new agent",
-      "edit agent"
-    ]
-  },
-  {
-    "view": "agent-studio-shell",
-    "fixture": "load-error",
-    "url": "/scripts/webview-preview/index.html?view=agent-studio-shell&fixture=load-error",
-    "frame": {
-      "w": 900,
-      "h": 900
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Agent Studio",
-    "aliases": [
-      "agent studio",
-      "new agent",
-      "edit agent"
     ]
   }
 ]

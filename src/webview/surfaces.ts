@@ -106,12 +106,10 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   // spec 350 T5 — Agent-entity fixture (Fake 2), region-composition proof. Same dev-tooling-only status as
   // Pipeline Studio above: never instantiated or registered from extension.ts.
   { viewId: "tachyonAgentFixtureStudio", view: "agent-studio-fixture", hostFile: "src/webview/AgentFixtureStudioPanel.ts", mode: "live", converted: true, editorHome: "dev-only" },
-  // spec 350 Phase 3 — Agent Studio (shell), the per-entity single-document agent-kind studio.
-  { viewId: "tachyonAgentStudioShell", view: "agent-studio-shell", hostFile: "src/webview/AgentStudioPanel.ts", mode: "live", converted: true, editorHome: "standalone" },
-  // t-610705 (SDD 410 Phase D, D0/D1a) — the standalone Command/Terminal/Runbook/Schedule Studio
-  // (shell) panels were retired: they're Control routes now (studio-new/studio-edit, studio:
-  // "command"/"terminal"/"runbook"/"schedule" — studios-routes-design.md; standalone bundles +
-  // harness routes retired — use ?view=cockpit&fixture=studio-<name> instead). The trusted
+  // t-610705 (SDD 410 Phase D, D0/D1a/D1b) — the standalone Command/Terminal/Runbook/Schedule/Agent
+  // Studio (shell) panels were retired: they're Control routes now (studio-new/studio-edit, studio:
+  // "command"/"terminal"/"runbook"/"schedule"/"agent" — studios-routes-design.md; standalone bundles
+  // + harness routes retired — use ?view=cockpit&fixture=studio-<name> instead). The trusted
   // serializer for each legacy viewType stays registered in extension.ts: a revived pre-410 panel
   // disposes itself and redirects into Control → the mapped studio route.
   // spec 349 T10/T11 — first-party relay for untrusted plugin UI surfaces.

@@ -16,20 +16,19 @@ describe("spec 350 Phase 4 cutover studio routing", () => {
     expect(source).not.toContain("./webview/AgentForm.js");
   });
 
-  it("routes the legacy palette command to the per-entity Agent Studio shell", () => {
-    expect(commandBody("tachyon.agentStudio")).toContain("agentStudioPanels.openNew(ws)");
+  it("routes the legacy palette command to the Agent Studio Control route", () => {
+    expect(commandBody("tachyon.agentStudio")).toContain('cockpitRoutes.studioNew("agent", ws.wsHash)');
   });
 
-  it("routes existing entries to the studio manager for their persisted kind", () => {
+  it("routes existing entries to their studio's Control route", () => {
     const agentEdit = commandBody("tachyon.editAgentStudioItem");
-    expect(agentEdit).toContain("agent: () => agentStudioPanels.openExisting(ws, item.agentName)");
-    // t-610705 (Phase D, D1a) — the "terminal" branch is a Control route now (Agent Studio's "agent"
-    // branch stays on the legacy panel manager until D1b).
+    // t-610705 (Phase D, D1b) — both branches are Control routes now.
+    expect(agentEdit).toContain('cockpitRoutes.studioEdit("agent", ws.wsHash, item.agentName)');
     expect(agentEdit).toContain('cockpitRoutes.studioEdit("terminal", ws.wsHash, item.agentName)');
     expect(agentEdit).toContain('dispatch[def.kind === "terminal" ? "terminal" : "agent"]()');
 
-    // t-610705 (Phase D, D0/D1a) — Command/Terminal/Runbook/Schedule Studio are Control routes now
-    // (studios-routes-design.md): no more per-panel manager, routes via openCockpit + the
+    // t-610705 (Phase D, D0/D1a/D1b) — Command/Terminal/Runbook/Schedule Studio are Control routes
+    // now (studios-routes-design.md): no more per-panel manager, routes via openCockpit + the
     // studio-new/studio-edit route builders instead.
     expect(commandBody("tachyon.editCommandStudioItem")).toContain('cockpitRoutes.studioEdit("command", ws.wsHash, item.commandName)');
     expect(commandBody("tachyon.editRunbookStudioItem")).toContain('cockpitRoutes.studioEdit("runbook", ws.wsHash, item.runbookName)');

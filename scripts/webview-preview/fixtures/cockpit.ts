@@ -377,6 +377,14 @@ export const cockpitFixtures: Record<string, Fixture<CockpitModel>> = {
     provenance: "synthetic-edge",
     vm: { ...buildCockpitModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.studioEdit("schedule", "b349073a", "nightly-release-check"), studioMountNonce: "fixture-mount-nonce" },
   },
+  "studio-agent": {
+    provenance: "synthetic-edge",
+    vm: { ...buildCockpitModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.studioNew("agent", "b349073a"), studioMountNonce: "fixture-mount-nonce" },
+  },
+  "studio-agent-edit": {
+    provenance: "synthetic-edge",
+    vm: { ...buildCockpitModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.studioEdit("agent", "b349073a", "reviewer"), studioMountNonce: "fixture-mount-nonce" },
+  },
   validations: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "validations", nowIso: now }) },
   approvals: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "approvals", nowIso: now }) },
   // t-610705 (Phase C.3) — Handoff folds into a section (no activeRoute, unlike task-detail/Fleet

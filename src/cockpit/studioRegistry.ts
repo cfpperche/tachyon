@@ -13,17 +13,23 @@
 import * as vscode from "vscode";
 import type { StudioId } from "./studioIds.js";
 import type { StudioHostAdapter } from "../webview/shared/studio/adapter.js";
-import type { WorkspaceStudioTarget } from "../shell/WorkspacePresentation.js";
+import type { WorkspaceStudioTarget, WorkspaceAgentStudioTarget } from "../shell/WorkspacePresentation.js";
 import { CommandStudioAdapter } from "../webview/CommandStudioAdapter.js";
 import { TerminalStudioAdapter } from "../webview/TerminalStudioAdapter.js";
 import { RunbookStudioAdapter } from "../webview/RunbookStudioAdapter.js";
 import { ScheduleStudioAdapter } from "../webview/ScheduleStudioAdapter.js";
+import { AgentStudioAdapter } from "../webview/AgentStudioAdapter.js";
+import { createAgentEvolutionLabels } from "../webview/agent-studio-shell/domain.js";
+import { handleAgentStudioDomainMessage } from "./agentStudioDomain.js";
 import { envelope } from "../webview/shared/studio/protocol.js";
 
 type Adapter = StudioHostAdapter<unknown, unknown, unknown, unknown>;
 
 export interface StudioDomainContext {
   post: (message: unknown) => void;
+  /** t-610705 (Phase D, D1b) — the current binding's own entity id (undefined for studio-new) —
+   *  see studioHost.ts's `StudioMessageHooks.handleDomainMessage` doc comment for why. */
+  entityId: string | undefined;
 }
 
 export interface StudioRegistryEntry {
@@ -78,6 +84,20 @@ export const STUDIO_REGISTRY: Record<StudioId, StudioRegistryEntry> = {
   schedule: {
     legacyViewType: "tachyonScheduleStudioShell",
     makeAdapter: (ws) => new ScheduleStudioAdapter(ws) as unknown as Adapter,
+  },
+  agent: {
+    legacyViewType: "tachyonAgentStudioShell",
+    // t-610705 (Phase D, D1b) — WorkspaceStudioTarget is a structural subset of the
+    // WorkspaceAgentStudioTarget AgentStudioAdapter actually needs (createSoulProfile/
+    // readAgentEvolutionOverview/etc); the RUNTIME object (WorkspaceShellHandle) already implements
+    // the full agent-specific surface — same "adapter surface collapses to unknown" cast the Adapter
+    // alias itself already uses, just one layer up at the workspace-target boundary.
+    makeAdapter: (ws) => new AgentStudioAdapter(
+      ws as unknown as WorkspaceAgentStudioTarget,
+      createAgentEvolutionLabels((message, ...args) => vscode.l10n.t(message, ...args)),
+      vscode.l10n.t("When supported, delivered at startup through the selected runtime."),
+    ) as unknown as Adapter,
+    handleDomainMessage: (ws, ctx, message) => handleAgentStudioDomainMessage(ws as unknown as WorkspaceAgentStudioTarget, ctx, message),
   },
 } satisfies Record<StudioId, StudioRegistryEntry>;
 

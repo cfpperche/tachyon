@@ -271,19 +271,11 @@ const agentStudioFixture = {
   outfile: "dist/webview/agent-studio-fixture.js",
 };
 
-// spec 350 Phase 3 T3 — the Agent Studio (shell) webview bundle: the per-entity, single-document Agent
-// studio rendered on the studio shell.
-const agentStudioShell = {
-  ...sidebar,
-  entryPoints: ["src/webview/agent-studio-shell/main.tsx"],
-  outfile: "dist/webview/agent-studio-shell.js",
-};
-
-// t-610705 (SDD 410 Phase D, D0/D1a) — the standalone Command/Terminal/Runbook/Schedule Studio
-// (shell) bundles were retired: they're Control routes now (studio-new/studio-edit, studio:"command"
-// /"terminal"/"runbook"/"schedule" — studios-routes-design.md; cockpit.js lazy-imports each shell's
-// App.tsx directly). Each shell's own copyFileSync call below stays (Control still co-loads that
-// stylesheet) — only the standalone entry point/bundle is gone.
+// t-610705 (SDD 410 Phase D, D0/D1a/D1b) — the standalone Command/Terminal/Runbook/Schedule/Agent
+// Studio (shell) bundles were retired: they're Control routes now (studio-new/studio-edit, studio:
+// "command"/"terminal"/"runbook"/"schedule"/"agent" — studios-routes-design.md; cockpit.js
+// lazy-imports each shell's App.tsx directly). Each shell's own copyFileSync call below stays
+// (Control still co-loads those stylesheets) — only the standalone entry point/bundle is gone.
 
 // spec 349 T10 — first-party plugin surface relay. It mounts the opaque-origin plugin iframe, nonce-stamps
 // inline plugin scripts, and relays typed messages to the VS Code host.
@@ -454,7 +446,7 @@ if (existsSync(excalidrawAssets)) {
   cpSync(excalidrawAssets, "dist/webview/excalidraw-assets", { recursive: true });
 }
 
-const targets = [extension, toolLauncher, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, approval, cockpit, pinPreview, pinStudio, taskStudio, pipelineStudio, agentStudioFixture, agentStudioShell, pluginHost, excalidraw, mermaid, katex, preview, uiGate];
+const targets = [extension, toolLauncher, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, approval, cockpit, pinPreview, pinStudio, taskStudio, pipelineStudio, agentStudioFixture, pluginHost, excalidraw, mermaid, katex, preview, uiGate];
 if (watch) {
   const ctxs = await Promise.all(targets.map((c) => esbuild.context(c)));
   await Promise.all(ctxs.map((c) => c.watch()));

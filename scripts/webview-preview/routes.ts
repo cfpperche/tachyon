@@ -117,11 +117,13 @@ export const ROUTES: Record<string, Route> = {
       "/dist/webview/activity.css",
       "/dist/webview/probes.css",
       "/dist/webview/handoff.css",
+      "/dist/webview/agent-studio-shell.tailwind.css",
       "/dist/webview/studio-frame.css",
       "/dist/webview/command-studio-shell.css",
       "/dist/webview/terminal-studio-shell.css",
       "/dist/webview/runbook-studio-shell.css",
       "/dist/webview/schedule-studio-shell.css",
+      "/dist/webview/agent-studio-shell.css",
       "/dist/webview/cockpit.css",
     ],
     frame: { w: 1100, h: 720 },
@@ -187,6 +189,7 @@ export const ROUTES: Record<string, Route> = {
           terminal: { fixtures: terminalStudioShellFixtures as Record<string, Fixture>, makeMessage: (vm) => terminalStudioShellMakeMessage(vm as never) },
           runbook: { fixtures: runbookStudioShellFixtures as Record<string, Fixture>, makeMessage: (vm) => runbookStudioShellMakeMessage(vm as never) },
           schedule: { fixtures: scheduleStudioShellFixtures as Record<string, Fixture>, makeMessage: (vm) => scheduleStudioShellMakeMessage(vm as never) },
+          agent: { fixtures: agentStudioShellFixtures as Record<string, Fixture>, makeMessage: (vm) => agentStudioShellMakeMessage(vm as never) },
         };
         const entry = byStudio[(activeRoute as { studio: string }).studio];
         const studio = entry?.fixtures[key]?.vm;
@@ -265,18 +268,9 @@ export const ROUTES: Record<string, Route> = {
     fixtures: agentStudioFixtureFixtures as Record<string, Fixture>,
     makeMessage: (vm) => agentStudioFixtureMakeMessage(vm as never),
   },
-  // spec 350 Phase 3 T3 — Agent Studio (shell): the pilot's real per-entity agent-kind studio (create + edit)
-  // on the shell — same CSS order as pipeline-studio/task-studio's real renderWebviewShell call.
-  "agent-studio-shell": {
-    bundle: "/dist/webview/agent-studio-shell.js",
-    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/vscode-theme.css", "/dist/webview/agent-studio-shell.tailwind.css", "/dist/webview/studio-frame.css", "/dist/webview/agent-studio-shell.css"],
-    frame: { w: 900, h: 900 },
-    fixtures: agentStudioShellFixtures as Record<string, Fixture>,
-    makeMessage: (vm) => agentStudioShellMakeMessage(vm as never),
-  },
-  // t-610705 (SDD 410 Phase D, D0/D1a) — the standalone "command"/"terminal"/"runbook"/"schedule"
-  // -studio-shell routes previewed the retired standalone panels; they're Control routes now
-  // (studio-new/studio-edit, studio:"command"/"terminal"/"runbook"/"schedule") — use
+  // t-610705 (SDD 410 Phase D, D0/D1a/D1b) — the standalone "command"/"terminal"/"runbook"/"schedule"
+  // /"agent"-studio-shell routes previewed the retired standalone panels; they're Control routes now
+  // (studio-new/studio-edit, studio:"command"/"terminal"/"runbook"/"schedule"/"agent") — use
   // ?view=cockpit&fixture=studio-<name> / studio-<name>-edit (same App.tsx components, same fixture
   // VMs via the cockpit route's activeRoute injection above).
 };

@@ -34,7 +34,6 @@ describe("persistent workspace presentation boundary", () => {
       "src/webview/ApprovalPanel.ts",
       "src/webview/PluginsPanel.ts",
       "src/webview/AgentStudioAdapter.ts",
-      "src/webview/AgentStudioPanel.ts",
       "src/webview/CommandStudioAdapter.ts",
       "src/webview/RunbookStudioAdapter.ts",
       "src/webview/ScheduleStudioAdapter.ts",
@@ -57,6 +56,10 @@ describe("persistent workspace presentation boundary", () => {
       // Cockpit.ts, which resolve WorkspaceStudioTarget through CockpitDeps.studios, not this file.
       // TerminalStudioPanel.ts/RunbookStudioPanel.ts/ScheduleStudioPanel.ts left this list on
       // t-610705 Phase D D1a for the same reason as CommandStudioPanel.ts above.
+      // AgentStudioPanel.ts left this list on t-610705 Phase D D1b for the same reason — the panel
+      // host was retired and the file is types-only now; Agent Studio is hosted by studioHost.ts /
+      // Cockpit.ts / agentStudioDomain.ts. AgentStudioAdapter.ts stays in this list (unchanged —
+      // still legitimately typed against WorkspaceAgentStudioTarget).
       "src/webview/TaskStudioAdapter.ts",
       "src/webview/TaskStudioPanel.ts",
       "src/webview/PinStudioAdapter.ts",

@@ -41,7 +41,7 @@ import { PinStudioPanelManager, PIN_STUDIO_VIEW_TYPE, type PinStudioPanelState }
 import { MISSION_CONTROL_VIEW_TYPE, type MissionControlPanelState } from "./webview/MissionControlPanel.js";
 import { TASK_DETAIL_VIEW_TYPE, type TaskDetailPanelState } from "./webview/TaskDetailPanel.js";
 import { TaskStudioPanelManager, TASK_STUDIO_VIEW_TYPE, type TaskStudioPanelState } from "./webview/TaskStudioPanel.js";
-import { AgentStudioPanelManager, AGENT_STUDIO_SHELL_VIEW_TYPE, type AgentStudioPanelState } from "./webview/AgentStudioPanel.js";
+import { AGENT_STUDIO_SHELL_VIEW_TYPE, type AgentStudioPanelState } from "./webview/AgentStudioPanel.js";
 import { TERMINAL_STUDIO_SHELL_VIEW_TYPE, type TerminalStudioPanelState } from "./webview/TerminalStudioPanel.js";
 import { COMMAND_STUDIO_SHELL_VIEW_TYPE, type CommandStudioPanelState } from "./webview/CommandStudioPanel.js";
 import { RUNBOOK_STUDIO_SHELL_VIEW_TYPE, type RunbookStudioPanelState } from "./webview/RunbookStudioPanel.js";
@@ -1016,8 +1016,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     refreshAll,
   );
   context.subscriptions.push({ dispose: () => pinStudioPanels.dispose() });
-  const agentStudioPanels = new AgentStudioPanelManager(context.extensionUri, workspaces, refreshAll);
-  context.subscriptions.push({ dispose: () => agentStudioPanels.dispose() });
   const pipelineStudioPanels = new PipelineStudioPanelManager(context.extensionUri, refreshAll);
   context.subscriptions.push({ dispose: () => pipelineStudioPanels.dispose() });
   const approvalPanels = new ApprovalPanelManager(context.extensionUri, workspaces);
@@ -1638,8 +1636,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   registerTrustedPanelSerializer<PinPreviewPanelState>(context, PIN_PREVIEW_VIEW_TYPE, (panel, state) => sidebarProto.deserializePinPreview(panel, state));
   registerTrustedPanelSerializer<PinStudioPanelState>(context, PIN_STUDIO_VIEW_TYPE, (panel, state) => pinStudioPanels.deserialize(panel, state));
   registerTrustedPanelSerializer<TaskStudioPanelState>(context, TASK_STUDIO_VIEW_TYPE, (panel, state) => taskStudioPanels.deserialize(panel, state));
-  registerTrustedPanelSerializer<AgentStudioPanelState>(context, AGENT_STUDIO_SHELL_VIEW_TYPE, (panel, state) => agentStudioPanels.deserialize(panel, state));
-  // t-610705 (SDD 410 Phase D, D0/D1a) — a revived pre-410 standalone studio panel disposes itself
+  // t-610705 (SDD 410 Phase D, D0/D1a/D1b) — a revived pre-410 standalone studio panel disposes itself
   // and redirects into Control → the mapped studio route, same claimed-singleton guard as every
   // other retired-panel serializer above. KNOWN GAP (documented, not silently dropped): unlike the
   // full studios-routes-design.md's exactly-once ack-based legacy handoff (round-1 F7 / round-2 F6 —
@@ -1664,6 +1661,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   registerLegacyStudioRedirect<TerminalStudioPanelState>(TERMINAL_STUDIO_SHELL_VIEW_TYPE, "terminal");
   registerLegacyStudioRedirect<RunbookStudioPanelState>(RUNBOOK_STUDIO_SHELL_VIEW_TYPE, "runbook");
   registerLegacyStudioRedirect<ScheduleStudioPanelState>(SCHEDULE_STUDIO_SHELL_VIEW_TYPE, "schedule");
+  registerLegacyStudioRedirect<AgentStudioPanelState>(AGENT_STUDIO_SHELL_VIEW_TYPE, "agent");
   registerTrustedPanelSerializer<PipelineStudioPanelState>(context, PIPELINE_STUDIO_VIEW_TYPE, (panel, state) => pipelineStudioPanels.deserialize(panel, state));
   // t-610705 (SDD 410 Phase B #5) — a revived pre-410 standalone panel disposes itself and
   // redirects into Control → tmux via tachyon.inspectServer, same as the live open path below.
@@ -2500,12 +2498,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon.agentStudio", async () => {
       const ws = await pickFolderForCreate();
       if (!ws) return;
-      agentStudioPanels.openNew(ws);
+      void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.studioNew("agent", ws.wsHash) });
     }),
     vscode.commands.registerCommand("tachyon.newAgentStudio", async () => {
       const ws = await pickFolderForCreate();
       if (!ws) return;
-      agentStudioPanels.openNew(ws);
+      void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.studioNew("agent", ws.wsHash) });
     }),
     vscode.commands.registerCommand("tachyon.terminalStudio", async () => {
       const ws = await pickFolderForCreate();
@@ -2525,10 +2523,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         notify(vscode.l10n.t("'{0}' is not declared in tachyon.yml (ad-hoc agents have no stored definition)", item.agentName), "warn");
         return;
       }
-      // t-610705 (Phase D, D1a) — the "terminal" branch is a Control route now; "agent" stays on the
-      // legacy panel manager until D1b migrates Agent Studio.
+      // t-610705 (Phase D, D1a/D1b) — both branches are Control routes now.
       const dispatch = {
-        agent: () => agentStudioPanels.openExisting(ws, item.agentName),
+        agent: () => { void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.studioEdit("agent", ws.wsHash, item.agentName) }); },
         terminal: () => { void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.studioEdit("terminal", ws.wsHash, item.agentName) }); },
       } satisfies Record<"agent" | "terminal", () => void>;
       dispatch[def.kind === "terminal" ? "terminal" : "agent"]();

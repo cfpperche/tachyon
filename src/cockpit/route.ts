@@ -132,6 +132,7 @@ function studioParentSection(studio: StudioId): CockpitSectionId {
     case "terminal":
     case "runbook":
     case "schedule":
+    case "agent":
       return "fleet";
     default: {
       const _never: never = studio;

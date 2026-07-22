@@ -165,6 +165,18 @@ const ScheduleStudioApp = lazy(() =>
     return { default: m.App };
   }),
 );
+// t-610705 (Phase D, D1b) — Agent Studio additionally needs its own compiled Tailwind utilities
+// (KitDropdown/KitFilePicker) before its surface CSS — same 3-sheet order the retired standalone
+// panel's styleFiles declared (vscode-theme.css is already unconditional in Cockpit.ts's main
+// styles: [...] array, so only the token-bridge Tailwind sheet needs its own co-load key here).
+const AgentStudioApp = lazy(() =>
+  import("../agent-studio-shell/App").then((m) => {
+    loadSectionStylesheet("studio-frame-agent");
+    loadSectionStylesheet("studio-agent-tailwind");
+    loadSectionStylesheet("studio-agent");
+    return { default: m.App };
+  }),
+);
 
 function SectionFallback() {
   return <EmptyState kind="loading" message="Loading…" />;
@@ -653,6 +665,8 @@ export function App(p: CockpitAppProps) {
             <RunbookStudioApp key={studioKey} {...studioMountProps} />
           ) : activeRoute.studio === "schedule" ? (
             <ScheduleStudioApp key={studioKey} {...studioMountProps} />
+          ) : activeRoute.studio === "agent" ? (
+            <AgentStudioApp key={studioKey} {...studioMountProps} />
           ) : null}
         </Suspense>
       </div>

@@ -234,7 +234,15 @@ function errorEnvelope(error: StudioError) {
 export interface StudioMessageHooks {
   onChanged: () => void;
   notify: (message: string, level?: "info" | "warn" | "error") => void;
-  handleDomainMessage?: (ctx: { post: (m: unknown) => void }, message: { type: string }) => void;
+  /** t-610705 (Phase D, D1b) — `entityId` is the CURRENT binding's own entity id (undefined for a
+   *  studio-new route), same value `beginStudioSave`/etc. already read off `binding.entityId` — a
+   *  domain handler that mutates a specific sub-resource of the saved entity (Agent Studio's soul-
+   *  profile/evolution actions, each of which independently carries its OWN `agent: string` field in
+   *  the message) uses this to reject a message whose payload targets a DIFFERENT entity than what
+   *  this binding is actually bound to, mirroring the retired AgentStudioPanelManager's
+   *  `ctx.entityId`/`m.agent !== agent` guard. A studio with no such guard (command/terminal's
+   *  "browse") simply never reads it. */
+  handleDomainMessage?: (ctx: { post: (m: unknown) => void; entityId: string | undefined }, message: { type: string }) => void;
 }
 
 export async function handleStudioMessage(io: StudioHostIO, raw: unknown, hooks: StudioMessageHooks): Promise<boolean> {
@@ -283,7 +291,7 @@ export async function handleStudioMessage(io: StudioHostIO, raw: unknown, hooks:
       hooks.onChanged();
       return true;
     default:
-      hooks.handleDomainMessage?.({ post: io.post }, msg as { type: string });
+      hooks.handleDomainMessage?.({ post: io.post, entityId: b.entityId }, msg as { type: string });
       return true;
   }
 }

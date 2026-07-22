@@ -34,7 +34,9 @@ describe("Agent Studio soul profile protocol (T15A)", () => {
   it("renders a state-focused Identity action surface before Role with secondary actions collapsed", () => {
     const source = fs.readFileSync(path.resolve("src/webview/agent-studio-shell/App.tsx"), "utf8");
     const pickerSource = fs.readFileSync(path.resolve("src/webview/shared/ui/kit/KitFilePicker.tsx"), "utf8");
-    const hostSource = fs.readFileSync(path.resolve("src/webview/AgentStudioPanel.ts"), "utf8");
+    // t-610705 (Phase D, D1b) — the soul/evolution domain-message handler (and its safeMessage error
+    // map) moved from AgentStudioPanel.ts (now types-only) to agentStudioDomain.ts.
+    const hostSource = fs.readFileSync(path.resolve("src/cockpit/agentStudioDomain.ts"), "utf8");
     expect(source.indexOf("Identity (SOUL.md)")).toBeGreaterThan(-1);
     expect(source.indexOf("Role template")).toBeGreaterThan(source.indexOf("Identity (SOUL.md)"));
     for (const action of [

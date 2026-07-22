@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "preact/hooks";
-import { decodeStudioMessage } from "../shared/studio/protocol";
+import { decodeStudioMessage, type StudioDispatch } from "../shared/studio/protocol";
 import { StudioFrame } from "../shared/studio/StudioFrame";
 import { canSave as computeCanSave } from "../shared/studio/dirtyGating";
+import { useStudioFreeze } from "../shared/studio/useStudioFreeze";
 import type { StudioError } from "../shared/studio/errorTaxonomy";
 import { Button, Chip, Input, Select, Textarea } from "../shared/ui";
 import { KitDropdown, KitDropdownContent, KitDropdownItem, KitDropdownSeparator, KitDropdownTrigger, KitFilePicker } from "../shared/ui/kit";
@@ -56,13 +57,22 @@ import type {
  * just no kind tabs (this studio only ever creates/edits `kind: "agent"`).
  *
  * `firstToken`/`harnessRuntimeOfCmd` are deliberately reimplemented here (not imported from formLogic.ts) —
- * formLogic.ts's runtime
- * exports transitively pull in `node:fs` (via config/loadConfig.ts), which this browser bundle can't resolve
- * (see agent-studio-shell/domain.ts's header for the empirical confirmation).
+ * formLogic.ts's runtime exports transitively pull in `node:fs` (via config/loadConfig.ts), which this
+ * browser bundle can't resolve (see agent-studio-shell/domain.ts's header for the empirical confirmation).
+ *
+ * t-610705 (Phase D, D1b) — Control-hosted now: props-driven, same split as every other migrated studio
+ * (command-studio-shell/App.tsx's doc comment has the full rationale for routeKey/mountNonce/useStudioFreeze/
+ * eager ref updates). The soul-profile/evolution message handling below is otherwise UNCHANGED from the
+ * standalone-panel version — those messages already carry their own `agent` field and are host-validated
+ * against the CURRENT binding's entityId (studioHost.ts's `StudioMessageHooks.handleDomainMessage`, D1b
+ * addition — see agentStudioDomain.ts), so no client-side identity work was needed there beyond routing
+ * every message (including soul/evolution ones) through the same identity-stamping `post` wrapper.
  */
-
-export interface AgentStudioDispatch {
-  post(msg: unknown): void;
+export interface AgentStudioAppProps {
+  dispatch: StudioDispatch;
+  routeKey: string;
+  mountNonce: string;
+  incoming?: { seq: number; message: unknown };
 }
 
 const firstToken = (cmd: string): string => (cmd.trim().split(/\s+/)[0] || "").split("/").pop() || "";
@@ -82,7 +92,12 @@ function bytesToBase64(bytes: Uint8Array): string {
 }
 
 async function sha256Hex(bytes: Uint8Array): Promise<string> {
-  const hash = await crypto.subtle.digest("SHA-256", bytes);
+  // t-610705 (Phase D, D1b) — this file is now transitively typechecked (cockpit/App.tsx's dynamic
+  // import pulls it into tsconfig.webview.json's graph for the first time; it was esbuild-only
+  // before, which doesn't type-check). `Uint8Array`'s `buffer` widened to include SharedArrayBuffer
+  // in this TS lib version, which `crypto.subtle.digest`'s BufferSource param rejects — always a
+  // real ArrayBuffer here (constructed locally from a File's arrayBuffer()), never shared.
+  const hash = await crypto.subtle.digest("SHA-256", bytes as BufferSource);
   return Array.from(new Uint8Array(hash), (value) => value.toString(16).padStart(2, "0")).join("");
 }
 
@@ -150,14 +165,13 @@ function SoulImportPicker({ onCancel, onSelect }: {
   );
 }
 
-export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
+export function App({ dispatch, routeKey, mountNonce, incoming }: AgentStudioAppProps) {
   const [mode, setMode] = useState<"new" | "edit">("new");
   const [entityId, setEntityId] = useState<string | undefined>(undefined);
   const [entity, setEntity] = useState<AgentStudioEntity | undefined>(undefined);
   const [fields, setFields] = useState<AgentStudioFields>(blankAgentFields());
   const [hostError, setHostError] = useState<StudioError | undefined>(undefined);
   const [loadFailed, setLoadFailed] = useState(false);
-  const [saveInFlight, setSaveInFlight] = useState(false);
   const [soulStatus, setSoulStatus] = useState<SoulProfileStatusMessage | undefined>(undefined);
   const [soulBusy, setSoulBusy] = useState<string | undefined>(undefined);
   const [soulImportOpen, setSoulImportOpen] = useState(false);
@@ -170,150 +184,196 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
   const [evolutionNotice, setEvolutionNotice] = useState<{ kind: "success" | "error"; text: string } | undefined>(undefined);
   const [ready, setReady] = useState(false);
   const entityRef = useRef<AgentStudioEntity | undefined>(undefined);
+  const fieldsRef = useRef(fields);
+  fieldsRef.current = fields;
+  const dirtyRef = useRef(false);
+  const editRevisionRef = useRef(0);
   const deleteCancelButtonRef = useRef<HTMLButtonElement>(null);
   const replaceCancelButtonRef = useRef<HTMLButtonElement>(null);
 
-  useEffect(() => {
-    const onMsg = (e: MessageEvent) => {
-      const decoded = decodeStudioMessage<AgentStudioHostMessage>(e.data, AGENT_STUDIO_HOST_MESSAGE_NAMES);
-      if (!decoded.ok || !decoded.message) {
-        setHostError({
-          code: "transport/protocol",
-          message: `studio protocol: ${decoded.reason ?? "undecodable message"}`,
-          source: "transport",
-          blocking: true,
-        });
-        if (!entityRef.current) setLoadFailed(true);
-        setSaveInFlight(false);
-        setReady(true);
-        return;
-      }
-      const d = decoded.message;
-      if (AGENT_STUDIO_HOST_MESSAGE_NAMES.includes(d.type as never) && !validateAgentStudioHostDomainMessage(d)) {
-        setHostError({ code: "transport/protocol", message: "studio protocol: malformed Agent Studio host response", source: "transport", blocking: true });
-        setSaveInFlight(false);
-        setReady(true);
-        return;
-      }
-      if (d.type === "load") {
-        entityRef.current = d.entity;
-        setEntity(d.entity);
-        setFields(d.entity.fields);
-        setMode(d.entity.name === undefined ? "new" : "edit");
-        setEntityId(d.entity.name);
-        setSaveInFlight(!!d.saveInFlight);
-        setHostError(undefined);
-        setLoadFailed(false);
-        setSoulStatus(undefined);
-        setSoulBusy(d.entity.name ? "Refreshing profile" : undefined);
-        setSoulImportOpen(false);
-        setSoulReplacePending(undefined);
-        setSoulDeleteConfirmOpen(false);
-        setEvolutionSummary(undefined);
-        setEvolutionCandidates(undefined);
-        setEvolutionDetail(undefined);
-        setEvolutionBusy(d.entity.name ? "overview" : undefined);
-        setEvolutionNotice(undefined);
-        setReady(true);
-        if (d.entity.name) {
-          dispatch.post(refreshSoulMessage(d.entity.name));
-          dispatch.post(refreshEvolutionMessage(d.entity.name));
-        }
-      } else if (d.type === "error") {
-        setHostError({ code: d.code, message: d.message, source: d.source ?? "persistence", blocking: d.blocking });
-        if (!entityRef.current) setLoadFailed(true);
-        setSaveInFlight(false);
-        setSoulBusy(undefined);
-        setReady(true);
-      } else if (d.type === "restore") {
-        if (d.snapshot?.patch) setFields(d.snapshot.patch);
-      } else if (d.type === "cwd") {
-        setHostError(undefined);
-        setLoadFailed(false);
-        setFields((f) => ({ ...f, cwd: d.value }));
-      } else if (d.type === "soulProfileStatus") {
-        if (entityRef.current?.name !== d.status.agent) {
-          setHostError({ code: "transport/protocol", message: "studio protocol: profile status belongs to another agent", source: "transport", blocking: true });
-          return;
-        }
-        setHostError(undefined);
-        setSoulStatus(d.status);
-        setSoulBusy(undefined);
-        setSoulReplacePending(undefined);
-        if (d.status.lifecycle !== "missing") setSoulImportOpen(false);
-        if (d.status.lifecycle === "missing") setSoulDeleteConfirmOpen(false);
-        const current = entityRef.current;
-        if (current && current.fields.soul !== d.status.soulEnabled) {
-          const updated = { ...current, fields: { ...current.fields, soul: d.status.soulEnabled } };
-          entityRef.current = updated;
-          setEntity(updated);
-        }
-        setFields((currentFields) => currentFields.soul === d.status.soulEnabled
-          ? currentFields
-          : { ...currentFields, soul: d.status.soulEnabled });
-      } else if (d.type === "soulProfileError") {
-        if (entityRef.current?.name !== d.agent) {
-          setHostError({ code: "transport/protocol", message: "studio protocol: profile error belongs to another agent", source: "transport", blocking: true });
-          return;
-        }
-        setSoulBusy(undefined);
-        setHostError({ code: d.code, message: d.message, source: "persistence", blocking: false });
-      } else if (d.type === "evolutionSummary") {
-        if (entityRef.current?.name !== d.summary.agent) {
-          setHostError({ code: "transport/protocol", message: "studio protocol: evolution summary belongs to another agent", source: "transport", blocking: true });
-          return;
-        }
-        setEvolutionSummary(d.summary);
-      } else if (d.type === "evolutionCandidates") {
-        if (entityRef.current?.name !== d.agent) {
-          setHostError({ code: "transport/protocol", message: "studio protocol: evolution candidates belong to another agent", source: "transport", blocking: true });
-          return;
-        }
-        setEvolutionCandidates(d.candidates);
-        setEvolutionBusy(undefined);
-      } else if (d.type === "evolutionCandidateDetail") {
-        if (entityRef.current?.name !== d.agent) {
-          setHostError({ code: "transport/protocol", message: "studio protocol: evolution detail belongs to another agent", source: "transport", blocking: true });
-          return;
-        }
-        setEvolutionDetail(d.detail);
-        setEvolutionBusy(undefined);
-        setEvolutionNotice(undefined);
-      } else if (d.type === "evolutionActionResult") {
-        if (entityRef.current?.name !== d.agent) {
-          setHostError({ code: "transport/protocol", message: "studio protocol: evolution result belongs to another agent", source: "transport", blocking: true });
-          return;
-        }
-        const labels = entityRef.current.evolutionLabels;
-        setEvolutionDetail(undefined);
-        setEvolutionBusy("overview");
-        setEvolutionNotice({
-          kind: "success",
-          text: `${d.status === "approved" ? labels.approved : labels.rejected}. ${labels.nextSession}`,
-        });
-      } else if (d.type === "evolutionError") {
-        if (entityRef.current?.name !== d.agent) {
-          setHostError({ code: "transport/protocol", message: "studio protocol: evolution error belongs to another agent", source: "transport", blocking: true });
-          return;
-        }
-        setEvolutionBusy(undefined);
-        if (d.conflict) setEvolutionDetail(undefined);
-        setEvolutionNotice({ kind: "error", text: d.message });
-      }
-    };
-    window.addEventListener("message", onMsg);
-    dispatch.post(readyMessage());
-    return () => window.removeEventListener("message", onMsg);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   const dirty = computeAgentDirty(entity, fields);
+  dirtyRef.current = dirty;
+
+  const post = (msg: object): void => dispatch.post({ ...msg, routeKey, mountNonce });
+
+  const { frozen, saving: saveInFlight, frozenRef, freezeForSave } = useStudioFreeze({
+    post: dispatch.post,
+    getSnapshot: () => ({ dirty: dirtyRef.current, editRevision: editRevisionRef.current, patch: dirtyRef.current ? fieldsRef.current : undefined }),
+  });
+
+  // Re-handshake whenever the binding identity changes (fresh mount OR a same-route re-entry the
+  // host rebound) — resets ALL local state (soul/evolution included) so a stale entity/profile/
+  // proposal never lingers across bindings, same reasoning as every other migrated studio.
   useEffect(() => {
-    if (!ready) return;
-    dispatch.post(dirtyMessage(dirty));
-    dispatch.post(patchMessage(fields));
+    setMode("new");
+    setEntityId(undefined);
+    setEntity(undefined);
+    entityRef.current = undefined;
+    fieldsRef.current = blankAgentFields();
+    dirtyRef.current = false;
+    setFields(fieldsRef.current);
+    setHostError(undefined);
+    setLoadFailed(false);
+    setSoulStatus(undefined);
+    setSoulBusy(undefined);
+    setSoulImportOpen(false);
+    setSoulReplacePending(undefined);
+    setSoulDeleteConfirmOpen(false);
+    setEvolutionSummary(undefined);
+    setEvolutionCandidates(undefined);
+    setEvolutionDetail(undefined);
+    setEvolutionBusy(undefined);
+    setEvolutionNotice(undefined);
+    setReady(false);
+    dispatch.post(readyMessage({ routeKey, mountNonce }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, dirty, fields]);
+  }, [routeKey, mountNonce]);
+
+  useEffect(() => {
+    if (!incoming) return;
+    const decoded = decodeStudioMessage<AgentStudioHostMessage>(incoming.message, AGENT_STUDIO_HOST_MESSAGE_NAMES);
+    if (!decoded.ok || !decoded.message) {
+      setHostError({
+        code: "transport/protocol",
+        message: `studio protocol: ${decoded.reason ?? "undecodable message"}`,
+        source: "transport",
+        blocking: true,
+      });
+      if (!entityRef.current) setLoadFailed(true);
+      setReady(true);
+      return;
+    }
+    const d = decoded.message;
+    if (AGENT_STUDIO_HOST_MESSAGE_NAMES.includes(d.type as never) && !validateAgentStudioHostDomainMessage(d)) {
+      setHostError({ code: "transport/protocol", message: "studio protocol: malformed Agent Studio host response", source: "transport", blocking: true });
+      setReady(true);
+      return;
+    }
+    if (d.type === "load") {
+      entityRef.current = d.entity;
+      setEntity(d.entity);
+      fieldsRef.current = d.entity.fields;
+      dirtyRef.current = computeAgentDirty(d.entity, d.entity.fields);
+      setFields(d.entity.fields);
+      setMode(d.entity.name === undefined ? "new" : "edit");
+      setEntityId(d.entity.name);
+      setHostError(undefined);
+      setLoadFailed(false);
+      setSoulStatus(undefined);
+      setSoulBusy(d.entity.name ? "Refreshing profile" : undefined);
+      setSoulImportOpen(false);
+      setSoulReplacePending(undefined);
+      setSoulDeleteConfirmOpen(false);
+      setEvolutionSummary(undefined);
+      setEvolutionCandidates(undefined);
+      setEvolutionDetail(undefined);
+      setEvolutionBusy(d.entity.name ? "overview" : undefined);
+      setEvolutionNotice(undefined);
+      setReady(true);
+      if (d.entity.name) {
+        post(refreshSoulMessage(d.entity.name));
+        post(refreshEvolutionMessage(d.entity.name));
+      }
+    } else if (d.type === "error") {
+      setHostError({ code: d.code, message: d.message, source: d.source ?? "persistence", blocking: d.blocking });
+      if (!entityRef.current) setLoadFailed(true);
+      setSoulBusy(undefined);
+      setReady(true);
+    } else if (d.type === "restore") {
+      if (d.snapshot?.patch) {
+        fieldsRef.current = d.snapshot.patch;
+        dirtyRef.current = computeAgentDirty(entityRef.current, d.snapshot.patch);
+        setFields(d.snapshot.patch);
+      }
+    } else if (d.type === "cwd") {
+      setHostError(undefined);
+      setLoadFailed(false);
+      const next = { ...fieldsRef.current, cwd: d.value };
+      fieldsRef.current = next;
+      dirtyRef.current = computeAgentDirty(entityRef.current, next);
+      setFields(next);
+    } else if (d.type === "soulProfileStatus") {
+      if (entityRef.current?.name !== d.status.agent) {
+        setHostError({ code: "transport/protocol", message: "studio protocol: profile status belongs to another agent", source: "transport", blocking: true });
+        return;
+      }
+      setHostError(undefined);
+      setSoulStatus(d.status);
+      setSoulBusy(undefined);
+      setSoulReplacePending(undefined);
+      if (d.status.lifecycle !== "missing") setSoulImportOpen(false);
+      if (d.status.lifecycle === "missing") setSoulDeleteConfirmOpen(false);
+      const current = entityRef.current;
+      if (current && current.fields.soul !== d.status.soulEnabled) {
+        const updated = { ...current, fields: { ...current.fields, soul: d.status.soulEnabled } };
+        entityRef.current = updated;
+        setEntity(updated);
+      }
+      if (fieldsRef.current.soul !== d.status.soulEnabled) {
+        const next = { ...fieldsRef.current, soul: d.status.soulEnabled };
+        fieldsRef.current = next;
+        dirtyRef.current = computeAgentDirty(entityRef.current, next);
+        setFields(next);
+      }
+    } else if (d.type === "soulProfileError") {
+      if (entityRef.current?.name !== d.agent) {
+        setHostError({ code: "transport/protocol", message: "studio protocol: profile error belongs to another agent", source: "transport", blocking: true });
+        return;
+      }
+      setSoulBusy(undefined);
+      setHostError({ code: d.code, message: d.message, source: "persistence", blocking: false });
+    } else if (d.type === "evolutionSummary") {
+      if (entityRef.current?.name !== d.summary.agent) {
+        setHostError({ code: "transport/protocol", message: "studio protocol: evolution summary belongs to another agent", source: "transport", blocking: true });
+        return;
+      }
+      setEvolutionSummary(d.summary);
+    } else if (d.type === "evolutionCandidates") {
+      if (entityRef.current?.name !== d.agent) {
+        setHostError({ code: "transport/protocol", message: "studio protocol: evolution candidates belong to another agent", source: "transport", blocking: true });
+        return;
+      }
+      setEvolutionCandidates(d.candidates);
+      setEvolutionBusy(undefined);
+    } else if (d.type === "evolutionCandidateDetail") {
+      if (entityRef.current?.name !== d.agent) {
+        setHostError({ code: "transport/protocol", message: "studio protocol: evolution detail belongs to another agent", source: "transport", blocking: true });
+        return;
+      }
+      setEvolutionDetail(d.detail);
+      setEvolutionBusy(undefined);
+      setEvolutionNotice(undefined);
+    } else if (d.type === "evolutionActionResult") {
+      if (entityRef.current?.name !== d.agent) {
+        setHostError({ code: "transport/protocol", message: "studio protocol: evolution result belongs to another agent", source: "transport", blocking: true });
+        return;
+      }
+      const labels = entityRef.current.evolutionLabels;
+      setEvolutionDetail(undefined);
+      setEvolutionBusy("overview");
+      setEvolutionNotice({
+        kind: "success",
+        text: `${d.status === "approved" ? labels.approved : labels.rejected}. ${labels.nextSession}`,
+      });
+    } else if (d.type === "evolutionError") {
+      if (entityRef.current?.name !== d.agent) {
+        setHostError({ code: "transport/protocol", message: "studio protocol: evolution error belongs to another agent", source: "transport", blocking: true });
+        return;
+      }
+      setEvolutionBusy(undefined);
+      if (d.conflict) setEvolutionDetail(undefined);
+      setEvolutionNotice({ kind: "error", text: d.message });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [incoming?.seq]);
+
+  useEffect(() => {
+    if (!ready || frozen) return;
+    editRevisionRef.current += 1;
+    post(dirtyMessage(dirty));
+    post(patchMessage(fields, editRevisionRef.current));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, dirty, fields, frozen]);
 
   useEffect(() => {
     if (soulDeleteConfirmOpen) deleteCancelButtonRef.current?.focus();
@@ -330,9 +390,13 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
   const errors: StudioError[] = hostError ? [hostError] : [];
   const canSave = computeCanSave({ dirty, blockingErrorCount: hostError?.blocking ? 1 : 0, saveInFlight, concurrencyStale: false });
   const updateFields = (updater: (fields: AgentStudioFields) => AgentStudioFields) => {
+    if (frozenRef.current) return;
     setHostError(undefined);
     setLoadFailed(false);
-    setFields(updater);
+    const next = updater(fieldsRef.current);
+    fieldsRef.current = next;
+    dirtyRef.current = computeAgentDirty(entityRef.current, next);
+    setFields(next);
   };
   const set = <K extends keyof AgentStudioFields>(key: K, value: AgentStudioFields[K]) => updateFields((f) => ({ ...f, [key]: value }));
   const toggleFlag = (flag: string) => {
@@ -395,39 +459,53 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
     invalid: "Invalid",
   };
   const runSoulAction = (label: string, message: unknown) => {
+    if (frozenRef.current) return;
     setHostError(undefined);
     setSoulImportOpen(false);
     setSoulReplacePending(undefined);
     setSoulDeleteConfirmOpen(false);
     setSoulBusy(label);
-    dispatch.post(message);
+    post(message as object);
   };
-  const runEnableSoul = () => runSoulAction(
-    "Enabling Soul",
-    enableRequiresOwnershipClaim && soulStatus?.sha256
-      ? adoptSoulProfileMessage(savedAgent, soulStatus.sha256)
-      : enableSoulMessage(savedAgent),
-  );
-  const refreshEvolution = () => {
+  const runEnableSoul = () => {
+    // t-610705 (Phase D, D1b) — same newly-typechecked-file note as sha256Hex above: `runEnableSoul`
+    // is only ever wired to a button inside the `savedAgent ? (...) : (...)` JSX branch below, so
+    // this was never reachable with `savedAgent` undefined — this guard just makes that explicit for
+    // the type-checker, matching refreshEvolution/inspectEvolutionCandidate's own `if (!savedAgent)` convention.
     if (!savedAgent) return;
+    runSoulAction(
+      "Enabling Soul",
+      enableRequiresOwnershipClaim && soulStatus?.sha256
+        ? adoptSoulProfileMessage(savedAgent, soulStatus.sha256)
+        : enableSoulMessage(savedAgent),
+    );
+  };
+  const refreshEvolution = () => {
+    if (!savedAgent || frozenRef.current) return;
     setEvolutionBusy("overview");
     setEvolutionNotice(undefined);
-    dispatch.post(refreshEvolutionMessage(savedAgent));
+    post(refreshEvolutionMessage(savedAgent));
   };
   const inspectEvolutionCandidate = (candidateId: string) => {
-    if (!savedAgent) return;
+    if (!savedAgent || frozenRef.current) return;
     setEvolutionDetail(undefined);
     setEvolutionBusy(`candidate:${candidateId}`);
     setEvolutionNotice(undefined);
-    dispatch.post(loadEvolutionCandidateMessage(savedAgent, candidateId));
+    post(loadEvolutionCandidateMessage(savedAgent, candidateId));
   };
   const resolveEvolutionCandidate = (detail: AgentEvolutionCandidateDetailMessage, action: "approve" | "reject") => {
-    if (!savedAgent) return;
+    if (!savedAgent || frozenRef.current) return;
     setEvolutionBusy(action);
     setEvolutionNotice(undefined);
-    dispatch.post(action === "approve"
+    post(action === "approve"
       ? approveEvolutionCandidateMessage(savedAgent, detail.id, detail.expectedActiveVersion, detail.expectedTargetDigest)
       : rejectEvolutionCandidateMessage(savedAgent, detail.id, detail.expectedActiveVersion, detail.expectedTargetDigest));
+  };
+
+  const onSave = () => {
+    if (frozenRef.current) return;
+    freezeForSave();
+    post(saveMessage());
   };
 
   return (
@@ -438,8 +516,9 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
       saveInFlight={saveInFlight}
       loadFailed={loadFailed}
       canSave={canSave}
-      onSave={() => dispatch.post(saveMessage())}
-      onCancel={() => dispatch.post(cancelMessage())}
+      frozen={frozen}
+      onSave={onSave}
+      onCancel={() => post(cancelMessage())}
       regions={{
         fields: (
           <div class="ash-fields">
@@ -679,7 +758,7 @@ export function App({ dispatch }: { dispatch: AgentStudioDispatch }) {
               <label class="ash-label" for="ash-cwd">Working directory</label>
               <div class="ash-row">
                 <Input id="ash-cwd" value={fields.cwd} placeholder={`(workspace root: ${entity.defaultCwd})`} onInput={(e) => set("cwd", (e.currentTarget as HTMLInputElement).value)} />
-                <Button onClick={() => dispatch.post(browseMessage())}>Browse</Button>
+                <Button onClick={() => post(browseMessage())}>Browse</Button>
               </div>
             </div>
 

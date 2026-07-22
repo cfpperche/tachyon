@@ -1759,6 +1759,7 @@ export async function openCockpit(
     const terminalStudioIsActive = isStudioRoute(currentRoute) && currentRoute.studio === "terminal";
     const runbookStudioIsActive = isStudioRoute(currentRoute) && currentRoute.studio === "runbook";
     const scheduleStudioIsActive = isStudioRoute(currentRoute) && currentRoute.studio === "schedule";
+    const agentStudioIsActive = isStudioRoute(currentRoute) && currentRoute.studio === "agent";
     // t-610705 (Phase C.2) — ported from the retired standalone ActivityPanel.ts: mermaid/katex load
     // ON DEMAND client-side (activity/markdown.tsx), gated on these globals being present at all —
     // never previously wired into Cockpit.ts's shell (Task Detail's C.1 migration also uses
@@ -1803,11 +1804,18 @@ export async function openCockpit(
         activityIsActive ? uri("activity.css") : undefined,
         probesIsActive ? uri("probes.css") : undefined,
         handoffIsActive ? uri("handoff.css") : undefined,
+        // t-610705 (Phase D, D1b) — Agent Studio's Tailwind utilities sheet loads BEFORE studio-frame.css
+        // (not alongside its own surface sheet below) — matches the retired standalone panel's
+        // styleFiles order exactly (vscode-theme.css → agent-studio-shell.tailwind.css → studio-frame.css
+        // → agent-studio-shell.css), so studio-frame.css's own rules still win the cascade over any
+        // Tailwind utility class at equal specificity, same as it always has for this surface.
+        agentStudioIsActive ? uri("agent-studio-shell.tailwind.css") : undefined,
         studioIsActive ? uri("studio-frame.css") : undefined,
         commandStudioIsActive ? uri("command-studio-shell.css") : undefined,
         terminalStudioIsActive ? uri("terminal-studio-shell.css") : undefined,
         runbookStudioIsActive ? uri("runbook-studio-shell.css") : undefined,
         scheduleStudioIsActive ? uri("schedule-studio-shell.css") : undefined,
+        agentStudioIsActive ? uri("agent-studio-shell.css") : undefined,
         uri("cockpit.css"),
       ].filter((href): href is string => href !== undefined),
       bundle: uri("cockpit.js"),
@@ -1850,6 +1858,9 @@ export async function openCockpit(
           "studio-runbook": uri("runbook-studio-shell.css"),
           "studio-frame-schedule": uri("studio-frame.css"),
           "studio-schedule": uri("schedule-studio-shell.css"),
+          "studio-frame-agent": uri("studio-frame.css"),
+          "studio-agent-tailwind": uri("agent-studio-shell.tailwind.css"),
+          "studio-agent": uri("agent-studio-shell.css"),
         },
         __mermaidSrc: uri("mermaid.js"),
         __katexSrc: uri("katex.js"),

@@ -56,11 +56,13 @@ describe("preview route table", () => {
       "/dist/webview/activity.css",
       "/dist/webview/probes.css",
       "/dist/webview/handoff.css",
+      "/dist/webview/agent-studio-shell.tailwind.css",
       "/dist/webview/studio-frame.css",
       "/dist/webview/command-studio-shell.css",
       "/dist/webview/terminal-studio-shell.css",
       "/dist/webview/runbook-studio-shell.css",
       "/dist/webview/schedule-studio-shell.css",
+      "/dist/webview/agent-studio-shell.css",
       "/dist/webview/cockpit.css",
     ]);
     expect(Object.keys(r.fixtures).sort()).toEqual([
@@ -79,6 +81,8 @@ describe("preview route table", () => {
       "plugins",
       "runtime",
       "settings",
+      "studio-agent",
+      "studio-agent-edit",
       "studio-command",
       "studio-command-edit",
       "studio-runbook",
@@ -158,18 +162,6 @@ describe("preview route table", () => {
     expect(Object.keys(r.fixtures).sort()).toEqual(["conflict", "default", "new"]);
     const messages = r.makeMessage(r.fixtures.default.vm) as { type: string }[];
     expect(messages[0]!.type).toBe("load");
-  });
-
-  it("declares Agent Studio with the UI Kit token bridge and Tailwind utilities before surface CSS", () => {
-    const r = ROUTES["agent-studio-shell"];
-    expect(r.cssLinks).toEqual([
-      "/dist/webview/codicon.css",
-      "/dist/webview/design-system.css",
-      "/dist/webview/vscode-theme.css",
-      "/dist/webview/agent-studio-shell.tailwind.css",
-      "/dist/webview/studio-frame.css",
-      "/dist/webview/agent-studio-shell.css",
-    ]);
   });
 
   it("declares the pin-preview route (spec 279) with a hostile fixture carrying injection payloads", () => {
