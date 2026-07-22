@@ -113,6 +113,24 @@ describe("TaskStore", () => {
     expect(asyncFailure.get(task.id).status).toBe("done");
   });
 
+  it("persists an evolution completion obligation before an asynchronous observer can be lost", async () => {
+    const revision = "a".repeat(64);
+    const tasks = new TaskStore(root, {
+      evolutionCompletionFor: (event) => event.after.assignee
+        ? { agent: event.after.assignee, revision }
+        : undefined,
+      onMutation: async () => { throw new Error("process ended before observer work"); },
+    });
+    const task = await tasks.create({ title: "durable evolution obligation", author: "human" });
+    await tasks.update(task.id, { status: "triaged", assignee: "reviewer" });
+    await tasks.update(task.id, { status: "active" });
+    await expect(tasks.update(task.id, { status: "done" })).resolves.toMatchObject({
+      evolutionCompletion: { agent: "reviewer", revision },
+    });
+    await Promise.resolve();
+    expect(new TaskStore(root).get(task.id).evolutionCompletion).toEqual({ agent: "reviewer", revision });
+  });
+
   // t-370286 — a prematurely-triaged task can be returned for re-evaluation; the move unscopes it.
   it("triaged → inbox returns a task for re-evaluation and clears the assignee (t-370286)", async () => {
     const task = await store.create({ title: "too early", author: "human" });

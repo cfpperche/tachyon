@@ -123,6 +123,7 @@ import { ProposalStore } from "../schedule/ProposalStore.js";
 import { PinStore } from "../pins/PinStore.js";
 import { TaskStore } from "../tasks/TaskStore.js";
 import { EvolutionStore } from "../evolution/EvolutionStore.js";
+import { resolveEvolutionStartupSnapshot } from "../evolution/startupSnapshot.js";
 import { EvolutionCoordinator } from "../evolution/EvolutionCoordinator.js";
 import { declaredHarnessSkillNames } from "../evolution/skillBundle.js";
 import {
@@ -776,6 +777,11 @@ export class Workspace {
       // resolution must use the same value; an unknown external home then fails capture closed.
       defaultClaudeConfigHome,
       ledger: this.ledger,
+      resolveEvolutionSnapshot: (principal) => resolveEvolutionStartupSnapshot(
+        this.workspaceRoot,
+        principal,
+        this.evolutionStore,
+      ),
       // spec 364 — stamp bound_generation from the live coordinator (0 until first listener-ready bump).
       getBridgeGeneration: () => this.clientRebind?.getGeneration() ?? 0,
       resolveCaptureId: (runtime, cwd, configHome) => runtime === "opencode"
@@ -1408,6 +1414,9 @@ export class Workspace {
         workspaceRoot,
         this.config?.agents[name]?.harness?.skills,
       ),
+      authorityIntegrityKey: () => this.authorityIntegrityKey,
+      authorityHead: this.canonicalAuthorityHeadPort(),
+      sessionSnapshotsRoot: path.join(deps.host.globalStoragePath(), "evolution-session-snapshots", this.wsHash),
     });
     this.evolutionCoordinator = new EvolutionCoordinator({
       store: this.evolutionStore,
@@ -1416,8 +1425,10 @@ export class Workspace {
       activitySeq: (name) => this.currentActivitySeq(name),
       deliverNotice: (name, line) => this.deliverNotice(name, line),
       onReviewChanged: () => deps.onViewsChanged("agents"),
+      onError: (message) => this.host.notify(message, "error"),
     });
     this.taskStore = new TaskStore(workspaceRoot, {
+      evolutionCompletionFor: (event) => this.evolutionCoordinator.completionMarker(event),
       onMutation: (event) => this.evolutionCoordinator.onTaskMutation(event),
     });
     this.validationStore = new ValidationStore(workspaceRoot);
@@ -2394,6 +2405,10 @@ export class Workspace {
   private async commitAuthorityHead(mapKey: string, head: AuthorityHead): Promise<void> {
     const updated = new Map(this.authorityHeads);
     updated.set(mapKey, { ...head });
+    await this.commitAuthorityHeads(updated, mapKey);
+  }
+
+  private async commitAuthorityHeads(updated: Map<string, AuthorityHead>, operation: string): Promise<void> {
     const serialized = serializeAuthorityHeads(updated);
     // SecretStorage is prepared before the workspace/SQLite commit. A crash after this await leaves
     // the head ahead of workspace state, which is an explicit fail-closed recovery condition.
@@ -2401,9 +2416,60 @@ export class Workspace {
     const persisted = parseAuthorityHeads(await this.host.getSecret(this.authorityHeadsSecretKey()));
     if (serializeAuthorityHeads(persisted) !== serialized) {
       this.authorityHeads = persisted;
-      throw new Error(`authority head '${mapKey}' changed during durable prepare`);
+      throw new Error(`authority head '${operation}' changed during durable prepare`);
     }
     this.authorityHeads = persisted;
+  }
+
+  private async retireAuthorityHead(identity: string, expectedMac?: string): Promise<void> {
+    const retired = this.authorityHeadPrepareTail.then(async () => {
+      if (!identity) throw new Error("invalid authority freshness identity");
+      this.authorityHeads = parseAuthorityHeads(await this.host.getSecret(this.authorityHeadsSecretKey()));
+      const mapKey = this.authorityHeadMapKey(identity);
+      const current = this.authorityHeads.get(mapKey);
+      if (!current) return;
+      if (expectedMac !== undefined && current.mac !== expectedMac) {
+        throw new Error(`authority head '${mapKey}' changed before retirement`);
+      }
+      const updated = new Map(this.authorityHeads);
+      updated.delete(mapKey);
+      await this.commitAuthorityHeads(updated, `retire:${mapKey}`);
+    });
+    this.authorityHeadPrepareTail = retired.catch(() => undefined);
+    return retired;
+  }
+
+  private async moveAuthorityHead(
+    fromIdentity: string,
+    toIdentity: string,
+    next: AuthorityHead,
+    expectedMac: string,
+  ): Promise<void> {
+    const moved = this.authorityHeadPrepareTail.then(async () => {
+      if (!fromIdentity || !toIdentity || fromIdentity === toIdentity
+        || !Number.isSafeInteger(next.revision) || next.revision < 1
+        || !/^[0-9a-f]{64}$/.test(next.mac) || !/^[0-9a-f]{64}$/.test(expectedMac)) {
+        throw new Error("invalid authority freshness move");
+      }
+      this.authorityHeads = parseAuthorityHeads(await this.host.getSecret(this.authorityHeadsSecretKey()));
+      const fromKey = this.authorityHeadMapKey(fromIdentity);
+      const toKey = this.authorityHeadMapKey(toIdentity);
+      const current = this.authorityHeads.get(fromKey);
+      const destination = this.authorityHeads.get(toKey);
+      if (!current || current.mac !== expectedMac) {
+        if (!current && destination?.revision === next.revision && destination.mac === next.mac) return;
+        throw new Error(`authority head '${fromKey}' changed before move`);
+      }
+      if (destination && (destination.revision !== next.revision || destination.mac !== next.mac)) {
+        throw new Error(`authority head '${toKey}' already exists with different state`);
+      }
+      const updated = new Map(this.authorityHeads);
+      updated.delete(fromKey);
+      updated.set(toKey, { ...next });
+      await this.commitAuthorityHeads(updated, `move:${fromKey}->${toKey}`);
+    });
+    this.authorityHeadPrepareTail = moved.catch(() => undefined);
+    return moved;
   }
 
   private canonicalAuthorityHeadPort(): AuthorityHeadPort {
@@ -2411,6 +2477,8 @@ export class Workspace {
       current: (identity) => this.currentAuthorityHead(identity),
       prepare: (identity, next, expectedMac) => this.prepareAuthorityHead(identity, next, expectedMac),
       establishInitial: (identity, head) => this.establishInitialAuthorityHead(identity, head),
+      retire: (identity, expectedMac) => this.retireAuthorityHead(identity, expectedMac),
+      move: (fromIdentity, toIdentity, next, expectedMac) => this.moveAuthorityHead(fromIdentity, toIdentity, next, expectedMac),
     };
   }
 
@@ -3184,7 +3252,8 @@ export class Workspace {
   }
 
   /** Canonical declared-agent removal tail. Caller owns deleting the tachyon.yml entry first. */
-  forgetAgent(name: string): void {
+  async forgetAgent(name: string): Promise<void> {
+    await this.evolutionStore.retireAgent(name);
     forgetAgentFootprint(name, {
       workspaceRoot: this.workspaceRoot,
       ledger: this.ledger,
@@ -4080,19 +4149,26 @@ export class Workspace {
    * external yaml edits / crash paths; the delete command also removes its row directly). Narrow on purpose —
    * never touches ad-hoc/fork rows (declared=false) or a stopped-but-still-declared agent (kept for resume).
    */
-  private gcLedger(declaredInConfig: Set<string>, live: Set<string>): void {
-    try {
-      for (const [name, rec] of this.ledger.all()) {
-        if (rec.declared && !declaredInConfig.has(name) && !live.has(name)) {
+  private async gcLedger(declaredInConfig: Set<string>, live: Set<string>): Promise<void> {
+    for (const [name, rec] of this.ledger.all()) {
+      if (rec.declared && !declaredInConfig.has(name) && !live.has(name)) {
+        try {
+          await this.evolutionStore.retireAgent(name);
           forgetAgentFootprint(name, {
             workspaceRoot: this.workspaceRoot,
             ledger: this.ledger,
             removeHarnessHome: (agent) => this.harness.remove(agent),
             removePiSessionDir: (agent) => removePiSessionDir(this.workspaceRoot, agent),
           });
+        } catch (error) {
+          this.host.notify(this.t(
+            "Could not finish cleanup for removed agent {0}: {1}",
+            name,
+            error instanceof Error ? error.message : String(error),
+          ), "warn");
         }
       }
-    } catch { /* best-effort — a faxina must never block activation */ }
+    }
   }
 
   /**
@@ -4172,6 +4248,9 @@ export class Workspace {
     }
     // spec 377 T15A — reconcile incomplete profile journals on every successful reload.
     void this.reconcileSoulProfileTransactions().catch(() => undefined);
+    void this.evolutionCoordinator.reconcileCompletedTasks(this.taskStore.listRaw()).catch((error) => {
+      this.host.notify(this.t("Agent Evolution review reconciliation failed: {0}", error instanceof Error ? error.message : String(error)), "error");
+    });
     // t-8354ae — persist last-known-good roster for degraded sidebar rendering if config later breaks.
     if (config) writeConfigLkg(this.workspaceRoot, snapshotFromConfig(config, file));
     // Push the user's tmux overlay (settings.tmux) to the server-options layer;
@@ -4586,7 +4665,7 @@ export class Workspace {
     );
     this.gcHarnessHomes(); // spec 226 (H8): drop config homes left by agents no longer declared/tracked
     const declaredInConfig = new Set(Object.keys(this.config?.agents ?? {}));
-    this.gcLedger(declaredInConfig, liveSessions); // spec 239: prune stale declared rows
+    await this.gcLedger(declaredInConfig, liveSessions); // spec 239: prune stale declared rows
     this.compactSessionOwners(declaredInConfig, liveSessions); // t-123143: prune stale session-owner rows
     this.gcOrphanAgentFootprints(liveSessions); // t-8310ca: continuity (+ activity) for names no longer known
     await this.rehydratePipelines(); // spec 230: restore pipeline runs so a reloaded run's surviving nodes can still complete

@@ -116,13 +116,50 @@ before continuing._
 ## Verification
 
 - [x] Config/schema/FormState opt-in contract is covered.
-- [x] EvolutionStore candidate/promotion/version/history contract is covered.
-- [x] Task completion produces exactly one review per completion revision and never changes Task outcome.
+- [x] EvolutionStore promotion is recoverable at every persistence boundary and the active head is
+  host-verifiable.
+- [x] Task completion produces exactly one review per completion revision across crash/reload and never
+  changes Task outcome.
 - [x] Bridge submission accepts matching reviews and preserves independent proposals.
 - [x] Reject/Approve/current-session/next-session behavior maps to the acceptance scenarios.
 - [x] Disabled prompt bytes and PI-001's fixed oracle remain unchanged.
 - [x] Agent Studio protocol, localized UI and lifecycle actions are covered.
-- [x] Runtime-switch and standard skill/script use are proven by dogfood.
+- [x] Runtime-switch and standard skill/script use are proven through a fresh runtime's normal tools.
+
+## Post-review correction slices
+
+- [x] `t-24ffb7` — add a durable promotion intent, commit authority last, reconcile every interrupted
+  boundary and cover learning plus skill create/update with fault injection.
+- [x] `t-0b7aa6` — bind the active snapshot digest/version to the existing host-custodied HMAC and
+  SecretStorage freshness-head infrastructure; reject unapproved workspace edits at startup.
+- [x] `t-67ece9` — make completion revisions reconstructible, reconcile eligible `done` Tasks after
+  reload and surface/retry review creation failures.
+- [x] `t-5f212f` — replace host-only runtime-switch evidence with a real fresh-runtime skill read/use
+  proof and record the result.
+- [x] Rerun focused fault/reload/tamper/runtime tests, PI-001, typecheck, full verification, dogfood and
+  the SDD close audit before restoring `shipped-partial`.
+
+## Second corrective review
+
+- [x] Route every production fresh-session snapshot through Workspace's authority-configured store and
+  cover first-profile creation plus tampered startup through the real AgentManager boundary.
+- [x] Capture profile, learning and skill bytes as one store-owned snapshot and authenticate those exact
+  captured bytes before returning them.
+- [x] Add host-custodied retire/move lifecycle operations; prove delete-and-recreate, rename-and-reuse and
+  an ambiguous post-move failure converge without a stale identity.
+- [x] Mint a unique persisted completion revision and prove fixed-time reopen/recomplete creates a second
+  review while replay remains idempotent.
+- [x] Rerun focused tests, PI-001, typecheck, full verification, dogfood and closure audit; then restore
+  `shipped-partial` for independent review.
+
+## Independent publication review
+
+- [x] Materialize each captured skill bundle at a session-pinned path and prove later active-file edits
+  cannot change the bytes read by the running session.
+- [x] Await authority retirement before external-edit GC removes the only retry footprint.
+- [x] Move the retired rename source out of the reusable agent-name path before best-effort deletion.
+- [x] Recover initial profile creation when head establishment fails before or after persistence.
+- [x] Repeat focused/full verification, live-runtime dogfood, closure audit and independent review.
 
 **Verify:** `npm run typecheck`
 
@@ -132,7 +169,7 @@ before continuing._
 
 ## Dogfood
 
-**Dogfood:** `npm exec -- vite-node scripts/dogfood-agent-evolution.mts`
+**Dogfood:** `TACHYON_AGENT_EVOLUTION_LIVE_RUNTIME=codex npm exec -- vite-node scripts/dogfood-agent-evolution.mts`
 
 **Human dogfood:**
 

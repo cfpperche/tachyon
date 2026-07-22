@@ -218,6 +218,48 @@ production module responsibilities above are the architectural contract.
 - User-declared and evolved skills can share a name. Promotion must show the collision and leave both
   existing sources unchanged.
 
+## Post-review corrective architecture
+
+Independent review at `1271c60a` disproved three successful-path assumptions. The correction is part
+of this spec rather than a new product feature:
+
+1. **Recoverable promotion.** Approval must create a durable promotion intent before changing active
+   bytes. The host-authorized active head is committed last. Reload resolves an interrupted intent by
+   rolling back to the old authorized state or completing the exact already-authorized state; startup
+   never composes a mixed version.
+2. **Host-verifiable activation.** The current active profile digest is authenticated with the existing
+   machine-local authority key and a SecretStorage freshness head, domain-separated for Agent
+   Evolution. Startup fails closed when workspace profile bytes do not match that human-authorized
+   head. Direct workspace writes remain data, never approval authority.
+3. **Review reconciliation.** A completion revision is reconstructible from the committed Task. On
+   reload, Tachyon scans eligible `done` Tasks and idempotently creates/delivers any missing review;
+   creation failure is surfaced and retried without reverting Task completion.
+4. **Runtime-use proof.** Dogfood must distinguish host-side script execution from a fresh runtime
+   reading `SKILL.md` and invoking the helper through its normal tool boundary after a runtime switch.
+
+The trust boundary is the existing Tachyon runtime boundary: direct workspace writes are untrusted,
+while the explicitly selected runtime is the agent executor and is not treated as a hostile same-UID
+process. Session-pinned skill copies live in host storage, are content-addressed and are byte-checked
+when resolved. Protecting files from an arbitrary process running as the Tachyon OS user would require
+an OS sandbox or separate identity and is outside this runtime-neutral feature.
+
+The corrective work is tracked by `t-24ffb7`, `t-67ece9`, `t-0b7aa6` and `t-5f212f`. PI-001 remains
+unchanged: the correction does not alter Project Guidance ownership, provenance, ordering or bytes.
+
+### Second corrective review
+
+The follow-up review found four remaining gaps. Production startup must use Workspace's
+authority-configured EvolutionStore rather than constructing an unprotected store. Snapshot assembly
+must authenticate the exact captured learning and skill bytes, not merely re-read current state after
+capture. Forget and rename must mutate the host-custodied identity alongside workspace lifecycle so
+deleted and renamed names remain reusable without stale heads. Finally, every completion marker needs
+a persisted unique nonce so repeated completions never depend on wall-clock uniqueness.
+
+The implementation keeps these corrections within the existing boundaries: AgentManager receives a
+Workspace-owned snapshot resolver; EvolutionStore owns one captured-and-authorized startup read;
+AuthorityHeadPort gains optional lifecycle CAS operations used by Evolution only; and TaskStore persists
+the coordinator-minted revision marker before its asynchronous observer runs.
+
 ## Visual impact
 
 Agent Studio gains a distinct Agent Evolution section and proposal review cards/diffs. The main visual

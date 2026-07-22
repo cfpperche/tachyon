@@ -57,6 +57,7 @@ export interface TaskMutationEvent {
 
 export interface TaskStoreOptions {
   onMutation?: (event: TaskMutationEvent) => void | Promise<void>;
+  evolutionCompletionFor?: (event: TaskMutationEvent) => Task["evolutionCompletion"];
 }
 
 const SDD_STATUSES = new Set<SddStatus>(["draft", "in-progress", "shipped", "shipped-partial", "superseded", "abandoned", "deferred"]);
@@ -202,6 +203,11 @@ export class TaskStore {
       // t-1339a8 — any status transition means the task advanced, so it is no longer waiting on the human;
       // clear the authored flag regardless of whether this same patch also tried to set/replace it.
       if (next.status !== current.status) delete next.awaitingHuman;
+      if (next.status !== current.status) delete next.evolutionCompletion;
+      if (current.status !== "done" && next.status === "done") {
+        const marker = this.options.evolutionCompletionFor?.({ before: current, after: next });
+        if (marker) next.evolutionCompletion = marker;
+      }
       if (JSON.stringify({ ...current, updatedAt: next.updatedAt }) === JSON.stringify(next)) {
         throw new Error("update_task requires at least one changed field");
       }
@@ -408,9 +414,18 @@ function normalizeTask(input: unknown, expectedId: string): Task | null {
     ...optionalDeps(row.deps),
     // t-1339a8 — backward-compatible: task JSON written before this field existed just has no key here.
     ...(row.awaitingHuman !== undefined ? optionalAwaitingHuman(row.awaitingHuman) : {}),
+    ...(row.evolutionCompletion !== undefined ? optionalEvolutionCompletion(row.evolutionCompletion) : {}),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
+}
+
+function optionalEvolutionCompletion(value: unknown): Pick<Task, "evolutionCompletion"> {
+  if (!value || typeof value !== "object") return {};
+  const marker = value as { agent?: unknown; revision?: unknown };
+  if (typeof marker.agent !== "string" || marker.agent.length === 0 || marker.agent.length > 64
+    || typeof marker.revision !== "string" || !/^[0-9a-f]{64}$/.test(marker.revision)) return {};
+  return { evolutionCompletion: { agent: marker.agent, revision: marker.revision } };
 }
 
 function applyUpdate(current: Task, input: TaskUpdateInput): Task {

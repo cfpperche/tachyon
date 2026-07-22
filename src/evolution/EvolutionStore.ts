@@ -4,6 +4,15 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { isValidAgentName } from "../config/nameValidation.js";
 import {
+  authorityRecordMac,
+  sealAuthorityRecord,
+  verifyAuthorityRecord,
+  workspaceAuthorityDomain,
+  type AuthorityRecord,
+  type AuthorityHead,
+  type AuthorityHeadPort,
+} from "../delivery/authorityIntegrity.js";
+import {
   EVOLUTION_SCHEMA_VERSION,
   createInitialEvolutionProfile,
   evolutionCandidateTargetKey,
@@ -41,6 +50,7 @@ export type EvolutionStoreErrorCode =
   | "evolution/review-malformed"
   | "evolution/review-conflict"
   | "evolution/promotion-conflict"
+  | "evolution/authority-invalid"
   | "evolution/skill-invalid"
   | "evolution/history-invalid";
 
@@ -100,7 +110,71 @@ export interface EvolutionStoreOptions {
   now?: () => string;
   uuid?: () => string;
   reservedSkillNames?: (agent: string) => ReadonlySet<string>;
+  /** Production authority custody. Omit only for isolated store tests/tools without a host. */
+  authorityIntegrityKey?: () => Buffer | undefined;
+  authorityHead?: AuthorityHeadPort;
+  /** Fault-injection seam for promotion recovery tests. */
+  promotionFault?: (point: EvolutionPromotionFaultPoint) => void | Promise<void>;
+  /** Fault-injection seam for initial-profile journal recovery tests. */
+  creationFault?: () => void | Promise<void>;
+  /** Fault-injection seam after atomic rename publication and before source quarantine. */
+  renameFault?: () => void | Promise<void>;
+  /** Test seam for best-effort cleanup after a renamed source is quarantined. */
+  retiredRootCleanup?: (root: string) => Promise<void>;
+  /** Fault-injection seam for the atomic source quarantine during rename. */
+  quarantineRoot?: (source: string, quarantined: string) => Promise<void>;
+  /** Host-owned materialization root for session-pinned skill bundles. */
+  sessionSnapshotsRoot?: string;
 }
+
+export interface EvolutionActiveSnapshotBytes {
+  profile: EvolutionProfile;
+  learnings: string;
+  skills: Array<{ name: string; files: EvolutionSkillFile[] }>;
+}
+
+export type EvolutionPromotionFaultPoint =
+  | "after-intent"
+  | "after-target"
+  | "after-history"
+  | "after-profile"
+  | "after-candidate"
+  | "after-authority";
+
+interface EvolutionPromotionIntent {
+  schemaVersion: 1;
+  agent: string;
+  candidateId: string;
+  previousVersion: number;
+  nextVersion: number;
+  previousHead: AuthorityHead;
+  nextHead: AuthorityHead;
+  target: { kind: "learning" } | { kind: "skill"; name: string };
+  historyFile: string;
+  previousProfile: EvolutionProfile;
+  previousCandidate: EvolutionCandidate;
+  previousLearnings: string;
+  previousSkillFiles?: EvolutionSkillFile[];
+}
+
+type EvolutionCreationIntent = AuthorityRecord & {
+  schemaVersion: 1;
+  kind: "agent-evolution-create";
+  agent: string;
+  profile: EvolutionProfile;
+  head: AuthorityHead;
+};
+
+type EvolutionRenameIntent = AuthorityRecord & {
+  schemaVersion: 1;
+  kind: "agent-evolution-rename";
+  oldAgent: string;
+  newAgent: string;
+  profileId: string;
+  retiredRoot: string;
+  previousHead: AuthorityHead;
+  nextHead: AuthorityHead;
+};
 
 function assertAgentName(agent: string): void {
   if (!isValidAgentName(agent)) {
@@ -270,6 +344,14 @@ export class EvolutionStore {
   private readonly now: () => string;
   private readonly uuid: () => string;
   private readonly reservedSkillNames: (agent: string) => ReadonlySet<string>;
+  private readonly authorityIntegrityKey: (() => Buffer | undefined) | undefined;
+  private readonly authorityHead: AuthorityHeadPort | undefined;
+  private readonly promotionFault: ((point: EvolutionPromotionFaultPoint) => void | Promise<void>) | undefined;
+  private readonly creationFault: (() => void | Promise<void>) | undefined;
+  private readonly renameFault: (() => void | Promise<void>) | undefined;
+  private readonly retiredRootCleanup: (root: string) => Promise<void>;
+  private readonly quarantineRoot: (source: string, quarantined: string) => Promise<void>;
+  private readonly sessionSnapshotsRoot: string;
   private readonly mutationTails = new Map<string, Promise<void>>();
 
   constructor(
@@ -279,6 +361,19 @@ export class EvolutionStore {
     this.now = options.now ?? (() => new Date().toISOString());
     this.uuid = options.uuid ?? (() => crypto.randomUUID());
     this.reservedSkillNames = options.reservedSkillNames ?? (() => new Set());
+    this.authorityIntegrityKey = options.authorityIntegrityKey;
+    this.authorityHead = options.authorityHead;
+    this.promotionFault = options.promotionFault;
+    this.creationFault = options.creationFault;
+    this.renameFault = options.renameFault;
+    this.retiredRootCleanup = options.retiredRootCleanup
+      ?? ((root) => fs.rm(root, { recursive: true, force: true }));
+    this.quarantineRoot = options.quarantineRoot ?? ((source, quarantined) => fs.rename(source, quarantined));
+    this.sessionSnapshotsRoot = options.sessionSnapshotsRoot
+      ?? path.join(this.workspaceRoot, ".tachyon", "evolution-session-snapshots");
+    if ((this.authorityIntegrityKey === undefined) !== (this.authorityHead === undefined)) {
+      throw new Error("Agent Evolution authority key and freshness head must be configured together");
+    }
   }
 
   rootFor(agent: string): string {
@@ -316,6 +411,22 @@ export class EvolutionStore {
     return path.join(this.rootFor(agent), "history");
   }
 
+  promotionDir(agent: string): string {
+    return path.join(this.rootFor(agent), "promotion");
+  }
+
+  promotionIntentPath(agent: string): string {
+    return path.join(this.promotionDir(agent), "intent.json");
+  }
+
+  creationIntentPath(agent: string): string {
+    return path.join(this.rootFor(agent), "creation-intent.json");
+  }
+
+  renameIntentPath(agent: string): string {
+    return path.join(this.rootFor(agent), "rename-intent.json");
+  }
+
   skillsDir(agent: string): string {
     return path.join(this.rootFor(agent), "skills");
   }
@@ -327,8 +438,18 @@ export class EvolutionStore {
     return path.join(this.skillsDir(agent), skillName);
   }
 
+  sessionSnapshotRoot(profileId: string): string {
+    return path.join(this.sessionSnapshotsRoot, crypto.createHash("sha256").update(profileId, "utf8").digest("hex"));
+  }
+
   async readProfile(agent: string): Promise<EvolutionProfile | undefined> {
     assertAgentName(agent);
+    const profile = await this.readProfileFile(agent);
+    if (profile) await this.assertAuthorizedStateUnlocked(agent, profile);
+    return profile;
+  }
+
+  private async readProfileFile(agent: string): Promise<EvolutionProfile | undefined> {
     try {
       return parseProfile(await fs.readFile(this.profilePath(agent), "utf8"), agent);
     } catch (error) {
@@ -338,7 +459,50 @@ export class EvolutionStore {
   }
 
   async ensureProfile(agent: string): Promise<EvolutionProfile> {
-    return this.withAgentMutation(agent, () => this.ensureProfileUnlocked(agent));
+    return this.withAgentMutation(agent, async () => {
+      await this.reconcilePromotionUnlocked(agent);
+      return this.ensureProfileUnlocked(agent);
+    });
+  }
+
+  /** Capture and authenticate the exact active bytes delivered to a fresh runtime. */
+  async readAuthorizedActiveState(agent: string): Promise<EvolutionActiveSnapshotBytes> {
+    return this.withAgentMutation(agent, async () => {
+      await this.reconcilePromotionUnlocked(agent);
+      const profile = await this.ensureProfileUnlocked(agent);
+      const learnings = await fs.readFile(this.learningsPath(agent), "utf8");
+      parseLearnings(learnings, agent);
+      const skills: EvolutionActiveSnapshotBytes["skills"] = [];
+      for (const name of await this.listSkillNamesUnlocked(agent)) {
+        const files = await this.readSkillFilesUnlocked(agent, name);
+        if (files) skills.push({ name, files });
+      }
+      const expected = this.authorityHeadForCapturedState(agent, profile, learnings, skills);
+      await this.assertExpectedAuthorityHeadUnlocked(agent, profile, expected);
+      return { profile, learnings, skills };
+    });
+  }
+
+  /** Retire one name-scoped authority identity before canonical agent footprint deletion. */
+  async retireAgent(agent: string): Promise<void> {
+    assertAgentName(agent);
+    if (!this.authorityHead) return;
+    if (!this.authorityHead.retire) {
+      throw new EvolutionStoreError("evolution/authority-invalid", "Agent Evolution approval authority cannot retire agent identities");
+    }
+    await this.withAgentMutation(agent, async () => {
+      try {
+        await fs.access(this.renameIntentPath(agent));
+        const profile = await this.readProfileFile(agent);
+        if (!profile) throw new EvolutionStoreError("evolution/authority-invalid", "Agent Evolution rename profile is missing");
+        await this.reconcileRenameIntentUnlocked(agent, profile);
+      } catch (error) {
+        if (!isMissing(error)) throw error;
+      }
+      const current = await this.authorityHead!.current(this.authorityIdentity(agent));
+      if (!current) return;
+      await this.authorityHead!.retire!(this.authorityIdentity(agent), current.mac);
+    });
   }
 
   /** Move one canonical profile to a renamed Tachyon agent without changing its identity or version. */
@@ -347,6 +511,21 @@ export class EvolutionStore {
     assertAgentName(newAgent);
     if (oldAgent === newAgent) return (await this.readProfile(oldAgent)) !== undefined;
     return this.withAgentMutations([oldAgent, newAgent], async () => {
+      const preparedDestination = await this.readProfileFile(newAgent);
+      if (preparedDestination) {
+        try {
+          await fs.access(this.renameIntentPath(newAgent));
+          await this.reconcileRenameIntentUnlocked(newAgent, preparedDestination);
+          return true;
+        } catch (error) {
+          if (!isMissing(error)) throw error;
+        }
+        throw new EvolutionStoreError(
+          "evolution/profile-conflict",
+          `Agent Evolution Profile already exists for '${newAgent}'`,
+        );
+      }
+      await this.reconcilePromotionUnlocked(oldAgent);
       const profile = await this.readProfile(oldAgent);
       if (!profile) return false;
       let destinationExists = false;
@@ -395,13 +574,74 @@ export class EvolutionStore {
             if (name.endsWith(".json")) await rewriteOwnedJson(path.join(staging, directory, name));
           }
         }
+        const renamedProfile = parseProfile(await fs.readFile(path.join(staging, "profile.json"), "utf8"), newAgent);
+        let previousHead: AuthorityHead | undefined;
+        let nextHead: AuthorityHead | undefined;
+        const retiredRoot = path.join(newParent, `.retired-evolution-${oldAgent}-${crypto.randomUUID()}`);
+        if (this.authorityHead) {
+          if (!this.authorityHead.move) {
+            throw new EvolutionStoreError("evolution/authority-invalid", "Agent Evolution approval authority cannot move agent identities");
+          }
+          // Calculate both heads while the old root and its authority identity still agree.
+          const active = await this.capturedStateBytesUnlocked(oldAgent, profile);
+          previousHead = this.authorityHeadForCapturedState(oldAgent, profile, active.learnings, active.skills);
+          await this.assertExpectedAuthorityHeadUnlocked(oldAgent, profile, previousHead);
+          nextHead = this.authorityHeadForCapturedState(newAgent, renamedProfile, active.learnings, active.skills);
+          await this.writeRenameIntentUnlocked({
+            schemaVersion: 1,
+            kind: "agent-evolution-rename",
+            oldAgent,
+            newAgent,
+            profileId: renamedProfile.profileId,
+            retiredRoot,
+            previousHead,
+            nextHead,
+          }, path.join(staging, "rename-intent.json"));
+        }
+        // Publish the prepared profile and its recovery journal in one atomic directory rename.
         await fs.rename(staging, newRoot);
+        await this.renameFault?.();
+
+        // Quarantine the source before authority moves. If this atomic rename fails, the old
+        // identity is still authoritative and the prepared destination can be discarded safely.
         try {
-          await fs.rm(oldRoot, { recursive: true, force: false });
+          await this.quarantineRoot(oldRoot, retiredRoot);
         } catch (error) {
           await fs.rm(newRoot, { recursive: true, force: true });
           throw error;
         }
+
+        if (this.authorityHead && previousHead && nextHead) {
+          try {
+            await this.authorityHead.move!(
+              this.authorityIdentity(oldAgent),
+              this.authorityIdentity(newAgent),
+              nextHead,
+              previousHead.mac,
+            );
+          } catch (error) {
+            let committed: AuthorityHead | undefined;
+            try {
+              committed = await this.authorityHead.current(this.authorityIdentity(newAgent));
+            } catch {
+              // The signed journal plus both prepared roots make the desired rename recoverable.
+              // Keep the config-facing rename committed; the next store access retries the same
+              // idempotent authority move instead of rolling Workspace/YAML back inconsistently.
+              return true;
+            }
+            if (committed?.revision !== nextHead.revision || committed.mac !== nextHead.mac) {
+              try {
+                await fs.rename(retiredRoot, oldRoot);
+                await fs.rm(newRoot, { recursive: true, force: true });
+              } catch (rollbackError) {
+                throw new AggregateError([error, rollbackError], "Agent Evolution rename and rollback both failed");
+              }
+              throw error;
+            }
+          }
+        }
+        await fs.rm(this.renameIntentPath(newAgent), { force: true });
+        await this.retiredRootCleanup(retiredRoot).catch(() => undefined);
         return true;
       } finally {
         await fs.rm(staging, { recursive: true, force: true });
@@ -411,6 +651,7 @@ export class EvolutionStore {
 
   async createCandidate(agent: string, input: CreateEvolutionCandidateInput): Promise<EvolutionCandidate> {
     return this.withAgentMutation(agent, async () => {
+      await this.reconcilePromotionUnlocked(agent);
       await this.ensureProfileUnlocked(agent);
       if (!requiredString(input.reviewId) || !requiredString(input.taskId)) {
         throw new EvolutionStoreError("evolution/candidate-malformed", "Evolution candidate requires reviewId and taskId");
@@ -472,6 +713,7 @@ export class EvolutionStore {
     input: ResolveEvolutionCandidateInput,
   ): Promise<EvolutionCandidate> {
     return this.withAgentMutation(agent, async () => {
+      await this.reconcilePromotionUnlocked(agent);
       const { profile, candidate } = await this.requirePendingCandidate(agent, candidateId, input);
       void profile;
       const rejected: EvolutionCandidate = {
@@ -490,12 +732,14 @@ export class EvolutionStore {
     input: ResolveEvolutionCandidateInput,
   ): Promise<EvolutionPromotionResult> {
     return this.withAgentMutation(agent, async () => {
+      await this.reconcilePromotionUnlocked(agent);
       const { profile, candidate } = await this.requirePendingCandidate(agent, candidateId, input);
       const promotedVersion = profile.activeVersion + 1;
       const recordedAt = this.now();
       let previousDigest: string | undefined;
       let previousSkillFiles: EvolutionSkillFile[] | undefined;
       let promotedDigest: string;
+      let nextLearnings: string | undefined;
 
       if (candidate.target.kind === "learning") {
         const entries = await this.readLearningsUnlocked(agent);
@@ -506,9 +750,8 @@ export class EvolutionStore {
           sourceReviewId: candidate.reviewId,
           approvedAt: recordedAt,
         };
-        const rendered = renderEvolutionLearnings([...entries, learning]);
-        await this.atomicWrite(this.learningsPath(agent), rendered);
-        promotedDigest = crypto.createHash("sha256").update(rendered, "utf8").digest("hex");
+        nextLearnings = renderEvolutionLearnings([...entries, learning]);
+        promotedDigest = crypto.createHash("sha256").update(nextLearnings, "utf8").digest("hex");
       } else {
         if (this.reservedSkillNames(agent).has(candidate.target.name)
           || input.reservedSkillNames?.has(candidate.target.name)) {
@@ -526,7 +769,6 @@ export class EvolutionStore {
           && (!previousSkillFiles || previousDigest !== candidate.target.expectedTargetDigest)) {
           throw new EvolutionStoreError("evolution/promotion-conflict", `skill '${candidate.target.name}' changed since the proposal was created`);
         }
-        await this.writeSkillBundleUnlocked(agent, candidate.target.name, candidate.target.files, candidate.target.operation);
         promotedDigest = candidate.target.digest;
       }
 
@@ -542,22 +784,77 @@ export class EvolutionStore {
         promotedDigest,
         ...(previousSkillFiles !== undefined ? { previousSkillFiles } : {}),
       };
-      await this.recordHistoryUnlocked(agent, history);
-
       const nextProfile: EvolutionProfile = {
         ...profile,
         activeVersion: promotedVersion,
         updatedAt: recordedAt,
       };
-      await this.atomicWriteJson(this.profilePath(agent), nextProfile);
       const approved: EvolutionCandidate = {
         ...candidate,
         status: "approved",
         resolvedAt: recordedAt,
         promotedVersion,
       };
-      await this.atomicWriteJson(this.candidatePath(agent, candidate.id), approved);
-      return { candidate: approved, profile: nextProfile, history };
+      const previousHead = await this.assertAuthorizedStateUnlocked(agent, profile);
+      const previousLearnings = await fs.readFile(this.learningsPath(agent), "utf8");
+      const nextHead = await this.calculatedAuthorityHead(agent, nextProfile, candidate.target.kind === "learning"
+        ? { learnings: nextLearnings }
+        : { skill: { name: candidate.target.name, files: candidate.target.files } });
+      const historyFile = `${String(history.version).padStart(6, "0")}-${history.id}.json`;
+      const intent: EvolutionPromotionIntent = {
+        schemaVersion: 1,
+        agent,
+        candidateId: candidate.id,
+        previousVersion: profile.activeVersion,
+        nextVersion: nextProfile.activeVersion,
+        previousHead,
+        nextHead,
+        target: candidate.target.kind === "learning"
+          ? { kind: "learning" }
+          : { kind: "skill", name: candidate.target.name },
+        historyFile,
+        previousProfile: profile,
+        previousCandidate: candidate,
+        previousLearnings,
+        ...(previousSkillFiles ? { previousSkillFiles } : {}),
+      };
+      await fs.rm(this.promotionDir(agent), { recursive: true, force: true });
+      await this.atomicWriteJson(this.promotionIntentPath(agent), intent);
+      await this.fault("after-intent");
+      try {
+        if (candidate.target.kind === "learning") {
+          await this.atomicWrite(this.learningsPath(agent), nextLearnings!);
+        } else {
+          await this.writeSkillBundleUnlocked(agent, candidate.target.name, candidate.target.files, candidate.target.operation);
+        }
+        await this.fault("after-target");
+        await this.recordHistoryUnlocked(agent, history);
+        await this.fault("after-history");
+        await this.atomicWriteJson(this.profilePath(agent), nextProfile);
+        await this.fault("after-profile");
+        await this.atomicWriteJson(this.candidatePath(agent, candidate.id), approved);
+        await this.fault("after-candidate");
+        if (this.authorityHead) {
+          await this.authorityHead.prepare(this.authorityIdentity(agent), nextHead, previousHead.mac);
+          const committed = await this.authorityHead.current(this.authorityIdentity(agent));
+          if (committed?.revision !== nextHead.revision || committed.mac !== nextHead.mac) {
+            throw new EvolutionStoreError("evolution/authority-invalid", "Agent Evolution approval head was not durably committed");
+          }
+        }
+        await this.fault("after-authority");
+        await fs.rm(this.promotionDir(agent), { recursive: true, force: true });
+        return { candidate: approved, profile: nextProfile, history };
+      } catch (error) {
+        await this.reconcilePromotionUnlocked(agent);
+        const recoveredProfile = await this.readProfileFile(agent);
+        const recoveredCandidate = await this.readCandidate(agent, candidate.id);
+        if (recoveredProfile?.activeVersion === nextProfile.activeVersion
+          && recoveredCandidate?.status === "approved"
+          && recoveredCandidate.promotedVersion === nextProfile.activeVersion) {
+          return { candidate: recoveredCandidate, profile: recoveredProfile, history };
+        }
+        throw error;
+      }
     });
   }
 
@@ -573,6 +870,12 @@ export class EvolutionStore {
 
   async listSkillNames(agent: string): Promise<string[]> {
     assertAgentName(agent);
+    const profile = await this.readProfile(agent);
+    if (!profile) return [];
+    return this.listSkillNamesUnlocked(agent);
+  }
+
+  private async listSkillNamesUnlocked(agent: string): Promise<string[]> {
     let entries: Dirent[];
     try {
       entries = await fs.readdir(this.skillsDir(agent), { withFileTypes: true });
@@ -674,6 +977,7 @@ export class EvolutionStore {
     proposals: readonly EvolutionCandidateInputTarget[],
   ): Promise<EvolutionReviewSubmission> {
     return this.withAgentMutation(agent, async () => {
+      await this.reconcilePromotionUnlocked(agent);
       const review = await this.requireReview(agent, reviewId);
       const targets = proposals.map((proposal) => this.normalizeCandidateTarget(proposal));
       const submissionDigest = crypto.createHash("sha256").update(JSON.stringify(targets), "utf8").digest("hex");
@@ -753,6 +1057,7 @@ export class EvolutionStore {
 
   async writeLearnings(agent: string, entries: readonly EvolutionLearning[]): Promise<void> {
     await this.withAgentMutation(agent, async () => {
+      await this.reconcilePromotionUnlocked(agent);
       await this.ensureProfileUnlocked(agent);
       const ids = new Set<string>();
       for (const entry of entries) {
@@ -772,6 +1077,7 @@ export class EvolutionStore {
 
   async recordHistory(agent: string, record: EvolutionHistoryRecord): Promise<void> {
     await this.withAgentMutation(agent, async () => {
+      await this.reconcilePromotionUnlocked(agent);
       await this.ensureProfileUnlocked(agent);
       await this.recordHistoryUnlocked(agent, record);
     });
@@ -998,7 +1304,20 @@ export class EvolutionStore {
   }
 
   private async ensureProfileUnlocked(agent: string): Promise<EvolutionProfile> {
-    const current = await this.readProfile(agent);
+    let current = await this.readProfileFile(agent);
+    if (!current && this.authorityHead) {
+      const pending = await this.readCreationIntentUnlocked(agent);
+      if (pending) {
+        current = parseProfile(JSON.stringify(pending.profile), agent);
+        const expected = this.authorityHeadForCapturedState(agent, current, renderEvolutionLearnings([]), []);
+        if (pending.head.revision !== expected.revision || pending.head.mac !== expected.mac) {
+          throw new EvolutionStoreError("evolution/authority-invalid", "Agent Evolution creation intent does not match its initial profile");
+        }
+        // The intent is the authenticated source of truth for every pre-authority crash boundary.
+        await this.atomicWriteJson(this.profilePath(agent), current);
+        await this.atomicWrite(this.learningsPath(agent), renderEvolutionLearnings([]));
+      }
+    }
     if (current) {
       try {
         await fs.access(this.learningsPath(agent));
@@ -1006,13 +1325,181 @@ export class EvolutionStore {
         if (!isMissing(error)) throw error;
         await this.atomicWrite(this.learningsPath(agent), renderEvolutionLearnings([]));
       }
+      await this.reconcileRenameIntentUnlocked(agent, current);
+      if (await this.reconcileCreationIntentUnlocked(agent, current)) return current;
+      await this.assertAuthorizedStateUnlocked(agent, current);
       return current;
     }
     const now = this.now();
     const profile = createInitialEvolutionProfile({ profileId: this.uuid(), agent, now });
+    if (this.authorityHead) {
+      const expected = this.authorityHeadForCapturedState(agent, profile, renderEvolutionLearnings([]), []);
+      await this.writeCreationIntentUnlocked(agent, profile, expected);
+      await this.creationFault?.();
+    }
     await this.atomicWriteJson(this.profilePath(agent), profile);
     await this.atomicWrite(this.learningsPath(agent), renderEvolutionLearnings([]));
+    try {
+      await this.establishAuthorizedStateUnlocked(agent, profile);
+      await fs.rm(this.creationIntentPath(agent), { force: true });
+    } catch (error) {
+      if (!this.authorityHead) throw error;
+      try {
+        if (await this.reconcileCreationIntentUnlocked(agent, profile)) return profile;
+      } catch {
+        // Preserve the signed intent and exact bytes. A later call can safely retry or confirm the
+        // same head without accepting unauthenticated workspace state.
+      }
+      throw error;
+    }
     return profile;
+  }
+
+  private async writeCreationIntentUnlocked(agent: string, profile: EvolutionProfile, head: AuthorityHead): Promise<void> {
+    const key = this.authorityIntegrityKey?.();
+    if (!key) throw new EvolutionStoreError("evolution/authority-invalid", "Agent Evolution approval authority is unavailable");
+    const intent = sealAuthorityRecord({
+      schemaVersion: 1 as const,
+      kind: "agent-evolution-create" as const,
+      agent,
+      profile,
+      head,
+    }, key, workspaceAuthorityDomain("agent-evolution", this.workspaceRoot));
+    await this.atomicWriteJson(this.creationIntentPath(agent), intent);
+  }
+
+  private async writeRenameIntentUnlocked(intent: {
+    schemaVersion: 1;
+    kind: "agent-evolution-rename";
+    oldAgent: string;
+    newAgent: string;
+    profileId: string;
+    retiredRoot: string;
+    previousHead: AuthorityHead;
+    nextHead: AuthorityHead;
+  }, target = this.renameIntentPath(intent.newAgent)): Promise<void> {
+    const key = this.authorityIntegrityKey?.();
+    if (!key) throw new EvolutionStoreError("evolution/authority-invalid", "Agent Evolution approval authority is unavailable");
+    const sealed = sealAuthorityRecord(intent, key, workspaceAuthorityDomain("agent-evolution", this.workspaceRoot));
+    await this.atomicWriteJson(target, sealed);
+  }
+
+  private async reconcileRenameIntentUnlocked(agent: string, profile: EvolutionProfile): Promise<void> {
+    let value: unknown;
+    try {
+      value = JSON.parse(await fs.readFile(this.renameIntentPath(agent), "utf8"));
+    } catch (error) {
+      if (isMissing(error)) return;
+      throw new EvolutionStoreError("evolution/authority-invalid", "Agent Evolution rename intent is unreadable");
+    }
+    const intent = value as Partial<EvolutionRenameIntent>;
+    const oldAgent = intent.oldAgent;
+    const retiredRoot = intent.retiredRoot;
+    const previousHead = intent.previousHead;
+    const nextHead = intent.nextHead;
+    const key = this.authorityIntegrityKey?.();
+    const parent = path.dirname(this.rootFor(agent));
+    if (!this.authorityHead?.move || !key || intent.schemaVersion !== 1 || intent.kind !== "agent-evolution-rename"
+      || !requiredString(oldAgent) || intent.newAgent !== agent || intent.profileId !== profile.profileId
+      || !requiredString(retiredRoot) || path.dirname(retiredRoot) !== parent
+      || !path.basename(retiredRoot).startsWith(`.retired-evolution-${oldAgent}-`)
+      || !Number.isSafeInteger(previousHead?.revision) || !SHA256_RE.test(previousHead?.mac ?? "")
+      || !Number.isSafeInteger(nextHead?.revision) || !SHA256_RE.test(nextHead?.mac ?? "")
+      || !verifyAuthorityRecord(intent as AuthorityRecord, key, workspaceAuthorityDomain("agent-evolution", this.workspaceRoot))) {
+      throw new EvolutionStoreError("evolution/authority-invalid", "Agent Evolution rename intent is not authentic");
+    }
+    const authenticatedOldAgent = oldAgent as string;
+    const authenticatedRetiredRoot = retiredRoot as string;
+    const authenticatedPreviousHead = previousHead as AuthorityHead;
+    const authenticatedNextHead = nextHead as AuthorityHead;
+    const expected = await this.calculatedAuthorityHead(agent, profile);
+    if (authenticatedNextHead.revision !== expected.revision || authenticatedNextHead.mac !== expected.mac) {
+      throw new EvolutionStoreError("evolution/authority-invalid", "Agent Evolution rename intent does not match active bytes");
+    }
+    let sourceQuarantined = false;
+    try {
+      await fs.access(authenticatedRetiredRoot);
+      sourceQuarantined = true;
+    } catch (error) {
+      if (!isMissing(error)) throw error;
+    }
+    if (!sourceQuarantined) {
+      const oldRoot = this.rootFor(authenticatedOldAgent);
+      try {
+        await this.quarantineRoot(oldRoot, authenticatedRetiredRoot);
+      } catch (error) {
+        if (isMissing(error)) {
+          throw new EvolutionStoreError("evolution/authority-invalid", "Agent Evolution rename source is missing before authority move");
+        }
+        throw error;
+      }
+    }
+    try {
+      await this.authorityHead.move(
+        this.authorityIdentity(authenticatedOldAgent),
+        this.authorityIdentity(agent),
+        authenticatedNextHead,
+        authenticatedPreviousHead.mac,
+      );
+    } catch (error) {
+      const current = await this.authorityHead.current(this.authorityIdentity(agent));
+      if (current?.revision !== authenticatedNextHead.revision || current.mac !== authenticatedNextHead.mac) throw error;
+    }
+    const current = await this.authorityHead.current(this.authorityIdentity(agent));
+    if (current?.revision !== authenticatedNextHead.revision || current.mac !== authenticatedNextHead.mac) {
+      throw new EvolutionStoreError("evolution/authority-invalid", "Agent Evolution rename authority could not be recovered");
+    }
+    await fs.rm(this.renameIntentPath(agent), { force: true });
+    await this.retiredRootCleanup(authenticatedRetiredRoot).catch(() => undefined);
+  }
+
+  private async readCreationIntentUnlocked(agent: string): Promise<EvolutionCreationIntent | undefined> {
+    let value: unknown;
+    try {
+      value = JSON.parse(await fs.readFile(this.creationIntentPath(agent), "utf8"));
+    } catch (error) {
+      if (isMissing(error)) return undefined;
+      throw new EvolutionStoreError("evolution/authority-invalid", "Agent Evolution creation intent is unreadable");
+    }
+    const intent = value as Partial<EvolutionCreationIntent>;
+    const key = this.authorityIntegrityKey?.();
+    if (!key || intent.schemaVersion !== 1 || intent.kind !== "agent-evolution-create"
+      || intent.agent !== agent || !intent.profile
+      || !Number.isSafeInteger(intent.head?.revision) || !SHA256_RE.test(intent.head?.mac ?? "")
+      || !verifyAuthorityRecord(intent as AuthorityRecord, key, workspaceAuthorityDomain("agent-evolution", this.workspaceRoot))) {
+      throw new EvolutionStoreError("evolution/authority-invalid", "Agent Evolution creation intent is not authentic");
+    }
+    parseProfile(JSON.stringify(intent.profile), agent);
+    return intent as EvolutionCreationIntent;
+  }
+
+  private async reconcileCreationIntentUnlocked(agent: string, profile: EvolutionProfile): Promise<boolean> {
+    const intent = await this.readCreationIntentUnlocked(agent);
+    if (!intent) return false;
+    const key = this.authorityIntegrityKey?.();
+    const expected = await this.calculatedAuthorityHead(agent, profile);
+    if (!this.authorityHead || !this.authorityHead.establishInitial || !key
+      || intent.profile.profileId !== profile.profileId
+      || intent.head?.revision !== expected.revision || intent.head.mac !== expected.mac
+      || JSON.stringify(intent.profile) !== JSON.stringify(profile)) {
+      throw new EvolutionStoreError("evolution/authority-invalid", "Agent Evolution creation intent is not authentic");
+    }
+    const identity = this.authorityIdentity(agent);
+    let current = await this.authorityHead.current(identity);
+    if (!current) {
+      try {
+        await this.authorityHead.establishInitial(identity, expected);
+      } catch (error) {
+        current = await this.authorityHead.current(identity);
+        if (current?.revision !== expected.revision || current.mac !== expected.mac) throw error;
+      }
+      current = await this.authorityHead.current(identity);
+    }
+    if (current?.revision !== expected.revision || current.mac !== expected.mac) {
+      throw new EvolutionStoreError("evolution/authority-invalid", "Agent Evolution creation intent conflicts with approval authority");
+    }
+    await fs.rm(this.creationIntentPath(agent), { force: true });
+    return true;
   }
 
   private async listReviewsUnlocked(agent: string): Promise<EvolutionReview[]> {
@@ -1051,6 +1538,182 @@ export class EvolutionStore {
       if (candidate) candidates.push(candidate);
     }
     return candidates.sort((a, b) => compareText(a.createdAt, b.createdAt) || compareText(a.id, b.id));
+  }
+
+  private authorityIdentity(agent: string): string {
+    return `evolution:${agent}`;
+  }
+
+  private async capturedStateBytesUnlocked(
+    agent: string,
+    profile: EvolutionProfile,
+  ): Promise<EvolutionActiveSnapshotBytes> {
+    const learnings = await fs.readFile(this.learningsPath(agent), "utf8");
+    parseLearnings(learnings, agent);
+    const skills: EvolutionActiveSnapshotBytes["skills"] = [];
+    for (const name of await this.listSkillNamesUnlocked(agent)) {
+      const files = await this.readSkillFilesUnlocked(agent, name);
+      if (files) skills.push({ name, files });
+    }
+    return { profile, learnings, skills };
+  }
+
+  private async calculatedAuthorityHead(
+    agent: string,
+    profile: EvolutionProfile,
+    override: { learnings?: string; skill?: { name: string; files: readonly EvolutionSkillFile[] } } = {},
+  ): Promise<AuthorityHead> {
+    let learnings: string;
+    try {
+      learnings = override.learnings ?? await fs.readFile(this.learningsPath(agent), "utf8");
+      parseLearnings(learnings, agent);
+    } catch (error) {
+      if (!isMissing(error)) throw error;
+      learnings = renderEvolutionLearnings([]);
+    }
+    const skills: EvolutionActiveSnapshotBytes["skills"] = [];
+    const skillNames = new Set(await this.listSkillNamesUnlocked(agent));
+    if (override.skill) skillNames.add(override.skill.name);
+    for (const name of [...skillNames].sort(compareText)) {
+      const files = override.skill?.name === name ? [...override.skill.files] : await this.readSkillFilesUnlocked(agent, name);
+      if (files) skills.push({ name, files });
+    }
+    return this.authorityHeadForCapturedState(agent, profile, learnings, skills);
+  }
+
+  private authorityHeadForCapturedState(
+    agent: string,
+    profile: EvolutionProfile,
+    learnings: string,
+    skills: EvolutionActiveSnapshotBytes["skills"],
+  ): AuthorityHead {
+    const record = {
+      schemaVersion: 1,
+      kind: "agent-evolution-active",
+      agent,
+      profileId: profile.profileId,
+      activeVersion: profile.activeVersion,
+      learningsDigest: crypto.createHash("sha256").update(learnings, "utf8").digest("hex"),
+      skills: skills.map(({ name, files }) => ({ name, digest: digestEvolutionSkillFiles(files) })),
+    };
+    const key = this.authorityIntegrityKey?.();
+    const mac = key
+      ? authorityRecordMac(sealAuthorityRecord(record, key, workspaceAuthorityDomain("agent-evolution", this.workspaceRoot)))!
+      : crypto.createHash("sha256").update(JSON.stringify(record), "utf8").digest("hex");
+    return { revision: profile.activeVersion + 1, mac };
+  }
+
+  private async assertAuthorizedStateUnlocked(agent: string, profile: EvolutionProfile): Promise<AuthorityHead> {
+    const expected = await this.calculatedAuthorityHead(agent, profile);
+    await this.assertExpectedAuthorityHeadUnlocked(agent, profile, expected);
+    return expected;
+  }
+
+  private async assertExpectedAuthorityHeadUnlocked(
+    agent: string,
+    profile: EvolutionProfile,
+    expected: AuthorityHead,
+  ): Promise<void> {
+    if (!this.authorityHead) return;
+    if (!this.authorityIntegrityKey?.()) {
+      throw new EvolutionStoreError("evolution/authority-invalid", "Agent Evolution approval authority is unavailable");
+    }
+    const identity = this.authorityIdentity(agent);
+    const current = await this.authorityHead.current(identity);
+    if (!current) throw new EvolutionStoreError("evolution/authority-invalid", "Agent Evolution approval authority has no active head");
+    if (current.revision !== expected.revision || current.mac !== expected.mac) {
+      throw new EvolutionStoreError(
+        "evolution/authority-invalid",
+        `Agent Evolution active profile '${profile.profileId}' does not match its human-approved head`,
+      );
+    }
+  }
+
+  private async establishAuthorizedStateUnlocked(agent: string, profile: EvolutionProfile): Promise<AuthorityHead> {
+    const expected = await this.calculatedAuthorityHead(agent, profile);
+    if (!this.authorityHead) return expected;
+    if (!this.authorityIntegrityKey?.() || !this.authorityHead.establishInitial) {
+      throw new EvolutionStoreError("evolution/authority-invalid", "Agent Evolution approval authority is unavailable");
+    }
+    const identity = this.authorityIdentity(agent);
+    await this.authorityHead.establishInitial(identity, expected);
+    const established = await this.authorityHead.current(identity);
+    if (established?.revision !== expected.revision || established.mac !== expected.mac) {
+      throw new EvolutionStoreError("evolution/authority-invalid", "Agent Evolution approval authority could not be established");
+    }
+    return expected;
+  }
+
+  private async fault(point: EvolutionPromotionFaultPoint): Promise<void> {
+    await this.promotionFault?.(point);
+  }
+
+  private async readPromotionIntentUnlocked(agent: string): Promise<EvolutionPromotionIntent | undefined> {
+    try {
+      const value = JSON.parse(await fs.readFile(this.promotionIntentPath(agent), "utf8")) as EvolutionPromotionIntent;
+      if (value.schemaVersion !== 1 || value.agent !== agent || !requiredString(value.candidateId)
+        || !Number.isSafeInteger(value.previousVersion) || !Number.isSafeInteger(value.nextVersion)
+        || value.nextVersion !== value.previousVersion + 1
+        || !Number.isSafeInteger(value.previousHead?.revision) || !SHA256_RE.test(value.previousHead?.mac ?? "")
+        || !Number.isSafeInteger(value.nextHead?.revision) || !SHA256_RE.test(value.nextHead?.mac ?? "")
+        || !requiredString(value.historyFile) || !value.previousProfile || !value.previousCandidate
+        || typeof value.previousLearnings !== "string") {
+        throw new Error("invalid promotion intent");
+      }
+      return value;
+    } catch (error) {
+      if (isMissing(error)) return undefined;
+      throw new EvolutionStoreError("evolution/authority-invalid", `Agent Evolution promotion intent is corrupt: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  private async rollbackPromotionUnlocked(agent: string, intent: EvolutionPromotionIntent): Promise<void> {
+    if (intent.target.kind === "learning") {
+      await this.atomicWrite(this.learningsPath(agent), intent.previousLearnings);
+    } else {
+      await fs.rm(this.skillDir(agent, intent.target.name), { recursive: true, force: true });
+      if (intent.previousSkillFiles) {
+        await this.writeSkillBundleUnlocked(agent, intent.target.name, intent.previousSkillFiles, "create");
+      }
+    }
+    await fs.rm(path.join(this.historyDir(agent), intent.historyFile), { force: true });
+    await this.atomicWriteJson(this.profilePath(agent), intent.previousProfile);
+    await this.atomicWriteJson(this.candidatePath(agent, intent.candidateId), intent.previousCandidate);
+    await fs.rm(this.promotionDir(agent), { recursive: true, force: true });
+  }
+
+  private async reconcilePromotionUnlocked(agent: string): Promise<void> {
+    const intent = await this.readPromotionIntentUnlocked(agent);
+    if (!intent) return;
+    if (!this.authorityHead) {
+      await this.rollbackPromotionUnlocked(agent, intent);
+      return;
+    }
+    const identity = this.authorityIdentity(agent);
+    const current = await this.authorityHead.current(identity);
+    if (current?.revision === intent.nextHead.revision && current.mac === intent.nextHead.mac) {
+      const profile = await this.readProfileFile(agent);
+      if (!profile || profile.activeVersion !== intent.nextVersion) {
+        throw new EvolutionStoreError("evolution/authority-invalid", "authorized Agent Evolution promotion is incomplete");
+      }
+      const calculated = await this.calculatedAuthorityHead(agent, profile);
+      if (calculated.revision !== current.revision || calculated.mac !== current.mac) {
+        throw new EvolutionStoreError("evolution/authority-invalid", "authorized Agent Evolution promotion bytes are incomplete");
+      }
+      await fs.rm(this.promotionDir(agent), { recursive: true, force: true });
+      return;
+    }
+    if (current?.revision === intent.previousHead.revision && current.mac === intent.previousHead.mac) {
+      await this.rollbackPromotionUnlocked(agent, intent);
+      const restored = await this.readProfileFile(agent);
+      if (!restored) throw new EvolutionStoreError("evolution/authority-invalid", "promotion rollback lost the active profile");
+      const calculated = await this.calculatedAuthorityHead(agent, restored);
+      if (calculated.revision !== current.revision || calculated.mac !== current.mac) {
+        throw new EvolutionStoreError("evolution/authority-invalid", "promotion rollback did not restore the authorized profile");
+      }
+      return;
+    }
+    throw new EvolutionStoreError("evolution/authority-invalid", "Agent Evolution promotion authority changed during recovery");
   }
 
   private async withAgentMutation<T>(agent: string, action: () => Promise<T>): Promise<T> {

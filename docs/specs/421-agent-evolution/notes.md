@@ -41,6 +41,28 @@ _Alternatives weighed mid-build. The chosen path + what was given up + why it wa
 
 _Questions surfaced during the build with no answer yet. Owner or path to resolution if known._
 
+## Independent review correction
+
+- 2026-07-21 — Independent review at `1271c60a` blocked merge: promotion was multi-file but not
+  recoverable; a committed Task could lose its asynchronous review; active workspace bytes were not
+  bound to host-verifiable human approval; runtime-switch dogfood exercised the helper from Node rather
+  than through a switched runtime. Full evidence is in
+  `.tachyon/reports/agent-evolution-code-review-2026-07-21.md`.
+- 2026-07-21 — The spec returned from `shipped-partial` to `in-progress`. Corrective follow-ups:
+  `t-24ffb7`, `t-67ece9`, `t-0b7aa6`, `t-5f212f`.
+- 2026-07-21 — Promotion now writes a durable intent before active files, commits the host-custodied
+  HMAC freshness head last, rolls back when the old head remains, and accepts an already-committed
+  result when the new head won. Fault tests cover every boundary plus skill-update restoration.
+- 2026-07-21 — Opt-in Task completion stores a reconstructible revision marker in the committed Task.
+  Reload reconciles missing reviews idempotently and production wiring surfaces creation failures.
+- 2026-07-21 — Direct edits to active learning now fail startup authority verification. The first live
+  target attempt (Grok) could not start because the installed CLI was not authenticated; no browser was
+  opened. The runtime-switch proof then used an authenticated fresh Codex session after Grok→Codex,
+  which read `SKILL.md`, ran `scripts/check.sh` through its normal tools and wrote the expected marker.
+- 2026-07-21 — Final post-correction verification: focused recovery/reload/authority suites passed
+  122/122; `npm run verify:full:quiet` passed 462 files and 5,236 tests with 3 skipped; final
+  `npm run typecheck` passed; targeted SDD close remained clean.
+
 ## Architecture validation
 
 - 2026-07-21 — `git diff --check` passed; SDD ids are unique; no scaffold placeholders remain.
@@ -122,6 +144,15 @@ _Questions surfaced during the build with no answer yet. Owner or path to resolu
 ### 2026-07-21T20:12:04Z — pass (1/1) — source: tasks.md — commit: e0856eaa52ceece045adc2826c2cfc4835261b8a
 - `npm exec -- vite-node scripts/dogfood-agent-evolution.mts` — pass
 
+
+### 2026-07-21T22:16:37Z — pass (1/1) — source: tasks.md — commit: 1271c60ad6849c633dc0210e4ec5775652512030
+- `TACHYON_AGENT_EVOLUTION_LIVE_RUNTIME=codex npm exec -- vite-node scripts/dogfood-agent-evolution.mts` — pass
+
+### 2026-07-21T23:19:23Z — pass (1/1) — source: tasks.md — commit: 1271c60ad6849c633dc0210e4ec5775652512030
+- `TACHYON_AGENT_EVOLUTION_LIVE_RUNTIME=codex npm exec -- vite-node scripts/dogfood-agent-evolution.mts` — pass
+
+### 2026-07-21T23:59:09Z — pass (1/1) — source: tasks.md — commit: 1271c60ad6849c633dc0210e4ec5775652512030
+- `TACHYON_AGENT_EVOLUTION_LIVE_RUNTIME=codex npm exec -- vite-node scripts/dogfood-agent-evolution.mts` — pass
 ## Verification log
 
 ### 2026-07-21T20:12:10Z — pass (3/3) — source: tasks.md
@@ -138,3 +169,48 @@ _Questions surfaced during the build with no answer yet. Owner or path to resolu
   cgroup-test failure. Its focused suite immediately passed 7/7 and the full rerun passed 462 files,
   5,225 tests with 3 skipped. Backlog bug `t-5f6355` owns investigation of the nondeterministic process
   selection; the original failure remains recorded rather than being hidden by the green rerun.
+
+### 2026-07-21T22:16:54Z — pass (3/3) — source: tasks.md
+- `npm run typecheck` — pass
+- `npm run test:invariants` — pass
+- `npm run verify:full:quiet` — pass
+
+### 2026-07-21T23:18:06Z — pass (3/3) — source: tasks.md
+- `npm run typecheck` — pass
+- `npm run test:invariants` — pass
+- `npm run verify:full:quiet` — pass
+
+## Second corrective review validation
+
+- 2026-07-21 — Workspace now injects its authority-configured Evolution snapshot resolver into the
+  real AgentManager startup path. A headless Workspace test proves first-session profile creation is
+  authorized and valid-but-unapproved learning bytes block the actual spawn route.
+- 2026-07-21 — EvolutionStore captures profile, learning and skill bytes together and compares the
+  authority MAC calculated from those exact bytes. A deterministic test swaps in transient valid bytes,
+  restores the approved file before the final head read and still observes a fail-closed rejection.
+- 2026-07-21 — SecretStorage authority custody now supports compare-and-swap retire and atomic identity
+  move. Lifecycle tests prove rename permits reuse of the old name, delete permits recreation of the
+  deleted name, and a move committed before its acknowledgement was lost converges to the new owner.
+- 2026-07-21 — Completion revisions include a persisted random nonce. Replaying the committed marker is
+  idempotent, while reopening and completing at the exact same timestamp creates a second review.
+- 2026-07-21 — Focused correction coverage passed 528/528 tests. The SDD verification gate passed
+  typecheck, PI-001 and full verification; fresh Codex runtime dogfood also passed.
+- 2026-07-21 — Publication review hardened the remaining recovery boundaries. Initial creation now
+  writes an authenticated intent before profile bytes, and rename writes an authenticated journal
+  before source quarantine so an ambiguous authority move is resumed idempotently. Session skill
+  copies moved to host storage keyed by stable profile identity; the documented trust boundary treats
+  workspace writes as untrusted and the user-selected same-UID runtime as the executor, not an OS-level
+  adversary.
+- 2026-07-21 — Final independent re-review reported no blockers after fault tests covered initial
+  creation before profile publication, rename publication before quarantine, ambiguous authority move,
+  retirement during pending rename, and old-name reuse.
+
+### 2026-07-21T23:55:23Z — fail (2/3) — source: tasks.md
+- `npm run typecheck` — pass
+- `npm run test:invariants` — pass
+- `npm run verify:full:quiet` — fail
+
+### 2026-07-21T23:57:57Z — pass (3/3) — source: tasks.md
+- `npm run typecheck` — pass
+- `npm run test:invariants` — pass
+- `npm run verify:full:quiet` — pass

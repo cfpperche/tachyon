@@ -1,6 +1,7 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { ManagedEntryDef } from "../config/loadConfig.js";
 import type { TaskMutationEvent } from "../tasks/TaskStore.js";
+import type { Task } from "../tasks/types.js";
 import type { EvolutionReview } from "./domain.js";
 import type { EvolutionStore } from "./EvolutionStore.js";
 
@@ -16,15 +17,15 @@ export interface EvolutionCoordinatorDeps {
   deliverNotice: (agent: string, line: string) => Promise<EvolutionNoticeResult>;
   onReviewChanged?: (review: EvolutionReview) => void;
   onError?: (message: string) => void;
+  completionNonce?: () => string;
 }
 
-export function evolutionCompletionRevision(event: TaskMutationEvent): string {
+export function evolutionCompletionRevision(event: TaskMutationEvent, nonce: string = randomUUID()): string {
   return createHash("sha256")
     .update(JSON.stringify({
       taskId: event.after.id,
-      beforeStatus: event.before.status,
-      beforeUpdatedAt: event.before.updatedAt,
       completedUpdatedAt: event.after.updatedAt,
+      nonce,
     }), "utf8")
     .digest("hex");
 }
@@ -53,18 +54,42 @@ export class EvolutionCoordinator {
     }
   }
 
+  completionMarker(event: TaskMutationEvent, nonce: string = randomUUID()): Task["evolutionCompletion"] {
+    if (event.before.status === "done" || event.after.status !== "done") return undefined;
+    const agent = event.after.assignee;
+    if (!agent) return undefined;
+    const definition = this.deps.declaredAgent(agent);
+    if (!definition || definition.kind !== "agent" || definition.selfEvolution?.enabled !== true) return undefined;
+    return { agent, revision: evolutionCompletionRevision(event, this.deps.completionNonce?.() ?? nonce) };
+  }
+
+  async reconcileCompletedTasks(tasks: readonly Task[]): Promise<void> {
+    for (const task of tasks) {
+      const marker = task.evolutionCompletion;
+      if (task.status !== "done" || !marker || task.assignee !== marker.agent) continue;
+      await this.ensureReview(task, marker.revision);
+    }
+  }
+
   async onTaskMutation(event: TaskMutationEvent): Promise<void> {
     if (event.before.status === "done" || event.after.status !== "done") return;
-    const agent = event.after.assignee;
+    const marker = event.after.evolutionCompletion
+      ?? this.completionMarker(event, `${event.before.updatedAt}->${event.after.updatedAt}`);
+    if (!marker) return;
+    await this.ensureReview(event.after, marker.revision);
+  }
+
+  private async ensureReview(task: Task, completionRevision: string): Promise<void> {
+    const agent = task.assignee;
     if (!agent) return;
     const definition = this.deps.declaredAgent(agent);
     if (!definition || definition.kind !== "agent" || definition.selfEvolution?.enabled !== true) return;
 
     try {
       const created = await this.deps.store.createReview(agent, {
-        taskId: event.after.id,
-        taskTitle: event.after.title,
-        completionRevision: evolutionCompletionRevision(event),
+        taskId: task.id,
+        taskTitle: task.title,
+        completionRevision,
         session: this.deps.sessionFor(agent),
         activitySeq: this.deps.activitySeq(agent),
       });
@@ -81,7 +106,7 @@ export class EvolutionCoordinator {
         this.emitError(`Agent Evolution review '${created.review.id}' could not be delivered: ${detail}`);
       }
     } catch (error) {
-      this.emitError(`Agent Evolution could not create a review for task '${event.after.id}': ${error instanceof Error ? error.message : String(error)}`);
+      this.emitError(`Agent Evolution could not create a review for task '${task.id}': ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 

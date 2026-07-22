@@ -734,15 +734,12 @@ async function deleteConfiguredAgent(
   }
   if (workspace.config?.agents[agent] === undefined) {
     workspace.manager.dismissAdhoc(agent);
+    await workspace.forgetAgent(agent);
   } else {
-    const changed = workspace.mutateConfig(
-      (text) => deleteAgent(text ?? "", agent),
-      () => {
-        workspace.forgetAgent(agent);
-        onViewsChanged("agents");
-      },
-    );
+    const changed = workspace.mutateConfig((text) => deleteAgent(text ?? "", agent));
     if (!changed) throw new Error(`could not remove '${agent}' from tachyon.yml`);
+    await workspace.forgetAgent(agent);
+    onViewsChanged("agents");
   }
   return json({ changed: true });
 }

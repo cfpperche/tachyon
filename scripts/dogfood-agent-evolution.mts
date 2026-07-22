@@ -80,7 +80,11 @@ try {
           path: "SKILL.md",
           content: "---\nname: repo-check\ndescription: Run the deterministic repository check helper.\n---\n\nRun `scripts/check.sh` when a compact repository check is useful.\n",
         },
-        { path: "scripts/check.sh", content: "#!/bin/sh\nprintf 'agent-evolution-helper-ok\\n'\n", executable: true },
+        {
+          path: "scripts/check.sh",
+          content: "#!/bin/sh\nprintf 'agent-evolution-helper-ok\\n'\nif [ -n \"${TACHYON_EVOLUTION_DOGFOOD_MARKER:-}\" ]; then printf 'agent-evolution-helper-ok\\n' > \"$TACHYON_EVOLUTION_DOGFOOD_MARKER\"; fi\n",
+          executable: true,
+        },
       ],
     },
   ]);
@@ -128,6 +132,40 @@ try {
   assert.equal(profileAfterRuntimeSwitch?.activeVersion, 1);
   assert.equal(notices.length, 2);
 
+  let liveRuntime: string | undefined;
+  if (process.env.TACHYON_AGENT_EVOLUTION_LIVE_RUNTIME === "codex") {
+    const marker = path.join(root, "runtime-skill-used.txt");
+    const finalMessage = path.join(root, "runtime-final-message.txt");
+    config = configOf("codex");
+    const codexSnapshot = await resolveEvolutionStartupSnapshot(root, "reviewer", store);
+    const codexPrompt = composeAgentPrompt({ evolution: codexSnapshot, bridgeGuidance: false }).body!;
+    const prompt = [
+      codexPrompt,
+      "This is the fresh Codex session after the declared runtime switched from Grok to Codex.",
+      `Read the approved repo-check SKILL.md at ${codexSnapshot.skills[0]!.skillMdPath}.`,
+      "Follow that skill and run its scripts/check.sh helper through your normal read/bash tools.",
+      "Reply with exactly EVOLUTION_RUNTIME_OK only after the helper succeeds.",
+    ].join("\n\n");
+    execFileSync("codex", [
+      "exec",
+      "--skip-git-repo-check",
+      "--ephemeral",
+      "--sandbox", "workspace-write",
+      "--cd", root,
+      "--output-last-message", finalMessage,
+      prompt,
+    ], {
+      encoding: "utf8",
+      timeout: 180_000,
+      stdio: ["ignore", "ignore", "pipe"],
+      env: { ...process.env, TACHYON_EVOLUTION_DOGFOOD_MARKER: marker },
+    });
+    const output = fs.readFileSync(finalMessage, "utf8");
+    assert.equal(output.trim(), "EVOLUTION_RUNTIME_OK", `fresh Codex did not confirm skill use: ${output}`);
+    assert.equal(fs.readFileSync(marker, "utf8"), "agent-evolution-helper-ok\n");
+    liveRuntime = "codex";
+  }
+
   console.log(JSON.stringify({
     tasksCompleted: 2,
     reviews: ["no-proposal", "submitted"],
@@ -135,8 +173,9 @@ try {
     currentSessionVersion: currentSession.version,
     nextSessionVersion: nextSession.version,
     helperOutput: "agent-evolution-helper-ok",
-    runtimeSwitch: "codex->grok",
+    runtimeSwitch: liveRuntime ? "codex->grok->codex" : "codex->grok",
     profilePreserved: true,
+    liveRuntimeSkillUse: liveRuntime ?? "not-requested",
   }, null, 2));
   console.log("agent-evolution dogfood: PASS");
 } finally {

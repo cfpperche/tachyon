@@ -42,6 +42,7 @@ describe("EvolutionCoordinator (SDD 421 Slice 2)", () => {
     });
     let observed = Promise.resolve();
     const tasks = new TaskStore(root, {
+      evolutionCompletionFor: (event) => coordinator.completionMarker(event),
       onMutation: (event) => {
         if (event.after.status === "done") completionEvents.push(event);
         observed = coordinator.onTaskMutation(event);
@@ -77,7 +78,9 @@ describe("EvolutionCoordinator (SDD 421 Slice 2)", () => {
     await observed;
     await tasks.update(task.id, { status: "active", now: "2026-07-21T10:05:00.000Z" });
     await observed;
-    await tasks.update(task.id, { status: "done", now: "2026-07-21T10:06:00.000Z" });
+    // The second execution deliberately reuses the first completion timestamp. Revision identity
+    // comes from the committed nonce, not wall-clock uniqueness.
+    await tasks.update(task.id, { status: "done", now: "2026-07-21T10:03:00.000Z" });
     await observed;
     expect(await evolution.listReviews("reviewer")).toHaveLength(2);
     expect(notices).toHaveLength(2);
@@ -148,6 +151,41 @@ describe("EvolutionCoordinator (SDD 421 Slice 2)", () => {
       status: "failed",
       delivery: { status: "failed", detail: "agent 'reviewer' is not running" },
     });
+  });
+
+  it("reconciles a durable done marker when the original observer never ran", async () => {
+    const root = await tempRoot();
+    const definition = parseConfig("agents:\n  reviewer:\n    cmd: codex\n    selfEvolution: {enabled: true}\n").config!.agents.reviewer;
+    const ids = ["profile-id", "review-id"];
+    const evolution = new EvolutionStore(root, { uuid: () => ids.shift()! });
+    const notices: string[] = [];
+    const coordinator = new EvolutionCoordinator({
+      store: evolution,
+      declaredAgent: (name) => name === "reviewer" ? definition : undefined,
+      sessionFor: () => "tachyon-reviewer",
+      activitySeq: () => 11,
+      deliverNotice: async (_agent, notice) => { notices.push(notice); return { status: "notified" }; },
+    });
+    const tasks = new TaskStore(root, {
+      evolutionCompletionFor: (event) => coordinator.completionMarker(event),
+      // Deliberately omit onMutation: this is the process-loss window under test.
+    });
+    const task = await tasks.create({ title: "Recover review on reload", author: "human" });
+    await tasks.update(task.id, { status: "triaged", assignee: "reviewer" });
+    await tasks.update(task.id, { status: "active" });
+    await tasks.update(task.id, { status: "done" });
+    expect(await evolution.listReviews("reviewer")).toEqual([]);
+
+    await coordinator.reconcileCompletedTasks(new TaskStore(root).listRaw());
+    expect((await evolution.listReviews("reviewer"))[0]).toMatchObject({
+      taskId: task.id,
+      completionRevision: tasks.get(task.id).evolutionCompletion!.revision,
+      delivery: { status: "notified" },
+    });
+    expect(notices).toHaveLength(1);
+    await coordinator.reconcileCompletedTasks(new TaskStore(root).listRaw());
+    expect(await evolution.listReviews("reviewer")).toHaveLength(1);
+    expect(notices).toHaveLength(1);
   });
 
   it("marks a queued review failed when its assigned agent becomes unavailable", async () => {

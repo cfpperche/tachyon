@@ -24,6 +24,7 @@ import type { FormState } from "../../src/webview/formLogic.js";
 import { agentSoulPath } from "../../src/agents/soul.js";
 import { loadOrCreateHmacKey } from "../../src/bridge/callerIdentity.js";
 import { deterministicGitDeliveryId } from "../../src/git-delivery/store.js";
+import { renderEvolutionLearnings } from "../../src/evolution/domain.js";
 
 /**
  * spec 235 — the headless Workspace smoke test (the deferred spec-233 payoff): drive the orchestrator with
@@ -248,9 +249,41 @@ it("moves Evolution on rename while disable and runtime changes retain the same 
     agent: "maintainer",
     activeVersion: 0,
   });
+  const reusedOldName = await ws.evolutionStore.ensureProfile("reviewer");
+  expect(reusedOldName.profileId).not.toBe(profile.profileId);
 
-  ws.forgetAgent("maintainer");
+  await ws.forgetAgent("maintainer");
   expect(fs.existsSync(ws.evolutionStore.rootFor("maintainer"))).toBe(false);
+  const recreated = await ws.evolutionStore.ensureProfile("maintainer");
+  expect(recreated.profileId).not.toBe(profile.profileId);
+  await ws.dispose();
+});
+
+it("uses Workspace authority for first-session creation and rejects tampered production startup", async () => {
+  const { ws } = await makeWorkspace(() => {}, {
+    tachyonYaml: [
+      "agents:",
+      "  fresh:",
+      "    cmd: claude",
+      "    selfEvolution: { enabled: true }",
+      "  tampered:",
+      "    cmd: claude",
+      "    selfEvolution: { enabled: true }",
+      "",
+    ].join("\n"),
+  });
+  await ws.manager.spawn("fresh");
+  await expect(ws.evolutionStore.readProfile("fresh")).resolves.toMatchObject({ agent: "fresh", activeVersion: 0 });
+
+  await ws.evolutionStore.ensureProfile("tampered");
+  await fs.promises.writeFile(ws.evolutionStore.learningsPath("tampered"), renderEvolutionLearnings([{
+    id: "forged",
+    sourceTaskId: "t-999999",
+    sourceReviewId: "review-forged",
+    approvedAt: "2026-07-21T20:00:00.000Z",
+    content: "Unapproved edit.",
+  }]), "utf8");
+  await expect(ws.manager.spawn("tampered")).rejects.toMatchObject({ code: "evolution/authority-invalid" });
   await ws.dispose();
 });
 
@@ -1726,12 +1759,28 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
       JSON.stringify({ agent: "a", sessionId: "s-a", transcriptPath: "/p/a.jsonl", cwd: ws.workspaceRoot, source: "startup", ts: "t2" }),
     ].join("\n") + "\n", "utf8");
 
-    (ws as unknown as { gcLedger(declaredInConfig: Set<string>, live: Set<string>): void }).gcLedger(new Set(["a", "b"]), new Set());
+    await (ws as unknown as { gcLedger(declaredInConfig: Set<string>, live: Set<string>): Promise<void> })
+      .gcLedger(new Set(["a", "b"]), new Set());
 
     expect(ws.ledger.get("old")).toBeUndefined();
     expect(fs.existsSync(logFile)).toBe(false);
     expect(fs.existsSync(stateFile)).toBe(false);
     expect(readSessionOwners(sessionOwnersFile(ws.workspaceRoot)).map((r) => r.agent)).toEqual(["a"]);
+    ws.dispose();
+  });
+
+  it("keeps a removed agent footprint retryable when authority retirement fails", async () => {
+    const { ws, host } = await makeWorkspace();
+    ws.ledger.record("old", { def: { cmd: "sh", kind: "agent" }, cwd: ws.workspaceRoot, declared: true, updatedAt: "t" });
+    await ws.evolutionStore.ensureProfile("old");
+    vi.spyOn(ws.evolutionStore, "retireAgent").mockRejectedValueOnce(new Error("secret storage unavailable"));
+
+    await (ws as unknown as { gcLedger(declaredInConfig: Set<string>, live: Set<string>): Promise<void> })
+      .gcLedger(new Set(), new Set());
+
+    expect(ws.ledger.get("old")).toBeDefined();
+    expect(fs.existsSync(ws.evolutionStore.rootFor("old"))).toBe(true);
+    expect(host.notices.some((notice) => notice.level === "warn" && notice.message.includes("secret storage unavailable"))).toBe(true);
     ws.dispose();
   });
 

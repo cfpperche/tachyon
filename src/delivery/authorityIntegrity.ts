@@ -18,6 +18,10 @@ export interface AuthorityHead {
 export interface AuthorityHeadPort {
   current(identity: string): Promise<AuthorityHead | undefined>;
   prepare(identity: string, next: AuthorityHead, expectedMac?: string): Promise<void>;
+  /** Host-authorized lifecycle cleanup. When expectedMac is present, deletion is compare-and-swap. */
+  retire?(identity: string, expectedMac?: string): Promise<void>;
+  /** Atomically transfer one freshness identity during an owner rename. */
+  move?(fromIdentity: string, toIdentity: string, next: AuthorityHead, expectedMac: string): Promise<void>;
   /** Migration-only: establish the very first head for `identity` at its already-existing revision N
    * (N >= 1) rather than the ordinary create's fixed revision 1. Must only succeed when there is no
    * current head; must be idempotent when the exact same head is supplied again; must never overwrite
@@ -34,7 +38,7 @@ export type AuthorityRecord = { authorityIntegrity?: AuthorityIntegrity } & Reco
  * be replayed from another workspace. Resolve symlinks when possible and hash
  * the absolute path so the scope itself does not disclose a local path.
  */
-export function workspaceAuthorityDomain(kind: "legacy-delegation" | "canonical-delivery", workspaceRoot: string): string {
+export function workspaceAuthorityDomain(kind: "legacy-delegation" | "canonical-delivery" | "agent-evolution", workspaceRoot: string): string {
   const resolved = path.resolve(workspaceRoot);
   let canonical = resolved;
   try {

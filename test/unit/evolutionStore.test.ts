@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import crypto from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   EVOLUTION_SCHEMA_VERSION,
@@ -9,6 +10,8 @@ import {
   type EvolutionLearning,
 } from "../../src/evolution/domain.js";
 import { EvolutionStore, EvolutionStoreError } from "../../src/evolution/EvolutionStore.js";
+import type { AuthorityHead, AuthorityHeadPort } from "../../src/delivery/authorityIntegrity.js";
+import { resolveEvolutionStartupSnapshot } from "../../src/evolution/startupSnapshot.js";
 import {
   digestEvolutionSkillFiles,
   declaredHarnessSkillNames,
@@ -41,6 +44,79 @@ function skillInput(name = "repo-check"): EvolutionSkillBundleInput {
       { path: "references/notes.md", content: "The check is local.\n" },
       { path: "scripts/check.sh", content: "#!/bin/sh\nnpm test\n", executable: true },
     ],
+  };
+}
+
+function authorityHarness(options: {
+  throwAfterMove?: boolean;
+  throwBeforeMove?: boolean;
+  throwCurrentAfterMove?: boolean;
+  throwBeforeInitial?: boolean;
+  throwAfterInitial?: boolean;
+  throwCurrentAfterInitialFailure?: boolean;
+} = {}): { key: Buffer; port: AuthorityHeadPort } {
+  const heads = new Map<string, AuthorityHead>();
+  let initialFaultInjected = false;
+  let currentFaultPending = false;
+  let moveCurrentFaultPending = false;
+  return {
+    key: crypto.createHash("sha256").update("evolution-test-authority").digest(),
+    port: {
+      current: async (identity) => {
+        if (moveCurrentFaultPending) {
+          moveCurrentFaultPending = false;
+          throw new Error("moved head read failed");
+        }
+        if (currentFaultPending) {
+          currentFaultPending = false;
+          throw new Error("initial head read failed");
+        }
+        return heads.get(identity);
+      },
+      establishInitial: async (identity, head) => {
+        const inject = !initialFaultInjected && (options.throwBeforeInitial || options.throwAfterInitial);
+        if (inject) initialFaultInjected = true;
+        if (inject && options.throwBeforeInitial) {
+          currentFaultPending = options.throwCurrentAfterInitialFailure ?? false;
+          throw new Error("initial head write failed");
+        }
+        const current = heads.get(identity);
+        if (current && (current.revision !== head.revision || current.mac !== head.mac)) throw new Error("head conflict");
+        heads.set(identity, { ...head });
+        if (inject && options.throwAfterInitial) throw new Error("initial head acknowledgement lost");
+      },
+      prepare: async (identity, next, expectedMac) => {
+        const current = heads.get(identity);
+        if (!current || current.mac !== expectedMac || next.revision !== current.revision + 1) throw new Error("head conflict");
+        heads.set(identity, { ...next });
+      },
+      retire: async (identity, expectedMac) => {
+        const current = heads.get(identity);
+        if (!current) return;
+        if (expectedMac !== undefined && current.mac !== expectedMac) throw new Error("head conflict");
+        heads.delete(identity);
+      },
+      move: async (fromIdentity, toIdentity, next, expectedMac) => {
+        if (options.throwBeforeMove) {
+          options.throwBeforeMove = false;
+          moveCurrentFaultPending = options.throwCurrentAfterMove ?? false;
+          throw new Error("move write failed");
+        }
+        const current = heads.get(fromIdentity);
+        const destination = heads.get(toIdentity);
+        if (!current || current.mac !== expectedMac) {
+          if (!current && destination?.revision === next.revision && destination.mac === next.mac) return;
+          throw new Error("head conflict");
+        }
+        if (destination && (destination.revision !== next.revision || destination.mac !== next.mac)) throw new Error("head conflict");
+        heads.delete(fromIdentity);
+        heads.set(toIdentity, { ...next });
+        if (options.throwAfterMove) {
+          moveCurrentFaultPending = options.throwCurrentAfterMove ?? false;
+          throw new Error("move acknowledgement lost");
+        }
+      },
+    },
   };
 }
 
@@ -109,6 +185,306 @@ describe("Agent Skills bundle validation (SDD 421)", () => {
 });
 
 describe("EvolutionStore (SDD 421 Slice 1)", () => {
+  it("recovers when creation stops after the authenticated intent but before profile bytes", async () => {
+    const root = await tempRoot();
+    const authority = authorityHarness();
+    const options = { authorityIntegrityKey: () => authority.key, authorityHead: authority.port };
+    const interrupted = new EvolutionStore(root, {
+      ...options,
+      creationFault: () => { throw new Error("creation interrupted"); },
+    });
+
+    await expect(interrupted.ensureProfile("reviewer")).rejects.toThrow("creation interrupted");
+    await expect(fs.stat(interrupted.profilePath("reviewer"))).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await fs.stat(interrupted.creationIntentPath("reviewer"))).toBeDefined();
+    await expect(new EvolutionStore(root, options).ensureProfile("reviewer"))
+      .resolves.toMatchObject({ agent: "reviewer", activeVersion: 0 });
+    await expect(fs.stat(interrupted.creationIntentPath("reviewer"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("retries a signed initial profile after authority write and confirmation were unavailable", async () => {
+    const root = await tempRoot();
+    const authority = authorityHarness({ throwBeforeInitial: true, throwCurrentAfterInitialFailure: true });
+    const options = { authorityIntegrityKey: () => authority.key, authorityHead: authority.port };
+    const store = new EvolutionStore(root, options);
+
+    await expect(store.ensureProfile("reviewer")).rejects.toThrow("initial head write failed");
+    const pending = await store.readProfile("reviewer").catch(() => undefined);
+    expect(pending).toBeUndefined();
+    expect(await fs.stat(store.creationIntentPath("reviewer"))).toBeDefined();
+    const recovered = await new EvolutionStore(root, options).ensureProfile("reviewer");
+    expect(recovered).toMatchObject({ agent: "reviewer", activeVersion: 0 });
+    await expect(fs.stat(store.creationIntentPath("reviewer"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("accepts initial profile creation when only the authority acknowledgement is lost", async () => {
+    const root = await tempRoot();
+    const authority = authorityHarness({ throwAfterInitial: true });
+    const options = { authorityIntegrityKey: () => authority.key, authorityHead: authority.port };
+    const store = new EvolutionStore(root, options);
+
+    const profile = await store.ensureProfile("reviewer");
+    expect(profile).toMatchObject({ agent: "reviewer" });
+    await expect(new EvolutionStore(root, options).readProfile("reviewer")).resolves.toEqual(profile);
+  });
+
+  it("rejects captured bytes that were restored before the final authority read", async () => {
+    const root = await tempRoot();
+    const authority = authorityHarness();
+    const options = { authorityIntegrityKey: () => authority.key, authorityHead: authority.port };
+    const store = new EvolutionStore(root, options);
+    await store.ensureProfile("reviewer");
+    const approved = renderEvolutionLearnings([]);
+    const current = authority.port.current.bind(authority.port);
+    let reads = 0;
+    authority.port.current = async (identity) => {
+      const head = await current(identity);
+      reads += 1;
+      if (reads === 1) await fs.writeFile(store.learningsPath("reviewer"), renderEvolutionLearnings([{
+        id: "transient",
+        sourceTaskId: "t-999999",
+        sourceReviewId: "review-transient",
+        approvedAt: "2026-07-21T20:00:00.000Z",
+        content: "Unapproved transient content.",
+      }]), "utf8");
+      if (reads === 2) await fs.writeFile(store.learningsPath("reviewer"), approved, "utf8");
+      return head;
+    };
+
+    await expect(store.readAuthorizedActiveState("reviewer"))
+      .rejects.toMatchObject({ code: "evolution/authority-invalid" });
+    expect(await fs.readFile(store.learningsPath("reviewer"), "utf8")).toBe(approved);
+  });
+
+  it("accepts a rename whose authority move committed before its acknowledgement failed", async () => {
+    const root = await tempRoot();
+    const authority = authorityHarness({ throwAfterMove: true });
+    const store = new EvolutionStore(root, {
+      authorityIntegrityKey: () => authority.key,
+      authorityHead: authority.port,
+      retiredRootCleanup: async () => { throw new Error("recursive cleanup failed"); },
+    });
+    const profile = await store.ensureProfile("reviewer");
+
+    await expect(store.renameAgent("reviewer", "maintainer")).resolves.toBe(true);
+    await expect(store.readProfile("maintainer")).resolves.toMatchObject({ profileId: profile.profileId });
+    await expect(store.readProfile("reviewer")).resolves.toBeUndefined();
+    await expect(store.ensureProfile("reviewer")).resolves.not.toMatchObject({ profileId: profile.profileId });
+  });
+
+  it("recovers a journaled rename when move acknowledgement and confirmation both fail", async () => {
+    const root = await tempRoot();
+    const authority = authorityHarness({ throwAfterMove: true, throwCurrentAfterMove: true });
+    const options = { authorityIntegrityKey: () => authority.key, authorityHead: authority.port };
+    const store = new EvolutionStore(root, options);
+    const profile = await store.ensureProfile("reviewer");
+
+    await expect(store.renameAgent("reviewer", "maintainer")).resolves.toBe(true);
+    expect(await fs.stat(store.renameIntentPath("maintainer"))).toBeDefined();
+    await expect(new EvolutionStore(root, options).ensureProfile("maintainer"))
+      .resolves.toMatchObject({ profileId: profile.profileId });
+    await expect(fs.stat(store.renameIntentPath("maintainer"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("reconciles an uncommitted journaled rename before retiring the renamed agent", async () => {
+    const root = await tempRoot();
+    const authority = authorityHarness({ throwBeforeMove: true, throwCurrentAfterMove: true });
+    const options = { authorityIntegrityKey: () => authority.key, authorityHead: authority.port };
+    const store = new EvolutionStore(root, options);
+    await store.ensureProfile("reviewer");
+
+    await expect(store.renameAgent("reviewer", "maintainer")).resolves.toBe(true);
+    expect(await fs.stat(store.renameIntentPath("maintainer"))).toBeDefined();
+    await expect(store.retireAgent("maintainer")).resolves.toBeUndefined();
+    await fs.rm(store.rootFor("maintainer"), { recursive: true, force: true });
+    await expect(new EvolutionStore(root, options).ensureProfile("maintainer"))
+      .resolves.toMatchObject({ agent: "maintainer", activeVersion: 0 });
+  });
+
+  it("quarantines the old source when retrying a crash after destination publication", async () => {
+    const root = await tempRoot();
+    const authority = authorityHarness();
+    const options = { authorityIntegrityKey: () => authority.key, authorityHead: authority.port };
+    const interrupted = new EvolutionStore(root, {
+      ...options,
+      renameFault: () => { throw new Error("rename interrupted after publication"); },
+    });
+    const profile = await interrupted.ensureProfile("reviewer");
+
+    await expect(interrupted.renameAgent("reviewer", "maintainer"))
+      .rejects.toThrow("rename interrupted after publication");
+    expect(await fs.stat(interrupted.rootFor("reviewer"))).toBeDefined();
+    await expect(new EvolutionStore(root, options).renameAgent("reviewer", "maintainer")).resolves.toBe(true);
+    await expect(new EvolutionStore(root, options).readProfile("maintainer"))
+      .resolves.toMatchObject({ profileId: profile.profileId });
+    await expect(fs.stat(interrupted.rootFor("reviewer"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(new EvolutionStore(root, options).ensureProfile("reviewer"))
+      .resolves.not.toMatchObject({ profileId: profile.profileId });
+  });
+
+  it("leaves the old profile authoritative when source quarantine fails before rename commit", async () => {
+    const root = await tempRoot();
+    const authority = authorityHarness();
+    const store = new EvolutionStore(root, {
+      authorityIntegrityKey: () => authority.key,
+      authorityHead: authority.port,
+      quarantineRoot: async () => { throw new Error("source quarantine failed"); },
+    });
+    const profile = await store.ensureProfile("reviewer");
+
+    await expect(store.renameAgent("reviewer", "maintainer")).rejects.toThrow("source quarantine failed");
+    await expect(store.readProfile("reviewer")).resolves.toEqual(profile);
+    await expect(store.readProfile("maintainer")).resolves.toBeUndefined();
+  });
+
+  it("fails closed when active learning bytes do not match the host-authorized head", async () => {
+    const root = await tempRoot();
+    const authority = authorityHarness();
+    const options = { authorityIntegrityKey: () => authority.key, authorityHead: authority.port };
+    const store = new EvolutionStore(root, options);
+    const candidate = await store.createCandidate("reviewer", {
+      reviewId: "review-authority",
+      taskId: "t-111111",
+      target: { kind: "learning", content: "Approved fact.", reason: "Reusable." },
+    });
+    const detail = await store.candidateDetail("reviewer", candidate.id);
+    await store.approveCandidate("reviewer", candidate.id, {
+      expectedActiveVersion: 0,
+      expectedTargetDigest: detail.currentTargetDigest,
+    });
+    await fs.appendFile(store.learningsPath("reviewer"), "unapproved edit\n", "utf8");
+
+    await expect(resolveEvolutionStartupSnapshot(root, "reviewer", new EvolutionStore(root, options)))
+      .rejects.toMatchObject({ code: "evolution/authority-invalid" });
+  });
+
+  it("does not treat an edited profile id as a new legacy authority identity", async () => {
+    const root = await tempRoot();
+    const authority = authorityHarness();
+    const options = { authorityIntegrityKey: () => authority.key, authorityHead: authority.port };
+    const store = new EvolutionStore(root, options);
+    const profile = await store.ensureProfile("reviewer");
+    await fs.writeFile(store.profilePath("reviewer"), `${JSON.stringify({ ...profile, profileId: "forged-profile" }, null, 2)}\n`, "utf8");
+    await expect(new EvolutionStore(root, options).readProfile("reviewer"))
+      .rejects.toMatchObject({ code: "evolution/authority-invalid" });
+  });
+
+  it("rolls back a durable promotion intent left before active bytes changed", async () => {
+    const root = await tempRoot();
+    const authority = authorityHarness();
+    let injected = false;
+    const options = { authorityIntegrityKey: () => authority.key, authorityHead: authority.port };
+    const store = new EvolutionStore(root, {
+      ...options,
+      promotionFault: (point) => {
+        if (!injected && point === "after-intent") { injected = true; throw new Error("simulated crash"); }
+      },
+    });
+    const candidate = await store.createCandidate("reviewer", {
+      reviewId: "review-recovery",
+      taskId: "t-222222",
+      target: { kind: "learning", content: "Recoverable fact.", reason: "Reusable." },
+    });
+    const detail = await store.candidateDetail("reviewer", candidate.id);
+    await expect(store.approveCandidate("reviewer", candidate.id, {
+      expectedActiveVersion: 0,
+      expectedTargetDigest: detail.currentTargetDigest,
+    })).rejects.toThrow("simulated crash");
+    expect(await fs.stat(store.promotionIntentPath("reviewer"))).toBeDefined();
+
+    const reloaded = new EvolutionStore(root, options);
+    expect((await reloaded.ensureProfile("reviewer")).activeVersion).toBe(0);
+    expect((await reloaded.readCandidate("reviewer", candidate.id))?.status).toBe("pending");
+    expect(await fs.readFile(reloaded.learningsPath("reviewer"), "utf8")).toBe(renderEvolutionLearnings([]));
+    await expect(fs.stat(reloaded.promotionIntentPath("reviewer"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it.each(["after-target", "after-history", "after-profile", "after-candidate"] as const)(
+    "restores the authorized learning profile when promotion fails at %s",
+    async (faultPoint) => {
+      const root = await tempRoot();
+      const authority = authorityHarness();
+      const options = { authorityIntegrityKey: () => authority.key, authorityHead: authority.port };
+      const store = new EvolutionStore(root, {
+        ...options,
+        promotionFault: (point) => { if (point === faultPoint) throw new Error(`fault:${point}`); },
+      });
+      const candidate = await store.createCandidate("reviewer", {
+        reviewId: `review-${faultPoint}`,
+        taskId: "t-333333",
+        target: { kind: "learning", content: `Fact for ${faultPoint}.`, reason: "Recovery proof." },
+      });
+      const detail = await store.candidateDetail("reviewer", candidate.id);
+      await expect(store.approveCandidate("reviewer", candidate.id, {
+        expectedActiveVersion: 0,
+        expectedTargetDigest: detail.currentTargetDigest,
+      })).rejects.toThrow(`fault:${faultPoint}`);
+      const reloaded = new EvolutionStore(root, options);
+      expect((await reloaded.ensureProfile("reviewer")).activeVersion).toBe(0);
+      expect((await reloaded.readCandidate("reviewer", candidate.id))?.status).toBe("pending");
+      expect(await reloaded.readLearnings("reviewer")).toEqual([]);
+    },
+  );
+
+  it("restores a previous skill bundle when an update fails after replacing its files", async () => {
+    const root = await tempRoot();
+    const authority = authorityHarness();
+    const options = { authorityIntegrityKey: () => authority.key, authorityHead: authority.port };
+    const initial = new EvolutionStore(root, options);
+    const created = await initial.createCandidate("reviewer", {
+      reviewId: "review-create-skill",
+      taskId: "t-444444",
+      target: { kind: "skill", ...skillInput() },
+    });
+    await initial.approveCandidate("reviewer", created.id, { expectedActiveVersion: 0 });
+    const previous = await initial.readSkillFiles("reviewer", "repo-check");
+    const previousDigest = digestEvolutionSkillFiles(previous!);
+    const updateInput = skillInput();
+    updateInput.operation = "update";
+    updateInput.expectedTargetDigest = previousDigest;
+    updateInput.files = updateInput.files.map((file) => file.path === "scripts/check.sh"
+      ? { ...file, content: "#!/bin/sh\nnpm run typecheck\n" }
+      : file);
+    const updated = await initial.createCandidate("reviewer", {
+      reviewId: "review-update-skill",
+      taskId: "t-555555",
+      target: { kind: "skill", ...updateInput },
+    });
+    const failing = new EvolutionStore(root, {
+      ...options,
+      promotionFault: (point) => { if (point === "after-target") throw new Error("skill update interrupted"); },
+    });
+    await expect(failing.approveCandidate("reviewer", updated.id, {
+      expectedActiveVersion: 1,
+      expectedTargetDigest: previousDigest,
+    })).rejects.toThrow("skill update interrupted");
+    const reloaded = new EvolutionStore(root, options);
+    expect((await reloaded.ensureProfile("reviewer")).activeVersion).toBe(1);
+    expect(await reloaded.readSkillFiles("reviewer", "repo-check")).toEqual(previous);
+    expect((await reloaded.readCandidate("reviewer", updated.id))?.status).toBe("pending");
+  });
+
+  it("returns the committed result when interruption happens after the authority head advanced", async () => {
+    const root = await tempRoot();
+    const authority = authorityHarness();
+    const options = { authorityIntegrityKey: () => authority.key, authorityHead: authority.port };
+    const store = new EvolutionStore(root, {
+      ...options,
+      promotionFault: (point) => { if (point === "after-authority") throw new Error("late interruption"); },
+    });
+    const candidate = await store.createCandidate("reviewer", {
+      reviewId: "review-late-interruption",
+      taskId: "t-666666",
+      target: { kind: "learning", content: "Committed fact.", reason: "Recovery proof." },
+    });
+    const detail = await store.candidateDetail("reviewer", candidate.id);
+    await expect(store.approveCandidate("reviewer", candidate.id, {
+      expectedActiveVersion: 0,
+      expectedTargetDigest: detail.currentTargetDigest,
+    })).resolves.toMatchObject({ profile: { activeVersion: 1 }, candidate: { status: "approved" } });
+    await expect(resolveEvolutionStartupSnapshot(root, "reviewer", new EvolutionStore(root, options)))
+      .resolves.toMatchObject({ version: 1 });
+  });
   it("moves a complete profile to a renamed agent while preserving identity, version, and skill bytes", async () => {
     const root = await tempRoot();
     const ids = ["profile-id", "review-id", "rename-stage"];

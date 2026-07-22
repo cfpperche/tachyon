@@ -481,6 +481,8 @@ export interface AgentManagerOptions {
   onRestart?: (name: string) => void;
   /** Session-resume ledger (spec 209); absent = resume tracking disabled. */
   ledger?: SessionLedger;
+  /** Workspace-owned resolver so production startup uses host-custodied Evolution authority. */
+  resolveEvolutionSnapshot?: (principal: string) => Promise<EvolutionStartupSnapshot>;
   /**
    * spec 364 — current Bridge generation for durable bridgeClient stamps on spawn/resume.
    * Workspace provides this from BridgeClientRebindCoordinator; default 0 when unwired.
@@ -712,10 +714,12 @@ export class AgentManager {
     if (managesOwnSession(def.cmd)) return prior?.evolution;
     if (!instructionsDeliverable(def.cmd)) return undefined;
     if (def.selfEvolution?.enabled === true) {
-      return resolveEvolutionStartupSnapshot(this.opts.workspaceRoot, principal);
+      return this.opts.resolveEvolutionSnapshot?.(principal)
+        ?? resolveEvolutionStartupSnapshot(this.opts.workspaceRoot, principal);
     }
     if (prior?.def?.fork && prior.evolution) {
-      return resolveEvolutionStartupSnapshot(this.opts.workspaceRoot, prior.evolution.agent);
+      return this.opts.resolveEvolutionSnapshot?.(prior.evolution.agent)
+        ?? resolveEvolutionStartupSnapshot(this.opts.workspaceRoot, prior.evolution.agent);
     }
     return undefined;
   }

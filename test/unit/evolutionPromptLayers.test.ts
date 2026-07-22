@@ -27,7 +27,8 @@ afterEach(async () => {
 describe("Agent Evolution startup snapshot (SDD 421 Slice 3)", () => {
   it("resolves one immutable runtime-neutral snapshot and composes it in the approved layer order", async () => {
     const root = await tempRoot();
-    const store = new EvolutionStore(root);
+    const hostSnapshots = await tempRoot();
+    const store = new EvolutionStore(root, { sessionSnapshotsRoot: hostSnapshots });
     const learning = await store.createCandidate("reviewer", {
       reviewId: "review-learning",
       taskId: "t-111111",
@@ -65,8 +66,11 @@ describe("Agent Evolution startup snapshot (SDD 421 Slice 3)", () => {
     expect(snapshot.skills[0]).toMatchObject({
       name: "repo-check",
       description: "Run the repository check consistently.",
-      skillMdPath: path.join(root, ".tachyon", "agents", "reviewer", "evolution", "skills", "repo-check", "SKILL.md"),
     });
+    expect(snapshot.skills[0]!.skillMdPath.startsWith(hostSnapshots)).toBe(true);
+    expect(await fs.readFile(snapshot.skills[0]!.skillMdPath, "utf8")).toContain("Use the helper.");
+    await fs.writeFile(path.join(store.skillDir("reviewer", "repo-check"), "SKILL.md"), "forged live skill\n", "utf8");
+    expect(await fs.readFile(snapshot.skills[0]!.skillMdPath, "utf8")).toContain("Use the helper.");
 
     const prompt = composeAgentPrompt({
       role: "reviewer",
