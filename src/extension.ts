@@ -17,6 +17,7 @@ import {
   refreshCockpitValidations,
   refreshCockpitTaskDetail,
   refreshCockpitTaskStudioEntity,
+  refreshCockpitPinStudioEntity,
   refreshCockpitProbes,
   refreshCockpitHandoff,
   refreshCockpitStudioReferenceData,
@@ -38,7 +39,7 @@ import { PluginsPanelManager, PLUGINS_VIEW_TYPE, type PluginsPanelState } from "
 import { HANDOFF_VIEW_TYPE, type HandoffPanelState } from "./webview/HandoffPanel.js";
 import { ApprovalPanelManager, APPROVAL_VIEW_TYPE, type ApprovalPanelState } from "./webview/ApprovalPanel.js";
 import { PROBES_VIEW_TYPE, type ProbesPanelState } from "./webview/ProbeResultPanel.js";
-import { PinStudioPanelManager, PIN_STUDIO_VIEW_TYPE, type PinStudioPanelState } from "./webview/PinStudioPanel.js";
+import { PIN_STUDIO_VIEW_TYPE, type PinStudioPanelState } from "./webview/PinStudioPanel.js";
 import { MISSION_CONTROL_VIEW_TYPE, type MissionControlPanelState } from "./webview/MissionControlPanel.js";
 import { TASK_DETAIL_VIEW_TYPE, type TaskDetailPanelState } from "./webview/TaskDetailPanel.js";
 import { TASK_STUDIO_VIEW_TYPE, type TaskStudioPanelState } from "./webview/TaskStudioPanel.js";
@@ -1092,14 +1093,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     sidebarProto.refresh();
     pluginSurfaces.refreshAll();
     refreshCockpitStudioReferenceData(); // t-610705 (Phase D, D1a) — was runbook/scheduleStudioPanels.refreshReferenceData()
+    refreshCockpitPinStudioEntity(); // t-610705 (Phase D, D3) — was pinStudioPanels.refreshAll() (retired panel)
     approvalPanels.refreshAll();
   };
-  const pinStudioPanels = new PinStudioPanelManager(
-    context.extensionUri,
-    () => workspaces().map((ws) => ws.pinStudio),
-    refreshAll,
-  );
-  context.subscriptions.push({ dispose: () => pinStudioPanels.dispose() });
   const pipelineStudioPanels = new PipelineStudioPanelManager(context.extensionUri, refreshAll);
   context.subscriptions.push({ dispose: () => pipelineStudioPanels.dispose() });
   const approvalPanels = new ApprovalPanelManager(context.extensionUri, workspaces);
@@ -1730,7 +1726,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     void openCockpit(makeCockpitDeps(), { route });
   });
   registerTrustedPanelSerializer<PinPreviewPanelState>(context, PIN_PREVIEW_VIEW_TYPE, (panel, state) => sidebarProto.deserializePinPreview(panel, state));
-  registerTrustedPanelSerializer<PinStudioPanelState>(context, PIN_STUDIO_VIEW_TYPE, (panel, state) => pinStudioPanels.deserialize(panel, state));
   // t-610705 (SDD 410 Phase D, D0/D1a/D1b) — a revived pre-410 standalone studio panel disposes itself
   // and redirects into Control → the mapped studio route, same claimed-singleton guard as every
   // other retired-panel serializer above. KNOWN GAP (documented, not silently dropped): unlike the
@@ -1757,6 +1752,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   registerLegacyStudioRedirect<RunbookStudioPanelState>(RUNBOOK_STUDIO_SHELL_VIEW_TYPE, "runbook");
   registerLegacyStudioRedirect<ScheduleStudioPanelState>(SCHEDULE_STUDIO_SHELL_VIEW_TYPE, "schedule");
   registerLegacyStudioRedirect<AgentStudioPanelState>(AGENT_STUDIO_SHELL_VIEW_TYPE, "agent");
+  // t-610705 (Phase D, D3) — unlike Task, Pin's studioNew never throws (pin IS reachable id-less —
+  // a brand-new pin has no id until its first save) — the shared helper works as-is.
+  registerLegacyStudioRedirect<PinStudioPanelState>(PIN_STUDIO_VIEW_TYPE, "pin");
   // t-610705 (Phase D, D2) — Task Studio's redirect can't reuse registerLegacyStudioRedirect's shared
   // helper as-is: its non-edit fallback calls cockpitRoutes.studioNew(studio, wsKey), which THROWS for
   // "task" (route.ts's defensive assertion — task is never id-less in practice). A persisted "new"
@@ -2317,7 +2315,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const ws = (node?.workspaceHash ? byHash(node.workspaceHash) : node?.ws ? wsOf({ ws: node.ws }) : undefined) ?? (await pickWorkspace());
       if (!ws) return;
       if (text === undefined) {
-        pinStudioPanels.openNew(ws.pinStudio);
+        void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.studioNew("pin", ws.wsHash) });
         return;
       }
       if (text.trim().length === 0) return;
@@ -2340,7 +2338,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon.editPinItem", async (item: PinItem) => {
       const ws = wsOf(item);
       if (!ws) return;
-      pinStudioPanels.openExisting(ws.pinStudio, item.pinId);
+      void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.studioEdit("pin", ws.wsHash, item.pinId) });
     }),
     // ---- agents ----
     vscode.commands.registerCommand("tachyon.spawnAgentItem", async (item: AgentItem) => {

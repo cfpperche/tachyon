@@ -25,6 +25,7 @@ export const strings: CockpitStrings = {
   navTmux: "tmux",
   navPlugins: "Plugins",
   navSettings: "Settings",
+  back: "Back",
   refresh: "Refresh",
   auto: "Auto-refresh",
   empty: "No Tachyon workspace attached in this window.",
@@ -401,6 +402,27 @@ export const cockpitFixtures: Record<string, Fixture<CockpitModel>> = {
   "studio-task-edit": {
     provenance: "synthetic-edge",
     vm: { ...buildCockpitModel(bundles, { section: "mission", nowIso: now }), activeRoute: cockpitRoutes.studioEdit("task", "b349073a", "t-4f2c91"), studioMountNonce: "fixture-mount-nonce" },
+  },
+  // t-610705 (Phase D, D3) — pin is nav-less (navSection: null — route.ts): unlike every studio
+  // above, its underlying `section` isn't a fixed answer, so this uses "overview" (the same fallback
+  // Cockpit.ts's real host uses at every navSection(currentRoute) call site) — and its `returnRoute`
+  // is explicit here (a static preview harness never runs the real navigate()/captureReturnRoute
+  // logic that fills it in automatically), demonstrating the "back to Mission" breadcrumb.
+  "studio-pin-edit": {
+    provenance: "synthetic-edge",
+    vm: {
+      ...buildCockpitModel(bundles, { section: "overview", nowIso: now }),
+      activeRoute: cockpitRoutes.studioEdit("pin", "b349073a", "pin-7f3a", cockpitRoutes.section("mission")),
+      studioMountNonce: "fixture-mount-nonce",
+    },
+  },
+  "studio-pin-new": {
+    provenance: "synthetic-edge",
+    vm: {
+      ...buildCockpitModel(bundles, { section: "overview", nowIso: now }),
+      activeRoute: cockpitRoutes.studioNew("pin", "b349073a", cockpitRoutes.section("mission")),
+      studioMountNonce: "fixture-mount-nonce",
+    },
   },
   validations: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "validations", nowIso: now }) },
   approvals: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "approvals", nowIso: now }) },

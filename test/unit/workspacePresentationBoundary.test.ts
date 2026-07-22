@@ -65,9 +65,13 @@ describe("persistent workspace presentation boundary", () => {
       // (VIEW_TYPE + PanelState only); Task Studio is hosted by studioHost.ts / Cockpit.ts /
       // taskStudioDomain.ts. TaskStudioAdapter.ts stays in this list (unchanged — still legitimately
       // typed against WorkspaceTaskStudioTarget).
+      // PinStudioPanel.ts left this list on t-610705 Phase D D3 for the same reason as
+      // CommandStudioPanel.ts above — the panel host was retired and the file is types-only now
+      // (VIEW_TYPE + PanelState only); Pin Studio is hosted by studioHost.ts / Cockpit.ts /
+      // pinStudioDomain.ts. PinStudioAdapter.ts stays in this list (unchanged — still legitimately
+      // typed against WorkspacePinStudioTarget).
       "src/webview/TaskStudioAdapter.ts",
       "src/webview/PinStudioAdapter.ts",
-      "src/webview/PinStudioPanel.ts",
       "src/webview/SidebarPrototype.ts",
       "src/presentation/items.ts",
       "src/plugins/ui/host.ts",

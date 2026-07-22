@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import { randomUUID } from "node:crypto";
 import {
   encodePinStudioStagedPayloadV1,
@@ -19,7 +20,7 @@ import {
   savePinStudio,
 } from "../pins/pinStudioService.js";
 import type { PinAttachment } from "../pins/types.js";
-import type { StudioLoadContext, StudioSaveResult } from "../webview/shared/studio/adapter.js";
+import type { StudioSaveResult } from "../webview/shared/studio/adapter.js";
 import type { PinDetailEntity, PinPatch } from "../webview/pin-studio/domain.js";
 import type { PinStudioAttachmentVM } from "../webview/pin-studio/types.js";
 import type { WorkspaceClient } from "./WorkspaceClient.js";
@@ -47,10 +48,12 @@ export interface PinStudioAttachmentResult {
 }
 
 export interface WorkspacePinStudioTarget extends WorkspacePresentationTarget {
-  loadPinStudio(pinId: string | undefined, context?: StudioLoadContext): Promise<PinDetailEntity>;
+  loadPinStudio(pinId: string | undefined): Promise<PinDetailEntity>;
   savePinStudio(pinId: string | undefined, patch: PinPatch): Promise<StudioSaveResult>;
-  putPinStudioImage(input: PinStudioImageInput, context: StudioLoadContext): Promise<PinStudioAttachmentResult>;
-  putPinStudioSketch(pinId: string | undefined, input: PinStudioSketchInput, context: StudioLoadContext): Promise<PinStudioAttachmentResult>;
+  putPinStudioImage(input: PinStudioImageInput): Promise<PinStudioAttachmentResult>;
+  putPinStudioSketch(pinId: string | undefined, input: PinStudioSketchInput): Promise<PinStudioAttachmentResult>;
+  /** t-610705 (Phase D, D3) — still used by SidebarTarget.ts's pin-preview path; unrelated to the
+   *  retired webview-localResourceRoots mechanism this port removes (see hydrateAttachment below). */
   attachmentBlobRoot(): string;
 }
 
@@ -64,24 +67,24 @@ export function legacyPinStudioTarget(source: LegacyPinStudioSource): WorkspaceP
     workspaceRoot: source.workspaceRoot,
     wsHash: source.wsHash,
     folderName: source.folderName,
-    loadPinStudio: async (pinId, context) => pinId
-      ? hydrateProjection(source, projectPinStudio(source.pinStore, pinId), context)
+    loadPinStudio: async (pinId) => pinId
+      ? hydrateProjection(source, projectPinStudio(source.pinStore, pinId))
       : emptyEntity(source),
     savePinStudio: async (pinId, rawPatch) => {
       const payload = validatePayload("save", { schemaVersion: 1, patch: rawPatch });
       if (!("patch" in payload)) throw new Error("Pin Studio save payload has the wrong shape");
       return serviceSaveResult(savePinStudio(source.pinStore, pinId, payload.patch));
     },
-    putPinStudioImage: async (input, context) => {
+    putPinStudioImage: async (input) => {
       const payload = imagePayload(input);
       const stored = putPinStudioImage(source.workspaceRoot, payload);
-      return { attachment: hydrateAttachment(source.workspaceRoot, stored.attachment, context), overSoftLimit: stored.overSoftLimit };
+      return { attachment: hydrateAttachment(source.workspaceRoot, stored.attachment), overSoftLimit: stored.overSoftLimit };
     },
-    putPinStudioSketch: async (pinId, input, context) => {
+    putPinStudioSketch: async (pinId, input) => {
       const payload = sketchPayload(input);
       const stored = putPinStudioSketch(source.workspaceRoot, source.pinStore, pinId, payload);
       return {
-        attachment: hydrateAttachment(source.workspaceRoot, stored.attachment, context, false),
+        attachment: hydrateAttachment(source.workspaceRoot, stored.attachment, false),
         overSoftLimit: stored.overSoftLimit,
       };
     },
@@ -114,12 +117,12 @@ export function workspacePinStudioTarget(client: WorkspaceClient): WorkspacePinS
   };
   return {
     ...identity,
-    loadPinStudio: async (pinId, context) => {
+    loadPinStudio: async (pinId) => {
       if (!pinId) return emptyEntity(identity);
       const result = await client.query({ schemaVersion: 1, method: "pin.studio", input: { id: pinId } });
       if (result.status === "error") throw new Error(result.message);
       if (result.method !== "pin.studio") throw new Error("Pin Studio query returned the wrong view");
-      return hydrateProjection(identity, result.view.studio, context);
+      return hydrateProjection(identity, result.view.studio);
     },
     savePinStudio: async (pinId, rawPatch) => {
       const payload = validatePayload("save", { schemaVersion: 1, patch: rawPatch });
@@ -128,23 +131,23 @@ export function workspacePinStudioTarget(client: WorkspaceClient): WorkspacePinS
       if (pinId !== undefined && result.pinId !== pinId) throw new Error("persistent engine changed the saved Pin identity");
       return { status: "ok" };
     },
-    putPinStudioImage: async (input, context) => {
+    putPinStudioImage: async (input) => {
       const result = await apply("put-image", imagePayload(input));
       if (result.outcome !== "attachment-stored" || result.attachment?.kind !== "image") {
         throw new Error("persistent engine returned a non-image Pin Studio outcome");
       }
       return {
-        attachment: hydrateAttachment(identity.workspaceRoot, result.attachment, context),
+        attachment: hydrateAttachment(identity.workspaceRoot, result.attachment),
         overSoftLimit: result.overSoftLimit!,
       };
     },
-    putPinStudioSketch: async (pinId, input, context) => {
+    putPinStudioSketch: async (pinId, input) => {
       const result = await apply("put-sketch", sketchPayload(input), pinId);
       if (result.outcome !== "attachment-stored" || result.attachment?.kind !== "excalidraw") {
         throw new Error("persistent engine returned a non-sketch Pin Studio outcome");
       }
       return {
-        attachment: hydrateAttachment(identity.workspaceRoot, result.attachment, context, false),
+        attachment: hydrateAttachment(identity.workspaceRoot, result.attachment, false),
         overSoftLimit: result.overSoftLimit!,
       };
     },
@@ -155,7 +158,6 @@ export function workspacePinStudioTarget(client: WorkspaceClient): WorkspacePinS
 function hydrateProjection(
   identity: WorkspacePresentationTarget,
   projection: PinStudioProjectionV1,
-  context?: StudioLoadContext,
 ): PinDetailEntity {
   return {
     workspaceHash: identity.wsHash,
@@ -164,29 +166,46 @@ function hydrateProjection(
     title: projection.title,
     tags: projection.tags,
     doc: projection.doc,
-    attachments: projection.attachments.map((attachment) => hydrateAttachment(identity.workspaceRoot, attachment, context)),
+    attachments: projection.attachments.map((attachment) => hydrateAttachment(identity.workspaceRoot, attachment)),
   };
 }
 
+/** t-610705 (Phase D, D3) — ported from TaskStudioTarget.ts's D2 fix: a Control-hosted studio route
+ *  is never handed a live `webview.asWebviewUri` (no per-panel `StudioLoadContext` reaches `load()`
+ *  through studioHost.ts — see route.ts/studioHost.ts's `adapter.load(entityId)` call, no context
+ *  arg). The OLD standalone-panel `context?.asWebviewUri(...) ?? store.blobPath(...)` fallback would
+ *  silently leak a bare filesystem path as `uri` in the Control-hosted path (unusable by the webview,
+ *  no scheme, no local-resource-root grant). Embedding the bytes as a `data:` URI instead needs no
+ *  per-route `localResourceRoots` grant at all — this is what D2's `imgBlob`/`connectSrc`/
+ *  `workerSrc:"blob"` CSP grants (Cockpit.ts) exist to support client-side.
+ */
 function hydrateAttachment(
   workspaceRoot: string,
   attachment: PinAttachment,
-  context?: StudioLoadContext,
   includeSketchScene = true,
 ): PinStudioAttachmentVM {
   const store = new PinAttachmentStore(workspaceRoot);
   const resolved = store.resolveAttachment(attachment);
   if (resolved.kind === "image") {
-    return {
-      ...resolved,
-      ...(resolved.available ? { uri: context?.asWebviewUri(store.blobPath(resolved.blobRef)) ?? store.blobPath(resolved.blobRef) } : {}),
-    };
+    let uri: string | undefined;
+    if (resolved.available) {
+      try { uri = dataUri(resolved.mediaType, fs.readFileSync(store.blobPath(resolved.blobRef))); } catch { /* stale blob */ }
+    }
+    return { ...resolved, ...(uri ? { uri } : {}) };
   }
-  return {
-    ...resolved,
-    ...(resolved.previewAvailable ? { previewUri: context?.asWebviewUri(store.blobPath(resolved.previewBlobRef)) ?? store.blobPath(resolved.previewBlobRef) } : {}),
-    ...(includeSketchScene && resolved.sceneAvailable ? { sceneJson: store.readExcalidrawScene(resolved) } : {}),
-  };
+  let previewUri: string | undefined;
+  let sceneJson: string | undefined;
+  if (resolved.previewAvailable) {
+    try { previewUri = dataUri("image/png", fs.readFileSync(store.blobPath(resolved.previewBlobRef))); } catch { /* stale blob */ }
+  }
+  if (includeSketchScene && resolved.sceneAvailable) {
+    try { sceneJson = store.readExcalidrawScene(resolved); } catch { /* stale or corrupt scene */ }
+  }
+  return { ...resolved, ...(previewUri ? { previewUri } : {}), ...(sceneJson ? { sceneJson } : {}) };
+}
+
+function dataUri(mediaType: string, data: Buffer): string {
+  return `data:${mediaType};base64,${data.toString("base64")}`;
 }
 
 function imagePayload(input: PinStudioImageInput): PinStudioImagePayloadV1 {

@@ -72,9 +72,8 @@ describe("Workspace Pin Studio target", () => {
       },
     });
     const target = workspacePinStudioTarget(fake);
-    const context = { asWebviewUri: (file: string) => `webview:${path.basename(file)}` };
 
-    expect(await target.loadPinStudio("p-abc123", context)).toMatchObject({
+    expect(await target.loadPinStudio("p-abc123")).toMatchObject({
       pinId: "p-abc123",
       title: "remote pin",
       tags: ["ui"],
@@ -90,16 +89,21 @@ describe("Workspace Pin Studio target", () => {
       mediaType: "image/png",
       name: "remote.png",
       source: "paste",
-    }, context);
+    });
     expect(image.attachment).toMatchObject({ kind: "image", name: "remote.png", available: true });
     if (image.attachment.kind !== "image") throw new Error("expected image");
-    expect(image.attachment.uri).toMatch(/^webview:[a-f0-9]{64}$/);
+    // t-610705 (Phase D, D3) — no more `context.asWebviewUri` (a Control-hosted studio route is
+    // never handed one); attachment bytes are embedded as a `data:` URI instead (mirrors
+    // TaskStudioTarget.ts's D2 fix — see PinStudioTarget.ts's hydrateAttachment doc comment).
+    expect(image.attachment.uri).toMatch(/^data:image\/png;base64,/);
     const sketch = await target.putPinStudioSketch("p-abc123", {
       sceneJson: JSON.stringify({ type: "excalidraw", elements: [], appState: {}, files: {} }),
       previewData: Buffer.from("preview"),
       source: "blank",
-    }, context);
+    });
     expect(sketch.attachment).toMatchObject({ kind: "excalidraw", sceneAvailable: true, previewAvailable: true });
+    if (sketch.attachment.kind !== "excalidraw") throw new Error("expected excalidraw");
+    expect(sketch.attachment.previewUri).toMatch(/^data:image\/png;base64,/);
 
     expect(fake.invocations.map((entry) => entry.command.method)).toEqual([
       "pin.studio.apply",
@@ -132,7 +136,7 @@ describe("Workspace Pin Studio target", () => {
       data: Buffer.from("image"),
       mediaType: "image/png",
       source: "paste",
-    }, { asWebviewUri: (file) => file })).rejects.toThrow(/forced refusal/);
+    })).rejects.toThrow(/forced refusal/);
     expect(fake.stagedPayloads).toMatchObject([{ discarded: true }]);
   });
 

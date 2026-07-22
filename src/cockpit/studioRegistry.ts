@@ -15,15 +15,18 @@ import type { StudioId } from "./studioIds.js";
 import type { StudioHostAdapter } from "../webview/shared/studio/adapter.js";
 import type { WorkspaceStudioTarget, WorkspaceAgentStudioTarget } from "../shell/WorkspacePresentation.js";
 import type { WorkspaceTaskStudioTarget } from "../shell/TaskStudioTarget.js";
+import type { WorkspacePinStudioTarget } from "../shell/PinStudioTarget.js";
 import { CommandStudioAdapter } from "../webview/CommandStudioAdapter.js";
 import { TerminalStudioAdapter } from "../webview/TerminalStudioAdapter.js";
 import { RunbookStudioAdapter } from "../webview/RunbookStudioAdapter.js";
 import { ScheduleStudioAdapter } from "../webview/ScheduleStudioAdapter.js";
 import { AgentStudioAdapter } from "../webview/AgentStudioAdapter.js";
 import { TaskStudioAdapter } from "../webview/TaskStudioAdapter.js";
+import { PinStudioAdapter } from "../webview/PinStudioAdapter.js";
 import { createAgentEvolutionLabels } from "../webview/agent-studio-shell/domain.js";
 import { handleAgentStudioDomainMessage } from "./agentStudioDomain.js";
 import { handleTaskStudioDomainMessage } from "./taskStudioDomain.js";
+import { handlePinStudioDomainMessage } from "./pinStudioDomain.js";
 import { envelope } from "../webview/shared/studio/protocol.js";
 
 type Adapter = StudioHostAdapter<unknown, unknown, unknown, unknown>;
@@ -111,6 +114,15 @@ export const STUDIO_REGISTRY: Record<StudioId, StudioRegistryEntry> = {
     // already implements the full task-specific surface.
     makeAdapter: (ws) => new TaskStudioAdapter(ws as unknown as WorkspaceTaskStudioTarget) as unknown as Adapter,
     handleDomainMessage: (ws, ctx, message) => handleTaskStudioDomainMessage(ws as unknown as WorkspaceTaskStudioTarget, ctx, message),
+  },
+  pin: {
+    legacyViewType: "tachyonPinStudio",
+    // t-610705 (Phase D, D3) — same structural-cast pattern as agent/task: WorkspaceStudioTarget is a
+    // structural subset of the richer WorkspacePinStudioTarget PinStudioAdapter actually needs
+    // (loadPinStudio/savePinStudio/putPinStudioImage/putPinStudioSketch) — the runtime object
+    // (WorkspaceShellHandle) already implements the full pin-specific surface.
+    makeAdapter: (ws) => new PinStudioAdapter(ws as unknown as WorkspacePinStudioTarget) as unknown as Adapter,
+    handleDomainMessage: (ws, ctx, message) => handlePinStudioDomainMessage(ws as unknown as WorkspacePinStudioTarget, ctx, message),
   },
 } satisfies Record<StudioId, StudioRegistryEntry>;
 

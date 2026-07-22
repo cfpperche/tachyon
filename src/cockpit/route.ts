@@ -79,28 +79,53 @@ export interface CockpitWorkspaceProbesRoute {
 }
 
 /**
+ * t-610705 (SDD 410 Phase D, D3) — every CockpitRoute kind EXCEPT the two studio kinds. This is
+ * exactly the set a pin's `returnRoute` is allowed to hold (design dueto probe-43bca1cc blocker:
+ * "studio kinds excluded by construction" must be a TYPE guarantee, not just a runtime convention —
+ * a convention-only guard left a real gap where trusted internal code could still construct an
+ * invalid nested-studio returnRoute). Never add `CockpitStudioNewRoute`/`CockpitStudioEditRoute` to
+ * this union — a route that can return to ANOTHER studio route has no defined semantics anywhere in
+ * this file (parentRoute/navSection would need to recurse into a second studio's own policy).
+ */
+export type CockpitNonStudioRoute =
+  | CockpitSectionRoute
+  | CockpitTaskDetailRoute
+  | CockpitAgentActivityRoute
+  | CockpitAgentProbesRoute
+  | CockpitWorkspaceProbesRoute;
+
+/**
  * t-610705 (SDD 410 Phase D, D0) — a fresh (unsaved) entity being drafted for one of the
  * StudioPanelManagerBase-based studios (studios-routes-design.md). `studio` is the closed
  * `StudioId` union — NOT 14 explicit route kinds, per the design dueto's Q1 (sound as long as
  * StudioId stays a true runtime discriminator: `satisfies Record<StudioId,...>` registries, no
  * casts, one exhaustive test — see studioRegistry.ts). `wsHash` is the immutable workspace locator,
  * same reasoning as every other entity route in this file.
+ *
+ * `returnRoute` (D3) — meaningful ONLY for `studio:"pin"` (studios-routes-design.md: pin is
+ * "nav-less", its close-target is this explicit slot, not `studioParentSection`'s static table).
+ * MANDATORY (no optional fields, per this file's own shipped rule), always `null` for every other
+ * studio. Captured automatically by Cockpit.ts's `navigate()` at the moment a pin route commits —
+ * callers never set it themselves, see routes.studioNew/studioEdit below.
  */
 export interface CockpitStudioNewRoute {
   readonly kind: "studio-new";
   readonly studio: StudioId;
   readonly wsHash: string;
+  readonly returnRoute: CockpitNonStudioRoute | null;
 }
 
 /**
  * t-610705 (SDD 410 Phase D, D0) — an existing entity open for edit in a studio. `entityId` is the
- * adapter's own id space (e.g. a command name) — opaque to the router.
+ * adapter's own id space (e.g. a command name) — opaque to the router. `returnRoute` — see
+ * CockpitStudioNewRoute's doc comment; identical rule.
  */
 export interface CockpitStudioEditRoute {
   readonly kind: "studio-edit";
   readonly studio: StudioId;
   readonly wsHash: string;
   readonly entityId: string;
+  readonly returnRoute: CockpitNonStudioRoute | null;
 }
 
 // C.1 also adds task-new/task-edit... superseded: Task Studio (task-edit/task-new) now lands as
@@ -111,22 +136,23 @@ export interface CockpitStudioEditRoute {
 // navSection's exhaustiveness checks — the compiler is the checklist (assertNeverRoute's `never`
 // parameter fails to compile until every function below handles the new kind/studio).
 export type CockpitRoute =
-  | CockpitSectionRoute
-  | CockpitTaskDetailRoute
-  | CockpitAgentActivityRoute
-  | CockpitAgentProbesRoute
-  | CockpitWorkspaceProbesRoute
+  | CockpitNonStudioRoute
   | CockpitStudioNewRoute
   | CockpitStudioEditRoute;
 
 /**
  * t-610705 (Phase D) — per-StudioId parent-section policy (studios-routes-design.md's registry
  * table). A studio's PARENT is a static function of its StudioId alone for every studio EXCEPT pin
- * (nav-less, D3 — its close-target is an explicit `returnRoute` slot, not derivable here). Kept as
- * its own exhaustive switch (not folded into parentRoute's route.kind switch) so adding a StudioId
- * without a matching case fails to compile independently of adding a new route KIND.
+ * (nav-less, D3 — its close-target is the route's own `returnRoute` slot, not derivable from the
+ * StudioId alone) — pin is excluded from this function's PARAMETER TYPE (not just its switch), per
+ * design-dueto probe-43bca1cc's finding: a nominally-exhaustive `case "pin": throw` would make an
+ * invalid call (passing "pin" here) type-correct and turn a design invariant into a runtime crash;
+ * omitting "pin" from the parameter type instead makes every call site that hasn't already narrowed
+ * away "pin" a COMPILE error. Kept as its own exhaustive switch (not folded into parentRoute's
+ * route.kind switch) so adding a StudioId without a matching case fails to compile independently of
+ * adding a new route KIND.
  */
-function studioParentSection(studio: StudioId): CockpitSectionId {
+function studioParentSection(studio: Exclude<StudioId, "pin">): CockpitSectionId {
   switch (studio) {
     case "command":
     case "terminal":
@@ -155,6 +181,12 @@ function assertNeverRoute(route: never): never {
   throw new Error(`cockpit route: unhandled kind ${JSON.stringify(route)}`);
 }
 
+/**
+ * t-610705 (Phase D, D3) — `studio-new`/`studio-edit`'s key DELIBERATELY excludes `returnRoute`: it
+ * is provenance metadata about where to go back, not part of the route's own identity. If it were
+ * included, re-opening the SAME pin from a different origin route would look like a different route,
+ * defeating `requestNavigate`'s same-identity re-entry check (`routeKey(route) === routeKey(currentRoute)`).
+ */
 export function routeKey(route: CockpitRoute): string {
   switch (route.kind) {
     case "section":
@@ -188,6 +220,12 @@ export function parentRoute(route: CockpitRoute): CockpitRoute | null {
     case "workspace-probes":
       return { kind: "section", section: "fleet" };
     case "studio-new":
+      // t-610705 (Phase D, D3) — pin is nav-less: its close-target is its OWN captured
+      // `returnRoute`, never `studioParentSection`'s static table. Falls back to Overview only when
+      // no return route was ever captured (e.g. a pin route decoded straight off a deep link with no
+      // prior Control session) — mirrors decodePanelState's own "never trusts a malformed/absent
+      // route" fallback elsewhere in this file.
+      if (route.studio === "pin") return route.returnRoute ?? { kind: "section", section: "overview" };
       return { kind: "section", section: studioParentSection(route.studio) };
     case "studio-edit":
       // t-610705 (Phase D, D2) — task is the one studio whose EDIT parent is a specific entity's
@@ -199,14 +237,24 @@ export function parentRoute(route: CockpitRoute): CockpitRoute | null {
       // onto beginStudioSave without a much larger atomic-transaction redesign; this reuses the
       // ALREADY-safe, already-proven back-navigation path instead.
       if (route.studio === "task") return { kind: "task-detail", wsHash: route.wsHash, taskId: route.entityId };
+      // t-610705 (Phase D, D3) — same returnRoute policy as studio-new above.
+      if (route.studio === "pin") return route.returnRoute ?? { kind: "section", section: "overview" };
       return { kind: "section", section: studioParentSection(route.studio) };
     default:
       return assertNeverRoute(route);
   }
 }
 
-/** Which nav-bar tab should read as active while this route is showing. */
-export function navSection(route: CockpitRoute): CockpitSectionId {
+/**
+ * Which nav-bar tab should read as active while this route is showing — `null` for pin (D3): it has
+ * no home tab in Control's nav bar (studios-routes-design.md's parent/nav table: "none, navSection:
+ * null, nav-less"). Callers that need a definite `CockpitSectionId` (which background section data
+ * stays warm underneath a studio form) fall back to "overview" AT THE CALL SITE, not here — keeping
+ * this function's own return value a genuine tri-state (design-dueto probe-43bca1cc minor finding:
+ * coercing null to "overview" inside this function would make nav-less state indistinguishable from
+ * "the Overview tab is genuinely active" for any future caller, e.g. diagnostics).
+ */
+export function navSection(route: CockpitRoute): CockpitSectionId | null {
   switch (route.kind) {
     case "section":
       return route.section;
@@ -218,7 +266,7 @@ export function navSection(route: CockpitRoute): CockpitSectionId {
       return "fleet";
     case "studio-new":
     case "studio-edit":
-      return studioParentSection(route.studio);
+      return route.studio === "pin" ? null : studioParentSection(route.studio);
     default:
       return assertNeverRoute(route);
   }
@@ -301,23 +349,45 @@ export const routes = {
   agentActivity: (wsHash: string, agent: string): CockpitAgentActivityRoute => ({ kind: "agent-activity", wsHash, agent }),
   agentProbes: (wsHash: string, agent: string): CockpitAgentProbesRoute => ({ kind: "agent-probes", wsHash, agent }),
   workspaceProbes: (wsHash: string): CockpitWorkspaceProbesRoute => ({ kind: "workspace-probes", wsHash }),
-  studioNew: (studio: StudioId, wsHash: string): CockpitStudioNewRoute => {
+  // t-610705 (Phase D, D3) — `returnRoute` defaults to `null` for every caller (every D0-D2 call
+  // site is unaffected). Real callers never pass it explicitly even for pin: Cockpit.ts's
+  // `navigate()` captures the real value automatically at the moment a pin route commits (design-
+  // dueto probe-43bca1cc — capture must be a host-owned side effect of the commit itself, not
+  // something a caller pre-computes, or same-identity re-entry / chained pin↔pin navigation loses
+  // the originally captured value). The parameter exists so decodeRoute/tests/preview fixtures can
+  // still construct a route with a specific returnRoute directly.
+  //
+  // t-610705 (Phase D, D3, design-dueto probe-12f603f3 major finding) — a RUNTIME guard, not an
+  // overloaded signature: overloads (`studio:"pin"` vs `Exclude<StudioId,"pin">`) were tried and
+  // reverted — they break every GENERIC caller typed over the whole `StudioId` union (extension.ts's
+  // `registerLegacyStudioRedirect` helper, this file's own StudioId-driven test loops), which never
+  // pass `returnRoute` at all but still fail overload resolution since a union argument must fit ONE
+  // overload branch wholesale. Mirrors the file's own existing precedent one line below (`studio ===
+  // "task"` is the same class of runtime-only defensive assertion, not a type-level one).
+  studioNew: (studio: StudioId, wsHash: string, returnRoute: CockpitNonStudioRoute | null = null): CockpitStudioNewRoute => {
     // t-610705 (Phase D, D2) — mirrors decodeRoute's own rejection: every "new task" caller must
     // pre-mint an id and call studioEdit directly instead (see decodeRoute's doc comment on this
     // same rule). A defensive assertion, not a reachable production path.
     if (studio === "task") throw new Error("routes.studioNew: task is never id-less — pre-mint an id and call routes.studioEdit instead");
-    return { kind: "studio-new", studio, wsHash };
+    if (returnRoute !== null && studio !== "pin") throw new Error(`routes.studioNew: returnRoute is only meaningful for "pin", not "${studio}"`);
+    return { kind: "studio-new", studio, wsHash, returnRoute };
   },
-  studioEdit: (studio: StudioId, wsHash: string, entityId: string): CockpitStudioEditRoute => ({ kind: "studio-edit", studio, wsHash, entityId }),
+  studioEdit: (studio: StudioId, wsHash: string, entityId: string, returnRoute: CockpitNonStudioRoute | null = null): CockpitStudioEditRoute => {
+    if (returnRoute !== null && studio !== "pin") throw new Error(`routes.studioEdit: returnRoute is only meaningful for "pin", not "${studio}"`);
+    return { kind: "studio-edit", studio, wsHash, entityId, returnRoute };
+  },
 };
 
 /**
- * The ONE runtime decoder for a route arriving from an untrusted boundary (webview message,
- * persisted panel state). Rejects unknown kinds, missing/extra fields, and invalid values —
- * returns null rather than guessing, so callers choose their own fallback (usually
- * `routes.section("overview")`).
+ * t-610705 (Phase D, D3) — the 5 non-studio kinds only, factored out of decodeRoute so a pin route's
+ * `returnRoute` field can be decoded WITHOUT ever recursing into decodeRoute's own studio-new/
+ * studio-edit branches (design-dueto probe-43bca1cc major finding: a naive `decodeRoute(returnRoute)`
+ * recursive call is only non-recursive in practice because the OUTER caller rejects a decoded studio
+ * result — an untrusted payload could still make the decoder walk an arbitrarily deep nested-studio
+ * chain before that rejection happens. This function structurally cannot decode a studio kind at
+ * all, so there is nothing to walk).
  */
-export function decodeRoute(raw: unknown): CockpitRoute | null {
+function decodeNonStudioRoute(raw: unknown): CockpitNonStudioRoute | null {
   if (!raw || typeof raw !== "object") return null;
   const obj = raw as Record<string, unknown>;
   const keys = Object.keys(obj);
@@ -343,8 +413,41 @@ export function decodeRoute(raw: unknown): CockpitRoute | null {
     if (typeof obj.wsHash !== "string" || !obj.wsHash) return null;
     return { kind: "workspace-probes", wsHash: obj.wsHash };
   }
+  return null;
+}
+
+/**
+ * t-610705 (Phase D, D3) — validates a `studio-new`/`studio-edit` route's raw `returnRoute` field.
+ * `null` is always valid (the "never captured / not pin" case). A non-null value is valid ONLY for
+ * `studio:"pin"` (every other studio must carry exactly `null` — design-dueto finding: the pin-only
+ * invariant must be enforced at decode time, not left to convention) — and only when it decodes via
+ * `decodeNonStudioRoute` AND, for a return route that itself carries a `wsHash`, that `wsHash`
+ * matches the outer pin route's own `wsHash` (a revive/deep-link whose persisted returnRoute points
+ * at a DIFFERENT workspace than the pin route itself is stale/mismatched data, not a route to trust —
+ * design-dueto finding on revive-mismatch). Returns `undefined` as a distinct "reject the whole outer
+ * route" sentinel (not `null`, which is itself a legitimate decoded value here).
+ */
+function decodeReturnRoute(raw: unknown, studio: StudioId, wsHash: string): CockpitNonStudioRoute | null | undefined {
+  if (raw === null) return null;
+  if (studio !== "pin") return undefined;
+  const decoded = decodeNonStudioRoute(raw);
+  if (!decoded) return undefined;
+  if ("wsHash" in decoded && decoded.wsHash !== wsHash) return undefined;
+  return decoded;
+}
+
+/**
+ * The ONE runtime decoder for a route arriving from an untrusted boundary (webview message,
+ * persisted panel state). Rejects unknown kinds, missing/extra fields, and invalid values —
+ * returns null rather than guessing, so callers choose their own fallback (usually
+ * `routes.section("overview")`).
+ */
+export function decodeRoute(raw: unknown): CockpitRoute | null {
+  if (!raw || typeof raw !== "object") return null;
+  const obj = raw as Record<string, unknown>;
+  const keys = Object.keys(obj);
   if (obj.kind === "studio-new") {
-    if (keys.length !== 3 || !keys.includes("studio") || !keys.includes("wsHash")) return null;
+    if (keys.length !== 4 || !keys.includes("studio") || !keys.includes("wsHash") || !keys.includes("returnRoute")) return null;
     if (!isStudioId(obj.studio)) return null;
     if (typeof obj.wsHash !== "string" || !obj.wsHash) return null;
     // t-610705 (Phase D, D2) — "task" is declared in StudioId (registry exhaustiveness, satisfies
@@ -355,16 +458,20 @@ export function decodeRoute(raw: unknown): CockpitRoute | null {
     // tests/future callers, not harmless exhaustiveness scaffolding — reject it here, fail closed,
     // rather than silently reaching semantics no adapter actually supports).
     if (obj.studio === "task") return null;
-    return { kind: "studio-new", studio: obj.studio, wsHash: obj.wsHash };
+    const returnRoute = decodeReturnRoute(obj.returnRoute, obj.studio, obj.wsHash);
+    if (returnRoute === undefined) return null;
+    return { kind: "studio-new", studio: obj.studio, wsHash: obj.wsHash, returnRoute };
   }
   if (obj.kind === "studio-edit") {
-    if (keys.length !== 4 || !keys.includes("studio") || !keys.includes("wsHash") || !keys.includes("entityId")) return null;
+    if (keys.length !== 5 || !keys.includes("studio") || !keys.includes("wsHash") || !keys.includes("entityId") || !keys.includes("returnRoute")) return null;
     if (!isStudioId(obj.studio)) return null;
     if (typeof obj.wsHash !== "string" || !obj.wsHash) return null;
     if (typeof obj.entityId !== "string" || !obj.entityId) return null;
-    return { kind: "studio-edit", studio: obj.studio, wsHash: obj.wsHash, entityId: obj.entityId };
+    const returnRoute = decodeReturnRoute(obj.returnRoute, obj.studio, obj.wsHash);
+    if (returnRoute === undefined) return null;
+    return { kind: "studio-edit", studio: obj.studio, wsHash: obj.wsHash, entityId: obj.entityId, returnRoute };
   }
-  return null;
+  return decodeNonStudioRoute(raw);
 }
 
 const COCKPIT_PANEL_VIEW = "tachyonCockpit" as const;

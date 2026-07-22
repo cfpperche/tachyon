@@ -10,6 +10,7 @@ import { parentRoute, isStudioRoute, routeKey } from "../../cockpit/route";
 import type { ControlInspectorWorkspaceRow } from "../../control-inspector/model";
 import {
   formatCompanionPairClipboard,
+  navigateReturnAction,
   type CockpitAction,
   type CockpitStrings,
   type CompanionPairOffer,
@@ -198,6 +199,22 @@ const TaskStudioApp = lazy(() =>
     loadSectionStylesheet("studio-task-richdoc");
     loadSectionStylesheet("studio-frame-task");
     loadSectionStylesheet("studio-task");
+    return { default: m.App };
+  }),
+);
+// t-610705 (Phase D, D3) — Pin Studio needs the SAME entity-neutral rich-doc.css HREF as Task Studio
+// BEFORE studio-frame.css, matching the retired standalone panel's own styleFiles order (`rich-doc.css,
+// studio-frame.css, pin-studio.css`) — no Tailwind sheet of its own (unlike Task/Agent Studio: Pin's UI
+// has no KitFieldRow/KitSelect-family controls). Own co-load KEY ("studio-pin-richdoc", not a reused
+// "studio-task-richdoc") even though both resolve to the same file — same "one distinct key per client
+// call site" convention studio-frame's per-studio keys already use (cockpitCssParity.test.ts's client/
+// host co-load-id parity check is a plain array compare, not set-based — a shared key called from two
+// lazy blocks would appear twice on the client side but only once in the host's bootstrap map).
+const PinStudioApp = lazy(() =>
+  import("../pin-studio/App").then((m) => {
+    loadSectionStylesheet("studio-pin-richdoc");
+    loadSectionStylesheet("studio-frame-pin");
+    loadSectionStylesheet("studio-pin");
     return { default: m.App };
   }),
 );
@@ -669,6 +686,14 @@ export function App(p: CockpitAppProps) {
   const isFleetSubroute = activeRoute?.kind === "agent-activity" || activeRoute?.kind === "agent-probes" || activeRoute?.kind === "workspace-probes";
   const isStudioSubroute = !!activeRoute && isStudioRoute(activeRoute);
   const isEmbed = EMBED_SECTIONS.has(section) || isFleetSubroute || isStudioSubroute;
+  // t-610705 (Phase D, D3) — pin is nav-less (navSection: null — route.ts): `section` above already
+  // falls back to "overview" (the same fallback Cockpit.ts's host uses for background-data purposes),
+  // but "overview" IS a real, clickable tab — without this, it would incorrectly render as visually
+  // active while Pin Studio is open. Suppressed here, client-side only; deliberately NOT threaded
+  // through `model.section` itself (design-dueto probe-43bca1cc minor finding: coercing null to
+  // "overview" anywhere but a background-data fallback would make nav-less state indistinguishable
+  // from "Overview is genuinely active").
+  const isNavlessStudio = !!activeRoute && isStudioRoute(activeRoute) && activeRoute.studio === "pin";
 
   let body: ComponentChildren = null;
   if (!m) {
@@ -726,12 +751,26 @@ export function App(p: CockpitAppProps) {
     // for esbuild's code-split analysis). Every branch shares `key`/`routeKey`/`mountNonce`/
     // `incoming`/`dispatch` wiring — only the component and its own studio-scoped stylesheet differ.
     const parent = parentRoute(activeRoute);
-    // t-610705 (Phase D, D2) — Task Studio's edit route is the one studio whose parent is NOT a flat
-    // section (route.ts's parentRoute special-cases studio-edit + studio:"task" to the task's own
-    // task-detail subroute) — reuses taskDetailDispatch's existing "openTask" round trip (the SAME
-    // one Task Detail's own breadcrumb and the Board's card-click already navigate through) rather
-    // than inventing a new generic route-navigate prop for this one case.
-    const back = parent && parent.kind === "section" ? (
+    // t-610705 (Phase D, D3) — pin is nav-less: its breadcrumb ALWAYS posts the parameterless
+    // "navigateReturn" action (the host is the sole authority on the destination — its own
+    // already-sanitized `currentRoute.returnRoute`, see Cockpit.ts's "navigateReturn" case; the
+    // client never sends a route object). `parent` (computed client-side via the SAME pure
+    // parentRoute() the host uses) only decides the button's LABEL here — a specific nav-tab name
+    // when returnRoute is a flat section, else the generic "Back" (returnRoute can also be
+    // task-detail/agent-activity/agent-probes/workspace-probes, none of which have their own fixed
+    // breadcrumb dispatch the way Task's task-detail parent does below).
+    const back = activeRoute.studio === "pin" ? (
+      <div class="ck-subroute-breadcrumb" data-testid="control-studio-breadcrumb">
+        <Button variant="default" icon="arrow-left" onClick={() => p.onPost(navigateReturnAction(routeKey(activeRoute)))}>
+          {parent && parent.kind === "section" ? s[TAB_META[parent.section].navKey] : s.back}
+        </Button>
+      </div>
+      // t-610705 (Phase D, D2) — Task Studio's edit route is the one OTHER studio whose parent is
+      // NOT a flat section (route.ts's parentRoute special-cases studio-edit + studio:"task" to the
+      // task's own task-detail subroute) — reuses taskDetailDispatch's existing "openTask" round trip
+      // (the SAME one Task Detail's own breadcrumb and the Board's card-click already navigate
+      // through) rather than inventing a new generic route-navigate prop for this one case.
+    ) : parent && parent.kind === "section" ? (
       <div class="ck-subroute-breadcrumb" data-testid="control-studio-breadcrumb">
         <Button variant="default" icon="arrow-left" onClick={() => p.onSetSection(parent.section)}>
           {s[TAB_META[parent.section].navKey]}
@@ -766,6 +805,8 @@ export function App(p: CockpitAppProps) {
             <AgentStudioApp key={studioKey} {...studioMountProps} />
           ) : activeRoute.studio === "task" ? (
             <TaskStudioApp key={studioKey} {...studioMountProps} />
+          ) : activeRoute.studio === "pin" ? (
+            <PinStudioApp key={studioKey} {...studioMountProps} />
           ) : null}
         </Suspense>
       </div>
@@ -1277,8 +1318,8 @@ export function App(p: CockpitAppProps) {
                   type="button"
                   role="tab"
                   key={id}
-                  aria-selected={section === id}
-                  class={`${section === id ? "active" : ""}${engineErr ? " has-err" : ""}`}
+                  aria-selected={section === id && !isNavlessStudio}
+                  class={`${section === id && !isNavlessStudio ? "active" : ""}${engineErr ? " has-err" : ""}`}
                   onClick={() => p.onSetSection(id)}
                 >
                   <span class={`codicon codicon-${meta.icon}`} />

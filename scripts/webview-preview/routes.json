@@ -481,6 +481,48 @@
   },
   {
     "view": "cockpit",
+    "fixture": "studio-pin-edit",
+    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=studio-pin-edit",
+    "frame": {
+      "w": 1100,
+      "h": 720
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Control",
+    "aliases": [
+      "control",
+      "cockpit",
+      "sysadmin",
+      "project control",
+      "fleet control",
+      "control plane"
+    ]
+  },
+  {
+    "view": "cockpit",
+    "fixture": "studio-pin-new",
+    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=studio-pin-new",
+    "frame": {
+      "w": 1100,
+      "h": 720
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Control",
+    "aliases": [
+      "control",
+      "cockpit",
+      "sysadmin",
+      "project control",
+      "fleet control",
+      "control plane"
+    ]
+  },
+  {
+    "view": "cockpit",
     "fixture": "validations",
     "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=validations",
     "frame": {
@@ -798,42 +840,6 @@
       "approvals",
       "human approvals",
       "approval view"
-    ]
-  },
-  {
-    "view": "pin-studio",
-    "fixture": "default",
-    "url": "/scripts/webview-preview/index.html?view=pin-studio&fixture=default",
-    "frame": {
-      "w": 900,
-      "h": 800
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Pin Studio",
-    "aliases": [
-      "pin studio",
-      "pin editor",
-      "sketch"
-    ]
-  },
-  {
-    "view": "pin-studio",
-    "fixture": "new",
-    "url": "/scripts/webview-preview/index.html?view=pin-studio&fixture=new",
-    "frame": {
-      "w": 900,
-      "h": 800
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Pin Studio",
-    "aliases": [
-      "pin studio",
-      "pin editor",
-      "sketch"
     ]
   },
   {

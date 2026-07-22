@@ -66,6 +66,7 @@ describe("preview route table", () => {
       "/dist/webview/schedule-studio-shell.css",
       "/dist/webview/agent-studio-shell.css",
       "/dist/webview/task-studio.css",
+      "/dist/webview/pin-studio.css",
       "/dist/webview/cockpit.css",
     ]);
     expect(Object.keys(r.fixtures).sort()).toEqual([
@@ -88,6 +89,8 @@ describe("preview route table", () => {
       "studio-agent-edit",
       "studio-command",
       "studio-command-edit",
+      "studio-pin-edit",
+      "studio-pin-new",
       "studio-runbook",
       "studio-runbook-edit",
       "studio-schedule",
@@ -149,14 +152,17 @@ describe("preview route table", () => {
     const taskMsgs = r.makeMessage(r.fixtures["studio-task-edit"]!.vm) as Array<{ type: string; studioProtocolVersion?: number }>;
     expect(taskMsgs.map((m) => m.type)).toEqual(["init", "model", "snapshot", "load"]);
     expect(taskMsgs[3]?.studioProtocolVersion).toBe(1);
-  });
-
-  it("declares the pin-studio route (spec 278 — the last view onboarded) with its envelope", () => {
-    const r = ROUTES["pin-studio"];
-    expect(r.bundle).toBe("/dist/webview/pin-studio.js");
-    expect(r.cssLinks).toEqual(["/dist/webview/codicon.css", "/dist/webview/design-system.css", "/dist/webview/rich-doc.css", "/dist/webview/studio-frame.css", "/dist/webview/pin-studio.css"]);
-    expect(Object.keys(r.fixtures).sort()).toEqual(["default", "new"]);
-    expect((r.makeMessage(r.fixtures.default.vm) as { type: string }).type).toBe("load");
+    // t-610705 (Phase D, D3) — pin's fixtures module reuses "dense-edit"/"new" via the SAME byStudio
+    // lookup. Nav section is null (nav-less — route.ts), so the fixture's own `section` is "overview"
+    // (the same fallback Cockpit.ts's real host uses) — "overview" rides no embed push of its own, so
+    // only "load" rides alongside init+model, same shape as the Fleet-parented studios (command et
+    // al.), not the dual-push "mission" shape task-detail/studio-task-edit have above.
+    const pinMsgs = r.makeMessage(r.fixtures["studio-pin-edit"]!.vm) as Array<{ type: string; studioProtocolVersion?: number }>;
+    expect(pinMsgs.map((m) => m.type)).toEqual(["init", "model", "load"]);
+    expect(pinMsgs[2]?.studioProtocolVersion).toBe(1);
+    const pinNewMsgs = r.makeMessage(r.fixtures["studio-pin-new"]!.vm) as Array<{ type: string; studioProtocolVersion?: number }>;
+    expect(pinNewMsgs.map((m) => m.type)).toEqual(["init", "model", "load"]);
+    expect(pinNewMsgs[2]?.studioProtocolVersion).toBe(1);
   });
 
   it("declares the pin-preview route (spec 279) with a hostile fixture carrying injection payloads", () => {

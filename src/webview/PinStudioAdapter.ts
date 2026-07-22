@@ -1,5 +1,5 @@
 import type { WorkspacePinStudioTarget } from "../shell/PinStudioTarget.js";
-import type { StudioHostAdapter, StudioLoadContext } from "./shared/studio/adapter.js";
+import type { StudioHostAdapter } from "./shared/studio/adapter.js";
 import { NO_VALIDATION_ERRORS, type StudioValidationResult } from "./shared/studio/errorTaxonomy.js";
 import {
   PIN_STUDIO_DOMAIN_MESSAGE_NAMES,
@@ -18,7 +18,6 @@ export class PinStudioAdapter implements StudioHostAdapter<PinDetailEntity, PinF
   readonly domainMessageNames = PIN_STUDIO_DOMAIN_MESSAGE_NAMES;
   readonly concurrency = { kind: "none" } as const;
   readonly allowPatchRestore = true;
-  private pendingInitialTitle = "";
 
   readonly dirty = {
     computeDirty: computePinDirty,
@@ -28,18 +27,13 @@ export class PinStudioAdapter implements StudioHostAdapter<PinDetailEntity, PinF
 
   constructor(private readonly target: WorkspacePinStudioTarget) {}
 
-  setInitialTitle(title: string): void {
-    this.pendingInitialTitle = title;
-  }
-
   titleFor(mode: "new" | "edit", entityId: string | undefined, entity: PinDetailEntity | undefined): string {
     return pinStudioTitleFor(mode, entityId, entity);
   }
 
-  async load(entityId: string | undefined, context?: StudioLoadContext) {
+  async load(entityId: string | undefined) {
     try {
-      const entity = await this.target.loadPinStudio(entityId, context);
-      if (!entityId) entity.title = this.pendingInitialTitle;
+      const entity = await this.target.loadPinStudio(entityId);
       return { status: "ok" as const, entity };
     } catch (error) {
       return { status: "error" as const, error: error instanceof Error ? error.message : String(error) };

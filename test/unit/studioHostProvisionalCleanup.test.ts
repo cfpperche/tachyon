@@ -66,7 +66,7 @@ function makeIo(): StudioHostIO & { posted: unknown[] } {
   return { post: (m) => posted.push(m), isCurrent: () => true, posted };
 }
 
-const route: StudioRoute = { kind: "studio-edit", studio: "command", wsHash: "ws-1", entityId: "provisional-1" };
+const route: StudioRoute = { kind: "studio-edit", studio: "command", wsHash: "ws-1", entityId: "provisional-1", returnRoute: null };
 
 async function openAndLoad(adapter: StudioHostAdapter<FakeEntity, FakeFields, FakeFields>): Promise<{ io: ReturnType<typeof makeIo>; mountNonce: string }> {
   const io = makeIo();

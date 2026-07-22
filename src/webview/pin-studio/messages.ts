@@ -7,15 +7,24 @@
  */
 
 import { envelope } from "../shared/studio/protocol.js";
-import type { PinStudioAttachmentVM, PinStudioHostMessage, PinStudioVM, PinStudioWebviewMessage } from "./types";
+import type { PinStudioAttachmentVM, PinStudioHostMessage, PinStudioWebviewMessage } from "./types";
 import type { PinPatch } from "./domain.js";
 
-export { READY, readyMessage, type ReadyMessage } from "../shared/ready";
+export { READY } from "../shared/ready";
 export type { PinStudioHostMessage, PinStudioWebviewMessage } from "./types";
 
+// t-610705 (Phase D, D3) — routeKey/mountNonce identify WHICH Control-hosted binding this ready is
+// for (studioHost.ts's mount handshake) — same shape every other migrated shell's messages.ts
+// declares; the shared shared/ready.ts helper predates the mount handshake and doesn't carry it.
+export const readyMessage = (mount?: { routeKey: string; mountNonce: string }) =>
+  envelope({ type: "ready" as const, ...(mount ? { routeKey: mount.routeKey, mountNonce: mount.mountNonce } : {}) });
 export const patchMessage = (patch: PinPatch) => envelope({ type: "patch" as const, patch });
 export const dirtyMessage = (dirty: boolean) => envelope({ type: "dirty" as const, dirty });
-export const saveMessage = (patch?: PinPatch) => envelope({ type: "save" as const, ...(patch !== undefined ? { patch } : {}) });
+// t-610705 (Phase D, D3) — "save" carries NO payload on the wire (protocol.ts's core
+// StudioWebviewCoreMessage shape), same as every other migrated studio — the host saves whatever
+// `b.patch` the last "patch" message set. The old standalone panel's `saveMessage(patch)` predates
+// this shared protocol.
+export const saveMessage = () => envelope({ type: "save" as const });
 export const cancelMessage = () => envelope({ type: "cancel" as const });
 export const importImageMessage = () => envelope({ type: "importImage" as const });
 export const attachImageMessage = (input: { mediaType: string; name?: string; source: "paste" | "drop"; dataBase64: string }) =>
@@ -29,19 +38,6 @@ export const storeSketchMessage = (input: {
   previewBase64: string;
 }) => envelope({ type: "storeSketch" as const, ...input });
 export const attachmentStoredMessage = (attachment: PinStudioAttachmentVM): PinStudioHostMessage => envelope({ type: "attachmentStored" as const, attachment });
-export const pinStudioMessage = (vm: PinStudioVM): PinStudioHostMessage => envelope({
-  type: "load" as const,
-  entity: {
-    workspaceHash: vm.workspaceHash,
-    folder: vm.folder,
-    ...(vm.pinId ? { pinId: vm.pinId } : {}),
-    title: vm.title,
-    tags: vm.tags,
-    doc: vm.doc,
-    attachments: vm.attachments,
-  },
-  concurrency: { kind: "none" as const },
-});
 
 /** the webview→host action union (typed at the `dispatch.post` boundary). */
 export type PinStudioAction = PinStudioWebviewMessage;

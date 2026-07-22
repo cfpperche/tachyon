@@ -6,6 +6,12 @@ import type { PinStudioAttachmentVM, TiptapJSON } from "./types.js";
 export const PIN_STUDIO_DOMAIN_MESSAGE_NAMES = ["importImage", "attachImage", "storeSketch", "attachmentStored"] as const;
 assertNoDomainNameCollision(PIN_STUDIO_DOMAIN_MESSAGE_NAMES);
 
+/** t-610705 (Phase D, D3) — the host->webview-only subset of the names above, browser-safe (no
+ *  `assertNoDomainNameCollision`'s Node-side import chain) — mirrors task-studio/domain.ts's
+ *  TASK_STUDIO_HOST_MESSAGE_NAMES split. Pin Studio's only inbound domain push is the same
+ *  "attachmentStored" (import/attach/storeSketch results) every rich-doc-based studio shares. */
+export const PIN_STUDIO_HOST_MESSAGE_NAMES = ["attachmentStored"] as const;
+
 export interface PinDetailEntity {
   workspaceHash: string;
   folder: string;

@@ -247,12 +247,10 @@ const pinPreview = {
   outfile: "dist/webview/pin-preview.js",
 };
 
-// spec 255 — the Preact/Tiptap Pin Studio editor-area webview bundle.
-const pinStudio = {
-  ...sidebar,
-  entryPoints: ["src/webview/pin-studio/main.tsx"],
-  outfile: "dist/webview/pin-studio.js",
-};
+// t-610705 (SDD 410 Phase D, D3) — the standalone Pin Studio bundle (spec 255) was retired: Pin
+// Studio is a cockpit-only studio route now (src/webview/pin-studio/App.tsx stays, lazy-imported by
+// cockpit/App.tsx via CSS co-load, same as command/terminal/runbook/schedule/agent/task before it).
+// pin-studio.css is still emitted below — Cockpit.ts co-loads it.
 
 // spec 350 T4 — the Preact Pipeline Studio webview bundle (Phase 1 shell proof, Fake 1). Dev-flag-hidden: no
 // command contribution anywhere ships this surface to a real user; it's reachable only via the dev preview
@@ -442,7 +440,7 @@ if (existsSync(excalidrawAssets)) {
   cpSync(excalidrawAssets, "dist/webview/excalidraw-assets", { recursive: true });
 }
 
-const targets = [extension, toolLauncher, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, approval, cockpit, pinPreview, pinStudio, pipelineStudio, agentStudioFixture, pluginHost, excalidraw, mermaid, katex, preview, uiGate];
+const targets = [extension, toolLauncher, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, approval, cockpit, pinPreview, pipelineStudio, agentStudioFixture, pluginHost, excalidraw, mermaid, katex, preview, uiGate];
 if (watch) {
   const ctxs = await Promise.all(targets.map((c) => esbuild.context(c)));
   await Promise.all(ctxs.map((c) => c.watch()));

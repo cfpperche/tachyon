@@ -58,7 +58,12 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   // need is served by Control's shell workspace selector, t-d16a39). The trusted serializer for
   // the legacy "tachyonPlugins" viewType stays registered in extension.ts: a revived pre-410 panel
   // disposes itself and redirects into Control → Plugins.
-  { viewId: "tachyonPinStudio", view: "pin-studio", hostFile: "src/webview/PinStudioPanel.ts", mode: "live", converted: true, editorHome: "standalone" },
+  // t-610705 (SDD 410 Phase D, D3) — the standalone Pin Studio panel (spec 255) was retired: it's a
+  // Control studio route now (src/webview/pin-studio/App.tsx stays, lazy-imported by cockpit/App.tsx
+  // via CSS co-load, same as command/terminal/runbook/schedule/agent/task before it). The trusted
+  // serializer for the legacy "tachyonPinStudio" viewType stays registered in extension.ts
+  // (registerLegacyStudioRedirect): a revived pre-410 panel disposes itself and redirects into
+  // Control → the pin's studio route.
   // spec 279 conversions (flip `converted` as each lane lands)
   // t-610705 (SDD 410 Phase C.2, 2026-07-21) — the standalone Probes panel was retired: it's a
   // Control subroute now (src/webview/probes/App.tsx stays, lazy-imported by cockpit/App.tsx;
