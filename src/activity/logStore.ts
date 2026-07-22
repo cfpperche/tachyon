@@ -118,6 +118,32 @@ export function convergeActivityRename(
   }
 }
 
+/** Move exact activity bytes into an identity-qualified retirement quarantine. */
+export function convergeActivityRetirement(
+  dir: string,
+  agent: string,
+  expected: ActivityRenameSnapshot,
+  quarantineDir: string,
+): void {
+  const sourceBase = path.join(dir, agentLogId(agent));
+  fs.mkdirSync(quarantineDir, { recursive: true });
+  for (const [ext, expectedDigest] of [[".jsonl", expected.jsonlSha256], [".state.json", expected.stateSha256]] as const) {
+    const source = `${sourceBase}${ext}`;
+    const destination = path.join(quarantineDir, `activity${ext}`);
+    const sourceDigest = fileDigest(source);
+    const destinationDigest = fileDigest(destination);
+    if (sourceDigest === null && destinationDigest === expectedDigest) continue;
+    if (expectedDigest === null && sourceDigest === null && destinationDigest === null) continue;
+    if (sourceDigest !== expectedDigest || destinationDigest !== null) {
+      throw new Error(`activity retirement '${ext}' changed outside the transaction`);
+    }
+    fs.renameSync(source, destination);
+    if (fileDigest(source) !== null || fileDigest(destination) !== expectedDigest) {
+      throw new Error(`activity retirement '${ext}' did not converge`);
+    }
+  }
+}
+
 /** Provenance back to the canonical runtime record. `recordId` (the runtime's stable per-record id) is
  *  preferred; `byteOffset` is a locator fallback only. */
 export interface LogSource {

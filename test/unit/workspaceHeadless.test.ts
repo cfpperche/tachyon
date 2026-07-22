@@ -396,6 +396,83 @@ it("renames a running canonical profile and keeps the same live session through 
   }
 });
 
+it("forgets a stopped canonical profile while preserving its private runtime home", async () => {
+  const root = mkdir();
+  const homeDir = mkdir();
+  fs.writeFileSync(path.join(root, "tachyon.yml"), "agents:\n  keeper:\n    cmd: sh\nsettings:\n  auth: false\n");
+  const secrets = new Map<string, string>();
+  const host = new SharedSecretHost(mkdir(), secrets);
+  const fake = fakeTmux();
+  const ws = await Workspace.createForTest(
+    root,
+    { host, onViewsChanged: () => {} },
+    { tmux: fake.tmux, startBridge: false, agentProfileHomeDir: homeDir },
+  );
+  try {
+    const created = await ws.commitAgentProfileLifecycle({
+      agentName: "reviewer",
+      operation: "create",
+      createProfile: { runtime: { adapter: "codex", executable: "codex" } },
+    });
+    await ws.evolutionStore.ensureProfile("reviewer");
+    ws.ledger.record("reviewer", { cwd: root, declared: true, updatedAt: "captured" });
+    const activityDir = path.join(root, ".tachyon", "activity");
+    fs.mkdirSync(activityDir, { recursive: true });
+    fs.writeFileSync(path.join(activityDir, `${agentLogId("reviewer")}.jsonl`), "owned activity\n");
+    const runtimeHome = ws.harness.home("reviewer");
+    fs.mkdirSync(runtimeHome, { recursive: true });
+    fs.writeFileSync(path.join(runtimeHome, "credentials.json"), "preserve\n");
+
+    const result = await ws.forgetCanonicalProfileAgent("reviewer");
+    await ws.start(); // startup GC must honor the durable retirement receipt
+
+    expect(result.agentId).toBe(created.snapshot.agentId);
+    expect(ws.config?.agents.reviewer).toBeUndefined();
+    expect(ws.ledger.get("reviewer")).toBeUndefined();
+    expect(fs.readFileSync(path.join(runtimeHome, "credentials.json"), "utf8")).toBe("preserve\n");
+    expect(fs.existsSync(path.join(root, ".tachyon", "agents", "reviewer"))).toBe(false);
+    expect(fs.readFileSync(path.join(
+      root,
+      ".tachyon",
+      "retired-agent-profiles",
+      result.agentId,
+      result.txid,
+      "runtime-projections",
+      "activity.jsonl",
+    ), "utf8")).toBe("owned activity\n");
+    expect(secrets.get(agentProfileAuthoritiesSecretKey(workspaceHash(root)))).not.toContain('"agentName": "reviewer"');
+    expect(host.notices.some((notice) => notice.message.includes("profile migration recovery found"))).toBe(false);
+  } finally {
+    ws.dispose();
+  }
+});
+
+it("refuses canonical forget while any tmux binding still exists", async () => {
+  const root = mkdir();
+  const homeDir = mkdir();
+  fs.writeFileSync(path.join(root, "tachyon.yml"), "agents:\n  keeper:\n    cmd: sh\nsettings:\n  auth: false\n");
+  const host = new SharedSecretHost(mkdir(), new Map());
+  const fake = fakeTmux();
+  const ws = await Workspace.createForTest(
+    root,
+    { host, onViewsChanged: () => {} },
+    { tmux: fake.tmux, startBridge: false, agentProfileHomeDir: homeDir },
+  );
+  try {
+    await ws.commitAgentProfileLifecycle({
+      agentName: "reviewer",
+      operation: "create",
+      createProfile: { runtime: { adapter: "codex", executable: "codex" } },
+    });
+    await ws.manager.spawn("reviewer");
+    await expect(ws.forgetCanonicalProfileAgent("reviewer")).rejects.toThrow("fully stopped");
+    expect(ws.config?.agents.reviewer?.profileLifecycle).toBeDefined();
+    expect(fs.existsSync(path.join(root, ".tachyon", "agents", "reviewer", "agent.yml"))).toBe(true);
+  } finally {
+    ws.dispose();
+  }
+});
+
 it("returns actionable Agent Studio messages for invalid soul values and unsupported runtimes", async () => {
   const { ws } = await makeWorkspace();
   const invalid = { ...blankAgentFields(), name: "invalid", cmd: "codex", soul: "yes" } as unknown as FormState;

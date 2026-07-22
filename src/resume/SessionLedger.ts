@@ -223,6 +223,28 @@ export class SessionLedger {
     if (all.delete(name)) this.write(all);
   }
 
+  /** Content-only custody token for a name-scoped row; does not disclose stored env or prompts. */
+  recordDigest(name: string): string | null {
+    const record = this.get(name);
+    return record ? crypto.createHash("sha256").update(JSON.stringify(record)).digest("hex") : null;
+  }
+
+  /** Remove only the exact row captured before a canonical identity retirement. */
+  removeExactDigest(name: string, expectedDigest: string | null): void {
+    const all = this.all();
+    const record = all.get(name);
+    const actual = record ? crypto.createHash("sha256").update(JSON.stringify(record)).digest("hex") : null;
+    if (actual === null) {
+      if (expectedDigest !== null) return; // acknowledges the transaction's prior exact removal
+      return;
+    }
+    if (expectedDigest === null || actual !== expectedDigest) {
+      throw new Error(`session ledger row for '${name}' changed outside the retirement transaction`);
+    }
+    all.delete(name);
+    this.write(all);
+  }
+
   /**
    * Move one exact owner row and every persisted child reference in one ledger replacement.
    * Replay acknowledges an already-moved exact row only when no old lineage references remain.

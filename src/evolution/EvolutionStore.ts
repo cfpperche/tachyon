@@ -484,7 +484,7 @@ export class EvolutionStore {
   }
 
   /** Retire one name-scoped authority identity before canonical agent footprint deletion. */
-  async retireAgent(agent: string): Promise<void> {
+  async retireAgent(agent: string, expectedProfileId?: string | null): Promise<void> {
     assertAgentName(agent);
     if (!this.authorityHead) return;
     if (!this.authorityHead.retire) {
@@ -498,6 +498,16 @@ export class EvolutionStore {
         await this.reconcileRenameIntentUnlocked(agent, profile);
       } catch (error) {
         if (!isMissing(error)) throw error;
+      }
+      if (expectedProfileId !== undefined) {
+        const stored = await this.readProfileFile(agent);
+        if ((expectedProfileId === null && stored !== undefined)
+          || (typeof expectedProfileId === "string" && stored?.profileId !== expectedProfileId)) {
+          throw new EvolutionStoreError(
+            "evolution/authority-invalid",
+            `Agent Evolution identity changed before retirement for '${agent}'`,
+          );
+        }
       }
       const current = await this.authorityHead!.current(this.authorityIdentity(agent));
       if (!current) return;

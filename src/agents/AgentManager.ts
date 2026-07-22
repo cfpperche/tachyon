@@ -21,6 +21,7 @@ import {
 } from "../resume/SessionLedger.js";
 import {
   captureActivityRenameSnapshot,
+  convergeActivityRetirement,
   convergeActivityRename,
   moveActivityLog,
   type ActivityRenameSnapshot,
@@ -104,6 +105,11 @@ const LAUNCH_READINESS_RUNTIMES = new Set<ResumeRuntime>(["codex", "claude", "gr
 export interface CanonicalLiveRenameSnapshot {
   sessionPresent: boolean;
   ledgerRecord: SessionRecord | null;
+  activity: ActivityRenameSnapshot;
+}
+
+export interface CanonicalProfileForgetSnapshot {
+  ledgerSha256: string | null;
   activity: ActivityRenameSnapshot;
 }
 
@@ -2958,6 +2964,50 @@ export class AgentManager {
       ledgerRecord: ledgerRecord ? structuredClone(ledgerRecord) : null,
       activity: captureActivityRenameSnapshot(this.activityDir(), oldName),
     };
+  }
+
+  /** Capture a stopped profile's exact name-scoped projections without touching runtime homes. */
+  async prepareCanonicalProfileForget(name: string): Promise<CanonicalProfileForgetSnapshot> {
+    if (await this.opts.tmux.hasSession(this.session(name)) || (await this.agentStates()).has(name)
+      || this.provisionalAgents.has(name) || this.soulReservations.has(name)) {
+      throw new Error(`agent '${name}' must be fully stopped before canonical forget`);
+    }
+    if (this.opts.ledger?.get(name)?.worktree) {
+      throw new Error(`agent '${name}' still owns a worktree; remove it explicitly before canonical forget`);
+    }
+    return {
+      ledgerSha256: this.opts.ledger?.recordDigest(name) ?? null,
+      activity: captureActivityRenameSnapshot(this.activityDir(), name),
+    };
+  }
+
+  /** Remove only captured projections; private runtime homes and external bindings are retained. */
+  async convergeCanonicalProfileForget(
+    name: string,
+    agentId: string,
+    txid: string,
+    expected: CanonicalProfileForgetSnapshot,
+  ): Promise<void> {
+    if (await this.opts.tmux.hasSession(this.session(name)) || (await this.agentStates()).has(name)) {
+      throw new Error(`canonical forget found a live or indeterminate session for '${name}'`);
+    }
+    this.opts.ledger?.removeExactDigest(name, expected.ledgerSha256);
+    convergeActivityRetirement(
+      this.activityDir(),
+      name,
+      expected.activity,
+      path.join(this.opts.workspaceRoot, ".tachyon", "retired-agent-profiles", agentId, txid, "runtime-projections"),
+    );
+    this.adhoc.delete(name);
+    this.lineage.delete(name);
+    this.delegators.delete(name);
+    this.readyAgents.delete(name);
+    this.provisionalAgents.delete(name);
+    this.readinessCache.delete(name);
+    this.stoppingSince.delete(name);
+    this.stopFailed.delete(name);
+    this.cleanExited.delete(name);
+    this.postmortemOutput.delete(name);
   }
 
   /** Idempotently converge captured live bindings after canonical profile authority commits. */

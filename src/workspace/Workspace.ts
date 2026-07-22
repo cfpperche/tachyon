@@ -40,6 +40,14 @@ import {
   commitAgentProfileRename,
   reconcileAgentProfileRenames,
 } from "../config/agentProfileRename.js";
+import {
+  agentProfileForgetBlocked,
+  agentProfileForgetRetainedNames,
+  agentProfileForgetRetentionUncertain,
+  commitAgentProfileForget,
+  reconcileAgentProfileForgets,
+  type AgentProfileForgetResult,
+} from "../config/agentProfileForget.js";
 import { composeAgentPrompt } from "../agents/promptLayers.js";
 import { SoulError, agentSoulPath, readCanonicalSoulBytes } from "../agents/soul.js";
 import {
@@ -2862,6 +2870,25 @@ export class Workspace {
       if (renames.degraded.length > 0) {
         ws.host.notify(ws.t("agent profile rename recovery found {0} degraded transaction(s); affected agents remain fail-closed", renames.degraded.length), "error");
       }
+      const forgets = await reconcileAgentProfileForgets({
+        workspaceRoot,
+        authority: ws.profileAuthorityPort(),
+        config: ws.agentProfileLifecycleConfigPort(),
+        evolution: {
+          readProfileId: async (agentName) => (await ws.evolutionStore.readProfile(agentName))?.profileId,
+          retire: (agentName, expectedProfileId) => ws.evolutionStore.retireAgent(agentName, expectedProfileId),
+        },
+        live: {
+          prepare: (agentName) => ws.manager.prepareCanonicalProfileForget(agentName),
+          converge: (agentName, agentId, txid, snapshot) => ws.manager.convergeCanonicalProfileForget(agentName, agentId, txid, snapshot),
+        },
+        activateState: () => {
+          if (!ws.reloadConfig()) throw new Error("trusted profile forget activation failed");
+        },
+      });
+      if (forgets.degraded.length > 0) {
+        ws.host.notify(ws.t("agent profile forget recovery found {0} degraded transaction(s); affected names remain fail-closed", forgets.degraded.length), "error");
+      }
     }
 
     try {
@@ -3483,7 +3510,13 @@ export class Workspace {
    */
   private gcOrphanAgentFootprints(live: Set<string>): void {
     try {
-      const known = new Set<string>([...live, ...this.ledger.all().keys(), ...Object.keys(this.config?.agents ?? {})]);
+      if (agentProfileForgetRetentionUncertain(this.workspaceRoot)) return;
+      const known = new Set<string>([
+        ...live,
+        ...this.ledger.all().keys(),
+        ...Object.keys(this.config?.agents ?? {}),
+        ...agentProfileForgetRetainedNames(this.workspaceRoot),
+      ]);
       const result = gcOrphanAgentFootprints({
         workspaceRoot: this.workspaceRoot,
         knownAgents: known,
@@ -3511,6 +3544,48 @@ export class Workspace {
       removePiSessionDir: (agent) => removePiSessionDir(this.workspaceRoot, agent),
     });
     this.removeContinuity(name);
+  }
+
+  isCanonicalProfileAgent(name: string): boolean {
+    return this.config?.agents[name]?.profileLifecycle !== undefined;
+  }
+
+  /** Recoverable retirement for a profile-backed declared agent. */
+  async forgetCanonicalProfileAgent(name: string): Promise<AgentProfileForgetResult> {
+    const lifecycle = this.config?.agents[name]?.profileLifecycle;
+    if (!lifecycle) throw new Error(`agent '${name}' is not backed by a canonical profile`);
+    const inspected = await this.inspectAgentProfileLifecycle(name);
+    const wasOpen = this.terminals.has(name);
+    if (wasOpen) this.terminals.close(name);
+    try {
+      const result = await commitAgentProfileForget({
+        workspaceRoot: this.workspaceRoot,
+        agentName: name,
+        expectedRevision: inspected.revision,
+        authority: this.profileAuthorityPort(),
+        config: this.agentProfileLifecycleConfigPort(),
+        evolution: {
+          readProfileId: async (agentName) => (await this.evolutionStore.readProfile(agentName))?.profileId,
+          retire: (agentName, expectedProfileId) => this.evolutionStore.retireAgent(agentName, expectedProfileId),
+        },
+        live: {
+          prepare: (agentName) => this.manager.prepareCanonicalProfileForget(agentName),
+          converge: (agentName, agentId, txid, snapshot) => this.manager.convergeCanonicalProfileForget(agentName, agentId, txid, snapshot),
+        },
+        activateState: () => {
+          if (!this.reloadConfig()) throw new Error("trusted profile forget activation failed");
+          this.profileSpawnBlocked.delete(name);
+        },
+      });
+      this.rebuildWatches();
+      this.refreshAgentsViews();
+      return result;
+    } catch (error) {
+      if (wasOpen && !agentProfileForgetBlocked(this.workspaceRoot, name)) {
+        this.terminals.open(name, this.manager.session(name));
+      }
+      throw error;
+    }
   }
 
   /** spec 241 OQ4 — the sidebar freshness badge: missing (no brief) | stale (≥ staleLag behind) | fresh. */
@@ -4427,14 +4502,24 @@ export class Workspace {
    * one of the authoritative workspace sets: live tmux sessions, durable session ledger, or tachyon.yml.
    */
   private compactSessionOwners(declaredInConfig: Set<string>, live: Set<string>): void {
-    const known = new Set([...live, ...this.ledger.all().keys(), ...declaredInConfig]);
+    if (agentProfileForgetRetentionUncertain(this.workspaceRoot)) return;
+    const known = new Set([
+      ...live,
+      ...this.ledger.all().keys(),
+      ...declaredInConfig,
+      ...agentProfileForgetRetainedNames(this.workspaceRoot),
+    ]);
     compactSessionOwnerRows(sessionOwnersFile(this.workspaceRoot), known);
     compactSpawnSettings(this.workspaceRoot, known);
   }
 
   private gcHarnessHomes(): void {
     try {
-      const declared = new Set(Object.keys(this.config?.agents ?? {}));
+      if (agentProfileForgetRetentionUncertain(this.workspaceRoot)) return;
+      const declared = new Set([
+        ...Object.keys(this.config?.agents ?? {}),
+        ...agentProfileForgetRetainedNames(this.workspaceRoot),
+      ]);
       const tracked = new Set(this.ledger.all().keys());
       // spec 240 — keep any home a ledger row still POINTS AT via resume.configHome (a persisted home can
       // differ from harnessHome(currentName) after a rename/toggle; a name-only keep-set would reap the live
@@ -4672,7 +4757,8 @@ export class Workspace {
    * name is not known via live config or an in-memory ad-hoc def (i.e. it would only come from LKG).
    */
   assertNotLkgOnlySpawn(name: string): void {
-    if (agentProfileLifecycleBlocked(this.workspaceRoot, name) || agentProfileRenameBlocked(this.workspaceRoot, name)) {
+    if (agentProfileLifecycleBlocked(this.workspaceRoot, name) || agentProfileRenameBlocked(this.workspaceRoot, name)
+      || agentProfileForgetBlocked(this.workspaceRoot, name)) {
       throw new Error(`cannot spawn profile-backed agent '${name}' while its lifecycle transaction requires recovery`);
     }
     if (this.profileSpawnBlocked.has(name)) {

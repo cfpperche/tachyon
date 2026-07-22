@@ -763,6 +763,14 @@ async function deleteConfiguredAgent(
     throw new Error(`agent '${agent}' still owns a worktree; remove it before deleting the agent`);
   }
   if (record?.worktree) await removeAgentWorktree(workspace, agent, true);
+  if (workspace.isCanonicalProfileAgent(agent)) {
+    if ((await workspace.manager.agentStates()).has(agent)) {
+      throw new Error(`agent '${agent}' must be fully stopped before canonical forget`);
+    }
+    await workspace.forgetCanonicalProfileAgent(agent);
+    onViewsChanged("agents");
+    return json({ changed: true });
+  }
   const states = await workspace.manager.agentStates();
   if (states.has(agent)) {
     await workspace.manager.kill(agent).catch(() => undefined);

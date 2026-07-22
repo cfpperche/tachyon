@@ -801,7 +801,7 @@ export async function reconcileAgentProfileMigrations(
   const reconciled: string[] = [];
   const degraded: string[] = [];
   for (const entry of fs.readdirSync(root)) {
-    if (entry === "locks" || entry === "lifecycle") continue;
+    if (["locks", "lifecycle", "rename", "forget"].includes(entry)) continue;
     const txDir = path.join(root, entry);
     try {
       requireSafeDirectory(input.workspaceRoot, txDir);
@@ -849,7 +849,7 @@ export function listRollbackableAgentProfileMigrations(workspaceRoot: string): R
   }
   const rows: RollbackableAgentProfileMigration[] = [];
   for (const entry of fs.readdirSync(root)) {
-    if (entry === "locks" || entry === "lifecycle") continue;
+    if (["locks", "lifecycle", "rename", "forget"].includes(entry)) continue;
     const txDir = path.join(root, entry);
     try {
       requireSafeDirectory(workspaceRoot, txDir);
