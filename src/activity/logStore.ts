@@ -66,6 +66,58 @@ export function moveActivityLog(dir: string, fromAgent: string, toAgent: string)
   }
 }
 
+export interface ActivityRenameSnapshot {
+  jsonlSha256: string | null;
+  stateSha256: string | null;
+}
+
+function fileDigest(file: string): string | null {
+  try { return createHash("sha256").update(fs.readFileSync(file)).digest("hex"); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+export function captureActivityRenameSnapshot(dir: string, agent: string): ActivityRenameSnapshot {
+  const base = path.join(dir, agentLogId(agent));
+  return {
+    jsonlSha256: fileDigest(`${base}.jsonl`),
+    stateSha256: fileDigest(`${base}.state.json`),
+  };
+}
+
+/** Exact source/target pair-state move used by recoverable canonical rename. */
+export function convergeActivityRename(
+  dir: string,
+  fromAgent: string,
+  toAgent: string,
+  expected: ActivityRenameSnapshot,
+): void {
+  const fromBase = path.join(dir, agentLogId(fromAgent));
+  const toBase = path.join(dir, agentLogId(toAgent));
+  for (const [ext, expectedDigest] of [[".jsonl", expected.jsonlSha256], [".state.json", expected.stateSha256]] as const) {
+    const from = `${fromBase}${ext}`;
+    const to = `${toBase}${ext}`;
+    const sourceDigest = fileDigest(from);
+    const targetDigest = fileDigest(to);
+    if (sourceDigest === null && targetDigest === null) {
+      if (expectedDigest !== null) throw new Error(`activity rename lost captured '${ext}' state`);
+      continue;
+    }
+    // A live writer may append or create its state after intent. Destination absence was captured
+    // before commit, so exact source/absent-target remains the owned move; absent-source/target
+    // acknowledges the same inode move after an uncertain return.
+    if (sourceDigest === null && targetDigest !== null) continue;
+    if (sourceDigest === null || targetDigest !== null) {
+      throw new Error(`activity rename '${ext}' changed outside the transaction`);
+    }
+    fs.mkdirSync(path.dirname(to), { recursive: true });
+    fs.renameSync(from, to);
+    if (fileDigest(from) !== null || fileDigest(to) !== sourceDigest) throw new Error(`activity rename '${ext}' did not converge`);
+  }
+}
+
 /** Provenance back to the canonical runtime record. `recordId` (the runtime's stable per-record id) is
  *  preferred; `byteOffset` is a locator fallback only. */
 export interface LogSource {

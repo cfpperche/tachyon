@@ -19,7 +19,12 @@ import {
   type SessionRecord,
   type SessionResume,
 } from "../resume/SessionLedger.js";
-import { moveActivityLog } from "../activity/logStore.js";
+import {
+  captureActivityRenameSnapshot,
+  convergeActivityRename,
+  moveActivityLog,
+  type ActivityRenameSnapshot,
+} from "../activity/logStore.js";
 import { sessionOwnersFile } from "../activity/sessionOwners.js";
 import { spawnContractCompletion, type DelegationGate, type SpawnContract } from "../bridge/spawnContract.js";
 import type { ResolvedCaptureSession } from "../resume/resolvers.js";
@@ -95,6 +100,12 @@ export class AgentNotRunningError extends Error {
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 const LAUNCH_READINESS_RUNTIMES = new Set<ResumeRuntime>(["codex", "claude", "grok"]);
+
+export interface CanonicalLiveRenameSnapshot {
+  sessionPresent: boolean;
+  ledgerRecord: SessionRecord | null;
+  activity: ActivityRenameSnapshot;
+}
 
 /** spec 236 — opencode honors this env var pointing at a config file (verified on 1.17.15). Tachyon
  *  sets it to the per-agent Bridge-only opencode config file it materializes, so a Tachyon-spawned
@@ -2918,6 +2929,82 @@ export class AgentManager {
     }
     const postmortem = this.postmortemOutput.get(oldName);
     if (postmortem) {
+      this.postmortemOutput.delete(oldName);
+      this.postmortemOutput.set(newName, postmortem);
+    }
+  }
+
+  /** Capture the exact durable/live bindings before canonical profile authority commits. */
+  async prepareCanonicalProfileRename(oldName: string, newName: string): Promise<CanonicalLiveRenameSnapshot> {
+    if (oldName === newName) throw new Error("canonical live rename source and destination must differ");
+    if (this.definitionOf(oldName)?.harness) {
+      throw new Error(`cannot rename '${oldName}': renaming an isolated-harness agent isn't supported yet (v1)`);
+    }
+    if (this.opts.ledger?.get(oldName)?.resume?.runtime === "pi") {
+      throw new Error(`cannot rename '${oldName}': renaming a managed Pi session isn't supported yet (phase 2)`);
+    }
+    if (this.definitionOf(newName)) throw new Error(`agent '${newName}' already exists`);
+    const oldSession = await this.opts.tmux.hasSession(this.session(oldName));
+    const newSession = await this.opts.tmux.hasSession(this.session(newName));
+    if (newSession) throw new Error(`a session named '${newName}' already exists`);
+    const ledgerRecord = this.opts.ledger?.get(oldName) ?? null;
+    if (this.opts.ledger?.get(newName)) throw new Error(`session ledger already contains '${newName}'`);
+    const targetActivity = captureActivityRenameSnapshot(this.activityDir(), newName);
+    if (targetActivity.jsonlSha256 !== null || targetActivity.stateSha256 !== null) {
+      throw new Error(`activity storage already contains '${newName}'`);
+    }
+    return {
+      sessionPresent: oldSession,
+      ledgerRecord: ledgerRecord ? structuredClone(ledgerRecord) : null,
+      activity: captureActivityRenameSnapshot(this.activityDir(), oldName),
+    };
+  }
+
+  /** Idempotently converge captured live bindings after canonical profile authority commits. */
+  async convergeCanonicalProfileRename(
+    oldName: string,
+    newName: string,
+    expected: CanonicalLiveRenameSnapshot,
+  ): Promise<void> {
+    let oldSession = await this.opts.tmux.hasSession(this.session(oldName));
+    let newSession = await this.opts.tmux.hasSession(this.session(newName));
+    if (expected.sessionPresent) {
+      if (oldSession && !newSession) {
+        try { await this.opts.tmux.renameSession(this.session(oldName), this.session(newName)); }
+        catch (error) {
+          oldSession = await this.opts.tmux.hasSession(this.session(oldName));
+          newSession = await this.opts.tmux.hasSession(this.session(newName));
+          if (oldSession || !newSession) throw error;
+        }
+        oldSession = await this.opts.tmux.hasSession(this.session(oldName));
+        newSession = await this.opts.tmux.hasSession(this.session(newName));
+      }
+      if (oldSession || !newSession) throw new Error("canonical live rename tmux ownership is ambiguous");
+    } else if (oldSession || newSession) {
+      throw new Error("canonical stopped rename found an unexpected tmux session");
+    }
+
+    this.opts.ledger?.renameExact(oldName, newName, expected.ledgerRecord);
+    convergeActivityRename(this.activityDir(), oldName, newName, expected.activity);
+
+    const def = this.adhoc.get(oldName);
+    if (def) {
+      if (this.adhoc.has(newName)) throw new Error("canonical live rename found conflicting ad-hoc state");
+      this.adhoc.delete(oldName);
+      this.adhoc.set(newName, def);
+    }
+    const parent = this.lineage.get(oldName);
+    if (parent) {
+      const targetParent = this.lineage.get(newName);
+      if (targetParent !== undefined && targetParent !== parent) throw new Error("canonical live rename found conflicting lineage");
+      this.lineage.delete(oldName);
+      this.lineage.set(newName, parent);
+    }
+    for (const [child, value] of this.lineage) if (value === oldName) this.lineage.set(child, newName);
+    for (const [child, value] of this.delegators) if (value === oldName) this.delegators.set(child, newName);
+    const postmortem = this.postmortemOutput.get(oldName);
+    if (postmortem) {
+      if (this.postmortemOutput.has(newName)) throw new Error("canonical live rename found conflicting postmortem state");
       this.postmortemOutput.delete(oldName);
       this.postmortemOutput.set(newName, postmortem);
     }

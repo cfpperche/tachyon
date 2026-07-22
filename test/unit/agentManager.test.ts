@@ -3956,6 +3956,7 @@ describe("AgentManager — session resume (spec 209)", () => {
     const { manager } = resumeHarness(HARNESS_YML, stubHarness());
     await manager.spawn("researcher");
     await expect(manager.rename("researcher", "researcher2")).rejects.toThrow("isolated-harness agent isn't supported yet");
+    await expect(manager.prepareCanonicalProfileRename("researcher", "researcher2")).rejects.toThrow("isolated-harness agent isn't supported yet");
   });
 
   it("phase 2: renaming a managed Pi agent is refused while its private session home is name-keyed", async () => {
@@ -3965,6 +3966,7 @@ describe("AgentManager — session resume (spec 209)", () => {
     });
     await manager.spawn("pi");
     await expect(manager.rename("pi", "pi2")).rejects.toThrow("managed Pi session isn't supported yet");
+    await expect(manager.prepareCanonicalProfileRename("pi", "pi2")).rejects.toThrow("managed Pi session isn't supported yet");
   });
 
   // spec 236 — the Bridge reaches EVERY Tachyon-spawned agent via withRuntimeBridge (one shared step).
@@ -4847,6 +4849,62 @@ describe("AgentManager — restart terminal lifecycle (t-4d2630 respawn keeps cl
 });
 
 describe("live rename (agent/terminal, running or not)", () => {
+  it("converges a captured canonical live rename idempotently across tmux, ledger, lineage and activity", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-canonical-live-rename-"));
+    try {
+      const ledger = new SessionLedger(dir);
+      ledger.record("reviewer", { resume: { runtime: "codex", sessionId: "session-1" }, cwd: dir, declared: true });
+      ledger.record("child", { def: { cmd: "sh", kind: "terminal", parent: "reviewer", delegator: "reviewer" }, cwd: dir, declared: false });
+      const fake = fakeTmux();
+      const hash = workspaceHash(dir);
+      fake.sessions.add(`tachyon-${hash}-reviewer`);
+      const activityDir = path.join(dir, ".tachyon", "activity");
+      fs.mkdirSync(activityDir, { recursive: true });
+      fs.writeFileSync(path.join(activityDir, `${agentLogId("reviewer")}.jsonl`), "event\n");
+      const manager = new AgentManager({
+        tmux: fake.tmux,
+        wsHash: hash,
+        workspaceRoot: dir,
+        ledger,
+        getConfig: () => configOf("agents:\n  reviewer:\n    cmd: codex\n"),
+        getMaxAgents: () => 8,
+      });
+      await manager.rehydrateFromLedger();
+      const snapshot = await manager.prepareCanonicalProfileRename("reviewer", "maintainer");
+      fs.appendFileSync(path.join(activityDir, `${agentLogId("reviewer")}.jsonl`), "late event\n");
+
+      await manager.convergeCanonicalProfileRename("reviewer", "maintainer", snapshot);
+      await manager.convergeCanonicalProfileRename("reviewer", "maintainer", snapshot);
+
+      expect(fake.sessions.has(`tachyon-${hash}-reviewer`)).toBe(false);
+      expect(fake.sessions.has(`tachyon-${hash}-maintainer`)).toBe(true);
+      expect(ledger.get("reviewer")).toBeUndefined();
+      expect(ledger.get("maintainer")?.resume?.sessionId).toBe("session-1");
+      expect(ledger.get("child")?.def).toMatchObject({ parent: "maintainer", delegator: "maintainer" });
+      expect((await manager.list()).find((agent) => agent.name === "child")?.parent).toBe("maintainer");
+      expect(fs.existsSync(path.join(activityDir, `${agentLogId("reviewer")}.jsonl`))).toBe(false);
+      expect(fs.readFileSync(path.join(activityDir, `${agentLogId("maintainer")}.jsonl`), "utf8")).toBe("event\nlate event\n");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("acknowledges tmux rename success when the command result is lost", async () => {
+    const { manager, sessions } = makeManager("agents:\n  reviewer:\n    cmd: codex\n");
+    await manager.spawn("reviewer");
+    const snapshot = await manager.prepareCanonicalProfileRename("reviewer", "maintainer");
+    const oldSession = manager.session("reviewer");
+    const newSession = manager.session("maintainer");
+    vi.spyOn((manager as unknown as { opts: { tmux: TmuxService } }).opts.tmux, "renameSession").mockImplementationOnce(async () => {
+      sessions.delete(oldSession);
+      sessions.add(newSession);
+      throw new Error("lost result");
+    });
+    await expect(manager.convergeCanonicalProfileRename("reviewer", "maintainer", snapshot)).resolves.toBeUndefined();
+    expect(sessions.has(oldSession)).toBe(false);
+    expect(sessions.has(newSession)).toBe(true);
+  });
+
   it("renames a LIVE session in place and the new name answers", async () => {
     const { manager, sessions } = makeManager("agents:\n  claude:\n    cmd: claude\n  pilot:\n    cmd: x\n");
     await manager.spawn("claude");

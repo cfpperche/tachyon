@@ -5,6 +5,7 @@ import { isDeepStrictEqual } from "node:util";
 import { parseDocument } from "yaml";
 import type { AgentProfileAuthorityRecord } from "./agentProfileAuthority.js";
 import { inspectAgentProfileLifecycle } from "./agentProfileLifecycle.js";
+import type { CanonicalLiveRenameSnapshot } from "../agents/AgentManager.js";
 import {
   acquireAgentProfileRecoveryLocks,
   acquireAgentProfileTransactionLocks,
@@ -25,6 +26,7 @@ export type AgentProfileRenamePhase =
   | "authority-moved"
   | "locator-written"
   | "evolution-moved"
+  | "live-converged"
   | "activated"
   | "committed"
   | "degraded";
@@ -49,6 +51,7 @@ export interface AgentProfileRenameJournal {
   sourceStanzaSha256: string;
   targetStanzaSha256: string;
   evolutionProfileId: string | null;
+  liveSnapshot: CanonicalLiveRenameSnapshot | null;
   degradedReason?: string;
 }
 
@@ -70,6 +73,10 @@ export interface CommitAgentProfileRenameInput {
   authority: AgentProfileMigrationAuthorityPort;
   config: AgentProfileRenameConfigPort;
   evolution: AgentProfileRenameEvolutionPort;
+  live?: {
+    prepare(oldAgentName: string, newAgentName: string): Promise<CanonicalLiveRenameSnapshot>;
+    converge(oldAgentName: string, newAgentName: string, snapshot: CanonicalLiveRenameSnapshot): Promise<void>;
+  };
   activateState: () => void;
   onPhase?: (phase: AgentProfileRenamePhase) => void;
 }
@@ -327,17 +334,25 @@ async function rollForward(input: CommitAgentProfileRenameInput, txDir: string, 
   const newRoot = profileRoot(input.workspaceRoot, journal.newAgentName);
   if (!sameManifestPart(newRoot, journal.profileManifest, "profile")) throw new Error("profile rename target tree changed");
   writeTargetLocator(input, journal);
-  if (journal.phase !== "locator-written" && journal.phase !== "evolution-moved" && journal.phase !== "activated" && journal.phase !== "committed") {
+  if (journal.phase !== "locator-written" && journal.phase !== "evolution-moved" && journal.phase !== "live-converged"
+    && journal.phase !== "activated" && journal.phase !== "committed") {
     journal = transition(txDir, journal, "locator-written", input.onPhase);
   }
   await convergeEvolution(input, journal);
-  if (journal.phase !== "evolution-moved" && journal.phase !== "activated" && journal.phase !== "committed") {
+  if (journal.phase !== "evolution-moved" && journal.phase !== "live-converged" && journal.phase !== "activated" && journal.phase !== "committed") {
     journal = transition(txDir, journal, "evolution-moved", input.onPhase);
   }
   if (exists(oldRoot)) {
     if (fs.readdirSync(oldRoot).length !== 0) throw new Error("profile rename source home retained unexpected data");
     fs.rmdirSync(oldRoot);
     syncDirectory(path.dirname(oldRoot));
+  }
+  if (journal.liveSnapshot) {
+    if (!input.live) throw new Error("profile rename recovery requires live convergence support");
+    await input.live.converge(journal.oldAgentName, journal.newAgentName, journal.liveSnapshot);
+    if (journal.phase !== "live-converged" && journal.phase !== "activated" && journal.phase !== "committed") {
+      journal = transition(txDir, journal, "live-converged", input.onPhase);
+    }
   }
   input.activateState();
   journal = transition(txDir, journal, "activated", input.onPhase);
@@ -398,6 +413,7 @@ export async function commitAgentProfileRename(input: CommitAgentProfileRenameIn
     const newRoot = profileRoot(input.workspaceRoot, input.newAgentName);
     if (exists(newRoot)) throw new Error(`canonical profile home for '${input.newAgentName}' already exists`);
     const profileManifest = treeManifest(oldRoot);
+    const liveSnapshot = input.live ? await input.live.prepare(input.oldAgentName, input.newAgentName) : null;
     const targetAuthority = { ...sourceAuthority, agentName: input.newAgentName };
     const root = ensureRenameRoot(input.workspaceRoot);
     txDir = path.join(root, txid);
@@ -416,6 +432,7 @@ export async function commitAgentProfileRename(input: CommitAgentProfileRenameIn
       sourceStanzaSha256: configTarget.sourceSha,
       targetStanzaSha256: configTarget.targetSha,
       evolutionProfileId: oldEvolution ?? null,
+      liveSnapshot,
     };
     writeJournal(txDir, journal);
     input.onPhase?.("intent");

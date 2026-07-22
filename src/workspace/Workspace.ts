@@ -2851,6 +2851,10 @@ export class Workspace {
           readProfileId: async (agentName) => (await ws.evolutionStore.readProfile(agentName))?.profileId,
           rename: (oldAgentName, newAgentName) => ws.evolutionStore.renameAgent(oldAgentName, newAgentName),
         },
+        live: {
+          prepare: (oldAgentName, newAgentName) => ws.manager.prepareCanonicalProfileRename(oldAgentName, newAgentName),
+          converge: (oldAgentName, newAgentName, snapshot) => ws.manager.convergeCanonicalProfileRename(oldAgentName, newAgentName, snapshot),
+        },
         activateState: () => {
           if (!ws.reloadConfig()) throw new Error("trusted profile rename activation failed");
         },
@@ -5466,9 +5470,12 @@ export class Workspace {
   async renameAgent(oldName: string, newName: string): Promise<void> {
     const profileLifecycle = this.config?.agents[oldName]?.profileLifecycle;
     if (profileLifecycle) {
-      await this.assertAgentStoppedForProfileMigration(oldName);
+      const liveSnapshot = await this.manager.prepareCanonicalProfileRename(oldName, newName);
       const inspected = await this.inspectAgentProfileLifecycle(oldName);
-      await commitAgentProfileRename({
+      const wasOpen = this.terminals.has(oldName);
+      if (wasOpen) this.terminals.close(oldName);
+      try {
+        await commitAgentProfileRename({
         workspaceRoot: this.workspaceRoot,
         oldAgentName: oldName,
         newAgentName: newName,
@@ -5479,12 +5486,33 @@ export class Workspace {
           readProfileId: async (agentName) => (await this.evolutionStore.readProfile(agentName))?.profileId,
           rename: (oldAgentName, newAgentName) => this.evolutionStore.renameAgent(oldAgentName, newAgentName),
         },
+        live: {
+          prepare: async () => liveSnapshot,
+          converge: (oldAgentName, newAgentName, snapshot) => this.manager.convergeCanonicalProfileRename(oldAgentName, newAgentName, snapshot),
+        },
         activateState: () => {
           if (!this.reloadConfig()) throw new Error("trusted profile rename activation failed");
           this.profileSpawnBlocked.delete(oldName);
           this.profileSpawnBlocked.delete(newName);
         },
-      });
+        });
+      } catch (error) {
+        if (wasOpen && !agentProfileRenameBlocked(this.workspaceRoot, oldName)
+          && !agentProfileRenameBlocked(this.workspaceRoot, newName)) {
+          this.terminals.open(oldName, this.manager.session(oldName));
+        }
+        throw error;
+      }
+      this.pendingAnchor.delete(newName);
+      if (this.pendingAnchor.delete(oldName)) this.pendingAnchor.add(newName);
+      this.agentIncarnations.delete(newName);
+      const incarnation = this.agentIncarnations.get(oldName);
+      if (incarnation !== undefined) {
+        this.agentIncarnations.delete(oldName);
+        this.agentIncarnations.set(newName, incarnation);
+        this.agentIncarnationCounters.set(newName, Math.max(this.agentIncarnationCounters.get(newName) ?? 0, incarnation));
+      }
+      if (wasOpen) this.terminals.open(newName, this.manager.session(newName));
       this.rebuildWatches();
       this.refreshAgentsViews();
       return;

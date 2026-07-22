@@ -176,6 +176,17 @@ function fakeTmux(opts: { realPaneProcesses?: boolean } = {}) {
       dead.delete(name);
       panes.delete(name);
     }
+    if (args[2] === "rename-session") {
+      const oldName = args[args.indexOf("-t") + 1].replace(/^=/, "");
+      const newName = args.at(-1)!;
+      if (!sessions.has(oldName) || sessions.has(newName)) throw new Error("rename conflict");
+      sessions.delete(oldName);
+      sessions.add(newName);
+      if (dead.has(oldName)) { dead.set(newName, dead.get(oldName)!); dead.delete(oldName); }
+      if (panes.has(oldName)) { panes.set(newName, panes.get(oldName)!); panes.delete(oldName); }
+      const child = children.get(oldName);
+      if (child) { children.delete(oldName); children.set(newName, child); }
+    }
     return { stdout: "", stderr: "" };
   };
   return { sessions, dead, sent, panes, calls, children, replacePaneProcess, cleanup: async () => { await Promise.all([...children.keys()].map(stop)); }, tmux: new TmuxService(exec) };
@@ -345,7 +356,7 @@ it("creates, edits and disables a canonical profile through the Workspace lifecy
   }
 });
 
-it("renames a stopped canonical profile through the Workspace transaction boundary", async () => {
+it("renames a running canonical profile and keeps the same live session through the Workspace transaction boundary", async () => {
   const root = mkdir();
   const homeDir = mkdir();
   fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nsettings:\n  auth: false\n");
@@ -364,6 +375,9 @@ it("renames a stopped canonical profile through the Workspace transaction bounda
       createProfile: { runtime: { adapter: "codex", executable: "codex" } },
     });
     const evolution = await ws.evolutionStore.ensureProfile("reviewer");
+    await ws.manager.spawn("reviewer");
+    ws.terminals.open("reviewer", ws.manager.session("reviewer"));
+    expect(fake.sessions.has(ws.manager.session("reviewer"))).toBe(true);
     await ws.renameAgent("reviewer", "maintainer");
 
     expect(ws.config?.agents.reviewer).toBeUndefined();
@@ -373,6 +387,10 @@ it("renames a stopped canonical profile through the Workspace transaction bounda
     expect(await ws.evolutionStore.readProfile("maintainer")).toMatchObject({ profileId: evolution.profileId, agent: "maintainer" });
     expect(fs.existsSync(path.join(root, ".tachyon", "agents", "reviewer"))).toBe(false);
     expect(fs.existsSync(path.join(root, ".tachyon", "agents", "maintainer", "agent.yml"))).toBe(true);
+    expect(fake.sessions.has(ws.manager.session("reviewer"))).toBe(false);
+    expect(fake.sessions.has(ws.manager.session("maintainer"))).toBe(true);
+    expect(ws.terminals.has("reviewer")).toBe(false);
+    expect(ws.terminals.has("maintainer")).toBe(true);
   } finally {
     ws.dispose();
   }

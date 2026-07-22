@@ -235,6 +235,47 @@ describe("canonical agent profile rename", () => {
     expect(agentProfileRenameBlocked(input.root, "maintainer")).toBe(false);
   });
 
+  it("replays live convergence when its first acknowledgement is lost", async () => {
+    const input = await fixture();
+    const snapshot = { sessionPresent: false, ledgerRecord: null, activity: { jsonlSha256: null, stateSha256: null } };
+    let liveMoved = false;
+    let calls = 0;
+    const live = {
+      prepare: async () => snapshot,
+      converge: async () => {
+        calls++;
+        if (!liveMoved) {
+          liveMoved = true;
+          throw new Error("lost live acknowledgement");
+        }
+      },
+    };
+    await expect(commitAgentProfileRename({
+      workspaceRoot: input.root,
+      oldAgentName: "reviewer",
+      newAgentName: "maintainer",
+      expectedRevision: input.created.revision,
+      authority: input.authority,
+      config: input.config,
+      evolution: input.evolution,
+      live,
+      activateState: () => undefined,
+    })).rejects.toThrow("lost live acknowledgement");
+    expect(agentProfileRenameBlocked(input.root, "maintainer")).toBe(true);
+
+    const recovered = await reconcileAgentProfileRenames({
+      workspaceRoot: input.root,
+      authority: input.authority,
+      config: input.config,
+      evolution: input.evolution,
+      live,
+      activateState: () => undefined,
+    });
+    expect(recovered.degraded).toEqual([]);
+    expect(calls).toBe(2);
+    expect(agentProfileRenameBlocked(input.root, "maintainer")).toBe(false);
+  });
+
   it("rejects destination collisions before moving durable state", async () => {
     const input = await fixture();
     input.evolution.profiles.set("maintainer", "other-profile");

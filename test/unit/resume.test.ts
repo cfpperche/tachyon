@@ -251,6 +251,21 @@ describe("encodeGrokCwd / grokTranscriptPath (t-9874be)", () => {
 });
 
 describe("SessionLedger", () => {
+  it("renames one exact row and child lineage in one replayable replacement", () => {
+    const ws = tmpWs();
+    const ledger = new SessionLedger(ws);
+    ledger.record("parent", { def: { cmd: "codex", kind: "agent" }, cwd: ws, declared: false });
+    ledger.record("child", { def: { cmd: "sh", kind: "terminal", parent: "parent", delegator: "parent" }, cwd: ws, declared: false });
+    const expected = ledger.get("parent")!;
+
+    ledger.renameExact("parent", "boss", expected);
+    expect(ledger.get("parent")).toBeUndefined();
+    expect(ledger.get("boss")).toEqual(expected);
+    expect(ledger.get("child")?.def).toMatchObject({ parent: "boss", delegator: "boss" });
+    expect(() => ledger.renameExact("parent", "boss", expected)).not.toThrow();
+    expect(() => ledger.renameExact("parent", "other", expected)).toThrow("ambiguous");
+  });
+
   const dirs: string[] = [];
   const tmpWs = (): string => {
     const d = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-ledger-"));
