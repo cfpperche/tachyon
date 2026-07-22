@@ -243,6 +243,36 @@ Requirements: `Xvfb`, `puppeteer-core` (dep), a compatible VS Code binary (`reso
 strips `VSCODE_IPC_HOOK_CLI`/`ELECTRON_RUN_AS_NODE` from the child env so it never hijacks the human's
 live window. Uses display `:97` (distinct from the S1 lane's `:96`) and its own private profile dirs.
 
+### Exploratory session (drive it live, verb-by-verb)
+
+`headless-interactive.mjs` runs ONE scenario then exits — great for a canned repro. For **exploratory**
+dogfood (boot once → look → act → look → decide the next step) use `headless-session.mjs`: `up` launches
+the pointed Dev Host once under Xvfb + CDP and leaves it running detached; every later verb makes a
+fresh cheap CDP connection, does one thing, prints a JSON line, disconnects. No relaunch between steps.
+
+```bash
+node scripts/dev-host/headless-session.mjs up                       # boot once (detached), ~10s
+node scripts/dev-host/headless-session.mjs cmd "Tachyon: Open Control"
+node scripts/dev-host/headless-session.mjs eval control "[...document.querySelectorAll('.ck-tabs button')].map(b=>b.textContent.trim())"
+node scripts/dev-host/headless-session.mjs click control "Fleet"
+node scripts/dev-host/headless-session.mjs dom control "[data-testid='control-fleet'] button"
+node scripts/dev-host/headless-session.mjs shot fleet             # → session-out/fleet.png (Read it)
+node scripts/dev-host/headless-session.mjs down                     # kill EDH + Xvfb
+```
+
+Verbs: `up`/`down`/`status`/`sleep`/`cmd`/`shot`/`frames`/`eval`/`click`/`click-testid`/`dom`/
+`spy-console`/`console`/`steps`. `<frame>` is the alias `control` (built-in Control-webview predicate)
+or any JS predicate string that returns truthy inside the target frame. `spy-console <frame>` installs
+a `console.*`/error mirror in the frame and `console <frame> [n]` reads it back — this is how you get
+the **webview's own** console (the parent CDP target can't see it).
+
+Guided/batch mode: `steps <file.json>` runs `[{ "verb": "...", "args": [...] }, ...]` in order (insert
+`{ "verb": "sleep", "args": ["2000"] }` between actions to let the UI settle) and prints a result
+array; it stops at the first failing step unless that step has `"continueOnError": true`. Session
+state lives in `.tachyon/dev-host/session.json`; screenshots/logs in `.tachyon/dev-host/session-out/`.
+`up` refuses if a session is already live (`--force` overrides a stale one). **Always `down` when
+finished** — a detached EDH left running holds the CDP port and the pointer's engine.
+
 ---
 
 ## Optional: GUI launch
