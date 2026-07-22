@@ -82,14 +82,20 @@ landing gates with security probes._
       caught a real bug (`ws.config?.agents[c.name]` read by plain index — a webview-message `name`
       of "constructor"/"__proto__"/"toString" would resolve an inherited Object.prototype property
       instead of `undefined`, slipping past the "not declared" guard; fixed with `Object.hasOwn`).
-- [ ] D1d: after a successful `studio-new` save, `beginStudioSave` (studioHost.ts) never updates the
-      binding's `entityId` to the newly-persisted entity, and no studio's App.tsx handles a `save`
-      reply to re-request a fresh load — so a form stays effectively in "new" mode client-side even
-      after a real save succeeded. Invisible for command/terminal/runbook/schedule (no post-save
-      domain actions); real UX gap for Agent Studio (soul/evolution actions need a named, saved
-      entity). Needs `StudioSaveResult`'s "ok" case to optionally carry the persisted entity id
-      (adapter.ts — a shared-interface change touching every adapter) + a fresh load push on success.
-      Found during D1b's code review (2026-07-21); not a blocker for D1b's landing.
+- [x] D1d: `StudioSaveResult`'s "ok" case now optionally carries the newly-persisted entity's id
+      (`entityId?: string`, adapter.ts), threaded through `mapStudioSubmitResult` and all 5
+      `*StudioAdapter.save()` calls via `patch.name`. `beginStudioSave` (studioHost.ts) adopts it into
+      the binding (`b.entityId`, `b.mode` → "edit") and re-runs `sendStudioLoad` on success, so a
+      `studio-new` form no longer stays stuck in "new" mode after a real save — closes the D1b-found
+      gap (soul/evolution actions in Agent Studio are post-save follow-ups gated on a named entity).
+      Landed `27d1af96` (2026-07-22); 1 adversarial probe round (2 false positives traced to
+      incomplete pasted diff context — a pre-existing `binding !== b` guard already covers the
+      claimed race; 3 real findings fixed/documented: an empty-string entityId silently dropped by a
+      truthy check, a documented known-limitation note on `b.route` staying `studio-new` post-adopt
+      (draft-cache/dedup identity split — checkpoint flow still protects against silent loss, just
+      caches under the wrong slot), and a doc-comment on the `patch.name`-as-persisted-key invariant).
+      Also fixed 2 unrelated pre-existing typecheck breaks discovered blocking this landing on main
+      (companion LAN/pair-QR work from other agents, `129c7a9b`) — not part of D1d's scope.
 - [ ] D2: Task Studio (CAS/rich-doc/visuals, task-edit→task-detail chain) + CSP tranche 1 + security probe; retires TaskStudioPanel (closes C.1b).
 - [ ] D3: Pin Studio (Excalidraw, attachment roots, nav-less returnRoute) + CSP tranche 2 + security probe; retires PinStudioPanel (closes C.4).
 
