@@ -49,12 +49,16 @@ protocol-completeness findings → v3). Product sign-offs recorded: draft policy
 landing gates with security probes._
 
 - [x] D0: router kinds (studio-new/studio-edit + StudioId) + STUDIO_REGISTRY + StudioRouteHost + nav-transaction FSM + mount handshake + revisioned persistence + draft cache + Command Studio pilot; retire CommandStudioPanel. DoD includes a design-conformance probe on the real FSM code. Landed `3aa19029` (2026-07-21); implemented inline (Fable, maintainer-authorized exception) with 6 adversarial probe rounds (2 design + 4 code) before landing.
-- [ ] D1a: Terminal + Runbook + Schedule Studio (shared shape, reuses D0's FSM as-is + a new
+- [x] D1a: Terminal + Runbook + Schedule Studio (shared shape, reuses D0's FSM as-is + a new
       generic `refreshStudioReferenceData` push for Runbook/Schedule's live command/agent catalogs);
-      retire the 3 hosts. Split from D1 in-flight (2026-07-21): Agent Studio's evolution/soul-profile
+      retired the 3 hosts. Split from D1 in-flight (2026-07-21): Agent Studio's evolution/soul-profile
       domain messages are ~5x the size of the other three combined — bundling it into the same PR
-      mixed risk profiles for no reason, so it moves to its own D1b. In progress (inline, same
-      Fable-implements/probe-review mode as D0, maintainer re-confirmed 2026-07-21 for D1-D3).
+      mixed risk profiles for no reason, so it moved to its own D1b. Landed `ac87346e` (2026-07-21);
+      implemented inline (Fable, maintainer-authorized exception re-confirmed for D1-D3) with 2
+      adversarial probe rounds; round 1 caught a real cross-studio state-residue crash (a stale
+      `studioIncoming` message from the PREVIOUS studio landing in a freshly-mounted DIFFERENT
+      studio) + a missing Terminal `referenceData` handler, both fixed; round 2 verified the fix
+      against studioHost.ts's actual binding-teardown ordering (no late-message race).
 - [ ] D1b: Agent Studio (soul profile + evolution candidates messaging); retire AgentStudioPanel.
 - [ ] D1c: Fleet agent rows are missing a "Probes" and an "Agent Studio" (edit) button — today only
       Stop/Start, Terminal, Activity are wired (maintainer screenshot, 2026-07-21). The agent-probes
