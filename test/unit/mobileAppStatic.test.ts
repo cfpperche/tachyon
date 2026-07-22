@@ -39,12 +39,23 @@ describe("companion mobile static serve (SDD 422 one-QR)", () => {
     expect(isCompanionPath("/companion/v1/pair")).toBe(true);
   });
 
-  it("maps SPA paths and blocks traversal", () => {
+  it("maps SPA paths and blocks traversal / encoding tricks", () => {
     const dist = makeDist();
     expect(companionAppFilePath("/companion/app", dist)?.endsWith("index.html")).toBe(true);
     expect(companionAppFilePath("/companion/app/", dist)?.endsWith("index.html")).toBe(true);
     expect(companionAppFilePath("/companion/app/app.js", dist)?.endsWith("app.js")).toBe(true);
+    // Traversal
     expect(companionAppFilePath("/companion/app/../secret", dist)).toBeUndefined();
+    expect(companionAppFilePath("/companion/app/%2e%2e/secret", dist)).toBeUndefined();
+    expect(companionAppFilePath("/companion/app/%2e%2e%2fsecret", dist)).toBeUndefined();
+    expect(companionAppFilePath("/companion/app/%252e%252e/secret", dist)).toBeUndefined();
+    expect(companionAppFilePath("/companion/app/foo/../../etc/passwd", dist)).toBeUndefined();
+    expect(companionAppFilePath("/companion/app/..\\secret", dist)).toBeUndefined();
+    // Missing asset → 404 (not SPA HTML spoof)
+    expect(companionAppFilePath("/companion/app/missing.js", dist)).toBeUndefined();
+    expect(companionAppFilePath("/companion/app/no-such.css", dist)).toBeUndefined();
+    // Bare client path → index SPA fallback
+    expect(companionAppFilePath("/companion/app/some-route", dist)?.endsWith("index.html")).toBe(true);
   });
 
   it("resolveCompanionMobileDist finds extension media", () => {
@@ -108,5 +119,33 @@ describe("companion mobile static serve (SDD 422 one-QR)", () => {
     const req = { url: "/companion/v1/health", method: "GET" } as http.IncomingMessage;
     const res = { writeHead() {}, end() {} } as unknown as http.ServerResponse;
     expect(serveCompanionMobileApp(req, res, dist)).toBe(false);
+  });
+
+  it("rejects POST and 404s missing assets; HEAD has empty body", async () => {
+    const dist = makeDist();
+    const pairing = new CompanionPairingService({
+      engineLabel: "demo",
+      engineId: "x",
+      getBaseUrl: () => "http://127.0.0.1:1",
+    });
+    const server = http.createServer((req, res) => {
+      void handleCompanionHttp(req, res, { pairing, mobileDistRoot: dist });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const { port } = server.address() as AddressInfo;
+    try {
+      const post = await fetch(`http://127.0.0.1:${port}/companion/app/`, { method: "POST" });
+      expect(post.status).toBe(405);
+
+      const missing = await fetch(`http://127.0.0.1:${port}/companion/app/nope.js`);
+      expect(missing.status).toBe(404);
+
+      const head = await fetch(`http://127.0.0.1:${port}/companion/app/app.js`, { method: "HEAD" });
+      expect(head.status).toBe(200);
+      expect(head.headers.get("x-content-type-options")).toBe("nosniff");
+      expect(await head.text()).toBe("");
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((e) => (e ? reject(e) : resolve())));
+    }
   });
 });
