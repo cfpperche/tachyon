@@ -75,12 +75,32 @@ Approvals — dual `tachyon.openApprovals` vs cockpit section is the proof targe
   multi-instance thin-host exception for task detail/handoff/probes) had been dead since Phase C
   closed it, but the type union and `docs/STYLEGUIDE.md` still described it as available. Removed
   the union member (the invariant is compiler-enforced now) and corrected STYLEGUIDE.md. Landed `43164ebb`.
-- **Visual QA — Approvals pilot vs Fleet:** never formally recorded (no Evidence/Verdict pair). The
-  maintainer explicitly accepted this as closed via real production usage instead of a retroactive
-  QA pass — Approvals has run in production as the Phase A pilot for weeks with no reported
-  regression, and every migrated section/studio since has followed the exact same shell pattern
-  without incident. Decision recorded 2026-07-22; treating Phase A's + Verification's "Pilot visual
-  QA recorded" items as satisfied by this acceptance, not by a written A/B comparison.
+- **Visual QA — every migrated surface, not just the Approvals pilot:** re-read `spec.md`'s own
+  acceptance criteria (the contract, not just `tasks.md`'s checklist) and found its "a migrated
+  surface has one host path" scenario explicitly asks for per-surface Evidence/Verdict — broader
+  than what had been discussed as just the Approvals pilot. No individual studio (D0-D3) or Phase
+  B/C section ever got a formal recorded A/B either. The maintainer explicitly extended the SAME
+  acceptance-via-real-usage decision to ALL of them (2026-07-22), not just Approvals: every migrated
+  section/studio has run in production following the identical shell pattern (`PageChrome` + kit
+  `Button`/`IconButton`, no bare-button overrides) with no reported regression. Treating spec.md's
+  per-surface visual-QA scenario, and tasks.md's Phase A/Verification "Pilot visual QA recorded"
+  items, as satisfied by this acceptance for every surface — not by a written A/B comparison per
+  surface.
+- **Confirmed nothing planned was skipped:** cross-checked `plan.md`'s Phase B table (7 rows),
+  Phase C migration groups (C.1-C.4), and Phase D's studio list against `tasks.md`'s actual `[x]`
+  state and the live `src/webview/surfaces.ts` manifest (whose own coverage is enforced by
+  `webviewConvention.test.ts`, green) — every row shipped. Phase D's original scope (plan.md, written
+  before the 2026-07-21 regrouping) named 5 studios (Agent/Terminal/Command/Runbook/Schedule); Task
+  and Pin were added to it later (C.1b/C.4 folded in) and also shipped, as D2/D3 — 7 studios total,
+  all landed. `plan.md`'s own "Phase D — Studios" section text and its multi-instance decision row
+  were never updated to reflect this — see the `plan.md` fix immediately below.
+- Found one more real drift while doing this cross-check: `ApprovalPanelManager` has been a pure
+  redirect stub (no `createWebviewPanel` call) since the Phase A pilot itself, but its esbuild
+  target, `main.tsx`, `WEBVIEW_SURFACES` row, and dev-harness route all kept existing/building
+  regardless — the exact "dead bundle" class Phase E's own task line was supposed to catch. Retired
+  all four, matching every other panel's shape; also dropped `legacy-redirect` + the paired
+  `cockpitSectionId` field (Approvals was the only user) from `WebviewEditorHome`/`WebviewSurface`.
+  Landed `70c7524f`.
 - **Cookbook:** added `cookbook.md` (the section/studio recipe, distilled from 7 real applications —
   Approvals + 6 studios). Landed `c973b8fc`.
 - **Spec closure line (`spec.md`'s `Status: draft`):** deliberately DEFERRED — the maintainer wants

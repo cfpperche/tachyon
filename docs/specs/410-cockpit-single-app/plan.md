@@ -108,6 +108,12 @@ in an adversarial dueto before implementation.
 - The 5 studio shells (Agent/Terminal/Command/Runbook/Schedule) become routes on the Phase C
   router (`fleet/agent/new` etc.); `StudioFrame` preserved.
 - Same `WEBVIEW_SURFACES` retirement discipline.
+- **Regrouped 2026-07-21 (maintainer decision, t-610705):** Task Studio (originally C.1b) and Pin
+  Studio (originally C.4) folded into this phase as D2/D3 — same router, same retirement discipline,
+  just sequenced with the other studios instead of Phase C. Final scope: **7 studios**
+  (Agent/Terminal/Command/Runbook/Schedule/Task/Pin), all landed. Task needed CAS concurrency + a
+  task-edit→task-detail breadcrumb parent (not a flat section); Pin is the one nav-less studio (no
+  fixed Control nav tab — see `studios-routes-design.md`'s `returnRoute` mechanism).
 
 ### Phase E — Cleanup
 
@@ -124,7 +130,7 @@ in an adversarial dueto before implementation.
 | Pilot | **Approvals** | TBD at kickoff |
 | Lazy import | **Phase A mechanism** | Lazy only for studios |
 | Eager budget | **≤ 350 KB cockpit.js through Phase B** | Measure-only |
-| Multi-instance (task/handoff/probes) | **Standing thin-host exception (B)** until human picks A | Silent singleton |
+| Multi-instance (task/handoff/probes) | ~~Standing thin-host exception (B) until human picks A~~ **SUPERSEDED 2026-07-21**: all screens open as Control subroutes (internal router, SPA/Linear-style); no multi-instance/tabbed support was added — see Phase C's own header note. | Silent singleton; cockpit gaining multi-instance/tabbed support (Option A) |
 | Migration | Foundation → PR-per-surface | Big-bang |
 | Dual Approvals path | Close in pilot/B1 | Leave forever |
 
