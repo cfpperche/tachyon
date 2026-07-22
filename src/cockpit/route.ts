@@ -25,6 +25,7 @@
  */
 import type { CockpitSectionId } from "./model.js";
 import { resolveCockpitSection, isCockpitSectionId } from "./resolveSection.js";
+import { isStudioId, type StudioId } from "./studioIds.js";
 
 /** A top-level Control tab. Sections have no parent — they ARE the top of the hierarchy. */
 export interface CockpitSectionRoute {
@@ -77,17 +78,64 @@ export interface CockpitWorkspaceProbesRoute {
   readonly wsHash: string;
 }
 
-// C.1 also adds task-new/task-edit (Task Studio — deferred pending its own design pass, since it
-// shares StudioPanelManagerBase with 8 other panels); C.3 folds handoff into a section (no new
-// kind); C.4 adds pinEdit. Extend this union, then satisfy parentRoute/decodeRoute/refreshPolicy/
+/**
+ * t-610705 (SDD 410 Phase D, D0) — a fresh (unsaved) entity being drafted for one of the
+ * StudioPanelManagerBase-based studios (studios-routes-design.md). `studio` is the closed
+ * `StudioId` union — NOT 14 explicit route kinds, per the design dueto's Q1 (sound as long as
+ * StudioId stays a true runtime discriminator: `satisfies Record<StudioId,...>` registries, no
+ * casts, one exhaustive test — see studioRegistry.ts). `wsHash` is the immutable workspace locator,
+ * same reasoning as every other entity route in this file.
+ */
+export interface CockpitStudioNewRoute {
+  readonly kind: "studio-new";
+  readonly studio: StudioId;
+  readonly wsHash: string;
+}
+
+/**
+ * t-610705 (SDD 410 Phase D, D0) — an existing entity open for edit in a studio. `entityId` is the
+ * adapter's own id space (e.g. a command name) — opaque to the router.
+ */
+export interface CockpitStudioEditRoute {
+  readonly kind: "studio-edit";
+  readonly studio: StudioId;
+  readonly wsHash: string;
+  readonly entityId: string;
+}
+
+// C.1 also adds task-new/task-edit... superseded: Task Studio (task-edit/task-new) now lands as
+// studio-new/studio-edit with studio:"task" in Phase D D2 (studios-routes-design.md), not a
+// separate route kind — same for Pin Studio (D3, studio:"pin", nav-less parent policy). C.3 folded
+// handoff into a section (no new kind, unaffected). Extend the union below (a new StudioId member,
+// added to studioIds.ts's STUDIO_IDS), then satisfy parentRoute/decodeRoute/refreshPolicy/
 // navSection's exhaustiveness checks — the compiler is the checklist (assertNeverRoute's `never`
-// parameter fails to compile until every function below handles the new kind).
+// parameter fails to compile until every function below handles the new kind/studio).
 export type CockpitRoute =
   | CockpitSectionRoute
   | CockpitTaskDetailRoute
   | CockpitAgentActivityRoute
   | CockpitAgentProbesRoute
-  | CockpitWorkspaceProbesRoute;
+  | CockpitWorkspaceProbesRoute
+  | CockpitStudioNewRoute
+  | CockpitStudioEditRoute;
+
+/**
+ * t-610705 (Phase D) — per-StudioId parent-section policy (studios-routes-design.md's registry
+ * table). A studio's PARENT is a static function of its StudioId alone for every studio EXCEPT pin
+ * (nav-less, D3 — its close-target is an explicit `returnRoute` slot, not derivable here). Kept as
+ * its own exhaustive switch (not folded into parentRoute's route.kind switch) so adding a StudioId
+ * without a matching case fails to compile independently of adding a new route KIND.
+ */
+function studioParentSection(studio: StudioId): CockpitSectionId {
+  switch (studio) {
+    case "command":
+      return "fleet";
+    default: {
+      const _never: never = studio;
+      throw new Error(`cockpit route: unhandled studio ${JSON.stringify(_never)}`);
+    }
+  }
+}
 
 /** How often the active route's data should be re-fetched on the 3s shell timer. */
 export type CockpitRefreshPolicy = "poll" | "none";
@@ -108,6 +156,10 @@ export function routeKey(route: CockpitRoute): string {
       return `agent-probes:${route.wsHash}:${route.agent}`;
     case "workspace-probes":
       return `workspace-probes:${route.wsHash}`;
+    case "studio-new":
+      return `studio-new:${route.studio}:${route.wsHash}`;
+    case "studio-edit":
+      return `studio-edit:${route.studio}:${route.wsHash}:${route.entityId}`;
     default:
       return assertNeverRoute(route);
   }
@@ -124,6 +176,9 @@ export function parentRoute(route: CockpitRoute): CockpitRoute | null {
     case "agent-probes":
     case "workspace-probes":
       return { kind: "section", section: "fleet" };
+    case "studio-new":
+    case "studio-edit":
+      return { kind: "section", section: studioParentSection(route.studio) };
     default:
       return assertNeverRoute(route);
   }
@@ -140,9 +195,18 @@ export function navSection(route: CockpitRoute): CockpitSectionId {
     case "agent-probes":
     case "workspace-probes":
       return "fleet";
+    case "studio-new":
+    case "studio-edit":
+      return studioParentSection(route.studio);
     default:
       return assertNeverRoute(route);
   }
+}
+
+/** True for either studio route kind — the one place callers gate "is a studio form active" without
+ *  caring whether it's new or edit (nav-transaction guard, CSS co-load, embed-host styling). */
+export function isStudioRoute(route: CockpitRoute): route is CockpitStudioNewRoute | CockpitStudioEditRoute {
+  return route.kind === "studio-new" || route.kind === "studio-edit";
 }
 
 /**
@@ -177,6 +241,12 @@ export function refreshPolicy(route: CockpitRoute): CockpitRefreshPolicy {
       // a cheap local disk read (ProbeStore), same cost class as Mission/Approvals/Validations —
       // polls like any other section; the fan-out (refreshCockpitProbes) covers the gap between ticks.
       return "poll";
+    case "studio-new":
+    case "studio-edit":
+      // t-610705 (Phase D, D0) — a form, not a dashboard: a timer-driven refetch would either
+      // clobber in-progress edits or (worse) silently race the nav-transaction FSM's frozen-form
+      // invariant (studios-routes-design.md). Reference-data refresh rides its own fan-out instead.
+      return "none";
     default:
       return assertNeverRoute(route);
   }
@@ -195,6 +265,10 @@ export function formatRoute(route: CockpitRoute): string {
       return `${route.agent} probes`;
     case "workspace-probes":
       return "probes";
+    case "studio-new":
+      return `${route.studio} new`;
+    case "studio-edit":
+      return `${route.studio} ${route.entityId}`;
     default:
       return assertNeverRoute(route);
   }
@@ -206,6 +280,8 @@ export const routes = {
   agentActivity: (wsHash: string, agent: string): CockpitAgentActivityRoute => ({ kind: "agent-activity", wsHash, agent }),
   agentProbes: (wsHash: string, agent: string): CockpitAgentProbesRoute => ({ kind: "agent-probes", wsHash, agent }),
   workspaceProbes: (wsHash: string): CockpitWorkspaceProbesRoute => ({ kind: "workspace-probes", wsHash }),
+  studioNew: (studio: StudioId, wsHash: string): CockpitStudioNewRoute => ({ kind: "studio-new", studio, wsHash }),
+  studioEdit: (studio: StudioId, wsHash: string, entityId: string): CockpitStudioEditRoute => ({ kind: "studio-edit", studio, wsHash, entityId }),
 };
 
 /**
@@ -239,6 +315,19 @@ export function decodeRoute(raw: unknown): CockpitRoute | null {
     if (keys.length !== 2 || !keys.includes("wsHash")) return null;
     if (typeof obj.wsHash !== "string" || !obj.wsHash) return null;
     return { kind: "workspace-probes", wsHash: obj.wsHash };
+  }
+  if (obj.kind === "studio-new") {
+    if (keys.length !== 3 || !keys.includes("studio") || !keys.includes("wsHash")) return null;
+    if (!isStudioId(obj.studio)) return null;
+    if (typeof obj.wsHash !== "string" || !obj.wsHash) return null;
+    return { kind: "studio-new", studio: obj.studio, wsHash: obj.wsHash };
+  }
+  if (obj.kind === "studio-edit") {
+    if (keys.length !== 4 || !keys.includes("studio") || !keys.includes("wsHash") || !keys.includes("entityId")) return null;
+    if (!isStudioId(obj.studio)) return null;
+    if (typeof obj.wsHash !== "string" || !obj.wsHash) return null;
+    if (typeof obj.entityId !== "string" || !obj.entityId) return null;
+    return { kind: "studio-edit", studio: obj.studio, wsHash: obj.wsHash, entityId: obj.entityId };
   }
   return null;
 }

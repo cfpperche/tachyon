@@ -109,6 +109,8 @@ import {
   reapDeadAction,
   reapOrphansAction,
 } from "../inspector/messages";
+import type { CommandStudioDispatch } from "../command-studio-shell/App";
+import { dispatchStudioFreezeMessage, isStudioFreezeBusMessage } from "../shared/studio/studioFreezeBus";
 import type { PluginsDispatch } from "../plugins/App";
 import type { PluginsViewModel } from "../../plugins/viewModel";
 import type { ConsentVM } from "../../plugins/consentViewModel";
@@ -160,6 +162,12 @@ function Root() {
   const [pluginsConsent, setPluginsConsent] = useState<ConsentVM | undefined>(undefined);
   const [pluginsBusy, setPluginsBusy] = useState<string | undefined>(undefined);
   const [pluginsToast, setPluginsToast] = useState<{ ok: boolean; message: string } | undefined>(undefined);
+  /** t-610705 (Phase D, D0) — the studio-envelope + nav-transaction protocols are forwarded raw (no
+   *  decode/reshape here — command-studio-shell/App.tsx's own decodeStudioMessage handles it, same
+   *  as it did as a standalone panel); `seq` guarantees change detection even across two arrivals
+   *  with an identical shape (e.g. two "load" pushes for the same blank new-entity form). */
+  const [studioIncoming, setStudioIncoming] = useState<{ seq: number; message: unknown } | undefined>(undefined);
+  const studioSeq = useRef(0);
   const timer = useRef<number | undefined>(undefined);
   const toastTimer = useRef<number | undefined>(undefined);
   const errorSeq = useRef(0);
@@ -286,6 +294,18 @@ function Root() {
         toastTimer.current = window.setTimeout(() => setToast(undefined), 2200);
       } else if (type === "companionPairOffer" && raw.offer && typeof raw.offer === "object") {
         setCompanionPairOffer(raw.offer as CompanionPairOffer);
+      } else if (isStudioFreezeBusMessage(raw)) {
+        // t-610705 (Phase D, D0, round-3 blocker #3) — dispatched SYNCHRONOUSLY, not through React
+        // state, so the mounted studio App's freeze can take effect before any subsequently-queued
+        // input event is processed — see studioFreezeBus.ts's module doc for why this can't go
+        // through the same setState+useEffect path as everything else in this listener.
+        dispatchStudioFreezeMessage(raw);
+      } else if (typeof raw.studioProtocolVersion === "number") {
+        // t-610705 (Phase D, D0) — studio-envelope core/domain messages (load/error/restore/cwd/
+        // save) forward here unmodified; the mounted studio App's own decodeStudioMessage sorts out
+        // which is which.
+        studioSeq.current += 1;
+        setStudioIncoming({ seq: studioSeq.current, message: raw });
       }
     };
     window.addEventListener("message", onMsg);
@@ -357,6 +377,11 @@ function Root() {
     }),
     [],
   );
+
+  // t-610705 (Phase D, D0) — {post} is the whole contract (CommandStudioDispatch); the studio App
+  // posts fully-formed enveloped messages itself (readyMessage/patchMessage/etc.), same as it did
+  // as a standalone panel.
+  const commandStudioDispatch: CommandStudioDispatch = useMemo(() => ({ post }), []);
 
   const approvalDispatch: ApprovalDispatch = useMemo(
     () => ({
@@ -473,6 +498,8 @@ function Root() {
       probesVm={probesVm}
       handoffVm={handoffVm}
       handoffDispatch={handoffDispatch}
+      studioIncoming={studioIncoming}
+      commandStudioDispatch={commandStudioDispatch}
       approvalVm={approvalVm}
       approvalError={approvalError}
       approvalDispatch={approvalDispatch}

@@ -40,7 +40,7 @@ import { TASK_DETAIL_VIEW_TYPE, type TaskDetailPanelState } from "./webview/Task
 import { TaskStudioPanelManager, TASK_STUDIO_VIEW_TYPE, type TaskStudioPanelState } from "./webview/TaskStudioPanel.js";
 import { AgentStudioPanelManager, AGENT_STUDIO_SHELL_VIEW_TYPE, type AgentStudioPanelState } from "./webview/AgentStudioPanel.js";
 import { TerminalStudioPanelManager, TERMINAL_STUDIO_SHELL_VIEW_TYPE, type TerminalStudioPanelState } from "./webview/TerminalStudioPanel.js";
-import { CommandStudioPanelManager, COMMAND_STUDIO_SHELL_VIEW_TYPE, type CommandStudioPanelState } from "./webview/CommandStudioPanel.js";
+import { COMMAND_STUDIO_SHELL_VIEW_TYPE, type CommandStudioPanelState } from "./webview/CommandStudioPanel.js";
 import { RunbookStudioPanelManager, RUNBOOK_STUDIO_SHELL_VIEW_TYPE, type RunbookStudioPanelState } from "./webview/RunbookStudioPanel.js";
 import { ScheduleStudioPanelManager, SCHEDULE_STUDIO_SHELL_VIEW_TYPE, type ScheduleStudioPanelState } from "./webview/ScheduleStudioPanel.js";
 import { PipelineStudioPanelManager, PIPELINE_STUDIO_VIEW_TYPE, type PipelineStudioPanelState } from "./webview/PipelineStudioPanel.js";
@@ -1015,8 +1015,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push({ dispose: () => agentStudioPanels.dispose() });
   const terminalStudioPanels = new TerminalStudioPanelManager(context.extensionUri, workspaces, refreshAll);
   context.subscriptions.push({ dispose: () => terminalStudioPanels.dispose() });
-  const commandStudioPanels = new CommandStudioPanelManager(context.extensionUri, workspaces, refreshAll);
-  context.subscriptions.push({ dispose: () => commandStudioPanels.dispose() });
   const runbookStudioPanels = new RunbookStudioPanelManager(context.extensionUri, workspaces, refreshAll);
   context.subscriptions.push({ dispose: () => runbookStudioPanels.dispose() });
   const scheduleStudioPanels = new ScheduleStudioPanelManager(context.extensionUri, workspaces, refreshAll);
@@ -1296,6 +1294,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // carries everything the host needs).
     handoff: {
       getWorkspaces: () => workspaces().map((ws) => ws.handoff),
+    },
+    // t-610705 (Phase D, D0) — StudioPanelManagerBase-based studios migrated onto a Control route
+    // (studios-routes-design.md). WorkspaceShellHandle already implements WorkspaceStudioTarget
+    // directly (no per-studio accessor needed, unlike taskDetail/activity/handoff above) — command/
+    // terminal/runbook/schedule/agent studios all read the SAME shape; onChanged mirrors every
+    // retired studio panel manager's refreshAll fan-out.
+    studios: {
+      getWorkspaces: () => workspaces(),
+      onChanged: refreshAll,
     },
     approvals: {
       getWorkspaces: () =>
@@ -1634,7 +1641,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   registerTrustedPanelSerializer<TaskStudioPanelState>(context, TASK_STUDIO_VIEW_TYPE, (panel, state) => taskStudioPanels.deserialize(panel, state));
   registerTrustedPanelSerializer<AgentStudioPanelState>(context, AGENT_STUDIO_SHELL_VIEW_TYPE, (panel, state) => agentStudioPanels.deserialize(panel, state));
   registerTrustedPanelSerializer<TerminalStudioPanelState>(context, TERMINAL_STUDIO_SHELL_VIEW_TYPE, (panel, state) => terminalStudioPanels.deserialize(panel, state));
-  registerTrustedPanelSerializer<CommandStudioPanelState>(context, COMMAND_STUDIO_SHELL_VIEW_TYPE, (panel, state) => commandStudioPanels.deserialize(panel, state));
+  // t-610705 (SDD 410 Phase D, D0) — a revived pre-410 standalone Command Studio panel disposes
+  // itself and redirects into Control → the mapped studio route, same claimed-singleton guard as
+  // every other retired-panel serializer above. KNOWN GAP (documented, not silently dropped): unlike
+  // the full studios-routes-design.md's exactly-once ack-based legacy handoff (round-1 F7 / round-2
+  // F6 — custody transfers only after Control durably accepts the seed), THIS redirect does not
+  // attempt to carry `state.snapshot.patch` forward — a dirty pre-410 draft open across a reload is
+  // simply not restored. D0 scopes down to the in-SESSION draft cache only (studioHost.ts's
+  // cacheDraft/takeDraftFor); the reload-survival mechanism is deferred to when a studio genuinely
+  // needs it (flagged for the D0 code review probe).
+  registerTrustedPanelSerializer<CommandStudioPanelState>(context, COMMAND_STUDIO_SHELL_VIEW_TYPE, (panel, state) => {
+    panel.dispose();
+    if (isCockpitSingletonClaimed()) return;
+    if (!state?.wsKey) return;
+    const route = state.snapshot.mode === "edit" && state.snapshot.entityId
+      ? cockpitRoutes.studioEdit("command", state.wsKey, state.snapshot.entityId)
+      : cockpitRoutes.studioNew("command", state.wsKey);
+    void openCockpit(makeCockpitDeps(), { route });
+  });
   registerTrustedPanelSerializer<RunbookStudioPanelState>(context, RUNBOOK_STUDIO_SHELL_VIEW_TYPE, (panel, state) => runbookStudioPanels.deserialize(panel, state));
   registerTrustedPanelSerializer<ScheduleStudioPanelState>(context, SCHEDULE_STUDIO_SHELL_VIEW_TYPE, (panel, state) => scheduleStudioPanels.deserialize(panel, state));
   registerTrustedPanelSerializer<PipelineStudioPanelState>(context, PIPELINE_STUDIO_VIEW_TYPE, (panel, state) => pipelineStudioPanels.deserialize(panel, state));
@@ -2975,12 +2999,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         notify(vscode.l10n.t("'{0}' is not declared in tachyon.yml", item.commandName), "warn");
         return;
       }
-      commandStudioPanels.openExisting(ws, item.commandName);
+      void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.studioEdit("command", ws.wsHash, item.commandName) });
     }),
     vscode.commands.registerCommand("tachyon.commandStudio", async () => {
       const ws = await pickFolderForCreate();
       if (!ws) return;
-      commandStudioPanels.openNew(ws);
+      void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.studioNew("command", ws.wsHash) });
     }),
     vscode.commands.registerCommand("tachyon.scheduleStudio", async () => {
       const ws = await pickFolderForCreate();

@@ -117,6 +117,8 @@ export const ROUTES: Record<string, Route> = {
       "/dist/webview/activity.css",
       "/dist/webview/probes.css",
       "/dist/webview/handoff.css",
+      "/dist/webview/studio-frame.css",
+      "/dist/webview/command-studio-shell.css",
       "/dist/webview/cockpit.css",
     ],
     frame: { w: 1100, h: 720 },
@@ -171,6 +173,14 @@ export const ROUTES: Record<string, Route> = {
       } else if (activeRoute?.kind === "agent-probes" || activeRoute?.kind === "workspace-probes") {
         const probes = probesFixtures.default?.vm;
         if (probes) msgs.push(probesMessage(probes));
+      } else if ((activeRoute?.kind === "studio-new" || activeRoute?.kind === "studio-edit") && (activeRoute as { studio?: string }).studio === "command") {
+        // t-610705 (Phase D, D0) — the pilot studio route: reuses the SAME fixture VMs + envelope
+        // shape the (now-retired-standalone) command-studio-shell route used, pushed unconditionally
+        // rather than gated on a real "ready" mount handshake (this static harness has no live host
+        // to answer one — the client processes whatever arrives regardless of handshake state).
+        const key = activeRoute.kind === "studio-edit" ? "dense-edit" : "new";
+        const studio = commandStudioShellFixtures[key]?.vm;
+        if (studio) msgs.push(commandStudioShellMakeMessage(studio));
       }
       return msgs;
     },
@@ -261,13 +271,10 @@ export const ROUTES: Record<string, Route> = {
     fixtures: terminalStudioShellFixtures as Record<string, Fixture>,
     makeMessage: (vm) => terminalStudioShellMakeMessage(vm as never),
   },
-  "command-studio-shell": {
-    bundle: "/dist/webview/command-studio-shell.js",
-    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/studio-frame.css", "/dist/webview/command-studio-shell.css"],
-    frame: { w: 760, h: 640 },
-    fixtures: commandStudioShellFixtures as Record<string, Fixture>,
-    makeMessage: (vm) => commandStudioShellMakeMessage(vm as never),
-  },
+  // t-610705 (SDD 410 Phase D, D0) — the standalone "command-studio-shell" route previewed the
+  // retired Command Studio panel; it's the pilot Control route now (studio-new/studio-edit,
+  // studio:"command") — use ?view=cockpit&fixture=studio-command / studio-command-edit (same
+  // App.tsx component, same fixture VMs via the cockpit route's activeRoute injection above).
   "runbook-studio-shell": {
     bundle: "/dist/webview/runbook-studio-shell.js",
     cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/studio-frame.css", "/dist/webview/runbook-studio-shell.css"],

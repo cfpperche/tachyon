@@ -164,7 +164,15 @@ export type CockpitAction =
   /** SDD 414 — host unpair of the active Companion session. */
   | { type: "unpairCompanionDevice"; wsHash: string }
   /** SDD 414 — mint a short-lived pair code (same op as tachyon.pairCompanion). */
-  | { type: "issueCompanionPairCode"; wsHash: string };
+  | { type: "issueCompanionPairCode"; wsHash: string }
+  /**
+   * t-610705 (Phase D, D0) — the client's reply to a `studioNavCheckpoint` host push: the EXACT
+   * freeze-moment state (studios-routes-design.md's navigation-transaction FSM). Cockpit-level, not
+   * a studio-envelope message — this is about ROUTE navigation, which is Cockpit's job. `patch` is
+   * opaque to the router (the studio's own domain shape); the host only ever stores or hands it back
+   * to that same studio's adapter, never inspects it.
+   */
+  | { type: "studioNavCheckpointAck"; txnId: string; dirty: boolean; editRevision: number; patch: unknown };
 
 /** Ephemeral pair offer — not part of the polled CockpitModel. */
 export type CompanionPairOffer =
@@ -182,7 +190,12 @@ export type CockpitHostMessage =
   | { type: typeof INIT; strings: CockpitStrings }
   | { type: typeof MODEL; model: CockpitModel }
   | { type: "toast"; text: string }
-  | { type: "companionPairOffer"; offer: CompanionPairOffer };
+  | { type: "companionPairOffer"; offer: CompanionPairOffer }
+  /** t-610705 (Phase D, D0) — host asks the mounted studio form to freeze and report its exact
+   *  state; see `studioNavCheckpointAck` above. */
+  | { type: "studioNavCheckpoint"; txnId: string }
+  /** t-610705 (Phase D, D0) — "Stay" (or a rejected Save) — the client unfreezes, nothing lost. */
+  | { type: "studioNavAbort"; txnId: string };
 
 export const readyMessage = (): CockpitAction => ({ type: READY });
 export const refreshAction = (): CockpitAction => ({ type: "refresh" });
@@ -237,10 +250,19 @@ export const issueCompanionPairCodeAction = (wsHash: string): CockpitAction => (
   type: "issueCompanionPairCode",
   wsHash,
 });
+export const studioNavCheckpointAckAction = (txnId: string, dirty: boolean, editRevision: number, patch: unknown): CockpitAction => ({
+  type: "studioNavCheckpointAck",
+  txnId,
+  dirty,
+  editRevision,
+  patch,
+});
 
 export const initMessage = (strings: CockpitStrings): CockpitHostMessage => ({ type: INIT, strings });
 export const modelMessage = (model: CockpitModel): CockpitHostMessage => ({ type: MODEL, model });
 export const toastMessage = (text: string): CockpitHostMessage => ({ type: "toast", text });
+export const studioNavCheckpointMessage = (txnId: string): CockpitHostMessage => ({ type: "studioNavCheckpoint", txnId });
+export const studioNavAbortMessage = (txnId: string): CockpitHostMessage => ({ type: "studioNavAbort", txnId });
 export const companionPairOfferMessage = (offer: CompanionPairOffer): CockpitHostMessage => ({
   type: "companionPairOffer",
   offer,

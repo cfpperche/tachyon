@@ -5,6 +5,7 @@ import { renderWebviewShell } from "./shared/shell.js";
 import { resolveCockpitSection } from "../cockpit/resolveSection.js";
 import {
   routes,
+  routeKey,
   decodePanelState as decodeCockpitPanelState,
   navSection,
   isSection,
@@ -83,6 +84,18 @@ import { buildInspectorModel, type InspectorModel, type TmuxServerSnapshot } fro
 import type { PaneSnapshot } from "../tmux/TmuxService.js";
 import { notify, showNotification } from "../workspace/NotificationService.js";
 import type { PluginsPanelManager } from "./PluginsPanel.js";
+import { isStudioRoute } from "../cockpit/route.js";
+import {
+  reconcileStudioTeardown,
+  stopStudioBinding,
+  ensureStudioBinding,
+  handleStudioMessage,
+  handleStudioNavCheckpointAck,
+  beginStudioNavTransaction,
+  currentStudioBindingFor,
+} from "../cockpit/studioHost.js";
+import { makeStudioAdapterFactory, makeStudioDomainDispatch, type CockpitStudios } from "../cockpit/studioRegistry.js";
+export type { CockpitStudios };
 
 export const COCKPIT_VIEW_TYPE = "tachyonCockpit";
 
@@ -175,6 +188,11 @@ export interface CockpitDeps {
   activity: CockpitActivity;
   probes: CockpitProbes;
   handoff: CockpitHandoff;
+  /** t-610705 (Phase D) — StudioPanelManagerBase-based editors migrated onto a Control route
+   *  (studios-routes-design.md). D0 only wires `studio:"command"`; D1-D3 add the rest onto the SAME
+   *  getWorkspaces() list (WorkspaceStudioTarget already covers command/terminal/runbook/schedule/
+   *  agent uniformly — task/pin need their own narrower CockpitDeps entries when their PR lands). */
+  studios: CockpitStudios;
   approvals: CockpitApprovals;
   validations: CockpitValidations;
   runtimeOps: CockpitRuntimeOps;
@@ -408,8 +426,48 @@ let navEpoch = 0;
 
 function navigate(route: CockpitRoute): void {
   reconcileActivityTeardown(route);
+  reconcileStudioTeardown(route);
   currentRoute = route;
   navEpoch += 1;
+}
+
+/**
+ * t-610705 (Phase D, D0) — the ONE gate for a navigation intent while `currentRoute` might be a
+ * dirty studio form (studios-routes-design.md's navigation-transaction FSM). Every existing
+ * `navigate()` call site that represents a NAVIGATION INTENT (as opposed to `navigate()`'s use as
+ * the transaction's own commit closure) goes through this instead. Off a non-studio route it's a
+ * synchronous pass-through — zero behavior change for every route kind that existed before D0.
+ */
+async function requestNavigate(route: CockpitRoute, live: vscode.WebviewPanel, afterCommit?: () => Promise<void>): Promise<void> {
+  // t-610705 (Phase D, D0) — a same-identity re-entry (reopening the route you're already on — e.g.
+  // a repeat command-palette invocation, or a legacy-serializer redirect racing an already-open
+  // Control) is a NO-OP for an EDIT route: nothing is actually being navigated away from (same
+  // entity), so it must never trigger a dirty-form checkpoint. Matches `ensureStudioBinding`'s/
+  // `navigate()`'s own idempotent-on-same-identity convention used everywhere else in this router
+  // (found via a test that hung waiting on an unanswered checkpoint for exactly this case).
+  //
+  // round-5 fix — deliberately NOT extended to "studio-new": every "create a new X" invocation for
+  // the same studio+workspace shares the identical routeKey (no entityId to distinguish them), so
+  // treating that as "same identity" would silently keep a stale/dirty draft across what the user
+  // may intend as a genuinely NEW creation attempt, bypassing the checkpoint entirely. A clean
+  // studio-new re-invocation still commits instantly either way (no dirty form == no visible modal),
+  // so this only changes behavior for the case that actually needs protecting.
+  if (!isStudioRoute(currentRoute) || (route.kind === "studio-edit" && currentRoute.kind === "studio-edit" && routeKey(route) === routeKey(currentRoute))) {
+    navigate(route);
+    if (afterCommit) await afterCommit();
+    return;
+  }
+  const outcome = await beginStudioNavTransaction(
+    { post: (m) => live.webview.postMessage(m), isCurrent: () => panel === live },
+    () => navigate(route),
+  );
+  if (outcome === "busy") {
+    notify("Another navigation is already in progress in Control.", "warn");
+    return;
+  }
+  if (outcome === "committed" && afterCommit) await afterCommit();
+  // "aborted" (Stay, timeout, or a rejected Save) — currentRoute is untouched, the studio form is
+  // still mounted and (per beginStudioNavTransaction's contract) unfrozen; nothing further to do.
 }
 
 /** t-d16a39 — the ONE shell-level workspace scope. undefined = "All workspaces" (aggregate
@@ -623,8 +681,11 @@ export async function openCockpit(
     panel = undefined;
     stale.dispose();
   }
-  if (opts?.route) navigate(opts.route);
-  else if (opts?.section) navigate(routes.section(resolveCockpitSection(opts.section)));
+  // t-610705 (Phase D, D0) — captured BEFORE the reveal/create block below: a FRESH panel has no
+  // live binding to protect (nothing to lose), so its initial route commits unguarded; REVEALING or
+  // redirecting into an EXISTING panel might be interrupting a dirty studio form, so that path goes
+  // through requestNavigate() once `live` exists a few lines down.
+  const revealingExisting = !!panel && !opts?.revivedPanel;
   // t-d16a39 — both legacy per-section opt names feed the ONE shell scope (callers unchanged).
   if (opts?.wsHash) controlWsHash = opts.wsHash;
   if (opts?.missionWsHash) controlWsHash = opts.missionWsHash;
@@ -662,11 +723,21 @@ export async function openCockpit(
         navEpoch += 1;
         missionAgentLists.clear();
         stopActivityBinding();
+        stopStudioBinding();
         deps.plugins.unbindControlEmbed();
       }
     });
   }
   const live = panel;
+
+  if (opts?.route) {
+    if (revealingExisting) await requestNavigate(opts.route, live);
+    else navigate(opts.route);
+  } else if (opts?.section) {
+    const target = routes.section(resolveCockpitSection(opts.section));
+    if (revealingExisting) await requestNavigate(target, live);
+    else navigate(target);
+  }
 
   const sendModel = async () => {
     const epoch = navEpoch;
@@ -697,6 +768,15 @@ export async function openCockpit(
     // t-610705 (Phase C.1) — carries the exact route when it's a subroute; buildCockpitModel stays
     // route-shape-agnostic (see the field's doc comment on CockpitModel).
     if (currentRoute.kind !== "section") model.activeRoute = currentRoute;
+    if (isStudioRoute(currentRoute)) {
+      // t-610705 (Phase D, D0) — ensure-if-missing HERE too (not just in sendSectionModule): the
+      // cockpit-level "ready" handler calls sendModel() BEFORE sendSectionModule(), and the client
+      // needs `studioMountNonce` on THIS push to complete its own mount handshake. Idempotent on an
+      // existing binding (routeKey match), so calling it from both places is safe.
+      ensureStudioBinding(currentRoute, makeStudioAdapterFactory(deps.studios));
+      const b = currentStudioBindingFor(currentRoute);
+      if (b) model.studioMountNonce = b.mountNonce;
+    }
     if (panel === live && navEpoch === epoch) {
       live.webview.postMessage(modelMessage(model));
       live.title = sectionTitle(s, navSection(currentRoute));
@@ -835,6 +915,21 @@ export async function openCockpit(
     return false;
   };
 
+  // t-610705 (Phase D, D0) — studio-envelope dispatch (ready/patch/dirty/save/cancel/domain). The
+  // io/hooks capabilities are the SAME injected-capability shape activityFeed.ts established (post +
+  // isCurrent), so a torn-down/replaced binding's in-flight work can never post into whatever
+  // replaced it — see studioHost.ts's module doc for the full nav-transaction rationale.
+  const studioIo = { post: (m: unknown) => live.webview.postMessage(m), isCurrent: () => panel === live };
+  const studioDomainDispatch = makeStudioDomainDispatch(deps.studios);
+  const dispatchStudioMessage = (raw: unknown): Promise<boolean> =>
+    handleStudioMessage(studioIo, raw, {
+      onChanged: deps.studios.onChanged,
+      notify,
+      handleDomainMessage: (ctx, message) => {
+        if (isStudioRoute(currentRoute)) studioDomainDispatch(currentRoute, ctx, message);
+      },
+    });
+
   const sendRuntime = async () => {
     if (panel !== live || !isSection(currentRoute, "runtime")) return;
     const epoch = navEpoch;
@@ -945,11 +1040,15 @@ export async function openCockpit(
     if (m.type === "openTask" && typeof m.id === "string") {
       // in-place navigate to another task in the SAME workspace (a dep/related-task link) — a
       // subroute of a subroute stays a single active route, not a stack (the accepted multi-
-      // instance trade-off applies here too).
-      navigate(routes.taskDetail(route.wsHash, m.id));
-      lastKnownTaskDetail = undefined;
-      await sendModel();
-      await sendSectionModule();
+      // instance trade-off applies here too). requestNavigate is a no-op guard here in practice
+      // (currentRoute is already task-detail, never a studio route, at this call site) — used
+      // anyway so every navigate-away call site is uniformly guarded, not "safe by an invariant a
+      // future refactor could silently break."
+      await requestNavigate(routes.taskDetail(route.wsHash, m.id), live, async () => {
+        lastKnownTaskDetail = undefined;
+        await sendModel();
+        await sendSectionModule();
+      });
       return true;
     }
     if ((m.type === "approvePrototype" || m.type === "rejectPrototype" || m.type === "notePrototype") &&
@@ -1174,6 +1273,12 @@ export async function openCockpit(
     else if (currentRoute.kind === "task-detail") await sendTaskDetail();
     else if (currentRoute.kind === "agent-activity") ensureActivityBinding();
     else if (currentRoute.kind === "agent-probes" || currentRoute.kind === "workspace-probes") await sendProbes();
+    else if (isStudioRoute(currentRoute)) {
+      // t-610705 (Phase D, D0) — start-if-missing only, same idempotent-on-same-identity convention
+      // as ensureActivityBinding: the actual content push happens once the mounted studio App's OWN
+      // "ready" (studio-envelope) handshake matches this binding's routeKey+mountNonce (round-2 F3).
+      ensureStudioBinding(currentRoute, makeStudioAdapterFactory(deps.studios));
+    }
   };
 
   pushMissionBoard = () => { void sendMission(); };
@@ -1239,10 +1344,11 @@ export async function openCockpit(
       // (the route's immutable locator — independent of the shell's workspace-scope selector).
       const ws = resolveMissionWs(deps.missionBoard);
       if (ws) {
-        navigate(routes.taskDetail(ws.wsHash, m.id));
-        lastKnownTaskDetail = undefined;
-        await sendModel();
-        await sendSectionModule();
+        await requestNavigate(routes.taskDetail(ws.wsHash, m.id), live, async () => {
+          lastKnownTaskDetail = undefined;
+          await sendModel();
+          await sendSectionModule();
+        });
       }
       return true;
     }
@@ -1381,6 +1487,10 @@ export async function openCockpit(
       if (await handleActivityAction(msg as Partial<ActivityWebviewMessage>)) return;
       // t-610705 (Phase C.3) — "openFile"/"distill" are unique to Handoff; route-gated the same way.
       if (await handleHandoffAction(msg as Partial<HandoffAction>)) return;
+      // t-610705 (Phase D, D0) — studio-envelope messages carry `studioProtocolVersion`, a field no
+      // other action in this chain has; `handleStudioMessage` returns false (falls through) when
+      // there's no current binding or the message doesn't decode, so this is safe unconditionally.
+      if (await dispatchStudioMessage(msg)) return;
 
       if (isRuntimeOpsSetProviderObservationAction(msg)) {
         try {
@@ -1400,6 +1510,9 @@ export async function openCockpit(
 
       const c = msg as unknown as CockpitAction;
       switch (c.type) {
+        case "studioNavCheckpointAck":
+          if (typeof c.txnId === "string") handleStudioNavCheckpointAck(c);
+          return;
         case READY:
           live.webview.postMessage(initMessage(s));
           await sendModel();
@@ -1418,9 +1531,12 @@ export async function openCockpit(
           // t-610705 (Phase C.0) — sugar over navigate(); C.1+ adds a "navigate" message carrying
           // real subroute params once there's a subroute to send. Bumps navEpoch, so any in-flight
           // send*() from the section being left discards its result instead of posting it late.
-          navigate(routes.section(resolveCockpitSection(c.section)));
-          await sendModel();
-          await sendSectionModule();
+          // t-610705 (Phase D, D0) — the load-bearing requestNavigate call site: a nav-tab click
+          // while a dirty studio route is active goes through the navigation-transaction FSM.
+          await requestNavigate(routes.section(resolveCockpitSection(c.section)), live, async () => {
+            await sendModel();
+            await sendSectionModule();
+          });
           return;
         case "switchControlWorkspace":
           // t-d16a39 — "" = All workspaces. Re-send model (aggregate sections re-scope) AND the
@@ -1486,9 +1602,10 @@ export async function openCockpit(
           if (typeof c.name === "string") {
             const ws = resolveFleetActivityWs(deps.activity, typeof c.wsHash === "string" ? c.wsHash : undefined);
             if (ws) {
-              navigate(routes.agentActivity(ws.wsHash, c.name));
-              await sendModel();
-              await sendSectionModule();
+              await requestNavigate(routes.agentActivity(ws.wsHash, c.name), live, async () => {
+                await sendModel();
+                await sendSectionModule();
+              });
             }
           }
           return;
@@ -1614,6 +1731,13 @@ export async function openCockpit(
     const activityIsActive = currentRoute.kind === "agent-activity";
     const probesIsActive = currentRoute.kind === "agent-probes" || currentRoute.kind === "workspace-probes";
     const handoffIsActive = isSection(currentRoute, "handoff");
+    // t-610705 (Phase D, D0) — studio-frame.css is shared by every StudioPanelManagerBase-based
+    // studio (StudioFrame.tsx); each studio's OWN sheet is a separate conditional (D1-D3 add theirs
+    // alongside command's here, one `studioX ? uri(...) : undefined` per StudioId — no shared/combined
+    // conditional the way mermaid-block.css above is, since each studio's own sheet is genuinely
+    // distinct content, not the same href under a different bootstrap-global key).
+    const studioIsActive = isStudioRoute(currentRoute);
+    const commandStudioIsActive = isStudioRoute(currentRoute) && currentRoute.studio === "command";
     // t-610705 (Phase C.2) — ported from the retired standalone ActivityPanel.ts: mermaid/katex load
     // ON DEMAND client-side (activity/markdown.tsx), gated on these globals being present at all —
     // never previously wired into Cockpit.ts's shell (Task Detail's C.1 migration also uses
@@ -1658,6 +1782,8 @@ export async function openCockpit(
         activityIsActive ? uri("activity.css") : undefined,
         probesIsActive ? uri("probes.css") : undefined,
         handoffIsActive ? uri("handoff.css") : undefined,
+        studioIsActive ? uri("studio-frame.css") : undefined,
+        commandStudioIsActive ? uri("command-studio-shell.css") : undefined,
         uri("cockpit.css"),
       ].filter((href): href is string => href !== undefined),
       bundle: uri("cockpit.js"),
@@ -1688,6 +1814,8 @@ export async function openCockpit(
           probes: uri("probes.css"),
           "handoff-mermaid": uri("mermaid-block.css"),
           handoff: uri("handoff.css"),
+          "studio-frame": uri("studio-frame.css"),
+          "studio-command": uri("command-studio-shell.css"),
         },
         __mermaidSrc: uri("mermaid.js"),
         __katexSrc: uri("katex.js"),

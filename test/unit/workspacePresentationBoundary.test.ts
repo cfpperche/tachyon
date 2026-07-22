@@ -36,7 +36,6 @@ describe("persistent workspace presentation boundary", () => {
       "src/webview/AgentStudioAdapter.ts",
       "src/webview/AgentStudioPanel.ts",
       "src/webview/CommandStudioAdapter.ts",
-      "src/webview/CommandStudioPanel.ts",
       "src/webview/RunbookStudioAdapter.ts",
       "src/webview/RunbookStudioPanel.ts",
       "src/webview/ScheduleStudioAdapter.ts",
@@ -55,6 +54,10 @@ describe("persistent workspace presentation boundary", () => {
       // HandoffPanel.ts left this list on t-610705 Phase C.3 for the same reason: the panel host was
       // retired and the file is types-only now (VIEW_TYPE + PanelState only) — Handoff is hosted by
       // Cockpit.ts, which was born on WorkspaceHandoffTarget.
+      // CommandStudioPanel.ts left this list on t-610705 Phase D D0 for the same reason: the panel
+      // host was retired (it's the pilot Control route now — studios-routes-design.md) and the file
+      // is types-only (VIEW_TYPE + PanelState only) — Command Studio is hosted by studioHost.ts /
+      // Cockpit.ts, which resolve WorkspaceStudioTarget through CockpitDeps.studios, not this file.
       "src/webview/TaskStudioAdapter.ts",
       "src/webview/TaskStudioPanel.ts",
       "src/webview/PinStudioAdapter.ts",

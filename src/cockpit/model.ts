@@ -137,6 +137,15 @@ export interface CockpitModel {
    * type-only, so there is no runtime coupling to route.ts.
    */
   activeRoute?: import("./route.js").CockpitRoute;
+  /**
+   * t-610705 (Phase D, D0) — the CURRENT studio binding's host-issued mount nonce, present only
+   * when `activeRoute` is a studio-new/studio-edit route AND the host has a live binding for it.
+   * The studio App echoes this (plus the derived routeKey) back on its "ready" handshake so the
+   * host can reject a stale ready from a torn-down mount re-entering the SAME route
+   * (studios-routes-design.md's round-2 F3). Attached by Cockpit.ts's sendModel(), same convention
+   * as `activeRoute` itself.
+   */
+  studioMountNonce?: string;
   /** t-d16a39 — every configured workspace, for the shell-level workspace selector. */
   workspaces: Array<{ hash: string; folder: string }>;
   /** t-d16a39 — the shell-selected workspace scoping every section; undefined = "All workspaces". */

@@ -250,6 +250,48 @@
   },
   {
     "view": "cockpit",
+    "fixture": "studio-command",
+    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=studio-command",
+    "frame": {
+      "w": 1100,
+      "h": 720
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Control",
+    "aliases": [
+      "control",
+      "cockpit",
+      "sysadmin",
+      "project control",
+      "fleet control",
+      "control plane"
+    ]
+  },
+  {
+    "view": "cockpit",
+    "fixture": "studio-command-edit",
+    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=studio-command-edit",
+    "frame": {
+      "w": 1100,
+      "h": 720
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Control",
+    "aliases": [
+      "control",
+      "cockpit",
+      "sysadmin",
+      "project control",
+      "fleet control",
+      "control plane"
+    ]
+  },
+  {
+    "view": "cockpit",
     "fixture": "validations",
     "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=validations",
     "frame": {
@@ -924,60 +966,6 @@
       "terminal studio",
       "new terminal",
       "edit terminal"
-    ]
-  },
-  {
-    "view": "command-studio-shell",
-    "fixture": "new",
-    "url": "/scripts/webview-preview/index.html?view=command-studio-shell&fixture=new",
-    "frame": {
-      "w": 760,
-      "h": 640
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Command Studio",
-    "aliases": [
-      "command studio",
-      "new command",
-      "edit command"
-    ]
-  },
-  {
-    "view": "command-studio-shell",
-    "fixture": "dense-edit",
-    "url": "/scripts/webview-preview/index.html?view=command-studio-shell&fixture=dense-edit",
-    "frame": {
-      "w": 760,
-      "h": 640
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Command Studio",
-    "aliases": [
-      "command studio",
-      "new command",
-      "edit command"
-    ]
-  },
-  {
-    "view": "command-studio-shell",
-    "fixture": "load-error",
-    "url": "/scripts/webview-preview/index.html?view=command-studio-shell&fixture=load-error",
-    "frame": {
-      "w": 760,
-      "h": 640
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Command Studio",
-    "aliases": [
-      "command studio",
-      "new command",
-      "edit command"
     ]
   },
   {

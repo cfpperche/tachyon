@@ -26,7 +26,9 @@ describe("spec 350 Phase 4 cutover studio routing", () => {
     expect(agentEdit).toContain("terminal: () => terminalStudioPanels.openExisting(ws, item.agentName)");
     expect(agentEdit).toContain('dispatch[def.kind === "terminal" ? "terminal" : "agent"]()');
 
-    expect(commandBody("tachyon.editCommandStudioItem")).toContain("commandStudioPanels.openExisting(ws, item.commandName)");
+    // t-610705 (Phase D, D0) — Command Studio is the pilot Control route now (studios-routes-design.md):
+    // no more per-panel manager, routes via openCockpit + the studio-edit route builder instead.
+    expect(commandBody("tachyon.editCommandStudioItem")).toContain('cockpitRoutes.studioEdit("command", ws.wsHash, item.commandName)');
     expect(commandBody("tachyon.editRunbookStudioItem")).toContain("runbookStudioPanels.openExisting(ws, item.runbookName)");
     expect(commandBody("tachyon.editScheduleStudioItem")).toContain("scheduleStudioPanels.openExisting(ws, item.scheduleName)");
   });

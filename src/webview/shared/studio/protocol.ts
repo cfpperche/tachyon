@@ -73,10 +73,16 @@ export type StudioHostCoreMessage<TEntity, TEntityId, TPatch, TReferenceData = u
   | ({ type: "restore"; snapshot: StudioRestoreSnapshot<TEntityId, TPatch> | null } & StudioEnvelope)
   | ({ type: "save"; status: "ok" } & StudioEnvelope);
 
-/** Webview -> host core messages. */
+/**
+ * Webview -> host core messages. `routeKey`/`mountNonce` on `ready` and `editRevision` on `patch`
+ * are t-610705 (Phase D, D0) additions for the Control-hosted studios (studios-routes-design.md's
+ * mount handshake + navigation-transaction checkpoint) — optional and additive, so a
+ * StudioPanelManagerBase-hosted studio (not yet migrated onto a route) that never sets them behaves
+ * exactly as before; the old host only ever pattern-matches on `type`.
+ */
 export type StudioWebviewCoreMessage<TPatch> =
-  | ({ type: "ready" } & StudioEnvelope)
-  | ({ type: "patch"; patch: TPatch } & StudioEnvelope)
+  | ({ type: "ready"; routeKey?: string; mountNonce?: string } & StudioEnvelope)
+  | ({ type: "patch"; patch: TPatch; editRevision?: number } & StudioEnvelope)
   | ({ type: "save" } & StudioEnvelope)
   | ({ type: "cancel" } & StudioEnvelope)
   | ({ type: "dirty"; dirty: boolean } & StudioEnvelope);

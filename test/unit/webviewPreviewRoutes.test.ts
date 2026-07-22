@@ -56,6 +56,8 @@ describe("preview route table", () => {
       "/dist/webview/activity.css",
       "/dist/webview/probes.css",
       "/dist/webview/handoff.css",
+      "/dist/webview/studio-frame.css",
+      "/dist/webview/command-studio-shell.css",
       "/dist/webview/cockpit.css",
     ]);
     expect(Object.keys(r.fixtures).sort()).toEqual([
@@ -74,6 +76,8 @@ describe("preview route table", () => {
       "plugins",
       "runtime",
       "settings",
+      "studio-command",
+      "studio-command-edit",
       "task-detail",
       "tmux",
       "validations",
@@ -108,6 +112,12 @@ describe("preview route table", () => {
     // "handoff" itself, so its own content message rides alongside init+model directly.
     const handoffMsgs = r.makeMessage(r.fixtures.handoff.vm) as Array<{ type: string }>;
     expect(handoffMsgs.map((m) => m.type)).toEqual(["init", "model", "handoff"]);
+    // t-610705 (Phase D, D0) — the pilot studio route: same "rides alongside its parent section's
+    // push" pattern as the Fleet subroutes above (nav section is "fleet"), envelope-carrying so no
+    // bare `type` field — asserted via studioProtocolVersion presence instead.
+    const studioMsgs = r.makeMessage(r.fixtures["studio-command"]!.vm) as Array<{ type: string; studioProtocolVersion?: number }>;
+    expect(studioMsgs.map((m) => m.type)).toEqual(["init", "model", "load"]);
+    expect(studioMsgs[2]?.studioProtocolVersion).toBe(1);
   });
 
   it("declares the pin-studio route (spec 278 — the last view onboarded) with its envelope", () => {

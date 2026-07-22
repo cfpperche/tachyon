@@ -286,12 +286,11 @@ const terminalStudioShell = {
   outfile: "dist/webview/terminal-studio-shell.js",
 };
 
-// spec 350 Phase 4 Step 2 — the Command Studio (shell) webview bundle: command kind only.
-const commandStudioShell = {
-  ...sidebar,
-  entryPoints: ["src/webview/command-studio-shell/main.tsx"],
-  outfile: "dist/webview/command-studio-shell.js",
-};
+// t-610705 (SDD 410 Phase D, D0) — the standalone Command Studio (shell) bundle was retired: it's
+// the pilot Control route now (studio-new/studio-edit, studio:"command" — studios-routes-design.md,
+// cockpit.js lazy-imports src/webview/command-studio-shell/App.tsx). The command-studio-shell.css
+// copyFileSync call below stays (Control still co-loads it) — only the standalone entry point/bundle
+// is gone.
 
 // spec 350 Phase 4 Step 3 — the Runbook Studio (shell) webview bundle: runbook kind only, with live
 // command-catalog referenceData refreshes.
@@ -476,7 +475,7 @@ if (existsSync(excalidrawAssets)) {
   cpSync(excalidrawAssets, "dist/webview/excalidraw-assets", { recursive: true });
 }
 
-const targets = [extension, toolLauncher, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, approval, cockpit, pinPreview, pinStudio, taskStudio, pipelineStudio, agentStudioFixture, agentStudioShell, terminalStudioShell, commandStudioShell, runbookStudioShell, scheduleStudioShell, pluginHost, excalidraw, mermaid, katex, preview, uiGate];
+const targets = [extension, toolLauncher, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, approval, cockpit, pinPreview, pinStudio, taskStudio, pipelineStudio, agentStudioFixture, agentStudioShell, terminalStudioShell, runbookStudioShell, scheduleStudioShell, pluginHost, excalidraw, mermaid, katex, preview, uiGate];
 if (watch) {
   const ctxs = await Promise.all(targets.map((c) => esbuild.context(c)));
   await Promise.all(ctxs.map((c) => c.watch()));

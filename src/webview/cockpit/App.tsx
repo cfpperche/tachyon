@@ -6,7 +6,7 @@ import {
   type CockpitModel,
   type CockpitSectionId,
 } from "../../cockpit/model";
-import { parentRoute } from "../../cockpit/route";
+import { parentRoute, isStudioRoute, routeKey } from "../../cockpit/route";
 import type { ControlInspectorWorkspaceRow } from "../../control-inspector/model";
 import {
   formatCompanionPairClipboard,
@@ -37,6 +37,7 @@ import type { PluginsDispatch } from "../plugins/App";
 import type { PluginsViewModel } from "../../plugins/viewModel";
 import type { ConsentVM } from "../../plugins/consentViewModel";
 import type { Toast as PluginsToast } from "../plugins/messages";
+import type { CommandStudioDispatch } from "../command-studio-shell/App";
 
 // spec 410 — lazy section bodies (ESM chunks). Keeps eager cockpit.js under budget.
 // t-610705 (Phase B #6) — CSS co-load, sixth surface (see the Approvals comment below for the
@@ -127,6 +128,17 @@ const HandoffApp = lazy(() =>
   }),
 );
 
+// t-610705 (Phase D, D0) — CSS co-load, eleventh surface: the shared studio-frame.css (every
+// StudioPanelManagerBase-based studio) plus THIS studio's own sheet under its own bootstrap-global
+// key. D1-D3 each add their own studio-scoped loadSectionStylesheet call the same way.
+const CommandStudioApp = lazy(() =>
+  import("../command-studio-shell/App").then((m) => {
+    loadSectionStylesheet("studio-frame");
+    loadSectionStylesheet("studio-command");
+    return { default: m.App };
+  }),
+);
+
 function SectionFallback() {
   return <EmptyState kind="loading" message="Loading…" />;
 }
@@ -203,6 +215,11 @@ export interface CockpitAppProps {
   pluginsBusy?: string;
   pluginsToast?: PluginsToast;
   pluginsDispatch: PluginsDispatch;
+  /** t-610705 (Phase D, D0) — the studio-new/studio-edit subroute (fleet/... pilot: "command"). The
+   *  studio App receives raw protocol/nav-transaction messages, not a decoded VM — see
+   *  command-studio-shell/App.tsx's own doc comment for why. */
+  studioIncoming?: { seq: number; message: unknown };
+  commandStudioDispatch: CommandStudioDispatch;
 }
 
 /** Tabs that host a full product surface (no ModuleChrome table / deep-link stub). */
@@ -521,7 +538,8 @@ export function App(p: CockpitAppProps) {
   // as an embedded section, even though their nav section ("fleet") isn't one itself (Fleet's own
   // plain list IS a native page and keeps its checkedAt footer — only its subroutes opt out).
   const isFleetSubroute = activeRoute?.kind === "agent-activity" || activeRoute?.kind === "agent-probes" || activeRoute?.kind === "workspace-probes";
-  const isEmbed = EMBED_SECTIONS.has(section) || isFleetSubroute;
+  const isStudioSubroute = !!activeRoute && isStudioRoute(activeRoute);
+  const isEmbed = EMBED_SECTIONS.has(section) || isFleetSubroute || isStudioSubroute;
 
   let body: ComponentChildren = null;
   if (!m) {
@@ -568,6 +586,40 @@ export function App(p: CockpitAppProps) {
           ) : (
             <ProbesApp vm={p.probesVm} />
           )}
+        </Suspense>
+      </div>
+    );
+  } else if (activeRoute && isStudioRoute(activeRoute)) {
+    // t-610705 (Phase D, D0) — a studio route is its own full-bleed body (StudioFrame is its own
+    // chrome: title, dirty dot, Cancel/Save) — same "checked before the section branch" pattern as
+    // task-detail/Fleet subroutes above. D0 only routes studio:"command" to a real component; D1-D3
+    // add their own branch the same way (no generic dispatch-by-registry on the client — Preact's
+    // `lazy()` calls must stay static top-level calls for esbuild's code-split analysis).
+    const parent = parentRoute(activeRoute);
+    const back = parent && parent.kind === "section" ? (
+      <div class="ck-subroute-breadcrumb" data-testid="control-studio-breadcrumb">
+        <Button variant="default" icon="arrow-left" onClick={() => p.onSetSection(parent.section)}>
+          {s[TAB_META[parent.section].navKey]}
+        </Button>
+      </div>
+    ) : null;
+    body = (
+      <div class="ck-embed-host" data-testid="control-studio">
+        {back}
+        <Suspense fallback={<SectionFallback />}>
+          {activeRoute.studio === "command" ? (
+            <CommandStudioApp
+              // t-610705 (Phase D, D0, round-3 major) — an explicit `key` forces Preact to fully
+              // UNMOUNT + remount on identity change instead of reusing the component instance with
+              // stale state visible under the new props for one render (the internal reset-effect
+              // alone left exactly that window — code review round 3 caught it).
+              key={`${routeKey(activeRoute)}:${m.studioMountNonce ?? ""}`}
+              routeKey={routeKey(activeRoute)}
+              mountNonce={m.studioMountNonce ?? ""}
+              incoming={p.studioIncoming}
+              dispatch={p.commandStudioDispatch}
+            />
+          ) : null}
         </Suspense>
       </div>
     );

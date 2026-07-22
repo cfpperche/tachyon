@@ -339,6 +339,19 @@ export const cockpitFixtures: Record<string, Fixture<CockpitModel>> = {
     provenance: "synthetic-edge",
     vm: { ...buildCockpitModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.agentProbes("b349073a", "claude") },
   },
+  // t-610705 (Phase D, D0) — the pilot studio route (studios-routes-design.md): same activeRoute-
+  // attached-after-buildCockpitModel pattern as above; nav section is "fleet" (command/terminal/
+  // runbook/schedule/agent studios all parent there per the registry table). `studioMountNonce` is
+  // a fixture-only stand-in for the real host's per-binding nonce — this static harness has no live
+  // host to hand one out, and the client doesn't validate it against anything here anyway.
+  "studio-command": {
+    provenance: "synthetic-edge",
+    vm: { ...buildCockpitModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.studioNew("command", "b349073a"), studioMountNonce: "fixture-mount-nonce" },
+  },
+  "studio-command-edit": {
+    provenance: "synthetic-edge",
+    vm: { ...buildCockpitModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.studioEdit("command", "b349073a", "verify-ui"), studioMountNonce: "fixture-mount-nonce" },
+  },
   validations: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "validations", nowIso: now }) },
   approvals: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "approvals", nowIso: now }) },
   // t-610705 (Phase C.3) — Handoff folds into a section (no activeRoute, unlike task-detail/Fleet

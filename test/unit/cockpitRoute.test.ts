@@ -3,13 +3,16 @@ import {
   routes,
   routeKey,
   parentRoute,
+  navSection,
   refreshPolicy,
   formatRoute,
   decodeRoute,
   decodePanelState,
+  isStudioRoute,
   type CockpitRoute,
 } from "../../src/cockpit/route.js";
 import { COCKPIT_SECTION_ORDER } from "../../src/cockpit/model.js";
+import { STUDIO_IDS } from "../../src/cockpit/studioIds.js";
 
 describe("routes.section / routeKey / formatRoute", () => {
   it("builds a section route and derives its key + display string", () => {
@@ -103,6 +106,56 @@ describe("decodePanelState (persisted-state restore boundary)", () => {
   it("carries wsHash through even on a fallback decode", () => {
     const state = { schemaVersion: 2, view: "tachyonCockpit", route: { kind: "bogus" }, wsHash: "keep-me" };
     expect(decodePanelState(state)).toEqual({ route: { kind: "section", section: "overview" }, wsHash: "keep-me" });
+  });
+});
+
+describe("studio-new / studio-edit (t-610705 Phase D, D0)", () => {
+  it("builds routes, derives keys, and formats a display string per StudioId", () => {
+    for (const studio of STUDIO_IDS) {
+      const fresh = routes.studioNew(studio, "ws-1");
+      expect(fresh).toEqual({ kind: "studio-new", studio, wsHash: "ws-1" });
+      expect(routeKey(fresh)).toBe(`studio-new:${studio}:ws-1`);
+      expect(formatRoute(fresh)).toBe(`${studio} new`);
+
+      const edit = routes.studioEdit(studio, "ws-1", "cmd-a");
+      expect(edit).toEqual({ kind: "studio-edit", studio, wsHash: "ws-1", entityId: "cmd-a" });
+      expect(routeKey(edit)).toBe(`studio-edit:${studio}:ws-1:cmd-a`);
+      expect(formatRoute(edit)).toBe(`${studio} cmd-a`);
+    }
+  });
+
+  it("command studio's parent/nav is the fleet section for both new and edit", () => {
+    expect(parentRoute(routes.studioNew("command", "ws-1"))).toEqual({ kind: "section", section: "fleet" });
+    expect(parentRoute(routes.studioEdit("command", "ws-1", "cmd-a"))).toEqual({ kind: "section", section: "fleet" });
+    expect(navSection(routes.studioNew("command", "ws-1"))).toBe("fleet");
+    expect(navSection(routes.studioEdit("command", "ws-1", "cmd-a"))).toBe("fleet");
+  });
+
+  it("never polls on the shared shell timer — a form must not be clobbered mid-edit", () => {
+    expect(refreshPolicy(routes.studioNew("command", "ws-1"))).toBe("none");
+    expect(refreshPolicy(routes.studioEdit("command", "ws-1", "cmd-a"))).toBe("none");
+  });
+
+  it("isStudioRoute is true for both kinds and false for everything else", () => {
+    expect(isStudioRoute(routes.studioNew("command", "ws-1"))).toBe(true);
+    expect(isStudioRoute(routes.studioEdit("command", "ws-1", "cmd-a"))).toBe(true);
+    expect(isStudioRoute(routes.section("fleet"))).toBe(false);
+    expect(isStudioRoute(routes.taskDetail("ws-1", "t-1"))).toBe(false);
+  });
+
+  it("decodeRoute round-trips a valid studio-new/studio-edit route", () => {
+    expect(decodeRoute({ kind: "studio-new", studio: "command", wsHash: "ws-1" })).toEqual({ kind: "studio-new", studio: "command", wsHash: "ws-1" });
+    expect(decodeRoute({ kind: "studio-edit", studio: "command", wsHash: "ws-1", entityId: "cmd-a" })).toEqual({ kind: "studio-edit", studio: "command", wsHash: "ws-1", entityId: "cmd-a" });
+  });
+
+  it("decodeRoute rejects an unknown studio, missing fields, or extra fields", () => {
+    expect(decodeRoute({ kind: "studio-new", studio: "bogus", wsHash: "ws-1" })).toBeNull();
+    expect(decodeRoute({ kind: "studio-new", studio: "command" })).toBeNull();
+    expect(decodeRoute({ kind: "studio-new", wsHash: "ws-1" })).toBeNull();
+    expect(decodeRoute({ kind: "studio-new", studio: "command", wsHash: "" })).toBeNull();
+    expect(decodeRoute({ kind: "studio-new", studio: "command", wsHash: "ws-1", extra: 1 })).toBeNull();
+    expect(decodeRoute({ kind: "studio-edit", studio: "command", wsHash: "ws-1" })).toBeNull();
+    expect(decodeRoute({ kind: "studio-edit", studio: "command", wsHash: "ws-1", entityId: "" })).toBeNull();
   });
 });
 

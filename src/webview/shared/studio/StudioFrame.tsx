@@ -55,6 +55,10 @@ export interface StudioFrameProps {
   onSave: () => void;
   onCancel: () => void;
   onReload?: () => void;
+  /** t-610705 (Phase D, D0) — true while a navigation-transaction checkpoint is pending
+   *  (useStudioNavFreeze). Dims + pointer-events:none's the body, disables Save/Cancel — a studio
+   *  migrated onto a Control route passes this; a still-standalone studio simply never sets it. */
+  frozen?: boolean;
   /** adapter-declared header action slots (e.g. Pin Studio's Import/Sketch), left of Cancel/Save. */
   headerActions?: ComponentChildren;
   regions: StudioFrameRegions;
@@ -63,7 +67,7 @@ export interface StudioFrameProps {
 export function StudioFrame(props: StudioFrameProps) {
   const labels = props.labels ?? DEFAULT_STUDIO_LABELS;
   return (
-    <div class="sf-shell">
+    <div class={props.frozen ? "sf-shell sf-frozen" : "sf-shell"}>
       <header class="sf-header">
         <div class="sf-title-group">
           <div class="sf-title">{props.title}</div>
@@ -71,8 +75,8 @@ export function StudioFrame(props: StudioFrameProps) {
         </div>
         <div class="sf-actions">
           {props.headerActions}
-          <Button onClick={props.onCancel}>{labels.cancel}</Button>
-          <Button variant="primary" disabled={!props.canSave} onClick={props.onSave}>
+          <Button disabled={props.frozen} onClick={props.onCancel}>{labels.cancel}</Button>
+          <Button variant="primary" disabled={!props.canSave || props.frozen} onClick={props.onSave}>
             {props.saveInFlight ? labels.saving : labels.save}
           </Button>
         </div>
