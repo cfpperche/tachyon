@@ -1,0 +1,11 @@
+{
+  "id": "t-fixture1",
+  "title": "Dogfood focus for release-0-56-91-dogfood",
+  "status": "active",
+  "priority": 1,
+  "kind": "feature",
+  "author": "human",
+  "assignee": "grok",
+  "createdAt": "2026-07-22T21:15:59.787Z",
+  "updatedAt": "2026-07-22T21:15:59.787Z"
+}
