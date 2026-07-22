@@ -4301,8 +4301,9 @@ export class Workspace {
           /* bridge may not be ready on early dispose paths */
         }
       }
-      if (prevCompanionLanAccess) {
-        // LAN was on; config gone → rebind loopback when Bridge is up.
+      if (prevCompanionLanAccess && this.bridge.listenerPort !== undefined) {
+        // LAN was on; config gone → rebind loopback only when Bridge is already listening.
+        // Cold start has not started the listener yet — skip (avoids race with startBridgeListener).
         void this.restartBridge().catch(() => undefined);
       }
       return false;
@@ -4335,8 +4336,13 @@ export class Workspace {
       }
     }
     // SDD 422 — lanAccess changes the listen host; rebind Bridge so phone reachability matches yml.
+    // Only when already listening. Cold start (_create) loads config before startBridgeListener;
+    // a fire-and-forget restart here races startBridgeListener → "Bridge already started".
     const nextCompanionLanAccess = config?.settings.companion?.lanAccess === true;
-    if (prevCompanionLanAccess !== nextCompanionLanAccess) {
+    if (
+      prevCompanionLanAccess !== nextCompanionLanAccess &&
+      this.bridge.listenerPort !== undefined
+    ) {
       void this.restartBridge().catch(() => undefined);
     }
     // spec 377 T15A — reconcile incomplete profile journals on every successful reload.
