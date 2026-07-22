@@ -33,7 +33,14 @@ export interface StudioLoadContext {
 }
 
 export type StudioLoadResult<TEntity, TReferenceData = unknown> =
-  | { status: "ok"; entity: TEntity; referenceData?: TReferenceData }
+  /** t-610705 (Phase D, D2) — `persisted` defaults to `true` when omitted (every existing adapter's
+   *  "ok" result stays correct with zero changes). Set it to `false` ONLY when `entityId` was
+   *  provided but the entity does NOT actually exist in durable storage yet — a pre-minted-but-
+   *  never-saved id (Task Studio's staged-create pattern: the id is reserved for the attachment
+   *  namespace before the entity is created, see mintTaskId()'s doc comment). Drives
+   *  `Binding.persisted` (studioHost.ts), which gates whether `adapter.onCancel` fires on abandonment
+   *  — see `abandonProvisionalIfNeeded`'s doc comment for why this can't be inferred from `mode`. */
+  | { status: "ok"; entity: TEntity; referenceData?: TReferenceData; persisted?: boolean }
   | { status: "not-found" }
   | { status: "error"; error: string };
 
