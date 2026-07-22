@@ -18,3 +18,4 @@
 ## Implementation log
 
 - 2026-07-22 — t-da645b: `settings.companion.lanAccess`, Bridge `start(port, {host})`, pair baseUrl via `lanReachability.ts`, doctor `companion.lan_access` warn, reload rebinds Bridge.
+- 2026-07-22 — t-0e1f58: IssuedPairCode gains `baseUrls` + `qrPayload`; Control pair offer shows QR PNG + candidates; companionBaseUrl respects lanAccess.

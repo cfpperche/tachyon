@@ -1421,13 +1421,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (!code || !baseUrl || !expiresAt) {
         return { ok: false as const, reason: "invalid_pair_response" };
       }
+      const baseUrls = Array.isArray(result.baseUrls)
+        ? result.baseUrls.filter((u): u is string => typeof u === "string" && u.length > 0)
+        : [baseUrl];
       return {
         ok: true as const,
         code,
         baseUrl,
+        baseUrls: baseUrls.length > 0 ? baseUrls : [baseUrl],
         expiresAt,
         ...(typeof result.protocolVersion === "number" ? { protocolVersion: result.protocolVersion } : {}),
         ...(typeof result.prefix === "string" ? { prefix: result.prefix } : {}),
+        ...(typeof result.qrPayload === "string" ? { qrPayload: result.qrPayload } : {}),
+        ...(typeof result.qrDataUrl === "string" ? { qrDataUrl: result.qrDataUrl } : {}),
       };
     },
   });

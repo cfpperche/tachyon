@@ -126,6 +126,11 @@ export interface CockpitStrings {
   companionCopyAll: string;
   companionNewCode: string;
   companionPairUnavailable: string;
+  companionPairQrLabel: string;
+  companionPairQrHint: string;
+  companionPairCandidatesLabel: string;
+  companionCopyPayload: string;
+  companionLanAccessHint: string;
   devicesTitle: string;
   devicesHint: string;
   devicesEmpty: string;
@@ -188,9 +193,15 @@ export type CompanionPairOffer =
       ok: true;
       code: string;
       baseUrl: string;
+      /** SDD 422 — loopback + LAN candidates for multi-NIC hosts. */
+      baseUrls?: string[];
       expiresAt: string;
       protocolVersion?: number;
       prefix?: string;
+      /** Compact JSON for mobile QR: { baseUrl, pairCode, protocolVersion }. */
+      qrPayload?: string;
+      /** PNG data URL of qrPayload (offline, generated on host). */
+      qrDataUrl?: string;
     }
   | { ok: false; reason: string };
 
@@ -288,5 +299,8 @@ export const companionPairOfferMessage = (offer: CompanionPairOffer): CockpitHos
 
 /** Clipboard blob matching tachyon.pairCompanion (code + baseUrl + expires). */
 export function formatCompanionPairClipboard(offer: Extract<CompanionPairOffer, { ok: true }>): string {
-  return `code=${offer.code} baseUrl=${offer.baseUrl} expires=${offer.expiresAt}`;
+  const urls = offer.baseUrls?.length ? offer.baseUrls.join(",") : offer.baseUrl;
+  const base = `code=${offer.code} baseUrl=${offer.baseUrl} expires=${offer.expiresAt}`;
+  if (offer.qrPayload) return `${base} qrPayload=${offer.qrPayload} baseUrls=${urls}`;
+  return base;
 }

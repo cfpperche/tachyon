@@ -17,14 +17,20 @@ import {
   type PairRequestBody,
   type PairResponse,
 } from "./protocol.js";
+import { buildCompanionPairQrPayload } from "./pairQr.js";
 
 export interface CompanionPairingServiceOptions {
   /** Human-readable workspace label for the extension UI. */
   engineLabel: string;
   /** Stable engine/workspace id (e.g. wsHash). */
   engineId: string;
-  /** Returns current loopback base URL, or undefined if Bridge is down. */
+  /** Returns current primary base URL, or undefined if Bridge is down. */
   getBaseUrl: () => string | undefined;
+  /**
+   * Optional multi-URL candidates (loopback + LAN). Defaults to [getBaseUrl()].
+   * SDD 422 — Control QR / mobile multi-NIC selection.
+   */
+  getBaseUrlCandidates?: () => string[] | undefined;
   now?: () => number;
   pairCodeTtlMs?: number;
   sessionTtlMs?: number;
@@ -94,29 +100,38 @@ export class CompanionPairingService {
    * Does not invalidate an existing companion session until a new pair succeeds.
    */
   issuePairCode(): IssuedPairCode | { ok: false; reason: "bridge_down" } {
-    const baseUrl = this.options.getBaseUrl();
-    if (!baseUrl) return { ok: false, reason: "bridge_down" };
+    if (!this.options.getBaseUrl()) return { ok: false, reason: "bridge_down" };
     const code = newPairCode();
     const expiresAtMs = this.now() + this.pairCodeTtlMs;
     this.pending = { code, expiresAtMs };
-    return {
-      code,
-      expiresAt: new Date(expiresAtMs).toISOString(),
-      baseUrl,
-      protocolVersion: COMPANION_PROTOCOL_VERSION,
-    };
+    return this.buildIssuedPairCode(code, expiresAtMs)!;
   }
 
   /** Peek current pending code if still valid (for UI refresh without rotating). */
   peekPairCode(): IssuedPairCode | undefined {
     this.sweep();
-    const baseUrl = this.options.getBaseUrl();
-    if (!this.pending || !baseUrl) return undefined;
+    if (!this.pending) return undefined;
+    return this.buildIssuedPairCode(this.pending.code, this.pending.expiresAtMs);
+  }
+
+  private buildIssuedPairCode(code: string, expiresAtMs?: number): IssuedPairCode | undefined {
+    const baseUrl = this.options.getBaseUrl()?.replace(/\/+$/, "");
+    if (!baseUrl) return undefined;
+    const candidates = (this.options.getBaseUrlCandidates?.() ?? [baseUrl])
+      .map((u) => u.replace(/\/+$/, ""))
+      .filter(Boolean);
+    const baseUrls = candidates.length > 0 ? [...new Set([baseUrl, ...candidates])] : [baseUrl];
+    // Prefer primary first in the list for stable UI ordering.
+    const ordered = [baseUrl, ...baseUrls.filter((u) => u !== baseUrl)];
+    const exp = expiresAtMs ?? this.now() + this.pairCodeTtlMs;
+    const protocolVersion = COMPANION_PROTOCOL_VERSION;
     return {
-      code: this.pending.code,
-      expiresAt: new Date(this.pending.expiresAtMs).toISOString(),
+      code,
+      expiresAt: new Date(exp).toISOString(),
       baseUrl,
-      protocolVersion: COMPANION_PROTOCOL_VERSION,
+      baseUrls: ordered,
+      protocolVersion,
+      qrPayload: buildCompanionPairQrPayload({ baseUrl, pairCode: code, protocolVersion }),
     };
   }
 

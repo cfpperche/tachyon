@@ -103,13 +103,15 @@ export async function executeExtensionQuery(
           ? workspace.config!.settings.companion!.allowedHosts!
           : [],
         paired: workspace.companion.hasPairedDevice(),
-        baseUrl: port === undefined ? undefined : `http://127.0.0.1:${port}`,
+        baseUrl: workspace.companionBaseUrl(),
+        baseUrls: workspace.companionBaseUrlCandidates(),
+        lanAccess: workspace.config?.settings.companion?.lanAccess === true,
         engineLabel: path.basename(workspace.workspaceRoot) || "tachyon",
         devices,
       });
     }
     case "companion.pair-code": {
-      // SDD 414 — short-lived companion pair code + loopback base URL for Tachyon Companion.
+      // SDD 414/422 — short-lived pair code + baseUrl(s) + QR payload for Companion (browser/mobile).
       const issued = workspace.issueCompanionPairCode();
       if ("ok" in issued && issued.ok === false) {
         return json({
@@ -119,7 +121,20 @@ export async function executeExtensionQuery(
           prefix: workspace.companionHttpPrefix(),
         });
       }
-      return json({ ok: true, ...issued, prefix: workspace.companionHttpPrefix() });
+      let qrDataUrl: string | undefined;
+      try {
+        const { companionPairQrDataUrl } = await import("../companion/pairQr.js");
+        const payload = "qrPayload" in issued ? String(issued.qrPayload) : "";
+        if (payload) qrDataUrl = await companionPairQrDataUrl(payload);
+      } catch {
+        /* QR optional — UI still shows payload text */
+      }
+      return json({
+        ok: true,
+        ...issued,
+        prefix: workspace.companionHttpPrefix(),
+        ...(qrDataUrl ? { qrDataUrl } : {}),
+      });
     }
     case "agent.inspect":
       return inspectAgent(workspace, query.agent);

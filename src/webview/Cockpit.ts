@@ -223,9 +223,12 @@ export interface CockpitDeps {
     ok: true;
     code: string;
     baseUrl: string;
+    baseUrls?: string[];
     expiresAt: string;
     protocolVersion?: number;
     prefix?: string;
+    qrPayload?: string;
+    qrDataUrl?: string;
   } | { ok: false; reason: string }>;
 }
 
@@ -358,8 +361,17 @@ function strings(): CockpitStrings {
     companionCopyAll: t("Copy all"),
     companionNewCode: t("New code"),
     companionPairUnavailable: t("Companion pairing unavailable — ensure the Bridge is listening."),
+    companionPairQrLabel: t("Mobile QR"),
+    companionPairQrHint: t(
+      "Scan with Tachyon Companion Mobile (or paste payload). Payload: baseUrl + pairCode + protocolVersion.",
+    ),
+    companionPairCandidatesLabel: t("URL candidates"),
+    companionCopyPayload: t("Copy QR payload"),
+    companionLanAccessHint: t(
+      "Phone on Wi‑Fi needs settings.companion.lanAccess: true (Bridge rebinds; Doctor warns).",
+    ),
     devicesTitle: t("Connected devices"),
-    devicesHint: t("Companion browsers paired to this workspace engine."),
+    devicesHint: t("Companion devices paired to this workspace engine (browser or mobile)."),
     devicesEmpty: t("No Companion device paired. Generate a pair code above, enter it in Tachyon Companion, then refresh."),
     devicesUnpair: t("Unpair"),
     devicesLive: t("Live"),

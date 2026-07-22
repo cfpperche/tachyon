@@ -13,7 +13,7 @@ _Board umbrella: `t-af2c9b`. Research: `t-619157` done. Product card: `t-fe52f0`
 ## Phase 1 — ADE reachability
 
 - [x] `t-da645b` — `settings.companion.lanAccess` + bind + doctor
-- [ ] `t-0e1f58` — pair QR + baseUrl candidates in Control
+- [x] `t-0e1f58` — pair QR + baseUrl candidates in Control
 - [ ] Connected devices shows mobile kind (smoke with slice 3)
 
 ## Phase 2 — Session policy (M4)

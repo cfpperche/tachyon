@@ -26,6 +26,20 @@ describe("companion pair offer messages (Control Settings)", () => {
     );
   });
 
+  it("formatCompanionPairClipboard includes qrPayload and baseUrls when present", () => {
+    const offer: Extract<CompanionPairOffer, { ok: true }> = {
+      ok: true,
+      code: "A3F9K2",
+      baseUrl: "http://10.0.0.2:41000",
+      baseUrls: ["http://10.0.0.2:41000", "http://127.0.0.1:41000"],
+      expiresAt: "2026-07-21T14:30:00.000Z",
+      qrPayload: '{"baseUrl":"http://10.0.0.2:41000","pairCode":"A3F9K2","protocolVersion":2}',
+    };
+    const blob = formatCompanionPairClipboard(offer);
+    expect(blob).toContain("qrPayload=");
+    expect(blob).toContain("baseUrls=");
+  });
+
   it("companionPairOfferMessage wraps success and failure offers", () => {
     const ok = companionPairOfferMessage({
       ok: true,

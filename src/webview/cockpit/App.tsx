@@ -418,12 +418,27 @@ function CompanionPairOfferCard({
     );
   }
 
+  const candidates = offer.baseUrls?.length ? offer.baseUrls : [offer.baseUrl];
+
   return (
     <div class="ck-pair-offer" data-testid="companion-pair-offer">
       {expired ? (
         <p class="ck-settings-block-body dim" data-testid="companion-pair-expired">
           {s.companionPairExpired}
         </p>
+      ) : null}
+      {offer.qrDataUrl ? (
+        <div class="ck-pair-offer-qr" data-testid="companion-pair-qr">
+          <span class="ck-pair-offer-label">{s.companionPairQrLabel}</span>
+          <img
+            class="ck-pair-offer-qr-img"
+            src={offer.qrDataUrl}
+            width={200}
+            height={200}
+            alt={s.companionPairQrLabel}
+          />
+          <p class="ck-settings-block-body dim">{s.companionPairQrHint}</p>
+        </div>
       ) : null}
       <div class="ck-pair-offer-row">
         <span class="ck-pair-offer-label">{s.companionPairCodeLabel}</span>
@@ -437,6 +452,39 @@ function CompanionPairOfferCard({
           {offer.baseUrl}
         </span>
       </div>
+      {candidates.length > 1 ? (
+        <div class="ck-pair-offer-candidates" data-testid="companion-pair-candidates">
+          <span class="ck-pair-offer-label">{s.companionPairCandidatesLabel}</span>
+          <ul class="ck-pair-offer-candidate-list">
+            {candidates.map((u) => (
+              <li key={u}>
+                <button
+                  type="button"
+                  class="ck-pair-offer-candidate ck-mono"
+                  data-testid="companion-pair-candidate"
+                  data-primary={u === offer.baseUrl ? "1" : "0"}
+                  title={u}
+                  onClick={() => onCopyText(u)}
+                >
+                  {u}
+                  {u === offer.baseUrl ? " ★" : ""}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {offer.qrPayload ? (
+        <div class="ck-pair-offer-row">
+          <span class="ck-pair-offer-label">payload</span>
+          <span class="ck-pair-offer-url ck-mono" data-testid="companion-pair-payload" title={offer.qrPayload}>
+            {offer.qrPayload}
+          </span>
+        </div>
+      ) : null}
+      <p class="ck-settings-block-body dim" data-testid="companion-lan-hint">
+        {s.companionLanAccessHint}
+      </p>
       <div class="ck-pair-offer-row">
         <span class="ck-pair-offer-label">{s.companionPairExpires}</span>
         <span class="ck-mono" data-testid="companion-pair-expires">
@@ -462,6 +510,16 @@ function CompanionPairOfferCard({
         >
           {s.companionCopyUrl}
         </Button>
+        {offer.qrPayload ? (
+          <Button
+            variant="default"
+            data-testid="companion-pair-copy-payload"
+            disabled={expired}
+            onClick={() => onCopyText(offer.qrPayload!)}
+          >
+            {s.companionCopyPayload}
+          </Button>
+        ) : null}
         <Button
           variant="default"
           data-testid="companion-pair-copy-all"

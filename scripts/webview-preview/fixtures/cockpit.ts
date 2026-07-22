@@ -133,8 +133,15 @@ export const strings: CockpitStrings = {
   companionCopyAll: "Copy all",
   companionNewCode: "New code",
   companionPairUnavailable: "Companion pairing unavailable — ensure the Bridge is listening.",
+  companionPairQrLabel: "Mobile QR",
+  companionPairQrHint:
+    "Scan with Tachyon Companion Mobile (or paste payload). Payload: baseUrl + pairCode + protocolVersion.",
+  companionPairCandidatesLabel: "URL candidates",
+  companionCopyPayload: "Copy QR payload",
+  companionLanAccessHint:
+    "Phone on Wi‑Fi needs settings.companion.lanAccess: true (Bridge rebinds; Doctor warns).",
   devicesTitle: "Connected devices",
-  devicesHint: "Companion browsers paired to this workspace engine.",
+  devicesHint: "Companion devices paired to this workspace engine (browser or mobile).",
   devicesEmpty: "No Companion device paired. Generate a pair code above, enter it in Tachyon Companion, then refresh.",
   devicesUnpair: "Unpair",
   devicesLive: "Live",

@@ -71,7 +71,11 @@ import { Bridge, derivePort } from "../bridge/Bridge.js";
 import { CompanionPairingService } from "../companion/CompanionPairingService.js";
 import { CompanionLiveSync } from "../companion/CompanionLiveSync.js";
 import { CompanionTabChannel } from "../companion/CompanionTabChannel.js";
-import { companionListenHost, companionPairBaseUrl } from "../companion/lanReachability.js";
+import {
+  companionListenHost,
+  companionPairBaseUrl,
+  companionPairBaseUrlCandidates,
+} from "../companion/lanReachability.js";
 import { TabRefCache } from "../companion/tabRefCache.js";
 import {
   listPendingApprovalRequests,
@@ -1528,6 +1532,12 @@ export class Workspace {
         const lanAccess = this.config?.settings.companion?.lanAccess === true;
         return companionPairBaseUrl(port, lanAccess);
       },
+      getBaseUrlCandidates: () => {
+        const port = this.bridge.listenerPort;
+        if (port === undefined) return undefined;
+        const lanAccess = this.config?.settings.companion?.lanAccess === true;
+        return companionPairBaseUrlCandidates(port, lanAccess);
+      },
     });
     this.companionLive = new CompanionLiveSync({
       statusOf: (token) => this.companion.status(token),
@@ -2778,10 +2788,21 @@ export class Workspace {
     return this.bridge.url;
   }
 
-  /** SDD 414 — companion loopback base (no path), undefined if Bridge is down. */
+  /**
+   * SDD 414/422 — companion pair base URL (no path). Loopback by default;
+   * LAN IPv4 when settings.companion.lanAccess is true.
+   */
   companionBaseUrl(): string | undefined {
     const port = this.bridge.listenerPort;
-    return port === undefined ? undefined : `http://127.0.0.1:${port}`;
+    if (port === undefined) return undefined;
+    return companionPairBaseUrl(port, this.config?.settings.companion?.lanAccess === true);
+  }
+
+  /** SDD 422 — all pair base URL candidates (for QR multi-NIC UI). */
+  companionBaseUrlCandidates(): string[] {
+    const port = this.bridge.listenerPort;
+    if (port === undefined) return [];
+    return companionPairBaseUrlCandidates(port, this.config?.settings.companion?.lanAccess === true);
   }
 
   /** SDD 414 — mint a short-lived pair code for Tachyon Companion. */

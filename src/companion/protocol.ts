@@ -79,9 +79,22 @@ export interface ConnectionStatus {
 export interface IssuedPairCode {
   code: string;
   expiresAt: string;
-  /** Loopback base URL the extension should use (no trailing path). */
+  /**
+   * Primary base URL (no path) for pairing — loopback when lanAccess is off;
+   * preferred LAN IPv4 when on (SDD 422).
+   */
   baseUrl: string;
+  /**
+   * All base URL candidates (loopback + LAN IPv4s when lanAccess). Mobile QR and
+   * Control UI list these so multi-NIC hosts can pick a reachable address.
+   */
+  baseUrls: string[];
   protocolVersion: number;
+  /**
+   * Canonical mobile pair payload for QR encoding:
+   * `{"baseUrl","pairCode","protocolVersion"}` (compact JSON).
+   */
+  qrPayload: string;
 }
 
 /** Running agent row for Companion send-prompt UI (MVP item 3 — evolving). */

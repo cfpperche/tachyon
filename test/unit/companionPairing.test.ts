@@ -22,6 +22,25 @@ describe("CompanionPairingService (SDD 414 slice 2)", () => {
     });
     if ("ok" in issued) throw new Error("expected success");
     expect(issued.code).toMatch(/^[A-Z2-9]{8}$/);
+    expect(issued.baseUrls).toEqual([base]);
+    expect(issued.qrPayload).toBe(
+      JSON.stringify({ baseUrl: base, pairCode: issued.code, protocolVersion: COMPANION_PROTOCOL_VERSION }),
+    );
+  });
+
+  it("includes LAN baseUrl candidates when provided (SDD 422)", () => {
+    const svc = new CompanionPairingService({
+      engineLabel: "demo",
+      engineId: "abc123",
+      getBaseUrl: () => "http://10.0.0.5:41000",
+      getBaseUrlCandidates: () => ["http://127.0.0.1:41000", "http://10.0.0.5:41000", "http://192.168.1.9:41000"],
+    });
+    const issued = svc.issuePairCode();
+    if ("ok" in issued) throw new Error("expected success");
+    expect(issued.baseUrl).toBe("http://10.0.0.5:41000");
+    expect(issued.baseUrls[0]).toBe("http://10.0.0.5:41000");
+    expect(issued.baseUrls).toContain("http://127.0.0.1:41000");
+    expect(issued.baseUrls).toContain("http://192.168.1.9:41000");
   });
 
   it("pairs with a valid code and replaces a prior session (one active pair)", () => {
