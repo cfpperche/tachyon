@@ -205,11 +205,12 @@ const sidebar = {
 // section now (src/webview/handoff/App.tsx stays, lazy-imported by cockpit/App.tsx via CSS
 // co-load). handoff.css is still copied below — Cockpit.ts co-loads it.
 
-const approval = {
-  ...sidebar,
-  entryPoints: ["src/webview/approval/main.tsx"],
-  outfile: "dist/webview/approval.js",
-};
+// t-610705 (SDD 410 Phase A/B, found + closed in the Phase E audit, 2026-07-22) — the standalone
+// Approvals bundle was retired: it's a Control section now (src/webview/approval/App.tsx stays,
+// lazy-imported by cockpit/App.tsx via CSS co-load). approval.css is still copied below — Cockpit.ts
+// co-loads it. ApprovalPanelManager (src/webview/ApprovalPanel.ts) is a pure redirect stub — it
+// never calls createWebviewPanel, so this target had kept building a bundle nothing ever opened
+// since the Phase A pilot landed.
 
 // spec 250 — the Preact Plugins View webview bundle (editor-area panel; never imports vscode).
 
@@ -440,7 +441,7 @@ if (existsSync(excalidrawAssets)) {
   cpSync(excalidrawAssets, "dist/webview/excalidraw-assets", { recursive: true });
 }
 
-const targets = [extension, toolLauncher, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, approval, cockpit, pinPreview, pipelineStudio, agentStudioFixture, pluginHost, excalidraw, mermaid, katex, preview, uiGate];
+const targets = [extension, toolLauncher, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, cockpit, pinPreview, pipelineStudio, agentStudioFixture, pluginHost, excalidraw, mermaid, katex, preview, uiGate];
 if (watch) {
   const ctxs = await Promise.all(targets.map((c) => esbuild.context(c)));
   await Promise.all(ctxs.map((c) => c.watch()));

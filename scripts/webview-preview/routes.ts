@@ -228,13 +228,10 @@ export const ROUTES: Record<string, Route> = {
   // t-610705 (SDD 410 Phase C.3) — the standalone "handoff" route previewed the retired Project
   // Handoff panel; Handoff is a cockpit-only section now — use ?view=cockpit&fixture=handoff (same
   // App.tsx, same fixture VM, via the cockpit route's section injection above).
-  approval: {
-    bundle: "/dist/webview/approval.js",
-    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/approval.css"],
-    frame: { w: 900, h: 760 },
-    fixtures: approvalFixtures as Record<string, Fixture>,
-    makeMessage: (vm) => approvalsMessage(vm as never),
-  },
+  // t-610705 (SDD 410 Phase A/B pilot, found + closed in the Phase E audit, 2026-07-22) — the
+  // standalone "approval" route previewed the retired Approvals panel; Approvals is a cockpit-only
+  // section now — use ?view=cockpit&fixture=approvals (same App.tsx, same fixture VM, via the
+  // cockpit route's section injection above).
   // t-610705 (SDD 410 Phase B #6) — the standalone "mission-control" route previewed the retired
   // Board panel; the Board is a cockpit-only section now — use ?view=cockpit&fixture=mission
   // (same App.tsx, same fixture VM via the cockpit route's board injection below).

@@ -27,15 +27,13 @@ describe("WEBVIEW_SURFACES editorHome (spec 410 / 279)", () => {
     expect(missing, `missing editorHome: ${missing.join(", ")}`).toEqual([]);
   });
 
-  it("Approvals is legacy-redirect into cockpit approvals", () => {
-    const a = WEBVIEW_SURFACES.find((s) => s.viewId === "tachyonApprovals");
-    expect(a?.editorHome).toBe("legacy-redirect");
-    expect(a?.cockpitSectionId).toBe("approvals");
-  });
-
-  // t-610705 (Phase E cleanup) — the "multi-instance class is tagged standalone-multi" test that
-  // used to live here is gone, not just green: `standalone-multi` (task-detail/activity/probes/
-  // handoff's thin-host exception — Phase C.1/C.2/C.3 closed all three into Control subroutes/
-  // sections) was removed from `WebviewEditorHome` itself, so the invariant is compiler-enforced now
-  // — a stronger guarantee than a runtime filter asserting an empty array.
+  // t-610705 (Phase E cleanup, 2026-07-22) — two tests that used to live here are gone, not just
+  // green: "multi-instance class is tagged standalone-multi" (task-detail/activity/probes/handoff's
+  // thin-host exception — Phase C.1/C.2/C.3 closed all three into Control subroutes/sections) and
+  // "Approvals is legacy-redirect into cockpit approvals" (Approvals' manager is a pure redirect stub
+  // with no createWebviewPanel call left — same shape as every other retired panel, it just hadn't
+  // dropped out of WEBVIEW_SURFACES yet). Both `standalone-multi` and `legacy-redirect` (+ the
+  // `cockpitSectionId` field it paired with) were removed from `WebviewEditorHome`/`WebviewSurface`
+  // itself, so both invariants are compiler-enforced now — a stronger guarantee than a runtime
+  // filter/lookup assertion.
 });

@@ -825,24 +825,6 @@
     ]
   },
   {
-    "view": "approval",
-    "fixture": "pending",
-    "url": "/scripts/webview-preview/index.html?view=approval&fixture=pending",
-    "frame": {
-      "w": 900,
-      "h": 760
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Human Approvals",
-    "aliases": [
-      "approvals",
-      "human approvals",
-      "approval view"
-    ]
-  },
-  {
     "view": "pipeline-studio",
     "fixture": "clean",
     "url": "/scripts/webview-preview/index.html?view=pipeline-studio&fixture=clean",
