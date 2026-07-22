@@ -4,7 +4,15 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { TmuxService, workspaceHash, SESSION_PREFIX } from "../tmux/TmuxService.js";
 import { ControlModeClient } from "../tmux/ControlModeClient.js";
-import { loadConfigFile, parseConfig, CONFIG_FILENAMES, inferKind, shellQuote, type TachyonConfig } from "../config/loadConfig.js";
+import { CONFIG_FILENAMES, inferKind, shellQuote, type TachyonConfig } from "../config/loadConfig.js";
+import {
+  loadProfileAwareConfig,
+  parseProfileAwareConfigSyntax,
+} from "../config/agentProfileConfigLoader.js";
+import {
+  parseAgentProfileAuthorityRegistry,
+  type AgentProfileAuthorityRecord,
+} from "../config/agentProfileAuthority.js";
 import { composeAgentPrompt } from "../agents/promptLayers.js";
 import { SoulError, agentSoulPath, readCanonicalSoulBytes } from "../agents/soul.js";
 import {
@@ -110,6 +118,7 @@ import { assertSafeBriefTransport, deliverableBody, previewDeliverableBody } fro
 import { loadOrCreateExternalToken, loadOrCreateToken, TOKEN_ENV_VAR, URL_ENV_VAR, AGENT_TOKEN_ENV_VAR } from "../bridge/token.js";
 import { CallerIdentityRegistry, loadOrCreateHmacKey, type CallerScope, type CallerSnapshot, type PersistableEntry } from "../bridge/callerIdentity.js";
 import {
+  agentProfileAuthoritiesSecretKey,
   authorityHeadsSecretKey,
   callerIdentityInstanceIdStateKey,
   callerIdentityRegistryStateKey,
@@ -318,6 +327,8 @@ export interface WorkspaceSeams {
   startBridge?: boolean;
   /** test-only presentation override; production obtains the adapter from EngineHost. */
   terminals?: TerminalPresentation;
+  /** test-only native-profile inspection home; production inspects the real runtime home. */
+  agentProfileHomeDir?: string;
 }
 
 export interface BridgeStartFailureInfo {
@@ -536,6 +547,9 @@ export class Workspace {
   private authorityIntegrityKey: Buffer | undefined;
   /** SecretStorage-backed exact MAC heads; kept outside agent-writable workspace metadata. */
   private authorityHeads = new Map<string, AuthorityHead>();
+  /** Host-custodied profile heads selected before any profile-backed config can load. */
+  private agentProfileAuthorities = new Map<string, AgentProfileAuthorityRecord>();
+  private readonly agentProfileHomeDir: string | undefined;
   /** Serializes the async SecretStorage read/prepare/readback sequence inside this extension host. */
   private authorityHeadPrepareTail: Promise<void> = Promise.resolve();
   private readonly reloadTransactions: ReloadTransactionStore;
@@ -545,6 +559,8 @@ export class Workspace {
   private clientRebind: BridgeClientRebindCoordinator | undefined;
   private readonly bridgeClientRebindAuditPath: string;
   config: TachyonConfig | undefined;
+  /** Profile-backed rows retained after a warm reload failure remain visible but cannot start anew. */
+  private profileSpawnBlocked = new Set<string>();
   /**
    * t-8354ae — set whenever the working-tree config fails to load. Survives until the next
    * successful reloadConfig(). Drives the persistent sidebar error banner + degraded roster.
@@ -578,6 +594,7 @@ export class Workspace {
     private readonly deps: WorkspaceDeps,
     seams: WorkspaceSeams = {},
   ) {
+    this.agentProfileHomeDir = seams.agentProfileHomeDir;
     this.wsHash = workspaceHash(workspaceRoot);
     this.gitExec = createGitExec(() => resolveGitBinaryForHost(deps.host));
     this.taskNotifications = new TaskNotificationService(workspaceRoot, deps.host, () => this.config);
@@ -629,7 +646,14 @@ export class Workspace {
 
     // Auth: stable per-workspace token (extension storage — never in a committable file).
     const earlyFile = this.configPath();
-    const earlyConfig = earlyFile ? loadConfigFile(earlyFile).config : undefined;
+    let earlyConfig: TachyonConfig | undefined;
+    if (earlyFile) {
+      try {
+        earlyConfig = parseProfileAwareConfigSyntax(fs.readFileSync(earlyFile, "utf8")).config;
+      } catch {
+        // Preserve the historical default-on auth behavior when the file cannot be read.
+      }
+    }
     this.authEnabled = earlyConfig?.settings.auth ?? true;
     this.token = this.authEnabled ? loadOrCreateToken(deps.host.globalStoragePath(), this.wsHash) : undefined;
     this.externalToken = this.token ? loadOrCreateExternalToken(deps.host.globalStoragePath(), this.wsHash, this.token) : undefined;
@@ -2685,6 +2709,13 @@ export class Workspace {
     } catch (err) {
       ws.host.notify(ws.t("per-agent Bridge tokens and authority custody unavailable: {0} (falling back to the shared token; gated authority remains fail-closed)", err instanceof Error ? err.message : String(err)), "warn");
     }
+    try {
+      ws.agentProfileAuthorities = parseAgentProfileAuthorityRegistry(
+        await deps.host.getSecret(agentProfileAuthoritiesSecretKey(ws.wsHash)),
+      );
+    } catch (err) {
+      ws.host.notify(ws.t("agent profile authority custody unavailable: {0} (profile-backed agents remain fail-closed)", err instanceof Error ? err.message : String(err)), "warn");
+    }
 
     try {
       // Load config before the Bridge so settings.bridgePort applies; default is a
@@ -2734,6 +2765,12 @@ export class Workspace {
       }
     };
     ws.disposables.push(ws.host.watch(workspaceRoot, "tachyon.{yml,yaml}", { change: true, create: true }, onConfigChange));
+    ws.disposables.push(ws.host.watch(
+      workspaceRoot,
+      ".tachyon/agents/*/agent.yml",
+      { change: true, create: true, delete: true },
+      onConfigChange,
+    ));
 
     // Manual edits to .tachyon/* (or agent writes through another window) reflect live.
     const refreshTachyonDir = () => {
@@ -4276,6 +4313,7 @@ export class Workspace {
     if (!file) {
       this.config = undefined;
       this.configFailure = undefined;
+      this.profileSpawnBlocked.clear();
       if (prevCompanionTabTools) {
         // Settings gone → drop companion tools from live MCP sessions.
         try {
@@ -4290,7 +4328,25 @@ export class Workspace {
       }
       return false;
     }
-    const { config, errors, warnings } = loadConfigFile(file);
+    let text: string;
+    try {
+      text = fs.readFileSync(file, "utf8");
+    } catch (error) {
+      this.configFailure = {
+        path: file,
+        file: path.basename(file),
+        errors: [`cannot read ${file}: ${error instanceof Error ? error.message : String(error)}`],
+        at: new Date().toISOString(),
+      };
+      this.blockProfileSpawnsFromLiveConfig();
+      return false;
+    }
+    const { config, errors, warnings } = loadProfileAwareConfig({
+      yamlText: text,
+      workspaceRoot: this.workspaceRoot,
+      authorities: this.agentProfileAuthorities,
+      homeDir: this.agentProfileHomeDir,
+    });
     if (errors.length > 0) {
       // t-8354ae — keep a durable failure surface (sidebar banner); toast alone is not enough.
       // Do NOT clear a previously-loaded in-memory config: live sessions keep working until
@@ -4301,12 +4357,14 @@ export class Workspace {
         errors: [...errors],
         at: new Date().toISOString(),
       };
+      this.blockProfileSpawnsFromLiveConfig();
       this.host.notify(this.t("invalid {0} — {1}{2}", path.basename(file), errors[0], errors.length > 1 ? this.t(" (+{0} more)", errors.length - 1) : ""), "error");
       return false;
     }
     for (const warning of warnings) this.host.notify(this.t("{0}: {1}", path.basename(file), warning), "warn");
     this.config = config;
     this.configFailure = undefined;
+    this.profileSpawnBlocked.clear();
     // SDD 414 — human toggle settings.companion.tabTools changes the Bridge tool catalog.
     // Close MCP sessions + announce list_changed so runtimes re-discover (pair alone does not).
     const nextCompanionTabTools = config?.settings.companion?.tabTools === true;
@@ -4348,6 +4406,24 @@ export class Workspace {
     return true;
   }
 
+  private parseTrustedConfigText(yamlText: string) {
+    return loadProfileAwareConfig({
+      yamlText,
+      workspaceRoot: this.workspaceRoot,
+      authorities: this.agentProfileAuthorities,
+      homeDir: this.agentProfileHomeDir,
+    });
+  }
+
+  private blockProfileSpawnsFromLiveConfig(): void {
+    const sources = (this.config as (TachyonConfig & {
+      agentSources?: Record<string, { mode: "legacy" | "profile" }>;
+    }) | undefined)?.agentSources;
+    this.profileSpawnBlocked = new Set(
+      Object.entries(sources ?? {}).filter(([, source]) => source.mode === "profile").map(([name]) => name),
+    );
+  }
+
   /** t-8354ae — last successful roster snapshot (null when never written / corrupt). */
   readConfigLkg(): ConfigLkgSnapshot | null {
     return readConfigLkg(this.workspaceRoot);
@@ -4358,6 +4434,9 @@ export class Workspace {
    * name is not known via live config or an in-memory ad-hoc def (i.e. it would only come from LKG).
    */
   assertNotLkgOnlySpawn(name: string): void {
+    if (this.profileSpawnBlocked.has(name)) {
+      throw new Error(`cannot spawn profile-backed agent '${name}' while its trusted configuration is invalid; fix the profile/authority error and reload`);
+    }
     if (!this.configFailure) return;
     const inLive = !!this.config?.agents[name] || this.manager.defOf(name) !== undefined;
     const lkg = this.readConfigLkg();
@@ -4889,7 +4968,7 @@ export class Workspace {
       // t-099be8 — validate the full resulting file BEFORE write (same gate as Studio submit / Bridge tool).
       // Never persist a config that loadConfig would reject; the delayed-detonation window (invalid on disk
       // until next reload) is the incident class this blocks for UI-driven edits.
-      const check = parseConfig(text);
+      const check = this.parseTrustedConfigText(text);
       if (check.errors.length > 0) {
         throw new Error(`invalid tachyon.yml (not saved): ${check.errors[0]}${check.errors.length > 1 ? ` (+${check.errors.length - 1} more)` : ""}`);
       }
@@ -4910,7 +4989,7 @@ export class Workspace {
    * Refuses to save on parse/schema/cross-ref hard errors; returns structured result (no throw).
    */
   writeTachyonConfigText(yamlText: string): { ok: true; warnings: string[] } | { ok: false; errors: string[]; warnings: string[] } {
-    const check = parseConfig(yamlText);
+    const check = this.parseTrustedConfigText(yamlText);
     if (check.errors.length > 0) return { ok: false, errors: check.errors, warnings: check.warnings };
     const file = this.configPath() ?? path.join(this.workspaceRoot, "tachyon.yml");
     try {
@@ -5078,7 +5157,7 @@ export class Workspace {
     } catch (err) {
       return [err instanceof Error ? err.message : String(err)];
     }
-    const cfg = parseConfig(candidate.text);
+    const cfg = this.parseTrustedConfigText(candidate.text);
     if (cfg.errors.length > 0) return cfg.errors;
     const ok = this.mutateConfig(
       () => candidate,

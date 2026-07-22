@@ -25,6 +25,10 @@ import { agentSoulPath } from "../../src/agents/soul.js";
 import { loadOrCreateHmacKey } from "../../src/bridge/callerIdentity.js";
 import { deterministicGitDeliveryId } from "../../src/git-delivery/store.js";
 import { renderEvolutionLearnings } from "../../src/evolution/domain.js";
+import { stringify } from "yaml";
+import { serializeAgentProfileAuthorityRegistry } from "../../src/config/agentProfileAuthority.js";
+import { CODEX_EMPTY_NATIVE_INPUT_INSPECTOR } from "../../src/config/agentProfileProjection.js";
+import { agentProfileAuthoritiesSecretKey } from "../../src/workspace/operationalStateKeys.js";
 
 /**
  * spec 235 — the headless Workspace smoke test (the deferred spec-233 payoff): drive the orchestrator with
@@ -211,6 +215,63 @@ it("rejects nonboolean soul on reload and retains the prior known-good config", 
   expect(ws.config?.agents.ada.soul).toBe(true);
   expect(ws.readConfigLkg()?.agents.map((agent) => agent.name)).toContain("ada");
   ws.dispose();
+});
+
+it("loads a canonical agent profile only after host-custodied authority is available", async () => {
+  const root = mkdir();
+  const homeDir = mkdir();
+  const profileDir = path.join(root, ".tachyon", "agents", "codex");
+  fs.mkdirSync(profileDir, { recursive: true });
+  const profile = stringify({
+    schemaVersion: 1,
+    agentId: "11111111-1111-4111-8111-111111111111",
+    runtime: { adapter: "codex", executable: "codex" },
+    prompt: { role: "reviewer" },
+  });
+  fs.writeFileSync(path.join(profileDir, "agent.yml"), profile);
+  fs.writeFileSync(
+    path.join(root, "tachyon.yml"),
+    "agents:\n  codex:\n    profile: .tachyon/agents/codex/agent.yml\nsettings:\n  auth: false\n",
+  );
+  const secrets = new Map<string, string>();
+  secrets.set(agentProfileAuthoritiesSecretKey(workspaceHash(root)), serializeAgentProfileAuthorityRegistry(new Map([
+    ["codex", {
+      schemaVersion: 1,
+      agentName: "codex",
+      agentId: "11111111-1111-4111-8111-111111111111",
+      revision: "profile-r1",
+      canonicalSha256: createHash("sha256").update(profile).digest("hex"),
+      runtimeInspector: { ...CODEX_EMPTY_NATIVE_INPUT_INSPECTOR },
+    }],
+  ])));
+  const host = new SharedSecretHost(mkdir(), secrets);
+  const fake = fakeTmux();
+  const ws = await Workspace.createForTest(
+    root,
+    { host, onViewsChanged: () => {} },
+    { tmux: fake.tmux, startBridge: false, agentProfileHomeDir: homeDir },
+  );
+  try {
+    expect(ws.configFailure).toBeUndefined();
+    expect(ws.config?.agents.codex).toMatchObject({ cmd: "codex", role: "reviewer" });
+    expect((ws.config as unknown as { agentSources: Record<string, { mode: string }> }).agentSources.codex?.mode).toBe("profile");
+    expect(ws.authEnabled).toBe(false);
+    expect(ws.readConfigLkg()?.agents.find((agent) => agent.name === "codex")).toMatchObject({
+      sourceMode: "profile",
+      agentId: "11111111-1111-4111-8111-111111111111",
+      authorityRevision: "profile-r1",
+      profileSha256: createHash("sha256").update(profile).digest("hex"),
+    });
+    const profileWatch = host.watches.find((watch) => watch.glob === ".tachyon/agents/*/agent.yml");
+    expect(profileWatch).toBeTruthy();
+    fs.writeFileSync(path.join(profileDir, "agent.yml"), profile.replace("reviewer", "coder"));
+    profileWatch!.onEvent();
+    expect(ws.configFailure?.errors.join("\n")).toContain("profile/authority-boundary");
+    expect(ws.config?.agents.codex.role).toBe("reviewer");
+    expect(() => ws.assertNotLkgOnlySpawn("codex")).toThrow("trusted configuration is invalid");
+  } finally {
+    ws.dispose();
+  }
 });
 
 it("returns actionable Agent Studio messages for invalid soul values and unsupported runtimes", async () => {

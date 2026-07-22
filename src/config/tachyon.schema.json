@@ -19,10 +19,16 @@
       "additionalProperties": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "cmd"
+        "oneOf": [
+          { "required": ["profile"] },
+          { "required": ["cmd"] }
         ],
         "properties": {
+          "profile": {
+            "description": "Compact pointer to this agent's conventional canonical profile. The loader also requires the path's agent segment to exactly match the map key.",
+            "type": "string",
+            "pattern": "^\\.tachyon/agents/[a-zA-Z][a-zA-Z0-9_-]*/agent\\.yml$"
+          },
           "cmd": {
             "description": "Shell command that runs the agent.",
             "type": "string",
@@ -252,7 +258,12 @@
       "propertyNames": {
         "pattern": "^[a-zA-Z][a-zA-Z0-9_-]*$"
       },
-      "additionalProperties": { "$ref": "#/properties/agents/additionalProperties" }
+      "additionalProperties": {
+        "allOf": [
+          { "$ref": "#/properties/agents/additionalProperties" },
+          { "not": { "required": ["profile"] } }
+        ]
+      }
     },
     "layouts": {
       "type": "object",

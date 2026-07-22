@@ -20,6 +20,10 @@ export function authorityHeadsSecretKey(workspaceHash: string): string {
   return `tachyon.authorityHeads.v1.${workspaceHash}`;
 }
 
+export function agentProfileAuthoritiesSecretKey(workspaceHash: string): string {
+  return `tachyon.agentProfileAuthorities.v1.${workspaceHash}`;
+}
+
 export function workspaceVersionStateKey(workspaceHash: string): string {
   return `tachyon.version.${workspaceHash}`;
 }
