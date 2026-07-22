@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0b0d10" />
+    <meta name="description" content="Tachyon Companion Mobile — pair with your local Tachyon engine" />
+    <!-- Base path when served by the engine at /companion/app/ (SDD 422 dogfood). -->
+    <base href="/companion/app/" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <title>Tachyon Companion</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0b0d10;
+        --fg: #e8eaed;
+        --muted: #9aa0a6;
+        --card: #151920;
+        --border: #2a3038;
+        --accent: #6cb6ff;
+        --danger: #f28b82;
+        --ok: #81c995;
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100dvh;
+        background: var(--bg);
+        color: var(--fg);
+      }
+      #app { min-height: 100dvh; }
+      .shell { max-width: 28rem; margin: 0 auto; padding: 1rem 1rem 2.5rem; }
+      h1 { font-size: 1.25rem; margin: 0 0 0.25rem; }
+      .sub { color: var(--muted); font-size: 0.875rem; margin: 0 0 1.25rem; }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 1rem;
+        margin-bottom: 1rem;
+      }
+      label { display: block; font-size: 0.75rem; color: var(--muted); margin-bottom: 0.35rem; }
+      input, textarea {
+        width: 100%;
+        background: var(--bg);
+        color: var(--fg);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 0.65rem 0.75rem;
+        font: inherit;
+        margin-bottom: 0.75rem;
+      }
+      textarea { min-height: 5.5rem; resize: vertical; font-family: ui-monospace, monospace; font-size: 0.8rem; }
+      button {
+        width: 100%;
+        border: 0;
+        border-radius: 8px;
+        padding: 0.75rem 1rem;
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+        background: var(--accent);
+        color: #0b0d10;
+        margin-top: 0.25rem;
+      }
+      button.secondary { background: transparent; color: var(--fg); border: 1px solid var(--border); }
+      button.danger { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
+      button:disabled { opacity: 0.5; cursor: not-allowed; }
+      .err { color: var(--danger); font-size: 0.875rem; margin: 0.5rem 0; }
+      .ok { color: var(--ok); font-size: 0.875rem; }
+      .row { display: flex; justify-content: space-between; gap: 0.5rem; font-size: 0.875rem; margin: 0.35rem 0; }
+      .mono { font-family: ui-monospace, monospace; word-break: break-all; }
+      .hint { color: var(--muted); font-size: 0.8rem; line-height: 1.4; }
+      .card-title { font-size: 1rem; margin: 0 0 0.75rem; font-weight: 600; }
+      .btn-row { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
+      .btn-row button { flex: 1; margin-top: 0; }
+      .tabs { display: flex; gap: 0.5rem; margin-bottom: 0.75rem; }
+      .tab {
+        flex: 1; background: var(--card); color: var(--fg);
+        border: 1px solid var(--border); font-weight: 500;
+      }
+      .tab.on { border-color: var(--accent); color: var(--accent); }
+      .agent-list, .approval-list { list-style: none; margin: 0; padding: 0; }
+      .agent-row {
+        width: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem;
+        text-align: left; background: var(--bg); color: var(--fg);
+        border: 1px solid var(--border); border-radius: 8px; padding: 0.65rem 0.75rem;
+        margin-bottom: 0.4rem; font-weight: 500;
+      }
+      .agent-row.selected { border-color: var(--accent); }
+      .agent-name { flex: 1; min-width: 0; }
+      .badge {
+        font-size: 0.7rem; padding: 0.15rem 0.4rem; border-radius: 999px;
+        border: 1px solid var(--border); color: var(--muted);
+      }
+      .att-needs { color: #fdd663; border-color: #fdd663; }
+      .att-work { color: var(--accent); border-color: var(--accent); }
+      .att-idle { color: var(--ok); border-color: var(--ok); }
+      .att-throttle { color: #f28b82; border-color: #f28b82; }
+      .approval-item {
+        border: 1px solid var(--border); border-radius: 8px;
+        padding: 0.75rem; margin-bottom: 0.6rem; background: var(--bg);
+      }
+      .approval-reason { margin: 0.35rem 0; font-size: 0.9rem; }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="app.js"></script>
+    <script>
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker
+          .register("sw.js", { scope: "/companion/app/" })
+          .catch(() => {});
+      }
+    </script>
+  </body>
+</html>

@@ -19,3 +19,4 @@
 
 - 2026-07-22 — t-da645b: `settings.companion.lanAccess`, Bridge `start(port, {host})`, pair baseUrl via `lanReachability.ts`, doctor `companion.lan_access` warn, reload rebinds Bridge.
 - 2026-07-22 — t-0e1f58: IssuedPairCode gains `baseUrls` + `qrPayload`; Control pair offer shows QR PNG + candidates; companionBaseUrl respects lanAccess.
+- 2026-07-22 — one-QR dogfood (worktree `companion-mobile-one-qr`): engine serves `media/companion-mobile` at `/companion/app/*`; `IssuedPairCode.openUrl`; Control QR encodes openUrl; mobile auto-pairs from `#pair=`; LAN filter allows `/companion/app/*`.

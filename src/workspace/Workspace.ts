@@ -76,6 +76,7 @@ import {
   companionPairBaseUrl,
   companionPairBaseUrlCandidates,
 } from "../companion/lanReachability.js";
+import { resolveCompanionMobileDist } from "../companion/mobileAppStatic.js";
 import { TabRefCache } from "../companion/tabRefCache.js";
 import {
   listPendingApprovalRequests,
@@ -1883,6 +1884,8 @@ export class Workspace {
           pairing: this.companion,
           live: this.companionLive,
           tab: this.companionTab,
+          // SDD 422 — engine serves Companion Mobile PWA at /companion/app/*
+          mobileDistRoot: this.resolveCompanionMobileDistRoot(),
           ops: {
             listActiveAgents: () => this.companionListActiveAgents(),
             sendPrompt: (agent, text) => this.companionSendPrompt(agent, text),
@@ -2813,6 +2816,20 @@ export class Workspace {
   /** SDD 414 — companion HTTP prefix on the Bridge listener. */
   companionHttpPrefix(): string {
     return COMPANION_HTTP_PREFIX;
+  }
+
+  /**
+   * SDD 422 — directory with Companion Mobile PWA (index.html + app.js).
+   * Prefer host mediaPath (VSIX / engine bundle); fall back to env + repo/sibling dist.
+   */
+  resolveCompanionMobileDistRoot(): string | undefined {
+    try {
+      const packaged = this.host.mediaPath("media", "companion-mobile");
+      if (fs.existsSync(path.join(packaged, "index.html"))) return packaged;
+    } catch {
+      /* host media path unavailable or escapes root */
+    }
+    return resolveCompanionMobileDist();
   }
 
   /**

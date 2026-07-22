@@ -1,6 +1,7 @@
 /**
  * Loopback HTTP surface for Tachyon Companion (SDD 414).
  * Mounted on the Bridge listener at /companion/v1/* — companion auth, not Bridge agent tokens.
+ * SDD 422 also mounts the Mobile PWA at /companion/app/* (static files, no companion auth).
  */
 
 import type http from "node:http";
@@ -15,6 +16,7 @@ import {
   type PairRequestBody,
   type SendPromptRequest,
 } from "./protocol.js";
+import { isCompanionAppPath, serveCompanionMobileApp } from "./mobileAppStatic.js";
 
 const CORS = {
   "access-control-allow-origin": "*",
@@ -30,6 +32,11 @@ export interface CompanionHttpSurface {
   live?: CompanionLiveSync;
   /** Tab command channel (agent tools ↔ extension). */
   tab?: CompanionTabChannel;
+  /**
+   * SDD 422 — absolute path to Companion Mobile PWA dist (index.html + app.js).
+   * When set, GET /companion/app/* is served from this directory.
+   */
+  mobileDistRoot?: string;
 }
 
 function json(res: http.ServerResponse, status: number, body: unknown): void {
@@ -66,8 +73,16 @@ function readBody(req: http.IncomingMessage, limit = 64 * 1024): Promise<string>
   });
 }
 
+/**
+ * Paths allowed for companion surface + LAN non-loopback peers (API + engine-served PWA).
+ * MCP and other Bridge routes stay loopback-only.
+ */
 export function isCompanionPath(urlPath: string): boolean {
-  return urlPath === COMPANION_HTTP_PREFIX || urlPath.startsWith(`${COMPANION_HTTP_PREFIX}/`);
+  return (
+    urlPath === COMPANION_HTTP_PREFIX ||
+    urlPath.startsWith(`${COMPANION_HTTP_PREFIX}/`) ||
+    isCompanionAppPath(urlPath)
+  );
 }
 
 function requireSession(
@@ -110,14 +125,25 @@ export async function handleCompanionHttp(
   const ops = "pairing" in surface ? surface.ops : undefined;
   const live = "pairing" in surface ? surface.live : undefined;
   const tab = "pairing" in surface ? surface.tab : undefined;
+  const mobileDistRoot = "pairing" in surface ? surface.mobileDistRoot : undefined;
 
   const urlPath = (req.url ?? "").split("?")[0] ?? "";
   if (!isCompanionPath(urlPath)) return false;
+
+  // SDD 422 — engine-served Companion Mobile PWA (no session auth; pair via #pair= hash).
+  if (isCompanionAppPath(urlPath)) {
+    return serveCompanionMobileApp(req, res, mobileDistRoot);
+  }
 
   if (req.method === "OPTIONS") {
     res.writeHead(204, { ...CORS });
     res.end();
     return true;
+  }
+
+  // API routes only under /companion/v1
+  if (!(urlPath === COMPANION_HTTP_PREFIX || urlPath.startsWith(`${COMPANION_HTTP_PREFIX}/`))) {
+    return false;
   }
 
   const sub = urlPath.slice(COMPANION_HTTP_PREFIX.length) || "/";

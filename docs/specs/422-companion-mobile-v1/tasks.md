@@ -28,7 +28,8 @@ _Board umbrella: `t-af2c9b`. Research: `t-619157` done. Product card: `t-fe52f0`
 
 ## Phase 4 — Serve & dogfood
 
-- [ ] Optional: engine serves mobile static for single-process dogfood
+- [x] Engine serves mobile static at `/companion/app/*` (one-QR dogfood; worktree `companion-mobile-one-qr`)
+- [x] Control QR encodes `openUrl` → phone camera opens PWA + auto-pair via `#pair=`
 - [ ] PRIVACY / README install (“Add to Home Screen”)
 - [ ] `t-900149` — human dogfood phone LAN; close `t-fe52f0` frente 2
 

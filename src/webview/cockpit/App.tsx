@@ -474,6 +474,14 @@ function CompanionPairOfferCard({
           </ul>
         </div>
       ) : null}
+      {offer.openUrl ? (
+        <div class="ck-pair-offer-row">
+          <span class="ck-pair-offer-label">open</span>
+          <span class="ck-pair-offer-url ck-mono" data-testid="companion-pair-open-url" title={offer.openUrl}>
+            {offer.openUrl}
+          </span>
+        </div>
+      ) : null}
       {offer.qrPayload ? (
         <div class="ck-pair-offer-row">
           <span class="ck-pair-offer-label">payload</span>
@@ -510,6 +518,16 @@ function CompanionPairOfferCard({
         >
           {s.companionCopyUrl}
         </Button>
+        {offer.openUrl ? (
+          <Button
+            variant="default"
+            data-testid="companion-pair-copy-open-url"
+            disabled={expired}
+            onClick={() => onCopyText(offer.openUrl!)}
+          >
+            {s.companionCopyUrl}
+          </Button>
+        ) : null}
         {offer.qrPayload ? (
           <Button
             variant="default"

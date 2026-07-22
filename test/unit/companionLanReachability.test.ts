@@ -79,6 +79,10 @@ describe("Bridge listen host (SDD 422)", () => {
     expect(shouldRejectLanNonCompanion("0.0.0.0", "10.0.0.9", "/other")).toBe(true);
     expect(shouldRejectLanNonCompanion("0.0.0.0", "10.0.0.9", "/companion/v1/health")).toBe(false);
     expect(shouldRejectLanNonCompanion("0.0.0.0", "10.0.0.9", "/companion/v1/pair")).toBe(false);
+    // SDD 422 one-QR: engine-served mobile PWA must be LAN-reachable too
+    expect(shouldRejectLanNonCompanion("0.0.0.0", "10.0.0.9", "/companion/app/")).toBe(false);
+    expect(shouldRejectLanNonCompanion("0.0.0.0", "10.0.0.9", "/companion/app/index.html")).toBe(false);
+    expect(shouldRejectLanNonCompanion("0.0.0.0", "10.0.0.9", "/companion/app/app.js")).toBe(false);
     // loopback peer still gets MCP
     expect(shouldRejectLanNonCompanion("0.0.0.0", "127.0.0.1", "/mcp")).toBe(false);
     expect(shouldRejectLanNonCompanion("0.0.0.0", "::ffff:127.0.0.1", "/mcp")).toBe(false);
@@ -87,6 +91,7 @@ describe("Bridge listen host (SDD 422)", () => {
     // path boundary
     expect(shouldRejectLanNonCompanion("0.0.0.0", "10.0.0.9", "/companion/v1")).toBe(false);
     expect(shouldRejectLanNonCompanion("0.0.0.0", "10.0.0.9", "/companion/v2/x")).toBe(true);
+    expect(shouldRejectLanNonCompanion("0.0.0.0", "10.0.0.9", "/companion/apps/x")).toBe(true);
   });
 
   it("records 0.0.0.0 when started with lan host; MCP url stays loopback", async () => {

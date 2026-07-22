@@ -198,9 +198,14 @@ export type CompanionPairOffer =
       expiresAt: string;
       protocolVersion?: number;
       prefix?: string;
-      /** Compact JSON for mobile QR: { baseUrl, pairCode, protocolVersion }. */
+      /** Compact JSON for mobile QR payload (also embedded in openUrl hash). */
       qrPayload?: string;
-      /** PNG data URL of qrPayload (offline, generated on host). */
+      /**
+       * Deep link: engine-served PWA + #pair= payload.
+       * QR encodes this so camera scan opens the browser and auto-pairs.
+       */
+      openUrl?: string;
+      /** PNG data URL of openUrl (preferred) or qrPayload. */
       qrDataUrl?: string;
     }
   | { ok: false; reason: string };
@@ -301,6 +306,9 @@ export const companionPairOfferMessage = (offer: CompanionPairOffer): CockpitHos
 export function formatCompanionPairClipboard(offer: Extract<CompanionPairOffer, { ok: true }>): string {
   const urls = offer.baseUrls?.length ? offer.baseUrls.join(",") : offer.baseUrl;
   const base = `code=${offer.code} baseUrl=${offer.baseUrl} expires=${offer.expiresAt}`;
-  if (offer.qrPayload) return `${base} qrPayload=${offer.qrPayload} baseUrls=${urls}`;
-  return base;
+  const bits = [base];
+  if (offer.openUrl) bits.push(`openUrl=${offer.openUrl}`);
+  if (offer.qrPayload) bits.push(`qrPayload=${offer.qrPayload}`);
+  if (offer.baseUrls?.length) bits.push(`baseUrls=${urls}`);
+  return bits.join(" ");
 }

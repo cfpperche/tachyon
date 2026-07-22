@@ -245,15 +245,14 @@ export class Bridge {
       if (!res.writableEnded) done();
     });
     const url = (req.url ?? "").split("?")[0] ?? "";
-    // SDD 422 — when listening on all interfaces, only /companion/v1 is allowed from
-    // non-loopback peers. MCP and other routes stay loopback-only even though the socket
-    // is shared (companion-only second port deferred).
+    // SDD 422 — when listening on all interfaces, only companion paths are allowed from
+    // non-loopback peers (/companion/v1/* API + /companion/app/* mobile PWA). MCP stays loopback-only.
     if (shouldRejectLanNonCompanion(this._listenHost, req.socket.remoteAddress, url)) {
       res.writeHead(403, { "content-type": "application/json" });
       res.end(
         JSON.stringify({
           error:
-            "LAN clients may only use /companion/v1/* when settings.companion.lanAccess is enabled. MCP remains loopback-only.",
+            "LAN clients may only use /companion/v1/* and /companion/app/* when settings.companion.lanAccess is enabled. MCP remains loopback-only.",
         }),
       );
       return;
@@ -267,7 +266,7 @@ export class Bridge {
       res.writeHead(404, { "content-type": "application/json" });
       res.end(
         JSON.stringify({
-          error: `not found — Bridge MCP is ${BRIDGE_PATH}; companion is /companion/v1/*`,
+          error: `not found — Bridge MCP is ${BRIDGE_PATH}; companion API is /companion/v1/*; mobile app is /companion/app/*`,
         }),
       );
       return;

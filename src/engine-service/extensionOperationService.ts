@@ -123,10 +123,13 @@ export async function executeExtensionQuery(
       let qrDataUrl: string | undefined;
       try {
         const { companionPairQrDataUrl } = await import("../companion/pairQr.js");
+        // Prefer openUrl so phone camera opens engine-served PWA and auto-pairs (one-QR dogfood).
+        const openUrl = "openUrl" in issued && typeof issued.openUrl === "string" ? issued.openUrl : "";
         const payload = "qrPayload" in issued ? String(issued.qrPayload) : "";
-        if (payload) qrDataUrl = await companionPairQrDataUrl(payload);
+        const qrContent = openUrl || payload;
+        if (qrContent) qrDataUrl = await companionPairQrDataUrl(qrContent);
       } catch {
-        /* QR optional — UI still shows payload text */
+        /* QR optional — UI still shows openUrl / payload text */
       }
       return json({
         ok: true,

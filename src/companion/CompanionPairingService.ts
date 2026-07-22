@@ -17,7 +17,7 @@ import {
   type PairRequestBody,
   type PairResponse,
 } from "./protocol.js";
-import { buildCompanionPairQrPayload } from "./pairQr.js";
+import { buildCompanionMobileOpenUrl, buildCompanionPairQrPayload } from "./pairQr.js";
 
 export interface CompanionPairingServiceOptions {
   /** Human-readable workspace label for the extension UI. */
@@ -125,18 +125,20 @@ export class CompanionPairingService {
     const ordered = [baseUrl, ...baseUrls.filter((u) => u !== baseUrl)];
     const exp = expiresAtMs ?? this.now() + this.pairCodeTtlMs;
     const protocolVersion = COMPANION_PROTOCOL_VERSION;
+    const qrPayload = buildCompanionPairQrPayload({
+      baseUrl,
+      baseUrls: ordered,
+      pairCode: code,
+      protocolVersion,
+    });
     return {
       code,
       expiresAt: new Date(exp).toISOString(),
       baseUrl,
       baseUrls: ordered,
       protocolVersion,
-      qrPayload: buildCompanionPairQrPayload({
-        baseUrl,
-        baseUrls: ordered,
-        pairCode: code,
-        protocolVersion,
-      }),
+      qrPayload,
+      openUrl: buildCompanionMobileOpenUrl(baseUrl, qrPayload),
     };
   }
 

@@ -1,0 +1,2 @@
+Built from cfpperche/tachyon-companion apps/mobile.
+Regenerate: (cd ../tachyon-companion && npm run build:mobile) && rsync -a apps/mobile/dist/ media/companion-mobile/

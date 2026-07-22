@@ -1433,6 +1433,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         ...(typeof result.protocolVersion === "number" ? { protocolVersion: result.protocolVersion } : {}),
         ...(typeof result.prefix === "string" ? { prefix: result.prefix } : {}),
         ...(typeof result.qrPayload === "string" ? { qrPayload: result.qrPayload } : {}),
+        ...(typeof result.openUrl === "string" ? { openUrl: result.openUrl } : {}),
         ...(typeof result.qrDataUrl === "string" ? { qrDataUrl: result.qrDataUrl } : {}),
       };
     },

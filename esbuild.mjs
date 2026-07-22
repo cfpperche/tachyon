@@ -42,6 +42,10 @@ function writeEngineManifest() {
       { path: "engine-daemon.cjs", sha256: sha256File("dist/engine/engine-daemon.cjs") },
       { path: "pi-bridge-extension.mjs", sha256: sha256File("dist/engine/pi-bridge-extension.mjs") },
       { path: "media/clipboard-copy.sh", sha256: sha256File("dist/engine/media/clipboard-copy.sh"), executable: true },
+      // SDD 422 — optional in older checkouts; include when packaged
+      ...(existsSync("dist/engine/media/companion-mobile/index.html")
+        ? [{ path: "media/companion-mobile/index.html", sha256: sha256File("dist/engine/media/companion-mobile/index.html") }]
+        : []),
     ],
     build: {
       commit: buildStampSnapshot.commit ?? "0".repeat(40),
@@ -386,6 +390,10 @@ rmSync("dist/persistent-bridge-daemon.cjs", { force: true });
 rmSync("dist/engine", { recursive: true, force: true });
 mkdirSync("dist/engine/media", { recursive: true });
 copyFileSync("media/clipboard-copy.sh", "dist/engine/media/clipboard-copy.sh");
+// SDD 422 — Companion Mobile PWA served by Bridge at /companion/app/*
+if (existsSync("media/companion-mobile/index.html")) {
+  cpSync("media/companion-mobile", "dist/engine/media/companion-mobile", { recursive: true });
+}
 buildTailwind();
 copyFileSync("src/config/tachyon.schema.json", "dist/tachyon.schema.json");
 copyFileSync("node_modules/@vscode/codicons/dist/codicon.css", "dist/webview/codicon.css");

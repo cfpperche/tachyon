@@ -40,12 +40,24 @@ export function buildCompanionPairQrPayload(input: {
   });
 }
 
-/** PNG data URL for embedding in Control webview (offline, no CDN). */
-export async function companionPairQrDataUrl(qrPayload: string): Promise<string> {
-  return QRCode.toDataURL(qrPayload, {
+/**
+ * Deep link: phone camera opens the engine-served PWA and auto-pairs.
+ * Hash carries the JSON payload (not query) to reduce server access-log leakage.
+ */
+export function buildCompanionMobileOpenUrl(engineBaseUrl: string, qrPayload: string): string {
+  const base = engineBaseUrl.replace(/\/+$/, "");
+  return `${base}/companion/app/#pair=${encodeURIComponent(qrPayload)}`;
+}
+
+/**
+ * PNG data URL for Control. Prefer encoding `openUrl` (scan → browser)
+ * over raw JSON (scan → needs a payload-aware app).
+ */
+export async function companionPairQrDataUrl(content: string): Promise<string> {
+  return QRCode.toDataURL(content, {
     errorCorrectionLevel: "M",
     margin: 1,
-    width: 200,
+    width: 240,
     color: { dark: "#000000", light: "#ffffff" },
   });
 }

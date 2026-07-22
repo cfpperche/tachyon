@@ -7,6 +7,8 @@
 /** SDD 420 foundation: tabId + refs + envelope. Pair fails closed on mismatch. */
 export const COMPANION_PROTOCOL_VERSION = 2 as const;
 export const COMPANION_HTTP_PREFIX = "/companion/v1";
+/** Engine-served Companion Mobile PWA (SDD 422 one-QR dogfood). */
+export const COMPANION_APP_PREFIX = "/companion/app";
 
 /** Pair code lifetime. */
 export const PAIR_CODE_TTL_MS = 5 * 60 * 1000;
@@ -91,10 +93,14 @@ export interface IssuedPairCode {
   baseUrls: string[];
   protocolVersion: number;
   /**
-   * Canonical mobile pair payload for QR encoding:
-   * `{"baseUrl","pairCode","protocolVersion"}` (compact JSON).
+   * Canonical mobile pair payload JSON (type tachyon.companion.pair, schemaVersion 1).
    */
   qrPayload: string;
+  /**
+   * URL the phone should open when scanning the QR (engine-served PWA + #pair= payload).
+   * Example: http://192.168.1.10:41000/companion/app/#pair=%7B%22type%22...
+   */
+  openUrl: string;
 }
 
 /** Running agent row for Companion send-prompt UI (MVP item 3 — evolving). */

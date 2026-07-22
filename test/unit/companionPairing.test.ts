@@ -39,6 +39,9 @@ describe("CompanionPairingService (SDD 414 slice 2)", () => {
       protocolVersion: COMPANION_PROTOCOL_VERSION,
     });
     expect(payload.baseUrls).toContain(base);
+    expect(issued.openUrl).toBe(
+      `${base}/companion/app/#pair=${encodeURIComponent(issued.qrPayload)}`,
+    );
   });
 
   it("includes LAN baseUrl candidates when provided (SDD 422)", () => {

@@ -1,0 +1,11 @@
+{
+  "name": "Tachyon Companion",
+  "short_name": "Tachyon",
+  "description": "Pair with your local Tachyon engine — fleet attention, prompts, approvals",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#0b0d10",
+  "theme_color": "#0b0d10",
+  "orientation": "portrait-primary",
+  "lang": "en"
+}
