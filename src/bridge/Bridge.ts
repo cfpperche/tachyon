@@ -64,6 +64,8 @@ export class Bridge {
   private server?: http.Server;
   private _port?: number;
   private _usedFallback = false;
+  /** Actual listen host (127.0.0.1 default; 0.0.0.0 when settings.companion.lanAccess). */
+  private _listenHost: string = "127.0.0.1";
   private readonly sessions = new Map<string, BridgeMcpSession>();
   private readonly closingSessions = new Set<string>();
   private metrics: BridgeMetrics = { requests: 0, slowRequests: 0, lastRequestMs: 0, maxRequestMs: 0 };
@@ -103,11 +105,20 @@ export class Bridge {
     return this._port;
   }
 
+  /** Host passed to `server.listen` (loopback or all-interfaces). */
+  get listenHost(): string {
+    return this._listenHost;
+  }
+
   /** True when the preferred port was busy and an ephemeral one was used instead. */
   get usedFallback(): boolean {
     return this._usedFallback;
   }
 
+  /**
+   * Loopback MCP URL for local runtimes. Even when the socket binds 0.0.0.0 for LAN
+   * companion access, agents still connect via 127.0.0.1.
+   */
   get url(): string | undefined {
     const port = this.port;
     return port === undefined ? undefined : `http://127.0.0.1:${port}${BRIDGE_PATH}`;
@@ -139,10 +150,18 @@ export class Bridge {
     this.announceToolListChanged();
   }
 
-  /** Binds the preferred port when given; falls back to an ephemeral one if it is taken. */
-  async start(preferredPort?: number): Promise<number> {
+  /**
+   * Binds the preferred port when given; falls back to an ephemeral one if it is taken.
+   * @param preferredPort preferred TCP port
+   * @param opts.host listen host — default `127.0.0.1`; use `0.0.0.0` when
+   *   `settings.companion.lanAccess` is true (SDD 422). Companion and MCP share this listener;
+   *   MCP still requires agent/bridge auth.
+   */
+  async start(preferredPort?: number, opts?: { host?: string }): Promise<number> {
     if (this.server) throw new Error("Bridge already started");
     this._usedFallback = false;
+    this._listenHost = opts?.host ?? "127.0.0.1";
+    const host = this._listenHost;
     const server = http.createServer((req, res) => {
       void this.handle(req, res);
     });
@@ -152,7 +171,7 @@ export class Bridge {
       new Promise<void>((resolve, reject) => {
         const onError = (err: NodeJS.ErrnoException) => reject(err);
         server.once("error", onError);
-        server.listen(port, "127.0.0.1", () => {
+        server.listen(port, host, () => {
           server.removeListener("error", onError);
           resolve();
         });

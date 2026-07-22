@@ -423,12 +423,14 @@ export interface TachyonConfig {
     /** Shared defaults for human-facing task mutation toasts; explicit VS Code settings override these. */
     taskNotifications?: TaskNotificationSettingsInput;
     /**
-     * SDD 414 — Companion browser tab tools (user_browser_*).
+     * SDD 414/422 — Companion shells (browser tab tools + mobile LAN reachability).
      * Human opt-in: when tabTools is true, tools are always listed on the Bridge;
      * calls still require a paired Companion device (clear not_paired error otherwise).
-     * Default absent/false = tools not registered (no list pollution).
+     * lanAccess (SDD 422): when true, Bridge binds 0.0.0.0 so LAN clients can reach
+     * /companion/v1 (default false = loopback-only). MCP still requires agent tokens.
+     * Default absent/false = tools not registered (no list pollution); loopback bind.
      */
-    companion?: { tabTools?: boolean; allowedHosts?: string[] };
+    companion?: { tabTools?: boolean; allowedHosts?: string[]; lanAccess?: boolean };
   };
 }
 
@@ -1513,7 +1515,7 @@ export function parseConfig(yamlText: string): ParseResult {
           errors.push("settings.companion: must be a mapping with 'tabTools'");
         } else {
           const c = raw.settings.companion;
-          const out: { tabTools?: boolean; allowedHosts?: string[] } = {};
+          const out: { tabTools?: boolean; allowedHosts?: string[]; lanAccess?: boolean } = {};
           if (c.tabTools !== undefined) {
             if (typeof c.tabTools !== "boolean") errors.push("settings.companion.tabTools: must be a boolean");
             else out.tabTools = c.tabTools;
@@ -1525,8 +1527,14 @@ export function parseConfig(yamlText: string): ParseResult {
               (out as { allowedHosts?: string[] }).allowedHosts = c.allowedHosts as string[];
             }
           }
+          if (c.lanAccess !== undefined) {
+            if (typeof c.lanAccess !== "boolean") errors.push("settings.companion.lanAccess: must be a boolean");
+            else out.lanAccess = c.lanAccess;
+          }
           for (const key of Object.keys(c)) {
-            if (key !== "tabTools" && key !== "allowedHosts") errors.push(`settings.companion: unknown key '${key}'`);
+            if (key !== "tabTools" && key !== "allowedHosts" && key !== "lanAccess") {
+              errors.push(`settings.companion: unknown key '${key}'`);
+            }
           }
           if (Object.keys(out).length > 0) settings.companion = out;
         }

@@ -191,6 +191,17 @@ describe("parseConfig", () => {
     expect(parseConfig(`${base}settings:\n  companion:\n    nope: true\n`).errors[0]).toContain("unknown key");
   });
 
+  it("parses settings.companion.lanAccess (SDD 422 phone LAN reachability)", () => {
+    const base = `agents:\n  a:\n    cmd: x\n`;
+    const on = parseConfig(`${base}settings:\n  companion:\n    lanAccess: true\n`);
+    expect(on.errors).toEqual([]);
+    expect(on.config?.settings.companion?.lanAccess).toBe(true);
+    const off = parseConfig(`${base}settings:\n  companion:\n    lanAccess: false\n`);
+    expect(off.errors).toEqual([]);
+    expect(off.config?.settings.companion?.lanAccess).toBe(false);
+    expect(parseConfig(`${base}settings:\n  companion:\n    lanAccess: yes\n`).errors[0]).toContain("lanAccess");
+  });
+
   it("parses settings.tmux: bool -> on/off, number -> string, string literal", () => {
     const base = `agents:\n  a:\n    cmd: x\n`;
     const { config, errors } = parseConfig(`${base}settings:\n  tmux:\n    mouse: false\n    history-limit: 50000\n    mode-keys: vi\n`);

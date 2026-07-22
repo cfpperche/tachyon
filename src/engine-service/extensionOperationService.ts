@@ -654,6 +654,7 @@ async function doctorReport(workspace: Workspace): Promise<JsonValue> {
       authConfigured: workspace.authEnabled,
       failure: workspace.bridgeStartFailureInfo(),
     },
+    companionLanAccess: workspace.config?.settings.companion?.lanAccess === true,
     transcriptPresence,
     mechanismOnlyDelivery: true,
   });

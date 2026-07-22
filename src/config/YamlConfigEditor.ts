@@ -253,6 +253,19 @@ export function setCompanionTabTools(text: string | undefined, enabled: boolean)
 }
 
 /**
+ * SDD 422 — set settings.companion.lanAccess (phone LAN reachability).
+ * Persists explicit true/false so the opt-in is visible in tachyon.yml.
+ */
+export function setCompanionLanAccess(text: string | undefined, enabled: boolean): EditResult {
+  if (text === undefined || text.trim().length === 0) {
+    throw new Error("create an agent first — Companion settings need an existing tachyon.yml");
+  }
+  const doc = load(text);
+  doc.setIn(["settings", "companion", "lanAccess"], enabled);
+  return { text: String(doc), warnings: [] };
+}
+
+/**
  * SDD 420 — set settings.companion.allowedHosts (Control Settings).
  * Empty list removes the key (all hosts still under confirm rules).
  * Hosts are trimmed, de-duped; invalid empty entries dropped.

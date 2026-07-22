@@ -46,6 +46,11 @@ export interface DoctorReportInput {
       technicalDetail: string;
     };
   };
+  /**
+   * SDD 422 — settings.companion.lanAccess. When true, Bridge listens beyond loopback
+   * so phones can reach /companion/v1 (MCP on the same port still requires agent auth).
+   */
+  companionLanAccess?: boolean;
   /** optional per-agent transcript/rollout presence for resumable rows */
   transcriptPresence?: ReadonlyMap<string, boolean>;
   now?: Date;
@@ -211,6 +216,21 @@ export function buildDoctorReport(input: DoctorReportInput): DoctorReport {
         .filter(Boolean)
         .join(" · "),
     });
+  }
+
+  // --- companion LAN (SDD 422 / t-da645b) ---
+  if (input.companionLanAccess === true) {
+    findings.push({
+      id: "companion.lan_access",
+      severity: "warn",
+      title: "Companion LAN access is enabled",
+      detail:
+        "settings.companion.lanAccess=true — the Bridge listener binds all interfaces (0.0.0.0). " +
+        "Phones on the LAN can reach /companion/v1 (still need a pair code/session). " +
+        "MCP on the same port still requires agent/bridge auth. Disable when not on a trusted network.",
+      action: "Set settings.companion.lanAccess: false in tachyon.yml when finished using mobile Companion",
+    });
+    suggestions.push("Disable settings.companion.lanAccess when the phone is not needed");
   }
 
   // dedupe suggestions

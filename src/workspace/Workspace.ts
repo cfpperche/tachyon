@@ -71,6 +71,7 @@ import { Bridge, derivePort } from "../bridge/Bridge.js";
 import { CompanionPairingService } from "../companion/CompanionPairingService.js";
 import { CompanionLiveSync } from "../companion/CompanionLiveSync.js";
 import { CompanionTabChannel } from "../companion/CompanionTabChannel.js";
+import { companionListenHost, companionPairBaseUrl } from "../companion/lanReachability.js";
 import { TabRefCache } from "../companion/tabRefCache.js";
 import {
   listPendingApprovalRequests,
@@ -1523,7 +1524,9 @@ export class Workspace {
       engineId: this.wsHash,
       getBaseUrl: () => {
         const port = this.bridge.listenerPort;
-        return port === undefined ? undefined : `http://127.0.0.1:${port}`;
+        if (port === undefined) return undefined;
+        const lanAccess = this.config?.settings.companion?.lanAccess === true;
+        return companionPairBaseUrl(port, lanAccess);
       },
     });
     this.companionLive = new CompanionLiveSync({
@@ -3033,7 +3036,8 @@ export class Workspace {
   }
 
   private async startBridgeListener(preferred: number): Promise<number> {
-    const port = await this.bridge.start(preferred);
+    const lanAccess = this.config?.settings.companion?.lanAccess === true;
+    const port = await this.bridge.start(preferred, { host: companionListenHost(lanAccess) });
     this.lastBridgeStartFailure = undefined;
     return port;
   }
@@ -4228,6 +4232,7 @@ export class Workspace {
   reloadConfig(): boolean {
     const file = this.configPath();
     const prevCompanionTabTools = this.config?.settings.companion?.tabTools === true;
+    const prevCompanionLanAccess = this.config?.settings.companion?.lanAccess === true;
     if (!file) {
       this.config = undefined;
       this.configFailure = undefined;
@@ -4238,6 +4243,10 @@ export class Workspace {
         } catch {
           /* bridge may not be ready on early dispose paths */
         }
+      }
+      if (prevCompanionLanAccess) {
+        // LAN was on; config gone → rebind loopback when Bridge is up.
+        void this.restartBridge().catch(() => undefined);
       }
       return false;
     }
@@ -4267,6 +4276,11 @@ export class Workspace {
       } catch {
         /* best-effort */
       }
+    }
+    // SDD 422 — lanAccess changes the listen host; rebind Bridge so phone reachability matches yml.
+    const nextCompanionLanAccess = config?.settings.companion?.lanAccess === true;
+    if (prevCompanionLanAccess !== nextCompanionLanAccess) {
+      void this.restartBridge().catch(() => undefined);
     }
     // spec 377 T15A — reconcile incomplete profile journals on every successful reload.
     void this.reconcileSoulProfileTransactions().catch(() => undefined);

@@ -10,6 +10,7 @@ import {
   deleteRunbook,
   runbookEntryLine,
   setCompanionTabTools,
+  setCompanionLanAccess,
   setCompanionAllowedHosts,
 } from "../../src/config/YamlConfigEditor.js";
 import { parseConfig } from "../../src/config/loadConfig.js";
@@ -320,5 +321,19 @@ describe("setCompanionAllowedHosts (SDD 420)", () => {
 
   it("refuses empty yml", () => {
     expect(() => setCompanionAllowedHosts(undefined, ["a.com"])).toThrow("existing tachyon.yml");
+  });
+});
+
+describe("setCompanionLanAccess (SDD 422)", () => {
+  it("writes settings.companion.lanAccess true/false and stays loadable", () => {
+    const on = setCompanionLanAccess(YML, true).text;
+    expect(expectValid(on).settings.companion?.lanAccess).toBe(true);
+    expect(on).toMatch(/companion:[\s\S]*lanAccess:\s*true/);
+    const off = setCompanionLanAccess(on, false).text;
+    expect(expectValid(off).settings.companion?.lanAccess).toBe(false);
+  });
+
+  it("refuses empty yml", () => {
+    expect(() => setCompanionLanAccess(undefined, true)).toThrow("existing tachyon.yml");
   });
 });

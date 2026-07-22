@@ -8,9 +8,13 @@
 
 ## Open during build
 
-- Companion-only LAN bind vs whole Bridge on `0.0.0.0`
 - Multi-session (browser+mobile) cost vs last-pair-wins
+- Control UI toggle for lanAccess (yml + YamlConfigEditor done in t-da645b; Control chrome in t-0e1f58 with QR)
 
 ## Deviations
 
-_(none yet)_
+- 2026-07-22 — **t-da645b:** companion-only second listener deferred. LAN mode binds the **shared Bridge** on `0.0.0.0` (MCP + `/companion/v1`). Documented in schema/doctor: MCP still requires agent tokens. Prefer companion-only bind if/when a second port is justified.
+
+## Implementation log
+
+- 2026-07-22 — t-da645b: `settings.companion.lanAccess`, Bridge `start(port, {host})`, pair baseUrl via `lanReachability.ts`, doctor `companion.lan_access` warn, reload rebinds Bridge.

@@ -252,4 +252,28 @@ describe("doctor report", () => {
     }));
     expect(formatDoctorReport(report)).toContain("SYSTEMD_USER_UNAVAILABLE");
   });
+
+  it("warns when settings.companion.lanAccess is enabled (SDD 422)", () => {
+    const report = buildDoctorReport({
+      workspaceRoot: "/ws",
+      configPath: "/ws/tachyon.yml",
+      configFileExists: true,
+      configValid: true,
+      configFailure: null,
+      lkg: null,
+      ledger: [],
+      liveSessions: new Set(),
+      knownSessions: new Set(),
+      bridge: { port: 41000, url: "http://127.0.0.1:41000/mcp", reachable: true },
+      companionLanAccess: true,
+    });
+    expect(report.findings).toContainEqual(
+      expect.objectContaining({
+        id: "companion.lan_access",
+        severity: "warn",
+        title: expect.stringMatching(/LAN access/i),
+      }),
+    );
+    expect(report.suggestions.some((s) => /lanAccess/i.test(s))).toBe(true);
+  });
 });

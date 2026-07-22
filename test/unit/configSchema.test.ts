@@ -40,11 +40,12 @@ describe("tachyon.schema.json — agents.selfEvolution", () => {
 });
 
 describe("tachyon.schema.json — settings.companion", () => {
-  it("publishes tabTools opt-in and the allowedHosts boundary for Companion tools", () => {
+  it("publishes tabTools, allowedHosts, and lanAccess for Companion shells", () => {
     const settings = schema.properties?.settings;
     const companion = settings?.properties?.companion;
     const allowedHosts = companion?.properties?.allowedHosts;
     const tabTools = companion?.properties?.tabTools;
+    const lanAccess = companion?.properties?.lanAccess;
 
     expect(companion).toMatchObject({ type: "object", additionalProperties: false });
     expect(companion?.description).toMatch(/Companion/i);
@@ -55,7 +56,13 @@ describe("tachyon.schema.json — settings.companion", () => {
     expect(allowedHosts?.description).toMatch(/host allowlist/i);
     expect(tabTools).toMatchObject({ type: "boolean", default: false });
     expect(tabTools?.description).toMatch(/user_browser_/);
-    expect(Object.keys(companion?.properties ?? {}).sort()).toEqual(["allowedHosts", "tabTools"]);
+    expect(lanAccess).toMatchObject({ type: "boolean", default: false });
+    expect(lanAccess?.description).toMatch(/LAN|lan|0\.0\.0\.0|loopback/i);
+    expect(Object.keys(companion?.properties ?? {}).sort()).toEqual([
+      "allowedHosts",
+      "lanAccess",
+      "tabTools",
+    ]);
   });
 });
 
