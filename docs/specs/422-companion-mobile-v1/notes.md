@@ -21,3 +21,4 @@
 - 2026-07-22 — t-0e1f58: IssuedPairCode gains `baseUrls` + `qrPayload`; Control pair offer shows QR PNG + candidates; companionBaseUrl respects lanAccess.
 - 2026-07-22 — one-QR dogfood (worktree `companion-mobile-one-qr`): engine serves `media/companion-mobile` at `/companion/app/*`; `IssuedPairCode.openUrl`; Control QR encodes openUrl; mobile auto-pairs from `#pair=`; LAN filter allows `/companion/app/*`.
 - 2026-07-22 — **Mobile reachability = Tailscale only.** `lanAccess: true` enables mobile (bind `0.0.0.0` + pair/openUrl = Tailscale IP). Multi-NIC Wi‑Fi candidate list removed. No Tailscale → pair fails with `tailscale_required` + Doctor error. Loopback remains for same-host/browser. Headscale later reuses the same client path.
+- 2026-07-23 — **Human dogfood PASS** (maintainer): mesh QR → pair → Connected/SSE; Control device row; fleet/prompt/approvals/unpair. Evidence `DOGFOOD-2026-07-23-human-tailscale.md`. `t-900149` closed.

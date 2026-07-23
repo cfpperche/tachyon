@@ -30,13 +30,14 @@ _Board umbrella: `t-af2c9b`. Research: `t-619157` done. Product card: `t-fe52f0`
 
 - [x] Engine serves mobile static at `/companion/app/*` (one-QR dogfood; worktree `companion-mobile-one-qr`)
 - [x] Control QR encodes `openUrl` → phone camera opens PWA + auto-pair via `#pair=`
+- [x] Mobile reachability = Tailscale only (`lanAccess` opt-in; no multi-NIC Wi‑Fi list)
 - [ ] PRIVACY / README install (“Add to Home Screen”)
-- [ ] `t-900149` — human dogfood phone LAN; close `t-fe52f0` frente 2
+- [x] `t-900149` — human dogfood (Tailscale mesh + phone); evidence under `.tachyon/evidence/companion-mobile/`
 
 ## Verification
 
-**Verify:** unit tests for `lanAccess` schema + pair baseUrl when LAN on (command TBD when code lands).  
-**Dogfood-Opt-Out:** headless cannot exercise real phone LAN pair; use **Human dogfood** below.  
-**Human dogfood:** enable LAN → QR pair from phone → see agent → prompt or approval → unpair.  
-**Visual QA:** mobile PWA pair + home roster (screenshots under `.tachyon/evidence/companion-mobile/`).  
-**Cookbook:** yes (operator path: Control pair QR + phone install) — add at ship.  
+**Verify:** unit tests for Tailscale pair baseUrl + `lanAccess` schema (worktree).  
+**Dogfood:** headless scenario `companion-one-qr.mjs` + human phone on same tailnet.  
+**Human dogfood (PASS 2026-07-23):** Tailscale on PC+phone → QR → auto-pair → fleet/prompt/approvals → unpair.  
+**Visual QA:** screenshots under `.tachyon/evidence/companion-mobile/`.  
+**Cookbook:** yes (operator path: Tailscale + Control pair QR) — add at ship.  
