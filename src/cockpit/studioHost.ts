@@ -296,6 +296,22 @@ export interface StudioMessageHooks {
    *  so task-detail(id) would 404 ("never found on disk"); see the model.ts studioPersisted doc
    *  comment for the client-side breadcrumb's identical fix. */
   onCancelled: (persisted: boolean) => void;
+  /** t-527767 — a successful Save, for adapters the client wants to auto-navigate away from
+   *  afterward (Pin/Task Studio: "create/edit → return to the list", scoped narrowly per maintainer
+   *  decision — the other 5 studios read more like config editors, where staying open to keep
+   *  tweaking is the better default, so their client-side implementation is a no-op). `persisted` is
+   *  the binding's value from BEFORE this save flipped it to `true` (same "task-detail is only a
+   *  valid destination for a REAL, already-saved entity" reasoning as onCancelled's own `persisted`
+   *  param — a brand-new task's first save must still land on Board, not its own task-detail).
+   *  Fired only on a genuinely successful save (never on validation/persistence error), after any
+   *  first-save `sendStudioLoad` has already completed — see beginStudioSave's "ok" branch. This
+   *  hook was deliberately ABSENT from D2's original scope (an adversarial dueto, REDESIGN verdict,
+   *  found bolting auto-navigation onto beginStudioSave unsafe without a larger atomic-transaction
+   *  redesign — route.ts's parentRoute doc comment); re-examined for this task and found safe: every
+   *  binding-mutation path (`patch`/`cancel`/nav-transaction) is already blocked by `saveInFlight`/
+   *  `txnLock` for the ENTIRE span from this save starting to this hook firing, so there is no window
+   *  for the state this hook reads to have moved out from under it. */
+  onSaved: (persisted: boolean) => void;
 }
 
 export async function handleStudioMessage(io: StudioHostIO, raw: unknown, hooks: StudioMessageHooks): Promise<boolean> {
@@ -416,17 +432,32 @@ async function beginStudioSave(io: StudioHostIO, hooks: StudioMessageHooks): Pro
     const result = await b.adapter.save(b.entityId, b.patch);
     if (!io.isCurrent() || binding !== b) return;
     if (result.status === "ok") {
+      // t-527767 — captured BEFORE the flip below, same reasoning as the "cancel" case's
+      // `wasPersisted` (t-c3c819): onSaved's client-side destination logic needs to know whether
+      // THIS save is the entity's first (a brand-new task's save must still land on Board, not its
+      // own task-detail) — reading b.persisted after this line would always observe true.
+      const wasPersisted = b.persisted;
       b.dirty = false;
       b.patch = undefined;
       b.persisted = true; // t-610705 (D2) — a successful save durably commits the entity either way
       discardDraft(b.route); // saved, not abandoned — nothing left to keep as a draft
       hooks.onChanged();
+      // t-527767 — defense-in-depth (3rd adversarial probe round): re-check after `hooks.onChanged`
+      // even though its real current binding (`refreshAll`, extension.ts) never navigates — a
+      // FUTURE onChanged implementation gaining that ability would otherwise silently reopen the
+      // exact stale-binding hazard the guards around this function already close everywhere else.
+      if (!io.isCurrent() || binding !== b) return;
       io.post(envelope({ type: "save", status: "ok" as const }));
       if (result.entityId !== undefined && b.entityId === undefined) {
         b.entityId = result.entityId;
         b.mode = "edit";
         await sendStudioLoad(io);
+        // t-527767 — re-check after the await: sendStudioLoad has its own internal guard for ITS
+        // OWN state writes, but onSaved is fired by US, below, so we need our own fresh check before
+        // trusting `b`/`io` are still the live binding/panel.
+        if (!io.isCurrent() || binding !== b) return;
       }
+      hooks.onSaved(wasPersisted);
     } else {
       const error: StudioError = result.status === "conflict"
         ? { code: result.error.code, message: result.error.message, source: "transport", blocking: true }

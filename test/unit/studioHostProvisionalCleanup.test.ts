@@ -88,6 +88,7 @@ describe("abandonProvisionalIfNeeded (t-610705, D2)", () => {
       onChanged: () => {},
       notify: () => {},
       onCancelled: () => {},
+      onSaved: () => {},
       handleDomainMessage: (_ctx, message) => received.push(message.type),
     })).resolves.toBe(true);
     expect(received).toEqual(["canonicalAction"]);
@@ -102,7 +103,7 @@ describe("abandonProvisionalIfNeeded (t-610705, D2)", () => {
     // part of its own idempotency guard — the client's "where does Cancel go" decision (task-detail
     // vs the studio's own section, for a still-unsaved task) depends on the value BEFORE that flip.
     const onCancelled = vi.fn();
-    await handleStudioMessage(io, scoped(mountNonce, { type: "cancel" }), { onChanged: () => {}, notify: () => {}, onCancelled });
+    await handleStudioMessage(io, scoped(mountNonce, { type: "cancel" }), { onChanged: () => {}, notify: () => {}, onCancelled, onSaved: () => {} });
 
     expect(onCancel).toHaveBeenCalledTimes(1);
     expect(onCancel).toHaveBeenCalledWith("provisional-1");
@@ -115,7 +116,7 @@ describe("abandonProvisionalIfNeeded (t-610705, D2)", () => {
     const { io, mountNonce } = await openAndLoad(adapter);
 
     const onCancelled = vi.fn();
-    await handleStudioMessage(io, scoped(mountNonce, { type: "cancel" }), { onChanged: () => {}, notify: () => {}, onCancelled });
+    await handleStudioMessage(io, scoped(mountNonce, { type: "cancel" }), { onChanged: () => {}, notify: () => {}, onCancelled, onSaved: () => {} });
 
     expect(onCancel).not.toHaveBeenCalled();
     expect(onCancelled).toHaveBeenCalledWith(true);
@@ -126,11 +127,49 @@ describe("abandonProvisionalIfNeeded (t-610705, D2)", () => {
     const adapter = fakeAdapter({ persisted: false, onCancel });
     const { io, mountNonce } = await openAndLoad(adapter);
 
-    await handleStudioMessage(io, scoped(mountNonce, { type: "patch", patch: { name: "x" }, editRevision: 1 }), { onChanged: () => {}, notify: () => {}, onCancelled: () => {} });
-    await handleStudioMessage(io, scoped(mountNonce, { type: "save" }), { onChanged: () => {}, notify: () => {}, onCancelled: () => {} });
+    await handleStudioMessage(io, scoped(mountNonce, { type: "patch", patch: { name: "x" }, editRevision: 1 }), { onChanged: () => {}, notify: () => {}, onCancelled: () => {}, onSaved: () => {} });
+    await handleStudioMessage(io, scoped(mountNonce, { type: "save" }), { onChanged: () => {}, notify: () => {}, onCancelled: () => {}, onSaved: () => {} });
 
     reconcileStudioTeardown({ kind: "section", section: "overview" });
     expect(onCancel).not.toHaveBeenCalled();
+  });
+
+  it("t-527767 — save calls onSaved with the PRE-save persisted value, once per successful save", async () => {
+    const adapter = fakeAdapter({ persisted: false });
+    const { io, mountNonce } = await openAndLoad(adapter);
+    const onSaved = vi.fn();
+
+    await handleStudioMessage(io, scoped(mountNonce, { type: "patch", patch: { name: "x" }, editRevision: 1 }), { onChanged: () => {}, notify: () => {}, onCancelled: () => {}, onSaved: () => {} });
+    await handleStudioMessage(io, scoped(mountNonce, { type: "save" }), { onChanged: () => {}, notify: () => {}, onCancelled: () => {}, onSaved });
+
+    expect(onSaved).toHaveBeenCalledTimes(1);
+    expect(onSaved).toHaveBeenCalledWith(false);
+  });
+
+  it("t-527767 — a SECOND save (already-persisted) calls onSaved(true)", async () => {
+    const adapter = fakeAdapter({ persisted: true });
+    const { io, mountNonce } = await openAndLoad(adapter);
+    const onSaved = vi.fn();
+
+    await handleStudioMessage(io, scoped(mountNonce, { type: "patch", patch: { name: "x" }, editRevision: 1 }), { onChanged: () => {}, notify: () => {}, onCancelled: () => {}, onSaved: () => {} });
+    await handleStudioMessage(io, scoped(mountNonce, { type: "save" }), { onChanged: () => {}, notify: () => {}, onCancelled: () => {}, onSaved });
+
+    expect(onSaved).toHaveBeenCalledTimes(1);
+    expect(onSaved).toHaveBeenCalledWith(true);
+  });
+
+  it("t-527767 — onSaved is NOT called when save fails", async () => {
+    const adapter: StudioHostAdapter<FakeEntity, FakeFields, FakeFields> = {
+      ...fakeAdapter({ persisted: false }),
+      save: (): StudioSaveResult => ({ status: "error", error: { code: "boom", message: "boom", source: "persistence" } }),
+    };
+    const { io, mountNonce } = await openAndLoad(adapter);
+    const onSaved = vi.fn();
+
+    await handleStudioMessage(io, scoped(mountNonce, { type: "patch", patch: { name: "x" }, editRevision: 1 }), { onChanged: () => {}, notify: () => {}, onCancelled: () => {}, onSaved: () => {} });
+    await handleStudioMessage(io, scoped(mountNonce, { type: "save" }), { onChanged: () => {}, notify: () => {}, onCancelled: () => {}, onSaved });
+
+    expect(onSaved).not.toHaveBeenCalled();
   });
 
   it("reconcileStudioTeardown cleans up an abandoned provisional binding exactly once", async () => {
@@ -156,7 +195,7 @@ describe("abandonProvisionalIfNeeded (t-610705, D2)", () => {
     const adapter = fakeAdapter({ persisted: false, onCancel });
     const { io, mountNonce } = await openAndLoad(adapter);
 
-    await handleStudioMessage(io, scoped(mountNonce, { type: "cancel" }), { onChanged: () => {}, notify: () => {}, onCancelled: () => {} });
+    await handleStudioMessage(io, scoped(mountNonce, { type: "cancel" }), { onChanged: () => {}, notify: () => {}, onCancelled: () => {}, onSaved: () => {} });
     reconcileStudioTeardown({ kind: "section", section: "overview" });
 
     expect(onCancel).toHaveBeenCalledTimes(1);
@@ -168,7 +207,7 @@ describe("abandonProvisionalIfNeeded (t-610705, D2)", () => {
     const { io, mountNonce } = await openAndLoad(adapter);
     __setWarningMessageResult("Discard");
 
-    await handleStudioMessage(io, scoped(mountNonce, { type: "patch", patch: { name: "x" }, editRevision: 1 }), { onChanged: () => {}, notify: () => {}, onCancelled: () => {} });
+    await handleStudioMessage(io, scoped(mountNonce, { type: "patch", patch: { name: "x" }, editRevision: 1 }), { onChanged: () => {}, notify: () => {}, onCancelled: () => {}, onSaved: () => {} });
 
     const outcomePromise = beginStudioNavTransaction(io, () => {});
     await flush();
@@ -185,7 +224,7 @@ describe("abandonProvisionalIfNeeded (t-610705, D2)", () => {
     const { io, mountNonce } = await openAndLoad(adapter);
     __setWarningMessageResult("Save");
 
-    await handleStudioMessage(io, scoped(mountNonce, { type: "patch", patch: { name: "x" }, editRevision: 1 }), { onChanged: () => {}, notify: () => {}, onCancelled: () => {} });
+    await handleStudioMessage(io, scoped(mountNonce, { type: "patch", patch: { name: "x" }, editRevision: 1 }), { onChanged: () => {}, notify: () => {}, onCancelled: () => {}, onSaved: () => {} });
 
     const outcomePromise = beginStudioNavTransaction(io, () => {});
     await flush();

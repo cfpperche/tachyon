@@ -44,13 +44,20 @@ describe("Task Studio provisional-new Cancel/Back stays on Board (t-c3c819)", ()
     expect(invokeAt).toBeGreaterThan(abandonAt);
   });
 
-  it("Cockpit.ts: onCancelled falls back to the mission section instead of task-detail when the binding was never persisted", () => {
+  it("Cockpit.ts: the shared studioExitTarget helper falls back to the mission section instead of task-detail when the binding was never persisted", () => {
+    // t-527767 — this logic moved out of onCancelled's own body and into a helper shared with
+    // onSaved (identical "where does this route's exit land" computation for both triggers); the
+    // behavior this test guards is unchanged, only where the source lives.
     const src = readFileSync("src/webview/Cockpit.ts", "utf8");
+    const helperAt = src.indexOf("const studioExitTarget = (route: StudioRoute, persisted: boolean): CockpitRoute => {");
+    expect(helperAt).toBeGreaterThan(-1);
+    const helperBody = src.slice(helperAt, helperAt + 400);
+    expect(helperBody).toMatch(/parent\?\.kind === "task-detail" && !persisted/);
+    expect(helperBody).toContain('routes.section("mission")');
+
     const hookAt = src.indexOf("onCancelled: (persisted) => {");
     expect(hookAt).toBeGreaterThan(-1);
-    const hookBody = src.slice(hookAt, hookAt + 1400);
-    expect(hookBody).toMatch(/parent\?\.kind === "task-detail" && !persisted/);
-    expect(hookBody).toContain('routes.section("mission")');
+    expect(src.slice(hookAt, hookAt + 300)).toContain("navigate(studioExitTarget(currentRoute, persisted));");
   });
 
   it("cockpit/App.tsx: the task-detail breadcrumb falls back to setSection(\"mission\") when studioPersisted is false", () => {
