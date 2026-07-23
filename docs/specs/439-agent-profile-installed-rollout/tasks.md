@@ -9,9 +9,9 @@ _Generated from `plan.md` on 2026-07-23. Work top-to-bottom. Check boxes as task
 - [x] Complete `t-1f35d4`: Evolution selector/authority handoff for the installed Codex.
 - [x] Complete `t-be11d9`: canonical operational field matrix and Agent Studio round-trip.
 - [x] Complete `t-2d4d87`: six-agent planner coverage and single-agent recovery extension.
-- [ ] Complete `t-673096`: isolated mirror, sequential installed cutover and Dev Host evidence.
+- [x] Supersede `t-673096`: abort installed migration and return all six agents to legacy declarations.
 - [ ] Complete `t-088d08`: legacy production path retirement plus explicit compatibility allowlist.
-- [ ] Close SDD 429 and umbrella `t-7d2cc0` with evidence pointers.
+- [x] Record the ratified replacement strategy in this superseded SDD.
 
 ## Verification
 

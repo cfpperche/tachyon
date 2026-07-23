@@ -2,6 +2,10 @@
 
 _Drafted from `spec.md` on 2026-07-23. The approach, not the steps (those go in `tasks.md`)._
 
+> Superseded on 2026-07-23. This plan remains as historical evidence; it is not an active rollout
+> procedure. Existing agents finish in the legacy format, while newly created agents use canonical
+> profiles.
+
 ## Approach
 
 Deliver the rollout as one coordinating SDD with six named implementation Tasks:

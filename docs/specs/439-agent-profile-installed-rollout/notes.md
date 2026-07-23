@@ -104,3 +104,15 @@ Evidence:
 
 No installed agent was modified. Live cutover remains the next barrier and requires the selected target
 to be stopped and unoccupied.
+
+## 2026-07-23 — installed rollout superseded
+
+Live dogfood exposed that migration also changes runtime-native configuration inheritance and session
+home semantics. The user chose not to spend further effort migrating short-lived existing agents.
+All six installed agents were returned to their legacy `tachyon.yml` declarations. Existing sessions
+will finish in that format; new agents are created directly as canonical profiles.
+
+The migration/rollback implementation is now temporary machinery, not a supported rollout path.
+Task `t-088d08` owns removal of the legacy format and all migration, journal, recovery and rollback
+paths after the last old agent is retired. It also owns cleanup of the host authority left behind by
+the manual Claude rollback (`22609f0b-885a-48a2-a429-18544d1b3669`).

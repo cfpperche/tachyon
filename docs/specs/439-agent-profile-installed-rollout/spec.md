@@ -2,7 +2,11 @@
 
 _Created 2026-07-23._
 
-**Status:** in-progress
+**Status:** superseded
+**Closure:** Installed migration was intentionally abandoned on 2026-07-23. All six agents were
+returned to the legacy declarations; existing agents will finish there and new agents are created
+canonically. Legacy and migration machinery will be removed by `t-088d08` after the last old agent
+is retired.
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
@@ -91,5 +95,4 @@ reinterpret guidance. Plugin payloads, locks and workspace-wide scope remain unt
 
 ## Open questions
 
-None. The user ratified migration of all six installed agents; support may ship in ordered slices, but
-the rollout is not complete while any of those agents remains inline.
+None. The installed cutover strategy was superseded: existing agents are not migrated.
