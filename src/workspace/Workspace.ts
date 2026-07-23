@@ -649,7 +649,7 @@ export class Workspace {
     this.agentProfileHomeDir = seams.agentProfileHomeDir;
     this.wsHash = workspaceHash(workspaceRoot);
     this.gitExec = createGitExec(() => resolveGitBinaryForHost(deps.host));
-    this.taskNotifications = new TaskNotificationService(workspaceRoot, deps.host, () => this.config);
+    this.taskNotifications = new TaskNotificationService(workspaceRoot, this.wsHash, deps.host, () => this.config);
     if (seams.tmux) {
       // spec 235 — test mode: a fake-exec tmux is supplied; the control-mode engine is NOT wired (lifecycle
       // is polling-only via tick()). A no-op engine keeps start()/dispose() coherent.

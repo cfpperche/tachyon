@@ -28,6 +28,10 @@ export class VsCodeHost implements EngineHost {
     void vscode.commands.executeCommand("tachyonSidebarPrototype.focus");
   }
 
+  openTask(wsHash: string, taskId: string): void {
+    void vscode.commands.executeCommand("tachyon.openControlTask", wsHash, taskId);
+  }
+
   executeCommand(command: string, ...args: unknown[]): Promise<unknown> {
     return Promise.resolve(vscode.commands.executeCommand(command, ...args));
   }

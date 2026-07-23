@@ -42,6 +42,8 @@ export interface EngineHost {
   notify(message: string, level?: NotifyLevel, actions?: NoticeAction[]): void;
   /** bring the shell's primary Tachyon view to focus (a one-way UI nudge; no-op for a headless host). */
   focusPrimaryView(): void;
+  /** t-75fd3c — deep-link straight to a task's detail view (a one-way UI nudge; no-op for a headless host). */
+  openTask(wsHash: string, taskId: string): void;
   /** stable host shim for adapter-internal VS Code commands; the engine never exposes this to agents directly. */
   executeCommand(command: string, ...args: unknown[]): Promise<unknown>;
 

@@ -28,6 +28,10 @@ export class TaskNotificationService {
 
   constructor(
     private readonly workspaceRoot: string,
+    /** t-75fd3c — same hash Workspace.ts computes as `this.wsHash`, passed in rather than recomputed
+     *  here so the "Open" action's deep link always resolves the same workspace Control already keys
+     *  routes by. */
+    private readonly wsHash: string,
     private readonly host: EngineHost,
     private readonly config: () => TachyonConfig | undefined,
   ) {}
@@ -43,7 +47,7 @@ export class TaskNotificationService {
       const toast = taskToastFor(event, settings, this.workspaceRoot);
       if (!toast || !this.deduper.shouldNotify(toast.dedupeKey, settings.dedupeWindowMs)) return;
       this.host.notify(toast.message, toast.level, [
-        { label: this.host.t("Open"), run: () => this.host.focusPrimaryView() },
+        { label: this.host.t("Open"), run: () => this.host.openTask(this.wsHash, event.task.id) },
       ]);
     } catch {
       // Human-facing notification delivery is best-effort and must never affect a successful mutation.

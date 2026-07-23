@@ -46,6 +46,7 @@ class FakeHost implements EngineHost {
     this.notices.push({ message, level, actions: [...actions] });
   }
   focusPrimaryView(): void {}
+  openTask(): void {}
   executeCommand(command: string): Promise<unknown> {
     return Promise.reject(new Error(`unexpected host command in headless test: ${command}`));
   }
