@@ -2028,6 +2028,12 @@ export class Workspace {
         const running = await this.manager.runningAgents();
         return running.filter((n) => this.manager.kindOf(n) === "agent");
       },
+      // t-016e8b: boot-time scans must see "ambiguous tmux read" (null) instead of the cold
+      // cache, so the coordinator's backoff rescans retry rather than accept an empty inventory.
+      listRunningStrict: async () => {
+        const running = await this.manager.runningAgentsStrict();
+        return running === null ? null : running.filter((n) => this.manager.kindOf(n) === "agent");
+      },
       kindOf: (name) => this.manager.kindOf(name),
       isRunning: async (name) => {
         const running = await this.manager.runningAgents();

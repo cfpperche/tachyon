@@ -1086,6 +1086,24 @@ export class AgentManager {
     return [...states.entries()].filter(([, s]) => !s.dead).map(([agent]) => agent);
   }
 
+  /**
+   * t-016e8b: like runningAgents, but an ambiguous tmux read surfaces as null instead of the
+   * last known-good snapshot — which on a fresh engine process is an empty Map, so the
+   * "protection" would read as "no agents" exactly when rebind scans the boot inventory.
+   * A successful read still refreshes lastAgentStates.
+   */
+  async runningAgentsStrict(): Promise<string[] | null> {
+    const sessions = await this.opts.tmux.sessionStates(this.prefix);
+    if (sessions === null) return null;
+    const out = new Map<string, { dead: boolean; exitCode?: number }>();
+    for (const [session, state] of sessions) {
+      const agent = agentFromSession(this.opts.wsHash, session);
+      if (agent !== null) out.set(agent, state);
+    }
+    this.lastAgentStates = out;
+    return [...out.entries()].filter(([, s]) => !s.dead).map(([agent]) => agent);
+  }
+
   async list(): Promise<ManagedEntryInfo[]> {
     const states = await this.agentStates();
     const config = this.opts.getConfig();
