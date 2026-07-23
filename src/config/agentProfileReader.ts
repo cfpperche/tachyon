@@ -326,7 +326,7 @@ export function closeCanonicalAgentProfile(source: CanonicalAgentProfileSource):
 export function withCanonicalAgentProfileDirectory<T>(source: CanonicalAgentProfileSource, operation: (descriptorRoot: string) => T): T {
   if (source.profileDirectoryFd < 0) fail("profile/changed-during-read", source.source, "profile directory descriptor is already closed");
   const before = fs.fstatSync(source.profileDirectoryFd, { bigint: true });
-  const root = descriptorPath(source.profileDirectoryFd, source.source);
+  const root = verifiedDescriptorPath(source.profileDirectoryFd, source.source);
   const result = operation(root);
   const after = fs.fstatSync(source.profileDirectoryFd, { bigint: true });
   if (!sameIdentity(before, after)) fail("profile/changed-during-read", source.source, "profile directory descriptor changed during operation");

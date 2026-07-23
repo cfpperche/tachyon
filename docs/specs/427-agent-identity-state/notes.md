@@ -4,6 +4,10 @@ _Created 2026-07-22._
 
 _In-flight design memory — decisions, deviations, tradeoffs, and open questions surfaced **while building** that weren't pre-empted by `spec.md` or `plan.md`. Append-only by convention._
 
+## Recovery
+
+- 2026-07-22 — Delivery recovery `t-9ab7b5`: the six validated SDD 427 commits ending at `44278040` had been marked shipped but remained only on `agent/agent-identity-state`. They were replayed onto the current main lineage after 39 subsequent commits. The sole textual/semantic adaptation uses the current exported `verifiedDescriptorPath` helper in the retained profile-directory operation; focused formation tests, PI-001, full verification and typecheck were rerun on the reconciled tree before integration.
+
 ## Design decisions
 
 _Choices made where the spec/plan was ambiguous. The decision + why this option over the others considered in the moment._
