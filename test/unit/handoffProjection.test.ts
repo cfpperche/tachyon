@@ -127,10 +127,14 @@ describe("Project Handoff Runtime API projection", () => {
     });
 
     expect(() => parseHandoffViewV1({ ...valid, extra: true })).toThrow(/unknown or missing/i);
-    expect(() => parseHandoffViewV1({
+    // t-7b1f87 — pendingCount is now DERIVED from the notes actually returned (idempotent under
+    // re-validation, see handoffProjection.ts's comment), not strictly cross-checked against the
+    // input: a mismatched input.pendingCount is silently corrected, never thrown.
+    const recovered = parseHandoffViewV1({
       ...valid,
       handoff: { ...valid.handoff, pendingCount: 1 },
-    })).toThrow(/contradicts/i);
+    });
+    expect(recovered.handoff.pendingCount).toBe(valid.handoff.notes.length);
     expect(() => parseHandoffViewV1({
       ...valid,
       handoff: {
@@ -142,6 +146,54 @@ describe("Project Handoff Runtime API projection", () => {
       ...valid,
       handoff: { ...valid.handoff, exists: true, updatedAt: "", updatedBy: "", revision: "" },
     })).toThrow(/missing canonical metadata/i);
+  });
+
+  it("t-7b1f87: a truly unparseable note is dropped, not fatal — the rest of the handoff still projects", async () => {
+    const root = temp("handoff-malformed-note-");
+    const store = new ProjectHandoffStore(root);
+    const valid = await projectHandoffView({
+      workspaceRoot: root,
+      store,
+      lastActivityAt: null,
+      distill: { listAgents: async () => [], resumableAgentNames: () => new Set() },
+    });
+
+    const parsed = parseHandoffViewV1({
+      ...valid,
+      handoff: {
+        ...valid.handoff,
+        pendingCount: 2,
+        notes: [
+          { ts: "not a real timestamp", agent: "codex", kind: "completed", summary: "genuinely corrupt", evidence: [] },
+          { ts: "2026-07-21T15:48:33.000Z", agent: "codex", kind: "completed", summary: "survives", evidence: [] },
+        ],
+      },
+    });
+    expect(parsed.handoff.notes).toHaveLength(1);
+    expect(parsed.handoff.notes[0].summary).toBe("survives");
+    expect(parsed.handoff.pendingCount).toBe(1);
+  });
+
+  it("t-7b1f87: a legacy timestamp missing milliseconds is migrated to canonical form, not dropped", async () => {
+    const root = temp("handoff-legacy-ts-");
+    const store = new ProjectHandoffStore(root);
+    const valid = await projectHandoffView({
+      workspaceRoot: root,
+      store,
+      lastActivityAt: null,
+      distill: { listAgents: async () => [], resumableAgentNames: () => new Set() },
+    });
+
+    const parsed = parseHandoffViewV1({
+      ...valid,
+      handoff: {
+        ...valid.handoff,
+        pendingCount: 1,
+        notes: [{ ts: "2026-07-21T15:48:33Z", agent: "codex", kind: "completed", summary: "legacy format", evidence: [] }],
+      },
+    });
+    expect(parsed.handoff.notes).toHaveLength(1);
+    expect(parsed.handoff.notes[0].ts).toBe("2026-07-21T15:48:33.000Z");
   });
 });
 

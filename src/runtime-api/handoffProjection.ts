@@ -108,9 +108,18 @@ export function parseHandoffViewV1(value: unknown): HandoffViewV1 {
   if (!Array.isArray(input.notes) || input.notes.length > HANDOFF_PENDING_NOTE_LIMIT) {
     throw invalid("handoff notes exceed their limit");
   }
-  const notes = input.notes.map(projectNote);
-  const pendingCount = safeInteger(input.pendingCount, 0, HANDOFF_PENDING_NOTE_LIMIT, "handoff pendingCount");
-  if (pendingCount !== notes.length) throw invalid("handoff pendingCount contradicts its notes");
+  // t-7b1f87 — ONE unparseable note (e.g. a pre-canonical-timestamp legacy record) must not blank the
+  // entire handoff: projectNote() is tolerant per-note, dropping only that one rather than throwing.
+  // pendingCount is DERIVED from the (possibly filtered) `notes` actually returned, not blindly trusted
+  // off `input.pendingCount` — this function round-trips through itself (engineService.ts builds a wire
+  // response from its own return value, then the client re-validates that SAME payload via
+  // isHandoffViewV1/parseHandoffViewV1 again), so pendingCount must equal notes.length on EVERY pass,
+  // including a second pass over an already-filtered array, not just the first. `input.pendingCount` is
+  // still shape-validated (a corrupt/out-of-range field is still a genuine "reject the whole message"
+  // case) even though its value isn't the one returned.
+  const notes = input.notes.map(projectNote).filter((n): n is HandoffNoteProjectionV1 => n !== undefined);
+  safeInteger(input.pendingCount, 0, HANDOFF_PENDING_NOTE_LIMIT, "handoff pendingCount");
+  const pendingCount = notes.length;
   if (!Array.isArray(input.distillTargets) || input.distillTargets.length > HANDOFF_TARGET_LIMIT) {
     throw invalid("handoff targets exceed their limit");
   }
@@ -141,20 +150,35 @@ export function parseHandoffViewV1(value: unknown): HandoffViewV1 {
   };
 }
 
-function projectNote(value: unknown): HandoffNoteProjectionV1 {
-  const input = exactRecord(value, ["ts", "agent", "kind", "summary", "evidence"], "handoff note");
-  const ts = boundedString(input.ts, 24, 24, "handoff note timestamp");
-  if (!isCanonicalTimestamp(ts)) throw invalid("handoff note timestamp is invalid");
-  if (input.kind !== "completed" && input.kind !== "blocked" && input.kind !== "decision"
-    && input.kind !== "gotcha" && input.kind !== "next") throw invalid("handoff note kind is invalid");
-  if (!Array.isArray(input.evidence) || input.evidence.length > 20) throw invalid("handoff note evidence exceeds its limit");
-  return {
-    ts,
-    agent: boundedString(input.agent, 1, 128, "handoff note agent"),
-    kind: input.kind,
-    summary: boundedString(input.summary, 1, 2_000, "handoff note summary"),
-    evidence: input.evidence.map((item) => boundedString(item, 0, 400, "handoff note evidence")),
-  };
+/** t-7b1f87 — returns undefined (never throws) for a note this build cannot make sense of, so ONE bad
+ *  record degrades to "one fewer note shown", not "the whole handoff fails to load". */
+function projectNote(value: unknown): HandoffNoteProjectionV1 | undefined {
+  try {
+    const input = exactRecord(value, ["ts", "agent", "kind", "summary", "evidence"], "handoff note");
+    const ts = canonicalizeHandoffTimestamp(input.ts);
+    if (input.kind !== "completed" && input.kind !== "blocked" && input.kind !== "decision"
+      && input.kind !== "gotcha" && input.kind !== "next") throw invalid("handoff note kind is invalid");
+    if (!Array.isArray(input.evidence) || input.evidence.length > 20) throw invalid("handoff note evidence exceeds its limit");
+    return {
+      ts,
+      agent: boundedString(input.agent, 1, 128, "handoff note agent"),
+      kind: input.kind,
+      summary: boundedString(input.summary, 1, 2_000, "handoff note summary"),
+      evidence: input.evidence.map((item) => boundedString(item, 0, 400, "handoff note evidence")),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+/** t-7b1f87 — the canonical 24-char ISO form (Date#toISOString's exact shape), but tolerant of a
+ *  near-miss on the way in (e.g. a legacy writer that omitted milliseconds) by round-tripping through
+ *  Date rather than requiring the input to already be exactly canonical. */
+function canonicalizeHandoffTimestamp(value: unknown): string {
+  const raw = boundedString(value, 16, 40, "handoff note timestamp");
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) throw invalid("handoff note timestamp is invalid");
+  return date.toISOString();
 }
 
 function projectTarget(value: unknown): HandoffDistillTargetProjectionV1 {
