@@ -563,6 +563,21 @@ describe("HarnessManager materialize (fs)", () => {
     expect(fs.realpathSync(path.join(res.home, "auth.json"))).toBe(fs.realpathSync(path.join(codexHome, "auth.json")));
   });
 
+  it("canonical Codex profiles suppress the real native config in their private home", () => {
+    const codexHome = path.join(path.dirname(realHome), "realcodex");
+    fs.mkdirSync(codexHome, { recursive: true });
+    fs.writeFileSync(path.join(codexHome, "auth.json"), "{}");
+    fs.writeFileSync(path.join(codexHome, "config.toml"), 'model = "ambient-model"\n');
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), codexHome);
+
+    const inherited = mgr.materializeHomeOnly("coder", codex);
+    expect(fs.readFileSync(path.join(inherited.home, "config.toml"), "utf8")).toContain("ambient-model");
+
+    const suppressed = mgr.materializeHomeOnly("coder", codex, undefined, { inheritNativeConfig: false });
+    expect(fs.existsSync(path.join(suppressed.home, "config.toml"))).toBe(false);
+    expect(fs.realpathSync(path.join(suppressed.home, "auth.json"))).toBe(fs.realpathSync(path.join(codexHome, "auth.json")));
+  });
+
   it("t-e2ebe3 review fix: opencode materializeHomeOnly returns all three XDG vars pointing at the config/data/state subdirs (not just XDG_CONFIG_HOME at the home root)", () => {
     const opencode = adapterForRuntime("opencode")!;
     const opencodeDataHome = path.join(path.dirname(realHome), "realopencodedata");

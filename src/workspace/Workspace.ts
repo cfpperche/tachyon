@@ -912,7 +912,13 @@ export class Workspace {
         if (def.isolate === "transcript") return this.harness.materializeHomeOnly(name, adapter, cwd);
         // spec 357 - codex defaults to a lifetime-scoped private CODEX_HOME so same-cwd agents cannot
         // bind to each other's rollout transcripts.
-        if (adapter.runtime === "codex") return this.harness.materializeHomeOnly(name, adapter, cwd);
+        if (adapter.runtime === "codex") {
+          // Canonical profiles own their forming inputs. Their private CODEX_HOME must not inherit
+          // selectors/capabilities from the account-wide config that the profile inspector suppresses.
+          return this.harness.materializeHomeOnly(name, adapter, cwd, {
+            inheritNativeConfig: def.profileLifecycle === undefined,
+          });
+        }
         return null;
       },
       // spec 236 — write a NON-harness claude agent's Bridge-only --mcp-config file and return its path

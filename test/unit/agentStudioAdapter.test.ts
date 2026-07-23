@@ -205,6 +205,20 @@ describe("AgentStudioAdapter — save", () => {
     expect(submits).toEqual([]);
   });
 
+  it("keeps unsupported Quick Add runtimes on the legacy creation path", async () => {
+    const { ws, submits } = fakeWorkspace({ submitResult: undefined });
+    const fields = canonicalAgentFields();
+    fields.name = "claude-helper";
+    fields.cmd = "claude";
+    fields.kind = "agent";
+
+    const patch = serializeAgentPatch(fields, true)!;
+    expect(patch).not.toHaveProperty("canonical");
+    expect(patch).not.toHaveProperty("editable");
+    expect(await new AgentStudioAdapter(ws).save(undefined, patch)).toEqual({ status: "ok", entityId: "claude-helper" });
+    expect(submits).toEqual([{ state: expect.objectContaining({ name: "claude-helper", cmd: "claude" }), editingName: undefined }]);
+  });
+
   it("maps a stale canonical save to a redacted Studio conflict", async () => {
     const { ws } = fakeWorkspace({ commit: async () => { throw new Error("agent 'frontend' profile revision conflict"); } });
     const fields = canonicalAgentFields(profileSnapshot());

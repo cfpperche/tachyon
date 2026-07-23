@@ -261,7 +261,7 @@ describe("loadProfileAwareConfig", () => {
     expect(authored.errors.join("\n")).toContain("unknown key 'profileLifecycle'");
   });
 
-  it("fails closed when authority is absent, stale, or native config is non-empty", () => {
+  it("fails closed when authority is absent, stale, or an effective native config is non-empty", () => {
     const root = temporaryRoot("tachyon-agent-profile-workspace-");
     const bytes = writeProfile(root);
     const record = authority(bytes);
@@ -281,7 +281,12 @@ describe("loadProfileAwareConfig", () => {
     fs.mkdirSync(path.join(homeDir, ".codex"));
     fs.writeFileSync(path.join(homeDir, ".codex", "config.toml"), "model = 'configured'\n");
     const native = load(root, record, { homeDir });
-    expect(native.errors.join("\n")).toContain("non-empty native config is not supported");
+    expect(native.errors).toEqual([]);
+
+    fs.mkdirSync(path.join(root, ".codex"));
+    fs.writeFileSync(path.join(root, ".codex", "config.toml"), "model = 'workspace-configured'\n");
+    const workspaceNative = load(root, record, { homeDir });
+    expect(workspaceNative.errors.join("\n")).toContain("non-empty native config is not supported");
 
     const emptyCapabilitiesRoot = temporaryRoot("tachyon-agent-profile-empty-capabilities-");
     const emptyBytes = writeProfile(emptyCapabilitiesRoot, { capabilities: {} });

@@ -338,6 +338,8 @@ it("migrates and rolls back a stopped eligible agent through host authority cust
 it("creates, edits and disables a canonical profile through the Workspace lifecycle boundary", async () => {
   const root = mkdir();
   const homeDir = mkdir();
+  fs.mkdirSync(path.join(homeDir, ".codex"));
+  fs.writeFileSync(path.join(homeDir, ".codex", "config.toml"), 'model = "ambient-model"\n');
   fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nsettings:\n  auth: false\n");
   const host = new SharedSecretHost(mkdir(), new Map());
   const fake = fakeTmux();

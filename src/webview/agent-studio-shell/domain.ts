@@ -679,6 +679,13 @@ export function serializeAgentPatch(fields: AgentStudioFields, dirty: boolean): 
   const adapter = fields.canonical.expectedRevision
     ? fields.canonical.runtime.adapter
     : executable.split(/[\\/]/).pop() ?? executable;
+  // V1 has measured canonical projectors only for Codex and Pi. Keep every other Quick Add runtime
+  // usable through Agent Studio's existing legacy writer instead of minting an authority the resolver
+  // cannot attest.
+  if (!fields.canonical.expectedRevision && adapter !== "codex" && adapter !== "pi") {
+    const { canonical: _canonical, ...legacy } = fields;
+    return legacy;
+  }
   return {
     schemaVersion: 1,
     kind: "canonical",

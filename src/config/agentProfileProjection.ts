@@ -1,6 +1,5 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { parseDocument } from "yaml";
 import type { AgentDef } from "./loadConfig.js";
@@ -170,9 +169,7 @@ function inspectMeasuredNativeInputs(input: ProjectAgentProfileInput, profile: A
   ].length > 0;
 
   if (profile.runtime.adapter === "codex") {
-    const home = input.homeDir ?? os.homedir();
     const candidates: Array<[string, string[]]> = [
-      [home, [".codex", "config.toml"]],
       [input.workspaceRoot, [".codex", "config.toml"]],
       ...(!hasCapabilities ? [[input.workspaceRoot, [".tachyon", "harness", input.agentName, "config.toml"]] as [string, string[]]] : []),
     ];

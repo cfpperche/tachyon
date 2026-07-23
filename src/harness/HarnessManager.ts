@@ -1639,11 +1639,19 @@ export class HarnessManager {
    * MCP/skills/rules/hooks. The agent still loads the workspace project config (CLAUDE.md/.claude/.mcp.json,
    * cwd-relative) and inherits auth (the symlinked credentials). No strict-MCP args.
    */
-  materializeHomeOnly(agent: string, adapter: ResumeAdapter, cwd?: string): MaterializedHarness {
+  materializeHomeOnly(
+    agent: string,
+    adapter: ResumeAdapter,
+    cwd?: string,
+    options: { inheritNativeConfig?: boolean } = {},
+  ): MaterializedHarness {
     const home = this.materializeHome(agent, adapter, cwd);
     const h = adapter.harness;
     if (!h) throw new Error(`runtime '${adapter.runtime}' does not support an isolated config home`);
-    if (adapter.runtime === "codex") this.seedCodexHomeOnlyConfig(home);
+    if (adapter.runtime === "codex") {
+      if (options.inheritNativeConfig === false) fs.rmSync(path.join(home, "config.toml"), { force: true });
+      else this.seedCodexHomeOnlyConfig(home);
+    }
     if (adapter.runtime === "grok") return { home, env: { [h.configHomeEnv]: this.grokHome(home) }, args: [] };
     if (adapter.runtime === "hermes") return { home, env: { [h.configHomeEnv]: home }, args: [] };
     if (h.xdg) {
