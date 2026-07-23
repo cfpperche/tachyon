@@ -1243,7 +1243,8 @@ export class AgentManager {
   private materializeRuntimeHarness(name: string, def: AgentDef | undefined, cwd: string): MaterializedHarness | null {
     const isolation = def ? isolationMechanismForCommand(def.cmd) : undefined;
     // spec 357/profile 358 - private-home runtimes need a per-agent config home by default.
-    const needsPrivateHome = !!def?.harness || def?.isolate === "transcript" || isolation?.mechanism === "private-home";
+    const needsPrivateHome = !!def?.harness || def?.isolate === "transcript"
+      || isolation?.mechanism === "private-home" || !!def?.profileLifecycle;
     if (!def || !needsPrivateHome || !this.opts.materializeHarness) return null;
     return this.opts.materializeHarness({ name, def, cwd });
   }

@@ -14,6 +14,7 @@ import {
 import type { AgentProfileAuthorityRecord } from "../../src/config/agentProfileAuthority.js";
 import type { AgentProfileMigrationAuthorityPort } from "../../src/config/agentProfileMigration.js";
 import { acquireAgentProfileTransactionLock } from "../../src/config/agentProfileMigration.js";
+import { GROK_PRIVATE_HOME_INPUT_INSPECTOR } from "../../src/config/agentProfileProjection.js";
 
 const roots: string[] = [];
 
@@ -82,6 +83,24 @@ afterEach(() => {
 });
 
 describe("agent profile lifecycle kernel", () => {
+  it("creates Grok authority with the measured private-home inspector", async () => {
+    const root = temporaryWorkspace();
+    const authority = new MemoryAuthority();
+    const config = configPort(root);
+
+    await commitAgentProfileLifecycle({
+      workspaceRoot: root,
+      agentName: "grok",
+      operation: "create",
+      createProfile: { runtime: { adapter: "grok", executable: "grok" } },
+      authority,
+      config,
+    });
+
+    expect(authority.records.get("grok")?.runtimeInspector).toEqual(GROK_PRIVATE_HOME_INPUT_INSPECTOR);
+    expect(config.read()).toContain("profile: .tachyon/agents/grok/agent.yml");
+  });
+
   it("creates a canonical profile, authority and exact pointer as one inspectable tuple", async () => {
     const root = temporaryWorkspace();
     const authority = new MemoryAuthority();

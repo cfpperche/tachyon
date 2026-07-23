@@ -10,6 +10,7 @@ import {
 } from "../../src/config/agentProfileConfigLoader.js";
 import {
   CODEX_EMPTY_NATIVE_INPUT_INSPECTOR,
+  GROK_PRIVATE_HOME_INPUT_INSPECTOR,
   PI_PRIVATE_CAPABILITY_INPUT_INSPECTOR,
 } from "../../src/config/agentProfileProjection.js";
 import type { AgentProfileAuthorityRecord } from "../../src/config/agentProfileAuthority.js";
@@ -95,6 +96,66 @@ describe("agent profile pointer syntax", () => {
 });
 
 describe("loadProfileAwareConfig", () => {
+  it("projects a literal Grok profile through its Tachyon-owned private home contract", () => {
+    const root = temporaryRoot("tachyon-agent-profile-grok-");
+    const directory = path.join(root, ".tachyon", "agents", "grok-x");
+    fs.mkdirSync(directory, { recursive: true });
+    const bytes = Buffer.from(stringify({
+      schemaVersion: 1,
+      agentId: AGENT_ID,
+      runtime: { adapter: "grok", executable: "grok" },
+      workspace: { cwd: "/workspaces/external" },
+    }));
+    fs.writeFileSync(path.join(directory, "agent.yml"), bytes);
+    const record: AgentProfileAuthorityRecord = {
+      schemaVersion: 1,
+      agentName: "grok-x",
+      agentId: AGENT_ID,
+      revision: "profile-r1",
+      canonicalSha256: sha256(bytes),
+      runtimeInspector: { ...GROK_PRIVATE_HOME_INPUT_INSPECTOR },
+    };
+    const result = loadProfileAwareConfig({
+      yamlText: "agents:\n  grok-x:\n    profile: .tachyon/agents/grok-x/agent.yml\n",
+      workspaceRoot: root,
+      authorities: new Map([["grok-x", record]]),
+    });
+
+    expect(result.errors).toEqual([]);
+    expect(result.config?.agents["grok-x"]).toMatchObject({
+      cmd: "grok",
+      cwd: "/workspaces/external",
+      profileLifecycle: { agentId: AGENT_ID, authorityRevision: "profile-r1" },
+    });
+    expect(result.config?.agentSources["grok-x"].mode).toBe("profile");
+  });
+
+  it("rejects a Grok profile when authority selects another runtime inspector", () => {
+    const root = temporaryRoot("tachyon-agent-profile-grok-wrong-inspector-");
+    const directory = path.join(root, ".tachyon", "agents", "grok");
+    fs.mkdirSync(directory, { recursive: true });
+    const bytes = Buffer.from(stringify({
+      schemaVersion: 1,
+      agentId: AGENT_ID,
+      runtime: { adapter: "grok", executable: "grok" },
+    }));
+    fs.writeFileSync(path.join(directory, "agent.yml"), bytes);
+    const result = loadProfileAwareConfig({
+      yamlText: "agents:\n  grok:\n    profile: .tachyon/agents/grok/agent.yml\n",
+      workspaceRoot: root,
+      authorities: new Map([["grok", {
+        schemaVersion: 1 as const,
+        agentName: "grok",
+        agentId: AGENT_ID,
+        revision: "profile-r1",
+        canonicalSha256: sha256(bytes),
+        runtimeInspector: { ...CODEX_EMPTY_NATIVE_INPUT_INSPECTOR },
+      }]]),
+    });
+
+    expect(result.errors.join("\n")).toContain("host authority does not select the registered grok inspector");
+  });
+
   it("attaches a captured project-owned skill only after legacy YAML parsing", () => {
     const root = temporaryRoot("tachyon-agent-profile-workspace-");
     const skill = path.join(root, "shared", "skills", "research");

@@ -4466,6 +4466,32 @@ describe("AgentManager — session resume (spec 209)", () => {
       expect(newSessionArgs.at(-1)!.some((a) => a.startsWith("GROK_HOME="))).toBe(false);
     });
 
+    it("canonical Grok materializes its private home even when the Bridge is down", async () => {
+      const materialized: string[] = [];
+      const h = resumeHarness("agents:\n  grok:\n    cmd: grok\n", {
+        materializeHarness: ({ name, def }) => {
+          materialized.push(`${name}:${def.profileLifecycle?.authorityRevision ?? "legacy"}`);
+          return {
+            home: `/ws/.tachyon/bridge-mcp/${name}.grok`,
+            env: { GROK_HOME: `/ws/.tachyon/bridge-mcp/${name}.grok` },
+            args: [],
+          };
+        },
+        materializeBridgeMcpGrok: () => undefined,
+      });
+      h.manager.defOf("grok")!.profileLifecycle = {
+        enabled: true,
+        agentId: "11111111-1111-4111-8111-111111111111",
+        canonicalSha256: "a".repeat(64),
+        authorityRevision: "grok-r1",
+      };
+
+      await h.manager.spawn("grok");
+
+      expect(materialized).toEqual(["grok:grok-r1"]);
+      expect(envFromTmuxArgs(h.newSessionArgs.at(-1)!).GROK_HOME).toBe("/ws/.tachyon/bridge-mcp/grok.grok");
+    });
+
     // t-303f2b — gated/ad-hoc grok must use the Bridge private GROK_HOME (same as declared), not a
     // second isolate:transcript harness home that races auth materialization.
     it("t-303f2b: ad-hoc grok with Bridge materializer injects bridge GROK_HOME (no harness isolate race)", async () => {

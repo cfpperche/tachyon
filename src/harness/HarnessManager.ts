@@ -426,6 +426,7 @@ export function seedGrokTrustedFolders(
   folders: readonly string[],
   nowSec: number = Math.floor(Date.now() / 1000),
   homeDir: string = os.homedir(),
+  mode: "merge" | "replace" = "merge",
 ): void {
   const absolute = uniqueAbsoluteFolders(folders, homeDir);
   if (absolute.length === 0) return;
@@ -436,6 +437,18 @@ export function seedGrokTrustedFolders(
     content = fs.readFileSync(file, "utf8");
   } catch {
     /* cold private home */
+  }
+
+  if (mode === "replace") {
+    const blocks = absolute.map((folder) => {
+      const re = new RegExp(`\\[folders\\."${escapeRegExp(folder)}"\\]([^\\[]*)`, "m");
+      const prior = content.match(re)?.[1] ?? "";
+      const decidedAt = prior.match(/^\s*decided_at\s*=\s*(\d+)\b/m)?.[1] ?? String(nowSec);
+      return `[folders."${folder}"]\ntrusted = true\ndecided_at = ${decidedAt}\n`;
+    });
+    const exact = blocks.join("");
+    if (content !== exact) fs.writeFileSync(file, exact, "utf8");
+    return;
   }
 
   let changed = false;
@@ -2012,7 +2025,12 @@ export class HarnessManager {
     return reconcileWorkspaceGrokAuth(this.workspaceRoot, this.realGrokHome);
   }
 
-  materializeBridgeMcpGrok(agent: string, bridgeEntry: Record<string, unknown>, cwd?: string): string {
+  materializeBridgeMcpGrok(
+    agent: string,
+    bridgeEntry: Record<string, unknown>,
+    cwd?: string,
+    options: { exactTrust?: boolean } = {},
+  ): string {
     const home = bridgeGrokHome(this.workspaceRoot, agent);
     fs.mkdirSync(home, { recursive: true });
 
@@ -2045,7 +2063,13 @@ export class HarnessManager {
     const configPath = path.join(home, "config.toml");
     fs.writeFileSync(configPath, toml.endsWith("\n") || toml.length === 0 ? toml : `${toml}\n`, "utf8");
     // Pre-trust workspace + effective spawn cwd so the folder-trust dialog never blocks managed Grok.
-    seedGrokTrustedFolders(home, [this.workspaceRoot, ...(cwd ? [cwd] : [])]);
+    seedGrokTrustedFolders(
+      home,
+      [this.workspaceRoot, ...(cwd ? [cwd] : [])],
+      undefined,
+      undefined,
+      options.exactTrust ? "replace" : "merge",
+    );
     return home;
   }
 

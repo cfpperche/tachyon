@@ -22,6 +22,14 @@ import { AgentCapabilitySourceError, captureCapabilitySourceAtRoot } from "./age
 
 const INSPECTOR_CONTRACT = "tachyon/codex-empty-native-input-inspector/v1";
 const PI_INSPECTOR_CONTRACT = "tachyon/pi-private-capability-input-inspector/v1";
+const GROK_INSPECTOR_CONTRACT = [
+  "tachyon/grok-private-home-input-inspector/v1",
+  "literal executable grok",
+  "GROK_HOME is Tachyon-owned bridge-mcp/<agent>.grok on every canonical launch",
+  "config.toml and trusted_folders.toml are rewritten before launch",
+  "auth.json is an external credential symlink",
+  "ambient ~/.grok config, memory and plugins are not inherited",
+].join("\n");
 const PROFILE_ATTENTION_DEFAULT_SILENCE_SEC = 8;
 const NATIVE_CONFIG_MAX_BYTES = 1024 * 1024;
 export const CODEX_EMPTY_NATIVE_INPUT_INSPECTOR = Object.freeze({
@@ -36,6 +44,19 @@ export const PI_PRIVATE_CAPABILITY_INPUT_INSPECTOR = Object.freeze({
   version: "1",
   sha256: crypto.createHash("sha256").update(PI_INSPECTOR_CONTRACT).digest("hex"),
 });
+export const GROK_PRIVATE_HOME_INPUT_INSPECTOR = Object.freeze({
+  adapter: "grok",
+  id: "tachyon.grok-private-home-inputs",
+  version: "1",
+  sha256: crypto.createHash("sha256").update(GROK_INSPECTOR_CONTRACT).digest("hex"),
+});
+
+export function profileRuntimeInspectorFor(adapter: string) {
+  if (adapter === "codex") return CODEX_EMPTY_NATIVE_INPUT_INSPECTOR;
+  if (adapter === "pi") return PI_PRIVATE_CAPABILITY_INPUT_INSPECTOR;
+  if (adapter === "grok") return GROK_PRIVATE_HOME_INPUT_INSPECTOR;
+  return undefined;
+}
 
 export interface ProjectAgentProfileInput {
   workspaceRoot: string;
@@ -149,13 +170,13 @@ function parseCanonicalProfile(workspaceRoot: string, agentName: string): { prof
 }
 
 function inspectMeasuredNativeInputs(input: ProjectAgentProfileInput, profile: AgentProfileV1): NativeRuntimeAttestation | string[] {
-  if (!(["codex", "pi"].includes(profile.runtime.adapter)) || profile.runtime.executable !== profile.runtime.adapter) {
-    return ["profile/native-attestation: measured profile projection supports only literal 'codex' and 'pi' executables"];
+  if (!(["codex", "pi", "grok"].includes(profile.runtime.adapter)) || profile.runtime.executable !== profile.runtime.adapter) {
+    return ["profile/native-attestation: measured profile projection supports only literal 'codex', 'pi' and 'grok' executables"];
   }
   if (profile.runtime.model || profile.runtime.provider || profile.runtime.reasoningEffort || profile.runtime.serviceTier) {
     return ["profile/native-attestation: runtime selector migration requires a later measured projector"];
   }
-  const expected = profile.runtime.adapter === "codex" ? CODEX_EMPTY_NATIVE_INPUT_INSPECTOR : PI_PRIVATE_CAPABILITY_INPUT_INSPECTOR;
+  const expected = profileRuntimeInspectorFor(profile.runtime.adapter)!;
   const actual = input.authority.runtimeInspector;
   if (actual.adapter !== expected.adapter || actual.id !== expected.id || actual.version !== expected.version || actual.sha256 !== expected.sha256) {
     return [`profile/native-attestation: host authority does not select the registered ${expected.adapter} inspector`];
@@ -191,11 +212,16 @@ function inspectMeasuredNativeInputs(input: ProjectAgentProfileInput, profile: A
     authorityRevision: input.authority.revision,
     selectorsSha256: agentProfileRuntimeSelectorsSha256(runtime),
     inspector: { id: expected.id, version: expected.version, sha256: expected.sha256 },
-    observations: hasCapabilities ? [{
-      field: profile.runtime.adapter === "pi" ? "capabilities.pi" : "capabilities.mcp",
-      source: "private-runtime-config",
-      suppressed: true,
-    }] : [],
+    observations: profile.runtime.adapter === "grok"
+      ? [
+          { field: "environment.GROK_HOME", source: "environment", suppressed: true },
+          { field: "capabilities.mcp", source: "private-runtime-config", suppressed: true },
+        ]
+      : hasCapabilities ? [{
+          field: profile.runtime.adapter === "pi" ? "capabilities.pi" : "capabilities.mcp",
+          source: "private-runtime-config",
+          suppressed: true,
+        }] : [],
   };
 }
 
@@ -234,7 +260,7 @@ function projectDefinition(resolved: ResolvedAgentProfile): AgentDef | string[] 
   const definition = resolved.definition;
   const errors: string[] = [];
   if (!resolved.agentId) errors.push("profile/projection: canonical profile identity is missing");
-  if (!(["codex", "pi"].includes(definition.runtime.adapter)) || definition.runtime.executable !== definition.runtime.adapter || definition.runtime.args?.length) {
+  if (!(["codex", "pi", "grok"].includes(definition.runtime.adapter)) || definition.runtime.executable !== definition.runtime.adapter || definition.runtime.args?.length) {
     errors.push("profile/projection: unsupported runtime projection");
   }
   if (definition.environment?.secrets && Object.keys(definition.environment.secrets).length > 0) {

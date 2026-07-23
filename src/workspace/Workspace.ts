@@ -919,6 +919,15 @@ export class Workspace {
             inheritNativeConfig: def.profileLifecycle === undefined,
           });
         }
+        if (adapter.runtime === "grok" && def.profileLifecycle) {
+          const home = this.harness.materializeBridgeMcpGrok(
+            name,
+            this.bridgeEntry() ?? {},
+            cwd ?? this.workspaceRoot,
+            { exactTrust: true },
+          );
+          return { home, env: { GROK_HOME: home }, args: [] };
+        }
         return null;
       },
       // spec 236 — write a NON-harness claude agent's Bridge-only --mcp-config file and return its path
@@ -944,7 +953,12 @@ export class Workspace {
       // undefined when the Bridge isn't up (self-heals on next restart). Never mutates the user's real ~/.grok.
       materializeBridgeMcpGrok: (name, cwd) => {
         const entry = this.bridgeEntry();
-        return entry ? this.harness.materializeBridgeMcpGrok(name, entry, cwd ?? this.workspaceRoot) : undefined;
+        return entry ? this.harness.materializeBridgeMcpGrok(
+          name,
+          entry,
+          cwd ?? this.workspaceRoot,
+          { exactTrust: this.config?.agents[name]?.profileLifecycle !== undefined },
+        ) : undefined;
       },
       // Private HERMES_HOME for non-harness hermes (Bridge MCP in config.yaml + auth.json symlink).
       materializeBridgeMcpHermes: (name) => {

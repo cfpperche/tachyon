@@ -714,6 +714,26 @@ describe("HarnessManager materialize (fs)", () => {
     expect(trust).toBe(before);
   });
 
+  it("canonical Grok rewrites folder trust to the exact workspace and effective cwd set", () => {
+    const realGrokHome = path.join(path.dirname(ws), "real-grok-exact-trust");
+    fs.mkdirSync(realGrokHome, { recursive: true });
+    fs.writeFileSync(path.join(realGrokHome, "auth.json"), '{"token":"GROK"}');
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), undefined, undefined, undefined, realGrokHome);
+    const cwd = path.join(path.dirname(ws), "external-project");
+    fs.mkdirSync(cwd, { recursive: true });
+    const home = bridgeGrokHome(ws, "canonical");
+    fs.mkdirSync(home, { recursive: true });
+    fs.writeFileSync(path.join(home, "trusted_folders.toml"), '[folders."/stale"]\ntrusted = true\ndecided_at = 1\n');
+
+    mgr.materializeBridgeMcpGrok("canonical", {}, cwd, { exactTrust: true });
+
+    const trust = fs.readFileSync(path.join(home, "trusted_folders.toml"), "utf8");
+    expect(trust).not.toContain("/stale");
+    expect(trust).toContain(`[folders."${path.resolve(ws)}"]`);
+    expect(trust).toContain(`[folders."${path.resolve(cwd)}"]`);
+    expect(trust.match(/trusted\s*=\s*true/g)).toHaveLength(2);
+  });
+
   it("t-2b0a08: materializeBridgeMcpGrok promotes a newer private regular auth refresh before relinking", () => {
     const realGrokHome = path.join(path.dirname(ws), "real-grok-refresh");
     fs.mkdirSync(realGrokHome, { recursive: true });

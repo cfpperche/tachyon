@@ -23,7 +23,7 @@ import {
 import { agentStanzaSourceSlice } from "./YamlConfigEditor.js";
 import { canonicalAgentProfilePointer, scanAgentProfilePointers } from "./agentProfilePointer.js";
 import { closeCanonicalAgentProfile, readAgentProfileReference, readCanonicalAgentProfile, verifiedDescriptorPath } from "./agentProfileReader.js";
-import { CODEX_EMPTY_NATIVE_INPUT_INSPECTOR, PI_PRIVATE_CAPABILITY_INPUT_INSPECTOR } from "./agentProfileProjection.js";
+import { profileRuntimeInspectorFor } from "./agentProfileProjection.js";
 
 const SCHEMA_VERSION = 1 as const;
 const CANONICALIZATION_VERSION = 1 as const;
@@ -425,15 +425,15 @@ function targetProfile(input: CommitAgentProfileLifecycleInput, current?: AgentP
 }
 
 function authorityFor(agentName: string, profile: AgentProfileV1, sha256: string, prior: AgentProfileAuthorityRecord | undefined, txid: string): AgentProfileAuthorityRecord {
-  const inspector = profile.runtime.adapter === "pi" ? PI_PRIVATE_CAPABILITY_INPUT_INSPECTOR : CODEX_EMPTY_NATIVE_INPUT_INSPECTOR;
-  if (!prior && !["codex", "pi"].includes(profile.runtime.adapter)) throw new Error(`unsupported profile runtime adapter '${profile.runtime.adapter}'`);
+  const inspector = profileRuntimeInspectorFor(profile.runtime.adapter);
+  if (!prior && !inspector) throw new Error(`unsupported profile runtime adapter '${profile.runtime.adapter}'`);
   return {
     schemaVersion: 1,
     agentName,
     agentId: profile.agentId,
     revision: `lifecycle-${txid}`,
     canonicalSha256: sha256,
-    runtimeInspector: prior ? { ...prior.runtimeInspector } : { ...inspector },
+    runtimeInspector: prior ? { ...prior.runtimeInspector } : { ...inspector! },
     ...(prior?.capabilityGrants ? { capabilityGrants: prior.capabilityGrants.map((grant) => ({ ...grant })) } : {}),
   };
 }
