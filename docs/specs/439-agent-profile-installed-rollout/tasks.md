@@ -41,7 +41,7 @@ _Acceptance checks tied to `spec.md`. Each should map to a checklist item there.
 
 ## Dogfood
 
-**Dogfood:** `npm run dev-host:scenario -- agent-profile-installed-rollout`
+**Dogfood:** `npm test -- test/unit/agentProfileInstalledRollout.dogfood.test.ts`
 <!-- A representative command that exercises the shipped behavior end-to-end.
      `/sdd dogfood` previews by default and runs only with --run, then logs under
      notes.md `## Dogfood log`. If no meaningful headless dogfood exists, replace

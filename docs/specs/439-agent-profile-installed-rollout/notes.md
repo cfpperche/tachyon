@@ -75,3 +75,32 @@ Verification:
 - PI-001: 2/2 passed;
 - `npm run typecheck`: passed;
 - `npm run verify:full:quiet`: 487 files, 5538 passed, 3 skipped.
+
+## Dogfood log
+
+### 2026-07-23T20:06:58Z — pass (1/1) — source: tasks.md — commit: ac90293f3de5ead73db5ab0d65f124f29dc94d5e
+- `npm test -- test/unit/agentProfileInstalledRollout.dogfood.test.ts` — pass
+
+## 2026-07-23 — isolated six-agent rollout mirror
+
+The mirror migrated `claude`, `claude-orca` and `codex`, wrote a durable completed/next checkpoint,
+simulated restart reconciliation, then resumed with `grok`, `grok-workflow` and `grok-x`. It rolled
+`grok-workflow` back and migrated it again, ending with six canonical pointers and byte-identical
+workspace plugin lock data.
+
+The first run exposed a real sequential-resume gap: planning and prospective reload treated canonical
+siblings from earlier transactions as legacy or lacked their host authorities. The planner now accepts
+the already-published authority set, and commit reload gathers every canonical sibling authority from
+the authority port. Missing sibling authority fails closed.
+
+Evidence:
+
+- SDD dogfood: 1/1 passed;
+- focused migration/Workspace set: 94/94 passed;
+- PI-001: 2/2 passed;
+- isolated Dev Host `TACHYON_DEV_HOST_ID=t-673096`: 8/8 checks passed;
+- `npm run typecheck`: passed;
+- `npm run verify:full:quiet`: 488 files, 5539 passed, 3 skipped.
+
+No installed agent was modified. Live cutover remains the next barrier and requires the selected target
+to be stopped and unoccupied.

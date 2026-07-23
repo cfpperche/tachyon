@@ -41,6 +41,9 @@ export interface PlanLegacyAgentProfileMigrationInput {
   workspaceRoot: string;
   configText: string;
   agentName: string;
+  /** Authorities for canonical siblings already migrated by an earlier single-agent transaction. */
+  existingAuthorities?: ReadonlyMap<string, AgentProfileAuthorityRecord>;
+  homeDir?: string;
   /** Every legacy env key must be explicitly acknowledged as a non-secret value. */
   nonSecretEnv?: readonly string[];
   agentId?: string;
@@ -436,6 +439,17 @@ function plainAgentStanza(configText: string, agentName: string): Record<string,
     : undefined;
 }
 
+function profilePointerAgentNames(configText: string): string[] {
+  const raw = parseYaml(configText) as unknown;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return [];
+  const agents = (raw as Record<string, unknown>).agents;
+  if (!agents || typeof agents !== "object" || Array.isArray(agents)) return [];
+  return Object.entries(agents as Record<string, unknown>)
+    .filter(([, stanza]) => stanza !== null && typeof stanza === "object" && !Array.isArray(stanza)
+      && typeof (stanza as Record<string, unknown>).profile === "string")
+    .map(([name]) => name);
+}
+
 function buildProfile(
   agentId: string,
   definition: AgentDef,
@@ -537,7 +551,14 @@ export function planLegacyAgentProfileMigration(
   input: PlanLegacyAgentProfileMigrationInput,
 ): PlanLegacyAgentProfileMigrationResult {
   const blockers: string[] = [];
-  const parsed = parseConfig(input.configText);
+  const parsed = input.existingAuthorities
+    ? loadProfileAwareConfig({
+        yamlText: input.configText,
+        workspaceRoot: input.workspaceRoot,
+        authorities: new Map(input.existingAuthorities),
+        homeDir: input.homeDir,
+      })
+    : parseConfig(input.configText);
   blockers.push(...parsed.errors);
   const originalDefinition = parsed.config?.agents[input.agentName];
   if (!originalDefinition) blockers.push(`agents.${input.agentName}: legacy agent is not loadable`);
@@ -818,10 +839,18 @@ export async function commitLegacyAgentProfileMigration(
       await input.authority.publish(input.plan.authority, undefined);
       journal = transition(txDir, journal, "authority-published", input.onPhase);
 
+      const authorities = new Map<string, AgentProfileAuthorityRecord>();
+      for (const sibling of profilePointerAgentNames(patched.text)) {
+        const record = sibling === input.plan.agentName
+          ? input.plan.authority
+          : await input.authority.read(sibling);
+        if (!record) throw new Error(`prospective trusted reload is missing host authority for '${sibling}'`);
+        authorities.set(sibling, record);
+      }
       const preflight = loadProfileAwareConfig({
         yamlText: patched.text,
         workspaceRoot: input.workspaceRoot,
-        authorities: new Map([[input.plan.agentName, input.plan.authority]]),
+        authorities,
         homeDir: input.homeDir,
       });
       if (!preflight.config || preflight.errors.length > 0) {

@@ -4739,6 +4739,8 @@ export class Workspace {
       agentName,
       nonSecretEnv,
       currentAuthority: this.agentProfileAuthorities.get(agentName),
+      existingAuthorities: this.agentProfileAuthorities,
+      homeDir: this.agentProfileHomeDir,
       evolutionSelector,
     });
   }
