@@ -116,6 +116,9 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Task
   const hasLoadedRef = useRef(false);
   const editRevisionRef = useRef(0);
   const dirtyRef = useRef(false);
+  // t-112627 — the entity a first-load's editor still needs to mount against, once `mount.current`
+  // actually exists; see the effect below for why this can't happen inline in resetEditorFrom.
+  const pendingEditorEntity = useRef<TaskDetailEntity | null>(null);
 
   const [entity, setEntity] = useState<TaskDetailEntity | undefined>(undefined);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -193,18 +196,32 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Task
     setAttachments(loadedEntity.attachments);
     setError(undefined);
     setFreshFields([]);
-    if (mount.current) {
-      editorRef.current?.destroy();
-      editorRef.current = createRichDocEditor(
-        mount.current,
-        toEditorDoc(loadedEntity.doc, loadedEntity.attachments),
-        (file, source) => void attachFile(file, source),
-        () => setSlashOpen(true),
-        () => setDocDirty(true),
-      );
-    }
+    // t-112627 — resetEditorFrom runs synchronously inside the "load" message handler, in the same
+    // tick as the setEntity/setReady that will cause StudioFrame's richDoc region (gated on
+    // `ready && entity`, below) to render for the FIRST time — `mount.current` is still null here on
+    // a fresh binding, so creating the editor inline silently no-ops and the editor never mounts.
+    // Stash the entity and let the effect below (which runs after the DOM has actually committed)
+    // create it once `mount.current` is real.
+    pendingEditorEntity.current = loadedEntity;
     setDocVersion((v) => v + 1);
   };
+
+  // Runs after every commit; cheap no-op once there's no pending entity. Mounts the editor as soon as
+  // the richDoc region's mount div has actually appeared in the DOM (t-112627) — see resetEditorFrom.
+  useEffect(() => {
+    const loadedEntity = pendingEditorEntity.current;
+    if (!loadedEntity || !mount.current) return;
+    pendingEditorEntity.current = null;
+    editorRef.current?.destroy();
+    editorRef.current = createRichDocEditor(
+      mount.current,
+      toEditorDoc(loadedEntity.doc, loadedEntity.attachments),
+      (file, source) => void attachFile(file, source),
+      () => setSlashOpen(true),
+      () => setDocDirty(true),
+    );
+    setDocVersion((v) => v + 1);
+  });
 
   // Re-handshake whenever the binding identity changes (fresh mount OR a same-route re-entry the
   // host rebound) — resets ALL local state so a stale entity never lingers across bindings, same
@@ -215,6 +232,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Task
     setEntity(undefined);
     editorRef.current?.destroy();
     editorRef.current = null;
+    pendingEditorEntity.current = null;
     attachmentsRef.current = [];
     originalRef.current = null;
     depTitlesRef.current = {};
