@@ -52,3 +52,8 @@ _Alternatives weighed mid-build. The chosen path + what was given up + why it wa
   `routeKey`/`mountNonce` safety metadata added by the shared studio host. Those routing fields are
   now ignored only for payload-key comparison; arbitrary extra fields remain rejected. Real Dev
   Host proof shows Soul as missing and Evolution version 0 instead of generic errors.
+
+## Dogfood log
+
+### 2026-07-23T14:44:44Z — pass (1/1) — source: tasks.md — commit: 1f1204d49d5a7872c1b6579d0df69d94e327b29d
+- `npx vitest run test/unit/agentStudioAdapter.test.ts test/unit/agentStudioDomain.test.ts` — pass

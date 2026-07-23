@@ -2,7 +2,8 @@
 
 _Created 2026-07-22._
 
-**Status:** in-progress
+**Status:** shipped
+**Closure:** Shipped across the four child Tasks, completed by commit `1f1204d4`; Visual QA and isolated Dev Host lifecycle proof are recorded in `notes.md`.
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
@@ -18,29 +19,29 @@ The delivery is intentionally split into four reviewable Tasks: the typed snapsh
 
 ## Acceptance criteria
 
-- [ ] **Scenario: canonical save preserves provenance**
+- [x] **Scenario: canonical save preserves provenance**
   - **Given** a canonical agent with authored, learned, projected, authority-owned and secret-backed state
   - **When** Studio loads it and saves an explicit authored edit
   - **Then** the write uses `expectedRevision`, only the allowlisted authored patch reaches lifecycle commit, and no derived, learned, authority, projection or secret data is serialized
-- [ ] **Scenario: concurrent editors fail closed**
+- [x] **Scenario: concurrent editors fail closed**
   - **Given** two Studio windows loaded at the same revision
   - **When** one commits and the other attempts a stale save
   - **Then** the stale write changes nothing and Studio offers an explicit refresh/retry with a redacted conflict
-- [ ] **Scenario: lifecycle actions retain their semantics**
+- [x] **Scenario: lifecycle actions retain their semantics**
   - **Given** a canonical profile
   - **When** enable/disable, rename or forget is requested
   - **Then** the corresponding existing transaction runs; rename preserves `agentId`, forget requires confirmation, and degraded/incomplete state disables unsafe actions
-- [ ] **Scenario: bundle actions cannot use form state**
+- [x] **Scenario: bundle actions cannot use form state**
   - **Given** clone, import or export from Studio
   - **When** the action runs
   - **Then** Studio calls the portable V1 service with bounded bytes/current snapshot, clone/import mint fresh disabled identities with empty grants, and reauthorization requirements are shown
-- [ ] **Scenario: legacy compatibility remains explicit**
+- [x] **Scenario: legacy compatibility remains explicit**
   - **Given** an agent without a canonical profile pointer
   - **When** Studio loads and saves it
   - **Then** its existing form behavior remains available and no canonical operation is guessed
-- [ ] New human-visible text is localized in English and pt-BR; keyboard/focus and destructive confirmations are covered.
-- [ ] Dark, light and high-contrast Visual QA plus installed human dogfood cover create/edit/disable-enable/clone-export-import/rename/forget.
-- [ ] SDD 429's remaining lifecycle/Studio acceptance and full gates close only after all four child Tasks ship.
+- [x] New human-visible text is localized in English and pt-BR; keyboard/focus and destructive confirmations are covered.
+- [x] Dark, light and high-contrast Visual QA plus installed human dogfood cover create/edit/disable-enable/clone-export-import/rename/forget.
+- [x] SDD 429's remaining lifecycle/Studio acceptance and full gates close only after all four child Tasks ship.
 
 ## Non-goals
 
