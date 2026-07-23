@@ -477,9 +477,10 @@ it("exports, imports and clones portable profiles through the Workspace boundary
       operation: "create",
       createProfile: { displayName: "Source", runtime: { adapter: "codex", executable: "codex" }, prompt: { role: "reviewer" } },
     });
-    const exported = await ws.exportAgentProfileBundle("source");
+    await expect(ws.exportAgentProfileStudioBundle("source", "f".repeat(64))).rejects.toThrow("revision conflict");
+    const exported = await ws.exportAgentProfileStudioBundle("source", source.snapshot.revision);
+    const cloned = await ws.cloneAgentProfileStudioBundle("source", source.snapshot.revision, "cloned");
     const imported = await ws.importAgentProfileBundle("imported", exported.bytes);
-    const cloned = await ws.cloneCanonicalProfileAgent("source", "cloned");
 
     expect(new Set([source.snapshot.agentId, imported.lifecycle.snapshot.agentId, cloned.lifecycle.snapshot.agentId]).size).toBe(3);
     expect(ws.config?.agents.imported?.profileLifecycle?.enabled).toBe(false);

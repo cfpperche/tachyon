@@ -13,6 +13,7 @@ _In-flight design memory — decisions, deviations, tradeoffs, and open question
 - 2026-07-22 — Canonical creation is disabled at the lifecycle level and canonical edits preserve unrelated prompt bindings by rebuilding the narrow top-level patch from the inspected CAS snapshot. Soul and Evolution remain separate protocols; their toggles cannot be serialized through canonical save.
 - 2026-07-22 — `t-293326` exposes enable/disable, rename and forget as a closed revisioned lifecycle union, not as form fields. Rename and forget reuse their existing canonical transactions; forget additionally requires the exact agent name as confirmation. Errors are redacted, stale revisions trigger a fresh bounded snapshot, dirty forms cannot launch lifecycle actions, and rename/forget confirmations focus Cancel first.
 - 2026-07-22 — The Control host was decoding a hardcoded `browse/cwd` domain subset even though adapters already declare their domain vocabulary. It now decodes `adapter.domainMessageNames`; without this correction Agent Studio's typed lifecycle messages (and other registered domain actions) could not reach their existing handler.
+- 2026-07-22 — `t-ecd405` keeps portable bundles byte-exact: export and clone bind the loaded profile revision, import crosses the existing staged-payload seam with the bundle service's 256 KiB cap, and the Studio only projects digest plus reauthorization requirements. Clone/import call the V1 services directly and create disabled, grant-free identities; no bundle is reconstructed from form fields.
 
 ## Deviations
 

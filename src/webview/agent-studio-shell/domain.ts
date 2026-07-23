@@ -9,6 +9,7 @@ import type {
   AgentProfileStudioSnapshotV1,
 } from "../../config/agentProfileStudio.js";
 import { isAgentProfileStudioSnapshotV1 } from "../../config/agentProfileStudio.js";
+import { agentProfileStudioBundleCreatedResultSchemaV1, agentProfileStudioBundleExportResultSchemaV1 } from "../../config/agentProfileStudio.js";
 
 /**
  * spec 350 Phase 3 T1 — the Agent-kind studio's vscode-free AND node-free domain: pure entity/fields/patch
@@ -56,6 +57,9 @@ export const AGENT_STUDIO_WEBVIEW_MESSAGE_NAMES = [
   "setCanonicalProfileEnabled",
   "renameCanonicalProfile",
   "forgetCanonicalProfile",
+  "exportCanonicalProfileBundle",
+  "cloneCanonicalProfileBundle",
+  "importCanonicalProfileBundle",
 ] as const;
 
 export const AGENT_STUDIO_HOST_MESSAGE_NAMES = [
@@ -70,6 +74,9 @@ export const AGENT_STUDIO_HOST_MESSAGE_NAMES = [
   "canonicalProfileSnapshot",
   "canonicalProfileForgotten",
   "canonicalProfileError",
+  "canonicalProfileBundleExport",
+  "canonicalProfileBundleCreated",
+  "canonicalProfileBundleError",
 ] as const;
 
 /** Complete surface vocabulary for collision checks only; boundary decoders use the directional lists. */
@@ -133,11 +140,17 @@ export type AgentStudioLifecycleActionMessage =
   | { type: "renameCanonicalProfile"; agent: string; expectedRevision: string; newName: string }
   | { type: "forgetCanonicalProfile"; agent: string; expectedRevision: string; confirmation: string };
 
+export type AgentStudioBundleActionMessage =
+  | { type: "exportCanonicalProfileBundle"; agent: string; expectedRevision: string }
+  | { type: "cloneCanonicalProfileBundle"; agent: string; expectedRevision: string; destinationAgentName: string }
+  | { type: "importCanonicalProfileBundle"; agent: string; destinationAgentName: string; contentBase64: string };
+
 export type AgentStudioInboundDomainMessage =
   | { type: "browse" }
   | AgentStudioSoulActionMessage
   | AgentStudioEvolutionActionMessage
-  | AgentStudioLifecycleActionMessage;
+  | AgentStudioLifecycleActionMessage
+  | AgentStudioBundleActionMessage;
 
 function exactKeys(value: Record<string, unknown>, expected: readonly string[]): boolean {
   const keys = Object.keys(value).filter((key) => key !== "studioProtocolVersion").sort();
@@ -153,6 +166,25 @@ export function validateAgentStudioInboundMessage(raw: unknown): AgentStudioInbo
     return exactKeys(value, ["type", "agent"]) && typeof value.agent === "string" && AGENT_NAME_RE.test(value.agent)
       ? { type: "refreshCanonicalProfile", agent: value.agent }
       : undefined;
+  }
+  if (value.type === "exportCanonicalProfileBundle") {
+    return exactKeys(value, ["type", "agent", "expectedRevision"]) && typeof value.agent === "string" && AGENT_NAME_RE.test(value.agent)
+      && typeof value.expectedRevision === "string" && SHA256_RE.test(value.expectedRevision)
+      ? { type: "exportCanonicalProfileBundle", agent: value.agent, expectedRevision: value.expectedRevision } : undefined;
+  }
+  if (value.type === "cloneCanonicalProfileBundle") {
+    return exactKeys(value, ["type", "agent", "expectedRevision", "destinationAgentName"])
+      && typeof value.agent === "string" && AGENT_NAME_RE.test(value.agent)
+      && typeof value.expectedRevision === "string" && SHA256_RE.test(value.expectedRevision)
+      && typeof value.destinationAgentName === "string" && AGENT_NAME_RE.test(value.destinationAgentName)
+      ? { type: "cloneCanonicalProfileBundle", agent: value.agent, expectedRevision: value.expectedRevision, destinationAgentName: value.destinationAgentName } : undefined;
+  }
+  if (value.type === "importCanonicalProfileBundle") {
+    return exactKeys(value, ["type", "agent", "destinationAgentName", "contentBase64"])
+      && typeof value.agent === "string" && AGENT_NAME_RE.test(value.agent)
+      && typeof value.destinationAgentName === "string" && AGENT_NAME_RE.test(value.destinationAgentName)
+      && typeof value.contentBase64 === "string" && value.contentBase64.length > 0 && value.contentBase64.length <= 350_000 && BASE64_RE.test(value.contentBase64)
+      ? { type: "importCanonicalProfileBundle", agent: value.agent, destinationAgentName: value.destinationAgentName, contentBase64: value.contentBase64 } : undefined;
   }
   if (value.type === "setCanonicalProfileEnabled") {
     return exactKeys(value, ["type", "agent", "expectedRevision", "enabled"])
@@ -338,6 +370,14 @@ export function validateAgentStudioHostDomainMessage(raw: unknown): boolean {
     return exactKeys(value, ["type", "action", "snapshot"])
       && ["refresh", "set-enabled", "rename"].includes(String(value.action))
       && isAgentProfileStudioSnapshotV1(value.snapshot);
+  }
+  if (value.type === "canonicalProfileBundleExport") return exactKeys(value, ["type", "result"]) && agentProfileStudioBundleExportResultSchemaV1.safeParse(value.result).success;
+  if (value.type === "canonicalProfileBundleCreated") return exactKeys(value, ["type", "result"]) && agentProfileStudioBundleCreatedResultSchemaV1.safeParse(value.result).success;
+  if (value.type === "canonicalProfileBundleError") {
+    return exactKeys(value, ["type", "agent", "code", "message", "conflict"])
+      && typeof value.agent === "string" && AGENT_NAME_RE.test(value.agent)
+      && typeof value.code === "string" && /^agent-profile\/[a-z0-9-]+$/.test(value.code)
+      && typeof value.message === "string" && value.message.length <= 2_000 && typeof value.conflict === "boolean";
   }
   if (value.type === "canonicalProfileForgotten") {
     return exactKeys(value, ["type", "agent", "agentId"])

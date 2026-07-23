@@ -44,6 +44,7 @@ describe("ClientWorkspaceStudioTarget", () => {
       identity,
       snapshot: projectionSnapshot(identity),
       query: async (query) => {
+        if (query.method === "extension.query" && query.input.action === "agent-profile.studio-bundle-export") return workspaceExtensionQuerySuccessV1(query as never, { schemaVersion: 1, agentName: "Ada", revision: snapshot.revision, fileName: "Ada.tachyon-agent-profile.json", contentBase64: Buffer.from("{}\n").toString("base64"), byteSize: 3, sha256: "e".repeat(64), requiresReauthorization: [] });
         expect(query).toMatchObject({ method: "extension.query", input: { action: "agent-profile.studio-inspect", agent: "Ada" } });
         return workspaceExtensionQuerySuccessV1(query as never, snapshot);
       },
@@ -53,6 +54,7 @@ describe("ClientWorkspaceStudioTarget", () => {
           expect(command).toMatchObject({ input: { mutation: { agentName: "Ada", expectedRevision: snapshot.revision } } });
           return workspaceExtensionCommandSuccessV1(command as never, { ...snapshot, revision: "c".repeat(64) });
         }
+        if (command.input.action === "agent-profile.studio-bundle-clone" || command.input.action === "agent-profile.studio-bundle-import") return workspaceExtensionCommandSuccessV1(command as never, { schemaVersion: 1, kind: "created", operation: command.input.action.endsWith("clone") ? "clone" : "import", snapshot: { ...snapshot, agentName: "Bea", enabled: false }, bundleSha256: "e".repeat(64), requiresReauthorization: [] });
         expect(command).toMatchObject({ input: { action: "agent-profile.studio-lifecycle", mutation: { operation: "set-enabled", agentName: "Ada", expectedRevision: snapshot.revision, enabled: true } } });
         return workspaceExtensionCommandSuccessV1(command as never, {
           schemaVersion: 1,
@@ -68,6 +70,10 @@ describe("ClientWorkspaceStudioTarget", () => {
       .resolves.toMatchObject({ revision: "c".repeat(64) });
     await expect(target.commitAgentProfileStudioLifecycle({ schemaVersion: 1, operation: "set-enabled", agentName: "Ada", expectedRevision: snapshot.revision, enabled: true }))
       .resolves.toMatchObject({ kind: "snapshot", snapshot: { revision: "d".repeat(64), enabled: true } });
+    await expect(target.exportAgentProfileStudioBundle("Ada", snapshot.revision)).resolves.toMatchObject({ byteSize: 3, sha256: "e".repeat(64) });
+    await expect(target.cloneAgentProfileStudioBundle("Ada", snapshot.revision, "Bea")).resolves.toMatchObject({ operation: "clone", snapshot: { agentName: "Bea", enabled: false } });
+    await expect(target.importAgentProfileStudioBundle("Bea", Buffer.from("{}\n"))).resolves.toMatchObject({ operation: "import" });
+    expect(fake.stagedPayloads.at(-1)?.discarded).toBe(true);
   });
 
   it("loads forms locally but routes every save through one idempotency-keyed engine command", async () => {

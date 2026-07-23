@@ -65,6 +65,37 @@ export const agentProfileStudioLifecycleResultSchemaV1 = z.union([
 
 export type AgentProfileStudioLifecycleResultV1 = z.infer<typeof agentProfileStudioLifecycleResultSchemaV1>;
 
+export const agentProfileStudioBundleRequirementSchemaV1 = z.object({
+  kind: z.enum(["secret", "environment", "reference", "workspace", "ownership", "lifecycle", "isolation"]),
+  field: z.string().min(1).max(512),
+  referenceId: z.string().regex(ID).optional(),
+  referenceKind: z.string().regex(ID).optional(),
+}).strict();
+
+export const agentProfileStudioBundleExportResultSchemaV1 = z.object({
+  schemaVersion: z.literal(1),
+  agentName: studioAgentName,
+  revision: z.string().regex(REVISION),
+  fileName: z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,127}\.tachyon-agent-profile\.json$/),
+  contentBase64: z.string().max(350_000).regex(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/),
+  byteSize: z.number().int().positive().max(256 * 1024),
+  sha256: z.string().regex(REVISION),
+  requiresReauthorization: z.array(agentProfileStudioBundleRequirementSchemaV1).max(256),
+}).strict();
+
+export const agentProfileStudioBundleCreatedResultSchemaV1 = z.object({
+  schemaVersion: z.literal(1),
+  kind: z.literal("created"),
+  operation: z.enum(["clone", "import"]),
+  snapshot: z.lazy(() => agentProfileStudioSnapshotSchemaV1),
+  bundleSha256: z.string().regex(REVISION),
+  requiresReauthorization: z.array(agentProfileStudioBundleRequirementSchemaV1).max(256),
+}).strict();
+
+export type AgentProfileStudioBundleRequirementV1 = z.infer<typeof agentProfileStudioBundleRequirementSchemaV1>;
+export type AgentProfileStudioBundleExportResultV1 = z.infer<typeof agentProfileStudioBundleExportResultSchemaV1>;
+export type AgentProfileStudioBundleCreatedResultV1 = z.infer<typeof agentProfileStudioBundleCreatedResultSchemaV1>;
+
 export const agentProfileStudioSnapshotSchemaV1 = z.object({
   schemaVersion: z.literal(1),
   kind: z.literal("canonical"),

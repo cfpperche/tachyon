@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { AgentStudioAdapter } from "../../src/webview/AgentStudioAdapter.js";
 import { blankAgentFields, canonicalAgentFields, createAgentEvolutionLabels, serializeAgentPatch } from "../../src/webview/agent-studio-shell/domain.js";
 import type { AgentProfileStudioMutationV1, AgentProfileStudioSnapshotV1 } from "../../src/config/agentProfileStudio.js";
-import type { Workspace } from "../../src/workspace/Workspace.js";
+import type { WorkspaceAgentStudioTarget } from "../../src/shell/WorkspacePresentation.js";
 import type { StudioSubmit } from "../../src/webview/studioSubmit.js";
 
 /** spec 350 Phase 3 T1 — AgentStudioAdapter in isolation: no vscode, no panel, no protocol — just the
@@ -46,7 +46,7 @@ function fakeWorkspace(opts: {
   inspectResult?: AgentProfileStudioSnapshotV1;
   commit?: (mutation: AgentProfileStudioMutationV1) => Promise<AgentProfileStudioSnapshotV1>;
 } = {}): {
-  ws: Workspace;
+  ws: WorkspaceAgentStudioTarget;
   submits: StudioSubmit[];
 } {
   const agents: FakeAgents = opts.agents ?? {};
@@ -68,7 +68,7 @@ function fakeWorkspace(opts: {
     },
     inspectAgentProfileStudio: async () => opts.inspectResult ?? profileSnapshot(),
     commitAgentProfileStudio: opts.commit ?? (async (mutation: AgentProfileStudioMutationV1) => profileSnapshot(mutation.agentName)),
-  } as unknown as Workspace;
+  } as unknown as WorkspaceAgentStudioTarget;
   return { ws, submits };
 }
 

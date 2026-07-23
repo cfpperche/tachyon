@@ -32,6 +32,9 @@ import {
   canonicalProfileErrorMessage,
   canonicalProfileForgottenMessage,
   canonicalProfileSnapshotMessage,
+  canonicalProfileBundleCreatedMessage,
+  canonicalProfileBundleErrorMessage,
+  canonicalProfileBundleExportMessage,
   soulProfileErrorMessage,
   soulProfileStatusMessage,
 } from "../webview/agent-studio-shell/messages.js";
@@ -66,6 +69,14 @@ export function handleAgentStudioDomainMessage(ws: WorkspaceAgentStudioTarget, c
     return;
   }
   if (m.type === "refreshCanonicalProfile") { void refreshCanonicalProfile(ws, ctx, agent); return; }
+  if (m.type === "exportCanonicalProfileBundle") { void runBundleAction(ws, ctx, agent, () => ws.exportAgentProfileStudioBundle(agent, m.expectedRevision)); return; }
+  if (m.type === "cloneCanonicalProfileBundle") { void runBundleAction(ws, ctx, agent, () => ws.cloneAgentProfileStudioBundle(agent, m.expectedRevision, m.destinationAgentName)); return; }
+  if (m.type === "importCanonicalProfileBundle") {
+    const bytes = Buffer.from(m.contentBase64, "base64");
+    if (bytes.toString("base64") !== m.contentBase64) { postBundleError(ctx, agent, new Error("invalid bundle bytes")); return; }
+    void runBundleAction(ws, ctx, agent, () => ws.importAgentProfileStudioBundle(m.destinationAgentName, bytes));
+    return;
+  }
   if (m.type === "setCanonicalProfileEnabled") {
     void runCanonicalProfileAction(ws, ctx, {
       schemaVersion: 1,
@@ -109,6 +120,29 @@ export function handleAgentStudioDomainMessage(ws: WorkspaceAgentStudioTarget, c
   if (m.type === "enableSoul") { void runProfileAction(ctx, agent, "enable", () => ws.enableSoulProfile(agent)); return; }
   if (m.type === "disableSoul") { void runProfileAction(ctx, agent, "disable", () => ws.disableSoulProfile(agent)); return; }
   if (m.type === "deleteSoulProfile") { void runProfileAction(ctx, agent, "delete", () => ws.deleteSoulProfile(agent)); return; }
+}
+
+async function runBundleAction(
+  ws: WorkspaceAgentStudioTarget,
+  ctx: StudioDomainContext,
+  agent: string,
+  run: () => Promise<Awaited<ReturnType<WorkspaceAgentStudioTarget["exportAgentProfileStudioBundle"]>> | Awaited<ReturnType<WorkspaceAgentStudioTarget["cloneAgentProfileStudioBundle"]>>>,
+): Promise<void> {
+  try {
+    const result = await run();
+    if ("contentBase64" in result) ctx.post(canonicalProfileBundleExportMessage(result));
+    else ctx.post(canonicalProfileBundleCreatedMessage(result));
+  } catch (error) {
+    postBundleError(ctx, agent, error);
+    if (isRevisionConflict(error)) await refreshCanonicalProfile(ws, ctx, agent);
+  }
+}
+
+function postBundleError(ctx: StudioDomainContext, agent: string, error: unknown): void {
+  const conflict = isRevisionConflict(error);
+  ctx.post(canonicalProfileBundleErrorMessage(agent, conflict ? "agent-profile/revision-conflict" : "agent-profile/bundle-failed", conflict
+    ? "This profile changed. The latest profile was loaded; review it before trying again."
+    : "The portable profile action could not be completed.", conflict));
 }
 
 async function refreshCanonicalProfile(ws: WorkspaceAgentStudioTarget, ctx: StudioDomainContext, agent: string): Promise<void> {

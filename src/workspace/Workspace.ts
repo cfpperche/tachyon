@@ -4802,6 +4802,12 @@ export class Workspace {
     return exportPortableAgentProfileBundle({ workspaceRoot: this.workspaceRoot, snapshot });
   }
 
+  async exportAgentProfileStudioBundle(agentName: string, expectedRevision: string): Promise<PortableAgentProfileBytes> {
+    const snapshot = await this.inspectAgentProfileLifecycle(agentName);
+    if (snapshot.revision !== expectedRevision) throw new Error(`agent '${agentName}' profile revision conflict`);
+    return exportPortableAgentProfileBundle({ workspaceRoot: this.workspaceRoot, snapshot });
+  }
+
   async importAgentProfileBundle(agentName: string, bundle: string | Buffer): Promise<ImportPortableAgentProfileResult> {
     await this.assertAgentStoppedForProfileMigration(agentName);
     const result = await importPortableAgentProfileBundle({
@@ -4819,6 +4825,27 @@ export class Workspace {
 
   async cloneCanonicalProfileAgent(sourceAgentName: string, destinationAgentName: string): Promise<ImportPortableAgentProfileResult> {
     const source = await this.inspectAgentProfileLifecycle(sourceAgentName);
+    await this.assertAgentStoppedForProfileMigration(destinationAgentName);
+    const result = await clonePortableAgentProfile({
+      workspaceRoot: this.workspaceRoot,
+      source,
+      destinationAgentName,
+      authority: this.profileAuthorityPort(),
+      config: this.agentProfileLifecycleConfigPort(),
+      activateState: (state) => this.activateAgentProfileLifecycleState(destinationAgentName, state),
+    });
+    this.rebuildWatches();
+    this.refreshAgentsViews();
+    return result;
+  }
+
+  async cloneAgentProfileStudioBundle(
+    sourceAgentName: string,
+    expectedRevision: string,
+    destinationAgentName: string,
+  ): Promise<ImportPortableAgentProfileResult> {
+    const source = await this.inspectAgentProfileLifecycle(sourceAgentName);
+    if (source.revision !== expectedRevision) throw new Error(`agent '${sourceAgentName}' profile revision conflict`);
     await this.assertAgentStoppedForProfileMigration(destinationAgentName);
     const result = await clonePortableAgentProfile({
       workspaceRoot: this.workspaceRoot,

@@ -40,6 +40,9 @@ import {
   setCanonicalProfileEnabledMessage,
   renameCanonicalProfileMessage,
   forgetCanonicalProfileMessage,
+  exportCanonicalProfileBundleMessage,
+  cloneCanonicalProfileBundleMessage,
+  importCanonicalProfileBundleMessage,
   rejectEvolutionCandidateMessage,
   saveMessage,
 } from "./messages";
@@ -116,6 +119,19 @@ interface SoulImportSelection {
   fileName: string;
   bytes: number;
   sha256: string;
+}
+
+const PROFILE_BUNDLE_MAX_BYTES = 256 * 1024;
+
+function ProfileBundlePicker({ onCancel, onSelect }: { onCancel(): void; onSelect(contentBase64: string): void }) {
+  const [error, setError] = useState<string | undefined>();
+  return <KitFilePicker title="Import portable agent profile" description="Canonical Tachyon profile JSON, up to 256 KB."
+    accept=".json,application/json" error={error} cancelLabel="Cancel import" onCancel={onCancel}
+    onFile={async (file) => {
+      if (!file || file.size < 1 || file.size > PROFILE_BUNDLE_MAX_BYTES) { setError("Choose a non-empty profile bundle up to 256 KB."); return; }
+      try { onSelect(bytesToBase64(new Uint8Array(await file.arrayBuffer()))); }
+      catch { setError("Tachyon could not read the selected bundle."); }
+    }} />;
 }
 
 function SoulImportPicker({ onCancel, onSelect }: {
@@ -199,6 +215,10 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
   const [forgetConfirmOpen, setForgetConfirmOpen] = useState(false);
   const [forgetValue, setForgetValue] = useState("");
   const [profileRetired, setProfileRetired] = useState(false);
+  const [bundleAction, setBundleAction] = useState<"clone" | "import" | undefined>();
+  const [bundleDestination, setBundleDestination] = useState("");
+  const [bundleImportBase64, setBundleImportBase64] = useState<string | undefined>();
+  const bundleCancelButtonRef = useRef<HTMLButtonElement>(null);
   const [ready, setReady] = useState(false);
   const entityRef = useRef<AgentStudioEntity | undefined>(undefined);
   const fieldsRef = useRef(fields);
@@ -250,6 +270,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
     setForgetConfirmOpen(false);
     setForgetValue("");
     setProfileRetired(false);
+    setBundleAction(undefined); setBundleDestination(""); setBundleImportBase64(undefined);
     setReady(false);
     dispatch.post(readyMessage({ routeKey, mountNonce }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -302,6 +323,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
       setForgetConfirmOpen(false);
       setForgetValue("");
       setProfileRetired(false);
+      setBundleAction(undefined); setBundleDestination(""); setBundleImportBase64(undefined);
       setReady(true);
       if (d.entity.name) {
         post(refreshSoulMessage(d.entity.name));
@@ -432,6 +454,18 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
       if (entityRef.current?.name !== d.agent) return;
       setProfileBusy(d.conflict ? "Refreshing profile" : undefined);
       setProfileNotice({ kind: "error", text: d.message });
+    } else if (d.type === "canonicalProfileBundleExport") {
+      if (entityRef.current?.name !== d.result.agentName) return;
+      const bytes = Uint8Array.from(atob(d.result.contentBase64), (char) => char.charCodeAt(0));
+      const url = URL.createObjectURL(new Blob([bytes], { type: "application/json" }));
+      const anchor = document.createElement("a"); anchor.href = url; anchor.download = d.result.fileName; anchor.click(); URL.revokeObjectURL(url);
+      setProfileBusy(undefined); setProfileNotice({ kind: "success", text: `Exported ${d.result.byteSize} bytes · SHA-256 ${d.result.sha256.slice(0, 12)}… · ${d.result.requiresReauthorization.length} reauthorization item(s).` });
+    } else if (d.type === "canonicalProfileBundleCreated") {
+      setProfileBusy(undefined); setBundleAction(undefined); setBundleDestination(""); setBundleImportBase64(undefined);
+      setProfileNotice({ kind: "success", text: `${d.result.operation === "clone" ? "Cloned" : "Imported"} ${d.result.snapshot.agentName} disabled · SHA-256 ${d.result.bundleSha256.slice(0, 12)}… · ${d.result.requiresReauthorization.length} reauthorization item(s).` });
+    } else if (d.type === "canonicalProfileBundleError") {
+      if (entityRef.current?.name !== d.agent) return;
+      setProfileBusy(d.conflict ? "Refreshing profile" : undefined); setProfileNotice({ kind: "error", text: d.message });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [incoming?.seq]);
@@ -459,6 +493,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
   useEffect(() => {
     if (forgetConfirmOpen) forgetCancelButtonRef.current?.focus();
   }, [forgetConfirmOpen]);
+  useEffect(() => { if (bundleAction) bundleCancelButtonRef.current?.focus(); }, [bundleAction]);
 
   if (!ready || !entity) {
     return (
@@ -649,6 +684,9 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
                     setForgetConfirmOpen(true);
                     setRenameConfirmOpen(false);
                   }}>Forget…</Button>
+                  <Button disabled={canonicalLifecycleDisabled} onClick={() => canonicalSnapshot && runCanonicalLifecycle("Exporting profile", exportCanonicalProfileBundleMessage(canonicalSnapshot.agentName, canonicalSnapshot.revision))}>Export</Button>
+                  <Button disabled={canonicalLifecycleDisabled} onClick={() => { setBundleAction("clone"); setBundleDestination(""); setBundleImportBase64(undefined); }}>Clone…</Button>
+                  <Button disabled={canonicalLifecycleDisabled} onClick={() => { setBundleAction("import"); setBundleDestination(""); setBundleImportBase64(undefined); }}>Import…</Button>
                 </div>
                 {dirty && <div class="ash-soul-status">Save or discard form changes before a lifecycle action.</div>}
                 {renameConfirmOpen && canonicalSnapshot && (
@@ -676,6 +714,26 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
                         "Forgetting agent",
                         forgetCanonicalProfileMessage(canonicalSnapshot.agentName, canonicalSnapshot.revision, forgetValue),
                       )}>Forget agent</Button>
+                    </div>
+                  </div>
+                )}
+                {bundleAction === "import" && !bundleImportBase64 && (
+                  <ProfileBundlePicker onCancel={() => setBundleAction(undefined)} onSelect={setBundleImportBase64} />
+                )}
+                {bundleAction && (bundleAction === "clone" || bundleImportBase64) && canonicalSnapshot && (
+                  <div class="ash-soul-replace-confirm" aria-labelledby="ash-bundle-action-title">
+                    <div class="ash-soul-replace-confirm-title" id="ash-bundle-action-title">{bundleAction === "clone" ? "Clone portable profile" : "Import portable profile"}</div>
+                    <div>Creates a new disabled agent. Secrets, grants and workspace bindings must be authorized again.</div>
+                    <label class="ash-label" for="ash-bundle-destination">New agent name</label>
+                    <Input id="ash-bundle-destination" value={bundleDestination} onInput={(event) => setBundleDestination((event.currentTarget as HTMLInputElement).value)} />
+                    <div class="ash-soul-replace-confirm-actions">
+                      <Button ref={bundleCancelButtonRef} onClick={() => { setBundleAction(undefined); setBundleImportBase64(undefined); }}>Cancel</Button>
+                      <Button variant="primary" disabled={!/^[A-Za-z][A-Za-z0-9_-]{0,127}$/.test(bundleDestination)} onClick={() => runCanonicalLifecycle(
+                        bundleAction === "clone" ? "Cloning profile" : "Importing profile",
+                        bundleAction === "clone"
+                          ? cloneCanonicalProfileBundleMessage(canonicalSnapshot.agentName, canonicalSnapshot.revision, bundleDestination)
+                          : importCanonicalProfileBundleMessage(canonicalSnapshot.agentName, bundleDestination, bundleImportBase64!),
+                      )}>{bundleAction === "clone" ? "Clone agent" : "Import agent"}</Button>
                     </div>
                   </div>
                 )}

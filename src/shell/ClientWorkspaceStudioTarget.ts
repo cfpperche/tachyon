@@ -30,6 +30,10 @@ import type {
 import {
   isAgentProfileStudioSnapshotV1,
   agentProfileStudioLifecycleResultSchemaV1,
+  agentProfileStudioBundleCreatedResultSchemaV1,
+  agentProfileStudioBundleExportResultSchemaV1,
+  type AgentProfileStudioBundleCreatedResultV1,
+  type AgentProfileStudioBundleExportResultV1,
   type AgentProfileStudioLifecycleMutationV1,
   type AgentProfileStudioLifecycleResultV1,
   type AgentProfileStudioMutationV1,
@@ -166,6 +170,33 @@ export class ClientWorkspaceStudioTarget implements WorkspaceAgentStudioTarget {
     if (!parsed.success) throw new Error("persistent engine returned a malformed canonical Agent Studio lifecycle result");
     this.refreshConfig();
     return structuredClone(parsed.data);
+  }
+
+  async exportAgentProfileStudioBundle(agent: string, expectedRevision: string): Promise<AgentProfileStudioBundleExportResultV1> {
+    const result = await this.client.query({ schemaVersion: 1, method: "extension.query", input: { action: "agent-profile.studio-bundle-export", agent, expectedRevision } });
+    if (result.status === "error") throw new Error(result.message);
+    if (result.method !== "extension.query" || result.action !== "agent-profile.studio-bundle-export") throw new Error("persistent engine returned a mismatched profile bundle export");
+    return agentProfileStudioBundleExportResultSchemaV1.parse(result.value);
+  }
+
+  async cloneAgentProfileStudioBundle(agent: string, expectedRevision: string, destinationAgentName: string): Promise<AgentProfileStudioBundleCreatedResultV1> {
+    return this.invokeProfileBundle({ action: "agent-profile.studio-bundle-clone", agent, expectedRevision, destinationAgentName });
+  }
+
+  async importAgentProfileStudioBundle(destinationAgentName: string, bytes: Buffer): Promise<AgentProfileStudioBundleCreatedResultV1> {
+    const staged = this.client.stagePayload(bytes);
+    try { return await this.invokeProfileBundle({ action: "agent-profile.studio-bundle-import", destinationAgentName, payload: staged.ref }); }
+    finally { staged.discard(); }
+  }
+
+  private async invokeProfileBundle(input: Extract<ExtensionCommandV1, { action: "agent-profile.studio-bundle-clone" | "agent-profile.studio-bundle-import" }>): Promise<AgentProfileStudioBundleCreatedResultV1> {
+    const result = await this.client.invoke(`agent-profile-studio-bundle:${input.action}:${this.operationId()}`, { schemaVersion: 1, method: "extension.invoke", input });
+    if (result.status === "error") throw new Error(result.message);
+    if (result.method !== "extension.invoke" || result.action !== input.action) throw new Error("persistent engine returned a mismatched profile bundle result");
+    const parsed = agentProfileStudioBundleCreatedResultSchemaV1.safeParse(result.value);
+    if (!parsed.success) throw new Error("persistent engine returned a malformed profile bundle result");
+    this.refreshConfig();
+    return parsed.data;
   }
 
   createSoulProfile(agent: string): Promise<SoulProfileMutationTargetResult> {
