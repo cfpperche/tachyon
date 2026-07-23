@@ -31,6 +31,20 @@ import { envelope } from "../webview/shared/studio/protocol.js";
 
 type Adapter = StudioHostAdapter<unknown, unknown, unknown, unknown>;
 
+/** t-9dadad — the task/pin studio surfaces live as nested sub-targets on the workspace handle
+ *  (`handle.taskStudio` / `handle.pinStudio`), NOT flat on the handle like agent's. Resolves the
+ *  nested target and fails LOUDLY (a thrown, host-visible error the studio error envelope carries)
+ *  if a future handle shape drops it — never a silent `undefined` method call. */
+interface NestedStudioTargets {
+  taskStudio: WorkspaceTaskStudioTarget;
+  pinStudio: WorkspacePinStudioTarget;
+}
+function nestedTarget<K extends keyof NestedStudioTargets>(ws: WorkspaceStudioTarget, key: K): NestedStudioTargets[K] {
+  const nested = (ws as Partial<NestedStudioTargets>)[key];
+  if (!nested) throw new Error(`workspace handle for '${ws.folderName}' is missing its nested '${key}' studio target`);
+  return nested;
+}
+
 export interface StudioDomainContext {
   post: (message: unknown) => void;
   /** t-610705 (Phase D, D1b) — the current binding's own entity id (undefined for studio-new) —
@@ -107,22 +121,20 @@ export const STUDIO_REGISTRY: Record<StudioId, StudioRegistryEntry> = {
   },
   task: {
     legacyViewType: "tachyonTaskStudio",
-    // t-610705 (Phase D, D2) — same structural-cast pattern as agent (D1b): WorkspaceStudioTarget is
-    // a structural subset of the richer WorkspaceTaskStudioTarget TaskStudioAdapter actually needs
-    // (loadTaskStudio/saveTaskStudio/cancelTaskStudio/putTaskStudioImage/putTaskStudioSketch/
-    // importTaskStudioPrototype/declaredAgentNames) — the runtime object (WorkspaceShellHandle)
-    // already implements the full task-specific surface.
-    makeAdapter: (ws) => new TaskStudioAdapter(ws as unknown as WorkspaceTaskStudioTarget) as unknown as Adapter,
-    handleDomainMessage: (ws, ctx, message) => handleTaskStudioDomainMessage(ws as unknown as WorkspaceTaskStudioTarget, ctx, message),
+    // t-9dadad — UNLIKE agent (whose surface WorkspaceShellHandle implements flat), the task-studio
+    // surface lives as a NESTED sub-target (`handle.taskStudio`, wired since the persistent-engine
+    // cutover). D2's flat cast of the whole handle meant `this.target.loadTaskStudio` was undefined
+    // at runtime — Task Studio never loaded through Control (infinite "Loading…"); the double-cast
+    // hid it from the compiler and no e2e ever opened the studio through this path until the
+    // 0.56.94 dogfood did.
+    makeAdapter: (ws) => new TaskStudioAdapter(nestedTarget(ws, "taskStudio")) as unknown as Adapter,
+    handleDomainMessage: (ws, ctx, message) => handleTaskStudioDomainMessage(nestedTarget(ws, "taskStudio"), ctx, message),
   },
   pin: {
     legacyViewType: "tachyonPinStudio",
-    // t-610705 (Phase D, D3) — same structural-cast pattern as agent/task: WorkspaceStudioTarget is a
-    // structural subset of the richer WorkspacePinStudioTarget PinStudioAdapter actually needs
-    // (loadPinStudio/savePinStudio/putPinStudioImage/putPinStudioSketch) — the runtime object
-    // (WorkspaceShellHandle) already implements the full pin-specific surface.
-    makeAdapter: (ws) => new PinStudioAdapter(ws as unknown as WorkspacePinStudioTarget) as unknown as Adapter,
-    handleDomainMessage: (ws, ctx, message) => handlePinStudioDomainMessage(ws as unknown as WorkspacePinStudioTarget, ctx, message),
+    // t-9dadad — same nested-target shape as task above (`handle.pinStudio`).
+    makeAdapter: (ws) => new PinStudioAdapter(nestedTarget(ws, "pinStudio")) as unknown as Adapter,
+    handleDomainMessage: (ws, ctx, message) => handlePinStudioDomainMessage(nestedTarget(ws, "pinStudio"), ctx, message),
   },
 } satisfies Record<StudioId, StudioRegistryEntry>;
 
