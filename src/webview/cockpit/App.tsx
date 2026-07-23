@@ -1151,8 +1151,7 @@ export function App(p: CockpitAppProps) {
   } else if (section === "plugins") {
     body = (
       <div class="ck-embed-host" data-testid="control-plugins">
-        <div class="ck-plugins-root">
-          <Suspense fallback={<SectionFallback />}>
+        <Suspense fallback={<SectionFallback />}>
           <PluginsApp
             vm={p.pluginsVm}
             consent={p.pluginsConsent}
@@ -1161,7 +1160,6 @@ export function App(p: CockpitAppProps) {
             dispatch={p.pluginsDispatch}
           />
         </Suspense>
-        </div>
       </div>
     );
   } else {
