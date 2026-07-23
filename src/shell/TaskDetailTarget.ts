@@ -12,6 +12,7 @@ import {
   readTaskDetailPrototypeHtml,
   taskDetailAttachmentBlobPath,
   taskDetailAttachmentBlobRoot,
+  taskDetailAttachmentsRoot,
   type TaskDetailProjectionV1,
 } from "../runtime-api/taskDetailProjection.js";
 import { reviewTaskPrototype } from "../tasks/taskPrototypeReview.js";
@@ -26,6 +27,8 @@ export interface WorkspaceTaskDetailTarget extends WorkspacePresentationTarget {
   updateTask(id: string, patch: MissionControlTaskPatchV1): Promise<void>;
   reviewPrototype(taskId: string, input: TaskPrototypeReviewActionV1): Promise<void>;
   attachmentBlobRoot(taskId: string): string;
+  /** t-4d59d3 — the stable per-workspace parent of every task's blob dir, granted once at panel creation. */
+  attachmentsRoot(): string;
   attachmentBlobPath(taskId: string, blobRef: string): string;
   prototypeHtml(taskId: string, prototypeId: string): string;
 }
@@ -50,6 +53,7 @@ export function legacyTaskDetailTarget(source: LegacyTaskDetailSource): Workspac
       await reviewTaskPrototype(source.workspaceRoot, source.taskStore, command);
     },
     attachmentBlobRoot: (taskId) => taskDetailAttachmentBlobRoot(source.workspaceRoot, taskId),
+    attachmentsRoot: () => taskDetailAttachmentsRoot(source.workspaceRoot),
     attachmentBlobPath: (taskId, blobRef) => taskDetailAttachmentBlobPath(source.workspaceRoot, taskId, blobRef),
     prototypeHtml: (taskId, prototypeId) => readTaskDetailPrototypeHtml(source.workspaceRoot, taskId, prototypeId),
   };
@@ -79,6 +83,7 @@ export function workspaceTaskDetailTarget(client: WorkspaceClient): WorkspaceTas
       input: assertPrototypeReview(taskId, input),
     }),
     attachmentBlobRoot: (taskId) => taskDetailAttachmentBlobRoot(identity.workspaceRoot, taskId),
+    attachmentsRoot: () => taskDetailAttachmentsRoot(identity.workspaceRoot),
     attachmentBlobPath: (taskId, blobRef) => taskDetailAttachmentBlobPath(identity.workspaceRoot, taskId, blobRef),
     prototypeHtml: (taskId, prototypeId) => readTaskDetailPrototypeHtml(identity.workspaceRoot, taskId, prototypeId),
   };

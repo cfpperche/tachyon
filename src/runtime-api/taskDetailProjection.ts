@@ -1,3 +1,4 @@
+import path from "node:path";
 import { z } from "zod";
 import { TaskAttachmentStore } from "../tasks/TaskAttachmentStore.js";
 import { TaskDetailStore } from "../tasks/TaskDetailStore.js";
@@ -212,6 +213,19 @@ export function projectTaskPrototypeList(workspaceRoot: string, id: string): Tas
 /** The Task Detail shell may map a verified blob to a webview URI but never writes it. */
 export function taskDetailAttachmentBlobRoot(workspaceRoot: string, taskIdValue: string): string {
   return new TaskAttachmentStore(workspaceRoot, taskIdValue).blobDir;
+}
+
+/**
+ * t-4d59d3 — the stable per-workspace PARENT of every task's blob dir
+ * (`.tachyon/tasks/attachments`). Control grants this once at panel CREATION instead of
+ * re-granting one task's own blob dir per navigation: reassigning `webview.options` on a live
+ * panel makes VS Code recreate the webview's inner iframe, and that reload can wedge at the
+ * fake.html placeholder — the whole Control surface goes permanently blank (the "click a Board
+ * card → blank screen" bug). Must stay in sync with TaskAttachmentStore.taskAttachmentsDir's
+ * parent.
+ */
+export function taskDetailAttachmentsRoot(workspaceRoot: string): string {
+  return path.join(workspaceRoot, ".tachyon", "tasks", "attachments");
 }
 
 export function taskDetailAttachmentBlobPath(workspaceRoot: string, taskIdValue: string, blobRef: string): string {
