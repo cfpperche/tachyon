@@ -127,8 +127,11 @@ describe("dev-host pointer", () => {
     expect(fs.statSync(ws).isDirectory()).toBe(true);
     expect(fs.realpathSync(ext)).toBe(path.resolve(worktree));
 
-    // Child entries are symlinks into the fixture (live content)
-    expect(fs.lstatSync(path.join(ws, "tachyon.yml")).isSymbolicLink()).toBe(true);
+    // Authoritative config is a real disposable copy: the engine opens it no-follow and dogfood
+    // mutations must not write back into a tracked fixture. Non-authoritative files stay linked.
+    expect(fs.lstatSync(path.join(ws, "tachyon.yml")).isSymbolicLink()).toBe(false);
+    expect(fs.lstatSync(path.join(ws, "tachyon.yml")).isFile()).toBe(true);
+    expect(fs.lstatSync(path.join(ws, "README.md")).isSymbolicLink()).toBe(true);
     expect(fs.readFileSync(path.join(ws, "tachyon.yml"), "utf8")).toContain("agents:");
     expect(fs.existsSync(path.join(ws, ".tachyon", "prompts", "hi.md"))).toBe(true);
     // Spec 393 / 390: mirror `.tachyon` must be a REAL directory (not a symlink) for Soul launch.

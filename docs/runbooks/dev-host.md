@@ -55,7 +55,8 @@ pins, journals, or commits should map the old vocabulary here:
 
 | Entry | How | Why |
 |-------|-----|-----|
-| `tachyon.yml`, README, other files | **symlink** into fixture | Live edits in fixture show in EDH Explorer |
+| `tachyon.yml` | **real copy** | Engine config reads are no-follow and Studio mutations must stay inside disposable dogfood state |
+| README, other files | **symlink** into fixture | Live edits in fixture show in EDH Explorer |
 | `.tachyon/` (tasks, continuity, sessions, …) | **real copy** (`cpSync`) | Engine Soul launch fails closed if `.tachyon` resolves *outside* the open workspace (`SoulError: … parent escapes workspace`) |
 | `.edh-*` CLI dirs | skipped | Not needed for F5 |
 
