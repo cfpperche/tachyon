@@ -96,6 +96,7 @@ import {
   currentStudioBindingFor,
   refreshStudioReferenceData,
   sendStudioLoad,
+  type StudioRoute,
 } from "../cockpit/studioHost.js";
 import { makeStudioAdapterFactory, makeStudioDomainDispatch, type CockpitStudios } from "../cockpit/studioRegistry.js";
 export type { CockpitStudios };
@@ -1049,6 +1050,20 @@ export async function openCockpit(
     return false;
   };
 
+  // t-527767 — shared by onCancelled (every studio) and onSaved (Pin/Task only — see onSaved's own
+  // scoping comment below) since the "where does this studio route's exit land" computation is
+  // IDENTICAL for both triggers; only whether-to-navigate-at-all differs.
+  // t-c3c819 — task-detail is only a valid exit destination for a REAL, already-saved task; Task
+  // Studio's staged-create pattern opens a brand-new task straight into studio-edit with a
+  // pre-minted, still-unsaved id, and task-detail(id) for that id 404s ("never found on disk"). Fall
+  // back to the studio's own section instead — "mission" (Board) is correct unconditionally here:
+  // task-detail is task-only, parentRoute never produces it for any other studio (route.ts's
+  // parentRoute switch), so this branch can't misfire for one.
+  const studioExitTarget = (route: StudioRoute, persisted: boolean): CockpitRoute => {
+    const parent = parentRoute(route);
+    return parent?.kind === "task-detail" && !persisted ? routes.section("mission") : parent ?? routes.section("overview");
+  };
+
   // t-610705 (Phase D, D0) — studio-envelope dispatch (ready/patch/dirty/save/cancel/domain). The
   // io/hooks capabilities are the SAME injected-capability shape activityFeed.ts established (post +
   // isCurrent), so a torn-down/replaced binding's in-flight work can never post into whatever
@@ -1072,15 +1087,24 @@ export async function openCockpit(
       // re-prompt a dialog the user just explicitly opted out of by clicking Cancel.
       onCancelled: (persisted) => {
         if (!isStudioRoute(currentRoute)) return;
-        const parent = parentRoute(currentRoute);
-        // t-c3c819 — task-detail is only a valid Cancel destination for a REAL, already-saved task;
-        // Task Studio's staged-create pattern opens a brand-new task straight into studio-edit with
-        // a pre-minted, still-unsaved id, and task-detail(id) for that id 404s ("never found on
-        // disk"). Fall back to the studio's own section instead — "mission" (Board) is correct
-        // unconditionally here: task-detail is task-only, parentRoute never produces it for any
-        // other studio (route.ts's parentRoute switch), so this branch can't misfire for one.
-        const target = parent?.kind === "task-detail" && !persisted ? routes.section("mission") : parent ?? routes.section("overview");
-        navigate(target);
+        navigate(studioExitTarget(currentRoute, persisted));
+        void (async () => {
+          await sendModel();
+          await sendSectionModule();
+        })();
+      },
+      // t-527767 — maintainer directive 2026-07-23: Pin/Task Studio read as "create/edit → return to
+      // the list" — Save should navigate away automatically, same destination Cancel/Back already
+      // use. Deliberately scoped to just these two: the other 5 studios (command/terminal/runbook/
+      // schedule/agent) read more like config editors, where staying open to keep tweaking is the
+      // better default — a maintainer decision, not an oversight (can extend later if it proves
+      // wanted). Calls navigate() DIRECTLY, same as onCancelled — a save that just succeeded has
+      // nothing left to confirm-discard, so this bypasses beginStudioNavTransaction's checkpoint the
+      // same way Cancel does.
+      onSaved: (persisted) => {
+        if (!isStudioRoute(currentRoute)) return;
+        if (currentRoute.studio !== "pin" && currentRoute.studio !== "task") return;
+        navigate(studioExitTarget(currentRoute, persisted));
         void (async () => {
           await sendModel();
           await sendSectionModule();
