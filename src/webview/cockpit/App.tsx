@@ -694,6 +694,13 @@ export function App(p: CockpitAppProps) {
   // "overview" anywhere but a background-data fallback would make nav-less state indistinguishable
   // from "Overview is genuinely active").
   const isNavlessStudio = !!activeRoute && isStudioRoute(activeRoute) && activeRoute.studio === "pin";
+  // t-fullpage-proto — every subroute (task-detail, the 3 Fleet subroutes, all 7 studios) gets the
+  // SAME fullpage chrome: the section tab strip is replaced by a single minimal "← Back" row at the
+  // very top, and the content area gets the vertical space the tab strip would have used. Each
+  // branch below sets `breadcrumb` to the exact same back-link it already computed for its own
+  // inline placement — this only changes WHERE it renders, not the navigation logic itself.
+  const isSubroute = activeRoute?.kind === "task-detail" || isFleetSubroute || isStudioSubroute;
+  let breadcrumb: ComponentChildren = null;
 
   let body: ComponentChildren = null;
   if (!m) {
@@ -706,15 +713,15 @@ export function App(p: CockpitAppProps) {
     // t-610705 (Phase C.1) — a lone back-link, not a full "parent / current" trail: the task's own
     // title already renders right below as the page H1 (PageChrome), so repeating it here would just
     // be the same text twice with nothing between them.
+    if (parent && parent.kind === "section") {
+      breadcrumb = (
+        <Button variant="default" icon="arrow-left" class="ck-top-breadcrumb-btn" data-testid="control-task-detail-breadcrumb" onClick={() => p.onSetSection(parent.section)}>
+          {s.navMission}
+        </Button>
+      );
+    }
     body = (
       <div class="ck-embed-host" data-testid="control-task-detail">
-        {parent && parent.kind === "section" ? (
-          <div class="td-breadcrumb" data-testid="control-task-detail-breadcrumb">
-            <Button variant="default" icon="arrow-left" onClick={() => p.onSetSection(parent.section)}>
-              {s.navMission}
-            </Button>
-          </div>
-        ) : null}
         <Suspense fallback={<SectionFallback />}>
           <TaskDetailApp vm={p.taskVm} errorSeq={p.taskErrorSeq} errorMessage={p.taskErrorMessage} dispatch={p.taskDetailDispatch} />
         </Suspense>
@@ -724,22 +731,23 @@ export function App(p: CockpitAppProps) {
     // t-610705 (Phase C.2) — Fleet subroutes: same "checked before the section branch" reasoning as
     // task-detail above (nav section reads "fleet" for all three; this renders the actual content).
     const parent = parentRoute(activeRoute);
-    // t-bf3498 — a compact "← Fleet" line under the surface's OWN title (ActivityApp/ProbesApp render
-    // it there), not a separate full-width bar above the embed host like before.
-    const back = parent && parent.kind === "section" ? (
-      <div class="ds-backlink-slot" data-testid="control-fleet-subroute-breadcrumb">
-        <Button variant="default" icon="arrow-left" class="ds-link-btn" onClick={() => p.onSetSection(parent.section)}>
+    // t-fullpage-proto — was a compact "← Fleet" line under the surface's OWN title
+    // (ActivityApp/ProbesApp rendered it there); now lives in the top chrome instead, so neither
+    // component receives a backLink prop any more.
+    if (parent && parent.kind === "section") {
+      breadcrumb = (
+        <Button variant="default" icon="arrow-left" class="ck-top-breadcrumb-btn" data-testid="control-fleet-subroute-breadcrumb" onClick={() => p.onSetSection(parent.section)}>
           {s.navFleet}
         </Button>
-      </div>
-    ) : null;
+      );
+    }
     body = (
       <div class="ck-embed-host" data-testid="control-fleet-subroute" ref={activityScrollRef}>
         <Suspense fallback={<SectionFallback />}>
           {activeRoute.kind === "agent-activity" ? (
-            <ActivityApp vm={p.activityVm} prepended={p.activityPrepended} images={p.activityImages} dispatch={p.activityDispatch} scrollContainer={activityScrollRef} backLink={back} />
+            <ActivityApp vm={p.activityVm} prepended={p.activityPrepended} images={p.activityImages} dispatch={p.activityDispatch} scrollContainer={activityScrollRef} />
           ) : (
-            <ProbesApp vm={p.probesVm} backLink={back} />
+            <ProbesApp vm={p.probesVm} />
           )}
         </Suspense>
       </div>
@@ -760,48 +768,43 @@ export function App(p: CockpitAppProps) {
     // when returnRoute is a flat section, else the generic "Back" (returnRoute can also be
     // task-detail/agent-activity/agent-probes/workspace-probes, none of which have their own fixed
     // breadcrumb dispatch the way Task's task-detail parent does below).
-    // t-bf3498 — a compact "← Parent" line under StudioFrame's OWN title (backLink prop), not a
-    // separate full-width bar above the embed host like before.
-    const back = activeRoute.studio === "pin" ? (
-      <div class="ds-backlink-slot" data-testid="control-studio-breadcrumb">
-        <Button variant="default" icon="arrow-left" class="ds-link-btn" onClick={() => p.onPost(navigateReturnAction(routeKey(activeRoute)))}>
-          {parent && parent.kind === "section" ? s[TAB_META[parent.section].navKey] : s.back}
-        </Button>
-      </div>
+    // t-fullpage-proto — was a compact "← Parent" line under StudioFrame's OWN title (backLink
+    // prop); now lives in the top chrome instead, same as every other subroute's breadcrumb.
+    breadcrumb = activeRoute.studio === "pin" ? (
+      <Button variant="default" icon="arrow-left" class="ck-top-breadcrumb-btn" data-testid="control-studio-breadcrumb" onClick={() => p.onPost(navigateReturnAction(routeKey(activeRoute)))}>
+        {parent && parent.kind === "section" ? s[TAB_META[parent.section].navKey] : s.back}
+      </Button>
       // t-610705 (Phase D, D2) — Task Studio's edit route is the one OTHER studio whose parent is
       // NOT a flat section (route.ts's parentRoute special-cases studio-edit + studio:"task" to the
       // task's own task-detail subroute) — reuses taskDetailDispatch's existing "openTask" round trip
       // (the SAME one Task Detail's own breadcrumb and the Board's card-click already navigate
       // through) rather than inventing a new generic route-navigate prop for this one case.
     ) : parent && parent.kind === "section" ? (
-      <div class="ds-backlink-slot" data-testid="control-studio-breadcrumb">
-        <Button variant="default" icon="arrow-left" class="ds-link-btn" onClick={() => p.onSetSection(parent.section)}>
-          {s[TAB_META[parent.section].navKey]}
-        </Button>
-      </div>
+      <Button variant="default" icon="arrow-left" class="ck-top-breadcrumb-btn" data-testid="control-studio-breadcrumb" onClick={() => p.onSetSection(parent.section)}>
+        {s[TAB_META[parent.section].navKey]}
+      </Button>
     ) : parent && parent.kind === "task-detail" ? (
-      <div class="ds-backlink-slot" data-testid="control-studio-breadcrumb">
-        <Button
-          variant="default"
-          icon="arrow-left"
-          class="ds-link-btn"
-          // t-c3c819 — task-detail is the correct parent for a REAL edit, but Task Studio's
-          // staged-create pattern opens a brand-new task straight into studio-edit with a
-          // pre-minted, still-unsaved id (mintTaskId()); m.studioPersisted === false means this
-          // is that case — task-detail(id) would 404 ("never found on disk"), so land on the
-          // Board itself instead, same as every other studio's flat-section parent.
-          onClick={() => (m.studioPersisted === false ? p.onSetSection("mission") : p.taskDetailDispatch.openTask(parent.taskId))}
-        >
-          {s.navMission}
-        </Button>
-      </div>
+      <Button
+        variant="default"
+        icon="arrow-left"
+        class="ck-top-breadcrumb-btn"
+        data-testid="control-studio-breadcrumb"
+        // t-c3c819 — task-detail is the correct parent for a REAL edit, but Task Studio's
+        // staged-create pattern opens a brand-new task straight into studio-edit with a
+        // pre-minted, still-unsaved id (mintTaskId()); m.studioPersisted === false means this
+        // is that case — task-detail(id) would 404 ("never found on disk"), so land on the
+        // Board itself instead, same as every other studio's flat-section parent.
+        onClick={() => (m.studioPersisted === false ? p.onSetSection("mission") : p.taskDetailDispatch.openTask(parent.taskId))}
+      >
+        {s.navMission}
+      </Button>
     ) : null;
     // t-610705 (Phase D, D0, round-3 major) — an explicit `key` forces Preact to fully UNMOUNT +
     // remount on identity change instead of reusing the component instance with stale state visible
     // under the new props for one render (the internal reset-effect alone left exactly that window —
     // code review round 3 caught it).
     const studioKey = `${routeKey(activeRoute)}:${m.studioMountNonce ?? ""}`;
-    const studioMountProps = { routeKey: routeKey(activeRoute), mountNonce: m.studioMountNonce ?? "", incoming: p.studioIncoming, dispatch: p.studioDispatch, backLink: back };
+    const studioMountProps = { routeKey: routeKey(activeRoute), mountNonce: m.studioMountNonce ?? "", incoming: p.studioIncoming, dispatch: p.studioDispatch };
     body = (
       <div class="ck-embed-host" data-testid="control-studio">
         <Suspense fallback={<SectionFallback />}>
@@ -1315,49 +1318,60 @@ export function App(p: CockpitAppProps) {
 
   return (
     <div class="ck-root">
-      <header class="ck-top">
-        {/* Tabs only — Refresh / Auto / Diagnostics live on Overview. */}
-        <div class="ck-chrome">
-          <div class="ck-tabs" role="tablist" aria-label={s.title}>
-            {COCKPIT_SECTION_ORDER.map((id) => {
-              const meta = TAB_META[id];
-              const engineErr =
-                id === "engine" && m?.control.workspaces.some((w) => w.engine.logHasError);
-              return (
-                <button
-                  type="button"
-                  role="tab"
-                  key={id}
-                  aria-selected={section === id && !isNavlessStudio}
-                  class={`${section === id && !isNavlessStudio ? "active" : ""}${engineErr ? " has-err" : ""}`}
-                  onClick={() => p.onSetSection(id)}
-                >
-                  <span class={`codicon codicon-${meta.icon}`} />
-                  {s[meta.navKey]}
-                  {engineErr ? <span class="ck-tab-dot" aria-label="errors in engine log" /> : null}
-                </button>
-              );
-            })}
+      {/* t-fullpage-proto — a subroute (task-detail, a Fleet subroute, or any studio) replaces the
+          whole section tab strip with ONE minimal "← Back" row; the content area gets the vertical
+          space the tabs would have used. `breadcrumb` is null for a genuine deep-link edge case
+          (pin with no captured returnRoute) — falls back to the normal tab strip rather than showing
+          an empty header. */}
+      {isSubroute && breadcrumb ? (
+        <header class="ck-top ck-top--fullpage">
+          <div class="ck-chrome ck-chrome--fullpage">{breadcrumb}</div>
+        </header>
+      ) : (
+        <header class="ck-top">
+          {/* Tabs only — Refresh / Auto / Diagnostics live on Overview. */}
+          <div class="ck-chrome">
+            <div class="ck-tabs" role="tablist" aria-label={s.title}>
+              {COCKPIT_SECTION_ORDER.map((id) => {
+                const meta = TAB_META[id];
+                const engineErr =
+                  id === "engine" && m?.control.workspaces.some((w) => w.engine.logHasError);
+                return (
+                  <button
+                    type="button"
+                    role="tab"
+                    key={id}
+                    aria-selected={section === id && !isNavlessStudio}
+                    class={`${section === id && !isNavlessStudio ? "active" : ""}${engineErr ? " has-err" : ""}`}
+                    onClick={() => p.onSetSection(id)}
+                  >
+                    <span class={`codicon codicon-${meta.icon}`} />
+                    {s[meta.navKey]}
+                    {engineErr ? <span class="ck-tab-dot" aria-label="errors in engine log" /> : null}
+                  </button>
+                );
+              })}
+            </div>
+            {/* t-d16a39 — ONE shell-level workspace scope for every section. Hidden for the common
+                single-workspace case (nothing to choose). Radix Select rejects an empty-string item
+                value, so the UI uses the ALL_WORKSPACES sentinel and translates to "" on dispatch
+                (the wire/host side keeps "" = All). */}
+            {m && m.workspaces.length > 1 ? (
+              <KitSelect
+                aria-label="Control workspace"
+                data-testid="control-workspace-select"
+                class="ck-workspace-select"
+                value={m.selectedWsHash ?? ALL_WORKSPACES}
+                onValueChange={(value) => p.onSwitchWorkspace(value === ALL_WORKSPACES ? "" : value)}
+                options={[
+                  { value: ALL_WORKSPACES, label: "All workspaces" },
+                  ...m.workspaces.map((w) => ({ value: w.hash, label: w.folder })),
+                ]}
+              />
+            ) : null}
           </div>
-          {/* t-d16a39 — ONE shell-level workspace scope for every section. Hidden for the common
-              single-workspace case (nothing to choose). Radix Select rejects an empty-string item
-              value, so the UI uses the ALL_WORKSPACES sentinel and translates to "" on dispatch
-              (the wire/host side keeps "" = All). */}
-          {m && m.workspaces.length > 1 ? (
-            <KitSelect
-              aria-label="Control workspace"
-              data-testid="control-workspace-select"
-              class="ck-workspace-select"
-              value={m.selectedWsHash ?? ALL_WORKSPACES}
-              onValueChange={(value) => p.onSwitchWorkspace(value === ALL_WORKSPACES ? "" : value)}
-              options={[
-                { value: ALL_WORKSPACES, label: "All workspaces" },
-                ...m.workspaces.map((w) => ({ value: w.hash, label: w.folder })),
-              ]}
-            />
-          ) : null}
-        </div>
-      </header>
+        </header>
+      )}
 
       <main class={`ck-main${isEmbed ? " ck-main--embed" : ""}${section === "mission" ? " ck-main--mission" : ""}`}>
         {body}
