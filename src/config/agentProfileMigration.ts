@@ -7,7 +7,7 @@ import { parse as parseYaml, stringify } from "yaml";
 import { parseConfig, type AgentDef } from "./loadConfig.js";
 import { agentProfileSchemaV1, type AgentProfileV1 } from "./agentProfileSchema.js";
 import {
-  CODEX_EMPTY_NATIVE_INPUT_INSPECTOR,
+  profileRuntimeInspectorFor,
   projectCanonicalAgentProfile,
 } from "./agentProfileProjection.js";
 import type { AgentProfileAuthorityRecord } from "./agentProfileAuthority.js";
@@ -439,12 +439,13 @@ function plainAgentStanza(configText: string, agentName: string): Record<string,
 function buildProfile(
   agentId: string,
   definition: AgentDef,
+  runtimeAdapter: string,
   evolutionSelector?: PlanLegacyAgentProfileMigrationInput["evolutionSelector"],
 ): AgentProfileV1 {
   const profile: Record<string, unknown> = {
     schemaVersion: 1,
     agentId,
-    runtime: { adapter: "codex", executable: "codex" },
+    runtime: { adapter: runtimeAdapter, executable: runtimeAdapter },
   };
   if (definition.env && Object.keys(definition.env).length > 0) {
     profile.environment = { values: { ...definition.env } };
@@ -556,8 +557,12 @@ export function planLegacyAgentProfileMigration(
     }
   }
   if (originalDefinition?.kind !== "agent") blockers.push(`agents.${input.agentName}: only AI agent entries are migratable`);
-  if (originalDefinition?.cmd !== "codex") {
-    blockers.push(`agents.${input.agentName}.cmd: V1 migration supports only the exact literal 'codex' command`);
+  const runtimeAdapter = originalDefinition && ["codex", "claude", "grok"].includes(originalDefinition.cmd)
+    ? originalDefinition.cmd
+    : undefined;
+  const runtimeInspector = runtimeAdapter ? profileRuntimeInspectorFor(runtimeAdapter) : undefined;
+  if (!runtimeAdapter || !runtimeInspector) {
+    blockers.push(`agents.${input.agentName}.cmd: migration supports only the measured exact literals 'codex', 'claude' and 'grok'`);
   }
   const envKeys = Object.keys(originalDefinition?.env ?? {}).sort();
   const classified = [...new Set(input.nonSecretEnv ?? [])].sort();
@@ -581,12 +586,14 @@ export function planLegacyAgentProfileMigration(
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") blockers.push(`agents.${input.agentName}: cannot prove canonical agent.yml absence`);
   }
-  if (blockers.length > 0 || !originalDefinition || !source) return { ok: false, blockers, unclassifiedEnv: envKeys.filter((key) => !classified.includes(key)) };
+  if (blockers.length > 0 || !originalDefinition || !source || !runtimeAdapter || !runtimeInspector) {
+    return { ok: false, blockers, unclassifiedEnv: envKeys.filter((key) => !classified.includes(key)) };
+  }
 
   const agentId = input.agentId ?? crypto.randomUUID();
   let profile: AgentProfileV1;
   try {
-    profile = buildProfile(agentId, originalDefinition, input.evolutionSelector);
+    profile = buildProfile(agentId, originalDefinition, runtimeAdapter, input.evolutionSelector);
   } catch (error) {
     return { ok: false, blockers: [`agents.${input.agentName}: canonical projection failed: ${error instanceof Error ? error.message : String(error)}`], unclassifiedEnv: [] };
   }
@@ -598,7 +605,7 @@ export function planLegacyAgentProfileMigration(
     agentId,
     revision: input.authorityRevision ?? `migration-${profileSha256.slice(0, 16)}`,
     canonicalSha256: profileSha256,
-    runtimeInspector: { ...CODEX_EMPTY_NATIVE_INPUT_INSPECTOR },
+    runtimeInspector: { ...runtimeInspector },
   };
   const artifacts = input.evolutionSelector
     ? [{ path: "evolution-selector.json", text: input.evolutionSelector.text, sha256: input.evolutionSelector.sha256 }]

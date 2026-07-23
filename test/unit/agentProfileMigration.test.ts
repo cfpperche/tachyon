@@ -54,6 +54,50 @@ afterEach(() => {
 });
 
 describe("planLegacyAgentProfileMigration", () => {
+  it("plans all six installed agent definitions without behavioral drift", () => {
+    const root = workspace();
+    const configText = [
+      "agents:",
+      "  claude:",
+      "    cmd: claude",
+      "  codex:",
+      "    cmd: codex",
+      "    selfEvolution: { enabled: true }",
+      "  grok:",
+      "    cmd: grok",
+      "  grok-x:",
+      "    cmd: grok",
+      "    cwd: /home/goat/monetizacao-x",
+      "  claude-orca:",
+      "    cmd: claude",
+      "  grok-workflow:",
+      "    cmd: grok",
+      "",
+    ].join("\n");
+    const installed = [
+      ["claude", "claude"],
+      ["codex", "codex"],
+      ["grok", "grok"],
+      ["grok-x", "grok"],
+      ["claude-orca", "claude"],
+      ["grok-workflow", "grok"],
+    ] as const;
+
+    for (const [index, [agentName, adapter]] of installed.entries()) {
+      const result = planLegacyAgentProfileMigration({
+        workspaceRoot: root,
+        configText,
+        agentName,
+        agentId: `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+        ...(agentName === "codex" ? { evolutionSelector: evolutionSelector() } : {}),
+      });
+      expect(result.ok, result.ok ? undefined : `${agentName}: ${result.blockers.join("\n")}`).toBe(true);
+      if (!result.ok) continue;
+      expect(result.plan.profile.runtime).toEqual({ adapter, executable: adapter });
+      expect(result.plan.projectedDefinition).toEqual(result.plan.originalDefinition);
+    }
+  });
+
   it("builds an equivalent strict Codex profile without touching workspace bytes", () => {
     const root = workspace();
     const configText = [
@@ -159,7 +203,7 @@ describe("planLegacyAgentProfileMigration", () => {
     });
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.blockers.join("\n")).toContain("exact literal 'codex'");
+    expect(result.blockers.join("\n")).toContain("measured exact literals 'codex', 'claude' and 'grok'");
     expect(result.blockers.join("\n")).toContain("anchors are not supported");
     expect(result.blockers.join("\n")).toContain("canonical agent.yml already exists");
     expect(result.blockers.join("\n")).toContain("host profile authority already exists");
@@ -187,6 +231,10 @@ describe("agent profile migration transaction", () => {
 
   it("dogfood: commits and rolls back an isolated profile fixture while preserving outside bytes", async () => {
     const f = fixture();
+    const pluginLock = path.join(f.workspaceRoot, ".tachyon", "plugins", "lock.json");
+    const pluginBytes = Buffer.from("{\"version\":1,\"plugins\":[\"visual-qa\"]}\n");
+    fs.mkdirSync(path.dirname(pluginLock), { recursive: true });
+    fs.writeFileSync(pluginLock, pluginBytes);
     let stopped = 0;
     const committed = await commitLegacyAgentProfileMigration({
       ...f,
@@ -200,6 +248,7 @@ describe("agent profile migration transaction", () => {
     expect(migrated).toContain("settings:\n  auth: false # tail");
     expect(fs.readFileSync(path.join(f.workspaceRoot, ".tachyon", "agents", "codex", "agent.yml"), "utf8")).toBe(f.plan.profileText);
     expect(await f.authority.read("codex")).toEqual(f.plan.authority);
+    expect(fs.readFileSync(pluginLock)).toEqual(pluginBytes);
     expect(listRollbackableAgentProfileMigrations(f.workspaceRoot)).toEqual([
       expect.objectContaining({ txid: committed.txid, agentName: "codex" }),
     ]);
@@ -216,7 +265,24 @@ describe("agent profile migration transaction", () => {
     expect(fs.readFileSync(f.configPath, "utf8")).toBe(f.configText);
     expect(fs.existsSync(path.join(f.workspaceRoot, ".tachyon", "agents", "codex", "agent.yml"))).toBe(false);
     expect(await f.authority.read("codex")).toBeUndefined();
+    expect(fs.readFileSync(pluginLock)).toEqual(pluginBytes);
     expect(listRollbackableAgentProfileMigrations(f.workspaceRoot)).toEqual([]);
+  });
+
+  it("compensates failures at every pre-commit durable phase", async () => {
+    const phases = ["staged", "profile-published", "authority-published", "config-written"] as const;
+    for (const phase of phases) {
+      const f = fixture();
+      await expect(commitLegacyAgentProfileMigration({
+        ...f,
+        onPhase: (current) => {
+          if (current === phase) throw new Error(`crash at ${phase}`);
+        },
+      })).rejects.toThrow(`crash at ${phase}`);
+      expect(fs.readFileSync(f.configPath, "utf8")).toBe(f.configText);
+      expect(fs.existsSync(path.join(f.workspaceRoot, ".tachyon", "agents", "codex", "agent.yml"))).toBe(false);
+      expect(await f.authority.read("codex")).toBeUndefined();
+    }
   });
 
   it("compensates an authority acknowledgement failure without changing config", async () => {
@@ -329,5 +395,19 @@ describe("agent profile migration transaction", () => {
     expect(fs.readFileSync(f.configPath, "utf8")).toContain("profile: .tachyon/agents/codex/agent.yml");
     expect(await f.authority.read("codex")).toEqual(f.plan.authority);
     expect(fs.readFileSync(path.join(f.workspaceRoot, ".tachyon", "agents", "codex", "agent.yml"), "utf8")).toBe(f.plan.profileText);
+  });
+
+  it("fails closed when the canonical profile directory is replaced by a symlink", async () => {
+    const f = fixture();
+    const outside = workspace();
+    fs.writeFileSync(path.join(outside, "sentinel"), "unchanged\n");
+    fs.mkdirSync(path.join(f.workspaceRoot, ".tachyon", "agents"), { recursive: true });
+    fs.symlinkSync(outside, path.join(f.workspaceRoot, ".tachyon", "agents", "codex"), "dir");
+
+    await expect(commitLegacyAgentProfileMigration(f)).rejects.toThrow("profile/unsafe-path");
+    expect(fs.readFileSync(path.join(outside, "sentinel"), "utf8")).toBe("unchanged\n");
+    expect(fs.existsSync(path.join(outside, "agent.yml"))).toBe(false);
+    expect(fs.readFileSync(f.configPath, "utf8")).toBe(f.configText);
+    expect(await f.authority.read("codex")).toBeUndefined();
   });
 });

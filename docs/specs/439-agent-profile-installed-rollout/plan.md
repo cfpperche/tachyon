@@ -12,8 +12,8 @@ Deliver the rollout as one coordinating SDD with six named implementation Tasks:
    not part of ordinary profile mutation.
 3. `t-be11d9` extends canonical authored mutation and Agent Studio using the field ownership matrix.
 4. `t-2d4d87` extends the existing single-agent planner/journal/reconcile/rollback transaction for all
-   five installed definitions.
-5. `t-673096` runs mirror proof, then five sequential installed transactions. Before each migration it
+   six installed definitions.
+5. `t-673096` runs mirror proof, then six sequential installed transactions. Before each migration it
    proves the target stopped and unoccupied; after each it verifies profile/authority/pointer tuple,
    reload and fresh launch. A durable checkpoint records completed agents and the next target. On
    interruption, startup reconciles only the in-flight single-agent journal, revalidates completed

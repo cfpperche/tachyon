@@ -5,10 +5,10 @@ _Generated from `plan.md` on 2026-07-23. Work top-to-bottom. Check boxes as task
 ## Implementation
 
 - [x] Create six named follow-up Tasks with dependencies, owned paths, oracle and exit evidence.
-- [ ] Complete `t-7e7464`: Claude/Grok inventories, measured adapters and external-cwd trust proof.
-- [ ] Complete `t-1f35d4`: Evolution selector/authority handoff for the installed Codex.
-- [ ] Complete `t-be11d9`: canonical operational field matrix and Agent Studio round-trip.
-- [ ] Complete `t-2d4d87`: five-agent planner coverage and single-agent recovery extension.
+- [x] Complete `t-7e7464`: Claude/Grok inventories, measured adapters and external-cwd trust proof.
+- [x] Complete `t-1f35d4`: Evolution selector/authority handoff for the installed Codex.
+- [x] Complete `t-be11d9`: canonical operational field matrix and Agent Studio round-trip.
+- [x] Complete `t-2d4d87`: six-agent planner coverage and single-agent recovery extension.
 - [ ] Complete `t-673096`: isolated mirror, sequential installed cutover and Dev Host evidence.
 - [ ] Complete `t-088d08`: legacy production path retirement plus explicit compatibility allowlist.
 - [ ] Close SDD 429 and umbrella `t-7d2cc0` with evidence pointers.
@@ -23,7 +23,7 @@ _Acceptance checks tied to `spec.md`. Each should map to a checklist item there.
 - [ ] Fresh/reload/resume/fork, LKG and projection-rematerialization tests pass.
 - [ ] PI-001, plugin non-interference, typecheck and full verification pass.
 
-**Headless check:** `npm test -- test/unit/agentProfileProjection.test.ts test/unit/agentProfileMigration.test.ts test/unit/agentProfileLifecycle.test.ts test/unit/agentStudioAdapter.test.ts test/unit/agentStudioDomain.test.ts test/unit/workspaceHeadless.test.ts`
+**Headless check:** `npm test -- test/unit/agentProfileConfigLoader.test.ts test/unit/agentProfileResolver.test.ts test/unit/agentProfileMigration.test.ts test/unit/agentProfileLifecycle.test.ts test/unit/agentStudioAdapter.test.ts test/unit/agentStudioDomain.test.ts test/unit/workspaceHeadless.test.ts`
 <!-- A mechanical command an agent can run to validate this spec's implementation
      without a human (tests / build / lint). Kept green = the spec stays delivered.
      To make `/sdd verify` re-run it, also declare it on a **Verify:** line, e.g.:
@@ -31,7 +31,7 @@ _Acceptance checks tied to `spec.md`. Each should map to a checklist item there.
      `/sdd verify` reads the FIRST backtick span per **Verify:** line, previews by
      default, and runs only with --run. Multiple **Verify:** lines run in order. -->
 
-**Verify:** `npm test -- test/unit/agentProfileProjection.test.ts test/unit/agentProfileMigration.test.ts test/unit/agentProfileLifecycle.test.ts test/unit/agentStudioAdapter.test.ts test/unit/agentStudioDomain.test.ts test/unit/workspaceHeadless.test.ts`
+**Verify:** `npm test -- test/unit/agentProfileConfigLoader.test.ts test/unit/agentProfileResolver.test.ts test/unit/agentProfileMigration.test.ts test/unit/agentProfileLifecycle.test.ts test/unit/agentStudioAdapter.test.ts test/unit/agentStudioDomain.test.ts test/unit/workspaceHeadless.test.ts`
 
 **Verify:** `npm run test:invariants`
 

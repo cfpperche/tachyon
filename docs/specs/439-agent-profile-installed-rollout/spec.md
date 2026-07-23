@@ -11,7 +11,7 @@ _Created 2026-07-23._
 ## Intent
 
 The canonical agent profile stack is implemented, but Tachyon's own installed workspace still declares
-all five agents inline in `tachyon.yml`. The current migration path accepts only a minimal literal
+all six agents inline in `tachyon.yml`. The current migration path accepts only a minimal literal
 Codex definition; it rejects Claude, Grok and the existing Codex Evolution selector. Agent Studio also
 edits only a narrow canonical subset, so declaring the architecture complete would leave real
 configuration stranded in the legacy writer.
@@ -28,7 +28,7 @@ reinterpret guidance. Plugin payloads, locks and workspace-wide scope remain unt
 ## Acceptance criteria
 
 - [ ] **Scenario: every installed agent migrates without behavioral drift**
-  - **Given** the five current inline agents (`claude`, `claude-orca`, `codex`, `grok`, `grok-x`)
+  - **Given** the six current inline agents (`claude`, `claude-orca`, `codex`, `grok`, `grok-workflow`, `grok-x`)
   - **When** the installed migration completes
   - **Then** each stanza becomes the exact canonical pointer and its effective command, cwd, lifecycle,
     Evolution selection and workspace references remain equivalent
@@ -61,7 +61,7 @@ reinterpret guidance. Plugin payloads, locks and workspace-wide scope remain unt
   - **When** reload, spawn, reconciliation or rollback runs
   - **Then** Tachyon fails closed or restores the exact safe state without overwriting later human edits
 - [ ] **Scenario: an interrupted installed cutover resumes deterministically**
-  - **Given** zero to four agents have completed their independent migration transaction
+  - **Given** zero to five agents have completed their independent migration transaction
   - **When** Tachyon or the operator is interrupted before the next agent passes its reload/fresh-launch barrier
   - **Then** startup reconciles the current single-agent journal, verifies every completed
     profile/authority/pointer tuple, and resumes from the first incomplete agent without rolling back
@@ -91,5 +91,5 @@ reinterpret guidance. Plugin payloads, locks and workspace-wide scope remain unt
 
 ## Open questions
 
-None. The user ratified migration of all five installed agents; support may ship in ordered slices, but
+None. The user ratified migration of all six installed agents; support may ship in ordered slices, but
 the rollout is not complete while any of those agents remains inline.
