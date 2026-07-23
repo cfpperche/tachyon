@@ -14,7 +14,10 @@ import {
 import type { AgentProfileAuthorityRecord } from "../../src/config/agentProfileAuthority.js";
 import type { AgentProfileMigrationAuthorityPort } from "../../src/config/agentProfileMigration.js";
 import { acquireAgentProfileTransactionLock } from "../../src/config/agentProfileMigration.js";
-import { GROK_PRIVATE_HOME_INPUT_INSPECTOR } from "../../src/config/agentProfileProjection.js";
+import {
+  CLAUDE_CLOSED_PRIVATE_HOME_INPUT_INSPECTOR,
+  GROK_PRIVATE_HOME_INPUT_INSPECTOR,
+} from "../../src/config/agentProfileProjection.js";
 
 const roots: string[] = [];
 
@@ -83,6 +86,22 @@ afterEach(() => {
 });
 
 describe("agent profile lifecycle kernel", () => {
+  it("creates Claude authority with the closed private-home inspector", async () => {
+    const root = temporaryWorkspace();
+    const authority = new MemoryAuthority();
+
+    await commitAgentProfileLifecycle({
+      workspaceRoot: root,
+      agentName: "claude",
+      operation: "create",
+      createProfile: { runtime: { adapter: "claude", executable: "claude" } },
+      authority,
+      config: configPort(root),
+    });
+
+    expect(authority.records.get("claude")?.runtimeInspector).toEqual(CLAUDE_CLOSED_PRIVATE_HOME_INPUT_INSPECTOR);
+  });
+
   it("creates Grok authority with the measured private-home inspector", async () => {
     const root = temporaryWorkspace();
     const authority = new MemoryAuthority();

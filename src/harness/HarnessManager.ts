@@ -45,6 +45,8 @@ import { renderCodexMcpBlock } from "../plugins/adapters/codex.js";
 import { setCodexMcpServer, setOpencodeMcpServer, expectedAgentOpencodeEntry } from "../registration/adapters.js";
 import { materializePiAgentHome, materializePiSessionDir, PI_AGENT_DIR_ENV, PI_SESSION_DIR_ENV } from "../agents/piSession.js";
 
+const CANONICAL_CLAUDE_SETTINGS_MAX_BYTES = 1024 * 1024;
+
 /** What a materialized harness contributes to the spawn: the config home, the env that redirects to
  *  it, and the MCP args. Threaded into the spawn/restart/resume/fork command (H3). */
 export interface MaterializedHarness {
@@ -1675,6 +1677,68 @@ export class HarnessManager {
       return { home, env: { [h.configHomeEnv]: dirs.config, [h.xdg.dataEnv]: dirs.data, [h.xdg.stateEnv]: dirs.state }, args: [] };
     }
     return { home, env: { [h.configHomeEnv]: home }, args: [] };
+  }
+
+  /**
+   * Canonical Claude launch projection. The private home and user-only settings source preserve
+   * OAuth and hooks while excluding account/project/local settings. Ambient prompt/plugin roots
+   * that Claude cannot disable selectively are rejected by the profile inspector before launch.
+   */
+  materializeCanonicalClaudeHome(agent: string, adapter: ResumeAdapter, cwd?: string): MaterializedHarness {
+    if (adapter.runtime !== "claude") throw new Error(`runtime '${adapter.runtime}' is not Claude`);
+    const home = this.materializeHome(agent, adapter, cwd);
+
+    for (const entry of ["CLAUDE.md", "settings.local.json", "plugins", "agents", "commands", "skills"]) {
+      fs.rmSync(path.join(home, entry), { recursive: true, force: true });
+    }
+
+    const projectSettings = this.readCanonicalClaudeSettings(path.join(this.workspaceRoot, ".claude", "settings.json"));
+    const localSettings = this.readCanonicalClaudeSettings(path.join(this.workspaceRoot, ".claude", "settings.local.json"));
+    const settings = { ...projectSettings, ...localSettings, autoMemoryEnabled: false };
+    const settingsPath = path.join(home, "settings.json");
+    fs.writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`, { mode: 0o600 });
+
+    const workspaceSkills = path.join(this.workspaceRoot, ".claude", "skills");
+    try {
+      const stat = fs.lstatSync(workspaceSkills);
+      if (stat.isSymbolicLink() || !stat.isDirectory()) {
+        throw new HarnessUnavailableError(agent, `workspace Claude skills projection must be a real directory: ${workspaceSkills}`);
+      }
+      this.copyNoFollowTree(agent, workspaceSkills, path.join(home, "skills"), ".claude/skills");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+
+    const servers = readWorkspaceMcpServers(this.workspaceRoot) ?? {};
+    const args = this.materializeMcpConfig(agent, { inherit: "none" }, adapter, home, servers);
+    return {
+      home,
+      env: { CLAUDE_CONFIG_DIR: home },
+      args: ["--setting-sources", "user", "--settings", settingsPath, ...args],
+    };
+  }
+
+  private readCanonicalClaudeSettings(file: string): Record<string, unknown> {
+    let stat: fs.Stats;
+    try {
+      stat = fs.lstatSync(file);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
+      throw error;
+    }
+    if (stat.isSymbolicLink() || !stat.isFile() || stat.size > CANONICAL_CLAUDE_SETTINGS_MAX_BYTES) {
+      throw new Error(`canonical Claude settings source is unsafe: ${file}`);
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(fs.readFileSync(file, "utf8"));
+    } catch {
+      throw new Error(`canonical Claude settings source is invalid JSON: ${file}`);
+    }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new Error(`canonical Claude settings source must be an object: ${file}`);
+    }
+    return parsed as Record<string, unknown>;
   }
 
   private materializeMcpConfig(_agent: string, def: HarnessDef, adapter: ResumeAdapter, home: string, servers: Record<string, unknown>, bridgeEntry?: Record<string, unknown>): string[] {

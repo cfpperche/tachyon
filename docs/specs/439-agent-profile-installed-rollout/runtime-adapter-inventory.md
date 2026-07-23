@@ -71,16 +71,18 @@ Observed forming surfaces include:
   sandbox/trust directories and resume/fork behavior.
 
 Claude's `--bare` mode explicitly disables automatic hooks, plugin sync, auto-memory, CLAUDE.md
-discovery and other ambient customization while allowing explicit prompt/settings/MCP/agent/plugin
-inputs. `--setting-sources` controls user/project/local settings but does not by itself prove every
-other discovery surface absent.
+discovery and other ambient customization. A live probe also proved that it rejects the installed
+OAuth session (`Not logged in`) and the CLI contract says keychain/OAuth are never read. It therefore
+cannot preserve this workspace's auth and hooks. `--setting-sources` controls user/project/local
+settings but does not by itself prove every other discovery surface absent.
 
 ### Consequence
 
 Claude cannot reuse Grok's adapter shape or honestly attest the current ordinary launch. Canonical
-Claude needs a private `CLAUDE_CONFIG_DIR` by default plus a closed launch contract that suppresses
-ambient discovery and rematerializes only captured profile/shared inputs. The private home may seed
-allowlisted onboarding/trust metadata and symlink credentials, but it cannot copy account model,
+Claude uses a private `CLAUDE_CONFIG_DIR`, generated user-only settings, strict MCP and an inspector
+that rejects ambient prompt/agent/command/plugin roots which Claude cannot selectively disable.
+This preserves installed OAuth and hooks without inheriting account settings. The private home may
+seed allowlisted onboarding/trust metadata and symlink credentials, but it cannot copy account model,
 prompt, permission, plugin, hook or memory selectors.
 
 ### Forming/governing inputs to bind
@@ -90,19 +92,21 @@ prompt, permission, plugin, hook or memory selectors.
 | executable/model/effort | profile selectors / CLI | generated closed args |
 | auth/account bootstrap | credential symlink + allowlisted onboarding markers | external auth; non-forming allowlist only |
 | system/project guidance | profile/shared references | explicit prompt files/arguments; ambient CLAUDE.md discovery suppressed |
-| settings/permissions/hooks | captured profile/shared assignments | generated private settings; project/local discovery suppressed |
+| settings/permissions/hooks | captured profile/shared assignments | generated private settings; only the private user source enabled |
 | MCP | captured assignments + Bridge | generated `mcp.json` with strict MCP |
 | skills/agents/plugins | captured assignments / workspace plugin subsystem | explicit generated paths; no account inheritance |
 | cwd/trust/additional dirs | profile workspace + host policy | exact generated args/private trust marker |
-| auto-memory | runtime memory policy | disabled unless separately authorized |
+| auto-memory | runtime memory policy | generated `autoMemoryEnabled: false` unless separately authorized |
 | sessions/history/cache/logs | private home | excluded runtime-owned state |
 
 ### Required oracle
 
 The adapter must prove the effective command contains the isolation flags selected by the adapter,
-uses the exact private home and generated inputs, and cannot load account/project/local forming bytes.
-Unknown command flags or generated-file divergence fail closed. Migration equivalence must explicitly
-account for the current project `hooks` and `permissions`; silently dropping them is not equivalent.
+uses the exact private home and generated inputs, and cannot load account forming bytes. Project
+settings, skills and MCP are explicit shared projections; unsupported ambient CLAUDE.md, agent,
+command or plugin roots fail closed. Unknown command flags or generated-file divergence also fail
+closed. Migration equivalence must explicitly account for the current project `hooks` and
+`permissions`; silently dropping them is not equivalent.
 
 ## Slice boundary
 

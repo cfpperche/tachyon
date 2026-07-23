@@ -30,6 +30,17 @@ const GROK_INSPECTOR_CONTRACT = [
   "auth.json is an external credential symlink",
   "ambient ~/.grok config, memory and plugins are not inherited",
 ].join("\n");
+const CLAUDE_INSPECTOR_CONTRACT = [
+  "tachyon/claude-closed-private-home-input-inspector/v2",
+  "literal executable claude",
+  "CLAUDE_CONFIG_DIR is Tachyon-owned harness/<agent> on every canonical launch",
+  "--setting-sources user plus --settings selects generated private settings and preserves OAuth hooks",
+  "autoMemoryEnabled is forced false",
+  "--strict-mcp-config selects explicit generated MCP files",
+  "workspace plugin skills/hooks/MCP are reprojected into the private home",
+  "ambient CLAUDE.md, agents, commands and plugin roots must be absent",
+  "credentials and allowlisted onboarding markers remain external auth/bootstrap",
+].join("\n");
 const PROFILE_ATTENTION_DEFAULT_SILENCE_SEC = 8;
 const NATIVE_CONFIG_MAX_BYTES = 1024 * 1024;
 export const CODEX_EMPTY_NATIVE_INPUT_INSPECTOR = Object.freeze({
@@ -50,11 +61,18 @@ export const GROK_PRIVATE_HOME_INPUT_INSPECTOR = Object.freeze({
   version: "1",
   sha256: crypto.createHash("sha256").update(GROK_INSPECTOR_CONTRACT).digest("hex"),
 });
+export const CLAUDE_CLOSED_PRIVATE_HOME_INPUT_INSPECTOR = Object.freeze({
+  adapter: "claude",
+  id: "tachyon.claude-closed-private-home-inputs",
+  version: "2",
+  sha256: crypto.createHash("sha256").update(CLAUDE_INSPECTOR_CONTRACT).digest("hex"),
+});
 
 export function profileRuntimeInspectorFor(adapter: string) {
   if (adapter === "codex") return CODEX_EMPTY_NATIVE_INPUT_INSPECTOR;
   if (adapter === "pi") return PI_PRIVATE_CAPABILITY_INPUT_INSPECTOR;
   if (adapter === "grok") return GROK_PRIVATE_HOME_INPUT_INSPECTOR;
+  if (adapter === "claude") return CLAUDE_CLOSED_PRIVATE_HOME_INPUT_INSPECTOR;
   return undefined;
 }
 
@@ -170,8 +188,8 @@ function parseCanonicalProfile(workspaceRoot: string, agentName: string): { prof
 }
 
 function inspectMeasuredNativeInputs(input: ProjectAgentProfileInput, profile: AgentProfileV1): NativeRuntimeAttestation | string[] {
-  if (!(["codex", "pi", "grok"].includes(profile.runtime.adapter)) || profile.runtime.executable !== profile.runtime.adapter) {
-    return ["profile/native-attestation: measured profile projection supports only literal 'codex', 'pi' and 'grok' executables"];
+  if (!(["codex", "pi", "grok", "claude"].includes(profile.runtime.adapter)) || profile.runtime.executable !== profile.runtime.adapter) {
+    return ["profile/native-attestation: measured profile projection supports only literal 'codex', 'pi', 'grok' and 'claude' executables"];
   }
   if (profile.runtime.model || profile.runtime.provider || profile.runtime.reasoningEffort || profile.runtime.serviceTier) {
     return ["profile/native-attestation: runtime selector migration requires a later measured projector"];
@@ -201,6 +219,27 @@ function inspectMeasuredNativeInputs(input: ProjectAgentProfileInput, profile: A
     }
     if (blockers.length > 0) return blockers;
   }
+  if (profile.runtime.adapter === "claude") {
+    const ambientCandidates = [
+      "CLAUDE.md",
+      "CLAUDE.local.md",
+      ".claude/agents",
+      ".claude/commands",
+      ".claude/plugins",
+      ".claude-plugin",
+    ];
+    const blockers = ambientCandidates.flatMap((relative) => {
+      try {
+        fs.lstatSync(path.join(input.workspaceRoot, ...relative.split("/")));
+        return [`profile/native-attestation: ambient Claude input must be absent: ${relative}`];
+      } catch (error) {
+        return (error as NodeJS.ErrnoException).code === "ENOENT"
+          ? []
+          : [`profile/native-attestation: cannot safely inspect ambient Claude input: ${relative}`];
+      }
+    });
+    if (blockers.length > 0) return blockers;
+  }
 
   const runtime = {
     adapter: profile.runtime.adapter,
@@ -217,6 +256,13 @@ function inspectMeasuredNativeInputs(input: ProjectAgentProfileInput, profile: A
           { field: "environment.GROK_HOME", source: "environment", suppressed: true },
           { field: "capabilities.mcp", source: "private-runtime-config", suppressed: true },
         ]
+      : profile.runtime.adapter === "claude"
+        ? [
+            { field: "environment.CLAUDE_CONFIG_DIR", source: "environment", suppressed: true },
+            { field: "capabilities.mcp", source: "private-runtime-config", suppressed: true },
+            { field: "capabilities.hooks", source: "private-runtime-config", suppressed: true },
+            { field: "capabilities.skills", source: "private-runtime-config", suppressed: true },
+          ]
       : hasCapabilities ? [{
           field: profile.runtime.adapter === "pi" ? "capabilities.pi" : "capabilities.mcp",
           source: "private-runtime-config",
@@ -260,7 +306,7 @@ function projectDefinition(resolved: ResolvedAgentProfile): AgentDef | string[] 
   const definition = resolved.definition;
   const errors: string[] = [];
   if (!resolved.agentId) errors.push("profile/projection: canonical profile identity is missing");
-  if (!(["codex", "pi", "grok"].includes(definition.runtime.adapter)) || definition.runtime.executable !== definition.runtime.adapter || definition.runtime.args?.length) {
+  if (!(["codex", "pi", "grok", "claude"].includes(definition.runtime.adapter)) || definition.runtime.executable !== definition.runtime.adapter || definition.runtime.args?.length) {
     errors.push("profile/projection: unsupported runtime projection");
   }
   if (definition.environment?.secrets && Object.keys(definition.environment.secrets).length > 0) {

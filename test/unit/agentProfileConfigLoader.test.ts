@@ -9,6 +9,7 @@ import {
   type LoadProfileAwareConfigInput,
 } from "../../src/config/agentProfileConfigLoader.js";
 import {
+  CLAUDE_CLOSED_PRIVATE_HOME_INPUT_INSPECTOR,
   CODEX_EMPTY_NATIVE_INPUT_INSPECTOR,
   GROK_PRIVATE_HOME_INPUT_INSPECTOR,
   PI_PRIVATE_CAPABILITY_INPUT_INSPECTOR,
@@ -96,6 +97,41 @@ describe("agent profile pointer syntax", () => {
 });
 
 describe("loadProfileAwareConfig", () => {
+  it("projects a literal Claude profile through its closed private-home contract", () => {
+    const root = temporaryRoot("tachyon-agent-profile-claude-");
+    const bytes = writeProfile(root, { runtime: { adapter: "claude", executable: "claude" } });
+    const result = load(root, authority(bytes, {
+      runtimeInspector: { ...CLAUDE_CLOSED_PRIVATE_HOME_INPUT_INSPECTOR },
+    }));
+
+    expect(result.errors).toEqual([]);
+    expect(result.config?.agents.codex).toMatchObject({
+      cmd: "claude",
+      profileLifecycle: { agentId: AGENT_ID, authorityRevision: "profile-r1" },
+    });
+  });
+
+  it("rejects a Claude profile when authority selects another runtime inspector", () => {
+    const root = temporaryRoot("tachyon-agent-profile-claude-wrong-inspector-");
+    const bytes = writeProfile(root, { runtime: { adapter: "claude", executable: "claude" } });
+    const result = load(root, authority(bytes));
+
+    expect(result.config).toBeUndefined();
+    expect(result.errors.join("\n")).toContain("does not select the registered claude inspector");
+  });
+
+  it("rejects ambient Claude prompt roots that cannot be disabled without breaking OAuth and hooks", () => {
+    const root = temporaryRoot("tachyon-agent-profile-claude-ambient-");
+    const bytes = writeProfile(root, { runtime: { adapter: "claude", executable: "claude" } });
+    fs.writeFileSync(path.join(root, "CLAUDE.md"), "ambient prompt");
+    const result = load(root, authority(bytes, {
+      runtimeInspector: { ...CLAUDE_CLOSED_PRIVATE_HOME_INPUT_INSPECTOR },
+    }));
+
+    expect(result.config).toBeUndefined();
+    expect(result.errors.join("\n")).toContain("ambient Claude input must be absent: CLAUDE.md");
+  });
+
   it("projects a literal Grok profile through its Tachyon-owned private home contract", () => {
     const root = temporaryRoot("tachyon-agent-profile-grok-");
     const directory = path.join(root, ".tachyon", "agents", "grok-x");
