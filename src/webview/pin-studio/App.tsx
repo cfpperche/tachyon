@@ -1,3 +1,4 @@
+import type { ComponentChildren } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { Editor } from "@tiptap/core";
 import { Button } from "../shared/ui";
@@ -58,9 +59,11 @@ export interface PinStudioAppProps {
   routeKey: string;
   mountNonce: string;
   incoming?: { seq: number; message: unknown };
+  /** t-bf3498 — the route's "← Parent" back-link, rendered under the studio title. */
+  backLink?: ComponentChildren;
 }
 
-export function App({ dispatch, routeKey, mountNonce, incoming }: PinStudioAppProps) {
+export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: PinStudioAppProps) {
   const mount = useRef<HTMLDivElement>(null);
   const editorRef = useRef<Editor | null>(null);
   const attachmentsRef = useRef<PinStudioAttachmentVM[]>([]);
@@ -275,7 +278,12 @@ export function App({ dispatch, routeKey, mountNonce, incoming }: PinStudioAppPr
   };
 
   if (!ready || !entity) {
-    return <div class="ds-degrade"><span class="codicon codicon-loading" /><div>Loading Pin Studio...</div></div>;
+    return (
+      <>
+        {backLink ? <div class="ds-degrade-backlink">{backLink}</div> : null}
+        <div class="ds-degrade"><span class="codicon codicon-loading" /><div>Loading Pin Studio...</div></div>
+      </>
+    );
   }
 
   const run = (fn: (editor: Editor) => void) => {
@@ -401,6 +409,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming }: PinStudioAppPr
     <>
       <StudioFrame
         title={pinStudioTitleFor(isNew ? "new" : "edit", entity.pinId, entity)}
+        backLink={backLink}
         errors={hostError ? [hostError] : []}
         dirty={dirtyComputed}
         saveInFlight={saveInFlight}

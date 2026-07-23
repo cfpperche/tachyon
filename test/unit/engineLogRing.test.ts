@@ -35,6 +35,21 @@ describe("t-cd3626 engine log ring V1–V2.5", () => {
     expect(ring.hasError()).toBe(true);
   });
 
+  it("t-3cdb91: Node's own process-warning capture does not flip hasError", () => {
+    installEngineLogRing(20);
+    // mirrors Node's default 'warning' handler output, captured via console.error
+    console.error("(node:1586539) ExperimentalWarning: SQLite is an experimental feature and might change at any time");
+    const ring = getEngineLogRing();
+    expect(ring?.tail().some((l) => l.includes("ExperimentalWarning"))).toBe(true);
+    expect(ring?.hasError()).toBe(false);
+  });
+
+  it("t-3cdb91: a genuine console.error still flips hasError", () => {
+    installEngineLogRing(20);
+    console.error("daemon crashed: ECONNREFUSED");
+    expect(getEngineLogRing()?.hasError()).toBe(true);
+  });
+
   it("V2.5 hydrates from file and clear truncates", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-log-"));
     const file = path.join(dir, "engine.log");

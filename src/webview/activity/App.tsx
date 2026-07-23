@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
-import type { RefObject } from "preact";
+import type { ComponentChildren, RefObject } from "preact";
 import type { ActivityItem, ActivityViewModel } from "../../activity/activityView";
 import { MarkdownView, linkify } from "./markdown";
 import { highlight } from "./markdownEngine";
@@ -326,7 +326,7 @@ function ActivityLine({ it, dispatch, cv }: { it: ActivityItem; dispatch: Activi
  * component owns everything ELSE — including the scroll/prepend machinery that used to live in
  * main.tsx, now retargeted at `scrollContainer` (Control's embed host div) instead of window.
  */
-export function App({ vm, prepended, dispatch, images, scrollContainer }: {
+export function App({ vm, prepended, dispatch, images, scrollContainer, backLink }: {
   vm?: ActivityViewModel;
   /** True when THIS vm push paged in older items at the top (scroll-anchor case) — travels as its
    *  own prop, set together with `vm` by the same host message, never inferred from vm alone. */
@@ -334,6 +334,8 @@ export function App({ vm, prepended, dispatch, images, scrollContainer }: {
   dispatch: ActivityDispatch;
   images: Record<string, string>;
   scrollContainer: RefObject<HTMLDivElement>;
+  /** t-bf3498 — the route's "← Fleet" back-link, rendered under the "Activity" title. */
+  backLink?: ComponentChildren;
 }) {
   const [query, setQuery] = useState("");
   const [zoom, setZoom] = useState<string | null>(null);
@@ -396,17 +398,25 @@ export function App({ vm, prepended, dispatch, images, scrollContainer }: {
   );
 
   if (!vm) {
-    return <div class="ds-degrade"><span class="codicon codicon-loading" /><div>Loading activity…</div></div>;
+    return (
+      <>
+        {backLink ? <div class="ds-degrade-backlink">{backLink}</div> : null}
+        <div class="ds-degrade"><span class="codicon codicon-loading" /><div>Loading activity…</div></div>
+      </>
+    );
   }
 
   if (vm.tier !== "structured") {
     return (
-      <EmptyState
-        kind="error"
-        icon="circle-slash"
-        message="Structured activity is unavailable for this runtime. Open the terminal to see the live session."
-        action={term}
-      />
+      <>
+        {backLink ? <div class="ds-degrade-backlink">{backLink}</div> : null}
+        <EmptyState
+          kind="error"
+          icon="circle-slash"
+          message="Structured activity is unavailable for this runtime. Open the terminal to see the live session."
+          action={term}
+        />
+      </>
     );
   }
   const s = vm.summary;
@@ -436,6 +446,7 @@ export function App({ vm, prepended, dispatch, images, scrollContainer }: {
       <PageChrome
         class="activity-chrome"
         title="Activity"
+        backLink={backLink}
         actions={
           <div class="activity-head-tools">
             <span class="stat" title="agent messages"><span class="codicon codicon-comment" /> {s.messages}</span>

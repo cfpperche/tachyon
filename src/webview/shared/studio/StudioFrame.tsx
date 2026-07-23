@@ -61,6 +61,8 @@ export interface StudioFrameProps {
   frozen?: boolean;
   /** adapter-declared header action slots (e.g. Pin Studio's Import/Sketch), left of Cancel/Save. */
   headerActions?: ComponentChildren;
+  /** t-bf3498 — the route's "← Parent" back-link, rendered as a compact line under the title. */
+  backLink?: ComponentChildren;
   regions: StudioFrameRegions;
 }
 
@@ -70,8 +72,11 @@ export function StudioFrame(props: StudioFrameProps) {
     <div class={props.frozen ? "sf-shell sf-frozen" : "sf-shell"}>
       <header class="sf-header">
         <div class="sf-title-group">
-          <div class="sf-title">{props.title}</div>
-          {props.dirty && <span class="sf-dirty-dot" aria-label="unsaved changes" title="unsaved changes" />}
+          <div class="sf-title-row">
+            <div class="sf-title">{props.title}</div>
+            {props.dirty && <span class="sf-dirty-dot" aria-label="unsaved changes" title="unsaved changes" />}
+          </div>
+          {props.backLink ? <div class="sf-backlink">{props.backLink}</div> : null}
         </div>
         <div class="sf-actions">
           {props.headerActions}

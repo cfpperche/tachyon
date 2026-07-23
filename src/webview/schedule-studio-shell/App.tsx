@@ -1,3 +1,4 @@
+import type { ComponentChildren } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { decodeStudioMessage, type StudioDispatch } from "../shared/studio/protocol";
 import { StudioFrame } from "../shared/studio/StudioFrame";
@@ -20,11 +21,13 @@ export interface ScheduleStudioAppProps {
   routeKey: string;
   mountNonce: string;
   incoming?: { seq: number; message: unknown };
+  /** t-bf3498 — the route's "← Parent" back-link, rendered under the studio title. */
+  backLink?: ComponentChildren;
 }
 
 const emptyReferenceData = (): ScheduleStudioReferenceData => ({ commandNames: [], runbookNames: [], agentNames: [] });
 
-export function App({ dispatch, routeKey, mountNonce, incoming }: ScheduleStudioAppProps) {
+export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: ScheduleStudioAppProps) {
   const [mode, setMode] = useState<"new" | "edit">("new");
   const [entityId, setEntityId] = useState<string | undefined>(undefined);
   const [entity, setEntity] = useState<ScheduleStudioEntity | undefined>(undefined);
@@ -117,7 +120,12 @@ export function App({ dispatch, routeKey, mountNonce, incoming }: ScheduleStudio
   }, [ready, dirty, fields, frozen]);
 
   if (!ready || !entity) {
-    return <div class="ds-degrade"><span class="codicon codicon-loading" /><div>Loading Schedule Studio...</div></div>;
+    return (
+      <>
+        {backLink ? <div class="ds-degrade-backlink">{backLink}</div> : null}
+        <div class="ds-degrade"><span class="codicon codicon-loading" /><div>Loading Schedule Studio...</div></div>
+      </>
+    );
   }
 
   const errors: StudioError[] = hostError ? [hostError] : [];
@@ -150,6 +158,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming }: ScheduleStudio
   return (
     <StudioFrame
       title={scheduleStudioTitleFor(mode, entityId, entity)}
+      backLink={backLink}
       errors={errors}
       dirty={dirty}
       saveInFlight={saving}

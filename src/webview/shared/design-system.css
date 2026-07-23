@@ -177,6 +177,24 @@ a { color: var(--ds-link); }
   padding: 0;
 }
 .ds-btn .codicon, .ds-tab .codicon, .ds-chip .codicon { font-size: var(--ds-small); line-height: 1; flex: none; }
+/* t-bf3498 — compact back-link theme for a .ds-btn used as a subtitle-style breadcrumb (Fleet subroutes,
+   studio routes): same Button component/a11y, borderless + tighter box so it reads as a link, not a button. */
+.ds-link-btn.ds-btn {
+  min-height: auto;
+  padding: 1px 4px 1px 2px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--ds-muted);
+}
+.ds-link-btn.ds-btn:hover {
+  background: transparent;
+  color: var(--ds-fg);
+  text-decoration: underline;
+}
+/* Wrapper kept only to give the back-link a stable data-testid scope — no layout/box of its own. */
+.ds-backlink-slot {
+  display: contents;
+}
 
 /* ── badges ── */
 .ds-badge { font-size: var(--ds-micro); line-height: 1.6; padding: 1px 9px; border-radius: 10px; border: 1px solid var(--ds-border); color: var(--ds-muted); white-space: nowrap; }
@@ -251,6 +269,9 @@ select:disabled { opacity: var(--ds-disabled-opacity); cursor: default; }
 .ds-empty { text-align: center; color: var(--ds-muted); padding: 56px var(--ds-5); }
 .ds-empty .ds-big { font-size: var(--ds-body); color: var(--ds-fg); margin-bottom: var(--ds-1); }
 .ds-degrade { padding: 56px var(--ds-5); text-align: center; color: var(--ds-muted); }
+/* t-bf3498 — the route's back-link, shown ABOVE a loading/degrade block that has no title row of its
+   own to hang it under (a studio still loading its entity, Activity/Probes before their vm arrives). */
+.ds-degrade-backlink { padding: var(--ds-page-pad-y) var(--ds-page-pad-x) 0; }
 
 /* t-df7df5 — respect reduced motion for token-driven transitions */
 @media (prefers-reduced-motion: reduce) {
@@ -302,6 +323,10 @@ select:disabled { opacity: var(--ds-disabled-opacity); cursor: default; }
 /* Title icons are forbidden on editor pages — hide if a legacy call still injects a codicon. */
 .ds-page-chrome-title > .codicon {
   display: none !important;
+}
+/* t-bf3498 — subroute back-link renders as a compact line under the title, not a separate full-width bar. */
+.ds-page-chrome-backlink {
+  margin: var(--ds-1) 0 0;
 }
 .ds-page-chrome-hint {
   margin: var(--ds-1) 0 0;
