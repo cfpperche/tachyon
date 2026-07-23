@@ -906,7 +906,10 @@ export async function openCockpit(
       // existing binding (routeKey match), so calling it from both places is safe.
       ensureStudioBinding(currentRoute, makeStudioAdapterFactory(deps.studios));
       const b = currentStudioBindingFor(currentRoute);
-      if (b) model.studioMountNonce = b.mountNonce;
+      if (b) {
+        model.studioMountNonce = b.mountNonce;
+        model.studioPersisted = b.persisted;
+      }
     }
     if (panel === live && navEpoch === epoch) {
       live.webview.postMessage(modelMessage(model));
@@ -1067,9 +1070,17 @@ export async function openCockpit(
       // — Cancel is designed as an unconfirmed direct discard (see the "cancel" case's own comment in
       // studioHost.ts), so it must bypass beginStudioNavTransaction's checkpoint entirely rather than
       // re-prompt a dialog the user just explicitly opted out of by clicking Cancel.
-      onCancelled: () => {
+      onCancelled: (persisted) => {
         if (!isStudioRoute(currentRoute)) return;
-        navigate(parentRoute(currentRoute) ?? routes.section("overview"));
+        const parent = parentRoute(currentRoute);
+        // t-c3c819 — task-detail is only a valid Cancel destination for a REAL, already-saved task;
+        // Task Studio's staged-create pattern opens a brand-new task straight into studio-edit with
+        // a pre-minted, still-unsaved id, and task-detail(id) for that id 404s ("never found on
+        // disk"). Fall back to the studio's own section instead — "mission" (Board) is correct
+        // unconditionally here: task-detail is task-only, parentRoute never produces it for any
+        // other studio (route.ts's parentRoute switch), so this branch can't misfire for one.
+        const target = parent?.kind === "task-detail" && !persisted ? routes.section("mission") : parent ?? routes.section("overview");
+        navigate(target);
         void (async () => {
           await sendModel();
           await sendSectionModule();

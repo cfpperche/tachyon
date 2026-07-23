@@ -122,9 +122,9 @@ export function stopStudioBinding(): void {
   binding = undefined;
 }
 
-export function currentStudioBindingFor(route: CockpitRoute): { mountNonce: string } | undefined {
+export function currentStudioBindingFor(route: CockpitRoute): { mountNonce: string; persisted: boolean } | undefined {
   if (!binding || routeKey(route) !== routeKey(binding.route)) return undefined;
-  return { mountNonce: binding.mountNonce };
+  return { mountNonce: binding.mountNonce, persisted: binding.persisted };
 }
 
 export type StudioAdapterFactory = (route: StudioRoute) => Adapter | undefined;
@@ -289,8 +289,13 @@ export interface StudioMessageHooks {
    *  navigate itself away (routes are host-authoritative), so the host must do it after discarding
    *  the draft. Every studio wires `onCancel` the same one-line way (`post(cancelMessage())`, no
    *  navigate call) — none of the 7 App.tsx files were ever missing anything; the host simply never
-   *  followed through. */
-  onCancelled: () => void;
+   *  followed through.
+   *  t-c3c819 — `persisted` (the binding's, captured before `abandonProvisionalIfNeeded` may have
+   *  already torn it down) lets the implementation avoid `parentRoute()`'s task-detail parent for a
+   *  brand-new, still-unsaved task (Task Studio's staged-create pattern) — that id was never saved,
+   *  so task-detail(id) would 404 ("never found on disk"); see the model.ts studioPersisted doc
+   *  comment for the client-side breadcrumb's identical fix. */
+  onCancelled: (persisted: boolean) => void;
 }
 
 export async function handleStudioMessage(io: StudioHostIO, raw: unknown, hooks: StudioMessageHooks): Promise<boolean> {
@@ -335,10 +340,14 @@ export async function handleStudioMessage(io: StudioHostIO, raw: unknown, hooks:
       // Excluded for the WHOLE transaction window (txnLock), not just while a save is in flight
       // (round-3 major) — a queued Cancel must never land while a discard-choice modal is still open.
       if (b.saveInFlight || txnLock) return true;
+      // t-c3c819 — captured BEFORE abandonProvisionalIfNeeded, which unconditionally sets
+      // b.persisted = true as part of its own idempotency guard (see its doc comment) — reading it
+      // after that call would always observe true, even for a task that was never actually saved.
+      const wasPersisted = b.persisted;
       discardDraft(b.route);
       abandonProvisionalIfNeeded(b);
       hooks.onChanged();
-      hooks.onCancelled();
+      hooks.onCancelled(wasPersisted);
       return true;
     default:
       hooks.handleDomainMessage?.({ post: io.post, entityId: b.entityId }, msg as { type: string });
