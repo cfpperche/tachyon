@@ -209,9 +209,12 @@ function inspectMeasuredNativeInputs(input: ProjectAgentProfileInput, profile: A
   ].length > 0;
 
   if (profile.runtime.adapter === "codex") {
+    // Canonical Codex launch removes the private-home config before spawn
+    // (`inheritNativeConfig:false`). A file left there by a legacy launch is a
+    // stale projection, not an effective native input. Workspace config remains
+    // effective and must still be empty under this inspector.
     const candidates: Array<[string, string[]]> = [
       [input.workspaceRoot, [".codex", "config.toml"]],
-      ...(!hasCapabilities ? [[input.workspaceRoot, [".tachyon", "harness", input.agentName, "config.toml"]] as [string, string[]]] : []),
     ];
     const blockers: string[] = [];
     for (const [root, segments] of candidates) {

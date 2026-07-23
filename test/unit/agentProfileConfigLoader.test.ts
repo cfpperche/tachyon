@@ -391,7 +391,7 @@ describe("loadProfileAwareConfig", () => {
     fs.mkdirSync(path.join(emptyCapabilitiesRoot, ".tachyon", "harness", "codex"), { recursive: true });
     fs.writeFileSync(path.join(emptyCapabilitiesRoot, ".tachyon", "harness", "codex", "config.toml"), "model = 'unmeasured'\n");
     const emptyCapabilities = load(emptyCapabilitiesRoot, authority(emptyBytes), { homeDir: privateHome });
-    expect(emptyCapabilities.errors.join("\n")).toContain("non-empty native config is not supported");
+    expect(emptyCapabilities.errors).toEqual([]);
   });
 
   it("rejects simultaneous inline and canonical owners", () => {
