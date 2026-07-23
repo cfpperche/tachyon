@@ -258,6 +258,15 @@ function Root() {
           setActivityVm(undefined);
           setActivityImages({});
         }
+        // t-9993cc — same identity-change reset as Activity above: a stale TASK message from the
+        // route just navigated AWAY FROM must never repopulate taskVm under a route pointing at a
+        // DIFFERENT task (or none) — clear it eagerly on identity change rather than trusting arrival
+        // order alone (a fast double-click between two Board cards could otherwise interleave).
+        const prevTask = activeRouteRef.current?.kind === "task-detail" ? activeRouteRef.current : undefined;
+        const nextTask = next.activeRoute?.kind === "task-detail" ? next.activeRoute : undefined;
+        if (!nextTask || !prevTask || prevTask.wsHash !== nextTask.wsHash || prevTask.taskId !== nextTask.taskId) {
+          setTaskVm(undefined);
+        }
         activeRouteRef.current = next.activeRoute;
         if (next.studioMountNonce !== studioMountNonceRef.current) {
           studioMountNonceRef.current = next.studioMountNonce;
@@ -280,7 +289,15 @@ function Root() {
           });
         }
       } else if (type === TASK && raw.vm) {
-        setTaskVm(raw.vm as TaskDetailVM);
+        // t-9993cc — same identity check ACTIVITY already does below: reject a TASK push that doesn't
+        // match the CURRENTLY active task-detail route rather than accepting any TASK message
+        // unconditionally (a delayed post from a route just navigated away from must never repopulate
+        // taskVm under a different/no task-detail route).
+        const route = activeRouteRef.current;
+        const vm = raw.vm as TaskDetailVM;
+        if (route?.kind === "task-detail" && route.wsHash === vm.wsHash && route.taskId === vm.id) {
+          setTaskVm(vm);
+        }
       } else if (type === ACTIVITY && raw.vm) {
         // t-610705 (Phase C.2, hardening dueto probe-2d90286d) — every Activity message carries its
         // own feed identity (wsHash/agent); reject anything that doesn't match the CURRENT route
