@@ -361,6 +361,44 @@ describe("AgentManager", () => {
     }
   });
 
+  it("canonical Evolution selector fails closed when the authorized active profile identity differs", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-agent-manager-evolution-selector-"));
+    try {
+      const evolution = new EvolutionStore(root);
+      const candidate = await evolution.createCandidate("reviewer", {
+        reviewId: "review-selector",
+        taskId: "t-selector",
+        target: { kind: "learning", content: "Authorized learning.", reason: "Selector binding test." },
+      });
+      const detail = await evolution.candidateDetail("reviewer", candidate.id);
+      await evolution.approveCandidate("reviewer", candidate.id, {
+        expectedActiveVersion: 0,
+        expectedTargetDigest: detail.currentTargetDigest,
+      });
+      const config = configOf("agents:\n  reviewer:\n    cmd: codex\n    selfEvolution: { enabled: true }\n");
+      config.agents.reviewer!.profileEvolution = {
+        profileId: "another-profile",
+        selectorSha256: "a".repeat(64),
+      };
+      const fake = fakeTmux();
+      const manager = new AgentManager({
+        tmux: fake.tmux,
+        wsHash: workspaceHash(root),
+        workspaceRoot: root,
+        ledger: new SessionLedger(root),
+        getConfig: () => config,
+        getMaxAgents: () => 8,
+      });
+
+      await expect(manager.spawn("reviewer")).rejects.toThrow(
+        "Agent Evolution active profile does not match canonical selector",
+      );
+      expect(fake.newSessionArgs).toEqual([]);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("SDD 421 delivers the same approved evolution snapshot through every supported runtime channel", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-agent-manager-evolution-runtimes-"));
     try {

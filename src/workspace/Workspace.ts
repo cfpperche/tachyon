@@ -4709,15 +4709,37 @@ export class Workspace {
     );
   }
 
-  planAgentProfileMigration(agentName: string, nonSecretEnv: readonly string[] = []): PlanLegacyAgentProfileMigrationResult {
+  async planAgentProfileMigration(
+    agentName: string,
+    nonSecretEnv: readonly string[] = [],
+  ): Promise<PlanLegacyAgentProfileMigrationResult> {
     const file = this.configPath();
     if (!file) return { ok: false, blockers: ["tachyon.yml does not exist"], unclassifiedEnv: [] };
+    let evolutionSelector: { profileId: string; text: string; sha256: string } | undefined;
+    if (this.config?.agents[agentName]?.selfEvolution?.enabled === true) {
+      try {
+        const active = await this.evolutionStore.readAuthorizedActiveState(agentName);
+        const text = `${JSON.stringify({ schemaVersion: 1, profileId: active.profile.profileId }, null, 2)}\n`;
+        evolutionSelector = {
+          profileId: active.profile.profileId,
+          text,
+          sha256: createHash("sha256").update(text).digest("hex"),
+        };
+      } catch (error) {
+        return {
+          ok: false,
+          blockers: [`agents.${agentName}.selfEvolution: ${error instanceof Error ? error.message : String(error)}`],
+          unclassifiedEnv: [],
+        };
+      }
+    }
     return planLegacyAgentProfileMigration({
       workspaceRoot: this.workspaceRoot,
       configText: fs.readFileSync(file, "utf8"),
       agentName,
       nonSecretEnv,
       currentAuthority: this.agentProfileAuthorities.get(agentName),
+      evolutionSelector,
     });
   }
 
@@ -4730,7 +4752,7 @@ export class Workspace {
   async migrateAgentProfile(agentName: string, nonSecretEnv: readonly string[] = []): Promise<AgentProfileMigrationResult> {
     const file = this.configPath();
     if (!file) throw new Error("tachyon.yml does not exist");
-    const planned = this.planAgentProfileMigration(agentName, nonSecretEnv);
+    const planned = await this.planAgentProfileMigration(agentName, nonSecretEnv);
     if (!planned.ok) throw new Error(planned.blockers.join("; "));
     const result = await commitLegacyAgentProfileMigration({
       workspaceRoot: this.workspaceRoot,

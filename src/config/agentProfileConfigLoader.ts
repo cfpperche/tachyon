@@ -132,6 +132,7 @@ export function loadProfileAwareConfig(input: LoadProfileAwareConfigInput): Prof
   for (const [agentName, definition] of projected) {
     const {
       profileCapabilities: _profileCapabilities,
+      profileEvolution: _profileEvolution,
       profileLifecycle: _profileLifecycle,
       ...publicDefinition
     } = definition;
@@ -150,6 +151,7 @@ export function loadProfileAwareConfig(input: LoadProfileAwareConfigInput): Prof
   });
   for (const [agentName, definition] of projected) {
     if (definition.profileCapabilities) parsed.config.agents[agentName]!.profileCapabilities = definition.profileCapabilities;
+    if (definition.profileEvolution) parsed.config.agents[agentName]!.profileEvolution = definition.profileEvolution;
     if (definition.profileLifecycle) parsed.config.agents[agentName]!.profileLifecycle = definition.profileLifecycle;
   }
   const agentSources: Record<string, AgentConfigSource> = {};

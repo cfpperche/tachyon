@@ -317,7 +317,7 @@ it("migrates and rolls back a stopped eligible agent through host authority cust
     { tmux: fake.tmux, startBridge: false, agentProfileHomeDir: homeDir },
   );
   try {
-    const preview = ws.planAgentProfileMigration("codex");
+    const preview = await ws.planAgentProfileMigration("codex");
     expect(preview.ok, preview.ok ? undefined : preview.blockers.join("\n")).toBe(true);
     const migrated = await ws.migrateAgentProfile("codex");
     expect(migrated.phase).toBe("committed");
@@ -330,6 +330,56 @@ it("migrates and rolls back a stopped eligible agent through host authority cust
     expect(fs.readFileSync(path.join(root, "tachyon.yml"), "utf8")).toBe(original);
     expect(secrets.get(agentProfileAuthoritiesSecretKey(workspaceHash(root)))).toContain('"records": []');
     expect(ws.config?.agents.codex).toMatchObject({ cmd: "codex", role: "reviewer" });
+  } finally {
+    ws.dispose();
+  }
+});
+
+it("migrates Evolution opt-in as a selector bound to the authorized profile identity", async () => {
+  const root = mkdir();
+  const host = new SharedSecretHost(mkdir(), new Map());
+  fs.writeFileSync(path.join(root, "tachyon.yml"), "agents:\n  codex:\n    cmd: codex\n    selfEvolution: { enabled: true }\n");
+  const ws = await Workspace.createForTest(
+    root,
+    { host, onViewsChanged: () => {} },
+    { tmux: fakeTmux().tmux, startBridge: false, agentProfileHomeDir: mkdir() },
+  );
+  try {
+    const evolution = await ws.evolutionStore.ensureProfile("codex");
+    const preview = await ws.planAgentProfileMigration("codex");
+    expect(preview.ok, preview.ok ? undefined : preview.blockers.join("\n")).toBe(true);
+    const migrated = await ws.migrateAgentProfile("codex");
+    expect(migrated.phase).toBe("committed");
+    expect(ws.config?.agents.codex).toMatchObject({
+      selfEvolution: { enabled: true },
+      profileEvolution: { profileId: evolution.profileId },
+    });
+    expect(JSON.parse(fs.readFileSync(
+      path.join(root, ".tachyon", "agents", "codex", "evolution-selector.json"),
+      "utf8",
+    ))).toEqual({ schemaVersion: 1, profileId: evolution.profileId });
+  } finally {
+    ws.dispose();
+  }
+});
+
+it("refuses Evolution migration when active bytes no longer match the host freshness head", async () => {
+  const { ws } = await makeWorkspace(() => {}, {
+    tachyonYaml: "agents:\n  codex:\n    cmd: codex\n    selfEvolution: { enabled: true }\n",
+  });
+  try {
+    await ws.evolutionStore.ensureProfile("codex");
+    await fs.promises.writeFile(ws.evolutionStore.learningsPath("codex"), renderEvolutionLearnings([{
+      id: "forged-migration",
+      sourceTaskId: "t-forged",
+      sourceReviewId: "review-forged",
+      approvedAt: "2026-07-23T18:00:00.000Z",
+      content: "Unapproved migration content.",
+    }]), "utf8");
+
+    const preview = await ws.planAgentProfileMigration("codex");
+    expect(preview.ok).toBe(false);
+    if (!preview.ok) expect(preview.blockers.join("\n")).toContain("does not match its human-approved head");
   } finally {
     ws.dispose();
   }

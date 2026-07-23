@@ -17,18 +17,21 @@ import {
   type AgentStanzaSourceSlice,
 } from "./YamlConfigEditor.js";
 import { loadProfileAwareConfig } from "./agentProfileConfigLoader.js";
-import { closeCanonicalAgentProfile, readCanonicalAgentProfile } from "./agentProfileReader.js";
+import {
+  closeCanonicalAgentProfile,
+  readAgentProfileReference,
+  readCanonicalAgentProfile,
+} from "./agentProfileReader.js";
 import { asciiFoldAgentName } from "./nameValidation.js";
 
 const SUPPORTED_KEYS = new Set([
   "cmd", "cwd", "env", "autostart", "watch", "attention", "restart", "kind", "role",
-  "worktree", "branch", "isolate", "subagents",
+  "worktree", "branch", "isolate", "subagents", "selfEvolution",
 ]);
 
 const DEFERRED_KEYS: Readonly<Record<string, string>> = {
   instructions: "persistent instructions are owned by t-a2827d",
   soul: "Soul is owned by t-a2827d",
-  selfEvolution: "Agent Evolution is owned by t-a2827d",
   harness: "agent capabilities are owned by t-a34bb7",
   worktreeSetup: "worktree setup requires pinned profile references",
   verify: "verification requires a pinned profile reference",
@@ -43,6 +46,12 @@ export interface PlanLegacyAgentProfileMigrationInput {
   agentId?: string;
   authorityRevision?: string;
   currentAuthority?: AgentProfileAuthorityRecord;
+  /** Host-authorized stable selector for an enabled legacy Evolution lane. */
+  evolutionSelector?: {
+    profileId: string;
+    text: string;
+    sha256: string;
+  };
 }
 
 export interface LegacyAgentProfileMigrationPlan {
@@ -56,6 +65,7 @@ export interface LegacyAgentProfileMigrationPlan {
   profileSha256: string;
   authority: AgentProfileAuthorityRecord;
   pointerValueText: string;
+  artifacts: Array<{ path: string; text: string; sha256: string }>;
 }
 
 export type PlanLegacyAgentProfileMigrationResult =
@@ -86,6 +96,7 @@ export interface AgentProfileMigrationJournal {
   targetStanzaSha256: string;
   profileSha256: string;
   authority: AgentProfileAuthorityRecord;
+  artifacts?: Array<{ path: string; sha256: string }>;
   degradedReason?: string;
 }
 
@@ -425,7 +436,11 @@ function plainAgentStanza(configText: string, agentName: string): Record<string,
     : undefined;
 }
 
-function buildProfile(agentId: string, definition: AgentDef): AgentProfileV1 {
+function buildProfile(
+  agentId: string,
+  definition: AgentDef,
+  evolutionSelector?: PlanLegacyAgentProfileMigrationInput["evolutionSelector"],
+): AgentProfileV1 {
   const profile: Record<string, unknown> = {
     schemaVersion: 1,
     agentId,
@@ -434,7 +449,24 @@ function buildProfile(agentId: string, definition: AgentDef): AgentProfileV1 {
   if (definition.env && Object.keys(definition.env).length > 0) {
     profile.environment = { values: { ...definition.env } };
   }
-  if (definition.role) profile.prompt = { role: definition.role };
+  if (definition.role || definition.selfEvolution?.enabled) {
+    profile.prompt = {
+      ...(definition.role ? { role: definition.role } : {}),
+      ...(definition.selfEvolution?.enabled ? { evolution: "evolution" } : {}),
+    };
+  }
+  if (definition.selfEvolution?.enabled) {
+    if (!evolutionSelector) throw new Error("enabled Agent Evolution requires a host-authorized selector");
+    profile.references = [{
+      id: "evolution",
+      kind: "evolution",
+      scope: "profile",
+      owner: agentId,
+      path: "evolution-selector.json",
+      mode: "pinned",
+      sha256: evolutionSelector.sha256,
+    }];
+  }
 
   const lifecycle: Record<string, unknown> = {};
   if (definition.autostart) lifecycle.autostart = true;
@@ -467,6 +499,7 @@ function prospectiveProjection(
   agentName: string,
   profileText: string,
   authority: AgentProfileAuthorityRecord,
+  artifacts: readonly { path: string; text: string }[] = [],
 ): AgentDef | string[] {
   const preflight = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-agent-profile-migration-preflight-"));
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-agent-profile-migration-home-"));
@@ -474,6 +507,7 @@ function prospectiveProjection(
     const directory = path.join(preflight, ".tachyon", "agents", agentName);
     fs.mkdirSync(directory, { recursive: true });
     fs.writeFileSync(path.join(directory, "agent.yml"), profileText, { mode: 0o600 });
+    for (const artifact of artifacts) fs.writeFileSync(path.join(directory, artifact.path), artifact.text, { mode: 0o600 });
     const result = projectCanonicalAgentProfile({
       workspaceRoot: preflight,
       agentName,
@@ -492,6 +526,7 @@ function runtimeBehaviorDefinition(definition: AgentDef): AgentDef {
   const {
     profileCapabilities: _profileCapabilities,
     profileLifecycle: _profileLifecycle,
+    profileEvolution: _profileEvolution,
     ...publicDefinition
   } = definition;
   return publicDefinition;
@@ -530,6 +565,15 @@ export function planLegacyAgentProfileMigration(
     blockers.push(`agents.${input.agentName}.env: classify every key explicitly as non-secret (expected: ${envKeys.join(", ") || "none"})`);
   }
   if (input.currentAuthority) blockers.push(`agents.${input.agentName}: host profile authority already exists`);
+  if (originalDefinition?.selfEvolution?.enabled && !input.evolutionSelector) {
+    blockers.push(`agents.${input.agentName}.selfEvolution: host-authorized Evolution selector is unavailable`);
+  }
+  if (!originalDefinition?.selfEvolution?.enabled && input.evolutionSelector) {
+    blockers.push(`agents.${input.agentName}.selfEvolution: selector supplied for a disabled Evolution lane`);
+  }
+  if (input.evolutionSelector && digest(input.evolutionSelector.text) !== input.evolutionSelector.sha256) {
+    blockers.push(`agents.${input.agentName}.selfEvolution: selector digest mismatch`);
+  }
   const canonicalPath = path.join(input.workspaceRoot, ".tachyon", "agents", input.agentName, "agent.yml");
   try {
     fs.lstatSync(canonicalPath);
@@ -542,7 +586,7 @@ export function planLegacyAgentProfileMigration(
   const agentId = input.agentId ?? crypto.randomUUID();
   let profile: AgentProfileV1;
   try {
-    profile = buildProfile(agentId, originalDefinition);
+    profile = buildProfile(agentId, originalDefinition, input.evolutionSelector);
   } catch (error) {
     return { ok: false, blockers: [`agents.${input.agentName}: canonical projection failed: ${error instanceof Error ? error.message : String(error)}`], unclassifiedEnv: [] };
   }
@@ -556,7 +600,10 @@ export function planLegacyAgentProfileMigration(
     canonicalSha256: profileSha256,
     runtimeInspector: { ...CODEX_EMPTY_NATIVE_INPUT_INSPECTOR },
   };
-  const projection = prospectiveProjection(input.agentName, profileText, authority);
+  const artifacts = input.evolutionSelector
+    ? [{ path: "evolution-selector.json", text: input.evolutionSelector.text, sha256: input.evolutionSelector.sha256 }]
+    : [];
+  const projection = prospectiveProjection(input.agentName, profileText, authority, artifacts);
   if (Array.isArray(projection)) return { ok: false, blockers: projection, unclassifiedEnv: [] };
   if (!isDeepStrictEqual(originalDefinition, projection)) {
     return { ok: false, blockers: [`agents.${input.agentName}: normalized before/after definitions are not equivalent`], unclassifiedEnv: [] };
@@ -574,6 +621,7 @@ export function planLegacyAgentProfileMigration(
       profileSha256,
       authority,
       pointerValueText: `profile: .tachyon/agents/${input.agentName}/agent.yml\n`,
+      artifacts,
     },
   };
 }
@@ -605,6 +653,45 @@ export function publishCanonicalProfile(workspaceRoot: string, agentName: string
     writeNewDurable(`${descriptorPath(retained.fd)}/agent.yml`, profileText);
   } finally {
     retained.close();
+  }
+}
+
+function publishMigrationArtifacts(
+  workspaceRoot: string,
+  agentName: string,
+  artifacts: readonly { path: string; text: string }[],
+): void {
+  if (artifacts.length === 0) return;
+  const retained = openProfileDirectory(workspaceRoot, agentName);
+  try {
+    for (const artifact of artifacts) writeNewDurable(`${descriptorPath(retained.fd)}/${artifact.path}`, artifact.text);
+  } finally {
+    retained.close();
+  }
+}
+
+function removeMigrationArtifactsExact(
+  workspaceRoot: string,
+  agentName: string,
+  artifacts: readonly { path: string; sha256: string }[],
+): void {
+  if (artifacts.length === 0) return;
+  const source = readCanonicalAgentProfile(workspaceRoot, agentName);
+  if (!source) return;
+  try {
+    for (const artifact of artifacts) {
+      const file = `${descriptorPath(source.profileDirectoryFd)}/${artifact.path}`;
+      try { fs.lstatSync(file); }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+        throw error;
+      }
+      readAgentProfileReference(source, artifact.path, artifact.sha256);
+      fs.unlinkSync(file);
+    }
+    syncDirectory(descriptorPath(source.profileDirectoryFd));
+  } finally {
+    closeCanonicalAgentProfile(source);
   }
 }
 
@@ -660,6 +747,7 @@ async function compensateIncompleteMigration(
     } else if (authority !== undefined) {
       throw new Error("profile authority changed outside the migration");
     }
+    removeMigrationArtifactsExact(input.workspaceRoot, journal.agentName, journal.artifacts ?? []);
     removeCanonicalProfileIfExact(input.workspaceRoot, journal.agentName, journal.profileSha256);
     return transition(txDir, journal, "rolled-back");
   } catch (error) {
@@ -712,11 +800,13 @@ export async function commitLegacyAgentProfileMigration(
       targetStanzaSha256: patched.next.valueSha256,
       profileSha256: input.plan.profileSha256,
       authority: input.plan.authority,
+      artifacts: input.plan.artifacts.map(({ path: artifactPath, sha256 }) => ({ path: artifactPath, sha256 })),
     };
     writeJournal(txDir, journal);
     try {
       journal = transition(txDir, journal, "staged", input.onPhase);
       publishCanonicalProfile(input.workspaceRoot, input.plan.agentName, input.plan.profileText);
+      publishMigrationArtifacts(input.workspaceRoot, input.plan.agentName, input.plan.artifacts);
       journal = transition(txDir, journal, "profile-published", input.onPhase);
       await input.authority.publish(input.plan.authority, undefined);
       journal = transition(txDir, journal, "authority-published", input.onPhase);

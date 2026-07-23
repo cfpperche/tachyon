@@ -15,6 +15,7 @@ import { agentProfileSchemaV1, type AgentProfileV1 } from "./agentProfileSchema.
 import { authoritySnapshotFor, type AgentProfileAuthorityRecord } from "./agentProfileAuthority.js";
 import {
   closeCanonicalAgentProfile,
+  readAgentProfileReference,
   readCanonicalAgentProfile,
   type CanonicalAgentProfileSource,
 } from "./agentProfileReader.js";
@@ -273,6 +274,39 @@ function inspectMeasuredNativeInputs(input: ProjectAgentProfileInput, profile: A
 
 const CAPABILITY_REFERENCE_KINDS = new Set(["skill", "mcp", "hook", "pi-extension", "pi-prompt", "pi-theme", "pi-package"]);
 
+function readEvolutionSelector(
+  workspaceRoot: string,
+  agentName: string,
+  profile: AgentProfileV1,
+): { profileId: string; selectorSha256: string } | string[] | undefined {
+  const id = profile.prompt?.evolution;
+  if (!id) return undefined;
+  const reference = profile.references?.find((candidate) => candidate.id === id);
+  if (!reference || reference.kind !== "evolution" || reference.scope !== "profile"
+    || reference.owner !== profile.agentId || reference.path !== "evolution-selector.json"
+    || reference.mode !== "pinned" || !reference.sha256) {
+    return ["profile/evolution-selector: canonical Evolution selector reference is invalid"];
+  }
+  const source = readCanonicalAgentProfile(workspaceRoot, agentName);
+  if (!source) return ["profile/evolution-selector: canonical profile disappeared"];
+  try {
+    const selected = readAgentProfileReference(source, reference.path, reference.sha256);
+    const parsed = JSON.parse(selected.text) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)
+      || (parsed as Record<string, unknown>).schemaVersion !== 1
+      || typeof (parsed as Record<string, unknown>).profileId !== "string"
+      || !/^[A-Za-z0-9][A-Za-z0-9._:+-]{0,255}$/.test((parsed as { profileId: string }).profileId)
+      || Object.keys(parsed as Record<string, unknown>).sort().join(",") !== "profileId,schemaVersion") {
+      return ["profile/evolution-selector: selector bytes are invalid"];
+    }
+    return { profileId: (parsed as { profileId: string }).profileId, selectorSha256: selected.sha256 };
+  } catch (error) {
+    return [`profile/evolution-selector: ${error instanceof Error ? error.message : String(error)}`];
+  } finally {
+    closeCanonicalAgentProfile(source);
+  }
+}
+
 function captureProjectCapabilities(input: ProjectAgentProfileInput, profile: AgentProfileV1): ExternalProfileReference[] | string[] {
   const external: ExternalProfileReference[] = [];
   const selected = new Set([
@@ -302,7 +336,10 @@ function captureProjectCapabilities(input: ProjectAgentProfileInput, profile: Ag
   return external;
 }
 
-function projectDefinition(resolved: ResolvedAgentProfile): AgentDef | string[] {
+function projectDefinition(
+  resolved: ResolvedAgentProfile,
+  evolutionSelector?: { profileId: string; selectorSha256: string },
+): AgentDef | string[] {
   const definition = resolved.definition;
   const errors: string[] = [];
   if (!resolved.agentId) errors.push("profile/projection: canonical profile identity is missing");
@@ -312,10 +349,15 @@ function projectDefinition(resolved: ResolvedAgentProfile): AgentDef | string[] 
   if (definition.environment?.secrets && Object.keys(definition.environment.secrets).length > 0) {
     errors.push("profile/projection: secret injection belongs to a later slice");
   }
-  if (definition.prompt?.soul || definition.prompt?.instructions || definition.prompt?.evolution || definition.prompt?.memory) {
-    errors.push("profile/projection: Soul, instructions, Evolution and memory belong to t-a2827d");
+  if (definition.prompt?.soul || definition.prompt?.instructions || definition.prompt?.memory) {
+    errors.push("profile/projection: Soul, instructions and memory belong to t-a2827d");
   }
-  const nonCapabilityReferences = resolved.references.filter((reference) => !CAPABILITY_REFERENCE_KINDS.has(reference.kind));
+  if (definition.prompt?.evolution && !evolutionSelector) {
+    errors.push("profile/projection: Evolution selector is unavailable");
+  }
+  const nonCapabilityReferences = resolved.references.filter((reference) =>
+    !CAPABILITY_REFERENCE_KINDS.has(reference.kind) && reference.id !== definition.prompt?.evolution
+  );
   if (nonCapabilityReferences.length > 0) errors.push("profile/projection: referenced setup/prompt materialization is not available yet");
   if (definition.workspace?.verify || definition.workspace?.worktree?.setup?.length) {
     errors.push("profile/projection: verification/setup references are not materialized yet");
@@ -342,6 +384,10 @@ function projectDefinition(resolved: ResolvedAgentProfile): AgentDef | string[] 
   if (definition.workspace?.cwd) projected.cwd = definition.workspace.cwd;
   if (definition.environment?.values) projected.env = { ...definition.environment.values };
   if (definition.prompt?.role) projected.role = definition.prompt.role;
+  if (evolutionSelector) {
+    projected.selfEvolution = { enabled: true };
+    projected.profileEvolution = evolutionSelector;
+  }
   if (definition.workspace?.worktree?.enabled !== undefined) projected.worktree = definition.workspace.worktree.enabled;
   if (definition.workspace?.worktree?.branch) projected.branch = definition.workspace.worktree.branch;
   if (definition.isolation) projected.isolate = definition.isolation;
@@ -370,6 +416,8 @@ export function projectCanonicalAgentProfile(input: ProjectAgentProfileInput): P
   }
   const attestation = inspectMeasuredNativeInputs(input, parsed.profile);
   if (Array.isArray(attestation)) return { ok: false, errors: attestation };
+  const evolutionSelector = readEvolutionSelector(input.workspaceRoot, input.agentName, parsed.profile);
+  if (Array.isArray(evolutionSelector)) return { ok: false, errors: evolutionSelector };
   const resolved = resolveAgentProfile({
     workspaceRoot: input.workspaceRoot,
     agentName: input.agentName,
@@ -379,7 +427,7 @@ export function projectCanonicalAgentProfile(input: ProjectAgentProfileInput): P
     externalReferences: externalReferences as ExternalProfileReference[],
   });
   if (!resolved.ok) return { ok: false, errors: resolved.errors.map((error) => `${error.code}: ${error.message}`) };
-  const definition = projectDefinition(resolved.value);
+  const definition = projectDefinition(resolved.value, evolutionSelector);
   if (Array.isArray(definition)) return { ok: false, errors: definition };
   return { ok: true, definition, resolved: resolved.value };
 }

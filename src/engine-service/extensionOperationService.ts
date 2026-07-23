@@ -95,7 +95,7 @@ export async function executeExtensionQuery(
     case "legacy-delivery.retirement-preview":
       return json(workspace.legacyDeliveryRetirement.preview());
     case "agent-profile.migration-preview": {
-      const result = workspace.planAgentProfileMigration(query.agent, query.nonSecretEnv);
+      const result = await workspace.planAgentProfileMigration(query.agent, query.nonSecretEnv);
       return result.ok
         ? json({ ok: true, agent: result.plan.agentName, profilePath: `.tachyon/agents/${result.plan.agentName}/agent.yml` })
         : json({ ok: false, blockers: result.blockers, unclassifiedEnv: result.unclassifiedEnv });

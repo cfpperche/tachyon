@@ -731,8 +731,12 @@ export class AgentManager {
     if (managesOwnSession(def.cmd)) return prior?.evolution;
     if (!instructionsDeliverable(def.cmd)) return undefined;
     if (def.selfEvolution?.enabled === true) {
-      return this.opts.resolveEvolutionSnapshot?.(principal)
-        ?? resolveEvolutionStartupSnapshot(this.opts.workspaceRoot, principal);
+      const snapshot = await (this.opts.resolveEvolutionSnapshot?.(principal)
+        ?? resolveEvolutionStartupSnapshot(this.opts.workspaceRoot, principal));
+      if (def.profileEvolution && snapshot.profileId !== def.profileEvolution.profileId) {
+        throw new Error(`Agent Evolution active profile does not match canonical selector for '${name}'`);
+      }
+      return snapshot;
     }
     if (prior?.def?.fork && prior.evolution) {
       return this.opts.resolveEvolutionSnapshot?.(prior.evolution.agent)

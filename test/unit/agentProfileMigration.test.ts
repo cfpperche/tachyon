@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import crypto from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -13,6 +14,12 @@ import {
 import type { AgentProfileAuthorityRecord } from "../../src/config/agentProfileAuthority.js";
 
 const roots: string[] = [];
+const EVOLUTION_PROFILE_ID = "evolution-profile-codex";
+
+function evolutionSelector() {
+  const text = `${JSON.stringify({ schemaVersion: 1, profileId: EVOLUTION_PROFILE_ID }, null, 2)}\n`;
+  return { profileId: EVOLUTION_PROFILE_ID, text, sha256: crypto.createHash("sha256").update(text).digest("hex") };
+}
 
 function workspace(): string {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-agent-profile-migrate-"));
@@ -104,8 +111,32 @@ describe("planLegacyAgentProfileMigration", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.blockers.join("\n")).toContain("persistent instructions are owned by t-a2827d");
-    expect(result.blockers.join("\n")).toContain("Agent Evolution is owned by t-a2827d");
+    expect(result.blockers.join("\n")).toContain("host-authorized Evolution selector is unavailable");
     expect(result.blockers.join("\n")).toContain("classify every key explicitly as non-secret");
+  });
+
+  it("migrates enabled Evolution as a stable selector without copying learned content", () => {
+    const root = workspace();
+    const result = planLegacyAgentProfileMigration({
+      workspaceRoot: root,
+      configText: "agents:\n  codex:\n    cmd: codex\n    selfEvolution: { enabled: true }\n",
+      agentName: "codex",
+      agentId: "11111111-1111-4111-8111-111111111111",
+      evolutionSelector: evolutionSelector(),
+    });
+
+    expect(result.ok, result.ok ? undefined : result.blockers.join("\n")).toBe(true);
+    if (!result.ok) return;
+    expect(result.plan.projectedDefinition.selfEvolution).toEqual({ enabled: true });
+    expect(result.plan.projectedDefinition.profileEvolution).toBeUndefined();
+    expect(result.plan.profile.prompt?.evolution).toBe("evolution");
+    expect(result.plan.profile.references).toEqual([expect.objectContaining({
+      id: "evolution",
+      kind: "evolution",
+      path: "evolution-selector.json",
+      sha256: evolutionSelector().sha256,
+    })]);
+    expect(result.plan.artifacts).toEqual([expect.objectContaining({ path: "evolution-selector.json" })]);
   });
 
   it("refuses unsupported commands, aliases, existing profile bytes, and existing authority", () => {
@@ -195,6 +226,41 @@ describe("agent profile migration transaction", () => {
     expect(fs.readFileSync(f.configPath, "utf8")).toBe(f.configText);
     expect(fs.existsSync(path.join(f.workspaceRoot, ".tachyon", "agents", "codex", "agent.yml"))).toBe(false);
     expect(await f.authority.read("codex")).toBeUndefined();
+  });
+
+  it("publishes and removes the Evolution selector in the same rollback boundary", async () => {
+    const root = workspace();
+    const homeDir = workspace();
+    const configPath = path.join(root, "tachyon.yml");
+    const configText = "agents:\n  codex:\n    cmd: codex\n    selfEvolution: { enabled: true }\n";
+    fs.writeFileSync(configPath, configText);
+    const planned = planLegacyAgentProfileMigration({
+      workspaceRoot: root,
+      configText,
+      agentName: "codex",
+      agentId: "11111111-1111-4111-8111-111111111111",
+      evolutionSelector: evolutionSelector(),
+    });
+    expect(planned.ok, planned.ok ? undefined : planned.blockers.join("\n")).toBe(true);
+    if (!planned.ok) return;
+    const authority = new MemoryAuthority();
+    const committed = await commitLegacyAgentProfileMigration({
+      workspaceRoot: root,
+      homeDir,
+      configPath,
+      plan: planned.plan,
+      authority,
+    });
+    const selectorPath = path.join(root, ".tachyon", "agents", "codex", "evolution-selector.json");
+    expect(fs.readFileSync(selectorPath, "utf8")).toBe(evolutionSelector().text);
+
+    await rollbackLegacyAgentProfileMigration({
+      workspaceRoot: root,
+      configPath,
+      authority,
+      txid: committed.txid,
+    });
+    expect(fs.existsSync(selectorPath)).toBe(false);
   });
 
   it("refuses rollback after later profile edits", async () => {

@@ -124,6 +124,8 @@ export interface ManagedEntryDef {
   soul?: boolean;
   /** spec 421 — opt in to Tachyon-owned, human-reviewed agent evolution. */
   selfEvolution?: SelfEvolutionDef;
+  /** Internal canonical selector. Active bytes still require the host-custodied Evolution head. */
+  profileEvolution?: { profileId: string; selectorSha256: string };
   /** spec 210 — run this agent in its own git worktree+branch (opt-in, off by default) */
   worktree?: boolean;
   /** per-agent literal branch name (overrides the global template); authoritatively validated via git check-ref-format at worktree-create */
