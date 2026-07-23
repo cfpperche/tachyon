@@ -1,6 +1,13 @@
 import path from "node:path";
 import { z } from "zod";
 import { containsUnsafeFramingCharacter } from "./framingSafety.js";
+import { agentNativeConfigSchemaV1 } from "./agentNativeConfigSchema.js";
+export {
+  AGENT_NATIVE_CONFIG_FAMILIES,
+  agentNativeConfigPolicySchemaV1,
+  agentNativeConfigSchemaV1,
+  type AgentNativeConfigPolicyV1,
+} from "./agentNativeConfigSchema.js";
 
 export const AGENT_PROFILE_SCHEMA_VERSION = 1 as const;
 export const AGENT_PROFILE_MAX_BYTES = 256 * 1024;
@@ -176,6 +183,7 @@ export const agentProfileSchemaV1 = z.object({
   isolation: z.enum(["transcript"]).optional(),
   ownership: z.object({ subagents: z.array(z.string().regex(ID_RE)).max(128) }).strict().optional(),
   capabilities: capabilitiesSchema.optional(),
+  nativeConfig: agentNativeConfigSchemaV1.optional(),
   guidance: guidanceSchema.optional(),
   inherit: z.object({
     environment: z.array(z.string().regex(ENV_NAME_RE)).max(128).optional(),

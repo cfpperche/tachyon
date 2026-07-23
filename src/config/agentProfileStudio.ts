@@ -1,6 +1,8 @@
 import { z } from "zod";
 import type { AgentProfileLifecycleSnapshot } from "./agentProfileLifecycle.js";
+import { agentNativeConfigSchemaV1 } from "./agentNativeConfigSchema.js";
 import type { AgentProfileV1 } from "./agentProfileSchema.js";
+import { previewAgentNativeConfigPolicy } from "./agentNativeConfigPolicy.js";
 
 const ID = /^[A-Za-z][A-Za-z0-9._-]{0,127}$/;
 const REVISION = /^[a-f0-9]{64}$/;
@@ -29,6 +31,7 @@ export const agentProfileStudioEditableSchemaV1 = z.object({
     branch: text(1024),
   }).strict(),
   isolation: z.enum(["", "transcript"]),
+  nativeConfig: agentNativeConfigSchemaV1.optional(),
 }).strict();
 
 export const agentProfileStudioMutationSchemaV1 = z.object({
@@ -138,6 +141,15 @@ export const agentProfileStudioSnapshotSchemaV1 = z.object({
     authority: z.object({ scope: z.literal("host"), writable: z.literal(false), revision: z.string().min(1).max(256), grants: z.number().int().nonnegative() }).strict(),
     learned: z.object({ scope: z.literal("profile"), writable: z.literal(false), present: z.boolean() }).strict(),
     projection: z.object({ scope: z.literal("runtime"), writable: z.literal(false), active: z.boolean() }).strict(),
+    nativeConfig: z.array(z.object({
+      family: z.enum(["selectors", "permissions", "interface", "tooling", "featureFlags", "authentication", "memory", "diagnostics"]),
+      source: z.enum(["global", "workspace", "agent"]),
+      treatment: z.enum(["exclude", "snapshot", "overlay", "external"]),
+      refresh: z.enum(["create-once", "every-launch", "runtime-owned"]),
+      lifecycle: z.array(z.enum(["fresh", "restart", "resume", "fork"])).min(1).max(4),
+      support: z.literal("unsupported"),
+      reason: z.string().min(1).max(512),
+    }).strict()).max(8).optional(),
   }).strict(),
 }).strict();
 
@@ -168,6 +180,7 @@ export function projectAgentProfileStudioSnapshot(snapshot: AgentProfileLifecycl
         branch: profile.workspace?.worktree?.branch ?? "",
       },
       isolation: profile.isolation ?? "",
+      nativeConfig: structuredClone(profile.nativeConfig ?? {}),
     },
     bindings: {
       environmentValueNames: Object.keys(profile.environment?.values ?? {}).sort(),
@@ -189,7 +202,15 @@ export function projectAgentProfileStudioSnapshot(snapshot: AgentProfileLifecycl
       },
       externalReferences: (profile.references ?? []).filter((reference) => reference.scope !== "profile").length,
     },
-    provenance: structuredClone(snapshot.provenance),
+    provenance: {
+      ...structuredClone(snapshot.provenance),
+      nativeConfig: previewAgentNativeConfigPolicy(profile.runtime.adapter, profile.nativeConfig).map((entry) => ({
+        family: entry.family,
+        ...entry.policy,
+        support: entry.support,
+        reason: entry.reason,
+      })),
+    },
   });
 }
 
@@ -221,6 +242,7 @@ export function createProfileFromStudioMutation(
       },
     } : {}),
     ...(parsed.editable.isolation ? { isolation: parsed.editable.isolation } : {}),
+    ...(Object.keys(parsed.editable.nativeConfig ?? {}).length > 0 ? { nativeConfig: structuredClone(parsed.editable.nativeConfig) } : {}),
   };
 }
 
@@ -263,6 +285,9 @@ export function patchProfileFromStudioMutation(
     lifecycle,
     workspace,
     isolation: parsed.editable.isolation || undefined,
+    nativeConfig: Object.keys(parsed.editable.nativeConfig ?? {}).length > 0
+      ? structuredClone(parsed.editable.nativeConfig)
+      : undefined,
   };
 }
 

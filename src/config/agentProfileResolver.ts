@@ -210,6 +210,7 @@ export interface NormalizedAgentDefinition {
   isolation?: AgentProfileV1["isolation"];
   ownership?: AgentProfileV1["ownership"];
   capabilities?: AgentProfileV1["capabilities"];
+  nativeConfig?: AgentProfileV1["nativeConfig"];
   guidance?: AgentProfileV1["guidance"];
   inherited?: {
     bridgeGuidance?: boolean;
@@ -502,6 +503,7 @@ function canonicalDefinition(profile: AgentProfileV1): NormalizedAgentDefinition
     ...(profile.isolation ? { isolation: profile.isolation } : {}),
     ...(profile.ownership ? { ownership: clone(profile.ownership) } : {}),
     ...(profile.capabilities ? { capabilities: clone(profile.capabilities) } : {}),
+    ...(profile.nativeConfig ? { nativeConfig: clone(profile.nativeConfig) } : {}),
     ...(profile.guidance ? { guidance: clone(profile.guidance) } : {}),
   };
 }
