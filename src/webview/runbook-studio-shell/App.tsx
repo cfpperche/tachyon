@@ -1,3 +1,4 @@
+import type { ComponentChildren } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { decodeStudioMessage, type StudioDispatch } from "../shared/studio/protocol";
 import { StudioFrame } from "../shared/studio/StudioFrame";
@@ -21,13 +22,15 @@ export interface RunbookStudioAppProps {
   routeKey: string;
   mountNonce: string;
   incoming?: { seq: number; message: unknown };
+  /** t-bf3498 — the route's "← Parent" back-link, rendered under the studio title. */
+  backLink?: ComponentChildren;
 }
 
 const emptyReferenceData = (): RunbookStudioReferenceData => ({ commandNames: [] });
 const stepResolutionsFor = (raw: string, commandNames: string[]): Array<{ step: string; ref: boolean }> =>
   raw.split("\n").map((l) => l.trim()).filter(Boolean).map((step) => ({ step, ref: commandNames.includes(step) }));
 
-export function App({ dispatch, routeKey, mountNonce, incoming }: RunbookStudioAppProps) {
+export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: RunbookStudioAppProps) {
   const [mode, setMode] = useState<"new" | "edit">("new");
   const [entityId, setEntityId] = useState<string | undefined>(undefined);
   const [entity, setEntity] = useState<RunbookStudioEntity | undefined>(undefined);
@@ -120,7 +123,12 @@ export function App({ dispatch, routeKey, mountNonce, incoming }: RunbookStudioA
   }, [ready, dirty, fields, frozen]);
 
   if (!ready || !entity) {
-    return <div class="ds-degrade"><span class="codicon codicon-loading" /><div>Loading Runbook Studio...</div></div>;
+    return (
+      <>
+        {backLink ? <div class="ds-degrade-backlink">{backLink}</div> : null}
+        <div class="ds-degrade"><span class="codicon codicon-loading" /><div>Loading Runbook Studio...</div></div>
+      </>
+    );
   }
 
   const errors: StudioError[] = hostError ? [hostError] : [];
@@ -146,6 +154,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming }: RunbookStudioA
   return (
     <StudioFrame
       title={runbookStudioTitleFor(mode, entityId, entity)}
+      backLink={backLink}
       errors={errors}
       dirty={dirty}
       saveInFlight={saving}

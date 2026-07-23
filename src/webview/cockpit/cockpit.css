@@ -272,14 +272,6 @@ main.ck-main.ck-main--mission,
   margin: 0;
 }
 
-/* t-610705 (SDD 410 Phase C.2) — the Fleet subroutes' (Activity/Probes) back-link, full-bleed and
-   left-aligned with the embedded surface's own chrome below it (unlike task-detail's centered
-   760px column, these surfaces use their full embed-host width). */
-.ck-subroute-breadcrumb {
-  padding: var(--ds-page-pad-y) var(--ds-page-pad-x) 0;
-  box-sizing: border-box;
-}
-
 /* Approvals / any main root: full-bleed width (no 980px column inside Control). */
 .ck-embed-host > main.approval-root,
 .ck-embed-host .approval-root {

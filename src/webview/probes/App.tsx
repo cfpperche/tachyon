@@ -1,3 +1,4 @@
+import type { ComponentChildren } from "preact";
 import type { ProbeViewRow } from "../../probe/probeView";
 import type { ProbesVM } from "./messages";
 
@@ -10,8 +11,8 @@ function Status({ status }: { status: ProbeViewRow["status"] }) {
   return <span class="st fail">✗ failed</span>;
 }
 
-export function App({ vm }: { vm: ProbesVM | undefined }) {
-  if (!vm) return <div class="probes-root empty"><p>Loading…</p></div>;
+export function App({ vm, backLink }: { vm: ProbesVM | undefined; /** t-bf3498 — the route's "← Parent" back-link, rendered under the title. */ backLink?: ComponentChildren }) {
+  if (!vm) return <div class="probes-root empty">{backLink ? <div class="ds-degrade-backlink">{backLink}</div> : null}<p>Loading…</p></div>;
   // spec 322 — a caller-scoped view is THIS agent's probe history; the unfiltered form is the internal
   // escape hatch for caller-less/orphaned records.
   const caller = "view" in vm ? vm.view.caller : undefined;
@@ -20,6 +21,7 @@ export function App({ vm }: { vm: ProbesVM | undefined }) {
     return (
       <div class="probes-root">
         <h1>{title}</h1>
+        {backLink ? <div class="ds-page-chrome-backlink">{backLink}</div> : null}
         <div class="error"><p>Could not load probes.</p><p class="hint">{vm.error}</p></div>
       </div>
     );
@@ -28,6 +30,7 @@ export function App({ vm }: { vm: ProbesVM | undefined }) {
   return (
     <div class="probes-root">
       <h1>{title}</h1>
+      {backLink ? <div class="ds-page-chrome-backlink">{backLink}</div> : null}
       {view.empty ? (
         <div class="empty">
           <p>{caller ? `No probes launched by '${caller}' yet.` : "No probes yet."}</p>

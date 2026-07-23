@@ -724,21 +724,22 @@ export function App(p: CockpitAppProps) {
     // t-610705 (Phase C.2) — Fleet subroutes: same "checked before the section branch" reasoning as
     // task-detail above (nav section reads "fleet" for all three; this renders the actual content).
     const parent = parentRoute(activeRoute);
+    // t-bf3498 — a compact "← Fleet" line under the surface's OWN title (ActivityApp/ProbesApp render
+    // it there), not a separate full-width bar above the embed host like before.
     const back = parent && parent.kind === "section" ? (
-      <div class="ck-subroute-breadcrumb" data-testid="control-fleet-subroute-breadcrumb">
-        <Button variant="default" icon="arrow-left" onClick={() => p.onSetSection(parent.section)}>
+      <div class="ds-backlink-slot" data-testid="control-fleet-subroute-breadcrumb">
+        <Button variant="default" icon="arrow-left" class="ds-link-btn" onClick={() => p.onSetSection(parent.section)}>
           {s.navFleet}
         </Button>
       </div>
     ) : null;
     body = (
       <div class="ck-embed-host" data-testid="control-fleet-subroute" ref={activityScrollRef}>
-        {back}
         <Suspense fallback={<SectionFallback />}>
           {activeRoute.kind === "agent-activity" ? (
-            <ActivityApp vm={p.activityVm} prepended={p.activityPrepended} images={p.activityImages} dispatch={p.activityDispatch} scrollContainer={activityScrollRef} />
+            <ActivityApp vm={p.activityVm} prepended={p.activityPrepended} images={p.activityImages} dispatch={p.activityDispatch} scrollContainer={activityScrollRef} backLink={back} />
           ) : (
-            <ProbesApp vm={p.probesVm} />
+            <ProbesApp vm={p.probesVm} backLink={back} />
           )}
         </Suspense>
       </div>
@@ -759,9 +760,11 @@ export function App(p: CockpitAppProps) {
     // when returnRoute is a flat section, else the generic "Back" (returnRoute can also be
     // task-detail/agent-activity/agent-probes/workspace-probes, none of which have their own fixed
     // breadcrumb dispatch the way Task's task-detail parent does below).
+    // t-bf3498 — a compact "← Parent" line under StudioFrame's OWN title (backLink prop), not a
+    // separate full-width bar above the embed host like before.
     const back = activeRoute.studio === "pin" ? (
-      <div class="ck-subroute-breadcrumb" data-testid="control-studio-breadcrumb">
-        <Button variant="default" icon="arrow-left" onClick={() => p.onPost(navigateReturnAction(routeKey(activeRoute)))}>
+      <div class="ds-backlink-slot" data-testid="control-studio-breadcrumb">
+        <Button variant="default" icon="arrow-left" class="ds-link-btn" onClick={() => p.onPost(navigateReturnAction(routeKey(activeRoute)))}>
           {parent && parent.kind === "section" ? s[TAB_META[parent.section].navKey] : s.back}
         </Button>
       </div>
@@ -771,14 +774,14 @@ export function App(p: CockpitAppProps) {
       // (the SAME one Task Detail's own breadcrumb and the Board's card-click already navigate
       // through) rather than inventing a new generic route-navigate prop for this one case.
     ) : parent && parent.kind === "section" ? (
-      <div class="ck-subroute-breadcrumb" data-testid="control-studio-breadcrumb">
-        <Button variant="default" icon="arrow-left" onClick={() => p.onSetSection(parent.section)}>
+      <div class="ds-backlink-slot" data-testid="control-studio-breadcrumb">
+        <Button variant="default" icon="arrow-left" class="ds-link-btn" onClick={() => p.onSetSection(parent.section)}>
           {s[TAB_META[parent.section].navKey]}
         </Button>
       </div>
     ) : parent && parent.kind === "task-detail" ? (
-      <div class="ck-subroute-breadcrumb" data-testid="control-studio-breadcrumb">
-        <Button variant="default" icon="arrow-left" onClick={() => p.taskDetailDispatch.openTask(parent.taskId)}>
+      <div class="ds-backlink-slot" data-testid="control-studio-breadcrumb">
+        <Button variant="default" icon="arrow-left" class="ds-link-btn" onClick={() => p.taskDetailDispatch.openTask(parent.taskId)}>
           {s.navMission}
         </Button>
       </div>
@@ -788,10 +791,9 @@ export function App(p: CockpitAppProps) {
     // under the new props for one render (the internal reset-effect alone left exactly that window —
     // code review round 3 caught it).
     const studioKey = `${routeKey(activeRoute)}:${m.studioMountNonce ?? ""}`;
-    const studioMountProps = { routeKey: routeKey(activeRoute), mountNonce: m.studioMountNonce ?? "", incoming: p.studioIncoming, dispatch: p.studioDispatch };
+    const studioMountProps = { routeKey: routeKey(activeRoute), mountNonce: m.studioMountNonce ?? "", incoming: p.studioIncoming, dispatch: p.studioDispatch, backLink: back };
     body = (
       <div class="ck-embed-host" data-testid="control-studio">
-        {back}
         <Suspense fallback={<SectionFallback />}>
           {activeRoute.studio === "command" ? (
             <CommandStudioApp key={studioKey} {...studioMountProps} />
