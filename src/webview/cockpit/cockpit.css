@@ -437,6 +437,7 @@ main.ck-main.ck-main--mission,
 .ci-ws-head {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   justify-content: space-between;
   gap: 6px;
   padding: 8px 10px;
