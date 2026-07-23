@@ -245,6 +245,18 @@ describe("Agent Studio soul profile protocol (T15A)", () => {
     expect(source).toContain("forgetValue !== canonicalSnapshot.agentName");
     expect(source).toContain("bundleCancelButtonRef.current?.focus()");
     expect(source).toContain("Creates a new disabled agent. Secrets, grants and workspace bindings must be authorized again.");
+    expect(source).toContain('aria-labelledby="ash-profile-sources-title"');
+    expect(source).toContain("canonicalSnapshot.provenance.authority.grants");
+    expect(source).toContain("profileLabels.retryRefresh");
+  });
+
+  it("ships canonical profile labels in English and pt-BR", () => {
+    const en = JSON.parse(fs.readFileSync(path.resolve("l10n/bundle.l10n.json"), "utf8")) as Record<string, string>;
+    const pt = JSON.parse(fs.readFileSync(path.resolve("l10n/bundle.l10n.pt-br.json"), "utf8")) as Record<string, string>;
+    expect(en["Profile sources and authority"]).toBe("Profile sources and authority");
+    expect(pt["Profile sources and authority"]).toBe("Origens e autoridade do perfil");
+    expect(pt["Only authored profile values are editable. Authority, learned state, and runtime projection are read-only."]).toContain("somente leitura");
+    expect(pt["Refresh and retry"]).toBe("Atualizar e tentar novamente");
   });
 
   it("keeps the browser import cap aligned with the authoritative soul byte cap", () => {

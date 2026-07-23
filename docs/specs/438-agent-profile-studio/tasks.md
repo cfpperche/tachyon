@@ -12,14 +12,14 @@ _Generated from `plan.md` on 2026-07-22. Work top-to-bottom. Check boxes as task
 - [x] Complete `t-fdb422`: canonical redacted snapshot and CAS create/edit.
 - [x] Complete `t-293326`: revisioned enable/disable, rename and confirmed forget actions.
 - [x] Complete `t-ecd405`: portable clone/import/export actions.
-- [ ] Complete `t-fa332a`: final presentation and proof.
+- [ ] Complete `t-fa332a`: final presentation is implemented and Visual QA is recorded; installed human dogfood remains.
 - [ ] Complete all four child Tasks without routing canonical writes through legacy YAML submit.
 
 ## Verification
 
-- [ ] Child focused tests cover stale CAS, redaction, transaction routing, bundle round-trip and legacy compatibility.
-- [ ] `npm run test:invariants` passes with PI-001 unchanged.
-- [ ] Full verification and typecheck pass after the final child.
+- [x] Child focused tests cover stale CAS, redaction, transaction routing, bundle round-trip and legacy compatibility.
+- [x] `npm run test:invariants` passes with PI-001 unchanged.
+- [x] Full verification and typecheck pass after the final child implementation.
 
 **Headless check:** `npx vitest run test/unit/agentStudioAdapter.test.ts test/unit/agentStudioDomain.test.ts test/unit/workspaceHeadless.test.ts`
 
@@ -47,8 +47,8 @@ _Generated from `plan.md` on 2026-07-22. Work top-to-bottom. Check boxes as task
 
 ## Visual QA
 
-- [ ] Capture installed Agent Studio in dark, light and high-contrast themes.
-- [ ] Record a verdict for provenance readability, conflicts, focus and destructive-action hierarchy.
+- [x] Capture Control-hosted Agent Studio in dark, light and high-contrast themes.
+- [x] Record a pass verdict for provenance readability, conflicts, focus and destructive-action hierarchy in `notes.md`; screenshots live under `evidence/`.
 
 ## Cookbook
 

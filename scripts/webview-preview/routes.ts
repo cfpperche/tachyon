@@ -186,7 +186,10 @@ export const ROUTES: Record<string, Route> = {
         // each (now-retired-standalone) <studio>-studio-shell route used, pushed unconditionally
         // rather than gated on a real "ready" mount handshake (this static harness has no live host
         // to answer one — the client processes whatever arrives regardless of handshake state).
-        const key = activeRoute.kind === "studio-edit" ? "dense-edit" : "new";
+        const key = (activeRoute as { studio?: string; entityId?: string }).studio === "agent"
+          && (activeRoute as { entityId?: string }).entityId === "canonical-reviewer"
+          ? "canonical-disabled"
+          : activeRoute.kind === "studio-edit" ? "dense-edit" : "new";
         const byStudio: Record<string, { fixtures: Record<string, Fixture>; makeMessage: (vm: unknown) => unknown }> = {
           command: { fixtures: commandStudioShellFixtures as Record<string, Fixture>, makeMessage: (vm) => commandStudioShellMakeMessage(vm as never) },
           terminal: { fixtures: terminalStudioShellFixtures as Record<string, Fixture>, makeMessage: (vm) => terminalStudioShellMakeMessage(vm as never) },

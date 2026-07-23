@@ -130,5 +130,18 @@
   "Roll back which agent profile migration?": "Roll back which agent profile migration?",
   "Roll back profile": "Roll back profile",
   "Restore the legacy tachyon.yml stanza for stopped agent '{0}'? Later edits will make rollback refuse safely.": "Restore the legacy tachyon.yml stanza for stopped agent '{0}'? Later edits will make rollback refuse safely.",
-  "Agent '{0}' profile migration rolled back.": "Agent '{0}' profile migration rolled back."
+  "Agent '{0}' profile migration rolled back.": "Agent '{0}' profile migration rolled back.",
+  "Agent lifecycle": "Agent lifecycle",
+  "Operational actions use the loaded profile revision and stay separate from form save.": "Operational actions use the loaded profile revision and stay separate from form save.",
+  "Closed": "Closed", "Degraded": "Degraded", "Conflict": "Conflict",
+  "Enable agent": "Enable agent", "Disable agent": "Disable agent", "Refresh and retry": "Refresh and retry",
+  "Rename…": "Rename…", "Forget…": "Forget…", "Export": "Export", "Clone…": "Clone…", "Import…": "Import…",
+  "Save or discard form changes before a lifecycle action.": "Save or discard form changes before a lifecycle action.",
+  "Profile sources and authority": "Profile sources and authority",
+  "Only authored profile values are editable. Authority, learned state, and runtime projection are read-only.": "Only authored profile values are editable. Authority, learned state, and runtime projection are read-only.",
+  "Authored profile": "Authored profile", "Host authority": "Host authority", "Learned state": "Learned state", "Runtime projection": "Runtime projection",
+  "Writable": "Writable", "Read-only": "Read-only", "Scope": "Scope", "Agent profile": "Agent profile", "Host": "Host", "Runtime": "Runtime",
+  "Present": "Present", "Absent": "Absent", "Active": "Active", "Inactive": "Inactive", "Grants": "Grants",
+  "Bound profile data": "Bound profile data", "Environment values": "Environment values", "Secret references": "Secret references",
+  "External references": "External references", "Capabilities": "Capabilities", "Prompt inputs": "Prompt inputs", "Profile identity": "Profile identity"
 }

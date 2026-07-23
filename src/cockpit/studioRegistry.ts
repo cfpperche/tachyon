@@ -23,7 +23,7 @@ import { ScheduleStudioAdapter } from "../webview/ScheduleStudioAdapter.js";
 import { AgentStudioAdapter } from "../webview/AgentStudioAdapter.js";
 import { TaskStudioAdapter } from "../webview/TaskStudioAdapter.js";
 import { PinStudioAdapter } from "../webview/PinStudioAdapter.js";
-import { createAgentEvolutionLabels } from "../webview/agent-studio-shell/domain.js";
+import { createAgentEvolutionLabels, createAgentProfileLabels } from "../webview/agent-studio-shell/domain.js";
 import { handleAgentStudioDomainMessage } from "./agentStudioDomain.js";
 import { handleTaskStudioDomainMessage } from "./taskStudioDomain.js";
 import { handlePinStudioDomainMessage } from "./pinStudioDomain.js";
@@ -116,6 +116,7 @@ export const STUDIO_REGISTRY: Record<StudioId, StudioRegistryEntry> = {
       ws as unknown as WorkspaceAgentStudioTarget,
       createAgentEvolutionLabels((message, ...args) => vscode.l10n.t(message, ...args)),
       vscode.l10n.t("When supported, delivered at startup through the selected runtime."),
+      createAgentProfileLabels((message, ...args) => vscode.l10n.t(message, ...args)),
     ) as unknown as Adapter,
     handleDomainMessage: (ws, ctx, message) => handleAgentStudioDomainMessage(ws as unknown as WorkspaceAgentStudioTarget, ctx, message),
   },

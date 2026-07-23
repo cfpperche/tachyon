@@ -14,6 +14,7 @@ import {
   blankAgentFields,
   canonicalAgentFields,
   computeAgentDirty,
+  createAgentProfileLabels,
   serializeAgentPatch,
   isAllowedSoulImportFileName,
   validateAgentStudioHostDomainMessage,
@@ -121,6 +122,13 @@ interface SoulImportSelection {
   sha256: string;
 }
 
+function ProfileSourceCard({ title, access, scope, state }: { title: string; access: string; scope: string; state: string }) {
+  return <article class="ash-profile-source">
+    <div class="ash-profile-source-heading"><strong>{title}</strong><span class="ash-profile-access">{access}</span></div>
+    <div class="ash-profile-source-meta"><span>{scope}</span><span>{state}</span></div>
+  </article>;
+}
+
 const PROFILE_BUNDLE_MAX_BYTES = 256 * 1024;
 
 function ProfileBundlePicker({ onCancel, onSelect }: { onCancel(): void; onSelect(contentBase64: string): void }) {
@@ -210,6 +218,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
   const [evolutionNotice, setEvolutionNotice] = useState<{ kind: "success" | "error"; text: string } | undefined>(undefined);
   const [profileBusy, setProfileBusy] = useState<string | undefined>(undefined);
   const [profileNotice, setProfileNotice] = useState<{ kind: "success" | "error"; text: string } | undefined>(undefined);
+  const [profileConflict, setProfileConflict] = useState(false);
   const [renameConfirmOpen, setRenameConfirmOpen] = useState(false);
   const [renameValue, setRenameValue] = useState("");
   const [forgetConfirmOpen, setForgetConfirmOpen] = useState(false);
@@ -318,6 +327,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
       setEvolutionNotice(undefined);
       setProfileBusy(undefined);
       setProfileNotice(undefined);
+      setProfileConflict(false);
       setRenameConfirmOpen(false);
       setRenameValue("");
       setForgetConfirmOpen(false);
@@ -435,6 +445,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
       setEntity(updated);
       setFields(nextFields);
       setProfileBusy(undefined);
+      setProfileConflict(false);
       setRenameConfirmOpen(false);
       setForgetConfirmOpen(false);
       setProfileRetired(renamed);
@@ -453,6 +464,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
     } else if (d.type === "canonicalProfileError") {
       if (entityRef.current?.name !== d.agent) return;
       setProfileBusy(d.conflict ? "Refreshing profile" : undefined);
+      setProfileConflict(d.conflict);
       setProfileNotice({ kind: "error", text: d.message });
     } else if (d.type === "canonicalProfileBundleExport") {
       if (entityRef.current?.name !== d.result.agentName) return;
@@ -465,7 +477,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
       setProfileNotice({ kind: "success", text: `${d.result.operation === "clone" ? "Cloned" : "Imported"} ${d.result.snapshot.agentName} disabled · SHA-256 ${d.result.bundleSha256.slice(0, 12)}… · ${d.result.requiresReauthorization.length} reauthorization item(s).` });
     } else if (d.type === "canonicalProfileBundleError") {
       if (entityRef.current?.name !== d.agent) return;
-      setProfileBusy(d.conflict ? "Refreshing profile" : undefined); setProfileNotice({ kind: "error", text: d.message });
+      setProfileBusy(d.conflict ? "Refreshing profile" : undefined); setProfileConflict(d.conflict); setProfileNotice({ kind: "error", text: d.message });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [incoming?.seq]);
@@ -537,6 +549,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
   const flags = entity.flagMap[firstToken(fields.cmd)] ?? [];
   const canonical = fields.canonical !== undefined;
   const canonicalSnapshot = entity.profile;
+  const profileLabels = entity.profileLabels ?? createAgentProfileLabels();
   const harnessRuntime = harnessRuntimeOfCmd(fields.cmd);
   const showHarness = !!harnessRuntime;
   const showHarnessRules = harnessRuntime === "claude";
@@ -654,11 +667,11 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
               <section class="ash-identity" aria-labelledby="ash-lifecycle-title">
                 <div class="ash-identity-heading">
                   <div>
-                    <div class="ash-label" id="ash-lifecycle-title">Agent lifecycle</div>
-                    <div class="hint">Operational actions use the loaded profile revision and stay separate from form save.</div>
+                    <div class="ash-label" id="ash-lifecycle-title">{profileLabels.lifecycleTitle}</div>
+                    <div class="hint">{profileLabels.lifecycleHelp}</div>
                   </div>
                   <span class={`ash-soul-state ${canonicalSnapshot?.enabled ? "ash-soul-state-active" : ""}`}>
-                    {profileRetired ? "Closed" : canonicalSnapshot?.enabled ? "Enabled" : "Disabled"}
+                    {profileRetired ? profileLabels.closed : profileConflict ? profileLabels.conflict : profileNotice?.kind === "error" ? profileLabels.degraded : canonicalSnapshot?.enabled ? profileLabels.enabled : profileLabels.disabled}
                   </span>
                 </div>
                 <div class="ash-identity-actions" role="group" aria-label="Agent lifecycle actions">
@@ -669,26 +682,26 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
                       canonicalSnapshot.enabled ? "Disabling agent" : "Enabling agent",
                       setCanonicalProfileEnabledMessage(canonicalSnapshot.agentName, canonicalSnapshot.revision, !canonicalSnapshot.enabled),
                     )}
-                  >{canonicalSnapshot?.enabled ? "Disable agent" : "Enable agent"}</Button>
+                  >{canonicalSnapshot?.enabled ? profileLabels.disableAgent : profileLabels.enableAgent}</Button>
                   <Button disabled={canonicalLifecycleDisabled} onClick={() => canonicalSnapshot && runCanonicalLifecycle(
                     "Refreshing profile",
                     refreshCanonicalProfileMessage(canonicalSnapshot.agentName),
-                  )}>Refresh</Button>
+                  )}>{profileLabels.refresh}</Button>
                   <Button disabled={canonicalLifecycleDisabled} onClick={() => {
                     setRenameValue(canonicalSnapshot?.agentName ?? "");
                     setRenameConfirmOpen(true);
                     setForgetConfirmOpen(false);
-                  }}>Rename…</Button>
+                  }}>{profileLabels.rename}</Button>
                   <Button variant="danger" disabled={canonicalLifecycleDisabled} onClick={() => {
                     setForgetValue("");
                     setForgetConfirmOpen(true);
                     setRenameConfirmOpen(false);
-                  }}>Forget…</Button>
-                  <Button disabled={canonicalLifecycleDisabled} onClick={() => canonicalSnapshot && runCanonicalLifecycle("Exporting profile", exportCanonicalProfileBundleMessage(canonicalSnapshot.agentName, canonicalSnapshot.revision))}>Export</Button>
-                  <Button disabled={canonicalLifecycleDisabled} onClick={() => { setBundleAction("clone"); setBundleDestination(""); setBundleImportBase64(undefined); }}>Clone…</Button>
-                  <Button disabled={canonicalLifecycleDisabled} onClick={() => { setBundleAction("import"); setBundleDestination(""); setBundleImportBase64(undefined); }}>Import…</Button>
+                  }}>{profileLabels.forget}</Button>
+                  <Button disabled={canonicalLifecycleDisabled} onClick={() => canonicalSnapshot && runCanonicalLifecycle("Exporting profile", exportCanonicalProfileBundleMessage(canonicalSnapshot.agentName, canonicalSnapshot.revision))}>{profileLabels.export}</Button>
+                  <Button disabled={canonicalLifecycleDisabled} onClick={() => { setBundleAction("clone"); setBundleDestination(""); setBundleImportBase64(undefined); }}>{profileLabels.clone}</Button>
+                  <Button disabled={canonicalLifecycleDisabled} onClick={() => { setBundleAction("import"); setBundleDestination(""); setBundleImportBase64(undefined); }}>{profileLabels.import}</Button>
                 </div>
-                {dirty && <div class="ash-soul-status">Save or discard form changes before a lifecycle action.</div>}
+                {dirty && <div class="ash-soul-status">{profileLabels.saveFirst}</div>}
                 {renameConfirmOpen && canonicalSnapshot && (
                   <div class="ash-soul-replace-confirm" aria-labelledby="ash-rename-confirm-title">
                     <div class="ash-soul-replace-confirm-title" id="ash-rename-confirm-title">Rename this agent?</div>
@@ -740,8 +753,35 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
                 {(profileBusy || profileNotice) && (
                   <div class={`ash-evolution-notice ${profileNotice?.kind === "error" ? "ash-evolution-notice-error" : ""}`} role="status" aria-live="polite">
                     {profileBusy ? `${profileBusy}…` : profileNotice?.text}
+                    {profileNotice?.kind === "error" && canonicalSnapshot && !profileBusy && <Button onClick={() => runCanonicalLifecycle(
+                      "Refreshing profile",
+                      refreshCanonicalProfileMessage(canonicalSnapshot.agentName),
+                    )}>{profileLabels.retryRefresh}</Button>}
                   </div>
                 )}
+              </section>
+            )}
+            {canonicalSnapshot && mode === "edit" && (
+              <section class="ash-profile-sources" aria-labelledby="ash-profile-sources-title">
+                <div>
+                  <div class="ash-label" id="ash-profile-sources-title">{profileLabels.provenanceTitle}</div>
+                  <div class="hint">{profileLabels.provenanceHelp}</div>
+                </div>
+                <div class="ash-profile-source-grid">
+                  <ProfileSourceCard title={profileLabels.authoredProfile} access={profileLabels.writable} scope={profileLabels.profileScope} state={canonicalSnapshot.provenance.canonical.sha256.slice(0, 12) + "…"} />
+                  <ProfileSourceCard title={profileLabels.hostAuthority} access={profileLabels.readOnly} scope={profileLabels.hostScope} state={`${profileLabels.grants}: ${canonicalSnapshot.provenance.authority.grants}`} />
+                  <ProfileSourceCard title={profileLabels.learnedState} access={profileLabels.readOnly} scope={profileLabels.profileScope} state={canonicalSnapshot.provenance.learned.present ? profileLabels.present : profileLabels.absent} />
+                  <ProfileSourceCard title={profileLabels.runtimeProjection} access={profileLabels.readOnly} scope={profileLabels.runtimeScope} state={canonicalSnapshot.provenance.projection.active ? profileLabels.active : profileLabels.inactive} />
+                </div>
+                <div class="ash-profile-bindings">
+                  <div class="ash-label">{profileLabels.bindingsTitle}</div>
+                  <span>{profileLabels.environmentValues}: {canonicalSnapshot.bindings.environmentValueNames.length}</span>
+                  <span>{profileLabels.secrets}: {canonicalSnapshot.bindings.secretNames.length}</span>
+                  <span>{profileLabels.externalReferences}: {canonicalSnapshot.bindings.externalReferences}</span>
+                  <span>{profileLabels.capabilities}: {Object.values(canonicalSnapshot.bindings.capabilities).reduce((sum, count) => sum + count, 0)}</span>
+                  <span>{profileLabels.promptInputs}: {Object.entries(canonicalSnapshot.bindings.prompt).filter(([key, value]) => key !== "memoryPolicy" && value === true).length}</span>
+                  <span>{profileLabels.profileIdentity}: <code>{canonicalSnapshot.agentId.slice(0, 8)}…</code></span>
+                </div>
               </section>
             )}
             <div class="ash-group">

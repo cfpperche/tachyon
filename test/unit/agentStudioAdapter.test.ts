@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { AgentStudioAdapter } from "../../src/webview/AgentStudioAdapter.js";
-import { blankAgentFields, canonicalAgentFields, createAgentEvolutionLabels, serializeAgentPatch } from "../../src/webview/agent-studio-shell/domain.js";
+import { blankAgentFields, canonicalAgentFields, createAgentEvolutionLabels, createAgentProfileLabels, serializeAgentPatch } from "../../src/webview/agent-studio-shell/domain.js";
 import type { AgentProfileStudioMutationV1, AgentProfileStudioSnapshotV1 } from "../../src/config/agentProfileStudio.js";
 import type { WorkspaceAgentStudioTarget } from "../../src/shell/WorkspacePresentation.js";
 import type { StudioSubmit } from "../../src/webview/studioSubmit.js";
@@ -109,6 +109,20 @@ describe("AgentStudioAdapter — load", () => {
     expect(result.status).toBe("ok");
     if (result.status !== "ok") throw new Error("unreachable");
     expect(result.entity.persistentInstructionsHelp).toBe("localized:runtime-neutral startup delivery");
+  });
+
+  it("projects host-localized canonical profile labels", async () => {
+    const { ws } = fakeWorkspace();
+    const result = await new AgentStudioAdapter(
+      ws,
+      createAgentEvolutionLabels(),
+      "help",
+      createAgentProfileLabels((message) => `localized:${message}`),
+    ).load(undefined);
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") throw new Error("unreachable");
+    expect(result.entity.profileLabels?.provenanceTitle).toBe("localized:Profile sources and authority");
+    expect(result.entity.profileLabels?.retryRefresh).toBe("localized:Refresh and retry");
   });
 
   it("resolves an existing agent-kind entry via formLogic's fromDef", async () => {

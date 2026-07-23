@@ -14,6 +14,9 @@ _In-flight design memory — decisions, deviations, tradeoffs, and open question
 - 2026-07-22 — `t-293326` exposes enable/disable, rename and forget as a closed revisioned lifecycle union, not as form fields. Rename and forget reuse their existing canonical transactions; forget additionally requires the exact agent name as confirmation. Errors are redacted, stale revisions trigger a fresh bounded snapshot, dirty forms cannot launch lifecycle actions, and rename/forget confirmations focus Cancel first.
 - 2026-07-22 — The Control host was decoding a hardcoded `browse/cwd` domain subset even though adapters already declare their domain vocabulary. It now decodes `adapter.domainMessageNames`; without this correction Agent Studio's typed lifecycle messages (and other registered domain actions) could not reach their existing handler.
 - 2026-07-22 — `t-ecd405` keeps portable bundles byte-exact: export and clone bind the loaded profile revision, import crosses the existing staged-payload seam with the bundle service's 256 KiB cap, and the Studio only projects digest plus reauthorization requirements. Clone/import call the V1 services directly and create disabled, grant-free identities; no bundle is reconstructed from form fields.
+- 2026-07-22 — `t-fa332a` presents the snapshot's four ownership domains without widening the write contract: authored profile is marked writable; host authority, learned state and runtime projection are read-only. Binding counts remain redacted metadata. Disabled/degraded/conflict states and explicit refresh/retry are visible in the lifecycle region.
+- 2026-07-22 — Canonical profile copy is translated by the extension host and projected into the webview, matching Evolution's existing localization boundary. English and pt-BR bundles cover the new source, authority and retry language.
+- 2026-07-22 — Visual QA passed at the Control-hosted canonical fixture in dark, light and high-contrast. Captures are in `evidence/agent-profile-{dark,light,high-contrast}.png`. The preview harness now emulates VS Code's one-way outbound bridge so a studio command cannot echo back as a false host protocol error.
 
 ## Deviations
 
@@ -25,4 +28,4 @@ _Alternatives weighed mid-build. The chosen path + what was given up + why it wa
 
 ## Open questions
 
-None.
+- Installed human dogfood remains required for create/edit/disable-enable/clone-export-import/rename/forget. The Dev Host correctly refused the monorepo root as a mutable test workspace; run this against an isolated canonical-profile fixture, never the live fleet.

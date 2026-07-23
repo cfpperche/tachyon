@@ -86,6 +86,7 @@ describe("preview route table", () => {
       "runtime",
       "settings",
       "studio-agent",
+      "studio-agent-canonical",
       "studio-agent-edit",
       "studio-command",
       "studio-command-edit",

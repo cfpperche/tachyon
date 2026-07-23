@@ -21,6 +21,15 @@
 .ash-row { display: flex; gap: var(--ds-1); align-items: center; }
 .ash-row .ds-input { flex: 1; width: auto; }
 .ash-identity { display: grid; gap: var(--ds-2); padding: var(--ds-3); border: 1px solid var(--ds-border); border-radius: var(--ds-radius); background: color-mix(in srgb, var(--vscode-editor-background) 92%, var(--vscode-focusBorder)); }
+.ash-profile-sources { display: grid; gap: var(--ds-3); padding: var(--ds-3); border: 1px solid var(--ds-border); border-radius: var(--ds-radius); background: var(--ds-card); }
+.ash-profile-source-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--ds-2); }
+.ash-profile-source { display: grid; gap: var(--ds-2); min-width: 0; padding: var(--ds-2); border: 1px solid var(--ds-border); border-radius: var(--ds-radius); background: color-mix(in srgb, var(--vscode-editor-background) 96%, var(--vscode-focusBorder)); }
+.ash-profile-source-heading, .ash-profile-source-meta { display: flex; align-items: center; justify-content: space-between; gap: var(--ds-2); }
+.ash-profile-source-meta { color: var(--ds-muted); font-size: var(--ds-small); }
+.ash-profile-access { flex: none; padding: 1px var(--ds-2); border: 1px solid var(--ds-border); border-radius: 999px; color: var(--ds-muted); font-size: var(--ds-small); }
+.ash-profile-bindings { display: flex; flex-wrap: wrap; gap: var(--ds-2) var(--ds-3); padding-top: var(--ds-2); border-top: 1px solid var(--ds-border); color: var(--ds-muted); font-size: var(--ds-small); }
+.ash-profile-bindings .ash-label { flex-basis: 100%; margin: 0; }
+.ash-evolution-notice .ds-button { margin-left: var(--ds-2); }
 .ash-identity-heading { display: flex; gap: var(--ds-3); align-items: flex-start; justify-content: space-between; }
 .ash-identity-actions { display: flex; flex-wrap: wrap; gap: var(--ds-1); }
 .ash-soul-state { flex: none; padding: 2px var(--ds-2); border: 1px solid var(--ds-border); border-radius: 999px; font-size: var(--ds-small); font-weight: 600; }
@@ -82,7 +91,7 @@ details > .ds-input, details > select, details > textarea, details > .hint, deta
 details > .ash-label { margin-top: var(--ds-3); }
 
 @media (max-width: 720px) {
-  .ash-grid-compact, .ash-check-grid, .ash-evolution-active-grid, .ash-evolution-file-diff { grid-template-columns: 1fr; }
+  .ash-grid-compact, .ash-check-grid, .ash-evolution-active-grid, .ash-evolution-file-diff, .ash-profile-source-grid { grid-template-columns: 1fr; }
   .ash-row { align-items: stretch; flex-direction: column; }
   .ash-identity-heading, .ash-evolution-heading, .ash-evolution-toolbar { align-items: stretch; flex-direction: column; }
   .ash-evolution-candidate { grid-template-columns: 1fr; }

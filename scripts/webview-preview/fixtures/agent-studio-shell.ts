@@ -5,7 +5,8 @@
  */
 
 import type { AgentStudioEntity } from "../../../src/webview/agent-studio-shell/domain";
-import { blankAgentFields, createAgentEvolutionLabels } from "../../../src/webview/agent-studio-shell/domain";
+import { blankAgentFields, canonicalAgentFields, createAgentEvolutionLabels, createAgentProfileLabels } from "../../../src/webview/agent-studio-shell/domain";
+import type { AgentProfileStudioSnapshotV1 } from "../../../src/config/agentProfileStudio";
 import type { Fixture, Route } from "../routes";
 
 interface AgentStudioShellFixtureVM {
@@ -35,6 +36,7 @@ const chips = [
 
 const flagMap = { claude: ["--dangerously-skip-permissions", "--model sonnet", "--model haiku", "--permission-mode plan", "--continue"] };
 const evolutionLabels = createAgentEvolutionLabels();
+const profileLabels = createAgentProfileLabels();
 
 const newEntity: AgentStudioEntity = {
   fields: blankAgentFields(),
@@ -44,6 +46,7 @@ const newEntity: AgentStudioEntity = {
   verifyCandidates: ["npm test", "npm run lint"],
   persistentInstructionsHelp: "When supported, delivered at startup through the selected runtime.",
   evolutionLabels,
+  profileLabels,
 };
 
 const denseEntity: AgentStudioEntity = {
@@ -70,11 +73,41 @@ const denseEntity: AgentStudioEntity = {
   verifyCandidates: ["npm test", "npm run lint"],
   persistentInstructionsHelp: "When supported, delivered at startup through the selected runtime.",
   evolutionLabels,
+  profileLabels,
+};
+
+const canonicalSnapshot: AgentProfileStudioSnapshotV1 = {
+  schemaVersion: 1,
+  kind: "canonical",
+  agentName: "reviewer",
+  agentId: "123e4567-e89b-42d3-a456-426614174000",
+  revision: "a".repeat(64),
+  enabled: false,
+  editable: { displayName: "Repository reviewer", runtime: { adapter: "codex", executable: "codex", model: "gpt-5.6" }, role: "reviewer" },
+  bindings: {
+    environmentValueNames: ["NODE_ENV"], secretNames: ["GITHUB_TOKEN"],
+    prompt: { soul: true, instructions: true, evolution: true, memoryPolicy: "human-approved" },
+    capabilities: { skills: 3, mcp: 1, hooks: 1, pi: 0 }, externalReferences: 2,
+  },
+  provenance: {
+    canonical: { scope: "profile", writable: true, sha256: "b".repeat(64) },
+    authority: { scope: "host", writable: false, revision: "authority-r7", grants: 2 },
+    learned: { scope: "profile", writable: false, present: true },
+    projection: { scope: "runtime", writable: false, active: false },
+  },
+};
+
+const canonicalEntity: AgentStudioEntity = {
+  ...denseEntity,
+  storage: "canonical",
+  profile: canonicalSnapshot,
+  fields: canonicalAgentFields(canonicalSnapshot),
 };
 
 export const agentStudioShellFixtures: Record<string, Fixture<AgentStudioShellFixtureVM>> = {
   new: { provenance: "synthetic-edge", vm: { entity: newEntity } },
   "dense-edit": { provenance: "synthetic-edge", vm: { entity: denseEntity } },
+  "canonical-disabled": { provenance: "synthetic-edge", vm: { entity: canonicalEntity } },
   "load-error": { provenance: "synthetic-edge", vm: { entity: newEntity, loadError: { code: "persistence/not-found", message: "This agent no longer exists." } } },
 };
 

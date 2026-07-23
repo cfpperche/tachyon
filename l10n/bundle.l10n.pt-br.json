@@ -538,5 +538,18 @@
   "Roll back which agent profile migration?": "Reverter qual migração de perfil de agente?",
   "Roll back profile": "Reverter perfil",
   "Restore the legacy tachyon.yml stanza for stopped agent '{0}'? Later edits will make rollback refuse safely.": "Restaurar a stanza legada do tachyon.yml para o agente parado '{0}'? Edições posteriores farão a reversão recusar com segurança.",
-  "Agent '{0}' profile migration rolled back.": "Migração de perfil do agente '{0}' revertida."
+  "Agent '{0}' profile migration rolled back.": "Migração de perfil do agente '{0}' revertida.",
+  "Agent lifecycle": "Ciclo de vida do agente",
+  "Operational actions use the loaded profile revision and stay separate from form save.": "As ações operacionais usam a revisão carregada do perfil e ficam separadas do salvamento do formulário.",
+  "Closed": "Encerrado", "Degraded": "Degradado", "Conflict": "Conflito",
+  "Enable agent": "Habilitar agente", "Disable agent": "Desabilitar agente", "Refresh and retry": "Atualizar e tentar novamente",
+  "Rename…": "Renomear…", "Forget…": "Esquecer…", "Export": "Exportar", "Clone…": "Clonar…", "Import…": "Importar…",
+  "Save or discard form changes before a lifecycle action.": "Salve ou descarte as alterações do formulário antes de uma ação de ciclo de vida.",
+  "Profile sources and authority": "Origens e autoridade do perfil",
+  "Only authored profile values are editable. Authority, learned state, and runtime projection are read-only.": "Somente valores definidos no perfil são editáveis. Autoridade, aprendizados e projeção do runtime são somente leitura.",
+  "Authored profile": "Perfil definido", "Host authority": "Autoridade do host", "Learned state": "Aprendizados", "Runtime projection": "Projeção do runtime",
+  "Writable": "Editável", "Read-only": "Somente leitura", "Scope": "Escopo", "Agent profile": "Perfil do agente", "Host": "Host", "Runtime": "Runtime",
+  "Present": "Presente", "Absent": "Ausente", "Active": "Ativa", "Inactive": "Inativa", "Grants": "Permissões",
+  "Bound profile data": "Dados vinculados ao perfil", "Environment values": "Valores de ambiente", "Secret references": "Referências a segredos",
+  "External references": "Referências externas", "Capabilities": "Capacidades", "Prompt inputs": "Entradas do prompt", "Profile identity": "Identidade do perfil"
 }

@@ -445,6 +445,52 @@ export interface AgentStudioEntity {
   verifyCandidates: string[];
   persistentInstructionsHelp: string;
   evolutionLabels: AgentEvolutionLabels;
+  profileLabels?: AgentProfileLabels;
+}
+
+/** Host-localized copy for the canonical profile-only region. */
+export interface AgentProfileLabels {
+  lifecycleTitle: string;
+  lifecycleHelp: string;
+  enabled: string;
+  disabled: string;
+  closed: string;
+  degraded: string;
+  conflict: string;
+  enableAgent: string;
+  disableAgent: string;
+  refresh: string;
+  retryRefresh: string;
+  rename: string;
+  forget: string;
+  export: string;
+  clone: string;
+  import: string;
+  saveFirst: string;
+  provenanceTitle: string;
+  provenanceHelp: string;
+  authoredProfile: string;
+  hostAuthority: string;
+  learnedState: string;
+  runtimeProjection: string;
+  writable: string;
+  readOnly: string;
+  scope: string;
+  profileScope: string;
+  hostScope: string;
+  runtimeScope: string;
+  present: string;
+  absent: string;
+  active: string;
+  inactive: string;
+  grants: string;
+  bindingsTitle: string;
+  environmentValues: string;
+  secrets: string;
+  externalReferences: string;
+  capabilities: string;
+  promptInputs: string;
+  profileIdentity: string;
 }
 
 /** Human-visible copy is translated by the extension host and projected in the load entity. */
@@ -530,6 +576,24 @@ export function createAgentEvolutionLabels(t: AgentStudioTranslate = (message) =
     rejected: t("Rejected"),
     nextSession: t("Approved changes are available only in the next fresh session. The current session does not change."),
     profilePending: t("The Evolution Profile will be created after the first completed-task review."),
+  };
+}
+
+export function createAgentProfileLabels(t: AgentStudioTranslate = (message) => message): AgentProfileLabels {
+  return {
+    lifecycleTitle: t("Agent lifecycle"),
+    lifecycleHelp: t("Operational actions use the loaded profile revision and stay separate from form save."),
+    enabled: t("Enabled"), disabled: t("Disabled"), closed: t("Closed"), degraded: t("Degraded"), conflict: t("Conflict"),
+    enableAgent: t("Enable agent"), disableAgent: t("Disable agent"), refresh: t("Refresh"), retryRefresh: t("Refresh and retry"),
+    rename: t("Rename…"), forget: t("Forget…"), export: t("Export"), clone: t("Clone…"), import: t("Import…"),
+    saveFirst: t("Save or discard form changes before a lifecycle action."),
+    provenanceTitle: t("Profile sources and authority"),
+    provenanceHelp: t("Only authored profile values are editable. Authority, learned state, and runtime projection are read-only."),
+    authoredProfile: t("Authored profile"), hostAuthority: t("Host authority"), learnedState: t("Learned state"), runtimeProjection: t("Runtime projection"),
+    writable: t("Writable"), readOnly: t("Read-only"), scope: t("Scope"), profileScope: t("Agent profile"), hostScope: t("Host"), runtimeScope: t("Runtime"),
+    present: t("Present"), absent: t("Absent"), active: t("Active"), inactive: t("Inactive"), grants: t("Grants"),
+    bindingsTitle: t("Bound profile data"), environmentValues: t("Environment values"), secrets: t("Secret references"),
+    externalReferences: t("External references"), capabilities: t("Capabilities"), promptInputs: t("Prompt inputs"), profileIdentity: t("Profile identity"),
   };
 }
 

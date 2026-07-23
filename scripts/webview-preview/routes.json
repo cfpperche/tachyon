@@ -460,6 +460,27 @@
   },
   {
     "view": "cockpit",
+    "fixture": "studio-agent-canonical",
+    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=studio-agent-canonical",
+    "frame": {
+      "w": 1100,
+      "h": 720
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Control",
+    "aliases": [
+      "control",
+      "cockpit",
+      "sysadmin",
+      "project control",
+      "fleet control",
+      "control plane"
+    ]
+  },
+  {
+    "view": "cockpit",
     "fixture": "studio-task-edit",
     "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=studio-task-edit",
     "frame": {
