@@ -1,7 +1,8 @@
 import * as esbuild from "esbuild";
 import { createHash } from "node:crypto";
-import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertStableBuildSource, resolveEngineReleaseChannel } from "./scripts/engine-release-channel.mjs";
 
@@ -31,7 +32,28 @@ function sha256File(file) {
   return createHash("sha256").update(readFileSync(file)).digest("hex");
 }
 
+/** Flat list of regular files under dir as posix-ish paths relative to dist/engine. */
+function listEngineMediaFiles(absDir, relPrefix) {
+  if (!existsSync(absDir)) return [];
+  /** @type {{ path: string, sha256: string }[]} */
+  const out = [];
+  for (const name of readdirSync(absDir).sort()) {
+    if (name.startsWith(".")) continue;
+    const abs = path.join(absDir, name);
+    const rel = `${relPrefix}/${name}`.replace(/\\/g, "/");
+    const st = statSync(abs);
+    if (st.isDirectory()) out.push(...listEngineMediaFiles(abs, rel));
+    else if (st.isFile()) out.push({ path: rel, sha256: sha256File(abs) });
+  }
+  return out;
+}
+
 function writeEngineManifest() {
+  // SDD 422 — stage every companion-mobile asset (index alone left app.js 404 on daemon dogfood).
+  const companionMobileFiles = listEngineMediaFiles(
+    "dist/engine/media/companion-mobile",
+    "media/companion-mobile",
+  );
   const manifest = {
     schemaVersion: 1,
     channel: engineReleaseChannel,
@@ -42,10 +64,7 @@ function writeEngineManifest() {
       { path: "engine-daemon.cjs", sha256: sha256File("dist/engine/engine-daemon.cjs") },
       { path: "pi-bridge-extension.mjs", sha256: sha256File("dist/engine/pi-bridge-extension.mjs") },
       { path: "media/clipboard-copy.sh", sha256: sha256File("dist/engine/media/clipboard-copy.sh"), executable: true },
-      // SDD 422 — optional in older checkouts; include when packaged
-      ...(existsSync("dist/engine/media/companion-mobile/index.html")
-        ? [{ path: "media/companion-mobile/index.html", sha256: sha256File("dist/engine/media/companion-mobile/index.html") }]
-        : []),
+      ...companionMobileFiles,
     ],
     build: {
       commit: buildStampSnapshot.commit ?? "0".repeat(40),
