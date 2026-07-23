@@ -146,6 +146,16 @@ export interface CockpitModel {
    * as `activeRoute` itself.
    */
   studioMountNonce?: string;
+  /**
+   * t-c3c819 — the CURRENT studio binding's `persisted` flag, present under the same conditions as
+   * `studioMountNonce`. `false` means `activeRoute`'s `entityId` was pre-minted (Task Studio's
+   * staged-create pattern, see `mintTaskId()`'s doc comment) but the entity has never actually been
+   * saved to disk — used to stop `parentRoute()`'s task-detail parent (correct for a REAL edit) from
+   * being trusted for a brand-new, still-unsaved task, whose "parent" is really just the studio's
+   * section (task-detail(entityId) would 404: "never found on disk"). Attached by Cockpit.ts's
+   * sendModel(), same convention as `activeRoute`/`studioMountNonce`.
+   */
+  studioPersisted?: boolean;
   /** t-d16a39 — every configured workspace, for the shell-level workspace selector. */
   workspaces: Array<{ hash: string; folder: string }>;
   /** t-d16a39 — the shell-selected workspace scoping every section; undefined = "All workspaces". */

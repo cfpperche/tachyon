@@ -97,10 +97,16 @@ describe("abandonProvisionalIfNeeded (t-610705, D2)", () => {
     const adapter = fakeAdapter({ persisted: false, onCancel });
     const { io, mountNonce } = await openAndLoad(adapter);
 
-    await handleStudioMessage(io, scoped(mountNonce, { type: "cancel" }), { onChanged: () => {}, notify: () => {}, onCancelled: () => {} });
+    // t-c3c819 — onCancelled must receive the PRE-cleanup persisted value (false here), even though
+    // abandonProvisionalIfNeeded (called just before it) unconditionally flips b.persisted to true as
+    // part of its own idempotency guard — the client's "where does Cancel go" decision (task-detail
+    // vs the studio's own section, for a still-unsaved task) depends on the value BEFORE that flip.
+    const onCancelled = vi.fn();
+    await handleStudioMessage(io, scoped(mountNonce, { type: "cancel" }), { onChanged: () => {}, notify: () => {}, onCancelled });
 
     expect(onCancel).toHaveBeenCalledTimes(1);
     expect(onCancel).toHaveBeenCalledWith("provisional-1");
+    expect(onCancelled).toHaveBeenCalledWith(false);
   });
 
   it("cancel does NOT call onCancel for an already-persisted (real, existing) binding", async () => {
@@ -108,9 +114,11 @@ describe("abandonProvisionalIfNeeded (t-610705, D2)", () => {
     const adapter = fakeAdapter({ persisted: true, onCancel });
     const { io, mountNonce } = await openAndLoad(adapter);
 
-    await handleStudioMessage(io, scoped(mountNonce, { type: "cancel" }), { onChanged: () => {}, notify: () => {}, onCancelled: () => {} });
+    const onCancelled = vi.fn();
+    await handleStudioMessage(io, scoped(mountNonce, { type: "cancel" }), { onChanged: () => {}, notify: () => {}, onCancelled });
 
     expect(onCancel).not.toHaveBeenCalled();
+    expect(onCancelled).toHaveBeenCalledWith(true);
   });
 
   it("a successful save flips persisted, so a LATER cancel/teardown no longer cleans up", async () => {

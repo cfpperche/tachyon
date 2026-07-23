@@ -781,7 +781,17 @@ export function App(p: CockpitAppProps) {
       </div>
     ) : parent && parent.kind === "task-detail" ? (
       <div class="ds-backlink-slot" data-testid="control-studio-breadcrumb">
-        <Button variant="default" icon="arrow-left" class="ds-link-btn" onClick={() => p.taskDetailDispatch.openTask(parent.taskId)}>
+        <Button
+          variant="default"
+          icon="arrow-left"
+          class="ds-link-btn"
+          // t-c3c819 — task-detail is the correct parent for a REAL edit, but Task Studio's
+          // staged-create pattern opens a brand-new task straight into studio-edit with a
+          // pre-minted, still-unsaved id (mintTaskId()); m.studioPersisted === false means this
+          // is that case — task-detail(id) would 404 ("never found on disk"), so land on the
+          // Board itself instead, same as every other studio's flat-section parent.
+          onClick={() => (m.studioPersisted === false ? p.onSetSection("mission") : p.taskDetailDispatch.openTask(parent.taskId))}
+        >
           {s.navMission}
         </Button>
       </div>
