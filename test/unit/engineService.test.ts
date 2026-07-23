@@ -411,6 +411,7 @@ describe("daemon engine service", () => {
         tags: ["docs"],
         doc: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "engine pin body" }] }] },
         attachments: [],
+        docDirty: false,
       },
     }));
     const savePinCommand = {

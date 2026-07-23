@@ -285,6 +285,12 @@ export interface StudioMessageHooks {
    *  `ctx.entityId`/`m.agent !== agent` guard. A studio with no such guard (command/terminal's
    *  "browse") simply never reads it. */
   handleDomainMessage?: (ctx: { post: (m: unknown) => void; entityId: string | undefined }, message: { type: string }) => void;
+  /** t-cdd4e1 — Cancel is a deliberate "leave without saving" gesture; the client has no way to
+   *  navigate itself away (routes are host-authoritative), so the host must do it after discarding
+   *  the draft. Every studio wires `onCancel` the same one-line way (`post(cancelMessage())`, no
+   *  navigate call) — none of the 7 App.tsx files were ever missing anything; the host simply never
+   *  followed through. */
+  onCancelled: () => void;
 }
 
 export async function handleStudioMessage(io: StudioHostIO, raw: unknown, hooks: StudioMessageHooks): Promise<boolean> {
@@ -332,6 +338,7 @@ export async function handleStudioMessage(io: StudioHostIO, raw: unknown, hooks:
       discardDraft(b.route);
       abandonProvisionalIfNeeded(b);
       hooks.onChanged();
+      hooks.onCancelled();
       return true;
     default:
       hooks.handleDomainMessage?.({ post: io.post, entityId: b.entityId }, msg as { type: string });

@@ -87,6 +87,7 @@ describe("abandonProvisionalIfNeeded (t-610705, D2)", () => {
     await expect(handleStudioMessage(io, scoped(mountNonce, { type: "canonicalAction" }), {
       onChanged: () => {},
       notify: () => {},
+      onCancelled: () => {},
       handleDomainMessage: (_ctx, message) => received.push(message.type),
     })).resolves.toBe(true);
     expect(received).toEqual(["canonicalAction"]);
@@ -96,7 +97,7 @@ describe("abandonProvisionalIfNeeded (t-610705, D2)", () => {
     const adapter = fakeAdapter({ persisted: false, onCancel });
     const { io, mountNonce } = await openAndLoad(adapter);
 
-    await handleStudioMessage(io, scoped(mountNonce, { type: "cancel" }), { onChanged: () => {}, notify: () => {} });
+    await handleStudioMessage(io, scoped(mountNonce, { type: "cancel" }), { onChanged: () => {}, notify: () => {}, onCancelled: () => {} });
 
     expect(onCancel).toHaveBeenCalledTimes(1);
     expect(onCancel).toHaveBeenCalledWith("provisional-1");
@@ -107,7 +108,7 @@ describe("abandonProvisionalIfNeeded (t-610705, D2)", () => {
     const adapter = fakeAdapter({ persisted: true, onCancel });
     const { io, mountNonce } = await openAndLoad(adapter);
 
-    await handleStudioMessage(io, scoped(mountNonce, { type: "cancel" }), { onChanged: () => {}, notify: () => {} });
+    await handleStudioMessage(io, scoped(mountNonce, { type: "cancel" }), { onChanged: () => {}, notify: () => {}, onCancelled: () => {} });
 
     expect(onCancel).not.toHaveBeenCalled();
   });
@@ -117,8 +118,8 @@ describe("abandonProvisionalIfNeeded (t-610705, D2)", () => {
     const adapter = fakeAdapter({ persisted: false, onCancel });
     const { io, mountNonce } = await openAndLoad(adapter);
 
-    await handleStudioMessage(io, scoped(mountNonce, { type: "patch", patch: { name: "x" }, editRevision: 1 }), { onChanged: () => {}, notify: () => {} });
-    await handleStudioMessage(io, scoped(mountNonce, { type: "save" }), { onChanged: () => {}, notify: () => {} });
+    await handleStudioMessage(io, scoped(mountNonce, { type: "patch", patch: { name: "x" }, editRevision: 1 }), { onChanged: () => {}, notify: () => {}, onCancelled: () => {} });
+    await handleStudioMessage(io, scoped(mountNonce, { type: "save" }), { onChanged: () => {}, notify: () => {}, onCancelled: () => {} });
 
     reconcileStudioTeardown({ kind: "section", section: "overview" });
     expect(onCancel).not.toHaveBeenCalled();
@@ -147,7 +148,7 @@ describe("abandonProvisionalIfNeeded (t-610705, D2)", () => {
     const adapter = fakeAdapter({ persisted: false, onCancel });
     const { io, mountNonce } = await openAndLoad(adapter);
 
-    await handleStudioMessage(io, scoped(mountNonce, { type: "cancel" }), { onChanged: () => {}, notify: () => {} });
+    await handleStudioMessage(io, scoped(mountNonce, { type: "cancel" }), { onChanged: () => {}, notify: () => {}, onCancelled: () => {} });
     reconcileStudioTeardown({ kind: "section", section: "overview" });
 
     expect(onCancel).toHaveBeenCalledTimes(1);
@@ -159,7 +160,7 @@ describe("abandonProvisionalIfNeeded (t-610705, D2)", () => {
     const { io, mountNonce } = await openAndLoad(adapter);
     __setWarningMessageResult("Discard");
 
-    await handleStudioMessage(io, scoped(mountNonce, { type: "patch", patch: { name: "x" }, editRevision: 1 }), { onChanged: () => {}, notify: () => {} });
+    await handleStudioMessage(io, scoped(mountNonce, { type: "patch", patch: { name: "x" }, editRevision: 1 }), { onChanged: () => {}, notify: () => {}, onCancelled: () => {} });
 
     const outcomePromise = beginStudioNavTransaction(io, () => {});
     await flush();
@@ -176,7 +177,7 @@ describe("abandonProvisionalIfNeeded (t-610705, D2)", () => {
     const { io, mountNonce } = await openAndLoad(adapter);
     __setWarningMessageResult("Save");
 
-    await handleStudioMessage(io, scoped(mountNonce, { type: "patch", patch: { name: "x" }, editRevision: 1 }), { onChanged: () => {}, notify: () => {} });
+    await handleStudioMessage(io, scoped(mountNonce, { type: "patch", patch: { name: "x" }, editRevision: 1 }), { onChanged: () => {}, notify: () => {}, onCancelled: () => {} });
 
     const outcomePromise = beginStudioNavTransaction(io, () => {});
     await flush();

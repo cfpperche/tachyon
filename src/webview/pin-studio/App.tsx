@@ -84,6 +84,9 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: PinS
   const [tagInput, setTagInput] = useState("");
   const [attachments, setAttachments] = useState<PinStudioAttachmentVM[]>([]);
   const [docVersion, setDocVersion] = useState(0);
+  // t-cdd4e1 — explicit dirty flag set only by TipTap's onUpdate firing; see computePinDirty's doc
+  // comment (domain.ts) for why a structural JSON diff against the loaded doc false-positives.
+  const [docDirty, setDocDirty] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
   const [slashOpen, setSlashOpen] = useState(false);
   const [sketch, setSketch] = useState<SketchRequest | null>(null);
@@ -95,7 +98,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: PinS
   const currentStoredDoc = () => toStoredDoc((editorRef.current?.getJSON() ?? { type: "doc", content: [] }) as never);
   const currentFields = (): PinFields => {
     const doc = currentStoredDoc();
-    return { title, tags, doc, attachments: attachmentsForSave(doc, attachmentsRef.current).map(attachmentFromVM) };
+    return { title, tags, doc, attachments: attachmentsForSave(doc, attachmentsRef.current).map(attachmentFromVM), docDirty };
   };
 
   const dirtyComputed = computePinDirty(entity, currentFields());
@@ -114,6 +117,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: PinS
     attachmentsRef.current = loadedEntity.attachments;
     setAttachments(loadedEntity.attachments);
     setError(undefined);
+    setDocDirty(false);
     if (mount.current) {
       editorRef.current?.destroy();
       editorRef.current = createRichDocEditor(
@@ -121,7 +125,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: PinS
         toEditorDoc(loadedEntity.doc, loadedEntity.attachments),
         (file, source) => void attachFile(file, source),
         () => setSlashOpen(true),
-        () => setDocVersion((v) => v + 1),
+        () => { setDocVersion((v) => v + 1); setDocDirty(true); },
       );
     }
     setDocVersion((v) => v + 1);
@@ -236,7 +240,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: PinS
     post(dirtyMessage(computePinDirty(entity, fields)));
     post(patchMessage(fields));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, entity, frozen, title, tags, docVersion]);
+  }, [ready, entity, frozen, title, tags, docVersion, docDirty]);
 
   useEffect(() => {
     if (hostError) setError(hostError.message);
@@ -418,6 +422,15 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: PinS
         frozen={frozen}
         onSave={onSave}
         onCancel={() => post(cancelMessage())}
+        // t-cdd4e1 — Import/Sketch are StudioFrame's own documented headerActions slot ("left of
+        // Cancel/Save"); they were wired into regions.sideActions instead, which renders at the
+        // BOTTOM of the whole studio body (.sf-side-actions), nowhere near the header.
+        headerActions={
+          <>
+            <Button icon="file-media" onClick={() => post(importImageMessage())}>Import</Button>
+            <Button icon="edit" onClick={openBlankSketch}>Sketch</Button>
+          </>
+        }
         regions={{
           fields: (
             <>
@@ -457,12 +470,6 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: PinS
               onAnnotate={(a) => void openAnnotate(a)}
               onEditSketch={openExistingSketch}
             />
-          ),
-          sideActions: (
-            <div class="pin-side-actions">
-              <Button icon="file-media" onClick={() => post(importImageMessage())}>Import</Button>
-              <Button icon="edit" onClick={openBlankSketch}>Sketch</Button>
-            </div>
           ),
         }}
       />
