@@ -372,3 +372,14 @@ npm run dogfood:dev-host -- shortlist
 | `fail-visible` | t-8354ae | Xvfb EDH (optional, slower) |
 
 PNGs land under `.tachyon/evidence/ui-shortlist/<stamp>-<sha>/`.
+
+## Companion Mobile one-QR (trail)
+
+PWA pair without a physical phone — requires a pointer at a build that serves `/companion/app/*`,
+`lanAccess: true`, and Tailscale up (`tailscale ip -4`):
+
+```bash
+node scripts/dev-host/headless-interactive.mjs --scenario scripts/dev-host/scenarios/companion-one-qr.mjs
+```
+
+Scenario: `scripts/dev-host/scenarios/companion-one-qr.mjs` (Control → Show pair code → mobile-viewport openUrl).
