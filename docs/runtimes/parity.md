@@ -1,7 +1,7 @@
 # Runtime capability parity (living document)
 
-**Status:** living · **Owner:** Tachyon maintainers · **Last verified:** 2026-07-20 (Soul MVP closure and runtime delivery audit)
-**Seams (code of record):** `src/resume/adapters.ts`, `src/runtime/runtimeProfile.ts`, `src/agents/AgentManager.ts` (`withRuntimeBridge`, `effectiveCmd`), `src/harness/HarnessManager.ts`, `src/activity/*Normalizer.ts`, `src/attention/patterns.ts`, `src/config/loadConfig.ts` (`INSTRUCTION_ARG`)
+**Status:** living · **Owner:** Tachyon maintainers · **Last verified:** 2026-07-23 (native configuration inheritance inventory)
+**Seams (code of record):** `src/resume/adapters.ts`, `src/runtime/runtimeProfile.ts`, `src/agents/AgentManager.ts` (`withRuntimeBridge`, `effectiveCmd`), `src/harness/HarnessManager.ts`, `src/config/agentProfileSchema.ts`, `src/config/agentProfileProjection.ts`, `src/activity/*Normalizer.ts`, `src/attention/patterns.ts`, `src/config/loadConfig.ts` (`INSTRUCTION_ARG`)
 
 This document is the **source of truth** for how Tachyon treats AI CLIs as first-class runtimes.  
 It is **not** a board task and is **not** a shippable SDD spec — it is continuous product/engine documentation.
@@ -46,6 +46,7 @@ What “first-class” means in Tachyon (ordered for reading, not strict priorit
 | 9 | **Permission inject** | Spawn/harness **actually sets** the runtime’s native permission/auto-approve posture (a measured profile with **zero readers** is `✗`, not `~`). |
 | 10 | **Label / profile** | `runtimeProfile` entry with enough for UI/governance: at least isolation + stop; `label` when present. “Full” means the sections peers use (composer, permission, model aliases) — not a marketing adjective. |
 | 11 | **Restart** | Kill + respawn with same definition; Bridge re-injected. |
+| 12 | **Native configuration parity** | Private-home isolation preserves or intentionally excludes each measured native behavior family through an explicit source/treatment/refresh policy. A private home alone does not count. |
 
 Also real, uneven seams (not full matrix rows yet — see open gaps): **session-id strategy** (mint vs capture), **deterministic `transcriptPath`**, **session-ownership hooks** (Claude `--settings`), **model-label normalization** (Claude/Codex), and **live/observed model provenance** (spec 378 plus the Hermes SQLite reader — claude/codex/grok/hermes can latch an observed model; opencode/gemini/qwen/etc. stay declared-only).
 
@@ -106,6 +107,7 @@ Avoid the word `ongoing` as a verification token — use a date, CLI version, te
 | 9 Permission inject | ~ | ~ | ~ | **✗** | ✓ |
 | 10 Label / profile | ✓ | ✓ | ~ | ✓ | ~ |
 | 11 Restart | ✓ | ✓ | ✓ | ✓ | ✓ |
+| 12 Native config parity | ~ | ✗ | ~ | ✗ | ~ |
 
 \* **Pi Bridge** is projected through a Tachyon-owned native extension because Pi has no MCP client.
 
@@ -114,6 +116,36 @@ Avoid the word `ongoing` as a verification token — use a date, CLI version, te
 ‡ **Pi default private home + exact resource harness exist.** SDD 406 snapshots declared workspace-local extensions/skills/prompts/themes/packages into the per-agent home, disables automatic discovery and passes only explicit private CLI paths. Remote package acquisition/global inheritance remain intentionally unsupported.
 
 *Secondary adapters: [§3.3](#33-secondary-runtimes).*
+
+### 3.1.1 Native configuration inheritance
+
+Private-home isolation and behavior parity are independent. The installed Codex rollout proved this:
+the agent remained isolated but lost status-line, approval, model/personality and native
+hook/extension behavior when the global `config.toml` was suppressed.
+
+The architecture contract is
+[`agent-native-config-inheritance.md`](../architecture/agent-native-config-inheritance.md). It separates
+agent policy, regenerable runtime projection, mutable runtime state and external authority. Inheritance
+means controlled materialization into the private home, never sharing that mutable home.
+
+Current adapter evidence:
+
+| Runtime | Global/account source | Workspace source | Private projection | External authority | Fresh/restart/resume/fork | Mark |
+|---|---|---|---|---|---|:---:|
+| Claude | selected auth/bootstrap only | settings, skills and MCP selectively projected; ambient prompt/plugin roots rejected | generated `settings.json`, skills and strict MCP config | credentials/onboarding markers | regenerated on launch paths; family-level resume evidence incomplete | ~ |
+| Codex | legacy home-only mode can copy global `config.toml`; canonical mode excludes it | canonical inspector currently requires `.codex/config.toml` empty | private `CODEX_HOME`; generated config/Bridge, global auth link | OAuth credentials | projection is rebuilt, but preserving model/approval/UI/hooks/extensions is unsupported | ✗ |
+| OpenCode | ambient global XDG excluded | `inherit: workspace` snapshots `opencode.json`; `none` starts empty | private XDG config/data/state plus MCP overlay | runtime auth state not fully classified here | spawn/restart/resume wiring exists; per-family refresh evidence incomplete | ~ |
+| Grok | ambient config, memory and plugins excluded | harness can snapshot `.grok/config.toml`; canonical non-harness writes Bridge-only config | private `GROK_HOME`, trust store and hooks | auth symlink plus reconciliation | regenerated on spawn/restart/resume; no family policy | ✗ |
+| Pi | safe global JSON settings seeded once, executable resources removed | exact declared resource snapshots | private agent/session homes | private auth snapshot; provider authority remains external | private settings become runtime-owned after seed; lifecycle evidence exists but policy is implicit | ~ |
+| Hermes | global non-MCP `config.yaml` is seeded; `inherit: none` still keeps that base | workspace `.hermes/config.yaml` may replace the global base; MCP is overlaid | private `HERMES_HOME`; `state.db` is runtime-owned | OAuth `auth.json` and API-key `.env` are externally linked/reconciled | spawn/resume paths exist; no canonical profile inspector or per-family policy | ✗ |
+
+Required evidence is per family: model/provider/reasoning, approval/sandbox/trust, UI/status/personality,
+hooks/MCP/skills/native extensions, feature flags, authentication, memory, caches/notices/telemetry and
+resume/fork consistency. Each record names source, projection target, mutable state, credentials,
+lifecycle behavior and a dated test/task. Unknown stays unknown.
+
+Runtime-managed memory is tracked by `t-d4c42e`; agent-scoped Tachyon plugins remain separate. Both
+must still be visible here when they affect effective runtime behavior.
 
 ### 3.2 Per-runtime: native mechanism → Tachyon seam
 
@@ -210,13 +242,13 @@ Detail dump: [`docs/runtimes/opencode.md`](./opencode.md) (narrative may still s
 
 ### 3.3 Secondary runtimes
 
-| Runtime | Brief | Resume | Bridge | Harness | Activity | Notes |
-|---------|:-----:|:------:|:------:|:-------:|:--------:|-------|
-| Gemini | ✓ (`-i`) | ✓ adapter | — | — | — | Thin overall |
-| Antigravity | ✓ (`--prompt-interactive`) | ✓ (`--conversation` / `--continue`) | — | — | — | Thin overall |
-| Qwen | — | ✓ (`--continue` style) | — | — | — | Thin |
-| Continue | — | ✓ (`--resume <id>`) | — | — | — | Thin (not “no resume”) |
-| Hermes | ✓ (`HERMES_TUI_QUERY` + forced TUI) | ✓ adapter + live session follow (`--resume`/`-c`) | ✓ (`HERMES_HOME` + `config.yaml` MCP) | ✓ (isolated MCP set; optional auth; hooks rejected) | ✓ (`state.db`, timestamp/model, bounded backfill) | Hardened 2026-07-16 (`agentManager`, `harness`, `resume`, `hermesStorageReader` units). No fork or permission reader. Detail: [`hermes.md`](./hermes.md). |
+| Runtime | Brief | Resume | Bridge | Harness | Activity | Native config | Notes |
+|---------|:-----:|:------:|:------:|:-------:|:--------:|:-------------:|-------|
+| Gemini | ✓ (`-i`) | ✓ adapter | — | — | — | ✗ | Thin overall |
+| Antigravity | ✓ (`--prompt-interactive`) | ✓ (`--conversation` / `--continue`) | — | — | — | ✗ | Thin overall |
+| Qwen | — | ✓ (`--continue` style) | — | — | — | ✗ | Thin |
+| Continue | — | ✓ (`--resume <id>`) | — | — | — | ✗ | Thin (not “no resume”) |
+| Hermes | ✓ (`HERMES_TUI_QUERY` + forced TUI) | ✓ adapter + live session follow (`--resume`/`-c`) | ✓ (`HERMES_HOME` + `config.yaml` MCP) | ✓ (isolated MCP set; optional auth; hooks rejected) | ✓ (`state.db`, timestamp/model, bounded backfill) | ✗ | Operational inheritance exists, but canonical policy/inspector does not. Hardened seams: 2026-07-16 (`agentManager`, `harness`, `resume`, `hermesStorageReader`). No fork or permission reader. Detail: [`hermes.md`](./hermes.md). |
 
 Promoting a secondary runtime means walking §2 with **native** measurements, then filling the summary table.
 
